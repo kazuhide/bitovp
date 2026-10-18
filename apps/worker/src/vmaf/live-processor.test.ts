@@ -133,12 +133,12 @@ function setup(
 		/** Non-zero ⇒ the source ffprobe fails (geometry unavailable). */
 		ffprobeExit?: number;
 		/**
-		 * : the container period the canned ffprobe reports, in frames
+		 * the container period the canned ffprobe reports, in frames
 		 * at 30 fps (default: the source signature's length — a hole-free loop).
 		 */
 		probeFrames?: number;
 		/**
-		 * : the canned decode of the reproduced push (default: three
+		 * the canned decode of the reproduced push (default: three
 		 * plays of `sourceSig`). A longer canned decode lets the period
 		 * estimator run — it needs `2·(probeFrames + 60)` frames at 30 fps.
 		 */

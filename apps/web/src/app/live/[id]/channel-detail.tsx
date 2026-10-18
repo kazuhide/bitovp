@@ -426,7 +426,7 @@ export function ChannelDetail({
 		(r) => Date.parse(r.fireAt) < Date.now() - SWEEP_GRACE_MS,
 	).length;
 	/**
-	 * : fired schedules that did NOT deliver.
+	 * fired schedules that did NOT deliver.
 	 *
 	 * Not a new alert metric — the audit asked only that a failed slate or
 	 * feeder outcome stop being invisible above the fold, and this section
@@ -466,7 +466,7 @@ export function ChannelDetail({
 		providerUnknown: providerUnconfirmed,
 	});
 	/**
-	 * : what is OPEN on arrival, one rule for the whole page.
+	 * what is OPEN on arrival, one rule for the whole page.
 	 *
 	 * Three inputs, in the order §5.7 gives them: the PHASE's default set (what
 	 * this situation is about), the derived next action's target (the one thing
@@ -493,7 +493,7 @@ export function ChannelDetail({
 		return key ? t(key) : undefined;
 	};
 	/**
-	 * : the same two escalations, as a LIST, for the focus handoff.
+	 * the same two escalations, as a LIST, for the focus handoff.
 	 *
 	 * Only these two — not the phase default and not the next action's target.
 	 * A phase default is what the page renders on arrival, and the next action
@@ -643,7 +643,7 @@ export function ChannelDetail({
 				tone={playable.length > 0 ? "ok" : "neutral"}
 			>
 				{/* A running channel is the only time its manifests exist; a
-				    stopped one leaves them behind but nothing writes segments,
+				 * stopped one leaves them behind but nothing writes segments,
 				    so the player would stall at the last one. */}
 				{/*  (owner): the VOD rail's width, and no playback until
 				    the output is confirmed while RUNNING. */}
@@ -665,13 +665,13 @@ export function ChannelDetail({
 					/>
 				</div>
 				{/* The full URL list, one disclosure back (§5.7 keeps "manifest
-				    summary" in the open state and "every URL" behind it). Without
-				    it a channel whose output is not public showed nothing at all —
-				    no URL, no path, no reason — which is every channel authored
-				    before the wizard's ACL field, so it stays one click away and
+				 * summary" in the open state and "every URL" behind it). Without
+				 * it a channel whose output is not public showed nothing at all —
+				 * no URL, no path, no reason — which is every channel authored
+				 * before the wizard's ACL field, so it stays one click away and
 				    never further. */}
 				{/* rev433: the one reason with a single-field remedy is said HERE,
-				    not only behind the URL disclosure — an MSL channel without an
+				 * not only behind the URL disclosure — an MSL channel without an
 				    edge base URL showed an empty player and nothing else. */}
 				{playable.length === 0 && mslEdgeUrlMissing ? (
 					<p className="mt-2 text-sm text-amber-300">
@@ -723,8 +723,8 @@ export function ChannelDetail({
 				defaultOpen={sectionOpen("sec-insertion-stop")}
 			>
 				{/* The global stop
-				    acts on whatever is PLAYING and leaves every reservation alone,
-				    so it is its own confirm-gated section — never a button on top
+				 * acts on whatever is PLAYING and leaves every reservation alone,
+				 * so it is its own confirm-gated section — never a button on top
 				    of the reservation list above. */}
 				<InsertedContentStopPanel
 					channelId={id}
@@ -1178,7 +1178,7 @@ export function ChannelDetail({
 	return (
 		<LiveAnnouncer>
 			{/* , the three handoffs that are not a click. All three mount
-			    WITH the body, so "the sections exist" is a fact about where they
+			 * WITH the body, so "the sections exist" is a fact about where they
 			    sit rather than a condition they re-derive. */}
 			<DeepLinkFocus />
 			<RevealFocus revealed={escalated} />
@@ -1209,14 +1209,14 @@ export function ChannelDetail({
 					) : null}
 					<DuplicateChannelButton channelId={id} />
 					{/*
-: the lifecycle controls, MOVED here — not copied. They
-				    used to share a button row with Duplicate and Delete inside the
-				    first body section. Start and Stop are the
-				    only mutations an operator reaches for while watching the strip
-				    above, so they belong in the fixed header; Delete is the last
-					    section on the page. Copy settings is a separate header action. `sec-actions`
-				    keeps its id because core's `liveNextAction` points at it.
-				*/}
+					 * the lifecycle controls, MOVED here — not copied. They
+					 * used to share a button row with Duplicate and Delete inside the
+					 * first body section. Start and Stop are the
+					 * only mutations an operator reaches for while watching the strip
+					 * above, so they belong in the fixed header; Delete is the last
+					 * section on the page. Copy settings is a separate header action. `sec-actions`
+					 * keeps its id because core's `liveNextAction` points at it.
+					 */}
 					<section
 						id="sec-actions"
 						aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
@@ -1264,7 +1264,7 @@ export function ChannelDetail({
 				/>
 
 				{/*  layer 1: the one thing to do next. : taking
-			    it hands focus to the target's heading, so a keyboard operator
+				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
 				<NextActionPanel action={nextAction} onJump={jumpToLiveSection} />
 
@@ -1382,20 +1382,20 @@ export function ChannelDetail({
 				) : null}
 
 				{/*
-			    Rows #248/#249, the body: six LAYERS in operator order, each a
-			    named landmark with a visible `h2` and a one-line reason, holding
-			    `h3` sections that open according to the phase. The order comes
-			    from `section-layout.ts`, not from the shape of this JSX — the
-			    page and its hierarchy pin read the same table.
-
-			     added the NAVIGATION over the same table. The rail is a
-			    sibling of the body, not a wrapper around it: `xl:flex-row-reverse`
-			    puts the DOM-first `<nav>` in the right margin at `xl` (the layout
-			    the owner picked over a sticky top bar, ) and above the
-			    body below it, where it collapses to a "Jump to" button. Reversing
-			    the ROW direction rather than reordering the items keeps the tab
-			    sequence and the reading order identical at every width.
-			*/}
+				 * Rows #248/#249, the body: six LAYERS in operator order, each a
+				 * named landmark with a visible `h2` and a one-line reason, holding
+				 * `h3` sections that open according to the phase. The order comes
+				 * from `section-layout.ts`, not from the shape of this JSX — the
+				 * page and its hierarchy pin read the same table.
+				 *
+				 * added the NAVIGATION over the same table. The rail is a
+				 * sibling of the body, not a wrapper around it: `xl:flex-row-reverse`
+				 * puts the DOM-first `<nav>` in the right margin at `xl` (the layout
+				 * the owner picked over a sticky top bar, ) and above the
+				 * body below it, where it collapses to a "Jump to" button. Reversing
+				 * the ROW direction rather than reordering the items keeps the tab
+				 * sequence and the reading order identical at every width.
+				 */}
 				<div className="flex flex-col gap-4 xl:flex-row-reverse xl:items-start xl:gap-6">
 					<LiveSectionNav layers={bodyLayers} />
 					<div className="min-w-0 flex-1 space-y-4">

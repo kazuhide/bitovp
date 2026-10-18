@@ -41,7 +41,7 @@ function activeDestination(
  * element rather than each building the list from `NAV_SECTIONS`. A second copy
  * of the loop is exactly how the two shells drift: 's flag filter
  * would have to be remembered twice, the role filter
- three times counting the page gate, and the `aria-current` rule
+ * three times counting the page gate, and the `aria-current` rule
  * with them. The shells own their box (a sticky column versus a dialog
  * panel); they do not own what is in it.
  *

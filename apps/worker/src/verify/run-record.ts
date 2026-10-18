@@ -399,7 +399,7 @@ export function createRunRecorder(
 	 * exactly that — a run that never sealed. The SEAL is the one write whose
 	 * all-retries failure is NOT survivable, and `sealed` reads this boolean to
 	 * refuse to claim SEALED without a durable write
-: before this returned that fact, the seal write was swallowed
+	 * before this returned that fact, the seal write was swallowed
 	 * like any other, so an all-fail write left the row RUNNING while the CLI
 	 * finished "successfully" — a release gate got different answers from the
 	 * exit code and the Dashboard row.

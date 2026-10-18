@@ -274,7 +274,7 @@ export const HEARTBEAT_FUTURE_SKEW_TOLERANCE_MS = 5_000;
  * `ingestConnectedFromHeartbeat` answers "did the SAMPLE say connected" —
  * it deliberately knows nothing about WHEN the sample was taken, and every
  * reader that treated it as "is connected NOW" inherited a frozen stamp
- * : a stopped channel's
+ * a stopped channel's
  * final CONNECTED sample froze the detail page at Connected forever, a
  * REVIVED run keeps its pre-error sample on the SAME row (review-243 R1's
  * presence-level read cannot help — presence is satisfied), and the

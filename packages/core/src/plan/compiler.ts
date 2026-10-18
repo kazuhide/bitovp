@@ -340,10 +340,9 @@ export function qcOutputPath(dir: string): string {
 /**
  * The QC mirror's name (filename + container) lives in the leaf `./qc-mirror`
  * so per-title attribution can bind a RESULT muxing back to its template
- * WITHOUT importing this module
-. Re-exported here for
- * the callers that already reach it through the compiler ('s "one
- * definition" kept, cycle avoided).
+ * without importing this module. The compiler imports `./per-title-results`,
+ * so a back-import would create a cycle. Re-exported here for callers that
+ * already use the compiler, keeping one definition without an import cycle.
  */
 export { qcMirrorFilename, qcMirrorMuxingKind };
 
@@ -462,7 +461,7 @@ function muxingName(
 }
 
 /**
- * : mirror refs ride beside every destination's outputId — the
+ * mirror refs ride beside every destination's outputId — the
  * worker appends one EncodingOutput per mirror, same path and acl. Emitted
  * only when the plan declares deliveryMirrors AND the site has a destination
  * (DRM-owned-output muxings keep their no-ref shape).
@@ -2766,7 +2765,7 @@ function compileDashManifest(
 
 	/*
 	 * One VIDEO adaptation set PER CODEC
-. The implicit branch put every video representation into one set;
+	 * . The implicit branch put every video representation into one set;
 	 * Bitmovin refuses a mixed set — VOD case 15 and Live case F both died on
 	 * the first H265 representation added beside H264 (400, code 1001), and
 	 * case 17's explicit codec-separated sets succeeded. A single-codec plan

@@ -88,14 +88,14 @@ export function SectionCard({
 					className="h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform group-open:rotate-90"
 				/>
 				{/* A heading inside the summary (review-260 126-A3): FlatSection
-				    made 13 sections heading-navigable; without this the two folds
-				    silently vanish from that navigation.
-
-				     gave it the `${id}-h` id and `tabIndex={-1}` its flat
-				    sibling already needed, so a jump lands on the same thing in
-				    both frames. Inside `<summary>` it is always rendered, open or
-				    closed, so a rail link to a CLOSED section still hands focus
-				    to a visible heading — and the operator can open it with the
+				 * made 13 sections heading-navigable; without this the two folds
+				 * silently vanish from that navigation.
+				 *
+				 * gave it the `${id}-h` id and `tabIndex={-1}` its flat
+				 * sibling already needed, so a jump lands on the same thing in
+				 * both frames. Inside `<summary>` it is always rendered, open or
+				 * closed, so a rail link to a CLOSED section still hands focus
+				 * to a visible heading — and the operator can open it with the
 				    Enter their focus is now one Tab away from. */}
 				<Heading
 					id={`${id}-h`}

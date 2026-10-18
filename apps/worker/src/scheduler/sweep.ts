@@ -131,7 +131,7 @@ export const DISPATCH_GRACE_MS = SCHEDULE_SWEEP_INTERVAL_MS * 2;
  * the wanted outcome — one job for one row.
  */
 /**
- * : the pre-stage's own deterministic id. Distinct from the row's
+ * the pre-stage's own deterministic id. Distinct from the row's
  * fire id because a switch row is handed off TWICE — the stage at
  * fireAt − lead and the commit at fireAt — and BullMQ's dedupe would
  * otherwise read the second as a replay of the first.
@@ -487,7 +487,7 @@ type ScheduleRow = {
 	autoLeadTime?: boolean;
 	airAt?: Date | null;
 	/**
-	 * : the session a FEEDER_SWITCH row's pre-stage created (stamped
+	 * the session a FEEDER_SWITCH row's pre-stage created (stamped
 	 * by the stage action), and the stage claim itself. Optional because the
 	 * other actions never carry them.
 	 */
@@ -517,7 +517,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		(deps.startGraceMinutes ?? DEFAULT_START_GRACE_MINUTES) * 60_000;
 	let inFlight = false;
 	/**
-	 * : where each ARMED scan stopped last tick. Per-sweep state, not
+	 * where each ARMED scan stopped last tick. Per-sweep state, not
 	 * per-process global, so two sweeps in one process (tests) do not inherit
 	 * each other's position — and deliberately in MEMORY, not in the row: a
 	 * cursor lost to a restart costs one pass from the head, which is the
@@ -643,7 +643,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : record the handoff, AFTER `queue.add` resolved. The CAS on
+	 * record the handoff, AFTER `queue.add` resolved. The CAS on
 	 * `dispatchedAt: null` keeps the stamp at exactly one — a dispatcher
 	 * re-add that deduped against an already-running job stamps the row it
 	 * found, and never overwrites an earlier truthful stamp.
@@ -1562,7 +1562,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : fire a FEEDER row — validate the source, require a RUNNING
+	 * fire a FEEDER row — validate the source, require a RUNNING
 	 * channel (the processor also needs the encoder IP; a pending IP is the
 	 * processor's own retry), claim FIRED via the row CAS, and enqueue the
 	 * liveChannel action. The processor owns session creation and, for
@@ -1871,7 +1871,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : creation-time slates carry a SOURCE, not a content id —
+	 * creation-time slates carry a SOURCE, not a content id —
 	 * content is per-encoding and did not exist at creation. Once the channel
 	 * is RUNNING, claim the row (contentClaimedAt CAS — two ticks and two
 	 * workers must not register twice) and hand registration to the live
@@ -2431,7 +2431,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : page the whole due set instead of re-reading its first 100
+	 * page the whole due set instead of re-reading its first 100
 	 * rows every tick. `now` is still read ONCE for the tick, so every row a
 	 * tick examines is judged against the same instant no matter which page
 	 * it arrived on.

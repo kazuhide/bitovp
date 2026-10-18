@@ -59,7 +59,7 @@ import {
 } from "@/lib/server/verification-key";
 
 /**
- * : attach the seal taken for this source, if one could be taken.
+ * attach the seal taken for this source, if one could be taken.
  *
  * Keyed on the same NUL-joined triple the cache used — the fields are free
  * text (a bucket may legally contain any of `/`, `:` or `-`), and a separator
@@ -86,7 +86,7 @@ const bodySchema = z
 		presetId: z.uuid().optional(),
 		presetRevision: z.number().int().min(1).optional(),
 		/**
-		 * : the broadcast slot, scheduled AT creation. The server
+		 * the broadcast slot, scheduled AT creation. The server
 		 * derives the rows; the client never posts row-level schedules here.
 		 * Since #125 the channel provisions IMMEDIATELY either way (billing
 		 * starts at creation — the wizard says so): no START row is derived;

@@ -194,7 +194,7 @@ export function liveHlsEntryUri(rendition: LiveRendition): string {
 
 /**
  * The playlist uri of EVERY rendition in the plan, unique per rendition
- * : two renditions of a kind sharing a bitrate
+ * two renditions of a kind sharing a bitrate
  * used to derive one uri and were refused (`LIVE_HLS_URI_COLLISION`); the
  * second and later now carry `_1`, `_2`… before the extension, in plan order,
  * so the first keeps the bare name every fixture and paid run was named by.

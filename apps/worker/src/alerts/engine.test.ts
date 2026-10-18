@@ -42,7 +42,7 @@ function makeStore(over: {
 	events?: EventRow[];
 	failCreateWithP2002?: boolean;
 	/**
-	 * : the channel's newest run. Defaults to one created at
+	 * the channel's newest run. Defaults to one created at
 	 * RUN_CREATED_AT; `null` is the pre-#108 channel that has no run row at
 	 * all, where the engine must not scope anything.
 	 */

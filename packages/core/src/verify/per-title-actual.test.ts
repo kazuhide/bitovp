@@ -4,7 +4,7 @@ import { perTitleActualVideoFamilies } from "./per-title-actual";
 
 /**
  * The third witness of the per-title family comparison
-: what the provider's RESULT population says. Every
+ * what the provider's RESULT population says. Every
  * arm that cannot answer must say so as `absent`/`incomplete` — the engine
  * turns those into an explicit SKIP — and only a complete capture yields a
  * family set, because a truncated or config-blind capture would otherwise read

@@ -44,8 +44,8 @@ export function qcMirrorFilename(renditionKey: string, codec: string): string {
  * The single-file muxing kinds the compiler emits for the QC mirror (ledger
  * #205): an MP4 for every codec but VP9, which rides a progressive WebM. The
  * one definition, shared by the per-title population (which fetches the mirror)
- * and the per-title attribution
-. Compared uppercased,
+ * and the per-title attribution, which reads the mirror muxing's filename to
+ * bind a RESULT to its template. Compared uppercased,
  * because the SDK's polymorphic discriminant casing is not ours to assume.
  */
 export const QC_MIRROR_MUXING_TYPES: ReadonlySet<string> = new Set([

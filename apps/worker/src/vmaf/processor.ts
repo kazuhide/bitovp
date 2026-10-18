@@ -120,7 +120,7 @@ export type VmafProcessorDeps = {
 	/** Product-event emit ; never throws. */
 	emitEvent?: EmitProductEvent;
 	/** Orchestrator producer . Absent ⇒ gate plans still score
-	    and store verdicts, but no continuation is enqueued — wire it in every
+	 * and store verdicts, but no continuation is enqueued — wire it in every
 	    real deployment; tests without gates omit it. */
 	orchestratorQueue?: OrchestratorQueueLike;
 	prisma: AppPrismaClient;
@@ -381,7 +381,7 @@ async function probeDistortedMetrics(
  * The rule itself lives in CORE (`vmafSourceFor`), not here. It used to be an
  * inline `kind === "S3" || kind === "AZURE"` allowlist, and the plan schema
  * grew past it without anything going red: `GENERIC_S3`
- plus `GCS` and `GCS_SERVICE_ACCOUNT`, found by deriving the
+ * plus `GCS` and `GCS_SERVICE_ACCOUNT`, found by deriving the
  * population from the schema union instead of from the reported instance. All
  * three are browsable by `packages/storage` and were refused here anyway —
  * AFTER Bitmovin had run and billed the encode.

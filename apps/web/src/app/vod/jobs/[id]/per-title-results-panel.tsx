@@ -273,10 +273,10 @@ function ResultRows({ results }: { results: PerTitleResultStream[] }) {
 						{index === 0 ? (
 							<td rowSpan={legs.length} className="py-1 align-top tabular-nums">
 								{/* Observed values, so NO set/schema-default badge: nobody set
-								    them, the encoder chose them (UI-DESIGN §6). Per RUNG, not
-								    per leg — the codec config belongs to the stream. The COUNT
-								    alone told an operator nothing ("34 observed" — of what?);
-								    the settings themselves are the payload, one click away
+								 * them, the encoder chose them (UI-DESIGN §6). Per RUNG, not
+								 * per leg — the codec config belongs to the stream. The COUNT
+								 * alone told an operator nothing ("34 observed" — of what?);
+								 * the settings themselves are the payload, one click away
 								    (owner directive, 2026-08-12). */}
 								{Object.keys(result.params).length > 0 ? (
 									<DetailPopover
@@ -401,7 +401,7 @@ export function PerTitleResultsPanel({
 					{view.snapshot.scan.complete ? null : (
 						<p className="mt-1 text-amber-400 text-xs">
 							{/* "Stopped early" without the numbers is not actionable —
-							    the scan's own accounting says HOW incomplete (ux
+							 * the scan's own accounting says HOW incomplete (ux
 							    inventory #7). */}
 							<DetailPopover
 								summary={t("jobDetail.ptIncomplete")}

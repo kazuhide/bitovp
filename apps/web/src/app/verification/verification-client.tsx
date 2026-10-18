@@ -114,7 +114,7 @@ type RunsPayload = { items: VerificationRunSummary[] };
 
 /**
  * How the list decides whether to keep polling
-. Poll while ANY run is still RUNNING so a long run reaches SEALED or
+ * . Poll while ANY run is still RUNNING so a long run reaches SEALED or
  * INCOMPLETE on this screen without a manual reload; stop once every row is
  * terminal, so a finished corpus is not polled forever. A pure function of the
  * data on purpose: the wall-clock interval is TanStack's to fire, but the

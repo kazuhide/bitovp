@@ -276,7 +276,7 @@ export type LiveChannelDetailRow = LiveChannelListItem & {
 		originObservation: unknown;
 		createdAt: string;
 		/**
-		 * : the provider's view of this run's encoding (core
+		 * the provider's view of this run's encoding (core
 		 * `deriveProviderLifecycle` reads these). Optional so a response cached
 		 * from before the columns existed still renders — absent = UNOBSERVED.
 		 */

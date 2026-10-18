@@ -150,16 +150,16 @@ export function LiveAnnouncer({ children }: { children: ReactNode }) {
 	return (
 		<AnnounceContext.Provider value={announce}>
 			{/*
-			    In the DOM from the first render, empty. A live region CREATED at
-			    announce time is routinely missed: the assistive technology has to
-			    be observing the node before its content changes.
-
-			    Known limit: two IDENTICAL consecutive messages produce no DOM
-			    change and so are read once. That is right for a state that did
-			    not change and wrong for the same action succeeding twice; the
-			    honest fix is a second alternating region, which is more machinery
-			    than the case has earned so far.
-			*/}
+			 * In the DOM from the first render, empty. A live region CREATED at
+			 * announce time is routinely missed: the assistive technology has to
+			 * be observing the node before its content changes.
+			 *
+			 * Known limit: two IDENTICAL consecutive messages produce no DOM
+			 * change and so are read once. That is right for a state that did
+			 * not change and wrong for the same action succeeding twice; the
+			 * honest fix is a second alternating region, which is more machinery
+			 * than the case has earned so far.
+			 */}
 			<p
 				role="status"
 				aria-live="polite"

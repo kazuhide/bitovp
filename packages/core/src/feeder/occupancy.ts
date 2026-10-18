@@ -1,7 +1,7 @@
 /**
  * "Does this feeder row OCCUPY its channel's single publisher slot?" — the ONE
  * predicate behind every feeder admission and spawn decision
-
+ *
  *
  * The defect it exists for: the single-pusher rule lived in `status`. The web
  * route, the scheduler and the DB's partial index all asked "is there an
@@ -24,7 +24,7 @@
  * 3. the row is ACTIVE and UNCOORDINATED — a CREATED/DOWNLOADING/PUSHING
  * SINGLE-PHASE session (`commitAt` null), which claims and spawns on its
  * own the moment its gates pass. A TWO-PHASE session (`commitAt` set
- * ) is never counted by status: while it stages or holds it
+ * is never counted by status: while it stages or holds it
  * cannot spawn, and when its commit is requested it competes for the slot
  * INSIDE its commit CAS, which is the claim — so it appears here through
  * fact 1 once it has committed, and through fact 2 once it has a pid,

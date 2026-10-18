@@ -284,7 +284,7 @@ function setup(
 		/** : an advancing clock, for the arms that watch a lease move. */
 		now?: () => string;
 		/**
-		 * : OTHER sessions on the same fake table — the predecessor a
+		 * OTHER sessions on the same fake table — the predecessor a
 		 * two-phase switch has to stop and wait out. Every fake below iterates
 		 * `sessions`, with `session` still the first row every older arm reads.
 		 */
@@ -295,7 +295,7 @@ function setup(
 		predecessorGoneTimeoutMs?: number;
 		stageHoldTimeoutMs?: number;
 		/**
-		 * : a sleep that yields to the MACROTASK queue. The default
+		 * a sleep that yields to the MACROTASK queue. The default
 		 * fake resolves in a microtask, which is fine for a wait the test
 		 * releases from inside `channelOnSleep` — but a hold or a barrier that
 		 * the TEST releases (a commit request written, a predecessor exiting)
@@ -829,7 +829,7 @@ function setup(
 		}),
 	};
 	/**
-	 * : the schedule row a scheduled feed was armed from.
+	 * the schedule row a scheduled feed was armed from.
 	 *
 	 * It exists here BECAUSE the outcome writer is best-effort — without a stub
 	 * its `prisma.liveSchedule` read throws, the catch swallows it, and every
@@ -1036,7 +1036,7 @@ function setup(
 
 	const now = opts.now ?? (() => NOW);
 	/**
-	 * : build ANOTHER worker over the SAME fake database — the only
+	 * build ANOTHER worker over the SAME fake database — the only
 	 * way to exercise a takeover, which is by definition a fact about two
 	 * processes. The overrides are the three things that make a worker a
 	 * different worker: its instance id, its host, and its clock.

@@ -1531,7 +1531,7 @@ export function validatePlan(
 
 	/*
 	 * Mixed video codecs in ONE encoding need a compatible mode
-. The start request's
+	 * . The start request's
 	 * `encodingMode` is one value for the whole encoding; when it is absent,
 	 * each codec config's preset implies its own, and the provider refuses the
 	 * START with "All encodingModes … must be the same" — after every resource
@@ -1578,7 +1578,7 @@ export function validatePlan(
 	/*
 	 * fMP4 media playlists carry EXT-X-MAP, which RFC 8216 §7 places at
 	 * protocol version 6
-. A WARNING, not an error: the vendor's own fixed-bitrate
+	 * . A WARNING, not an error: the vendor's own fixed-bitrate
 	 * samples do exactly this and players tolerate it, so 17 transcribed
 	 * goldens carry it deliberately. The wizard's DEFAULT is now V6 for fMP4
 	 * an explicit lower version is the author's call, and this
@@ -2170,7 +2170,7 @@ export function validatePlan(
 			});
 			/*
 			 * VIDEO routed in but NONE selected — the audio-only MPD
-. The zero-TOTAL rule below could not
+			 * . The zero-TOTAL rule below could not
 			 * see it: an AAC fMP4 leg satisfied "some representation exists"
 			 * while every video leg dropped out of the selection. Distinct code,
 			 * distinct message, because the fix is one field: name the leg.
@@ -2251,8 +2251,8 @@ export function validatePlan(
 			/*
 			 * PER-TITLE video across more than one codec has NO compiled shape
 			 *
-
-			 *			 * A set may hold one codec, and
+			 *
+			 * A set may hold one codec, and
 			 * the static representations now each join their own. The per-title
 			 * path cannot follow, because `CREATE_DASH_PER_TITLE_REPRESENTATIONS`
 			 * is ONE op naming ONE adaptation set and ONE encoding, and its only

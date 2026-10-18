@@ -175,7 +175,7 @@ export type LiveChannelDeps = {
 	) => Promise<void>;
 	/**
 	 * How often the provisioning lease is renewed DURING a long SDK call
-	 * : the poll seam renews between polls, but a create/start
+	 * the poll seam renews between polls, but a create/start
 	 * call that outlives the lease window had nothing renewing it. Test seam;
 	 * defaults to a third of PROVISION_LEASE_MS.
 	 */
@@ -232,7 +232,7 @@ export type LiveChannelDeps = {
 	 */
 	probeStorageObject?: BoundedObjectProbe;
 	/**
-	 * : the slate preparer (`createSlatePreparer`) — transcodes a
+	 * the slate preparer (`createSlatePreparer`) — transcodes a
 	 * scheduled slate to match the ingest before it is registered. Optional
 	 * for the same reason as `probeStorageObject`.
 	 */
@@ -639,7 +639,7 @@ class ChannelStateError extends Error {
 }
 
 /**
- * : the provider's lifecycle refused an action — a TERMINAL encoding
+ * the provider's lifecycle refused an action — a TERMINAL encoding
  * (already reconciled onto run + channel by the reconciler) or an UNKNOWN
  * readback (the channel was marked ERROR with a retryable message before the
  * throw). A SENTINEL so the catch arms that would otherwise `markError` again
@@ -709,7 +709,7 @@ type LiveChannelRow = NonNullable<
 >;
 
 /**
- * : channel product events. Loads the name lazily (terminal
+ * channel product events. Loads the name lazily (terminal
  * transitions only — never on the poll path); best-effort by the emitter's
  * contract, so callers never guard it.
  */
@@ -780,7 +780,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	const runs = createRunMirror(deps.prisma);
 	const heartbeatDoor = createHeartbeatDoor(deps.prisma);
 	/**
-	 * : the provider-lifecycle reconciler. Every entry that can put a
+	 * the provider-lifecycle reconciler. Every entry that can put a
 	 * channel into RUNNING or act on its encoder — Start/revive, Restart, the
 	 * heartbeat sweep, provision finalize — asks it first; the effect gates
 	 * (slate, SCTE-35, timeshift, feeder start/commit) read its persisted view.
@@ -1278,7 +1278,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					error: unconfirmed,
 				});
 				/**
-				 * : what the SCHEDULED stop delivered.
+				 * what the SCHEDULED stop delivered.
 				 *
 				 * The same evidence that decides `error` on the channel decides
 				 * this — a stop whose encodings could not be OBSERVED terminal is
@@ -1715,7 +1715,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		 * discipline), replay-skipped as status DONE.
 		 */
 		/**
-		 * : register a creation-time slate's content once the
+		 * register a creation-time slate's content once the
 		 * channel is RUNNING. Writes insertableContentId only when READY —
 		 * which is the sweep's fire gate — and releases the registration
 		 * claim instead of throwing when the channel is not there yet, so
@@ -2067,7 +2067,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				throw enqueueErr;
 			}
 			/**
-			 * : BIND the session to the row that created it.
+			 * BIND the session to the row that created it.
 			 *
 			 * The note already named the session in prose, which no query can
 			 * follow. The column is what lets the feeder's own status transitions
@@ -2976,7 +2976,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		 * one counts past them, so a re-run never overwrites a previous one.
 		 *
 		 * WHICH families is a property of the recording, not a preference either
-		 * : a DASH default manifest
+		 * a DASH default manifest
 		 * enumerates fMP4 muxings only, so the default over a segmented-TS
 		 * recording is HLS alone (`liveToVodFamilySupport`). Each family is then
 		 * processed INDEPENDENTLY with its own status, id, url and error on the
@@ -3820,7 +3820,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		},
 
 		/**
-		 * : one channel's sweep tick. Reconcile the provider's lifecycle
+		 * one channel's sweep tick. Reconcile the provider's lifecycle
 		 * for the run's EXACT encoding under the tick's token, then — unless the
 		 * encoding has ended — poll the heartbeat under the same token. A
 		 * channel whose run carries no encoding id (pre-#108 dual-write gap)
@@ -3950,7 +3950,7 @@ export function createLiveHeartbeatSweep(
 		summarizeEndedRuns?: () => Promise<{ summarized: number }>;
 		/**
 		 * Per-channel deadline + parallel lane count
-. Test seams; default to the shared cadence
+		 * . Test seams; default to the shared cadence
 		 * constants. A channel that outlives `perChannelTimeoutMs` is abandoned
 		 * for the tick so it cannot stall the others; `sweepConcurrency` caps
 		 * how many channels poll at once.
@@ -4016,7 +4016,7 @@ export function createLiveHeartbeatSweep(
 			row: (typeof rows)[number],
 		): Promise<ChannelTickOutcome> => {
 			/**
-			 * : the RUN first — it is the identity everything below is
+			 * the RUN first — it is the identity everything below is
 			 * fenced on.  PR2 / #243 already read it for the stale
 			 * anchor and the alert scope; it moved ahead of the poll so the poll
 			 * itself can carry the token. Null = looked, no run row.
@@ -5555,7 +5555,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				throw new Error("Step log carries no CREATE_ENCODING resource id");
 			}
 			/**
-			 * : RUNNING is written only from a FRESH readback of exactly
+			 * RUNNING is written only from a FRESH readback of exactly
 			 * this encoding — a details GET is not a lifecycle observation (it
 			 * answers for a FINISHED encoding too, which is how the audited
 			 * revive greened). A terminal answer is reconciled onto run + channel

@@ -61,7 +61,7 @@ export type LiveSectionId =
 	| "sec-danger";
 
 /**
- * : every section's HEADING copy, once.
+ * every section's HEADING copy, once.
  *
  * The rail and the "Jump to" menu label their links with the same words the
  * section's own heading carries — that is what makes a jump legible ("Alerts"

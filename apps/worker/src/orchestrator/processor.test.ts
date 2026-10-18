@@ -1977,7 +1977,7 @@ describe("orchestrator processor — QC gate boundary", () => {
 	});
 
 	/**
-	 * : the JIT→POST_ENCODING fallback, end to end through the
+	 * the JIT→POST_ENCODING fallback, end to end through the
 	 * processor. The fake start REFUSES exactly the request shape Bitmovin
 	 * refused for hours on 2026-08-14 (a body carrying vodHlsManifestIds) and
 	 * accepts the plain one — so a green run here means the recovery produced

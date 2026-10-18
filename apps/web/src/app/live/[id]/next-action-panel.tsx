@@ -151,9 +151,9 @@ export function NextActionPanel({
 					<HelpOverlay labelFor={t(copy.title)}>{t(copy.body)}</HelpOverlay>
 				) : null}
 				{/* An in-page anchor, not a button (review-260 126-A5 rewording):
-			    since #126 flattened the page, 13 of 15 targets are always-open
-			    sections — the link simply scrolls. For the two surviving folds
-			    the openByDefault mechanics open the pointed one; otherwise the
+				 * since #126 flattened the page, 13 of 15 targets are always-open
+				 * sections — the link simply scrolls. For the two surviving folds
+				 * the openByDefault mechanics open the pointed one; otherwise the
 			    operator clicks the summary. */}
 				<a
 					href={`#${action.section}`}

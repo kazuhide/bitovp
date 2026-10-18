@@ -36,7 +36,7 @@ export function StatusStrip({
 }: {
 	/**
 	 * Open alerts, or `"unknown"` when the alert query failed
-. It was a plain `number` fed by `?? 0`, so a strip whose
+	 * . It was a plain `number` fed by `?? 0`, so a strip whose
 	 * whole contract is "every value is a MEASUREMENT" printed a green zero
 	 * for a list it had never read.
 	 */
@@ -48,7 +48,7 @@ export function StatusStrip({
 	 * The soonest ARMED schedule row; `null` when nothing is armed, and
 	 * `"unknown"` when the schedules query FAILED — the same three-valued
 	 * shape `openAlerts` uses, and for the same reason
-: a list nobody managed to read must not render as "none
+	 * a list nobody managed to read must not render as "none
 	 * armed" on a strip whose whole contract is that every value is measured.
 	 *
 	 * `label` is already localised by the caller, which owns the action → copy

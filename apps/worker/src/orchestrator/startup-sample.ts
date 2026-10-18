@@ -157,8 +157,8 @@ export async function recordRunningStartupSample(
 
 /** Provision-failure writer — create-if-absent (a lost write is re-covered
  * by the reconciler; an existing row is never overwritten). Returns whether
- * a row was actually created
-. */
+ * a row was actually created, so the reconciler does not count skipped rows
+ * as work. */
 export async function recordFailedStartupSample(
 	prisma: AppPrismaClient,
 	liveChannelId: string,

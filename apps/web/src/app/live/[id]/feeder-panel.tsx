@@ -375,9 +375,9 @@ export function FeederPanel({
 			{!embeddedForm ? (
 				<div className="flex items-center justify-end gap-3">
 					{/* This toggle is the pattern the rest of the
-				    page now copies (`Disclosure`), and it was the one missing the
-				    ARIA that makes it a disclosure rather than a button that
-				    happens to change what is on screen. The controlled region
+					 * page now copies (`Disclosure`), and it was the one missing the
+					 * ARIA that makes it a disclosure rather than a button that
+					 * happens to change what is on screen. The controlled region
 				    below is always in the DOM so `aria-controls` never dangles. */}
 					<RoleAccess control="live.channel.feeder">
 						<Button
@@ -394,10 +394,10 @@ export function FeederPanel({
 			) : null}
 
 			{/* : a PUSHING feeder against an encoder that reports no
-			    bound input is the incident shape — ffmpeg healthy for 9.5
-			    minutes in a session the encoder never bound. The worker's
-			    bind-watchdog now recycles such pushes automatically; this
-			    banner tells the operator what is happening and what to check
+			 * bound input is the incident shape — ffmpeg healthy for 9.5
+			 * minutes in a session the encoder never bound. The worker's
+			 * bind-watchdog now recycles such pushes automatically; this
+			 * banner tells the operator what is happening and what to check
 			    if it persists. */}
 			{ingestConnected === false &&
 			(sessions.data?.items ?? []).some((s) => s.status === "PUSHING") ? (
@@ -409,8 +409,8 @@ export function FeederPanel({
 				</p>
 			) : null}
 			{/*  (paid audit MODERATE-15): a PUSHING badge with NO
-			    heartbeat information is not "pushing" — it is "unconfirmed". The
-			    bound-input banner above fires only on an explicit `false`; a
+			 * heartbeat information is not "pushing" — it is "unconfirmed". The
+			 * bound-input banner above fires only on an explicit `false`; a
 			    missing or stale heartbeat left the badge reading as healthy. */}
 			{ingestConnected === undefined &&
 			(sessions.data?.items ?? []).some((s) => s.status === "PUSHING") ? (

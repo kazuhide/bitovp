@@ -68,12 +68,12 @@ export type Destination = {
 	outputPath: string;
 	acl?: string;
 	/**
-	 * : RESOLVED mirror output ids — the facade's `outputs`
+	 * RESOLVED mirror output ids — the facade's `outputs`
 	 * expands one EncodingOutput per mirror at the SAME path and acl.
 	 */
 	mirrorOutputIds?: string[];
 	/**
-	 * : per-mirror output PATHS, aligned with `mirrorOutputIds`.
+	 * per-mirror output PATHS, aligned with `mirrorOutputIds`.
 	 * Absent (or a missing entry) means the mirror shares the primary's path
 	 * — the #115 shape; an Akamai MSL mirror of a storage primary needs the
 	 * MSL manifest form (`/folder/`) instead.

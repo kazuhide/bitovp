@@ -46,7 +46,7 @@ import type { ResolvedCredential } from "../orchestrator/executor";
  * standalone container: a bare `.m4s` has no `moov`, so each fragment fails
  * with "trun track id unknown, no tfhd was found" and the clip decodes to
  * ZERO frames. That is the paid audit's Live A/E result
- while every
+ * while every
  * segment was individually probe-able; reproduced locally on 2026-08-28
  * against a 75-frame testsrc (concat demuxer: cannot open segment_0.m4s;
  * byte-concat: 75/75 frames).

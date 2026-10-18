@@ -353,7 +353,7 @@ export async function POST(req: Request) {
 			}
 		}
 		/**
-		 * : SEAL the bytes at creation — the IMMEDIATE door's half of
+		 * SEAL the bytes at creation — the IMMEDIATE door's half of
 		 * the same rule the scheduled door follows. An immediate session is
 		 * short-lived, but "short" is not "atomic": the download still runs
 		 * behind a channel wait, an ffprobe and a compatibility gate, and an
@@ -392,7 +392,7 @@ export async function POST(req: Request) {
 			);
 		}
 		/**
-		 * : an immediate SWITCH is the scheduled switch with lead 0 —
+		 * an immediate SWITCH is the scheduled switch with lead 0 —
 		 * the commit instant is now and the commit is requested at creation,
 		 * so the feeder worker stages first, stops the active feeder only
 		 * once the new source is READY, and spawns after it is proven gone.

@@ -388,7 +388,7 @@ describe("outcomeFromLiveResult", () => {
 
 	/**
 	 * The durable teardown seal on the outcome
-: an unclean seal seals the run INVALID before any report-based
+	 * an unclean seal seals the run INVALID before any report-based
 	 * verdict, and the seal rides onto every outcome so the run row keeps the
 	 * teardown evidence whatever the verdict.
 	 */

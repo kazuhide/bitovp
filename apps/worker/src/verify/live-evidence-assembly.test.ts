@@ -17,7 +17,7 @@ import {
 
 /**
  * The evidence tuple assembled from one live run
-: legs come from the PLAN (manifests × delivery targets), the
+ * legs come from the PLAN (manifests × delivery targets), the
  * origin legs are witnessed through the listing and the read master, the edge
  * legs through the in-run closures, and every leg is sealed by core's rule.
  */

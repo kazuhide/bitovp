@@ -245,7 +245,7 @@ export type FeederDeps = {
 	 */
 	hostname: string;
 	/**
-	 * : this worker INSTANCE's id — the holder of every lease it
+	 * this worker INSTANCE's id — the holder of every lease it
 	 * claims. Distinct from `hostname`, which answers a different question
 	 * (where a pid can be signalled): two workers on one host are two owners,
 	 * and a restart that reuses a pid is a different owner. Required, not
@@ -283,7 +283,7 @@ export type FeederDeps = {
 	/** Lease renewal cadence (tests shrink it to observe renewals). */
 	leaseRenewalIntervalMs?: number;
 	/**
-	 * : how often a HELD session re-reads its row for the commit
+	 * how often a HELD session re-reads its row for the commit
 	 * request, and how often the commit re-checks its predecessors. Tests
 	 * shrink it; the arms resolve on the writes they observe, never on it.
 	 */
@@ -380,7 +380,7 @@ const TAKEN_OVER = "TAKEN_OVER";
 
 /**
  * How long a graceful shutdown waits for the sessions this process RESUMED
- * .
+ *
  *
  * `drainTakeovers` is not a bookkeeping sweep: it waits for a PROCESS TO
  * DIE. Stopping one resumed session is SIGTERM → `KILL_GRACE_MS` → SIGKILL →
@@ -398,7 +398,7 @@ const TAKEN_OVER = "TAKEN_OVER";
 export const FEEDER_TAKEOVER_DRAIN_MS = KILL_GRACE_MS + 5_000;
 
 /**
- * : the session's SEAL, rebuilt from its columns (audit 2026-08-29
+ * the session's SEAL, rebuilt from its columns (audit 2026-08-29
  * HIGH-4).
  *
  * `sourceSize` is the discriminator, not the selectors: every driver reports a
@@ -432,7 +432,7 @@ function sealedIdentity(row: {
 }
 
 /**
- * : the loop boundaries a previous owner already recorded.
+ * the loop boundaries a previous owner already recorded.
  *
  * `appendBoundary` rewrites the WHOLE array (single writer, race-free), so a
  * taken-over session starting from an empty list would ERASE the loop ledger
@@ -463,7 +463,7 @@ class FeederStopError extends Error {
 }
 
 /**
- * : a HELD session let go of its staged source without ever being
+ * a HELD session let go of its staged source without ever being
  * asked to push — its schedule row ended (cancelled, missed, refused) or no
  * commit arrived inside the hold window. Not a stop (nobody asked) and not a
  * failure of the feed (nothing was fed): the row lands STOPPED with the
@@ -481,7 +481,7 @@ class FeederReleasedError extends Error {
 class RunController {
 	stopRequested = false;
 	/**
-	 * : this run was superseded — another worker holds the lease now.
+	 * this run was superseded — another worker holds the lease now.
 	 *
 	 * A SEPARATE flag from `stopRequested` because the two demand opposite
 	 * endings, the distinction #216's `ProvisionLeaseLostError` draws. A stop
@@ -536,7 +536,7 @@ type FeederSessionRow = NonNullable<
 export function createFeederProcessor(deps: FeederDeps) {
 	const registry = new Map<string, RunController>();
 	/**
-	 * : sessions this process resumed through `takeOverStale`.
+	 * sessions this process resumed through `takeOverStale`.
 	 *
 	 * They run with NO BullMQ job — the job that started them died with the
 	 * worker that held it — so `worker.close` cannot wait for them the way it
@@ -720,7 +720,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 	}
 
 	/**
-	 * : a fenced write matched nothing at a phase boundary. Either a
+	 * a fenced write matched nothing at a phase boundary. Either a
 	 * stop landed on the row (from this registry, or STOPPED written by a
 	 * registry-miss stop on another worker) or the lease was taken. The two
 	 * demand opposite endings — a stop must land STOPPED, a lost lease must
@@ -1063,7 +1063,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		}
 		if (status === "ERROR") {
 			/**
-			 * : a SCHEDULED feed that failed must say so on its
+			 * a SCHEDULED feed that failed must say so on its
 			 * schedule row.
 			 *
 			 * Before this, the only writer of a feeder schedule's failure was the
@@ -1540,7 +1540,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		const controller = new RunController();
 		registry.set(feederSessionId, controller);
 		/**
-		 * : hold the lease for as long as this process supervises the
+		 * hold the lease for as long as this process supervises the
 		 * push. On a TICKER rather than at the stage seams, for the reason #216
 		 * learned the hard way — a push spends hours inside one `await`, and a
 		 * lease that only renews between stages expires under a perfectly
@@ -3240,7 +3240,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		takeOverStale,
 
 		/**
-		 * : await the sessions this process RESUMED.
+		 * await the sessions this process RESUMED.
 		 *
 		 * `worker.close` waits for active BullMQ jobs, which is what makes a
 		 * graceful stop land every start-job session on STOPPED. A taken-over

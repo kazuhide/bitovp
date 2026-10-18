@@ -1512,7 +1512,7 @@ describe("PlaybackSurface — implicating vs merely informative", () => {
 });
 
 /**
- * : the Bitmovin Player branch. jsdom has no MSE and no real
+ * the Bitmovin Player branch. jsdom has no MSE and no real
  * player — the module is mocked; what is under test is the BRANCH DECISION
  * (which element renders, which library initializes, with which key) and
  * the licence-refusal surface (§4.4: the failure is opaque by default and

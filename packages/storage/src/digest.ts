@@ -47,7 +47,7 @@ export async function pipeWithDigest(
 	source: NodeJS.ReadableStream,
 	sink: NodeJS.WritableStream,
 	/**
-	 * : an optional AbortSignal, forwarded to `pipeline` verbatim.
+	 * an optional AbortSignal, forwarded to `pipeline` verbatim.
 	 *
 	 * The feeder spools multi-GB sources and must cancel promptly when a stop
 	 * lands mid-DOWNLOADING; it used to call `pipeline` directly for exactly

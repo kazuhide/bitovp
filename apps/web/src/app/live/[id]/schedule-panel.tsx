@@ -191,7 +191,7 @@ export function SchedulePanel({
 	programStartAt?: string | null;
 	programEndAt?: string | null;
 	/**
-	 * : is the encoder's ingest CONNECTED right now (from the
+	 * is the encoder's ingest CONNECTED right now (from the
 	 * channel's last heartbeat)? An armed slate on a RUNNING channel with no
 	 * input will WAIT — and the operator must hear that from the page, not
 	 * discover it as a black stream at air time (the 2026-08-15 incident).
@@ -538,17 +538,17 @@ export function SchedulePanel({
 			</div>
 
 			{/*
-: the arm form is now DISCLOSED, and it used to be the
-			    first thing in this panel. The order was
-			    `arm form -> runtime cap -> cost estimate -> upcoming -> history`,
-			    so an operator asking "what fires next?" — the everyday question —
-			    scrolled past three authoring surfaces to reach the answer
-. Arming a one-shot is a deliberate act, taken once
-			    per broadcast; reading the upcoming rows happens every time the
-			    page is opened. The disclosure carries `aria-expanded` /
-			    `aria-controls`, so the form appearing is announced rather than
-			    merely rendered.
-			*/}
+			 * the arm form is now DISCLOSED, and it used to be the
+			 * first thing in this panel. The order was
+			 * `arm form -> runtime cap -> cost estimate -> upcoming -> history`,
+			 * so an operator asking "what fires next?" — the everyday question —
+			 * scrolled past three authoring surfaces to reach the answer
+			 * . Arming a one-shot is a deliberate act, taken once
+			 * per broadcast; reading the upcoming rows happens every time the
+			 * page is opened. The disclosure carries `aria-expanded` /
+			 * `aria-controls`, so the form appearing is announced rather than
+			 * merely rendered.
+			 */}
 			<RoleAccess control="live.channel.schedule">
 				<Disclosure
 					id="schedule-arm"

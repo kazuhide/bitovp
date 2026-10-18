@@ -114,7 +114,7 @@ export type FeederSessionListItem = {
 	/** When that pid was PROVEN gone; null = never proven, not "alive". */
 	processGoneAt: string | null;
 	/**
-	 * : the two-phase columns. Optional on the type so a response
+	 * the two-phase columns. Optional on the type so a response
 	 * from a server that predates them still parses; absent reads as an
 	 * ordinary single-phase session.
 	 */
@@ -139,7 +139,7 @@ export type FeederSessionListItem = {
 };
 
 /**
- * : what a two-phase session is doing while its status still reads
+ * what a two-phase session is doing while its status still reads
  * DOWNLOADING. `STAGING` = the source is being downloaded and gated; `READY`
  * = staged and HOLDING for the commit (no ffmpeg yet). Null for a session
  * that is not two-phase, or has moved past the hold — PUSHING says the rest.

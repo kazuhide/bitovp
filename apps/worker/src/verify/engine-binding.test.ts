@@ -18,7 +18,7 @@ import {
 
 /**
  * Manifest binding as the paid re-audit specified it
-, driven through the REAL player-family parsers so the
+ * driven through the REAL player-family parsers so the
  * fixtures below are the shapes Bitmovin writes, not a fake's.
  *
  * HIGH-3 a per-title manifest compiled to an EMPTY video family set, so the

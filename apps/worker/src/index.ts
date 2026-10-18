@@ -958,7 +958,7 @@ const liveHeartbeatSweep: typeof liveHeartbeatSweepInner = async () => {
 // spool defaults under the OS tmpdir.
 const WORKER_HOSTNAME = hostname();
 /**
- * : this worker INSTANCE, which is what a feeder ownership lease is
+ * this worker INSTANCE, which is what a feeder ownership lease is
  * held by. The nonce is what makes each BOOT distinct — a restarted worker can
  * be handed the same pid, and a lease held by "whatever used to be 4711" is a
  * lease held by nobody.

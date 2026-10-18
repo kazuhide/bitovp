@@ -582,7 +582,7 @@ function verifyRedundancy(
 }
 
 /**
- * : a static-ingest channel's obligation, named rather than
+ * a static-ingest channel's obligation, named rather than
  * silent. Proving the fixed FQDN accepts a push needs a real encoder against
  * live-input.bitmovin.com — the #113/#114 real-credential item — which this
  * harness cannot stage; the named SKIP keeps the check id present (the

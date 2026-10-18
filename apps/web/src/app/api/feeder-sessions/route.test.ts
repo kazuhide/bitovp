@@ -40,7 +40,7 @@ vi.mock("@/lib/server/queue", () => ({
 }));
 
 /**
- * : the arm-time SEAL. Mocked at the helper, not at the driver,
+ * the arm-time SEAL. Mocked at the helper, not at the driver,
  * because what this route owns is the DECISION — write the version onto the
  * session, and refuse the create when the object cannot be read at all.
  * `sealSourceIdentity`'s own three-way contract is pinned in
@@ -270,7 +270,7 @@ describe("POST /api/feeder-sessions", () => {
 	});
 
 	/**
-	 * : the immediate switch is the scheduled switch with lead 0 —
+	 * the immediate switch is the scheduled switch with lead 0 —
 	 * the commit instant is creation and the commit is requested at once, so
 	 * the feeder worker stages first and stops the active feeder only when the
 	 * new source is READY. Without the flag the create is exactly what it was.

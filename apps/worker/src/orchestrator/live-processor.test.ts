@@ -405,7 +405,7 @@ function setup(
 	// review-223 F6: insert-content writes its window-closed note here;
 	// #96's supersession guard reads rows through findUnique/findFirst.
 	/**
-	 * : the schedule row REMEMBERS the session its start stamped, so
+	 * the schedule row REMEMBERS the session its start stamped, so
 	 * a second delivery of the same job reads it back the way Postgres would.
 	 * rev367 I-3 adds its STATUS (default FIRED — what every start/immediate
 	 * job runs against; stage arms set ARMED) and makes the stamp's status
@@ -489,7 +489,7 @@ function setup(
 			: [];
 	const liveChannelRun = {
 		/**
-		 * : honours `where.bitmovinEncodingId` (the heartbeat history's
+		 * honours `where.bitmovinEncodingId` (the heartbeat history's
 		 * run lookup) — after a re-air the OLD encoding's sample must find the
 		 * OLD run, not the newest row; every other read is "the current run".
 		 */
@@ -505,7 +505,7 @@ function setup(
 		),
 		findMany: vi.fn(async () => runRows),
 		/**
-		 * : the fenced run writes — the poll-token claim, the provider
+		 * the fenced run writes — the poll-token claim, the provider
 		 * lifecycle CAS, the heartbeat door — are MODELLED, not answered
 		 * `count: 1` regardless. A stub that matches every `where` turns every
 		 * fence test into a tautology (the exact trap the channel stub's
@@ -2177,7 +2177,7 @@ describe("live channel actions", () => {
 	});
 
 	/**
-	 * : a restart reconciles the provider's lifecycle for the run's
+	 * a restart reconciles the provider's lifecycle for the run's
 	 * EXACT encoding first, so every restart test seeds the run row that
 	 * carries it (production rows always do — #240's backfill and the start
 	 * routes; a channel with no run has no identity to reconcile onto and is

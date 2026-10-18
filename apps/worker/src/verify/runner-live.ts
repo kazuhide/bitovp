@@ -181,7 +181,7 @@ export type LiveRunOptions = {
 	intent?: LiveIntentHooks;
 	/**
 	 * What the evidence tuple binds the run TO
-: the exact commit / image, and the fed source's version identity.
+	 * the exact commit / image, and the fed source's version identity.
 	 * Absent (unit tests) ⇒ the tuple names them as missing, never guesses.
 	 */
 	evidence?: { commit: string; image?: string };
@@ -239,7 +239,7 @@ export type LiveRunResult = {
 	cleanup?: LiveCleanupSeal;
 	/**
 	 * The evidence TUPLE, one leg per (manifest, delivery target)
-: build → source → channel → output → master →
+	 * build → source → channel → output → master →
 	 * children → media → two probes → progression → provider terminal →
 	 * cleanup, each leg sealed by core's completeness rule. Present whenever
 	 * the run reached its samples; `outcomeFromLiveResult` refuses a PASS whose
@@ -430,8 +430,8 @@ export function rewriteLiveForRun(
 		 * The AKAMAI_MSL family's live target — provisioning-config credential
 		 * (streamId + eventName live in its config). Absent ⇒ MSL outputs stay
 		 * as authored and the AKAMAI_MSL capability gate reports them.
-		 * `edgeBaseUrl` rides along
-
+		 * `edgeBaseUrl` is unused by the rewrite; the runner reads it to verify
+		 * delivery-mirror legs on the edge.
 		 */
 		akamaiMsl?: LiveMslCredentialTarget;
 		/** UC-numbered channel name (uc{NN}-{scenario}); overrides the fixture name. */
@@ -595,7 +595,7 @@ export function rewriteLiveForRun(
 	/**
 	 * The AKAMAI_MSL output keys, so the MSL manifest-path exemption below knows
 	 * which destinations carry the empty/slash contract
-. Read AFTER the credential rewrite, which leaves every
+	 * . Read AFTER the credential rewrite, which leaves every
 	 * output's `kind` intact.
 	 */
 	const mslOutputKeys = new Set(
@@ -1106,7 +1106,7 @@ async function sample(
 
 	/**
 	 * The MSL delivery-mirror legs on the EDGE at THIS sample
-: master → every child → init + media with bytes and
+	 * master → every child → init + media with bytes and
 	 * hashes, IN-RUN. Two of these, a sample gap apart, are what let the
 	 * engine and the evidence tuple witness media ADVANCING on the edge — the
 	 * post-stop closure alone cannot. Empty (no `edge` key) when no edge base
@@ -1294,7 +1294,7 @@ async function readCleanupFacts(
 /**
  * The local half of the durable teardown seal, re-read until every local
  * element is POSITIVELY true or the budget runs out
-. EV-01 joins provider proof after this loop.
+ * . EV-01 joins provider proof after this loop.
  *
  * The loop IS the idempotent resume: each pass is a pure read of current state,
  * so a teardown that was partial when first read (the feeder stop's kill ladder

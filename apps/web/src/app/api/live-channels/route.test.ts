@@ -22,7 +22,7 @@ const credFindUnique = vi.fn(async () => ({ provider: "AWS_S3" }));
 // callback the same delegates so assertions see every write.
 const presetFindFirst = vi.fn();
 /**
- * : open alerts for the whole page come from ONE grouped read. The
+ * open alerts for the whole page come from ONE grouped read. The
  * default is an empty grouping — "looked, found none" — so every pre-existing
  * GET test keeps meaning what it meant.
  */
@@ -32,7 +32,7 @@ const alertGroupBy = vi.fn<
 	) => Promise<{ liveChannelId: string; _count: { _all: number } }[]>
 >(async () => []);
 /**
- * : the newest run per channel is a separate BOUNDED statement
+ * the newest run per channel is a separate BOUNDED statement
  * (`latestRunsFor`), not a nested `runs: { take: 1 }` on the channel query —
  * Prisma pushes no limit into that one, so it read every airing of every
  * channel on the page. The default is "no channel has run", which is what the
@@ -76,7 +76,7 @@ vi.mock("@/lib/server/queue", () => ({
 }));
 
 /**
- * : the arm-time SEAL for derived FEEDER rows. This route is the ONLY
+ * the arm-time SEAL for derived FEEDER rows. This route is the ONLY
  * door that creates them (`liveScheduleArmSchema` refuses a manual arm), so it
  * is the only place an arm-time seal can be taken.
  */

@@ -529,7 +529,7 @@ describe("feeder orphan reconcile (boot + tick)", () => {
 });
 
 /**
- * : the lease gate this sweep gained, and the schedule row it was not
+ * the lease gate this sweep gained, and the schedule row it was not
  * closing.
  */
 describe("feeder orphan reconcile — owner lease (row #242)", () => {

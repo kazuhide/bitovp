@@ -87,8 +87,8 @@ export type OrchestratorDeps = {
 		tenantOrgId: string | null;
 		bitmovinAccountId: string;
 		/** : create-op idempotency stamp, threaded to the fetch layer
-		    (and its adoptWindow to sdk-ops' adopt-before-create). Structural
-		    subtype of CreateStamp — the #163 lesson says a NARROWER declaration
+		 * (and its adoptWindow to sdk-ops' adopt-before-create). Structural
+		 * subtype of CreateStamp — the #163 lesson says a NARROWER declaration
 		    here lets a wiring silently drop a field, so keep it in lockstep. */
 		stamp?: CreateStamp;
 	}): SdkOps;
@@ -945,7 +945,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					// was lost. Reconcile the exact marker; never POST beside it.
 					stampAdopt = wasRunning || wasVerificationCreateAttempt;
 					/**
-					 * : the ONE recovery that is not a retry. When a start
+					 * the ONE recovery that is not a retry. When a start
 					 * dies of the measured 500/1004 signature AFTER the ladder has
 					 * exhausted, and the request carried JIT manifest lists, the same
 					 * artefacts are reachable by starting plainly and generating those
@@ -1217,7 +1217,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 	 * this stops all of them — cancel takes the whole job down.
 	 */
 	/**
-	 * : the stop's OUTCOME is returned, not just attempted. `confirmed`
+	 * the stop's OUTCOME is returned, not just attempted. `confirmed`
 	 * is true only when every created encoding was SEEN terminal — either
 	 * already terminal before the stop, or terminal on the readback after the
 	 * stop call — so a stop that failed, or one the provider had not applied

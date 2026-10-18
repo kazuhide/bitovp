@@ -1125,7 +1125,7 @@ describe("public-read ACL", () => {
 });
 
 /**
- * : static RTMPS ingest is the RECOMMENDED DEFAULT — the pushable
+ * static RTMPS ingest is the RECOMMENDED DEFAULT — the pushable
  * URL exists from creation. This pins the flip so it cannot silently revert;
  * per-IP RTMP and SRT stay one select away (their tests say inputKind
  * explicitly since this landed).

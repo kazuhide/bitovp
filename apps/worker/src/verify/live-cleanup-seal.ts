@@ -54,7 +54,7 @@ export type LiveCleanupSeal = {
 	/**
 	 * The airing (LiveChannelRun.id) and the provider encoding the channel
 	 * detail reported, carried on the seal so the evidence tuple
- can bind provider → cleanup without a second
+	 * can bind provider → cleanup without a second
 	 * read. Absent when the detail could not be read — the tuple then names it.
 	 */
 	liveChannelRunId?: string;

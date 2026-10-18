@@ -191,7 +191,7 @@ export type ScenarioOutcome = {
 	liveCleanup?: LiveCleanupSeal;
 	/**
 	 * LIVE only: the versioned evidence-tuple summary
- — per output leg, complete or the elements it lacks.
+	 * — per output leg, complete or the elements it lacks.
 	 * A PASS/WARN live outcome is refused (INVALID) unless every leg is
 	 * complete, and the run recorder refuses SEALED for a green live outcome
 	 * whose tuple is not. The full legs (object lists, hashes) live in the
@@ -1092,7 +1092,7 @@ async function runLive(
 	},
 	/**
 	 * What the evidence tuple binds the run TO
-: the exact commit/image this harness runs, and the fed source's
+	 * the exact commit/image this harness runs, and the fed source's
 	 * version identity — neither is knowable inside the live loop.
 	 */
 	evidence: { commit: string; image?: string },
@@ -2563,7 +2563,7 @@ function liveReportOutcome(
 	}
 	/**
 	 * A run that observed NO delivery cannot be a pass. AKR-E57-007,
-	 * .
+	 *
 	 *
 	 * The zero-PASS floor above does not reach this: an MSL channel's
 	 * provisioning and heartbeat checks PASS honestly, while every manifest
@@ -2625,7 +2625,7 @@ function liveReportOutcome(
 	}
 	/**
 	 * The PARTIALLY-blind mirror topology the manifest floor above could not see
-	 * .
+	 *
 	 *
 	 * An origin + MSL-mirror plan passes the manifest floor on the origin's OWN
 	 * manifests — the mirror output is not in `expected.manifests` at all — so
@@ -3069,7 +3069,7 @@ export type SubmitBody = {
 
 /**
  * What one submit attempt established about the paid job
-. The old `submit` THREW on a lost or unreadable
+ * . The old `submit` THREW on a lost or unreadable
  * response, and the catch saw `!jobId` and returned INVALID with no cleanup —
  * the job was billing and nothing named it. Now every failure says WHERE it
  * happened relative to the wire, so the caller can tell "nothing was created"
@@ -5792,7 +5792,7 @@ export async function runRecoveryCommand(
 
 /**
  * `--live-msl-edge-base-url`, else `VERIFY_LIVE_MSL_EDGE_BASE_URL`
-. Absent ⇒ undefined, and every MSL mirror
+ * . Absent ⇒ undefined, and every MSL mirror
  * leg stays UNOBSERVED (the honest default). Present ⇒ validated by core's
  * `parseEdgeBaseUrl`: HTTPS only, no userinfo, no query or fragment, and a
  * host on the delivery allowlist (Akamai's media hostnames by default;

@@ -490,7 +490,7 @@ function makeStore(
 				}
 			},
 			/**
-			 * : the SESSION the commit gate reads. Only the projection
+			 * the SESSION the commit gate reads. Only the projection
 			 * the sweep selects, honoured by id.
 			 */
 			feederSession: {

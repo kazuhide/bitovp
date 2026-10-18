@@ -17,7 +17,7 @@ import {
 
 /**
  * The auto-refresh + stale-safety half of the release-evidence screens
-. A long run must reach its terminal state here
+ * . A long run must reach its terminal state here
  * without a manual reload, the polling must STOP once it is terminal, and a
  * refresh failure must never keep showing the last state as if it were current.
  *

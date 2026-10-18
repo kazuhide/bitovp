@@ -15,10 +15,10 @@ import type { ResolvedCredential } from "../orchestrator/executor";
 import { captureRenditionWindow } from "./live-capture";
 
 /**
- * The mechanism behind the paid audit's Live A/E VMAF failures
-
-, proven with a real ffmpeg rather than
- * argued.
+ * Reproduces live VMAF capture failures with real ffmpeg: no packets and zero
+ * decoded frames despite every segment being individually readable. Reading
+ * individual segments alone therefore cannot prove that the assembled clip
+ * can be decoded.
  *
  * ffmpeg's concat DEMUXER opens every list entry as a standalone container. A
  * bare fMP4 fragment (`.m4s`) has no `moov`, so each one fails with "trun track

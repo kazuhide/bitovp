@@ -125,7 +125,7 @@ const querySchema = z.object({
 	// (validationError); an empty/absent label is simply ignored.
 	status: z.enum(ENCODING_JOB_STATUSES).optional(),
 	/** QC gate outcome filter : pass | fail. Jobs without a
-	    verdict match neither — the filter answers "what did the gate say",
+	 * verdict match neither — the filter answers "what did the gate say",
 	    and silence is not an answer. */
 	qc: z.enum(["pass", "fail"]).optional(),
 	label: z.string().min(1).optional(),

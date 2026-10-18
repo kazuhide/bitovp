@@ -3,7 +3,7 @@ import { z } from "zod";
 
 /**
  * The VerificationResourceIntent contract
-, shared by the harness (which WRITES the rows), the product's two
+ * shared by the harness (which WRITES the rows), the product's two
  * create routes (which honour the idempotency key) and any later reader.
  *
  * The defect this exists for: the harness learned a paid resource's id from

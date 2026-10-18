@@ -74,7 +74,7 @@ function navHrefs(root: HTMLElement): string[] {
  *
  * Until 2026-08-29 there was one: a `w-60` column rendered at every width, so a
  * 375px phone gave the working area 135px
-. The fix is a pair of classes — `hidden md:flex` on the column and
+ * . The fix is a pair of classes — `hidden md:flex` on the column and
  * `md:hidden` on the compact bar — and a pair of classes is exactly the sort of
  * thing that survives a refactor in only one of the two places, so both are
  * pinned here by name.

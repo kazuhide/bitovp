@@ -109,7 +109,7 @@ export function RunDetail({ run }: { run: VerificationRunDetail }) {
 						{run.sourceObject ?? "—"}
 					</Fact>
 					{/* A NAME says nothing about bytes. "unavailable" is
-					    the harness's own word for a source it could not HEAD, and it
+					 * the harness's own word for a source it could not HEAD, and it
 					    is shown as such rather than as an empty cell. */}
 					<Fact label={t("verification.sourceIdentity")}>
 						{run.sourceIdentity ?? t("verification.sourceIdentityUnknown")}
@@ -250,9 +250,9 @@ export function RunDetail({ run }: { run: VerificationRunDetail }) {
 			</Section>
 
 			{/* The Live/MSL evidence tuples:
-			    one card per output leg, showing the SAME completeness verdict the
-			    harness sealed on — and, when a leg is incomplete, the elements it
-			    lacks, so a reader sees WHY a live PASS was refused rather than a
+			 * one card per output leg, showing the SAME completeness verdict the
+			 * harness sealed on — and, when a leg is incomplete, the elements it
+			 * lacks, so a reader sees WHY a live PASS was refused rather than a
 			    bare INVALID. */}
 			<Section title={t("verification.liveEvidence")}>
 				{evidence.length === 0 ? (
@@ -408,7 +408,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /**
  * Poll while the run is still RUNNING so a long run reaches SEALED or INCOMPLETE
  * on this screen without a manual reload; stop once it is terminal
-. A pure function of the data so the stop
+ * . A pure function of the data so the stop
  * decision is testable without a wall-clock timer.
  */
 export const VERIFICATION_DETAIL_POLL_MS = 5_000;

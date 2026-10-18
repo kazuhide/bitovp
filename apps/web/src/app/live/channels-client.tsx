@@ -40,8 +40,8 @@ type Page = {
 const COLUMN_COUNT = 7;
 
 /**
- * The live channel list as an OPERATIONS COCKPIT (audit 4403130
- * §5.5).
+ * The live channel list as an OPERATIONS COCKPIT
+
  *
  * It used to be Name / Status / Encoding ID / Created / Delete with the next
  * schedule as a footnote — which means that with several channels up, "which

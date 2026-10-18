@@ -1,31 +1,31 @@
 /**
  * The delivery-EDGE resolver: master → every child → init + media, with bytes
- * and hashes, under a URL policy (audit 5c3d97ca BLOCKER-4, §14.4 EV-02 #3/#4).
+ * and hashes, under a URL policy.
  *
- * What the previous closure  got wrong, and why each rule below
+ * What the previous closure got wrong, and why each rule below
  * exists:
  *
- *   absolute URIs were DROPPED   `filter(relative)` threw away every absolute
- *                                child and segment URI, so a master whose
- *                                children were absolute walked ZERO children —
- *                                and still closed. Now every reference is
- *                                resolved with `new URL(reference, parent)`
- *                                semantics and either FOLLOWED (inside the
- *                                policy) or REFUSED and counted as missing.
- *   zero segments closed         a child listing no media, or a child whose
- *                                media were never fetched, was "closed". Now a
- *                                leg closes only when ≥1 child was walked and
- *                                EVERY child served ≥1 nonzero media segment.
- *   DASH closed on Representation count
- *                                the MPD was parsed and counted. Now BaseURL +
- *                                SegmentTemplate / Timeline / List are resolved
- *                                (mpd-parser, with the MPD's own URL and the
- *                                harness clock), and every representation's
- *                                init AND ≥1 nonzero media segment is fetched.
- *   nothing was hashed           the audit hashed every representative segment;
- *                                the product hashed nothing. Every fetched
- *                                object carries its SHA-256, and every persisted
- *                                URL is credential-free (core's `redactUrl`).
+ * absolute URIs were DROPPED `filter(relative)` threw away every absolute
+ * child and segment URI, so a master whose
+ * children were absolute walked ZERO children —
+ * and still closed. Now every reference is
+ * resolved with `new URL(reference, parent)`
+ * semantics and either FOLLOWED (inside the
+ * policy) or REFUSED and counted as missing.
+ * zero segments closed a child listing no media, or a child whose
+ * media were never fetched, was "closed". Now a
+ * leg closes only when ≥1 child was walked and
+ * EVERY child served ≥1 nonzero media segment.
+ * DASH closed on Representation count
+ * the MPD was parsed and counted. Now BaseURL +
+ * SegmentTemplate / Timeline / List are resolved
+ * (mpd-parser, with the MPD's own URL and the
+ * harness clock), and every representation's
+ * init AND ≥1 nonzero media segment is fetched.
+ * nothing was hashed the audit hashed every representative segment;
+ * the product hashed nothing. Every fetched
+ * object carries its SHA-256, and every persisted
+ * URL is credential-free (core's `redactUrl`).
  *
  * Progression — media ADVANCING between two probes — is not decided here: this
  * observes ONE instant. The runner takes one observation per sample and the

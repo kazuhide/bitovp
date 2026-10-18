@@ -380,8 +380,8 @@ async function probeDistortedMetrics(
  *
  * The rule itself lives in CORE (`vmafSourceFor`), not here. It used to be an
  * inline `kind === "S3" || kind === "AZURE"` allowlist, and the plan schema
- * grew past it without anything going red: `GENERIC_S3` (audit e57f2d3,
- * AKR-E57-008) plus `GCS` and `GCS_SERVICE_ACCOUNT`, found by deriving the
+ * grew past it without anything going red: `GENERIC_S3`
+ plus `GCS` and `GCS_SERVICE_ACCOUNT`, found by deriving the
  * population from the schema union instead of from the reported instance. All
  * three are browsable by `packages/storage` and were refused here anyway —
  * AFTER Bitmovin had run and billed the encode.
@@ -1274,8 +1274,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				);
 			}
 			const unmeasured: UnmeasuredRung[] = [];
-			// Templates the PROVIDER generated no RESULT for (audit
-			// 602ec286 §5.4 item 4) — shown for what it is, "not generated", never a
+			// Templates the PROVIDER generated no RESULT for
+			// are shown for what they are, "not generated", never a
 			// synthetic failed measurement. NOT part of `expectedUnits`.
 			const notGenerated: { rendition: string }[] = [];
 			// RESULT streams a target scored or marked unmeasured, so the sweep below
@@ -1353,7 +1353,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						)
 					) {
 						// No RESULT attributed to this template. With explicit-marker / exact
-						// fixed-settings attribution (audit 602ec286 §5.4 item 4), that means
+						// fixed-settings attribution, that means
 						// the PROVIDER generated
 						// none for it — per-title templates are not fixed rungs, so the
 						// paid run's real ladder was 6 of 7 (`v900` had no RESULT). Shown
@@ -1388,8 +1388,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					work.push({ target, out, key: d.key, variant: d.variant });
 				}
 			}
-			// Every RESULT the provider generated stays in the population (audit
-			// 602ec286 §5.4 items 4/5). A per-title RESULT that no target scored and
+			// Every RESULT the provider generated stays in the population.
+			// A per-title RESULT that no target scored and
 			// no target marked unmeasured is one nothing could place — either
 			// attribution abstained (a conflicting/missing stable witness) or it
 			// landed on a rendition that is not a VMAF target. Either way it EXISTS,
@@ -1419,7 +1419,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					variant: u.variant,
 				}));
 				// A per-title template the provider generated no RESULT for is not
-				// part of THIS run's population (audit 602ec286 §5.4 item 4), so it
+				// part of THIS run's population, so it
 				// must not synthesize a failing gate actual — the "synthetic failed
 				// rung" the fix forbids. Removing it from the DEFAULT expected set is
 				// narrow and snapshot-evidence-based: a standard rendition never
@@ -1557,10 +1557,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			}
 
 			/**
-			 * A run that scored NOTHING is not a finished measurement (paid
-			 * re-audit eb7c983 BLOCKER-6).
+			 * A run that scored NOTHING is not a finished measurement
+
 			 *
-			 *  made a rung with no mirror UNMEASURED instead of fatal —
+			 * made a rung with no mirror UNMEASURED instead of fatal —
 			 * right for the rung, wrong for the job, because nothing then held the
 			 * whole-population case. When EVERY rung is unmeasured the pool has no
 			 * work, no unit errors, and `markTerminal(FINISHED)` below reported a

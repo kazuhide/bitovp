@@ -2767,7 +2767,7 @@ describe("deadline backstop — SCHEDULE_NOT_RUNNING_AT_DEADLINE (ledger #160 PR
 		);
 	});
 
-	it("an emit failure rolls the stamp back — the alert retries instead of being lost (review-8eaef21 #9)", async () => {
+	it("an emit failure rolls the stamp back — the alert retries instead of being lost", async () => {
 		const store = makeStore(
 			[makeRow({ fireAt: FUTURE_FIRE, airAt: new Date(2_200_000) })],
 			[makeChannel()],
@@ -4540,7 +4540,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		expect(stats.fired).toBe(1);
 		expect(store.rows[0]?.status).toBe("FIRED");
 		expect(enqueue).toHaveBeenCalledWith(
-			// audit 602ec286 BLOCKER-4 (row 266): the bound airing now rides the
+			// (row 266): the bound airing now rides the
 			// payload so the processor can fence a queue retry after a re-air.
 			expect.objectContaining({
 				liveChannelId: CH,
@@ -4552,7 +4552,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		);
 	});
 
-	it("the fired feeder payload CARRIES the planned run id — the fence the processor needs against a queue retry (audit 602ec286 BLOCKER-4)", async () => {
+	it("the fired feeder payload CARRIES the planned run id — the fence the processor needs against a queue retry", async () => {
 		const store = runningOn(
 			[
 				makeRow({
@@ -4578,7 +4578,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		);
 	});
 
-	it("the fired SLATE (insert-content) payload CARRIES the planned run id (audit 602ec286 BLOCKER-4)", async () => {
+	it("the fired SLATE (insert-content) payload CARRIES the planned run id", async () => {
 		// No runs pushed: the slate's run-level ingest check falls back to the
 		// channel heartbeat and the generation guard fails open — the row is
 		// still BOUND to RUN_2, which is what the payload must carry. Dropping
@@ -4605,7 +4605,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		);
 	});
 
-	it("the STAGED feeder-switch payload CARRIES the planned run id (audit 602ec286 BLOCKER-4)", async () => {
+	it("the STAGED feeder-switch payload CARRIES the planned run id", async () => {
 		const SEALED = {
 			credentialId: "00000000-0000-4000-8000-0000000000c1",
 			bucket: "in",
@@ -4638,7 +4638,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		);
 	});
 
-	it("the COMMITTED feeder-switch payload CARRIES the planned run id (audit 602ec286 BLOCKER-4)", async () => {
+	it("the COMMITTED feeder-switch payload CARRIES the planned run id", async () => {
 		const SESSION_ID = "00000000-0000-4000-8000-0000000000f1";
 		const SEALED = {
 			credentialId: "00000000-0000-4000-8000-0000000000c1",
@@ -4828,7 +4828,7 @@ describe("a panel-armed row survives a re-air it never saw (row #241)", () => {
 		// row's — the panel row dispatched nothing.
 		expect(enqueue).toHaveBeenCalledTimes(1);
 		expect(enqueue).toHaveBeenCalledWith(
-			// audit 602ec286 BLOCKER-4 (row 266): the creation-time row bound to
+			// (row 266): the creation-time row bound to
 			// run 2 THIS tick, and the payload carries that just-bound airing —
 			// proof the lazy bind is reflected onto the stamp, not the null the
 			// row was read as.

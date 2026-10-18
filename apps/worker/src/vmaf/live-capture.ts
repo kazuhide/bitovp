@@ -39,19 +39,19 @@ import type { ResolvedCredential } from "../orchestrator/executor";
  * via `makeBrowser` so the worker test can fake the whole listing.
  *
  * CONCAT STRATEGY mirrors the container:
- *  - fMP4: the init segment (`init.mp4`) followed by the ordered `.m4s` media
- *    fragments, BYTE-concatenated into one `.mp4` — that is the fMP4 contract
- *    (a player does exactly this). The first cut handed init + fragments to
- *    ffmpeg's concat DEMUXER as a list, which opens every entry as a
- *    standalone container: a bare `.m4s` has no `moov`, so each fragment fails
- *    with "trun track id unknown, no tfhd was found" and the clip decodes to
- *    ZERO frames. That is the paid audit's Live A/E result (893eb66 §7.3,
- *    "signalstats no packets", "decoded zero frames", results 0) while every
- *    segment was individually probe-able; reproduced locally on 2026-08-28
- *    against a 75-frame testsrc (concat demuxer: cannot open segment_0.m4s;
- *    byte-concat: 75/75 frames). .
- *  - TS: MPEG-TS segments are self-framing and legally byte-concatenate, so we
- *    stream them into a single .ts in order (no init).
+ * - fMP4: the init segment (`init.mp4`) followed by the ordered `.m4s` media
+ * fragments, BYTE-concatenated into one `.mp4` — that is the fMP4 contract
+ * (a player does exactly this). The first cut handed init + fragments to
+ * ffmpeg's concat DEMUXER as a list, which opens every entry as a
+ * standalone container: a bare `.m4s` has no `moov`, so each fragment fails
+ * with "trun track id unknown, no tfhd was found" and the clip decodes to
+ * ZERO frames. That is the paid audit's Live A/E result
+ while every
+ * segment was individually probe-able; reproduced locally on 2026-08-28
+ * against a 75-frame testsrc (concat demuxer: cannot open segment_0.m4s;
+ * byte-concat: 75/75 frames).
+ * - TS: MPEG-TS segments are self-framing and legally byte-concatenate, so we
+ * stream them into a single.ts in order (no init).
  * The worker then probes/decodes the concatenated clip for signatures + libvmaf.
  */
 
@@ -367,7 +367,7 @@ export type CapturedClip = {
 	/**
 	 * Ordered STORAGE keys byte-concatenated into the clip — the fMP4 init first
 	 * when there is one, then the media segments in sequence order. The distorted
-	 * side's provenance (paid re-audit eb7c983 HIGH-1): a live score is over N
+	 * side's provenance: a live score is over N
 	 * objects assembled at read time, so "which object" is a list, not a key.
 	 */
 	keys: string[];

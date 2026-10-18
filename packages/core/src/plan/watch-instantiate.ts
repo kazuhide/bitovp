@@ -60,8 +60,8 @@ function literalHead(template: string): string {
 }
 
 /**
- * Would this rule's OWN outputs land where it is watching? (audit f63f76b
- * F63-RUN-002)
+ * Would this rule's OWN outputs land where it is watching?
+
  *
  * Nothing rejected a rule whose preset writes back into the watched
  * credential+bucket+prefix. The sweep enumerates that prefix recursively, so

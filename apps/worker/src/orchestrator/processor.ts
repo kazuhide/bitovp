@@ -245,7 +245,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 
 		/*
 		 * TAKE THE ATTEMPT LEASE, atomically — before any write, any SDK call
-		 * (audit 893eb66 CRITICAL-1).
+		 *
 		 *
 		 * Everything below this line used to run on the strength of a single
 		 * read: the row was not terminal, so proceed. A worker whose BullMQ

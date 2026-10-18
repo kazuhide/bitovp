@@ -83,9 +83,9 @@ function renderPanel(locale: "en" | "ja" = "en") {
 }
 
 /**
- * : the arm form and the fired history are DISCLOSED now — the panel
+ * the arm form and the fired history are DISCLOSED now — the panel
  * opens with the programme timeline and the upcoming rows, because "what fires
- * next" is the everyday question and arming one is not (audit 4403130 §5.3).
+ * next" is the everyday question and arming one is not.
  * Every test below that reaches a form field or a fired row therefore says so
  * first; a test that stopped needing this call would be a test whose subject
  * had drifted back above the fold.
@@ -245,7 +245,7 @@ describe("SchedulePanel", () => {
 		// operator sees WHY it never fired, not just a red badge. (findBy:
 		// "Start channel (START)" exists statically as an <option>, so it cannot
 		// gate on the query having resolved.)
-		// Audit 5c3d97ca §8.3: the WORD is the badge, the raw code rides beside
+		// the WORD is the badge, the raw code rides beside
 		// it as a secondary — both must render.
 		expect(await screen.findByText("Reserved")).toBeInTheDocument();
 		expect(screen.getByText("ARMED")).toBeInTheDocument();
@@ -358,8 +358,8 @@ describe("SchedulePanel", () => {
 			screen.getByLabelText("Air time (deadline alert)"),
 			"2099-01-01T10:00",
 		);
-		// The margin field appears once an air time is set (review-8eaef21 #8:
-		// API-parity — the arm schema accepts it, so the form must too).
+		// The margin field appears once an air time is set:
+		// the arm schema accepts it, so the form must too.
 		await userEvent.type(
 			screen.getByLabelText("Deadline margin (seconds)"),
 			"600",
@@ -436,7 +436,7 @@ describe("SchedulePanel", () => {
 			expect(body.fireAt).toBeUndefined();
 		});
 		const resolution = await screen.findByText(/Resolved:/i);
-		// Audit 5c3d97ca §8.3: the sample count and percentile in words, not
+		// the sample count and percentile in words, not
 		// `n=20` / `P90` as a statistician's shorthand in customer copy.
 		expect(resolution.textContent).toContain("from 20 recorded start-ups");
 		expect(resolution.textContent).toContain("600s");
@@ -529,7 +529,7 @@ describe("SchedulePanel", () => {
 		});
 	});
 
-	it("a FAILED schedules query is not an empty schedule — audit 4403130 IMPORTANT-2", async () => {
+	it("a FAILED schedules query is not an empty schedule", async () => {
 		// `schedules.data ?? []` collapsed a rejected query into two empty
 		// lists, so an operator checking an unattended channel read
 		// "Nothing armed." / "Nothing fired yet." off a panel that had not

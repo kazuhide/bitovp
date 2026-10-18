@@ -66,7 +66,7 @@ describe("LifecycleStrip", () => {
 	});
 
 	/**
-	 *  (audit 5c3d97ca BLOCKER-1): the provider's view outranks the
+	 * the provider's view outranks the
 	 * stage hint — UNKNOWN is amber with the last confirmed reading and the
 	 * window's start; a provider-TERMINAL error run must not say "may still
 	 * be up on Bitmovin" when Bitmovin has said the encoding ended.

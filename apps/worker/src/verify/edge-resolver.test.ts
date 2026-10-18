@@ -14,7 +14,7 @@ import {
 } from "./edge-resolver";
 
 /**
- * The delivery-edge resolver (audit 5c3d97ca BLOCKER-4, §14.4 EV-02 #3/#4).
+ * The delivery-edge resolver.
  *
  * Every negative the audit lists must leave the leg NOT closed and name why:
  * empty / master-only, a disallowed scheme or origin, a root escape, zero

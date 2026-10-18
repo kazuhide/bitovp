@@ -348,7 +348,7 @@ function setup(
 		committedAt: null,
 		predecessorGoneAt: null,
 		switchSeamMs: null,
-		// Audit 5c3d97ca LC-02: the publisher claim. Null = never claimed, the
+		// the publisher claim. Null = never claimed, the
 		// shape of every row written before the columns existed and of a
 		// staged hold that has not committed.
 		publisherClaimedAt: null,
@@ -457,7 +457,7 @@ function setup(
 		) {
 			return false;
 		}
-		// Audit 5c3d97ca LC-02 — the PUBLISHER CLAIM. Key presence, like the
+		// the PUBLISHER CLAIM. Key presence, like the
 		// fence: the occupancy fragment's held-claim arm and setPushing's
 		// claim guard both filter on these, and a fake that ignored them would
 		// count every row as a claim holder (over-matching) or let an
@@ -600,7 +600,7 @@ function setup(
 						next[key] = value;
 					}
 				}
-				// Audit 5c3d97ca LC-02 — the partial unique index
+				// the partial unique index
 				// `FeederSession_one_publisher_claim_per_channel`, modelled: a
 				// write that would leave THIS row holding a claim while ANOTHER
 				// row on the channel holds one is a P2002 and applies nothing —
@@ -2300,7 +2300,7 @@ describe("mayKeepPushing (review-260 127-A3/A4 — the watchdog's no-kill-on-no-
 		).toBe("UNKNOWN");
 	});
 
-	//  / audit 602ec286 HIGH-6: the freshness gate is SYMMETRIC. A
+	// the freshness gate is SYMMETRIC. A
 	// FUTURE stamp beyond the shared skew tolerance describes a moment that has
 	// not happened — no-information, NOT a fresh explicit failure. The old
 	// one-sided check scored its negative age as fresh and restarted a HEALTHY
@@ -3391,7 +3391,7 @@ describe("feeder processor — ownership lease (row #242)", () => {
 		).not.toContain("FAILED");
 	});
 
-	it("REFUSES to resume a live pid on ANOTHER host it cannot prove gone — no second push, a terminal ERROR (audit 602ec286 BLOCKER-5)", async () => {
+	it("REFUSES to resume a live pid on ANOTHER host it cannot prove gone — no second push, a terminal ERROR", async () => {
 		const s = setup({ leaseRenewalIntervalMs: 1 });
 		const runA = s.processor.process(startJob);
 		await vi.waitFor(() => expect(s.spawned).toHaveLength(1));
@@ -3449,7 +3449,7 @@ describe("feeder processor — ownership lease (row #242)", () => {
 		expect(s.session.status).toBe("ERROR");
 	});
 
-	it("RESUMES a cross-host session whose previous push was PROVEN gone (processGoneAt stamped) — #240's completion path (control, audit 602ec286)", async () => {
+	it("RESUMES a cross-host session whose previous push was PROVEN gone (processGoneAt stamped) — #240's completion path", async () => {
 		// The revoked owner's lease-lost path  nulls the pid AND
 		// stamps processGoneAt in ONE write, so a proven-gone cross-host push
 		// arrives at the sweep with pid NULL — the safe branch. This is the
@@ -4632,7 +4632,7 @@ describe("feeder processor — the two-phase switch (row #240)", () => {
 	});
 });
 
-describe("feeder processor — the publisher claim (audit 5c3d97ca BLOCKER-2 / LC-02)", () => {
+describe("feeder processor — the publisher claim", () => {
 	const OLD_ID = "00000000-0000-4000-8000-0000000000f0";
 	const NEW_ID = "00000000-0000-4000-8000-0000000000f3";
 	const NEW2_ID = "00000000-0000-4000-8000-0000000000f4";

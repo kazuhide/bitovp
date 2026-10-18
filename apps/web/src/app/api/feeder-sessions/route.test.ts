@@ -295,7 +295,7 @@ describe("POST /api/feeder-sessions", () => {
 	});
 
 	/**
-	 * Audit 5c3d97ca BLOCKER-2 / LC-02: the per-channel door counted the STATUS
+	 * the per-channel door counted the STATUS
 	 * list, so a terminal row whose ffmpeg was not proven gone (a cross-host
 	 * takeover refusal, a not-ours stop, a dead START job) was invisible to it
 	 * while its push continued. The door now counts core's ONE occupancy
@@ -352,7 +352,7 @@ describe("POST /api/feeder-sessions", () => {
 	});
 
 	/**
-	 * The active-row unique-index finding (audit 602ec286 HIGH-1): the
+	 * The active-row unique-index finding: the
 	 * per-channel count above is
 	 * check-then-act — two concurrent POSTs both read zero active and both reach
 	 * the create. The partial unique index
@@ -607,7 +607,7 @@ describe("GET /api/feeder-sessions", () => {
 		});
 	});
 
-	// Row 268 (audit 602ec286 BLOCKER-2): the opt-in `queue=1` per-session
+	// Row 268: the opt-in `queue=1` per-session
 	// pending-job read the cleanup seal uses to prove the feeder queue drained.
 	it("without queue=1, adds no queued field (the UI list stays Redis-free)", async () => {
 		sessionFindMany.mockResolvedValueOnce([

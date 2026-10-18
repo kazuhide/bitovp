@@ -219,7 +219,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			);
 		}
 		/**
-		 * Audit 5c3d97ca LC-02: a held PUBLISHER CLAIM is the third thing a
+		 * a held PUBLISHER CLAIM is the third thing a
 		 * terminal row can still own. The claim is released only on positive
 		 * proof that the process is gone, so a terminal row that holds one is a
 		 * row whose owning worker has not yet observed its child's exit (the

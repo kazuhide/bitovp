@@ -6,7 +6,7 @@ import { Field } from "./field";
 import { InfoHint } from "./info-hint";
 
 /**
- * Audit 5c3d97ca §14.6 (UX-03) / UX-06 §5: the help body must be the
+ * (UX-03) / UX-06 §5: the help body must be the
  * TRIGGER'S ACCESSIBLE DESCRIPTION, reached by hover, keyboard focus AND
  * click/tap — and "a `role=tooltip` node exists in the DOM" is not a passing
  * assertion. That is exactly what the first version of this file checked,

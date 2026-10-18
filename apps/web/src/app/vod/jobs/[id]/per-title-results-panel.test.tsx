@@ -299,7 +299,7 @@ describe("per-title results panel — the numbers", () => {
 		expect(screen.getAllByText("video/enc/1080p_a1b2/")).toHaveLength(1);
 	});
 
-	it("the resolved path is COPYABLE and not truncated (audit 602ec286 §5.4 item 7)", async () => {
+	it("the resolved path is COPYABLE and not truncated", async () => {
 		// The run-resolved {height}p_{bitrate}_{uuid} key must be traceable in full
 		// and one click from the clipboard — it is the fact the plan can never state.
 		const writeText = vi.fn().mockResolvedValue(undefined);
@@ -454,7 +454,7 @@ describe("per-title results panel — the numbers", () => {
 	});
 
 	it("names every copy button for its rendition, leg and path — unique per row, never a bare 'Copy'", () => {
-		// The audit heard N identical "Copy" buttons (5c3d97ca MEDIUM-6; UX-04's
+		// The audit heard N identical "Copy" buttons (UX-04's
 		// copy-name requirement): a screen-reader user listing controls could not
 		// tell which rung or leg any of them copied. Two rungs, three legs, one of
 		// them DRM'd — so the names must carry rendition + format (+ DRM) + path.

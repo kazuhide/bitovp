@@ -846,7 +846,7 @@ describe("per-title attribution — provider-copied fixed settings (release audi
 });
 
 /**
- * The fix (audit 602ec286 HIGH-2 / §5.4): a PER_TITLE_RESULT is bound to its
+ * The fix: a PER_TITLE_RESULT is bound to its
  * template by the QC-mirror FILENAME the compiler stamped with the rendition
  * key (`qcMirrorFilename`), not by codec alone — which abstained on every
  * same-codec ladder and reported a paid run's 6 RESULTs as 0.
@@ -993,7 +993,7 @@ describe("per-title attribution — binds on the QC-mirror filename (§5.4)", ()
 
 	it("FAILS CLOSED on an unmatched or malformed mirror filename — no sole-codec fallback once a filename is present", () => {
 		// The customer copy states the fallback applies only "if no filename is
-		// available" (audit 5c3d97ca HIGH-11 / §14.6 UX-04), and that is what the
+		// available", and that is what the
 		// code does: a mirror filename that matches NO template returns from the
 		// filename branch and never reaches the codec rule — even where that rule
 		// would have named a sole template. A foreign, placeholder-shaped or
@@ -1677,7 +1677,7 @@ describe("perTitleResultsView — precedence, and the difference between empty a
 });
 
 /**
- * Best-evidence, extended for the fix (audit 602ec286 §5.4 item 6): a NEW,
+ * Best-evidence, extended for the fix: a NEW,
  * filename-attributed 6 must beat an OLD, codec-abstained 6 it used to TIE (and
  * lose to as the incumbent step) — WITHOUT letting a truncated fresh capture win
  * on attribution or version alone.
@@ -1949,7 +1949,7 @@ describe("bitmovinCapturePort — the row guards", () => {
 
 	it("keeps the muxing filename AND name off the SDK row (§5.4 correlation key)", async () => {
 		// `Mp4Muxing.filename` / base `Muxing.name` come back on the real readback
-		// (audit 602ec286 §5.4.2). Dropping `filename` here is what starved
+		// Dropping `filename` here is what starved
 		// attribution — this pins that the row parser preserves both.
 		const port = bitmovinCapturePort(
 			api(
@@ -1987,7 +1987,7 @@ describe("bitmovinCapturePort — the row guards", () => {
 });
 
 /**
- * Persistence (audit 602ec286 §5.4 item 1 / §5.4.6): the mirror `filename`/`name`
+ * Persistence: the mirror `filename`/`name`
  * and the version stamps survive capture → JSON column → re-read, and a snapshot
  * written before versioning still parses.
  */

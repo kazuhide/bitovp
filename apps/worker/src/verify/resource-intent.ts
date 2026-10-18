@@ -15,8 +15,8 @@ import { recordableError, redactIntentDossier } from "./run-record";
 export { redactIntentDossier } from "./run-record";
 
 /**
- * The durable-intent ledger for paid creates (audit 5c3d97ca BLOCKER-5, §14.4
- * EV-01).
+ * The durable-intent ledger for paid creates
+
  *
  * What was wrong: both spend sites learned the resource's id from the HTTP
  * RESPONSE. `submit` threw on a lost or unparseable response and the catch
@@ -27,20 +27,20 @@ export { redactIntentDossier } from "./run-record";
  *
  * The invariant this module carries (§14.4 EV-01):
  *
- *   1. A durable intent row lands BEFORE the create is sent (`prepare` =
- *      PREPARED, `submitted` = SUBMITTED). Both are HARD writes: if either
- *      does not land, the caller must NOT send.
- *   2. The possibly-created set is rediscoverable WITHOUT the response: the
- *      intent's key is derived from (run, scenario, kind); the product stamps
- *      it on the row it creates; the resource's name/label carries it too.
- *   3. A lost, reset or unparseable response after the send is AMBIGUOUS —
- *      never a blind retry. The resource is LOOKED UP by key and marker:
- *      exactly one candidate is adopted; zero or several stay UNRESOLVED and
- *      the run exits nonzero with 0 SEALED rows (an unfinished lookup could
- *      still land, so "zero" is not "never created" once the request left).
- *   4. Teardown enumerates every intent from the DATABASE — the authority —
- *      and the run seals only when `possibly-created == terminal-readback-
- *      and-cleaned` (`verificationIntentsSealable`).
+ * 1. A durable intent row lands BEFORE the create is sent (`prepare` =
+ * PREPARED, `submitted` = SUBMITTED). Both are HARD writes: if either
+ * does not land, the caller must NOT send.
+ * 2. The possibly-created set is rediscoverable WITHOUT the response: the
+ * intent's key is derived from (run, scenario, kind); the product stamps
+ * it on the row it creates; the resource's name/label carries it too.
+ * 3. A lost, reset or unparseable response after the send is AMBIGUOUS —
+ * never a blind retry. The resource is LOOKED UP by key and marker:
+ * exactly one candidate is adopted; zero or several stay UNRESOLVED and
+ * the run exits nonzero with 0 SEALED rows (an unfinished lookup could
+ * still land, so "zero" is not "never created" once the request left).
+ * 4. Teardown enumerates every intent from the DATABASE — the authority —
+ * and the run seals only when `possibly-created == terminal-readback-
+ * and-cleaned` (`verificationIntentsSealable`).
  *
  * Behind a narrow store, like run-record.ts, so the decisions are driven by a
  * fake and the Prisma adapter is a field-for-field pass-through.

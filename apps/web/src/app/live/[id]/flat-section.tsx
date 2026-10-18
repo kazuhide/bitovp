@@ -16,7 +16,7 @@ export function FlatSection({
 	/** One live line, right of the heading. Never a placeholder. */
 	summary?: ReactNode;
 	/**
-	 * Audit 5c3d97ca HIGH-10: the same title-level help `SectionCard` carries,
+	 * the same title-level help `SectionCard` carries,
 	 * because the input endpoint is HOISTED into this frame before air — the
 	 * one phase where an operator most needs to know what the section is.
 	 */

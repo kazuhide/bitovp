@@ -6,8 +6,8 @@ import {
 } from "./one-to-one";
 
 /**
- * The binding algorithm, isolated from the manifest shapes it serves (row 284
- * / audit 5c3d97ca HIGH-5). Every case below is one the non-consuming
+ * The binding algorithm, isolated from the manifest shapes it serves
+. Every case below is one the non-consuming
  * `nearestByBandwidth` got wrong or could not express: it picked, per expected
  * node, the nearest observed row and never took that row out of the pool.
  */

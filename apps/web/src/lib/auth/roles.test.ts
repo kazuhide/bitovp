@@ -443,7 +443,7 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// lost its POST (−1), so the handler count nets +1. The removed
 		// unsigned receiver was exempt and never counted here. Measured by
 		// running this test, not summed.
-		// merge of the G-2a tip (main 962467c9 included) into G-2b (2026-09-05): both
+		// merge of the G-2a tip into G-2b (2026-09-05): both
 		// deltas landed together; the numbers are the instrument's received values.
 		// merge of origin/main into this branch (2026-09-05): both deltas above landed
 		// together; the numbers are the instrument's received values on the merged tree.

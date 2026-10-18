@@ -37,7 +37,7 @@ function renderPanel(locale: "en" | "ja" = "en") {
 }
 
 /**
- *  (audit 5c3d97ca HIGH-8 / §14.6 UX-01): the global
+ * the global
  * `POST …/insertable-content/stop` is an EMERGENCY operation on whatever is
  * playing — not a reservation action, and not a claim that anything was
  * playing. So: confirm-gated, one POST, copy that says the stop was ACCEPTED

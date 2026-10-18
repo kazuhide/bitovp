@@ -6,7 +6,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import { InfoHint } from "@/components/ui/info-hint";
 
 /**
- * Audit 5c3d97ca §8.5 / §14.6: which control a title-level help rides.
+ * Choose the control that presents title-level help.
  *
  * One sentence → `InfoHint` (hover + keyboard focus + tap; the body is the
  * trigger's accessible description). Two or more → `HelpOverlay` (click/tap

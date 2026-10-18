@@ -931,7 +931,7 @@ describe("createLiveVmafProcessor — recording the subsample stride", () => {
 });
 
 /**
- * The capture's OUTPUT-KIND gate — audit e57f2d3, AKR-E57-009, .
+ * The capture's OUTPUT-KIND gate.
  *
  * The predicate was `kind !== "S3"` while the message it threw said
  * "S3-family". Akamai Object Storage is `GENERIC_S3` with V4 signing (C10),
@@ -1045,7 +1045,7 @@ describe("live VMAF capture accepts the S3 family, not just AWS", () => {
 });
 
 /**
- * HIGH-1 (paid re-audit eb7c983): the live path built its libvmaf argv without
+ * HIGH-1: the live path built its libvmaf argv without
  * `scaleToReference`/`fpsConform`, so only the rendition that happened to match
  * the source geometry produced a score and 720/540/360p ERRORed on the
  * dimension mismatch. The VOD path has passed both since its first commit.
@@ -1273,7 +1273,7 @@ describe("one rendition's failure leaves the others scored (ledger #213, review-
 });
 
 /**
- * SHARED CAPTURE WINDOW — audit 602ec286 MODERATE-4 / §17 P1-5, .
+ * SHARED CAPTURE WINDOW.
  *
  * A live VMAF job used to re-read `deps.now` for the capture endpoint INSIDE
  * the per-rendition loop, so over a long multi-rendition download/score the

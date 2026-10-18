@@ -721,7 +721,7 @@ describe("GET /api/live-channels", () => {
 });
 
 /**
- *  (audit 4403130 §5.5): the Live list became an operations cockpit,
+ * the Live list became an operations cockpit,
  * which needs per-channel health the old projection did not carry. The rule
  * these tests hold is the one the audit's finding rests on — the fleet is read
  * in a BOUNDED number of queries, and what crosses is a digest, not the
@@ -1123,8 +1123,8 @@ describe("POST /api/live-channels — auto-shutdown vs the schedule window", () 
 });
 
 /**
- * EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
- * key. A channel bills from creation , so a create response lost
+ * EV-01: the verification harness's idempotency
+ * key. A channel bills from creation, so a create response lost
  * after the server created it is a billing channel nobody's memory names —
  * the same key must answer with the channel already created, never a twin.
  */

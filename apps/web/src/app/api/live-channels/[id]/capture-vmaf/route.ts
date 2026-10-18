@@ -111,8 +111,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 		// click rather than from a failed job.
 		//
 		// The predicate was `kind !== "S3"`, mirrored from the worker, and the
-		// worker's own message said "S3-family" while its check said S3 (audit
-		// e57f2d3, AKR-E57-009; ). Akamai Object Storage is
+		// worker's own message said "S3-family" while its check said S3.
+		// Akamai Object Storage is
 		// GENERIC_S3 (C10), so an AOS channel could not be measured at all —
 		// while the capture primitive it would have used lists through a
 		// provider-agnostic browser and explicitly handles S3-compatible

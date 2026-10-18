@@ -39,13 +39,13 @@ export type ScheduleDraft = {
 	slateEnabled: boolean;
 	slateSource: SlateSource | null;
 	/**
-	 * There is deliberately NO program-source field here.  built the
-	 * file-fed chain (FEEDER_START → FEEDER_SWITCH) and  took its
+	 * There is deliberately NO program-source field here. The
+	 * file-fed chain (FEEDER_START → FEEDER_SWITCH) has its
 	 * wizard entry back out on the owner's call: a pseudo-live feed is authored
 	 * on `/live/feeders`, and this step schedules an EXTERNAL ingest plus its
 	 * slate. The dangling comment that used to sit here still described the
-	 * removed "external | file" choice, which is how a reader (audit 4403130
-	 * MODERATE-1) can conclude the wizard merely forgot the option. It did not.
+	 * removed "external | file" choice, which is how a reader
+	 * can conclude the wizard merely forgot the option. It did not.
 	 * `schedule.feederPointer` says so on screen; this says so in the type.
 	 */
 };
@@ -216,7 +216,7 @@ export function ScheduleSection({
 				/>
 				{t("schedule.enableAtCreation")}
 			</label>
-			{/* Audit 5c3d97ca §14.6: ALWAYS visible, enabled or not — the one
+			{/* ALWAYS visible, enabled or not — the one
 			    sentence that separates "planned input feed time" from "channel
 			    start". The detailed hints below explain billing and the
 			    anchoring; this line is the thing an operator must not miss. */}

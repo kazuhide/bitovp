@@ -13,7 +13,7 @@ import {
 } from "./per-title-population";
 
 /**
- * Paid audit 893eb66 HIGH-10 : the per-title VMAF population is
+ * the per-title VMAF population is
  * the ladder the provider BUILT, read from the CAPTURE_PER_TITLE_RESULTS
  * snapshot — not whatever a bucket listing under the template happens to
  * find inside a time window. A rung with no mirror is named, not invisible.
@@ -371,7 +371,7 @@ describe("perTitleRungDirsFromSnapshot", () => {
 });
 
 /**
- * The FIX (audit 602ec286 §5.4): with filename attribution the population is the
+ * The FIX: with filename attribution the population is the
  * ladder the provider BUILT, keyed by each RESULT's resolved output path + exact
  * mirror filename — driven end to end from provider-shaped muxing rows, with NO
  * injected `templateRendition`.

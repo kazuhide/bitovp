@@ -18,7 +18,6 @@ export async function GET(_request: Request) {
 		parameterSnapshot: {
 			surveyedSdk: summary.surveyedSdk,
 			surveyedAt: summary.surveyedAt,
-			surveyedAtRepo: summary.surveyedAtRepo,
 			paramTotals: summary.paramTotals,
 			paramFamilies: summary.paramFamilies,
 			fields: summary.headline.paramFields,

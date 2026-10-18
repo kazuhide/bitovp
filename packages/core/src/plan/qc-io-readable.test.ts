@@ -3,7 +3,7 @@ import { encodingPlanSchema } from "./schema";
 import { validatePlan } from "./validate";
 
 /**
- * PLAN_QC_IO_NOT_READABLE — audit e57f2d3 AKR-E57-008, .
+ * PLAN_QC_IO_NOT_READABLE.
  *
  * The defect was a BILLED one: `qc.vmaf` on an Akamai Object Storage plan
  * compiled, ran, and was invoiced before the measurement worker refused the

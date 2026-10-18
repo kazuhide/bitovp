@@ -227,7 +227,7 @@ export type LiveToVodFamilySupport = {
 
 /**
  * Which manifest families a live-to-VOD DEFAULT manifest can be generated
- * for over THIS recording — audit 5c3d97ca HIGH-1 / §14.6 LF-02 .
+ * for over THIS recording — / §14.6 LF-02.
  *
  * The provider rule: a default manifest enumerates the encoding's muxings
  * itself, and a DASH default manifest enumerates fMP4 muxings only — over a
@@ -244,7 +244,7 @@ export type LiveToVodFamilySupport = {
  * muxings at all ⇒ nothing is supported (and `resolveLiveToVodTarget` refuses
  * the roll with the same reason).
  *
- * Only SEGMENTED muxings are judged : a TS recording that also
+ * Only SEGMENTED muxings are judged: a TS recording that also
  * wrote a progressive MP4 archive used to be refused for BOTH families —
  * the archive matched neither allowlist — which turned every archived
  * channel's live-to-VOD into a 422 (customer install, 2026-09-11).

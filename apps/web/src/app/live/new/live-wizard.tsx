@@ -70,7 +70,7 @@ import {
 import { LiveStartSection } from "./start-section";
 
 /**
- * Audit 5c3d97ca §14.6 (UX-03): the step names an AWS MediaLive operator
+ * the step names an AWS MediaLive operator
  * expects — Input / Encodes / Destinations / Output groups / Schedule
  * actions — as LIVE-SPECIFIC keys. The generic `ui.*` labels the VOD wizard
  * shares (`ui.ladder`, `ui.start`, …) are deliberately not renamed: "Start"
@@ -351,7 +351,7 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 				},
 			};
 			/*
-			 * audit 602ec286 HIGH-7, : apply the MSL format normalization
+			 * apply the MSL format normalization
 			 * on CREDENTIAL SELECT, not only when the operator touches the format
 			 * dropdown.
 			 *

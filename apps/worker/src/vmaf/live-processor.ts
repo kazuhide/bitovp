@@ -343,8 +343,8 @@ export type LiveMetadata = {
 	measuredPeriodFrames: number | null;
 	captureSelection: CaptureSelection;
 	/**
-	 * The job's single sealed capture window (audit 602ec286 MODERATE-4, row
-	 * #273) — identical across every rendition of the job, recorded so the report
+	 * The job's single sealed capture window
+ — identical across every rendition of the job, recorded so the report
 	 * proves the set was compared over one interval.
 	 */
 	captureWindow: CaptureWindow;
@@ -674,13 +674,13 @@ function createLiveVmafProcessorRun(
 	/**
 	 * Downloads the feeder source MP4 (reference) via the capture browser and
 	 * returns its provenance: bucket/key plus a streaming SHA-256 of the bytes
-	 * that arrived (paid re-audit eb7c983 HIGH-1 — live result rows recorded no
-	 * provenance at all).
+	 * that arrived
+
 	 *
 	 * `pinned: false`, always, and that is the honest value rather than a
 	 * placeholder: this read is unconditional (`getObject` with no `expect`), so
 	 * a same-size replacement of the looping source between capture and scoring
-	 * is not detected here. Pinning the live legs is  slice 3, which
+	 * is not detected here. Pinning the live legs is slice 3, which
 	 * is still open; recording the digest is what makes that slice checkable.
 	 */
 	async function downloadSourceMp4(
@@ -870,9 +870,9 @@ function createLiveVmafProcessorRun(
 		captureDeps: CaptureDeps;
 		windowSeconds: number;
 		/**
-		 * The job's single sealed capture window (audit 602ec286 MODERATE-4 / §17
-		 * P1-5, ). Every rendition of the job is captured over — and records
-		 * — THIS window; the endpoint is never re-read from `deps.now` here, which
+		 * The job's single sealed capture window
+. Every rendition of the job is captured over — and records
+		 * THIS window; the endpoint is never re-read from `deps.now` here, which
 		 * is what used to let it drift between renditions of one set.
 		 */
 		captureWindow: CaptureWindow;
@@ -1062,8 +1062,8 @@ function createLiveVmafProcessorRun(
 				...(modelPath ? { modelPath } : {}),
 				logPath,
 				/**
-				 * CONFORM THE DISTORTED SIDE, exactly as the VOD path does (paid
-				 * re-audit eb7c983 HIGH-1).
+				 * CONFORM THE DISTORTED SIDE, exactly as the VOD path does
+
 				 *
 				 * libvmaf needs identical W×H and frame rate on its two pads, and
 				 * `buildVmafCommand` only emits the scale/fps nodes when these options
@@ -1205,8 +1205,8 @@ function createLiveVmafProcessorRun(
 					pooled: pooled as unknown as Prisma.InputJsonValue,
 					framesGzip,
 					/**
-					 * WHICH bytes this row compared ( slice 2, extended to
-					 * the live leg by paid re-audit eb7c983 HIGH-1). VOD rows have
+					 * WHICH bytes this row compared
+. VOD rows have
 					 * carried this since the download path started digesting; live rows
 					 * carried `null`, so a live score could not be tied to any object at
 					 * all — and a live capture is the case where it matters most,
@@ -1217,14 +1217,14 @@ function createLiveVmafProcessorRun(
 					 * Same `{ reference, distorted }` shape as VOD. Both sides are
 					 * `pinned: false` and honest about it: neither the feeder-source
 					 * download nor the segment capture demands a version identity
-					 * (`getObject` without `expect` —  slice 3 is the row
+					 * (`getObject` without `expect` — slice 3 is the row
 					 * that closes that, and it is still open). The SHA-256s are the only
 					 * identity here, and they are of the bytes ffmpeg actually read.
 					 */
 					provenance: {
 						/**
-						 * WHICH window this row was captured over (audit 602ec286
-						 * MODERATE-4 / §17 P1-5, ). Identical across every
+						 * WHICH window this row was captured over
+. Identical across every
 						 * rendition of the job, so a multi-rendition set is provably one
 						 * comparable window rather than a per-target drift.
 						 */
@@ -1614,8 +1614,8 @@ function createLiveVmafProcessorRun(
 
 			// The capture window is SEALED here, ONCE, from a single `deps.now`
 			// reading — before any rendition is captured — and every target is read
-			// over and records THIS window (audit 602ec286 MODERATE-4 / §17 P1-5,
-			// ). Re-deriving it per target from `deps.now` mid-run let the
+			// over and records THIS window.
+			// Re-deriving it per target from `deps.now` mid-run let the
 			// endpoint drift over a long download/score, so a multi-rendition set was
 			// not compared over the same wall-clock interval / the same scene. This
 			// is the SHARED-WINDOW seal only; the reference loop-boundary alignment
@@ -1668,8 +1668,8 @@ function createLiveVmafProcessorRun(
 					`${unscored.length} of ${targets.length} rendition(s) not scored (${resultCount} scored and kept): ${unscored.join(" | ")}`,
 				);
 			}
-			// FAIL CLOSED on a mixed set (audit 602ec286 MODERATE-4 / §17 P1-5, row
-			// #273): every scored rendition must carry the job's single window. A
+			// FAIL CLOSED on a mixed set:
+			// every scored rendition must carry the job's single window. A
 			// rendition captured over a drifted window is an inconsistency the seal
 			// rejects — the scored rows are kept, but the set is NOT recorded as a
 			// comparable FINISHED set. In correct code this never fires (every target

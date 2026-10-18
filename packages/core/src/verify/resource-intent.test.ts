@@ -13,7 +13,7 @@ import {
 } from "./resource-intent";
 
 /**
- * The VerificationResourceIntent contract (audit 5c3d97ca BLOCKER-5 / EV-01).
+ * The VerificationResourceIntent contract.
  * The DECISIONS the harness makes on these values live in the worker's
  * resource-intent module; this pins the vocabulary and the seal rule.
  */

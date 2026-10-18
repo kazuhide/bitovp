@@ -241,18 +241,18 @@ function statusRunBoundaries(points: HeartbeatHistoryPoint[]): Set<number> {
  * questions:
  *
  * 1. **Packet-loss spikes** — each bucket keeps its WORST point (max delta
- *    across the four counters) rather than the mean, so a single bad poll
- *    survives reduction instead of being averaged away.
+ * across the four counters) rather than the mean, so a single bad poll
+ * survives reduction instead of being averaged away.
  * 2. **Ingest-status transitions** — every point at which `ingestStatus`
- *    differs from its predecessor is kept, along with the last point of each
- *    run. The UI derives its status dots by comparing each point with the
- *    previous one (`heartbeat-history.tsx`), so without this the reduction
- *    could DELETE a disconnect: audit 4403130 IMPORTANT-2 found a short
- *    DISCONNECTED → CONNECTED excursion inside a long run vanishing whenever
- *    its packet deltas were not the bucket maximum. The guarantee is now
- *    exact: the transition sequence derived from the reduced series equals
- *    the one derived from the full series, and `healthy` with it (the UI
- *    derives healthy FROM the status word, so it cannot diverge).
+ * differs from its predecessor is kept, along with the last point of each
+ * run. The UI derives its status dots by comparing each point with the
+ * previous one (`heartbeat-history.tsx`), so without this the reduction
+ * could DELETE a disconnect: a short
+ * DISCONNECTED → CONNECTED excursion inside a long run vanishing whenever
+ * its packet deltas were not the bucket maximum. The guarantee is now
+ * exact: the transition sequence derived from the reduced series equals
+ * the one derived from the full series, and `healthy` with it (the UI
+ * derives healthy FROM the status word, so it cannot diverge).
  *
  * Still lossy, deliberately: per-poll packet DETAIL between the kept points is
  * gone — bucket peaks and run boundaries survive, the samples between them do

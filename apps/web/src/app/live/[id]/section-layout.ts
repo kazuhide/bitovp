@@ -31,8 +31,8 @@ export type LiveSectionId =
 	| "sec-manifests"
 	| "sec-origin"
 	| "sec-slate"
-	// : the emergency "stop what is playing" lever, apart from the
-	// reservation list it used to sit on top of (audit 5c3d97ca HIGH-8).
+	// The emergency "stop what is playing" lever, apart from the
+	// reservation list it used to sit on top of.
 	| "sec-insertion-stop"
 	// Programme / scheduling
 	| "sec-schedule"
@@ -105,7 +105,7 @@ export const LIVE_SECTION_TITLE_KEYS: Record<LiveSectionId, MessageKey> = {
 };
 
 /**
- * Audit 5c3d97ca §8.5 — every section's TITLE-LEVEL HELP, once, beside the
+ * every section's TITLE-LEVEL HELP, once, beside the
  * title keys it explains. Partial on purpose: a section with no entry renders
  * no mark. The entries are the §8.5 table — the concepts an AWS MediaLive
  * operator does not share (input state vs. output monitoring, a slate
@@ -155,7 +155,7 @@ export const LIVE_LAYERS: readonly {
 	/** Why this layer exists, one line, under its heading. */
 	leadKey: MessageKey;
 	/**
-	 * Audit 5c3d97ca §8.5: the two layers whose NAME is a concept (channel
+	 * the two layers whose NAME is a concept (channel
 	 * state; output and delivery) carry a one-sentence help beside the `h2`,
 	 * so the lead can be a plain descriptor instead of a conversational line.
 	 */

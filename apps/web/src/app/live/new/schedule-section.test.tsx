@@ -223,7 +223,7 @@ describe("ScheduleSection", () => {
 	});
 
 	/**
-	 * Audit 4403130 MODERATE-1, half one. The channel provisions AND STARTS
+	 * half one. The channel provisions AND STARTS
 	 * BILLING at creation (`api/live-channels/route.ts` enqueues `provision`
 	 * unconditionally; `deriveProgramSchedule` derives no START row since
 	 * #125) — but `schedule.streamUpHint` still described the world before
@@ -242,7 +242,7 @@ describe("ScheduleSection", () => {
 		en: "The channel provisions and goes live at this time",
 		ja: "この時刻にプロビジョニングして配信可能になります",
 	};
-	// Audit 5c3d97ca §8.6 (UX-03): the clause names the CHANNEL, the operator's
+	// the clause names the CHANNEL, the operator's
 	// object, not the provider's encoder — same fact, same position.
 	const CREATE_TIME_BILLING: Record<string, string> = {
 		en: "The channel starts — and billing begins — the moment you create it",
@@ -483,7 +483,7 @@ describe("ScheduleSection — auto-shutdown vs the slot", () => {
 	const SHORT_TIMEOUT = { streamTimeoutMinutes: 6 };
 
 	/**
-	 * Audit 5c3d97ca §8.3 (HIGH-10): the warning names the VALUE, the slot and
+	 * the warning names the VALUE, the slot and
 	 * the consequence (stops before the planned end) — never the raw property
 	 * `streamTimeoutMinutes=`, which the first version of this pin required.
 	 */

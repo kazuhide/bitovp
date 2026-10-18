@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 /**
- * `verify clean` — audit aa972a2 DOC-015.
+ * `verify clean` — DOC-015.
  *
  * The documented invocation was `verify clean --older-than <d>`; the CLI read
  * the day count POSITIONALLY, so `Number("--older-than")` produced NaN, `cutoff`

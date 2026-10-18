@@ -69,7 +69,7 @@ export async function executeManifestStep(
 			const resourceId = await ctx.sdk.createHlsStreamInfo(
 				refId(op, ctx, "manifestId"),
 				{
-					// `optStr`, NOT `str` (paid audit 893eb66 HIGH-8, cases 3/4): the
+					// `optStr`, NOT `str`: the
 					// compiler OMITS `audio` on a self-contained muxed-TS variant (C33 —
 					// there is no EXT-X-MEDIA group to point at), and `str(undefined)`
 					// turned that omission into `AUDIO=""` on the wire. Verified against
@@ -282,7 +282,7 @@ export async function executeManifestStep(
 		}
 
 		case "CREATE_DASH_REPRESENTATION_WEBM": {
-			// Static WebM representation (audit 893eb66 CRITICAL-2). The facade
+			// Static WebM representation. The facade
 			// method already existed for the per-title expansion; the compiler
 			// simply never emitted a static op for it.
 			const resourceId = await ctx.sdk.createDashWebmRepresentation(

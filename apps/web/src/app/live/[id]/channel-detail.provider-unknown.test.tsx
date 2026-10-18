@@ -12,7 +12,7 @@ import { renderWithQuery as wrap } from "@/test/render";
 import type { LiveStatusSignal } from "./status-announce";
 
 /**
- *  (audit 5c3d97ca BLOCKER-1 / §14.5 LC-01 item 4), at the page that
+ * at the page that
  * composes the derived state: a RUNNING channel whose current run's provider
  * view is UNKNOWN must not be ON_AIR, must paint the lifecycle strip amber and
  * must say the provider status cannot be confirmed — with the last successful

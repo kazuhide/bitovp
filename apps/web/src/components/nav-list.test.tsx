@@ -147,7 +147,7 @@ async function bothShellsOnceResolved(anchor: string | RegExp) {
 }
 
 /**
- * The role filter (audit 5c3d97ca MEDIUM-5 / AU-01), asserted on BOTH shells
+ * The role filter, asserted on BOTH shells
  * from one render: jsdom applies no stylesheet, so the desktop column and the
  * mobile sheet are both in the DOM, and each is read inside its own root.
  */

@@ -376,7 +376,7 @@ export function ChannelDetail({
 			anchoredNowMs,
 		).output === "advancing";
 	/**
-	 *  (audit 5c3d97ca BLOCKER-1): the PROVIDER's view of the current
+	 * the PROVIDER's view of the current
 	 * run's encoding, judged on the server-anchored clock (a confirmed RUNNING
 	 * older than the freshness TTL is UNKNOWN, exactly as the worker judges
 	 * it). UNKNOWN is what suppresses ON_AIR and paints the lifecycle strip
@@ -485,7 +485,7 @@ export function ChannelDetail({
 		nextAction.section === section ||
 		(section === "sec-alerts" && criticalOpenAlert) ||
 		(section === "sec-steps" && hasFailedStep);
-	// Audit 5c3d97ca §8.5: the title-level help, read off the same table the
+	// the title-level help, read off the same table the
 	// titles come from, so a section gains its help in ONE place.
 	const sectionHelp = (section: LiveSectionId): string | undefined => {
 		if (section === "sec-vmaf") return t("prose.captureVmafIntro");
@@ -722,7 +722,7 @@ export function ChannelDetail({
 				help={sectionHelp("sec-insertion-stop")}
 				defaultOpen={sectionOpen("sec-insertion-stop")}
 			>
-				{/*  (audit 5c3d97ca HIGH-8 / §14.6 UX-01): the global stop
+				{/* The global stop
 				    acts on whatever is PLAYING and leaves every reservation alone,
 				    so it is its own confirm-gated section — never a button on top
 				    of the reservation list above. */}
@@ -1209,9 +1209,9 @@ export function ChannelDetail({
 					) : null}
 					<DuplicateChannelButton channelId={id} />
 					{/*
-				    : the lifecycle controls, MOVED here — not copied. They
+: the lifecycle controls, MOVED here — not copied. They
 				    used to share a button row with Duplicate and Delete inside the
-				    first body section (audit 4403130 §5.4). Start and Stop are the
+				    first body section. Start and Stop are the
 				    only mutations an operator reaches for while watching the strip
 				    above, so they belong in the fixed header; Delete is the last
 					    section on the page. Copy settings is a separate header action. `sec-actions`

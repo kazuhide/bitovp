@@ -182,16 +182,16 @@ export type ScenarioOutcome = {
 	/** Prior run supplying this PASS; present only when no paid submit occurred. */
 	resumedFromRunId?: string;
 	/**
-	 * LIVE only: the durable teardown seal (row 268, audit 602ec286 BLOCKER-2)
-	 * — provider terminal, local terminal, feeder `processGoneAt`, host process
+	 * LIVE only: the durable teardown seal
+	 * provider terminal, local terminal, feeder `processGoneAt`, host process
 	 * and queue, as one artefact. Rides onto the outcome so it lands in the
 	 * VerificationRun evidence row; an unclean seal is what makes the verdict
 	 * INVALID.
 	 */
 	liveCleanup?: LiveCleanupSeal;
 	/**
-	 * LIVE only: the versioned evidence-tuple summary (audit 5c3d97ca
-	 * BLOCKER-4, EV-02) — per output leg, complete or the elements it lacks.
+	 * LIVE only: the versioned evidence-tuple summary
+ — per output leg, complete or the elements it lacks.
 	 * A PASS/WARN live outcome is refused (INVALID) unless every leg is
 	 * complete, and the run recorder refuses SEALED for a green live outcome
 	 * whose tuple is not. The full legs (object lists, hashes) live in the
@@ -1091,8 +1091,8 @@ async function runLive(
 		};
 	},
 	/**
-	 * What the evidence tuple binds the run TO (audit 5c3d97ca BLOCKER-4,
-	 * EV-02): the exact commit/image this harness runs, and the fed source's
+	 * What the evidence tuple binds the run TO
+: the exact commit/image this harness runs, and the fed source's
 	 * version identity — neither is knowable inside the live loop.
 	 */
 	evidence: { commit: string; image?: string },
@@ -1184,8 +1184,8 @@ async function runLive(
 			sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 			now: () => Date.now(),
 			log,
-			// The Akamai delivery EDGE reader for MSL mirror-leg closure (audit
-			// 602ec286 BLOCKER-3, ): a plain HTTP GET as a player would,
+			// The Akamai delivery EDGE reader for MSL mirror-leg closure:
+			// a plain HTTP GET as a player would,
 			// dormant unless an `edgeBaseUrl` is configured (see
 			// `collectEdgeClosures`). Lives in `edge-reader.ts` so its raw-bytes
 			// and Last-Modified forwarding are judged by behaviour (rev411 M-A).
@@ -1280,8 +1280,8 @@ async function runLive(
 			`${JSON.stringify({ scenario: scenario.name, channelId: result.channelId, firstPublish: result.firstPublish, report: result.report, evidence: result.evidence }, null, "\t")}\n`,
 		);
 	}
-	// The evidence TUPLE, durably, per scenario as it completes (audit
-	// 5c3d97ca BLOCKER-4, EV-02 #5) — BEFORE the verdict is derived, so a
+	// The evidence TUPLE, durably, per scenario as it completes,
+	// BEFORE the verdict is derived, so a
 	// crash between the two still leaves the legs the run witnessed.
 	if (result.evidence) {
 		await recordLiveEvidence(result.evidence);
@@ -2435,7 +2435,7 @@ export function outcomeFromLiveResult(
 		report?: VerificationReport;
 		firstPublish?: { ms?: number; polls: number; note: string };
 		/**
-		 * The durable teardown seal (row 268, audit 602ec286 BLOCKER-2). When
+		 * The durable teardown seal. When
 		 * present and NOT clean it seals the run INVALID before any report-based
 		 * verdict — a missing teardown element is not run success — and it rides
 		 * onto EVERY outcome so the evidence lands in the run row regardless of
@@ -2443,7 +2443,7 @@ export function outcomeFromLiveResult(
 		 */
 		cleanup?: LiveCleanupSeal;
 		/**
-		 * The evidence legs (audit 5c3d97ca BLOCKER-4, EV-02). Summarised onto
+		 * The evidence legs. Summarised onto
 		 * every outcome; a PASS/WARN is refused — INVALID, never FAIL, because a
 		 * verifier gap is not a delivery failure — unless every leg is complete.
 		 */
@@ -2482,7 +2482,7 @@ export function outcomeFromLiveResult(
 		});
 	}
 	// A teardown that did not prove itself is not a success, whatever the report
-	// said (row 268, audit 602ec286 BLOCKER-2 / §16-3). BEFORE any report-based
+	// said. BEFORE any report-based
 	// verdict: a green report over a push that may still be running is exactly
 	// the false-clean the seal exists to refuse.
 	if (result.cleanup && !result.cleanup.clean) {
@@ -2498,7 +2498,7 @@ export function outcomeFromLiveResult(
 	}
 	const outcome = liveReportOutcome(result.report, base, publish, scenarioName);
 	/**
-	 * The evidence gate (audit 5c3d97ca BLOCKER-4, EV-02): a green live
+	 * The evidence gate: a green live
 	 * outcome must be BACKED by a complete tuple — source, plan, provider
 	 * resource, edge/origin media bytes, two probes with progression, provider
 	 * terminal, cleanup — for every output leg. AFTER the report verdict: a
@@ -2520,7 +2520,7 @@ export function outcomeFromLiveResult(
 
 /**
  * The live report → verdict decision, split out so the durable cleanup seal
- * (row 268, audit 602ec286 BLOCKER-2) is attached to EVERY outcome by the one
+ * is attached to EVERY outcome by the one
  * `withCleanup` in `outcomeFromLiveResult` rather than repeated on each return
  * below. Every branch here is reached only after the seal proved clean (an
  * unclean seal seals INVALID before this runs), so the verdict logic is
@@ -3068,19 +3068,19 @@ export type SubmitBody = {
 };
 
 /**
- * What one submit attempt established about the paid job (EV-01, audit
- * 5c3d97ca BLOCKER-5). The old `submit` THREW on a lost or unreadable
+ * What one submit attempt established about the paid job
+. The old `submit` THREW on a lost or unreadable
  * response, and the catch saw `!jobId` and returned INVALID with no cleanup —
  * the job was billing and nothing named it. Now every failure says WHERE it
  * happened relative to the wire, so the caller can tell "nothing was created"
  * from "something may have been":
  *
- *   BEFORE_SEND — the request provably never left (`classifySendFailure`).
- *   REFUSED     — the product answered a definitive 4xx (not 409): not created.
- *   AMBIGUOUS   — a lost response, an unparseable body, a body with no id, a
- *                 5xx (the route marks the row ERROR after an enqueue failure
- *                 and rethrows — the row EXISTS), or a 409 (a job with this
- *                 key exists). The job may exist and must be LOOKED UP.
+ * BEFORE_SEND — the request provably never left (`classifySendFailure`).
+ * REFUSED — the product answered a definitive 4xx (not 409): not created.
+ * AMBIGUOUS — a lost response, an unparseable body, a body with no id, a
+ * 5xx (the route marks the row ERROR after an enqueue failure
+ * and rethrows — the row EXISTS), or a 409 (a job with this
+ * key exists). The job may exist and must be LOOKED UP.
  */
 export type SubmitResult =
 	| { ok: true; jobId: string; replayed: boolean }
@@ -3828,7 +3828,7 @@ async function runVerificationRecorded(
 		sourceObject: config.sourceObject,
 	});
 	/**
-	 * EV-01 (audit 5c3d97ca BLOCKER-5): the durable-intent ledger, a child of
+	 * EV-01: the durable-intent ledger, a child of
 	 * the reservation just made. Every paid create below — the VOD job POST
 	 * and the live channel POST — commits an intent row through it BEFORE
 	 * sending, and the seal at the end of this function reads the ledger, not
@@ -4486,7 +4486,7 @@ async function runVerificationRecorded(
 				s,
 				base,
 				liveRewrite,
-				// What the evidence tuple binds to (audit 5c3d97ca BLOCKER-4,
+				// What the evidence tuple binds to:
 				// EV-02): the run's fingerprinted commit and explicitly supplied image
 				// identity. The fed source seal comes from the feeder row AFTER it hashes
 				// the bytes actually pushed; a pre-feed HEAD is not that evidence.
@@ -4724,7 +4724,7 @@ async function runVerificationRecorded(
 			};
 		}
 		/**
-		 * EV-01 (audit 5c3d97ca BLOCKER-5): the durable intent, BEFORE the paid
+		 * EV-01: the durable intent, BEFORE the paid
 		 * POST. The old `submit` threw on a lost or unparseable response and the
 		 * catch below saw `!jobId` and returned INVALID with no cleanup — the job
 		 * was created, billing, and named by nothing. Now the intent row lands
@@ -5484,7 +5484,7 @@ function leastTrustworthyGreens(report: RunReport): string[] {
  *
  * The doc says `verify clean --older-than <d>`; the CLI read `rest[0]`
  * positionally, so the documented form parsed to NaN and pruned everything
- * (audit aa972a2 DOC-015). Both spellings are accepted now — the flag because
+ * Both spellings are accepted now — the flag because
  * it is what the doc promises, the bare number because that is what the nightly
  * job and existing muscle memory use — and anything else is REFUSED rather than
  * coerced. `Number` turning a typo into NaN is exactly how this got shipped.
@@ -5610,7 +5610,7 @@ export async function cleanRuns(
 	evidenceRetentionDays = 90,
 ): Promise<string[]> {
 	/**
-	 * A nonsense bound must delete NOTHING — audit aa972a2 DOC-015.
+	 * A nonsense bound must delete NOTHING — DOC-015.
 	 *
 	 * `verify.ts` read the day count positionally, so the documented form
 	 * `verify clean --older-than 7` handed `Number("--older-than")` = NaN
@@ -5791,8 +5791,8 @@ export async function runRecoveryCommand(
 }
 
 /**
- * `--live-msl-edge-base-url`, else `VERIFY_LIVE_MSL_EDGE_BASE_URL` (audit
- * 5c3d97ca BLOCKER-4, EV-02 #6). Absent ⇒ undefined, and every MSL mirror
+ * `--live-msl-edge-base-url`, else `VERIFY_LIVE_MSL_EDGE_BASE_URL`
+. Absent ⇒ undefined, and every MSL mirror
  * leg stays UNOBSERVED (the honest default). Present ⇒ validated by core's
  * `parseEdgeBaseUrl`: HTTPS only, no userinfo, no query or fragment, and a
  * host on the delivery allowlist (Akamai's media hostnames by default;
@@ -5987,7 +5987,7 @@ export async function main(argv: string[]): Promise<number> {
 				flag("live-encoder-version") ?? "",
 			);
 		}
-		// The MSL delivery edge (audit 5c3d97ca BLOCKER-4, EV-02 #6): the flag,
+		// The MSL delivery edge: the flag,
 		// else the dedicated env; validated — HTTPS, no query/userinfo, an
 		// allowed host — before anything is spent, like every other argument.
 		liveMslEdgeBaseUrl = resolveLiveMslEdgeBaseUrl(

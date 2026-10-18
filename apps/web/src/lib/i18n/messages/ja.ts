@@ -3141,7 +3141,7 @@ export const ja = {
 		parameterSnapshotTitle: "参考: 過去のパラメータ調査",
 		parameterSnapshotNotice:
 			"パラメータ分類は再調査していません。現在の設定可能範囲や最新の操作集計とは別の参考情報です。",
-		parameterProvenance: "調査日: {date} · コミット: {repo} · SDK: {sdk}",
+		parameterProvenance: "調査日: {date} · SDK: {sdk}",
 		historicalNotice:
 			"過去の調査スナップショットです。現在の API 対応率・利用可否、実行検証や課金検証を示すものではありません。",
 		noMatches: "条件に一致するエンドポイントはありません。",

@@ -26,7 +26,7 @@ export function dashVideoLegSelected(
 	// says so. This used to be a literal `"FMP4"` first conjunct, which made
 	// `videoMuxingKind: "WEBM"` select nothing: the schema admitted it, the
 	// encoder produced four WebM ladders, and the MPD carried audio only (paid
-	// audit 893eb66 CRITICAL-2, case 8; ).
+	// case 8; ).
 	return (
 		(muxing.kind === "FMP4" ||
 			muxing.kind === "CMAF" ||

@@ -258,7 +258,7 @@ describe("the verification-run detail", () => {
 	});
 
 	/**
-	 * The Live/MSL evidence card (audit 5c3d97ca BLOCKER-4, EV-02): one entry
+	 * The Live/MSL evidence card: one entry
 	 * per output leg with the SAME completeness verdict the harness sealed on,
 	 * and — for an incomplete leg — the elements it lacks, so a reader sees why
 	 * a live PASS was refused instead of a bare INVALID.

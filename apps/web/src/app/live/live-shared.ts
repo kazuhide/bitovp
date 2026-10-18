@@ -135,8 +135,8 @@ export type LiveChannelHealthDigest = {
 	} | null;
 	/**
 	 * Open alert events, or `"unknown"` when that read failed — never a
-	 * green zero for a list we never read (audit 4403130 IMPORTANT-2, the
-	 * status strip's rule applied to the fleet view).
+	 * green zero for a list we never read
+
 	 */
 	openAlerts: number | "unknown";
 	/** Feeder sessions in CREATED/DOWNLOADING/PUSHING (channel-wide). */

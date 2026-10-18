@@ -58,7 +58,7 @@ describe("startupSecondsFromLog", () => {
 		).toEqual({ queueSeconds: null, totalSeconds: null });
 	});
 
-	it("anchors total to THIS attempt — a resumed provision must not bill yesterday's clock (review-8eaef21 #3)", () => {
+	it("anchors total to THIS attempt — a resumed provision must not bill yesterday's clock", () => {
 		const { queueSeconds, totalSeconds } = startupSecondsFromLog(
 			[
 				// Attempt 1's DONE steps keep their original stamps…

@@ -1,18 +1,18 @@
 import type { Messages } from "@/lib/i18n";
 
 /**
- *  — the customer-surface copy gate's ONE pattern registry (audit
- * 5c3d97ca §8.7 release gate + §14.6 UX-02e, HIGH-9).
+ * the customer-surface copy gate's ONE pattern registry
+
  *
  * Two arms read it, and both must use THIS list rather than a copy:
  *
- *   - the catalogue arm scans every customer-facing value of BOTH catalogues
- *     (`customer-copy-gate.test.tsx`), with the explicit per-key allowlist
- *     below and nothing wider;
- *   - the render arm scans the DOM of the customer screens in JA and EN
- *     across their loading / empty / error / pending / unsupported / deleted
- *     states, because a literal that never entered the catalogue is invisible
- *     to the first arm (the class `untranslated-jsx-text.test.ts` documents).
+ * - the catalogue arm scans every customer-facing value of BOTH catalogues
+ * (`customer-copy-gate.test.tsx`), with the explicit per-key allowlist
+ * below and nothing wider;
+ * - the render arm scans the DOM of the customer screens in JA and EN
+ * across their loading / empty / error / pending / unsupported / deleted
+ * states, because a literal that never entered the catalogue is invisible
+ * to the first arm (the class `untranslated-jsx-text.test.ts` documents).
  *
  * Not a `*.test.ts` file, so vitest does not collect it as a suite; it lives
  * beside the tests because nothing in production should import it.

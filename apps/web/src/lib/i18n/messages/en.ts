@@ -21,19 +21,8 @@
  * plural forms as separate keys and pick between them at the call site — the
  * types will force both locales to define them.
  */
-/**
- * The one lifecycle fact  changed, written ONCE and interpolated
- * into every sentence that needs it.
- *
- * It is a const rather than two hand-kept copies because the copies drifted:
- * `rampHint` said billing starts at CREATION while `schedule.streamUpHint`
- * still described the pre-#125 world where the channel provisioned at
- * `streamUpAt` — two sentences in the SAME wizard step, one of them wrong for
- * a week (audit 4403130 MODERATE-1). A shared clause makes "both places agree"
- * a property of the file instead of a thing the next editor must remember.
- *
- * No trailing punctuation: each call site continues the sentence its own way.
- */
+// Share the provisioning and billing clause so every lifecycle hint stays consistent.
+// No trailing punctuation: each call site continues the sentence its own way.
 const PROVISIONS_AT_CREATE =
 	"The channel starts — and billing begins — the moment you create it";
 
@@ -582,18 +571,11 @@ export const en = {
 		signOut: "Sign out",
 		signingOut: "Signing out…",
 		authDisabled: "Auth is disabled — this install is open to anyone.",
-		/** Audit 5c3d97ca MEDIUM-5: the ADMIN-only section — release evidence
-		 * and the SDK census. A role below its floor sees neither the section
-		 * nor its heading. */
+		// The ADMIN-only diagnostics section is hidden together with its heading below the required role.
 		sectionDiagnostics: "Diagnostics",
 		apiCoverage: "API coverage",
 	},
-	/**
-	 * The shared permission screen (`components/page-access-gate.tsx`): what
-	 * a direct URL to an ADMIN-only page shows a lower role instead of empty
-	 * 403'd panels (audit 5c3d97ca MEDIUM-5). `roles` renders the model's own
-	 * enum names, as the session menu does.
-	 */
+	// The shared permission screen explains denied direct links. Role names match the session menu.
 	permission: {
 		title: "Permission required",
 		body: "You do not have permission to view this screen. Ask an administrator for access.",
@@ -910,8 +892,7 @@ export const en = {
 		alertsUnknownTitle: "Alert state could not be read",
 		alertsUnknownBody:
 			"The alert list did not load, so nobody can say this channel is healthy — a failed read is not zero alerts. Open the alerts card, retry, and check that the app can reach its own API before treating the channel as monitored.",
-		//  (audit 5c3d97ca BLOCKER-1): the provider's status read for
-		// the run's encoding is failing — neither on air nor known down.
+		// A failed provider status read leaves the encoder state unconfirmed.
 		providerUnknownTitle: "Bitmovin encoder status unconfirmed",
 		providerUnknownBody:
 			"Bitmovin has not confirmed this run's encoder status yet, or the latest check failed, so do not treat the channel as on air. It is checked again every 30 s. Stop remains available; wait for a fresh reading before other live actions.",
@@ -940,9 +921,7 @@ export const en = {
 	 * legible rather than merely imposed.
 	 */
 	liveLayer: {
-		// Audit 5c3d97ca §8.3 (HIGH-10): the heading names the concept, the lead
-		// lists what is inside instead of talking; the concept itself is the
-		// help beside the heading (operationsHelp / deliveryHelp).
+		// Name each section by its operational concept; explain its contents beside the heading.
 		operations: "Channel state",
 		operationsLead: "Alerts, manifests and slate reservations",
 		operationsHelp:
@@ -961,14 +940,8 @@ export const en = {
 		danger: "Danger zone",
 		dangerLead: "Irreversible. Nothing here is part of running a broadcast.",
 	},
-	/**
-	 * Audit 5c3d97ca §8.5 (HIGH-10): title-level help for the live detail's
-	 * sections — the concepts an AWS MediaLive operator does not share (input
-	 * state vs. output monitoring; a slate insertion vs. an input switch /
-	 * static image overlay / input-loss slate; a file input vs. an Input
-	 * resource; an automatic stop that can end the broadcast early), written
-	 * as operator outcomes rather than API constraints.
-	 */
+	// Section help distinguishes input state, output monitoring, slate insertion, file inputs,
+	// and automatic stops using operator outcomes rather than API constraints.
 	liveHelp: {
 		ingest:
 			"The address and stream key your encoder connects to over RTMP or SRT. The direction (push, listener or caller) comes from the input settings. Once video arrives here, the input and encoder state shows it as received.",
@@ -991,12 +964,7 @@ export const en = {
 		liveToVod:
 			"After the broadcast, builds VOD manifests from the live output. It reuses the segments written during the broadcast, so it is not the same as an AWS Archive output group, which records a separate archive.",
 	},
-	/**
-	 * Audit 5c3d97ca §14.6 (HIGH-10): the live wizard's step names as
-	 * LIVE-SPECIFIC keys, in the AWS MediaLive vocabulary (Input / Encodes /
-	 * Destinations / Output groups / Schedule actions). The generic `ui.*`
-	 * labels the VOD wizard shares are deliberately not renamed.
-	 */
+	// Live-specific wizard keys use AWS MediaLive vocabulary without renaming shared VOD labels.
 	liveMirror: {
 		title: "Storage mirror",
 		enable: "Also deliver to storage",
@@ -1119,17 +1087,11 @@ export const en = {
 		summaryStepsDone: "{done}/{total} done",
 		summaryStreams: "{count} streams",
 		summaryLinks: "{count} links",
-		// Audit 4403130 IMPORTANT-2: a failed read used to render as the
-		// empty/zero state. These two say so instead — the short one for a
-		// section summary, the sentence for the panel that would otherwise
-		// have claimed "nothing here".
+		// A failed read must remain distinct from an empty or zero result.
 		summaryUnavailable: "could not be read",
 		readUnavailable:
 			"This could not be read, so it is not the same as “nothing”. Retry, and check that the app can reach its own API — anything shown below is the last successful read.",
-		// : the two TIME cells the header gained. The operational
-		// header had no "what fires next" and no elapsed/remaining, so a
-		// healthy RUNNING channel said nothing about the STOP four minutes
-		// away or how far into its runtime cap it was (audit 4403130 §5.3).
+		// Show the next scheduled event and elapsed or remaining run time in the header.
 		nextEvent: "Next event",
 		nextEventIn: "{action} in {countdown}",
 		// An armed row past its fireAt is evidence the sweep is not running,
@@ -1372,10 +1334,7 @@ export const en = {
 		ptPathTitle:
 			"The path this rendition was actually written to — final once the encoding completes.",
 		ptDrmPathTitle: "Encrypted output of the {type} DRM on this leg",
-		// Copy-button accessible names (audit 5c3d97ca HIGH-11 / MEDIUM-6): every
-		// path button used to be named the bare "Copy", so a screen reader listed N
-		// identical controls. The name now carries the TARGET (which rendition, which
-		// leg, which path) and the PURPOSE, and the path makes it unique per row.
+		// Copy-button names include the target and purpose so each control is distinct to screen readers.
 		ptCopyPath:
 			"Copy the output path of rendition {rendition} ({muxing}): {path}",
 		ptCopyDrmPath:
@@ -2117,10 +2076,8 @@ export const en = {
 			"Encoder not running. A manual start or the schedule's START row boots it.",
 		s1ErrorHint:
 			"Channel is in ERROR — the encoder may still be up on Bitmovin (Stop releases it). A start from here resumes provisioning.",
-		//  (audit 5c3d97ca BLOCKER-1): the provider's own view of the
-		// run's encoding. Amber, never green, while it cannot be confirmed; and
-		// the ① hint must not claim "may still be up" once Bitmovin has said
-		// the encoding ended.
+		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
+		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
 			"Provider status cannot be confirmed — Bitmovin's status read for this run's encoding is failing (last confirmed {at}; unconfirmed since {since}). It is re-checked every 30 s. Stop remains available; start, restart, slate, SCTE-35, timeshift and new feeders wait for a fresh reading.",
 		providerUnobservedHint:
@@ -2175,11 +2132,7 @@ export const en = {
 		deleteTitle: "Delete this channel?",
 		deleteFailed: "Delete failed",
 		loadMore: "Load more",
-		/**
-		 * The Live list as an OPERATIONS COCKPIT (audit 4403130
-		 * §5.5): the columns, filters and sort that let an operator compare a
-		 * fleet instead of opening every detail page in turn.
-		 */
+		// Live-list columns, filters and sorting let operators compare channels without opening each detail page.
 		list: {
 			health: "Health",
 			nextEvent: "Next event",
@@ -2217,8 +2170,7 @@ export const en = {
 		},
 		channelLoadFailed: "Failed to load the live channel.",
 		loadingChannel: "Loading live channel",
-		// Audit 5c3d97ca §8.6: the AWS Input / Monitoring words; the collection
-		// mechanism's name (heartbeat) leaves the customer's primary labels.
+		// Primary labels describe input and monitoring tasks; heartbeat names the collection mechanism.
 		ingestCoordinates: "Input endpoint",
 		planUnavailableHints: "Plan unavailable — cannot derive connection hints.",
 		heartbeat: "Input & encoder state",
@@ -2369,7 +2321,7 @@ export const en = {
 			"The stored plan does not parse, so the ladder cannot be shown.",
 		dvr: "DVR / timeshift",
 		planUnavailableDvr: "Plan unavailable — DVR windows unknown.",
-		// Audit 5c3d97ca §8.6: an upstream feature, not an AWS Input resource.
+		// A file input is an upstream feature, separate from an AWS Input resource.
 		feeders: "File input (pseudo-live)",
 		contentInsertion: "Content insertion",
 		dnsMappings: "DNS mappings",
@@ -2377,10 +2329,7 @@ export const en = {
 		vmafCapture: "VMAF capture",
 		stepTimeline: "Step timeline",
 		stepLogUnavailable: "Step log unavailable for this channel.",
-		//  — the reorganised page's own labels.
-		// : a reservation list, not an on-air readout (audit 5c3d97ca
-		// HIGH-8). The key keeps its name so the section id it titles does not
-		// move; the WORD is what was wrong.
+		// This section lists slate reservations rather than confirming what is on air. Keep its section key stable.
 		slateNow: "Slate reservations",
 		advanced: "Duplicate & template",
 		dangerZone: "Delete this channel",
@@ -2390,8 +2339,7 @@ export const en = {
 			"SCTE-35 cues can only be inserted into a RUNNING channel.",
 		manifestUrlsDisclose: "Show every manifest URL",
 		manifestUrlsDiscloseClose: "Hide manifest URLs",
-		// Audit 5c3d97ca §8.6 (HIGH-10): the operator task is AWS's Start
-		// channel; the provider's encoder is a secondary detail.
+		// Name the operator task; the provider encoder is a secondary detail.
 		start: "Start channel",
 		startNewRun: "Start a new run",
 		//  — the Akamai MSL output editor in the live wizard's
@@ -2419,9 +2367,7 @@ export const en = {
 		startResume: "Start channel (resume)",
 		stop: "Stop channel",
 		restart: "Restart channel",
-		// : the failure-toast frame — it was hardcoded English.
-		// Audit 5c3d97ca (UX-03): the buttons became verb phrases, so the toast
-		// frames get noun-form keys in both locales ("Channel stop rejected: …").
+		// Failure-toast labels use noun forms while action buttons use verb phrases.
 		actionLabelStart: "Channel start",
 		actionLabelStop: "Channel stop",
 		actionLabelRestart: "Channel restart",
@@ -2712,9 +2658,7 @@ export const en = {
 		requestFailed: "Request failed",
 		scheduling: "Scheduling…",
 		registering: "Registering…",
-		//  (audit 5c3d97ca HIGH-8 / §14.6 UX-01): the slate section is
-		// a RESERVATION list. Provider status → the customer's word; the raw
-		// status lives only under the technical-details disclosure.
+		// Slate reservations use operator-facing status words; raw provider codes stay in technical details.
 		runAsap: "Run immediately",
 		reservationDuration: "{seconds} s",
 		statusCreated: "Registering",
@@ -3242,7 +3186,7 @@ export const en = {
 		parameterSnapshotTitle: "Reference: historical parameter survey",
 		parameterSnapshotNotice:
 			"Parameter classifications have not been refreshed. These are historical references, separate from current configurability and the latest operation census.",
-		parameterProvenance: "Survey date: {date} · Commit: {repo} · SDK: {sdk}",
+		parameterProvenance: "Survey date: {date} · SDK: {sdk}",
 		historicalNotice:
 			"Historical survey snapshot. These figures do not establish current API coverage, availability, execution verification, or paid validation.",
 		noMatches: "No endpoints match these filters.",
@@ -4899,8 +4843,7 @@ export const en = {
 		eventStreamSignalling: "Event stream signalling",
 		everySourceBeyondTheImplicitVideoAudio:
 			"Every source beyond the implicit video/audio pair: extra ingest tracks, WebVTT subtitle sidecars, and Dolby Atmos / Vision / metadata inputs — one list. Each stream reads a declared input file; renditions and subtitle tracks reference them by label under Placement & extras.",
-		// Audit 5c3d97ca HIGH-10: the operator outcome (what triggers a restart
-		// and what viewers see) before the API minimum.
+		// Explain restart triggers and viewer impact before the API minimum.
 		everyTimeoutHasAnApiMinimumOf:
 			"When an input loss, a stalled output or an unresponsive encoder is detected, the encoder restarts automatically. The broadcast is interrupted while it restarts, which viewers see as a break in the stream. Every timeout has an API minimum of 30s — shorter values are rejected, not rounded up.",
 		extXDaterange: "#EXT-X-DATERANGE",
@@ -4952,8 +4895,7 @@ export const en = {
 		importedPlanActiveTheFormIsBypassed:
 			"Imported plan active — the form is bypassed and the JSON is submitted verbatim.",
 		incomplete: "incomplete",
-		// Audit 5c3d97ca §14.6 mandatory content: an automatic stop can end the
-		// broadcast before the planned end, and billing runs until it completes.
+		// Automatic stop can end a broadcast before the planned end; billing continues until it completes.
 		independentOfAutoRestartARestartDoes:
 			"Stops the channel automatically when a condition is met: no input for a set time, the total run time reaching its limit, or no first connection within a set time. It can stop before the planned end of the program, and billing continues until the stop completes. Independent of auto-restart — a restart does NOT reset these timers.",
 		infrastructureAdvanced: "Infrastructure (advanced)",
@@ -5293,9 +5235,7 @@ export const en = {
 		zoneIdentity: "Zone identity",
 	},
 	origin: {
-		// Audit 5c3d97ca §8.3 (HIGH-10): "origin observation", "bitovp's own"
-		// and "second opinion" leave the customer DOM; the name says it is the
-		// OUTPUT side being watched.
+		// Name the output side being monitored.
 		title: "Output monitoring",
 		explainer:
 			"Read directly from the media playlists at the output destination — a check independent of the encoder's self-report.",
@@ -6015,10 +5955,8 @@ export const en = {
 	},
 	schedule: {
 		upcomingCaption: "Reserved schedule actions, next 7 days",
-		// Audit 5c3d97ca §14.6 (HIGH-10): "Stream up" was not the channel start
-		// but the planned input feed, while provisioning and billing begin the
-		// moment the channel is created — the label misdescribed the lifecycle.
-		// The three times are the planned input feed / program start / stop.
+		// The planned input feed time is separate from channel creation, which starts provisioning and billing.
+		// The three schedule times describe the input feed, program start and channel stop.
 		enableAtCreation: "Set the planned input feed, program and stop times",
 		// Always visible, enabled or not: the one sentence separating the
 		// planned time from the start time.
@@ -6030,8 +5968,7 @@ export const en = {
 		// what RUNS, never when the channel comes up.
 		disabledHint: `${PROVISIONS_AT_CREATE} either way — a planned time never defers that. Without one it simply runs until stopped by hand (or by its cap). Everything below can also be set later, from the channel's detail page.`,
 		streamUpAt: "Planned input feed time",
-		// Derived from PROVISIONS_AT_CREATE so it cannot drift from `rampHint`
-		// below — the two disagreed for a week (audit 4403130 MODERATE-1).
+		// Share PROVISIONS_AT_CREATE with rampHint to keep the lifecycle explanation consistent.
 		streamUpHint: `${PROVISIONS_AT_CREATE}, not at this time. What you set here are the planned input feed, program and stop times — not when the channel starts. The planned input feed time is the moment the schedule anchors to: have your feed arriving at the input endpoint by then, and the slate, if enabled, is inserted here and runs until the program starts. Billing runs from creation until the stop completes.`,
 		programStartAt: "Planned program start",
 		programStartHint:
@@ -6054,9 +5991,7 @@ export const en = {
 		errNoSlateSource: "Pick a slate clip, or turn the slate off.",
 		errZeroSlateWindow:
 			"A slate needs the planned input feed time strictly before the planned program start — there is no window to cover.",
-		// : the provider's own automatic shutdown against this slot.
-		// Audit 5c3d97ca §8.3: the consequence (stops before the planned end),
-		// not the raw property name.
+		// Describe the consequence of automatic shutdown before the planned end rather than its raw property name.
 		errStreamTimeoutShorterThanSlot:
 			"Automatic stop after {minutes} minutes of total run time is shorter than this {slot}-minute slot, so the channel stops before the planned end — every stop, slate and file-input action scheduled after it would run against a stopped channel. Raise the limit on the Automatic restart and stop step, or shorten the slot.",
 		autoShutdownConditionalNote:
@@ -6081,32 +6016,18 @@ export const en = {
 		rampHint: `${PROVISIONS_AT_CREATE}. The planned input feed time anchors the slate, the stop and the runtime cap. Start-up takes a few minutes before the channel accepts a feed.`,
 		slateIngestHint:
 			"A slate covers a CONNECTED input — it cannot render on an empty channel. Have your feed (or a file input) connected by the planned input feed time, or the slate waits and is marked not run (MISSED) when the window closes.",
-		//  kept the file-fed program OUT of this wizard on purpose
-		// (pseudo-live feeds are authored on their own screen). What it did not
-		// do was SAY so, so an operator hunting for that path found only an
-		// ingest form — audit 4403130 MODERATE-1 read the silence as a missing
-		// feature. This sentence is the signpost, not the feature.
+		// File-fed programs are configured separately from external input scheduling; point operators to that screen.
 		feederPointer:
 			"Pushing a clip from your own bucket as the program, instead of connecting a live input? That is a file input (pseudo-live), created on its own screen — this step sets the planned feed time for an external input and its slate.",
-		//  — the feeder-chain: the program itself is a file. Only the
-		// two ACTION LABELS survive here, because only they are still rendered
-		// (the schedule panel's row table). #128 removed the wizard entry that
-		// produced these rows, and its two validation sentences went orphan —
-		// unreachable by construction, since the only consumers of a
-		// `schedule.err*` key are `scheduleFromDraft`'s five literals, and no
-		// `zerr` sentence map targets this namespace. Deleted rather than kept:
-		// in a count-pinned catalogue an orphan is indistinguishable from a live
-		// entry (#137's own lesson, `mslNotEditableYet`).
-		// Audit 5c3d97ca §8.6: primary word + raw code secondary. A two-phase
-		// upstream switch — not MediaLive's Input prepare / switch API.
+		// Show the operator action first and its raw code second. These are upstream file-input actions,
+		// separate from the MediaLive Input prepare and switch APIs.
 		actionFeederStart: "Start file input — slate loop (FEEDER_START)",
 		actionFeederSwitch: "Switch input source — program (FEEDER_SWITCH)",
 		upcomingTitle: "Upcoming broadcasts",
 		upcomingEmpty: "No scheduled slots in the next 7 days.",
 		upcomingAt: "{action} at {at}",
 		cancelFailed: "Cancel failed: {error}",
-		// Audit 5c3d97ca §8.3 (HIGH-10): "Schedule actions", "Run at", "Not
-		// run". Implementation words (the worker, firing) leave customer copy.
+		// Use schedule-action terms in customer copy rather than worker implementation details.
 		title: "Schedule actions",
 		timelineEvents: "Schedule events",
 		explainer:
@@ -6147,13 +6068,8 @@ export const en = {
 		noneUpcoming: "Nothing armed.",
 		history: "History",
 		noneHistory: "Nothing has run yet.",
-		// : firing is not delivering. A fired row now says which of
-		// the two it managed, because "FIRED" said only the first and was
-		// painted like the second.
-		//
-		// Audit 602ec286 §17 P1-4: the middle rungs. "Delivered" no longer
-		// covers a feed that only started pushing (HIGH-4) or a slate the
-		// provider merely armed (HIGH-5) — those get their own, non-green words.
+		// Distinguish unconfirmed, pushing, connected and delivered outcomes. A provider-armed slate or a feed
+		// that has only started pushing must not imply confirmed delivery.
 		outcomePending: "Requested — outcome not confirmed yet",
 		outcomePushing: "Pushing — provider has not confirmed the ingest yet",
 		outcomeIngestConnected:
@@ -6167,8 +6083,7 @@ export const en = {
 		// : armed for one airing, refused against another. Not an
 		// error — the guard working — so the wording says what it protected.
 		statusSkippedStaleGeneration: "Skipped — armed for an earlier airing",
-		// Audit 5c3d97ca §8.3 (HIGH-10): every status is a word first and its
-		// raw code second — the six short ones no longer render the enum alone.
+		// Display a readable status before its raw code.
 		statusArmed: "Reserved",
 		statusFired: "Requested",
 		statusCompleted: "Completed",
@@ -6254,11 +6169,7 @@ export const en = {
 		reArm: "Re-encode",
 	},
 	alerts: {
-		// Audit 4403130 §5.4 (registry row 249, spelled without a hash because
-		// this block sits inside the ledger-pointer scanner's window): the rule
-		// editor and the resolved history moved out of the open-alert section
-		// into Diagnostics, because a monitoring readout and a settings form
-		// were sharing one always-expanded block.
+		// Keep alert configuration and resolved history in Diagnostics, separate from the current monitoring readout.
 		rulesTitle: "Alert rules & resolved history",
 		title: "Alerts",
 		openBannerLineOne: "{count} alert firing — see the Alerts section below.",

@@ -19,7 +19,7 @@ const en: Translator = (key, values) =>
 	translate(messagesFor("en"), key, values);
 
 /**
- * Audit 5c3d97ca BLOCKER-2 / LC-02 — the panel's "something to switch from"
+ * the panel's "something to switch from"
  * reads the channel's OCCUPANCY, the same three facts the create route's
  * admission counts, so a channel held by a terminal row whose ffmpeg is not
  * proven gone offers the switch instead of a 409 with no way forward.

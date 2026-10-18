@@ -603,7 +603,7 @@ describe("validatePlan", () => {
 		 * The same manifest WITHOUT per-title (STANDARD VP9) now SELECTS the
 		 * WebM leg statically. This arm used to assert the opposite — "selects
 		 * nothing statically, the rail must fire" — which was paid audit
-		 * 893eb66 CRITICAL-2 written down as expected behaviour: the schema
+		 * written down as expected behaviour: the schema
 		 * admitted `videoMuxingKind: "WEBM"`, the compiler's video selection
 		 * hard-coded FMP4, and case 8's MPD shipped with four WebM ladders
 		 * missing. A test can pin a defect as faithfully as a fix.
@@ -1937,7 +1937,7 @@ describe("HLS variant-group and DASH set rails", () => {
 		).toBe(true);
 	});
 
-	describe("HLS audio media NAME/URI uniqueness (audit 893eb66 HIGH-8, ledger #201)", () => {
+	describe("HLS audio media NAME/URI uniqueness", () => {
 		function twoAudios(second: {
 			name: string;
 			uri: string;
@@ -2035,7 +2035,7 @@ describe("HLS variant-group and DASH set rails", () => {
 		});
 	});
 
-	describe("mixed video codecs need a pinned encodingMode (audit 893eb66 HIGH-9, ledger #204)", () => {
+	describe("mixed video codecs need a pinned encodingMode", () => {
 		function mixed(encodingMode?: "TWO_PASS", secondEncoding?: string) {
 			const plan = groupPlan();
 			const v = plan.renditions.find((r) => r.key === "v");
@@ -2106,7 +2106,7 @@ describe("HLS variant-group and DASH set rails", () => {
 		});
 	});
 
-	describe("fMP4 HLS media playlists below version 6 (audit 893eb66 HIGH-8, ledger #206)", () => {
+	describe("fMP4 HLS media playlists below version 6", () => {
 		/**
 		 * `videoKind`/`audioKind` switch that family's muxing to TS AND pin the
 		 * manifest to it — the two halves have to move together, because a pin

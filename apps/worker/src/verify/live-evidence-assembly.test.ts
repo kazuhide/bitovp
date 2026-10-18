@@ -16,8 +16,8 @@ import {
 } from "./live-evidence-assembly";
 
 /**
- * The evidence tuple assembled from one live run (audit 5c3d97ca BLOCKER-4,
- * EV-02 #1/#2): legs come from the PLAN (manifests × delivery targets), the
+ * The evidence tuple assembled from one live run
+: legs come from the PLAN (manifests × delivery targets), the
  * origin legs are witnessed through the listing and the read master, the edge
  * legs through the in-run closures, and every leg is sealed by core's rule.
  */
@@ -209,7 +209,7 @@ function inputs(
 		expected,
 		plan,
 		build: {
-			commit: "5c3d97ca",
+			commit: "b8c63e35",
 			image: `worker@sha256:${"c".repeat(64)}`,
 			planSha256: "b".repeat(64),
 		},

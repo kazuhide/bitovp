@@ -9,7 +9,7 @@ import { classifySendFailure } from "./resource-intent";
 import { liveApiFor, submit, withVerificationLabel } from "./runner";
 
 /**
- * The VOD spend site's half of EV-01 (audit 5c3d97ca BLOCKER-5).
+ * The VOD spend site's half of EV-01.
  *
  * `submit` is driven for real against a fake fetch: every way a paid POST can
  * fail is classified by WHERE it failed relative to the wire, because the old

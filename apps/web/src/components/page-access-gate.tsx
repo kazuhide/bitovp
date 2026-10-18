@@ -10,8 +10,8 @@ import { useT } from "@/lib/i18n/context";
 import { Button } from "./ui/button";
 
 /**
- * The permission screen a DIRECT URL to a privileged page renders (audit
- * 5c3d97ca MEDIUM-5 / §14.5 AU-01 item 3) — one component, mounted once by
+ * The permission screen a DIRECT URL to a privileged page renders
+ — one component, mounted once by
  * `PageAccessGate`, never copied per page.
  *
  * Exported on its own so a surface that gates something narrower than a

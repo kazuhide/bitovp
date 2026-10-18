@@ -11,7 +11,7 @@ import {
 } from "./occupancy";
 
 /**
- * Audit 5c3d97ca BLOCKER-2 / LC-02 — the occupancy predicate and its `where`
+ * the occupancy predicate and its `where`
  * fragment must mean exactly the same thing, for EVERY row shape. The
  * evaluator models the fragment's operators and throws on anything else, so a
  * fragment that grows a new operator has to teach it rather than pass a

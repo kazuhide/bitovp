@@ -9,7 +9,7 @@ import {
 } from "./provider-lifecycle";
 
 /**
- *  (audit 5c3d97ca BLOCKER-1) — the reconciler in isolation: what
+ * the reconciler in isolation: what
  * each provider answer does to the run row, the channel row, the feeders and
  * the emitter, and what the fences refuse.
  */

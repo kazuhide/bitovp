@@ -1127,7 +1127,7 @@ export type SdkOps = {
 			 * Optional, as on the SDK model: a muxed self-contained variant has NO
 			 * audio group, and the API doc says a present value MUST match an
 			 * EXT-X-MEDIA GROUP-ID — so absence is the only correct spelling of
-			 * "none" (audit 893eb66 HIGH-8).
+			 * "none".
 			 */
 			audio?: string;
 			subtitles?: string;

@@ -69,7 +69,7 @@ export function isStoppableFeederSession(
 
 /**
  * Does this session OCCUPY its channel's single publisher slot, as the server's
- * admission counts it (audit 5c3d97ca LC-02)? The panel used `status` alone
+ * admission counts it? The panel used `status` alone
  * to decide whether to offer the switch checkbox, so a channel occupied by a
  * terminal row whose ffmpeg was not proven gone had the create refused by
  * the route (correctly) with no switch on offer — a dead end. Core's
@@ -123,7 +123,7 @@ export type FeederSessionListItem = {
 	committedAt?: string | null;
 	switchSeamMs?: number | null;
 	/**
-	 * Audit 5c3d97ca LC-02: the publisher claim. Optional for the same reason
+	 * the publisher claim. Optional for the same reason
 	 * as the two-phase columns; absent reads as "unknown", which occupancy
 	 * treats as not-held (the pid/status facts still decide).
 	 */

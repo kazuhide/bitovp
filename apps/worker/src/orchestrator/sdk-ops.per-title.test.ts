@@ -205,7 +205,7 @@ describe("listAllMuxings", () => {
 
 	it("keeps the QC-mirror filename and name off the SDK muxing row (§5.4 key)", async () => {
 		// The worker's primary capture path runs through core's `readMuxingRow`. The
-		// mirror `filename` is the RESULT↔template correlation key (audit 602ec286
+		// mirror `filename` is the RESULT↔template correlation key (
 		// HIGH-2 / §5.4); this pins it survives the SDK-facing listAllMuxings.
 		const { ops } = setup();
 		api.muxingsList.mockImplementation(async () => ({

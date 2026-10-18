@@ -8,8 +8,8 @@
 export const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
 
 /**
- * Per-channel budget for one heartbeat poll + alert evaluation (audit
- * 602ec286 MODERATE-1 / ). A single hung SDK poll must not stall the
+ * Per-channel budget for one heartbeat poll + alert evaluation
+. A single hung SDK poll must not stall the
  * sweep: past this deadline the channel's work is abandoned for the tick, its
  * lane is freed, and the sweep moves on. 10s is a third of the interval — far
  * more than a healthy `getLiveHeartbeat` GET needs, yet small enough that a
@@ -18,7 +18,7 @@ export const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
 export const HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS = 10_000;
 
 /**
- * How many channels the sweep polls in parallel (audit 602ec286 MODERATE-1).
+ * How many channels the sweep polls in parallel.
  * A bounded lane count keeps one slow/hung channel from delaying the others'
  * freshness SLA while capping the fan-out of concurrent SDK calls and DB
  * writes. Each channel is independent (its own row/run), so parallel polls do

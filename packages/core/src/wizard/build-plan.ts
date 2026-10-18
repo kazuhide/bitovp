@@ -2182,7 +2182,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			name: primary ? "HLS Manifest" : str(name),
 			destination: destination(base, o.acl),
 			// V6 when the manifest's video legs are fMP4 (EXT-X-MAP needs it,
-			// RFC 8216 §7 — paid audit 893eb66 HIGH-8, ), V4 for a
+			// RFC 8216 §7), V4 for a
 			// TS/MP4 leg, which is what the vendor samples do. The importer
 			// drops exactly this derived default on read-back so a fixture
 			// round-trips whichever way it was written.

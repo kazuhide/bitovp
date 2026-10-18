@@ -1134,7 +1134,7 @@ describe("DASH set STRUCTURE — one video AdaptationSet per codec (ledger #229,
 	});
 });
 
-describe("verifyMirrorDelivery — each delivery-mirror leg is judged on its own (audit 602ec286 BLOCKER-3, row #269)", () => {
+describe("verifyMirrorDelivery — each delivery-mirror leg is judged on its own", () => {
 	// live-akamai-msl-storage: Akamai Object Storage PRIMARY (readable) + an
 	// AKAMAI_MSL mirror (Akamai ingest, read back on the edge). hls + dash, each
 	// mirrored to `mirror-1` → two mirror legs.
@@ -1177,7 +1177,7 @@ describe("verifyMirrorDelivery — each delivery-mirror leg is judged on its own
 	});
 
 	/**
-	 * Audit 5c3d97ca BLOCKER-4 (EV-02): a leg PASSes only on TWO in-run probes
+	 * a leg PASSes only on TWO in-run probes
 	 * (`samples[].edge`), each closed — ≥1 child, every child ≥1 nonzero media
 	 * segment served with bytes — and media ADVANCING between them. The
 	 * post-stop `edgeClosures` entry can no longer pass a leg on its own: a

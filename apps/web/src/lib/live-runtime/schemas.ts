@@ -858,7 +858,7 @@ export const liveScheduleArmSchema = z
 			value.fireAt !== undefined &&
 			Date.parse(value.airAt) <= Date.parse(value.fireAt)
 		) {
-			// review-8eaef21 #2: an airAt at or before fireAt arms a deadline
+			// an airAt at or before fireAt arms a deadline
 			// that is already expired when the start command runs — the next
 			// sweep tick would false-alert before anything had a chance to
 			// happen. fireAt > now is enforced by the route, so airAt > fireAt

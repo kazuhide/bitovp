@@ -25,12 +25,12 @@ import { useT } from "@/lib/i18n/context";
 import { useAnnounce } from "./live-announcer";
 
 /**
- * The channel's mutation controls — SPLIT, as of .
+ * The channel's mutation controls, split by task.
  *
  * They used to be one `ChannelActions` block: Start / Stop / Restart shared a
  * button row with Duplicate and Delete, and the SCTE-35 cue form hung off the
- * same always-open section (audit 4403130 §5.4 — "read, configure and destroy
- * in one always-expanded section"). A row where the second-most-likely click
+ * same always-open section.
+ * A row where the second-most-likely click
  * beside "Stop the broadcast" is "Delete the channel" is a mis-click waiting
  * for a bad night.
  *
@@ -39,11 +39,11 @@ import { useAnnounce } from "./live-announcer";
  * it", because a second Start button is the second source of truth this whole
  * redesign exists to remove:
  *
- *  - `ChannelLifecycleActions` → the operational header (`sec-actions`, still
- *    the id `liveNextAction` points at).
- *  - `ChannelCueForm` → Programme, beside the other ad-signalling insertions.
- *  - `DuplicateChannelButton` → Diagnostics / Advanced.
- *  - `ChannelDangerZone` → the Danger zone, last on the page.
+ * - `ChannelLifecycleActions` → the operational header (`sec-actions`, still
+ * the id `liveNextAction` points at).
+ * - `ChannelCueForm` → Programme, beside the other ad-signalling insertions.
+ * - `DuplicateChannelButton` → Diagnostics / Advanced.
+ * - `ChannelDangerZone` → the Danger zone, last on the page.
  *
  * Each holds only the mutation it fires, so no state is shared across the
  * split and nothing had to become a context.

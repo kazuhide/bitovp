@@ -35,7 +35,7 @@ const JOB_ID = "00000000-0000-4000-8000-0000000000aa";
 
 /**
  * A `updateMany` that honours the WHERE clause the way Postgres would — the
- * lease (audit 893eb66 CRITICAL-1) is a compare-and-swap on
+ * lease is a compare-and-swap on
  * `attemptClaimedAt`, and a fake that ignored `where` would make every fence
  * pass and every lease test vacuous. Modelled: `id`, `status` (a literal or
  * `{ in }`), `attemptClaimedAt` (a Date, `null`, or `{ lt }`) and `OR` over
@@ -2103,7 +2103,7 @@ describe("orchestrator processor — QC gate boundary", () => {
 	});
 });
 
-describe("attempt lease (audit 893eb66 CRITICAL-1)", () => {
+describe("attempt lease", () => {
 	const NOW = new Date("2026-06-11T00:00:00.000Z");
 
 	it("claims on entry and RELEASES on FINISHED, so a retry can claim at once", async () => {

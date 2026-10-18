@@ -1345,7 +1345,7 @@ describe("executeStep", () => {
 		expect(sdk.startEncoding).not.toHaveBeenCalled();
 	});
 
-	describe("HLS variant audio group (paid audit 893eb66 HIGH-8, cases 3/4)", () => {
+	describe("HLS variant audio group", () => {
 		const variantOp = (audio?: string): CompiledOperation => ({
 			step: "hls-variant:hls:v1080",
 			kind: "CREATE_HLS_STREAM_INFO",
@@ -1406,7 +1406,7 @@ describe("executeStep", () => {
 		});
 	});
 
-	describe("VP9 QC mirror as a progressive WebM (paid audit 893eb66 HIGH-9, ledger #205)", () => {
+	describe("VP9 QC mirror as a progressive WebM", () => {
 		it("routes CREATE_MUXING_PROGRESSIVE_WEBM to the progressive-webm facade", async () => {
 			const sdk = fakeSdk();
 			const result = await executeStep(
@@ -1443,7 +1443,7 @@ describe("executeStep", () => {
 		});
 	});
 
-	describe("static WebM DASH representations (paid audit 893eb66 CRITICAL-2)", () => {
+	describe("static WebM DASH representations", () => {
 		const ids = {
 			"manifest:dash": "bm-dash",
 			"manifest:dash:period": "bm-period",

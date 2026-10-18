@@ -42,7 +42,7 @@ export type LiveNextActionCode =
 	/** Everything is live; the open alert is the thing to look at. */
 	| "REVIEW_ALERTS"
 	/**
-	 * The alert list could not be READ (audit 4403130 IMPORTANT-2). Distinct
+	 * The alert list could not be READ. Distinct
 	 * from `REVIEW_ALERTS`, which asserts an alert exists: here we know
 	 * nothing, and the one thing this layer must never do is turn "no answer"
 	 * into `ON_AIR`. Points at the alerts card, whose own panel carries the
@@ -50,7 +50,7 @@ export type LiveNextActionCode =
 	 */
 	| "ALERTS_UNKNOWN"
 	/**
-	 *  (audit 5c3d97ca BLOCKER-1): the PROVIDER's status for the
+	 * the PROVIDER's status for the
 	 * current run's encoding cannot be confirmed — the read is timing out or
 	 * failing, or the last confirmed reading is older than the freshness TTL.
 	 * Outranks every other RUNNING question: nobody can say the channel is on
@@ -112,7 +112,7 @@ export type LiveNextActionInput = {
 	overdueArmedCount: number;
 	/**
 	 * Open alerts, or `"unknown"` when the caller could not read the list at
-	 * all (audit 4403130 IMPORTANT-2). This was a plain `number` and the web
+	 * all. This was a plain `number` and the web
 	 * layer passed `alerts.data?.open.length ?? 0`, so a failing alerts query
 	 * arrived here as a measured zero — the healthiest possible reading — and
 	 * an otherwise-fine channel was told `ON_AIR` on evidence nobody had.

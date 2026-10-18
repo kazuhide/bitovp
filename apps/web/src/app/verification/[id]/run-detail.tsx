@@ -249,7 +249,7 @@ export function RunDetail({ run }: { run: VerificationRunDetail }) {
 				)}
 			</Section>
 
-			{/* The Live/MSL evidence tuples (audit 5c3d97ca BLOCKER-4, EV-02):
+			{/* The Live/MSL evidence tuples:
 			    one card per output leg, showing the SAME completeness verdict the
 			    harness sealed on — and, when a leg is incomplete, the elements it
 			    lacks, so a reader sees WHY a live PASS was refused rather than a
@@ -407,8 +407,8 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * Poll while the run is still RUNNING so a long run reaches SEALED or INCOMPLETE
- * on this screen without a manual reload; stop once it is terminal (audit
- * 602ec286 BLOCKER-1 / ). A pure function of the data so the stop
+ * on this screen without a manual reload; stop once it is terminal
+. A pure function of the data so the stop
  * decision is testable without a wall-clock timer.
  */
 export const VERIFICATION_DETAIL_POLL_MS = 5_000;

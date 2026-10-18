@@ -539,7 +539,7 @@ describe("a duplicate muxing key does not misplace a container", () => {
 });
 
 /**
- * FINDINGS FROM THE REVIEW OF f66c1f12 — the ones my own census missed.
+ * Muxed-container regressions missed by the original census.
  *
  * Each of these is a rail I reasoned about instead of mutating. That is the
  * repeat pattern the review named, and it is why they get arms rather than
@@ -772,7 +772,7 @@ describe("review findings", () => {
 });
 
 /**
- * ONE PLAN, TWO MANIFESTS, ONE MUXED LEG — review of 85250672, finding (b).
+ * ONE PLAN, TWO MANIFESTS, ONE MUXED LEG.
  *
  * The per-title C33 scan asked whether the PLAN contains a muxed per-title
  * container anywhere; the op it decorates expands only containers of ONE kind.

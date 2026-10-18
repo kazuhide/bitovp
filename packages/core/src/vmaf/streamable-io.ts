@@ -19,7 +19,7 @@ import type { PlanInput, PlanOutput } from "../plan/schema";
  * The two requirements were never written down together, so the measurement
  * worker's resolver carried an inline `kind === "S3" || kind === "AZURE"`
  * allowlist while the plan schema, the compiler and the QC mirror synthesis all
- * accepted far more (audit e57f2d3, AKR-E57-008). The consequence is the
+ * accepted far more. The consequence is the
  * expensive shape: the plan validates, the compiler builds QC mirrors,
  * **Bitmovin runs and bills the encode**, and only then does the worker refuse
  * the output kind. A blocking QC gate then marks the delivery QC_FAILED for a

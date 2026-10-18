@@ -216,7 +216,7 @@ describe("totality — the pins that license the sentence→key deviation", () =
 		expect(validatorArg.size).toBe(48);
 		// 16→17 : the airAt START-only refusal — a message
 		// PROPERTY (addIssue object form inside the arm schema's superRefine).
-		// 17→18 (review-8eaef21 #2): the airAt-after-fireAt ordering refusal,
+		// 17→18: the airAt-after-fireAt ordering refusal,
 		// same route.
 		// 18→21 : the auto-lead arm's three refusals —
 		// fireAt-required-unless-derived, START-only, needs-airAt.
@@ -242,7 +242,7 @@ describe("totality — the pins that license the sentence→key deviation", () =
 		// cross-check rather than two spellings of one number.
 		// 64→65 : the airAt refusal joins through the
 		// message-prop route above; both totals move together, as designed.
-		// 65→66 (review-8eaef21 #2): the ordering refusal, same route again.
+		// 65→66: the ordering refusal, same route again.
 		// 66→69 : the three auto-lead refusals, all via the
 		// message-prop route; both totals move together, as designed.
 		// 69→70 : the Digest both-or-neither sentence, via the

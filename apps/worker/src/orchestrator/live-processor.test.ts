@@ -2131,7 +2131,7 @@ describe("live channel actions", () => {
 		});
 	});
 
-	it("a failed feeder-stop enqueue SURFACES into the channel error, without blocking the stop (row 268, audit 602ec286 BLOCKER-2)", async () => {
+	it("a failed feeder-stop enqueue SURFACES into the channel error, without blocking the stop", async () => {
 		// It must not BLOCK the channel stop — the encodings still have to be
 		// stopped — but it must NOT be swallowed either: a stop that never reached
 		// the queue leaves the feeder's `-stream_loop -1` ffmpeg pushing into a
@@ -2365,7 +2365,7 @@ describe("live channel actions", () => {
 
 	it("a restart whose fresh details cannot be read lands ERROR with every id kept — RUNNING over the previous coordinates is a dead ingest presented as live (row #280, rewrites the old best-effort pin)", async () => {
 		// This test used to assert the OPPOSITE ("keeps RUNNING when the
-		// post-restart detail refresh fails"). Audit 5c3d97ca §14.5 item 6
+		// post-restart detail refresh fails"). item 6
 		// makes the fresh details part of what licenses RUNNING: ingest
 		// coordinates can change across a restart, and a channel shown RUNNING
 		// with the old IP sends the operator's encoder at a dead ingest.
@@ -2392,7 +2392,7 @@ describe("live channel actions", () => {
 		expect(t.runRows[0]?.bitmovinEncodingId).toBe("bm-live-enc");
 	});
 
-	describe("provider lifecycle at restart (audit 5c3d97ca BLOCKER-1 / row #280)", () => {
+	describe("provider lifecycle at restart", () => {
 		it("details delay race: RUNNING before the GET but FINISHED after it never commits local RUNNING", async () => {
 			let detailsReturned = false;
 			const t = setup(
@@ -2625,7 +2625,7 @@ describe("live channel actions", () => {
 
 	it("does NOT insert a second slate when the provider already holds this one (lost-response retry)", async () => {
 		/**
-		 * Audit f63f76b F63-RUN-006. The insert is a POST, the queue retries it
+		 * The insert is a POST, the queue retries it
 		 * up to five times, and the history row is written only AFTER it
 		 * returns — so a provider that ACCEPTED the insertion and then lost the
 		 * response left no local trace at all, and the retry covered the
@@ -4133,7 +4133,7 @@ describe("live channel actions", () => {
 	});
 
 	/**
-	 * Audit 5c3d97ca BLOCKER-2 / LC-02: a scheduled ORDINARY start had no
+	 * a scheduled ORDINARY start had no
 	 * per-channel door at all. It now asks core's occupancy question and
 	 * refuses — FAILED, naming the occupant — instead of creating a session
 	 * whose worker would spawn beside a push that is not proven gone.
@@ -4610,7 +4610,7 @@ describe("live channel actions", () => {
 });
 
 /**
- * audit 602ec286 BLOCKER-4 (row 266) — the run-generation fence for a
+ * (row 266) — the run-generation fence for a
  * scheduled action retrying INSIDE the queue.
  *
  * Every run-acting job carries the run it was PLANNED for. A BullMQ backoff
@@ -5027,7 +5027,7 @@ describe("durable external-effect fence (SC-01)", () => {
 	});
 });
 
-describe("run-generation fence for queue retries (audit 602ec286 BLOCKER-4)", () => {
+describe("run-generation fence for queue retries", () => {
 	// Distinct run ids: RUN_1 is the airing the job was planned for, RUN_2 is
 	// the airing the channel is on NOW (it re-aired while the job sat queued).
 	const RUN_1 = "11111111-1111-4111-8111-111111111111";
@@ -6280,7 +6280,7 @@ describe("heartbeat polling", () => {
 	});
 });
 
-describe("heartbeat sweep — concurrency, timeout, no-overlap (audit 602ec286 MODERATE-1 / row #270)", () => {
+describe("heartbeat sweep — concurrency, timeout, no-overlap", () => {
 	const okRaw: LiveHeartbeatSample = {
 		timestamp: "2026-06-12T00:00:00Z",
 		ingest: { status: "CONNECTED", healthy: true },
@@ -7042,7 +7042,7 @@ describe("live-to-VOD", () => {
 	});
 
 	it("records PARTIAL (and rethrows) when one family fails — the other family's manifest survives, channel status untouched", async () => {
-		// Audit 5c3d97ca HIGH-1 . This test used to pin the DEFECT:
+		// This test used to pin the DEFECT:
 		// a whole-record ERROR with `manifests: []`, because the loop stopped at
 		// the first failure and the delivered family was reported as nothing.
 		// Families are independent now: the failure is recorded on ITS family,
@@ -7322,7 +7322,7 @@ describe("live-to-VOD", () => {
 	});
 
 	/**
-	 * Audit 5c3d97ca HIGH-1 / §14.6 LF-02 . The paid run rolled a
+	 * The paid run rolled a
 	 * segmented-TS channel with no body: the default asked for HLS AND DASH, the
 	 * HLS manifest was generated, the DASH create came back 400 / code 2700 (a
 	 * DASH default manifest enumerates fMP4 muxings only), and the record said

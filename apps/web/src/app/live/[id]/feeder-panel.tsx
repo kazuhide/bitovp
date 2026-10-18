@@ -229,7 +229,7 @@ export function FeederPanel({
 				: false,
 	});
 
-	// Audit 5c3d97ca LC-02: "is there something to switch from" is the
+	// "is there something to switch from" is the
 	// channel's OCCUPANCY — the same three facts the route's admission counts
 	// — not the status alone, or a channel held by a terminal row whose
 	// ffmpeg is not proven gone would refuse the create and offer no switch.
@@ -374,7 +374,7 @@ export function FeederPanel({
 		<div className="mt-2 space-y-3">
 			{!embeddedForm ? (
 				<div className="flex items-center justify-end gap-3">
-					{/* Audit 4403130 §5.6: this toggle is the pattern the rest of the
+					{/* This toggle is the pattern the rest of the
 				    page now copies (`Disclosure`), and it was the one missing the
 				    ARIA that makes it a disclosure rather than a button that
 				    happens to change what is on screen. The controlled region

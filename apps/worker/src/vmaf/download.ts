@@ -43,8 +43,8 @@ export type VmafDownloadArgs = {
 };
 
 /**
- * What a download actually fetched ( slice 2, audit ce4a935
- * CRITICAL-2): the provider's version identity read BEFORE the transfer and
+ * What a download actually fetched
+: the provider's version identity read BEFORE the transfer and
  * demanded during it, and a streaming SHA-256 of the bytes that arrived. A
  * same-size overwrite between encode and scoring used to hand VMAF the wrong
  * bytes with a plausible score; a result row now says which object it

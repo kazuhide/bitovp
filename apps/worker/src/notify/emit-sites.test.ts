@@ -90,7 +90,7 @@ const EXPECTATIONS: Expectation[] = [
 		emitCount: 11,
 	},
 	{
-		//  (audit 5c3d97ca BLOCKER-1): the provider-lifecycle
+		// the provider-lifecycle
 		// reconciler's TERMINAL arm — ONE transition, dual-written (the run row
 		// with its `providerTerminalAt` stamp, then the channel row with its
 		// coordinates cleared), ONE CHANNEL_ERROR. The UNKNOWN arm writes

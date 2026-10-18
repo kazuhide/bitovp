@@ -79,7 +79,7 @@ function fakeProduct(
 		/** Make the live-to-VOD request itself throw (a network fault). */
 		rollThrows?: string;
 		/**
-		 * Cleanup-seal knobs (row 268, audit 602ec286 BLOCKER-2). Defaults model
+		 * Cleanup-seal knobs. Defaults model
 		 * a CLEAN teardown so a healthy run seals clean; each override models one
 		 * unproven element.
 		 */
@@ -265,7 +265,7 @@ function fakeProduct(
 					// a feeder stop that could not be enqueued).
 					error: stopped ? (opts.channelStopError ?? null) : null,
 					// The airing and the provider encoding the evidence tuple binds
-					// to (audit 5c3d97ca EV-02) — the detail route's shape: the
+					// to — the detail route's shape: the
 					// channel columns dual-written, `currentRun` canonical.
 					currentRun: {
 						id: "run-1",
@@ -1311,7 +1311,7 @@ describe("rewriteLiveForRun — a fixture submitted verbatim is a guaranteed 400
 		expect(JSON.stringify(before)).toBe(snapshot);
 	});
 
-	it("keeps a direct MSL manifest's event-root path EMPTY under the prefix, so the fixture stays valid (audit 602ec286 BLOCKER-3, row #269)", () => {
+	it("keeps a direct MSL manifest's event-root path EMPTY under the prefix, so the fixture stays valid", () => {
 		/**
 		 * A DIRECT MSL fixture writes its manifests to the event ROOT — an EMPTY
 		 * path (LIVE_MSL_MANIFEST_PATH, C31, row 220). The blanket prefix
@@ -2080,7 +2080,7 @@ describe("teardown must be CONFIRMED, not acknowledged (ledger #209, paid audit 
 	});
 });
 
-describe("the durable cleanup seal (row 268, audit 602ec286 BLOCKER-2)", () => {
+describe("the durable cleanup seal", () => {
 	const run = (deps: LiveRunnerDeps) =>
 		runLiveScenario(deps, {
 			plan: plan("live-rtmp-simple"),
@@ -2168,7 +2168,7 @@ describe("the durable cleanup seal (row 268, audit 602ec286 BLOCKER-2)", () => {
 	});
 });
 
-describe("collectEdgeClosures — reads the MSL mirror back on the delivery edge (audit 602ec286 BLOCKER-3, row #269)", () => {
+describe("collectEdgeClosures — reads the MSL mirror back on the delivery edge", () => {
 	const EDGE = "https://edge.example.net/cmaf/live/1/ev/";
 	const RUN_PREFIX = REWRITE.prefix;
 	const EDGE_RUN = `${EDGE}${RUN_PREFIX}`;
@@ -2257,7 +2257,7 @@ ${RUN_PREFIX}output/live-akamai-msl-storage/seg-2.m4s
 		expect(c?.closed).toBe(true);
 		expect(c?.childCount).toBe(1);
 		// init + seg-1 + seg-2 were ACTUALLY read from the edge, not just counted
-		// off the playlist — the whole point of a closure. Since audit 5c3d97ca
+		// off the playlist — the whole point of a closure. Since
 		// EV-02 the init is witnessed separately: `segmentCount` is MEDIA only.
 		expect(c?.segmentCount).toBe(2);
 		expect(c?.children?.[0]?.served.filter((s) => s.init)).toHaveLength(1);
@@ -2352,8 +2352,8 @@ ${RUN_PREFIX}output/live-akamai-msl-storage/seg-2.m4s
 });
 
 /**
- * The durable intent around the channel create (audit 5c3d97ca BLOCKER-5 /
- * §14.4 EV-01). The create used to sit ABOVE the `try/finally`: a POST that
+ * The durable intent around the channel create
+. The create used to sit ABOVE the `try/finally`: a POST that
  * threw after the server had created the channel ran no teardown at all, and
  * a channel that bills from creation was nobody's. These drive the runner
  * through a fake intent handle that records every write, and a product whose
@@ -3123,9 +3123,9 @@ describe("teardownAdoptedChannel — the run-level teardown of a channel adopted
 	});
 });
 
-describe("the evidence tuple rides on the result (audit 5c3d97ca BLOCKER-4, EV-02)", () => {
+describe("the evidence tuple rides on the result", () => {
 	const EVIDENCE = {
-		commit: "5c3d97ca",
+		commit: "b8c63e35",
 		image: `worker@sha256:${"c".repeat(64)}`,
 	};
 	function evidenceIntent(): LiveIntentHooks {
@@ -3212,7 +3212,7 @@ describe("the evidence tuple rides on the result (audit 5c3d97ca BLOCKER-4, EV-0
 			JSON.stringify(legs.map((l) => l.missing)),
 		).toEqual(legs.map((l) => [l.outputLeg, true, []]));
 		const first = legs[0];
-		expect(first?.build.commit).toBe("5c3d97ca");
+		expect(first?.build.commit).toBe("b8c63e35");
 		expect(first?.build.planSha256).toMatch(/^[0-9a-f]{64}$/);
 		expect(first?.source).toEqual({
 			location: "verify-in/bbb-short.mov",

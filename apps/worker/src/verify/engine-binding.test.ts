@@ -17,21 +17,21 @@ import {
 } from "./engine";
 
 /**
- * Manifest binding as the paid re-audit specified it (audit 5c3d97ca §14.5
- * VF-02 + VF-03, row 284), driven through the REAL player-family parsers so the
+ * Manifest binding as the paid re-audit specified it
+, driven through the REAL player-family parsers so the
  * fixtures below are the shapes Bitmovin writes, not a fake's.
  *
- *   HIGH-3  a per-title manifest compiled to an EMPTY video family set, so the
- *           DASH AdaptationSet check FAILed a correct H.264/H.265 MPD as "no
- *           plan family" — the only FAIL in the paid Per-Title outputs. The
- *           family is a plan value on every rendition; only the geometry is the
- *           encoder's. The plan, the RESULT capture and the manifest are now
- *           compared three ways, and a missing capture is an explicit SKIP.
- *   HIGH-5  `nearestByBandwidth` never consumed the child it bound, so one
- *           observed row satisfied every same-height rendition. Binding is now a
- *           one-to-one assignment on the row's identity (URI + AUDIO for HLS,
- *           kind + height / family for DASH), with missing, unexpected and
- *           duplicate rows each a verdict of its own.
+ * HIGH-3 a per-title manifest compiled to an EMPTY video family set, so the
+ * DASH AdaptationSet check FAILed a correct H.264/H.265 MPD as "no
+ * plan family" — the only FAIL in the paid Per-Title outputs. The
+ * family is a plan value on every rendition; only the geometry is the
+ * encoder's. The plan, the RESULT capture and the manifest are now
+ * compared three ways, and a missing capture is an explicit SKIP.
+ * HIGH-5 `nearestByBandwidth` never consumed the child it bound, so one
+ * observed row satisfied every same-height rendition. Binding is now a
+ * one-to-one assignment on the row's identity (URI + AUDIO for HLS,
+ * kind + height / family for DASH), with missing, unexpected and
+ * duplicate rows each a verdict of its own.
  */
 
 const FIXTURES = join(

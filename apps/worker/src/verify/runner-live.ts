@@ -171,7 +171,7 @@ export type LiveRunOptions = {
 		channelName?: string;
 	};
 	/**
-	 * The durable-intent hooks (audit 5c3d97ca BLOCKER-5 / §14.4 EV-01). When
+	 * The durable-intent hooks. When
 	 * wired, the runner commits PREPARED and SUBMITTED BEFORE the create POST,
 	 * sends the key with the request, classifies a create-time failure
 	 * (before-send vs ambiguous), adopts a channel the product created by its
@@ -180,8 +180,8 @@ export type LiveRunOptions = {
 	 */
 	intent?: LiveIntentHooks;
 	/**
-	 * What the evidence tuple binds the run TO (audit 5c3d97ca BLOCKER-4,
-	 * EV-02): the exact commit / image, and the fed source's version identity.
+	 * What the evidence tuple binds the run TO
+: the exact commit / image, and the fed source's version identity.
 	 * Absent (unit tests) ⇒ the tuple names them as missing, never guesses.
 	 */
 	evidence?: { commit: string; image?: string };
@@ -230,7 +230,7 @@ export type LiveRunResult = {
 	 */
 	firstPublish?: { ms?: number; polls: number; note: string };
 	/**
-	 * The durable teardown seal (row 268, audit 602ec286 BLOCKER-2): provider
+	 * The durable teardown seal: provider
 	 * terminal, local terminal, feeder `processGoneAt`, host process gone and
 	 * queue drained, in one artefact. `clean` false ⇒ the run is NOT a success
 	 * (`outcomeFromLiveResult` seals it INVALID). Present whenever a channel was
@@ -238,8 +238,8 @@ export type LiveRunResult = {
 	 */
 	cleanup?: LiveCleanupSeal;
 	/**
-	 * The evidence TUPLE, one leg per (manifest, delivery target) (audit
-	 * 5c3d97ca BLOCKER-4, EV-02): build → source → channel → output → master →
+	 * The evidence TUPLE, one leg per (manifest, delivery target)
+: build → source → channel → output → master →
 	 * children → media → two probes → progression → provider terminal →
 	 * cleanup, each leg sealed by core's completeness rule. Present whenever
 	 * the run reached its samples; `outcomeFromLiveResult` refuses a PASS whose
@@ -332,7 +332,7 @@ const STOP_CONFIRM_MS = 5 * 60 * 1000;
 
 /**
  * How long the cleanup seal waits for its elements to become POSITIVELY true
- * before it gives up and seals INVALID (row 268, audit 602ec286 BLOCKER-2).
+ * before it gives up and seals INVALID.
  *
  * The channel-stop confirmation and the feeder stop's kill ladder run before
  * this — the feeder stop is enqueued at the top of teardown and the channel
@@ -430,8 +430,8 @@ export function rewriteLiveForRun(
 		 * The AKAMAI_MSL family's live target — provisioning-config credential
 		 * (streamId + eventName live in its config). Absent ⇒ MSL outputs stay
 		 * as authored and the AKAMAI_MSL capability gate reports them.
-		 * `edgeBaseUrl` rides along (unused by the rewrite; the runner reads it
-		 * for the mirror-leg edge closure — audit 602ec286 BLOCKER-3, ).
+		 * `edgeBaseUrl` rides along
+
 		 */
 		akamaiMsl?: LiveMslCredentialTarget;
 		/** UC-numbered channel name (uc{NN}-{scenario}); overrides the fixture name. */
@@ -594,8 +594,8 @@ export function rewriteLiveForRun(
 
 	/**
 	 * The AKAMAI_MSL output keys, so the MSL manifest-path exemption below knows
-	 * which destinations carry the empty/slash contract (audit 602ec286
-	 * BLOCKER-3, ). Read AFTER the credential rewrite, which leaves every
+	 * which destinations carry the empty/slash contract
+. Read AFTER the credential rewrite, which leaves every
 	 * output's `kind` intact.
 	 */
 	const mslOutputKeys = new Set(
@@ -612,7 +612,7 @@ export function rewriteLiveForRun(
 	// this replaces was blind to any destination site off its list.
 	const rebased = mapDestinations(next, (dest) => ({
 		...dest,
-		// audit 602ec286 BLOCKER-3, : an AKAMAI_MSL manifest path is the
+		// an AKAMAI_MSL manifest path is the
 		// EVENT ROOT — EMPTY, or leading-and-trailing slash (LIVE_MSL_MANIFEST_PATH,
 		// C31, row 220). Prepending the run prefix turned `""` into a non-empty,
 		// non-slash path the validator rejects, so a DIRECT MSL fixture died on the
@@ -759,8 +759,8 @@ async function collectManifestFiles(
 
 /**
  * Read every declared manifest back on the Akamai delivery EDGE for each MSL
- * delivery-mirror leg (audit 602ec286 BLOCKER-3, ; re-shaped by audit
- * 5c3d97ca BLOCKER-4, EV-02).
+ * delivery-mirror leg
+
  *
  * One closure per (manifest, MSL mirror output), built by `observeEdgeLeg`
  * (edge-resolver.ts): master → every child → init + a bounded spread of media,
@@ -1105,8 +1105,8 @@ async function sample(
 	}
 
 	/**
-	 * The MSL delivery-mirror legs on the EDGE at THIS sample (audit 5c3d97ca
-	 * BLOCKER-4, EV-02): master → every child → init + media with bytes and
+	 * The MSL delivery-mirror legs on the EDGE at THIS sample
+: master → every child → init + media with bytes and
 	 * hashes, IN-RUN. Two of these, a sample gap apart, are what let the
 	 * engine and the evidence tuple witness media ADVANCING on the edge — the
 	 * post-stop closure alone cannot. Empty (no `edge` key) when no edge base
@@ -1166,8 +1166,8 @@ async function awaitRunning(
 }
 
 /**
- * Read the raw cleanup facts once, over the product's own API (row 268, audit
- * 602ec286 BLOCKER-2).
+ * Read the raw cleanup facts once, over the product's own API
+
  *
  * Two reads: the channel detail for the local STOPPED projection, and the
  * channel's feeder sessions (with `queue=1`, so each carries whether the feeder
@@ -1293,8 +1293,8 @@ async function readCleanupFacts(
 
 /**
  * The local half of the durable teardown seal, re-read until every local
- * element is POSITIVELY true or the budget runs out (row 268, audit 602ec286
- * BLOCKER-2 / §16-3). EV-01 joins provider proof after this loop.
+ * element is POSITIVELY true or the budget runs out
+. EV-01 joins provider proof after this loop.
  *
  * The loop IS the idempotent resume: each pass is a pure read of current state,
  * so a teardown that was partial when first read (the feeder stop's kill ladder
@@ -1466,12 +1466,12 @@ export async function runLiveScenario(
 	const { submitted, expected: expectedForRun, mslOutputs } = prepared;
 
 	/**
-	 * EV-01 (audit 5c3d97ca BLOCKER-5): the durable intent, BEFORE the POST.
+	 * EV-01: the durable intent, BEFORE the POST.
 	 *
 	 * The create used to sit above the `try/finally`, so a throw from the POST
-	 * — a timeout after the server had created the channel, a reset, a body
+	 * a timeout after the server had created the channel, a reset, a body
 	 * that would not parse — ran no teardown at all, and a channel that bills
-	 * from creation  was nobody's. Now: PREPARED lands first (a
+	 * from creation was nobody's. Now: PREPARED lands first (a
 	 * failed write means nothing is sent), the key rides the request so the
 	 * product can answer a repeat with the same channel, and every exit from
 	 * the `try` below — the ambiguous-create adoption included — reaches the
@@ -1998,8 +1998,8 @@ export async function runLiveScenario(
 
 		// Collected BEFORE the teardown, while the channel is still writing them.
 		const manifestFiles = await collectManifestFiles(deps, expectedForRun);
-		// The MSL delivery-mirror legs, read back on the Akamai edge (audit
-		// 602ec286 BLOCKER-3, ). Empty when there is no edge base URL to
+		// The MSL delivery-mirror legs, read back on the Akamai edge.
+		// Empty when there is no edge base URL to
 		// read them on — each leg then SKIPs as UNOBSERVED and the run cannot pass
 		// on the origin alone.
 		const providerOutputIds = Object.fromEntries(
@@ -2033,8 +2033,8 @@ export async function runLiveScenario(
 			fed,
 			...(afterStop ? { afterStop } : {}),
 		});
-		// First read the local half of the durable teardown seal (row 268, audit
-		// 602ec286 BLOCKER-2): local projection, feeder `processGoneAt`, host
+		// First read the local half of the durable teardown seal:
+		// local projection, feeder `processGoneAt`, host
 		// process and queue. Provider proof is joined only after EV-01 below.
 		const localCleanup = await sealCleanup(deps, channelId, temporaryStreamKey);
 		// EV-01 owns provider discovery, exact-set teardown and terminal
@@ -2064,7 +2064,7 @@ export async function runLiveScenario(
 		});
 		sealedCleanup = cleanup;
 		const source = await readFedSourceEvidence(deps, feederId, options.feed);
-		// The evidence TUPLE (audit 5c3d97ca BLOCKER-4, EV-02): everything this
+		// The evidence TUPLE: everything this
 		// PASS would be a pass OF, one leg per (manifest, delivery target),
 		// sealed by core's completeness rule — assembled here because only this
 		// scope holds the submitted plan, both samples, the manifests, the

@@ -20,7 +20,7 @@ import {
 } from "./harness-rails";
 
 /**
- * Paid audit 893eb66 BLOCKER-3 / BLOCKER-4 / HIGH-11 : every rail
+ * every rail
  * the harness lacked, as a table. Each arm is a value the audit either sent
  * or could have sent, and the rule's answer to it.
  */

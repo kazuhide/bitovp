@@ -26,7 +26,7 @@ describe("liveNextAction — the page's first layer (ledger #103)", () => {
 		// A status added to the DB and forgotten here would otherwise fall
 		// through to NOTHING_TO_DO, i.e. the page would tell an operator there
 		// is nothing to do on a state nobody has thought about.
-		// Crossed with the alert tri-state (audit 4403130 IMPORTANT-2): the
+		// Crossed with the alert tri-state: the
 		// `"unknown"` arm must be total too, or a status added later would
 		// fall through to NOTHING_TO_DO only when the alerts query happened
 		// to be down — the hardest class of bug to reproduce.
@@ -104,7 +104,7 @@ describe("liveNextAction — the page's first layer (ledger #103)", () => {
 		});
 	});
 
-	it("an alert list that could not be READ is never ON_AIR — audit 4403130 IMPORTANT-2", () => {
+	it("an alert list that could not be READ is never ON_AIR", () => {
 		// The production shape: a RUNNING channel whose alerts query failed.
 		// The web layer passed `alerts.data?.open.length ?? 0`, which made
 		// that indistinguishable from a measured zero, so a channel nobody

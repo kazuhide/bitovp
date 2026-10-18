@@ -234,7 +234,7 @@ describe("no live check may disappear when the channel says less", () => {
 		// primary + MSL4 as the first live deliveryMirror.
 		// 11→12: live-akamai-msl-ts (HLS/TS half of the MSL pair).
 		// 13→14 : live-akamai-msl5.
-		// 14→15 (2026-08-29, paid re-audit eb7c983 HIGH-2): live-mixed-codec-dash.
+		// 14→15: live-mixed-codec-dash.
 		expect(planFiles.length).toBe(15);
 	});
 

@@ -345,7 +345,7 @@ describe("POST /schedules — validation table", () => {
 		});
 	});
 
-	it("refuses an airAt at or before fireAt — an already-expired deadline would false-alert on the next tick (review-8eaef21 #2)", async () => {
+	it("refuses an airAt at or before fireAt — an already-expired deadline would false-alert on the next tick", async () => {
 		const res = await POST(
 			post({ action: "START", fireAt: FUTURE, airAt: FUTURE }),
 			ctx(),

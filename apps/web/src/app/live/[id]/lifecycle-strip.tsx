@@ -35,7 +35,7 @@ const STAGE_DEFS = [
 ] as const;
 
 /**
- *  (audit 5c3d97ca BLOCKER-1): the PROVIDER's view of the current
+ * the PROVIDER's view of the current
  * run's encoding, as the page derives it from the run columns.
  */
 export type ProviderLifecycleView = {

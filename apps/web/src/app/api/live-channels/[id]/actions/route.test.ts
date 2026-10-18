@@ -1699,7 +1699,7 @@ describe("POST /api/live-channels/[id]/actions", () => {
 });
 
 /**
- *  (audit 5c3d97ca BLOCKER-1 / §14.5 LC-01) — the route's half of the
+ * the route's half of the
  * observed paid sequence: a run the PROVIDER ended is never restarted and
  * never revived; UNKNOWN refuses new effects retryably. The persisted view
  * (`deriveProviderLifecycle` over the run columns) is what the route reads;

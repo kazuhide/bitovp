@@ -398,7 +398,7 @@ describe("describeStorageError", () => {
 });
 
 /**
- * Exact-version reads — audit ce4a935 CRITICAL-2, slice 1.
+ * Exact-version reads.
  *
  * The thing being pinned is not "the code has an `expect` field": it is that
  * the field REACHES THE SDK. A previous PR in this repo shipped an optional

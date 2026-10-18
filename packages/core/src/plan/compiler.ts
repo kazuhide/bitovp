@@ -340,8 +340,8 @@ export function qcOutputPath(dir: string): string {
 /**
  * The QC mirror's name (filename + container) lives in the leaf `./qc-mirror`
  * so per-title attribution can bind a RESULT muxing back to its template
- * WITHOUT importing this module (which imports `./per-title-results`, so the
- * back-import would close a cycle — audit 602ec286 §5.4). Re-exported here for
+ * WITHOUT importing this module
+. Re-exported here for
  * the callers that already reach it through the compiler ('s "one
  * definition" kept, cycle avoided).
  */
@@ -1880,7 +1880,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 				const base = renditionOutputBase(plan, rendition.key);
 				if (base) {
 					// VP9 cannot ride a progressive MP4 — the provider refuses the
-					// muxing ("Codec type not supported", paid audit 893eb66 HIGH-9
+					// muxing ("Codec type not supported",
 					// case 9, before START). Its single-file container is a
 					// progressive WebM; every other video codec keeps the MP4 mirror
 					// byte-for-byte. `qcMirrorFilename` is the ONE definition of the
@@ -2447,7 +2447,7 @@ function compileHlsManifest(
 		// `videoMuxingKind` exists to serve — then had its CMAF variants omit
 		// `audio` while that same manifest emitted a perfectly good EXT-X-MEDIA
 		// group: every CMAF variant plays video-only with the audio sitting
-		// unreferenced beside it (review of 85250672, finding b).
+		// unreferenced beside it.
 		ops.push({
 			// Preserve the existing single-leg step ID for persisted logs.
 			step: `hls-pertitle:${manifest.key}${index === 0 ? "" : `:${perTitleMuxingKind}`}`,
@@ -2765,8 +2765,8 @@ function compileDashManifest(
 	}
 
 	/*
-	 * One VIDEO adaptation set PER CODEC (paid audit 893eb66 HIGH-9, ledger
-	 * #204). The implicit branch put every video representation into one set;
+	 * One VIDEO adaptation set PER CODEC
+. The implicit branch put every video representation into one set;
 	 * Bitmovin refuses a mixed set — VOD case 15 and Live case F both died on
 	 * the first H265 representation added beside H264 (400, code 1001), and
 	 * case 17's explicit codec-separated sets succeeded. A single-codec plan
@@ -2782,7 +2782,7 @@ function compileDashManifest(
 		),
 	];
 	/*
-	 * Per-title video codecs count too (paid re-audit eb7c983 HIGH-3). The
+	 * Per-title video codecs count too. The
 	 * per-title expansion below creates representations at RUN time, so its
 	 * codec never appears in `dashMuxings` — deriving the set population from
 	 * the static muxings alone would put per-title H265 results into an
@@ -2891,7 +2891,7 @@ function compileDashManifest(
 					manifestId: manifestStep,
 					periodId: periodStep,
 					// The SAME set the representation above joined. This said
-					// `videoSetStep` until the paid re-audit eb7c983 HIGH-3: #204
+					// `videoSetStep` until the mixed-codec regression was fixed. It
 					// stopped creating that base set for a mixed-codec plan, so a
 					// mixed-codec plan WITH DRM emitted a ContentProtection child
 					// under an adaptation set that no step creates.
@@ -2932,7 +2932,7 @@ function compileDashManifest(
 				manifestId: manifestStep,
 				periodId: periodStep,
 				// The per-title codec's own set, not the base one — same defect
-				// as the ContentProtection ref above (re-audit eb7c983 HIGH-3).
+				// as the ContentProtection ref above.
 				// ONE op carries ONE adaptation set and creates every
 				// PER_TITLE_RESULT representation inside it, so this is
 				// expressible only while the plan's per-title video is a single

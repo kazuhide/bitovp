@@ -274,7 +274,7 @@ describe("FeederPanel target prefill (ledger #46)", () => {
 	});
 
 	it("a PUSHING feeder with NO heartbeat information reads as unconfirmed, not healthy (ledger #213)", async () => {
-		// Paid audit 893eb66 MODERATE-15: the bound-input banner fires only on an
+		// the bound-input banner fires only on an
 		// explicit `false`; a missing or stale heartbeat left the PUSHING badge
 		// standing alone, and absence of information read as a healthy push.
 		apiFetch.mockImplementation((path: unknown) =>

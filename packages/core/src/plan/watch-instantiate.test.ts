@@ -195,7 +195,7 @@ describe("instantiateWatchPlan", () => {
 });
 
 /**
- * Audit f63f76b F63-RUN-002 — a rule whose preset writes back into the folder
+ * a rule whose preset writes back into the folder
  * it watches. The sweep enumerates the watched prefix recursively, so the
  * encoder's own outputs are discovered as new sources and encoded again; the
  * uniquifying token in outputPrefixTemplate means each generation gets a fresh

@@ -1,17 +1,17 @@
 /**
  * Assemble the Live/MSL evidence TUPLE from what one live run observed
- * (audit 5c3d97ca BLOCKER-4, §14.4 EV-02 #1/#2).
+ *
  *
  * One leg per (manifest, delivery target):
  *
- *   ORIGIN legs  every manifest on its primary output, witnessed through the
- *                storage driver — the master the runner read (bytes, hash),
- *                the muxing prefixes it LISTED at each sample (nonzero object
- *                sizes are the media witness; the bytes are not downloaded, so
- *                there is no hash), and the media playlist's sequence number.
- *   EDGE legs    every (manifest, AKAMAI_MSL mirror), witnessed on the delivery
- *                edge by the resolver's in-run closures: master, children,
- *                fetched init + media with SHA-256s, one probe per sample.
+ * ORIGIN legs every manifest on its primary output, witnessed through the
+ * storage driver — the master the runner read (bytes, hash),
+ * the muxing prefixes it LISTED at each sample (nonzero object
+ * sizes are the media witness; the bytes are not downloaded, so
+ * there is no hash), and the media playlist's sequence number.
+ * EDGE legs every (manifest, AKAMAI_MSL mirror), witnessed on the delivery
+ * edge by the resolver's in-run closures: master, children,
+ * fetched init + media with SHA-256s, one probe per sample.
  *
  * The verdict per leg is core's `liveEvidenceCompleteness` — this module only
  * gathers; it never decides. Everything it emits is credential-free: edge

@@ -24,7 +24,7 @@ import { getFeederQueue } from "@/lib/server/queue";
 import { sealSourceIdentity } from "@/lib/server/storage";
 
 /**
- *  (audit 602ec286 HIGH-1): a P2002 from the partial unique index
+ * a P2002 from the partial unique index
  * `FeederSession_one_active_pusher_per_channel` — the DB's atomic single-pusher
  * guarantee. Matched structurally (no runtime Prisma error-class import;
  * `code`/`meta` are public fields of PrismaClientKnownRequestError).
@@ -75,7 +75,7 @@ const LIST_SELECT = {
 	readyAt: true,
 	committedAt: true,
 	switchSeamMs: true,
-	// Audit 5c3d97ca LC-02: the publisher claim, so the panel's "this channel
+	// the publisher claim, so the panel's "this channel
 	// is occupied — offer the switch" decision reads the SAME three facts the
 	// server's admission counts (claim held / process may be alive / active
 	// single-phase) instead of the status alone.
@@ -94,7 +94,7 @@ const querySchema = z.object({
 	/** Channel detail views list their attached feeders with this. */
 	liveChannelId: z.uuid().optional(),
 	/**
-	 * Row 268 (audit 602ec286 BLOCKER-2): opt-in per-session `queued` — whether
+	 * Row 268: opt-in per-session `queued` — whether
 	 * the feeder queue still holds a pending job for the session. Off by default
 	 * so the UI list stays Redis-free; the verify cleanup seal turns it on to
 	 * prove the queue is drained for a channel BEFORE calling teardown clean.
@@ -224,7 +224,7 @@ export async function POST(req: Request) {
 		// concurrency because the cap is concurrency − 1).
 		// The SLOT population — every active row, staged holds included, because
 		// each one's START job occupies a worker slot for its whole life. This
-		// is deliberately NOT replaced by publisher occupancy (audit 5c3d97ca
+		// is deliberately NOT replaced by publisher occupancy (
 		// LC-02): that would omit staged holds and break the reserved stop-slot
 		// guarantee. The separate publisher-cap question follows immediately.
 		const activeSessions = await ctx.prisma.feederSession.count({
@@ -291,7 +291,7 @@ export async function POST(req: Request) {
 		 * cap above: the count-then-create window is unguarded, acceptable
 		 * for an operator tool.
 		 *
-		 * Audit 5c3d97ca BLOCKER-2 (LC-02): "active" was the STATUS list, and a
+		 * "active" was the STATUS list, and a
 		 * row that left it with its ffmpeg still pushing — a cross-host takeover
 		 * refusal (ERROR, pid kept), a stop the owner's host could not verify,
 		 * a dead START job — was invisible here for up to a lease renewal plus
@@ -429,7 +429,7 @@ export async function POST(req: Request) {
 				},
 				select: LIST_SELECT,
 			})
-			//  (audit 602ec286 HIGH-1): the count above is check-then-act
+			// the count above is check-then-act
 			// — two concurrent creates on one channel both clear it. The partial
 			// unique index is the ATOMIC backstop: the racing loser's INSERT is a
 			// P2002, caught here and returned as a clean 409 (not a 500) below. A

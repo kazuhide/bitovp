@@ -14,9 +14,9 @@ import { renderLocalized, renderWithQuery as wrap } from "@/test/render";
 vi.mock("@/lib/auth/use-role-access", () => import("@/test/owner-role-access"));
 
 /**
- *  — the long page's NAVIGATION and FOCUS HANDOFF.
+ * the long page's NAVIGATION and FOCUS HANDOFF.
  *
- * Audit 4403130 §5.6 measured three gaps on a body 5.72 viewports tall: a
+ * measured three gaps on a body 5.72 viewports tall: a
  * source comment describing a right-margin section rail that does not exist in
  * the render tree, a next-action pointer that scrolls to an anchor whose
  * `FlatSection` is not focusable, and a StatusStrip whose material changes are
@@ -24,16 +24,16 @@ vi.mock("@/lib/auth/use-role-access", () => import("@/test/owner-role-access"));
  *
  * What each `describe` below pins, and why it is the arm that would go red:
  *
- *  - the rail and the "Jump to" menu are ONE list rendered from
- *    `section-layout.ts` — delete a layer from that table and the navigation
- *    loses it in the same edit as the page;
- *  - the "you are here" highlight follows the IntersectionObserver, not a
- *    hand-maintained scroll table;
- *  - a deep link, a rail link, the next-action CTA and the FIRST auto-reveal of
- *    an escalated section each leave the caret on the target's HEADING, and a
- *    poll or a second reveal leaves it exactly where the operator put it;
- *  - the live region speaks on a CHANGE and is silent on a poll that measured
- *    the same thing again.
+ * - the rail and the "Jump to" menu are ONE list rendered from
+ * `section-layout.ts` — delete a layer from that table and the navigation
+ * loses it in the same edit as the page;
+ * - the "you are here" highlight follows the IntersectionObserver, not a
+ * hand-maintained scroll table;
+ * - a deep link, a rail link, the next-action CTA and the FIRST auto-reveal of
+ * an escalated section each leave the caret on the target's HEADING, and a
+ * poll or a second reveal leaves it exactly where the operator put it;
+ * - the live region speaks on a CHANGE and is silent on a poll that measured
+ * the same thing again.
  */
 
 const apiFetch = vi.fn();
@@ -1003,7 +1003,7 @@ describe("the polite live region speaks on a change and not on a poll", () => {
 		// TWO nodes carry the sentence: the visible notice and the region. That
 		// is the design — one is seen, one is spoken — and the notice is NOT
 		// itself a live region, or it would be read twice. The sentence is the
-		// NOUN frame (audit 5c3d97ca UX-03: the button is a verb phrase now).
+		// NOUN frame.
 		const carrying = await screen.findAllByText("Channel stop accepted.");
 		expect(carrying).toHaveLength(2);
 		expect(region()).toBe("Channel stop accepted.");

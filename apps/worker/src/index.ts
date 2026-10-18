@@ -1668,7 +1668,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								},
 							})
 							.then(({ count }) => {
-								// Audit f63f76b F63-RUN-009: marking the row
+								// marking the row
 								// ERROR stops it wedging, but the ENCODING this job may have
 								// started at Bitmovin keeps billing — and the cancel API
 								// claims `status in (QUEUED, RUNNING)`, so the write above is

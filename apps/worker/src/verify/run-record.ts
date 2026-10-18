@@ -178,7 +178,7 @@ export type RunRecordStore = {
 	actorForToken?: (secret: string) => Promise<string | null>;
 	/**
 	 * The Live/MSL evidence tuples, one child row per output leg, upserted on
-	 * (run, scenario, airing, leg) (audit 5c3d97ca BLOCKER-4, EV-02 #2/#5).
+	 * (run, scenario, airing, leg).
 	 */
 	upsertLiveEvidence?: (rows: readonly LiveEvidenceRow[]) => Promise<unknown>;
 };
@@ -380,7 +380,7 @@ export function createRunRecorder(
 	let sourceIdentity: string | undefined;
 	/**
 	 * True ONLY once the SEALED row write has DURABLY landed — never before the
-	 * write, never on a swallowed failure (audit 602ec286 BLOCKER-1). It is the
+	 * write, never on a swallowed failure. It is the
 	 * short-circuit both a re-seal and a post-seal `failed` read: once the
 	 * evidence really says SEALED, a later throw is not this row's story.
 	 */
@@ -398,8 +398,8 @@ export function createRunRecorder(
 	 * row stays RUNNING, and this model documents a stale RUNNING row as
 	 * exactly that — a run that never sealed. The SEAL is the one write whose
 	 * all-retries failure is NOT survivable, and `sealed` reads this boolean to
-	 * refuse to claim SEALED without a durable write (audit 602ec286
-	 * BLOCKER-1): before this returned that fact, the seal write was swallowed
+	 * refuse to claim SEALED without a durable write
+: before this returned that fact, the seal write was swallowed
 	 * like any other, so an all-fail write left the row RUNNING while the CLI
 	 * finished "successfully" — a release gate got different answers from the
 	 * exit code and the Dashboard row.

@@ -1,5 +1,5 @@
 /**
- * The Live / MSL evidence TUPLE (audit 5c3d97ca BLOCKER-4, §14.4 EV-02).
+ * The Live / MSL evidence TUPLE.
  *
  * The paid re-audit found that a live run's PASS rested on facts that were
  * never joined: `LiveRunResult` carried a channel id, a report, a first-publish
@@ -12,15 +12,15 @@
  * This module is the canonical, VERSIONED shape of what a live PASS is a pass
  * OF, one leg per (manifest, output) delivery target:
  *
- *   build        exact commit / image / plan SHA
- *   source       the fed object's location and version identity
- *   channel      channel id, the airing (LiveChannelRun), the provider encoding
- *   output       the run prefix, and for an edge leg the credential-free edge URL
- *   master       identity, bytes, hash
- *   children     each child playlist / representation, with the media it served
- *   probes       at least two timestamps, each with what was listed and served
- *   progression  whether media ADVANCED between the first and last probe
- *   providerTerminal, cleanup
+ * build exact commit / image / plan SHA
+ * source the fed object's location and version identity
+ * channel channel id, the airing (LiveChannelRun), the provider encoding
+ * output the run prefix, and for an edge leg the credential-free edge URL
+ * master identity, bytes, hash
+ * children each child playlist / representation, with the media it served
+ * probes at least two timestamps, each with what was listed and served
+ * progression whether media ADVANCED between the first and last probe
+ * providerTerminal, cleanup
  *
  * `liveEvidenceCompleteness` is the single rule for whether a leg is COMPLETE,
  * and it is pure: the worker's runner assembles the leg and asks; the run

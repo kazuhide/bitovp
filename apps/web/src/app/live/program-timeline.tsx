@@ -31,7 +31,7 @@ export type TimelineRow = {
 	action: "START" | "STOP" | "SLATE_IN" | "FEEDER_START" | "FEEDER_SWITCH";
 	status: LiveScheduleStatusKind;
 	/**
-	 * Audit 602ec286 HIGH-8: a FIRED row's colour comes from its DELIVERY, not
+	 * a FIRED row's colour comes from its DELIVERY, not
 	 * its firing. Optional for the wizard's planning view (no rows have fired
 	 * yet) and for a server that predates the column; absent reads as PENDING,
 	 * the direction that cannot invent a success.
@@ -84,7 +84,7 @@ export function ProgramTimeline({
 	const nowMs = now?.getTime();
 
 	/**
-	 * Audit 602ec286 HIGH-8: a FIRED marker is coloured by its OUTCOME, never
+	 * a FIRED marker is coloured by its OUTCOME, never
 	 * emerald-by-status. The old chain greened every FIRED row, so a slate
 	 * whose provider entry went ERROR, a feed still only PROCESS_PUSHING, or a
 	 * row left UNKNOWN all read as success on the timeline while the history
@@ -97,7 +97,7 @@ export function ProgramTimeline({
 	 * not a success. This mirrors `schedule-panel`'s `OUTCOME_TONE` exactly, so
 	 * the two surfaces agree.
 	 *
-	 * Exhaustive `Record` on purpose : a new outcome is a
+	 * Exhaustive `Record` on purpose: a new outcome is a
 	 * COMPILE error here instead of silently inheriting a colour — which is how
 	 * the untyped status chain greened FIRED in the first place.
 	 */
@@ -182,7 +182,7 @@ export function ProgramTimeline({
 						aria-hidden="true"
 						data-marker={row.action}
 						data-status={row.status}
-						// audit 602ec286 HIGH-8: expose the outcome the bar is
+						// expose the outcome the bar is
 						// coloured from, so a test (and an inspecting operator) can
 						// read WHY a FIRED marker is amber or red rather than green.
 						data-outcome={

@@ -452,7 +452,7 @@ describe("alert engine transitions", () => {
 });
 
 /**
- *  (audit 4403130 §4 IMPORTANT-1, second defect): the engine read
+ * the engine read
  * heartbeats by `liveChannelId` ALONE, so right after a re-air the previous
  * airing's samples were still the newest rows in the table and were evaluated
  * as if they belonged to the new run.

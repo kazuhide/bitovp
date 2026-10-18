@@ -2184,7 +2184,7 @@ describe("PlaybackSurface — the Bitmovin Player branch (ledger #59)", () => {
 	});
 
 	it("tells the player NOT to load its own skin and builds it from the UI package instead (ledger #212)", async () => {
-		// Paid audit 893eb66 HIGH-14: left to itself the player fetched
+		// left to itself the player fetched
 		// `bitmovinplayer-ui.js` / `.css` from beside its script — a 404 under
 		// Next's chunk path on every deployment, i.e. a player with no controls.
 		uiBuilt = 0;

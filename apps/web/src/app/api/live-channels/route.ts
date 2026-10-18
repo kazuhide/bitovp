@@ -96,8 +96,8 @@ const bodySchema = z
 		 */
 		schedule: liveProgramScheduleSchema.optional(),
 		/**
-		 * EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's
-		 * idempotency pair — a channel bills from creation , so a
+		 * EV-01: the verification harness's
+		 * idempotency pair — a channel bills from creation, so a
 		 * lost create response must be answerable by the key alone. See
 		 * `verification-key.ts`.
 		 */
@@ -261,7 +261,7 @@ function originDigest(observation: unknown): {
  * build.
  *
  * A failure degrades to `null` — rendered as `"unknown"` — rather than failing
- * the request or printing a green zero (audit 4403130 IMPORTANT-2): the alert
+ * the request or printing a green zero: the alert
  * table is the one thing on this screen whose absence and whose emptiness look
  * identical and mean opposite things.
  */
@@ -339,7 +339,7 @@ export async function GET(req: Request) {
 		const pageIds = page.map((row) => row.id);
 		/**
 		 * Two page-wide reads, both bounded, both issued at once: the grouped
-		 * alert counts and the newest run per channel ( — the nested
+		 * alert counts and the newest run per channel (the nested
 		 * `runs: { take: 1 }` this replaces read every airing of every channel
 		 * on the page). Concurrent rather than sequential because neither
 		 * depends on the other, so the page still costs the operator one round

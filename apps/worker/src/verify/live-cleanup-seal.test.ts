@@ -7,7 +7,7 @@ import {
 } from "./live-cleanup-seal";
 
 /**
- * The durable Live cleanup seal (row 268, audit 602ec286 BLOCKER-2 / §16-3).
+ * The durable Live cleanup seal.
  *
  * The property the whole fix turns on: the run seals CLEAN only when all five
  * elements are POSITIVELY established, and a missing one is not run success.

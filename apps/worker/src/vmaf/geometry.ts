@@ -4,7 +4,7 @@
  * libvmaf requires its two inputs to agree on W×H *and* frame rate, so every
  * scoring path has to conform the distorted side to the reference before the
  * comparison. The VOD runner has done that since its first commit; the LIVE
- * runner did not, and the paid re-audit (eb7c983 HIGH-1) measured the cost:
+ * runner did not, and the paid re-audit measured the cost:
  * only the rendition that happened to match the source geometry (1080p) ever
  * produced a result, and 720/540/360p ERRORed on the mismatch.
  *

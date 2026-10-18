@@ -363,7 +363,7 @@ function PlaybackAttempt({
 		let cleanup = () => {};
 		(async () => {
 			const { Player, PlayerEvent } = await import("bitmovin-player");
-			// The skin ships as its own package (paid audit 893eb66
+			// The skin ships as its own package (
 			// HIGH-14): left to itself the player fetches
 			// `bitmovinplayer-ui.js` / `.css` from beside its own script, which
 			// under Next's chunk path is a 404 on every deployment — a player

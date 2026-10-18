@@ -22,7 +22,7 @@ import {
 } from "./live-evidence";
 
 /**
- * The Live/MSL evidence tuple (audit 5c3d97ca BLOCKER-4, §14.4 EV-02): the
+ * The Live/MSL evidence tuple: the
  * completeness rule, the progression rule, the credential-free URL shape and
  * the reference policy. Every negative the audit lists — empty/master-only,
  * disallowed scheme/origin, root escape, zero segments, two identical
@@ -57,7 +57,7 @@ function completeLeg(): LiveEvidenceLegInput {
 		kind: "HLS",
 		role: "EDGE",
 		build: {
-			commit: "5c3d97ca",
+			commit: "b8c63e35",
 			image: `worker@sha256:${"c".repeat(64)}`,
 			planSha256: "a".repeat(64),
 		},

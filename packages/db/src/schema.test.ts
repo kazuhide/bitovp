@@ -203,7 +203,7 @@ describe("FeederSession model (P3-PR3)", () => {
 	});
 });
 
-describe("FeederSession publisher claim (audit 5c3d97ca BLOCKER-2 / LC-02)", () => {
+describe("FeederSession publisher claim", () => {
 	/**
 	 * Schema ↔ migration ↔ generated client, for the three columns the
 	 * single-publisher guarantee rests on. The partial unique index is
@@ -307,7 +307,7 @@ describe("FeederSession publisher claim (audit 5c3d97ca BLOCKER-2 / LC-02)", () 
 	});
 });
 
-describe("FeederPushAttempt actual spawn boundary (audit 5c3d97ca LF-01)", () => {
+describe("FeederPushAttempt actual spawn boundary", () => {
 	const sql = readFileSync(
 		join(
 			__dirname,
@@ -439,7 +439,7 @@ describe("CredentialProvider enum", () => {
 	});
 });
 
-describe("LiveScheduleOutcome enum (audit 602ec286 §17 P1-4)", () => {
+describe("LiveScheduleOutcome enum", () => {
 	/**
 	 * The delivery column's media-witnessed progression. The generated-client
 	 * pins below are the compile-time half (a member dropped from schema.prisma
@@ -495,7 +495,7 @@ describe("LiveScheduleOutcome enum (audit 602ec286 §17 P1-4)", () => {
 	});
 });
 
-describe("VerificationLiveEvidence model (audit 5c3d97ca BLOCKER-4 / EV-02)", () => {
+describe("VerificationLiveEvidence model", () => {
 	/**
 	 * The Live/MSL evidence tuple's row. The uniqueness is the audit's own
 	 * recommendation — (run, scenario, airing, output leg) — and the FK is
@@ -551,7 +551,7 @@ describe("VerificationLiveEvidence model (audit 5c3d97ca BLOCKER-4 / EV-02)", ()
 	});
 });
 
-describe("VerificationRun resume authority (audit 5c3d97ca HIGH-6 / EV-03)", () => {
+describe("VerificationRun resume authority", () => {
 	it("stores one formal prior-run relation and the seal/retention contract", () => {
 		const body = block("model", "VerificationRun");
 		expect(body).toMatch(

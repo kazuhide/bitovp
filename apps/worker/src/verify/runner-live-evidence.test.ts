@@ -9,7 +9,7 @@ import {
 } from "./runner";
 
 /**
- * The CLI edge base (audit 5c3d97ca BLOCKER-4, §14.4 EV-02 #6) and the
+ * The CLI edge base and the
  * runner's evidence wiring, pinned by shape the way run-record-wiring.test.ts
  * pins the recorder's call sites: `runVerification` needs a database, a
  * product and an encoder, so what a test can reach is the rule (the flag /
@@ -223,7 +223,7 @@ describe("resolveLiveEvidenceImage — immutable image identity before spend", (
 	});
 });
 
-describe("the evidence wiring, pinned by shape (audit 5c3d97ca BLOCKER-4, EV-02)", () => {
+describe("the evidence wiring, pinned by shape", () => {
 	const runner = readFileSync(new URL("./runner.ts", import.meta.url), "utf8");
 	const live = readFileSync(
 		new URL("./runner-live.ts", import.meta.url),

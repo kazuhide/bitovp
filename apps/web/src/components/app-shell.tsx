@@ -43,7 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 	/*
 	 * The page gate sits HERE, around every page's children, and nowhere
 	 * else: a direct URL to a privileged page gets the shared permission
-	 * screen from the shell (audit 5c3d97ca MEDIUM-5 / AU-01 item 3), so no
+	 * screen from the shell, so no
 	 * page carries its own copy and a page added later is covered the moment
 	 * its rule lands in PAGE_ACCESS_RULES.
 	 */

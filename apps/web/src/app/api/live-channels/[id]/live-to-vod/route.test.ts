@@ -667,7 +667,7 @@ describe("POST /api/live-channels/[id]/live-to-vod", () => {
 	});
 
 	/**
-	 * Audit 5c3d97ca HIGH-1 / §14.6 LF-02 . A DASH default manifest
+	 * A DASH default manifest
 	 * enumerates fMP4 muxings only; over a segmented-TS recording the provider
 	 * refuses it (400 / code 2700). The default is therefore the family set the
 	 * RECORDED muxings support, and an explicit incompatible family is refused

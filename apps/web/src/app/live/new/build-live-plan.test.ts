@@ -600,7 +600,7 @@ describe("planToLiveWizardState round-trip (live goldens)", () => {
 		// that the wizard did not model `mslVersion` at all and emitted MSL4's
 		// segment-naming grammar for an MSL5 output. Both were invisible until a
 		// fixture asked the form to rebuild an MSL5 plan.
-		// 14→15 (2026-08-29, paid re-audit eb7c983 HIGH-2): live-mixed-codec-dash.
+		// 14→15: live-mixed-codec-dash.
 		// It earned its keep here too: the first draft named its renditions
 		// `v1080-h264`/`v1080-h265` and the round-trip failed, because
 		// `videoKeys` disambiguates on HEIGHT and not on codec. The ladder now

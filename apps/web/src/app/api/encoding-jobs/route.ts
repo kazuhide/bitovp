@@ -40,12 +40,12 @@ import {
 } from "@/lib/server/verification-key";
 
 /**
- * `presetId`+`presetRevision` : template provenance from the
+ * `presetId`+`presetRevision`: template provenance from the
  * launcher — both-or-neither. The revision is CLIENT-supplied by design: it is
  * the revision the launcher LOADED (the body it instantiated), which a
  * template edit racing the launch would misreport if the server re-read it.
  *
- * `verificationKey`+`requestSha256` (EV-01, audit 5c3d97ca BLOCKER-5): the
+ * `verificationKey`+`requestSha256`: the
  * verification harness's idempotency pair — see `verification-key.ts`.
  */
 const bodySchema = z

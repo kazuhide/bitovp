@@ -4,10 +4,10 @@ import { type ReactNode, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
- * : the one-line progressive disclosure for RARE AUTHORING inside an
+ * the one-line progressive disclosure for RARE AUTHORING inside an
  * otherwise-readable section.
  *
- * Audit 4403130 §5.4 named the shape to copy — the feeder panel already
+ * named the shape to copy — the feeder panel already
  * "shows session/status and toggles only the creation form"
  * (`feeder-panel.tsx`) — and §5.6 named what that toggle was missing:
  * `aria-expanded` / `aria-controls`. This component is that pattern with the

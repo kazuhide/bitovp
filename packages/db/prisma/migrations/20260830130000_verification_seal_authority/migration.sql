@@ -1,4 +1,4 @@
--- Audit 5c3d97ca HIGH-6 / EV-03: one authority for DB, report, seal,
+-- One authority for DB, report, seal,
 -- fingerprint, scenario evidence and retention. Key material is never stored.
 ALTER TABLE "VerificationRun"
     ADD COLUMN "resumedFromId" UUID,

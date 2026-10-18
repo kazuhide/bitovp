@@ -249,6 +249,10 @@ UPDATE, or DELETE effects, and the Prisma datamodel does not represent every
 partial index, trigger, function, or CHECK constraint. Inspect these objects in
 both directions against committed migrations.
 
+Comment corrections also change a migration file's checksum even when its SQL
+is unchanged. A successful `migrate deploy` does not prove historical checksums
+match. Compare the statements and test the upgrade on a restored copy.
+
 Do not reset a database containing required history or edit migration bookkeeping
 merely to silence a mismatch. Establish schema equivalence, inspect hand-written
 objects and data effects, preserve a verified backup, and resolve the specific

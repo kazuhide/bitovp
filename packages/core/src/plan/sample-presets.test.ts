@@ -59,8 +59,8 @@ describe("sample presets", () => {
 
 	it("returns an OWNED deep clone, not the shared singleton", () => {
 		// The generator used to emit `return PLANS[name]`, so a mutation in one
-		// caller leaked into the next (a real test-isolation flake, hand-patched
-		// in 189ad1d). Nothing caught the divergence: the fix lived only in the
+		// caller leaked into the next, causing a test-isolation flake.
+		// Nothing caught the divergence: the fix lived only in the
 		// generated file, so re-running the documented generate:presets flow
 		// silently reverted it. This test fails on the shared reference, so the
 		// generator and the committed module can no longer drift apart.

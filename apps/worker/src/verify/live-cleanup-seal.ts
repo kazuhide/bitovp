@@ -1,8 +1,8 @@
 import { feederProcessMayBeAlive } from "@bitovp/core";
 
 /**
- * The durable Live cleanup seal (row 268, audit 602ec286 BLOCKER-2 / §16-3 /
- * §17 P0-4).
+ * The durable Live cleanup seal
+
  *
  * The live runner used to wait only for the LOCAL channel row to read
  * STOPPED/ERROR after a stop 2xx and then report the run normally. That proved
@@ -17,23 +17,23 @@ import { feederProcessMayBeAlive } from "@bitovp/core";
  * inference. It records the local product/process projection first; EV-01's
  * exact provider-set readback then finalises the provider element:
  *
- *   1. productStopProjection — the local channel row projects STOPPED with no
- *      error. This is useful product evidence, but NEVER provider evidence.
- *   2. providerTerminal — EV-01 discovered the exact marker-bound provider set,
- *      stopped it and read every member terminal. The pure local read below
- *      deliberately leaves this false; `finalizeLiveCleanupSeal` is the only
- *      promotion point.
- *   3. localTerminal — the local channel row reached a terminal state.
- *   4. feederProcessGone — every feeder session that ENGAGED a process carries
- *      a positive `processGoneAt` ( / BLOCKER-5 stamps it on a proven
- *      kill ladder or an ESRCH probe). This is the element the audit's hole
- *      turned on: a feeder that pushed, went terminal (pid nulled) but was
- *      never proven gone reads as "nothing to do" everywhere else.
- *   5. hostProcessGone — no feeder session still points at a pid nobody proved
- *      gone (`feederProcessMayBeAlive`): the DB analogue of "0 ffmpeg for this
- *      run".
- *   6. queueDrained — no pending feeder job remains for this channel's
- *      sessions.
+ * 1. productStopProjection — the local channel row projects STOPPED with no
+ * error. This is useful product evidence, but NEVER provider evidence.
+ * 2. providerTerminal — EV-01 discovered the exact marker-bound provider set,
+ * stopped it and read every member terminal. The pure local read below
+ * deliberately leaves this false; `finalizeLiveCleanupSeal` is the only
+ * promotion point.
+ * 3. localTerminal — the local channel row reached a terminal state.
+ * 4. feederProcessGone — every feeder session that ENGAGED a process carries
+ * a positive `processGoneAt` (stamped on a proven
+ * kill ladder or an ESRCH probe). This is the element the audit's hole
+ * turned on: a feeder that pushed, went terminal (pid nulled) but was
+ * never proven gone reads as "nothing to do" everywhere else.
+ * 5. hostProcessGone — no feeder session still points at a pid nobody proved
+ * gone (`feederProcessMayBeAlive`): the DB analogue of "0 ffmpeg for this
+ * run".
+ * 6. queueDrained — no pending feeder job remains for this channel's
+ * sessions.
  *
  * `localClean` is the local/product/process conjunction and is what the polling
  * loop can establish. `clean` additionally requires EV-01 provider evidence and
@@ -53,8 +53,8 @@ export type LiveCleanupSeal = {
 	channelId: string;
 	/**
 	 * The airing (LiveChannelRun.id) and the provider encoding the channel
-	 * detail reported, carried on the seal so the evidence tuple (audit
-	 * 5c3d97ca BLOCKER-4, EV-02) can bind provider → cleanup without a second
+	 * detail reported, carried on the seal so the evidence tuple
+ can bind provider → cleanup without a second
 	 * read. Absent when the detail could not be read — the tuple then names it.
 	 */
 	liveChannelRunId?: string;

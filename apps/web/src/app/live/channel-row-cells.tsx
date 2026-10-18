@@ -6,8 +6,8 @@ import type { ChannelHealthReading } from "./channel-health";
 import type { LiveChannelListItem } from "./live-shared";
 
 /**
- * The three promoted cells of the Live operations list (audit
- * 4403130 §5.5): Health, Next event and Runtime.
+ * The three promoted cells of the Live operations list
+: Health, Next event and Runtime.
  *
  * Every value here is TEXT, and colour is only ever a second channel on top
  * of it — the same rule the detail page's StatusStrip states about itself.

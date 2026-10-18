@@ -48,7 +48,7 @@ describe("wizard step labels", () => {
 		},
 		{
 			file: "live/new/live-wizard.tsx",
-			// Audit 5c3d97ca §14.6 (UX-03): the AWS MediaLive vocabulary, as
+			// the AWS MediaLive vocabulary, as
 			// live-specific keys — "Start" named a step that never started
 			// anything (the channel provisions at creation; the step holds the
 			// automatic restart / stop settings).

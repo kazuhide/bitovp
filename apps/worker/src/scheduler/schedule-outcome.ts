@@ -42,11 +42,11 @@ export type ScheduleOutcomeEvidenceKind =
  * data, applied inside the UPDATE's own WHERE so two writers race in Postgres
  * rather than in a read-modify-write.
  *
- * Audit 602ec286 §17 P1-4 split the single PENDING→DELIVERED leap into a
+ * P1-4 split the single PENDING→DELIVERED leap into a
  * media-witnessed progression, so this ladder now has middle rungs:
  *
- *   PENDING → PROCESS_PUSHING → INGEST_CONNECTED → DELIVERED   (feeder/lifecycle)
- *   PENDING → SLATE_ARMED                                       (slate — no witness)
+ * PENDING → PROCESS_PUSHING → INGEST_CONNECTED → DELIVERED (feeder/lifecycle)
+ * PENDING → SLATE_ARMED (slate — no witness)
  *
  * `PROCESS_PUSHING` may replace only `PENDING`. A restart's fresh push must
  * NOT drag an already-`INGEST_CONNECTED` row back down (a downgrade), and it
@@ -123,16 +123,16 @@ const MAY_REPLACE: Record<
  * WHAT MAKES "any FIRED row of that action" precise enough to be a row
  * IDENTIFIER — the invariant, stated because the lookup is not obviously one:
  *
- *  · the sweep claims a row ARMED → FIRED with a CAS before it enqueues, and
- *    only fires a START/STOP once the channel is in the matching state, so at
- *    most one start and one stop are in flight per channel at a time;
- *  · every way that in-flight job can end now closes its row — the processor
- *    on success/failure, and `live/dead-job-outcome.ts` when the job dies
- *    outside the processor. Before that second half existed, a dangling
- *    FIRED/PENDING row could sit here forever and be "resolved" much later by
- *    an unrelated start or stop, which is exactly the defect this note guards.
+ * · the sweep claims a row ARMED → FIRED with a CAS before it enqueues, and
+ * only fires a START/STOP once the channel is in the matching state, so at
+ * most one start and one stop are in flight per channel at a time;
+ * · every way that in-flight job can end now closes its row — the processor
+ * on success/failure, and `live/dead-job-outcome.ts` when the job dies
+ * outside the processor. Before that second half existed, a dangling
+ * FIRED/PENDING row could sit here forever and be "resolved" much later by
+ * an unrelated start or stop, which is exactly the defect this note guards.
  *
- * The residual this note once NAMED is now CLOSED (audit 602ec286 MODERATE-2):
+ * The residual this note once NAMED is now CLOSED:
  * a scheduled start that failed for good is left UNKNOWN, and `MAY_REPLACE` no
  * longer lets a positive replace UNKNOWN, so a manual start hours afterwards
  * reverse-looks-up that FIRED row, finds its UNKNOWN outranks the DELIVERED it

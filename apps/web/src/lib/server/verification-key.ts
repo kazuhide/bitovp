@@ -3,18 +3,18 @@ import { z } from "zod";
 
 /**
  * The idempotency contract the two paid create routes honour for the
- * verification harness (audit 5c3d97ca BLOCKER-5 / §14.4 EV-01 change 3).
+ * verification harness.
  *
  * The harness sends `verificationKey` (derived from run + scenario + kind,
  * so it can be re-derived with no response) and `requestSha256` (its own
  * digest of the body it meant to send). The route stamps both on the row it
  * creates. A repeat with the same key:
  *
- *   same SHA      → the EXISTING row, 200, `replayed: true` — the harness's
- *                   lost response is answered without a second paid resource;
- *   different SHA → 409 — the key was used for a different request, and a
- *                   silent "return the existing" would hand back a resource
- *                   the caller did not describe.
+ * same SHA → the EXISTING row, 200, `replayed: true` — the harness's
+ * lost response is answered without a second paid resource;
+ * different SHA → 409 — the key was used for a different request, and a
+ * silent "return the existing" would hand back a resource
+ * the caller did not describe.
  *
  * The SHA is the CLIENT's statement; the route never recomputes it — its
  * parsed plan is not the raw body. Both fields go together or not at all.

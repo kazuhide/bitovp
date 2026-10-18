@@ -15,7 +15,7 @@ import { useAnnounce } from "./live-announcer";
  * The emergency lever: `POST …/insertable-content/stop` — cut whatever
  * inserted content is PLAYING and put the live input back on air.
  *
- *  (audit 5c3d97ca HIGH-8 / §14.6 UX-01). This button used to sit on
+ * This button used to sit on
  * top of the scheduled-content list as "Return to live now", which made two
  * things it is not look like one thing it is: it is not a reservation action
  * (a reservation is cancelled per row, in `SlateReservationsPanel`, and this

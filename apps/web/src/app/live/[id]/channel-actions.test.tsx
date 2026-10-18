@@ -219,7 +219,7 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 	});
 
 	/* Lifecycle buttons describe channel operations; provider encoder details remain secondary. */
-	it("labels start and stop as CHANNEL operations in both locales (audit 5c3d97ca UX-03)", () => {
+	it("labels start and stop as CHANNEL operations in both locales", () => {
 		for (const [locale, start, stop] of [
 			["en", "Start channel", "Stop channel"],
 			["ja", "チャンネルを開始", "チャンネルを停止"],
@@ -258,7 +258,7 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 	/**
 	 * 's own property: the lifecycle row no longer carries Duplicate or
 	 * Delete. It is the header control now, and a Delete beside Stop in a fixed
-	 * header is exactly the mis-click audit 4403130 §5.4 asked us to remove.
+	 * header creates an avoidable mis-click risk.
 	 * Duplicate is the recovery for a stopped channel and still exists — one
 	 * layer down, in Advanced.
 	 */

@@ -181,10 +181,10 @@ export function AlertPanel({
 	return (
 		<div className="mt-2 space-y-4">
 			{/*
-			    : the OPEN alerts and the rule EDITOR are two different
+: the OPEN alerts and the rule EDITOR are two different
 			    jobs, and they used to be one always-expanded block — the rule
 			    form sat directly under the firing events, with the resolved
-			    history under that (audit 4403130 §5.4). `mode` splits them
+			    history under that. `mode` splits them
 			    across the page instead of duplicating either: "open" is the
 			    Operations readout, "manage" is the Diagnostics editor plus the
 			    resolved history. One component, one set of mutations, two

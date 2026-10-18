@@ -739,7 +739,7 @@ describe("sealing", () => {
 	});
 
 	/**
-	 * The BLOCKER this write earns its retry for (audit 602ec286 BLOCKER-1).
+	 * The BLOCKER this write earns its retry for.
 	 * When EVERY seal-write retry fails, only pending exports exist and no
 	 * durable row says the run sealed. The run must not finish as if it did:
 	 * `sealed` THROWS — so runVerification's catch runs and the CLI
@@ -1319,7 +1319,7 @@ describe("the small rules", () => {
 	});
 });
 
-describe("the live evidence tuple and the seal gate (audit 5c3d97ca BLOCKER-4, EV-02)", () => {
+describe("the live evidence tuple and the seal gate", () => {
 	/** A COMPLETE leg; `incomplete` drops the progression (two identical snapshots). */
 	function leg(
 		options: {
@@ -1337,7 +1337,7 @@ describe("the live evidence tuple and the seal gate (audit 5c3d97ca BLOCKER-4, E
 			kind: "HLS",
 			role: "ORIGIN",
 			build: {
-				commit: "5c3d97ca",
+				commit: "b8c63e35",
 				image: `worker@sha256:${"c".repeat(64)}`,
 				planSha256: "a".repeat(64),
 			},

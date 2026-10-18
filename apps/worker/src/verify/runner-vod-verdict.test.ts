@@ -344,7 +344,7 @@ describe("a live run that observed no delivery is not a pass", () => {
 
 /**
  * The PARTIALLY-blind mirror topology the manifest floor above could not see
- * (audit 602ec286 BLOCKER-3, ; the deferred item, row 187(b)).
+ *
  *
  * An origin + MSL-mirror plan writes every destination to BOTH a readable
  * origin and an AKAMAI_MSL mirror. The origin's own manifests PASS, and the

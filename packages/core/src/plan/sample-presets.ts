@@ -528,10 +528,8 @@ export function samplePresetPlan(
 	}
 	// Deep-clone the imported-JSON singleton: callers (the API route, the
 	// wizard's preset import, tests) treat the plan as owned and may mutate it.
-	// Returning the shared reference let a mutation in one caller leak into the
-	// next — a real test-isolation flake (fixed by hand in 189ad1d; the
-	// generator kept emitting the shared reference, so a re-run silently
-	// reverted it and no test could notice). Fixtures are pure JSON, so a JSON
-	// round-trip is a sufficient and dependency-free deep clone.
+	// A shared reference would leak mutations into later callers.
+	// Fixtures are pure JSON, so a JSON round-trip is a sufficient
+	// dependency-free deep clone.
 	return JSON.parse(JSON.stringify(PLANS[name])) as Record<string, unknown>;
 }

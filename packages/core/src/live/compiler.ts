@@ -1148,7 +1148,7 @@ function compileLiveHlsManifest(
 				kind: "CREATE_HLS_AUDIO_MEDIA",
 				payload: {
 					// Unique within the group when the channel carries more than
-					// one audio rendition (paid audit 893eb66 HIGH-8: AWS Live A/B/E
+					// one audio rendition (AWS Live A/B/E
 					// and MSL4 M2 all published two entries named identically).
 					// One audio keeps the vendor literal, so every live golden is
 					// byte-identical.
@@ -1199,8 +1199,8 @@ function compileLiveDashManifest(
 	const selected = selectLiveManifestMuxings(plan, manifest);
 	/*
 	 * One VIDEO adaptation set PER CODEC — the same rule the VOD compiler
-	 * follows , landing here because live was
-	 * left behind by it (paid re-audit eb7c983 HIGH-2). This branch put every
+	 * follows, landing here because live was
+	 * left behind by it. This branch put every
 	 * video representation into ONE `aset-video` regardless of codec, and the
 	 * provider refuses a mixed set: paid case F (H264+H265 on one live channel)
 	 * encoded and then died on the FIRST H265 representation added beside the

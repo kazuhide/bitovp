@@ -103,7 +103,7 @@ export function perTitleRungsFromSnapshot(
 		// qc/ directory on the exact provider output created for the target's plan
 		// output key. A delivery mirror can put the same object key on several output
 		// resources, so array order is not identity. Its captured `filename` is the
-		// exact object the provider wrote (audit 602ec286 §5.4 item 5); attribution
+		// exact object the provider wrote; attribution
 		// has already guaranteed it
 		// equals `qcMirrorFilename(target)`, so the derived name is only a fallback
 		// for older snapshots that predate filename capture. One score unit per

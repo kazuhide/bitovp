@@ -54,6 +54,9 @@ jobs:
           run_install: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bitovp/db build
+      - name: Prepare empty migration environment for Compose inspection
+        if: matrix.package == 'web'
+        run: touch .env.migrate
       - run: pnpm --filter @bitovp/${{ matrix.package }} test --maxWorkers=2
 
   build:

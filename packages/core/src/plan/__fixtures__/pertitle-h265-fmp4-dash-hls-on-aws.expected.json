@@ -1,0 +1,282 @@
+{
+	"planName": "per-title-h265-aac-fmp4-dash-hls-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v180",
+			"streamKey": "v180",
+			"renditionKey": "v180",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v180/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v180/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 180,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v480-210",
+			"streamKey": "v480-210",
+			"renditionKey": "v480-210",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-210/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-210/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 480,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v480-420",
+			"streamKey": "v480-420",
+			"renditionKey": "v480-420",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-420/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-420/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 480,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"renditionKey": "v540",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v540/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v540/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"renditionKey": "v720",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v720/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v720/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v900",
+			"streamKey": "v900",
+			"renditionKey": "v900",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v900/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v900/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 900,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"renditionKey": "v1080",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v1080/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v1080/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H265",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/audio/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/audio/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 7,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": true,
+			"perTitle": true,
+			"manifestRenditions": {
+				"video": [],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H265"
+				]
+			}
+		},
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/",
+				"prefix": "output/per-title-h265-aac-fmp4-dash-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 7,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": true,
+			"perTitle": true,
+			"manifestRenditions": {
+				"video": [],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_128000.m3u8",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H265"
+				],
+				"hlsVariants": []
+			},
+			"hlsMasterVersion": "HLS_V6",
+			"hlsMediaVersion": "HLS_V6",
+			"hlsChildFiles": [
+				"audio_128000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": [
+		"per-title plan: heights and bitrates are algorithmic, so rung geometry is asserted as ordered-and-present rather than against plan values (C1/C4)"
+	]
+}

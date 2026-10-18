@@ -1,0 +1,142 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "Progressive MP4 carrying video and audio in one file (mp4-muxed-av-progressive)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "/path/to/your/input/file.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "/path/to/your/input/file.mp4",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v1080",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "H264 1080p",
+			"height": 1080,
+			"bitrate": 5000000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"profile": "HIGH"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v1080",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 1080p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v1080",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "codec:a192",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"name": "AAC 192kbps",
+			"bitrate": 192000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a192",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 192kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a192",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:file",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "output.mp4",
+			"outputPath": "output/mp4-muxed-av-progressive/",
+			"acl": "PUBLIC_READ",
+			"name": "Progressive MP4 Muxing"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v1080",
+			"additionalStreamIds": [
+				"stream:a192"
+			],
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

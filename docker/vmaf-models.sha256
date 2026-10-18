@@ -1,0 +1,25 @@
+# sha256 manifest for the VMAF model JSONs the worker image bundles
+# (Dockerfile "VMAF models" layer). Source: Netflix/vmaf at commit
+# 3f9e02af258a5c0e30124fc585a3c3af90126dee (= tag v3.2.0), hashes computed
+# from an independent download on 2026-08-06. Verified in-image with
+# `sha256sum -c --strict` right after the downloads — a tampered or
+# truncated model fails the build (fail-closed), it can never ship.
+# Filenames are relative to $VMAF_MODEL_DIR (the check cd's there first).
+# The manifest is COPY'd to $VMAF_MODEL_DIR/vmaf-models.sha256 and kept in
+# the image, so `cd $VMAF_MODEL_DIR && sha256sum -c vmaf-models.sha256`
+# re-verifies the models inside a running container.
+# When bumping VMAF_MODEL_REF: re-download, re-hash, update this file.
+5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3  vmaf_v0.6.1.json
+1fcda193aaa2a3136471b7516b3c5dc344546c05fcde2d58609f8c60a2387392  vmaf_v0.6.1neg.json
+73b187001309703c89d57cf58baab01660bd11e4ea6fac62bc064c5f5da6dac8  vmaf_4k_v0.6.1.json
+26573aa333346f1109226e7283969e8b3581119a1ab7f18897767351dd963ff8  vmaf_float_v0.6.1.json
+8ac8e9bd6153e57fed4e9809c49711ea7654da2a14ea701423187905e914597a  vmaf_float_v0.6.1neg.json
+2af34f3068174720a35126807dbe8d0b19c5143fee328a9fc2331c15c54e4433  vmaf_float_4k_v0.6.1.json
+e4cf8c147e1368b35497d772920bc92f98c1ad7853c1033d8a836947f427140e  vmaf_v1.0.16_3d0h.json
+77f552fd8d5b6c6a2166bfc4470c9368ec68d2425ed40f1cc235b0cc500f33c2  vmaf_v1.0.16_3d0h_2160.json
+64e12d9c1e4ed5d79da7fa515b82fac7247a9e2ccc91e0ebce31d05489500385  vmaf_v1.0.16_5d0h.json
+634d36e0502cb797384726cdd1a106a2c207827595a9e4958d3dae1bd517b139  vmaf_v1.0.16_1d5h_2160.json
+dcfdfab1c00685c1e5f75b6f1078bb4a44c722654e4de090fa5c66784c75241b  vmaf_v1.0.16_hfr_3d0h.json
+1bc502f00aeee11433e2d09468186bbf1bbce56ee650c9bade06c7435ebdd4db  vmaf_v1.0.16_hfr_3d0h_2160.json
+590f612c87df94badca58e563b318fa9958eac631ab8aadd73bff8cc1adfc515  vmaf_v1.0.16_hfr_5d0h.json
+0371db55d3de81a760125f6d65eb4386f1d38af6cf1d00c2f48158e3596246d4  vmaf_v1.0.16_hfr_1d5h_2160.json

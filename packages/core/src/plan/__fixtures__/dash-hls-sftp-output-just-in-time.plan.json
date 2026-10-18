@@ -1,0 +1,119 @@
+{
+	"planVersion": 1,
+	"name": "h264-aac-fmp4-dash-hls-sftp-output-just-in-time",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "SFTP",
+			"credentialId": "00000000-0000-4000-8000-000000000003",
+			"name": "Test SFTP Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "big_buck_bunny_1080p_h264_short.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "big_buck_bunny_1080p_h264_short.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 300000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "a64",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 64000,
+			"rate": 44100,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v360",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "/content/encoding_test/h264-aac-fmp4-dash-hls-sftp-output-just-in-time/video/360p"
+			}
+		},
+		{
+			"key": "a64",
+			"kind": "FMP4",
+			"streamKey": "a64",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "/content/encoding_test/h264-aac-fmp4-dash-hls-sftp-output-just-in-time/audio/64000"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "/content/encoding_test/h264-aac-fmp4-dash-hls-sftp-output-just-in-time/"
+			},
+			"masterVersion": "HLS_V4",
+			"mediaVersion": "HLS_V4",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		},
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "/content/encoding_test/h264-aac-fmp4-dash-hls-sftp-output-just-in-time/"
+			},
+			"audioLanguage": "ja",
+			"representationType": "TEMPLATE"
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

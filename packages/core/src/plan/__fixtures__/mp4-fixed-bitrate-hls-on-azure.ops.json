@@ -1,0 +1,324 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_AZURE",
+		"payload": {
+			"name": "Test Azure Input",
+			"credentialId": "00000000-0000-4000-8000-000000000003",
+			"container": "sample-input-container"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_AZURE",
+		"payload": {
+			"name": "Test Azure Output",
+			"credentialId": "00000000-0000-4000-8000-000000000004",
+			"container": "sample-output-container"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "h264-aac-mp4-fixed-bitrate-hls-azure",
+			"cloudRegion": "AZURE_JAPAN_EAST",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": 300000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 360p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "video_360p.mp4",
+			"fragmentedMP4MuxingManifestType": "HLS_BYTE_RANGES",
+			"fragmentDuration": 4000,
+			"outputPath": "output/h264-aac-mp4-fixed-bitrate-hls-azure/video/360p",
+			"acl": "PUBLIC_READ",
+			"name": "Video MP4 Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v540",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 540,
+			"bitrate": 600000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v540",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 540p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v540",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v540",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "video_540p.mp4",
+			"fragmentedMP4MuxingManifestType": "HLS_BYTE_RANGES",
+			"fragmentDuration": 4000,
+			"outputPath": "output/h264-aac-mp4-fixed-bitrate-hls-azure/video/540p",
+			"acl": "PUBLIC_READ",
+			"name": "Video MP4 Muxing 540p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "aac_128000.mp4",
+			"fragmentedMP4MuxingManifestType": "HLS_BYTE_RANGES",
+			"fragmentDuration": 4000,
+			"outputPath": "output/h264-aac-mp4-fixed-bitrate-hls-azure/audio/128000",
+			"acl": "PUBLIC_READ",
+			"name": "Audio MP4 Muxing 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a64",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 64000,
+			"rate": 44100,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a64",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 64kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a64",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a64",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "aac_64000.mp4",
+			"fragmentedMP4MuxingManifestType": "HLS_BYTE_RANGES",
+			"fragmentDuration": 4000,
+			"outputPath": "output/h264-aac-mp4-fixed-bitrate-hls-azure/audio/64000",
+			"acl": "PUBLIC_READ",
+			"name": "Audio MP4 Muxing 64kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a64",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V4",
+			"hlsMediaPlaylistVersion": "HLS_V4",
+			"outputPath": "output/h264-aac-mp4-fixed-bitrate-hls-azure/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v360",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/360p",
+			"uri": "video_300000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v540",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/540p",
+			"uri": "video_600000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"muxingId": "muxing:v540"
+		}
+	},
+	{
+		"step": "hls-media:hls:a128",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media (a128)",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/128000",
+			"uri": "audio_128000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "hls-media:hls:a64",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media (a64)",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/64000",
+			"uri": "audio_64000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:a64",
+			"muxingId": "muxing:a64"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"vodHlsManifestIds": [
+				"manifest:hls"
+			]
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

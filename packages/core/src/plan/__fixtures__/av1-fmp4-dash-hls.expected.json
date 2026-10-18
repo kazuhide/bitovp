@@ -1,0 +1,205 @@
+{
+	"planName": "av1-aac-fmp4-dash-hls-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v360",
+			"streamKey": "v360",
+			"renditionKey": "v360",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/av1-aac-fmp4-dash-hls-aws/video/360p/",
+				"prefix": "output/av1-aac-fmp4-dash-hls-aws/video/360p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 360,
+				"codec": "AV1",
+				"bitrate": 600000
+			}
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"renditionKey": "v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/av1-aac-fmp4-dash-hls-aws/video/720p/",
+				"prefix": "output/av1-aac-fmp4-dash-hls-aws/video/720p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "AV1",
+				"bitrate": 1500000
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/av1-aac-fmp4-dash-hls-aws/audio/128000/",
+				"prefix": "output/av1-aac-fmp4-dash-hls-aws/audio/128000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/av1-aac-fmp4-dash-hls-aws/",
+				"prefix": "output/av1-aac-fmp4-dash-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 2,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v360",
+						"height": 360,
+						"bitrate": 600000,
+						"codec": "AV1"
+					},
+					{
+						"renditionKey": "v720",
+						"height": 720,
+						"bitrate": 1500000,
+						"codec": "AV1"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_128000.m3u8",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"AV1"
+				],
+				"hlsVariants": [
+					{
+						"key": "v360",
+						"renditionKey": "v360",
+						"kind": "video",
+						"codec": "AV1",
+						"height": 360,
+						"bitrate": 600000,
+						"audioGroup": "audio",
+						"uri": "video_600000.m3u8"
+					},
+					{
+						"key": "v720",
+						"renditionKey": "v720",
+						"kind": "video",
+						"codec": "AV1",
+						"height": 720,
+						"bitrate": 1500000,
+						"audioGroup": "audio",
+						"uri": "video_1500000.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V4",
+			"hlsMediaVersion": "HLS_V4",
+			"hlsChildFiles": [
+				"video_600000.m3u8",
+				"video_1500000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		},
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/av1-aac-fmp4-dash-hls-aws/",
+				"prefix": "output/av1-aac-fmp4-dash-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 2,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v360",
+						"height": 360,
+						"bitrate": 600000,
+						"codec": "AV1"
+					},
+					{
+						"renditionKey": "v720",
+						"height": 720,
+						"bitrate": 1500000,
+						"codec": "AV1"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"AV1"
+				]
+			}
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

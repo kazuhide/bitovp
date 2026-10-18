@@ -1,0 +1,357 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "per-title-av1-aac-fmp4-dash-aws",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_AV1",
+		"payload": {
+			"encodingMode": "THREE_PASS",
+			"height": 360,
+			"bitrate": null,
+			"presetConfiguration": "VOD_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AV1 360p",
+			"mode": "PER_TITLE_TEMPLATE"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_AV1",
+		"payload": {
+			"encodingMode": "THREE_PASS",
+			"height": 720,
+			"bitrate": null,
+			"presetConfiguration": "VOD_QUALITY",
+			"autoLevelSetup": "ENABLED"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AV1 720p",
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"perTitleSettings": {
+				"fixedResolutionAndBitrateSettings": {
+					"minBitrate": 700000,
+					"maxBitrate": 1700000,
+					"bitrateSelectionMode": "COMPLEXITY_RANGE",
+					"lowComplexityBoundaryForMaxBitrate": 1500000,
+					"highComplexityBoundaryForMaxBitrate": 3200000
+				}
+			}
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"name": "AAC Codec Configuration",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD",
+			"conditions": {
+				"attribute": "AUDIOSTREAMCOUNT",
+				"operator": "GREATER_THAN",
+				"value": "0"
+			}
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/per-title-av1-aac-fmp4-dash-aws/audio/",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 Muxing"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"perTitle": {
+				"av1Configuration": {
+					"minBitrate": 128000,
+					"maxBitrate": 3200000,
+					"targetQualityCrf": 18,
+					"maxBitrateStepSize": 4,
+					"fixedResolutionAndBitrateConfiguration": {
+						"forcedRenditionAboveHighestFixedRepresentation": 1,
+						"forcedRenditionAboveHighestFixedRepresentationFactor": 1.2,
+						"forcedRenditionAboveHighestFixedRepresentationCalculationMode": "LAST_CALCULATED_BITRATE"
+					}
+				}
+			}
+		},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "per-title-results",
+		"kind": "CAPTURE_PER_TITLE_RESULTS",
+		"payload": {
+			"streamModeFilter": "PER_TITLE_RESULT",
+			"templates": [
+				{
+					"rendition": "v360",
+					"codec": "AV1",
+					"mode": "PER_TITLE_TEMPLATE",
+					"height": 360,
+					"outputPathPatterns": [
+						"output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/"
+					]
+				},
+				{
+					"rendition": "v720",
+					"codec": "AV1",
+					"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					"height": 720,
+					"perTitleSettings": {
+						"fixedResolutionAndBitrateSettings": {
+							"minBitrate": 700000,
+							"maxBitrate": 1700000,
+							"bitrateSelectionMode": "COMPLEXITY_RANGE",
+							"lowComplexityBoundaryForMaxBitrate": 1500000,
+							"highComplexityBoundaryForMaxBitrate": 3200000
+						}
+					},
+					"outputPathPatterns": [
+						"output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/"
+					]
+				}
+			]
+		},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest:dash",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"outputPath": "output/per-title-av1-aac-fmp4-dash-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:dash:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:a128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "manifest:dash:pertitle-reps",
+		"kind": "CREATE_DASH_PER_TITLE_REPRESENTATIONS",
+		"payload": {
+			"muxingKind": "FMP4",
+			"streamModeFilter": "PER_TITLE_RESULT",
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"stripBase": "output/per-title-av1-aac-fmp4-dash-aws/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest-start:dash",
+		"kind": "START_MANIFEST_DASH",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest-await:dash",
+		"kind": "AWAIT_MANIFEST_DASH",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	}
+]

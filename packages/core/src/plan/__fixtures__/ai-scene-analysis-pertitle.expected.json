@@ -1,0 +1,138 @@
+{
+	"planName": "per-title-h264-aac-fmp4-ai-scene-analysis-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "pt-video",
+			"streamKey": "pt-video",
+			"renditionKey": "pt-video",
+			"container": "FMP4_SEGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/video/{height}_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/video/",
+				"templated": true
+			},
+			"perTitle": true,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": null,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "HIGH"
+			}
+		},
+		{
+			"muxingKey": "aac192",
+			"streamKey": "aac192",
+			"renditionKey": "aac192",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/audio/192000/",
+				"prefix": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/audio/192000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 192000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/",
+				"prefix": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 1,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": true,
+			"perTitle": true,
+			"manifestRenditions": {
+				"video": [],
+				"audio": [
+					{
+						"renditionKey": "aac192",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_192000.m3u8",
+						"bitrate": 192000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				],
+				"hlsVariants": []
+			},
+			"hlsMasterVersion": "HLS_V6",
+			"hlsMediaVersion": "HLS_V6",
+			"hlsChildFiles": [
+				"audio_192000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		},
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/",
+				"prefix": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 1,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": true,
+			"perTitle": true,
+			"manifestRenditions": {
+				"video": [],
+				"audio": [
+					{
+						"renditionKey": "aac192",
+						"codec": "AAC",
+						"bitrate": 192000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				]
+			}
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": [
+		"per-title plan: heights and bitrates are algorithmic, so rung geometry is asserted as ordered-and-present rather than against plan values (C1/C4)"
+	]
+}

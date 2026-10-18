@@ -1,0 +1,414 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "h264-aac-fmp4-dash-template-and-timeline-aws",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "H264 360p",
+			"height": 360,
+			"bitrate": 600000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"profile": "MAIN"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Video 360p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 4,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/h264-aac-fmp4-dash-template-and-timeline-aws/video/360p_600000",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "H264 720p",
+			"height": 720,
+			"bitrate": 1500000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"profile": "HIGH"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Video 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 4,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/h264-aac-fmp4-dash-template-and-timeline-aws/video/720p_1500000",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "AAC 128kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 4,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/h264-aac-fmp4-dash-template-and-timeline-aws/audio/128000",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest:template",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "template.mpd",
+			"name": "DASH (SegmentTemplate)",
+			"outputPath": "output/h264-aac-fmp4-dash-template-and-timeline-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:template:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:template"
+		}
+	},
+	{
+		"step": "manifest:template:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:template",
+			"periodId": "manifest:template:period"
+		}
+	},
+	{
+		"step": "manifest:template:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:template",
+			"periodId": "manifest:template:period"
+		}
+	},
+	{
+		"step": "manifest:template:rep:v360",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/360p_600000"
+		},
+		"refs": {
+			"manifestId": "manifest:template",
+			"periodId": "manifest:template:period",
+			"adaptationSetId": "manifest:template:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "manifest:template:rep:v720",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/720p_1500000"
+		},
+		"refs": {
+			"manifestId": "manifest:template",
+			"periodId": "manifest:template:period",
+			"adaptationSetId": "manifest:template:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "manifest:template:rep:a128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/128000"
+		},
+		"refs": {
+			"manifestId": "manifest:template",
+			"periodId": "manifest:template:period",
+			"adaptationSetId": "manifest:template:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "manifest:timeline",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "timeline.mpd",
+			"name": "DASH (SegmentTimeline)",
+			"outputPath": "output/h264-aac-fmp4-dash-template-and-timeline-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:timeline:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:timeline"
+		}
+	},
+	{
+		"step": "manifest:timeline:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:timeline",
+			"periodId": "manifest:timeline:period"
+		}
+	},
+	{
+		"step": "manifest:timeline:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:timeline",
+			"periodId": "manifest:timeline:period"
+		}
+	},
+	{
+		"step": "manifest:timeline:rep:v360",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TIMELINE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/360p_600000"
+		},
+		"refs": {
+			"manifestId": "manifest:timeline",
+			"periodId": "manifest:timeline:period",
+			"adaptationSetId": "manifest:timeline:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "manifest:timeline:rep:v720",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TIMELINE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/720p_1500000"
+		},
+		"refs": {
+			"manifestId": "manifest:timeline",
+			"periodId": "manifest:timeline:period",
+			"adaptationSetId": "manifest:timeline:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "manifest:timeline:rep:a128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TIMELINE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/128000"
+		},
+		"refs": {
+			"manifestId": "manifest:timeline",
+			"periodId": "manifest:timeline:period",
+			"adaptationSetId": "manifest:timeline:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "manifest-start:template",
+		"kind": "START_MANIFEST_DASH",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:template"
+		}
+	},
+	{
+		"step": "manifest-await:template",
+		"kind": "AWAIT_MANIFEST_DASH",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:template"
+		}
+	},
+	{
+		"step": "manifest-start:timeline",
+		"kind": "START_MANIFEST_DASH",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:timeline"
+		}
+	},
+	{
+		"step": "manifest-await:timeline",
+		"kind": "AWAIT_MANIFEST_DASH",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:timeline"
+		}
+	}
+]

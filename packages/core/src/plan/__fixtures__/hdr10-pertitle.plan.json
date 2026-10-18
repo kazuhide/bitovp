@@ -1,0 +1,165 @@
+{
+	"planVersion": 1,
+	"name": "Sample HDR10 Encoding",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "hdr10/Sony Bravia OLED 4K Demo.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "hdr10/Sony Bravia OLED 4K Demo.mp4",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v-main10",
+			"codec": "H265",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": null,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "MAIN10",
+			"pixelFormat": "YUV420P10LE",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"hdr": true,
+			"masterDisplay": "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
+			"maxContentLightLevel": 800,
+			"maxPictureAverageLightLevel": 400,
+			"colorConfig": {
+				"colorSpace": "BT2020_NCL",
+				"colorPrimaries": "BT2020",
+				"colorTransfer": "SMPTE2084"
+			},
+			"streamName": "Stream H265 Nonep"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"name": "AAC Codec Configuration",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_5_1_BACK",
+			"streamName": "Audio Stream"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v-main10",
+			"kind": "FMP4",
+			"streamKey": "v-main10",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "encoding_test/hdr10_2026-06-12__00-00-00/video/{height}p_{bitrate}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing Nonep"
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "encoding_test/hdr10_2026-06-12__00-00-00/audio/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 Muxing"
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "encoding_test/hdr10_2026-06-12__00-00-00/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE"
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "encoding_test/hdr10_2026-06-12__00-00-00/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V8",
+			"mediaVersion": "HLS_V8",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"audioMediaUri": "audio.m3u8"
+		}
+	],
+	"perTitle": {
+		"h265Configuration": {
+			"autoRepresentations": {}
+		}
+	},
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

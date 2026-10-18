@@ -1,0 +1,1358 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding:dv81",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4-dv81",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:aac-audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "<REDACTED_AUDIO_INPUT>.mxf",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "dolby:dv81-vision",
+		"kind": "CREATE_DOLBY_VISION_INPUT_STREAM",
+		"payload": {
+			"videoInputPath": "<REDACTED_DV_MEZZANINE>.mxf",
+			"metadataInputPath": "<REDACTED_DV_METADATA>.xml"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "dolby:atmos-in",
+		"kind": "CREATE_DOLBY_ATMOS_INPUT_STREAM",
+		"payload": {
+			"inputPath": "<REDACTED_ATMOS_INPUT>.atmos",
+			"inputFormat": "DAMF"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:dv81-v2160",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 DV81 2160p",
+			"height": 2160,
+			"bitrate": 15000000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.5,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 30000000,
+			"bufsize": 60000000,
+			"dynamicRangeFormat": "DOLBY_VISION_PROFILE_8_1"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:dv81-v2160",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 DV81 2160p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"codecConfigId": "codec:dv81-v2160",
+			"inputStreamId": "dolby:dv81-vision"
+		}
+	},
+	{
+		"step": "muxing:dv81-v2160",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/dv81/2160p_15000000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 DV81 2160p"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v2160",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:dv81-v1080",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 DV81 1080p",
+			"height": 1080,
+			"bitrate": 6000000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.8,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 12000000,
+			"bufsize": 24000000,
+			"dynamicRangeFormat": "DOLBY_VISION_PROFILE_8_1"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:dv81-v1080",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 DV81 1080p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"codecConfigId": "codec:dv81-v1080",
+			"inputStreamId": "dolby:dv81-vision"
+		}
+	},
+	{
+		"step": "muxing:dv81-v1080",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/dv81/1080p_6000000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 DV81 1080p"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v1080",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:dv81-v720",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 DV81 720p",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 6000000,
+			"bufsize": 12000000,
+			"dynamicRangeFormat": "DOLBY_VISION_PROFILE_8_1"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:dv81-v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 DV81 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"codecConfigId": "codec:dv81-v720",
+			"inputStreamId": "dolby:dv81-vision"
+		}
+	},
+	{
+		"step": "muxing:dv81-v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/dv81/720p_3000000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 DV81 720p"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:dv81-v540",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 DV81 540p",
+			"height": 540,
+			"bitrate": 1800000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 3600000,
+			"bufsize": 7200000,
+			"dynamicRangeFormat": "DOLBY_VISION_PROFILE_8_1"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:dv81-v540",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 DV81 540p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"codecConfigId": "codec:dv81-v540",
+			"inputStreamId": "dolby:dv81-vision"
+		}
+	},
+	{
+		"step": "muxing:dv81-v540",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/dv81/540p_1800000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 DV81 540p"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v540",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:atmos448",
+		"kind": "CREATE_CODEC_DOLBY_ATMOS",
+		"payload": {
+			"bitrate": 448000,
+			"rate": 48000,
+			"loudnessControl": {
+				"meteringMode": "ITU_R_BS_1770_4",
+				"dialogueIntelligence": "ENABLED",
+				"speechThreshold": 15
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:atmos448",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream ATMOS 448000bps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"codecConfigId": "codec:atmos448",
+			"inputStreamId": "dolby:atmos-in"
+		}
+	},
+	{
+		"step": "muxing:atmos448",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/audio/atmos/448000/",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 ATMOS 448000bps"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:atmos448",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:aac128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"name": "AAC 128000bps",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:aac128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128000bps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"codecConfigId": "codec:aac128",
+			"inputStreamId": "ingest:aac-audio"
+		}
+	},
+	{
+		"step": "muxing:aac128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/audio/aac/128000/",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 AAC 128000bps"
+		},
+		"refs": {
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:aac128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "encoding:sdr",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4-sdr",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "dolby:sdr-vision",
+		"kind": "CREATE_DOLBY_VISION_INPUT_STREAM",
+		"payload": {
+			"videoInputPath": "<REDACTED_DV_MEZZANINE>.mxf",
+			"metadataInputPath": "<REDACTED_DV_METADATA>.xml"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:sdr-v2160",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 SDR 2160p",
+			"height": 2160,
+			"bitrate": 12000000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.5,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 24000000,
+			"bufsize": 48000000,
+			"dynamicRangeFormat": "SDR"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:sdr-v2160",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 SDR 2160p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"codecConfigId": "codec:sdr-v2160",
+			"inputStreamId": "dolby:sdr-vision"
+		}
+	},
+	{
+		"step": "muxing:sdr-v2160",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/sdr/2160p_12000000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 SDR 2160p"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v2160",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:sdr-v1080",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 SDR 1080p",
+			"height": 1080,
+			"bitrate": 5000000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.8,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 10000000,
+			"bufsize": 20000000,
+			"dynamicRangeFormat": "SDR"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:sdr-v1080",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 SDR 1080p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"codecConfigId": "codec:sdr-v1080",
+			"inputStreamId": "dolby:sdr-vision"
+		}
+	},
+	{
+		"step": "muxing:sdr-v1080",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/sdr/1080p_5000000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 SDR 1080p"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v1080",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:sdr-v720",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 SDR 720p",
+			"height": 720,
+			"bitrate": 2500000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 5000000,
+			"bufsize": 10000000,
+			"dynamicRangeFormat": "SDR"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:sdr-v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 SDR 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"codecConfigId": "codec:sdr-v720",
+			"inputStreamId": "dolby:sdr-vision"
+		}
+	},
+	{
+		"step": "muxing:sdr-v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/sdr/720p_2500000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 SDR 720p"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:sdr-v540",
+		"kind": "CREATE_CODEC_H265",
+		"payload": {
+			"name": "H265 SDR 540p",
+			"height": 540,
+			"bitrate": 1500000,
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCTUSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"maxBitrate": 3000000,
+			"bufsize": 6000000,
+			"dynamicRangeFormat": "SDR"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:sdr-v540",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H265 SDR 540p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"codecConfigId": "codec:sdr-v540",
+			"inputStreamId": "dolby:sdr-vision"
+		}
+	},
+	{
+		"step": "muxing:sdr-v540",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/video/sdr/540p_1500000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 SDR 540p"
+		},
+		"refs": {
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v540",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start:dv81",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding:dv81"
+		}
+	},
+	{
+		"step": "start:sdr",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding:sdr"
+		}
+	},
+	{
+		"step": "await:dv81",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding:dv81"
+		}
+	},
+	{
+		"step": "await:sdr",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding:sdr"
+		}
+	},
+	{
+		"step": "manifest:dash",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:dash:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video-dv81",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video-sdr",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio-atmos",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio-aac",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:dv81-v2160",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/dv81/2160p_15000000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-dv81",
+			"encodingId": "encoding:dv81",
+			"muxingId": "muxing:dv81-v2160"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:dv81-v1080",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/dv81/1080p_6000000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-dv81",
+			"encodingId": "encoding:dv81",
+			"muxingId": "muxing:dv81-v1080"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:dv81-v720",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/dv81/720p_3000000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-dv81",
+			"encodingId": "encoding:dv81",
+			"muxingId": "muxing:dv81-v720"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:dv81-v540",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/dv81/540p_1800000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-dv81",
+			"encodingId": "encoding:dv81",
+			"muxingId": "muxing:dv81-v540"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:sdr-v2160",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/sdr/2160p_12000000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-sdr",
+			"encodingId": "encoding:sdr",
+			"muxingId": "muxing:sdr-v2160"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:sdr-v1080",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/sdr/1080p_5000000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-sdr",
+			"encodingId": "encoding:sdr",
+			"muxingId": "muxing:sdr-v1080"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:sdr-v720",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/sdr/720p_2500000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-sdr",
+			"encodingId": "encoding:sdr",
+			"muxingId": "muxing:sdr-v720"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:sdr-v540",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/sdr/540p_1500000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video-sdr",
+			"encodingId": "encoding:sdr",
+			"muxingId": "muxing:sdr-v540"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:atmos448",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/atmos/448000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio-atmos",
+			"encodingId": "encoding:dv81",
+			"muxingId": "muxing:atmos448"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:aac128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/aac/128000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio-aac",
+			"encodingId": "encoding:dv81",
+			"muxingId": "muxing:aac128"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V8",
+			"hlsMediaPlaylistVersion": "HLS_V8",
+			"outputPath": "output/dolbyvision-hdr10-sdr-2ladder-profile81-hls-dash-fmp4/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v2160:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/2160p_15000000/",
+			"uri": "video_dv81_2160p_15000000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v2160",
+			"muxingId": "muxing:dv81-v2160"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v2160:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/2160p_15000000/",
+			"uri": "video_dv81_2160p_15000000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v2160",
+			"muxingId": "muxing:dv81-v2160"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:dv81-v2160",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_dv81_2160p_15000000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:dv81-v2160:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v1080:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/1080p_6000000/",
+			"uri": "video_dv81_1080p_6000000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v1080",
+			"muxingId": "muxing:dv81-v1080"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v1080:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/1080p_6000000/",
+			"uri": "video_dv81_1080p_6000000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v1080",
+			"muxingId": "muxing:dv81-v1080"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:dv81-v1080",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_dv81_1080p_6000000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:dv81-v1080:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v720:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/720p_3000000/",
+			"uri": "video_dv81_720p_3000000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v720",
+			"muxingId": "muxing:dv81-v720"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v720:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/720p_3000000/",
+			"uri": "video_dv81_720p_3000000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v720",
+			"muxingId": "muxing:dv81-v720"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:dv81-v720",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_dv81_720p_3000000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:dv81-v720:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v540:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/540p_1800000/",
+			"uri": "video_dv81_540p_1800000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v540",
+			"muxingId": "muxing:dv81-v540"
+		}
+	},
+	{
+		"step": "hls-variant:hls:dv81-v540:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/dv81/540p_1800000/",
+			"uri": "video_dv81_540p_1800000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:dv81-v540",
+			"muxingId": "muxing:dv81-v540"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:dv81-v540",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_dv81_540p_1800000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:dv81-v540:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v2160:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/2160p_12000000/",
+			"uri": "video_sdr_2160p_12000000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v2160",
+			"muxingId": "muxing:sdr-v2160"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v2160:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/2160p_12000000/",
+			"uri": "video_sdr_2160p_12000000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v2160",
+			"muxingId": "muxing:sdr-v2160"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:sdr-v2160",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_sdr_2160p_12000000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:sdr-v2160:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v1080:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/1080p_5000000/",
+			"uri": "video_sdr_1080p_5000000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v1080",
+			"muxingId": "muxing:sdr-v1080"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v1080:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/1080p_5000000/",
+			"uri": "video_sdr_1080p_5000000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v1080",
+			"muxingId": "muxing:sdr-v1080"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:sdr-v1080",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_sdr_1080p_5000000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:sdr-v1080:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v720:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/720p_2500000/",
+			"uri": "video_sdr_720p_2500000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v720",
+			"muxingId": "muxing:sdr-v720"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v720:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/720p_2500000/",
+			"uri": "video_sdr_720p_2500000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v720",
+			"muxingId": "muxing:sdr-v720"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:sdr-v720",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_sdr_720p_2500000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:sdr-v720:aac"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v540:aac",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "aac",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/540p_1500000/",
+			"uri": "video_sdr_540p_1500000_aac.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v540",
+			"muxingId": "muxing:sdr-v540"
+		}
+	},
+	{
+		"step": "hls-variant:hls:sdr-v540:atmos",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "atmos",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/sdr/540p_1500000/",
+			"uri": "video_sdr_540p_1500000_atmos.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:sdr",
+			"streamId": "stream:sdr-v540",
+			"muxingId": "muxing:sdr-v540"
+		}
+	},
+	{
+		"step": "hls-iframe:hls:sdr-v540",
+		"kind": "CREATE_HLS_IFRAME_PLAYLIST",
+		"payload": {
+			"filename": "video_sdr_540p_1500000_iframe.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"streamInfoId": "hls-variant:hls:sdr-v540:aac"
+		}
+	},
+	{
+		"step": "hls-media:hls:atmos448",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "English Atmos",
+			"groupId": "atmos",
+			"language": "en",
+			"isDefault": false,
+			"autoselect": true,
+			"segmentPath": "audio/atmos/448000/",
+			"uri": "audio_atmos_448000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:atmos448",
+			"muxingId": "muxing:atmos448"
+		}
+	},
+	{
+		"step": "hls-media:hls:aac128",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "English AAC",
+			"groupId": "aac",
+			"language": "en",
+			"isDefault": true,
+			"autoselect": true,
+			"segmentPath": "audio/aac/128000/",
+			"uri": "audio_aac_128000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding:dv81",
+			"streamId": "stream:aac128",
+			"muxingId": "muxing:aac128"
+		}
+	},
+	{
+		"step": "manifest-start:dash",
+		"kind": "START_MANIFEST_DASH",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest-await:dash",
+		"kind": "AWAIT_MANIFEST_DASH",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest-start:hls",
+		"kind": "START_MANIFEST_HLS",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:hls"
+		}
+	},
+	{
+		"step": "manifest-await:hls",
+		"kind": "AWAIT_MANIFEST_HLS",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:hls"
+		}
+	}
+]

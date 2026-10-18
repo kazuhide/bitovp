@@ -1,0 +1,274 @@
+{
+	"planVersion": 1,
+	"name": "vp9-webm-fixed-dash",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v1080",
+			"codec": "VP9",
+			"ingestKey": "video",
+			"height": 1080,
+			"bitrate": 3000000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		{
+			"key": "v720",
+			"codec": "VP9",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": 1500000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		{
+			"key": "v540",
+			"codec": "VP9",
+			"ingestKey": "video",
+			"height": 540,
+			"bitrate": 800000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		{
+			"key": "v360",
+			"codec": "VP9",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 400000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"name": "AAC Codec Configuration",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		{
+			"key": "a64",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"name": "AAC Codec Configuration",
+			"bitrate": 64000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v1080",
+			"kind": "WEBM",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/video/1080p_3000000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v720",
+			"kind": "WEBM",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/video/720p_1500000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v540",
+			"kind": "WEBM",
+			"streamKey": "v540",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/video/540p_800000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v360",
+			"kind": "WEBM",
+			"streamKey": "v360",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/video/360p_400000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/audio/128000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a64",
+			"kind": "FMP4",
+			"streamKey": "a64",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/audio/64000/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vp9-webm-fixed-dash/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"videoMuxingKind": "WEBM",
+			"audioMuxingKind": "FMP4"
+		}
+	],
+	"generation": {
+		"timing": "POST_ENCODING",
+		"encodingMode": "THREE_PASS"
+	},
+	"qc": {
+		"vmaf": true
+	}
+}

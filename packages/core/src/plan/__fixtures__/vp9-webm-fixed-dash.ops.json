@@ -1,0 +1,605 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "vp9-webm-fixed-dash",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v1080",
+		"kind": "CREATE_CODEC_VP9",
+		"payload": {
+			"height": 1080,
+			"bitrate": 3000000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v1080",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream VP9 1080p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v1080",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v1080",
+		"kind": "CREATE_MUXING_WEBM",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"outputPath": "output/vp9-webm-fixed-dash/video/1080p_3000000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video WebM Muxing 1080p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v1080",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "qc-muxing:v1080",
+		"kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+		"payload": {
+			"filename": "v1080.webm",
+			"outputPath": "output/vp9-webm-fixed-dash/video/1080p_3000000/qc/",
+			"acl": "PUBLIC_READ",
+			"name": "QC VMAF Mirror Stream VP9 1080p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v1080",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_VP9",
+		"payload": {
+			"height": 720,
+			"bitrate": 1500000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream VP9 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_WEBM",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"outputPath": "output/vp9-webm-fixed-dash/video/720p_1500000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video WebM Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "qc-muxing:v720",
+		"kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+		"payload": {
+			"filename": "v720.webm",
+			"outputPath": "output/vp9-webm-fixed-dash/video/720p_1500000/qc/",
+			"acl": "PUBLIC_READ",
+			"name": "QC VMAF Mirror Stream VP9 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v540",
+		"kind": "CREATE_CODEC_VP9",
+		"payload": {
+			"height": 540,
+			"bitrate": 800000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v540",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream VP9 540p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v540",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v540",
+		"kind": "CREATE_MUXING_WEBM",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"outputPath": "output/vp9-webm-fixed-dash/video/540p_800000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video WebM Muxing 540p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "qc-muxing:v540",
+		"kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+		"payload": {
+			"filename": "v540.webm",
+			"outputPath": "output/vp9-webm-fixed-dash/video/540p_800000/qc/",
+			"acl": "PUBLIC_READ",
+			"name": "QC VMAF Mirror Stream VP9 540p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_VP9",
+		"payload": {
+			"height": 360,
+			"bitrate": 400000,
+			"rate": null,
+			"cpuUsed": 1,
+			"tileColumns": 1,
+			"qpMin": 0,
+			"qpMax": 63,
+			"rateUndershootPct": 25,
+			"rateOvershootPct": 25,
+			"quality": "GOOD",
+			"lossless": null,
+			"aqMode": "NONE",
+			"arnrType": "CENTERED",
+			"arnrMaxFrames": 0,
+			"arnrStrength": 3,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true,
+				"copyChromaLocationFlag": true,
+				"copyColorRangeFlag": true
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream VP9 360p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_WEBM",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.chk",
+			"initSegmentName": "init.hdr",
+			"outputPath": "output/vp9-webm-fixed-dash/video/360p_400000/",
+			"acl": "PUBLIC_READ",
+			"name": "Video WebM Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "qc-muxing:v360",
+		"kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+		"payload": {
+			"filename": "v360.webm",
+			"outputPath": "output/vp9-webm-fixed-dash/video/360p_400000/qc/",
+			"acl": "PUBLIC_READ",
+			"name": "QC VMAF Mirror Stream VP9 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"name": "AAC Codec Configuration",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/vp9-webm-fixed-dash/audio/128000/",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 Muxing 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a64",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"name": "AAC Codec Configuration",
+			"bitrate": 64000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a64",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 64kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a64",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a64",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/vp9-webm-fixed-dash/audio/64000/",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 Muxing 64kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a64",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"encodingMode": "THREE_PASS"
+		},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest:dash",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"outputPath": "output/vp9-webm-fixed-dash/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:dash:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v1080",
+		"kind": "CREATE_DASH_REPRESENTATION_WEBM",
+		"payload": {
+			"type": "TEMPLATE",
+			"segmentPath": "video/1080p_3000000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v1080"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v720",
+		"kind": "CREATE_DASH_REPRESENTATION_WEBM",
+		"payload": {
+			"type": "TEMPLATE",
+			"segmentPath": "video/720p_1500000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v540",
+		"kind": "CREATE_DASH_REPRESENTATION_WEBM",
+		"payload": {
+			"type": "TEMPLATE",
+			"segmentPath": "video/540p_800000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v540"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v360",
+		"kind": "CREATE_DASH_REPRESENTATION_WEBM",
+		"payload": {
+			"type": "TEMPLATE",
+			"segmentPath": "video/360p_400000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:a128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/128000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:a64",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/64000/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a64"
+		}
+	},
+	{
+		"step": "manifest-start:dash",
+		"kind": "START_MANIFEST_DASH",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest-await:dash",
+		"kind": "AWAIT_MANIFEST_DASH",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	}
+]

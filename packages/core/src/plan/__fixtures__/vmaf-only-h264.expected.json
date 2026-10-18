@@ -1,0 +1,34 @@
+{
+	"planName": "VMAF-only H264 (no delivery outputs)",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [],
+	"manifests": [],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"qc": {
+		"vmaf": true,
+		"psnr": false,
+		"model": "vmaf_v1.0.16_3d0h",
+		"mirrorRenditionKeys": [
+			"v540"
+		],
+		"mirrorDirSuffix": "qc/",
+		"mirrors": [
+			{
+				"renditionKey": "v540",
+				"outputKey": "origin",
+				"dir": {
+					"pattern": "output/vmaf-only-h264/video/540p/qc/",
+					"prefix": "output/vmaf-only-h264/video/540p/qc/",
+					"templated": false
+				},
+				"filename": "v540.mp4"
+			}
+		]
+	},
+	"multiEncoding": false,
+	"notes": []
+}

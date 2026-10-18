@@ -1,0 +1,80 @@
+{
+	"planVersion": 1,
+	"name": "Progressive MP4 carrying video and audio in one file (mp4-muxed-av-progressive)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/file.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/file.mp4",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v1080",
+			"codec": "H264",
+			"name": "H264 1080p",
+			"ingestKey": "video",
+			"height": 1080,
+			"bitrate": 5000000,
+			"profile": "HIGH"
+		},
+		{
+			"key": "a192",
+			"codec": "AAC",
+			"name": "AAC 192kbps",
+			"ingestKey": "audio",
+			"bitrate": 192000,
+			"rate": 48000
+		}
+	],
+	"muxings": [
+		{
+			"key": "file",
+			"kind": "MP4",
+			"streamKey": "v1080",
+			"additionalStreamKeys": ["a192"],
+			"filename": "output.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/mp4-muxed-av-progressive/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Progressive MP4 Muxing"
+		}
+	],
+	"manifests": [],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

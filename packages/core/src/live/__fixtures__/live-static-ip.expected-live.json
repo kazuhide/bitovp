@@ -1,0 +1,126 @@
+{
+	"planName": "Live RTMP + Static IP (live-static-ip)",
+	"ingest": {
+		"kind": "RTMP",
+		"feedable": true,
+		"requiresCoordinates": [
+			"streamKey",
+			"encoderIp"
+		]
+	},
+	"muxings": [
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-static-ip/video/1080p/",
+				"prefix": "output/live-static-ip/video/1080p/",
+				"templated": false
+			},
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4"
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-static-ip/video/720p/",
+				"prefix": "output/live-static-ip/video/720p/",
+				"templated": false
+			},
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4"
+		},
+		{
+			"muxingKey": "v360",
+			"streamKey": "v360",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-static-ip/video/360p/",
+				"prefix": "output/live-static-ip/video/360p/",
+				"templated": false
+			},
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4"
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-static-ip/audio/128000/",
+				"prefix": "output/live-static-ip/audio/128000/",
+				"templated": false
+			},
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4"
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-static-ip/",
+				"prefix": "output/live-static-ip/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"mediaPlaylists": [
+				"video_4500000.m3u8",
+				"video_3000000.m3u8",
+				"video_800000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"timeshiftSec": 7200,
+			"elementBudget": {
+				"segmentsPerRendition": 1200,
+				"totalElements": 4800,
+				"budget": 54000,
+				"utilization": 0.08888888888888889,
+				"level": "ok"
+			}
+		},
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-static-ip/",
+				"prefix": "output/live-static-ip/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"mediaPlaylists": [],
+			"videoCodecs": [
+				"H264"
+			],
+			"timeshiftSec": 7200,
+			"elementBudget": {
+				"segmentsPerRendition": 1200,
+				"totalElements": 4800,
+				"budget": 54000,
+				"utilization": 0.08888888888888889,
+				"level": "ok"
+			}
+		}
+	],
+	"renditionCount": 4,
+	"needsPois": false,
+	"notes": []
+}

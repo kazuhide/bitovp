@@ -1,0 +1,103 @@
+{
+	"planName": "h264-sprites-trickplay-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"renditionKey": "v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-sprites-trickplay-aws/video/720p/",
+				"prefix": "output/h264-sprites-trickplay-aws/video/720p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "H264",
+				"bitrate": 3000000
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-sprites-trickplay-aws/",
+				"prefix": "output/h264-sprites-trickplay-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 1,
+			"audioEntries": 0,
+			"textEntries": 0,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v720",
+						"height": 720,
+						"bitrate": 3000000,
+						"codec": "H264"
+					}
+				],
+				"audio": [],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				],
+				"hlsVariants": [
+					{
+						"key": "v720",
+						"renditionKey": "v720",
+						"kind": "video",
+						"codec": "H264",
+						"height": 720,
+						"bitrate": 3000000,
+						"audioGroup": "audio",
+						"uri": "video_3000000.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V4",
+			"hlsMediaVersion": "HLS_V4",
+			"hlsChildFiles": [
+				"video_3000000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [
+		{
+			"spriteKey": "sprite720",
+			"streamKey": "v720",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-sprites-trickplay-aws/sprite/",
+				"prefix": "output/h264-sprites-trickplay-aws/sprite/",
+				"templated": false
+			},
+			"spriteName": "sprite.jpg",
+			"vttName": "sprite.vtt",
+			"tileHeight": 90,
+			"hTiles": 10,
+			"vTiles": 10
+		}
+	],
+	"multiEncoding": false,
+	"notes": []
+}

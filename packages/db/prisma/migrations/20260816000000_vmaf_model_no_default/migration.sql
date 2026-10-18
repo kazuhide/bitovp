@@ -1,0 +1,14 @@
+-- VmafJob.model: drop the column default.
+--
+-- Hand-written (the repo's precedent: #83's partial-unique index). `migrate
+-- dev` wanted a full reset over pre-existing checksum drift on two older
+-- migrations, and this database holds the verification history a reset would
+-- destroy — including a corpus run in flight. The change itself is a metadata
+-- update: no rewrite, no lock beyond ACCESS EXCLUSIVE for the catalogue edit.
+--
+-- Why remove rather than re-point at the new default: both writers (the VOD
+-- auto-trigger and the live capture route) already pass `model` explicitly, so
+-- the default was a SIXTH spelling of "the default" that disagreed with core's
+-- DEFAULT_VMAF_MODEL and could only ever be wrong (review-234). A row must say
+-- which model produced its score.
+ALTER TABLE "VmafJob" ALTER COLUMN "model" DROP DEFAULT;

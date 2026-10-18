@@ -1,0 +1,614 @@
+{
+	"planVersion": 1,
+	"name": "Sample H264 Per-Title Encoding (Separate AV Inputs)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/video_only.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/audio_only.wav",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v180",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 180,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "BASELINE",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle"
+		},
+		{
+			"key": "v360-300",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle",
+			"perTitleSettings": {
+				"minBitrate": 300000,
+				"maxBitrate": 500000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v360-600",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle",
+			"perTitleSettings": {
+				"minBitrate": 600000,
+				"maxBitrate": 900000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v540",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 540,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle",
+			"perTitleSettings": {
+				"minBitrate": 1000000,
+				"maxBitrate": 1400000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v720",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 720,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle",
+			"perTitleSettings": {
+				"minBitrate": 1800000,
+				"maxBitrate": 2400000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v900",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 900,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.8,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle"
+		},
+		{
+			"key": "v1080",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 1080,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.5,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"streamName": "Stream H264 PerTitle"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		{
+			"key": "a64",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 64000,
+			"rate": 44100,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v180",
+			"kind": "FMP4",
+			"streamKey": "v180",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v180-ts",
+			"kind": "TS",
+			"streamKey": "v180",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "v360-300",
+			"kind": "FMP4",
+			"streamKey": "v360-300",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v360-300-ts",
+			"kind": "TS",
+			"streamKey": "v360-300",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "v360-600",
+			"kind": "FMP4",
+			"streamKey": "v360-600",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v360-600-ts",
+			"kind": "TS",
+			"streamKey": "v360-600",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v540-ts",
+			"kind": "TS",
+			"streamKey": "v540",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v720-ts",
+			"kind": "TS",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "v900",
+			"kind": "FMP4",
+			"streamKey": "v900",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v900-ts",
+			"kind": "TS",
+			"streamKey": "v900",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/fmp4/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		{
+			"key": "v1080-ts",
+			"kind": "TS",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/video/ts/{height}p_{bitrate}_{uuid}",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video Ts Muxing PerTitle"
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/audio/fmp4/128000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 Muxing 128kbps"
+		},
+		{
+			"key": "a128-ts",
+			"kind": "TS",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/audio/ts/128000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio Ts Muxing 128kbps"
+		},
+		{
+			"key": "a64",
+			"kind": "FMP4",
+			"streamKey": "a64",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/audio/fmp4/64000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 Muxing 64kbps"
+		},
+		{
+			"key": "a64-ts",
+			"kind": "TS",
+			"streamKey": "a64",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/audio/ts/64000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio Ts Muxing 64kbps"
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V6",
+			"mediaVersion": "HLS_V6",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"videoMuxingKind": "TS",
+			"audioMuxingKind": "TS",
+			"perTitleVariantUri": "CODEC_BITRATE"
+		},
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vod-pertitle-h264-aac-ts-fmp4-hls-dash/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"videoMuxingKind": "FMP4",
+			"audioMuxingKind": "FMP4"
+		}
+	],
+	"perTitle": {
+		"h264Configuration": {
+			"minBitrate": 128000,
+			"maxBitrate": 4000000,
+			"codecMinBitrateFactor": 0.8,
+			"codecMaxBitrateFactor": 1.2,
+			"codecBufsizeFactor": 2,
+			"targetQualityCrf": 17,
+			"complexityFactor": 1,
+			"maxBitrateStepSize": 4,
+			"fixedResolutionAndBitrateConfiguration": {
+				"forcedRenditionAboveHighestFixedRepresentation": 1,
+				"forcedRenditionAboveHighestFixedRepresentationFactor": 1.2,
+				"forcedRenditionAboveHighestFixedRepresentationCalculationMode": "LAST_CALCULATED_BITRATE"
+			}
+		}
+	},
+	"generation": {
+		"timing": "POST_ENCODING",
+		"encodingMode": "THREE_PASS"
+	}
+}

@@ -1,0 +1,191 @@
+{
+	"planName": "h264-aac-fmp4-fixed-bitrate-hls-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v360",
+			"streamKey": "v360",
+			"renditionKey": "v360",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/video/360p/",
+				"prefix": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/video/360p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 360,
+				"codec": "H264",
+				"bitrate": 300000
+			}
+		},
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"renditionKey": "v540",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/video/540p/",
+				"prefix": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/video/540p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H264",
+				"bitrate": 600000
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/audio/128000/",
+				"prefix": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/audio/128000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		},
+		{
+			"muxingKey": "a64",
+			"streamKey": "a64",
+			"renditionKey": "a64",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/audio/64000/",
+				"prefix": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/audio/64000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 64000,
+				"sampleRate": 44100,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/",
+				"prefix": "output/h264-aac-fmp4-fixed-bitrate-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 2,
+			"audioEntries": 2,
+			"textEntries": 0,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v360",
+						"height": 360,
+						"bitrate": 300000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v540",
+						"height": 540,
+						"bitrate": 600000,
+						"codec": "H264"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media (a128)",
+						"uri": "audio_128000.m3u8",
+						"bitrate": 128000
+					},
+					{
+						"renditionKey": "a64",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media (a64)",
+						"uri": "audio_64000.m3u8",
+						"bitrate": 64000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				],
+				"hlsVariants": [
+					{
+						"key": "v360",
+						"renditionKey": "v360",
+						"kind": "video",
+						"codec": "H264",
+						"height": 360,
+						"bitrate": 300000,
+						"audioGroup": "audio",
+						"uri": "video_300000.m3u8"
+					},
+					{
+						"key": "v540",
+						"renditionKey": "v540",
+						"kind": "video",
+						"codec": "H264",
+						"height": 540,
+						"bitrate": 600000,
+						"audioGroup": "audio",
+						"uri": "video_600000.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V4",
+			"hlsMediaVersion": "HLS_V4",
+			"hlsChildFiles": [
+				"video_300000.m3u8",
+				"video_600000.m3u8",
+				"audio_128000.m3u8",
+				"audio_64000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

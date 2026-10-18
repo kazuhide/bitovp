@@ -1,0 +1,482 @@
+{
+	"planVersion": 1,
+	"name": "per-title-h265-aac-fmp4-dash-hls-aws",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v180",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 180,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			}
+		},
+		{
+			"key": "v480-210",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 480,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			},
+			"perTitleSettings": {
+				"minBitrate": 210000,
+				"maxBitrate": 350000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 1500000,
+				"highComplexityBoundaryForMaxBitrate": 3200000
+			}
+		},
+		{
+			"key": "v480-420",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 480,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			},
+			"perTitleSettings": {
+				"minBitrate": 420000,
+				"maxBitrate": 630000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 1500000,
+				"highComplexityBoundaryForMaxBitrate": 3200000
+			}
+		},
+		{
+			"key": "v540",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 540,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			},
+			"perTitleSettings": {
+				"minBitrate": 700000,
+				"maxBitrate": 980000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 1500000,
+				"highComplexityBoundaryForMaxBitrate": 3200000
+			}
+		},
+		{
+			"key": "v720",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			},
+			"perTitleSettings": {
+				"minBitrate": 1250000,
+				"maxBitrate": 1700000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 1500000,
+				"highComplexityBoundaryForMaxBitrate": 3200000
+			}
+		},
+		{
+			"key": "v900",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 900,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.8,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			}
+		},
+		{
+			"key": "v1080",
+			"codec": "H265",
+			"ingestKey": "video",
+			"height": 1080,
+			"bitrate": null,
+			"level": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "MAIN",
+			"rate": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"rcLookahead": 60,
+			"subMe": 5,
+			"maxCtuSize": "S64",
+			"motionSearch": "STAR",
+			"tuIntraDepth": "D4",
+			"tuInterDepth": "D4",
+			"weightPredictionOnPSlice": true,
+			"weightPredictionOnBSlice": true,
+			"sceneCutThreshold": 40,
+			"motionSearchRange": 92,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.5,
+			"psyRateDistortionOptimization": 0,
+			"psyRateDistortionOptimizedQuantization": 0,
+			"qpMin": 15,
+			"sao": true,
+			"colorConfig": {
+				"colorSpace": "BT709",
+				"colorPrimaries": "BT709",
+				"colorTransfer": "BT709"
+			}
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"name": "AAC Codec Configuration",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"conditions": {
+				"attribute": "AUDIOSTREAMCOUNT",
+				"operator": "GREATER_THAN",
+				"value": "0"
+			}
+		}
+	],
+	"muxings": [
+		{
+			"key": "v180",
+			"kind": "FMP4",
+			"streamKey": "v180",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v180/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v480-210",
+			"kind": "FMP4",
+			"streamKey": "v480-210",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-210/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v480-420",
+			"kind": "FMP4",
+			"streamKey": "v480-420",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-420/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v540/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v720/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v900",
+			"kind": "FMP4",
+			"streamKey": "v900",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v900/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v1080/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/audio/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 Muxing"
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE"
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h265-aac-fmp4-dash-hls-aws/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V6",
+			"mediaVersion": "HLS_V6",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		}
+	],
+	"perTitle": {
+		"h265Configuration": {
+			"minBitrate": 128000,
+			"maxBitrate": 3200000,
+			"codecMinBitrateFactor": 0.8,
+			"codecMaxBitrateFactor": 1.2,
+			"codecBufsizeFactor": 2,
+			"targetQualityCrf": 17,
+			"maxBitrateStepSize": 4,
+			"fixedResolutionAndBitrateConfiguration": {
+				"forcedRenditionAboveHighestFixedRepresentation": 1,
+				"forcedRenditionAboveHighestFixedRepresentationFactor": 1.2,
+				"forcedRenditionAboveHighestFixedRepresentationCalculationMode": "LAST_CALCULATED_BITRATE"
+			}
+		}
+	},
+	"generation": {
+		"timing": "POST_ENCODING",
+		"encodingMode": "THREE_PASS"
+	}
+}

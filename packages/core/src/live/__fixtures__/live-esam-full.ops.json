@@ -1,0 +1,490 @@
+[
+	{
+		"step": "live-input:main",
+		"kind": "CREATE_INPUT_RTMP",
+		"payload": {
+			"inputId": "00000000-0000-4000-8000-0000000000f6"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "Live ESAM / POIS + Cache-Control Channel (live-esam-full)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "codec:v1080",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Live H264 1080p",
+			"height": 1080,
+			"bitrate": 4500000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v1080",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 1080p",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v1080",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:v1080",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/live-esam-full/video/1080p",
+			"signalScte35AsEmsg": true,
+			"name": "Video FMP4 Muxing 1080p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v1080",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Live H264 720p",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 720p",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/live-esam-full/video/720p",
+			"signalScte35AsEmsg": true,
+			"name": "Video FMP4 Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Live H264 360p",
+			"height": 360,
+			"bitrate": 800000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 360p",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/live-esam-full/video/360p",
+			"signalScte35AsEmsg": true,
+			"name": "Video FMP4 Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 1
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/live-esam-full/audio/128000",
+			"signalScte35AsEmsg": true,
+			"name": "Audio FMP4 Muxing 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "Live HLS Manifest",
+			"outputPath": "output/live-esam-full"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v1080",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/1080p",
+			"uri": "video_4500000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v1080",
+			"muxingId": "muxing:v1080"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v720",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/720p",
+			"uri": "video_3000000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v360",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/360p",
+			"uri": "video_800000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "hls-media:hls:a128",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/128000",
+			"uri": "audio_128000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "manifest:dash",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "stream.mpd",
+			"name": "Live DASH Manifest",
+			"outputPath": "output/live-esam-full"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:dash:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {
+			"start": 0
+		},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v1080",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/1080p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v1080"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v720",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/720p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v360",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/360p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:a128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/128000"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_LIVE_ENCODING",
+		"payload": {
+			"streamKey": "myStreamKey",
+			"hlsManifests": {
+				"hls": {
+					"timeshift": 7200,
+					"liveEdgeOffset": 18,
+					"insertProgramDateTime": true,
+					"programDateTimeSettings": {
+						"source": "SYSTEM_CLOCK",
+						"placement": {
+							"mode": "SECONDS_INTERVAL",
+							"interval": 30
+						}
+					},
+					"adMarkerSettings": {
+						"enabledMarkerTypes": [
+							"EXT_X_DATERANGE",
+							"EXT_X_SCTE35"
+						],
+						"disablePreannouncing": true
+					}
+				}
+			},
+			"dashManifests": {
+				"dash": {
+					"timeshift": 7200,
+					"suggestedPresentationDelay": 12000,
+					"minimumUpdatePeriod": 6000,
+					"availabilityStartTimeMode": "ON_FIRST_SEGMENT",
+					"adMarkerSettings": {
+						"periodOption": "MULTI_PERIOD",
+						"eventStreamSignalling": "XML"
+					}
+				}
+			},
+			"manifestGenerator": "V2",
+			"autoRestartConfiguration": {
+				"segmentsWrittenTimeout": 60,
+				"restartOnEncoderError": true
+			},
+			"autoShutdownConfiguration": {
+				"bytesReadTimeoutSeconds": 3600,
+				"streamTimeoutMinutes": 720
+			},
+			"esamSettings": {
+				"poisEndpoint": "https://pois.example.com/esam/signalProcessingEvent",
+				"acquisitionPointIdentity": "acquisition-point-1",
+				"zoneIdentity": "zone-east",
+				"adAvailOffset": -1500,
+				"poisCredentialId": "00000000-0000-4000-8000-0000000000e5"
+			},
+			"cacheControlSettings": {
+				"hls": {
+					"multiVariantPlaylist": {
+						"cacheControl": "public, max-age=60"
+					},
+					"variantPlaylist": {
+						"cacheControl": "public, max-age=2"
+					}
+				},
+				"dash": {
+					"timelineManifest": {
+						"cacheControl": "public, max-age=1"
+					},
+					"templateManifest": {
+						"cacheControl": "public, max-age=4"
+					}
+				},
+				"segments": {
+					"initSegment": {
+						"cacheControl": "public, max-age=31536000, immutable"
+					},
+					"mediaSegment": {
+						"cacheControl": "public, max-age=31536000, immutable"
+					}
+				}
+			},
+			"adInsertionSettings": {
+				"enableEsamMediaPointInsertion": true,
+				"clockSynchronizationMode": "SYSTEM_CLOCK"
+			}
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"liveHlsManifestIds": [
+				"manifest:hls"
+			],
+			"liveDashManifestIds": [
+				"manifest:dash"
+			]
+		}
+	},
+	{
+		"step": "await:running",
+		"kind": "AWAIT_LIVE_RUNNING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

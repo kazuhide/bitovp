@@ -1,0 +1,107 @@
+{
+	"planName": "Sample Audio-Only AAC Encoding (audio-only-aac-fmp4-hls-dash)",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/audio-only-aac-fmp4-hls-dash/audio/128000/",
+				"prefix": "output/audio-only-aac-fmp4-hls-dash/audio/128000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/audio-only-aac-fmp4-hls-dash/",
+				"prefix": "output/audio-only-aac-fmp4-hls-dash/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 0,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": true,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": []
+			}
+		},
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/audio-only-aac-fmp4-hls-dash/",
+				"prefix": "output/audio-only-aac-fmp4-hls-dash/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 0,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": true,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_128000.m3u8",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [],
+				"hlsVariants": []
+			},
+			"hlsMasterVersion": "HLS_V6",
+			"hlsMediaVersion": "HLS_V6",
+			"hlsChildFiles": [
+				"audio_128000.m3u8"
+			]
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

@@ -1,0 +1,69 @@
+{
+	"planName": "Live HLS with audio muxed into each TS variant (live-hls-ts-muxed)",
+	"ingest": {
+		"kind": "RTMP",
+		"feedable": true,
+		"requiresCoordinates": [
+			"streamKey",
+			"encoderIp"
+		]
+	},
+	"muxings": [
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-hls-ts-muxed/video/540p/",
+				"prefix": "output/live-hls-ts-muxed/video/540p/",
+				"templated": false
+			},
+			"segmentNaming": "seg_%number%.ts",
+			"segmentLengthSec": 6
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-hls-ts-muxed/video/720p/",
+				"prefix": "output/live-hls-ts-muxed/video/720p/",
+				"templated": false
+			},
+			"segmentNaming": "seg_%number%.ts",
+			"segmentLengthSec": 6
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-hls-ts-muxed/",
+				"prefix": "output/live-hls-ts-muxed/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"mediaPlaylists": [
+				"video_1500000.m3u8",
+				"video_3000000.m3u8"
+			],
+			"timeshiftSec": 7200,
+			"elementBudget": {
+				"segmentsPerRendition": 1200,
+				"totalElements": 2400,
+				"budget": 54000,
+				"utilization": 0.044444444444444446,
+				"level": "ok"
+			}
+		}
+	],
+	"renditionCount": 3,
+	"needsPois": false,
+	"notes": []
+}

@@ -1,0 +1,251 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "HLS MPEG-TS with audio muxed into each variant (hls-ts-muxed-av)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "/path/to/your/input/file.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "/path/to/your/input/file.mp4",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "H264 360p",
+			"height": 360,
+			"bitrate": 800000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"profile": "MAIN"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 360p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "H264 720p",
+			"height": 720,
+			"bitrate": 2400000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"profile": "MAIN"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"name": "AAC 128kbps",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:v360-ts",
+		"kind": "CREATE_MUXING_TS",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.ts",
+			"outputPath": "output/hls-ts-muxed-av/video/360p",
+			"acl": "PUBLIC_READ",
+			"name": "Video TS Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"additionalStreamIds": [
+				"stream:a128"
+			],
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "muxing:v720-ts",
+		"kind": "CREATE_MUXING_TS",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.ts",
+			"outputPath": "output/hls-ts-muxed-av/video/720p",
+			"acl": "PUBLIC_READ",
+			"name": "Video TS Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"additionalStreamIds": [
+				"stream:a128"
+			],
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V6",
+			"hlsMediaPlaylistVersion": "HLS_V6",
+			"outputPath": "output/hls-ts-muxed-av/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v360-ts",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"closedCaptions": "NONE",
+			"segmentPath": "video/360p",
+			"uri": "video_800000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"muxingId": "muxing:v360-ts"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v720-ts",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"closedCaptions": "NONE",
+			"segmentPath": "video/720p",
+			"uri": "video_2400000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"muxingId": "muxing:v720-ts"
+		}
+	},
+	{
+		"step": "manifest-start:hls",
+		"kind": "START_MANIFEST_HLS",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:hls"
+		}
+	},
+	{
+		"step": "manifest-await:hls",
+		"kind": "AWAIT_MANIFEST_HLS",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:hls"
+		}
+	}
+]

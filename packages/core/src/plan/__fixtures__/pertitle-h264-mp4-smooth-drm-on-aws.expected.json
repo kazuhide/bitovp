@@ -1,0 +1,381 @@
+{
+	"planName": "per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v180",
+			"streamKey": "v180",
+			"renditionKey": "v180",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v180-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 180,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "BASELINE"
+			}
+		},
+		{
+			"muxingKey": "v360-300",
+			"streamKey": "v360-300",
+			"renditionKey": "v360-300",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v360-300-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 360,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v360-600",
+			"streamKey": "v360-600",
+			"renditionKey": "v360-600",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v360-600-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 360,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"renditionKey": "v540",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v540-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 540,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "MAIN"
+			}
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"renditionKey": "v720",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "FIXED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v720-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 720,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "HIGH"
+			}
+		},
+		{
+			"muxingKey": "v900",
+			"streamKey": "v900",
+			"renditionKey": "v900",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v900-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 900,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "HIGH"
+			}
+		},
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"renditionKey": "v1080",
+			"container": "MP4_FRAGMENTED",
+			"perTitleMode": "TEMPLATE",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": true,
+			"viaDrmKeys": [
+				"v1080-cenc"
+			],
+			"filename": "video.ismv",
+			"video": {
+				"height": 1080,
+				"codec": "H264",
+				"bitrate": null,
+				"profile": "HIGH"
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "MP4_FRAGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"a128-cenc"
+			],
+			"filename": "audio.isma",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "smooth",
+			"kind": "SMOOTH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.ism",
+				"stream.ismc"
+			],
+			"videoEntries": 7,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": true,
+			"perTitle": true,
+			"drmKind": "CENC"
+		}
+	],
+	"drm": [
+		{
+			"drmKey": "v180-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v180"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "v360-300-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v360-300"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "v360-600-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v360-600"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "v540-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v540"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "v720-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v720"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "v900-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v900"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "v1080-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v1080"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/",
+				"templated": true
+			}
+		},
+		{
+			"drmKey": "a128-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"a128"
+			],
+			"ivSizeBytes": 8,
+			"schemeType": "cenc",
+			"kid": "43215678123412341234123412341234",
+			"systemIds": [
+				"9a04f07998404286ab92e65be0885f95"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/audio/",
+				"prefix": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/audio/",
+				"templated": false
+			}
+		}
+	],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": [
+		"per-title plan: heights and bitrates are algorithmic, so rung geometry is asserted as ordered-and-present rather than against plan values (C1/C4)"
+	]
+}

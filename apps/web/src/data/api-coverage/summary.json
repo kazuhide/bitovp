@@ -1,0 +1,273 @@
+{
+	"surveyedSdk": "1.277.0",
+	"surveyedAt": "2026-08-22",
+	"surveyedAtRepo": "d68759c",
+	"ledger": 157,
+	"headline": {
+		"totalOps": 1088,
+		"implemented": 217,
+		"partial": 13,
+		"createTotal": 216,
+		"createImplemented": 98,
+		"paramFields": 1425,
+		"paramOperatorReachable": 488
+	},
+	"families": [
+		{
+			"family": "encodings/muxings",
+			"total": 250,
+			"yes": 31,
+			"partial": 0,
+			"no": 219
+		},
+		{
+			"family": "manifests",
+			"total": 169,
+			"yes": 28,
+			"partial": 0,
+			"no": 141
+		},
+		{
+			"family": "configurations",
+			"total": 141,
+			"yes": 19,
+			"partial": 0,
+			"no": 122
+		},
+		{
+			"family": "inputs",
+			"total": 93,
+			"yes": 13,
+			"partial": 0,
+			"no": 80
+		},
+		{
+			"family": "filters",
+			"total": 88,
+			"yes": 1,
+			"partial": 0,
+			"no": 87
+		},
+		{
+			"family": "outputs",
+			"total": 66,
+			"yes": 8,
+			"partial": 0,
+			"no": 58
+		},
+		{
+			"family": "encodings/streams",
+			"total": 59,
+			"yes": 9,
+			"partial": 2,
+			"no": 48
+		},
+		{
+			"family": "encodings/inputStreams",
+			"total": 55,
+			"yes": 10,
+			"partial": 0,
+			"no": 45
+		},
+		{
+			"family": "infrastructure",
+			"total": 54,
+			"yes": 54,
+			"partial": 0,
+			"no": 0
+		},
+		{
+			"family": "encodings (core)",
+			"total": 25,
+			"yes": 9,
+			"partial": 0,
+			"no": 16
+		},
+		{
+			"family": "statistics",
+			"total": 23,
+			"yes": 0,
+			"partial": 0,
+			"no": 23
+		},
+		{
+			"family": "live",
+			"total": 22,
+			"yes": 19,
+			"partial": 0,
+			"no": 3
+		},
+		{
+			"family": "encodings/live",
+			"total": 18,
+			"yes": 15,
+			"partial": 0,
+			"no": 3
+		},
+		{
+			"family": "encodings/sidecars",
+			"total": 9,
+			"yes": 0,
+			"partial": 0,
+			"no": 9
+		},
+		{
+			"family": "watchFolders",
+			"total": 6,
+			"yes": 0,
+			"partial": 6,
+			"no": 0
+		},
+		{
+			"family": "templates",
+			"total": 5,
+			"yes": 0,
+			"partial": 5,
+			"no": 0
+		},
+		{
+			"family": "encodings/keyframes",
+			"total": 4,
+			"yes": 1,
+			"partial": 0,
+			"no": 3
+		},
+		{
+			"family": "errorDefinitions",
+			"total": 1,
+			"yes": 0,
+			"partial": 0,
+			"no": 1
+		}
+	],
+	"paramTotals": {
+		"wizard": 290,
+		"advanced": 126,
+		"rawJson": 72,
+		"autoDerived": 130,
+		"hardcoded": 78,
+		"notSettable": 729
+	},
+	"paramFamilies": [
+		{
+			"family": "configurations",
+			"fields": 313,
+			"wizard": 19,
+			"advanced": 74,
+			"rawJson": 9,
+			"autoDerived": 9,
+			"hardcoded": 9,
+			"notSettable": 193
+		},
+		{
+			"family": "live",
+			"fields": 173,
+			"wizard": 63,
+			"advanced": 19,
+			"rawJson": 5,
+			"autoDerived": 6,
+			"hardcoded": 1,
+			"notSettable": 79
+		},
+		{
+			"family": "inputs",
+			"fields": 136,
+			"wizard": 48,
+			"advanced": 0,
+			"rawJson": 9,
+			"autoDerived": 0,
+			"hardcoded": 22,
+			"notSettable": 57
+		},
+		{
+			"family": "muxings",
+			"fields": 131,
+			"wizard": 30,
+			"advanced": 0,
+			"rawJson": 10,
+			"autoDerived": 13,
+			"hardcoded": 7,
+			"notSettable": 71
+		},
+		{
+			"family": "streams",
+			"fields": 128,
+			"wizard": 38,
+			"advanced": 9,
+			"rawJson": 3,
+			"autoDerived": 16,
+			"hardcoded": 1,
+			"notSettable": 61
+		},
+		{
+			"family": "infrastructure",
+			"fields": 113,
+			"wizard": 48,
+			"advanced": 0,
+			"rawJson": 22,
+			"autoDerived": 5,
+			"hardcoded": 0,
+			"notSettable": 38
+		},
+		{
+			"family": "outputs",
+			"fields": 105,
+			"wizard": 28,
+			"advanced": 0,
+			"rawJson": 11,
+			"autoDerived": 0,
+			"hardcoded": 8,
+			"notSettable": 58
+		},
+		{
+			"family": "manifests/hls",
+			"fields": 97,
+			"wizard": 5,
+			"advanced": 10,
+			"rawJson": 1,
+			"autoDerived": 26,
+			"hardcoded": 4,
+			"notSettable": 51
+		},
+		{
+			"family": "manifests/dash",
+			"fields": 93,
+			"wizard": 1,
+			"advanced": 6,
+			"rawJson": 1,
+			"autoDerived": 20,
+			"hardcoded": 12,
+			"notSettable": 53
+		},
+		{
+			"family": "inputStreams",
+			"fields": 88,
+			"wizard": 7,
+			"advanced": 4,
+			"rawJson": 0,
+			"autoDerived": 22,
+			"hardcoded": 10,
+			"notSettable": 45
+		},
+		{
+			"family": "manifests/smooth",
+			"fields": 37,
+			"wizard": 3,
+			"advanced": 0,
+			"rawJson": 1,
+			"autoDerived": 12,
+			"hardcoded": 3,
+			"notSettable": 18
+		},
+		{
+			"family": "filters",
+			"fields": 11,
+			"wizard": 0,
+			"advanced": 4,
+			"rawJson": 0,
+			"autoDerived": 1,
+			"hardcoded": 1,
+			"notSettable": 5
+		}
+	]
+}

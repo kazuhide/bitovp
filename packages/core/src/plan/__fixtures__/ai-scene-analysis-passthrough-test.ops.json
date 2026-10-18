@@ -1,0 +1,131 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "h264-mp4-ai-scene-analysis-passthrough-aws-test",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "BETA"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v180",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 180,
+			"bitrate": 200000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"refFrames": 4,
+			"bframes": 3,
+			"cabac": true,
+			"adaptiveSpatialTransform": true,
+			"weightedPredictionPFrames": "SMART",
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v180",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 AI Scene Analysis",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v180",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v180",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "180p.mp4",
+			"outputPath": "output/h264-mp4-ai-scene-analysis-passthrough-aws-test/video",
+			"acl": "PUBLIC_READ",
+			"name": "Video MP4 Muxing"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v180",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"aiSceneAnalysis": {
+				"features": {
+					"assetDescription": {
+						"filename": "h264-mp4-ai-scene-analysis-passthrough-aws-test.json",
+						"outputPath": "output/h264-mp4-ai-scene-analysis-passthrough-aws-test/ai",
+						"acl": "PUBLIC_READ"
+					},
+					"outputLanguageCodes": {
+						"outputLanguageCodes": [
+							"ja",
+							"ko"
+						]
+					}
+				}
+			}
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"aiAssetDescriptionOutputId": "output:origin"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

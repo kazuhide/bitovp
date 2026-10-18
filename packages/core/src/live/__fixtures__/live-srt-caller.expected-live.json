@@ -1,0 +1,73 @@
+{
+	"planName": "Live SRT Caller Channel (live-srt-caller)",
+	"ingest": {
+		"kind": "SRT",
+		"feedable": false,
+		"requiresCoordinates": [
+			"encoderIp"
+		],
+		"srtPort": 7000
+	},
+	"muxings": [
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-srt-caller/video/720p/",
+				"prefix": "output/live-srt-caller/video/720p/",
+				"templated": false
+			},
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4"
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-srt-caller/audio/128000/",
+				"prefix": "output/live-srt-caller/audio/128000/",
+				"templated": false
+			},
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4"
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-srt-caller/",
+				"prefix": "output/live-srt-caller/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"mediaPlaylists": [
+				"video_3000000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"timeshiftSec": 3600,
+			"elementBudget": {
+				"segmentsPerRendition": 600,
+				"totalElements": 1200,
+				"budget": 54000,
+				"utilization": 0.022222222222222223,
+				"level": "ok"
+			}
+		}
+	],
+	"renditionCount": 2,
+	"needsPois": false,
+	"notes": [
+		"SRT cannot be driven by our feeder, so this channel can be provisioned and checked for coordinates and heartbeat but never fed — media assertions will SKIP with that reason"
+	]
+}

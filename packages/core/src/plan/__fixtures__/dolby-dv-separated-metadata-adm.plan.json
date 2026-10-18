@@ -1,0 +1,179 @@
+{
+	"planVersion": 1,
+	"name": "dolbyvision-separated-metadata-dolbyatmos-adm-hls-dash-fmp4",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		},
+		{
+			"key": "metadata",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000007",
+			"bucket": "sample-metadata-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "dv-video",
+			"inputKey": "main",
+			"inputPath": "<INSERT_DOLBY_VISION_VIDEO_PATH>",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		}
+	],
+	"dolbyStreams": [
+		{
+			"key": "dv-meta",
+			"kind": "VISION_METADATA",
+			"inputKey": "metadata",
+			"inputPath": "<INSERT_DOLBY_VISION_METADATA_PATH>"
+		},
+		{
+			"key": "atmos-in",
+			"kind": "ATMOS",
+			"inputKey": "main",
+			"inputPath": "<INSERT_DOLBY_ATMOS_ADM_PATH>",
+			"inputFormat": "ADM"
+		}
+	],
+	"renditions": [
+		{
+			"key": "v1080",
+			"codec": "H265",
+			"ingestKey": "dv-video",
+			"name": "H265 DV 1080p",
+			"height": 1080,
+			"bitrate": 2000000,
+			"level": null,
+			"adaptiveQuantizationStrength": 0.5,
+			"streamName": "Stream H265 DV 1080p",
+			"dolbyVisionMetadata": {
+				"profile": "DVHE_05",
+				"metadataSource": "INPUT_STREAM",
+				"metadataStreamKey": "dv-meta"
+			}
+		},
+		{
+			"key": "v540",
+			"codec": "H265",
+			"ingestKey": "dv-video",
+			"name": "H265 DV 540p",
+			"height": 540,
+			"bitrate": 1000000,
+			"level": null,
+			"adaptiveQuantizationStrength": 1.2,
+			"streamName": "Stream H265 DV 540p",
+			"dolbyVisionMetadata": {
+				"profile": "DVHE_05",
+				"metadataSource": "INPUT_STREAM",
+				"metadataStreamKey": "dv-meta"
+			}
+		},
+		{
+			"key": "atmos448",
+			"codec": "DOLBY_ATMOS",
+			"ingestKey": "atmos-in",
+			"bitrate": 448000,
+			"rate": 48000,
+			"loudnessControl": {
+				"meteringMode": "ITU_R_BS_1770_4",
+				"dialogueIntelligence": "ENABLED",
+				"speechThreshold": 15
+			},
+			"streamName": "Stream ATMOS 448000bps"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-separated-metadata-dolbyatmos-adm-hls-dash-fmp4/video/1080/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-separated-metadata-dolbyatmos-adm-hls-dash-fmp4/video/540/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "atmos448",
+			"kind": "FMP4",
+			"streamKey": "atmos448",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-separated-metadata-dolbyatmos-adm-hls-dash-fmp4/audio/448000/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-separated-metadata-dolbyatmos-adm-hls-dash-fmp4/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"masterVersion": "HLS_V8",
+			"mediaVersion": "HLS_V8",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-separated-metadata-dolbyatmos-adm-hls-dash-fmp4/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

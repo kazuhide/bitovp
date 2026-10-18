@@ -1,0 +1,41 @@
+{
+	"name": "@bitovp/worker",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "tsx watch src/index.ts",
+		"build": "tsc --noEmit",
+		"start": "tsx src/index.ts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"smoke": "tsx scripts/sdk-interop-smoke.ts",
+		"verify": "tsx scripts/verify.ts"
+	},
+	"dependencies": {
+		"@aws-sdk/client-batch": "^3.1138.0",
+		"@aws-sdk/client-s3": "^3.1138.0",
+		"@aws-sdk/lib-storage": "^3.1066.0",
+		"@aws-sdk/s3-request-presigner": "^3.1066.0",
+		"@azure/identity": "^4.13.3",
+		"@azure/storage-blob": "^12.33.0",
+		"@bitovp/core": "workspace:*",
+		"@bitovp/db": "workspace:*",
+		"@bitovp/storage": "workspace:*",
+		"@bitmovin/api-sdk": "1.280.0",
+		"@google-cloud/storage": "^7.21.0",
+		"bullmq": "^5.34.0",
+		"fast-xml-parser": "5.8.0",
+		"google-auth-library": "^11.1.0",
+		"ioredis": "^5.4.1",
+		"m3u8-parser": "^7.2.0",
+		"mpd-parser": "^1.4.0",
+		"tsx": "^4.20.0"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"dashjs": "5.2.0",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

@@ -1,0 +1,12 @@
+-- Which scoring generation produced a VmafJob's numbers.
+--
+-- Generation 1 is everything scored before 2026-08-11, when libvmaf's two
+-- inputs were not PTS-rebased: framesync pairs frames by timestamp, so a
+-- mezzanine with a non-zero first PTS had its frame N compared with the
+-- encode's frame N±1. One real encode measured 23.08 where the corrected
+-- pipeline reports 84.21.
+--
+-- DEFAULT 1 is deliberate: it labels every existing row correctly without a
+-- backfill statement, and the worker writes the current generation explicitly
+-- on create so new rows are never mislabelled by the default.
+ALTER TABLE "VmafJob" ADD COLUMN "scoringVersion" INTEGER NOT NULL DEFAULT 1;

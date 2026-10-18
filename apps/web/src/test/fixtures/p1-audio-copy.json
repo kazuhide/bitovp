@@ -1,0 +1,243 @@
+{
+	"planVersion": 1,
+	"name": "media-copy-fixture-06-audio-clean",
+	"bitmovin": {
+		"accountId": "0f8edfe4-fc30-4a9a-89e3-a3e89d5245df",
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE",
+		"prewarmedEncoderPoolIds": [],
+		"labels": ["media-copy-fixture"]
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df",
+			"bucket": "test-input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df",
+			"bucket": "test-output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "monoL",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 1
+		},
+		{
+			"key": "monoR",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 2
+		},
+		{
+			"key": "surround",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 3
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 700000,
+			"mode": "STANDARD",
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		{
+			"key": "mono",
+			"codec": "AAC",
+			"ingestKey": "monoPair",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"filters": [
+				{
+					"filterKey": "volume",
+					"position": 0
+				}
+			]
+		},
+		{
+			"key": "swapped",
+			"codec": "AAC",
+			"ingestKey": "swap",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"filters": [
+				{
+					"filterKey": "ebu",
+					"position": 0
+				}
+			]
+		},
+		{
+			"key": "stereo",
+			"codec": "AAC",
+			"ingestKey": "downmix",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "mp4",
+			"kind": "MP4",
+			"streamKey": "v360",
+			"filename": "video.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/06-audio-clean",
+				"acl": "PRIVATE"
+			},
+			"additionalStreamKeys": ["mono", "swapped", "stereo"]
+		}
+	],
+	"manifests": [],
+	"generation": {
+		"timing": "POST_ENCODING"
+	},
+	"audioMixStreams": [
+		{
+			"key": "monoPair",
+			"channelLayout": "STEREO",
+			"audioMixChannels": [
+				{
+					"sourceKey": "monoL",
+					"outputChannelType": "FRONT_LEFT",
+					"sourceChannels": [
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 0
+						}
+					]
+				},
+				{
+					"sourceKey": "monoR",
+					"outputChannelType": "FRONT_RIGHT",
+					"sourceChannels": [
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 0
+						}
+					]
+				}
+			]
+		},
+		{
+			"key": "swap",
+			"channelLayout": "STEREO",
+			"audioMixChannels": [
+				{
+					"sourceKey": "audio",
+					"outputChannelType": "FRONT_LEFT",
+					"sourceChannels": [
+						{
+							"type": "FRONT_RIGHT"
+						}
+					]
+				},
+				{
+					"sourceKey": "audio",
+					"outputChannelType": "FRONT_RIGHT",
+					"sourceChannels": [
+						{
+							"type": "FRONT_LEFT"
+						}
+					]
+				}
+			]
+		},
+		{
+			"key": "downmix",
+			"channelLayout": "STEREO",
+			"audioMixChannels": [
+				{
+					"sourceKey": "surround",
+					"outputChannelType": "FRONT_LEFT",
+					"sourceChannels": [
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 0,
+							"gain": 1
+						},
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 2,
+							"gain": 0.7071067811865476
+						},
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 4,
+							"gain": 0.7071067811865476
+						}
+					]
+				},
+				{
+					"sourceKey": "surround",
+					"outputChannelType": "FRONT_RIGHT",
+					"sourceChannels": [
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 1,
+							"gain": 1
+						},
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 2,
+							"gain": 0.7071067811865476
+						},
+						{
+							"type": "CHANNEL_NUMBER",
+							"channelNumber": 5,
+							"gain": 0.7071067811865476
+						}
+					]
+				}
+			]
+		}
+	],
+	"filters": [
+		{
+			"key": "volume",
+			"kind": "AUDIO_VOLUME",
+			"volume": -6.0206,
+			"unit": "DB"
+		},
+		{
+			"key": "ebu",
+			"kind": "EBU_R128_SINGLE_PASS",
+			"integratedLoudness": -24,
+			"maximumTruePeakLevel": -1
+		}
+	]
+}

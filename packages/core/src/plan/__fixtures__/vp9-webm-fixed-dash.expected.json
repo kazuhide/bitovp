@@ -1,0 +1,266 @@
+{
+	"planName": "vp9-webm-fixed-dash",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"renditionKey": "v1080",
+			"container": "WEBM_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/video/1080p_3000000/",
+				"prefix": "output/vp9-webm-fixed-dash/video/1080p_3000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.chk",
+			"segmentLengthSec": 6,
+			"initSegment": "init.hdr",
+			"video": {
+				"height": 1080,
+				"codec": "VP9",
+				"bitrate": 3000000
+			}
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"renditionKey": "v720",
+			"container": "WEBM_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/video/720p_1500000/",
+				"prefix": "output/vp9-webm-fixed-dash/video/720p_1500000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.chk",
+			"segmentLengthSec": 6,
+			"initSegment": "init.hdr",
+			"video": {
+				"height": 720,
+				"codec": "VP9",
+				"bitrate": 1500000
+			}
+		},
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"renditionKey": "v540",
+			"container": "WEBM_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/video/540p_800000/",
+				"prefix": "output/vp9-webm-fixed-dash/video/540p_800000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.chk",
+			"segmentLengthSec": 6,
+			"initSegment": "init.hdr",
+			"video": {
+				"height": 540,
+				"codec": "VP9",
+				"bitrate": 800000
+			}
+		},
+		{
+			"muxingKey": "v360",
+			"streamKey": "v360",
+			"renditionKey": "v360",
+			"container": "WEBM_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/video/360p_400000/",
+				"prefix": "output/vp9-webm-fixed-dash/video/360p_400000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.chk",
+			"segmentLengthSec": 6,
+			"initSegment": "init.hdr",
+			"video": {
+				"height": 360,
+				"codec": "VP9",
+				"bitrate": 400000
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/audio/128000/",
+				"prefix": "output/vp9-webm-fixed-dash/audio/128000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		},
+		{
+			"muxingKey": "a64",
+			"streamKey": "a64",
+			"renditionKey": "a64",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/audio/64000/",
+				"prefix": "output/vp9-webm-fixed-dash/audio/64000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 64000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vp9-webm-fixed-dash/",
+				"prefix": "output/vp9-webm-fixed-dash/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 4,
+			"audioEntries": 2,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": true,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 3000000,
+						"codec": "VP9"
+					},
+					{
+						"renditionKey": "v720",
+						"height": 720,
+						"bitrate": 1500000,
+						"codec": "VP9"
+					},
+					{
+						"renditionKey": "v540",
+						"height": 540,
+						"bitrate": 800000,
+						"codec": "VP9"
+					},
+					{
+						"renditionKey": "v360",
+						"height": 360,
+						"bitrate": 400000,
+						"codec": "VP9"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"bitrate": 128000
+					},
+					{
+						"renditionKey": "a64",
+						"codec": "AAC",
+						"bitrate": 64000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"VP9"
+				]
+			}
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"qc": {
+		"vmaf": true,
+		"psnr": false,
+		"model": "vmaf_v1.0.16_3d0h",
+		"mirrorRenditionKeys": [
+			"v1080",
+			"v720",
+			"v540",
+			"v360"
+		],
+		"mirrorDirSuffix": "qc/",
+		"mirrors": [
+			{
+				"renditionKey": "v1080",
+				"outputKey": "origin",
+				"dir": {
+					"pattern": "output/vp9-webm-fixed-dash/video/1080p_3000000/qc/",
+					"prefix": "output/vp9-webm-fixed-dash/video/1080p_3000000/qc/",
+					"templated": false
+				},
+				"filename": "v1080.webm"
+			},
+			{
+				"renditionKey": "v720",
+				"outputKey": "origin",
+				"dir": {
+					"pattern": "output/vp9-webm-fixed-dash/video/720p_1500000/qc/",
+					"prefix": "output/vp9-webm-fixed-dash/video/720p_1500000/qc/",
+					"templated": false
+				},
+				"filename": "v720.webm"
+			},
+			{
+				"renditionKey": "v540",
+				"outputKey": "origin",
+				"dir": {
+					"pattern": "output/vp9-webm-fixed-dash/video/540p_800000/qc/",
+					"prefix": "output/vp9-webm-fixed-dash/video/540p_800000/qc/",
+					"templated": false
+				},
+				"filename": "v540.webm"
+			},
+			{
+				"renditionKey": "v360",
+				"outputKey": "origin",
+				"dir": {
+					"pattern": "output/vp9-webm-fixed-dash/video/360p_400000/qc/",
+					"prefix": "output/vp9-webm-fixed-dash/video/360p_400000/qc/",
+					"templated": false
+				},
+				"filename": "v360.webm"
+			}
+		]
+	},
+	"multiEncoding": false,
+	"notes": []
+}

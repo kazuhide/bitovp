@@ -1,0 +1,480 @@
+{
+	"planName": "cenc-cbc-drm-wv-pr-fp-dash-hls-aws",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"renditionKey": "v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"v1080-cenc"
+			],
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H264",
+				"bitrate": 2500000
+			}
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"renditionKey": "v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"v720-cenc"
+			],
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "H264",
+				"bitrate": 1200000
+			}
+		},
+		{
+			"muxingKey": "v480",
+			"streamKey": "v480",
+			"renditionKey": "v480",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"v480-cenc"
+			],
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 480,
+				"codec": "H264",
+				"bitrate": 750000
+			}
+		},
+		{
+			"muxingKey": "v360",
+			"streamKey": "v360",
+			"renditionKey": "v360",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"v360-cenc"
+			],
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 360,
+				"codec": "H264",
+				"bitrate": 400000
+			}
+		},
+		{
+			"muxingKey": "v240",
+			"streamKey": "v240",
+			"renditionKey": "v240",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"v240-cenc"
+			],
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 240,
+				"codec": "H264",
+				"bitrate": 150000
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"perTitle": false,
+			"viaDrmKeys": [
+				"a128-cenc"
+			],
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 5,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 2500000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v720",
+						"height": 720,
+						"bitrate": 1200000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v480",
+						"height": 480,
+						"bitrate": 750000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v360",
+						"height": 360,
+						"bitrate": 400000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v240",
+						"height": 240,
+						"bitrate": 150000,
+						"codec": "H264"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_128000.m3u8",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				],
+				"hlsVariants": [
+					{
+						"key": "v1080",
+						"renditionKey": "v1080",
+						"kind": "video",
+						"codec": "H264",
+						"height": 1080,
+						"bitrate": 2500000,
+						"audioGroup": "audio",
+						"uri": "video_2500000.m3u8"
+					},
+					{
+						"key": "v720",
+						"renditionKey": "v720",
+						"kind": "video",
+						"codec": "H264",
+						"height": 720,
+						"bitrate": 1200000,
+						"audioGroup": "audio",
+						"uri": "video_1200000.m3u8"
+					},
+					{
+						"key": "v480",
+						"renditionKey": "v480",
+						"kind": "video",
+						"codec": "H264",
+						"height": 480,
+						"bitrate": 750000,
+						"audioGroup": "audio",
+						"uri": "video_750000.m3u8"
+					},
+					{
+						"key": "v360",
+						"renditionKey": "v360",
+						"kind": "video",
+						"codec": "H264",
+						"height": 360,
+						"bitrate": 400000,
+						"audioGroup": "audio",
+						"uri": "video_400000.m3u8"
+					},
+					{
+						"key": "v240",
+						"renditionKey": "v240",
+						"kind": "video",
+						"codec": "H264",
+						"height": 240,
+						"bitrate": 150000,
+						"audioGroup": "audio",
+						"uri": "video_150000.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V6",
+			"hlsMediaVersion": "HLS_V6",
+			"hlsChildFiles": [
+				"video_2500000.m3u8",
+				"video_1200000.m3u8",
+				"video_750000.m3u8",
+				"video_400000.m3u8",
+				"video_150000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		},
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 5,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 2500000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v720",
+						"height": 720,
+						"bitrate": 1200000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v480",
+						"height": 480,
+						"bitrate": 750000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v360",
+						"height": 360,
+						"bitrate": 400000,
+						"codec": "H264"
+					},
+					{
+						"renditionKey": "v240",
+						"height": 240,
+						"bitrate": 150000,
+						"codec": "H264"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				]
+			},
+			"drmKind": "CENC"
+		}
+	],
+	"drm": [
+		{
+			"drmKey": "v1080-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v1080"
+			],
+			"ivSizeBytes": 16,
+			"schemeType": "cbcs",
+			"kid": "43214321432143214321432143214321",
+			"systemIds": [
+				"edef8ba979d64acea3c827dcd51d21ed",
+				"9a04f07998404286ab92e65be0885f95",
+				"94ce86fb07ff4f43adb893d2fa968ca2"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/1080p/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/1080p/",
+				"templated": false
+			}
+		},
+		{
+			"drmKey": "v720-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v720"
+			],
+			"ivSizeBytes": 16,
+			"schemeType": "cbcs",
+			"kid": "43214321432143214321432143214321",
+			"systemIds": [
+				"edef8ba979d64acea3c827dcd51d21ed",
+				"9a04f07998404286ab92e65be0885f95",
+				"94ce86fb07ff4f43adb893d2fa968ca2"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/720p/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/720p/",
+				"templated": false
+			}
+		},
+		{
+			"drmKey": "v480-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v480"
+			],
+			"ivSizeBytes": 16,
+			"schemeType": "cbcs",
+			"kid": "43214321432143214321432143214321",
+			"systemIds": [
+				"edef8ba979d64acea3c827dcd51d21ed",
+				"9a04f07998404286ab92e65be0885f95",
+				"94ce86fb07ff4f43adb893d2fa968ca2"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/480p/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/480p/",
+				"templated": false
+			}
+		},
+		{
+			"drmKey": "v360-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v360"
+			],
+			"ivSizeBytes": 16,
+			"schemeType": "cbcs",
+			"kid": "43214321432143214321432143214321",
+			"systemIds": [
+				"edef8ba979d64acea3c827dcd51d21ed",
+				"9a04f07998404286ab92e65be0885f95",
+				"94ce86fb07ff4f43adb893d2fa968ca2"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/360p/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/360p/",
+				"templated": false
+			}
+		},
+		{
+			"drmKey": "v240-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"v240"
+			],
+			"ivSizeBytes": 16,
+			"schemeType": "cbcs",
+			"kid": "43214321432143214321432143214321",
+			"systemIds": [
+				"edef8ba979d64acea3c827dcd51d21ed",
+				"9a04f07998404286ab92e65be0885f95",
+				"94ce86fb07ff4f43adb893d2fa968ca2"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/240p/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/240p/",
+				"templated": false
+			}
+		},
+		{
+			"drmKey": "a128-cenc",
+			"kind": "CENC",
+			"muxingKeys": [
+				"a128"
+			],
+			"ivSizeBytes": 16,
+			"schemeType": "cbcs",
+			"kid": "43214321432143214321432143214321",
+			"systemIds": [
+				"edef8ba979d64acea3c827dcd51d21ed",
+				"9a04f07998404286ab92e65be0885f95",
+				"94ce86fb07ff4f43adb893d2fa968ca2"
+			],
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/audio/128000/",
+				"prefix": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/audio/128000/",
+				"templated": false
+			}
+		}
+	],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

@@ -1,0 +1,12 @@
+-- Ledger #137, remodelled 2026-08-19 on the owner's call: Akamai MSL becomes a
+-- credential provider rather than plan literals.
+--
+-- The identifiers (streamId, eventName) cannot be obtained without an Akamai
+-- account, which makes them account-scoped provisioning facts — the thing this
+-- vault holds. Carrying no password does not make something not a credential;
+-- AWS_S3_ROLE_BASED already stands in this enum with an empty secret.
+--
+-- Additive only, like the NetStorage value before it. Postgres cannot remove an
+-- enum value, so this is one-way by construction; nothing is renamed and no row
+-- is rewritten.
+ALTER TYPE "CredentialProvider" ADD VALUE IF NOT EXISTS 'AKAMAI_MSL';

@@ -1,0 +1,1979 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`detail-view selectors — representative shapes > audio-only-aac-fmp4-hls-dash: input files 1`] = `
+[
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "AUDIO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "a128",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "/path/to/your/input/audio.mp3",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+]
+`;
+
+exports[`detail-view selectors — representative shapes > audio-only-aac-fmp4-hls-dash: rendition summaries 1`] = `
+{
+  "audio": [
+    {
+      "bitrate": 128000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "audio",
+      "key": "a128",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/audio-only-aac-fmp4-hls-dash/audio/128000",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "a128",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 48000,
+    },
+  ],
+  "subtitle": [],
+  "video": [],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > audio-only-aac-fmp4-hls-dash: storage summaries 1`] = `
+{
+  "inputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000001",
+      "key": "main",
+      "kind": "S3",
+      "location": "sample-input-bucket",
+      "paths": [],
+    },
+  ],
+  "outputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000002",
+      "key": "origin",
+      "kind": "S3",
+      "location": "sample-output-bucket",
+      "paths": [
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dash",
+          "path": "output/audio-only-aac-fmp4-hls-dash/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hls",
+          "path": "output/audio-only-aac-fmp4-hls-dash/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a128",
+          "path": "output/audio-only-aac-fmp4-hls-dash/audio/128000",
+          "role": "muxing",
+          "templated": false,
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > dolby-dv-hdr10-sdr-3ladder-profile5-single-input: input files 1`] = `
+[
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "AUDIO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "aac128",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "<INSERT_AAC_2_0_MEZZANINE_PATH>",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "detail": "DAMF",
+            "dolbyKind": "ATMOS",
+            "kind": "dolby",
+          },
+        ],
+        "renditionKeys": [
+          "atmos448",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "<INSERT_DOLBY_ATMOS_DAMF_PATH>",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "detail": "metadata",
+            "dolbyKind": "VISION",
+            "kind": "dolby",
+          },
+        ],
+        "renditionKeys": [
+          "dv-v2160",
+          "dv-v1080",
+          "dv-v720",
+          "dv-v540",
+          "hdr10-v2160",
+          "hdr10-v1080",
+          "hdr10-v720",
+          "hdr10-v540",
+          "sdr-v2160",
+          "sdr-v1080",
+          "sdr-v720",
+          "sdr-v540",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "<INSERT_DOLBY_VISION_METADATA_PATH>",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "detail": "video",
+            "dolbyKind": "VISION",
+            "kind": "dolby",
+          },
+        ],
+        "renditionKeys": [
+          "dv-v2160",
+          "dv-v1080",
+          "dv-v720",
+          "dv-v540",
+          "hdr10-v2160",
+          "hdr10-v1080",
+          "hdr10-v720",
+          "hdr10-v540",
+          "sdr-v2160",
+          "sdr-v1080",
+          "sdr-v720",
+          "sdr-v540",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "<INSERT_DOLBY_VISION_VIDEO_PATH>",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+]
+`;
+
+exports[`detail-view selectors — representative shapes > dolby-dv-hdr10-sdr-3ladder-profile5-single-input: rendition summaries 1`] = `
+{
+  "audio": [
+    {
+      "bitrate": 448000,
+      "codec": "DOLBY_ATMOS",
+      "encodingKey": "dv",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "atmos-in",
+      "key": "atmos448",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/atmos/448000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "atmos448",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 48000,
+    },
+    {
+      "bitrate": 128000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "encodingKey": "dv",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "aac-audio",
+      "key": "aac128",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/aac/128000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "aac128",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 48000,
+    },
+  ],
+  "subtitle": [],
+  "video": [
+    {
+      "bitrate": 15000000,
+      "codec": "H265",
+      "encodingKey": "dv",
+      "family": "video",
+      "filters": [],
+      "height": 2160,
+      "ingestKey": "dv-vision",
+      "key": "dv-v2160",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/2160p_15000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "dv-v2160",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 15000000,
+      "codec": "H265",
+      "encodingKey": "hdr10",
+      "family": "video",
+      "filters": [],
+      "height": 2160,
+      "ingestKey": "hdr10-vision",
+      "key": "hdr10-v2160",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/2160p_15000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "hdr10-v2160",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 12000000,
+      "codec": "H265",
+      "encodingKey": "sdr",
+      "family": "video",
+      "filters": [],
+      "height": 2160,
+      "ingestKey": "sdr-vision",
+      "key": "sdr-v2160",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/2160p_12000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "sdr-v2160",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 6000000,
+      "codec": "H265",
+      "encodingKey": "dv",
+      "family": "video",
+      "filters": [],
+      "height": 1080,
+      "ingestKey": "dv-vision",
+      "key": "dv-v1080",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/1080p_6000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "dv-v1080",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 6000000,
+      "codec": "H265",
+      "encodingKey": "hdr10",
+      "family": "video",
+      "filters": [],
+      "height": 1080,
+      "ingestKey": "hdr10-vision",
+      "key": "hdr10-v1080",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/1080p_6000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "hdr10-v1080",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 5000000,
+      "codec": "H265",
+      "encodingKey": "sdr",
+      "family": "video",
+      "filters": [],
+      "height": 1080,
+      "ingestKey": "sdr-vision",
+      "key": "sdr-v1080",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/1080p_5000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "sdr-v1080",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 3000000,
+      "codec": "H265",
+      "encodingKey": "dv",
+      "family": "video",
+      "filters": [],
+      "height": 720,
+      "ingestKey": "dv-vision",
+      "key": "dv-v720",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/720p_3000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "dv-v720",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 3000000,
+      "codec": "H265",
+      "encodingKey": "hdr10",
+      "family": "video",
+      "filters": [],
+      "height": 720,
+      "ingestKey": "hdr10-vision",
+      "key": "hdr10-v720",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/720p_3000000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "hdr10-v720",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 2500000,
+      "codec": "H265",
+      "encodingKey": "sdr",
+      "family": "video",
+      "filters": [],
+      "height": 720,
+      "ingestKey": "sdr-vision",
+      "key": "sdr-v720",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/720p_2500000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "sdr-v720",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 1800000,
+      "codec": "H265",
+      "encodingKey": "dv",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "dv-vision",
+      "key": "dv-v540",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/540p_1800000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "dv-v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 1800000,
+      "codec": "H265",
+      "encodingKey": "hdr10",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "hdr10-vision",
+      "key": "hdr10-v540",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/540p_1800000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "hdr10-v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 1500000,
+      "codec": "H265",
+      "encodingKey": "sdr",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "sdr-vision",
+      "key": "sdr-v540",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/540p_1500000/",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "sdr-v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > dolby-dv-hdr10-sdr-3ladder-profile5-single-input: storage summaries 1`] = `
+{
+  "inputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000001",
+      "key": "main",
+      "kind": "S3",
+      "location": "sample-input-bucket",
+      "paths": [],
+    },
+  ],
+  "outputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000002",
+      "key": "origin",
+      "kind": "S3",
+      "location": "sample-output-bucket",
+      "paths": [
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dash",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hls",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "aac128",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/aac/128000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "atmos448",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/atmos/448000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dv-v1080",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/1080p_6000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dv-v2160",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/2160p_15000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dv-v540",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/540p_1800000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dv-v720",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/720p_3000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hdr10-v1080",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/1080p_6000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hdr10-v2160",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/2160p_15000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hdr10-v540",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/540p_1800000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hdr10-v720",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/720p_3000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "sdr-v1080",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/1080p_5000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "sdr-v2160",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/2160p_12000000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "sdr-v540",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/540p_1500000/",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "sdr-v720",
+          "path": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/720p_2500000/",
+          "role": "muxing",
+          "templated": false,
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > fixed-bitrate-dash-hls-streamcondition-on-aws: input files 1`] = `
+[
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "AUDIO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "a128",
+          "a64",
+        ],
+      },
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "VIDEO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "v360",
+          "v540",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "sintel/Sintel.2010.1080p.mkv",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+]
+`;
+
+exports[`detail-view selectors — representative shapes > fixed-bitrate-dash-hls-streamcondition-on-aws: rendition summaries 1`] = `
+{
+  "audio": [
+    {
+      "bitrate": 128000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "audio",
+      "key": "a128",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/audio/128000",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "a128",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 48000,
+    },
+    {
+      "bitrate": 64000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "audio",
+      "key": "a64",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/audio/64000",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "a64",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 44100,
+    },
+  ],
+  "subtitle": [],
+  "video": [
+    {
+      "bitrate": 600000,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "video",
+      "key": "v540",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/video/540p",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 300000,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 360,
+      "ingestKey": "video",
+      "key": "v360",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/video/360p",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "v360",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > fixed-bitrate-dash-hls-streamcondition-on-aws: storage summaries 1`] = `
+{
+  "inputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000001",
+      "key": "main",
+      "kind": "S3",
+      "location": "sample-input-bucket",
+      "paths": [],
+    },
+  ],
+  "outputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000002",
+      "key": "origin",
+      "kind": "S3",
+      "location": "sample-output-bucket",
+      "paths": [
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hls",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dash",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a128",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/audio/128000",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a64",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/audio/64000",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v360",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/video/360p",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v540",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-dash-hls-with-stream-condition-aws/video/540p",
+          "role": "muxing",
+          "templated": false,
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > fixed-bitrate-hls-vtt-on-aws: input files 1`] = `
+[
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "AUDIO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "a128",
+          "a64",
+        ],
+      },
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "VIDEO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "v360",
+          "v540",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "sintel/Sintel.2010.1080p.mkv",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "file",
+            "type": "FILE",
+          },
+        ],
+        "renditionKeys": [
+          "vtt",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "sintel/subtitles_en.vtt",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+]
+`;
+
+exports[`detail-view selectors — representative shapes > fixed-bitrate-hls-vtt-on-aws: rendition summaries 1`] = `
+{
+  "audio": [
+    {
+      "bitrate": 128000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "audio",
+      "key": "a128",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/audio/128000",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "a128",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 48000,
+    },
+    {
+      "bitrate": 64000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "audio",
+      "key": "a64",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/audio/64000",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "a64",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 44100,
+    },
+  ],
+  "subtitle": [
+    {
+      "codec": "WEBVTT",
+      "family": "subtitle",
+      "filters": [],
+      "ingestKey": "vtt-en",
+      "key": "vtt",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/en",
+          },
+          "drm": [],
+          "key": "vtt",
+          "kind": "CHUNKED_TEXT",
+          "segmentLength": 10,
+          "segmentNaming": "en_webvtt_seg_%number%.vtt",
+        },
+      ],
+      "runtime": {},
+    },
+  ],
+  "video": [
+    {
+      "bitrate": 600000,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "video",
+      "key": "v540",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/video/540p",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+    {
+      "bitrate": 300000,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 360,
+      "ingestKey": "video",
+      "key": "v360",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/video/360p",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "v360",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > fixed-bitrate-hls-vtt-on-aws: storage summaries 1`] = `
+{
+  "inputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000001",
+      "key": "main",
+      "kind": "S3",
+      "location": "sample-input-bucket",
+      "paths": [],
+    },
+  ],
+  "outputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000002",
+      "key": "origin",
+      "kind": "S3",
+      "location": "sample-output-bucket",
+      "paths": [
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hls",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a128",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/audio/128000",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a64",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/audio/64000",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "vtt",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/en",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v360",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/video/360p",
+          "role": "muxing",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v540",
+          "path": "output/h264-aac-fmp4-fixed-bitrate-hls-vtt-aws/video/540p",
+          "role": "muxing",
+          "templated": false,
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > pertitle-h264-fmp4-ts-drm-on-aws: input files 1`] = `
+[
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "AUDIO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "a128",
+        ],
+      },
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "VIDEO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "v180",
+          "v360-300",
+          "v360-600",
+          "v540",
+          "v720",
+          "v900",
+          "v1080",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "{YOUR INPUT FILE PATH}",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+]
+`;
+
+exports[`detail-view selectors — representative shapes > pertitle-h264-fmp4-ts-drm-on-aws: rendition summaries 1`] = `
+{
+  "audio": [
+    {
+      "bitrate": 128000,
+      "channelLayout": "CL_STEREO",
+      "codec": "AAC",
+      "family": "audio",
+      "filters": [],
+      "ingestKey": "audio",
+      "key": "a128",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/audio/dash/",
+              },
+              "key": "a128-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "a128",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/audio/hls/",
+              },
+              "key": "a128-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "a128-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "runtime": {},
+      "sampleRate": 48000,
+    },
+  ],
+  "subtitle": [],
+  "video": [
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 1080,
+      "ingestKey": "video",
+      "key": "v1080",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v1080-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v1080",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v1080-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v1080-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "profile": "HIGH",
+      "runtime": {},
+    },
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 180,
+      "ingestKey": "video",
+      "key": "v180",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v180-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v180",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v180-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v180-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "profile": "BASELINE",
+      "runtime": {},
+    },
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 360,
+      "ingestKey": "video",
+      "key": "v360-300",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v360-300-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v360-300",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v360-300-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v360-300-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "perTitleSettings": {
+        "bitrateSelectionMode": "COMPLEXITY_RANGE",
+        "highComplexityBoundaryForMaxBitrate": 4000000,
+        "lowComplexityBoundaryForMaxBitrate": 2160000,
+        "maxBitrate": 500000,
+        "minBitrate": 300000,
+      },
+      "profile": "MAIN",
+      "runtime": {},
+    },
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 360,
+      "ingestKey": "video",
+      "key": "v360-600",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v360-600-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v360-600",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v360-600-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v360-600-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "perTitleSettings": {
+        "bitrateSelectionMode": "COMPLEXITY_RANGE",
+        "highComplexityBoundaryForMaxBitrate": 4000000,
+        "lowComplexityBoundaryForMaxBitrate": 2160000,
+        "maxBitrate": 900000,
+        "minBitrate": 600000,
+      },
+      "profile": "MAIN",
+      "runtime": {},
+    },
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "video",
+      "key": "v540",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v540-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v540-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v540-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "perTitleSettings": {
+        "bitrateSelectionMode": "COMPLEXITY_RANGE",
+        "highComplexityBoundaryForMaxBitrate": 4000000,
+        "lowComplexityBoundaryForMaxBitrate": 2160000,
+        "maxBitrate": 1400000,
+        "minBitrate": 1000000,
+      },
+      "profile": "MAIN",
+      "runtime": {},
+    },
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 720,
+      "ingestKey": "video",
+      "key": "v720",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v720-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v720",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v720-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v720-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "perTitleSettings": {
+        "bitrateSelectionMode": "COMPLEXITY_RANGE",
+        "highComplexityBoundaryForMaxBitrate": 4000000,
+        "lowComplexityBoundaryForMaxBitrate": 2160000,
+        "maxBitrate": 2400000,
+        "minBitrate": 1800000,
+      },
+      "profile": "HIGH",
+      "runtime": {},
+    },
+    {
+      "bitrate": null,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 900,
+      "ingestKey": "video",
+      "key": "v900",
+      "level": null,
+      "mode": "PER_TITLE_TEMPLATE",
+      "muxings": [
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v900-cenc",
+              "kind": "CENC",
+            },
+          ],
+          "initSegmentName": "init.mp4",
+          "key": "v900",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.m4s",
+        },
+        {
+          "destination": null,
+          "drm": [
+            {
+              "destination": {
+                "acl": "PUBLIC_READ",
+                "outputKey": "origin",
+                "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+              },
+              "key": "v900-fp",
+              "kind": "FAIRPLAY",
+            },
+          ],
+          "key": "v900-ts",
+          "kind": "TS",
+          "segmentLength": 6,
+          "segmentNaming": "seg_%number%.ts",
+        },
+      ],
+      "profile": "HIGH",
+      "runtime": {},
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > pertitle-h264-fmp4-ts-drm-on-aws: storage summaries 1`] = `
+{
+  "inputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000001",
+      "key": "main",
+      "kind": "S3",
+      "location": "sample-input-bucket",
+      "paths": [],
+    },
+  ],
+  "outputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000002",
+      "key": "origin",
+      "kind": "S3",
+      "location": "sample-output-bucket",
+      "paths": [
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a128-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/audio/dash/",
+          "role": "drm",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "a128-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/audio/hls/",
+          "role": "drm",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v180-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v360-300-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v360-600-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v540-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v720-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v900-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v1080-cenc",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/dash/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v180-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v360-300-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v360-600-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v540-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v720-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v900-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v1080-fp",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/video/hls/{height}p_{bitrate}_{uuid}/",
+          "role": "drm",
+          "templated": true,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "dash",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/",
+          "role": "manifest",
+          "templated": false,
+        },
+        {
+          "acl": "PUBLIC_READ",
+          "key": "hls",
+          "path": "output/per-title-h264-aac-fmp4-ts-drm-wv-pr-fp-dash-hls-aws/",
+          "role": "manifest",
+          "templated": false,
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > vmaf-only-h264: input files 1`] = `
+[
+  {
+    "consumers": [
+      {
+        "chain": [
+          {
+            "kind": "ingest",
+            "position": 0,
+            "selectionMode": "VIDEO_RELATIVE",
+          },
+        ],
+        "renditionKeys": [
+          "v540",
+        ],
+      },
+    ],
+    "credentialId": "00000000-0000-4000-8000-000000000001",
+    "inputKey": "main",
+    "inputPath": "input.mp4",
+    "kind": "S3",
+    "location": "sample-input-bucket",
+  },
+]
+`;
+
+exports[`detail-view selectors — representative shapes > vmaf-only-h264: rendition summaries 1`] = `
+{
+  "audio": [],
+  "subtitle": [],
+  "video": [
+    {
+      "bitrate": 600000,
+      "codec": "H264",
+      "family": "video",
+      "filters": [],
+      "height": 540,
+      "ingestKey": "video",
+      "key": "v540",
+      "level": null,
+      "mode": "STANDARD",
+      "muxings": [
+        {
+          "destination": {
+            "acl": "PUBLIC_READ",
+            "outputKey": "origin",
+            "path": "output/vmaf-only-h264/video/540p",
+          },
+          "drm": [],
+          "initSegmentName": "init.mp4",
+          "key": "v540",
+          "kind": "FMP4",
+          "segmentLength": 6,
+          "segmentNaming": "segment_%number%.m4s",
+        },
+      ],
+      "runtime": {},
+    },
+  ],
+}
+`;
+
+exports[`detail-view selectors — representative shapes > vmaf-only-h264: storage summaries 1`] = `
+{
+  "inputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000001",
+      "key": "main",
+      "kind": "S3",
+      "location": "sample-input-bucket",
+      "paths": [],
+    },
+  ],
+  "outputs": [
+    {
+      "credentialId": "00000000-0000-4000-8000-000000000002",
+      "key": "origin",
+      "kind": "S3",
+      "location": "sample-output-bucket",
+      "paths": [
+        {
+          "acl": "PUBLIC_READ",
+          "key": "v540",
+          "path": "output/vmaf-only-h264/video/540p/qc/",
+          "role": "qc",
+          "templated": false,
+        },
+      ],
+    },
+  ],
+}
+`;

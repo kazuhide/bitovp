@@ -1,0 +1,93 @@
+{
+	"planVersion": 1,
+	"name": "h264-mp4-ai-scene-analysis-passthrough-aws",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "BETA"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v180",
+			"codec": "H264",
+			"name": "Sample video codec configuration",
+			"height": 180,
+			"bitrate": 200000,
+			"profile": "HIGH",
+			"level": null,
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"refFrames": 4,
+			"bframes": 3,
+			"cabac": true,
+			"adaptiveSpatialTransform": true,
+			"weightedPredictionPFrames": "SMART",
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"ingestKey": "video",
+			"streamName": "Stream H264 AI Scene Analysis"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v180",
+			"kind": "MP4",
+			"streamKey": "v180",
+			"filename": "180p.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-mp4-ai-scene-analysis-passthrough-aws/video",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 Muxing"
+		}
+	],
+	"manifests": [],
+	"aiSceneAnalysis": {
+		"assetDescription": {
+			"filename": "h264-mp4-ai-scene-analysis-passthrough-aws.json",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-mp4-ai-scene-analysis-passthrough-aws/ai",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		"outputLanguageCodes": [
+			"ja",
+			"ko"
+		]
+	},
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

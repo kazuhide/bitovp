@@ -1,0 +1,21 @@
+{
+	"comment": "Synthetic compiler fixtures that are excluded from the sample preset gallery. Consumers share this list to keep the generated gallery and its tests consistent.",
+	"names": [
+		"trimming-time-based",
+		"concatenation-two-sources",
+		"generic-s3-akamai-io",
+		"gcs-service-account-io",
+		"sprites-trickplay",
+		"av1-fmp4-dash-hls",
+		"pertitle-av1-fmp4-dash-on-aws",
+		"vmaf-only-h264",
+		"labels-infrastructure-preview",
+		"kantar-audio-watermark",
+		"multi-output-s3-gcs",
+		"akamai-netstorage-io",
+		"hls-ts-muxed-av",
+		"mp4-muxed-av-progressive",
+		"vp9-webm-fixed-dash",
+		"mixed-codec-dash-hls"
+	]
+}

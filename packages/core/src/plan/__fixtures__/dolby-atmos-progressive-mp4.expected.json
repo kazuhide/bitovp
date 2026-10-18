@@ -1,0 +1,34 @@
+{
+	"planName": "Dolby Atmos Encoding - Progressive Mp4",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "atmos448",
+			"streamKey": "atmos448",
+			"renditionKey": "atmos448",
+			"container": "MP4_PROGRESSIVE",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/Dolby_Atmos_Encoding__Progressive_Mp4/2026-06-12__00-00-00/",
+				"prefix": "output/Dolby_Atmos_Encoding__Progressive_Mp4/2026-06-12__00-00-00/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"filename": "output.mp4",
+			"audio": {
+				"codec": "DOLBY_ATMOS",
+				"bitrate": 448000,
+				"sampleRate": 48000
+			}
+		}
+	],
+	"manifests": [],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

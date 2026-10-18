@@ -1,0 +1,154 @@
+{
+	"planVersion": 1,
+	"name": "h264-aac-fmp4-dash-template-and-timeline-aws",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "H264 360p",
+			"height": 360,
+			"bitrate": 600000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"mode": "STANDARD",
+			"profile": "MAIN",
+			"streamName": "Video 360p"
+		},
+		{
+			"key": "v720",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "H264 720p",
+			"height": 720,
+			"bitrate": 1500000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"mode": "STANDARD",
+			"profile": "HIGH",
+			"streamName": "Video 720p"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"streamName": "AAC 128kbps"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v360",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 4,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-dash-template-and-timeline-aws/video/360p_600000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 360p"
+		},
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 4,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-dash-template-and-timeline-aws/video/720p_1500000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 720p"
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 4,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-dash-template-and-timeline-aws/audio/128000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 128kbps"
+		}
+	],
+	"manifests": [
+		{
+			"key": "template",
+			"kind": "DASH",
+			"manifestName": "template.mpd",
+			"name": "DASH (SegmentTemplate)",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-dash-template-and-timeline-aws/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE"
+		},
+		{
+			"key": "timeline",
+			"kind": "DASH",
+			"manifestName": "timeline.mpd",
+			"name": "DASH (SegmentTimeline)",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-dash-template-and-timeline-aws/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TIMELINE"
+		}
+	],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

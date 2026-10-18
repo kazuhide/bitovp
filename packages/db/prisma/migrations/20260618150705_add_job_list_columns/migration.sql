@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "EncodingJob" ADD COLUMN     "doneSteps" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "region" TEXT,
+ADD COLUMN     "totalSteps" INTEGER NOT NULL DEFAULT 0;

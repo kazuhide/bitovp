@@ -1,0 +1,30 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"globalDependencies": ["tsconfig.base.json"],
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build"],
+			"outputs": [".next/**", "!.next/cache/**", "dist/**"]
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"test": {
+			"dependsOn": ["^build"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"../../docs/**",
+				"../../apps/**/*.ts",
+				"../../apps/**/*.tsx",
+				"../../packages/**/*.ts",
+				"../../scripts/**",
+				"../../README.md"
+			]
+		},
+		"typecheck": {
+			"dependsOn": ["^build"]
+		}
+	},
+	"globalEnv": ["NODE_ENV", "CI"]
+}

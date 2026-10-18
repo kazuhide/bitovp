@@ -1,0 +1,141 @@
+{
+	"planVersion": 1,
+	"name": "nagra-nexguard-forensic-watermarking-sample",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "<INSERT YOUR INPUT PATH>",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "<INSERT YOUR INPUT PATH>",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v1080",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 1080,
+			"bitrate": 2000000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"mode": "STANDARD",
+			"nexguard": {
+				"credentialId": "00000000-0000-4000-8000-000000000006",
+				"watermarkType": "OTT",
+				"preset": "sample-nexguard-preset",
+				"strength": "DEFAULT"
+			}
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"conditions": {
+				"attribute": "AUDIOSTREAMCOUNT",
+				"operator": "GREATER_THAN",
+				"value": "0"
+			},
+			"nexguard": {
+				"credentialId": "00000000-0000-4000-8000-000000000006",
+				"watermarkType": "DUPLICATED",
+				"preset": "sample-nexguard-preset",
+				"strength": "DEFAULT"
+			}
+		}
+	],
+	"muxings": [
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "bigbuckbunny_init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/nagra-nexguard-forensic-watermarking-sample/video/1080",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "bigbuckbunny_init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/nagra-nexguard-forensic-watermarking-sample/audio/128000",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/nagra-nexguard-forensic-watermarking-sample/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"masterVersion": "HLS_V8",
+			"mediaVersion": "HLS_V8",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/nagra-nexguard-forensic-watermarking-sample/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

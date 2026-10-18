@@ -1,0 +1,21 @@
+-- Audit 893eb66 CRITICAL-1: an attempt LEASE for VOD orchestration, because the
+-- status alone was never the lock.
+--
+-- The orchestrator read the row, wrote RUNNING, and then wrote every step-log
+-- update with an unconditional `update({ where: { id } })`. A worker that loses
+-- its BullMQ lock mid-provider-call (a Redis blip, a paused container, an event
+-- loop stalled past lockDuration) keeps running while the job is redelivered to
+-- a second worker — and both then create at the provider and both write the
+-- step log, the LAST writer winning. `stop-remote-encodings` enumerates only
+-- recorded ids, so whichever tree lost the write race was billing with no
+-- product-side record of it.
+--
+-- Same shape as `LiveChannel.provisionClaimedAt` (AKR-E57-003): a timestamp,
+-- not an owner token, so a worker that dies mid-run does not wedge the job —
+-- the lease simply goes stale and the next attempt takes it. The processor
+-- renews it on every poll tick and every persist is fenced on its own last
+-- value (compare-and-swap), so a worker that has lost the lease cannot write.
+--
+-- Nullable and with no default: every existing row is unclaimed, which is the
+-- correct reading for any job not mid-attempt right now.
+ALTER TABLE "EncodingJob" ADD COLUMN "attemptClaimedAt" TIMESTAMP(3);

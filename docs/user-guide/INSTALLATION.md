@@ -71,6 +71,28 @@ For network access, remove `AUTH_ALLOW_INSECURE_HTTP=true`, configure an HTTPS
 `PUBLIC_BASE_URL`, and review the host and trusted-proxy settings in
 [Operations](../OPERATIONS.md). The HTTP exception is only for trusted local use.
 
+### Optional: run beside another local installation
+
+For the Docker runtime, choose unused host ports before database initialization.
+For example, set these in `.env`:
+
+```dotenv
+POSTGRES_PORT=15432
+REDIS_PORT=16379
+WEB_PORT=13100
+PUBLIC_BASE_URL=http://localhost:13100
+REDIS_URL=redis://localhost:16379
+```
+
+In step 4, replace the default initialization command with
+`pnpm --filter @bitovp/db db:runtime:init -- --database-port 15432`.
+The flag must match `POSTGRES_PORT`: setting the Compose port alone does not
+change the generated host database URL. Runtime preparation then preserves that
+host port. Keep container-to-container database and Redis ports at 5432 and 6379.
+Use **http://localhost:13100** for setup/sign-in and replace port 3100 in the
+health-check URL below with 13100. These overrides do not change the port used
+by `pnpm dev`.
+
 ## 4. Prepare the database
 
 For a new installation:

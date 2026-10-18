@@ -8,5 +8,6 @@ Start with the [user guide](./USER-GUIDE.md), then choose the task you need.
 | [API usage](./API-USAGE.md) | Authentication and machine-client workflows |
 | [Supported features and limits](./BITMOVIN-API-COVERAGE.md) | Capabilities and technical restrictions that affect configuration |
 | [Operations](./OPERATIONS.md) | Deployment, backup, upgrades, and cleanup |
+| [Database upgrades](./DATABASE-UPGRADES.md) | Checks and maintenance steps for affected existing databases |
 | [Delivery preset authoring](./DELIVERY-PRESET-AUTHORING.md) | Importing reusable delivery requirements |
 | [Verification prerequisites](./VERIFY-ENVIRONMENT.md) | Resolve missing resources when using optional verification tools |

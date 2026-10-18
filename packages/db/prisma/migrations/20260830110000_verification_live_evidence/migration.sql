@@ -9,7 +9,7 @@
 --
 -- Additive only: a new table and its FK. No DML, no partial index, nothing
 -- outside the datamodel — so `migrate diff` can see all of it, per
--- prisma/migrations/MIGRATIONS.md's audit standard. `liveChannelRunId` is TEXT
+-- docs/DATABASE-UPGRADES.md's audit standard. `liveChannelRunId` is TEXT
 -- on purpose (no FK): the evidence must outlive the channel row it names.
 CREATE TABLE "VerificationLiveEvidence" (
     "id" UUID NOT NULL,

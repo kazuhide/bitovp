@@ -4,7 +4,7 @@
 -- provider readback, cleanup and the report's seal.
 --
 -- No DML, no partial index, nothing outside the datamodel — so `migrate diff`
--- can see all of it, per prisma/migrations/MIGRATIONS.md's audit standard.
+-- can see all of it, per docs/DATABASE-UPGRADES.md's audit standard.
 CREATE TABLE "VerificationRun" (
     "id" UUID NOT NULL,
     "runId" TEXT NOT NULL,

@@ -16,7 +16,7 @@
 --
 -- Prisma cannot express a partial unique index declaratively — hand-written
 -- here, the #83 / LiveChannelRun_one_live_per_channel precedent. Enumerated in
--- MIGRATIONS.md; keep the checksum in sync per that file if this is edited after
+-- docs/DATABASE-UPGRADES.md; keep the checksum in sync per that file if this is edited after
 -- applying.
 CREATE UNIQUE INDEX "FeederSession_one_active_pusher_per_channel"
   ON "FeederSession"("liveChannelId")

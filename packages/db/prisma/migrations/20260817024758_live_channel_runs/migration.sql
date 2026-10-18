@@ -48,7 +48,7 @@ ALTER TABLE "FeederSession" ADD CONSTRAINT "FeederSession_liveChannelRunId_fkey"
 
 -- ------------------------------------------------------------------------
 -- Hand-written section (ledger #108 §2/§6 — the #83 precedent; keep the
--- checksum in sync per MIGRATIONS.md if this file is edited after applying).
+-- checksum in sync per docs/DATABASE-UPGRADES.md if this file is edited after applying).
 -- ------------------------------------------------------------------------
 
 -- At most ONE non-terminal run per channel (closes ledger #48's duplicate-

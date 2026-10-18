@@ -60,6 +60,58 @@ Readable output storage or an unambiguous declared mirror is required. MP4
 archives are not substituted for live segment capture. Unsupported naming or
 unavailable segments remain unverified.
 
+### Small local media check
+
+A ten-second excerpt of [Big Buck Bunny](https://peach.blender.org/about/)
+was checked with the worker's FFmpeg 8.1.3 build. The excerpt starts at 30 seconds
+and contains 320 × 180 H.264 video at 24 frames per second, with stereo AAC at
+48,000 samples per second. These are local encoding, packaging, and complete
+decode results; they do not establish Bitmovin API execution or browser playback.
+
+| Check | Result |
+|---|---|
+| Video frames | 240 |
+| HLS video segments | Five segments of 2 seconds / 48 frames |
+| DASH video segments | Five segments of 2 seconds / 48 frames |
+| Complete HLS audio/video decode | Passed, exit 0 |
+| Complete DASH audio/video decode | Passed, exit 0 |
+| DASH audio presentation segments | 1.920000 s, 2.005333 s × 4, 0.058667 s |
+
+Here, two seconds is 93.75 AAC frames. Audio therefore crosses the requested
+video boundaries rather than being forced into an impossible integer frame
+count. Priming also gives the first audio packet a timestamp of −21.33 ms.
+Inspect presentation timestamps and decoded media together; packet counts alone
+cannot establish playback duration or synchronization.
+
+To reproduce, extract the MP4 from the [official Blender ZIP](https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4.zip)
+as `source.mp4` in a scratch directory, then run with the worker's FFmpeg:
+
+```sh
+mkdir -p hls dash
+ffmpeg -v error -nostdin -y -ss 30 -i source.mp4 -t 10 \
+  -map 0:v:0 -map 0:a:0 -c:v libx264 -threads 1 -crf 23 \
+  -r 24 -g 48 -keyint_min 48 -sc_threshold 0 \
+  -force_key_frames 'expr:gte(t,n_forced*2)' \
+  -c:a aac -b:a 128k -ar 48000 -movflags +faststart bbb-10s.mp4
+ffmpeg -v error -nostdin -y -i bbb-10s.mp4 -map 0 -c copy \
+  -f hls -hls_time 2 -hls_playlist_type vod -hls_segment_type fmp4 \
+  -hls_flags independent_segments \
+  -hls_segment_filename hls/segment-%03d.m4s hls/index.m3u8
+ffmpeg -v error -nostdin -y -i bbb-10s.mp4 -map 0 -c copy \
+  -f dash -seg_duration 2 -use_template 1 -use_timeline 1 \
+  -adaptation_sets 'id=0,streams=v id=1,streams=a' dash/manifest.mpd
+ffmpeg -v error -nostdin -i hls/index.m3u8 -map 0:v:0 -map 0:a:0 -f null -
+ffmpeg -v error -nostdin -i dash/manifest.mpd -map 0:v:0 -map 0:a:0 -f null -
+```
+
+The source MP4 SHA-256 is
+`f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508`.
+The measured excerpt SHA-256 is
+`a9a79a2afb8a04379bbbc363db4b8db92541f55ef6e11197af4391f5ae8de628`.
+Different encoder builds can produce different bytes. Big Buck Bunny is licensed
+under Creative Commons Attribution 3.0; excerpt credit:
+“(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org”.
+
 ## Quality gates
 
 A gate applies configured rules to measured results. `PASS` means those rules

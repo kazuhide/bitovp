@@ -4,7 +4,7 @@
 -- NOTHING cleanup could act on while the job or channel billed.
 --
 -- Three additive changes, all datamodel-expressible (no DML, no partial index
--- — `migrate diff` sees every statement, per MIGRATIONS.md's audit standard):
+-- — `migrate diff` sees every statement, per docs/DATABASE-UPGRADES.md's audit standard):
 --
 --   1. EncodingJob / LiveChannel gain a nullable UNIQUE `verificationKey` and
 --      the `verificationRequestSha256` the harness sent with it. The create

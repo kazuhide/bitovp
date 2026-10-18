@@ -51,7 +51,7 @@ ADD COLUMN     "sourceSha256" TEXT;
 
 -- ---------------------------------------------------------------------------
 -- 3. Backfill — DELIBERATELY NOT PERFORMED HERE. Read the pre-deploy note in
---    MIGRATIONS.md ("Pre-deploy step: 20260830010000_...") BEFORE deploying.
+--    docs/DATABASE-UPGRADES.md ("Pre-deploy step: 20260830010000_...") BEFORE deploying.
 -- ---------------------------------------------------------------------------
 --
 -- The bind cannot be inferred correctly by SQL alone for every ARMED row, and
@@ -68,4 +68,4 @@ ADD COLUMN     "sourceSha256" TEXT;
 -- current airing, and the row was armed against it), leave every other row
 -- NULL. That is a decision about live data, so it is an OPERATOR step with a
 -- query to read first — not an unattended UPDATE inside a migration. The
--- query and the statement are both in MIGRATIONS.md.
+-- query and the statement are both in docs/DATABASE-UPGRADES.md.

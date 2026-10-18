@@ -4,6 +4,11 @@ Use [Installation](./user-guide/INSTALLATION.md) for a new deployment.
 
 ## Upgrades
 
+For an existing database, read [Database upgrades](./DATABASE-UPGRADES.md) before
+applying pending migrations. Some older schemas require a writer pause, data
+checks, or explicit backfill decisions. Fresh installations apply all migrations
+automatically and do not require those manual repairs.
+
 1. Record the current application/image revisions and active billable resources.
 2. Back up the database and private environment files, including `MASTER_KEY`.
    Verify a restore in an isolated database before relying on the backup.

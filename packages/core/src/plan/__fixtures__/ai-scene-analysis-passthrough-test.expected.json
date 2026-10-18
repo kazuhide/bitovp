@@ -1,0 +1,35 @@
+{
+	"planName": "h264-mp4-ai-scene-analysis-passthrough-aws-test",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v180",
+			"streamKey": "v180",
+			"renditionKey": "v180",
+			"container": "MP4_PROGRESSIVE",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/h264-mp4-ai-scene-analysis-passthrough-aws-test/video/",
+				"prefix": "output/h264-mp4-ai-scene-analysis-passthrough-aws-test/video/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"filename": "180p.mp4",
+			"video": {
+				"height": 180,
+				"codec": "H264",
+				"bitrate": 200000,
+				"profile": "HIGH"
+			}
+		}
+	],
+	"manifests": [],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

@@ -1,0 +1,160 @@
+{
+	"planName": "deinterlace-sample",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"renditionKey": "v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/deinterlace-sample/video/1080p/",
+				"prefix": "output/deinterlace-sample/video/1080p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H264",
+				"bitrate": 2000000
+			}
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"renditionKey": "a128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/deinterlace-sample/audio/128000/",
+				"prefix": "output/deinterlace-sample/audio/128000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/deinterlace-sample/",
+				"prefix": "output/deinterlace-sample/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 1,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 2000000,
+						"codec": "H264"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				]
+			}
+		},
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/deinterlace-sample/",
+				"prefix": "output/deinterlace-sample/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 1,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 2000000,
+						"codec": "H264"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "a128",
+						"codec": "AAC",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_128000.m3u8",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H264"
+				],
+				"hlsVariants": [
+					{
+						"key": "v1080",
+						"renditionKey": "v1080",
+						"kind": "video",
+						"codec": "H264",
+						"height": 1080,
+						"bitrate": 2000000,
+						"audioGroup": "audio",
+						"uri": "video_2000000.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V6",
+			"hlsMediaVersion": "HLS_V6",
+			"hlsChildFiles": [
+				"video_2000000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

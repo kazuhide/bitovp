@@ -1,0 +1,189 @@
+{
+	"planVersion": 1,
+	"name": "h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 300000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"mode": "STANDARD",
+			"rate": 25,
+			"minKeyframeInterval": 1.92,
+			"maxKeyframeInterval": 1.92
+		},
+		{
+			"key": "v540",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 540,
+			"bitrate": 600000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"mode": "STANDARD",
+			"rate": 25,
+			"minKeyframeInterval": 1.92,
+			"maxKeyframeInterval": 1.92
+		},
+		{
+			"key": "v1080",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 1080,
+			"bitrate": 1000000,
+			"level": null,
+			"presetConfiguration": "VOD_STANDARD",
+			"mode": "STANDARD",
+			"rate": 25,
+			"minKeyframeInterval": 1.92,
+			"maxKeyframeInterval": 1.92
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v360",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 5.76,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned/video/360p",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"segmentLength": 5.76,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned/video/540p",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 5.76,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned/video/1080p",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 5.76,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned/audio/128000",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"keyframes": [
+		{
+			"key": "ad1",
+			"time": 0.32
+		},
+		{
+			"key": "ad2",
+			"time": 19.2
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V6",
+			"mediaVersion": "HLS_V6",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		},
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-fmp4-hls-dash-with-keyframes-segment-aligned/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TIMELINE"
+		}
+	],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

@@ -1,0 +1,172 @@
+# Local deployment. Keep application and migration credentials separate.
+services:
+  postgres:
+    image: postgres:17-alpine
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
+    memswap_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
+    env_file:
+      - path: .env.migrate
+        required: true
+        format: raw
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    mem_limit: ${REDIS_MEMORY_LIMIT:-256m}
+    memswap_limit: ${REDIS_MEMORY_LIMIT:-256m}
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    mem_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
+    memswap_limit: ${MIGRATE_MEMORY_LIMIT:-512m}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    command: ["pnpm", "--filter", "@bitovp/db", "run", "db:migrate:deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - path: .env.migrate
+        required: true
+        format: raw
+    environment:
+      BITOVP_MIGRATION_IN_CONTAINER: "1"
+    restart: "no"
+
+  worker:
+    mem_limit: ${WORKER_MEMORY_LIMIT:-4g}
+    memswap_limit: ${WORKER_MEMORY_LIMIT:-4g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+        format: raw
+    environment:
+      DATABASE_URL: "${COMPOSE_DATABASE_URL:-postgresql://bitovp_runtime@postgres:5432/bitovp}"
+      REDIS_URL: "redis://redis:6379"
+      NODE_ENV: "production"
+      FFMPEG_PATH: "ffmpeg"
+      FFPROBE_PATH: "ffprobe"
+      VMAF_CONCURRENCY: ${VMAF_CONCURRENCY:-1}
+      VMAF_THREADS: ${VMAF_THREADS:-2}
+      DEPLOYMENT_PROFILE: "${DEPLOYMENT_PROFILE:-UNRESTRICTED}"
+    volumes:
+      - ./verify-runs:/verify-runs
+    restart: unless-stopped
+
+  web:
+    mem_limit: ${WEB_MEMORY_LIMIT:-512m}
+    memswap_limit: ${WEB_MEMORY_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+        format: raw
+    environment:
+      DATABASE_URL: "${COMPOSE_DATABASE_URL:-postgresql://bitovp_runtime@postgres:5432/bitovp}"
+      REDIS_URL: "redis://redis:6379"
+      NODE_ENV: "production"
+      ALLOWED_ORIGIN_HOSTS: "web,localhost,127.0.0.1"
+      DEPLOYMENT_PROFILE: "${DEPLOYMENT_PROFILE:-UNRESTRICTED}"
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3100}:3100"
+    restart: unless-stopped
+
+  ingress:
+    mem_limit: ${INGRESS_MEMORY_LIMIT:-128m}
+    memswap_limit: ${INGRESS_MEMORY_LIMIT:-128m}
+    image: cloudflare/cloudflared:2026.8.3@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339
+    profiles: ["quick-tunnel"]
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - "${INGRESS_ORIGIN_URL:-http://web:3100}"
+      - --metrics
+      - 0.0.0.0:20241
+    ports:
+      - "127.0.0.1:${INGRESS_METRICS_PORT:-20241}:20241"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  ingress-named:
+    mem_limit: ${INGRESS_MEMORY_LIMIT:-128m}
+    memswap_limit: ${INGRESS_MEMORY_LIMIT:-128m}
+    image: cloudflare/cloudflared:2026.8.3@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339
+    profiles: ["named-tunnel"]
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --metrics
+      - 0.0.0.0:20241
+      - run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

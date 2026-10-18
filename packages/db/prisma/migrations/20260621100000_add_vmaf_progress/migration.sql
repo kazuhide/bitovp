@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "VmafJob" ADD COLUMN     "concurrency" INTEGER,
+ADD COLUMN     "cores" INTEGER,
+ADD COLUMN     "doneUnits" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "threads" INTEGER,
+ADD COLUMN     "totalUnits" INTEGER NOT NULL DEFAULT 0;

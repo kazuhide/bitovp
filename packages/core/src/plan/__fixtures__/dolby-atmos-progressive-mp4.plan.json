@@ -1,0 +1,70 @@
+{
+	"planVersion": 1,
+	"name": "Dolby Atmos Encoding - Progressive Mp4",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [],
+	"dolbyStreams": [
+		{
+			"key": "atmos-in",
+			"kind": "ATMOS",
+			"inputKey": "main",
+			"inputPath": "sollevante_lp_v01_DAMF_Nearfield_48k_24b_24.wav",
+			"inputFormat": "ADM"
+		}
+	],
+	"renditions": [
+		{
+			"key": "atmos448",
+			"codec": "DOLBY_ATMOS",
+			"ingestKey": "atmos-in",
+			"name": "Atmos Codec Configuration",
+			"bitrate": 448000,
+			"rate": 48000,
+			"loudnessControl": {
+				"meteringMode": "ITU_R_BS_1770_4",
+				"dialogueIntelligence": "ENABLED",
+				"speechThreshold": 15
+			},
+			"streamName": "Audio Stream"
+		}
+	],
+	"muxings": [
+		{
+			"key": "atmos448",
+			"kind": "MP4",
+			"streamKey": "atmos448",
+			"filename": "output.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/Dolby_Atmos_Encoding__Progressive_Mp4/2026-06-12__00-00-00/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Sample MP4 Muxing with Dolby Vision"
+		}
+	],
+	"manifests": [],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

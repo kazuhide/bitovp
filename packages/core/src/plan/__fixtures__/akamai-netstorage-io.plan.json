@@ -1,0 +1,56 @@
+{
+	"planVersion": 1,
+	"name": "Akamai NetStorage in and out",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "AKAMAI_NETSTORAGE",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"name": "Akamai NetStorage Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "AKAMAI_NETSTORAGE",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"name": "Akamai NetStorage Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "input.mp4",
+			"selectionMode": "VIDEO_RELATIVE"
+		}
+	],
+	"renditions": [
+		{
+			"key": "v540",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 540,
+			"bitrate": 600000
+		}
+	],
+	"muxings": [
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vmaf-only-h264/video/540p"
+			}
+		}
+	],
+	"manifests": [],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

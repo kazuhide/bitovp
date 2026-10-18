@@ -1,0 +1,122 @@
+# Isolated deployment. Use scripts/customer-compose.sh with private configuration.
+x-app-environment: &app-environment
+  DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql://bitovp_runtime@postgres:5432/bitovp}
+  REDIS_URL: redis://redis:6379
+  MASTER_KEY: ${CUSTOMER_MASTER_KEY:?required}
+  NODE_ENV: production
+  DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-UNRESTRICTED}
+  INGRESS_MODE: none
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    mem_limit: 512m
+    memswap_limit: 512m
+    env_file:
+      - path: ${CUSTOMER_MIGRATION_ENV_FILE:?required}
+        required: true
+        format: raw
+    ports: ["127.0.0.1:${CUSTOMER_DATABASE_PORT:?required}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:8-alpine
+    mem_limit: 256m
+    memswap_limit: 256m
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    image: ${CUSTOMER_WORKER_IMAGE:?required}
+    mem_limit: 512m
+    memswap_limit: 512m
+    command: [pnpm, --filter, "@bitovp/db", run, "db:migrate:deploy"]
+    env_file:
+      - path: ${CUSTOMER_MIGRATION_ENV_FILE:?required}
+        required: true
+        format: raw
+    environment:
+      BITOVP_MIGRATION_IN_CONTAINER: "1"
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    logging: *logging
+
+  report-init:
+    image: ${CUSTOMER_WORKER_IMAGE:?required}
+    mem_limit: 64m
+    memswap_limit: 64m
+    user: "0:0"
+    command: [chown, "1000:1000", /verify-runs]
+    volumes: [reports:/verify-runs]
+    restart: "no"
+    logging: *logging
+
+  worker:
+    image: ${CUSTOMER_WORKER_IMAGE:?required}
+    mem_limit: 4g
+    memswap_limit: 4g
+    env_file:
+      - path: ${CUSTOMER_APP_ENV_FILE:?required}
+        required: true
+        format: raw
+    environment:
+      <<: *app-environment
+      FFMPEG_PATH: /usr/local/bin/ffmpeg
+      FFPROBE_PATH: /usr/local/bin/ffprobe
+      VERIFY_RUN_ROOT: /verify-runs
+      VMAF_CONCURRENCY: "1"
+      VMAF_THREADS: "2"
+    volumes: [reports:/verify-runs]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      report-init: { condition: service_completed_successfully }
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    image: ${CUSTOMER_WEB_IMAGE:?required}
+    mem_limit: 512m
+    memswap_limit: 512m
+    env_file:
+      - path: ${CUSTOMER_APP_ENV_FILE:?required}
+        required: true
+        format: raw
+    environment:
+      <<: *app-environment
+      AUTH_MODE: password
+      AUTH_PASSWORD_HASH: ${CUSTOMER_AUTH_PASSWORD_HASH:?required}
+      AUTH_SESSION_SECRET: ${CUSTOMER_AUTH_SESSION_SECRET:?required}
+      ALLOWED_ORIGIN_HOSTS: web,localhost,127.0.0.1
+    ports: ["127.0.0.1:${CUSTOMER_HTTP_PORT:?required}:3100"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  reports:

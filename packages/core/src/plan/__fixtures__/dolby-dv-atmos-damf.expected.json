@@ -1,0 +1,204 @@
+{
+	"planName": "dolbyvision-dolbyatmos-damf-hls-dash-fmp4",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"renditionKey": "v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/video/1080/",
+				"prefix": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/video/1080/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H265",
+				"bitrate": 2000000
+			}
+		},
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"renditionKey": "v540",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/video/540/",
+				"prefix": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/video/540/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H265",
+				"bitrate": 1000000
+			}
+		},
+		{
+			"muxingKey": "atmos448",
+			"streamKey": "atmos448",
+			"renditionKey": "atmos448",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/audio/448000/",
+				"prefix": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/audio/448000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "DOLBY_ATMOS",
+				"bitrate": 448000,
+				"sampleRate": 48000
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/",
+				"prefix": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 2,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 2000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "v540",
+						"height": 540,
+						"bitrate": 1000000,
+						"codec": "H265"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "atmos448",
+						"codec": "DOLBY_ATMOS",
+						"bitrate": 448000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H265"
+				]
+			}
+		},
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/",
+				"prefix": "output/dolbyvision-dolbyatmos-damf-hls-dash-fmp4/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 2,
+			"audioEntries": 1,
+			"textEntries": 0,
+			"postEncoding": false,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "v1080",
+						"height": 1080,
+						"bitrate": 2000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "v540",
+						"height": 540,
+						"bitrate": 1000000,
+						"codec": "H265"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "atmos448",
+						"codec": "DOLBY_ATMOS",
+						"groupId": "audio",
+						"name": "HLS Audio Media",
+						"uri": "audio_448000.m3u8",
+						"bitrate": 448000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H265"
+				],
+				"hlsVariants": [
+					{
+						"key": "v1080",
+						"renditionKey": "v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 2000000,
+						"audioGroup": "audio",
+						"uri": "video_2000000.m3u8"
+					},
+					{
+						"key": "v540",
+						"renditionKey": "v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1000000,
+						"audioGroup": "audio",
+						"uri": "video_1000000.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V8",
+			"hlsMediaVersion": "HLS_V8",
+			"hlsChildFiles": [
+				"video_2000000.m3u8",
+				"video_1000000.m3u8",
+				"audio_448000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

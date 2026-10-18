@@ -1,0 +1,825 @@
+{
+	"planName": "dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "dv-v2160",
+			"streamKey": "dv-v2160",
+			"renditionKey": "dv-v2160",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/2160p_15000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/2160p_15000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 2160,
+				"codec": "H265",
+				"bitrate": 15000000
+			}
+		},
+		{
+			"muxingKey": "dv-v1080",
+			"streamKey": "dv-v1080",
+			"renditionKey": "dv-v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/1080p_6000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/1080p_6000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H265",
+				"bitrate": 6000000
+			}
+		},
+		{
+			"muxingKey": "dv-v720",
+			"streamKey": "dv-v720",
+			"renditionKey": "dv-v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/720p_3000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/720p_3000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "H265",
+				"bitrate": 3000000
+			}
+		},
+		{
+			"muxingKey": "dv-v540",
+			"streamKey": "dv-v540",
+			"renditionKey": "dv-v540",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/540p_1800000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/dv/540p_1800000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H265",
+				"bitrate": 1800000
+			}
+		},
+		{
+			"muxingKey": "hdr10-v2160",
+			"streamKey": "hdr10-v2160",
+			"renditionKey": "hdr10-v2160",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/2160p_15000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/2160p_15000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 2160,
+				"codec": "H265",
+				"bitrate": 15000000
+			}
+		},
+		{
+			"muxingKey": "hdr10-v1080",
+			"streamKey": "hdr10-v1080",
+			"renditionKey": "hdr10-v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/1080p_6000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/1080p_6000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H265",
+				"bitrate": 6000000
+			}
+		},
+		{
+			"muxingKey": "hdr10-v720",
+			"streamKey": "hdr10-v720",
+			"renditionKey": "hdr10-v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/720p_3000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/720p_3000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "H265",
+				"bitrate": 3000000
+			}
+		},
+		{
+			"muxingKey": "hdr10-v540",
+			"streamKey": "hdr10-v540",
+			"renditionKey": "hdr10-v540",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/540p_1800000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/hdr10/540p_1800000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H265",
+				"bitrate": 1800000
+			}
+		},
+		{
+			"muxingKey": "sdr-v2160",
+			"streamKey": "sdr-v2160",
+			"renditionKey": "sdr-v2160",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/2160p_12000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/2160p_12000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 2160,
+				"codec": "H265",
+				"bitrate": 12000000
+			}
+		},
+		{
+			"muxingKey": "sdr-v1080",
+			"streamKey": "sdr-v1080",
+			"renditionKey": "sdr-v1080",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/1080p_5000000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/1080p_5000000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 1080,
+				"codec": "H265",
+				"bitrate": 5000000
+			}
+		},
+		{
+			"muxingKey": "sdr-v720",
+			"streamKey": "sdr-v720",
+			"renditionKey": "sdr-v720",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/720p_2500000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/720p_2500000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 720,
+				"codec": "H265",
+				"bitrate": 2500000
+			}
+		},
+		{
+			"muxingKey": "sdr-v540",
+			"streamKey": "sdr-v540",
+			"renditionKey": "sdr-v540",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/540p_1500000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/video/sdr/540p_1500000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H265",
+				"bitrate": 1500000
+			}
+		},
+		{
+			"muxingKey": "atmos448",
+			"streamKey": "atmos448",
+			"renditionKey": "atmos448",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/atmos/448000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/atmos/448000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "DOLBY_ATMOS",
+				"bitrate": 448000,
+				"sampleRate": 48000
+			}
+		},
+		{
+			"muxingKey": "aac128",
+			"streamKey": "aac128",
+			"renditionKey": "aac128",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/aac/128000/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/audio/aac/128000/",
+				"templated": false
+			},
+			"perTitle": false,
+			"acl": "PUBLIC_READ",
+			"segmentNaming": "seg_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"audio": {
+				"codec": "AAC",
+				"bitrate": 128000,
+				"sampleRate": 48000,
+				"channelLayout": "CL_STEREO"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "dash",
+			"kind": "DASH",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/",
+				"templated": false
+			},
+			"files": [
+				"stream.mpd"
+			],
+			"videoEntries": 12,
+			"audioEntries": 2,
+			"textEntries": 0,
+			"dashRepresentationType": "TEMPLATE",
+			"dashOnDemand": false,
+			"postEncoding": true,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "dv-v2160",
+						"height": 2160,
+						"bitrate": 15000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "dv-v1080",
+						"height": 1080,
+						"bitrate": 6000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "dv-v720",
+						"height": 720,
+						"bitrate": 3000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "dv-v540",
+						"height": 540,
+						"bitrate": 1800000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v2160",
+						"height": 2160,
+						"bitrate": 15000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v1080",
+						"height": 1080,
+						"bitrate": 6000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v720",
+						"height": 720,
+						"bitrate": 3000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v540",
+						"height": 540,
+						"bitrate": 1800000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v2160",
+						"height": 2160,
+						"bitrate": 12000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v1080",
+						"height": 1080,
+						"bitrate": 5000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v720",
+						"height": 720,
+						"bitrate": 2500000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v540",
+						"height": 540,
+						"bitrate": 1500000,
+						"codec": "H265"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "atmos448",
+						"codec": "DOLBY_ATMOS",
+						"bitrate": 448000
+					},
+					{
+						"renditionKey": "aac128",
+						"codec": "AAC",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H265"
+				]
+			}
+		},
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/",
+				"prefix": "output/dolbyvision-hdr10-sdr-3ladder-profile5-single-dv-input-hls-dash-fmp4/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"videoEntries": 12,
+			"audioEntries": 2,
+			"textEntries": 0,
+			"postEncoding": true,
+			"perTitle": false,
+			"manifestRenditions": {
+				"video": [
+					{
+						"renditionKey": "dv-v2160",
+						"height": 2160,
+						"bitrate": 15000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "dv-v1080",
+						"height": 1080,
+						"bitrate": 6000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "dv-v720",
+						"height": 720,
+						"bitrate": 3000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "dv-v540",
+						"height": 540,
+						"bitrate": 1800000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v2160",
+						"height": 2160,
+						"bitrate": 15000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v1080",
+						"height": 1080,
+						"bitrate": 6000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v720",
+						"height": 720,
+						"bitrate": 3000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "hdr10-v540",
+						"height": 540,
+						"bitrate": 1800000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v2160",
+						"height": 2160,
+						"bitrate": 12000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v1080",
+						"height": 1080,
+						"bitrate": 5000000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v720",
+						"height": 720,
+						"bitrate": 2500000,
+						"codec": "H265"
+					},
+					{
+						"renditionKey": "sdr-v540",
+						"height": 540,
+						"bitrate": 1500000,
+						"codec": "H265"
+					}
+				],
+				"audio": [
+					{
+						"renditionKey": "atmos448",
+						"codec": "DOLBY_ATMOS",
+						"groupId": "atmos",
+						"name": "English Atmos",
+						"uri": "audio_atmos_448000.m3u8",
+						"bitrate": 448000
+					},
+					{
+						"renditionKey": "aac128",
+						"codec": "AAC",
+						"groupId": "aac",
+						"name": "English AAC",
+						"uri": "audio_aac_128000.m3u8",
+						"bitrate": 128000
+					}
+				],
+				"declaredVideoCodecFamilies": [
+					"H265"
+				],
+				"hlsVariants": [
+					{
+						"key": "dv-v2160:aac",
+						"renditionKey": "dv-v2160",
+						"kind": "video",
+						"codec": "H265",
+						"height": 2160,
+						"bitrate": 15000000,
+						"audioGroup": "aac",
+						"uri": "video_dv_2160p_15000000_aac.m3u8"
+					},
+					{
+						"key": "dv-v2160:atmos",
+						"renditionKey": "dv-v2160",
+						"kind": "video",
+						"codec": "H265",
+						"height": 2160,
+						"bitrate": 15000000,
+						"audioGroup": "atmos",
+						"uri": "video_dv_2160p_15000000_atmos.m3u8"
+					},
+					{
+						"key": "dv-v1080:aac",
+						"renditionKey": "dv-v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 6000000,
+						"audioGroup": "aac",
+						"uri": "video_dv_1080p_6000000_aac.m3u8"
+					},
+					{
+						"key": "dv-v1080:atmos",
+						"renditionKey": "dv-v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 6000000,
+						"audioGroup": "atmos",
+						"uri": "video_dv_1080p_6000000_atmos.m3u8"
+					},
+					{
+						"key": "dv-v720:aac",
+						"renditionKey": "dv-v720",
+						"kind": "video",
+						"codec": "H265",
+						"height": 720,
+						"bitrate": 3000000,
+						"audioGroup": "aac",
+						"uri": "video_dv_720p_3000000_aac.m3u8"
+					},
+					{
+						"key": "dv-v720:atmos",
+						"renditionKey": "dv-v720",
+						"kind": "video",
+						"codec": "H265",
+						"height": 720,
+						"bitrate": 3000000,
+						"audioGroup": "atmos",
+						"uri": "video_dv_720p_3000000_atmos.m3u8"
+					},
+					{
+						"key": "dv-v540:aac",
+						"renditionKey": "dv-v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1800000,
+						"audioGroup": "aac",
+						"uri": "video_dv_540p_1800000_aac.m3u8"
+					},
+					{
+						"key": "dv-v540:atmos",
+						"renditionKey": "dv-v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1800000,
+						"audioGroup": "atmos",
+						"uri": "video_dv_540p_1800000_atmos.m3u8"
+					},
+					{
+						"key": "hdr10-v2160:aac",
+						"renditionKey": "hdr10-v2160",
+						"kind": "video",
+						"codec": "H265",
+						"height": 2160,
+						"bitrate": 15000000,
+						"audioGroup": "aac",
+						"uri": "video_hdr10_2160p_15000000_aac.m3u8"
+					},
+					{
+						"key": "hdr10-v2160:atmos",
+						"renditionKey": "hdr10-v2160",
+						"kind": "video",
+						"codec": "H265",
+						"height": 2160,
+						"bitrate": 15000000,
+						"audioGroup": "atmos",
+						"uri": "video_hdr10_2160p_15000000_atmos.m3u8"
+					},
+					{
+						"key": "hdr10-v1080:aac",
+						"renditionKey": "hdr10-v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 6000000,
+						"audioGroup": "aac",
+						"uri": "video_hdr10_1080p_6000000_aac.m3u8"
+					},
+					{
+						"key": "hdr10-v1080:atmos",
+						"renditionKey": "hdr10-v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 6000000,
+						"audioGroup": "atmos",
+						"uri": "video_hdr10_1080p_6000000_atmos.m3u8"
+					},
+					{
+						"key": "hdr10-v720:aac",
+						"renditionKey": "hdr10-v720",
+						"kind": "video",
+						"codec": "H265",
+						"height": 720,
+						"bitrate": 3000000,
+						"audioGroup": "aac",
+						"uri": "video_hdr10_720p_3000000_aac.m3u8"
+					},
+					{
+						"key": "hdr10-v720:atmos",
+						"renditionKey": "hdr10-v720",
+						"kind": "video",
+						"codec": "H265",
+						"height": 720,
+						"bitrate": 3000000,
+						"audioGroup": "atmos",
+						"uri": "video_hdr10_720p_3000000_atmos.m3u8"
+					},
+					{
+						"key": "hdr10-v540:aac",
+						"renditionKey": "hdr10-v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1800000,
+						"audioGroup": "aac",
+						"uri": "video_hdr10_540p_1800000_aac.m3u8"
+					},
+					{
+						"key": "hdr10-v540:atmos",
+						"renditionKey": "hdr10-v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1800000,
+						"audioGroup": "atmos",
+						"uri": "video_hdr10_540p_1800000_atmos.m3u8"
+					},
+					{
+						"key": "sdr-v2160:aac",
+						"renditionKey": "sdr-v2160",
+						"kind": "video",
+						"codec": "H265",
+						"height": 2160,
+						"bitrate": 12000000,
+						"audioGroup": "aac",
+						"uri": "video_sdr_2160p_12000000_aac.m3u8"
+					},
+					{
+						"key": "sdr-v2160:atmos",
+						"renditionKey": "sdr-v2160",
+						"kind": "video",
+						"codec": "H265",
+						"height": 2160,
+						"bitrate": 12000000,
+						"audioGroup": "atmos",
+						"uri": "video_sdr_2160p_12000000_atmos.m3u8"
+					},
+					{
+						"key": "sdr-v1080:aac",
+						"renditionKey": "sdr-v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 5000000,
+						"audioGroup": "aac",
+						"uri": "video_sdr_1080p_5000000_aac.m3u8"
+					},
+					{
+						"key": "sdr-v1080:atmos",
+						"renditionKey": "sdr-v1080",
+						"kind": "video",
+						"codec": "H265",
+						"height": 1080,
+						"bitrate": 5000000,
+						"audioGroup": "atmos",
+						"uri": "video_sdr_1080p_5000000_atmos.m3u8"
+					},
+					{
+						"key": "sdr-v720:aac",
+						"renditionKey": "sdr-v720",
+						"kind": "video",
+						"codec": "H265",
+						"height": 720,
+						"bitrate": 2500000,
+						"audioGroup": "aac",
+						"uri": "video_sdr_720p_2500000_aac.m3u8"
+					},
+					{
+						"key": "sdr-v720:atmos",
+						"renditionKey": "sdr-v720",
+						"kind": "video",
+						"codec": "H265",
+						"height": 720,
+						"bitrate": 2500000,
+						"audioGroup": "atmos",
+						"uri": "video_sdr_720p_2500000_atmos.m3u8"
+					},
+					{
+						"key": "sdr-v540:aac",
+						"renditionKey": "sdr-v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1500000,
+						"audioGroup": "aac",
+						"uri": "video_sdr_540p_1500000_aac.m3u8"
+					},
+					{
+						"key": "sdr-v540:atmos",
+						"renditionKey": "sdr-v540",
+						"kind": "video",
+						"codec": "H265",
+						"height": 540,
+						"bitrate": 1500000,
+						"audioGroup": "atmos",
+						"uri": "video_sdr_540p_1500000_atmos.m3u8"
+					}
+				]
+			},
+			"hlsMasterVersion": "HLS_V8",
+			"hlsMediaVersion": "HLS_V8",
+			"hlsChildFiles": [
+				"video_dv_2160p_15000000_aac.m3u8",
+				"video_dv_2160p_15000000_atmos.m3u8",
+				"video_dv_1080p_6000000_aac.m3u8",
+				"video_dv_1080p_6000000_atmos.m3u8",
+				"video_dv_720p_3000000_aac.m3u8",
+				"video_dv_720p_3000000_atmos.m3u8",
+				"video_dv_540p_1800000_aac.m3u8",
+				"video_dv_540p_1800000_atmos.m3u8",
+				"video_hdr10_2160p_15000000_aac.m3u8",
+				"video_hdr10_2160p_15000000_atmos.m3u8",
+				"video_hdr10_1080p_6000000_aac.m3u8",
+				"video_hdr10_1080p_6000000_atmos.m3u8",
+				"video_hdr10_720p_3000000_aac.m3u8",
+				"video_hdr10_720p_3000000_atmos.m3u8",
+				"video_hdr10_540p_1800000_aac.m3u8",
+				"video_hdr10_540p_1800000_atmos.m3u8",
+				"video_sdr_2160p_12000000_aac.m3u8",
+				"video_sdr_2160p_12000000_atmos.m3u8",
+				"video_sdr_1080p_5000000_aac.m3u8",
+				"video_sdr_1080p_5000000_atmos.m3u8",
+				"video_sdr_720p_2500000_aac.m3u8",
+				"video_sdr_720p_2500000_atmos.m3u8",
+				"video_sdr_540p_1500000_aac.m3u8",
+				"video_sdr_540p_1500000_atmos.m3u8",
+				"audio_atmos_448000.m3u8",
+				"audio_aac_128000.m3u8"
+			],
+			"hlsVideoLeg": "FMP4"
+		}
+	],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": true,
+	"notes": [
+		"multi-encoding plan: artefacts come from several encodings merged into shared manifests"
+	]
+}

@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1
+# Cloud VMAF worker image.
+ARG WORKER_IMAGE
+FROM ${WORKER_IMAGE}
+ARG WORKER_IMAGE
+RUN node -e 'if (!/^[^\s]+@sha256:[a-f0-9]{64}$/.test(process.argv[1])) process.exit(1)' "$WORKER_IMAGE"
+WORKDIR /app/apps/worker
+COPY apps/worker/scripts/vmaf-cloud-worker.mjs ./scripts/vmaf-cloud-worker.mjs
+COPY packages/core/src/vmaf/command.ts /app/packages/core/src/vmaf/command.ts
+USER node
+ENTRYPOINT []
+CMD ["node", "--import", "tsx", "/app/apps/worker/scripts/vmaf-cloud-worker.mjs"]

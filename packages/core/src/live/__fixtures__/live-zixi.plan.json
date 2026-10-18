@@ -1,0 +1,105 @@
+{
+	"planVersion": 1,
+	"name": "Live Zixi Channel (live-zixi)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"liveInput": {
+		"key": "main",
+		"kind": "ZIXI",
+		"name": "Zixi Input",
+		"host": "zixi-feeder.example.com",
+		"port": 2077,
+		"stream": "channelOne",
+		"credentialId": "00000000-0000-4000-8000-000000000004",
+		"latency": 4000,
+		"minBitrate": 800000,
+		"decryptionType": "AES_128"
+	},
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputPath": "/",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputPath": "/",
+			"position": 1
+		}
+	],
+	"renditions": [
+		{
+			"key": "v720",
+			"codec": "H264",
+			"name": "Live H264 720p",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v720",
+			"kind": "TS",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-zixi/video/720p"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "TS",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.ts",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-zixi/audio/128000"
+			}
+		}
+	],
+	"liveManifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "Live HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-zixi"
+			},
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"timeshift": 7200
+		}
+	],
+	"start": {
+		"streamKey": "zixiStreamKey"
+	}
+}

@@ -1,0 +1,196 @@
+[
+	{
+		"step": "live-input:main",
+		"kind": "CREATE_INPUT_SRT",
+		"payload": {
+			"name": "SRT Caller Input",
+			"mode": "CALLER",
+			"host": "203.0.113.10",
+			"port": 7000,
+			"latency": 150,
+			"credentialId": "00000000-0000-4000-8000-000000000003",
+			"keyLength": 256
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "Live SRT Caller Channel (live-srt-caller)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Live H264 720p",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 720p",
+			"mode": "STANDARD",
+			"inputPath": "/",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/live-srt-caller/video/720p",
+			"name": "Video FMP4 Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD",
+			"inputPath": "/",
+			"position": 1
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/live-srt-caller/audio/128000",
+			"name": "Audio FMP4 Muxing 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "Live HLS Manifest",
+			"outputPath": "output/live-srt-caller"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v720",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/720p",
+			"uri": "video_3000000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "hls-media:hls:a128",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/128000",
+			"uri": "audio_128000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_LIVE_ENCODING",
+		"payload": {
+			"streamKey": "srtCallerKey",
+			"hlsManifests": {
+				"hls": {
+					"timeshift": 3600
+				}
+			},
+			"liveEncodingMode": "SINGLE_PASS",
+			"reuploadSettings": {
+				"muxingInitFileInterval": 300
+			},
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"liveHlsManifestIds": [
+				"manifest:hls"
+			]
+		}
+	},
+	{
+		"step": "await:running",
+		"kind": "AWAIT_LIVE_RUNNING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

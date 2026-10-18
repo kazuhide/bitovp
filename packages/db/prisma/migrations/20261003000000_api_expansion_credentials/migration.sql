@@ -1,0 +1,2 @@
+ALTER TYPE "CredentialProvider" ADD VALUE 'DRM_SPEKE';
+ALTER TYPE "CredentialProvider" ADD VALUE 'LIVE_MEDIA_INGEST';

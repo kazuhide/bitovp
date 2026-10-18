@@ -1,0 +1,120 @@
+{
+	"planVersion": 1,
+	"name": "Synthetic Multi-Output S3+GCS (multi-output-s3-gcs)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		},
+		{
+			"key": "mirror-1",
+			"kind": "GCS",
+			"credentialId": "00000000-0000-4000-8000-000000000003",
+			"bucket": "sample-mirror-bucket",
+			"name": "Test GCS Mirror Output"
+		}
+	],
+	"deliveryMirrors": [
+		{
+			"outputKey": "mirror-1"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/video.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/video.mp4",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v720",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": 3000000
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/multi-output-s3-gcs/video/720p",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/multi-output-s3-gcs/audio/128000",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/multi-output-s3-gcs/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V6",
+			"mediaVersion": "HLS_V6",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

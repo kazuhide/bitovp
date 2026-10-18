@@ -1,0 +1,106 @@
+{
+	"planName": "Akamai MSL live channel (HLS/TS)",
+	"ingest": {
+		"kind": "REDUNDANT_RTMP",
+		"feedable": true,
+		"requiresCoordinates": [
+			"streamKey",
+			"encoderIp"
+		],
+		"staticIngestPoints": [
+			"GENERATE"
+		]
+	},
+	"muxings": [
+		{
+			"muxingKey": "v1080",
+			"streamKey": "v1080",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-akamai-msl-ts/video/1080p/",
+				"prefix": "output/live-akamai-msl-ts/video/1080p/",
+				"templated": false
+			},
+			"segmentNaming": "seg-{rand_chars:8}-%number%.ts",
+			"segmentLengthSec": 6
+		},
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-akamai-msl-ts/video/720p/",
+				"prefix": "output/live-akamai-msl-ts/video/720p/",
+				"templated": false
+			},
+			"segmentNaming": "seg-{rand_chars:8}-%number%.ts",
+			"segmentLengthSec": 6
+		},
+		{
+			"muxingKey": "v360",
+			"streamKey": "v360",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-akamai-msl-ts/video/360p/",
+				"prefix": "output/live-akamai-msl-ts/video/360p/",
+				"templated": false
+			},
+			"segmentNaming": "seg-{rand_chars:8}-%number%.ts",
+			"segmentLengthSec": 6
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-akamai-msl-ts/audio/128000/",
+				"prefix": "output/live-akamai-msl-ts/audio/128000/",
+				"templated": false
+			},
+			"segmentNaming": "seg-{rand_chars:8}-%number%.ts",
+			"segmentLengthSec": 6
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "",
+				"prefix": "",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"mediaPlaylists": [
+				"video_4500000.m3u8",
+				"video_3000000.m3u8",
+				"video_800000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"timeshiftSec": 7200,
+			"elementBudget": {
+				"segmentsPerRendition": 1200,
+				"totalElements": 4800,
+				"budget": 54000,
+				"utilization": 0.08888888888888889,
+				"level": "ok"
+			}
+		}
+	],
+	"renditionCount": 4,
+	"needsPois": false,
+	"mslEdgeOutputs": [
+		{
+			"outputKey": "origin",
+			"role": "PRIMARY"
+		}
+	],
+	"notes": []
+}

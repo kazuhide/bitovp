@@ -1,0 +1,2610 @@
+// Application persistence schema.
+// Secrets are NEVER stored in plaintext: encrypted* columns hold serialized
+// EncryptedSecret blobs (AES-256-GCM, AAD-bound to the owning row id) produced
+// by @bitovp/core crypto. Snapshot columns exist because Bitmovin purges
+// encoding data after ~90 days (constraint C7).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Credentials & accounts
+// ---------------------------------------------------------------------------
+
+/// Storage provider of a credential. Akamai (Linode) Object Storage and OCI
+/// Object Storage are S3-compatible and become Bitmovin GenericS3 resources
+/// with V4 signing (constraint C10); they get distinct values so the UI can
+/// prefill host patterns.
+enum CredentialProvider {
+  AWS_S3
+  AWS_S3_ROLE_BASED
+  AKAMAI_OBJECT_STORAGE
+  OCI_OBJECT_STORAGE
+  GENERIC_S3
+  GCS_HMAC
+  GCS_SERVICE_ACCOUNT
+  AZURE_BLOB
+  SFTP
+  AKAMAI_NETSTORAGE
+  AKAMAI_MSL
+  LIVE_MEDIA_INGEST
+  DRM_CENC
+  DRM_SPEKE
+  NEXGUARD
+  SRT_PASSPHRASE
+  ZIXI
+  POIS_ENDPOINT
+  KANTAR
+  NOTIFICATION_WEBHOOK
+}
+
+/// App-wide operator settings, one row per key (ledger #131).
+/// Key/value rather than a column per knob: P11 and the cost/index work have
+/// more knobs coming, and a column each means a migration each. The VALUE is
+/// zod-validated in packages/core — an unparseable row degrades to DEFAULTS
+/// rather than crashing a render. Defaults live in core, not here, so an
+/// ABSENT row and a fresh install behave identically (no seed step).
+model AppSetting {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@id([organizationId, key])
+  @@index([organizationId])
+}
+
+model Credential {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id              String             @id @default(uuid()) @db.Uuid
+  label           String
+  provider        CredentialProvider
+  /// Non-secret configuration: region, endpoint host, default bucket, etc.
+  config          Json               @default("{}")
+  /// Serialized EncryptedSecret (AES-256-GCM, AAD "credential:<id>").
+  encryptedSecret String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  locationPresets      StorageLocationPreset[]
+  inspections          StorageInspection[]
+  notificationChannels NotificationChannel[]
+
+  watchRules WatchRule[]
+
+  @@index([provider])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Internal work ownership, not customer history. No foreign keys: survives reset.
+model ResetCleanupTask {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id               String   @id @default(uuid()) @db.Uuid
+  encryptedPayload String
+  entityKeys       String[]
+  revision         Int      @default(0)
+  nextAttemptAt    DateTime @default(now())
+  settledAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([entityKeys], type: Gin)
+  @@index([settledAt, nextAttemptAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+model BitmovinAccount {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id              String   @id @default(uuid()) @db.Uuid
+  label           String
+  /// Serialized EncryptedSecret (AES-256-GCM, AAD "bitmovin-account:<id>").
+  encryptedApiKey String
+  /// Optional X-Tenant-Org-Id sent with every API call.
+  tenantOrgId     String?
+  /// Defaults applied to new plans: encoderVersion, cloudRegion,
+  /// fallbackRegions, schedulingPriority, prewarmedPoolIds.
+  defaults        Json     @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  encodingJobs     EncodingJob[]
+  liveChannels     LiveChannel[]
+  auditLogs        AuditLog[]
+  verificationRuns VerificationRun[]
+  usageDailyStatistics UsageDailyStatistic[]
+  usageSweepCursors    UsageSweepCursor[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+enum StorageRole {
+  INPUT
+  OUTPUT
+}
+
+model StorageLocationPreset {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id           String      @id @default(uuid()) @db.Uuid
+  credentialId String      @db.Uuid
+  credential   Credential  @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  label        String
+  bucket       String
+  prefix       String      @default("")
+  role         StorageRole
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([credentialId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// VOD jobs
+// ---------------------------------------------------------------------------
+
+/// Orchestration status of an EncodingJob (our state machine, not Bitmovin's;
+/// the raw Bitmovin status lives in snapshots/stepLog).
+///
+/// AWAITING_QC / QC_FAILED (ledger #86 PR2): a BLOCK_MANIFESTS gate parks the
+/// job at AWAITING_QC once encoding finishes (deferred manifest steps stay
+/// PENDING); the vmaf-runner's continuation re-enqueues it, and the verdict
+/// decides FINISHED (gate passed, manifests generated) or QC_FAILED. QC_FAILED
+/// is deliberately NOT ERROR — a correct measurement of a bad encode is not a
+/// malfunction (the #42 lesson), and the retry route must keep refusing it
+/// (override-and-deliver is its own audited action, PR4).
+/// Declaration order = PHYSICAL order (review-201 N1): ALTER TYPE ADD VALUE
+/// appends, so the two #86 values sit at the END here even though they read
+/// better beside RUNNING — every prior enum addition kept this property and
+/// the first divergence is not worth a special case.
+enum EncodingJobStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  FINISHED
+  ERROR
+  CANCELED
+  AWAITING_QC
+  QC_FAILED
+}
+
+model EncodingJob {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                 String            @id @default(uuid()) @db.Uuid
+  name               String
+  labels             String[]          @default([])
+  status             EncodingJobStatus @default(DRAFT)
+  /// Explicit library reset keeps job history without automatic re-registration.
+  /// Cleared only by a successful explicit capture under the job row lock.
+  libraryCaptureSuppressed Boolean @default(false)
+  /// Denormalized list-view columns: plan/stepLog are NEVER selected in list
+  /// queries (schema contract below), so the run region (plan.bitmovin.
+  /// cloudRegion) and step progress (count of DONE stepLog entries) are
+  /// projected into columns at creation and bumped by the orchestrator after
+  /// each step. region is null and totalSteps 0 for jobs created before this
+  /// migration → the UI must treat totalSteps=0 as "progress unknown".
+  region             String?
+  doneSteps          Int               @default(0)
+  totalSteps         Int               @default(0)
+  /// EncodingPlan JSON (zod-validated in packages/core before persisting).
+  plan               Json
+  /// Ordered step log: [{ step, requestedAt, request, response, resourceId }].
+  /// CONTRACT: payloads MUST pass through redactSecrets before persisting
+  /// (secrets are reconstructable from Credential rows at execution time).
+  /// Single writer: only the orchestrator worker appends, one job = one
+  /// BullMQ job; list endpoints must project columns (never select plan/
+  /// stepLog/snapshots in list queries).
+  stepLog            Json              @default("[]")
+  bitmovinEncodingId String?           @unique
+  /// Row #313: exact encoding id confirmed terminal or CREATED (never started),
+  /// or verified absent by reset-only account/provenance checks and locked CAS.
+  /// Exempts only the current bitmovinEncodingId; every (re)start clears it.
+  /// Unknown/ambiguous reads remain blocking. Absence never changes lifecycle.
+  encoderStoppedConfirmedFor String?
+  /// Irreversible orphan STOP intent, not proof the provider stopped. Retry
+  /// must not reuse this job's resources once set; re-run-as-new starts clear.
+  /// Never expired with the attempt lease or cleared by reconciliation.
+  remoteStopRequestedAt DateTime?
+  bitmovinAccountId  String?           @db.Uuid
+  bitmovinAccount    BitmovinAccount?  @relation(fields: [bitmovinAccountId], references: [id], onDelete: SetNull)
+  /// Cooperative-cancel flag (ledger #10). The cancel route SETS it (atomic
+  /// claim on QUEUED|RUNNING); the orchestrator worker — the SINGLE writer of
+  /// `status` — re-reads it at safe points (loop top + before each step + each
+  /// AWAIT_ENCODING poll) and honors it by transitioning the job to CANCELED
+  /// (NEVER ERROR). Re-read from the DB each loop, so crash-resume re-honors it
+  /// idempotently. The route never touches `status`; the worker owns the
+  /// terminal transition, which is why a genuinely-FINISHED job is never reverted.
+  /// Lease held by the worker attempt currently running this job (audit
+  /// 893eb66 CRITICAL-1). The VOD twin of `LiveChannel.provisionClaimedAt`.
+  ///
+  /// The status alone could not be the lock: a worker whose BullMQ lock lapsed
+  /// mid-provider-call kept running while the redelivered job started on a
+  /// second worker, and every step-log write was an unconditional update — so
+  /// two attempts created at the provider and the last DB writer won. CONTRACT:
+  /// the orchestrator claims this atomically (null or stale → now) before its
+  /// first write, RENEWS it on every poll tick, FENCES every persist on the
+  /// value it last wrote, and RELEASES it (null) on any write that leaves the
+  /// attempt — terminal, parked at AWAITING_QC, or canceled — so a retry or a
+  /// QC continuation can claim at once. A timestamp rather than an owner token
+  /// so a dead worker's claim simply expires.
+  attemptClaimedAt   DateTime?
+  cancelRequested    Boolean           @default(false)
+  /// Full request/response snapshots for the bm-xray-style detail view (C7).
+  /// CONTRACT: MUST pass through redactSecrets before persisting.
+  snapshots          Json?
+  /// QC gate verdict (ledger #86 PR2), denormalized from VmafJob.gateVerdict
+  /// for the jobs list. CONTRACT: written by the vmaf-runner in the SAME
+  /// transaction as gateVerdict — its one writer, and NOT a status write (the
+  /// orchestrator stays the single writer of `status`/`stepLog`). Shape:
+  /// QcVerdict from packages/core (pass + ruleResults). Null = no gate, or
+  /// the measurement never completed.
+  qcVerdict          Json?
+  /// Override-and-deliver (ledger #86 PR4): when set, the QC boundary runs
+  /// the deferred manifest group DESPITE a failing verdict. Written once by
+  /// the override route's atomic QC_FAILED→QUEUED claim (audited there);
+  /// the evidence report states it — a forced delivery is never silent.
+  qcOverriddenAt     DateTime?
+  error              String?
+  /// The moment the orchestrator's SINGLE terminal transition wrote FINISHED
+  /// (review-259 116-A1). `updatedAt` is NOT that moment: it is @updatedAt,
+  /// bumped by any later write — a MARK_ONLY VMAF verdict landing after the
+  /// run, a snapshot backfill (see step-log.ts's raw-SQL dodge of this exact
+  /// column) — so durations derived from it inflate. Rows FINISHED before the
+  /// migration carry updatedAt as a stated approximation (backfill).
+  finishedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  /// Ledger #32 §5: the actor that created this job. Values track AUTH_MODE:
+  /// `user:<id>` / `token:<id>` in users mode, the literal `session` in the
+  /// DEFAULT shared-password mode, `none` under AUTH_MODE=none, and
+  /// `worker:<name>` for the unattended watch sweep. Additive, nullable; old
+  /// rows stay null. Same encoding as AuditLog.actor.
+  createdBy          String?
+
+  /// The plan is copied at launch. Deleting its template clears the relation
+  /// while preserving presetRevision for the original template attribution.
+  presetId       String? @db.Uuid
+  preset         Preset? @relation(fields: [presetId], references: [id], onDelete: SetNull)
+  presetRevision Int?
+
+  /// EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
+  /// key, stamped at create when the submit carried one. Unique, nullable:
+  /// ordinary jobs never carry it. `POST /api/encoding-jobs` returns THIS row
+  /// for a repeat of the same key with the same `verificationRequestSha256`
+  /// and 409s a repeat with a different one — so a harness whose create
+  /// response was lost can find the job it paid for instead of creating a twin.
+  verificationKey           String? @unique
+  verificationRequestSha256 String?
+
+  manifests ManifestJob[]
+  vmafJobs  VmafJob[]
+  librarySources LibrarySource[]
+
+  watchedObjects WatchedObject[]
+  webhookRegistrations WebhookRegistration[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([finishedAt(sort: Desc)])
+  @@index([bitmovinAccountId])
+  @@index([presetId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Immutable VOD source snapshot plus a durable, leased analysis-import request.
+/// The optional job link is navigation only; origin IDs and snapshot survive reset.
+model LibrarySource {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id             String @id @default(uuid()) @db.Uuid
+  sourceKey      String @unique
+  jobId          String? @db.Uuid
+  job            EncodingJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  originalJobId  String @db.Uuid
+  encodingId     String
+  accountId      String @db.Uuid
+  snapshot       Json
+  locales        String[]
+  state          String @default("PENDING")
+  attempts       Int @default(0)
+  availableAt    DateTime @default(now())
+  leaseToken     String?
+  leaseUntil     DateTime?
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  analyses       SceneAnalysisRevision[]
+  revisions      ContentRevision[]
+  @@index([state, availableAt])
+  @@index([jobId])
+  @@index([originalJobId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Raw and normalized provider output are immutable and shared by job/Library.
+model SceneAnalysisRevision {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id              String @id @default(uuid()) @db.Uuid
+  sourceId        String @db.Uuid
+  source          LibrarySource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  locale          String
+  rawHash         String
+  providerVersion String
+  raw             Json
+  document        Json
+  createdAt       DateTime @default(now())
+  @@unique([sourceId, locale, rawHash])
+  @@index([sourceId, locale, createdAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+model Content {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id              String @id @default(uuid()) @db.Uuid
+  registrationKey String @unique
+  title           String
+  description     String @default("")
+  tags            String[]
+  locale          String
+  revision        Int @default(1)
+  archived        Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  revisions       ContentRevision[]
+  @@index([archived, updatedAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+model ContentRevision {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id          String @id @default(uuid()) @db.Uuid
+  contentId   String @db.Uuid
+  content     Content @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  revision    Int
+  sourceId    String @db.Uuid
+  source      LibrarySource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  title       String
+  description String
+  tags        String[]
+  locale      String
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  @@unique([contentId, revision])
+  @@index([sourceId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+enum ManifestType {
+  HLS
+  DASH
+}
+
+enum ManifestMode {
+  DEFAULT
+  CUSTOM
+}
+
+/// C1: Per-Title + CUSTOM manifests must use POST_ENCODING.
+enum ManifestGeneration {
+  JUST_IN_TIME
+  POST_ENCODING
+}
+
+enum ManifestJobStatus {
+  PENDING
+  RUNNING
+  FINISHED
+  ERROR
+}
+
+model ManifestJob {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                 String             @id @default(uuid()) @db.Uuid
+  encodingJobId      String             @db.Uuid
+  encodingJob        EncodingJob        @relation(fields: [encodingJobId], references: [id], onDelete: Cascade)
+  type               ManifestType
+  mode               ManifestMode
+  generation         ManifestGeneration
+  status             ManifestJobStatus  @default(PENDING)
+  bitmovinManifestId String?
+  snapshot           Json?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([encodingJobId])
+  @@index([bitmovinManifestId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// Live
+// ---------------------------------------------------------------------------
+
+/// Orchestration status of a LiveChannel (our state machine, not
+/// Bitmovin's). Unlike EncodingJob, RUNNING is the STEADY state (the
+/// channel stays up until stopped); PROVISIONING covers the compiled
+/// step-log replay up to AWAIT_LIVE_RUNNING.
+enum LiveChannelStatus {
+  CREATED
+  PROVISIONING
+  RUNNING
+  STOPPING
+  STOPPED
+  ERROR
+}
+
+model LiveChannel {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                 String            @id @default(uuid()) @db.Uuid
+  name               String
+  status             LiveChannelStatus @default(CREATED)
+  /// Audit 5c3d97ca SC-01: the monotonic CAS authority shared by run
+  /// transitions and external-effect claims. Every claim and every stop/start
+  /// transition increments it; an effect may send only while its committed
+  /// claim generation is still current.
+  liveEffectFenceVersion Int           @default(0)
+  /// Ledger #160 PR4: startup probes ride the NORMAL pipeline but are
+  /// not operator content — PROBE rows are hidden from the default
+  /// channel list (a toggle reveals them) and their finalize sample
+  /// records source PROBE. Null = an ordinary channel.
+  purpose            String?
+  /// LiveChannelPlan JSON (zod-parsed in packages/core before persisting).
+  plan               Json
+  /// Ordered provisioning step log — same contract as EncodingJob.stepLog:
+  /// redacted snapshots only, single writer (the live-channel worker), the
+  /// worker replays THIS (never recompiles). The AWAIT_LIVE_RUNNING entry
+  /// additionally carries the C7 start-request snapshot (getLiveStartRequest)
+  /// and live details, redacted.
+  stepLog            Json              @default("[]")
+  /// Lease held by the worker currently provisioning this channel.
+  ///
+  /// The status alone could not be the lock. `provision()` accepts CREATED
+  /// (the create route's own enqueue) AND PROVISIONING (a start action that
+  /// atomically claimed the row), so when a start arrived while the row was
+  /// still CREATED, BOTH jobs passed the guard and ran every op — two encoding
+  /// trees writing the same output prefix, both billed (audit e57f2d3
+  /// AKR-E57-003, RUNTIME-VERIFIED). The start action's claim was correct; it
+  /// just never stopped the create path's job.
+  ///
+  /// A TIMESTAMP rather than an owner token, so a worker that dies mid-provision
+  /// does not wedge the channel forever: the lease simply goes stale and the
+  /// next attempt takes it. That keeps the three existing stale-PROVISIONING
+  /// recovery paths (worker index sweep, reconcile-stranded-runs, startup
+  /// sample) unchanged rather than adding a fourth thing they must remember to
+  /// release.
+  provisionClaimedAt DateTime?
+  bitmovinEncodingId String?           @unique
+  /// Row #313: exact encoding id confirmed terminal or CREATED (never started),
+  /// or verified absent by reset-only account/provenance checks and locked CAS.
+  /// Exempts only the current bitmovinEncodingId; every (re)start clears it.
+  /// Unknown/ambiguous reads remain blocking. Absence never changes lifecycle.
+  encoderStoppedConfirmedFor String?
+  bitmovinAccountId  String?           @db.Uuid
+  bitmovinAccount    BitmovinAccount?  @relation(fields: [bitmovinAccountId], references: [id], onDelete: SetNull)
+  /// Live encoder ingest coordinates from LiveEncoding (live get). The
+  /// stream key column is the ONE structural redaction exception (COVERAGE
+  /// P3 batch 1): it is connection-routing material the user must read back
+  /// to point an encoder; redactSecrets still masks streamKey fields inside
+  /// persisted JSON snapshots/step logs.
+  streamKey          String?
+  encoderIp          String?
+  /// Latest heartbeat poll: { at, raw, deltas } — the SDK packet counters
+  /// are CUMULATIVE since encoding start, so the worker stores the raw
+  /// sample plus per-poll deltas. This is the CURRENT-STATE column the
+  /// detail panel reads; the per-poll HISTORY (the dashboard trend chart)
+  /// lives in the LiveHeartbeat time-series table below, appended by the
+  /// same sweep and pruned to a retention window.
+  lastHeartbeat      Json?
+  /// live-to-VOD result (P5): Bitmovin has no live-to-VOD API, so this is
+  /// OUR record of the workflow — { status: RUNNING|FINISHED|ERROR,
+  /// requestedAt, finishedAt?, outputId, path, manifests: [{ type, manifestId,
+  /// url }], error? } — generated by creating DEFAULT VOD manifests over this
+  /// channel's own (stopped) encoding with manifestGenerator LEGACY. Written
+  /// only by the channel worker; the route just claims the RUNNING state so a
+  /// double-submit cannot start two runs.
+  liveToVod          Json?
+  error              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  /// Ledger #32 §5: creating actor — user:<id> / token:<id> in users mode,
+  /// `session` in shared-password mode, `none` under AUTH_MODE=none,
+  /// worker:<name> for the runner (a probe stamps worker:startup-probe).
+  /// Additive, nullable.
+  createdBy          String?
+
+  /// Runtime cap (ledger #84): RUNNING longer than this many minutes =>
+  /// the schedule sweep stops the channel, measured from runningSince.
+  maxRunMinutes  Int?
+  /// Scheduled program window (ledger #94), from the creation-time slot.
+  /// PROGRAM_START_NO_INGEST alerts only inside this window, and the detail
+  /// timeline renders it.
+  programStartAt DateTime?
+  programEndAt   DateTime?
+  /// Observed-RUNNING epoch (ledger #84, review-190 I6): set by the worker
+  /// whenever it writes status RUNNING (provision finalize AND restart), so
+  /// the cap never reads step logs and a restart starts a fresh epoch.
+  runningSince   DateTime?
+
+  /// Template provenance (ledger #109) — same pair, same semantics as
+  /// EncodingJob.presetId/presetRevision (COPIED at launch, SetNull).
+  presetId       String? @db.Uuid
+  preset         Preset? @relation(fields: [presetId], references: [id], onDelete: SetNull)
+  presetRevision Int?
+
+  /// EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
+  /// key — same contract as `EncodingJob.verificationKey`, honoured by
+  /// `POST /api/live-channels`. A channel is billed from creation (ledger
+  /// #125), which is exactly why a lost create response must be recoverable.
+  verificationKey           String? @unique
+  verificationRequestSha256 String?
+
+  feederSessions FeederSession[]
+  liveHeartbeats LiveHeartbeat[]
+  /// Ledger #108: the channel's run history (1:N). At most one non-terminal
+  /// run — enforced by a hand-written partial unique index in the migration
+  /// (Prisma cannot express it; the #83 precedent).
+  runs           LiveChannelRun[]
+  schedules      LiveSchedule[]
+  slateNormalizations SlateNormalization[]
+  effectClaims   LiveEffectClaim[]
+  alertRules     AlertRule[]
+  alertEvents    AlertEvent[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([bitmovinAccountId])
+  @@index([presetId])
+  /// review-pr34 Q6: the default channel list filters `purpose: null` and
+  /// the probe reconciler scans `purpose: "PROBE"` — btree carries both.
+  @@index([purpose])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// One Bitmovin encoding = one RUN of a channel (ledger #108 §2). The channel
+/// outlives it: FINISHED releases the vendor's infrastructure and nothing
+/// resurrects it (C30), so a re-air is a NEW run, never a restart. This PR
+/// (#108 PR1) is schema+backfill+derivation only — the worker still writes
+/// the channel columns; the run rows become the write path in the follow-up.
+model LiveChannelRun {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                            String            @id @default(uuid()) @db.Uuid
+  liveChannelId                 String            @db.Uuid
+  liveChannel                   LiveChannel       @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  /// Monotonic per channel, starting at one; displayed as the broadcast number.
+  seq                           Int
+  status                        LiveChannelStatus @default(CREATED)
+  /// Durable cooperative startup cancellation; kept on the exact airing across retries.
+  cancelRequested               Boolean           @default(false)
+  /// Unique across ALL runs; null only until CREATE_ENCODING lands.
+  bitmovinEncodingId            String?           @unique
+  /// Row #313: exact encoding id confirmed terminal or CREATED (never started),
+  /// or verified absent by reset-only account/provenance checks and locked CAS.
+  /// Exempts only the current bitmovinEncodingId; every (re)start clears it.
+  /// Unknown/ambiguous reads remain blocking. Absence never changes lifecycle.
+  encoderStoppedConfirmedFor    String?
+  /// The compiled step log for THIS run — replay/resume is per run.
+  stepLog                       Json              @default("[]")
+  /// Per-run ingest facts: Bitmovin allocates a fresh encoder per run.
+  encoderIp                     String?
+  streamKey                     String?
+  /// Where this run's segments/manifests were written (§4):
+  /// <channel base>/runs/<seq>-<runId8>/… — empty for backfilled run #1,
+  /// which wrote at the plan's own paths before the rebase existed.
+  outputPrefix                  String
+  /// Ledger #160: Bitmovin queue/allocation seconds for THIS run's start
+  /// (the AWAIT pair) — denormalized so lists and the Runs card never read
+  /// the step log. Null until the run reaches RUNNING via provision.
+  /// Ledger #161 §4 — the origin observer's per-RUN cursor (last fetch,
+  /// due-at, per-playlist segment counts/URIs, last verdicts). On the RUN,
+  /// not the channel: run 2's fresh manifest read against run 1's cursor
+  /// would be a false CRIT at the top of the new airing (#108/#127/#155).
+  originObservation             Json?
+  /// Ledger #239 — the media attributes THIS run's encoder is bound to, as
+  /// the first feeder push put them on the wire (`MediaAttributes`: video
+  /// codec/size/frame rate/profile/level/pixel format + the audio streams).
+  /// A live encoding binds its input format once and faults on a mid-run
+  /// change, so a later feeder (a scheduled FEEDER_SWITCH, an operator's
+  /// manual session) is compared against this before ffmpeg is spawned.
+  /// On the RUN, not the channel, for the same reason `originObservation`
+  /// is: a re-air provisions a FRESH encoder that binds whatever arrives
+  /// next, and inheriting the previous airing's format would refuse a
+  /// perfectly good first push. Written once per run (CAS on NULL) — the
+  /// switch being checked must never redefine the reference it was checked
+  /// against. Null = nothing recorded; the gate then falls back to the
+  /// encoder's own heartbeat, or stands down.
+  ingestMedia                   Json?
+  /// The CAS lock for the column above, and the reason it is a separate
+  /// DateTime rather than a filter on the Json itself: row #254 (the live-to-VOD sentinel finding, PR #349) measured
+  /// `{ equals: Prisma.DbNull }` matching NOTHING against a SQL-NULL Json
+  /// column in the deployed (bundled) web image while the same predicate
+  /// matched from a plain process — the sentinel is an identity, and an
+  /// identity does not survive every build. A first-writer-wins lock whose
+  /// failure mode is "the reference is never recorded, silently" must not
+  /// rest on that. `ingestMediaRecordedAt: null` is an ordinary IS NULL that
+  /// no bundler can reinterpret. Written in the SAME update as ingestMedia,
+  /// so the two can never disagree.
+  ingestMediaRecordedAt         DateTime?
+  queueSeconds                  Int?
+  runningSince                  DateTime?
+  endedAt                       DateTime?
+  /// Snapshot of the window THIS run served (R6): the channel's own
+  /// programStartAt/EndAt mean the UPCOMING window and get rewritten.
+  programStartAt                DateTime?
+  programEndAt                  DateTime?
+  error                         String?
+  liveToVod                     Json?
+  lastHeartbeat                 Json?
+  /// The HEARTBEAT_STALE anchor (ledger #108 PR2; review-109pr1's pre-build
+  /// catch): ONLY the heartbeat mirror writes this. `updatedAt` moves on ANY
+  /// row write (step-log mirrors, status transitions, encoder facts) and is
+  /// NOT a sign of encoder life — anchoring staleness there lets unrelated
+  /// writes silently reset the clock on a genuinely dead feed. Null = no
+  /// sample this run; staleness grace then measures from createdAt, which is
+  /// how a fresh run avoids inheriting the previous run's grace (R5/I3).
+  lastHeartbeatAt               DateTime?
+  /// Row #280 (audit 5c3d97ca BLOCKER-1): the PROVIDER's own lifecycle word
+  /// for THIS run's encoding — RUNNING / QUEUED / FINISHED / … as last read
+  /// back from the encoding-status endpoint for exactly `bitmovinEncodingId`.
+  /// Never inferred from a local write (a Restart 2xx, a details GET or a
+  /// heartbeat that succeeded is not a lifecycle observation). Null until the
+  /// first exact readback — existing rows are NOT backfilled by guess.
+  providerStatus                String?
+  /// When that successful readback happened. Readers treat a RUNNING older
+  /// than the freshness TTL (core PROVIDER_STATUS_TTL_MS) as UNKNOWN.
+  providerStatusObservedAt      DateTime?
+  /// First failed/inconclusive readback (timeout, network/credential error,
+  /// 404) since the last successful one. Null = confirmed, or never observed.
+  /// Cleared by the next successful readback — the UNKNOWN window's start,
+  /// which the grace alert and the customer strip both measure from.
+  providerUnknownSince          DateTime?
+  /// Set by the first sweep that reports an UNKNOWN window past grace.
+  /// Cleared with the window so a later outage has its own transition.
+  providerUnknownAlertedAt      DateTime?
+  /// Stamped ONCE when a terminal provider status (FINISHED/ERROR/CANCELED/
+  /// TRANSFER_ERROR) was reconciled onto this run. A run carrying this is
+  /// never revived by Start nor restarted — the audited sequence reused a
+  /// FINISHED encoding's id, ingest coordinates and DONE step log.
+  providerTerminalAt            DateTime?
+  /// Durable completion marker for the terminal run's feeder-stop intents.
+  /// A terminal run may move its channel to ERROR even when Redis is briefly
+  /// unavailable; the heartbeat sweep retries every still-null marker until
+  /// all matching feeder stop jobs have been accepted.
+  providerFeederStopsEnqueuedAt DateTime?
+  /// Per-run heartbeat poll token (audit 5c3d97ca MEDIUM-1): every sweep
+  /// claim bumps it by compare-and-swap, and a poll result whose epoch no
+  /// longer matches is discarded whole — no sample, no history, no alert.
+  heartbeatPollEpoch            Int               @default(0)
+  /// The run's heartbeat SUMMARY (core `RunHeartbeatSummary`): sample count,
+  /// first/last poll, ingest-connected span, packet totals, provider event
+  /// counts. Written ONCE by the sweep's summarizer after `endedAt` lands, so
+  /// a run outlives its heartbeat rows (retention prunes them after 7 days).
+  heartbeatSummary              Json?
+  /// When the summary was computed — the write-once lock for the column
+  /// above, a plain `IS NULL` for the same reason `ingestMediaRecordedAt` is
+  /// (a Json-null sentinel is not a reliable predicate in every build). A
+  /// revive clears it WITH `endedAt`, so a resumed airing is re-summarized
+  /// when it finally ends.
+  heartbeatSummaryAt            DateTime?
+  createdAt                     DateTime          @default(now())
+  updatedAt                     DateTime          @updatedAt
+
+  liveHeartbeats LiveHeartbeat[]
+  feederSessions FeederSession[]
+  webhookRegistrations WebhookRegistration[]
+
+  @@unique([liveChannelId, seq])
+  @@index([liveChannelId, createdAt(sort: Desc)])
+  @@index([providerTerminalAt, providerFeederStopsEnqueuedAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+enum AlertSeverity {
+  WARN
+  CRIT
+}
+
+/// Live alert rule (ledger #83). Thresholds an operator can read — no
+/// anomaly detection. Metric values are validated in core
+/// (ALERT_METRICS); PACKET_DELTA_ZERO from the design is RESERVED, not
+/// accepted: the heartbeat sample carries no received-packet counter, so
+/// the metric cannot be computed honestly from the data we have.
+model AlertRule {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id            String        @id @default(uuid()) @db.Uuid
+  /// null ⇒ applies to ALL channels; else channel-scoped.
+  liveChannelId String?       @db.Uuid
+  liveChannel   LiveChannel?  @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  metric        String
+  /// Numeric rules only (BITRATE_BELOW / FPS_BELOW).
+  threshold     Float?
+  /// How many consecutive polls must breach before the alert opens.
+  windowPolls   Int           @default(2)
+  severity      AlertSeverity @default(WARN)
+  enabled       Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  events AlertEvent[]
+
+  @@index([liveChannelId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Open/resolve alert lifecycle (ledger #83). At most one OPEN event per
+/// (rule, channel) — enforced by a PARTIAL UNIQUE INDEX in the migration
+/// SQL (Prisma cannot express `WHERE "resolvedAt" IS NULL` declaratively;
+/// the #14 triggerKey precedent). The DB, not a check-then-act read,
+/// dedups racing opens; the loser treats P2002 as "already open".
+model AlertEvent {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id            String      @id @default(uuid()) @db.Uuid
+  ruleId        String      @db.Uuid
+  rule          AlertRule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  liveChannelId String      @db.Uuid
+  liveChannel   LiveChannel @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  openedAt      DateTime
+  resolvedAt    DateTime?
+  /// Snapshot of the breaching observation(s) — chart-linkable.
+  context       Json
+
+  @@index([liveChannelId, openedAt(sort: Desc)])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Per-poll heartbeat history — the time-series backing the dashboard trend
+/// chart and the per-run heartbeat log. The 30s sweep appends ONE row per
+/// poll ({ at, raw, deltas } — the same sample it also writes to
+/// LiveChannel.lastHeartbeat) and prunes the channel's rows older than a
+/// retention window (HEARTBEAT_RETENTION_MS, default 7 days ≈ 20k
+/// rows/channel/week @30s, ~1.1 KB of raw JSON each — bounded, and pruned
+/// in capped batches). Cascade-deleted with the channel. Same redaction
+/// discipline as the column: the persisted JSON passes through
+/// redactSecrets (the sample's rtmpUserIngestInfo.streamKey lands as
+/// `[REDACTED]`).
+model LiveHeartbeat {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id               String          @id @default(uuid()) @db.Uuid
+  liveChannelId    String          @db.Uuid
+  liveChannel      LiveChannel     @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  /// Ledger #108: which RUN this sample belongs to. Nullable through the
+  /// two-step move (backfilled for existing rows; required once the worker
+  /// writes runs).
+  liveChannelRunId String?         @db.Uuid
+  liveChannelRun   LiveChannelRun? @relation(fields: [liveChannelRunId], references: [id], onDelete: Cascade)
+  /// Poll time (ours) — the chart's x-axis; matches the sample's `at`.
+  at               DateTime
+  /// The raw cumulative SDK heartbeat sample (LiveHeartbeatSample), redacted.
+  raw              Json
+  /// Per-poll counter deltas (HeartbeatCounterDeltas) computed by the worker.
+  deltas           Json
+  createdAt        DateTime        @default(now())
+
+  @@index([liveChannelId, at])
+  /// review-293 I3: the run-health route filters by run — without this the
+  /// query scans every channel's heartbeats per page poll.
+  @@index([liveChannelRunId, at])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Pseudo-live feeder lifecycle (P3-PR3). CREATED → DOWNLOADING (source
+/// spool) → PUSHING (supervised ffmpeg loop) → STOPPED; ERROR from any
+/// stage. There is deliberately no STOPPING state: stop is handled
+/// in-process by the supervisor (SIGTERM → grace → SIGKILL) and the worker
+/// flips straight to STOPPED — the stop route therefore cannot claim a
+/// transition and relies on worker-side idempotency instead.
+enum FeederStatus {
+  CREATED
+  DOWNLOADING
+  PUSHING
+  STOPPED
+  ERROR
+}
+
+/// Push protocol. SRT is CALLER mode only — the feeder dials Bitmovin's
+/// SRT listener (the shared contract gotcha); listener-side SRT belongs to real
+/// external feeds, not the feeder.
+enum FeederProtocol {
+  RTMP
+  SRT_CALLER
+}
+
+model FeederSession {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                 String          @id @default(uuid()) @db.Uuid
+  liveChannelId      String          @db.Uuid
+  liveChannel        LiveChannel     @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  /// Ledger #108: the run this feeder fed (nullable through the move).
+  liveChannelRunId   String?         @db.Uuid
+  liveChannelRun     LiveChannelRun? @relation(fields: [liveChannelRunId], references: [id], onDelete: Cascade)
+  status             FeederStatus    @default(CREATED)
+  /// Source MP4 storage coordinates; the credential is resolved from the
+  /// vault at spawn only — never persisted here.
+  sourceCredentialId String          @db.Uuid
+  sourceBucket       String
+  sourceKey          String
+  /// Row #241 — the SEAL: which bytes the operator chose (audit 2026-08-29
+  /// HIGH-4). bucket/key name a LOCATION, and a location is not a version:
+  /// an object replaced under the same key between arm and air aired
+  /// different content than the one that was scheduled, and nothing in this
+  /// row could tell the two apart. Captured by `headObject` at ARM (or at
+  /// creation for an immediate session) and DEMANDED at download —
+  /// `getObject({ expect })` where the driver can express it, an observed-vs-
+  /// sealed compare where it cannot.
+  ///
+  /// Verbatim, never normalized: S3 returns quoted ETags and wants the same
+  /// quoted form back in `If-Match` (packages/storage `ObjectVersion`).
+  /// All nullable — providers genuinely disagree about which they have, and
+  /// rows written before this column carry nothing.
+  sourceEtag         String?
+  sourceVersionId    String?
+  /// GCS's exact-version selector. Carried as a string because that is how
+  /// the API returns it and how it round-trips through JSON; it is ALSO the
+  /// only selector the GCS driver can enforce, so dropping it would make
+  /// every GCS seal unenforceable.
+  sourceGeneration   String?
+  /// BigInt — mezzanines exceed Int32 (the `StorageInspection.objectSize`
+  /// precedent). The transfer is asserted against it, so a truncated or
+  /// swapped object fails the download instead of reaching the encoder.
+  sourceSize         BigInt?
+  /// SHA-256 of the bytes that were actually pushed, computed WHILE
+  /// streaming to the spool (never a second read of the file). The audit
+  /// trail: the seal proves we asked for the right version, this proves what
+  /// arrived. Written when the download completes.
+  sourceSha256       String?
+  /// Row #256 (PR-C): the normalized loop the feeder pushes — `{version, mode,
+  /// fps, frames, loopSeconds, audioEndSec, sourceSha256, normalizer, recordedAt}`
+  /// (`loopProfileSchema` in core). Written once the intermediate is built and
+  /// probed; null for a session that pushed the raw source (older sessions).
+  loopProfile        Json?
+  protocol           FeederProtocol
+  /// Push coordinates: { url, streamKey } for RTMP | { host, port,
+  /// passphraseCredentialId? } for SRT_CALLER. The SRT passphrase itself
+  /// is NEVER stored (vault ref only, resolved at spawn). target.streamKey
+  /// is connection-routing material under the SAME ledgered redaction
+  /// exception as LiveChannel.streamKey: the worker must rebuild the push
+  /// URL across restarts, so it stays readable in THIS column while
+  /// redactSecrets keeps masking streamKey inside every persisted JSON
+  /// snapshot, log line and error string.
+  target             Json
+  /// ffmpeg pid while PUSHING (log forensics + best-effort orphan stop);
+  /// nulled on terminal states — with ONE deliberate exception: the dead-job
+  /// handler (apps/worker/src/index.ts) marks the session ERROR and KEEPS the
+  /// pid, because it is the operator's only pointer to a possibly-orphaned
+  /// ffmpeg. That exception is what `processGoneAt` below exists to close.
+  pid                Int?
+  /// Host whose worker spawned `pid` (os.hostname()), written and released
+  /// with it. A pid is only actionable on the host that owns it: signalling a
+  /// bare number from another host kills whatever local process happens to
+  /// wear it. Null on rows written before this column existed — read as "the
+  /// single-worker assumption held", never as "some other host".
+  ownerHost          String?
+  /// Row #242 — the OWNER LEASE (audit 2026-08-29 HIGH-5). `ownerHost` says
+  /// where a pid is signallable; these three say WHO is supervising the push
+  /// right now, so a session survives the death of the worker that started it.
+  ///
+  /// `ownerId` is a worker INSTANCE id (host + pid + a per-boot nonce), not a
+  /// host: two workers on one host are two owners, and a restart under the
+  /// same pid is a different owner. `ownerGeneration` is the fencing token —
+  /// every claim and every takeover bumps it, so a renewal, a terminal write
+  /// or a log flush from a superseded owner matches ZERO rows instead of
+  /// landing on the winner's row. `ownerLeaseAt` is the liveness: the owner
+  /// re-stamps it on a ticker, and a lease older than the takeover window
+  /// belongs to a worker that is gone.
+  ///
+  /// All three are NULL/0 on rows written before this column existed and on
+  /// rows nobody has claimed yet (a CREATED session waiting for its start
+  /// job). A NULL `ownerLeaseAt` is therefore NEVER takeable — "not claimed"
+  /// and "claimed by a dead worker" are different facts, the same distinction
+  /// `provisionClaimedAt` draws in `live/provision-lease.ts` (ledger #216).
+  ownerId            String?
+  ownerLeaseAt       DateTime?
+  ownerGeneration    Int             @default(0)
+  /// When `pid` was PROVEN gone: a verified kill ladder (SIGTERM → grace →
+  /// SIGKILL, re-probing between rungs) or an existence probe that answered
+  /// ESRCH. Audit 2026-08-29 CRITICAL-2: absence of evidence (pid = null) and
+  /// evidence of absence are different facts, and DELETE needs the second —
+  /// deleting an ERROR row that still carries an unreclaimed pid erases the
+  /// last reference to an ffmpeg still pushing into a live ingest.
+  processGoneAt      DateTime?
+  /// Audit 5c3d97ca BLOCKER-2 (§14.5 LC-02) — the PUBLISHER CLAIM, a
+  /// status-independent reservation of the channel's single ingest slot.
+  /// `status` says what the SESSION is doing; `pid`/`processGoneAt` say what is
+  /// known about the PROCESS; neither is a DB-enforced cardinality. The active
+  /// partial index above covers only CREATED/DOWNLOADING/PUSHING, so a row that
+  /// left the active set with its process still alive — a cross-host takeover
+  /// refusal, a stop the owner's host could not verify, a dead START job — was
+  /// invisible to admission while its ffmpeg kept pushing, and a second
+  /// publisher could open at the same ingest until the old owner self-fenced.
+  ///
+  /// `publisherClaimedAt IS NOT NULL AND publisherReleasedAt IS NULL` = this row
+  /// holds the channel's publisher slot. Enforced by the hand-written partial
+  /// unique index `FeederSession_one_publisher_claim_per_channel` (migration
+  /// SQL), so two claims on one channel cannot coexist whatever their status.
+  /// A claim is taken by the owning worker BEFORE it spawns ffmpeg (an ordinary
+  /// session just before the supervisor starts; a two-phase switch inside the
+  /// commit CAS, after every predecessor is proven gone), and RELEASED only on
+  /// positive proof that the process is gone: the owning supervisor observing
+  /// its child's exit, a verified kill ladder, or ESRCH — never a terminal
+  /// status, a lease expiry, or a pid-null rewrite. A staged two-phase hold
+  /// (`commitAt` set, `commitRequestedAt` null) claims nothing: it cannot
+  /// spawn before its commit, so several future holds coexist on one channel
+  /// and serialise only at their commit. `publisherGeneration` counts claims
+  /// on this row (a takeover's resumed push re-claims), so an attempt record
+  /// can name which claim it served.
+  publisherClaimedAt  DateTime?
+  publisherReleasedAt DateTime?
+  publisherGeneration Int             @default(0)
+  /// Row #240 — the TWO-PHASE switch (audit 2026-08-29 HIGH-3). A switch used
+  /// to enqueue a stop for the running feeder and create its replacement in
+  /// the same breath; the replacement then downloaded the whole source and
+  /// probed it AFTER air time (paid run #5: 29 s to PUSHING for 725 MB), and
+  /// nothing waited for the old push to end — the seam was dead air or a
+  /// dual push depending on queue scheduling, and no point was "the commit".
+  ///
+  /// `commitAt` non-null marks a session that runs in two phases. Phase A
+  /// (pre-stage) downloads the sealed bytes, probes them and runs the
+  /// compatibility gate, then records `readyAt` and HOLDS the spooled file
+  /// without spawning. Phase B (commit) starts when `commitRequestedAt` is
+  /// written — by the scheduler's commit at fireAt, or at creation for an
+  /// immediate switch — and spawns only after every predecessor on the
+  /// channel is proven gone (`predecessorGoneAt`); `committedAt` is the
+  /// fenced write that IS the commit point, and `switchSeamMs` is the
+  /// measured cost, first push minus `predecessorGoneAt`. Policy: dead air
+  /// is preferred over overlap — the ingest is single-owner, so a session
+  /// whose predecessor cannot be confirmed gone lands ERROR and never spawns.
+  ///
+  /// `readyAt` is cleared by a takeover claim: a resumed session re-stages
+  /// under the new owner's generation, and the commit is fenced on the same
+  /// `(ownerId, ownerGeneration)` pair as the staging — the superseded owner
+  /// cannot commit a source it no longer holds.
+  commitAt           DateTime?
+  readyAt            DateTime?
+  commitRequestedAt  DateTime?
+  committedAt        DateTime?
+  predecessorGoneAt  DateTime?
+  switchSeamMs       Int?
+  /// Append-only [{ loopIndex, wallClock, streamTimeSec }] written by the
+  /// supervisor (single writer) as each -stream_loop iteration wraps —
+  /// C7-style local truth: P4 VMAF live alignment depends on these.
+  loopBoundaries     Json            @default("[]")
+  /// Ring buffer of the last N ffmpeg-stderr/supervisor lines, scrubbed of
+  /// secret literals BEFORE buffering (redaction discipline).
+  logTail            Json            @default("[]")
+  startedAt          DateTime?
+  stoppedAt          DateTime?
+  error              String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  /// Row #267 (audit 602ec286 HIGH-1): at most ONE active feeder session per
+  /// channel whose push is UN-COORDINATED — enforced by a hand-written PARTIAL
+  /// UNIQUE INDEX (`FeederSession_one_active_pusher_per_channel`) in the
+  /// migration SQL, `ON (liveChannelId) WHERE status IN active AND
+  /// commitAt IS NULL`. Prisma cannot express it declaratively (the #83
+  /// precedent). A two-phase SWITCH row (commitAt set — row #240) is exempt: it
+  /// stages behind the predecessor barrier, so it may hold a second active row
+  /// for the handoff. The DB, not a check-then-act count, dedups racing creates;
+  /// the loser treats P2002 as "channel already has an active feeder session".
+  ///
+  /// Audit 5c3d97ca BLOCKER-2 (LC-02): a SECOND hand-written partial unique
+  /// index, `FeederSession_one_publisher_claim_per_channel`, `ON (liveChannelId)
+  /// WHERE publisherClaimedAt IS NOT NULL AND publisherReleasedAt IS NULL` —
+  /// at most one held publisher claim per channel, independent of `status`.
+  /// The index above admits at most one uncoordinated ROW; this one admits at
+  /// most one PUBLISHER, and it is the guarantee a spawn rests on.
+
+  @@index([liveChannelId])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  /// The takeover sweep's population: non-terminal rows whose lease has gone
+  /// stale. Status leads because it is the selective half — terminal rows are
+  /// the overwhelming majority of this table and never take part.
+  @@index([status, ownerLeaseAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Audit 5c3d97ca LF-01 — one durable, attempt-bound record for every feeder
+/// process spawn. These identifiers deliberately are not foreign keys: the
+/// operational ledger must survive deletion of a schedule, run or feeder
+/// session. Rows are inserted before spawn, advanced only with facts from that
+/// attempt, and never reused or deleted by feeder lifecycle code.
+model FeederPushAttempt {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                  String   @id @default(uuid()) @db.Uuid
+  liveScheduleId      String?  @db.Uuid
+  liveChannelRunId    String?  @db.Uuid
+  feederSessionId     String   @db.Uuid
+  ownerGeneration     Int
+  publisherGeneration Int
+  attemptNo           Int
+  pid                 Int?
+  /// Durable pre-spawn intent. This is not provider evidence authority.
+  startedAt           DateTime
+  /// Captured only after runner.spawn returns with an actual process.
+  processSpawnedAt    DateTime?
+  /// The latest of actual process spawn, intent-clock floor and switch commit.
+  /// Written atomically with pid/processSpawnedAt; null accepts no evidence.
+  evidenceNotBefore   DateTime?
+  endedAt             DateTime?
+  exitCode            Int?
+  exitSignal          String?
+  /// Secret-free endpoint copied from buildFeederCommand.redactedArgv.
+  sanitizedTarget     String
+  /// { mode, reasons, normalise } — the A/B hook for copy vs transcode runs.
+  codecDecision       Json
+  sourceSha256        String?
+  providerSampleAt    DateTime?
+  providerStatus      String   @default("UNKNOWN")
+  providerAcceptedAt  DateTime?
+  createdAt           DateTime @default(now())
+
+  @@unique([feederSessionId, ownerGeneration, attemptNo])
+  @@index([liveScheduleId, startedAt])
+  @@index([liveChannelRunId, startedAt])
+  @@index([feederSessionId, startedAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// QC / VMAF
+// ---------------------------------------------------------------------------
+
+enum VmafMode {
+  VOD
+  LIVE
+}
+
+enum VmafStatus {
+  PENDING
+  RUNNING
+  FINISHED
+  ERROR
+}
+
+model VmafJob {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id             String       @id @default(uuid()) @db.Uuid
+  encodingJobId  String?      @db.Uuid
+  encodingJob    EncodingJob? @relation(fields: [encodingJobId], references: [id], onDelete: SetNull)
+  mode           VmafMode
+  /// Idempotency key for AUTOMATIC triggers (ledger #14 TOCTOU hardening):
+  /// the VOD auto-trigger writes `vod-auto:<encodingJobId>` so the DB —
+  /// not a check-then-act read — enforces at-most-one auto job per encoding
+  /// across workers. Manual captures / future "re-run VMAF" rows stay null
+  /// (Postgres unique ignores nulls), so re-runs are never blocked.
+  triggerKey     String?      @unique
+  /// The libvmaf model these numbers came from — ALWAYS written explicitly by
+  /// both writers (the VOD auto-trigger and the live capture route), which is
+  /// why this column has no default. It carried `@default("vmaf_v0.6.1")` and
+  /// a doc comment naming `vmaf_phone` (never a bundled model) — a SIXTH,
+  /// disagreeing spelling of "the default" that survived the move to core's
+  /// DEFAULT_VMAF_MODEL because nothing takes it (review-234 (a)). A row must
+  /// say which model produced its score; silently inheriting one is how a
+  /// report gets compared against a different viewing condition.
+  model          String
+  /// Which SCORING GENERATION produced this row's numbers.
+  ///
+  /// 1 — before 2026-08-11. libvmaf pairs frames through ffmpeg's framesync,
+  ///     i.e. by PTS, and neither input was re-timed; a mezzanine with a
+  ///     non-zero first timestamp therefore had its frame N scored against the
+  ///     encode's frame N±1. Measured understatement on one real encode: mean
+  ///     23.08 where the corrected pipeline reports 84.21.
+  /// 2 — both pads carry `setpts=N/FRAME_RATE/TB`.
+  ///
+  /// Persisted because generation-1 numbers are NOT comparable with
+  /// generation-2 ones, and a chart that mixes them silently is worse than one
+  /// that refuses to. The column defaults to 1 so every pre-existing row is
+  /// labelled correctly by the migration alone; the worker writes the current
+  /// generation explicitly.
+  scoringVersion Int          @default(1)
+  params         Json         @default("{}")
+  /// QC gate verdict (ledger #86 PR2): evaluateQcGate over this run's pooled
+  /// results, written atomically WITH the FINISHED status when the encoding
+  /// plan carries qc.gate (null otherwise). The orchestrator continuation
+  /// reads it to decide FINISHED vs QC_FAILED for BLOCK_MANIFESTS plans.
+  gateVerdict    Json?
+  status         VmafStatus   @default(PENDING)
+  error          String?
+  /// Progress + execution observability (set after the work list is built):
+  /// totalUnits = targets × resolved per-title rungs; doneUnits bumped
+  /// (atomic increment) after each scoring. Best-effort — a failed progress
+  /// write never fails the run. totalUnits=0 ⇒ pre-migration / not-yet-set
+  /// (the UI must treat it as "progress unknown").
+  totalUnits     Int          @default(0)
+  doneUnits      Int          @default(0)
+  /// Worker CPU core count + libvmaf n_threads per run + concurrent scorings
+  /// at run time (null for jobs created before this migration).
+  cores          Int?
+  threads        Int?
+  concurrency    Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  results VmafResult[]
+
+  @@index([encodingJobId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+model VmafResult {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id           String   @id @default(uuid()) @db.Uuid
+  vmafJobId    String   @db.Uuid
+  vmafJob      VmafJob  @relation(fields: [vmafJobId], references: [id], onDelete: Cascade)
+  /// Which rendition this result covers ({ streamId, label, bitrate, … }).
+  renditionRef Json
+  /// Pooled metrics: mean, harmonic mean, percentiles, 1% low.
+  pooled       Json
+  /// Frame-level scores; gzipped blob over ~50k frames (ARCHITECTURE §6).
+  frames       Json?
+  framesGzip   Bytes?
+  /// Ledger #199 slice 2 (audit ce4a935 CRITICAL-2): the bytes this row scored.
+  /// `{ reference, distorted }`, each `{ bucket, key, identity?, pinned,
+  /// sha256, bytes }` — the provider's version identity read BEFORE the
+  /// download and demanded DURING it (`getObject({ expect })`), plus a
+  /// streaming SHA-256 of what actually arrived. A same-size overwrite between
+  /// encode and scoring used to produce a plausible PASS over the wrong bytes;
+  /// with this a report can say exactly which object it compared. Null on rows
+  /// scored before the column existed.
+  provenance   Json?
+  createdAt    DateTime @default(now())
+
+  @@index([vmafJobId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Storage object INSPECTION (P5): an ffprobe read of one object in the
+/// customer's bucket, run by the worker (which owns the ffprobe binary) rather
+/// than the web app. Bounded by design — the processor reads a capped HEAD and,
+/// for a non-faststart MP4, a capped TAIL, never the whole object.
+enum StorageInspectionStatus {
+  PENDING
+  RUNNING
+  FINISHED
+  ERROR
+}
+
+model StorageInspection {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id           String                  @id @default(uuid()) @db.Uuid
+  credentialId String                  @db.Uuid
+  /// Cascade, matching StorageLocationPreset (the only other Credential
+  /// dependent): an inspection row is DERIVED from this credential's
+  /// authorization to read that bucket, and it holds customer data — bucket
+  /// name, object key, media metadata. Deleting the credential revokes the
+  /// authorization, so the records it produced must not outlive it. SetNull is
+  /// not an option either way: `credentialId` is non-null and the GET filters
+  /// on it, so a nulled row would be unreachable garbage.
+  credential   Credential              @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  bucket       String
+  objectKey    String
+  status       StorageInspectionStatus @default(PENDING)
+  /// Raw ffprobe JSON (-show_format -show_streams). Media metadata only — no
+  /// credential material — but still written through redactSecrets.
+  probe        Json?
+  /// How many bytes the probe actually read (head + optional tail).
+  bytesRead    Int?
+  /// The object's size from the LISTING that offered Inspect (ledger #26).
+  /// Optional: entry points that don't know it (job-detail input cards) omit
+  /// it and the probe falls back to the next-slice retry. BigInt — mezzanines
+  /// exceed Int32. Advisory only: the worker still bounds on arrival and
+  /// requires Content-Range, so a stale/wrong size cannot unbound the read.
+  objectSize   BigInt?
+  error        String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  /// Serves the ONLY query this table has: the latest inspection of one
+  /// object — findFirst on (credentialId, bucket, objectKey) ordered by
+  /// createdAt desc. The trailing sorted column makes it a covering lookup
+  /// instead of a filter-then-sort.
+  @@index([credentialId, bucket, objectKey, createdAt(sort: Desc)])
+  /// Kept for the retention prune (ledger #27), which scans by age alone.
+  @@index([createdAt(sort: Desc)])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// Presets, webhooks, audit
+// ---------------------------------------------------------------------------
+
+enum PresetKind {
+  FULL_PLAN
+  /// Live channel template (ledger #109): body = LiveChannelPlan JSON
+  /// (liveChannelPlanSchema), not an EncodingPlan. Written by PR4's
+  /// save-from-detail; the /api/presets family stays FULL_PLAN-scoped.
+  LIVE_PLAN
+  LADDER
+  CODEC_CONFIG
+  FILTER_CHAIN
+  DRM_SET
+  MANIFEST_LAYOUT
+}
+
+model Preset {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id             String     @id @default(uuid()) @db.Uuid
+  kind           PresetKind
+  name           String
+  description    String?
+  /// Gallery grouping (ledger #82): "MEZZANINE" | "BROADCAST_TS" |
+  /// "AUDIO_MASTER" for imported delivery presets; null for plain plan
+  /// presets. A string, not an enum — org-authored spec files own the
+  /// vocabulary and an unknown category must import, not 400.
+  category       String?
+  /// Delivery-spec metadata (ledger #82): {constraints, suggestedGate?,
+  /// sources?} for imported delivery presets — DELIBERATELY separate from
+  /// `body`, which stays a bare EncodingPlan for every existing consumer
+  /// (the wizard's ?userPreset= load parses body as the plan; a combined
+  /// shape would have broken it silently).
+  spec           Json?
+  body           Json
+  /// Bumped on every body CHANGE (metadata/launchDefaults edits do not bump;
+  /// a PATCH carrying a structurally identical body does not either).
+  /// Provenance display only — no revision history (ledger #109 §7).
+  revision       Int        @default(1)
+  /// Launch-form defaults (ledger #109): { outputPrefixTemplate?, nameTemplate? }.
+  /// Separate from `spec` (delivery metadata) and from `body` (the plan) for
+  /// the same reason spec is — every existing consumer parses body as a bare
+  /// plan and must keep doing so.
+  launchDefaults Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  watchRules   WatchRule[]
+  /// Provenance back-relations (ledger #109): jobs/channels COPIED this
+  /// preset's body at launch — nothing reads through these at runtime.
+  encodingJobs EncodingJob[]
+  liveChannels LiveChannel[]
+
+  @@unique([organizationId, kind, name])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// CONTRACT: rows with signatureValid=false are diagnostics-only and MUST
+/// NOT drive state — the receiver is a public endpoint and anyone can
+/// produce unverified rows. Consumers go through
+/// findProcessableWebhookEvents (packages/db), which filters to verified.
+model WebhookEvent {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id              String    @id @default(uuid()) @db.Uuid
+  source          String    @default("bitmovin")
+  eventType       String?
+  /// Provider-side event/notification id — dedupes webhook redeliveries.
+  /// Only VERIFIED deliveries may claim a slot (set null on unverified
+  /// rows), so spam can never mask a future genuine delivery.
+  externalEventId String?   @unique
+  /// Verified receiver identity for deferred heartbeat binding; never body-supplied.
+  receiverTokenHash String?
+  raw             Json
+  signatureValid  Boolean
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  /// WP-G G-2: which job / run the `j`-scope token that received this
+  /// delivery was registered for — resolved from the WebhookRegistration
+  /// row, never from the body. Plain ids, no foreign key: a delivery is a
+  /// record of what arrived and must outlive the job's deletion.
+  encodingJobId    String? @db.Uuid
+  liveChannelRunId String? @db.Uuid
+
+  @@index([receivedAt(sort: Desc)])
+  @@index([eventType])
+  @@index([processedAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// WP-G G-2 — one row per (encoding, kind) the app registered with Bitmovin
+/// through `createByEncodingId`, plus the rows that COULD NOT be registered
+/// (SKIPPED: no public ingress; FAILED: provider error, retried with
+/// backoff). The worker's registrar reconciles this table against the jobs
+/// and runs every 10 s: registers when an encoding id exists and the job is
+/// live, deletes at the provider when the job is terminal or gone, and
+/// re-registers when the persisted ingress moved. `url` carries the receiver
+/// token in plain sight (it is what Bitmovin stores); `tokenHash` is the
+/// receiver's lookup key; the HMAC key is never stored — it is derived.
+enum WebhookRegistrationStatus {
+  ACTIVE
+  SKIPPED
+  FAILED
+  DELETED
+}
+
+model WebhookRegistration {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                String                    @id @default(uuid()) @db.Uuid
+  /// `j` = encoding events; `hb` = account or per-encoding heartbeat.
+  scope             String                    @default("j")
+  encodingJobId     String?                   @db.Uuid
+  encodingJob       EncodingJob?              @relation(fields: [encodingJobId], references: [id], onDelete: SetNull)
+  liveChannelRunId  String?                   @db.Uuid
+  liveChannelRun    LiveChannelRun?           @relation(fields: [liveChannelRunId], references: [id], onDelete: SetNull)
+  /// Denormalized so the provider-side delete still works after the job or
+  /// run row is gone (SetNull above) — the registration must be removable
+  /// by what THIS row knows.
+  bitmovinAccountId String                    @db.Uuid
+  encodingId        String
+  /// finished | error | transferError | liveManifestReady, or liveEncodingHeartbeat for an `hb` row
+  kind              String
+  status            WebhookRegistrationStatus @default(SKIPPED)
+  providerWebhookId String?
+  /// Frozen heartbeat capability/correlation intent; null is legacy.
+  configuration     Json?
+  url               String?
+  tokenHash         String?
+  /// Fingerprint of the master secret the key was derived from; a rotated
+  /// master makes every older row visibly stale and re-registered.
+  keyId             String?
+  /// Why the row is SKIPPED / FAILED (ingressUnavailable, provider:<msg>).
+  note              String?
+  attempts          Int                       @default(0)
+  /// Backoff only: the next time the reconciler may touch this row.
+  nextAttemptAt     DateTime?
+  /// A worker's in-flight claim on the provider call (CAS window). Kept apart
+  /// from `nextAttemptAt` so clearing a backoff (Settings → re-register) can
+  /// never release another worker's claim and orphan a hook at Bitmovin.
+  claimedUntil      DateTime?
+  registeredAt      DateTime?
+  deletedAt         DateTime?
+  lastDeliveryAt    DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@unique([encodingId, kind])
+  @@index([tokenHash])
+  @@index([status])
+  @@index([encodingJobId])
+  @@index([liveChannelRunId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+model AuditLog {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                String           @id @default(uuid()) @db.Uuid
+  /// Who acted: `token:<id>` for API tokens (ledger #81); `user:<id>` once
+  /// multi-user (#32) lands — the column is the SHARED migration both
+  /// designs name, landed once here.
+  actor             String?
+  at                DateTime         @default(now())
+  bitmovinAccountId String?          @db.Uuid
+  bitmovinAccount   BitmovinAccount? @relation(fields: [bitmovinAccountId], references: [id], onDelete: SetNull)
+  method            String
+  path              String
+  statusCode        Int?
+  durationMs        Int?
+  /// Redacted via @bitovp/core redactSecrets before persisting.
+  request           Json?
+  response          Json?
+  error             String?
+
+  @@index([at(sort: Desc)])
+  @@index([bitmovinAccountId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Outbound notification channel.
+/// The webhook URL is a SECRET and a credential-egress destination — it lives
+/// in the Credential vault (provider NOTIFICATION_WEBHOOK), never here.
+model NotificationChannel {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id           String             @id @default(uuid()) @db.Uuid
+  name         String
+  /// SLACK_WEBHOOK | GENERIC_WEBHOOK (rendering differs; PR1 delivers generic,
+  /// PR2 adds Slack blocks — the kind exists so rows need no migration then).
+  kind         String
+  credentialId String             @db.Uuid
+  credential   Credential         @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  enabled      Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  rules        NotificationRule[]
+
+  @@index([credentialId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Event kinds → channel mapping. `events` holds ProductEventKind strings
+/// (validated against the core union at the route); `filter` is
+/// notificationRuleFilterSchema JSON ({} = match all of `events`).
+model NotificationRule {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id        String              @id @default(uuid()) @db.Uuid
+  channelId String              @db.Uuid
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  events    String[]
+  filter    Json                @default("{}")
+  enabled   Boolean             @default(true)
+  createdAt DateTime            @default(now())
+
+  @@index([channelId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Bearer machine credentials (ledger #81, docs/API-USAGE.md). The secret
+/// is `bo_` + 43 base64url chars (32 random bytes), stored ONLY as a SHA-256
+/// hex — not scrypt: the secret is 256-bit random, so a KDF adds per-request
+/// latency without security. Soft revoke keeps rows for audit trails.
+model ApiToken {
+  userId String? @db.Uuid
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String
+  /// First 8 chars after "bo_" — display/lookup key. NOT secret.
+  prefix     String    @unique
+  tokenHash  String
+  role       String    @default("OPERATOR")
+  /// user:<id> once multi-user lands; null until then.
+  createdBy  String?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  /// Best-effort observability; throttled in-process (≤1 write/min/token).
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Live schedule statuses.
+enum LiveScheduleStatus {
+  ARMED
+  FIRED
+  COMPLETED
+  CANCELED
+  MISSED
+  ERROR
+  /// Row #241: the row was armed for a DIFFERENT airing than the one on
+  /// the air now, so it was refused rather than fired. Terminal, and not an
+  /// ERROR — nothing malfunctioned; the generation the operator armed
+  /// against ended. `note` names both run ids so the refusal is auditable.
+  SKIPPED_STALE_GENERATION
+}
+
+/// Ledger #238 + audit 602ec286 §17 P1-4 (HIGH-4/HIGH-5/MODERATE-2): what a
+/// schedule row DELIVERED, which is a different question from whether it fired.
+/// `status = FIRED` says only "the request left this system"; paid run #4 of
+/// the 2026-08-29 live audit fired a SLATE_IN, the provider's scheduled entry
+/// went ERROR, the picture never changed, and the row read FIRED with a green
+/// badge. So delivery gets its own column and `FIRED` stops being a synonym.
+///
+/// The first cut of this column collapsed the middle: it wrote `DELIVERED` the
+/// instant a feeder's ffmpeg started pushing (~16s before the provider bound
+/// the ingest — HIGH-4) and the instant a slate's provider entry was ARMED (no
+/// segment/frame witness that it aired — HIGH-5). "Delivered" was thus claimed
+/// before any media flowed. The states below split that single leap into the
+/// progression the audit prescribed, so a green means media was OBSERVED, not
+/// merely requested:
+///
+///   PENDING          — a writer is still expected (the job that fired it runs).
+///   PROCESS_PUSHING  — our feeder's ffmpeg is pushing bytes, but the provider
+///                      has NOT confirmed it received them. Not a success.
+///   INGEST_CONNECTED — the provider's live encoder reports a fresh CONNECTED
+///                      ingest while we push: the media reached the provider.
+///                      This is the strongest witness the app holds for a feed
+///                      (there is no output frame-probe), so it is the feeder's
+///                      terminal-positive green.
+///   SLATE_ARMED      — the provider ARMED a scheduled insertion. The SDK has
+///                      no played/finished status, so this is NOT a witness the
+///                      slate aired — it stays short of a green.
+///   DELIVERED        — a lifecycle action reached its terminal positive: a
+///                      START whose channel reached RUNNING, or a STOP observed
+///                      terminal. Green.
+///   FAILED           — a definitive non-delivery. STICKY: a later, weaker
+///                      observation must not un-fail a feed that died.
+///   UNKNOWN          — nobody will ever tell us: the deadline passed, the job
+///                      died, or the row fired before this column existed. A
+///                      later positive observation must NOT upgrade it
+///                      (audit MODERATE-2: a manual START hours later must not
+///                      relabel a past UNKNOWN as DELIVERED).
+///
+/// PENDING / UNKNOWN / PROCESS_PUSHING / SLATE_ARMED all render amber-or-neutral
+/// (unconfirmed); only INGEST_CONNECTED and DELIVERED render green. The reader
+/// (`schedule-panel.tsx`) and the precedence writer (`schedule-outcome.ts`) are
+/// the two authorities and a test set-equals the enum against them.
+enum LiveScheduleOutcome {
+  PENDING
+  PROCESS_PUSHING
+  INGEST_CONNECTED
+  SLATE_ARMED
+  DELIVERED
+  FAILED
+  UNKNOWN
+}
+
+/// START provisions; STOP always stops, even when late.
+/// SLATE_IN schedules insertable content over the stream
+/// (start-like grace: a slate fired late into a program is worse than a
+/// missed slate).
+enum LiveScheduleAction {
+  START
+  STOP
+  SLATE_IN
+  FEEDER_START
+  FEEDER_SWITCH
+}
+
+/// Audit 5c3d97ca SC-01: durable state at the external-effect boundary.
+/// DISPATCHING means the intent is committed and the request/process may have
+/// been sent; a timeout or owner loss moves it to AMBIGUOUS, never back to a
+/// retryable empty slot without exact readback.
+enum LiveEffectClaimState {
+  CLAIMED
+  DISPATCHING
+  ACKED
+  FAILED
+  AMBIGUOUS
+  RESOLVED
+}
+
+/// Audit 5c3d97ca SC-02: why a schedule outcome may be trusted. The version is
+/// stored separately so a future evidence contract can fail closed without
+/// relabelling rows written under this one.
+enum LiveScheduleOutcomeEvidenceKind {
+  PROVIDER_RUNNING
+  PROVIDER_TERMINAL
+  PROVIDER_STATUS_UNKNOWN
+  HEARTBEAT_INGEST_CONNECTED
+  FEEDER_PROCESS_PUSHING
+  SLATE_ARMED
+  EFFECT_FAILED
+  JOB_TERMINAL_UNKNOWN
+  STALE_GENERATION_REFUSAL
+}
+
+/// Ledger #160 PR1 — one row per RUN start attempt (per-run: #108).
+/// queueSeconds = the AWAIT pair (Bitmovin's allocation time isolated);
+/// totalSeconds = end-to-end from the first step. cloudRegion is the
+/// RESOLVED region (infrastructure.cloudRegion ?? plan region; AUTO stays
+/// its own honest bucket). One sample per run: the success writer UPSERTS
+/// over a reconciler's provisional FAILED row.
+enum StartupSampleSource {
+  CHANNEL
+  PROBE
+}
+
+enum StartupOutcome {
+  RUNNING
+  FAILED
+  CENSORED
+}
+
+model StartupSample {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                String              @id @default(uuid()) @db.Uuid
+  cloudRegion       String
+  infrastructureId  String?
+  bitmovinAccountId String?
+  source            StartupSampleSource
+  outcome           StartupOutcome
+  failedPhase       String?
+  queueSeconds      Int?
+  totalSeconds      Int?
+  encoderVersion    String?
+  /// Ledger #160 PR4: a probe's post-run cleanup failure is recorded ON the
+  /// sample (design §4) — the measurement stands, the leftover is named.
+  cleanupError      String?
+  /// Provenance, NOT a relation — deliberately no FK: samples are REGION
+  /// statistics and must survive their channel/run being deleted (deleting
+  /// a test channel must not erase the region's history). Unique so the
+  /// success upsert and the failure create-if-absent converge per run.
+  liveChannelRunId  String?             @unique @db.Uuid
+  poolAcquired      Boolean             @default(false)
+  observedAt        DateTime            @default(now())
+
+  @@index([cloudRegion, source, observedAt(sort: Desc)])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+model LiveSchedule {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                    String              @id @default(uuid()) @db.Uuid
+  liveChannelId         String              @db.Uuid
+  liveChannel           LiveChannel         @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  /// Row #241 — WHICH AIRING this row was armed for (audit 2026-08-29
+  /// HIGH-4). A schedule bound only to the channel outlives the run it was
+  /// meant for: after a re-air, a STOP armed for last night's programme
+  /// could take today's off the air, and a slate or feeder armed for run N
+  /// could push its content into run N+1. The sweep compares this against
+  /// the channel's current run before it fires and refuses a mismatch as
+  /// `SKIPPED_STALE_GENERATION`.
+  ///
+  /// NULL = armed before any run existed (creation-time rows; a channel not
+  /// yet provisioned). Those keep today's behaviour and bind LAZILY, to the
+  /// run that is current when they first fire — see `bindGeneration` in
+  /// `apps/worker/src/scheduler/sweep.ts`.
+  ///
+  /// Provenance, NOT a relation — deliberately no FK, for the same reason
+  /// `feederSessionId` below and `StartupSample.liveChannelRunId` have none:
+  /// the schedule LEDGER must be able to outlive the run it names.
+  liveChannelRunId      String?             @db.Uuid
+  action                LiveScheduleAction
+  /// Wall-clock fire time, UTC.
+  fireAt                DateTime
+  /// Ledger #160 PR3: fireAt was RESOLVED from airAt − lead at arm time
+  /// (P90 + margin, or the default lead below the honesty bar). The sweep
+  /// derives this row's MISSED deadline from airAt instead of fireAt — an
+  /// early fire time must not shrink the useful window (design §5).
+  autoLeadTime          Boolean             @default(false)
+  /// Ledger #160 PR2 (START rows only): the intended AIR time. When set,
+  /// the sweep raises SCHEDULE_NOT_RUNNING_AT_DEADLINE if the channel is
+  /// not RUNNING by airAt − deadlineMarginSeconds — the #94-F11 gap, one
+  /// alert instead of two surfaces. PR3's auto-lead resolves fireAt FROM
+  /// this value; a null airAt means no deadline monitoring.
+  airAt                 DateTime?
+  deadlineMarginSeconds Int                 @default(300)
+  /// Dedup stamp: the deadline event fires once per row.
+  deadlineNotifiedAt    DateTime?
+  /// SLATE_IN only: the registered insertable-content id + play length.
+  insertableContentId   String?
+  slateDurationSeconds  Int?
+  /// Creation-time slate (ledger #94): the CLIP SOURCE, because insertable
+  /// content is per-encoding and no encoding exists at creation. The worker
+  /// registers it once the channel is RUNNING and only then fills
+  /// insertableContentId — which is also the fire path's READY gate.
+  slateSource           Json?
+  /// Slate insertion upper bound: fire-time duration = slateUntil − now. A duration
+  /// fixed at arm time would overrun into the program by however late
+  /// provisioning ran.
+  slateUntil            DateTime?
+  /// Registration CAS claim — two sweep ticks must not register twice.
+  contentClaimedAt      DateTime?
+  /// Ledger #96: the file a scheduled FEEDER row pushes ({credentialId, bucket, key}).
+  feederSource          Json?
+  status                LiveScheduleStatus  @default(ARMED)
+  firedAt               DateTime?
+  /// Ledger #236 — the queue-handoff OUTBOX stamp (audit 2026-08-29
+  /// CRITICAL-1). The sweep used to write the claim (row FIRED, and for a
+  /// STOP the channel STOPPING) and only THEN call `queue.add`; a SIGKILL
+  /// between the two lost the action forever, because the next sweep reads
+  /// only ARMED rows. A FIRED row now means CLAIMED, and `dispatchedAt`
+  /// means HANDED TO THE QUEUE — it is written only after `add` resolves.
+  /// FIRED + null is therefore the recoverable state the dispatcher pass
+  /// re-adds (under the same deterministic job id, so a handoff that DID
+  /// land dedupes instead of running twice).
+  dispatchedAt          DateTime?
+  /// The BullMQ job id the handoff used. Forensics only — never the
+  /// re-dispatch INPUT, because a crash leaves it null by construction; the
+  /// dispatcher always DERIVES the id from the row id.
+  dispatchJobId         String?
+  note                  String?
+  error                 String?
+  /// Ledger #238: did the fired action actually land? Written by whoever
+  /// LEARNS the answer — the slate poll, the feeder session's own status
+  /// transitions, the stop confirmation, the dead-job handler — never by the
+  /// enqueue. FAILED is sticky: a later success must not un-fail a row.
+  outcome               LiveScheduleOutcome @default(PENDING)
+  outcomeAt             DateTime?
+  outcomeNote           String?
+  /// SC-02: green is allowed only for the current evidence contract. Null is
+  /// legacy/unverified and therefore amber even if an old row says DELIVERED.
+  outcomeEvidenceVersion Int?
+  outcomeEvidenceKind    LiveScheduleOutcomeEvidenceKind?
+  outcomeEvidenceAt      DateTime?
+  /// FEEDER_START / FEEDER_SWITCH: the session this row created. Provenance,
+  /// NOT a relation — deliberately no FK, so the feeder session can be
+  /// deleted (the DELETE route exists) without taking the schedule ledger's
+  /// history with it, and so the outcome writer can find its row by a single
+  /// reverse lookup instead of threading the id through the queue payload.
+  feederSessionId       String?             @db.Uuid
+  /// Row #240 — a FEEDER_SWITCH row's own outbox pair for the PRE-STAGE
+  /// (audit 2026-08-29 HIGH-3). `stagedAt` is the sweep's claim at
+  /// fireAt − lead (the row stays ARMED — staging is not firing);
+  /// `stageDispatchedAt` is written only after the stage job's `queue.add`
+  /// resolved, so a crash between the two is a claim with no handoff that the
+  /// dispatcher pass re-adds under the same deterministic job id — the same
+  /// shape `firedAt`/`dispatchedAt` give the fire itself. `readyAt` is a
+  /// write-once RECORD mirrored from the session when its staging completed;
+  /// the sweep's commit gate reads the SESSION, which is the live truth (a
+  /// takeover re-stages it). `switchSeamMs` is the measured seam, mirrored
+  /// from the session at its first push.
+  stagedAt              DateTime?
+  stageDispatchedAt     DateTime?
+  readyAt               DateTime?
+  switchSeamMs          Int?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([status, fireAt])
+  @@index([liveChannelId])
+  /// "Every row armed for this run" — the lazy bind pass reads it, and so
+  /// does anyone auditing which airing a refused row belonged to (row #241).
+  @@index([liveChannelRunId])
+  /// The dispatcher's scan: FIRED rows with no handoff stamp. FIRED rows
+  /// accumulate for the life of a channel, so the scan needs its own index
+  /// rather than riding [status, fireAt].
+  @@index([status, dispatchedAt])
+  @@index([feederSessionId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Row #330 — slate normalization + registration for the DIRECT route.
+/// A movie slate registered from the channel page is no longer handed to the
+/// provider as it is: the worker transcodes it to an MPEG-TS that matches
+/// the live ingest (measured 2026-09-12/13: MP4/MOV audio plays at half
+/// speed, mono/yuv422p/MKV pass every preflight and fail on air, a frame-rate
+/// mismatch plays fast and ends black). This row is the operator's view of
+/// that work — waiting for the input, converting, registering, ready, or the
+/// reason it failed. A scheduled (creation-time) slate keeps its own path on
+/// `LiveSchedule` and shares the worker's preparer, not this table.
+enum SlateNormalizationStatus {
+  /// The channel has no ingest reference yet; the promoter re-queues the row
+  /// once a heartbeat with stream attributes exists.
+  WAITING_FOR_INPUT
+  QUEUED
+  NORMALIZING
+  REGISTERING
+  READY
+  ERROR
+}
+
+model SlateNormalization {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                  String                   @id @default(uuid()) @db.Uuid
+  liveChannelId       String                   @db.Uuid
+  liveChannel         LiveChannel              @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  bitmovinAccountId   String                   @db.Uuid
+  /// The operator's content name (optional) — becomes the provider content's name.
+  name                String?
+  /// The source triple, exactly as the picker chose it (the credential is a REFERENCE).
+  credentialId        String                   @db.Uuid
+  bucket              String
+  sourceKey           String
+  status              SlateNormalizationStatus @default(QUEUED)
+  /// The ingest attributes the file was matched to (`SlateNormalizationTarget`), once known.
+  target              Json?
+  /// Why the row is where it is — the preparer's plain-English reason (localized by code in the panel).
+  note                String?
+  error               String?
+  /// The object the provider was pointed at: the source itself (as-is) or the normalized MPEG-TS.
+  registeredKey       String?
+  /// Its bucket when it is not the source's (the channel's S3-family output, #330 follow-up); null = `bucket`.
+  registeredBucket    String?
+  normalized          Boolean                  @default(false)
+  /// Provider content id once READY at the provider — what the schedule form needs.
+  insertableContentId String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@index([liveChannelId, status])
+  /// The promoter's scan: WAITING_FOR_INPUT rows across channels, oldest first.
+  @@index([status, updatedAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Audit 5c3d97ca SC-01 — one durable intent per idempotency key. Run ids are
+/// provenance rather than foreign keys: claims must survive historical run
+/// cleanup long enough to explain an ambiguous provider/process effect.
+model LiveEffectClaim {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                    String               @id @default(uuid()) @db.Uuid
+  liveChannelId         String               @db.Uuid
+  liveChannel           LiveChannel          @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  liveChannelRunId      String               @db.Uuid
+  scheduleId            String?              @db.Uuid
+  action                String
+  idempotencyKey        String               @unique
+  requestSha256         String?
+  providerResultId      String?
+  providerEncodingId    String
+  targetId              String?
+  generation            Int
+  state                 LiveEffectClaimState @default(CLAIMED)
+  token                 String               @unique @db.Uuid
+  attempt               Int                  @default(1)
+  ownerId               String
+  expiresAt             DateTime
+  dispatchedAt          DateTime?
+  acknowledgedAt        DateTime?
+  failure               String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([liveChannelId, state])
+  @@index([scheduleId])
+  @@index([state, expiresAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Watch folder rule (ledger #87): a bucket prefix we LIST (never write)
+/// on the customer's own storage; stable new objects auto-submit encoding
+/// jobs from the FULL_PLAN preset. Restrict FKs: deleting a credential or
+/// preset with live rules must be a deliberate act.
+model WatchRule {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                   String     @id @default(uuid()) @db.Uuid
+  name                 String
+  credentialId         String     @db.Uuid
+  credential           Credential @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  bucket               String
+  prefix               String     @default("")
+  /// Lowercased extension allowlist, e.g. ["mp4","mov"]. Empty = all.
+  extensions           String[]   @default([])
+  presetId             String     @db.Uuid
+  preset               Preset     @relation(fields: [presetId], references: [id], onDelete: Restrict)
+  /// Output path template: {basename} {ext} {date} {uuid} {rule}.
+  outputPrefixTemplate String
+  labels               String[]   @default([])
+  enabled              Boolean    @default(true)
+  /// Ledger #132: set when the data reset disarmed this rule. The reset
+  /// deletes WatchedObject — the at-most-once memory — so re-enabling
+  /// re-detects EVERYTHING under the prefix as new and submits billable
+  /// encodings. "Zero watched objects" cannot distinguish this from a
+  /// freshly created rule (where full detection is the intended first
+  /// sweep); the distinction IS this stamp. Cleared only by an enable that
+  /// explicitly acknowledged the re-detection (PATCH guard).
+  disarmedByResetAt    DateTime?
+  pollIntervalSec      Int        @default(120)
+  /// Consecutive identical sightings before submission ("still being
+  /// written" guard).
+  stabilityChecks      Int        @default(2)
+  maxConcurrentJobs    Int        @default(3)
+  /// Bounded-pages resume cursor (searchObjects honesty rule: a partial
+  /// sweep says so and resumes here next tick). Beyond the design doc.
+  scanCursor           String?
+  /// Consecutive failed sweeps — drives the exponential backoff (cap 15
+  /// min). Beyond the design doc, which named the behavior not the column.
+  errorStreak          Int        @default(0)
+  lastSweepAt          DateTime?
+  lastError            String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  objects WatchedObject[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  @@unique([organizationId, name])
+}
+
+enum WatchedObjectState {
+  SEEN
+  STABLE
+  SUBMITTED
+  SKIPPED
+  ERROR
+}
+
+/// Per-object tracking (ledger #87). contentId = size:mtime (our storage
+/// contract surfaces no etag): a RE-UPLOADED object gets a NEW row (the
+/// unique key re-arms it) while a re-listed unchanged object can never
+/// double-submit — DB-enforced (#14 precedent).
+model WatchedObject {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id            String             @id @default(uuid()) @db.Uuid
+  watchRuleId   String             @db.Uuid
+  watchRule     WatchRule          @relation(fields: [watchRuleId], references: [id], onDelete: Cascade)
+  objectKey     String
+  contentId     String
+  state         WatchedObjectState @default(SEEN)
+  size          BigInt?
+  mtimeMs       Float?
+  stableCount   Int                @default(0)
+  encodingJobId String?            @db.Uuid
+  encodingJob   EncodingJob?       @relation(fields: [encodingJobId], references: [id], onDelete: SetNull)
+  error         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([watchRuleId, objectKey, contentId])
+  @@index([watchRuleId, state])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// per-user accounts for AUTH_MODE=users.
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  /// Normalized at WRITE and LOOKUP: lowercase + trim (one shared helper) —
+  /// `Admin@x.com` and `admin@x.com` must be one account, not two.
+  email              String    @unique
+  displayName        String
+  /// scrypt$N$r$p$salt$hash — SAME format and parser as AUTH_PASSWORD_HASH.
+  passwordHash       String
+  role               UserRole  @default(OPERATOR)
+  active             Boolean   @default(true)
+  /// Forced-rotate flag (bootstrap / admin reset). Enforced by the GATE:
+  /// while true, only change-password and logout continue (§3c).
+  mustChangePassword Boolean   @default(false)
+  /// Temp-password TTL (§3c, ~72h from issuance). Expired ⇒ a distinct
+  /// "ask an admin to reissue" login response (caller already proved the
+  /// password, so distinguishing is safe).
+  passwordExpiresAt  DateTime?
+  /// Session watermark: cookies with iat at or before this are invalid.
+  /// Bumped on password change, admin reset, and role change.
+  sessionsValidFrom  DateTime  @default(now())
+  /// Monotonic revocation generation. A users-mode cookie carries the exact
+  /// generation whose password was verified; the gate requires equality.
+  /// Unlike a millisecond timestamp this cannot alias two concurrent resets.
+  sessionGeneration  Int       @default(0)
+  /// OIDC seam (#31): subject claim once oidc mode exists.
+  oidcSubject        String?   @unique
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  platformOwner Boolean @default(false)
+  memberships Membership[]
+  accessEvents AccessEvent[]
+  apiTokens ApiToken[]
+}
+
+/// First-boot setup code (§3c). A DB row, NOT process memory: the akamai
+/// profile runs TWO web processes against one DB — an in-memory code minted
+/// by one process could never be verified by the other. Holds the SHA-256 of
+/// the code; the plaintext is printed to stdout once and never stored.
+model SetupCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+/// One paid verification run, durably. Re-audit 2026-08-29 HIGH-7 / GO 11:
+/// the harness already proved provider-terminal cleanup, a known commit, the
+/// source's bytes and a sealed report — but every one of those facts lived in
+/// `verify-runs/<runId>/` on the operator's disk and in a terminal scrollback,
+/// so release evidence could not be reconstructed from the Dashboard once the
+/// session ended. This row is the join: run → provider account → source bytes
+/// → per-scenario verdicts (VMAF and delivery checks included) → cleanup seal.
+///
+/// It holds NO secrets. `baseUrlOrigin` is an origin, never the token or the
+/// password that rode on it; `actor` is the AuditLog convention (`token:<id>`),
+/// which is what lets a run join its own audit rows.
+model VerificationRun {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The harness's own run id (`verify-runs/<runId>`) — and the RESERVATION.
+  /// Unique, created before anything is spent: `prepareRunDir` refuses a reused
+  /// id on ONE host's disk, and this refuses it across every host that shares
+  /// the database (re-audit GO 4).
+  runId String @unique
+
+  /// VOD | LIVE | MIXED (core's VerificationRunKind), derived from the
+  /// scenarios the run selected. Null until that set is known — a run that
+  /// dies in preflight never had a kind, and naming one would be a guess.
+  kind String?
+
+  /// RUNNING | SEALED | INCOMPLETE (core's VerificationRunStatus). A row left
+  /// RUNNING is not a gap in this model: it is the evidence that the run never
+  /// sealed a report — and that reading is only worth making because the seal
+  /// write RETRIES first (SEAL_WRITE_ATTEMPTS in the worker's run-record.ts).
+  /// Without the retry a single transient write failure would leave this
+  /// column saying "never sealed" about a run that sealed perfectly, which is
+  /// the same class of untrustworthy evidence this table exists to end.
+  status String @default("RUNNING")
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  /// The run report's fingerprint. Defaulted to the same
+  /// word `collectRunFingerprint` itself uses, because the reservation is
+  /// written BEFORE the fingerprint is collected — nothing is spent in that
+  /// window, and "unknown" is what a row that died inside it truthfully says.
+  commit                  String  @default("unknown")
+  checkoutLatestMigration String  @default("unknown")
+  dbLatestMigration       String  @default("unknown")
+  drift                   Boolean @default(false)
+
+  /// The account the run BILLED. SetNull, not Cascade: deleting an account
+  /// must not delete the evidence of what it was charged for.
+  bitmovinAccountId String?          @db.Uuid
+  bitmovinAccount   BitmovinAccount? @relation(fields: [bitmovinAccountId], references: [id], onDelete: SetNull)
+
+  /// Origin only (scheme://host:port) — never a path, a query or a credential.
+  baseUrlOrigin String?
+  /// `token:<id>`, resolved from the runner's own API token, so the run joins
+  /// AuditLog.actor. The token itself is never stored, hashed or otherwise.
+  actor         String?
+
+  /// The staged mezzanine every scenario reads, and its version identity
+  /// (etag/versionId/size) — a NAME says nothing about bytes.
+  sourceObject   String?
+  sourceIdentity String?
+
+  /// The prior SEALED run whose PASSes this one honoured (`--resume-from`).
+  /// This is a real self-relation, not a free-form run-id string: a resumed
+  /// PASS was not re-spent, so the evidence authority lives in THAT row.
+  resumedFromId String?          @db.Uuid
+  resumedFrom   VerificationRun? @relation("VerificationRunResume", fields: [resumedFromId], references: [id], onDelete: SetNull)
+  resumedRuns   VerificationRun[] @relation("VerificationRunResume")
+
+  /// The pre-spend resume decision (accepted or refused), including the
+  /// compared digests, algorithm/key id and retention deadline. Never a key.
+  resumeDecision Json?
+
+  /// ScenarioOutcome[] — every field the report carries, per scenario
+  /// (verdict, reason, jobId, encodingId, check counts, planSha256, the
+  /// source it read, the account it billed). Written as each scenario
+  /// finishes, so a crash mid-run leaves partial evidence rather than none.
+  outcomes Json @default("[]")
+  /// Record<ScenarioVerdict, number>.
+  counts   Json @default("{}")
+
+  /// encodingId → the PROVIDER's status at cleanup time, exactly what
+  /// `ensureTerminal` read through the worker's own SDK.
+  providerReadback Json?
+  /// Per-scenario cleanup: { scenario, jobId, status, cancelHttp, terminal,
+  /// localTerminal, providerTerminal, encodingIds }. `ensureTerminal` runs
+  /// once per ABANDONED job, so this is an array, not one run-level verdict.
+  cleanup          Json?
+
+  /// The database is the release authority: SEALED stores the exact bytes
+  /// covered by `seal` in the same row update. `reportPath` names a recoverable
+  /// local export only; a file or file-side seal is never authoritative alone.
+  reportPath     String
+  reportJson     String? @db.Text
+  reportMarkdown String? @db.Text
+  reportSha256   String?
+  seal           String?
+  /// SHA256 is local corruption detection only; HMAC_SHA256 is release-grade.
+  sealAlgorithm String?
+  /// Identifier used to select a key from the runtime keyring. No key material.
+  sealKeyId String?
+  /// Version of the joined DB/file/scenario evidence contract.
+  evidenceVersion Int?
+  /// Hashes of every PASS scenario's retained plan and scenario report.
+  evidenceManifest Json?
+  /// Resume is refused at or after this instant; the row remains as a tombstone.
+  retentionUntil DateTime?
+  sealedAt     DateTime?
+
+  /// Why an INCOMPLETE run ended — redacted and truncated.
+  error String?
+
+  /// Run-level restart fence. A producer may create/transition paid-resource
+  /// intents or SEALED-CAS only the generation it reserved. Explicit recovery
+  /// increments this generation and leases the run before touching child
+  /// intents, so a merely slow producer cannot submit or publish success after
+  /// an operator has begun teardown.
+  recoveryOwner      String?
+  recoveryLeaseUntil DateTime?
+  recoveryGeneration Int       @default(0)
+
+  /// EV-01: every paid resource this run INTENDED to create, written before
+  /// the create was sent. The seal reads these, not the in-memory ids.
+  intents VerificationResourceIntent[]
+  /// The Live/MSL evidence tuples this run sealed, one per output leg
+  /// (audit 5c3d97ca BLOCKER-4 / EV-02).
+  liveEvidence VerificationLiveEvidence[]
+
+  @@index([startedAt(sort: Desc)])
+  @@index([bitmovinAccountId])
+  @@index([resumedFromId])
+  @@index([retentionUntil])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// EV-01 (audit 5c3d97ca BLOCKER-5, §14.4): the durable INTENT to create one
+/// paid resource, committed BEFORE the create request is sent.
+///
+/// The defect: the harness learned a job's or channel's id from the HTTP
+/// response. A timeout, a reset or an unparseable body between the server's
+/// create and that assignment left nothing in memory for cleanup to act on,
+/// while the resource billed. This row is what survives that window: its
+/// `verificationKey` is derivable from (run, scenario, kind) with no response
+/// at all, the product stamps the same key on the job/channel it creates, and
+/// the resource's name/label carries it too — so the set of "resources that
+/// MAY have been created" is rediscoverable, and the run's cleanup seal is
+/// driven by this set (`verificationIntentsSealable` in core), never by the
+/// ids a process happened to still hold.
+///
+/// Vocabulary in core's `verify/resource-intent.ts` (states, kinds, cleanup
+/// states) — plain strings here, the VerificationRun precedent.
+model VerificationResourceIntent {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Cascade: an intent is a child of its run's evidence row.
+  verificationRunId String          @db.Uuid
+  verificationRun   VerificationRun @relation(fields: [verificationRunId], references: [id], onDelete: Cascade)
+
+  scenario String
+  /// VOD_JOB | LIVE_CHANNEL (core's VerificationIntentKind).
+  kind     String
+
+  /// `verify:<runId>:<scenario>:<kind>` — the idempotency key the product
+  /// honours (EncodingJob/LiveChannel.verificationKey). Unique: one intent
+  /// per paid resource, across every run that shares this database.
+  verificationKey String  @unique
+  /// SHA-256 of the request body the harness meant to send, recorded before
+  /// the send; the product stores the same value beside the key.
+  requestSha256   String
+  /// The exact `name` the request carried — the resource's second marker.
+  /// A VOD job also carries the key as a label; a live channel has only its
+  /// name, so a lookup that must work from THIS ROW alone needs it here.
+  resourceName    String?
+
+  /// PREPARED | SUBMITTED | CONFIRMED | AMBIGUOUS | TERMINAL.
+  state String @default("PREPARED")
+
+  /// The product's id for the resource (EncodingJob.id / LiveChannel.id),
+  /// from the response or from the lookup that adopted it.
+  localId     String?
+  /// The provider's encoding id once known (read back from the local row).
+  providerId  String?
+  /// Every provider encoding for ladders/multi-encoding jobs. `providerId`
+  /// remains the sole/primary compatibility projection.
+  providerIds String[] @default([])
+
+  /// What an AMBIGUOUS lookup found: [{ localId, matchedBy[], status,
+  /// providerId }]. Kept whatever the count, so an UNRESOLVED intent tells the
+  /// operator exactly which rows competed for it.
+  candidates Json?
+
+  /// PENDING | CLEANED | NEVER_CREATED | UNRESOLVED.
+  cleanupState        String    @default("PENDING")
+  /// The terminal readback that closed the intent: local status, provider
+  /// statuses, live cleanup seal — whatever the kind's resolver read.
+  readback            Json?
+  /// Canonical resource identities used by the closure equality gate.
+  possiblyCreatedKeys String[]  @default([])
+  cleanedResourceKeys String[]  @default([])
+  /// SHA-256 over the closure dossier fields; recomputed before run seal.
+  closureDigest       String?
+  /// When the intent reached TERMINAL.
+  sealedAt            DateTime?
+
+  /// Monotonic append-only event sequence and the dispatch/recovery lease. A
+  /// crashed process can be resumed without racing an in-flight paid POST or
+  /// allowing two reconcilers to act.
+  eventSeq           Int                               @default(0)
+  recoveryOwner      String?
+  recoveryLeaseUntil DateTime?
+  recoveryGeneration Int                               @default(0)
+  events             VerificationResourceIntentEvent[]
+
+  /// The last fault or refusal, redacted and truncated.
+  error String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([verificationRunId])
+  @@index([state])
+  @@index([state, recoveryLeaseUntil])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Append-only state/cleanup history for third-party reconstruction of EV-01.
+model VerificationResourceIntentEvent {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String @id @default(uuid()) @db.Uuid
+
+  verificationResourceIntentId String                     @db.Uuid
+  verificationResourceIntent   VerificationResourceIntent @relation(fields: [verificationResourceIntentId], references: [id], onDelete: Cascade)
+
+  sequence     Int
+  eventType    String
+  fromState    String?
+  toState      String?
+  cleanupState String?
+  details      Json?
+  createdAt    DateTime @default(now())
+
+  @@unique([verificationResourceIntentId, sequence])
+  @@index([createdAt(sort: Desc)])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// One Live / MSL evidence TUPLE — audit 5c3d97ca BLOCKER-4 (§14.4 EV-02).
+/// A live PASS used to rest on facts that were never joined: the run row held
+/// a channel id, a report and a cleanup seal, but no plan digest, no source
+/// identity, no provider resource, no output prefix / edge URL and no media
+/// bytes — and the edge closure could close on ZERO segments. This row is the
+/// join, per (run, scenario, airing, output leg): `tuple` is core's versioned
+/// `LiveEvidenceLeg` (build → source → channel → output → master → children →
+/// media → two probes → progression → provider terminal → cleanup), and
+/// `complete` is core's single completeness rule over it. The run recorder
+/// refuses to write SEALED while a green live outcome has an incomplete leg.
+///
+/// `liveChannelRunId` is TEXT, not a relation: the evidence must outlive the
+/// channel row (a data reset deletes channels; an FK would have to SetNull the
+/// very join key the seal is about). Every URL inside `tuple` is credential-
+/// free (userinfo dropped, query VALUES dropped, key names + a SHA-256 kept).
+model VerificationLiveEvidence {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                String          @id @default(uuid()) @db.Uuid
+  verificationRunId String          @db.Uuid
+  verificationRun   VerificationRun @relation(fields: [verificationRunId], references: [id], onDelete: Cascade)
+
+  scenario         String
+  /// The airing (LiveChannelRun.id), or "unknown" when the channel detail
+  /// could not be read — in which case `complete` is false and `missing`
+  /// names it; the unique key still needs a value.
+  liveChannelRunId String
+  /// `<manifestKey>@<outputKey>` — one delivery target of one manifest.
+  outputLeg        String
+
+  /// core's LIVE_EVIDENCE_VERSION at write time.
+  version  Int
+  complete Boolean
+  /// string[] — every element the completeness rule found absent.
+  missing  Json    @default("[]")
+  /// The whole LiveEvidenceLeg, credential-free.
+  tuple    Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([verificationRunId, scenario, liveChannelRunId, outputLeg])
+  @@index([verificationRunId])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Row #314: which statistics family a usage day belongs to (Bitmovin reports
+/// VOD and live encoding statistics through separate daily endpoints).
+enum UsageStatisticKind {
+  VOD
+  LIVE
+}
+
+/// Row #314: one day of Bitmovin encoding statistics for one account and one
+/// kind, as the provider reported it. Bitmovin deletes encoding statistics 90
+/// days after the encoding completes, so the dashboard reads THIS table; the
+/// worker's usage sweep refreshes it every few hours and re-reads the trailing
+/// days (daily aggregates settle late). `breakdown` keeps the provider's
+/// per-day detail (billable minutes per mode/codec/bucket, per-stream codec ×
+/// resolution, features, egress by category/region) — a snapshot, because the
+/// provider record expires (BITMOVIN-API-COVERAGE invariant 6).
+model UsageDailyStatistic {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                String             @id @default(uuid()) @db.Uuid
+  bitmovinAccountId String             @db.Uuid
+  bitmovinAccount   BitmovinAccount    @relation(fields: [bitmovinAccountId], references: [id], onDelete: Cascade)
+  /// The provider's calendar day (UTC).
+  date              DateTime           @db.Date
+  kind              UsageStatisticKind
+  bytesEncoded      Float              @default(0)
+  timeEncodedS      Float              @default(0)
+  bytesEgress       Float              @default(0)
+  /// Encoding (SD/HD/UHD/audio/unknown buckets) + transmuxing + feature minutes.
+  billableMinutes   Float              @default(0)
+  breakdown         Json               @default("{}")
+  fetchedAt         DateTime
+
+  @@unique([bitmovinAccountId, date, kind])
+  @@index([date])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Row #314 (rev426 R1): the usage sweep's watermark per account × kind,
+/// advanced only after a chunk of that kind was stored — so a failed live
+/// read can never hide behind a stored VOD day. No row means "backfill the
+/// retention window"; the dashboard derives its freshness note from these
+/// rows (the provider omits quiet days, so row presence proves nothing).
+model UsageSweepCursor {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id                String             @id @default(uuid()) @db.Uuid
+  bitmovinAccountId String             @db.Uuid
+  bitmovinAccount   BitmovinAccount    @relation(fields: [bitmovinAccountId], references: [id], onDelete: Cascade)
+  kind              UsageStatisticKind
+  /// The last provider day (UTC) this kind was read through, inclusive.
+  sweptThrough      DateTime           @db.Date
+  sweptAt           DateTime
+
+  @@unique([bitmovinAccountId, kind])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Durable paid-resource ownership. Intentionally no cascading FK: reset deletes
+/// VmafJob immediately while this receipt survives until cloud cleanup confirms.
+model VmafComputeTask {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id            String   @id @default(uuid()) @db.Uuid
+  vmafJobId     String   @db.Uuid
+  targetKey     String
+  profileId     String
+  profile       Json
+  providerId    String?
+  state         String   @default("PREPARING")
+  reservedUsd   Float
+  stagingKeys   Json     @default("[]")
+  receipt       Json?
+  expiresAt     DateTime
+  queueExpiresAt DateTime
+  heartbeatAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  cleanedAt     DateTime?
+  error         String?
+
+  attempt       Int      @default(0)
+  progress      Json?
+
+  @@unique([vmafJobId, targetKey, attempt])
+  @@index([cleanedAt, expiresAt])
+  @@index([profileId, cleanedAt])
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Immutable secret versions. Disable only prevents new profile submissions;
+/// historical snapshots retain decryption access for cloud teardown.
+model VmafComputeCredential {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String @id @default(uuid()) @db.Uuid
+  label String
+  provider String
+  encryptedSecret String
+  disabledAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Non-secret named profile. Each submitted task snapshots config and version.
+model VmafExecutionProfile {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String
+  label String
+  config Json
+  version Int @default(1)
+  enabled Boolean @default(true)
+  /// Reset tombstones hide customer config while preventing environment fallback resurrection.
+  resetAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([organizationId, id])
+  @@index([organizationId])
+}
+
+model Organization {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  slug String @unique
+  active Boolean @default(true)
+  allowedIpCidrs String[] @default([])
+  createdAt DateTime @default(now())
+  memberships Membership[]
+  appSettingRows AppSetting[]
+  credentialRows Credential[]
+  resetCleanupTaskRows ResetCleanupTask[]
+  bitmovinAccountRows BitmovinAccount[]
+  storageLocationPresetRows StorageLocationPreset[]
+  encodingJobRows EncodingJob[]
+  librarySourceRows LibrarySource[]
+  sceneAnalysisRevisionRows SceneAnalysisRevision[]
+  contentRows Content[]
+  contentRevisionRows ContentRevision[]
+  manifestJobRows ManifestJob[]
+  liveChannelRows LiveChannel[]
+  liveChannelRunRows LiveChannelRun[]
+  alertRuleRows AlertRule[]
+  alertEventRows AlertEvent[]
+  liveHeartbeatRows LiveHeartbeat[]
+  feederSessionRows FeederSession[]
+  feederPushAttemptRows FeederPushAttempt[]
+  vmafJobRows VmafJob[]
+  vmafResultRows VmafResult[]
+  storageInspectionRows StorageInspection[]
+  presetRows Preset[]
+  webhookEventRows WebhookEvent[]
+  webhookRegistrationRows WebhookRegistration[]
+  auditLogRows AuditLog[]
+  notificationChannelRows NotificationChannel[]
+  notificationRuleRows NotificationRule[]
+  apiTokenRows ApiToken[]
+  startupSampleRows StartupSample[]
+  liveScheduleRows LiveSchedule[]
+  slateNormalizationRows SlateNormalization[]
+  liveEffectClaimRows LiveEffectClaim[]
+  watchRuleRows WatchRule[]
+  watchedObjectRows WatchedObject[]
+  verificationRunRows VerificationRun[]
+  verificationResourceIntentRows VerificationResourceIntent[]
+  verificationResourceIntentEventRows VerificationResourceIntentEvent[]
+  verificationLiveEvidenceRows VerificationLiveEvidence[]
+  usageDailyStatisticRows UsageDailyStatistic[]
+  usageSweepCursorRows UsageSweepCursor[]
+  vmafComputeTaskRows VmafComputeTask[]
+  vmafComputeCredentialRows VmafComputeCredential[]
+  vmafExecutionProfileRows VmafExecutionProfile[]
+  accessEventRows AccessEvent[]
+}
+
+model Membership {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role UserRole @default(OPERATOR)
+  active Boolean @default(true)
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model PlatformSetting {
+  key String @id
+  value Json
+  updatedAt DateTime @updatedAt
+}
+
+model AccessEvent {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId String? @db.Uuid
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actor String
+  userDisplayName String
+  method String
+  path String
+  clientIp String?
+  statusCode Int
+  createdAt DateTime @default(now())
+  @@unique([organizationId,id])
+  @@index([organizationId,createdAt])
+  @@index([organizationId])
+}

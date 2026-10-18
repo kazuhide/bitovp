@@ -1,0 +1,63 @@
+{
+	"planVersion": 1,
+	"name": "VMAF-only H264 (no delivery outputs)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "input.mp4",
+			"selectionMode": "VIDEO_RELATIVE"
+		}
+	],
+	"renditions": [
+		{
+			"key": "v540",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 540,
+			"bitrate": 600000
+		}
+	],
+	"muxings": [
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/vmaf-only-h264/video/540p",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [],
+	"generation": {
+		"timing": "POST_ENCODING"
+	},
+	"qc": {
+		"vmaf": true,
+		"only": true
+	}
+}

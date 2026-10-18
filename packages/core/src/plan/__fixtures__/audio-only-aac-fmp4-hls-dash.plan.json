@@ -1,0 +1,95 @@
+{
+	"planVersion": 1,
+	"name": "Sample Audio-Only AAC Encoding (audio-only-aac-fmp4-hls-dash)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "/path/to/your/input/audio.mp3",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"name": "AAC 128kbps",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/audio-only-aac-fmp4-hls-dash/audio/128000",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/audio-only-aac-fmp4-hls-dash/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE"
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/audio-only-aac-fmp4-hls-dash/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V6",
+			"mediaVersion": "HLS_V6",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		}
+	],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

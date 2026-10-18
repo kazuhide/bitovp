@@ -1,0 +1,832 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "cenc-cbc-drm-wv-pr-fp-dash-hls-aws",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v1080",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 1080,
+			"bitrate": 2500000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v1080",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 1080p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v1080",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v1080",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"name": "Video FMP4 Muxing 1080p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v1080"
+		}
+	},
+	{
+		"step": "drm:v1080-cenc",
+		"kind": "CREATE_DRM_CENC",
+		"payload": {
+			"muxingKind": "FMP4",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43214321432143214321432143214321",
+			"encryptionMode": "CBC",
+			"ivSize": "IV_16_BYTES",
+			"widevine": {
+				"pssh": "CAESEAABAgMEBQYHCAkKCwwNDg8aCmludGVydHJ1c3QiASo="
+			},
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"fairPlay": {
+				"iv": "00000000000000000000000000000000",
+				"uri": "skd://fairplay_token"
+			},
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/1080p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 CENC"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"muxingId": "muxing:v1080",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 720,
+			"bitrate": 1200000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"name": "Video FMP4 Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720"
+		}
+	},
+	{
+		"step": "drm:v720-cenc",
+		"kind": "CREATE_DRM_CENC",
+		"payload": {
+			"muxingKind": "FMP4",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43214321432143214321432143214321",
+			"encryptionMode": "CBC",
+			"ivSize": "IV_16_BYTES",
+			"widevine": {
+				"pssh": "CAESEAABAgMEBQYHCAkKCwwNDg8aCmludGVydHJ1c3QiASo="
+			},
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"fairPlay": {
+				"iv": "00000000000000000000000000000000",
+				"uri": "skd://fairplay_token"
+			},
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/720p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 CENC"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v480",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 480,
+			"bitrate": 750000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v480",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 480p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v480",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v480",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"name": "Video FMP4 Muxing 480p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v480"
+		}
+	},
+	{
+		"step": "drm:v480-cenc",
+		"kind": "CREATE_DRM_CENC",
+		"payload": {
+			"muxingKind": "FMP4",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43214321432143214321432143214321",
+			"encryptionMode": "CBC",
+			"ivSize": "IV_16_BYTES",
+			"widevine": {
+				"pssh": "CAESEAABAgMEBQYHCAkKCwwNDg8aCmludGVydHJ1c3QiASo="
+			},
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"fairPlay": {
+				"iv": "00000000000000000000000000000000",
+				"uri": "skd://fairplay_token"
+			},
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/480p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 CENC"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"muxingId": "muxing:v480",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": 400000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 360p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"name": "Video FMP4 Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360"
+		}
+	},
+	{
+		"step": "drm:v360-cenc",
+		"kind": "CREATE_DRM_CENC",
+		"payload": {
+			"muxingKind": "FMP4",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43214321432143214321432143214321",
+			"encryptionMode": "CBC",
+			"ivSize": "IV_16_BYTES",
+			"widevine": {
+				"pssh": "CAESEAABAgMEBQYHCAkKCwwNDg8aCmludGVydHJ1c3QiASo="
+			},
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"fairPlay": {
+				"iv": "00000000000000000000000000000000",
+				"uri": "skd://fairplay_token"
+			},
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/360p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 CENC"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:v240",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 240,
+			"bitrate": 150000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v240",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 240p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v240",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v240",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"name": "Video FMP4 Muxing 240p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v240"
+		}
+	},
+	{
+		"step": "drm:v240-cenc",
+		"kind": "CREATE_DRM_CENC",
+		"payload": {
+			"muxingKind": "FMP4",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43214321432143214321432143214321",
+			"encryptionMode": "CBC",
+			"ivSize": "IV_16_BYTES",
+			"widevine": {
+				"pssh": "CAESEAABAgMEBQYHCAkKCwwNDg8aCmludGVydHJ1c3QiASo="
+			},
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"fairPlay": {
+				"iv": "00000000000000000000000000000000",
+				"uri": "skd://fairplay_token"
+			},
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/video/240p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 CENC"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"muxingId": "muxing:v240",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD",
+			"conditions": {
+				"attribute": "AUDIOSTREAMCOUNT",
+				"operator": "GREATER_THAN",
+				"value": "0"
+			}
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"name": "Audio FMP4 Muxing 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128"
+		}
+	},
+	{
+		"step": "drm:a128-cenc",
+		"kind": "CREATE_DRM_CENC",
+		"payload": {
+			"muxingKind": "FMP4",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43214321432143214321432143214321",
+			"encryptionMode": "CBC",
+			"ivSize": "IV_16_BYTES",
+			"widevine": {
+				"pssh": "CAESEAABAgMEBQYHCAkKCwwNDg8aCmludGVydHJ1c3QiASo="
+			},
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"fairPlay": {
+				"iv": "00000000000000000000000000000000",
+				"uri": "skd://fairplay_token"
+			},
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/audio/128000",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 CENC"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V6",
+			"hlsMediaPlaylistVersion": "HLS_V6",
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v1080",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/1080p",
+			"uri": "video_2500000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v1080",
+			"muxingId": "muxing:v1080",
+			"drmId": "drm:v1080-cenc"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v720",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/720p",
+			"uri": "video_1200000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"muxingId": "muxing:v720",
+			"drmId": "drm:v720-cenc"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v480",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/480p",
+			"uri": "video_750000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v480",
+			"muxingId": "muxing:v480",
+			"drmId": "drm:v480-cenc"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v360",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/360p",
+			"uri": "video_400000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"muxingId": "muxing:v360",
+			"drmId": "drm:v360-cenc"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v240",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/240p",
+			"uri": "video_150000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v240",
+			"muxingId": "muxing:v240",
+			"drmId": "drm:v240-cenc"
+		}
+	},
+	{
+		"step": "hls-media:hls:a128",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/128000",
+			"uri": "audio_128000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"muxingId": "muxing:a128",
+			"drmId": "drm:a128-cenc"
+		}
+	},
+	{
+		"step": "manifest:dash",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"outputPath": "output/cenc-cbc-drm-wv-pr-fp-dash-hls-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:dash:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v1080",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/1080p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v1080"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v1080:cp",
+		"kind": "CREATE_DASH_CONTENT_PROTECTION",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"representationId": "manifest:dash:rep:v1080",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v1080",
+			"drmId": "drm:v1080-cenc"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v720",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/720p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v720:cp",
+		"kind": "CREATE_DASH_CONTENT_PROTECTION",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"representationId": "manifest:dash:rep:v720",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v720",
+			"drmId": "drm:v720-cenc"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v480",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/480p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v480"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v480:cp",
+		"kind": "CREATE_DASH_CONTENT_PROTECTION",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"representationId": "manifest:dash:rep:v480",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v480",
+			"drmId": "drm:v480-cenc"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v360",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/360p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v360:cp",
+		"kind": "CREATE_DASH_CONTENT_PROTECTION",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"representationId": "manifest:dash:rep:v360",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v360",
+			"drmId": "drm:v360-cenc"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v240",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "video/240p"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v240"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:v240:cp",
+		"kind": "CREATE_DASH_CONTENT_PROTECTION",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"representationId": "manifest:dash:rep:v240",
+			"encodingId": "encoding",
+			"muxingId": "muxing:v240",
+			"drmId": "drm:v240-cenc"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:a128",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/128000"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:a128:cp",
+		"kind": "CREATE_DASH_CONTENT_PROTECTION",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"representationId": "manifest:dash:rep:a128",
+			"encodingId": "encoding",
+			"muxingId": "muxing:a128",
+			"drmId": "drm:a128-cenc"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"vodHlsManifestIds": [
+				"manifest:hls"
+			],
+			"vodDashManifestIds": [
+				"manifest:dash"
+			]
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

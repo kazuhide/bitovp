@@ -1,0 +1,35 @@
+{
+	"planName": "Akamai NetStorage in and out",
+	"outputKeys": [
+		"origin"
+	],
+	"muxings": [
+		{
+			"muxingKey": "v540",
+			"streamKey": "v540",
+			"renditionKey": "v540",
+			"container": "FMP4_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/vmaf-only-h264/video/540p/",
+				"prefix": "output/vmaf-only-h264/video/540p/",
+				"templated": false
+			},
+			"perTitle": false,
+			"segmentNaming": "segment_%number%.m4s",
+			"segmentLengthSec": 6,
+			"initSegment": "init.mp4",
+			"video": {
+				"height": 540,
+				"codec": "H264",
+				"bitrate": 600000
+			}
+		}
+	],
+	"manifests": [],
+	"drm": [],
+	"thumbnails": [],
+	"sprites": [],
+	"multiEncoding": false,
+	"notes": []
+}

@@ -1,0 +1,103 @@
+{
+	"planVersion": 1,
+	"name": "h264-sprites-trickplay-aws",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v720",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"mode": "STANDARD"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-sprites-trickplay-aws/video/720p",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"sprites": [
+		{
+			"key": "sprite720",
+			"streamKey": "v720",
+			"distance": 10,
+			"unit": "SECONDS",
+			"height": 90,
+			"hTiles": 10,
+			"vTiles": 10,
+			"spriteName": "sprite.jpg",
+			"filename": "sprite.jpg",
+			"vttName": "sprite.vtt",
+			"creationMode": "INTERVAL_START",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-sprites-trickplay-aws/sprite",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-sprites-trickplay-aws/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V4",
+			"mediaVersion": "HLS_V4",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

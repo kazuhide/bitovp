@@ -1,0 +1,43 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  msgpackr-extract: true
+  prisma: true
+  sharp: true
+
+# Keep the exact transitive security fixes selected for the release candidate.
+# Parent-qualified rules are used only where the patched version crosses the
+# dependency's declared major range.
+overrides:
+  "next@16.2.11>postcss": "8.5.23"
+  "sharp@": "0.35.5"
+  "source-map-js@": "1.2.2"
+  "postcss@": "8.5.23"
+  "nanoid@": "3.3.18"
+  "form-data@": "2.5.6"
+  "@prisma/config@6.19.3>deepmerge-ts": "8.0.2"
+  "esbuild@": "0.28.1"
+  "fast-uri@": "3.1.7"
+  "undici@": "7.29.1"
+  "browserslist@": "4.28.7"
+  "gaxios@6.7.1>uuid": "11.1.1"
+  "teeny-request@9.0.0>uuid": "11.1.1"
+
+catalog:
+  typescript: ^5.9.3
+  "@types/node": ^24.0.0
+  vitest: ^4.0.18
+  "@vitejs/plugin-react": ^5.1.4
+  zod: ^4.1.0
+  react: ^19.2.4
+  react-dom: ^19.2.4
+  "@types/react": ^19.2.14
+  "@types/react-dom": ^19.2.3
+
+minimumReleaseAgeExclude:
+  - '@bitmovin/api-sdk@1.280.0'

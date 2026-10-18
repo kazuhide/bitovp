@@ -1,0 +1,12 @@
+-- AKR-E57-003: a provisioning LEASE, because the status alone could not be the lock.
+--
+-- `provision()` accepted CREATED (the create route's enqueue) and PROVISIONING
+-- (a start action's atomic claim) alike, so a start arriving while the row was
+-- still CREATED let BOTH jobs through — two encoding trees on one channel,
+-- writing the same output prefix, both billed.
+--
+-- Nullable and with no default: every existing row is unclaimed, which is the
+-- correct reading for any channel not mid-provision right now. A row that IS
+-- mid-provision during deploy simply has its lease taken by the next attempt
+-- once the stale window passes, which is the same outcome as a worker restart.
+ALTER TABLE "LiveChannel" ADD COLUMN "provisionClaimedAt" TIMESTAMP(3);

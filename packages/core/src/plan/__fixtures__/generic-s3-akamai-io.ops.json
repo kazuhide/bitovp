@@ -1,0 +1,209 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_GENERIC_S3",
+		"payload": {
+			"name": "Akamai Generic S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "akamai-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_GENERIC_S3",
+		"payload": {
+			"name": "Akamai Generic S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "akamai-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "generic-s3-akamai-io",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v360",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": 300000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v360",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 360p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v360",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:v360",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/generic-s3-akamai-io/video/360p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 Muxing 360p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:a128",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/generic-s3-akamai-io/audio/128000",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 Muxing 128kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V4",
+			"hlsMediaPlaylistVersion": "HLS_V4",
+			"outputPath": "output/generic-s3-akamai-io/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v360",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/360p",
+			"uri": "video_300000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v360",
+			"muxingId": "muxing:v360"
+		}
+	},
+	{
+		"step": "hls-media:hls:a128",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/128000",
+			"uri": "audio_128000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:a128",
+			"muxingId": "muxing:a128"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"vodHlsManifestIds": [
+				"manifest:hls"
+			]
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

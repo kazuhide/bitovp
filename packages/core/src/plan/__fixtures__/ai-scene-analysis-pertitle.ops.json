@@ -1,0 +1,379 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "per-title-h264-aac-fmp4-ai-scene-analysis-aws",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "BETA"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:audio",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "big_buck_bunny_1080p_h264.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:pt-video",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": null,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"refFrames": 4,
+			"bframes": 3,
+			"cabac": true,
+			"adaptiveSpatialTransform": true,
+			"weightedPredictionPFrames": "SMART",
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:pt-video",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 PerTitle",
+			"mode": "PER_TITLE_TEMPLATE"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:pt-video",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "muxing:pt-video",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/video/{height}_{bitrate}_{uuid}",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 Muxing PerTitle"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:pt-video",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "codec:aac192",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 192000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:aac192",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 192kbps",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:aac192",
+			"inputStreamId": "ingest:audio"
+		}
+	},
+	{
+		"step": "muxing:aac192",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/audio/192000",
+			"acl": "PUBLIC_READ",
+			"name": "Audio FMP4 Muxing 192kbps"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:aac192",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"perTitle": {
+				"h264Configuration": {
+					"targetQualityCrf": 17,
+					"autoRepresentations": {},
+					"codecMinBitrateFactor": 0.5,
+					"codecMaxBitrateFactor": 2,
+					"codecBufsizeFactor": 4
+				}
+			},
+			"aiSceneAnalysis": {
+				"features": {
+					"assetDescription": {
+						"filename": "per-title-h264-aac-fmp4-ai-scene-analysis-aws.json",
+						"outputPath": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/ai",
+						"acl": "PUBLIC_READ"
+					},
+					"automaticAdPlacement": {
+						"allSceneBoundaries": {
+							"isEnabled": true,
+							"insertCueTags": true
+						}
+					},
+					"outputLanguageCodes": {
+						"outputLanguageCodes": [
+							"ja",
+							"ko"
+						]
+					}
+				}
+			}
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"aiAssetDescriptionOutputId": "output:origin"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "per-title-results",
+		"kind": "CAPTURE_PER_TITLE_RESULTS",
+		"payload": {
+			"streamModeFilter": "PER_TITLE_RESULT",
+			"templates": [
+				{
+					"rendition": "pt-video",
+					"codec": "H264",
+					"mode": "PER_TITLE_TEMPLATE",
+					"height": null,
+					"outputPathPatterns": [
+						"output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/video/{height}_{bitrate}_{uuid}"
+					]
+				}
+			]
+		},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V6",
+			"hlsMediaPlaylistVersion": "HLS_V6",
+			"outputPath": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-media:hls:aac192",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"payload": {
+			"name": "HLS Audio Media",
+			"groupId": "audio",
+			"language": "en",
+			"segmentPath": "audio/192000",
+			"uri": "audio_192000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:aac192",
+			"muxingId": "muxing:aac192"
+		}
+	},
+	{
+		"step": "hls-pertitle:hls",
+		"kind": "CREATE_HLS_PER_TITLE_VARIANTS",
+		"payload": {
+			"muxingKind": "FMP4",
+			"streamModeFilter": "PER_TITLE_RESULT",
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"uriTemplate": "video_{avgBitrate}.m3u8",
+			"stripBase": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest:dash",
+		"kind": "CREATE_MANIFEST_DASH",
+		"payload": {
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"outputPath": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:dash:period",
+		"kind": "CREATE_DASH_PERIOD",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-video",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:aset-audio",
+		"kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+		"payload": {
+			"lang": "en"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period"
+		}
+	},
+	{
+		"step": "manifest:dash:rep:aac192",
+		"kind": "CREATE_DASH_REPRESENTATION_FMP4",
+		"payload": {
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"segmentPath": "audio/192000"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-audio",
+			"encodingId": "encoding",
+			"muxingId": "muxing:aac192"
+		}
+	},
+	{
+		"step": "manifest:dash:pertitle-reps",
+		"kind": "CREATE_DASH_PER_TITLE_REPRESENTATIONS",
+		"payload": {
+			"muxingKind": "FMP4",
+			"streamModeFilter": "PER_TITLE_RESULT",
+			"type": "TEMPLATE",
+			"mode": "TEMPLATE_REPRESENTATION",
+			"stripBase": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws/"
+		},
+		"refs": {
+			"manifestId": "manifest:dash",
+			"periodId": "manifest:dash:period",
+			"adaptationSetId": "manifest:dash:aset-video",
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "manifest-start:hls",
+		"kind": "START_MANIFEST_HLS",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:hls"
+		}
+	},
+	{
+		"step": "manifest-await:hls",
+		"kind": "AWAIT_MANIFEST_HLS",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:hls"
+		}
+	},
+	{
+		"step": "manifest-start:dash",
+		"kind": "START_MANIFEST_DASH",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	},
+	{
+		"step": "manifest-await:dash",
+		"kind": "AWAIT_MANIFEST_DASH",
+		"payload": {},
+		"refs": {
+			"manifestId": "manifest:dash"
+		}
+	}
+]

@@ -1,0 +1,103 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "Dolby Atmos Encoding - Progressive Mp4",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "dolby:atmos-in",
+		"kind": "CREATE_DOLBY_ATMOS_INPUT_STREAM",
+		"payload": {
+			"inputPath": "sollevante_lp_v01_DAMF_Nearfield_48k_24b_24.wav",
+			"inputFormat": "ADM"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:atmos448",
+		"kind": "CREATE_CODEC_DOLBY_ATMOS",
+		"payload": {
+			"name": "Atmos Codec Configuration",
+			"bitrate": 448000,
+			"rate": 48000,
+			"loudnessControl": {
+				"meteringMode": "ITU_R_BS_1770_4",
+				"dialogueIntelligence": "ENABLED",
+				"speechThreshold": 15
+			}
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:atmos448",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Audio Stream",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:atmos448",
+			"inputStreamId": "dolby:atmos-in"
+		}
+	},
+	{
+		"step": "muxing:atmos448",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "output.mp4",
+			"outputPath": "output/Dolby_Atmos_Encoding__Progressive_Mp4/2026-06-12__00-00-00/",
+			"acl": "PUBLIC_READ",
+			"name": "Sample MP4 Muxing with Dolby Vision"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:atmos448",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

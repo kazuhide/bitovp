@@ -1,0 +1,101 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "VMAF-only H264 (no delivery outputs)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:video",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "input.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "codec:v540",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Sample video codec configuration",
+			"height": 540,
+			"bitrate": 600000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v540",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 540p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v540",
+			"inputStreamId": "ingest:video"
+		}
+	},
+	{
+		"step": "qc-muxing:v540",
+		"kind": "CREATE_MUXING_MP4",
+		"payload": {
+			"filename": "v540.mp4",
+			"outputPath": "output/vmaf-only-h264/video/540p/qc/",
+			"acl": "PUBLIC_READ",
+			"name": "QC VMAF Mirror Stream H264 540p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

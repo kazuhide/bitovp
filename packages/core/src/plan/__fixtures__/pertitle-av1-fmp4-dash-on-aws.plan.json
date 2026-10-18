@@ -1,0 +1,161 @@
+{
+	"planVersion": 1,
+	"name": "per-title-av1-aac-fmp4-dash-aws",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "AV1",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"presetConfiguration": "VOD_STANDARD",
+			"encodingMode": "THREE_PASS"
+		},
+		{
+			"key": "v720",
+			"codec": "AV1",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"presetConfiguration": "VOD_QUALITY",
+			"autoLevelSetup": "ENABLED",
+			"perTitleSettings": {
+				"minBitrate": 700000,
+				"maxBitrate": 1700000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 1500000,
+				"highComplexityBoundaryForMaxBitrate": 3200000
+			},
+			"encodingMode": "THREE_PASS"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"name": "AAC Codec Configuration",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"conditions": {
+				"attribute": "AUDIOSTREAMCOUNT",
+				"operator": "GREATER_THAN",
+				"value": "0"
+			}
+		}
+	],
+	"muxings": [
+		{
+			"key": "v360",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-av1-aac-fmp4-dash-aws/audio/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 Muxing"
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-av1-aac-fmp4-dash-aws/",
+				"acl": "PUBLIC_READ"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"videoMuxingKind": "FMP4",
+			"audioMuxingKind": "FMP4"
+		}
+	],
+	"perTitle": {
+		"av1Configuration": {
+			"minBitrate": 128000,
+			"maxBitrate": 3200000,
+			"targetQualityCrf": 18,
+			"maxBitrateStepSize": 4,
+			"fixedResolutionAndBitrateConfiguration": {
+				"forcedRenditionAboveHighestFixedRepresentation": 1,
+				"forcedRenditionAboveHighestFixedRepresentationFactor": 1.2,
+				"forcedRenditionAboveHighestFixedRepresentationCalculationMode": "LAST_CALCULATED_BITRATE"
+			}
+		}
+	},
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

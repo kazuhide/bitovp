@@ -1,0 +1,258 @@
+{
+	"planVersion": 1,
+	"name": "dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "aac-audio",
+			"inputKey": "main",
+			"inputPath": "<INSERT_AAC_2_0_MEZZANINE_PATH>",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"dolbyStreams": [
+		{
+			"key": "dv-in",
+			"kind": "VISION",
+			"inputKey": "main",
+			"videoInputPath": "<INSERT_DOLBY_VISION_VIDEO_PATH>",
+			"metadataInputPath": "<INSERT_DOLBY_VISION_METADATA_PATH>"
+		},
+		{
+			"key": "atmos-in",
+			"kind": "ATMOS",
+			"inputKey": "main",
+			"inputPath": "<INSERT_DOLBY_ATMOS_DAMF_PATH>",
+			"inputFormat": "DAMF"
+		}
+	],
+	"renditions": [
+		{
+			"key": "v2160",
+			"codec": "H265",
+			"ingestKey": "dv-in",
+			"name": "H265 DV 2160p",
+			"height": 2160,
+			"bitrate": 15000000,
+			"level": null,
+			"dynamicRangeFormat": "DOLBY_VISION",
+			"adaptiveQuantizationStrength": 0.5,
+			"streamName": "Stream H265 DV 2160p",
+			"hlsVariantLabel": "dv"
+		},
+		{
+			"key": "v1080",
+			"codec": "H265",
+			"ingestKey": "dv-in",
+			"name": "H265 DV 1080p",
+			"height": 1080,
+			"bitrate": 6000000,
+			"level": null,
+			"dynamicRangeFormat": "DOLBY_VISION",
+			"adaptiveQuantizationStrength": 0.8,
+			"streamName": "Stream H265 DV 1080p",
+			"hlsVariantLabel": "dv"
+		},
+		{
+			"key": "v720",
+			"codec": "H265",
+			"ingestKey": "dv-in",
+			"name": "H265 DV 720p",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"dynamicRangeFormat": "DOLBY_VISION",
+			"adaptiveQuantizationStrength": 1,
+			"streamName": "Stream H265 DV 720p",
+			"hlsVariantLabel": "dv"
+		},
+		{
+			"key": "v540",
+			"codec": "H265",
+			"ingestKey": "dv-in",
+			"name": "H265 DV 540p",
+			"height": 540,
+			"bitrate": 1800000,
+			"level": null,
+			"dynamicRangeFormat": "DOLBY_VISION",
+			"adaptiveQuantizationStrength": 1.2,
+			"streamName": "Stream H265 DV 540p",
+			"hlsVariantLabel": "dv"
+		},
+		{
+			"key": "atmos448",
+			"codec": "DOLBY_ATMOS",
+			"ingestKey": "atmos-in",
+			"bitrate": 448000,
+			"rate": 48000,
+			"loudnessControl": {
+				"meteringMode": "ITU_R_BS_1770_4",
+				"dialogueIntelligence": "ENABLED",
+				"speechThreshold": 15
+			},
+			"streamName": "Stream ATMOS 448000bps",
+			"hlsMedia": {
+				"groupId": "atmos",
+				"name": "English Atmos",
+				"uri": "audio_atmos_448000.m3u8",
+				"isDefault": false,
+				"autoselect": true
+			}
+		},
+		{
+			"key": "aac128",
+			"codec": "AAC",
+			"ingestKey": "aac-audio",
+			"name": "AAC 128000bps",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"streamName": "Stream AAC 128000bps",
+			"hlsMedia": {
+				"groupId": "aac",
+				"name": "English AAC",
+				"uri": "audio_aac_128000.m3u8",
+				"isDefault": true,
+				"autoselect": true
+			}
+		}
+	],
+	"muxings": [
+		{
+			"key": "v2160",
+			"kind": "FMP4",
+			"streamKey": "v2160",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/video/dv/2160p_15000000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/video/dv/1080p_6000000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/video/dv/720p_3000000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v540",
+			"kind": "FMP4",
+			"streamKey": "v540",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/video/dv/540p_1800000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "atmos448",
+			"kind": "FMP4",
+			"streamKey": "atmos448",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/audio/atmos/448000/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "aac128",
+			"kind": "FMP4",
+			"streamKey": "aac128",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/audio/aac/128000/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"masterVersion": "HLS_V8",
+			"mediaVersion": "HLS_V8",
+			"variantsPerAudioGroup": true,
+			"iframePlaylists": true,
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dolbyvision-dolbyatmos-damf-aac-hls-dash-fmp4/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

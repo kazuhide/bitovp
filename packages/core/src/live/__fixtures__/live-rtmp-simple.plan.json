@@ -1,0 +1,171 @@
+{
+	"planVersion": 1,
+	"name": "Live RTMP Channel (live-rtmp-simple)",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"liveInput": {
+		"key": "main",
+		"kind": "RTMP"
+	},
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputPath": "live",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputPath": "live",
+			"position": 1
+		}
+	],
+	"renditions": [
+		{
+			"key": "v1080",
+			"codec": "H264",
+			"name": "Live H264 1080p",
+			"ingestKey": "video",
+			"height": 1080,
+			"bitrate": 4500000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "v720",
+			"codec": "H264",
+			"name": "Live H264 720p",
+			"ingestKey": "video",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "v360",
+			"codec": "H264",
+			"name": "Live H264 360p",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 800000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v1080",
+			"kind": "FMP4",
+			"streamKey": "v1080",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-rtmp-simple/video/1080p"
+			}
+		},
+		{
+			"key": "v720",
+			"kind": "FMP4",
+			"streamKey": "v720",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-rtmp-simple/video/720p"
+			}
+		},
+		{
+			"key": "v360",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-rtmp-simple/video/360p"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-rtmp-simple/audio/128000"
+			}
+		}
+	],
+	"liveManifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "Live HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-rtmp-simple"
+			},
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"timeshift": 7200,
+			"liveEdgeOffset": 18,
+			"insertProgramDateTime": true
+		},
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "Live DASH Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/live-rtmp-simple"
+			},
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"timeshift": 7200,
+			"suggestedPresentationDelay": 12000,
+			"minimumUpdatePeriod": 6000,
+			"availabilityStartTimeMode": "ON_FIRST_SEGMENT"
+		}
+	],
+	"start": {
+		"streamKey": "myStreamKey",
+		"autoRestart": {
+			"segmentsWrittenTimeout": 60,
+			"restartOnEncoderError": true
+		},
+		"autoShutdown": {
+			"bytesReadTimeoutSeconds": 3600,
+			"streamTimeoutMinutes": 720
+		}
+	}
+}

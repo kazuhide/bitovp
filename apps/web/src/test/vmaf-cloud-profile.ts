@@ -1,0 +1,21 @@
+/** Private configuration fixture: response tests must prove these fields stay server-side. */
+export const cloudProfile = {
+	id: "aws-test",
+	label: "AWS test",
+	provider: "AWS_BATCH",
+	region: "us-east-1",
+	image: `private-image@sha256:${"a".repeat(64)}`,
+	cpu: 4,
+	memoryMiB: 8192,
+	diskGiB: 20,
+	maxParallel: 2,
+	timeoutSeconds: 3600,
+	queueTimeoutSeconds: 600,
+	maxCostUsdPerHour: 2,
+	transferUsdPerGiB: 0.1,
+	overheadUsd: 0.2,
+	maxStagingGiB: 10,
+	staging: { provider: "S3", bucket: "private-bucket", region: "us-east-1" },
+	jobQueue: "private-queue",
+	jobDefinition: "private-definition",
+};

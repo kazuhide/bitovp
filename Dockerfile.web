@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# Web application image with an isolated production build.
+FROM node:24-bookworm-slim
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends openssl ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+
+ENV COREPACK_HOME=/corepack
+RUN corepack enable \
+	&& corepack prepare pnpm@11.20.0 --activate \
+	&& chmod -R a+rX /corepack
+
+WORKDIR /app
+
+ARG GIT_COMMIT=unknown
+ENV BITOVP_COMMIT=$GIT_COMMIT
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+
+COPY . .
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+	pnpm install --frozen-lockfile --filter "@bitovp/web..." \
+	|| ( echo "filtered frozen install failed — falling back to full frozen install" \
+		&& pnpm install --frozen-lockfile )
+
+RUN pnpm --filter @bitovp/db run build
+
+RUN pnpm --filter @bitovp/web run build
+
+USER node
+
+ENV BITOVP_BIND_HOST=0.0.0.0
+CMD ["pnpm", "--filter", "@bitovp/web", "run", "start"]

@@ -1,0 +1,174 @@
+[
+	{
+		"step": "input:main",
+		"kind": "CREATE_INPUT_S3",
+		"payload": {
+			"name": "Test S3 Input",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucketName": "sample-input-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "Synthetic Two-Source Concatenation (concatenation-two-sources)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "ingest:partA",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "/path/to/your/input/part-a.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "ingest:partB",
+		"kind": "CREATE_INGEST_INPUT_STREAM",
+		"payload": {
+			"inputPath": "/path/to/your/input/part-b.mp4",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"inputId": "input:main"
+		}
+	},
+	{
+		"step": "concat:joined",
+		"kind": "CREATE_CONCATENATION_INPUT_STREAM",
+		"payload": {
+			"sources": [
+				{
+					"sourceRef": "source0",
+					"isMain": true,
+					"position": 0
+				},
+				{
+					"sourceRef": "source1",
+					"position": 1
+				}
+			]
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"source0": "ingest:partA",
+			"source1": "ingest:partB"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "H264 720p",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 720p",
+			"mode": "STANDARD"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputStreamId": "concat:joined"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_FMP4",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "segment_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"outputPath": "output/concatenation-two-sources/video/720p",
+			"acl": "PUBLIC_READ",
+			"name": "Video FMP4 Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"hlsMasterPlaylistVersion": "HLS_V6",
+			"hlsMediaPlaylistVersion": "HLS_V6",
+			"outputPath": "output/concatenation-two-sources/",
+			"acl": "PUBLIC_READ"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v720",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"audio": "audio",
+			"closedCaptions": "NONE",
+			"segmentPath": "video/720p",
+			"uri": "video_3000000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_ENCODING",
+		"payload": {
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"vodHlsManifestIds": [
+				"manifest:hls"
+			]
+		}
+	},
+	{
+		"step": "await:encoding",
+		"kind": "AWAIT_ENCODING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

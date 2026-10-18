@@ -1,0 +1,216 @@
+{
+	"planVersion": 1,
+	"name": "media-copy-fixture-08-video-subtitles",
+	"bitmovin": {
+		"accountId": "0f8edfe4-fc30-4a9a-89e3-a3e89d5245df",
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE",
+		"prewarmedEncoderPoolIds": [],
+		"labels": ["media-copy-fixture"]
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df",
+			"bucket": "test-input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df",
+			"bucket": "test-output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/source.mov",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 700000,
+			"mode": "STANDARD",
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"width": 640,
+			"filters": [
+				{
+					"filterKey": "crop",
+					"position": 0
+				},
+				{
+					"filterKey": "rotate",
+					"position": 1
+				},
+				{
+					"filterKey": "text",
+					"position": 2
+				},
+				{
+					"filterKey": "image",
+					"position": 3
+				}
+			],
+			"burnInSrt": {
+				"inputKey": "main",
+				"inputPath": "bitovp-tests/media-copy-fixture/captions.srt",
+				"characterEncoding": "UTF_8"
+			}
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		{
+			"key": "captions",
+			"codec": "WEBVTT",
+			"ingestKey": "captions-file",
+			"language": "en",
+			"label": "English"
+		}
+	],
+	"muxings": [
+		{
+			"key": "mp4",
+			"kind": "MP4",
+			"streamKey": "v360",
+			"additionalStreamKeys": ["a128"],
+			"filename": "video.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/08-video-subtitles/",
+				"acl": "PRIVATE"
+			}
+		},
+		{
+			"key": "video-fmp4",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 4,
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/08-video-subtitles/video/",
+				"acl": "PRIVATE"
+			}
+		},
+		{
+			"key": "audio-fmp4",
+			"kind": "FMP4",
+			"streamKey": "a128",
+			"segmentLength": 4,
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/08-video-subtitles/audio/",
+				"acl": "PRIVATE"
+			}
+		},
+		{
+			"key": "captions-text",
+			"kind": "CHUNKED_TEXT",
+			"streamKey": "captions",
+			"segmentLength": 4,
+			"segmentNaming": "captions_%number%.vtt",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/08-video-subtitles/subtitles/en/",
+				"acl": "PRIVATE"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/08-video-subtitles/",
+				"acl": "PRIVATE"
+			},
+			"videoMuxingKind": "FMP4",
+			"audioMuxingKind": "FMP4"
+		},
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/media-copy-fixture/08-video-subtitles/",
+				"acl": "PRIVATE"
+			},
+			"videoMuxingKind": "FMP4",
+			"audioMuxingKind": "FMP4"
+		}
+	],
+	"generation": {
+		"timing": "POST_ENCODING"
+	},
+	"fileStreams": [
+		{
+			"key": "captions-file",
+			"inputKey": "main",
+			"inputPath": "bitovp-tests/media-copy-fixture/captions.vtt",
+			"fileType": "WEBVTT"
+		}
+	],
+	"filters": [
+		{
+			"key": "crop",
+			"kind": "CROP",
+			"left": 32,
+			"right": 32,
+			"top": 18,
+			"bottom": 18,
+			"unit": "PIXELS"
+		},
+		{
+			"key": "rotate",
+			"kind": "ROTATE",
+			"rotation": 180
+		},
+		{
+			"key": "text",
+			"kind": "TEXT",
+			"text": "P1 FILTER",
+			"x": "12",
+			"y": "12",
+			"font": "DEJAVUSANS",
+			"fontSize": 24,
+			"fontColor": "white",
+			"box": true,
+			"boxColor": "black",
+			"boxBorderWidth": 4
+		},
+		{
+			"key": "image",
+			"kind": "WATERMARK",
+			"inputKey": "main",
+			"imagePath": "bitovp-tests/media-copy-fixture/mark.png",
+			"right": 12,
+			"top": 12,
+			"unit": "PIXELS"
+		}
+	]
+}

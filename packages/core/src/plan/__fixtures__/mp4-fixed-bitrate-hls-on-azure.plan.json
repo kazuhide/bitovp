@@ -1,0 +1,155 @@
+{
+	"planVersion": 1,
+	"name": "h264-aac-mp4-fixed-bitrate-hls-azure",
+	"bitmovin": {
+		"cloudRegion": "AZURE_JAPAN_EAST",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "AZURE",
+			"credentialId": "00000000-0000-4000-8000-000000000003",
+			"container": "sample-input-container",
+			"name": "Test Azure Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "AZURE",
+			"credentialId": "00000000-0000-4000-8000-000000000004",
+			"container": "sample-output-container",
+			"name": "Test Azure Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "sintel/Sintel.2010.1080p.mkv",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 360,
+			"bitrate": 300000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "v540",
+			"codec": "H264",
+			"ingestKey": "video",
+			"height": 540,
+			"bitrate": 600000,
+			"level": null,
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"mode": "STANDARD"
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		{
+			"key": "a64",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 64000,
+			"rate": 44100,
+			"channelLayout": "CL_STEREO"
+		}
+	],
+	"muxings": [
+		{
+			"key": "v360",
+			"kind": "MP4",
+			"streamKey": "v360",
+			"filename": "video_360p.mp4",
+			"fragmentDuration": 4000,
+			"manifestType": "HLS_BYTE_RANGES",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-mp4-fixed-bitrate-hls-azure/video/360p",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "v540",
+			"kind": "MP4",
+			"streamKey": "v540",
+			"filename": "video_540p.mp4",
+			"fragmentDuration": 4000,
+			"manifestType": "HLS_BYTE_RANGES",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-mp4-fixed-bitrate-hls-azure/video/540p",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a128",
+			"kind": "MP4",
+			"streamKey": "a128",
+			"filename": "aac_128000.mp4",
+			"fragmentDuration": 4000,
+			"manifestType": "HLS_BYTE_RANGES",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-mp4-fixed-bitrate-hls-azure/audio/128000",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "a64",
+			"kind": "MP4",
+			"streamKey": "a64",
+			"filename": "aac_64000.mp4",
+			"fragmentDuration": 4000,
+			"manifestType": "HLS_BYTE_RANGES",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-mp4-fixed-bitrate-hls-azure/audio/64000",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"manifests": [
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/h264-aac-mp4-fixed-bitrate-hls-azure/",
+				"acl": "PUBLIC_READ"
+			},
+			"masterVersion": "HLS_V4",
+			"mediaVersion": "HLS_V4",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE"
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

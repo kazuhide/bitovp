@@ -1,0 +1,70 @@
+{
+	"planName": "Live Zixi Channel (live-zixi)",
+	"ingest": {
+		"kind": "ZIXI",
+		"feedable": false,
+		"requiresCoordinates": [
+			"encoderIp"
+		]
+	},
+	"muxings": [
+		{
+			"muxingKey": "v720",
+			"streamKey": "v720",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-zixi/video/720p/",
+				"prefix": "output/live-zixi/video/720p/",
+				"templated": false
+			},
+			"segmentNaming": "seg_%number%.ts",
+			"segmentLengthSec": 6
+		},
+		{
+			"muxingKey": "a128",
+			"streamKey": "a128",
+			"container": "TS_SEGMENTED",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-zixi/audio/128000/",
+				"prefix": "output/live-zixi/audio/128000/",
+				"templated": false
+			},
+			"segmentNaming": "seg_%number%.ts",
+			"segmentLengthSec": 6
+		}
+	],
+	"manifests": [
+		{
+			"manifestKey": "hls",
+			"kind": "HLS",
+			"outputKey": "origin",
+			"dir": {
+				"pattern": "output/live-zixi/",
+				"prefix": "output/live-zixi/",
+				"templated": false
+			},
+			"files": [
+				"stream.m3u8"
+			],
+			"mediaPlaylists": [
+				"video_3000000.m3u8",
+				"audio_128000.m3u8"
+			],
+			"timeshiftSec": 7200,
+			"elementBudget": {
+				"segmentsPerRendition": 1200,
+				"totalElements": 2400,
+				"budget": 54000,
+				"utilization": 0.044444444444444446,
+				"level": "ok"
+			}
+		}
+	],
+	"renditionCount": 2,
+	"needsPois": false,
+	"notes": [
+		"ZIXI cannot be driven by our feeder, so this channel can be provisioned and checked for coordinates and heartbeat but never fed — media assertions will SKIP with that reason"
+	]
+}

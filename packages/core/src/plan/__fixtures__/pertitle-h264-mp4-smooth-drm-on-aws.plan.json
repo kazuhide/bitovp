@@ -1,0 +1,544 @@
+{
+	"planVersion": 1,
+	"name": "per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "video",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "VIDEO_RELATIVE",
+			"position": 0
+		},
+		{
+			"key": "audio",
+			"inputKey": "main",
+			"inputPath": "{YOUR INPUT FILE PATH}",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"renditions": [
+		{
+			"key": "v180",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 180,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "BASELINE",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			}
+		},
+		{
+			"key": "v360-300",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"perTitleSettings": {
+				"minBitrate": 300000,
+				"maxBitrate": 500000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v360-600",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"perTitleSettings": {
+				"minBitrate": 600000,
+				"maxBitrate": 900000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v540",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 540,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "MAIN",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1.2,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"perTitleSettings": {
+				"minBitrate": 1000000,
+				"maxBitrate": 1400000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v720",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 720,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 1,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			},
+			"perTitleSettings": {
+				"minBitrate": 1800000,
+				"maxBitrate": 2400000,
+				"bitrateSelectionMode": "COMPLEXITY_RANGE",
+				"lowComplexityBoundaryForMaxBitrate": 2160000,
+				"highComplexityBoundaryForMaxBitrate": 4000000
+			}
+		},
+		{
+			"key": "v900",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 900,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.8,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			}
+		},
+		{
+			"key": "v1080",
+			"codec": "H264",
+			"ingestKey": "video",
+			"name": "Sample video codec configuration",
+			"height": 1080,
+			"bitrate": null,
+			"level": null,
+			"presetConfiguration": null,
+			"mode": "PER_TITLE_TEMPLATE",
+			"profile": "HIGH",
+			"minKeyframeInterval": 2,
+			"maxKeyframeInterval": 2,
+			"slices": 1,
+			"trellis": "ENABLED_ALL",
+			"mvSearchRangeMax": 24,
+			"rcLookahead": 60,
+			"subMe": "RD_REF_IP",
+			"motionEstimationMethod": "UMH",
+			"sceneCutThreshold": 40,
+			"adaptiveQuantizationMode": "AUTO_VARIANCE_DARK_SCENES",
+			"adaptiveQuantizationStrength": 0.5,
+			"mvPredictionMode": "AUTO",
+			"psyRateDistortionOptimization": 0,
+			"psyTrellis": 0,
+			"colorConfig": {
+				"copyColorPrimariesFlag": true,
+				"copyColorTransferFlag": true,
+				"copyColorSpaceFlag": true
+			}
+		},
+		{
+			"key": "a128",
+			"codec": "AAC",
+			"ingestKey": "audio",
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"name": "AAC Codec Configuration",
+			"conditions": {
+				"attribute": "AUDIOSTREAMCOUNT",
+				"operator": "GREATER_THAN",
+				"value": "0"
+			}
+		}
+	],
+	"muxings": [
+		{
+			"key": "v180",
+			"kind": "MP4",
+			"streamKey": "v180",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "v360-300",
+			"kind": "MP4",
+			"streamKey": "v360-300",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "v360-600",
+			"kind": "MP4",
+			"streamKey": "v360-600",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "v540",
+			"kind": "MP4",
+			"streamKey": "v540",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "v720",
+			"kind": "MP4",
+			"streamKey": "v720",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "v900",
+			"kind": "MP4",
+			"streamKey": "v900",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "v1080",
+			"kind": "MP4",
+			"streamKey": "v1080",
+			"filename": "video.ismv",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		},
+		{
+			"key": "a128",
+			"kind": "MP4",
+			"streamKey": "a128",
+			"filename": "audio.isma",
+			"fragmentDuration": 6000,
+			"manifestType": "SMOOTH"
+		}
+	],
+	"drm": [
+		{
+			"key": "v180-cenc",
+			"kind": "CENC",
+			"muxingKey": "v180",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "v360-300-cenc",
+			"kind": "CENC",
+			"muxingKey": "v360-300",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "v360-600-cenc",
+			"kind": "CENC",
+			"muxingKey": "v360-600",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "v540-cenc",
+			"kind": "CENC",
+			"muxingKey": "v540",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "v720-cenc",
+			"kind": "CENC",
+			"muxingKey": "v720",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "v900-cenc",
+			"kind": "CENC",
+			"muxingKey": "v900",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "v1080-cenc",
+			"kind": "CENC",
+			"muxingKey": "v1080",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/video/{height}p_{bitrate}_{uuid}/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video MP4 CENC PlayReady"
+		},
+		{
+			"key": "a128-cenc",
+			"kind": "CENC",
+			"muxingKey": "a128",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"kid": "43215678123412341234123412341234",
+			"ivSize": "IV_8_BYTES",
+			"playReady": {
+				"laUrl": "http://pr.test.drm.com/playready/RightsManager.asmx"
+			},
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/audio/",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio MP4 CENC PlayReady"
+		}
+	],
+	"manifests": [
+		{
+			"key": "smooth",
+			"kind": "SMOOTH",
+			"serverManifestName": "stream.ism",
+			"clientManifestName": "stream.ismc",
+			"name": "Smooth Manifest",
+			"language": "en",
+			"drmKind": "CENC",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/per-title-h264-aac-mp4-cenc-drm-pr-smooth-aws/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"perTitle": {
+		"h264Configuration": {
+			"minBitrate": 128000,
+			"maxBitrate": 4000000,
+			"codecMinBitrateFactor": 0.8,
+			"codecMaxBitrateFactor": 1.2,
+			"codecBufsizeFactor": 2,
+			"targetQualityCrf": 17,
+			"complexityFactor": 1,
+			"maxBitrateStepSize": 4,
+			"fixedResolutionAndBitrateConfiguration": {
+				"forcedRenditionAboveHighestFixedRepresentation": 1,
+				"forcedRenditionAboveHighestFixedRepresentationFactor": 1.2,
+				"forcedRenditionAboveHighestFixedRepresentationCalculationMode": "LAST_CALCULATED_BITRATE"
+			}
+		}
+	},
+	"generation": {
+		"timing": "POST_ENCODING",
+		"encodingMode": "THREE_PASS"
+	}
+}

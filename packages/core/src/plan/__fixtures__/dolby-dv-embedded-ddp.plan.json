@@ -1,0 +1,156 @@
+{
+	"planVersion": 1,
+	"name": "dv-embedded-with-atmos-ddp-dd-aac",
+	"bitmovin": {
+		"cloudRegion": "AWS_AP_NORTHEAST_1",
+		"encoderVersion": "STABLE"
+	},
+	"inputs": [
+		{
+			"key": "main",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000001",
+			"bucket": "sample-input-bucket",
+			"name": "Test S3 Input"
+		}
+	],
+	"outputs": [
+		{
+			"key": "origin",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucket": "sample-output-bucket",
+			"name": "Test S3 Output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "stereo",
+			"inputKey": "main",
+			"inputPath": "netflix-opencontent/SolLevante/imf/AUDIO_4467fc2f-2536-44ba-b1f9-010e0ae3f6b1.mxf",
+			"selectionMode": "AUDIO_RELATIVE",
+			"position": 0
+		}
+	],
+	"dolbyStreams": [
+		{
+			"key": "dv-in",
+			"kind": "VISION",
+			"inputKey": "main",
+			"videoInputPath": "netflix-opencontent/SolLevante/imf/VIDEO_e4da5fcd-5ffc-4713-bcdd-95ea579d790b.mxf"
+		},
+		{
+			"key": "atmos-in",
+			"kind": "ATMOS",
+			"inputKey": "main",
+			"inputPath": "netflix-opencontent/SolLevante/atmos-adm/sollevante_lp_v01_DAMF_Nearfield_48k_24b_24.wav",
+			"inputFormat": "ADM"
+		}
+	],
+	"renditions": [
+		{
+			"key": "v360",
+			"codec": "H265",
+			"ingestKey": "dv-in",
+			"name": "Sample video codec configuration",
+			"height": 360,
+			"bitrate": 1000000,
+			"level": null,
+			"maxBitrate": 2000000,
+			"bufsize": 4000000,
+			"dynamicRangeFormat": "DOLBY_VISION",
+			"presetConfiguration": "VOD_HIGH_QUALITY",
+			"dashSetKey": "video"
+		},
+		{
+			"key": "ddp192",
+			"codec": "DDPLUS",
+			"ingestKey": "stereo",
+			"bitrate": 192000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO",
+			"dashSetKey": "ddp",
+			"hlsMedia": {
+				"groupId": "audio",
+				"name": "DDP",
+				"uri": "ddp_audio_192000.m3u8"
+			}
+		}
+	],
+	"muxings": [
+		{
+			"key": "v360",
+			"kind": "FMP4",
+			"streamKey": "v360",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dv-embedded-with-atmos-ddp-dd-aac/video/360",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Video FMP4 Muxing 360p"
+		},
+		{
+			"key": "ddp192-mux",
+			"kind": "FMP4",
+			"streamKey": "ddp192",
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.m4s",
+			"initSegmentName": "init.mp4",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dv-embedded-with-atmos-ddp-dd-aac/audio/dolby-digital-plus/192000",
+				"acl": "PUBLIC_READ"
+			},
+			"name": "Audio FMP4 Muxing 192kbps"
+		}
+	],
+	"manifests": [
+		{
+			"key": "dash",
+			"kind": "DASH",
+			"manifestName": "stream.mpd",
+			"name": "DASH Manifest",
+			"audioLanguage": "en",
+			"representationType": "TEMPLATE",
+			"adaptationSets": [
+				{
+					"key": "video",
+					"type": "VIDEO"
+				},
+				{
+					"key": "ddp",
+					"type": "AUDIO",
+					"lang": "en",
+					"label": "ddp"
+				}
+			],
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dv-embedded-with-atmos-ddp-dd-aac/",
+				"acl": "PUBLIC_READ"
+			}
+		},
+		{
+			"key": "hls",
+			"kind": "HLS",
+			"manifestName": "stream.m3u8",
+			"name": "HLS Manifest",
+			"audioGroupId": "audio",
+			"audioLanguage": "en",
+			"closedCaptions": "NONE",
+			"masterVersion": "HLS_V8",
+			"mediaVersion": "HLS_V8",
+			"destination": {
+				"outputKey": "origin",
+				"path": "output/dv-embedded-with-atmos-ddp-dd-aac/",
+				"acl": "PUBLIC_READ"
+			}
+		}
+	],
+	"generation": {
+		"timing": "JUST_IN_TIME"
+	}
+}

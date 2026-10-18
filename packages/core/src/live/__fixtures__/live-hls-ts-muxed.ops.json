@@ -1,0 +1,212 @@
+[
+	{
+		"step": "live-input:main",
+		"kind": "CREATE_INPUT_RTMP",
+		"payload": {},
+		"refs": {}
+	},
+	{
+		"step": "output:origin",
+		"kind": "CREATE_OUTPUT_S3",
+		"payload": {
+			"name": "Test S3 Output",
+			"credentialId": "00000000-0000-4000-8000-000000000002",
+			"bucketName": "sample-output-bucket"
+		},
+		"refs": {}
+	},
+	{
+		"step": "encoding",
+		"kind": "CREATE_ENCODING",
+		"payload": {
+			"name": "Live HLS with audio muxed into each TS variant (live-hls-ts-muxed)",
+			"cloudRegion": "AWS_AP_NORTHEAST_1",
+			"encoderVersion": "STABLE"
+		},
+		"refs": {}
+	},
+	{
+		"step": "codec:v540",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Live H264 540p",
+			"height": 540,
+			"bitrate": 1500000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v540",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 540p",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v540",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "codec:v720",
+		"kind": "CREATE_CODEC_H264",
+		"payload": {
+			"name": "Live H264 720p",
+			"height": 720,
+			"bitrate": 3000000,
+			"level": null,
+			"presetConfiguration": "LIVE_STANDARD"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:v720",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream H264 720p",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 0
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:v720",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "codec:a128",
+		"kind": "CREATE_CODEC_AAC",
+		"payload": {
+			"bitrate": 128000,
+			"rate": 48000,
+			"channelLayout": "CL_STEREO"
+		},
+		"refs": {}
+	},
+	{
+		"step": "stream:a128",
+		"kind": "CREATE_STREAM",
+		"payload": {
+			"name": "Stream AAC 128kbps",
+			"mode": "STANDARD",
+			"inputPath": "live",
+			"position": 1
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"codecConfigId": "codec:a128",
+			"inputId": "live-input:main"
+		}
+	},
+	{
+		"step": "muxing:v540",
+		"kind": "CREATE_MUXING_TS",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.ts",
+			"outputPath": "output/live-hls-ts-muxed/video/540p",
+			"name": "Video TS Muxing 540p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"additionalStreamIds": [
+				"stream:a128"
+			],
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "muxing:v720",
+		"kind": "CREATE_MUXING_TS",
+		"payload": {
+			"segmentLength": 6,
+			"segmentNaming": "seg_%number%.ts",
+			"outputPath": "output/live-hls-ts-muxed/video/720p",
+			"name": "Video TS Muxing 720p"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"additionalStreamIds": [
+				"stream:a128"
+			],
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "manifest:hls",
+		"kind": "CREATE_MANIFEST_HLS",
+		"payload": {
+			"manifestName": "stream.m3u8",
+			"name": "Live HLS Manifest",
+			"outputPath": "output/live-hls-ts-muxed"
+		},
+		"refs": {
+			"outputId": "output:origin"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v540",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"closedCaptions": "NONE",
+			"segmentPath": "video/540p",
+			"uri": "video_1500000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v540",
+			"muxingId": "muxing:v540"
+		}
+	},
+	{
+		"step": "hls-variant:hls:v720",
+		"kind": "CREATE_HLS_STREAM_INFO",
+		"payload": {
+			"closedCaptions": "NONE",
+			"segmentPath": "video/720p",
+			"uri": "video_3000000.m3u8"
+		},
+		"refs": {
+			"manifestId": "manifest:hls",
+			"encodingId": "encoding",
+			"streamId": "stream:v720",
+			"muxingId": "muxing:v720"
+		}
+	},
+	{
+		"step": "start",
+		"kind": "START_LIVE_ENCODING",
+		"payload": {
+			"streamKey": "muxedLive",
+			"hlsManifests": {
+				"hls": {
+					"timeshift": 7200
+				}
+			},
+			"manifestGenerator": "V2"
+		},
+		"refs": {
+			"encodingId": "encoding",
+			"liveHlsManifestIds": [
+				"manifest:hls"
+			]
+		}
+	},
+	{
+		"step": "await:running",
+		"kind": "AWAIT_LIVE_RUNNING",
+		"payload": {},
+		"refs": {
+			"encodingId": "encoding"
+		}
+	}
+]

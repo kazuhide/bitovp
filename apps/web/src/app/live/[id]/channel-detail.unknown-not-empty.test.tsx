@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery as wrap } from "@/test/render";
 
 /**
- * at the page that composes the summaries.
+ * Verify query failure handling at the page that composes the summaries.
  *
  * A failed alerts query became `alerts.data?.open.length ?? 0`, so the
  * monitoring strip printed a green `0`, the alerts card summarised "0 open"

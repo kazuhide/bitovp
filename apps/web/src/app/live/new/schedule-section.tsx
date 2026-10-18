@@ -366,7 +366,7 @@ export function ScheduleSection({
 				</div>
 			)}
 
-			{/* 's signpost, OUTSIDE the enabled/disabled branch on
+			{/* Keep the feeder signpost OUTSIDE the enabled/disabled branch on
 			 * purpose: the operator this sentence is for came here looking for
 			 * a file-fed program, and that operator has no reason to tick
 			 * "schedule a broadcast slot" first — putting it inside the branch
@@ -374,7 +374,7 @@ export function ScheduleSection({
 			<div className="space-y-1">
 				<p className="text-xs text-zinc-500">{t("schedule.feederPointer")}</p>
 				{/* Keep the link separate from the sentence rather than inserting a JSX space between Japanese characters. */}
-				{/* A new tab : the wizard holds an unsaved draft
+				{/* Open a new tab: the wizard holds an unsaved draft
 				    and navigating away discarded it. */}
 				<Link
 					href="/live/feeders"

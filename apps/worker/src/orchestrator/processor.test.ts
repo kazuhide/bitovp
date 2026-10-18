@@ -1370,7 +1370,7 @@ describe("the #38 create stamp — threaded, not just declared", () => {
 	});
 
 	it("adoptWindow() is true EXACTLY while a crash-leftover step re-executes", async () => {
-		// 's adoption half: sdk-ops runs adopt-before-create only in
+		// sdk-ops runs adopt-before-create only in
 		// this window. Too wide (true on fresh steps) and every happy-path
 		// create pays a list + N customData GETs; too narrow (never true) and
 		// adoption is dead code with a green suite — the same silent-drop shape

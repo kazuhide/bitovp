@@ -444,7 +444,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// BOTH exits of executeStep (the DONE path and the catch), so poll,
 		// finalize, cancel and sibling-stop traffic all run with no stamp.
 		let stampStep: string | undefined;
-		// 's adoption window: true only while a step that a previous
+		// The adoption window is true only while a step that a previous
 		// attempt left RUNNING re-executes. Same lifecycle as stampStep — the two
 		// move in lockstep at all three sites (set, success-clear, catch-clear).
 		let stampAdopt = false;
@@ -1222,7 +1222,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 	 * already terminal before the stop, or terminal on the readback after the
 	 * stop call — so a stop that failed, or one the provider had not applied
 	 * by the readback, leaves the job unconfirmed and the reset keeps blocking
-	 * on its pointer . The reconcile
+	 * on its pointer. The reconcile
 	 * route can confirm it later from the provider's own status.
 	 */
 	/**

@@ -48,7 +48,7 @@ async function withChannelDeadline<R>(
  * call bounded by `perItemTimeoutMs`. A hung item releases its lane when its
  * deadline fires, so one stuck channel delays the freshness SLA of the others
  * by at most a single timeout rather than stalling the whole sweep
- * . `onOutcome` observes each item's result — the real
+ * `onOutcome` observes each item's result — the real
  * value, or CHANNEL_TIMED_OUT.
  *
  * Lanes share ONE iterator: `iterator.next` is synchronous and atomic in

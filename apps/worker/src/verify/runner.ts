@@ -2595,7 +2595,7 @@ function liveReportOutcome(
 	 * manifest population comes from `expected.manifests`, which omits mirror
 	 * outputs entirely, so a plan delivering to an origin AND an MSL mirror
 	 * passes on the origin's manifests while nothing ever looks at the mirror.
-	 * Recorded as 's remaining item (b) rather than fixed here.
+	 * This delivery floor does not validate those mirror outputs.
 	 *
 	 * AFTER the FAIL branch on purpose: a manifest that was read and found
 	 * wrong is a product failure and says more than "unverified". My first cut
@@ -3069,7 +3069,7 @@ export type SubmitBody = {
 
 /**
  * What one submit attempt established about the paid job
- * . The old `submit` THREW on a lost or unreadable
+ * The old `submit` THREW on a lost or unreadable
  * response, and the catch saw `!jobId` and returned INVALID with no cleanup —
  * the job was billing and nothing named it. Now every failure says WHERE it
  * happened relative to the wire, so the caller can tell "nothing was created"
@@ -5792,7 +5792,7 @@ export async function runRecoveryCommand(
 
 /**
  * `--live-msl-edge-base-url`, else `VERIFY_LIVE_MSL_EDGE_BASE_URL`
- * . Absent ⇒ undefined, and every MSL mirror
+ * Absent ⇒ undefined, and every MSL mirror
  * leg stays UNOBSERVED (the honest default). Present ⇒ validated by core's
  * `parseEdgeBaseUrl`: HTTPS only, no userinfo, no query or fragment, and a
  * host on the delivery allowlist (Akamai's media hostnames by default;

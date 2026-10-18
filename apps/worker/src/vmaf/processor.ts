@@ -119,7 +119,7 @@ export type VmafProcessorDeps = {
 	resolveCloudProfile?: (profileId: string) => Promise<VmafCloudProfile>;
 	/** Product-event emit ; never throws. */
 	emitEvent?: EmitProductEvent;
-	/** Orchestrator producer . Absent ⇒ gate plans still score
+	/** Orchestrator producer. Absent ⇒ gate plans still score
 	 * and store verdicts, but no continuation is enqueued — wire it in every
 	    real deployment; tests without gates omit it. */
 	orchestratorQueue?: OrchestratorQueueLike;
@@ -1560,7 +1560,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			 * A run that scored NOTHING is not a finished measurement
 
 			 *
-			 * made a rung with no mirror UNMEASURED instead of fatal —
+			 * Treating a rung with no mirror as UNMEASURED instead of fatal was
 			 * right for the rung, wrong for the job, because nothing then held the
 			 * whole-population case. When EVERY rung is unmeasured the pool has no
 			 * work, no unit errors, and `markTerminal(FINISHED)` below reported a

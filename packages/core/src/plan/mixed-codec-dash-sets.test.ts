@@ -8,10 +8,10 @@ import { planHasErrors, validatePlan } from "./validate";
  * Mixed-codec DASH: the CHILDREN of a representation, not just the
  * representation.
  *
- * split the implicit video adaptation set per codec and pinned it
- * with the `mixed-codec-dash-hls` golden — a plan with neither DRM nor
+ * The compiler splits the implicit video adaptation set per codec, covered
+ * by the `mixed-codec-dash-hls` golden — a plan with neither DRM nor
  * per-title. Two references were left pointing at the base `aset-video` step
- * that the same commit stopped creating for a mixed plan: the DASH
+ * that no longer exists for a mixed plan: the DASH
  * ContentProtection child and the run-time per-title expansion. Both compile
  * into a well-formed-looking op list whose `adaptationSetId` names a step
  * nothing creates, so the failure surfaces at RUN time as a dangling reference

@@ -23,7 +23,7 @@
  * existed, or by a writer that could not prove anything, land here;
  * 3. the row is ACTIVE and UNCOORDINATED — a CREATED/DOWNLOADING/PUSHING
  * SINGLE-PHASE session (`commitAt` null), which claims and spawns on its
- * own the moment its gates pass. A TWO-PHASE session (`commitAt` set
+ * own the moment its gates pass. A TWO-PHASE session (`commitAt` set)
  * is never counted by status: while it stages or holds it
  * cannot spawn, and when its commit is requested it competes for the slot
  * INSIDE its commit CAS, which is the claim — so it appears here through

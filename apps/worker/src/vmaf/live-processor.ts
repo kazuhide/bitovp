@@ -871,7 +871,7 @@ function createLiveVmafProcessorRun(
 		windowSeconds: number;
 		/**
 		 * The job's single sealed capture window
-		 * . Every rendition of the job is captured over — and records
+		 * Every rendition of the job is captured over — and records
 		 * THIS window; the endpoint is never re-read from `deps.now` here, which
 		 * is what used to let it drift between renditions of one set.
 		 */
@@ -1206,7 +1206,7 @@ function createLiveVmafProcessorRun(
 					framesGzip,
 					/**
 					 * WHICH bytes this row compared
-					 * . VOD rows have
+					 * VOD rows have
 					 * carried this since the download path started digesting; live rows
 					 * carried `null`, so a live score could not be tied to any object at
 					 * all — and a live capture is the case where it matters most,
@@ -1224,7 +1224,7 @@ function createLiveVmafProcessorRun(
 					provenance: {
 						/**
 						 * WHICH window this row was captured over
-						 * . Identical across every
+						 * Identical across every
 						 * rendition of the job, so a multi-rendition set is provably one
 						 * comparable window rather than a per-target drift.
 						 */

@@ -256,8 +256,8 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 	});
 
 	/**
-	 * 's own property: the lifecycle row no longer carries Duplicate or
-	 * Delete. It is the header control now, and a Delete beside Stop in a fixed
+	 * The lifecycle row carries neither Duplicate nor Delete. It is the
+	 * header control, and a Delete beside Stop in a fixed
 	 * header creates an avoidable mis-click risk.
 	 * Duplicate is the recovery for a stopped channel and still exists — one
 	 * layer down, in Advanced.

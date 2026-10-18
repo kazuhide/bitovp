@@ -4,14 +4,12 @@ import { type ReactNode, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
- * the one-line progressive disclosure for RARE AUTHORING inside an
+ * The one-line progressive disclosure for RARE AUTHORING inside an
  * otherwise-readable section.
  *
- * named the shape to copy — the feeder panel already
- * "shows session/status and toggles only the creation form"
- * (`feeder-panel.tsx`) — and §5.6 named what that toggle was missing:
- * `aria-expanded` / `aria-controls`. This component is that pattern with the
- * ARIA wired in, so every rare form on the page (arm a schedule, edit the
+ * The feeder panel (`feeder-panel.tsx`) shows session/status and toggles only
+ * the creation form. This component follows that pattern and adds
+ * `aria-expanded` / `aria-controls`, so every rare form on the page (arm a schedule, edit the
  * runtime cap, add an alert rule, read the schedule history, list every
  * manifest URL) discloses the same way and announces the same way.
  *

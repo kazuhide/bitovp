@@ -539,10 +539,9 @@ describe("createS3Browser exact-version reads", () => {
 		 * literal scenario — a same-size overwrite. VersionId is ADDITIVE to
 		 * that check, never a substitute for it.
 		 *
-		 * The residual, which no test can settle and which is recorded in
-		 * whether Akamai's ETag is content-derived the way AWS's
-		 * is. That needs two same-size different-content PUTs against a real
-		 * bucket.
+		 * A unit test cannot establish whether Akamai's ETag is content-derived
+		 * the way AWS's is. That needs two same-size different-content PUTs
+		 * against a real bucket.
 		 */
 		send.mockResolvedValue({ Body: readableBody() });
 		const browser = createS3Browser({

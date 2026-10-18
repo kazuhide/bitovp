@@ -195,7 +195,7 @@ export type LiveChannelDeps = {
 		tenantOrgId: string | null;
 		bitmovinAccountId: string;
 		/**
-		 * 's create stamp. Typed here so index.ts's shared
+		 * The create stamp is typed here so index.ts's shared
 		 * implementation cannot be assignability-masked into dropping it again
 		 * (contravariance made tsc silent the first time — review of PR #163,
 		 * C1). The PROVISION path passes one (job = the CHANNEL id; step
@@ -3950,7 +3950,7 @@ export function createLiveHeartbeatSweep(
 		summarizeEndedRuns?: () => Promise<{ summarized: number }>;
 		/**
 		 * Per-channel deadline + parallel lane count
-		 * . Test seams; default to the shared cadence
+		 * Test seams; default to the shared cadence
 		 * constants. A channel that outlives `perChannelTimeoutMs` is abandoned
 		 * for the tick so it cannot stall the others; `sweepConcurrency` caps
 		 * how many channels poll at once.

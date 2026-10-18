@@ -1385,7 +1385,7 @@ describe("live channel provisioning", () => {
 	});
 
 	it("provision stamps as the CHANNEL — window opens only for the crash-leftover step", async () => {
-		// 's live half: job identity = the channel id, and the
+		// Live job identity = the channel id, and the
 		// adoption window mirrors the VOD processor's lifecycle exactly.
 		const seen: Array<{ step: string | undefined; window: boolean }> = [];
 		let stampRef:

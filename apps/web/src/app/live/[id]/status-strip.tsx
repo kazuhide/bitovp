@@ -36,7 +36,7 @@ export function StatusStrip({
 }: {
 	/**
 	 * Open alerts, or `"unknown"` when the alert query failed
-	 * . It was a plain `number` fed by `?? 0`, so a strip whose
+	 * It was a plain `number` fed by `?? 0`, so a strip whose
 	 * whole contract is "every value is a MEASUREMENT" printed a green zero
 	 * for a list it had never read.
 	 */

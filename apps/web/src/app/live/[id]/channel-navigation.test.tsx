@@ -14,9 +14,9 @@ import { renderLocalized, renderWithQuery as wrap } from "@/test/render";
 vi.mock("@/lib/auth/use-role-access", () => import("@/test/owner-role-access"));
 
 /**
- * the long page's NAVIGATION and FOCUS HANDOFF.
+ * The long page's NAVIGATION and FOCUS HANDOFF.
  *
- * measured three gaps on a body 5.72 viewports tall: a
+ * Three gaps were visible on a body 5.72 viewports tall: a
  * source comment describing a right-margin section rail that does not exist in
  * the render tree, a next-action pointer that scrolls to an anchor whose
  * `FlatSection` is not focusable, and a StatusStrip whose material changes are

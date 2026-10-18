@@ -474,7 +474,7 @@ export function ChannelDetail({
 	 * FAILED provisioning step. All three only ever OPEN a section; nothing here
 	 * can close one, because `SectionCard`'s effect is one-way and closing a
 	 * card under the operator is the defect that component has already failed
-	 * twice .
+	 * twice.
 	 */
 	const criticalOpenAlert = (alerts.data?.open ?? []).some(
 		(event) => event.rule.severity === "CRIT",
@@ -1388,10 +1388,9 @@ export function ChannelDetail({
 				 * from `section-layout.ts`, not from the shape of this JSX — the
 				 * page and its hierarchy pin read the same table.
 				 *
-				 * added the NAVIGATION over the same table. The rail is a
+				 * The navigation uses the same table. The rail is a
 				 * sibling of the body, not a wrapper around it: `xl:flex-row-reverse`
-				 * puts the DOM-first `<nav>` in the right margin at `xl` (the layout
-				 * the owner picked over a sticky top bar, ) and above the
+				 * puts the DOM-first `<nav>` in the right margin at `xl` and above the
 				 * body below it, where it collapses to a "Jump to" button. Reversing
 				 * the ROW direction rather than reordering the items keeps the tab
 				 * sequence and the reading order identical at every width.

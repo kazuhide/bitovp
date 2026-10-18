@@ -408,7 +408,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /**
  * Poll while the run is still RUNNING so a long run reaches SEALED or INCOMPLETE
  * on this screen without a manual reload; stop once it is terminal
- * . A pure function of the data so the stop
+ * A pure function of the data so the stop
  * decision is testable without a wall-clock timer.
  */
 export const VERIFICATION_DETAIL_POLL_MS = 5_000;

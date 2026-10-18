@@ -91,7 +91,7 @@ export function SectionCard({
 				 * made 13 sections heading-navigable; without this the two folds
 				 * silently vanish from that navigation.
 				 *
-				 * gave it the `${id}-h` id and `tabIndex={-1}` its flat
+				 * The heading uses the `${id}-h` id and `tabIndex={-1}` its flat
 				 * sibling already needed, so a jump lands on the same thing in
 				 * both frames. Inside `<summary>` it is always rendered, open or
 				 * closed, so a rail link to a CLOSED section still hands focus

@@ -640,7 +640,7 @@ function setup(
 			return sessions.filter((row) => matchesRow(row, where)).length;
 		}),
 		/**
-		 * 's takeover population. ONE row, so it cannot speak to
+		 * The takeover population has ONE row, so it cannot speak to
 		 * ordering or the batch cap — but it DOES evaluate the two filters the
 		 * sweep's safety rests on, which is what the arms need:
 		 *
@@ -841,7 +841,7 @@ function setup(
 		findFirst: vi.fn(async () => opts.scheduleRow?.() ?? null),
 	};
 	/**
-	 * 's reference store. Honours `select` for the same reason
+	 * The ingest reference store honours `select` for the same reason
 	 * `liveChannel` does, and simulates the CAS the recorder relies on: an
 	 * `ingestMediaRecordedAt: null` filter matches only while the lock is
 	 * still unset, so a test can prove the SECOND push does not redefine the

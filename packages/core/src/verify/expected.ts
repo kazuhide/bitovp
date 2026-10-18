@@ -125,7 +125,7 @@ export type ExpectedMuxing = {
 
 /**
  * One EXT-X-STREAM-INF row the compiler emits for an HLS manifest — the
- * `CREATE_HLS_STREAM_INFO` granularity
+ * `CREATE_HLS_STREAM_INFO` granularity.
  * A fixed video muxing is one row, or one
  * row PER audio group under `variantsPerAudioGroup` (the Dolby fan-out); an
  * `audioVariantStreams` manifest also lists one row per audio muxing, whose
@@ -157,7 +157,7 @@ export type ExpectedHlsVariant = {
 
 /**
  * The per-child rendition topology a manifest enumerates, each child bound to
- * the plan's exact declared attributes
+ * the plan's exact declared attributes.
  * Count-and-name checks alone passed a 128k rendition delivered at 64k, a
  * wrong codec, and two children swapped, because nothing tied a child to the
  * rendition it was supposed to be. The engine binds each observed

@@ -1251,7 +1251,7 @@ async function probeRung(
 }
 
 /**
- * RFC 6381 codec-string prefixes for each plan codec
+ * RFC 6381 codec-string prefixes for each plan codec.
  * A manifest declares codecs as `avc1.640028` / `mp4a.40.2`; the plan
  * names a family. Matching is a case-insensitive prefix. An unknown plan codec
  * returns an empty list, and the caller SKIPs rather than inventing a verdict.
@@ -1780,7 +1780,7 @@ function manifestVideoFamilies(rows: { codecs?: string }[]): {
 }
 
 /**
- * Per-title manifests: the declared / actual / manifest family comparison
+ * Per-title manifests: the declared / actual / manifest family comparison.
  * The plan declares which families its
  * templates carry; the provider's RESULT capture says which it produced; the
  * manifest says which it enumerates. All three must agree — and when the
@@ -1847,7 +1847,7 @@ function verifyPerTitleVideoFamilies(
 }
 
 /**
- * Bind each HLS master row to its planned node, one-to-one
+ * Bind each HLS master row to its planned node, one-to-one.
  * An EXT-X-STREAM-INF row's
  * IDENTITY is its URI plus its AUDIO group — the two values the compiler wrote
  * into the StreamInfo and the master hands back verbatim — and every expected
@@ -2144,7 +2144,7 @@ export function bindHlsTopology(
 }
 
 /**
- * Bind an MPD's codec/representation topology to the plan
+ * Bind an MPD's codec/representation topology to the plan.
  * Every
  * AdaptationSet's codecs belong to the plan family for its kind (the `case F`
  * two-codecs-in-one-set defect a count cannot see) — the VIDEO family set is

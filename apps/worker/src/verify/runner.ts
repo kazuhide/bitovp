@@ -3068,7 +3068,7 @@ export type SubmitBody = {
 };
 
 /**
- * What one submit attempt established about the paid job
+ * What one submit attempt established about the paid job.
  * The old `submit` THREW on a lost or unreadable
  * response, and the catch saw `!jobId` and returned INVALID with no cleanup —
  * the job was billing and nothing named it. Now every failure says WHERE it
@@ -5791,7 +5791,7 @@ export async function runRecoveryCommand(
 }
 
 /**
- * `--live-msl-edge-base-url`, else `VERIFY_LIVE_MSL_EDGE_BASE_URL`
+ * `--live-msl-edge-base-url`, else `VERIFY_LIVE_MSL_EDGE_BASE_URL`.
  * Absent ⇒ undefined, and every MSL mirror
  * leg stays UNOBSERVED (the honest default). Present ⇒ validated by core's
  * `parseEdgeBaseUrl`: HTTPS only, no userinfo, no query or fragment, and a

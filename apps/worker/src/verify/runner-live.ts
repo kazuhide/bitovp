@@ -594,7 +594,7 @@ export function rewriteLiveForRun(
 
 	/**
 	 * The AKAMAI_MSL output keys, so the MSL manifest-path exemption below knows
-	 * which destinations carry the empty/slash contract
+	 * which destinations carry the empty/slash contract.
 	 * Read AFTER the credential rewrite, which leaves every
 	 * output's `kind` intact.
 	 */
@@ -1293,7 +1293,7 @@ async function readCleanupFacts(
 
 /**
  * The local half of the durable teardown seal, re-read until every local
- * element is POSITIVELY true or the budget runs out
+ * element is POSITIVELY true or the budget runs out.
  * EV-01 joins provider proof after this loop.
  *
  * The loop IS the idempotent resume: each pass is a pure read of current state,

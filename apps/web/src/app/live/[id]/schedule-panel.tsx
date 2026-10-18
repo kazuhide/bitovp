@@ -540,7 +540,7 @@ export function SchedulePanel({
 			 * first thing in this panel. The order was
 			 * `arm form -> runtime cap -> cost estimate -> upcoming -> history`,
 			 * so an operator asking "what fires next?" — the everyday question —
-			 * scrolled past three authoring surfaces to reach the answer
+			 * scrolled past three authoring surfaces to reach the answer.
 			 * Arming a one-shot is a deliberate act, taken once
 			 * per broadcast; reading the upcoming rows happens every time the
 			 * page is opened. The disclosure carries `aria-expanded` /

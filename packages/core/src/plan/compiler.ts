@@ -2764,7 +2764,7 @@ function compileDashManifest(
 	}
 
 	/*
-	 * One VIDEO adaptation set PER CODEC
+	 * One VIDEO adaptation set PER CODEC.
 	 * The implicit branch put every video representation into one set;
 	 * Bitmovin refuses a mixed set — VOD case 15 and Live case F both died on
 	 * the first H265 representation added beside H264 (400, code 1001), and

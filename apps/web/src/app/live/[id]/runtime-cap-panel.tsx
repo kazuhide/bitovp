@@ -19,7 +19,7 @@ import { useT } from "@/lib/i18n/context";
  * Extracted from `SchedulePanel`. It used to sit BETWEEN the arm
  * form and the upcoming list, so the panel read
  * `arm form → cap → cost → upcoming → history`: three configuration surfaces
- * before the operator could see what was actually going to fire
+ * before the operator could see what was actually going to fire.
  * Neither control answers "what happens next" — a cap is a billing
  * guard-rail you set once and an estimate is a planning tool — so §5.7 puts
  * both in the Advanced layer, and Programme now opens with the timeline and the

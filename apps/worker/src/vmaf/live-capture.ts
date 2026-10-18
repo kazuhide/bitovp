@@ -34,7 +34,7 @@ import type { ResolvedCredential } from "../orchestrator/executor";
  * accurate description of the world on the day it was written: this file
  * landed 2026-06-18 and `createAzureBrowser` did not exist until 2026-08-06.
  * Seven weeks made it stale, and it read as a capability limit rather than a
- * date — it is why AZURE was left out of the gate this file sits behind
+ * date — it is why AZURE was left out of the gate this file sits behind.
  * The browser is injected
  * via `makeBrowser` so the worker test can fake the whole listing.
  *

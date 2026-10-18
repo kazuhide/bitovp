@@ -153,7 +153,7 @@ export type ExpectedLiveManifest = {
 
 /**
  * One delivery-mirror target — an output at least one destination writes to
- * in addition to its primary
+ * in addition to its primary.
  * The primary (origin) manifests are read through
  * `manifests`; the mirror is a SEPARATE delivery target the verifier must judge
  * on its own — an `AKAMAI_MSL` mirror is Akamai's ingest, so it is read back on

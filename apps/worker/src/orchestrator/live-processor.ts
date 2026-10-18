@@ -3949,7 +3949,7 @@ export function createLiveHeartbeatSweep(
 		 */
 		summarizeEndedRuns?: () => Promise<{ summarized: number }>;
 		/**
-		 * Per-channel deadline + parallel lane count
+		 * Per-channel deadline + parallel lane count.
 		 * Test seams; default to the shared cadence
 		 * constants. A channel that outlives `perChannelTimeoutMs` is abandoned
 		 * for the tick so it cannot stall the others; `sweepConcurrency` caps

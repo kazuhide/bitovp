@@ -2352,7 +2352,7 @@ ${RUN_PREFIX}output/live-akamai-msl-storage/seg-2.m4s
 });
 
 /**
- * The durable intent around the channel create
+ * The durable intent around the channel create.
  * The create used to sit ABOVE the `try/finally`: a POST that
  * threw after the server had created the channel ran no teardown at all, and
  * a channel that bills from creation was nobody's. These drive the runner

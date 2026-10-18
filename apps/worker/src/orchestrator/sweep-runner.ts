@@ -47,7 +47,7 @@ async function withChannelDeadline<R>(
  * Run `work` over `items` with at most `concurrency` in flight at once, each
  * call bounded by `perItemTimeoutMs`. A hung item releases its lane when its
  * deadline fires, so one stuck channel delays the freshness SLA of the others
- * by at most a single timeout rather than stalling the whole sweep
+ * by at most a single timeout rather than stalling the whole sweep.
  * `onOutcome` observes each item's result — the real
  * value, or CHANNEL_TIMED_OUT.
  *

@@ -1,5 +1,5 @@
 /**
- * The Akamai delivery EDGE reader for MSL mirror-leg closure
+ * The Akamai delivery EDGE reader for MSL mirror-leg closure.
  * A plain HTTP GET, as a player would — MSL is Akamai's
  * ingest, so the mirror is observed on its public delivery URL, never on a
  * storage driver. Dormant unless an `edgeBaseUrl` is configured (see

@@ -1530,7 +1530,7 @@ export function validatePlan(
 	}
 
 	/*
-	 * Mixed video codecs in ONE encoding need a compatible mode
+	 * Mixed video codecs in ONE encoding need a compatible mode.
 	 * The start request's
 	 * `encodingMode` is one value for the whole encoding; when it is absent,
 	 * each codec config's preset implies its own, and the provider refuses the
@@ -2168,7 +2168,7 @@ export function validatePlan(
 				return false;
 			});
 			/*
-			 * VIDEO routed in but NONE selected — the audio-only MPD
+			 * VIDEO routed in but NONE selected — the audio-only MPD.
 			 * The zero-TOTAL rule below could not
 			 * see it: an AAC fMP4 leg satisfied "some representation exists"
 			 * while every video leg dropped out of the selection. Distinct code,

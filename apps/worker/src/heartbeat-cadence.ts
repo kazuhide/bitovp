@@ -8,7 +8,7 @@
 export const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
 
 /**
- * Per-channel budget for one heartbeat poll + alert evaluation
+ * Per-channel budget for one heartbeat poll + alert evaluation.
  * A single hung SDK poll must not stall the
  * sweep: past this deadline the channel's work is abandoned for the tick, its
  * lane is freed, and the sweep moves on. 10s is a third of the interval — far

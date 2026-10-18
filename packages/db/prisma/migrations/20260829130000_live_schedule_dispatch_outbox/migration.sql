@@ -54,7 +54,7 @@
 ALTER TABLE "LiveSchedule" ADD COLUMN     "dispatchJobId" TEXT,
 ADD COLUMN     "dispatchedAt" TIMESTAMP(3);
 
--- Backfill (hand-written; docs/DATABASE-UPGRADES.md's DML enumeration counts it).
+-- Backfill; preserve pending dispatch evidence as described in docs/DATABASE-UPGRADES.md.
 --
 -- The new column's meaning is "this row's action was handed to the queue".
 -- Every row that is ALREADY FIRED was fired by code that had no such column,

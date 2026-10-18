@@ -47,8 +47,8 @@ ALTER TABLE "LiveHeartbeat" ADD CONSTRAINT "LiveHeartbeat_liveChannelRunId_fkey"
 ALTER TABLE "FeederSession" ADD CONSTRAINT "FeederSession_liveChannelRunId_fkey" FOREIGN KEY ("liveChannelRunId") REFERENCES "LiveChannelRun"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ------------------------------------------------------------------------
--- Hand-written section (ledger #108 §2/§6 — the #83 precedent; keep the
--- checksum in sync per docs/DATABASE-UPGRADES.md if this file is edited after applying).
+-- Data backfill. For upgrade and applied-migration checks, see
+-- docs/DATABASE-UPGRADES.md.
 -- ------------------------------------------------------------------------
 
 -- At most ONE non-terminal run per channel (closes ledger #48's duplicate-

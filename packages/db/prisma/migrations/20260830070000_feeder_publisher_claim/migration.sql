@@ -24,8 +24,8 @@
 --
 -- ROLLOUT ORDER (mixed-version publisher execution is FORBIDDEN — a worker
 -- that predates this migration spawns without claiming and walks straight
--- past the index; see docs/DATABASE-UPGRADES.md "Pre-deploy step:
--- 20260830070000_feeder_publisher_claim"):
+-- past the index; see docs/DATABASE-UPGRADES.md,
+-- 'Establish a single feeder publisher':
 --   1. column expand (this file's ALTER TABLE — additive, nullable/defaulted);
 --   2. pause the feeder create/switch doors (web POST /api/feeder-sessions and
 --      the scheduler's feeder-start/stage/commit dispatch);
@@ -95,8 +95,8 @@ UPDATE "FeederSession"
     OR ("startedAt" IS NOT NULL AND "processGoneAt" IS NULL);
 
 -- The guarantee. Prisma cannot express a partial unique index declaratively —
--- hand-written here (the #83 / #267 precedent). Enumerated in docs/DATABASE-UPGRADES.md;
--- keep the checksum in sync per that file if this is edited after applying.
+-- verify its deployed definition directly. See docs/DATABASE-UPGRADES.md;
+-- do not edit applied migrations to silence a mismatch.
 CREATE UNIQUE INDEX "FeederSession_one_publisher_claim_per_channel"
   ON "FeederSession"("liveChannelId")
   WHERE "publisherClaimedAt" IS NOT NULL AND "publisherReleasedAt" IS NULL;

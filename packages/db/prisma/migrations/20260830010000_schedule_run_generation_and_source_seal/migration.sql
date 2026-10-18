@@ -51,7 +51,7 @@ ADD COLUMN     "sourceSha256" TEXT;
 
 -- ---------------------------------------------------------------------------
 -- 3. Backfill — DELIBERATELY NOT PERFORMED HERE. Read the pre-deploy note in
---    docs/DATABASE-UPGRADES.md ("Pre-deploy step: 20260830010000_...") BEFORE deploying.
+--    docs/DATABASE-UPGRADES.md, 'Bind armed schedules', BEFORE deploying.
 -- ---------------------------------------------------------------------------
 --
 -- The bind cannot be inferred correctly by SQL alone for every ARMED row, and

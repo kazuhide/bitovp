@@ -14,10 +14,10 @@
 -- dual push this index forbids. commitAt-set <=> barriered holds at BOTH create
 -- sites (the web route and the scheduler's live-processor).
 --
--- Prisma cannot express a partial unique index declaratively — hand-written
--- here, the #83 / LiveChannelRun_one_live_per_channel precedent. Enumerated in
--- docs/DATABASE-UPGRADES.md; keep the checksum in sync per that file if this is edited after
--- applying.
+-- Prisma cannot express this partial unique index declaratively.
+-- Verify its deployed definition directly during schema checks.
+-- See docs/DATABASE-UPGRADES.md for upgrade precautions.
+-- Do not edit applied migrations to silence a mismatch.
 CREATE UNIQUE INDEX "FeederSession_one_active_pusher_per_channel"
   ON "FeederSession"("liveChannelId")
   WHERE "status" IN ('CREATED', 'DOWNLOADING', 'PUSHING') AND "commitAt" IS NULL;

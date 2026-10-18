@@ -114,7 +114,21 @@ expired windowed actions are missed rather than played late.
 
 For `20260830010000_schedule_run_generation_and_source_seal`, inspect ARMED
 schedules on RUNNING channels and each channel's latest run before migration.
-Existing rows default to lazy binding, so leaving them unchanged is safe.
+
+```sql
+SELECT s.id, s.action, s."fireAt", c.name AS channel, c.status,
+       r.id AS "currentRunId", r.seq, r.status AS "runStatus"
+FROM "LiveSchedule" s
+JOIN "LiveChannel" c ON c.id = s."liveChannelId"
+JOIN LATERAL (
+  SELECT id, seq, status FROM "LiveChannelRun"
+  WHERE "liveChannelId" = c.id ORDER BY seq DESC LIMIT 1
+) r ON TRUE
+WHERE s.status = 'ARMED' AND c.status = 'RUNNING'
+ORDER BY c.name, s."fireAt";
+```
+
+Zero rows need no action. Existing rows default to lazy binding, so leaving them unchanged is safe.
 Only if every selected row belongs to the broadcast currently on air, bind it
 after migration:
 

@@ -125,7 +125,7 @@ describe("every expected dir is slash-terminated (ledger #61 a)", () => {
 describe("compileExpectedArtefacts — goldens", () => {
 	it("finds the whole fixture corpus, so a broken glob cannot pass over nothing", () => {
 		// 67 VOD plans, measured . A drop means the glob broke, not that the corpus did.
-		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash` (audit 893eb66 CRITICAL-2).
+		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
 		expect(planFiles.length).toBe(72);
 	});
@@ -614,7 +614,7 @@ describe("compileExpectedArtefacts — properties that must hold for every fixtu
 
 /**
  * The manifest topology, pinned against the PLAN and the COMPILER rather than
- * restated from a golden (row 284 / audit 5c3d97ca HIGH-3 + HIGH-5).
+ * restated from a golden.
  *
  * A golden is a restatement: regenerate it and the fact becomes whatever the
  * code now says. These derive each fact a second way — the family set from the

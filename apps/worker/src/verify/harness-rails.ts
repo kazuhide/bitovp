@@ -1,6 +1,6 @@
 /**
- * The paid harness's rails — the rules that make it FAIL CLOSED (paid audit
- * 893eb66 BLOCKER-3 / BLOCKER-4 / HIGH-11, ).
+ * The paid harness's rails — the rules that make it FAIL CLOSED
+
  *
  * Every rule here is pure or dependency-injected, because the runner that
  * applies them needs a database, credentials, a product URL and a bucket, and
@@ -8,17 +8,17 @@
  * `addHygieneChecks` and `vodOutcomeForReport` were extracted on). What the
  * audit measured, in order:
  *
- *  - a `--run-id` is joined into a filesystem path and an S3 prefix unchecked,
- *    and a REUSED id lets a prior run's artefacts stand as this run's evidence;
- *  - `--resume-from` honoured a prior PASS by scenario NAME alone — a different
- *    commit, schema, plan, source or account could inherit it;
- *  - numeric flags went through `Number`, so `NaN`/`Infinity` turned every
- *    cap and timeout into "no cap";
- *  - the runner's identity was "the first credential whose label starts with
- *    X" and "the oldest Bitmovin account" — ambiguity resolved silently;
- *  - a password or Bearer token was sent to whatever `VERIFY_BASE_URL` said;
- *  - a scenario that timed out was reported INVALID with no job id and no
- *    attempt to reach a terminal state, so the encoding kept billing.
+ * - a `--run-id` is joined into a filesystem path and an S3 prefix unchecked,
+ * and a REUSED id lets a prior run's artefacts stand as this run's evidence;
+ * - `--resume-from` honoured a prior PASS by scenario NAME alone — a different
+ * commit, schema, plan, source or account could inherit it;
+ * - numeric flags went through `Number`, so `NaN`/`Infinity` turned every
+ * cap and timeout into "no cap";
+ * - the runner's identity was "the first credential whose label starts with
+ * X" and "the oldest Bitmovin account" — ambiguity resolved silently;
+ * - a password or Bearer token was sent to whatever `VERIFY_BASE_URL` said;
+ * - a scenario that timed out was reported INVALID with no job id and no
+ * attempt to reach a terminal state, so the encoding kept billing.
  */
 
 import { createHash, createHmac } from "node:crypto";

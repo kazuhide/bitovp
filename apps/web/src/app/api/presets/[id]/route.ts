@@ -137,7 +137,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			}
 			/**
 			 * A watch rule's self-intersection check runs when the RULE is saved
-			 * (audit f63f76b F63-RUN-002) — and this route can move the ground
+			 * and this route can move the ground
 			 * under it afterwards. A preset that was a safe watch template when
 			 * the rule was created can be edited here to write into the bucket
 			 * and prefix that rule watches, and the sweep would then discover
@@ -168,7 +168,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 						{ issues },
 					);
 				}
-				// Same reasoning, second rule (audit aa972a2 AA972-WATCH-001):
+				// Same reasoning, second rule:
 				// a create-time compatibility check is bypassable by editing the
 				// preset afterwards. An edit that swaps the template's input to
 				// a kind substitution cannot target — or to one this rule's

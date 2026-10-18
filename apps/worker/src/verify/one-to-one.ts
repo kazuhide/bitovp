@@ -1,6 +1,6 @@
 /**
  * Deterministic one-to-one binding of expected manifest nodes to observed rows
- * (row 284 / audit 5c3d97ca HIGH-5, VF-03).
+ *
  *
  * The binding it replaces — `nearestByBandwidth` — picked, for EACH expected
  * rendition independently, the observed child nearest its bitrate, and never

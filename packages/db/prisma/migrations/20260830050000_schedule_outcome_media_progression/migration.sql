@@ -1,12 +1,11 @@
--- Audit 602ec286 §17 P1-4 (HIGH-4 / HIGH-5 / MODERATE-2): a schedule row's
--- delivery was one binary leap — PENDING → DELIVERED — so `DELIVERED` was
+-- A schedule row's delivery was one binary leap — PENDING → DELIVERED — so `DELIVERED` was
 -- written the moment a feeder's ffmpeg started pushing (~16s before the
 -- provider bound the ingest) and the moment a slate's provider entry was
 -- ARMED (with no witness it aired). "Delivered" claimed media before any media
 -- flowed.
 --
--- These three values split that leap into the progression the audit
--- prescribed, so a green now means media was OBSERVED, not merely requested:
+-- These three values split that leap into a media progression,
+-- so a green now means media was OBSERVED, not merely requested:
 --
 --   PROCESS_PUSHING  — our ffmpeg is pushing, provider not yet confirmed.
 --   INGEST_CONNECTED — the provider's live encoder reports a fresh CONNECTED

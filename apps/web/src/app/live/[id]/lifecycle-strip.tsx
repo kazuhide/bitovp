@@ -35,7 +35,7 @@ const STAGE_DEFS = [
 ] as const;
 
 /**
- *  (audit 5c3d97ca BLOCKER-1): the PROVIDER's view of the current
+ * the PROVIDER's view of the current
  * run's encoding, as the page derives it from the run columns.
  */
 export type ProviderLifecycleView = {
@@ -74,7 +74,7 @@ export function LifecycleStrip({
 	/** A STOPPED row carrying an error is a stop Bitmovin never confirmed. */
 	hasError?: boolean;
 	/**
-	 * : optional so callers without a run view (and every pre-#280
+	 * optional so callers without a run view (and every pre-#280
 	 * test) render exactly as before; absent = not unknown, not terminal.
 	 */
 	provider?: ProviderLifecycleView;
@@ -98,7 +98,7 @@ export function LifecycleStrip({
 	const errorWithEncoder =
 		hasEncoding && (status === "ERROR" || (status === "STOPPED" && hasError));
 	/**
-	 * : the provider's view outranks the stage hint. UNKNOWN paints the
+	 * the provider's view outranks the stage hint. UNKNOWN paints the
 	 * active stage AMBER (the audit's invariant: a lost observation on a
 	 * RUNNING channel is never shown as confirmed green/on-air) and says so,
 	 * with the last successful reading and the window's start. A provider-
@@ -181,7 +181,7 @@ export function LifecycleStrip({
 				}
 			>
 				{/* STAGE_DEFS covers the mapper's whole range, so activeDef is
-				    total — review-228 caught the defensive ternary surviving
+				 * total — review-228 caught the defensive ternary surviving
 				    the first "removed dead ternary" claim. */}
 				{providerUnconfirmed ? (
 					<span className="mr-1">

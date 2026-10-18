@@ -39,13 +39,13 @@ export type ScheduleDraft = {
 	slateEnabled: boolean;
 	slateSource: SlateSource | null;
 	/**
-	 * There is deliberately NO program-source field here.  built the
-	 * file-fed chain (FEEDER_START → FEEDER_SWITCH) and  took its
+	 * There is deliberately NO program-source field here. The
+	 * file-fed chain (FEEDER_START → FEEDER_SWITCH) has its
 	 * wizard entry back out on the owner's call: a pseudo-live feed is authored
 	 * on `/live/feeders`, and this step schedules an EXTERNAL ingest plus its
 	 * slate. The dangling comment that used to sit here still described the
-	 * removed "external | file" choice, which is how a reader (audit 4403130
-	 * MODERATE-1) can conclude the wizard merely forgot the option. It did not.
+	 * removed "external | file" choice, which is how a reader
+	 * can conclude the wizard merely forgot the option. It did not.
 	 * `schedule.feederPointer` says so on screen; this says so in the type.
 	 */
 };
@@ -216,9 +216,9 @@ export function ScheduleSection({
 				/>
 				{t("schedule.enableAtCreation")}
 			</label>
-			{/* Audit 5c3d97ca §14.6: ALWAYS visible, enabled or not — the one
-			    sentence that separates "planned input feed time" from "channel
-			    start". The detailed hints below explain billing and the
+			{/* ALWAYS visible, enabled or not — the one
+			 * sentence that separates "planned input feed time" from "channel
+			 * start". The detailed hints below explain billing and the
 			    anchoring; this line is the thing an operator must not miss. */}
 			<p data-schedule-note="provisions" className="text-xs text-zinc-400">
 				{t("schedule.provisionsNote")}
@@ -274,8 +274,8 @@ export function ScheduleSection({
 					/>
 
 					{/* : the two facts the incident proved operators
-					    need BEFORE air, not after — the machinery ramps for a
-					    few minutes past stream-up, and a slate only renders on
+					 * need BEFORE air, not after — the machinery ramps for a
+					 * few minutes past stream-up, and a slate only renders on
 					    a CONNECTED input. */}
 					<p className="text-xs text-zinc-500">{t("schedule.rampHint")}</p>
 					{draft.slateEnabled ? (
@@ -323,9 +323,9 @@ export function ScheduleSection({
 					{spanMinutes !== null ? (
 						<p className="text-xs text-zinc-500">
 							{/* The margin is the SERVER's, imported rather than retyped: a
-						    literal here goes stale the day `deriveProgramSchedule`
-						    changes it, and the preview would then quote a cap the
-						    channel never gets. `start-section.tsx` already reads the
+							 * literal here goes stale the day `deriveProgramSchedule`
+							 * changes it, and the preview would then quote a cap the
+							 * channel never gets. `start-section.tsx` already reads the
 						    constant this way. */}
 							{t("schedule.capPreview", {
 								minutes: spanMinutes + MAX_RUN_CAP_MARGIN_MINUTES,
@@ -366,15 +366,15 @@ export function ScheduleSection({
 				</div>
 			)}
 
-			{/* 's signpost, OUTSIDE the enabled/disabled branch on
-			    purpose: the operator this sentence is for came here looking for
-			    a file-fed program, and that operator has no reason to tick
-			    "schedule a broadcast slot" first — putting it inside the branch
+			{/* Keep the feeder signpost OUTSIDE the enabled/disabled branch on
+			 * purpose: the operator this sentence is for came here looking for
+			 * a file-fed program, and that operator has no reason to tick
+			 * "schedule a broadcast slot" first — putting it inside the branch
 			    would hide it from exactly the reader it addresses. */}
 			<div className="space-y-1">
 				<p className="text-xs text-zinc-500">{t("schedule.feederPointer")}</p>
 				{/* Keep the link separate from the sentence rather than inserting a JSX space between Japanese characters. */}
-				{/* A new tab : the wizard holds an unsaved draft
+				{/* Open a new tab: the wizard holds an unsaved draft
 				    and navigating away discarded it. */}
 				<Link
 					href="/live/feeders"

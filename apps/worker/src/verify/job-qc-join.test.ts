@@ -11,7 +11,7 @@ import type { AutoVmafRow } from "./job";
 import { addQcMeasurementChecks, readAutoVmaf } from "./job";
 
 /**
- *  (paid audit 893eb66 BLOCKER-5): the verifier proved every QC mirror EXISTED
+ * the verifier proved every QC mirror EXISTED
  * and never asked whether anything scored it. The paid runner carried zero references to
  * `VmafJob`; a plan whose measurement ERRORed, never ran, or produced 0 results passed
  * with `qc:mirror:*` green — the Live A/E and per-title shapes the audit measured.

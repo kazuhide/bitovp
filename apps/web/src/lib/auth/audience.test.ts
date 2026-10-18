@@ -14,7 +14,7 @@ import type { SessionDto } from "./dto";
 import { evaluateRole, ruleMatchesPath, USER_ROLES } from "./roles";
 
 /**
- * The page-level half of the role model (audit 5c3d97ca MEDIUM-5 / AU-01).
+ * The page-level half of the role model.
  *
  * The closure criterion the audit set is "client filtering AND server
  * authorization agree", so the load-bearing block here is the last one: for

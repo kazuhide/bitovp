@@ -363,7 +363,7 @@ function PlaybackAttempt({
 		let cleanup = () => {};
 		(async () => {
 			const { Player, PlayerEvent } = await import("bitmovin-player");
-			// The skin ships as its own package (paid audit 893eb66
+			// The skin ships as its own package (
 			// HIGH-14): left to itself the player fetches
 			// `bitmovinplayer-ui.js` / `.css` from beside its own script, which
 			// under Next's chunk path is a 404 on every deployment — a player
@@ -1043,8 +1043,8 @@ function PlaybackAttempt({
 				</div>
 			) : null}
 			{/* No <track>: subtitles are a property of the encoding under test —
-			    a caption here would be one this app invented. (The former
-			    useMediaCaption suppression no longer suppresses anything —
+			 * a caption here would be one this app invented. (The former
+			 * useMediaCaption suppression no longer suppresses anything —
 			    biome 2.4 stopped flagging this shape;  sweep.) */}
 			{sceneAnalysis?.scenes.length ? (
 				<label className="mb-2 flex items-center gap-2 text-xs text-zinc-400">

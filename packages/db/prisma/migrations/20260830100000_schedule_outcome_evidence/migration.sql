@@ -1,4 +1,4 @@
--- Audit 5c3d97ca SC-02: versioned schedule-outcome evidence.
+-- Versioned schedule-outcome evidence.
 --
 -- Idempotent by construction: the enum/columns are guarded, and the rewrite
 -- targets only positive rows whose evidence version is NULL. Re-running this

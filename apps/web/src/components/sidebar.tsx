@@ -11,7 +11,7 @@ import { SessionMenu } from "./session-menu";
  * `hidden md:flex` is load-bearing, not decoration. This column is a fixed
  * `w-60`/240px, and until 2026-08-29 it was rendered unconditionally: on a
  * 375px phone that left 135px of working area for tables the app renders at
- * desktop density (codex re-audit of main@eb7c983, MODERATE-2). Below `md` the
+ * desktop density. Below `md` the
  * same navigation is reached through `MobileNav`'s sheet, which renders the
  * very same `NavList`.
  *

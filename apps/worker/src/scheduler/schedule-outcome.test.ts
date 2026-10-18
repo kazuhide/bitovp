@@ -397,7 +397,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		expect(rows.map((r) => r.outcome)).toEqual(["UNKNOWN"]);
 	});
 
-	// ── audit 602ec286 §17 P1-4: the media-witnessed progression ──────────
+	// ── P1-4: the media-witnessed progression ──────────
 	// PENDING → PROCESS_PUSHING → INGEST_CONNECTED → DELIVERED (feeder/lifecycle)
 	// and the off-ladder SLATE_ARMED. Each rung is proven by what it may and
 	// may NOT replace, against the fake that actually applies the WHERE.

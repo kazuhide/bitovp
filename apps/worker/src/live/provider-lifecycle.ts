@@ -15,7 +15,7 @@ import { DB_NULL } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
 
 /**
- *  (audit 5c3d97ca BLOCKER-1 / §14.5 LC-01) — the ONE place the
+ * the ONE place the
  * provider's lifecycle for a run's exact encoding is read back and reconciled
  * onto local state. Every entry that can put a channel into RUNNING or act on
  * its encoder calls this first: Start/revive (provision entry), Restart, the
@@ -30,25 +30,25 @@ import type { SdkOps } from "../orchestrator/sdk-ops";
  *
  * Three outcomes, and the asymmetry between them is the design:
  *
- *  - TERMINAL (FINISHED/ERROR/CANCELED/TRANSFER_ERROR, read back for exactly
- *    this run's encoding) — the run is terminalised ONCE (`providerTerminalAt`
- *    is the CAS). CANCELED and a normally completed RUNNING airing become STOPPED;
- *    startup failures and other terminal words remain ERROR with
- *    active coordinates and heartbeat cleared, every feeder of THAT run gets a
- *    stop enqueued, and CHANNEL_STOPPED or CHANNEL_ERROR is emitted. The provider id is KEPT on
- *    both rows — the stop/reset sweeps and the operator must still be able to
- *    find the encoding (false-fix list: never delete the old id first).
- *  - UNKNOWN (timeout, network/credential error, a single 404, an identity the
- *    run does not carry) — nothing is cleaned up and no id, prefix, coordinate
- *    or publisher claim moves. `providerUnknownSince` opens the window (first
- *    writer wins) so the UI can say "cannot be confirmed since …" and the
- *    sweep can alert past grace. The next successful readback closes it with
- *    the SAME identity.
- *  - RUNNING / TRANSITIONAL — the observation is recorded (word + time) and
- *    the window, if open, is closed.
+ * - TERMINAL (FINISHED/ERROR/CANCELED/TRANSFER_ERROR, read back for exactly
+ * this run's encoding) — the run is terminalised ONCE (`providerTerminalAt`
+ * is the CAS). CANCELED and a normally completed RUNNING airing become STOPPED;
+ * startup failures and other terminal words remain ERROR with
+ * active coordinates and heartbeat cleared, every feeder of THAT run gets a
+ * stop enqueued, and CHANNEL_STOPPED or CHANNEL_ERROR is emitted. The provider id is KEPT on
+ * both rows — the stop/reset sweeps and the operator must still be able to
+ * find the encoding (false-fix list: never delete the old id first).
+ * - UNKNOWN (timeout, network/credential error, a single 404, an identity the
+ * run does not carry) — nothing is cleaned up and no id, prefix, coordinate
+ * or publisher claim moves. `providerUnknownSince` opens the window (first
+ * writer wins) so the UI can say "cannot be confirmed since …" and the
+ * sweep can alert past grace. The next successful readback closes it with
+ * the SAME identity.
+ * - RUNNING / TRANSITIONAL — the observation is recorded (word + time) and
+ * the window, if open, is closed.
  *
  * Every run write is fenced on the run id AND the encoding id it carries, and
- * — from the sweep — on the heartbeat poll epoch, so a late result from a
+ * from the sweep — on the heartbeat poll epoch, so a late result from a
  * timed-out tick cannot overwrite a newer sample or land on a new run
  * (MEDIUM-1).
  */

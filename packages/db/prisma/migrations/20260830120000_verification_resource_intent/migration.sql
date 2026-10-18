@@ -1,5 +1,5 @@
--- EV-01 · audit 5c3d97ca BLOCKER-5 (§14.4): a paid create's id lived only in
--- the HTTP response. A timeout, a reset or an unparseable body between the
+-- A paid create's id lived only in the HTTP response.
+-- A timeout, a reset or an unparseable body between the
 -- server's create and `jobId = …` / `channelId = …` left the harness with
 -- NOTHING cleanup could act on while the job or channel billed.
 --

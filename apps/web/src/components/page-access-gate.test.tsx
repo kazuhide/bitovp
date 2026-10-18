@@ -70,7 +70,7 @@ function renderAt(path: string, locale: Locale = "en") {
 	);
 }
 
-describe("PageAccessGate — a direct URL to a privileged page (audit 5c3d97ca MEDIUM-5 / AU-01)", () => {
+describe("PageAccessGate — a direct URL to a privileged page", () => {
 	it("shows a VIEWER at /settings/users the permission screen naming the required and current roles (en)", async () => {
 		apiFetch.mockResolvedValue(usersSession("VIEWER"));
 		renderAt("/settings/users");

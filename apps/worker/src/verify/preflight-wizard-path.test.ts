@@ -24,7 +24,7 @@ const vod = scenarios.filter((s) => s.kind === "VOD");
 
 describe("every scenario is submitted through one of the wizard's own paths", () => {
 	it("found the corpus, so a broken read cannot pass over nothing", () => {
-		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash` (audit 893eb66 CRITICAL-2).
+		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		expect(vod.length).toBe(72);
 	});
 
@@ -68,7 +68,7 @@ describe("every scenario is submitted through one of the wizard's own paths", ()
 		// 9→10 / 77→78 : live-pinned-encoder joins —
 		// gated behind PINNED_ENCODER_VERSION until Track 1 supplies the tag.
 		// 13→14 : live-akamai-msl5.
-		// 14→15 (2026-08-29, paid re-audit eb7c983 HIGH-2): live-mixed-codec-dash.
+		// 14→15: live-mixed-codec-dash.
 		expect(live.length).toBe(15);
 		for (const s of live) {
 			expect(s.submittedVia, s.name).toBe("wizard-import");

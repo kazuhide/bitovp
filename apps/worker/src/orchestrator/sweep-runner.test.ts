@@ -7,7 +7,7 @@ import {
 } from "./sweep-runner";
 
 /**
- * audit 602ec286 MODERATE-1 /  — the three rules the heartbeat sweep
+ * the three rules the heartbeat sweep
  * is built from, each tested against an injected clock / explicit gates rather
  * than a wall-clock sleep.
  */

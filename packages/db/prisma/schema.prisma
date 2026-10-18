@@ -239,8 +239,8 @@ model EncodingJob {
   /// (NEVER ERROR). Re-read from the DB each loop, so crash-resume re-honors it
   /// idempotently. The route never touches `status`; the worker owns the
   /// terminal transition, which is why a genuinely-FINISHED job is never reverted.
-  /// Lease held by the worker attempt currently running this job (audit
-  /// 893eb66 CRITICAL-1). The VOD twin of `LiveChannel.provisionClaimedAt`.
+  /// Lease held by the worker attempt currently running this job.
+  /// The VOD twin of `LiveChannel.provisionClaimedAt`.
   ///
   /// The status alone could not be the lock: a worker whose BullMQ lock lapsed
   /// mid-provider-call kept running while the redelivered job started on a
@@ -292,7 +292,7 @@ model EncodingJob {
   preset         Preset? @relation(fields: [presetId], references: [id], onDelete: SetNull)
   presetRevision Int?
 
-  /// EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
+  /// The verification harness's idempotency
   /// key, stamped at create when the submit carried one. Unique, nullable:
   /// ordinary jobs never carry it. `POST /api/encoding-jobs` returns THIS row
   /// for a repeat of the same key with the same `verificationRequestSha256`
@@ -486,7 +486,7 @@ model LiveChannel {
   id                 String            @id @default(uuid()) @db.Uuid
   name               String
   status             LiveChannelStatus @default(CREATED)
-  /// Audit 5c3d97ca SC-01: the monotonic CAS authority shared by run
+  /// The monotonic CAS authority shared by run
   /// transitions and external-effect claims. Every claim and every stop/start
   /// transition increments it; an effect may send only while its committed
   /// claim generation is still current.
@@ -510,8 +510,8 @@ model LiveChannel {
   /// (the create route's own enqueue) AND PROVISIONING (a start action that
   /// atomically claimed the row), so when a start arrived while the row was
   /// still CREATED, BOTH jobs passed the guard and ran every op — two encoding
-  /// trees writing the same output prefix, both billed (audit e57f2d3
-  /// AKR-E57-003, RUNTIME-VERIFIED). The start action's claim was correct; it
+  /// trees writing the same output prefix, both billed.
+  /// The start action's claim was correct; it
   /// just never stopped the create path's job.
   ///
   /// A TIMESTAMP rather than an owner token, so a worker that dies mid-provision
@@ -579,7 +579,7 @@ model LiveChannel {
   preset         Preset? @relation(fields: [presetId], references: [id], onDelete: SetNull)
   presetRevision Int?
 
-  /// EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
+  /// The verification harness's idempotency
   /// key — same contract as `EncodingJob.verificationKey`, honoured by
   /// `POST /api/live-channels`. A channel is billed from creation (ledger
   /// #125), which is exactly why a lost create response must be recoverable.
@@ -694,7 +694,7 @@ model LiveChannelRun {
   /// sample this run; staleness grace then measures from createdAt, which is
   /// how a fresh run avoids inheriting the previous run's grace (R5/I3).
   lastHeartbeatAt               DateTime?
-  /// Row #280 (audit 5c3d97ca BLOCKER-1): the PROVIDER's own lifecycle word
+  /// The PROVIDER's own lifecycle word
   /// for THIS run's encoding — RUNNING / QUEUED / FINISHED / … as last read
   /// back from the encoding-status endpoint for exactly `bitmovinEncodingId`.
   /// Never inferred from a local write (a Restart 2xx, a details GET or a
@@ -722,7 +722,7 @@ model LiveChannelRun {
   /// unavailable; the heartbeat sweep retries every still-null marker until
   /// all matching feeder stop jobs have been accepted.
   providerFeederStopsEnqueuedAt DateTime?
-  /// Per-run heartbeat poll token (audit 5c3d97ca MEDIUM-1): every sweep
+  /// Per-run heartbeat poll token: every sweep
   /// claim bumps it by compare-and-swap, and a poll result whose epoch no
   /// longer matches is discarded whole — no sample, no history, no alert.
   heartbeatPollEpoch            Int               @default(0)
@@ -974,7 +974,7 @@ model FeederSession {
   /// deleting an ERROR row that still carries an unreclaimed pid erases the
   /// last reference to an ffmpeg still pushing into a live ingest.
   processGoneAt      DateTime?
-  /// Audit 5c3d97ca BLOCKER-2 (§14.5 LC-02) — the PUBLISHER CLAIM, a
+  /// The PUBLISHER CLAIM, a
   /// status-independent reservation of the channel's single ingest slot.
   /// `status` says what the SESSION is doing; `pid`/`processGoneAt` say what is
   /// known about the PROCESS; neither is a DB-enforced cardinality. The active
@@ -1043,7 +1043,7 @@ model FeederSession {
   error              String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
-  /// Row #267 (audit 602ec286 HIGH-1): at most ONE active feeder session per
+  /// At most ONE active feeder session per
   /// channel whose push is UN-COORDINATED — enforced by a hand-written PARTIAL
   /// UNIQUE INDEX (`FeederSession_one_active_pusher_per_channel`) in the
   /// migration SQL, `ON (liveChannelId) WHERE status IN active AND
@@ -1053,7 +1053,7 @@ model FeederSession {
   /// for the handoff. The DB, not a check-then-act count, dedups racing creates;
   /// the loser treats P2002 as "channel already has an active feeder session".
   ///
-  /// Audit 5c3d97ca BLOCKER-2 (LC-02): a SECOND hand-written partial unique
+  /// A SECOND hand-written partial unique
   /// index, `FeederSession_one_publisher_claim_per_channel`, `ON (liveChannelId)
   /// WHERE publisherClaimedAt IS NOT NULL AND publisherReleasedAt IS NULL` —
   /// at most one held publisher claim per channel, independent of `status`.
@@ -1072,7 +1072,7 @@ model FeederSession {
   @@index([organizationId])
 }
 
-/// Audit 5c3d97ca LF-01 — one durable, attempt-bound record for every feeder
+/// One durable, attempt-bound record for every feeder
 /// process spawn. These identifiers deliberately are not foreign keys: the
 /// operational ledger must survive deletion of a schedule, run or feeder
 /// session. Rows are inserted before spawn, advanced only with facts from that
@@ -1217,7 +1217,7 @@ model VmafResult {
   /// Frame-level scores; gzipped blob over ~50k frames (ARCHITECTURE §6).
   frames       Json?
   framesGzip   Bytes?
-  /// Ledger #199 slice 2 (audit ce4a935 CRITICAL-2): the bytes this row scored.
+  /// The bytes this row scored.
   /// `{ reference, distorted }`, each `{ bucket, key, identity?, pinned,
   /// sha256, bytes }` — the provider's version identity read BEFORE the
   /// download and demanded DURING it (`getObject({ expect })`), plus a
@@ -1571,19 +1571,17 @@ enum LiveScheduleStatus {
   SKIPPED_STALE_GENERATION
 }
 
-/// Ledger #238 + audit 602ec286 §17 P1-4 (HIGH-4/HIGH-5/MODERATE-2): what a
-/// schedule row DELIVERED, which is a different question from whether it fired.
-/// `status = FIRED` says only "the request left this system"; paid run #4 of
-/// the 2026-08-29 live audit fired a SLATE_IN, the provider's scheduled entry
-/// went ERROR, the picture never changed, and the row read FIRED with a green
-/// badge. So delivery gets its own column and `FIRED` stops being a synonym.
+/// What a schedule row DELIVERED, which is a different question from whether
+/// it fired. `status = FIRED` says only "the request left this system"; a
+/// SLATE_IN request may fire while the provider's scheduled entry goes ERROR
+/// and the picture never changes. Delivery therefore gets its own column.
 ///
 /// The first cut of this column collapsed the middle: it wrote `DELIVERED` the
 /// instant a feeder's ffmpeg started pushing (~16s before the provider bound
-/// the ingest — HIGH-4) and the instant a slate's provider entry was ARMED (no
-/// segment/frame witness that it aired — HIGH-5). "Delivered" was thus claimed
+/// the ingest) and the instant a slate's provider entry was ARMED (no
+/// segment/frame witness that it aired). "Delivered" was thus claimed
 /// before any media flowed. The states below split that single leap into the
-/// progression the audit prescribed, so a green means media was OBSERVED, not
+/// media progression, so a green means media was OBSERVED, not
 /// merely requested:
 ///
 ///   PENDING          — a writer is still expected (the job that fired it runs).
@@ -1605,7 +1603,7 @@ enum LiveScheduleStatus {
 ///   UNKNOWN          — nobody will ever tell us: the deadline passed, the job
 ///                      died, or the row fired before this column existed. A
 ///                      later positive observation must NOT upgrade it
-///                      (audit MODERATE-2: a manual START hours later must not
+///                      (a manual START hours later must not
 ///                      relabel a past UNKNOWN as DELIVERED).
 ///
 /// PENDING / UNKNOWN / PROCESS_PUSHING / SLATE_ARMED all render amber-or-neutral
@@ -1634,7 +1632,7 @@ enum LiveScheduleAction {
   FEEDER_SWITCH
 }
 
-/// Audit 5c3d97ca SC-01: durable state at the external-effect boundary.
+/// Durable state at the external-effect boundary.
 /// DISPATCHING means the intent is committed and the request/process may have
 /// been sent; a timeout or owner loss moves it to AMBIGUOUS, never back to a
 /// retryable empty slot without exact readback.
@@ -1647,7 +1645,7 @@ enum LiveEffectClaimState {
   RESOLVED
 }
 
-/// Audit 5c3d97ca SC-02: why a schedule outcome may be trusted. The version is
+/// Why a schedule outcome may be trusted. The version is
 /// stored separately so a future evidence contract can fail closed without
 /// relabelling rows written under this one.
 enum LiveScheduleOutcomeEvidenceKind {
@@ -1894,7 +1892,7 @@ model SlateNormalization {
   @@index([organizationId])
 }
 
-/// Audit 5c3d97ca SC-01 — one durable intent per idempotency key. Run ids are
+/// One durable intent per idempotency key. Run ids are
 /// provenance rather than foreign keys: claims must survive historical run
 /// cleanup long enough to explain an ambiguous provider/process effect.
 model LiveEffectClaim {
@@ -2205,8 +2203,7 @@ model VerificationRun {
   /// EV-01: every paid resource this run INTENDED to create, written before
   /// the create was sent. The seal reads these, not the in-memory ids.
   intents VerificationResourceIntent[]
-  /// The Live/MSL evidence tuples this run sealed, one per output leg
-  /// (audit 5c3d97ca BLOCKER-4 / EV-02).
+  /// The Live/MSL evidence tuples this run sealed, one per output leg.
   liveEvidence VerificationLiveEvidence[]
 
   @@index([startedAt(sort: Desc)])
@@ -2218,7 +2215,7 @@ model VerificationRun {
   @@index([organizationId])
 }
 
-/// EV-01 (audit 5c3d97ca BLOCKER-5, §14.4): the durable INTENT to create one
+/// The durable INTENT to create one
 /// paid resource, committed BEFORE the create request is sent.
 ///
 /// The defect: the harness learned a job's or channel's id from the HTTP
@@ -2338,7 +2335,7 @@ model VerificationResourceIntentEvent {
   @@index([organizationId])
 }
 
-/// One Live / MSL evidence TUPLE — audit 5c3d97ca BLOCKER-4 (§14.4 EV-02).
+/// One Live / MSL evidence TUPLE.
 /// A live PASS used to rest on facts that were never joined: the run row held
 /// a channel id, a report and a cleanup seal, but no plan digest, no source
 /// identity, no provider resource, no output prefix / edge URL and no media

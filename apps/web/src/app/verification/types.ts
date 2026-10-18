@@ -32,8 +32,8 @@ export type RunOutcome = {
 	sourceIdentity?: string;
 	checks?: Record<string, number>;
 	/**
-	 * LIVE only (audit 5c3d97ca BLOCKER-4, EV-02): the durable teardown seal
-	 *  and the versioned evidence-tuple summary — the SAME shapes the
+	 * LIVE only: the durable teardown seal
+	 * and the versioned evidence-tuple summary — the SAME shapes the
 	 * harness writes, imported from core rather than re-declared here so the
 	 * Dashboard cannot drift from the writer.
 	 */

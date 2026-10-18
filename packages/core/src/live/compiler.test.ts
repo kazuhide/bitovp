@@ -337,7 +337,7 @@ describe("compileLiveChannel golden fixtures", () => {
 	});
 });
 
-describe("HLS audio media NAME uniqueness — live (audit 893eb66 HIGH-8, ledger #201)", () => {
+describe("HLS audio media NAME uniqueness — live", () => {
 	function withSecondAudio() {
 		const plan = loadPlan("live-rtmp-simple");
 		const a = plan.renditions.find((r) => r.key === "a128");
@@ -427,7 +427,7 @@ describe("MSL4 manifest paths on the wire (re-audit 2026-08-29 BLOCKER-5, ledger
 	});
 });
 
-describe("mixed-codec live DASH — one video set per codec (eb7c983 HIGH-2)", () => {
+describe("mixed-codec live DASH — one video set per codec", () => {
 	/**
 	 * DASH video adaptation sets must be separated by codec. An H264+H265 Live
 	 * channel cannot place the first H265 representation in the H264 set.

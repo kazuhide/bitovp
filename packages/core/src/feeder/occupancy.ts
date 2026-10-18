@@ -1,7 +1,7 @@
 /**
  * "Does this feeder row OCCUPY its channel's single publisher slot?" — the ONE
- * predicate behind every feeder admission and spawn decision (audit 5c3d97ca
- * BLOCKER-2 / §14.5 LC-02).
+ * predicate behind every feeder admission and spawn decision
+ *
  *
  * The defect it exists for: the single-pusher rule lived in `status`. The web
  * route, the scheduler and the DB's partial index all asked "is there an
@@ -14,24 +14,24 @@
  *
  * Occupancy is therefore THREE facts, any one of which holds the slot:
  *
- *  1. a PUBLISHER CLAIM is held (`publisherClaimedAt` set, `publisherReleasedAt`
- *     null) — the owning worker reserved the slot before spawning, and only
- *     positive proof that the process is gone releases it. The DB enforces at
- *     most one per channel (`FeederSession_one_publisher_claim_per_channel`);
- *  2. a PROCESS MAY BE ALIVE (`feederProcessMayBeAlive`) — a recorded pid nobody
- *     has proven gone, whatever the status. Rows written before the claim
- *     existed, or by a writer that could not prove anything, land here;
- *  3. the row is ACTIVE and UNCOORDINATED — a CREATED/DOWNLOADING/PUSHING
- *     SINGLE-PHASE session (`commitAt` null), which claims and spawns on its
- *     own the moment its gates pass. A TWO-PHASE session (`commitAt` set —
- *     ) is never counted by status: while it stages or holds it
- *     cannot spawn, and when its commit is requested it competes for the slot
- *     INSIDE its commit CAS, which is the claim — so it appears here through
- *     fact 1 once it has committed, and through fact 2 once it has a pid,
- *     never before. Several holds therefore coexist on one channel and
- *     serialise only at their commits (rev367 I-1), and two commits requested
- *     at once are decided by the index rather than by each barrier stopping
- *     the other (which could stop both).
+ * 1. a PUBLISHER CLAIM is held (`publisherClaimedAt` set, `publisherReleasedAt`
+ * null) — the owning worker reserved the slot before spawning, and only
+ * positive proof that the process is gone releases it. The DB enforces at
+ * most one per channel (`FeederSession_one_publisher_claim_per_channel`);
+ * 2. a PROCESS MAY BE ALIVE (`feederProcessMayBeAlive`) — a recorded pid nobody
+ * has proven gone, whatever the status. Rows written before the claim
+ * existed, or by a writer that could not prove anything, land here;
+ * 3. the row is ACTIVE and UNCOORDINATED — a CREATED/DOWNLOADING/PUSHING
+ * SINGLE-PHASE session (`commitAt` null), which claims and spawns on its
+ * own the moment its gates pass. A TWO-PHASE session (`commitAt` set)
+ * is never counted by status: while it stages or holds it
+ * cannot spawn, and when its commit is requested it competes for the slot
+ * INSIDE its commit CAS, which is the claim — so it appears here through
+ * fact 1 once it has committed, and through fact 2 once it has a pid,
+ * never before. Several holds therefore coexist on one channel and
+ * serialise only at their commits (rev367 I-1), and two commits requested
+ * at once are decided by the index rather than by each barrier stopping
+ * the other (which could stop both).
  *
  * Polarity is deliberate, as in `orphan-process.ts`: an unknown reads as
  * occupied. Refusing an admission costs an operator one stop or one switch;

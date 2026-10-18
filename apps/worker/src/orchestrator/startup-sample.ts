@@ -24,7 +24,7 @@ import type { AppPrismaClient } from "@bitovp/db";
 /** queue = the AWAIT pair (Bitmovin's allocation time, isolated from our
  * ~29 resource-creation calls); total = end-to-end from THIS ATTEMPT's start.
  *
- * review-8eaef21 #3: `entries[0].startedAt` alone is a cross-attempt clock —
+ * `entries[0].startedAt` alone is a cross-attempt clock —
  * a resumed provision keeps its DONE entries' original timestamps (the retry
  * path reseeds FAILED→PENDING without touching stamps), so a channel retried
  * the next morning would record totalSeconds ≈ 20 h. The caller passes the
@@ -106,7 +106,7 @@ async function sampleContext(
 }
 
 /** The provision-finalize writer — the ONLY success sampler (never restart).
- * The caller threads the run id it already holds (review-8eaef21 #10) and
+ * The caller threads the run id it already holds and
  * this attempt's start time (#3). */
 export async function recordRunningStartupSample(
 	prisma: AppPrismaClient,
@@ -157,8 +157,8 @@ export async function recordRunningStartupSample(
 
 /** Provision-failure writer — create-if-absent (a lost write is re-covered
  * by the reconciler; an existing row is never overwritten). Returns whether
- * a row was actually created (review-8eaef21 #5: the reconciler's count must
- * not claim skips as work). */
+ * a row was actually created, so the reconciler does not count skipped rows
+ * as work. */
 export async function recordFailedStartupSample(
 	prisma: AppPrismaClient,
 	liveChannelId: string,
@@ -217,7 +217,7 @@ export async function reconcileStartupSamples(
 	const stuck = await prisma.liveChannelRun.findMany({
 		where: { status: "PROVISIONING", createdAt: { lt: cutoff } },
 		select: { id: true, liveChannelId: true },
-		// NEWEST first, deliberately (review-8eaef21 #5): nothing transitions
+		// NEWEST first, deliberately: nothing transitions
 		// a stuck PROVISIONING run out of this scan's population, so already-
 		// sampled rows accumulate forever. Once they exceed the take, oldest-
 		// first would let that permanent backlog starve every NEW stuck run;

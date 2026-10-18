@@ -250,7 +250,7 @@ describe("HeartbeatHistory", () => {
 		).toBeInTheDocument();
 	});
 
-	it("a FAILED fetch reads as unavailable, never as 'no history yet' — audit 4403130 IMPORTANT-2", async () => {
+	it("a FAILED fetch reads as unavailable, never as 'no history yet'", async () => {
 		// The defect: `history.data?.points ?? []` made a rejected query
 		// indistinguishable from an empty window, and a post-mortem of a run
 		// that HAD heartbeats told its reader there had never been any.
@@ -267,7 +267,7 @@ describe("HeartbeatHistory", () => {
 		expect(screen.getByRole("status")).toHaveTextContent(/could not be read/i);
 	});
 
-	it("a short disconnect inside a 2,000-poll run still draws both dots after the SERVER's downsample — audit 4403130 IMPORTANT-2", async () => {
+	it("a short disconnect inside a 2,000-poll run still draws both dots after the SERVER's downsample", async () => {
 		// End to end over the real pair: the server reducer thins the series,
 		// this component derives the status dots from what survives. Before
 		// the fix the reducer kept only each bucket's max-packet-delta point,

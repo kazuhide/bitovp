@@ -5,7 +5,7 @@ import { renderWithQuery } from "@/test/render";
 import { ProgramTimeline, type TimelineRow } from "./program-timeline";
 
 /**
- * Audit 602ec286 HIGH-8 — the timeline paints a FIRED row's OUTCOME, never a
+ * the timeline paints a FIRED row's OUTCOME, never a
  * blanket FIRED-green.
  *
  * The defect the old `statusTone` shipped: `status === "FIRED"` mapped straight

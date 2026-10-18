@@ -2,8 +2,8 @@ import { StreamInfo } from "@bitmovin/api-sdk";
 import { describe, expect, it } from "vitest";
 
 /**
- * The wire fact the `optStr(p.audio)` fix rests on (paid audit 893eb66
- * HIGH-8), pinned against the INSTALLED SDK rather than reasoned about: the
+ * The wire fact the `optStr(p.audio)` fix rests on
+ * pinned against the INSTALLED SDK rather than reasoned about: the
  * facade hands the payload straight to `new StreamInfo(p)` and the client
  * JSON-serializes the model, so what `undefined` and `""` become on the wire is
  * decided here and nowhere in our code.

@@ -6,7 +6,7 @@ const listBlobsByHierarchy = vi.fn();
 const download = vi.fn();
 const getProperties = vi.fn();
 /**
- * Every `withVersion(id)` the driver called — audit ce4a935 CRITICAL-2. Azure
+ * Every `withVersion(id)` the driver called. Azure
  * selects a blob VERSION on the client, not in `download`'s options, so the
  * only way to see that a recorded versionId was honoured is to record the call.
  */

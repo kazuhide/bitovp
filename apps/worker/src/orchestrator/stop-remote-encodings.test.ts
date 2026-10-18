@@ -7,7 +7,7 @@ import {
 } from "./stop-remote-encodings";
 
 /**
- * Audit f63f76b F63-RUN-009 — the encoding a dead job leaves billing.
+ * the encoding a dead job leaves billing.
  *
  * A job can die outside its processor (stalled twice, lock lost). The `failed`
  * listener flips the row to ERROR so it does not wedge, and that write is
@@ -18,7 +18,7 @@ import {
  *
  * The reset SEES these rows and refuses to proceed — but seeing is not
  * stopping, and the only "fix" it offers is deleting the local record, which is
- *  (a forgotten encoder is a bill) reached through a clean-looking
+ * (a forgotten encoder is a bill) reached through a clean-looking
  * screen.
  */
 

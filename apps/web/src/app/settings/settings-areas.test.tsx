@@ -119,7 +119,7 @@ describe("SettingsAreas — role-aware ADMIN cards", () => {
 });
 
 /**
- *  (audit 5c3d97ca §14.6 UX-02d): the landing shows only usable tasks,
+ * the landing shows only usable tasks,
  * grouped by audience. The historical API census is read-only for VIEWER+;
  * release-verification runs and roadmap cards remain absent.
  */

@@ -44,7 +44,7 @@ const STATUS_TONE: Record<Exclude<LiveScheduleStatusKind, "FIRED">, Tone> = {
 	CANCELED: "neutral",
 	MISSED: "error",
 	ERROR: "error",
-	// : amber, not red. Refusing a row armed for a previous airing is
+	// Use amber for a stale generation. Refusing a row armed for a previous airing is
 	// the guard WORKING; painting it as a failure would send an operator
 	// looking for a fault. It is still not "ok" — a scheduled action did not
 	// happen, and the note says which airing it wanted.
@@ -52,15 +52,13 @@ const STATUS_TONE: Record<Exclude<LiveScheduleStatusKind, "FIRED">, Tone> = {
 };
 
 /**
- *  — the badge TEXT.
+ * Localized badge text.
  *
- *  gave only `SKIPPED_STALE_GENERATION` a sentence and let the six
- * short statuses render their raw enum name. Audit 5c3d97ca §8.3 (HIGH-10)
- * measured what that reads like to an operator who did not write the
- * scheduler: `MISSED` as a primary state. Every status is now a catalogued
- * word — the PRIMARY — with the raw code beside it as a secondary
- * `<code>` (`statusChip` below), which is the "Japanese primary + raw code
- * secondary" shape §8.3 asks for.
+ * Translating only `SKIPPED_STALE_GENERATION` left the six short statuses
+ * displaying raw enum names such as `MISSED`, which are unclear to an
+ * operator who did not write the scheduler. Every status uses a catalogued
+ * word as the primary label, with the raw code beside it as a secondary
+ * `<code>` (`statusChip` below).
  *
  * Exhaustive on purpose: a future status must make a deliberate choice here
  * instead of silently inheriting the raw name — which is exactly how
@@ -74,7 +72,7 @@ const STATUS_TONE: Record<Exclude<LiveScheduleStatusKind, "FIRED">, Tone> = {
  * and nothing here needs the literal types the other one would preserve.
  */
 /**
- * What a fired row's DELIVERY looks like (audit 602ec286 §17 P1-4).
+ * What a fired row's DELIVERY looks like.
  *
  * Green (`ok`) is reserved for OBSERVED media: INGEST_CONNECTED (the provider's
  * encoder reports a fresh CONNECTED ingest while a feed pushes) and DELIVERED
@@ -191,7 +189,7 @@ export function SchedulePanel({
 	programStartAt?: string | null;
 	programEndAt?: string | null;
 	/**
-	 * : is the encoder's ingest CONNECTED right now (from the
+	 * is the encoder's ingest CONNECTED right now (from the
 	 * channel's last heartbeat)? An armed slate on a RUNNING channel with no
 	 * input will WAIT — and the operator must hear that from the page, not
 	 * discover it as a black stream at air time (the 2026-08-15 incident).
@@ -225,7 +223,7 @@ export function SchedulePanel({
 	const [fireAt, setFireAt] = useState("");
 	// #160 PR2: intended air time — arms the not-RUNNING-by-deadline alert.
 	const [airAt, setAirAt] = useState("");
-	// review-8eaef21 #8: the arm schema accepts a per-row margin (30..3600s);
+	// the arm schema accepts a per-row margin (30..3600s);
 	// API-parity says the form must reach it too. Blank = the default 300.
 	const [deadlineMargin, setDeadlineMargin] = useState("");
 	// #160 PR3: derive fireAt from airAt − lead at arm time (server-side).
@@ -444,7 +442,7 @@ export function SchedulePanel({
 					rows={rows.map((r) => ({
 						action: r.action,
 						status: r.status,
-						// audit 602ec286 HIGH-8: the timeline paints the OUTCOME of a
+						// the timeline paints the OUTCOME of a
 						// fired row, not a blanket FIRED-green. Absent = PENDING (the
 						// direction that cannot invent a success), exactly as the
 						// history list reads it.
@@ -538,17 +536,17 @@ export function SchedulePanel({
 			</div>
 
 			{/*
-			    : the arm form is now DISCLOSED, and it used to be the
-			    first thing in this panel. The order was
-			    `arm form -> runtime cap -> cost estimate -> upcoming -> history`,
-			    so an operator asking "what fires next?" — the everyday question —
-			    scrolled past three authoring surfaces to reach the answer (audit
-			    4403130 §5.3). Arming a one-shot is a deliberate act, taken once
-			    per broadcast; reading the upcoming rows happens every time the
-			    page is opened. The disclosure carries `aria-expanded` /
-			    `aria-controls`, so the form appearing is announced rather than
-			    merely rendered .
-			*/}
+			 * the arm form is now DISCLOSED, and it used to be the
+			 * first thing in this panel. The order was
+			 * `arm form -> runtime cap -> cost estimate -> upcoming -> history`,
+			 * so an operator asking "what fires next?" — the everyday question —
+			 * scrolled past three authoring surfaces to reach the answer.
+			 * Arming a one-shot is a deliberate act, taken once
+			 * per broadcast; reading the upcoming rows happens every time the
+			 * page is opened. The disclosure carries `aria-expanded` /
+			 * `aria-controls`, so the form appearing is announced rather than
+			 * merely rendered.
+			 */}
 			<RoleAccess control="live.channel.schedule">
 				<Disclosure
 					id="schedule-arm"

@@ -113,7 +113,7 @@ it("keeps a valid AWS import available across rerenders", async () => {
 /** Walk to the output step and hand back its credential select. */
 async function outputCredentialSelect(): Promise<HTMLSelectElement> {
 	renderWithQuery(<LiveWizard />);
-	// "4. Destinations" (audit 5c3d97ca §14.6) — a bare /output/i now lands on
+	// "4. Destinations" — a bare /output/i now lands on
 	// "5. Output groups and manifests", one step past the credential select.
 	const step = (
 		await screen.findAllByRole("button", { name: /^\d+\. Destinations$/ })
@@ -292,7 +292,7 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 			"lw-msl-format",
 		) as HTMLSelectElement;
 
-		// Audit 5c3d97ca §14.6 step names: "3. Video and audio encodes" is the
+		// step names: "3. Video and audio encodes" is the
 		// ladder, "4. Destinations" the output credential.
 		const ladderStep = (
 			await screen.findAllByRole("button", {
@@ -361,7 +361,7 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 		);
 	});
 
-	it("normalizes the ladder to HLS/TS on MSL credential SELECT, before any dropdown touch (audit 602ec286 HIGH-7, row #269)", async () => {
+	it("normalizes the ladder to HLS/TS on MSL credential SELECT, before any dropdown touch", async () => {
 		/**
 		 * The desync HIGH-7 names: the format dropdown DISPLAYS `?? "HLS"` the
 		 * moment MSL is the destination, but the ladder stayed on its fMP4 default
@@ -435,7 +435,7 @@ describe("live wizard — the Start step's auto-shutdown reaches the Schedule st
 	async function fillShutdownThenSlot(streamTimeoutMinutes: string) {
 		renderWithQuery(<LiveWizard />);
 		// The step buttons are numbered ("6. Automatic restart and stop",
-		// "7. Schedule actions" — audit 5c3d97ca §14.6's names), so anchor on
+		// "7. Schedule actions" — the step names changed), so anchor on
 		// the number-and-name shape rather than the bare word.
 		const startStep = (
 			await screen.findAllByRole("button", {
@@ -482,7 +482,7 @@ describe("live wizard — the Start step's auto-shutdown reaches the Schedule st
 	 * would pass on the wrong element in the positive arm and fail in the
 	 * negative one for a reason that has nothing to do with this rule.
 	 */
-	// Audit 5c3d97ca §8.3: the sentence names the value and the consequence,
+	// the sentence names the value and the consequence,
 	// not the raw property, so the scope is its own wording.
 	const shutdownAlerts = () =>
 		screen

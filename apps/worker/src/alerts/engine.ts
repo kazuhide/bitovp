@@ -107,7 +107,7 @@ export function createAlertEngine(deps: {
 							where: { id: liveChannelId },
 							select: { programStartAt: true, programEndAt: true },
 						}),
-				//  (audit 4403130 §4 IMPORTANT-1, second defect): which
+				// which
 				// RUN the window belongs to. Threaded from the caller when it has
 				// the row (the sweep does, one statement earlier), self-read when
 				// it does not — the same shape as `programWindow`, and the same

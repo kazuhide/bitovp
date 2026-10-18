@@ -87,8 +87,8 @@ export type OrchestratorDeps = {
 		tenantOrgId: string | null;
 		bitmovinAccountId: string;
 		/** : create-op idempotency stamp, threaded to the fetch layer
-		    (and its adoptWindow to sdk-ops' adopt-before-create). Structural
-		    subtype of CreateStamp — the #163 lesson says a NARROWER declaration
+		 * (and its adoptWindow to sdk-ops' adopt-before-create). Structural
+		 * subtype of CreateStamp — the #163 lesson says a NARROWER declaration
 		    here lets a wiring silently drop a field, so keep it in lockstep. */
 		stamp?: CreateStamp;
 	}): SdkOps;
@@ -245,7 +245,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 
 		/*
 		 * TAKE THE ATTEMPT LEASE, atomically — before any write, any SDK call
-		 * (audit 893eb66 CRITICAL-1).
+		 *
 		 *
 		 * Everything below this line used to run on the strength of a single
 		 * read: the row was not terminal, so proceed. A worker whose BullMQ
@@ -444,7 +444,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// BOTH exits of executeStep (the DONE path and the catch), so poll,
 		// finalize, cancel and sibling-stop traffic all run with no stamp.
 		let stampStep: string | undefined;
-		// 's adoption window: true only while a step that a previous
+		// The adoption window is true only while a step that a previous
 		// attempt left RUNNING re-executes. Same lifecycle as stampStep — the two
 		// move in lockstep at all three sites (set, success-clear, catch-clear).
 		let stampAdopt = false;
@@ -945,7 +945,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					// was lost. Reconcile the exact marker; never POST beside it.
 					stampAdopt = wasRunning || wasVerificationCreateAttempt;
 					/**
-					 * : the ONE recovery that is not a retry. When a start
+					 * the ONE recovery that is not a retry. When a start
 					 * dies of the measured 500/1004 signature AFTER the ladder has
 					 * exhausted, and the request carried JIT manifest lists, the same
 					 * artefacts are reachable by starting plainly and generating those
@@ -1217,12 +1217,12 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 	 * this stops all of them — cancel takes the whole job down.
 	 */
 	/**
-	 * : the stop's OUTCOME is returned, not just attempted. `confirmed`
+	 * the stop's OUTCOME is returned, not just attempted. `confirmed`
 	 * is true only when every created encoding was SEEN terminal — either
 	 * already terminal before the stop, or terminal on the readback after the
 	 * stop call — so a stop that failed, or one the provider had not applied
 	 * by the readback, leaves the job unconfirmed and the reset keeps blocking
-	 * on its pointer . The reconcile
+	 * on its pointer. The reconcile
 	 * route can confirm it later from the provider's own status.
 	 */
 	/**

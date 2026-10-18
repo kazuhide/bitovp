@@ -25,8 +25,7 @@ export function dashVideoLegSelected(
 	// The manifest's DECLARED video leg — FMP4 by default, WEBM when the plan
 	// says so. This used to be a literal `"FMP4"` first conjunct, which made
 	// `videoMuxingKind: "WEBM"` select nothing: the schema admitted it, the
-	// encoder produced four WebM ladders, and the MPD carried audio only (paid
-	// audit 893eb66 CRITICAL-2, case 8; ).
+	// encoder produced four WebM ladders, and the MPD carried audio only.
 	return (
 		(muxing.kind === "FMP4" ||
 			muxing.kind === "CMAF" ||

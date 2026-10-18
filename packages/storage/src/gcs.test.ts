@@ -7,7 +7,7 @@ const getFiles = vi.fn();
 const getMetadata = vi.fn();
 const createReadStream = vi.fn();
 /**
- * Every `bucket(name).file(key, options)` call, in order — audit ce4a935
+ * Every `bucket(name).file(key, options)` call, in order —
  * CRITICAL-2. GCS pins an exact version by SELECTING a generation on the file
  * handle rather than by sending a precondition header, so the options argument
  * IS the enforcement and recording it is the only way to prove the enforcement

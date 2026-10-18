@@ -238,7 +238,7 @@ export type SlatePreflightDto = {
 	/** Raw ffprobe JSON of the inspected object (for the summary table). */
 	probe?: unknown;
 	/**
-	 * : what registration will DO with the object — register it as
+	 * what registration will DO with the object — register it as
 	 * it is, convert it to an ingest-matching MPEG-TS, wait for the live
 	 * input first, or refuse. Present on every DONE verdict.
 	 */
@@ -858,7 +858,7 @@ export const liveScheduleArmSchema = z
 			value.fireAt !== undefined &&
 			Date.parse(value.airAt) <= Date.parse(value.fireAt)
 		) {
-			// review-8eaef21 #2: an airAt at or before fireAt arms a deadline
+			// an airAt at or before fireAt arms a deadline
 			// that is already expired when the start command runs — the next
 			// sweep tick would false-alert before anything had a chance to
 			// happen. fireAt > now is enforced by the route, so airAt > fireAt

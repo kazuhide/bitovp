@@ -226,7 +226,7 @@ describe("feeder orphan reconcile (boot + tick)", () => {
 		);
 	});
 
-	it("releases the dead owner's PUBLISHER CLAIM in the same write as the proof (audit 5c3d97ca LC-02)", async () => {
+	it("releases the dead owner's PUBLISHER CLAIM in the same write as the proof", async () => {
 		// The audit's row after the backfill: PUSHING, pid kept, claim held,
 		// its owner dead. ESRCH is one of the three release proofs — the same
 		// instant stamps processGoneAt and publisherReleasedAt, so the channel
@@ -529,7 +529,7 @@ describe("feeder orphan reconcile (boot + tick)", () => {
 });
 
 /**
- * : the lease gate this sweep gained, and the schedule row it was not
+ * the lease gate this sweep gained, and the schedule row it was not
  * closing.
  */
 describe("feeder orphan reconcile — owner lease (row #242)", () => {

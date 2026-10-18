@@ -198,7 +198,7 @@ export type RunMirror = ReturnType<typeof createRunMirror>;
  * token-presence pin watches (dynamic import remains the named residual).
  */
 /**
- *  (audit 5c3d97ca MEDIUM-1): the poll token a sweep holds for one
+ * the poll token a sweep holds for one
  * channel's tick — the run it read, the encoding that run carried, and the
  * epoch its claim bumped to. A heartbeat write carrying a token lands only
  * while the run still IS that run, still carries that encoding, and no later

@@ -40,12 +40,12 @@ import {
 } from "@/lib/server/verification-key";
 
 /**
- * `presetId`+`presetRevision` : template provenance from the
+ * `presetId`+`presetRevision`: template provenance from the
  * launcher — both-or-neither. The revision is CLIENT-supplied by design: it is
  * the revision the launcher LOADED (the body it instantiated), which a
  * template edit racing the launch would misreport if the server re-read it.
  *
- * `verificationKey`+`requestSha256` (EV-01, audit 5c3d97ca BLOCKER-5): the
+ * `verificationKey`+`requestSha256`: the
  * verification harness's idempotency pair — see `verification-key.ts`.
  */
 const bodySchema = z
@@ -125,7 +125,7 @@ const querySchema = z.object({
 	// (validationError); an empty/absent label is simply ignored.
 	status: z.enum(ENCODING_JOB_STATUSES).optional(),
 	/** QC gate outcome filter : pass | fail. Jobs without a
-	    verdict match neither — the filter answers "what did the gate say",
+	 * verdict match neither — the filter answers "what did the gate say",
 	    and silence is not an answer. */
 	qc: z.enum(["pass", "fail"]).optional(),
 	label: z.string().min(1).optional(),

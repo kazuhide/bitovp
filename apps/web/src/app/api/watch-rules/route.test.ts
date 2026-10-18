@@ -63,7 +63,7 @@ beforeEach(() => {
 	// Returning no provider would leave every test in this file exercising the
 	// "caller could not resolve one" arm, where the compatibility check is
 	// skipped by design — the arm would then be the silent default rather than
-	// the deliberate case it is meant to be (audit aa972a2 AA972-WATCH-001).
+	// the deliberate case it is meant to be.
 	credentialFindUnique.mockResolvedValue({ id: CRED_ID, provider: "AWS_S3" });
 	ruleCreate.mockImplementation(async ({ data }) => ({ id: "r-1", ...data }));
 });

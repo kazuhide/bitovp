@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 		});
 		// CHANNEL and PROBE stay separate buckets by design : a probe's
 		// synthetic minimal ladder must never launder a real channel's tail.
-		// The tuple rides IN the value (review-8eaef21 #6) — encoding it into
+		// The tuple rides IN the value — encoding it into
 		// a delimited key invited a region containing the delimiter to
 		// mis-split and invert exactly that invariant; the string key is Map
 		// identity only and is never parsed back.

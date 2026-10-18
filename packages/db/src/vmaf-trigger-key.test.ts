@@ -82,7 +82,7 @@ describe("VmafJob.triggerKey", () => {
 	 * rejected by the constraint.
 	 *
 	 * So the arms below are TRANSCRIBED from the four call sites as they stood
-	 * before this change (git 71c9611a^), and both implementations run over a
+	 * before this change, and both implementations run over a
 	 * cross product. A previous PR proved an extraction this way and left the
 	 * evidence only in a terminal, which a reviewer rightly called the strongest
 	 * instrument in the change being the one nobody else could audit. It lives

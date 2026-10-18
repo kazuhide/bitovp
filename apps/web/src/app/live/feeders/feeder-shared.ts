@@ -69,7 +69,7 @@ export function isStoppableFeederSession(
 
 /**
  * Does this session OCCUPY its channel's single publisher slot, as the server's
- * admission counts it (audit 5c3d97ca LC-02)? The panel used `status` alone
+ * admission counts it? The panel used `status` alone
  * to decide whether to offer the switch checkbox, so a channel occupied by a
  * terminal row whose ffmpeg was not proven gone had the create refused by
  * the route (correctly) with no switch on offer — a dead end. Core's
@@ -114,7 +114,7 @@ export type FeederSessionListItem = {
 	/** When that pid was PROVEN gone; null = never proven, not "alive". */
 	processGoneAt: string | null;
 	/**
-	 * : the two-phase columns. Optional on the type so a response
+	 * the two-phase columns. Optional on the type so a response
 	 * from a server that predates them still parses; absent reads as an
 	 * ordinary single-phase session.
 	 */
@@ -123,7 +123,7 @@ export type FeederSessionListItem = {
 	committedAt?: string | null;
 	switchSeamMs?: number | null;
 	/**
-	 * Audit 5c3d97ca LC-02: the publisher claim. Optional for the same reason
+	 * the publisher claim. Optional for the same reason
 	 * as the two-phase columns; absent reads as "unknown", which occupancy
 	 * treats as not-held (the pid/status facts still decide).
 	 */
@@ -139,7 +139,7 @@ export type FeederSessionListItem = {
 };
 
 /**
- * : what a two-phase session is doing while its status still reads
+ * what a two-phase session is doing while its status still reads
  * DOWNLOADING. `STAGING` = the source is being downloaded and gated; `READY`
  * = staged and HOLDING for the commit (no ffmpeg yet). Null for a session
  * that is not two-phase, or has moved past the hold — PUSHING says the rest.

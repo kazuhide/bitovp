@@ -1,4 +1,4 @@
--- Audit 5c3d97ca BLOCKER-2 / §14.5 LC-02: the single-pusher rule must be a
+-- The single-pusher rule must be a
 -- DB guarantee about PUBLISHERS, not about statuses.
 --
 -- `FeederSession_one_active_pusher_per_channel` (20260830040000) admits at most
@@ -54,7 +54,7 @@ ADD COLUMN     "publisherGeneration" INTEGER NOT NULL DEFAULT 0;
 -- BACKFILL — only rows that PROVE a real spawn may hold a claim:
 --   * PUSHING (a supervisor is pushing right now), or
 --   * pid IS NOT NULL AND processGoneAt IS NULL (a recorded process nobody has
---     proven gone — the audit's may-be-alive shape, any status), or
+--     proven gone, regardless of status), or
 --   * startedAt IS NOT NULL AND processGoneAt IS NULL (a process was spawned,
 --     but its pid pointer was later lost without positive gone proof).
 -- NOT claimed: CREATED/DOWNLOADING stage/holds (they have not spawned; the

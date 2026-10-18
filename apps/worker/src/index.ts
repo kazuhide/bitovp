@@ -958,7 +958,7 @@ const liveHeartbeatSweep: typeof liveHeartbeatSweepInner = async () => {
 // spool defaults under the OS tmpdir.
 const WORKER_HOSTNAME = hostname();
 /**
- * : this worker INSTANCE, which is what a feeder ownership lease is
+ * this worker INSTANCE, which is what a feeder ownership lease is
  * held by. The nonce is what makes each BOOT distinct — a restarted worker can
  * be handed the same pid, and a lease held by "whatever used to be 4711" is a
  * lease held by nobody.
@@ -1668,7 +1668,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								},
 							})
 							.then(({ count }) => {
-								// Audit f63f76b F63-RUN-009: marking the row
+								// marking the row
 								// ERROR stops it wedging, but the ENCODING this job may have
 								// started at Bitmovin keeps billing — and the cancel API
 								// claims `status in (QUEUED, RUNNING)`, so the write above is

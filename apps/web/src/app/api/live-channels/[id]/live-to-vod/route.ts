@@ -247,7 +247,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 		if (!target.ok) {
 			return liveToVodRequestError(400, "L2V_INVALID_PATH", target.reason);
 		}
-		//  (audit 5c3d97ca HIGH-1): WHICH families is a property of
+		// WHICH families is a property of
 		// the recording. A DASH default manifest enumerates fMP4 muxings only, so
 		// over a segmented-TS recording the provider refuses it (400 / code 2700)
 		// — and the old default of "both" turned every TS-only roll's delivered

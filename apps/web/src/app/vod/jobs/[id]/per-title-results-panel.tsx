@@ -98,7 +98,7 @@ function distinctPaths(
 /**
  * One resolved output path, WRAPPED and COPYABLE (not truncated) so the run's
  * `{height}p_{bitrate}_{uuid}` key is traceable in full — placeholder → RESULT
- * stream → muxing → resolved key in one row (audit 602ec286 §5.4 item 7). The
+ * stream → muxing → resolved key in one row. The
  * whole line copies on click (CopyableId's affordance, sized down for a dense
  * list); the tooltip stays the catalogue sentence a `getByTitle` test pins.
  *
@@ -106,7 +106,7 @@ function distinctPaths(
  * path of rendition 1920×1080 (FMP4): video/…"), unique per row because the
  * path is in it. Every path button used to be the bare "Copy", so a screen
  * reader listing controls heard N identical buttons and could not tell which
- * rung or leg any of them copied (audit 5c3d97ca HIGH-11 / MEDIUM-6). The
+ * rung or leg any of them copied. The
  * `title` stays a description beside it, never the name.
  */
 function ResolvedPath({
@@ -157,9 +157,9 @@ function ResolvedPath({
  * The resolved output paths of one muxing leg — the one fact about a result the
  * plan can never state (C4 forces `{uuid}`/`{bitrate}` placeholders, so where a
  * rung landed is only knowable after the run), and the whole reason capture
- * exists happens before Bitmovin's ~90-day purge. Captured since ;
- * rendered here , now wrap/copyable so
- * the resolved key is traceable in full (audit 602ec286 §5.4 item 7).
+ * must capture the paths before Bitmovin's ~90-day purge. They are
+ * rendered here with wrapping and copy controls so
+ * the resolved key is traceable in full.
  *
  * DRM'd legs write through the DRM resource (`stream → muxing → drm → output →
  * outputPath`), so those paths are listed under their DRM type. A leg with
@@ -273,10 +273,10 @@ function ResultRows({ results }: { results: PerTitleResultStream[] }) {
 						{index === 0 ? (
 							<td rowSpan={legs.length} className="py-1 align-top tabular-nums">
 								{/* Observed values, so NO set/schema-default badge: nobody set
-								    them, the encoder chose them (UI-DESIGN §6). Per RUNG, not
-								    per leg — the codec config belongs to the stream. The COUNT
-								    alone told an operator nothing ("34 observed" — of what?);
-								    the settings themselves are the payload, one click away
+								 * them, the encoder chose them (UI-DESIGN §6). Per RUNG, not
+								 * per leg — the codec config belongs to the stream. The COUNT
+								 * alone told an operator nothing ("34 observed" — of what?);
+								 * the settings themselves are the payload, one click away
 								    (owner directive, 2026-08-12). */}
 								{Object.keys(result.params).length > 0 ? (
 									<DetailPopover
@@ -401,7 +401,7 @@ export function PerTitleResultsPanel({
 					{view.snapshot.scan.complete ? null : (
 						<p className="mt-1 text-amber-400 text-xs">
 							{/* "Stopped early" without the numbers is not actionable —
-							    the scan's own accounting says HOW incomplete (ux
+							 * the scan's own accounting says HOW incomplete (ux
 							    inventory #7). */}
 							<DetailPopover
 								summary={t("jobDetail.ptIncomplete")}

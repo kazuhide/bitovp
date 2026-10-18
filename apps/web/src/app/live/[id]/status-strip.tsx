@@ -9,11 +9,11 @@ import type { LiveJumpEvent } from "./section-focus";
  * Ingest state and observation freshness live in DeliveryStatusPanel. Unknown
  * readings stay unknown rather than becoming reassuring defaults.
  *
- *  added the two TIME cells. Audit 4403130 §5.3 measured the gap: on a
+ * The two TIME cells address an operational gap: on a
  * healthy RUNNING channel the derived next action settles on `ON_AIR`, so the
  * page said nothing at all about the STOP or the slate that was about to fire,
  * and nothing about how long the broadcast had been up against its runtime cap
- * — the two numbers a gallery operator watches. They belong on this row and
+ * the two numbers a gallery operator watches. They belong on this row and
  * not in a new band, because the whole point of the strip is that the answer to
  * "is it all right?" is ONE horizontal scan.
  *
@@ -35,8 +35,8 @@ export function StatusStrip({
 	nowMs,
 }: {
 	/**
-	 * Open alerts, or `"unknown"` when the alert query failed (audit 4403130
-	 * IMPORTANT-2). It was a plain `number` fed by `?? 0`, so a strip whose
+	 * Open alerts, or `"unknown"` when the alert query failed.
+	 * It was a plain `number` fed by `?? 0`, so a strip whose
 	 * whole contract is "every value is a MEASUREMENT" printed a green zero
 	 * for a list it had never read.
 	 */
@@ -47,8 +47,8 @@ export function StatusStrip({
 	/**
 	 * The soonest ARMED schedule row; `null` when nothing is armed, and
 	 * `"unknown"` when the schedules query FAILED — the same three-valued
-	 * shape `openAlerts` uses, and for the same reason (audit 4403130
-	 * IMPORTANT-2): a list nobody managed to read must not render as "none
+	 * shape `openAlerts` uses, and for the same reason
+	 * a list nobody managed to read must not render as "none
 	 * armed" on a strip whose whole contract is that every value is measured.
 	 *
 	 * `label` is already localised by the caller, which owns the action → copy

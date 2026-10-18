@@ -1,6 +1,6 @@
 /**
  * The per-title RESULT population's video codec families, as the verifier's
- * third witness (row 284 / audit 5c3d97ca HIGH-3, VF-02).
+ * third witness.
  *
  * A per-title manifest's video ladder is the ENCODER's, so the expectation
  * compiler cannot bind its rungs to plan geometry (C1). What the plan does know

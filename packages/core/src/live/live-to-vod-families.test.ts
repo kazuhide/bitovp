@@ -12,11 +12,11 @@ import {
 } from "./vod-manifest-target";
 
 /**
- * Audit 5c3d97ca HIGH-1 / §14.6 LF-02 : the live-to-VOD DEFAULT
+ * the live-to-VOD DEFAULT
  * family set is "every family the recorded muxings are compatible with", not
  * "both". The fixtures are REAL live plans compiled through the real compiler
- * — `live-hls-ts-muxed` is the exact 2×TS + HLS topology the paid run rolled
- * , `live-rtmp-simple` the fMP4 HLS+DASH control.
+ * `live-hls-ts-muxed` is the exact 2×TS + HLS topology the paid run rolled
+ * `live-rtmp-simple` the fMP4 HLS+DASH control.
  */
 function compiledLog(fixture: string): StepLogEntry[] {
 	const plan = liveChannelPlanSchema.parse(

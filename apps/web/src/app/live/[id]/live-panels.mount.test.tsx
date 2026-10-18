@@ -187,7 +187,7 @@ describe("StatusStrip (ledger #149 batch 2d)", () => {
 		programmeHref: "#layer-programme",
 	} as const;
 
-	it("an UNREAD alert list is amber-unknown, never a green zero — audit 4403130 IMPORTANT-2", () => {
+	it("an UNREAD alert list is amber-unknown, never a green zero", () => {
 		renderWithQuery(
 			<StatusStrip
 				openAlerts="unknown"

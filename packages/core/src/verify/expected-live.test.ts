@@ -44,7 +44,7 @@ describe("compileExpectedLiveArtefacts — golden per live fixture", () => {
 		// segment naming the vendor's own E2E uses, and encoderVersion 2.283.0,
 		// the release that shipped MSL5. The MSL4 goldens stayed BYTE-IDENTICAL,
 		// which is what "MSL4 behaviour untouched" has to mean to be a claim.
-		// 14→15 (paid re-audit eb7c983 HIGH-2): live-mixed-codec-dash — H264 and
+		// 14→15: live-mixed-codec-dash — H264 and
 		// H265 on one channel, the topology paid case F could not deliver. The
 		// other fourteen goldens stayed BYTE-IDENTICAL, which is what "the
 		// single-codec path is untouched" has to mean to be a claim.

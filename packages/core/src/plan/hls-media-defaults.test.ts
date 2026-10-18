@@ -425,7 +425,7 @@ describe("one audio rendition, several muxing legs (HIGH-5)", () => {
 describe("qcMirrorFilename (ledger #205)", () => {
 	it("VP9 rides a progressive WebM; every other codec keeps the MP4 mirror", () => {
 		// The provider refused a VP9 progressive MP4 with "Codec type not
-		// supported" (paid audit 893eb66 case 9). One definition: the compiler
+		// supported". One definition: the compiler
 		// emits it, the VMAF runner's target enumeration reads it.
 		expect(qcMirrorFilename("v1080", "VP9")).toBe("v1080.webm");
 		for (const codec of ["H264", "H265", "AV1"]) {

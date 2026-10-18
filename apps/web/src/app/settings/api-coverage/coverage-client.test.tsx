@@ -68,7 +68,6 @@ function payload() {
 		parameterSnapshot: {
 			surveyedSdk: "1.277.0",
 			surveyedAt: "2026-08-22",
-			surveyedAtRepo: "d68759c",
 			paramTotals: {},
 			fields: 10,
 			operatorReachable: 4,
@@ -125,7 +124,7 @@ describe("ApiCoverageClient current source census", () => {
 		const historical = screen.getByTestId("parameter-snapshot");
 		expect(historical.tagName).toBe("DETAILS");
 		expect(historical).not.toHaveAttribute("open");
-		for (const text of ["2026-08-22", "d68759c", "1.277.0", "40.0%"])
+		for (const text of ["2026-08-22", "1.277.0", "40.0%"])
 			expect(historical).toHaveTextContent(text);
 		expect(screen.getByText("40.0%").closest("details")).toBe(historical);
 		const provenance = screen.getByTestId("current-provenance");
@@ -223,6 +222,13 @@ describe("ApiCoverageClient current source census", () => {
 		expect(screen.getByTestId("parameter-snapshot")).toHaveTextContent(
 			locale === "en" ? /not.*refresh/i : /再調査していません/,
 		);
+		expect(
+			screen.getByText(
+				locale === "en"
+					? "Survey date: 2026-08-22 · SDK: 1.277.0"
+					: "調査日: 2026-08-22 · SDK: 1.277.0",
+			),
+		).toBeInTheDocument();
 		fireEvent.change(screen.getByRole("textbox"), {
 			target: { value: "nonexistent" },
 		});

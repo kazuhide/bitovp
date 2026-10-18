@@ -8,7 +8,7 @@ import {
 } from "./heartbeat-history";
 
 /**
- * Audit 4403130 IMPORTANT-2, fourth defect: the reducer kept only each
+ * fourth defect: the reducer kept only each
  * bucket's max-packet-delta point, and the chart derives ingest-status
  * TRANSITIONS from whatever survives — so a short disconnect/reconnect inside
  * a long run could be deleted outright, and the operator's post-mortem showed

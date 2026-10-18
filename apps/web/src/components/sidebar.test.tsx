@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({
 	usePathname: () => "/vod/jobs",
 }));
 
-// The nav filters by the session's role (audit 5c3d97ca MEDIUM-5) and fails
+// The nav filters by the session's role and fails
 // CLOSED while the answer is pending, so a pending query hides the Storage
 // entry from the IA loop below. A PASSWORD-mode session is the
 // single-owner install with no role model — every destination renders, which

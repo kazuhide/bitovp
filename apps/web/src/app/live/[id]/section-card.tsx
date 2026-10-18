@@ -6,7 +6,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import { InfoHint } from "@/components/ui/info-hint";
 
 /**
- * Audit 5c3d97ca §8.5 / §14.6: which control a title-level help rides.
+ * Choose the control that presents title-level help.
  *
  * One sentence → `InfoHint` (hover + keyboard focus + tap; the body is the
  * trigger's accessible description). Two or more → `HelpOverlay` (click/tap
@@ -88,14 +88,14 @@ export function SectionCard({
 					className="h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform group-open:rotate-90"
 				/>
 				{/* A heading inside the summary (review-260 126-A3): FlatSection
-				    made 13 sections heading-navigable; without this the two folds
-				    silently vanish from that navigation.
-
-				     gave it the `${id}-h` id and `tabIndex={-1}` its flat
-				    sibling already needed, so a jump lands on the same thing in
-				    both frames. Inside `<summary>` it is always rendered, open or
-				    closed, so a rail link to a CLOSED section still hands focus
-				    to a visible heading — and the operator can open it with the
+				 * made 13 sections heading-navigable; without this the two folds
+				 * silently vanish from that navigation.
+				 *
+				 * The heading uses the `${id}-h` id and `tabIndex={-1}` its flat
+				 * sibling already needed, so a jump lands on the same thing in
+				 * both frames. Inside `<summary>` it is always rendered, open or
+				 * closed, so a rail link to a CLOSED section still hands focus
+				 * to a visible heading — and the operator can open it with the
 				    Enter their focus is now one Tab away from. */}
 				<Heading
 					id={`${id}-h`}

@@ -1638,7 +1638,7 @@ describe("createVmafProcessor", () => {
 		});
 
 		/**
-		 * BLOCKER-6 (paid re-audit eb7c983). This test used to assert FINISHED with
+		 * BLOCKER-6. This test used to assert FINISHED with
 		 * zero results and call that correct — the pin WAS the defect. A run that
 		 * measured none of its population is a failed measurement, and the paid run
 		 * `d62708cc` (FINISHED, totalUnits 0, doneUnits 0, results 0, unmeasured 7)
@@ -1678,7 +1678,7 @@ describe("createVmafProcessor", () => {
 
 		it("a RESULT nothing can place (attributed off-target) keeps the population > 0 and ERRORs — no false FINISHED 0/0", async () => {
 			// The plan's one template (vpt) generated no matching RESULT — that is
-			// "not generated", not a failure (audit 602ec286 §5.4 item 4). But the
+			// "not generated", not a failure. But the
 			// snapshot DID capture a RESULT, attributed to a rendition with no target
 			// (vother). It EXISTS, so it must stay in the population as UNMEASURED,
 			// and a run that measured none of it ERRORs — never a green 0/0.
@@ -1751,14 +1751,14 @@ describe("createVmafProcessor", () => {
 });
 
 /**
- * The fix (audit 602ec286 HIGH-2 / §5.4): with filename attribution the
+ * The fix: with filename attribution the
  * processor scores the RESULTs the provider actually generated, a template that
  * generated none is "not generated" (not a synthetic failed rung), and a RESULT
  * nothing could place still holds the whole-population line. Driven from
  * provider-shaped muxing rows through the REAL capture — no injected
  * `templateRendition`.
  */
-describe("per-title population from filename attribution (audit 602ec286 §5.4)", () => {
+describe("per-title population from filename attribution", () => {
 	function multiPerTitlePlan(keys: string[]): Record<string, unknown> {
 		const plan = qcPlan();
 		plan.renditions = keys.map((key) => ({
@@ -2435,7 +2435,7 @@ describe("QC gate verdict — review-201 folds", () => {
 });
 
 /**
- * The RESOLVER's kind routing — audit e57f2d3 AKR-E57-008, .
+ * The RESOLVER's kind routing.
  *
  * The rule now lives in core (`vmafSourceFor`) and is unit-tested there. These
  * two arms exist because that is not the same thing as the CALL SITE being

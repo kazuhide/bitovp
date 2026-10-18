@@ -199,7 +199,7 @@ describe("INPUT_DISCONNECTED", () => {
 
 describe("INPUT_DISCONNECTED × the PLANNED pre-air window (ledger #243)", () => {
 	/**
-	 * Audit 4403130 §4 IMPORTANT-1, re-audit proof §9-7: on paid runs #3–#5
+	 * re-audit proof §9-7: on paid runs #3–#5
 	 * this alert opened during the scheduled WAITING_FOR_FIRST_CONNECT —
 	 * before the feeder's own start time — and resolved the moment the feed
 	 * arrived. Every arm below feeds the SAME two disconnected samples and
@@ -462,7 +462,7 @@ describe("HEARTBEAT_STALE (sweep clock, not sample clock)", () => {
 	});
 
 	/**
-	 *  (audit 4403130 §4 IMPORTANT-1, third defect): the anchor was
+	 * the anchor was
 	 * `window[last]` unconditionally, so ONE sample stamped in the future by a
 	 * skewed worker clock produced a negative age and silently suppressed a
 	 * breach the rest of the window had earned.
@@ -1081,7 +1081,7 @@ describe("ingestConnectedFresh (ledger #127 — sample truth × time)", () => {
 	});
 
 	/**
-	 *  (audit 4403130 §4 IMPORTANT-1, third defect). This block
+	 * This block
 	 * REPLACES a test that asserted the opposite — "a future-dated sample
 	 * (clock skew) is tolerated as fresh … the same tolerance HEARTBEAT_STALE's
 	 * age math applies". That was the defect written down as a contract: the

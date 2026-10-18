@@ -62,7 +62,7 @@ const allNames = readdirSync(FIXTURES)
 
 describe("capabilitiesFor — a source's ROLE, not its filename", () => {
 	it("found the corpus, so a broken read cannot pass over nothing", () => {
-		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash` (audit 893eb66 CRITICAL-2).
+		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
 		expect(allNames.length).toBe(72);
 	});

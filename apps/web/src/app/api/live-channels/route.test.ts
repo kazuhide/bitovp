@@ -22,7 +22,7 @@ const credFindUnique = vi.fn(async () => ({ provider: "AWS_S3" }));
 // callback the same delegates so assertions see every write.
 const presetFindFirst = vi.fn();
 /**
- * : open alerts for the whole page come from ONE grouped read. The
+ * open alerts for the whole page come from ONE grouped read. The
  * default is an empty grouping — "looked, found none" — so every pre-existing
  * GET test keeps meaning what it meant.
  */
@@ -32,7 +32,7 @@ const alertGroupBy = vi.fn<
 	) => Promise<{ liveChannelId: string; _count: { _all: number } }[]>
 >(async () => []);
 /**
- * : the newest run per channel is a separate BOUNDED statement
+ * the newest run per channel is a separate BOUNDED statement
  * (`latestRunsFor`), not a nested `runs: { take: 1 }` on the channel query —
  * Prisma pushes no limit into that one, so it read every airing of every
  * channel on the page. The default is "no channel has run", which is what the
@@ -76,7 +76,7 @@ vi.mock("@/lib/server/queue", () => ({
 }));
 
 /**
- * : the arm-time SEAL for derived FEEDER rows. This route is the ONLY
+ * the arm-time SEAL for derived FEEDER rows. This route is the ONLY
  * door that creates them (`liveScheduleArmSchema` refuses a manual arm), so it
  * is the only place an arm-time seal can be taken.
  */
@@ -721,7 +721,7 @@ describe("GET /api/live-channels", () => {
 });
 
 /**
- *  (audit 4403130 §5.5): the Live list became an operations cockpit,
+ * the Live list became an operations cockpit,
  * which needs per-channel health the old projection did not carry. The rule
  * these tests hold is the one the audit's finding rests on — the fleet is read
  * in a BOUNDED number of queries, and what crosses is a digest, not the
@@ -1123,8 +1123,8 @@ describe("POST /api/live-channels — auto-shutdown vs the schedule window", () 
 });
 
 /**
- * EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
- * key. A channel bills from creation , so a create response lost
+ * EV-01: the verification harness's idempotency
+ * key. A channel bills from creation, so a create response lost
  * after the server created it is a billing channel nobody's memory names —
  * the same key must answer with the channel already created, never a twin.
  */

@@ -16,7 +16,7 @@ export function FlatSection({
 	/** One live line, right of the heading. Never a placeholder. */
 	summary?: ReactNode;
 	/**
-	 * Audit 5c3d97ca HIGH-10: the same title-level help `SectionCard` carries,
+	 * the same title-level help `SectionCard` carries,
 	 * because the input endpoint is HOISTED into this frame before air — the
 	 * one phase where an operator most needs to know what the section is.
 	 */
@@ -24,7 +24,7 @@ export function FlatSection({
 	/** Colours the summary only — the title stays legible in every state. */
 	tone?: "neutral" | "ok" | "warn" | "error";
 	/**
-	 * : the page grew a LAYER above the section (Operations,
+	 * the page grew a LAYER above the section (Operations,
 	 * Programme, …), each an `h2`, so a section nested in one is an `h3`. The
 	 * default stays `h2` for the phase leads, which sit directly under the
 	 * page title with no layer between them. The landmark itself is unchanged

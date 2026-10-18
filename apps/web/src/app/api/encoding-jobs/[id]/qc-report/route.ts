@@ -130,7 +130,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 			bitmovin?: { encoderVersion?: string };
 		} | null;
 		/*
-		 * THE GATE-EVIDENCE MEASUREMENT — audit ce4a935f CRITICAL-1.
+		 * THE GATE-EVIDENCE MEASUREMENT.
 		 *
 		 * This used to be "the LATEST measurement", selected INDEPENDENTLY of
 		 * the verdict, which was read from the denormalized

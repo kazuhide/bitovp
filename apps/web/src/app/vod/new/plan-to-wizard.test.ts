@@ -28,7 +28,7 @@ const coreFixturesDir = join(
 	"../../../../../../packages/core/src/plan/__fixtures__",
 );
 
-describe("mixed-codec ladder round-trip (audit 893eb66 HIGH-9)", () => {
+describe("mixed-codec ladder round-trip", () => {
 	it("mixed-codec-dash-hls rebuilds through the wizard exactly", () => {
 		const raw = JSON.parse(
 			readFileSync(
@@ -44,7 +44,7 @@ describe("mixed-codec ladder round-trip (audit 893eb66 HIGH-9)", () => {
 	});
 });
 
-describe("fixed WebM ladder round-trip (audit 893eb66 CRITICAL-2)", () => {
+describe("fixed WebM ladder round-trip", () => {
 	it("vp9-webm-fixed-dash rebuilds through the wizard exactly", () => {
 		/*
 		 * The fixture is synthetic (no encoding examples), so the 56-preset loop

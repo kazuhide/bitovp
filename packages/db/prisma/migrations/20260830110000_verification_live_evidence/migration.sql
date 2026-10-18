@@ -1,4 +1,4 @@
--- Audit 5c3d97ca BLOCKER-4 (§14.4 EV-02): a Live/MSL PASS rested on facts that
+-- A Live/MSL PASS rested on facts that
 -- were never joined — the run row carried a channel id, a report and a cleanup
 -- seal, but no plan digest, no source identity, no provider resource, no output
 -- prefix / edge URL and no media bytes, and the edge closure could close on

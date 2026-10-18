@@ -57,7 +57,6 @@ type CoveragePayload = {
 	parameterSnapshot: {
 		surveyedSdk: string;
 		surveyedAt: string;
-		surveyedAtRepo: string;
 		paramTotals: Record<string, number>;
 		paramFamilies: ParamFamilyRow[];
 		fields: number;
@@ -374,7 +373,6 @@ export function ApiCoverageClient() {
 				<p className="mt-2">
 					{t("apiCoverage.parameterProvenance", {
 						date: historical.surveyedAt,
-						repo: historical.surveyedAtRepo,
 						sdk: historical.surveyedSdk,
 					})}
 				</p>

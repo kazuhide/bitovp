@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- *  slice 2 (audit ce4a935 CRITICAL-2): the VMAF downloader reads
+ * slice 2: the VMAF downloader reads
  * the object's version identity FIRST, demands it during the read, digests
  * what arrives, and refuses a transfer that is not that object. The browser
  * is faked at the storage boundary — the drivers' own exact-version behaviour

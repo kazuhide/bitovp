@@ -21,7 +21,7 @@
 
 /**
  * The mirror's CONTAINER for a codec — VP9 rides a progressive WebM because the
- * provider refuses a VP9 progressive MP4 (paid audit 893eb66 HIGH-9, case 9);
+ * provider refuses a VP9 progressive MP4;
  * every other codec keeps `.mp4`. Exported on its own because the Akamai MSL
  * checker counts the synthesized mirror among the muxing kinds reaching an
  * output (review-324 I1). One definition, several callers.
@@ -44,8 +44,8 @@ export function qcMirrorFilename(renditionKey: string, codec: string): string {
  * The single-file muxing kinds the compiler emits for the QC mirror (ledger
  * #205): an MP4 for every codec but VP9, which rides a progressive WebM. The
  * one definition, shared by the per-title population (which fetches the mirror)
- * and the per-title attribution (which reads the mirror muxing's filename to
- * bind a RESULT to its template — audit 602ec286 §5.4). Compared uppercased,
+ * and the per-title attribution, which reads the mirror muxing's filename to
+ * bind a RESULT to its template. Compared uppercased,
  * because the SDK's polymorphic discriminant casing is not ours to assume.
  */
 export const QC_MIRROR_MUXING_TYPES: ReadonlySet<string> = new Set([

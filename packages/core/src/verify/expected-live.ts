@@ -80,7 +80,7 @@ export type ExpectedLiveIngest = {
 	 */
 	ingestPoints?: string[];
 	/**
-	 * : static ingest points' streamKeyConfiguration types
+	 * static ingest points' streamKeyConfiguration types
 	 * (GENERATE/ASSIGN). Without this the static fixture emitted a check set
 	 * byte-identical to live-rtmp-simple — the same disease ingestPoints
 	 * cured for the redundant fixture (comment above).
@@ -153,8 +153,8 @@ export type ExpectedLiveManifest = {
 
 /**
  * One delivery-mirror target — an output at least one destination writes to
- * in addition to its primary (audit 602ec286 BLOCKER-3, ; MSL4 + storage
- * simultaneous case). The primary (origin) manifests are read through
+ * in addition to its primary.
+ * The primary (origin) manifests are read through
  * `manifests`; the mirror is a SEPARATE delivery target the verifier must judge
  * on its own — an `AKAMAI_MSL` mirror is Akamai's ingest, so it is read back on
  * the delivery EDGE, not on any storage driver.

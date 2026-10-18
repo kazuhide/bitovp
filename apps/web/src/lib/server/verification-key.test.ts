@@ -8,7 +8,7 @@ import {
 	verificationReplay,
 } from "./verification-key";
 
-/** EV-01 (audit 5c3d97ca BLOCKER-5): the create routes' idempotency rule. */
+/** EV-01: the create routes' idempotency rule. */
 
 describe("verificationReplay — same key, same SHA replays; different SHA conflicts", () => {
 	const sha = "a".repeat(64);

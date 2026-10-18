@@ -236,8 +236,8 @@ export type ParsedDash = {
 		/** How the representation addresses segments. */
 		addressing: "TEMPLATE" | "TIMELINE" | "BASE" | "LIST" | "UNKNOWN";
 		/**
-		 * What the representation carries (paid audit 893eb66 BLOCKER-5, ledger
-		 * #207): from the enclosing AdaptationSet's `contentType`, else its
+		 * What the representation carries
+		 * from the enclosing AdaptationSet's `contentType`, else its
 		 * `mimeType` prefix, else the representation's own `height` (video) —
 		 * an audio-only MPD with four expected video entries used to pass a
 		 * count-of-everything check as long as the TOTAL happened to be right.
@@ -328,7 +328,7 @@ export type EngineDeps = {
 	foreignKeyFilter?: (key: string, entry?: ObjectEntry) => boolean;
 	/**
 	 * The per-title RESULT population's video codec families, when the caller
-	 * captured them (row 284 / audit 5c3d97ca HIGH-3): the third witness of the
+	 * captured them: the third witness of the
 	 * declared / actual / manifest family comparison on a per-title manifest.
 	 * Absent ⇒ that comparison is an explicit UNVERIFIED (SKIP), never a PASS.
 	 */
@@ -351,7 +351,7 @@ const SEGMENT_COUNT_EXTRA_ALLOWED = 1;
 const BITRATE_LOW = 0.5;
 const BITRATE_HIGH = 1.6;
 /**
- * AUDIO bitrate band (row 272 / audit 602ec286 HIGH-3). Tighter than the video
+ * AUDIO bitrate band. Tighter than the video
  * band above, and a FAIL outside it rather than a WARN: an AAC/Dolby track is
  * (near-)CBR and lands within a few percent of target, so the "128k delivered at
  * 64k" the audit had to catch with a separate ffprobe (ratio 0.5) sits well
@@ -1251,8 +1251,8 @@ async function probeRung(
 }
 
 /**
- * RFC 6381 codec-string prefixes for each plan codec (row 272 / audit 602ec286
- * HIGH-3). A manifest declares codecs as `avc1.640028` / `mp4a.40.2`; the plan
+ * RFC 6381 codec-string prefixes for each plan codec.
+ * A manifest declares codecs as `avc1.640028` / `mp4a.40.2`; the plan
  * names a family. Matching is a case-insensitive prefix. An unknown plan codec
  * returns an empty list, and the caller SKIPs rather than inventing a verdict.
  */
@@ -1492,7 +1492,7 @@ async function verifyMediaProperties(
 			probe.audioCodec !== undefined,
 			`audio stream expected (${audio.codec}) — ${probe.audioCodec ?? "none"}`,
 		);
-		// CODEC equality, not just presence (row 272 / audit 602ec286 HIGH-3): a
+		// CODEC equality, not just presence: a
 		// muxing carrying SOME audio in the WRONG codec passed on `:audio-present`
 		// alone. Emitted as assert-or-skip so the id is a function of the plan, not
 		// of what ffprobe happened to read.
@@ -1780,8 +1780,8 @@ function manifestVideoFamilies(rows: { codecs?: string }[]): {
 }
 
 /**
- * Per-title manifests: the declared / actual / manifest family comparison (row
- * 284 / audit 5c3d97ca HIGH-3, VF-02). The plan declares which families its
+ * Per-title manifests: the declared / actual / manifest family comparison.
+ * The plan declares which families its
  * templates carry; the provider's RESULT capture says which it produced; the
  * manifest says which it enumerates. All three must agree — and when the
  * capture is absent or incomplete the verdict is an explicit UNVERIFIED (SKIP)
@@ -1847,8 +1847,8 @@ function verifyPerTitleVideoFamilies(
 }
 
 /**
- * Bind each HLS master row to its planned node, one-to-one (row 272 / audit
- * 602ec286 HIGH-3; row 284 / audit 5c3d97ca HIGH-5). An EXT-X-STREAM-INF row's
+ * Bind each HLS master row to its planned node, one-to-one.
+ * An EXT-X-STREAM-INF row's
  * IDENTITY is its URI plus its AUDIO group — the two values the compiler wrote
  * into the StreamInfo and the master hands back verbatim — and every expected
  * node consumes the row it binds, so `2 expected / 1 observed` leaves one node
@@ -2144,8 +2144,8 @@ export function bindHlsTopology(
 }
 
 /**
- * Bind an MPD's codec/representation topology to the plan (row 272 / audit
- * 602ec286 HIGH-3; row 284 / audit 5c3d97ca HIGH-3 + HIGH-5). Every
+ * Bind an MPD's codec/representation topology to the plan.
+ * Every
  * AdaptationSet's codecs belong to the plan family for its kind (the `case F`
  * two-codecs-in-one-set defect a count cannot see) — the VIDEO family set is
  * the plan's DECLARED one, per-title templates included, so a per-title MPD is
@@ -2465,8 +2465,8 @@ async function verifyManifest(
 				continue;
 			}
 			/*
-			 * RAW-TEXT checks on the master (paid audit 893eb66 BLOCKER-5, ledger
-			 * #207) — deliberately NOT through the parser. `m3u8-parser` stores
+			 * RAW-TEXT checks on the master
+			 * — deliberately NOT through the parser. `m3u8-parser` stores
 			 * media entries as `mediaGroup[NAME] = rendition`, so two EXT-X-MEDIA
 			 * lines with one NAME collapse to one in the parsed structure: the
 			 * duplicate-NAME defect the audit reproduced on five real masters was

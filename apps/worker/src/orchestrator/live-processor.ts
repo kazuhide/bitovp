@@ -175,7 +175,7 @@ export type LiveChannelDeps = {
 	) => Promise<void>;
 	/**
 	 * How often the provisioning lease is renewed DURING a long SDK call
-	 * : the poll seam renews between polls, but a create/start
+	 * the poll seam renews between polls, but a create/start
 	 * call that outlives the lease window had nothing renewing it. Test seam;
 	 * defaults to a third of PROVISION_LEASE_MS.
 	 */
@@ -195,7 +195,7 @@ export type LiveChannelDeps = {
 		tenantOrgId: string | null;
 		bitmovinAccountId: string;
 		/**
-		 * 's create stamp. Typed here so index.ts's shared
+		 * The create stamp is typed here so index.ts's shared
 		 * implementation cannot be assignability-masked into dropping it again
 		 * (contravariance made tsc silent the first time — review of PR #163,
 		 * C1). The PROVISION path passes one (job = the CHANNEL id; step
@@ -232,7 +232,7 @@ export type LiveChannelDeps = {
 	 */
 	probeStorageObject?: BoundedObjectProbe;
 	/**
-	 * : the slate preparer (`createSlatePreparer`) — transcodes a
+	 * the slate preparer (`createSlatePreparer`) — transcodes a
 	 * scheduled slate to match the ingest before it is registered. Optional
 	 * for the same reason as `probeStorageObject`.
 	 */
@@ -639,7 +639,7 @@ class ChannelStateError extends Error {
 }
 
 /**
- * : the provider's lifecycle refused an action — a TERMINAL encoding
+ * the provider's lifecycle refused an action — a TERMINAL encoding
  * (already reconciled onto run + channel by the reconciler) or an UNKNOWN
  * readback (the channel was marked ERROR with a retryable message before the
  * throw). A SENTINEL so the catch arms that would otherwise `markError` again
@@ -709,7 +709,7 @@ type LiveChannelRow = NonNullable<
 >;
 
 /**
- * : channel product events. Loads the name lazily (terminal
+ * channel product events. Loads the name lazily (terminal
  * transitions only — never on the poll path); best-effort by the emitter's
  * contract, so callers never guard it.
  */
@@ -780,7 +780,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	const runs = createRunMirror(deps.prisma);
 	const heartbeatDoor = createHeartbeatDoor(deps.prisma);
 	/**
-	 * : the provider-lifecycle reconciler. Every entry that can put a
+	 * the provider-lifecycle reconciler. Every entry that can put a
 	 * channel into RUNNING or act on its encoder — Start/revive, Restart, the
 	 * heartbeat sweep, provision finalize — asks it first; the effect gates
 	 * (slate, SCTE-35, timeshift, feeder start/commit) read its persisted view.
@@ -1076,7 +1076,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				},
 				select: { id: true },
 			});
-			// Row 268 (audit 602ec286 BLOCKER-2): a feeder stop we could not
+			// Row 268: a feeder stop we could not
 			// enqueue is NOT swallowed. An enqueue that never lands leaves the
 			// feeder's `-stream_loop -1` ffmpeg pushing into a now-dead ingest
 			// with no stop intent to converge it, and logging-and-continuing
@@ -1278,7 +1278,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					error: unconfirmed,
 				});
 				/**
-				 * : what the SCHEDULED stop delivered.
+				 * what the SCHEDULED stop delivered.
 				 *
 				 * The same evidence that decides `error` on the channel decides
 				 * this — a stop whose encodings could not be OBSERVED terminal is
@@ -1408,7 +1408,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				const sdk = await sdkFor(row);
 				resetSdk = sdk;
 				/**
-				 *  (audit 5c3d97ca BLOCKER-1): ask the provider BEFORE
+				 * ask the provider BEFORE
 				 * asking it to restart. The audited run hit the vendor's 409 on a
 				 * FINISHED encoding and landed local ERROR with nothing recording
 				 * WHY — so the next Start revived the finished encoding. Now a
@@ -1715,7 +1715,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		 * discipline), replay-skipped as status DONE.
 		 */
 		/**
-		 * : register a creation-time slate's content once the
+		 * register a creation-time slate's content once the
 		 * channel is RUNNING. Writes insertableContentId only when READY —
 		 * which is the sweep's fire gate — and releases the registration
 		 * claim instead of throwing when the channel is not there yet, so
@@ -1892,7 +1892,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			// the run makes it authoritative so the column drop is safe later.
 			// One query serves both this read and the session stamp below.
 			//
-			// audit 602ec286 BLOCKER-4 (row 266): this "latest run" IS the
+			// (row 266): this "latest run" IS the
 			// job's planned run whenever a scheduled feeder reaches here — the
 			// dispatch fence (`refuseStaleQueuedGeneration`) has already refused
 			// any job whose planned run is not the current one, so a late retry
@@ -1921,7 +1921,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				return "REFUSED";
 			}
 			/**
-			 * Audit 5c3d97ca BLOCKER-2 (LC-02): a scheduled ordinary start had NO
+			 * a scheduled ordinary start had NO
 			 * per-channel admission at all — only the global slot cap below — so
 			 * a FEEDER_START firing while the channel's previous push was still
 			 * alive (or merely unproven gone) created a second session whose
@@ -2067,7 +2067,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				throw enqueueErr;
 			}
 			/**
-			 * : BIND the session to the row that created it.
+			 * BIND the session to the row that created it.
 			 *
 			 * The note already named the session in prose, which no query can
 			 * follow. The column is what lets the feeder's own status transitions
@@ -2265,7 +2265,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				durationSeconds = Math.min(remaining, 86_400);
 			}
 			/**
-			 * Ask the PROVIDER before inserting — audit f63f76b F63-RUN-006.
+			 * Ask the PROVIDER before inserting.
 			 *
 			 * `scheduleInsertableContent` is a POST, the queue retries it up to
 			 * five times, and the history row below is written only AFTER it
@@ -2927,7 +2927,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				await recordScheduleOutcomeBestEffort(
 					deps.prisma,
 					{ scheduleId: params.scheduleId },
-					// audit 602ec286 HIGH-5: a CONFIRMED verdict means the provider
+					// a CONFIRMED verdict means the provider
 					// ARMED the insertion — its entry reached SCHEDULED /
 					// TO_BE_DESCHEDULED / DESCHEDULED. The SDK has no played/finished
 					// status, so there is NO segment/frame witness that the slate
@@ -2976,7 +2976,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		 * one counts past them, so a re-run never overwrites a previous one.
 		 *
 		 * WHICH families is a property of the recording, not a preference either
-		 * : a DASH default manifest
+		 * a DASH default manifest
 		 * enumerates fMP4 muxings only, so the default over a segmented-TS
 		 * recording is HLS alone (`liveToVodFamilySupport`). Each family is then
 		 * processed INDEPENDENTLY with its own status, id, url and error on the
@@ -3124,7 +3124,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				throw new ChannelStateError(resolved.reason);
 			}
 			const { path, nameFor } = resolved.target;
-			//  (audit 5c3d97ca HIGH-1). The DEFAULT family set is what
+			// The DEFAULT family set is what
 			// the RECORDED muxings can carry — a segmented-TS recording rolls HLS
 			// alone. Asking the provider for a DASH default manifest over TS is
 			// refused (400 / code 2700), and the previous `?? ["HLS", "DASH"]`
@@ -3820,7 +3820,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		},
 
 		/**
-		 * : one channel's sweep tick. Reconcile the provider's lifecycle
+		 * one channel's sweep tick. Reconcile the provider's lifecycle
 		 * for the run's EXACT encoding under the tick's token, then — unless the
 		 * encoding has ended — poll the heartbeat under the same token. A
 		 * channel whose run carries no encoding id (pre-#108 dual-write gap)
@@ -3949,8 +3949,8 @@ export function createLiveHeartbeatSweep(
 		 */
 		summarizeEndedRuns?: () => Promise<{ summarized: number }>;
 		/**
-		 * Per-channel deadline + parallel lane count (audit 602ec286
-		 * MODERATE-1 / ). Test seams; default to the shared cadence
+		 * Per-channel deadline + parallel lane count.
+		 * Test seams; default to the shared cadence
 		 * constants. A channel that outlives `perChannelTimeoutMs` is abandoned
 		 * for the tick so it cannot stall the others; `sweepConcurrency` caps
 		 * how many channels poll at once.
@@ -3960,7 +3960,7 @@ export function createLiveHeartbeatSweep(
 	},
 ) {
 	const actions = createLiveChannelActions(deps);
-	// audit 602ec286 MODERATE-1 / : at most ONE sweep runs at a time
+	// at most ONE sweep runs at a time
 	// (the 30s repeat scheduler must never pile on), and every channel is polled
 	// under a per-channel deadline with a bounded parallel lane count so one
 	// hung channel cannot stall the freshness SLA of the others. The per-channel
@@ -4016,7 +4016,7 @@ export function createLiveHeartbeatSweep(
 			row: (typeof rows)[number],
 		): Promise<ChannelTickOutcome> => {
 			/**
-			 * : the RUN first — it is the identity everything below is
+			 * the RUN first — it is the identity everything below is
 			 * fenced on.  PR2 / #243 already read it for the stale
 			 * anchor and the alert scope; it moved ahead of the poll so the poll
 			 * itself can carry the token. Null = looked, no run row.
@@ -4995,7 +4995,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// Dual-write : make sure THIS provision has a run row
 		// (lazy for pre-PR3 start paths — PR3 moves creation to the routes) and
 		// mirror the transition onto it. The id is kept for the startup
-		// sampler (review-8eaef21 #10 — re-deriving "latest" there leaned on
+		// sampler (re-deriving "latest" there leaned on
 		// the one-live-per-channel index two modules away), and the attempt
 		// clock anchors totalSeconds to THIS attempt (#3 — a resume keeps the
 		// prior attempt's DONE stamps, so entries[0] is a cross-attempt clock).
@@ -5036,20 +5036,20 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		});
 
 		/**
-		 *  (audit 5c3d97ca BLOCKER-1): a REVIVE replays DONE steps, and
+		 * a REVIVE replays DONE steps, and
 		 * the encoding those steps created may have ENDED at the provider — the
 		 * audited auto-shutdown. Every DONE step then skips, finalize reads the
 		 * finished encoding's details (the GET still answers) and writes
 		 * RUNNING over a dead encoder. So before trusting the log, ask the
 		 * provider for exactly that encoding:
 		 *
-		 *  - TERMINAL: the reconciler terminalises run + channel (the channel
-		 *    write is fenced on THIS lease and releases it), stops the run's
-		 *    feeders and emits; this provision fails with the terminal message.
-		 *    The next Start is a RE-AIR (the route reads `providerTerminalAt`).
-		 *  - UNKNOWN: refused with a retryable message, every id kept — the
-		 *    step log is not replayed against an encoding we cannot see.
-		 *  - RUNNING / TRANSITIONAL: the replay proceeds as before.
+		 * - TERMINAL: the reconciler terminalises run + channel (the channel
+		 * write is fenced on THIS lease and releases it), stops the run's
+		 * feeders and emits; this provision fails with the terminal message.
+		 * The next Start is a RE-AIR (the route reads `providerTerminalAt`).
+		 * - UNKNOWN: refused with a retryable message, every id kept — the
+		 * step log is not replayed against an encoding we cannot see.
+		 * - RUNNING / TRANSITIONAL: the replay proceeds as before.
 		 *
 		 * A first provision (no DONE CREATE_ENCODING) has nothing to ask about.
 		 */
@@ -5555,7 +5555,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				throw new Error("Step log carries no CREATE_ENCODING resource id");
 			}
 			/**
-			 * : RUNNING is written only from a FRESH readback of exactly
+			 * RUNNING is written only from a FRESH readback of exactly
 			 * this encoding — a details GET is not a lifecycle observation (it
 			 * answers for a FINISHED encoding too, which is how the audited
 			 * revive greened). A terminal answer is reconciled onto run + channel
@@ -5744,7 +5744,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	}
 
 	/**
-	 * audit 602ec286 BLOCKER-4 (row 266) — the run-generation fence for a
+	 * (row 266) — the run-generation fence for a
 	 * scheduled action retrying INSIDE the queue.
 	 *
 	 * A scheduled feeder/slate/stop job carries the run it was PLANNED for
@@ -5793,7 +5793,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	return async function process(jobData: unknown): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
-		// audit 602ec286 BLOCKER-4 (row 266): the terminal result a run-acting
+		// (row 266): the terminal result a run-acting
 		// action returns when the fence refuses it — the job is acknowledged
 		// (BullMQ must not retry a correct refusal) but nothing was done.
 		const staleGenerationResult = (): LiveChannelResult => ({
@@ -6007,7 +6007,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				//  (slate insertion): fired by the scheduler sweep — the sweep
 				// never touches Bitmovin; this action is the only slate writer.
 				const params = liveInsertContentParamsSchema.parse(job.params);
-				// audit 602ec286 BLOCKER-4 (row 266): a scheduled slate additionally
+				// (row 266): a scheduled slate additionally
 				// names its schedule row for stale-outcome repair. SC-01 binds both
 				// scheduled and manual insertion to the exact run/provider fence.
 				if (
@@ -6092,7 +6092,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				};
 			case "feeder-start": {
 				const params = liveFeederActionParamsSchema.parse(job.params);
-				// audit 602ec286 BLOCKER-4 (row 266): the audited case — a
+				// (row 266): the audited case — a
 				// feeder-start re-delivered after a re-air must not push this
 				// row's source into the new run's ingest.
 				if (
@@ -6143,7 +6143,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			}
 			case "feeder-switch": {
 				const params = liveFeederActionParamsSchema.parse(job.params);
-				// audit 602ec286 BLOCKER-4 (row 266): the immediate/legacy switch
+				// (row 266): the immediate/legacy switch
 				// form — same fence as the two-phase commit.
 				if (
 					await refuseStaleQueuedGeneration(
@@ -6192,7 +6192,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			}
 			case "feeder-stage": {
 				const params = liveFeederStageParamsSchema.parse(job.params);
-				// audit 602ec286 BLOCKER-4 (row 266): refuse before the download —
+				// (row 266): refuse before the download —
 				// staging a whole source for a run that already ended is wasted
 				// work whose only use is a switch that can no longer happen.
 				if (
@@ -6214,7 +6214,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			}
 			case "feeder-commit": {
 				const params = liveFeederCommitParamsSchema.parse(job.params);
-				// audit 602ec286 BLOCKER-4 (row 266): a commit re-delivered after
+				// (row 266): a commit re-delivered after
 				// a re-air must not cut a stale staged source into the new run.
 				if (
 					await refuseStaleQueuedGeneration(

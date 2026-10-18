@@ -369,8 +369,8 @@ function dedupeVideoChildUris(
 /**
  * Every child playlist an HLS manifest's master will reference, de-duplicated.
  *
- * Two readers: the verifier's foreign-object filter (a child the compiler
- * itself named is not foreign — paid audit 893eb66 BLOCKER-5, the false FAIL)
+ * Two readers: the verifier's foreign-object filter (a child named by the
+ * compiler is declared output, not a foreign object)
  * and its child-playlist walk (each of these must exist, parse, and close).
  */
 export function hlsChildFiles(

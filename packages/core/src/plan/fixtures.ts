@@ -126,14 +126,14 @@ export const VOD_FIXTURES = [
 	// assertion is what proves the muxed container waits for both streams.
 	"hls-ts-muxed-av",
 	"mp4-muxed-av-progressive",
-	// Audit 893eb66 CRITICAL-2 (case 8) — a FIXED VP9 WebM ladder beside AAC
+	// (case 8) — a FIXED VP9 WebM ladder beside AAC
 	// fMP4 in one DASH manifest. Synthetic: the vendor's only WebM samples are
 	// per-title, which ride the runtime expansion and never touched the static
 	// video selection — the path that hard-coded FMP4 and dropped every WebM
 	// leg from the MPD. This golden pins CREATE_DASH_REPRESENTATION_WEBM being
 	// emitted statically at all.
 	"vp9-webm-fixed-dash",
-	// Audit 893eb66 HIGH-9 (cases 10/15/17) — H264 and H265 in ONE encoding,
+	// (cases 10/15/17) — H264 and H265 in ONE encoding,
 	// implicit HLS+DASH. Synthetic: no encoding examples mixes video codecs in a
 	// single encoding (the Dolby ladders use one encoding per codec). Pins the
 	// per-codec DASH adaptation sets (case 15 died on the first H265 rep added

@@ -10,7 +10,7 @@ import type { LiveCleanupSeal } from "./live-cleanup-seal";
 import { outcomeFromLiveResult } from "./runner";
 
 /**
- * A COMPLETE evidence leg (audit 5c3d97ca BLOCKER-4, EV-02) — the tuple a
+ * A COMPLETE evidence leg — the tuple a
  * green live outcome must be backed by. `incomplete` drops the progression so
  * the same leg reads as the audited "two identical snapshots".
  */
@@ -52,7 +52,7 @@ function leg(
 		kind: "HLS",
 		role: options.edge ? "EDGE" : "ORIGIN",
 		build: {
-			commit: "5c3d97ca",
+			commit: "b8c63e35",
 			image: `worker@sha256:${"c".repeat(64)}`,
 			planSha256: "a".repeat(64),
 		},
@@ -259,7 +259,7 @@ describe("outcomeFromLiveResult", () => {
 	});
 
 	/**
-	 * The evidence gate (audit 5c3d97ca BLOCKER-4, EV-02): a green report is
+	 * The evidence gate: a green report is
 	 * NOT a pass until every output leg's tuple is complete. INVALID rather
 	 * than FAIL — a verifier gap is not a delivery failure — and AFTER the
 	 * report verdict, so a FAIL the engine found stays a FAIL.
@@ -387,8 +387,8 @@ describe("outcomeFromLiveResult", () => {
 	});
 
 	/**
-	 * The durable teardown seal on the outcome (row 268, audit 602ec286
-	 * BLOCKER-2): an unclean seal seals the run INVALID before any report-based
+	 * The durable teardown seal on the outcome
+	 * an unclean seal seals the run INVALID before any report-based
 	 * verdict, and the seal rides onto every outcome so the run row keeps the
 	 * teardown evidence whatever the verdict.
 	 */

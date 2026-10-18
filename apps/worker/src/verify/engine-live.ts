@@ -89,7 +89,7 @@ export type LiveSample = {
 	readErrors?: string[];
 	/**
 	 * The MSL delivery-mirror legs observed on the EDGE at this sample — one
-	 * closure per (manifest, mirror) leg (audit 5c3d97ca BLOCKER-4, EV-02).
+	 * closure per (manifest, mirror) leg.
 	 * Taken IN-RUN, while the channel is still writing, because progression can
 	 * only be witnessed between two probes on a live edge; the post-stop
 	 * closure in `edgeClosures` cannot show it. Absent when no edge base URL /
@@ -172,8 +172,8 @@ export type LiveEngineDeps = {
 	 */
 	ingestPoints?: string[];
 	/**
-	 * Edge-closure observations for delivery-MIRROR legs (audit 602ec286
-	 * BLOCKER-3, ).
+	 * Edge-closure observations for delivery-MIRROR legs
+
 	 *
 	 * A `deliveryMirror` writes every destination to a SECOND output. When that
 	 * output is `AKAMAI_MSL` its delivery is Akamai's edge, which no storage
@@ -185,7 +185,7 @@ export type LiveEngineDeps = {
 	 * is why `runner.ts`'s origin-only floor could not see the gap: the mirror
 	 * output is not in `expected.manifests` at all (the deferred item, row 187(b)).
 	 *
-	 * Since audit 5c3d97ca BLOCKER-4 this is the POST-STOP observation only. A
+	 * Since this is the POST-STOP observation only. A
 	 * PASS needs the two IN-RUN probes on `samples[].edge` with progression
 	 * between them; this final closure can still FAIL a leg it found empty when
 	 * no in-run probe exists, but it can never pass one on its own.
@@ -582,7 +582,7 @@ function verifyRedundancy(
 }
 
 /**
- * : a static-ingest channel's obligation, named rather than
+ * a static-ingest channel's obligation, named rather than
  * silent. Proving the fixed FQDN accepts a push needs a real encoder against
  * live-input.bitmovin.com — the #113/#114 real-credential item — which this
  * harness cannot stage; the named SKIP keeps the check id present (the
@@ -775,8 +775,8 @@ function verifyAdMarkers(
 }
 
 /**
- * Judge each delivery-MIRROR leg on the Akamai edge (audit 602ec286 BLOCKER-3,
- * ).
+ * Judge each delivery-MIRROR leg on the Akamai edge
+
  *
  * The origin closure the rest of this engine performs cannot reach a mirror: an
  * `AKAMAI_MSL` mirror is Akamai's ingest, and its output is not even in
@@ -786,17 +786,17 @@ function verifyAdMarkers(
  * segments 404 on the edge). Here every MSL mirror × every manifest is a
  * leg, judged individually:
  *
- *   closed          the runner read master → all children → all listed
- *                   segments back on the edge, with bytes → PASS
- *   missing / error the edge WAS read and did not serve it → FAIL (a mirror
- *                   that delivers nothing is a product failure, not "unverified")
- *   no observation  no edge base URL was available to read the mirror back →
- *                   UNOBSERVED SKIP. `runner.ts`'s mirror floor then refuses to
- *                   pass the whole run on the origin alone.
+ * closed the runner read master → all children → all listed
+ * segments back on the edge, with bytes → PASS
+ * missing / error the edge WAS read and did not serve it → FAIL (a mirror
+ * that delivers nothing is a product failure, not "unverified")
+ * no observation no edge base URL was available to read the mirror back →
+ * UNOBSERVED SKIP. `runner.ts`'s mirror floor then refuses to
+ * pass the whole run on the origin alone.
  *
  * The check id is a function of the PLAN (manifests × mirrors), not of what the
  * edge reported, so it is emitted whether or not the runner could read the edge
- * — the no-silence property the VOD side paid for five times.
+ * the no-silence property the VOD side paid for five times.
  */
 function verifyMirrorDelivery(
 	report: ReportBuilder,
@@ -820,7 +820,7 @@ function verifyMirrorDelivery(
 				c.manifestKey === manifest.manifestKey &&
 				c.outputKey === target.outputKey;
 			/**
-			 * The IN-RUN probes (audit 5c3d97ca BLOCKER-4, EV-02): one closure per
+			 * The IN-RUN probes: one closure per
 			 * sample, taken while the channel was writing. A PASS needs at least
 			 * two of them, each closed (≥1 child, every child ≥1 nonzero media
 			 * segment, every reference inside the policy), AND media advancing

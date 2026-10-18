@@ -89,11 +89,11 @@ import {
 /**
  * Feeder session processor (P3-PR3): runs one FeederSession lifecycle
  * inside ONE long-lived BullMQ "start" job —
- *   claim CREATED → DOWNLOADING → wait for the channel to reach RUNNING
- *   (lifecycle coupling) → spool the source MP4 from object storage →
- *   ffprobe + copy/transcode decision → resolve push secrets from the
- *   vault (spawn-time only) → supervised ffmpeg push (PUSHING) → STOPPED
- *   or ERROR.
+ * claim CREATED → DOWNLOADING → wait for the channel to reach RUNNING
+ * (lifecycle coupling) → spool the source MP4 from object storage →
+ * ffprobe + copy/transcode decision → resolve push secrets from the
+ * vault (spawn-time only) → supervised ffmpeg push (PUSHING) → STOPPED
+ * or ERROR.
  *
  * "stop" jobs signal the running supervisor through the in-process
  * registry (the worker raises feeder-queue concurrency so stop jobs run
@@ -117,7 +117,7 @@ import {
  * A terminal reclaim never rewrites `status` (an ERROR run did fail); it
  * stamps `processGoneAt` as proof and releases the pid.
  *
- * Multi-worker ownership . The registry is
+ * Multi-worker ownership. The registry is
  * still per-process — a stop consumed by a different worker than the one
  * pushing takes the fallback path, which checks `ownerHost` first because a
  * pid from another host is a bare number some unrelated local process is
@@ -133,12 +133,12 @@ import {
  * provisioning loser leaves the winner's channel alone.
  *
  * `takeOverStale` is the other half: any worker may resume a session whose
- * lease has expired, re-spawning ffmpeg from the SEALED source  at
- * the same target and through the same compatibility gate . It is a
+ * lease has expired, re-spawning ffmpeg from the SEALED source at
+ * the same target and through the same compatibility gate. It is a
  * recovery, not a seamless failover — the source is downloaded again, so the
  * gap is a download plus a handshake.
  *
- * THE TWO-PHASE SWITCH . A session whose
+ * THE TWO-PHASE SWITCH. A session whose
  * `commitAt` is set does not spawn when its staging completes. Phase A —
  * everything above the spawn: the RUNNING wait, the sealed download, ffprobe,
  * the ingest and compatibility gates — ends by recording `readyAt` (fenced)
@@ -153,7 +153,7 @@ import {
  *
  * POLICY, written down because the old path had none: dead air is preferred
  * over overlap. The ingest is single-owner — a second publisher on one stream
- * key is the jammed-socket class  recorded — so a predecessor that cannot
+ * key is the jammed-socket class recorded — so a predecessor that cannot
  * be confirmed gone within `PREDECESSOR_GONE_TIMEOUT_MS` lands THIS session
  * ERROR and never spawns; the schedule row reads FAILED with the reason.
  * What the ingest is left with is stated honestly (rev367 I-4): the
@@ -171,7 +171,7 @@ import {
  * that wakes up to a commit request matches zero rows at the commit point and
  * never spawns.
  *
- * THE PUBLISHER CLAIM (audit 5c3d97ca BLOCKER-2 / §14.5 LC-02). Everything
+ * THE PUBLISHER CLAIM. Everything
  * above bounds who may WRITE a row; none of it bounded how many ffmpegs may
  * PUSH at one ingest, because the single-pusher rule lived in `status`: the
  * DB index and both admission doors counted CREATED/DOWNLOADING/PUSHING, and
@@ -211,7 +211,7 @@ export function mayKeepPushing(
 	if (!Number.isFinite(nowMs)) {
 		return "UNKNOWN";
 	}
-	//  / audit 602ec286 HIGH-6: the freshness gate must be SYMMETRIC.
+	// the freshness gate must be SYMMETRIC.
 	// The old inline check `nowMs - at <= INGEST_CONNECTED_MAX_AGE_MS` had NO
 	// lower bound, so a FUTURE-dated stamp (clock skew on the worker that wrote
 	// the sample) scored a NEGATIVE age, counted as "fresh", and a future
@@ -245,7 +245,7 @@ export type FeederDeps = {
 	 */
 	hostname: string;
 	/**
-	 * : this worker INSTANCE's id — the holder of every lease it
+	 * this worker INSTANCE's id — the holder of every lease it
 	 * claims. Distinct from `hostname`, which answers a different question
 	 * (where a pid can be signalled): two workers on one host are two owners,
 	 * and a restart that reuses a pid is a different owner. Required, not
@@ -283,7 +283,7 @@ export type FeederDeps = {
 	/** Lease renewal cadence (tests shrink it to observe renewals). */
 	leaseRenewalIntervalMs?: number;
 	/**
-	 * : how often a HELD session re-reads its row for the commit
+	 * how often a HELD session re-reads its row for the commit
 	 * request, and how often the commit re-checks its predecessors. Tests
 	 * shrink it; the arms resolve on the writes they observe, never on it.
 	 */
@@ -337,7 +337,7 @@ const ACTIVE_STATUSES = FEEDER_ACTIVE_STATUSES;
 
 /**
  * A P2002 from `FeederSession_one_publisher_claim_per_channel` — the DB's
- * atomic single-PUBLISHER guarantee (audit 5c3d97ca LC-02). Matched
+ * atomic single-PUBLISHER guarantee. Matched
  * structurally, like the web route's `isActivePusherViolation`: the only
  * unique a claim write can violate is that index (it changes neither `status`
  * nor `commitAt`, so the active-pusher index cannot fire), and the name check
@@ -380,7 +380,7 @@ const TAKEN_OVER = "TAKEN_OVER";
 
 /**
  * How long a graceful shutdown waits for the sessions this process RESUMED
- * .
+ *
  *
  * `drainTakeovers` is not a bookkeeping sweep: it waits for a PROCESS TO
  * DIE. Stopping one resumed session is SIGTERM → `KILL_GRACE_MS` → SIGKILL →
@@ -398,7 +398,7 @@ const TAKEN_OVER = "TAKEN_OVER";
 export const FEEDER_TAKEOVER_DRAIN_MS = KILL_GRACE_MS + 5_000;
 
 /**
- * : the session's SEAL, rebuilt from its columns (audit 2026-08-29
+ * the session's SEAL, rebuilt from its columns (audit 2026-08-29
  * HIGH-4).
  *
  * `sourceSize` is the discriminator, not the selectors: every driver reports a
@@ -432,7 +432,7 @@ function sealedIdentity(row: {
 }
 
 /**
- * : the loop boundaries a previous owner already recorded.
+ * the loop boundaries a previous owner already recorded.
  *
  * `appendBoundary` rewrites the WHOLE array (single writer, race-free), so a
  * taken-over session starting from an empty list would ERASE the loop ledger
@@ -463,7 +463,7 @@ class FeederStopError extends Error {
 }
 
 /**
- * : a HELD session let go of its staged source without ever being
+ * a HELD session let go of its staged source without ever being
  * asked to push — its schedule row ended (cancelled, missed, refused) or no
  * commit arrived inside the hold window. Not a stop (nobody asked) and not a
  * failure of the feed (nothing was fed): the row lands STOPPED with the
@@ -481,7 +481,7 @@ class FeederReleasedError extends Error {
 class RunController {
 	stopRequested = false;
 	/**
-	 * : this run was superseded — another worker holds the lease now.
+	 * this run was superseded — another worker holds the lease now.
 	 *
 	 * A SEPARATE flag from `stopRequested` because the two demand opposite
 	 * endings, the distinction #216's `ProvisionLeaseLostError` draws. A stop
@@ -536,7 +536,7 @@ type FeederSessionRow = NonNullable<
 export function createFeederProcessor(deps: FeederDeps) {
 	const registry = new Map<string, RunController>();
 	/**
-	 * : sessions this process resumed through `takeOverStale`.
+	 * sessions this process resumed through `takeOverStale`.
 	 *
 	 * They run with NO BullMQ job — the job that started them died with the
 	 * worker that held it — so `worker.close` cannot wait for them the way it
@@ -720,7 +720,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 	}
 
 	/**
-	 * : a fenced write matched nothing at a phase boundary. Either a
+	 * a fenced write matched nothing at a phase boundary. Either a
 	 * stop landed on the row (from this registry, or STOPPED written by a
 	 * registry-miss stop on another worker) or the lease was taken. The two
 	 * demand opposite endings — a stop must land STOPPED, a lost lease must
@@ -856,7 +856,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		row: { id: string; liveChannelId: string },
 		controller: RunController,
 	): Promise<{ predecessorGoneAt: Date | null; predecessorIds: string[] }> {
-		// Audit 5c3d97ca LC-02: the population is the channel's OCCUPANCY — a
+		// the population is the channel's OCCUPANCY — a
 		// held publisher claim, a process nobody has proven gone, or an active
 		// single-phase session — read from the ONE fragment both admission
 		// doors count, so the barrier and the doors cannot disagree about who
@@ -994,7 +994,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 	}
 
 	/**
-	 * `evidence` (audit 5c3d97ca LC-02) is what THIS run can prove at its end:
+	 * `evidence` is what THIS run can prove at its end:
 	 * `childReaped` — the supervisor observed the exit of every child it
 	 * spawned (`run` resolves only after the exit event), which is the
 	 * owning supervisor's positive process-gone proof and stamps
@@ -1063,7 +1063,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		}
 		if (status === "ERROR") {
 			/**
-			 * : a SCHEDULED feed that failed must say so on its
+			 * a SCHEDULED feed that failed must say so on its
 			 * schedule row.
 			 *
 			 * Before this, the only writer of a feeder schedule's failure was the
@@ -1151,23 +1151,23 @@ export function createFeederProcessor(deps: FeederDeps) {
 	 * push at the wire and the encoder judges it as one.
 	 */
 	/**
-	 * Audit 5c3d97ca LC-02 — the CLAIM an ordinary (single-phase) session takes
+	 * the CLAIM an ordinary (single-phase) session takes
 	 * just before it spawns, after every gate has passed. Two steps, both
 	 * refusals rather than waits (the doors already refused an occupied
 	 * channel; reaching here occupied means a race, or a row written by a
 	 * door that predates the claim):
 	 *
-	 *  1. the OCCUPANCY read — any other row that holds a claim, may still own
-	 *     a process, or is an active uncoordinated session. This is the half
-	 *     the index cannot see: a may-be-alive row from before the claim
-	 *     existed holds no claim, and spawning beside it is exactly the finding;
-	 *  2. the CLAIM itself — one fenced compare-and-swap that the partial unique
-	 *     index turns into a P2002 when another row on the channel already holds
-	 *     the slot. The generation bump makes a re-claim (a takeover's resumed
-	 *     push) distinguishable from the claim it replaces; `processGoneAt` is
-	 *     cleared because the claim is for a NEW process (a stale proof on the
-	 *     row described its predecessor, the rev367 I-4 rule `setPushing` also
-	 *     applies).
+	 * 1. the OCCUPANCY read — any other row that holds a claim, may still own
+	 * a process, or is an active uncoordinated session. This is the half
+	 * the index cannot see: a may-be-alive row from before the claim
+	 * existed holds no claim, and spawning beside it is exactly the finding;
+	 * 2. the CLAIM itself — one fenced compare-and-swap that the partial unique
+	 * index turns into a P2002 when another row on the channel already holds
+	 * the slot. The generation bump makes a re-claim (a takeover's resumed
+	 * push) distinguishable from the claim it replaces; `processGoneAt` is
+	 * cleared because the claim is for a NEW process (a stale proof on the
+	 * row described its predecessor, the rev367 I-4 rule `setPushing` also
+	 * applies).
 	 *
 	 * Either refusal lands the session ERROR through the ordinary catch — the
 	 * schedule row reads FAILED with the holder named, FEEDER_ERROR is emitted —
@@ -1297,7 +1297,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 	}
 
 	/**
-	 * 's commit point, made the CLAIM as well (audit 5c3d97ca LC-02):
+	 * The switch commit point also takes the CLAIM:
 	 * ONE transaction releases every predecessor already proven gone that
 	 * still holds a claim (a legacy shape — every claim-aware proof writer
 	 * releases in its own write, so this is the guarded safety net, never the
@@ -1540,7 +1540,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		const controller = new RunController();
 		registry.set(feederSessionId, controller);
 		/**
-		 * : hold the lease for as long as this process supervises the
+		 * hold the lease for as long as this process supervises the
 		 * push. On a TICKER rather than at the stage seams, for the reason #216
 		 * learned the hard way — a push spends hours inside one `await`, and a
 		 * lease that only renews between stages expires under a perfectly
@@ -2099,7 +2099,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 					0,
 				);
 				let droppedBoundaries = 0;
-				// audit 602ec286 HIGH-4: has THIS session already recorded the
+				// has THIS session already recorded the
 				// provider-confirmed ingest? A once-per-session latch so a
 				// restart's re-probe does not re-issue the (idempotent) write.
 				let ingestConfirmed = false;
@@ -2412,7 +2412,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 								});
 							}
 							/**
-							 *  + audit 602ec286 HIGH-4: our ffmpeg is pushing
+							 * our ffmpeg is pushing
 							 * bytes now — but that is NOT delivery. The paid run measured
 							 * this write landing ~16s BEFORE the provider's first CONNECT
 							 * and ~37s before its first persisted CONNECTED sample; a push
@@ -2781,7 +2781,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				return null;
 			}
 			if (reclaim.kind === "not-ours") {
-				// BLOCKER-5 (audit 602ec286 / §16-2): another host minted this
+				// BLOCKER-5: another host minted this
 				// pid and NOTHING here can prove that push stopped. This branch
 				// used to take the session over on a bare note — keeping the old
 				// (host, pid) pointer and spawning a SECOND ffmpeg
@@ -2876,22 +2876,22 @@ export function createFeederProcessor(deps: FeederDeps) {
 
 	/**
 	 * Decline a cross-host stale session whose old push cannot be proven gone
-	 * (audit 602ec286 BLOCKER-5 / §16-2 / §17 P0-3). Do NOT spawn a
+	 * Do NOT spawn a
 	 * replacement — mirror #240's predecessor barrier and the stop `not-ours`
 	 * arm: dead air over overlap.
 	 *
-	 *  · REVOKE the old owner with a generation bump — NOT an ownership transfer
-	 *    (no `ownerId` of ours): its next fenced renewal then matches zero rows
-	 *    and it self-fences its own ffmpeg down . The exact-token
-	 *    `where` means an owner that just healed and renewed, or another worker
-	 *    that got there first, has already moved the token — this matches
-	 *    nothing and theirs stands.
-	 *  · KEEP pid/ownerHost (and stamp NO `processGoneAt`): this worker proved
-	 *    nothing, so `feederProcessMayBeAlive` stays true and DELETE keeps
-	 *    refusing the row until that host accounts for the process.
-	 *  · Land ERROR, not STOPPED — ERROR is the state that NOTIFIES (ledger
-	 *    #88), and an operator whose push could not be safely resumed must be
-	 *    told rather than left reading a green STOPPED.
+	 * · REVOKE the old owner with a generation bump — NOT an ownership transfer
+	 * (no `ownerId` of ours): its next fenced renewal then matches zero rows
+	 * and it self-fences its own ffmpeg down. The exact-token
+	 * `where` means an owner that just healed and renewed, or another worker
+	 * that got there first, has already moved the token — this matches
+	 * nothing and theirs stands.
+	 * · KEEP pid/ownerHost (and stamp NO `processGoneAt`): this worker proved
+	 * nothing, so `feederProcessMayBeAlive` stays true and DELETE keeps
+	 * refusing the row until that host accounts for the process.
+	 * · Land ERROR, not STOPPED — ERROR is the state that NOTIFIES (ledger
+	 * #88), and an operator whose push could not be safely resumed must be
+	 * told rather than left reading a green STOPPED.
 	 *
 	 * Returns null so `takeOverStale` records no takeover and spawns nothing.
 	 */
@@ -3240,7 +3240,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		takeOverStale,
 
 		/**
-		 * : await the sessions this process RESUMED.
+		 * await the sessions this process RESUMED.
 		 *
 		 * `worker.close` waits for active BullMQ jobs, which is what makes a
 		 * graceful stop land every start-job session on STOPPED. A taken-over

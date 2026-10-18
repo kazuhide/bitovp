@@ -23,7 +23,7 @@ export function parseReservationStatus(
 
 /**
  * Each provider reservation state → the customer's word for it, and how it is
- * painted — the two tables  (audit 5c3d97ca HIGH-8 / §14.6 UX-01)
+ * painted — the two tables
  * replaced the green `SCHEDULED` chip with.
  *
  * A `.ts` module apart from the panel, for the reason `channel-detail.tsx`'s
@@ -32,7 +32,7 @@ export function parseReservationStatus(
  * (`untranslated-jsx-text.test.ts`) as a bare English text node. Here it is
  * plain TypeScript, and `satisfies Record<ScheduledContentStatus, …>` keeps
  * its job: a value added to the wire enum is a compile error in both tables,
- * not a raw token rendered to an operator (the rule  set for alert
+ * not a raw token rendered to an operator (the rule set for alert
  * metrics).
  */
 export const RESERVATION_STATUS_LABEL_KEYS = {

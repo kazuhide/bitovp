@@ -8,7 +8,7 @@ import {
 } from "./digest";
 
 /**
- * Streaming SHA-256 — audit ce4a935 CRITICAL-2, slice 1.
+ * Streaming SHA-256.
  *
  * Every expected digest below was produced by `shasum -a 256`, NOT by this
  * module. A test that hashes the input with `createHash` and compares against

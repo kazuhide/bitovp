@@ -125,8 +125,8 @@ export type ExpectedMuxing = {
 
 /**
  * One EXT-X-STREAM-INF row the compiler emits for an HLS manifest — the
- * `CREATE_HLS_STREAM_INFO` granularity (row 284 / audit 5c3d97ca HIGH-5,
- * `compiler.ts` compileHlsManifest). A fixed video muxing is one row, or one
+ * `CREATE_HLS_STREAM_INFO` granularity.
+ * A fixed video muxing is one row, or one
  * row PER audio group under `variantsPerAudioGroup` (the Dolby fan-out); an
  * `audioVariantStreams` manifest also lists one row per audio muxing, whose
  * URI is the media playlist itself. Per-title video rows are absent: their
@@ -157,14 +157,14 @@ export type ExpectedHlsVariant = {
 
 /**
  * The per-child rendition topology a manifest enumerates, each child bound to
- * the plan's exact declared attributes (audit 602ec286 HIGH-3 / §17 P1-3, row
- * 272). Count-and-name checks alone passed a 128k rendition delivered at 64k, a
+ * the plan's exact declared attributes.
+ * Count-and-name checks alone passed a 128k rendition delivered at 64k, a
  * wrong codec, and two children swapped, because nothing tied a child to the
  * rendition it was supposed to be. The engine binds each observed
  * variant/representation to the entry for its rendition and asserts the rest
  * against these values.
  *
- * Two populations, split on purpose (row 284 / audit 5c3d97ca HIGH-3): the
+ * Two populations, split on purpose: the
  * FIXED renditions, whose height/bitrate are plan values a child can be bound
  * to, and the codec FAMILIES, which every listed video rendition declares —
  * per-title included. Per-title VIDEO is absent from `video` only: the encoder
@@ -227,9 +227,9 @@ export type ExpectedManifest = {
 	hlsMediaVersion?: string;
 	/**
 	 * HLS only: every child playlist the master will reference, named as the
-	 * compiler names them . The verifier walks each one, and the
+	 * compiler names them. The verifier walks each one, and the
 	 * foreign-object filter must not call them foreign — the paid audit's
-	 * false FAIL (893eb66 BLOCKER-5). Per-title variants are absent (resolved
+	 * false FAIL. Per-title variants are absent (resolved
 	 * at run time); the walk itself reads the master's own URIs.
 	 */
 	hlsChildFiles?: string[];
@@ -259,7 +259,7 @@ export type ExpectedManifest = {
 	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	/**
 	 * The renditions this manifest enumerates, bound to the plan's exact
-	 * attributes (row 272 / audit 602ec286 HIGH-3). HLS and DASH; absent for
+	 * attributes. HLS and DASH; absent for
 	 * Smooth. The video list omits per-title rungs (encoder-chosen — C1).
 	 */
 	manifestRenditions?: ManifestRenditionTopology;
@@ -776,11 +776,11 @@ export function compileExpectedArtefacts(
 			const videoKeys = new Set(videoRenditions.map((r) => r.key));
 			const audioKeys = new Set(audioRenditions.map((r) => r.key));
 			/**
-			 * The manifest's per-child topology (row 272 / audit 602ec286 HIGH-3),
+			 * The manifest's per-child topology,
 			 * built from the SAME muxings the entry counts come from so the two can
 			 * never describe different ladders. Per-title video is dropped from the
 			 * GEOMETRY list only (the encoder chooses that ladder — C1) and kept in
-			 * the codec-family set (row 284 / audit 5c3d97ca HIGH-3); audio is never
+			 * the codec-family set; audio is never
 			 * per-title. Kept ONE entry per rendition so the engine's per-rendition
 			 * check ids stay unique even when a manifest lists two legs of one
 			 * rendition.
@@ -837,7 +837,7 @@ export function compileExpectedArtefacts(
 					// compiler emits each EXT-X-MEDIA with `rendition.hlsMedia.groupId`
 					// when set (compiler.ts) — `variantsPerAudioGroup` (Dolby) fans a
 					// ladder across "atmos"/"aac" groups, so a flat stamp FAILs a
-					// correct master (audit 602ec286 HIGH-3 review, C1).
+					// correct master.
 					const groupId = hlsAudio?.group.get(m.renditionKey);
 					return [
 						{
@@ -854,7 +854,7 @@ export function compileExpectedArtefacts(
 			};
 			/**
 			 * The EXT-X-STREAM-INF rows an HLS master must carry, one expected node
-			 * per compiler op (row 284 / audit 5c3d97ca HIGH-5): read off
+			 * per compiler op: read off
 			 * `hlsChildEntries`, the enumeration the validator and the foreign-object
 			 * filter already trust, so the fan-out rule has ONE home. A fixed video
 			 * muxing yields one row, or one per audio group under

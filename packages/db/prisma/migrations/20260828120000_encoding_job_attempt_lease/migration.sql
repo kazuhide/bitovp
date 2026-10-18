@@ -1,5 +1,4 @@
--- Audit 893eb66 CRITICAL-1: an attempt LEASE for VOD orchestration, because the
--- status alone was never the lock.
+-- An attempt LEASE for VOD orchestration, because status alone is not a lock.
 --
 -- The orchestrator read the row, wrote RUNNING, and then wrote every step-log
 -- update with an unconditional `update({ where: { id } })`. A worker that loses
@@ -10,7 +9,7 @@
 -- recorded ids, so whichever tree lost the write race was billing with no
 -- product-side record of it.
 --
--- Same shape as `LiveChannel.provisionClaimedAt` (AKR-E57-003): a timestamp,
+-- Same shape as `LiveChannel.provisionClaimedAt`: a timestamp,
 -- not an owner token, so a worker that dies mid-run does not wedge the job —
 -- the lease simply goes stale and the next attempt takes it. The processor
 -- renews it on every poll tick and every persist is fenced on its own last

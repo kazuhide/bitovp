@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery as wrap } from "@/test/render";
 
 /**
- * Audit 4403130 IMPORTANT-2, at the page that composes the summaries.
+ * Verify query failure handling at the page that composes the summaries.
  *
  * A failed alerts query became `alerts.data?.open.length ?? 0`, so the
  * monitoring strip printed a green `0`, the alerts card summarised "0 open"
@@ -365,7 +365,7 @@ describe.each([
 	});
 });
 
-describe("ChannelDetail — a failed read is not a healthy channel (audit 4403130 IMPORTANT-2)", () => {
+describe("ChannelDetail — a failed read is not a healthy channel", () => {
 	it("alerts RESOLVING with an empty list is still ON_AIR, a green 0, and '0 open'", async () => {
 		mockPage("none");
 		wrap(<ChannelDetail id={CHANNEL} />);

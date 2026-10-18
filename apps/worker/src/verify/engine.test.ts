@@ -675,7 +675,7 @@ const FAULTS: {
 		},
 	},
 	/*
-	 * Paid audit 893eb66 BLOCKER-5 : every one of these shapes was
+	 * every one of these shapes was
 	 * observed on a REAL master or MPD and passed the verifier as it stood.
 	 */
 	{
@@ -1298,7 +1298,7 @@ describe("media closure — the FOREIGN clause (re-audit BLOCKER-4, review-343 H
 });
 
 // ---------------------------------------------------------------------------
-// Exact audio / mux topology (row 272 / audit 602ec286 HIGH-3, §17 P1-3).
+// Exact audio / mux topology.
 //
 // The count-and-name checks passed a 128k rendition delivered at 64k, a wrong
 // codec, a stereo track in another layout, and two children swapped, because

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LIVE_SCHEDULE_OUTCOMES } from "./schemas";
 
 /**
- * Audit 602ec286 §17 P1-4 — the READER agrees with the schema.
+ * P1-4 — the READER agrees with the schema.
  *
  * `LIVE_SCHEDULE_OUTCOMES` is the UI's hand-maintained copy of the persisted
  * `LiveScheduleOutcome` enum; `schedule-panel`'s tone/message records are keyed

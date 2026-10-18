@@ -21,8 +21,8 @@ export type NavItem = {
 	/**
 	 * Who the destination is for, and the role floor its data sits behind —
 	 * READ from `PAGE_ACCESS_RULES` by `navItem` below rather than typed here,
-	 * so the link and the page it opens cannot disagree about who may enter
-	 * (audit 5c3d97ca MEDIUM-5). `nav-list.tsx` filters on them; the values
+	 * so the link and the page it opens cannot disagree about who may enter.
+	 * `nav-list.tsx` filters on them; the values
 	 * are pinned per item in nav-list.test.tsx.
 	 */
 	audience: Audience;

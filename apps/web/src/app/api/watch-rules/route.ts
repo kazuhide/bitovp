@@ -69,7 +69,7 @@ export async function POST(req: Request) {
 		// Resolved BEFORE the template checks, because one of them needs the
 		// provider: a credential that cannot back the template's input kind is
 		// a rule that claims objects and then fails per-object in the worker
-		// (audit aa972a2 AA972-WATCH-001).
+		//
 		const credential = await ctx.prisma.credential.findUnique({
 			where: { id: parsed.data.credentialId },
 			select: { id: true, provider: true },
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 				credentialProvider: credential.provider,
 			}),
 			// The rule's own outputs must not land where it is watching
-			// (audit f63f76b F63-RUN-002) — checked HERE and on the PATCH,
+			// checked HERE and on the PATCH,
 			// which can move outputPrefixTemplate under the watched prefix.
 			...watchSelfIntersectionIssues(preset.body, parsed.data),
 		];

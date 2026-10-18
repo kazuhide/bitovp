@@ -147,7 +147,7 @@ export type ScannedMuxing = {
 	 * ). Other delivery muxings — including Smooth MP4 — correlate
 	 * through exact fixed settings or a template-specific resolved path marker.
 	 * Dropping the filename made attribution abstain on every QC-enabled
-	 * same-codec ladder (audit 602ec286 HIGH-2 / §5.4). Absent on segmented
+	 * same-codec ladder. Absent on segmented
 	 * muxings (fMP4/TS name their segments instead).
 	 */
 	filename?: string;
@@ -193,7 +193,7 @@ export const perTitleResultMuxingSchema = z.strictObject({
 	muxingType: z.string(),
 	/**
 	 * The single-file muxing's `filename` — the RESULT↔template correlation key
-	 * (audit 602ec286 §5.4). OPTIONAL so segmented muxings (no filename) and
+	 * OPTIONAL so segmented muxings (no filename) and
 	 * snapshots written before this field existed still parse; when present it is
 	 * persisted verbatim through capture → DB → re-read.
 	 */
@@ -460,33 +460,33 @@ export function isPerTitleRendition(
  * THERE IS NO UPSTREAM LINK in the SDK (a `PER_TITLE_RESULT` stream references
  * no template), so this is our own inference. A QC-enabled result BINDS ON THE
  * QC-MIRROR FILENAME: the compiler stamps every mirror muxing with
- * `qcMirrorFilename(rendition, codec)` = `<renditionKey>.<ext>` ,
+ * `qcMirrorFilename(rendition, codec)` = `<renditionKey>.<ext>`,
  * and the provider copies that filename verbatim onto each RESULT's mirror
  * muxing and reads it back. Rendition keys are unique within a plan, so the
  * filename identifies exactly one template — including on the same-codec,
  * many-template ladders where the old codec-only guess abstained on all seven
- * rungs of a real paid run and reported the provider's 6 RESULTs as 0 (audit
- * 602ec286 HIGH-2 / §5.4).
+ * rungs of a real paid run and reported the provider's 6 RESULTs as 0.
+
  *
  * Fail closed, never guess (§5.4 items 2, 3, 5):
- *  - EXACTLY one same-codec template's `qcMirrorFilename` among the result's
- *    QC-directory-qualified mirror filenames → that template. Several RESULTs
- *    carrying the same filename are fine ("1 template → many results"); this
- *    function sees one result at a time and each attributes to the same key.
- *  - More than one template matches (two different mirror filenames on one
- *    result, or one filename that somehow resolves to two templates) → abstain.
- *  - Placeholders (`{height}`/`{width}`/`{bitrate}`) are NEVER consulted: they
- *    resolve OBJECT identity, not template identity, and same-height/different-
- *    bitrate rungs would mis-file.
- *  - Without a filename, a fixed RESULT binds only when codec, fixed mode,
- *    applied height, and every normalized copied fixed setting identify exactly
- *    one template. A partial/mismatched fixed witness abstains.
- *  - A RESULT without copied fixed settings may bind on an exact full output
- *    path pattern. The pattern may expand `{…}` within one path segment, but
- *    every static byte — including the template-specific segment written by
- *    new authoring flows — must match. Shared imported patterns therefore match
- *    several templates and abstain; path prefixes and height-only matches do not
- *    count.
+ * - EXACTLY one same-codec template's `qcMirrorFilename` among the result's
+ * QC-directory-qualified mirror filenames → that template. Several RESULTs
+ * carrying the same filename are fine ("1 template → many results"); this
+ * function sees one result at a time and each attributes to the same key.
+ * - More than one template matches (two different mirror filenames on one
+ * result, or one filename that somehow resolves to two templates) → abstain.
+ * - Placeholders (`{height}`/`{width}`/`{bitrate}`) are NEVER consulted: they
+ * resolve OBJECT identity, not template identity, and same-height/different-
+ * bitrate rungs would mis-file.
+ * - Without a filename, a fixed RESULT binds only when codec, fixed mode,
+ * applied height, and every normalized copied fixed setting identify exactly
+ * one template. A partial/mismatched fixed witness abstains.
+ * - A RESULT without copied fixed settings may bind on an exact full output
+ * path pattern. The pattern may expand `{…}` within one path segment, but
+ * every static byte — including the template-specific segment written by
+ * new authoring flows — must match. Shared imported patterns therefore match
+ * several templates and abstain; path prefixes and height-only matches do not
+ * count.
  *
  * When a flexible result carries neither a mirror filename nor fixed settings,
  * fall back to the one rule that still cannot be wrong: if the plan has exactly
@@ -905,15 +905,15 @@ export function perTitleResultsView(inputs: {
  *
  * So both candidates are scored the same way and the better one wins, by this
  * ordered vector (earlier wins first):
- *  - reaching the end of every list, then reading every rung's parameters (tier);
- *  - MORE RUNGS captured — which saves the 12-vs-2 case, and is ALSO why a fresh
- *    but 2-rung-truncated capture must not beat a good old 6 even though the fresh
- *    one attributes better (audit 602ec286 §5.4 item 6);
- *  - MORE RUNGS ATTRIBUTED among an equal capture — which is what lets a NEW,
- *    filename-attributed 6 finally beat an OLD, codec-abstained 6 that used to
- *    TIE it and win by being the incumbent step (the shadow §5.4 names);
- *  - and, all else equal, the NEWER attribution version — a migration nicety,
- *    below rung count so it can never resurrect the truncation shadow.
+ * - reaching the end of every list, then reading every rung's parameters (tier);
+ * - MORE RUNGS captured — which saves the 12-vs-2 case, and is ALSO why a fresh
+ * but 2-rung-truncated capture must not beat a good old 6 even though the fresh
+ * one attributes better;
+ * - MORE RUNGS ATTRIBUTED among an equal capture — which is what lets a NEW,
+ * filename-attributed 6 finally beat an OLD, codec-abstained 6 that used to
+ * TIE it and win by being the incumbent step (the shadow §5.4 names);
+ * - and, all else equal, the NEWER attribution version — a migration nicety,
+ * below rung count so it can never resurrect the truncation shadow.
  */
 function captureQuality(
 	snapshot: PerTitleResultsSnapshot,

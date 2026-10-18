@@ -40,7 +40,7 @@ import { getLiveChannelQueue } from "@/lib/server/queue";
 type RouteParams = { params: Promise<{ id: string }> };
 
 /**
- *  (audit 5c3d97ca BLOCKER-1): the provider-lifecycle columns a
+ * the provider-lifecycle columns a
  * run carries, read wherever this route decides between revive and re-air
  * or admits a new provider/ingest effect.
  */
@@ -685,7 +685,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 							throw new RunAlreadyLiveError();
 						}
 						/**
-						 *  (audit 5c3d97ca BLOCKER-1): a run the PROVIDER
+						 * a run the PROVIDER
 						 * ended is never revived. The audited sequence was exactly
 						 * this arm — channel ERROR × run ERROR after a Restart 409 —
 						 * and the revive replayed the FINISHED encoding's DONE step
@@ -1157,7 +1157,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					);
 				}
 				/**
-				 *  (audit 5c3d97ca BLOCKER-1): the provider's view of the
+				 * the provider's view of the
 				 * run's encoding decides BEFORE the claim. A TERMINAL run gets the
 				 * same guidance a STOPPED channel does (the encoder is gone; the
 				 * remedy is a fresh Start), and an UNKNOWN one — the read is

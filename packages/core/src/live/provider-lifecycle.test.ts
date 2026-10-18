@@ -11,7 +11,7 @@ import {
 } from "./provider-lifecycle";
 
 /**
- *  (audit 5c3d97ca BLOCKER-1 / §14.5 LC-01 item 3) — the pure
+ * the pure
  * classifier, table-driven. Every arm the audit names: timeout, credential /
  * network error, single 404 and TTL expiry are UNKNOWN; the SDK's terminal
  * words are TERMINAL; only RUNNING is RUNNING; an unrecognised word is UNKNOWN.

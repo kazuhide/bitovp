@@ -40,15 +40,15 @@ function activeDestination(
  * The desktop `Sidebar` and the below-`md` `MobileNav` sheet both render this
  * element rather than each building the list from `NAV_SECTIONS`. A second copy
  * of the loop is exactly how the two shells drift: 's flag filter
- * would have to be remembered twice, the role filter (audit 5c3d97ca
- * MEDIUM-5) three times counting the page gate, and the `aria-current` rule
+ * would have to be remembered twice, the role filter
+ * three times counting the page gate, and the `aria-current` rule
  * with them. The shells own their box (a sticky column versus a dialog
  * panel); they do not own what is in it.
  *
  * The role filter reads the same session cache the page gate and the session
  * menu read (`useRoleView`), so the three agree, and it fails CLOSED: while
  * the session is loading or could not be read, only floor-level links render
- * — a VIEWER never sees the ADMIN entries appear and then vanish.
+ * a VIEWER never sees the ADMIN entries appear and then vanish.
  *
  * `flex-1 overflow-y-auto` is part of that contract and takes no prop: both
  * shells are full-height flex columns whose middle section scrolls, so a caller

@@ -3,7 +3,7 @@ import type { PooledMetrics } from "../vmaf/pooled";
 import { evaluateQcGate, type QcGate } from "./qc-gate";
 
 /**
- *  (paid audit 893eb66 HIGH-10): a per-title rung the provider
+ * a per-title rung the provider
  * built but the runner could not score — its mirror was never written — must
  * reach the verdict as an UNMEASURED actual, exactly as a rendition absent
  * from the results does. The listing-based population made such a rung

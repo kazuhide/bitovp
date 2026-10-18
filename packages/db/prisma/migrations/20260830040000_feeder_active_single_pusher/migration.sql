@@ -1,5 +1,5 @@
--- Row #267 · audit 602ec286 HIGH-1 (§17 P0-3): the single-pusher rule is a DB
--- GUARANTEE, not a check-then-act. The web create route COUNTed active feeder
+-- The single-pusher rule is a DB GUARANTEE, not a check-then-act.
+-- The web create route COUNTed active feeder
 -- sessions per channel and then INSERTed the row in a separate statement — two
 -- concurrent POSTs both read zero and both created, opening a second push at
 -- one ingest (video jam + double billing). This partial unique index makes the

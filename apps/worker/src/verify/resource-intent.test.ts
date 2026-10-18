@@ -17,7 +17,7 @@ import {
 } from "./resource-intent";
 
 /**
- * The durable-intent ledger (audit 5c3d97ca BLOCKER-5 / §14.4 EV-01), driven
+ * The durable-intent ledger, driven
  * against a fake store: every state decision lives here where it can be
  * driven; the two spend sites' call ORDER is pinned next door
  * (runner-intent-wiring.test.ts for VOD, runner-live.test.ts for live).

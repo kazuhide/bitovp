@@ -54,7 +54,7 @@ const COPY: Record<
 		body: "nextAction.alertsBody",
 		cta: "nextAction.goAlerts",
 	},
-	// Audit 4403130 IMPORTANT-2 — the alert list did not load. Separate copy
+	// the alert list did not load. Separate copy
 	// from REVIEW_ALERTS on purpose: that one says an alert IS open, which is
 	// a claim we cannot make here.
 	ALERTS_UNKNOWN: {
@@ -121,9 +121,9 @@ export function NextActionPanel({
 }: {
 	action: LiveNextAction;
 	/**
-	 * : called with the click event and the target section id when the
-	 * CTA is taken, so the page can hand focus to that section's heading (audit
-	 * 4403130 §5.6 — the anchor scrolled and left the caret in the header).
+	 * called with the click event and the target section id when the
+	 * CTA is taken, so the page can hand focus to that section's heading
+
 	 *
 	 * A callback rather than a `hashchange` listener doing the work alone: a
 	 * second click on an UNCHANGED action — the operator who scrolled away from
@@ -151,9 +151,9 @@ export function NextActionPanel({
 					<HelpOverlay labelFor={t(copy.title)}>{t(copy.body)}</HelpOverlay>
 				) : null}
 				{/* An in-page anchor, not a button (review-260 126-A5 rewording):
-			    since #126 flattened the page, 13 of 15 targets are always-open
-			    sections — the link simply scrolls. For the two surviving folds
-			    the openByDefault mechanics open the pointed one; otherwise the
+				 * since #126 flattened the page, 13 of 15 targets are always-open
+				 * sections — the link simply scrolls. For the two surviving folds
+				 * the openByDefault mechanics open the pointed one; otherwise the
 			    operator clicks the summary. */}
 				<a
 					href={`#${action.section}`}

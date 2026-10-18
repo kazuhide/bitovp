@@ -250,8 +250,8 @@ export const INGEST_CONNECTED_MAX_AGE_MS = 90_000;
 /**
  * How far a heartbeat stamp may sit in the FUTURE and still describe a moment
  * this process can reason about — pure clock skew between the worker that
- * stamped the sample and the reader judging it (audit 4403130
- * §4 IMPORTANT-1 third defect).
+ * stamped the sample and the reader judging it.
+
  *
  * The window was one-sided until then: `now - at <= maxAge` with no lower
  * bound, so a sample stamped an HOUR ahead scored an age of -3,600,000 ms and
@@ -274,7 +274,7 @@ export const HEARTBEAT_FUTURE_SKEW_TOLERANCE_MS = 5_000;
  * `ingestConnectedFromHeartbeat` answers "did the SAMPLE say connected" —
  * it deliberately knows nothing about WHEN the sample was taken, and every
  * reader that treated it as "is connected NOW" inherited a frozen stamp
- * : a stopped channel's
+ * a stopped channel's
  * final CONNECTED sample froze the detail page at Connected forever, a
  * REVIVED run keeps its pre-error sample on the SAME row (review-243 R1's
  * presence-level read cannot help — presence is satisfied), and the
@@ -484,8 +484,8 @@ export function evaluateAlertRules(input: {
 
 		switch (rule.metric) {
 			case "INPUT_DISCONNECTED": {
-				// A PLANNED pre-air wait is not a fault (audit
-				// 4403130 §4 IMPORTANT-1, re-audit proof §9-7). This rule read
+				// A PLANNED pre-air wait is not a fault.
+				// This rule read
 				// only the consecutive DISCONNECTED/healthy=false samples and
 				// never the program window, so on paid runs #3–#5 it opened
 				// during the scheduled WAITING_FOR_FIRST_CONNECT before the

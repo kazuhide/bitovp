@@ -1,4 +1,4 @@
--- Audit 5c3d97ca LF-01: attempt-bound feeder evidence.
+-- Attempt-bound feeder evidence.
 --
 -- This is an additive table and is safe to deploy before the worker image.
 -- Old workers do not write it; therefore the release queue must remain paused

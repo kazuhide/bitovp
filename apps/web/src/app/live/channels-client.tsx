@@ -40,8 +40,8 @@ type Page = {
 const COLUMN_COUNT = 7;
 
 /**
- * The live channel list as an OPERATIONS COCKPIT (audit 4403130
- * §5.5).
+ * The live channel list as an OPERATIONS COCKPIT
+
  *
  * It used to be Name / Status / Encoding ID / Created / Delete with the next
  * schedule as a footnote — which means that with several channels up, "which
@@ -232,7 +232,7 @@ export function ChannelsClient() {
 				) : null}
 			</div>
 			{/* The definition, where the operator meets it — "Error" here is
-			    wider than the ERROR status, and a filter whose population you
+			 * wider than the ERROR status, and a filter whose population you
 			    have to guess is one you stop trusting. */}
 			{prefs.filter === "error" ? (
 				<p className="mt-2 text-xs text-zinc-500">
@@ -313,7 +313,7 @@ export function ChannelsClient() {
 											{channel.name}
 										</Link>
 										{/* Demoted from its own column : identity, not a
-										    monitoring value — one click from the clipboard,
+										 * monitoring value — one click from the clipboard,
 										    and no longer competing with Health for width. */}
 										{channel.bitmovinEncodingId ? (
 											<CopyableId

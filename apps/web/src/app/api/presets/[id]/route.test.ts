@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const findFirst = vi.fn();
 const deleteMany = vi.fn();
 const updateMany = vi.fn();
-/** Watch rules templated on this preset (audit f63f76b F63-RUN-002). */
+/** Watch rules templated on this preset. */
 const watchRuleFindMany = vi.fn(async () => [] as unknown[]);
 
 vi.mock("@/lib/server/context", () => ({
@@ -166,7 +166,7 @@ describe("PATCH /api/presets/[id]", () => {
 
 	it("refuses an edit that would make a watch rule watch its own outputs", async () => {
 		/**
-		 * The bypass the rule-side check cannot see (audit f63f76b F63-RUN-002).
+		 * The bypass the rule-side check cannot see.
 		 * A watch rule is validated when the RULE is saved; this route can move
 		 * the ground under it afterwards. Editing the preset so its outputs land
 		 * in the bucket+prefix that rule watches turns every encode's output
@@ -229,7 +229,7 @@ describe("PATCH /api/presets/[id]", () => {
 
 	it("refuses an edit that leaves a watch rule unable to instantiate the preset", async () => {
 		/**
-		 * Audit aa972a2 AA972-WATCH-001, the same bypass  found for
+		 * the same bypass found for
 		 * self-intersection: the rule-save check is only as good as the preset
 		 * it validated. Swapping the template's input to a kind substitution
 		 * cannot target — or one this rule's credential cannot back — reaches

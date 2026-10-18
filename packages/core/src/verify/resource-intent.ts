@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 /**
- * The VerificationResourceIntent contract (audit 5c3d97ca BLOCKER-5 / §14.4
- * EV-01), shared by the harness (which WRITES the rows), the product's two
+ * The VerificationResourceIntent contract
+ * shared by the harness (which WRITES the rows), the product's two
  * create routes (which honour the idempotency key) and any later reader.
  *
  * The defect this exists for: the harness learned a paid resource's id from

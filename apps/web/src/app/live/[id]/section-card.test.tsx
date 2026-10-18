@@ -139,7 +139,7 @@ describe("SectionCard (ledger #103)", () => {
 });
 
 /* Title-level help explains operational concepts independently of field-level hints and remains accessible. */
-describe("SectionCard title-level help (audit 5c3d97ca §8.5)", () => {
+describe("SectionCard title-level help", () => {
 	it("a one-sentence help is an InfoHint named for the title, whose accessible description IS the help", async () => {
 		renderWithQuery(
 			<SectionCard

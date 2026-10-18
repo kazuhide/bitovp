@@ -1,4 +1,4 @@
--- Audit 5c3d97ca SC-01: durable, generation-fenced external-effect intents.
+-- Durable, generation-fenced external-effect intents.
 --
 -- Rollout is additive. Existing channels start at fence version 0; the first
 -- run transition or effect claim advances it. Existing work has no claim and

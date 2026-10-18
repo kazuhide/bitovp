@@ -90,7 +90,7 @@ export function AlertPanel({
 	const [issues, setIssues] = useState<string[]>([]);
 
 	/** review-83b C1: the operator's escape hatch — resolve a live event
-	    they have seen and dealt with. The orphan sweep handles the
+	 * they have seen and dealt with. The orphan sweep handles the
 	    channel/rule-left cases; this handles the human. */
 	const resolveEvent = useMutation({
 		mutationFn: (eventId: string) =>
@@ -181,15 +181,15 @@ export function AlertPanel({
 	return (
 		<div className="mt-2 space-y-4">
 			{/*
-			    : the OPEN alerts and the rule EDITOR are two different
-			    jobs, and they used to be one always-expanded block — the rule
-			    form sat directly under the firing events, with the resolved
-			    history under that (audit 4403130 §5.4). `mode` splits them
-			    across the page instead of duplicating either: "open" is the
-			    Operations readout, "manage" is the Diagnostics editor plus the
-			    resolved history. One component, one set of mutations, two
-			    mounts, no shared state to fork.
-			*/}
+			 * the OPEN alerts and the rule EDITOR are two different
+			 * jobs, and they used to be one always-expanded block — the rule
+			 * form sat directly under the firing events, with the resolved
+			 * history under that. `mode` splits them
+			 * across the page instead of duplicating either: "open" is the
+			 * Operations readout, "manage" is the Diagnostics editor plus the
+			 * resolved history. One component, one set of mutations, two
+			 * mounts, no shared state to fork.
+			 */}
 			{mode === "open" ? (
 				<>
 					{/* Open banner — severity colored; absent entirely when quiet. */}

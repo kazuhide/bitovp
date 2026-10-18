@@ -363,7 +363,7 @@ describe("DELETE /api/feeder-sessions/[id]", () => {
 	});
 
 	/**
-	 * Audit 5c3d97ca BLOCKER-2 / LC-02 — a terminal row can still HOLD the
+	 * a terminal row can still HOLD the
 	 * channel's publisher claim (its owning worker has not yet observed its
 	 * child's exit — the lost-stop window). Deleting it would erase the
 	 * channel's occupancy record while the push is being torn down.

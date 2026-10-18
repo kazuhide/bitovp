@@ -35,7 +35,7 @@ const JOB_ID = "00000000-0000-4000-8000-0000000000aa";
 
 /**
  * A `updateMany` that honours the WHERE clause the way Postgres would — the
- * lease (audit 893eb66 CRITICAL-1) is a compare-and-swap on
+ * lease is a compare-and-swap on
  * `attemptClaimedAt`, and a fake that ignored `where` would make every fence
  * pass and every lease test vacuous. Modelled: `id`, `status` (a literal or
  * `{ in }`), `attemptClaimedAt` (a Date, `null`, or `{ lt }`) and `OR` over
@@ -1370,7 +1370,7 @@ describe("the #38 create stamp — threaded, not just declared", () => {
 	});
 
 	it("adoptWindow() is true EXACTLY while a crash-leftover step re-executes", async () => {
-		// 's adoption half: sdk-ops runs adopt-before-create only in
+		// sdk-ops runs adopt-before-create only in
 		// this window. Too wide (true on fresh steps) and every happy-path
 		// create pays a list + N customData GETs; too narrow (never true) and
 		// adoption is dead code with a green suite — the same silent-drop shape
@@ -1977,7 +1977,7 @@ describe("orchestrator processor — QC gate boundary", () => {
 	});
 
 	/**
-	 * : the JIT→POST_ENCODING fallback, end to end through the
+	 * the JIT→POST_ENCODING fallback, end to end through the
 	 * processor. The fake start REFUSES exactly the request shape Bitmovin
 	 * refused for hours on 2026-08-14 (a body carrying vodHlsManifestIds) and
 	 * accepts the plain one — so a green run here means the recovery produced
@@ -2103,7 +2103,7 @@ describe("orchestrator processor — QC gate boundary", () => {
 	});
 });
 
-describe("attempt lease (audit 893eb66 CRITICAL-1)", () => {
+describe("attempt lease", () => {
 	const NOW = new Date("2026-06-11T00:00:00.000Z");
 
 	it("claims on entry and RELEASES on FINISHED, so a retry can claim at once", async () => {

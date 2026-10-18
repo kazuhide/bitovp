@@ -96,7 +96,7 @@ function mockList(items: LiveChannelListItem[]) {
 }
 
 /**
- * The five-channel fleet the cockpit exists for (audit 4403130 §5.5): one of
+ * The five-channel fleet the cockpit exists for: one of
  * each thing an operator has to be able to tell apart WITHOUT opening a
  * detail page. Names are deliberately alphabetical-against-severity, so an
  * order that merely sorts by name is visibly not an order that sorts by
@@ -207,7 +207,7 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe("ChannelsClient — delete moved out of the primary columns (audit 4403130 §5.5)", () => {
+describe("ChannelsClient — delete moved out of the primary columns", () => {
 	it("is not in the row's own cells and is reached through the row menu", async () => {
 		mockList([channel({ name: "Stopped one", status: "STOPPED" })]);
 		wrap(<ChannelsClient />);
@@ -320,7 +320,7 @@ describe("ChannelsClient — provider-aware status", () => {
 	});
 });
 
-describe("ChannelsClient — anomaly-first order (audit 4403130 §5.5)", () => {
+describe("ChannelsClient — anomaly-first order", () => {
 	it("puts ERROR, then an open alert, then a stale heartbeat above the healthy rows — and orders the rest by name", async () => {
 		mockList(FLEET);
 		wrap(<ChannelsClient />);
@@ -478,7 +478,7 @@ describe("ChannelsClient — a post-mortem is not an anomaly (review-359)", () =
 	});
 });
 
-describe("ChannelsClient — filters (audit 4403130 §5.5)", () => {
+describe("ChannelsClient — filters", () => {
 	async function selectFilter(value: string) {
 		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 		await user.selectOptions(screen.getByLabelText("Show"), value);
@@ -574,7 +574,7 @@ describe("ChannelsClient — filters (audit 4403130 §5.5)", () => {
 	});
 });
 
-describe("ChannelsClient — the Health column reads as text (audit 4403130 §5.5)", () => {
+describe("ChannelsClient — the Health column reads as text", () => {
 	it("gives each row's input, heartbeat, output, alert and feeder state a WORD, not a colour", async () => {
 		mockList(FLEET);
 		wrap(<ChannelsClient />);
@@ -638,7 +638,7 @@ describe("ChannelsClient — the Health column reads as text (audit 4403130 §5.
 	});
 });
 
-describe("ChannelsClient — Next event and Runtime (audit 4403130 §5.5)", () => {
+describe("ChannelsClient — Next event and Runtime", () => {
 	it("counts down to the armed fire time on the SERVER's clock", async () => {
 		mockList(FLEET);
 		wrap(<ChannelsClient />);

@@ -70,7 +70,7 @@ import {
 import { LiveStartSection } from "./start-section";
 
 /**
- * Audit 5c3d97ca §14.6 (UX-03): the step names an AWS MediaLive operator
+ * the step names an AWS MediaLive operator
  * expects — Input / Encodes / Destinations / Output groups / Schedule
  * actions — as LIVE-SPECIFIC keys. The generic `ui.*` labels the VOD wizard
  * shares (`ui.ladder`, `ui.start`, …) are deliberately not renamed: "Start"
@@ -232,7 +232,7 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 	const planAccount = imported ? importedAccountId(imported) : undefined;
 
 	/**
-	 * : the auto-shutdown that will actually be POSTed, from
+	 * the auto-shutdown that will actually be POSTed, from
 	 * whichever half is authoritative. The imported plan wins when one is
 	 * loaded (its payload is the import, verbatim); otherwise the FORM state,
 	 * not `evaluation.plan` — a half-built wizard has no valid plan yet, and
@@ -351,7 +351,7 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 				},
 			};
 			/*
-			 * audit 602ec286 HIGH-7, : apply the MSL format normalization
+			 * apply the MSL format normalization
 			 * on CREDENTIAL SELECT, not only when the operator touches the format
 			 * dropdown.
 			 *
@@ -843,7 +843,7 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 											disabled={!outputSelectable(c.provider)}
 										>
 											{/* The provider's LABEL, not its enum — same reason
-											    as the VOD source step: this is the name the
+											 * as the VOD source step: this is the name the
 											    credentials screen uses for the same thing. */}
 											{c.label} (
 											{
@@ -968,8 +968,8 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 								</Field>
 							) : null}
 							{/* AKAMAI_MSL joins these two. The plan's MSL output carries a
-							    credential and a streamFormat and NO bucket, so asking for one
-							    invites a value the plan has no field to put it in. Only the
+							 * credential and a streamFormat and NO bucket, so asking for one
+							 * invites a value the plan has no field to put it in. Only the
 							    Browse BUTTON was guarded — the box itself still rendered. */}
 							{state.output.kind !== "SFTP" &&
 							state.output.kind !== "AKAMAI_MSL" &&
@@ -994,9 +994,9 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 											}
 										/>
 										{/* No MSL clause here any more, and tsc is the reason: with
-										    the field itself excluding MSL, the comparison became
-										    provably dead (TS2367). It had been the ONLY guard —
-										    the bucket box rendered for MSL and only the button
+										 * the field itself excluding MSL, the comparison became
+										 * provably dead (TS2367). It had been the ONLY guard —
+										 * the bucket box rendered for MSL and only the button
 										    was hidden. */}
 										{outputKindIsBrowsable(state.output.kind) ? (
 											<Button

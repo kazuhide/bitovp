@@ -677,7 +677,7 @@ describe("createdBy attribution (#32 §5)", () => {
 });
 
 /**
- * EV-01 (audit 5c3d97ca BLOCKER-5): the verification harness's idempotency
+ * EV-01: the verification harness's idempotency
  * key. A create response lost after the server created the job used to leave
  * the harness with no id at all; now the same key answers with the row it
  * already paid for, and a different request under the same key is refused.

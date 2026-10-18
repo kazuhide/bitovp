@@ -243,19 +243,9 @@ lines.push(
 lines.push(
 	"\t// wizard's preset import, tests) treat the plan as owned and may mutate it.",
 );
-lines.push(
-	"\t// Returning the shared reference let a mutation in one caller leak into the",
-);
-lines.push(
-	"\t// next — a real test-isolation flake (fixed by hand in 189ad1d; the",
-);
-lines.push(
-	"\t// generator kept emitting the shared reference, so a re-run silently",
-);
-lines.push(
-	"\t// reverted it and no test could notice). Fixtures are pure JSON, so a JSON",
-);
-lines.push("\t// round-trip is a sufficient and dependency-free deep clone.");
+lines.push("\t// A shared reference would leak mutations into later callers.");
+lines.push("\t// Fixtures are pure JSON, so a JSON round-trip is a sufficient");
+lines.push("\t// dependency-free deep clone.");
 lines.push(
 	"\treturn JSON.parse(JSON.stringify(PLANS[name])) as Record<string, unknown>;",
 );

@@ -1,5 +1,5 @@
 /**
- *  (audit 5c3d97ca BLOCKER-1 / §14.5 LC-01) — the PROVIDER's lifecycle
+ * the PROVIDER's lifecycle
  * for a run's exact encoding, as a pure classification.
  *
  * The invariant this file exists to make statable: a write that puts local
@@ -13,7 +13,7 @@
  *
  * The provider's wire words come from the SDK's `Status` enum (CREATED,
  * QUEUED, RUNNING, FINISHED, ERROR, CANCELED, TRANSFER_ERROR). Anything else
- * — a value the enum grows later, an empty string, a non-string — classifies
+ * a value the enum grows later, an empty string, a non-string — classifies
  * UNKNOWN: an unrecognised word must not be read as either alive or gone.
  *
  * UI-free and DB-free: the worker feeds it observations, the routes and the

@@ -15,7 +15,7 @@ import { renderWithQuery as wrap } from "@/test/render";
  *
  * This file REPLACES the structural pin that used to live in
  * `channel-playback.test.tsx` ("almost every section expanded, exactly two
- * folds"). That pin described the #126 layout, and audit 4403130 §5.2 measured
+ * folds"). That pin described the #126 layout, and measured
  * that layout as having swung past the fix: 15 always-expanded panels over 5.7
  * viewports, with the schedule ARM FORM and the content-registration UI ahead
  * of open alerts, playback, the active feeder and the ingest coordinates.
@@ -887,7 +887,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 });
 
 describe("the reorganised page renders in both catalogues", () => {
-	// Audit 5c3d97ca §8.3 (HIGH-10): the layer names are the AWS operator's
+	// the layer names are the AWS operator's
 	// concepts — "Channel state" and "Output & delivery", not "Operations".
 	const EN = [
 		"Channel state",
@@ -908,7 +908,7 @@ describe("the reorganised page renders in both catalogues", () => {
 		"Schedule an action",
 		"Show past and cancelled rows",
 		"Show every manifest URL",
-		// Audit 5c3d97ca §8.5/§8.6 (HIGH-10): the section titles an AWS operator
+		// the section titles an AWS operator
 		// recognises, in place of Heartbeat / Ingest coordinates / Origin
 		// observation / Pseudo-live feeders / Schedules.
 		"Delivery status",
@@ -961,7 +961,7 @@ describe("the reorganised page renders in both catalogues", () => {
 				`${locale}: ${text}`,
 			).toBeGreaterThan(0);
 		}
-		// Audit 5c3d97ca §8.5: the title-level help is ON THE PAGE, named for
+		// the title-level help is ON THE PAGE, named for
 		// its title in the locale's own frame, with the §8.5 body as the
 		// trigger's accessible description (a short help) or behind it (a long
 		// one, `role=note` on click). Output monitoring's help is long.

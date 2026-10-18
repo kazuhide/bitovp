@@ -3,7 +3,7 @@ import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import type { SdkOps } from "./sdk-ops";
 
 /**
- * Stop the Bitmovin encodings of a job whose worker died — audit f63f76b
+ * Stop the Bitmovin encodings of a job whose worker died —
  * F63-RUN-009.
  *
  * A job can die OUTSIDE its processor: stalled twice, or lock lost. The `failed`
@@ -11,9 +11,9 @@ import type { SdkOps } from "./sdk-ops";
  * that was the whole of the recovery. But by then the plan may have created a
  * Bitmovin encoding and started it, and nothing told the provider to stop:
  *
- *   - the processor's own cancel/stop paths never ran (its process is gone);
- *   - the cancel API refuses the row — it claims `status in (QUEUED, RUNNING)`,
- *     and the listener has just written ERROR, so every later cancel 409s.
+ * - the processor's own cancel/stop paths never ran (its process is gone);
+ * - the cancel API refuses the row — it claims `status in (QUEUED, RUNNING)`,
+ * and the listener has just written ERROR, so every later cancel 409s.
  *
  * WHAT STOPPING COSTS, and why it is not unconditional. The first version of
  * this module asserted that "`retry` starts a NEW run rather than adopting the
@@ -21,7 +21,7 @@ import type { SdkOps } from "./sdk-ops";
  * on: `retry/route.ts` says the opposite in its own docstring — FAILED steps
  * reset to PENDING, DONE steps KEEP their resource ids, so the orchestrator
  * RESUMES against the same encoding. (`re-run-as-new` is the route that starts
- * fresh.) `stall-policy.ts` records the measurement, : a real encoding
+ * fresh.) `stall-policy.ts` records the measurement: a real encoding
  * SIGKILLed twice landed ERROR at step 15/34 while it kept running and billing,
  * and `POST /retry` drove the same row to FINISHED 34/34 in seventy seconds,
  * untouched.
@@ -34,11 +34,11 @@ import type { SdkOps } from "./sdk-ops";
  *
  * So the stop is split by WHO CAN PRESS RETRY — the line `stall-policy.ts`
  * already draws:
- *   - UNATTENDED (createdBy `worker:*` — the watch sweep, the scheduler):
- *     nobody is watching, retry will never come, so stop at once.
- *   - ATTENDED (a user, a token, an interactive session): keep the encoding
- *     resumable, and let the periodic sweep stop it only after a grace window, so
- *     the bill is bounded without taking the recovery away.
+ * - UNATTENDED (createdBy `worker:*` — the watch sweep, the scheduler):
+ * nobody is watching, retry will never come, so stop at once.
+ * - ATTENDED (a user, a token, an interactive session): keep the encoding
+ * resumable, and let the periodic sweep stop it only after a grace window, so
+ * the bill is bounded without taking the recovery away.
  *
  * So the encoding kept billing per minute with no route to stop it from the
  * product at all. The reset SEES these rows (`unstoppedEncoders` reads any

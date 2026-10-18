@@ -34,7 +34,7 @@ export type ListObjectsResult = {
 };
 
 /**
- * A provider's name for ONE version of an object's bytes — audit ce4a935
+ * A provider's name for ONE version of an object's bytes —
  * CRITICAL-2, slice 1.
  *
  * The defect this exists to make fixable: nothing in this package could name a
@@ -46,21 +46,21 @@ export type ListObjectsResult = {
  * Every field is optional because the providers genuinely disagree about which
  * they have, and a required field would force a driver to invent one:
  *
- *  - `etag` — S3 and Azure both return one. GCS returns an `etag` too, but it is
- *    NOT its md5Hash/crc32c and must not be treated as a content digest.
- *  - `versionId` — S3 only, and only on a version-enabled bucket.
- *  - `generation` — GCS only. Carried as a string because that is how the API
- *    returns it and how it round-trips through JSON and the database without a
- *    lossy hop. NOT because the string survives to the wire: verified in
- *    @google-cloud/storage 7.21.0 (file.js:612-621), the `File` constructor
- *    does `Number(options.generation)`, so the one call that consumes it
- *    coerces anyway. An earlier revision of this comment claimed the string
- *    form guarded precision through to the request; it does not, and the
- *    correction matters because the false version would have made a future
- *    reader trust a guarantee nothing provides. No live risk today —
- *    generations are microsecond timestamps, ~1.7e15 against a safe-integer
- *    ceiling of ~9.0e15 — and a rounding error would 404 rather than silently
- *    select other bytes, which is the failure direction to prefer.
+ * - `etag` — S3 and Azure both return one. GCS returns an `etag` too, but it is
+ * NOT its md5Hash/crc32c and must not be treated as a content digest.
+ * - `versionId` — S3 only, and only on a version-enabled bucket.
+ * - `generation` — GCS only. Carried as a string because that is how the API
+ * returns it and how it round-trips through JSON and the database without a
+ * lossy hop. NOT because the string survives to the wire: verified in
+ * @google-cloud/storage 7.21.0 (file.js:612-621), the `File` constructor
+ * does `Number(options.generation)`, so the one call that consumes it
+ * coerces anyway. An earlier revision of this comment claimed the string
+ * form guarded precision through to the request; it does not, and the
+ * correction matters because the false version would have made a future
+ * reader trust a guarantee nothing provides. No live risk today —
+ * generations are microsecond timestamps, ~1.7e15 against a safe-integer
+ * ceiling of ~9.0e15 — and a rounding error would 404 rather than silently
+ * select other bytes, which is the failure direction to prefer.
  *
  * Values are stored and replayed VERBATIM, never normalized. S3 returns ETags
  * wrapped in quotes (`"abc123"`) and expects the same quoted form back in

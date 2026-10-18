@@ -47,8 +47,8 @@ async function withChannelDeadline<R>(
  * Run `work` over `items` with at most `concurrency` in flight at once, each
  * call bounded by `perItemTimeoutMs`. A hung item releases its lane when its
  * deadline fires, so one stuck channel delays the freshness SLA of the others
- * by at most a single timeout rather than stalling the whole sweep (audit
- * 602ec286 MODERATE-1). `onOutcome` observes each item's result — the real
+ * by at most a single timeout rather than stalling the whole sweep.
+ * `onOutcome` observes each item's result — the real
  * value, or CHANNEL_TIMED_OUT.
  *
  * Lanes share ONE iterator: `iterator.next` is synchronous and atomic in
@@ -88,7 +88,7 @@ export type HeartbeatSweepResult = {
 	/** Set when this tick was skipped because a prior sweep was still running. */
 	skipped?: true;
 	/**
-	 * : channels whose provider readback was TERMINAL this tick and
+	 * channels whose provider readback was TERMINAL this tick and
 	 * were reconciled (no heartbeat polled — the encoding is gone). Present
 	 * only when non-zero, so the plain `{ polled, failed }` shape holds.
 	 */
@@ -106,7 +106,7 @@ export type HeartbeatSweepResult = {
 };
 
 /**
- * Wrap a sweep so at most ONE runs at a time (audit 602ec286 MODERATE-1). The
+ * Wrap a sweep so at most ONE runs at a time. The
  * 30s repeat scheduler enqueues a fresh sweep every interval regardless of
  * whether the previous one finished; while one is in flight, an overlapping
  * tick returns `skipped` immediately and does no work — which both prevents

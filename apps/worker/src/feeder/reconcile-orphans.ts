@@ -241,7 +241,7 @@ export function createFeederOrphanReconciler(deps: {
 					pid: null,
 					ownerHost: null,
 					processGoneAt: goneAt,
-					// Audit 5c3d97ca LC-02: a verified kill / ESRCH / recycled pid
+					// a verified kill / ESRCH / recycled pid
 					// is one of the three proofs that release the publisher claim
 					// the dead owner held. Same instant as the proof it rides on.
 					publisherReleasedAt: goneAt,

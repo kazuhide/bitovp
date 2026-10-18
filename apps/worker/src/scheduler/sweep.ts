@@ -131,7 +131,7 @@ export const DISPATCH_GRACE_MS = SCHEDULE_SWEEP_INTERVAL_MS * 2;
  * the wanted outcome — one job for one row.
  */
 /**
- * : the pre-stage's own deterministic id. Distinct from the row's
+ * the pre-stage's own deterministic id. Distinct from the row's
  * fire id because a switch row is handed off TWICE — the stage at
  * fireAt − lead and the commit at fireAt — and BullMQ's dedupe would
  * otherwise read the second as a replay of the first.
@@ -487,7 +487,7 @@ type ScheduleRow = {
 	autoLeadTime?: boolean;
 	airAt?: Date | null;
 	/**
-	 * : the session a FEEDER_SWITCH row's pre-stage created (stamped
+	 * the session a FEEDER_SWITCH row's pre-stage created (stamped
 	 * by the stage action), and the stage claim itself. Optional because the
 	 * other actions never carry them.
 	 */
@@ -496,7 +496,7 @@ type ScheduleRow = {
 };
 
 /**
- * audit 602ec286 BLOCKER-4 (row 266): stamp WHICH airing a scheduled job is
+ * (row 266): stamp WHICH airing a scheduled job is
  * FOR onto its payload, so the processor can refuse a job the queue delivered
  * after the channel re-aired onto a new run. Omitted when the row is not
  * bound to a run (a creation-time row with no run yet) — there is nothing to
@@ -517,7 +517,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		(deps.startGraceMinutes ?? DEFAULT_START_GRACE_MINUTES) * 60_000;
 	let inFlight = false;
 	/**
-	 * : where each ARMED scan stopped last tick. Per-sweep state, not
+	 * where each ARMED scan stopped last tick. Per-sweep state, not
 	 * per-process global, so two sweeps in one process (tests) do not inherit
 	 * each other's position — and deliberately in MEMORY, not in the row: a
 	 * cursor lost to a restart costs one pass from the head, which is the
@@ -643,7 +643,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : record the handoff, AFTER `queue.add` resolved. The CAS on
+	 * record the handoff, AFTER `queue.add` resolved. The CAS on
 	 * `dispatchedAt: null` keeps the stamp at exactly one — a dispatcher
 	 * re-add that deduped against an already-running job stamps the row it
 	 * found, and never overwrites an earlier truthful stamp.
@@ -749,7 +749,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					where: { id: row.id, status: "ARMED", liveChannelRunId: null },
 					data: { liveChannelRunId: current.id },
 				});
-				// audit 602ec286 BLOCKER-4 (row 266): reflect the just-written
+				// (row 266): reflect the just-written
 				// bind on the LOCAL row, so the enqueue that follows this call
 				// stamps the payload's `plannedLiveChannelRunId` with the run
 				// this dispatch is FOR — not the null the row was read as. The
@@ -1365,7 +1365,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						{
 							liveChannelId: row.liveChannelId,
 							action: "stop",
-							// audit 602ec286 BLOCKER-4 (row 266): the airing this
+							// (row 266): the airing this
 							// STOP was armed for. A stop re-delivered after a
 							// re-air must not take the NEW run off the air.
 							...plannedRunStamp(row.liveChannelRunId),
@@ -1524,7 +1524,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				{
 					liveChannelId: row.liveChannelId,
 					action: "insert-content",
-					// audit 602ec286 BLOCKER-4 (row 266): the airing this slate
+					// (row 266): the airing this slate
 					// was armed for. A slate insertion re-delivered after a re-air must
 					// not splice content bound to the previous encoding onto the
 					// new run.
@@ -1562,7 +1562,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : fire a FEEDER row — validate the source, require a RUNNING
+	 * fire a FEEDER row — validate the source, require a RUNNING
 	 * channel (the processor also needs the encoder IP; a pending IP is the
 	 * processor's own retry), claim FIRED via the row CAS, and enqueue the
 	 * liveChannel action. The processor owns session creation and, for
@@ -1619,7 +1619,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				{
 					liveChannelId: row.liveChannelId,
 					action: "feeder-start",
-					// audit 602ec286 BLOCKER-4 (row 266): the airing this feed
+					// (row 266): the airing this feed
 					// was armed for — the audit's own case. A feeder-start
 					// re-delivered after a re-air must not push this row's
 					// pre-air filler over the NEW run's programme.
@@ -1695,7 +1695,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				{
 					liveChannelId: row.liveChannelId,
 					action: "feeder-commit",
-					// audit 602ec286 BLOCKER-4 (row 266): the airing this switch
+					// (row 266): the airing this switch
 					// was armed for — a commit re-delivered after a re-air must
 					// not cut a stale staged source into the new run.
 					...plannedRunStamp(row.liveChannelRunId),
@@ -1831,7 +1831,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					{
 						liveChannelId: row.liveChannelId,
 						action: "feeder-stage",
-						// audit 602ec286 BLOCKER-4 (row 266): the airing this
+						// (row 266): the airing this
 						// pre-stage is for. A stage re-delivered after a re-air
 						// must not download a whole source for a dead run.
 						...plannedRunStamp(row.liveChannelRunId),
@@ -1871,7 +1871,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : creation-time slates carry a SOURCE, not a content id —
+	 * creation-time slates carry a SOURCE, not a content id —
 	 * content is per-encoding and did not exist at creation. Once the channel
 	 * is RUNNING, claim the row (contentClaimedAt CAS — two ticks and two
 	 * workers must not register twice) and hand registration to the live
@@ -2210,7 +2210,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						{
 							liveChannelId: row.liveChannelId,
 							action: "feeder-stage",
-							// audit 602ec286 BLOCKER-4 (row 266): a bound stranded
+							// (row 266): a bound stranded
 							// row carries that airing through the recovery add too —
 							// the fence must see the SAME planned run a healthy
 							// dispatch would have stamped.
@@ -2255,7 +2255,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		}
 		if (row.action === "STOP") {
 			// Includes the runtime cap's synthetic row — same action, same
-			// claim, same recovery. audit 602ec286 BLOCKER-4 (row 266): a
+			// claim, same recovery. (row 266): a
 			// stranded STOP was FIRED, so its bind is set — carry it so the
 			// recovery add fences on the SAME airing a healthy dispatch would.
 			const effect = await effectIntentFor(row, "STOP");
@@ -2294,7 +2294,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		) {
 			// : a fired switch is a lost COMMIT for the session the
 			// stage created — the same payload the fire path built. audit
-			// 602ec286 BLOCKER-4 (row 266): plus the airing it was armed for.
+			// (row 266): plus the airing it was armed for.
 			const effect = await effectIntentFor(
 				row,
 				"FEEDER_COMMIT",
@@ -2336,7 +2336,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				liveChannelId: row.liveChannelId,
 				action:
 					row.action === "FEEDER_SWITCH" ? "feeder-switch" : "feeder-start",
-				// audit 602ec286 BLOCKER-4 (row 266): carry the armed airing.
+				// (row 266): carry the armed airing.
 				...plannedRunStamp(row.liveChannelRunId),
 				effect,
 				params: { scheduleId: row.id, source: parsed.data },
@@ -2376,7 +2376,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		return {
 			liveChannelId: row.liveChannelId,
 			action: "insert-content",
-			// audit 602ec286 BLOCKER-4 (row 266): carry the armed airing.
+			// (row 266): carry the armed airing.
 			...plannedRunStamp(row.liveChannelRunId),
 			effect,
 			params: {
@@ -2431,7 +2431,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * : page the whole due set instead of re-reading its first 100
+	 * page the whole due set instead of re-reading its first 100
 	 * rows every tick. `now` is still read ONCE for the tick, so every row a
 	 * tick examines is judged against the same instant no matter which page
 	 * it arrived on.
@@ -2697,7 +2697,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					{
 						liveChannelId: channel.id,
 						action: "stop",
-						// audit 602ec286 BLOCKER-4 (row 266): the run this cap is
+						// (row 266): the run this cap is
 						// stopping. If the cap-stop job is re-delivered after a
 						// re-air, the fence refuses it rather than cutting the
 						// new airing off at the old one's deadline.
@@ -2762,9 +2762,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		const now = deps.now();
 		// The arm schema caps deadlineMarginSeconds at 3600, so any row whose
 		// airAt is further out than that cannot be due yet — bounding the
-		// query keeps the scanned population to actually-decidable rows
-		// (review-8eaef21 #4: an unbounded scan over far-future rows plus
-		// take:100 could starve the row whose deadline is NOW).
+		// query keeps the scanned population to actually-decidable rows:
+		// an unbounded scan over far-future rows plus
+		// take:100 could starve the row whose deadline is NOW.
 		const horizon = new Date(now.getTime() + 3600 * 1000);
 		const due = await deps.prisma.liveSchedule.findMany({
 			where: {
@@ -2831,7 +2831,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					path: `/live/${row.liveChannelId}`,
 				});
 			} catch (err) {
-				// review-8eaef21 #9: stamp-then-emit loses the alert forever on
+				// stamp-then-emit loses the alert forever on
 				// a throw, and silent loss is worse than a duplicate for an
 				// alert whose whole value is "while there is still margin".
 				// Roll the stamp back so the next tick retries (at-least-once).
@@ -2906,7 +2906,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			}
 			await fireDue(stats);
 			await enforceCaps(stats);
-			// Own try/catch (review-8eaef21 #9): a throw here must not skip
+			// Own try/catch: a throw here must not skip
 			// the reconcile below, and a broken deadline pass must not break
 			// the tick's fired/missed work either.
 			try {

@@ -36,7 +36,7 @@ export const LIVE_FIXTURES = [
 	// : the first LIVE deliveryMirror — Akamai Object Storage as
 	// the primary with an MSL4 mirror. Landed with plan/ops/expected-live and
 	// an expected-live consumer, but NOT this registry, so its compiled op
-	// sequence had no deep-equal pin at all (audit f63f76b F63-TEST-002).
+	// sequence had no deep-equal pin at all.
 	"live-akamai-msl-storage",
 	// : the first MSL5 fixture. Differs from `live-akamai-msl` in
 	// exactly three ways, each one a measured fact rather than a choice —
@@ -59,7 +59,7 @@ export const LIVE_FIXTURES = [
 	// assumption about shared code.
 	"live-hls-ts-muxed",
 	// The live half of the mixed-codec DASH rule (#204 shipped the VOD half and
-	// recorded live as a separate slice; paid re-audit eb7c983 HIGH-2). Paid
+	// recorded live as a separate slice). Paid
 	// case F — H264+H265 on one live channel — got provider 400 on the FIRST
 	// H265 representation added to the single `aset-video`. This is the ONLY
 	// live fixture with more than one video codec, so it is the only one whose

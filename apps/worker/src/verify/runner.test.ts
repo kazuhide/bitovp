@@ -172,7 +172,7 @@ const rewritable = plans.filter((p) => !gated.includes(p));
 
 describe("rewriteForRun — over the whole corpus", () => {
 	it("has a corpus to rewrite, so a broken read cannot pass over nothing", () => {
-		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash` (audit 893eb66 CRITICAL-2).
+		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
 		expect(plans.length).toBe(72);
 		// Both sides non-empty, or one of the two suites below is silently testing nothing.
@@ -627,7 +627,7 @@ describe("the run report covers every scenario", () => {
 		const md = formatRunReport(report);
 		expect(md).toContain(`total ${plans.length}`);
 		// And the corpus itself is pinned, so this cannot pass over a shrunken list.
-		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash` (audit 893eb66 CRITICAL-2).
+		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
 		expect(plans.length).toBe(72);
 	});

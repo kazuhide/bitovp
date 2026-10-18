@@ -27,7 +27,7 @@ import {
  * resolve to a real one. (Two drafts of this very note put the hashed form back
  * inside the explanation and re-tripped the guard.)
  *
- * Audit 4403130 §5.6: the StatusStrip's material changes (ingest disconnects,
+ * the StatusStrip's material changes (ingest disconnects,
  * the heartbeat goes stale) and the schedule/action success notices are visible
  * and nothing else — a screen-reader operator watching a running channel is
  * told none of it. Open alerts already carry `role="alert"` and keep it (§5.8's
@@ -38,26 +38,26 @@ import {
  * render would read the ingest state aloud four times a minute forever. Two
  * rules, and both are load-bearing:
  *
- *  1. **Announce on CHANGE, never on value.** `status-announce.ts` compares the
- *     previous sample with the next one and returns nothing at all when they
- *     agree. A poll that changes nothing is silent by construction, which is
- *     what makes this safe to leave on during an incident.
- *  2. **At most one announcement per signal per `ANNOUNCE_MIN_INTERVAL_MS`.** A
- *     flapping value — the exact case an operator most needs to hear once and
- *     least needs to hear twenty times — is coalesced: the first crossing
- *     speaks immediately, and anything inside that signal's window is held and
- *     replaced, so what is finally read is the LATEST state rather than a queue
- *     of stale ones.
+ * 1. **Announce on CHANGE, never on value.** `status-announce.ts` compares the
+ * previous sample with the next one and returns nothing at all when they
+ * agree. A poll that changes nothing is silent by construction, which is
+ * what makes this safe to leave on during an incident.
+ * 2. **At most one announcement per signal per `ANNOUNCE_MIN_INTERVAL_MS`.** A
+ * flapping value — the exact case an operator most needs to hear once and
+ * least needs to hear twenty times — is coalesced: the first crossing
+ * speaks immediately, and anything inside that signal's window is held and
+ * replaced, so what is finally read is the LATEST state rather than a queue
+ * of stale ones.
  *
- *     PER SIGNAL, and the first cut was not (review-366 S1). One window and one
- *     hold slot for the whole page meant a held "Heartbeat has gone stale."
- *     was silently overwritten by whatever arrived next — an unrelated ingest
- *     change, or an action confirmation — and was then never spoken at all.
- *  3. **An operator's own confirmation never waits.** `announce` with no
- *     signal is a direct consequence of a click ("Stop encoder accepted."), so
- *     it is spoken immediately and takes no slot. Holding it behind a status
- *     window could delay the answer to a button press by the full 8 s, which is
- *     long enough for an operator to press it again.
+ * PER SIGNAL, and the first cut was not (review-366 S1). One window and one
+ * hold slot for the whole page meant a held "Heartbeat has gone stale."
+ * was silently overwritten by whatever arrived next — an unrelated ingest
+ * change, or an action confirmation — and was then never spoken at all.
+ * 3. **An operator's own confirmation never waits.** `announce` with no
+ * signal is a direct consequence of a click ("Stop encoder accepted."), so
+ * it is spoken immediately and takes no slot. Holding it behind a status
+ * window could delay the answer to a button press by the full 8 s, which is
+ * long enough for an operator to press it again.
  */
 
 /**
@@ -150,16 +150,16 @@ export function LiveAnnouncer({ children }: { children: ReactNode }) {
 	return (
 		<AnnounceContext.Provider value={announce}>
 			{/*
-			    In the DOM from the first render, empty. A live region CREATED at
-			    announce time is routinely missed: the assistive technology has to
-			    be observing the node before its content changes.
-
-			    Known limit: two IDENTICAL consecutive messages produce no DOM
-			    change and so are read once. That is right for a state that did
-			    not change and wrong for the same action succeeding twice; the
-			    honest fix is a second alternating region, which is more machinery
-			    than the case has earned so far.
-			*/}
+			 * In the DOM from the first render, empty. A live region CREATED at
+			 * announce time is routinely missed: the assistive technology has to
+			 * be observing the node before its content changes.
+			 *
+			 * Known limit: two IDENTICAL consecutive messages produce no DOM
+			 * change and so are read once. That is right for a state that did
+			 * not change and wrong for the same action succeeding twice; the
+			 * honest fix is a second alternating region, which is more machinery
+			 * than the case has earned so far.
+			 */}
 			<p
 				role="status"
 				aria-live="polite"

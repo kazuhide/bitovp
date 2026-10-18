@@ -1512,7 +1512,7 @@ describe("PlaybackSurface — implicating vs merely informative", () => {
 });
 
 /**
- * : the Bitmovin Player branch. jsdom has no MSE and no real
+ * the Bitmovin Player branch. jsdom has no MSE and no real
  * player — the module is mocked; what is under test is the BRANCH DECISION
  * (which element renders, which library initializes, with which key) and
  * the licence-refusal surface (§4.4: the failure is opaque by default and
@@ -2184,7 +2184,7 @@ describe("PlaybackSurface — the Bitmovin Player branch (ledger #59)", () => {
 	});
 
 	it("tells the player NOT to load its own skin and builds it from the UI package instead (ledger #212)", async () => {
-		// Paid audit 893eb66 HIGH-14: left to itself the player fetched
+		// left to itself the player fetched
 		// `bitmovinplayer-ui.js` / `.css` from beside its script — a 404 under
 		// Next's chunk path on every deployment, i.e. a player with no controls.
 		uiBuilt = 0;

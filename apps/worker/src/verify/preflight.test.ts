@@ -55,10 +55,10 @@ describe("loadScenarios", () => {
 		// 83→84 : live-akamai-msl5, mapped to UC 19 alongside
 		// the other three MSL fixtures — the same use case, a different protocol
 		// version.
-		// 84→85 / 70→71 on 2026-08-28: `vp9-webm-fixed-dash` (audit 893eb66 CRITICAL-2).
+		// 84→85 / 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 85→86 / 71→72 same day: `mixed-codec-dash-hls` .
 		// 86→87 / 14→15 live on 2026-08-29: `live-mixed-codec-dash` (paid
-		// re-audit eb7c983 HIGH-2 — the live half of #204).
+		// the live half of the mixed-codec DASH rule).
 		expect(scenarios.length).toBe(87);
 		expect(scenarios.filter((s) => s.kind === "VOD").length).toBe(72);
 		expect(scenarios.filter((s) => s.kind === "LIVE").length).toBe(15);

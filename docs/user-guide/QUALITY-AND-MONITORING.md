@@ -80,13 +80,51 @@ decode results; they do not establish Bitmovin API execution or browser playback
 | DASH video segments | Five segments of 2 seconds / 48 frames |
 | Complete HLS audio/video decode | Passed, exit 0 |
 | Complete DASH audio/video decode | Passed, exit 0 |
-| DASH audio presentation segments | 1.920000 s, 2.005333 s × 4, 0.058667 s |
+| VMAF frames per comparison | 240, ordered and complete |
+| VMAF mean: identical / encoded / degraded | 98.282 / 93.123 / 4.778 |
+
+A [Linux CI run on 19 October 2026](https://github.com/kazuhide/bitovp/actions/runs/39211595682)
+also passed: 240 video frames, five 2-second / 48-frame video segments in both
+HLS and DASH, complete MP4/HLS/DASH audio/video decoding, and 240 VMAF frames
+per comparison. Its identical / encoded / degraded means were
+**98.282 / 93.142 / 5.088**.
+
+These VMAF results use model `vmaf_v0.6.1` and score every frame. They
+are fixture sanity checks; platforms and encoder builds can produce different
+scores. They do not establish provider execution, browser playback, or quality
+targets for other content.
 
 Here, two seconds is 93.75 AAC frames. Audio therefore crosses the requested
 video boundaries rather than being forced into an impossible integer frame
-count. Priming also gives the first audio packet a timestamp of −21.33 ms.
+count. Encoder priming (startup delay) gives the excerpt’s first AAC packet a
+timestamp of −21.33 ms.
 Inspect presentation timestamps and decoded media together; packet counts alone
 cannot establish playback duration or synchronization.
+
+On Linux or macOS, install Docker, Node.js 24 or later, Python 3, and
+the repository's pnpm version to run the automated check:
+
+```sh
+pnpm test:media
+```
+
+This downloads and verifies the source below, builds the worker image, and runs
+the media checks without network access inside the container. It checks complete
+video and audio decoding, each video segment's frame timestamps, and all 240
+VMAF scores using the application's command builder and result parser. An
+audio timestamp check rejects gaps and large start/end offsets while allowing
+millisecond rounding, codec startup delay, and padding. These fixture bounds
+do not establish audio/video synchronization. An
+identical-video comparison and an intentionally degraded control check that the
+model responds to visible damage; their thresholds are test sanity checks,
+not quality targets for your content. No account or storage credentials are used.
+Only the check's own temporary files, image, and container are removed afterward.
+
+To reuse an already extracted source without copying or changing it:
+
+```sh
+pnpm test:media --source /absolute/path/to/BigBuckBunny_320x180.mp4
+```
 
 To reproduce, extract the MP4 from the [official Blender ZIP](https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4.zip)
 as `source.mp4` in a scratch directory, then run with the worker's FFmpeg:
@@ -104,10 +142,24 @@ ffmpeg -v error -nostdin -y -i bbb-10s.mp4 -map 0 -c copy \
   -hls_segment_filename hls/segment-%03d.m4s hls/index.m3u8
 ffmpeg -v error -nostdin -y -i bbb-10s.mp4 -map 0 -c copy \
   -f dash -seg_duration 2 -use_template 1 -use_timeline 1 \
+  -avoid_negative_ts make_non_negative \
+  -format_options use_editlist=0 \
   -adaptation_sets 'id=0,streams=v id=1,streams=a' dash/manifest.mpd
-ffmpeg -v error -nostdin -i hls/index.m3u8 -map 0:v:0 -map 0:a:0 -f null -
-ffmpeg -v error -nostdin -i dash/manifest.mpd -map 0:v:0 -map 0:a:0 -f null -
+ffmpeg -v error -nostdin -i "$PWD/hls/index.m3u8" -map 0:v:0 -map 0:a:0 -f null -
+ffmpeg -v error -nostdin -i "$PWD/dash/manifest.mpd" -map 0:v:0 -map 0:a:0 -f null -
 ```
+
+Use absolute manifest paths so FFmpeg can resolve local fragments reliably.
+The DASH example passes `use_editlist=0` through FFmpeg’s
+[container format options](https://ffmpeg.org/ffmpeg-formats.html#dash-2).
+An edit list adjusts the media presentation start. In this check, the default
+DASH initialization edits caused the reader to omit AAC frames at fragment
+boundaries. Disabling those edits preserved complete audio decoding; the check
+retains its decoded-frame bounds instead of accepting the shorter result.
+The [common non-negative timestamp origin](https://ffmpeg.org/ffmpeg-formats.html#Format-Options)
+preserves relative track timing and prevents an initial AAC timestamp gap
+observed with this worker build. Decoded audio timestamps and frame counts are
+therefore checked together.
 
 The source MP4 SHA-256 is
 `f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508`.

@@ -42,6 +42,7 @@
 			"packages/**",
 			"tests/browser/**",
 			"scripts/installed-gui-smoke*.mjs",
+			"scripts/media-smoke*.mjs",
 			"*.json",
 			"!**/node_modules",
 			"!**/.claude",

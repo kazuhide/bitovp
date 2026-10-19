@@ -16,6 +16,8 @@
 		"test:installed-gui": "node scripts/installed-gui-smoke.mjs",
 		"test:postgres-runner": "node --test scripts/postgres-integration.test.mjs",
 		"test:postgres": "node scripts/postgres-integration.mjs",
+		"test:media": "node scripts/media-smoke.mjs",
+		"test:media-runner": "node --test scripts/media-smoke.test.mjs",
 		"release:gates": "node scripts/release-gates.mjs",
 		"typecheck": "turbo run typecheck",
 		"check": "biome check --error-on-warnings .",

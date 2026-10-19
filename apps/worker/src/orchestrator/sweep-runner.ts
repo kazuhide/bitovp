@@ -60,7 +60,8 @@ export async function runChannelsBounded<T, R>(
 	work: (item: T) => Promise<R>,
 	opts: {
 		concurrency: number;
-		perItemTimeoutMs: number;
+		/** Omit when work applies its own deadline before awaited finalization. */
+		perItemTimeoutMs?: number;
 		onOutcome: (item: T, outcome: ChannelOutcome<R>) => void;
 	},
 ): Promise<void> {
@@ -72,10 +73,10 @@ export async function runChannelsBounded<T, R>(
 	async function lane(): Promise<void> {
 		for (let next = iterator.next(); !next.done; next = iterator.next()) {
 			const item = next.value;
-			const outcome = await withChannelDeadline(
-				work(item),
-				opts.perItemTimeoutMs,
-			);
+			const outcome =
+				opts.perItemTimeoutMs === undefined
+					? await work(item)
+					: await withChannelDeadline(work(item), opts.perItemTimeoutMs);
 			opts.onOutcome(item, outcome);
 		}
 	}

@@ -53,6 +53,63 @@ function stub(rows: MirrorRow[]) {
 }
 
 describe("createRunMirror (ledger #108 PR2 — the dual-write seam)", () => {
+	it.each([
+		"run",
+		"channel",
+		"history",
+	])("rolls a monitoring sample back if its deadline fires during the %s write", async (abortAt) => {
+		const controller = new AbortController();
+		const reason = new Error("monitoring expired");
+		const writes: string[] = [];
+		const write = (stage: string) => {
+			writes.push(stage);
+			if (stage === abortAt) controller.abort(reason);
+		};
+		const tx = {
+			liveChannelRun: {
+				updateMany: vi.fn(async () => {
+					write("run");
+					return { count: 1 };
+				}),
+			},
+			liveChannel: {
+				updateMany: vi.fn(async () => {
+					write("channel");
+					return { count: 1 };
+				}),
+			},
+			liveHeartbeat: {
+				create: vi.fn(async () => {
+					write("history");
+					return {};
+				}),
+			},
+		};
+		const door = createHeartbeatDoor({
+			$transaction: async (fn: (client: typeof tx) => Promise<void>) => {
+				const before = [...writes];
+				try {
+					await fn(tx);
+				} catch (error) {
+					writes.splice(0, writes.length, ...before);
+					throw error;
+				}
+			},
+		} as unknown as AppPrismaClient);
+		await expect(
+			door.recordHeartbeat(
+				"ch",
+				"enc",
+				new Date(),
+				{},
+				{ runId: "run", encodingId: "enc", epoch: 1 },
+				{ raw: {}, deltas: {} },
+				controller.signal,
+			),
+		).rejects.toBe(reason);
+		expect(writes).toEqual([]);
+	});
+
 	it("ensure returns the existing LIVE run without creating", async () => {
 		const rows = [{ id: "run-1", seq: 1, status: "RUNNING" }];
 		const { mirror, create } = stub(rows);

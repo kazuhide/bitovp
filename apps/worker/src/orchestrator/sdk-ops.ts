@@ -12,6 +12,7 @@ import {
 	assertInternalHevcV2Access,
 	type InternalHevcV2,
 } from "./internal-hevc-v2";
+import { createMonitoringFetch } from "./monitoring-fetch";
 import { createOrphanStopFetch } from "./orphan-stop-fetch";
 import { createRetryingFetch } from "./retrying-fetch";
 import { type CreateStamp, createStampingFetch } from "./stamping-fetch";
@@ -1536,6 +1537,8 @@ import {
 export { BitmovinCallError, sdkEnumValue } from "./ops/shared";
 
 export type SdkOpsOptions = {
+	/** Monitoring GETs share one deadline, including body download. */
+	monitoringSignal?: AbortSignal;
 	internalHevcV2?: InternalHevcV2;
 	apiKey: string;
 	tenantOrgId?: string | null;
@@ -1563,7 +1566,9 @@ export function createBitmovinSdkOps(
 		);
 	const retrying = options.orphanStopOnly
 		? createOrphanStopFetch()
-		: createRetryingFetch();
+		: options.monitoringSignal
+			? createMonitoringFetch(options.monitoringSignal)
+			: createRetryingFetch();
 	const api = new BitmovinApi({
 		apiKey: options.apiKey,
 		...(options.internalHevcV2

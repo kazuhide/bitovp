@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { UserRole } from "@bitovp/db";
 import { screen } from "@testing-library/react";
 import ts from "typescript";
@@ -234,9 +234,362 @@ function resolveEndpointExpression(
 	return null;
 }
 
+function descendants(node: ts.Node): ts.Node[] {
+	const rows: ts.Node[] = [];
+	const visit = (child: ts.Node) => {
+		rows.push(child);
+		ts.forEachChild(child, visit);
+	};
+	visit(node);
+	return rows;
+}
+
+/** Read the shared transport, rather than granting a hook-name exemption. */
+function creationTransportEndpoints(
+	client = parseSource("lib/creation-submission.ts"),
+	hook = parseSource("lib/creation-submission-hook.ts"),
+) {
+	const nodes = descendants(client.file);
+	const calls = nodes.filter(ts.isCallExpression);
+	const sends = calls.filter(
+		(call) =>
+			ts.isIdentifier(call.expression) && call.expression.text === "send",
+	);
+	const endpoint = client.declarations.get("endpoint")?.[0];
+	const conditional = endpoint?.initializer;
+	const options = sends[0]?.arguments[1];
+	const method =
+		options && ts.isObjectLiteralExpression(options)
+			? options.properties.find(
+					(property) =>
+						ts.isPropertyAssignment(property) &&
+						property.name.getText(client.file) === "method",
+				)
+			: undefined;
+	const defaultSend = nodes.find(
+		(node) =>
+			ts.isBindingElement(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === "send" &&
+			node.initializer &&
+			ts.isIdentifier(node.initializer) &&
+			node.initializer.text === "apiFetch",
+	);
+	if (
+		!defaultSend ||
+		sends.length !== 1 ||
+		!method ||
+		!ts.isPropertyAssignment(method) ||
+		!ts.isStringLiteral(method.initializer) ||
+		method.initializer.text !== "POST" ||
+		sends[0]?.arguments[0]?.getText(client.file) !== "endpoint" ||
+		!conditional ||
+		!ts.isConditionalExpression(conditional)
+	) {
+		throw new Error(
+			"Creation transport must expose one classified POST through its apiFetch-backed send",
+		);
+	}
+	if (
+		[...calls, ...descendants(hook.file).filter(ts.isCallExpression)].some(
+			(call) =>
+				ts.isIdentifier(call.expression) &&
+				["apiFetch", "fetch"].includes(call.expression.text),
+		)
+	) {
+		throw new Error(
+			"Creation transport contains an unclassified direct HTTP call",
+		);
+	}
+	const condition = conditional.condition;
+	if (
+		!ts.isBinaryExpression(condition) ||
+		condition.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken ||
+		!ts.isElementAccessExpression(condition.left) ||
+		condition.left.expression.getText(client.file) !== "scope" ||
+		condition.left.argumentExpression?.getText(client.file) !== "2" ||
+		!ts.isStringLiteral(condition.right) ||
+		condition.right.text !== "live" ||
+		!ts.isStringLiteral(conditional.whenTrue) ||
+		!ts.isStringLiteral(conditional.whenFalse)
+	) {
+		throw new Error(
+			"Creation transport endpoint must resolve from its exact kind slot",
+		);
+	}
+	const forwards = descendants(hook.file)
+		.filter(ts.isCallExpression)
+		.filter(
+			(call) =>
+				ts.isPropertyAccessExpression(call.expression) &&
+				call.expression.name.text === "submit" &&
+				ts.isCallExpression(call.expression.expression) &&
+				call.expression.expression.expression.getText(hook.file) ===
+					"createSubmissionClient",
+		);
+	const forward = forwards[0]?.expression;
+	const scope =
+		forward &&
+		ts.isPropertyAccessExpression(forward) &&
+		ts.isCallExpression(forward.expression)
+			? forward.expression.arguments[0]
+			: undefined;
+	if (
+		forwards.length !== 1 ||
+		!scope ||
+		!ts.isArrayLiteralExpression(scope) ||
+		scope.elements.length !== 3 ||
+		!ts.isSpreadElement(scope.elements[0] as ts.Node) ||
+		scope.elements[1]?.getText(hook.file) !== "kind" ||
+		scope.elements[2]?.getText(hook.file) !== "context"
+	) {
+		throw new Error(
+			"Creation hook must forward its kind to the classified submit transport",
+		);
+	}
+	return { live: conditional.whenTrue.text, vod: conditional.whenFalse.text };
+}
+
+let sharedCreationEndpoints:
+	| ReturnType<typeof creationTransportEndpoints>
+	| undefined;
+
+function productionTsFiles(dir: string): string[] {
+	return readdirSync(dir).flatMap((entry) => {
+		const path = join(dir, entry);
+		if (statSync(path).isDirectory()) return productionTsFiles(path);
+		return /\.tsx?$/.test(entry) && !/\.(?:test|spec)\.tsx?$/.test(entry)
+			? [path]
+			: [];
+	});
+}
+
+function moduleSpecifierText(
+	expression: ts.Expression,
+	parsed: ParsedSource,
+	seen = new Set<ts.VariableDeclaration>(),
+): string | null {
+	if (
+		ts.isStringLiteral(expression) ||
+		ts.isNoSubstitutionTemplateLiteral(expression)
+	)
+		return expression.text;
+	if (
+		ts.isParenthesizedExpression(expression) ||
+		ts.isAsExpression(expression) ||
+		ts.isSatisfiesExpression(expression)
+	)
+		return moduleSpecifierText(expression.expression, parsed, seen);
+	if (ts.isIdentifier(expression)) {
+		const declaration = resolveLexicalDeclaration(expression, parsed, {
+			allowLaterConstants: true,
+		});
+		if (!declaration?.initializer || seen.has(declaration)) return null;
+		return moduleSpecifierText(
+			declaration.initializer,
+			parsed,
+			new Set([...seen, declaration]),
+		);
+	}
+	if (ts.isTemplateExpression(expression)) {
+		let text = expression.head.text;
+		for (const span of expression.templateSpans) {
+			const value = moduleSpecifierText(span.expression, parsed, seen);
+			if (value === null) return null;
+			text += value + span.literal.text;
+		}
+		return text;
+	}
+	if (
+		ts.isBinaryExpression(expression) &&
+		expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+	) {
+		const left = moduleSpecifierText(expression.left, parsed, seen),
+			right = moduleSpecifierText(expression.right, parsed, seen);
+		return left === null || right === null ? null : left + right;
+	}
+	return null;
+}
+
+/** All production TypeScript edges are checked, so a new proxy cannot hide the factory. */
+function creationFactoryOwnershipViolations(
+	source: string,
+	parsed: ParsedSource,
+): string[] {
+	if (/\.(?:test|spec)\.tsx?$/.test(source)) return [];
+	const owner = source === "lib/creation-submission-hook.ts";
+	const factoryModule = resolve(SRC_DIR, "lib/creation-submission");
+	const isFactoryModule = (expression: ts.Expression) => {
+		const specifier = moduleSpecifierText(expression, parsed);
+		const target = specifier?.startsWith("@/")
+			? resolve(SRC_DIR, specifier.slice(2))
+			: specifier?.startsWith(".")
+				? resolve(dirname(join(SRC_DIR, source)), specifier)
+				: null;
+		return target?.replace(/\.[cm]?[jt]sx?$/, "") === factoryModule;
+	};
+	const hits: string[] = [];
+	const reject = (node: ts.Node) =>
+		hits.push(
+			`${source}:${parsed.file.getLineAndCharacterOfPosition(node.getStart(parsed.file)).line + 1} factory access must remain inside the identity hook`,
+		);
+	for (const node of descendants(parsed.file)) {
+		if (ts.isImportDeclaration(node) && isFactoryModule(node.moduleSpecifier)) {
+			const clause = node.importClause;
+			if (!clause || clause.isTypeOnly) continue;
+			const bindings = clause.namedBindings;
+			const factoryAccess =
+				clause.name ||
+				(bindings &&
+					(ts.isNamespaceImport(bindings) ||
+						bindings.elements.some(
+							(entry) =>
+								!entry.isTypeOnly &&
+								(entry.propertyName?.text ?? entry.name.text) ===
+									"createSubmissionClient",
+						)));
+			if (
+				factoryAccess &&
+				(!owner || !bindings || !ts.isNamedImports(bindings) || clause.name)
+			)
+				reject(node);
+		} else if (
+			ts.isExportDeclaration(node) &&
+			node.moduleSpecifier &&
+			isFactoryModule(node.moduleSpecifier) &&
+			!node.isTypeOnly
+		) {
+			if (
+				!node.exportClause ||
+				ts.isNamespaceExport(node.exportClause) ||
+				node.exportClause.elements.some(
+					(entry) =>
+						!entry.isTypeOnly &&
+						(entry.propertyName?.text ?? entry.name.text) ===
+							"createSubmissionClient",
+				)
+			)
+				reject(node);
+		} else if (
+			ts.isImportEqualsDeclaration(node) &&
+			ts.isExternalModuleReference(node.moduleReference) &&
+			node.moduleReference.expression &&
+			isFactoryModule(node.moduleReference.expression)
+		) {
+			reject(node);
+		} else if (
+			ts.isCallExpression(node) &&
+			(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+				(ts.isIdentifier(node.expression) &&
+					node.expression.text === "require")) &&
+			node.arguments[0] &&
+			isFactoryModule(node.arguments[0])
+		) {
+			reject(node);
+		}
+	}
+	const factory = source === "lib/creation-submission.ts";
+	if (owner || factory) {
+		for (const statement of parsed.file.statements) {
+			// Pin both trusted modules' value exports so a new alias cannot escape
+			// the import boundary. Type exports carry no runtime factory handle.
+			const typeOnlyExport =
+				ts.isExportDeclaration(statement) &&
+				(statement.isTypeOnly ||
+					(statement.exportClause &&
+						ts.isNamedExports(statement.exportClause) &&
+						statement.exportClause.elements.every(
+							(entry) => entry.isTypeOnly,
+						)));
+			const allowedValue = owner
+				? ts.isFunctionDeclaration(statement) &&
+					statement.name?.text === "useCreationSubmission"
+				: (ts.isFunctionDeclaration(statement) &&
+						statement.name?.text === "createSubmissionClient") ||
+					(ts.isClassDeclaration(statement) &&
+						statement.name?.text === "CreationSubmissionError");
+			if (
+				ts.isExportAssignment(statement) ||
+				(ts.isExportDeclaration(statement) && !typeOnlyExport)
+			) {
+				reject(statement);
+			} else if (
+				ts.canHaveModifiers(statement) &&
+				ts
+					.getModifiers(statement)
+					?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+				(!allowedValue ||
+					ts
+						.getModifiers(statement)
+						?.some(
+							(modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword,
+						)) &&
+				!ts.isTypeAliasDeclaration(statement) &&
+				!ts.isInterfaceDeclaration(statement)
+			) {
+				reject(statement);
+			}
+		}
+	}
+	return hits;
+}
+
+function isCreationHook(
+	initializer: ts.CallExpression,
+	parsed: ParsedSource,
+): boolean {
+	if (!ts.isIdentifier(initializer.expression)) return false;
+	const local = initializer.expression.text;
+	return parsed.file.statements.some(
+		(statement) =>
+			ts.isImportDeclaration(statement) &&
+			ts.isStringLiteral(statement.moduleSpecifier) &&
+			statement.moduleSpecifier.text === "@/lib/creation-submission-hook" &&
+			statement.importClause?.namedBindings &&
+			ts.isNamedImports(statement.importClause.namedBindings) &&
+			statement.importClause.namedBindings.elements.some(
+				(entry) =>
+					entry.name.text === local &&
+					(entry.propertyName?.text ?? entry.name.text) ===
+						"useCreationSubmission",
+			),
+	);
+}
+
+function creationEndpoint(
+	receiver: ts.Identifier,
+	parsed: ParsedSource,
+	seen = new Set<ts.VariableDeclaration>(),
+): string | null {
+	const declaration = resolveLexicalDeclaration(receiver, parsed);
+	if (!declaration?.initializer || seen.has(declaration)) return null;
+	seen.add(declaration);
+	const initializer = declaration.initializer;
+	if (ts.isIdentifier(initializer))
+		return creationEndpoint(initializer, parsed, seen);
+	if (!ts.isCallExpression(initializer) || !isCreationHook(initializer, parsed))
+		return null;
+	const kind = initializer.arguments[0]
+		? resolveEndpointExpression(initializer.arguments[0], parsed)
+		: null;
+	if (kind !== "vod" && kind !== "live")
+		throw new Error("Unresolved creation kind in mutation census");
+	sharedCreationEndpoints ??= creationTransportEndpoints();
+	return sharedCreationEndpoints[kind];
+}
+
 function apiCallsFromParsed(parsed: ParsedSource): ApiCall[] {
 	const calls: ApiCall[] = [];
 	const visit = (node: ts.Node) => {
+		if (
+			ts.isCallExpression(node) &&
+			ts.isPropertyAccessExpression(node.expression) &&
+			node.expression.name.text === "submit" &&
+			ts.isIdentifier(node.expression.expression)
+		) {
+			const endpoint = creationEndpoint(node.expression.expression, parsed);
+			if (endpoint) calls.push({ endpoint, method: "POST", node });
+		}
 		if (
 			ts.isCallExpression(node) &&
 			ts.isIdentifier(node.expression) &&
@@ -339,13 +692,17 @@ function permissionBindings(
 function resolveLexicalDeclaration(
 	identifier: ts.Identifier,
 	parsed: ParsedSource,
+	options: { allowLaterConstants?: boolean } = {},
 ): ts.VariableDeclaration | null {
 	const declarations = parsed.declarations.get(identifier.text) ?? [];
 	for (const scope of lexicalScopes(identifier)) {
 		const visible = declarations.filter(
 			(declaration) =>
 				declarationScope(declaration) === scope &&
-				declaration.getStart(parsed.file) < identifier.getStart(parsed.file),
+				(declaration.getStart(parsed.file) < identifier.getStart(parsed.file) ||
+					(options.allowLaterConstants === true &&
+						ts.isVariableDeclarationList(declaration.parent) &&
+						(declaration.parent.flags & ts.NodeFlags.Const) !== 0)),
 		);
 		if (visible.length > 1) {
 			return null;
@@ -559,7 +916,13 @@ function mutationTriggerProofsFromParsed(parsed: ParsedSource): TriggerProof[] {
 	);
 	const mutationWrites = new Map<string, ApiCall[]>();
 	const directHandlerWrites = new Map<string, ApiCall[]>();
+	const directTriggerNodes: {
+		node: ts.Node;
+		handler: string;
+		writes: readonly ApiCall[];
+	}[] = [];
 	for (const write of writes) {
+		const inlineAttribute = nearestJsxAttribute(write.node);
 		let useMutationCall: ts.CallExpression | null = null;
 		for (let cursor = write.node.parent; cursor; cursor = cursor.parent) {
 			if (
@@ -577,6 +940,12 @@ function mutationTriggerProofsFromParsed(parsed: ParsedSource): TriggerProof[] {
 		) {
 			const name = useMutationCall.parent.name.text;
 			mutationWrites.set(name, [...(mutationWrites.get(name) ?? []), write]);
+		} else if (inlineAttribute) {
+			directTriggerNodes.push({
+				node: inlineAttribute,
+				handler: write.node.expression.getText(parsed.file),
+				writes: [write],
+			});
 		} else {
 			const handler = nearestNamedContainer(write.node);
 			if (handler) {
@@ -588,11 +957,6 @@ function mutationTriggerProofsFromParsed(parsed: ParsedSource): TriggerProof[] {
 		}
 	}
 
-	const directTriggerNodes: {
-		node: ts.Node;
-		handler: string;
-		writes: readonly ApiCall[];
-	}[] = [];
 	const handlerWrites = new Map(directHandlerWrites);
 	const visitMutations = (node: ts.Node) => {
 		if (
@@ -739,6 +1103,241 @@ function users(role: UserRole): SessionDto {
 }
 
 describe("mixed-page mutation control contract", () => {
+	it("keeps every production factory import and reexport owned by the identity-bound hook", () => {
+		const hits = productionTsFiles(SRC_DIR).flatMap((path) => {
+			const source = relative(SRC_DIR, path);
+			return creationFactoryOwnershipViolations(source, parseSource(source));
+		});
+		expect(hits).toEqual([]);
+	});
+
+	it.each([
+		[
+			"direct import",
+			'import { createSubmissionClient } from "@/lib/creation-submission"; const creation = createSubmissionClient(["org", "actor", "vod", "fixture"], { storage: sessionStorage });',
+		],
+		[
+			"named import alias",
+			'import { createSubmissionClient as makeCreate } from "@/lib/creation-submission"; const creation = makeCreate(["org", "actor", "vod", "fixture"], { storage: sessionStorage });',
+		],
+		[
+			"namespace import",
+			'import * as creationModule from "@/lib/creation-submission"; const creation = creationModule.createSubmissionClient(["org", "actor", "vod", "fixture"], { storage: sessionStorage });',
+		],
+		[
+			"new TypeScript proxy",
+			'export { createSubmissionClient as makeCreate } from "@/lib/creation-submission";',
+		],
+		["wildcard reexport", 'export * from "@/lib/creation-submission";'],
+		[
+			"relative import",
+			'import { createSubmissionClient } from "../../lib/creation-submission.js";',
+		],
+		[
+			"dynamic module alias",
+			'const modulePath = "@/lib/creation-submission"; const creationModule = await import(modulePath);',
+		],
+		[
+			"CommonJS module alias",
+			'const modulePath = "@/lib/creation-submission"; const creationModule = require(modulePath);',
+		],
+	])("rejects a factory ownership bypass through %s", (_label, text) => {
+		const source = "app/fixtures/unguarded.ts";
+		expect(
+			creationFactoryOwnershipViolations(source, parseSourceText(source, text)),
+		).not.toEqual([]);
+	});
+
+	it.each([
+		"import(p)",
+		"require(p)",
+	])("rejects a deferred factory module load through a later constant: %s", (load) => {
+		const source = "app/fixtures/deferred.ts";
+		const text = `const load = () => ${load}; const p = "@/lib/creation-submission"; load();`;
+		expect(
+			creationFactoryOwnershipViolations(source, parseSourceText(source, text)),
+		).not.toEqual([]);
+	});
+
+	it.each([
+		"export { createSubmissionClient as makeCreate };",
+		"export default createSubmissionClient;",
+		"export const makeCreate = createSubmissionClient;",
+		"export function makeCreate() { return createSubmissionClient; }",
+	])("rejects additional factory module value exports: %s", (extraExport) => {
+		const source = "lib/creation-submission.ts";
+		const original = readFileSync(join(SRC_DIR, source), "utf8");
+		expect(
+			creationFactoryOwnershipViolations(
+				source,
+				parseSourceText(source, `${original}\n${extraExport}`),
+			),
+		).not.toEqual([]);
+	});
+
+	it("bounds cyclic module aliases and retains ordinary lexical declaration ordering", () => {
+		const source = "app/fixtures/cycle.ts";
+		expect(
+			creationFactoryOwnershipViolations(
+				source,
+				parseSourceText(source, "const p = q; const q = p; import(p);"),
+			),
+		).toEqual([]);
+		const ordinary = parseSourceText(
+			source,
+			'function Fixture() { creation.submit({ plan: {} }); const creation = useCreationSubmission("vod", "fixture"); }',
+		);
+		expect(apiCallsFromParsed(ordinary)).toEqual([]);
+	});
+	it("rejects factory reexports from the otherwise trusted hook", () => {
+		const source = "lib/creation-submission-hook.ts";
+		expect(
+			creationFactoryOwnershipViolations(
+				source,
+				parseSourceText(
+					source,
+					'export { createSubmissionClient as escape } from "./creation-submission";',
+				),
+			),
+		).not.toEqual([]);
+	});
+
+	it("permits the exact production owner and type-only imports without hiding new proxies", () => {
+		const source = "lib/creation-submission-hook.ts";
+		expect(
+			creationFactoryOwnershipViolations(source, parseSource(source)),
+		).toEqual([]);
+		expect(
+			creationFactoryOwnershipViolations(
+				"app/fixtures/consumer.ts",
+				parseSourceText(
+					"app/fixtures/consumer.ts",
+					'import type { CreationBody } from "@/lib/creation-submission";',
+				),
+			),
+		).toEqual([]);
+	});
+
+	it("classifies the shared POST transport and rejects an added unowned send", () => {
+		expect(creationTransportEndpoints()).toEqual({
+			vod: "/api/encoding-jobs",
+			live: "/api/live-channels",
+		});
+		const transport = readFileSync(
+			join(SRC_DIR, "lib/creation-submission.ts"),
+			"utf8",
+		);
+		expect(() =>
+			creationTransportEndpoints(
+				parseSourceText(
+					"lib/creation-submission.ts",
+					`${transport}\nsend("/api/settings/features", { method: "PATCH" });`,
+				),
+			),
+		).toThrow(/classified POST/);
+		expect(() =>
+			creationTransportEndpoints(
+				parseSourceText(
+					"lib/creation-submission.ts",
+					`${transport}\napiFetch("/api/settings/features", { method: "PATCH" });`,
+				),
+			),
+		).toThrow(/unclassified direct HTTP/);
+	});
+
+	it.each([
+		["vod", "/api/encoding-jobs"],
+		["live", "/api/live-channels"],
+	])("discovers delegated %s creates at the owning guarded JSX trigger", (kind, endpoint) => {
+		const [proof] = fixtureTriggerProofs(`
+   import { useCreationSubmission as useCreate } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreate("${kind}", "fixture");
+    const alias = creation;
+    const launch = useMutation({ mutationFn: () => alias.submit({ plan: {} }) });
+    return <RoleAccess control="templates.manage"><button onClick={() => launch.mutate()} /></RoleAccess>;
+   }
+  `);
+		expect(proof).toMatchObject({
+			component: "Fixture",
+			control: "templates.manage",
+			writes: [`POST ${endpoint}`],
+		});
+	});
+
+	it("discovers an unguarded delegated create and rejects its missing control", () => {
+		const [proof] = fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreationSubmission("vod", "fixture");
+    const launch = useMutation({ mutationFn: () => creation.submit({ plan: {} }) });
+    return <button onClick={() => launch.mutate()} />;
+   }
+  `);
+		expect(proof).toMatchObject({
+			component: "Fixture",
+			control: null,
+			writes: ["POST /api/encoding-jobs"],
+		});
+		expect(
+			writeOwnedByControls(
+				"app/templates/launch-dialog.tsx",
+				proof?.writes[0] ?? "",
+				new Set(proof?.control ? [proof.control] : []),
+			),
+		).toBe(false);
+	});
+
+	it("rejects a new unguarded inline creation trigger instead of losing it behind the helper", () => {
+		const proofs = fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreationSubmission("live", "fixture");
+    return <button onClick={() => creation.submit({ plan: {} })} />;
+   }
+  `);
+		expect(proofs).toHaveLength(1);
+		expect(proofs[0]).toMatchObject({
+			control: null,
+			component: "Fixture",
+			writes: ["POST /api/live-channels"],
+		});
+		expect(
+			writeOwnedByControls(
+				"app/templates/live-launch-dialog.tsx",
+				proofs[0]?.writes[0] ?? "",
+				new Set(),
+			),
+		).toBe(false);
+	});
+
+	it("resolves creation receivers lexically instead of attributing a shadowed unrelated submit", () => {
+		expect(
+			fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreationSubmission("vod", "fixture");
+    {
+     const creation = { submit: () => Promise.resolve() };
+     return <button onClick={() => creation.submit()} />;
+    }
+   }
+  `),
+		).toEqual([]);
+	});
+
+	it("fails closed when a delegated create's kind cannot be resolved", () => {
+		expect(() =>
+			fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture({ kind }) {
+    const creation = useCreationSubmission(kind, "fixture");
+    return <button onClick={() => creation.submit({ plan: {} })} />;
+   }
+  `),
+		).toThrow(/creation kind/);
+	});
+
 	it("keeps the independent startup cancellation trigger inside the OPERATOR lifecycle gate", () => {
 		const triggers = mutationTriggerProofs(
 			"app/live/[id]/channel-actions.tsx",

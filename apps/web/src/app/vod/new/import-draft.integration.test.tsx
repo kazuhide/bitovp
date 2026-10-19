@@ -60,7 +60,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
 		init?.method === "POST"
-			? { id: "created-import" }
+			? { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee8" }
 			: url === "/api/credentials"
 				? [{ id: credentialId, label: "Storage", provider: "AWS_S3" }]
 				: url === "/api/bitmovin-accounts"
@@ -116,7 +116,9 @@ it.each([
 	await waitFor(() => expect(start).toBeEnabled());
 	fireEvent.click(start);
 	await waitFor(() =>
-		expect(push).toHaveBeenCalledWith("/vod/jobs/created-import"),
+		expect(push).toHaveBeenCalledWith(
+			"/vod/jobs/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee8",
+		),
 	);
 	expect(localStorage.getItem(key)).toBe(saved);
 });

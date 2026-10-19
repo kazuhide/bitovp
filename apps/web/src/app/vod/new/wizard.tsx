@@ -19,6 +19,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
 import { WizardDraftOffer } from "@/components/wizard-draft-offer";
 import { ApiError, apiFetch } from "@/lib/api";
+import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -463,17 +464,20 @@ export function VodWizard({
 					? t("qc.measureProfileMissing")
 					: t("qc.executionBudgetInvalid");
 
+	const creation = useCreationSubmission(
+		"vod",
+		presetKey === undefined
+			? "wizard:new"
+			: `wizard:${presetKey}:${presetUpdatedAt ?? ""}`,
+	);
 	const submit = useMutation({
 		mutationFn: () => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
 			if (qcExecutionValidation.invalid) throw new Error(qcExecutionMessage);
-			return apiFetch<{ id: string }>("/api/encoding-jobs", {
-				method: "POST",
-				body: JSON.stringify({
-					plan: imported
-						? buildSubmissionPlan(imported, state.accountId)
-						: buildPlan(state),
-				}),
+			return creation.submit<{ id: string }>({
+				plan: imported
+					? buildSubmissionPlan(imported, state.accountId)
+					: buildPlan(state),
 			});
 		},
 		onSuccess: (job) => {

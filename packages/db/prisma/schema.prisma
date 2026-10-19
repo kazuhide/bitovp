@@ -191,6 +191,23 @@ enum EncodingJobStatus {
   QC_FAILED
 }
 
+/// Durable acceptance receipt for a paid GUI create request. Kept after deletion
+/// and reset so a delayed retry cannot create another resource.
+model CreateRequest {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  kind String
+  requestKey String @db.VarChar(200)
+  requestSha256 String @db.Char(64)
+  /// Deliberately not a foreign key: the receipt outlives its resource.
+  resourceId String @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@id([organizationId, kind, requestKey])
+  @@index([organizationId])
+}
+
 model EncodingJob {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -2529,6 +2546,7 @@ model Organization {
   resetCleanupTaskRows ResetCleanupTask[]
   bitmovinAccountRows BitmovinAccount[]
   storageLocationPresetRows StorageLocationPreset[]
+  createRequestRows CreateRequest[]
   encodingJobRows EncodingJob[]
   librarySourceRows LibrarySource[]
   sceneAnalysisRevisionRows SceneAnalysisRevision[]

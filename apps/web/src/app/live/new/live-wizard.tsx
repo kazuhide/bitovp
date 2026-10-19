@@ -29,6 +29,7 @@ import { NewCredentialLink } from "@/components/ui/new-credential-link";
 import { WizardDraftOffer } from "@/components/wizard-draft-offer";
 import { apiFetch } from "@/lib/api";
 import { RoleAccess } from "@/lib/auth/use-role-access";
+import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
 import { formatDateTime } from "@/lib/format";
 import type { MessageKey } from "@/lib/i18n";
@@ -273,6 +274,10 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 			setStep(saved.step);
 		},
 	});
+	const creation = useCreationSubmission(
+		"live",
+		`wizard:${duplicateFrom ?? "new"}`,
+	);
 	const submit = useMutation({
 		mutationFn: () => {
 			const current = imported
@@ -287,14 +292,11 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 					t(verdict.errorKey as MessageKey, verdict.params),
 				);
 			}
-			return apiFetch<{ id: string }>("/api/live-channels", {
-				method: "POST",
-				body: JSON.stringify({
-					plan: imported
-						? buildSubmissionPlan(imported, state.accountId)
-						: buildLiveChannelPlan(state),
-					...(verdict.schedule ? { schedule: verdict.schedule } : {}),
-				}),
+			return creation.submit<{ id: string }>({
+				plan: imported
+					? buildSubmissionPlan(imported, state.accountId)
+					: buildLiveChannelPlan(state),
+				...(verdict.schedule ? { schedule: verdict.schedule } : {}),
 			});
 		},
 		onSuccess: (channel) => {

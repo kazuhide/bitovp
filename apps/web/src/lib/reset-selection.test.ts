@@ -28,7 +28,7 @@ describe("reset selection", () => {
 		];
 		expect(new Set(classified).size).toBe(classified.length);
 		expect(classified.sort()).toEqual(models.sort());
-		expect(models).toHaveLength(49);
+		expect(models).toHaveLength(50);
 		expect(RESET_GLOBAL_MODELS).toEqual([
 			"user",
 			"setupCode",
@@ -46,6 +46,12 @@ describe("reset selection", () => {
 			"sceneAnalysisRevision",
 			"librarySource",
 		]);
+	});
+	it("keeps paid create receipts outside every selectable reset category", () => {
+		expect(RESET_INTERNAL_MODELS).toContain("createRequest");
+		expect(RESET_CATALOG.flatMap((entry) => entry.models)).not.toContain(
+			"createRequest",
+		);
 	});
 	it("keeps Library-only deletion independent from jobs and settings", () => {
 		expect(requiredResetCategories(["contentLibrary"])).toEqual([

@@ -71,7 +71,9 @@ describe.runIf(Boolean(adminUrl && runtimeUrl))(
 					readFileSync(join(__dirname, "../prisma/schema.prisma")),
 				);
 				for (const entry of readdirSync(migrations, { withFileTypes: true })) {
-					if (entry.name === migration) continue;
+					// Seed the schema before organization isolation. Later migrations
+					// may depend on its tables and must be applied only after seeding.
+					if (entry.isDirectory() && entry.name >= migration) continue;
 					cpSync(
 						join(migrations, entry.name),
 						join(scratch, "migrations", entry.name),
@@ -90,11 +92,14 @@ describe.runIf(Boolean(adminUrl && runtimeUrl))(
 				await legacy.$executeRaw`INSERT INTO "Credential" ("id","label","provider","encryptedSecret","updatedAt") VALUES (${credentialId}::uuid,'Legacy','AWS_S3','existing-ciphertext',now())`;
 				await legacy.$executeRaw`INSERT INTO "ResetCleanupTask" ("id","encryptedPayload","entityKeys","updatedAt") VALUES (${cleanupId}::uuid,'existing-receipt',ARRAY['legacy:orphan'],now())`;
 				await legacy.$executeRaw`INSERT INTO "AppSetting" ("key","value","updatedAt") VALUES ('ingress.current','{"legacy":true}'::jsonb,now()),('webhook.masterSecret','{"v":1,"encrypted":"existing-hook-cipher"}'::jsonb,now())`;
-				cpSync(
-					join(migrations, migration),
-					join(scratch, "migrations", migration),
-					{ recursive: true },
-				);
+				for (const entry of readdirSync(migrations, { withFileTypes: true })) {
+					if (!entry.isDirectory() || entry.name < migration) continue;
+					cpSync(
+						join(migrations, entry.name),
+						join(scratch, "migrations", entry.name),
+						{ recursive: true },
+					);
+				}
 				deploy();
 				await legacy.$executeRawUnsafe(
 					`GRANT USAGE ON SCHEMA "public" TO "${role}"`,

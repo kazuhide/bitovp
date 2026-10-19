@@ -13,6 +13,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
+import {
+	type CreateRequestIdentity,
+	createRequestConflictResponse,
+	createRequestGoneResponse,
+	createRequestIdentity,
+	InvalidCreateRequestError,
+	isCreateRequestUniqueConflict,
+	lookupCreateRequest,
+	recordCreateRequest,
+} from "@/lib/server/create-request";
 import { readFeatureFlags } from "@/lib/server/feature-flags";
 import {
 	jsonError,
@@ -220,6 +230,25 @@ function verificationKeyResponse(
 	return undefined;
 }
 
+/** A receipt remains spent even when its resource has been deleted. */
+async function ordinaryCreateReplay(
+	prisma: Awaited<ReturnType<typeof getServerContext>>["prisma"],
+	identity: CreateRequestIdentity,
+) {
+	const receipt = await lookupCreateRequest(prisma, "VOD_JOB", identity);
+	if (receipt.kind === "none") return undefined;
+	if (receipt.kind === "conflict") return createRequestConflictResponse();
+	const row = await prisma.encodingJob.findUnique({
+		where: { id: receipt.resourceId },
+		select: LIST_SELECT,
+	});
+	if (!row) return createRequestGoneResponse();
+	return NextResponse.json(
+		{ ...row, issues: [], replayed: true },
+		{ status: 200 },
+	);
+}
+
 /**
  * Creates a job through CORE's submitEncodingJob ( PR1 — ONE
  * pipeline; reRunJob and the watch-folder sweep are the other callers).
@@ -230,6 +259,18 @@ export async function POST(req: Request) {
 	const body = bodySchema.safeParse(rawBody);
 	if (!body.success) {
 		return validationError(body.error);
+	}
+	let ordinaryIdentity: CreateRequestIdentity | undefined;
+	let ordinaryContext: Awaited<ReturnType<typeof getServerContext>> | undefined;
+	try {
+		ordinaryIdentity = createRequestIdentity(req, body.data);
+	} catch (err) {
+		if (err instanceof InvalidCreateRequestError)
+			return jsonError(
+				400,
+				"Invalid Idempotency-Key or conflicting verification fields",
+			);
+		throw err;
 	}
 	const { verificationKey, requestSha256, verificationDispatch } = body.data;
 	if (
@@ -243,10 +284,15 @@ export async function POST(req: Request) {
 		});
 	}
 	try {
-		// Fail fast before persisting QUEUED state: with a broken MASTER_KEY
-		// the worker cannot decrypt anything, so the job would just wedge.
-		masterKeyFromEnv();
 		const ctx = await getServerContext();
+		if (ordinaryIdentity) {
+			ordinaryContext = ctx;
+			const replay = await ordinaryCreateReplay(ctx.prisma, ordinaryIdentity);
+			if (replay) return replay;
+		}
+		// A replay needs no decryption; a new job must fail before persisting
+		// QUEUED state if the worker would not be able to decrypt its secrets.
+		masterKeyFromEnv();
 		if (verificationKey !== undefined && requestSha256 !== undefined) {
 			// EV-01: a repeat of a key this deployment already honoured answers
 			// with that row (or 409) BEFORE anything is validated or created —
@@ -336,18 +382,33 @@ export async function POST(req: Request) {
 					select: { id: true },
 				} satisfies Prisma.EncodingJobCreateArgs;
 				if (
-					verificationKey !== undefined &&
-					requestSha256 !== undefined &&
-					verificationDispatch !== undefined
+					ordinaryIdentity ||
+					(verificationKey !== undefined &&
+						requestSha256 !== undefined &&
+						verificationDispatch !== undefined)
 				) {
 					return ctx.prisma.$transaction(async (tx) => {
-						await assertVerificationDispatchFence(tx, {
-							fence: verificationDispatch,
-							kind: "VOD_JOB",
-							verificationKey,
-							requestSha256,
-						});
-						return tx.encodingJob.create(createArgs);
+						if (
+							verificationKey !== undefined &&
+							requestSha256 !== undefined &&
+							verificationDispatch !== undefined
+						) {
+							await assertVerificationDispatchFence(tx, {
+								fence: verificationDispatch,
+								kind: "VOD_JOB",
+								verificationKey,
+								requestSha256,
+							});
+						}
+						const row = await tx.encodingJob.create(createArgs);
+						if (ordinaryIdentity)
+							await recordCreateRequest(
+								tx,
+								"VOD_JOB",
+								ordinaryIdentity,
+								row.id,
+							);
+						return row;
 					});
 				}
 				return ctx.prisma.encodingJob.create(createArgs);
@@ -402,6 +463,21 @@ export async function POST(req: Request) {
 			},
 		);
 	} catch (err) {
+		if (
+			ordinaryIdentity &&
+			ordinaryContext &&
+			isCreateRequestUniqueConflict(err)
+		) {
+			try {
+				const replay = await ordinaryCreateReplay(
+					ordinaryContext.prisma,
+					ordinaryIdentity,
+				);
+				if (replay) return replay;
+			} catch (lookupErr) {
+				return routeError(lookupErr);
+			}
+		}
 		if (err instanceof VerificationDispatchFenceError) {
 			return jsonError(
 				409,

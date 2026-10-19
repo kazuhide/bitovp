@@ -88,7 +88,17 @@ beforeEach(() => {
 	};
 	apiFetch.mockImplementation(
 		async (url: string, options?: { method?: string }) => {
-			if (options?.method === "POST") return { id: "created" };
+			if (url === "/api/auth/session")
+				return {
+					configured: true,
+					authenticated: true,
+					mode: "users",
+					role: "OPERATOR",
+					organizationId: "org",
+					effectiveUserId: "user",
+				};
+			if (options?.method === "POST")
+				return { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" };
 			if (url === "/api/vmaf-compute-profiles") return { items: [profile] };
 			if (url.startsWith("/api/infrastructure/")) return { items: [] };
 			if (url === "/api/credentials")

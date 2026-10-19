@@ -16,6 +16,22 @@ vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
 	apiFetch: (...args: unknown[]) => apiFetch(...args),
 }));
+vi.mock("@/lib/auth/use-session", async (original) => ({
+	...(await original<Record<string, unknown>>()),
+	useSession: () => ({
+		status: "success",
+		isFetchedAfterMount: true,
+		isFetching: false,
+		data: {
+			configured: true,
+			authenticated: true,
+			mode: "users",
+			role: "OPERATOR",
+			organizationId: "org",
+			effectiveUserId: "user",
+		},
+	}),
+}));
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ replace, push: vi.fn() }),

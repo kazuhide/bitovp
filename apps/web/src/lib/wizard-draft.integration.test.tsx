@@ -67,6 +67,7 @@ const vod = {
 };
 beforeEach(() => {
 	localStorage.clear();
+	sessionStorage.clear();
 	vi.clearAllMocks();
 	apiFetch.mockImplementation(async (url: string) =>
 		url === "/api/credentials"
@@ -102,6 +103,13 @@ it("VOD restores manually, retains failed submissions, and clears on success bef
 		).toBe(true),
 	);
 	expect(readWizardDraft(key, "vod")?.value.name).toBe("Saved VOD");
+	const firstPost = apiFetch.mock.calls.find(
+		([, init]) => init?.method === "POST",
+	);
+	const firstRequestKey = new Headers(firstPost?.[1].headers).get(
+		"Idempotency-Key",
+	);
+	expect(firstRequestKey).toMatch(/^[A-Za-z0-9._:-]{1,200}$/);
 	await waitFor(() => expect(submit).toBeEnabled());
 	apiFetch.mockImplementation((_url: string, init?: RequestInit) =>
 		init?.method === "POST"
@@ -112,8 +120,20 @@ it("VOD restores manually, retains failed submissions, and clears on success bef
 	);
 	fireEvent.click(submit);
 	await waitFor(() => expect(succeed).toBeTypeOf("function"));
-	await act(async () => succeed({ id: "created" }));
-	await waitFor(() => expect(push).toHaveBeenCalledWith("/vod/jobs/created"));
+	const retriedPost = apiFetch.mock.calls
+		.filter(([, init]) => init?.method === "POST")
+		.at(-1);
+	expect(new Headers(retriedPost?.[1].headers).get("Idempotency-Key")).toBe(
+		firstRequestKey,
+	);
+	await act(async () =>
+		succeed({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" }),
+	);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/vod/jobs/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+		),
+	);
 	await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
 	expect(localStorage.getItem(key)).toBeNull();
 });
@@ -202,14 +222,34 @@ it("Live restores safe fields and step, requires its secret again, retains failu
 	});
 	fireEvent.click(submit);
 	await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+	const firstLivePost = apiFetch.mock.calls.find(
+		([url, init]) => url === "/api/live-channels" && init?.method === "POST",
+	);
+	const firstLiveKey = new Headers(firstLivePost?.[1].headers).get(
+		"Idempotency-Key",
+	);
+	expect(firstLiveKey).toMatch(/^[a-f0-9]{64}$/);
 	expect(readWizardDraft(key, "live")?.value.name).toBe("Saved live");
 	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
 		url === "/api/live-channels" && init?.method === "POST"
-			? { id: "created-live" }
+			? { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea" }
 			: readResponse?.(url, init),
 	);
 	fireEvent.click(submit);
-	await waitFor(() => expect(push).toHaveBeenCalledWith("/live/created-live"));
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea",
+		),
+	);
+	const retriedLivePost = apiFetch.mock.calls
+		.filter(
+			([url, init]) => url === "/api/live-channels" && init?.method === "POST",
+		)
+		.at(-1);
+	expect(new Headers(retriedLivePost?.[1].headers).get("Idempotency-Key")).toBe(
+		firstLiveKey,
+	);
+	expect(retriedLivePost?.[1].body).toBe(firstLivePost?.[1].body);
 	await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
 	expect(localStorage.getItem(key)).toBeNull();
 });

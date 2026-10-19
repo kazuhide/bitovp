@@ -20,6 +20,24 @@ input, encoding, origin files, delivery/player, then quality measurement.
 | Missing quality renditions | Expected count, QC output availability, output identity, and read permission |
 | Missing controls | Current organization role and feature availability |
 
+## Creation response lost
+
+If creating a VOD job or Live channel times out, retry from the same form with
+the same settings. The wizards and template launch dialogs remember that
+creation in the current browser tab, so a retry returns the original resource
+instead of creating another one. After reloading, restore any settings omitted
+from the saved draft before retrying.
+
+Changing settings or opening a separate new tab can create new work. Check the
+job or channel list before starting over or clearing browser session data.
+Successful creation and an intentional subsequent launch are separate operations.
+If browser session storage is unavailable, creation stops before sending the
+request; allow storage for the application and try again.
+
+If the original resource was deleted, its old creation request is refused.
+Create new work deliberately after reviewing output paths. If the existing
+resource shows a queue error, use its retry or start action from the detail page.
+
 ## Investigate a 404
 
 1. Copy the exact output URL from the affected job or run.

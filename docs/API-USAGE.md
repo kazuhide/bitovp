@@ -141,6 +141,39 @@ rejects writes, including queue operations. [Full contract](user-guide/LIBRARY-A
   non-admin access-gate decisions, not downstream provider/completion statuses.
   Query/body/secrets and background GETs are excluded.
 
+## Retry a creation safely
+
+For `POST /api/encoding-jobs` and `POST /api/live-channels`, send an
+`Idempotency-Key` header to identify one intended creation. Generate the key once
+and reuse it with the same body after a timeout or lost response. Use a new key
+for a deliberately new job or channel, even when its settings are identical.
+Keys accept 1–200 letters, digits, periods, underscores, colons, or hyphens.
+Requests without this header retain the existing behavior: each accepted request
+creates new work.
+
+In the examples below, set `CREATE_KEY` to a key generated once for that intended
+creation. Preserve it for retries; replace it before creating new work.
+
+- A successful new creation returns `201`. A repeated request with the same key
+  and content returns `200`, the same resource ID, and `replayed: true`.
+- Reusing a key with different content returns `409`, with
+  `details.code: "CREATE_REQUEST_CONFLICT"`.
+- If the original job or channel has been deleted, the key returns `410`, with
+  `details.code: "CREATE_REQUEST_GONE"`. It never creates a replacement.
+- Keys are separate for each organization and creation endpoint. Creation
+  receipts survive job/channel deletion and administrative reset.
+- Do not combine this header with the verification-only `verificationKey`,
+  `requestSha256`, or `verificationDispatch` fields; that returns `400`.
+
+A replay returns the resource's current state and does not queue it again.
+If it reports an enqueue error, use its normal retry or start action. A process
+interruption between saving a job and queueing it can leave VOD work `QUEUED`
+without a queue entry; replay does not repair that dispatch. Check worker and
+queue state before starting over. Receiving the same ID confirms creation, not
+successful encoding or delivery. Keep the key and exact submitted body in your
+automation's private records; do not post credentials or plans containing secrets
+publicly.
+
 ## Workflow 1 — VOD submission
 
 AISA `automaticAdPlacement.schedule`: nonempty `{position,maxDeviation,duration?}` rows in seconds, finite ≥0. Zero is preserved; see [contract](user-guide/VOD.md#quality-checks-and-scene-analysis).
@@ -162,6 +195,7 @@ For presets or `packages/core/src/plan/__fixtures__/*.plan.json`, replace
 ```bash
 # submit
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  -H "Idempotency-Key: $CREATE_KEY" \
   --data "{\"plan\": $(cat plan.json)}" https://ovp.example.com/api/encoding-jobs
 # → 201 { "id": "<jobId>", ..., "issues": [...] }   (`issues` carries
 #   non-fatal warnings; 400 lists validation issues — the same
@@ -197,6 +231,7 @@ strip the selector, never retry another mode. Re-air creates a new encoding.
 # CREATED is the initial state, NOT a register-now/start-later mode.
 # The {"plan": …} wrapper is required; a bare wizard plan returns 400.
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  -H "Idempotency-Key: $CREATE_KEY" \
   --data '{"plan": <LiveChannelPlan>}' https://ovp.example.com/api/live-channels
 # → { "id": "<channelId>", "status": "CREATED" }
 

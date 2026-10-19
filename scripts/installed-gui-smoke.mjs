@@ -183,6 +183,58 @@ export function validateReport(report) {
 	);
 }
 
+export function failureSummary(raw) {
+	if (raw === undefined) return ["Browser diagnostic: report unavailable"];
+	let report;
+	try {
+		assert(typeof raw === "string" && raw.length <= 2_000_000);
+		report = JSON.parse(raw);
+		assert(report && Array.isArray(report.suites));
+	} catch {
+		return ["Browser diagnostic: invalid report"];
+	}
+	const statuses = new Map();
+	const pending = [...report.suites];
+	let visited = 0;
+	try {
+		while (pending.length) {
+			assert(++visited <= 256 && pending.length <= 256);
+			const suite = pending.pop();
+			assert(suite && typeof suite === "object");
+			assert(suite.specs === undefined || Array.isArray(suite.specs));
+			assert(suite.suites === undefined || Array.isArray(suite.suites));
+			for (const spec of suite.specs ?? []) {
+				assert(CASES.includes(spec?.title) && !statuses.has(spec.title));
+				assert(spec.tests?.length === 1);
+				const results = spec.tests[0].results;
+				assert(Array.isArray(results));
+				const status = results[0]?.status;
+				statuses.set(
+					spec.title,
+					results.length > 1
+						? "retried"
+						: [
+									"passed",
+									"failed",
+									"timedOut",
+									"skipped",
+									"interrupted",
+								].includes(status)
+							? status
+							: "unknown",
+				);
+			}
+			pending.push(...(suite.suites ?? []));
+		}
+	} catch {
+		return ["Browser diagnostic: unrecognized report structure"];
+	}
+	return CASES.map(
+		(title) =>
+			`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}`,
+	);
+}
+
 export function workerReady(log) {
 	return QUEUES.every((key) => log.includes(`[worker:${key}] listening on `));
 }
@@ -725,6 +777,16 @@ export async function runFixture({
 		);
 	} catch (error) {
 		notify(`Installed GUI smoke failed during ${stage}`);
+		if (stage === "installed GUI browser tests") {
+			let report;
+			try {
+				report = readFileSync(
+					join(state.directory, "browser-results.json"),
+					"utf8",
+				);
+			} catch {}
+			for (const line of failureSummary(report)) notify(line);
+		}
 		if (statePath)
 			writeFileSync(`${statePath}.failure.log`, failureDiagnostics(state), {
 				mode: 0o600,

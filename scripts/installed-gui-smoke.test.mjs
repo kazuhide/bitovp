@@ -16,6 +16,7 @@ import {
 	childEnvironment,
 	cleanupFixture,
 	composeOverride,
+	failureSummary,
 	inside,
 	validateExecutionMode,
 	validateReport,
@@ -109,6 +110,65 @@ test("requires every named browser case to run and pass once without skipping or
 	const retried = report();
 	retried.suites[0].specs[0].tests[0].results.push({ status: "passed" });
 	assert.throws(() => validateReport(retried));
+});
+test("failure summaries expose only known case names and safe statuses", () => {
+	const changed = report();
+	const specs = changed.suites[0].specs;
+	specs[0].tests[0].results[0] = {
+		status: "failed",
+		error: { message: "private password, URL and cookie" },
+		attachments: [{ body: "private attachment" }],
+	};
+	specs[1].tests[0].results[0].status = "timedOut";
+	specs[2].tests[0].results[0].status = "skipped";
+	specs[3].tests[0].results.push({ status: "passed" });
+	specs[4].tests[0].results[0].status = "private-status";
+	const summary = failureSummary(JSON.stringify(changed));
+	assert.deepEqual(summary, [
+		`Browser case: ${CASES[0]}; status=failed`,
+		`Browser case: ${CASES[1]}; status=timedOut`,
+		`Browser case: ${CASES[2]}; status=skipped`,
+		`Browser case: ${CASES[3]}; status=retried`,
+		`Browser case: ${CASES[4]}; status=unknown`,
+		`Browser case: ${CASES[5]}; status=passed`,
+	]);
+	assert(!summary.join("\n").includes("private"));
+});
+test("missing and malformed browser reports produce constant failure categories", () => {
+	assert.deepEqual(failureSummary(), [
+		"Browser diagnostic: report unavailable",
+	]);
+	for (const raw of ["private invalid JSON", "null", "{}", '"private"'])
+		assert.deepEqual(failureSummary(raw), [
+			"Browser diagnostic: invalid report",
+		]);
+	const changed = report();
+	changed.suites[0].specs[0].title = "private case name";
+	assert.deepEqual(failureSummary(JSON.stringify(changed)), [
+		"Browser diagnostic: unrecognized report structure",
+	]);
+});
+test("failure summaries show unstarted cases and bound report traversal", () => {
+	const changed = report();
+	changed.suites[0].specs.pop();
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=not-run`,
+	);
+	const duplicate = report();
+	duplicate.suites[0].specs.push(duplicate.suites[0].specs[0]);
+	assert.deepEqual(failureSummary(JSON.stringify(duplicate)), [
+		"Browser diagnostic: unrecognized report structure",
+	]);
+	assert.deepEqual(failureSummary(" ".repeat(2_000_001)), [
+		"Browser diagnostic: invalid report",
+	]);
+	assert.deepEqual(
+		failureSummary(
+			JSON.stringify({ suites: Array.from({ length: 257 }, () => ({})) }),
+		),
+		["Browser diagnostic: unrecognized report structure"],
+	);
 });
 test("a process being up is insufficient without all worker queue registrations", () => {
 	const queues = [

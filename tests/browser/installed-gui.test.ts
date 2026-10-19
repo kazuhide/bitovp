@@ -328,7 +328,7 @@ test("configure and submit Live and inspect heartbeat", async ({ browser }) => {
 		await page.locator("#lw-account").selectOption(ACCOUNT);
 		await goTo(page, /input/i);
 		await page.locator("#lw-input-kind").selectOption("RTMP");
-		await goTo(page, /ladder/i);
+		await goTo(page, /^\d+\. Video and audio encodes$/);
 		await page.locator("#lw-v-0-width").fill("1280");
 		await page.locator("#lw-v-0-height").fill("720");
 		await page.locator("#lw-v-0-bitrate").fill("1500000");
@@ -366,7 +366,7 @@ test("configure and submit Live and inspect heartbeat", async ({ browser }) => {
 		heartbeatAgeMs = 600_000;
 		await page.reload();
 		await page.locator("#sec-heartbeat > summary").click();
-		await expect(page.getByText(/Sample is stale/)).toBeVisible();
+		await expect(page.getByText(/No heartbeat sample yet/)).toBeVisible();
 		expect(unexpected).toEqual([]);
 	} finally {
 		await context.close();

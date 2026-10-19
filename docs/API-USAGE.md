@@ -119,6 +119,25 @@ tests):
   strict descending keyset, including same-time ties. Invalid input400, foreign
   run404, read failure5xx (not empty success). No provider call or mutation.
 
+## Public request body limits
+
+`POST /api/auth/login` accepts up to **4 KiB**, `POST /api/auth/setup` up to
+**8 KiB**, and `POST /api/webhooks/bitmovin/<scope>/<token>` up to
+**1,000,000 bytes**. These are received UTF-8 byte limits, including streamed
+bodies; non-ASCII characters can occupy several bytes. An oversized request
+returns **413**. Reduce the payload before retrying. Webhook signatures cover
+the exact received bytes, including whitespace and newlines: do not reformat
+or re-serialize JSON before signing it.
+
+The standard ingress can return 413 before authentication, configuration or
+webhook-token checks. A route response already sent before a size violation
+keeps its status. Within the webhook handler, unknown tokens are still rejected
+before reading the body.
+These three paths also receive the same ingress limits through
+`/_next/data/<build-id>/...json` aliases, including stale or unknown build IDs.
+Indexed aliases for these paths receive the size check even when the framework
+would otherwise reject their dynamic or interception-route syntax.
+
 ## Organization and identity
 
 `AUTH_MODE=users` requests are bound to a verified organization. Tokens cannot

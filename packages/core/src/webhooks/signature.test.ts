@@ -7,6 +7,23 @@ const body = '{"type":"ENCODING_FINISHED","id":"abc"}';
 const validSignature = createHmac("sha512", secret).update(body).digest("hex");
 
 describe("verifyWebhookSignature", () => {
+	it.each([
+		Buffer.from(' {\n"type":"TEST", "text":"界"\n}\n'),
+		Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(body)]),
+		Buffer.from([0xff, 0xc3, 0x28]),
+	])("accepts exact raw bytes without decoding or re-serializing: %j", (bytes) => {
+		const expected = createHmac("sha512", secret).update(bytes).digest("hex");
+		expect(computeWebhookSignature(bytes, secret)).toBe(expected);
+		expect(verifyWebhookSignature(bytes, expected, secret)).toBe(true);
+		expect(
+			verifyWebhookSignature(
+				bytes,
+				createHmac("sha512", secret).update(bytes).digest("base64"),
+				secret,
+			),
+		).toBe(true);
+	});
+
 	it("accepts the matching HMAC-SHA512 hex digest", () => {
 		expect(verifyWebhookSignature(body, validSignature, secret)).toBe(true);
 	});

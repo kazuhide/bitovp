@@ -8,8 +8,10 @@ import {
 const ORG_A = "00000000-0000-4000-8000-00000000000a";
 const ORG_B = "00000000-0000-4000-8000-00000000000b";
 
-function database(superuser = false) {
+function database(superuser = false, setupFailure = false) {
 	const committed: string[] = [];
+	const events: string[] = [];
+	const transactionOptions: unknown[] = [];
 	let transactions = 0;
 	const base = {
 		credential: {
@@ -29,22 +31,40 @@ function database(superuser = false) {
 				throw new Error("eager operation");
 			},
 		},
-		$transaction: async (callback: (tx: object) => Promise<unknown>) => {
+		$transaction: async (
+			callback: (tx: object) => Promise<unknown>,
+			options: unknown,
+		) => {
 			transactions++;
+			transactionOptions.push(options);
 			let org: string | undefined;
 			const pending: string[] = [];
 			const tx = {
 				$executeRaw: async (_strings: TemplateStringsArray, value: string) => {
+					events.push("scope");
 					org = value;
 					return 1;
 				},
-				$queryRaw: async (strings: TemplateStringsArray) =>
-					strings.join("").includes("pg_roles")
-						? [{ rolsuper: superuser, rolbypassrls: false }]
-						: [{ org }],
-				$executeRawUnsafe: async () => 0,
+				$queryRaw: async (strings: TemplateStringsArray, value: unknown) => {
+					const sql = strings.join("?");
+					if (sql.includes("pg_roles")) {
+						events.push("role");
+						return [{ rolsuper: superuser, rolbypassrls: false }];
+					}
+					if (sql.includes("statement_timeout")) {
+						events.push(`timeout:${value}`);
+						if (setupFailure) throw new Error("setup refused");
+						return [{ set_config: value }];
+					}
+					return [{ org }];
+				},
+				$executeRawUnsafe: async () => {
+					events.push("readOnly");
+					return 0;
+				},
 				credential: {
 					create: async ({ data }: { data: { label: string } }) => {
+						events.push(`create:${data.label}`);
 						if (data.label === "failure") throw new Error("write refused");
 						pending.push(`${org}:${data.label}`);
 						return { organizationId: org, label: data.label };
@@ -58,10 +78,145 @@ function database(superuser = false) {
 			return result;
 		},
 	} as unknown as AppPrismaClient;
-	return { base, committed, transactions: () => transactions };
+	return {
+		base,
+		committed,
+		events,
+		transactionOptions,
+		transactions: () => transactions,
+	};
 }
 
 describe("tenant command facade", () => {
+	it("sets the timeout after tenant scope and preserves callback options and read-only guards", async () => {
+		const db = database();
+		const a = createTenantPrismaClient(db.base, ORG_A, { readOnly: true });
+		await a.$transaction(
+			async (tx) => {
+				db.events.push("callback");
+				expect(
+					() => tx.$queryRaw`SELECT set_config('statement_timeout', '0', true)`,
+				).toThrow(/Unsafe SQL/);
+				return tx.$queryRaw`SELECT current_setting('bitovp.organization_id')`;
+			},
+			{
+				statementTimeoutMs: 123,
+				timeout: 30000,
+				isolationLevel: "RepeatableRead",
+			},
+		);
+		expect(db.events).toEqual([
+			"readOnly",
+			"role",
+			"scope",
+			"timeout:123ms",
+			"callback",
+		]);
+		expect(db.transactionOptions).toEqual([
+			{ timeout: 30000, isolationLevel: "RepeatableRead" },
+		]);
+	});
+
+	it("sets a lazy batch timeout before ordered commands and strips it from native options", async () => {
+		const db = database();
+		const a = createTenantPrismaClient(db.base, ORG_A);
+		const commands = ["one", "two"].map((label) =>
+			a.credential.create({
+				data: { label, provider: "AWS_S3", encryptedSecret: "cipher" },
+			}),
+		);
+		expect(db.events).toEqual([]);
+		const result = await a.$transaction(commands, {
+			statementTimeoutMs: 123,
+			isolationLevel: "Serializable",
+		});
+		expect(result.map((row) => row.label)).toEqual(["one", "two"]);
+		expect(db.events).toEqual([
+			"role",
+			"scope",
+			"timeout:123ms",
+			"create:one",
+			"create:two",
+		]);
+		expect(db.transactionOptions).toEqual([{ isolationLevel: "Serializable" }]);
+	});
+
+	it.each([
+		0,
+		5001,
+		-1,
+		1.5,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		null,
+		"123",
+	])("rejects invalid timeout %s before beginning or consuming a lazy batch", async (value) => {
+		const db = database();
+		const a = createTenantPrismaClient(db.base, ORG_A);
+		const command = a.credential.create({
+			data: { label: "one", provider: "AWS_S3", encryptedSecret: "cipher" },
+		});
+		await expect(
+			a.$transaction([command], { statementTimeoutMs: value } as never),
+		).rejects.toThrow(/statementTimeoutMs/);
+		await expect(
+			a.$transaction(async () => db.events.push("callback"), {
+				statementTimeoutMs: value,
+			} as never),
+		).rejects.toThrow(/statementTimeoutMs/);
+		expect(db.transactions()).toBe(0);
+		expect(db.events).toEqual([]);
+		await a.$transaction([command]);
+		expect(db.committed).toEqual([`${ORG_A}:one`]);
+	});
+
+	it("forwards native options unchanged without an opt-in and strips explicit undefined", async () => {
+		const db = database();
+		const a = createTenantPrismaClient(db.base, ORG_A);
+		const options = { timeout: 1234, isolationLevel: "Serializable" } as const;
+		await a.$transaction(async () => 1, options);
+		expect(db.transactionOptions[0]).toBe(options);
+		await a.$transaction(async () => 2, {
+			...options,
+			statementTimeoutMs: undefined,
+		});
+		expect(db.transactionOptions[1]).toEqual(options);
+		expect(db.events).toEqual(["role", "scope", "role", "scope"]);
+	});
+
+	it("does not execute or commit tenant commands when timeout setup fails", async () => {
+		const db = database(false, true);
+		const a = createTenantPrismaClient(db.base, ORG_A);
+		await expect(
+			a.$transaction(async () => db.events.push("callback"), {
+				statementTimeoutMs: 123,
+			}),
+		).rejects.toThrow("setup refused");
+		await expect(
+			a.$transaction(
+				[
+					a.credential.create({
+						data: {
+							label: "one",
+							provider: "AWS_S3",
+							encryptedSecret: "cipher",
+						},
+					}),
+				],
+				{ statementTimeoutMs: 123 },
+			),
+		).rejects.toThrow("setup refused");
+		expect(db.committed).toEqual([]);
+		expect(db.events).toEqual([
+			"role",
+			"scope",
+			"timeout:123ms",
+			"role",
+			"scope",
+			"timeout:123ms",
+		]);
+	});
+
 	it("does not execute a command until awaited, then uses its captured organization", async () => {
 		const db = database();
 		const a = createTenantPrismaClient(db.base, ORG_A);
@@ -108,6 +263,12 @@ describe("tenant command facade", () => {
 		const db = database(true);
 		const a = createTenantPrismaClient(db.base, ORG_A);
 		await expect(a.$queryRaw`SELECT 1`).rejects.toThrow(/BYPASSRLS/);
+		await expect(
+			a.$transaction(async () => db.events.push("callback"), {
+				statementTimeoutMs: 123,
+			}),
+		).rejects.toThrow(/BYPASSRLS/);
+		expect(db.events).toEqual(["role", "role"]);
 		const readOnly = createTenantPrismaClient(database().base, ORG_A, {
 			readOnly: true,
 		});

@@ -58,9 +58,48 @@ it("allows only the local library media endpoint as a relative MP4 source", () =
 	}
 });
 
-function catalogDatabase(items: unknown[]) {
+function catalogDatabase(items: Record<string, unknown>[]) {
 	const db = {
-		$queryRaw: vi.fn(async () => [{ total: items.length, items }]),
+		$transaction: vi.fn(async function <T>(
+			this: AppPrismaClient,
+			callback: (tx: AppPrismaClient) => Promise<T>,
+		) {
+			return callback(this);
+		}),
+		$queryRaw: vi.fn(
+			async (sql: TemplateStringsArray, ...values: unknown[]) => {
+				if (sql.join("").includes("AS candidates"))
+					return [
+						{
+							candidates: items,
+							scanned: items.length,
+							cursorId: items.at(-1)?.id,
+							cursorUpdatedAt: new Date(0),
+						},
+					];
+				const ids = values[0] as string[];
+				const fields = [
+					"id",
+					"title",
+					"description",
+					"tags",
+					"locale",
+					"revision",
+					"archived",
+					"updatedAt",
+					"analysisSummary",
+				];
+				return [
+					{
+						items: items
+							.filter((item) => ids.includes(item.id as string))
+							.map((item) =>
+								Object.fromEntries(fields.map((key) => [key, item[key]])),
+							),
+					},
+				];
+			},
+		),
 		encodingJob: { findMany: vi.fn(async () => []) },
 		credential: { findMany: vi.fn(async () => []) },
 	};
@@ -117,7 +156,10 @@ it("filters before pagination and counts every search/archive-scoped asset", asy
 		TemplateStringsArray,
 		...unknown[],
 	];
-	expect(sql.join("?")).not.toMatch(/LIMIT 25|OFFSET/);
+	expect(sql.join("?")).toContain(
+		'ORDER BY c."updatedAt" DESC, c.id DESC LIMIT',
+	);
+	expect(values).toContain(250);
 	expect(sql.join("?")).toContain("c.archived =");
 	expect(sql.join("?")).toContain("r.revision = c.revision");
 	expect(values).toContain(true);

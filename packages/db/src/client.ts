@@ -1,5 +1,9 @@
 import { loadEnv } from "@bitovp/core";
 import { Prisma, PrismaClient } from "../generated/client";
+import {
+	setStatementTimeout,
+	transactionSettings,
+} from "./transaction-settings";
 
 /**
  * The generated Prisma client's handles, pinned to ONE module instance per
@@ -171,6 +175,8 @@ type TransactionOptions = {
 	maxWait?: number;
 	timeout?: number;
 	isolationLevel?: Prisma.TransactionIsolationLevel;
+	/** Transaction-local PostgreSQL statement limit; integer milliseconds, 1..5000. */
+	statementTimeoutMs?: number;
 };
 export type AppPrismaClient = Omit<
 	RawPrismaClient,
@@ -180,7 +186,7 @@ export type AppPrismaClient = Omit<
 	vmafExecutionProfile: ProfileDelegate;
 	$transaction<P extends Prisma.PrismaPromise<unknown>[]>(
 		commands: [...P],
-		options?: Pick<TransactionOptions, "isolationLevel">,
+		options?: Pick<TransactionOptions, "isolationLevel" | "statementTimeoutMs">,
 	): Promise<{ [K in keyof P]: Awaited<P[K]> }>;
 	$transaction<T>(
 		callback: (tx: AppTransactionClient) => Promise<T>,
@@ -193,7 +199,41 @@ export type AppTransactionClient = Omit<
 >;
 
 export function createPrismaClient(databaseUrl?: string): AppPrismaClient {
-	return constructPrismaClient(databaseUrl) as unknown as AppPrismaClient;
+	const client = constructPrismaClient(databaseUrl);
+	const transaction = client.$transaction as (
+		input: unknown,
+		options?: unknown,
+	) => Promise<unknown>;
+	client.$transaction = function (
+		this: RawPrismaClient,
+		...args: [input: unknown, options?: unknown]
+	) {
+		const [input, options] = args;
+		const { nativeOptions, statementTimeoutMs } = transactionSettings(options);
+		if (statementTimeoutMs === undefined)
+			return nativeOptions === options
+				? transaction.apply(this, args)
+				: transaction.call(this, input, nativeOptions);
+		if (typeof input === "function")
+			return transaction.call(
+				this,
+				async (tx: AppTransactionClient) => {
+					await setStatementTimeout(tx, statementTimeoutMs);
+					return input(tx);
+				},
+				nativeOptions,
+			);
+		if (Array.isArray(input))
+			return transaction
+				.call(
+					this,
+					[setStatementTimeout(this, statementTimeoutMs), ...input],
+					nativeOptions,
+				)
+				.then((results) => (results as unknown[]).slice(1));
+		return transaction.call(this, input, nativeOptions);
+	} as typeof client.$transaction;
+	return client as unknown as AppPrismaClient;
 }
 
 /**

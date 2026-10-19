@@ -630,6 +630,16 @@ function setup(
 		liveSchedule,
 		liveChannelRun,
 		startupSample,
+		$queryRaw: vi.fn(
+			async (
+				_sql: TemplateStringsArray,
+				channelId: string,
+				encodingId: string,
+			) =>
+				row.id === channelId && row.bitmovinEncodingId === encodingId
+					? [{ id: row.id }]
+					: [],
+		),
 		$transaction: vi.fn(async <T>(fn: (tx: AppPrismaClient) => Promise<T>) => {
 			let release = () => {};
 			const predecessor = transactionTail;

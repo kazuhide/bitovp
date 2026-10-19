@@ -140,6 +140,7 @@ describe("customer Compose isolation", () => {
 		expect(c.services.worker.environment.VMAF_CONCURRENCY).toBe("1");
 		expect(c.services.worker.environment.VMAF_THREADS).toBe("2");
 		expect(c.services.worker.mem_limit).toBe("4294967296");
+		expect(c.services.web.mem_limit).toBe("1073741824");
 		for (const s of Object.values(c.services) as {
 			mem_limit: string;
 			memswap_limit: string;

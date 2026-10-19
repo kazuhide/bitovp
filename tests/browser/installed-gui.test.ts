@@ -11,6 +11,15 @@ import {
 import { liveChannelPlanSchema } from "../../packages/core/src/live/schema";
 import { encodingPlanSchema } from "../../packages/core/src/plan/schema";
 
+import {
+	type AuthenticationObservations,
+	classifyNavigationContentType,
+	observeSessionResponses,
+	recordBrowserError,
+	recordConsoleError,
+	selectGuiStates,
+} from "./diagnostics";
+
 const fixture = JSON.parse(
 	readFileSync(process.env.BITOVP_GUI_SMOKE_FIXTURE as string, "utf8"),
 );
@@ -40,69 +49,18 @@ function submissionStage(
 	info.annotations.push({ type: "smoke-stage", description });
 }
 
-function observeSessionResponses(page: Page) {
-	const history: { state: string }[] = [];
-	const add = (state: string) => {
-		const entry = { state };
-		history.push(entry);
-		if (history.length > 8) history.shift();
-		return entry;
-	};
-	const isSession = (url: string) => {
-		const parsed = new URL(url);
-		return (
-			parsed.origin === fixture.baseURL &&
-			parsed.pathname === "/api/auth/session"
-		);
-	};
-	page.on("response", (response) => {
-		if (!isSession(response.url())) return;
-		const entry = add(
-			response.status() === 200 ? "session-pending" : "session-http-error",
-		);
-		if (response.status() !== 200) return;
-		void response
-			.json()
-			.then((data: unknown) => {
-				if (!data || typeof data !== "object") {
-					entry.state = "session-invalid";
-					return;
-				}
-				const session = data as Record<string, unknown>;
-				entry.state =
-					typeof session.configured !== "boolean" ||
-					typeof session.authenticated !== "boolean"
-						? "session-invalid"
-						: !session.configured
-							? "session-unconfigured"
-							: !session.authenticated
-								? "session-anonymous"
-								: session.mode === "users" && session.role === "ADMIN"
-									? "session-admin"
-									: "session-authenticated-other";
-			})
-			.catch(() => {
-				entry.state = "session-unreadable";
-			});
-	});
-	page.on("requestfailed", (request) => {
-		if (isSession(request.url())) add("session-request-failed");
-	});
-	return history;
-}
-
 async function observeFailedPage(
 	page: Page,
 	info: TestInfo,
-	sessions: { state: string }[],
+	observations: AuthenticationObservations,
 	navigationStatus: number | undefined,
+	navigationContentType: ReturnType<typeof classifyNavigationContentType>,
 	unexpected: string[],
 ) {
-	const add = (description: string) =>
-		info.annotations.push({ type: "smoke-state", description });
+	const states: string[] = [];
 	try {
 		const path = new URL(page.url()).pathname;
-		add(
+		states.push(
 			path === "/vod/new"
 				? "route-vod-new"
 				: path === "/login"
@@ -113,57 +71,138 @@ async function observeFailedPage(
 							? "route-root"
 							: "route-other",
 		);
-		add(
+		states.push(
 			navigationStatus === undefined
 				? "navigation-unknown"
 				: navigationStatus === 200
 					? "navigation-ok"
 					: "navigation-error",
 		);
-		const ready = await page.evaluate(() => document.readyState);
-		add(
-			ready === "complete"
-				? "ready-complete"
-				: ready === "interactive"
-					? "ready-interactive"
-					: ready === "loading"
-						? "ready-loading"
-						: "ready-unknown",
+		states.push(`navigation-content-${navigationContentType}`);
+		states.push(
+			...(await page.evaluate(() => {
+				const visible = (element: Element | null) =>
+					element instanceof HTMLElement &&
+					element.getClientRects().length > 0 &&
+					!["hidden", "collapse"].includes(
+						getComputedStyle(element).visibility,
+					);
+				const knownText = (selector: string, text: string) =>
+					Array.from(document.querySelectorAll(selector)).some(
+						(element) =>
+							visible(element) && element.textContent?.trim() === text,
+					);
+				const shell = document.querySelector("#page-content");
+				const organization = document.querySelector("#current-organization");
+				const field = document.querySelector("#wz-name");
+				const nav = document.querySelector('nav[aria-label="Wizard steps"]');
+				const currentStep = nav
+					? Array.from(nav.querySelectorAll("button")).findIndex(
+							(button) => button.getAttribute("aria-current") === "step",
+						)
+					: -1;
+				const hasContent = (root: Element) =>
+					Array.from(
+						root.querySelectorAll(
+							'section,form,h1,h2,p,input,button,nav,[role="status"],[role="alert"]',
+						),
+					).some(visible);
+				const heading = knownText(
+					"h1,h2",
+					"Something broke while rendering this page",
+				)
+					? "global-error"
+					: knownText("h1,h2", "Sign in required")
+						? "sign-in-required"
+						: knownText("h1,h2", "Page not found")
+							? "content-not-found"
+							: knownText("h1,h2", "New VOD Job")
+								? "content-vod"
+								: knownText("h1,h2", "Dashboard")
+									? "content-dashboard"
+									: hasContent(shell ?? document.body)
+										? "content-other"
+										: "content-empty";
+				const permission = knownText("h1,h2", "Sign in required")
+					? "sign-in-required"
+					: visible(
+								document.querySelector(
+									'[role="status"][aria-label="Checking your permissions…"]',
+								),
+							)
+						? "permission-checking"
+						: knownText(
+									'[role="alert"]',
+									"Your permissions could not be confirmed. Reload the page or try again.",
+								)
+							? "permission-unverified"
+							: knownText(
+										'[role="alert"]',
+										"You do not have permission to view this screen. Ask an administrator for access.",
+									)
+								? "permission-denied"
+								: Array.from(document.querySelectorAll('[role="alert"]')).some(
+											visible,
+										)
+									? "alert-visible"
+									: "permission-none";
+				return [
+					document.readyState === "complete"
+						? "ready-complete"
+						: document.readyState === "interactive"
+							? "ready-interactive"
+							: document.readyState === "loading"
+								? "ready-loading"
+								: "ready-unknown",
+					document.documentElement.id === "__next_error__"
+						? "document-next-error"
+						: shell
+							? "document-app-shell"
+							: !hasContent(document.body)
+								? "document-empty"
+								: "document-other",
+					visible(organization)
+						? "organization-visible"
+						: organization
+							? "organization-attached"
+							: "organization-missing",
+					heading,
+					permission,
+					knownText("button", "Discard import")
+						? "wizard-imported"
+						: !nav
+							? "wizard-nav-missing"
+							: !visible(nav)
+								? "wizard-nav-hidden"
+								: currentStep >= 0 && currentStep < 8
+									? `wizard-step-${currentStep + 1}`
+									: "wizard-nav-no-current",
+					visible(field)
+						? "wizard-visible"
+						: field
+							? "wizard-attached"
+							: "wizard-missing",
+				];
+			})),
 		);
-		if (await page.locator("#wz-name").count()) add("wizard-attached");
-		if (await page.locator("#wz-name").isVisible()) add("wizard-visible");
-		for (const [name, state] of [
-			["Sign in required", "sign-in-required"],
-			["Something broke while rendering this page", "global-error"],
-		] as const)
-			if (await page.getByRole("heading", { name, exact: true }).isVisible())
-				add(state);
-		if (
-			await page
-				.getByRole("status", {
-					name: "Checking your permissions…",
-					exact: true,
-				})
-				.isVisible()
-		)
-			add("permission-checking");
-		for (const [text, state] of [
-			[
-				"Your permissions could not be confirmed. Reload the page or try again.",
-				"permission-unverified",
-			],
-			[
-				"You do not have permission to view this screen. Ask an administrator for access.",
-				"permission-denied",
-			],
-		] as const)
-			if (await page.getByText(text, { exact: true }).isVisible()) add(state);
-		if (await page.getByRole("alert").first().isVisible()) add("alert-visible");
 	} catch {
-		add("diagnostic-unavailable");
+		states.push("diagnostic-unavailable");
 	}
-	if (unexpected.length) add("browser-error");
-	for (const entry of sessions) add(entry.state);
+	if (states.includes("route-login"))
+		states.push(
+			observations.login.fields,
+			observations.login.http,
+			observations.login.code,
+		);
+	states.push(
+		...observations.browserErrors,
+		...observations.history.map((entry) => entry.state),
+	);
+	if (unexpected.length) states.push("browser-error");
+	if (observations.postLoginSessionStarted)
+		states.push("session-post-login-started");
+	for (const description of selectGuiStates(states))
+		info.annotations.push({ type: "smoke-state", description });
 }
 
 async function open(browser: Browser, signedIn = true, accounts = true) {
@@ -563,19 +602,34 @@ test("keep independent installation sessions isolated", async ({
 	browser,
 }, info) => {
 	const { context, page, unexpected } = await open(browser, false, false);
-	const sessions = observeSessionResponses(page);
+	const observations = observeSessionResponses(page, fixture.baseURL, {
+		email: fixture.email,
+		password: fixture.password,
+	});
 	let navigationStatus: number | undefined;
+	let navigationContentType: ReturnType<typeof classifyNavigationContentType> =
+		"unknown";
 	const secondary = await context.newPage();
-	secondary.on("pageerror", (error) => unexpected.push(error.message));
+	secondary.on("pageerror", (error) => {
+		unexpected.push(error.message);
+		recordBrowserError(observations, error);
+	});
+	secondary.on("console", (message) =>
+		recordConsoleError(observations, message),
+	);
 	try {
 		await page.goto(`${fixture.baseURL}/login`);
 		await page.locator("#email").fill(fixture.email);
 		await page.locator("#password").fill(fixture.password);
 		await page.getByRole("button", { name: "Sign in", exact: true }).click();
 		await expect(page).toHaveURL(`${fixture.baseURL}/`);
-		navigationStatus = (
-			await page.goto(`${fixture.baseURL}/vod/new`)
-		)?.status();
+		// URL commit alone does not establish an authenticated, hydrated shell.
+		await expect(page.locator("#current-organization")).toBeVisible();
+		const navigation = await page.goto(`${fixture.baseURL}/vod/new`);
+		navigationStatus = navigation?.status();
+		navigationContentType = classifyNavigationContentType(
+			navigation?.headers()["content-type"],
+		);
 		await expect(page.locator("#wz-name")).toBeVisible();
 
 		await secondary.goto(`${fixture.secondary.baseURL}/setup`);
@@ -589,6 +643,7 @@ test("keep independent installation sessions isolated", async ({
 			.getByRole("button", { name: "Create admin and sign in", exact: true })
 			.click();
 		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/`);
+		await expect(secondary.locator("#current-organization")).toBeVisible();
 		await secondary
 			.getByRole("button", { name: "Sign out", exact: true })
 			.click();
@@ -599,6 +654,7 @@ test("keep independent installation sessions isolated", async ({
 			.getByRole("button", { name: "Sign in", exact: true })
 			.click();
 		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/`);
+		await expect(secondary.locator("#current-organization")).toBeVisible();
 		await secondary.goto(`${fixture.secondary.baseURL}/vod/new`);
 		await expect(secondary.locator("#wz-name")).toBeVisible();
 		await page.reload();
@@ -651,7 +707,14 @@ test("keep independent installation sessions isolated", async ({
 		).toBe(fixture.secondary.email);
 		expect(unexpected).toEqual([]);
 	} catch (error) {
-		await observeFailedPage(page, info, sessions, navigationStatus, unexpected);
+		await observeFailedPage(
+			page,
+			info,
+			observations,
+			navigationStatus,
+			navigationContentType,
+			unexpected,
+		);
 		throw error;
 	} finally {
 		await context.close();

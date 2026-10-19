@@ -24,6 +24,8 @@ import {
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
+import { selectGuiStates } from "../tests/browser/diagnostics.ts";
+
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
 const LABEL = "io.bitovp.gui-smoke";
@@ -213,49 +215,18 @@ export function failureSummary(raw) {
 				assert(Array.isArray(results));
 				const status = results[0]?.status;
 				if (status === "failed" || status === "timedOut") {
-					for (const annotation of Array.isArray(spec.tests[0].annotations)
+					const annotations = Array.isArray(spec.tests[0].annotations)
 						? spec.tests[0].annotations.slice(0, 32)
-						: []) {
-						if (
-							annotation?.type === "smoke-state" &&
-							[
-								"route-vod-new",
-								"route-login",
-								"route-setup",
-								"route-root",
-								"route-other",
-								"ready-complete",
-								"ready-interactive",
-								"ready-loading",
-								"ready-unknown",
-								"navigation-ok",
-								"navigation-error",
-								"navigation-unknown",
-								"wizard-attached",
-								"wizard-visible",
-								"permission-checking",
-								"sign-in-required",
-								"permission-unverified",
-								"permission-denied",
-								"global-error",
-								"alert-visible",
-								"browser-error",
-								"diagnostic-unavailable",
-								"session-pending",
-								"session-http-error",
-								"session-unreadable",
-								"session-invalid",
-								"session-unconfigured",
-								"session-anonymous",
-								"session-admin",
-								"session-authenticated-other",
-								"session-request-failed",
-							].includes(annotation.description)
-						) {
-							const values = observations.get(spec.title) ?? [];
-							if (values.length < 24) values.push(annotation.description);
-							observations.set(spec.title, values);
-						}
+						: [];
+					const values = selectGuiStates(
+						annotations.map((annotation) =>
+							annotation?.type === "smoke-state"
+								? annotation.description
+								: undefined,
+						),
+					);
+					if (values.length) observations.set(spec.title, values);
+					for (const annotation of annotations) {
 						if (
 							annotation?.type === "smoke-stage" &&
 							[
@@ -426,6 +397,183 @@ const docker = (args, env, execute = command, options = {}) =>
 		timeout: 60_000,
 		...options,
 	});
+
+async function ownedPrimaryWeb(state, env, execute) {
+	assert(/^[a-f0-9]{32}$/.test(state.id));
+	const listed = await docker(
+		[
+			"ps",
+			"--all",
+			"--quiet",
+			"--no-trunc",
+			"--filter",
+			`label=${LABEL}=${state.id}`,
+			"--filter",
+			`label=com.docker.compose.project=${ownedName(state.id)}`,
+			"--filter",
+			"label=com.docker.compose.service=web",
+		],
+		env,
+		execute,
+	);
+	assert(typeof listed === "string" && listed.length <= 256);
+	const ids = listed.split(/\s+/).filter(Boolean);
+	assert(ids.length === 1 && /^[a-f0-9]{64}$/.test(ids[0]));
+	const raw = await docker(
+		[
+			"container",
+			"inspect",
+			"--format",
+			`{"fixture":{{json (index .Config.Labels "${LABEL}")}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}}}`,
+			ids[0],
+		],
+		env,
+		execute,
+	);
+	assert(typeof raw === "string" && raw.length <= 4096);
+	const labels = JSON.parse(raw);
+	assert(
+		labels?.fixture === state.id &&
+			labels.project === ownedName(state.id) &&
+			labels.service === "web",
+	);
+	return ids[0];
+}
+
+/** Inspect only the owned primary Web's labels and lifecycle fields after failure. */
+export async function reportPrimaryWebFailure(
+	state,
+	{ env = process.env, execute = command, notify = console.log } = {},
+) {
+	let line = "Primary Web diagnostic: unavailable";
+	try {
+		const id = await ownedPrimaryWeb(state, env, execute);
+		const raw = await docker(
+			[
+				"container",
+				"inspect",
+				"--format",
+				'{"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"exit":{{json .State.ExitCode}},"restarts":{{json .RestartCount}}}',
+				id,
+			],
+			env,
+			execute,
+		);
+		assert(typeof raw === "string" && raw.length <= 4096);
+		const data = JSON.parse(raw);
+		assert(
+			typeof data?.running === "boolean" &&
+				typeof data.oom === "boolean" &&
+				Number.isInteger(data.exit) &&
+				data.exit >= 0 &&
+				data.exit <= 255 &&
+				Number.isSafeInteger(data.restarts) &&
+				data.restarts >= 0,
+		);
+		line = `Primary Web diagnostic: running=${data.running}; oom=${data.oom}; exit=${data.exit === 0 ? "zero" : data.exit === 137 ? "137" : "other"}; restarts=${data.restarts === 0 ? "none" : "some"}`;
+	} catch {
+		// Diagnostic failures must not replace the original browser failure.
+	}
+	try {
+		await notify(line);
+	} catch {}
+}
+
+export function parseWebMemory(raw) {
+	assert(typeof raw === "string" && raw.length <= 4096);
+	const [current, peak, limit, ...events] = raw.trim().split("\n");
+	const unsigned = (value, maximum) => {
+		assert(typeof value === "string" && /^\d{1,16}$/.test(value));
+		const number = Number(value);
+		assert(Number.isSafeInteger(number) && number <= maximum);
+		return number;
+	};
+	const event = (key) => {
+		const matches = events.filter((line) => line.startsWith(`${key} `));
+		assert(matches.length === 1);
+		return unsigned(matches[0].slice(key.length + 1), 1_000_000_000);
+	};
+	const maximum = 64 * 1024 ** 3;
+	const sample = {
+		current: unsigned(current, maximum),
+		peak: unsigned(peak, maximum),
+		limit: unsigned(limit, maximum),
+		oom: event("oom"),
+		oomKill: event("oom_kill"),
+	};
+	assert(sample.limit > 0 && sample.peak >= sample.current);
+	return sample;
+}
+
+export async function withWebMemoryProof(state, run, options) {
+	const before = await reportPrimaryWebMemory(state, "before", options);
+	let after;
+	try {
+		await run();
+	} finally {
+		after = await reportPrimaryWebMemory(state, "after", options);
+	}
+	validateWebMemory(before);
+	validateWebMemory(after);
+	assert(
+		before.containerId === after.containerId,
+		"Hosted Web memory proof must use one primary container",
+	);
+}
+
+export function validateWebMemory(sample) {
+	assert(
+		sample &&
+			sample.limit === 1024 ** 3 &&
+			sample.oom === 0 &&
+			sample.oomKill === 0,
+		"Hosted Web memory proof requires a 1 GiB limit and no OOM events or kills",
+	);
+}
+
+/** Read the lifetime kernel peak at two checkpoints without a polling process. */
+export async function reportPrimaryWebMemory(
+	state,
+	checkpoint,
+	{ env = process.env, execute = command, notify = console.log } = {},
+) {
+	const phase = ["before", "after"].includes(checkpoint)
+		? checkpoint
+		: "unknown";
+	let line = `Primary Web memory: checkpoint=${phase}; unavailable`,
+		sample = null;
+	try {
+		assert(phase !== "unknown");
+		const id = await ownedPrimaryWeb(state, env, execute);
+		sample = {
+			...parseWebMemory(
+				await docker(
+					[
+						"exec",
+						id,
+						"cat",
+						"/sys/fs/cgroup/memory.current",
+						"/sys/fs/cgroup/memory.peak",
+						"/sys/fs/cgroup/memory.max",
+						"/sys/fs/cgroup/memory.events",
+					],
+					env,
+					execute,
+				),
+			),
+			containerId: id,
+		};
+		const mib = (value) => Math.ceil(value / 1024 ** 2);
+		line = `Primary Web memory: checkpoint=${phase}; currentMiB=${mib(sample.current)}; peakMiB=${mib(sample.peak)}; limitMiB=${mib(sample.limit)}; oom=${sample.oom === 0 ? "0" : "some"}; oom_kill=${sample.oomKill === 0 ? "0" : "some"}`;
+	} catch {
+		// Unavailable counters must not hide the original browser failure or become zeros.
+	}
+	try {
+		await notify(line);
+	} catch {}
+	return sample;
+}
+
 const privateDirectory = (state) => {
 	assert(/^[a-f0-9]{32}$/.test(state.id), "Invalid smoke test identity");
 	assert(
@@ -841,25 +989,34 @@ export async function runFixture({
 			notify(
 				"Checking real setup, sign-in, VOD and Live forms, heartbeat settings and independent installation sessions in hosted Chromium",
 			);
-			await execute(
-				"pnpm",
-				[
-					"exec",
-					"playwright",
-					"test",
-					"--config",
-					"tests/browser/playwright.config.ts",
-				],
-				{
-					env: { ...primary.clean, BITOVP_GUI_SMOKE_FIXTURE: fixture },
-					timeout: 600_000,
-					log: join(state.directory, "command.log"),
+			await withWebMemoryProof(
+				state,
+				async () => {
+					await execute(
+						"pnpm",
+						[
+							"exec",
+							"playwright",
+							"test",
+							"--config",
+							"tests/browser/playwright.config.ts",
+						],
+						{
+							env: { ...primary.clean, BITOVP_GUI_SMOKE_FIXTURE: fixture },
+							timeout: 600_000,
+							log: join(state.directory, "command.log"),
+						},
+					);
+					validateReport(
+						JSON.parse(
+							readFileSync(
+								join(state.directory, "browser-results.json"),
+								"utf8",
+							),
+						),
+					);
 				},
-			);
-			validateReport(
-				JSON.parse(
-					readFileSync(join(state.directory, "browser-results.json"), "utf8"),
-				),
+				{ env, execute, notify },
 			);
 			notify(
 				`${CASES.length} installed GUI browser tests passed without skips or retries`,
@@ -905,6 +1062,7 @@ export async function runFixture({
 	} catch (error) {
 		notify(`Installed GUI smoke failed during ${stage}`);
 		if (stage === "installed GUI browser tests") {
+			await reportPrimaryWebFailure(state, { env, notify });
 			let report;
 			try {
 				report = readFileSync(

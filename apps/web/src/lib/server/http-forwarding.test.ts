@@ -162,6 +162,9 @@ describe("HTTP ingress body limits with a loopback upstream", () => {
 		"/api/other/../auth/login",
 		"//api//auth/login",
 		"/api\\auth\\login",
+		"/_next/data/current-build/api/auth/login.json",
+		"/_next/data/current-build/index/api/auth/login.json",
+		"/_next/data/current-build/api/%61uth/login.json",
 	])("applies the limit to normalized route %s", async (path) => {
 		const { port, received } = await fixture();
 		const { connection, result } = client(port, path);
@@ -170,11 +173,36 @@ describe("HTTP ingress body limits with a loopback upstream", () => {
 		expect(received.bytes).toBeLessThanOrEqual(4096);
 	});
 	it.each([
+		["/_next/data/current-build/api/auth/login.json", 4096],
+		["/_next/data/current-build/api/auth/setup.json", 8192],
+		["/_next/data/current-build/api/webhooks/bitmovin/j/token.json", 1_000_000],
+	] as const)("limits a streamed data alias %s before the client ends", async (path, limit) => {
+		const { port, received, forwarded } = await fixture();
+		const { connection, result } = client(port, path, {
+			"transfer-encoding": "chunked",
+		});
+		try {
+			connection.write(Buffer.alloc(limit));
+			await forwarded;
+			connection.write(Buffer.from("!"));
+			expect((await result).status).toBe(413);
+			expect(received.bytes).toBeLessThanOrEqual(limit);
+			expect(received.bodies).toEqual([]);
+		} finally {
+			connection.destroy();
+		}
+	});
+	it.each([
 		["/api/auth/login", 4096],
 		["/api/auth/setup", 8192],
 		["/api/webhooks/bitmovin/j/token", 1_000_000],
-		["/api/encodings", 20_000],
-		["/api/live/encodings", 20_000],
+		["/api/encoding-jobs", 20_000],
+		["/api/live-channels", 20_000],
+		["/_next/data/current-build/api/auth/login.json", 4096],
+		["/_next/data/current-build/api/auth/setup.json", 8192],
+		["/_next/data/current-build/api/webhooks/bitmovin/j/token.json", 1_000_000],
+		["/_next/data/current-build/api/encoding-jobs.json", 20_000],
+		["/_next/data/current-build/api/live-channels.json", 20_000],
 	] as const)("preserves every byte on %s", async (path, length) => {
 		const { port, received } = await fixture();
 		const body = Buffer.alloc(length, 0xc3);

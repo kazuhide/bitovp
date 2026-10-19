@@ -86,6 +86,27 @@ describe("bounded request bytes", () => {
 
 describe("public body policies", () => {
 	it.each([
+		["/_next/data/current-build/api/auth/login.json", 4096],
+		["/_next/data/current-build/index/api/auth/login.json", 4096],
+		["/_next/data/current-build/api/%61uth/login.json", 4096],
+		["/_next/data/unknown-build/api%2fauth%2flogin.json", 4096],
+		["/_next/data/current-build/api/auth/setup.json?q=1", 8192],
+		["/_next/data/current-build/api/webhooks/bitmovin/j/token.json", 1_000_000],
+	] as const)("protects the data alias %s", (path, limit) => {
+		expect(publicRequestBodyPolicy("POST", path)?.limit).toBe(limit);
+	});
+	it.each([
+		"/%5fnext/data/current-build/api/auth/login.json",
+		"/_next/data/current-build/api/auth/login%2ejson",
+		"/_next/data/current-build/api/auth/login.json/extra",
+		"/_next/data/current-build/index/index/api/auth/login.json",
+		"/_next/data/current-build/index/api/webhooks/bitmovin/[scope]/token.json",
+		"/_next/data/current-build/api/encoding-jobs.json",
+		"/_next/data/current-build/api/live-channels.json",
+	])("does not unwrap an unrelated or differently encoded data path %s", (path) => {
+		expect(publicRequestBodyPolicy("POST", path)).toBeNull();
+	});
+	it.each([
 		"/api/auth/login",
 		"/api/auth/login/?q=1",
 		"/api/other/../auth/login",
@@ -108,8 +129,8 @@ describe("public body policies", () => {
 	it.each([
 		"/api/auth/login/extra",
 		"/api/auth/login-extra",
-		"/api/encodings",
-		"/api/live/encodings",
+		"/api/encoding-jobs",
+		"/api/live-channels",
 		"/api/webhooks/bitmovin",
 		"/api/webhooks/bitmovin/j/token/extra",
 		"/api/auth/login.rsc",

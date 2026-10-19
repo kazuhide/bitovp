@@ -133,6 +133,8 @@ The standard ingress can return 413 before authentication, configuration or
 webhook-token checks. A route response already sent before a size violation
 keeps its status. Within the webhook handler, unknown tokens are still rejected
 before reading the body.
+These three paths also receive the same ingress limits through
+`/_next/data/<build-id>/...json` aliases, including stale or unknown build IDs.
 
 ## Organization and identity
 

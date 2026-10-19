@@ -30,6 +30,7 @@ export function forwardHttpRequest(
 	incoming: IncomingMessage,
 	outgoing: ServerResponse,
 	options: RequestOptions,
+	connect: typeof request = request,
 ) {
 	const policy = publicRequestBodyPolicy(incoming.method, incoming.url);
 	if (
@@ -41,15 +42,16 @@ export function forwardHttpRequest(
 	}
 	let rejected = false;
 	let counter: Transform | undefined;
-	const upstream = request(options, (response) => {
+	const upstream = connect(options, (response) => {
 		if (rejected) {
 			response.resume();
 			return;
 		}
-		if (policy && !incoming.readableEnded) {
-			// A completed early route response wins before any size violation.
+		if (policy && !counter?.writableFinished) {
+			// Input can end while unchecked chunks remain queued in the transform.
 			incoming.unpipe(counter);
 			incoming.pause();
+			counter?.unpipe(upstream);
 			counter?.destroy();
 			outgoing.once("finish", () => {
 				upstream.destroy();

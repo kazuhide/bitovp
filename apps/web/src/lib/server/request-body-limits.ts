@@ -47,6 +47,18 @@ export function publicRequestBodyPolicy(
 	} catch {
 		return null;
 	}
+	// Next unwraps data URLs before its decoded filesystem lookup. Apply the
+	// same size policy to stale build IDs too, without rewriting the request.
+	const dataPath = /^\/_next\/data\/[^/]+(\/.*)\.json$/.exec(pathname)?.[1];
+	if (dataPath) {
+		pathname = dataPath;
+		if (
+			pathname.startsWith("/index/") &&
+			!/\/\[[^/]+?\](?=\/|$)/.test(pathname)
+		) {
+			pathname = pathname.slice(6);
+		}
+	}
 	const direct = policyForPath(pathname);
 	if (direct) return direct;
 	try {

@@ -100,9 +100,92 @@ function scan(directory, entries) {
 	};
 }
 
-function canary() {
-	return randomBytes(32).toString("hex");
+function canary({ bytes = randomBytes, length = 64 } = {}) {
+	// Balanced pools keep entropy above the scanner thresholds even with a
+	// repeated random source. Alternating letters/digits avoids hex stopwords.
+	const shuffle = (alphabet) => {
+		const pool = Array.from(
+			{ length: length / 2 },
+			(_, index) => alphabet[index % alphabet.length],
+		);
+		const random = bytes(pool.length);
+		for (let index = pool.length - 1; index > 0; index--) {
+			const other = random[index] % (index + 1);
+			[pool[index], pool[other]] = [pool[other], pool[index]];
+		}
+		return pool;
+	};
+	const letters = shuffle("abcdef");
+	const digits = shuffle("0123456789");
+	return letters.map((letter, index) => `${letter}${digits[index]}`).join("");
 }
+
+function assertCanariesDetected(directory, sources) {
+	const secrets = [];
+	const expected = [];
+	const lines = [];
+	for (const bytes of sources) {
+		for (const [length, rule] of [
+			[64, "generic-api-key"],
+			[36, "github-pat"],
+		]) {
+			const value = canary({ bytes, length });
+			const secret = rule === "github-pat" ? `ghp_${value}` : value;
+			secrets.push(secret);
+			lines.push(
+				rule === "github-pat"
+					? `const value = "${secret}";`
+					: `const apiKey = "${secret}";`,
+			);
+			expected.push({ line: lines.length, rule });
+		}
+	}
+	const result = scan(directory, [["canaries.txt", `${lines.join("\n")}\n`]]);
+	assert.equal(result.status, 1);
+	for (const { line, rule } of expected)
+		assert.ok(
+			result.rows.some((row) => row.StartLine === line && row.RuleID === rule),
+			`Missing ${rule} canary on line ${line}`,
+		);
+	for (const secret of secrets)
+		assert.ok(
+			!`${result.stdout}${result.stderr}${result.report}`.includes(secret),
+			"Canaries must be fully redacted",
+		);
+}
+
+test("detects canaries when random bytes have no entropy", () =>
+	fixture((directory) =>
+		assertCanariesDetected(directory, [
+			(size) => Buffer.alloc(size),
+			(size) => Buffer.alloc(size, 255),
+		]),
+	));
+
+test("detects canaries when random bytes spell scanner stopwords", () =>
+	fixture((directory) =>
+		assertCanariesDetected(
+			directory,
+			[
+				[0xde, 0xad],
+				[0xfe, 0xed],
+			].map((prefix) => (size) => {
+				const bytes = Buffer.from(
+					Array.from({ length: size }, (_, index) => (index * 37) % 256),
+				);
+				bytes.set(prefix);
+				return bytes;
+			}),
+		),
+	));
+
+test("detects every canary across repeated random sources", () =>
+	fixture((directory) =>
+		assertCanariesDetected(
+			directory,
+			Array.from({ length: 256 }, () => randomBytes),
+		),
+	));
 
 test("accepts only the exact known synthetic and non-secret lines", () =>
 	fixture((directory) => {
@@ -163,7 +246,7 @@ for (const placement of ["next line", "same line", "changed value"]) {
 test("retains other scanner rules inside an excepted file", () =>
 	fixture((directory) => {
 		const { path, line } = exceptions()[0];
-		const token = `ghp_${randomBytes(18).toString("hex")}`;
+		const token = `ghp_${canary({ length: 36 })}`;
 		const result = scan(directory, [
 			[path, `${line}\nconst token = "${token}"; // gitleaks:allow\n`],
 		]);

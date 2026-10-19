@@ -38,12 +38,13 @@ export async function fetchSession() {
 	return session;
 }
 
-export function useSession() {
+export function useSession(options?: { refetchOnMount: "always" }) {
 	return useQuery({
 		queryKey: SESSION_QUERY_KEY,
 		queryFn: fetchSession,
 		refetchInterval: SESSION_REFRESH_INTERVAL_MS,
 		refetchOnWindowFocus: "always",
+		refetchOnMount: options?.refetchOnMount,
 	});
 }
 

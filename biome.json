@@ -40,6 +40,8 @@
 		"includes": [
 			"apps/**",
 			"packages/**",
+			"tests/browser/**",
+			"scripts/installed-gui-smoke*.mjs",
 			"*.json",
 			"!**/node_modules",
 			"!**/.claude",

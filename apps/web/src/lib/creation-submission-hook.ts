@@ -17,7 +17,9 @@ export function useCreationSubmission(
 	context: string,
 	prepareSeed = false,
 ) {
-	const session = useSession();
+	// The page gate can populate a fresh cache before this form mounts. Its
+	// observer still needs its own completed read before it can bind identity.
+	const session = useSession({ refetchOnMount: "always" });
 	const { t } = useT();
 	const identity =
 		session.status === "success" &&

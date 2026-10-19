@@ -13,6 +13,7 @@ import {
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { DB_NULL } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
+import { tryLockCurrentPollChannel } from "./poll-channel-lock";
 
 /**
  * the ONE place the
@@ -98,6 +99,7 @@ export function providerTerminalMessage(
 }
 
 class RunningCommitFenceLostError extends Error {}
+class PollChannelUnavailableError extends Error {}
 
 /** FINISHED proves completion, not that a failed startup ever went on air. */
 function isFinishedAiring(
@@ -474,6 +476,8 @@ export function createProviderLifecycleReconciler(deps: {
 			data?: Record<string, unknown>;
 		};
 		persistRun: boolean;
+		/** Only a fenced background observation may discard its whole transaction. */
+		nonblockingPoll?: boolean;
 		signal?: AbortSignal;
 	}): Promise<{ runLanded: boolean; channelLanded: boolean }> {
 		const finishedNormally = isFinishedAiring(args.status, args.run);
@@ -481,62 +485,81 @@ export function createProviderLifecycleReconciler(deps: {
 		const status = error === null ? "STOPPED" : "ERROR";
 		let runLanded = !args.persistRun;
 		let channelLanded = false;
-		await deps.prisma.$transaction(async (tx) => {
-			args.signal?.throwIfAborted();
-			if (args.persistRun) {
-				const runWrite = await tx.liveChannelRun.updateMany({
+		try {
+			await deps.prisma.$transaction(async (tx) => {
+				args.signal?.throwIfAborted();
+				if (args.persistRun) {
+					const runWrite = await tx.liveChannelRun.updateMany({
+						where: {
+							...(args.fenceWhere ?? {
+								id: args.run.id,
+								bitmovinEncodingId: args.encodingId,
+							}),
+							providerTerminalAt: null,
+							// A late FINISHED observation cannot erase an intervening
+							// failure, even while the exact encoding ID remains unchanged.
+							...(finishedNormally
+								? { status: "RUNNING", error: null }
+								: { status: { not: "STOPPED" } }),
+						},
+						data: {
+							status,
+							error,
+							endedAt: args.observedAt,
+							providerStatus: args.status,
+							providerStatusObservedAt: args.observedAt,
+							providerUnknownSince: null,
+							providerUnknownAlertedAt: null,
+							providerTerminalAt: args.observedAt,
+						},
+					});
+					args.signal?.throwIfAborted();
+					runLanded = runWrite.count === 1;
+					if (!runLanded) return;
+				}
+				if (
+					args.nonblockingPoll &&
+					!(await tryLockCurrentPollChannel(
+						tx,
+						args.channelId,
+						args.run.id,
+						args.encodingId,
+					))
+				) {
+					throw new PollChannelUnavailableError();
+				}
+				args.signal?.throwIfAborted();
+				const channelWrite = await tx.liveChannel.updateMany({
 					where: {
-						...(args.fenceWhere ?? {
-							id: args.run.id,
-							bitmovinEncodingId: args.encodingId,
-						}),
-						providerTerminalAt: null,
-						// A late FINISHED observation cannot erase an intervening
-						// failure, even while the exact encoding ID remains unchanged.
-						...(finishedNormally
-							? { status: "RUNNING", error: null }
-							: { status: { not: "STOPPED" } }),
+						id: args.channelId,
+						bitmovinEncodingId: args.encodingId,
+						status: { in: [...TERMINAL_RECONCILABLE_CHANNEL_STATUSES] },
+						...(args.channelWrite?.where ?? {}),
+						...(finishedNormally ? { error: null } : {}),
 					},
 					data: {
 						status,
+						// SC-01: terminalising the current provider run invalidates every
+						// claim admitted against its prior generation in the same atomic
+						// channel projection write. A worker paused before send must lose.
+						liveEffectFenceVersion: { increment: 1 },
 						error,
-						endedAt: args.observedAt,
-						providerStatus: args.status,
-						providerStatusObservedAt: args.observedAt,
-						providerUnknownSince: null,
-						providerUnknownAlertedAt: null,
-						providerTerminalAt: args.observedAt,
+						lastHeartbeat: DB_NULL,
+						runningSince: null,
+						streamKey: null,
+						encoderIp: null,
+						...(args.channelWrite?.data ?? {}),
 					},
 				});
 				args.signal?.throwIfAborted();
-				runLanded = runWrite.count === 1;
-				if (!runLanded) return;
-			}
-			const channelWrite = await tx.liveChannel.updateMany({
-				where: {
-					id: args.channelId,
-					bitmovinEncodingId: args.encodingId,
-					status: { in: [...TERMINAL_RECONCILABLE_CHANNEL_STATUSES] },
-					...(args.channelWrite?.where ?? {}),
-					...(finishedNormally ? { error: null } : {}),
-				},
-				data: {
-					status,
-					// SC-01: terminalising the current provider run invalidates every
-					// claim admitted against its prior generation in the same atomic
-					// channel projection write. A worker paused before send must lose.
-					liveEffectFenceVersion: { increment: 1 },
-					error,
-					lastHeartbeat: DB_NULL,
-					runningSince: null,
-					streamKey: null,
-					encoderIp: null,
-					...(args.channelWrite?.data ?? {}),
-				},
+				channelLanded = channelWrite.count === 1;
 			});
-			args.signal?.throwIfAborted();
-			channelLanded = channelWrite.count === 1;
-		});
+		} catch (error) {
+			if (error instanceof PollChannelUnavailableError) {
+				return { runLanded: false, channelLanded: false };
+			}
+			throw error;
+		}
 		return { runLanded, channelLanded };
 	}
 
@@ -726,6 +749,7 @@ export function createProviderLifecycleReconciler(deps: {
 			fenceWhere,
 			channelWrite: args.channelWrite,
 			persistRun: true,
+			nonblockingPoll: args.fence !== undefined,
 			signal: args.signal,
 		});
 		args.signal?.throwIfAborted();

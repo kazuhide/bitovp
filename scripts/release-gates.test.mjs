@@ -103,7 +103,7 @@ test("fixed local gates include API freshness and the runner tests, never deploy
 	assert(COMMANDS.some((c) => c.join(" ") === "pnpm test"));
 	assert.equal(
 		pkg.scripts.test,
-		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates",
+		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner",
 	);
 	assert.equal(COMMANDS.length, 7);
 	assert(!JSON.stringify(COMMANDS).match(/docker|verify run|deploy|gh /));

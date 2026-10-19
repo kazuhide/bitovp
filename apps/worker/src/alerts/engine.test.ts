@@ -49,6 +49,10 @@ function makeStore(over: {
 	run?: { id: string; createdAt: Date } | null;
 	pollEpoch?: number;
 	runEncodingId?: string;
+	channelStatus?: string;
+	channelEncodingId?: string;
+	channelLocked?: boolean;
+	latestRun?: { id: string; createdAt: Date };
 }) {
 	const run =
 		over.run === undefined
@@ -68,6 +72,15 @@ function makeStore(over: {
 		prisma: {
 			$transaction: async <T>(fn: (tx: AppPrismaClient) => Promise<T>) =>
 				fn(store.prisma as unknown as AppPrismaClient),
+			$queryRaw: vi.fn(
+				async (_query: TemplateStringsArray, id: string, encodingId: string) =>
+					!over.channelLocked &&
+					id === CH &&
+					(over.channelStatus ?? "RUNNING") === "RUNNING" &&
+					(over.channelEncodingId ?? "enc-1") === encodingId
+						? [{ id: CH }]
+						: [],
+			),
 			alertRule: {
 				findMany: vi.fn(async () =>
 					(
@@ -127,7 +140,9 @@ function makeStore(over: {
 				// : the engine reads its own run scope (it is not
 				// threaded from the sweep — a caller that forgot would get the
 				// pre-#243 cross-run window back silently).
-				findFirst: vi.fn(projecting(async () => (run ? { ...run } : null))),
+				findFirst: vi.fn(
+					projecting(async () => over.latestRun ?? (run ? { ...run } : null)),
+				),
 				updateMany: vi.fn(
 					async (args: {
 						where: {
@@ -252,6 +267,108 @@ beforeEach(() => {
 });
 
 describe("alert engine transitions", () => {
+	it("does not resolve alerts while a channel transition owns the row", async () => {
+		const store = makeStore({
+			channelLocked: true,
+			heartbeats: [CONNECTED],
+			events: [
+				{
+					id: "event-1",
+					ruleId: RULE,
+					liveChannelId: CH,
+					openedAt: RUN_CREATED_AT,
+					resolvedAt: null,
+					context: {},
+				},
+			],
+		});
+		const { engine, emitEvent } = makeEngine(store);
+		await expect(
+			engine(
+				CH,
+				"RUNNING",
+				undefined,
+				undefined,
+				{ id: CURRENT_RUN, createdAt: RUN_CREATED_AT },
+				{ runId: CURRENT_RUN, encodingId: "enc-1", epoch: 1 },
+			),
+		).resolves.toEqual({ opened: 0, resolved: 0 });
+		expect(store.events[0]?.resolvedAt).toBeNull();
+		expect(store.prisma.alertRule.findMany).not.toHaveBeenCalled();
+		expect(emitEvent).not.toHaveBeenCalled();
+	});
+	it.each([
+		"STOPPING",
+		"STOPPED",
+	])("an old poll cannot open alerts after the channel enters %s", async (channelStatus) => {
+		const store = makeStore({ heartbeats: [DISCONNECTED], channelStatus });
+		const { engine, emitEvent } = makeEngine(store);
+		await expect(
+			engine(
+				CH,
+				"RUNNING",
+				undefined,
+				undefined,
+				{ id: CURRENT_RUN, createdAt: RUN_CREATED_AT },
+				{ runId: CURRENT_RUN, encodingId: "enc-1", epoch: 1 },
+			),
+		).resolves.toEqual({ opened: 0, resolved: 0 });
+		expect(store.events).toHaveLength(0);
+		expect(emitEvent).not.toHaveBeenCalled();
+	});
+
+	it("an old poll cannot judge its retained run after a new run takes the channel", async () => {
+		const store = makeStore({
+			heartbeats: [DISCONNECTED],
+			latestRun: {
+				id: "new-run",
+				createdAt: new Date(RUN_CREATED_AT.getTime() + 1),
+			},
+		});
+		const { engine, emitEvent } = makeEngine(store);
+		await expect(
+			engine(
+				CH,
+				"RUNNING",
+				undefined,
+				undefined,
+				{ id: CURRENT_RUN, createdAt: RUN_CREATED_AT },
+				{ runId: CURRENT_RUN, encodingId: "enc-1", epoch: 1 },
+			),
+		).resolves.toEqual({ opened: 0, resolved: 0 });
+		expect(store.events).toHaveLength(0);
+		expect(emitEvent).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"stop",
+		"new run",
+		"new encoding",
+	] as const)("an old poll cannot resolve an existing alert after %s wins", async (transition) => {
+		const over: Parameters<typeof makeStore>[0] = {
+			heartbeats: [DISCONNECTED],
+		};
+		const store = makeStore(over);
+		const { engine, emitEvent } = makeEngine(store);
+		const evaluate = () =>
+			engine(
+				CH,
+				"RUNNING",
+				undefined,
+				undefined,
+				{ id: CURRENT_RUN, createdAt: RUN_CREATED_AT },
+				{ runId: CURRENT_RUN, encodingId: "enc-1", epoch: 1 },
+			);
+		await expect(evaluate()).resolves.toEqual({ opened: 1, resolved: 0 });
+		over.heartbeats = [CONNECTED];
+		if (transition === "stop") over.channelStatus = "STOPPED";
+		else if (transition === "new encoding") over.channelEncodingId = "enc-2";
+		else over.latestRun = { id: "new-run", createdAt: RUN_CREATED_AT };
+		await expect(evaluate()).resolves.toEqual({ opened: 0, resolved: 0 });
+		expect(store.events[0]?.resolvedAt).toBeNull();
+		expect(emitEvent).toHaveBeenCalledTimes(1);
+	});
+
 	it("a superseded heartbeat token cannot evaluate or mutate alerts", async () => {
 		const store = makeStore({
 			heartbeats: [DISCONNECTED],

@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { guidePath } from "./guide/routes";
 import {
 	enCopy,
 	FEATURE_IDS,
@@ -8,24 +9,18 @@ import {
 	type ScreenshotName,
 } from "./landing-copy";
 import { jaCopy } from "./landing-copy-ja";
-import {
-	localePath,
-	SITE_BASE,
-	SITE_LOCALES,
-	type SiteLocale,
-	USER_GUIDE_URLS,
-} from "./site-config";
+import { SITE_BASE, type SiteLocale } from "./site-config";
+import { SiteFooter, SiteHeader } from "./site-layout";
 
 const repository = "https://github.com/kazuhide/bitovp";
-const userGuide = `${repository}/blob/main/docs/user-guide`;
-const featureLinks: Record<FeatureId, string> = {
+const featureLinks = (locale: SiteLocale): Record<FeatureId, string> => ({
 	vod: "#/demo/vod/new",
 	live: "#/demo/live/new",
-	monitoring: `${userGuide}/LIVE.md`,
+	monitoring: guidePath(locale, "live-operations"),
 	jobs: "#/demo/vod/jobs",
 	dashboard: "#/demo",
-	quality: `${userGuide}/QUALITY-AND-MONITORING.md`,
-};
+	quality: guidePath(locale, "quality"),
+});
 const featureScreenshots: Partial<Record<FeatureId, ScreenshotName>> = {
 	live: "live-settings",
 	monitoring: "live-monitoring",
@@ -82,7 +77,15 @@ function Screenshot({
 	);
 }
 
-function FeatureTour({ id, copy }: { id: FeatureId; copy: FeatureCopy }) {
+function FeatureTour({
+	id,
+	copy,
+	locale,
+}: {
+	id: FeatureId;
+	copy: FeatureCopy;
+	locale: SiteLocale;
+}) {
 	return (
 		<section className="landing-tour" aria-labelledby={id}>
 			<div className="landing-tour-heading">
@@ -103,7 +106,7 @@ function FeatureTour({ id, copy }: { id: FeatureId; copy: FeatureCopy }) {
 					{copy.note ? (
 						<p className="landing-context-note">{copy.note}</p>
 					) : null}
-					<a className="landing-text-link" href={featureLinks[id]}>
+					<a className="landing-text-link" href={featureLinks(locale)[id]}>
 						{copy.link}
 					</a>
 				</div>
@@ -114,48 +117,12 @@ function FeatureTour({ id, copy }: { id: FeatureId; copy: FeatureCopy }) {
 
 export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 	const copy = locale === "ja" ? jaCopy : enCopy;
-	const guide = USER_GUIDE_URLS[locale];
 	return (
 		<div className="site-landing" lang={locale}>
 			<a className="landing-skip" href="#landing-main">
 				{copy.skip}
 			</a>
-			<header className="landing-header">
-				<div className="landing-container landing-header-inner">
-					<a className="landing-brand" href={localePath(locale)}>
-						bitovp
-					</a>
-					<div className="landing-header-links">
-						<nav
-							aria-label={copy.navigation.mainLabel}
-							className="landing-header-nav"
-						>
-							<a href="#vod">{copy.navigation.features}</a>
-							<a href={guide}>{copy.navigation.guide}</a>
-							<a href={repository}>GitHub</a>
-							<a className="landing-button landing-button-small" href="#/demo">
-								{copy.navigation.demo}
-							</a>
-						</nav>
-						<nav
-							className="landing-language-switch"
-							aria-label={copy.navigation.languageLabel}
-						>
-							{SITE_LOCALES.map((candidate) => (
-								<a
-									key={candidate}
-									href={localePath(candidate)}
-									lang={candidate}
-									hrefLang={candidate}
-									aria-current={candidate === locale ? "page" : undefined}
-								>
-									{candidate === "ja" ? "日本語" : "English"}
-								</a>
-							))}
-						</nav>
-					</div>
-				</div>
-			</header>
+			<SiteHeader locale={locale} />
 			<main id="landing-main" tabIndex={-1} className="landing-container">
 				<div className="landing-intro">
 					<h1>{copy.hero.title}</h1>
@@ -166,7 +133,7 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 						</a>
 						<a
 							className="landing-text-link"
-							href={`${userGuide}/INSTALLATION.md`}
+							href={guidePath(locale, "appendix")}
 						>
 							{copy.hero.install}
 						</a>
@@ -186,7 +153,7 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 				</nav>
 				{FEATURE_IDS.map((id) => (
 					<Fragment key={id}>
-						<FeatureTour id={id} copy={copy.features[id]} />
+						<FeatureTour id={id} copy={copy.features[id]} locale={locale} />
 						{featureScreenshots[id] ? (
 							<Screenshot
 								file={featureScreenshots[id]}
@@ -208,7 +175,7 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 					</div>
 					<a
 						className="landing-text-link"
-						href={`${userGuide}/LIBRARY-AND-ADMIN.md`}
+						href={guidePath(locale, "content-and-storage")}
 					>
 						{copy.more.link}
 					</a>
@@ -228,7 +195,7 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 						<p key={paragraph}>{paragraph}</p>
 					))}
 					<div className="landing-actions">
-						<a className="landing-button" href={`${userGuide}/INSTALLATION.md`}>
+						<a className="landing-button" href={guidePath(locale, "appendix")}>
 							{copy.run.install}
 						</a>
 						<a
@@ -244,16 +211,7 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 					</details>
 				</section>
 			</main>
-			<footer className="landing-footer">
-				<div className="landing-container landing-footer-inner">
-					<p>{copy.footer.license}</p>
-					<nav aria-label={copy.footer.navigationLabel}>
-						<a href={repository}>{copy.footer.source}</a>
-						<a href={guide}>{copy.footer.guide}</a>
-						<a href={`${repository}/issues`}>{copy.footer.issues}</a>
-					</nav>
-				</div>
-			</footer>
+			<SiteFooter locale={locale} />
 		</div>
 	);
 }

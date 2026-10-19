@@ -3,6 +3,7 @@ import { createRoot, hydrateRoot } from "react-dom/client";
 import { LandingPage } from "./landing";
 import { localeFromPath } from "./site-config";
 import "./landing.css";
+import "./guide/guide.css";
 
 const DemoApp = lazy(() => import("./demo/app"));
 const isDemo = () => window.location.hash.startsWith("#/demo");

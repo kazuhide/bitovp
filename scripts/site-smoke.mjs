@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { runGuideSmoke } from "./guide-smoke.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dist = resolve(root, "apps/site/dist");
@@ -451,6 +452,7 @@ async function runLocale(locale, copy) {
 try {
 	for (const [locale, copy] of Object.entries(locales))
 		await runLocale(locale, copy);
+	if (!capture) await runGuideSmoke({ createContext, base, unexpected });
 	assert.deepEqual(
 		unexpected,
 		[],

@@ -381,7 +381,9 @@ function moduleSpecifierText(
 	)
 		return moduleSpecifierText(expression.expression, parsed, seen);
 	if (ts.isIdentifier(expression)) {
-		const declaration = resolveLexicalDeclaration(expression, parsed);
+		const declaration = resolveLexicalDeclaration(expression, parsed, {
+			allowLaterConstants: true,
+		});
 		if (!declaration?.initializer || seen.has(declaration)) return null;
 		return moduleSpecifierText(
 			declaration.initializer,
@@ -486,12 +488,29 @@ function creationFactoryOwnershipViolations(
 			reject(node);
 		}
 	}
-	if (owner) {
+	const factory = source === "lib/creation-submission.ts";
+	if (owner || factory) {
 		for (const statement of parsed.file.statements) {
-			// The one trusted owner exports its hook, never a raw factory alias.
+			// Pin both trusted modules' value exports so a new alias cannot escape
+			// the import boundary. Type exports carry no runtime factory handle.
+			const typeOnlyExport =
+				ts.isExportDeclaration(statement) &&
+				(statement.isTypeOnly ||
+					(statement.exportClause &&
+						ts.isNamedExports(statement.exportClause) &&
+						statement.exportClause.elements.every(
+							(entry) => entry.isTypeOnly,
+						)));
+			const allowedValue = owner
+				? ts.isFunctionDeclaration(statement) &&
+					statement.name?.text === "useCreationSubmission"
+				: (ts.isFunctionDeclaration(statement) &&
+						statement.name?.text === "createSubmissionClient") ||
+					(ts.isClassDeclaration(statement) &&
+						statement.name?.text === "CreationSubmissionError");
 			if (
 				ts.isExportAssignment(statement) ||
-				(ts.isExportDeclaration(statement) && !statement.isTypeOnly)
+				(ts.isExportDeclaration(statement) && !typeOnlyExport)
 			) {
 				reject(statement);
 			} else if (
@@ -499,10 +518,12 @@ function creationFactoryOwnershipViolations(
 				ts
 					.getModifiers(statement)
 					?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
-				!(
-					ts.isFunctionDeclaration(statement) &&
-					statement.name?.text === "useCreationSubmission"
-				) &&
+				(!allowedValue ||
+					ts
+						.getModifiers(statement)
+						?.some(
+							(modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword,
+						)) &&
 				!ts.isTypeAliasDeclaration(statement) &&
 				!ts.isInterfaceDeclaration(statement)
 			) {
@@ -671,13 +692,17 @@ function permissionBindings(
 function resolveLexicalDeclaration(
 	identifier: ts.Identifier,
 	parsed: ParsedSource,
+	options: { allowLaterConstants?: boolean } = {},
 ): ts.VariableDeclaration | null {
 	const declarations = parsed.declarations.get(identifier.text) ?? [];
 	for (const scope of lexicalScopes(identifier)) {
 		const visible = declarations.filter(
 			(declaration) =>
 				declarationScope(declaration) === scope &&
-				declaration.getStart(parsed.file) < identifier.getStart(parsed.file),
+				(declaration.getStart(parsed.file) < identifier.getStart(parsed.file) ||
+					(options.allowLaterConstants === true &&
+						ts.isVariableDeclarationList(declaration.parent) &&
+						(declaration.parent.flags & ts.NodeFlags.Const) !== 0)),
 		);
 		if (visible.length > 1) {
 			return null;
@@ -1123,6 +1148,47 @@ describe("mixed-page mutation control contract", () => {
 		).not.toEqual([]);
 	});
 
+	it.each([
+		"import(p)",
+		"require(p)",
+	])("rejects a deferred factory module load through a later constant: %s", (load) => {
+		const source = "app/fixtures/deferred.ts";
+		const text = `const load = () => ${load}; const p = "@/lib/creation-submission"; load();`;
+		expect(
+			creationFactoryOwnershipViolations(source, parseSourceText(source, text)),
+		).not.toEqual([]);
+	});
+
+	it.each([
+		"export { createSubmissionClient as makeCreate };",
+		"export default createSubmissionClient;",
+		"export const makeCreate = createSubmissionClient;",
+		"export function makeCreate() { return createSubmissionClient; }",
+	])("rejects additional factory module value exports: %s", (extraExport) => {
+		const source = "lib/creation-submission.ts";
+		const original = readFileSync(join(SRC_DIR, source), "utf8");
+		expect(
+			creationFactoryOwnershipViolations(
+				source,
+				parseSourceText(source, `${original}\n${extraExport}`),
+			),
+		).not.toEqual([]);
+	});
+
+	it("bounds cyclic module aliases and retains ordinary lexical declaration ordering", () => {
+		const source = "app/fixtures/cycle.ts";
+		expect(
+			creationFactoryOwnershipViolations(
+				source,
+				parseSourceText(source, "const p = q; const q = p; import(p);"),
+			),
+		).toEqual([]);
+		const ordinary = parseSourceText(
+			source,
+			'function Fixture() { creation.submit({ plan: {} }); const creation = useCreationSubmission("vod", "fixture"); }',
+		);
+		expect(apiCallsFromParsed(ordinary)).toEqual([]);
+	});
 	it("rejects factory reexports from the otherwise trusted hook", () => {
 		const source = "lib/creation-submission-hook.ts";
 		expect(

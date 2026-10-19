@@ -3136,12 +3136,39 @@ export const ja = {
 		workspaceConfiguration: "ワークスペースの設定。",
 	},
 	apiCoverage: {
+		requestFields: {
+			title: "SDK のリクエスト属性",
+			scopeNotice:
+				"SDK がリクエスト本文のモデルに宣言する最上位の属性を、操作ごとに数えています。レスポンスと共用の属性も含むため、すべてが書き込み可能とは限りません。",
+			assignmentNotice:
+				"「直接指定の記述あり」は、SDK 呼び出しへ直接渡すオブジェクトやモデル生成の属性名を確認したものです。省略可能・undefined の値も含み、画面からの設定や実際の送信を保証しません。スプレッド構文・変数・ヘルパー・複数候補の型は追跡しません。「未確認」は「未実装」を意味しません。",
+			bodyOperations: "本文を持つ操作",
+			expandedOperations: "属性を展開した操作",
+			unexpandedOperations: "本文を展開できなかった操作",
+			totalFields: "最上位の属性数（操作ごと）",
+			sourceAssigned: "直接指定の記述あり",
+			unconfirmed: "未確認の属性",
+			searchLabel: "リクエスト属性を検索",
+			searchPlaceholder: "属性名・型・モデル・API・ソース…",
+			property: "属性名・型",
+			model: "本文モデル",
+			sdkDeclaration: "SDK の宣言",
+			noMatches: "条件に一致するリクエスト属性はありません。",
+			unexpandedTitle: "展開できなかった本文",
+			unexpandedReason: "理由",
+			unknownReason: "展開済みのモデルがありません。",
+			noUnexpanded: "条件に一致する未展開の本文はありません。",
+			previousFields: "リクエスト属性の前のページ",
+			nextFields: "リクエスト属性の次のページ",
+			previousBodies: "未展開の本文の前のページ",
+			nextBodies: "未展開の本文の次のページ",
+		},
 		currentNotice:
 			"SDK の Encoding API 操作と、現行ソースの呼び出しを照合した集計です。実行検証・課金検証ではありません。動的な呼び出しは未確認に残るため、未確認は未実装を意味しません。",
 		sourceConfirmed: "ソースで確認",
 		unconfirmed: "未確認",
 		confirmedOperations: "呼び出しを確認した操作",
-		confirmedCreates: "呼び出しを確認した create 操作",
+		confirmedCreates: "呼び出しを確認した SDK create メソッド",
 		currentProvenance:
 			"生成: {date} · ソースコミット: {repo} · ソース指紋: {source} · SDK: {sdk} · SDK 指紋: {sdkFingerprint} · 対象: Encoding API",
 		sdkMatches:

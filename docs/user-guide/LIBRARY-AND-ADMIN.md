@@ -95,6 +95,11 @@ and are not a substitute for managed registrations.
 
 The API coverage screen lists SDK operations and source references. Source-confirmed
 means a call exists in code, not that its GUI path or provider execution passed.
+The current body-model inventory lists top-level SDK properties by operation,
+with direct property-key evidence where available. Search it to inspect a
+particular field. Shared response properties can appear; nested fields,
+variables, and helper-generated arguments are not expanded. Neither a model
+property nor a direct key proves GUI availability or successful transmission.
 Historical parameter survey values are separately dated and are not current
 coverage percentages. The settings footer identifies the web build, not the
 worker or Bitmovin encoder version.

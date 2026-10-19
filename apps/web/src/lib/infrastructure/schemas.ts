@@ -12,7 +12,7 @@ import { z } from "zod";
  * contracts consumed only by this app's routes + Settings UI, and the
  * parallel core-agent owns packages/core during this phase.
  *
- * Region enums are copied from @bitmovin/api-sdk 1.269.0 (the SDK is
+ * Region enums are verified against @bitmovin/api-sdk 1.284.0 (the SDK is
  * server-side only — importing it here would pull it into the client
  * bundle). Regenerate on SDK bumps, mirroring core's BITMOVIN_CLOUD_REGIONS.
  */
@@ -45,7 +45,7 @@ export const LIST_LIMIT_MAX = 100;
 // Provider region enums (path params of the region-settings sub-CRUD)
 // ---------------------------------------------------------------------------
 
-/** AwsCloudRegion — @bitmovin/api-sdk 1.269.0. */
+/** AwsCloudRegion — @bitmovin/api-sdk 1.284.0. */
 export const AWS_REGIONS = [
 	"US_EAST_1",
 	"US_EAST_2",
@@ -65,7 +65,7 @@ export const AWS_REGIONS = [
 	"EU_NORTH_1",
 ] as const;
 
-/** GoogleCloudRegion — @bitmovin/api-sdk 1.269.0. */
+/** GoogleCloudRegion — @bitmovin/api-sdk 1.284.0. */
 export const GCE_REGIONS = [
 	"US_CENTRAL_1",
 	"US_EAST_1",
@@ -88,7 +88,7 @@ export const GCE_REGIONS = [
 	"ME_CENTRAL_2",
 ] as const;
 
-/** AzureCloudRegion — @bitmovin/api-sdk 1.269.0. */
+/** AzureCloudRegion — @bitmovin/api-sdk 1.284.0. */
 export const AZURE_REGIONS = [
 	"ASIA_EAST",
 	"ASIA_SOUTHEAST",
@@ -116,8 +116,9 @@ export const AZURE_REGIONS = [
 	"UK_SOUTH",
 ] as const;
 
-/** AkamaiCloudRegion — @bitmovin/api-sdk 1.269.0. */
+/** AkamaiCloudRegion — @bitmovin/api-sdk 1.284.0. */
 export const AKAMAI_REGIONS = [
+	"AU_MEL",
 	"BR_GRU",
 	"ES_MAD",
 	"FR_PAR",
@@ -133,7 +134,7 @@ export const AKAMAI_REGIONS = [
 	"US_SEA",
 ] as const;
 
-/** OciCloudRegion — @bitmovin/api-sdk 1.269.0 (only these two exist). */
+/** OciCloudRegion — @bitmovin/api-sdk 1.284.0 (only these two exist). */
 export const OCI_REGIONS = ["EU_FRANKFURT_1", "US_ASHBURN_1"] as const;
 
 export const PROVIDER_REGIONS: Record<CloudProviderId, readonly string[]> = {

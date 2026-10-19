@@ -409,8 +409,8 @@ export type WizardVp9Options = {
 	colorConfig?: WizardColorConfig;
 };
 
-/** AV1 (Av1VideoConfiguration) — the SDK exposes only preset + autoLevelSetup
- * beyond the shared base, so this is the leanest video option bag. */
+/** AV1 (Av1VideoConfiguration) — the app exposes preset + autoLevelSetup
+ * as a subset of the SDK's AV1-specific settings. */
 export type WizardAv1Options = {
 	rate?: number | null;
 	presetConfiguration?: "VOD_QUALITY" | "VOD_STANDARD" | "VOD_SPEED";

@@ -10,8 +10,8 @@ import { rateCardSchema } from "../live/cost";
 export const ENCODER_VERSION_PRESETS = ["STABLE", "BETA"] as const;
 
 /**
- * Full CloudRegion list extracted from @bitmovin/api-sdk 1.269.0 (names ==
- * wire values for this enum — verified in the PR8 review). AUTO first,
+ * Full CloudRegion list verified against @bitmovin/api-sdk 1.284.0 (names ==
+ * wire values for this enum). AUTO first,
  * then provider groups in SDK order. Regenerate from the SDK on bumps.
  */
 export const BITMOVIN_CLOUD_REGIONS = [
@@ -75,6 +75,7 @@ export const BITMOVIN_CLOUD_REGIONS = [
 	"AZURE_US_SOUTH_CENTRAL",
 	"AZURE_US_NORTH_CENTRAL",
 	"AZURE_UK_SOUTH",
+	"AKAMAI_AU_MEL",
 	"AKAMAI_BR_GRU",
 	"AKAMAI_ES_MAD",
 	"AKAMAI_FR_PAR",

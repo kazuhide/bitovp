@@ -38,6 +38,3 @@ catalog:
   react-dom: ^19.2.4
   "@types/react": ^19.2.14
   "@types/react-dom": ^19.2.3
-
-minimumReleaseAgeExclude:
-  - '@bitmovin/api-sdk@1.280.0'

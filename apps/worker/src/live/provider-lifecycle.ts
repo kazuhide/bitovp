@@ -474,6 +474,7 @@ export function createProviderLifecycleReconciler(deps: {
 			data?: Record<string, unknown>;
 		};
 		persistRun: boolean;
+		signal?: AbortSignal;
 	}): Promise<{ runLanded: boolean; channelLanded: boolean }> {
 		const finishedNormally = isFinishedAiring(args.status, args.run);
 		const error = terminalError(args.status, args.run, args.message);
@@ -481,6 +482,7 @@ export function createProviderLifecycleReconciler(deps: {
 		let runLanded = !args.persistRun;
 		let channelLanded = false;
 		await deps.prisma.$transaction(async (tx) => {
+			args.signal?.throwIfAborted();
 			if (args.persistRun) {
 				const runWrite = await tx.liveChannelRun.updateMany({
 					where: {
@@ -506,6 +508,7 @@ export function createProviderLifecycleReconciler(deps: {
 						providerTerminalAt: args.observedAt,
 					},
 				});
+				args.signal?.throwIfAborted();
 				runLanded = runWrite.count === 1;
 				if (!runLanded) return;
 			}
@@ -531,6 +534,7 @@ export function createProviderLifecycleReconciler(deps: {
 					...(args.channelWrite?.data ?? {}),
 				},
 			});
+			args.signal?.throwIfAborted();
 			channelLanded = channelWrite.count === 1;
 		});
 		return { runLanded, channelLanded };
@@ -544,6 +548,8 @@ export function createProviderLifecycleReconciler(deps: {
 		sdk: SdkOps;
 		/** The sweep's poll token — every run write then CASes on it too. */
 		fence?: { epoch: number };
+		/** The monitoring attempt may no longer persist after its deadline. */
+		signal?: AbortSignal;
 		/**
 		 * A readback the caller already made (provision finalize observes
 		 * first and reconciles only a terminal answer) — skips the SDK call.
@@ -559,6 +565,18 @@ export function createProviderLifecycleReconciler(deps: {
 		};
 	}): Promise<ReconcileOutcome> {
 		const { channel, run, encodingId, sdk } = args;
+		args.signal?.throwIfAborted();
+		const recordObservation = async (
+			query: Prisma.LiveChannelRunUpdateManyArgs,
+		) => {
+			if (!args.signal) return deps.prisma.liveChannelRun.updateMany(query);
+			return deps.prisma.$transaction(async (tx) => {
+				args.signal?.throwIfAborted();
+				const result = await tx.liveChannelRun.updateMany(query);
+				args.signal?.throwIfAborted();
+				return result;
+			});
+		};
 		let observedAt = deps.now();
 		const unknown = (reason: string): ReconcileOutcome => ({
 			lifecycle: "UNKNOWN",
@@ -606,7 +624,9 @@ export function createProviderLifecycleReconciler(deps: {
 				message,
 				channelWrite: args.channelWrite,
 				persistRun: false,
+				signal: args.signal,
 			});
+			args.signal?.throwIfAborted();
 			if (run.providerFeederStopsEnqueuedAt === null) {
 				await enqueueTerminalFeederStops(run).catch((err) => {
 					console.error(
@@ -631,6 +651,7 @@ export function createProviderLifecycleReconciler(deps: {
 			};
 		}
 		const observation = args.observation ?? (await observe(sdk, encodingId));
+		args.signal?.throwIfAborted();
 		observedAt = observation.observedAt;
 		const nowMs = new Date(deps.now()).getTime();
 		const lifecycle = classifyProviderLifecycle(observation, nowMs);
@@ -650,7 +671,7 @@ export function createProviderLifecycleReconciler(deps: {
 			// First writer opens the window; a later failure keeps the original
 			// start, so grace and the customer strip measure from the first loss.
 			const existingUnknownSince = run.providerUnknownSince;
-			const { count } = await deps.prisma.liveChannelRun.updateMany({
+			const { count } = await recordObservation({
 				where:
 					existingUnknownSince === null
 						? { ...fenceWhere, providerUnknownSince: null }
@@ -671,7 +692,7 @@ export function createProviderLifecycleReconciler(deps: {
 
 		const status = observation.ok ? observation.status : null;
 		if (lifecycle === "RUNNING" || lifecycle === "TRANSITIONAL") {
-			const { count } = await deps.prisma.liveChannelRun.updateMany({
+			const { count } = await recordObservation({
 				where: fenceWhere,
 				data: {
 					providerStatus: status,
@@ -705,7 +726,9 @@ export function createProviderLifecycleReconciler(deps: {
 			fenceWhere,
 			channelWrite: args.channelWrite,
 			persistRun: true,
+			signal: args.signal,
 		});
+		args.signal?.throwIfAborted();
 		const terminal: ReconcileOutcome = {
 			lifecycle: "TERMINAL",
 			status,

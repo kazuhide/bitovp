@@ -268,9 +268,9 @@ export function createAlertEngine(deps: {
 			return evaluate(deps.prisma);
 		}
 		return deps.prisma.$transaction(async (tx) => {
-			// A same-value update is an epoch check AND a row lock. A newer poll's
-			// claim waits for this evaluation; if it already claimed, count is 0
-			// and this older sample cannot open or resolve an alert.
+			// Match heartbeat and provider persistence: lock the run before the
+			// channel. A deadline can start this evaluation while an aborted poll
+			// is still finishing its channel update and rolling its run write back.
 			const { count } = await tx.liveChannelRun.updateMany({
 				where: {
 					id: pollToken.runId,
@@ -283,6 +283,22 @@ export function createAlertEngine(deps: {
 			if (count !== 1) {
 				return { opened: 0, resolved: 0 };
 			}
+			// Web and scheduler transitions can hold the channel before its run.
+			// Skip their locked row rather than waiting while we hold that run.
+			// An acquired row stays locked through the latest-run check and alerts.
+			const channels = await tx.$queryRaw<{ id: string }[]>`
+				SELECT id FROM "LiveChannel"
+				WHERE id = ${liveChannelId}::uuid
+					AND status = 'RUNNING'
+					AND "bitmovinEncodingId" = ${pollToken.encodingId}
+				FOR UPDATE SKIP LOCKED`;
+			if (channels.length !== 1) return { opened: 0, resolved: 0 };
+			const latest = await tx.liveChannelRun.findFirst({
+				where: { liveChannelId },
+				orderBy: { seq: "desc" },
+				select: { id: true },
+			});
+			if (latest?.id !== pollToken.runId) return { opened: 0, resolved: 0 };
 			return evaluate(tx);
 		});
 	};

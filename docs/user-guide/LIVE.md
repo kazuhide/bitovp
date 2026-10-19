@@ -64,6 +64,11 @@ provider sample time; delayed or duplicate delivery is not a new input sample.
 Polling history is kept for seven days while a channel is polled; ended runs
 retain a summary. See [Operations](../OPERATIONS.md#heartbeat-history).
 
+If provider monitoring stops responding, a configured `HEARTBEAT_STALE` rule
+opens once after its freshness grace and resolves when fresh polling recovers.
+This indicates missing monitoring data; it does not confirm an input disconnect
+or a stopped encoder. Other channels continue to be monitored.
+
 ## Pseudo-live, schedules, and slate insertion
 
 Use `/live/feeders` to send stored media at real-time speed to a channel's RTMP

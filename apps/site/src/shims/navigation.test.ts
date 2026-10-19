@@ -36,7 +36,7 @@ describe("demo language navigation", () => {
 			}),
 		);
 		expect(html).toContain("デモ用ワークスペース");
-		expect(html).toContain("bitovpについて");
+		expect(html).toContain("bitovp について");
 		expect(html).not.toContain("About bitovp");
 		expect(html).toContain('href="/bitovp/#/demo/live/new?from=sample"');
 		expect(html).toContain('href="/bitovp/ja/#/demo/live/new?from=sample"');

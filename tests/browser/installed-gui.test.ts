@@ -421,7 +421,9 @@ test("persist and reset heartbeat cadence", async ({ browser }) => {
 				response.url().endsWith("/api/settings/live-heartbeat") &&
 				response.request().method() === "DELETE",
 		);
-		await section.getByRole("button", { name: /revert|reset/i }).click();
+		await section
+			.getByRole("button", { name: "Use the deployment default", exact: true })
+			.click();
 		expect((await removed).status()).toBe(200);
 		await page.reload();
 		await expect(page.locator("#hb-interval")).toHaveValue(original);

@@ -19,6 +19,10 @@ import {
 	spliceDistortedInput,
 	windowFromNow,
 } from "./live-processor";
+import {
+	createLocalVmafResources,
+	type LocalVmafResources,
+} from "./local-resources";
 import type { FrameStats } from "./signatures";
 
 /**
@@ -121,6 +125,7 @@ type Row = Record<string, unknown>;
 function setup(
 	opts: {
 		job?: Row;
+		localResources?: LocalVmafResources;
 		channel?: Row | null;
 		feeder?: Row | null;
 		plan?: Record<string, unknown> | null;
@@ -312,6 +317,9 @@ function setup(
 									streams: [
 										{
 											codec_type: "video",
+											...(opts.localResources
+												? { codec_name: "h264", pix_fmt: "yuv420p" }
+												: {}),
 											width,
 											height,
 											r_frame_rate: "30/1",
@@ -414,6 +422,7 @@ function setup(
 	}
 	const deps: LiveVmafProcessorDeps = {
 		prisma,
+		...(opts.localResources ? { localResources: opts.localResources } : {}),
 		resolveCredential,
 		runner,
 		ffmpegPath: "ffmpeg",
@@ -447,6 +456,64 @@ beforeEach(() => {
 });
 afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
+});
+
+describe("live local resource policy", () => {
+	it("forwards the abort grace only for scoring while retaining its liveness signal", async () => {
+		const t = setup();
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		const calls = vi.mocked(t.runner.run).mock.calls;
+		const scoring = calls.filter(([, argv]) =>
+			argv.join(" ").includes("libvmaf"),
+		);
+		const preparation = calls.filter(
+			([, argv]) => !argv.join(" ").includes("libvmaf"),
+		);
+		expect(scoring).toHaveLength(1);
+		expect(preparation.length).toBeGreaterThan(0);
+		for (const [, , options] of scoring) {
+			expect(options).toMatchObject({
+				abortKillAfterMs: 250,
+				signal: expect.any(AbortSignal),
+			});
+		}
+		for (const [, , options] of preparation) {
+			expect(options).not.toHaveProperty("abortKillAfterMs");
+			expect(options?.signal).toBe(scoring[0]?.[2]?.signal);
+		}
+	});
+
+	it.each([
+		undefined,
+		2,
+	])("uses automatic or explicit threads (%s) through the real factory", async (threads) => {
+		const localResources = createLocalVmafResources({
+			threads,
+			readResources: () => ({
+				cpuCapacity: 4,
+				memoryLimitBytes: 4 * 1024 ** 3,
+				headroomBytes: 3.5 * 1024 ** 3,
+				reserveBytes: 512 * 1024 ** 2,
+				budgetBytes: 3 * 1024 ** 3,
+			}),
+		});
+		const t = setup({ localResources });
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		const argv = t.calls.find((args) => args.join(" ").includes("libvmaf"));
+		expect(argv).toBeDefined();
+		expect(argv?.join(" ")).toContain(`n_threads=${threads ?? 4}`);
+		expect(argv?.filter((arg) => arg === "-threads")).toHaveLength(2);
+		expect(argv?.[argv.indexOf("-filter_complex_threads") + 1]).toBe("1");
+		expect(t.job).toMatchObject({
+			status: "FINISHED",
+			threads: threads ?? 4,
+			concurrency: 1,
+			params: {
+				liveChannelId: CHANNEL_ID,
+				localResources: { units: [{ threads: threads ?? 4 }] },
+			},
+		});
+	});
 });
 
 describe("live rendition progress", () => {
@@ -1667,4 +1734,49 @@ it("aborts live VMAF child work when reset removes the owning measurement", asyn
 			data: expect.objectContaining({ status: "ERROR" }),
 		}),
 	);
+});
+
+it("live reset cadence detects deletion within one hundred milliseconds", async () => {
+	vi.useFakeTimers();
+	const t = setup();
+	let started!: () => void;
+	const didStart = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	let aborted = false;
+	vi.mocked(t.runner.run).mockImplementationOnce(
+		async (_bin, _argv, options) => {
+			started();
+			return new Promise((resolve) =>
+				options?.signal?.addEventListener(
+					"abort",
+					() => {
+						aborted = true;
+						resolve({ code: null, stdout: "", stderr: "" });
+					},
+					{ once: true },
+				),
+			);
+		},
+	);
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	pending.catch(() => {});
+	try {
+		await didStart;
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		await vi.advanceTimersByTimeAsync(99);
+		expect(aborted).toBe(false);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(aborted).toBe(true);
+		await expect(pending).resolves.toMatchObject({
+			status: "MISSING",
+			results: 0,
+		});
+		expect(t.results).toEqual([]);
+	} finally {
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		await vi.advanceTimersByTimeAsync(2_000);
+		await pending.catch(() => {});
+		vi.useRealTimers();
+	}
 });

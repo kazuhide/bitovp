@@ -181,7 +181,59 @@ CDN reachability or browser playback.
 
 ## Local and cloud execution
 
-Local execution is the default. Cloud execution requires an administrator-enabled
+Local execution is the default. The worker automatically selects calculation
+threads and simultaneous VOD comparisons to fit its CPU and available memory.
+A large reference still requires decoding at that reference's dimensions even
+when the output is small. More calculation threads can also increase memory
+use. Resource selection preserves the model, comparison resolution and every
+scored frame; it does not trade measurement accuracy for speed. Live captures
+keep their sequential rendition order. See [local resource settings](../OPERATIONS.md#local-quality-resources)
+for manual limits and memory diagnostics.
+
+Two local ten-second pipeline checks used the same Big Buck Bunny source, starting
+at 60 seconds, resized to each geometry below. Each comparison used one H.264
+reference/output pair, the `vmaf_v0.6.1` model and every frame. At four allocated
+CPUs and 4 GiB memory, all frame indices, feature values and pooled metrics
+matched the earlier complete-frame measurements exactly.
+
+| Reference / frames per second | Scored frames | Selected threads | Elapsed seconds | Peak memory (MiB) |
+|---|---:|---:|---:|---:|
+| 1280 × 720 / 24 | 240 | 4 | 2.54–5.23 | 560–668 |
+| 1280 × 720 / 60 | 600 | 4 | 6.64–9.14 | 560–564 |
+| 1920 × 1080 / 24 | 240 | 4 | 5.72–12.37 | 877–901 |
+| 1920 × 1080 / 60 | 600 | 4 | 13.71–19.10 | 921–964 |
+| 3840 × 2160 / 24 | 240 | 2 | 39.45–46.85 | 1,680–1,793 |
+| 3840 × 2160 / 60 | 600 | 2 | 96.51–137.60 | 1,864–1,977 |
+
+The ranges show two observations per case with fixture storage and persistence.
+They establish quality equivalence for these inputs, without establishing a
+speed improvement or cloud execution. Peak container memory includes the
+measurement process and cached file pages. Resizing this small source exercises
+the processing geometry; it does not represent native high-resolution content
+or establish memory requirements for every codec/model.
+
+A separate control check exercised the actual Web API, queue, database and
+worker on one host. Each 120-second comparison completed all 2,880 frames;
+a second comparison was reset while scoring. Worker CPU and memory limits
+were applied for each row. All sampled API responses, Live stop confirmations
+and reset-to-process-close timings in this final run stayed below one second.
+
+| Worker limits | Reference / frames per second | Maximum API response (ms) | Live stop confirmed (ms) | Reset to FFmpeg close (ms) |
+|---|---|---:|---:|---:|
+| 2 CPUs / 2 GiB | 1280 × 720 / 24 | 296.6 | 139.3 | 310.3 |
+| 4 CPUs / 2 GiB | 1920 × 1080 / 24 | 56.2 | 288.3 | 347.6 |
+| 2 CPUs / 4 GiB | 1280 × 720 / 24 | 11.1 | 101.7 | 341.6 |
+| 4 CPUs / 4 GiB | 1920 × 1080 / 24 | 33.7 | 189.4 | 327.6 |
+
+Live provider responses were supplied by a local test fixture; this checks
+application control handling without external encoding jobs or provider latency.
+No worker container was killed for exceeding its memory limit. Earlier checks observed reset-to-close
+latency up to 1.55 seconds and one startup health response of 1.19 seconds.
+The final reset path uses the documented 100-millisecond deletion check and
+250-millisecond termination grace. These single-host results and resource
+estimates do not guarantee response times or memory use for other workloads.
+
+Cloud execution requires an administrator-enabled
 profile under `/settings/vmaf` and a positive per-run USD budget. Saving a profile
 does not launch compute. Profiles identify region, pinned worker image, workspace
 storage, permissions, timeout, and cost limits.

@@ -50,12 +50,21 @@ import {
 	type VmafDownload,
 } from "./download";
 import { type Geometry, geometryFromProbe } from "./geometry";
+import type {
+	LocalVmafResourceSession,
+	LocalVmafResources,
+} from "./local-resources";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
 import {
 	defaultKeyLister,
 	type KeyLister,
 	resolveDistortedKeys,
 } from "./resolve-distorted";
+import {
+	type LocalResourcePlan,
+	type ResourceVideo,
+	resourceVideoFromProbe,
+} from "./resource-plan";
 
 /**
  * VOD VMAF runner (P4-PR3): scores a FINISHED qc-enabled encoding with our
@@ -115,6 +124,7 @@ export function qcContinuationJobId(
 }
 
 export type VmafProcessorDeps = {
+	localResources?: LocalVmafResources;
 	cloudScore?: (request: CloudScoreRequest) => Promise<void>;
 	resolveCloudProfile?: (profileId: string) => Promise<VmafCloudProfile>;
 	/** Product-event emit ; never throws. */
@@ -328,6 +338,7 @@ async function probeDistortedMetrics(
 	deps: VmafProcessorDeps,
 	path: string,
 	signal: AbortSignal,
+	probeOutput?: string,
 ): Promise<{ height?: number; bitrate?: number }> {
 	const toInt = (v: string | undefined): number | undefined => {
 		if (v === undefined) {
@@ -337,19 +348,22 @@ async function probeDistortedMetrics(
 		return Number.isFinite(n) && n > 0 ? n : undefined;
 	};
 	try {
-		const probe = await deps.runner.run(
-			deps.ffprobePath,
-			[
-				"-v",
-				"error",
-				"-print_format",
-				"json",
-				"-show_streams",
-				"-show_format",
-				path,
-			],
-			{ signal },
-		);
+		const probe =
+			probeOutput !== undefined
+				? { code: 0, stdout: probeOutput }
+				: await deps.runner.run(
+						deps.ffprobePath,
+						[
+							"-v",
+							"error",
+							"-print_format",
+							"json",
+							"-show_streams",
+							"-show_format",
+							path,
+						],
+						{ signal },
+					);
 		if (probe.code !== 0) {
 			return {};
 		}
@@ -657,6 +671,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		executionProfile?: VmafCloudProfile,
 		measurementMethod?: "FRAME_INDEX_BT709_10BIT",
 		referenceCredential?: ResolvedCredential,
+		resourceSession?: LocalVmafResourceSession,
+		referenceResource?: ResourceVideo,
 	): Promise<void> {
 		const slot = (variant ?? "std").replace(/[^A-Za-z0-9._-]/g, "_");
 		// The local extension follows the mirror's: a VP9 mirror is a WebM
@@ -677,12 +693,34 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			destPath: distortedPath,
 			label: `distorted qc mirror for rendition ${target.renditionKey}${variant ? ` rung ${variant}` : ""} (output "${target.distorted.outputKey}")`,
 		});
+		const resourceProbe = resourceSession
+			? await deps.runner.run(
+					deps.ffprobePath,
+					[
+						"-v",
+						"error",
+						"-show_streams",
+						"-show_format",
+						"-of",
+						"json",
+						distortedPath,
+					],
+					{ signal },
+				)
+			: undefined;
+		if (resourceProbe && resourceProbe.code !== 0)
+			throw new Error("Cannot probe quality measurement input");
 		// Per-title rungs carry no plan height/bitrate — probe the downloaded
 		// mirror so the quality ladder can place them. Standard renditions keep
 		// their plan values, so skip the extra probe there.
 		const probed =
 			target.height === null || target.bitrate === null
-				? await probeDistortedMetrics(deps, distortedPath, signal)
+				? await probeDistortedMetrics(
+						deps,
+						distortedPath,
+						signal,
+						resourceProbe?.stdout,
+					)
 				: undefined;
 		// Prefer a bundled model FILE when the image ships one (VMAF v1 models are
 		// only reachable this way; the v0.6.1 family resolves either way). Falls
@@ -692,11 +730,13 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			| { width: number; height: number; bitdepth: number }
 			| undefined;
 		if (measurementMethod) {
-			const probe = await deps.runner.run(
-				deps.ffprobePath,
-				["-v", "error", "-show_streams", "-of", "json", distortedPath],
-				{ signal },
-			);
+			const probe =
+				resourceProbe ??
+				(await deps.runner.run(
+					deps.ffprobePath,
+					["-v", "error", "-show_streams", "-of", "json", distortedPath],
+					{ signal },
+				));
 			if (probe.code !== 0)
 				throw new Error("Cannot probe existing MP4 geometry");
 			const video = JSON.parse(probe.stdout).streams?.find(
@@ -712,146 +752,177 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				bitdepth: depth,
 			};
 		}
-		try {
-			const scoringOptions: VmafCommandOptions = {
-				referencePath,
-				distortedPath,
-				model,
-				...(measurementMethod
-					? {
-							measurementMethod,
-							referenceFrameRate: geometry.frameRate,
-							distortedOriginal,
-						}
-					: {}),
-				...(modelPath ? { modelPath } : {}),
-				logPath,
-				// Conform the distorted side to the reference (libvmaf needs an
-				// exact W×H + fps match). The mirror is already at the rendition
-				// resolution; scaling up to the source is the standard VMAF setup.
-				scaleToReference: { width: geometry.width, height: geometry.height },
-				...(!measurementMethod && geometry.fps !== undefined
-					? { fpsConform: geometry.fps }
-					: {}),
-				...(deps.threads !== undefined ? { threads: deps.threads } : {}),
-				// Cloud receipts require every frame, regardless of local performance tuning.
-				...(execution.backend === "CLOUD"
-					? { subsample: 1 }
-					: deps.subsample !== undefined
-						? { subsample: deps.subsample }
-						: {}),
-				// PSNR rides the same libvmaf invocation (no extra pass / no
-				// Bitmovin QC API); off ⇒ the argv is byte-identical to VMAF-only.
-				...(wantPsnr ? { psnr: true } : {}),
-			};
-			let run: { code: number | null; stderr: string };
-			if (execution.backend === "CLOUD") {
-				if (!deps.cloudScore)
-					throw new Error("Cloud VMAF is not configured on this worker");
-				const ttl = Math.min(
-					604800,
-					(executionProfile?.provider === "GCP_BATCH" && executionProfile.spot
-						? (executionProfile.spotPolicy?.deadlineSeconds ?? 0)
-						: 0) +
-						(executionProfile?.timeoutSeconds ?? 86400) +
-						(executionProfile?.queueTimeoutSeconds ?? 7200) +
-						900,
-				);
-				const [referenceRemote, distortedRemote] =
-					executionProfile?.provider === "GCP_BATCH"
-						? await Promise.all([
-								referenceCredential
-									? signGcsVmafInput(
-											referenceCredential,
-											referenceProvenance,
-											ttl,
-										)
-									: undefined,
-								signGcsVmafInput(out.credential, distortedProvenance, ttl),
-							])
-						: [];
-				await deps.cloudScore({
-					...(referenceRemote || distortedRemote
+		const score = async (allocation?: LocalResourcePlan) => {
+			try {
+				const scoringOptions: VmafCommandOptions = {
+					referencePath,
+					distortedPath,
+					model,
+					...(measurementMethod
 						? {
-								remoteInputs: {
-									reference: referenceRemote,
-									distorted: distortedRemote,
-								},
+								measurementMethod,
+								referenceFrameRate: geometry.frameRate,
+								distortedOriginal,
 							}
 						: {}),
-					vmafJobId,
-					pairCount,
-					targetKey: `${target.renditionKey}/${slot}`,
-					profileId: execution.profileId,
-					profile: executionProfile,
-					budgetUsd: execution.budgetUsd,
-					options: scoringOptions,
-					signal,
+					...(modelPath ? { modelPath } : {}),
+					logPath,
+					// Conform the distorted side to the reference (libvmaf needs an
+					// exact W×H + fps match). The mirror is already at the rendition
+					// resolution; scaling up to the source is the standard VMAF setup.
+					scaleToReference: { width: geometry.width, height: geometry.height },
+					...(!measurementMethod && geometry.fps !== undefined
+						? { fpsConform: geometry.fps }
+						: {}),
+					...(allocation
+						? {
+								threads: allocation.threads,
+								...(!measurementMethod
+									? {
+											decoderThreads: allocation.decoderThreads,
+											filterComplexThreads: allocation.filterComplexThreads,
+										}
+									: {}),
+							}
+						: deps.threads !== undefined
+							? { threads: deps.threads }
+							: {}),
+					// Cloud receipts require every frame, regardless of local performance tuning.
+					...(execution.backend === "CLOUD"
+						? { subsample: 1 }
+						: deps.subsample !== undefined
+							? { subsample: deps.subsample }
+							: {}),
+					// PSNR rides the same libvmaf invocation (no extra pass / no
+					// Bitmovin QC API); off ⇒ the argv is byte-identical to VMAF-only.
+					...(wantPsnr ? { psnr: true } : {}),
+				};
+				let run: { code: number | null; stderr: string };
+				if (execution.backend === "CLOUD") {
+					if (!deps.cloudScore)
+						throw new Error("Cloud VMAF is not configured on this worker");
+					const ttl = Math.min(
+						604800,
+						(executionProfile?.provider === "GCP_BATCH" && executionProfile.spot
+							? (executionProfile.spotPolicy?.deadlineSeconds ?? 0)
+							: 0) +
+							(executionProfile?.timeoutSeconds ?? 86400) +
+							(executionProfile?.queueTimeoutSeconds ?? 7200) +
+							900,
+					);
+					const [referenceRemote, distortedRemote] =
+						executionProfile?.provider === "GCP_BATCH"
+							? await Promise.all([
+									referenceCredential
+										? signGcsVmafInput(
+												referenceCredential,
+												referenceProvenance,
+												ttl,
+											)
+										: undefined,
+									signGcsVmafInput(out.credential, distortedProvenance, ttl),
+								])
+							: [];
+					await deps.cloudScore({
+						...(referenceRemote || distortedRemote
+							? {
+									remoteInputs: {
+										reference: referenceRemote,
+										distorted: distortedRemote,
+									},
+								}
+							: {}),
+						vmafJobId,
+						pairCount,
+						targetKey: `${target.renditionKey}/${slot}`,
+						profileId: execution.profileId,
+						profile: executionProfile,
+						budgetUsd: execution.budgetUsd,
+						options: scoringOptions,
+						signal,
+					});
+					run = { code: 0, stderr: "" };
+				} else {
+					run = await deps.runner.run(
+						deps.ffmpegPath,
+						buildVmafCommand(scoringOptions),
+						{ signal, abortKillAfterMs: 250 },
+					);
+				}
+				if (run.code !== 0) {
+					// libvmaf rejects an unresolvable model with a cryptic tail
+					// ("Invalid argument") — surface the real cause + the fix instead.
+					if (isUnresolvableModel(run.stderr)) {
+						throw new Error(unresolvableModelMessage(model, modelPath));
+					}
+					throw new Error(
+						`libvmaf failed for rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,
+					);
+				}
+				const raw = await readFile(logPath, "utf8");
+				const parsed = parseVmafJson(JSON.parse(raw));
+				if (parsed.frames.length === 0) {
+					throw new Error(
+						`libvmaf produced no frame scores for rendition ${target.renditionKey}`,
+					);
+				}
+				const pooled = computePooled(parsed.frames);
+				// PSNR (when requested + actually present): pool the per-frame psnr_y
+				// into mean/min/max and attach it to the result's pooled block. Absent
+				// frames (feature off, or a log without psnr_y) ⇒ undefined ⇒ no
+				// `pooled.psnr` key, so VMAF-only results are byte-identical to before.
+				if (wantPsnr) {
+					const psnrValues = parsed.frames
+						.map((f) => f.psnr)
+						.filter((v): v is number => typeof v === "number");
+					const psnrPooled = computePsnrPooled(psnrValues);
+					if (psnrPooled) {
+						pooled.psnr = psnrPooled;
+					}
+				}
+				// Per-frame array gzipped into framesGzip (now [{frameNum,vmaf,psnr?}]);
+				// frames column stays null.
+				const framesGzip = gzipSync(Buffer.from(JSON.stringify(parsed.frames)));
+				await deps.prisma.vmafResult.create({
+					data: {
+						vmafJobId,
+						renditionRef: renditionRef(
+							target,
+							variant,
+							probed,
+						) as Prisma.InputJsonValue,
+						pooled: pooled as unknown as Prisma.InputJsonValue,
+						framesGzip,
+						//  slice 2: WHICH bytes this row compared — both
+						// sides' version identity (demanded at read) and digest.
+						provenance: {
+							reference: referenceProvenance,
+							distorted: distortedProvenance,
+							...(providerResult !== undefined ? { providerResult } : {}),
+						} as unknown as Prisma.InputJsonValue,
+					},
 				});
-				run = { code: 0, stderr: "" };
-			} else {
-				run = await deps.runner.run(
-					deps.ffmpegPath,
-					buildVmafCommand(scoringOptions),
-					{ signal },
-				);
+			} finally {
+				await rm(distortedPath, { force: true }).catch(() => {});
+				await rm(logPath, { force: true }).catch(() => {});
 			}
-			if (run.code !== 0) {
-				// libvmaf rejects an unresolvable model with a cryptic tail
-				// ("Invalid argument") — surface the real cause + the fix instead.
-				if (isUnresolvableModel(run.stderr)) {
-					throw new Error(unresolvableModelMessage(model, modelPath));
-				}
-				throw new Error(
-					`libvmaf failed for rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,
-				);
-			}
-			const raw = await readFile(logPath, "utf8");
-			const parsed = parseVmafJson(JSON.parse(raw));
-			if (parsed.frames.length === 0) {
-				throw new Error(
-					`libvmaf produced no frame scores for rendition ${target.renditionKey}`,
-				);
-			}
-			const pooled = computePooled(parsed.frames);
-			// PSNR (when requested + actually present): pool the per-frame psnr_y
-			// into mean/min/max and attach it to the result's pooled block. Absent
-			// frames (feature off, or a log without psnr_y) ⇒ undefined ⇒ no
-			// `pooled.psnr` key, so VMAF-only results are byte-identical to before.
-			if (wantPsnr) {
-				const psnrValues = parsed.frames
-					.map((f) => f.psnr)
-					.filter((v): v is number => typeof v === "number");
-				const psnrPooled = computePsnrPooled(psnrValues);
-				if (psnrPooled) {
-					pooled.psnr = psnrPooled;
-				}
-			}
-			// Per-frame array gzipped into framesGzip (now [{frameNum,vmaf,psnr?}]);
-			// frames column stays null.
-			const framesGzip = gzipSync(Buffer.from(JSON.stringify(parsed.frames)));
-			await deps.prisma.vmafResult.create({
-				data: {
-					vmafJobId,
-					renditionRef: renditionRef(
-						target,
-						variant,
-						probed,
-					) as Prisma.InputJsonValue,
-					pooled: pooled as unknown as Prisma.InputJsonValue,
-					framesGzip,
-					//  slice 2: WHICH bytes this row compared — both
-					// sides' version identity (demanded at read) and digest.
-					provenance: {
-						reference: referenceProvenance,
-						distorted: distortedProvenance,
-						...(providerResult !== undefined ? { providerResult } : {}),
-					} as unknown as Prisma.InputJsonValue,
+		};
+		if (resourceSession && referenceResource && resourceProbe) {
+			await resourceSession.run(
+				`${target.renditionKey}/${slot}`,
+				{
+					reference: referenceResource,
+					distorted: resourceVideoFromProbe(resourceProbe.stdout),
+					model,
+					psnr: wantPsnr,
+					measurementMethod,
+					outputFps: geometry.fps,
 				},
-			});
-		} finally {
-			await rm(distortedPath, { force: true }).catch(() => {});
-			await rm(logPath, { force: true }).catch(() => {});
+				pairCount,
+				score,
+			);
+		} else {
+			await score();
 		}
 	}
 
@@ -1097,6 +1168,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				{
 					path: string;
 					geometry: Geometry & { frameRate?: string };
+					resourceVideo?: ResourceVideo;
 					provenance: DownloadProvenance;
 					credential: ResolvedCredential;
 				}
@@ -1106,6 +1178,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			): Promise<{
 				path: string;
 				geometry: Geometry & { frameRate?: string };
+				resourceVideo?: ResourceVideo;
 				provenance: DownloadProvenance;
 				credential: ResolvedCredential;
 			}> => {
@@ -1136,6 +1209,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						"-print_format",
 						"json",
 						"-show_streams",
+						...(!isCloud && deps.localResources ? ["-show_format"] : []),
 						referencePath,
 					],
 					{ signal },
@@ -1160,6 +1234,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				const entry = {
 					path: referencePath,
 					geometry,
+					...(!isCloud && deps.localResources
+						? { resourceVideo: resourceVideoFromProbe(probe.stdout) }
+						: {}),
 					provenance: referenceProvenance,
 					credential: src.credential,
 				};
@@ -1452,6 +1529,35 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					});
 			}
 
+			// Pre-fetch each unique reference source SEQUENTIALLY (download once;
+			// referenceFor caches by inputKey+inputPath), so the concurrent pool
+			// below only reads the cache — no double-download or filename race.
+			for (const target of targets) {
+				await referenceFor(target);
+			}
+
+			const resourceSession = !isCloud
+				? deps.localResources?.begin(signal)
+				: undefined;
+			const initialPlans = resourceSession
+				? [...refCache.values()].map((ref) => {
+						if (!ref.resourceVideo)
+							throw new Error(
+								"Quality measurement input metadata is unavailable",
+							);
+						return resourceSession.plan(
+							{
+								reference: ref.resourceVideo,
+								distorted: ref.resourceVideo,
+								model: row.model,
+								psnr: wantPsnr,
+								measurementMethod,
+								outputFps: ref.geometry.fps,
+							},
+							work.length,
+						);
+					})
+				: [];
 			// Now the unit count is known (incl. per-title rungs): record the
 			// progress baseline + execution profile for the report. Best-effort —
 			// a failed progress write must NEVER fail the run.
@@ -1472,15 +1578,33 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					? deps.subsample
 					: undefined;
 			// Each cloud pair owns a separate resource; local scoring keeps its CPU limit.
-			const jobConcurrency = isCloud ? work.length : concurrency;
+			const jobConcurrency = isCloud
+				? work.length
+				: initialPlans.length > 0
+					? Math.max(...initialPlans.map((plan) => plan.concurrency))
+					: concurrency;
 			await writeProgress(vmafJobId, {
 				totalUnits: work.length,
 				doneUnits: 0,
 				...(isCloud
 					? { cores: null, threads: null }
 					: {
-							...(deps.cores !== undefined ? { cores: deps.cores } : {}),
-							...(deps.threads !== undefined ? { threads: deps.threads } : {}),
+							...(resourceSession
+								? {
+										cores: Math.max(
+											1,
+											Math.floor(resourceSession.report().cpuCapacity),
+										),
+										threads: Math.max(
+											...initialPlans.map((plan) => plan.threads),
+										),
+									}
+								: {
+										...(deps.cores !== undefined ? { cores: deps.cores } : {}),
+										...(deps.threads !== undefined
+											? { threads: deps.threads }
+											: {}),
+									}),
 						}),
 				concurrency: jobConcurrency,
 				...(isCloud || subsampling !== undefined
@@ -1496,13 +1620,6 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						}
 					: {}),
 			});
-
-			// Pre-fetch each unique reference source SEQUENTIALLY (download once;
-			// referenceFor caches by inputKey+inputPath), so the concurrent pool
-			// below only reads the cache — no double-download or filename race.
-			for (const target of targets) {
-				await referenceFor(target);
-			}
 
 			// Bounded pool: `concurrency` workers pull from a shared index. On the
 			// first error, stop pulling and let in-flight runs settle, then rethrow
@@ -1534,6 +1651,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							executionProfile,
 							measurementMethod,
 							reference.credential,
+							resourceSession,
+							reference.resourceVideo,
 						);
 						resultCount += 1;
 						// Atomic increment — multiple pool workers bump concurrently, so
@@ -1552,6 +1671,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					poolWorker(),
 				),
 			);
+			if (resourceSession) {
+				const report = resourceSession.report();
+				await writeProgress(vmafJobId, {
+					params: mergeParams({
+						localResources: report as unknown as Prisma.InputJsonValue,
+					}),
+					...(report.units.length
+						? { threads: Math.max(...report.units.map((unit) => unit.threads)) }
+						: {}),
+				});
+			}
 			if (firstError !== undefined) {
 				throw firstError;
 			}
@@ -1643,6 +1773,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// The PENDING claim prevents restarting compute; later liveness checks
 			// still abort a cloud run when the operator stops it.
 			let initialRead = true;
+			let cloudExecution = false;
 			try {
 				return await whileRowExists(
 					async () => {
@@ -1653,17 +1784,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						const params = row?.params as {
 							execution?: { backend?: string };
 						} | null;
+						cloudExecution = params?.execution?.backend === "CLOUD";
 						const startup = initialRead;
 						initialRead = false;
-						if (
-							!startup &&
-							params?.execution?.backend === "CLOUD" &&
-							row?.status === "ERROR"
-						)
+						if (!startup && cloudExecution && row?.status === "ERROR")
 							throw new CloudVmafStopped("Cloud measurement stopped");
 						return Boolean(row);
 					},
 					(signal) => run(vmafJobId, signal),
+					() => (cloudExecution ? 1_000 : 100),
 				);
 			} catch (error) {
 				if (error instanceof CloudVmafStopped)

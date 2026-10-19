@@ -49,8 +49,16 @@ import {
 	captureRenditionWindow,
 	defaultCaptureBrowserFactory,
 } from "./live-capture";
+import type {
+	LocalVmafResourceSession,
+	LocalVmafResources,
+} from "./local-resources";
 import { probeContainerLoop } from "./loop-probe";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
+import {
+	type LocalResourcePlan,
+	resourceVideoFromProbe,
+} from "./resource-plan";
 import {
 	extractStats,
 	type FrameStats,
@@ -142,6 +150,7 @@ export const SIGNATURE_FPS = 30;
 const FALLBACK_SEGMENT_COUNT = 20;
 
 export type LiveVmafProcessorDeps = {
+	localResources?: LocalVmafResources;
 	/** Product-event emit ; never throws. */
 	emitEvent?: EmitProductEvent;
 	prisma: AppPrismaClient;
@@ -587,9 +596,12 @@ export function createLiveVmafProcessor(deps: LiveVmafProcessorDeps) {
 								makeBrowser,
 								runner: {
 									...deps.runner,
-									run: async (bin, argv) => {
+									run: async (bin, argv, options) => {
 										signal.throwIfAborted();
-										const result = await deps.runner.run(bin, argv, { signal });
+										const result = await deps.runner.run(bin, argv, {
+											...options,
+											signal,
+										});
 										signal.throwIfAborted();
 										return result;
 									},
@@ -598,6 +610,7 @@ export function createLiveVmafProcessor(deps: LiveVmafProcessorDeps) {
 							signal,
 						).process(jobData);
 					},
+					100,
 				);
 			} catch (error) {
 				if (error instanceof ResetRowDeleted)
@@ -877,6 +890,7 @@ function createLiveVmafProcessorRun(
 		 */
 		captureWindow: CaptureWindow;
 		jobDir: string;
+		resourceSession?: LocalVmafResourceSession;
 	}): Promise<CaptureWindow> {
 		const { target, jobDir, fps } = args;
 		const output = args.plan.outputs.find((o) => o.key === target.outputKey);
@@ -939,6 +953,13 @@ function createLiveVmafProcessorRun(
 		const logPath = join(jobDir, `vmaf-${target.renditionKey}.json`);
 		const alignedRefPath = join(jobDir, `aligned-${target.renditionKey}.mp4`);
 		const cleanup = [...clip.localPaths, logPath, alignedRefPath];
+		let cleaned = false;
+		const clean = async () => {
+			if (cleaned) return;
+			cleaned = true;
+			for (const path of cleanup)
+				await rm(path, { force: true }).catch(() => {});
+		};
 		try {
 			// ── signatures: distorted raw stats (concat) + source raw stats ───────
 			const distortedRaw = await distortedStats(distortedInput, fps);
@@ -1053,15 +1074,25 @@ function createLiveVmafProcessorRun(
 				}
 			}
 
-			// ── score: libvmaf(distorted, alignedReference) ───────────────────────
-			const modelPath = deps.resolveModelPath?.(args.model);
-			const baseArgv = buildVmafCommand({
-				referencePath: alignedRefPath,
-				distortedPath: DISTORTED_PLACEHOLDER,
-				model: args.model,
-				...(modelPath ? { modelPath } : {}),
-				logPath,
-				/**
+			const pair = args.resourceSession
+				? {
+						reference: await probeResource(alignedRefPath),
+						distorted: await probeResource(clip.clipPath),
+						model: args.model,
+						outputFps: fps,
+					}
+				: undefined;
+			const score = async (allocation?: LocalResourcePlan) => {
+				try {
+					// ── score: libvmaf(distorted, alignedReference) ───────────────────────
+					const modelPath = deps.resolveModelPath?.(args.model);
+					const baseArgv = buildVmafCommand({
+						referencePath: alignedRefPath,
+						distortedPath: DISTORTED_PLACEHOLDER,
+						model: args.model,
+						...(modelPath ? { modelPath } : {}),
+						logPath,
+						/**
 				 * CONFORM THE DISTORTED SIDE, exactly as the VOD path does
 
 				 *
@@ -1079,180 +1110,216 @@ function createLiveVmafProcessorRun(
 				 * that is the reference's actual cadence, and it is also the grid the
 				 * alignment offset is counted in.
 				 */
-				scaleToReference: {
-					width: args.referenceGeometry.width,
-					height: args.referenceGeometry.height,
-				},
-				fpsConform: fps,
-				...(deps.threads !== undefined ? { threads: deps.threads } : {}),
-				...(deps.subsample !== undefined ? { subsample: deps.subsample } : {}),
-			});
-			const argv = spliceDistortedInput(baseArgv, distortedInput);
-			const run = await deps.runner.run(deps.ffmpegPath, argv);
-			if (run.code !== 0) {
-				// Same actionable guidance as the VOD path for an unresolvable
-				// model (e.g. a VMAF v1 model on a worker without VMAF_MODEL_DIR).
-				if (isUnresolvableModel(run.stderr)) {
-					throw new Error(unresolvableModelMessage(args.model, modelPath));
-				}
-				throw new Error(
-					`libvmaf failed for live rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,
-				);
-			}
-			const parsed = parseVmafJson(JSON.parse(await readFile(logPath, "utf8")));
-			if (parsed.frames.length === 0) {
-				throw new Error(
-					`libvmaf produced no frame scores for live rendition ${target.renditionKey}`,
-				);
-			}
-			// ── pool only the frames that have a reference and an aligned segment ─
-			const masked = maskedByRuns(timeline, referenceRuns, distortedFrames);
-			const maskedCount = masked.filter(Boolean).length;
-			const excludedSegments = alignment.segments
-				.filter((seg) => !seg.included)
-				.map((seg) => seg.index);
-			const noSegmentIncluded = alignment.includedSegments === 0;
-			if (noSegmentIncluded) {
-				// Nothing aligned confidently: score every unmasked frame and say
-				// so — a bogus alignment is surfaced, never trusted .
-				warnings.push(
-					"No segment aligned with confidence; every unmasked frame was pooled under the window's best offset.",
-				);
-			}
-			const include = new Array<boolean>(distortedFrames).fill(false);
-			for (const seg of alignment.segments) {
-				if (!seg.included && !noSegmentIncluded) {
-					continue;
-				}
-				for (let i = seg.frameStart; i < seg.frameEnd; i++) {
-					include[i] = !masked[i];
-				}
-			}
-			// Grid identity (rev427 re-review Q3): `include` is over the distorted
-			// signature grid, `frameNum` over libvmaf's own decode of the same
-			// clip through the same fps conform. A run that scored fewer frames
-			// than the grid (by more than the subsample stride) is said out loud.
-			const stride = Math.max(1, deps.subsample ?? 1);
-			const lastScored = parsed.frames.reduce(
-				(acc, frame) => Math.max(acc, frame.frameNum),
-				-1,
-			);
-			if (lastScored < distortedFrames - stride) {
-				warnings.push(
-					`libvmaf scored frames up to ${lastScored} of a ${distortedFrames}-frame window — ${distortedFrames - 1 - lastScored} frames at the tail were not scored.`,
-				);
-			}
-			const pooledFrames = poolFrames(parsed.frames, include);
-			const pooled = pooledFrames.pooled as PooledMetrics & {
-				live?: LiveMetadata;
-			};
-			const live: LiveMetadata = {
-				mode: "LIVE",
-				alignmentVersion: 2,
-				referenceSource: args.referenceSource,
-				offset: alignment.offset,
-				confidence: alignment.confidence,
-				lowConfidence,
-				fps,
-				signatureMode,
-				sourceFrames,
-				distortedFrames,
-				coarseOffset: null,
-				drift: alignment.drift,
-				loopMap: alignment.loopMap,
-				timeline,
-				referenceRuns,
-				segments: alignment.segments.map((seg) => ({
-					index: seg.index,
-					frameStart: seg.frameStart,
-					frameEnd: seg.frameEnd,
-					offset: seg.offset,
-					confidence: seg.confidence,
-					comparableFrames: seg.comparableFrames,
-					comparableAtWindowOffset: seg.comparableAtWindowOffset,
-					included: seg.included,
-				})),
-				masked: {
-					frames: maskedCount,
-					share: distortedFrames === 0 ? 0 : maskedCount / distortedFrames,
-				},
-				// Under the no-segment fallback nothing is kept out, so nothing is
-				// listed as excluded; the per-segment `included` flags and
-				// `pooledWithoutAlignment` say that no segment aligned.
-				excluded: noSegmentIncluded
-					? { segments: [], frames: 0 }
-					: {
-							segments: excludedSegments,
-							frames: distortedFrames - alignment.includedFrames,
+						scaleToReference: {
+							width: args.referenceGeometry.width,
+							height: args.referenceGeometry.height,
 						},
-				pooledWithoutAlignment: noSegmentIncluded,
-				includedFrames: pooledFrames.includedFrames,
-				unscoredFrames: pooledFrames.unscoredFrames,
-				measuredPeriodFrames,
-				captureSelection: clip.selection,
-				// The job's single sealed window, identical on every rendition (row
-				// #273) — the report proves the set was compared over one interval.
-				captureWindow: window,
-				...(warnings.length > 0 ? { warning: warnings.join(" ") } : {}),
-			};
-			pooled.live = live;
-
-			const framesGzip = gzipSync(Buffer.from(JSON.stringify(parsed.frames)));
-			await deps.prisma.vmafResult.create({
-				data: {
-					vmafJobId: args.vmafJobId,
-					renditionRef: renditionRef(target) as Prisma.InputJsonValue,
-					pooled: pooled as unknown as Prisma.InputJsonValue,
-					framesGzip,
-					/**
-					 * WHICH bytes this row compared.
-					 * VOD rows have
-					 * carried this since the download path started digesting; live rows
-					 * carried `null`, so a live score could not be tied to any object at
-					 * all — and a live capture is the case where it matters most,
-					 * because the distorted side is N segments assembled at read time
-					 * and the reference is a looping source that can be replaced under a
-					 * running channel.
-					 *
-					 * Same `{ reference, distorted }` shape as VOD. Both sides are
-					 * `pinned: false` and honest about it: neither the feeder-source
-					 * download nor the segment capture demands a version identity
-					 * (`getObject` without `expect` — slice 3 is the row
-					 * that closes that, and it is still open). The SHA-256s are the only
-					 * identity here, and they are of the bytes ffmpeg actually read.
-					 */
-					provenance: {
-						/**
-						 * WHICH window this row was captured over.
-						 * Identical across every
-						 * rendition of the job, so a multi-rendition set is provably one
-						 * comparable window rather than a per-target drift.
-						 */
-						captureWindow: window,
-						reference: args.sourceProvenance,
+						fpsConform: fps,
+						...(allocation
+							? {
+									threads: allocation.threads,
+									decoderThreads: allocation.decoderThreads,
+									filterComplexThreads: allocation.filterComplexThreads,
+								}
+							: deps.threads !== undefined
+								? { threads: deps.threads }
+								: {}),
+						...(deps.subsample !== undefined
+							? { subsample: deps.subsample }
+							: {}),
+					});
+					const argv = spliceDistortedInput(baseArgv, distortedInput);
+					const run = await deps.runner.run(deps.ffmpegPath, argv, {
+						abortKillAfterMs: 250,
+					});
+					if (run.code !== 0) {
+						// Same actionable guidance as the VOD path for an unresolvable
+						// model (e.g. a VMAF v1 model on a worker without VMAF_MODEL_DIR).
+						if (isUnresolvableModel(run.stderr)) {
+							throw new Error(unresolvableModelMessage(args.model, modelPath));
+						}
+						throw new Error(
+							`libvmaf failed for live rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,
+						);
+					}
+					const parsed = parseVmafJson(
+						JSON.parse(await readFile(logPath, "utf8")),
+					);
+					if (parsed.frames.length === 0) {
+						throw new Error(
+							`libvmaf produced no frame scores for live rendition ${target.renditionKey}`,
+						);
+					}
+					// ── pool only the frames that have a reference and an aligned segment ─
+					const masked = maskedByRuns(timeline, referenceRuns, distortedFrames);
+					const maskedCount = masked.filter(Boolean).length;
+					const excludedSegments = alignment.segments
+						.filter((seg) => !seg.included)
+						.map((seg) => seg.index);
+					const noSegmentIncluded = alignment.includedSegments === 0;
+					if (noSegmentIncluded) {
+						// Nothing aligned confidently: score every unmasked frame and say
+						// so — a bogus alignment is surfaced, never trusted .
+						warnings.push(
+							"No segment aligned with confidence; every unmasked frame was pooled under the window's best offset.",
+						);
+					}
+					const include = new Array<boolean>(distortedFrames).fill(false);
+					for (const seg of alignment.segments) {
+						if (!seg.included && !noSegmentIncluded) {
+							continue;
+						}
+						for (let i = seg.frameStart; i < seg.frameEnd; i++) {
+							include[i] = !masked[i];
+						}
+					}
+					// Grid identity (rev427 re-review Q3): `include` is over the distorted
+					// signature grid, `frameNum` over libvmaf's own decode of the same
+					// clip through the same fps conform. A run that scored fewer frames
+					// than the grid (by more than the subsample stride) is said out loud.
+					const stride = Math.max(1, deps.subsample ?? 1);
+					const lastScored = parsed.frames.reduce(
+						(acc, frame) => Math.max(acc, frame.frameNum),
+						-1,
+					);
+					if (lastScored < distortedFrames - stride) {
+						warnings.push(
+							`libvmaf scored frames up to ${lastScored} of a ${distortedFrames}-frame window — ${distortedFrames - 1 - lastScored} frames at the tail were not scored.`,
+						);
+					}
+					const pooledFrames = poolFrames(parsed.frames, include);
+					const pooled = pooledFrames.pooled as PooledMetrics & {
+						live?: LiveMetadata;
+					};
+					const live: LiveMetadata = {
+						mode: "LIVE",
+						alignmentVersion: 2,
 						referenceSource: args.referenceSource,
-						distorted: {
-							bucket: source.bucket,
-							keys: clip.keys,
-							segmentCount: clip.segmentCount,
-							container: clip.container,
-							pinned: false,
-							sha256: clip.sha256,
-							bytes: clip.bytes,
-							captureSelection: clip.selection,
+						offset: alignment.offset,
+						confidence: alignment.confidence,
+						lowConfidence,
+						fps,
+						signatureMode,
+						sourceFrames,
+						distortedFrames,
+						coarseOffset: null,
+						drift: alignment.drift,
+						loopMap: alignment.loopMap,
+						timeline,
+						referenceRuns,
+						segments: alignment.segments.map((seg) => ({
+							index: seg.index,
+							frameStart: seg.frameStart,
+							frameEnd: seg.frameEnd,
+							offset: seg.offset,
+							confidence: seg.confidence,
+							comparableFrames: seg.comparableFrames,
+							comparableAtWindowOffset: seg.comparableAtWindowOffset,
+							included: seg.included,
+						})),
+						masked: {
+							frames: maskedCount,
+							share: distortedFrames === 0 ? 0 : maskedCount / distortedFrames,
 						},
-					} as unknown as Prisma.InputJsonValue,
-				},
-			});
-			// Echo the window this rendition actually recorded so the caller can
-			// SEAL the set — the fail-closed check compares every rendition's
-			// recorded window against the job's single window .
-			return window;
+						// Under the no-segment fallback nothing is kept out, so nothing is
+						// listed as excluded; the per-segment `included` flags and
+						// `pooledWithoutAlignment` say that no segment aligned.
+						excluded: noSegmentIncluded
+							? { segments: [], frames: 0 }
+							: {
+									segments: excludedSegments,
+									frames: distortedFrames - alignment.includedFrames,
+								},
+						pooledWithoutAlignment: noSegmentIncluded,
+						includedFrames: pooledFrames.includedFrames,
+						unscoredFrames: pooledFrames.unscoredFrames,
+						measuredPeriodFrames,
+						captureSelection: clip.selection,
+						// The job's single sealed window, identical on every rendition (row
+						// #273) — the report proves the set was compared over one interval.
+						captureWindow: window,
+						...(warnings.length > 0 ? { warning: warnings.join(" ") } : {}),
+					};
+					pooled.live = live;
+
+					const framesGzip = gzipSync(
+						Buffer.from(JSON.stringify(parsed.frames)),
+					);
+					await deps.prisma.vmafResult.create({
+						data: {
+							vmafJobId: args.vmafJobId,
+							renditionRef: renditionRef(target) as Prisma.InputJsonValue,
+							pooled: pooled as unknown as Prisma.InputJsonValue,
+							framesGzip,
+							/**
+							 * WHICH bytes this row compared.
+							 * VOD rows have
+							 * carried this since the download path started digesting; live rows
+							 * carried `null`, so a live score could not be tied to any object at
+							 * all — and a live capture is the case where it matters most,
+							 * because the distorted side is N segments assembled at read time
+							 * and the reference is a looping source that can be replaced under a
+							 * running channel.
+							 *
+							 * Same `{ reference, distorted }` shape as VOD. Both sides are
+							 * `pinned: false` and honest about it: neither the feeder-source
+							 * download nor the segment capture demands a version identity
+							 * (`getObject` without `expect` — slice 3 is the row
+							 * that closes that, and it is still open). The SHA-256s are the only
+							 * identity here, and they are of the bytes ffmpeg actually read.
+							 */
+							provenance: {
+								/**
+								 * WHICH window this row was captured over.
+								 * Identical across every
+								 * rendition of the job, so a multi-rendition set is provably one
+								 * comparable window rather than a per-target drift.
+								 */
+								captureWindow: window,
+								reference: args.sourceProvenance,
+								referenceSource: args.referenceSource,
+								distorted: {
+									bucket: source.bucket,
+									keys: clip.keys,
+									segmentCount: clip.segmentCount,
+									container: clip.container,
+									pinned: false,
+									sha256: clip.sha256,
+									bytes: clip.bytes,
+									captureSelection: clip.selection,
+								},
+							} as unknown as Prisma.InputJsonValue,
+						},
+					});
+					// Echo the window this rendition actually recorded so the caller can
+					// SEAL the set — the fail-closed check compares every rendition's
+					// recorded window against the job's single window .
+					return window;
+				} finally {
+					await clean();
+				}
+			};
+			return args.resourceSession && pair
+				? await args.resourceSession.run(target.renditionKey, pair, 1, score)
+				: await score();
 		} finally {
-			for (const p of cleanup) {
-				await rm(p, { force: true }).catch(() => {});
-			}
+			await clean();
 		}
+	}
+
+	async function probeResource(path: string) {
+		const probe = await deps.runner.run(deps.ffprobePath, [
+			"-v",
+			"error",
+			"-show_streams",
+			"-show_format",
+			"-of",
+			"json",
+			path,
+		]);
+		if (probe.code !== 0)
+			throw new Error("Cannot probe quality measurement input");
+		return resourceVideoFromProbe(probe.stdout);
 	}
 
 	async function run(vmafJobId: string): Promise<LiveVmafResult> {
@@ -1628,6 +1695,7 @@ function createLiveVmafProcessorRun(
 			// the whole job ERROR with the earlier rows orphaned under it. Each
 			// target is isolated; the job still ends ERROR, naming exactly which
 			// renditions went unscored and why, and the scored rows are kept.
+			const resourceSession = deps.localResources?.begin(signal);
 			const unscored: string[] = [];
 			const sealed: SealedRendition[] = [];
 			for (const target of targets) {
@@ -1651,6 +1719,7 @@ function createLiveVmafProcessorRun(
 						windowSeconds,
 						captureWindow: jobWindow,
 						jobDir,
+						resourceSession,
 					});
 					sealed.push({ renditionKey: target.renditionKey, window });
 					resultCount += 1;
@@ -1662,6 +1731,32 @@ function createLiveVmafProcessorRun(
 				}
 			}
 
+			if (resourceSession) {
+				const report = resourceSession.report();
+				await deps.prisma.vmafJob
+					.update({
+						where: { id: vmafJobId },
+						data: {
+							cores: Math.max(1, Math.floor(report.cpuCapacity)),
+							concurrency: 1,
+							...(report.units.length
+								? {
+										threads: Math.max(
+											...report.units.map((unit) => unit.threads),
+										),
+									}
+								: {}),
+							params: {
+								...(params as unknown as Prisma.InputJsonObject),
+								...(deps.subsample !== undefined && deps.subsample > 1
+									? { subsample: deps.subsample }
+									: {}),
+								localResources: report as unknown as Prisma.InputJsonValue,
+							},
+						},
+					})
+					.catch(() => {});
+			}
 			await rm(sourcePath, { force: true }).catch(() => {});
 			if (unscored.length > 0) {
 				throw new Error(

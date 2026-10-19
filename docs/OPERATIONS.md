@@ -104,6 +104,49 @@ Per-encoding heartbeat hooks are owned and removed by the worker. Before an
 upgrade that removes support for those hooks, disable registration with the new
 worker and confirm cleanup first. Preserve signing keys and ownership records.
 
+## Local quality resources
+
+Leave `VMAF_THREADS` and `VMAF_CONCURRENCY` blank for automatic selection. The
+worker considers its CPU allocation, available memory, input dimensions, pixel
+format and video length. Container CPU and memory limits take precedence over
+the host's size. It keeps extra memory for other work and checks headroom before
+starting each comparison.
+
+`VMAF_THREADS` fixes the number of libvmaf calculation threads per comparison.
+`VMAF_CONCURRENCY` caps simultaneous VOD comparisons; memory checks can reduce
+that overlap. Set either value independently to keep the other automatic. Live
+comparisons keep their existing sequential order. Restart the worker after
+changing these settings. Both bundled Compose configurations preserve explicit
+values in the deployment's environment file.
+
+On Linux, clean inactive disk cache can be reclaimed by the operating system.
+The worker accounts for it only when host and container statistics provide
+consistent bounds. It excludes dirty, mapped and shared-memory pages from this
+estimate. Missing or inconsistent statistics retain the conservative free-memory
+check, so memory pressure or changing samples can reduce parallelism or refuse a
+comparison. Extra memory headroom remains reserved in either mode.
+
+Memory estimates are conservative starting points, not a guarantee for every
+codec or model. Unmeasured formats run alone; an estimate that cannot fit ends
+with an actionable error. A comparison waits for active work to release memory
+and remains cancellable. External memory pressure with no active comparison
+produces a diagnostic after 30 seconds. If memory cannot be detected, automatic
+selection stops; explicitly setting both values permits the legacy manual path
+and reports that automatic memory protection is unavailable.
+
+During a local job, the worker checks for deletion every 100 milliseconds, up
+to ten database lookups per second. One local job runs per worker, with several
+comparisons allowed inside it; queued jobs add no such checks. Cloud jobs retain
+their one-second check interval. For ordinary local scoring, reset first asks
+FFmpeg to stop; if it has not exited after 250 milliseconds, the worker force
+stops that process and discards partial scores. Cancellation holds reserved
+capacity until FFmpeg exits and its output streams close, so a replacement
+cannot overlap a process that is still shutting down.
+
+Resource selection keeps the model, resolution and scored frames unchanged.
+`VMAF_SUBSAMPLE` remains a separate explicit quality tradeoff. Reports record the
+selected resources for each comparison in `params.localResources`.
+
 ## Cloud quality workers
 
 Configure profiles in `/settings/vmaf` only after preparing the provider's

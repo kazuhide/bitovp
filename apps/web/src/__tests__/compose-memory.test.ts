@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadEnv } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 
 const root = join(__dirname, "..", "..", "..", "..");
@@ -98,11 +99,17 @@ describe("Compose memory containment (row #93)", () => {
 		expect(tuned?.memswap_limit).toBe(tuned?.mem_limit);
 	});
 
-	it("pairs the memory ceiling with measured VMAF defaults and preserves explicit tuning", () => {
+	it("leaves local quality settings automatic and preserves explicit tuning", () => {
 		expect(memoryConfig().worker?.environment).toMatchObject({
-			VMAF_CONCURRENCY: "1",
-			VMAF_THREADS: "2",
+			VMAF_CONCURRENCY: "",
+			VMAF_THREADS: "",
 		});
+		const loaded = loadEnv({
+			...(memoryConfig().worker?.environment ?? {}),
+			NODE_ENV: "test",
+		});
+		expect(loaded.VMAF_CONCURRENCY).toBeUndefined();
+		expect(loaded.VMAF_THREADS).toBeUndefined();
 		expect(
 			memoryConfig({ VMAF_CONCURRENCY: "2", VMAF_THREADS: "4" }).worker
 				?.environment,

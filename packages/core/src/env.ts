@@ -67,12 +67,10 @@ const envSchema = z.object({
 	 */
 	VMAF_MODEL_DIR: z.string().min(1).optional(),
 	/**
-	 * VMAF performance knobs. CONCURRENCY = how many qc mirrors (per-title rungs)
-	 * are scored at once. THREADS = libvmaf `n_threads` per scoring. Both default
-	 * to a plateau-tuned split of the box: concurrency = floor(cores / 4),
-	 * threads = floor(cores / concurrency) (libvmaf scaling plateaus at ~4
-	 * threads, so ~4-thread runs overlapped beat all-cores-on-one). Set
-	 * CONCURRENCY=1 to give one run all cores.
+	 * Local quality settings: CONCURRENCY caps simultaneous mirrors and THREADS
+	 * fixes libvmaf threads per pair. Missing values are selected from the CPU
+	 * quota, memory headroom and probed video metadata. Neither changes quality
+	 * settings or frame sampling; memory admission can reduce actual overlap.
 	 */
 	VMAF_CONCURRENCY: z.coerce.number().int().positive().optional(),
 	/**

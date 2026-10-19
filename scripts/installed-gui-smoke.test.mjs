@@ -872,6 +872,198 @@ test("unavailable Web diagnostics cannot expose untrusted data or replace the or
 			assert.equal(calls, 2, "Foreign state must not be inspected");
 	}
 });
+test("Web memory proof parses only bounded cgroup values and requires an actual 1 GiB zero-OOM sample", async () => {
+	const { parseWebMemory, validateWebMemory } = await import(
+		"./installed-gui-smoke.mjs"
+	);
+	const raw =
+		"104857600\n734003200\n1073741824\nlow 0\nhigh 0\nmax 2\noom 0\noom_kill 0\n";
+	const sample = parseWebMemory(raw);
+	assert.deepEqual(sample, {
+		current: 100 * 1024 ** 2,
+		peak: 700 * 1024 ** 2,
+		limit: 1024 ** 3,
+		oom: 0,
+		oomKill: 0,
+	});
+	assert.doesNotThrow(() => validateWebMemory(sample));
+	for (const changed of [
+		null,
+		{ ...sample, limit: 512 * 1024 ** 2 },
+		{ ...sample, oom: 1 },
+		{ ...sample, oom: "0" },
+		{ ...sample, oomKill: 1 },
+		{ ...sample, oomKill: "0" },
+	])
+		assert.throws(() => validateWebMemory(changed));
+	for (const malformed of [
+		undefined,
+		"private".repeat(700),
+		raw.replace("1073741824", "max"),
+		raw.replace("104857600", "-1"),
+		raw.replace("734003200", "1.5"),
+		raw.replace("734003200", "99999999999999999"),
+		raw.replace("oom_kill 0", "oom_kill private"),
+		raw.replace("oom_kill 0", "oom_kill 10000000000000000"),
+		raw.replace("oom_kill 0", ""),
+		`${raw}oom_kill 0\n`,
+	])
+		assert.throws(() => parseWebMemory(malformed));
+});
+test("Web memory checkpoints read only fixed cgroup files after ownership and emit finite projections", async () => {
+	const { reportPrimaryWebMemory } = await import("./installed-gui-smoke.mjs");
+	for (const phase of ["before", "after"]) {
+		const calls = [],
+			lines = [];
+		const sample = await reportPrimaryWebMemory({ id }, phase, {
+			env: { DATABASE_URL: "private value" },
+			notify: (line) => lines.push(line),
+			execute: async (binary, args, options) => {
+				assert.equal(binary, "docker");
+				assert.equal(options.env.DATABASE_URL, undefined);
+				calls.push(args);
+				if (args.includes("ps")) return "a".repeat(64);
+				if (args.includes("inspect"))
+					return JSON.stringify({
+						fixture: id,
+						project: `bitovp-gui-${id}`,
+						service: "web",
+					});
+				assert.equal(calls.length, 3);
+				assert.deepEqual(args.slice(2), [
+					"exec",
+					"a".repeat(64),
+					"cat",
+					"/sys/fs/cgroup/memory.current",
+					"/sys/fs/cgroup/memory.peak",
+					"/sys/fs/cgroup/memory.max",
+					"/sys/fs/cgroup/memory.events",
+				]);
+				return "104857601\n734003201\n1073741824\noom 2\noom_kill 1\n";
+			},
+		});
+		assert.equal(sample.oomKill, 1);
+		assert.deepEqual(lines, [
+			`Primary Web memory: checkpoint=${phase}; currentMiB=101; peakMiB=701; limitMiB=1024; oom=some; oom_kill=some`,
+		]);
+	}
+});
+test("Web memory collection rejects foreign containers and cannot replace a browser failure", async () => {
+	const { reportPrimaryWebMemory } = await import("./installed-gui-smoke.mjs");
+	for (const variant of [
+		"foreign",
+		"unavailable",
+		"malformed",
+		"notify-error",
+	]) {
+		const original = new Error("Original browser failure"),
+			lines = [];
+		let calls = 0;
+		await assert.rejects(
+			async () => {
+				try {
+					throw original;
+				} catch (error) {
+					assert.equal(
+						await reportPrimaryWebMemory({ id }, "after", {
+							env: {},
+							notify: (line) => {
+								if (variant === "notify-error") throw new Error("private");
+								lines.push(line);
+							},
+							execute: async (_binary, args) => {
+								calls++;
+								if (args.includes("ps")) return "a".repeat(64);
+								if (args.includes("inspect"))
+									return JSON.stringify({
+										fixture: id,
+										project: `bitovp-gui-${id}`,
+										service: variant === "foreign" ? "private" : "web",
+									});
+								if (variant === "unavailable")
+									throw new Error("private command error");
+								return "private invalid cgroup response";
+							},
+						}),
+						null,
+					);
+					throw error;
+				}
+			},
+			(error) => error === original,
+		);
+		assert.deepEqual(
+			lines,
+			variant === "notify-error"
+				? []
+				: ["Primary Web memory: checkpoint=after; unavailable"],
+		);
+		if (variant === "foreign") assert.equal(calls, 2);
+	}
+});
+test("hosted memory proof retains browser exceptions and requires both valid lifetime checkpoints", async () => {
+	const { withWebMemoryProof } = await import("./installed-gui-smoke.mjs");
+	for (const variant of [
+		"good",
+		"before-unavailable",
+		"after-unavailable",
+		"after-oom",
+		"after-kill",
+		"wrong-limit",
+		"changed-container",
+		"browser-failure",
+		"browser-and-diagnostic-failure",
+	]) {
+		let reads = 0,
+			lookups = 0,
+			browserRuns = 0;
+		const original = new Error("Original browser exception");
+		const work = () =>
+			withWebMemoryProof(
+				{ id },
+				async () => {
+					browserRuns++;
+					if (variant.startsWith("browser-")) throw original;
+				},
+				{
+					env: {},
+					notify: () => {},
+					execute: async (_binary, args) => {
+						if (args.includes("ps")) {
+							lookups++;
+							return (
+								variant === "changed-container" && lookups === 2 ? "b" : "a"
+							).repeat(64);
+						}
+						if (args.includes("inspect"))
+							return JSON.stringify({
+								fixture: id,
+								project: `bitovp-gui-${id}`,
+								service: "web",
+							});
+						reads++;
+						if (
+							(variant === "before-unavailable" && reads === 1) ||
+							(variant === "after-unavailable" && reads === 2) ||
+							variant === "browser-and-diagnostic-failure"
+						)
+							throw new Error("Private unavailable counters");
+						return `104857600\n734003200\n${variant === "wrong-limit" ? 536870912 : 1073741824}\nmax 2\noom ${variant === "after-oom" && reads === 2 ? 1 : 0}\noom_kill ${variant === "after-kill" && reads === 2 ? 1 : 0}\n`;
+					},
+				},
+			);
+		if (variant === "good") await assert.doesNotReject(work);
+		else if (variant.startsWith("browser-"))
+			await assert.rejects(work, (error) => error === original);
+		else await assert.rejects(work, /Hosted Web memory proof/);
+		assert.equal(browserRuns, 1);
+		assert.equal(
+			reads,
+			2,
+			"The final checkpoint must run even when the browser fails",
+		);
+	}
+});
 test("failed sign-in prioritizes fixed original POST evidence within existing output bounds", () => {
 	const changed = report();
 	const browserTest = changed.suites[0].specs[5].tests[0];

@@ -17,6 +17,12 @@ Linux. Encoding credentials are configured later in the GUI.
 Compose 2.30.0 is required because `env_file.format: raw` preserves the `$`
 characters in password hashes.
 
+The Web container allows up to **1 GiB (1,024 MiB) of memory**, without swap.
+The former 512 MiB limit could terminate Web while opening pages.
+For this installation, `WEB_MEMORY_LIMIT` changes the limit.
+If an existing `.env` explicitly sets the old `WEB_MEMORY_LIMIT=512m`, update it
+to `1g` before recreating Web; the new default does not replace explicit values.
+
 ## 2. Get the application
 
 ```bash

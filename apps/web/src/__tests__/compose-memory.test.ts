@@ -89,6 +89,15 @@ describe("Compose memory containment (row #93)", () => {
 		expect(Number(services.worker?.memswap_limit)).toBe(3 * 1024 ** 3);
 	});
 
+	it("gives Web a 1 GiB default without changing explicit memory overrides", () => {
+		const defaults = memoryConfig().web;
+		expect(Number(defaults?.mem_limit)).toBe(1024 ** 3);
+		expect(defaults?.memswap_limit).toBe(defaults?.mem_limit);
+		const tuned = memoryConfig({ WEB_MEMORY_LIMIT: "1536m" }).web;
+		expect(Number(tuned?.mem_limit)).toBe(1536 * 1024 ** 2);
+		expect(tuned?.memswap_limit).toBe(tuned?.mem_limit);
+	});
+
 	it("pairs the memory ceiling with measured VMAF defaults and preserves explicit tuning", () => {
 		expect(memoryConfig().worker?.environment).toMatchObject({
 			VMAF_CONCURRENCY: "1",
@@ -106,19 +115,27 @@ describe("Compose memory containment (row #93)", () => {
 		try {
 			writeFileSync(
 				envFile,
-				"WORKER_MEMORY_LIMIT=5g\nVMAF_CONCURRENCY=3\nVMAF_THREADS=4\n",
+				"WORKER_MEMORY_LIMIT=5g\nWEB_MEMORY_LIMIT=1536m\nVMAF_CONCURRENCY=3\nVMAF_THREADS=4\n",
 			);
 			const fileConfig = memoryConfig({}, envFile);
 			expect(Number(fileConfig.worker?.mem_limit)).toBe(5 * 1024 ** 3);
+			expect(Number(fileConfig.web?.mem_limit)).toBe(1536 * 1024 ** 2);
+			expect(fileConfig.web?.memswap_limit).toBe(fileConfig.web?.mem_limit);
 			expect(fileConfig.worker?.environment).toMatchObject({
 				VMAF_CONCURRENCY: "3",
 				VMAF_THREADS: "4",
 			});
 			const shellConfig = memoryConfig(
-				{ WORKER_MEMORY_LIMIT: "6g", VMAF_CONCURRENCY: "1" },
+				{
+					WORKER_MEMORY_LIMIT: "6g",
+					WEB_MEMORY_LIMIT: "2g",
+					VMAF_CONCURRENCY: "1",
+				},
 				envFile,
 			);
 			expect(Number(shellConfig.worker?.mem_limit)).toBe(6 * 1024 ** 3);
+			expect(Number(shellConfig.web?.mem_limit)).toBe(2 * 1024 ** 3);
+			expect(shellConfig.web?.memswap_limit).toBe(shellConfig.web?.mem_limit);
 			expect(shellConfig.worker?.environment).toMatchObject({
 				VMAF_CONCURRENCY: "1",
 				VMAF_THREADS: "4",

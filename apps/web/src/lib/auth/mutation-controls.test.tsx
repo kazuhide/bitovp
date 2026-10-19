@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { UserRole } from "@bitovp/db";
 import { screen } from "@testing-library/react";
 import ts from "typescript";
@@ -353,6 +353,165 @@ function creationTransportEndpoints(
 let sharedCreationEndpoints:
 	| ReturnType<typeof creationTransportEndpoints>
 	| undefined;
+
+function productionTsFiles(dir: string): string[] {
+	return readdirSync(dir).flatMap((entry) => {
+		const path = join(dir, entry);
+		if (statSync(path).isDirectory()) return productionTsFiles(path);
+		return /\.tsx?$/.test(entry) && !/\.(?:test|spec)\.tsx?$/.test(entry)
+			? [path]
+			: [];
+	});
+}
+
+function moduleSpecifierText(
+	expression: ts.Expression,
+	parsed: ParsedSource,
+	seen = new Set<ts.VariableDeclaration>(),
+): string | null {
+	if (
+		ts.isStringLiteral(expression) ||
+		ts.isNoSubstitutionTemplateLiteral(expression)
+	)
+		return expression.text;
+	if (
+		ts.isParenthesizedExpression(expression) ||
+		ts.isAsExpression(expression) ||
+		ts.isSatisfiesExpression(expression)
+	)
+		return moduleSpecifierText(expression.expression, parsed, seen);
+	if (ts.isIdentifier(expression)) {
+		const declaration = resolveLexicalDeclaration(expression, parsed);
+		if (!declaration?.initializer || seen.has(declaration)) return null;
+		return moduleSpecifierText(
+			declaration.initializer,
+			parsed,
+			new Set([...seen, declaration]),
+		);
+	}
+	if (ts.isTemplateExpression(expression)) {
+		let text = expression.head.text;
+		for (const span of expression.templateSpans) {
+			const value = moduleSpecifierText(span.expression, parsed, seen);
+			if (value === null) return null;
+			text += value + span.literal.text;
+		}
+		return text;
+	}
+	if (
+		ts.isBinaryExpression(expression) &&
+		expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+	) {
+		const left = moduleSpecifierText(expression.left, parsed, seen),
+			right = moduleSpecifierText(expression.right, parsed, seen);
+		return left === null || right === null ? null : left + right;
+	}
+	return null;
+}
+
+/** All production TypeScript edges are checked, so a new proxy cannot hide the factory. */
+function creationFactoryOwnershipViolations(
+	source: string,
+	parsed: ParsedSource,
+): string[] {
+	if (/\.(?:test|spec)\.tsx?$/.test(source)) return [];
+	const owner = source === "lib/creation-submission-hook.ts";
+	const factoryModule = resolve(SRC_DIR, "lib/creation-submission");
+	const isFactoryModule = (expression: ts.Expression) => {
+		const specifier = moduleSpecifierText(expression, parsed);
+		const target = specifier?.startsWith("@/")
+			? resolve(SRC_DIR, specifier.slice(2))
+			: specifier?.startsWith(".")
+				? resolve(dirname(join(SRC_DIR, source)), specifier)
+				: null;
+		return target?.replace(/\.[cm]?[jt]sx?$/, "") === factoryModule;
+	};
+	const hits: string[] = [];
+	const reject = (node: ts.Node) =>
+		hits.push(
+			`${source}:${parsed.file.getLineAndCharacterOfPosition(node.getStart(parsed.file)).line + 1} factory access must remain inside the identity hook`,
+		);
+	for (const node of descendants(parsed.file)) {
+		if (ts.isImportDeclaration(node) && isFactoryModule(node.moduleSpecifier)) {
+			const clause = node.importClause;
+			if (!clause || clause.isTypeOnly) continue;
+			const bindings = clause.namedBindings;
+			const factoryAccess =
+				clause.name ||
+				(bindings &&
+					(ts.isNamespaceImport(bindings) ||
+						bindings.elements.some(
+							(entry) =>
+								!entry.isTypeOnly &&
+								(entry.propertyName?.text ?? entry.name.text) ===
+									"createSubmissionClient",
+						)));
+			if (
+				factoryAccess &&
+				(!owner || !bindings || !ts.isNamedImports(bindings) || clause.name)
+			)
+				reject(node);
+		} else if (
+			ts.isExportDeclaration(node) &&
+			node.moduleSpecifier &&
+			isFactoryModule(node.moduleSpecifier) &&
+			!node.isTypeOnly
+		) {
+			if (
+				!node.exportClause ||
+				ts.isNamespaceExport(node.exportClause) ||
+				node.exportClause.elements.some(
+					(entry) =>
+						!entry.isTypeOnly &&
+						(entry.propertyName?.text ?? entry.name.text) ===
+							"createSubmissionClient",
+				)
+			)
+				reject(node);
+		} else if (
+			ts.isImportEqualsDeclaration(node) &&
+			ts.isExternalModuleReference(node.moduleReference) &&
+			node.moduleReference.expression &&
+			isFactoryModule(node.moduleReference.expression)
+		) {
+			reject(node);
+		} else if (
+			ts.isCallExpression(node) &&
+			(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+				(ts.isIdentifier(node.expression) &&
+					node.expression.text === "require")) &&
+			node.arguments[0] &&
+			isFactoryModule(node.arguments[0])
+		) {
+			reject(node);
+		}
+	}
+	if (owner) {
+		for (const statement of parsed.file.statements) {
+			// The one trusted owner exports its hook, never a raw factory alias.
+			if (
+				ts.isExportAssignment(statement) ||
+				(ts.isExportDeclaration(statement) && !statement.isTypeOnly)
+			) {
+				reject(statement);
+			} else if (
+				ts.canHaveModifiers(statement) &&
+				ts
+					.getModifiers(statement)
+					?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+				!(
+					ts.isFunctionDeclaration(statement) &&
+					statement.name?.text === "useCreationSubmission"
+				) &&
+				!ts.isTypeAliasDeclaration(statement) &&
+				!ts.isInterfaceDeclaration(statement)
+			) {
+				reject(statement);
+			}
+		}
+	}
+	return hits;
+}
 
 function isCreationHook(
 	initializer: ts.CallExpression,
@@ -919,6 +1078,80 @@ function users(role: UserRole): SessionDto {
 }
 
 describe("mixed-page mutation control contract", () => {
+	it("keeps every production factory import and reexport owned by the identity-bound hook", () => {
+		const hits = productionTsFiles(SRC_DIR).flatMap((path) => {
+			const source = relative(SRC_DIR, path);
+			return creationFactoryOwnershipViolations(source, parseSource(source));
+		});
+		expect(hits).toEqual([]);
+	});
+
+	it.each([
+		[
+			"direct import",
+			'import { createSubmissionClient } from "@/lib/creation-submission"; const creation = createSubmissionClient(["org", "actor", "vod", "fixture"], { storage: sessionStorage });',
+		],
+		[
+			"named import alias",
+			'import { createSubmissionClient as makeCreate } from "@/lib/creation-submission"; const creation = makeCreate(["org", "actor", "vod", "fixture"], { storage: sessionStorage });',
+		],
+		[
+			"namespace import",
+			'import * as creationModule from "@/lib/creation-submission"; const creation = creationModule.createSubmissionClient(["org", "actor", "vod", "fixture"], { storage: sessionStorage });',
+		],
+		[
+			"new TypeScript proxy",
+			'export { createSubmissionClient as makeCreate } from "@/lib/creation-submission";',
+		],
+		["wildcard reexport", 'export * from "@/lib/creation-submission";'],
+		[
+			"relative import",
+			'import { createSubmissionClient } from "../../lib/creation-submission.js";',
+		],
+		[
+			"dynamic module alias",
+			'const modulePath = "@/lib/creation-submission"; const creationModule = await import(modulePath);',
+		],
+		[
+			"CommonJS module alias",
+			'const modulePath = "@/lib/creation-submission"; const creationModule = require(modulePath);',
+		],
+	])("rejects a factory ownership bypass through %s", (_label, text) => {
+		const source = "app/fixtures/unguarded.ts";
+		expect(
+			creationFactoryOwnershipViolations(source, parseSourceText(source, text)),
+		).not.toEqual([]);
+	});
+
+	it("rejects factory reexports from the otherwise trusted hook", () => {
+		const source = "lib/creation-submission-hook.ts";
+		expect(
+			creationFactoryOwnershipViolations(
+				source,
+				parseSourceText(
+					source,
+					'export { createSubmissionClient as escape } from "./creation-submission";',
+				),
+			),
+		).not.toEqual([]);
+	});
+
+	it("permits the exact production owner and type-only imports without hiding new proxies", () => {
+		const source = "lib/creation-submission-hook.ts";
+		expect(
+			creationFactoryOwnershipViolations(source, parseSource(source)),
+		).toEqual([]);
+		expect(
+			creationFactoryOwnershipViolations(
+				"app/fixtures/consumer.ts",
+				parseSourceText(
+					"app/fixtures/consumer.ts",
+					'import type { CreationBody } from "@/lib/creation-submission";',
+				),
+			),
+		).toEqual([]);
+	});
+
 	it("classifies the shared POST transport and rejects an added unowned send", () => {
 		expect(creationTransportEndpoints()).toEqual({
 			vod: "/api/encoding-jobs",

@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import {
 	existsSync,
 	lstatSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
@@ -39,6 +40,7 @@ export const CASES = [
 	"configure and submit VOD",
 	"configure and submit Live and inspect heartbeat",
 	"persist and reset heartbeat cadence",
+	"keep independent installation sessions isolated",
 ];
 const QUEUES = [
 	"usageStatistics",
@@ -72,6 +74,8 @@ export function childEnvironment(env) {
 		"COREPACK_HOME",
 		"PNPM_HOME",
 		"PLAYWRIGHT_BROWSERS_PATH",
+		"GITHUB_ACTIONS",
+		"RUNNER_ENVIRONMENT",
 	])
 		if (env[key]) clean[key] = env[key];
 	return {
@@ -82,8 +86,9 @@ export function childEnvironment(env) {
 	};
 }
 
-export function composeOverride({ id, directory }) {
+export function composeOverride({ id, directory, imageId = id }) {
 	assert(/^[a-f0-9]{32}$/.test(id), "Invalid smoke test identity");
+	assert(/^[a-f0-9]{32}$/.test(imageId), "Invalid smoke image identity");
 	const env = (file) =>
 		`env_file: !override\n      - path: ${JSON.stringify(join(directory, file))}\n        required: true\n        format: raw`;
 	const owned = `labels:\n      ${LABEL}: ${id}`;
@@ -94,6 +99,11 @@ export function composeOverride({ id, directory }) {
     ${env(".env.migrate")}
     ${owned}
     ports: !override ["127.0.0.1::5432"]
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready --host=127.0.0.1 --username "$\${POSTGRES_USER}" --dbname "$\${POSTGRES_DB}"']
+      interval: 1s
+      timeout: 3s
+      retries: 60
     restart: "no"
   redis:
     ${owned}
@@ -103,19 +113,19 @@ export function composeOverride({ id, directory }) {
     ${env(".env.migrate")}
     ${owned}
     ${build("Dockerfile")}
-    image: bitovp-gui-worker:${id}
+    image: bitovp-gui-worker:${imageId}
   worker:
     ${env(".env")}
     ${owned}
     ${build("Dockerfile")}
-    image: bitovp-gui-worker:${id}
+    image: bitovp-gui-worker:${imageId}
     volumes: !override []
     restart: "no"
   web:
     ${env(".env")}
     ${owned}
     ${build("Dockerfile.web")}
-    image: bitovp-gui-web:${id}
+    image: bitovp-gui-web:${imageId}
     ports: !override ["127.0.0.1::3100"]
     restart: "no"
 networks:
@@ -264,6 +274,7 @@ export async function cleanupFixture(
 	env = process.env,
 ) {
 	privateDirectory(state);
+	if (state.secondary) await cleanupFixture(state.secondary, execute, env);
 	for (const [kind, list, remove] of [
 		["container", ["ps", "--all", "--quiet"], ["rm", "--force", "--volumes"]],
 		["volume", ["volume", "ls", "--quiet"], ["volume", "rm"]],
@@ -337,12 +348,238 @@ export async function cleanupFixture(
 	if (existsSync(state.directory)) rmSync(state.directory, { recursive: true });
 }
 
+export function browserExecutionAllowed(env, platform = process.platform) {
+	return (
+		platform === "linux" &&
+		env.GITHUB_ACTIONS === "true" &&
+		env.RUNNER_ENVIRONMENT === "github-hosted"
+	);
+}
+
+export function validateExecutionMode(
+	env,
+	runtimeOnly,
+	platform = process.platform,
+) {
+	if (runtimeOnly)
+		assert(
+			!env.CI && env.GITHUB_ACTIONS !== "true",
+			"CI must run the complete browser suite",
+		);
+	else
+		assert(
+			browserExecutionAllowed(env, platform),
+			"Browser execution requires a GitHub-hosted Linux runner; use --runtime-only for local Docker checks",
+		);
+}
+
+async function waitUntil(probe, signal) {
+	for (let attempt = 0; attempt < 120; attempt++) {
+		assert(!signal?.aborted, "Smoke test was cancelled");
+		try {
+			if (await probe()) return;
+		} catch {}
+		await new Promise((accept) => setTimeout(accept, 500));
+	}
+	throw new Error("Application readiness timed out");
+}
+
+async function install(
+	state,
+	{ env, execute, imageId, revision, worker, signal, stage, notify, hostname },
+) {
+	const { id, directory } = state;
+	const temporary = join(directory, "tmp");
+	mkdirSync(temporary, { mode: 0o700 });
+	const clean = {
+		...childEnvironment(env),
+		TMPDIR: temporary,
+		TMP: temporary,
+		TEMP: temporary,
+	};
+	const run = (executable, args, options = {}) =>
+		execute(executable, args, {
+			env: clean,
+			...options,
+			log: join(directory, "command.log"),
+		});
+	const app = join(directory, ".env"),
+		admin = join(directory, ".env.migrate"),
+		override = join(directory, "compose.yml");
+	writeFileSync(
+		app,
+		`MASTER_KEY=${randomBytes(32).toString("base64")}\nAUTH_SESSION_SECRET=${randomBytes(48).toString("base64")}\nAUTH_MODE=users\nAUTH_ALLOW_INSECURE_HTTP=true\nPUBLIC_BASE_URL=http://${hostname}\nINGRESS_MODE=none\nCOMPOSE_PROFILES=\n`,
+		{ mode: 0o600, flag: "wx" },
+	);
+	writeFileSync(override, composeOverride({ ...state, imageId }), {
+		mode: 0o600,
+		flag: "wx",
+	});
+	const composeArgs = [
+		"compose",
+		"--project-name",
+		ownedName(id),
+		"--env-file",
+		app,
+		"-f",
+		join(ROOT, "docker-compose.yml"),
+		"-f",
+		override,
+	];
+	const compose = (args, options = {}) =>
+		docker([...composeArgs, ...args], clean, run, options);
+	const db = (args) =>
+		run("pnpm", [
+			"--filter",
+			"@bitovp/db",
+			...args,
+			"--admin-env",
+			admin,
+			"--app-env",
+			app,
+		]);
+	stage("database initialization");
+	await db(["db:runtime:init"]);
+	await compose(["config", "--quiet"]);
+	await compose(["up", "--detach", "--wait", "postgres", "redis"]);
+	const postgres = await compose(["port", "postgres", "5432"]);
+	assert(
+		/^127\.0\.0\.1:[1-9]\d*$/.test(postgres),
+		"PostgreSQL must use a random IPv4 loopback port",
+	);
+	const migration = parseEnv(readFileSync(admin, "utf8"));
+	const url = new URL(migration.DATABASE_URL);
+	url.host = postgres;
+	migration.DATABASE_URL = url.toString();
+	writeFileSync(
+		admin,
+		Object.entries(migration)
+			.map(([key, value]) => `${key}=${value}\n`)
+			.join(""),
+		{ mode: 0o600 },
+	);
+	stage("restricted database role preparation");
+	await db(["db:runtime:prepare"]);
+	if (worker) {
+		stage("fresh Web and Worker Docker builds");
+		notify("Building the current source into separate Web and Worker images");
+		await compose(
+			["build", "--build-arg", `GIT_COMMIT=${revision}`, "worker", "web"],
+			{ timeout: 1_200_000 },
+		);
+		notify("Web and Worker Docker builds passed");
+	}
+	stage("migration and application startup");
+	await compose([
+		"up",
+		"--detach",
+		"--no-build",
+		...(worker ? ["worker", "web"] : ["web"]),
+	]);
+	const binding = await compose(["port", "web", "3100"]);
+	assert(
+		/^127\.0\.0\.1:[1-9]\d*$/.test(binding),
+		"Web must use a random IPv4 loopback port",
+	);
+	const baseURL = `http://${hostname}:${binding.split(":")[1]}`;
+	await waitUntil(async () => {
+		const response = await fetch(`http://${binding}/api/health`, {
+			signal: AbortSignal.timeout(3_000),
+		});
+		return response.status === 200 && (await response.json()).status === "ok";
+	}, signal);
+	if (worker)
+		await waitUntil(
+			async () => workerReady(await compose(["logs", "--no-color", "worker"])),
+			signal,
+		);
+	const migrationId = await compose(["ps", "--all", "--quiet", "migrate"]);
+	const [migrationContainer] = JSON.parse(
+		await docker(["inspect", migrationId], clean, run),
+	);
+	assert(
+		migrationContainer.State.Status === "exited" &&
+			migrationContainer.State.ExitCode === 0,
+		"The migration service must exit successfully",
+	);
+	const blocked = await fetch(`${baseURL}/api/encoding-jobs`, {
+		signal: AbortSignal.timeout(10_000),
+	});
+	assert.equal(
+		blocked.status,
+		503,
+		"A fresh installation must require administrator setup",
+	);
+	await fetch(`${baseURL}/setup`, { signal: AbortSignal.timeout(10_000) });
+	const code = /\[auth\] setup-code: ([a-z0-9-]+) /.exec(
+		await compose(["logs", "--no-color", "web"]),
+	)?.[1];
+	assert(code, "The first-boot setup code was not issued");
+	notify(
+		`${worker ? "Primary" : "Independent secondary"} installation: migration passed, web health 200${worker ? ", all 9 worker queue registrations observed" : ""}, bootstrap API 503`,
+	);
+	return {
+		compose,
+		clean,
+		login: {
+			baseURL,
+			code,
+			email: `admin-${id}@example.invalid`,
+			password: randomBytes(24).toString("base64url"),
+		},
+	};
+}
+
+function failureDiagnostics(state) {
+	let diagnostics = "";
+	const values = [];
+	const visit = (instance) => {
+		for (const file of ["command.log", "browser-results.json"])
+			if (existsSync(join(instance.directory, file)))
+				diagnostics += readFileSync(join(instance.directory, file), "utf8");
+		for (const file of [".env", ".env.migrate"])
+			if (existsSync(join(instance.directory, file))) {
+				for (const value of Object.values(
+					parseEnv(readFileSync(join(instance.directory, file), "utf8")),
+				)) {
+					if (value.length >= 12) values.push(value);
+					try {
+						if (new URL(value).password) values.push(new URL(value).password);
+					} catch {}
+				}
+			}
+		if (instance.secondary) visit(instance.secondary);
+	};
+	visit(state);
+	if (existsSync(join(state.directory, "browser.json"))) {
+		const browser = JSON.parse(
+			readFileSync(join(state.directory, "browser.json"), "utf8"),
+		);
+		values.push(
+			browser.code,
+			browser.password,
+			browser.secondary?.code,
+			browser.secondary?.password,
+		);
+	}
+	for (const value of values.filter(Boolean))
+		diagnostics = diagnostics.replaceAll(value, "[private fixture value]");
+	return diagnostics
+		.replace(
+			/((?:set-cookie|cookie|authorization):)[^\r\n]*/gi,
+			"$1 [private fixture value]",
+		)
+		.slice(-50_000);
+}
+
 export async function runFixture({
 	statePath,
 	env = process.env,
 	signal,
+	runtimeOnly = false,
 	notify = console.log,
 } = {}) {
+	validateExecutionMode(env, runtimeOnly);
 	const clean = childEnvironment(env);
 	if (statePath)
 		assert(
@@ -356,20 +593,19 @@ export async function runFixture({
 		!inside(realpathSync(ROOT), parent),
 		"Private smoke configuration must be outside the checkout",
 	);
-	const directory = realpathSync(mkdtempSync(join(parent, "bitovp-gui-")));
-	const id = randomBytes(16).toString("hex");
-	const state = { id, directory };
-	const stateFile = statePath ?? join(directory, "state.json");
-	writeFileSync(join(directory, ".owner"), id, { mode: 0o600, flag: "wx" });
-	let stateWritten = false;
-	let stage = "configuration";
-	const execute = async (executable, args, options = {}) => {
+	const create = () => {
+		const directory = realpathSync(mkdtempSync(join(parent, "bitovp-gui-")));
+		const id = randomBytes(16).toString("hex");
+		writeFileSync(join(directory, ".owner"), id, { mode: 0o600, flag: "wx" });
+		return { id, directory };
+	};
+	const state = create();
+	const stateFile = statePath ?? join(state.directory, "state.json");
+	let stateWritten = false,
+		stage = "configuration";
+	const execute = (executable, args, options) => {
 		assert(!signal?.aborted, "Smoke test was cancelled");
-		return command(executable, args, {
-			env: clean,
-			...options,
-			log: join(directory, "command.log"),
-		});
+		return command(executable, args, options);
 	};
 	try {
 		writeFileSync(stateFile, JSON.stringify(state), {
@@ -377,224 +613,122 @@ export async function runFixture({
 			flag: "wx",
 		});
 		stateWritten = true;
-		const app = join(directory, ".env");
-		const admin = join(directory, ".env.migrate");
-		writeFileSync(
-			app,
-			`MASTER_KEY=${randomBytes(32).toString("base64")}\nAUTH_SESSION_SECRET=${randomBytes(48).toString("base64")}\nAUTH_MODE=users\nAUTH_ALLOW_INSECURE_HTTP=true\nPUBLIC_BASE_URL=http://127.0.0.1\nINGRESS_MODE=none\nCOMPOSE_PROFILES=\n`,
-			{ mode: 0o600, flag: "wx" },
-		);
-		const override = join(directory, "compose.yml");
-		writeFileSync(override, composeOverride(state), {
-			mode: 0o600,
-			flag: "wx",
+		const revision = await execute("git", ["rev-parse", "HEAD"], {
+			env: clean,
 		});
-		const composeArgs = [
-			"compose",
-			"--project-name",
-			ownedName(id),
-			"--env-file",
-			app,
-			"-f",
-			join(ROOT, "docker-compose.yml"),
-			"-f",
-			override,
-		];
-		const compose = (args, options) =>
-			docker([...composeArgs, ...args], env, execute, options);
-		const db = (args) =>
-			execute("pnpm", [
-				"--filter",
-				"@bitovp/db",
-				...args,
-				"--admin-env",
-				admin,
-				"--app-env",
-				app,
-			]);
-		await db(["db:runtime:init"]);
-		await compose(["config", "--quiet"]);
-		stage = "PostgreSQL and Redis startup";
-		notify(
-			"Starting dedicated PostgreSQL and Redis with private generated configuration",
-		);
-		await compose(["up", "--detach", "--wait", "postgres", "redis"]);
-		const postgres = await compose(["port", "postgres", "5432"]);
-		assert(
-			/^127\.0\.0\.1:\d+$/.test(postgres),
-			"PostgreSQL must use a random loopback port",
-		);
-		const migration = parseEnv(readFileSync(admin, "utf8"));
-		const url = new URL(migration.DATABASE_URL);
-		url.host = postgres;
-		migration.DATABASE_URL = url.toString();
-		writeFileSync(
-			admin,
-			Object.entries(migration)
-				.map(([key, value]) => `${key}=${value}\n`)
-				.join(""),
-			{ mode: 0o600 },
-		);
-		stage = "runtime database preparation";
-		await db(["db:runtime:prepare"]);
-		stage = "fresh Docker build";
-		notify("Building the current source into separate Web and Worker images");
-		const revision = await execute("git", ["rev-parse", "HEAD"]);
-		await compose(
-			[
-				"build",
-				"--build-arg",
-				`GIT_COMMIT=${revision}`,
-				"migrate",
-				"worker",
-				"web",
-			],
-			{ timeout: 1_200_000 },
-		);
-		stage = "migration and application startup";
-		await compose(["up", "--detach", "--no-build", "worker", "web"]);
-		const port = await compose(["port", "web", "3100"]);
-		assert(
-			/^127\.0\.0\.1:\d+$/.test(port),
-			"Web must use a random loopback port",
-		);
-		const baseURL = `http://${port}`;
-		const wait = async (probe) => {
-			for (let attempt = 0; attempt < 120; attempt++) {
-				assert(!signal?.aborted, "Smoke test was cancelled");
-				try {
-					if (await probe()) return;
-				} catch {}
-				await new Promise((accept) => setTimeout(accept, 500));
-			}
-			throw new Error("Application readiness timed out");
-		};
-		await wait(async () => {
-			const response = await fetch(`${baseURL}/api/health`, {
-				signal: AbortSignal.timeout(3_000),
-			});
-			return response.status === 200 && (await response.json()).status === "ok";
-		});
-		await wait(async () =>
-			workerReady(await compose(["logs", "--no-color", "worker"])),
-		);
-		const services = (await compose(["ps", "--all", "--services"])).split(
-			/\s+/,
-		);
-		for (const service of ["postgres", "redis", "migrate", "worker", "web"])
-			assert(
-				services.includes(service),
-				"Required application services are missing",
-			);
-		await fetch(`${baseURL}/setup`, { signal: AbortSignal.timeout(10_000) });
-		const log = await compose(["logs", "--no-color", "web"]);
-		const code = /\[auth\] setup-code: ([a-z0-9-]+) /.exec(log)?.[1];
-		assert(code, "The first-boot setup code was not issued");
-		const fixture = join(directory, "browser.json");
-		writeFileSync(
-			fixture,
-			JSON.stringify({
-				id,
-				baseURL,
-				code,
-				directory,
-				email: `admin-${id}@example.invalid`,
-				password: randomBytes(24).toString("base64url"),
-			}),
-			{ mode: 0o600, flag: "wx" },
-		);
-		stage = "installed GUI browser tests";
-		notify(
-			"Checking real setup, sign-in, VOD and Live forms, and heartbeat settings in isolated Chromium",
-		);
-		await execute(
-			"pnpm",
-			[
-				"exec",
-				"playwright",
-				"test",
-				"--config",
-				"tests/browser/playwright.config.ts",
-			],
-			{
-				env: { ...clean, BITOVP_GUI_SMOKE_FIXTURE: fixture },
-				timeout: 300_000,
+		const primary = await install(state, {
+			env,
+			execute,
+			imageId: state.id,
+			revision,
+			worker: true,
+			signal,
+			notify,
+			hostname: "localhost",
+			stage: (value) => {
+				stage = `primary ${value}`;
 			},
-		);
-		validateReport(
-			JSON.parse(readFileSync(join(directory, "browser-results.json"), "utf8")),
-		);
-		const resources = await compose([
-			"exec",
-			"--no-TTY",
-			"postgres",
-			"psql",
-			"--username",
-			"bitovp",
-			"--dbname",
-			"bitovp",
-			"--tuples-only",
-			"--no-align",
-			"--command",
-			'SELECT (SELECT count(*) FROM "BitmovinAccount") + (SELECT count(*) FROM "Credential") + (SELECT count(*) FROM "EncodingJob") + (SELECT count(*) FROM "LiveChannel")',
-		]);
-		assert.equal(
-			resources,
-			"0",
-			"Browser fixtures must not register provider accounts or enqueue real jobs",
-		);
-		const running = await compose(["ps", "--status", "running", "--services"]);
-		assert(
-			running.split(/\s+/).includes("worker") &&
-				running.split(/\s+/).includes("web"),
-			"Application services stopped during the GUI test",
-		);
+		});
+		const installations = [primary];
+		if (!runtimeOnly) {
+			state.secondary = create();
+			writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 });
+			const secondary = await install(state.secondary, {
+				env,
+				execute,
+				imageId: state.id,
+				revision,
+				worker: false,
+				signal,
+				notify,
+				hostname: "127.0.0.1",
+				stage: (value) => {
+					stage = `secondary ${value}`;
+				},
+			});
+			installations.push(secondary);
+			const fixture = join(state.directory, "browser.json");
+			writeFileSync(
+				fixture,
+				JSON.stringify({
+					id: state.id,
+					directory: state.directory,
+					...primary.login,
+					secondary: secondary.login,
+				}),
+				{ mode: 0o600, flag: "wx" },
+			);
+			stage = "installed GUI browser tests";
+			notify(
+				"Checking real setup, sign-in, VOD and Live forms, heartbeat settings and independent installation sessions in hosted Chromium",
+			);
+			await execute(
+				"pnpm",
+				[
+					"exec",
+					"playwright",
+					"test",
+					"--config",
+					"tests/browser/playwright.config.ts",
+				],
+				{
+					env: { ...primary.clean, BITOVP_GUI_SMOKE_FIXTURE: fixture },
+					timeout: 600_000,
+					log: join(state.directory, "command.log"),
+				},
+			);
+			validateReport(
+				JSON.parse(
+					readFileSync(join(state.directory, "browser-results.json"), "utf8"),
+				),
+			);
+			notify(
+				`${CASES.length} installed GUI browser tests passed without skips or retries`,
+			);
+		} else
+			notify("Local Docker runtime checks passed; browser tests were not run");
+		for (const instance of installations) {
+			const resources = await instance.compose([
+				"exec",
+				"--no-TTY",
+				"postgres",
+				"psql",
+				"--username",
+				"bitovp",
+				"--dbname",
+				"bitovp",
+				"--tuples-only",
+				"--no-align",
+				"--command",
+				'SELECT (SELECT count(*) FROM "BitmovinAccount") + (SELECT count(*) FROM "Credential") + (SELECT count(*) FROM "EncodingJob") + (SELECT count(*) FROM "LiveChannel")',
+			]);
+			assert.equal(
+				resources,
+				"0",
+				"Browser fixtures must not register provider accounts or enqueue real jobs",
+			);
+			const running = (
+				await instance.compose(["ps", "--status", "running", "--services"])
+			).split(/\s+/);
+			assert(
+				running.includes("web"),
+				"A Web service stopped during the smoke test",
+			);
+			if (instance === primary)
+				assert(
+					running.includes("worker"),
+					"The Worker stopped during the smoke test",
+				);
+		}
 		notify(
-			`${CASES.length} installed GUI browser tests passed; no provider credentials or encoding requests were used`,
+			"Provider accounts, storage credentials, encoding jobs and Live channels remained absent",
 		);
 	} catch (error) {
 		notify(`Installed GUI smoke failed during ${stage}`);
-		if (statePath && existsSync(join(directory, "command.log"))) {
-			let diagnostics = readFileSync(join(directory, "command.log"), "utf8");
-			if (existsSync(join(directory, "browser-results.json")))
-				diagnostics += readFileSync(
-					join(directory, "browser-results.json"),
-					"utf8",
-				);
-			for (const file of [".env", ".env.migrate"]) {
-				if (!existsSync(join(directory, file))) continue;
-				for (const value of Object.values(
-					parseEnv(readFileSync(join(directory, file), "utf8")),
-				)) {
-					if (value.length < 12) continue;
-					diagnostics = diagnostics.replaceAll(
-						value,
-						"[private fixture value]",
-					);
-					try {
-						const password = new URL(value).password;
-						if (password)
-							diagnostics = diagnostics.replaceAll(
-								password,
-								"[private fixture credential]",
-							);
-					} catch {}
-				}
-			}
-			if (existsSync(join(directory, "browser.json"))) {
-				const browser = JSON.parse(
-					readFileSync(join(directory, "browser.json"), "utf8"),
-				);
-				for (const value of [browser.code, browser.password])
-					diagnostics = diagnostics.replaceAll(
-						value,
-						"[private fixture value]",
-					);
-			}
-			writeFileSync(`${statePath}.failure.log`, diagnostics.slice(-50_000), {
+		if (statePath)
+			writeFileSync(`${statePath}.failure.log`, failureDiagnostics(state), {
 				mode: 0o600,
 			});
-		}
 		throw error;
 	} finally {
 		await cleanupFixture(state, command, env);
@@ -608,8 +742,14 @@ if (
 	import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
 	const args = process.argv.slice(2);
+	const runtimeOnly = args[0] === "--runtime-only";
+	if (runtimeOnly) args.shift();
 	const cleanup = args[0] === "--cleanup";
 	if (cleanup) args.shift();
+	assert(
+		!(runtimeOnly && cleanup),
+		"Cleanup and runtime-only options cannot be combined",
+	);
 	assert(
 		args.length === 0 || (args.length === 2 && args[0] === "--state-file"),
 		"Unknown installed GUI smoke option",
@@ -629,7 +769,8 @@ if (
 			process.exitCode = 1;
 		});
 	(async () => {
-		if (!cleanup) return runFixture({ statePath, signal: controller.signal });
+		if (!cleanup)
+			return runFixture({ statePath, runtimeOnly, signal: controller.signal });
 		assert(
 			statePath && isAbsolute(statePath) && !inside(ROOT, statePath),
 			"Cleanup requires an external private state file",

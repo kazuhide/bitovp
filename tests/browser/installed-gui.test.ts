@@ -39,7 +39,7 @@ async function open(browser: Browser, signedIn = true, accounts = true) {
 	await context.route("**/*", async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
-		if (url.origin !== fixture.baseURL) {
+		if (![fixture.baseURL, fixture.secondary.baseURL].includes(url.origin)) {
 			unexpected.push(`${request.method()} external request`);
 			return route.abort();
 		}
@@ -178,28 +178,24 @@ test("configure and submit VOD", async ({ browser }) => {
 		await page.locator("#wz-name").fill("Browser VOD smoke");
 		await page.locator("#wz-account").selectOption(ACCOUNT);
 		await goTo(page, /sources/i);
-		await page
-			.getByRole("combobox", { name: /^credential/i })
-			.selectOption(CREDENTIAL);
+		await page.locator("#wz-in-0-cred").selectOption(CREDENTIAL);
 		await closePicker(page);
-		await page.getByLabel(/^bucket/i).fill("synthetic-input");
-		await page.getByLabel(/^object path/i).fill("bbb-10s.mp4");
+		await page.locator("#wz-in-0-bucket").fill("synthetic-input");
+		await page.locator("#wz-in-0-path").fill("bbb-10s.mp4");
 		await goTo(page, /ladder/i);
 		await page.locator("#wz-v-0-height").fill("720");
 		await page.locator("#wz-v-0-bitrate").fill("1500000");
 		await goTo(page, /^4\. Output$/);
 		await page.locator("#wz-out-cred").selectOption(CREDENTIAL);
 		await closePicker(page);
-		await page.getByLabel(/^bucket/i).fill("synthetic-output");
+		await page.locator("#wz-out-bucket").fill("synthetic-output");
 		await page
 			.getByRole("button", { name: "Show summary", exact: true })
 			.click();
 		await page
 			.getByRole("button", { name: "Enter manually", exact: true })
 			.click();
-		await page
-			.getByLabel(/output folder/i, { exact: false })
-			.fill("browser-smoke");
+		await page.locator("#wz-out-path").fill("browser-smoke");
 		for (const step of [
 			/^5\. Packaging$/,
 			/^6\. Encoding$/,
@@ -404,6 +400,96 @@ test("persist and reset heartbeat cadence", async ({ browser }) => {
 		expect((await removed).status()).toBe(200);
 		await page.reload();
 		await expect(page.locator("#hb-interval")).toHaveValue(original);
+		expect(unexpected).toEqual([]);
+	} finally {
+		await context.close();
+	}
+});
+
+test("keep independent installation sessions isolated", async ({ browser }) => {
+	const { context, page, unexpected } = await open(browser, false, false);
+	const secondary = await context.newPage();
+	secondary.on("pageerror", (error) => unexpected.push(error.message));
+	try {
+		await page.goto(`${fixture.baseURL}/login`);
+		await page.locator("#email").fill(fixture.email);
+		await page.locator("#password").fill(fixture.password);
+		await page.getByRole("button", { name: "Sign in", exact: true }).click();
+		await expect(page).toHaveURL(`${fixture.baseURL}/`);
+		await page.goto(`${fixture.baseURL}/vod/new`);
+		await expect(page.locator("#wz-name")).toBeVisible();
+
+		await secondary.goto(`${fixture.secondary.baseURL}/setup`);
+		await secondary.locator("#setup-code").fill(fixture.secondary.code);
+		await secondary.locator("#setup-email").fill(fixture.secondary.email);
+		await secondary
+			.locator("#setup-display-name")
+			.fill("Independent test administrator");
+		await secondary.locator("#setup-password").fill(fixture.secondary.password);
+		await secondary
+			.getByRole("button", { name: "Create admin and sign in", exact: true })
+			.click();
+		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/`);
+		await secondary
+			.getByRole("button", { name: "Sign out", exact: true })
+			.click();
+		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/login`);
+		await secondary.locator("#email").fill(fixture.secondary.email);
+		await secondary.locator("#password").fill(fixture.secondary.password);
+		await secondary
+			.getByRole("button", { name: "Sign in", exact: true })
+			.click();
+		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/`);
+		await secondary.goto(`${fixture.secondary.baseURL}/vod/new`);
+		await expect(secondary.locator("#wz-name")).toBeVisible();
+		await page.reload();
+		await secondary.reload();
+		await expect(page.locator("#wz-name")).toBeVisible();
+		await expect(secondary.locator("#wz-name")).toBeVisible();
+		const cookies = (await context.cookies()).filter(
+			(cookie) => cookie.name === "bitovp_session",
+		);
+		expect(cookies.map((cookie) => cookie.domain).sort()).toEqual([
+			"127.0.0.1",
+			"localhost",
+		]);
+		expect(new Set(cookies.map((cookie) => cookie.value)).size).toBe(2);
+		expect(
+			(
+				await (
+					await context.request.get(`${fixture.baseURL}/api/auth/session`)
+				).json()
+			).email,
+		).toBe(fixture.email);
+		expect(
+			(
+				await (
+					await context.request.get(
+						`${fixture.secondary.baseURL}/api/auth/session`,
+					)
+				).json()
+			).email,
+		).toBe(fixture.secondary.email);
+		await page.getByRole("button", { name: "Sign out", exact: true }).click();
+		await expect(page).toHaveURL(`${fixture.baseURL}/login`);
+		await secondary.reload();
+		await expect(secondary.locator("#wz-name")).toBeVisible();
+		expect(
+			(
+				await (
+					await context.request.get(`${fixture.baseURL}/api/auth/session`)
+				).json()
+			).authenticated,
+		).toBe(false);
+		expect(
+			(
+				await (
+					await context.request.get(
+						`${fixture.secondary.baseURL}/api/auth/session`,
+					)
+				).json()
+			).email,
+		).toBe(fixture.secondary.email);
 		expect(unexpected).toEqual([]);
 	} finally {
 		await context.close();

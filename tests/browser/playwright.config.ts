@@ -2,12 +2,20 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
 
+if (
+	process.platform !== "linux" ||
+	process.env.GITHUB_ACTIONS !== "true" ||
+	process.env.RUNNER_ENVIRONMENT !== "github-hosted"
+)
+	throw new Error("Run browser verification on a GitHub-hosted Linux runner");
+
 const file = process.env.BITOVP_GUI_SMOKE_FIXTURE;
 if (!file) throw new Error("Run the installed GUI fixture launcher first");
 const fixture = JSON.parse(readFileSync(file, "utf8"));
 if (
 	!/^[a-f0-9]{32}$/.test(fixture.id) ||
-	!/^http:\/\/127\.0\.0\.1:\d+$/.test(fixture.baseURL)
+	!/^http:\/\/localhost:[1-9]\d*$/.test(fixture.baseURL) ||
+	!/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(fixture.secondary?.baseURL)
 )
 	throw new Error("Only the dedicated loopback installation may be tested");
 

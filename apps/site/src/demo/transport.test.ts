@@ -1,6 +1,7 @@
 import { encodingPlanSchema, VMAF_SCORING_VERSION } from "@bitovp/core";
 import { buildPlan, tryImportPresetIntoWizard } from "@bitovp/core/wizard";
 import { describe, expect, it, vi } from "vitest";
+import type { HeartbeatLogResponse } from "@/app/api/live-channels/[id]/runs/[runId]/heartbeats/route";
 import {
 	DEMO_ACCOUNT_ID,
 	DEMO_LIVE_CHANNEL_ID,
@@ -123,6 +124,147 @@ describe("isolated demo transport", () => {
 		expect(usage.days).toHaveLength(19);
 		expect(usage.totals.VOD.bytesEncoded).toBeGreaterThan(0);
 		expect(assetFetch).not.toHaveBeenCalled();
+	});
+
+	it("serves the normal run Heartbeat log with the actual monitoring DTO", async () => {
+		const { transport, assetFetch } = fixture();
+		const channel = await (
+			await transport.fetch(`/api/live-channels/${DEMO_LIVE_CHANNEL_ID}`)
+		).json();
+		const response = await transport.fetch(
+			`/api/live-channels/${DEMO_LIVE_CHANNEL_ID}/runs/${channel.currentRun.id}/heartbeats?limit=200`,
+		);
+		expect(response.status).toBe(200);
+		const log: HeartbeatLogResponse = await response.json();
+		expect(log.run).toEqual({
+			id: channel.currentRun.id,
+			seq: channel.currentRun.seq,
+			status: channel.currentRun.status,
+			createdAt: channel.currentRun.createdAt,
+			endedAt: channel.currentRun.endedAt,
+			summary: null,
+		});
+		expect(log.rows.length).toBeGreaterThan(0);
+		expect(log.rows.length).toBeLessThanOrEqual(200);
+		for (const row of log.rows) {
+			expect(row.id).toMatch(
+				/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+			);
+			expect(Number.isFinite(Date.parse(row.at))).toBe(true);
+			expect(row.raw).toMatchObject({ ingest: { streams: expect.any(Array) } });
+			expect(row.deltas).toMatchObject({
+				droppedPacketsVideo: expect.any(Number),
+			});
+		}
+		expect(log.rows.map((row) => row.at)).toEqual(
+			log.rows.map((row) => row.at).toSorted(),
+		);
+		expect(log.nextCursor).toBeUndefined();
+		expect(log.latestEvents).toEqual(expect.any(Array));
+		expect(assetFetch).not.toHaveBeenCalled();
+	});
+
+	it("pages the same run without duplicate rows and respects inclusive Heartbeat time windows", async () => {
+		const { transport } = fixture();
+		const path = `/api/live-channels/${DEMO_LIVE_CHANNEL_ID}/runs/00000000-0000-4000-8000-000000000211/heartbeats`;
+		const all: HeartbeatLogResponse = await (
+			await transport.fetch(`${path}?limit=200`)
+		).json();
+		const firstResponse = await transport.fetch(`${path}?limit=2`);
+		expect(firstResponse.status).toBe(200);
+		const first: HeartbeatLogResponse = await firstResponse.json();
+		expect(first.rows).toEqual(all.rows.slice(0, 2));
+		expect(first.nextCursor).toBe(first.rows[1]?.id);
+		const second: HeartbeatLogResponse = await (
+			await transport.fetch(`${path}?limit=2&cursor=${first.nextCursor}`)
+		).json();
+		expect(second.rows).toEqual(all.rows.slice(2, 4));
+		expect(second.latestEvents).toBeUndefined();
+		const from = all.rows[1]?.at;
+		const to = all.rows[3]?.at;
+		if (!from || !to)
+			throw new Error("Expected enough synthetic samples for paging");
+		const window: HeartbeatLogResponse = await (
+			await transport.fetch(
+				`${path}?${new URLSearchParams({ from, to, limit: "200" })}`,
+			)
+		).json();
+		expect(window.rows).toEqual(all.rows.slice(1, 4));
+		expect(window.nextCursor).toBeUndefined();
+		expect((await transport.fetch(`${path}?limit=501`)).status).toBe(400);
+		expect((await transport.fetch(`${path}?from=not-a-date`)).status).toBe(400);
+		expect(
+			(
+				await transport.fetch(
+					`${path}?cursor=00000000-0000-4000-8000-000000000999`,
+				)
+			).status,
+		).toBe(400);
+	});
+
+	it("never returns another channel's current run for unknown Heartbeat log identities", async () => {
+		const { transport, assetFetch } = fixture();
+		const run = "00000000-0000-4000-8000-000000000211";
+		const missing = "00000000-0000-4000-8000-000000000999";
+		expect(
+			(
+				await transport.fetch(
+					`/api/live-channels/${DEMO_LIVE_CHANNEL_ID}/runs/${missing}/heartbeats?limit=200`,
+				)
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await transport.fetch(
+					`/api/live-channels/00000000-0000-4000-8000-000000000202/runs/${run}/heartbeats?limit=200`,
+				)
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await transport.fetch(
+					`/api/live-channels/${missing}/runs/${run}/heartbeats?limit=200`,
+				)
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await transport.fetch(
+					`/api/live-channels/${DEMO_LIVE_CHANNEL_ID}/runs/${run}/heartbeats`,
+					post({}),
+				)
+			).status,
+		).toBe(501);
+		expect(assetFetch).not.toHaveBeenCalled();
+	});
+
+	it("does not dispatch an unsupported-operation notice for normal mounted Live monitoring", async () => {
+		vi.resetModules();
+		const assetFetch = vi.fn<typeof fetch>();
+		const dispatchEvent = vi.fn();
+		const browser = {
+			location: new URL(`${origin}/bitovp/#/demo/live/${DEMO_LIVE_CHANNEL_ID}`),
+			sessionStorage: memoryStorage(),
+			fetch: assetFetch,
+			dispatchEvent,
+		};
+		vi.stubGlobal("window", browser);
+		try {
+			const { installDemoTransport, DEMO_LIMITATION_EVENT } = await import(
+				"./transport"
+			);
+			installDemoTransport();
+			const path = `/api/live-channels/${DEMO_LIVE_CHANNEL_ID}/runs/00000000-0000-4000-8000-000000000211/heartbeats?limit=200`;
+			expect((await browser.fetch(path)).status).toBe(200);
+			expect(dispatchEvent).not.toHaveBeenCalled();
+			expect((await browser.fetch(path, post({}))).status).toBe(501);
+			expect(dispatchEvent).toHaveBeenCalledWith(
+				expect.objectContaining({ type: DEMO_LIMITATION_EVENT }),
+			);
+			expect(assetFetch).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("rejects unknown APIs, external origins, and non-assets without fallback", async () => {

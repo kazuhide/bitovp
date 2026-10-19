@@ -13,11 +13,23 @@
 		sans-serif;
 }
 
+.demo-banner > p {
+	flex: 1 1 28rem;
+	max-width: 62rem;
+	text-wrap: pretty;
+}
+
 .demo-banner-actions {
 	display: flex;
 	align-items: flex-start;
 	flex-wrap: wrap;
 	gap: 1rem;
+}
+
+.demo-banner-actions > button,
+.demo-banner-actions > a,
+.demo-banner summary {
+	white-space: nowrap;
 }
 
 .demo-banner summary {

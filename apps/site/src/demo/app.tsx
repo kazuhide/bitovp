@@ -12,10 +12,11 @@ import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
 import { ThemeProvider } from "@/components/theme-provider";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
-import { LOCALE_COOKIE, resolveLocale } from "@/lib/i18n";
-import { LocaleProvider } from "@/lib/i18n/context";
+import { LocaleProvider, persistLocale, useT } from "@/lib/i18n/context";
 import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
 import { useDemoRoute } from "../shims/navigation";
+import { localePath, SITE_METADATA, type SiteLocale } from "../site-config";
+import { DEMO_TEXT } from "./text";
 import {
 	DEMO_LIMITATION_EVENT,
 	installDemoTransport,
@@ -72,45 +73,47 @@ function preference(name: string) {
 }
 
 function DemoScope() {
+	const { locale } = useT();
+	const text = DEMO_TEXT[locale];
 	return (
 		<section className="mx-auto max-w-3xl space-y-5 py-8">
-			<h1 className="font-semibold text-2xl text-zinc-100">Explore the demo</h1>
-			<p className="text-sm text-zinc-400">
-				This demo includes the dashboard, VOD jobs, Live channels, quality
-				reports, and their encoding forms. Other workspace tools are available
-				in the installed application.
-			</p>
+			<h1 className="font-semibold text-2xl text-zinc-100">
+				{text.scopeTitle}
+			</h1>
+			<p className="text-sm text-zinc-400">{text.scopeBody}</p>
 			<ul className="space-y-3 text-emerald-400 underline">
 				<li>
-					<a href="#/demo">View the sample dashboard</a>
+					<a href="#/demo">{text.dashboardLink}</a>
 				</li>
 				<li>
-					<a href="#/demo/vod/jobs">Browse VOD jobs</a>
+					<a href="#/demo/vod/jobs">{text.jobsLink}</a>
 				</li>
 				<li>
-					<a href="#/demo/vod/new">Configure a VOD encoding</a>
+					<a href="#/demo/vod/new">{text.newJobLink}</a>
 				</li>
 				<li>
-					<a href="#/demo/live">Explore Live channels</a>
+					<a href="#/demo/live">{text.channelsLink}</a>
 				</li>
 				<li>
-					<a href="#/demo/live/new">Configure a Live channel</a>
+					<a href="#/demo/live/new">{text.newChannelLink}</a>
 				</li>
 				<li>
-					<a href="#/demo/qc">Inspect illustrative quality reports</a>
+					<a href="#/demo/qc">{text.qualityLink}</a>
 				</li>
 			</ul>
 			<a
 				href="https://github.com/kazuhide/bitovp/blob/main/docs/USER-GUIDE.md"
 				className="inline-block text-sm text-emerald-400 underline"
 			>
-				Read the full user guide
+				{text.guideLink}
 			</a>
 		</section>
 	);
 }
 
 function Screen({ route }: { route: string }) {
+	const { locale } = useT();
+	const text = DEMO_TEXT[locale];
 	const url = new URL(route, "https://demo.invalid");
 	const path = url.pathname;
 	if (path === "/") return <Dashboard />;
@@ -118,11 +121,11 @@ function Screen({ route }: { route: string }) {
 	if (path === "/vod/new") {
 		const from = url.searchParams.get("from");
 		return from ? (
-			<CopyVodJob source={from} submitLabel="Create demo job" />
+			<CopyVodJob source={from} submitLabel={text.createJob} />
 		) : (
 			<VodWizard
 				presetName={url.searchParams.get("preset") ?? undefined}
-				submitLabel="Create demo job"
+				submitLabel={text.createJob}
 			/>
 		);
 	}
@@ -133,7 +136,7 @@ function Screen({ route }: { route: string }) {
 		return (
 			<LiveWizard
 				duplicateFrom={url.searchParams.get("from") ?? undefined}
-				submitLabel="Create demo channel"
+				submitLabel={text.createChannel}
 			/>
 		);
 	const channel = /^\/live\/([^/]+)$/.exec(path);
@@ -145,7 +148,7 @@ function Screen({ route }: { route: string }) {
 }
 
 class ScreenBoundary extends Component<
-	{ children: ReactNode },
+	{ children: ReactNode; locale: SiteLocale },
 	{ failed: boolean }
 > {
 	state = { failed: false };
@@ -156,11 +159,12 @@ class ScreenBoundary extends Component<
 		console.error(error, info);
 	}
 	render() {
+		const text = DEMO_TEXT[this.props.locale];
 		return this.state.failed ? (
 			<div role="alert" className="space-y-3 py-8">
-				<p>This demo screen could not be loaded.</p>
+				<p>{text.screenError}</p>
 				<a className="text-emerald-400 underline" href="#/demo">
-					Return to the dashboard
+					{text.returnDashboard}
 				</a>
 			</div>
 		) : (
@@ -169,23 +173,26 @@ class ScreenBoundary extends Component<
 	}
 }
 
-export default function DemoApp() {
+export default function DemoApp({ locale }: { locale: SiteLocale }) {
 	const route = useDemoRoute();
 	const [theme] = useState(() => resolveTheme(preference(THEME_COOKIE)));
-	const [locale] = useState(() =>
-		resolveLocale({ cookie: preference(LOCALE_COOKIE) }),
-	);
+	const text = DEMO_TEXT[locale];
 	const [notice, setNotice] = useState("");
 	installDemoTransport();
 	useEffect(() => {
+		// The URL selects the static document and its GUI language, including on refresh.
+		try {
+			persistLocale(locale);
+		} catch {
+			/* The URL remains authoritative when preference cookies are unavailable. */
+		}
 		document.documentElement.dataset.theme = theme;
 		document.documentElement.lang = locale;
-		document.title = "Interactive demo — Bitovp";
+		document.title = DEMO_TEXT[locale].title;
 		return () => {
 			document.documentElement.dataset.theme = "paper";
-			document.documentElement.lang = "en";
-			document.title =
-				"Bitovp — VOD and Live encoding, in a graphical workspace";
+			document.documentElement.lang = locale;
+			document.title = SITE_METADATA[locale].title;
 		};
 	}, [locale, theme]);
 	useEffect(() => {
@@ -195,11 +202,11 @@ export default function DemoApp() {
 	useEffect(() => {
 		const limitation = (event: Event) => {
 			if (event instanceof CustomEvent && typeof event.detail === "string")
-				setNotice(event.detail);
+				setNotice(locale === "ja" ? DEMO_TEXT.ja.limitation : event.detail);
 		};
 		window.addEventListener(DEMO_LIMITATION_EVENT, limitation);
 		return () => window.removeEventListener(DEMO_LIMITATION_EVENT, limitation);
-	}, []);
+	}, [locale]);
 	useEffect(() => {
 		const download = async (event: MouseEvent) => {
 			const anchor =
@@ -228,8 +235,7 @@ export default function DemoApp() {
 			event.preventDefault();
 			try {
 				const response = await fetch(url.href);
-				if (!response.ok)
-					throw new Error("This download is unavailable in the demo.");
+				if (!response.ok) throw new Error(DEMO_TEXT[locale].downloadError);
 				const objectUrl = URL.createObjectURL(await response.blob());
 				const link = document.createElement("a");
 				link.href = objectUrl;
@@ -239,17 +245,13 @@ export default function DemoApp() {
 						: "demo-report.json";
 				link.click();
 				setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-			} catch (error) {
-				setNotice(
-					error instanceof Error
-						? error.message
-						: "This download is unavailable in the demo.",
-				);
+			} catch {
+				setNotice(DEMO_TEXT[locale].downloadError);
 			}
 		};
 		document.addEventListener("click", download);
 		return () => document.removeEventListener("click", download);
-	}, []);
+	}, [locale]);
 	return (
 		<LocaleProvider locale={locale}>
 			<FeatureFlagsProvider flags={{ ...DEFAULT_FEATURE_FLAGS, qcVmaf: true }}>
@@ -258,19 +260,12 @@ export default function DemoApp() {
 						<div className="demo-workspace min-h-screen bg-zinc-950 text-zinc-200 antialiased">
 							<div className="demo-banner">
 								<p>
-									<strong>Interactive demo.</strong> Sample data and simulated
-									jobs. Nothing is sent to an encoding service.
+									<strong>{text.bannerTitle}</strong> {text.bannerBody}
 								</p>
 								<div className="demo-banner-actions">
 									<details>
-										<summary>Demo limits</summary>
-										<p className="demo-limits">
-											You can configure and create simulated VOD jobs and
-											immediate Live channels. Scheduled starts, runtime caps,
-											media playback, and quality computation require the
-											installed application. Quality scores here are
-											illustrative.
-										</p>
+										<summary>{text.limitsLabel}</summary>
+										<p className="demo-limits">{text.limitsBody}</p>
 									</details>
 									<button
 										type="button"
@@ -280,9 +275,9 @@ export default function DemoApp() {
 											window.location.reload();
 										}}
 									>
-										Reset demo
+										{text.reset}
 									</button>
-									<a href={import.meta.env.BASE_URL}>About Bitovp</a>
+									<a href={localePath(locale)}>{text.about}</a>
 								</div>
 							</div>
 							{notice ? (
@@ -291,11 +286,11 @@ export default function DemoApp() {
 								</p>
 							) : null}
 							<AppShell>
-								<ScreenBoundary key={route}>
+								<ScreenBoundary key={route} locale={locale}>
 									<Suspense
 										fallback={
 											<p role="status" className="py-8">
-												Loading demo screen…
+												{text.loading}
 											</p>
 										}
 									>

@@ -1,6 +1,6 @@
 # Supported features and technical limits
 
-Bitovp is a graphical application for Bitmovin video on demand (VOD) and Live
+bitovp is a graphical application for Bitmovin video on demand (VOD) and Live
 encoding. Complete Encoding API coverage is the goal; the current application
 supports a subset of operations and parameters. Available features also depend
 on account permissions, encoder version, input, and output capabilities.

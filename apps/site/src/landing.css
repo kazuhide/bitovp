@@ -74,6 +74,7 @@
 }
 
 .site-landing .landing-header-inner,
+.site-landing .landing-header-links,
 .site-landing .landing-header-nav,
 .site-landing .landing-actions,
 .site-landing .landing-footer-inner,
@@ -110,6 +111,27 @@
 
 .site-landing .landing-header-nav > a:hover {
 	text-decoration: underline;
+}
+
+.site-landing .landing-language-switch {
+	display: flex;
+	gap: 0.25rem;
+	border-inline-start: 1px solid var(--landing-border);
+	padding-inline-start: 1rem;
+	font-size: 0.875rem;
+}
+
+.site-landing .landing-language-switch a {
+	padding: 0.25rem 0.5rem;
+	border-radius: 0.25rem;
+	color: var(--landing-secondary);
+	text-decoration: none;
+}
+
+.site-landing .landing-language-switch a[aria-current="page"] {
+	background: var(--landing-paper);
+	color: var(--landing-ink);
+	font-weight: 600;
 }
 
 .site-landing .landing-button {
@@ -482,4 +504,21 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
+}
+
+.site-landing:lang(ja) {
+	line-height: 1.9;
+	line-break: strict;
+}
+
+.site-landing:lang(ja) h1 {
+	max-width: 21em;
+	font-size: clamp(2rem, 3.6vw, 3.25rem);
+	letter-spacing: 0.015em;
+	line-height: 1.45;
+}
+
+.site-landing:lang(ja) :is(h2, h3) {
+	letter-spacing: 0;
+	line-height: 1.5;
 }

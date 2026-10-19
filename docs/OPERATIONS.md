@@ -95,10 +95,9 @@ polling; an inactive channel can retain older rows until it runs again or is
 deleted. Ended runs retain a summary. Unknown/pruned measurements remain unknown,
 not zero. Avoid manually deleting live history while alerts depend on it.
 
-A background heartbeat or provider-terminal observation skips its entire write
-when a channel transition owns the channel lock. The next sweep can retry; a
-skipped observation adds no heartbeat history or terminal side effects and does
-not delay the transition's cancellation request.
+During channel transitions, background monitoring may skip a sample so
+cancellation can finish promptly. The next monitoring sweep retries. A skipped
+sample adds no heartbeat history or saved provider status change.
 
 Per-encoding heartbeat hooks are owned and removed by the worker. Before an
 upgrade that removes support for those hooks, disable registration with the new

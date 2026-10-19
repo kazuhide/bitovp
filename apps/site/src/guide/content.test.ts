@@ -88,7 +88,7 @@ describe("guide source publication boundary", () => {
 			expect(() =>
 				kind === "source"
 					? readGuideSource(alias)
-					: guideLink(relative(dirname(SOURCE), alias), SOURCE, "en"),
+					: guideLink(relative(dirname(SOURCE), alias), SOURCE),
 			).toThrow(/published Markdown documents/);
 		});
 	});
@@ -108,7 +108,7 @@ describe("guide source publication boundary", () => {
 			expect(() =>
 				kind === "source"
 					? readGuideSource(source)
-					: guideLink(relative(dirname(SOURCE), source), SOURCE, "en"),
+					: guideLink(relative(dirname(SOURCE), source), SOURCE),
 			).toThrow(/published Markdown documents/);
 		});
 	});
@@ -133,7 +133,7 @@ describe("guide source publication boundary", () => {
 				/Guide sources must be published Markdown documents/,
 			);
 			expect(() =>
-				guideLink(relative(dirname(SOURCE), absentDocument), SOURCE, "en"),
+				guideLink(relative(dirname(SOURCE), absentDocument), SOURCE),
 			).toThrow(/Guide links must reference published Markdown documents/);
 			expect(() =>
 				renderChapter(`![Outside fixture](${absentImage})`, SOURCE, "en", []),
@@ -233,26 +233,26 @@ describe("guide public links", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("maps public task guides to the current %s guide routes", (locale) => {
-		expect(guideLink("./VOD.md", SOURCE, locale)).toBe(
-			guidePath(locale, "vod-encoding"),
-		);
-		expect(guideLink("./INSTALLATION.md", SOURCE, locale)).toBe(
-			guidePath(locale, "appendix"),
-		);
+	] as const)("preserves detailed task-document destinations from the %s guide", (locale) => {
+		const source = SOURCE.replace(".en.md", `.${locale}.md`);
+		for (const name of [
+			"VOD.md",
+			"INSTALLATION.md",
+			"QUALITY-AND-MONITORING.md",
+		])
+			expect(guideLink(`./${name}`, source)).toBe(
+				`https://github.com/kazuhide/bitovp/blob/main/docs/user-guide/${name}`,
+			);
 	});
 
 	it.each([
 		"en",
 		"ja",
 	] as const)("preserves the explicitly linked guide language from the %s interface", (locale) => {
-		expect(guideLink("../USER-GUIDE.md", SOURCE, locale)).toBe(guidePath("en"));
-		expect(guideLink("./USER-GUIDE.en.md", SOURCE, locale)).toBe(
-			guidePath("en"),
-		);
-		expect(guideLink("./USER-GUIDE.ja.md", SOURCE, locale)).toBe(
-			guidePath("ja"),
-		);
+		const source = SOURCE.replace(".en.md", `.${locale}.md`);
+		expect(guideLink("../USER-GUIDE.md", source)).toBe(guidePath("en"));
+		expect(guideLink("./USER-GUIDE.en.md", source)).toBe(guidePath("en"));
+		expect(guideLink("./USER-GUIDE.ja.md", source)).toBe(guidePath("ja"));
 	});
 
 	it("keeps local section links and public HTTP(S) destinations", () => {
@@ -261,12 +261,12 @@ describe("guide public links", () => {
 			"https://example.com/guide?topic=vod#output",
 			"http://localhost:3100/vod/new",
 		]) {
-			expect(guideLink(href, SOURCE, "en")).toBe(href);
+			expect(guideLink(href, SOURCE)).toBe(href);
 		}
 	});
 
 	it("keeps fragments on public Markdown links that cannot map to a chapter", () => {
-		expect(guideLink("./VOD.md#per-title", SOURCE, "en")).toBe(
+		expect(guideLink("./VOD.md#per-title", SOURCE)).toBe(
 			"https://github.com/kazuhide/bitovp/blob/main/docs/user-guide/VOD.md#per-title",
 		);
 	});
@@ -284,7 +284,7 @@ describe("guide public links", () => {
 		"../../README.md",
 		"./bitovp-user-guide-ja.pdf",
 	])("rejects non-public or unsupported link %s", (href) => {
-		expect(() => guideLink(href, SOURCE, "en")).toThrow();
+		expect(() => guideLink(href, SOURCE)).toThrow();
 	});
 });
 
@@ -453,6 +453,20 @@ describe("guide HTML rendering", () => {
 });
 
 describe("published bilingual guides", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps the %s appendix links to port examples and media reproduction commands", (locale) => {
+		const appendix = loadGuides()[locale].find(
+			(chapter) => chapter.id === "appendix",
+		);
+		expect(appendix).toBeDefined();
+		for (const name of ["INSTALLATION.md", "QUALITY-AND-MONITORING.md"])
+			expect(appendix?.html).toContain(
+				`href="https://github.com/kazuhide/bitovp/blob/main/docs/user-guide/${name}"`,
+			);
+	});
+
 	it("loads all 18 chapters in both languages with stable corresponding section IDs", () => {
 		const guides = loadGuides();
 		expect(GUIDE_CHAPTERS).toHaveLength(18);

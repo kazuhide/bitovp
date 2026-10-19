@@ -16,16 +16,6 @@ const sourceFiles = {
 	en: resolve(DOCS, "user-guide/USER-GUIDE.en.md"),
 	ja: resolve(DOCS, "user-guide/USER-GUIDE.ja.md"),
 };
-const relatedGuides: Record<string, GuideChapterId | undefined> = {
-	"INSTALLATION.md": "appendix",
-	"GETTING-STARTED.md": "getting-started",
-	"VOD.md": "vod-encoding",
-	"LIVE.md": "live-encoding",
-	"QUALITY-AND-MONITORING.md": "quality",
-	"LIBRARY-AND-ADMIN.md": "content-and-storage",
-	"TROUBLESHOOTING.md": "troubleshooting",
-	"GLOSSARY.md": "appendix",
-};
 
 export interface GuideHeading {
 	id: string;
@@ -131,7 +121,7 @@ export function readGuideSource(source: string) {
 	return readFileSync(path, "utf8");
 }
 
-export function guideLink(href: string, source: string, locale: SiteLocale) {
+export function guideLink(href: string, source: string) {
 	if (href.startsWith("#")) return href;
 	if (/^[a-z][a-z\d+.-]*:/i.test(href)) {
 		const url = new URL(href);
@@ -160,8 +150,6 @@ export function guideLink(href: string, source: string, locale: SiteLocale) {
 	if (["USER-GUIDE.md", "USER-GUIDE.en.md"].includes(basename))
 		return guidePath("en");
 	if (basename === "USER-GUIDE.ja.md") return guidePath("ja");
-	const chapter = relatedGuides[basename];
-	if (chapter && !fragment) return guidePath(locale, chapter);
 	return `https://github.com/kazuhide/bitovp/blob/main/${relative(ROOT, path).split(sep).map(encodeURIComponent).join("/")}${fragment ? `#${encodeURIComponent(decodeURIComponent(fragment))}` : ""}`;
 }
 
@@ -243,7 +231,6 @@ export function renderChapter(
 			guideLink(
 				String(required(items[i], "Missing link token").attrGet("href") ?? ""),
 				source,
-				locale,
 			),
 		);
 		return renderer.renderToken(items, i, options);

@@ -194,6 +194,7 @@ export function failureSummary(raw) {
 		return ["Browser diagnostic: invalid report"];
 	}
 	const statuses = new Map();
+	const locations = new Map();
 	const pending = [...report.suites];
 	let visited = 0;
 	try {
@@ -209,6 +210,41 @@ export function failureSummary(raw) {
 				const results = spec.tests[0].results;
 				assert(Array.isArray(results));
 				const status = results[0]?.status;
+				if (status === "failed" || status === "timedOut") {
+					const lines = new Set();
+					const add = (line) => {
+						if (
+							Number.isInteger(line) &&
+							line > 0 &&
+							line <= 10_000 &&
+							lines.size < 3
+						)
+							lines.add(line);
+					};
+					const errors = [
+						results[0].error,
+						...(Array.isArray(results[0].errors)
+							? results[0].errors.slice(0, 10)
+							: []),
+					];
+					for (const error of errors) {
+						const file = error?.location?.file;
+						if (
+							typeof file === "string" &&
+							file.replaceAll("\\", "/").split("/").at(-1) ===
+								"installed-gui.test.ts"
+						)
+							add(error.location.line);
+						if (typeof error?.stack === "string")
+							for (const match of error.stack
+								.slice(0, 10_000)
+								.matchAll(
+									/installed-gui\.test\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
+								))
+								add(Number(match[1]));
+					}
+					if (lines.size) locations.set(spec.title, [...lines].join(","));
+				}
 				statuses.set(
 					spec.title,
 					results.length > 1
@@ -264,7 +300,7 @@ export function failureSummary(raw) {
 		...categories,
 		...CASES.map(
 			(title) =>
-				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}`,
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}`,
 		),
 	];
 }

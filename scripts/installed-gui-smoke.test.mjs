@@ -262,6 +262,31 @@ test("discovery errors expose fixed categories without raw module paths or messa
 		!failureSummary(JSON.stringify(changed)).join("\n").includes("private"),
 	);
 });
+test("failed cases expose only bounded line numbers from the known browser test file", () => {
+	const changed = report();
+	const result = changed.suites[0].specs[0].tests[0].results[0];
+	result.status = "failed";
+	result.error = {
+		message: "private password and cookie",
+		location: { file: "/private/installed-gui.test.ts", line: 173 },
+		stack: "private URL and token\n at /private/installed-gui.test.ts:202:3",
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[0],
+		`Browser case: ${CASES[0]}; status=failed; lines=173,202`,
+	);
+	assert(
+		!failureSummary(JSON.stringify(changed)).join("\n").includes("private"),
+	);
+	for (const line of [0, -1, 10001, "private", 2.5]) {
+		result.error.location.line = line;
+		result.error.stack = "private data";
+		assert.equal(
+			failureSummary(JSON.stringify(changed))[0],
+			`Browser case: ${CASES[0]}; status=failed`,
+		);
+	}
+});
 test("a process being up is insufficient without all worker queue registrations", () => {
 	const queues = [
 		"usageStatistics",

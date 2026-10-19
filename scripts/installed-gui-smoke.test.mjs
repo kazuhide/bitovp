@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
 	existsSync,
 	mkdtempSync,
@@ -244,7 +245,7 @@ test("failure page observations expose only bounded fixed categories", () => {
 	assert.equal(
 		failureSummary(JSON.stringify(changed))[5].split("session-admin").length -
 			1,
-		24,
+		8,
 	);
 	browserTest.results[0].status = "passed";
 	assert.equal(
@@ -315,7 +316,7 @@ test("failure diagnostics distinguish authentication phases without exposing inj
 	];
 	assert.equal(
 		failureSummary(JSON.stringify(changed))[5],
-		`Browser case: ${CASES[5]}; status=failed; state=session-initial-login-anonymous,session-post-login-started,session-post-login-admin,browser-post-login-module-load`,
+		`Browser case: ${CASES[5]}; status=failed; state=browser-post-login-module-load,session-initial-login-anonymous,session-post-login-admin,session-post-login-started`,
 	);
 	browserTest.results[0].status = "timedOut";
 	assert(
@@ -337,7 +338,7 @@ test("failure diagnostics distinguish authentication phases without exposing inj
 		failureSummary(JSON.stringify(changed))[5].split(
 			"browser-post-login-reference-error",
 		).length - 1,
-		24,
+		4,
 	);
 	browserTest.annotations = [
 		...Array.from({ length: 32 }, () => ({
@@ -350,6 +351,264 @@ test("failure diagnostics distinguish authentication phases without exposing inj
 		failureSummary(JSON.stringify(changed))[5],
 		`Browser case: ${CASES[5]}; status=failed`,
 	);
+});
+test("original console errors retain useful fixed categories without returning text", () => {
+	for (const [message, expected] of [
+		[
+			"An error occurred in the Server Components render. private digest",
+			"server-render",
+		],
+		[
+			'[i18n] key "private.key" has no value for {private}',
+			"missing-translation",
+		],
+		["useT must be used inside <LocaleProvider>", "missing-translation"],
+		["ReferenceError: private symbol is not defined", "reference-error"],
+		["TypeError: private value is undefined", "type-error"],
+		["SyntaxError: private input", "syntax-error"],
+		["private URL cookie and arbitrary text", "unknown"],
+	])
+		assert.equal(classifyBrowserError({ message }), expected);
+});
+test("structured failure diagnostics reserve bounded slots for original errors and sessions", () => {
+	const changed = report();
+	const browserTest = changed.suites[0].specs[5].tests[0];
+	browserTest.results[0].status = "failed";
+	const dom = [
+		"route-vod-new",
+		"navigation-ok",
+		"navigation-content-html",
+		"ready-complete",
+		"document-next-error",
+		"organization-missing",
+		"content-empty",
+		"permission-none",
+		"wizard-nav-missing",
+		"wizard-missing",
+	];
+	const errors = [
+		"console-post-login-server-render",
+		"console-post-login-missing-translation",
+		"browser-post-login-react-418",
+		"console-post-login-unknown",
+	];
+	const sessions = [
+		"session-initial-login-login-anonymous",
+		"session-post-login-root-admin",
+		"session-post-login-vod-new-pending",
+		"session-post-login-vod-new-admin",
+		"session-post-login-other-http-error",
+		"session-post-login-unavailable-invalid",
+		"session-post-login-vod-new-unreadable",
+		"session-post-login-vod-new-request-failed",
+	];
+	const markers = ["browser-error", "session-post-login-started"];
+	const states = [...dom, ...errors, ...sessions, ...markers];
+	assert.equal(states.length, 24);
+	browserTest.annotations = [
+		...states.map((description) => ({ type: "smoke-state", description })),
+		{ type: "smoke-state", description: "console-post-login-private URL" },
+		{
+			type: "smoke-state",
+			description: "session-post-login-vod-new-admin\nprivate",
+		},
+		{ type: "smoke-state", description: "wizard-step-private" },
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed; state=${states.join(",")}`,
+	);
+	// A noisy DOM group cannot evict error/session records inside the first 32 annotations.
+	browserTest.annotations = [
+		...Array(20).fill("document-empty"),
+		...errors,
+		...sessions,
+	].map((description) => ({ type: "smoke-state", description }));
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed; state=${[...Array(10).fill("document-empty"), ...errors, ...sessions].join(",")}`,
+	);
+});
+test("known wizard steps and document states stay closed at the public boundary", () => {
+	const changed = report();
+	const browserTest = changed.suites[0].specs[5].tests[0];
+	browserTest.results[0].status = "failed";
+	for (const state of [
+		"document-next-error",
+		"document-app-shell",
+		"document-empty",
+		"document-other",
+		"content-vod",
+		"content-dashboard",
+		"content-not-found",
+		"content-empty",
+		"wizard-imported",
+		"wizard-nav-hidden",
+		"wizard-nav-no-current",
+		...Array.from({ length: 8 }, (_, index) => `wizard-step-${index + 1}`),
+	]) {
+		browserTest.annotations = [
+			{ type: "smoke-state", description: state },
+			{ type: "smoke-state", description: "wizard-step-0" },
+			{ type: "smoke-state", description: "wizard-step-9" },
+			{ type: "smoke-state", description: `${state} private URL cookie` },
+		];
+		assert.equal(
+			failureSummary(JSON.stringify(changed))[5],
+			`Browser case: ${CASES[5]}; status=failed; state=${state}`,
+		);
+	}
+});
+test("original navigation content types expose only fixed media categories", async () => {
+	const { classifyNavigationContentType } = await import(
+		"../tests/browser/diagnostics.ts"
+	);
+	for (const [value, expected] of [
+		["text/html; charset=utf-8", "html"],
+		["TEXT/X-COMPONENT; private=discard", "rsc"],
+		["application/json", "json"],
+		["application/problem+json; secret=discard", "json"],
+		["private invalid content type", "other"],
+		["", "unknown"],
+		[null, "unknown"],
+		[
+			{
+				toString() {
+					throw new Error("must not coerce header");
+				},
+			},
+			"unknown",
+		],
+	])
+		assert.equal(classifyNavigationContentType(value), expected);
+});
+test("session records retain request-start document and response-arrival slots", async () => {
+	const { observeSessionResponses } = await import(
+		"../tests/browser/diagnostics.ts"
+	);
+	const page = new EventEmitter();
+	const origin = "http://localhost:3100";
+	let documentURL = `${origin}/login?private=discard`;
+	const request = () => ({
+		url: () => `${origin}/api/auth/session`,
+		frame: () => ({ url: () => documentURL }),
+	});
+	const response = (req, json) => ({
+		url: req.url,
+		request: () => req,
+		status: () => 200,
+		json: () => json,
+	});
+	let finishInitial;
+	const initialJSON = new Promise((resolve) => {
+		finishInitial = resolve;
+	});
+	const observations = observeSessionResponses(page, origin);
+	const initial = request();
+	page.emit("request", initial);
+	page.emit("response", {
+		url: () => `${origin}/api/auth/login`,
+		status: () => 200,
+		request: () => ({ method: () => "POST" }),
+	});
+	documentURL = `${origin}/`;
+	page.emit("response", response(initial, initialJSON));
+	const dashboard = request();
+	page.emit("request", dashboard);
+	documentURL = `${origin}/vod/new?private=discard`;
+	page.emit(
+		"response",
+		response(
+			dashboard,
+			Promise.resolve({
+				configured: true,
+				authenticated: true,
+				mode: "users",
+				role: "ADMIN",
+			}),
+		),
+	);
+	let failLate;
+	const lateJSON = new Promise((_resolve, reject) => {
+		failLate = reject;
+	});
+	for (let index = 0; index < 7; index++) {
+		const req = request();
+		page.emit("request", req);
+		page.emit(
+			"response",
+			response(
+				req,
+				index === 0
+					? lateJSON
+					: Promise.resolve({ configured: true, authenticated: false }),
+			),
+		);
+	}
+	await new Promise(setImmediate);
+	assert.equal(observations.history.length, 8);
+	assert.equal(
+		observations.history[0].state,
+		"session-initial-login-login-pending",
+	);
+	assert.equal(observations.history[1].state, "session-post-login-root-admin");
+	assert.equal(
+		observations.history[2].state,
+		"session-post-login-vod-new-pending",
+	);
+	finishInitial({ configured: true, authenticated: false, private: "discard" });
+	failLate(new Error("private late JSON failure"));
+	await new Promise(setImmediate);
+	assert.equal(
+		observations.history[0].state,
+		"session-initial-login-login-anonymous",
+	);
+	assert.equal(
+		observations.history[2].state,
+		"session-post-login-vod-new-unreadable",
+	);
+	assert.equal(observations.history.length, 8);
+	assert.equal(observations.postLoginSessionStarted, true);
+	assert(!JSON.stringify(observations).includes("private"));
+});
+test("diagnostic observers keep the first four original errors and classify console text only", async () => {
+	const { observeSessionResponses } = await import(
+		"../tests/browser/diagnostics.ts"
+	);
+	const page = new EventEmitter();
+	const observations = observeSessionResponses(page, "http://localhost:3100");
+	page.emit("console", {
+		type: () => "log",
+		text: () => {
+			throw new Error("must not read logs");
+		},
+	});
+	page.emit("console", {
+		type: () => "error",
+		text: () => "Minified React error #418; private",
+	});
+	page.emit("console", {
+		type: () => "error",
+		text: () => "private arbitrary URL cookie",
+	});
+	page.emit("pageerror", { name: "ReferenceError", message: "private symbol" });
+	page.emit("console", {
+		type: () => "error",
+		text: () => {
+			throw new Error("private getter");
+		},
+	});
+	page.emit("pageerror", {
+		name: "TypeError",
+		message: "fifth must be ignored",
+	});
+	assert.deepEqual(observations.browserErrors, [
+		"console-initial-login-react-418",
+		"console-initial-login-unknown",
+		"browser-initial-login-reference-error",
+		"console-initial-login-unknown",
+	]);
+	assert(!JSON.stringify(observations).includes("private"));
 });
 test("missing and malformed browser reports produce constant failure categories", () => {
 	assert.deepEqual(failureSummary(), [

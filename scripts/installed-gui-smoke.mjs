@@ -24,7 +24,7 @@ import {
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
-import { PHASED_GUI_STATES } from "../tests/browser/diagnostics.ts";
+import { selectGuiStates } from "../tests/browser/diagnostics.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
@@ -215,50 +215,18 @@ export function failureSummary(raw) {
 				assert(Array.isArray(results));
 				const status = results[0]?.status;
 				if (status === "failed" || status === "timedOut") {
-					for (const annotation of Array.isArray(spec.tests[0].annotations)
+					const annotations = Array.isArray(spec.tests[0].annotations)
 						? spec.tests[0].annotations.slice(0, 32)
-						: []) {
-						if (
-							annotation?.type === "smoke-state" &&
-							[
-								"route-vod-new",
-								"route-login",
-								"route-setup",
-								"route-root",
-								"route-other",
-								"ready-complete",
-								"ready-interactive",
-								"ready-loading",
-								"ready-unknown",
-								"navigation-ok",
-								"navigation-error",
-								"navigation-unknown",
-								"wizard-attached",
-								"wizard-visible",
-								"permission-checking",
-								"sign-in-required",
-								"permission-unverified",
-								"permission-denied",
-								"global-error",
-								"alert-visible",
-								"browser-error",
-								"diagnostic-unavailable",
-								"session-pending",
-								"session-http-error",
-								"session-unreadable",
-								"session-invalid",
-								"session-unconfigured",
-								"session-anonymous",
-								"session-admin",
-								"session-authenticated-other",
-								"session-request-failed",
-								...PHASED_GUI_STATES,
-							].includes(annotation.description)
-						) {
-							const values = observations.get(spec.title) ?? [];
-							if (values.length < 24) values.push(annotation.description);
-							observations.set(spec.title, values);
-						}
+						: [];
+					const values = selectGuiStates(
+						annotations.map((annotation) =>
+							annotation?.type === "smoke-state"
+								? annotation.description
+								: undefined,
+						),
+					);
+					if (values.length) observations.set(spec.title, values);
+					for (const annotation of annotations) {
 						if (
 							annotation?.type === "smoke-stage" &&
 							[

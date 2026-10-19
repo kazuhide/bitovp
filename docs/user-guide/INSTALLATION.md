@@ -80,6 +80,13 @@ For network access, remove `AUTH_ALLOW_INSECURE_HTTP=true`, configure an HTTPS
 
 ### Optional: run beside another local installation
 
+Use a separate checkout with its own `.env` and `.env.migrate` files. Before
+initializing it, choose an unused Compose project name in `.env`, as shown below.
+Compose groups containers and data volumes by that name; two checkouts with the
+same folder name otherwise share the default project, even in different folders.
+Keep the chosen project name for startup and shutdown. If you use `-p` or a shell
+`COMPOSE_PROJECT_NAME`, set it to the same name.
+
 Browser sign-in cookies are shared across ports on the same hostname. Changing
 ports alone can replace another installation's sign-in cookie or sign you out.
 Use a distinct hostname for each installation, or a separate browser profile.
@@ -94,6 +101,7 @@ For the Docker runtime, choose unused host ports before database initialization.
 For example, set these in `.env`:
 
 ```dotenv
+COMPOSE_PROJECT_NAME=bitovp-secondary
 POSTGRES_PORT=15432
 REDIS_PORT=16379
 WEB_PORT=13100

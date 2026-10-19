@@ -106,13 +106,146 @@ const domCategories = [
 	"diagnostic-unavailable",
 ];
 
+type LoginFields = Readonly<{ email: string; password: string }>;
+const loginFieldCategories = [
+	"not-observed",
+	"match",
+	"mismatch",
+	"unreadable",
+	"unavailable",
+].map((state) => `login-fields-${state}`);
+const loginHttpCategories = [
+	"not-observed",
+	"pending",
+	"ok",
+	"bad-request",
+	"unauthorized",
+	"forbidden",
+	"conflict",
+	"too-large",
+	"rate-limited",
+	"server-error",
+	"unavailable",
+	"other-2xx",
+	"redirect",
+	"other-4xx",
+	"other-5xx",
+	"other",
+	"request-failed",
+].map((state) => `login-http-${state}`);
+const loginErrorCodes = new Map([
+	["AUTH_NOT_CONFIGURED", "not-configured"],
+	["AUTH_PROVIDER_UNAVAILABLE", "provider-unavailable"],
+	["AUTH_INVALID_CREDENTIALS", "invalid-credentials"],
+	["AUTH_PASSWORD_EXPIRED", "password-expired"],
+	["AUTH_RATE_LIMITED", "rate-limited"],
+	["AUTH_BUSY", "busy"],
+	["AUTH_PASSWORD_REQUIRED", "password-required"],
+	["AUTH_EMAIL_REQUIRED", "email-required"],
+	["AUTH_CREDENTIALS_CHANGED", "credentials-changed"],
+	["AUTH_MODE_UNSUPPORTED", "mode-unsupported"],
+	["AUTH_PASSWORD_CHANGE_REQUIRED", "password-change-required"],
+	["AUTH_SETUP_REQUIRED", "setup-required"],
+	["TENANT_IP_DENIED", "tenant-ip-denied"],
+	["TENANT_CHANGED", "tenant-changed"],
+	["TENANT_MEMBERSHIP_REQUIRED", "tenant-membership-required"],
+	["TENANT_IP_INVALID", "tenant-ip-invalid"],
+]);
+const loginCodeCategories = [
+	"not-observed",
+	"pending",
+	"none",
+	"invalid",
+	"unreadable",
+	"unavailable",
+	"other",
+	...loginErrorCodes.values(),
+].map((state) => `login-code-${state}`);
+
+/** Compare the original POST in memory and retain no submitted or expected values. */
+export function classifyLoginFields(body: unknown, expected?: LoginFields) {
+	try {
+		if (!expected) return "login-fields-unavailable";
+		if (!body || typeof body !== "object" || Array.isArray(body))
+			return "login-fields-mismatch";
+		const fields = body as Record<string, unknown>;
+		return fields.email === expected.email &&
+			fields.password === expected.password
+			? "login-fields-match"
+			: "login-fields-mismatch";
+	} catch {
+		return "login-fields-unreadable";
+	}
+}
+
+export function classifyLoginStatus(status: unknown) {
+	if (typeof status !== "number" || !Number.isInteger(status))
+		return "login-http-other";
+	const known = new Map([
+		[200, "ok"],
+		[400, "bad-request"],
+		[401, "unauthorized"],
+		[403, "forbidden"],
+		[409, "conflict"],
+		[413, "too-large"],
+		[429, "rate-limited"],
+		[500, "server-error"],
+		[503, "unavailable"],
+	]);
+	const category =
+		known.get(status) ??
+		(status >= 200 && status < 300
+			? "other-2xx"
+			: status >= 300 && status < 400
+				? "redirect"
+				: status >= 400 && status < 500
+					? "other-4xx"
+					: status >= 500 && status < 600
+						? "other-5xx"
+						: "other");
+	return `login-http-${category}`;
+}
+
+export function classifyLoginCode(body: unknown) {
+	try {
+		if (!body || typeof body !== "object" || Array.isArray(body))
+			return "login-code-invalid";
+		const details = (body as Record<string, unknown>).details;
+		if (details === undefined) return "login-code-none";
+		if (!details || typeof details !== "object" || Array.isArray(details))
+			return "login-code-invalid";
+		const code = (details as Record<string, unknown>).code;
+		return typeof code === "string"
+			? `login-code-${loginErrorCodes.get(code) ?? "other"}`
+			: "login-code-invalid";
+	} catch {
+		return "login-code-unreadable";
+	}
+}
+
 /** Reserve slots for each structured group inside the unchanged public limits. */
 export function selectGuiStates(states: readonly unknown[]): string[] {
 	const fixed = states
 		.slice(0, 32)
 		.filter((state): state is string => typeof state === "string");
+	const login = fixed.includes("route-login")
+		? [loginFieldCategories, loginHttpCategories, loginCodeCategories].flatMap(
+				(categories) => {
+					const state = fixed.find((value) => categories.includes(value));
+					return state ? [state] : [];
+				},
+			)
+		: [];
+	const dom = fixed.filter((state) => domCategories.includes(state));
 	return [
-		...fixed.filter((state) => domCategories.includes(state)).slice(0, 10),
+		...(login.length
+			? dom.filter(
+					(state) =>
+						!state.startsWith("navigation-") && !state.startsWith("wizard-"),
+				)
+			: dom
+		).slice(0, 10 - login.length),
+		...login,
 		...fixed.filter((state) => errorCategories.includes(state)).slice(0, 4),
 		...fixed.filter((state) => sessionCategories.includes(state)).slice(0, 8),
 		...(fixed.includes("browser-error") ? ["browser-error"] : []),
@@ -198,6 +331,7 @@ export type AuthenticationObservations = {
 	history: { state: string }[];
 	browserErrors: string[];
 	postLoginSessionStarted: boolean;
+	login: { fields: string; http: string; code: string };
 };
 
 export function recordBrowserError(
@@ -240,13 +374,23 @@ function requestDocumentRoute(
 }
 
 /** Observe existing requests only; the failing document's cause remains unknown. */
-export function observeSessionResponses(page: Page, origin: string) {
+export function observeSessionResponses(
+	page: Page,
+	origin: string,
+	expectedLogin?: LoginFields,
+) {
 	const observations: AuthenticationObservations = {
 		phase: "initial-login",
 		history: [],
 		browserErrors: [],
 		postLoginSessionStarted: false,
+		login: {
+			fields: "login-fields-not-observed",
+			http: "login-http-not-observed",
+			code: "login-code-not-observed",
+		},
 	};
+	let firstLoginRequest: object | undefined;
 	const requestContexts = new WeakMap<
 		object,
 		{ phase: AuthenticationPhase; route: (typeof documentRoutes)[number] }
@@ -262,6 +406,26 @@ export function observeSessionResponses(page: Page, origin: string) {
 		return parsed.origin === origin && parsed.pathname === "/api/auth/session";
 	};
 	page.on("request", (request) => {
+		const url = new URL(request.url());
+		if (
+			url.origin === origin &&
+			url.pathname === "/api/auth/login" &&
+			request.method() === "POST"
+		) {
+			if (firstLoginRequest) return;
+			firstLoginRequest = request;
+			try {
+				observations.login.fields = classifyLoginFields(
+					request.postDataJSON(),
+					expectedLogin,
+				);
+			} catch {
+				observations.login.fields = "login-fields-unreadable";
+			}
+			observations.login.http = "login-http-pending";
+			observations.login.code = "login-code-pending";
+			return;
+		}
 		if (!isSession(request.url())) return;
 		requestContexts.set(request, {
 			phase: observations.phase,
@@ -277,10 +441,27 @@ export function observeSessionResponses(page: Page, origin: string) {
 		if (
 			url.origin === origin &&
 			url.pathname === "/api/auth/login" &&
-			response.request().method() === "POST" &&
-			response.status() === 200
+			response.request().method() === "POST"
 		) {
-			observations.phase = "post-login";
+			if (response.status() === 200) observations.phase = "post-login";
+			if (firstLoginRequest && firstLoginRequest !== response.request()) return;
+			if (!firstLoginRequest) {
+				firstLoginRequest = response.request();
+				observations.login.fields = "login-fields-unavailable";
+			}
+			observations.login.http = classifyLoginStatus(response.status());
+			observations.login.code = "login-code-pending";
+			try {
+				void Promise.resolve(response.json())
+					.then((body: unknown) => {
+						observations.login.code = classifyLoginCode(body);
+					})
+					.catch(() => {
+						observations.login.code = "login-code-unreadable";
+					});
+			} catch {
+				observations.login.code = "login-code-unreadable";
+			}
 			return;
 		}
 		if (!isSession(response.url())) return;
@@ -320,6 +501,13 @@ export function observeSessionResponses(page: Page, origin: string) {
 			});
 	});
 	page.on("requestfailed", (request) => {
+		if (
+			request === firstLoginRequest &&
+			observations.login.http === "login-http-pending"
+		) {
+			observations.login.http = "login-http-request-failed";
+			observations.login.code = "login-code-unavailable";
+		}
 		if (!isSession(request.url())) return;
 		const context = requestContexts.get(request) ?? {
 			phase: observations.phase,

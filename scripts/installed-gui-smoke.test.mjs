@@ -610,6 +610,273 @@ test("diagnostic observers keep the first four original errors and classify cons
 	]);
 	assert(!JSON.stringify(observations).includes("private"));
 });
+test("failed sign-in prioritizes fixed original POST evidence within existing output bounds", () => {
+	const changed = report();
+	const browserTest = changed.suites[0].specs[5].tests[0];
+	browserTest.results[0].status = "failed";
+	const dom = [
+		"route-login",
+		"navigation-unknown",
+		"navigation-content-unknown",
+		"ready-complete",
+		"document-other",
+		"organization-missing",
+		"content-other",
+		"alert-visible",
+		"wizard-nav-missing",
+		"wizard-missing",
+	];
+	const login = [
+		"login-fields-match",
+		"login-http-unauthorized",
+		"login-code-invalid-credentials",
+	];
+	const errors = Array(4).fill("console-initial-login-unknown");
+	const sessions = Array(8).fill("session-initial-login-login-anonymous");
+	const markers = ["browser-error", "session-post-login-started"];
+	const states = [...dom, ...errors, ...sessions, ...login, ...markers];
+	assert(states.length <= 32);
+	browserTest.annotations = states.map((description) => ({
+		type: "smoke-state",
+		description,
+	}));
+	const expected = [
+		"route-login",
+		"ready-complete",
+		"document-other",
+		"organization-missing",
+		"content-other",
+		"alert-visible",
+		...login,
+		...errors,
+		...sessions,
+		...markers,
+	];
+	assert(expected.length <= 24);
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed; state=${expected.join(",")}`,
+	);
+	browserTest.annotations.push(
+		{
+			type: "smoke-state",
+			description: "login-code-invalid-credentials\nprivate credential",
+		},
+		{ type: "smoke-state", description: "login-fields-private URL" },
+		{ type: "smoke-state", description: "login-http-401 private header" },
+	);
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed; state=${expected.join(",")}`,
+	);
+});
+test("login projections classify fields, HTTP status and machine code without exposing data", async () => {
+	const { classifyLoginFields, classifyLoginStatus, classifyLoginCode } =
+		await import("../tests/browser/diagnostics.ts");
+	const expected = {
+		email: "synthetic@example.invalid",
+		password: "synthetic-password",
+	};
+	assert.equal(
+		classifyLoginFields({ ...expected, private: "discard" }, expected),
+		"login-fields-match",
+	);
+	assert.equal(
+		classifyLoginFields(
+			{ ...expected, password: "wrong private password" },
+			expected,
+		),
+		"login-fields-mismatch",
+	);
+	assert.equal(
+		classifyLoginFields({ password: expected.password }, expected),
+		"login-fields-mismatch",
+	);
+	assert.equal(classifyLoginFields(null, expected), "login-fields-mismatch");
+	assert.equal(
+		classifyLoginFields(
+			{
+				get email() {
+					throw new Error("private getter");
+				},
+			},
+			expected,
+		),
+		"login-fields-unreadable",
+	);
+	for (const [status, category] of [
+		[200, "ok"],
+		[400, "bad-request"],
+		[401, "unauthorized"],
+		[403, "forbidden"],
+		[409, "conflict"],
+		[413, "too-large"],
+		[429, "rate-limited"],
+		[500, "server-error"],
+		[503, "unavailable"],
+		[302, "redirect"],
+		[404, "other-4xx"],
+		[502, "other-5xx"],
+		[null, "other"],
+		["401 private", "other"],
+	])
+		assert.equal(classifyLoginStatus(status), `login-http-${category}`);
+	for (const [code, category] of [
+		["AUTH_INVALID_CREDENTIALS", "invalid-credentials"],
+		["AUTH_EMAIL_REQUIRED", "email-required"],
+		["AUTH_PASSWORD_REQUIRED", "password-required"],
+		["AUTH_CREDENTIALS_CHANGED", "credentials-changed"],
+		["AUTH_PASSWORD_EXPIRED", "password-expired"],
+		["AUTH_RATE_LIMITED", "rate-limited"],
+		["AUTH_BUSY", "busy"],
+		["AUTH_PROVIDER_UNAVAILABLE", "provider-unavailable"],
+		["AUTH_NOT_CONFIGURED", "not-configured"],
+		["AUTH_MODE_UNSUPPORTED", "mode-unsupported"],
+		["AUTH_INVALID_CREDENTIALS\nprivate", "other"],
+		["__proto__", "other"],
+	])
+		assert.equal(
+			classifyLoginCode({
+				error: "private text",
+				details: { code, private: "discard" },
+			}),
+			`login-code-${category}`,
+		);
+	assert.equal(
+		classifyLoginCode({ error: "private raw error" }),
+		"login-code-none",
+	);
+	assert.equal(classifyLoginCode(null), "login-code-invalid");
+	assert.equal(
+		classifyLoginCode({
+			details: {
+				get code() {
+					throw new Error("private getter");
+				},
+			},
+		}),
+		"login-code-unreadable",
+	);
+});
+test("original login observation captures only the first primary POST and catches unreadable JSON", async () => {
+	const { observeSessionResponses } = await import(
+		"../tests/browser/diagnostics.ts"
+	);
+	const origin = "http://localhost:3100";
+	const expected = {
+		email: "synthetic@example.invalid",
+		password: "synthetic-password",
+	};
+	const loginRequest = (url = `${origin}/api/auth/login`, method = "POST") => ({
+		url: () => url,
+		method: () => method,
+		postDataJSON: () => ({ ...expected }),
+	});
+	const page = new EventEmitter();
+	const observations = observeSessionResponses(page, origin, expected);
+	page.emit("request", loginRequest(`${origin}/api/auth/login`, "GET"));
+	page.emit("request", loginRequest("http://127.0.0.1:13100/api/auth/login"));
+	assert.equal(observations.login.http, "login-http-not-observed");
+	const first = loginRequest();
+	page.emit("request", first);
+	assert.equal(observations.login.fields, "login-fields-match");
+	let completeJSON;
+	page.emit("response", {
+		url: first.url,
+		request: () => first,
+		status: () => 401,
+		json: () =>
+			new Promise((resolve) => {
+				completeJSON = resolve;
+			}),
+	});
+	const later = loginRequest();
+	page.emit("request", later);
+	page.emit("response", {
+		url: later.url,
+		request: () => later,
+		status: () => 503,
+		json: () => {
+			throw new Error("later must not be read");
+		},
+	});
+	completeJSON({
+		error: "private prose",
+		details: { code: "AUTH_INVALID_CREDENTIALS", private: expected.password },
+	});
+	await new Promise(setImmediate);
+	assert.deepEqual(observations.login, {
+		fields: "login-fields-match",
+		http: "login-http-unauthorized",
+		code: "login-code-invalid-credentials",
+	});
+	assert(!JSON.stringify(observations).includes(expected.email));
+	assert(!JSON.stringify(observations).includes(expected.password));
+	const failingPage = new EventEmitter();
+	const unreadable = observeSessionResponses(failingPage, origin, expected);
+	const broken = {
+		...loginRequest(),
+		postDataJSON: () => {
+			throw new Error("private body");
+		},
+	};
+	failingPage.emit("request", broken);
+	failingPage.emit("response", {
+		url: broken.url,
+		request: () => broken,
+		status: () => 500,
+		json: () => Promise.reject(new Error("private body JSON")),
+	});
+	await new Promise(setImmediate);
+	assert.deepEqual(unreadable.login, {
+		fields: "login-fields-unreadable",
+		http: "login-http-server-error",
+		code: "login-code-unreadable",
+	});
+	const syncPage = new EventEmitter();
+	const syncFailure = observeSessionResponses(syncPage, origin, expected);
+	const syncRequest = loginRequest();
+	syncPage.emit("request", syncRequest);
+	assert.doesNotThrow(() =>
+		syncPage.emit("response", {
+			url: syncRequest.url,
+			request: () => syncRequest,
+			status: () => 503,
+			json: () => {
+				throw new Error("private synchronous JSON failure");
+			},
+		}),
+	);
+	assert.equal(syncFailure.login.code, "login-code-unreadable");
+	const successfulPage = new EventEmitter();
+	const successful = observeSessionResponses(successfulPage, origin, expected);
+	const successfulRequest = loginRequest();
+	successfulPage.emit("request", successfulRequest);
+	successfulPage.emit("response", {
+		url: successfulRequest.url,
+		request: () => successfulRequest,
+		status: () => 200,
+		json: () => Promise.resolve({ ok: true, expiresAt: "private timestamp" }),
+	});
+	await new Promise(setImmediate);
+	assert.deepEqual(successful.login, {
+		fields: "login-fields-match",
+		http: "login-http-ok",
+		code: "login-code-none",
+	});
+	assert.equal(successful.phase, "post-login");
+	assert(!JSON.stringify(successful).includes("private"));
+	const cancelledPage = new EventEmitter();
+	const cancelled = observeSessionResponses(cancelledPage, origin, expected);
+	const cancelledRequest = loginRequest();
+	cancelledPage.emit("request", cancelledRequest);
+	cancelledPage.emit("requestfailed", cancelledRequest);
+	assert.deepEqual(cancelled.login, {
+		fields: "login-fields-match",
+		http: "login-http-request-failed",
+		code: "login-code-unavailable",
+	});
+});
 test("missing and malformed browser reports produce constant failure categories", () => {
 	assert.deepEqual(failureSummary(), [
 		"Browser diagnostic: report unavailable",

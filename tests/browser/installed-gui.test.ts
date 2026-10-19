@@ -188,6 +188,12 @@ async function observeFailedPage(
 	} catch {
 		states.push("diagnostic-unavailable");
 	}
+	if (states.includes("route-login"))
+		states.push(
+			observations.login.fields,
+			observations.login.http,
+			observations.login.code,
+		);
 	states.push(
 		...observations.browserErrors,
 		...observations.history.map((entry) => entry.state),
@@ -596,7 +602,10 @@ test("keep independent installation sessions isolated", async ({
 	browser,
 }, info) => {
 	const { context, page, unexpected } = await open(browser, false, false);
-	const observations = observeSessionResponses(page, fixture.baseURL);
+	const observations = observeSessionResponses(page, fixture.baseURL, {
+		email: fixture.email,
+		password: fixture.password,
+	});
 	let navigationStatus: number | undefined;
 	let navigationContentType: ReturnType<typeof classifyNavigationContentType> =
 		"unknown";

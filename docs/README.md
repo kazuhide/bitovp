@@ -4,7 +4,7 @@ Start with the [user guide](./USER-GUIDE.md), then choose the task you need.
 
 | Guide | Purpose |
 |---|---|
-| [User guide](./USER-GUIDE.md) | Main workflows and navigation |
+| User guide: [English](https://kazuhide.github.io/bitovp/guide/) · [Japanese](https://kazuhide.github.io/bitovp/ja/guide/) | Complete workflows, settings, and screenshots |
 | [Japanese user guide (PDF)](./user-guide/bitovp-user-guide-ja.pdf) | Detailed Japanese workflows, settings, and screenshots |
 | [API usage](./API-USAGE.md) | Authentication and machine-client workflows |
 | [Supported features and limits](./BITMOVIN-API-COVERAGE.md) | Capabilities and technical restrictions that affect configuration |

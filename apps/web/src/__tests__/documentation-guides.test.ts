@@ -13,6 +13,7 @@ const USER_GUIDE_PAGES = [
 	"TROUBLESHOOTING.md",
 	"GLOSSARY.md",
 	"USER-GUIDE.ja.md",
+	"USER-GUIDE.en.md",
 ];
 const read = (path: string) => readFileSync(join(REPO, path), "utf8");
 
@@ -48,7 +49,12 @@ function anchor(heading: string): string {
 describe("user documentation navigation", () => {
 	it("opens with the graphical application and indexes each task guide", () => {
 		expect(read("README.md")).toContain("http://localhost:3100");
-		expect(read("README.md")).toContain("./docs/USER-GUIDE.md");
+		expect(read("README.md")).toContain(
+			"https://kazuhide.github.io/bitovp/guide/",
+		);
+		expect(read("README.md")).toContain(
+			"https://kazuhide.github.io/bitovp/ja/guide/",
+		);
 		const indexed = links(read("docs/USER-GUIDE.md"))
 			.filter(
 				(link) => link.startsWith("./user-guide/") && link.endsWith(".md"),

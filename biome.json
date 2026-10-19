@@ -44,6 +44,7 @@
 			"scripts/installed-gui-smoke*.mjs",
 			"scripts/media-smoke*.mjs",
 			"scripts/site-smoke.mjs",
+			"scripts/guide-smoke.mjs",
 			"scripts/check-site*.mjs",
 			"*.json",
 			"!**/node_modules",

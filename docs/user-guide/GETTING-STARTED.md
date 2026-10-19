@@ -2,6 +2,20 @@
 
 [Back to the user guide](../USER-GUIDE.md)
 
+## Try the browser demo
+
+Open the [interactive demo](https://kazuhide.github.io/bitovp/#/demo) to explore
+the dashboard, example jobs, Live monitoring, quality reports, and encoding forms
+without an account. Created jobs and their progress are simulated. Demo jobs
+stay in the current browser tab. **Reset demo** clears those jobs and demo form
+drafts. Display preferences remain in your browser.
+
+The demo does not connect to Bitmovin or storage services. Use sample references
+when editing forms; do not enter credentials or signed media URLs. Some workspace
+tools and operations are available only in the installed application, including
+scheduled starts, runtime caps, media playback, and quality computation. The
+sample quality scores are illustrative.
+
 ## Sign in and choose your organization
 
 Complete [installation](./INSTALLATION.md), then open **http://localhost:3100**.

@@ -107,6 +107,7 @@ export function VodWizard({
 	userPresetId,
 	deliveryPresetId,
 	editPresetId,
+	submitLabel,
 }: {
 	copiedJob?: { id: string; plan: Record<string, unknown> };
 	presetName?: string;
@@ -115,6 +116,7 @@ export function VodWizard({
 	deliveryPresetId?: string;
 	/* Template edit mode loads through the same import path as userPreset. Its primary action updates the template with the loaded updatedAt concurrency token instead of submitting an encoding job. */
 	editPresetId?: string;
+	submitLabel?: string;
 }) {
 	const { t } = useT();
 	const router = useRouter();
@@ -989,7 +991,7 @@ export function VodWizard({
 							>
 								{submit.isPending
 									? t("wizard.starting")
-									: t("wizard.startEncodingImportedPlan")}
+									: (submitLabel ?? t("wizard.startEncodingImportedPlan"))}
 							</Button>
 						)}
 					</div>
@@ -1520,7 +1522,7 @@ export function VodWizard({
 								>
 									{submit.isPending
 										? t("wizard.starting")
-										: t("wizard.startEncoding")}
+										: (submitLabel ?? t("wizard.startEncoding"))}
 								</Button>
 							)}
 							<PlanPresetsPanel evaluation={evaluation} />

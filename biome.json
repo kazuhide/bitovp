@@ -43,6 +43,8 @@
 			"tests/browser/**",
 			"scripts/installed-gui-smoke*.mjs",
 			"scripts/media-smoke*.mjs",
+			"scripts/site-smoke.mjs",
+			"scripts/check-site*.mjs",
 			"*.json",
 			"!**/node_modules",
 			"!**/.claude",

@@ -12,9 +12,11 @@ import { VodWizard } from "./wizard";
 export function CopyVodJob({
 	source,
 	conflictingSource = false,
+	submitLabel,
 }: {
 	source?: string | string[];
 	conflictingSource?: boolean;
+	submitLabel?: string;
 }) {
 	const { t } = useT();
 	const valid = !conflictingSource && z.uuid().safeParse(source).success;
@@ -75,7 +77,7 @@ export function CopyVodJob({
 						{t("wizard.copiedPerTitleBitrateFixed")}
 					</p>
 				) : null}
-				<VodWizard copiedJob={copied} />
+				<VodWizard copiedJob={copied} submitLabel={submitLabel} />
 			</>
 		);
 	return (

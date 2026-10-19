@@ -1,0 +1,20 @@
+{
+	"extends": ["//"],
+	"tasks": {
+		"build": {
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/web/src/**",
+				"$TURBO_ROOT$/packages/core/src/**"
+			],
+			"outputs": ["dist/**"]
+		},
+		"typecheck": {
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/web/src/**",
+				"$TURBO_ROOT$/packages/core/src/**"
+			]
+		}
+	}
+}

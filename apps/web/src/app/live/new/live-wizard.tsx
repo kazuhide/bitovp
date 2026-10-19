@@ -103,7 +103,13 @@ function wizardSubmitError(t: Translator, error: unknown): string {
 		: localizedCustomerError(t, error, "ui.createFailed");
 }
 
-export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
+export function LiveWizard({
+	duplicateFrom,
+	submitLabel,
+}: {
+	duplicateFrom?: string;
+	submitLabel?: string;
+} = {}) {
 	const { t } = useT();
 	const router = useRouter();
 	const [step, setStep] = useState(0);
@@ -430,7 +436,7 @@ export function LiveWizard({ duplicateFrom }: { duplicateFrom?: string } = {}) {
 
 	const submitButton = (label: string) => (
 		<Button disabled={submitDisabled} onClick={() => submit.mutate()}>
-			{submit.isPending ? t("ui.creating") : label}
+			{submit.isPending ? t("ui.creating") : (submitLabel ?? label)}
 		</Button>
 	);
 

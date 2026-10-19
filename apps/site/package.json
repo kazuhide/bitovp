@@ -1,0 +1,32 @@
+{
+	"name": "@bitovp/site",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite --host 127.0.0.1",
+		"build": "vite build && tsx scripts/prerender.ts",
+		"preview": "vite preview --host 127.0.0.1",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@bitovp/core": "workspace:*",
+		"@tanstack/react-query": "^5.66.0",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@bitovp/db": "workspace:*",
+		"@tailwindcss/postcss": "^4.2.0",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"tsx": "^4.20.0",
+		"typescript": "catalog:",
+		"vite": "8.0.16",
+		"vitest": "catalog:"
+	}
+}

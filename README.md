@@ -10,6 +10,11 @@ GUI. Complete API coverage is a goal, not a claim about the current release.
 The application also includes storage browsing, reusable presets, pseudo-live
 file playback, scheduling, slate insertion, and VMAF video-quality measurement.
 
+[Explore the features and screenshots](https://kazuhide.github.io/bitovp/),
+or [try the interactive demo](https://kazuhide.github.io/bitovp/#/demo)
+without an account. The demo uses sample data and simulates job creation in your
+browser; it does not run cloud encodings.
+
 ## Open the application
 
 After installation, open **http://localhost:3100** in your browser.

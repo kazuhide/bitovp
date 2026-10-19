@@ -6473,6 +6473,14 @@ describe("monitoring deadlines and alert transitions", () => {
 		const events: { id: string; ruleId: string; resolvedAt: Date | null }[] =
 			[];
 		Object.assign(t.deps.prisma, {
+			$queryRaw: vi.fn(
+				async (_query: TemplateStringsArray, id: string, encodingId: string) =>
+					t.row.id === id &&
+					t.row.status === "RUNNING" &&
+					t.row.bitmovinEncodingId === encodingId
+						? [{ id }]
+						: [],
+			),
 			alertRule: {
 				findMany: vi.fn(async () => [
 					{

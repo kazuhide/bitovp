@@ -283,17 +283,16 @@ export function createAlertEngine(deps: {
 			if (count !== 1) {
 				return { opened: 0, resolved: 0 };
 			}
-			// Channel transitions claim this row. Holding it through evaluation
-			// makes STOP and re-air serialize with the alert transition.
-			const channel = await tx.liveChannel.updateMany({
-				where: {
-					id: liveChannelId,
-					status: "RUNNING",
-					bitmovinEncodingId: pollToken.encodingId,
-				},
-				data: { status: "RUNNING" },
-			});
-			if (channel.count !== 1) return { opened: 0, resolved: 0 };
+			// Web and scheduler transitions can hold the channel before its run.
+			// Skip their locked row rather than waiting while we hold that run.
+			// An acquired row stays locked through the latest-run check and alerts.
+			const channels = await tx.$queryRaw<{ id: string }[]>`
+				SELECT id FROM "LiveChannel"
+				WHERE id = ${liveChannelId}::uuid
+					AND status = 'RUNNING'
+					AND "bitmovinEncodingId" = ${pollToken.encodingId}
+				FOR UPDATE SKIP LOCKED`;
+			if (channels.length !== 1) return { opened: 0, resolved: 0 };
 			const latest = await tx.liveChannelRun.findFirst({
 				where: { liveChannelId },
 				orderBy: { seq: "desc" },

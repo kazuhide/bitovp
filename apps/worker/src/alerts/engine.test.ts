@@ -51,6 +51,7 @@ function makeStore(over: {
 	runEncodingId?: string;
 	channelStatus?: string;
 	channelEncodingId?: string;
+	channelLocked?: boolean;
 	latestRun?: { id: string; createdAt: Date };
 }) {
 	const run =
@@ -71,6 +72,15 @@ function makeStore(over: {
 		prisma: {
 			$transaction: async <T>(fn: (tx: AppPrismaClient) => Promise<T>) =>
 				fn(store.prisma as unknown as AppPrismaClient),
+			$queryRaw: vi.fn(
+				async (_query: TemplateStringsArray, id: string, encodingId: string) =>
+					!over.channelLocked &&
+					id === CH &&
+					(over.channelStatus ?? "RUNNING") === "RUNNING" &&
+					(over.channelEncodingId ?? "enc-1") === encodingId
+						? [{ id: CH }]
+						: [],
+			),
 			alertRule: {
 				findMany: vi.fn(async () =>
 					(
@@ -153,18 +163,6 @@ function makeStore(over: {
 				),
 			},
 			liveChannel: {
-				updateMany: vi.fn(
-					async (args: {
-						where: { status: string; bitmovinEncodingId: string };
-					}) => ({
-						count:
-							args.where.status === (over.channelStatus ?? "RUNNING") &&
-							args.where.bitmovinEncodingId ===
-								(over.channelEncodingId ?? "enc-1")
-								? 1
-								: 0,
-					}),
-				),
 				// : the engine reads the scheduled program window
 				// itself. Projected via the shared helper so a wrong SELECT is
 				// a red test, not a silent no-op (the #86 mock lesson).
@@ -269,6 +267,36 @@ beforeEach(() => {
 });
 
 describe("alert engine transitions", () => {
+	it("does not resolve alerts while a channel transition owns the row", async () => {
+		const store = makeStore({
+			channelLocked: true,
+			heartbeats: [CONNECTED],
+			events: [
+				{
+					id: "event-1",
+					ruleId: RULE,
+					liveChannelId: CH,
+					openedAt: RUN_CREATED_AT,
+					resolvedAt: null,
+					context: {},
+				},
+			],
+		});
+		const { engine, emitEvent } = makeEngine(store);
+		await expect(
+			engine(
+				CH,
+				"RUNNING",
+				undefined,
+				undefined,
+				{ id: CURRENT_RUN, createdAt: RUN_CREATED_AT },
+				{ runId: CURRENT_RUN, encodingId: "enc-1", epoch: 1 },
+			),
+		).resolves.toEqual({ opened: 0, resolved: 0 });
+		expect(store.events[0]?.resolvedAt).toBeNull();
+		expect(store.prisma.alertRule.findMany).not.toHaveBeenCalled();
+		expect(emitEvent).not.toHaveBeenCalled();
+	});
 	it.each([
 		"STOPPING",
 		"STOPPED",

@@ -296,5 +296,197 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await alertResult;
 			}
 		}, 15_000);
+		it("skips an alert while cancel-start owns the channel and waits for its run", async () => {
+			const liveChannelId = randomUUID();
+			const runId = randomUUID();
+			const encodingId = `test-${randomUUID()}`;
+			const now = new Date("2026-10-19T00:00:00Z");
+			const createdAt = new Date(now.getTime() - 90_000);
+			await tenant.liveChannel.create({
+				data: {
+					id: liveChannelId,
+					name: "Cancel-start lock test",
+					status: "RUNNING",
+					plan: {},
+					bitmovinEncodingId: encodingId,
+				},
+			});
+			await tenant.liveChannelRun.create({
+				data: {
+					id: runId,
+					liveChannelId,
+					seq: 1,
+					status: "RUNNING",
+					createdAt,
+					bitmovinEncodingId: encodingId,
+					outputPrefix: "",
+					heartbeatPollEpoch: 7,
+				},
+			});
+			await tenant.alertRule.create({
+				data: {
+					liveChannelId,
+					metric: "HEARTBEAT_STALE",
+					windowPolls: 2,
+				},
+			});
+			const cancelAtChannel = barrier();
+			const releaseCancelRun = barrier();
+			const alertAtRun = barrier();
+			const releaseAlertChannel = barrier();
+			// The Web cancel-start transition claims the channel before updating
+			// its retained latest run, including when the channel is RUNNING.
+			const cancellation = tenant.$transaction(
+				async (tx) => {
+					const current = await tx.liveChannel.findUnique({
+						where: { id: liveChannelId },
+					});
+					const latest = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+					});
+					if (current?.status !== "RUNNING" || latest?.id !== runId)
+						throw new Error("Test cancellation changed");
+					const claimed = await tx.liveChannel.updateMany({
+						where: {
+							id: liveChannelId,
+							status: current.status,
+							liveEffectFenceVersion: current.liveEffectFenceVersion,
+						},
+						data: { status: "STOPPING" },
+					});
+					if (claimed.count !== 1)
+						throw new Error("Test cancellation claim lost");
+					cancelAtChannel.release();
+					await releaseCancelRun.ready;
+					await tx.liveChannelRun.update({
+						where: { id: latest.id },
+						data: { cancelRequested: true, status: "STOPPING" },
+					});
+					return latest.id;
+				},
+				{ maxWait: 5_000, timeout: 10_000 },
+			);
+			const cancelResult = Promise.allSettled([cancellation]);
+			let alertResult: Promise<PromiseSettledResult<unknown>[]> | undefined;
+			const emitEvent = vi.fn(async () => {});
+			try {
+				await Promise.race([
+					cancelAtChannel.ready,
+					cancelResult.then((result) => {
+						throw new Error("Cancellation settled before its channel barrier", {
+							cause: result,
+						});
+					}),
+				]);
+				const alertClient = instrumentTransactions(
+					tenant,
+					async (tx) =>
+						new Proxy(tx, {
+							get(target, key) {
+								if (key === "liveChannelRun")
+									return new Proxy(target.liveChannelRun, {
+										get(delegate, method) {
+											if (method === "updateMany")
+												return async (
+													...args: Parameters<typeof delegate.updateMany>
+												) => {
+													const result = await delegate.updateMany(...args);
+													alertAtRun.release();
+													await releaseAlertChannel.ready;
+													return result;
+												};
+											return Reflect.get(delegate, method);
+										},
+									});
+								return Reflect.get(target, key);
+							},
+						}),
+				);
+				const engine = createAlertEngine({
+					prisma: alertClient,
+					now: () => now,
+					sweepIntervalMs: 30_000,
+					emitEvent,
+				});
+				const evaluate = () =>
+					engine(
+						liveChannelId,
+						"RUNNING",
+						createdAt.toISOString(),
+						{ programStartAt: null, programEndAt: null },
+						{ id: runId, createdAt },
+						{ runId, encodingId, epoch: 7 },
+					);
+				alertResult = Promise.allSettled([evaluate()]);
+				await Promise.race([
+					alertAtRun.ready,
+					alertResult.then((result) => {
+						throw new Error("Alert settled before its run barrier", {
+							cause: result,
+						});
+					}),
+				]);
+				releaseAlertChannel.release();
+				releaseCancelRun.release();
+				expect(await alertResult).toEqual([
+					{ status: "fulfilled", value: { opened: 0, resolved: 0 } },
+				]);
+				expect(await cancelResult).toEqual([
+					{ status: "fulfilled", value: runId },
+				]);
+				expect(
+					(
+						await tenant.liveChannel.findUnique({
+							where: { id: liveChannelId },
+						})
+					)?.status,
+				).toBe("STOPPING");
+				expect(
+					await tenant.liveChannelRun.findUnique({
+						where: { id: runId },
+						select: { status: true, cancelRequested: true },
+					}),
+				).toEqual({ status: "STOPPING", cancelRequested: true });
+				// A stale caller must also lose after the transition commits.
+				await expect(evaluate()).resolves.toEqual({ opened: 0, resolved: 0 });
+				await tenant.liveChannel.update({
+					where: { id: liveChannelId },
+					data: {
+						status: "RUNNING",
+						bitmovinEncodingId: `new-${encodingId}`,
+					},
+				});
+				await expect(evaluate()).resolves.toEqual({ opened: 0, resolved: 0 });
+				await tenant.liveChannelRun.update({
+					where: { id: runId },
+					data: { status: "STOPPED" },
+				});
+				await tenant.liveChannelRun.create({
+					data: {
+						liveChannelId,
+						seq: 2,
+						status: "RUNNING",
+						outputPrefix: "",
+						createdAt: now,
+						bitmovinEncodingId: `new-${encodingId}`,
+					},
+				});
+				await tenant.liveChannel.update({
+					where: { id: liveChannelId },
+					data: { bitmovinEncodingId: encodingId },
+				});
+				await expect(evaluate()).resolves.toEqual({ opened: 0, resolved: 0 });
+				expect(
+					await tenant.alertEvent.count({ where: { liveChannelId } }),
+				).toBe(0);
+				expect(emitEvent).not.toHaveBeenCalled();
+			} finally {
+				releaseAlertChannel.release();
+				releaseCancelRun.release();
+				await alertResult;
+				await cancelResult;
+			}
+		}, 15_000);
 	},
 );

@@ -43,6 +43,11 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: { "src/lib/server/create-request.integration.test.ts": 3 },
 	},
+	{
+		workspace: "@bitovp/worker",
+		directory: "apps/worker",
+		files: { "src/alerts/engine-locking.integration.test.ts": 3 },
+	},
 ];
 
 export function childEnvironment(env) {

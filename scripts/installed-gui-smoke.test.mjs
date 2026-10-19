@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
@@ -8,7 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import {
 	browserExecutionAllowed,
@@ -24,6 +25,7 @@ import {
 } from "./installed-gui-smoke.mjs";
 
 const id = "0123456789abcdef0123456789abcdef";
+const root = resolve(import.meta.dirname, "..");
 const report = () => ({
 	stats: { unexpected: 0, skipped: 0, flaky: 0, expected: CASES.length },
 	suites: [
@@ -34,6 +36,66 @@ const report = () => ({
 			})),
 		},
 	],
+});
+
+test("all browser definitions load in collection-only mode without running a case", () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-collect-")),
+	);
+	try {
+		const fixture = join(directory, "fixture.json");
+		const output = join(directory, "report.json");
+		const config = join(directory, "collect.config.mjs");
+		writeFileSync(fixture, "{}", { mode: 0o600 });
+		writeFileSync(
+			config,
+			`export default ${JSON.stringify({
+				testDir: join(root, "tests/browser"),
+				testMatch: "installed-gui.test.ts",
+				reporter: [["json", { outputFile: output }]],
+				outputDir: join(directory, "output"),
+			})};`,
+			{ mode: 0o600 },
+		);
+		const result = spawnSync(
+			process.execPath,
+			[
+				join(root, "node_modules/@playwright/test/cli.js"),
+				"test",
+				"--list",
+				"--config",
+				config,
+			],
+			{
+				cwd: root,
+				env: {
+					...childEnvironment(process.env),
+					TMPDIR: directory,
+					TMP: directory,
+					TEMP: directory,
+					BITOVP_GUI_SMOKE_FIXTURE: fixture,
+				},
+				timeout: 30_000,
+				maxBuffer: 2_000_000,
+			},
+		);
+		assert.equal(result.status, 0, "Browser definition collection failed");
+		const collected = JSON.parse(readFileSync(output, "utf8"));
+		assert.deepEqual(collected.errors, []);
+		const titles = [];
+		const visit = (suite) => {
+			for (const spec of suite.specs ?? []) {
+				titles.push(spec.title);
+				assert.equal(spec.tests.length, 1);
+				assert.deepEqual(spec.tests[0].results, []);
+			}
+			for (const child of suite.suites ?? []) visit(child);
+		};
+		for (const suite of collected.suites) visit(suite);
+		assert.deepEqual(titles, CASES);
+	} finally {
+		rmSync(directory, { recursive: true });
+	}
 });
 
 test("private state paths cannot use a dot-prefixed child or the checkout itself", () => {

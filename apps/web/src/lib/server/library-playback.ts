@@ -19,8 +19,12 @@ type PlaybackSource = FileSource & {
 	playbackLinks: PlaybackLinks;
 };
 
+export const needsLibraryPlaybackProjection = (source: PlaybackSource) =>
+	source.fileOutputs === undefined &&
+	!source.playbackLinks.some((link) => link.kind === "MP4" && link.url);
+
 async function matchingPlans(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
 	sources: readonly FileSource[],
 ) {
 	const ids = [
@@ -55,7 +59,7 @@ async function matchingPlans(
 
 /** Exact stored coordinates survive deletion; legacy rows require the identical retained plan. */
 export async function libraryFileOutputsForSource(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
 	source: FileSource,
 ): Promise<ReturnType<typeof libraryFileOutputs>> {
 	if (source.fileOutputs !== undefined) return source.fileOutputs;
@@ -66,13 +70,12 @@ export async function libraryFileOutputsForSource(
 
 /** Read-only compatibility for manifest-only snapshots; never reconstruct a deleted job. */
 export async function enrichLibraryPlayback(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
 	sources: readonly PlaybackSource[],
+	/** A batched catalog supplies eligibility from its complete matched snapshot. */
+	projectionEligible = needsLibraryPlaybackProjection,
 ): Promise<PlaybackLinks[]> {
-	const needsProjection = (source: PlaybackSource) =>
-		source.fileOutputs === undefined &&
-		!source.playbackLinks.some((link) => link.kind === "MP4" && link.url);
-	const plans = await matchingPlans(prisma, sources.filter(needsProjection));
+	const plans = await matchingPlans(prisma, sources.filter(projectionEligible));
 	const credentialIds = [
 		...new Set(
 			[...plans.values()].flatMap(({ plan }) =>

@@ -147,6 +147,9 @@ describe("one Prisma module instance per process", () => {
 				Prisma: { DbNull: { sentinel: copies.length } },
 				PrismaClient: class {
 					constructor(public options: unknown) {}
+					$transaction() {
+						return Promise.resolve();
+					}
 				},
 			};
 			copies.push(copy);

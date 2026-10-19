@@ -5,6 +5,10 @@ import {
 	getPrisma,
 } from "./client";
 import { TENANT_MODEL_RELATIONS } from "./tenant-relations";
+import {
+	setStatementTimeout,
+	transactionSettings,
+} from "./transaction-settings";
 
 export const DEFAULT_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
 export const TENANT_ORGANIZATION = Symbol.for("bitovp.tenantOrganization");
@@ -282,13 +286,17 @@ export function createTenantPrismaClient(
 						if (inTransaction)
 							throw new Error("Nested tenant transactions are unsupported");
 						return async (input: unknown, options?: unknown) => {
+							const { nativeOptions, statementTimeoutMs } =
+								transactionSettings(options);
 							if (typeof input === "function") {
 								return base.$transaction(async (tx) => {
 									await setScope(tx, org, readOnly);
+									if (statementTimeoutMs !== undefined)
+										await setStatementTimeout(tx, statementTimeoutMs);
 									return input(
 										scope(tx as unknown as Record<string, unknown>, true),
 									);
-								}, options as never);
+								}, nativeOptions as never);
 							}
 							if (!Array.isArray(input))
 								throw new Error("Invalid tenant transaction input");
@@ -311,6 +319,8 @@ export function createTenantPrismaClient(
 							for (const state of states) state.started = true;
 							return base.$transaction(async (tx) => {
 								await setScope(tx, org, readOnly);
+								if (statementTimeoutMs !== undefined)
+									await setStatementTimeout(tx, statementTimeoutMs);
 								const results: unknown[] = [];
 								for (const state of states)
 									results.push(
@@ -319,7 +329,7 @@ export function createTenantPrismaClient(
 										),
 									);
 								return results;
-							}, options as never);
+							}, nativeOptions as never);
 						};
 					}
 					if (RAW_METHODS.has(key)) {

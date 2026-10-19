@@ -63,6 +63,12 @@ const fileOutputs = [
 const mediaUrl = `/api/library/sources/${sourceId}/media?key=mp4%3Amp4`;
 function database(jobs = [{ id: "job-1", plan }]) {
 	const db = {
+		$transaction: vi.fn(async function <T>(
+			this: AppPrismaClient,
+			callback: (tx: AppPrismaClient) => Promise<T>,
+		) {
+			return callback(this);
+		}),
 		encodingJob: { findMany: vi.fn(async () => jobs) },
 		credential: {
 			findMany: vi.fn(async () => [
@@ -75,6 +81,40 @@ function database(jobs = [{ id: "job-1", plan }]) {
 		},
 	};
 	return { db, prisma: db as unknown as AppPrismaClient };
+}
+function catalogQueries(items: Record<string, unknown>[]) {
+	return vi.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
+		if (sql.join("").includes("AS candidates"))
+			return [
+				{
+					candidates: items,
+					scanned: items.length,
+					cursorId: items.at(-1)?.id,
+					cursorUpdatedAt: new Date(0),
+				},
+			];
+		const ids = values[0] as string[];
+		const fields = [
+			"id",
+			"title",
+			"description",
+			"tags",
+			"locale",
+			"revision",
+			"archived",
+			"updatedAt",
+			"analysisSummary",
+		];
+		return [
+			{
+				items: items
+					.filter((item) => ids.includes(item.id as string))
+					.map((item) =>
+						Object.fromEntries(fields.map((key) => [key, item[key]])),
+					),
+			},
+		];
+	});
 }
 it("adds legacy MP4 links in batches while preserving stored manifests and narrowing credential reads", async () => {
 	const { db, prisma } = database();
@@ -185,9 +225,7 @@ it("projects legacy MP4 catalog previews in one batch and strips internal projec
 	};
 	const prisma = {
 		...db,
-		$queryRaw: vi.fn(async () => [
-			{ total: 2, items: [item, { ...item, id: "content-2" }] },
-		]),
+		$queryRaw: catalogQueries([item, { ...item, id: "content-2" }]),
 	} as unknown as AppPrismaClient;
 	const result = await listContents(prisma, {
 		q: "",
@@ -248,7 +286,7 @@ it("classifies legacy private MP4 beyond the first page with one batched plan an
 	}));
 	const prisma = {
 		...db,
-		$queryRaw: vi.fn(async () => [{ total: items.length, items }]),
+		$queryRaw: catalogQueries(items),
 	} as unknown as AppPrismaClient;
 	const result = await listContents(prisma, {
 		q: "",

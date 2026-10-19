@@ -140,7 +140,9 @@ describe.skipIf(!HAVE_FFMPEG)(
 						.map((n) => ({
 							key: `${prefix}/${n}`,
 							size: statSync(join(segDir, n)).size,
-							lastModified: new Date().toISOString(),
+							// Listing happens after the capture cutoff; retain the file's
+							// earlier write time so valid fragments do not become future data.
+							lastModified: statSync(join(segDir, n)).mtime.toISOString(),
 						})),
 				}),
 				getObject: async ({ key }: { key: string }) =>

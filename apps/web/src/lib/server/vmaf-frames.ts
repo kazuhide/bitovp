@@ -1,6 +1,9 @@
 import "server-only";
-import { gunzipSync } from "node:zlib";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
 import type { VmafFrame } from "@bitovp/core";
+import { streamArray } from "stream-json/streamers/stream-array.js";
 
 /**
  * Server-side helpers for the persisted per-frame VMAF blob.
@@ -14,11 +17,85 @@ import type { VmafFrame } from "@bitovp/core";
  * anchor (psnr rides that frame untouched via the object spread).
  */
 
-/** Decode `framesGzip` back into the ordered per-frame series. */
-export function decodeFrames(blob: Uint8Array | Buffer): VmafFrame[] {
-	const json = gunzipSync(blob).toString("utf8");
-	const parsed = JSON.parse(json) as VmafFrame[];
-	return parsed;
+/** Retain one frame at a time; cancellation also stops the gzip/parser pipeline. */
+export async function* iterateFrames(
+	blob: Uint8Array,
+	signal?: AbortSignal,
+): AsyncGenerator<VmafFrame> {
+	signal?.throwIfAborted();
+	const controller = new AbortController();
+	const combined = signal
+		? AbortSignal.any([signal, controller.signal])
+		: controller.signal;
+	const options = {
+		packKeys: true,
+		streamKeys: false,
+		streamStrings: false,
+		streamNumbers: false,
+		decodeStrings: false,
+	};
+	const frames = streamArray.withParserAsStream(options);
+	const gunzip = createGunzip({ chunkSize: 65_536 });
+	gunzip.setEncoding("utf8");
+	const completed = pipeline(Readable.from([blob]), gunzip, frames, {
+		signal: combined,
+	});
+	// Iteration observes the original error; attach a handler before the first pull.
+	void completed.catch(() => {});
+	try {
+		for await (const item of frames) {
+			combined.throwIfAborted();
+			yield item.value as VmafFrame;
+		}
+		await completed;
+	} finally {
+		controller.abort();
+		await completed.catch(() => {});
+	}
+}
+
+/** Two passes preserve the original bucket boundaries without storing the full series. */
+export async function downsampleFrameBlob(
+	blob: Uint8Array,
+	cap: number = DOWNSAMPLE_CAP,
+	signal?: AbortSignal,
+): Promise<{ frames: ChartFrame[]; frameCount: number }> {
+	if (cap < 1) throw new Error("downsampleFrames cap must be >= 1");
+	let frameCount = 0;
+	for await (const _frame of iterateFrames(blob, signal)) frameCount++;
+	if (frameCount <= cap) {
+		const frames: VmafFrame[] = [];
+		for await (const frame of iterateFrames(blob, signal)) frames.push(frame);
+		return { frames: downsampleFrames(frames, cap), frameCount };
+	}
+	const size = frameCount / Math.max(1, cap - 1);
+	const selected: { frame: VmafFrame; index: number }[] = [];
+	let index = 0;
+	let bucket = 0;
+	let minimum: { frame: VmafFrame; index: number } | undefined;
+	let worst: { frame: VmafFrame; index: number } | undefined;
+	for await (const frame of iterateFrames(blob, signal)) {
+		if (index >= Math.floor((bucket + 1) * size)) {
+			if (minimum) selected.push(minimum);
+			minimum = undefined;
+			bucket++;
+		}
+		if (!minimum || frame.vmaf < minimum.frame.vmaf) minimum = { frame, index };
+		if (!worst || frame.vmaf < worst.frame.vmaf) worst = { frame, index };
+		index++;
+	}
+	if (minimum) selected.push(minimum);
+	const frames: ChartFrame[] = selected.map(({ frame, index }) =>
+		index === worst?.index ? { ...frame, worst: true } : { ...frame },
+	);
+	if (
+		worst &&
+		!frames.some((frame) => frame.frameNum === worst.frame.frameNum)
+	) {
+		frames.push({ ...worst.frame, worst: true });
+		frames.sort((a, b) => a.frameNum - b.frameNum);
+	}
+	return { frames, frameCount };
 }
 
 /** A frame plus a flag marking it the run's worst (pinned through downsampling). */

@@ -35,6 +35,11 @@ expected rendition count, and errors. Mean alone can hide poor frames; inspect
 percentiles, worst frames, and the frame graph too. A partial result is not a
 complete ladder measurement.
 
+CSV and JSON downloads include every stored frame, including PSNR when measured.
+The graph keeps up to 1,500 points and preserves each bucket's worst frame.
+Large downloads arrive progressively; wait for the download to finish. If it is
+interrupted, discard the partial file and retry the export.
+
 The comparison preview fixes up to two renditions and seeks both to the selected
 measurement time. Browser seeking can show an adjacent frame; use decoded frame
 inspection when exact frame identity is required. Missing graph samples are not

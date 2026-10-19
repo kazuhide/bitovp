@@ -11,7 +11,7 @@ import { getServerContext } from "@/lib/server/context";
 import { deleteVmafJobLocally } from "@/lib/server/delete-jobs";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
-import { decodeFrames, downsampleFrames } from "@/lib/server/vmaf-frames";
+import { downsampleFrameBlob } from "@/lib/server/vmaf-frames";
 import { previewDescriptor } from "@/lib/server/vmaf-preview";
 
 /**
@@ -70,7 +70,7 @@ type RouteParams = { params: Promise<{ id: string }> };
  * blob can be ~270k frames (3h clip) — only the downsampled series crosses to
  * the browser; the full data is reachable via the export route.
  */
-export async function GET(_req: Request, { params }: RouteParams) {
+export async function GET(req: Request, { params }: RouteParams) {
 	// : OFF means this surface does not exist for the deployment.
 	// The recovery pair (qc-override, qc-report) is deliberately NOT gated.
 	const disabled = await requireQcVmafEnabled();
@@ -112,7 +112,6 @@ export async function GET(_req: Request, { params }: RouteParams) {
 						renditionRef: true,
 						provenance: true,
 						pooled: true,
-						framesGzip: true,
 					},
 				},
 			},
@@ -121,24 +120,34 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			return jsonError(404, "Not found");
 		}
 
-		const results: VmafResultDetail[] = job.results.map((r) => {
-			const all = r.framesGzip ? decodeFrames(r.framesGzip as Uint8Array) : [];
+		const results: VmafResultDetail[] = [];
+		for (const r of job.results) {
+			req.signal.throwIfAborted();
+			const stored = await ctx.prisma.vmafResult.findFirst({
+				where: { id: r.id, vmafJobId: id },
+				select: { framesGzip: true },
+			});
+			req.signal.throwIfAborted();
+			if (!stored) throw new Error("VMAF result is no longer available");
+			const series = stored.framesGzip
+				? await downsampleFrameBlob(stored.framesGzip, undefined, req.signal)
+				: { frames: [], frameCount: 0 };
 			// LIVE results carry the PR6a alignment block in pooled.live; lift it
 			// out so the report can render the live panels (VOD pooled has no live).
 			const pooledRaw = r.pooled as PooledMetrics & {
 				live?: LiveReportMetadata;
 			};
 			const { live, ...pooled } = pooledRaw;
-			return {
+			results.push({
 				id: r.id,
 				renditionRef: r.renditionRef as RenditionRef,
 				pooled: pooled as PooledMetrics,
-				frames: downsampleFrames(all),
-				frameCount: all.length,
+				frames: series.frames,
+				frameCount: series.frameCount,
 				preview: previewDescriptor(id, job, r),
 				...(live ? { live } : {}),
-			};
-		});
+			});
+		}
 
 		const execution =
 			vmafExecutionSchema.safeParse(

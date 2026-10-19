@@ -14,10 +14,10 @@
 		"typecheck": "next typegen && tsc --noEmit"
 	},
 	"dependencies": {
+		"@bitmovin/api-sdk": "1.280.0",
 		"@bitovp/core": "workspace:*",
 		"@bitovp/db": "workspace:*",
 		"@bitovp/storage": "workspace:*",
-		"@bitmovin/api-sdk": "1.280.0",
 		"@tailwindcss/postcss": "^4.2.0",
 		"@tanstack/react-query": "^5.66.0",
 		"bitmovin-player": "^8.272.0",
@@ -36,6 +36,7 @@
 		"recharts": "^3.8.1",
 		"server-only": "^0.0.1",
 		"shaka-player": "5.2.8",
+		"stream-json": "3.7.0",
 		"tailwind-merge": "^3.5.0",
 		"tailwindcss": "^4.2.0",
 		"zod": "catalog:"

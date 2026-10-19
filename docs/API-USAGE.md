@@ -325,6 +325,13 @@ curl -H "Authorization: Bearer $TOKEN" \
   "https://ovp.example.com/api/vmaf-jobs/<vmafJobId>/export?format=csv" -o vmaf.csv
 ```
 
+Exports include all stored frames; `result=<resultId>` selects one rendition.
+JSON retains its two-space formatting. CSV keeps the `rendition,frameNum,vmaf,psnr`
+header and leaves PSNR empty when it was not measured. Downloads are streamed:
+check that the client completed successfully and discard partial files on error.
+The detail endpoint returns at most 1,500 chart points per result, with bucket
+minima and the first worst frame preserved; `frameCount` reports the full count.
+
 `qc.vmaf` enables automatic measurement. List rows expose `localRetryAvailable`. OPERATOR `POST /api/vmaf-jobs/<id>/retry` (no body) retries eligible ERROR/local/VOD reports:201 `{id,encodingJobId,status}`; active/ineligible409. Existing outputs and scoring settings are reused; encoding is not restarted.
 
 Detail results add optional `preview: {url} | {unavailableReason}` for fixed QC

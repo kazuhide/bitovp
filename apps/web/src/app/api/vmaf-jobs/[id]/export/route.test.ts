@@ -3,6 +3,15 @@ import type { VmafFrame } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const resultFindFirst = vi.fn(async (args) => {
+	const job = await findUnique.mock.results.at(-1)?.value;
+	return (
+		job?.results.find(
+			(result: { id: string }) =>
+				result.id === args.where.id && job.id === args.where.vmafJobId,
+		) ?? null
+	);
+});
 
 let qcVmafEnabled = true;
 
@@ -15,6 +24,7 @@ vi.mock("@/lib/server/context", () => ({
 				findUnique: async () => ({ value: { qcVmaf: qcVmafEnabled } }),
 			},
 			vmafJob: { findUnique },
+			vmafResult: { findFirst: resultFindFirst },
 		},
 	}),
 }));
@@ -57,6 +67,57 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]/export", () => {
+	it("fetches one tenant-scoped blob on demand and stops before later renditions when cancelled", async () => {
+		const job = jobWithTwoRenditions();
+		const firstResult = job.results[0];
+		if (!firstResult) throw new Error("Missing first rendition");
+		firstResult.framesGzip = gz(
+			Array.from({ length: 20_000 }, (_, frameNum) => ({
+				frameNum,
+				vmaf: 91.23456789,
+			})),
+		);
+		findUnique.mockResolvedValueOnce(job);
+		const response = await GET(
+			new Request(`http://test/api/vmaf-jobs/${JOB_ID}/export`),
+			params(),
+		);
+		expect(
+			findUnique.mock.calls[0]?.[0].select.results.select,
+		).not.toHaveProperty("framesGzip");
+		expect(resultFindFirst).not.toHaveBeenCalled();
+		if (!response.body) throw new Error("Missing response body");
+		const reader = response.body.getReader();
+		const first = await reader.read();
+		expect(first.value?.byteLength).toBeLessThanOrEqual(65_536);
+		expect(resultFindFirst).toHaveBeenCalledTimes(1);
+		expect(resultFindFirst.mock.calls[0]?.[0].where).toEqual({
+			id: firstResult.id,
+			vmafJobId: JOB_ID,
+		});
+		await reader.cancel();
+		expect(resultFindFirst).toHaveBeenCalledTimes(1);
+	});
+
+	it("fails a response body rather than completing a download after a late gzip checksum error", async () => {
+		const job = jobWithTwoRenditions();
+		const blob = gz(
+			Array.from({ length: 20_000 }, (_, frameNum) => ({ frameNum, vmaf: 95 })),
+		);
+		blob.writeUInt8(blob.readUInt8(blob.length - 8) ^ 1, blob.length - 8);
+		const firstResult = job.results[0];
+		if (!firstResult) throw new Error("Missing first rendition");
+		firstResult.framesGzip = blob;
+		findUnique.mockResolvedValueOnce(job);
+		const response = await GET(
+			new Request(`http://test/api/vmaf-jobs/${JOB_ID}/export`),
+			params(),
+		);
+		expect(response.status).toBe(200);
+		await expect(response.text()).rejects.toThrow();
+		expect(resultFindFirst).toHaveBeenCalledTimes(1);
+	});
+
 	it("emits FULL CSV (rendition,frameNum,vmaf) over every rendition", async () => {
 		findUnique.mockResolvedValueOnce(jobWithTwoRenditions());
 		const res = await GET(

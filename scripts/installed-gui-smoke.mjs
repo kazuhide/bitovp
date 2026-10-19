@@ -24,6 +24,8 @@ import {
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
+import { PHASED_GUI_STATES } from "../tests/browser/diagnostics.ts";
+
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
 const LABEL = "io.bitovp.gui-smoke";
@@ -250,6 +252,7 @@ export function failureSummary(raw) {
 								"session-admin",
 								"session-authenticated-other",
 								"session-request-failed",
+								...PHASED_GUI_STATES,
 							].includes(annotation.description)
 						) {
 							const values = observations.get(spec.title) ?? [];

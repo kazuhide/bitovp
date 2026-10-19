@@ -11,6 +11,8 @@ import {
 import { liveChannelPlanSchema } from "../../packages/core/src/live/schema";
 import { encodingPlanSchema } from "../../packages/core/src/plan/schema";
 
+import { type AuthenticationPhase, classifyBrowserError } from "./diagnostics";
+
 const fixture = JSON.parse(
 	readFileSync(process.env.BITOVP_GUI_SMOKE_FIXTURE as string, "utf8"),
 );
@@ -40,8 +42,32 @@ function submissionStage(
 	info.annotations.push({ type: "smoke-stage", description });
 }
 
+type AuthenticationObservations = {
+	phase: AuthenticationPhase;
+	history: { state: string }[];
+	browserErrors: string[];
+	postLoginSessionStarted: boolean;
+};
+
+function recordBrowserError(
+	observations: AuthenticationObservations,
+	error: unknown,
+) {
+	observations.browserErrors.push(
+		`browser-${observations.phase}-${classifyBrowserError(error)}`,
+	);
+	if (observations.browserErrors.length > 4) observations.browserErrors.shift();
+}
+
 function observeSessionResponses(page: Page) {
-	const history: { state: string }[] = [];
+	const observations: AuthenticationObservations = {
+		phase: "initial-login",
+		history: [],
+		browserErrors: [],
+		postLoginSessionStarted: false,
+	};
+	const history = observations.history;
+	const requestPhases = new WeakMap<object, AuthenticationPhase>();
 	const add = (state: string) => {
 		const entry = { state };
 		history.push(entry);
@@ -55,46 +81,69 @@ function observeSessionResponses(page: Page) {
 			parsed.pathname === "/api/auth/session"
 		);
 	};
+	page.on("request", (request) => {
+		if (!isSession(request.url())) return;
+		requestPhases.set(request, observations.phase);
+		if (observations.phase === "post-login")
+			observations.postLoginSessionStarted = true;
+	});
+	page.on("pageerror", (error) => recordBrowserError(observations, error));
 	page.on("response", (response) => {
+		const url = new URL(response.url());
+		if (
+			url.origin === fixture.baseURL &&
+			url.pathname === "/api/auth/login" &&
+			response.request().method() === "POST" &&
+			response.status() === 200
+		) {
+			observations.phase = "post-login";
+			return;
+		}
 		if (!isSession(response.url())) return;
+		const phase = requestPhases.get(response.request()) ?? observations.phase;
+		const state = (value: string) => `session-${phase}-${value}`;
 		const entry = add(
-			response.status() === 200 ? "session-pending" : "session-http-error",
+			state(response.status() === 200 ? "pending" : "http-error"),
 		);
 		if (response.status() !== 200) return;
 		void response
 			.json()
 			.then((data: unknown) => {
 				if (!data || typeof data !== "object") {
-					entry.state = "session-invalid";
+					entry.state = state("invalid");
 					return;
 				}
 				const session = data as Record<string, unknown>;
-				entry.state =
+				entry.state = state(
 					typeof session.configured !== "boolean" ||
-					typeof session.authenticated !== "boolean"
-						? "session-invalid"
+						typeof session.authenticated !== "boolean"
+						? "invalid"
 						: !session.configured
-							? "session-unconfigured"
+							? "unconfigured"
 							: !session.authenticated
-								? "session-anonymous"
+								? "anonymous"
 								: session.mode === "users" && session.role === "ADMIN"
-									? "session-admin"
-									: "session-authenticated-other";
+									? "admin"
+									: "authenticated-other",
+				);
 			})
 			.catch(() => {
-				entry.state = "session-unreadable";
+				entry.state = state("unreadable");
 			});
 	});
 	page.on("requestfailed", (request) => {
-		if (isSession(request.url())) add("session-request-failed");
+		if (isSession(request.url()))
+			add(
+				`session-${requestPhases.get(request) ?? observations.phase}-request-failed`,
+			);
 	});
-	return history;
+	return observations;
 }
 
 async function observeFailedPage(
 	page: Page,
 	info: TestInfo,
-	sessions: { state: string }[],
+	observations: AuthenticationObservations,
 	navigationStatus: number | undefined,
 	unexpected: string[],
 ) {
@@ -163,7 +212,9 @@ async function observeFailedPage(
 		add("diagnostic-unavailable");
 	}
 	if (unexpected.length) add("browser-error");
-	for (const entry of sessions) add(entry.state);
+	if (observations.postLoginSessionStarted) add("session-post-login-started");
+	for (const error of observations.browserErrors) add(error);
+	for (const entry of observations.history) add(entry.state);
 }
 
 async function open(browser: Browser, signedIn = true, accounts = true) {
@@ -563,16 +614,21 @@ test("keep independent installation sessions isolated", async ({
 	browser,
 }, info) => {
 	const { context, page, unexpected } = await open(browser, false, false);
-	const sessions = observeSessionResponses(page);
+	const observations = observeSessionResponses(page);
 	let navigationStatus: number | undefined;
 	const secondary = await context.newPage();
-	secondary.on("pageerror", (error) => unexpected.push(error.message));
+	secondary.on("pageerror", (error) => {
+		unexpected.push(error.message);
+		recordBrowserError(observations, error);
+	});
 	try {
 		await page.goto(`${fixture.baseURL}/login`);
 		await page.locator("#email").fill(fixture.email);
 		await page.locator("#password").fill(fixture.password);
 		await page.getByRole("button", { name: "Sign in", exact: true }).click();
 		await expect(page).toHaveURL(`${fixture.baseURL}/`);
+		// URL commit alone does not establish an authenticated, hydrated shell.
+		await expect(page.locator("#current-organization")).toBeVisible();
 		navigationStatus = (
 			await page.goto(`${fixture.baseURL}/vod/new`)
 		)?.status();
@@ -589,6 +645,7 @@ test("keep independent installation sessions isolated", async ({
 			.getByRole("button", { name: "Create admin and sign in", exact: true })
 			.click();
 		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/`);
+		await expect(secondary.locator("#current-organization")).toBeVisible();
 		await secondary
 			.getByRole("button", { name: "Sign out", exact: true })
 			.click();
@@ -599,6 +656,7 @@ test("keep independent installation sessions isolated", async ({
 			.getByRole("button", { name: "Sign in", exact: true })
 			.click();
 		await expect(secondary).toHaveURL(`${fixture.secondary.baseURL}/`);
+		await expect(secondary.locator("#current-organization")).toBeVisible();
 		await secondary.goto(`${fixture.secondary.baseURL}/vod/new`);
 		await expect(secondary.locator("#wz-name")).toBeVisible();
 		await page.reload();
@@ -651,7 +709,13 @@ test("keep independent installation sessions isolated", async ({
 		).toBe(fixture.secondary.email);
 		expect(unexpected).toEqual([]);
 	} catch (error) {
-		await observeFailedPage(page, info, sessions, navigationStatus, unexpected);
+		await observeFailedPage(
+			page,
+			info,
+			observations,
+			navigationStatus,
+			unexpected,
+		);
 		throw error;
 	} finally {
 		await context.close();

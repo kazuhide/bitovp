@@ -12,6 +12,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import {
+	classifyBrowserError,
+	PHASED_GUI_STATES,
+} from "../tests/browser/diagnostics.ts";
+import {
 	browserExecutionAllowed,
 	CASES,
 	childEnvironment,
@@ -246,6 +250,105 @@ test("failure page observations expose only bounded fixed categories", () => {
 	assert.equal(
 		failureSummary(JSON.stringify(changed))[5],
 		`Browser case: ${CASES[5]}; status=passed`,
+	);
+});
+test("original browser errors produce fixed useful categories without exposing their details", () => {
+	for (const [error, expected] of [
+		[{ message: "Minified React error #418; secret=discard" }, "react-418"],
+		[{ message: "Minified React error #423; secret=discard" }, "react-423"],
+		[{ message: "Minified React error #310; private URL" }, "react-310"],
+		[{ message: "Minified React error #311; private URL" }, "react-311"],
+		[{ message: "Minified React error #321; private URL" }, "react-321"],
+		[{ message: "Minified React error #999; private URL" }, "react-other"],
+		[{ name: "ChunkLoadError", message: "private module URL" }, "module-load"],
+		[
+			{ message: "Failed to load chunk https://private.invalid/path" },
+			"module-load",
+		],
+		[{ message: "Hydration failed with private content" }, "hydration"],
+		[
+			{ message: "Rendered more hooks than during the previous render" },
+			"hooks",
+		],
+		[
+			{ message: "No QueryClient set, use QueryClientProvider to set one" },
+			"query-client",
+		],
+		[{ name: "ReferenceError", message: "private symbol" }, "reference-error"],
+		[{ name: "TypeError", message: "private value" }, "type-error"],
+		[{ name: "SyntaxError", message: "private input" }, "syntax-error"],
+		[{ name: "private name", message: "private arbitrary content" }, "unknown"],
+		[null, "unknown"],
+		[{ message: `${"x".repeat(2000)}Minified React error #418` }, "unknown"],
+		[
+			{
+				get message() {
+					throw new Error("private diagnostic failure");
+				},
+			},
+			"unknown",
+		],
+	]) {
+		const result = classifyBrowserError(error);
+		assert.equal(result, expected);
+		for (const phase of ["initial-login", "post-login"])
+			assert(PHASED_GUI_STATES.includes(`browser-${phase}-${result}`));
+	}
+});
+test("failure diagnostics distinguish authentication phases without exposing injected values", () => {
+	const changed = report();
+	const browserTest = changed.suites[0].specs[5].tests[0];
+	browserTest.results[0].status = "failed";
+	browserTest.annotations = [
+		{ type: "smoke-state", description: "session-initial-login-anonymous" },
+		{ type: "smoke-state", description: "session-post-login-started" },
+		{ type: "smoke-state", description: "session-post-login-admin" },
+		{ type: "smoke-state", description: "browser-post-login-module-load" },
+		{
+			type: "smoke-state",
+			description: "browser-post-login-private URL cookie",
+		},
+		{
+			type: "smoke-state",
+			description: "session-post-login-admin\nprivate value",
+		},
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed; state=session-initial-login-anonymous,session-post-login-started,session-post-login-admin,browser-post-login-module-load`,
+	);
+	browserTest.results[0].status = "timedOut";
+	assert(
+		failureSummary(JSON.stringify(changed))[5].includes(
+			"session-post-login-started",
+		),
+	);
+	browserTest.results[0].status = "passed";
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=passed`,
+	);
+	browserTest.results[0].status = "failed";
+	browserTest.annotations = Array.from({ length: 100 }, () => ({
+		type: "smoke-state",
+		description: "browser-post-login-reference-error",
+	}));
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5].split(
+			"browser-post-login-reference-error",
+		).length - 1,
+		24,
+	);
+	browserTest.annotations = [
+		...Array.from({ length: 32 }, () => ({
+			type: "private",
+			description: "discard",
+		})),
+		{ type: "smoke-state", description: "session-post-login-started" },
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed`,
 	);
 });
 test("missing and malformed browser reports produce constant failure categories", () => {

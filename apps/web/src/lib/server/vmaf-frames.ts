@@ -68,7 +68,8 @@ export async function downsampleFrameBlob(
 		for await (const frame of iterateFrames(blob, signal)) frames.push(frame);
 		return { frames: downsampleFrames(frames, cap), frameCount };
 	}
-	const size = frameCount / Math.max(1, cap - 1);
+	const buckets = Math.max(1, cap - 1);
+	const size = frameCount / buckets;
 	const selected: { frame: VmafFrame; index: number }[] = [];
 	let index = 0;
 	let bucket = 0;
@@ -80,7 +81,9 @@ export async function downsampleFrameBlob(
 			minimum = undefined;
 			bucket++;
 		}
-		if (!minimum || frame.vmaf < minimum.frame.vmaf) minimum = { frame, index };
+		// The final floor endpoint may exclude a tail frame; only worst pinning scans it.
+		if (bucket < buckets && (!minimum || frame.vmaf < minimum.frame.vmaf))
+			minimum = { frame, index };
 		if (!worst || frame.vmaf < worst.frame.vmaf) worst = { frame, index };
 		index++;
 	}

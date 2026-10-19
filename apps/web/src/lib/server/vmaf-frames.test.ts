@@ -57,6 +57,48 @@ describe("streaming frame reads", () => {
 	});
 
 	it.each([
+		[15, 12],
+		[1502, DOWNSAMPLE_CAP],
+		[1507, DOWNSAMPLE_CAP],
+	])("preserves the finite bucket endpoint when %i frames round below cap %i", async (length, cap) => {
+		for (const minimum of ["first", "tail", "tied-tail", "first-tail-tie"]) {
+			const minimumIndices =
+				minimum === "tail"
+					? [length - 1]
+					: minimum === "first-tail-tie"
+						? [length - 2, length - 1]
+						: minimum === "tied-tail"
+							? [0, length - 1]
+							: [0];
+			const input = Array.from({ length }, (_, index) => ({
+				frameNum: index * 3 + 7,
+				vmaf: minimumIndices.includes(index) ? 0 : 90,
+				psnr: 42.123456789 + index / 1000,
+			}));
+			const expected = downsampleFrames(input, cap);
+			const actual = await downsampleFrameBlob(
+				gzipSync(JSON.stringify(input)),
+				cap,
+			);
+			expect(actual.frameCount).toBe(length);
+			expect(actual.frames, minimum).toEqual(expected);
+			if (minimum === "first") {
+				expect(actual.frames).toHaveLength(cap - 1);
+				expect(actual.frames.at(-1)?.frameNum).toBe((length - 2) * 3 + 7);
+			}
+			if (minimum === "tail")
+				expect(actual.frames.at(-1)).toEqual({
+					...input.at(-1),
+					worst: true,
+				});
+			if (minimum === "tied-tail")
+				expect(actual.frames.filter((frame) => frame.worst)).toEqual([
+					{ ...input[0], worst: true },
+				]);
+		}
+	});
+
+	it.each([
 		'[{"frameNum":0,"vmaf":95}',
 		"[] trailing",
 		"{}",

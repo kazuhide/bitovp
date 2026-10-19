@@ -5,6 +5,7 @@ import {
 	type BrowserContext,
 	expect,
 	type Page,
+	type TestInfo,
 	test,
 } from "@playwright/test";
 import { liveChannelPlanSchema } from "../../packages/core/src/live/schema";
@@ -25,6 +26,18 @@ function only<T>(items: T[]): T {
 	const first = items[0];
 	if (!first) throw new Error("The expected submission was not captured");
 	return first;
+}
+
+function submissionStage(
+	info: TestInfo,
+	description:
+		| "submit-clicked"
+		| "post-received"
+		| "plan-validated"
+		| "post-fulfilled"
+		| "navigation-complete",
+) {
+	info.annotations.push({ type: "smoke-stage", description });
 }
 
 async function open(browser: Browser, signedIn = true, accounts = true) {
@@ -136,7 +149,7 @@ test("sign in and reject unauthenticated access", async ({
 	}
 });
 
-test("configure and submit VOD", async ({ browser }) => {
+test("configure and submit VOD", async ({ browser }, info) => {
 	const { context, page, unexpected } = await open(browser);
 	const submitted: {
 		plan: ReturnType<typeof encodingPlanSchema.parse>;
@@ -144,11 +157,14 @@ test("configure and submit VOD", async ({ browser }) => {
 	}[] = [];
 	await page.route("**/api/encoding-jobs", async (route) => {
 		if (route.request().method() !== "POST") return route.fallback();
+		submissionStage(info, "post-received");
 		submitted.push({
 			plan: encodingPlanSchema.parse(route.request().postDataJSON().plan),
 			key: route.request().headers()["idempotency-key"] ?? "",
 		});
-		return route.fulfill({ status: 201, json: { id: JOB } });
+		submissionStage(info, "plan-validated");
+		await route.fulfill({ status: 201, json: { id: JOB } });
+		submissionStage(info, "post-fulfilled");
 	});
 	await page.route(`**/api/encoding-jobs/${JOB}`, (route) =>
 		route.fulfill({
@@ -206,10 +222,12 @@ test("configure and submit VOD", async ({ browser }) => {
 		await expect(
 			page.getByRole("button", { name: "Plan JSON", exact: true }),
 		).toBeVisible();
+		submissionStage(info, "submit-clicked");
 		await page
 			.getByRole("button", { name: "Start encoding", exact: true })
 			.click();
 		await expect(page).toHaveURL(`${fixture.baseURL}/vod/jobs/${JOB}`);
+		submissionStage(info, "navigation-complete");
 		await expect(
 			page.getByRole("heading", { name: "Browser VOD smoke", exact: true }),
 		).toBeVisible();
@@ -231,7 +249,9 @@ test("configure and submit VOD", async ({ browser }) => {
 	}
 });
 
-test("configure and submit Live and inspect heartbeat", async ({ browser }) => {
+test("configure and submit Live and inspect heartbeat", async ({
+	browser,
+}, info) => {
 	const { context, page, unexpected } = await open(browser);
 	const submitted: {
 		plan: ReturnType<typeof liveChannelPlanSchema.parse>;
@@ -239,11 +259,14 @@ test("configure and submit Live and inspect heartbeat", async ({ browser }) => {
 	}[] = [];
 	await page.route("**/api/live-channels", async (route) => {
 		if (route.request().method() !== "POST") return route.fallback();
+		submissionStage(info, "post-received");
 		submitted.push({
 			plan: liveChannelPlanSchema.parse(route.request().postDataJSON().plan),
 			key: route.request().headers()["idempotency-key"] ?? "",
 		});
-		return route.fulfill({ status: 201, json: { id: CHANNEL } });
+		submissionStage(info, "plan-validated");
+		await route.fulfill({ status: 201, json: { id: CHANNEL } });
+		submissionStage(info, "post-fulfilled");
 	});
 	const plan = JSON.parse(
 		readFileSync(
@@ -343,10 +366,12 @@ test("configure and submit Live and inspect heartbeat", async ({ browser }) => {
 		await goTo(page, /start/i);
 		await page.locator("#lw-streamkey").fill("browserStream");
 		await goTo(page, /review/i);
+		submissionStage(info, "submit-clicked");
 		await page
 			.getByRole("button", { name: "Create live channel", exact: true })
 			.click();
 		await expect(page).toHaveURL(`${fixture.baseURL}/live/${CHANNEL}`);
+		submissionStage(info, "navigation-complete");
 		const creation = only(submitted);
 		expect(creation.key).toMatch(/^[a-f0-9]{64}$/);
 		expect(creation.plan.liveInput.kind).toBe("RTMP");

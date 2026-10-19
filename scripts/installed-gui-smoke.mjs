@@ -195,6 +195,7 @@ export function failureSummary(raw) {
 	}
 	const statuses = new Map();
 	const locations = new Map();
+	const stages = new Map();
 	const pending = [...report.suites];
 	let visited = 0;
 	try {
@@ -211,6 +212,21 @@ export function failureSummary(raw) {
 				assert(Array.isArray(results));
 				const status = results[0]?.status;
 				if (status === "failed" || status === "timedOut") {
+					for (const annotation of Array.isArray(spec.tests[0].annotations)
+						? spec.tests[0].annotations.slice(0, 32)
+						: []) {
+						if (
+							annotation?.type === "smoke-stage" &&
+							[
+								"submit-clicked",
+								"post-received",
+								"plan-validated",
+								"post-fulfilled",
+								"navigation-complete",
+							].includes(annotation.description)
+						)
+							stages.set(spec.title, annotation.description);
+					}
 					const lines = new Set();
 					const add = (line) => {
 						if (
@@ -239,7 +255,7 @@ export function failureSummary(raw) {
 							for (const match of error.stack
 								.slice(0, 10_000)
 								.matchAll(
-									/installed-gui\.test\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
+									/(?:^|[/\\])installed-gui\.test\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
 								))
 								add(Number(match[1]));
 					}
@@ -300,7 +316,7 @@ export function failureSummary(raw) {
 		...categories,
 		...CASES.map(
 			(title) =>
-				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}`,
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}`,
 		),
 	];
 }

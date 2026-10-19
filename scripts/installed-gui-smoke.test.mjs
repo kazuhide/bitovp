@@ -196,6 +196,27 @@ test("failure summaries expose only known case names and safe statuses", () => {
 	]);
 	assert(!summary.join("\n").includes("private"));
 });
+test("failed browser cases expose only the last fixed submission stage", () => {
+	const changed = report();
+	const browserTest = changed.suites[0].specs[2].tests[0];
+	browserTest.results[0].status = "failed";
+	browserTest.annotations = [
+		{ type: "smoke-stage", description: "submit-clicked" },
+		{ type: "smoke-stage", description: "post-received" },
+		{ type: "smoke-stage", description: "private URL and token" },
+		{ type: "private", description: "post-fulfilled" },
+		null,
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[2],
+		`Browser case: ${CASES[2]}; status=failed; stage=post-received`,
+	);
+	browserTest.results[0].status = "passed";
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[2],
+		`Browser case: ${CASES[2]}; status=passed`,
+	);
+});
 test("missing and malformed browser reports produce constant failure categories", () => {
 	assert.deepEqual(failureSummary(), [
 		"Browser diagnostic: report unavailable",
@@ -281,6 +302,17 @@ test("failed cases expose only bounded line numbers from the known browser test 
 	for (const line of [0, -1, 10001, "private", 2.5]) {
 		result.error.location.line = line;
 		result.error.stack = "private data";
+		assert.equal(
+			failureSummary(JSON.stringify(changed))[0],
+			`Browser case: ${CASES[0]}; status=failed`,
+		);
+	}
+	for (const name of [
+		"other-installed-gui.test.ts",
+		"xinstalled-gui.test.ts",
+		"other installed-gui.test.ts",
+	]) {
+		result.error.stack = `at /private/${name}:202:3`;
 		assert.equal(
 			failureSummary(JSON.stringify(changed))[0],
 			`Browser case: ${CASES[0]}; status=failed`,

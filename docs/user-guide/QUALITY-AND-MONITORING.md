@@ -83,8 +83,16 @@ decode results; they do not establish Bitmovin API execution or browser playback
 | VMAF frames per comparison | 240, ordered and complete |
 | VMAF mean: identical / encoded / degraded | 98.282 / 93.123 / 4.778 |
 
+A [Linux CI run on 19 October 2026](https://github.com/kazuhide/bitovp/actions/runs/39211595682)
+also passed: 240 video frames, five 2-second / 48-frame video segments in both
+HLS and DASH, complete MP4/HLS/DASH audio/video decoding, and 240 VMAF frames
+per comparison. Its identical / encoded / degraded means were
+**98.282 / 93.142 / 5.088**.
+
 These VMAF results use model `vmaf_v0.6.1` and score every frame. They
-are fixture sanity checks; encoder builds can produce different scores.
+are fixture sanity checks; platforms and encoder builds can produce different
+scores. They do not establish provider execution, browser playback, or quality
+targets for other content.
 
 Here, two seconds is 93.75 AAC frames. Audio therefore crosses the requested
 video boundaries rather than being forced into an impossible integer frame

@@ -2,8 +2,13 @@ import {
 	DEFAULT_BRANDING_SETTINGS,
 	encodingPlanSchema,
 	liveChannelPlanSchema,
+	providerHeartbeatEvents,
 } from "@bitovp/core";
 import { z } from "zod";
+import type {
+	HeartbeatLogResponse,
+	HeartbeatLogRow,
+} from "@/app/api/live-channels/[id]/runs/[runId]/heartbeats/route";
 import {
 	DEMO_ACCOUNT_ID,
 	DEMO_BUCKET,
@@ -23,6 +28,7 @@ import {
 	demoSession,
 	demoUsage,
 	demoVmafReport,
+	heartbeatRaw,
 	liveRecord,
 	vodRecord,
 } from "./fixtures";
@@ -51,6 +57,19 @@ const stateSchema = z.strictObject({
 });
 type Entry = z.infer<typeof entrySchema>;
 type State = z.infer<typeof stateSchema>;
+const heartbeatLogQuerySchema = z
+	.object({
+		from: z.iso.datetime({ offset: true }).optional(),
+		to: z.iso.datetime({ offset: true }).optional(),
+		cursor: z.uuid().optional(),
+		limit: z.coerce.number().int().min(1).max(500).default(200),
+	})
+	.refine(
+		(query) =>
+			!query.from ||
+			!query.to ||
+			Date.parse(query.from) <= Date.parse(query.to),
+	);
 
 function json(value: unknown, status = 200): Response {
 	return new Response(JSON.stringify(value), {
@@ -235,6 +254,10 @@ export function createDemoTransport(
 	let state = restore(options.storage, now());
 	const templates: DemoRecord[] = [];
 	const deletedReports = new Set<string>();
+	const heartbeatSnapshots = new Map<
+		string,
+		{ identity: string; rows: HeartbeatLogRow[] }
+	>();
 
 	function persist() {
 		const serialized = JSON.stringify(state);
@@ -260,6 +283,95 @@ export function createDemoTransport(
 				"This demo record was not found. Reset the demo to restore the samples.",
 			);
 		return entry;
+	}
+
+	function heartbeatLog(
+		entry: Entry,
+		run: DemoRecord,
+		url: URL,
+		timestamp: number,
+	): Response {
+		const parsed = heartbeatLogQuerySchema.safeParse({
+			from: url.searchParams.get("from") ?? undefined,
+			to: url.searchParams.get("to") ?? undefined,
+			cursor: url.searchParams.get("cursor") ?? undefined,
+			limit: url.searchParams.get("limit") ?? undefined,
+		});
+		if (!parsed.success) return error(400, "Invalid demo Heartbeat log query.");
+		const { from, to, cursor, limit } = parsed.data;
+		// A bounded snapshot keeps row IDs stable across pages and isolated between runs.
+		const identity = `${String(run.id)}:${entry.createdAt}:${entry.generation ?? 0}`;
+		let snapshot = heartbeatSnapshots.get(entry.id);
+		if (snapshot?.identity !== identity) {
+			const start = Date.parse(String(run.createdAt));
+			const end = run.endedAt ? Date.parse(String(run.endedAt)) : timestamp;
+			const count = Math.min(
+				37,
+				Math.floor(Math.max(0, end - start) / 30_000) + 1,
+			);
+			snapshot = {
+				identity,
+				rows: Array.from({ length: count }, (_, index) => {
+					const at = start + index * 30_000;
+					return {
+						id: crypto.randomUUID(),
+						at: new Date(at).toISOString(),
+						raw: {
+							...heartbeatRaw(at),
+							events: [
+								{
+									time: new Date(start).toISOString(),
+									details: {
+										eventType: "INPUT_CONNECTED",
+										message: "Simulated input connected",
+									},
+								},
+							],
+						},
+						deltas: {
+							droppedPacketsVideo: index === 12 ? 2 : 0,
+							droppedPacketsAudio: 0,
+							corruptPacketsVideo: 0,
+							corruptPacketsAudio: 0,
+						},
+					};
+				}),
+			};
+			heartbeatSnapshots.set(entry.id, snapshot);
+		}
+		const filtered = snapshot.rows.filter(
+			(sample) =>
+				(!from || Date.parse(sample.at) >= Date.parse(from)) &&
+				(!to || Date.parse(sample.at) <= Date.parse(to)),
+		);
+		const cursorIndex = cursor
+			? filtered.findIndex((sample) => sample.id === cursor)
+			: -1;
+		if (cursor && cursorIndex === -1)
+			return error(
+				400,
+				"The demo Heartbeat cursor does not belong to this run and time window.",
+			);
+		const offset = cursorIndex + 1;
+		const rows = filtered.slice(offset, offset + limit);
+		const response: HeartbeatLogResponse = {
+			run: {
+				id: String(run.id),
+				seq: Number(run.seq),
+				status: String(run.status),
+				createdAt: String(run.createdAt),
+				endedAt: run.endedAt ? String(run.endedAt) : null,
+				summary: null,
+			},
+			rows,
+			...(filtered.length > offset + limit
+				? { nextCursor: rows.at(-1)?.id }
+				: {}),
+			...(!cursor
+				? { latestEvents: providerHeartbeatEvents(snapshot.rows.at(-1)?.raw) }
+				: {}),
+		};
+		return json(response);
 	}
 
 	function create(kind: Entry["kind"], raw: unknown, requestKey?: string) {
@@ -605,6 +717,7 @@ export function createDemoTransport(
 				)
 					return error(409, "Stop this simulated record before deleting it.");
 				state.entries = state.entries.filter((item) => item !== entry);
+				heartbeatSnapshots.delete(id);
 				persist();
 				return new Response(null, { status: 204 });
 			}
@@ -627,6 +740,12 @@ export function createDemoTransport(
 			}
 			if (kind === "live") {
 				const run = row.currentRun as DemoRecord;
+				const heartbeatLogPath = suffix?.match(/^runs\/([^/]+)\/heartbeats$/);
+				if (heartbeatLogPath && get) {
+					if (heartbeatLogPath[1] !== run.id)
+						return error(404, "This run was not found on the demo channel.");
+					return heartbeatLog(entry, run, url, timestamp);
+				}
 				if (suffix === "actions" && method === "POST") {
 					const input = await body(request);
 					if (input.action === "stop") entry.status = "STOPPED";
@@ -731,6 +850,7 @@ export function createDemoTransport(
 			state = initialState(now());
 			templates.length = 0;
 			deletedReports.clear();
+			heartbeatSnapshots.clear();
 			try {
 				options.storage?.removeItem(DEMO_STORAGE_KEY);
 			} catch {

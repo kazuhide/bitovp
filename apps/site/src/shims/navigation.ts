@@ -1,6 +1,15 @@
 import { useMemo, useSyncExternalStore } from "react";
+import { localePath, type SiteLocale } from "../site-config";
 
 const PREFIX = "#/demo";
+
+/** Locale links navigate between static documents and retain the active demo screen. */
+export function demoLocaleHref(
+	locale: SiteLocale,
+	location: Pick<Location, "search" | "hash">,
+): string {
+	return `${localePath(locale)}${location.search}${location.hash}`;
+}
 
 function subscribe(listener: () => void) {
 	window.addEventListener("hashchange", listener);

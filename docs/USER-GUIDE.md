@@ -1,6 +1,6 @@
 # User guide
 
-Bitovp is a GUI for Bitmovin VOD and Live encoding. Use the browser to configure
+bitovp is a GUI for Bitmovin VOD and Live encoding. Use the browser to configure
 encodings, review the complete plan, start work, and inspect the output.
 
 | Task | Guide | Main screens |

@@ -4,6 +4,10 @@
 
 ## Try the browser demo
 
+The [feature guide](https://kazuhide.github.io/bitovp/) and demo are also available
+[in Japanese](https://kazuhide.github.io/bitovp/ja/). Use the language links to switch
+between English and Japanese.
+
 Open the [interactive demo](https://kazuhide.github.io/bitovp/#/demo) to explore
 the dashboard, example jobs, Live monitoring, quality reports, and encoding forms
 without an account. Created jobs and their progress are simulated. Demo jobs

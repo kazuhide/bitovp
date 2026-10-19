@@ -7,6 +7,7 @@ import type { InternalHevcV2 } from "./internal-hevc-v2";
 import type { AuditRecorder } from "./sdk-ops";
 import { createBitmovinSdkOps, type SdkOps } from "./sdk-ops";
 import type { CreateStamp } from "./stamping-fetch";
+import type { StartRetryControl } from "./start-1004-retry";
 
 /**
  * The production `makeSdk` — lifted out of index.ts so the seam is TESTABLE.
@@ -35,6 +36,7 @@ export function makeWorkerSdk(prisma: AppPrismaClient) {
 		stamp?: CreateStamp;
 		orphanStopOnly?: true;
 		monitoringSignal?: AbortSignal;
+		startControl?: StartRetryControl;
 		internalHevcV2?: InternalHevcV2;
 	}): SdkOps =>
 		createBitmovinSdkOps(args, (entry) =>

@@ -139,6 +139,7 @@ import {
 	VerificationProviderOwnershipLostError,
 	verificationCreateIdentity,
 } from "./stamping-fetch";
+import type { StartRetryControl } from "./start-1004-retry";
 import {
 	recordFailedStartupSample,
 	recordRunningStartupSample,
@@ -207,6 +208,7 @@ export type LiveChannelDeps = {
 		 */
 		stamp?: CreateStamp;
 		monitoringSignal?: AbortSignal;
+		startControl?: StartRetryControl;
 	}): SdkOps;
 	sleep(ms: number): Promise<void>;
 	pollIntervalMs: number;
@@ -4826,6 +4828,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		 * in-flight renewal so no compare-and-swap is pending when the next
 		 * fenced write reads the token.
 		 */
+		let activeLeaseTicker: { readonly lost: boolean } | undefined;
 		const startLeaseTicker = () => {
 			const state = { lost: false, renewalFailed: false };
 			const timer = setInterval(
@@ -4934,6 +4937,20 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			resetOwner.accountId = accountId;
 			const account = await deps.revealBitmovinAccount(accountId);
 			sdk = deps.makeSdk({
+				startControl: {
+					check: async (attempted) => {
+						if (activeLeaseTicker?.lost)
+							throw new ProvisionLeaseLostError(liveChannelId);
+						if (!(await renewLease()) || activeLeaseTicker?.lost)
+							throw new ProvisionLeaseLostError(liveChannelId);
+						const canceled = await shouldCancel();
+						if (activeLeaseTicker?.lost)
+							throw new ProvisionLeaseLostError(liveChannelId);
+						if (canceled)
+							throw new CancelRequested(stampStep ?? "start", !attempted);
+					},
+					sleep: deps.sleep,
+				},
 				apiKey: account.apiKey,
 				tenantOrgId: account.tenantOrgId,
 				bitmovinAccountId: accountId,
@@ -5417,11 +5434,16 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					// exist at the provider and must reconcile by exact marker first.
 					stampAdopt = wasRunning || wasVerificationCreateAttempt;
 					const ticker = startLeaseTicker();
+					activeLeaseTicker = ticker;
 					let result: Awaited<ReturnType<typeof executeStep>>;
 					try {
 						result = await executeStep(entry, ctx, { wasRunning });
 					} finally {
-						await ticker.stop();
+						try {
+							await ticker.stop();
+						} finally {
+							activeLeaseTicker = undefined;
+						}
 					}
 					// Preserve a late CREATE result before the ownership fence rejects persistence.
 					if (entry.kind === "CREATE_ENCODING" && result.resourceId)

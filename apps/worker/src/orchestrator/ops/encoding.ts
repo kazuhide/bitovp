@@ -36,7 +36,7 @@ import {
 	VerificationProviderOwnershipLostError,
 	verificationCreateIdentity,
 } from "../stamping-fetch";
-import { reconcileStartFailure, retryStart1004 } from "../start-1004-retry";
+import { startWithRetry1004 } from "../start-1004-retry";
 import type { OpsContext } from "./context";
 import {
 	adoptOrCreateStamped,
@@ -431,7 +431,7 @@ export function createEncodingLifecycleOps(
 				// I-02: a start 5xx is then RECONCILED against remote state —
 				// if the start actually landed, the job proceeds.
 				() =>
-					retryStart1004(
+					startWithRetry1004(
 						() =>
 							api.encoding.encodings.start(
 								encodingId,
@@ -554,22 +554,12 @@ export function createEncodingLifecycleOps(
 										: {}),
 								}),
 							),
-						(ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
-					).catch(async (err) => {
-						const outcome = await reconcileStartFailure(() =>
+						() =>
 							api.encoding.encodings
 								.status(encodingId)
 								.then((task) => ({ status: String(task.status) })),
-						);
-						if (outcome.started) {
-							return {
-								result: undefined as never,
-								retries: 0,
-								reconciledFrom: outcome.remoteStatus,
-							};
-						}
-						throw err;
-					}),
+						options.startControl,
+					),
 				(done: { retries: number; reconciledFrom?: string }) => ({
 					started: true,
 					// The audit row says when a start needed the window, and when

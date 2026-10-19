@@ -16,7 +16,7 @@ import {
 	createOrchestratorProcessor,
 	type OrchestratorDeps,
 } from "./processor";
-import type { SdkOps } from "./sdk-ops";
+import { createBitmovinSdkOps, type SdkOps } from "./sdk-ops";
 import {
 	type CreateStamp,
 	VerificationProviderIdDefinitelyNotPersistedError,
@@ -866,6 +866,244 @@ describe("orchestrator processor", () => {
 				},
 			];
 		}
+
+		it.each([
+			"cancel",
+			"lease",
+		] as const)("stops START retry sends when %s wins during the first delay", async (race) => {
+			vi.useFakeTimers();
+			try {
+				const log = midRunLog();
+				const startEntry = log.find((entry) => entry.kind === "START_ENCODING");
+				if (!startEntry) throw new Error("Missing START fixture");
+				startEntry.status = "PENDING";
+				let sent = false;
+				let stopping = false;
+				const h = setup({
+					status: "RUNNING",
+					stepLog: log,
+					bitmovinEncodingId: "bm-enc",
+				});
+				h.sdk.getEncodingStatus = vi.fn(async () => ({
+					status: stopping ? "FINISHED" : sent ? "QUEUED" : "CREATED",
+				}));
+				h.sdk.stopEncoding = vi.fn(async () => {
+					stopping = true;
+				});
+				h.deps.sleep = (ms) =>
+					new Promise((resolve) => setTimeout(resolve, ms));
+				const wire = vi.fn(async () => {
+					sent = true;
+					return new Response(
+						JSON.stringify({
+							status: "ERROR",
+							data: { code: 1004, message: "Synthetic settle window" },
+						}),
+						{ status: 500 },
+					);
+				});
+				vi.stubGlobal("fetch", wire);
+				h.deps.makeSdk = (args) => ({
+					...h.sdk,
+					startEncoding: createBitmovinSdkOps(args, async () => {})
+						.startEncoding,
+				});
+				let outcome: unknown;
+				void h.processor({ encodingJobId: JOB_ID }).then(
+					(result) => {
+						outcome = result;
+					},
+					(error) => {
+						outcome = error;
+					},
+				);
+				await vi.advanceTimersByTimeAsync(0);
+				expect(wire).toHaveBeenCalledOnce();
+				const winner = new Date("2030-01-01T00:00:00Z");
+				if (race === "cancel") h.row.cancelRequested = true;
+				else h.row.attemptClaimedAt = winner;
+				const acceptedBeforeRace = h.updates.length;
+				await vi.advanceTimersByTimeAsync(1_000);
+				expect(outcome).toMatchObject({
+					status: race === "cancel" ? "CANCELED" : "LEASE_LOST",
+				});
+				expect(wire).toHaveBeenCalledOnce();
+				expect(h.emitted.some((event) => event.kind === "JOB_ERROR")).toBe(
+					false,
+				);
+				expect(
+					h.updates
+						.slice(acceptedBeforeRace)
+						.some(
+							(update) =>
+								update.status === "ERROR" || update.status === "FINISHED",
+						),
+				).toBe(false);
+				if (race === "cancel") {
+					expect(h.sdk.stopEncoding).toHaveBeenCalledExactlyOnceWith("bm-enc");
+					expect(h.row).toMatchObject({
+						status: "CANCELED",
+						error: null,
+						bitmovinEncodingId: "bm-enc",
+						encoderStoppedConfirmedFor: "bm-enc",
+					});
+					expect(
+						(h.row.stepLog as StepLogEntry[]).find(
+							(entry) => entry.kind === "START_ENCODING",
+						),
+					).toMatchObject({
+						status: "RUNNING",
+						startedAt: expect.any(String),
+						error: undefined,
+					});
+				} else {
+					expect(h.sdk.stopEncoding).not.toHaveBeenCalled();
+					expect(h.row.attemptClaimedAt).toEqual(winner);
+					expect(h.updates).toHaveLength(acceptedBeforeRace);
+				}
+			} finally {
+				vi.clearAllTimers();
+				vi.useRealTimers();
+				vi.unstubAllGlobals();
+			}
+		});
+
+		it.each([
+			"QUEUED",
+			"CREATED",
+		])("retains the exact encoding after an in-flight START accepts during cancellation with provider state %s", async (providerStatus) => {
+			vi.useFakeTimers();
+			try {
+				const log = midRunLog();
+				const entry = log.find((item) => item.kind === "START_ENCODING");
+				if (!entry) throw new Error("Missing START fixture");
+				entry.status = "PENDING";
+				let sent = false;
+				let stopping = false;
+				let accept: ((value: Response) => void) | undefined;
+				const h = setup({
+					status: "RUNNING",
+					stepLog: log,
+					bitmovinEncodingId: "bm-enc",
+				});
+				h.sdk.getEncodingStatus = vi.fn(async () => ({
+					status: stopping ? "FINISHED" : sent ? providerStatus : "CREATED",
+				}));
+				h.sdk.stopEncoding = vi.fn(async () => {
+					stopping = true;
+				});
+				const wire = vi.fn(() => {
+					sent = true;
+					return new Promise<Response>((resolve) => {
+						accept = resolve;
+					});
+				});
+				vi.stubGlobal("fetch", wire);
+				h.deps.makeSdk = (args) => ({
+					...h.sdk,
+					startEncoding: createBitmovinSdkOps(args, async () => {})
+						.startEncoding,
+				});
+				let outcome: unknown;
+				void h.processor({ encodingJobId: JOB_ID }).then(
+					(result) => {
+						outcome = result;
+					},
+					(error) => {
+						outcome = error;
+					},
+				);
+				await vi.advanceTimersByTimeAsync(0);
+				expect(accept).toBeDefined();
+				h.row.cancelRequested = true;
+				expect(outcome).toBeUndefined();
+				accept?.(
+					new Response(JSON.stringify({ data: { result: { id: "bm-enc" } } }), {
+						status: 202,
+					}),
+				);
+				await vi.advanceTimersByTimeAsync(0);
+				expect(outcome).toMatchObject({ status: "CANCELED" });
+				expect(wire).toHaveBeenCalledOnce();
+				if (providerStatus === "QUEUED") {
+					expect(h.sdk.stopEncoding).toHaveBeenCalledExactlyOnceWith("bm-enc");
+					expect(h.row.encoderStoppedConfirmedFor).toBe("bm-enc");
+				} else {
+					expect(h.sdk.stopEncoding).not.toHaveBeenCalled();
+					expect(h.row.encoderStoppedConfirmedFor).toBeNull();
+				}
+				expect(
+					(h.row.stepLog as StepLogEntry[]).find(
+						(item) => item.kind === "START_ENCODING",
+					),
+				).toMatchObject({ status: "RUNNING", startedAt: expect.any(String) });
+				expect(
+					h.emitted.some(
+						(event) =>
+							event.kind === "JOB_ERROR" || event.kind === "JOB_FINISHED",
+					),
+				).toBe(false);
+			} finally {
+				vi.clearAllTimers();
+				vi.useRealTimers();
+				vi.unstubAllGlobals();
+			}
+		});
+
+		it.each([
+			false,
+			true,
+		])("preserves prior START history %s when canceled before this pass sends", async (priorAttempt) => {
+			const log = midRunLog();
+			const entry = log.find((item) => item.kind === "START_ENCODING");
+			if (!entry) throw new Error("Missing START fixture");
+			entry.status = priorAttempt ? "RUNNING" : "PENDING";
+			entry.startedAt = priorAttempt ? "2020-01-01T00:00:00Z" : undefined;
+			const h = setup({
+				status: "RUNNING",
+				stepLog: log,
+				bitmovinEncodingId: "bm-enc",
+			});
+			let stopping = false;
+			h.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: stopping ? "FINISHED" : "CREATED",
+			}));
+			h.sdk.stopEncoding = vi.fn(async () => {
+				stopping = true;
+			});
+			const wire = vi.fn();
+			vi.stubGlobal("fetch", wire);
+			h.deps.makeSdk = (args) => ({
+				...h.sdk,
+				startEncoding: createBitmovinSdkOps(
+					{
+						...args,
+						startControl: {
+							sleep: h.deps.sleep,
+							check: async (attempted) => {
+								h.row.cancelRequested = true;
+								await args.startControl?.check(attempted);
+							},
+						},
+					},
+					async () => {},
+				).startEncoding,
+			});
+			try {
+				expect(await h.processor({ encodingJobId: JOB_ID })).toMatchObject({
+					status: "CANCELED",
+				});
+				expect(wire).not.toHaveBeenCalled();
+				const stored = (h.row.stepLog as StepLogEntry[]).find(
+					(item) => item.kind === "START_ENCODING",
+				);
+				expect(stored?.status).toBe(priorAttempt ? "RUNNING" : "PENDING");
+				if (priorAttempt) expect(stored?.startedAt).toBeDefined();
+				else expect(stored?.startedAt).toBeUndefined();
+			} finally {
+				vi.unstubAllGlobals();
+			}
+		});
 
 		// (a) cancel set before a QUEUED job is processed -> CANCELED, no steps
 		// run, stopEncoding NOT called (nothing was ever started).
@@ -2044,6 +2282,98 @@ describe("orchestrator processor — QC gate boundary", () => {
 			(startEntry?.response as { jitDowngrade?: { appendedSteps: string[] } })
 				?.jitDowngrade?.appendedSteps,
 		).toContain("manifest-start:hls");
+	});
+
+	it("retains the original START attempt when canceled during JIT fallback persistence before the second SDK invocation", async () => {
+		const h = setup();
+		let stopping = false;
+		h.sdk.getEncodingStatus = vi.fn(async () => ({
+			status: stopping ? "FINISHED" : "QUEUED",
+		}));
+		h.sdk.stopEncoding = vi.fn(async () => {
+			stopping = true;
+		});
+		const sends: Record<string, unknown>[] = [];
+		const wire = vi.fn(async (_url: string, init?: RequestInit) => {
+			if (init?.method === "POST") {
+				sends.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+				return new Response(
+					JSON.stringify({
+						status: "ERROR",
+						data: { code: 1004, message: "Synthetic settle window" },
+					}),
+					{ status: 500 },
+				);
+			}
+			return new Response(
+				JSON.stringify({ data: { result: { status: "CREATED" } } }),
+			);
+		});
+		vi.stubGlobal("fetch", wire);
+		h.deps.makeSdk = (args) => ({
+			...h.sdk,
+			startEncoding: createBitmovinSdkOps(args, async () => {}).startEncoding,
+		});
+		let enterFallback!: () => void;
+		const fallbackReached = new Promise<void>((resolve) => {
+			enterFallback = resolve;
+		});
+		let releaseFallback!: () => void;
+		const fallbackRelease = new Promise<void>((resolve) => {
+			releaseFallback = resolve;
+		});
+		const update = h.updateMany.getMockImplementation();
+		let originalMarker: unknown;
+		h.updateMany.mockImplementation(async (args) => {
+			const result = await update?.(args);
+			if (args.data.plan) {
+				originalMarker = (h.row.stepLog as StepLogEntry[]).find(
+					(entry) => entry.kind === "START_ENCODING",
+				)?.startedAt;
+				enterFallback();
+				await fallbackRelease;
+			}
+			return result ?? { count: 0 };
+		});
+		try {
+			const pending = h.processor({ encodingJobId: JOB_ID });
+			await fallbackReached;
+			expect(sends).toHaveLength(10);
+			expect(
+				sends.every(
+					(body) =>
+						Array.isArray(body.vodHlsManifests) &&
+						body.vodHlsManifests.length > 0,
+				),
+			).toBe(true);
+			expect(originalMarker).toBeDefined();
+			h.row.cancelRequested = true;
+			releaseFallback();
+			expect(await pending).toMatchObject({ status: "CANCELED" });
+			expect(sends).toHaveLength(10);
+			const entry = (h.row.stepLog as StepLogEntry[]).find(
+				(item) => item.kind === "START_ENCODING",
+			);
+			expect(entry).toMatchObject({
+				status: "RUNNING",
+				startedAt: originalMarker,
+			});
+			const encodingId = (h.row.stepLog as StepLogEntry[]).find(
+				(item) => item.kind === "CREATE_ENCODING",
+			)?.resourceId;
+			expect(encodingId).toBe("bm-encoding");
+			expect(h.sdk.stopEncoding).toHaveBeenCalledExactlyOnceWith(encodingId);
+			expect(h.row.encoderStoppedConfirmedFor).toBe(encodingId);
+			expect(
+				h.emitted.some(
+					(event) =>
+						event.kind === "JOB_ERROR" || event.kind === "JOB_FINISHED",
+				),
+			).toBe(false);
+		} finally {
+			releaseFallback();
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("never downgrades twice: a POST_ENCODING plan whose start 1004s fails the job", async () => {

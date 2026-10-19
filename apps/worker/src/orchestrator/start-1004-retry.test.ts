@@ -4,6 +4,7 @@ import {
 	reconcileStartFailure,
 	retryStart1004,
 	START_1004_DELAYS_MS,
+	startWithRetry1004,
 } from "./start-1004-retry";
 
 /**
@@ -133,5 +134,89 @@ describe("reconcileStartFailure", () => {
 			throw new Error("network down");
 		});
 		expect(outcome).toEqual({ started: false });
+	});
+});
+
+describe("owned START retry control", () => {
+	it("retains the complete normal 1004 ladder with bounded wait slices", async () => {
+		let sends = 0;
+		const waits: number[] = [];
+		const checks: boolean[] = [];
+		const done = await startWithRetry1004(
+			async () => {
+				if (++sends <= START_1004_DELAYS_MS.length) throw err1004();
+				return "accepted";
+			},
+			async () => ({ status: "CREATED" }),
+			{
+				check: async (attempted) => {
+					checks.push(attempted);
+				},
+				sleep: async (ms) => {
+					waits.push(ms);
+				},
+			},
+		);
+		expect(done).toEqual({
+			result: "accepted",
+			retries: START_1004_DELAYS_MS.length,
+		});
+		expect(sends).toBe(START_1004_DELAYS_MS.length + 1);
+		expect(waits.reduce((sum, ms) => sum + ms, 0)).toBe(
+			START_1004_DELAYS_MS.reduce((sum, ms) => sum + ms, 0),
+		);
+		expect(waits.every((ms) => ms > 0 && ms <= 1_000)).toBe(true);
+		expect(checks[0]).toBe(false);
+		expect(checks.slice(1).every(Boolean)).toBe(true);
+	});
+
+	it("never mistakes a control error with provider-like fields for a retryable provider failure", async () => {
+		const controlError = err1004();
+		let sends = 0;
+		let reads = 0;
+		await expect(
+			startWithRetry1004(
+				async () => {
+					sends++;
+				},
+				async () => {
+					reads++;
+					return { status: "RUNNING" };
+				},
+				{
+					check: async () => {
+						throw controlError;
+					},
+					sleep: async () => {},
+				},
+			),
+		).rejects.toBe(controlError);
+		expect(sends).toBe(0);
+		expect(reads).toBe(0);
+	});
+
+	it("rechecks ownership after an uncertain in-flight start's status readback", async () => {
+		const cancelled = new Error("Synthetic cancellation");
+		let allowed = true;
+		let reads = 0;
+		await expect(
+			startWithRetry1004(
+				async () => {
+					throw new Error("Synthetic lost response");
+				},
+				async () => {
+					reads++;
+					allowed = false;
+					return { status: "RUNNING" };
+				},
+				{
+					check: async () => {
+						if (!allowed) throw cancelled;
+					},
+					sleep: async () => {},
+				},
+			),
+		).rejects.toBe(cancelled);
+		expect(reads).toBe(1);
 	});
 });

@@ -118,6 +118,12 @@ each broadcast and confirm that no previous publisher is active.
 Stop the feeder, stop the channel, and confirm provider termination and output
 progression ending. Deleting a local row does not by itself establish cloud cleanup.
 
+A START error can leave the provider state uncertain. Startup cancellation
+prevents further START retries once the worker observes it. If a request is
+already in flight, the worker waits for its outcome, then checks and stops that
+exact encoding before confirming termination. Provider or network failures can
+leave that confirmation pending.
+
 The worker reserves one Live processing slot for stop commands and startup
 cancellation, so other channels waiting to start cannot occupy every slot.
 `LIVE_CHANNEL_CONCURRENCY` sets the total per worker (default `8`, minimum `2`);

@@ -95,9 +95,10 @@ polling; an inactive channel can retain older rows until it runs again or is
 deleted. Ended runs retain a summary. Unknown/pruned measurements remain unknown,
 not zero. Avoid manually deleting live history while alerts depend on it.
 
-During channel transitions, background monitoring may skip a sample so
-cancellation can finish promptly. The next monitoring sweep retries. A skipped
-sample adds no heartbeat history or saved provider status change.
+During channel changes, background heartbeat and terminal updates may wait for
+the next monitoring sweep so cancellation can finish promptly. A skipped
+heartbeat adds no history. A skipped terminal update leaves the run's terminal
+state unchanged; earlier accepted status observations are retained.
 
 Per-encoding heartbeat hooks are owned and removed by the worker. Before an
 upgrade that removes support for those hooks, disable registration with the new

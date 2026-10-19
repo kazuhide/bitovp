@@ -820,12 +820,10 @@ export const vp9RenditionSchema = z.strictObject({
 });
 
 /**
- * AV1 (Av1VideoConfiguration). The SDK exposes only two AV1-specific knobs
- * beyond the shared VideoConfiguration base — `presetConfiguration`
- * (Av1PresetConfiguration: VOD_QUALITY|VOD_STANDARD|VOD_SPEED) and
- * `autoLevelSetup` (AutoLevelSetup: ENABLED|DISABLED) — so this is the
- * leanest video rendition. Mirrors VP9's nullable height/bitrate + stream
- * mode + colorConfig + per-title plumbing.
+ * AV1 (Av1VideoConfiguration). This app exposes a subset of the SDK's
+ * AV1-specific settings: `presetConfiguration` and `autoLevelSetup`.
+ * Shared settings include nullable height/bitrate, stream mode, colorConfig,
+ * and per-title options. Other SDK AV1 settings are not represented here.
  */
 export const av1RenditionSchema = z.strictObject({
 	...renditionBase,

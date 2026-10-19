@@ -8,6 +8,7 @@ import { readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { enumerateBodyParameters, createRequestFieldAudit } from "./api-coverage-fields.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(root, "apps/web/package.json"));
@@ -38,10 +39,11 @@ export function enumerateOperations(file, source) {
 	return rows;
 }
 
-export function collectEvidence({ root, sdkRoot, files, operations, options }) {
+export function collectEvidence({ root, sdkRoot, files, operations, options, onProgram, onCall }) {
 	const selected = files.filter((file) => !excluded(file));
 	const program = ts.createProgram(selected, { ...options, noEmit: true, incremental: false });
 	const checker = program.getTypeChecker();
+	onProgram?.(program);
 	const allowed = new Set(operations.map((row) => row.identity));
 	const evidence = new Map();
 	for (const file of selected) {
@@ -58,6 +60,7 @@ export function collectEvidence({ root, sdkRoot, files, operations, options }) {
 						const sdkFile = slash(relative(sdkRoot, declaration.getSourceFile().fileName));
 						const identity = `${sdkFile}#${declaration.name.getText()}`;
 						if (allowed.has(identity)) {
+								onCall?.({ identity, node, source, checker });
 							const item = { file: slash(relative(root, file)), line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1 };
 							const entries = evidence.get(identity) ?? [];
 							if (!entries.some((old) => old.file === item.file && old.line === item.line)) entries.push(item);
@@ -92,6 +95,9 @@ export function generateCensus() {
 	}
 	walk(join(sdkRoot, "encoding"));
 	const operations = sdkFiles.sort().flatMap((file) => enumerateOperations(slash(relative(sdkRoot, file)), readFileSync(file, "utf8")));
+	const bodyOperations = sdkFiles.flatMap((file) => enumerateBodyParameters(slash(relative(sdkRoot, file)), readFileSync(file, "utf8")));
+	const requestFields = createRequestFieldAudit({ root, sdkRoot, bodyOperations });
+	const modelDeclarations = readdirSync(join(sdkRoot, "models")).filter((file) => file.endsWith(".d.ts")).map((file) => join(sdkRoot, "models", file));
 	if (operations.length < 1000 || new Set(operations.map((row) => row.identity)).size !== operations.length) throw new Error("Incomplete or duplicate SDK operation census");
 	const tracked = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8" }).split("\0");
 	const files = tracked.filter((file) => /^(?:apps\/(?:web|worker)|packages\/(?:core|db|storage))\/src\/.*\.tsx?$/.test(file) && !excluded(file)).map((file) => join(root, file));
@@ -105,7 +111,7 @@ export function generateCensus() {
 		const parsed = ts.parseJsonConfigFileContent(loaded.config, ts.sys, dirname(config));
 		if (parsed.errors.length) throw new Error(`Invalid compiler configuration: ${config}`);
 		const ownFiles = files.filter((file) => file.startsWith(`${join(root, workspace)}/`));
-		const own = collectEvidence({ root, sdkRoot, files: ownFiles, operations, options: parsed.options });
+		const own = collectEvidence({ root, sdkRoot, files: ownFiles, operations, options: parsed.options, onProgram: requestFields.observeProgram, onCall: requestFields.observeCall });
 		for (const [id, entries] of own) evidence.set(id, [...(evidence.get(id) ?? []), ...entries]);
 	}
 	const endpoints = operations.map(({ identity, ...row }) => ({ ...row, status: evidence.has(identity) ? "source-confirmed" : "unconfirmed", evidence: evidence.get(identity) ?? [] }));
@@ -113,10 +119,11 @@ export function generateCensus() {
 	const creates = endpoints.filter((row) => row.operation === "create");
 	return {
 		schemaVersion: 1,
-		provenance: { generatedAt: new Date().toISOString(), sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), sourceFingerprint: hashFiles([...files, ...configs, join(root, "tsconfig.base.json"), join(root, "pnpm-lock.yaml"), fileURLToPath(import.meta.url)], root), sdkVersion, typescriptVersion: ts.version, sdkFingerprint: hashFiles(sdkFiles.flatMap((file) => [file, file.replace(/\.js$/, ".d.ts")]), sdkRoot), method: "typescript-resolved-sdk-signatures-v1", scope: "encoding" },
+		provenance: { generatedAt: new Date().toISOString(), sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), sourceFingerprint: hashFiles([...files, ...configs, join(root, "tsconfig.base.json"), join(root, "pnpm-lock.yaml"), fileURLToPath(import.meta.url), join(root, "scripts/api-coverage-fields.mjs")], root), sdkVersion, typescriptVersion: ts.version, sdkFingerprint: hashFiles([...sdkFiles.flatMap((file) => [file, file.replace(/\.js$/, ".d.ts")]), ...modelDeclarations], sdkRoot), method: "typescript-resolved-sdk-signatures-v1", scope: "encoding" },
 		summary: { ...tally(endpoints), createTotal: creates.length, createSourceConfirmed: tally(creates).sourceConfirmed },
 		families: [...new Set(endpoints.map((r) => r.family))].sort().map((family) => { const t = tally(endpoints.filter((r) => r.family === family)); return { family, total: t.totalOperations, sourceConfirmed: t.sourceConfirmed, unconfirmed: t.unconfirmed }; }),
 		endpoints,
+		requestFields: requestFields.finish(),
 	};
 }
 

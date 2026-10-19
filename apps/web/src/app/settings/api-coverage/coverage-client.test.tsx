@@ -138,6 +138,38 @@ describe("ApiCoverageClient current source census", () => {
 		expect(screen.getByTestId("sdk-notice")).toHaveTextContent(/match/i);
 		expect(screen.getByTestId("current-notice")).toHaveTextContent(/dynamic/i);
 		expect(screen.queryByText("Not implemented")).not.toBeInTheDocument();
+		expect(
+			screen.queryByTestId("request-field-inventory"),
+		).not.toBeInTheDocument();
+	});
+	it("renders the optional current body-model inventory separately from history", async () => {
+		const data = payload();
+		apiFetch.mockResolvedValue({
+			...data,
+			current: {
+				...data.current,
+				requestFields: {
+					method: "sdk-body-properties-and-direct-source-keys-v1",
+					scope: "encoding-operation-top-level-body-properties",
+					summary: {
+						bodyOperations: 0,
+						expandedOperations: 0,
+						unexpandedOperations: 0,
+						totalFields: 0,
+						sourceAssigned: 0,
+						unconfirmed: 0,
+					},
+					operations: [],
+				},
+			},
+		});
+		renderWithQuery(<ApiCoverageClient />);
+		const currentFields = await screen.findByTestId("request-field-inventory");
+		expect(currentFields).not.toHaveAttribute("open");
+		expect(currentFields).toHaveTextContent("SDK request-body properties");
+		expect(screen.getByTestId("parameter-snapshot")).not.toContainElement(
+			currentFields,
+		);
 	});
 	it("reports SDK mismatch without refreshing historical parameter figures", async () => {
 		const data = payload();

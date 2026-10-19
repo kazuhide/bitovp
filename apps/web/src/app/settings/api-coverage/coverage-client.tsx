@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import { type RequestFieldInventory, RequestFields } from "./request-fields";
 
 type EndpointRow = {
 	path: string;
@@ -53,6 +54,7 @@ type CoveragePayload = {
 			unconfirmed: number;
 		}[];
 		endpoints: EndpointRow[];
+		requestFields?: RequestFieldInventory;
 	};
 	parameterSnapshot: {
 		surveyedSdk: string;
@@ -361,6 +363,9 @@ export function ApiCoverageClient() {
 					</button>
 				</div>
 			</section>
+			{current.requestFields && (
+				<RequestFields inventory={current.requestFields} />
+			)}
 			<details
 				data-testid="parameter-snapshot"
 				className="rounded-lg border border-zinc-800 p-4 text-xs text-zinc-400"

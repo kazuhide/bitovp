@@ -93,8 +93,10 @@ tests):
   `apps/web/src/lib/auth/roles.ts`). Revocation is checked on the next request.
 
 - `/api/settings/api-coverage` — GET (VIEWER): bundled current source census,
-  installed/surveyed SDK and mismatch flag, plus a separately dated historical
-  parameter snapshot. No provider/DB calls. Source-confirmed is not runtime proof.
+  installed/surveyed SDK and mismatch flag, current top-level SDK body-model
+  properties with conservative direct property-key evidence, plus a separately
+  dated historical parameter snapshot. No provider/DB calls. Source evidence
+  is not proof of GUI reachability, API writeability, or runtime success.
 
 - `/api/admin/reset` (organization ADMIN session, no tokens): GET `?categories=<comma list>` previews selected counts. POST `{confirm:"RESET",categories:[...]}` force-deletes selected organization data and returns `deletedCounts`. Empty/duplicate/unknown/incomplete dependencies fail validation. Global users, memberships, organizations and setup identity are excluded; reset does not reopen setup. Active work and unresolved cleanup do not block selected deletion; organization-owned encrypted receipts retain cleanup ownership.
 - `/api/admin/reset/reconcile`: POST ADMIN, audited, no tokens. Stamps terminal,

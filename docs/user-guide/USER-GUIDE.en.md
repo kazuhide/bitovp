@@ -886,7 +886,9 @@ A startup probe starts an actual Live encoder, unlike observation of a normal br
 
 In the probe destination settings, set an abandon deadline of 1–15 minutes, with a default of 8 minutes. At execution, select 1 region and a probe count of 1–10. Read the displayed worst-case cost estimate and confirmation before launching. Test compute, transfer, and storage can incur charges. Afterward, also confirm shutdown and cleanup results.
 
-"API coverage" compares operations defined in the SDK with calls found in the source code. Finding a call does not mean the operation has been verified through the GUI or executed successfully in Bitmovin. The separate historical parameter survey is reference information with a stated survey date.
+"API coverage" compares operations defined in the SDK with calls found in the source code. Finding a call does not mean the operation has been verified through the GUI or executed successfully in Bitmovin.
+
+The current body-model inventory lists top-level SDK properties by API operation. Search by property name, model, or API. Direct property evidence identifies an explicit key in an argument passed to an SDK call; it does not establish that the value is set, configurable in the GUI, or sent successfully. Nested properties, variables, and helper results are not expanded. SDK models can share request and response properties, so not every listed property is writable. Unexpanded bodies are shown separately. The older parameter survey has a different scope and remains separately dated reference information.
 
 ## 16. Users, organizations, and API tokens
 

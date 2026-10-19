@@ -33,6 +33,13 @@ not imply a control for every field.
   `openGop`, or `autoLevelSetup`. Adding them to imported plan JSON does not
   enable them; unsupported fields are rejected. Use the existing bitrate and
   keyframe-interval controls where suitable.
+- AV1 exposes selected settings, including presets and automatic level setup.
+  The SDK also declares `maxLevel` and `dynamicRangeFormat`, which current plans
+  do not accept. SDK model availability does not add these controls to the form.
+- Live auto-shutdown settings are applied when starting a broadcast. The SDK's
+  operation for replacing these settings during a running broadcast is not
+  currently exposed. That operation replaces the configuration rather than
+  merging individual timers.
 - The Live form represents one storage mirror and one manifest of each type
   (HLS and DASH). Some valid imported plans can contain more. When a form cannot
   reproduce a plan without changing its settings, the application keeps it in
@@ -113,11 +120,31 @@ delete operations.
 
 ## Reading the API coverage screen
 
-Settings → API coverage lists operations in the installed provider SDK and marks
-calls found in application source code as source-confirmed. This is not a
+Settings → API coverage lists operations under `/encoding/` in the installed
+provider SDK and marks calls found in application source code as source-confirmed.
+Account, notification, and other product APIs are outside this inventory. This is not a
 percentage of GUI fields, successful provider calls, or verified playback
-scenarios. Separately dated parameter survey values are historical, not current
-coverage measurements.
+scenarios. An unconfirmed operation can still be used through a wrapper that
+the analysis cannot resolve.
+
+The current SDK body-model inventory lists top-level properties for each
+operation that sends a body. Search by property, model, operation, or source
+reference. Inherited public properties are included; nested properties are not
+expanded. SDK models can share request and response properties, so this list
+does not establish that every property can be written to the API. Bodies whose
+types cannot be expanded are listed separately with a reason.
+
+"Direct property evidence" means an explicit property key was found in an
+object or SDK-model constructor passed directly to a resolved SDK call. The
+value can be optional or undefined. Variables, helper results, spreads, and
+ambiguous calls are not followed. This evidence does not establish that the
+property is configurable in the GUI or sent successfully. "Unconfirmed" does
+not mean "not implemented."
+
+The separately dated historical parameter survey uses a different scope and
+method. Its GUI/JSON reachability figures have not been refreshed and must not
+be compared with the current body-model inventory. The CSV export uses the same
+operation census as this screen, including separate methods sharing one path.
 
 A successful encode, an available manifest, and browser playback are separate
 checks. Verify the expected renditions and actual delivery after encoding;

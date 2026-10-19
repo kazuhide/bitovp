@@ -182,6 +182,11 @@ export const CATALOGUE_ALLOWLIST: readonly AllowlistEntry[] = [
 		"apiCoverage.sdkMethod",
 		"apiCoverage.parameterProvenance",
 		"apiCoverage.surveyedAgainst",
+		"apiCoverage.confirmedCreates",
+		"apiCoverage.requestFields.title",
+		"apiCoverage.requestFields.scopeNotice",
+		"apiCoverage.requestFields.assignmentNotice",
+		"apiCoverage.requestFields.sdkDeclaration",
 	].map((key) => ({
 		key,
 		terms: ["sdk"],

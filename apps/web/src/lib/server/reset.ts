@@ -1150,6 +1150,9 @@ export async function deleteOperationalData(
 			// Lock in stable order, matching capture's job lock; reject before mutations.
 			await tx.$queryRaw`SELECT id FROM "EncodingJob" WHERE status = 'FINISHED' ORDER BY id FOR UPDATE`;
 			await assertAisaSnapshotCaptured(tx);
+			// Match owned Live transitions before deleting any child rows. Lock all
+			// visible channels in a stable order, then recheck admission and stop proof.
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
 			// review-265 130-A1: re-assert INSIDE the transaction. The
 			// pre-check ran seconds earlier, and the watch-folder sweep (a 30s
 			// timer) or any submit door can create and enqueue a job in

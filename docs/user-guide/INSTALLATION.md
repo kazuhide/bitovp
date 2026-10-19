@@ -12,7 +12,8 @@ Linux. Encoding credentials are configured later in the GUI.
 - Node.js 24 or newer, pnpm 11, and Git for initial database setup.
 - A current browser and outbound HTTPS access to image registries and providers.
 - Available ports: 3100 for the web application, 5432 for PostgreSQL, and 6379
-  for Redis. Use a separate host or adjust ports if another installation uses them.
+  for Redis. If these are in use, follow the separate-port and sign-in guidance
+  under [multiple local installations](#optional-run-beside-another-local-installation).
 
 Compose 2.30.0 is required because `env_file.format: raw` preserves the `$`
 characters in password hashes.
@@ -79,14 +80,32 @@ For network access, remove `AUTH_ALLOW_INSECURE_HTTP=true`, configure an HTTPS
 
 ### Optional: run beside another local installation
 
+Use a separate checkout with its own `.env` and `.env.migrate` files. Before
+initializing it, choose an unused Compose project name in `.env`, as shown below.
+Compose groups containers and data volumes by that name; two checkouts with the
+same folder name otherwise share the default project, even in different folders.
+Keep the chosen project name for startup and shutdown. If you use `-p` or a shell
+`COMPOSE_PROJECT_NAME`, set it to the same name.
+
+Browser sign-in cookies are shared across ports on the same hostname. Changing
+ports alone can replace another installation's sign-in cookie or sign you out.
+Use a distinct hostname for each installation, or a separate browser profile.
+
+For two local installations, keep the first at **http://localhost:3100** and
+use **http://127.0.0.1:13100** for the second. These addresses reach the same
+computer but keep the application's host-only sign-in cookies separate. Use
+each installation's assigned hostname consistently for setup, sign-in and
+bookmarks.
+
 For the Docker runtime, choose unused host ports before database initialization.
 For example, set these in `.env`:
 
 ```dotenv
+COMPOSE_PROJECT_NAME=bitovp-secondary
 POSTGRES_PORT=15432
 REDIS_PORT=16379
 WEB_PORT=13100
-PUBLIC_BASE_URL=http://localhost:13100
+PUBLIC_BASE_URL=http://127.0.0.1:13100
 REDIS_URL=redis://localhost:16379
 ```
 
@@ -95,9 +114,13 @@ In step 4, replace the default initialization command with
 The flag must match `POSTGRES_PORT`: setting the Compose port alone does not
 change the generated host database URL. Runtime preparation then preserves that
 host port. Keep container-to-container database and Redis ports at 5432 and 6379.
-Use **http://localhost:13100** for setup/sign-in and replace port 3100 in the
+Use **http://127.0.0.1:13100** for setup/sign-in and replace port 3100 in the
 health-check URL below with 13100. These overrides do not change the port used
 by `pnpm dev`.
+
+For additional hostnames or network access, follow the HTTPS and
+`ALLOWED_ORIGIN_HOSTS` Compose override instructions in
+[Operations](../OPERATIONS.md#public-ingress).
 
 ## 4. Prepare the database
 

@@ -1,81 +1,124 @@
 # Supported features and technical limits
 
-Bitovp aims to make the Bitmovin Encoding API available through a practical VOD
-and Live GUI. Current support is narrower than the whole API. Availability also
-depends on provider permissions, encoder version, input, and output capabilities.
+Bitovp is a graphical application for Bitmovin video on demand (VOD) and Live
+encoding. Complete Encoding API coverage is the goal; the current application
+supports a subset of operations and parameters. Available features also depend
+on account permissions, encoder version, input, and output capabilities.
 
-## Supported workflows
+Follow the [VOD](user-guide/VOD.md), [Live](user-guide/LIVE.md), and
+[Quality and monitoring](user-guide/QUALITY-AND-MONITORING.md) guides for steps;
+use the [glossary](user-guide/GLOSSARY.md) for encoding terms.
 
-- VOD: fixed/Per-Title ladders, H.264/H.265/VP9/AV1, audio/subtitles, filters,
-  input streams, packaging, manifests, encryption, and quality gates.
-- Live: RTMP/redundant RTMP/SRT/Zixi/HLS pull, persistent channels and runs,
-  scheduling, slate insertion, SCTE-35, heartbeat monitoring, storage mirrors,
-  Live-to-VOD, and optional H.264/AAC MP4 archives.
-- Storage: AWS S3, compatible GenericS3 providers, GCS, Azure, and the modeled
-  input/output credential families. Encoder output support can be wider than
-  storage-browser or read-back support.
-- Quality: ffmpeg/libvmaf reports, comparisons, provenance, and quality gates.
-  Bitmovin itself does not provide a VMAF API.
-- Operations: organizations/roles, API tokens, usage statistics, content library,
-  saved settings, watch folders, notifications, and infrastructure management.
+## What you can configure
 
-## Configuration constraints
-
-These stable identifiers appear in validation messages and tests. C1–C37 cover
-restrictions that affect plan configuration and interpretation of results.
-
-| # | Rule and effect |
+| Workflow | Available features |
 |---|---|
-| C1 | Per-Title template bitrate must be null. Custom manifests require post-encoding (`PER_TITLE_RESULT` absent at start); defaults may be JIT. Wizard selects post-encoding. HLS result expansion uses selected template muxing kinds (FMP4/TS/MP4); an omitted video pin does not imply FMP4. |
-| C2 | Start-request trimming and InputStream resources are mutually exclusive. This product models trimming with InputStreams. |
-| C3 | Use Manifest Generator V2. Live-to-VOD is the explicit LEGACY exception because V2 cannot enumerate a live encoding's muxings. |
-| C4 | Per-Title output paths require a supported placeholder such as `{uuid}` or `{bitrate}`; `{width}` and `{height}` are also supported. Only provider-supported output kinds may be used. |
-| C5 | HE-AAC v1 is limited to 128 kbps and HE-AAC v2 to 64 kbps. |
-| C6 | List operations use `limit <= 100` and paginate to exhaustion. One page is never treated as a complete provider inventory. |
-| C7 | Provider encoding records expire; persist redacted request, response, resource, and result identity while the job runs. |
-| C8 | Live DVR settings must remain inside the manifest-element budget (about 54,000 elements); expose the calculation and reject unsafe configurations. |
-| C9 | CENC CTR uses an 8-byte IV and CBC uses a 16-byte IV. Standalone FairPlay uses AES-CBC with IV and URI. |
-| C10 | Akamai Object Storage and OCI Object Storage use Bitmovin GenericS3 with V4 signing and provider-specific endpoint/addressing rules. They are not Akamai NetStorage. |
-| C11 | Segment validation is unavailable for provider/output combinations that Bitmovin cannot read back, including GenericS3, S3 role-based, FTP, and Live. The UI must not promise it. |
-| C12 | Live ingest `inputPath` depends on the input kind: account-default RTMP uses `live`; created redundant RTMP, SRT, Zixi, and HLS inputs use `/`. |
-| C13 | Live codec streams reference the ingest input directly in `StreamInput`; video uses position 0 and audio position 1. Do not create standalone `IngestInputStream` resources. |
-| C14 | SCTE-35 is observable only on a RUNNING channel with carriers enabled. fMP4 uses `signalScte35AsEmsg`; HLS/DASH manifests carry their matching marker settings. |
-| C15 | Cloud Connect accounts, region settings, static IPs, and prewarmed pools have no update API; edits are delete-and-recreate. Akamai subnet/firewall identifiers are numeric. |
-| C16 | Static IP: bind at create; used IP fails. Prewarmed: specific region (not aggregate/`AUTO`), VOD only, not Live. |
-| C17 | Audio/video sync tweaks conflict with Dolby audio. Preview manifests are JIT-only, a preview-only manifest is not finalized, and Smooth has no preview list. |
-| C18 | Cloud Connect encodings use `cloudRegion: EXTERNAL`; conversely, `EXTERNAL` requires infrastructure. Live static-IP/infrastructure configurations must also be region-pinned. |
-| C19 | Conflicting ad-insertion clock synchronization and HLS program-date-time sources fail validation. Cache-control headers are limited to provider kinds that support them. |
-| C20 | Never persist or return a vendor SDK's raw `err.message`. Classify it at the boundary and expose only redacted, stable error data. |
-| C21 | Kantar audio watermarking is an encoding-level singleton; create replaces the existing value and requires an audio stream. |
-| C22 | Kantar/ESAM credential-egress URLs require HTTPS, no URL userinfo, and an explicit host allowlist. Validate again at worker egress, not only at submit. |
-| C23 | Azure listings terminate on the continuation token, not page size; an empty-string token means complete. Preserve delimiter semantics in both recursive and virtual-folder listings. |
-| C24 | `GET /encoding/inputs` is the cross-type list and returns polymorphic provider objects. Proxy only an explicit safe projection; never leak provider connection fields. |
-| C25 | The transfer-retries endpoint was removed. Do not rebuild retry/resume around a pinned SDK type; `TRANSFER_ERROR` status/webhooks remain, and recovery is a new encoding. |
-| C26 | Secret credentials and public Player/Analytics client keys are different classes. Secrets stay encrypted/server-only; public client keys may cross the single browser configuration boundary. |
-| C27 | Derive preview URLs from the credential provider and addressing mode, or return a coded non-derivable result. Never guess from a bucket or credential name. Akamai MSL has no object URL and Bitmovin never carries the delivery hostname: the link is the `AKAMAI_MSL` credential's declared `edgeBaseUrl` (https, no query/userinfo/trailing slash, public host) + `/<manifestName>`, else the coded `MSL_EDGE_URL_NOT_CONFIGURED`. It is the viewer's edge, not encoder health. |
-| C28 | A `PER_TITLE_RESULT` stream has no reliable parent link or inherited name. Attribute only from exact witnesses (QC filename, applied settings, resolved rendition path, or an unambiguous sole-template fallback); otherwise abstain. |
-| C29 | QC gates enforce their prerequisites: VMAF/PSNR rules require those metrics, delivery blocking requires post-encoding manifests, and a gate with nothing to block is surfaced. |
-| C30 | A terminal Live encoding cannot restart. Re-airing a channel creates a fresh encoding/run; restart is only for a still-active provider encoding. |
-| C31 | Akamai MSL `streamFormat` constrains muxings and manifests. MSL4 uses account authentication; MSL5 publishing credentials are vaulted and derive `enabled`. MSL manifests publish at the event root regardless of the manifest's `outputPath`, and the HLS child/segment URIs Bitmovin writes are RELATIVE to that `outputPath` — so a manifest moved into a run subtree cancels the subtree out of its own URIs; mirror paths are normalized with leading/trailing slashes. |
-| C32 | Strip aws-sdk-js `x-id` from custom S3-compatible requests before signing. Do not alter AWS-native requests. |
-| C33 | A muxing may contain multiple streams. An HLS variant whose segments already contain audio must not reference an external audio group; separated audio groups must match their variants. |
-| C34 | One video codec per DASH set (VOD/Live); prefer one codec/job. Mixed plans need separate evidence. VOD H264/H265 presets conflict with START encodingMode (2025): reject before submit, never alter quality. AV1 unchanged. |
-| C35 | A default manifest output path is a parent of every muxing path it enumerates. Do not place it in a sibling subtree or infer scope from only one output leg. |
-| C36 | Insertable video must match the live INGEST exactly (position 0, H.264/AAC, resolution, frame rate, one audio stream, sample rate, channels, yuv420p, closed GOP); only MPEG-TS plays audio at the right rate (MP4/MOV: half speed); MKV never airs. The application transcodes non-matching movies to a matching MPEG-TS; matching TS and JPG/PNG stills (silent, letterboxed, duration required) register as they are. READY never proves playback. |
-| C37 | Heartbeat: per-encoding only on resolved2.x≥2.285.0 ; create/list/customData GET/delete, max5/encoding, runtime add/delete, first push immediate. No account CREATE; owned legacy cleanup/history only; old versions Poll. Interval≥1s/default20; name required. HMAC, durable intent, owned cleanup. Per-encoding finished/error/transferError/liveManifestReady: create/list/delete; liveInputStreamChanged: create-only. |
+| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, manifests, encryption, and quality gates |
+| Live | RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; reusable channels and broadcast history; scheduling, slate insertion, advertising markers, heartbeat monitoring, storage mirrors, Live-to-VOD, and optional H.264/AAC MP4 archives |
+| Storage | AWS S3 and compatible providers, Google Cloud Storage, Azure, and other supported input/output credentials; encoding destinations can support more operations than the storage browser or output inspection |
+| Quality | Local or configured cloud quality measurement, comparisons, and quality gates; VMAF is calculated with FFmpeg/libvmaf, separately from the Bitmovin Encoding API |
+| Administration | Organizations and roles, API tokens, usage statistics, content library, saved settings, watch folders, notifications, and encoding infrastructure |
 
-## Interpreting coverage
+Input protocols include RTMP (Real-Time Messaging Protocol), SRT (Secure Reliable
+Transport), and Zixi. HLS (HTTP Live Streaming) pull reads an existing playlist.
+HLS and DASH (Dynamic Adaptive Streaming over HTTP) are also delivery formats.
 
-Settings → API coverage distinguishes source-confirmed SDK operations from
-unconfirmed ones. This is a source census, not a count of GUI fields, successful
-provider calls, or verified delivery scenarios. Historical parameter survey
-values have a separate date and must not be treated as current coverage.
+## Limits of the forms and imported plans
 
-Use one video codec per job for the simplest delivery workflow. MSL5 authoring
-requires a compatible account/encoder and independent delivery validation; MSL4
-success does not prove MSL5. Header-only MSL publishing is not supported.
+Advanced controls expose supported parameters; an available API operation does
+not imply a control for every field.
 
-A successful encode, available manifest, and browser playback are different
-checks. Likewise, SDK model availability does not establish provider acceptance.
-See [VOD](user-guide/VOD.md), [Live](user-guide/LIVE.md), and
-[Quality and monitoring](user-guide/QUALITY-AND-MONITORING.md) for operating steps.
+- H.264 settings do not currently accept `crf` (constant rate factor),
+  `minBitrate`, `maxBitrate`, `bufsize` (decoder buffer size), `minGop`, `maxGop`,
+  `openGop`, or `autoLevelSetup`. Adding them to imported plan JSON does not
+  enable them; unsupported fields are rejected. Use the existing bitrate and
+  keyframe-interval controls where suitable.
+- The Live form represents one storage mirror and one manifest of each type
+  (HLS and DASH). Some valid imported plans can contain more. When a form cannot
+  reproduce a plan without changing its settings, the application keeps it in
+  the JSON editor. Review the complete plan there before submitting.
+- Account-specific features, including HEVCv2, appear only where enabled for the
+  selected account. A codec or setting declared by the provider's software
+  development kit (SDK) is not proof that your account or encoder accepts it.
+
+## Configuration limits
+
+C1–C37 match configuration messages and related help. Use these checks when a
+plan is rejected or a result is unclear.
+
+### Encoding, packaging, and quality
+
+| ID | What this means for your configuration |
+|---|---|
+| C1 | Per-Title chooses result bitrates, so template bitrate must be null. Custom manifests wait for result renditions; the wizard selects post-encoding generation. Default manifests may be generated during encoding. For HLS, select the template container: fragmented MP4, MPEG transport stream (TS), or MP4. Blank video selection does not select fragmented MP4. |
+| C2 | Start-request trimming cannot be combined with InputStream resources. Use the input-stream trimming controls rather than adding trimming to an imported start request. |
+| C3 | Plans use Manifest Generator V2. Live-to-VOD uses `LEGACY` because V2 cannot enumerate live muxings. Choose a supported recording container for Live-to-VOD. |
+| C4 | Per-Title creates multiple results, so paths must include `{uuid}` or `{bitrate}` and use a supported output: S3, GenericS3, Google Cloud Storage, Akamai NetStorage, or Azure. `{width}`, `{height}`, or a unique literal path alone is not enough. |
+| C5 | High-Efficiency AAC (HE-AAC) v1 is limited to 128 kbps and v2 to 64 kbps. Lower the bitrate or change audio profile. |
+| C9 | Common Encryption (CENC) counter mode (CTR) needs an 8-byte initialization vector (IV); cipher block chaining (CBC) needs 16 bytes. Standalone FairPlay uses AES-CBC with an IV and key URI. Match encryption mode and container. |
+| C17 | Audio/video synchronization adjustments conflict with Dolby audio. Preview manifests are just-in-time (JIT), generated during encoding; preview-only manifests are not finalized. Smooth has no preview list. Use final manifests for completed delivery. |
+| C21 | Kantar watermarking is one encoding-wide setting and requires audio. A new configuration replaces the previous value rather than adding another. |
+| C28 | Per-Title results do not reliably inherit template names or parent references. Exact output/settings evidence identifies results; ambiguous ones stay unattributed. Check paths and applied settings rather than matching by count. |
+| C29 | Quality-control gates require their metrics: enable VMAF or peak signal-to-noise ratio (PSNR) for the corresponding rules. Delivery blocking requires post-encoding manifests; already published manifests cannot be held back. Review warnings when nothing can be blocked. |
+| C33 | An HLS variant with audio already in its segments must not also reference external audio. For separate audio, select the group matching the variant. |
+| C34 | Each DASH video adaptation set holds one codec; one video codec per job simplifies delivery. Incompatible VOD H.264/H.265 presets and job-wide start encoding modes are rejected without changing quality settings. AV1 is unaffected by this check. |
+| C35 | A default manifest path must be a parent of every included muxing path, not a sibling. Review all output legs, including mirrors. |
+
+### Live input, monitoring, and delivery
+
+| ID | What this means for your configuration |
+|---|---|
+| C8 | A longer DVR (timeshift) window creates more manifest entries. The application estimates entries across renditions against a budget of about 54,000 and rejects unsafe plans. Reduce the window/rendition count or increase segment length. |
+| C12 | Live `inputPath` is `live` for account-default RTMP and `/` for created redundant RTMP, SRT, Zixi, and HLS inputs. Keep the appropriate path when importing plans. |
+| C13 | Live streams reference ingest directly: video position 0, audio position 1. Separate `IngestInputStream` resources are not used. Check the incoming track layout against these positions. |
+| C14 | SCTE-35 advertising markers require a `RUNNING` channel and enabled carriers. For fragmented MP4, enable `signalScte35AsEmsg`; also select matching HLS/DASH marker settings. Starting a channel alone does not enable markers. |
+| C19 | Ad-insertion clock synchronization can conflict with the HLS program-date-time source. Select compatible clocks. Cache-Control response headers require an output provider that supports them. |
+| C30 | Terminal Live encodings cannot restart. Broadcast the channel again for a new run/encoding. Restart applies only to a still-active provider encoding. |
+| C31 | Akamai Media Services Live (MSL) stream format limits containers/manifests. MSL4 uses account authentication; MSL5 uses saved publishing credentials, not Header-only authentication, and needs separate delivery validation. Manifests publish at the event root; child/segment paths remain relative to manifest `outputPath`. Keep run-specific media paths and inspect playback references. |
+| C36 | Insertable video must match ingest: H.264/AAC, resolution/frame rate, one audio stream, sample rate/channels, `yuv420p`, and closed groups of pictures (GOPs). MPEG-TS is required: MP4/MOV can play audio at half speed; MKV does not air. Non-matching movies are converted. Matching TS and JPG/PNG stills register directly; stills are silent, letterboxed, and need a duration. `READY` means registered, not proven playable. |
+| C37 | Heartbeat webhooks require a resolved 2.x encoder version of at least 2.285.0. Older versions poll; unresolved versions wait for capability detection. Default interval: 20 seconds; minimum: 1 second; zero disables registration. At most five named hooks per encoding. Check registration and receipt freshness in settings/channel details. |
+
+The application manages heartbeat registration for each run and removes its
+registrations when the run ends. It does not create account-wide heartbeat
+hooks; older owned registrations remain available for cleanup and history.
+Finished, error, transfer-error, and live-manifest-ready notifications have
+managed registration and cleanup. The provider's live-input-stream-changed
+notification has a create-only API; do not assume it supports the same list and
+delete operations.
+
+### Storage, credentials, and infrastructure
+
+| ID | What this means for your configuration |
+|---|---|
+| C10 | Akamai Object Storage and Oracle Cloud Infrastructure (OCI) Object Storage use GenericS3 credentials, V4 signing, and provider-specific endpoints/addressing. They are not Akamai NetStorage; choose the matching credential kind. |
+| C11 | Provider segment validation cannot read back GenericS3, S3 role-based outputs, FTP, or Live. Use available output inspection and independent playback checks. An unavailable validation option is not a successful check. |
+| C15 | Cloud Connect accounts, region settings, static IPs, and prewarmed pools require deletion/recreation to change; the provider has no update API. Check dependent encodings first. Akamai subnet/firewall identifiers are numeric. |
+| C16 | Assign a static IP (fixed public address) at creation; an IP in use fails. Prewarmed pools require a specific region, not `AUTO` or an aggregate region, and support VOD only. |
+| C18 | Cloud Connect requires infrastructure settings and `cloudRegion: EXTERNAL`; `EXTERNAL` without infrastructure is invalid. Live static-IP/infrastructure settings also need a specific region. Keep these selections consistent. |
+| C22 | Kantar watermarking and ad-insertion URLs can receive credentials: use HTTPS, no embedded username/password, and an administrator-approved host. Ask the administrator to allow the intended host. |
+| C23 | Azure can return short, incomplete pages. The storage browser follows continuation tokens to completion and preserves folder boundaries. Check folder/prefix selections when comparing recursive and folder views. |
+| C24 | Input lists cover several provider types and expose selected fields, not secret connection values. Select stored credentials rather than expecting lists to reveal saved secrets. |
+| C26 | Encoding API keys and storage/integration credentials stay encrypted on the server; saved secrets cannot be revealed. Player/Analytics client keys are public browser configuration. Never use an Encoding API key there. |
+| C27 | Playback URLs depend on provider/addressing mode; unavailable derivation is reported rather than guessed. Akamai MSL needs its public HTTPS edge base URL without query, embedded credentials, or trailing slash, else `MSL_EDGE_URL_NOT_CONFIGURED`. A viewer URL does not prove encoder health. |
+| C32 | Some S3-compatible providers reject the AWS-specific `x-id` query parameter. The application omits it before signing custom requests; AWS-native requests are unchanged. Select the correct credential type/endpoint. |
+
+### History and errors
+
+| ID | What this means when operating a job |
+|---|---|
+| C6 | Provider inventories span pages. The application requests at most 100 records per page and continues through the listing. One displayed page need not contain every resource. |
+| C7 | Provider encoding records eventually expire. The application records redacted step details and resource/result identities while work runs. Retain its database and required output files for later history. |
+| C20 | Errors are classified and redacted because raw provider messages may contain secrets. Use the error code and failed step to investigate; withheld text does not mean success. |
+| C25 | The transfer-retries endpoint was removed; `TRANSFER_ERROR` status and notifications remain. That endpoint cannot resume a transfer. Recovery through a new encoding creates new work: review paths and charges. |
+
+## Reading the API coverage screen
+
+Settings → API coverage lists operations in the installed provider SDK and marks
+calls found in application source code as source-confirmed. This is not a
+percentage of GUI fields, successful provider calls, or verified playback
+scenarios. Separately dated parameter survey values are historical, not current
+coverage measurements.
+
+A successful encode, an available manifest, and browser playback are separate
+checks. Verify the expected renditions and actual delivery after encoding;
+provider status and SDK model availability do not establish playback success.

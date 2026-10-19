@@ -88,6 +88,38 @@ beforeEach(() => {
 });
 
 describe("reconcile — identity guards", () => {
+	it.each([
+		"RUNNING",
+		"FINISHED",
+		"unrecognized",
+		"failure",
+	])("discards a %s provider result after the monitoring deadline", async (status) => {
+		const h = harness();
+		const controller = new AbortController();
+		const reason = new Error("monitoring expired");
+		const sdk = fakeSdk({
+			getEncodingStatus: vi.fn(async () => {
+				controller.abort(reason);
+				if (status === "failure") throw new Error("network failed");
+				return { status: status as "RUNNING" };
+			}),
+		});
+		await expect(
+			h.reconciler.reconcile({
+				channel: { id: CHANNEL },
+				run: run(),
+				encodingId: "enc-1",
+				sdk,
+				fence: { epoch: 3 },
+				signal: controller.signal,
+			}),
+		).rejects.toBe(reason);
+		expect(h.runUpdateMany).not.toHaveBeenCalled();
+		expect(h.channelUpdateMany).not.toHaveBeenCalled();
+		expect(h.enqueueFeederJob).not.toHaveBeenCalled();
+		expect(h.emitChannel).not.toHaveBeenCalled();
+	});
+
 	it("projects a completed RUNNING airing as STOPPED, not an encoding error", async () => {
 		const h = harness();
 		await h.reconciler.reconcile({

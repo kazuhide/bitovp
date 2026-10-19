@@ -16,6 +16,34 @@ afterEach(() => {
 });
 
 describe("makeWorkerSdk — the production seam, to the wire", () => {
+	it("forwards the monitoring deadline through status and heartbeat to native fetch", async () => {
+		const controller = new AbortController();
+		const signals: (AbortSignal | null | undefined)[] = [];
+		const nativeFetch = vi.fn(async (_url: string, init: RequestInit) => {
+			signals.push(init.signal);
+			return new Response(
+				JSON.stringify({ data: { result: { status: "RUNNING" } } }),
+			);
+		});
+		vi.stubGlobal("fetch", nativeFetch);
+		const prisma = {
+			auditLog: { create: vi.fn(async () => ({})) },
+		} as unknown as AppPrismaClient;
+		const ops = makeWorkerSdk(prisma)({
+			apiKey: "k",
+			tenantOrgId: null,
+			bitmovinAccountId: "acct",
+			monitoringSignal: controller.signal,
+		});
+		await ops.getEncodingStatus("enc-1");
+		await ops.getLiveHeartbeat("enc-1");
+		expect(signals).toHaveLength(2);
+		controller.abort(new Error("expired"));
+		expect(signals.every((signal) => signal?.aborted)).toBe(true);
+		await expect(ops.getLiveHeartbeat("enc-1")).rejects.toThrow();
+		expect(nativeFetch).toHaveBeenCalledTimes(2);
+	});
+
 	it("forwards the stamp: a create during a step carries bitovp customData", async () => {
 		const bodies: string[] = [];
 		vi.stubGlobal(

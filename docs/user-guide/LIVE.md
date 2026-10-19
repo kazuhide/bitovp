@@ -64,6 +64,11 @@ provider sample time; delayed or duplicate delivery is not a new input sample.
 Polling history is kept for seven days while a channel is polled; ended runs
 retain a summary. See [Operations](../OPERATIONS.md#heartbeat-history).
 
+If provider monitoring stops responding, a configured `HEARTBEAT_STALE` rule
+opens once after its freshness grace and resolves when fresh polling recovers.
+This indicates missing monitoring data; it does not confirm an input disconnect
+or a stopped encoder. Other channels continue to be monitored.
+
 ## Pseudo-live, schedules, and slate insertion
 
 Use `/live/feeders` to send stored media at real-time speed to a channel's RTMP
@@ -112,6 +117,14 @@ each broadcast and confirm that no previous publisher is active.
 
 Stop the feeder, stop the channel, and confirm provider termination and output
 progression ending. Deleting a local row does not by itself establish cloud cleanup.
+
+The worker reserves one Live processing slot for stop commands and startup
+cancellation, so other channels waiting to start cannot occupy every slot.
+`LIVE_CHANNEL_CONCURRENCY` sets the total per worker (default `8`, minimum `2`);
+ordinary Live actions use at most one fewer slot. Blank uses the default.
+Invalid values prevent the worker from starting. This reservation lets a stop
+begin during a busy startup period; provider or network failures can still
+prevent confirmed termination.
 
 A terminal provider encoding cannot restart. Broadcasting the channel again
 creates a new run and encoding; insertable content is registered for that run.

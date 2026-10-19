@@ -3203,6 +3203,12 @@ export const en = {
 			unexpandedTitle: "Bodies that could not be expanded",
 			unexpandedReason: "Reason",
 			unknownReason: "No expanded model is available.",
+			arrayReason: "The request body is an array.",
+			unknownBodyReason: "No concrete body type is declared.",
+			unionReason: "The body accepts several possible types.",
+			dictionaryReason: "The body uses arbitrary property names.",
+			unsupportedReason:
+				"This body type is outside the current extraction scope.",
 			noUnexpanded: "No unexpanded bodies match this search.",
 			previousFields: "Previous request properties page",
 			nextFields: "Next request properties page",

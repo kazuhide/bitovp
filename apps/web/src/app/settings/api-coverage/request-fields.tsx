@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
+import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 
 type SourceReference = { file: string; line: number };
@@ -53,6 +54,13 @@ const columnKeys = [
 	"state",
 	"sourceEvidence",
 ] as const;
+const reasonKeys = new Map<string, MessageKey>([
+	["array-body", "apiCoverage.requestFields.arrayReason"],
+	["unknown-body", "apiCoverage.requestFields.unknownBodyReason"],
+	["union-body", "apiCoverage.requestFields.unionReason"],
+	["dictionary-body", "apiCoverage.requestFields.dictionaryReason"],
+	["unsupported-body", "apiCoverage.requestFields.unsupportedReason"],
+]);
 const reference = (source: SourceReference) => `${source.file}:${source.line}`;
 const operationText = (
 	operation: RequestFieldInventory["operations"][number],
@@ -234,8 +242,10 @@ export function RequestFields({
 							</div>
 							<div>
 								{t("apiCoverage.requestFields.unexpandedReason")}:{" "}
-								{operation.reason ||
-									t("apiCoverage.requestFields.unknownReason")}
+								{t(
+									reasonKeys.get(operation.reason ?? "") ??
+										"apiCoverage.requestFields.unknownReason",
+								)}
 							</div>
 						</li>
 					))}

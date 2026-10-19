@@ -60,7 +60,7 @@ function inventory(): RequestFieldInventory {
 				bodyParameterIndex: 1,
 				bodyModel: "object | string",
 				expansion: "unexpanded",
-				reason: "Union request body cannot be expanded.",
+				reason: "union-body",
 				fields: [],
 			},
 		],
@@ -76,6 +76,69 @@ function openInventory() {
 }
 
 describe("current SDK request-field inventory", () => {
+	for (const locale of ["en", "ja"] as const) {
+		it.each([
+			[
+				"array-body",
+				"The request body is an array.",
+				"本文が配列になっています。",
+			],
+			[
+				"unknown-body",
+				"No concrete body type is declared.",
+				"本文の具体的な型が宣言されていません。",
+			],
+			[
+				"union-body",
+				"The body accepts several possible types.",
+				"本文の型に複数の候補があります。",
+			],
+			[
+				"dictionary-body",
+				"The body uses arbitrary property names.",
+				"本文の属性名が固定されていません。",
+			],
+			[
+				"unsupported-body",
+				"This body type is outside the current extraction scope.",
+				"この本文の型は、現在の属性抽出の対象外です。",
+			],
+			[
+				"future-body-code",
+				"No expanded model is available.",
+				"展開済みのモデルがありません。",
+			],
+			[
+				undefined,
+				"No expanded model is available.",
+				"展開済みのモデルがありません。",
+			],
+		] as const)(`explains reason %s without exposing opaque codes (${locale})`, (reason, english, japanese) => {
+			const data = inventory();
+			const body = data.operations[1];
+			if (!body) throw new Error("Missing unexpanded fixture");
+			body.reason = reason;
+			renderLocalized(<RequestFields inventory={data} />, locale);
+			openInventory();
+			const list = screen.getByTestId("request-bodies-unexpanded");
+			const explanation = locale === "en" ? english : japanese;
+			expect(list).toHaveTextContent(explanation);
+			if (reason) {
+				expect(list).not.toHaveTextContent(reason);
+				fireEvent.change(
+					screen.getByRole("textbox", {
+						name:
+							locale === "en"
+								? "Search request properties"
+								: "リクエスト属性を検索",
+					}),
+					{ target: { value: reason } },
+				);
+				expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+				expect(list).toHaveTextContent(explanation);
+			}
+		});
+	}
 	it.each([
 		"en",
 		"ja",
@@ -200,7 +263,7 @@ describe("current SDK request-field inventory", () => {
 		openInventory();
 		const unexpanded = screen.getByTestId("request-bodies-unexpanded");
 		expect(unexpanded).toHaveTextContent(
-			"Union request body cannot be expanded.",
+			"The body accepts several possible types.",
 		);
 		expect(unexpanded).toHaveTextContent("object | string");
 		expect(

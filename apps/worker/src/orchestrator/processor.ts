@@ -938,7 +938,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				// accepted P1 risk: benign orphan resources in the Bitmovin
 				// account (dedup via customData is a P2 follow-up).
 				const wasRunning = entry.status === "RUNNING";
-				const hadStartAttempt = entry.startedAt !== undefined;
+				let hasStartAttempt = entry.startedAt !== undefined;
 				const wasVerificationCreateAttempt =
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&
@@ -983,6 +983,9 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 							}
 							throw stepErr;
 						}
+						// The fallback follows a sent START; the next SDK call has its
+						// own admission counter, so retain this step's earlier attempt.
+						hasStartAttempt = true;
 						const downgrade = outcome;
 						plan = downgrade.plan;
 						jitNote = applyJitFallback(
@@ -1094,7 +1097,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					if (err instanceof CancelRequested) {
 						if (
 							entry.kind !== "START_ENCODING" ||
-							(err.beforeSend && !hadStartAttempt)
+							(err.beforeSend && !hasStartAttempt)
 						) {
 							entry.status = "PENDING";
 							entry.startedAt = undefined;

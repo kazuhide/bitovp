@@ -2284,6 +2284,98 @@ describe("orchestrator processor — QC gate boundary", () => {
 		).toContain("manifest-start:hls");
 	});
 
+	it("retains the original START attempt when canceled during JIT fallback persistence before the second SDK invocation", async () => {
+		const h = setup();
+		let stopping = false;
+		h.sdk.getEncodingStatus = vi.fn(async () => ({
+			status: stopping ? "FINISHED" : "QUEUED",
+		}));
+		h.sdk.stopEncoding = vi.fn(async () => {
+			stopping = true;
+		});
+		const sends: Record<string, unknown>[] = [];
+		const wire = vi.fn(async (_url: string, init?: RequestInit) => {
+			if (init?.method === "POST") {
+				sends.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+				return new Response(
+					JSON.stringify({
+						status: "ERROR",
+						data: { code: 1004, message: "Synthetic settle window" },
+					}),
+					{ status: 500 },
+				);
+			}
+			return new Response(
+				JSON.stringify({ data: { result: { status: "CREATED" } } }),
+			);
+		});
+		vi.stubGlobal("fetch", wire);
+		h.deps.makeSdk = (args) => ({
+			...h.sdk,
+			startEncoding: createBitmovinSdkOps(args, async () => {}).startEncoding,
+		});
+		let enterFallback!: () => void;
+		const fallbackReached = new Promise<void>((resolve) => {
+			enterFallback = resolve;
+		});
+		let releaseFallback!: () => void;
+		const fallbackRelease = new Promise<void>((resolve) => {
+			releaseFallback = resolve;
+		});
+		const update = h.updateMany.getMockImplementation();
+		let originalMarker: unknown;
+		h.updateMany.mockImplementation(async (args) => {
+			const result = await update?.(args);
+			if (args.data.plan) {
+				originalMarker = (h.row.stepLog as StepLogEntry[]).find(
+					(entry) => entry.kind === "START_ENCODING",
+				)?.startedAt;
+				enterFallback();
+				await fallbackRelease;
+			}
+			return result ?? { count: 0 };
+		});
+		try {
+			const pending = h.processor({ encodingJobId: JOB_ID });
+			await fallbackReached;
+			expect(sends).toHaveLength(10);
+			expect(
+				sends.every(
+					(body) =>
+						Array.isArray(body.vodHlsManifests) &&
+						body.vodHlsManifests.length > 0,
+				),
+			).toBe(true);
+			expect(originalMarker).toBeDefined();
+			h.row.cancelRequested = true;
+			releaseFallback();
+			expect(await pending).toMatchObject({ status: "CANCELED" });
+			expect(sends).toHaveLength(10);
+			const entry = (h.row.stepLog as StepLogEntry[]).find(
+				(item) => item.kind === "START_ENCODING",
+			);
+			expect(entry).toMatchObject({
+				status: "RUNNING",
+				startedAt: originalMarker,
+			});
+			const encodingId = (h.row.stepLog as StepLogEntry[]).find(
+				(item) => item.kind === "CREATE_ENCODING",
+			)?.resourceId;
+			expect(encodingId).toBe("bm-encoding");
+			expect(h.sdk.stopEncoding).toHaveBeenCalledExactlyOnceWith(encodingId);
+			expect(h.row.encoderStoppedConfirmedFor).toBe(encodingId);
+			expect(
+				h.emitted.some(
+					(event) =>
+						event.kind === "JOB_ERROR" || event.kind === "JOB_FINISHED",
+				),
+			).toBe(false);
+		} finally {
+			releaseFallback();
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("never downgrades twice: a POST_ENCODING plan whose start 1004s fails the job", async () => {
 		const plan = structuredClone(basePlan);
 		plan.bitmovin.accountId = ACCOUNT_ID;

@@ -32,3 +32,5 @@ docs/measurements/_to_delete/
 bitovp-feeder/
 playwright-report/
 test-results/
+/output/
+/tmp/pdfs/

@@ -38,7 +38,7 @@ Delivery presets describe output requirements, not provider credentials. See
 | `/settings/vmaf` | Quality-worker profiles and cloud credentials |
 | `/settings/watch-folders` | Automatically submit files found under an input prefix |
 | `/settings/webhooks` | Public receiver, automatic registrations, and receipt status |
-| `/settings/notifications` | Outbound notifications and delivery tests |
+| `/settings/notifications` | Outbound notifications, event filters, and delivery history |
 | `/settings/tokens` | API tokens; secret shown only once at creation |
 | `/settings/users` | Organization membership roles and active state |
 | `/settings/organizations` | Organization settings, allowed IP ranges, and owner controls |

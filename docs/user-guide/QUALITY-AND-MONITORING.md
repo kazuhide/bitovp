@@ -24,6 +24,9 @@ VMAF (Video Multi-Method Assessment Fusion) compares decoded output frames with
 a reference video. This application calculates it with ffmpeg/libvmaf; it is
 not a Bitmovin Encoding API metric.
 
+An administrator must first enable quality measurement in **Settings → Features**
+and reload the application. The feature is disabled by default.
+
 - Enable VMAF in the VOD wizard to measure after encoding.
 - Use `/qc` to measure an existing completed job.
 - On an eligible VOD job, use remeasure to create a report without changing the
@@ -171,9 +174,10 @@ under Creative Commons Attribution 3.0; excerpt credit:
 
 ## Quality gates
 
-A gate applies configured rules to measured results. `PASS` means those rules
-were met; `FAIL` means a valid measurement failed them. A missing or failed
-measurement is a separate state and cannot establish a pass.
+A gate applies configured rules to measured results. `PASS` means all configured
+rules were met. `FAIL` includes both below-threshold scores and missing required
+measurements. Inspect each rule's values and unmeasured reasons separately from
+a failed measurement run. Missing data cannot establish a pass.
 
 Delivery blocking requires post-encoding manifest generation. A manual decision
 to continue delivery is recorded separately. Gate success does not establish

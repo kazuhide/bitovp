@@ -52,7 +52,7 @@ export const DEMO_TEXT: Record<SiteLocale, typeof english> = {
 		channelsLink: "Live チャンネル一覧",
 		newChannelLink: "Live の設定画面",
 		qualityLink: "画質レポートの表示例を見る",
-		guideLink: "ユーザーガイドを読む（英語）",
+		guideLink: "ユーザーガイド（PDF）",
 		createJob: "デモジョブを作成",
 		createChannel: "デモチャンネルを作成",
 		screenError: "このデモ画面を読み込めませんでした。",

@@ -6,7 +6,7 @@ export const jaCopy: LandingCopy = {
 		mainLabel: "メインナビゲーション",
 		languageLabel: "言語",
 		features: "機能",
-		guide: "ユーザーガイド（英語）",
+		guide: "ユーザーガイド（PDF）",
 		demo: "デモを開く",
 		tourLabel: "機能紹介",
 		tour: {
@@ -156,7 +156,7 @@ export const jaCopy: LandingCopy = {
 		license: "bitovp は MIT ライセンスのオープンソースソフトウェアです。",
 		navigationLabel: "フッターナビゲーション",
 		source: "ソースコード",
-		guide: "ユーザーガイド（英語）",
+		guide: "ユーザーガイド（PDF）",
 		issues: "問題を報告する",
 	},
 };

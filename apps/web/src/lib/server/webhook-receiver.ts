@@ -24,6 +24,13 @@ import { contextForOrganization, type ServerContext } from "./context";
 import { jsonError, routeError } from "./http";
 import { bindHeartbeatRun } from "./live-heartbeat-reception";
 import { clientKey, createFixedWindowLimiter } from "./rate-limit";
+import { readBoundedBody } from "./request-body";
+import {
+	declaredBodyTooLarge,
+	MAX_WEBHOOK_BODY_BYTES,
+} from "./request-body-limits";
+
+export { MAX_WEBHOOK_BODY_BYTES } from "./request-body-limits";
 
 /**
  * The signed webhook receiver (WP-G G-1) behind
@@ -57,9 +64,6 @@ import { clientKey, createFixedWindowLimiter } from "./rate-limit";
  * job/run ids, so the settings list and the payload viewer both know which
  * encoding it belonged to without trusting the body.
  */
-
-/** Bitmovin notifications are tiny; anything near this cap is hostile. */
-export const MAX_WEBHOOK_BODY_BYTES = 1_000_000;
 
 /**
  * Same budget as the legacy receiver (120/min, install-wide without a
@@ -270,8 +274,12 @@ export async function receiveSignedWebhook(
 	}
 
 	// The DECLARED size, before anything is read.
-	const contentLength = Number(req.headers.get("content-length") ?? "0");
-	if (contentLength > MAX_WEBHOOK_BODY_BYTES) {
+	if (
+		declaredBodyTooLarge(
+			req.headers.get("content-length"),
+			MAX_WEBHOOK_BODY_BYTES,
+		)
+	) {
 		return jsonError(413, "Payload too large");
 	}
 
@@ -287,8 +295,8 @@ export async function receiveSignedWebhook(
 	if (resolved === null) {
 		return jsonError(404, "Not found");
 	}
-	const rawBody = await req.text();
-	if (rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+	const rawBody = await readBoundedBody(req, MAX_WEBHOOK_BODY_BYTES);
+	if (rawBody === null) {
 		return jsonError(413, "Payload too large");
 	}
 	if (
@@ -305,7 +313,7 @@ export async function receiveSignedWebhook(
 
 	let payload: unknown;
 	try {
-		payload = JSON.parse(rawBody);
+		payload = JSON.parse(new TextDecoder().decode(rawBody));
 	} catch {
 		return jsonError(400, "Body must be JSON");
 	}

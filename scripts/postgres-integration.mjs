@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import {
 	existsSync,
 	lstatSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -11,16 +12,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import {
-	basename,
-	dirname,
-	isAbsolute,
-	join,
-	relative,
-	resolve,
-	sep,
-} from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
@@ -68,6 +60,21 @@ export function childEnvironment(env) {
 		CI: "1",
 		TURBO_TELEMETRY_DISABLED: "1",
 		NEXT_TELEMETRY_DISABLED: "1",
+	};
+}
+
+function privateChildEnvironment(env, directory) {
+	const temporary = join(realpathSync(directory), "tmp");
+	mkdirSync(temporary, { mode: 0o700, recursive: true });
+	assert(
+		lstatSync(temporary).isDirectory() && !(lstatSync(temporary).mode & 0o077),
+		"Child temporary directory must be private and owned by the fixture",
+	);
+	return {
+		...childEnvironment(env),
+		TMPDIR: temporary,
+		TMP: temporary,
+		TEMP: temporary,
 	};
 }
 
@@ -237,7 +244,11 @@ export async function runIntegrationTests(
 	{ root, directory, env, notify = console.log },
 	execute = command,
 ) {
-	const clean = testEnvironment(env);
+	const validated = testEnvironment(env);
+	const clean = {
+		...validated,
+		...privateChildEnvironment(validated, directory),
+	};
 	for (const group of GROUPS)
 		for (const file of Object.keys(group.files))
 			assert(
@@ -410,7 +421,8 @@ export async function runFixture(
 		);
 		assert(!existsSync(statePath), "Fixture state already exists");
 	}
-	const parent = realpathSync(statePath ? dirname(statePath) : tmpdir());
+	// Child tooling uses Unix sockets; keep their paths short even for deep state paths.
+	const parent = realpathSync("/tmp");
 	assert(
 		!inside(realpathSync(root), parent),
 		"Private fixture files must be outside the source checkout",
@@ -467,8 +479,12 @@ export async function runFixture(
 						"exec",
 						name(id),
 						"pg_isready",
+						"--host",
+						"127.0.0.1",
 						"--username",
 						"bitovp_fixture_admin",
+						"--dbname",
+						`bitovp_integration_${id}`,
 					],
 					env,
 					execute,
@@ -489,7 +505,7 @@ export async function runFixture(
 			mode: 0o600,
 			flag: "wx",
 		});
-		const options = { cwd: root, env: childEnvironment(env) };
+		const options = { cwd: root, env: privateChildEnvironment(env, directory) };
 		notify("Preparing dedicated PostgreSQL runtime role and migrations");
 		await execute(
 			"pnpm",

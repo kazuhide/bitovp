@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -220,6 +223,10 @@ test("runs each selected package and validates its actual report before continui
 			{ root, directory, env: urls, notify: () => {} },
 			async (command, args, options) => {
 				const group = GROUPS[invoked.length];
+				const temporary = realpathSync(options.env.TMPDIR);
+				assert.equal(temporary, join(realpathSync(directory), "tmp"));
+				assert.equal(options.env.TMP, temporary);
+				assert.equal(options.env.TEMP, temporary);
 				assert.equal(command, "pnpm");
 				assert.equal(args[1], group.workspace);
 				assert(args.includes("--maxWorkers=2"));
@@ -354,6 +361,8 @@ for (const cancellation of [false, true])
 		let state;
 		let removed = false;
 		let ran = false;
+		let probe;
+		let credentialFile;
 		const controller = new AbortController();
 		const execute = async (command, args, options) => {
 			assert.equal(options.env.DATABASE_URL, undefined);
@@ -383,11 +392,13 @@ for (const cancellation of [false, true])
 						0o600,
 					);
 					ran = true;
-					if (cancellation) controller.abort();
 					return "fixture-id";
 				}
 				if (dockerArgs[0] === "port") return "127.0.0.1:15432";
-				if (dockerArgs[0] === "exec") return "";
+				if (dockerArgs[0] === "exec") {
+					probe = dockerArgs;
+					return "";
+				}
 				if (dockerArgs[0] === "inspect")
 					return JSON.stringify({ "io.bitovp.postgres-test": state.id });
 				if (dockerArgs[0] === "rm") {
@@ -395,6 +406,23 @@ for (const cancellation of [false, true])
 					return "";
 				}
 				if (dockerArgs[0] === "ps") return "";
+			}
+			assert.equal(options.env.TMPDIR, join(state.directory, "tmp"));
+			assert(
+				options.env.TMPDIR.length < 70,
+				"Child IPC paths must fit Unix socket limits",
+			);
+			assert.equal(options.env.TMP, options.env.TMPDIR);
+			assert.equal(options.env.TEMP, options.env.TMPDIR);
+			if (cancellation) {
+				const nested = mkdtempSync(join(options.env.TMPDIR, "bitovp-role-db-"));
+				credentialFile = join(nested, ".env.migrate");
+				writeFileSync(credentialFile, "DATABASE_URL=synthetic-fixture\n", {
+					mode: 0o600,
+				});
+				assert.equal(statSync(credentialFile).mode & 0o777, 0o600);
+				controller.abort();
+				return "";
 			}
 			throw new Error("Simulated setup failure containing a private URL");
 		};
@@ -413,12 +441,86 @@ for (const cancellation of [false, true])
 			);
 			assert.equal(ran, true);
 			assert.equal(removed, true);
+			assert.deepEqual(probe, [
+				"exec",
+				`bitovp-postgres-${state.id}`,
+				"pg_isready",
+				"--host",
+				"127.0.0.1",
+				"--username",
+				"bitovp_fixture_admin",
+				"--dbname",
+				`bitovp_integration_${state.id}`,
+			]);
+			if (cancellation) {
+				assert(
+					credentialFile,
+					"Cancellation must occur after child credentials exist",
+				);
+				assert.throws(() => statSync(credentialFile));
+			}
 			assert.throws(() => readFileSync(join(state.directory, ".owner")));
 			assert.throws(() => readFileSync(statePath));
 		} finally {
 			rmSync(parent, { recursive: true, force: true });
 		}
 	});
+
+test("CI cleanup command removes credential-bearing child temporary directories", () => {
+	const parent = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-pg-fallback-test-")),
+	);
+	const id = randomBytes(16).toString("hex");
+	const directory = join(parent, "bitovp-postgres-owned");
+	const statePath = join(parent, "state.json");
+	const removed = join(parent, "removed");
+	try {
+		mkdirSync(directory, { mode: 0o700 });
+		writeFileSync(join(directory, ".owner"), id, { mode: 0o600 });
+		writeFileSync(statePath, JSON.stringify({ id, directory }), {
+			mode: 0o600,
+		});
+		const childTemp = join(directory, "tmp", "bitovp-role-db-interrupted");
+		mkdirSync(childTemp, { recursive: true, mode: 0o700 });
+		const credentialFile = join(childTemp, ".env");
+		writeFileSync(
+			credentialFile,
+			`DATABASE_URL=${randomBytes(24).toString("base64url")}\n`,
+			{ mode: 0o600 },
+		);
+		assert.equal(statSync(credentialFile).mode & 0o777, 0o600);
+		const docker = join(parent, "docker");
+		writeFileSync(
+			docker,
+			`#!/usr/bin/env node\nconst fs = require('node:fs');\nconst a = process.argv.slice(2);\nif (a[0] !== '--host' || a[1] !== 'unix:///var/run/docker.sock') process.exit(2);\nif (a[2] === 'inspect') console.log(JSON.stringify({'io.bitovp.postgres-test': ${JSON.stringify(id)}}));\nelse if (a[2] === 'rm') fs.writeFileSync(${JSON.stringify(removed)}, 'removed');\nelse if (a[2] !== 'ps') process.exit(2);\n`,
+			{ mode: 0o700 },
+		);
+		const result = spawnSync(
+			process.execPath,
+			[
+				join(root, "scripts/postgres-integration.mjs"),
+				"--cleanup",
+				"--state-file",
+				statePath,
+			],
+			{
+				env: {
+					...childEnvironment(process.env),
+					PATH: `${parent}:${process.env.PATH}`,
+				},
+				encoding: "utf8",
+				timeout: 10_000,
+			},
+		);
+		assert.equal(result.status, 0);
+		assert.equal(readFileSync(removed, "utf8"), "removed");
+		assert.throws(() => statSync(credentialFile));
+		assert.throws(() => statSync(directory));
+		assert.throws(() => statSync(statePath));
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
 
 for (const labels of [null, {}, { "io.bitovp.postgres-test": "another-owner" }])
 	test(`cleanup refuses missing or different ownership labels: ${JSON.stringify(labels)}`, async () => {

@@ -19,23 +19,21 @@ export const BITMOVIN_SIGNATURE_HEADER = "bitmovin-signature";
 const HMAC_SHA512_BYTES = 64;
 
 export function computeWebhookSignature(
-	rawBody: string,
+	rawBody: string | Uint8Array,
 	secret: string,
 ): string {
-	return createHmac("sha512", secret).update(rawBody, "utf8").digest("hex");
+	return createHmac("sha512", secret).update(rawBody).digest("hex");
 }
 
 export function verifyWebhookSignature(
-	rawBody: string,
+	rawBody: string | Uint8Array,
 	signatureHeader: string | null,
 	secret: string,
 ): boolean {
 	if (!signatureHeader) {
 		return false;
 	}
-	const expected = createHmac("sha512", secret)
-		.update(rawBody, "utf8")
-		.digest();
+	const expected = createHmac("sha512", secret).update(rawBody).digest();
 	const provided = decodeDigest(signatureHeader.trim());
 	return (
 		provided !== null &&

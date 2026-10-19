@@ -19,8 +19,10 @@ import {
 	normalizeEmail,
 	passwordPolicyError,
 } from "@/lib/auth/users";
-import { jsonError, readJson } from "@/lib/server/http";
+import { jsonError } from "@/lib/server/http";
 import { clientKey, createTokenBucketLimiter } from "@/lib/server/rate-limit";
+import { readBoundedJson } from "@/lib/server/request-body";
+import { MAX_SETUP_BODY_BYTES } from "@/lib/server/request-body-limits";
 
 /**
  * First-boot admin creation . Lives under /api/auth — the
@@ -55,8 +57,6 @@ const bodySchema = z.strictObject({
 	password: z.string().min(1).max(512),
 });
 
-const MAX_SETUP_BODY_BYTES = 8 * 1024;
-
 export async function POST(req: Request) {
 	const config = loadAuthConfig();
 	if (!config.ok) {
@@ -68,10 +68,11 @@ export async function POST(req: Request) {
 			"Initial administrator setup is not available with the current authentication settings",
 		);
 	}
-	if (Number(req.headers.get("content-length") ?? 0) > MAX_SETUP_BODY_BYTES) {
+	const body = await readBoundedJson(req, MAX_SETUP_BODY_BYTES);
+	if (body.tooLarge) {
 		return jsonError(413, "Request body is too large");
 	}
-	const parsed = bodySchema.safeParse(await readJson(req));
+	const parsed = bodySchema.safeParse(body.value);
 	if (!parsed.success) {
 		return jsonError(400, "code, email, displayName and password are required");
 	}

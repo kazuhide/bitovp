@@ -19,6 +19,28 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:postgres-runner
+      - run: pnpm --filter @bitovp/db build
+      - name: Run mandatory PostgreSQL integration tests
+        run: pnpm test:postgres --state-file "$RUNNER_TEMP/bitovp-postgres-state.json"
+      - name: Remove owned PostgreSQL fixture after success, failure or cancellation
+        if: always()
+        run: node scripts/postgres-integration.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-postgres-state.json"
+
   secrets:
     runs-on: ubuntu-latest
     timeout-minutes: 10

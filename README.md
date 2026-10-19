@@ -22,6 +22,7 @@ After installation, open **http://localhost:3100** in your browser.
 
 - [Installation and first sign-in](./docs/user-guide/INSTALLATION.md)
 - [User guide](./docs/USER-GUIDE.md)
+- [Japanese user guide (PDF)](./docs/user-guide/bitovp-user-guide-ja.pdf)
 - [Configure a VOD encoding](./docs/user-guide/VOD.md)
 - [Configure and monitor Live](./docs/user-guide/LIVE.md)
 

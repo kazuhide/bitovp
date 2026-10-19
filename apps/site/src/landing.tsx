@@ -13,10 +13,10 @@ import {
 	SITE_BASE,
 	SITE_LOCALES,
 	type SiteLocale,
+	USER_GUIDE_URLS,
 } from "./site-config";
 
 const repository = "https://github.com/kazuhide/bitovp";
-const guide = `${repository}/blob/main/docs/USER-GUIDE.md`;
 const userGuide = `${repository}/blob/main/docs/user-guide`;
 const featureLinks: Record<FeatureId, string> = {
 	vod: "#/demo/vod/new",
@@ -114,6 +114,7 @@ function FeatureTour({ id, copy }: { id: FeatureId; copy: FeatureCopy }) {
 
 export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 	const copy = locale === "ja" ? jaCopy : enCopy;
+	const guide = USER_GUIDE_URLS[locale];
 	return (
 		<div className="site-landing" lang={locale}>
 			<a className="landing-skip" href="#landing-main">

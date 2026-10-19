@@ -12,6 +12,7 @@ const USER_GUIDE_PAGES = [
 	"LIBRARY-AND-ADMIN.md",
 	"TROUBLESHOOTING.md",
 	"GLOSSARY.md",
+	"USER-GUIDE.ja.md",
 ];
 const read = (path: string) => readFileSync(join(REPO, path), "utf8");
 
@@ -55,7 +56,7 @@ describe("user documentation navigation", () => {
 			.map((link) => link.slice("./user-guide/".length));
 		expect([...new Set(indexed)].sort()).toEqual([...USER_GUIDE_PAGES].sort());
 		expect(readdirSync(join(REPO, "docs/user-guide")).sort()).toEqual(
-			[...USER_GUIDE_PAGES].sort(),
+			[...USER_GUIDE_PAGES, "bitovp-user-guide-ja.pdf"].sort(),
 		);
 	});
 

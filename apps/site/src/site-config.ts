@@ -2,6 +2,10 @@ export const SITE_BASE = "/bitovp/";
 export const SITE_ORIGIN = "https://kazuhide.github.io";
 export const SITE_LOCALES = ["en", "ja"] as const;
 export type SiteLocale = (typeof SITE_LOCALES)[number];
+export const USER_GUIDE_URLS = {
+	en: "https://github.com/kazuhide/bitovp/blob/main/docs/USER-GUIDE.md",
+	ja: "https://github.com/kazuhide/bitovp/raw/refs/heads/main/docs/user-guide/bitovp-user-guide-ja.pdf",
+} satisfies Record<SiteLocale, string>;
 
 export function localePath(locale: SiteLocale): string {
 	return locale === "ja" ? `${SITE_BASE}ja/` : SITE_BASE;

@@ -15,7 +15,12 @@ import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
 import { LocaleProvider, persistLocale, useT } from "@/lib/i18n/context";
 import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
 import { useDemoRoute } from "../shims/navigation";
-import { localePath, SITE_METADATA, type SiteLocale } from "../site-config";
+import {
+	localePath,
+	SITE_METADATA,
+	type SiteLocale,
+	USER_GUIDE_URLS,
+} from "../site-config";
 import { DEMO_TEXT } from "./text";
 import {
 	DEMO_LIMITATION_EVENT,
@@ -102,7 +107,7 @@ function DemoScope() {
 				</li>
 			</ul>
 			<a
-				href="https://github.com/kazuhide/bitovp/blob/main/docs/USER-GUIDE.md"
+				href={USER_GUIDE_URLS[locale]}
 				className="inline-block text-sm text-emerald-400 underline"
 			>
 				{text.guideLink}

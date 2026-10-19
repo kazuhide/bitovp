@@ -35,9 +35,9 @@ are excluded. Review omitted settings and output destinations after restoring.
 
 A fixed ladder uses your chosen resolutions and bitrates. Per-Title analyzes the
 source and produces content-dependent renditions. Template bitrates are null;
-use supported path placeholders such as `{uuid}`, `{height}`, `{width}`, and
-`{bitrate}` to keep results separate. Custom manifests are generated after the
-result renditions exist.
+include `{uuid}` or `{bitrate}` in output paths to keep results separate.
+`{height}` and `{width}` can also be used, but do not satisfy that requirement
+on their own. Custom manifests are generated after the result renditions exist.
 
 Per-Title controls are under Encoding, with stream modes in Ladder:
 

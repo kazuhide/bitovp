@@ -15,9 +15,11 @@ Open `/live/new` and configure the existing wizard from top to bottom:
    Pseudo-live is a feeder that sends stored files to an input, not a separate
    encoder input type.
 3. Configure video/audio renditions and their codec settings.
-4. Choose output storage or delivery service, paths, packaging, and manifests.
-5. Review DVR, maximum run time, scheduling, and optional features.
-6. Read the plan preview and any Custom Live warnings, then create the channel.
+4. Choose output storage or delivery service, paths, optional mirror, and archive.
+5. Configure output groups, HLS/DASH manifests, and DVR.
+6. Review automatic restart/stop controls and optional features.
+7. Configure scheduled actions. A schedule does not postpone provisioning.
+8. Read the plan preview and any Custom Live warnings, then create the channel.
 
 New channels normally target Live HD where eligible. Settings outside that shape
 are identified as Custom Live before start. Account eligibility and provider

@@ -3,6 +3,9 @@
 bitovp is a GUI for Bitmovin VOD and Live encoding. Use the browser to configure
 encodings, review the complete plan, start work, and inspect the output.
 
+The Japanese guide is available as a [PDF](./user-guide/bitovp-user-guide-ja.pdf)
+or [Markdown](./user-guide/USER-GUIDE.ja.md).
+
 | Task | Guide | Main screens |
 |---|---|---|
 | Install and sign in | [Installation](./user-guide/INSTALLATION.md) | `/setup`, `/login` |

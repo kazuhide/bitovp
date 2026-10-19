@@ -10,7 +10,7 @@ import {
 	providerEffectRefusal,
 	redactSecrets,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 import { DB_NULL } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
 import { tryLockCurrentPollChannel } from "./poll-channel-lock";
@@ -100,6 +100,14 @@ export function providerTerminalMessage(
 
 class RunningCommitFenceLostError extends Error {}
 class PollChannelUnavailableError extends Error {}
+
+/** Owned transitions wait for channel-first writers before taking any run lock. */
+async function lockOwnedChannel(tx: AppTransactionClient, channelId: string) {
+	await tx.$queryRaw`
+		SELECT id FROM "LiveChannel"
+		WHERE id = ${channelId}::uuid
+		FOR UPDATE`;
+}
 
 /** FINISHED proves completion, not that a failed startup ever went on air. */
 function isFinishedAiring(
@@ -362,8 +370,9 @@ export function createProviderLifecycleReconciler(deps: {
 
 	/**
 	 * Commits the provider's fresh RUNNING evidence and both local RUNNING
-	 * projections as one fact. The run is locked by its exact channel/encoding
-	 * identity; the channel is locked by that encoding and PROVISIONING claim,
+	 * projections as one fact. Lock the channel before the run, then verify the
+	 * current run and its exact channel/encoding identity. The channel write
+	 * matches that encoding and PROVISIONING claim,
 	 * plus the provisioning lease when this is a Start finalize. If either side
 	 * moved, throwing inside the interactive transaction rolls the other write
 	 * back — a half-green run/channel is never observable.
@@ -398,6 +407,13 @@ export function createProviderLifecycleReconciler(deps: {
 		const encoderIp = args.coordinates.encoderIp ?? null;
 		try {
 			await deps.prisma.$transaction(async (tx) => {
+				await lockOwnedChannel(tx, args.channel.id);
+				const latest = await tx.liveChannelRun.findFirst({
+					where: { liveChannelId: args.channel.id },
+					orderBy: { seq: "desc" },
+					select: { id: true },
+				});
+				if (latest?.id !== run.id) throw new RunningCommitFenceLostError();
 				const runWrite = await tx.liveChannelRun.updateMany({
 					where: {
 						id: run.id,
@@ -488,6 +504,12 @@ export function createProviderLifecycleReconciler(deps: {
 		try {
 			await deps.prisma.$transaction(async (tx) => {
 				args.signal?.throwIfAborted();
+				if (!args.nonblockingPoll) {
+					// Keep old-run terminal facts even after a re-air: lock by channel
+					// identity only, then preserve the exact run/projection CAS below.
+					await lockOwnedChannel(tx, args.channelId);
+					args.signal?.throwIfAborted();
+				}
 				if (args.persistRun) {
 					const runWrite = await tx.liveChannelRun.updateMany({
 						where: {

@@ -53,6 +53,7 @@ function harness(now: () => string = () => NOW) {
 			fn(prisma),
 	);
 	prisma = {
+		$queryRaw: vi.fn(async () => [{ id: CHANNEL }]),
 		liveChannelRun: {
 			findFirst: runFindFirst,
 			findMany: runFindMany,
@@ -347,6 +348,7 @@ describe("reconcile — identity guards", () => {
 	it("commits provider evidence, run RUNNING and channel RUNNING in one transaction while clearing absent coordinates", async () => {
 		const h = harness();
 		const currentRun = run({ status: "PROVISIONING" });
+		h.runFindFirst.mockResolvedValue(currentRun);
 		const heldAt = new Date("2026-08-30T11:59:00.000Z");
 		const stepLog = [{ step: "await", status: "DONE" }];
 
@@ -404,6 +406,7 @@ describe("reconcile — identity guards", () => {
 
 	it("aborts the transaction before the channel write when the exact run fence is lost", async () => {
 		const h = harness();
+		h.runFindFirst.mockResolvedValue(run());
 		h.runUpdateMany.mockResolvedValueOnce({ count: 0 });
 
 		await expect(
@@ -421,6 +424,7 @@ describe("reconcile — identity guards", () => {
 
 	it("aborts and rolls back when the exact channel or provision-lease fence is lost", async () => {
 		const h = harness();
+		h.runFindFirst.mockResolvedValue(run());
 		h.channelUpdateMany.mockResolvedValueOnce({ count: 0 });
 
 		await expect(

@@ -98,6 +98,11 @@ export async function deleteSelectedData(
 					// Same lock order as capture: job, then source. A late capture cannot
 					// resurrect erased library data from retained FINISHED history.
 					await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
+					if (selected.has("liveChannels")) {
+						// Snapshot ownership and delete children under the same channel-first
+						// order as owned finalizers, including delayed provider responses.
+						await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
+					}
 					if (selected.has("contentLibrary")) {
 						await tx.$queryRaw`SELECT id FROM "LibrarySource" ORDER BY id FOR UPDATE`;
 					}

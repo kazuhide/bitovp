@@ -5716,6 +5716,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				}),
 			);
 			if (!committed) {
+				// Cancellation can win after the last pre-finalize check while this
+				// worker still owns the lease. Reuse its exact-run cleanup now rather
+				// than abandoning a live lease for the recovery sweep to expire.
+				if (await shouldCancel()) return finishCancellation();
 				throw new ProvisionLeaseLostError(liveChannelId);
 			}
 			heldAt = null;

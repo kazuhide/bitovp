@@ -24,7 +24,7 @@ vi.mock("@/lib/server/context", () => ({
 		bitmovinAccounts: { get: getAccount, revealApiKey },
 		prisma: {
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
-				fn({ $executeRaw: effectExecuteRaw }),
+				fn({ $executeRaw: effectExecuteRaw, $queryRaw: async () => [] }),
 			liveChannel: { findUnique },
 			liveChannelRun: { findFirst: runFindFirst },
 			liveEffectClaim: { findUnique: effectClaimFindUnique },

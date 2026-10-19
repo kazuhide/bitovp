@@ -10,6 +10,15 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const resultFindFirst = vi.fn(async (args) => {
+	const job = await findUnique.mock.results.at(-1)?.value;
+	return (
+		job?.results.find(
+			(result: { id: string }) =>
+				result.id === args.where.id && job.id === args.where.vmafJobId,
+		) ?? null
+	);
+});
 const computeFindMany = vi.fn();
 const jobDeleteMany = vi.fn();
 const auditCreate = vi.fn();
@@ -31,6 +40,7 @@ vi.mock("@/lib/server/context", () => ({
 				findUnique: async () => ({ value: { qcVmaf: qcVmafEnabled } }),
 			},
 			vmafJob: { findUnique, deleteMany: jobDeleteMany },
+			vmafResult: { findFirst: resultFindFirst },
 			vmafComputeTask: { findMany: computeFindMany },
 			auditLog: { create: auditCreate },
 			$transaction,

@@ -40,6 +40,132 @@ function submissionStage(
 	info.annotations.push({ type: "smoke-stage", description });
 }
 
+function observeSessionResponses(page: Page) {
+	const history: { state: string }[] = [];
+	const add = (state: string) => {
+		const entry = { state };
+		history.push(entry);
+		if (history.length > 8) history.shift();
+		return entry;
+	};
+	const isSession = (url: string) => {
+		const parsed = new URL(url);
+		return (
+			parsed.origin === fixture.baseURL &&
+			parsed.pathname === "/api/auth/session"
+		);
+	};
+	page.on("response", (response) => {
+		if (!isSession(response.url())) return;
+		const entry = add(
+			response.status() === 200 ? "session-pending" : "session-http-error",
+		);
+		if (response.status() !== 200) return;
+		void response
+			.json()
+			.then((data: unknown) => {
+				if (!data || typeof data !== "object") {
+					entry.state = "session-invalid";
+					return;
+				}
+				const session = data as Record<string, unknown>;
+				entry.state =
+					typeof session.configured !== "boolean" ||
+					typeof session.authenticated !== "boolean"
+						? "session-invalid"
+						: !session.configured
+							? "session-unconfigured"
+							: !session.authenticated
+								? "session-anonymous"
+								: session.mode === "users" && session.role === "ADMIN"
+									? "session-admin"
+									: "session-authenticated-other";
+			})
+			.catch(() => {
+				entry.state = "session-unreadable";
+			});
+	});
+	page.on("requestfailed", (request) => {
+		if (isSession(request.url())) add("session-request-failed");
+	});
+	return history;
+}
+
+async function observeFailedPage(
+	page: Page,
+	info: TestInfo,
+	sessions: { state: string }[],
+	navigationStatus: number | undefined,
+	unexpected: string[],
+) {
+	const add = (description: string) =>
+		info.annotations.push({ type: "smoke-state", description });
+	try {
+		const path = new URL(page.url()).pathname;
+		add(
+			path === "/vod/new"
+				? "route-vod-new"
+				: path === "/login"
+					? "route-login"
+					: path === "/setup"
+						? "route-setup"
+						: path === "/"
+							? "route-root"
+							: "route-other",
+		);
+		add(
+			navigationStatus === undefined
+				? "navigation-unknown"
+				: navigationStatus === 200
+					? "navigation-ok"
+					: "navigation-error",
+		);
+		const ready = await page.evaluate(() => document.readyState);
+		add(
+			ready === "complete"
+				? "ready-complete"
+				: ready === "interactive"
+					? "ready-interactive"
+					: ready === "loading"
+						? "ready-loading"
+						: "ready-unknown",
+		);
+		if (await page.locator("#wz-name").count()) add("wizard-attached");
+		if (await page.locator("#wz-name").isVisible()) add("wizard-visible");
+		for (const [name, state] of [
+			["Sign in required", "sign-in-required"],
+			["Something broke while rendering this page", "global-error"],
+		] as const)
+			if (await page.getByRole("heading", { name, exact: true }).isVisible())
+				add(state);
+		if (
+			await page
+				.getByRole("status", {
+					name: "Checking your permissions…",
+					exact: true,
+				})
+				.isVisible()
+		)
+			add("permission-checking");
+		for (const [text, state] of [
+			[
+				"Your permissions could not be confirmed. Reload the page or try again.",
+				"permission-unverified",
+			],
+			[
+				"You do not have permission to view this screen. Ask an administrator for access.",
+				"permission-denied",
+			],
+		] as const)
+			if (await page.getByText(text, { exact: true }).isVisible()) add(state);
+		if (await page.getByRole("alert").first().isVisible()) add("alert-visible");
+	} catch {
+		add("diagnostic-unavailable");
+	}
+	if (unexpected.length) add("browser-error");
+	for (const entry of sessions) add(entry.state);
+}
+
 async function open(browser: Browser, signedIn = true, accounts = true) {
 	const context = await browser.newContext({
 		baseURL: fixture.baseURL,
@@ -433,8 +559,12 @@ test("persist and reset heartbeat cadence", async ({ browser }) => {
 	}
 });
 
-test("keep independent installation sessions isolated", async ({ browser }) => {
+test("keep independent installation sessions isolated", async ({
+	browser,
+}, info) => {
 	const { context, page, unexpected } = await open(browser, false, false);
+	const sessions = observeSessionResponses(page);
+	let navigationStatus: number | undefined;
 	const secondary = await context.newPage();
 	secondary.on("pageerror", (error) => unexpected.push(error.message));
 	try {
@@ -443,7 +573,9 @@ test("keep independent installation sessions isolated", async ({ browser }) => {
 		await page.locator("#password").fill(fixture.password);
 		await page.getByRole("button", { name: "Sign in", exact: true }).click();
 		await expect(page).toHaveURL(`${fixture.baseURL}/`);
-		await page.goto(`${fixture.baseURL}/vod/new`);
+		navigationStatus = (
+			await page.goto(`${fixture.baseURL}/vod/new`)
+		)?.status();
 		await expect(page.locator("#wz-name")).toBeVisible();
 
 		await secondary.goto(`${fixture.secondary.baseURL}/setup`);
@@ -518,6 +650,9 @@ test("keep independent installation sessions isolated", async ({ browser }) => {
 			).email,
 		).toBe(fixture.secondary.email);
 		expect(unexpected).toEqual([]);
+	} catch (error) {
+		await observeFailedPage(page, info, sessions, navigationStatus, unexpected);
+		throw error;
 	} finally {
 		await context.close();
 	}

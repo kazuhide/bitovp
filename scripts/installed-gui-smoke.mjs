@@ -196,6 +196,7 @@ export function failureSummary(raw) {
 	const statuses = new Map();
 	const locations = new Map();
 	const stages = new Map();
+	const observations = new Map();
 	const pending = [...report.suites];
 	let visited = 0;
 	try {
@@ -215,6 +216,46 @@ export function failureSummary(raw) {
 					for (const annotation of Array.isArray(spec.tests[0].annotations)
 						? spec.tests[0].annotations.slice(0, 32)
 						: []) {
+						if (
+							annotation?.type === "smoke-state" &&
+							[
+								"route-vod-new",
+								"route-login",
+								"route-setup",
+								"route-root",
+								"route-other",
+								"ready-complete",
+								"ready-interactive",
+								"ready-loading",
+								"ready-unknown",
+								"navigation-ok",
+								"navigation-error",
+								"navigation-unknown",
+								"wizard-attached",
+								"wizard-visible",
+								"permission-checking",
+								"sign-in-required",
+								"permission-unverified",
+								"permission-denied",
+								"global-error",
+								"alert-visible",
+								"browser-error",
+								"diagnostic-unavailable",
+								"session-pending",
+								"session-http-error",
+								"session-unreadable",
+								"session-invalid",
+								"session-unconfigured",
+								"session-anonymous",
+								"session-admin",
+								"session-authenticated-other",
+								"session-request-failed",
+							].includes(annotation.description)
+						) {
+							const values = observations.get(spec.title) ?? [];
+							if (values.length < 24) values.push(annotation.description);
+							observations.set(spec.title, values);
+						}
 						if (
 							annotation?.type === "smoke-stage" &&
 							[
@@ -316,7 +357,7 @@ export function failureSummary(raw) {
 		...categories,
 		...CASES.map(
 			(title) =>
-				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}`,
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
 		),
 	];
 }

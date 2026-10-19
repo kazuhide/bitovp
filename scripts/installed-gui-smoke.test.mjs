@@ -217,6 +217,37 @@ test("failed browser cases expose only the last fixed submission stage", () => {
 		`Browser case: ${CASES[2]}; status=passed`,
 	);
 });
+test("failure page observations expose only bounded fixed categories", () => {
+	const changed = report();
+	const browserTest = changed.suites[0].specs[5].tests[0];
+	browserTest.results[0].status = "failed";
+	browserTest.annotations = [
+		{ type: "smoke-state", description: "route-vod-new" },
+		{ type: "smoke-state", description: "session-admin" },
+		{ type: "smoke-state", description: "session-anonymous" },
+		{ type: "smoke-state", description: "private URL and cookie" },
+		{ type: "private", description: "session-admin" },
+		null,
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=failed; state=route-vod-new,session-admin,session-anonymous`,
+	);
+	browserTest.annotations = Array.from({ length: 100 }, () => ({
+		type: "smoke-state",
+		description: "session-admin",
+	}));
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5].split("session-admin").length -
+			1,
+		24,
+	);
+	browserTest.results[0].status = "passed";
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[5],
+		`Browser case: ${CASES[5]}; status=passed`,
+	);
+});
 test("missing and malformed browser reports produce constant failure categories", () => {
 	assert.deepEqual(failureSummary(), [
 		"Browser diagnostic: report unavailable",

@@ -36,22 +36,21 @@ export const DEMO_TEXT: Record<SiteLocale, typeof english> = {
 	ja: {
 		title: "操作デモ — bitovp",
 		bannerTitle: "操作デモ",
-		bannerBody:
-			"サンプルデータで画面を試せます。ジョブはシミュレーションで、エンコードサービスには送信しません。",
+		bannerBody: "サンプルデータによるデモです。実際のエンコードは行いません。",
 		limitsLabel: "デモで利用できる範囲",
 		limitsBody:
-			"VODジョブと、すぐに開始するLiveチャンネルの設定・作成を試せます。スケジュール実行、稼働時間の上限設定、動画の再生、画質の計測は、インストールしたアプリで利用します。ここで表示する画質スコアは説明用の例です。",
+			"VOD ジョブと即時開始の Live チャンネルは、設定から作成まで試せます。スケジュール実行、稼働時間の上限設定、動画再生、画質測定には、インストールしたアプリが必要です。表示される画質スコアはサンプルです。",
 		reset: "デモを初期状態に戻す",
-		about: "bitovpについて",
+		about: "bitovp について",
 		workspace: "デモ用ワークスペース",
 		scopeTitle: "デモで試せる機能",
 		scopeBody:
-			"ダッシュボード、VODジョブ、Liveチャンネル、画質レポートを閲覧し、エンコードの設定を試せます。それ以外の機能は、インストールしたアプリで利用できます。",
+			"ダッシュボード、VOD ジョブ、Live チャンネル、画質レポートを閲覧できます。VOD・Live の設定画面も操作できます。そのほかの機能は、インストールしたアプリで利用できます。",
 		dashboardLink: "サンプルのダッシュボードを見る",
-		jobsLink: "VODジョブを見る",
-		newJobLink: "VODエンコードを設定する",
-		channelsLink: "Liveチャンネルを見る",
-		newChannelLink: "Liveチャンネルを設定する",
+		jobsLink: "VOD ジョブ一覧",
+		newJobLink: "VOD の設定画面",
+		channelsLink: "Live チャンネル一覧",
+		newChannelLink: "Live の設定画面",
 		qualityLink: "画質レポートの表示例を見る",
 		guideLink: "ユーザーガイドを読む（英語）",
 		createJob: "デモジョブを作成",
@@ -60,7 +59,7 @@ export const DEMO_TEXT: Record<SiteLocale, typeof english> = {
 		returnDashboard: "ダッシュボードに戻る",
 		loading: "画面を読み込んでいます…",
 		limitation:
-			"この操作はデモでは利用できません。スケジュール実行や稼働時間の上限設定は、インストールしたアプリでお試しください。クラウドには何も送信していません。",
+			"デモでは利用できない操作です。スケジュール実行や稼働時間の上限設定には、インストールしたアプリが必要です。クラウドへの送信は行っていません。",
 		downloadError: "このファイルはデモではダウンロードできません。",
 	},
 };

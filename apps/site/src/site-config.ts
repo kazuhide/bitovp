@@ -21,8 +21,8 @@ export const SITE_METADATA = {
 			"A self-hosted graphical application for Bitmovin VOD and Live encoding. Explore the workflows, screenshots, and account-free interactive demo.",
 	},
 	ja: {
-		title: "bitovp — VOD・Liveエンコードを設定するGUIアプリケーション",
+		title: "bitovp — Bitmovin エンコーダー用 GUI",
 		description:
-			"BitmovinのVOD・Liveエンコードをブラウザで設定・管理するbitovp。設定画面や監視機能をスクリーンショットで紹介します。アカウント不要のデモも利用できます。",
+			"bitovp は、Bitmovin Encoding API 用の GUI アプリケーションです。VOD・Live の設定、ジョブの実行、配信の監視に対応しています。画面例と操作デモを掲載しています。",
 	},
 } satisfies Record<SiteLocale, { title: string; description: string }>;

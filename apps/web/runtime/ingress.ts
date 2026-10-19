@@ -4,6 +4,7 @@ import { createServer, request } from "node:http";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { validateIpCidrs } from "@bitovp/core";
+import { forwardHttpRequest } from "./http-forwarding";
 import { ingressHeaders } from "./ip-forwarding";
 
 const envFile = resolve(import.meta.dirname, "../../../.env");
@@ -49,30 +50,13 @@ const server = createServer((incoming, outgoing) => {
 		secret,
 		trusted,
 	);
-	const upstream = request(
-		{
-			hostname: "127.0.0.1",
-			port: privatePort,
-			method: incoming.method,
-			path: incoming.url,
-			headers,
-		},
-		(response) => {
-			outgoing.writeHead(response.statusCode ?? 502, response.headers);
-			response.pipe(outgoing);
-			response.on("error", () => outgoing.destroy());
-		},
-	);
-	upstream.on("error", () => {
-		if (!outgoing.headersSent)
-			outgoing.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
-		outgoing.end("Application is starting or unavailable");
+	forwardHttpRequest(incoming, outgoing, {
+		hostname: "127.0.0.1",
+		port: privatePort,
+		method: incoming.method,
+		path: incoming.url,
+		headers,
 	});
-	incoming.on("aborted", () => upstream.destroy());
-	outgoing.on("close", () => {
-		if (!outgoing.writableFinished) upstream.destroy();
-	});
-	incoming.pipe(upstream);
 });
 server.on("upgrade", (incoming, socket, head) => {
 	const headers = ingressHeaders(

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import {
 	AesGcmCipher,
 	computeWebhookSignature,
@@ -7,14 +7,24 @@ import {
 	hashWebhookToken,
 	MasterKeyConfigError,
 	newWebhookToken,
+	verifyWebhookSignature,
 } from "@bitovp/core";
 import {
 	encodeWebhookMasterSecretRow,
 	WEBHOOK_MASTER_SECRET_KEY,
 } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { streamedRequest } from "@/__tests__/request-body-stream";
 import type { ServerContext } from "./context";
 import { receiveSignedWebhook } from "./webhook-receiver";
+
+vi.mock("@bitovp/core", async (original) => {
+	const actual = await original<typeof import("@bitovp/core")>();
+	return {
+		...actual,
+		verifyWebhookSignature: vi.fn(actual.verifyWebhookSignature),
+	};
+});
 
 /**
  * WP-G G-1 receiver matrix. Every arm asserts the PERSISTENCE side too:
@@ -131,6 +141,121 @@ const acctToken = () => deriveScopedToken(MASTER, "acct");
 const hbToken = () => deriveScopedToken(MASTER, "hb");
 const sign = (body: string, token: string) =>
 	computeWebhookSignature(body, deriveWebhookKey(MASTER, token));
+
+describe("received webhook bytes", () => {
+	const encoder = new TextEncoder();
+	const signedRequest = (
+		bytes: Uint8Array,
+		token: string,
+		signatureBytes = bytes,
+	) => {
+		const signature = createHmac("sha512", deriveWebhookKey(MASTER, token))
+			.update(signatureBytes)
+			.digest("hex");
+		const split = Math.max(1, bytes.indexOf(0xe7) + 1);
+		return streamedRequest(
+			"http://test/api/webhooks/bitmovin/acct/token",
+			[bytes.subarray(0, split), bytes.subarray(split)],
+			{ headers: { "bitmovin-signature": signature } },
+		).request;
+	};
+	it.each([
+		undefined,
+		"1",
+	])("stops at the first oversized chunk with declared length %s", async (contentLength) => {
+		const { request, reads } = streamedRequest(
+			"http://test/api/webhooks/bitmovin/acct/token",
+			[
+				new Uint8Array(1_000_000),
+				new Uint8Array(1),
+				encoder.encode("sentinel"),
+			],
+			{ contentLength },
+		);
+		const response = await receive(request, "acct", acctToken());
+		expect(response.status).toBe(413);
+		expect(reads).toEqual({ pulls: 2, cancellations: 1 });
+		expect(request.body?.locked).toBe(false);
+		expect(verifyWebhookSignature).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(registrationUpdateMany).not.toHaveBeenCalled();
+	});
+	it("rejects UTF-8 bytes above the cap even when the character count is smaller", async () => {
+		const body = JSON.stringify({ type: "TEST", text: "界".repeat(333_334) });
+		expect(body.length).toBeLessThan(1_000_000);
+		expect(
+			(
+				await receive(
+					signedRequest(encoder.encode(body), acctToken()),
+					"acct",
+					acctToken(),
+				)
+			).status,
+		).toBe(413);
+		expect(verifyWebhookSignature).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(registrationUpdateMany).not.toHaveBeenCalled();
+	});
+	it("rejects an unknown token before pulling any body bytes", async () => {
+		const { request, reads } = streamedRequest(
+			"http://test/api/webhooks/bitmovin/acct/token",
+			[new Uint8Array(1_000_001)],
+		);
+		expect((await receive(request, "acct", newWebhookToken())).status).toBe(
+			404,
+		);
+		expect(reads).toEqual({ pulls: 0, cancellations: 0 });
+		expect(verifyWebhookSignature).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+	});
+	it("verifies original whitespace, newline and split UTF-8 bytes before parsing", async () => {
+		const bytes = encoder.encode(' {\n  "type": "TEST", "text": "界"\n}\n');
+		const token = acctToken();
+		expect(
+			(await receive(signedRequest(bytes, token), "acct", token)).status,
+		).toBe(200);
+		expect(create).toHaveBeenCalledWith({
+			data: expect.objectContaining({ raw: { type: "TEST", text: "界" } }),
+		});
+		const reserialized = encoder.encode(
+			JSON.stringify(JSON.parse(new TextDecoder().decode(bytes))),
+		);
+		expect(
+			(await receive(signedRequest(bytes, token, reserialized), "acct", token))
+				.status,
+		).toBe(401);
+	});
+	it.each([
+		Buffer.concat([
+			Buffer.from([0xef, 0xbb, 0xbf]),
+			Buffer.from('{"type":"TEST"}\n'),
+		]),
+		Buffer.concat([
+			Buffer.from('{"type":"TEST","text":"'),
+			Buffer.from([0xff]),
+			Buffer.from('"}'),
+		]),
+	])("signs raw BOM and malformed UTF-8 bytes before decoding: %j", async (bytes) => {
+		const token = acctToken();
+		expect(
+			(await receive(signedRequest(bytes, token), "acct", token)).status,
+		).toBe(200);
+		const decoded = encoder.encode(new TextDecoder().decode(bytes));
+		expect(
+			(await receive(signedRequest(bytes, token, decoded), "acct", token))
+				.status,
+		).toBe(401);
+	});
+	it("accepts a signed JSON body exactly at the byte limit", async () => {
+		const bytes = encoder.encode(
+			payload + " ".repeat(1_000_000 - encoder.encode(payload).byteLength),
+		);
+		const token = acctToken();
+		expect(
+			(await receive(signedRequest(bytes, token), "acct", token)).status,
+		).toBe(200);
+	});
+});
 
 describe("signed receiver matrix", () => {
 	it("good signature on the acct token ⇒ 200, persisted VERIFIED with a dedup slot", async () => {

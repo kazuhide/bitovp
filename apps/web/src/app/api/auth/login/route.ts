@@ -20,8 +20,10 @@ import {
 	invalidateUserCache,
 } from "@/lib/auth/users";
 import { customerErrorDetails } from "@/lib/customer-error";
-import { jsonError, readJson } from "@/lib/server/http";
+import { jsonError } from "@/lib/server/http";
 import { clientKey, createTokenBucketLimiter } from "@/lib/server/rate-limit";
+import { readBoundedJson } from "@/lib/server/request-body";
+import { MAX_LOGIN_BODY_BYTES } from "@/lib/server/request-body-limits";
 
 /**
  * RATE LIMITING, redesigned after a review demonstrated that the previous
@@ -150,9 +152,6 @@ const bodySchema = z.object({
 	email: z.string().min(3).max(320).optional(),
 });
 
-/** The body is one short string; anything larger is not a sign-in attempt. */
-const MAX_LOGIN_BODY_BYTES = 4 * 1024;
-
 export async function POST(req: Request) {
 	const ip = clientKey(req);
 
@@ -189,14 +188,11 @@ export async function POST(req: Request) {
 				);
 	}
 
-	// Mirrors the webhook route's guard: App Router handlers have no default body
-	// limit, and this is the other unauthenticated endpoint. Measured as
-	// bandwidth-bound rather than amplifying (~70 ms for 100 MB, no event-loop
-	// stall), so this is consistency, not urgency.
-	if (Number(req.headers.get("content-length") ?? 0) > MAX_LOGIN_BODY_BYTES) {
+	const body = await readBoundedJson(req, MAX_LOGIN_BODY_BYTES);
+	if (body.tooLarge) {
 		return jsonError(413, "Request body is too large");
 	}
-	const parsed = bodySchema.safeParse(await readJson(req));
+	const parsed = bodySchema.safeParse(body.value);
 	if (!parsed.success) {
 		return jsonError(
 			400,

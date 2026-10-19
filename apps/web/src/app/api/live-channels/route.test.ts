@@ -42,7 +42,43 @@ const queryRaw = vi.fn(async (..._args: unknown[]): Promise<unknown[]> => []);
 // EV-01: the verification-key pre-check. Default null — "no row carries the
 // key" — so every pre-existing case keeps meaning what it meant.
 const findUnique = vi.fn(async (_args: unknown): Promise<unknown> => null);
+const createRequests = new Map<
+	string,
+	{ requestSha256: string; resourceId: string }
+>();
+const createRequestFindFirst = vi.fn(
+	async ({ where }: { where: { kind: string; requestKey: string } }) =>
+		createRequests.get(`${where.kind}:${where.requestKey}`) ?? null,
+);
+const createRequestCreate = vi.fn(
+	async ({
+		data,
+	}: {
+		data: {
+			kind: string;
+			requestKey: string;
+			requestSha256: string;
+			resourceId: string;
+		};
+	}) => {
+		const key = `${data.kind}:${data.requestKey}`;
+		if (createRequests.has(key))
+			throw {
+				code: "P2002",
+				meta: { target: null },
+			};
+		createRequests.set(key, {
+			requestSha256: data.requestSha256,
+			resourceId: data.resourceId,
+		});
+		return data;
+	},
+);
 const prismaMock = {
+	createRequest: {
+		findFirst: createRequestFindFirst,
+		create: createRequestCreate,
+	},
 	liveChannel: { create, update, updateMany, findMany, findUnique },
 	$queryRaw: queryRaw,
 	preset: { findFirst: presetFindFirst },
@@ -117,6 +153,7 @@ function postRequest(body: unknown, actor?: string): Request {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	createRequests.clear();
 	queryRaw.mockImplementation(async () => []);
 	update.mockImplementation(async () => ({}));
 	updateMany.mockImplementation(async () => ({ count: 1 }));
@@ -1370,5 +1407,141 @@ describe("POST /api/live-channels — the verification key (EV-01)", () => {
 		expect(res.status).toBe(200);
 		expect((await res.json()).replayed).toBe(true);
 		expect(queueAdd).not.toHaveBeenCalled();
+	});
+});
+
+describe("ordinary GUI create retries", () => {
+	function keyedRequest(body: unknown, key = "gui-request-1") {
+		return new Request("http://test/api/live-channels", {
+			method: "POST",
+			headers: { "Idempotency-Key": key },
+			body: JSON.stringify(body),
+		});
+	}
+	it("recovers a lost create response without creating or enqueuing a second resource", async () => {
+		const body = { plan: withAccount() };
+		await POST(keyedRequest(body));
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			name: "created",
+			status: "CREATED",
+		});
+		getAccount.mockResolvedValue(null);
+		const retry = await POST(keyedRequest(body));
+		expect(retry.status).toBe(200);
+		expect(await retry.json()).toMatchObject({
+			id: CHANNEL_ID,
+			replayed: true,
+		});
+		expect(create).toHaveBeenCalledTimes(1);
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
+	it("rejects changed content under an already accepted key", async () => {
+		await POST(keyedRequest({ plan: withAccount() }));
+		const retry = await POST(
+			keyedRequest({ plan: { ...withAccount(), name: "different" } }),
+		);
+		expect(retry.status).toBe(409);
+		expect(await retry.json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_CONFLICT" },
+		});
+		expect(create).toHaveBeenCalledTimes(1);
+	});
+	it("keeps the receipt after deletion and refuses to recreate the paid resource", async () => {
+		const body = { plan: withAccount() };
+		await POST(keyedRequest(body));
+		findUnique.mockResolvedValue(null);
+		const retry = await POST(keyedRequest(body));
+		expect(retry.status).toBe(410);
+		expect(await retry.json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_GONE" },
+		});
+		expect(create).toHaveBeenCalledTimes(1);
+	});
+	it("leaves existing unkeyed API callers unchanged", async () => {
+		const response = await POST(postRequest({ plan: withAccount() }));
+		expect(response.status).toBe(201);
+		expect(createRequestCreate).not.toHaveBeenCalled();
+	});
+	it.each([
+		false,
+		true,
+	])("resolves a racing receipt insert; changed content: %s", async (changed) => {
+		createRequestCreate.mockImplementationOnce(async ({ data }) => {
+			createRequests.set(`LIVE_CHANNEL:${data.requestKey}`, {
+				requestSha256: changed ? "a".repeat(64) : data.requestSha256,
+				resourceId: "00000000-0000-4000-8000-0000000000cc",
+			});
+			throw {
+				code: "P2002",
+				meta: { target: null },
+			};
+		});
+		findUnique.mockResolvedValue({
+			id: "00000000-0000-4000-8000-0000000000cc",
+			name: "winner",
+			status: "CREATED",
+		});
+		const response = await POST(keyedRequest({ plan: withAccount() }));
+		expect(response.status).toBe(changed ? 409 : 200);
+		expect(await response.json()).toMatchObject(
+			changed
+				? { details: { code: "CREATE_REQUEST_CONFLICT" } }
+				: { id: "00000000-0000-4000-8000-0000000000cc", replayed: true },
+		);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("returns the accepted ERROR resource after an enqueue failure without enqueueing again", async () => {
+		queueAdd.mockRejectedValueOnce(new Error("queue unavailable"));
+		const body = { plan: withAccount() };
+		const first = await POST(keyedRequest(body));
+		expect(first.status).toBe(500);
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			name: "created",
+			status: "ERROR",
+		});
+		const retry = await POST(keyedRequest(body));
+		expect(retry.status).toBe(200);
+		expect(await retry.json()).toMatchObject({
+			id: CHANNEL_ID,
+			status: "ERROR",
+			replayed: true,
+		});
+		expect(create).toHaveBeenCalledTimes(1);
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
+	it.each([
+		["bitmovinEncodingId"],
+		null,
+	])("does not treat a resource unique constraint as a successful replay: %s", async (target) => {
+		create.mockRejectedValueOnce({
+			code: "P2002",
+			meta: { target },
+		});
+		const response = await POST(keyedRequest({ plan: withAccount() }));
+		expect(response.status).toBe(500);
+		expect(createRequestCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it.each([
+		"",
+		"has spaces",
+		"a".repeat(201),
+	])("refuses an invalid key before creating: %s", async (key) => {
+		const response = await POST(keyedRequest({ plan: withAccount() }, key));
+		expect(response.status).toBe(400);
+		expect(create).not.toHaveBeenCalled();
+	});
+	it.each([
+		"verificationKey",
+		"requestSha256",
+		"verificationDispatch",
+	])("does not combine an ordinary key with %s", async (field) => {
+		const response = await POST(
+			keyedRequest({ plan: withAccount(), [field]: null }),
+		);
+		expect(response.status).toBe(400);
+		expect(create).not.toHaveBeenCalled();
 	});
 });

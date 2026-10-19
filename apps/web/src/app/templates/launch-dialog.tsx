@@ -18,6 +18,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
+import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { useT } from "@/lib/i18n/context";
 import {
 	BROWSABLE_STORAGE_PROVIDERS,
@@ -119,6 +120,10 @@ export function LaunchDialog({
 		});
 	}, [sites, overrides, prefixTemplate, detail.data?.name]);
 
+	const creation = useCreationSubmission(
+		"vod",
+		`template:${presetId}:${detail.data?.revision ?? "loading"}`,
+	);
 	const launch = useMutation({
 		mutationFn: async () => {
 			if (!detail.data) {
@@ -131,20 +136,36 @@ export function LaunchDialog({
 				name,
 				templateName: detail.data.name,
 				now: new Date(),
-				uuid: crypto.randomUUID().slice(0, 8),
+				uuid: "xxxxxxxx",
 			});
 			if (!result.ok) {
 				setIssues(result.issues.map((i) => i.message));
 				return null;
 			}
 			setIssues([]);
-			return apiFetch<{ id: string }>("/api/encoding-jobs", {
-				method: "POST",
-				body: JSON.stringify({
-					plan: result.plan,
-					presetId: detail.data.id,
-					presetRevision: detail.data.revision,
-				}),
+			const intent = {
+				presetBody: detail.data.body,
+				sources: overrides,
+				outputPrefixTemplate: prefixTemplate,
+				name,
+				templateName: detail.data.name,
+				presetId: detail.data.id,
+				presetRevision: detail.data.revision,
+			};
+			return creation.submit<{ id: string }>(intent, (seed, snapshot) => {
+				const frozen = snapshot as typeof intent;
+				const rendered = instantiateTemplatePlan({
+					...frozen,
+					now: new Date(seed.createdAt),
+					uuid: seed.nonce,
+				});
+				if (!rendered.ok)
+					throw new Error("Template parameters changed before submission");
+				return {
+					plan: rendered.plan,
+					presetId: frozen.presetId,
+					presetRevision: frozen.presetRevision,
+				};
 			});
 		},
 		onSuccess: (created) => {

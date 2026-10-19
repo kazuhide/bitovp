@@ -1,16 +1,15 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TENANT_MODEL_RELATIONS } from "./tenant-relations";
 
 const schema = readFileSync(join(__dirname, "../prisma/schema.prisma"), "utf8");
-const sql = readFileSync(
-	join(
-		__dirname,
-		"../prisma/migrations/20261004110000_organization_isolation/migration.sql",
-	),
-	"utf8",
-);
+const migrations = join(__dirname, "../prisma/migrations");
+const sql = readdirSync(migrations)
+	.filter((name) => /^\d/.test(name))
+	.sort()
+	.map((name) => readFileSync(join(migrations, name, "migration.sql"), "utf8"))
+	.join("\n");
 const global = new Set([
 	"User",
 	"SetupCode",
@@ -40,9 +39,9 @@ describe("schema-derived organization enforcement coverage", () => {
 		expect(TENANT_MODEL_RELATIONS).toEqual(relations);
 	});
 	it("classifies every model and forces RLS, immutable ownership and no ambient default for every tenant table", () => {
-		expect(models.length).toBe(49);
+		expect(models.length).toBe(50);
 		const tenant = models.filter((model) => !global.has(model[1] ?? ""));
-		expect(tenant.length).toBe(44);
+		expect(tenant.length).toBe(45);
 		for (const model of tenant) {
 			const name = model[1];
 			expect(model[2], name).toMatch(

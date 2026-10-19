@@ -52,6 +52,8 @@ export const RESET_DELETES = [
  * would cascade away the exact proof needed to find and clean a paid resource.
  */
 export const RESET_PRESERVES = [
+	// A stale create retry must remain spent after its resource is reset.
+	"createRequest",
 	"librarySource",
 	"sceneAnalysisRevision",
 	"content",

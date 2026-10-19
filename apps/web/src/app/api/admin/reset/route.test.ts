@@ -145,6 +145,7 @@ const MODELS = [
 	"encodingJob",
 ];
 const PRESERVES = [
+	"createRequest",
 	// Internal ownership ledgers must survive reset until external cleanup completes.
 	"resetCleanupTask",
 	"vmafComputeTask",

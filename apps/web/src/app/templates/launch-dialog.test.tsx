@@ -5,7 +5,7 @@ import {
 } from "@bitovp/core";
 import { samplePresetPlan } from "@bitovp/core/presets";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import { LaunchDialog } from "./launch-dialog";
 
@@ -29,6 +29,23 @@ afterEach(() => {
 });
 
 const ID = "11111111-2222-4333-8444-555555555555";
+beforeEach(() => sessionStorage.clear());
+vi.mock("@/lib/auth/use-session", async (original) => ({
+	...(await original<Record<string, unknown>>()),
+	useSession: () => ({
+		status: "success",
+		isFetchedAfterMount: true,
+		isFetching: false,
+		data: {
+			configured: true,
+			authenticated: true,
+			mode: "users",
+			role: "OPERATOR",
+			organizationId: "org",
+			effectiveUserId: "user",
+		},
+	}),
+}));
 
 function detailFor(body: unknown) {
 	return {
@@ -41,6 +58,43 @@ function detailFor(body: unknown) {
 }
 
 describe("LaunchDialog (ledger #109 §4.1)", () => {
+	it("retries a lost response with the same creation key and rendered output prefix", async () => {
+		const body = samplePresetPlan("fixed-bitrate-hls-on-aws");
+		let attempts = 0;
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+			if (url === `/api/presets/${ID}`) return detailFor(body);
+			if (url === "/api/encoding-jobs" && init?.method === "POST") {
+				if (++attempts === 1) throw new Error("response lost");
+				return { id: "replayed" };
+			}
+			return [];
+		});
+		const view = renderWithQuery(
+			<LaunchDialog presetId={ID} onClose={() => {}} />,
+		);
+		await screen.findByLabelText(/Job name/i);
+		fireEvent.click(screen.getByRole("button", { name: /Create job/i }));
+		await screen.findByText(/response lost/);
+		view.unmount();
+		renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+		await screen.findByLabelText(/Job name/i);
+		fireEvent.click(screen.getByRole("button", { name: /Create job/i }));
+		await waitFor(() =>
+			expect(routerPush).toHaveBeenCalledWith("/vod/jobs/replayed"),
+		);
+		const posts = apiFetch.mock.calls.filter(
+			([url]) => url === "/api/encoding-jobs",
+		);
+		expect(posts).toHaveLength(2);
+		const requestKey = new Headers(posts[0]?.[1].headers).get(
+			"Idempotency-Key",
+		);
+		expect(requestKey).toMatch(/^[a-f0-9]{64}$/);
+		expect(new Headers(posts[1]?.[1].headers).get("Idempotency-Key")).toBe(
+			requestKey,
+		);
+		expect(posts[1]?.[1].body).toBe(posts[0]?.[1].body);
+	});
 	it("derives one prefilled source row per site — the ask-list is the plan's, never authored", async () => {
 		const body = samplePresetPlan("fixed-bitrate-hls-on-aws");
 		apiFetch.mockImplementation(async (url: string) => {

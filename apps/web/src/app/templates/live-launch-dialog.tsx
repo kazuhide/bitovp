@@ -13,6 +13,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ApiError, apiFetch } from "@/lib/api";
+import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -98,6 +99,10 @@ export function LiveLaunchDialog({
 		[prefixTemplate, detail.data?.name],
 	);
 
+	const creation = useCreationSubmission(
+		"live",
+		`template:${presetId}:${detail.data?.revision ?? "loading"}`,
+	);
 	const launch = useMutation({
 		mutationFn: () => {
 			if (!detail.data || !plan) {
@@ -117,24 +122,39 @@ export function LiveLaunchDialog({
 				objectKey: "",
 				templateName: detail.data.name,
 				now: new Date(),
-				uuid: crypto.randomUUID().slice(0, 8),
+				uuid: "xxxxxxxx",
 			});
 			if (prefix === "") {
 				setPrefixError(t("templates.livePrefixEmpty"));
 				return Promise.resolve(null);
 			}
 			setPrefixError(null);
-			const rebased = liveChannelPlanSchema.parse(
-				rebaseDestinations(plan, prefix),
-			);
-			return apiFetch<{ id: string }>("/api/live-channels", {
-				method: "POST",
-				body: JSON.stringify({
-					plan: { ...rebased, name },
-					...(verdict.schedule ? { schedule: verdict.schedule } : {}),
-					presetId: detail.data.id,
-					presetRevision: detail.data.revision,
-				}),
+			const intent = {
+				plan,
+				name,
+				prefixTemplate,
+				templateName: detail.data.name,
+				schedule: verdict.schedule,
+				presetId: detail.data.id,
+				presetRevision: detail.data.revision,
+			};
+			return creation.submit<{ id: string }>(intent, (seed, snapshot) => {
+				const frozen = snapshot as typeof intent;
+				const stablePrefix = renderTemplateOutputPrefix(frozen.prefixTemplate, {
+					objectKey: "",
+					templateName: frozen.templateName,
+					now: new Date(seed.createdAt),
+					uuid: seed.nonce,
+				});
+				const rebased = liveChannelPlanSchema.parse(
+					rebaseDestinations(frozen.plan, stablePrefix),
+				);
+				return {
+					plan: { ...rebased, name: frozen.name },
+					...(frozen.schedule ? { schedule: frozen.schedule } : {}),
+					presetId: frozen.presetId,
+					presetRevision: frozen.presetRevision,
+				};
 			});
 		},
 		onSuccess: (channel) => {

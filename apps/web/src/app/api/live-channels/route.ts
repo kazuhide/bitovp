@@ -32,6 +32,16 @@ import { z } from "zod";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext, type ServerContext } from "@/lib/server/context";
 import {
+	type CreateRequestIdentity,
+	createRequestConflictResponse,
+	createRequestGoneResponse,
+	createRequestIdentity,
+	InvalidCreateRequestError,
+	isCreateRequestUniqueConflict,
+	lookupCreateRequest,
+	recordCreateRequest,
+} from "@/lib/server/create-request";
+import {
 	jsonError,
 	readJson,
 	routeError,
@@ -464,18 +474,50 @@ async function verificationKeyReplay(
 	return undefined;
 }
 
+/** A receipt remains spent even when its resource has been deleted. */
+async function ordinaryCreateReplay(
+	prisma: Awaited<ReturnType<typeof getServerContext>>["prisma"],
+	identity: CreateRequestIdentity,
+) {
+	const receipt = await lookupCreateRequest(prisma, "LIVE_CHANNEL", identity);
+	if (receipt.kind === "none") return undefined;
+	if (receipt.kind === "conflict") return createRequestConflictResponse();
+	const row = await prisma.liveChannel.findUnique({
+		where: { id: receipt.resourceId },
+		select: CREATE_SELECT,
+	});
+	if (!row) return createRequestGoneResponse();
+	const schedules = await prisma.liveSchedule.findMany({
+		where: { liveChannelId: row.id },
+		orderBy: { fireAt: "asc" },
+	});
+	return NextResponse.json(
+		{ ...row, issues: [], schedules, replayed: true },
+		{ status: 200 },
+	);
+}
+
 /**
  * Creates a live channel: parse plan (strict), run the live constraint
  * validator (error-level rails reject), compile, persist the parsed plan +
  * initialized step log as CREATED (the worker replays THIS — never
- * recompiles), then enqueue provisioning. jobId = row id so BullMQ dedupes
- * double-submits.
+ * recompiles), then enqueue provisioning. The optional create receipt dedupes
+ * HTTP retries; the row id dedupes queue deliveries of that channel.
  */
 export async function POST(req: Request) {
 	const rawBody = await readJson(req);
 	const body = bodySchema.safeParse(rawBody);
 	if (!body.success) {
 		return validationError(body.error);
+	}
+	let ordinaryIdentity: CreateRequestIdentity | undefined;
+	let ordinaryContext: Awaited<ReturnType<typeof getServerContext>> | undefined;
+	try {
+		ordinaryIdentity = createRequestIdentity(req, body.data);
+	} catch (err) {
+		if (err instanceof InvalidCreateRequestError)
+			return jsonError(400, err.message);
+		throw err;
 	}
 	const { verificationKey, requestSha256, verificationDispatch } = body.data;
 	if (
@@ -515,6 +557,18 @@ export async function POST(req: Request) {
 			return routeError(err);
 		}
 	}
+	if (ordinaryIdentity) {
+		try {
+			ordinaryContext = await getServerContext();
+			const replay = await ordinaryCreateReplay(
+				ordinaryContext.prisma,
+				ordinaryIdentity,
+			);
+			if (replay) return replay;
+		} catch (err) {
+			return routeError(err);
+		}
+	}
 	const parsedPlan = liveChannelPlanSchema.safeParse(body.data.plan);
 	if (!parsedPlan.success) {
 		return validationError(parsedPlan.error);
@@ -523,8 +577,8 @@ export async function POST(req: Request) {
 	const issues = validateLiveChannel(
 		plan,
 		await submitterValidationOptions(
-			(await getServerContext()).prisma,
-			(await getServerContext()).credentials,
+			(ordinaryContext ?? (await getServerContext())).prisma,
+			(ordinaryContext ?? (await getServerContext())).credentials,
 		),
 	);
 	if (planHasErrors(issues)) {
@@ -541,7 +595,7 @@ export async function POST(req: Request) {
 		// Fail fast before persisting: with a broken MASTER_KEY the worker
 		// cannot decrypt anything, so the channel would just wedge.
 		masterKeyFromEnv();
-		const ctx = await getServerContext();
+		const ctx = ordinaryContext ?? (await getServerContext());
 		// Filed once the plan is accepted, before anything is persisted or
 		// enqueued — the record is about admitting the plan, not the outcome.
 		await recordUnrestrictedEgress(ctx.prisma, issues, {
@@ -798,6 +852,8 @@ export async function POST(req: Request) {
 					})),
 				});
 			}
+			if (ordinaryIdentity)
+				await recordCreateRequest(tx, "LIVE_CHANNEL", ordinaryIdentity, row.id);
 			return row;
 		});
 		const schedules = derived
@@ -838,6 +894,21 @@ export async function POST(req: Request) {
 			{ status: 201 },
 		);
 	} catch (err) {
+		if (
+			ordinaryIdentity &&
+			ordinaryContext &&
+			isCreateRequestUniqueConflict(err)
+		) {
+			try {
+				const replay = await ordinaryCreateReplay(
+					ordinaryContext.prisma,
+					ordinaryIdentity,
+				);
+				if (replay) return replay;
+			} catch (lookupErr) {
+				return routeError(lookupErr);
+			}
+		}
 		if (err instanceof VerificationDispatchFenceError) {
 			return jsonError(
 				409,

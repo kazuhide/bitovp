@@ -28,6 +28,9 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		organization: "organization",
 		credential: "credential",
 	},
+	createRequest: {
+		organization: "organization",
+	},
 	encodingJob: {
 		organization: "organization",
 		bitmovinAccount: "bitmovinAccount",

@@ -27,6 +27,16 @@ const PROVISIONS_AT_CREATE =
 	"The channel starts — and billing begins — the moment you create it";
 
 export const en = {
+	creationSubmission: {
+		responseUnavailable:
+			"The creation response was incomplete. Retry without changing the form to recover the same job or channel.",
+		sessionUnavailable:
+			"Your session could not be confirmed. Reload this page before creating a job or channel.",
+		storageUnavailable:
+			"This browser could not save a safe retry receipt. Enable session storage and retry. No new request was sent.",
+		pendingLimit:
+			"This tab has too many unconfirmed creation requests. Retry an existing request or check the job and channel lists before starting another.",
+	},
 	branding: {
 		title: "App name and icon",
 		scope:

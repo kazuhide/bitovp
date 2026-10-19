@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import { LiveLaunchDialog } from "./live-launch-dialog";
 
@@ -25,6 +25,23 @@ afterEach(() => {
 });
 
 const ID = "11111111-2222-4333-8444-555555555555";
+beforeEach(() => sessionStorage.clear());
+vi.mock("@/lib/auth/use-session", async (original) => ({
+	...(await original<Record<string, unknown>>()),
+	useSession: () => ({
+		status: "success",
+		isFetchedAfterMount: true,
+		isFetching: false,
+		data: {
+			configured: true,
+			authenticated: true,
+			mode: "users",
+			role: "OPERATOR",
+			organizationId: "org",
+			effectiveUserId: "user",
+		},
+	}),
+}));
 const LIVE_BODY = JSON.parse(
 	readFileSync(
 		join(
@@ -53,6 +70,51 @@ function collectDestinations(node: unknown, out: string[] = []): string[] {
 }
 
 describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
+	it("retries a lost response with the same key and output paths, and changes both after editing", async () => {
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+			if (url === `/api/presets/${ID}`)
+				return { id: ID, name: "eve-show", body: LIVE_BODY, revision: 2 };
+			if (url === "/api/live-channels" && init?.method === "POST")
+				throw new Error("response lost");
+			return [];
+		});
+		renderWithQuery(<LiveLaunchDialog presetId={ID} onClose={() => {}} />);
+		const name = await screen.findByLabelText(/Channel name/i);
+		const submit = screen.getByRole("button", { name: /Create channel/i });
+		fireEvent.click(submit);
+		await screen.findByText(/response lost/);
+		fireEvent.click(submit);
+		await waitFor(() =>
+			expect(
+				apiFetch.mock.calls.filter(([url]) => url === "/api/live-channels"),
+			).toHaveLength(2),
+		);
+		await waitFor(() => expect(submit).toBeEnabled());
+		fireEvent.change(name, { target: { value: "Edited launch" } });
+		fireEvent.click(submit);
+		await waitFor(() =>
+			expect(
+				apiFetch.mock.calls.filter(([url]) => url === "/api/live-channels"),
+			).toHaveLength(3),
+		);
+		const posts = apiFetch.mock.calls.filter(
+			([url]) => url === "/api/live-channels",
+		);
+		const requestKey = new Headers(posts[0]?.[1].headers).get(
+			"Idempotency-Key",
+		);
+		expect(requestKey).toMatch(/^[a-f0-9]{64}$/);
+		expect(new Headers(posts[1]?.[1].headers).get("Idempotency-Key")).toBe(
+			requestKey,
+		);
+		expect(posts[1]?.[1].body).toBe(posts[0]?.[1].body);
+		expect(new Headers(posts[2]?.[1].headers).get("Idempotency-Key")).not.toBe(
+			requestKey,
+		);
+		expect(
+			collectDestinations(JSON.parse(posts[2]?.[1].body).plan),
+		).not.toEqual(collectDestinations(JSON.parse(posts[0]?.[1].body).plan));
+	});
 	it("asks only name + schedule; creates the RENAMED plan with provenance (no schedule = none posted)", async () => {
 		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
 			if (url === `/api/presets/${ID}`) {
@@ -99,7 +161,7 @@ describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
 		const destinations = collectDestinations(payload.plan);
 		expect(destinations.length).toBeGreaterThan(0);
 		for (const path of destinations) {
-			expect(path).toMatch(/^eve-show\/\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\//);
+			expect(path).toMatch(/^eve-show\/\d{4}-\d{2}-\d{2}-[0-9a-f]{32}\//);
 		}
 	});
 

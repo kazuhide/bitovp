@@ -1,0 +1,189 @@
+title = "Public source secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/api/auth/login/guessrate\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/api/auth/login/route\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/api/auth/session/route\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/api/webhook-registration/route\.test\.ts$''']
+regexes = ['''^\s*const KEY = "0123456789abcdef"\.repeat\(4\);\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/settings/live/live-settings-views\.test\.tsx$''']
+regexes = ['''^\s*const POOL_STREAM_KEY = "sk-standby-xyz98765";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/settings/live/live-settings-views\.test\.tsx$''']
+regexes = ['''^\s*const STREAM_KEY = "sk-live-abc12345";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/copy-job\.test\.tsx$''']
+regexes = ['''^\s*const CREDENTIAL = "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/drm-row-editor\.test\.tsx$''']
+regexes = ['''^\s*secret: \{ key: "00112233445566778899aabbccddeeff" \},\s*$''']
+
+[[rules.allowlists]]
+description = "Translation catalog key; not a credential."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/hevc-v2-quality-editor\.tsx$''']
+regexes = ['''^\s*labelKey: "hevcV2\.perceptualPenaltyKnee",\s*$''']
+
+[[rules.allowlists]]
+description = "Translation catalog key; not a credential."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/hevc-v2-quality-editor\.tsx$''']
+regexes = ['''^\s*labelKey: "hevcV2\.perceptualPenaltyStrength",\s*$''']
+
+[[rules.allowlists]]
+description = "Translation catalog key; not a credential."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/hevc-v2-quality-editor\.tsx$''']
+regexes = ['''^\s*labelKey: "hevcV2\.perceptualStrength",\s*$''']
+
+[[rules.allowlists]]
+description = "Translation catalog key; not a credential."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/hevc-v2-quality-editor\.tsx$''']
+regexes = ['''^\s*labelKey: "hevcV2\.perceptualTemporalStrength",\s*$''']
+
+[[rules.allowlists]]
+description = "Translation catalog key; not a credential."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/vod/new/hevc-v2-quality-editor\.tsx$''']
+regexes = ['''^\s*labelKey: "hevcV2\.pixelPerDegree",\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/instrumentation\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/lib/auth/config\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/lib/auth/session\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/proxy\.password-rotation\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/proxy\.roles\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/proxy\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/proxy\.token\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/worker/src/orchestrator/sdk-ops\.stamped-adopt\.test\.ts$''']
+regexes = ['''^\s*key: "0123456789abcdef0123456789abcdef",\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/worker/src/verify/run-record\.test\.ts$''']
+regexes = ['''^\s*const credential = "eyJhbGciOiJIUzI1NiJ9\.e30\.Zm9vYmFy";\s*$''']
+
+[[rules.allowlists]]
+description = "Verification credential label; not a credential value."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/worker/src/verify/runner\.ts$''']
+regexes = ['''^\s*s3CredentialLabel: env\.VERIFY_S3_LABEL \?\? "verify-aws",\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/core/src/credentials/schemas\.test\.ts$''']
+regexes = ['''^\s*secret: \{ decryptionKey: "0123456789abcdef" \},\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic value used by this regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^packages/db/src/bitmovin-accounts\.test\.ts$''']
+regexes = ['''^\s*apiKey: "bitmovin-api-key-123",\s*$''']
+
+[[rules.allowlists]]
+description = "Synthetic HMAC value used by the password regression test."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/web/src/app/api/account/password/route\.test\.ts$''']
+regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef"; // gitleaks:allow -- test-only HMAC secret\s*$''']

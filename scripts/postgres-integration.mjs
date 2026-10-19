@@ -28,6 +28,7 @@ export const GROUPS = [
 			"src/tenant-db.integration.test.ts": 6,
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
+			"src/transaction-options.integration.test.ts": 6,
 		},
 	},
 	{
@@ -36,6 +37,7 @@ export const GROUPS = [
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
+			"src/lib/server/library-catalog.integration.test.ts": 17,
 		},
 	},
 	{

@@ -21,7 +21,7 @@ import {
 	type StepLogEntry,
 	stepLogSchema,
 } from "@bitovp/core";
-import type { AppPrismaClient } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
 import {
 	afterEach,
 	beforeEach,
@@ -630,6 +630,16 @@ function setup(
 		liveSchedule,
 		liveChannelRun,
 		startupSample,
+		$queryRaw: vi.fn(
+			async (
+				_sql: TemplateStringsArray,
+				channelId: string,
+				encodingId: string,
+			) =>
+				row.id === channelId && row.bitmovinEncodingId === encodingId
+					? [{ id: row.id }]
+					: [],
+		),
 		$transaction: vi.fn(async <T>(fn: (tx: AppPrismaClient) => Promise<T>) => {
 			let release = () => {};
 			const predecessor = transactionTail;
@@ -9924,6 +9934,134 @@ function cancelCurrentRun(h: ReturnType<typeof setup>) {
 }
 
 describe("cooperative startup cancellation", () => {
+	it("retains a cancellation that wins restart finalization for exact-run cleanup recovery", async () => {
+		const h = setup({
+			status: "PROVISIONING",
+			bitmovinEncodingId: "bm-live-enc",
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "RUNNING",
+			bitmovinEncodingId: "bm-live-enc",
+		});
+		const run = h.runRows[0];
+		if (!run) throw new Error("Missing restart run");
+		let stopping = false;
+		h.sdk.getEncodingStatus = vi.fn(async () => ({
+			status: stopping ? "FINISHED" : "RUNNING",
+		}));
+		h.sdk.stopLiveEncoding = vi.fn(async () => {
+			stopping = true;
+		});
+		h.deps.emitEvent = vi.fn(async () => {});
+		const transact = h.deps.prisma.$transaction.bind(h.deps.prisma);
+		let cancelled = false;
+		Object.assign(h.deps.prisma, {
+			$transaction: async <T>(fn: (tx: AppTransactionClient) => Promise<T>) => {
+				if (!cancelled) {
+					cancelled = true;
+					h.row.status = "STOPPING";
+					run.status = "STOPPING";
+					run.cancelRequested = true;
+				}
+				return transact(fn);
+			},
+		});
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
+		).resolves.toMatchObject({ status: "EFFECT_AMBIGUOUS" });
+		expect(h.row.status).toBe("STOPPING");
+		expect(h.runRows[0]?.cancelRequested).toBe(true);
+		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				params: { cancelRunId: run.id },
+			}),
+		).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+		);
+		expect(h.sdk.restartLiveEncoding).toHaveBeenCalledOnce();
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_RUNNING" }),
+		);
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_ERROR" }),
+		);
+		expect(h.startupSample.upsert).not.toHaveBeenCalled();
+	});
+	it.each([
+		"cancel",
+		"takeover",
+	] as const)("handles %s at the final RUNNING transaction without abandoning cleanup or stopping a winner", async (race) => {
+		const h = setup();
+		let stopping = false;
+		h.sdk.getEncodingStatus = vi.fn(async () => ({
+			status: stopping ? "FINISHED" : "RUNNING",
+		}));
+		h.sdk.stopLiveEncoding = vi.fn(async () => {
+			stopping = true;
+		});
+		h.deps.emitEvent = vi.fn(async () => {});
+		const transact = h.deps.prisma.$transaction.bind(h.deps.prisma);
+		const winningLease = new Date("2030-01-01T00:00:00Z");
+		let raced = false;
+		Object.assign(h.deps.prisma, {
+			$transaction: async <T>(fn: (tx: AppTransactionClient) => Promise<T>) => {
+				if (!raced) {
+					raced = true;
+					const run = h.runRows[0];
+					if (!run) throw new Error("Missing startup run");
+					if (race === "cancel") {
+						h.row.status = "STOPPING";
+						run.status = "STOPPING";
+						run.cancelRequested = true;
+					} else h.row.provisionClaimedAt = winningLease;
+				}
+				return transact(fn);
+			},
+		});
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID }),
+		).resolves.toMatchObject({
+			status: race === "cancel" ? "STOPPED" : "PROVISIONING",
+		});
+		expect(raced).toBe(true);
+		expect(h.sdk.createEncoding).toHaveBeenCalledTimes(1);
+		expect(h.sdk.startLiveEncoding).toHaveBeenCalledTimes(1);
+		if (race === "cancel") {
+			expect(h.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				"bm-live-enc",
+			);
+			expect(h.row).toMatchObject({
+				status: "STOPPED",
+				provisionClaimedAt: null,
+				encoderStoppedConfirmedFor: "bm-live-enc",
+			});
+			expect(h.runRows[0]).toMatchObject({
+				status: "STOPPED",
+				cancelRequested: true,
+			});
+		} else {
+			expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			expect(h.row.provisionClaimedAt).toEqual(winningLease);
+			expect(h.row.status).toBe("PROVISIONING");
+		}
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_RUNNING" }),
+		);
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_ERROR" }),
+		);
+		expect(h.startupSample.upsert).not.toHaveBeenCalled();
+	});
 	it("does not START after cancellation arrives during CREATE_ENCODING", async () => {
 		const h = setup();
 		h.sdk.createEncoding = vi.fn(async () => {

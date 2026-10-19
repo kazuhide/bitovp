@@ -208,6 +208,7 @@ describe("appendLiveEffectStepLogEntry", () => {
 			.mockResolvedValueOnce(0);
 		let prisma: AppPrismaClient;
 		prisma = {
+			$queryRaw: vi.fn(async () => [{ id: claim.liveChannelId }]),
 			$executeRaw: executeRaw,
 			$transaction: async (fn: (tx: AppPrismaClient) => Promise<unknown>) =>
 				fn(prisma),
@@ -252,6 +253,7 @@ describe("appendLiveEffectStepLogEntry", () => {
 		const executeRaw = vi.fn(async (..._args: unknown[]) => 0);
 		let prisma: AppPrismaClient;
 		prisma = {
+			$queryRaw: vi.fn(async () => [{ id: claim.liveChannelId }]),
 			$executeRaw: executeRaw,
 			$transaction: async (fn: (tx: AppPrismaClient) => Promise<unknown>) =>
 				fn(prisma),

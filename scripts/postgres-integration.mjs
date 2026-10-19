@@ -33,12 +33,19 @@ export const GROUPS = [
 	{
 		workspace: "@bitovp/web",
 		directory: "apps/web",
-		files: { "src/lib/server/create-request.integration.test.ts": 3 },
+		files: {
+			"src/lib/server/create-request.integration.test.ts": 3,
+			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
+		},
 	},
 	{
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
-		files: { "src/alerts/engine-locking.integration.test.ts": 3 },
+		files: {
+			"src/alerts/engine-locking.integration.test.ts": 3,
+			"src/live/poll-transition-locking.integration.test.ts": 4,
+			"src/live/owned-transition-locking.integration.test.ts": 9,
+		},
 	},
 ];
 

@@ -73,6 +73,8 @@ export async function appendLiveEffectStepLogEntry(
 ): Promise<{ runUpdated: number; channelUpdated: number }> {
 	const serialised = JSON.stringify([entry]);
 	return prisma.$transaction(async (tx) => {
+		// Match owned transitions and reset without discarding an old run's facts.
+		await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${claim.liveChannelId}::uuid FOR UPDATE`;
 		const runUpdated = await tx.$executeRaw`
 			UPDATE "LiveChannelRun"
 			SET "stepLog" = "stepLog" || ${serialised}::jsonb

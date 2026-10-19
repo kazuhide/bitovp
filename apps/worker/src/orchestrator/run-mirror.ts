@@ -1,4 +1,5 @@
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import { tryLockCurrentPollChannel } from "../live/poll-channel-lock";
 
 /**
  *  §6 step 3 — the DUAL-WRITE seam. The worker still writes the
@@ -270,6 +271,19 @@ export function createHeartbeatDoor(prisma: AppPrismaClient) {
 					if (runWrite.count !== 1) {
 						throw new StaleHeartbeatPollError();
 					}
+					// Channel-first transitions may already be waiting for this run.
+					// A miss must roll back the run sample, not just its projection.
+					if (
+						!(await tryLockCurrentPollChannel(
+							tx,
+							liveChannelId,
+							token.runId,
+							encodingId,
+						))
+					) {
+						throw new StaleHeartbeatPollError();
+					}
+					signal?.throwIfAborted();
 					const channelWrite = await tx.liveChannel.updateMany({
 						where: { id: liveChannelId, bitmovinEncodingId: encodingId },
 						data: { lastHeartbeat: redactedSample },

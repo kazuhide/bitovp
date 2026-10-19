@@ -66,7 +66,9 @@ describe("createRunMirror (ledger #108 PR2 — the dual-write seam)", () => {
 			if (stage === abortAt) controller.abort(reason);
 		};
 		const tx = {
+			$queryRaw: vi.fn(async () => [{ id: "ch" }]),
 			liveChannelRun: {
+				findFirst: vi.fn(async () => ({ id: "run" })),
 				updateMany: vi.fn(async () => {
 					write("run");
 					return { count: 1 };
@@ -202,7 +204,9 @@ describe("createRunMirror (ledger #108 PR2 — the dual-write seam)", () => {
 	it("a fenced heartbeat commits run, channel fallback and history as one token-owned transaction", async () => {
 		const calls: string[] = [];
 		const tx = {
+			$queryRaw: vi.fn(async () => [{ id: "ch" }]),
 			liveChannelRun: {
+				findFirst: vi.fn(async () => ({ id: "run-1" })),
 				updateMany: vi.fn(async () => {
 					calls.push("run");
 					return { count: 1 };
@@ -273,7 +277,9 @@ describe("createRunMirror (ledger #108 PR2 — the dual-write seam)", () => {
 			history: unknown[];
 		} = { runSample: null, channelSample: null, history: [] };
 		const tx = {
+			$queryRaw: vi.fn(async () => [{ id: "ch" }]),
 			liveChannelRun: {
+				findFirst: vi.fn(async () => ({ id: "run-old" })),
 				updateMany: vi.fn(
 					async ({ data }: { data: { lastHeartbeat: unknown } }) => {
 						state.runSample = data.lastHeartbeat;

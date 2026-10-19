@@ -268,6 +268,23 @@ export function createAlertEngine(deps: {
 			return evaluate(deps.prisma);
 		}
 		return deps.prisma.$transaction(async (tx) => {
+			// Channel transitions claim this row. Holding it through evaluation
+			// makes STOP and re-air serialize with the alert transition.
+			const channel = await tx.liveChannel.updateMany({
+				where: {
+					id: liveChannelId,
+					status: "RUNNING",
+					bitmovinEncodingId: pollToken.encodingId,
+				},
+				data: { status: "RUNNING" },
+			});
+			if (channel.count !== 1) return { opened: 0, resolved: 0 };
+			const latest = await tx.liveChannelRun.findFirst({
+				where: { liveChannelId },
+				orderBy: { seq: "desc" },
+				select: { id: true },
+			});
+			if (latest?.id !== pollToken.runId) return { opened: 0, resolved: 0 };
 			// A same-value update is an epoch check AND a row lock. A newer poll's
 			// claim waits for this evaluation; if it already claimed, count is 0
 			// and this older sample cannot open or resolve an alert.

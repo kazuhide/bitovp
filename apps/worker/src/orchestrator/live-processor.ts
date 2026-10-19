@@ -206,6 +206,7 @@ export type LiveChannelDeps = {
 		 * not on a stamp.
 		 */
 		stamp?: CreateStamp;
+		monitoringSignal?: AbortSignal;
 	}): SdkOps;
 	sleep(ms: number): Promise<void>;
 	pollIntervalMs: number;
@@ -847,7 +848,10 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		return row;
 	}
 
-	async function sdkFor(row: LiveChannelRow): Promise<SdkOps> {
+	async function sdkFor(
+		row: LiveChannelRow,
+		monitoringSignal?: AbortSignal,
+	): Promise<SdkOps> {
 		const accountId =
 			row.bitmovinAccountId ??
 			(row.plan as { bitmovin?: { accountId?: string } } | null)?.bitmovin
@@ -856,10 +860,12 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			throw new ChannelStateError("Channel carries no Bitmovin account id");
 		}
 		const account = await deps.revealBitmovinAccount(accountId);
+		monitoringSignal?.throwIfAborted();
 		return deps.makeSdk({
 			apiKey: account.apiKey,
 			tenantOrgId: account.tenantOrgId,
 			bitmovinAccountId: accountId,
+			...(monitoringSignal ? { monitoringSignal } : {}),
 		});
 	}
 
@@ -3738,6 +3744,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				token?: HeartbeatPollToken;
 				sdk?: SdkOps;
 				row?: LiveChannelRow;
+				signal?: AbortSignal;
 			} = {},
 		): Promise<PersistedHeartbeat & { discarded?: true }> {
 			const row = opts.row ?? (await loadChannel(liveChannelId));
@@ -3749,6 +3756,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			// look newer than the spawn and let it satisfy the new process's bind gate.
 			const pollStartedAt = deps.now();
 			const raw = await sdk.getLiveHeartbeat(encodingId);
+			opts.signal?.throwIfAborted();
 			const previous = (row.lastHeartbeat as PersistedHeartbeat | null)?.raw;
 			const sample: PersistedHeartbeat = {
 				at: pollStartedAt,
@@ -3782,7 +3790,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							deltas: redacted.deltas as unknown as Prisma.InputJsonValue,
 						}
 					: undefined,
+				opts.signal,
 			);
+			opts.signal?.throwIfAborted();
 			if (!landed) {
 				console.warn(
 					`[live-channel] heartbeat sample for ${liveChannelId} discarded — its poll token (run ${opts.token?.runId}, epoch ${opts.token?.epoch}) no longer matches`,
@@ -3828,10 +3838,15 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		 */
 		async sweepTick(
 			liveChannelId: string,
-			opts: { run: RunLifecycleRow | null; token: HeartbeatPollToken | null },
+			opts: {
+				run: RunLifecycleRow | null;
+				token: HeartbeatPollToken | null;
+				signal?: AbortSignal;
+			},
 		): Promise<SweepTickResult> {
 			const row = await loadChannel(liveChannelId);
-			const sdk = await sdkFor(row);
+			opts.signal?.throwIfAborted();
+			const sdk = await sdkFor(row, opts.signal);
 			let lifecycle: SweepTickResult["lifecycle"] = "UNOBSERVED";
 			let unknownSince: Date | null = null;
 			if (opts.token && opts.run) {
@@ -3841,7 +3856,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					encodingId: opts.token.encodingId,
 					sdk,
 					fence: { epoch: opts.token.epoch },
+					signal: opts.signal,
 				});
+				opts.signal?.throwIfAborted();
 				lifecycle = outcome.lifecycle;
 				unknownSince = outcome.unknownSince;
 				if (outcome.lifecycle === "TERMINAL") {
@@ -3870,6 +3887,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					token: opts.token ?? undefined,
 					sdk,
 					row,
+					signal: opts.signal,
 				});
 				return {
 					lifecycle,
@@ -3879,6 +3897,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					unknownSince,
 				};
 			} catch (err) {
+				if (opts.signal?.aborted) throw err;
 				console.error(
 					`[live-channel] heartbeat poll for ${liveChannelId} failed:`,
 					err instanceof Error ? err.message : err,
@@ -3951,20 +3970,68 @@ export function createLiveHeartbeatSweep(
 		/**
 		 * Per-channel deadline + parallel lane count.
 		 * Test seams; default to the shared cadence
-		 * constants. A channel that outlives `perChannelTimeoutMs` is abandoned
-		 * for the tick so it cannot stall the others; `sweepConcurrency` caps
-		 * how many channels poll at once.
+		 * constants. A monitoring attempt that outlives `perChannelTimeoutMs`
+		 * is cancelled before alert evaluation; `sweepConcurrency` caps how
+		 * many channel attempts run at once.
 		 */
 		perChannelTimeoutMs?: number;
 		sweepConcurrency?: number;
 	},
 ) {
 	const actions = createLiveChannelActions(deps);
+	// Keep ownership across repeat ticks until the physical poll settles. An
+	// injected transport may ignore abort; that must not create more requests.
+	const pendingPolls = new Map<string, object>();
+	const failedTick: SweepTickResult = {
+		lifecycle: "UNOBSERVED",
+		terminal: false,
+		pollFailed: true,
+		discarded: false,
+		unknownSince: null,
+	};
+	const pollWithinBudget = async (
+		liveChannelId: string,
+		run: RunLifecycleRow | null,
+		token: HeartbeatPollToken | null,
+	): Promise<SweepTickResult> => {
+		if (pendingPolls.has(liveChannelId)) return failedTick;
+		const owner = {};
+		const controller = new AbortController();
+		pendingPolls.set(liveChannelId, owner);
+		const pending = actions
+			.sweepTick(liveChannelId, { run, token, signal: controller.signal })
+			.catch((err) => {
+				if (!controller.signal.aborted) {
+					console.error(
+						`[live-channel] heartbeat poll for ${liveChannelId} failed:`,
+						err instanceof Error ? err.message : err,
+					);
+				}
+				return failedTick;
+			})
+			.finally(() => {
+				if (pendingPolls.get(liveChannelId) === owner) {
+					pendingPolls.delete(liveChannelId);
+				}
+			});
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const deadline = new Promise<SweepTickResult>((resolve) => {
+			timer = setTimeout(() => {
+				controller.abort(new Error("Live monitoring deadline exceeded"));
+				resolve(failedTick);
+			}, deps.perChannelTimeoutMs ?? HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS);
+		});
+		try {
+			return await Promise.race([pending, deadline]);
+		} finally {
+			clearTimeout(timer);
+		}
+	};
 	// at most ONE sweep runs at a time
 	// (the 30s repeat scheduler must never pile on), and every channel is polled
 	// under a per-channel deadline with a bounded parallel lane count so one
-	// hung channel cannot stall the freshness SLA of the others. The per-channel
-	// poll + alert body below is unchanged from the old serial loop.
+	// hung provider cannot stall the other lanes. Alert finalization is awaited
+	// after the poll deadline, so a timed-out poll still evaluates staleness.
 	const runSweep = async (): Promise<HeartbeatSweepResult> => {
 		// Terminal feeder-stop intent is a durable second phase. It must keep
 		// retrying after the channel left RUNNING, so it rides this repeatable
@@ -4009,9 +4076,7 @@ export function createLiveHeartbeatSweep(
 			discarded?: true;
 			claimSkipped?: true;
 		};
-		// One channel's poll + alert evaluation. NEVER rejects (every fallible
-		// step is caught) — the contract runChannelsBounded's deadline relies on,
-		// so a settle after the deadline has nothing to surface as unhandled.
+		// One channel's bounded poll followed by awaited alert finalization.
 		const processChannel = async (
 			row: (typeof rows)[number],
 		): Promise<ChannelTickOutcome> => {
@@ -4029,6 +4094,7 @@ export function createLiveHeartbeatSweep(
 					`[live-channel] run read for ${row.id} failed:`,
 					err instanceof Error ? err.message : err,
 				);
+				return { pollFailed: true };
 			}
 			/**
 			 * MEDIUM-1: claim this channel's tick by bumping the run's poll epoch
@@ -4057,22 +4123,7 @@ export function createLiveHeartbeatSweep(
 					return { pollFailed: true };
 				}
 			}
-			let tick: SweepTickResult;
-			try {
-				tick = await actions.sweepTick(row.id, { run: currentRun, token });
-			} catch (err) {
-				console.error(
-					`[live-channel] heartbeat poll for ${row.id} failed:`,
-					err instanceof Error ? err.message : err,
-				);
-				tick = {
-					lifecycle: "UNOBSERVED",
-					terminal: false,
-					pollFailed: true,
-					discarded: false,
-					unknownSince: null,
-				};
-			}
+			const tick = await pollWithinBudget(row.id, currentRun, token);
 			if (tick.terminal) {
 				// Reconciled terminal: the channel left RUNNING under this tick;
 				// the orphan resolver retires its open alerts on the next sweep.
@@ -4179,19 +4230,8 @@ export function createLiveHeartbeatSweep(
 		};
 		await runChannelsBounded(rows, processChannel, {
 			concurrency: deps.sweepConcurrency ?? HEARTBEAT_SWEEP_CONCURRENCY,
-			perItemTimeoutMs:
-				deps.perChannelTimeoutMs ?? HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
-			onOutcome: (row, outcome) => {
-				if (outcome === CHANNEL_TIMED_OUT) {
-					// A hung channel: its lane is freed and it is counted as not
-					// polled this tick. The invariant is that the OTHER channels
-					// are still evaluated within the interval, not that this one
-					// is; it is retried next tick.
-					failed += 1;
-					console.error(
-						`[live-channel] heartbeat sweep for ${row.id} exceeded its per-channel budget — abandoned this tick`,
-					);
-				} else if (outcome.pollFailed) {
+			onOutcome: (_row, outcome) => {
+				if (outcome === CHANNEL_TIMED_OUT || outcome.pollFailed) {
 					failed += 1;
 				} else if (outcome.terminal) {
 					terminal += 1;

@@ -231,7 +231,9 @@ export function createHeartbeatDoor(prisma: AppPrismaClient) {
 				raw: Prisma.InputJsonValue;
 				deltas: Prisma.InputJsonValue;
 			},
+			signal?: AbortSignal,
 		): Promise<boolean> {
+			signal?.throwIfAborted();
 			// review-242 A3: match the run by the ENCODING the sample was
 			// fetched for — a unique-index hit, and it deletes the "sample
 			// stamped onto the wrong run" race when a stop landed between the
@@ -251,6 +253,7 @@ export function createHeartbeatDoor(prisma: AppPrismaClient) {
 			}
 			try {
 				await prisma.$transaction(async (tx) => {
+					signal?.throwIfAborted();
 					// This row update both validates the token and locks the exact run.
 					// A later sweep's epoch claim therefore cannot pass this point until
 					// the run sample, channel fallback and history row commit together.
@@ -263,6 +266,7 @@ export function createHeartbeatDoor(prisma: AppPrismaClient) {
 						},
 						data: { lastHeartbeat: redactedSample, lastHeartbeatAt: at },
 					});
+					signal?.throwIfAborted();
 					if (runWrite.count !== 1) {
 						throw new StaleHeartbeatPollError();
 					}
@@ -270,6 +274,7 @@ export function createHeartbeatDoor(prisma: AppPrismaClient) {
 						where: { id: liveChannelId, bitmovinEncodingId: encodingId },
 						data: { lastHeartbeat: redactedSample },
 					});
+					signal?.throwIfAborted();
 					if (channelWrite.count !== 1) {
 						throw new StaleHeartbeatPollError();
 					}
@@ -282,6 +287,7 @@ export function createHeartbeatDoor(prisma: AppPrismaClient) {
 							deltas: history.deltas,
 						},
 					});
+					signal?.throwIfAborted();
 				});
 				return true;
 			} catch (err) {

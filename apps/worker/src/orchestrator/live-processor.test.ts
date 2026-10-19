@@ -31,6 +31,7 @@ import {
 	type MockInstance,
 	vi,
 } from "vitest";
+import { createAlertEngine } from "../alerts/engine";
 import { fakeSdk as baseFakeSdk } from "./fake-sdk";
 import {
 	computeHeartbeatDeltas,
@@ -42,6 +43,7 @@ import {
 	type LiveChannelDeps,
 	type PersistedHeartbeat,
 } from "./live-processor";
+import { makeWorkerSdk } from "./make-sdk";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import type { LiveHeartbeatSample, SdkOps, TaskStatusResult } from "./sdk-ops";
 import {
@@ -140,6 +142,7 @@ function setup(
 		findMany: vi.fn(async () => [
 			{
 				id: row.id,
+				purpose: (row.purpose as string | null | undefined) ?? null,
 				updatedAt: new Date("2026-06-11T23:59:30.000Z"),
 				// /review-223 F10: the sweep's own read carries the
 				// program window to the alert engine.
@@ -6429,14 +6432,352 @@ describe("heartbeat sweep — concurrency, timeout, no-overlap", () => {
 			// microtasks well before this.
 			await vi.advanceTimersByTimeAsync(5_000);
 			await expect(result).resolves.toEqual({ polled: 1, failed: 1 });
-			// OK was fully evaluated; HUNG was abandoned BEFORE its alert step.
+			// A failed monitoring attempt must still evaluate staleness.
 			const okCalls = alertEngine.mock.calls.filter((c) => c[0] === OK);
 			const hungCalls = alertEngine.mock.calls.filter((c) => c[0] === HUNG);
 			expect(okCalls).toHaveLength(1);
-			expect(hungCalls).toHaveLength(0);
+			expect(hungCalls).toHaveLength(1);
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("monitoring deadlines and alert transitions", () => {
+	const NOW = "2026-06-12T00:00:00.000Z";
+	function monitoringHarness(purpose: "PROBE" | null = null) {
+		const t = setup({
+			status: "RUNNING",
+			purpose,
+			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinEncodingId: "bm-live-enc",
+		});
+		const run = t.runRows[0];
+		if (!run) throw new Error("missing test run");
+		run.createdAt = new Date();
+		const history: { at: Date; raw: unknown }[] = [];
+		t.liveHeartbeat.create.mockImplementation((async ({
+			data,
+		}: {
+			data: { at: Date; raw: unknown };
+		}) => {
+			history.push({ at: data.at, raw: data.raw });
+			return {};
+		}) as typeof t.liveHeartbeat.create);
+		t.liveHeartbeat.findMany.mockImplementation((async (args: {
+			select?: { raw?: boolean };
+		}) =>
+			args.select?.raw
+				? history.map((row) => ({ ...row })).reverse()
+				: []) as unknown as typeof t.liveHeartbeat.findMany);
+		const events: { id: string; ruleId: string; resolvedAt: Date | null }[] =
+			[];
+		Object.assign(t.deps.prisma, {
+			alertRule: {
+				findMany: vi.fn(async () => [
+					{
+						id: "stale-rule",
+						metric: "HEARTBEAT_STALE",
+						threshold: null,
+						windowPolls: 2,
+					},
+				]),
+			},
+			alertEvent: {
+				findMany: vi.fn(async () =>
+					events.filter((event) => !event.resolvedAt),
+				),
+				create: vi.fn(async ({ data }: { data: { ruleId: string } }) => {
+					const event = {
+						id: `event-${events.length + 1}`,
+						ruleId: data.ruleId,
+						resolvedAt: null,
+					};
+					events.push(event);
+					return event;
+				}),
+				findFirst: vi.fn(
+					async () => events.find((event) => !event.resolvedAt) ?? null,
+				),
+				updateMany: vi.fn(
+					async ({
+						where,
+						data,
+					}: {
+						where: { id: string };
+						data: { resolvedAt: Date };
+					}) => {
+						const event = events.find(
+							(event) => event.id === where.id && !event.resolvedAt,
+						);
+						if (!event) return { count: 0 };
+						event.resolvedAt = data.resolvedAt;
+						return { count: 1 };
+					},
+				),
+			},
+		});
+		const emitEvent = vi.fn(
+			async (
+				_event: Parameters<NonNullable<LiveChannelDeps["emitEvent"]>>[0],
+			) => {},
+		);
+		const alertEngine = createAlertEngine({
+			prisma: t.deps.prisma,
+			emitEvent,
+			now: () => new Date(),
+			sweepIntervalMs: 30_000,
+		});
+		const sweep = createLiveHeartbeatSweep({
+			...t.deps,
+			now: () => new Date().toISOString(),
+			alertEngine,
+			perChannelTimeoutMs: 1_000,
+		});
+		return { ...t, run, events, history, emitEvent, sweep };
+	}
+
+	it.each([
+		"status",
+		"heartbeat",
+	] as const)("a permanently pending %s opens stale once after grace and resolves once after recovery", async (stage) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(NOW));
+		try {
+			const t = monitoringHarness();
+			let release = () => {};
+			if (stage === "status") {
+				vi.mocked(t.sdk.getEncodingStatus).mockImplementationOnce(
+					() =>
+						new Promise<TaskStatusResult>((resolve) => {
+							release = () => resolve({ status: "RUNNING" });
+						}),
+				);
+			} else {
+				vi.mocked(t.sdk.getLiveHeartbeat).mockImplementationOnce(
+					() =>
+						new Promise<LiveHeartbeatSample>((resolve) => {
+							release = () => resolve({ ingest: { status: "CONNECTED" } });
+						}),
+				);
+			}
+			const first = t.sweep();
+			await vi.advanceTimersByTimeAsync(1_000);
+			await expect(first).resolves.toEqual({ polled: 0, failed: 1 });
+			expect(t.events).toHaveLength(0);
+			expect(t.emitEvent).not.toHaveBeenCalled();
+			vi.setSystemTime(new Date(Date.parse(NOW) + 60_001));
+			await t.sweep();
+			expect(t.events).toHaveLength(1);
+			expect(t.events[0]?.resolvedAt).toBeNull();
+			expect(t.emitEvent).toHaveBeenCalledTimes(1);
+			for (let tick = 0; tick < 4; tick += 1) {
+				await vi.advanceTimersByTimeAsync(30_000);
+				await expect(t.sweep()).resolves.toEqual({ polled: 0, failed: 1 });
+			}
+			// Ignored abort retains one physical request across all later ticks.
+			expect(t.sdk.getEncodingStatus).toHaveBeenCalledTimes(1);
+			expect(t.sdk.getLiveHeartbeat).toHaveBeenCalledTimes(
+				stage === "status" ? 0 : 1,
+			);
+			expect(t.emitEvent).toHaveBeenCalledTimes(1);
+			release();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(t.history).toHaveLength(0);
+			expect(t.run.lastHeartbeatAt).toBeNull();
+			await expect(t.sweep()).resolves.toEqual({ polled: 1, failed: 0 });
+			expect(t.history).toHaveLength(1);
+			expect(t.run.lastHeartbeatAt).toEqual(new Date());
+			expect(t.events).toHaveLength(1);
+			expect(t.events[0]?.resolvedAt).toEqual(new Date());
+			expect(
+				t.emitEvent.mock.calls.map(
+					(call) => (call[0] as { kind: string }).kind,
+				),
+			).toEqual(["ALERT_OPENED", "ALERT_RESOLVED"]);
+			await t.sweep();
+			expect(t.emitEvent).toHaveBeenCalledTimes(2);
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps PROBE monitoring failures outside alert transitions", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(NOW));
+		try {
+			const t = monitoringHarness("PROBE");
+			vi.mocked(t.sdk.getLiveHeartbeat).mockImplementation(
+				() => new Promise(() => {}),
+			);
+			const first = t.sweep();
+			await vi.advanceTimersByTimeAsync(1_000);
+			await first;
+			await vi.advanceTimersByTimeAsync(90_000);
+			await t.sweep();
+			expect(t.events).toHaveLength(0);
+			expect(t.emitEvent).not.toHaveBeenCalled();
+			expect(t.sdk.getLiveHeartbeat).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("native abort settles the old request and frees its owner for the next tick", async () => {
+		vi.useFakeTimers();
+		try {
+			const t = setup({
+				status: "RUNNING",
+				bitmovinAccountId: ACCOUNT_ID,
+				bitmovinEncodingId: "bm-live-enc",
+			});
+			Object.assign(t.deps.prisma, {
+				auditLog: { create: vi.fn(async () => ({})) },
+			});
+			const signals: AbortSignal[] = [];
+			const nativeFetch = vi.fn(
+				(_url: string, init: RequestInit) =>
+					new Promise<Response>((_resolve, reject) => {
+						if (!init.signal) throw new Error("missing native signal");
+						signals.push(init.signal);
+						init.signal.addEventListener(
+							"abort",
+							() => reject(init.signal?.reason),
+							{ once: true },
+						);
+					}),
+			);
+			vi.stubGlobal("fetch", nativeFetch);
+			const alertEngine = vi.fn(async () => ({ opened: 0, resolved: 0 }));
+			const sweep = createLiveHeartbeatSweep({
+				...t.deps,
+				makeSdk: makeWorkerSdk(t.deps.prisma),
+				alertEngine,
+				perChannelTimeoutMs: 1_000,
+			});
+			for (let tick = 0; tick < 3; tick += 1) {
+				const pending = sweep();
+				await vi.advanceTimersByTimeAsync(1_000);
+				await expect(pending).resolves.toEqual({ polled: 0, failed: 1 });
+			}
+			expect(nativeFetch).toHaveBeenCalledTimes(3);
+			expect(signals.every((signal) => signal.aborted)).toBe(true);
+			expect(alertEngine).toHaveBeenCalledTimes(3);
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.unstubAllGlobals();
+			vi.useRealTimers();
+		}
+	});
+
+	it("awaits alert finalization after the poll deadline has expired", async () => {
+		vi.useFakeTimers();
+		try {
+			const t = setup({
+				status: "RUNNING",
+				bitmovinAccountId: ACCOUNT_ID,
+				bitmovinEncodingId: "bm-live-enc",
+			});
+			vi.mocked(t.sdk.getLiveHeartbeat).mockImplementation(
+				() => new Promise(() => {}),
+			);
+			let finish: (() => void) | undefined;
+			const alertEngine = vi.fn(
+				() =>
+					new Promise<{ opened: number; resolved: number }>((resolve) => {
+						finish = () => resolve({ opened: 0, resolved: 0 });
+					}),
+			);
+			let settled = false;
+			const sweep = createLiveHeartbeatSweep({
+				...t.deps,
+				alertEngine,
+				perChannelTimeoutMs: 1_000,
+			})();
+			void sweep.then(() => {
+				settled = true;
+			});
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(alertEngine).toHaveBeenCalledTimes(1);
+			expect(settled).toBe(false);
+			finish?.();
+			await expect(sweep).resolves.toEqual({ polled: 0, failed: 1 });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		"stop",
+		"new run",
+	] as const)("a %s immediately before timeout prevents old alert and late sample writes", async (transition) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(NOW));
+		try {
+			const t = monitoringHarness();
+			// The old run is already stale when this attempt begins.
+			t.run.createdAt = new Date(Date.parse(NOW) - 90_000);
+			let release: ((raw: LiveHeartbeatSample) => void) | undefined;
+			vi.mocked(t.sdk.getLiveHeartbeat).mockImplementationOnce(
+				() =>
+					new Promise<LiveHeartbeatSample>((resolve) => {
+						release = resolve;
+					}),
+			);
+			const pending = t.sweep();
+			await vi.advanceTimersByTimeAsync(999);
+			if (transition === "stop") t.row.status = "STOPPING";
+			else {
+				t.run.status = "STOPPED";
+				t.runRows.push({
+					id: "new-run",
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: "enc-new",
+					createdAt: new Date(),
+					heartbeatPollEpoch: 0,
+				});
+				t.row.bitmovinEncodingId = "enc-new";
+			}
+			await vi.advanceTimersByTimeAsync(1);
+			await pending;
+			expect(t.events).toHaveLength(0);
+			expect(t.emitEvent).not.toHaveBeenCalled();
+			release?.({ ingest: { status: "CONNECTED" } });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(t.history).toHaveLength(0);
+			expect(t.row.lastHeartbeat).toBeNull();
+			expect(t.emitEvent).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		"run read",
+		"epoch claim",
+	])("fails closed when the %s fails", async (stage) => {
+		const t = setup({
+			status: "RUNNING",
+			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinEncodingId: "bm-live-enc",
+		});
+		if (stage === "run read")
+			t.liveChannelRun.findFirst.mockRejectedValueOnce(
+				new Error("database unavailable"),
+			);
+		else
+			t.liveChannelRun.updateMany.mockRejectedValueOnce(
+				new Error("database unavailable"),
+			);
+		const alertEngine = vi.fn(async () => ({ opened: 0, resolved: 0 }));
+		await expect(
+			createLiveHeartbeatSweep({ ...t.deps, alertEngine })(),
+		).resolves.toEqual({ polled: 0, failed: 1 });
+		expect(alertEngine).not.toHaveBeenCalled();
+		expect(t.sdk.getEncodingStatus).not.toHaveBeenCalled();
+		expect(t.sdk.getLiveHeartbeat).not.toHaveBeenCalled();
 	});
 });
 
@@ -9044,12 +9385,13 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			expect(releaseA).toBeDefined();
 			await vi.advanceTimersByTimeAsync(5_001);
 			await expect(a).resolves.toEqual({ polled: 0, failed: 1 });
+			expect(alertEngine).toHaveBeenCalledTimes(1);
 			// B claims the channel (epoch 2) and lands its sample.
 			await expect(sweepB()).resolves.toEqual({ polled: 1, failed: 0 });
 			expect(run.heartbeatPollEpoch).toBe(2);
 			expect(run.lastHeartbeat).toBeTruthy();
 			expect(t.liveHeartbeat.create).toHaveBeenCalledTimes(1);
-			expect(alertEngine).toHaveBeenCalledTimes(1);
+			expect(alertEngine).toHaveBeenCalledTimes(2);
 			const landedAt = run.lastHeartbeatAt;
 			// B's landed sample logged the ONE transition (the channel had no
 			// sample before it).
@@ -9062,7 +9404,7 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			await vi.advanceTimersByTimeAsync(1);
 			await vi.advanceTimersByTimeAsync(1);
 			expect(t.liveHeartbeat.create).toHaveBeenCalledTimes(1);
-			expect(alertEngine).toHaveBeenCalledTimes(1);
+			expect(alertEngine).toHaveBeenCalledTimes(2);
 			expect(run.lastHeartbeatAt).toBe(landedAt);
 			expect(
 				(run.lastHeartbeat as { raw: LiveHeartbeatSample }).raw.timestamp,

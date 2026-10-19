@@ -34,6 +34,7 @@ export function makeWorkerSdk(prisma: AppPrismaClient) {
 		bitmovinAccountId: string;
 		stamp?: CreateStamp;
 		orphanStopOnly?: true;
+		monitoringSignal?: AbortSignal;
 		internalHevcV2?: InternalHevcV2;
 	}): SdkOps =>
 		createBitmovinSdkOps(args, (entry) =>

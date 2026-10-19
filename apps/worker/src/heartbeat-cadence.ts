@@ -8,12 +8,12 @@
 export const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
 
 /**
- * Per-channel budget for one heartbeat poll + alert evaluation.
- * A single hung SDK poll must not stall the
- * sweep: past this deadline the channel's work is abandoned for the tick, its
- * lane is freed, and the sweep moves on. 10s is a third of the interval — far
- * more than a healthy `getLiveHeartbeat` GET needs, yet small enough that a
- * hung channel cannot push the sweep past the next 30s repeat.
+ * Per-channel budget for provider status and heartbeat monitoring, including
+ * response bodies. Expiry cancels the poll and becomes a failed observation;
+ * alert evaluation is then awaited so missing monitoring can become stale.
+ * A transport that ignores cancellation retains its channel's pending owner
+ * until it settles; later ticks evaluate staleness without adding requests.
+ * Database work and alert finalization are outside this transport guarantee.
  */
 export const HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS = 10_000;
 

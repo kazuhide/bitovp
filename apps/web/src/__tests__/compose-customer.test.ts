@@ -87,6 +87,19 @@ describe("customer Compose isolation", () => {
 				expect(c.services[name].environment.DEPLOYMENT_PROFILE).toBe(profile);
 		}
 	});
+	it("preserves private local-quality overrides instead of forcing fixed defaults", () => {
+		const file = join(temp, "quality-settings.env");
+		writeFileSync(
+			file,
+			`${fixture}\n${runtimeSettings}\nVMAF_THREADS=3\nVMAF_CONCURRENCY=2\n`,
+			{ mode: 0o600 },
+		);
+		const c = config("alpha", file);
+		expect(c.services.worker.environment).toMatchObject({
+			VMAF_THREADS: "3",
+			VMAF_CONCURRENCY: "2",
+		});
+	});
 	it("requires explicit customer settings, never parent environment fallbacks", () => {
 		for (const line of fixture.split("\n")) {
 			const missing = join(temp, "missing.env");
@@ -137,8 +150,8 @@ describe("customer Compose isolation", () => {
 			c.services.web.environment.AUTH_PASSWORD_HASH.replaceAll("$$", "$"),
 		).toBe("scrypt$synthetic$password$hash");
 		expect(c.services.worker.environment.VERIFY_RUN_ROOT).toBe("/verify-runs");
-		expect(c.services.worker.environment.VMAF_CONCURRENCY).toBe("1");
-		expect(c.services.worker.environment.VMAF_THREADS).toBe("2");
+		expect(c.services.worker.environment.VMAF_CONCURRENCY).toBe("");
+		expect(c.services.worker.environment.VMAF_THREADS).toBe("");
 		expect(c.services.worker.mem_limit).toBe("4294967296");
 		expect(c.services.web.mem_limit).toBe("1073741824");
 		for (const s of Object.values(c.services) as {

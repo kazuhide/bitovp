@@ -66,6 +66,33 @@ describe("buildVmafCommand", () => {
 		expect(filterComplexOf(buildVmafCommand(BASE))).not.toContain("n_threads");
 	});
 
+	it("bounds each decoder and the filter graph without changing scoring terms", () => {
+		const argv = buildVmafCommand({
+			...BASE,
+			decoderThreads: 2,
+			filterComplexThreads: 1,
+		});
+		const first = argv.indexOf("-i");
+		const second = argv.indexOf("-i", first + 1);
+		expect(argv.slice(first - 2, first)).toEqual(["-threads", "2"]);
+		expect(argv.slice(second - 2, second)).toEqual(["-threads", "2"]);
+		expect(argv[argv.indexOf("-filter_complex_threads") + 1]).toBe("1");
+		expect(filterComplexOf(argv)).toBe(filterComplexOf(buildVmafCommand(BASE)));
+		expect(buildVmafCommand(BASE)).not.toContain("-threads");
+		expect(buildVmafCommand(BASE)).not.toContain("-filter_complex_threads");
+	});
+
+	it.each([
+		0,
+		-1,
+		1.5,
+		Number.NaN,
+	])("rejects unbounded or invalid ordinary decoder limits: %s", (decoderThreads) => {
+		expect(() => buildVmafCommand({ ...BASE, decoderThreads })).toThrow(
+			"positive integers",
+		);
+	});
+
 	describe("frame subsample (n_subsample)", () => {
 		it("appends n_subsample when subsample > 1", () => {
 			const fc = filterComplexOf(buildVmafCommand({ ...BASE, subsample: 4 }));

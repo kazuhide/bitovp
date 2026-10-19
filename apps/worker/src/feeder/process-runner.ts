@@ -66,8 +66,20 @@ export function createNodeProcessRunner(): ProcessRunner {
 
 		run(bin, argv, options) {
 			return new Promise((resolve) => {
-				// An aborted signal makes Node kill the child (SIGTERM) and emit
-				// `error` (AbortError); `close` may follow — settle once.
+				const abortKillAfterMs = options?.abortKillAfterMs;
+				if (
+					abortKillAfterMs !== undefined &&
+					(!Number.isInteger(abortKillAfterMs) ||
+						abortKillAfterMs <= 0 ||
+						abortKillAfterMs > 2 ** 31 - 1)
+				) {
+					throw new RangeError(
+						"abortKillAfterMs must be a positive timer-safe integer",
+					);
+				}
+				// Node emits AbortError when it sends SIGTERM, before the child
+				// necessarily exits. Keep ownership until close so memory admission
+				// cannot start a replacement while that child is still shutting down.
 				const child = spawn(bin, argv, {
 					stdio: ["ignore", "pipe", "pipe"],
 					shell: false,
@@ -76,6 +88,18 @@ export function createNodeProcessRunner(): ProcessRunner {
 				let stdout = "";
 				let stderr = "";
 				let settled = false;
+				let aborted = false;
+				let exited = false;
+				let killScheduled = false;
+				let killTimer: ReturnType<typeof setTimeout> | undefined;
+				const clearKillTimer = () => {
+					if (killTimer !== undefined) clearTimeout(killTimer);
+					killTimer = undefined;
+				};
+				const onExit = () => {
+					exited = true;
+					clearKillTimer();
+				};
 				const settle = (result: {
 					code: number | null;
 					stdout: string;
@@ -83,19 +107,71 @@ export function createNodeProcessRunner(): ProcessRunner {
 				}) => {
 					if (!settled) {
 						settled = true;
+						clearKillTimer();
+						child.removeListener("exit", onExit);
+						child.removeListener("error", onError);
+						child.removeListener("close", onClose);
 						resolve(result);
 					}
 				};
+				const onError = (err: Error) => {
+					if (
+						child.pid !== undefined &&
+						(err.name === "AbortError" ||
+							(abortKillAfterMs !== undefined && options?.signal?.aborted))
+					) {
+						aborted = true;
+						stderr += err.message;
+						if (
+							abortKillAfterMs !== undefined &&
+							!killScheduled &&
+							!exited &&
+							!settled
+						) {
+							killScheduled = true;
+							killTimer = setTimeout(() => {
+								killTimer = undefined;
+								// killed records signal delivery, not physical exit. Never
+								// signal an exited child while its stdio is still draining.
+								if (
+									settled ||
+									exited ||
+									child.exitCode !== null ||
+									child.signalCode !== null
+								)
+									return;
+								try {
+									child.kill("SIGKILL");
+								} catch (error) {
+									stderr +=
+										error instanceof Error ? error.message : String(error);
+								}
+							}, abortKillAfterMs);
+						}
+						return;
+					}
+					if (
+						aborted &&
+						abortKillAfterMs !== undefined &&
+						child.pid !== undefined
+					) {
+						// Failure to deliver the hard kill does not release ownership.
+						stderr += err.message;
+						return;
+					}
+					settle({ code: null, stdout, stderr: `${stderr}${err.message}` });
+				};
+				const onClose = (code: number | null) =>
+					settle({ code: aborted ? null : code, stdout, stderr });
 				child.stdout?.on("data", (chunk: Buffer) => {
 					stdout += chunk.toString("utf8");
 				});
 				child.stderr?.on("data", (chunk: Buffer) => {
 					stderr += chunk.toString("utf8");
 				});
-				child.on("error", (err) => {
-					settle({ code: null, stdout, stderr: `${stderr}${err.message}` });
-				});
-				child.on("close", (code) => settle({ code, stdout, stderr }));
+				child.on("error", onError);
+				child.once("exit", onExit);
+				child.once("close", onClose);
 			});
 		},
 	};

@@ -90,6 +90,10 @@ export type VmafCommandOptions = {
 	fpsConform?: number;
 	/** libvmaf worker threads (n_threads); omitted ⇒ libvmaf default. */
 	threads?: number;
+	/** Ordinary-path decoder limit, applied separately before each input. */
+	decoderThreads?: number;
+	/** Ordinary-path filter graph limit; does not change the filter graph. */
+	filterComplexThreads?: number;
 	/**
 	 * Frame subsample stride (libvmaf `n_subsample`): when set and > 1, libvmaf
 	 * scores only every Nth frame. This speeds scoring up — but it yields a
@@ -196,6 +200,15 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 			"null",
 			"-",
 		];
+	}
+	for (const threads of [opts.decoderThreads, opts.filterComplexThreads]) {
+		if (
+			threads !== undefined &&
+			(!Number.isSafeInteger(threads) || threads <= 0)
+		)
+			throw new Error(
+				"Decoder and filter thread limits must be positive integers",
+			);
 	}
 
 	// Distorted-side conform chain feeding libvmaf's [main] pad. flags=bicubic
@@ -313,10 +326,19 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	return [
 		"-hide_banner",
 		"-nostdin",
+		...(opts.decoderThreads !== undefined
+			? ["-threads", String(opts.decoderThreads)]
+			: []),
 		"-i",
 		opts.distortedPath,
+		...(opts.decoderThreads !== undefined
+			? ["-threads", String(opts.decoderThreads)]
+			: []),
 		"-i",
 		opts.referencePath,
+		...(opts.filterComplexThreads !== undefined
+			? ["-filter_complex_threads", String(opts.filterComplexThreads)]
+			: []),
 		"-filter_complex",
 		filterComplex,
 		"-map",

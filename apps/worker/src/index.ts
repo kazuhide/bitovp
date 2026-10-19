@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cpus, hostname, tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	cipherFromEnv,
@@ -158,6 +158,7 @@ import {
 	createLocalExecutionGate,
 } from "./vmaf/execution-dispatch";
 import { createLiveVmafProcessor } from "./vmaf/live-processor";
+import { createLocalVmafResources } from "./vmaf/local-resources";
 import { createVmafProcessor } from "./vmaf/processor";
 import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
 import { createVmafTrigger } from "./vmaf/trigger";
@@ -1095,33 +1096,16 @@ runTenantTick(() => feederTakeoverSweep());
 // defaults under the OS tmpdir.
 const vmafWorkDir = env.VMAF_WORKDIR ?? join(tmpdir(), "bitovp-vmaf");
 const vmafRunner = createNodeProcessRunner();
-// Parallelism: libvmaf was single-threaded (n_threads unset), then "all cores on
-// one run" — but its thread scaling PLATEAUS at ~4–6 threads (benchmarked: on a
-// 10-core box one 360p→1080p rung took 5618ms@4thr ≈ 5486ms@6thr ≈ 5632ms@10thr,
-// because decode/scale, not VMAF feature extraction, dominate past ~4 threads).
-// So all-cores-on-one-run wastes cores. Default instead to SPLITTING the box
-// into ~4-thread runs and scoring that many mirrors concurrently (10 cores →
-// 2×5; 4 → 1×4; 16 → 4×4) — same total work per run, but multiple rungs overlap.
-// For 4 rungs this is sequential@10thr 22.6s → 19.8s (−13%), and compounds with
-// VMAF_SUBSAMPLE (→13.6s). The pool caps concurrency at the rung count, so
-// single-rendition jobs still get one run (with the divided thread count). The
-// env overrides win exactly as before.
-const VMAF_IDEAL_THREADS = 4; // libvmaf scaling plateaus here (benchmarked)
-const vmafCores = cpus().length;
-const vmafConcurrency =
-	env.VMAF_CONCURRENCY ??
-	Math.max(1, Math.floor(vmafCores / VMAF_IDEAL_THREADS));
-const vmafThreads =
-	env.VMAF_THREADS ?? Math.max(1, Math.floor(vmafCores / vmafConcurrency));
-// Frame subsample stride (libvmaf n_subsample): scores every Nth frame.
-// Default UNSET ⇒ full precision (byte-identical argv to before). Opt-in only.
+// Local resource decisions are made after probing each pair, using the CPU
+// quota, memory headroom and decoded reference geometry. Explicit thread and
+// concurrency settings retain their respective exact value and upper bound.
+const localVmafResources = createLocalVmafResources({
+	threads: env.VMAF_THREADS,
+	concurrency: env.VMAF_CONCURRENCY,
+});
+// Frame subsampling remains an explicit quality tradeoff; automatic resource
+// planning never changes the scored frame set.
 const vmafSubsample = env.VMAF_SUBSAMPLE;
-console.log(
-	`[worker:vmaf] ${vmafCores} cores → ${vmafConcurrency} concurrent × ${vmafThreads} libvmaf threads (plateau-tuned @~${VMAF_IDEAL_THREADS}thr/run)` +
-		(vmafSubsample !== undefined
-			? ` · n_subsample=${vmafSubsample} (sparser per-frame series)`
-			: ""),
-);
 // Bundled VMAF model files (the Docker image populates VMAF_MODEL_DIR). The
 // "VMAF v1" models (vmaf_v1.0.16_3d0h and the other _NdNh / _hfr variants) are
 // NOT libvmaf built-ins — they only load from a model FILE — so the runner maps
@@ -1185,9 +1169,11 @@ const vmafProcessor = tenantService(() =>
 		ffprobePath: env.FFPROBE_PATH,
 		workDir: join(vmafWorkDir, requireOrganizationId()),
 		now: processorDeps.now,
-		cores: vmafCores,
-		threads: vmafThreads,
-		concurrency: vmafConcurrency,
+		localResources: localVmafResources,
+		...(env.VMAF_THREADS !== undefined ? { threads: env.VMAF_THREADS } : {}),
+		...(env.VMAF_CONCURRENCY !== undefined
+			? { concurrency: env.VMAF_CONCURRENCY }
+			: {}),
 		...(vmafSubsample !== undefined ? { subsample: vmafSubsample } : {}),
 		...(resolveModelPath ? { resolveModelPath } : {}),
 	}),
@@ -1274,6 +1260,8 @@ const liveVmafProcessor = tenantService(() =>
 		workDir: join(vmafWorkDir, requireOrganizationId()),
 		spoolDir: join(feederSpoolDir, requireOrganizationId()),
 		now: processorDeps.now,
+		localResources: localVmafResources,
+		...(env.VMAF_THREADS !== undefined ? { threads: env.VMAF_THREADS } : {}),
 		...(vmafSubsample !== undefined ? { subsample: vmafSubsample } : {}),
 		...(resolveModelPath ? { resolveModelPath } : {}),
 	}),

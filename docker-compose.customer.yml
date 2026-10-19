@@ -83,8 +83,8 @@ services:
       FFMPEG_PATH: /usr/local/bin/ffmpeg
       FFPROBE_PATH: /usr/local/bin/ffprobe
       VERIFY_RUN_ROOT: /verify-runs
-      VMAF_CONCURRENCY: "1"
-      VMAF_THREADS: "2"
+      VMAF_CONCURRENCY: "${VMAF_CONCURRENCY:-}"
+      VMAF_THREADS: "${VMAF_THREADS:-}"
     volumes: [reports:/verify-runs]
     depends_on:
       postgres: { condition: service_healthy }

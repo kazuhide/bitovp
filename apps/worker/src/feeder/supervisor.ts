@@ -193,12 +193,14 @@ export type ProcessRunner = {
 	/**
 	 * One-shot run with buffered output (ffprobe, the loop normalizer). An
 	 * aborted `signal` kills the child; the caller reads its own stop flag
-	 * afterwards to tell a stop from a failure .
+	 * afterwards to tell a stop from a failure. An optional positive timer-safe
+	 * abortKillAfterMs escalates an aborted child to SIGKILL after its grace;
+	 * the result still waits for close. Omission preserves SIGTERM-only behavior.
 	 */
 	run(
 		bin: string,
 		argv: string[],
-		options?: { signal?: AbortSignal },
+		options?: { signal?: AbortSignal; abortKillAfterMs?: number },
 	): Promise<{ code: number | null; stdout: string; stderr: string }>;
 };
 

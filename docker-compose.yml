@@ -85,8 +85,8 @@ services:
       NODE_ENV: "production"
       FFMPEG_PATH: "ffmpeg"
       FFPROBE_PATH: "ffprobe"
-      VMAF_CONCURRENCY: ${VMAF_CONCURRENCY:-1}
-      VMAF_THREADS: ${VMAF_THREADS:-2}
+      VMAF_CONCURRENCY: "${VMAF_CONCURRENCY:-}"
+      VMAF_THREADS: "${VMAF_THREADS:-}"
       DEPLOYMENT_PROFILE: "${DEPLOYMENT_PROFILE:-UNRESTRICTED}"
     volumes:
       - ./verify-runs:/verify-runs

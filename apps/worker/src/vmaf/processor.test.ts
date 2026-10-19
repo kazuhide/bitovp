@@ -18,6 +18,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
 import type { VmafDownload } from "./download";
+import {
+	createLocalVmafResources,
+	type LocalVmafResources,
+} from "./local-resources";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 
 /**
@@ -207,6 +211,8 @@ function setup(
 		/** stderr the canned ffmpeg run emits on a non-zero exit. */
 		ffmpegStderr?: string;
 		probeExit?: number;
+		probeJson?: string;
+		localResources?: LocalVmafResources;
 		download?: VmafDownload;
 		concurrency?: number;
 		cloudScore?: VmafProcessorDeps["cloudScore"];
@@ -379,6 +385,12 @@ function setup(
 		run: vi.fn(async (_bin: string, argv: string[]) => {
 			// ffprobe call: -show_streams present, no filter_complex.
 			if (argv.includes("-show_streams")) {
+				if (opts.probeJson)
+					return {
+						code: opts.probeExit ?? 0,
+						stdout: opts.probeJson,
+						stderr: "",
+					};
 				// Distorted-mirror probe (adds -show_format) → the per-title rung's
 				// REAL height + bitrate for the ladder. The reference probe omits it.
 				if (argv.includes("-show_format")) {
@@ -471,6 +483,7 @@ function setup(
 		...(opts.resolveModelPath
 			? { resolveModelPath: opts.resolveModelPath }
 			: {}),
+		...(opts.localResources ? { localResources: opts.localResources } : {}),
 	};
 
 	return {
@@ -501,6 +514,77 @@ afterEach(() => {
 });
 
 describe("createVmafProcessor", () => {
+	it("limits abort escalation to ordinary local scoring commands", async () => {
+		const t = setup();
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		const calls = vi.mocked(t.runner.run).mock.calls;
+		const scoring = calls.filter(([, argv]) =>
+			argv.join(" ").includes("libvmaf"),
+		);
+		const preparation = calls.filter(
+			([, argv]) => !argv.join(" ").includes("libvmaf"),
+		);
+		expect(scoring).toHaveLength(2);
+		expect(preparation.length).toBeGreaterThan(0);
+		for (const [, , options] of scoring) {
+			expect(options).toMatchObject({
+				abortKillAfterMs: 250,
+				signal: expect.any(AbortSignal),
+			});
+		}
+		for (const [, , options] of preparation) {
+			expect(options).not.toHaveProperty("abortKillAfterMs");
+		}
+	});
+
+	it("applies the local resource policy through the real processor factory", async () => {
+		const localResources = createLocalVmafResources({
+			readResources: () => ({
+				cpuCapacity: 4,
+				budgetBytes: 3 * 1024 ** 3,
+				reserveBytes: 512 * 1024 ** 2,
+			}),
+		});
+		const probeJson = JSON.stringify({
+			streams: [
+				{
+					codec_type: "video",
+					codec_name: "h264",
+					width: 1920,
+					height: 1080,
+					pix_fmt: "yuv420p",
+					r_frame_rate: "30/1",
+					duration: "10",
+					nb_frames: "300",
+				},
+			],
+		});
+		const t = setup({ localResources, probeJson });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).resolves.toMatchObject({
+			status: "FINISHED",
+			results: 2,
+		});
+		expect(t.filterComplexArgs).toHaveLength(2);
+		for (const graph of t.filterComplexArgs) {
+			expect(graph).toContain("n_threads=4");
+			expect(graph).not.toContain("n_subsample");
+		}
+		const calls = vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-filter_complex"));
+		for (const [, argv] of calls) {
+			expect(argv.filter((value) => value === "-threads")).toHaveLength(2);
+			expect(argv[argv.indexOf("-filter_complex_threads") + 1]).toBe("1");
+		}
+		expect(t.job).toMatchObject({ cores: 4, threads: 4, concurrency: 1 });
+		expect(
+			(t.job.params as { localResources: { units: unknown[] } }).localResources
+				.units,
+		).toHaveLength(2);
+	});
+
 	it("scores existing full MP4s through Lab with PSNR and leaves encoding QC untouched", async () => {
 		const plan = qcPlan();
 		delete plan.qc;
@@ -660,6 +744,13 @@ describe("createVmafProcessor", () => {
 			plan,
 			subsample: 4,
 			cloudScore,
+			localResources: {
+				begin: () => {
+					throw new Error(
+						"Cloud scoring must not enter local resource admission",
+					);
+				},
+			},
 			job: {
 				params: {
 					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
@@ -1271,6 +1362,8 @@ describe("createVmafProcessor", () => {
 			).toMatchObject({ status: "FINISHED", results: 2 });
 			expect(listKeys).not.toHaveBeenCalled();
 			expect(cloudScore).toHaveBeenCalledTimes(2);
+			for (const [, , options] of vi.mocked(t.runner.run).mock.calls)
+				expect(options ?? {}).not.toHaveProperty("abortKillAfterMs");
 			for (const [request] of cloudScore.mock.calls)
 				expect(request.options).toMatchObject({
 					measurementMethod: "FRAME_INDEX_BT709_10BIT",
@@ -2676,6 +2769,8 @@ describe("cloud scoring integration", () => {
 			budgetUsd: 10,
 		});
 		expect(t.filterComplexArgs).toHaveLength(0);
+		for (const [, , options] of vi.mocked(t.runner.run).mock.calls)
+			expect(options ?? {}).not.toHaveProperty("abortKillAfterMs");
 	});
 	it("does not silently fall back to local when selected cloud is unavailable", async () => {
 		const t = setup({
@@ -2872,4 +2967,110 @@ it.each([
 	);
 	expect(t.downloaded).toHaveLength(0);
 	expect(cloudScore).not.toHaveBeenCalled();
+});
+
+describe("measurement reset cadence", () => {
+	it.each([
+		undefined,
+		"LOCAL",
+	])("local reset cadence preserves an 850ms physical teardown budget (%s)", async (backend) => {
+		vi.useFakeTimers();
+		const t = setup(
+			backend ? { job: { params: { execution: { backend } } } } : {},
+		);
+		const original = vi.mocked(t.runner.run).getMockImplementation();
+		if (!original) throw new Error("Missing fixture runner");
+		let started!: () => void;
+		const didStart = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let closed = false;
+		vi.mocked(t.runner.run).mockImplementation((bin, argv, options) => {
+			if (!argv.includes("-filter_complex"))
+				return original(bin, argv, options);
+			started();
+			return new Promise((resolve) =>
+				options?.signal?.addEventListener(
+					"abort",
+					() => {
+						setTimeout(() => {
+							closed = true;
+							resolve({ code: null, stdout: "", stderr: "" });
+						}, 850);
+					},
+					{ once: true },
+				),
+			);
+		});
+		const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		pending.catch(() => {});
+		try {
+			await didStart;
+			t.vmafJob.findUnique.mockResolvedValue(null as never);
+			await vi.advanceTimersByTimeAsync(949);
+			expect(closed).toBe(false);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(closed).toBe(true);
+			await expect(pending).resolves.toMatchObject({
+				status: "MISSING",
+				results: 0,
+			});
+			expect(t.results).toEqual([]);
+		} finally {
+			t.vmafJob.findUnique.mockResolvedValue(null as never);
+			await vi.advanceTimersByTimeAsync(3_000);
+			await pending.catch(() => {});
+			vi.useRealTimers();
+		}
+	});
+
+	it("cloud reset cadence retains its one-second interval", async () => {
+		vi.useFakeTimers();
+		let started!: () => void;
+		const didStart = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let aborted = false;
+		const t = setup({
+			job: {
+				params: {
+					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+				},
+			},
+			cloudScore: async (request) => {
+				started();
+				await new Promise<void>((_resolve, reject) =>
+					request.signal?.addEventListener(
+						"abort",
+						() => {
+							aborted = true;
+							reject(request.signal?.reason);
+						},
+						{ once: true },
+					),
+				);
+			},
+		});
+		const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		pending.catch(() => {});
+		try {
+			await didStart;
+			t.job.status = "ERROR";
+			t.job.error = "Canceled";
+			await vi.advanceTimersByTimeAsync(999);
+			expect(aborted).toBe(false);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(aborted).toBe(true);
+			await expect(pending).resolves.toMatchObject({
+				status: "ERROR",
+				results: 0,
+			});
+			expect(t.results).toEqual([]);
+		} finally {
+			t.job.status = "ERROR";
+			await vi.advanceTimersByTimeAsync(2_000);
+			await pending.catch(() => {});
+			vi.useRealTimers();
+		}
+	});
 });

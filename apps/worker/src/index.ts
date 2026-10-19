@@ -92,6 +92,10 @@ import {
 } from "./live/reconcile-stranded-runs";
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
+import {
+	liveChannelConcurrency,
+	reserveLiveStopCapacity,
+} from "./live-capacity";
 import { createInboundDispatcher } from "./notify/dispatcher";
 import { createEventEmitter } from "./notify/emitter";
 import { createNotifyProcessor } from "./notify/processor";
@@ -170,6 +174,12 @@ if (existsSync(envFile)) {
 }
 
 const env = loadEnv();
+// Reserve one total slot for stop/cancellation even while ordinary Live work
+// waits on the provider. The same total config drives admission and BullMQ.
+const LIVE_CHANNEL_CONCURRENCY = liveChannelConcurrency(
+	process.env.LIVE_CHANNEL_CONCURRENCY,
+);
+
 const basePrisma = createPrismaClient(env.DATABASE_URL);
 const tenantClients = new Map<
 	string,
@@ -1567,24 +1577,6 @@ const ORCHESTRATOR_CONCURRENCY = Number(
 	process.env.ORCHESTRATOR_CONCURRENCY ?? 8,
 );
 
-/**
- * The live lifecycle queue, for the same reason plus a worse one.
- *
- * Provisioning blocks at `AWAIT_LIVE_RUNNING` until Bitmovin brings the live encoding up —
- * minutes, measured. And per live-processor's own contract, STOP/restart/reset-timeshift/
- * SCTE-35 are "dispatched through the same queue with an `action` field". At concurrency 1 an
- * operator who starts channel B while A is still provisioning CANNOT STOP A: the stop job waits
- * behind a provisioning job that is itself waiting on a third party. A live channel bills while
- * it runs, so an unstoppable channel is not merely slow.
- *
- * feederManager already carries this exact reasoning ("a 'start' job stays active for the
- * entire push … and 'stop' jobs must still reach the supervisor meanwhile") — the live queue
- * needed it and did not have it.
- */
-const LIVE_CHANNEL_CONCURRENCY = Number(
-	process.env.LIVE_CHANNEL_CONCURRENCY ?? 8,
-);
-
 // Through the validated env, NOT `Number(process.env.X ?? DEFAULT)`:
 // `Number("")` is 0, BullMQ reads 0 as "never fail", and `??` does not catch
 // the empty string a `KEY=` line produces (review-final measured all four
@@ -1599,9 +1591,12 @@ const VMAF_JOB_CONCURRENCY = cloudJobConcurrency(
 );
 
 const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
+	const consume = consumeTenantJob(key, handlers[key]);
 	const worker = new Worker(
 		QUEUE_NAMES[key],
-		consumeTenantJob(key, handlers[key]),
+		key === "liveChannel"
+			? reserveLiveStopCapacity(LIVE_CHANNEL_CONCURRENCY, consume)
+			: consume,
 		{
 			connection: { url: env.REDIS_URL },
 			// : BullMQ's default retires a resumable job on its SECOND

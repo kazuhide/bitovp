@@ -370,6 +370,79 @@ test("original console errors retain useful fixed categories without returning t
 	])
 		assert.equal(classifyBrowserError({ message }), expected);
 });
+test("console resource failures expose fixed causes without resource names or codes", () => {
+	const examples = [
+		["Failed to load resource: net::ERR_CONNECTION_REFUSED", "network-refused"],
+		["Failed to load resource: net::ERR_CONNECTION_RESET", "network-reset"],
+		["Failed to load resource: net::ERR_CONNECTION_CLOSED", "network-closed"],
+		["Failed to load resource: net::ERR_EMPTY_RESPONSE", "network-empty"],
+		["Failed to load resource: net::ERR_TIMED_OUT", "network-timeout"],
+		[
+			"Failed to load resource: net::ERR_CONNECTION_TIMED_OUT",
+			"network-timeout",
+		],
+		["Failed to load resource: net::ERR_ABORTED", "network-aborted"],
+		["Failed to load resource: net::ERR_PRIVATE_UNKNOWN", "network-other"],
+		["TypeError: Failed to fetch private URL", "network-other"],
+		[
+			"Failed to load resource: the server responded with a status of 404 (private)",
+			"resource-http-404",
+		],
+		[
+			"Failed to load resource: the server responded with a status of 503 (private)",
+			"resource-http-5xx",
+		],
+		[
+			"Failed to load resource: the server responded with a status of 401 (private)",
+			"resource-http-other",
+		],
+		["Failed to load resource: private data", "resource-load"],
+		[
+			"Refused to load private URL because it violates Content Security Policy",
+			"csp",
+		],
+		["Access to private URL has been blocked by CORS policy", "cors"],
+		[
+			"Refused to execute private script because its MIME type is not executable",
+			"mime-type",
+		],
+		[
+			"Failed to find a valid digest in the integrity attribute for private resource",
+			"integrity",
+		],
+		["Loading CSS chunk private failed", "module-load"],
+		["Failed to load module script at private URL", "module-load"],
+		[
+			"Text content did not match. Server: private Client: private",
+			"hydration",
+		],
+		["Expected server HTML to contain a matching private element", "hydration"],
+		[
+			`${"x".repeat(2000)}Failed to load resource: net::ERR_CONNECTION_RESET`,
+			"unknown",
+		],
+	];
+	assert.deepEqual(
+		examples.map(([message]) => classifyBrowserError({ message })),
+		examples.map(([, expected]) => expected),
+	);
+	for (const [, category] of examples) {
+		const changed = report();
+		const browserTest = changed.suites[0].specs[5].tests[0];
+		browserTest.results[0].status = "failed";
+		browserTest.annotations = [
+			{ type: "smoke-state", description: `console-post-login-${category}` },
+			{
+				type: "smoke-state",
+				description: `console-post-login-${category} private URL cookie`,
+			},
+		];
+		assert.equal(
+			failureSummary(JSON.stringify(changed))[5],
+			`Browser case: ${CASES[5]}; status=failed; state=console-post-login-${category}`,
+		);
+	}
+});
 test("structured failure diagnostics reserve bounded slots for original errors and sessions", () => {
 	const changed = report();
 	const browserTest = changed.suites[0].specs[5].tests[0];
@@ -571,7 +644,7 @@ test("session records retain request-start document and response-arrival slots",
 	assert.equal(observations.postLoginSessionStarted, true);
 	assert(!JSON.stringify(observations).includes("private"));
 });
-test("diagnostic observers keep the first four original errors and classify console text only", async () => {
+test("diagnostic observers keep the first four distinct categories and classify console text only", async () => {
 	const { observeSessionResponses } = await import(
 		"../tests/browser/diagnostics.ts"
 	);
@@ -600,15 +673,204 @@ test("diagnostic observers keep the first four original errors and classify cons
 	});
 	page.emit("pageerror", {
 		name: "TypeError",
-		message: "fifth must be ignored",
+		message: "fourth distinct category",
+	});
+	page.emit("pageerror", {
+		name: "SyntaxError",
+		message: "fifth distinct category must be ignored",
 	});
 	assert.deepEqual(observations.browserErrors, [
 		"console-initial-login-react-418",
 		"console-initial-login-unknown",
 		"browser-initial-login-reference-error",
-		"console-initial-login-unknown",
+		"browser-initial-login-type-error",
 	]);
 	assert(!JSON.stringify(observations).includes("private"));
+});
+test("primary Web failure snapshots require ownership and inspect only explicit fields", async () => {
+	const { reportPrimaryWebFailure } = await import("./installed-gui-smoke.mjs");
+	const container = "a".repeat(64);
+	for (const state of [
+		{ running: true, oom: false, exit: 0, restarts: 0 },
+		{ running: false, oom: false, exit: 137, restarts: 0 },
+		{ running: false, oom: true, exit: 137, restarts: 2 },
+		{ running: false, oom: false, exit: 1, restarts: 0 },
+	]) {
+		const calls = [],
+			lines = [];
+		await reportPrimaryWebFailure(
+			{ id },
+			{
+				env: { DATABASE_URL: "private synthetic value" },
+				notify: (line) => lines.push(line),
+				execute: async (binary, args, options) => {
+					assert.equal(binary, "docker");
+					assert.equal(options.env.DATABASE_URL, undefined);
+					calls.push(args);
+					if (args.includes("ps")) {
+						for (const filter of [
+							`label=io.bitovp.gui-smoke=${id}`,
+							`label=com.docker.compose.project=bitovp-gui-${id}`,
+							"label=com.docker.compose.service=web",
+						])
+							assert(args.includes(filter));
+						assert(args.includes("--no-trunc"));
+						return container;
+					}
+					assert.equal(args.at(-1), container);
+					assert(args.includes("--format"));
+					const format = args[args.indexOf("--format") + 1];
+					if (format.includes(".Config.Labels")) {
+						assert.deepEqual(
+							[
+								...new Set(
+									format.match(/(?<![A-Za-z0-9_])\.[A-Za-z_][A-Za-z0-9_.]*/g),
+								),
+							],
+							[".Config.Labels"],
+						);
+						assert.deepEqual(
+							[...format.matchAll(/index \.Config\.Labels "([^"]+)"/g)].map(
+								(match) => match[1],
+							),
+							[
+								"io.bitovp.gui-smoke",
+								"com.docker.compose.project",
+								"com.docker.compose.service",
+							],
+						);
+						return JSON.stringify({
+							fixture: id,
+							project: `bitovp-gui-${id}`,
+							service: "web",
+						});
+					}
+					assert.equal(
+						calls.length,
+						3,
+						"Ownership must be established before state is read",
+					);
+					assert.deepEqual(
+						[
+							...new Set(
+								format.match(/(?<![A-Za-z0-9_])\.[A-Za-z_][A-Za-z0-9_.]*/g),
+							),
+						].sort(),
+						[
+							".RestartCount",
+							".State.ExitCode",
+							".State.OOMKilled",
+							".State.Running",
+						],
+					);
+					return JSON.stringify(state);
+				},
+			},
+		);
+		assert.equal(calls.length, 3);
+		assert.deepEqual(lines, [
+			`Primary Web diagnostic: running=${state.running}; oom=${state.oom}; exit=${state.exit === 0 ? "zero" : state.exit === 137 ? "137" : "other"}; restarts=${state.restarts === 0 ? "none" : "some"}`,
+		]);
+		assert(!JSON.stringify(lines).includes("private"));
+	}
+});
+test("unavailable Web diagnostics cannot expose untrusted data or replace the original failure", async () => {
+	const { reportPrimaryWebFailure } = await import("./installed-gui-smoke.mjs");
+	for (const variant of [
+		"missing",
+		"ambiguous",
+		"foreign-fixture",
+		"foreign-project",
+		"foreign-service",
+		"invalid-running",
+		"invalid-oom",
+		"invalid-exit",
+		"invalid-exit-range",
+		"invalid-restarts",
+		"negative-restarts",
+		"missing-state",
+		"malformed-state",
+		"oversized-state",
+		"command-error",
+		"notify-error",
+		"notify-rejection",
+	]) {
+		let calls = 0;
+		const lines = [];
+		const original = new Error("Original browser failure");
+		await assert.rejects(
+			async () => {
+				try {
+					throw original;
+				} catch (error) {
+					await reportPrimaryWebFailure(
+						{ id },
+						{
+							env: {},
+							notify: (line) => {
+								if (variant === "notify-error")
+									throw new Error("private notification");
+								if (variant === "notify-rejection")
+									return Promise.reject(new Error("private notification"));
+								lines.push(line);
+							},
+							execute: async (_binary, args) => {
+								calls++;
+								if (variant === "command-error")
+									throw new Error("private Docker error");
+								if (args.includes("ps"))
+									return variant === "missing"
+										? ""
+										: variant === "ambiguous"
+											? `${"a".repeat(64)}\n${"b".repeat(64)}`
+											: "a".repeat(64);
+								const format = args[args.indexOf("--format") + 1];
+								if (format.includes(".Config.Labels"))
+									return JSON.stringify({
+										fixture: variant === "foreign-fixture" ? "private" : id,
+										project:
+											variant === "foreign-project"
+												? "private"
+												: `bitovp-gui-${id}`,
+										service: variant === "foreign-service" ? "private" : "web",
+									});
+								if (variant === "missing-state") return "null";
+								if (variant === "malformed-state")
+									return "private invalid JSON";
+								if (variant === "oversized-state") return "private".repeat(600);
+								return JSON.stringify({
+									running: variant === "invalid-running" ? "private" : false,
+									oom: variant === "invalid-oom" ? "private" : false,
+									exit:
+										variant === "invalid-exit"
+											? "private"
+											: variant === "invalid-exit-range"
+												? 256
+												: 0,
+									restarts:
+										variant === "invalid-restarts"
+											? 0.5
+											: variant === "negative-restarts"
+												? -1
+												: 0,
+								});
+							},
+						},
+					);
+					throw error;
+				}
+			},
+			(error) => error === original,
+		);
+		assert.deepEqual(
+			lines,
+			variant.startsWith("notify-")
+				? []
+				: ["Primary Web diagnostic: unavailable"],
+		);
+		if (variant.startsWith("foreign-"))
+			assert.equal(calls, 2, "Foreign state must not be inspected");
+	}
 });
 test("failed sign-in prioritizes fixed original POST evidence within existing output bounds", () => {
 	const changed = report();

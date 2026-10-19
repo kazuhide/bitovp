@@ -37,6 +37,21 @@ const browserErrors = [
 	"reference-error",
 	"type-error",
 	"syntax-error",
+	"network-refused",
+	"network-reset",
+	"network-closed",
+	"network-empty",
+	"network-timeout",
+	"network-aborted",
+	"network-other",
+	"resource-http-404",
+	"resource-http-5xx",
+	"resource-http-other",
+	"resource-load",
+	"csp",
+	"cors",
+	"mime-type",
+	"integrity",
 	"unknown",
 ] as const;
 
@@ -294,14 +309,33 @@ export function classifyBrowserError(
 			if (react[1] === "423") return "react-423";
 			return "react-other";
 		}
+		if (/Content Security Policy/i.test(message)) return "csp";
 		if (
-			/ChunkLoadError|Loading chunk[^\n]*failed|Failed to load (?:chunk|script)|dynamically imported module|Importing a module script failed/i.test(
+			/blocked by CORS policy|Cross-Origin Request Blocked|Cross-Origin-Resource-Policy/i.test(
+				message,
+			)
+		)
+			return "cors";
+		if (
+			/MIME type|Expected a JavaScript(?:-or-Wasm)? module script/i.test(
+				message,
+			)
+		)
+			return "mime-type";
+		if (
+			/valid digest.*integrity|integrity.*(?:digest|mismatch)|Subresource Integrity/i.test(
+				message,
+			)
+		)
+			return "integrity";
+		if (
+			/ChunkLoadError|Loading (?:CSS )?chunk[^\n]*failed|Failed to load (?:chunk|(?:module )?script)|dynamically imported module|Importing a module script failed/i.test(
 				`${name} ${message}`,
 			)
 		)
 			return "module-load";
 		if (
-			/hydration|hydrating|server rendered HTML|text content does not match/i.test(
+			/hydration|hydrating|hydrated|server rendered HTML|text content (?:does|did) not match|Expected server HTML to contain a matching|Did not expect server HTML to contain/i.test(
 				message,
 			)
 		)
@@ -314,6 +348,35 @@ export function classifyBrowserError(
 			return "hooks";
 		if (/No QueryClient set|use QueryClientProvider to set one/i.test(message))
 			return "query-client";
+		const network = message.match(/\bnet::(ERR_[A-Z_]{1,64})\b/);
+		if (network) {
+			const known = new Map<string, (typeof browserErrors)[number]>([
+				["ERR_CONNECTION_REFUSED", "network-refused"],
+				["ERR_CONNECTION_RESET", "network-reset"],
+				["ERR_CONNECTION_CLOSED", "network-closed"],
+				["ERR_EMPTY_RESPONSE", "network-empty"],
+				["ERR_CONNECTION_TIMED_OUT", "network-timeout"],
+				["ERR_TIMED_OUT", "network-timeout"],
+				["ERR_ABORTED", "network-aborted"],
+			]);
+			return known.get(network[1] ?? "") ?? "network-other";
+		}
+		if (
+			/Failed to fetch\b|NetworkError when attempting to fetch resource/i.test(
+				message,
+			)
+		)
+			return "network-other";
+		const http = message.match(
+			/Failed to load resource:[^\n]*status of ([1-5]\d{2})\b/i,
+		);
+		if (http)
+			return http[1] === "404"
+				? "resource-http-404"
+				: http[1]?.startsWith("5")
+					? "resource-http-5xx"
+					: "resource-http-other";
+		if (/Failed to load resource\b/i.test(message)) return "resource-load";
 		if (name === "ReferenceError" || /^ReferenceError:/.test(message))
 			return "reference-error";
 		if (name === "TypeError" || /^TypeError:/.test(message))
@@ -339,10 +402,10 @@ export function recordBrowserError(
 	error: unknown,
 	source: "browser" | "console" = "browser",
 ) {
-	if (observations.browserErrors.length < 4)
-		observations.browserErrors.push(
-			`${source}-${observations.phase}-${classifyBrowserError(error)}`,
-		);
+	if (observations.browserErrors.length >= 4) return;
+	const category = `${source}-${observations.phase}-${classifyBrowserError(error)}`;
+	if (!observations.browserErrors.includes(category))
+		observations.browserErrors.push(category);
 }
 
 export function recordConsoleError(

@@ -397,6 +397,72 @@ const docker = (args, env, execute = command, options = {}) =>
 		timeout: 60_000,
 		...options,
 	});
+
+/** Inspect only the owned primary Web's labels and lifecycle fields after failure. */
+export async function reportPrimaryWebFailure(
+	state,
+	{ env = process.env, execute = command, notify = console.log } = {},
+) {
+	let line = "Primary Web diagnostic: unavailable";
+	try {
+		assert(/^[a-f0-9]{32}$/.test(state.id));
+		const listed = await docker(
+			[
+				"ps",
+				"--all",
+				"--quiet",
+				"--no-trunc",
+				"--filter",
+				`label=${LABEL}=${state.id}`,
+				"--filter",
+				`label=com.docker.compose.project=${ownedName(state.id)}`,
+				"--filter",
+				"label=com.docker.compose.service=web",
+			],
+			env,
+			execute,
+		);
+		assert(typeof listed === "string" && listed.length <= 256);
+		const ids = listed.split(/\s+/).filter(Boolean);
+		assert(ids.length === 1 && /^[a-f0-9]{64}$/.test(ids[0]));
+		const inspect = async (format) => {
+			const raw = await docker(
+				["container", "inspect", "--format", format, ids[0]],
+				env,
+				execute,
+			);
+			assert(typeof raw === "string" && raw.length <= 4096);
+			return JSON.parse(raw);
+		};
+		const labels = await inspect(
+			`{"fixture":{{json (index .Config.Labels "${LABEL}")}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}}}`,
+		);
+		assert(
+			labels?.fixture === state.id &&
+				labels.project === ownedName(state.id) &&
+				labels.service === "web",
+		);
+		const data = await inspect(
+			'{"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"exit":{{json .State.ExitCode}},"restarts":{{json .RestartCount}}}',
+		);
+		assert(
+			typeof data?.running === "boolean" &&
+				typeof data.oom === "boolean" &&
+				Number.isInteger(data.exit) &&
+				data.exit >= 0 &&
+				data.exit <= 255 &&
+				Number.isSafeInteger(data.restarts) &&
+				data.restarts >= 0,
+		);
+		line = `Primary Web diagnostic: running=${data.running}; oom=${data.oom}; exit=${data.exit === 0 ? "zero" : data.exit === 137 ? "137" : "other"}; restarts=${data.restarts === 0 ? "none" : "some"}`;
+	} catch {
+		// Diagnostic failures must not replace the original browser failure.
+	}
+	try {
+		await notify(line);
+	} catch {}
+}
+
 const privateDirectory = (state) => {
 	assert(/^[a-f0-9]{32}$/.test(state.id), "Invalid smoke test identity");
 	assert(
@@ -876,6 +942,7 @@ export async function runFixture({
 	} catch (error) {
 		notify(`Installed GUI smoke failed during ${stage}`);
 		if (stage === "installed GUI browser tests") {
+			await reportPrimaryWebFailure(state, { env, notify });
 			let report;
 			try {
 				report = readFileSync(

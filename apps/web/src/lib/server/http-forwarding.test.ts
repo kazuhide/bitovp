@@ -95,6 +95,31 @@ function client(
 }
 
 describe("HTTP ingress body limits with a loopback upstream", () => {
+	it.each([
+		"(.)",
+		"(..)",
+		"(...)",
+		"(..)(..)",
+	])("rejects indexed %s interception aliases before the client ends", async (marker) => {
+		for (const tail of ["token", ""]) {
+			const { port, received, forwarded } = await fixture();
+			const { connection, result } = client(
+				port,
+				`/_next/data/current-build/index/api/webhooks/bitmovin/[x]/${marker}${tail}.json`,
+				{ "transfer-encoding": "chunked" },
+			);
+			try {
+				connection.write(Buffer.alloc(1_000_000));
+				await forwarded;
+				connection.write(Buffer.from("!"));
+				expect((await result).status).toBe(413);
+				expect(received.bytes).toBeLessThanOrEqual(1_000_000);
+				expect(received.bodies).toEqual([]);
+			} finally {
+				connection.destroy();
+			}
+		}
+	});
 	const limitedRoutes = [
 		["/api/auth/login", 4096],
 		["/api/auth/setup", 8192],
@@ -203,6 +228,8 @@ describe("HTTP ingress body limits with a loopback upstream", () => {
 		["/_next/data/current-build/api/webhooks/bitmovin/j/token.json", 1_000_000],
 		["/_next/data/current-build/api/encoding-jobs.json", 20_000],
 		["/_next/data/current-build/api/live-channels.json", 20_000],
+		["/_next/data/current-build/index/api/encoding-jobs.json", 20_000],
+		["/_next/data/current-build/index/api/live-channels.json", 20_000],
 	] as const)("preserves every byte on %s", async (path, length) => {
 		const { port, received } = await fixture();
 		const body = Buffer.alloc(length, 0xc3);

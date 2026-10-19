@@ -135,6 +135,8 @@ keeps its status. Within the webhook handler, unknown tokens are still rejected
 before reading the body.
 These three paths also receive the same ingress limits through
 `/_next/data/<build-id>/...json` aliases, including stale or unknown build IDs.
+Indexed aliases for these paths receive the size check even when the framework
+would otherwise reject their dynamic or interception-route syntax.
 
 ## Organization and identity
 

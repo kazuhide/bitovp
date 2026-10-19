@@ -1,3 +1,4 @@
+import { NextDataPathnameNormalizer } from "next/dist/server/normalizers/request/next-data";
 import { describe, expect, it } from "vitest";
 import { streamedRequest } from "@/__tests__/request-body-stream";
 import { readBoundedBody, readBoundedJson } from "./request-body";
@@ -86,6 +87,27 @@ describe("bounded request bytes", () => {
 
 describe("public body policies", () => {
 	it.each([
+		["(.)", false],
+		["(..)", true],
+		["(...)", true],
+		["(..)(..)", true],
+	] as const)("covers indexed data aliases when %s changes Next's dynamic lookup", (marker, stripsIndex) => {
+		const route = `/api/webhooks/bitmovin/[x]/${marker}token`;
+		const alias = `/_next/data/current-build/index${route}.json`;
+		const normalized = new NextDataPathnameNormalizer(
+			"current-build",
+		).normalize(alias);
+		expect(normalized).toBe(`${stripsIndex ? "" : "/index"}${route}`);
+		expect(publicRequestBodyPolicy("POST", alias)?.limit).toBe(1_000_000);
+		const invalidAlias = `/_next/data/current-build/index/api/webhooks/bitmovin/[x]/${marker}.json`;
+		expect(() =>
+			new NextDataPathnameNormalizer("current-build").normalize(invalidAlias),
+		).toThrow();
+		expect(publicRequestBodyPolicy("POST", invalidAlias)?.limit).toBe(
+			1_000_000,
+		);
+	});
+	it.each([
 		["/_next/data/current-build/api/auth/login.json", 4096],
 		["/_next/data/current-build/index/api/auth/login.json", 4096],
 		["/_next/data/current-build/api/%61uth/login.json", 4096],
@@ -100,11 +122,35 @@ describe("public body policies", () => {
 		"/_next/data/current-build/api/auth/login%2ejson",
 		"/_next/data/current-build/api/auth/login.json/extra",
 		"/_next/data/current-build/index/index/api/auth/login.json",
-		"/_next/data/current-build/index/api/webhooks/bitmovin/[scope]/token.json",
 		"/_next/data/current-build/api/encoding-jobs.json",
 		"/_next/data/current-build/api/live-channels.json",
 	])("does not unwrap an unrelated or differently encoded data path %s", (path) => {
 		expect(publicRequestBodyPolicy("POST", path)).toBeNull();
+	});
+	it("conservatively limits an indexed webhook alias even when Next would retain index and return 404", () => {
+		expect(
+			publicRequestBodyPolicy(
+				"POST",
+				"/_next/data/current-build/index/api/webhooks/bitmovin/[scope]/token.json",
+			)?.limit,
+		).toBe(1_000_000);
+	});
+	it.each([
+		"(.)",
+		"(..)",
+		"(...)",
+		"(..)(..)",
+	])("keeps unrelated VOD and Live aliases outside the policy with %s", (marker) => {
+		for (const route of ["encoding-jobs", "live-channels"]) {
+			for (const tail of ["token", ""]) {
+				expect(
+					publicRequestBodyPolicy(
+						"POST",
+						`/_next/data/current-build/index/api/${route}/[x]/${marker}${tail}.json`,
+					),
+				).toBeNull();
+			}
+		}
 	});
 	it.each([
 		"/api/auth/login",

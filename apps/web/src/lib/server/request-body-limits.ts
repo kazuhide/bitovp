@@ -52,10 +52,10 @@ export function publicRequestBodyPolicy(
 	const dataPath = /^\/_next\/data\/[^/]+(\/.*)\.json$/.exec(pathname)?.[1];
 	if (dataPath) {
 		pathname = dataPath;
-		if (
-			pathname.startsWith("/index/") &&
-			!/\/\[[^/]+?\](?=\/|$)/.test(pathname)
-		) {
+		// Conservatively cover indexed aliases without copying Next's dynamic
+		// and interception-route parsing. The policy below still names only
+		// the three limited endpoints, and the forwarded URL stays untouched.
+		if (pathname.startsWith("/index/")) {
 			pathname = pathname.slice(6);
 		}
 	}

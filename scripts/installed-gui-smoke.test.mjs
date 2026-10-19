@@ -170,6 +170,36 @@ test("failure summaries show unstarted cases and bound report traversal", () => 
 		["Browser diagnostic: unrecognized report structure"],
 	);
 });
+test("discovery errors expose fixed categories without raw module paths or messages", () => {
+	const changed = report();
+	changed.errors = [
+		{ message: "Error: Cannot find module '/private/credential-path'" },
+		{
+			message: "Playwright Test did not expect test.describe.configure() here",
+		},
+		{ message: "Error: No tests found. private filter" },
+		{
+			message: "browserType.launch: Executable doesn't exist at /private/path",
+		},
+		{ message: "SyntaxError: private source text" },
+		{ message: "Run browser verification on a GitHub-hosted Linux runner" },
+		{ message: "Only the dedicated loopback installation may be tested" },
+		{ message: "private error, cookie and password" },
+	];
+	assert.deepEqual(failureSummary(JSON.stringify(changed)).slice(0, 8), [
+		"Browser diagnostic: module resolution",
+		"Browser diagnostic: test registration",
+		"Browser diagnostic: test discovery",
+		"Browser diagnostic: browser launch",
+		"Browser diagnostic: module loading",
+		"Browser diagnostic: hosted runner guard",
+		"Browser diagnostic: fixture configuration",
+		"Browser diagnostic: unclassified preflight error",
+	]);
+	assert(
+		!failureSummary(JSON.stringify(changed)).join("\n").includes("private"),
+	);
+});
 test("a process being up is insufficient without all worker queue registrations", () => {
 	const queues = [
 		"usageStatistics",

@@ -229,10 +229,44 @@ export function failureSummary(raw) {
 	} catch {
 		return ["Browser diagnostic: unrecognized report structure"];
 	}
-	return CASES.map(
-		(title) =>
-			`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}`,
-	);
+	const categories = new Set();
+	for (const error of Array.isArray(report.errors)
+		? report.errors.slice(0, 20)
+		: []) {
+		const message =
+			typeof error?.message === "string" ? error.message.slice(0, 10_000) : "";
+		const category =
+			[
+				[/Cannot find module|ERR_MODULE_NOT_FOUND/, "module resolution"],
+				[/Playwright Test did not expect/, "test registration"],
+				[/No tests found/, "test discovery"],
+				[
+					/browserType\.launch|Executable doesn't exist|Host system is missing dependencies/,
+					"browser launch",
+				],
+				[
+					/SyntaxError|Transform failed|Cannot use import statement|require is not defined/,
+					"module loading",
+				],
+				[
+					/Run browser verification on a GitHub-hosted Linux runner/,
+					"hosted runner guard",
+				],
+				[
+					/Only the dedicated loopback installation may be tested|Run the installed GUI fixture launcher first/,
+					"fixture configuration",
+				],
+			].find(([pattern]) => pattern.test(message))?.[1] ??
+			"unclassified preflight error";
+		categories.add(`Browser diagnostic: ${category}`);
+	}
+	return [
+		...categories,
+		...CASES.map(
+			(title) =>
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}`,
+		),
+	];
 }
 
 export function workerReady(log) {

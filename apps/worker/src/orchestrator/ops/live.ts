@@ -42,7 +42,7 @@ import {
 	UpdateEncodingRtmpIngestPointRequest,
 } from "@bitmovin/api-sdk";
 import type { LiveHeartbeatSample, SdkOps } from "../sdk-ops";
-import { reconcileStartFailure, retryStart1004 } from "../start-1004-retry";
+import { startWithRetry1004 } from "../start-1004-retry";
 import type { OpsContext } from "./context";
 import {
 	cacheControl,
@@ -72,7 +72,7 @@ export function createLiveOps(
 	| "listLiveInsertableContent"
 	| "listScheduledInsertableContent"
 > {
-	const { api, audited, id } = ctx;
+	const { api, audited, id, options } = ctx;
 	// review-223 F3: the SDK default page is 25 — a channel that accumulated
 	// more contents (slates re-registered across restarts adopt by name, but
 	// every distinct schedule row mints one) would make adopt-by-name miss and
@@ -233,7 +233,7 @@ export function createLiveOps(
 				// VOD start and hits the same settle window (measured: a
 				// scheduled channel's live/start answered 500/1004).
 				() =>
-					retryStart1004(
+					startWithRetry1004(
 						() =>
 							start(
 								new Request({
@@ -415,22 +415,12 @@ export function createLiveOps(
 										: undefined,
 								}),
 							),
-						(ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
-					).catch(async (err) => {
-						const outcome = await reconcileStartFailure(() =>
+						() =>
 							api.encoding.encodings
 								.status(encodingId)
 								.then((task) => ({ status: String(task.status) })),
-						);
-						if (outcome.started) {
-							return {
-								result: undefined as never,
-								retries: 0,
-								reconciledFrom: outcome.remoteStatus,
-							};
-						}
-						throw err;
-					}),
+						options.startControl,
+					),
 				(done: { retries: number; reconciledFrom?: string }) => ({
 					started: true,
 					...(done.retries > 0 ? { start1004Retries: done.retries } : {}),

@@ -1,26 +1,7 @@
 /**
- * Bounded retry for the start-1004 window — 's root cause, measured
- * 2026-08-14 with real credentials.
- *
- * POST /encodings/{id}/start intermittently answers HTTP 500 code 1004
- * ("An undefined error occurred") for a SHORT window after the encoding's
- * resources were created WITH the #38 idempotency stamp. Measured, not
- * reasoned: two fresh stamped encodings 500/1004'd on their immediate start,
- * and the SAME encodings answered 202 on a manual re-POST (+~3 min and
- * +3.5 h respectively), then ran to FINISHED — while the stamp-free twin
- * started first try. The stamp's customData writes settle asynchronously on
- * Bitmovin's side, and start's validation can lose that race; the 2026-08-14
- * E2E's stamp-on/stamp-off A/B (n=1 per arm) read this timing race as
- * "stamping breaks start".
- *
- * The retry is deliberately narrow: THIS signature only (500 + errorCode
- * 1004), start only (create ops never showed it, and manifest starts run
- * minutes after their creates — outside any settle window). The escalating
- * schedule totals ~11.75 min: measured cures were ~3 min (bfbc1846), 3–7 min
- * (6395414a — it outlived the first 2.75-min schedule and answered 202 on
- * the next manual probe), and one unbounded ≤3.5 h (c3666fbe, probed late).
- * A PERSISTENT 1004 still fails, carrying the attempt count so the error is
- * honest about the time already spent.
+ * Retry only encoding START responses with HTTP 500 and error code 1004.
+ * Other errors fail immediately. After an uncertain failure, an exact-id
+ * status read can establish whether the provider already accepted START.
  */
 
 export const START_1004_DELAYS_MS: readonly number[] = [
@@ -89,4 +70,73 @@ export async function reconcileStartFailure(
 		started: STARTED_STATUSES.has(remote.status),
 		remoteStatus: remote.status,
 	};
+}
+
+/** Internal control for one owned START; it never aborts an in-flight request. */
+export type StartRetryControl = {
+	check(attempted: boolean): Promise<void>;
+	sleep(ms: number): Promise<void>;
+};
+
+class StartControlInterrupted extends Error {
+	constructor(readonly reason: unknown) {
+		super("START control interrupted");
+	}
+}
+
+/** Keep the provider retry policy separate from cancellation and ownership failures. */
+export async function startWithRetry1004<T>(
+	send: () => Promise<T>,
+	readStatus: () => Promise<{ status: string }>,
+	control?: StartRetryControl,
+): Promise<{ result: T; retries: number; reconciledFrom?: string }> {
+	let attempted = false;
+	const controlled = async (run: () => Promise<void>) => {
+		try {
+			await run();
+		} catch (reason) {
+			throw new StartControlInterrupted(reason);
+		}
+	};
+	const check = async () => {
+		if (control) await controlled(() => control.check(attempted));
+	};
+	const sleep = async (ms: number) => {
+		if (!control) {
+			await new Promise((resolve) => setTimeout(resolve, ms));
+			return;
+		}
+		for (let remaining = ms; remaining > 0; ) {
+			await check();
+			const slice = Math.min(remaining, 1_000);
+			await controlled(() => control.sleep(slice));
+			remaining -= slice;
+		}
+	};
+	try {
+		try {
+			const done = await retryStart1004(async () => {
+				await check();
+				attempted = true;
+				return send();
+			}, sleep);
+			await check();
+			return done;
+		} catch (error) {
+			if (error instanceof StartControlInterrupted) throw error;
+			await check();
+			const outcome = await reconcileStartFailure(readStatus);
+			await check();
+			if (outcome.started)
+				return {
+					result: undefined as T,
+					retries: 0,
+					reconciledFrom: outcome.remoteStatus,
+				};
+			throw error;
+		}
+	} catch (error) {
+		if (error instanceof StartControlInterrupted) throw error.reason;
+		throw error;
+	}
 }

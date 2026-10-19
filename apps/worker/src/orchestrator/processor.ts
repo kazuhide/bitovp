@@ -44,6 +44,7 @@ import {
 	VerificationProviderOwnershipLostError,
 	verificationCreateIdentity,
 } from "./stamping-fetch";
+import type { StartRetryControl } from "./start-1004-retry";
 
 /**
  * Orchestrator (ARCHITECTURE §3): replays the job's persisted step log —
@@ -91,6 +92,7 @@ export type OrchestratorDeps = {
 		 * subtype of CreateStamp — the #163 lesson says a NARROWER declaration
 		    here lets a wiring silently drop a field, so keep it in lockstep. */
 		stamp?: CreateStamp;
+		startControl?: StartRetryControl;
 	}): SdkOps;
 	sleep(ms: number): Promise<void>;
 	pollIntervalMs: number;
@@ -521,6 +523,15 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				...(!row.cancelRequested && plan.internal?.hevcV2
 					? { internalHevcV2: plan.internal.hevcV2 }
 					: {}),
+				startControl: {
+					check: async (attempted) => {
+						if (!(await renewLease()))
+							throw new AttemptLeaseLostError(encodingJobId);
+						if (await checkCancel())
+							throw new CancelRequested(stampStep ?? "start", !attempted);
+					},
+					sleep: deps.sleep,
+				},
 				apiKey: account.apiKey,
 				tenantOrgId: account.tenantOrgId,
 				bitmovinAccountId: accountId,
@@ -635,8 +646,8 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		};
 		// Cancel finalize: stop the job's encoding(s) best-effort (a stop failure
 		// is logged, never fatal — we still cancel locally), then persist CANCELED
-		// with error:null (CANCELED is not an error). Non-DONE steps stay PENDING
-		// (the step did not fail); persist recomputes doneSteps from DONE entries.
+		// with error:null (CANCELED is not an error). Sent START attempts retain
+		// their markers; persist recomputes doneSteps from DONE entries.
 		const finalizeCancel = async (): Promise<{
 			acknowledged: true;
 			encodingJobId: string;
@@ -927,6 +938,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				// accepted P1 risk: benign orphan resources in the Bitmovin
 				// account (dedup via customData is a P2 follow-up).
 				const wasRunning = entry.status === "RUNNING";
+				const hadStartAttempt = entry.startedAt !== undefined;
 				const wasVerificationCreateAttempt =
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&
@@ -1077,15 +1089,16 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 							? err
 							: new AttemptLeaseLostError(encodingJobId);
 					}
-					// Cancel mid-await : a typed signal, NOT a step failure.
-					// Roll the interrupted step back to PENDING (it did not fail; clear
-					// the RUNNING markers we set above) and take the CANCELED finalize —
-					// never the ERROR/stop-siblings path. The finalize stops the running
-					// encoding best-effort. Resume can never re-enter (process returns
-					// early on CANCELED), but PENDING keeps the step log schema-honest.
+					// Cancellation is not a failed step. Preserve uncertain START
+					// attempts so recovery never treats a sent request as unsent.
 					if (err instanceof CancelRequested) {
-						entry.status = "PENDING";
-						entry.startedAt = undefined;
+						if (
+							entry.kind !== "START_ENCODING" ||
+							(err.beforeSend && !hadStartAttempt)
+						) {
+							entry.status = "PENDING";
+							entry.startedAt = undefined;
+						}
 						entry.error = undefined;
 						return await finalizeCancel();
 					}

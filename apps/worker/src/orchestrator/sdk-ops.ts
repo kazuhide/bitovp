@@ -16,6 +16,7 @@ import { createMonitoringFetch } from "./monitoring-fetch";
 import { createOrphanStopFetch } from "./orphan-stop-fetch";
 import { createRetryingFetch } from "./retrying-fetch";
 import { type CreateStamp, createStampingFetch } from "./stamping-fetch";
+import type { StartRetryControl } from "./start-1004-retry";
 
 /**
  * The @bitmovin/api-sdk boundary. This file owns the CONTRACT (SdkOps and
@@ -1537,6 +1538,8 @@ import {
 export { BitmovinCallError, sdkEnumValue } from "./ops/shared";
 
 export type SdkOpsOptions = {
+	/** Ownership and cancellation admission for ordinary VOD/Live START only. */
+	startControl?: StartRetryControl;
 	/** Monitoring GETs share one deadline, including body download. */
 	monitoringSignal?: AbortSignal;
 	internalHevcV2?: InternalHevcV2;

@@ -45,7 +45,12 @@ import {
 } from "./live-processor";
 import { makeWorkerSdk } from "./make-sdk";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
-import type { LiveHeartbeatSample, SdkOps, TaskStatusResult } from "./sdk-ops";
+import {
+	createBitmovinSdkOps,
+	type LiveHeartbeatSample,
+	type SdkOps,
+	type TaskStatusResult,
+} from "./sdk-ops";
 import {
 	type CreateStamp,
 	VerificationProviderIdDefinitelyNotPersistedError,
@@ -9934,6 +9939,282 @@ function cancelCurrentRun(h: ReturnType<typeof setup>) {
 }
 
 describe("cooperative startup cancellation", () => {
+	it.each([
+		"cancel",
+		"lease",
+		"run",
+	] as const)("does not resend START after %s wins its first 1004 wait", async (race) => {
+		vi.useFakeTimers();
+		try {
+			const h = setup();
+			let stopping = false;
+			h.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: stopping ? "FINISHED" : "CREATED",
+			}));
+			h.sdk.stopLiveEncoding = vi.fn(async () => {
+				stopping = true;
+			});
+			h.deps.sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+			h.deps.emitEvent = vi.fn(async () => {});
+			const wire = vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: "ERROR",
+							data: { code: 1004, message: "Synthetic settle window" },
+						}),
+						{ status: 500 },
+					),
+			);
+			vi.stubGlobal("fetch", wire);
+			h.deps.makeSdk = (args) => ({
+				...h.sdk,
+				startLiveEncoding: createBitmovinSdkOps(args, async () => {})
+					.startLiveEncoding,
+			});
+			let outcome: unknown;
+			void h.process({ liveChannelId: CHANNEL_ID }).then(
+				(result) => {
+					outcome = result;
+				},
+				(error) => {
+					outcome = error;
+				},
+			);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(wire).toHaveBeenCalledOnce();
+			const winner = new Date("2030-01-01T00:00:00Z");
+			if (race === "cancel") cancelCurrentRun(h);
+			else if (race === "lease") h.row.provisionClaimedAt = winner;
+			else
+				h.runRows.push({
+					id: LIVE_TO_VOD_RUN_ID,
+					seq: 100,
+					status: "PROVISIONING",
+				});
+			await vi.advanceTimersByTimeAsync(1_000);
+			expect(outcome).toMatchObject({
+				status: race === "cancel" ? "STOPPED" : "PROVISIONING",
+			});
+			expect(wire).toHaveBeenCalledOnce();
+			expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ kind: "CHANNEL_RUNNING" }),
+			);
+			expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ kind: "CHANNEL_ERROR" }),
+			);
+			expect(h.startupSample.upsert).not.toHaveBeenCalled();
+			if (race === "cancel") {
+				expect(h.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+					"bm-live-enc",
+				);
+				expect(h.row).toMatchObject({
+					status: "STOPPED",
+					bitmovinEncodingId: "bm-live-enc",
+					encoderStoppedConfirmedFor: "bm-live-enc",
+				});
+				expect(
+					(h.row.stepLog as StepLogEntry[]).find(
+						(entry) => entry.kind === "START_LIVE_ENCODING",
+					)?.startedAt,
+				).toBeDefined();
+			} else {
+				expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+				if (race === "lease") expect(h.row.provisionClaimedAt).toEqual(winner);
+			}
+			const count = h.updates.length;
+			await vi.advanceTimersByTimeAsync(100_000);
+			expect(h.updates).toHaveLength(count);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("honors a failed lease ticker before another START retry even if a later renewal could succeed", async () => {
+		vi.useFakeTimers();
+		try {
+			const h = setup();
+			h.deps.leaseRenewalIntervalMs = 50;
+			h.deps.sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+			const wire = vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: "ERROR",
+							data: { code: 1004, message: "Synthetic settle window" },
+						}),
+						{ status: 500 },
+					),
+			);
+			vi.stubGlobal("fetch", wire);
+			h.deps.makeSdk = (args) => ({
+				...h.sdk,
+				startLiveEncoding: createBitmovinSdkOps(args, async () => {})
+					.startLiveEncoding,
+			});
+			let outcome: unknown;
+			void h.process({ liveChannelId: CHANNEL_ID }).then(
+				(result) => {
+					outcome = result;
+				},
+				(error) => {
+					outcome = error;
+				},
+			);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(wire).toHaveBeenCalledOnce();
+			h.liveChannel.updateMany.mockRejectedValueOnce(
+				new Error("Synthetic unknown renewal outcome"),
+			);
+			await vi.advanceTimersByTimeAsync(1_000);
+			expect(outcome).toMatchObject({ status: "PROVISIONING" });
+			expect(wire).toHaveBeenCalledOnce();
+			expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			const count = h.updates.length;
+			await vi.advanceTimersByTimeAsync(100_000);
+			expect(h.updates).toHaveLength(count);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("does not send START when the lease ticker fails during its cancellation read", async () => {
+		vi.useFakeTimers();
+		try {
+			const h = setup();
+			h.deps.leaseRenewalIntervalMs = 50;
+			const wire = vi.fn(
+				async () =>
+					new Response(JSON.stringify({ data: { result: {} } }), {
+						status: 202,
+					}),
+			);
+			vi.stubGlobal("fetch", wire);
+			const findCurrent = h.liveChannelRun.findFirst.getMockImplementation();
+			let delayed = false;
+			h.deps.makeSdk = (args) => ({
+				...h.sdk,
+				startLiveEncoding: createBitmovinSdkOps(
+					{
+						...args,
+						startControl: {
+							sleep: h.deps.sleep,
+							check: async (attempted) => {
+								if (!delayed) {
+									delayed = true;
+									h.liveChannelRun.findFirst.mockImplementationOnce(
+										async (query) => {
+											h.liveChannel.updateMany.mockRejectedValueOnce(
+												new Error("Synthetic unknown renewal outcome"),
+											);
+											await new Promise((resolve) => setTimeout(resolve, 100));
+											return findCurrent?.(query) ?? null;
+										},
+									);
+								}
+								await args.startControl?.check(attempted);
+							},
+						},
+					},
+					async () => {},
+				).startLiveEncoding,
+			});
+			let outcome: unknown;
+			void h.process({ liveChannelId: CHANNEL_ID }).then(
+				(result) => {
+					outcome = result;
+				},
+				(error) => {
+					outcome = error;
+				},
+			);
+			await vi.advanceTimersByTimeAsync(100);
+			expect(delayed).toBe(true);
+			expect(outcome).toMatchObject({ status: "PROVISIONING" });
+			expect(wire).not.toHaveBeenCalled();
+			expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("keeps a late accepted START owned through cancellation and physical provider-stop readback", async () => {
+		vi.useFakeTimers();
+		try {
+			const h = setup();
+			let stopping = false;
+			let accept: ((value: Response) => void) | undefined;
+			h.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: stopping ? "FINISHED" : "QUEUED",
+			}));
+			h.sdk.stopLiveEncoding = vi.fn(async () => {
+				stopping = true;
+			});
+			h.deps.emitEvent = vi.fn(async () => {});
+			const wire = vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						accept = resolve;
+					}),
+			);
+			vi.stubGlobal("fetch", wire);
+			h.deps.makeSdk = (args) => ({
+				...h.sdk,
+				startLiveEncoding: createBitmovinSdkOps(args, async () => {})
+					.startLiveEncoding,
+			});
+			let outcome: unknown;
+			void h.process({ liveChannelId: CHANNEL_ID }).then(
+				(result) => {
+					outcome = result;
+				},
+				(error) => {
+					outcome = error;
+				},
+			);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(accept).toBeDefined();
+			cancelCurrentRun(h);
+			expect(outcome).toBeUndefined();
+			accept?.(
+				new Response(
+					JSON.stringify({ data: { result: { id: "bm-live-enc" } } }),
+					{ status: 202 },
+				),
+			);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(outcome).toMatchObject({ status: "STOPPED" });
+			expect(wire).toHaveBeenCalledOnce();
+			expect(h.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				"bm-live-enc",
+			);
+			expect(h.row).toMatchObject({
+				status: "STOPPED",
+				bitmovinEncodingId: "bm-live-enc",
+				encoderStoppedConfirmedFor: "bm-live-enc",
+			});
+			expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+			expect(h.sdk.getLiveEncodingDetails).not.toHaveBeenCalled();
+			expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ kind: "CHANNEL_RUNNING" }),
+			);
+			expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ kind: "CHANNEL_ERROR" }),
+			);
+			expect(h.startupSample.upsert).not.toHaveBeenCalled();
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("retains a cancellation that wins restart finalization for exact-run cleanup recovery", async () => {
 		const h = setup({
 			status: "PROVISIONING",

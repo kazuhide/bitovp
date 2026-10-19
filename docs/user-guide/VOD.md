@@ -112,4 +112,11 @@ during a two-hour recovery window. Once automatic recovery records a stop reques
 retrying the same resources is refused; use a new job instead. A stop request is
 not confirmation that the provider has stopped.
 
+A START error can leave the provider state uncertain. Cancellation prevents
+further START retries once the worker observes it; an in-flight request must
+settle first. `CANCELED` records local cancellation. The worker checks the exact
+encoding and requests a stop if it is queued or running, but only terminal
+provider readback confirms termination. A created or unknown provider state, or
+a failed stop or readback, leaves that confirmation pending.
+
 See [supported features and limits](../BITMOVIN-API-COVERAGE.md) for more restrictions.

@@ -163,7 +163,7 @@ it("excludes mapped JSON imports from unrelated new-channel browser drafts", asy
 					isImpersonating: false,
 				}
 			: url === "/api/live-channels"
-				? { id: "import-created" }
+				? { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9" }
 				: [],
 	);
 	renderWithQuery(<LiveWizard />);
@@ -187,7 +187,9 @@ it("excludes mapped JSON imports from unrelated new-channel browser drafts", asy
 	await waitFor(() => expect(create).toBeEnabled());
 	fireEvent.click(create);
 	await waitFor(() =>
-		expect(push).toHaveBeenCalledWith("/live/import-created"),
+		expect(push).toHaveBeenCalledWith(
+			"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9",
+		),
 	);
 	expect(localStorage.getItem(key)).toBe(existing);
 });

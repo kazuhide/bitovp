@@ -97,7 +97,8 @@ beforeEach(() => {
 					organizationId: "org",
 					effectiveUserId: "user",
 				};
-			if (options?.method === "POST") return { id: "created" };
+			if (options?.method === "POST")
+				return { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" };
 			if (url === "/api/vmaf-compute-profiles") return { items: [profile] };
 			if (url.startsWith("/api/infrastructure/")) return { items: [] };
 			if (url === "/api/credentials")

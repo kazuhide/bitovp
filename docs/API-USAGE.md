@@ -154,7 +154,7 @@ creates new work.
 In the examples below, set `CREATE_KEY` to a key generated once for that intended
 creation. Preserve it for retries; replace it before creating new work.
 
-- The first accepted request returns `201`. A repeated request with the same key
+- A successful new creation returns `201`. A repeated request with the same key
   and content returns `200`, the same resource ID, and `replayed: true`.
 - Reusing a key with different content returns `409`, with
   `details.code: "CREATE_REQUEST_CONFLICT"`.
@@ -166,10 +166,13 @@ creation. Preserve it for retries; replace it before creating new work.
   `requestSha256`, or `verificationDispatch` fields; that returns `400`.
 
 A replay returns the resource's current state and does not queue it again.
-If queue delivery failed, inspect the existing job or channel and use its normal
-retry or start action. Receiving the same ID confirms creation, not successful
-encoding or delivery. Keep the key and exact submitted body in your automation's
-private records; do not post credentials or plans containing secrets publicly.
+If it reports an enqueue error, use its normal retry or start action. A process
+interruption between saving a job and queueing it can leave VOD work `QUEUED`
+without a queue entry; replay does not repair that dispatch. Check worker and
+queue state before starting over. Receiving the same ID confirms creation, not
+successful encoding or delivery. Keep the key and exact submitted body in your
+automation's private records; do not post credentials or plans containing secrets
+publicly.
 
 ## Workflow 1 — VOD submission
 

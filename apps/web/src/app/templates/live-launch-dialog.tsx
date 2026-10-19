@@ -14,6 +14,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
+import { localizedCustomerError } from "@/lib/customer-error";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -61,6 +62,11 @@ export function LiveLaunchDialog({
 		enabled: presetId !== null,
 		queryFn: () => apiFetch<PresetDetail>(`/api/presets/${presetId}`),
 	});
+	const creation = useCreationSubmission(
+		"live",
+		`template:${presetId}:${detail.data?.revision ?? "loading"}`,
+		presetId !== null && detail.data?.id === presetId,
+	);
 
 	const plan = useMemo(() => {
 		if (!detail.data) {
@@ -71,10 +77,14 @@ export function LiveLaunchDialog({
 	}, [detail.data]);
 
 	useEffect(() => {
-		if (!detail.data || detail.data.id === seededFor) {
+		if (
+			!detail.data ||
+			!creation.seed ||
+			`${detail.data.id}:${creation.seed.nonce}` === seededFor
+		) {
 			return;
 		}
-		setSeededFor(detail.data.id);
+		setSeededFor(`${detail.data.id}:${creation.seed.nonce}`);
 		setScheduleDraft(EMPTY_SCHEDULE_DRAFT);
 		setPrefixTemplate(DEFAULT_PREFIX_TEMPLATE);
 		setPrefixError(null);
@@ -82,30 +92,25 @@ export function LiveLaunchDialog({
 			renderTemplateOutputPrefix(DEFAULT_NAME_TEMPLATE, {
 				objectKey: "",
 				templateName: detail.data.name,
-				now: new Date(),
-				uuid: crypto.randomUUID().slice(0, 8),
+				now: new Date(creation.seed.createdAt),
+				uuid: creation.seed.nonce,
 			}),
 		);
-	}, [detail.data, seededFor]);
+	}, [detail.data, seededFor, creation.seed]);
 
 	const preview = useMemo(
 		() =>
 			renderTemplateOutputPrefix(prefixTemplate, {
 				objectKey: "",
 				templateName: detail.data?.name ?? "",
-				now: new Date(),
+				now: new Date(creation.seed?.createdAt ?? Date.now()),
 				uuid: "xxxxxxxx",
 			}),
-		[prefixTemplate, detail.data?.name],
-	);
-
-	const creation = useCreationSubmission(
-		"live",
-		`template:${presetId}:${detail.data?.revision ?? "loading"}`,
+		[prefixTemplate, detail.data?.name, creation.seed],
 	);
 	const launch = useMutation({
 		mutationFn: () => {
-			if (!detail.data || !plan) {
+			if (!detail.data || !plan || !creation.seed) {
 				throw new Error("not loaded");
 			}
 			const verdict = scheduleFromDraft(scheduleDraft);
@@ -121,7 +126,7 @@ export function LiveLaunchDialog({
 			const prefix = renderTemplateOutputPrefix(prefixTemplate, {
 				objectKey: "",
 				templateName: detail.data.name,
-				now: new Date(),
+				now: new Date(creation.seed.createdAt),
 				uuid: "xxxxxxxx",
 			});
 			if (prefix === "") {
@@ -137,13 +142,14 @@ export function LiveLaunchDialog({
 				schedule: verdict.schedule,
 				presetId: detail.data.id,
 				presetRevision: detail.data.revision,
+				renderedAt: creation.seed.createdAt,
 			};
 			return creation.submit<{ id: string }>(intent, (seed, snapshot) => {
 				const frozen = snapshot as typeof intent;
 				const stablePrefix = renderTemplateOutputPrefix(frozen.prefixTemplate, {
 					objectKey: "",
 					templateName: frozen.templateName,
-					now: new Date(seed.createdAt),
+					now: new Date(frozen.renderedAt),
 					uuid: seed.nonce,
 				});
 				const rebased = liveChannelPlanSchema.parse(
@@ -165,6 +171,19 @@ export function LiveLaunchDialog({
 		},
 	});
 
+	const launchFailure = launch.error ?? creation.seedError;
+	const launchFailureKey =
+		(
+			[
+				"creationSubmission.sessionUnavailable",
+				"creationSubmission.storageUnavailable",
+				"creationSubmission.pendingLimit",
+				"creationSubmission.responseUnavailable",
+			] as const
+		).find(
+			(key) =>
+				launchFailure instanceof ApiError && launchFailure.message === t(key),
+		) ?? "ui.createFailed";
 	return (
 		<Dialog
 			open={presetId !== null}
@@ -213,17 +232,17 @@ export function LiveLaunchDialog({
 						}
 					/>
 
-					{launch.isError ? (
+					{launch.isError || creation.seedError ? (
 						<p className="text-rose-400 text-xs">
-							{launch.error instanceof ApiError
-								? launch.error.message
-								: String(launch.error)}
+							{localizedCustomerError(t, launchFailure, launchFailureKey)}
 						</p>
 					) : null}
 
 					<div className="flex justify-end pt-2">
 						<Button
-							disabled={launch.isPending || name.trim() === ""}
+							disabled={
+								launch.isPending || name.trim() === "" || !creation.seed
+							}
 							onClick={() => launch.mutate()}
 						>
 							{launch.isPending

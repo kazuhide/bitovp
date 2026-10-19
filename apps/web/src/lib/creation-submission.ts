@@ -19,6 +19,7 @@ const pendingSchema = baseSchema.extend({
 const stateSchema = z.object({
 	version: z.literal(1),
 	base: baseSchema.optional(),
+	formSeed: baseSchema.optional(),
 	pending: z.array(pendingSchema).max(100),
 });
 type SubmissionState = z.infer<typeof stateSchema>;
@@ -84,6 +85,21 @@ export function createSubmissionClient(
 		}
 	}
 	return {
+		getSeed(): CreationSeed {
+			const state = read();
+			if (!state.formSeed) {
+				const source = state.pending[0] ??
+					state.base ?? { id: crypto.randomUUID(), createdAt: Date.now() };
+				state.formSeed = { id: source.id, createdAt: source.createdAt };
+				if (!state.base && state.pending.length === 0)
+					state.base = state.formSeed;
+				write(state);
+			}
+			return {
+				createdAt: state.formSeed.createdAt,
+				nonce: state.formSeed.id.replaceAll("-", ""),
+			};
+		},
 		submit<T>(intent: unknown, buildBody?: CreationBody): Promise<T> {
 			try {
 				const serialized = canonicalJson(intent);
@@ -131,8 +147,12 @@ export function createSubmissionClient(
 						headers: { "Idempotency-Key": pending.requestKey },
 						body: JSON.stringify(payload),
 					});
-					if (!z.object({ id: z.string().min(1) }).safeParse(result).success)
+					if (!z.object({ id: z.uuid() }).safeParse(result).success)
 						throw new CreationSubmissionError("response");
+					flights.delete(flightKey);
+					const anotherActive = [...flights.keys()].some((key) =>
+						key.startsWith(`${storageKey}:`),
+					);
 					try {
 						const latest = read();
 						latest.pending = latest.pending.filter(
@@ -140,7 +160,10 @@ export function createSubmissionClient(
 								entry.digest !== digest ||
 								entry.requestKey !== pending.requestKey,
 						);
-						if (latest.base?.id === pending.id) delete latest.base;
+						if (!anotherActive && latest.base?.id === pending.id)
+							delete latest.base;
+						if (!anotherActive && latest.pending.length === 0)
+							delete latest.formSeed;
 						if (latest.pending.length === 0 && !latest.base)
 							storage.removeItem(storageKey);
 						else write(latest);
@@ -153,6 +176,26 @@ export function createSubmissionClient(
 				void operation
 					.finally(() => {
 						if (flights.get(flightKey) === operation) flights.delete(flightKey);
+						if (
+							![...flights.keys()].some((key) =>
+								key.startsWith(`${storageKey}:`),
+							)
+						) {
+							try {
+								const latest = read();
+								if (
+									latest.pending.length === 0 &&
+									latest.base?.id === base.id
+								) {
+									delete latest.base;
+									// A mounted template still displays this form's generated name.
+									if (latest.formSeed) write(latest);
+									else storage.removeItem(storageKey);
+								}
+							} catch {
+								// Pending request metadata remains intact when browser storage is unavailable.
+							}
+						}
 					})
 					.catch(() => {});
 				return operation;

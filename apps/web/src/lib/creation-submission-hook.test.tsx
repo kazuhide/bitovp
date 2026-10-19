@@ -1,5 +1,5 @@
 import { webcrypto } from "node:crypto";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { useCreationSubmission } from "./creation-submission-hook";
@@ -35,7 +35,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	sessionStorage.clear();
 	session.current = trusted();
-	send.mockResolvedValue({ id: "created" });
+	send.mockResolvedValue({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
 });
 
 it.each([
@@ -101,4 +101,24 @@ it("rechecks the mounted identity after hashing and before posting", async () =>
 	await act(async () => resume());
 	await expect(pending).rejects.toThrow("session could not be confirmed");
 	expect(send).not.toHaveBeenCalled();
+});
+
+it("never exposes a previous template seed while the new scope prepares", async () => {
+	const observed: { context: string; nonce: string | null }[] = [];
+	const view = renderHook(
+		({ context }) => {
+			const creation = useCreationSubmission("vod", context, true);
+			observed.push({ context, nonce: creation.seed?.nonce ?? null });
+			return creation;
+		},
+		{ wrapper, initialProps: { context: "template:first:1" } },
+	);
+	await waitFor(() => expect(view.result.current.seed).not.toBeNull());
+	const firstNonce = view.result.current.seed?.nonce;
+	view.rerender({ context: "template:second:2" });
+	expect(
+		observed.find((entry) => entry.context === "template:second:2")?.nonce,
+	).toBeNull();
+	await waitFor(() => expect(view.result.current.seed).not.toBeNull());
+	expect(view.result.current.seed?.nonce).not.toBe(firstNonce);
 });

@@ -22,6 +22,7 @@ vi.mock("next/navigation", () => ({
 afterEach(() => {
 	apiFetch.mockReset();
 	routerPush.mockReset();
+	vi.useRealTimers();
 });
 
 const ID = "11111111-2222-4333-8444-555555555555";
@@ -70,6 +71,66 @@ function collectDestinations(node: unknown, out: string[] = []): string[] {
 }
 
 describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
+	it("keeps unstructured provider diagnostics out of the creation error", async () => {
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+			if (url === `/api/presets/${ID}`)
+				return { id: ID, name: "eve-show", body: LIVE_BODY, revision: 2 };
+			if (init?.method === "POST")
+				throw new Error("PRIVATE_PROVIDER_DIAGNOSTIC");
+			return [];
+		});
+		renderWithQuery(<LiveLaunchDialog presetId={ID} onClose={() => {}} />);
+		await screen.findByLabelText(/Channel name/i);
+		const submit = screen.getByRole("button", { name: /Create channel/i });
+		fireEvent.click(submit);
+		await waitFor(() =>
+			expect(
+				apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+			).toBe(true),
+		);
+		await waitFor(() => expect(submit).toBeEnabled());
+		expect(screen.queryByText(/PRIVATE_PROVIDER_DIAGNOSTIC/)).toBeNull();
+		expect(screen.getByText("Create failed")).toBeInTheDocument();
+	});
+	it("retains the visible generated name and request after a lost response across midnight", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2030-01-01T23:59:59Z"));
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+			if (url === `/api/presets/${ID}`)
+				return { id: ID, name: "eve-show", body: LIVE_BODY, revision: 2 };
+			if (url === "/api/live-channels" && init?.method === "POST")
+				throw new Error("response lost");
+			return [];
+		});
+		const view = renderWithQuery(
+			<LiveLaunchDialog presetId={ID} onClose={() => {}} />,
+		);
+		const name = (await screen.findByLabelText(
+			/Channel name/i,
+		)) as HTMLInputElement;
+		await waitFor(() => expect(name.value).not.toBe(""));
+		const visibleName = name.value;
+		fireEvent.click(screen.getByRole("button", { name: /Create channel/i }));
+		await screen.findByText("Create failed");
+		view.unmount();
+		vi.setSystemTime(new Date("2030-01-02T00:00:01Z"));
+		renderWithQuery(<LiveLaunchDialog presetId={ID} onClose={() => {}} />);
+		const restored = await screen.findByLabelText(/Channel name/i);
+		await waitFor(() => expect(restored).toHaveValue(visibleName));
+		fireEvent.click(screen.getByRole("button", { name: /Create channel/i }));
+		await waitFor(() =>
+			expect(
+				apiFetch.mock.calls.filter(([url]) => url === "/api/live-channels"),
+			).toHaveLength(2),
+		);
+		const posts = apiFetch.mock.calls.filter(
+			([url]) => url === "/api/live-channels",
+		);
+		expect(new Headers(posts[1]?.[1].headers).get("Idempotency-Key")).toBe(
+			new Headers(posts[0]?.[1].headers).get("Idempotency-Key"),
+		);
+		expect(posts[1]?.[1].body).toBe(posts[0]?.[1].body);
+	});
 	it("retries a lost response with the same key and output paths, and changes both after editing", async () => {
 		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
 			if (url === `/api/presets/${ID}`)
@@ -82,7 +143,7 @@ describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
 		const name = await screen.findByLabelText(/Channel name/i);
 		const submit = screen.getByRole("button", { name: /Create channel/i });
 		fireEvent.click(submit);
-		await screen.findByText(/response lost/);
+		await screen.findByText("Create failed");
 		fireEvent.click(submit);
 		await waitFor(() =>
 			expect(
@@ -121,7 +182,7 @@ describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
 				return { id: ID, name: "eve-show", body: LIVE_BODY, revision: 2 };
 			}
 			if (url === "/api/live-channels" && init?.method === "POST") {
-				return { id: "ch-1" };
+				return { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee7" };
 			}
 			return [];
 		});
@@ -137,7 +198,9 @@ describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
 		fireEvent.change(name, { target: { value: "friday-show" } });
 		fireEvent.click(screen.getByRole("button", { name: /Create channel/i }));
 		await waitFor(() => {
-			expect(routerPush).toHaveBeenCalledWith("/live/ch-1");
+			expect(routerPush).toHaveBeenCalledWith(
+				"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee7",
+			);
 		});
 		const post = apiFetch.mock.calls.find(
 			([url]) => url === "/api/live-channels",
@@ -173,7 +236,9 @@ describe("LiveLaunchDialog (ledger #109 §4.2)", () => {
 			}
 			if (url === "/api/live-channels" && init?.method === "POST") {
 				payloads.push(JSON.parse(init.body as string));
-				return { id: `ch-${payloads.length}` };
+				return {
+					id: `eeeeeeee-eeee-4eee-8eee-${String(payloads.length).padStart(12, "0")}`,
+				};
 			}
 			return [];
 		});

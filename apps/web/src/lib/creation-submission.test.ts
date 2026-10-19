@@ -48,15 +48,15 @@ it("shares an in-flight same-intent submission across helper instances", async (
 	const first = client().submit(body);
 	const second = client().submit(body);
 	await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-	resolve({ id: "created" });
-	expect(await first).toEqual({ id: "created" });
-	expect(await second).toEqual({ id: "created" });
+	resolve({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
+	expect(await first).toEqual({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
+	expect(await second).toEqual({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
 });
 
 it("changes the key for changed payloads while preserving older unresolved intent", async () => {
 	await expect(client().submit(body)).rejects.toThrow();
 	const changed = { plan: { ...body.plan, name: "Edited" } };
-	send.mockResolvedValueOnce({ id: "edited" });
+	send.mockResolvedValueOnce({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2" });
 	await client().submit(changed);
 	await expect(client().submit(body)).rejects.toThrow();
 	expect(key(1)).not.toBe(key());
@@ -64,7 +64,7 @@ it("changes the key for changed payloads while preserving older unresolved inten
 });
 
 it("starts a fresh intent after confirmed success", async () => {
-	send.mockResolvedValue({ id: "created" });
+	send.mockResolvedValue({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
 	await client().submit(body);
 	await client().submit(body);
 	expect(key(1)).not.toBe(key());
@@ -152,10 +152,10 @@ it("returns confirmed success even when receipt cleanup fails", async () => {
 			throw new Error("storage blocked");
 		},
 	};
-	send.mockResolvedValue({ id: "created" });
+	send.mockResolvedValue({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
 	await expect(
 		createSubmissionClient(scope, { storage, send }).submit(body),
-	).resolves.toEqual({ id: "created" });
+	).resolves.toEqual({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
 	await createSubmissionClient(scope, { storage, send }).submit(body);
 	expect(key(1)).toBe(key());
 });
@@ -165,11 +165,15 @@ it.each([
 	undefined,
 	{},
 	{ id: "" },
+	{ id: "not-uuid" },
+	{ id: " " },
 ])("retains the retry key for an incomplete successful response %j", async (response) => {
 	send.mockResolvedValueOnce(response);
 	await expect(client().submit(body)).rejects.toThrow("response");
-	send.mockResolvedValueOnce({ id: "recovered" });
-	await expect(client().submit(body)).resolves.toEqual({ id: "recovered" });
+	send.mockResolvedValueOnce({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3" });
+	await expect(client().submit(body)).resolves.toEqual({
+		id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3",
+	});
 	expect(key(1)).toBe(key());
 });
 
@@ -226,15 +230,125 @@ it("does not let an older completion erase a newer pending generation", async ()
 	);
 	const old = client().submit(body);
 	await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-	send.mockResolvedValueOnce({ id: "edited" });
+	send.mockResolvedValueOnce({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2" });
 	await client().submit({ ...body, name: "edited" });
 	const newer = { ...body, name: "newer" };
 	await expect(client().submit(newer)).rejects.toThrow();
 	const newerKey = key(2);
-	completeOld({ id: "old" });
+	completeOld({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4" });
 	await old;
 	await expect(client().submit(newer)).rejects.toThrow();
 	expect(key(3)).toBe(newerKey);
+});
+
+it("retains the visible form seed while an older request is unresolved, then renews it after all confirmations", async () => {
+	const originalSeed = client().getSeed();
+	await expect(client().submit(body)).rejects.toThrow("response lost");
+	const originalKey = key();
+	send.mockResolvedValueOnce({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2" });
+	await client().submit({ ...body, name: "edited" });
+	expect(client().getSeed()).toEqual(originalSeed);
+	await expect(client().submit(body)).rejects.toThrow("response lost");
+	expect(key(2)).toBe(originalKey);
+	send.mockResolvedValueOnce({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
+	await client().submit(body);
+	expect(client().getSeed().nonce).not.toBe(originalSeed.nonce);
+});
+
+it("retains the form seed when another intent is hashing during a successful completion", async () => {
+	const originalSeed = client().getSeed();
+	let releaseHash!: () => void;
+	vi.stubGlobal("crypto", {
+		randomUUID: () => webcrypto.randomUUID(),
+		subtle: {
+			digest: async (algorithm: string, data: Uint8Array) => {
+				if (new TextDecoder().decode(data).includes('"name":"B"'))
+					await new Promise<void>((resolve) => {
+						releaseHash = resolve;
+					});
+				return webcrypto.subtle.digest(algorithm, data);
+			},
+		},
+	});
+	let completeA!: (value: unknown) => void;
+	send.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				completeA = resolve;
+			}),
+	);
+	const first = client().submit({ name: "A" });
+	await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+	const second = client().submit({ name: "B" });
+	expect(releaseHash).toBeTypeOf("function");
+	completeA({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
+	await first;
+	expect(client().getSeed()).toEqual(originalSeed);
+	releaseHash();
+	await expect(second).rejects.toThrow("response lost");
+	expect(client().getSeed()).toEqual(originalSeed);
+});
+
+it("renews the form seed once concurrent different intents are both confirmed", async () => {
+	const originalSeed = client().getSeed();
+	send.mockResolvedValue({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
+	await Promise.all([
+		client().submit({ name: "A" }),
+		client().submit({ name: "B" }),
+	]);
+	expect(client().getSeed().nonce).not.toBe(originalSeed.nonce);
+	await client().submit({ name: "A" });
+	expect(key(2)).not.toBe(key());
+});
+
+it("renews an orphan operation while keeping a mounted form's seed through retry and reload", async () => {
+	const originalSeed = client().getSeed();
+	let rejectHash!: (error: Error) => void;
+	vi.stubGlobal("crypto", {
+		randomUUID: () => webcrypto.randomUUID(),
+		subtle: {
+			digest: async (algorithm: string, data: Uint8Array) => {
+				if (new TextDecoder().decode(data).includes('"name":"B"'))
+					await new Promise<void>((_resolve, reject) => {
+						rejectHash = reject;
+					});
+				return webcrypto.subtle.digest(algorithm, data);
+			},
+		},
+	});
+	let completeA!: (value: unknown) => void;
+	send.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				completeA = resolve;
+			}),
+	);
+	const first = client().submit({ name: "A" });
+	await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+	const second = client().submit({ name: "B" });
+	const failed = expect(second).rejects.toThrow("digest unavailable");
+	completeA({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" });
+	await first;
+	rejectHash(new Error("digest unavailable"));
+	await failed;
+	expect(send).toHaveBeenCalledTimes(1);
+	vi.stubGlobal("crypto", webcrypto);
+	const intent = (seed: typeof originalSeed) => ({
+		name: seed.nonce,
+		renderedAt: seed.createdAt,
+	});
+	// The mounted form still displays its original generated name and date.
+	await expect(client().submit(intent(originalSeed))).rejects.toThrow(
+		"response lost",
+	);
+	const reloadedSeed = client().getSeed();
+	expect(reloadedSeed).toEqual(originalSeed);
+	await expect(client().submit(intent(reloadedSeed))).rejects.toThrow(
+		"response lost",
+	);
+	expect(key(1)).not.toBe(key());
+	expect(key(2)).toBe(key(1));
+	expect(request(2).body).toBe(request(1).body);
 });
 
 it("refuses new intent at the pending limit while keeping existing retries usable", async () => {

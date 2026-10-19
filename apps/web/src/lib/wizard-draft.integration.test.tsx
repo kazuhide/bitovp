@@ -126,8 +126,14 @@ it("VOD restores manually, retains failed submissions, and clears on success bef
 	expect(new Headers(retriedPost?.[1].headers).get("Idempotency-Key")).toBe(
 		firstRequestKey,
 	);
-	await act(async () => succeed({ id: "created" }));
-	await waitFor(() => expect(push).toHaveBeenCalledWith("/vod/jobs/created"));
+	await act(async () =>
+		succeed({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" }),
+	);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/vod/jobs/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+		),
+	);
 	await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
 	expect(localStorage.getItem(key)).toBeNull();
 });
@@ -226,11 +232,15 @@ it("Live restores safe fields and step, requires its secret again, retains failu
 	expect(readWizardDraft(key, "live")?.value.name).toBe("Saved live");
 	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
 		url === "/api/live-channels" && init?.method === "POST"
-			? { id: "created-live" }
+			? { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea" }
 			: readResponse?.(url, init),
 	);
 	fireEvent.click(submit);
-	await waitFor(() => expect(push).toHaveBeenCalledWith("/live/created-live"));
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea",
+		),
+	);
 	const retriedLivePost = apiFetch.mock.calls
 		.filter(
 			([url, init]) => url === "/api/live-channels" && init?.method === "POST",

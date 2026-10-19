@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
+import { localizedCustomerError } from "@/lib/customer-error";
 import { useT } from "@/lib/i18n/context";
 import {
 	BROWSABLE_STORAGE_PROVIDERS,
@@ -66,6 +67,11 @@ export function LaunchDialog({
 		enabled: presetId !== null,
 		queryFn: () => apiFetch<PresetDetail>(`/api/presets/${presetId}`),
 	});
+	const creation = useCreationSubmission(
+		"vod",
+		`template:${presetId}:${detail.data?.revision ?? "loading"}`,
+		presetId !== null && detail.data?.id === presetId,
+	);
 
 	const plan: EncodingPlan | null = useMemo(() => {
 		if (!detail.data) {
@@ -80,10 +86,14 @@ export function LaunchDialog({
 	// Seed the form ONCE per opened template, after the async load lands —
 	// state initializers cannot see it (the dialog mounts before the fetch).
 	useEffect(() => {
-		if (!detail.data || detail.data.id === seededFor) {
+		if (
+			!detail.data ||
+			!creation.seed ||
+			`${detail.data.id}:${creation.seed.nonce}` === seededFor
+		) {
 			return;
 		}
-		setSeededFor(detail.data.id);
+		setSeededFor(`${detail.data.id}:${creation.seed.nonce}`);
 		setOverrides({});
 		setIssues([]);
 		setPrefixTemplate(
@@ -98,12 +108,12 @@ export function LaunchDialog({
 				{
 					objectKey: "",
 					templateName: detail.data.name,
-					now: new Date(),
-					uuid: crypto.randomUUID().slice(0, 8),
+					now: new Date(creation.seed.createdAt),
+					uuid: creation.seed.nonce,
 				},
 			),
 		);
-	}, [detail.data, seededFor]);
+	}, [detail.data, seededFor, creation.seed]);
 
 	// Preview mirrors the instantiation's own semantics: tokens read the
 	// FIRST site's effective path.
@@ -115,18 +125,13 @@ export function LaunchDialog({
 		return renderTemplateOutputPrefix(prefixTemplate, {
 			objectKey: effective,
 			templateName: detail.data?.name ?? "",
-			now: new Date(),
+			now: new Date(creation.seed?.createdAt ?? Date.now()),
 			uuid: "xxxxxxxx",
 		});
-	}, [sites, overrides, prefixTemplate, detail.data?.name]);
-
-	const creation = useCreationSubmission(
-		"vod",
-		`template:${presetId}:${detail.data?.revision ?? "loading"}`,
-	);
+	}, [sites, overrides, prefixTemplate, detail.data?.name, creation.seed]);
 	const launch = useMutation({
 		mutationFn: async () => {
-			if (!detail.data) {
+			if (!detail.data || !creation.seed) {
 				throw new Error("not loaded");
 			}
 			const result = instantiateTemplatePlan({
@@ -135,7 +140,7 @@ export function LaunchDialog({
 				outputPrefixTemplate: prefixTemplate,
 				name,
 				templateName: detail.data.name,
-				now: new Date(),
+				now: new Date(0),
 				uuid: "xxxxxxxx",
 			});
 			if (!result.ok) {
@@ -143,20 +148,37 @@ export function LaunchDialog({
 				return null;
 			}
 			setIssues([]);
+			const sources = Object.fromEntries(
+				templateSourceSites(result.plan).map((site) => {
+					const input = result.plan.inputs.find(
+						(entry) => entry.key === site.inputKey,
+					);
+					return [
+						site.siteId,
+						{
+							objectKey: site.currentPath,
+							...(input && "bucket" in input && "credentialId" in input
+								? { bucket: input.bucket, credentialId: input.credentialId }
+								: {}),
+						},
+					];
+				}),
+			);
 			const intent = {
 				presetBody: detail.data.body,
-				sources: overrides,
+				sources,
 				outputPrefixTemplate: prefixTemplate,
 				name,
 				templateName: detail.data.name,
 				presetId: detail.data.id,
 				presetRevision: detail.data.revision,
+				renderedAt: creation.seed.createdAt,
 			};
 			return creation.submit<{ id: string }>(intent, (seed, snapshot) => {
 				const frozen = snapshot as typeof intent;
 				const rendered = instantiateTemplatePlan({
 					...frozen,
-					now: new Date(seed.createdAt),
+					now: new Date(frozen.renderedAt),
 					uuid: seed.nonce,
 				});
 				if (!rendered.ok)
@@ -199,6 +221,19 @@ export function LaunchDialog({
 		pickingSite !== null
 			? providersForSite(sites.find((s) => s.siteId === pickingSite)?.inputKey)
 			: [];
+	const launchFailure = launch.error ?? creation.seedError;
+	const launchFailureKey =
+		(
+			[
+				"creationSubmission.sessionUnavailable",
+				"creationSubmission.storageUnavailable",
+				"creationSubmission.pendingLimit",
+				"creationSubmission.responseUnavailable",
+			] as const
+		).find(
+			(key) =>
+				launchFailure instanceof ApiError && launchFailure.message === t(key),
+		) ?? "ui.createFailed";
 
 	return (
 		<Dialog
@@ -304,8 +339,10 @@ export function LaunchDialog({
 							))}
 						</ul>
 					) : null}
-					{launch.isError ? (
-						<p className="text-rose-400 text-xs">{String(launch.error)}</p>
+					{launch.isError || creation.seedError ? (
+						<p className="text-rose-400 text-xs">
+							{localizedCustomerError(t, launchFailure, launchFailureKey)}
+						</p>
 					) : null}
 
 					<div className="flex items-center justify-between gap-2 pt-2">
@@ -316,7 +353,9 @@ export function LaunchDialog({
 							{t("templates.editInWizard")}
 						</a>
 						<Button
-							disabled={launch.isPending || name.trim() === ""}
+							disabled={
+								launch.isPending || name.trim() === "" || !creation.seed
+							}
 							onClick={() => launch.mutate()}
 						>
 							{launch.isPending

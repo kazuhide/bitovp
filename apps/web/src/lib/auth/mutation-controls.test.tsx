@@ -234,9 +234,182 @@ function resolveEndpointExpression(
 	return null;
 }
 
+function descendants(node: ts.Node): ts.Node[] {
+	const rows: ts.Node[] = [];
+	const visit = (child: ts.Node) => {
+		rows.push(child);
+		ts.forEachChild(child, visit);
+	};
+	visit(node);
+	return rows;
+}
+
+/** Read the shared transport, rather than granting a hook-name exemption. */
+function creationTransportEndpoints(
+	client = parseSource("lib/creation-submission.ts"),
+	hook = parseSource("lib/creation-submission-hook.ts"),
+) {
+	const nodes = descendants(client.file);
+	const calls = nodes.filter(ts.isCallExpression);
+	const sends = calls.filter(
+		(call) =>
+			ts.isIdentifier(call.expression) && call.expression.text === "send",
+	);
+	const endpoint = client.declarations.get("endpoint")?.[0];
+	const conditional = endpoint?.initializer;
+	const options = sends[0]?.arguments[1];
+	const method =
+		options && ts.isObjectLiteralExpression(options)
+			? options.properties.find(
+					(property) =>
+						ts.isPropertyAssignment(property) &&
+						property.name.getText(client.file) === "method",
+				)
+			: undefined;
+	const defaultSend = nodes.find(
+		(node) =>
+			ts.isBindingElement(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === "send" &&
+			node.initializer &&
+			ts.isIdentifier(node.initializer) &&
+			node.initializer.text === "apiFetch",
+	);
+	if (
+		!defaultSend ||
+		sends.length !== 1 ||
+		!method ||
+		!ts.isPropertyAssignment(method) ||
+		!ts.isStringLiteral(method.initializer) ||
+		method.initializer.text !== "POST" ||
+		sends[0]?.arguments[0]?.getText(client.file) !== "endpoint" ||
+		!conditional ||
+		!ts.isConditionalExpression(conditional)
+	) {
+		throw new Error(
+			"Creation transport must expose one classified POST through its apiFetch-backed send",
+		);
+	}
+	if (
+		[...calls, ...descendants(hook.file).filter(ts.isCallExpression)].some(
+			(call) =>
+				ts.isIdentifier(call.expression) &&
+				["apiFetch", "fetch"].includes(call.expression.text),
+		)
+	) {
+		throw new Error(
+			"Creation transport contains an unclassified direct HTTP call",
+		);
+	}
+	const condition = conditional.condition;
+	if (
+		!ts.isBinaryExpression(condition) ||
+		condition.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken ||
+		!ts.isElementAccessExpression(condition.left) ||
+		condition.left.expression.getText(client.file) !== "scope" ||
+		condition.left.argumentExpression?.getText(client.file) !== "2" ||
+		!ts.isStringLiteral(condition.right) ||
+		condition.right.text !== "live" ||
+		!ts.isStringLiteral(conditional.whenTrue) ||
+		!ts.isStringLiteral(conditional.whenFalse)
+	) {
+		throw new Error(
+			"Creation transport endpoint must resolve from its exact kind slot",
+		);
+	}
+	const forwards = descendants(hook.file)
+		.filter(ts.isCallExpression)
+		.filter(
+			(call) =>
+				ts.isPropertyAccessExpression(call.expression) &&
+				call.expression.name.text === "submit" &&
+				ts.isCallExpression(call.expression.expression) &&
+				call.expression.expression.expression.getText(hook.file) ===
+					"createSubmissionClient",
+		);
+	const forward = forwards[0]?.expression;
+	const scope =
+		forward &&
+		ts.isPropertyAccessExpression(forward) &&
+		ts.isCallExpression(forward.expression)
+			? forward.expression.arguments[0]
+			: undefined;
+	if (
+		forwards.length !== 1 ||
+		!scope ||
+		!ts.isArrayLiteralExpression(scope) ||
+		scope.elements.length !== 3 ||
+		!ts.isSpreadElement(scope.elements[0] as ts.Node) ||
+		scope.elements[1]?.getText(hook.file) !== "kind" ||
+		scope.elements[2]?.getText(hook.file) !== "context"
+	) {
+		throw new Error(
+			"Creation hook must forward its kind to the classified submit transport",
+		);
+	}
+	return { live: conditional.whenTrue.text, vod: conditional.whenFalse.text };
+}
+
+let sharedCreationEndpoints:
+	| ReturnType<typeof creationTransportEndpoints>
+	| undefined;
+
+function isCreationHook(
+	initializer: ts.CallExpression,
+	parsed: ParsedSource,
+): boolean {
+	if (!ts.isIdentifier(initializer.expression)) return false;
+	const local = initializer.expression.text;
+	return parsed.file.statements.some(
+		(statement) =>
+			ts.isImportDeclaration(statement) &&
+			ts.isStringLiteral(statement.moduleSpecifier) &&
+			statement.moduleSpecifier.text === "@/lib/creation-submission-hook" &&
+			statement.importClause?.namedBindings &&
+			ts.isNamedImports(statement.importClause.namedBindings) &&
+			statement.importClause.namedBindings.elements.some(
+				(entry) =>
+					entry.name.text === local &&
+					(entry.propertyName?.text ?? entry.name.text) ===
+						"useCreationSubmission",
+			),
+	);
+}
+
+function creationEndpoint(
+	receiver: ts.Identifier,
+	parsed: ParsedSource,
+	seen = new Set<ts.VariableDeclaration>(),
+): string | null {
+	const declaration = resolveLexicalDeclaration(receiver, parsed);
+	if (!declaration?.initializer || seen.has(declaration)) return null;
+	seen.add(declaration);
+	const initializer = declaration.initializer;
+	if (ts.isIdentifier(initializer))
+		return creationEndpoint(initializer, parsed, seen);
+	if (!ts.isCallExpression(initializer) || !isCreationHook(initializer, parsed))
+		return null;
+	const kind = initializer.arguments[0]
+		? resolveEndpointExpression(initializer.arguments[0], parsed)
+		: null;
+	if (kind !== "vod" && kind !== "live")
+		throw new Error("Unresolved creation kind in mutation census");
+	sharedCreationEndpoints ??= creationTransportEndpoints();
+	return sharedCreationEndpoints[kind];
+}
+
 function apiCallsFromParsed(parsed: ParsedSource): ApiCall[] {
 	const calls: ApiCall[] = [];
 	const visit = (node: ts.Node) => {
+		if (
+			ts.isCallExpression(node) &&
+			ts.isPropertyAccessExpression(node.expression) &&
+			node.expression.name.text === "submit" &&
+			ts.isIdentifier(node.expression.expression)
+		) {
+			const endpoint = creationEndpoint(node.expression.expression, parsed);
+			if (endpoint) calls.push({ endpoint, method: "POST", node });
+		}
 		if (
 			ts.isCallExpression(node) &&
 			ts.isIdentifier(node.expression) &&
@@ -559,7 +732,13 @@ function mutationTriggerProofsFromParsed(parsed: ParsedSource): TriggerProof[] {
 	);
 	const mutationWrites = new Map<string, ApiCall[]>();
 	const directHandlerWrites = new Map<string, ApiCall[]>();
+	const directTriggerNodes: {
+		node: ts.Node;
+		handler: string;
+		writes: readonly ApiCall[];
+	}[] = [];
 	for (const write of writes) {
+		const inlineAttribute = nearestJsxAttribute(write.node);
 		let useMutationCall: ts.CallExpression | null = null;
 		for (let cursor = write.node.parent; cursor; cursor = cursor.parent) {
 			if (
@@ -577,6 +756,12 @@ function mutationTriggerProofsFromParsed(parsed: ParsedSource): TriggerProof[] {
 		) {
 			const name = useMutationCall.parent.name.text;
 			mutationWrites.set(name, [...(mutationWrites.get(name) ?? []), write]);
+		} else if (inlineAttribute) {
+			directTriggerNodes.push({
+				node: inlineAttribute,
+				handler: write.node.expression.getText(parsed.file),
+				writes: [write],
+			});
 		} else {
 			const handler = nearestNamedContainer(write.node);
 			if (handler) {
@@ -588,11 +773,6 @@ function mutationTriggerProofsFromParsed(parsed: ParsedSource): TriggerProof[] {
 		}
 	}
 
-	const directTriggerNodes: {
-		node: ts.Node;
-		handler: string;
-		writes: readonly ApiCall[];
-	}[] = [];
 	const handlerWrites = new Map(directHandlerWrites);
 	const visitMutations = (node: ts.Node) => {
 		if (
@@ -739,6 +919,126 @@ function users(role: UserRole): SessionDto {
 }
 
 describe("mixed-page mutation control contract", () => {
+	it("classifies the shared POST transport and rejects an added unowned send", () => {
+		expect(creationTransportEndpoints()).toEqual({
+			vod: "/api/encoding-jobs",
+			live: "/api/live-channels",
+		});
+		const transport = readFileSync(
+			join(SRC_DIR, "lib/creation-submission.ts"),
+			"utf8",
+		);
+		expect(() =>
+			creationTransportEndpoints(
+				parseSourceText(
+					"lib/creation-submission.ts",
+					`${transport}\nsend("/api/settings/features", { method: "PATCH" });`,
+				),
+			),
+		).toThrow(/classified POST/);
+		expect(() =>
+			creationTransportEndpoints(
+				parseSourceText(
+					"lib/creation-submission.ts",
+					`${transport}\napiFetch("/api/settings/features", { method: "PATCH" });`,
+				),
+			),
+		).toThrow(/unclassified direct HTTP/);
+	});
+
+	it.each([
+		["vod", "/api/encoding-jobs"],
+		["live", "/api/live-channels"],
+	])("discovers delegated %s creates at the owning guarded JSX trigger", (kind, endpoint) => {
+		const [proof] = fixtureTriggerProofs(`
+   import { useCreationSubmission as useCreate } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreate("${kind}", "fixture");
+    const alias = creation;
+    const launch = useMutation({ mutationFn: () => alias.submit({ plan: {} }) });
+    return <RoleAccess control="templates.manage"><button onClick={() => launch.mutate()} /></RoleAccess>;
+   }
+  `);
+		expect(proof).toMatchObject({
+			component: "Fixture",
+			control: "templates.manage",
+			writes: [`POST ${endpoint}`],
+		});
+	});
+
+	it("discovers an unguarded delegated create and rejects its missing control", () => {
+		const [proof] = fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreationSubmission("vod", "fixture");
+    const launch = useMutation({ mutationFn: () => creation.submit({ plan: {} }) });
+    return <button onClick={() => launch.mutate()} />;
+   }
+  `);
+		expect(proof).toMatchObject({
+			component: "Fixture",
+			control: null,
+			writes: ["POST /api/encoding-jobs"],
+		});
+		expect(
+			writeOwnedByControls(
+				"app/templates/launch-dialog.tsx",
+				proof?.writes[0] ?? "",
+				new Set(proof?.control ? [proof.control] : []),
+			),
+		).toBe(false);
+	});
+
+	it("rejects a new unguarded inline creation trigger instead of losing it behind the helper", () => {
+		const proofs = fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreationSubmission("live", "fixture");
+    return <button onClick={() => creation.submit({ plan: {} })} />;
+   }
+  `);
+		expect(proofs).toHaveLength(1);
+		expect(proofs[0]).toMatchObject({
+			control: null,
+			component: "Fixture",
+			writes: ["POST /api/live-channels"],
+		});
+		expect(
+			writeOwnedByControls(
+				"app/templates/live-launch-dialog.tsx",
+				proofs[0]?.writes[0] ?? "",
+				new Set(),
+			),
+		).toBe(false);
+	});
+
+	it("resolves creation receivers lexically instead of attributing a shadowed unrelated submit", () => {
+		expect(
+			fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture() {
+    const creation = useCreationSubmission("vod", "fixture");
+    {
+     const creation = { submit: () => Promise.resolve() };
+     return <button onClick={() => creation.submit()} />;
+    }
+   }
+  `),
+		).toEqual([]);
+	});
+
+	it("fails closed when a delegated create's kind cannot be resolved", () => {
+		expect(() =>
+			fixtureTriggerProofs(`
+   import { useCreationSubmission } from "@/lib/creation-submission-hook";
+   function Fixture({ kind }) {
+    const creation = useCreationSubmission(kind, "fixture");
+    return <button onClick={() => creation.submit({ plan: {} })} />;
+   }
+  `),
+		).toThrow(/creation kind/);
+	});
+
 	it("keeps the independent startup cancellation trigger inside the OPERATOR lifecycle gate", () => {
 		const triggers = mutationTriggerProofs(
 			"app/live/[id]/channel-actions.tsx",

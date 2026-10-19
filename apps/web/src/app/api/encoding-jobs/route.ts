@@ -266,7 +266,10 @@ export async function POST(req: Request) {
 		ordinaryIdentity = createRequestIdentity(req, body.data);
 	} catch (err) {
 		if (err instanceof InvalidCreateRequestError)
-			return jsonError(400, err.message);
+			return jsonError(
+				400,
+				"Invalid Idempotency-Key or conflicting verification fields",
+			);
 		throw err;
 	}
 	const { verificationKey, requestSha256, verificationDispatch } = body.data;

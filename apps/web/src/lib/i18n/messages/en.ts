@@ -133,6 +133,9 @@ export const en = {
 		replaceHint:
 			"Review all three timers. Any blank timer will be disabled; leaving all three blank disables all automatic stop timers on the encoder.",
 		review: "Review settings",
+		reviewDelivery: "Review and retry",
+		unrecorded:
+			"bitovp has no delivery record for this update. Review the proposed settings before trying again.",
 		reviewTitle: "Replace automatic stop settings",
 		apply: "Apply to this broadcast",
 		disarmAll: "Disable all three timers",

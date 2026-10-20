@@ -1654,9 +1654,22 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				throw new ChannelStateError(
 					"Automatic stop update requires the RUNNING channel encoding bound to its claim",
 				);
+			const currentRun = await deps.prisma.liveChannelRun.findFirst({
+				where: { liveChannelId },
+				orderBy: { seq: "desc" },
+				select: { id: true, bitmovinEncodingId: true, stepLog: true },
+			});
+			if (
+				currentRun?.id !== effect.claim.liveChannelRunId ||
+				currentRun.bitmovinEncodingId !== encodingId
+			)
+				throw new ChannelStateError(
+					"Automatic stop update no longer belongs to the current live run",
+				);
+			// The exact run retains late success receipts even when their expired
+			// claim no longer owns the channel's display projection.
 			const revision =
-				readLiveAutoShutdownUpdate(stepLogSchema.parse(row.stepLog))
-					?.requestId ?? null;
+				readLiveAutoShutdownUpdate(currentRun.stepLog)?.requestId ?? null;
 			if (revision !== (params.expectedRevision ?? null))
 				throw new ChannelStateError(
 					"Automatic stop settings changed after this request was prepared; reload before updating",

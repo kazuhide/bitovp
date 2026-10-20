@@ -10,6 +10,7 @@ import {
 	ingestConnectedFromHeartbeat,
 	initStepLog,
 	type LiveToVodRecord,
+	liveAutoShutdownFingerprint,
 	liveChannelPlanSchema,
 	liveToVodClaim,
 	liveToVodFamilySupport,
@@ -913,6 +914,105 @@ describe("run-bound automatic stop replacement", () => {
 		);
 		expect(t.row.plan).toEqual(planBefore);
 		expect(liveEffectMocks.markAcked).toHaveBeenCalledOnce();
+	});
+
+	it("accepts the next revision from the admitted run even when a late success missed the channel projection", async () => {
+		const t = harness(
+			{},
+			{
+				updateLiveAutoShutdown: vi.fn(async () => ({ configuration: {} })),
+			},
+		);
+		const previousRequest = "previous-shutdown-update";
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current live run");
+		// A late accepted response can be durable on its exact run after its
+		// expired claim has ceased to own the channel projection.
+		run.stepLog = [
+			{
+				step: "previous-update",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration: { streamTimeoutMinutes: 5 },
+					appliedAt: "2026-06-11T23:59:00.000Z",
+					scheduledShutdownAt: "2026-06-12T00:04:00.000Z",
+					requestId: previousRequest,
+				},
+			},
+		];
+		const result = await t.rawProcess({
+			...t.job,
+			params: { configuration: {}, expectedRevision: previousRequest },
+			effect: {
+				...t.job.effect,
+				requestSha256: createHash("sha256")
+					.update(
+						liveAutoShutdownFingerprint(
+							LIVE_TO_VOD_RUN_ID,
+							{},
+							previousRequest,
+						),
+					)
+					.digest("hex"),
+			},
+		});
+		expect(result).toMatchObject({ status: "RUNNING" });
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+			{},
+		);
+		expect(t.runRows[0]?.stepLog).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					payload: expect.objectContaining({
+						requestId: "shutdown-request",
+						configuration: {},
+					}),
+				}),
+			]),
+		);
+	});
+
+	it("ignores a channel-only revision when the current run has no accepted update", async () => {
+		const t = harness(
+			{},
+			{
+				updateLiveAutoShutdown: vi.fn(async () => ({ configuration: {} })),
+			},
+		);
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current live run");
+		t.row.stepLog = [
+			{
+				step: "old-channel-copy",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration: {},
+					appliedAt: "2026-06-11T22:00:00.000Z",
+					requestId: "old-channel-update",
+				},
+			},
+		];
+		run.stepLog = [];
+		expect(await t.rawProcess(t.job)).toMatchObject({ status: "RUNNING" });
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		"run",
+		"encoding",
+	])("refuses a latest %s that no longer matches the admitted update", async (identity) => {
+		const t = harness();
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current live run");
+		if (identity === "run") run.id = "00000000-0000-4000-8000-0000000000dd";
+		else run.bitmovinEncodingId = "other-encoding";
+		await expect(t.rawProcess(t.job)).rejects.toThrow();
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
 	});
 
 	it("does not send a substituted payload or a channel encoding that differs from the claim", async () => {

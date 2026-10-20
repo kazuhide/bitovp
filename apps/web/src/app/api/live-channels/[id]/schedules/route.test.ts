@@ -591,6 +591,8 @@ describe("POST /schedules — the run window (ledger #247)", () => {
 	}) {
 		return {
 			id: CHANNEL_ID,
+			bitmovinEncodingId: "enc-1",
+			stepLog: [],
 			plan: over.autoShutdown
 				? { start: { streamKey: "abc", autoShutdown: over.autoShutdown } }
 				: null,
@@ -610,6 +612,146 @@ describe("POST /schedules — the run window (ledger #247)", () => {
 			vi.useRealTimers();
 		}
 	}
+
+	const RUN_ID = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+	function recordedUpdate(
+		configuration: { streamTimeoutMinutes?: number },
+		scheduledShutdownAt: string | null,
+	) {
+		return [
+			{
+				step: "automatic-stop-update",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration,
+					appliedAt: "2026-09-01T12:00:00.000Z",
+					scheduledShutdownAt,
+					requestId: "accepted-shutdown-update",
+				},
+			},
+		];
+	}
+	function currentRun(stepLog: unknown) {
+		return {
+			id: RUN_ID,
+			status: "RUNNING",
+			bitmovinEncodingId: "enc-1",
+			stepLog,
+		};
+	}
+
+	it.each([
+		{
+			original: 6,
+			configuration: { streamTimeoutMinutes: 30 },
+			deadline: "2026-09-01T12:30:00.000Z",
+			expected: 201,
+		},
+		{
+			original: 30,
+			configuration: { streamTimeoutMinutes: 6 },
+			deadline: "2026-09-01T12:06:00.000Z",
+			expected: 422,
+		},
+		{ original: 6, configuration: {}, deadline: null, expected: 201 },
+	])("uses a current-run-only replacement when arming: %j", async ({
+		original,
+		configuration,
+		deadline,
+		expected,
+	}) => {
+		channelFindUnique.mockResolvedValue(
+			channel({ autoShutdown: { streamTimeoutMinutes: original } }),
+		);
+		runFindFirst.mockResolvedValue(
+			currentRun(recordedUpdate(configuration, deadline)),
+		);
+		const result = await arm({
+			action: "STOP",
+			fireAt: "2026-09-01T12:20:00.000Z",
+		});
+		expect(result.status).toBe(expected);
+		if (expected === 201)
+			expect(scheduleCreate.mock.calls[0]?.[0]?.data.liveChannelRunId).toBe(
+				RUN_ID,
+			);
+		else expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("does not apply a terminal run's receipt or its old channel projection to the next airing", async () => {
+		const oldReceipt = recordedUpdate(
+			{ streamTimeoutMinutes: 6 },
+			"2026-09-01T12:06:00.000Z",
+		);
+		channelFindUnique.mockResolvedValue({
+			...channel({ autoShutdown: { streamTimeoutMinutes: 30 } }),
+			stepLog: oldReceipt,
+		});
+		runFindFirst.mockResolvedValue({
+			...currentRun(oldReceipt),
+			status: "STOPPED",
+		});
+		const result = await arm({
+			action: "STOP",
+			fireAt: "2026-09-01T12:20:00.000Z",
+		});
+		expect(result.status).toBe(201);
+		expect(scheduleCreate.mock.calls[0]?.[0]?.data.liveChannelRunId).toBeNull();
+	});
+
+	it("refuses a provider mismatch instead of using another encoding's accepted deadline", async () => {
+		channelFindUnique.mockResolvedValue(
+			channel({ autoShutdown: { streamTimeoutMinutes: 30 } }),
+		);
+		runFindFirst.mockResolvedValue({
+			...currentRun(recordedUpdate({}, null)),
+			bitmovinEncodingId: "other-encoding",
+		});
+		const result = await arm({
+			action: "STOP",
+			fireAt: "2026-09-01T12:20:00.000Z",
+		});
+		expect(result.status).toBe(409);
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ identity: "run", change: { id: "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb" } },
+		{ identity: "encoding", change: { bitmovinEncodingId: "enc-2" } },
+		{ identity: "ended run", change: { status: "STOPPED" } },
+	])("refuses a changed $identity during content validation instead of binding a stale window", async ({
+		change,
+	}) => {
+		channelFindUnique.mockResolvedValue(
+			channel({ autoShutdown: { streamTimeoutMinutes: 30 } }),
+		);
+		runFindFirst.mockResolvedValue(
+			currentRun(
+				recordedUpdate(
+					{ streamTimeoutMinutes: 30 },
+					"2026-09-01T12:30:00.000Z",
+				),
+			),
+		);
+		contentList.mockImplementationOnce(async () => {
+			runFindFirst.mockResolvedValue({
+				...currentRun([]),
+				...change,
+			});
+			return { items: [{ id: CONTENT_ID, status: "READY" }] };
+		});
+		const result = await arm({
+			action: "SLATE_IN",
+			fireAt: "2026-09-01T12:20:00.000Z",
+			bitmovinAccountId: ACCOUNT_ID,
+			insertableContentId: CONTENT_ID,
+			slateDurationSeconds: 30,
+		});
+		expect(result.status).toBe(409);
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
 
 	it("refuses a STOP past the provider's streamTimeoutMinutes, naming the knob and both instants", async () => {
 		channelFindUnique.mockResolvedValue(

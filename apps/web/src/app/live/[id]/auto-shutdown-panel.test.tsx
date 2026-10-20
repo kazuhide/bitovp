@@ -152,6 +152,54 @@ describe("running Live automatic stop editor", () => {
 		);
 		expect(screen.queryByText(/Update queued/)).not.toBeInTheDocument();
 	});
+	it("reviews an unrecorded failed handoff before explicitly redelivering the same immutable request", async () => {
+		const user = await open();
+		api.fetch.mockImplementationOnce(async () => {
+			throw new ApiError(500, "handoff unavailable");
+		});
+		await user.click(screen.getByRole("button", { name: "Review settings" }));
+		await user.click(
+			screen.getByRole("button", { name: "Apply to this broadcast" }),
+		);
+		const retry = await screen.findByRole("button", {
+			name: "Review and retry",
+		});
+		expect(posts()).toHaveLength(1);
+		expect(
+			screen.getByRole("button", { name: "Review settings" }),
+		).toBeDisabled();
+		const original = (posts()[0]?.[1] as RequestInit).body;
+		await user.click(retry);
+		expect(posts()).toHaveLength(1);
+		await user.click(
+			screen.getByRole("button", { name: "Apply to this broadcast" }),
+		);
+		await waitFor(() => expect(posts()).toHaveLength(2));
+		expect((posts()[1]?.[1] as RequestInit).body).toEqual(original);
+	});
+	it("never offers redelivery when a lost response has an ambiguous recorded effect", async () => {
+		const user = await open();
+		api.fetch.mockImplementationOnce(async (_url, init) => {
+			const body = JSON.parse(init.body as string) as { requestId: string };
+			record.request = {
+				key: `manual:auto-shutdown:${ID}:${body.requestId}`,
+				state: "AMBIGUOUS",
+			};
+			throw new ApiError(500, "response lost");
+		});
+		await user.click(screen.getByRole("button", { name: "Review settings" }));
+		await user.click(
+			screen.getByRole("button", { name: "Apply to this broadcast" }),
+		);
+		await screen.findByText(/Do not resend/);
+		expect(posts()).toHaveLength(1);
+		expect(
+			screen.queryByRole("button", { name: "Review and retry" }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Review settings" }),
+		).toBeDisabled();
+	});
 	it("renders Japanese explanations and labels", async () => {
 		await open("ja");
 		expect(screen.getByText(/3項目すべてを置き換えます/)).toBeVisible();

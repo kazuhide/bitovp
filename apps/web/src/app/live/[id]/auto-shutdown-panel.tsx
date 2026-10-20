@@ -98,8 +98,8 @@ function AutoShutdownEditor({
 		refetchInterval: (query) =>
 			request &&
 			Date.now() - request.startedAt < 120_000 &&
-			(!query.state.data?.request ||
-				PENDING_STATES.has(query.state.data.request.state))
+			(!query.state.data ||
+				PENDING_STATES.has(query.state.data.request?.state ?? ""))
 				? 2_000
 				: false,
 	});
@@ -132,6 +132,9 @@ function AutoShutdownEditor({
 			queryClient.invalidateQueries({ queryKey: ["live-channel", channelId] });
 		},
 		onError: (error) => {
+			queryClient.invalidateQueries({
+				queryKey: ["live-auto-shutdown", channelId, runId],
+			});
 			const code =
 				error instanceof ApiError
 					? (error.details as { code?: unknown } | undefined)?.code
@@ -152,6 +155,15 @@ function AutoShutdownEditor({
 		update.isPending ||
 		(operation !== null &&
 			(PENDING_STATES.has(operation) || operation === "AMBIGUOUS"));
+	const canReviewDelivery = Boolean(
+		request &&
+			update.isError &&
+			update.variables &&
+			recorded.isSuccess &&
+			!recorded.isPlaceholderData &&
+			!recorded.isFetching &&
+			recorded.data.request === null,
+	);
 	return (
 		<details
 			className="mt-4 rounded-md border border-zinc-800 p-3"
@@ -187,8 +199,22 @@ function AutoShutdownEditor({
 					{recorded.data?.configuration === null ? (
 						<p role="alert">{t("autoShutdownUpdate.unavailable")}</p>
 					) : null}
-					{operation && PENDING_STATES.has(operation) ? (
+					{operation && PENDING_STATES.has(operation) && !canReviewDelivery ? (
 						<p role="status">{t("autoShutdownUpdate.queued")}</p>
+					) : null}
+					{canReviewDelivery ? (
+						<div className="space-y-2">
+							<p role="status">{t("autoShutdownUpdate.unrecorded")}</p>
+							<Button
+								size="sm"
+								variant="secondary"
+								onClick={() => {
+									if (update.variables) setReview(update.variables);
+								}}
+							>
+								{t("autoShutdownUpdate.reviewDelivery")}
+							</Button>
+						</div>
 					) : null}
 					{operation === "ACKED" ? (
 						<p role="status" className="text-emerald-400">
@@ -273,7 +299,7 @@ function AutoShutdownEditor({
 								? "destructive"
 								: "default"
 						}
-						disabled={locked}
+						disabled={update.isPending || (locked && !canReviewDelivery)}
 						onClick={() => {
 							if (review) {
 								update.mutate(review);

@@ -150,6 +150,7 @@ export async function executeConfigStep(
 				rate: optNum(p.rate),
 				presetConfiguration: optStr(p.presetConfiguration),
 				autoLevelSetup: optStr(p.autoLevelSetup),
+				dynamicRangeFormat: optStr(p.dynamicRangeFormat),
 				colorConfig: colorConfigOf(p.colorConfig),
 			});
 			return { resourceId, request, response: { id: resourceId } };

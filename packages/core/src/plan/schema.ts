@@ -821,10 +821,17 @@ export const vp9RenditionSchema = z.strictObject({
 
 /**
  * AV1 (Av1VideoConfiguration). This app exposes a subset of the SDK's
- * AV1-specific settings: `presetConfiguration` and `autoLevelSetup`.
+ * AV1-specific settings: preset, level setup and dynamic range format.
  * Shared settings include nullable height/bitrate, stream mode, colorConfig,
  * and per-title options. Other SDK AV1 settings are not represented here.
  */
+export const AV1_DYNAMIC_RANGE_FORMATS = [
+	"SDR",
+	"HDR10",
+	"DOLBY_VISION_PROFILE_10_0",
+	"DOLBY_VISION_PROFILE_10_1",
+] as const;
+
 export const av1RenditionSchema = z.strictObject({
 	...renditionBase,
 	codec: z.literal("AV1"),
@@ -840,6 +847,7 @@ export const av1RenditionSchema = z.strictObject({
 		.optional(),
 	/** AutoLevelSetup is an enum (not an object) in this SDK version. */
 	autoLevelSetup: z.enum(["ENABLED", "DISABLED"]).optional(),
+	dynamicRangeFormat: z.enum(AV1_DYNAMIC_RANGE_FORMATS).optional(),
 	colorConfig: colorConfigSchema.optional(),
 	perTitleSettings: perTitleStreamSettingsSchema.optional(),
 });

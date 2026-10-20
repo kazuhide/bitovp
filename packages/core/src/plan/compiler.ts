@@ -1341,6 +1341,9 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						...(rendition.autoLevelSetup
 							? { autoLevelSetup: rendition.autoLevelSetup }
 							: {}),
+						...(rendition.dynamicRangeFormat
+							? { dynamicRangeFormat: rendition.dynamicRangeFormat }
+							: {}),
 						...(rendition.colorConfig
 							? { colorConfig: rendition.colorConfig }
 							: {}),

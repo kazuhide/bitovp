@@ -790,6 +790,7 @@ export type {
 	TrimmingStream,
 } from "./plan/schema";
 export {
+	AV1_DYNAMIC_RANGE_FORMATS,
 	aacRenditionSchema,
 	aclSchema,
 	concatenationSourceSchema,

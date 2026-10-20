@@ -204,6 +204,7 @@ export type Av1ConfigParams = {
 	presetConfiguration?: string;
 	/** AutoLevelSetup name (ENABLED|DISABLED). */
 	autoLevelSetup?: string;
+	dynamicRangeFormat?: string;
 	colorConfig?: ColorConfigParams;
 };
 

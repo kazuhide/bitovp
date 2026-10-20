@@ -246,6 +246,7 @@ const AV1_OPTION_KEYS = [
 	"rate",
 	"presetConfiguration",
 	"autoLevelSetup",
+	"dynamicRangeFormat",
 	"colorConfig",
 ];
 

@@ -1,6 +1,9 @@
 "use client";
 
-import type { CredentialSummaryWire } from "@bitovp/core";
+import {
+	AV1_DYNAMIC_RANGE_FORMATS,
+	type CredentialSummaryWire,
+} from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
@@ -362,6 +365,17 @@ const VP9_FIELDS: OptionFieldSpec[] = [
 // AV1 (Av1VideoConfiguration) exposes only these knobs beyond bitrate/height.
 // The preset select lives on the rendition row directly; these are Advanced.
 const AV1_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "dynamicRangeFormat",
+		labelKey: "wizard.dynamicRangeFormat",
+		control: {
+			options: AV1_DYNAMIC_RANGE_FORMATS,
+			labels: {
+				DOLBY_VISION_PROFILE_10_0: "Dolby Vision Profile 10.0",
+				DOLBY_VISION_PROFILE_10_1: "Dolby Vision Profile 10.1",
+			},
+		},
+	},
 	{
 		key: "rate",
 		labelKey: "wizard.frameRateFps",

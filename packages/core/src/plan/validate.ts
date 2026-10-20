@@ -865,7 +865,9 @@ export function validatePlan(
 			const ok =
 				(dolbySource.kind === "ATMOS" && rendition.codec === "DOLBY_ATMOS") ||
 				(dolbySource.kind === "VISION" &&
-					(rendition.codec === "H265" || rendition.codec === "H264"));
+					(rendition.codec === "H265" ||
+						rendition.codec === "H264" ||
+						rendition.codec === "AV1"));
 			if (!ok) {
 				issues.push({
 					code: "PLAN_STREAM_SOURCE_MISMATCH",
@@ -1212,6 +1214,22 @@ export function validatePlan(
 				const packaged = renditionByKey.get(streamKey);
 				if (!packaged) {
 					continue; // already reported as an unresolved ref above
+				}
+				// The AV1 Dolby Vision path exposed here is fMP4 only.
+				const av1DolbyVision =
+					packaged.codec === "AV1" &&
+					packaged.dynamicRangeFormat?.startsWith("DOLBY_VISION_PROFILE_10_");
+				if (av1DolbyVision && muxing.kind !== "FMP4") {
+					issues.push({
+						code: "PLAN_MUXING_CODEC_MISMATCH",
+						level: "error",
+						message: `muxing "${muxing.key}" (${muxing.kind}) cannot package AV1 Dolby Vision rendition "${packaged.key}" — this path supports fMP4 only`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+					continue;
 				}
 				if (!(allowed[muxing.kind] ?? []).includes(packaged.codec)) {
 					issues.push({

@@ -703,6 +703,25 @@ function setup(
 		$executeRaw: vi.fn(async (strings: unknown, ...values: unknown[]) => {
 			const sql = Array.isArray(strings) ? strings.join("?") : String(strings);
 			const appended = JSON.parse(String(values[0])) as unknown[];
+			if (sql.includes('UPDATE "LiveChannelRun" AS run')) {
+				const [, runId, channelId] = values;
+				const run = runRows.find(
+					(candidate) =>
+						candidate.id === runId &&
+						(candidate.liveChannelId ?? CHANNEL_ID) === channelId,
+				);
+				if (!run) return 0;
+				const isReceipt = (entry: unknown) =>
+					typeof entry === "object" &&
+					entry !== null &&
+					"kind" in entry &&
+					entry.kind === "LIVE_AUTO_SHUTDOWN_UPDATE";
+				run.stepLog = [
+					...appended.filter((entry) => !isReceipt(entry)),
+					...((run.stepLog as unknown[] | undefined) ?? []).filter(isReceipt),
+				];
+				return 1;
+			}
 			if (sql.includes('UPDATE "LiveChannelRun"')) {
 				const [, runId, channelId, providerEncodingId] = values;
 				const exactRun = runRows.find(
@@ -2839,6 +2858,34 @@ describe("live channel actions", () => {
 		await expect(
 			process({ liveChannelId: CHANNEL_ID, action: "scte35", params: {} }),
 		).rejects.toThrow(); // cueDuration is required
+	});
+
+	it("keeps a run-only automatic stop receipt after slate insertion mirrors the channel history", async () => {
+		const t = setup(runningRow);
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current run");
+		const receipt = {
+			step: "accepted-update",
+			kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+			status: "DONE",
+			refs: {},
+			payload: {
+				configuration: {},
+				requestId: "accepted-update",
+				appliedAt: "2026-06-12T00:00:00.000Z",
+			},
+		};
+		run.stepLog = [receipt];
+		await t.process({
+			liveChannelId: CHANNEL_ID,
+			action: "insert-content",
+			params: {
+				insertableContentId: "99999999-9999-4999-8999-999999999999",
+				durationSeconds: 30,
+			},
+		});
+		expect(t.sdk.scheduleInsertableContent).toHaveBeenCalledOnce();
+		expect(run.stepLog).toEqual(expect.arrayContaining([receipt]));
 	});
 
 	it("re-derives the slate duration from slateUntil AT INSERT TIME — queue retries must not stretch the cover into the program (review-223 F6)", async () => {

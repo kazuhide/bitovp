@@ -120,6 +120,42 @@ export async function appendLiveEffectStepLogEntry(
 }
 
 /**
+ * Replaces provisioning/runtime snapshots while retaining this run's canonical
+ * automatic-stop receipts. Incoming copies are never authoritative: they may
+ * be stale or belong to an earlier airing. One UPDATE reads the locked row's
+ * current receipts, so a concurrent append cannot be lost between a read and
+ * a replacement. This operation only locks the run; it never takes a channel
+ * lock after it, preserving the append helper's channel-to-run lock order.
+ */
+export async function replaceLiveRunStepLogSnapshot(
+	prisma: Pick<AppPrismaClient, "$executeRaw">,
+	liveChannelId: string,
+	liveChannelRunId: string,
+	snapshot: readonly unknown[],
+): Promise<number> {
+	if (!Array.isArray(snapshot))
+		throw new Error("A live run step-log snapshot must be an array");
+	return prisma.$executeRaw`
+		UPDATE "LiveChannelRun" AS run
+		SET "stepLog" =
+			COALESCE((
+				SELECT jsonb_agg(incoming.entry ORDER BY incoming.ord)
+				FROM jsonb_array_elements(${JSON.stringify(snapshot)}::jsonb)
+					WITH ORDINALITY AS incoming(entry, ord)
+				WHERE incoming.entry->>'kind' IS DISTINCT FROM 'LIVE_AUTO_SHUTDOWN_UPDATE'
+			), '[]'::jsonb)
+			|| COALESCE((
+				SELECT jsonb_agg(canonical.entry ORDER BY canonical.ord)
+				FROM jsonb_array_elements(run."stepLog")
+					WITH ORDINALITY AS canonical(entry, ord)
+				WHERE canonical.entry->>'kind' = 'LIVE_AUTO_SHUTDOWN_UPDATE'
+			), '[]'::jsonb)
+		WHERE run.id = ${liveChannelRunId}::uuid
+			AND run."liveChannelId" = ${liveChannelId}::uuid
+	`;
+}
+
+/**
  * Merges ONE named snapshot into an encoding job's `snapshots` object,
  * atomically.
  *

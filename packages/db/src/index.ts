@@ -81,6 +81,7 @@ export {
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,
 	mergeEncodingJobSnapshot,
+	replaceLiveRunStepLogSnapshot,
 } from "./step-log";
 export type { TenantClientOptions } from "./tenant-client";
 export {

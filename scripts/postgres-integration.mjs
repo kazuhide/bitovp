@@ -29,6 +29,7 @@ export const GROUPS = [
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
+			"src/live-run-step-log.integration.test.ts": 4,
 		},
 	},
 	{

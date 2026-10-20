@@ -4,6 +4,7 @@ import {
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,
 	mergeEncodingJobSnapshot,
+	replaceLiveRunStepLogSnapshot,
 } from "./step-log";
 
 /**
@@ -42,6 +43,62 @@ function sqlOf(call: unknown[]): string {
 	const strings = call[0] as string[];
 	return strings.map((part, i) => (i === 0 ? part : `$${i}${part}`)).join("");
 }
+
+describe("replaceLiveRunStepLogSnapshot", () => {
+	it("atomically separates incoming snapshots from the row's canonical receipts", async () => {
+		const { prisma, executeRaw } = fakePrisma();
+		await replaceLiveRunStepLogSnapshot(prisma, "channel", "run", []);
+		const sql = sqlOf(executeRaw.mock.calls[0] ?? []);
+		expect(sql).toContain('UPDATE "LiveChannelRun" AS run');
+		expect(sql).toContain('jsonb_array_elements(run."stepLog")');
+		expect(sql).toContain(
+			"incoming.entry->>'kind' IS DISTINCT FROM 'LIVE_AUTO_SHUTDOWN_UPDATE'",
+		);
+		expect(sql).toContain(
+			"canonical.entry->>'kind' = 'LIVE_AUTO_SHUTDOWN_UPDATE'",
+		);
+		expect(sql).toContain("ORDER BY incoming.ord");
+		expect(sql).toContain("ORDER BY canonical.ord");
+		expect(sql).toContain('run."liveChannelId"');
+		expect(sql).not.toMatch(
+			/UPDATE "LiveChannel"|lastHeartbeat|endedAt|updatedAt/,
+		);
+		expect(executeRaw).toHaveBeenCalledOnce();
+	});
+	it("binds the exact target and serializes dates and sparse fields as ordinary JSON", async () => {
+		const { prisma, executeRaw } = fakePrisma();
+		await replaceLiveRunStepLogSnapshot(prisma, "channel", "run", [
+			{
+				payload: {
+					at: new Date("2026-10-21T00:00:00.000Z"),
+					unused: undefined,
+				},
+			},
+		]);
+		const call = executeRaw.mock.calls[0] ?? [];
+		expect(call.slice(2)).toEqual(["run", "channel"]);
+		expect(JSON.parse(String(call[1]))).toEqual([
+			{ payload: { at: "2026-10-21T00:00:00.000Z" } },
+		]);
+	});
+	it("refuses non-array input before SQL and exposes a missing target", async () => {
+		const { prisma, executeRaw } = fakePrisma(
+			vi.fn(async (..._args: unknown[]) => 0),
+		);
+		await expect(
+			replaceLiveRunStepLogSnapshot(
+				prisma,
+				"channel",
+				"run",
+				{} as unknown as unknown[],
+			),
+		).rejects.toThrow(/array/);
+		expect(executeRaw).not.toHaveBeenCalled();
+		expect(
+			await replaceLiveRunStepLogSnapshot(prisma, "channel", "gone", []),
+		).toBe(0);
+	});
+});
 
 describe("mergeEncodingJobSnapshot", () => {
 	it("merges with `jsonb ||` and never reads the column first", async () => {

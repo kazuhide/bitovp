@@ -1,3 +1,4 @@
+import { readLiveAutoShutdownUpdate } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { describe, expect, it, vi } from "vitest";
 import { createHeartbeatDoor, createRunMirror } from "./run-mirror";
@@ -7,6 +8,8 @@ type MirrorRow = {
 	seq: number;
 	status: string;
 	endedAt?: Date | null;
+	stepLog?: unknown[];
+	lastHeartbeatAt?: Date | null;
 };
 function stub(rows: MirrorRow[]) {
 	const create = vi.fn(async (args: { data: Record<string, unknown> }) => {
@@ -41,16 +44,129 @@ function stub(rows: MirrorRow[]) {
 			return { count: 1 };
 		},
 	);
+	const findFirst = vi.fn(async () =>
+		structuredClone(rows[rows.length - 1] ?? null),
+	);
 	const prisma = {
+		$executeRaw: vi.fn(
+			async (
+				_sql: TemplateStringsArray,
+				snapshot: string,
+				runId: string,
+				channelId: string,
+			) => {
+				const row = rows.find((candidate) => candidate.id === runId);
+				if (!row || channelId !== "ch") return 0;
+				const isReceipt = (entry: unknown) =>
+					typeof entry === "object" &&
+					entry !== null &&
+					"kind" in entry &&
+					entry.kind === "LIVE_AUTO_SHUTDOWN_UPDATE";
+				row.stepLog = [
+					...(JSON.parse(snapshot) as unknown[]).filter(
+						(entry) => !isReceipt(entry),
+					),
+					...(row.stepLog ?? []).filter(isReceipt),
+				];
+				return 1;
+			},
+		),
 		liveChannelRun: {
-			findFirst: vi.fn(async () => rows[rows.length - 1] ?? null),
+			findFirst,
 			create,
 			update,
 			updateMany,
 		},
 	} as unknown as AppPrismaClient;
-	return { mirror: createRunMirror(prisma), create, update, updateMany };
+	return {
+		mirror: createRunMirror(prisma),
+		create,
+		update,
+		updateMany,
+		findFirst,
+	};
 }
+
+function shutdownRecord(requestId: string) {
+	return {
+		step: requestId,
+		kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+		status: "DONE",
+		refs: {},
+		payload: {
+			requestId,
+			configuration: {},
+			appliedAt: "2026-10-21T00:00:00.000Z",
+		},
+	};
+}
+
+describe("canonical automatic stop receipts", () => {
+	const slate = {
+		step: "slate",
+		kind: "SLATE_INSERTED",
+		status: "RUNNING",
+		payload: {},
+		refs: {},
+	};
+	it("retains a run-only success when a stale channel snapshot is mirrored", async () => {
+		const accepted = shutdownRecord("accepted");
+		const clock = new Date("2026-10-21T00:00:00.000Z");
+		const rows: MirrorRow[] = [
+			{
+				id: "run-1",
+				seq: 1,
+				status: "RUNNING",
+				stepLog: [accepted],
+				lastHeartbeatAt: clock,
+			},
+		];
+		const { mirror } = stub(rows);
+		await mirror.mirror("ch", { stepLog: [slate] });
+		expect(rows[0]?.stepLog).toEqual([slate, accepted]);
+		expect(rows[0]?.lastHeartbeatAt).toEqual(clock);
+	});
+	it("keeps every canonical revision in append order and ignores stale input receipts", async () => {
+		const a = shutdownRecord("a");
+		const b = shutdownRecord("b");
+		const rows: MirrorRow[] = [
+			{ id: "run-1", seq: 1, status: "RUNNING", stepLog: [a, b] },
+		];
+		const { mirror } = stub(rows);
+		await mirror.mirror("ch", { stepLog: [shutdownRecord("stale"), slate] });
+		expect(rows[0]?.stepLog).toEqual([slate, a, b]);
+		expect(readLiveAutoShutdownUpdate(rows[0]?.stepLog)?.requestId).toBe("b");
+	});
+	it("never imports a previous run's receipt from the channel snapshot", async () => {
+		const old = shutdownRecord("old-run");
+		const rows: MirrorRow[] = [
+			{ id: "run-1", seq: 1, status: "STOPPED", stepLog: [old] },
+			{ id: "run-2", seq: 2, status: "RUNNING", stepLog: [] },
+		];
+		const { mirror } = stub(rows);
+		await mirror.mirror("ch", { stepLog: [old, slate] });
+		expect(rows[0]?.stepLog).toEqual([old]);
+		expect(rows[1]?.stepLog).toEqual([slate]);
+	});
+	it("retains a new append that lands after the mirror lookup", async () => {
+		const a = shutdownRecord("a");
+		const b = shutdownRecord("b");
+		const row: MirrorRow = {
+			id: "run-1",
+			seq: 1,
+			status: "RUNNING",
+			stepLog: [a],
+		};
+		const { mirror, findFirst } = stub([row]);
+		findFirst.mockImplementationOnce(async () => {
+			const snapshot = structuredClone(row);
+			row.stepLog = [...(row.stepLog ?? []), b];
+			return snapshot;
+		});
+		await mirror.mirror("ch", { stepLog: [slate] });
+		expect(row.stepLog).toEqual([slate, a, b]);
+	});
+});
 
 describe("createRunMirror (ledger #108 PR2 — the dual-write seam)", () => {
 	it.each([

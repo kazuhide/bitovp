@@ -122,7 +122,7 @@ const muxing = fields(
 	{ muxedAudioKeys: strings },
 );
 const extras = fields(
-	"key name streamName source encodingKey hlsVariantLabel dashSetKey mode",
+	"key name streamName source encodingKey hlsVariantLabel hlsVariantUri dashSetKey mode",
 	"",
 	"",
 	{

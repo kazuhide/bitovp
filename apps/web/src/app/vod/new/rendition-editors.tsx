@@ -24,6 +24,7 @@ import type {
 import { BurnInSrtEditor } from "./burn-in-srt-editor";
 import { CODEC_OPTIONS } from "./codec-options";
 import { HevcV2QualityEditor } from "./hevc-v2-quality-editor";
+import { HlsVideoUriField } from "./hls-video-uri-field";
 import {
 	Collapsible,
 	type OptionFieldSpec,
@@ -1509,6 +1510,14 @@ export function RenditionPlacement({
 					{t("wizard.dashAdaptationSetRoutingAppearsHereOnce")}
 				</p>
 			)}
+			{family === "video" ? (
+				<HlsVideoUriField
+					id={`${idBase}-hls-video-uri`}
+					value={value.hlsVariantUri}
+					perTitle={value.mode?.startsWith("PER_TITLE")}
+					onChange={(hlsVariantUri) => onChange({ ...value, hlsVariantUri })}
+				/>
+			) : null}
 			<HlsPlacementBlock
 				idBase={idBase}
 				family={family}

@@ -190,7 +190,7 @@ export function selectLiveManifestMuxings(
 export function liveHlsEntryUri(rendition: LiveRendition): string {
 	return isLiveAudioCodec(rendition)
 		? `audio_${rendition.bitrate}.m3u8`
-		: `video_${rendition.bitrate}.m3u8`;
+		: (rendition.hlsVariantUri ?? `video_${rendition.bitrate}.m3u8`);
 }
 
 /**
@@ -213,16 +213,32 @@ export function liveHlsEntryUris(
 	plan: Pick<LiveChannelPlan, "renditions">,
 ): Map<string, string> {
 	const uris = new Map<string, string>();
-	const taken = new Set<string>();
+	// Explicit video names must not silently rename the derived audio playlists.
+	const audioTaken = new Set<string>();
+	const taken = new Set(
+		plan.renditions.flatMap((r) =>
+			isLiveRendition(r) &&
+			!isLiveAudioCodec(r) &&
+			r.hlsVariantUri !== undefined
+				? [r.hlsVariantUri]
+				: [],
+		),
+	);
 	for (const rendition of plan.renditions) {
 		if (!isLiveRendition(rendition)) {
 			continue;
 		}
 		const base = liveHlsEntryUri(rendition);
+		if (!isLiveAudioCodec(rendition) && rendition.hlsVariantUri !== undefined) {
+			uris.set(rendition.key, base);
+			continue;
+		}
 		let uri = base;
-		for (let n = 1; taken.has(uri); n += 1) {
+		const assigned = isLiveAudioCodec(rendition) ? audioTaken : taken;
+		for (let n = 1; assigned.has(uri); n += 1) {
 			uri = suffixPlaylistName(base, n);
 		}
+		assigned.add(uri);
 		taken.add(uri);
 		uris.set(rendition.key, uri);
 	}

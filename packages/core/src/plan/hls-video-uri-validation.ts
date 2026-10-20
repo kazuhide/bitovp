@@ -1,18 +1,12 @@
 import { hlsLegSelected } from "./hls-legs";
 import { hlsChildEntries } from "./hls-media-defaults";
-import { HLS_VIDEO_GROUP_TOKEN, isHlsVideoFilename } from "./hls-video-uri";
+import {
+	HLS_VIDEO_GROUP_TOKEN,
+	hlsPlaylistWritePath,
+	isHlsVideoFilename,
+} from "./hls-video-uri";
 import type { EncodingPlan } from "./schema";
 import type { PlanIssue } from "./validate";
-
-/** Normalize object paths, not URLs; explicit video names are always flat. */
-function objectPath(base: string, filename: string): string {
-	const parts: string[] = [];
-	for (const part of `${base}/${filename}`.split("/")) {
-		if (part === ".." && parts.length && parts.at(-1) !== "..") parts.pop();
-		else if (part && part !== ".") parts.push(part);
-	}
-	return parts.join("/");
-}
 
 export function checkHlsVideoUris(plan: EncodingPlan): PlanIssue[] {
 	const issues: PlanIssue[] = [];
@@ -92,7 +86,7 @@ export function checkHlsVideoUris(plan: EncodingPlan): PlanIssue[] {
 		explicit: boolean,
 		path: string,
 	) => {
-		const key = JSON.stringify([output, objectPath(base, uri)]);
+		const key = JSON.stringify([output, hlsPlaylistWritePath(base, uri)]);
 		const previous = writers.get(key);
 		if (previous && previous.owner !== owner && (previous.explicit || explicit))
 			add(

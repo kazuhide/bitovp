@@ -1859,11 +1859,15 @@ export function validatePlan(
 						r.codec === "VP9" ||
 						r.codec === "AV1";
 					if (videoCodec) {
-						if (!r.hlsVariantLabel || r.height === null || r.bitrate === null) {
+						if (
+							(!r.hlsVariantLabel && !r.hlsVariantUri) ||
+							r.height === null ||
+							r.bitrate === null
+						) {
 							issues.push({
 								code: "PLAN_HLS_VARIANT_GROUP_INCOMPLETE",
 								level: "error",
-								message: `rendition "${r.key}" needs hlsVariantLabel + fixed height/bitrate for variantsPerAudioGroup uris`,
+								message: `rendition "${r.key}" needs hlsVariantLabel or hlsVariantUri, plus fixed height/bitrate for variantsPerAudioGroup uris`,
 								path: `renditions[${rIndex}]`,
 							});
 						}

@@ -297,6 +297,7 @@ export type WizardRenditionExtras = {
 	source?: string;
 	encodingKey?: string;
 	hlsVariantLabel?: string;
+	hlsVariantUri?: string;
 	dashSetKey?: string;
 	hlsMedia?: {
 		groupId: string;
@@ -1330,6 +1331,7 @@ function extrasFields(extras: WizardRenditionExtras | undefined) {
 		streamName: str(extras?.streamName),
 		encodingKey: str(extras?.encodingKey),
 		hlsVariantLabel: str(extras?.hlsVariantLabel),
+		hlsVariantUri: str(extras?.hlsVariantUri),
 		dashSetKey: str(extras?.dashSetKey),
 		hlsMedia: extras?.hlsMedia ? prune(extras.hlsMedia) : undefined,
 		nexguard: extras?.nexguard

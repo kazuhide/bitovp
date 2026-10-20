@@ -3869,6 +3869,13 @@ export const en = {
 		codecStrictCbrMode:
 			"Strict CBR requires a target bitrate without CRF or constant QP.",
 		crf: "Constant rate factor (0–51)",
+		hlsVideoUri: "Video playlist URI",
+		hlsVideoUriHelp:
+			"Optional flat .m3u8 filename. Leave blank for the derived name. For variants per audio group, include {token}. Per-Title keeps bitrate-derived names.",
+		hlsVideoUriLiveHelp:
+			"Optional flat .m3u8 filename. Leave blank for the derived name. Patterns and subdirectories are unavailable for Live.",
+		hlsVideoUriPerTitle:
+			"Individual video playlist filenames are unavailable for Per-Title. Clear this override and use the manifest's bitrate-derived names.",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",

@@ -3,6 +3,7 @@
 import { AUDIO_CHANNEL_LAYOUTS } from "@/app/vod/new/audio-channel-layouts";
 import { audioKeys, videoKeys } from "@/app/vod/new/build-plan";
 import { CMAF_CHUNK_FIELDS } from "@/app/vod/new/cmaf-fields";
+import { HlsVideoUriField } from "@/app/vod/new/hls-video-uri-field";
 import {
 	audioCopyLabel,
 	RenditionAddControls,
@@ -65,7 +66,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 	const stableVideos: LiveVideoRendition[] = state.videos.map(
 		(video, index) => ({
 			...video,
-			extras: { key: vKeys[index] },
+			extras: { ...video.extras, key: vKeys[index] },
 		}),
 	);
 	const stableAudios: LiveAudioRendition[] = state.audios.map(
@@ -174,6 +175,12 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 											h264: { rate: 30 },
 										},
 										nextKey("v"),
+										[
+											...stableVideos.map(
+												(video) => video.extras?.hlsVariantUri,
+											),
+											state.manifests.hls.manifestName || "stream.m3u8",
+										],
 									),
 								],
 							})
@@ -348,6 +355,18 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									onChange={(cmaf) => patchVideo(index, { cmaf })}
 								/>
 							) : null}
+							<div className="max-w-md">
+								<HlsVideoUriField
+									id={`lw-v-${index}-hls-video-uri`}
+									live
+									value={video.extras?.hlsVariantUri}
+									onChange={(hlsVariantUri) =>
+										patchVideo(index, {
+											extras: { ...stableVideos[index]?.extras, hlsVariantUri },
+										})
+									}
+								/>
+							</div>
 							{/*
 							 * Which track rides inside THIS rung  — TS only,
 							 * because `additionalStreamKeys` is on the TS schema; single,

@@ -3822,6 +3822,13 @@ export const ja = {
 		codecStrictCbrMode:
 			"厳密なCBRでは目標ビットレートを設定し、CRFと固定QPを指定しないでください。",
 		crf: "固定品質係数（CRF、0〜51）",
+		hlsVideoUri: "動画プレイリストURI",
+		hlsVideoUriHelp:
+			"任意の.m3u8ファイル名を指定します。空欄なら自動生成します。音声グループ別のバリアントでは{token}を含めてください。Per-Titleはビットレートから名前を生成します。",
+		hlsVideoUriLiveHelp:
+			"任意の.m3u8ファイル名を指定します。空欄なら自動生成します。Liveではパターンやサブディレクトリーは使用できません。",
+		hlsVideoUriPerTitle:
+			"Per-Titleでは動画プレイリスト名を個別指定できません。この指定を消し、マニフェストのビットレートから生成される名前を使ってください。",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",

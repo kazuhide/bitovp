@@ -15,6 +15,7 @@ import {
 	isLiveAacChannelLayout,
 	resolveLiveEncodingOption,
 } from "./encoding-option";
+import { checkLiveHlsVideoUris } from "./hls-video-uri-validation";
 import { liveManifestPathIssues } from "./manifest-paths";
 import type { LiveChannelPlan } from "./schema";
 import { SRT_LISTENER_PORTS } from "./schema";
@@ -152,7 +153,10 @@ export function validateLiveChannel(
 	plan: LiveChannelPlan,
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
-	const issues: PlanIssue[] = liveManifestPathIssues(plan);
+	const issues: PlanIssue[] = [
+		...liveManifestPathIssues(plan),
+		...checkLiveHlsVideoUris(plan),
+	];
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	if (plan.start.encodingOption === "HD") {
 		const resolution = resolveLiveEncodingOption(plan);

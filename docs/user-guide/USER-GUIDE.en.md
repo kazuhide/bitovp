@@ -343,6 +343,8 @@ The ladder's `AUDIOSTREAMCOUNT > 0` guard creates audio only when the input cont
 
 Distinguish subtitle tracks for delivery from subtitles burned into the video. IMSC uses a TTML source and `.ttml` output. HLS subtitles use WebVTT. "Burn in SRT subtitles" draws subtitles into the video, so they cannot be hidden during playback like a separate subtitle track.
 
+HLS WebVTT keeps a boundary-crossing cue's full interval in both segments: a 1.75–2.25-second cue belongs in the 0–2-second and 2–4-second segments. A segment with no cues is valid. These rules follow [RFC 8216 §3.5](https://datatracker.ietf.org/doc/html/rfc8216#section-3.5). Do not delete repeated cues or rewrite outputs to force the files to match.
+
 NexGuard is configured per rendition; Kantar is configured per encoding. Prepare the credentials, presets, identifiers, and report destination required by your service agreement. The presence of a setting in the interface does not establish that your account is entitled to use it.
 
 ### Filters and processing order
@@ -780,6 +782,8 @@ In a single report, “Open comparison preview” lets you select up to 2 VOD QC
 ### Frame boundaries and alignment
 
 Video and audio are not divided into units of the same duration. For AAC, 1 frame normally contains 1,024 samples, or about 21.33 milliseconds at 48 kHz. A 2-second interval corresponds to 93.75 audio frames, so a whole number of audio frames cannot fit exactly into every 2-second video interval. Encoder startup delay, end padding, timestamps and container edit information also affect the starting position and duration.
+
+In the provider-encoded sample recorded on October 20, 2026, the joint MP4 had 10.000 seconds of video and 10.005 seconds of AAC audio. The concatenated AAC track in the separate fMP4 output contained 471 frames over 10.042667 seconds. Consider AAC frame boundaries, encoder delay and padding when interpreting these duration differences; they alone do not establish desynchronization.
 
 Do not assess synchronization from segment duration or packet counts alone. Check timing information and decoded video and audio. VMAF compares video frames; it does not measure audio/video synchronization.
 
@@ -1226,6 +1230,21 @@ Published local media verification includes a 10-second Big Buck Bunny excerpt. 
 This example checks media conversion, segmentation, decoding, and the evaluation process. It does not establish Bitmovin API execution, browser playback, or a quality target for other content. See the [quality and monitoring guide](./QUALITY-AND-MONITORING.md) for detailed conditions and reproduction commands.
 
 Audio boundaries and alignment are explained in Chapter 11. Big Buck Bunny is from the [Blender Foundation](https://peach.blender.org/about/) and is licensed under Creative Commons Attribution 3.0. Media credit: © copyright 2008, Blender Foundation / www.bigbuckbunny.org.
+
+### Provider-encoded samples: October 20, 2026
+
+Ten-second Big Buck Bunny inputs were encoded through Bitmovin using the JavaScript API SDK 1.284.0. The following measurements describe those outputs separately from the local example above.
+
+| Output sample | Recorded result |
+|---|---|
+| H.264 and HEVC with AAC in fMP4 HLS/DASH; H.264/AAC joint MP4 | Each segmented video track contained 240 frames over 10 seconds and five 2-second video segments. All concatenated fMP4 tracks decoded completely. |
+| VP9 / Opus, WebM DASH | Complete concatenated-track decoding passed; video contained 240 frames over 10 seconds. |
+| English WebVTT in H.264 / AAC HLS | Five subtitle segments preserved all four source cues, including a cue crossing a segment boundary and an empty segment. Chrome displayed all four cues during complete playback. The HLS tracks and joint MP4 decoded completely. |
+| Local quality measurement of the provider-encoded H.264 / AAC joint MP4 | All 240 consecutive frames had finite VMAF and PSNR scores. Model `vmaf_v0.6.1`; mean VMAF 98.018, mean PSNR 50.763 dB. |
+
+Chrome playback reached the end with 240 decoded video frames for HLS using hls.js 1.6.16 and for both DASH presentations using Shaka Player 5.2.8. It used unchanged downloaded files served locally. For the H.264/HEVC sample, direct FFmpeg reading of the DASH manifest was not qualified; the unchanged files passed concatenated-track decoding and browser playback.
+
+These scores describe one reference/output pair and measurement method. They do not establish a quality target for other content or audio/video synchronization. These checks do not qualify AV1 output.
 
 ### Glossary
 

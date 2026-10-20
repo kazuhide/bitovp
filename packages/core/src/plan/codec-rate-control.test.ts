@@ -111,6 +111,52 @@ it.each([
 });
 
 it.each([
+	["H264", false],
+	["H265", false],
+	["H264", true],
+	["H265", true],
+] as const)("exports distinct %s CRF HLS children (per audio group: %s)", (codec, perGroup) => {
+	const base = withControls(codec, {
+		bitrate: null,
+		crf: 23.5,
+		...(perGroup ? { height: 360 } : {}),
+	});
+	const plan = encodingPlanSchema.parse({
+		...base,
+		renditions: base.renditions.map((r) =>
+			r.codec === "AAC"
+				? {
+						...r,
+						hlsMedia: { name: "AAC", groupId: "audio", uri: "audio.m3u8" },
+					}
+				: r,
+		),
+		manifests: base.manifests.map((m) =>
+			m.kind === "HLS" ? { ...m, variantsPerAudioGroup: perGroup } : m,
+		),
+	});
+	const compiled = compilePlan(plan).filter(
+		(op) => op.kind === "CREATE_HLS_STREAM_INFO",
+	);
+	expect(compiled).toHaveLength(2);
+	expect(new Set(compiled.map((op) => op.payload.uri)).size).toBe(2);
+	const yaml = parse(planToEncodingTemplateYaml(plan));
+	const children = Object.values(yaml.manifests.hls.hls.streams) as {
+		properties: { uri: string; streamId: string; muxingId: string };
+	}[];
+	expect(children).toHaveLength(2);
+	expect(new Set(children.map((child) => child.properties.uri)).size).toBe(2);
+	expect(children.map((child) => child.properties.uri)).toEqual(
+		compiled.map((op) => op.payload.uri),
+	);
+	for (const [index, key] of ["v360", "v720"].entries())
+		expect(children[index]?.properties).toMatchObject({
+			streamId: `$/encodings/main/streams/${key}`,
+			muxingId: `$/encodings/main/muxings/fmp4/${key}`,
+		});
+});
+
+it.each([
 	"H264",
 	"H265",
 ] as const)("does not materialize optional %s rate controls", (codec) => {

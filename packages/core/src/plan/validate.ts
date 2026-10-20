@@ -20,6 +20,7 @@ import {
 	hlsSubtitleGroups,
 	isHlsAudioRendition,
 } from "./hls-media-defaults";
+import { checkHlsVideoUris } from "./hls-video-uri-validation";
 import {
 	inputStreamAncestry,
 	inputStreamDependencies,
@@ -186,6 +187,7 @@ export function validatePlan(
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST")
 			issues.push({

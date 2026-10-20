@@ -2,6 +2,7 @@ import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
 import { h26xPictureControlsSchema } from "./codec-controls";
+import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
 	audioVolumeFilterSchema,
@@ -612,6 +613,14 @@ const renditionBase = {
 	hlsMedia: hlsMediaOverrideSchema.optional(),
 	/** Variant uri label in variantsPerAudioGroup mode (dv81/sdr/dv…). */
 	hlsVariantLabel: z.string().optional(),
+	/** Fixed video playlist filename; {group} is expanded for per-audio-group variants. */
+	hlsVariantUri: z
+		.string()
+		.refine(isHlsVideoUriPattern, {
+			message:
+				"Use a flat .m3u8 filename with only letters, numbers, '.', '_', '-' and optional {group}.",
+		})
+		.optional(),
 	/** Explicit DASH adaptation-set membership (multi-set manifests). */
 	dashSetKey: refKey.optional(),
 };

@@ -683,7 +683,7 @@ Use the incoming Live input as the compatibility reference for inserted video. M
 
 A pre-program slate waits until the input connects. If the insertion window closes while input is still disconnected, it becomes `MISSED`. To cancel a future insertion, cancel its reservation. To end the insertion currently playing, use “Emergency stop: inserted content”. [Stopping the current insertion](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/encoding/encodings/live/insertableContent/stop/StopApi.ts) does not cancel other reservations.
 
-A recorded H.264/AAC test using RTMP input, AWS encoding and S3 output verified scheduled insertion, early stop and return to the main source. Inspection of the archive found eight black frames in seven transition intervals with a 10-second inserted clip; the registered clip itself contained no black frames. The cause has not been established. An offline timing adjustment has not been validated in the cloud. Check the archive around insertion starts, repetitions and returns when assessing continuity.
+A recorded H.264/AAC test using RTMP input, AWS encoding and S3 output verified insertion, early stop and return to the main source. Inspection of the archive found eight black frames in seven transition intervals with a 10-second inserted clip; the registered clip itself contained no black frames. The cause has not been established. An offline timing adjustment has not been validated in the cloud. Check the archive around insertion starts, repetitions and returns when assessing continuity.
 
 ### Ad cues, SCTE-35, and ESAM
 

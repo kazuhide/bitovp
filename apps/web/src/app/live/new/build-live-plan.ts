@@ -746,6 +746,7 @@ export function withMslStreamFormat(
 		videos: state.videos.map((v) => ({ ...v, container })),
 		audios: state.audios.map((a) => ({ ...a, container })),
 		manifests: {
+			...state.manifests,
 			hls: {
 				...state.manifests.hls,
 				enabled: streamFormat !== "DASH",

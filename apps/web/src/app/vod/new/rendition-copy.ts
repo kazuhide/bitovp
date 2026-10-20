@@ -220,13 +220,16 @@ function prepareLadder(state: WizardState) {
 		if (subtitle.muxing?.key !== undefined) reserved.add(subtitle.muxing.key);
 	}
 	const uris = new Set([
+		state.manifests.hlsOptions?.audioMediaUri,
 		...audios.map((audio) => audio.extras?.hlsMedia?.uri),
 		...videos.map((video) => video.extras?.hlsMedia?.uri),
 		...videos.map((video) => video.extras?.hlsVariantUri),
 		...(state.subtitles ?? []).map((subtitle) => subtitle.uri),
 		"stream.m3u8",
 		...(state.manifests.extra ?? []).flatMap((manifest) =>
-			manifest.kind === "HLS" ? [manifest.manifestName] : [],
+			manifest.kind === "HLS"
+				? [manifest.manifestName, manifest.hls?.audioMediaUri]
+				: [],
 		),
 	]);
 	const groups = [

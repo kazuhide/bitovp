@@ -250,7 +250,7 @@ describe("requestLibrarySource", () => {
 		expect(source.state).toBe("PENDING");
 		expect(JSON.stringify(job.plan)).toBe(before);
 	});
-	it("queues the missing default English once for a completed legacy capture without overwriting content", async () => {
+	it("explicitly queues the missing default English once for a completed legacy capture without overwriting content", async () => {
 		const { job, tx, prisma } = setup({
 			plan: {
 				...planFixture,
@@ -264,15 +264,49 @@ describe("requestLibrarySource", () => {
 		legacy.locales = ["ja"];
 		legacy.state = "READY";
 		legacy.attempts = 5;
-		const upgraded = await requestLibrarySource(prisma, job.id);
+		const upgraded = await requestLibrarySource(prisma, job.id, {
+			explicit: true,
+		});
 		expect(upgraded).toMatchObject({
 			locales: ["ja", "en"],
 			state: "PENDING",
 			attempts: 0,
 			error: null,
 		});
-		await requestLibrarySource(prisma, job.id);
+		await requestLibrarySource(prisma, job.id, { explicit: true });
 		expect(tx.librarySource.update).toHaveBeenCalledOnce();
+		expect(tx.content.create).toHaveBeenCalledOnce();
+		expect(tx.contentRevision.create).toHaveBeenCalledOnce();
+	});
+	it.each([
+		undefined,
+		false,
+	])("enriches a completed legacy locator without automatically queueing missing English: explicit=%s", async (explicit) => {
+		const { job, tx, prisma } = setup();
+		const legacy = await requestLibrarySource(prisma, job.id);
+		delete (legacy.snapshot as Record<string, unknown>).analysisOutput;
+		legacy.locales = ["ja", "ko"];
+		legacy.state = "READY";
+		legacy.attempts = 5;
+		const upgraded =
+			explicit === undefined
+				? await requestLibrarySource(prisma, job.id)
+				: await requestLibrarySource(prisma, job.id, { explicit });
+		expect(upgraded.snapshot).toHaveProperty("analysisOutput");
+		expect(upgraded).toMatchObject({
+			locales: ["ja", "ko"],
+			state: "READY",
+			attempts: 5,
+		});
+		expect(tx.librarySource.update).toHaveBeenCalledOnce();
+		const repaired = await requestLibrarySource(prisma, job.id, {
+			explicit: true,
+		});
+		expect(repaired).toMatchObject({
+			locales: ["ja", "ko", "en"],
+			state: "PENDING",
+			attempts: 0,
+		});
 		expect(tx.content.create).toHaveBeenCalledOnce();
 		expect(tx.contentRevision.create).toHaveBeenCalledOnce();
 	});

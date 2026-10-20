@@ -174,6 +174,7 @@ export async function requestLibrarySource(
 				);
 			const upgradeAnalysis = analysisOutput && !snapshot.analysisOutput;
 			const upgradeLocales =
+				options.explicit === true &&
 				snapshot.planHash === planHash &&
 				locales.some((locale) => !existing.locales.includes(locale));
 			// Fill missing capture metadata once, without rewriting editorial metadata.

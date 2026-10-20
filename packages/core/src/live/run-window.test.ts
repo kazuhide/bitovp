@@ -27,6 +27,55 @@ import { liveAutoShutdownSchema } from "./schema";
 const START = Date.parse("2026-09-01T12:00:00.000Z");
 const MIN = 60_000;
 
+describe("run windows after an accepted automatic stop replacement", () => {
+	const receipt = (
+		configuration: {
+			streamTimeoutMinutes?: number;
+			bytesReadTimeoutSeconds?: number;
+		},
+		scheduledShutdownAt: string | null,
+	) => ({
+		configuration,
+		scheduledShutdownAt,
+		appliedAt: "2026-09-01T13:30:00.000Z",
+		requestId: "accepted-update",
+	});
+	it("uses the encoder's accepted instant instead of counting an updated timeout from the original start", () => {
+		const out = liveRunWindow(
+			{ start: { autoShutdown: { streamTimeoutMinutes: 120 } } },
+			START,
+			{
+				autoShutdownUpdate: receipt(
+					{ streamTimeoutMinutes: 150 },
+					"2026-09-01T16:00:00.000Z",
+				),
+			},
+		);
+		expect(out.endsAtMs).toBe(Date.parse("2026-09-01T16:00:00.000Z"));
+	});
+	it("an explicit empty replacement disarms the original timer and keeps the local maximum runtime", () => {
+		const plan = { start: { autoShutdown: { streamTimeoutMinutes: 120 } } };
+		expect(
+			liveRunWindow(plan, START, { autoShutdownUpdate: receipt({}, null) })
+				.bound,
+		).toBeNull();
+		expect(
+			liveRunWindow(plan, START, {
+				maxRunMinutes: 180,
+				autoShutdownUpdate: receipt({}, null),
+			}).endsAtMs,
+		).toBe(START + 180 * MIN);
+	});
+	it("conditional warnings come from the replacement rather than removed start-time values", () => {
+		const out = liveRunWindow(
+			{ start: { autoShutdown: { bytesReadTimeoutSeconds: 300 } } },
+			START,
+			{ autoShutdownUpdate: receipt({ bytesReadTimeoutSeconds: 30 }, null) },
+		);
+		expect(out.conditional.map((warning) => warning.value)).toEqual([30]);
+	});
+});
+
 function planWith(
 	autoShutdown: Record<string, number>,
 ): NonNullable<LiveRunWindowPlan> {

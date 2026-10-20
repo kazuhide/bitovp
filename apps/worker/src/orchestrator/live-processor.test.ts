@@ -847,6 +847,127 @@ beforeEach(() => {
 	});
 });
 
+describe("run-bound automatic stop replacement", () => {
+	function harness(
+		configuration: { streamTimeoutMinutes?: number } = {
+			streamTimeoutMinutes: 5,
+		},
+		overrides: Partial<SdkOps> = {},
+	) {
+		const requestSha256 = createHash("sha256")
+			.update(JSON.stringify({ runId: LIVE_TO_VOD_RUN_ID, configuration }))
+			.digest("hex");
+		return {
+			...setup(
+				{
+					status: "RUNNING",
+					bitmovinEncodingId: "bm-live-enc",
+					bitmovinAccountId: ACCOUNT_ID,
+				},
+				overrides,
+			),
+			job: {
+				liveChannelId: CHANNEL_ID,
+				action: "update-auto-shutdown",
+				params: { configuration },
+				effect: {
+					idempotencyKey: "shutdown-request",
+					action: "AUTO_SHUTDOWN_UPDATE",
+					requestSha256,
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					providerEncodingId: "bm-live-enc",
+					admissionFenceVersion: 0,
+				},
+			},
+		};
+	}
+
+	it("applies once after the send fence, stores the accepted instant on the admitted run and keeps the next-run plan", async () => {
+		const t = harness();
+		const planBefore = structuredClone(t.row.plan);
+		vi.mocked(t.sdk.updateLiveAutoShutdown).mockResolvedValueOnce({
+			configuration: { streamTimeoutMinutes: 5 },
+			scheduledShutdownAt: "2026-06-12T00:05:00.000Z",
+		});
+		expect(await t.rawProcess(t.job)).toMatchObject({ status: "RUNNING" });
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+			{ streamTimeoutMinutes: 5 },
+		);
+		expect(
+			liveEffectMocks.assertCurrent.mock.invocationCallOrder[0] ?? Infinity,
+		).toBeLessThan(
+			vi.mocked(t.sdk.updateLiveAutoShutdown).mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(t.runRows[0]?.stepLog).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+					status: "DONE",
+					payload: expect.objectContaining({
+						configuration: { streamTimeoutMinutes: 5 },
+						scheduledShutdownAt: "2026-06-12T00:05:00.000Z",
+					}),
+				}),
+			]),
+		);
+		expect(t.row.plan).toEqual(planBefore);
+		expect(liveEffectMocks.markAcked).toHaveBeenCalledOnce();
+	});
+
+	it("does not send a substituted payload or a channel encoding that differs from the claim", async () => {
+		for (const change of ["payload", "encoding"]) {
+			const t = harness();
+			if (change === "payload")
+				t.job.params.configuration.streamTimeoutMinutes = 6;
+			else t.row.bitmovinEncodingId = "another-encoding";
+			await expect(t.rawProcess(t.job)).rejects.toThrow();
+			expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+		}
+	});
+
+	it.each([
+		"STALE",
+		"BLOCKED",
+	])("does not send after a %s durable admission", async (kind) => {
+		liveEffectMocks.begin.mockResolvedValueOnce({
+			kind,
+			state: "CLAIMED",
+			reason: "a newer run or stop owns the channel",
+		});
+		const t = harness();
+		await t.rawProcess(t.job);
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
+
+	it("does not send when STOP wins at the final send fence", async () => {
+		liveEffectMocks.assertCurrent.mockResolvedValueOnce(false);
+		const t = harness();
+		await expect(t.rawProcess(t.job)).rejects.toThrow(/fence/i);
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
+
+	it("retains an ambiguous lost response and never marks it as acknowledged", async () => {
+		const t = harness(
+			{},
+			{
+				updateLiveAutoShutdown: vi.fn(async () => {
+					throw new Error("response lost");
+				}),
+			},
+		);
+		expect(await t.rawProcess(t.job)).toMatchObject({
+			status: "EFFECT_AMBIGUOUS",
+		});
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+			{},
+		);
+		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.markAcked).not.toHaveBeenCalled();
+	});
+});
+
 describe("run-bound redundant RTMP ingest update", () => {
 	function rtmpJob() {
 		const plan = structuredClone(basePlan);

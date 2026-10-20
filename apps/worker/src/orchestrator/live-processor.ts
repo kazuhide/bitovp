@@ -10,6 +10,7 @@ import {
 	isRuntimeRecordKind,
 	isStaleGeneration,
 	joinManifestPath,
+	type LiveAutoShutdownUpdateParams,
 	type LiveChannelAction,
 	type LiveChannelJob,
 	type LiveEffectIntent,
@@ -26,6 +27,9 @@ import {
 	type LiveToVodParams,
 	type LiveToVodProviderIdentity,
 	type LiveToVodRecord,
+	liveAutoShutdownFingerprint,
+	liveAutoShutdownUpdateParamsSchema,
+	liveAutoShutdownUpdateReceiptSchema,
 	liveChannelJobSchema,
 	liveChannelPlanSchema,
 	liveFeederActionParamsSchema,
@@ -47,6 +51,7 @@ import {
 	type ProviderLifecycle,
 	priorRollManifestFiles,
 	providerUnknownPastGrace,
+	readLiveAutoShutdownUpdate,
 	redactSecrets,
 	resolveLiveToVodTarget,
 	type SlateSource,
@@ -1635,6 +1640,77 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			} catch {
 				throw new Error("RTMP ingest update provider result is unknown");
 			}
+		},
+
+		async updateAutoShutdown(
+			liveChannelId: string,
+			params: LiveAutoShutdownUpdateParams,
+			requestSha256: string | undefined,
+			effect: LiveEffectFence,
+		): Promise<void> {
+			const row = await loadChannel(liveChannelId);
+			const encodingId = effect.claim.providerEncodingId;
+			if (row.status !== "RUNNING" || row.bitmovinEncodingId !== encodingId)
+				throw new ChannelStateError(
+					"Automatic stop update requires the RUNNING channel encoding bound to its claim",
+				);
+			const revision =
+				readLiveAutoShutdownUpdate(stepLogSchema.parse(row.stepLog))
+					?.requestId ?? null;
+			if (revision !== (params.expectedRevision ?? null))
+				throw new ChannelStateError(
+					"Automatic stop settings changed after this request was prepared; reload before updating",
+				);
+			const digest = createHash("sha256")
+				.update(
+					liveAutoShutdownFingerprint(
+						effect.claim.liveChannelRunId,
+						params.configuration,
+						params.expectedRevision,
+					),
+				)
+				.digest("hex");
+			if (!requestSha256 || digest !== requestSha256)
+				throw new ChannelStateError(
+					"Automatic stop update configuration does not match its admitted request",
+				);
+			await assertProviderEffectAllowed(
+				liveChannelId,
+				"Automatic stop update",
+				{
+					runId: effect.claim.liveChannelRunId,
+					encodingId,
+				},
+			);
+			const sdk = await sdkFor(row);
+			await effect.beforeSend("Automatic stop update");
+			const accepted = await sdk.updateLiveAutoShutdown(
+				encodingId,
+				params.configuration,
+			);
+			const at = deps.now();
+			const receipt = liveAutoShutdownUpdateReceiptSchema.parse({
+				...accepted,
+				appliedAt: at,
+				requestId: effect.claim.idempotencyKey,
+			});
+			const persisted = await appendLiveEffectStepLogEntry(
+				deps.prisma,
+				effect.claim,
+				{
+					step: `auto-shutdown:${effect.claim.id}`,
+					kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+					payload: receipt,
+					refs: {},
+					status: "DONE",
+					startedAt: at,
+					finishedAt: at,
+				},
+			);
+			if (persisted.runUpdated !== 1)
+				throw new Error(
+					"Automatic stop was accepted but its exact run receipt could not be saved; do not resend",
+				);
 		},
 
 		/** Shrinks the DVR window (C8 surface) — RUNNING channels only. */
@@ -6058,6 +6134,25 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					await actions.updateRtmpIngest(
 						liveChannelId,
 						liveRtmpIngestParamsSchema.parse(job.params),
+						job.effect?.requestSha256,
+						prepared.fence,
+					);
+					return finishLiveEffect(job, prepared.fence, "RUNNING");
+				} catch (err) {
+					return failLiveEffect(job, prepared.fence, err);
+				} finally {
+					await acknowledgeResetEffect(prepared.fence);
+				}
+			}
+			case "update-auto-shutdown": {
+				const prepared = await prepareLiveEffect(job, "AUTO_SHUTDOWN_UPDATE", [
+					"RUNNING",
+				]);
+				if (prepared.kind === "RETURN") return prepared.result;
+				try {
+					await actions.updateAutoShutdown(
+						liveChannelId,
+						liveAutoShutdownUpdateParamsSchema.parse(job.params),
 						job.effect?.requestSha256,
 						prepared.fence,
 					);

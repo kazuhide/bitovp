@@ -68,6 +68,11 @@ export const MUTATION_CONTROLS = {
 		source: "app/live/[id]/runtime-cap-panel.tsx",
 		bindings: 1,
 	},
+	"live.channel.auto-shutdown": {
+		minRole: "OPERATOR",
+		source: "app/live/[id]/auto-shutdown-panel.tsx",
+		bindings: 1,
+	},
 	"live.channel.cue": {
 		minRole: "OPERATOR",
 		source: "app/live/[id]/channel-detail.tsx",
@@ -406,6 +411,10 @@ export const MUTATION_SOURCE_CENSUS = {
 		writeCalls: 2,
 		controls: ["live.channel.alerts"],
 	},
+	"app/live/[id]/auto-shutdown-panel.tsx": {
+		writeCalls: 1,
+		controls: ["live.channel.auto-shutdown"],
+	},
 	"app/live/[id]/capture-vmaf-panel.tsx": {
 		writeCalls: 1,
 		controls: ["live.channel.vmaf"],
@@ -673,6 +682,12 @@ export const MUTATION_WRITE_FAMILIES = {
 			controls: ["live.channel.alerts"],
 		},
 		{ write: "POST /api/alert-rules", controls: ["live.channel.alerts"] },
+	],
+	"app/live/[id]/auto-shutdown-panel.tsx": [
+		{
+			write: "POST /api/live-channels/x/auto-shutdown",
+			controls: ["live.channel.auto-shutdown"],
+		},
 	],
 	"app/live/[id]/capture-vmaf-panel.tsx": [
 		{

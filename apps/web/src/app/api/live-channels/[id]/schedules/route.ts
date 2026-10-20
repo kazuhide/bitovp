@@ -3,6 +3,7 @@ import {
 	liveChannelPlanSchema,
 	liveRunWindow,
 	liveRunWindowPlanFrom,
+	readLiveAutoShutdownUpdate,
 	resolveAutoLead,
 	resolveStartupRegion,
 	SCHEDULE_DEFAULT_LEAD_SECONDS,
@@ -182,6 +183,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			select: {
 				id: true,
 				plan: true,
+				stepLog: true,
 				maxRunMinutes: true,
 				runningSince: true,
 				createdAt: true,
@@ -282,7 +284,10 @@ export async function POST(req: Request, { params }: RouteParams) {
 			// bound (`liveRunWindowPlanFrom`'s own reasoning).
 			liveRunWindowPlanFrom(channel.plan),
 			channel.runningSince ?? channel.createdAt,
-			{ maxRunMinutes: channel.maxRunMinutes },
+			{
+				maxRunMinutes: channel.maxRunMinutes,
+				autoShutdownUpdate: readLiveAutoShutdownUpdate(channel.stepLog),
+			},
 		);
 		const beyond = scheduleBeyondRunWindow(runWindow, {
 			action: body.action,

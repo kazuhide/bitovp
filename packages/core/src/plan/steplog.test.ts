@@ -200,6 +200,7 @@ describe("isRuntimeRecordKind", () => {
 	it("is exactly the classified runtime-record set — no more, no less", () => {
 		expect([...RUNTIME_RECORD_KINDS].sort()).toEqual([
 			"ESAM_MEDIA_POINT",
+			"LIVE_AUTO_SHUTDOWN_UPDATE",
 			"SCTE35_CUE",
 			// 's three verdicts join the set: they too are appended
 			// after the fact and must never be replayed — re-running one would

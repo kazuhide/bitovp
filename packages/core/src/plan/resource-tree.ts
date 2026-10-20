@@ -140,6 +140,7 @@ const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	START_MANIFEST_SMOOTH: "manifests",
 	AWAIT_MANIFEST_SMOOTH: "manifests",
 	SCTE35_CUE: "other",
+	LIVE_AUTO_SHUTDOWN_UPDATE: "other",
 	SLATE_INSERTED: "other",
 	SLATE_CONFIRMED: "other",
 	SLATE_FAILED: "other",

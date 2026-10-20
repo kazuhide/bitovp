@@ -209,6 +209,10 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		resetLiveManifestTimeshift: vi.fn(() => Promise.resolve()),
 		insertScte35Cue: vi.fn(() => Promise.resolve({ id: "fake-scte35-cue" })),
 		updateLiveRtmpIngestPoints: vi.fn(async () => undefined),
+		updateLiveAutoShutdown: vi.fn(async (_id, configuration) => ({
+			configuration,
+			scheduledShutdownAt: null,
+		})),
 		createLiveInsertableContent: vi.fn(nextId),
 		getLiveInsertableContent: vi.fn(async (_e: string, contentId: string) => ({
 			id: contentId,

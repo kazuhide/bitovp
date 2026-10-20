@@ -121,5 +121,6 @@
 	"startSmoothManifest",
 	"stopEncoding",
 	"stopLiveEncoding",
+	"updateLiveAutoShutdown",
 	"updateLiveRtmpIngestPoints"
 ]

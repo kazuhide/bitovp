@@ -211,6 +211,7 @@ export async function executeStep(
 		case "SLATE_FAILED":
 		case "SLATE_UNCONFIRMED":
 		case "SCTE35_CUE":
+		case "LIVE_AUTO_SHUTDOWN_UPDATE":
 			return executeLiveStep(op, ec);
 		default: {
 			// No cast: a new core op kind must fail HERE at compile time.

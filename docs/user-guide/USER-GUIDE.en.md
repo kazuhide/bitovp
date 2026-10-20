@@ -339,6 +339,8 @@ HEVCv2 appears for eligible accounts. Selecting a BCF is separate from selecting
 
 When using H.264 or H.265 presets or rendition-level modes, avoid conflicting settings at the job level. If the interface displays "Use ladder encoding modes / presets", configure them in the ladder.
 
+With H.264 VOD_STANDARD, selecting HIGH can still produce a Main-profile bitstream because the preset disables "Adaptive spatial transform". To require High, enable that advanced setting as described in [Bitmovin's H.264 presets](https://developer.bitmovin.com/encoding/docs/h264-presets), then check the actual output profile.
+
 ### Audio, subtitles, and watermarking
 
 For audio, choose a suitable codec such as AAC, Opus, Dolby Digital, Dolby Digital Plus, or Dolby Atmos. In addition to bitrate, sample rate, and channel layout, supported codecs provide loudness measurement methods and dialogue detection. "Audio channel mix" defines the mapping and gain from input channels to output channels.
@@ -386,13 +388,31 @@ For SPEKE, select the key provider and DRM systems. A Content ID is generated if
 
 Encrypted media and DASH encryption metadata must agree. When a DASH manifest selects a DRM configuration, bitovp uses its encrypted output path and associates the selected audio and video representations with that configuration. Segmented MP4 and WebM use ContentProtection, the DASH element that identifies encryption; DASH On-Demand uses the encrypted single-file MP4 representation. This also applies when adaptation sets are configured explicitly. The YAML export currently omits DRM representation settings for DASH On-Demand MP4; run this configuration from the app.
 
+For clear (unencrypted) DASH On-Demand, use MP4 containers without DRM. In a recorded shared-container test, clear manifests included initialization and index byte ranges from the encrypted file, together with its encryption metadata. A player would read the wrong parts of the clear file. bitovp rejects this combination before starting; create separate encoding plans for clear and encrypted MP4 outputs.
+
 For local diagnostics, a separately configured player can use [ClearKey](https://shaka-project.github.io/shaka-player/docs/api/tutorial-drm-config.html) with a known test key. Apple's [TN2454 identity-key procedure](https://developer.apple.com/library/archive/technotes/tn2454/_index.html) instead uses a test HLS playlist and a key file to help distinguish content-authoring problems from FairPlay key-delivery problems. These checks do not establish production license acquisition or Dolby Vision display support. Keep identity-key delivery limited to testing.
+
+Short AV1 Dolby Vision Profile 10.0/10.1 and AAC tests used Encoder 2.290.0 (BETA) and JavaScript SDK 1.285.0. After local decryption, the CENC (CTR) and FairPlay (CBCS) outputs matched the clear output in encoded packets, decoded video frames and audio samples. All 312 output video frames in each rendition decoded successfully. The encoder also reported an input-duration discrepancy; successful output decoding does not identify the cause of that warning.
+
+The following observations use an Apple M5 Mac with Chrome 155.0.8059.85 and Safari 27.0.1. Profile 10.1 was checked at 720p, and Profile 10.0 at 360p and 720p. They cover test-key diagnostics, not production FairPlay, Widevine or PlayReady license acquisition or Dolby Vision display. A browser's decoded-frame counter can differ from the file frame count.
+
+| Local playback check | Recorded scope |
+|---|---|
+| Profile 10.1 AV1/AAC, CENC and Chrome ClearKey | Visible video advanced and playback reached the end after about 13 seconds. The browser reported 316 decoded frames; the file contained 312 video frames. |
+| Profile 10.0 AV1/AAC and Chrome | Media Source Extensions rejected the `dav1` codec string; Shaka reported error 6001. Playback is unqualified in this browser. |
+| H.264 Main/AAC, CENC DASH On-Demand and Chrome ClearKey | Both standard and explicit adaptation-set manifests played to the end. The decrypted tracks matched clear video (240 frames) and audio. |
+| Profile 10.0/10.1 AV1/AAC, CBCS and Safari with TN2454 identity keys | All three renditions reached the end after about 13 seconds without media errors. Decoded frames, frame-composition callbacks and changing, nonuniform canvas samples were recorded. Some native captures remained white. |
+| H.264 Main/AAC, clear DASH On-Demand in a separate encoding plan | Both standard and explicit manifests had correct initialization/index byte ranges and no encryption metadata. Full audio/video decoding succeeded, including all 240 output video frames. Chrome played both unmodified manifests to the end, reporting 240 decoded frames and no dropped frames. |
+
+The Safari identity check establishes known-test-key decryption and AV1 base-video decoding, with frame submission to the compositor and changing pixel samples. It does not establish Dolby Vision display, color accuracy or consecutive presentation of every output frame. White native captures were observed for two renditions; their cause remains unresolved. Corresponding clear HLS controls produced visible video.
 
 ### Manifests and generation timing
 
 A manifest lists the video, audio, and subtitles available for playback and the locations of their files. Configure HLS, DASH, and additional formats such as SMOOTH as needed. Creating a container and including it in a manifest are separate settings.
 
 For HLS, check audio group IDs, languages, media URIs, and variant names. If you create multiple master playlists, give their child playlists unique paths too. Changing only the master filename does not prevent child files from being overwritten.
+
+Check HLS `BANDWIDTH` against measured peak segment bitrates for the playable video/audio combination. [Apple's HLS authoring specification](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices/) requires the VOD measured peak to be within 10% of that attribute. Three recorded clear AV1 controls declared 1,628–3,128 kb/s while measured combined peaks were about 252–396 kb/s. Apple's validator reported required fixes despite exiting with code 0. Inspect the report as well as the exit code. bitovp currently has no HLS bandwidth-override field; these three configurations did not pass Apple HLS validation.
 
 A DASH adaptation set groups streams that a player can switch between. In multi-ladder or multilingual configurations, assign each rendition to a declared set. Do not put different video codecs in the same video adaptation set.
 
@@ -804,6 +824,8 @@ In a single report, “Open comparison preview” lets you select up to 2 VOD QC
 Video and audio are not divided into units of the same duration. For AAC, 1 frame normally contains 1,024 samples, or about 21.33 milliseconds at 48 kHz. A 2-second interval corresponds to 93.75 audio frames, so a whole number of audio frames cannot fit exactly into every 2-second video interval. Encoder priming (startup delay), end padding and timestamps also affect the starting position and duration. Container trim information can exclude priming and padding from playback. See [Apple’s explanation of AAC track timing](https://developer.apple.com/documentation/quicktime-file-format/using_track_structures_to_represent_encode_delay_explictly).
 
 In the provider-encoded sample recorded on October 20, 2026, the joint MP4 had 10.000 seconds of video and 10.005 seconds of AAC audio. The concatenated AAC track in the separate fMP4 output contained 471 frames over 10.042667 seconds. Consider AAC frame boundaries, encoder delay and padding when interpreting these duration differences; they alone do not establish desynchronization.
+
+A separate AV1/AAC check recorded 13.013 seconds of video (312 frames) and 13.055667 seconds of AAC container time: a difference of 2,048 samples at 48 kHz. The final AAC packet covered 1,008 samples while the decoder emitted 1,024, making the decoded track 13.056 seconds, or 16 samples (0.333 ms) longer than its timeline. No edit-list or skip/padding metadata explained the 2,048-sample difference; this measurement does not identify priming as its cause.
 
 Do not assess synchronization from segment duration or packet counts alone. Check timing information and decoded video and audio. VMAF compares video frames; it does not measure audio/video synchronization.
 
@@ -1236,7 +1258,7 @@ This preserves the database volumes. Use `--volumes` only when you intend to del
 
 ### A short-media verification example
 
-Published local media verification includes a 10-second Big Buck Bunny excerpt. The following results were recorded in [Linux CI on October 19, 2026](https://github.com/kazuhide/bitovp/actions/runs/39211595682). They do not come from new cloud jobs run while preparing the PDF.
+Published local media verification includes a 10-second Big Buck Bunny excerpt. The following results were recorded in [Linux CI on October 19, 2026](https://github.com/kazuhide/bitovp/actions/runs/39211595682).
 
 | Check | Recorded result |
 |---|---|

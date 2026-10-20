@@ -1,5 +1,10 @@
 import { type HlsLegKind, hlsLegSelected } from "./hls-legs";
 import { resolveHlsVideoUri } from "./hls-video-uri";
+import {
+	outputFileNamesAtDestination,
+	staticManifestOutputFiles,
+	staticMuxingOutputFiles,
+} from "./output-files";
 import type { EncodingPlan, PlanRendition } from "./schema";
 
 /** Only packaged WebVTT resources produce EXT-X-MEDIA subtitle groups. */
@@ -414,6 +419,15 @@ export function hlsIframeUris(
 	if (!manifest.iframePlaylists || !manifest.variantsPerAudioGroup)
 		return new Map();
 	const entries = hlsChildEntries(plan, manifest);
+	const destination = plan.manifests.find(
+		(entry) => entry.key === manifest.key,
+	)?.destination;
+	const reserved = destination
+		? outputFileNamesAtDestination(plan, destination, [
+				...staticManifestOutputFiles(plan),
+				...staticMuxingOutputFiles(plan),
+			])
+		: new Set<string>();
 	// One I-frame writer per selected video muxing, not per audio group.
 	const writers = new Map<string, HlsChildEntry>();
 	for (const entry of entries) {
@@ -438,7 +452,7 @@ export function hlsIframeUris(
 	return new Map(
 		dedupeVideoChildUris(
 			[...writers.values()],
-			entries.map((e) => e.uri),
+			[...entries.map((e) => e.uri), ...reserved],
 		).map((entry) => [entry.muxingKey, entry.uri]),
 	);
 }

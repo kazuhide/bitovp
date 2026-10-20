@@ -352,7 +352,7 @@ describe("multiple Live output authoring", () => {
 			}),
 		);
 	});
-	it("reserves media init files but does not invent archive writes on delivery mirrors", () => {
+	it("reserves media init files and the archive writes sent to delivery mirrors", () => {
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
 		plan.outputs.push({
 			...required(plan.outputs[0]),
@@ -368,6 +368,14 @@ describe("multiple Live output authoring", () => {
 			filename: "stream.m3u8",
 			destination: { outputKey: "recording", path: "live/test" },
 		});
+		expect(
+			validateLiveChannel(plan).filter(
+				(issue) => issue.code === "LIVE_OUTPUT_NAMESPACE_COLLISION",
+			),
+		).toHaveLength(3);
+		const archive = plan.muxings.at(-1);
+		if (archive?.kind !== "MP4") throw new Error("Missing archive fixture");
+		archive.filename = "archive.mp4";
 		expect(
 			validateLiveChannel(plan).filter(
 				(issue) => issue.code === "LIVE_OUTPUT_NAMESPACE_COLLISION",

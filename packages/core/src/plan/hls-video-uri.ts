@@ -21,12 +21,4 @@ export function resolveHlsVideoUri(value: string, group?: string): string {
 		: value.replaceAll(HLS_VIDEO_GROUP_TOKEN, group);
 }
 
-/** Normalize object paths, not URLs; explicit video names are always flat. */
-export function hlsPlaylistWritePath(base: string, filename: string): string {
-	const parts: string[] = [];
-	for (const part of `${base}/${filename}`.split("/")) {
-		if (part === ".." && parts.length && parts.at(-1) !== "..") parts.pop();
-		else if (part && part !== ".") parts.push(part);
-	}
-	return parts.join("/");
-}
+export { outputFilePath as hlsPlaylistWritePath } from "./output-files";

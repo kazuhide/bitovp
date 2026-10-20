@@ -1,10 +1,11 @@
 import { hlsLegSelected } from "./hls-legs";
-import { hlsChildEntries } from "./hls-media-defaults";
+import { hlsChildEntries, hlsIframeUris } from "./hls-media-defaults";
+import { HLS_VIDEO_GROUP_TOKEN, isHlsVideoFilename } from "./hls-video-uri";
 import {
-	HLS_VIDEO_GROUP_TOKEN,
-	hlsPlaylistWritePath,
-	isHlsVideoFilename,
-} from "./hls-video-uri";
+	outputFileKeys,
+	staticManifestOutputFiles,
+	staticMuxingOutputFiles,
+} from "./output-files";
 import type { EncodingPlan } from "./schema";
 import type { PlanIssue } from "./validate";
 
@@ -77,46 +78,44 @@ export function checkHlsVideoUris(plan: EncodingPlan): PlanIssue[] {
 			}
 		}
 	}
-	const writers = new Map<string, { owner: string; explicit: boolean }>();
+	const writers = new Map<string, string>();
 	const write = (
-		output: string,
-		base: string,
+		destination: { outputKey: string; path: string },
 		uri: string,
 		owner: string,
-		explicit: boolean,
 		path: string,
 	) => {
-		const key = JSON.stringify([output, hlsPlaylistWritePath(base, uri)]);
-		const previous = writers.get(key);
-		if (previous && previous.owner !== owner && (previous.explicit || explicit))
-			add(
-				"COLLISION",
-				path,
-				`Video playlist "${uri}" overlaps another HLS playlist at the same output destination. Use distinct filenames or manifest directories.`,
-			);
-		else if (!previous) writers.set(key, { owner, explicit });
+		for (const key of outputFileKeys(plan, { destination, filename: uri })) {
+			const previous = writers.get(key);
+			if (previous && previous !== owner)
+				add(
+					"COLLISION",
+					path,
+					`Video playlist "${uri}" overlaps another output file at the same storage destination. Use distinct filenames or manifest directories.`,
+				);
+			else if (!previous) writers.set(key, owner);
+		}
 	};
 	// A different DRM segment directory does not change the playlist destination.
-	for (const [index, manifest] of plan.manifests.entries()) {
-		if (manifest.kind === "HLS")
-			write(
-				manifest.destination.outputKey,
-				manifest.destination.path,
-				manifest.manifestName,
-				`master:${manifest.key}`,
-				false,
-				`manifests[${index}]`,
-			);
-	}
+	for (const file of [
+		...staticManifestOutputFiles(plan),
+		...staticMuxingOutputFiles(plan),
+	])
+		write(file.destination, file.filename, file.owner, file.path);
 	for (const [index, manifest] of plan.manifests.entries()) {
 		if (manifest.kind !== "HLS") continue;
 		for (const entry of hlsChildEntries(plan, manifest))
 			write(
-				manifest.destination.outputKey,
-				manifest.destination.path,
+				manifest.destination,
 				entry.uri,
 				`${manifest.key}:${entry.kind}:${entry.muxingKey}:${entry.group ?? ""}`,
-				entry.explicitUri === true,
+				`manifests[${index}]`,
+			);
+		for (const [muxingKey, filename] of hlsIframeUris(plan, manifest))
+			write(
+				manifest.destination,
+				filename,
+				`${manifest.key}:iframe:${muxingKey}`,
 				`manifests[${index}]`,
 			);
 	}

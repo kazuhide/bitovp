@@ -81,11 +81,6 @@
 .site-guide .guide-title > p:first-child:not(:only-child) {
 	font-size: 0.9375rem;
 }
-.site-guide .guide-pdf {
-	display: inline-block;
-	margin-top: 0.75rem;
-	font-size: 0.875rem;
-}
 .site-guide .guide-start-link {
 	margin-right: 1rem;
 }
@@ -323,8 +318,7 @@
 			.guide-page-toc,
 			.guide-inline-toc,
 			.guide-mobile-chapters,
-			.guide-pagination,
-			.guide-pdf
+			.guide-pagination
 		) {
 		display: none;
 	}

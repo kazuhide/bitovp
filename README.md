@@ -30,7 +30,6 @@ The default local application address is **http://localhost:3100**.
 
 - [Installation details and alternative local ports](./docs/user-guide/INSTALLATION.md)
 - User guide: [English](https://kazuhide.github.io/bitovp/guide/) · [日本語](https://kazuhide.github.io/bitovp/ja/guide/)
-- [Japanese user guide (PDF)](./docs/user-guide/bitovp-user-guide-ja.pdf)
 - [Configure a VOD encoding](./docs/user-guide/VOD.md)
 - [Configure and monitor Live](./docs/user-guide/LIVE.md)
 

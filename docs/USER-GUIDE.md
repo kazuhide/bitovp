@@ -11,8 +11,7 @@ storage connection, and first encoding. If the app is already installed, skip to
 its sign-in and connection steps.
 
 Read the complete guide on GitHub Pages in [English](https://kazuhide.github.io/bitovp/guide/)
-or [Japanese](https://kazuhide.github.io/bitovp/ja/guide/). The Japanese edition is also
-available as a [PDF](./user-guide/bitovp-user-guide-ja.pdf). Editable sources:
+or [Japanese](https://kazuhide.github.io/bitovp/ja/guide/). Editable sources:
 [English](./user-guide/USER-GUIDE.en.md) · [Japanese](./user-guide/USER-GUIDE.ja.md).
 
 | Task | Guide | Main screens |

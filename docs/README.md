@@ -9,7 +9,6 @@ and the first encoding. Use the [user guide](./USER-GUIDE.md) for other tasks.
 | Guide | Purpose |
 |---|---|
 | User guide: [English](https://kazuhide.github.io/bitovp/guide/) · [Japanese](https://kazuhide.github.io/bitovp/ja/guide/) | Complete workflows, settings, and screenshots |
-| [Japanese user guide (PDF)](./user-guide/bitovp-user-guide-ja.pdf) | Detailed Japanese workflows, settings, and screenshots |
 | [API usage](./API-USAGE.md) | Authentication and machine-client workflows |
 | [Supported features and limits](./BITMOVIN-API-COVERAGE.md) | Capabilities and technical restrictions that affect configuration |
 | [Operations](./OPERATIONS.md) | Deployment, backup, upgrades, and cleanup |

@@ -62,7 +62,7 @@ describe("user documentation navigation", () => {
 			.map((link) => link.slice("./user-guide/".length));
 		expect([...new Set(indexed)].sort()).toEqual([...USER_GUIDE_PAGES].sort());
 		expect(readdirSync(join(REPO, "docs/user-guide")).sort()).toEqual(
-			[...USER_GUIDE_PAGES, "bitovp-user-guide-ja.pdf"].sort(),
+			[...USER_GUIDE_PAGES].sort(),
 		);
 	});
 

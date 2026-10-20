@@ -56,6 +56,18 @@ segment therefore need not contain an integer number of audio frames. Encoder
 delay, padding, timestamps, and container boundaries can add further differences.
 Equal-looking segment durations do not establish audio/video synchronization.
 
+In the provider-encoded sample recorded on 20 October 2026, the joint MP4 had
+10.000 seconds of video and 10.005 seconds of AAC audio. The concatenated
+AAC track in the separate fMP4 output contained 471 frames over 10.042667 seconds. Consider AAC frame
+boundaries, encoder delay and padding when interpreting these durations;
+the differences alone do not establish desynchronization.
+
+HLS WebVTT keeps a boundary-crossing cue's full interval in both segments:
+a 1.75–2.25-second cue belongs in the 0–2-second and 2–4-second segments.
+A segment with no cues is valid. These rules follow
+[RFC 8216 §3.5](https://datatracker.ietf.org/doc/html/rfc8216#section-3.5).
+Do not delete repeated cues or rewrite outputs to force the files to match.
+
 VMAF compares video frames, so an offset, frame-rate conversion, loop boundary,
 or wrong source can dominate the score even when the codec output looks sound.
 The application preserves alignment confidence, offsets, drift warnings, and
@@ -67,6 +79,30 @@ The application cannot derive the original reference from an arbitrary live feed
 Readable output storage or an unambiguous declared mirror is required. MP4
 archives are not substituted for live segment capture. Unsupported naming or
 unavailable segments remain unverified.
+
+### Measured provider samples: 20 October 2026
+
+The following results use ten-second Big Buck Bunny inputs encoded through
+Bitmovin with the JavaScript API SDK 1.284.0. They cover the stated outputs and
+measurement conditions. The local checks below have separate conditions.
+
+| Output sample | Measured result |
+|---|---|
+| H.264 and HEVC with AAC in fMP4 HLS/DASH; H.264/AAC joint MP4 | Each segmented video track contained 240 frames over 10 seconds, with five 2-second video segments. Every concatenated fMP4 track decoded completely. |
+| VP9 / Opus, WebM DASH | Complete concatenated-track decoding passed; video contained 240 frames over 10 seconds. |
+| English WebVTT in H.264 / AAC HLS | Five subtitle segments preserved all four source cues, including a cue crossing a segment boundary and an empty segment. Chrome displayed all four cues during complete playback. The HLS tracks and joint MP4 decoded completely. |
+| Local quality measurement of the provider-encoded H.264 / AAC joint MP4 | All 240 consecutive frames had finite VMAF and PSNR scores. Model `vmaf_v0.6.1`; mean VMAF **98.018**, mean PSNR **50.763 dB**. |
+
+Chrome played the HLS presentation with hls.js 1.6.16 and both DASH
+presentations with Shaka Player 5.2.8. Each reached the end after decoding
+240 video frames. These playback checks used unchanged downloaded files
+served locally. For the H.264/HEVC sample, direct FFmpeg reading of the DASH
+manifest was not qualified; complete concatenated-track decoding and browser
+playback were confirmed with the unchanged files.
+
+The quality scores apply to this reference/output pair and measurement method;
+they are not quality targets for other content or an audio/video synchronization
+measurement. These checks do not qualify AV1 output.
 
 ### Small local media check
 

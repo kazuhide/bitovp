@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	type LiveToVodRecord,
+	liveAutoShutdownUpdateReceiptSchema,
 	readLiveAutoShutdownUpdate,
 	type StepLogEntry,
 } from "@bitovp/core";
@@ -524,11 +525,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
 				status: "DONE",
 				refs: {},
-				payload: {
+				payload: liveAutoShutdownUpdateReceiptSchema.parse({
 					requestId: claim.idempotencyKey,
 					configuration: { streamTimeoutMinutes: 5 },
 					appliedAt: now.toISOString(),
-				},
+					scheduledShutdownAt: new Date(
+						now.getTime() + 5 * 60_000,
+					).toISOString(),
+				}),
 			};
 			expect(
 				await appendLiveEffectStepLogEntry(tenant, claim, receipt),

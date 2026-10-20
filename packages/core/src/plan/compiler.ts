@@ -1034,6 +1034,16 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							? { width: rendition.width }
 							: {}),
 						// Per-title H264 samples omit bitrate/preset entirely
+						...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
+						...(rendition.minBitrate !== undefined
+							? { minBitrate: rendition.minBitrate }
+							: {}),
+						...(rendition.maxBitrate !== undefined
+							? { maxBitrate: rendition.maxBitrate }
+							: {}),
+						...(rendition.bufsize !== undefined
+							? { bufsize: rendition.bufsize }
+							: {}),
 						// (unlike H265, which passes None) — null means "absent".
 						...(rendition.bitrate !== null
 							? { bitrate: rendition.bitrate }
@@ -1158,6 +1168,10 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						kind: "CREATE_CODEC_H265",
 						// Field order mirrors the python sample constructors.
 						payload: {
+							...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
+							...(rendition.minBitrate !== undefined
+								? { minBitrate: rendition.minBitrate }
+								: {}),
 							...(rendition.encodingMode
 								? { encodingMode: rendition.encodingMode }
 								: {}),

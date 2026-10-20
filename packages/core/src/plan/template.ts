@@ -524,6 +524,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			h265[rendition.key] = {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
+					crf: rendition.crf,
+					minBitrate: rendition.minBitrate,
 					name: rendition.name,
 					profile: rendition.profile
 						? wire(PROFILE_H265_WIRE, rendition.profile)
@@ -640,6 +642,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			h264[rendition.key] = {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
+					crf: rendition.crf,
+					minBitrate: rendition.minBitrate,
+					maxBitrate: rendition.maxBitrate,
+					bufsize: rendition.bufsize,
 					name: rendition.name,
 					height: rendition.height,
 					bitrate: rendition.bitrate,

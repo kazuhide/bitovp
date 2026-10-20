@@ -27,6 +27,10 @@ export async function executeConfigStep(
 	switch (op.kind) {
 		case "CREATE_CODEC_H264": {
 			const resourceId = await ctx.sdk.createH264Config({
+				crf: optNum(p.crf),
+				minBitrate: optNum(p.minBitrate),
+				maxBitrate: optNum(p.maxBitrate),
+				bufsize: optNum(p.bufsize),
 				encodingMode: optStr(p.encodingMode),
 				name: optStr(p.name),
 				...(p.width !== undefined ? { width: optNum(p.width) } : {}),
@@ -69,6 +73,8 @@ export async function executeConfigStep(
 				rateControlModeConfig: p.rateControlModeConfig,
 			});
 			const resourceId = await ctx.sdk.createH265Config({
+				crf: optNum(p.crf),
+				minBitrate: optNum(p.minBitrate),
 				...quality,
 				encodingMode: optStr(p.encodingMode),
 				...(p.internalHevcV2 === true

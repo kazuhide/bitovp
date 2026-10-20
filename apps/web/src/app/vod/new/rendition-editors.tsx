@@ -103,6 +103,10 @@ export function ColorConfigEditor({
 }
 
 const H264_FIELDS: OptionFieldSpec[] = [
+	{ key: "crf", labelKey: "wizard.crf", control: "num" },
+	{ key: "minBitrate", labelKey: "wizard.minBitrateBps", control: "num" },
+	{ key: "maxBitrate", labelKey: "wizard.maxBitrateBps", control: "num" },
+	{ key: "bufsize", labelKey: "wizard.bufsizeBits", control: "num" },
 	{
 		key: "profile",
 		labelKey: "wizard.profile",
@@ -188,6 +192,8 @@ const H264_FIELDS: OptionFieldSpec[] = [
 ];
 
 const H265_FIELDS: OptionFieldSpec[] = [
+	{ key: "crf", labelKey: "wizard.crf", control: "num" },
+	{ key: "minBitrate", labelKey: "wizard.minBitrateBps", control: "num" },
 	{
 		key: "level",
 		labelKey: "wizard.level",

@@ -100,6 +100,10 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.h264.create(
 						new H264VideoConfiguration({
+							crf: p.crf,
+							minBitrate: p.minBitrate,
+							maxBitrate: p.maxBitrate,
+							bufsize: p.bufsize,
 							encodingMode: ordinaryEncodingMode(p.encodingMode),
 							name: p.name,
 							width: p.width,
@@ -250,6 +254,8 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.h265.create(
 						new H265VideoConfiguration({
+							crf: p.crf,
+							minBitrate: p.minBitrate,
 							encodingMode: ordinaryEncodingMode(p.encodingMode),
 							name: p.name,
 							profile: optEnum(ProfileH265, p.profile, "ProfileH265"),

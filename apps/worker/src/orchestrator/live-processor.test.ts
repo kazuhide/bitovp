@@ -9938,6 +9938,157 @@ function cancelCurrentRun(h: ReturnType<typeof setup>) {
 	run.cancelRequested = true;
 }
 
+describe("confirmed encoding cancellation", () => {
+	function confirmedCancellation() {
+		const h = setup({
+			status: "STOPPING",
+			bitmovinEncodingId: "bm-live-enc",
+			bitmovinAccountId: ACCOUNT_ID,
+			encoderStoppedConfirmedFor: "bm-live-enc",
+		});
+		const encoding = (h.row.stepLog as StepLogEntry[]).find(
+			(e) => e.kind === "CREATE_ENCODING",
+		);
+		if (!encoding) throw new Error("Missing encoding fixture");
+		Object.assign(encoding, { status: "DONE", resourceId: "bm-live-enc" });
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "STOPPING",
+			cancelRequested: true,
+			bitmovinEncodingId: "bm-live-enc",
+			encoderStoppedConfirmedFor: "bm-live-enc",
+			providerStatus: null,
+			providerStatusObservedAt: null,
+		});
+		const readRun = h.liveChannelRun.findFirst.getMockImplementation();
+		if (!readRun) throw new Error("Missing run reader fixture");
+		h.liveChannelRun.findFirst.mockImplementation(async (args) =>
+			structuredClone(await readRun(args)),
+		);
+		h.sdk.getEncodingStatus = vi.fn(async () => {
+			throw new Error("404 Not Found");
+		});
+		h.sdk.stopLiveEncoding = vi.fn(async () => {});
+		h.feederSession.findMany.mockResolvedValue([{ id: "owned-feeder" }]);
+		return h;
+	}
+	const cancel = {
+		liveChannelId: CHANNEL_ID,
+		action: "provision",
+		params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+	};
+
+	it("uses fresh exact proof after feeder stop without rereading a deleted encoder", async () => {
+		const h = confirmedCancellation();
+		let active = true;
+		h.enqueueFeederJob.mockImplementation(async () => {
+			active = false;
+		});
+		h.feederSession.findFirst.mockImplementation(async () =>
+			active ? { id: "owned-feeder" } : null,
+		);
+		await expect(h.process(cancel)).resolves.toMatchObject({
+			status: "STOPPED",
+		});
+		expect(h.enqueueFeederJob).toHaveBeenCalledWith({
+			feederSessionId: "owned-feeder",
+			action: "stop",
+		});
+		expect(h.feederSession.findFirst).toHaveBeenCalled();
+		expect(h.enqueueFeederJob.mock.invocationCallOrder[0]).toBeLessThan(
+			h.feederSession.findFirst.mock.invocationCallOrder.at(-1) as number,
+		);
+		expect(h.sdk.getEncodingStatus).not.toHaveBeenCalled();
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.row).toMatchObject({
+			status: "STOPPED",
+			encoderStoppedConfirmedFor: "bm-live-enc",
+		});
+		expect(h.runRows[0]).toMatchObject({
+			status: "STOPPED",
+			cancelRequested: true,
+			encoderStoppedConfirmedFor: "bm-live-enc",
+			providerStatus: null,
+			providerStatusObservedAt: null,
+		});
+	});
+
+	it.each([
+		"missing",
+		"wrong-proof",
+		"run-pointer",
+		"channel-pointer",
+		"channel-proof",
+		"revoked-after-await",
+		"channel-revoked-after-await",
+	])("keeps a 404 unconfirmed for %s", async (kind) => {
+		const h = confirmedCancellation();
+		const run = h.runRows[0];
+		if (!run) throw new Error("Missing run fixture");
+		if (kind === "missing") run.encoderStoppedConfirmedFor = null;
+		if (kind === "wrong-proof") run.encoderStoppedConfirmedFor = "old-encoding";
+		if (kind === "run-pointer") run.bitmovinEncodingId = "other-encoding";
+		if (kind === "channel-pointer") h.row.bitmovinEncodingId = "other-encoding";
+		if (kind === "channel-proof")
+			h.row.encoderStoppedConfirmedFor = "old-encoding";
+		if (kind === "revoked-after-await")
+			h.enqueueFeederJob.mockImplementation(async () => {
+				run.encoderStoppedConfirmedFor = null;
+			});
+		if (kind === "channel-revoked-after-await")
+			h.enqueueFeederJob.mockImplementation(async () => {
+				h.row.encoderStoppedConfirmedFor = null;
+			});
+		await expect(h.process(cancel)).resolves.toMatchObject({
+			status: "STOPPING",
+		});
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.row.status).toBe("STOPPING");
+		expect(run.providerStatus).toBeNull();
+	});
+
+	it.each([
+		"lease",
+		"fence",
+		"run",
+	])("does not finish after %s ownership changes during feeder stop", async (kind) => {
+		const h = confirmedCancellation();
+		h.enqueueFeederJob.mockImplementation(async () => {
+			if (kind === "lease")
+				h.row.provisionClaimedAt = new Date("2030-01-01T00:00:00Z");
+			if (kind === "fence") h.row.liveEffectFenceVersion = 2;
+			if (kind === "run")
+				h.runRows.push({
+					id: "new-run",
+					seq: 2,
+					status: "PROVISIONING",
+					cancelRequested: false,
+				});
+		});
+		const pending = h.process(cancel);
+		if (kind === "lease") await expect(pending).rejects.toThrow("lease lost");
+		else expect((await pending).status).not.toBe("STOPPED");
+		expect(h.row.status).not.toBe("STOPPED");
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it("keeps exact confirmation pending while a feeder remains occupied", async () => {
+		const h = confirmedCancellation();
+		h.feederSession.findFirst.mockResolvedValue({ id: "owned-feeder" });
+		await expect(h.process(cancel)).resolves.toMatchObject({
+			status: "STOPPING",
+		});
+		expect(h.sdk.getEncodingStatus).not.toHaveBeenCalled();
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.row.status).toBe("STOPPING");
+	});
+});
+
 describe("cooperative startup cancellation", () => {
 	it.each([
 		"cancel",

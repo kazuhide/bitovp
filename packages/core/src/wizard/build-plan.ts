@@ -1,6 +1,7 @@
 import { hlsLegSelected, hlsVersionForLegs } from "../plan/hls-legs";
 import type { QcGate } from "../plan/qc-gate";
 import {
+	type AV1_DYNAMIC_RANGE_FORMATS,
 	DEFAULT_VMAF_MODEL,
 	type EncodingPlanInput,
 	type H265V2PerceptualQualityModeConfig,
@@ -409,12 +410,13 @@ export type WizardVp9Options = {
 	colorConfig?: WizardColorConfig;
 };
 
-/** AV1 (Av1VideoConfiguration) — the app exposes preset + autoLevelSetup
+/** AV1 (Av1VideoConfiguration) — preset, level setup and dynamic range
  * as a subset of the SDK's AV1-specific settings. */
 export type WizardAv1Options = {
 	rate?: number | null;
 	presetConfiguration?: "VOD_QUALITY" | "VOD_STANDARD" | "VOD_SPEED";
 	autoLevelSetup?: "ENABLED" | "DISABLED";
+	dynamicRangeFormat?: (typeof AV1_DYNAMIC_RANGE_FORMATS)[number];
 	colorConfig?: WizardColorConfig;
 };
 
@@ -1789,6 +1791,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				rate: o.rate,
 				presetConfiguration: o.presetConfiguration,
 				autoLevelSetup: o.autoLevelSetup,
+				dynamicRangeFormat: o.dynamicRangeFormat,
 				colorConfig: pruneColorConfig(o.colorConfig),
 				perTitleSettings: perTitleSettingsField(video.extras),
 			});

@@ -624,6 +624,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					// wire values per the schema.
 					presetConfiguration: rendition.presetConfiguration,
 					autoLevelSetup: rendition.autoLevelSetup,
+					dynamicRangeFormat: rendition.dynamicRangeFormat,
 					colorConfig: rendition.colorConfig
 						? dense({ ...rendition.colorConfig })
 						: undefined,

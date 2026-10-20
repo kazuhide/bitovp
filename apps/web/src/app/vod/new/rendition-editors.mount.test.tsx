@@ -175,6 +175,51 @@ describe("per-codec Advanced editors mount and patch (ledger #149)", () => {
 		expect(onChange).toHaveBeenCalledWith({ autoLevelSetup: "DISABLED" });
 	});
 
+	it("AV1 dynamic range has readable profile labels and an explicit unset choice", () => {
+		const onChange = vi.fn();
+		const { rerender } = render(
+			<Av1AdvancedEditor
+				idBase="av1"
+				value={{ autoLevelSetup: "ENABLED" }}
+				onChange={onChange}
+			/>,
+		);
+		const control = screen.getByLabelText(
+			"Dynamic range format",
+		) as HTMLSelectElement;
+		expect(control).toHaveValue("");
+		expect([...control.options].map((o) => [o.value, o.text])).toEqual([
+			["", "(default)"],
+			["SDR", "SDR"],
+			["HDR10", "HDR10"],
+			["DOLBY_VISION_PROFILE_10_0", "Dolby Vision Profile 10.0"],
+			["DOLBY_VISION_PROFILE_10_1", "Dolby Vision Profile 10.1"],
+		]);
+		fireEvent.change(control, {
+			target: { value: "DOLBY_VISION_PROFILE_10_1" },
+		});
+		expect(onChange).toHaveBeenLastCalledWith({
+			autoLevelSetup: "ENABLED",
+			dynamicRangeFormat: "DOLBY_VISION_PROFILE_10_1",
+		});
+		rerender(
+			<Av1AdvancedEditor
+				idBase="av1"
+				value={{
+					autoLevelSetup: "ENABLED",
+					dynamicRangeFormat: "DOLBY_VISION_PROFILE_10_1",
+				}}
+				onChange={onChange}
+			/>,
+		);
+		expect(control).toHaveValue("DOLBY_VISION_PROFILE_10_1");
+		fireEvent.change(control, { target: { value: "" } });
+		expect(onChange).toHaveBeenLastCalledWith({
+			autoLevelSetup: "ENABLED",
+			dynamicRangeFormat: undefined,
+		});
+	});
+
 	it("LoudnessEditor offers the ITU metering modes", () => {
 		const onChange = vi.fn();
 		render(<LoudnessEditor idBase="loud" value={{}} onChange={onChange} />);

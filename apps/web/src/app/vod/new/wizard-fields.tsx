@@ -53,7 +53,14 @@ export type OptionFieldSpec = {
 	key: string;
 	labelKey: MessageKey;
 	/** "num" | "text" | "bool" | enum options for a select. */
-	control: "num" | "text" | "bool" | { options: readonly string[] };
+	control:
+		| "num"
+		| "text"
+		| "bool"
+		| {
+				options: readonly string[];
+				labels?: Readonly<Record<string, string>>;
+		  };
 	hintKey?: MessageKey;
 	/** Tri-state extras: bool gains a "null" choice, num gains an
 	 * "auto (null)" checkbox — per-title samples pass explicit nulls. */
@@ -156,6 +163,7 @@ function OptionControl({
 			</SelectNative>
 		);
 	}
+	const control = spec.control;
 	return (
 		<SelectNative
 			id={id}
@@ -167,12 +175,12 @@ function OptionControl({
 			<option value="">{t("wizard.default")}</option>
 			{typeof raw === "string" &&
 			raw !== "" &&
-			!spec.control.options.includes(raw) ? (
+			!control.options.includes(raw) ? (
 				<option value={raw}>{raw}</option>
 			) : null}
-			{spec.control.options.map((option) => (
+			{control.options.map((option) => (
 				<option key={option} value={option}>
-					{option}
+					{control.labels?.[option] ?? option}
 				</option>
 			))}
 		</SelectNative>

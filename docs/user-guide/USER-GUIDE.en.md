@@ -326,10 +326,12 @@ Open each video row's "Advanced" section to configure its profile, level, frame 
 | H.265 | Profile, level, High Tier, CTU, look-ahead, motion search, AQ, SAO, and related settings |
 | HEVCv2 | Dedicated presets, pixel format, MCTF, perceptual quality, and dedicated Per-Title QP settings |
 | VP9 | Quality and speed, tiles, quantization range, AQ, ARNR, and related settings |
-| AV1 | Preset, frame rate, automatic level selection, and related settings |
+| AV1 | Preset, frame rate, automatic level selection, and dynamic range (SDR, HDR10, Dolby Vision Profile 10.0 or 10.1) |
 | Color and HDR | Color space, primaries, transfer characteristics, copying input values, HDR10, and Dolby Vision metadata |
 
 A blank field often means "not specified", rather than zero or disabled. "Default", "Auto", and "OFF" also have different meanings.
+
+For AV1, leave "Dynamic range format" at its default to omit the setting. Dolby Vision Profile 10.0/10.1 uses the fMP4 path in this application. Bitmovin added these profiles and Dolby Vision-to-SDR/HDR10 conversion in Encoder 2.287.0; encrypting Dolby Vision AV1 fMP4 requires the feature introduced in 2.290.0 (BETA). Check the selected encoder version and account availability before running a job. See the [official encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990). Selecting a format does not establish playback or display compatibility.
 
 HEVCv2 appears for eligible accounts. Selecting a BCF is separate from selecting an encoder version. MCTF reduces temporal noise using motion compensation; choose `AUTO`, `OFF`, or `ON`. Conventional H.265 CRF and x265 settings are not automatically converted into HEVCv2 values. If incompatible settings remain after changing codecs, explicitly remove them.
 

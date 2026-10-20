@@ -795,6 +795,10 @@ export function validatePlan(
 		});
 	}
 
+	const visionFormats = new Map<
+		string,
+		{ format: string; renditionKey: string }
+	>();
 	for (const [index, rendition] of plan.renditions.entries()) {
 		if (rendition.burnInSrt) {
 			if (!VIDEO_CODECS_FOR_MODE.has(rendition.codec))
@@ -859,6 +863,36 @@ export function validatePlan(
 					message: `${rendition.codec} requires a ${rendition.codec === "IMSC" ? "TTML" : "WEBVTT"} fileStream`,
 					path: `renditions[${index}].ingestKey`,
 				});
+		}
+		// A shared Dolby Vision input has one conversion format per encoding,
+		// including when a rendition consumes it through trimming/concatenation.
+		if (
+			(rendition.codec === "H265" || rendition.codec === "AV1") &&
+			rendition.dynamicRangeFormat !== undefined
+		) {
+			for (const key of inputStreamAncestry(plan, rendition.ingestKey) ?? []) {
+				const source = dolbyByKey.get(key);
+				if (
+					source?.kind !== "VISION" ||
+					source.encodingKey !== rendition.encodingKey
+				)
+					continue;
+				const identity = JSON.stringify([rendition.encodingKey ?? null, key]);
+				const previous = visionFormats.get(identity);
+				if (previous && previous.format !== rendition.dynamicRangeFormat) {
+					issues.push({
+						code: "PLAN_DOLBY_VISION_FORMAT_CONFLICT",
+						level: "error",
+						message: `Renditions "${previous.renditionKey}" and "${rendition.key}" request different dynamic range formats (${previous.format}, ${rendition.dynamicRangeFormat}) from Dolby Vision input stream "${key}" in the same encoding. Use a separate encoding for each format.`,
+						path: `renditions[${index}].dynamicRangeFormat`,
+					});
+				} else if (!previous) {
+					visionFormats.set(identity, {
+						format: rendition.dynamicRangeFormat,
+						renditionKey: rendition.key,
+					});
+				}
+			}
 		}
 		const dolbySource = dolbyByKey.get(rendition.ingestKey);
 		if (dolbySource) {

@@ -2725,10 +2725,11 @@ function compileDashManifest(
 				encodingId: encStepFor(rendition.key),
 				muxingId: `muxing:${muxing.key}`,
 			};
+			const repStep = `${manifestStep}:rep:${muxing.key}`;
 			ops.push(
 				onDemand && muxing.kind === "MP4"
 					? {
-							step: `${manifestStep}:rep:${muxing.key}`,
+							step: repStep,
 							kind: "CREATE_DASH_REPRESENTATION_MP4",
 							payload: {
 								type: "SEGMENT_BASE",
@@ -2738,7 +2739,7 @@ function compileDashManifest(
 						}
 					: muxing.kind === "WEBM"
 						? {
-								step: `${manifestStep}:rep:${muxing.key}`,
+								step: repStep,
 								// The vendor's own VP9 sample: DashWebmRepresentation, TEMPLATE
 								// type, segment path — no `mode` field on this model.
 								kind: "CREATE_DASH_REPRESENTATION_WEBM",
@@ -2749,7 +2750,7 @@ function compileDashManifest(
 								refs: setRefs,
 							}
 						: {
-								step: `${manifestStep}:rep:${muxing.key}`,
+								step: repStep,
 								kind:
 									muxing.kind === "CMAF"
 										? "CREATE_DASH_REPRESENTATION_CMAF"
@@ -2762,6 +2763,18 @@ function compileDashManifest(
 								refs: setRefs,
 							},
 			);
+			if (drm) {
+				ops.push({
+					step: `${repStep}:cp`,
+					kind: "CREATE_DASH_CONTENT_PROTECTION",
+					payload: muxing.kind === "WEBM" ? { representationKind: "WEBM" } : {},
+					refs: {
+						...setRefs,
+						representationId: repStep,
+						drmId: `drm:${drm.key}`,
+					},
+				});
+			}
 		}
 		return ops;
 	}

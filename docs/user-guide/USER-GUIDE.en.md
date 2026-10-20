@@ -333,6 +333,8 @@ A blank field often means "not specified", rather than zero or disabled. "Defaul
 
 For AV1, leave "Dynamic range format" at its default to omit the setting. Dolby Vision Profile 10.0/10.1 uses the fMP4 path in this application. Bitmovin added these profiles and Dolby Vision-to-SDR/HDR10 conversion in Encoder 2.287.0; encrypting Dolby Vision AV1 fMP4 requires the feature introduced in 2.290.0 (BETA). Check the selected encoder version and account availability before running a job. See the [official encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990). Selecting a format does not establish playback or display compatibility.
 
+Use one conversion format per Dolby Vision input stream within an encoding. Different resolutions can share that format, but mixing Profile 10.0 with 10.1, or Dolby Vision with SDR/HDR10 conversions of the same input stream, is rejected before the job starts. This also applies through trimming or concatenation. Create separate encodings when that input needs multiple conversion formats.
+
 HEVCv2 appears for eligible accounts. Selecting a BCF is separate from selecting an encoder version. MCTF reduces temporal noise using motion compensation; choose `AUTO`, `OFF`, or `ON`. Conventional H.265 CRF and x265 settings are not automatically converted into HEVCv2 values. If incompatible settings remain after changing codecs, explicitly remove them.
 
 When using H.264 or H.265 presets or rendition-level modes, avoid conflicting settings at the job level. If the interface displays "Use ladder encoding modes / presets", configure them in the ladder.
@@ -381,6 +383,10 @@ Avoid having a video variant that already carries audio also reference an extern
 Configure DRM on the target container. Depending on whether you use CENC, FairPlay, or SPEKE, specify key credentials, KID, PSSH, IV, license URI, and related values. KID identifies a key; PSSH is DRM initialization information used mainly in manifests. Secret content keys are stored in credentials, and the plan holds references to them.
 
 For SPEKE, select the key provider and DRM systems. A Content ID is generated if omitted. Matching Content ID and KID values request the same keys. A FairPlay IV is 32 hexadecimal characters. Check that the encryption scheme, license service configuration, and player support agree.
+
+Encrypted segments and DASH encryption metadata must agree. When a DASH manifest selects a DRM configuration, bitovp uses its encrypted output path and adds ContentProtection, the DASH element that identifies encryption, to the selected audio and video representations. This also applies when adaptation sets are configured explicitly.
+
+For local diagnostics, a separately configured player can use [ClearKey](https://shaka-project.github.io/shaka-player/docs/api/tutorial-drm-config.html) with a known test key. Apple's [TN2454 identity-key procedure](https://developer.apple.com/library/archive/technotes/tn2454/_index.html) instead uses a test HLS playlist and a key file to help distinguish content-authoring problems from FairPlay key-delivery problems. These checks do not establish production license acquisition or Dolby Vision display support. Keep identity-key delivery limited to testing.
 
 ### Manifests and generation timing
 

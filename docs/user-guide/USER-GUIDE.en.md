@@ -687,6 +687,14 @@ Pseudo-live repeatedly sends a stored MP4 at real-time speed as input to a live 
 
 VIEWER users can view sessions. OPERATOR or ADMIN users can start, switch, stop and delete them. Prepare a credential that can read the input file and a live channel in advance. Chapter 7 covers channel configuration and startup; Chapter 8 covers monitoring during a broadcast.
 
+### Source length and preparation time
+
+For an initial input and playback check, choose a source lasting several minutes, such as the roughly 10-minute Big Buck Bunny sample. This gives you time to observe reception, output progression and playback without frequent returns to the start. A 10-second clip is useful for checking repeated loop boundaries; its short duration does not by itself prevent pseudo-live use.
+
+Before sending, the worker waits for the channel to reach `RUNNING`, downloads the entire source and prepares a local MP4 for looping. Preparation uses CPU and can take several minutes for a long or high-resolution source. Allow time before the intended broadcast and enough temporary storage for both the downloaded source and the prepared file.
+
+AAC audio is encoded in blocks of 1,024 samples, so its end does not necessarily coincide with the final video frame. Audio extending past the video can lengthen each repetition. bitovp prepares a constant-frame-rate loop with timestamps starting at zero and trims audio on AAC frame boundaries to keep it within the video span. This aligns timing; it does not make the ending and opening scenes join naturally. Check the loop boundary in playback as well as the middle of the source.
+
 ### Starting a file input
 
 1. Open “Pseudo-Live Feeds” in the navigation and choose “Start file input”. You can also start it under “File input (pseudo-live)” on the channel detail page.
@@ -701,7 +709,7 @@ SRT Caller initiates a connection from the feeder to the receiver. Specify the h
 
 ### Progress and source switching
 
-`DOWNLOADING` means the source is being retrieved; `PUSHING` means the feeder is sending it. Check fresh input information on the channel detail page too, followed by output progression and playback. `PUSHING` alone does not establish that the encoder is receiving the feed or that viewers can play it.
+`DOWNLOADING` covers waiting for the channel, retrieving the source and preparing the loop; `PUSHING` means the feeder is sending it. Check fresh input information on the channel detail page too, followed by output progression and playback. `PUSHING` alone does not establish that the encoder is receiving the feed or that viewers can play it.
 
 To replace the source, choose the new MP4, enable “Switch from the active feeder (stage first, then swap)” and select “Stage and switch”. The application downloads and probes the new source and checks format compatibility before stopping the old session. It starts the new sender after confirming that the old sender has ended. This can leave a gap during the switch to avoid overlapping sends. It does not guarantee a seamless transition.
 

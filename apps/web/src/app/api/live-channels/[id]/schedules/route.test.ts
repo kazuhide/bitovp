@@ -617,6 +617,7 @@ describe("POST /schedules — the run window (ledger #247)", () => {
 	function recordedUpdate(
 		configuration: { streamTimeoutMinutes?: number },
 		scheduledShutdownAt: string | null,
+		requestId = "accepted-shutdown-update",
 	) {
 		return [
 			{
@@ -628,7 +629,7 @@ describe("POST /schedules — the run window (ledger #247)", () => {
 					configuration,
 					appliedAt: "2026-09-01T12:00:00.000Z",
 					scheduledShutdownAt,
-					requestId: "accepted-shutdown-update",
+					requestId,
 				},
 			},
 		];
@@ -751,6 +752,104 @@ describe("POST /schedules — the run window (ledger #247)", () => {
 		});
 		expect(result.status).toBe(409);
 		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			change: "shortened timer",
+			before: { streamTimeoutMinutes: 30 },
+			after: { streamTimeoutMinutes: 5 },
+			deadline: "2026-09-01T12:05:00.000Z",
+		},
+		{
+			change: "extended timer",
+			before: { streamTimeoutMinutes: 30 },
+			after: { streamTimeoutMinutes: 60 },
+			deadline: "2026-09-01T13:00:00.000Z",
+		},
+		{
+			change: "disabled timers",
+			before: { streamTimeoutMinutes: 30 },
+			after: {},
+			deadline: null,
+		},
+		{
+			change: "first accepted update",
+			before: null,
+			after: { streamTimeoutMinutes: 5 },
+			deadline: "2026-09-01T12:05:00.000Z",
+		},
+		{
+			change: "new revision with identical timer values",
+			before: { streamTimeoutMinutes: 30 },
+			after: { streamTimeoutMinutes: 30 },
+			deadline: "2026-09-01T12:30:00.000Z",
+		},
+	])("refuses a $change accepted on the same run during content validation", async ({
+		before,
+		after,
+		deadline,
+	}) => {
+		channelFindUnique.mockResolvedValue(
+			channel({ autoShutdown: { streamTimeoutMinutes: 30 } }),
+		);
+		let stepLog = before
+			? recordedUpdate(before, "2026-09-01T12:30:00.000Z", "initial-update")
+			: [];
+		runFindFirst.mockImplementation(async () =>
+			structuredClone(currentRun(stepLog)),
+		);
+		contentList.mockImplementationOnce(async () => {
+			stepLog = recordedUpdate(after, deadline, "replacement-update");
+			return { items: [{ id: CONTENT_ID, status: "READY" }] };
+		});
+		const result = await arm({
+			action: "SLATE_IN",
+			fireAt: "2026-09-01T12:20:00.000Z",
+			bitmovinAccountId: ACCOUNT_ID,
+			insertableContentId: CONTENT_ID,
+			slateDurationSeconds: 30,
+		});
+		expect(result.status).toBe(409);
+		expect(result.body.error).toContain("Automatic stop settings changed");
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("still arms when an unrelated runtime record arrives but the accepted stop settings stay unchanged", async () => {
+		channelFindUnique.mockResolvedValue(
+			channel({ autoShutdown: { streamTimeoutMinutes: 30 } }),
+		);
+		let stepLog: unknown[] = recordedUpdate(
+			{ streamTimeoutMinutes: 30 },
+			"2026-09-01T12:30:00.000Z",
+		);
+		runFindFirst.mockImplementation(async () =>
+			structuredClone(currentRun(stepLog)),
+		);
+		contentList.mockImplementationOnce(async () => {
+			stepLog = [
+				...stepLog,
+				{
+					kind: "SCTE35_CUE",
+					status: "DONE",
+					payload: { cueDuration: 30 },
+					refs: {},
+					step: "cue",
+				},
+			];
+			return { items: [{ id: CONTENT_ID, status: "READY" }] };
+		});
+		const result = await arm({
+			action: "SLATE_IN",
+			fireAt: "2026-09-01T12:20:00.000Z",
+			bitmovinAccountId: ACCOUNT_ID,
+			insertableContentId: CONTENT_ID,
+			slateDurationSeconds: 30,
+		});
+		expect(result.status).toBe(201);
+		expect(scheduleCreate.mock.calls[0]?.[0]?.data.liveChannelRunId).toBe(
+			RUN_ID,
+		);
 	});
 
 	it("refuses a STOP past the provider's streamTimeoutMinutes, naming the knob and both instants", async () => {

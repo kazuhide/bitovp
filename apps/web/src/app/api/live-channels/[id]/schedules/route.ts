@@ -299,6 +299,11 @@ export async function POST(req: Request, { params }: RouteParams) {
 				409,
 				"The current live run's encoding changed; reload before arming a schedule",
 			);
+		// A late accepted update can exist only on its immutable run.
+		// Ended runs never supply a replacement for a future airing.
+		const autoShutdownUpdate = windowRunIsLive
+			? readLiveAutoShutdownUpdate(windowRun.stepLog)
+			: null;
 		const runWindow = liveRunWindow(
 			// Read straight off the stored JSON, not through a whole-plan parse:
 			// an old plan that no longer validates must not silently lose its
@@ -307,11 +312,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channel.runningSince ?? channel.createdAt,
 			{
 				maxRunMinutes: channel.maxRunMinutes,
-				// A late accepted update can exist only on its immutable run.
-				// Ended runs never supply a replacement for a future airing.
-				autoShutdownUpdate: windowRunIsLive
-					? readLiveAutoShutdownUpdate(windowRun.stepLog)
-					: null,
+				autoShutdownUpdate,
 			},
 		);
 		const beyond = scheduleBeyondRunWindow(runWindow, {
@@ -407,7 +408,12 @@ export async function POST(req: Request, { params }: RouteParams) {
 		const currentRun = await ctx.prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: id },
 			orderBy: { seq: "desc" },
-			select: { id: true, status: true, bitmovinEncodingId: true },
+			select: {
+				id: true,
+				status: true,
+				bitmovinEncodingId: true,
+				stepLog: true,
+			},
 		});
 		if (
 			(currentRun?.id ?? null) !== (windowRun?.id ?? null) ||
@@ -419,6 +425,18 @@ export async function POST(req: Request, { params }: RouteParams) {
 			return jsonError(
 				409,
 				"The current live run changed while this schedule was prepared; reload before arming it",
+			);
+		const currentAutoShutdownUpdate =
+			currentRun && isLiveRunStatus(currentRun.status)
+				? readLiveAutoShutdownUpdate(currentRun.stepLog)
+				: null;
+		if (
+			JSON.stringify(currentAutoShutdownUpdate) !==
+			JSON.stringify(autoShutdownUpdate)
+		)
+			return jsonError(
+				409,
+				"Automatic stop settings changed while this schedule was prepared; reload before arming it",
 			);
 		const armedForRun =
 			currentRun && isLiveRunStatus(currentRun.status) ? currentRun.id : null;

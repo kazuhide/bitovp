@@ -472,6 +472,18 @@ Figure 6-1. VOD job details in the demo. The screen uses sample data and does no
 
 In "Resources", inspect references between related resources and the details of recorded requests and responses. "Copy as cURL" is for inspecting a request; copying it does not execute an API call.
 
+To run a copied command, replace the placeholders below locally and set the variables in your shell first. The copied command contains variable names; “Copy as cURL” does not read or copy the values from your shell.
+
+```sh
+export BITMOVIN_API_KEY='YOUR_BITMOVIN_API_KEY'
+```
+
+If the command includes an `X-Tenant-Org-Id` header, also set:
+
+```sh
+export BITMOVIN_TENANT_ORG_ID='YOUR_BITMOVIN_ORG_ID'
+```
+
 `FINISHED` means that encoding has completed. It does not mean CDN delivery or browser playback has been verified.
 
 1. Check the expected output destination and manifests.
@@ -670,6 +682,8 @@ Use the incoming Live input as the compatibility reference for inserted video. M
 `READY` describes the registered asset’s preparation state. After registration or acceptance of a schedule request, confirm the actual broadcast by watching the output before, during and after insertion. Check both picture and sound, and the return to the live program.
 
 A pre-program slate waits until the input connects. If the insertion window closes while input is still disconnected, it becomes `MISSED`. To cancel a future insertion, cancel its reservation. To end the insertion currently playing, use “Emergency stop: inserted content”. [Stopping the current insertion](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/encoding/encodings/live/insertableContent/stop/StopApi.ts) does not cancel other reservations.
+
+A recorded H.264/AAC test using RTMP input, AWS encoding and S3 output verified scheduled insertion, early stop and return to the main source. Inspection of the archive found eight black frames in seven transition intervals with a 10-second inserted clip; the registered clip itself contained no black frames. The cause has not been established. An offline timing adjustment has not been validated in the cloud. Check the archive around insertion starts, repetitions and returns when assessing continuity.
 
 ### Ad cues, SCTE-35, and ESAM
 

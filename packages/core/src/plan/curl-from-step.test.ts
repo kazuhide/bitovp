@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { REDACTED } from "../crypto/redact";
 import { canCurlStep, curlForStep } from "./curl-from-step";
@@ -78,7 +79,7 @@ describe("curlForStep — endpoint mapping", () => {
 		expect(result.command).toContain(
 			"curl -X POST 'https://api.bitmovin.com/v1/encoding/inputs/s3'",
 		);
-		expect(result.command).toContain("-H 'X-Api-Key: $BITMOVIN_API_KEY'");
+		expect(result.command).toContain('-H "X-Api-Key: $BITMOVIN_API_KEY"');
 		expect(result.command).toContain("-H 'Content-Type: application/json'");
 		// Body is the snapshot minus the `refs` bookkeeping key.
 		expect(result.command).toContain("--data");
@@ -230,7 +231,7 @@ describe("curlForStep — options", () => {
 			"'https://api.bitmovin.com/v1/encoding/encodings'",
 		);
 		expect(result.command).toContain(
-			"-H 'X-Tenant-Org-Id: $BITMOVIN_TENANT_ORG_ID'",
+			'-H "X-Tenant-Org-Id: $BITMOVIN_TENANT_ORG_ID"',
 		);
 	});
 
@@ -549,5 +550,69 @@ describe("DASH ContentProtection cURL from resolved request refs", () => {
 			code: "NO_ENDPOINT",
 			kind: "CREATE_DASH_CONTENT_PROTECTION",
 		});
+	});
+});
+
+describe("curlForStep — POSIX shell variable headers", () => {
+	it.each([
+		false,
+		true,
+	])("expands synthetic header variables once without splitting arguments (org=%s)", (includeOrgHeader) => {
+		const apiKey = [
+			"synthetic key with spaces",
+			"'single'",
+			'"double"',
+			"$BITMOVIN_TENANT_ORG_ID",
+			"$(printf KEY_EXPANDED)",
+			"`printf KEY_BACKTICK`",
+			"; *",
+		].join(" ");
+		const orgId = [
+			"synthetic org with spaces",
+			"'single'",
+			'"double"',
+			"$BITMOVIN_API_KEY",
+			"$(printf ORG_EXPANDED)",
+			"`printf ORG_BACKTICK`",
+			"; *",
+		].join(" ");
+		const baseUrl =
+			"https://example.invalid/v1/quoted'path;$(printf URL_EXPANDED)";
+		const body = {
+			name: "literal 'quotes' and $(printf BODY_EXPANDED); `printf BODY_BACKTICK`",
+			bucketName: "synthetic-bucket",
+		};
+		const result = curlForStep(
+			step({ kind: "CREATE_INPUT_S3", request: { ...body, refs: {} } }),
+			{ baseUrl, includeOrgHeader },
+		);
+		if (!result.ok) throw new Error("Expected runnable synthetic command");
+		// This shell function captures argv; no curl executable or network is used.
+		// Only these synthetic variables enter the child, never the parent's environment.
+		const output = execFileSync(
+			"/bin/sh",
+			["-c", `curl() { printf '%s\\000' "$@"; }\n${result.command}`],
+			{
+				env: { BITMOVIN_API_KEY: apiKey, BITMOVIN_TENANT_ORG_ID: orgId },
+				encoding: "utf8",
+				timeout: 2000,
+				maxBuffer: 65536,
+			},
+		);
+		expect(output.endsWith("\0")).toBe(true);
+		expect(output.split("\0").slice(0, -1)).toEqual([
+			"-X",
+			"POST",
+			`${baseUrl}/encoding/inputs/s3`,
+			"-H",
+			`X-Api-Key: ${apiKey}`,
+			...(includeOrgHeader ? ["-H", `X-Tenant-Org-Id: ${orgId}`] : []),
+			"-H",
+			"Content-Type: application/json",
+			"--data",
+			JSON.stringify(body, null, 2),
+		]);
+		expect(result.command).not.toContain(apiKey);
+		expect(result.command).not.toContain(orgId);
 	});
 });

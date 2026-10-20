@@ -134,7 +134,7 @@ export type LiveStaticIngestPoint = {
 
 export type LiveVideoRendition = {
 	/** Stable form identity, preserved when editing a rendition. */
-	extras?: { key?: string };
+	extras?: { key?: string; hlsVariantUri?: string };
 	codec: "H264" | "H265";
 	/** Explicit H264/H265 output width; absent preserves input aspect ratio. */
 	width?: number;
@@ -915,6 +915,7 @@ function videoRendition(
 			maxKeyframeInterval: o.maxKeyframeInterval,
 			rcLookahead: o.rcLookahead,
 			subMe: o.subMe,
+			hlsVariantUri: video.extras?.hlsVariantUri,
 			maxCtuSize: str(o.maxCtuSize),
 			motionSearch: str(o.motionSearch),
 			tuIntraDepth: str(o.tuIntraDepth),
@@ -971,6 +972,7 @@ function videoRendition(
 		mvSearchRangeMax: o.mvSearchRangeMax,
 		rcLookahead: o.rcLookahead,
 		subMe: str(o.subMe),
+		hlsVariantUri: video.extras?.hlsVariantUri,
 		motionEstimationMethod: str(o.motionEstimationMethod),
 		sceneCutThreshold: o.sceneCutThreshold,
 		adaptiveQuantizationMode: str(o.adaptiveQuantizationMode),

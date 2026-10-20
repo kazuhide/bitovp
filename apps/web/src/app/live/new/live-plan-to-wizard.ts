@@ -101,7 +101,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const videos: LiveVideoRendition[] = plan.renditions
 		.filter(isVideoRendition)
 		.map((r) => ({
-			extras: { key: r.key },
+			extras: { key: r.key, ...("hlsVariantUri" in r && typeof r.hlsVariantUri === "string" ? { hlsVariantUri: r.hlsVariantUri } : {}) },
 			codec: r.codec,
 			...(r.width !== undefined ? { width: r.width } : {}),
 			...readH26xCodecOptions(r),

@@ -3746,6 +3746,8 @@ export const ja = {
 		title: "公開 ingress",
 	},
 	wizard: {
+		onDemandDrmTemplateUnavailable:
+			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",
 		spekeOtherSystems: "その他のシステムID（任意）",
 		spekeProvider: "SPEKE鍵プロバイダー",

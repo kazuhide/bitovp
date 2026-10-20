@@ -503,3 +503,99 @@ describe("SPEKE plan preview", () => {
 		).toBeDisabled();
 	});
 });
+
+describe("OnDemand MP4 DRM template availability", () => {
+	function onDemandEvaluation() {
+		const base = buildPlan(completeState);
+		const muxings = base.muxings.map((m) => ({
+			key: m.key,
+			kind: "MP4",
+			streamKey: m.streamKey,
+			filename: `${m.key}.mp4`,
+			fragmentDuration: 2000,
+			manifestType: "DASH_ON_DEMAND",
+			destination: m.destination,
+		}));
+		const evaluation = evaluatePlanDocument({
+			...base,
+			muxings,
+			drm: muxings.map((m) => ({
+				key: `${m.key}-cenc`,
+				kind: "CENC",
+				muxingKey: m.key,
+				credentialId: "00000000-0000-4000-8000-000000000003",
+				kid: "0123456789abcdef0123456789abcdef",
+				encryptionMode: "CTR",
+				ivSize: "IV_8_BYTES",
+				destination: { ...m.destination, path: `cenc/${m.key}` },
+			})),
+			manifests: [
+				{
+					key: "ondemand",
+					kind: "DASH",
+					name: "OnDemand",
+					manifestName: "stream.mpd",
+					profile: "ON_DEMAND",
+					drmKind: "CENC",
+					destination: { outputKey: base.outputs[0]?.key, path: "" },
+				},
+			],
+			generation: { timing: "POST_ENCODING" },
+		});
+		if (!evaluation.ok) throw new Error("valid OnDemand fixture");
+		expect(evaluation.issues).toEqual([]);
+		const reps = evaluation.ops.filter(
+			(op) => op.kind === "CREATE_DASH_REPRESENTATION_MP4",
+		);
+		expect(reps).toHaveLength(muxings.length);
+		expect(reps.every((op) => !!op.refs.drmId)).toBe(true);
+		return evaluation;
+	}
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps execution and JSON available with an honest export reason in %s", async (locale) => {
+		const evaluation = onDemandEvaluation();
+		const t = (key: Parameters<typeof translate>[1]) =>
+			translate(messagesFor(locale), key);
+		render(<PlanPreview evaluation={evaluation} />, locale);
+		expect(
+			screen.getByRole("button", { name: t("wizard.templateYaml") }),
+		).toBeDisabled();
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? /OnDemand MP4 DRMのYAML出力は利用できません/
+					: /YAML export is unavailable for OnDemand MP4 DRM/,
+			),
+		).toBeVisible();
+		expect(screen.getByTestId("plan-json").textContent).toContain(
+			'"drmKind": "CENC"',
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: t("ui.operations") }),
+		);
+		expect(screen.getByTestId("plan-ops").textContent).toContain(
+			"CREATE_DASH_REPRESENTATION_MP4",
+		);
+	});
+	it("does not leave a stale YAML export when switching between supported and unsupported plans", () => {
+		const safe = evaluateWizardState(completeState);
+		const view = render(<PlanPreview evaluation={safe} />);
+		expect(screen.getByRole("button", { name: "Template YAML" })).toBeEnabled();
+		expect(screen.getByTestId("plan-yaml")).toHaveTextContent("metadata:");
+		view.rerender(<PlanPreview evaluation={onDemandEvaluation()} />);
+		expect(
+			screen.getByRole("button", { name: "Template YAML" }),
+		).toBeDisabled();
+		expect(screen.getByTestId("plan-json")).toHaveTextContent(
+			'"drmKind": "CENC"',
+		);
+		view.rerender(<PlanPreview evaluation={safe} />);
+		expect(screen.getByRole("button", { name: "Template YAML" })).toBeEnabled();
+		expect(screen.getByTestId("plan-yaml")).toHaveTextContent("metadata:");
+		expect(
+			screen.queryByText(/YAML export is unavailable for OnDemand MP4 DRM/),
+		).not.toBeInTheDocument();
+	});
+});

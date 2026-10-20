@@ -2168,10 +2168,62 @@ function commentSafe(text: string): string {
 	return text.replaceAll(/\p{Cc}+/gu, " ");
 }
 
+/** A template must not silently omit selected DRM from an executable plan. */
+export function encodingTemplateExportUnavailableReason(
+	plan: EncodingPlan,
+): "SPEKE" | "DASH_ON_DEMAND_MP4_DRM" | undefined {
+	if (plan.drm.some((drm) => drm.kind === "SPEKE")) return "SPEKE";
+	for (const manifest of plan.manifests) {
+		if (
+			manifest.kind !== "DASH" ||
+			manifest.profile !== "ON_DEMAND" ||
+			!manifest.drmKind
+		)
+			continue;
+		for (const muxing of plan.muxings) {
+			const rendition = plan.renditions.find((r) => r.key === muxing.streamKey);
+			if (
+				!rendition ||
+				isPerTitle(rendition) ||
+				(!isVideoCodec(rendition) && !isAudioCodec(rendition))
+			)
+				continue;
+			if (
+				!(isAudioCodec(rendition)
+					? dashAudioLegSelected(muxing, manifest, true)
+					: dashVideoLegSelected(muxing, manifest, true))
+			)
+				continue;
+			if (
+				manifest.adaptationSets?.length &&
+				!manifest.adaptationSets.some(
+					(set) =>
+						set.key === rendition.dashSetKey &&
+						set.type === (isAudioCodec(rendition) ? "AUDIO" : "VIDEO"),
+				)
+			)
+				continue;
+			if (
+				plan.drm.some(
+					(drm) =>
+						drm.muxingKey === muxing.key && drm.kind === manifest.drmKind,
+				)
+			)
+				return "DASH_ON_DEMAND_MP4_DRM";
+		}
+	}
+	return undefined;
+}
+
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
-	if (plan.drm.some((drm) => drm.kind === "SPEKE"))
+	const unavailable = encodingTemplateExportUnavailableReason(plan);
+	if (unavailable === "SPEKE")
 		throw new Error(
 			"SPEKE uses a write-only key provider credential. Export the bitovp plan JSON to preserve its vault reference; encoding-template export is unavailable.",
+		);
+	if (unavailable === "DASH_ON_DEMAND_MP4_DRM")
+		throw new Error(
+			"OnDemand MP4 DRM is unavailable in encoding-template YAML. Export Plan JSON or run the plan in the app to preserve DRM.",
 		);
 	if (plan.internal?.hevcV2) {
 		throw new Error(

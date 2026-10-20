@@ -5,6 +5,7 @@ import {
 	compilePlan,
 	type EncodingPlan,
 	encodingPlanSchema,
+	encodingTemplateExportUnavailableReason,
 	type PlanIssue,
 	type PlanValidationOptions,
 	planToEncodingTemplateYaml,
@@ -149,15 +150,22 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 		[evaluation],
 	);
 	const internalProfile = evaluation.ok && !!evaluation.plan.internal?.hevcV2;
-	const spekeProfile =
-		evaluation.ok && evaluation.plan.drm.some((drm) => drm.kind === "SPEKE");
-	const currentTab = spekeProfile && tab === "yaml" ? "json" : tab;
+	const templateUnavailable = evaluation.ok
+		? encodingTemplateExportUnavailableReason(evaluation.plan)
+		: undefined;
+	const templateUnavailableMessage =
+		templateUnavailable === "SPEKE"
+			? t("wizard.spekeTemplateUnavailable")
+			: templateUnavailable === "DASH_ON_DEMAND_MP4_DRM"
+				? t("wizard.onDemandDrmTemplateUnavailable")
+				: undefined;
+	const currentTab = templateUnavailable && tab === "yaml" ? "json" : tab;
 	const yaml = useMemo(
 		() =>
-			evaluation.ok && !evaluation.plan.internal?.hevcV2 && !spekeProfile
+			evaluation.ok && !evaluation.plan.internal?.hevcV2 && !templateUnavailable
 				? planToEncodingTemplateYaml(evaluation.plan)
 				: null,
-		[evaluation, spekeProfile],
+		[evaluation, templateUnavailable],
 	);
 	const blocked =
 		evaluation.ok && evaluation.issues.some((i) => i.level === "error");
@@ -190,10 +198,8 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 				<div className="ml-auto flex items-center gap-1">
 					<button
 						type="button"
-						disabled={internalProfile || spekeProfile}
-						title={
-							spekeProfile ? t("wizard.spekeTemplateUnavailable") : undefined
-						}
+						disabled={internalProfile || !!templateUnavailable}
+						title={templateUnavailableMessage}
 						aria-pressed={currentTab === "yaml"}
 						className={`rounded px-2 py-1 text-xs ${
 							currentTab === "yaml"
@@ -231,6 +237,9 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 					{active ? <CopyButton value={active} /> : null}
 				</div>
 			</div>
+			{templateUnavailableMessage ? (
+				<p className="text-amber-400 text-xs">{templateUnavailableMessage}</p>
+			) : null}
 			{!evaluation.ok ? (
 				<p role="alert" className="text-amber-400 text-xs">
 					{evaluation.zodMessage || t("wizard.planIsIncomplete")}

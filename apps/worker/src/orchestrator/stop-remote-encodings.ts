@@ -45,9 +45,9 @@ import type { SdkOps } from "./sdk-ops";
  * status outside FINISHED/QC_FAILED that names an encoding) but only as a
  * refusal to proceed — seeing is not stopping.
  *
- * This is the stop. Same shape as the processor's own cancel sweep: ask the
- * provider for each encoding's status and stop only what is still QUEUED or
- * RUNNING, so a terminal encoding costs one GET and nothing else. Errors are
+ * This is the stop. Exact current stopped-confirmation exempts only that
+ * resource. Otherwise ask the provider for its status and stop only what is
+ * still QUEUED or RUNNING; a terminal encoding costs one GET. Errors are
  * logged, never thrown — this runs from a failure handler and a boot sweep, and
  * neither may be killed by one unreachable encoding.
  */
@@ -156,23 +156,7 @@ export async function stopRemoteEncodingsFor(
 	if (out.found.length === 0) {
 		return out;
 	}
-	let sdk: SdkOps;
-	try {
-		const account = await deps.revealBitmovinAccount(row.bitmovinAccountId);
-		sdk = deps.makeSdk({
-			apiKey: account.apiKey,
-			tenantOrgId: account.tenantOrgId,
-			bitmovinAccountId: row.bitmovinAccountId,
-			encodingJobId,
-			orphanStopOnly: true,
-		});
-	} catch (err) {
-		console.error(
-			`[orchestrator] stop-remote: cannot reach the Bitmovin account for job ${encodingJobId} — ${out.found.length} encoding(s) may still be RUNNING and billing:`,
-			err instanceof Error ? err.message : err,
-		);
-		return out;
-	}
+	let sdk: SdkOps | undefined;
 	for (const encodingId of [...out.found].sort()) {
 		if (opts.afterEncodingId && encodingId <= opts.afterEncodingId) continue;
 		if (opts.beforeEncoding && !(await opts.beforeEncoding(encodingId))) {
@@ -180,6 +164,37 @@ export async function stopRemoteEncodingsFor(
 			break;
 		}
 		try {
+			// The cursor callback and earlier resources may have awaited writes.
+			// Confirmation exempts only the current pointer, read after that await.
+			const confirmation = await deps.prisma.encodingJob.findUnique({
+				where: { id: encodingJobId },
+				select: { bitmovinEncodingId: true, encoderStoppedConfirmedFor: true },
+			});
+			if (
+				confirmation?.bitmovinEncodingId === encodingId &&
+				confirmation.encoderStoppedConfirmedFor === encodingId
+			)
+				continue;
+			if (!sdk) {
+				try {
+					const account = await deps.revealBitmovinAccount(
+						row.bitmovinAccountId,
+					);
+					sdk = deps.makeSdk({
+						apiKey: account.apiKey,
+						tenantOrgId: account.tenantOrgId,
+						bitmovinAccountId: row.bitmovinAccountId,
+						encodingJobId,
+						orphanStopOnly: true,
+					});
+				} catch (err) {
+					console.error(
+						`[orchestrator] stop-remote: cannot reach the Bitmovin account for job ${encodingJobId} — ${out.found.length} encoding(s) may still be RUNNING and billing:`,
+						err instanceof Error ? err.message : err,
+					);
+					return out;
+				}
+			}
 			const task = await sdk.getEncodingStatus(encodingId);
 			if (!STOPPABLE.has(String(task.status))) {
 				continue;
@@ -193,13 +208,17 @@ export async function stopRemoteEncodingsFor(
 					updatedAt: true,
 					remoteStopRequestedAt: true,
 					bitmovinAccountId: true,
+					bitmovinEncodingId: true,
+					encoderStoppedConfirmedFor: true,
 					stepLog: true,
 				},
 			});
 			if (
 				fresh?.status !== "ERROR" ||
 				fresh.bitmovinAccountId !== row.bitmovinAccountId ||
-				JSON.stringify(fresh.stepLog) !== JSON.stringify(row.stepLog)
+				JSON.stringify(fresh.stepLog) !== JSON.stringify(row.stepLog) ||
+				(fresh.bitmovinEncodingId === encodingId &&
+					fresh.encoderStoppedConfirmedFor === encodingId)
 			)
 				continue;
 			if (
@@ -214,6 +233,8 @@ export async function stopRemoteEncodingsFor(
 					status: "ERROR",
 					updatedAt: fresh.updatedAt,
 					bitmovinAccountId: row.bitmovinAccountId,
+					bitmovinEncodingId: fresh.bitmovinEncodingId,
+					encoderStoppedConfirmedFor: fresh.encoderStoppedConfirmedFor,
 					stepLog: { equals: row.stepLog as Prisma.InputJsonValue },
 					remoteStopRequestedAt: fresh.remoteStopRequestedAt,
 				},

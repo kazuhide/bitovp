@@ -280,6 +280,7 @@ describe.each([
 	}
 	it("binds MP4 DRM on the representation instead of an fMP4 child", () => {
 		const plan = onDemandPlan();
+		plan.manifests = plan.manifests.filter((manifest) => manifest.drmKind);
 		expect(
 			validatePlan(plan).filter((issue) => issue.level === "error"),
 		).toEqual([]);
@@ -298,8 +299,14 @@ describe.each([
 			);
 		}
 	});
-	it("preserves clear MP4 representations when encrypted outputs also exist", () => {
-		const ops = compilePlan(onDemandPlan()).filter((op) =>
+	it("preserves clear MP4 representations in a clear-only encoding plan", () => {
+		const plan = onDemandPlan();
+		plan.drm = [];
+		plan.manifests = plan.manifests.filter((manifest) => !manifest.drmKind);
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const ops = compilePlan(plan).filter((op) =>
 			op.step.startsWith("manifest:clear:rep:"),
 		);
 		expect(ops).toHaveLength(3);

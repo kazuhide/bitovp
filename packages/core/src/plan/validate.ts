@@ -1945,6 +1945,40 @@ export function validatePlan(
 	// entry without drmId pointing at an empty path.
 	const videoCodecsForDrm = new Set(["H264", "H265", "VP9", "AV1"]);
 	for (const [mIndex, manifest] of plan.manifests.entries()) {
+		if (
+			manifest.kind === "DASH" &&
+			manifest.profile === "ON_DEMAND" &&
+			!manifest.drmKind
+		) {
+			for (const muxing of plan.muxings) {
+				const target = renditionByKey.get(muxing.streamKey);
+				if (
+					muxing.kind !== "MP4" ||
+					muxing.manifestType !== "DASH_ON_DEMAND" ||
+					!target ||
+					isPerTitleRendition(target) ||
+					!(
+						videoCodecsForDrm.has(target.codec) ||
+						AUDIO_CODECS.has(target.codec)
+					) ||
+					(manifest.adaptationSets?.length &&
+						!manifest.adaptationSets.some(
+							(set) => set.key === target.dashSetKey,
+						)) ||
+					!plan.drm.some((drm) => drm.muxingKey === muxing.key)
+				) {
+					continue;
+				}
+				// Shared MP4/DRM outputs can give clear OnDemand manifests the
+				// encrypted file's index ranges and protection metadata.
+				issues.push({
+					code: "PLAN_DASH_ONDEMAND_CLEAR_DRM",
+					level: "error",
+					message: `Clear OnDemand DASH manifest "${manifest.key}" selects MP4 muxing "${muxing.key}" with DRM. Put clear OnDemand MP4 and DRM outputs in separate encoding plans.`,
+					path: `manifests[${mIndex}]`,
+				});
+			}
+		}
 		if (!("drmKind" in manifest) || !manifest.drmKind) {
 			continue;
 		}

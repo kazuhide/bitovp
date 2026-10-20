@@ -13,6 +13,7 @@ import {
 	SITE_ORIGIN,
 	type SiteLocale,
 } from "../src/site-config";
+import { prepareStaticHtml } from "../src/static-html";
 
 const output = new URL("../dist/index.html", import.meta.url);
 const template = await readFile(output, "utf8");
@@ -41,7 +42,7 @@ function document(
 			return `<link rel="alternate" hreflang="${language}" href="${SITE_ORIGIN}${path}" />`;
 		})
 		.join("\n");
-	let html = template
+	const html = template
 		.replace('<html lang="en"', `<html lang="${locale}"`)
 		.replace(
 			/<title>[^<]*<\/title>/,
@@ -58,12 +59,7 @@ function document(
 				`<link rel="canonical" href="${SITE_ORIGIN}${paths[locale]}" />\n${alternates}`,
 		)
 		.replace("<!--landing-->", () => markup);
-	if (!interactive) {
-		html = html
-			.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-			.replace(/<link\b(?=[^>]*\brel="modulepreload")[^>]*>/gi, "");
-	}
-	return html;
+	return prepareStaticHtml(html, interactive);
 }
 
 async function writePage(path: string, html: string) {

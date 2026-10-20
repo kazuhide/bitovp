@@ -283,9 +283,18 @@ describe("guide public links", () => {
 		"/api/credentials",
 		"./VOD.md?token=example",
 		"../../README.md",
-		"./unsupported-attachment.pdf",
 	])("rejects non-public or unsupported link %s", (href) => {
 		expect(() => guideLink(href, SOURCE)).toThrow();
+	});
+
+	it("rejects an existing PDF document inside the published guide directory", () => {
+		withSourceFixture(({ published }) => {
+			const attachment = join(published, "unsupported-attachment.pdf");
+			writeFileSync(attachment, "Self-created unsupported document fixture.");
+			expect(() =>
+				guideLink(relative(dirname(SOURCE), attachment), SOURCE),
+			).toThrow(/Guide links must reference published Markdown documents/);
+		});
 	});
 });
 

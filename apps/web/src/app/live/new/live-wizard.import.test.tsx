@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { liveChannelPlanSchema } from "@bitovp/core";
 import {
 	act,
 	fireEvent,
@@ -70,6 +71,86 @@ function load(raw: unknown) {
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Load plan" }));
 }
+it("saves and submits an edited multi-output import without dropping later resources", async () => {
+	const raw = plan();
+	raw.outputs.push(
+		...[1, 2, 3].map((number) => ({
+			...raw.outputs[0],
+			key: `mirror-${number}`,
+			bucket: `mirror-${number}`,
+			name: `Mirror ${number}`,
+		})),
+	);
+	raw.deliveryMirrors = [1, 2, 3].map((number) => ({
+		outputKey: `mirror-${number}`,
+	}));
+	const firstHls = raw.liveManifests.find(
+		(manifest: { kind: string }) => manifest.kind === "HLS",
+	);
+	raw.liveManifests.push(
+		...[2, 3].map((number) => ({
+			...firstHls,
+			key: `hls-${number}`,
+			name: `HLS ${number}`,
+			destination: {
+				...firstHls.destination,
+				path: `manual/hls-${number}`,
+				acl: number === 2 ? "PRIVATE" : undefined,
+			},
+		})),
+	);
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url === "/api/auth/session") return operatorSession;
+		if (url === "/api/credentials")
+			return [
+				{
+					id: raw.outputs[0].credentialId,
+					label: "Synthetic storage",
+					provider: "AWS_S3",
+				},
+			];
+		if (url === "/api/presets")
+			return { id: "saved", name: "Multiple outputs" };
+		if (url === "/api/live-channels")
+			return { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9" };
+		return [];
+	});
+	renderWithQuery(<LiveWizard />);
+	load(raw);
+	const name = await screen.findByRole("textbox", { name: "Channel name" });
+	fireEvent.change(name, { target: { value: "Edited multiple outputs" } });
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review/ }));
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Save as template" }),
+	);
+	const dialog = screen.getByRole("dialog");
+	fireEvent.change(within(dialog).getByLabelText("Template name"), {
+		target: { value: "Multiple outputs" },
+	});
+	fireEvent.click(
+		within(dialog).getByRole("button", { name: "Save as template" }),
+	);
+	await screen.findByText(/Saved as template/);
+	const create = screen.getByRole("button", { name: "Create live channel" });
+	await waitFor(() => expect(create).toBeEnabled());
+	fireEvent.click(create);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9",
+		),
+	);
+	const posts = apiFetch.mock.calls.filter(
+		([, init]) => init?.method === "POST",
+	);
+	expect(posts.map(([url]) => url)).toEqual([
+		"/api/presets",
+		"/api/live-channels",
+	]);
+	for (const [, init] of posts)
+		expect(liveChannelPlanSchema.parse(JSON.parse(init.body).plan)).toEqual(
+			liveChannelPlanSchema.parse({ ...raw, name: "Edited multiple outputs" }),
+		);
+});
 it("imports into editable wizard and saves edited plan separately without creating a channel", async () => {
 	renderWithQuery(<LiveWizard />);
 	load(plan());

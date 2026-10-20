@@ -5,6 +5,21 @@ const PROVISIONS_AT_CREATE =
 	"作成した時点でチャンネルの起動準備が始まり、課金もそこから始まります";
 
 export const ja = {
+	liveOutputs: {
+		addMirror: "複製先を追加",
+		removeMirror: "複製先を削除",
+		mirrorNumber: "複製先 {number}",
+		addHls: "HLSマニフェストを追加",
+		addDash: "DASHマニフェストを追加",
+		removeHls: "HLSマニフェストを削除",
+		removeDash: "DASHマニフェストを削除",
+		manifestNumber: "{kind} {number}",
+		primaryDestination: "{kind}：出力先とリソース名",
+		resourceName: "リソース名",
+		path: "出力パス",
+		referenced:
+			"この複製先を削除するには、先に録画やマニフェストの出力先を変更するか、その設定を削除してください。",
+	},
 	creationSubmission: {
 		responseUnavailable:
 			"作成結果を受信できませんでした。フォームを変更せずに再試行すると、同じジョブやチャンネルの結果を確認できます。",

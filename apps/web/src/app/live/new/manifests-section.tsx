@@ -1,4 +1,6 @@
-"use client";
+import type { ReactNode } from "react";
+
+("use client");
 
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
@@ -18,6 +20,8 @@ import { DvrGauge, type DvrLeg } from "./dvr-gauge";
 type ManifestsSectionProps = {
 	state: LiveWizardState;
 	onPatch: (partial: Partial<LiveWizardState>) => void;
+	manifestKind?: "HLS" | "DASH";
+	idPrefix?: string;
 };
 
 /**
@@ -77,9 +81,25 @@ const HLS_MARKER_TYPES: LiveHlsMarkerType[] = [
 	"EXT_X_SCTE35",
 ];
 
+function ManifestCard({
+	kind,
+	selected,
+	children,
+}: {
+	kind: "HLS" | "DASH" | "PRIMARY";
+	selected?: "HLS" | "DASH";
+	children: ReactNode;
+}) {
+	return !selected || kind === selected ? (
+		<div className="rounded-md border border-zinc-800 p-3">{children}</div>
+	) : null;
+}
+
 export function LiveManifestsSection({
 	state,
 	onPatch,
+	manifestKind,
+	idPrefix = "lw",
 }: ManifestsSectionProps) {
 	const { t } = useT();
 	const hls = state.manifests.hls;
@@ -128,13 +148,13 @@ export function LiveManifestsSection({
 
 	return (
 		<div className="space-y-4">
-			<div className="rounded-md border border-zinc-800 p-3">
+			<ManifestCard kind="HLS" selected={manifestKind}>
 				<label
-					htmlFor="lw-hls-enabled"
+					htmlFor={`${idPrefix}-hls-enabled`}
 					className="flex items-center gap-2 font-medium text-sm text-zinc-200"
 				>
 					<input
-						id="lw-hls-enabled"
+						id={`${idPrefix}-hls-enabled`}
 						type="checkbox"
 						className="h-4 w-4 accent-emerald-600"
 						checked={hls.enabled}
@@ -147,22 +167,22 @@ export function LiveManifestsSection({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<Field
 								label={t("ui.manifestName")}
-								htmlFor="lw-hls-mname"
+								htmlFor={`${idPrefix}-hls-mname`}
 								help={t("uiX.emptyStreamM3u8")}
 							>
 								<Input
-									id="lw-hls-mname"
+									id={`${idPrefix}-hls-mname`}
 									value={hls.manifestName}
 									onChange={(e) => patchHls({ manifestName: e.target.value })}
 								/>
 							</Field>
 							<Field
 								label={t("ui.timeshiftDvrWindowS")}
-								htmlFor="lw-hls-timeshift"
+								htmlFor={`${idPrefix}-hls-timeshift`}
 								help={t("uiX.hlsTimeshiftDefaultHelp")}
 							>
 								<Input
-									id="lw-hls-timeshift"
+									id={`${idPrefix}-hls-timeshift`}
 									type="number"
 									value={hls.timeshift ?? ""}
 									onChange={(e) =>
@@ -181,11 +201,11 @@ export function LiveManifestsSection({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<Field
 								label={t("ui.liveEdgeOffsetS")}
-								htmlFor="lw-hls-edge"
+								htmlFor={`${idPrefix}-hls-edge`}
 								help={`${t("uiX.hlsLiveEdgeOffsetTooltip")} ${t("uiX.hlsLiveEdgeOffsetDefaultHint")}`}
 							>
 								<Input
-									id="lw-hls-edge"
+									id={`${idPrefix}-hls-edge`}
 									type="number"
 									value={hls.liveEdgeOffset ?? ""}
 									onChange={(e) =>
@@ -197,11 +217,11 @@ export function LiveManifestsSection({
 							</Field>
 							<Field
 								label={t("ui.audioGroupId")}
-								htmlFor="lw-hls-group"
+								htmlFor={`${idPrefix}-hls-group`}
 								help={t("uiX.emptyAudio")}
 							>
 								<Input
-									id="lw-hls-group"
+									id={`${idPrefix}-hls-group`}
 									value={hls.audioGroupId}
 									onChange={(e) => patchHls({ audioGroupId: e.target.value })}
 								/>
@@ -210,22 +230,22 @@ export function LiveManifestsSection({
 						<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 							<Field
 								label={t("ui.audioLanguage")}
-								htmlFor="lw-hls-lang"
+								htmlFor={`${idPrefix}-hls-lang`}
 								help={t("uiX.emptyEnLang")}
 							>
 								<Input
-									id="lw-hls-lang"
+									id={`${idPrefix}-hls-lang`}
 									value={hls.audioLanguage}
 									onChange={(e) => patchHls({ audioLanguage: e.target.value })}
 								/>
 							</Field>
 							<Field
 								label={t("ui.videoMuxingPin")}
-								htmlFor="lw-hls-vpin"
+								htmlFor={`${idPrefix}-hls-vpin`}
 								help={t("ui.pinOneFamilyWhenRenditionsCarryFmp4")}
 							>
 								<SelectNative
-									id="lw-hls-vpin"
+									id={`${idPrefix}-hls-vpin`}
 									value={hls.videoMuxingKind}
 									onChange={(e) =>
 										patchHls({
@@ -241,11 +261,11 @@ export function LiveManifestsSection({
 							</Field>
 							<Field
 								label={t("ui.audioMuxingPin")}
-								htmlFor="lw-hls-apin"
+								htmlFor={`${idPrefix}-hls-apin`}
 								help={t("ui.sameForAudioLegs")}
 							>
 								<SelectNative
-									id="lw-hls-apin"
+									id={`${idPrefix}-hls-apin`}
 									value={hls.audioMuxingKind}
 									onChange={(e) =>
 										patchHls({
@@ -260,20 +280,23 @@ export function LiveManifestsSection({
 								</SelectNative>
 							</Field>
 						</div>
-						<Field label={t("wizard.closedCaptions")} htmlFor="lw-hls-captions">
+						<Field
+							label={t("wizard.closedCaptions")}
+							htmlFor={`${idPrefix}-hls-captions`}
+						>
 							<Input
-								id="lw-hls-captions"
+								id={`${idPrefix}-hls-captions`}
 								placeholder="NONE"
 								value={hls.closedCaptions ?? ""}
 								onChange={(e) => patchHls({ closedCaptions: e.target.value })}
 							/>
 						</Field>
 						<label
-							htmlFor="lw-hls-pdt"
+							htmlFor={`${idPrefix}-hls-pdt`}
 							className="flex items-center gap-2 text-sm text-zinc-300"
 						>
 							<input
-								id="lw-hls-pdt"
+								id={`${idPrefix}-hls-pdt`}
 								type="checkbox"
 								className="h-4 w-4 accent-emerald-600"
 								checked={hls.insertProgramDateTime}
@@ -301,11 +324,11 @@ export function LiveManifestsSection({
 							<div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
 								<Field
 									label={t("ui.pdtSource")}
-									htmlFor="lw-hls-pdt-source"
+									htmlFor={`${idPrefix}-hls-pdt-source`}
 									help={t("ui.systemClockTheEncoderClockEmbeddedTimestamps")}
 								>
 									<SelectNative
-										id="lw-hls-pdt-source"
+										id={`${idPrefix}-hls-pdt-source`}
 										value={pdt?.source ?? ""}
 										onChange={(e) =>
 											patchPdt({
@@ -322,11 +345,11 @@ export function LiveManifestsSection({
 								</Field>
 								<Field
 									label={t("ui.placementMode")}
-									htmlFor="lw-hls-pdt-mode"
+									htmlFor={`${idPrefix}-hls-pdt-mode`}
 									help={t("ui.oncePerPlaylistWritesOneTagPer")}
 								>
 									<SelectNative
-										id="lw-hls-pdt-mode"
+										id={`${idPrefix}-hls-pdt-mode`}
 										value={placementMode ?? ""}
 										onChange={(e) => patchPlacementMode(e.target.value)}
 									>
@@ -343,7 +366,7 @@ export function LiveManifestsSection({
 												? t("ui.intervalSegments")
 												: t("ui.intervalSeconds")
 										}
-										htmlFor="lw-hls-pdt-interval"
+										htmlFor={`${idPrefix}-hls-pdt-interval`}
 										error={
 											pdt?.placement?.interval === undefined
 												? t("uiX.intervalRequiredFor", { mode: placementMode })
@@ -352,7 +375,7 @@ export function LiveManifestsSection({
 										help={t("ui.howOftenTheTagRepeats")}
 									>
 										<Input
-											id="lw-hls-pdt-interval"
+											id={`${idPrefix}-hls-pdt-interval`}
 											type="number"
 											value={pdt?.placement?.interval ?? ""}
 											onChange={(e) =>
@@ -372,15 +395,15 @@ export function LiveManifestsSection({
 						</div>
 					</div>
 				) : null}
-			</div>
+			</ManifestCard>
 
-			<div className="rounded-md border border-zinc-800 p-3">
+			<ManifestCard kind="DASH" selected={manifestKind}>
 				<label
-					htmlFor="lw-dash-enabled"
+					htmlFor={`${idPrefix}-dash-enabled`}
 					className="flex items-center gap-2 font-medium text-sm text-zinc-200"
 				>
 					<input
-						id="lw-dash-enabled"
+						id={`${idPrefix}-dash-enabled`}
 						type="checkbox"
 						className="h-4 w-4 accent-emerald-600"
 						checked={dash.enabled}
@@ -393,22 +416,22 @@ export function LiveManifestsSection({
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<Field
 								label={t("ui.manifestName")}
-								htmlFor="lw-dash-mname"
+								htmlFor={`${idPrefix}-dash-mname`}
 								help={t("uiX.emptyStreamMpd")}
 							>
 								<Input
-									id="lw-dash-mname"
+									id={`${idPrefix}-dash-mname`}
 									value={dash.manifestName}
 									onChange={(e) => patchDash({ manifestName: e.target.value })}
 								/>
 							</Field>
 							<Field
 								label={t("ui.timeshiftDvrWindowS")}
-								htmlFor="lw-dash-timeshift"
+								htmlFor={`${idPrefix}-dash-timeshift`}
 								help={t("ui.emptyNoDvrWindowLiveEdgeOnly")}
 							>
 								<Input
-									id="lw-dash-timeshift"
+									id={`${idPrefix}-dash-timeshift`}
 									type="number"
 									value={dash.timeshift ?? ""}
 									onChange={(e) =>
@@ -427,11 +450,11 @@ export function LiveManifestsSection({
 						<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 							<Field
 								label={t("ui.representationType")}
-								htmlFor="lw-dash-rep"
+								htmlFor={`${idPrefix}-dash-rep`}
 								help={t("ui.segmenttemplateVsSegmenttimeline")}
 							>
 								<SelectNative
-									id="lw-dash-rep"
+									id={`${idPrefix}-dash-rep`}
 									value={dash.representationType}
 									onChange={(e) =>
 										patchDash({
@@ -446,11 +469,11 @@ export function LiveManifestsSection({
 							</Field>
 							<Field
 								label={t("ui.liveEdgeOffsetS")}
-								htmlFor="lw-dash-edge"
+								htmlFor={`${idPrefix}-dash-edge`}
 								tooltip={t("uiX.liveEdgeOffsetTooltip")}
 							>
 								<Input
-									id="lw-dash-edge"
+									id={`${idPrefix}-dash-edge`}
 									type="number"
 									value={dash.liveEdgeOffset ?? ""}
 									onChange={(e) =>
@@ -462,11 +485,11 @@ export function LiveManifestsSection({
 							</Field>
 							<Field
 								label={t("ui.audioLanguage")}
-								htmlFor="lw-dash-lang"
+								htmlFor={`${idPrefix}-dash-lang`}
 								help={t("uiX.emptyEnLang")}
 							>
 								<Input
-									id="lw-dash-lang"
+									id={`${idPrefix}-dash-lang`}
 									value={dash.audioLanguage}
 									onChange={(e) => patchDash({ audioLanguage: e.target.value })}
 								/>
@@ -475,11 +498,11 @@ export function LiveManifestsSection({
 						<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 							<Field
 								label={t("ui.suggestedPresentationDelayMs")}
-								htmlFor="lw-dash-spd"
+								htmlFor={`${idPrefix}-dash-spd`}
 								help={t("ui.unsetNotWrittenToTheMpd")}
 							>
 								<Input
-									id="lw-dash-spd"
+									id={`${idPrefix}-dash-spd`}
 									type="number"
 									value={dash.suggestedPresentationDelay ?? ""}
 									onChange={(e) =>
@@ -493,11 +516,11 @@ export function LiveManifestsSection({
 							</Field>
 							<Field
 								label={t("ui.minimumUpdatePeriodMs")}
-								htmlFor="lw-dash-mup"
+								htmlFor={`${idPrefix}-dash-mup`}
 								help={t("ui.unsetApiDefaultsToTheSegmentDuration")}
 							>
 								<Input
-									id="lw-dash-mup"
+									id={`${idPrefix}-dash-mup`}
 									type="number"
 									value={dash.minimumUpdatePeriod ?? ""}
 									onChange={(e) =>
@@ -509,10 +532,10 @@ export function LiveManifestsSection({
 							</Field>
 							<Field
 								label={t("ui.availabilityStartTime")}
-								htmlFor="lw-dash-astm"
+								htmlFor={`${idPrefix}-dash-astm`}
 							>
 								<SelectNative
-									id="lw-dash-astm"
+									id={`${idPrefix}-dash-astm`}
 									value={dash.availabilityStartTimeMode}
 									onChange={(e) =>
 										patchDash({
@@ -529,15 +552,15 @@ export function LiveManifestsSection({
 						</div>
 					</div>
 				) : null}
-			</div>
+			</ManifestCard>
 
-			<div className="rounded-md border border-zinc-800 p-3">
+			<ManifestCard kind="PRIMARY" selected={manifestKind}>
 				<label
-					htmlFor="lw-scte35"
+					htmlFor={`${idPrefix}-scte35`}
 					className="flex items-center gap-2 font-medium text-sm text-zinc-200"
 				>
 					<input
-						id="lw-scte35"
+						id={`${idPrefix}-scte35`}
 						type="checkbox"
 						className="h-4 w-4 accent-emerald-600"
 						checked={state.scte35AdMarkers}
@@ -591,11 +614,11 @@ export function LiveManifestsSection({
 							</p>
 							<div className="mt-3 flex items-center gap-2">
 								<label
-									htmlFor="lw-scte-preannounce"
+									htmlFor={`${idPrefix}-scte-preannounce`}
 									className="flex items-center gap-2 text-sm text-zinc-300"
 								>
 									<input
-										id="lw-scte-preannounce"
+										id={`${idPrefix}-scte-preannounce`}
 										type="checkbox"
 										className="h-4 w-4 accent-emerald-600"
 										checked={markerOptions?.hlsDisablePreannouncing === true}
@@ -625,11 +648,11 @@ export function LiveManifestsSection({
 							<div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
 								<Field
 									label={t("ui.periodOption")}
-									htmlFor="lw-scte-period"
+									htmlFor={`${idPrefix}-scte-period`}
 									help={t("ui.singlePeriodKeepsOneContinuousPeriodMulti")}
 								>
 									<SelectNative
-										id="lw-scte-period"
+										id={`${idPrefix}-scte-period`}
 										value={markerOptions?.dashPeriodOption ?? ""}
 										onChange={(e) =>
 											patchMarkerOptions({
@@ -647,11 +670,11 @@ export function LiveManifestsSection({
 								</Field>
 								<Field
 									label={t("ui.eventStreamSignalling")}
-									htmlFor="lw-scte-eventstream"
+									htmlFor={`${idPrefix}-scte-eventstream`}
 									help={t("ui.xmlBinCarriesTheBinarySpliceInfo")}
 								>
 									<SelectNative
-										id="lw-scte-eventstream"
+										id={`${idPrefix}-scte-eventstream`}
 										value={markerOptions?.dashEventStreamSignalling ?? ""}
 										onChange={(e) =>
 											patchMarkerOptions({
@@ -671,9 +694,15 @@ export function LiveManifestsSection({
 						</div>
 					</div>
 				) : null}
-			</div>
+			</ManifestCard>
 
-			{!hls.enabled && !dash.enabled ? (
+			{!manifestKind &&
+			![
+				hls,
+				dash,
+				...(state.manifests.additionalHls ?? []),
+				...(state.manifests.additionalDash ?? []),
+			].some((manifest) => manifest.enabled) ? (
 				<p role="alert" className="text-amber-400 text-xs">
 					{t("ui.aChannelWithoutAManifestHasNo")}
 				</p>

@@ -13,6 +13,7 @@ import {
 	videoKeys,
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
+import { inResourceOrder, liveMirrorEntries } from "./live-output-model";
 
 /**
  * Pure mapping from live wizard state to a LiveChannelPlan (input shape —
@@ -183,7 +184,13 @@ export type LiveAudioRendition = {
 	ownContainer?: boolean;
 };
 
-export type LiveHlsManifestState = {
+type LiveManifestIdentity = {
+	key?: string;
+	name?: string;
+	destination?: LiveChannelPlanInput["liveManifests"][number]["destination"];
+};
+
+export type LiveHlsManifestState = LiveManifestIdentity & {
 	enabled: boolean;
 	manifestName: string;
 	audioGroupId: string;
@@ -196,6 +203,8 @@ export type LiveHlsManifestState = {
 	timeshift?: number;
 	liveEdgeOffset?: number;
 	insertProgramDateTime: boolean;
+	/** Retain an explicitly disabled imported setting, distinct from omission. */
+	insertProgramDateTimeExplicit?: boolean;
 	/**
 	 * PDT source + placement. A source set here must MATCH
 	 * start.adInsertion.clockSynchronizationMode when both are set — mismatched
@@ -204,7 +213,7 @@ export type LiveHlsManifestState = {
 	programDateTimeSettings?: LivePdtSettingsState;
 };
 
-export type LiveDashManifestState = {
+export type LiveDashManifestState = LiveManifestIdentity & {
 	enabled: boolean;
 	manifestName: string;
 	audioLanguage: string;
@@ -372,6 +381,11 @@ export type LiveWizardState = {
 	 * Delivery paths/ACL come from the primary destinations, not mirror fields.
 	 */
 	mirror?: LiveWizardState["output"];
+	mirrorKey?: string;
+	additionalMirrors?: { key: string; output: LiveWizardState["output"] }[];
+	/** Imported resource order is independent of mirror-reference order. */
+	outputOrder?: string[];
+	manifestOrder?: string[];
 	/** One progressive archive, reusing existing streams. No separate encode.
 	 * Keep the schema shape so imported names, paths and ACL remain verbatim.
 	 * output is absent when the archive explicitly references origin/mirror-1.
@@ -394,6 +408,8 @@ export type LiveWizardState = {
 	manifests: {
 		hls: LiveHlsManifestState;
 		dash: LiveDashManifestState;
+		additionalHls?: LiveHlsManifestState[];
+		additionalDash?: LiveDashManifestState[];
 	};
 	/** SCTE-35 ad markers (C14) — off by default; plan-level (fMP4 + manifests). */
 	scte35AdMarkers: boolean;
@@ -885,6 +901,7 @@ function videoRendition(
 		return prune({
 			key,
 			codec: "H265" as const,
+			hlsVariantUri: video.extras?.hlsVariantUri,
 			name: str(video.name) ?? derivedName,
 			ingestKey: "video",
 			height: video.height,
@@ -915,7 +932,6 @@ function videoRendition(
 			maxKeyframeInterval: o.maxKeyframeInterval,
 			rcLookahead: o.rcLookahead,
 			subMe: o.subMe,
-			hlsVariantUri: video.extras?.hlsVariantUri,
 			maxCtuSize: str(o.maxCtuSize),
 			motionSearch: str(o.motionSearch),
 			tuIntraDepth: str(o.tuIntraDepth),
@@ -946,6 +962,7 @@ function videoRendition(
 	return prune({
 		key,
 		codec: "H264" as const,
+		hlsVariantUri: video.extras?.hlsVariantUri,
 		name: str(video.name) ?? derivedName,
 		ingestKey: "video",
 		width: video.width,
@@ -972,7 +989,6 @@ function videoRendition(
 		mvSearchRangeMax: o.mvSearchRangeMax,
 		rcLookahead: o.rcLookahead,
 		subMe: str(o.subMe),
-		hlsVariantUri: video.extras?.hlsVariantUri,
 		motionEstimationMethod: str(o.motionEstimationMethod),
 		sceneCutThreshold: o.sceneCutThreshold,
 		adaptiveQuantizationMode: str(o.adaptiveQuantizationMode),
@@ -1213,7 +1229,7 @@ function outputAcl(output: LiveWizardState["output"]) {
 			: undefined;
 }
 
-function buildManifests(state: LiveWizardState): LiveManifestInput[] {
+export function liveManifestDestination(state: LiveWizardState) {
 	const base = liveBasePath(state);
 	const acl = outputAcl(state.output);
 	// Re-audit 2026-08-29 BLOCKER-5 : an Akamai MSL4 manifest is
@@ -1222,56 +1238,80 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 	// acceptance runs proved). The SEGMENTS keep the channel folder as their
 	// run-specific prefix (muxing destinations still join `base`), which is
 	// what keeps two airings of one event apart at the edge.
-	const destination = {
+	return {
 		outputKey: "origin",
 		path: state.output.kind === "AKAMAI_MSL" ? "" : base,
 		...(acl ? { acl } : {}),
 	};
+}
+
+function buildManifests(state: LiveWizardState): LiveManifestInput[] {
+	const destination = liveManifestDestination(state);
 	const manifests: LiveManifestInput[] = [];
-	const hls = state.manifests.hls;
-	if (hls.enabled) {
-		manifests.push(
-			prune({
-				key: "hls",
-				kind: "HLS" as const,
-				manifestName: str(hls.manifestName),
-				destination,
-				audioGroupId: str(hls.audioGroupId),
-				audioLanguage: str(hls.audioLanguage),
-				closedCaptions: str(hls.closedCaptions),
-				videoMuxingKind:
-					hls.videoMuxingKind === "" ? undefined : hls.videoMuxingKind,
-				audioMuxingKind:
-					hls.audioMuxingKind === "" ? undefined : hls.audioMuxingKind,
-				timeshift: hls.timeshift,
-				liveEdgeOffset: hls.liveEdgeOffset,
-				insertProgramDateTime: hls.insertProgramDateTime ? true : undefined,
-				programDateTimeSettings: pdtSettings(hls.programDateTimeSettings),
-			}),
-		);
+	for (const hls of [
+		state.manifests.hls,
+		...(state.manifests.additionalHls ?? []),
+	]) {
+		if (hls.enabled) {
+			manifests.push(
+				prune({
+					key: hls.key ?? "hls",
+					kind: "HLS" as const,
+					name: hls.name,
+					manifestName: str(hls.manifestName),
+					destination: hls.destination ?? destination,
+					audioGroupId: str(hls.audioGroupId),
+					audioLanguage: str(hls.audioLanguage),
+					closedCaptions: str(hls.closedCaptions),
+					videoMuxingKind:
+						hls.videoMuxingKind === "" ? undefined : hls.videoMuxingKind,
+					audioMuxingKind:
+						hls.audioMuxingKind === "" ? undefined : hls.audioMuxingKind,
+					timeshift: hls.timeshift,
+					liveEdgeOffset: hls.liveEdgeOffset,
+					insertProgramDateTime:
+						hls.insertProgramDateTime || hls.insertProgramDateTimeExplicit
+							? hls.insertProgramDateTime
+							: undefined,
+					programDateTimeSettings: pdtSettings(hls.programDateTimeSettings),
+				}),
+			);
+		}
 	}
-	const dash = state.manifests.dash;
-	if (dash.enabled) {
-		manifests.push(
-			prune({
-				key: "dash",
-				kind: "DASH" as const,
-				manifestName: str(dash.manifestName),
-				destination,
-				audioLanguage: str(dash.audioLanguage),
-				representationType: dash.representationType,
-				timeshift: dash.timeshift,
-				liveEdgeOffset: dash.liveEdgeOffset,
-				suggestedPresentationDelay: dash.suggestedPresentationDelay,
-				minimumUpdatePeriod: dash.minimumUpdatePeriod,
-				availabilityStartTimeMode:
-					dash.availabilityStartTimeMode === ""
-						? undefined
-						: dash.availabilityStartTimeMode,
-			}),
-		);
+	for (const dash of [
+		state.manifests.dash,
+		...(state.manifests.additionalDash ?? []),
+	]) {
+		if (dash.enabled) {
+			manifests.push(
+				prune({
+					key: dash.key ?? "dash",
+					kind: "DASH" as const,
+					name: dash.name,
+					manifestName: str(dash.manifestName),
+					destination: dash.destination ?? destination,
+					audioLanguage: str(dash.audioLanguage),
+					representationType: dash.representationType,
+					timeshift: dash.timeshift,
+					liveEdgeOffset: dash.liveEdgeOffset,
+					suggestedPresentationDelay: dash.suggestedPresentationDelay,
+					minimumUpdatePeriod: dash.minimumUpdatePeriod,
+					availabilityStartTimeMode:
+						dash.availabilityStartTimeMode === ""
+							? undefined
+							: dash.availabilityStartTimeMode,
+				}),
+			);
+		}
 	}
-	return manifests;
+	// Keep the legacy HLS/DASH order, followed by explicitly added resources.
+	return inResourceOrder(
+		manifests,
+		state.manifestOrder ?? [
+			state.manifests.hls.key ?? "hls",
+			state.manifests.dash.key ?? "dash",
+		],
+	);
 }
 
 export function buildLiveChannelPlan(
@@ -1295,8 +1335,11 @@ export function buildLiveChannelPlan(
 	// mirror included (2026-08-23): a deliveryMirror writes the same segment
 	// names to the MSL side, so a storage-primary + MSL-mirror channel must
 	// name segments the way MSL demands.
-	const mslNaming =
-		state.output.kind === "AKAMAI_MSL" || state.mirror?.kind === "AKAMAI_MSL";
+	const mirrors = liveMirrorEntries(state);
+	const mslMirror = mirrors.find(
+		(mirror) => mirror.output.kind === "AKAMAI_MSL",
+	)?.output;
+	const mslNaming = state.output.kind === "AKAMAI_MSL" || !!mslMirror;
 	// WHICH grammar, not just whether — the two versions speak different
 	// languages and the wizard emitted MSL4's for both until the MSL5 fixture's
 	// round-trip caught it. A channel authored as MSL5 through the form would
@@ -1305,8 +1348,8 @@ export function buildLiveChannelPlan(
 	const mslVersion =
 		state.output.kind === "AKAMAI_MSL"
 			? state.output.mslVersion
-			: state.mirror?.kind === "AKAMAI_MSL"
-				? state.mirror.mslVersion
+			: mslMirror
+				? mslMirror.mslVersion
 				: undefined;
 	// The relation, resolved once: which rung carries which tracks, and which
 	// tracks are carried at all.
@@ -1367,7 +1410,8 @@ export function buildLiveChannelPlan(
 
 	if (state.archive) muxings.push(state.archive.muxing);
 	const outputs = [buildOutput(state)];
-	if (state.mirror) outputs.push(buildOutputFrom(state.mirror, "mirror-1"));
+	for (const mirror of mirrors)
+		outputs.push(buildOutputFrom(mirror.output, mirror.key));
 	if (state.archive?.output) {
 		outputs.push(
 			buildOutputFrom(
@@ -1397,8 +1441,12 @@ export function buildLiveChannelPlan(
 			infrastructure: state.infrastructure,
 		}),
 		liveInput: buildLiveInput(state),
-		outputs,
-		...(state.mirror ? { deliveryMirrors: [{ outputKey: "mirror-1" }] } : {}),
+		outputs: inResourceOrder(outputs, state.outputOrder),
+		...(mirrors.length
+			? {
+					deliveryMirrors: mirrors.map((mirror) => ({ outputKey: mirror.key })),
+				}
+			: {}),
 		// Live codec streams reference the input DIRECTLY on their StreamInput
 		// (inputId + inputPath + position) — NOT a standalone IngestInputStream.
 		// live/start cannot resolve an IngestInputStream built on the account

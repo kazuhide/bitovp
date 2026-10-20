@@ -20,6 +20,7 @@ import {
 	type LiveWizardState,
 	liveBasePath,
 } from "./build-live-plan";
+import { liveMirrorEntries, liveOutputEntries } from "./live-output-model";
 import { liveStorageKind as storageKind } from "./mirror-model";
 
 type Archive = NonNullable<LiveWizardState["archive"]>;
@@ -72,15 +73,25 @@ export function LiveArchiveSection({
 		publicRead: false,
 		basePath: "",
 	});
+	let availableKey = "archive-output";
+	for (
+		let n = 2;
+		liveOutputEntries(state).some((entry) => entry.key === availableKey);
+		n++
+	)
+		availableKey = `archive-output-${n}`;
 	const separateKey = archive?.output
 		? archive.muxing.destination.outputKey
-		: "archive-output";
+		: availableKey;
 	const currentDestinationAvailable =
 		archive?.output ||
 		(archive?.muxing.destination.outputKey === "origin" &&
 			storageKind(state.output.kind)) ||
-		(archive?.muxing.destination.outputKey === "mirror-1" &&
-			storageKind(state.mirror?.kind ?? null));
+		liveMirrorEntries(state).some(
+			(entry) =>
+				entry.key === archive?.muxing.destination.outputKey &&
+				storageKind(entry.output.kind),
+		);
 	return (
 		<section
 			className="space-y-3 border-zinc-800 border-t pt-4"
@@ -108,7 +119,7 @@ export function LiveArchiveSection({
 												additionalStreamKeys: [audios[0]?.key ?? ""],
 												filename: "archive.mp4",
 												destination: {
-													outputKey: "archive-output",
+													outputKey: separateKey,
 													path: `${liveBasePath(state)}/archive`,
 													acl: "PRIVATE",
 												},
@@ -210,11 +221,16 @@ export function LiveArchiveSection({
 							{storageKind(state.output.kind) ? (
 								<option value="origin">{t("liveArchive.originStorage")}</option>
 							) : null}
-							{state.mirror && storageKind(state.mirror.kind) ? (
-								<option value="mirror-1">
-									{t("liveArchive.mirrorStorage")}
-								</option>
-							) : null}
+							{liveMirrorEntries(state)
+								.filter((entry) => storageKind(entry.output.kind))
+								.map((entry, index) => (
+									<option key={entry.key} value={entry.key}>
+										{index === 0
+											? t("liveArchive.mirrorStorage")
+											: entry.output.name ||
+												t("liveOutputs.mirrorNumber", { number: index + 1 })}
+									</option>
+								))}
 						</SelectNative>
 					</Field>
 					{output ? (

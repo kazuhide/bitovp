@@ -146,6 +146,102 @@ function optionFor(
 }
 
 describe("live wizard — output destinations (owner, 2026-08-21)", () => {
+	it("adds and removes later mirrors without changing the first destination", async () => {
+		await outputCredentialSelect();
+		await userEvent.click(
+			screen.getByRole("checkbox", { name: "Also deliver to storage" }),
+		);
+		await userEvent.type(
+			within(
+				screen.getByRole("region", { name: "Storage mirror" }),
+			).getByLabelText("Bucket"),
+			"first-bucket",
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Add storage mirror" }),
+		);
+		const second = screen.getByRole("region", { name: "Storage mirror 2" });
+		await userEvent.selectOptions(
+			within(second).getByLabelText("Credential"),
+			"cred-aos",
+		);
+		await userEvent.type(
+			within(second).getByLabelText("Bucket"),
+			"second-bucket",
+		);
+		await userEvent.click(
+			within(second).getByRole("button", { name: "Remove storage mirror" }),
+		);
+		expect(
+			screen.queryByRole("region", { name: "Storage mirror 2" }),
+		).not.toBeInTheDocument();
+		expect(
+			within(
+				screen.getByRole("region", { name: "Storage mirror" }),
+			).getByLabelText("Bucket"),
+		).toHaveValue("first-bucket");
+	});
+	it("adds independent HLS and DASH settings and removes only the selected manifest", async () => {
+		renderWithQuery(<LiveWizard />);
+		const step = (
+			await screen.findAllByRole("button", {
+				name: /^\d+\. Output groups and manifests$/,
+			})
+		)[0];
+		if (!step) throw new Error("missing manifests step");
+		await userEvent.click(step);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Add HLS manifest" }),
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Add DASH manifest" }),
+		);
+		const hls = screen.getByRole("region", { name: "HLS 2" });
+		const dash = screen.getByRole("region", { name: "DASH 2" });
+		fireEvent.change(within(hls).getByLabelText("Manifest name"), {
+			target: { value: "french.m3u8" },
+		});
+		fireEvent.change(within(dash).getByLabelText("Manifest name"), {
+			target: { value: "alternate.mpd" },
+		});
+		expect(within(hls).getByLabelText("Output path")).not.toHaveValue(
+			within(dash).getByLabelText("Output path").getAttribute("value"),
+		);
+		await userEvent.click(
+			within(hls).getByRole("button", { name: "Remove HLS manifest" }),
+		);
+		expect(
+			screen.queryByRole("region", { name: "HLS 2" }),
+		).not.toBeInTheDocument();
+		expect(within(dash).getByLabelText("Manifest name")).toHaveValue(
+			"alternate.mpd",
+		);
+	});
+	it("recognizes playback from an added manifest when both primary manifests are disabled", async () => {
+		renderWithQuery(<LiveWizard />);
+		const step = (
+			await screen.findAllByRole("button", {
+				name: /^\d+\. Output groups and manifests$/,
+			})
+		)[0];
+		if (!step) throw new Error("missing manifests step");
+		await userEvent.click(step);
+		for (const label of ["HLS manifest", "DASH manifest"]) {
+			const checkbox = screen.getByLabelText<HTMLInputElement>(label);
+			if (checkbox.checked) await userEvent.click(checkbox);
+		}
+		expect(
+			screen.getByText(/A channel without a manifest has no playback surface/),
+		).toBeInTheDocument();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Add HLS manifest" }),
+		);
+		expect(
+			screen.queryByText(
+				/A channel without a manifest has no playback surface/,
+			),
+		).not.toBeInTheDocument();
+	});
 	it("authors an optional storage mirror and lets the MP4 archive reuse it", async () => {
 		const primary = await outputCredentialSelect();
 		await userEvent.selectOptions(primary, "cred-msl");
@@ -171,9 +267,10 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 		expect(destination.value).toBe("mirror-1");
 		await userEvent.click(enable);
 		expect(destination.value).toBe("mirror-1");
+		expect(enable).toBeDisabled();
 		expect(
-			within(destination).getByRole("option", { name: /unavailable/i }),
-		).toBeInTheDocument();
+			within(destination).queryByRole("option", { name: /unavailable/i }),
+		).not.toBeInTheDocument();
 	});
 
 	it("offers an Akamai MSL credential as a selectable destination", async () => {

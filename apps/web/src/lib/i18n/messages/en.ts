@@ -27,6 +27,21 @@ const PROVISIONS_AT_CREATE =
 	"The channel starts — and billing begins — the moment you create it";
 
 export const en = {
+	liveOutputs: {
+		addMirror: "Add storage mirror",
+		removeMirror: "Remove storage mirror",
+		mirrorNumber: "Storage mirror {number}",
+		addHls: "Add HLS manifest",
+		addDash: "Add DASH manifest",
+		removeHls: "Remove HLS manifest",
+		removeDash: "Remove DASH manifest",
+		manifestNumber: "{kind} {number}",
+		primaryDestination: "{kind}: destination and resource name",
+		resourceName: "Resource name",
+		path: "Output path",
+		referenced:
+			"Change or remove the archive or manifest destination before removing this storage mirror.",
+	},
 	creationSubmission: {
 		responseUnavailable:
 			"The creation response was incomplete. Retry without changing the form to recover the same job or channel.",

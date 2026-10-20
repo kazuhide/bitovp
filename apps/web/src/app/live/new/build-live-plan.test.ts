@@ -299,7 +299,7 @@ describe("buildLiveChannelPlan goldens (deep-equal against live fixtures)", () =
 				start: {
 					streamKey: "srtCallerKey",
 					liveEncodingMode: "SINGLE_PASS",
-					autoRestart: { scheduleExpression: "", restartOnEncoderError: false },
+					autoRestart: { scheduleExpression: "" },
 					autoShutdown: {},
 					reupload: { muxingInitFileInterval: 300 },
 				},
@@ -379,7 +379,7 @@ describe("buildLiveChannelPlan goldens (deep-equal against live fixtures)", () =
 				start: {
 					streamKey: "srtListenerKey",
 					liveEncodingMode: "",
-					autoRestart: { scheduleExpression: "", restartOnEncoderError: false },
+					autoRestart: { scheduleExpression: "" },
 					autoShutdown: { waitingForFirstConnectTimeoutMinutes: 30 },
 					reupload: {},
 				},
@@ -439,7 +439,7 @@ describe("buildLiveChannelPlan goldens (deep-equal against live fixtures)", () =
 				start: {
 					streamKey: "zixiStreamKey",
 					liveEncodingMode: "",
-					autoRestart: { scheduleExpression: "", restartOnEncoderError: false },
+					autoRestart: { scheduleExpression: "" },
 					autoShutdown: {},
 					reupload: {},
 				},
@@ -509,7 +509,7 @@ describe("buildLiveChannelPlan goldens (deep-equal against live fixtures)", () =
 				start: {
 					streamKey: "redundantKey",
 					liveEncodingMode: "",
-					autoRestart: { scheduleExpression: "", restartOnEncoderError: false },
+					autoRestart: { scheduleExpression: "" },
 					autoShutdown: {},
 					reupload: {},
 				},

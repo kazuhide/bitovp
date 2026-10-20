@@ -364,7 +364,7 @@ export function LiveStartSection({
 							id="lw-ar-onerror"
 							type="checkbox"
 							className="h-4 w-4 accent-emerald-600"
-							checked={start.autoRestart.restartOnEncoderError}
+							checked={start.autoRestart.restartOnEncoderError === true}
 							onChange={(e) =>
 								patchAutoRestart({ restartOnEncoderError: e.target.checked })
 							}

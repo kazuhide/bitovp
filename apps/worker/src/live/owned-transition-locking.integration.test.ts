@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { LiveToVodRecord } from "@bitovp/core";
+import {
+	type LiveToVodRecord,
+	readLiveAutoShutdownUpdate,
+	type StepLogEntry,
+} from "@bitovp/core";
 import {
 	type AppPrismaClient,
 	type AppTransactionClient,
@@ -497,6 +501,130 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					})
 				).status,
 			).toBe("RUNNING");
+		});
+
+		it("retains an accepted run-only stop revision through ERROR revival and rolls back a lost finalization lease", async () => {
+			const f = await fixture("RUNNING", null);
+			const claim = {
+				id: randomUUID(),
+				idempotencyKey: `synthetic:${randomUUID()}`,
+				token: randomUUID(),
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				action: "AUTO_SHUTDOWN_UPDATE" as const,
+				generation: f.channel.liveEffectFenceVersion,
+				expiresAt: new Date(now.getTime() - 60_000),
+			};
+			await tenant.liveEffectClaim.create({
+				data: { ...claim, state: "AMBIGUOUS", ownerId: "synthetic-owner" },
+			});
+			const receipt: StepLogEntry = {
+				step: claim.idempotencyKey,
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					requestId: claim.idempotencyKey,
+					configuration: { streamTimeoutMinutes: 5 },
+					appliedAt: now.toISOString(),
+				},
+			};
+			expect(
+				await appendLiveEffectStepLogEntry(tenant, claim, receipt),
+			).toEqual({
+				runUpdated: 1,
+				channelUpdated: 0,
+			});
+			await tenant.liveEffectClaim.update({
+				where: { id: claim.id },
+				data: { state: "ACKED" },
+			});
+			const heartbeatAt = new Date(now.getTime() - 120_000);
+			await tenant.$transaction(async (tx) => {
+				await tx.liveChannel.update({
+					where: { id: f.channel.id },
+					data: { status: "ERROR", error: "synthetic local failure" },
+				});
+				await tx.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: {
+						status: "ERROR",
+						error: "synthetic local failure",
+						providerStatus: "RUNNING",
+						providerStatusObservedAt: now,
+						endedAt: now,
+						lastHeartbeatAt: heartbeatAt,
+					},
+				});
+			});
+			// Match Start's same-run revival: channel history has no receipt,
+			// and the historical run keeps the existing encoder and evidence.
+			await tenant.$transaction(async (tx) => {
+				await tx.liveChannel.update({
+					where: { id: f.channel.id },
+					data: {
+						status: "PROVISIONING",
+						error: null,
+						provisionClaimedAt: lease,
+						liveEffectFenceVersion: { increment: 1 },
+					},
+				});
+				await tx.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { status: "PROVISIONING", error: null, endedAt: null },
+				});
+			});
+			const currentRun = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			const snapshot = [
+				{
+					step: "await:running",
+					kind: "AWAIT_LIVE_RUNNING",
+					status: "DONE",
+					payload: {},
+					refs: {},
+				},
+			] satisfies StepLogEntry[];
+			const finalize = (heldAt: Date) =>
+				reconciler().door.commitRunning({
+					channel: f.channel,
+					run: currentRun,
+					encodingId: f.encodingId,
+					observation: {
+						ok: true,
+						status: "RUNNING",
+						observedAt: now.toISOString(),
+					},
+					coordinates: {},
+					provisionClaimedAt: heldAt,
+					stepLog: snapshot,
+				});
+			expect(await finalize(new Date(lease.getTime() + 1_000))).toBe(false);
+			const refused = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(refused.status).toBe("PROVISIONING");
+			expect(refused.stepLog).toEqual([receipt]);
+			expect(await finalize(lease)).toBe(true);
+			const committed = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(committed.status).toBe("RUNNING");
+			expect(committed.stepLog).toEqual([...snapshot, receipt]);
+			expect(committed.lastHeartbeatAt).toEqual(heartbeatAt);
+			expect(committed.endedAt).toBeNull();
+			expect(readLiveAutoShutdownUpdate(committed.stepLog)?.requestId).toBe(
+				claim.idempotencyKey,
+			);
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					})
+				).stepLog,
+			).toEqual(snapshot);
 		});
 
 		it("serializes actual effect evidence append with owned terminalization", async () => {

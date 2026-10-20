@@ -47,13 +47,16 @@ function harness(now: () => string = () => NOW) {
 	);
 	const channelUpdateMany = vi.fn(async (_args?: unknown) => ({ count: 1 }));
 	const feederFindMany = vi.fn(async () => [] as { id: string }[]);
+	const executeRaw = vi.fn(async (..._args: unknown[]) => 1);
+	const queryRaw = vi.fn(async () => [{ id: CHANNEL }]);
 	let prisma: AppPrismaClient;
 	const transaction = vi.fn(
 		async <T>(fn: (tx: AppPrismaClient) => Promise<T>): Promise<T> =>
 			fn(prisma),
 	);
 	prisma = {
-		$queryRaw: vi.fn(async () => [{ id: CHANNEL }]),
+		$queryRaw: queryRaw,
+		$executeRaw: executeRaw,
 		liveChannelRun: {
 			findFirst: runFindFirst,
 			findMany: runFindMany,
@@ -78,6 +81,8 @@ function harness(now: () => string = () => NOW) {
 		runUpdateMany,
 		channelUpdateMany,
 		transaction,
+		executeRaw,
+		queryRaw,
 		feederFindMany,
 		enqueueFeederJob,
 		emitChannel,
@@ -382,9 +387,23 @@ describe("reconcile — identity guards", () => {
 				providerStatusObservedAt: new Date(NOW),
 				providerUnknownSince: null,
 				providerUnknownAlertedAt: null,
-				stepLog,
 			},
 		});
+		expect(h.executeRaw).toHaveBeenCalledExactlyOnceWith(
+			expect.any(Array),
+			JSON.stringify(stepLog),
+			currentRun.id,
+			CHANNEL,
+		);
+		expect(h.queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+			h.runUpdateMany.mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(h.runUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(
+			h.executeRaw.mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(h.executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+			h.channelUpdateMany.mock.invocationCallOrder[0] ?? 0,
+		);
 		expect(h.channelUpdateMany).toHaveBeenCalledWith({
 			where: {
 				id: CHANNEL,
@@ -420,6 +439,29 @@ describe("reconcile — identity guards", () => {
 		).resolves.toBe(false);
 
 		expect(h.channelUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it("rolls back RUNNING finalization when its canonical receipt snapshot cannot be persisted", async () => {
+		const h = harness();
+		h.runFindFirst.mockResolvedValue(run());
+		h.executeRaw.mockResolvedValueOnce(0);
+
+		await expect(
+			h.reconciler.commitRunning({
+				channel: { id: CHANNEL },
+				run: run(),
+				encodingId: "enc-1",
+				observation: { ok: true, status: "RUNNING", observedAt: NOW },
+				coordinates: {},
+				stepLog: [],
+			}),
+		).resolves.toBe(false);
+
+		expect(h.runUpdateMany).toHaveBeenCalledOnce();
+		expect(h.channelUpdateMany).not.toHaveBeenCalled();
+		await expect(h.transaction.mock.results[0]?.value).rejects.toBeInstanceOf(
+			Error,
+		);
 	});
 
 	it("aborts and rolls back when the exact channel or provision-lease fence is lost", async () => {

@@ -8757,13 +8757,24 @@ describe("dual-write to runs (ledger #108 PR2) — writer-coupled, per R5's cure
 		// The run was ensured before the channel transition…
 		expect(h.liveChannelRun.create).toHaveBeenCalled();
 		expect(h.runRows[0]?.status).toBe("RUNNING");
-		// …and the mirrored updates carried the run facts: some update wrote
-		// the step log, and some update wrote the RUNNING transition.
+		// …and the final run history and updates carry the encoder facts.
+		expect(stepLogSchema.parse(h.runRows[0]?.stepLog)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "CREATE_ENCODING",
+					status: "DONE",
+					resourceId: "bm-live-enc",
+				}),
+				expect.objectContaining({
+					kind: "AWAIT_LIVE_RUNNING",
+					status: "DONE",
+				}),
+			]),
+		);
 		const datas = [
 			...h.liveChannelRun.update.mock.calls,
 			...h.liveChannelRun.updateMany.mock.calls,
 		].map((c) => (c[0] as { data: Record<string, unknown> }).data);
-		expect(datas.some((d) => d.stepLog !== undefined)).toBe(true);
 		expect(datas.some((d) => d.status === "RUNNING")).toBe(true);
 	});
 
@@ -10013,6 +10024,43 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			expect(run.providerStatus).toBe("RUNNING");
 			expect(run.providerStatusObservedAt).toBeInstanceOf(Date);
 			// A true revive: nothing was recreated, the DONE log was replayed.
+			expect(t.sdk.createEncoding).not.toHaveBeenCalled();
+			expect(t.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		});
+
+		it("keeps a run-only automatic stop receipt through same-run revive finalization", async () => {
+			// The Start route revives ERROR to PROVISIONING using the channel's
+			// reseeded log. A late accepted update may exist only on this run.
+			const entries = allDoneLog("bm-live-enc");
+			const t = setup({
+				status: "PROVISIONING",
+				bitmovinAccountId: ACCOUNT_ID,
+				bitmovinEncodingId: "bm-live-enc",
+				stepLog: entries,
+			});
+			const receipt: StepLogEntry = {
+				step: "accepted-before-revive",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration: { streamTimeoutMinutes: 5 },
+					requestId: "accepted-before-revive",
+					appliedAt: "2026-06-11T23:59:00.000Z",
+				},
+			};
+			const run = seedRun(t, {
+				status: "PROVISIONING",
+				stepLog: [...entries, receipt],
+			});
+
+			await expect(
+				t.process({ liveChannelId: CHANNEL_ID, action: "provision" }),
+			).resolves.toMatchObject({ status: "RUNNING" });
+
+			expect(run.status).toBe("RUNNING");
+			expect(run.stepLog).toEqual(expect.arrayContaining([receipt]));
+			expect(t.runRows).toHaveLength(1);
 			expect(t.sdk.createEncoding).not.toHaveBeenCalled();
 			expect(t.sdk.startLiveEncoding).not.toHaveBeenCalled();
 		});

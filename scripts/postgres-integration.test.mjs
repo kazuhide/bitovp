@@ -121,7 +121,7 @@ test("accepts exactly the required files and all passed assertions", () => {
 			(a, b) => a + b,
 			0,
 		),
-		64,
+		65,
 	);
 });
 

@@ -1,3 +1,4 @@
+import { projectSelected } from "@bitovp/db";
 import { describe, expect, it, vi } from "vitest";
 import type { StopRemoteDeps } from "./stop-remote-encodings";
 import {
@@ -40,6 +41,8 @@ function setup(
 		id?: string;
 		stepLog?: unknown;
 		bitmovinAccountId?: string | null;
+		bitmovinEncodingId?: string | null;
+		encoderStoppedConfirmedFor?: string | null;
 		createdBy?: string | null;
 		status?: string;
 	} | null,
@@ -49,22 +52,31 @@ function setup(
 	const getEncodingStatus = vi.fn(async (id: string) => ({
 		status: statuses[id] ?? "RUNNING",
 	}));
-	const findUnique = vi.fn(async () =>
-		job === null
-			? null
-			: {
-					id: job.id ?? "job-1",
-					status: job.status ?? "ERROR",
-					remoteStopRequestedAt: null,
-					updatedAt: new Date("2026-08-01T00:00:00Z"),
-					stepLog: job.stepLog ?? stepLog([{ resourceId: "enc-1" }]),
-					bitmovinAccountId:
-						job.bitmovinAccountId === undefined
-							? ACCOUNT
-							: job.bitmovinAccountId,
-					createdBy:
-						job.createdBy === undefined ? "worker:watch-sweep" : job.createdBy,
-				},
+	const findUnique = vi.fn(
+		async (args?: { select?: Record<string, unknown> }) =>
+			job === null
+				? null
+				: projectSelected(
+						{
+							id: job.id ?? "job-1",
+							status: job.status ?? "ERROR",
+							remoteStopRequestedAt: null,
+							updatedAt: new Date("2026-08-01T00:00:00Z"),
+							stepLog: job.stepLog ?? stepLog([{ resourceId: "enc-1" }]),
+							bitmovinAccountId:
+								job.bitmovinAccountId === undefined
+									? ACCOUNT
+									: job.bitmovinAccountId,
+							bitmovinEncodingId: job.bitmovinEncodingId ?? null,
+							encoderStoppedConfirmedFor:
+								job.encoderStoppedConfirmedFor ?? null,
+							createdBy:
+								job.createdBy === undefined
+									? "worker:watch-sweep"
+									: job.createdBy,
+						},
+						args?.select,
+					),
 	);
 	const findMany = vi.fn(async (args?: unknown) => {
 		if (job === null) return [];
@@ -104,6 +116,177 @@ function setup(
 }
 
 describe("stopRemoteEncodingsFor", () => {
+	it("uses exact current confirmation without credentials, SDK I/O or a fabricated STOP", async () => {
+		const { deps, getEncodingStatus, stopEncoding } = setup({
+			bitmovinEncodingId: "enc-1",
+			encoderStoppedConfirmedFor: "enc-1",
+		});
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(out).toEqual({ found: ["enc-1"], stopped: [] });
+		expect(deps.revealBitmovinAccount).not.toHaveBeenCalled();
+		expect(deps.makeSdk).not.toHaveBeenCalled();
+		expect(getEncodingStatus).not.toHaveBeenCalled();
+		expect(stopEncoding).not.toHaveBeenCalled();
+		expect(deps.prisma.encodingJob.updateMany).not.toHaveBeenCalled();
+	});
+	it.each([
+		{ bitmovinEncodingId: "enc-1", encoderStoppedConfirmedFor: null },
+		{ bitmovinEncodingId: "enc-1", encoderStoppedConfirmedFor: "other" },
+		{ bitmovinEncodingId: "other", encoderStoppedConfirmedFor: "enc-1" },
+		{ bitmovinEncodingId: null, encoderStoppedConfirmedFor: "enc-1" },
+		{ bitmovinEncodingId: "other", encoderStoppedConfirmedFor: "other" },
+	])("keeps unconfirmed resource cleanup for $bitmovinEncodingId / $encoderStoppedConfirmedFor", async (job) => {
+		const { deps, getEncodingStatus, stopEncoding } = setup(job);
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(getEncodingStatus).toHaveBeenCalledWith("enc-1");
+		expect(stopEncoding).toHaveBeenCalledWith("enc-1");
+		expect(out.stopped).toEqual(["enc-1"]);
+		expect(deps.prisma.encodingJob.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: { remoteStopRequestedAt: expect.any(Date) },
+			}),
+		);
+	});
+	it("confirmation exempts only its current resource in a multi-encoding job", async () => {
+		const { deps, getEncodingStatus } = setup({
+			bitmovinEncodingId: "enc-b",
+			encoderStoppedConfirmedFor: "enc-b",
+			stepLog: stepLog([
+				{ resourceId: "enc-c" },
+				{ resourceId: "enc-b" },
+				{ resourceId: "enc-a" },
+			]),
+		});
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(out.found).toEqual(["enc-c", "enc-b", "enc-a"]);
+		expect(out.stopped).toEqual(["enc-a", "enc-c"]);
+		expect(getEncodingStatus.mock.calls.map(([id]) => id)).toEqual([
+			"enc-a",
+			"enc-c",
+		]);
+		expect(deps.revealBitmovinAccount).toHaveBeenCalledTimes(1);
+	});
+	it.each([
+		"confirmation",
+		"pointer",
+	])("rechecks %s after the awaited resource callback", async (changed) => {
+		const job = {
+			bitmovinEncodingId: "enc-1",
+			encoderStoppedConfirmedFor: "enc-1" as string | null,
+		};
+		const { deps, getEncodingStatus } = setup(job);
+		const out = await stopRemoteEncodingsFor(deps, "job-1", {
+			beforeEncoding: async () => {
+				if (changed === "confirmation") job.encoderStoppedConfirmedFor = null;
+				else job.bitmovinEncodingId = "other";
+				return true;
+			},
+		});
+		expect(getEncodingStatus).toHaveBeenCalledWith("enc-1");
+		expect(out.stopped).toEqual(["enc-1"]);
+	});
+	it("honors confirmation added during the awaited callback before revealing credentials", async () => {
+		const job = {
+			bitmovinEncodingId: "enc-1",
+			encoderStoppedConfirmedFor: null as string | null,
+		};
+		const { deps, getEncodingStatus } = setup(job);
+		await stopRemoteEncodingsFor(deps, "job-1", {
+			beforeEncoding: async () => {
+				job.encoderStoppedConfirmedFor = "enc-1";
+				return true;
+			},
+		});
+		expect(getEncodingStatus).not.toHaveBeenCalled();
+		expect(deps.revealBitmovinAccount).not.toHaveBeenCalled();
+	});
+	it("does not reuse confirmation across an earlier resource's awaited provider read", async () => {
+		const job = {
+			bitmovinEncodingId: "enc-b",
+			encoderStoppedConfirmedFor: "enc-b" as string | null,
+			stepLog: stepLog([{ resourceId: "enc-a" }, { resourceId: "enc-b" }]),
+		};
+		const { deps, getEncodingStatus } = setup(job);
+		getEncodingStatus.mockImplementationOnce(async () => {
+			job.encoderStoppedConfirmedFor = null;
+			return { status: "FINISHED" };
+		});
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(getEncodingStatus.mock.calls.map(([id]) => id)).toEqual([
+			"enc-a",
+			"enc-b",
+		]);
+		expect(out.stopped).toEqual(["enc-b"]);
+	});
+	it("does not claim STOP when exact confirmation arrives during the status read", async () => {
+		const job = {
+			bitmovinEncodingId: "enc-1",
+			encoderStoppedConfirmedFor: null as string | null,
+		};
+		const { deps, getEncodingStatus, stopEncoding } = setup(job);
+		getEncodingStatus.mockImplementationOnce(async () => {
+			job.encoderStoppedConfirmedFor = "enc-1";
+			return { status: "RUNNING" };
+		});
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(out.stopped).toEqual([]);
+		expect(stopEncoding).not.toHaveBeenCalled();
+		expect(deps.prisma.encodingJob.updateMany).not.toHaveBeenCalled();
+	});
+	it("confirmation arriving at the intent CAS prevents STOP without changing lifecycle", async () => {
+		const { deps, stopEncoding } = setup({ bitmovinEncodingId: "enc-1" });
+		Object.assign(deps.prisma.encodingJob, {
+			updateMany: vi.fn(
+				async ({ where }: { where?: Record<string, unknown> }) => {
+					// An unguarded update still matches; a real confirmation predicate loses.
+					return {
+						count:
+							where?.encoderStoppedConfirmedFor === undefined ||
+							where.encoderStoppedConfirmedFor === "enc-1"
+								? 1
+								: 0,
+					};
+				},
+			),
+		});
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(out.stopped).toEqual([]);
+		expect(stopEncoding).not.toHaveBeenCalled();
+	});
+	it("an unproved 404 remains unknown and never mints confirmation", async () => {
+		const { deps, getEncodingStatus, stopEncoding } = setup({
+			bitmovinEncodingId: "enc-1",
+		});
+		getEncodingStatus.mockRejectedValueOnce(
+			Object.assign(new Error("not found"), {
+				httpStatusCode: 404,
+				errorCode: 1001,
+			}),
+		);
+		const out = await stopRemoteEncodingsFor(deps, "job-1");
+		expect(out.stopped).toEqual([]);
+		expect(stopEncoding).not.toHaveBeenCalled();
+		expect(deps.prisma.encodingJob.updateMany).not.toHaveBeenCalled();
+	});
+	it("keeps callback refusal and after-resource cursors ahead of confirmation checks", async () => {
+		const { deps, getEncodingStatus } = setup({
+			bitmovinEncodingId: "enc-1",
+			encoderStoppedConfirmedFor: "enc-1",
+		});
+		const beforeEncoding = vi.fn(async () => false);
+		await expect(
+			stopRemoteEncodingsFor(deps, "job-1", { beforeEncoding }),
+		).resolves.toMatchObject({ deferred: true });
+		expect(beforeEncoding).toHaveBeenCalledWith("enc-1");
+		beforeEncoding.mockClear();
+		await stopRemoteEncodingsFor(deps, "job-1", {
+			afterEncodingId: "enc-1",
+			beforeEncoding,
+		});
+		expect(beforeEncoding).not.toHaveBeenCalled();
+		expect(getEncodingStatus).not.toHaveBeenCalled();
+		expect(deps.revealBitmovinAccount).not.toHaveBeenCalled();
+	});
 	it("a fresh attended ERROR remains inside the two-hour grace at dispatch", async () => {
 		const { deps, getEncodingStatus, stopEncoding } = setup({
 			createdBy: "session",
@@ -291,6 +474,22 @@ describe("stopRemoteEncodingsFor", () => {
 });
 
 describe("reconcileUnstoppedEncodings", () => {
+	it("confirmed resources consume the cursor budget without counting as provider STOPs", async () => {
+		const { deps, getEncodingStatus } = setup({
+			bitmovinEncodingId: "enc-a",
+			encoderStoppedConfirmedFor: "enc-a",
+			stepLog: stepLog([{ resourceId: "enc-a" }, { resourceId: "enc-b" }]),
+		});
+		await expect(
+			reconcileUnstoppedEncodings(deps, 200, { maxEncodings: 1 }),
+		).resolves.toBe(0);
+		expect(getEncodingStatus).not.toHaveBeenCalled();
+		expect(deps.revealBitmovinAccount).not.toHaveBeenCalled();
+		await expect(
+			reconcileUnstoppedEncodings(deps, 200, { maxEncodings: 1 }),
+		).resolves.toBe(1);
+		expect(getEncodingStatus.mock.calls.map(([id]) => id)).toEqual(["enc-b"]);
+	});
 	it.each([
 		"throw",
 		"CAS loss",

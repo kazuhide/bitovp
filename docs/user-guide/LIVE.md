@@ -30,8 +30,7 @@ acceptance still apply.
 
 Turning off **Restart on encoder error** sends an explicit disabled setting.
 An untouched control leaves an omitted setting unspecified. Import and duplicate
-also preserve explicitly private output permissions (`PRIVATE`); preview playback
-still needs authorized access to those files.
+also preserve explicitly private output permissions (`PRIVATE`).
 
 The HLS live-edge offset delays segment publication; it is not the player's
 starting position. Blank uses the provider default, which can add latency.
@@ -57,6 +56,15 @@ heartbeat information is preferred when fresh; otherwise fresh provider polling
 is used. Missing Push alone is not an input-loss diagnosis. Direct output
 observations remain separate and can expose stalled output even when the input
 report looks healthy. DASH-only output does not use the HLS output-observation lamp.
+
+To preview `PRIVATE` S3 output in Live, you need a delivery URL the browser can
+play. In the storage credential's **Public base URLs (optional)**, an administrator
+maps each bucket to an existing delivery service's base URL (for example, a CDN),
+one `bucket = base URL` entry per line, and configures delivery authentication and
+CORS for browser access. Open **Show every manifest URL** to check each link or
+the reason a URL is unavailable. HLS output monitoring uses saved storage
+credentials, while the preview loads the delivery URL directly; verify output
+updates and actual playback separately.
 
 ## Heartbeat and status history
 

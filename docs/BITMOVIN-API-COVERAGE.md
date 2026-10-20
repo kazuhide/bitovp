@@ -28,14 +28,15 @@ HLS and DASH (Dynamic Adaptive Streaming over HTTP) are also delivery formats.
 Advanced controls expose supported parameters; an available API operation does
 not imply a control for every field.
 
-- H.264 settings do not currently accept `crf` (constant rate factor),
-  `minBitrate`, `maxBitrate`, `bufsize` (decoder buffer size), `minGop`, `maxGop`,
-  `openGop`, or `autoLevelSetup`. Adding them to imported plan JSON does not
-  enable them; unsupported fields are rejected. Use the existing bitrate and
-  keyframe-interval controls where suitable.
-- AV1 exposes selected settings, including presets and automatic level setup.
-  The SDK also declares `maxLevel` and `dynamicRangeFormat`, which current plans
-  do not accept. SDK model availability does not add these controls to the form.
+- H.264 and H.265 expose codec bitrate limits, buffer size, GOP lengths in
+  frames, and aspect ratios. The VOD form also exposes `crf` (constant rate
+  factor); the Live form retains its fixed target bitrate requirement.
+  These codec controls are separate from Per-Title bitrate bounds and from
+  keyframe intervals measured in seconds. H.264 `autoLevelSetup` remains
+  unsupported in imported plans.
+- AV1 exposes selected settings, including presets, automatic level setup,
+  and `dynamicRangeFormat`. The SDK also declares `maxLevel`, which current
+  plans do not accept. SDK model availability does not add a form control.
 - Live auto-shutdown settings are applied when starting a broadcast. The SDK's
   operation for replacing these settings during a running broadcast is not
   currently exposed. That operation replaces the configuration rather than

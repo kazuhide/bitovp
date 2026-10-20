@@ -3790,6 +3790,30 @@ export const en = {
 		title: "Public ingress",
 	},
 	wizard: {
+		codecDarPair:
+			"Display aspect ratio requires both numerator and denominator",
+		minGopFrames: "Minimum GOP length (frames)",
+		maxGopFrames: "Maximum GOP length (frames)",
+		openGop: "Open GOP",
+		sarNumerator: "Sample aspect ratio numerator",
+		sarDenominator: "Sample aspect ratio denominator",
+		displayAspectRatio: "Display aspect ratio",
+		darNumerator: "Display aspect ratio numerator",
+		darDenominator: "Display aspect ratio denominator",
+		qp: "Constant quantization factor (QP)",
+		strictCbr: "Strict CBR (target-bitrate mode)",
+		codecBitrateRange:
+			"Minimum codec bitrate must not exceed maximum codec bitrate (bps).",
+		codecGopRange:
+			"Minimum GOP length must not exceed maximum GOP length (frames).",
+		codecSarPair: "Set both the sample aspect ratio numerator and denominator.",
+		codecAspectConflict:
+			"Choose sample aspect ratio or display aspect ratio, not both.",
+		codecQpRange:
+			"Maximum quantization factor must not be less than the minimum.",
+		codecStrictCbrMode:
+			"Strict CBR requires a target bitrate without CRF or constant QP.",
+		crf: "Constant rate factor (0–51)",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",

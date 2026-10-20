@@ -6,7 +6,7 @@
  * monolithic one did. The default is unreachable by construction.
  */
 import type { CompiledOperation } from "@bitovp/core";
-import { h265V2QualityControlsSchema } from "@bitovp/core";
+import { h264RenditionSchema, h265V2QualityControlsSchema } from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { ExecStepContext } from "./exec-shared";
 import {
@@ -27,6 +27,18 @@ export async function executeConfigStep(
 	switch (op.kind) {
 		case "CREATE_CODEC_H264": {
 			const resourceId = await ctx.sdk.createH264Config({
+				minGop: optNum(p.minGop),
+				maxGop: optNum(p.maxGop),
+				openGop: optBool(p.openGop),
+				sampleAspectRatioNumerator: optNum(p.sampleAspectRatioNumerator),
+				sampleAspectRatioDenominator: optNum(p.sampleAspectRatioDenominator),
+				displayAspectRatio: h264RenditionSchema.shape.displayAspectRatio.parse(
+					p.displayAspectRatio,
+				),
+				crf: optNum(p.crf),
+				minBitrate: optNum(p.minBitrate),
+				maxBitrate: optNum(p.maxBitrate),
+				bufsize: optNum(p.bufsize),
 				encodingMode: optStr(p.encodingMode),
 				name: optStr(p.name),
 				...(p.width !== undefined ? { width: optNum(p.width) } : {}),
@@ -69,6 +81,22 @@ export async function executeConfigStep(
 				rateControlModeConfig: p.rateControlModeConfig,
 			});
 			const resourceId = await ctx.sdk.createH265Config({
+				...(p.width !== undefined ? { width: optNum(p.width) } : {}),
+				bframes: optNum(p.bframes),
+				refFrames: optNum(p.refFrames),
+				qp: optNum(p.qp),
+				qpMax: optNum(p.qpMax),
+				strictCbr: optBool(p.strictCbr),
+				minGop: optNum(p.minGop),
+				maxGop: optNum(p.maxGop),
+				openGop: optBool(p.openGop),
+				sampleAspectRatioNumerator: optNum(p.sampleAspectRatioNumerator),
+				sampleAspectRatioDenominator: optNum(p.sampleAspectRatioDenominator),
+				displayAspectRatio: h264RenditionSchema.shape.displayAspectRatio.parse(
+					p.displayAspectRatio,
+				),
+				crf: optNum(p.crf),
+				minBitrate: optNum(p.minBitrate),
 				...quality,
 				encodingMode: optStr(p.encodingMode),
 				...(p.internalHevcV2 === true

@@ -202,30 +202,30 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 										<option value="H265">H265</option>
 									</SelectNative>
 								</Field>
-								{video.codec === "H264" ? (
-									<div className="min-w-24 flex-1">
-										<Field
-											label={t("liveWizard.outputWidth")}
-											htmlFor={`lw-v-${index}-width`}
-											tooltip={t("liveWizard.outputWidthHint")}
-										>
-											<Input
-												id={`lw-v-${index}-width`}
-												type="number"
-												min={1}
-												value={video.width ?? ""}
-												onChange={(e) =>
-													patchVideo(index, {
-														width:
-															e.target.value === ""
-																? undefined
-																: Number(e.target.value),
-													})
-												}
-											/>
-										</Field>
-									</div>
-								) : null}
+
+								<div className="min-w-24 flex-1">
+									<Field
+										label={t("liveWizard.outputWidth")}
+										htmlFor={`lw-v-${index}-width`}
+										tooltip={t("liveWizard.outputWidthHint")}
+									>
+										<Input
+											id={`lw-v-${index}-width`}
+											type="number"
+											min={1}
+											value={video.width ?? ""}
+											onChange={(e) =>
+												patchVideo(index, {
+													width:
+														e.target.value === ""
+															? undefined
+															: Number(e.target.value),
+												})
+											}
+										/>
+									</Field>
+								</div>
+
 								<div className="min-w-24 flex-1">
 									<Field
 										label={t("ui.heightP")}
@@ -389,12 +389,14 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							) : null}
 							{video.codec === "H264" ? (
 								<H264AdvancedEditor
+									allowCrf={false}
 									idBase={`lw-v-${index}-h264`}
 									value={video.h264}
 									onChange={(h264) => patchVideo(index, { h264 })}
 								/>
 							) : (
 								<H265AdvancedEditor
+									allowCrf={false}
 									idBase={`lw-v-${index}-h265`}
 									value={video.h265}
 									visionMetadataKeys={[]}

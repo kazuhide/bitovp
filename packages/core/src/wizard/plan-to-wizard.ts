@@ -167,6 +167,16 @@ function bagOrUndefined<T extends Record<string, unknown>>(
 // structural (key/ingestKey/codec/height/bitrate) and extras/mode/name
 // fields handled separately. level/presetConfiguration are special-cased.
 const H264_OPTION_KEYS = [
+	"minGop",
+	"maxGop",
+	"openGop",
+	"sampleAspectRatioNumerator",
+	"sampleAspectRatioDenominator",
+	"displayAspectRatio",
+	"crf",
+	"minBitrate",
+	"maxBitrate",
+	"bufsize",
 	"profile",
 	"rate",
 	"minKeyframeInterval",
@@ -191,6 +201,19 @@ const H264_OPTION_KEYS = [
 	"colorConfig",
 ];
 const H265_OPTION_KEYS = [
+	"minGop",
+	"maxGop",
+	"openGop",
+	"sampleAspectRatioNumerator",
+	"sampleAspectRatioDenominator",
+	"displayAspectRatio",
+	"bframes",
+	"refFrames",
+	"qp",
+	"qpMax",
+	"strictCbr",
+	"crf",
+	"minBitrate",
 	"motionCompensatedTemporalFiltering",
 	"rateControlModeConfig",
 	"profile",

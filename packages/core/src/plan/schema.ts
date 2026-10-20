@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
+import { h26xPictureControlsSchema } from "./codec-controls";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
 	audioVolumeFilterSchema,
@@ -625,12 +626,17 @@ const codecEncodingModeSchema = z.enum([
 
 export const h264RenditionSchema = z.strictObject({
 	...renditionBase,
+	...h26xPictureControlsSchema.shape,
 	codec: z.literal("H264"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	/** Codec-config display name (sample default kept for golden fidelity). */
 	name: z.string().default("Sample video codec configuration"),
 	/** Explicit output width; omitted legacy plans still inherit input aspect. */
 	width: z.number().int().positive().optional(),
+	crf: z.number().min(0).max(51).optional(),
+	minBitrate: z.number().int().nonnegative().optional(),
+	maxBitrate: z.number().int().nonnegative().optional(),
+	bufsize: z.number().int().nonnegative().optional(),
 	/** AISA per-title template passes height=None too — nullable like bitrate. */
 	height: z.number().int().positive().nullable(),
 	/** Per-title templates leave bitrate to the algorithm (null). */
@@ -689,10 +695,19 @@ export type H265V2QualityControls = z.infer<typeof h265V2QualityControlsSchema>;
 
 export const h265RenditionSchema = z.strictObject({
 	...renditionBase,
+	...h26xPictureControlsSchema.shape,
 	...h265V2QualityControlsSchema.shape,
 	codec: z.literal("H265"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	name: z.string().optional(),
+	crf: z.number().min(0).max(51).optional(),
+	minBitrate: z.number().int().nonnegative().optional(),
+	width: z.number().int().positive().optional(),
+	bframes: z.number().int().min(0).max(16).optional(),
+	refFrames: z.number().int().min(0).max(16).optional(),
+	qp: z.number().int().min(0).max(51).optional(),
+	qpMax: z.number().int().min(0).max(69).optional(),
+	strictCbr: z.boolean().optional(),
 	/** HDR10 per-title template scales freely — height nullable. */
 	height: z.number().int().positive().nullable(),
 	bitrate: z.number().int().positive().nullable(),
@@ -730,8 +745,8 @@ export const h265RenditionSchema = z.strictObject({
 	perTitleSettings: perTitleStreamSettingsSchema.optional(),
 	// Dolby ladders (PR5): rate-control + dynamic range + preset
 	presetConfiguration: z.string().optional(),
-	maxBitrate: z.number().int().positive().optional(),
-	bufsize: z.number().int().positive().optional(),
+	maxBitrate: z.number().int().nonnegative().optional(),
+	bufsize: z.number().int().nonnegative().optional(),
 	/** false = Main-tier level signaling (DASH OnDemand sample). */
 	levelHighTier: z.boolean().optional(),
 	/** H265DynamicRangeFormat NAME (wire identical). */

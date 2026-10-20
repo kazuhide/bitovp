@@ -136,7 +136,7 @@ export type LiveVideoRendition = {
 	/** Stable form identity, preserved when editing a rendition. */
 	extras?: { key?: string };
 	codec: "H264" | "H265";
-	/** Explicit H264 output width; absent preserves input aspect ratio. */
+	/** Explicit H264/H265 output width; absent preserves input aspect ratio. */
 	width?: number;
 	height: number | null;
 	bitrate: number | null;
@@ -891,6 +891,20 @@ function videoRendition(
 			bitrate: video.bitrate,
 			presetConfiguration: str(video.presetConfiguration),
 			profile: o.profile,
+			width: video.width,
+			crf: o.crf,
+			minBitrate: o.minBitrate,
+			bframes: o.bframes,
+			refFrames: o.refFrames,
+			qp: o.qp,
+			qpMax: o.qpMax,
+			strictCbr: o.strictCbr,
+			minGop: o.minGop,
+			maxGop: o.maxGop,
+			openGop: o.openGop,
+			sampleAspectRatioNumerator: o.sampleAspectRatioNumerator,
+			sampleAspectRatioDenominator: o.sampleAspectRatioDenominator,
+			displayAspectRatio: o.displayAspectRatio,
 			level: str(o.level),
 			rate: o.rate,
 			maxBitrate: o.maxBitrate,
@@ -938,6 +952,16 @@ function videoRendition(
 		bitrate: video.bitrate,
 		presetConfiguration: str(video.presetConfiguration),
 		profile: o.profile,
+		crf: o.crf,
+		minBitrate: o.minBitrate,
+		maxBitrate: o.maxBitrate,
+		bufsize: o.bufsize,
+		minGop: o.minGop,
+		maxGop: o.maxGop,
+		openGop: o.openGop,
+		sampleAspectRatioNumerator: o.sampleAspectRatioNumerator,
+		sampleAspectRatioDenominator: o.sampleAspectRatioDenominator,
+		displayAspectRatio: o.displayAspectRatio,
 		level: str(o.level),
 		rate: o.rate,
 		minKeyframeInterval: o.minKeyframeInterval,

@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { CustomLiveNotice } from "@/app/live/custom-live-notice";
 import { CopyButton } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
+import { codecControlIssueMessage } from "@/lib/i18n/codec-control";
 import type { Translator } from "@/lib/i18n/context";
 import { useT } from "@/lib/i18n/context";
 import { zodIssueMessage } from "@/lib/i18n/zod-issue-message";
@@ -160,7 +161,8 @@ export function LivePlanPreview({
 									: "text-amber-400 text-xs"
 							}
 						>
-							[{issue.code}] {issue.message}
+							[{issue.code}]{" "}
+							{codecControlIssueMessage(issue.code, t) ?? issue.message}
 						</li>
 					))}
 				</ul>

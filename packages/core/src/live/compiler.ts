@@ -1,3 +1,4 @@
+import { h26xPictureControls } from "../plan/codec-controls";
 import type { CompiledOperation } from "../plan/compiler";
 import { relativeSegmentPath } from "../plan/compiler";
 import {
@@ -422,6 +423,17 @@ function compileLiveInput(plan: LiveChannelPlan): CompiledOperation {
 function codecPayload(rendition: PlanRendition): Record<string, unknown> {
 	if (rendition.codec === "H264") {
 		return {
+			...h26xPictureControls(rendition),
+			...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
+			...(rendition.minBitrate !== undefined
+				? { minBitrate: rendition.minBitrate }
+				: {}),
+			...(rendition.maxBitrate !== undefined
+				? { maxBitrate: rendition.maxBitrate }
+				: {}),
+			...(rendition.bufsize !== undefined
+				? { bufsize: rendition.bufsize }
+				: {}),
 			name: rendition.name,
 			height: rendition.height,
 			...(rendition.width !== undefined ? { width: rendition.width } : {}),
@@ -492,6 +504,23 @@ function codecPayload(rendition: PlanRendition): Record<string, unknown> {
 	}
 	if (rendition.codec === "H265") {
 		return {
+			...h26xPictureControls(rendition),
+			...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
+			...(rendition.minBitrate !== undefined
+				? { minBitrate: rendition.minBitrate }
+				: {}),
+			...(rendition.width !== undefined ? { width: rendition.width } : {}),
+			...(rendition.bframes !== undefined
+				? { bframes: rendition.bframes }
+				: {}),
+			...(rendition.refFrames !== undefined
+				? { refFrames: rendition.refFrames }
+				: {}),
+			...(rendition.qp !== undefined ? { qp: rendition.qp } : {}),
+			...(rendition.qpMax !== undefined ? { qpMax: rendition.qpMax } : {}),
+			...(rendition.strictCbr !== undefined
+				? { strictCbr: rendition.strictCbr }
+				: {}),
 			...(rendition.name ? { name: rendition.name } : {}),
 			...(rendition.profile ? { profile: rendition.profile } : {}),
 			height: rendition.height,

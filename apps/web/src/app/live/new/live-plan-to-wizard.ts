@@ -103,9 +103,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		.map((r) => ({
 			extras: { key: r.key },
 			codec: r.codec,
-			...(r.codec === "H264" && r.width !== undefined
-				? { width: r.width }
-				: {}),
+			...(r.width !== undefined ? { width: r.width } : {}),
 			...readH26xCodecOptions(r),
 			height: r.height ?? null,
 			bitrate: r.bitrate ?? null,

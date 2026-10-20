@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-10-20T23:01:17.958Z",
-		"sourceCommit": "c6d82a505bd7c67a493d2ae3d5fe76d01c9f0d8a",
-		"sourceFingerprint": "b47b72c9b4f1e5ea2f4337428864395d8fdafa5a7bfef49cdf5a2e59c8fc606a",
+		"generatedAt": "2026-10-20T23:27:52.549Z",
+		"sourceCommit": "06fd57861f26afaea222f94d7e467f9cfd2b14c6",
+		"sourceFingerprint": "0a8759e406f888c50df9c908a993596c9c51cf04994f871ad225acd45cdd30dd",
 		"sdkVersion": "1.285.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "ca6c9cf0b84701c18888291145575997495d2201f2d8615f92660ddcf978b5ea",
@@ -120,7 +120,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 397
+					"line": 421
 				}
 			]
 		},
@@ -215,7 +215,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 418
+					"line": 442
 				}
 			]
 		},
@@ -265,7 +265,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 470
+					"line": 494
 				}
 			]
 		},
@@ -315,7 +315,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 449
+					"line": 473
 				}
 			]
 		},
@@ -725,7 +725,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 491
+					"line": 515
 				}
 			]
 		},
@@ -946,7 +946,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 509
+					"line": 533
 				}
 			]
 		},
@@ -996,7 +996,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 530
+					"line": 554
 				}
 			]
 		},
@@ -1046,7 +1046,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 539
+					"line": 563
 				}
 			]
 		},
@@ -1060,7 +1060,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 362
+					"line": 386
 				}
 			]
 		},
@@ -1083,7 +1083,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 556
+					"line": 580
 				}
 			]
 		},
@@ -1183,7 +1183,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 542
+					"line": 566
 				}
 			]
 		},
@@ -1215,7 +1215,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 251
+					"line": 261
 				}
 			]
 		},
@@ -1238,7 +1238,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 550
+					"line": 574
 				}
 			]
 		},
@@ -1270,7 +1270,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 240
+					"line": 250
 				}
 			]
 		},
@@ -1293,7 +1293,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 546
+					"line": 570
 				}
 			]
 		},
@@ -1406,7 +1406,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 328
+					"line": 352
 				}
 			]
 		},
@@ -1429,7 +1429,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 553
+					"line": 577
 				}
 			]
 		},
@@ -11426,8 +11426,8 @@
 			"expandedOperations": 226,
 			"unexpandedOperations": 3,
 			"totalFields": 2561,
-			"sourceAssigned": 387,
-			"unconfirmed": 2174
+			"sourceAssigned": 411,
+			"unconfirmed": 2150
 		},
 		"operations": [
 			{
@@ -11449,8 +11449,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 400,
-								"callLine": 397
+								"line": 424,
+								"callLine": 421
 							}
 						]
 					},
@@ -11465,8 +11465,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 402,
-								"callLine": 397
+								"line": 426,
+								"callLine": 421
 							}
 						]
 					},
@@ -11541,8 +11541,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 399,
-								"callLine": 397
+								"line": 423,
+								"callLine": 421
 							}
 						]
 					},
@@ -11557,8 +11557,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 401,
-								"callLine": 397
+								"line": 425,
+								"callLine": 421
 							}
 						]
 					}
@@ -11693,8 +11693,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 421,
-								"callLine": 418
+								"line": 445,
+								"callLine": 442
 							}
 						]
 					},
@@ -11749,8 +11749,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 423,
-								"callLine": 418
+								"line": 447,
+								"callLine": 442
 							}
 						]
 					},
@@ -11775,8 +11775,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 420,
-								"callLine": 418
+								"line": 444,
+								"callLine": 442
 							}
 						]
 					},
@@ -11801,8 +11801,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 422,
-								"callLine": 418
+								"line": 446,
+								"callLine": 442
 							}
 						]
 					}
@@ -11827,8 +11827,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 473,
-								"callLine": 470
+								"line": 497,
+								"callLine": 494
 							}
 						]
 					},
@@ -11853,8 +11853,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 475,
-								"callLine": 470
+								"line": 499,
+								"callLine": 494
 							}
 						]
 					},
@@ -11949,8 +11949,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 472,
-								"callLine": 470
+								"line": 496,
+								"callLine": 494
 							}
 						]
 					},
@@ -11975,8 +11975,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 474,
-								"callLine": 470
+								"line": 498,
+								"callLine": 494
 							}
 						]
 					}
@@ -12001,8 +12001,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 452,
-								"callLine": 449
+								"line": 476,
+								"callLine": 473
 							}
 						]
 					},
@@ -12027,8 +12027,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 454,
-								"callLine": 449
+								"line": 478,
+								"callLine": 473
 							}
 						]
 					},
@@ -12123,8 +12123,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 451,
-								"callLine": 449
+								"line": 475,
+								"callLine": 473
 							}
 						]
 					},
@@ -12149,8 +12149,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 453,
-								"callLine": 449
+								"line": 477,
+								"callLine": 473
 							}
 						]
 					}
@@ -13525,8 +13525,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 511,
-								"callLine": 509
+								"line": 535,
+								"callLine": 533
 							}
 						]
 					}
@@ -13631,8 +13631,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 531,
-								"callLine": 530
+								"line": 555,
+								"callLine": 554
 							}
 						]
 					},
@@ -13667,8 +13667,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 374,
-								"callLine": 362
+								"line": 398,
+								"callLine": 386
 							}
 						]
 					},
@@ -13683,8 +13683,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 367,
-								"callLine": 362
+								"line": 391,
+								"callLine": 386
 							}
 						]
 					},
@@ -13699,8 +13699,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 384,
-								"callLine": 362
+								"line": 408,
+								"callLine": 386
 							}
 						]
 					},
@@ -13755,8 +13755,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 379,
-								"callLine": 362
+								"line": 403,
+								"callLine": 386
 							}
 						]
 					},
@@ -13771,8 +13771,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 364,
-								"callLine": 362
+								"line": 388,
+								"callLine": 386
 							}
 						]
 					},
@@ -13787,8 +13787,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 366,
-								"callLine": 362
+								"line": 390,
+								"callLine": 386
 							}
 						]
 					},
@@ -13863,8 +13863,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 365,
-								"callLine": 362
+								"line": 389,
+								"callLine": 386
 							}
 						]
 					},
@@ -13889,8 +13889,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 369,
-								"callLine": 362
+								"line": 393,
+								"callLine": 386
 							}
 						]
 					},
@@ -13905,8 +13905,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 368,
-								"callLine": 362
+								"line": 392,
+								"callLine": 386
 							}
 						]
 					},
@@ -14221,7 +14221,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 129,
+								"line": 139,
 								"callLine": 101
 							}
 						]
@@ -14237,7 +14237,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 134,
+								"line": 144,
 								"callLine": 101
 							}
 						]
@@ -14253,7 +14253,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 145,
+								"line": 155,
 								"callLine": 101
 							}
 						]
@@ -14289,7 +14289,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 143,
+								"line": 153,
 								"callLine": 101
 							}
 						]
@@ -14305,7 +14305,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 107,
+								"line": 117,
 								"callLine": 101
 							}
 						]
@@ -14327,8 +14327,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 113
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 112,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "cabac",
@@ -14341,7 +14347,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 144,
+								"line": 154,
 								"callLine": 101
 							}
 						]
@@ -14367,7 +14373,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 151,
+								"line": 161,
 								"callLine": 101
 							}
 						]
@@ -14389,8 +14395,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 48
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 109,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "customData",
@@ -14439,8 +14451,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 63
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 108,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "dynamicRangeFormat",
@@ -14463,7 +14481,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 103,
+								"line": 113,
 								"callLine": 101
 							}
 						]
@@ -14489,7 +14507,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 106,
+								"line": 116,
 								"callLine": 101
 							}
 						]
@@ -14525,7 +14543,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 109,
+								"line": 119,
 								"callLine": 101
 							}
 						]
@@ -14547,8 +14565,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 101
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 111,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "maxGop",
@@ -14557,8 +14581,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 125
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 104,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "maxKeyframeInterval",
@@ -14571,7 +14601,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 117,
+								"line": 127,
 								"callLine": 101
 							}
 						]
@@ -14583,8 +14613,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 107
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 110,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "minGop",
@@ -14593,8 +14629,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 119
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 103,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "minKeyframeInterval",
@@ -14607,7 +14649,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 116,
+								"line": 126,
 								"callLine": 101
 							}
 						]
@@ -14643,7 +14685,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 123,
+								"line": 133,
 								"callLine": 101
 							}
 						]
@@ -14659,7 +14701,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 135,
+								"line": 145,
 								"callLine": 101
 							}
 						]
@@ -14675,7 +14717,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 120,
+								"line": 130,
 								"callLine": 101
 							}
 						]
@@ -14701,7 +14743,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 104,
+								"line": 114,
 								"callLine": 101
 							}
 						]
@@ -14713,8 +14755,14 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 131
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 105,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "partitions",
@@ -14747,7 +14795,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 110,
+								"line": 120,
 								"callLine": 101
 							}
 						]
@@ -14763,7 +14811,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 115,
+								"line": 125,
 								"callLine": 101
 							}
 						]
@@ -14779,7 +14827,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 140,
+								"line": 150,
 								"callLine": 101
 							}
 						]
@@ -14795,7 +14843,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 141,
+								"line": 151,
 								"callLine": 101
 							}
 						]
@@ -14841,7 +14889,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 108,
+								"line": 118,
 								"callLine": 101
 							}
 						]
@@ -14857,7 +14905,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 121,
+								"line": 131,
 								"callLine": 101
 							}
 						]
@@ -14873,7 +14921,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 142,
+								"line": 152,
 								"callLine": 101
 							}
 						]
@@ -14885,8 +14933,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 57
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 107,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "sampleAspectRatioNumerator",
@@ -14895,8 +14949,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 51
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 106,
+								"callLine": 101
+							}
+						]
 					},
 					{
 						"name": "sceneCutThreshold",
@@ -14909,7 +14969,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 128,
+								"line": 138,
 								"callLine": 101
 							}
 						]
@@ -14925,7 +14985,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 118,
+								"line": 128,
 								"callLine": 101
 							}
 						]
@@ -14941,7 +15001,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 122,
+								"line": 132,
 								"callLine": 101
 							}
 						]
@@ -14957,7 +15017,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 119,
+								"line": 129,
 								"callLine": 101
 							}
 						]
@@ -14983,7 +15043,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 146,
+								"line": 156,
 								"callLine": 101
 							}
 						]
@@ -14999,7 +15059,7 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 105,
+								"line": 115,
 								"callLine": 101
 							}
 						]
@@ -15025,8 +15085,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 285,
-								"callLine": 251
+								"line": 309,
+								"callLine": 261
 							}
 						]
 					},
@@ -15051,8 +15111,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 290,
-								"callLine": 251
+								"line": 314,
+								"callLine": 261
 							}
 						]
 					},
@@ -15123,8 +15183,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 64
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 264,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "bitrate",
@@ -15137,8 +15203,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 257,
-								"callLine": 251
+								"line": 281,
+								"callLine": 261
 							}
 						]
 					},
@@ -15173,8 +15239,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 307,
-								"callLine": 251
+								"line": 331,
+								"callLine": 261
 							}
 						]
 					},
@@ -15209,8 +15275,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 300,
-								"callLine": 251
+								"line": 324,
+								"callLine": 261
 							}
 						]
 					},
@@ -15251,8 +15317,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 53
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 275,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "customData",
@@ -15291,8 +15363,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 63
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 274,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "dynamicRangeFormat",
@@ -15305,8 +15383,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 308,
-								"callLine": 251
+								"line": 332,
+								"callLine": 261
 							}
 						]
 					},
@@ -15361,8 +15439,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 253,
-								"callLine": 251
+								"line": 277,
+								"callLine": 261
 							}
 						]
 					},
@@ -15427,8 +15505,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 296,
-								"callLine": 251
+								"line": 320,
+								"callLine": 261
 							}
 						]
 					},
@@ -15443,8 +15521,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 256,
-								"callLine": 251
+								"line": 280,
+								"callLine": 261
 							}
 						]
 					},
@@ -15479,8 +15557,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 259,
-								"callLine": 251
+								"line": 283,
+								"callLine": 261
 							}
 						]
 					},
@@ -15495,8 +15573,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 313,
-								"callLine": 251
+								"line": 337,
+								"callLine": 261
 							}
 						]
 					},
@@ -15571,8 +15649,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 297,
-								"callLine": 251
+								"line": 321,
+								"callLine": 261
 							}
 						]
 					},
@@ -15587,8 +15665,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 306,
-								"callLine": 251
+								"line": 330,
+								"callLine": 261
 							}
 						]
 					},
@@ -15603,8 +15681,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 298,
-								"callLine": 251
+								"line": 322,
+								"callLine": 261
 							}
 						]
 					},
@@ -15619,8 +15697,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 265,
-								"callLine": 251
+								"line": 289,
+								"callLine": 261
 							}
 						]
 					},
@@ -15631,8 +15709,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 106
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 270,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "maximumTransformUnitSize",
@@ -15655,8 +15739,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 262,
-								"callLine": 251
+								"line": 286,
+								"callLine": 261
 							}
 						]
 					},
@@ -15681,8 +15765,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 299,
-								"callLine": 251
+								"line": 323,
+								"callLine": 261
 							}
 						]
 					},
@@ -15693,8 +15777,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 88
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 276,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "minCodingUnitSize",
@@ -15713,8 +15803,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 100
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 269,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "minKeyframeInterval",
@@ -15727,8 +15823,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 261,
-								"callLine": 251
+								"line": 285,
+								"callLine": 261
 							}
 						]
 					},
@@ -15753,8 +15849,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 266,
-								"callLine": 251
+								"line": 290,
+								"callLine": 261
 							}
 						]
 					},
@@ -15769,8 +15865,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 284,
-								"callLine": 251
+								"line": 308,
+								"callLine": 261
 							}
 						]
 					},
@@ -15785,8 +15881,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 254,
-								"callLine": 251
+								"line": 278,
+								"callLine": 261
 							}
 						]
 					},
@@ -15817,8 +15913,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 112
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 271,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "pbRatio",
@@ -15841,8 +15943,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 260,
-								"callLine": 251
+								"line": 284,
+								"callLine": 261
 							}
 						]
 					},
@@ -15857,8 +15959,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 301,
-								"callLine": 251
+								"line": 325,
+								"callLine": 261
 							}
 						]
 					},
@@ -15873,8 +15975,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 255,
-								"callLine": 251
+								"line": 279,
+								"callLine": 261
 							}
 						]
 					},
@@ -15889,8 +15991,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 291,
-								"callLine": 251
+								"line": 315,
+								"callLine": 261
 							}
 						]
 					},
@@ -15905,8 +16007,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 292,
-								"callLine": 251
+								"line": 316,
+								"callLine": 261
 							}
 						]
 					},
@@ -15917,8 +16019,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 76
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 266,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "qpMax",
@@ -15927,8 +16035,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 359
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 267,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "qpMin",
@@ -15941,8 +16055,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 294,
-								"callLine": 251
+								"line": 318,
+								"callLine": 261
 							}
 						]
 					},
@@ -16007,8 +16121,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 258,
-								"callLine": 251
+								"line": 282,
+								"callLine": 261
 							}
 						]
 					},
@@ -16053,8 +16167,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 263,
-								"callLine": 251
+								"line": 287,
+								"callLine": 261
 							}
 						]
 					},
@@ -16085,8 +16199,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 70
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 265,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "refineRateDistortionCost",
@@ -16105,8 +16225,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 57
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 273,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "sampleAspectRatioNumerator",
@@ -16115,8 +16241,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 51
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 272,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "sao",
@@ -16129,8 +16261,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 295,
-								"callLine": 251
+								"line": 319,
+								"callLine": 261
 							}
 						]
 					},
@@ -16165,8 +16297,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 283,
-								"callLine": 251
+								"line": 307,
+								"callLine": 261
 							}
 						]
 					},
@@ -16217,8 +16349,14 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 527
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 268,
+								"callLine": 261
+							}
+						]
 					},
 					{
 						"name": "strongIntraSmoothing",
@@ -16241,8 +16379,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 264,
-								"callLine": 251
+								"line": 288,
+								"callLine": 261
 							}
 						]
 					},
@@ -16277,8 +16415,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 276,
-								"callLine": 251
+								"line": 300,
+								"callLine": 261
 							}
 						]
 					},
@@ -16293,8 +16431,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 271,
-								"callLine": 251
+								"line": 295,
+								"callLine": 261
 							}
 						]
 					},
@@ -16329,8 +16467,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 282,
-								"callLine": 251
+								"line": 306,
+								"callLine": 261
 							}
 						]
 					},
@@ -16345,8 +16483,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 281,
-								"callLine": 251
+								"line": 305,
+								"callLine": 261
 							}
 						]
 					},
@@ -16357,8 +16495,14 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 16
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 263,
+								"callLine": 261
+							}
+						]
 					}
 				]
 			},
@@ -17081,8 +17225,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 343,
-								"callLine": 328
+								"line": 367,
+								"callLine": 352
 							}
 						]
 					},
@@ -17097,8 +17241,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 345,
-								"callLine": 328
+								"line": 369,
+								"callLine": 352
 							}
 						]
 					},
@@ -17113,8 +17257,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 346,
-								"callLine": 328
+								"line": 370,
+								"callLine": 352
 							}
 						]
 					},
@@ -17129,8 +17273,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 344,
-								"callLine": 328
+								"line": 368,
+								"callLine": 352
 							}
 						]
 					},
@@ -17175,8 +17319,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 333,
-								"callLine": 328
+								"line": 357,
+								"callLine": 352
 							}
 						]
 					},
@@ -17211,8 +17355,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 347,
-								"callLine": 328
+								"line": 371,
+								"callLine": 352
 							}
 						]
 					},
@@ -17227,8 +17371,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 335,
-								"callLine": 328
+								"line": 359,
+								"callLine": 352
 							}
 						]
 					},
@@ -17303,8 +17447,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 330,
-								"callLine": 328
+								"line": 354,
+								"callLine": 352
 							}
 						]
 					},
@@ -17339,8 +17483,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 332,
-								"callLine": 328
+								"line": 356,
+								"callLine": 352
 							}
 						]
 					},
@@ -17375,8 +17519,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 342,
-								"callLine": 328
+								"line": 366,
+								"callLine": 352
 							}
 						]
 					},
@@ -17451,8 +17595,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 331,
-								"callLine": 328
+								"line": 355,
+								"callLine": 352
 							}
 						]
 					},
@@ -17497,8 +17641,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 338,
-								"callLine": 328
+								"line": 362,
+								"callLine": 352
 							}
 						]
 					},
@@ -17513,8 +17657,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 337,
-								"callLine": 328
+								"line": 361,
+								"callLine": 352
 							}
 						]
 					},
@@ -17529,8 +17673,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 341,
-								"callLine": 328
+								"line": 365,
+								"callLine": 352
 							}
 						]
 					},
@@ -17545,8 +17689,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 334,
-								"callLine": 328
+								"line": 358,
+								"callLine": 352
 							}
 						]
 					},
@@ -17561,8 +17705,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 340,
-								"callLine": 328
+								"line": 364,
+								"callLine": 352
 							}
 						]
 					},
@@ -17577,8 +17721,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 339,
-								"callLine": 328
+								"line": 363,
+								"callLine": 352
 							}
 						]
 					},
@@ -17653,8 +17797,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 336,
-								"callLine": 328
+								"line": 360,
+								"callLine": 352
 							}
 						]
 					},

@@ -1,11 +1,12 @@
 import { stringify } from "yaml";
+import { h26xPictureControls } from "./codec-controls";
 import {
 	joinFilePath,
 	relativeFilePath,
 	relativeSegmentPath,
 } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
-import { hlsSubtitleGroups } from "./hls-media-defaults";
+import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
 import { muxingStreamKeys } from "./muxing-streams";
 import type { EncodingPlan } from "./schema";
@@ -524,6 +525,15 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			h265[rendition.key] = {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
+					...h26xPictureControls(rendition),
+					width: rendition.width,
+					bframes: rendition.bframes,
+					refFrames: rendition.refFrames,
+					qp: rendition.qp,
+					qpMax: rendition.qpMax,
+					strictCbr: rendition.strictCbr,
+					crf: rendition.crf,
+					minBitrate: rendition.minBitrate,
 					name: rendition.name,
 					profile: rendition.profile
 						? wire(PROFILE_H265_WIRE, rendition.profile)
@@ -640,6 +650,12 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			h264[rendition.key] = {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
+					...h26xPictureControls(rendition),
+					width: rendition.width,
+					crf: rendition.crf,
+					minBitrate: rendition.minBitrate,
+					maxBitrate: rendition.maxBitrate,
+					bufsize: rendition.bufsize,
 					name: rendition.name,
 					height: rendition.height,
 					bitrate: rendition.bitrate,
@@ -1347,6 +1363,14 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				: {}),
 		};
 		if (manifest.kind === "HLS") {
+			const videoUris = new Map(
+				hlsChildEntries(plan, manifest)
+					.filter((entry) => entry.kind === "video")
+					.map((entry) => [
+						JSON.stringify([entry.muxingKey, entry.group]),
+						entry.uri,
+					]),
+			);
 			const subtitleGroup = hlsSubtitleGroups(plan)[0];
 			const subtitleReference = subtitleGroup
 				? { subtitles: subtitleGroup }
@@ -1462,7 +1486,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 									...subtitleReference,
 									closedCaptions: manifest.closedCaptions,
 									segmentPath,
-									uri: `video_${label}_${rendition.height}p_${rendition.bitrate}_${group}.m3u8`,
+									uri:
+										videoUris.get(JSON.stringify([muxing.key, group])) ??
+										`video_${label}_${rendition.height}p_${rendition.bitrate}_${group}.m3u8`,
 									...refs,
 								},
 							};
@@ -1474,7 +1500,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								...subtitleReference,
 								closedCaptions: manifest.closedCaptions,
 								segmentPath,
-								uri: `video_${rendition.bitrate}.m3u8`,
+								uri:
+									videoUris.get(JSON.stringify([muxing.key, undefined])) ??
+									`video_${rendition.bitrate}.m3u8`,
 								...refs,
 							},
 						};

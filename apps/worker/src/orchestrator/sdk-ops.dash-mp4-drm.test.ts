@@ -77,19 +77,21 @@ function onDemandPlan(explicit: boolean, encrypted: boolean) {
 				acl: "PRIVATE",
 			},
 		})),
-		drm: streams.map((key) => ({
-			key: `${key}-cenc`,
-			kind: "CENC",
-			muxingKey: key,
-			credentialId: "00000000-0000-4000-8000-000000000002",
-			kid: "12345678901234567890123456789012",
-			encryptionMode: "CTR",
-			destination: {
-				outputKey: "out",
-				path: `test/cenc/${key}`,
-				acl: "PRIVATE",
-			},
-		})),
+		drm: encrypted
+			? streams.map((key) => ({
+					key: `${key}-cenc`,
+					kind: "CENC",
+					muxingKey: key,
+					credentialId: "00000000-0000-4000-8000-000000000002",
+					kid: "12345678901234567890123456789012",
+					encryptionMode: "CTR",
+					destination: {
+						outputKey: "out",
+						path: `test/cenc/${key}`,
+						acl: "PRIVATE",
+					},
+				}))
+			: [],
 		manifests: [
 			{
 				key: "dash",

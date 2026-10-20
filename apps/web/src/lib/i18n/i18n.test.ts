@@ -119,9 +119,9 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		pinWithDriftAid(long.length, 1414, "long");
+		pinWithDriftAid(long.length, 1418, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		pinWithDriftAid(short.size, 2769, "short");
+		pinWithDriftAid(short.size, 2779, "short");
 	});
 
 	/**
@@ -141,6 +141,8 @@ describe("catalogue parity", () => {
 		// UI renders the enum literals directly and the server-error refusals
 		// stay English per §10b, so those keys were dead translations.)
 		"nav.signedInAs",
+		/* Resource kind and sequence number are locale-neutral placeholders. */
+		"liveOutputs.manifestNumber",
 		/* Keep the established DRM initialism consistent across credential groups and the rest of the application. */
 		"settings.groupDrm",
 		/* Preserve the Akamai MSL product name consistently across destination labels. */

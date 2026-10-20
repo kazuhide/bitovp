@@ -655,10 +655,10 @@ export function curlForStep(
 	const url = `${base}${path}`;
 
 	const lines = [`curl -X ${endpoint.method} ${shellSingleQuote(url)}`];
-	// Placeholder auth — secret-free by construction (no real key in the log).
-	lines.push(`  -H 'X-Api-Key: $BITMOVIN_API_KEY'`);
+	// References expand in the operator's shell; this app never reads the values.
+	lines.push(`  -H "X-Api-Key: $BITMOVIN_API_KEY"`);
 	if (options.includeOrgHeader) {
-		lines.push(`  -H 'X-Tenant-Org-Id: $BITMOVIN_TENANT_ORG_ID'`);
+		lines.push(`  -H "X-Tenant-Org-Id: $BITMOVIN_TENANT_ORG_ID"`);
 	}
 	if (typeof entry.payload.bcfVersion === "string")
 		lines.push(

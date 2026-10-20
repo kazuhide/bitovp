@@ -14,6 +14,7 @@ import {
 	DashManifest,
 	DashManifestDefault,
 	DashManifestDefaultVersion,
+	DashMp4DrmRepresentation,
 	DashMp4Representation,
 	DashOnDemandRepresentationType,
 	DashProfile,
@@ -600,29 +601,51 @@ export function createManifestOps(
 				(r) => ({ id: r.id }),
 			).then(id),
 
-		createDashMp4Representation: (manifestId, periodId, adaptationSetId, p) =>
-			audited(
+		createDashMp4Representation: (manifestId, periodId, adaptationSetId, p) => {
+			return audited(
 				"POST",
-				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${adaptationSetId}/representations/mp4`,
-				{ filePath: p.filePath, type: p.type },
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${adaptationSetId}/representations/mp4${p.drmId ? "/drm" : ""}`,
+				{
+					filePath: p.filePath,
+					type: p.type,
+					...(p.drmId ? { drmId: p.drmId } : {}),
+				},
 				() =>
-					api.encoding.manifests.dash.periods.adaptationsets.representations.mp4.create(
-						manifestId,
-						periodId,
-						adaptationSetId,
-						new DashMp4Representation({
-							type: sdkEnumValue(
-								DashOnDemandRepresentationType,
-								p.type,
-								"DashOnDemandRepresentationType",
+					p.drmId
+						? api.encoding.manifests.dash.periods.adaptationsets.representations.mp4.drm.create(
+								manifestId,
+								periodId,
+								adaptationSetId,
+								new DashMp4DrmRepresentation({
+									type: sdkEnumValue(
+										DashOnDemandRepresentationType,
+										p.type,
+										"DashOnDemandRepresentationType",
+									),
+									filePath: p.filePath,
+									encodingId: p.encodingId,
+									muxingId: p.muxingId,
+									drmId: p.drmId,
+								}),
+							)
+						: api.encoding.manifests.dash.periods.adaptationsets.representations.mp4.create(
+								manifestId,
+								periodId,
+								adaptationSetId,
+								new DashMp4Representation({
+									type: sdkEnumValue(
+										DashOnDemandRepresentationType,
+										p.type,
+										"DashOnDemandRepresentationType",
+									),
+									filePath: p.filePath,
+									encodingId: p.encodingId,
+									muxingId: p.muxingId,
+								}),
 							),
-							filePath: p.filePath,
-							encodingId: p.encodingId,
-							muxingId: p.muxingId,
-						}),
-					),
 				(r) => ({ id: r.id }),
-			).then(id),
+			).then(id);
+		},
 
 		createDashContentProtection: (path, p) => {
 			const reps =

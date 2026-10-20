@@ -1245,6 +1245,7 @@ export type SdkOps = {
 			filePath: string;
 			encodingId: string;
 			muxingId: string;
+			drmId?: string;
 		},
 	): Promise<string>;
 	createDashContentProtection(

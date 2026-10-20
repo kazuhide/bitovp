@@ -386,7 +386,7 @@ DRM は対象コンテナーに設定します。CENC、FairPlay、SPEKE の方�
 
 SPEKE では鍵プロバイダーと DRM システムを選びます。Content ID の省略時は ID が生成されます。同じ Content ID と KID は同じ鍵の要求に使われます。FairPlay の IV は 32 桁の16進数です。暗号化の方式、ライセンス側の設定、プレイヤーの対応を合わせて確認してください。
 
-暗号化したセグメントと、DASH に記載する暗号化情報は対応している必要があります。DASH マニフェストで DRM を選ぶと、bitovp は暗号化した出力先を参照し、対象の映像・音声に暗号化情報を示す ContentProtection 要素を追加します。アダプテーションセットを個別に設定した場合も同じです。
+暗号化したメディアと、DASH に記載する暗号化情報は対応している必要があります。DASH マニフェストで DRM を選ぶと、bitovp は暗号化した出力先を参照し、対象の映像・音声をその DRM 設定に関連付けます。分割された MP4 と WebM では暗号化情報を示す ContentProtection 要素を使い、DASH On-Demand では暗号化用の単一 MP4 表現を使います。アダプテーションセットを個別に設定した場合も同じです。 現在、YAML 出力には DASH On-Demand MP4 の DRM 表現設定が含まれないため、この構成はアプリから実行してください。
 
 問題の切り分けには、別途用意した試験用プレイヤーで、既知のテストキーを使う [ClearKey](https://shaka-project.github.io/shaka-player/docs/api/tutorial-drm-config.html) を利用できます。Apple の [TN2454 の identity 方式](https://developer.apple.com/library/archive/technotes/tn2454/_index.html) は、試験用の HLS プレイリストから鍵ファイルを読み込み、メディアの作成条件と FairPlay の鍵配信の問題を切り分ける方法です。これらの確認だけで、本番のライセンス取得や Dolby Vision 表示まで確認できたことにはなりません。identity 方式は試験に限定してください。
 

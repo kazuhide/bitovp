@@ -238,3 +238,75 @@ describe("explicit DASH adaptation sets with DRM", () => {
 		);
 	});
 });
+
+describe.each([
+	false,
+	true,
+])("DASH OnDemand DRM (explicit sets: %s)", (explicit) => {
+	function onDemandPlan() {
+		const base = explicitDrmPlan();
+		return encodingPlanSchema.parse({
+			...base,
+			renditions: base.renditions.map((r) =>
+				r.codec === "AV1"
+					? {
+							key: r.key,
+							codec: "H264",
+							ingestKey: r.ingestKey,
+							height: r.height,
+							bitrate: r.bitrate,
+							dashSetKey: r.dashSetKey,
+						}
+					: r,
+			),
+			muxings: base.muxings.map((m) => ({
+				key: m.key,
+				kind: "MP4",
+				streamKey: m.streamKey,
+				filename: `${m.key}.mp4`,
+				fragmentDuration: 6000,
+				manifestType: "DASH_ON_DEMAND",
+				destination: m.destination,
+			})),
+			drm: base.drm.filter((d) => d.kind === "CENC"),
+			manifests: base.manifests
+				.filter((m) => m.kind === "DASH")
+				.map((m) => ({
+					...m,
+					profile: "ON_DEMAND",
+					adaptationSets: explicit ? m.adaptationSets : undefined,
+				})),
+		});
+	}
+	it("binds MP4 DRM on the representation instead of an fMP4 child", () => {
+		const plan = onDemandPlan();
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const ops = compilePlan(plan);
+		expect(
+			ops.filter((op) => op.kind === "CREATE_DASH_CONTENT_PROTECTION"),
+		).toEqual([]);
+		for (const muxing of plan.muxings) {
+			const rep = ops.find(
+				(op) => op.step === `manifest:cenc:rep:${muxing.key}`,
+			);
+			expect(rep?.kind).toBe("CREATE_DASH_REPRESENTATION_MP4");
+			expect(rep?.refs.drmId).toBe(`drm:${muxing.key}-cenc`);
+			expect(rep?.payload.filePath).toBe(
+				`cenc/${muxing.key}/${muxing.key}.mp4`,
+			);
+		}
+	});
+	it("preserves clear MP4 representations when encrypted outputs also exist", () => {
+		const ops = compilePlan(onDemandPlan()).filter((op) =>
+			op.step.startsWith("manifest:clear:rep:"),
+		);
+		expect(ops).toHaveLength(3);
+		for (const op of ops) {
+			expect(op.kind).toBe("CREATE_DASH_REPRESENTATION_MP4");
+			expect(op.refs).not.toHaveProperty("drmId");
+			expect(op.payload.filePath).toMatch(/^clear\//);
+		}
+	});
+});

@@ -309,6 +309,7 @@ export async function executeManifestStep(
 					filePath: str(p.filePath),
 					encodingId: refId(op, ctx, "encodingId"),
 					muxingId: refId(op, ctx, "muxingId"),
+					...(op.refs.drmId ? { drmId: refId(op, ctx, "drmId") } : {}),
 				},
 			);
 			return { resourceId, request, response: { id: resourceId } };

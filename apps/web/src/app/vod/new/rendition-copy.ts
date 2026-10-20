@@ -21,11 +21,10 @@ export function copyRendition<T extends { extras?: { key?: string } }>(
 	return copy;
 }
 
-/** Freeze identities AND derived destinations before adding an identical rung. */
-function prepareLadder(state: WizardState) {
+function derivedOutputPaths(state: WizardState) {
 	const vKeys = videoKeys(state.videos);
 	const aKeys = audioKeys(state.audios);
-	const derivedPaths = new Map([
+	return new Map([
 		...state.videos.map(
 			(video, index) =>
 				[vKeys[index], videoMuxingRelPath(video, vKeys[index] ?? "")] as const,
@@ -38,6 +37,86 @@ function prepareLadder(state: WizardState) {
 			(key) => [key, `subtitles/${key}`] as const,
 		),
 	]);
+}
+
+type ManagedPath = { path?: string; autoPath?: string };
+type OutputPath = {
+	path: string;
+	row?: ManagedPath;
+	videoIndex?: number;
+	drmMuxingKey?: string;
+};
+
+const pathRoot = (path: string) => path.split("/").slice(0, 2).join("/");
+
+/** Relative destinations emitted by the wizard, including non-video outputs. */
+function outputPaths(state: WizardState): OutputPath[] {
+	const derived = derivedOutputPaths(state);
+	const paths: OutputPath[] = [];
+	const drm = state.drm ?? [];
+	const drmKeys = new Set(drm.map((row) => row.muxingKey));
+	const vKeys = videoKeys(state.videos);
+	const addLeg = (
+		key: string,
+		leg: WizardMuxing | undefined,
+		videoIndex?: number,
+		defaultKind: WizardMuxing["kind"] = "FMP4",
+	) => {
+		const kind = leg?.kind ?? defaultKind;
+		if (
+			leg?.path !== undefined ||
+			!drmKeys.has(leg?.key ?? key) ||
+			kind === "TEXT" ||
+			kind === "CHUNKED_TEXT"
+		) {
+			paths.push({
+				path: leg?.path ?? derived.get(key) ?? "",
+				row: leg,
+				videoIndex,
+			});
+		}
+	};
+	state.videos.forEach((video, index) => {
+		const key = vKeys[index] ?? `v${video.height}`;
+		for (const leg of [video.muxing, ...(video.extraMuxings ?? [])])
+			addLeg(key, leg, index);
+	});
+	for (const { key, leg } of wizardAudioLegs(state)) addLeg(key, leg);
+	const qcOnly = state.qc?.only && (state.qc.vmaf || state.qc.psnr);
+	if (qcOnly) return paths;
+	const sKeys = subtitleKeys(state.subtitles ?? []);
+	state.subtitles?.forEach((subtitle, index) => {
+		addLeg(
+			sKeys[index] ?? "vtt",
+			subtitle.muxing,
+			undefined,
+			subtitle.codec === "IMSC" ? "TEXT" : "CHUNKED_TEXT",
+		);
+	});
+	for (const row of drm)
+		paths.push({
+			path: row.path ?? derived.get(row.muxingKey) ?? "",
+			row,
+			drmMuxingKey: row.muxingKey,
+		});
+	for (const row of [...(state.thumbnails ?? []), ...(state.sprites ?? [])])
+		paths.push({ path: row.path ?? "" });
+	if (state.startOptions?.aiSceneAnalysis)
+		paths.push({ path: state.startOptions.aiSceneAnalysis.path });
+	if (
+		state.manifests.hls ||
+		state.manifests.dash ||
+		(state.manifests.extra?.length ?? 0) > 0
+	)
+		paths.push({ path: "" });
+	return paths;
+}
+
+/** Freeze identities AND derived destinations before adding an identical rung. */
+function prepareLadder(state: WizardState) {
+	const vKeys = videoKeys(state.videos);
+	const aKeys = audioKeys(state.audios);
+	const derivedPaths = derivedOutputPaths(state);
 	// buildPlan derives DRM destinations from the pre-edit rendition key.
 	// Pin those paths too, so freezing a sibling cannot relocate its encrypted output.
 	const drm = state.drm?.map((row) =>
@@ -72,9 +151,10 @@ function prepareLadder(state: WizardState) {
 			row.muxingKey,
 		]),
 	]);
-	const paths = new Set<string>();
+	const paths = new Set(
+		outputPaths(state).flatMap(({ path }) => [path, pathRoot(path)]),
+	);
 	const audioLegs = wizardAudioLegs(state);
-	const rememberPath = (path: string) => paths.add(path.replace(/\/+$/, ""));
 	const freeze = <T extends WizardVideoRendition | WizardAudioRendition>(
 		rendition: T,
 		key: string,
@@ -90,7 +170,6 @@ function prepareLadder(state: WizardState) {
 					(item) =>
 						item.key === key && item.primary === primary && item.leg === leg,
 				);
-			rememberPath(leg?.path ?? path);
 			reserved.add(muxingKey);
 			// Keep omitted outputs omitted: a path would opt bundled audio back
 			// into standalone delivery or enable clear output beside its DRM.
@@ -127,10 +206,7 @@ function prepareLadder(state: WizardState) {
 	});
 	for (const subtitle of state.subtitles ?? []) {
 		if (subtitle.muxing?.key !== undefined) reserved.add(subtitle.muxing.key);
-		if (subtitle.muxing?.path !== undefined) rememberPath(subtitle.muxing.path);
 	}
-	for (const row of drm ?? [])
-		if (row.path !== undefined) rememberPath(row.path);
 	const uris = new Set([
 		...audios.map((audio) => audio.extras?.hlsMedia?.uri),
 		...videos.map((video) => video.extras?.hlsMedia?.uri),
@@ -306,15 +382,7 @@ export function updateVodVideoModePaths(
 	if (state.videos.length !== next.length) return { videos: next };
 	const oldKeys = videoKeys(state.videos);
 	const keys = videoKeys(next);
-	const rootOf = (path: string) => path.split("/").slice(0, 2).join("/");
-	const occupied = new Set<string>();
-	state.videos.forEach((video, index) => {
-		const derived = videoMuxingRelPath(video, oldKeys[index] ?? "");
-		for (const leg of [video.muxing, ...(video.extraMuxings ?? [])])
-			occupied.add(rootOf(leg?.path ?? derived));
-	});
-	for (const row of state.drm ?? [])
-		if (row.path !== undefined) occupied.add(rootOf(row.path));
+	const destinations = outputPaths({ ...state, videos: next });
 	const allocated = new Set<string>();
 	let drm = state.drm;
 	const videos = next.map((video, index) => {
@@ -337,7 +405,7 @@ export function updateVodVideoModePaths(
 			templateLeaf,
 			(templateLeaf.match(/\{[^{}]+\}/g) ?? []).join("_"),
 		];
-		const ownedSuffix = (row?: { path?: string; autoPath?: string }) =>
+		const ownedSuffix = (row?: ManagedPath) =>
 			row?.path !== undefined && row.path === row.autoPath
 				? leaves.find((leaf) => row.path?.endsWith(`/${leaf}`))
 				: undefined;
@@ -346,66 +414,42 @@ export function updateVodVideoModePaths(
 				(leg) => leg?.key ?? oldKeys[index],
 			),
 		);
-		const standardOccupied = new Set(allocated);
-		if (!perTitle) {
-			// Release only owned paths that this transition will move; manual paths
-			// on this rendition and all sibling destinations keep their roots.
-			state.videos.forEach((sibling, siblingIndex) => {
-				for (const leg of [sibling.muxing, ...(sibling.extraMuxings ?? [])]) {
-					if (siblingIndex === index && ownedSuffix(leg) !== undefined)
-						continue;
-					const drmOwned = state.drm?.some(
-						(row) => row.muxingKey === (leg?.key ?? oldKeys[siblingIndex]),
-					);
-					if (leg?.path === undefined && drmOwned) continue;
-					standardOccupied.add(
-						rootOf(
-							leg?.path ??
-								videoMuxingRelPath(
-									next[siblingIndex] ?? sibling,
-									keys[siblingIndex] ?? "",
-								),
-						),
-					);
-				}
-			});
-			for (const row of state.drm ?? [])
-				if (
-					row.path !== undefined &&
-					(!muxingKeys.has(row.muxingKey) || ownedSuffix(row) === undefined)
-				)
-					standardOccupied.add(rootOf(row.path));
+		const occupied = new Set(allocated);
+		for (const destination of destinations) {
+			const selected =
+				destination.videoIndex === index ||
+				(destination.drmMuxingKey !== undefined &&
+					muxingKeys.has(destination.drmMuxingKey));
+			const row = destination.row;
+			const moving =
+				selected &&
+				row?.path !== undefined &&
+				row.path === row.autoPath &&
+				(perTitle
+					? ownedSuffix(row) === undefined
+					: ownedSuffix(row) !== undefined);
+			// Release only owned paths that this transition will move.
+			if (!moving) occupied.add(pathRoot(destination.path));
 		}
-		const standardRoots = new Map<string, string>();
-		let derivedRoot: string | undefined;
-		const updatePath = <T extends { path?: string; autoPath?: string }>(
-			row: T,
-		): T => {
+		const roots = new Map<string, string>();
+		const updatePath = <T extends ManagedPath>(row: T): T => {
 			if (row.path === undefined || row.path !== row.autoPath) return row;
 			const suffix = ownedSuffix(row);
-			let path: string;
-			if (perTitle) {
-				if (suffix !== undefined) return row;
-				let root = row.path;
-				if (root === previousDefault) {
-					const proposed = `video/${key}`;
-					derivedRoot ??=
-						rootOf(root) === proposed ? proposed : unique(proposed, occupied);
-					root = derivedRoot;
-				}
-				path = `${root}/${templateLeaf}`;
-				allocated.add(rootOf(root));
-			} else {
-				if (suffix === undefined) return row;
-				const stripped = row.path.slice(0, -(suffix.length + 1));
-				const proposed = rootOf(stripped);
-				const root =
-					standardRoots.get(proposed) ?? unique(proposed, standardOccupied);
-				standardRoots.set(proposed, root);
-				allocated.add(root);
-				occupied.add(root);
-				path = [root, ...stripped.split("/").slice(2)].join("/");
-			}
+			if (perTitle ? suffix !== undefined : suffix === undefined) return row;
+			const base = perTitle
+				? row.path
+				: row.path.slice(0, -((suffix?.length ?? 0) + 1));
+			const currentRoot = pathRoot(base);
+			const proposed =
+				perTitle && base === previousDefault ? `video/${key}` : currentRoot;
+			const root = roots.get(currentRoot) ?? unique(proposed, occupied);
+			roots.set(currentRoot, root);
+			allocated.add(root);
+			const path = [
+				root,
+				...base.split("/").slice(2),
+				...(perTitle ? [templateLeaf] : []),
+			].join("/");
 			return { ...row, path, autoPath: path };
 		};
 		drm = drm?.map((row) =>
@@ -464,18 +508,16 @@ export function updateVodVideoHeight(
 	);
 	const muxingKeys = new Map<string, string>();
 	// All destinations under a root occupy it, including custom and DRM paths.
-	const pathRoot = unique(
+	const nextPathRoot = unique(
 		`video/${key}`,
-		new Set(
-			[...context.paths].map((path) => path.split("/").slice(0, 2).join("/")),
-		),
+		new Set([...context.paths].map(pathRoot)),
 	);
 	const renamePath = <T extends { path?: string; autoPath?: string }>(
 		row: T,
 	): T => {
 		if (row.path === undefined || row.path !== row.autoPath) return row;
 		const suffix = row.path.split("/").slice(2);
-		const path = [pathRoot, ...suffix].join("/");
+		const path = [nextPathRoot, ...suffix].join("/");
 		return { ...row, path, autoPath: path };
 	};
 	const selectedMuxingKeys = new Set(

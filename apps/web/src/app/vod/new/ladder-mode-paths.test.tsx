@@ -4,11 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 import { renderWithQuery as render } from "@/test/render";
 import {
 	buildPlan,
+	DEFAULT_WIZARD_QC,
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
 } from "./build-plan";
 import { MuxingsSection } from "./muxings-section";
-import { addVodAudio, addVodVideo } from "./rendition-copy";
+import {
+	addVodAudio,
+	addVodVideo,
+	updateVodVideoHeight,
+	updateVodVideoModePaths,
+} from "./rendition-copy";
 import { LadderSection } from "./wizard-sections";
 
 vi.mock("@/lib/api", async (original) => ({
@@ -47,6 +53,138 @@ function copiedState(): WizardState {
 	const initial = structuredClone(DEFAULT_WIZARD_STATE);
 	return { ...initial, ...addVodVideo(initial, 0) };
 }
+
+function emittedPaths(state: WizardState): string[] {
+	const paths: string[] = [];
+	const visit = (value: unknown) => {
+		if (Array.isArray(value)) {
+			value.forEach(visit);
+		} else if (value && typeof value === "object") {
+			for (const [key, child] of Object.entries(value)) {
+				if (
+					key === "destination" &&
+					child &&
+					typeof child === "object" &&
+					"path" in child &&
+					typeof child.path === "string"
+				) {
+					paths.push(child.path);
+				} else {
+					visit(child);
+				}
+			}
+		}
+	};
+	visit(buildPlan(state));
+	return paths;
+}
+
+const outputNamespaces: Array<{
+	name: string;
+	claim: (path: string) => Partial<WizardState>;
+}> = [
+	{
+		name: "standalone audio",
+		claim: (path) => ({
+			audios: [{ bitrate: 64_000, rate: 44_100, muxing: { path } }],
+		}),
+	},
+	{
+		name: "extra audio container",
+		claim: (path) => ({
+			audios: [
+				{
+					bitrate: 64_000,
+					rate: 44_100,
+					extraMuxings: [{ key: "audio-extra", path }],
+				},
+			],
+		}),
+	},
+	{
+		name: "audio without a video carrier despite ownContainer being false",
+		claim: (path) => ({
+			audios: [
+				{
+					bitrate: 64_000,
+					rate: 44_100,
+					muxing: { path, ownContainer: false },
+				},
+			],
+		}),
+	},
+	{
+		name: "encrypted primary audio",
+		claim: (path) => ({
+			audios: [{ bitrate: 64_000, rate: 44_100 }],
+			drm: [
+				{
+					kind: "CENC",
+					muxingKey: "a64",
+					credentialId: "vault",
+					kid: "kid",
+					path,
+				},
+			],
+		}),
+	},
+	{
+		name: "encrypted extra audio container",
+		claim: (path) => ({
+			audios: [
+				{
+					bitrate: 64_000,
+					rate: 44_100,
+					extraMuxings: [{ key: "audio-protected" }],
+				},
+			],
+			drm: [
+				{
+					kind: "CENC",
+					muxingKey: "audio-protected",
+					credentialId: "vault",
+					kid: "kid",
+					path,
+				},
+			],
+		}),
+	},
+	...(["WEBVTT", "IMSC"] as const).map((codec) => ({
+		name: `${codec} subtitles`,
+		claim: (path: string): Partial<WizardState> => ({
+			subtitles: [{ codec, source: "captions", muxing: { path } }],
+		}),
+	})),
+	{
+		name: "thumbnail",
+		claim: (path) => ({
+			thumbnails: [
+				{ key: "thumb", streamKey: "v360", height: 90, positions: [0], path },
+			],
+		}),
+	},
+	{
+		name: "sprite",
+		claim: (path) => ({
+			sprites: [
+				{
+					key: "sprite",
+					streamKey: "v360",
+					distance: 5,
+					width: 160,
+					filename: "sprite.jpg",
+					path,
+				},
+			],
+		}),
+	},
+	{
+		name: "AI scene analysis",
+		claim: (path) => ({
+			startOptions: { aiSceneAnalysis: { filename: "analysis.json", path } },
+		}),
+	},
+];
 
 describe("automatic container paths follow the ladder stream mode", () => {
 	it("updates paths pinned by Add video to Per-Title destinations in both the form and emitted plan", () => {
@@ -114,6 +252,224 @@ describe("automatic container paths follow the ladder stream mode", () => {
 		});
 		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
 		expect(destinationPaths().slice(0, 2)).toEqual([automatic, manual]);
+	});
+
+	it("keeps a manually claimed standalone audio directory when returning to Standard", () => {
+		render(<Harness initial={copiedState()} />);
+		const originalMode = screen.getAllByLabelText("Stream mode")[0] as Element;
+		fireEvent.change(originalMode, { target: { value: "PER_TITLE_TEMPLATE" } });
+		fireEvent.change(document.getElementById("wz-mx-a-0-path") as Element, {
+			target: { value: "video/v360" },
+		});
+		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
+		fireEvent.change(document.getElementById("wz-v-0-bitrate") as Element, {
+			target: { value: "300000" },
+		});
+		expect(currentState().audios[0]?.muxing?.path).toBe("video/v360");
+		expect(destinationPaths()[0]).not.toBe("video/v360");
+		expect(
+			emittedPaths(currentState()).filter((path) => path === "video/v360"),
+		).toHaveLength(1);
+	});
+
+	it("reserves an audio directory that is the allocator's next candidate", () => {
+		render(<Harness initial={copiedState()} />);
+		const originalMode = screen.getAllByLabelText("Stream mode")[0] as Element;
+		fireEvent.change(originalMode, { target: { value: "PER_TITLE_TEMPLATE" } });
+		fireEvent.change(document.getElementById("wz-mx-v-1-path") as Element, {
+			target: { value: "video/v360" },
+		});
+		fireEvent.change(document.getElementById("wz-mx-a-0-path") as Element, {
+			target: { value: "video/v360-2" },
+		});
+		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
+		fireEvent.change(document.getElementById("wz-v-0-bitrate") as Element, {
+			target: { value: "300000" },
+		});
+		expect(destinationPaths().slice(0, 3)).toEqual([
+			"video/v360-3",
+			"video/v360",
+			"video/v360-2",
+		]);
+	});
+
+	describe.each([
+		"entering",
+		"leaving",
+	] as const)("%s Per-Title", (direction) => {
+		it.each(outputNamespaces)("reserves the $name output namespace", ({
+			claim,
+		}) => {
+			const initial = copiedState();
+			if (direction === "leaving") {
+				const current = initial.videos[0];
+				if (!current) throw new Error("Missing original video");
+				initial.videos[0] = {
+					...current,
+					extras: { ...current.extras, mode: "PER_TITLE_TEMPLATE" },
+					muxing: {
+						...current.muxing,
+						path: "video/v360/{height}p_{bitrate}_{uuid}",
+						autoPath: "video/v360/{height}p_{bitrate}_{uuid}",
+					},
+				};
+			}
+			const state = { ...initial, ...claim("video/v360") };
+			const untouched = structuredClone(state);
+			const videos = state.videos.map((video, index) =>
+				index === 0
+					? {
+							...video,
+							extras: {
+								...video.extras,
+								mode:
+									direction === "entering"
+										? ("PER_TITLE_TEMPLATE" as const)
+										: ("STANDARD" as const),
+							},
+						}
+					: video,
+			);
+			const updated = { ...state, ...updateVodVideoModePaths(state, videos) };
+			const path = updated.videos[0]?.muxing?.path;
+			expect(path?.split("/").slice(0, 2).join("/")).not.toBe("video/v360");
+			expect(
+				emittedPaths(updated).filter((value) => value === "video/v360"),
+			).toHaveLength(1);
+			expect(state).toEqual(untouched);
+			for (const [key, value] of Object.entries(claim("video/v360"))) {
+				expect(updated[key as keyof WizardState]).toEqual(value);
+			}
+		});
+	});
+
+	it("rechecks an already allocated copy root when entering Per-Title", () => {
+		const initial = copiedState();
+		initial.audios[0] = {
+			bitrate: 64_000,
+			rate: 44_100,
+			muxing: { path: "video/v360-2" },
+		};
+		render(<Harness initial={initial} />);
+		fireEvent.change(screen.getAllByLabelText("Stream mode")[1] as Element, {
+			target: { value: "PER_TITLE_TEMPLATE" },
+		});
+		expect(destinationPaths().slice(0, 3)).toEqual([
+			"video/360p",
+			"video/v360-2-2/{height}p_{bitrate}_{uuid}",
+			"video/v360-2",
+		]);
+	});
+
+	it("does not reserve primary or extra audio containers carried only inside a video container", () => {
+		const initial = copiedState();
+		const current = initial.videos[0];
+		if (!current) throw new Error("Missing original video");
+		initial.videos[0] = {
+			...current,
+			muxing: { ...current.muxing, kind: "TS", muxedAudioKeys: ["a64"] },
+		};
+		initial.audios = [
+			{
+				bitrate: 64_000,
+				rate: 44_100,
+				muxing: { ownContainer: false, path: "video/v360" },
+				extraMuxings: [
+					{ key: "bundled-extra", ownContainer: false, path: "video/v360-2" },
+				],
+			},
+		];
+		const videos = initial.videos.map((video, index) =>
+			index === 0
+				? {
+						...video,
+						extras: { ...video.extras, mode: "PER_TITLE_TEMPLATE" as const },
+					}
+				: video,
+		);
+		const updated = { ...initial, ...updateVodVideoModePaths(initial, videos) };
+		expect(updated.videos[0]?.muxing?.path).toBe(
+			"video/v360/{height}p_{bitrate}_{uuid}",
+		);
+		expect(
+			buildPlan(updated).muxings.some((muxing) => muxing.streamKey === "a64"),
+		).toBe(false);
+		expect(updated.audios).toEqual(initial.audios);
+	});
+
+	it("does not reserve delivery outputs omitted from a quality-only plan", () => {
+		const initial = copiedState();
+		for (const { claim } of outputNamespaces)
+			Object.assign(initial, claim("video/v360"));
+		initial.drm = [];
+		initial.qc = { ...DEFAULT_WIZARD_QC, vmaf: true, only: true };
+		const videos = initial.videos.map((video, index) =>
+			index === 0
+				? {
+						...video,
+						extras: { ...video.extras, mode: "PER_TITLE_TEMPLATE" as const },
+					}
+				: video,
+		);
+		const updated = { ...initial, ...updateVodVideoModePaths(initial, videos) };
+		expect(updated.videos[0]?.muxing?.path).toBe(
+			"video/v360/{height}p_{bitrate}_{uuid}",
+		);
+		expect(emittedPaths(updated)).not.toContain("video/v360");
+	});
+
+	describe.each([
+		"copy",
+		"height",
+	] as const)("allocating a video %s", (operation) => {
+		it.each(outputNamespaces)("reserves the $name output namespace", ({
+			claim,
+		}) => {
+			const path = operation === "copy" ? "video/v360-2" : "video/v480";
+			const state = {
+				...structuredClone(DEFAULT_WIZARD_STATE),
+				...claim(path),
+			};
+			const untouched = structuredClone(state);
+			const patch =
+				operation === "copy"
+					? addVodVideo(state, 0)
+					: updateVodVideoHeight(state, 0, 480);
+			const updated = { ...state, ...patch };
+			const video = updated.videos[operation === "copy" ? 1 : 0];
+			expect(video?.muxing?.path).not.toBe(path);
+			expect(
+				emittedPaths(updated).filter((value) => value === path),
+			).toHaveLength(1);
+			expect(state).toEqual(untouched);
+		});
+
+		it("does not reserve a bundled audio destination that is not emitted", () => {
+			const path = operation === "copy" ? "video/v360-2" : "video/v480";
+			const state = structuredClone(DEFAULT_WIZARD_STATE);
+			state.videos[0] = {
+				...state.videos[0],
+				height: 360,
+				bitrate: 300_000,
+				muxing: { kind: "TS", muxedAudioKeys: ["a64"] },
+			};
+			state.audios[0] = {
+				bitrate: 64_000,
+				rate: 44_100,
+				muxing: { ownContainer: false, path },
+			};
+			const patch =
+				operation === "copy"
+					? addVodVideo(state, 0)
+					: updateVodVideoHeight(state, 0, 480);
+			const updated = { ...state, ...patch };
+			expect(updated.videos[operation === "copy" ? 1 : 0]?.muxing?.path).toBe(
+				path,
+			);
+			expect(
+				buildPlan(updated).muxings.some((muxing) => muxing.streamKey === "a64"),
+			).toBe(false);
+		});
 	});
 
 	it("keeps a manually claimed DRM directory when an automatic encrypted rendition returns to Standard", () => {

@@ -5084,12 +5084,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			console.warn(new ProvisionLeaseLostError(liveChannelId).message);
 			return "PROVISIONING";
 		}
-		// rev431: the worker's entry mirror clears the run's stop/CREATED
-		// confirmation as well, so a door that forgot it cannot leave a run
-		// stamped while its encoding (re)starts.
+		// A (re)start clears confirmation; cancellation only tears down the
+		// current encoding and must retain its exact existing stop proof.
 		await runs.mirror(liveChannelId, {
 			status: "PROVISIONING",
-			encoderStoppedConfirmedFor: null,
+			...(!cancelling ? { encoderStoppedConfirmedFor: null } : {}),
 		});
 
 		/**
@@ -5330,7 +5329,43 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						feederSessionId: feeder.id,
 						action: "stop",
 					});
+				let confirmed = false;
 				if (encodingId) {
+					// Re-read after feeder awaits. Trusted stop/CREATED/reset absence
+					// proof applies only to this exact current encoding, never a re-air.
+					const [current, channel] = await Promise.all([
+						deps.prisma.liveChannelRun.findFirst({
+							where: { liveChannelId },
+							orderBy: { seq: "desc" },
+							select: {
+								id: true,
+								cancelRequested: true,
+								bitmovinEncodingId: true,
+								encoderStoppedConfirmedFor: true,
+							},
+						}),
+						deps.prisma.liveChannel.findUnique({
+							where: { id: liveChannelId },
+							select: {
+								bitmovinEncodingId: true,
+								encoderStoppedConfirmedFor: true,
+								provisionClaimedAt: true,
+								liveEffectFenceVersion: true,
+							},
+						}),
+					]);
+					confirmed =
+						current?.id === currentRunId &&
+						current.cancelRequested &&
+						current.bitmovinEncodingId === encodingId &&
+						current.encoderStoppedConfirmedFor === encodingId &&
+						channel?.bitmovinEncodingId === encodingId &&
+						channel.encoderStoppedConfirmedFor === encodingId &&
+						heldAt !== null &&
+						channel.provisionClaimedAt?.getTime() === heldAt.getTime() &&
+						channel.liveEffectFenceVersion === row.liveEffectFenceVersion;
+				}
+				if (encodingId && !confirmed) {
 					let task = await sdk.getEncodingStatus(encodingId);
 					const startAttempted = entries.some(
 						(e) => e.kind === "START_LIVE_ENCODING" && e.startedAt,

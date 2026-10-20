@@ -2435,8 +2435,8 @@ export function validatePlan(
 		}
 	}
 
-	// Segment paths a manifest can't strip produce broken playlists — warn
-	// when muxings don't sit under the manifest base. One aggregated issue
+	// Flag layouts whose segment references leave the manifest directory.
+	// The compiler resolves these through parent or absolute paths. One issue
 	// per manifest (stable issue identity for UIs). Empty base = bucket
 	// root: everything is under it (mirrors relativeSegmentPath).
 	for (const [mIndex, manifest] of plan.manifests.entries()) {
@@ -2459,7 +2459,7 @@ export function validatePlan(
 			issues.push({
 				code: "PLAN_SEGMENT_PATH_NOT_UNDER_MANIFEST",
 				level: "warning",
-				message: `muxing(s) ${outside.join(", ")} write outside manifest "${manifest.key}" base path — their segment paths will be emitted absolute`,
+				message: `muxing(s) ${outside.join(", ")} write outside manifest "${manifest.key}" base path — their segment references use parent or absolute paths`,
 				path: `manifests[${mIndex}].destination.path`,
 			});
 		}

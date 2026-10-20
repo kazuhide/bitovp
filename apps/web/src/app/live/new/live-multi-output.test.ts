@@ -108,6 +108,67 @@ function state(): LiveWizardState {
 }
 
 describe("multiple Live output authoring", () => {
+	it("points default additional HLS and DASH directories back to the shared ladder", () => {
+		let value = state();
+		value.videos = [
+			...value.videos,
+			{
+				...required(value.videos[0]),
+				height: 360,
+				bitrate: 500_000,
+				container: "CMAF",
+				extras: { key: "v360" },
+			},
+		];
+		value = { ...value, ...addLiveManifest(value, "HLS") };
+		value = { ...value, ...addLiveManifest(value, "DASH") };
+		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(value));
+		const operations = compileLiveChannel(plan);
+		const hls = operations.filter(
+			(operation) => operation.refs.manifestId === "manifest:hls-2",
+		);
+		expect(
+			hls
+				.filter((operation) => operation.kind === "CREATE_HLS_STREAM_INFO")
+				.map((operation) => operation.payload.segmentPath),
+		).toEqual(["../video/720p"]);
+		expect(
+			hls
+				.filter((operation) => operation.kind === "CREATE_HLS_AUDIO_MEDIA")
+				.map((operation) => operation.payload.segmentPath),
+		).toEqual(["../audio/128000"]);
+		const dash = operations.filter(
+			(operation) =>
+				operation.refs.manifestId === "manifest:dash-2" &&
+				operation.kind.startsWith("CREATE_DASH_REPRESENTATION_"),
+		);
+		expect(
+			dash.map((operation) => [operation.kind, operation.payload.segmentPath]),
+		).toEqual([
+			["CREATE_DASH_REPRESENTATION_FMP4", "../video/720p"],
+			["CREATE_DASH_REPRESENTATION_CMAF", "../video/360p"],
+			["CREATE_DASH_REPRESENTATION_FMP4", "../audio/128000"],
+		]);
+		for (const operation of [...hls, ...dash]) {
+			if (typeof operation.payload.segmentPath !== "string") continue;
+			const manifest = plan.liveManifests.find(
+				(entry) => `manifest:${entry.key}` === operation.refs.manifestId,
+			);
+			const muxing = plan.muxings.find(
+				(entry) => `muxing:${entry.key}` === operation.refs.muxingId,
+			);
+			if (!manifest || !muxing?.destination)
+				throw new Error("Missing compiled destination");
+			expect(
+				new URL(
+					`${operation.payload.segmentPath}/seg.m4s`,
+					`https://delivery.example/published/${manifest.destination.path}/stream.m3u8`,
+				).href,
+			).toBe(
+				`https://delivery.example/published/${muxing.destination.path}/seg.m4s`,
+			);
+		}
+	});
 	it("keeps a video playlist override through multi-output drafts, import and every HLS operation", () => {
 		const original = state();
 		original.videos = original.videos.map((video, index) =>

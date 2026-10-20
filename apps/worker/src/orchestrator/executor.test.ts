@@ -1704,7 +1704,10 @@ describe("executeStep", () => {
 			expect(sdk.createHlsStreamInfo).not.toHaveBeenCalled();
 		});
 
-		it("derives DRM'd variant paths from the DRM output and skips DRM-less muxings", async () => {
+		it.each([
+			["output/item/", "video/drm_900/"],
+			["output/item/hls-2", "../video/drm_900/"],
+		])("derives DRM variant paths relative to %s and skips DRM-less muxings", async (stripBase, segmentPath) => {
 			const sdk = fakeSdk({
 				listMuxings: vi.fn(() =>
 					Promise.resolve([
@@ -1733,6 +1736,7 @@ describe("executeStep", () => {
 					payload: {
 						...hlsExpansionOp.payload,
 						muxingKind: "TS",
+						stripBase,
 						drm: { kind: "FAIRPLAY" },
 					},
 				},
@@ -1748,14 +1752,17 @@ describe("executeStep", () => {
 			expect(sdk.createHlsStreamInfo).toHaveBeenCalledWith(
 				"bm-hls",
 				expect.objectContaining({
-					segmentPath: "video/drm_900/",
+					segmentPath,
 					muxingId: "mux-drm",
 					drmId: "drm-1",
 				}),
 			);
 		});
 
-		it("creates WEBM DASH representations plus content protection", async () => {
+		it.each([
+			["output/item/", "video/p/"],
+			["output/item/manifests/dash", "../../video/p/"],
+		])("creates WEBM DASH representations relative to %s plus content protection", async (stripBase, segmentPath) => {
 			const sdk = fakeSdk({
 				listMuxings: vi.fn(() =>
 					Promise.resolve([{ id: "mux-webm", streamId: "s1" }]),
@@ -1781,7 +1788,7 @@ describe("executeStep", () => {
 						muxingKind: "WEBM",
 						streamModeFilter: "PER_TITLE_RESULT",
 						type: "TEMPLATE",
-						stripBase: "output/item/",
+						stripBase,
 						drm: { kind: "CENC" },
 					},
 					refs: {
@@ -1804,7 +1811,7 @@ describe("executeStep", () => {
 				"bm-aset",
 				{
 					type: "TEMPLATE",
-					segmentPath: "video/p/",
+					segmentPath,
 					encodingId: "bm-enc",
 					muxingId: "mux-webm",
 				},
@@ -1822,7 +1829,10 @@ describe("executeStep", () => {
 			expect(result.response).toMatchObject({ created: 1 });
 		});
 
-		it("builds smooth entries from MP4 filenames and wires content protection", async () => {
+		it.each([
+			["output/smooth/", "video/540p_1200_x/video.ismv"],
+			["output/smooth/manifests", "../video/540p_1200_x/video.ismv"],
+		])("builds smooth entries relative to %s and wires content protection", async (stripBase, mediaFile) => {
 			const sdk = fakeSdk({
 				listMuxings: vi.fn(() =>
 					Promise.resolve([
@@ -1848,7 +1858,7 @@ describe("executeStep", () => {
 					payload: {
 						muxingKind: "MP4",
 						streamModeFilter: "PER_TITLE_RESULT",
-						stripBase: "output/smooth/",
+						stripBase,
 						language: "en",
 						trackName: "video",
 						drm: { kind: "CENC" },
@@ -1860,7 +1870,7 @@ describe("executeStep", () => {
 			expect(sdk.createSmoothMp4Representation).toHaveBeenCalledWith(
 				"bm-smooth",
 				{
-					mediaFile: "video/540p_1200_x/video.ismv",
+					mediaFile,
 					language: "en",
 					trackName: "video",
 					encodingId: "bm-enc",

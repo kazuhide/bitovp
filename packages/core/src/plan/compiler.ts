@@ -238,9 +238,9 @@ function inputStreamStep(
 }
 
 /**
- * encoding examples `_remove_output_base_path` equivalent, hardened: the base
- * is slash-terminated before comparison so `output/x` cannot strip a
- * sibling prefix like `output/x2/...` or leave a leading slash.
+ * Segment references resolve from the manifest directory (RFC 8216 section 4.1).
+ * Preserve descendant spelling and explicit absolute references; other output
+ * directories need parent traversal, not an unmodified bucket-relative path.
  */
 export function relativeSegmentPath(
 	muxingPath: string,
@@ -250,9 +250,11 @@ export function relativeSegmentPath(
 		manifestPath === "" || manifestPath.endsWith("/")
 			? manifestPath
 			: `${manifestPath}/`;
-	return muxingPath.startsWith(base)
-		? muxingPath.slice(base.length)
-		: muxingPath;
+	if (muxingPath.startsWith(base)) return muxingPath.slice(base.length);
+	if (muxingPath.startsWith("/") || /^[a-z][a-z\d+.-]*:/i.test(muxingPath))
+		return muxingPath;
+	const relative = relativeFilePath(muxingPath, "", manifestPath);
+	return muxingPath.endsWith("/") ? relative : relative.replace(/\/$/, "");
 }
 
 /**

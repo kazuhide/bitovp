@@ -12,6 +12,7 @@ import {
 	loadEnv,
 	ociCompatHost,
 	parseSecretEgressAllowlist,
+	relativeSegmentPath,
 } from "@bitovp/core";
 import type { ExecutorContext } from "../executor";
 import type {
@@ -415,15 +416,9 @@ export function drmKindOf(
 	return kind;
 }
 
-/**
- * encoding examples `_remove_output_base_path` semantics, slash-hardened like
- * core's relativeSegmentPath (reimplemented locally — core internals are
- * not part of the worker contract): the base is slash-terminated before
- * comparison so `output/x` cannot strip a sibling `output/x2/...` prefix.
- */
+/** Keep run-time Per-Title references consistent with static manifests. */
 export function stripBasePath(path: string, base: string): string {
-	const slashed = base === "" || base.endsWith("/") ? base : `${base}/`;
-	return path.startsWith(slashed) ? path.slice(slashed.length) : path;
+	return relativeSegmentPath(path, base);
 }
 
 /** core joinFilePath semantics (smooth mediaFile = dir + filename). */

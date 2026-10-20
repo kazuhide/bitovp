@@ -758,8 +758,8 @@ export function validateLiveChannel(
 				}
 			}
 		}
-		// Mirrors PLAN_SEGMENT_PATH_NOT_UNDER_MANIFEST: segment paths the
-		// manifest cannot strip are emitted absolute → broken players.
+		// Flag references outside this manifest directory, matching the VOD rail.
+		// The compiler resolves these through parent or absolute paths.
 		const raw = manifest.destination.path;
 		const base = raw === "" || raw.endsWith("/") ? raw : `${raw}/`;
 		const outside = selected
@@ -772,7 +772,7 @@ export function validateLiveChannel(
 			issues.push({
 				code: "LIVE_SEGMENT_PATH_NOT_UNDER_MANIFEST",
 				level: "warning",
-				message: `muxing(s) ${outside.join(", ")} write outside liveManifest "${manifest.key}" base path — their segment paths will be emitted absolute`,
+				message: `muxing(s) ${outside.join(", ")} write outside liveManifest "${manifest.key}" base path — their segment references use parent or absolute paths`,
 				path: `liveManifests[${index}].destination.path`,
 			});
 		}

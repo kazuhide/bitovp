@@ -94,7 +94,10 @@ describe("CMAF compiled worker execution", () => {
 		expect(ctx.sdk.createDashFmp4Representation).not.toHaveBeenCalled();
 	});
 
-	it("expands per-title CMAF results using their own representation endpoint", async () => {
+	it.each([
+		["out/", "video/360p/"],
+		["out/manifests/dash", "../../video/360p/"],
+	])("expands per-title CMAF results relative to %s using their own endpoint", async (stripBase, segmentPath) => {
 		const op: CompiledOperation = {
 			kind: "CREATE_DASH_PER_TITLE_REPRESENTATIONS",
 			step: "dash:result",
@@ -103,7 +106,7 @@ describe("CMAF compiled worker execution", () => {
 				streamModeFilter: "PER_TITLE_RESULT",
 				type: "TEMPLATE",
 				mode: "TEMPLATE_REPRESENTATION",
-				stripBase: "out/",
+				stripBase,
 			},
 			refs: {
 				encodingId: "encoding",
@@ -134,7 +137,7 @@ describe("CMAF compiled worker execution", () => {
 			{
 				type: "TEMPLATE",
 				mode: "TEMPLATE_REPRESENTATION",
-				segmentPath: "video/360p/",
+				segmentPath,
 				encodingId: "provider:encoding",
 				muxingId: "mux-result",
 			},

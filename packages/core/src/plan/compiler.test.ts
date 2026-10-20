@@ -330,13 +330,55 @@ describe("compilePlan golden fixtures", () => {
 	});
 });
 
+describe("nested VOD manifest directories", () => {
+	it.each([
+		"fixed-bitrate-hls-on-aws",
+		"cenc-cbc-drm-on-aws",
+	])("references the selected clear or DRM destination in %s", (name) => {
+		const plan = loadPlan(name);
+		for (const manifest of plan.manifests)
+			manifest.destination.path = `${manifest.destination.path.replace(/\/$/, "")}/${manifest.key}-2`;
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const entries = compilePlan(plan).filter(
+			(operation) => typeof operation.payload.segmentPath === "string",
+		);
+		expect(entries.length).toBeGreaterThan(0);
+		for (const operation of entries) {
+			const manifest = plan.manifests.find(
+				(entry) => `manifest:${entry.key}` === operation.refs.manifestId,
+			);
+			const muxing = plan.muxings.find(
+				(entry) => `muxing:${entry.key}` === operation.refs.muxingId,
+			);
+			const drm = manifest?.drmKind
+				? plan.drm.find(
+						(entry) =>
+							entry.muxingKey === muxing?.key &&
+							entry.kind === manifest.drmKind,
+					)
+				: undefined;
+			const destination = drm?.destination ?? muxing?.destination;
+			if (!manifest || !destination) throw new Error("Missing VOD destination");
+			expect(String(operation.payload.segmentPath)).toMatch(/^\.\.\//);
+			expect(
+				new URL(
+					`${operation.payload.segmentPath}/seg.m4s`,
+					`https://delivery.example/published/${manifest.destination.path}/stream.m3u8`,
+				).href,
+			).toBe(`https://delivery.example/published/${destination.path}/seg.m4s`);
+		}
+	});
+});
+
 describe("relativeSegmentPath", () => {
-	it("strips the manifest base path like _remove_output_base_path", () => {
+	it("resolves descendant and unrelated directories from the manifest base", () => {
 		expect(relativeSegmentPath("output/x/video/360p", "output/x/")).toBe(
 			"video/360p",
 		);
 		expect(relativeSegmentPath("elsewhere/video/360p", "output/x/")).toBe(
-			"elsewhere/video/360p",
+			"../../elsewhere/video/360p",
 		);
 	});
 
@@ -348,7 +390,33 @@ describe("relativeSegmentPath", () => {
 
 	it("does not strip sibling prefixes", () => {
 		expect(relativeSegmentPath("output/x2/video/360p", "output/x")).toBe(
-			"output/x2/video/360p",
+			"../x2/video/360p",
+		);
+	});
+	it.each([
+		["output/x/video/720p", "output/x/hls-2", "../video/720p"],
+		["output/x/audio/128000", "output/x/hls-2", "../audio/128000"],
+		["output/video/", "output/manifests/hls", "../../video/"],
+		["output", "output/hls", ".."],
+		["output/x", "output/x", ""],
+		["", "output/x", "../.."],
+		["video/720p", "", "video/720p"],
+		["/assets/video/", "output/x", "/assets/video/"],
+		[
+			"https://media.example/video/",
+			"output/x",
+			"https://media.example/video/",
+		],
+		["//media.example/video/", "output/x", "//media.example/video/"],
+	])("resolves segment directory %s from %s", (target, base, expected) => {
+		const actual = relativeSegmentPath(target, base);
+		expect(actual).toBe(expected);
+		const delivery = "https://delivery.example/published/";
+		const child = `${actual}${actual && !actual.endsWith("/") ? "/" : ""}seg.m4s`;
+		const source = `${target}${target && !target.endsWith("/") ? "/" : ""}seg.m4s`;
+		const master = `${base}${base && !base.endsWith("/") ? "/" : ""}stream.m3u8`;
+		expect(new URL(child, new URL(master, delivery)).href).toBe(
+			new URL(source, delivery).href,
 		);
 	});
 });

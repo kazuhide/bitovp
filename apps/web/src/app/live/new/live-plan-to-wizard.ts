@@ -321,9 +321,12 @@ function outputState(
 	const publicRead = plan.liveManifests.some(
 		(m) => m.destination.acl === "PUBLIC_READ",
 	);
-	const privateAcl = plan.liveManifests.some(
-		(m) => m.destination.acl === "PRIVATE",
-	)
+	// Origins generate their own manifests, so segmented media must also carry
+	// this setting through readback. A progressive archive has an independent ACL.
+	const privateAcl = [
+		...plan.liveManifests,
+		...plan.muxings.filter((m) => m.kind !== "MP4"),
+	].some((m) => m.destination?.acl === "PRIVATE")
 		? { explicitPrivateAcl: true }
 		: {};
 	if (!o) {
@@ -348,6 +351,7 @@ function outputState(
 			...D.output,
 			basePath: base,
 			publicRead: false,
+			...privateAcl,
 			kind: o.kind,
 			credentialId: o.credentialId,
 			name: o.name,

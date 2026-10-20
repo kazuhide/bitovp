@@ -117,4 +117,44 @@ describe("Live wizard explicit settings", () => {
 		plan.liveManifests[0].destination.acl = "PRIVATE";
 		expect(tryImportLiveChannelIntoWizard(plan).ok).toBe(false);
 	});
+
+	it.each([
+		"FMP4",
+		"CMAF",
+	] as const)("preserves private %s delivery when switching to an Origin without manifests", (container) => {
+		const plan = channel();
+		for (const entry of [...plan.muxings, ...plan.liveManifests]) {
+			if (entry.destination) entry.destination.acl = "PRIVATE";
+		}
+		const state = planToLiveWizardState(plan);
+		state.output = {
+			...state.output,
+			kind: "LIVE_MEDIA_INGEST",
+			credentialId: "00000000-0000-4000-8000-000000000001",
+			name: "Origin",
+		};
+		state.manifests.hls.enabled = false;
+		state.manifests.dash.enabled = false;
+		for (const row of [...state.videos, ...state.audios]) {
+			row.container = container;
+		}
+		const origin = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
+		expect(origin.liveManifests).toEqual([]);
+		expect(origin.muxings.every((m) => m.destination?.acl === "PRIVATE")).toBe(
+			true,
+		);
+		expect(
+			validateLiveChannel(origin).filter((i) => i.level === "error"),
+		).toEqual([]);
+		expect(tryImportLiveChannelIntoWizard(origin).ok).toBe(true);
+		expect(
+			liveChannelPlanSchema.parse(
+				buildLiveChannelPlan(planToLiveWizardState(origin)),
+			),
+		).toEqual(origin);
+		const firstDestination = origin.muxings[0]?.destination;
+		if (!firstDestination) throw new Error("missing segmented destination");
+		delete firstDestination.acl;
+		expect(tryImportLiveChannelIntoWizard(origin).ok).toBe(false);
+	});
 });

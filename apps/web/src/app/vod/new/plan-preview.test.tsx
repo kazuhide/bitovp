@@ -54,6 +54,61 @@ const completeState: WizardState = {
 };
 
 describe("evaluateWizardState (plan preview state)", () => {
+	it.each([
+		"ja",
+		"en",
+	] as const)("blocks shared clear OnDemand MP4 with separate-plan guidance in %s", (locale) => {
+		const plan = buildPlan(completeState);
+		const firstMuxing = plan.muxings[0];
+		const output = plan.outputs[0];
+		if (!firstMuxing || !output) throw Error("fixture");
+		plan.muxings = plan.muxings.map((muxing) => ({
+			key: muxing.key,
+			kind: "MP4",
+			streamKey: muxing.streamKey,
+			filename: `${muxing.key}.mp4`,
+			fragmentDuration: 2000,
+			manifestType: "DASH_ON_DEMAND",
+			destination: muxing.destination,
+		}));
+		plan.drm = [
+			{
+				key: "test-cenc",
+				kind: "CENC",
+				muxingKey: firstMuxing.key,
+				credentialId: "00000000-0000-4000-8000-000000000003",
+				kid: "0123456789abcdef0123456789abcdef",
+				destination: { outputKey: output.key, path: "encrypted" },
+			},
+		];
+		plan.manifests = [
+			{
+				key: "clear",
+				kind: "DASH",
+				name: "Clear OnDemand",
+				manifestName: "clear.mpd",
+				profile: "ON_DEMAND",
+				destination: { outputKey: output.key, path: "" },
+			},
+		];
+		const evaluation = evaluatePlanDocument(plan);
+		if (!evaluation.ok) throw Error("parseable fixture");
+		expect(evaluation.opCount).toBe(0);
+		expect(evaluation.issues).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_DASH_ONDEMAND_CLEAR_DRM",
+				level: "error",
+			}),
+		);
+		render(<PlanPreview evaluation={evaluation} />, locale);
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? /暗号化の有無でエンコード設定を分け/
+					: /For clear OnDemand DASH/,
+			),
+		).toBeInTheDocument();
+	});
 	it("accepts imported GenericS3 with either provider and keeps its raw document", () => {
 		const raw = buildPlan({
 			...completeState,

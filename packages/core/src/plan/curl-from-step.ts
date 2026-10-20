@@ -12,8 +12,9 @@ import type { StepLogEntry } from "./steplog";
  * source of truth — keep these in lockstep). Path params (`{encodingId}`,
  * `{manifestId}`, `{muxingId}`, `{periodId}`, `{adaptationSetId}`,
  * `{streamId}`, `{streamInfoId}`, `{representationId}`) are filled from the
- * step's RESOLVED refs (the executor stores `entry.refs` resolved to Bitmovin
- * ids). DRM endpoints additionally splice a `{muxingKind}` path segment read
+ * step's references. MP4 and ContentProtection use resolved IDs from the
+ * persisted `request.refs` snapshot, rather than compiled step references.
+ * DRM endpoints additionally splice a `{muxingKind}` path segment read
  * from the (redacted) payload.
  *
  * Secret-free by construction:
@@ -571,6 +572,78 @@ export function curlForStep(
 	if (!endpoint) {
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
+	let request = entry.request;
+	if (
+		entry.kind === "CREATE_DASH_REPRESENTATION_MP4" ||
+		entry.kind === "CREATE_DASH_CONTENT_PROTECTION"
+	) {
+		// These variants assemble their SDK body from resolved request refs;
+		// entry.refs still names the compiler's producing steps.
+		const snapshot =
+			request !== null && typeof request === "object" && !Array.isArray(request)
+				? (request as Record<string, unknown>)
+				: {};
+		const refs =
+			snapshot.refs !== null &&
+			typeof snapshot.refs === "object" &&
+			!Array.isArray(snapshot.refs)
+				? (snapshot.refs as Record<string, unknown>)
+				: {};
+		const contentProtection = entry.kind === "CREATE_DASH_CONTENT_PROTECTION";
+		const encrypted =
+			contentProtection ||
+			"drmId" in entry.refs ||
+			Object.hasOwn(refs, "drmId");
+		const resolved: Record<string, string> = {};
+		for (const key of [
+			"manifestId",
+			"periodId",
+			"adaptationSetId",
+			"encodingId",
+			"muxingId",
+			...(contentProtection ? ["representationId"] : []),
+			...(encrypted ? ["drmId"] : []),
+		]) {
+			const value = refs[key];
+			if (typeof value !== "string" || value.length === 0)
+				return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+			resolved[key] = value;
+		}
+		entry = { ...entry, refs: resolved };
+		const bodyRefs = {
+			encodingId: resolved.encodingId,
+			muxingId: resolved.muxingId,
+			...(encrypted ? { drmId: resolved.drmId } : {}),
+		};
+		if (contentProtection) {
+			const kind = entry.payload.representationKind;
+			if (kind !== undefined && kind !== "FMP4" && kind !== "WEBM")
+				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+			if (kind === "WEBM")
+				endpoint = {
+					...endpoint,
+					template: endpoint.template.replace(
+						"/representations/fmp4/",
+						"/representations/webm/",
+					),
+				};
+			request = { typeDiscriminator: "CONTENT_PROTECTION", ...bodyRefs };
+		} else {
+			if (
+				typeof snapshot.filePath !== "string" ||
+				snapshot.filePath.length === 0
+			)
+				return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+			if (encrypted)
+				endpoint = { ...endpoint, template: `${endpoint.template}/drm` };
+			request = {
+				typeDiscriminator: encrypted ? "DRM_MP4" : "MP4",
+				type: snapshot?.type,
+				filePath: snapshot?.filePath,
+				...bodyRefs,
+			};
+		}
+	}
 	const path = fillTemplate(endpoint.template, entry);
 	if (path === null) {
 		return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
@@ -591,9 +664,9 @@ export function curlForStep(
 		lines.push(
 			`  -H ${shellSingleQuote(`X-BITMOVIN-BCF-VERSION: ${entry.payload.bcfVersion}`)}`,
 		);
-	const body = hasBody(endpoint.method, entry.request)
+	const body = hasBody(endpoint.method, request)
 		? curlBody(
-				entry.request,
+				request,
 				entry.kind === "START_LIVE_ENCODING",
 				entry.kind === "CREATE_FILTER_WATERMARK",
 			)

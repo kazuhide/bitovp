@@ -4008,6 +4008,8 @@ export const ja = {
 			"画質プリセットを使う場合は、「エンコーディング開始オプション」の「エンコーディングモード」を「(既定)」に戻してください。",
 		mixedEncodingModeGuidance:
 			"動画コーデックごとの別ジョブを推奨します。複数のコーデックを同じジョブで使う場合は、プリセットなしの明示設定と共通のエンコーディングモードが必要です。",
+		onDemandClearDrmGuidance:
+			"OnDemand DASH の MP4 は、暗号化の有無でエンコード設定を分けてください。DRM が付いた MP4 muxing を、暗号化しないマニフェストから参照することはできません。",
 		encryptionMode: "暗号化モード",
 		endPictureTiming: "終了ピクチャタイミング",
 		endTimecode: "終了タイムコード",

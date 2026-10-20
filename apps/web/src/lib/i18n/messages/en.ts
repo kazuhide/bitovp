@@ -4054,6 +4054,8 @@ export const en = {
 			"When using a quality preset, set Encoding start options > Encoding mode back to (default).",
 		mixedEncodingModeGuidance:
 			"Prefer one video codec per job. Advanced mixed-codec jobs require explicit settings without presets and a common encoding mode.",
+		onDemandClearDrmGuidance:
+			"For clear OnDemand DASH, use MP4 muxings without DRM. Put clear and encrypted MP4 outputs in separate encoding plans.",
 		encryptionMode: "Encryption mode",
 		endPictureTiming: "End picture timing",
 		endTimecode: "End timecode",

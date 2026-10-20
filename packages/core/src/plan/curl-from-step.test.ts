@@ -330,28 +330,28 @@ describe("every operation kind is classified", () => {
 	 * evidence. `START_LIVE_ENCODING` is the one uncovered kind with a path param,
 	 * which makes it the one most worth a real fixture.
 	 */
-	/** A minimal well-formed entry: `canCurlStep` reads refs and payload. */
-	const stub = (kind: string): StepLogEntry =>
-		({
+	/** A minimal completed entry with resolved request refs for manifest copies. */
+	const stub = (kind: string): StepLogEntry => {
+		const refs = {
+			encodingId: "enc",
+			manifestId: "man",
+			streamId: "str",
+			streamInfoId: "sinf",
+			muxingId: "mux",
+			periodId: "per",
+			adaptationSetId: "ada",
+			representationId: "rep",
+			drmId: "drm",
+		};
+		return {
 			step: kind,
-			kind,
+			kind: kind as StepLogEntry["kind"],
 			payload: { muxingKind: "FMP4" },
-			// Every path param any template uses (`:param` in ENDPOINTS), so "no
-			// curl" means the kind is genuinely unmapped rather than this stub
-			// merely lacking an id. muxingKind rides the payload, not refs.
-			refs: {
-				encodingId: "enc",
-				manifestId: "man",
-				streamId: "str",
-				streamInfoId: "sinf",
-				muxingId: "mux",
-				periodId: "per",
-				adaptationSetId: "ada",
-				representationId: "rep",
-				drmId: "drm",
-			},
+			refs,
+			request: { type: "SEGMENT_BASE", filePath: "video.mp4", refs },
 			status: "DONE",
-		}) as unknown as StepLogEntry;
+		};
+	};
 
 	it("is exhaustive over OPERATION_KINDS", () => {
 		const unclassified = OPERATION_KINDS.filter(
@@ -375,5 +375,179 @@ describe("every operation kind is classified", () => {
 			canCurlStep(stub(kind)),
 		);
 		expect(contradictory).toEqual([]);
+	});
+});
+
+describe("OnDemand MP4 cURL from persisted resolved request refs", () => {
+	const payload = { type: "SEGMENT_BASE", filePath: "encrypted/video.mp4" };
+	const resolved = {
+		manifestId: "manifest-id",
+		periodId: "period-id",
+		adaptationSetId: "set-id",
+		encodingId: "encoding-id",
+		muxingId: "muxing-id",
+		drmId: "drm-id",
+	};
+	function mp4(encrypted = true, refs: Record<string, unknown> = resolved) {
+		return step({
+			kind: "CREATE_DASH_REPRESENTATION_MP4",
+			payload,
+			refs: {
+				manifestId: "manifest:dash",
+				periodId: "manifest:dash:period",
+				adaptationSetId: "manifest:dash:aset-video",
+				encodingId: "encoding",
+				muxingId: "muxing:video",
+				...(encrypted ? { drmId: "drm:video" } : {}),
+			},
+			request: {
+				...payload,
+				refs: encrypted
+					? refs
+					: Object.fromEntries(
+							Object.entries(refs).filter(([key]) => key !== "drmId"),
+						),
+			},
+		});
+	}
+	it("uses the DRM MP4 endpoint and all required resolved body references", () => {
+		const result = curlForStep(mp4());
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.command).toContain(
+			"/dash/manifest-id/periods/period-id/adaptationsets/set-id/representations/mp4/drm'",
+		);
+		expect(result.command).toContain('"drmId": "drm-id"');
+		expect(result.command).toContain('"encodingId": "encoding-id"');
+		expect(result.command).toContain('"muxingId": "muxing-id"');
+		expect(result.command).toContain('"filePath": "encrypted/video.mp4"');
+		expect(result.command).not.toContain('"refs"');
+		expect(result.command).not.toContain("manifest:dash");
+		expect(result.command).not.toContain("drm:video");
+	});
+	it("keeps clear MP4 on the plain endpoint without a DRM ID", () => {
+		const result = curlForStep(mp4(false));
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.command).toContain(
+			"/dash/manifest-id/periods/period-id/adaptationsets/set-id/representations/mp4'",
+		);
+		expect(result.command).toContain('"encodingId": "encoding-id"');
+		expect(result.command).toContain('"muxingId": "muxing-id"');
+		expect(result.command).not.toContain('"drmId"');
+		expect(result.command).not.toContain("/mp4/drm");
+	});
+	it.each([
+		"manifestId",
+		"periodId",
+		"adaptationSetId",
+		"encodingId",
+		"muxingId",
+		"drmId",
+	])("does not fall back to compiled references when resolved %s is missing", (missing) => {
+		const refs = Object.fromEntries(
+			Object.entries(resolved).filter(([key]) => key !== missing),
+		);
+		expect(curlForStep(mp4(true, refs))).toEqual({
+			ok: false,
+			code: "UNRESOLVED_PATH_PARAMS",
+			kind: "CREATE_DASH_REPRESENTATION_MP4",
+		});
+	});
+	it.each([
+		undefined,
+		null,
+		"",
+		["not-a-path"],
+	])("rejects a missing or malformed MP4 file path (%s)", (filePath) => {
+		const entry = mp4();
+		entry.request = { ...payload, filePath, refs: resolved };
+		expect(curlForStep(entry)).toEqual({
+			ok: false,
+			code: "UNRESOLVED_PATH_PARAMS",
+			kind: entry.kind,
+		});
+	});
+	it.each([
+		null,
+		"",
+		["not-a-scalar"],
+	])("rejects a malformed resolved DRM ID (%s)", (drmId) => {
+		expect(curlForStep(mp4(true, { ...resolved, drmId }))).toEqual({
+			ok: false,
+			code: "UNRESOLVED_PATH_PARAMS",
+			kind: "CREATE_DASH_REPRESENTATION_MP4",
+		});
+	});
+});
+
+describe("DASH ContentProtection cURL from resolved request refs", () => {
+	const resolved = {
+		manifestId: "manifest-id",
+		periodId: "period-id",
+		adaptationSetId: "set-id",
+		representationId: "representation-id",
+		encodingId: "encoding-id",
+		muxingId: "muxing-id",
+		drmId: "drm-id",
+	};
+	function cp(
+		representationKind: unknown,
+		refs: Record<string, unknown> = resolved,
+	) {
+		const payload =
+			representationKind === undefined ? {} : { representationKind };
+		return step({
+			kind: "CREATE_DASH_CONTENT_PROTECTION",
+			payload,
+			refs: Object.fromEntries(
+				Object.keys(resolved).map((key) => [key, `step:${key}`]),
+			),
+			request: { ...payload, refs },
+		});
+	}
+	it.each([
+		undefined,
+		"FMP4",
+		"WEBM",
+	])("reconstructs the exact %s endpoint and SDK body without selectors", (kind) => {
+		const result = curlForStep(cp(kind));
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.command).toContain(
+			`/dash/manifest-id/periods/period-id/adaptationsets/set-id/representations/${kind === "WEBM" ? "webm" : "fmp4"}/representation-id/contentprotection'`,
+		);
+		expect(result.command).toContain(
+			'"typeDiscriminator": "CONTENT_PROTECTION"',
+		);
+		expect(result.command).toContain('"drmId": "drm-id"');
+		expect(result.command).toContain('"encodingId": "encoding-id"');
+		expect(result.command).toContain('"muxingId": "muxing-id"');
+		expect(result.command).not.toContain('"representationKind"');
+		expect(result.command).not.toContain('"refs"');
+		expect(result.command).not.toContain("step:");
+	});
+	it.each(
+		Object.keys(resolved),
+	)("fails closed when resolved %s is missing", (missing) => {
+		const refs = Object.fromEntries(
+			Object.entries(resolved).filter(([key]) => key !== missing),
+		);
+		expect(curlForStep(cp("WEBM", refs))).toEqual({
+			ok: false,
+			code: "UNRESOLVED_PATH_PARAMS",
+			kind: "CREATE_DASH_CONTENT_PROTECTION",
+		});
+	});
+	it.each([
+		"MP4",
+		"unknown",
+		null,
+	])("does not guess an endpoint for unsupported representationKind %s", (kind) => {
+		expect(curlForStep(cp(kind))).toEqual({
+			ok: false,
+			code: "NO_ENDPOINT",
+			kind: "CREATE_DASH_CONTENT_PROTECTION",
+		});
 	});
 });

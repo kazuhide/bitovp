@@ -85,6 +85,8 @@ function friendlyIssueMessage(issue: PlanIssue, t: Translator): string {
 		return t("wizard.encodingModePresetConflict");
 	if (issue.code === "PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS")
 		return t("wizard.mixedEncodingModeGuidance");
+	if (issue.code === "PLAN_DASH_ONDEMAND_CLEAR_DRM")
+		return t("wizard.onDemandClearDrmGuidance");
 	if (
 		issue.code === "PLAN_DUPLICATE_KEY" &&
 		(issue.path === "renditions" || issue.path === "muxings")

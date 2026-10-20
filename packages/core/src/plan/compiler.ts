@@ -2725,20 +2725,21 @@ function compileDashManifest(
 				encodingId: encStepFor(rendition.key),
 				muxingId: `muxing:${muxing.key}`,
 			};
+			const repStep = `${manifestStep}:rep:${muxing.key}`;
 			ops.push(
 				onDemand && muxing.kind === "MP4"
 					? {
-							step: `${manifestStep}:rep:${muxing.key}`,
+							step: repStep,
 							kind: "CREATE_DASH_REPRESENTATION_MP4",
 							payload: {
 								type: "SEGMENT_BASE",
 								filePath: joinFilePath(base, muxing.filename),
 							},
-							refs: setRefs,
+							refs: { ...setRefs, ...(drm ? { drmId: `drm:${drm.key}` } : {}) },
 						}
 					: muxing.kind === "WEBM"
 						? {
-								step: `${manifestStep}:rep:${muxing.key}`,
+								step: repStep,
 								// The vendor's own VP9 sample: DashWebmRepresentation, TEMPLATE
 								// type, segment path — no `mode` field on this model.
 								kind: "CREATE_DASH_REPRESENTATION_WEBM",
@@ -2749,7 +2750,7 @@ function compileDashManifest(
 								refs: setRefs,
 							}
 						: {
-								step: `${manifestStep}:rep:${muxing.key}`,
+								step: repStep,
 								kind:
 									muxing.kind === "CMAF"
 										? "CREATE_DASH_REPRESENTATION_CMAF"
@@ -2762,6 +2763,18 @@ function compileDashManifest(
 								refs: setRefs,
 							},
 			);
+			if (drm && !(onDemand && muxing.kind === "MP4")) {
+				ops.push({
+					step: `${repStep}:cp`,
+					kind: "CREATE_DASH_CONTENT_PROTECTION",
+					payload: muxing.kind === "WEBM" ? { representationKind: "WEBM" } : {},
+					refs: {
+						...setRefs,
+						representationId: repStep,
+						drmId: `drm:${drm.key}`,
+					},
+				});
+			}
 		}
 		return ops;
 	}
@@ -2826,8 +2839,8 @@ function compileDashManifest(
 	}
 
 	for (const { muxing, rendition } of dashMuxings) {
-		// DRM'd reps point at the DRM resource's output and gain a
-		// ContentProtection child (the scripts add it per representation).
+		// Encrypted representations use the DRM output. OnDemand MP4 binds
+		// DRM directly; segmented representations use a ContentProtection child.
 		const drm = manifest.drmKind
 			? plan.drm.find(
 					(d) => d.muxingKey === muxing.key && d.kind === manifest.drmKind,
@@ -2856,7 +2869,7 @@ function compileDashManifest(
 							type: "SEGMENT_BASE",
 							filePath: joinFilePath(repBase, muxing.filename),
 						},
-						refs: repRefs,
+						refs: { ...repRefs, ...(drm ? { drmId: `drm:${drm.key}` } : {}) },
 					}
 				: muxing.kind === "WEBM"
 					? {
@@ -2882,7 +2895,7 @@ function compileDashManifest(
 							refs: repRefs,
 						},
 		);
-		if (drm) {
+		if (drm && !(onDemand && muxing.kind === "MP4")) {
 			ops.push({
 				step: `${repStep}:cp`,
 				kind: "CREATE_DASH_CONTENT_PROTECTION",

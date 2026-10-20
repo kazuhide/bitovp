@@ -795,6 +795,10 @@ export function validatePlan(
 		});
 	}
 
+	const visionFormats = new Map<
+		string,
+		{ format: string; renditionKey: string }
+	>();
 	for (const [index, rendition] of plan.renditions.entries()) {
 		if (rendition.burnInSrt) {
 			if (!VIDEO_CODECS_FOR_MODE.has(rendition.codec))
@@ -859,6 +863,36 @@ export function validatePlan(
 					message: `${rendition.codec} requires a ${rendition.codec === "IMSC" ? "TTML" : "WEBVTT"} fileStream`,
 					path: `renditions[${index}].ingestKey`,
 				});
+		}
+		// A shared Dolby Vision input has one conversion format per encoding,
+		// including when a rendition consumes it through trimming/concatenation.
+		if (
+			(rendition.codec === "H265" || rendition.codec === "AV1") &&
+			rendition.dynamicRangeFormat !== undefined
+		) {
+			for (const key of inputStreamAncestry(plan, rendition.ingestKey) ?? []) {
+				const source = dolbyByKey.get(key);
+				if (
+					source?.kind !== "VISION" ||
+					source.encodingKey !== rendition.encodingKey
+				)
+					continue;
+				const identity = JSON.stringify([rendition.encodingKey ?? null, key]);
+				const previous = visionFormats.get(identity);
+				if (previous && previous.format !== rendition.dynamicRangeFormat) {
+					issues.push({
+						code: "PLAN_DOLBY_VISION_FORMAT_CONFLICT",
+						level: "error",
+						message: `Renditions "${previous.renditionKey}" and "${rendition.key}" request different dynamic range formats (${previous.format}, ${rendition.dynamicRangeFormat}) from Dolby Vision input stream "${key}" in the same encoding. Use a separate encoding for each format.`,
+						path: `renditions[${index}].dynamicRangeFormat`,
+					});
+				} else if (!previous) {
+					visionFormats.set(identity, {
+						format: rendition.dynamicRangeFormat,
+						renditionKey: rendition.key,
+					});
+				}
+			}
 		}
 		const dolbySource = dolbyByKey.get(rendition.ingestKey);
 		if (dolbySource) {
@@ -1911,6 +1945,40 @@ export function validatePlan(
 	// entry without drmId pointing at an empty path.
 	const videoCodecsForDrm = new Set(["H264", "H265", "VP9", "AV1"]);
 	for (const [mIndex, manifest] of plan.manifests.entries()) {
+		if (
+			manifest.kind === "DASH" &&
+			manifest.profile === "ON_DEMAND" &&
+			!manifest.drmKind
+		) {
+			for (const muxing of plan.muxings) {
+				const target = renditionByKey.get(muxing.streamKey);
+				if (
+					muxing.kind !== "MP4" ||
+					muxing.manifestType !== "DASH_ON_DEMAND" ||
+					!target ||
+					isPerTitleRendition(target) ||
+					!(
+						videoCodecsForDrm.has(target.codec) ||
+						AUDIO_CODECS.has(target.codec)
+					) ||
+					(manifest.adaptationSets?.length &&
+						!manifest.adaptationSets.some(
+							(set) => set.key === target.dashSetKey,
+						)) ||
+					!plan.drm.some((drm) => drm.muxingKey === muxing.key)
+				) {
+					continue;
+				}
+				// Shared MP4/DRM outputs can give clear OnDemand manifests the
+				// encrypted file's index ranges and protection metadata.
+				issues.push({
+					code: "PLAN_DASH_ONDEMAND_CLEAR_DRM",
+					level: "error",
+					message: `Clear OnDemand DASH manifest "${manifest.key}" selects MP4 muxing "${muxing.key}" with DRM. Put clear OnDemand MP4 and DRM outputs in separate encoding plans.`,
+					path: `manifests[${mIndex}]`,
+				});
+			}
+		}
 		if (!("drmKind" in manifest) || !manifest.drmKind) {
 			continue;
 		}

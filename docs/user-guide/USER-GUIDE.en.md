@@ -637,9 +637,11 @@ A slate is a still image or video inserted in place of the incoming program. It 
 5. Set the insertion time and duration.
 6. Confirm insertion and the return to the program in the actual output.
 
-Video must match the frame rate, resolution, audio sample rate, audio channels, codecs and other requirements. Supported sources can be converted to MPEG-TS. Successful MP4 registration or a `READY` state does not establish correct playback or audio timing during insertion.
+Use the incoming Live input as the compatibility reference for inserted video. Match its video codec, resolution and frame rate, with video at stream position 0. Match the number of audio streams and their sample format, channel count and sample rate. Supported sources can be converted to MPEG-TS. See [Bitmovin’s content requirements](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/models/InsertableContent.ts).
 
-A pre-program slate waits until the input connects. If the insertion window closes while input is still disconnected, it becomes `MISSED`. Cancelling a reservation and using “Emergency stop: inserted content” are separate operations: stopping the current insertion does not cancel other reservations.
+`READY` describes the registered asset’s preparation state. After registration or acceptance of a schedule request, confirm the actual broadcast by watching the output before, during and after insertion. Check both picture and sound, and the return to the live program.
+
+A pre-program slate waits until the input connects. If the insertion window closes while input is still disconnected, it becomes `MISSED`. To cancel a future insertion, cancel its reservation. To end the insertion currently playing, use “Emergency stop: inserted content”. [Stopping the current insertion](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/encoding/encodings/live/insertableContent/stop/StopApi.ts) does not cancel other reservations.
 
 ### Ad cues, SCTE-35, and ESAM
 
@@ -791,7 +793,7 @@ In a single report, “Open comparison preview” lets you select up to 2 VOD QC
 
 ### Frame boundaries and alignment
 
-Video and audio are not divided into units of the same duration. For AAC, 1 frame normally contains 1,024 samples, or about 21.33 milliseconds at 48 kHz. A 2-second interval corresponds to 93.75 audio frames, so a whole number of audio frames cannot fit exactly into every 2-second video interval. Encoder startup delay, end padding, timestamps and container edit information also affect the starting position and duration.
+Video and audio are not divided into units of the same duration. For AAC, 1 frame normally contains 1,024 samples, or about 21.33 milliseconds at 48 kHz. A 2-second interval corresponds to 93.75 audio frames, so a whole number of audio frames cannot fit exactly into every 2-second video interval. Encoder priming (startup delay), end padding and timestamps also affect the starting position and duration. Container trim information can exclude priming and padding from playback. See [Apple’s explanation of AAC track timing](https://developer.apple.com/documentation/quicktime-file-format/using_track_structures_to_represent_encode_delay_explictly).
 
 In the provider-encoded sample recorded on October 20, 2026, the joint MP4 had 10.000 seconds of video and 10.005 seconds of AAC audio. The concatenated AAC track in the separate fMP4 output contained 471 frames over 10.042667 seconds. Consider AAC frame boundaries, encoder delay and padding when interpreting these duration differences; they alone do not establish desynchronization.
 
@@ -1358,4 +1360,4 @@ The compatibility paths `/templates`, `/settings/basic`, `/verification`, and `/
 - [Authoring delivery presets](../DELIVERY-PRESET-AUTHORING.md)
 - [Source code for the features covered in this guide](https://github.com/kazuhide/bitovp/tree/56f230502efc35ef74e619fdc54eb71afd46f3ec)
 
-bitovp is published under the MIT license. The Japanese PDF uses [Noto Sans JP](https://github.com/google/fonts/tree/main/ofl/notosansjp), licensed under the SIL Open Font License 1.1.
+bitovp is published under the MIT license.

@@ -25,6 +25,3 @@ export type GuideChapterId = (typeof GUIDE_CHAPTERS)[number];
 export function guidePath(locale: SiteLocale, chapter?: GuideChapterId) {
 	return `${USER_GUIDE_URLS[locale]}${chapter ? `${chapter}/` : ""}`;
 }
-
-export const JAPANESE_GUIDE_PDF =
-	"https://github.com/kazuhide/bitovp/raw/refs/heads/main/docs/user-guide/bitovp-user-guide-ja.pdf";

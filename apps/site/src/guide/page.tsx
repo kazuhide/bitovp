@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { localePath, type SiteLocale } from "../site-config";
 import { SiteFooter, SiteHeader } from "../site-layout";
 import type { GuideChapter } from "./content";
-import { type GuideChapterId, guidePath, JAPANESE_GUIDE_PDF } from "./routes";
+import { type GuideChapterId, guidePath } from "./routes";
 
 const labels = {
 	en: {
@@ -13,7 +13,6 @@ const labels = {
 		contents: "On this page",
 		previous: "Previous chapter",
 		next: "Next chapter",
-		pdf: "Download the Japanese PDF",
 		intro:
 			"Instructions for configuring and running VOD and Live encodings, checking output, and managing the application.",
 		start:
@@ -36,7 +35,6 @@ const labels = {
 		contents: "この章の項目",
 		previous: "前の章",
 		next: "次の章",
-		pdf: "日本語ガイドをPDFで保存",
 		intro:
 			"VOD・Liveの設定と実行、出力の確認、アプリの管理について説明します。",
 		start:
@@ -180,9 +178,6 @@ export function renderGuidePage(
 								</a>
 							</>
 						) : null}
-						<a className="guide-pdf" href={JAPANESE_GUIDE_PDF}>
-							{copy.pdf}
-						</a>
 					</header>
 					{chapter ? (
 						<>

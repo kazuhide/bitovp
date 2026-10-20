@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { expect } from "@playwright/test";
 
 const publishedBase = "https://kazuhide.github.io/bitovp/";
-const japanesePdf =
-	"https://github.com/kazuhide/bitovp/raw/refs/heads/main/docs/user-guide/bitovp-user-guide-ja.pdf";
 const locales = {
 	en: { path: "", browserLocale: "en-US", title: "User guide" },
 	ja: { path: "ja/", browserLocale: "ja-JP", title: "ユーザーガイド" },
@@ -83,11 +81,12 @@ async function assertShell(page, base, locale, chapter, title) {
 		.locator("[id]")
 		.evaluateAll((nodes) => nodes.map((node) => node.id));
 	assert.equal(new Set(ids).size, ids.length, `${url}: IDs must be unique`);
-	assert.equal(await page.locator(".guide-pdf").count(), 1, url);
-	assert.equal(
-		await page.locator(".guide-pdf").getAttribute("href"),
-		japanesePdf,
-		`${url}: PDF link must retain the published Japanese PDF`,
+	const links = await page
+		.locator("a[href]")
+		.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("href")));
+	assert(
+		!links.some((href) => /\.pdf(?:[?#]|$)/i.test(href ?? "")),
+		`${url}: guides must not offer a PDF download`,
 	);
 	await assertGuideNavigation(page, base, locale);
 	const languageLinks = page.locator(".landing-language-switch a[hreflang]");

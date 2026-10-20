@@ -17,6 +17,7 @@ import {
 	readGuideSource,
 	renderChapter,
 } from "./content";
+import { renderGuidePage } from "./page";
 import { GUIDE_CHAPTERS, guidePath } from "./routes";
 
 const ROOT = realpathSync(
@@ -282,7 +283,7 @@ describe("guide public links", () => {
 		"/api/credentials",
 		"./VOD.md?token=example",
 		"../../README.md",
-		"./bitovp-user-guide-ja.pdf",
+		"./unsupported-attachment.pdf",
 	])("rejects non-public or unsupported link %s", (href) => {
 		expect(() => guideLink(href, SOURCE)).toThrow();
 	});
@@ -453,6 +454,16 @@ describe("guide HTML rendering", () => {
 });
 
 describe("published bilingual guides", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("publishes %s guide pages without PDF downloads", (locale) => {
+		const chapters = loadGuides()[locale];
+		for (const chapter of [undefined, ...GUIDE_CHAPTERS]) {
+			const html = renderGuidePage(locale, chapters, chapter);
+			expect(html).not.toMatch(/<a\b[^>]*\bhref="[^"]*\.pdf(?:[?#][^"]*)?"/i);
+		}
+	});
 	it.each([
 		"en",
 		"ja",

@@ -229,7 +229,8 @@ export type LiveStartState = {
 		hlsManifestsUpdateTimeout?: number;
 		dashManifestsUpdateTimeout?: number;
 		scheduleExpression: string;
-		restartOnEncoderError: boolean;
+		/** Undefined preserves an omitted provider setting; false disables it. */
+		restartOnEncoderError?: boolean;
 	};
 	autoShutdown: {
 		bytesReadTimeoutSeconds?: number;
@@ -319,6 +320,8 @@ export type LiveWizardState = {
 		 * is one switch, exactly as the VOD wizard treats it.
 		 */
 		publicRead: boolean;
+		/** Preserve imported PRIVATE ACLs separately from an unspecified ACL. */
+		explicitPrivateAcl?: boolean;
 		kind:
 			| "S3"
 			| "AZURE"
@@ -491,7 +494,7 @@ export const DEFAULT_LIVE_WIZARD_STATE: LiveWizardState = {
 		encodingOption: "AUTO",
 		streamKey: "",
 		liveEncodingMode: "",
-		autoRestart: { scheduleExpression: "", restartOnEncoderError: false },
+		autoRestart: { scheduleExpression: "" },
 		autoShutdown: {},
 		reupload: {},
 	},
@@ -1006,7 +1009,7 @@ function muxing(
 	container: "FMP4" | "CMAF" | "TS",
 	segmentLength: number,
 	path: string,
-	acl?: "PUBLIC_READ",
+	acl?: "PUBLIC_READ" | "PRIVATE",
 	/**
 	 * Akamai MSL refuses `live/start` unless every segment name matches
 	 * `[prefix]-{rand_chars[:number]}-%number%.[extension]` (code 2025,
@@ -1176,9 +1179,17 @@ function cacheControlSettings(
 	});
 }
 
+function outputAcl(output: LiveWizardState["output"]) {
+	return output.publicRead
+		? ("PUBLIC_READ" as const)
+		: output.explicitPrivateAcl
+			? ("PRIVATE" as const)
+			: undefined;
+}
+
 function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 	const base = liveBasePath(state);
-	const acl = state.output.publicRead ? ("PUBLIC_READ" as const) : undefined;
+	const acl = outputAcl(state.output);
 	// Re-audit 2026-08-29 BLOCKER-5 : an Akamai MSL4 manifest is
 	// published at the EVENT ROOT (the documented contract: empty, or a path
 	// with leading and trailing slashes — the empty form is the one the paid
@@ -1253,9 +1264,7 @@ export function buildLiveChannelPlan(
 		),
 	];
 
-	const segmentAcl = state.output.publicRead
-		? ("PUBLIC_READ" as const)
-		: undefined;
+	const segmentAcl = outputAcl(state.output);
 	// MSL's naming grammar is required whenever MSL is ANY destination — the
 	// mirror included (2026-08-23): a deliveryMirror writes the same segment
 	// names to the MSL side, so a storage-primary + MSL-mirror channel must
@@ -1428,9 +1437,7 @@ export function buildLiveChannelPlan(
 				hlsManifestsUpdateTimeout: s.autoRestart.hlsManifestsUpdateTimeout,
 				dashManifestsUpdateTimeout: s.autoRestart.dashManifestsUpdateTimeout,
 				scheduleExpression: str(s.autoRestart.scheduleExpression),
-				restartOnEncoderError: s.autoRestart.restartOnEncoderError
-					? true
-					: undefined,
+				restartOnEncoderError: s.autoRestart.restartOnEncoderError,
 			}),
 			autoShutdown: group({
 				bytesReadTimeoutSeconds: s.autoShutdown.bytesReadTimeoutSeconds,

@@ -28,6 +28,11 @@ New channels normally target Live HD where eligible. Settings outside that shape
 are identified as Custom Live before start. Account eligibility and provider
 acceptance still apply.
 
+Turning off **Restart on encoder error** sends an explicit disabled setting.
+An untouched control leaves an omitted setting unspecified. Import and duplicate
+also preserve explicitly private output permissions (`PRIVATE`); preview playback
+still needs authorized access to those files.
+
 The HLS live-edge offset delays segment publication; it is not the player's
 starting position. Blank uses the provider default, which can add latency.
 DASH suggested presentation delay and minimum update period use milliseconds in

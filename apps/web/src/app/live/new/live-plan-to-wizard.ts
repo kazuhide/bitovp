@@ -321,8 +321,16 @@ function outputState(
 	const publicRead = plan.liveManifests.some(
 		(m) => m.destination.acl === "PUBLIC_READ",
 	);
+	// Origins generate their own manifests, so segmented media must also carry
+	// this setting through readback. A progressive archive has an independent ACL.
+	const privateAcl = [
+		...plan.liveManifests,
+		...plan.muxings.filter((m) => m.kind !== "MP4"),
+	].some((m) => m.destination?.acl === "PRIVATE")
+		? { explicitPrivateAcl: true }
+		: {};
 	if (!o) {
-		return { ...D.output, basePath: base, publicRead };
+		return { ...D.output, basePath: base, publicRead, ...privateAcl };
 	}
 	/**
 	 * AKAMAI_MSL  is carried through verbatim and re-emitted by
@@ -343,6 +351,7 @@ function outputState(
 			...D.output,
 			basePath: base,
 			publicRead: false,
+			...privateAcl,
 			kind: o.kind,
 			credentialId: o.credentialId,
 			name: o.name,
@@ -356,6 +365,7 @@ function outputState(
 			...D.output,
 			basePath: base,
 			publicRead,
+			...privateAcl,
 			kind: "AKAMAI_MSL" as const,
 			credentialId: o.credentialId,
 			name: o.name ?? "",
@@ -394,6 +404,7 @@ function outputState(
 				: "",
 		kind: o.kind,
 		publicRead,
+		...privateAcl,
 		bucket: bucket ?? "",
 		basePath: base,
 		name: o.name ?? "",
@@ -517,7 +528,7 @@ function startState(
 						? { dashManifestsUpdateTimeout: ar.dashManifestsUpdateTimeout }
 						: {}),
 					scheduleExpression: ar.scheduleExpression ?? "",
-					restartOnEncoderError: ar.restartOnEncoderError === true,
+					restartOnEncoderError: ar.restartOnEncoderError,
 				}
 			: D.start.autoRestart,
 		autoShutdown: as

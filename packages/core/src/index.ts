@@ -851,7 +851,10 @@ export type {
 	SubmitSuccess,
 } from "./plan/submit";
 export { submitEncodingJob } from "./plan/submit";
-export { planToEncodingTemplateYaml } from "./plan/template";
+export {
+	encodingTemplateExportUnavailableReason,
+	planToEncodingTemplateYaml,
+} from "./plan/template";
 export type {
 	InstantiateTemplatePlanInput,
 	InstantiateTemplatePlanResult,

@@ -3790,6 +3790,8 @@ export const en = {
 		title: "Public ingress",
 	},
 	wizard: {
+		onDemandDrmTemplateUnavailable:
+			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",
 		spekeOtherSystems: "Other system IDs (optional)",
 		spekeProvider: "SPEKE key provider",

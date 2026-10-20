@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-10-20T23:27:52.549Z",
-		"sourceCommit": "06fd57861f26afaea222f94d7e467f9cfd2b14c6",
-		"sourceFingerprint": "0a8759e406f888c50df9c908a993596c9c51cf04994f871ad225acd45cdd30dd",
+		"generatedAt": "2026-10-20T23:52:06.016Z",
+		"sourceCommit": "a977ab606836420b208094b5ac1712d3a8139442",
+		"sourceFingerprint": "77e81656f564c1c3857aefb3362217993e01aff621cb070233e727bf7689175b",
 		"sdkVersion": "1.285.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "ca6c9cf0b84701c18888291145575997495d2201f2d8615f92660ddcf978b5ea",
@@ -12,10 +12,10 @@
 	},
 	"summary": {
 		"totalOperations": 1089,
-		"sourceConfirmed": 264,
-		"unconfirmed": 825,
+		"sourceConfirmed": 265,
+		"unconfirmed": 824,
 		"createTotal": 217,
-		"createSourceConfirmed": 116
+		"createSourceConfirmed": 117
 	},
 	"families": [
 		{
@@ -27,8 +27,8 @@
 		{
 			"family": "encodings",
 			"total": 421,
-			"sourceConfirmed": 89,
-			"unconfirmed": 332
+			"sourceConfirmed": 90,
+			"unconfirmed": 331
 		},
 		{
 			"family": "errorDefinitions",
@@ -1536,7 +1536,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 124
+					"line": 130
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
@@ -1608,7 +1608,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 419
+					"line": 425
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
@@ -2342,7 +2342,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 453
+					"line": 522
 				}
 			]
 		},
@@ -2356,7 +2356,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 465
+					"line": 534
 				}
 			]
 		},
@@ -2370,7 +2370,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 448
+					"line": 454
 				}
 			]
 		},
@@ -2384,7 +2384,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 200
+					"line": 206
 				}
 			]
 		},
@@ -2398,7 +2398,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 439
+					"line": 445
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
@@ -2444,7 +2444,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 199
+					"line": 205
 				}
 			]
 		},
@@ -2458,7 +2458,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 471
+					"line": 540
 				}
 			]
 		},
@@ -2490,7 +2490,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 558
+					"line": 627
 				}
 			]
 		},
@@ -2508,11 +2508,11 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/schedules/route.ts",
-					"line": 317
+					"line": 348
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 92
+					"line": 98
 				}
 			]
 		},
@@ -2530,7 +2530,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 661
+					"line": 730
 				}
 			]
 		},
@@ -2562,7 +2562,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 624
+					"line": 693
 				}
 			]
 		},
@@ -2590,7 +2590,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 481
+					"line": 550
 				}
 			]
 		},
@@ -2604,7 +2604,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 536
+					"line": 605
 				}
 			]
 		},
@@ -2614,8 +2614,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.encodings.live.updateAutoshutdownConfig.create",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/live.ts",
+					"line": 464
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/{muxing_id}",
@@ -7884,7 +7889,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 163
+					"line": 169
 				}
 			]
 		},
@@ -8410,7 +8415,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 505
+					"line": 574
 				}
 			]
 		},
@@ -20463,8 +20468,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 665,
-								"callLine": 661
+								"line": 734,
+								"callLine": 730
 							}
 						]
 					},
@@ -20549,8 +20554,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 486,
-								"callLine": 481
+								"line": 555,
+								"callLine": 550
 							}
 						]
 					},
@@ -20565,8 +20570,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 485,
-								"callLine": 481
+								"line": 554,
+								"callLine": 550
 							}
 						]
 					},
@@ -20581,8 +20586,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 484,
-								"callLine": 481
+								"line": 553,
+								"callLine": 550
 							}
 						]
 					},
@@ -20597,8 +20602,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 487,
-								"callLine": 481
+								"line": 556,
+								"callLine": 550
 							}
 						]
 					}
@@ -20623,8 +20628,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 539,
-								"callLine": 536
+								"line": 608,
+								"callLine": 605
 							}
 						]
 					},
@@ -20649,8 +20654,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 540,
-								"callLine": 536
+								"line": 609,
+								"callLine": 605
 							}
 						]
 					}
@@ -33793,8 +33798,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 167,
-								"callLine": 163
+								"line": 173,
+								"callLine": 169
 							}
 						]
 					},
@@ -33859,8 +33864,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 165,
-								"callLine": 163
+								"line": 171,
+								"callLine": 169
 							}
 						]
 					},
@@ -33875,8 +33880,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 166,
-								"callLine": 163
+								"line": 172,
+								"callLine": 169
 							}
 						]
 					}
@@ -35085,8 +35090,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/live.ts",
-								"line": 508,
-								"callLine": 505
+								"line": 577,
+								"callLine": 574
 							}
 						]
 					}

@@ -3746,6 +3746,26 @@ export const ja = {
 		title: "公開 ingress",
 	},
 	wizard: {
+		codecDarPair: "表示アスペクト比の分子と分母を両方設定してください。",
+		minGopFrames: "最小GOP長（フレーム）",
+		maxGopFrames: "最大GOP長（フレーム）",
+		openGop: "オープンGOP",
+		sarNumerator: "サンプルアスペクト比の分子",
+		sarDenominator: "サンプルアスペクト比の分母",
+		displayAspectRatio: "表示アスペクト比",
+		darNumerator: "表示アスペクト比の分子",
+		darDenominator: "表示アスペクト比の分母",
+		qp: "固定量子化係数（QP）",
+		strictCbr: "厳密なCBR（目標ビットレート方式）",
+		codecBitrateRange:
+			"コーデックの最小ビットレートは最大ビットレート以下にしてください（bps）。",
+		codecGopRange: "最小GOP長は最大GOP長以下にしてください（フレーム数）。",
+		codecSarPair: "サンプルアスペクト比の分子と分母を両方設定してください。",
+		codecAspectConflict:
+			"サンプルアスペクト比と表示アスペクト比は、どちらか一方を設定してください。",
+		codecQpRange: "量子化係数の最大値は最小値以上にしてください。",
+		codecStrictCbrMode:
+			"厳密なCBRでは目標ビットレートを設定し、CRFと固定QPを指定しないでください。",
 		crf: "固定品質係数（CRF、0〜51）",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { OpPayloadPopover } from "@/components/op-payload-popover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { codecControlIssueMessage } from "@/lib/i18n/codec-control";
 import type { Translator } from "@/lib/i18n/context";
 import { useT } from "@/lib/i18n/context";
 import { zodIssueMessage } from "@/lib/i18n/zod-issue-message";
@@ -82,6 +83,8 @@ export function evaluatePlanDocument(
 
 /** Plan-internal codes translated for ladder editors. */
 function friendlyIssueMessage(issue: PlanIssue, t: Translator): string {
+	const codecMessage = codecControlIssueMessage(issue.code, t);
+	if (codecMessage) return codecMessage;
 	if (issue.code === "PLAN_ENCODING_MODE_PRESET_CONFLICT")
 		return t("wizard.encodingModePresetConflict");
 	if (issue.code === "PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS")

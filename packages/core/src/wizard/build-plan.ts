@@ -1,3 +1,7 @@
+import {
+	type H26xPictureControls,
+	h26xPictureControls,
+} from "../plan/codec-controls";
 import { hlsLegSelected, hlsVersionForLegs } from "../plan/hls-legs";
 import type { QcGate } from "../plan/qc-gate";
 import {
@@ -314,7 +318,7 @@ export type WizardRenditionExtras = {
 	filters?: { filterKey: string; position: number }[];
 };
 
-export type WizardH264Options = {
+export type WizardH264Options = H26xPictureControls & {
 	crf?: number;
 	minBitrate?: number;
 	maxBitrate?: number;
@@ -346,7 +350,12 @@ export type WizardH264Options = {
 	colorConfig?: WizardColorConfig;
 };
 
-export type WizardH265Options = {
+export type WizardH265Options = H26xPictureControls & {
+	bframes?: number;
+	refFrames?: number;
+	qp?: number;
+	qpMax?: number;
+	strictCbr?: boolean;
 	crf?: number;
 	minBitrate?: number;
 	/** Native HEVCv2 controls; retained on codec changes for explicit validation. */
@@ -1712,6 +1721,12 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				bitrate,
 				mode: video.extras?.mode,
 				profile: o.profile,
+				...h26xPictureControls(o),
+				bframes: o.bframes,
+				refFrames: o.refFrames,
+				qp: o.qp,
+				qpMax: o.qpMax,
+				strictCbr: o.strictCbr,
 				crf: o.crf,
 				minBitrate: o.minBitrate,
 				level: str(o.level),
@@ -1819,6 +1834,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					: o.presetConfiguration,
 			mode: video.extras?.mode ?? ("STANDARD" as const),
 			profile: o.profile,
+			...h26xPictureControls(o),
 			crf: o.crf,
 			minBitrate: o.minBitrate,
 			maxBitrate: o.maxBitrate,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
+import { h26xPictureControlsSchema } from "./codec-controls";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
 	audioVolumeFilterSchema,
@@ -625,6 +626,7 @@ const codecEncodingModeSchema = z.enum([
 
 export const h264RenditionSchema = z.strictObject({
 	...renditionBase,
+	...h26xPictureControlsSchema.shape,
 	codec: z.literal("H264"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	/** Codec-config display name (sample default kept for golden fidelity). */
@@ -693,12 +695,19 @@ export type H265V2QualityControls = z.infer<typeof h265V2QualityControlsSchema>;
 
 export const h265RenditionSchema = z.strictObject({
 	...renditionBase,
+	...h26xPictureControlsSchema.shape,
 	...h265V2QualityControlsSchema.shape,
 	codec: z.literal("H265"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	name: z.string().optional(),
 	crf: z.number().min(0).max(51).optional(),
 	minBitrate: z.number().int().nonnegative().optional(),
+	width: z.number().int().positive().optional(),
+	bframes: z.number().int().min(0).max(16).optional(),
+	refFrames: z.number().int().min(0).max(16).optional(),
+	qp: z.number().int().min(0).max(51).optional(),
+	qpMax: z.number().int().min(0).max(69).optional(),
+	strictCbr: z.boolean().optional(),
 	/** HDR10 per-title template scales freely — height nullable. */
 	height: z.number().int().positive().nullable(),
 	bitrate: z.number().int().positive().nullable(),

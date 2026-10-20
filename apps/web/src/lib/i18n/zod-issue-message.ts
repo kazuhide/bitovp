@@ -36,6 +36,10 @@ export const SENTENCE_TO_KEY: ReadonlyMap<string, MessageKey> = new Map<
 	MessageKey
 >([
 	[
+		"Display aspect ratio requires both numerator and denominator",
+		"wizard.codecDarPair",
+	],
+	[
 		"Provide both Basic authentication username and password",
 		"zerr.spekeBasicPair",
 	],

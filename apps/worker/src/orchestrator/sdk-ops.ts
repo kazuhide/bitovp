@@ -99,6 +99,12 @@ export type ColorConfigParams = {
 
 /** Full compiler surface for CREATE_CODEC_H264 (enum fields carry NAMES). */
 export type H264ConfigParams = {
+	minGop?: number;
+	maxGop?: number;
+	openGop?: boolean;
+	sampleAspectRatioNumerator?: number;
+	sampleAspectRatioDenominator?: number;
+	displayAspectRatio?: { numerator?: number; denominator?: number };
 	crf?: number;
 	minBitrate?: number;
 	maxBitrate?: number;
@@ -136,6 +142,18 @@ export type H264ConfigParams = {
 
 /** Full compiler surface for CREATE_CODEC_H265 (subMe is numeric here). */
 export type H265ConfigParams = H265V2QualityControls & {
+	width?: number;
+	bframes?: number;
+	refFrames?: number;
+	qp?: number;
+	qpMax?: number;
+	strictCbr?: boolean;
+	minGop?: number;
+	maxGop?: number;
+	openGop?: boolean;
+	sampleAspectRatioNumerator?: number;
+	sampleAspectRatioDenominator?: number;
+	displayAspectRatio?: { numerator?: number; denominator?: number };
 	crf?: number;
 	minBitrate?: number;
 	internalHevcV2?: true;

@@ -9,17 +9,65 @@ import {
 	readWizardDraft,
 	writeWizardDraft,
 } from "@/lib/wizard-draft";
-import { renderWithQuery as render } from "@/test/render";
+import { renderWithQuery as render, renderLocalized } from "@/test/render";
 import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	type WizardH264Options,
 } from "./build-plan";
+import { evaluatePlanDocument, PlanPreview } from "./plan-preview";
 import { planToWizardState, tryImportPresetIntoWizard } from "./plan-to-wizard";
 import { addVodVideo } from "./rendition-copy";
 import { H264AdvancedEditor, H265AdvancedEditor } from "./rendition-editors";
 
 afterEach(() => localStorage.clear());
+
+it.each([
+	"en",
+	"ja",
+] as const)("blocks invalid codec operations with localized %s guidance", (locale) => {
+	const raw = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../packages/core/src/plan/__fixtures__/av1-fmp4-dash-hls.plan.json",
+			),
+			"utf8",
+		),
+	);
+	raw.renditions = raw.renditions.map(
+		(r: {
+			codec: string;
+			key: string;
+			ingestKey: string;
+			height: number;
+			bitrate: number;
+		}) =>
+			r.codec === "AV1"
+				? {
+						codec: "H264",
+						key: r.key,
+						ingestKey: r.ingestKey,
+						height: r.height,
+						bitrate: r.bitrate,
+						minBitrate: 900000,
+						maxBitrate: 800000,
+					}
+				: r,
+	);
+	const evaluation = evaluatePlanDocument(raw);
+	if (!evaluation.ok) throw new Error("Expected semantic validation");
+	expect(evaluation.ops).toHaveLength(0);
+	expect(evaluation.opCount).toBe(0);
+	renderLocalized(<PlanPreview evaluation={evaluation} />, locale);
+	expect(
+		screen.getAllByText(
+			locale === "ja"
+				? /コーデックの最小ビットレートは最大ビットレート以下/
+				: /Minimum codec bitrate must not exceed maximum codec bitrate/,
+		).length,
+	).toBeGreaterThan(0);
+});
 
 it.each([
 	"H264",
@@ -71,6 +119,13 @@ it.each([
 		minBitrate: 0,
 		maxBitrate: 900000,
 		bufsize: 1800000,
+		minGop: 0,
+		maxGop: 48,
+		openGop: false,
+		displayAspectRatio: { numerator: 16, denominator: 9 },
+		...(codec === "H265"
+			? { qp: 0, qpMax: 69, refFrames: 0, bframes: 0, strictCbr: false }
+			: {}),
 	};
 	raw.renditions = raw.renditions.map(
 		(r: {
@@ -109,8 +164,58 @@ it.each([
 	const field = codec === "H264" ? "h264" : "h265";
 	expect(duplicate[field]).toMatchObject(controls);
 	expect(duplicate[field]).not.toBe(original[field]);
+	expect(duplicate[field]?.displayAspectRatio).not.toBe(
+		original[field]?.displayAspectRatio,
+	);
 	const built = encodingPlanSchema.parse(buildPlan(copied));
 	expect(built.renditions.filter((r) => r.codec === codec)).toHaveLength(3);
 	for (const r of built.renditions.filter((r) => r.codec === codec))
 		expect(r).toMatchObject(controls);
+});
+
+it.each([
+	"H264",
+	"H265",
+] as const)("edits %s display ratio without dropping GOP false/zero", (codec) => {
+	function Editor() {
+		const [value, setValue] = useState<
+			Pick<WizardH264Options, "minGop" | "openGop" | "displayAspectRatio">
+		>({ minGop: 0, openGop: false });
+		return (
+			<>
+				{codec === "H264" ? (
+					<H264AdvancedEditor
+						idBase="ratio"
+						value={value}
+						onChange={setValue}
+					/>
+				) : (
+					<H265AdvancedEditor
+						idBase="ratio"
+						value={value}
+						onChange={setValue}
+						visionMetadataKeys={[]}
+					/>
+				)}
+				<output data-testid="controls">{JSON.stringify(value)}</output>
+			</>
+		);
+	}
+	render(<Editor />);
+	const numerator = screen.getByLabelText("Display aspect ratio numerator");
+	const denominator = screen.getByLabelText("Display aspect ratio denominator");
+	fireEvent.change(numerator, { target: { value: "16" } });
+	fireEvent.change(denominator, { target: { value: "9" } });
+	expect(
+		JSON.parse(screen.getByTestId("controls").textContent ?? "{}"),
+	).toEqual({
+		minGop: 0,
+		openGop: false,
+		displayAspectRatio: { numerator: 16, denominator: 9 },
+	});
+	fireEvent.change(numerator, { target: { value: "" } });
+	fireEvent.change(denominator, { target: { value: "" } });
+	expect(
+		JSON.parse(screen.getByTestId("controls").textContent ?? "{}"),
+	).toEqual({ minGop: 0, openGop: false });
 });

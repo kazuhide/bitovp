@@ -102,7 +102,56 @@ export function ColorConfigEditor({
 	);
 }
 
+const H26X_PICTURE_FIELDS: OptionFieldSpec[] = [
+	{ key: "minGop", labelKey: "wizard.minGopFrames", control: "num" },
+	{ key: "maxGop", labelKey: "wizard.maxGopFrames", control: "num" },
+	{ key: "openGop", labelKey: "wizard.openGop", control: "bool" },
+	{
+		key: "sampleAspectRatioNumerator",
+		labelKey: "wizard.sarNumerator",
+		control: "num",
+	},
+	{
+		key: "sampleAspectRatioDenominator",
+		labelKey: "wizard.sarDenominator",
+		control: "num",
+	},
+];
+const DAR_FIELDS: OptionFieldSpec[] = [
+	{ key: "numerator", labelKey: "wizard.darNumerator", control: "num" },
+	{ key: "denominator", labelKey: "wizard.darDenominator", control: "num" },
+];
+
+function DisplayAspectRatioEditor({
+	idBase,
+	value,
+	onChange,
+}: {
+	idBase: string;
+	value: WizardH264Options["displayAspectRatio"];
+	onChange: (ratio: WizardH264Options["displayAspectRatio"]) => void;
+}) {
+	const { t } = useT();
+	return (
+		<Collapsible summary={t("wizard.displayAspectRatio")}>
+			<OptionsGrid
+				idBase={`${idBase}-dar`}
+				value={value ?? {}}
+				fields={DAR_FIELDS}
+				onChange={(next) =>
+					onChange(
+						next.numerator !== undefined || next.denominator !== undefined
+							? next
+							: undefined,
+					)
+				}
+			/>
+		</Collapsible>
+	);
+}
+
 const H264_FIELDS: OptionFieldSpec[] = [
+	...H26X_PICTURE_FIELDS,
 	{ key: "crf", labelKey: "wizard.crf", control: "num" },
 	{ key: "minBitrate", labelKey: "wizard.minBitrateBps", control: "num" },
 	{ key: "maxBitrate", labelKey: "wizard.maxBitrateBps", control: "num" },
@@ -192,6 +241,12 @@ const H264_FIELDS: OptionFieldSpec[] = [
 ];
 
 const H265_FIELDS: OptionFieldSpec[] = [
+	...H26X_PICTURE_FIELDS,
+	{ key: "bframes", labelKey: "wizard.bFrames", control: "num" },
+	{ key: "refFrames", labelKey: "wizard.referenceFrames", control: "num" },
+	{ key: "qp", labelKey: "wizard.qp", control: "num" },
+	{ key: "qpMax", labelKey: "wizard.qpMax", control: "num" },
+	{ key: "strictCbr", labelKey: "wizard.strictCbr", control: "bool" },
 	{ key: "crf", labelKey: "wizard.crf", control: "num" },
 	{ key: "minBitrate", labelKey: "wizard.minBitrateBps", control: "num" },
 	{
@@ -477,10 +532,12 @@ function PresetSelect({
 export function H264AdvancedEditor({
 	idBase,
 	value,
+	allowCrf = true,
 	onChange,
 }: {
 	idBase: string;
 	value: WizardH264Options | undefined;
+	allowCrf?: boolean;
 	onChange: (next: WizardH264Options) => void;
 }) {
 	const { t } = useT();
@@ -501,8 +558,19 @@ export function H264AdvancedEditor({
 			<OptionsGrid
 				idBase={idBase}
 				value={options}
-				fields={H264_FIELDS}
+				fields={
+					allowCrf
+						? H264_FIELDS
+						: H264_FIELDS.filter((field) => field.key !== "crf")
+				}
 				onChange={onChange}
+			/>
+			<DisplayAspectRatioEditor
+				idBase={idBase}
+				value={options.displayAspectRatio}
+				onChange={(displayAspectRatio) =>
+					onChange({ ...options, displayAspectRatio })
+				}
 			/>
 			<ColorConfigEditor
 				idBase={`${idBase}-color`}
@@ -573,11 +641,13 @@ export function H265V2AdvancedEditor({
 export function H265AdvancedEditor({
 	idBase,
 	value,
+	allowCrf = true,
 	visionMetadataKeys,
 	onChange,
 }: {
 	idBase: string;
 	value: WizardH265Options | undefined;
+	allowCrf?: boolean;
 	/** VISION_METADATA dolbyStream keys (separated-metadata flow). */
 	visionMetadataKeys: string[];
 	onChange: (next: WizardH265Options) => void;
@@ -598,8 +668,19 @@ export function H265AdvancedEditor({
 			<OptionsGrid
 				idBase={idBase}
 				value={options}
-				fields={H265_FIELDS}
+				fields={
+					allowCrf
+						? H265_FIELDS
+						: H265_FIELDS.filter((field) => field.key !== "crf")
+				}
 				onChange={onChange}
+			/>
+			<DisplayAspectRatioEditor
+				idBase={idBase}
+				value={options.displayAspectRatio}
+				onChange={(displayAspectRatio) =>
+					onChange({ ...options, displayAspectRatio })
+				}
 			/>
 			<Collapsible summary="HDR10">
 				<OptionsGrid

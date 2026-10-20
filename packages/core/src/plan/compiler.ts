@@ -1,3 +1,4 @@
+import { h26xPictureControls } from "./codec-controls";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import {
 	type HlsAudioMediaDefaults,
@@ -1034,6 +1035,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							? { width: rendition.width }
 							: {}),
 						// Per-title H264 samples omit bitrate/preset entirely
+						...h26xPictureControls(rendition),
 						...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
 						...(rendition.minBitrate !== undefined
 							? { minBitrate: rendition.minBitrate }
@@ -1168,6 +1170,23 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						kind: "CREATE_CODEC_H265",
 						// Field order mirrors the python sample constructors.
 						payload: {
+							...h26xPictureControls(rendition),
+							...(rendition.width !== undefined
+								? { width: rendition.width }
+								: {}),
+							...(rendition.bframes !== undefined
+								? { bframes: rendition.bframes }
+								: {}),
+							...(rendition.refFrames !== undefined
+								? { refFrames: rendition.refFrames }
+								: {}),
+							...(rendition.qp !== undefined ? { qp: rendition.qp } : {}),
+							...(rendition.qpMax !== undefined
+								? { qpMax: rendition.qpMax }
+								: {}),
+							...(rendition.strictCbr !== undefined
+								? { strictCbr: rendition.strictCbr }
+								: {}),
 							...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
 							...(rendition.minBitrate !== undefined
 								? { minBitrate: rendition.minBitrate }

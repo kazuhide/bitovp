@@ -61,6 +61,39 @@ it.each([
 		).toMatchObject(controls);
 });
 
+it("keeps codec bitrate limits distinct from Per-Title rendition bounds", () => {
+	const base = loadPlan("pertitle-h264-fmp4-ts-dash-hls-on-aws");
+	const plan = encodingPlanSchema.parse({
+		...base,
+		renditions: base.renditions.map((r) =>
+			r.codec === "H264"
+				? {
+						...r,
+						minBitrate: 0,
+						maxBitrate: 5000000,
+						perTitleSettings: { minBitrate: 100000, maxBitrate: 800000 },
+					}
+				: r,
+		),
+	});
+	const state = planToWizardState(plan);
+	expect(encodingPlanSchema.parse(buildPlan(state))).toEqual(plan);
+	for (const r of plan.renditions.filter((r) => r.codec === "H264")) {
+		const ops = compilePlan(plan);
+		expect(
+			ops.find((op) => op.step === `codec:${r.key}`)?.payload,
+		).toMatchObject({ minBitrate: 0, maxBitrate: 5000000 });
+		expect(
+			ops.find((op) => op.step === `stream:${r.key}`)?.payload.perTitleSettings,
+		).toMatchObject({
+			fixedResolutionAndBitrateSettings: {
+				minBitrate: 100000,
+				maxBitrate: 800000,
+			},
+		});
+	}
+});
+
 it.each([
 	"H264",
 	"H265",

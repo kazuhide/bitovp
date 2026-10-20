@@ -100,6 +100,12 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.h264.create(
 						new H264VideoConfiguration({
+							minGop: p.minGop,
+							maxGop: p.maxGop,
+							openGop: p.openGop,
+							sampleAspectRatioNumerator: p.sampleAspectRatioNumerator,
+							sampleAspectRatioDenominator: p.sampleAspectRatioDenominator,
+							displayAspectRatio: p.displayAspectRatio,
 							crf: p.crf,
 							minBitrate: p.minBitrate,
 							maxBitrate: p.maxBitrate,
@@ -254,6 +260,18 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.h265.create(
 						new H265VideoConfiguration({
+							width: p.width,
+							bframes: p.bframes,
+							refFrames: p.refFrames,
+							qp: p.qp,
+							qpMax: p.qpMax,
+							strictCbr: p.strictCbr,
+							minGop: p.minGop,
+							maxGop: p.maxGop,
+							openGop: p.openGop,
+							sampleAspectRatioNumerator: p.sampleAspectRatioNumerator,
+							sampleAspectRatioDenominator: p.sampleAspectRatioDenominator,
+							displayAspectRatio: p.displayAspectRatio,
 							crf: p.crf,
 							minBitrate: p.minBitrate,
 							encodingMode: ordinaryEncodingMode(p.encodingMode),

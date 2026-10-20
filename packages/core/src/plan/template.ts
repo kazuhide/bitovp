@@ -1,4 +1,5 @@
 import { stringify } from "yaml";
+import { h26xPictureControls } from "./codec-controls";
 import {
 	joinFilePath,
 	relativeFilePath,
@@ -524,6 +525,13 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			h265[rendition.key] = {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
+					...h26xPictureControls(rendition),
+					width: rendition.width,
+					bframes: rendition.bframes,
+					refFrames: rendition.refFrames,
+					qp: rendition.qp,
+					qpMax: rendition.qpMax,
+					strictCbr: rendition.strictCbr,
 					crf: rendition.crf,
 					minBitrate: rendition.minBitrate,
 					name: rendition.name,
@@ -642,6 +650,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			h264[rendition.key] = {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
+					...h26xPictureControls(rendition),
+					width: rendition.width,
 					crf: rendition.crf,
 					minBitrate: rendition.minBitrate,
 					maxBitrate: rendition.maxBitrate,

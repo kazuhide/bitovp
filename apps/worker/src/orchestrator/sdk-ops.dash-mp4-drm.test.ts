@@ -1,9 +1,29 @@
-import { compilePlan, encodingPlanSchema, validatePlan } from "@bitovp/core";
+import {
+	compilePlan,
+	curlForStep,
+	encodingPlanSchema,
+	type StepLogEntry,
+	validatePlan,
+} from "@bitovp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
 
 afterEach(() => vi.unstubAllGlobals());
+
+function copiedRequest(entry: StepLogEntry) {
+	const result = curlForStep(entry);
+	expect(result.ok).toBe(true);
+	if (!result.ok) throw new Error("Expected a reproducible manifest request");
+	const url = result.command.match(/^curl -X POST '([^']+)'/)?.[1];
+	const data = result.command.match(/--data '([\s\S]*)'$/)?.[1];
+	expect(url).toBeDefined();
+	expect(data).toBeDefined();
+	return {
+		path: new URL(url as string).pathname,
+		body: JSON.parse(data as string),
+	};
+}
 
 function onDemandPlan(explicit: boolean, encrypted: boolean) {
 	const streams = ["video", "audio"];
@@ -128,13 +148,17 @@ describe.each([
 				op.kind === "CREATE_DASH_REPRESENTATION_MP4" ||
 				op.kind === "CREATE_DASH_CONTENT_PROTECTION",
 		);
-		for (const op of manifestOps)
-			await executeStep(op, {
+		for (const op of manifestOps) {
+			const result = await executeStep(op, {
 				sdk,
 				ids,
 				resolveCredential: vi.fn(),
 				poll: { intervalMs: 1, timeoutMs: 50, sleep: async () => {} },
 			});
+			expect(
+				copiedRequest({ ...op, status: "DONE", request: result.request }),
+			).toEqual(calls.at(-1));
+		}
 		expect(calls).toEqual(
 			plan.muxings.map((muxing) => {
 				const rep = ops.find(
@@ -155,4 +179,54 @@ describe.each([
 			}),
 		);
 	});
+});
+
+it.each([
+	"FMP4",
+	"WEBM",
+] as const)("copies the actual %s ContentProtection SDK URL and JSON", async (representationKind) => {
+	const calls: { path: string; body: unknown }[] = [];
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			calls.push({
+				path: new URL(url).pathname,
+				body: JSON.parse(init.body as string),
+			});
+			return new Response(
+				JSON.stringify({ data: { result: { id: "created" } } }),
+				{ status: 201, headers: { "content-type": "application/json" } },
+			);
+		}),
+	);
+	const refs = {
+		manifestId: "manifest",
+		periodId: "period",
+		adaptationSetId: "set",
+		representationId: "representation",
+		encodingId: "encoding",
+		muxingId: "muxing",
+		drmId: "drm",
+	};
+	const op = {
+		step: "content-protection",
+		kind: "CREATE_DASH_CONTENT_PROTECTION" as const,
+		payload: representationKind === "WEBM" ? { representationKind } : {},
+		refs,
+	};
+	const sdk = createBitmovinSdkOps(
+		{ apiKey: "test-only", tenantOrgId: null, bitmovinAccountId: "account" },
+		async () => {},
+	);
+	const result = await executeStep(op, {
+		sdk,
+		ids: new Map(Object.values(refs).map((key) => [key, `${key}-id`])),
+		resolveCredential: vi.fn(),
+		poll: { intervalMs: 1, timeoutMs: 50, sleep: async () => {} },
+	});
+	expect(calls).toHaveLength(1);
+	expect(
+		copiedRequest({ ...op, status: "DONE", request: result.request }),
+	).toEqual(calls[0]);
+	expect(calls[0]?.body).not.toHaveProperty("representationKind");
 });

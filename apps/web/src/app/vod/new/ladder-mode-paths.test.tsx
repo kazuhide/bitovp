@@ -90,6 +90,90 @@ describe("automatic container paths follow the ladder stream mode", () => {
 		]);
 	});
 
+	it("keeps a sibling's manually claimed directory when an automatic rendition returns to Standard", () => {
+		render(<Harness initial={copiedState()} />);
+		const originalMode = screen.getAllByLabelText("Stream mode")[0] as Element;
+		fireEvent.change(originalMode, {
+			target: { value: "PER_TITLE_TEMPLATE" },
+		});
+		fireEvent.change(document.getElementById("wz-mx-v-1-path") as Element, {
+			target: { value: "video/v360" },
+		});
+		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
+		fireEvent.change(document.getElementById("wz-v-0-bitrate") as Element, {
+			target: { value: "300000" },
+		});
+		const [automatic, manual] = destinationPaths();
+		expect(manual).toBe("video/v360");
+		expect(automatic).not.toBe(manual);
+		expect(automatic).toBe(currentState().videos[0]?.muxing?.autoPath);
+		expect(currentState().videos[0]?.bitrate).toBe(300_000);
+		expect(currentState().videos[1]?.muxing?.autoPath).toBeUndefined();
+		fireEvent.change(originalMode, {
+			target: { value: "PER_TITLE_TEMPLATE" },
+		});
+		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
+		expect(destinationPaths().slice(0, 2)).toEqual([automatic, manual]);
+	});
+
+	it("keeps a manually claimed DRM directory when an automatic encrypted rendition returns to Standard", () => {
+		const initial = structuredClone(DEFAULT_WIZARD_STATE);
+		initial.drm = [
+			{ kind: "CENC", muxingKey: "v360", credentialId: "vault", kid: "kid" },
+		];
+		render(<Harness initial={{ ...initial, ...addVodVideo(initial, 0) }} />);
+		const originalMode = screen.getAllByLabelText("Stream mode")[0] as Element;
+		fireEvent.change(originalMode, {
+			target: { value: "PER_TITLE_TEMPLATE" },
+		});
+		fireEvent.change(
+			document.getElementById("wz-mx-v-1-drm-1-path") as Element,
+			{
+				target: { value: "video/v360" },
+			},
+		);
+		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
+		const [automatic, manual] = currentState().drm ?? [];
+		expect(manual?.path).toBe("video/v360");
+		expect(automatic?.path).toBeDefined();
+		expect(automatic?.path).not.toBe(manual?.path);
+		expect(automatic?.path).toBe(automatic?.autoPath);
+		const plan = JSON.parse(
+			screen.getByTestId("path-plan").textContent ?? "{}",
+		);
+		expect(
+			plan.drm.map(
+				(row: { destination: { path: string } }) => row.destination.path,
+			),
+		).toEqual([automatic?.path, manual?.path]);
+		expect(destinationPaths().slice(0, 2)).toEqual([undefined, undefined]);
+	});
+
+	it("keeps a manual extra-container directory on the same rendition when returning to Standard", () => {
+		const initial = copiedState();
+		const original = initial.videos[0];
+		if (!original) throw new Error("Missing original video");
+		original.extraMuxings = [
+			{ key: "alternate", kind: "FMP4", path: "archive/manual" },
+		];
+		render(<Harness initial={initial} />);
+		const originalMode = screen.getAllByLabelText("Stream mode")[0] as Element;
+		fireEvent.change(originalMode, {
+			target: { value: "PER_TITLE_TEMPLATE" },
+		});
+		fireEvent.change(document.getElementById("wz-mx-v-0-x0-path") as Element, {
+			target: { value: "video/v360" },
+		});
+		fireEvent.change(originalMode, { target: { value: "STANDARD" } });
+		const [automatic, manual] = destinationPaths();
+		expect(manual).toBe("video/v360");
+		expect(automatic).not.toBe(manual);
+		expect(currentState().videos[0]?.extraMuxings?.[0]).toMatchObject({
+			key: "alternate",
+			path: "video/v360",
+		});
+	});
+
 	it("keeps an explicit path even when its text equals the old derived default", () => {
 		const initial = structuredClone(DEFAULT_WIZARD_STATE);
 		initial.videos[0] = {

@@ -315,6 +315,7 @@ export function updateVodVideoModePaths(
 	});
 	for (const row of state.drm ?? [])
 		if (row.path !== undefined) occupied.add(rootOf(row.path));
+	const allocated = new Set<string>();
 	let drm = state.drm;
 	const videos = next.map((video, index) => {
 		const current = state.videos[index];
@@ -336,12 +337,52 @@ export function updateVodVideoModePaths(
 			templateLeaf,
 			(templateLeaf.match(/\{[^{}]+\}/g) ?? []).join("_"),
 		];
+		const ownedSuffix = (row?: { path?: string; autoPath?: string }) =>
+			row?.path !== undefined && row.path === row.autoPath
+				? leaves.find((leaf) => row.path?.endsWith(`/${leaf}`))
+				: undefined;
+		const muxingKeys = new Set(
+			[current.muxing, ...(current.extraMuxings ?? [])].map(
+				(leg) => leg?.key ?? oldKeys[index],
+			),
+		);
+		const standardOccupied = new Set(allocated);
+		if (!perTitle) {
+			// Release only owned paths that this transition will move; manual paths
+			// on this rendition and all sibling destinations keep their roots.
+			state.videos.forEach((sibling, siblingIndex) => {
+				for (const leg of [sibling.muxing, ...(sibling.extraMuxings ?? [])]) {
+					if (siblingIndex === index && ownedSuffix(leg) !== undefined)
+						continue;
+					const drmOwned = state.drm?.some(
+						(row) => row.muxingKey === (leg?.key ?? oldKeys[siblingIndex]),
+					);
+					if (leg?.path === undefined && drmOwned) continue;
+					standardOccupied.add(
+						rootOf(
+							leg?.path ??
+								videoMuxingRelPath(
+									next[siblingIndex] ?? sibling,
+									keys[siblingIndex] ?? "",
+								),
+						),
+					);
+				}
+			});
+			for (const row of state.drm ?? [])
+				if (
+					row.path !== undefined &&
+					(!muxingKeys.has(row.muxingKey) || ownedSuffix(row) === undefined)
+				)
+					standardOccupied.add(rootOf(row.path));
+		}
+		const standardRoots = new Map<string, string>();
 		let derivedRoot: string | undefined;
 		const updatePath = <T extends { path?: string; autoPath?: string }>(
 			row: T,
 		): T => {
 			if (row.path === undefined || row.path !== row.autoPath) return row;
-			const suffix = leaves.find((leaf) => row.path?.endsWith(`/${leaf}`));
+			const suffix = ownedSuffix(row);
 			let path: string;
 			if (perTitle) {
 				if (suffix !== undefined) return row;
@@ -353,17 +394,20 @@ export function updateVodVideoModePaths(
 					root = derivedRoot;
 				}
 				path = `${root}/${templateLeaf}`;
+				allocated.add(rootOf(root));
 			} else {
 				if (suffix === undefined) return row;
-				path = row.path.slice(0, -(suffix.length + 1));
+				const stripped = row.path.slice(0, -(suffix.length + 1));
+				const proposed = rootOf(stripped);
+				const root =
+					standardRoots.get(proposed) ?? unique(proposed, standardOccupied);
+				standardRoots.set(proposed, root);
+				allocated.add(root);
+				occupied.add(root);
+				path = [root, ...stripped.split("/").slice(2)].join("/");
 			}
 			return { ...row, path, autoPath: path };
 		};
-		const muxingKeys = new Set(
-			[current.muxing, ...(current.extraMuxings ?? [])].map(
-				(leg) => leg?.key ?? oldKeys[index],
-			),
-		);
 		drm = drm?.map((row) =>
 			muxingKeys.has(row.muxingKey) ? updatePath(row) : row,
 		);

@@ -1,6 +1,159 @@
 # bitovp user guide
 
-## 1. About bitovp
+## 1. Installation and first run
+
+Start here to install bitovp, create the first administrator, and connect Bitmovin and storage. Once those connections are ready, you can create your first VOD job or Live channel in the browser.
+
+If an administrator has already installed bitovp, obtain the application URL and sign-in method and continue at [Signing in](#signing-in). You do not need to install another copy. The public demo uses sample data and does not require these connections.
+
+### Installation and first sign-in
+
+The following steps describe a new Docker installation on macOS or Linux. For an existing installation, read [Upgrades, backups, and shutdown](https://kazuhide.github.io/bitovp/guide/appendix/#upgrades-backups-and-shutdown) before changing its database.
+
+Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Git, Node.js 24 or later, and pnpm 11. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
+
+Compose 2.30.0 or later is required because `env_file.format: raw` preserves the `$` characters in password hashes. The Web container's default memory limit is 1 GiB. If an older `.env` still contains `WEB_MEMORY_LIMIT=512m`, changing the default does not update that value. Change it to `1g` if needed.
+
+#### Getting the app
+
+```sh
+git clone https://github.com/kazuhide/bitovp.git
+cd bitovp
+corepack enable
+pnpm install --frozen-lockfile
+cp .env.example .env
+chmod 600 .env
+```
+
+#### Encryption keys and authentication
+
+Generate separate values for the encryption key and session secret with the following commands.
+
+```sh
+openssl rand -base64 32
+openssl rand -base64 48
+```
+
+Set the first value as `MASTER_KEY` and the second as `AUTH_SESSION_SECRET` in `.env`. Do not save these values in a public repository. Losing `MASTER_KEY` prevents decryption of saved credentials.
+
+The following example is for access only from your own computer. Replace `<generated-session-secret>` with the value you generated.
+
+```dotenv
+AUTH_MODE=users
+AUTH_SESSION_SECRET=<generated-session-secret>
+PUBLIC_BASE_URL=http://localhost:3100
+AUTH_ALLOW_INSECURE_HTTP=true
+INGRESS_MODE=none
+COMPOSE_PROFILES=
+```
+
+In raw format, quotes and comments after a value remain part of the string. Do not quote values or add comments at the end of the same line.
+
+#### Preparing the database
+
+For a new installation, run the following in order.
+
+```sh
+pnpm --filter @bitovp/db db:runtime:init
+docker compose up -d postgres redis
+pnpm --filter @bitovp/db db:runtime:prepare
+```
+
+Administrative connection information is saved in `.env.migrate`, and the restricted runtime URL in `.env`. Keep both private with file permissions of 0600. Do not run Web or Worker with a PostgreSQL superuser or a role that bypasses row-level access control.
+
+#### Startup and first sign-in
+
+```sh
+export GIT_COMMIT=$(git rev-parse HEAD)
+docker compose config --quiet
+docker compose build migrate worker web
+docker compose up -d --no-build
+```
+
+If configuration validation, the build, or migration fails, fix the cause before continuing.
+
+```sh
+curl --connect-timeout 2 --max-time 5 -fsS \
+  http://127.0.0.1:3100/api/health
+docker compose ps
+docker compose ps --all migrate
+```
+
+Check for HTTP 200 from the health endpoint, successful migration completion, healthy PostgreSQL and Redis services, and running Web and Worker services. The health check alone does not verify Bitmovin or storage connections, encoding, or playback.
+
+1. Open `http://localhost:3100/setup` in a browser.
+2. After opening the page, use the following command to retrieve the one-time setup code.
+3. Enter the code, email address, display name, and a password of at least 12 characters.
+4. Confirm that the dashboard opens and the role is ADMIN.
+
+```sh
+docker compose logs web | grep setup-code
+```
+
+Run the log command from the installation directory, using the same Compose project, Compose files, and environment file that started Web. If you used `-p`, `-f`, or `--env-file` at startup, use the same options for `logs`. A different project shows different containers' logs.
+
+The code is printed only when it is created and is valid for 60 minutes. A refresh or container restart does not reprint an active code. If it is missing, first check the project and earlier Web logs; after expiration, visit `/setup` again to issue a new one. Do not reinitialize the database or replace encryption keys to retrieve a setup code.
+
+The first account becomes the platform owner and administrator of the Main organization. Setup does not reopen after users exist or after a data reset.
+
+### Signing in
+
+Open the installed application and sign in using the method specified by your administrator. With individual user authentication, the first administrator is created at `/setup`; subsequent sign-ins use `/login`. There is no shared initial password for all users. Use `/change-password` to change your own password when needed.
+
+If you belong to more than one organization, select the one you intend to use. When an operation is unavailable, check the selected organization and your role in it, as well as whether you are signed in.
+
+### Registering a Bitmovin account
+
+ADMIN users register and edit accounts and test their connections.
+
+1. Open "Settings" → "Bitmovin accounts" (`/settings/bitmovin`).
+2. Enter an account name and Encoding API key. If the account requires a Bitmovin organization ID, enter it too.
+3. Save the account and test the connection. This makes a real request to Bitmovin.
+4. Check that the account is available in the VOD and Live creation screens.
+
+A successful connection test does not establish that every region, codec, or feature is available. Supported configurations depend on the account's entitlements and the encoder's capabilities.
+
+### Input and output credentials
+
+ADMIN users register storage and other connection credentials under "Settings" → "Credentials" (`/settings/credentials`). Select the destination type first, then enter the endpoint and authentication settings appropriate to it. An S3-compatible service does not necessarily use the same configuration as AWS S3.
+
+Secrets are encrypted at rest and cannot be displayed again after saving. Distinguish connection metadata, such as names and endpoints, from fields for secrets. Chapters 15 and 16 explain credential updates and key management.
+
+| Purpose | What to check |
+|---|---|
+| Input | Permission to read the bucket or container and the object. Listing permission is also required when using the browser. |
+| Output | Permission to write to the specified bucket or container and path. |
+| Playback and quality measurement | The browser or measurement environment that will read the manifests and media must be able to retrieve them. |
+
+OPERATOR users and above can use "Storage" to browse supported destinations and files. A successful listing does not establish that a file can be read or that outputs can be written. The credential types you can register also differ from those supported by the storage browser.
+
+Use a dedicated output path that distinguishes each run. An object storage prefix is the beginning of an object path, such as `encodings/example/`. If outputs are written into a watched input folder, the generated files may be detected as new inputs.
+
+#### AWS S3
+
+Use an existing bucket and a small input video already stored in it. The app selects stored objects; it does not create an S3 bucket or upload a local file from this screen.
+
+1. In "Credentials", add **AWS S3**. Enter a name, the bucket's AWS region, the access key ID, and the secret access key. This storage region is separate from the encoding region.
+2. Save the credential. Use the same credential for input and output only if its permissions cover both; otherwise register them separately.
+3. Open "Storage" (`/storage`), choose the credential and bucket, and locate the input object. If bucket enumeration is not allowed, type the bucket name directly.
+4. Choose an output bucket and a prefix such as `encodings/first-run/`. A prefix is part of an object name, so an empty folder does not need to be created first. Keep the output separate from the input.
+5. In the VOD or Live wizard, select the saved credential, bucket, and input object or output prefix. You can save a frequently used output location as an `OUTPUT` preset in Storage.
+
+The storage browser uses key-based AWS S3 credentials. S3 role-based inputs and outputs have different requirements and are not supported by this browser.
+
+### Preview playback
+
+Configure VOD and Live previews under "Settings" → "Player & Analytics". Standard HLS playback uses hls.js and DASH playback uses Shaka Player. By default, neither sends data to Bitmovin Analytics.
+
+If you select Bitmovin Player, configure its public browser license key. Analytics also uses a browser client key. Do not enter an Encoding API key or storage secret in these fields.
+
+The browser must be able to access both manifests and media. If it cannot retrieve them, check public access, authentication, and CORS. CORS is the permission that allows a browser to retrieve files from another origin.
+
+### Before your first run
+
+For your first run, a short source of about 10 seconds and a dedicated output path make it easier to check input, encoding, output, and playback in order. Start with one video and one audio stream, then choose the delivery formats you need. Continue with [VOD encoding](https://kazuhide.github.io/bitovp/guide/vod-encoding/) or [Live encoding](https://kazuhide.github.io/bitovp/guide/live-encoding/). After the run, check that the expected video and audio play correctly, as well as checking the final status.
+
+## 2. About bitovp
 
 bitovp is a graphical application for the Bitmovin Encoding API. In your browser, you can configure and run VOD encoding, which converts stored video into files for delivery, and Live encoding, which receives and encodes incoming media for live delivery. You can specify detailed codec parameters, delivery formats, and output destinations, then inspect the processing history and delivery status.
 
@@ -26,11 +179,11 @@ Jobs you create in the demo are stored in the current browser tab. "Reset demo" 
 
 ### What you need for real encoding
 
-Install the application in your own environment. Administrators performing the installation should follow Chapter 18. If the application is already installed, obtain its URL and sign-in method from your administrator.
+Install the application in your own environment. Administrators performing the installation should follow Chapter 1. If the application is already installed, obtain its URL and sign-in method from your administrator.
 
 Real encoding requires an eligible Bitmovin account, credentials to read the input, and permission to write to the output destination. Running VOD jobs, creating Live channels, and starting cloud compute resources may incur charges from the services you use. Live provisioning begins when you create a channel.
 
-## 2. Layout and basic operations
+## 3. Layout and basic operations
 
 ### Navigation
 
@@ -82,53 +235,6 @@ Browser drafts do not save every setting. They are kept for 7 days and are separ
 
 `RUNNING` means processing is in progress, and `FINISHED` means the encoding process has finished. Check input reception, output updates, and browser playback separately. For stop operations, also distinguish acceptance of the request from confirmation that external resources have stopped. Chapters 8 and 17 describe the checks in detail.
 
-## 3. Getting ready
-
-### Signing in
-
-Open the installed application and sign in using the method specified by your administrator. With individual user authentication, the first administrator is created at `/setup`; subsequent sign-ins use `/login`. There is no shared initial password for all users. Use `/change-password` to change your own password when needed.
-
-If you belong to more than one organization, select the one you intend to use. When an operation is unavailable, check the selected organization and your role in it, as well as whether you are signed in.
-
-### Registering a Bitmovin account
-
-ADMIN users register and edit accounts and test their connections.
-
-1. Open "Settings", then "Bitmovin accounts".
-2. Enter an account name and Encoding API key. If the account requires a Bitmovin organization ID, enter it too.
-3. Save the account and test the connection. This makes a real request to Bitmovin.
-4. Check that the account is available in the VOD and Live creation screens.
-
-A successful connection test does not establish that every region, codec, or feature is available. Supported configurations depend on the account's entitlements and the encoder's capabilities.
-
-### Input and output credentials
-
-ADMIN users register storage and other connection credentials under "Settings" → "Credentials". Select the destination type first, then enter the endpoint and authentication settings appropriate to it. An S3-compatible service does not necessarily use the same configuration as AWS S3.
-
-Secrets are encrypted at rest and cannot be displayed again after saving. Distinguish connection metadata, such as names and endpoints, from fields for secrets. Chapters 15 and 16 explain credential updates and key management.
-
-| Purpose | What to check |
-|---|---|
-| Input | Permission to read the bucket or container and the object. Listing permission is also required when using the browser. |
-| Output | Permission to write to the specified bucket or container and path. |
-| Playback and quality measurement | The browser or measurement environment that will read the manifests and media must be able to retrieve them. |
-
-OPERATOR users and above can use "Storage" to browse supported destinations and files. A successful listing does not establish that a file can be read or that outputs can be written. The credential types you can register also differ from those supported by the storage browser.
-
-Use a dedicated output path that distinguishes each run. An object storage prefix is the beginning of an object path, such as `encodings/example/`. If outputs are written into a watched input folder, the generated files may be detected as new inputs.
-
-### Preview playback
-
-Configure VOD and Live previews under "Settings" → "Player & Analytics". Standard HLS playback uses hls.js and DASH playback uses Shaka Player. By default, neither sends data to Bitmovin Analytics.
-
-If you select Bitmovin Player, configure its public browser license key. Analytics also uses a browser client key. Do not enter an Encoding API key or storage secret in these fields.
-
-The browser must be able to access both manifests and media. If it cannot retrieve them, check public access, authentication, and CORS. CORS is the permission that allows a browser to retrieve files from another origin.
-
-### Before your first run
-
-For your first run, a short source of about 10 seconds and a dedicated output path make it easier to check input, encoding, output, and playback in order. Start with one video and one audio stream, then choose the delivery formats you need. Continue to Chapter 4 for VOD or Chapter 7 for Live. After the run, check that the expected video and audio play correctly, as well as checking the final status.
-
 ## 4. VOD encoding
 
 ### Creating a VOD job
@@ -158,7 +264,7 @@ Figure 4-1. VOD ladder and detailed codec settings in the demo. The screen uses 
 
 ### Basic settings and input files
 
-Choose a name that identifies the job. Check the Bitmovin account and region, then select an encoder version. The usual options are `STABLE` and `BETA`. If you pin a version, also check that it supports the features you need.
+Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. Then select an encoder version. The usual options are `STABLE` and `BETA`. If you pin a version, also check that it supports the features you need.
 
 In "Sources", specify the input file's credentials, bucket, and path. For supported destinations, use "Browse storage…" to select from a list. Enter paths directly for destinations that do not support browsing. For HTTPS inputs, provide a URL from which the source can be retrieved.
 
@@ -298,7 +404,7 @@ Automatic rendition generation includes `autoRepresentations` and configuration-
 
 See Chapter 11 for VMAF, PSNR, execution profiles, budgets, and interpreting results. The wizard's "VMAF only (skip delivery outputs)" mode disables delivery packaging, manifests, and AI Scene Analysis. A quality gate can either mark a result or block manifest generation; distinguish these behaviors. Holding delivery requires post-encoding manifest generation. It does not retract outputs that have already been published.
 
-AI Scene Analysis supports scene analysis and placement of ad breaks. Configure the asset description file, languages, automatic insertion at scene boundaries, and cue points at specified times. Positions, maximum allowed offsets, and durations are in seconds, and accept zero and fractional values. Even a zero allowed offset does not guarantee identical cut frames across codecs. View completed analysis in the Content Library.
+AI Scene Analysis supports scene analysis and placement of ad breaks. Analysis output always includes English. Add `ja` for Japanese, or leave additional languages blank for English only. Configure the asset description file, languages, automatic insertion at scene boundaries, and cue points at specified times. Positions, maximum allowed offsets, and durations are in seconds, and accept zero and fractional values. Even a zero allowed offset does not guarantee identical cut frames across codecs. View completed analysis in the Content Library.
 
 For Cloud Connect, specify the infrastructure ID together with its region. The overall job region changes to `EXTERNAL`. If you need a dedicated pool or label-based reporting, check those settings against the configuration prepared by your administrator.
 
@@ -362,6 +468,8 @@ If a start request fails, you may not immediately know whether it never reached 
 ## 7. Live encoding
 
 ### Creating a Live channel
+
+New configurations start with region `AUTO`, which lets Bitmovin select a region. Review the selected account and region before creating the channel; saved or copied settings may specify a different region.
 
 Live encoding continuously processes incoming video and audio and writes output for delivery. Creating a channel starts provisioning immediately and incurs charges. Creating it in the wizard is not a reservation that delays processing until the planned input feed time.
 
@@ -1018,46 +1126,15 @@ Do not include API keys, storage secrets, stream keys, signed URL queries, priva
 
 ### Installation and first sign-in
 
-The following steps describe a new Docker installation on macOS or Linux. Before upgrading an existing database, read "Upgrades, backups, and shutdown" below.
-
-Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Git, Node.js 24 or later, and pnpm 11. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
-
-Compose 2.30.0 or later is required because `env_file.format: raw` preserves the `$` characters in password hashes. The Web container's default memory limit is 1 GiB. If an older `.env` still contains `WEB_MEMORY_LIMIT=512m`, changing the default does not update that value. Change it to `1g` if needed.
+Installation and first-run setup are now in [Chapter 1: Installation and first run](https://kazuhide.github.io/bitovp/guide/getting-started/#installation-and-first-sign-in). Follow it from Docker startup through the first administrator, Bitmovin API key, storage, and first encoding. The links below preserve existing bookmarks.
 
 #### Getting the app
 
-```sh
-git clone https://github.com/kazuhide/bitovp.git
-cd bitovp
-corepack enable
-pnpm install --frozen-lockfile
-cp .env.example .env
-chmod 600 .env
-```
+Continue at [Getting the app in Chapter 1](https://kazuhide.github.io/bitovp/guide/getting-started/#getting-the-app).
 
 #### Encryption keys and authentication
 
-Generate separate values for the encryption key and session secret with the following commands.
-
-```sh
-openssl rand -base64 32
-openssl rand -base64 48
-```
-
-Set the first value as `MASTER_KEY` and the second as `AUTH_SESSION_SECRET` in `.env`. Do not save these values in a public repository. Losing `MASTER_KEY` prevents decryption of saved credentials.
-
-The following example is for access only from your own computer. Replace `<generated-session-secret>` with the value you generated.
-
-```dotenv
-AUTH_MODE=users
-AUTH_SESSION_SECRET=<generated-session-secret>
-PUBLIC_BASE_URL=http://localhost:3100
-AUTH_ALLOW_INSECURE_HTTP=true
-INGRESS_MODE=none
-COMPOSE_PROFILES=
-```
-
-In raw format, quotes and comments after a value remain part of the string. Do not quote values or add comments at the end of the same line.
+Continue at [Encryption keys and authentication in Chapter 1](https://kazuhide.github.io/bitovp/guide/getting-started/#encryption-keys-and-authentication). The first-run instructions use individual user accounts. Other authentication choices are listed below.
 
 | Authentication mode | Behavior |
 |---|---|
@@ -1068,50 +1145,15 @@ In raw format, quotes and comments after a value remain part of the string. Do n
 
 A blank mode selects `password`. Copying `.env.example` without completing the required authentication settings results in HTTP 503. Generate the shared password hash with `pnpm --filter @bitovp/web auth:hash`. Supply the password through standard input, not a command argument.
 
-The HTTP configuration above is intended for a trusted local environment. For network access, configure an HTTPS `PUBLIC_BASE_URL`, accepted hosts, and a reverse proxy, and remove `AUTH_ALLOW_INSECURE_HTTP=true`. See the [operations guide](../OPERATIONS.md) for details.
+The HTTP example in Chapter 1 is intended for a trusted local environment. For network access, configure an HTTPS `PUBLIC_BASE_URL`, accepted hosts, and a reverse proxy, and remove `AUTH_ALLOW_INSECURE_HTTP=true`. See the [operations guide](../OPERATIONS.md) for details.
 
 #### Preparing the database
 
-For a new installation, run the following in order.
-
-```sh
-pnpm --filter @bitovp/db db:runtime:init
-docker compose up -d postgres redis
-pnpm --filter @bitovp/db db:runtime:prepare
-```
-
-Administrative connection information is saved in `.env.migrate`, and the restricted runtime URL in `.env`. Keep both private with file permissions of 0600. Do not run Web or Worker with a PostgreSQL superuser or a role that bypasses row-level access control.
+Continue at [Preparing the database in Chapter 1](https://kazuhide.github.io/bitovp/guide/getting-started/#preparing-the-database). For an existing database, use the upgrade procedure rather than initializing it again.
 
 #### Startup and first sign-in
 
-```sh
-export GIT_COMMIT=$(git rev-parse HEAD)
-docker compose config --quiet
-docker compose build migrate worker web
-docker compose up -d --no-build
-```
-
-If configuration validation, the build, or migration fails, fix the cause before continuing.
-
-```sh
-curl --connect-timeout 2 --max-time 5 -fsS \
-  http://127.0.0.1:3100/api/health
-docker compose ps
-docker compose ps --all migrate
-```
-
-Check for HTTP 200 from the health endpoint, successful migration completion, healthy PostgreSQL and Redis services, and running Web and Worker services. The health check alone does not verify Bitmovin or storage connections, encoding, or playback.
-
-1. Open `http://localhost:3100/setup` in a browser.
-2. After opening the page, use the following command to retrieve the one-time setup code.
-3. Enter the code, email address, display name, and a password of at least 12 characters.
-4. Confirm that the dashboard opens and the role is ADMIN.
-
-```sh
-docker compose logs web | grep setup-code
-```
-
-The first account becomes the platform owner and administrator of the Main organization. Setup does not reopen after users exist or after a data reset.
+Continue at [Startup and first sign-in in Chapter 1](https://kazuhide.github.io/bitovp/guide/getting-started/#startup-and-first-sign-in). Retrieve the one-time setup code from the Web logs of the same Compose project that started the app.
 
 #### Public receivers and multiple installations
 

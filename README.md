@@ -16,11 +16,19 @@ or [try the interactive demo](https://kazuhide.github.io/bitovp/#/demo)
 without an account. The demo uses sample data and simulates job creation in your
 browser; it does not run cloud encodings.
 
-## Open the application
+## Install and open bitovp
 
-After installation, open **http://localhost:3100** in your browser.
+Start with **Installation and first run**:
+[English](https://kazuhide.github.io/bitovp/guide/getting-started/) ·
+[日本語](https://kazuhide.github.io/bitovp/ja/guide/getting-started/).
+Follow Docker installation, first administrator creation, Bitmovin API key,
+storage access, and the first VOD or Live encoding in order.
+If your administrator already installed the app, continue with sign-in and
+connection settings in that guide.
 
-- [Installation and first sign-in](./docs/user-guide/INSTALLATION.md)
+The default local application address is **http://localhost:3100**.
+
+- [Installation details and alternative local ports](./docs/user-guide/INSTALLATION.md)
 - User guide: [English](https://kazuhide.github.io/bitovp/guide/) · [日本語](https://kazuhide.github.io/bitovp/ja/guide/)
 - [Japanese user guide (PDF)](./docs/user-guide/bitovp-user-guide-ja.pdf)
 - [Configure a VOD encoding](./docs/user-guide/VOD.md)

@@ -3,6 +3,13 @@
 bitovp is a GUI for Bitmovin VOD and Live encoding. Use the browser to configure
 encodings, review the complete plan, start work, and inspect the output.
 
+For the first installation, follow **Installation and first run** in
+[English](https://kazuhide.github.io/bitovp/guide/getting-started/) or
+[Japanese](https://kazuhide.github.io/bitovp/ja/guide/getting-started/).
+The same chapter takes you through the first administrator, Bitmovin API key,
+storage connection, and first encoding. If the app is already installed, skip to
+its sign-in and connection steps.
+
 Read the complete guide on GitHub Pages in [English](https://kazuhide.github.io/bitovp/guide/)
 or [Japanese](https://kazuhide.github.io/bitovp/ja/guide/). The Japanese edition is also
 available as a [PDF](./user-guide/bitovp-user-guide-ja.pdf). Editable sources:

@@ -17,7 +17,8 @@ const labels = {
 		intro:
 			"Instructions for configuring and running VOD and Live encodings, checking output, and managing the application.",
 		start:
-			"If you are using bitovp for the first time, start with Getting ready. Choose a chapter below for a specific task or setting.",
+			"Start with installation and first-run setup: create an administrator, connect Bitmovin and storage, then run your first encoding. If the app is already installed, the same chapter explains where to continue.",
+		startLink: "Installation and first run",
 		groups: [
 			"Getting started",
 			"VOD encoding",
@@ -39,7 +40,8 @@ const labels = {
 		intro:
 			"VOD・Liveの設定と実行、出力の確認、アプリの管理について説明します。",
 		start:
-			"初めて使う場合は「利用準備」からお読みください。操作や設定を調べる場合は、次の目次から該当する章を選べます。",
+			"まずは「導入と初回設定」へ。インストール、初回管理者、Bitmovin とストレージへの接続、最初のエンコードまで順に進めます。導入済みの場合の手順も、同じ章にまとめています。",
+		startLink: "導入と初回設定",
 		groups: [
 			"使い始める前に",
 			"VODエンコード",
@@ -170,6 +172,12 @@ export function renderGuidePage(
 							<>
 								<p>{copy.intro}</p>
 								<p>{copy.start}</p>
+								<a
+									className="landing-button guide-start-link"
+									href={guidePath(locale, "getting-started")}
+								>
+									{copy.startLink}
+								</a>
 							</>
 						) : null}
 						<a className="guide-pdf" href={JAPANESE_GUIDE_PDF}>

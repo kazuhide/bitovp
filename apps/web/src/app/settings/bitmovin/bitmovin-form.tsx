@@ -196,10 +196,14 @@ export function BitmovinForm({
 						error={formState.errors.apiKey?.message}
 						help={t("settingsForms.writeOnlyEncryptedAtRestNeverShown")}
 					>
+						{/* A best-effort save-prompt hint; the key keeps native secret masking. */}
 						<Input
 							id="bm-apiKey"
 							type="password"
-							autoComplete="off"
+							autoComplete="one-time-code"
+							autoCapitalize="none"
+							autoCorrect="off"
+							spellCheck={false}
 							{...register("apiKey")}
 						/>
 					</Field>

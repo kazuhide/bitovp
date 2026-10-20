@@ -3877,6 +3877,9 @@ export const ja = {
 		automaticAdPlacementAllsceneboundaries:
 			"広告位置の自動挿入 (allSceneBoundaries)",
 		aisaSchedule: "広告キューポイントの時刻指定",
+		aisaDefaultLanguage: "英語の解析結果は標準で含まれます。",
+		aisaAdditionalLanguagesHelp:
+			"英語以外に必要な言語を、ja、de のような言語コードで最大 3 つ指定します。複数ある場合はカンマで区切ってください。",
 		aisaPosition: "位置（秒）",
 		aisaMaxDeviation: "最大許容ずれ（秒）",
 		aisaDuration: "長さ（秒・任意）",
@@ -4172,7 +4175,7 @@ export const ja = {
 		optionalShownInThePresetGallery: "任意:プリセットギャラリーに表示されます",
 		optionalVtt: "任意、.vtt",
 		output: "出力",
-		outputLanguageCodes: "出力言語コード",
+		outputLanguageCodes: "解析結果の追加言語",
 		outputPath: "出力パス",
 		packaging: "パッケージング",
 		paddingAfterS: "後方パディング (秒)",

@@ -10,6 +10,9 @@ Bitmovin charges and writes to the selected output storage.
 
 Open `/vod/jobs`, choose the create action, and follow `/vod/new`:
 
+New configurations start with region `AUTO`, which lets Bitmovin select a
+region. Review the selected account and any saved or copied region settings.
+
 1. **Basics:** name, Bitmovin account, region, encoder version, and encoding mode.
 2. **Sources:** choose stored media and identify the video, audio, and subtitle tracks.
 3. **Ladder:** configure each output rendition's codec, dimensions, bitrate, and
@@ -99,7 +102,9 @@ or an administrator-configured cloud profile and a per-run USD budget. Quality
 gates can hold delivery when post-encoding manifest generation is used.
 See [Quality and monitoring](./QUALITY-AND-MONITORING.md).
 
-AI Scene Analysis can be configured under Encoding. Timed ad cue points accept
+AI Scene Analysis can be configured under Encoding. Analysis always includes
+English; add `ja` for Japanese, or leave additional languages blank for English
+only. Timed ad cue points accept
 positions and permitted deviation in seconds, including zero and fractional
 values. A zero tolerance does not guarantee physical frame alignment. Completed
 analysis and playback references are available in the content library.

@@ -1,9 +1,9 @@
 import { type SiteLocale, USER_GUIDE_URLS } from "../site-config";
 
 export const GUIDE_CHAPTERS = [
+	"getting-started",
 	"overview",
 	"basic-operations",
-	"getting-started",
 	"vod-encoding",
 	"vod-settings",
 	"vod-jobs",

@@ -3922,6 +3922,9 @@ export const en = {
 		automaticAdPlacementAllsceneboundaries:
 			"Automatic ad placement (allSceneBoundaries)",
 		aisaSchedule: "Scheduled cue points",
+		aisaDefaultLanguage: "English is the default analysis language.",
+		aisaAdditionalLanguagesHelp:
+			"Add up to three language codes separated by commas, for example ja, de. English does not need to be added.",
 		aisaPosition: "Position (seconds)",
 		aisaMaxDeviation: "Max deviation (seconds)",
 		aisaDuration: "Duration (seconds, optional)",
@@ -4216,7 +4219,7 @@ export const en = {
 		optionalShownInThePresetGallery: "Optional — shown in the preset gallery",
 		optionalVtt: "Optional, .vtt",
 		output: "Output",
-		outputLanguageCodes: "Output language codes",
+		outputLanguageCodes: "Additional analysis languages",
 		outputPath: "Output path",
 		packaging: "Packaging",
 		paddingAfterS: "Padding after",

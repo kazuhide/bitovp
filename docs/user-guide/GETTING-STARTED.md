@@ -2,6 +2,12 @@
 
 [Back to the user guide](../USER-GUIDE.md)
 
+For a new installation, follow **Installation and first run** in
+[English](https://kazuhide.github.io/bitovp/guide/getting-started/) or
+[Japanese](https://kazuhide.github.io/bitovp/ja/guide/getting-started/).
+It combines Docker installation, the first administrator, and the connections
+below. If the app is already installed, continue here.
+
 ## Try the browser demo
 
 The [feature guide](https://kazuhide.github.io/bitovp/) and demo are also available

@@ -1017,8 +1017,7 @@ export function applyMirrorCredentialSelection(
 export const DEFAULT_WIZARD_STATE: WizardState = {
 	name: "",
 	accountId: "",
-	// Owner decision 2026-09-07 (rev433): new VOD jobs default to Akamai Osaka.
-	cloudRegion: "AKAMAI_JP_OSA",
+	cloudRegion: "AUTO",
 	encoderVersion: "STABLE",
 	inputFiles: [
 		{

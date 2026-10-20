@@ -9,7 +9,13 @@ const locator = {
 	path: "output/job/",
 	filename: "asset.json",
 };
-it("reads the configured locale file with a version-pinned, bounded read and disposes the client", async () => {
+it.each([
+	{ locale: "en", key: "output/job/asset.json" },
+	{ locale: "ja", key: "output/job/asset_ja.json" },
+])("reads the $locale output with a version-pinned, bounded read and disposes the client", async ({
+	locale,
+	key,
+}) => {
 	const getObject = vi.fn(async () =>
 		Readable.from([JSON.stringify({ metadata: { version: "1.9.0" } })]),
 	);
@@ -22,10 +28,12 @@ it("reads the configured locale file with a version-pinned, bounded read and dis
 				dispose,
 			}) as unknown as ObjectStorageBrowser,
 	);
-	expect(await read(locator, "ja")).toEqual({ metadata: { version: "1.9.0" } });
+	expect(await read(locator, locale)).toEqual({
+		metadata: { version: "1.9.0" },
+	});
 	expect(getObject).toHaveBeenCalledWith({
 		bucket: "bucket",
-		key: "output/job/asset_ja.json",
+		key,
 		expect: { etag: '"v1"' },
 	});
 	expect(dispose).toHaveBeenCalledOnce();

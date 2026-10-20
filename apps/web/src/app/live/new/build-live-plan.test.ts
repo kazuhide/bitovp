@@ -41,8 +41,7 @@ const POIS_CREDENTIAL = "00000000-0000-4000-8000-0000000000e5";
 function baseState(partial: Partial<LiveWizardState>): LiveWizardState {
 	return {
 		...DEFAULT_LIVE_WIZARD_STATE,
-		// The golden fixtures are pinned to the pre-rev434 defaults; the wizard
-		// default itself (AKAMAI_JP_OSA / BETA) is asserted separately below.
+		// The golden fixtures pin their region and version independently of new-channel defaults.
 		cloudRegion: "AWS_AP_NORTHEAST_1",
 		encoderVersion: "STABLE",
 		...partial,
@@ -1367,14 +1366,24 @@ describe("rev433: the start request's stream key on a static-ingest channel", ()
 	});
 });
 
-describe("rev434: the live wizard's defaults", () => {
-	it("start a new channel on Akamai Osaka with the BETA encoder line", () => {
-		expect(DEFAULT_LIVE_WIZARD_STATE.cloudRegion).toBe("AKAMAI_JP_OSA");
+describe("the live wizard's defaults", () => {
+	it("starts a new channel on AUTO with the BETA encoder line", () => {
+		expect(DEFAULT_LIVE_WIZARD_STATE.cloudRegion).toBe("AUTO");
 		expect(DEFAULT_LIVE_WIZARD_STATE.encoderVersion).toBe("BETA");
 		const plan = buildLiveChannelPlan(DEFAULT_LIVE_WIZARD_STATE);
 		expect(plan.bitmovin).toMatchObject({
-			cloudRegion: "AKAMAI_JP_OSA",
+			cloudRegion: "AUTO",
 			encoderVersion: "BETA",
 		});
+	});
+
+	it("preserves an explicit region when a channel is copied through the wizard", () => {
+		const plan = liveChannelPlanSchema.parse(loadFixture("live-rtmp-simple"));
+		expect(plan.bitmovin.cloudRegion).toBe("AWS_AP_NORTHEAST_1");
+		const copied = planToLiveWizardState(plan);
+		expect(copied.cloudRegion).toBe("AWS_AP_NORTHEAST_1");
+		expect(liveChannelPlanSchema.parse(buildLiveChannelPlan(copied))).toEqual(
+			plan,
+		);
 	});
 });

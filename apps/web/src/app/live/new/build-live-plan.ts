@@ -406,10 +406,7 @@ export type LiveWizardState = {
 export const DEFAULT_LIVE_WIZARD_STATE: LiveWizardState = {
 	name: "",
 	accountId: "",
-	// Owner decision 2026-09-07 (rev434): new live channels default to Akamai
-	// Osaka on the BETA encoder line (the VOD wizard's default is AKAMAI_JP_OSA
-	// too; its encoder line stays STABLE).
-	cloudRegion: "AKAMAI_JP_OSA",
+	cloudRegion: "AUTO",
 	encoderVersion: "BETA",
 	//  (owner 2026-08-17): static RTMPS ingest is the RECOMMENDED
 	// default — the pushable URL exists from creation, before any encoder or

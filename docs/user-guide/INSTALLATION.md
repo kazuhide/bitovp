@@ -5,6 +5,11 @@
 These instructions install the browser application with Docker on macOS or
 Linux. Encoding credentials are configured later in the GUI.
 
+For installation through the first encoding in one guide, use
+[Installation and first run](https://kazuhide.github.io/bitovp/guide/getting-started/)
+([Japanese](https://kazuhide.github.io/bitovp/ja/guide/getting-started/)).
+The details below also cover alternative ports and authentication modes.
+
 ## 1. Requirements
 
 - Docker Engine or Docker Desktop, running.
@@ -184,6 +189,16 @@ it does not test Bitmovin, storage, encoding, or playback.
    `docker compose logs web | grep setup-code`.
 3. Enter the code, your email, display name, and a password of at least 12 characters.
 4. Confirm that the dashboard opens and your role is `ADMIN`.
+
+Read logs from the installation directory using the same Compose project,
+Compose files, and environment file that started Web. If startup used `-p`,
+`-f`, or `--env-file`, repeat those options for `logs`; another project has
+different containers and logs.
+
+The code is printed only when minted and is valid for 60 minutes. A refresh or
+container restart does not reprint an active code. Check the earlier Web logs;
+after expiration, visit `/setup` again to issue a new one. Do not reinitialize
+the database or replace encryption keys to retrieve it.
 
 There are no default credentials. The first account is platform owner and Main
 organization administrator. Setup does not reopen after users exist or after a

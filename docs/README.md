@@ -1,6 +1,10 @@
 # Documentation
 
-Start with the [user guide](./USER-GUIDE.md), then choose the task you need.
+Start with **Installation and first run**:
+[English](https://kazuhide.github.io/bitovp/guide/getting-started/) ·
+[日本語](https://kazuhide.github.io/bitovp/ja/guide/getting-started/).
+It covers installation, the first administrator, Bitmovin and storage connections,
+and the first encoding. Use the [user guide](./USER-GUIDE.md) for other tasks.
 
 | Guide | Purpose |
 |---|---|

@@ -5,6 +5,7 @@ import {
 	libraryPlaybackLinks,
 	librarySnapshotSchema,
 	redactSecrets,
+	sceneAnalysisLocales,
 } from "@bitovp/core";
 import type { Prisma } from "../generated/client";
 import type { AppPrismaClient } from "./client";
@@ -72,13 +73,7 @@ export async function requestLibrarySource(
 		}
 		const plan = parsed.data;
 		const locales = plan.aiSceneAnalysis
-			? [
-					...new Set(
-						plan.aiSceneAnalysis?.outputLanguageCodes?.length
-							? plan.aiSceneAnalysis.outputLanguageCodes
-							: ["en"],
-					),
-				]
+			? sceneAnalysisLocales(plan.aiSceneAnalysis.outputLanguageCodes)
 			: [];
 		const description = plan.aiSceneAnalysis?.assetDescription;
 		const output = plan.outputs.find(
@@ -178,9 +173,15 @@ export async function requestLibrarySource(
 						!snapshot.playbackLinks.some((stored) => stored.key === link.key),
 				);
 			const upgradeAnalysis = analysisOutput && !snapshot.analysisOutput;
-			// Upgrade legacy API-only captures once, without rewriting editorial metadata.
+			const upgradeLocales =
+				snapshot.planHash === planHash &&
+				locales.some((locale) => !existing.locales.includes(locale));
+			// Fill missing capture metadata once, without rewriting editorial metadata.
 			if (
-				(upgradeAnalysis || missingMp4 || fileOutputs?.length) &&
+				(upgradeAnalysis ||
+					upgradeLocales ||
+					missingMp4 ||
+					fileOutputs?.length) &&
 				existing.state !== "RUNNING"
 			) {
 				const additions = missingMp4
@@ -195,13 +196,17 @@ export async function requestLibrarySource(
 				const upgraded = await tx.librarySource.update({
 					where: { id: existing.id },
 					data: {
+						...(upgradeLocales
+							? { locales: [...new Set([...existing.locales, ...locales])] }
+							: {}),
 						snapshot: {
 							...(existing.snapshot as Prisma.InputJsonObject),
 							playbackLinks: [...snapshot.playbackLinks, ...additions],
 							...(fileOutputs ? { fileOutputs } : {}),
 							...(upgradeAnalysis ? { analysisOutput } : {}),
 						} as Prisma.InputJsonValue,
-						...(upgradeAnalysis && existing.state === "ERROR"
+						...(upgradeLocales ||
+						(upgradeAnalysis && existing.state === "ERROR")
 							? {
 									state: "PENDING",
 									attempts: 0,

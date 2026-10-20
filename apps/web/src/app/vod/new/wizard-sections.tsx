@@ -58,6 +58,7 @@ import {
 	addVodAudio,
 	addVodVideo,
 	updateVodVideoHeight,
+	updateVodVideoModePaths,
 } from "./rendition-copy";
 import {
 	Av1AdvancedEditor,
@@ -273,9 +274,13 @@ export function LadderSection({
 			}
 			return { ...video, bitrate: null };
 		});
+		const modePaths = updateVodVideoModePaths(
+			{ ...state, ...referencePatch, videos },
+			normalized,
+		);
 		onPatch({
 			...referencePatch,
-			videos: normalized,
+			...modePaths,
 			internal: normalized.some((video) => video.codec === "H265V2")
 				? (state.internal ??
 					(activateHevcV2
@@ -2555,7 +2560,8 @@ export function EncodingOptionsSection({
 							<Field
 								label={t("wizard.outputLanguageCodes")}
 								htmlFor="wz-ai-langs"
-								help={t("uiX.iso6391CommaSeparated")}
+								hint={t("wizard.aisaDefaultLanguage")}
+								help={t("wizard.aisaAdditionalLanguagesHelp")}
 							>
 								<CodesInput
 									id="wz-ai-langs"

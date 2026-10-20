@@ -140,6 +140,15 @@ describe("library writes", () => {
 			registerContent(prisma, contentRegisterSchema.parse(input), null),
 		).resolves.toBe(contentId);
 	});
+	it("recognizes default English when a legacy analysis source lists only translations", async () => {
+		tx.librarySource.findUnique.mockResolvedValue({
+			id: sourceId,
+			locales: ["ja"],
+		});
+		await expect(
+			registerContent(prisma, contentRegisterSchema.parse(input), null),
+		).resolves.toBe(contentId);
+	});
 	it("allows non-AISA metadata with an undetermined locale", async () => {
 		tx.librarySource.findUnique.mockResolvedValue({
 			id: sourceId,

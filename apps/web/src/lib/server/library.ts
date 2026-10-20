@@ -12,6 +12,7 @@ import {
 	type ProviderAnalysisView,
 	redactSecrets,
 	sceneAnalysisDocumentSchema,
+	sceneAnalysisLocales,
 } from "@bitovp/core";
 import { type AppPrismaClient, LibrarySourceError } from "@bitovp/db";
 import { NextResponse } from "next/server";
@@ -76,8 +77,11 @@ export async function sourceView(
 ): Promise<LibrarySourceView> {
 	const source = await prisma.librarySource.findUnique({ where: { id } });
 	if (!source) throw new LibrarySourceError(404, "Source not found");
+	const locales = source.locales.length
+		? sceneAnalysisLocales(source.locales)
+		: [];
 	const analyses = await Promise.all(
-		source.locales.map((locale) =>
+		locales.map((locale) =>
 			prisma.sceneAnalysisRevision.findFirst({
 				where: { sourceId: id, locale },
 				orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -91,6 +95,10 @@ export async function sourceView(
 			}),
 		),
 	);
+	const missingDefaultEnglish =
+		source.locales.length > 0 &&
+		!source.locales.includes("en") &&
+		!analyses.some((analysis) => analysis?.locale === "en");
 	const links = await prisma.contentRevision.findMany({
 		where: { sourceId: id },
 		distinct: ["contentId"],
@@ -115,9 +123,15 @@ export async function sourceView(
 		id: source.id,
 		jobId: source.jobId,
 		originalJobId: source.originalJobId,
-		state: z.enum(["PENDING", "RUNNING", "READY", "ERROR"]).parse(source.state),
+		state: z
+			.enum(["PENDING", "RUNNING", "READY", "ERROR"])
+			.parse(
+				source.state === "READY" && missingDefaultEnglish
+					? "ERROR"
+					: source.state,
+			),
 		error: source.error,
-		locales: source.locales,
+		locales,
 		snapshot: {
 			...snapshot,
 			playbackLinks: playbackLinks ?? snapshot.playbackLinks,
@@ -195,7 +209,11 @@ async function requireSourceLocale(tx: Tx, sourceId: string, locale: string) {
 		select: { id: true, locales: true },
 	});
 	if (!source) throw new LibrarySourceError(404, "Source not found");
-	if (!(source.locales.length ? source.locales : ["und"]).includes(locale))
+	if (
+		!(
+			source.locales.length ? sceneAnalysisLocales(source.locales) : ["und"]
+		).includes(locale)
+	)
 		throw new LibrarySourceError(400, "Locale not present in source");
 }
 async function appendRevision(

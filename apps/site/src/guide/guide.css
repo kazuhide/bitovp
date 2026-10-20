@@ -86,6 +86,9 @@
 	margin-top: 0.75rem;
 	font-size: 0.875rem;
 }
+.site-guide .guide-start-link {
+	margin-right: 1rem;
+}
 .site-guide .guide-page-toc {
 	border-left: 1px solid var(--landing-border);
 	padding-left: 1rem;

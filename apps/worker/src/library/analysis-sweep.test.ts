@@ -127,6 +127,28 @@ describe("durable analysis import", () => {
 		expect(f.revisions[0]?.document).not.toHaveProperty("future");
 		expect(f.db).not.toHaveProperty("encodingJob");
 	});
+	it("imports default English for additional-only locales and waits for its actual output", async () => {
+		const f = setup({ locales: ["ja"] });
+		f.get.mockImplementation(async (_id, locale) => {
+			if (locale === "en")
+				throw new Error("English output is not available yet");
+			return raw;
+		});
+		await f.tick();
+		expect(f.row.locales).toEqual(["ja", "en"]);
+		expect(f.row.state).toBe("ERROR");
+		expect(f.revisions.map((revision) => revision.locale)).toEqual(["ja"]);
+		f.row.availableAt = instant;
+		f.get.mockClear();
+		f.get.mockResolvedValue(raw);
+		await f.tick();
+		expect(f.row.state).toBe("READY");
+		expect(f.get).toHaveBeenCalledExactlyOnceWith("encoding", "en");
+		expect(f.revisions.map((revision) => revision.locale)).toEqual([
+			"ja",
+			"en",
+		]);
+	});
 	it("imports provider shots that overlap scene boundaries without altering their timing", async () => {
 		const f = setup({ locales: ["ja"] });
 		f.get.mockResolvedValue({
@@ -207,7 +229,13 @@ describe("durable analysis import", () => {
 		await f.tick();
 		expect(f.providerFor).not.toHaveBeenCalled();
 	});
-	it("uses the SDK GET path and retains raw JSON before SDK mapping", async () => {
+	it.each([
+		{ locale: "en", suffix: "" },
+		{ locale: "ja", suffix: "/language/ja" },
+	])("uses the SDK $locale GET path and retains raw JSON before SDK mapping", async ({
+		locale,
+		suffix,
+	}) => {
 		const fetchMock = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValue(
@@ -223,9 +251,9 @@ describe("durable analysis import", () => {
 					tenantOrgId: null,
 				}),
 			})("account");
-			expect(await provider.get("encoding", "ja")).toEqual(raw);
+			expect(await provider.get("encoding", locale)).toEqual(raw);
 			expect(fetchMock.mock.calls[0]?.[0]).toBe(
-				"https://api.bitmovin.com/v1/ai-scene-analysis/analyses/by-encoding-id/encoding/details/language/ja",
+				`https://api.bitmovin.com/v1/ai-scene-analysis/analyses/by-encoding-id/encoding/details${suffix}`,
 			);
 			expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("GET");
 		} finally {

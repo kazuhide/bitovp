@@ -1,3 +1,4 @@
+import { sceneAnalysisLocales } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
@@ -12,10 +13,23 @@ export async function POST(
 	if (invalid) return invalid;
 	return libraryRoute(async () => {
 		const ctx = await getServerContext();
+		const source = await ctx.prisma.librarySource.findUnique({
+			where: { id },
+			select: { state: true, locales: true },
+		});
+		const missingDefaultEnglish =
+			source?.state === "READY" &&
+			source.locales.length > 0 &&
+			!source.locales.includes("en");
+		if (!source || (source.state !== "ERROR" && !missingDefaultEnglish))
+			return jsonError(409, "Only a failed import can be retried");
 		const updated = await ctx.prisma.librarySource.updateMany({
-			where: { id, state: "ERROR" },
+			where: { id, state: source.state, locales: { equals: source.locales } },
 			data: {
 				state: "PENDING",
+				locales: source.locales.length
+					? sceneAnalysisLocales(source.locales)
+					: [],
 				attempts: 0,
 				availableAt: new Date(),
 				error: null,

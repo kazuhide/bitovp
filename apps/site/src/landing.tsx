@@ -128,14 +128,14 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 					<h1>{copy.hero.title}</h1>
 					<p className="landing-lead">{copy.hero.intro}</p>
 					<div className="landing-actions">
-						<a className="landing-button" href="#/demo">
-							{copy.hero.demo}
-						</a>
 						<a
-							className="landing-text-link"
-							href={guidePath(locale, "appendix")}
+							className="landing-button"
+							href={guidePath(locale, "getting-started")}
 						>
 							{copy.hero.install}
+						</a>
+						<a className="landing-text-link" href="#/demo">
+							{copy.hero.demo}
 						</a>
 					</div>
 					<p className="landing-intro-note">{copy.hero.note}</p>
@@ -195,7 +195,10 @@ export function LandingPage({ locale = "en" }: { locale?: SiteLocale }) {
 						<p key={paragraph}>{paragraph}</p>
 					))}
 					<div className="landing-actions">
-						<a className="landing-button" href={guidePath(locale, "appendix")}>
+						<a
+							className="landing-button"
+							href={guidePath(locale, "getting-started")}
+						>
 							{copy.run.install}
 						</a>
 						<a

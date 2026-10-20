@@ -43,7 +43,13 @@ function prepareLadder(state: WizardState) {
 	const drm = state.drm?.map((row) =>
 		row.path !== undefined
 			? row
-			: { ...row, path: derivedPaths.get(row.muxingKey) ?? "" },
+			: {
+					...row,
+					path: derivedPaths.get(row.muxingKey) ?? "",
+					...(vKeys.includes(row.muxingKey)
+						? { autoPath: derivedPaths.get(row.muxingKey) }
+						: {}),
+				},
 	);
 	const reserved = new Set([
 		...vKeys,
@@ -90,7 +96,7 @@ function prepareLadder(state: WizardState) {
 			// into standalone delivery or enable clear output beside its DRM.
 			return drmOwned || !emitted || leg?.path !== undefined
 				? leg
-				: { ...leg, path };
+				: { ...leg, path, ...(!isAudio ? { autoPath: path } : {}) };
 		};
 		return {
 			...rendition,
@@ -290,6 +296,86 @@ function isDerivedName(key: string | undefined, base: string): boolean {
 	if (!key?.startsWith(`${base}-`)) return false;
 	const suffix = key.slice(base.length + 1);
 	return /^\d+$/.test(suffix) && Number(suffix) >= 2;
+}
+
+/** Keep only editor-owned destinations in sync when a stream changes mode. */
+export function updateVodVideoModePaths(
+	state: WizardState,
+	next: WizardVideoRendition[],
+): Pick<WizardState, "videos"> & Partial<Pick<WizardState, "drm">> {
+	if (state.videos.length !== next.length) return { videos: next };
+	const oldKeys = videoKeys(state.videos);
+	const keys = videoKeys(next);
+	const rootOf = (path: string) => path.split("/").slice(0, 2).join("/");
+	const occupied = new Set<string>();
+	state.videos.forEach((video, index) => {
+		const derived = videoMuxingRelPath(video, oldKeys[index] ?? "");
+		for (const leg of [video.muxing, ...(video.extraMuxings ?? [])])
+			occupied.add(rootOf(leg?.path ?? derived));
+	});
+	for (const row of state.drm ?? [])
+		if (row.path !== undefined) occupied.add(rootOf(row.path));
+	let drm = state.drm;
+	const videos = next.map((video, index) => {
+		const current = state.videos[index];
+		if (!current) return video;
+		const wasPerTitle = current.extras?.mode?.startsWith("PER_TITLE") ?? false;
+		const perTitle = video.extras?.mode?.startsWith("PER_TITLE") ?? false;
+		if (wasPerTitle === perTitle) return video;
+		const key = keys[index] ?? "";
+		const previousDefault = videoMuxingRelPath(current, oldKeys[index] ?? "");
+		const templateLeaf = videoMuxingRelPath(
+			{ ...video, extras: { ...video.extras, mode: "PER_TITLE_TEMPLATE" } },
+			key,
+		)
+			.split("/")
+			.slice(2)
+			.join("/");
+		// Copies made before mode editing retained the tokens without the "p".
+		const leaves = [
+			templateLeaf,
+			(templateLeaf.match(/\{[^{}]+\}/g) ?? []).join("_"),
+		];
+		let derivedRoot: string | undefined;
+		const updatePath = <T extends { path?: string; autoPath?: string }>(
+			row: T,
+		): T => {
+			if (row.path === undefined || row.path !== row.autoPath) return row;
+			const suffix = leaves.find((leaf) => row.path?.endsWith(`/${leaf}`));
+			let path: string;
+			if (perTitle) {
+				if (suffix !== undefined) return row;
+				let root = row.path;
+				if (root === previousDefault) {
+					const proposed = `video/${key}`;
+					derivedRoot ??=
+						rootOf(root) === proposed ? proposed : unique(proposed, occupied);
+					root = derivedRoot;
+				}
+				path = `${root}/${templateLeaf}`;
+			} else {
+				if (suffix === undefined) return row;
+				path = row.path.slice(0, -(suffix.length + 1));
+			}
+			return { ...row, path, autoPath: path };
+		};
+		const muxingKeys = new Set(
+			[current.muxing, ...(current.extraMuxings ?? [])].map(
+				(leg) => leg?.key ?? oldKeys[index],
+			),
+		);
+		drm = drm?.map((row) =>
+			muxingKeys.has(row.muxingKey) ? updatePath(row) : row,
+		);
+		return {
+			...video,
+			...(video.muxing ? { muxing: updatePath(video.muxing) } : {}),
+			...(video.extraMuxings
+				? { extraMuxings: video.extraMuxings.map(updatePath) }
+				: {}),
+		};
+	});
+	return { videos, ...(drm !== state.drm ? { drm } : {}) };
 }
 
 /** Rename an editor-owned height key and its references in one wizard patch. */

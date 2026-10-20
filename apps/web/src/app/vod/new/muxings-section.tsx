@@ -390,6 +390,7 @@ function MuxingEditor({
 							onChange({
 								...muxing,
 								path: e.target.value === "" ? undefined : e.target.value,
+								autoPath: undefined,
 							})
 						}
 					/>

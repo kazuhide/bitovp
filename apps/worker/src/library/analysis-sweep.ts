@@ -4,6 +4,7 @@ import {
 	MAX_SCENE_ANALYSIS_BYTES,
 	normalizeSceneAnalysis,
 	redactSecrets,
+	sceneAnalysisLocales,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { UnsupportedBrowseError } from "@bitovp/storage";
@@ -64,10 +65,16 @@ export function createAnalysisProvider(deps: {
 			get: async (encodingId, locale) => {
 				// Let the SDK validate status/envelope, retaining fields its model mapper drops.
 				rawResult = undefined;
-				await api.aiSceneAnalysis.analyses.byEncodingId.details.language.get(
-					encodingId,
-					locale,
-				);
+				if (locale === "en") {
+					await api.aiSceneAnalysis.analyses.byEncodingId.details.get(
+						encodingId,
+					);
+				} else {
+					await api.aiSceneAnalysis.analyses.byEncodingId.details.language.get(
+						encodingId,
+						locale,
+					);
+				}
 				return rawResult;
 			},
 		};
@@ -120,11 +127,15 @@ export function createAnalysisSweep(deps: {
 			},
 		});
 		for (const row of rows) {
+			const locales = row.locales.length
+				? sceneAnalysisLocales(row.locales)
+				: [];
 			const leaseToken = (deps.uuid ?? randomUUID)();
 			const claimed = await deps.prisma.librarySource.updateMany({
 				where: { id: row.id, ...eligible },
 				data: {
 					state: "RUNNING",
+					locales,
 					leaseToken,
 					leaseUntil: new Date(now().getTime() + ANALYSIS_LEASE_MS),
 					attempts: { increment: 1 },
@@ -160,7 +171,7 @@ export function createAnalysisSweep(deps: {
 					provider ??= await deps.providerFor(row.accountId);
 					return provider.get(row.encodingId, locale);
 				};
-				for (const locale of row.locales) {
+				for (const locale of locales) {
 					if (completed.has(locale)) continue;
 					try {
 						const renewed = await deps.prisma.librarySource.updateMany({
@@ -208,8 +219,8 @@ export function createAnalysisSweep(deps: {
 					}
 				}
 				failed ||=
-					row.locales.length === 0 ||
-					row.locales.some((locale) => !completed.has(locale));
+					locales.length === 0 ||
+					locales.some((locale) => !completed.has(locale));
 			} catch {
 				failed = true;
 			}

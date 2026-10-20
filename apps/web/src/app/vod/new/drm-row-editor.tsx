@@ -311,6 +311,7 @@ export function DrmRowEditor({
 							onChange({
 								...row,
 								path: e.target.value === "" ? undefined : e.target.value,
+								autoPath: undefined,
 							})
 						}
 					/>
@@ -560,7 +561,11 @@ function SpekeRowEditor({
 						id={`${idBase}-path`}
 						value={row.path ?? ""}
 						onChange={(e) =>
-							onChange({ ...row, path: e.target.value || undefined })
+							onChange({
+								...row,
+								path: e.target.value || undefined,
+								autoPath: undefined,
+							})
 						}
 					/>
 				</Field>

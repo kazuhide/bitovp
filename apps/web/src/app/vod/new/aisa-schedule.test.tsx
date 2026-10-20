@@ -40,6 +40,32 @@ function mount(ai: Ai = imported, locale: "en" | "ja" = "en") {
 }
 
 describe("AISA schedule", () => {
+	it.each([
+		{
+			locale: "en" as const,
+			label: "Additional analysis languages",
+			hint: "English is the default analysis language.",
+		},
+		{
+			locale: "ja" as const,
+			label: "解析結果の追加言語",
+			hint: "英語の解析結果は標準で含まれます。",
+		},
+	])("explains default English while editing only additional languages: $locale", ({
+		locale,
+		label,
+		hint,
+	}) => {
+		const onPatch = mount({ ...imported, outputLanguageCodes: ["ja"] }, locale);
+		const input = screen.getByLabelText(label);
+		expect(input).toHaveValue("ja");
+		expect(input).toHaveAccessibleDescription(hint);
+		fireEvent.change(input, { target: { value: "ja, de, fr" } });
+		expect(
+			onPatch.mock.lastCall?.[0].startOptions.aiSceneAnalysis
+				.outputLanguageCodes,
+		).toEqual(["ja", "de", "fr"]);
+	});
 	it("edits imported zero values while preserving scene boundaries and metadata", () => {
 		const onPatch = mount();
 		expect(screen.getByLabelText("Position (seconds) 1")).toHaveValue(12.5);

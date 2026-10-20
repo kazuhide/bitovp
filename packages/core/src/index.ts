@@ -33,6 +33,7 @@ export {
 	contentUpdateSchema,
 	librarySnapshotSchema,
 } from "./content-library/contracts";
+export { sceneAnalysisLocales } from "./content-library/languages";
 export {
 	libraryFileOutputs,
 	libraryPlaybackLinks,

@@ -53,7 +53,11 @@ const raw = {
 };
 const stored = normalizeSceneAnalysis({ metadata: raw.metadata, duration: 10 });
 
-function database(retainedRaw: unknown, document: unknown = stored) {
+function database(
+	retainedRaw: unknown,
+	document: unknown = stored,
+	sourceOverrides: Record<string, unknown> = {},
+) {
 	const row: Record<string, unknown> = {
 		id: "analysis-1",
 		locale: "en",
@@ -62,8 +66,16 @@ function database(retainedRaw: unknown, document: unknown = stored) {
 		document,
 	};
 	const findFirst = vi.fn(
-		async ({ select }: { select: Record<string, boolean> }) =>
-			Object.fromEntries(Object.entries(row).filter(([key]) => select[key])),
+		async ({
+			select,
+			where,
+		}: {
+			select: Record<string, boolean>;
+			where: { locale: string };
+		}) =>
+			where.locale === row.locale
+				? Object.fromEntries(Object.entries(row).filter(([key]) => select[key]))
+				: null,
 	);
 	const db = {
 		librarySource: {
@@ -85,6 +97,7 @@ function database(retainedRaw: unknown, document: unknown = stored) {
 					qcVerdict: null,
 					qcOverriddenAt: null,
 				},
+				...sourceOverrides,
 			})),
 		},
 		sceneAnalysisRevision: { findFirst },
@@ -94,6 +107,27 @@ function database(retainedRaw: unknown, document: unknown = stored) {
 }
 
 describe("Library source detail retained-raw projection", () => {
+	it("includes default English on legacy sources without inventing its analysis or import success", async () => {
+		const { db, row } = database(raw, stored, { locales: ["ja"] });
+		row.locale = "ja";
+		const view = await sourceView(db, "source-1");
+		expect(view.locales).toEqual(["ja", "en"]);
+		expect(view.analyses.map((analysis) => analysis.locale)).toEqual(["ja"]);
+		expect(view.state).toBe("ERROR");
+	});
+	it("returns retained default English on a legacy source even if its locale list omitted it", async () => {
+		const { db } = database(raw, stored, { locales: ["ja"] });
+		const view = await sourceView(db, "source-1");
+		expect(view.locales).toEqual(["ja", "en"]);
+		expect(view.analyses.map((analysis) => analysis.locale)).toEqual(["en"]);
+	});
+	it("keeps non-AISA sources free of invented English analysis", async () => {
+		const { db } = database(raw, stored, { locales: [] });
+		const view = await sourceView(db, "source-1");
+		expect(view.locales).toEqual([]);
+		expect(view.analyses).toEqual([]);
+		expect(view.state).toBe("READY");
+	});
 	it("recovers scene context and sanitized provider fields without changing history", async () => {
 		const { db, row } = database(raw);
 		const before = JSON.stringify(row);

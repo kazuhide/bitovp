@@ -10,6 +10,9 @@ operate channels; administrators configure shared credentials and Live defaults.
 
 Open `/live/new` and configure the existing wizard from top to bottom:
 
+New configurations start with region `AUTO`, which lets Bitmovin select a
+region. Review the selected account and any saved or copied region settings.
+
 1. Name the channel and choose its Bitmovin account, region, and encoder version.
 2. Choose **RTMP**, **redundant RTMP**, **SRT**, **Zixi**, or **HLS pull** input.
    Pseudo-live is a feeder that sends stored files to an input, not a separate

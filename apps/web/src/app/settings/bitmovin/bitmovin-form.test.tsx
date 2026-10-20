@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery as wrap } from "@/test/render";
 
@@ -34,6 +35,65 @@ beforeEach(() => {
 	vi.clearAllMocks();
 });
 
+describe("BitmovinForm API key entry", () => {
+	it("keeps native secret protection while hinting against automatic password saving", () => {
+		wrap(<BitmovinForm submitting={false} onSubmit={onSubmit} />);
+		const input = screen.getByLabelText("API key");
+		expect(input).toHaveAttribute("type", "password");
+		expect(input).toHaveAttribute("autocomplete", "one-time-code");
+		expect(input).toHaveAttribute("autocapitalize", "none");
+		expect(input).toHaveAttribute("spellcheck", "false");
+	});
+
+	it("keeps native text editing and submits the entered key through form registration", async () => {
+		const user = userEvent.setup();
+		wrap(<BitmovinForm submitting={false} onSubmit={onSubmit} />);
+		await user.type(screen.getByLabelText("Label"), "Test account");
+		await user.type(screen.getByLabelText("API key"), "not-a-real-api-key");
+		await user.keyboard("{Home}{Delete}");
+		await user.click(screen.getByRole("button", { name: "Add account" }));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+		expect(onSubmit.mock.calls[0]?.[0].apiKey).toBe("ot-a-real-api-key");
+	});
+
+	it("uses a blank native password field for key rotation without changing stored account defaults", async () => {
+		wrap(
+			<BitmovinForm account={ACCOUNT} submitting={false} onSubmit={onSubmit} />,
+		);
+		expect(screen.queryByLabelText("API key")).toBeNull();
+		fireEvent.click(screen.getByLabelText("Rotate API key"));
+		const input = screen.getByLabelText("API key");
+		expect(input).toHaveAttribute("type", "password");
+		expect(input).toHaveAttribute("autocomplete", "one-time-code");
+		expect(input).toHaveValue("");
+		fireEvent.change(input, {
+			target: { value: "not-a-real-replacement-key" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+		expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({
+			apiKey: "not-a-real-replacement-key",
+			defaults: { cloudRegion: "AWS_EU_WEST_1", encoderVersion: "STABLE" },
+		});
+	});
+
+	it("retains the label, keyboard focus, validation description and disabled state", async () => {
+		const view = wrap(<BitmovinForm submitting={false} onSubmit={onSubmit} />);
+		const input = screen.getByLabelText("API key");
+		input.focus();
+		expect(input).toHaveFocus();
+		fireEvent.change(screen.getByLabelText("Label"), {
+			target: { value: "Test account" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+		await waitFor(() => expect(input).toHaveAccessibleDescription(/required/i));
+		expect(onSubmit).not.toHaveBeenCalled();
+		view.rerender(<BitmovinForm submitting onSubmit={onSubmit} />);
+		expect(screen.getByLabelText("API key")).toBe(input);
+		expect(input).toBeDisabled();
+	});
+});
+
 describe("BitmovinForm — rate card survival (review-84b C1)", () => {
 	it("hydrates the stored card into the textarea on edit", () => {
 		wrap(
@@ -61,6 +121,7 @@ describe("BitmovinForm — rate card survival (review-84b C1)", () => {
 		const payload = onSubmit.mock.calls[0]?.[0] as {
 			defaults: { rateCard?: { currency: string } };
 		};
+		expect(payload).not.toHaveProperty("apiKey");
 		expect(payload.defaults.rateCard).toBeDefined();
 		expect(payload.defaults.rateCard?.currency).toBe("USD");
 	});

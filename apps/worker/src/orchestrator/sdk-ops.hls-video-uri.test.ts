@@ -1,9 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	compileLiveChannel,
 	compilePlan,
 	curlForStep,
 	encodingPlanSchema,
+	liveChannelPlanSchema,
+	validateLiveChannel,
 	validatePlan,
 } from "@bitovp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -73,6 +76,92 @@ function planFor(mode: "clear" | "CENC" | "FAIRPLAY") {
 }
 
 describe("installed SDK HLS video URI serialization", () => {
+	it("keeps the shared Live URI bound to each additional manifest", async () => {
+		const calls: { path: string; body: Record<string, unknown> }[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				calls.push({
+					path: new URL(url).pathname,
+					body: JSON.parse(init.body as string),
+				});
+				return new Response(
+					JSON.stringify({ data: { result: { id: "created" } } }),
+					{
+						status: 201,
+						headers: { "content-type": "application/json" },
+					},
+				);
+			}),
+		);
+		const plan = liveChannelPlanSchema.parse(
+			JSON.parse(
+				readFileSync(
+					join(
+						__dirname,
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+					),
+					"utf8",
+				),
+			),
+		);
+		const video = plan.renditions[0];
+		const hls = plan.liveManifests.find((manifest) => manifest.kind === "HLS");
+		if (!video || !hls) throw new Error("Missing Live fixture");
+		video.hlsVariantUri = "live-main.m3u8";
+		plan.liveManifests.push(
+			...[2, 3].map((number) => ({
+				...hls,
+				key: `hls-${number}`,
+				destination: {
+					...hls.destination,
+					path: `${hls.destination.path}/hls-${number}`,
+				},
+			})),
+		);
+		expect(
+			validateLiveChannel(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const ops = compileLiveChannel(plan);
+		const ids = new Map(
+			ops.map((operation, index) => [operation.step, `resource-${index}`]),
+		);
+		const sdk = createBitmovinSdkOps(
+			{
+				apiKey: "synthetic-only",
+				tenantOrgId: null,
+				bitmovinAccountId: "synthetic-account",
+			},
+			async () => {},
+		);
+		const resolveCredential = vi.fn();
+		const variants = ops.filter(
+			(operation) =>
+				operation.kind === "CREATE_HLS_STREAM_INFO" &&
+				operation.payload.uri === "live-main.m3u8",
+		);
+		expect(variants).toHaveLength(3);
+		for (const operation of variants) {
+			await executeStep(operation, {
+				sdk,
+				ids,
+				resolveCredential,
+				poll: { intervalMs: 1, timeoutMs: 50, sleep: async () => {} },
+			});
+			const call = calls.at(-1);
+			expect(call?.path).toBe(
+				`/v1/encoding/manifests/hls/${ids.get(String(operation.refs.manifestId))}/streams`,
+			);
+			expect(call?.body).toMatchObject({
+				uri: "live-main.m3u8",
+				segmentPath: operation.payload.segmentPath,
+				streamId: ids.get(String(operation.refs.streamId)),
+				muxingId: ids.get(String(operation.refs.muxingId)),
+			});
+		}
+		expect(new Set(calls.map((call) => call.path)).size).toBe(3);
+		expect(resolveCredential).not.toHaveBeenCalled();
+	});
 	it.each([
 		"clear",
 		"CENC",

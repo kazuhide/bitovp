@@ -47,6 +47,27 @@ describe("Live video playlist URI form", () => {
 		const rebuilt = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
 		expect(rebuilt.renditions[0]?.hlsVariantUri).toBe("live-main.m3u8");
 	});
+	it("keeps copied filenames clear of additional manifest names", () => {
+		const value = state();
+		value.manifests.additionalHls = [
+			{
+				...value.manifests.hls,
+				key: "alternate",
+				manifestName: "video-v1.m3u8",
+				destination: { outputKey: "origin", path: "separate-hls" },
+			},
+		];
+		const onPatch = vi.fn();
+		render(<LiveLadderSection state={value} onPatch={onPatch} />);
+		fireEvent.change(screen.getByLabelText("Video settings to reuse"), {
+			target: { value: "v1080" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /Add video/ }));
+		const videos = onPatch.mock.lastCall?.[0].videos;
+		expect(videos[0].extras.hlsVariantUri).toBe("live-main.m3u8");
+		expect(videos[3].extras.hlsVariantUri).not.toBe("video-v1.m3u8");
+		expect(videos[3].extras.hlsVariantUri).toBe("video-v1-2.m3u8");
+	});
 	it("edits the URI in the existing video card", () => {
 		const onPatch = vi.fn();
 		render(<LiveLadderSection state={state()} onPatch={onPatch} />);

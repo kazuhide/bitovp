@@ -18,6 +18,12 @@ import {
 } from "./live-plan-to-wizard";
 import { liveMirrorProblem } from "./mirror-model";
 
+function required<T>(value: T | undefined): T {
+	if (value === undefined)
+		throw new Error("Missing multi-output fixture value");
+	return value;
+}
+
 function state(): LiveWizardState {
 	const output = {
 		...DEFAULT_LIVE_WIZARD_STATE.output,
@@ -102,6 +108,66 @@ function state(): LiveWizardState {
 }
 
 describe("multiple Live output authoring", () => {
+	it("keeps a video playlist override through multi-output drafts, import and every HLS operation", () => {
+		const original = state();
+		original.videos = original.videos.map((video, index) =>
+			index === 0
+				? {
+						...video,
+						extras: { ...video.extras, hlsVariantUri: "main-video.m3u8" },
+					}
+				: video,
+		);
+		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(original));
+		const imported = tryImportLiveChannelIntoWizard(plan);
+		if (!imported.ok) throw new Error(imported.reasonKey);
+		const restored = mergeWizardDraft(
+			DEFAULT_LIVE_WIZARD_STATE,
+			projectWizardDraft("live", imported.state),
+			"live",
+		);
+		expect(liveChannelPlanSchema.parse(buildLiveChannelPlan(restored))).toEqual(
+			plan,
+		);
+		const variants = compileLiveChannel(plan).filter(
+			(operation) =>
+				operation.kind === "CREATE_HLS_STREAM_INFO" &&
+				operation.payload.uri === "main-video.m3u8",
+		);
+		expect(variants.map((operation) => operation.step.split(":")[1])).toEqual([
+			"hls",
+			"french",
+			"german",
+		]);
+		expect(
+			validateLiveChannel(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+	});
+	it("checks URI tokens and all mirrored namespaces for an additional HLS manifest", () => {
+		const original = state();
+		const additional = original.manifests.additionalHls?.[0];
+		if (!additional) throw new Error("Missing additional HLS fixture");
+		additional.manifestName = "main-video.m3u8";
+		original.videos = original.videos.map((video, index) =>
+			index === 0
+				? {
+						...video,
+						extras: { ...video.extras, hlsVariantUri: "main-video.m3u8" },
+					}
+				: video,
+		);
+		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(original));
+		expect(validateLiveChannel(plan).map((issue) => issue.code)).toContain(
+			"LIVE_OUTPUT_NAMESPACE_COLLISION",
+		);
+		expect(validateLiveChannel(plan).map((issue) => issue.code)).toContain(
+			"LIVE_HLS_URI_COLLISION",
+		);
+		required(plan.renditions[0]).hlsVariantUri = "main-{group}.m3u8";
+		expect(validateLiveChannel(plan).map((issue) => issue.code)).toContain(
+			"LIVE_HLS_VIDEO_URI_PATTERN",
+		);
+	});
 	it("restores and clears every additional resource through the allowlisted browser draft", () => {
 		const original = state();
 		original.outputOrder = ["origin", "west", "mirror-1", "east"];
@@ -160,17 +226,17 @@ describe("multiple Live output authoring", () => {
 	it("preserves imported array order, stable identities, names and PRIVATE versus omitted ACL", () => {
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
 		plan.outputs = [
-			plan.outputs[3]!,
-			plan.outputs[0]!,
-			plan.outputs[1]!,
-			plan.outputs[2]!,
+			required(plan.outputs[3]),
+			required(plan.outputs[0]),
+			required(plan.outputs[1]),
+			required(plan.outputs[2]),
 		];
 		plan.liveManifests = [
-			plan.liveManifests[4]!,
-			plan.liveManifests[2]!,
-			plan.liveManifests[1]!,
-			plan.liveManifests[3]!,
-			plan.liveManifests[0]!,
+			required(plan.liveManifests[4]),
+			required(plan.liveManifests[2]),
+			required(plan.liveManifests[1]),
+			required(plan.liveManifests[3]),
+			required(plan.liveManifests[0]),
 		];
 		expect(
 			liveChannelPlanSchema.parse(
@@ -205,14 +271,14 @@ describe("multiple Live output authoring", () => {
 	});
 	it("refuses a later mirror that duplicates an existing storage destination", () => {
 		const next = state();
-		next.additionalMirrors![1]!.output = {
-			...next.additionalMirrors![0]!.output,
+		required(next.additionalMirrors?.[1]).output = {
+			...required(next.additionalMirrors?.[0]).output,
 		};
 		expect(liveMirrorProblem(next)).toBe("liveMirror.sameDestination");
 	});
 	it("blocks masters and derived HLS playlists that would overwrite another manifest", () => {
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
-		const first = plan.liveManifests[0]!;
+		const first = required(plan.liveManifests[0]);
 		plan.liveManifests.push({
 			...first,
 			key: "collision",
@@ -228,7 +294,7 @@ describe("multiple Live output authoring", () => {
 	it("reserves media init files but does not invent archive writes on delivery mirrors", () => {
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
 		plan.outputs.push({
-			...plan.outputs[0]!,
+			...required(plan.outputs[0]),
 			key: "recording",
 			kind: "S3",
 			bucket: "recordings",
@@ -246,11 +312,11 @@ describe("multiple Live output authoring", () => {
 				(issue) => issue.code === "LIVE_OUTPUT_NAMESPACE_COLLISION",
 			),
 		).toEqual([]);
-		const first = plan.muxings[0]!;
+		const first = required(plan.muxings[0]);
 		if (first.kind !== "FMP4" || !first.destination)
 			throw new Error("Missing media init fixture");
-		plan.liveManifests[0]!.manifestName = first.initSegmentName;
-		plan.liveManifests[0]!.destination = first.destination;
+		required(plan.liveManifests[0]).manifestName = first.initSegmentName;
+		required(plan.liveManifests[0]).destination = first.destination;
 		expect(validateLiveChannel(plan)).toContainEqual(
 			expect.objectContaining({
 				code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
@@ -260,7 +326,7 @@ describe("multiple Live output authoring", () => {
 	});
 	it("reserves a CMAF init filename only when its name is statically known", () => {
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
-		const first = plan.muxings[0]!;
+		const first = required(plan.muxings[0]);
 		if (first.kind !== "FMP4" || !first.destination)
 			throw new Error("Missing CMAF init fixture");
 		plan.muxings[0] = { ...first, kind: "CMAF" };
@@ -301,8 +367,9 @@ describe("multiple Live output authoring", () => {
 	});
 	it("keeps explicit false and reports references before a mirror is removed", () => {
 		const next = state();
-		next.manifests.additionalHls![0]!.insertProgramDateTimeExplicit = true;
-		next.manifests.additionalHls![0]!.destination!.outputKey = "east";
+		const additional = required(next.manifests.additionalHls?.[0]);
+		additional.insertProgramDateTimeExplicit = true;
+		required(additional.destination).outputKey = "east";
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(next));
 		expect(
 			plan.liveManifests.find((entry) => entry.key === "french"),

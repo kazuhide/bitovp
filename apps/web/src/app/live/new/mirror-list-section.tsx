@@ -50,18 +50,18 @@ export function LiveMirrorListSection({
 							title={t("liveOutputs.mirrorNumber", { number: index + 2 })}
 							disableRemoval={referenced}
 							onRemove={remove}
-							onPatch={(patch) =>
-								patch.mirror
-									? onPatch({
-											additionalMirrors: state.additionalMirrors?.map(
-												(candidate) =>
-													candidate.key === entry.key
-														? { ...candidate, output: patch.mirror! }
-														: candidate,
-											),
-										})
-									: remove()
-							}
+							onPatch={(patch) => {
+								const mirror = patch.mirror;
+								if (!mirror) return remove();
+								onPatch({
+									additionalMirrors: state.additionalMirrors?.map(
+										(candidate) =>
+											candidate.key === entry.key
+												? { ...candidate, output: mirror }
+												: candidate,
+									),
+								});
+							}}
 						/>
 					</div>
 				);

@@ -40,7 +40,7 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 				.join("/");
 			const token = JSON.stringify([identity, file]);
 			const previous = reservations.get(token);
-			if (previous)
+			if (previous && previous !== owner)
 				issues.push({
 					code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
 					level: "error",
@@ -55,9 +55,18 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 		const path = `liveManifests[${index}].destination`;
 		reserve(manifest.destination, manifest.manifestName, owner, path);
 		if (manifest.kind === "HLS") {
-			for (const { rendition } of selectLiveManifestMuxings(plan, manifest)) {
+			for (const { muxing, rendition } of selectLiveManifestMuxings(
+				plan,
+				manifest,
+			)) {
 				const uri = uris.get(rendition.key);
-				if (uri) reserve(manifest.destination, uri, owner, path);
+				if (uri)
+					reserve(
+						manifest.destination,
+						uri,
+						`playlist "${muxing.key}" in ${owner}`,
+						path,
+					);
 			}
 		}
 	}

@@ -73,6 +73,7 @@ function load(raw: unknown) {
 }
 it("saves and submits an edited multi-output import without dropping later resources", async () => {
 	const raw = plan();
+	raw.renditions[0].hlsVariantUri = "main-video.m3u8";
 	raw.outputs.push(
 		...[1, 2, 3].map((number) => ({
 			...raw.outputs[0],

@@ -180,6 +180,13 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 												(video) => video.extras?.hlsVariantUri,
 											),
 											state.manifests.hls.manifestName || "stream.m3u8",
+											state.manifests.dash.manifestName,
+											...(state.manifests.additionalHls ?? []).map(
+												(manifest) => manifest.manifestName,
+											),
+											...(state.manifests.additionalDash ?? []).map(
+												(manifest) => manifest.manifestName,
+											),
 										],
 									),
 								],

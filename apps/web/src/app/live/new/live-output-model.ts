@@ -44,6 +44,9 @@ export function inResourceOrder<T extends { key: string }>(
 	const byKey = new Map(items.map((item) => [item.key, item]));
 	const keys = new Set(order);
 	return [...keys]
-		.flatMap((key) => (byKey.get(key) ? [byKey.get(key)!] : []))
+		.flatMap((key) => {
+			const item = byKey.get(key);
+			return item ? [item] : [];
+		})
 		.concat(items.filter((item) => !keys.has(item.key)));
 }

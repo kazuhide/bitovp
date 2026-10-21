@@ -742,6 +742,18 @@ export {
 	templateStreamRefSchema,
 } from "./plan/per-title-results";
 export type {
+	PerTitleApiSettings,
+	PerTitleCodec,
+	PerTitleCountPolicy,
+	PerTitleDiagnostic,
+	PerTitleGoal,
+	PerTitleGoalRow,
+	PerTitleProposal,
+	PerTitleScenario,
+	PerTitleStrategy,
+} from "./plan/per-title-simulator";
+export { proposePerTitleSettings } from "./plan/per-title-simulator";
+export type {
 	CreateLivePresetRequest,
 	CreatePlanPresetRequest,
 	DeliverySpecMeta,

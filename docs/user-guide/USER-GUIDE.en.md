@@ -440,6 +440,22 @@ Per-Title analyzes the source and creates outputs with resolutions and bitrates 
 
 Automatic rendition generation includes `autoRepresentations` and configuration-adoption thresholds. Advanced fixed-resolution and fixed-bitrate settings provide conditions and calculation methods for adding higher outputs. Complexity factors and codec bitrate factors are separate from the basic minimum and maximum values.
 
+**Per-Title simulator**
+
+In "Ladder", select "Open simulator" to compare Per-Title settings in a separate dialog. Select a codec to load its current ladder settings. Edits remain available when switching between codecs in the dialog. Choose one of five approaches:
+
+- **Automatic:** let Per-Title choose resolutions and bitrates.
+- **Count only:** set a desired total count and let Per-Title choose resolutions.
+- **Some required resolutions:** require selected resolutions and allow others.
+- **All resolutions specified:** list the resolutions to use; let Per-Title choose bitrates.
+- **Resolutions and bitrate bounds:** specify each resolution and its bitrate range.
+
+Distinguish the desired total count from the count at each resolution, such as two different bitrates at 360p. Count video renditions, not audio tracks, containers or manifests. Desired counts are goals: the API has no field that directly enforces an arbitrary total of N renditions.
+
+Fixing resolutions alone does not guarantee the total count or one rendition per resolution. Stream bitrate bounds, global bounds and bitrate steps can conflict, producing extra or missing renditions or an error. See Bitmovin's [bandwidth constraints guide](https://developer.bitmovin.com/encoding/docs/constraining-bandwidth-in-per-title-encoding).
+
+The comparison uses model assumptions, not measured encoding results. It counts required rows by resolution and checks the total rendition count; it does not calculate an upper count for each resolution. Check the assumptions, conflicts and any conditions the model cannot evaluate; matching a scenario does not guarantee the same result for every source. Select "Review changes" to inspect the differences, then "Apply to draft" to update the form. Opening or applying a proposal does not start encoding. Use the existing review and start actions when ready.
+
 See Chapter 11 for VMAF, PSNR, execution profiles, budgets, and interpreting results. The wizard's "VMAF only (skip delivery outputs)" mode disables delivery packaging, manifests, and AI Scene Analysis. A quality gate can either mark a result or block manifest generation; distinguish these behaviors. Holding delivery requires post-encoding manifest generation. It does not retract outputs that have already been published.
 
 AI Scene Analysis supports scene analysis and placement of ad breaks. Analysis output always includes English. Add `ja` for Japanese, or leave additional languages blank for English only. Configure the asset description file, languages, automatic insertion at scene boundaries, and cue points at specified times. Positions, maximum allowed offsets, and durations are in seconds, and accept zero and fractional values. Even a zero allowed offset does not guarantee identical cut frames across codecs. View completed analysis in the Content Library.

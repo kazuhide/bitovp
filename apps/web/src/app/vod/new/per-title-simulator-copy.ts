@@ -15,6 +15,7 @@ const en = {
 	global: "Overall bitrate limits",
 	minimum: "Minimum bitrate (kbps)",
 	maximum: "Maximum bitrate (kbps)",
+	minimumSlider: "Minimum bitrate slider (kbps)",
 	maximumSlider: "Maximum bitrate slider (kbps)",
 	automaticSteps:
 		"Bitrate spacing is selected automatically from the current requirements.",
@@ -140,6 +141,7 @@ const ja: typeof en = {
 	global: "全体のビットレート範囲",
 	minimum: "最小ビットレート (kbps)",
 	maximum: "最大ビットレート (kbps)",
+	minimumSlider: "最小ビットレートのスライダー (kbps)",
 	maximumSlider: "最大ビットレートのスライダー (kbps)",
 	automaticSteps: "ビットレート間隔は、現在の要件から自動で計算します。",
 	automaticRanges:

@@ -37,12 +37,102 @@ function proposedApi() {
 }
 
 function maximum(value: number) {
-	fireEvent.change(screen.getByRole("slider", { name: /Maximum bitrate/ }), {
-		target: { value: String(value) },
-	});
+	fireEvent.change(
+		screen.getByRole("slider", { name: "Maximum bitrate slider (kbps)" }),
+		{
+			target: { value: String(value) },
+		},
+	);
 }
 
 describe("Per-Title automatic interaction", () => {
+	it("recalculates automatic row ranges and dependent settings from the overall minimum slider", () => {
+		const { onApply } = show();
+		const first = proposedApi();
+		fireEvent.change(
+			screen.getByRole("slider", { name: "Minimum bitrate slider (kbps)" }),
+			{
+				target: { value: "200" },
+			},
+		);
+		const second = proposedApi();
+		expect(
+			screen.getByRole("spinbutton", { name: "Minimum bitrate (kbps)" }),
+		).toHaveValue(200);
+		expect(second.global.minBitrate).toBe(200_000);
+		expect(second.streams[1].perTitleSettings.minBitrate).toBeGreaterThan(
+			first.streams[1].perTitleSettings.minBitrate,
+		);
+		expect(second.streams[1].perTitleSettings.maxBitrate).toBeGreaterThan(
+			first.streams[1].perTitleSettings.maxBitrate,
+		);
+		expect(
+			second.streams[1].perTitleSettings.lowComplexityBoundaryForMaxBitrate,
+		).not.toBe(
+			first.streams[1].perTitleSettings.lowComplexityBoundaryForMaxBitrate,
+		);
+		expect(second.global.fixedResolutionAndBitrateConfiguration).not.toEqual(
+			first.global.fixedResolutionAndBitrateConfiguration,
+		);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it("keeps row slider edits pinned while both overall sliders recalculate automatic values", () => {
+		show();
+		const rowMinimum = screen.getByRole("slider", {
+			name: "Minimum bitrate slider (kbps), rendition 2",
+		});
+		const rowMaximum = screen.getByRole("slider", {
+			name: "Maximum bitrate slider (kbps), rendition 3",
+		});
+		fireEvent.change(rowMinimum, { target: { value: "350" } });
+		fireEvent.change(rowMaximum, { target: { value: "1250" } });
+		fireEvent.change(
+			screen.getByRole("slider", { name: "Minimum bitrate slider (kbps)" }),
+			{ target: { value: "200" } },
+		);
+		maximum(4800);
+		const api = proposedApi();
+		expect(rowMinimum).toHaveValue("350");
+		expect(rowMaximum).toHaveValue("1250");
+		expect(api.streams[1].perTitleSettings.minBitrate).toBe(350_000);
+		expect(api.streams[2].perTitleSettings.maxBitrate).toBe(1_250_000);
+		expect(api.streams[0].perTitleSettings.minBitrate).toBeGreaterThan(160_000);
+		fireEvent.click(
+			screen.getByRole("button", { name: /Reset.*automatic.*2/i }),
+		);
+		expect(rowMinimum).not.toHaveValue("350");
+	});
+
+	it("adjusts an automatic partner when a row slider passes it and retains manual partners", () => {
+		show();
+		const minimum = screen.getByRole("slider", {
+			name: "Minimum bitrate slider (kbps), rendition 2",
+		});
+		const maximum = screen.getByRole("slider", {
+			name: "Maximum bitrate slider (kbps), rendition 2",
+		});
+		fireEvent.change(minimum, { target: { value: "700" } });
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 2",
+			}),
+		).toHaveValue(700);
+		expect(maximum).toHaveAttribute("min", "700");
+		fireEvent.change(maximum, { target: { value: "900" } });
+		expect(minimum).toHaveAttribute("max", "900");
+		fireEvent.keyDown(minimum, { key: "End" });
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Minimum bitrate (kbps), rendition 2",
+			}),
+		).toHaveValue(900);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 2",
+			}),
+		).toHaveValue(900);
+	});
 	it("represents current limits below the loaded minimum without a keyboard jump", () => {
 		show();
 		fireEvent.change(
@@ -53,7 +143,9 @@ describe("Per-Title automatic interaction", () => {
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 			{ target: { value: "50" } },
 		);
-		const slider = screen.getByRole("slider", { name: /Maximum bitrate/ });
+		const slider = screen.getByRole("slider", {
+			name: "Maximum bitrate slider (kbps)",
+		});
 		expect(slider).toHaveAttribute("min", "10");
 		expect(slider).toHaveValue("50");
 		fireEvent.keyDown(slider, { key: "ArrowRight" });
@@ -68,11 +160,34 @@ describe("Per-Title automatic interaction", () => {
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 			{ target: { value: "12000" } },
 		);
-		const slider = screen.getByRole("slider", { name: /Maximum bitrate/ });
+		const slider = screen.getByRole("slider", {
+			name: "Maximum bitrate slider (kbps)",
+		});
 		expect(slider).toHaveAttribute("max", "12000");
 		maximum(9000);
 		expect(slider).toHaveAttribute("max", "12000");
 		expect(slider).toHaveValue("9000");
+	});
+
+	it("recovers both sliders after an invalid maximum is repaired", () => {
+		show();
+		const field = screen.getByRole("spinbutton", {
+			name: "Maximum bitrate (kbps)",
+		});
+		const minimum = screen.getByRole("slider", {
+			name: "Minimum bitrate slider (kbps)",
+		});
+		const maximum = screen.getByRole("slider", {
+			name: "Maximum bitrate slider (kbps)",
+		});
+		fireEvent.change(field, { target: { value: "3000000" } });
+		expect(minimum).toBeDisabled();
+		expect(maximum).toBeDisabled();
+		expect(field).toHaveValue(3000000);
+		fireEvent.change(field, { target: { value: "2400" } });
+		expect(minimum).toBeEnabled();
+		expect(maximum).toBeEnabled();
+		expect(maximum).toHaveAttribute("max", "9600");
 	});
 
 	it("inherits displayed ranges when switching to a codec without a saved seed", () => {
@@ -223,7 +338,9 @@ describe("Per-Title automatic interaction", () => {
 
 	it("keeps exact integer limits on the slider and supports useful keyboard steps", () => {
 		show({ ...goal, maxBitrate: 2_400_001 });
-		const slider = screen.getByRole("slider", { name: /Maximum bitrate/ });
+		const slider = screen.getByRole("slider", {
+			name: "Maximum bitrate slider (kbps)",
+		});
 		expect(slider).toHaveValue("2400.001");
 		fireEvent.keyDown(slider, { key: "ArrowRight" });
 		expect(

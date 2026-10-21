@@ -5,6 +5,7 @@ import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import type { PerTitleManualBounds } from "./per-title-simulator-auto";
+import { PerTitleSimulatorBitrateField } from "./per-title-simulator-bitrate-field";
 import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulator-fields";
 
 const texts = {
@@ -16,6 +17,8 @@ const texts = {
 		manual: "Manual",
 		minimum: "Minimum bitrate (kbps)",
 		maximum: "Maximum bitrate (kbps)",
+		minimumSlider: "Minimum bitrate slider (kbps)",
+		maximumSlider: "Maximum bitrate slider (kbps)",
 		short: { min: "Min", max: "Max" },
 		height: "Height (px)",
 		optionalHeight: "Height (px, optional)",
@@ -38,6 +41,8 @@ const texts = {
 		manual: "手動",
 		minimum: "最小ビットレート (kbps)",
 		maximum: "最大ビットレート (kbps)",
+		minimumSlider: "最小ビットレートのスライダー (kbps)",
+		maximumSlider: "最大ビットレートのスライダー (kbps)",
 		short: { min: "下限", max: "上限" },
 		height: "高さ (px)",
 		optionalHeight: "高さ (px、省略可)",
@@ -148,6 +153,15 @@ export function PerTitleSimulatorRows({
 	const automatic = goal.automaticTemplates ?? [];
 	const ranged = goal.strategy === "fixed-ranges";
 	const full = rows.length + automatic.length >= 64;
+	const inGlobal = (value: number | undefined): value is number =>
+		positiveInteger(value) &&
+		value >= goal.minBitrate &&
+		value <= goal.maxBitrate;
+	const validGlobal =
+		positiveInteger(goal.minBitrate) &&
+		positiveInteger(goal.maxBitrate) &&
+		goal.minBitrate <= goal.maxBitrate &&
+		goal.maxBitrate <= 2_147_483_647;
 	const heightOrder = (row: { height?: number }) =>
 		row.height !== undefined && Number.isFinite(row.height)
 			? row.height
@@ -281,15 +295,34 @@ export function PerTitleSimulatorRows({
 								/>
 								{rowRanged
 									? (["min", "max"] as const).map((bound) => (
-											<NumberField
+											<PerTitleSimulatorBitrateField
 												key={bound}
 												id={`${id}-${row.id}-${bound}`}
 												label={bound === "min" ? copy.minimum : copy.maximum}
 												accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${index + 1}`}
+												sliderLabel={`${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${index + 1}`}
 												value={
 													bound === "min" ? row.minBitrate : row.maxBitrate
 												}
-												unit={1000}
+												minimum={
+													validGlobal
+														? bound === "max" &&
+															manual?.min &&
+															inGlobal(row.minBitrate)
+															? row.minBitrate
+															: goal.minBitrate
+														: 1
+												}
+												maximum={
+													validGlobal
+														? bound === "min" &&
+															manual?.max &&
+															inGlobal(row.maxBitrate)
+															? row.maxBitrate
+															: goal.maxBitrate
+														: 2_147_483_647
+												}
+												disabled={!validGlobal}
 												onChange={(value) =>
 													onBitrateChange(row.id, bound, value)
 												}

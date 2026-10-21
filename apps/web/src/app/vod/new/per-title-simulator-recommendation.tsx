@@ -3,17 +3,20 @@
 import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
 import { type ReactNode, useId } from "react";
 import { useT } from "@/lib/i18n/context";
+import { PerTitleComplexity } from "./per-title-simulator-complexity";
 import { perTitleSimulatorCopy } from "./per-title-simulator-copy";
 import { PerTitleLadder } from "./per-title-simulator-ladder";
 
 export function PerTitleRecommendation({
 	goal,
 	proposal,
+	baseline,
 	children,
 	comparisonOnly = false,
 }: {
 	goal: PerTitleGoal;
 	proposal: PerTitleProposal;
+	baseline?: PerTitleProposal;
 	children?: ReactNode;
 	comparisonOnly?: boolean;
 }) {
@@ -129,6 +132,7 @@ export function PerTitleRecommendation({
 				) : null}
 			</dl>
 			<PerTitleLadder proposal={proposal} />
+			<PerTitleComplexity proposal={proposal} baseline={baseline} />
 			{children}
 			<details className="space-y-2 border-t border-zinc-800 pt-3 text-xs text-zinc-400">
 				<summary className="cursor-pointer">{copy.apiParameters}</summary>

@@ -26,6 +26,7 @@ import {
 	bitrateSliderBounds,
 	type PerTitleManualBounds,
 } from "./per-title-simulator-auto";
+import { PerTitleSimulatorBitrateField as BitrateField } from "./per-title-simulator-bitrate-field";
 import { PerTitleConstraints } from "./per-title-simulator-constraints";
 import {
 	type PerTitleSimulatorCopy,
@@ -50,6 +51,9 @@ export type PerTitleSimulatorProps = {
 
 const usesRows = (goal: PerTitleGoal) =>
 	goal.strategy !== "automatic" && goal.strategy !== "count";
+
+const validSliderBitrate = (value: number) =>
+	Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
 
 const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 	"model-only":
@@ -387,26 +391,24 @@ function SimulatorEditor({
 				current.baseline === referenceGoal ? current.maximum : slider.max;
 			const maximum = Math.max(
 				baselineMaximum,
-				Number.isFinite(goal.maxBitrate) ? goal.maxBitrate : baselineMaximum,
+				validSliderBitrate(goal.maxBitrate) ? goal.maxBitrate : baselineMaximum,
 			);
 			return current.baseline === referenceGoal && current.maximum === maximum
 				? current
 				: { baseline: referenceGoal, maximum };
 		});
 	}, [referenceGoal, goal.maxBitrate, slider.max]);
-	const sliderMinimum =
-		Number.isSafeInteger(goal.minBitrate) && goal.minBitrate > 0
-			? goal.minBitrate
-			: slider.min;
+	const sliderMinimum = validSliderBitrate(goal.minBitrate)
+		? goal.minBitrate
+		: slider.min;
 	const sliderMaximum = Math.max(
 		sliderRange.baseline === referenceGoal ? sliderRange.maximum : slider.max,
-		Number.isFinite(goal.maxBitrate) ? goal.maxBitrate : slider.max,
+		validSliderBitrate(goal.maxBitrate) ? goal.maxBitrate : slider.max,
 		sliderMinimum,
 	);
 	const sliderValid =
-		Number.isSafeInteger(goal.minBitrate) &&
-		goal.minBitrate > 0 &&
-		Number.isSafeInteger(goal.maxBitrate) &&
+		validSliderBitrate(goal.minBitrate) &&
+		validSliderBitrate(goal.maxBitrate) &&
 		goal.maxBitrate >= goal.minBitrate;
 	const selected = useMemo(() => recommendPerTitleSettings(goal), [goal]);
 	const baseline = useMemo(
@@ -497,70 +499,28 @@ function SimulatorEditor({
 							{copy.global}
 						</h3>
 						<div className="grid gap-3 sm:grid-cols-2">
-							<NumberField
+							<BitrateField
 								id={`${id}-min`}
 								label={copy.minimum}
+								sliderLabel={copy.minimumSlider}
 								value={goal.minBitrate}
-								unit={1000}
+								minimum={1}
+								maximum={goal.maxBitrate}
+								keyboardStep={slider.step}
+								disabled={!sliderValid}
 								onChange={(value) => patch({ minBitrate: value ?? Number.NaN })}
 							/>
-							<div className="space-y-2">
-								<NumberField
-									id={`${id}-max`}
-									label={copy.maximum}
-									value={goal.maxBitrate}
-									unit={1000}
-									onChange={(value) =>
-										patch({ maxBitrate: value ?? Number.NaN })
-									}
-								/>
-								<input
-									type="range"
-									aria-label={copy.maximumSlider}
-									aria-valuetext={
-										sliderValid
-											? `${new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(goal.maxBitrate / 1000)} kbps`
-											: undefined
-									}
-									min={sliderMinimum / 1000}
-									max={sliderMaximum / 1000}
-									step={0.001}
-									value={(sliderValid ? goal.maxBitrate : sliderMinimum) / 1000}
-									disabled={!sliderValid}
-									className="h-5 w-full cursor-pointer accent-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2 disabled:opacity-50"
-									onChange={(event) =>
-										patch({
-											maxBitrate: Math.round(Number(event.target.value) * 1000),
-										})
-									}
-									onKeyDown={(event) => {
-										const direction = [
-											"ArrowRight",
-											"ArrowUp",
-											"PageUp",
-										].includes(event.key)
-											? 1
-											: ["ArrowLeft", "ArrowDown", "PageDown"].includes(
-														event.key,
-													)
-												? -1
-												: 0;
-										if (!direction || !sliderValid) return;
-										event.preventDefault();
-										const increment =
-											slider.step * (event.key.startsWith("Page") ? 10 : 1);
-										patch({
-											maxBitrate: Math.min(
-												sliderMaximum,
-												Math.max(
-													sliderMinimum,
-													goal.maxBitrate + direction * increment,
-												),
-											),
-										});
-									}}
-								/>
-							</div>
+							<BitrateField
+								id={`${id}-max`}
+								label={copy.maximum}
+								sliderLabel={copy.maximumSlider}
+								value={goal.maxBitrate}
+								minimum={sliderMinimum}
+								maximum={sliderMaximum}
+								keyboardStep={slider.step}
+								disabled={!sliderValid}
+								onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
+							/>
 						</div>
 					</section>
 					<div className="grid gap-3 sm:grid-cols-2">
@@ -633,6 +593,7 @@ function SimulatorEditor({
 					<PerTitleRecommendation
 						goal={goal}
 						proposal={selected}
+						baseline={baseline}
 						comparisonOnly={!!reference}
 					/>
 					<PerTitleReasoning

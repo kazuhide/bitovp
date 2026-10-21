@@ -45,6 +45,260 @@ describe("Unified Per-Title rendition inputs", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("offers labelled required-bound sliders over global limits (%s)", (locale) => {
+		const events = callbacks();
+		renderLocalized(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={goal}
+				manualBounds={{}}
+				{...events}
+			/>,
+			locale,
+		);
+		const minimum = screen.getByRole("slider", {
+			name:
+				locale === "en"
+					? "Minimum bitrate slider (kbps), rendition 1"
+					: "最小ビットレートのスライダー (kbps), レンディション 1",
+		});
+		const maximum = screen.getByRole("slider", {
+			name:
+				locale === "en"
+					? "Maximum bitrate slider (kbps), rendition 1"
+					: "最大ビットレートのスライダー (kbps), レンディション 1",
+		});
+		for (const slider of [minimum, maximum]) {
+			expect(slider).toHaveAttribute("min", "100");
+			expect(slider).toHaveAttribute("max", "2000");
+			expect(slider).toBeEnabled();
+		}
+		expect(screen.getAllByRole("slider")).toHaveLength(2);
+		fireEvent.change(minimum, { target: { value: "650" } });
+		expect(events.onBitrateChange).toHaveBeenLastCalledWith(
+			"required",
+			"min",
+			650000,
+		);
+		fireEvent.change(maximum, { target: { value: "300" } });
+		expect(events.onBitrateChange).toHaveBeenLastCalledWith(
+			"required",
+			"max",
+			300000,
+		);
+		expect(events.onChange).not.toHaveBeenCalled();
+	});
+	it("restricts a slider only by a valid, manually pinned opposite endpoint", () => {
+		const events = callbacks();
+		const { rerender } = renderLocalized(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={goal}
+				manualBounds={{ required: { max: true } }}
+				{...events}
+			/>,
+		);
+		const min = () =>
+			screen.getByRole("slider", {
+				name: "Minimum bitrate slider (kbps), rendition 1",
+			});
+		const max = () =>
+			screen.getByRole("slider", {
+				name: "Maximum bitrate slider (kbps), rendition 1",
+			});
+		expect(min()).toHaveAttribute("max", "400");
+		expect(max()).toHaveAttribute("min", "100");
+		rerender(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={{
+					...goal,
+					rows: goal.rows?.map((row) => ({ ...row, minBitrate: 250000 })),
+				}}
+				manualBounds={{ required: { min: true } }}
+				{...events}
+			/>,
+		);
+		expect(max()).toHaveAttribute("min", "250");
+		expect(min()).toHaveAttribute("max", "2000");
+	});
+	it("keeps invalid or crossed manual values visible instead of correcting them through sliders", () => {
+		const events = callbacks();
+		const invalid = {
+			...goal,
+			rows: goal.rows?.map((row) => ({
+				...row,
+				minBitrate: 900000,
+				maxBitrate: 400000,
+			})),
+		};
+		const { rerender } = renderLocalized(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={invalid}
+				manualBounds={{ required: { min: true, max: true } }}
+				{...events}
+			/>,
+		);
+		for (const slider of screen.getAllByRole("slider"))
+			expect(slider).toBeDisabled();
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Minimum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(900);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(400);
+		const outside = {
+			...goal,
+			rows: goal.rows?.map((row) => ({ ...row, maxBitrate: 3000000 })),
+		};
+		rerender(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={outside}
+				manualBounds={{ required: { max: true } }}
+				{...events}
+			/>,
+		);
+		expect(
+			screen.getByRole("slider", {
+				name: "Maximum bitrate slider (kbps), rendition 1",
+			}),
+		).toBeDisabled();
+		expect(
+			screen.getByRole("slider", {
+				name: "Minimum bitrate slider (kbps), rendition 1",
+			}),
+		).toHaveAttribute("max", "2000");
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(3000);
+		expect(events.onBitrateChange).not.toHaveBeenCalled();
+	});
+	it("disables both sliders for invalid global limits without disabling numeric repairs", () => {
+		const events = callbacks();
+		const { rerender } = renderLocalized(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={goal}
+				manualBounds={{}}
+				{...events}
+			/>,
+		);
+		for (const limits of [
+			{ minBitrate: NaN, maxBitrate: 2000000 },
+			{ minBitrate: 2000000, maxBitrate: 100000 },
+			{ minBitrate: 100000, maxBitrate: 2147483648 },
+		]) {
+			rerender(
+				<PerTitleSimulatorRows
+					id="rows"
+					goal={{ ...goal, ...limits }}
+					manualBounds={{}}
+					{...events}
+				/>,
+			);
+			for (const slider of screen.getAllByRole("slider"))
+				expect(slider).toBeDisabled();
+			expect(
+				screen.getByRole("spinbutton", {
+					name: "Minimum bitrate (kbps), rendition 1",
+				}),
+			).toBeEnabled();
+		}
+		expect(events.onBitrateChange).not.toHaveBeenCalled();
+	});
+	it("lets an edited slider cross an automatic counterpart and resets both through the existing adapter", () => {
+		const edits = vi.fn();
+		function Controlled() {
+			const [raw, setRaw] = useState(goal);
+			const [manual, setManual] = useState<
+				Record<string, { min?: boolean; max?: boolean }>
+			>({});
+			const effective = autoTunePerTitleGoal(raw, goal, manual);
+			return (
+				<PerTitleSimulatorRows
+					id="rows"
+					goal={effective}
+					manualBounds={manual}
+					onChange={setRaw}
+					onBitrateChange={(id, bound, value) => {
+						edits(id, bound, value);
+						setRaw((current) => ({
+							...current,
+							rows: current.rows?.map((row) =>
+								row.id === id
+									? {
+											...row,
+											[bound === "min" ? "minBitrate" : "maxBitrate"]: value,
+										}
+									: row,
+							),
+						}));
+						setManual((current) => ({
+							...current,
+							[id]: { ...current[id], [bound]: true },
+						}));
+					}}
+					onResetBitrates={(id) =>
+						setManual((current) => {
+							const next = { ...current };
+							delete next[id];
+							return next;
+						})
+					}
+				/>
+			);
+		}
+		renderLocalized(<Controlled />);
+		fireEvent.change(
+			screen.getByRole("slider", {
+				name: "Minimum bitrate slider (kbps), rendition 1",
+			}),
+			{ target: { value: "650" } },
+		);
+		expect(edits).toHaveBeenCalledExactlyOnceWith("required", "min", 650000);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Minimum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(650);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(650);
+		expect(screen.getByText("Min Manual")).toBeVisible();
+		expect(screen.getByText("Max Auto")).toBeVisible();
+		expect(
+			screen.getByRole("slider", {
+				name: "Maximum bitrate slider (kbps), rendition 1",
+			}),
+		).toHaveAttribute("min", "650");
+		fireEvent.click(
+			screen.getByRole("button", { name: "Reset to automatic, rendition 1" }),
+		);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Minimum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(100);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 1",
+			}),
+		).toHaveValue(400);
+		expect(edits).toHaveBeenCalledTimes(1);
+	});
+	it.each([
+		"en",
+		"ja",
 	] as const)("shares one compact list and keeps automatic templates free of bitrate controls (%s)", (locale) => {
 		const events = callbacks();
 		renderLocalized(

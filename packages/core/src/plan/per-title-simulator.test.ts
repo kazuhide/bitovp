@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type PerTitleGoal,
 	proposePerTitleSettings,
+	recommendPerTitleSettings,
 } from "./per-title-simulator.js";
 
 const automatic: PerTitleGoal = {
@@ -732,5 +733,391 @@ describe("proposePerTitleSettings", () => {
 				(item) => item.code === "required-count-exceeded",
 			),
 		).toBe(true);
+	});
+});
+
+describe("recommendPerTitleSettings", () => {
+	const narrow: PerTitleGoal = {
+		strategy: "fixed-ranges",
+		codec: "H264",
+		minBitrate: 100_000,
+		maxBitrate: 1_000_000,
+		countPolicy: { kind: "unrestricted" },
+		rows: [
+			{
+				id: "low",
+				height: 360,
+				width: 640,
+				minBitrate: 300_000,
+				maxBitrate: 301_000,
+			},
+			{ id: "high", height: 360, minBitrate: 302_000, maxBitrate: 303_000 },
+		],
+	};
+
+	it("preserves valid existing ratios when the requested constraints already fit", () => {
+		const result = recommendPerTitleSettings({
+			...automatic,
+			minBitrateStepSize: 1.25,
+			maxBitrateStepSize: 3,
+		});
+		expect(result.api.global.minBitrateStepSize).toBe(1.25);
+		expect(result.api.global.maxBitrateStepSize).toBe(3);
+		expect(result.derivation?.method).toBe("preserved-existing");
+	});
+
+	it("derives a count interval even when the default upper count would already be below the target", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_600_000,
+			countPolicy: { kind: "maximum", count: 10 },
+		});
+		expect(result.derivation?.method).toBe("geometric-count");
+		expect(result.derivation?.desiredCount).toBe(10);
+		expect(result.derivation?.ratioLowerExclusive).toBeCloseTo(16 ** (1 / 10));
+		expect(result.derivation?.ratioUpperInclusive).toBeCloseTo(16 ** (1 / 9));
+		expect(result.api.global.minBitrateStepSize).toBeGreaterThan(
+			16 ** (1 / 10),
+		);
+		expect(result.api.global.minBitrateStepSize).toBeLessThan(16 ** (1 / 9));
+		expect(result.derivation?.targetSatisfied).toBe(true);
+	});
+
+	it("fits many required resolutions without using an almost-one ratio that exceeds model capacity", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "fixed-resolutions",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_600_000,
+			countPolicy: { kind: "unrestricted" },
+			rows: Array.from({ length: 10 }, (_, index) => ({
+				id: `r-${index}`,
+				height: 180 + index * 60,
+			})),
+		});
+		expect(result.applicable).toBe(true);
+		expect(result.derivation?.method).toBe("required-intervals");
+		expect(result.derivation?.integerWitness).toHaveLength(10);
+		expect(result.derivation?.fixedOrderRowIds).toHaveLength(10);
+		expect(result.scenarios[2]?.modelCountRange?.maximum).toBe(10);
+	});
+
+	it("uses the checked integer witness when biased required-row examples exceed a narrow ratio interval", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "fixed-resolutions",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "maximum", count: 3 },
+			rows: [
+				{ id: "a", height: 360 },
+				{ id: "b", height: 720 },
+				{ id: "c", height: 1080 },
+			],
+		});
+		expect(result.applicable).toBe(true);
+		for (const id of ["medium", "high"]) {
+			const scenario = result.scenarios.find((item) => item.id === id);
+			expect(scenario?.status).toBe("modelled");
+			expect(scenario?.modelRungs.map((rung) => rung.bitrate)).toEqual(
+				result.derivation?.integerWitness,
+			);
+			expect(
+				scenario?.modelRungs.every(
+					(rung) => rung.bitrate <= scenario.assumedMaxBitrate,
+				),
+			).toBe(true);
+		}
+		expect(result.scenarios[0]?.status).toBe("conflict");
+	});
+
+	it("labels the documented default assumption when no count, required row, or saved ratio exists", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "automatic",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_600_000,
+			countPolicy: { kind: "unrestricted" },
+		});
+		expect(result.derivation?.method).toBe("documented-defaults");
+		expect(result.derivation?.rationale).toContain(
+			"https://developer.bitmovin.com/encoding/docs/per-title-configuration-options",
+		);
+	});
+
+	it("uses the integer capacity when a short interval cannot contain an extra bitrate point", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 1,
+			maxBitrate: 4,
+			countPolicy: { kind: "exact", count: 4 },
+		});
+		expect(result.applicable).toBe(true);
+		expect(result.scenarios[2]?.modelRungs).toHaveLength(4);
+		const witness = result.derivation?.integerWitness ?? [];
+		expect(witness).toHaveLength(4);
+		for (let index = 1; index < witness.length; index++) {
+			const ratio = (witness[index] as number) / (witness[index - 1] as number);
+			expect(ratio).toBeGreaterThanOrEqual(
+				result.api.global.minBitrateStepSize,
+			);
+			expect(ratio).toBeLessThanOrEqual(result.api.global.maxBitrateStepSize);
+		}
+	});
+
+	it("keeps unknown complexity boundaries in the API without projecting them into recommended bitrate examples", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_600_000,
+			countPolicy: { kind: "unrestricted" },
+			rows: [
+				{
+					id: "r",
+					height: 360,
+					minBitrate: 100_000,
+					maxBitrate: 400_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 500_000,
+					highComplexityBoundaryForMaxBitrate: 1_000_000,
+				},
+			],
+		};
+		const original = recommendPerTitleSettings(goal);
+		const changed = recommendPerTitleSettings({
+			...goal,
+			rows: goal.rows?.map((row) => ({
+				...row,
+				highComplexityBoundaryForMaxBitrate: 2_000_000,
+			})),
+		});
+		expect(changed.scenarios).toEqual(original.scenarios);
+		expect(
+			original.scenarios.every((scenario) =>
+				scenario.rowModels.every(
+					(row) =>
+						row.linearTargetBitrate === null && row.boundaryFraction === null,
+				),
+			),
+		).toBe(true);
+		expect(
+			original.api.streams[0]?.perTitleSettings
+				?.highComplexityBoundaryForMaxBitrate,
+		).toBe(1_000_000);
+		expect(
+			changed.api.streams[0]?.perTitleSettings
+				?.highComplexityBoundaryForMaxBitrate,
+		).toBe(2_000_000);
+		expect(original.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "complexity-analysis-required" }),
+		);
+	});
+
+	it("derives close spacing from narrow row intervals and ignores saved ratio constraints", () => {
+		const goal = {
+			...narrow,
+			minBitrateStepSize: Number.NaN,
+			maxBitrateStepSize: 1,
+		};
+		const before = structuredClone(goal);
+		const result = recommendPerTitleSettings(goal);
+		expect(result.applicable).toBe(true);
+		expect(result.api.global.minBitrateStepSize).toBeGreaterThan(1);
+		expect(result.api.global.minBitrateStepSize).toBeLessThan(1.5);
+		expect(
+			result.api.streams.map((row) => [
+				row.rowId,
+				row.height,
+				row.width,
+				row.perTitleSettings?.minBitrate,
+				row.perTitleSettings?.maxBitrate,
+			]),
+		).toEqual([
+			["low", 360, 640, 300_000, 301_000],
+			["high", 360, undefined, 302_000, 303_000],
+		]);
+		expect(goal).toEqual(before);
+		expect(result.evidence).toBe("model-only");
+		expect(result.countGuarantee).toBe(false);
+	});
+
+	it("derives a wide maximum gap without changing fixed bitrate points", () => {
+		const result = recommendPerTitleSettings({
+			...narrow,
+			rows: [
+				{ id: "low", height: 360, minBitrate: 200_000, maxBitrate: 200_000 },
+				{ id: "high", height: 720, minBitrate: 800_000, maxBitrate: 800_000 },
+			],
+		});
+		expect(result.applicable).toBe(true);
+		expect(result.api.global.maxBitrateStepSize).toBeGreaterThanOrEqual(4);
+		expect(result.api.streams[1]?.perTitleSettings?.maxBitrate).toBe(800_000);
+	});
+
+	it("uses a count goal with touching intervals instead of imposing default spacing", () => {
+		const result = recommendPerTitleSettings({
+			...narrow,
+			countPolicy: { kind: "maximum", count: 2 },
+			rows: [
+				{ id: "low", height: 360, minBitrate: 300_000, maxBitrate: 301_000 },
+				{ id: "high", height: 360, minBitrate: 301_000, maxBitrate: 302_000 },
+			],
+		});
+		expect(result.applicable).toBe(true);
+		expect(result.scenarios[2]?.modelCountRange?.maximum).toBeLessThanOrEqual(
+			2,
+		);
+	});
+
+	it.each([
+		{ kind: "exact", count: 6 },
+		{ kind: "maximum", count: 3 },
+	] as const)("derives one automatic candidate for $kind $count without a count API field", (countPolicy) => {
+		const result = recommendPerTitleSettings({
+			...automatic,
+			strategy: "count",
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 20,
+			maxBitrateStepSize: 20,
+			countPolicy,
+		});
+		expect(result.applicable).toBe(true);
+		expect(result.scenarios[2]?.modelCountRange?.maximum).toBeLessThanOrEqual(
+			countPolicy.count,
+		);
+		expect(result.api.global).not.toHaveProperty("count");
+		expect(result.countGuarantee).toBe(false);
+	});
+
+	it("refuses two required rows at the same single bitrate instead of changing their ranges", () => {
+		const result = recommendPerTitleSettings({
+			...narrow,
+			rows: [
+				{ id: "a", height: 360, minBitrate: 300_000, maxBitrate: 300_000 },
+				{ id: "b", height: 360, minBitrate: 300_000, maxBitrate: 300_000 },
+			],
+		});
+		expect(result.applicable).toBe(false);
+		expect(result.status).not.toBe("candidate");
+		expect(
+			result.api.streams.every(
+				(row) =>
+					row.perTitleSettings?.minBitrate === 300_000 &&
+					row.perTitleSettings.maxBitrate === 300_000,
+			),
+		).toBe(true);
+	});
+
+	it("preserves automatic candidates separately from required rows in a mixed ladder", () => {
+		const result = recommendPerTitleSettings({
+			...narrow,
+			rows: [
+				{
+					id: "fixed-a",
+					height: 360,
+					minBitrate: 200_000,
+					maxBitrate: 250_000,
+				},
+				{
+					id: "fixed-b",
+					height: 540,
+					minBitrate: 500_000,
+					maxBitrate: 600_000,
+				},
+			],
+			automaticTemplates: [
+				{
+					id: "auto-a",
+					height: 180,
+					width: 320,
+					minBitrate: 100_000,
+					maxBitrate: 200_000,
+				},
+				{ id: "auto-b", height: 720 },
+			],
+		});
+		expect(result.api.global.autoRepresentations).toEqual({});
+		expect(
+			result.api.streams.filter((row) => row.mode === "PER_TITLE_TEMPLATE"),
+		).toEqual([
+			{
+				rowId: "auto-a",
+				height: 180,
+				width: 320,
+				mode: "PER_TITLE_TEMPLATE",
+				perTitleSettings: { minBitrate: 100_000, maxBitrate: 200_000 },
+			},
+			{ rowId: "auto-b", height: 720, mode: "PER_TITLE_TEMPLATE" },
+		]);
+		expect(result.scenarios[2]?.modelCountRange?.minimum).toBe(2);
+	});
+
+	it("preserves forced configuration while leaving its output count unknown and preventing application", () => {
+		const forced = {
+			forcedRenditionAboveHighestFixedRepresentation: 2,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"MAXIMUM" as const,
+		};
+		const result = recommendPerTitleSettings({
+			...narrow,
+			fixedResolutionAndBitrateConfiguration: forced,
+		});
+		expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			forced,
+		);
+		expect(result.status).toBe("unknown");
+		expect(result.applicable).toBe(false);
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "forced-count-unknown" }),
+		);
+		expect(
+			result.scenarios.every(
+				(scenario) =>
+					scenario.status === "unknown" && scenario.modelCountRange === null,
+			),
+		).toBe(true);
+	});
+
+	it("does not declare an exact count impossible when additional-rendition rules are unmodelled", () => {
+		const result = recommendPerTitleSettings({
+			...narrow,
+			countPolicy: { kind: "exact", count: 250 },
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 2,
+			},
+		});
+		expect(result.status).toBe("unknown");
+		expect(result.applicable).toBe(false);
+		expect(
+			result.diagnostics.some(
+				(item) =>
+					item.code === "count-unreachable" ||
+					item.code === "extra-rungs-possible",
+			),
+		).toBe(false);
+	});
+
+	it("counts every explicit automatic candidate against the template limit", () => {
+		const result = recommendPerTitleSettings({
+			...narrow,
+			rows: Array.from({ length: 63 }, (_, index) => ({
+				id: `fixed-${index}`,
+				height: 360,
+				minBitrate: 100_000,
+				maxBitrate: 1_000_000,
+			})),
+			automaticTemplates: [{ id: "auto-a" }, { id: "auto-b" }],
+		});
+		expect(result.applicable).toBe(false);
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "model-limit" }),
+		);
 	});
 });

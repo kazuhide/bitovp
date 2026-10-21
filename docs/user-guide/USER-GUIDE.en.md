@@ -442,7 +442,7 @@ Automatic rendition generation includes `autoRepresentations` and configuration-
 
 **Per-Title simulator**
 
-In "Ladder", select "Open simulator" to compare Per-Title settings in a separate dialog. Select a codec to load its current ladder settings. Edits remain available when switching between codecs in the dialog. Choose one of five approaches:
+In "Ladder", select "Open simulator" to plan a Per-Title ladder in a separate dialog. Select a codec to load its current ladder settings. Edits remain available when switching between codecs in the dialog. Choose one of five approaches:
 
 - **Automatic:** let Per-Title choose resolutions and bitrates.
 - **Count only:** set a desired total count and let Per-Title choose resolutions.
@@ -450,15 +450,29 @@ In "Ladder", select "Open simulator" to compare Per-Title settings in a separate
 - **All resolutions specified:** list the resolutions to use; let Per-Title choose bitrates.
 - **Resolutions and bitrate bounds:** specify each resolution and its bitrate range.
 
+Enter the overall minimum and maximum bitrates and, if needed, a desired count. Add rows for required resolutions and set per-row minimum and maximum bitrates when using bitrate ranges. Repeat a resolution to request multiple renditions at that height. The recommendation keeps valid existing bitrate steps when they meet the requirements and adjusts them when the count or required ranges demand it. When neither existing steps nor a count goal determines the ratio, it starts from the documented defaults. You do not enter step ratios here; expand "Proposed settings" to inspect the calculated values in read-only JSON.
+
+For a ladder mixing `PER_TITLE_TEMPLATE` with fixed-resolution bitrate ranges, edit the candidates separately under "Automatic templates". Candidates are not counted as required outputs, and their heights do not guarantee the resulting resolutions. Attached bitrate settings are retained as source data; the model does not use those settings as count constraints for automatic candidates.
+
+Use "Download requirements" to save the current requirements as a JSON file, then "Load requirements file" to reuse it. Files are read and saved locally through your browser. Loading a file keeps its requirements as the comparison reference. "Loaded settings" and "Edited settings" show how changes, such as a different maximum bitrate, affect the model's counts and bitrate ranges.
+
+Two file variants are supported: requirements files for editing and reviewing a proposal, and reference files that also retain original template modes, quality settings and additional-rendition rules. Reference files are comparison-only and cannot be applied to the encoding draft here. Counts remain undetermined while the original additional-rendition rules are included. Clear "Include original additional-rendition rules" to compare the remaining conditions explicitly; this keeps the original reference intact and does not make it applicable.
+
 Distinguish the desired total count from the count at each resolution, such as two different bitrates at 360p. Count video renditions, not audio tracks, containers or manifests. Desired counts are goals: the API has no field that directly enforces an arbitrary total of N renditions.
 
-Fixing resolutions alone does not guarantee the total count or one rendition per resolution. Stream bitrate bounds, global bounds and bitrate steps can conflict, producing extra or missing renditions or an error. See Bitmovin's [bandwidth constraints guide](https://developer.bitmovin.com/encoding/docs/constraining-bandwidth-in-per-title-encoding).
+Minimum and maximum bitrates alone cannot predict the encoder's output count. Content analysis, quality targets, template choices and bitrate steps also affect the result. See Bitmovin's [Per-Title configuration guide](https://developer.bitmovin.com/encoding/docs/per-title-configuration-options). Fixing resolutions alone does not guarantee the total count or one rendition per resolution. Stream bitrate bounds, global bounds and bitrate steps can conflict, producing extra or missing renditions or an error, as explained in Bitmovin's [bandwidth constraints guide](https://developer.bitmovin.com/encoding/docs/constraining-bandwidth-in-per-title-encoding).
 
-The comparison uses model assumptions, not measured encoding results. It counts required rows by resolution and checks the total rendition count; it does not calculate an upper count for each resolution. Check the assumptions, conflicts and any conditions the model cannot evaluate; matching a scenario does not guarantee the same result for every source. Select "Review changes" to inspect the differences, then "Apply to draft" to update the form. Opening or applying a proposal does not start encoding. Use the existing review and start actions when ready.
+"Why these settings" explains the recommendation using adjacent-bitrate ratios, a count bound and example integer bitrates within the required ranges. A wider bitrate range can fit more points at the same minimum ratio. Before integer rounding, one interval with minimum ratio `r > 1` has the upper bound `1 + floor(log(max/min) / log(r))`: `min` and `max` are bitrate bounds, `log` is the logarithm and `floor` rounds down. Required rows and integer rounding need further checks. These are arithmetic checks, not a recreation of the encoder's content analysis or a claim of optimal picture quality.
+
+Deriving bitrate steps leaves the specified global and per-row ranges unchanged. If the conditions conflict, the simulator can suggest a wider overall range while retaining the row ranges, or a higher count that keeps all required rows. Removing automatic candidates or additional-rendition rules is a separate trade-off. Suggestions appear only when verified in the model; inputs stay unchanged until you select one. If no verified alternative is available, the result remains conflicting or undetermined.
+
+Results use model assumptions, not measured encoding results. The simulator counts required rows by resolution and checks the total rendition count; it does not calculate an upper count for each resolution. Check the assumptions, conflicts and any conditions the model cannot evaluate; matching a scenario does not guarantee the same result for every source. Select "Review changes" to inspect the differences, then "Apply to draft" to update the form. Opening or applying a proposal does not start encoding. Use the existing review and start actions when ready.
+
+`COMPLEXITY_RANGE` boundary settings are retained for the API. The displayed bitrate examples use the required rows' allowed intervals; they do not predict target bitrates from the low and high boundaries. Assess their effect through encoding results that include source analysis.
 
 Bitrates are whole numbers of bits per second. Rounding can change the ratio between adjacent values, so integer examples are checked against the proposed steps. An applicable proposal can still have scenarios that miss the desired count; inspect their results before applying. If overlapping ranges at the same resolution prevent the model from determining an order within its calculation limit, the result remains undetermined and cannot be applied.
 
-A ladder that mixes fixed bitrate ranges with automatic templates cannot be imported into this simulator. Use the existing ladder fields for that configuration. Applying a proposal can also be unavailable when existing DRM or output references cannot be preserved safely.
+Applying a proposal can be unavailable when existing DRM or output references cannot be preserved safely. Check the actual rendition count and bitrates after encoding; the comparison is not a substitute for that result.
 
 See Chapter 11 for VMAF, PSNR, execution profiles, budgets, and interpreting results. The wizard's "VMAF only (skip delivery outputs)" mode disables delivery packaging, manifests, and AI Scene Analysis. A quality gate can either mark a result or block manifest generation; distinguish these behaviors. Holding delivery requires post-encoding manifest generation. It does not retract outputs that have already been published.
 

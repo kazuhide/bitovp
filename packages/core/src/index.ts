@@ -743,16 +743,22 @@ export {
 } from "./plan/per-title-results";
 export type {
 	PerTitleApiSettings,
+	PerTitleAutomaticTemplate,
 	PerTitleCodec,
 	PerTitleCountPolicy,
+	PerTitleDerivation,
 	PerTitleDiagnostic,
+	PerTitleFixedResolutionAndBitrateConfiguration,
 	PerTitleGoal,
 	PerTitleGoalRow,
 	PerTitleProposal,
 	PerTitleScenario,
 	PerTitleStrategy,
 } from "./plan/per-title-simulator";
-export { proposePerTitleSettings } from "./plan/per-title-simulator";
+export {
+	proposePerTitleSettings,
+	recommendPerTitleSettings,
+} from "./plan/per-title-simulator";
 export type {
 	CreateLivePresetRequest,
 	CreatePlanPresetRequest,

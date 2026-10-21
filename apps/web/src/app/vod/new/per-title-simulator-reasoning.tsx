@@ -1,0 +1,217 @@
+"use client";
+
+import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
+import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/context";
+import { perTitleSuggestions } from "./per-title-simulator-suggestions";
+
+const texts = {
+	en: {
+		title: "Why these settings",
+		objective:
+			"Keep the required resolutions and bitrate ranges, and change existing settings only when the count or interval conditions require it.",
+		methods: {
+			"preserved-existing":
+				"The existing bitrate steps satisfy the checked conditions, so they are retained. Raising the overall maximum does not scale the individual bitrate ranges.",
+			"geometric-count":
+				"The bitrate range and desired count define a spacing interval. The proposed value is checked against integer bitrate examples within that interval.",
+			"required-intervals":
+				"The allowed ranges of the required rows limit the spacing. Their feasible interval is checked against the desired count before selecting settings.",
+			"documented-defaults":
+				"No count or required-row constraint requires different spacing. The comparison uses the documented default ratios, 1.5 and 1.9.",
+		},
+		details: "Calculation and assumptions",
+		capacity:
+			"For continuous bitrate points in the overall range, s^N > U/L is a sufficient condition for at most N points. Equality permits another continuous point. Integer bitrate capacity is checked separately.",
+		intervals:
+			"For the checked required-row order, each integer point must satisfy p[i] = max(L[i], ceil(s × p[i−1])) ≤ U[i]. The model also checks the largest ratio between these points.",
+		order:
+			"The search checks a bounded set of row orders. This is not a proof of the best spacing across every possible order.",
+		unknown:
+			"The count goal has not been established by this model. Check the proposed alternatives and the conditions below.",
+		limit:
+			"Content analysis is still needed for generated resolutions, quality and the actual rendition count. The examples do not establish a quality optimum.",
+		suggestions: "Ways to meet the conditions",
+		ranking:
+			"Options that preserve all templates and ranges come first. Changes to generation rules are explicit alternatives. Each option is checked again in the model.",
+		reasons: {
+			"global-range":
+				"Keep the per-rendition ranges and expand the overall limits to contain them.",
+			"required-count":
+				"Keep every required rendition and raise the count goal to accommodate them.",
+			"fixed-only":
+				"Prioritize the count goal by removing the automatic templates and retaining the required rows.",
+			"without-forced":
+				"Compare the template conditions with the additional-rendition rules excluded. The original reference remains available.",
+		},
+		use: "Use these conditions",
+		changes: "Fields to change",
+		maximum: "Overall maximum (kbps)",
+		count: "Desired count",
+		range: "Model count range at the upper limit",
+		source: "Parameter definitions",
+		constraints: "Combining bitrate constraints",
+	},
+	ja: {
+		title: "提案の根拠",
+		objective:
+			"必須の解像度とビットレート範囲を維持し、本数や配置の条件を満たすために必要な設定を変更します。",
+		methods: {
+			"preserved-existing":
+				"元のビットレート間隔で確認対象の条件を満たすため、その値を維持します。全体の上限を上げても、各段のビットレート範囲は比例して変更しません。",
+			"geometric-count":
+				"全体のビットレート範囲と希望本数から、間隔の取り得る範囲を求めています。その範囲内で、整数のビットレートを配置できる値を選びます。",
+			"required-intervals":
+				"必須の各段を許容範囲内に配置できる間隔を求め、本数の条件とも両立するかを確認して値を選びます。",
+			"documented-defaults":
+				"本数や必須段の条件による間隔の変更が必要ないため、公開仕様の既定値である1.5・1.9を比較に使います。",
+		},
+		details: "計算手順と前提",
+		capacity:
+			"全体の範囲に連続値のビットレート点を高々N個置ける十分条件は s^N > U/L です。等号では連続値ならもう1点入る余地があります。整数値での上限は別途確認しています。",
+		intervals:
+			"確認した必須段の並びで、各整数点が p[i] = max(L[i], ceil(s × p[i−1])) ≤ U[i] を満たすかを調べます。隣り合う点の最大比率も確認します。",
+		order:
+			"並び順の探索には上限があります。すべての並びについて最良の間隔であることを証明するものではありません。",
+		unknown:
+			"このモデルでは、本数の要件を満たすことを確認できていません。下の変更案と条件を確認してください。",
+		limit:
+			"生成される解像度、画質、実際の本数の判断には素材解析が必要です。計算例だけで画質の最適値は求められません。",
+		suggestions: "条件を満たすための変更案",
+		ranking:
+			"テンプレートと各範囲を維持する案を先に示します。生成ルールを変更する案は、その変更点を明記します。各案はモデルで再確認しています。",
+		reasons: {
+			"global-range":
+				"各段のビットレート範囲を維持し、それらが収まるよう全体の範囲を広げます。",
+			"required-count":
+				"必須のレンディションをすべて残すため、それらが収まる本数に希望値を変更します。",
+			"fixed-only":
+				"希望本数を優先し、自動生成の候補を外して、必須の行を残す案です。",
+			"without-forced":
+				"追加レンディションのルールを外し、残りのテンプレート条件で比較する案です。元の参照設定は保持します。",
+		},
+		use: "この条件で比較する",
+		changes: "変更する項目",
+		maximum: "全体の最大ビットレート (kbps)",
+		count: "希望する本数",
+		range: "上限値でのモデル上の本数",
+		source: "パラメータの定義",
+		constraints: "ビットレート条件の組み合わせ",
+	},
+};
+
+export function PerTitleReasoning({
+	goal,
+	proposal,
+	onChange,
+}: {
+	goal: PerTitleGoal;
+	proposal: PerTitleProposal;
+	onChange: (goal: PerTitleGoal) => void;
+}) {
+	const { locale } = useT();
+	const copy = texts[locale];
+	const suggestions = useMemo(() => perTitleSuggestions(goal), [goal]);
+	const derivation = proposal.derivation;
+	return (
+		<section
+			className="space-y-3 border-t border-zinc-800 pt-4"
+			aria-label={copy.title}
+		>
+			<h3 className="font-medium text-sm text-zinc-200">{copy.title}</h3>
+			<p className="text-xs text-zinc-300">{copy.objective}</p>
+			{derivation ? (
+				<>
+					<p className="text-xs text-zinc-400">
+						{copy.methods[derivation.method]}
+					</p>
+					{!derivation.targetSatisfied ? (
+						<p className="text-xs text-amber-300">{copy.unknown}</p>
+					) : null}
+					<details className="space-y-2 text-xs text-zinc-400">
+						<summary className="cursor-pointer">{copy.details}</summary>
+						<p>{copy.capacity}</p>
+						<pre className="overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-900 p-3">
+							{JSON.stringify(
+								{ L: goal.minBitrate, U: goal.maxBitrate, ...derivation },
+								null,
+								2,
+							)}
+						</pre>
+						{derivation.requiredRowCount > 1 ? (
+							<>
+								<p>{copy.intervals}</p>
+								<p>{copy.order}</p>
+							</>
+						) : null}
+					</details>
+				</>
+			) : null}
+			<p className="text-xs text-zinc-400">{copy.limit}</p>
+			<div className="flex flex-wrap gap-3 text-xs text-emerald-400">
+				<a
+					href="https://developer.bitmovin.com/encoding/docs/per-title-configuration-options"
+					target="_blank"
+					rel="noreferrer"
+				>
+					{copy.source}
+				</a>
+				<a
+					href="https://developer.bitmovin.com/encoding/docs/constraining-bandwidth-in-per-title-encoding"
+					target="_blank"
+					rel="noreferrer"
+				>
+					{copy.constraints}
+				</a>
+			</div>
+			{suggestions.length ? (
+				<div className="space-y-3">
+					<h4 className="font-medium text-sm text-zinc-200">
+						{copy.suggestions}
+					</h4>
+					<p className="text-xs text-zinc-400">{copy.ranking}</p>
+					{suggestions.map((suggestion) => {
+						const high = suggestion.proposal.scenarios.find(
+							(item) => item.fraction === 1,
+						)?.modelCountRange;
+						return (
+							<div
+								key={suggestion.id}
+								className="space-y-2 rounded-md border border-zinc-800 p-3 text-xs text-zinc-300"
+							>
+								<p>{copy.reasons[suggestion.reason]}</p>
+								<p>
+									{copy.maximum}: {suggestion.goal.maxBitrate / 1000}
+								</p>
+								{suggestion.goal.countPolicy.kind !== "unrestricted" ? (
+									<p>
+										{copy.count}: {suggestion.goal.countPolicy.count}
+									</p>
+								) : null}
+								{high ? (
+									<p>
+										{copy.range}: {high.minimum}–{high.maximum}
+									</p>
+								) : null}
+								<details className="text-zinc-400">
+									<summary className="cursor-pointer">{copy.changes}</summary>
+									<p className="mt-2 break-all font-mono">
+										{suggestion.changedFields.join(", ")}
+									</p>
+								</details>
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => onChange(structuredClone(suggestion.goal))}
+								>
+									{copy.use}
+								</Button>
+							</div>
+						);
+					})}
+				</div>
+			) : null}
+		</section>
+	);
+}

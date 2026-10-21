@@ -6,7 +6,7 @@ import {
 	type PerTitleGoalRow,
 	type PerTitleProposal,
 	type PerTitleScenario,
-	proposePerTitleSettings,
+	recommendPerTitleSettings,
 } from "@bitovp/core";
 import {
 	type Dispatch,
@@ -19,13 +19,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
-import { Input, SelectNative } from "@/components/ui/input";
+import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
+import { PerTitleAutomaticTemplates } from "./per-title-simulator-automatic";
 import {
 	type PerTitleSimulatorCopy,
 	perTitleSimulatorCopy,
 } from "./per-title-simulator-copy";
+import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulator-fields";
+import { PerTitleSimulatorFiles } from "./per-title-simulator-files";
+import type { PerTitleReference } from "./per-title-simulator-preset";
+import { PerTitleReasoning } from "./per-title-simulator-reasoning";
 
 export type PerTitleSimulatorProps = {
 	open: boolean;
@@ -39,69 +44,6 @@ export type PerTitleSimulatorProps = {
 
 const usesRows = (goal: PerTitleGoal) =>
 	goal.strategy !== "automatic" && goal.strategy !== "count";
-
-function NumberField({
-	id,
-	label,
-	value,
-	onChange,
-	unit = 1,
-	optional = false,
-	integer = false,
-	minimum = 0,
-	accessibleLabel,
-}: {
-	id: string;
-	label: string;
-	value: number | undefined;
-	onChange: (value: number | undefined) => void;
-	unit?: number;
-	optional?: boolean;
-	integer?: boolean;
-	minimum?: number;
-	accessibleLabel?: string;
-}) {
-	const { locale } = useT();
-	const copy = perTitleSimulatorCopy[locale];
-	const valid =
-		(optional && value === undefined) ||
-		(value !== undefined &&
-			Number.isFinite(value) &&
-			(integer
-				? Number.isSafeInteger(value) && value >= minimum && value > 0
-				: value > minimum));
-	const error = valid
-		? undefined
-		: integer
-			? copy.positiveInteger
-			: minimum === 1
-				? copy.stepInvalid
-				: copy.finitePositive;
-	return (
-		<Field htmlFor={id} label={label} error={error}>
-			<Input
-				id={id}
-				type="number"
-				min={minimum}
-				step={integer ? 1 : "any"}
-				value={
-					value !== undefined && Number.isFinite(value) ? value / unit : ""
-				}
-				aria-label={accessibleLabel}
-				aria-invalid={error ? true : undefined}
-				onChange={(event) =>
-					onChange(
-						event.target.value === ""
-							? optional
-								? undefined
-								: Number.NaN
-							: Number(event.target.value) * unit,
-					)
-				}
-			/>
-		</Field>
-	);
-}
 
 function GoalRows({
 	goal,
@@ -249,7 +191,9 @@ function GoalRows({
 					do {
 						nextId.current += 1;
 					} while (
-						rows.some((row) => row.id === `${id}-new-${nextId.current}`)
+						[...rows, ...(goal.automaticTemplates ?? [])].some(
+							(row) => row.id === `${id}-new-${nextId.current}`,
+						)
 					);
 					onChange({
 						...goal,
@@ -317,6 +261,8 @@ const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 		"本数の範囲は、指定した許容範囲全体から求めたものです。このシナリオに示すビットレートの点とは別に計算しています。",
 	"scenario-conflict":
 		"一部のシナリオで、本数や間隔の条件を満たしていません。設定を反映する前に、該当するシナリオと条件を確認してください。",
+	"forced-count-unknown":
+		"追加レンディションのルールを保持しています。このルールを含む出力本数は、素材解析なしには算出できません。",
 };
 
 const tableClasses =
@@ -398,17 +344,19 @@ function DiagnosticList({
 }
 
 function ProposalResults({
-	proposals,
 	selected,
-	onSelect,
+	baseline,
+	goal,
+	referenceGoal,
 	rows,
 	copy,
 	locale,
 	id,
 }: {
-	proposals: PerTitleProposal[];
-	selected: PerTitleProposal | undefined;
-	onSelect: (id: PerTitleProposal["id"]) => void;
+	selected: PerTitleProposal;
+	baseline: PerTitleProposal;
+	goal: PerTitleGoal;
+	referenceGoal: PerTitleGoal;
 	rows: PerTitleGoal["rows"];
 	copy: PerTitleSimulatorCopy;
 	locale: Locale;
@@ -424,6 +372,11 @@ function ProposalResults({
 				: scenario.id === "high"
 					? copy.high
 					: copy.custom;
+	const countGoal = (value: PerTitleGoal) =>
+		value.countPolicy.kind === "unrestricted"
+			? copy.countPolicies.unrestricted
+			: `${copy.countPolicies[value.countPolicy.kind]} (${value.countPolicy.count})`;
+	const proposals = [baseline, selected];
 	if (!selected)
 		return (
 			<p role="status" className="text-sm text-zinc-400">
@@ -449,62 +402,49 @@ function ProposalResults({
 					{copy.comparison}
 				</h3>
 				<div className="overflow-x-auto">
-					<table className={tableClasses}>
+					<table className={tableClasses} aria-label={copy.comparison}>
 						<thead>
 							<tr>
 								<th scope="col">{copy.parameter}</th>
-								{proposals.map((proposal) => (
-									<th key={proposal.id} scope="col">
-										<label className="flex items-start gap-2">
-											<input
-												type="radio"
-												name={`${id}-proposal`}
-												value={proposal.id}
-												checked={selected.id === proposal.id}
-												onChange={() => onSelect(proposal.id)}
-												className="mt-0.5 accent-emerald-600"
-											/>
-											{proposal.id === "baseline"
-												? copy.baseline
-												: copy.adjusted}
-										</label>
-									</th>
-								))}
+								<th scope="col">{copy.baseline}</th>
+								<th scope="col">{copy.adjusted}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{(
 								[
-									[copy.minStep, "minBitrateStepSize"],
-									[copy.maxStep, "maxBitrateStepSize"],
+									[copy.minimum, "minBitrate"],
+									[copy.maximum, "maxBitrate"],
 								] as const
 							).map(([label, key]) => (
 								<tr key={key}>
 									<th scope="row">{label}</th>
-									{proposals.map((proposal) => (
-										<td key={proposal.id}>
-											{String(proposal.api.global[key])}
-										</td>
-									))}
+									<td>{format(referenceGoal[key] / 1000)}</td>
+									<td>{format(goal[key] / 1000)}</td>
 								</tr>
 							))}
 							<tr>
+								<th scope="row">{copy.countPolicy}</th>
+								<td>{countGoal(referenceGoal)}</td>
+								<td>{countGoal(goal)}</td>
+							</tr>
+							<tr>
 								<th scope="row">{copy.autoRepresentations}</th>
-								{proposals.map((proposal) => (
-									<td key={proposal.id}>
+								{proposals.map((proposal, index) => (
+									<td key={index === 0 ? "loaded" : "edited"}>
 										{proposal.api.global.autoRepresentations
 											? copy.enabled
 											: copy.disabled}
 									</td>
 								))}
 							</tr>
-							{proposals[0]?.scenarios.map((scenario, index) => (
+							{selected.scenarios.map((scenario, index) => (
 								<tr key={scenario.id}>
 									<th scope="row">
 										{scenarioName(scenario)}: {copy.modelCount}
 									</th>
-									{proposals.map((proposal) => (
-										<td key={proposal.id}>
+									{proposals.map((proposal, column) => (
+										<td key={column === 0 ? "loaded" : "edited"}>
 											{countRange(proposal.scenarios[index], copy)}
 										</td>
 									))}
@@ -691,26 +631,44 @@ function SimulatorEditor({
 	applyError,
 	goal,
 	setGoal,
-	selectedId,
-	setSelectedId,
+	referenceGoal,
+	reference,
+	onLoad,
 	onCodecChange,
 }: PerTitleSimulatorProps & {
 	goal: PerTitleGoal;
 	setGoal: Dispatch<SetStateAction<PerTitleGoal>>;
-	selectedId: PerTitleProposal["id"];
-	setSelectedId: Dispatch<SetStateAction<PerTitleProposal["id"]>>;
+	referenceGoal: PerTitleGoal;
+	reference?: PerTitleReference;
+	onLoad: (goal: PerTitleGoal, reference?: PerTitleReference) => void;
 	onCodecChange: (codec: PerTitleGoal["codec"]) => void;
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
 	const id = useId();
-	const proposals = useMemo(() => proposePerTitleSettings(goal), [goal]);
-	const selected =
-		proposals.find((proposal) => proposal.id === selectedId) ?? proposals[0];
+	const selected = useMemo(() => recommendPerTitleSettings(goal), [goal]);
+	const baseline = useMemo(
+		() => recommendPerTitleSettings(referenceGoal),
+		[referenceGoal],
+	);
 	const patch = (next: Partial<PerTitleGoal>) =>
 		setGoal((current) => ({ ...current, ...next }));
 	return (
 		<div className="space-y-5">
+			<PerTitleSimulatorFiles
+				goal={goal}
+				reference={reference}
+				allowedCodecs={[
+					"H264",
+					"H265",
+					"VP9",
+					"AV1",
+					...(initialGoal.codec === "H265V2" || goalsByCodec?.H265V2
+						? ["H265V2" as const]
+						: []),
+				]}
+				onLoad={onLoad}
+			/>
 			<Field htmlFor={`${id}-codec`} label={copy.codec} hint={copy.codecHint}>
 				<SelectNative
 					id={`${id}-codec`}
@@ -771,7 +729,7 @@ function SimulatorEditor({
 				<h3 id={`${id}-global`} className="font-medium text-sm text-zinc-200">
 					{copy.global}
 				</h3>
-				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+				<div className="grid gap-3 sm:grid-cols-2">
 					<NumberField
 						id={`${id}-min`}
 						label={copy.minimum}
@@ -786,22 +744,8 @@ function SimulatorEditor({
 						unit={1000}
 						onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
 					/>
-					<NumberField
-						id={`${id}-min-step`}
-						label={copy.minStep}
-						value={goal.minBitrateStepSize ?? 1.5}
-						minimum={1}
-						onChange={(value) => patch({ minBitrateStepSize: value })}
-					/>
-					<NumberField
-						id={`${id}-max-step`}
-						label={copy.maxStep}
-						value={goal.maxBitrateStepSize ?? 1.9}
-						minimum={1}
-						onChange={(value) => patch({ maxBitrateStepSize: value })}
-					/>
 				</div>
-				<p className="text-xs text-zinc-400">{copy.stepHint}</p>
+				<p className="text-xs text-zinc-400">{copy.automaticSteps}</p>
 			</section>
 			<div className="grid gap-3 sm:grid-cols-2">
 				<Field
@@ -862,15 +806,54 @@ function SimulatorEditor({
 			{usesRows(goal) ? (
 				<GoalRows id={id} goal={goal} onChange={setGoal} copy={copy} />
 			) : null}
+			{goal.strategy === "fixed-ranges" || goal.automaticTemplates?.length ? (
+				<PerTitleAutomaticTemplates goal={goal} onChange={setGoal} />
+			) : null}
+			{referenceGoal.fixedResolutionAndBitrateConfiguration ? (
+				<div className="space-y-2 text-xs text-zinc-400">
+					<label className="flex items-start gap-2">
+						<input
+							type="checkbox"
+							checked={!!goal.fixedResolutionAndBitrateConfiguration}
+							onChange={(event) =>
+								patch({
+									fixedResolutionAndBitrateConfiguration: event.target.checked
+										? structuredClone(
+												referenceGoal.fixedResolutionAndBitrateConfiguration,
+											)
+										: undefined,
+								})
+							}
+						/>
+						{copy.includeForced}
+					</label>
+					<p>{copy.forcedHint}</p>
+				</div>
+			) : null}
+			<PerTitleReasoning goal={goal} proposal={selected} onChange={setGoal} />
 			<ProposalResults
-				proposals={proposals}
 				selected={selected}
-				onSelect={setSelectedId}
+				baseline={baseline}
+				goal={goal}
+				referenceGoal={referenceGoal}
 				rows={goal.rows}
 				copy={copy}
 				locale={locale}
 				id={id}
 			/>
+			{reference ? (
+				<div className="space-y-2 text-xs text-zinc-400">
+					<p>{copy.referenceHint}</p>
+					<details>
+						<summary className="cursor-pointer">
+							{copy.referenceSettings}
+						</summary>
+						<pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-900 p-3">
+							{JSON.stringify(reference, null, 2)}
+						</pre>
+					</details>
+				</div>
+			) : null}
 			{applyError ? (
 				<p role="alert" className="text-red-400 text-sm">
 					{applyError}
@@ -881,9 +864,9 @@ function SimulatorEditor({
 					{copy.cancel}
 				</Button>
 				<Button
-					disabled={!selected?.applicable}
+					disabled={!selected.applicable || !!reference}
 					onClick={() => {
-						if (selected?.applicable) onApply(selected);
+						if (selected.applicable && !reference) onApply(selected);
 					}}
 				>
 					{copy.apply}
@@ -894,39 +877,54 @@ function SimulatorEditor({
 }
 
 function copyGoal(goal: PerTitleGoal): PerTitleGoal {
-	return {
-		...goal,
-		countPolicy: { ...goal.countPolicy },
-		rows: goal.rows?.map((row) => ({ ...row })),
-	};
+	return structuredClone(goal);
 }
 
 export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
 	const [goal, setGoal] = useState(() => copyGoal(props.initialGoal));
-	const [selectedId, setSelectedId] =
-		useState<PerTitleProposal["id"]>("baseline");
+	const [referenceGoal, setReferenceGoal] = useState(() =>
+		copyGoal(props.initialGoal),
+	);
+	const [reference, setReference] = useState<PerTitleReference>();
+	const [codecError, setCodecError] = useState(false);
 	const drafts = useRef(
 		new Map<
 			PerTitleGoal["codec"],
-			{ goal: PerTitleGoal; selectedId: PerTitleProposal["id"] }
+			{
+				goal: PerTitleGoal;
+				referenceGoal: PerTitleGoal;
+				reference?: PerTitleReference;
+			}
 		>(),
 	);
 	const draftId = useId();
 	const nextRowId = useRef(0);
 	function switchCodec(codec: PerTitleGoal["codec"]) {
 		if (codec === goal.codec) return;
-		drafts.current.set(goal.codec, { goal: copyGoal(goal), selectedId });
+		drafts.current.set(goal.codec, {
+			goal: copyGoal(goal),
+			referenceGoal: copyGoal(referenceGoal),
+			reference,
+		});
 		const cached = drafts.current.get(codec);
 		if (cached) {
+			setCodecError(false);
 			setGoal(copyGoal(cached.goal));
-			setSelectedId(cached.selectedId);
+			setReferenceGoal(copyGoal(cached.referenceGoal));
+			setReference(cached.reference);
 			return;
 		}
 		const seed = props.goalsByCodec?.[codec];
+		if (reference && seed?.codec !== codec) {
+			setCodecError(true);
+			return;
+		}
+		setCodecError(false);
 		if (seed?.codec === codec) {
 			setGoal(copyGoal(seed));
+			setReferenceGoal(copyGoal(seed));
 		} else {
 			const reservedIds = new Set<string>();
 			for (const known of [
@@ -935,29 +933,53 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 				...Object.values(props.goalsByCodec ?? {}),
 				...[...drafts.current.values()].map((draft) => draft.goal),
 			]) {
-				for (const row of known?.rows ?? []) reservedIds.add(row.id);
+				for (const row of [
+					...(known?.rows ?? []),
+					...(known?.automaticTemplates ?? []),
+				])
+					reservedIds.add(row.id);
 			}
-			setGoal({
+			const freshId = () => {
+				let rowId: string;
+				do {
+					nextRowId.current += 1;
+					rowId = `${draftId}-${codec}-new-${nextRowId.current}`;
+				} while (reservedIds.has(rowId));
+				reservedIds.add(rowId);
+				return rowId;
+			};
+			const next = {
 				...copyGoal(goal),
 				codec,
-				rows: goal.rows?.map((row) => {
-					let rowId: string;
-					do {
-						nextRowId.current += 1;
-						rowId = `${draftId}-${codec}-new-${nextRowId.current}`;
-					} while (reservedIds.has(rowId));
-					reservedIds.add(rowId);
-					return { ...row, id: rowId };
-				}),
-			});
+				rows: goal.rows?.map((row) => ({ ...row, id: freshId() })),
+				automaticTemplates: goal.automaticTemplates?.map((row) => ({
+					...row,
+					id: freshId(),
+				})),
+			};
+			setGoal(next);
+			setReferenceGoal(copyGoal(next));
 		}
-		setSelectedId("baseline");
+		setReference(undefined);
+	}
+	function loadGoal(next: PerTitleGoal, loadedReference?: PerTitleReference) {
+		setCodecError(false);
+		drafts.current.set(goal.codec, {
+			goal: copyGoal(goal),
+			referenceGoal: copyGoal(referenceGoal),
+			reference,
+		});
+		setGoal(copyGoal(next));
+		setReferenceGoal(copyGoal(next));
+		setReference(loadedReference);
 	}
 	function changeOpen(open: boolean) {
 		if (!open) {
+			setCodecError(false);
 			drafts.current.clear();
 			setGoal(copyGoal(props.initialGoal));
-			setSelectedId("baseline");
+			setReferenceGoal(copyGoal(props.initialGoal));
+			setReference(undefined);
 		}
 		props.onOpenChange(open);
 	}
@@ -971,11 +993,13 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		>
 			<SimulatorEditor
 				{...props}
+				applyError={codecError ? copy.referenceCodecError : props.applyError}
 				onOpenChange={changeOpen}
 				goal={goal}
 				setGoal={setGoal}
-				selectedId={selectedId}
-				setSelectedId={setSelectedId}
+				referenceGoal={referenceGoal}
+				reference={reference}
+				onLoad={loadGoal}
 				onCodecChange={switchCodec}
 			/>
 		</Dialog>

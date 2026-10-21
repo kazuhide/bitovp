@@ -15,10 +15,32 @@ const en = {
 	global: "Overall bitrate limits",
 	minimum: "Minimum bitrate (kbps)",
 	maximum: "Maximum bitrate (kbps)",
-	minStep: "Minimum bitrate step",
-	maxStep: "Maximum bitrate step",
-	stepHint:
-		"Steps are ratios between neighbouring bitrates: a minimum of 1.5 requires at least 50% more; a maximum of 1.9 allows at most 90% more.",
+	automaticSteps:
+		"Bitrate steps are calculated from these limits, the desired count and each rendition's allowed range. You can inspect the API values under Proposed settings.",
+	loadRequirements: "Load requirements file",
+	saveRequirements: "Download requirements",
+	fileHint:
+		"Save or load a local JSON file. Loading a file does not change the encoding draft.",
+	fileError:
+		"This requirements file could not be loaded. Check its format, codec and values.",
+	fileLoaded: "Requirements loaded.",
+	fileLoading: "Loading requirements…",
+	referenceSettings: "Original template settings",
+	referenceHint:
+		"This reference includes template and quality settings. It is available for comparison; applying it to the encoding draft is not supported here.",
+	referenceCodecError:
+		"Load a file for that codec or open the simulator from its encoding settings. A reference file cannot be converted to another codec here.",
+	automaticTemplates: "Automatic templates retained",
+	automaticRows: "Automatic templates",
+	automaticRow: "automatic template",
+	automaticHint:
+		"These are candidates for Per-Title, not required outputs. Their number and heights do not guarantee the resulting renditions. Attached bitrate settings are retained as source data; the model does not use those settings as count constraints for automatic candidates.",
+	addAutomatic: "Add automatic template",
+	removeAutomatic: "Remove automatic template",
+	optionalHeight: "Height (px, optional)",
+	includeForced: "Include original additional-rendition rules",
+	forcedHint:
+		"Counts with these rules need content analysis. Uncheck to compare the remaining template conditions; the original file is kept intact.",
 	countPolicy: "Rendition count",
 	countPolicies: {
 		unrestricted: "Let Per-Title choose",
@@ -49,10 +71,10 @@ const en = {
 	complexityRange: "Use a complexity range",
 	lowBoundary: "Low complexity boundary (kbps)",
 	highBoundary: "High complexity boundary (kbps)",
-	comparison: "Compare proposals",
+	comparison: "Compare settings",
 	parameter: "Setting",
-	baseline: "Current conditions",
-	adjusted: "Adjusted steps",
+	baseline: "Loaded settings",
+	adjusted: "Edited settings",
 	autoRepresentations: "Automatically add representations",
 	enabled: "Enabled",
 	disabled: "Disabled",
@@ -87,7 +109,6 @@ const en = {
 	unassigned: "Chosen by Per-Title",
 	finitePositive: "Enter a number greater than zero.",
 	positiveInteger: "Enter a whole number greater than zero.",
-	stepInvalid: "Enter a ratio greater than one.",
 	empty: "No proposal is available for these conditions.",
 	cancel: "Cancel",
 	apply: "Review changes",
@@ -110,10 +131,32 @@ const ja: typeof en = {
 	global: "全体のビットレート範囲",
 	minimum: "最小ビットレート (kbps)",
 	maximum: "最大ビットレート (kbps)",
-	minStep: "ビットレート間隔の下限",
-	maxStep: "ビットレート間隔の上限",
-	stepHint:
-		"間隔は隣り合うビットレートの比率です。下限1.5なら50%以上、上限1.9なら90%以下の増加になります。",
+	automaticSteps:
+		"全体の範囲、希望する本数、各レンディションの許容範囲からビットレート間隔を求めます。API に渡す値は「提案する設定」で確認できます。",
+	loadRequirements: "要件ファイルを読み込む",
+	saveRequirements: "要件ファイルを保存",
+	fileHint:
+		"ローカルの JSON ファイルに保存・読み込みできます。読み込んだ時点では、エンコードの下書きは変更しません。",
+	fileError:
+		"要件ファイルを読み込めませんでした。形式・コーデック・入力値を確認してください。",
+	fileLoaded: "要件ファイルを読み込みました。",
+	fileLoading: "要件ファイルを読み込み中…",
+	referenceSettings: "元のテンプレート設定",
+	referenceHint:
+		"この参照設定には、テンプレートや品質の設定が含まれています。比較用として読み込み、エンコードの下書きへの反映は行いません。",
+	referenceCodecError:
+		"そのコーデックの要件ファイルを読み込むか、エンコード設定から開いてください。この画面では、参照ファイルを別のコーデックへ変換できません。",
+	automaticTemplates: "保持している自動テンプレート",
+	automaticRows: "自動生成の候補",
+	automaticRow: "自動生成の候補",
+	automaticHint:
+		"Per-Title に渡す候補です。候補の数や高さは、出力される本数・解像度の保証ではありません。候補に付いたビットレート設定は元データとして保持します。このモデルでは、自動候補の本数を制約する値として扱いません。",
+	addAutomatic: "自動生成の候補を追加",
+	removeAutomatic: "自動生成の候補を削除",
+	optionalHeight: "高さ (px、省略可)",
+	includeForced: "元の追加レンディションのルールを含める",
+	forcedHint:
+		"このルールを含む本数の算出には素材解析が必要です。チェックを外すと、残りのテンプレート条件を比較できます。元のファイルは変更しません。",
 	countPolicy: "レンディションの本数",
 	countPolicies: {
 		unrestricted: "Per-Title に任せる",
@@ -144,10 +187,10 @@ const ja: typeof en = {
 	complexityRange: "複雑度の範囲を使う",
 	lowBoundary: "複雑度の下側境界 (kbps)",
 	highBoundary: "複雑度の上側境界 (kbps)",
-	comparison: "設定案の比較",
+	comparison: "読み込み時との比較",
 	parameter: "設定項目",
-	baseline: "現在の条件",
-	adjusted: "間隔を調整した案",
+	baseline: "読み込んだ設定",
+	adjusted: "変更後の設定",
 	autoRepresentations: "レンディションの自動追加",
 	enabled: "有効",
 	disabled: "無効",
@@ -182,7 +225,6 @@ const ja: typeof en = {
 	unassigned: "Per-Title が選択",
 	finitePositive: "0 より大きい数値を入力してください。",
 	positiveInteger: "1 以上の整数を入力してください。",
-	stepInvalid: "1 より大きい比率を入力してください。",
 	empty: "この条件の設定案はありません。",
 	cancel: "キャンセル",
 	apply: "差分を確認",

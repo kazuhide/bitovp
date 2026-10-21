@@ -1,5 +1,11 @@
 import type { PerTitleGoal } from "@bitovp/core";
-import { fireEvent, screen, within } from "@testing-library/react";
+import {
+	act,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
@@ -74,6 +80,371 @@ function show(goal = initialGoal, locale: "en" | "ja" = "en") {
 }
 
 describe("Per-Title simulator", () => {
+	it.each([
+		"bitrate",
+		"codec",
+	])("discards a delayed file read after a newer %s edit", (field) => {
+		const readers: DelayedReader[] = [];
+		class DelayedReader {
+			static LOADING = 1;
+			readyState = 0;
+			result = JSON.stringify({
+				version: 1,
+				goal: { ...initialGoal, maxBitrate: 4_000_000 },
+			});
+			onload?: () => void;
+			onerror?: () => void;
+			constructor() {
+				readers.push(this);
+			}
+			readAsText() {
+				this.readyState = 1;
+			}
+			abort() {
+				this.readyState = 2;
+			}
+		}
+		vi.stubGlobal("FileReader", DelayedReader);
+		try {
+			const { onApply } = show();
+			fireEvent.change(screen.getByLabelText("Load requirements file"), {
+				target: {
+					files: [new File(["{}"], "slow.json", { type: "application/json" })],
+				},
+			});
+			if (field === "bitrate")
+				fireEvent.change(
+					screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+					{ target: { value: "9000" } },
+				);
+			else
+				fireEvent.change(screen.getByRole("combobox", { name: "Codec" }), {
+					target: { value: "VP9" },
+				});
+			act(() => readers[0]?.onload?.());
+			expect(
+				screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			).toHaveValue(field === "bitrate" ? 9000 : 8000);
+			expect(screen.getByRole("combobox", { name: "Codec" })).toHaveValue(
+				field === "codec" ? "VP9" : "H265",
+			);
+			expect(onApply).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("offers a verified count change that preserves required rows and waits for explicit selection", async () => {
+		const { onApply } = show({
+			...initialGoal,
+			strategy: "fixed-resolutions",
+			countPolicy: { kind: "maximum", count: 2 },
+			rows: [
+				{ id: "first", height: 360 },
+				{ id: "second", height: 720 },
+				{ id: "third", height: 1080 },
+			],
+		});
+		expect(
+			screen.getByRole("spinbutton", { name: "Desired count" }),
+		).toHaveValue(2);
+		expect(
+			screen.getByText(
+				"Keep every required rendition and raise the count goal to accommodate them.",
+			),
+		).toBeVisible();
+		expect(onApply).not.toHaveBeenCalled();
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Use these conditions" }));
+		expect(
+			screen.getByRole("spinbutton", { name: "Desired count" }),
+		).toHaveValue(3);
+		expect(
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 3" }),
+		).toHaveValue(1080);
+		expect(onApply).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeEnabled();
+	});
+
+	it("edits automatic candidates separately from required bitrate ranges", async () => {
+		const { onApply } = show({
+			...initialGoal,
+			strategy: "fixed-ranges",
+			rows: [
+				{
+					id: "required",
+					height: 480,
+					minBitrate: 200_000,
+					maxBitrate: 600_000,
+				},
+			],
+		});
+		const user = userEvent.setup();
+		await user.click(
+			screen.getByRole("button", { name: "Add automatic template" }),
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: "Height (px, optional), automatic template 1",
+			}),
+			{ target: { value: "1080" } },
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: "Minimum bitrate (kbps), automatic template 1",
+			}),
+			{ target: { value: "700" } },
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), automatic template 1",
+			}),
+			{ target: { value: "4000" } },
+		);
+		await user.click(screen.getByRole("button", { name: "Review changes" }));
+		expect(onApply).toHaveBeenCalledOnce();
+		const api = onApply.mock.calls[0]?.[0].api;
+		expect(api.global.autoRepresentations).toEqual({});
+		expect(api.streams).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					rowId: "required",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					height: 480,
+					perTitleSettings: expect.objectContaining({
+						minBitrate: 200_000,
+						maxBitrate: 600_000,
+					}),
+				}),
+				expect.objectContaining({
+					mode: "PER_TITLE_TEMPLATE",
+					height: 1080,
+					perTitleSettings: expect.objectContaining({
+						minBitrate: 700_000,
+						maxBitrate: 4_000_000,
+					}),
+				}),
+			]),
+		);
+		const counts = screen.getByRole("table", {
+			name: "Requirements by resolution",
+		});
+		expect(within(counts).queryByRole("row", { name: /1080/ })).toBeNull();
+	});
+
+	it("loads a local mixed reference for comparison and retains its original settings after editing", async () => {
+		const { onApply } = show();
+		const user = userEvent.setup();
+		const reference = {
+			codec: "H265",
+			global: {
+				minBitrate: 100_000,
+				maxBitrate: 6_000_000,
+				fixedResolutionAndBitrateConfiguration: {
+					forcedRenditionAboveHighestFixedRepresentation: 1,
+				},
+			},
+			streams: [
+				{
+					id: "reference-fixed",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					height: 480,
+					perTitleSettings: {
+						minBitrate: 200_000,
+						maxBitrate: 600_000,
+						bitrateSelectionMode: "OPTIMIZED",
+					},
+				},
+				{
+					id: "reference-auto",
+					mode: "PER_TITLE_TEMPLATE",
+					height: 1080,
+					bitrate: null,
+				},
+			],
+		};
+		await user.upload(
+			screen.getByLabelText("Load requirements file"),
+			new File(
+				[JSON.stringify({ version: 1, reference })],
+				"local-reference.json",
+				{ type: "application/json" },
+			),
+		);
+		await waitFor(() =>
+			expect(screen.getByRole("status")).toHaveTextContent(
+				"Requirements loaded.",
+			),
+		);
+		expect(
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+		).toHaveValue(480);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Height (px, optional), automatic template 1",
+			}),
+		).toHaveValue(1080);
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{ target: { value: "10000" } },
+		);
+		const table = screen.getByRole("table", { name: "Compare settings" });
+		expect(
+			within(table).getByRole("row", {
+				name: "Maximum bitrate (kbps) 6,000 10,000",
+			}),
+		).toBeVisible();
+		await user.click(
+			screen.getByRole("checkbox", {
+				name: "Include original additional-rendition rules",
+			}),
+		);
+		expect(
+			screen.getByRole("checkbox", {
+				name: "Include original additional-rendition rules",
+			}),
+		).not.toBeChecked();
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeDisabled();
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Codec" }),
+			"AV1",
+		);
+		expect(screen.getByRole("combobox", { name: "Codec" })).toHaveValue("H265");
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"A reference file cannot be converted to another codec here.",
+		);
+		await user.click(screen.getByText("Original template settings"));
+		const originalDetails = screen.getByText(
+			"Original template settings",
+		).parentElement;
+		if (!originalDetails) throw new Error("missing reference details");
+		expect(
+			JSON.parse(
+				within(originalDetails).getByText(/"reference-fixed"/).textContent ??
+					"",
+			),
+		).toEqual(reference);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it("reserves imported automatic IDs when adding required rows", async () => {
+		const goal: PerTitleGoal = {
+			...initialGoal,
+			strategy: "fixed-ranges",
+			rows: [
+				{ id: "first", height: 360, minBitrate: 100_000, maxBitrate: 800_000 },
+			],
+		};
+		const { onApply } = show(goal);
+		const height = screen.getByRole("spinbutton", {
+			name: "Height (px), rendition 1",
+		});
+		const prefix = height.id.slice(0, -"-first-height".length);
+		const imported = {
+			...goal,
+			automaticTemplates: [{ id: `${prefix}-new-1`, height: 1080 }],
+		};
+		const user = userEvent.setup();
+		await user.upload(
+			screen.getByLabelText("Load requirements file"),
+			new File(
+				[JSON.stringify({ version: 1, goal: imported })],
+				"requirements.json",
+				{ type: "application/json" },
+			),
+		);
+		await waitFor(() =>
+			expect(screen.getByRole("status")).toHaveTextContent(
+				"Requirements loaded.",
+			),
+		);
+		await user.click(screen.getByRole("button", { name: "Add rendition" }));
+		await user.click(screen.getByRole("button", { name: "Review changes" }));
+		expect(onApply).toHaveBeenCalledOnce();
+		const ids = onApply.mock.calls[0]?.[0].api.streams.map(
+			(stream: { rowId: string }) => stream.rowId,
+		);
+		expect(ids).toHaveLength(3);
+		expect(new Set(ids).size).toBe(3);
+	});
+
+	it("rejects an invalid local file without replacing the current draft", async () => {
+		show();
+		await userEvent.setup().upload(
+			screen.getByLabelText("Load requirements file"),
+			new File(['{"version":1,"apiKey":"example"}'], "invalid.json", {
+				type: "application/json",
+			}),
+		);
+		await waitFor(() =>
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"This requirements file could not be loaded.",
+			),
+		);
+		expect(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+		).toHaveValue(8000);
+	});
+
+	it("derives bitrate steps from the desired count without requiring ratio inputs", async () => {
+		const { onApply } = show({
+			...initialGoal,
+			strategy: "count",
+			countPolicy: { kind: "exact", count: 6 },
+		});
+		expect(
+			screen.queryByRole("spinbutton", { name: "Minimum bitrate step" }),
+		).toBeNull();
+		expect(
+			screen.queryByRole("spinbutton", { name: "Maximum bitrate step" }),
+		).toBeNull();
+		expect(screen.queryByRole("radio")).toBeNull();
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Review changes" }));
+		const proposal = onApply.mock.calls[0]?.[0];
+		expect(proposal.applicable).toBe(true);
+		expect(
+			screen.getByRole("region", { name: "Why these settings" }),
+		).toBeVisible();
+		await userEvent
+			.setup()
+			.click(screen.getByText("Calculation and assumptions"));
+		expect(screen.getByText(/s\^N > U\/L/)).toBeVisible();
+		expect(proposal.api.global.minBitrateStepSize ** 6).toBeGreaterThan(80);
+		expect(
+			proposal.scenarios.find(
+				(scenario: { id: string }) => scenario.id === "high",
+			).modelCountRange.maximum,
+		).toBeLessThanOrEqual(6);
+	});
+
+	it("compares the loaded maximum with an edited maximum without changing the reference", () => {
+		show();
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{
+				target: { value: "12000" },
+			},
+		);
+		const comparison = screen.getByRole("table", { name: "Compare settings" });
+		expect(
+			within(comparison).getByRole("columnheader", { name: "Loaded settings" }),
+		).toBeVisible();
+		expect(
+			within(comparison).getByRole("columnheader", { name: "Edited settings" }),
+		).toBeVisible();
+		const maximum = within(comparison).getByRole("row", {
+			name: "Maximum bitrate (kbps) 8,000 12,000",
+		});
+		expect(maximum).toBeVisible();
+	});
+
 	it("offers the five intent modes and shows rows only for resolution constraints", async () => {
 		show();
 		const user = userEvent.setup();
@@ -307,11 +678,9 @@ describe("Per-Title simulator", () => {
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 			{ target: { value: "5500" } },
 		);
-		await user.click(screen.getByRole("radio", { name: "Adjusted steps" }));
+		expect(screen.queryByRole("radio")).toBeNull();
 		await user.selectOptions(codec, "H265");
-		expect(
-			screen.getByRole("radio", { name: "Current conditions" }),
-		).toBeChecked();
+		expect(screen.queryByRole("radio")).toBeNull();
 		fireEvent.change(
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 			{ target: { value: "9000" } },
@@ -323,7 +692,7 @@ describe("Per-Title simulator", () => {
 		expect(
 			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
 		).toHaveValue(360);
-		expect(screen.getByRole("radio", { name: "Adjusted steps" })).toBeChecked();
+		expect(screen.queryByRole("radio")).toBeNull();
 		await user.selectOptions(codec, "H265");
 		expect(
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
@@ -430,7 +799,7 @@ describe("Per-Title simulator", () => {
 		});
 	});
 
-	it("shows why a step adjustment was proposed and reviews the selected alternative", async () => {
+	it("automatically reviews count-driven settings while preserving required resolutions", async () => {
 		const { onApply } = show({
 			...initialGoal,
 			strategy: "fixed-resolutions",
@@ -441,15 +810,13 @@ describe("Per-Title simulator", () => {
 			],
 		});
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("radio", { name: "Adjusted steps" }));
+		expect(screen.queryByRole("radio")).toBeNull();
 		expect(
-			screen.getByText(
-				"Only the bitrate steps change. Requested resolutions and bitrate intervals are preserved.",
-			),
+			screen.getByText(/Bitrate steps are calculated from these limits/),
 		).toBeVisible();
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		const proposal = onApply.mock.calls[0]?.[0];
-		expect(proposal).toMatchObject({ id: "step-adjusted", applicable: true });
+		expect(proposal).toMatchObject({ applicable: true });
 		expect(proposal.api.global.minBitrateStepSize).toBeGreaterThan(1.5);
 		expect(
 			proposal.api.streams.map((stream: { height: number }) => stream.height),
@@ -488,7 +855,7 @@ describe("Per-Title simulator", () => {
 		});
 	});
 
-	it("retains the reviewed draft and selected alternative when the dialog is hidden and reopened", async () => {
+	it("retains the reviewed draft when the dialog is hidden and reopened", async () => {
 		const props = {
 			initialGoal: {
 				...initialGoal,
@@ -508,7 +875,7 @@ describe("Per-Title simulator", () => {
 			{ target: { value: "7000" } },
 		);
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("radio", { name: "Adjusted steps" }));
+		expect(screen.queryByRole("radio")).toBeNull();
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		expect(props.onApply).toHaveBeenCalledTimes(1);
 		rerender(<PerTitleSimulator {...props} open={false} />);
@@ -516,7 +883,7 @@ describe("Per-Title simulator", () => {
 		expect(
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 		).toHaveValue(7000);
-		expect(screen.getByRole("radio", { name: "Adjusted steps" })).toBeChecked();
+		expect(screen.queryByRole("radio")).toBeNull();
 	});
 
 	it("resets the draft after the user cancels and then reopens the dialog", async () => {
@@ -578,8 +945,8 @@ describe("Per-Title simulator", () => {
 		).toBeVisible();
 	});
 
-	it("updates the labelled linear example when a complexity boundary changes", async () => {
-		show({
+	it("retains complexity boundaries without presenting a manufactured native prediction", async () => {
+		const { onApply } = show({
 			...initialGoal,
 			strategy: "fixed-ranges",
 			rows: [
@@ -596,20 +963,28 @@ describe("Per-Title simulator", () => {
 		});
 		const user = userEvent.setup();
 		await user.click(screen.getByText("Bitrate selection"));
-		const summary = screen.getAllByText("Show example renditions")[0];
-		if (!summary?.parentElement) throw new Error("missing example details");
-		await user.click(summary);
-		expect(within(summary.parentElement).getByText("822.5")).toBeVisible();
-		expect(
-			within(summary.parentElement).getByText("(Linear example)"),
-		).toBeVisible();
+		await user.click(screen.getByRole("button", { name: "Review changes" }));
+		const first = onApply.mock.calls[0]?.[0];
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
 				name: "High complexity boundary (kbps)",
 			}),
 			{ target: { value: "8000" } },
 		);
-		expect(within(summary.parentElement).queryByText("822.5")).toBeNull();
-		expect(within(summary.parentElement).getByText("730.357")).toBeVisible();
+		await user.click(screen.getByRole("button", { name: "Review changes" }));
+		const second = onApply.mock.calls[1]?.[0];
+		expect(
+			first.api.streams[0].perTitleSettings.highComplexityBoundaryForMaxBitrate,
+		).toBe(6_000_000);
+		expect(
+			second.api.streams[0].perTitleSettings
+				.highComplexityBoundaryForMaxBitrate,
+		).toBe(8_000_000);
+		expect(
+			second.scenarios.map((item: { modelRungs: unknown }) => item.modelRungs),
+		).toEqual(
+			first.scenarios.map((item: { modelRungs: unknown }) => item.modelRungs),
+		);
+		expect(screen.queryByText("(Linear example)")).toBeNull();
 	});
 });

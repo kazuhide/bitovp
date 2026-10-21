@@ -137,7 +137,8 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 	const api = proposal.api;
 	const global = api.global;
 	const streams = api.streams;
-	const validInteger = (n: number) => Number.isSafeInteger(n) && n > 0;
+	const validInteger = (n: number | undefined): n is number =>
+		typeof n === "number" && Number.isSafeInteger(n) && n > 0;
 	if (
 		proposal.codec !== codec ||
 		!proposal.applicable ||
@@ -170,7 +171,7 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 						!validInteger(row.perTitleSettings.maxBitrate) ||
 						row.perTitleSettings.minBitrate > row.perTitleSettings.maxBitrate ||
 						!["OPTIMIZED", "COMPLEXITY_RANGE"].includes(
-							row.perTitleSettings.bitrateSelectionMode,
+							row.perTitleSettings.bitrateSelectionMode ?? "",
 						) ||
 						(row.perTitleSettings.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
 							(!positive(

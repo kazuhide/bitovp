@@ -1,3 +1,5 @@
+import type { EncodingPlan } from "./schema.js";
+
 export type PerTitleStrategy =
 	| "automatic"
 	| "count"
@@ -22,6 +24,16 @@ export type PerTitleGoalRow = {
 	highComplexityBoundaryForMaxBitrate?: number;
 };
 
+export type PerTitleAutomaticTemplate = Omit<PerTitleGoalRow, "height"> & {
+	height?: number;
+};
+
+export type PerTitleFixedResolutionAndBitrateConfiguration = NonNullable<
+	NonNullable<
+		NonNullable<EncodingPlan["perTitle"]>["h264Configuration"]
+	>["fixedResolutionAndBitrateConfiguration"]
+>;
+
 export type PerTitleGoal = {
 	strategy: PerTitleStrategy;
 	codec: PerTitleCodec;
@@ -31,6 +43,8 @@ export type PerTitleGoal = {
 	maxBitrateStepSize?: number;
 	countPolicy: PerTitleCountPolicy;
 	rows?: readonly PerTitleGoalRow[];
+	automaticTemplates?: readonly PerTitleAutomaticTemplate[];
+	fixedResolutionAndBitrateConfiguration?: PerTitleFixedResolutionAndBitrateConfiguration;
 	inputHeight?: number;
 	inputWidth?: number;
 	scenarioFractions?: readonly number[];
@@ -61,6 +75,7 @@ export type PerTitleDiagnostic = {
 		| "linear-illustration"
 		| "scenario-range-bound"
 		| "scenario-conflict"
+		| "forced-count-unknown"
 		| "model-limit";
 	severity: "info" | "warning" | "conflict";
 	message: string;
@@ -75,6 +90,7 @@ export type PerTitleApiSettings = {
 		minBitrateStepSize: number;
 		maxBitrateStepSize: number;
 		autoRepresentations?: Record<string, never>;
+		fixedResolutionAndBitrateConfiguration?: PerTitleFixedResolutionAndBitrateConfiguration;
 	};
 	streams: Array<{
 		rowId: string;
@@ -85,9 +101,9 @@ export type PerTitleApiSettings = {
 			| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
 			| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
 		perTitleSettings?: {
-			minBitrate: number;
-			maxBitrate: number;
-			bitrateSelectionMode: "OPTIMIZED" | "COMPLEXITY_RANGE";
+			minBitrate?: number;
+			maxBitrate?: number;
+			bitrateSelectionMode?: "OPTIMIZED" | "COMPLEXITY_RANGE";
 			lowComplexityBoundaryForMaxBitrate?: number;
 			highComplexityBoundaryForMaxBitrate?: number;
 		};
@@ -126,6 +142,27 @@ export type PerTitleProposal = {
 	api: PerTitleApiSettings;
 	scenarios: PerTitleScenario[];
 	diagnostics: PerTitleDiagnostic[];
+	derivation?: PerTitleDerivation;
+};
+
+export type PerTitleDerivation = {
+	method:
+		| "preserved-existing"
+		| "geometric-count"
+		| "required-intervals"
+		| "documented-defaults";
+	desiredCount?: number;
+	requiredRowCount: number;
+	ratioLowerExclusive?: number;
+	ratioUpperInclusive?: number;
+	maximumFeasibleStep?: number;
+	idealStep?: number;
+	selectedMinStep: number;
+	selectedMaxStep: number;
+	targetSatisfied: boolean;
+	fixedOrderRowIds?: string[];
+	integerWitness?: number[];
+	rationale: string;
 };
 
 /** Returns arithmetic examples and API candidates, without making provider requests. */
@@ -136,6 +173,8 @@ export function proposePerTitleSettings(
 	if (baseline.diagnostics.some((item) => inputErrorCodes.has(item.code))) {
 		return [baseline];
 	}
+	if (goal.fixedResolutionAndBitrateConfiguration !== undefined)
+		return [baseline];
 	const desiredCount =
 		goal.countPolicy.kind === "unrestricted"
 			? isClosedStrategy(goal.strategy)
@@ -234,6 +273,349 @@ export function proposePerTitleSettings(
 	return [baseline, adjusted];
 }
 
+/** Preserves compatible settings, otherwise derives one explicitly bounded model candidate. */
+export function recommendPerTitleSettings(
+	goal: PerTitleGoal,
+): PerTitleProposal {
+	const build = (input: PerTitleGoal, id: PerTitleProposal["id"]) =>
+		buildProposal(input, id, true);
+	const normalized: PerTitleGoal = {
+		...goal,
+		minBitrateStepSize: DEFAULT_MIN_STEP,
+		maxBitrateStepSize: DEFAULT_MAX_STEP,
+	};
+	const initialRows = orderedRows(normalized);
+	const forced = goal.fixedResolutionAndBitrateConfiguration !== undefined;
+	const desiredCount =
+		goal.countPolicy.kind !== "unrestricted"
+			? goal.countPolicy.count
+			: !hasAutomaticOutput(goal)
+				? initialRows.length
+				: undefined;
+	const finish = (
+		proposal: PerTitleProposal,
+		details: Omit<
+			PerTitleDerivation,
+			| "selectedMinStep"
+			| "selectedMaxStep"
+			| "requiredRowCount"
+			| "targetSatisfied"
+		>,
+	) => {
+		useCheckedIntervalWitness(proposal, goal, details);
+		proposal.derivation = {
+			...details,
+			...(desiredCount ? { desiredCount } : {}),
+			requiredRowCount: initialRows.length,
+			selectedMinStep: proposal.api.global.minBitrateStepSize,
+			selectedMaxStep: proposal.api.global.maxBitrateStepSize,
+			targetSatisfied:
+				proposal.applicable &&
+				(goal.countPolicy.kind !== "exact" ||
+					proposal.scenarios.some(
+						(scenario) =>
+							scenario.status === "modelled" &&
+							scenario.modelRungs.length === desiredCount,
+					)) &&
+				(!desiredCount ||
+					modelCapacity(
+						goal,
+						rowRanges(goal, initialRows),
+						proposal.api.global.minBitrateStepSize,
+					) <= desiredCount),
+		};
+		return proposal;
+	};
+	if (validateGoal(normalized).length) {
+		return finish(build(normalized, "baseline"), {
+			method: "required-intervals",
+			rationale:
+				"The input is invalid. Requested intervals and counts were not changed.",
+		});
+	}
+	if (
+		goal.minBitrateStepSize !== undefined ||
+		goal.maxBitrateStepSize !== undefined
+	) {
+		const existing = build(goal, "baseline");
+		if (
+			!existing.diagnostics.some(
+				(item) =>
+					item.severity === "conflict" || item.code === "row-order-unknown",
+			)
+		) {
+			return finish(existing, {
+				method: "preserved-existing",
+				rationale:
+					"Existing spacing satisfies the model's row and explicit count checks, so it is retained to minimize setting changes. Unmodelled additional-rendition rules remain unknown.",
+			});
+		}
+	}
+	if (!initialRows.length && (!desiredCount || forced)) {
+		return finish(build(normalized, "baseline"), {
+			method: "documented-defaults",
+			rationale:
+				"No count or required interval supplies a spacing objective. This model uses the documented defaults 1.5 and 1.9: https://developer.bitmovin.com/encoding/docs/per-title-configuration-options. This is not a quality optimization.",
+		});
+	}
+	const span = goal.maxBitrate / goal.minBitrate;
+	if (!initialRows.length) {
+		const requested = desiredCount as number;
+		const count =
+			goal.countPolicy.kind === "maximum"
+				? Math.min(requested, goal.maxBitrate - goal.minBitrate + 1)
+				: requested;
+		const lower =
+			goal.maxBitrate - goal.minBitrate + 1 <= count ? 1 : span ** (1 / count);
+		const ideal = count > 1 ? span ** (1 / (count - 1)) : undefined;
+		const witness = Array.from({ length: count }, (_, index) =>
+			Math.min(
+				goal.maxBitrate,
+				Math.round(goal.minBitrate * (ideal ?? 1) ** index),
+			),
+		);
+		const ratios = witness
+			.slice(1)
+			.map((point, index) => point / (witness[index] as number));
+		const upper = ideal === undefined ? undefined : Math.min(ideal, ...ratios);
+		const minimumStep =
+			upper !== undefined && upper > lower
+				? Math.exp((Math.log(lower) + Math.log(upper)) / 2)
+				: Math.max(1 + Number.EPSILON, lower + (count === 1 ? 1 : 0));
+		const maximumStep = Math.max(minimumStep + 1 / goal.minBitrate, ...ratios);
+		return finish(
+			build(
+				{
+					...normalized,
+					minBitrateStepSize: minimumStep,
+					maxBitrateStepSize: maximumStep,
+				},
+				"step-adjusted",
+			),
+			{
+				method: "geometric-count",
+				ratioLowerExclusive: lower,
+				...(upper !== undefined ? { ratioUpperInclusive: upper } : {}),
+				...(ideal !== undefined ? { idealStep: ideal } : {}),
+				integerWitness: witness,
+				rationale:
+					"Equal logarithmic spacing supplies an integer illustration. The minimum step is chosen inside the count-cap interval to leave rounding margin; this is a spacing model, not a provider or quality optimum.",
+			},
+		);
+	}
+	const widestStep = span + 1;
+	const ordering = resolveRowOrder(
+		normalized,
+		initialRows,
+		1 + Number.EPSILON,
+		widestStep,
+		(candidate) => integerPoints(rowRanges(goal, candidate), 1) !== null,
+	);
+	const ranges = rowRanges(goal, ordering.rows);
+	const firstWitness = integerPoints(ranges, 1);
+	if (ordering.unknown || !firstWitness) {
+		const result = build(normalized, "baseline");
+		if (ordering.unknown) {
+			result.status = "unknown";
+			result.applicable = false;
+			result.diagnostics = result.diagnostics.filter(
+				(item) => item.severity !== "conflict",
+			);
+			result.diagnostics.push({
+				code: "row-order-unknown",
+				severity: "warning",
+				message:
+					"The bounded search did not establish an integer ordering; this does not prove the requested ladder impossible.",
+				values: { states: ordering.states, limit: MAX_ORDER_STATES },
+			});
+			result.scenarios = result.scenarios.map((scenario) => ({
+				...scenario,
+				status: "unknown",
+				modelCountRange: null,
+				modelRungs: [],
+				rowModels: [],
+				diagnostics: result.diagnostics.filter(
+					(item) => item.code === "row-order-unknown",
+				),
+			}));
+		}
+		return finish(result, {
+			method: "required-intervals",
+			fixedOrderRowIds: ordering.rows.map((row) => row.id),
+			rationale:
+				"A valid integer ordering was not established. No ranges or required rows were relaxed.",
+		});
+	}
+	let feasibleLower = 1;
+	let feasibleUpper = widestStep;
+	let witness = firstWitness;
+	if (ranges.length > 1) {
+		for (let index = 0; index < 64; index++) {
+			const midpoint = (feasibleLower + feasibleUpper) / 2;
+			const points = integerPoints(ranges, midpoint);
+			if (points) {
+				feasibleLower = midpoint;
+				witness = points;
+			} else feasibleUpper = midpoint;
+		}
+	}
+	const maximumFeasibleStep =
+		ranges.length > 1
+			? Math.min(
+					...witness
+						.slice(1)
+						.map((point, index) => point / (witness[index] as number)),
+				)
+			: undefined;
+	let countLower = 1;
+	let countUpper = widestStep;
+	if (desiredCount && !forced) {
+		for (let index = 0; index < 64; index++) {
+			const midpoint = (countLower + countUpper) / 2;
+			if (modelCapacity(goal, ranges, midpoint) > desiredCount)
+				countLower = midpoint;
+			else countUpper = midpoint;
+		}
+	}
+	const upper = maximumFeasibleStep ?? countLower + 2;
+	const minimumStep =
+		upper > countUpper || !desiredCount || forced
+			? Math.exp(
+					(Math.log(desiredCount && !forced ? countUpper : 1) +
+						Math.log(upper)) /
+						2,
+				)
+			: Math.max(1 + Number.EPSILON, upper);
+	witness = integerPoints(ranges, minimumStep) ?? witness;
+	const maximumStep = Math.max(
+		minimumStep + 1 / goal.minBitrate,
+		...witness
+			.slice(1)
+			.map((point, index) => point / (witness[index] as number)),
+	);
+	return finish(
+		build(
+			{
+				...normalized,
+				minBitrateStepSize: minimumStep,
+				maxBitrateStepSize: maximumStep,
+			},
+			"step-adjusted",
+		),
+		{
+			method: "required-intervals",
+			...(desiredCount && !forced ? { ratioLowerExclusive: countLower } : {}),
+			...(maximumFeasibleStep !== undefined
+				? { ratioUpperInclusive: maximumFeasibleStep, maximumFeasibleStep }
+				: {}),
+			fixedOrderRowIds: ordering.rows.map((row) => row.id),
+			integerWitness: witness,
+			rationale:
+				"The model intersects the count-cap lower bound with the largest feasible minimum step in this fixed row order, then chooses an interior value for rounding margin. The integer witness preserves every interval. Bounded ordering does not prove a global or provider quality optimum.",
+		},
+	);
+}
+
+/** Uses a proved fixed-order example only where that scenario can contain it. */
+function useCheckedIntervalWitness(
+	proposal: PerTitleProposal,
+	goal: PerTitleGoal,
+	details: Pick<PerTitleDerivation, "fixedOrderRowIds" | "integerWitness">,
+): void {
+	const ids = details.fixedOrderRowIds;
+	const points = details.integerWitness;
+	const rows = orderedRows(goal);
+	if (
+		!ids ||
+		!points ||
+		ids.length !== rows.length ||
+		points.length !== ids.length ||
+		new Set(ids).size !== ids.length
+	)
+		return;
+	const byId = new Map(rows.map((row) => [row.id, row]));
+	const ordered = ids.map((id) => byId.get(id));
+	if (ordered.some((row) => !row)) return;
+	const actualRows = ordered as PerTitleGoalRow[];
+	const ranges = rowRanges(goal, actualRows);
+	for (let index = 0; index < points.length; index++) {
+		const point = points[index] as number;
+		const range = ranges[index] as Interval;
+		if (
+			!Number.isSafeInteger(point) ||
+			point < range.minimum ||
+			point > range.maximum
+		)
+			return;
+		if (index > 0) {
+			const ratio = point / (points[index - 1] as number);
+			if (
+				(actualRows[index]?.height ?? 0) <
+					(actualRows[index - 1]?.height ?? 0) ||
+				ratio < proposal.api.global.minBitrateStepSize - EPSILON ||
+				ratio > proposal.api.global.maxBitrateStepSize + EPSILON
+			)
+				return;
+		}
+	}
+	proposal.scenarios = proposal.scenarios.map((scenario) => {
+		if (
+			!scenario.modelCountRange ||
+			!scenario.diagnostics.some((item) => item.code === "row-step-conflict") ||
+			points.some((point) => point > scenario.assumedMaxBitrate)
+		)
+			return scenario;
+		const diagnostics = scenario.diagnostics.filter(
+			(item) => item.code !== "row-step-conflict",
+		);
+		const incomplete =
+			goal.countPolicy.kind === "exact" &&
+			points.length !== goal.countPolicy.count;
+		return {
+			...scenario,
+			modelRungs: points.map((bitrate, index) => ({
+				rowId: ids[index],
+				height: actualRows[index]?.height,
+				bitrate,
+				kind: "required" as const,
+			})),
+			diagnostics,
+			status: diagnostics.some((item) => item.severity === "conflict")
+				? "conflict"
+				: incomplete
+					? "unknown"
+					: "modelled",
+		};
+	});
+	if (!proposal.scenarios.some((scenario) => scenario.status === "conflict")) {
+		proposal.diagnostics = proposal.diagnostics.filter(
+			(item) => item.code !== "scenario-conflict",
+		);
+	}
+}
+
+/** Earliest strictly increasing integer assignment, with no maximum-gap constraint. */
+function integerPoints(
+	ranges: Interval[],
+	minimumStep: number,
+): number[] | null {
+	const points: number[] = [];
+	for (const range of ranges) {
+		const previous = points.at(-1);
+		const point =
+			previous === undefined
+				? range.minimum
+				: Math.max(
+						range.minimum,
+						previous + 1,
+						Math.ceil(previous * minimumStep),
+					);
+		if (!Number.isSafeInteger(point) || point > range.maximum) return null;
+		points.push(point);
+	}
+	return points;
+}
+
 const DEFAULT_MIN_STEP = 1.5;
 const DEFAULT_MAX_STEP = 1.9;
 const MAX_MODEL_RUNGS = 256;
@@ -262,6 +644,13 @@ function isClosedStrategy(strategy: PerTitleStrategy): boolean {
 	return strategy === "fixed-resolutions" || strategy === "fixed-ranges";
 }
 
+function hasAutomaticOutput(goal: PerTitleGoal): boolean {
+	return (
+		!isClosedStrategy(goal.strategy) ||
+		(goal.automaticTemplates?.length ?? 0) > 0
+	);
+}
+
 function positiveInteger(value: number | undefined): value is number {
 	return value !== undefined && Number.isSafeInteger(value) && value > 0;
 }
@@ -285,6 +674,7 @@ function resolveRowOrder(
 	rows: PerTitleGoalRow[],
 	minimumStep: number,
 	maximumStep: number,
+	acceptOrder?: (rows: PerTitleGoalRow[]) => boolean,
 ): { rows: PerTitleGoalRow[]; unknown: boolean; states: number } {
 	if (
 		goal.strategy !== "fixed-ranges" ||
@@ -295,7 +685,10 @@ function resolveRowOrder(
 		return { rows, unknown: false, states: 0 };
 	}
 	const ranges = rowRanges(goal, rows);
-	if (choosePoints(ranges, minimumStep, maximumStep, 0.5)) {
+	if (
+		choosePoints(ranges, minimumStep, maximumStep, 0.5) &&
+		(!acceptOrder || acceptOrder(rows))
+	) {
 		return { rows, unknown: false, states: 0 };
 	}
 	const intervals = ranges.map((range) => ({
@@ -317,7 +710,11 @@ function resolveRowOrder(
 				return null;
 			}
 			states++;
-			if (remaining.length === 0) return [...order];
+			if (remaining.length === 0)
+				return !acceptOrder ||
+					acceptOrder(order.map((index) => rows[index] as PerTitleGoalRow))
+					? [...order]
+					: null;
 			const height = rows[remaining[0] as number]?.height;
 			const candidates = remaining
 				.filter((index) => rows[index]?.height === height)
@@ -411,7 +808,8 @@ function modelCapacity(
 		{ minimum: goal.minBitrate, maximum: goal.maxBitrate },
 		minimumStep,
 	);
-	if (goal.strategy !== "fixed-ranges") return globalCapacity;
+	if (goal.strategy !== "fixed-ranges" || hasAutomaticOutput(goal))
+		return globalCapacity;
 	return Math.min(
 		globalCapacity,
 		ranges.reduce((total, range) => total + capacityOf(range, minimumStep), 0),
@@ -528,7 +926,10 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 	) {
 		conflict("rows-required", "Add at least one required resolution.");
 	}
-	const streamCount = rows.length + (isClosedStrategy(goal.strategy) ? 0 : 1);
+	const automaticTemplates = goal.automaticTemplates ?? [];
+	const streamCount =
+		rows.length +
+		(automaticTemplates.length || (isClosedStrategy(goal.strategy) ? 0 : 1));
 	if (
 		streamCount > MAX_ROWS ||
 		(goal.scenarioFractions?.length ?? 0) > MAX_SCENARIOS
@@ -598,6 +999,72 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 			);
 		}
 	}
+	for (const row of automaticTemplates.slice(0, MAX_ROWS)) {
+		if (
+			!row.id ||
+			ids.has(row.id) ||
+			(row.height !== undefined && !positiveInteger(row.height)) ||
+			(row.width !== undefined && !positiveInteger(row.width))
+		) {
+			conflict(
+				"invalid-row",
+				"Automatic templates need unique IDs and positive integer dimensions when provided.",
+				[row.id],
+			);
+		}
+		ids.add(row.id);
+		if (
+			(row.minBitrate !== undefined && !positiveInteger(row.minBitrate)) ||
+			(row.maxBitrate !== undefined && !positiveInteger(row.maxBitrate)) ||
+			(row.minBitrate !== undefined &&
+				row.maxBitrate !== undefined &&
+				row.maxBitrate < row.minBitrate)
+		) {
+			conflict(
+				"invalid-row-range",
+				"Automatic template bitrate bounds must be positive and ordered when provided.",
+				[row.id],
+			);
+		}
+		if (
+			row.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
+			(!positiveInteger(row.lowComplexityBoundaryForMaxBitrate) ||
+				!positiveInteger(row.highComplexityBoundaryForMaxBitrate) ||
+				row.highComplexityBoundaryForMaxBitrate <=
+					row.lowComplexityBoundaryForMaxBitrate)
+		) {
+			conflict(
+				"invalid-complexity-range",
+				"COMPLEXITY_RANGE requires ordered low and high boundaries.",
+				[row.id],
+			);
+		}
+	}
+	const forced = goal.fixedResolutionAndBitrateConfiguration;
+	if (
+		forced &&
+		((forced.forcedRenditionAboveHighestFixedRepresentation !== undefined &&
+			(!Number.isSafeInteger(
+				forced.forcedRenditionAboveHighestFixedRepresentation,
+			) ||
+				forced.forcedRenditionAboveHighestFixedRepresentation < 0)) ||
+			(forced.forcedRenditionAboveHighestFixedRepresentationFactor !==
+				undefined &&
+				(!Number.isFinite(
+					forced.forcedRenditionAboveHighestFixedRepresentationFactor,
+				) ||
+					forced.forcedRenditionAboveHighestFixedRepresentationFactor <= 0)) ||
+			(forced.forcedRenditionAboveHighestFixedRepresentationCalculationMode !==
+				undefined &&
+				!["LAST_CALCULATED_BITRATE", "MINIMUM", "MAXIMUM", "AVERAGE"].includes(
+					forced.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+				)))
+	) {
+		conflict(
+			"invalid-row",
+			"Additional-rendition settings must use a nonnegative integer count, positive factor, and supported calculation mode.",
+		);
+	}
 	if (
 		goal.countPolicy.kind !== "unrestricted" &&
 		rows.length > goal.countPolicy.count
@@ -613,6 +1080,7 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 function buildProposal(
 	goal: PerTitleGoal,
 	id: PerTitleProposal["id"],
+	neutralScenarios = false,
 ): PerTitleProposal {
 	const minimumStep = goal.minBitrateStepSize ?? DEFAULT_MIN_STEP;
 	const maximumStep = goal.maxBitrateStepSize ?? DEFAULT_MAX_STEP;
@@ -637,7 +1105,14 @@ function buildProposal(
 			maxBitrate: goal.maxBitrate,
 			minBitrateStepSize: minimumStep,
 			maxBitrateStepSize: maximumStep,
-			...(!isClosedStrategy(goal.strategy) ? { autoRepresentations: {} } : {}),
+			...(hasAutomaticOutput(goal) ? { autoRepresentations: {} } : {}),
+			...(goal.fixedResolutionAndBitrateConfiguration
+				? {
+						fixedResolutionAndBitrateConfiguration: structuredClone(
+							goal.fixedResolutionAndBitrateConfiguration,
+						),
+					}
+				: {}),
 		},
 		streams: rows.map((row) => ({
 			rowId: row.id,
@@ -666,7 +1141,38 @@ function buildProposal(
 				: {}),
 		})),
 	};
-	if (!isClosedStrategy(goal.strategy)) {
+	if ((goal.automaticTemplates?.length ?? 0) > 0) {
+		for (const row of goal.automaticTemplates ?? []) {
+			const settings: NonNullable<
+				PerTitleApiSettings["streams"][number]["perTitleSettings"]
+			> = {
+				...(row.minBitrate !== undefined ? { minBitrate: row.minBitrate } : {}),
+				...(row.maxBitrate !== undefined ? { maxBitrate: row.maxBitrate } : {}),
+				...(row.bitrateSelectionMode !== undefined
+					? { bitrateSelectionMode: row.bitrateSelectionMode }
+					: {}),
+				...(row.lowComplexityBoundaryForMaxBitrate !== undefined
+					? {
+							lowComplexityBoundaryForMaxBitrate:
+								row.lowComplexityBoundaryForMaxBitrate,
+						}
+					: {}),
+				...(row.highComplexityBoundaryForMaxBitrate !== undefined
+					? {
+							highComplexityBoundaryForMaxBitrate:
+								row.highComplexityBoundaryForMaxBitrate,
+						}
+					: {}),
+			};
+			api.streams.push({
+				rowId: row.id,
+				mode: "PER_TITLE_TEMPLATE",
+				...(row.height !== undefined ? { height: row.height } : {}),
+				...(row.width !== undefined ? { width: row.width } : {}),
+				...(Object.keys(settings).length ? { perTitleSettings: settings } : {}),
+			});
+		}
+	} else if (!isClosedStrategy(goal.strategy)) {
 		const rowIds = new Set(rows.map((row) => row.id));
 		let rowId = "automatic-template";
 		for (let suffix = 1; rowIds.has(rowId); suffix++) {
@@ -682,9 +1188,18 @@ function buildProposal(
 	diagnostics.push({
 		code: "model-only",
 		severity: "info",
-		message:
-			"Examples use interval spacing and an explicitly linear illustration of complexity boundaries. They do not reproduce content analysis or predict provider output.",
+		message: neutralScenarios
+			? "Examples use the allowed bitrate intervals and spacing only. They do not simulate content complexity, quality, or provider output."
+			: "Examples use interval spacing and an explicitly linear illustration of complexity boundaries. They do not reproduce content analysis or predict provider output.",
 	});
+	if (goal.fixedResolutionAndBitrateConfiguration) {
+		diagnostics.push({
+			code: "forced-count-unknown",
+			severity: "warning",
+			message:
+				"The additional-rendition configuration is preserved, but this model does not calculate its output. Counts remain unknown and this comparison cannot be applied.",
+		});
+	}
 	if (goal.countPolicy.kind !== "unrestricted") {
 		diagnostics.push({
 			code: "count-not-guaranteed",
@@ -700,8 +1215,9 @@ function buildProposal(
 		diagnostics.push({
 			code: "complexity-analysis-required",
 			severity: "warning",
-			message:
-				"Source analysis is unknown. Complexity examples use only the stated hypothetical target and an illustrative linear interpolation.",
+			message: neutralScenarios
+				? "Source complexity is unknown. COMPLEXITY_RANGE settings and boundaries are preserved in the API, but they do not determine these interval examples."
+				: "Source analysis is unknown. Complexity examples use only the stated hypothetical target and an illustrative linear interpolation.",
 		});
 	}
 	for (const row of rows) {
@@ -740,7 +1256,11 @@ function buildProposal(
 				"Connecting the required rows needs a larger maximum step or additional bitrate points.",
 		});
 	}
-	if (!invalid && modelCapacity(goal, ranges, minimumStep) > MAX_MODEL_RUNGS) {
+	if (
+		!invalid &&
+		goal.fixedResolutionAndBitrateConfiguration === undefined &&
+		modelCapacity(goal, ranges, minimumStep) > MAX_MODEL_RUNGS
+	) {
 		diagnostics.push({
 			code: "model-limit",
 			severity: "conflict",
@@ -748,7 +1268,11 @@ function buildProposal(
 				"The spacing bound exceeds the model's 256-point limit. Increase the minimum step to inspect a smaller model.",
 		});
 	}
-	if (!invalid && goal.countPolicy.kind !== "unrestricted") {
+	if (
+		!invalid &&
+		goal.fixedResolutionAndBitrateConfiguration === undefined &&
+		goal.countPolicy.kind !== "unrestricted"
+	) {
 		const capacity = modelCapacity(goal, ranges, minimumStep);
 		if (
 			goal.countPolicy.kind === "exact" &&
@@ -772,9 +1296,12 @@ function buildProposal(
 		}
 	}
 	const hasConflicts = diagnostics.some((item) => item.severity === "conflict");
-	const applicable = !ordering.unknown && !hasConflicts;
+	const forcedUnknown =
+		goal.fixedResolutionAndBitrateConfiguration !== undefined;
+	const applicable = !ordering.unknown && !forcedUnknown && !hasConflicts;
 	const canModel =
 		!ordering.unknown &&
+		!forcedUnknown &&
 		!diagnostics.some(
 			(item) =>
 				inputErrorCodes.has(item.code) ||
@@ -798,11 +1325,20 @@ function buildProposal(
 				modelRungs: [],
 				diagnostics: diagnostics.filter(
 					(item) =>
-						item.severity === "conflict" || item.code === "row-order-unknown",
+						item.severity === "conflict" ||
+						item.code === "row-order-unknown" ||
+						item.code === "forced-count-unknown",
 				),
 			};
 		}
-		return buildScenario(goal, rows, ranges, fraction, scenarioId);
+		return buildScenario(
+			goal,
+			rows,
+			ranges,
+			fraction,
+			scenarioId,
+			!neutralScenarios,
+		);
 	});
 	const conflictingScenarios = scenarios.filter(
 		(scenario) => scenario.status === "conflict",
@@ -835,6 +1371,7 @@ function buildScenario(
 	ranges: Interval[],
 	fraction: number,
 	id: string,
+	allowLinearIllustration = true,
 ): PerTitleScenario {
 	const minimumStep = goal.minBitrateStepSize ?? DEFAULT_MIN_STEP;
 	const maximumStep = goal.maxBitrateStepSize ?? DEFAULT_MAX_STEP;
@@ -853,6 +1390,7 @@ function buildScenario(
 	const rowModels: PerTitleScenario["rowModels"] = rows.map((row, index) => {
 		const range = ranges[index] as Interval;
 		const boundaryFraction =
+			allowLinearIllustration &&
 			goal.strategy === "fixed-ranges" &&
 			row.bitrateSelectionMode === "COMPLEXITY_RANGE"
 				? Math.min(

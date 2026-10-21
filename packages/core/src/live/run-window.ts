@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { LiveAutoShutdownUpdateReceipt } from "./auto-shutdown";
 import {
 	CHANNEL_STARTING_SCHEDULE_ACTIONS,
 	LIVE_SCHEDULE_ACTION_VALUES,
@@ -200,10 +201,14 @@ function configured(value: unknown): number | null {
 export function liveRunWindow(
 	plan: LiveRunWindowPlan,
 	startAt: Date | number,
-	opts: { maxRunMinutes?: number | null } = {},
+	opts: {
+		maxRunMinutes?: number | null;
+		autoShutdownUpdate?: LiveAutoShutdownUpdateReceipt | null;
+	} = {},
 ): LiveRunWindow {
 	const startsAtMs = startAt instanceof Date ? startAt.getTime() : startAt;
-	const autoShutdown = plan?.start?.autoShutdown ?? null;
+	const autoShutdown =
+		opts.autoShutdownUpdate?.configuration ?? plan?.start?.autoShutdown ?? null;
 
 	const bounds: LiveRunBound[] = [];
 	const conditional: LiveRunConditionalNote[] = [];
@@ -215,7 +220,13 @@ export function liveRunWindow(
 		const spec: AutoShutdownKnobSpec = AUTO_SHUTDOWN_KNOBS[knob];
 		if (spec.kind === "hard") {
 			const minutes = spec.minutes(value);
-			bounds.push({ knob, minutes, endsAtMs: startsAtMs + minutes * 60_000 });
+			bounds.push({
+				knob,
+				minutes,
+				endsAtMs: opts.autoShutdownUpdate?.scheduledShutdownAt
+					? Date.parse(opts.autoShutdownUpdate.scheduledShutdownAt)
+					: startsAtMs + minutes * 60_000,
+			});
 		} else {
 			conditional.push({
 				knob,

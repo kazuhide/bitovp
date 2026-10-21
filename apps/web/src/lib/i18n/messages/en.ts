@@ -117,6 +117,46 @@ export const en = {
 	shell: {
 		skipToContent: "Skip to content",
 	},
+	autoShutdownUpdate: {
+		title: "Encoder automatic stop",
+		inputLoss: "No input received (seconds)",
+		runtime: "Stop after update (minutes)",
+		firstInput: "Wait for first input (minutes)",
+		disabled: "Disabled",
+		emptyDisabled: "Leave blank to disable this timer.",
+		recordedHint:
+			"These are the last settings recorded for this broadcast. Changes made elsewhere may differ. Updating replaces all three timers; it does not change the next broadcast's saved start settings.",
+		timingHint:
+			"The runtime timer starts again when the encoder accepts the update. The input-loss timer counts from the last received data. Waiting for first input has no effect after input connects.",
+		limitHint:
+			"Your organization's maximum live runtime still applies. The encoder can refuse an update when a shutdown timer is within 10 seconds of firing.",
+		replaceHint:
+			"Review all three timers. Any blank timer will be disabled; leaving all three blank disables all automatic stop timers on the encoder.",
+		review: "Review settings",
+		reviewDelivery: "Review and retry",
+		unrecorded:
+			"No delivery record was found for this update. Review the proposed settings before trying again.",
+		reviewTitle: "Replace automatic stop settings",
+		apply: "Apply to this broadcast",
+		disarmAll: "Disable all three timers",
+		invalid:
+			"Use whole numbers: at least 30 seconds for input loss and at least 5 minutes for each other timer. Leave a field blank to disable it.",
+		queued:
+			"Update queued. Acceptance by the encoder has not been confirmed yet. Reload the status if it stays pending.",
+		applied: "The encoder accepted this update.",
+		unknown:
+			"The outcome of this update needs to be resolved. Do not resend it; the runtime timer could start again. Stop remains available.",
+		resolved:
+			"The previous operation was resolved. Review all settings before applying another update.",
+		failed:
+			"The update was not confirmed. Reload the status before trying again.",
+		unavailable:
+			"Recorded automatic stop settings could not be read. Reload before preparing an update.",
+		loadFailed: "Could not load automatic stop settings.",
+		reload: "Reload settings and status",
+		scheduled:
+			"Encoder's scheduled shutdown: {at}. Input loss may stop it earlier.",
+	},
 	rtmpUpdate: {
 		title: "RTMP ingest points",
 		apply: "Apply selected points",

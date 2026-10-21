@@ -71,6 +71,7 @@ export const liveChannelActionSchema = z.enum([
 	"restart",
 	"reset-timeshift",
 	"update-rtmp-ingest",
+	"update-auto-shutdown",
 	"scte35",
 	"heartbeat",
 	// live-to-VOD: create + start + await DEFAULT manifests over the stopped
@@ -256,6 +257,7 @@ export const liveEffectActionSchema = z.enum([
 	"SCTE35",
 	"TIMESHIFT_RESET",
 	"RTMP_INGEST_UPDATE",
+	"AUTO_SHUTDOWN_UPDATE",
 	"FEEDER_START",
 	"FEEDER_COMMIT",
 	"FEEDER_SPAWN",

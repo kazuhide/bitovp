@@ -11,7 +11,7 @@ import {
 	redactSecrets,
 } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
-import { DB_NULL } from "@bitovp/db";
+import { DB_NULL, replaceLiveRunStepLogSnapshot } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
 import { tryLockCurrentPollChannel } from "./poll-channel-lock";
 
@@ -388,7 +388,7 @@ export function createProviderLifecycleReconciler(deps: {
 		coordinates: { streamKey?: string | null; encoderIp?: string | null };
 		/** Restart expects null; provision finalize expects and releases its Date. */
 		provisionClaimedAt?: Date | null;
-		/** Provision's redacted final step-log snapshot, written on both rows. */
+		/** Provision's redacted snapshot; the run also retains canonical receipts. */
 		stepLog?: Prisma.InputJsonValue;
 	}): Promise<boolean> {
 		const { run, observation, encodingId } = args;
@@ -431,11 +431,21 @@ export function createProviderLifecycleReconciler(deps: {
 						providerStatusObservedAt: providerObservedAt,
 						providerUnknownSince: null,
 						providerUnknownAlertedAt: null,
-						...(args.stepLog !== undefined ? { stepLog: args.stepLog } : {}),
 					},
 				});
 				if (runWrite.count !== 1) {
 					throw new RunningCommitFenceLostError();
+				}
+				if (args.stepLog !== undefined) {
+					if (!Array.isArray(args.stepLog))
+						throw new Error("A live run step-log snapshot must be an array");
+					const updated = await replaceLiveRunStepLogSnapshot(
+						tx,
+						args.channel.id,
+						run.id,
+						args.stepLog,
+					);
+					if (updated !== 1) throw new RunningCommitFenceLostError();
 				}
 				const channelWrite = await tx.liveChannel.updateMany({
 					where: {

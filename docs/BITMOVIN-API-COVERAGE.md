@@ -37,10 +37,11 @@ not imply a control for every field.
 - AV1 exposes selected settings, including presets, automatic level setup,
   and `dynamicRangeFormat`. The SDK also declares `maxLevel`, which current
   plans do not accept. SDK model availability does not add a form control.
-- Live auto-shutdown settings are applied when starting a broadcast. The SDK's
-  operation for replacing these settings during a running broadcast is not
-  currently exposed. That operation replaces the configuration rather than
-  merging individual timers.
+- Running Live channels offer **Encoder automatic stop** under **Maximum run
+  time**. Each update replaces all three timers; blank fields disable timers.
+  Check the accepted settings and the encoder's returned shutdown time before
+  relying on a change. This affects the current broadcast; the next start uses
+  the channel's saved plan. See the [Live guide](user-guide/LIVE.md#changing-automatic-stop-during-a-broadcast).
 - The Live form represents one storage mirror and one manifest of each type
   (HLS and DASH). Some valid imported plans can contain more. When a form cannot
   reproduce a plan without changing its settings, the application keeps it in

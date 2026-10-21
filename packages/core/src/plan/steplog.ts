@@ -125,6 +125,7 @@ export const OPERATION_KINDS = [
 	// cue fired. status DONE ⇒ the provision/restart replay skips it; carries
 	// only cueDuration/manifestIds (secret-free) in payload.
 	"SCTE35_CUE",
+	"LIVE_AUTO_SHUTDOWN_UPDATE",
 	// Fired slate insertion  — same replay-skip discipline;
 	// payload carries insertableContentId + durationSeconds only.
 	//
@@ -341,6 +342,7 @@ const OPERATION_KIND_EXECUTION = {
 	START_LIVE_ENCODING: "executable",
 	AWAIT_LIVE_RUNNING: "executable",
 	SCTE35_CUE: "runtime-record",
+	LIVE_AUTO_SHUTDOWN_UPDATE: "runtime-record",
 	SLATE_INSERTED: "runtime-record",
 	SLATE_CONFIRMED: "runtime-record",
 	SLATE_FAILED: "runtime-record",

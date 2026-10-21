@@ -66,6 +66,14 @@ the reason a URL is unavailable. HLS output monitoring uses saved storage
 credentials, while the preview loads the delivery URL directly; verify output
 updates and actual playback separately.
 
+## Changing automatic stop during a broadcast
+
+On a `RUNNING` channel, open **Diagnostics & history → Maximum run time → Encoder automatic stop**. Review the three recorded timer values, edit the required fields, then choose **Review settings** and **Apply to this broadcast**. A blank field disables that timer; disabling all three requires a separate confirmation. A queued update is not an accepted update. Check the acceptance message and the encoder's returned shutdown time.
+
+The API replaces the complete configuration. The runtime timer starts again when the encoder accepts the update, while the input-loss timer still counts from the last received data. The first-input timer no longer matters once input connects. These settings apply to the current broadcast; they do not change the next broadcast's start settings or remove bitovp's separate maximum run time. Values shown are the last settings recorded by bitovp and may differ from changes made elsewhere.
+
+The organization's maximum live runtime still applies, and the encoder can reject changes within ten seconds of an armed shutdown. If a response is lost, bitovp does not resend the update automatically: another send could move the shutdown again. Reload the status and resolve an uncertain result before trying again. If no delivery record is found, **Review and retry** lets you check the proposed settings and retry the same update. **Stop** remains available. See the [Bitmovin API reference](https://developer.bitmovin.com/encoding/reference/livepostencodingencodingsliveupdateautoshutdownconfigbyencodingid).
+
 ## Heartbeat and status history
 
 Per-encoding heartbeat registration is automatic on supported encoder versions.

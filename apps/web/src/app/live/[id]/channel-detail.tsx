@@ -43,6 +43,7 @@ import { useT } from "@/lib/i18n/context";
 import type { LiveScheduleDto } from "@/lib/live-runtime/schemas";
 import { AlertPanel, type ChannelAlertEvent } from "./alert-panel";
 import { LiveArchivePanel } from "./archive-panel";
+import { AutoShutdownPanel } from "./auto-shutdown-panel";
 import { CaptureVmafPanel } from "./capture-vmaf-panel";
 import {
 	ChannelCueForm,
@@ -1131,6 +1132,7 @@ export function ChannelDetail({
 					bitmovinAccountId={row.bitmovinAccountId}
 					onChannelChanged={() => channel.refetch()}
 				/>
+				<AutoShutdownPanel channelId={id} runId={run?.id} status={row.status} />
 			</SectionCard>
 		),
 		"sec-advanced": (

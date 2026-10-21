@@ -29,6 +29,7 @@ export const GROUPS = [
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
+			"src/live-run-step-log.integration.test.ts": 4,
 		},
 	},
 	{
@@ -46,7 +47,7 @@ export const GROUPS = [
 		files: {
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 4,
-			"src/live/owned-transition-locking.integration.test.ts": 9,
+			"src/live/owned-transition-locking.integration.test.ts": 10,
 		},
 	},
 ];

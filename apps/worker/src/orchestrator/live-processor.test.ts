@@ -10,6 +10,7 @@ import {
 	ingestConnectedFromHeartbeat,
 	initStepLog,
 	type LiveToVodRecord,
+	liveAutoShutdownFingerprint,
 	liveChannelPlanSchema,
 	liveToVodClaim,
 	liveToVodFamilySupport,
@@ -702,6 +703,25 @@ function setup(
 		$executeRaw: vi.fn(async (strings: unknown, ...values: unknown[]) => {
 			const sql = Array.isArray(strings) ? strings.join("?") : String(strings);
 			const appended = JSON.parse(String(values[0])) as unknown[];
+			if (sql.includes('UPDATE "LiveChannelRun" AS run')) {
+				const [, runId, channelId] = values;
+				const run = runRows.find(
+					(candidate) =>
+						candidate.id === runId &&
+						(candidate.liveChannelId ?? CHANNEL_ID) === channelId,
+				);
+				if (!run) return 0;
+				const isReceipt = (entry: unknown) =>
+					typeof entry === "object" &&
+					entry !== null &&
+					"kind" in entry &&
+					entry.kind === "LIVE_AUTO_SHUTDOWN_UPDATE";
+				run.stepLog = [
+					...appended.filter((entry) => !isReceipt(entry)),
+					...((run.stepLog as unknown[] | undefined) ?? []).filter(isReceipt),
+				];
+				return 1;
+			}
 			if (sql.includes('UPDATE "LiveChannelRun"')) {
 				const [, runId, channelId, providerEncodingId] = values;
 				const exactRun = runRows.find(
@@ -844,6 +864,226 @@ beforeEach(() => {
 	liveEffectMocks.resolveAfterStop.mockResolvedValue({
 		kind: "RESOLVED",
 		count: 0,
+	});
+});
+
+describe("run-bound automatic stop replacement", () => {
+	function harness(
+		configuration: { streamTimeoutMinutes?: number } = {
+			streamTimeoutMinutes: 5,
+		},
+		overrides: Partial<SdkOps> = {},
+	) {
+		const requestSha256 = createHash("sha256")
+			.update(JSON.stringify({ runId: LIVE_TO_VOD_RUN_ID, configuration }))
+			.digest("hex");
+		return {
+			...setup(
+				{
+					status: "RUNNING",
+					bitmovinEncodingId: "bm-live-enc",
+					bitmovinAccountId: ACCOUNT_ID,
+				},
+				overrides,
+			),
+			job: {
+				liveChannelId: CHANNEL_ID,
+				action: "update-auto-shutdown",
+				params: { configuration },
+				effect: {
+					idempotencyKey: "shutdown-request",
+					action: "AUTO_SHUTDOWN_UPDATE",
+					requestSha256,
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					providerEncodingId: "bm-live-enc",
+					admissionFenceVersion: 0,
+				},
+			},
+		};
+	}
+
+	it("applies once after the send fence, stores the accepted instant on the admitted run and keeps the next-run plan", async () => {
+		const t = harness();
+		const planBefore = structuredClone(t.row.plan);
+		vi.mocked(t.sdk.updateLiveAutoShutdown).mockResolvedValueOnce({
+			configuration: { streamTimeoutMinutes: 5 },
+			scheduledShutdownAt: "2026-06-12T00:05:00.000Z",
+		});
+		expect(await t.rawProcess(t.job)).toMatchObject({ status: "RUNNING" });
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+			{ streamTimeoutMinutes: 5 },
+		);
+		expect(
+			liveEffectMocks.assertCurrent.mock.invocationCallOrder[0] ?? Infinity,
+		).toBeLessThan(
+			vi.mocked(t.sdk.updateLiveAutoShutdown).mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(t.runRows[0]?.stepLog).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+					status: "DONE",
+					payload: expect.objectContaining({
+						configuration: { streamTimeoutMinutes: 5 },
+						scheduledShutdownAt: "2026-06-12T00:05:00.000Z",
+					}),
+				}),
+			]),
+		);
+		expect(t.row.plan).toEqual(planBefore);
+		expect(liveEffectMocks.markAcked).toHaveBeenCalledOnce();
+	});
+
+	it("accepts the next revision from the admitted run even when a late success missed the channel projection", async () => {
+		const t = harness(
+			{},
+			{
+				updateLiveAutoShutdown: vi.fn(async () => ({ configuration: {} })),
+			},
+		);
+		const previousRequest = "previous-shutdown-update";
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current live run");
+		// A late accepted response can be durable on its exact run after its
+		// expired claim has ceased to own the channel projection.
+		run.stepLog = [
+			{
+				step: "previous-update",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration: { streamTimeoutMinutes: 5 },
+					appliedAt: "2026-06-11T23:59:00.000Z",
+					scheduledShutdownAt: "2026-06-12T00:04:00.000Z",
+					requestId: previousRequest,
+				},
+			},
+		];
+		const result = await t.rawProcess({
+			...t.job,
+			params: { configuration: {}, expectedRevision: previousRequest },
+			effect: {
+				...t.job.effect,
+				requestSha256: createHash("sha256")
+					.update(
+						liveAutoShutdownFingerprint(
+							LIVE_TO_VOD_RUN_ID,
+							{},
+							previousRequest,
+						),
+					)
+					.digest("hex"),
+			},
+		});
+		expect(result).toMatchObject({ status: "RUNNING" });
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+			{},
+		);
+		expect(t.runRows[0]?.stepLog).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					payload: expect.objectContaining({
+						requestId: "shutdown-request",
+						configuration: {},
+					}),
+				}),
+			]),
+		);
+	});
+
+	it("ignores a channel-only revision when the current run has no accepted update", async () => {
+		const t = harness(
+			{},
+			{
+				updateLiveAutoShutdown: vi.fn(async () => ({ configuration: {} })),
+			},
+		);
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current live run");
+		t.row.stepLog = [
+			{
+				step: "old-channel-copy",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration: {},
+					appliedAt: "2026-06-11T22:00:00.000Z",
+					requestId: "old-channel-update",
+				},
+			},
+		];
+		run.stepLog = [];
+		expect(await t.rawProcess(t.job)).toMatchObject({ status: "RUNNING" });
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		"run",
+		"encoding",
+	])("refuses a latest %s that no longer matches the admitted update", async (identity) => {
+		const t = harness();
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current live run");
+		if (identity === "run") run.id = "00000000-0000-4000-8000-0000000000dd";
+		else run.bitmovinEncodingId = "other-encoding";
+		await expect(t.rawProcess(t.job)).rejects.toThrow();
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
+
+	it("does not send a substituted payload or a channel encoding that differs from the claim", async () => {
+		for (const change of ["payload", "encoding"]) {
+			const t = harness();
+			if (change === "payload")
+				t.job.params.configuration.streamTimeoutMinutes = 6;
+			else t.row.bitmovinEncodingId = "another-encoding";
+			await expect(t.rawProcess(t.job)).rejects.toThrow();
+			expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+		}
+	});
+
+	it.each([
+		"STALE",
+		"BLOCKED",
+	])("does not send after a %s durable admission", async (kind) => {
+		liveEffectMocks.begin.mockResolvedValueOnce({
+			kind,
+			state: "CLAIMED",
+			reason: "a newer run or stop owns the channel",
+		});
+		const t = harness();
+		await t.rawProcess(t.job);
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
+
+	it("does not send when STOP wins at the final send fence", async () => {
+		liveEffectMocks.assertCurrent.mockResolvedValueOnce(false);
+		const t = harness();
+		await expect(t.rawProcess(t.job)).rejects.toThrow(/fence/i);
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
+
+	it("retains an ambiguous lost response and never marks it as acknowledged", async () => {
+		const t = harness(
+			{},
+			{
+				updateLiveAutoShutdown: vi.fn(async () => {
+					throw new Error("response lost");
+				}),
+			},
+		);
+		expect(await t.rawProcess(t.job)).toMatchObject({
+			status: "EFFECT_AMBIGUOUS",
+		});
+		expect(t.sdk.updateLiveAutoShutdown).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+			{},
+		);
+		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.markAcked).not.toHaveBeenCalled();
 	});
 });
 
@@ -2618,6 +2858,34 @@ describe("live channel actions", () => {
 		await expect(
 			process({ liveChannelId: CHANNEL_ID, action: "scte35", params: {} }),
 		).rejects.toThrow(); // cueDuration is required
+	});
+
+	it("keeps a run-only automatic stop receipt after slate insertion mirrors the channel history", async () => {
+		const t = setup(runningRow);
+		const [run] = t.runRows;
+		if (!run) throw new Error("Expected a current run");
+		const receipt = {
+			step: "accepted-update",
+			kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+			status: "DONE",
+			refs: {},
+			payload: {
+				configuration: {},
+				requestId: "accepted-update",
+				appliedAt: "2026-06-12T00:00:00.000Z",
+			},
+		};
+		run.stepLog = [receipt];
+		await t.process({
+			liveChannelId: CHANNEL_ID,
+			action: "insert-content",
+			params: {
+				insertableContentId: "99999999-9999-4999-8999-999999999999",
+				durationSeconds: 30,
+			},
+		});
+		expect(t.sdk.scheduleInsertableContent).toHaveBeenCalledOnce();
+		expect(run.stepLog).toEqual(expect.arrayContaining([receipt]));
 	});
 
 	it("re-derives the slate duration from slateUntil AT INSERT TIME — queue retries must not stretch the cover into the program (review-223 F6)", async () => {
@@ -8489,13 +8757,24 @@ describe("dual-write to runs (ledger #108 PR2) — writer-coupled, per R5's cure
 		// The run was ensured before the channel transition…
 		expect(h.liveChannelRun.create).toHaveBeenCalled();
 		expect(h.runRows[0]?.status).toBe("RUNNING");
-		// …and the mirrored updates carried the run facts: some update wrote
-		// the step log, and some update wrote the RUNNING transition.
+		// …and the final run history and updates carry the encoder facts.
+		expect(stepLogSchema.parse(h.runRows[0]?.stepLog)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "CREATE_ENCODING",
+					status: "DONE",
+					resourceId: "bm-live-enc",
+				}),
+				expect.objectContaining({
+					kind: "AWAIT_LIVE_RUNNING",
+					status: "DONE",
+				}),
+			]),
+		);
 		const datas = [
 			...h.liveChannelRun.update.mock.calls,
 			...h.liveChannelRun.updateMany.mock.calls,
 		].map((c) => (c[0] as { data: Record<string, unknown> }).data);
-		expect(datas.some((d) => d.stepLog !== undefined)).toBe(true);
 		expect(datas.some((d) => d.status === "RUNNING")).toBe(true);
 	});
 
@@ -9745,6 +10024,43 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			expect(run.providerStatus).toBe("RUNNING");
 			expect(run.providerStatusObservedAt).toBeInstanceOf(Date);
 			// A true revive: nothing was recreated, the DONE log was replayed.
+			expect(t.sdk.createEncoding).not.toHaveBeenCalled();
+			expect(t.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		});
+
+		it("keeps a run-only automatic stop receipt through same-run revive finalization", async () => {
+			// The Start route revives ERROR to PROVISIONING using the channel's
+			// reseeded log. A late accepted update may exist only on this run.
+			const entries = allDoneLog("bm-live-enc");
+			const t = setup({
+				status: "PROVISIONING",
+				bitmovinAccountId: ACCOUNT_ID,
+				bitmovinEncodingId: "bm-live-enc",
+				stepLog: entries,
+			});
+			const receipt: StepLogEntry = {
+				step: "accepted-before-revive",
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					configuration: { streamTimeoutMinutes: 5 },
+					requestId: "accepted-before-revive",
+					appliedAt: "2026-06-11T23:59:00.000Z",
+				},
+			};
+			const run = seedRun(t, {
+				status: "PROVISIONING",
+				stepLog: [...entries, receipt],
+			});
+
+			await expect(
+				t.process({ liveChannelId: CHANNEL_ID, action: "provision" }),
+			).resolves.toMatchObject({ status: "RUNNING" });
+
+			expect(run.status).toBe("RUNNING");
+			expect(run.stepLog).toEqual(expect.arrayContaining([receipt]));
+			expect(t.runRows).toHaveLength(1);
 			expect(t.sdk.createEncoding).not.toHaveBeenCalled();
 			expect(t.sdk.startLiveEncoding).not.toHaveBeenCalled();
 		});

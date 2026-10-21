@@ -1,5 +1,6 @@
 import type {
 	H265V2QualityControls,
+	LiveAutoShutdownConfiguration,
 	ScannedMuxing,
 	ScannedStream,
 	ScanPage,
@@ -1457,6 +1458,13 @@ export type SdkOps = {
 	): Promise<void>;
 	stopLiveEncoding(encodingId: string): Promise<void>;
 	restartLiveEncoding(encodingId: string): Promise<void>;
+	updateLiveAutoShutdown(
+		encodingId: string,
+		configuration: LiveAutoShutdownConfiguration,
+	): Promise<{
+		configuration: LiveAutoShutdownConfiguration;
+		scheduledShutdownAt?: string | null;
+	}>;
 	updateLiveRtmpIngestPoints(
 		encodingId: string,
 		ingestPoints: { applicationName: string; streamKey: string }[],

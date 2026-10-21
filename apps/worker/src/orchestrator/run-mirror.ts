@@ -1,4 +1,8 @@
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	type Prisma,
+	replaceLiveRunStepLogSnapshot,
+} from "@bitovp/db";
 import { tryLockCurrentPollChannel } from "../live/poll-channel-lock";
 
 /**
@@ -36,7 +40,7 @@ export type RunMirrorData = {
 const TERMINAL = new Set(["STOPPED", "ERROR"]);
 
 export function createRunMirror(
-	prisma: Pick<AppPrismaClient, "liveChannelRun">,
+	prisma: Pick<AppPrismaClient, "liveChannelRun" | "$executeRaw">,
 ) {
 	async function latestRun(liveChannelId: string) {
 		return prisma.liveChannelRun.findFirst({
@@ -132,6 +136,18 @@ export function createRunMirror(
 			if (!latest) {
 				return;
 			}
+			if (data.stepLog !== undefined) {
+				if (!Array.isArray(data.stepLog))
+					throw new Error("A live run step-log snapshot must be an array");
+				const updated = await replaceLiveRunStepLogSnapshot(
+					prisma,
+					liveChannelId,
+					latest.id,
+					data.stepLog,
+				);
+				if (updated !== 1)
+					throw new Error("The live run snapshot target no longer exists");
+			}
 			// EXPLICIT pick, never a spread (review-109pr1, round 6): a spread
 			// would let any wider object smuggle fields — including the
 			// heartbeat anchor — past the type into the row. With the pick,
@@ -146,7 +162,9 @@ export function createRunMirror(
 				data: {
 					...(data.status !== undefined ? { status: data.status } : {}),
 					...(data.error !== undefined ? { error: data.error } : {}),
-					...(data.stepLog !== undefined ? { stepLog: data.stepLog } : {}),
+					// Preserve the normal activity clock after moving JSON replacement
+					// to its atomic SQL seam. Heartbeat and end clocks stay separate.
+					...(data.stepLog !== undefined ? { updatedAt: new Date() } : {}),
 					...(data.encoderIp !== undefined
 						? { encoderIp: data.encoderIp }
 						: {}),

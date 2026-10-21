@@ -592,6 +592,14 @@ Other optional settings include static IPs, labels, Cloud Connect, ESAM POIS end
 
 ## 8. Live broadcast operations
 
+### Changing automatic stop during a broadcast
+
+On a `RUNNING` channel, open **Diagnostics & history → Maximum run time → Encoder automatic stop**. The panel shows the three timer values last recorded by bitovp. Changes made through another tool may differ. Edit the fields, choose **Review settings**, check all three values, and apply the update. Input loss requires at least 30 seconds; the other timers require at least 5 minutes. A blank field disables that timer. Disabling all three requires an explicit confirmation.
+
+This is a complete replacement of the encoder's settings for the current broadcast. The next broadcast's start settings stay unchanged. The runtime timer starts again when the encoder accepts the update. For example, a broadcast started at 12:00 with a 120-minute timeout would stop at 14:00. Applying 150 minutes at 13:30 moves that stop to 16:00. The input-loss timer still counts from the last received data, and the first-input timer has no effect after input connects. The organization's maximum live runtime and bitovp's separate maximum run time still apply.
+
+“Update queued” means the worker has yet to confirm acceptance. Check the accepted update and the encoder's returned shutdown time; input loss can still stop the broadcast earlier. An update may be rejected within ten seconds of an armed shutdown. If the result is uncertain, bitovp does not resend it automatically, because doing so could restart the runtime timer. Reload the status and resolve the result before trying again. When no delivery record is found, choose **Review and retry** to check the proposed settings and retry the same update. **Stop** remains available. Existing schedule times are not moved when a timer changes; review them separately. See the [Bitmovin API reference](https://developer.bitmovin.com/encoding/reference/livepostencodingencodingsliveupdateautoshutdownconfigbyencodingid).
+
 ### Input connection and delivery checks
 
 Open the channel and check its input endpoint under “Input & pseudo-live”. Configure your sending software or external encoder with the endpoint, stream key, protocol, encryption and other required settings.

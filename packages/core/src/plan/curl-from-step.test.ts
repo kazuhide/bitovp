@@ -299,6 +299,8 @@ describe("every operation kind is classified", () => {
 		AWAIT_MANIFEST_SMOOTH: "status read",
 		AWAIT_LIVE_RUNNING: "status read",
 		SCTE35_CUE: "runtime record; the request lives in the C7 audit row",
+		LIVE_AUTO_SHUTDOWN_UPDATE:
+			"runtime record; the full replacement request lives in the audit row",
 		// A POST endpoint DOES exist for this one (the ESAM route calls it), so if
 		// anyone maps it here, check `request` still holds the real body shape —
 		// this guard would stay green either way.

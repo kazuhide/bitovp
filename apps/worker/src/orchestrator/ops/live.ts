@@ -24,6 +24,7 @@ import {
 	InsertableContent,
 	InsertableContentInput,
 	LiveAutoShutdownConfiguration,
+	LiveAutoShutdownConfigurationUpdateRequest,
 	LiveDashManifest,
 	LiveHlsManifest,
 	ManifestGenerator,
@@ -41,6 +42,10 @@ import {
 	StartLiveEncodingRequest,
 	UpdateEncodingRtmpIngestPointRequest,
 } from "@bitmovin/api-sdk";
+import {
+	liveAutoShutdownFingerprint,
+	liveAutoShutdownUpdateParamsSchema,
+} from "@bitovp/core";
 import type { LiveHeartbeatSample, SdkOps } from "../sdk-ops";
 import { startWithRetry1004 } from "../start-1004-retry";
 import type { OpsContext } from "./context";
@@ -60,6 +65,7 @@ export function createLiveOps(
 	| "startLiveEncoding"
 	| "stopLiveEncoding"
 	| "restartLiveEncoding"
+	| "updateLiveAutoShutdown"
 	| "getLiveEncodingDetails"
 	| "getLiveStartRequest"
 	| "getLiveHeartbeat"
@@ -448,6 +454,69 @@ export function createLiveOps(
 				() => api.encoding.encodings.live.restart(encodingId),
 				(r) => ({ id: r.id }),
 			).then(() => undefined),
+
+		updateLiveAutoShutdown: async (encodingId, configuration) => {
+			const response = await audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/live/update-autoshutdown-config`,
+				configuration,
+				() =>
+					api.encoding.encodings.live.updateAutoshutdownConfig.create(
+						encodingId,
+						new LiveAutoShutdownConfigurationUpdateRequest(configuration),
+					),
+				(r) => ({
+					configuration: {
+						bytesReadTimeoutSeconds: r.bytesReadTimeoutSeconds,
+						streamTimeoutMinutes: r.streamTimeoutMinutes,
+						waitingForFirstConnectTimeoutMinutes:
+							r.waitingForFirstConnectTimeoutMinutes,
+					},
+					scheduledShutdownAt: r.scheduledShutdownAt,
+				}),
+			);
+			const accepted = liveAutoShutdownUpdateParamsSchema.parse({
+				configuration: {
+					...(response.bytesReadTimeoutSeconds != null
+						? { bytesReadTimeoutSeconds: response.bytesReadTimeoutSeconds }
+						: {}),
+					...(response.streamTimeoutMinutes != null
+						? { streamTimeoutMinutes: response.streamTimeoutMinutes }
+						: {}),
+					...(response.waitingForFirstConnectTimeoutMinutes != null
+						? {
+								waitingForFirstConnectTimeoutMinutes:
+									response.waitingForFirstConnectTimeoutMinutes,
+							}
+						: {}),
+				},
+			}).configuration;
+			if (
+				liveAutoShutdownFingerprint(encodingId, accepted) !==
+				liveAutoShutdownFingerprint(encodingId, configuration)
+			)
+				throw new Error(
+					"The accepted configuration does not match the requested automatic stop settings",
+				);
+			if (
+				accepted.streamTimeoutMinutes !== undefined &&
+				response.scheduledShutdownAt == null
+			)
+				throw new Error(
+					"The accepted configuration has no confirmed scheduled shutdown instant",
+				);
+			return {
+				configuration: accepted,
+				...(response.scheduledShutdownAt !== undefined
+					? {
+							scheduledShutdownAt:
+								response.scheduledShutdownAt === null
+									? null
+									: new Date(response.scheduledShutdownAt).toISOString(),
+						}
+					: {}),
+			};
+		},
 
 		getLiveEncodingDetails: async (encodingId) => {
 			const live = await api.encoding.encodings.live.get(encodingId);

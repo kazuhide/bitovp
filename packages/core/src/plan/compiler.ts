@@ -163,6 +163,7 @@ export type OperationKind =
 	// the live worker per inserted SCTE-35 cue (always status DONE; the replay
 	// skips it). Kept in the shared union so the step log stays one contract.
 	| "SCTE35_CUE"
+	| "LIVE_AUTO_SHUTDOWN_UPDATE"
 	// Fired slate confirmation  — advisory, replay-skipped.
 	// It records that the POST landed, NOT that anything aired:
 	// downgraded it to status RUNNING and gave the three terminal verdicts

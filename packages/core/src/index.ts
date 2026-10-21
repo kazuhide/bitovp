@@ -213,6 +213,17 @@ export {
 	METRIC_CLASS,
 	persistedHeartbeatAtMs,
 } from "./live/alerts";
+export type {
+	LiveAutoShutdownConfiguration,
+	LiveAutoShutdownUpdateParams,
+	LiveAutoShutdownUpdateReceipt,
+} from "./live/auto-shutdown";
+export {
+	liveAutoShutdownFingerprint,
+	liveAutoShutdownUpdateParamsSchema,
+	liveAutoShutdownUpdateReceiptSchema,
+	readLiveAutoShutdownUpdate,
+} from "./live/auto-shutdown";
 export {
 	compileLiveChannel,
 	selectLiveManifestMuxings,

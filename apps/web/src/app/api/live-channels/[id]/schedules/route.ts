@@ -3,6 +3,7 @@ import {
 	liveChannelPlanSchema,
 	liveRunWindow,
 	liveRunWindowPlanFrom,
+	readLiveAutoShutdownUpdate,
 	resolveAutoLead,
 	resolveStartupRegion,
 	SCHEDULE_DEFAULT_LEAD_SECONDS,
@@ -182,6 +183,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			select: {
 				id: true,
 				plan: true,
+				bitmovinEncodingId: true,
 				maxRunMinutes: true,
 				runningSince: true,
 				createdAt: true,
@@ -276,13 +278,42 @@ export async function POST(req: Request, { params }: RouteParams) {
 		 * Refused before the SLATE_IN content lookup below, so an impossible
 		 * row costs no Bitmovin round-trips.
 		 */
+		const windowRun = await ctx.prisma.liveChannelRun.findFirst({
+			where: { liveChannelId: id },
+			orderBy: { seq: "desc" },
+			select: {
+				id: true,
+				status: true,
+				bitmovinEncodingId: true,
+				stepLog: true,
+			},
+		});
+		const windowRunIsLive =
+			windowRun !== null && isLiveRunStatus(windowRun.status);
+		if (
+			windowRunIsLive &&
+			(windowRun.bitmovinEncodingId ?? null) !==
+				(channel.bitmovinEncodingId ?? null)
+		)
+			return jsonError(
+				409,
+				"The current live run's encoding changed; reload before arming a schedule",
+			);
+		// A late accepted update can exist only on its immutable run.
+		// Ended runs never supply a replacement for a future airing.
+		const autoShutdownUpdate = windowRunIsLive
+			? readLiveAutoShutdownUpdate(windowRun.stepLog)
+			: null;
 		const runWindow = liveRunWindow(
 			// Read straight off the stored JSON, not through a whole-plan parse:
 			// an old plan that no longer validates must not silently lose its
 			// bound (`liveRunWindowPlanFrom`'s own reasoning).
 			liveRunWindowPlanFrom(channel.plan),
 			channel.runningSince ?? channel.createdAt,
-			{ maxRunMinutes: channel.maxRunMinutes },
+			{
+				maxRunMinutes: channel.maxRunMinutes,
+				autoShutdownUpdate,
+			},
 		);
 		const beyond = scheduleBeyondRunWindow(runWindow, {
 			action: body.action,
@@ -377,8 +408,36 @@ export async function POST(req: Request, { params }: RouteParams) {
 		const currentRun = await ctx.prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: id },
 			orderBy: { seq: "desc" },
-			select: { id: true, status: true },
+			select: {
+				id: true,
+				status: true,
+				bitmovinEncodingId: true,
+				stepLog: true,
+			},
 		});
+		if (
+			(currentRun?.id ?? null) !== (windowRun?.id ?? null) ||
+			(currentRun?.bitmovinEncodingId ?? null) !==
+				(windowRun?.bitmovinEncodingId ?? null) ||
+			(currentRun !== null && isLiveRunStatus(currentRun.status)) !==
+				windowRunIsLive
+		)
+			return jsonError(
+				409,
+				"The current live run changed while this schedule was prepared; reload before arming it",
+			);
+		const currentAutoShutdownUpdate =
+			currentRun && isLiveRunStatus(currentRun.status)
+				? readLiveAutoShutdownUpdate(currentRun.stepLog)
+				: null;
+		if (
+			JSON.stringify(currentAutoShutdownUpdate) !==
+			JSON.stringify(autoShutdownUpdate)
+		)
+			return jsonError(
+				409,
+				"Automatic stop settings changed while this schedule was prepared; reload before arming it",
+			);
 		const armedForRun =
 			currentRun && isLiveRunStatus(currentRun.status) ? currentRun.id : null;
 		const row = await ctx.prisma.liveSchedule.create({

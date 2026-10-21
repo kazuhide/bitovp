@@ -161,6 +161,8 @@ export function isRetryable(url: string, init: unknown): boolean {
 	// A response lost after assignment must reach that claim as AMBIGUOUS,
 	// never be sent again inside the transport layer (or logged with its key).
 	if (/\/actions\/update-rtmp-ingest-points\/?$/.test(path)) return false;
+	// Repeating this full replacement restarts the running encoder's timeout.
+	if (/\/live\/update-autoshutdown-config\/?$/.test(path)) return false;
 	return !/\/(live\/)?start\/?$/.test(path);
 }
 

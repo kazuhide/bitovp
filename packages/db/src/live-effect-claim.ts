@@ -16,6 +16,7 @@ export type LiveEffectAction =
 	| "SCTE35"
 	| "TIMESHIFT_RESET"
 	| "RTMP_INGEST_UPDATE"
+	| "AUTO_SHUTDOWN_UPDATE"
 	| "FEEDER_START"
 	| "FEEDER_COMMIT"
 	| "FEEDER_SPAWN";

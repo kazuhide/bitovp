@@ -464,8 +464,10 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// Library scene keyword search adds one VIEWER GET route.
 		// Registered scene-language options adds one VIEWER GET route.
 		// Branding adds one route and two methods.
-		expect(guarded.length).toBe(150);
+		// Live automatic stop adds one guarded route with VIEWER GET and
+		// OPERATOR POST handlers. Both populations were measured from disk.
+		expect(guarded.length).toBe(151);
 		// Historical imports replace the old insights GET with GET + POST.
-		expect(methods.length).toBe(214);
+		expect(methods.length).toBe(216);
 	});
 });

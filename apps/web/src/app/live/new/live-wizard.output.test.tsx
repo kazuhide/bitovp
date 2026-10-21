@@ -439,7 +439,7 @@ describe("live wizard — Origin credential transitions", () => {
 					},
 				);
 				await userEvent.selectOptions(
-					section.getByLabelText(/access$/i),
+					section.getByLabelText("Access permissions"),
 					"PRIVATE",
 				);
 			}

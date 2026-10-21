@@ -150,7 +150,7 @@ function optionFor(
 it.each([
 	["en", "Output destination", "Access permissions"],
 	["ja", "\u51fa\u529b\u5148", "\u30a2\u30af\u30bb\u30b9\u6a29"],
-] as const)("labels every primary and additional manifest as output settings in %s", (locale, destination, access) => {
+] as const)("keeps output controls inside each primary and additional manifest in %s", (locale, destination, access) => {
 	const state = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
 	state.manifests.hls.enabled = true;
 	state.manifests.dash.enabled = true;
@@ -162,6 +162,22 @@ it.each([
 	);
 	expect(screen.getAllByLabelText(destination)).toHaveLength(4);
 	expect(screen.getAllByLabelText(access)).toHaveLength(4);
+	for (const kind of ["HLS", "DASH"]) {
+		const groups = screen.getAllByRole("group", {
+			name: `${kind} ${locale === "ja" ? "マニフェストの設定" : "manifest settings"}`,
+		});
+		expect(groups).toHaveLength(2);
+		for (const group of groups) {
+			const settings = within(group);
+			expect(settings.getByLabelText(destination)).toBeVisible();
+			expect(settings.getByLabelText(access)).toBeVisible();
+			expect(
+				settings.getByLabelText(
+					locale === "ja" ? "マニフェスト名" : "Manifest name",
+				),
+			).toBeVisible();
+		}
+	}
 });
 
 describe("live wizard — output destinations (owner, 2026-08-21)", () => {
@@ -457,19 +473,18 @@ describe("live wizard — Origin credential transitions", () => {
 				target: { value: "240" },
 			},
 		);
-		const summary = screen.getByText(`${kind}: destination and resource name`);
-		await userEvent.click(summary);
-		const details = summary.closest("details");
-		if (!details) throw new Error("Missing primary destination fields");
+		const settings = within(
+			screen.getByRole("group", { name: `${kind} manifest settings` }),
+		);
 		await userEvent.selectOptions(
-			within(details).getByLabelText("Output destination"),
+			settings.getByLabelText("Output destination"),
 			"mirror-1",
 		);
-		fireEvent.change(within(details).getByLabelText("Output path"), {
+		fireEvent.change(settings.getByLabelText("Output path"), {
 			target: { value: `primary/${family}` },
 		});
 		await userEvent.selectOptions(
-			within(details).getByLabelText("Access permissions"),
+			settings.getByLabelText("Access permissions"),
 			"PRIVATE",
 		);
 		const configured = (await previewPlan()).liveManifests.find(

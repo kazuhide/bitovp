@@ -38,9 +38,15 @@ export const en = {
 		removeHls: "Remove HLS manifest",
 		removeDash: "Remove DASH manifest",
 		manifestNumber: "{kind} {number}",
-		primaryDestination: "{kind}: destination and resource name",
+		manifestSettings: "{kind} manifest settings",
 		resourceName: "Resource name",
+		resourceNameHelp:
+			"An optional label for this resource in Bitmovin. The manifest filename is set separately.",
+		destinationHelp:
+			"Choose a destination configured in step 4 that also receives the video and audio data.",
 		path: "Output path",
+		pathHelp:
+			"Folder within the selected destination where the manifest file is written.",
 		referenced:
 			"Change or remove the archive or manifest destination before removing this storage mirror.",
 	},

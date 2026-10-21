@@ -56,17 +56,11 @@ function ManifestDestination({
 	const patchDestination = (patch: Partial<typeof destination>) =>
 		onPatch({ destination: { ...destination, ...patch } });
 	return (
-		<div className="grid gap-3 sm:grid-cols-2">
-			<Field label={t("liveOutputs.resourceName")} htmlFor={`${prefix}-name`}>
-				<Input
-					id={`${prefix}-name`}
-					value={value.name ?? ""}
-					onChange={(e) => onPatch({ name: e.target.value })}
-				/>
-			</Field>
+		<>
 			<Field
 				label={t("liveOutputs.destination")}
 				htmlFor={`${prefix}-destination`}
+				help={t("liveOutputs.destinationHelp")}
 			>
 				<SelectNative
 					id={`${prefix}-destination`}
@@ -91,7 +85,11 @@ function ManifestDestination({
 					))}
 				</SelectNative>
 			</Field>
-			<Field label={t("liveOutputs.path")} htmlFor={`${prefix}-path`}>
+			<Field
+				label={t("liveOutputs.path")}
+				htmlFor={`${prefix}-path`}
+				help={t("liveOutputs.pathHelp")}
+			>
 				<Input
 					id={`${prefix}-path`}
 					value={destination.path}
@@ -116,7 +114,18 @@ function ManifestDestination({
 					<option value="PUBLIC_READ">{t("liveArchive.publicRead")}</option>
 				</SelectNative>
 			</Field>
-		</div>
+			<Field
+				label={t("liveOutputs.resourceName")}
+				htmlFor={`${prefix}-name`}
+				help={t("liveOutputs.resourceNameHelp")}
+			>
+				<Input
+					id={`${prefix}-name`}
+					value={value.name ?? ""}
+					onChange={(e) => onPatch({ name: e.target.value })}
+				/>
+			</Field>
+		</>
 	);
 }
 
@@ -129,37 +138,36 @@ export function LiveManifestListSection({
 }) {
 	const { t } = useT();
 	const outputEntries = manifestOutputEntries(state);
+	const primaryOutputSettings = (kind: "HLS" | "DASH") => {
+		const property = kind === "HLS" ? "hls" : "dash";
+		const primary = state.manifests[property];
+		return (
+			<ManifestDestination
+				state={state}
+				outputEntries={outputEntries}
+				value={primary}
+				prefix={`lw-${kind}-destination`}
+				onPatch={(patch) =>
+					onPatch({
+						manifests: {
+							...state.manifests,
+							[property]: { ...primary, ...patch },
+						},
+					})
+				}
+			/>
+		);
+	};
 	return (
 		<div className="space-y-4">
-			<LiveManifestsSection state={state} onPatch={onPatch} />
-			{(["HLS", "DASH"] as const).map((kind) => {
-				const primary =
-					kind === "HLS" ? state.manifests.hls : state.manifests.dash;
-				return primary.enabled ? (
-					<details
-						key={kind}
-						className="space-y-3 rounded-md border border-zinc-800 p-3"
-					>
-						<summary className="cursor-pointer text-sm">
-							{t("liveOutputs.primaryDestination", { kind })}
-						</summary>
-						<ManifestDestination
-							state={state}
-							outputEntries={outputEntries}
-							value={primary}
-							prefix={`lw-${kind}-destination`}
-							onPatch={(patch) =>
-								onPatch({
-									manifests: {
-										...state.manifests,
-										[kind === "HLS" ? "hls" : "dash"]: { ...primary, ...patch },
-									},
-								})
-							}
-						/>
-					</details>
-				) : null;
-			})}
+			<LiveManifestsSection
+				state={state}
+				onPatch={onPatch}
+				outputSettings={{
+					HLS: primaryOutputSettings("HLS"),
+					DASH: primaryOutputSettings("DASH"),
+				}}
+			/>
 			{(["HLS", "DASH"] as const).map((kind) => {
 				const property = kind === "HLS" ? "additionalHls" : "additionalDash";
 				const entries = state.manifests[property] ?? [];
@@ -217,13 +225,6 @@ export function LiveManifestListSection({
 											)}
 										</Button>
 									</div>
-									<ManifestDestination
-										state={state}
-										outputEntries={outputEntries}
-										value={entry}
-										prefix={prefix}
-										onPatch={replace}
-									/>
 									<LiveManifestsSection
 										state={{
 											...state,
@@ -234,6 +235,17 @@ export function LiveManifestListSection({
 										}}
 										manifestKind={kind}
 										idPrefix={prefix}
+										outputSettings={{
+											[kind]: (
+												<ManifestDestination
+													state={state}
+													outputEntries={outputEntries}
+													value={entry}
+													prefix={prefix}
+													onPatch={replace}
+												/>
+											),
+										}}
 										onPatch={(patch) => {
 											const next =
 												kind === "HLS"

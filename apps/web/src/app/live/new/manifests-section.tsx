@@ -1,7 +1,6 @@
+"use client";
+
 import type { ReactNode } from "react";
-
-("use client");
-
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { InfoHint } from "@/components/ui/info-hint";

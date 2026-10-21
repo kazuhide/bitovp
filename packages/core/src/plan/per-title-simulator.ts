@@ -1,7 +1,7 @@
 import {
 	optimizePerTitleConstraints,
 	type PerTitleConstraintAnalysis,
-} from "./per-title-optimizer.js";
+} from "./per-title-optimizer";
 import type { EncodingPlan } from "./schema.js";
 
 export type PerTitleStrategy =

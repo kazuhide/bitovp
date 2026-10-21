@@ -77,6 +77,7 @@ describe("Per-Title calculation explanation", () => {
 			],
 		};
 		const onChange = vi.fn();
+		const before = structuredClone(original);
 		renderLocalized(
 			<PerTitleReasoning
 				goal={original}
@@ -86,6 +87,23 @@ describe("Per-Title calculation explanation", () => {
 			locale,
 		);
 		expect(onChange).not.toHaveBeenCalled();
+		const summary = screen.getByText(
+			locale === "en" ? "Why these settings" : "提案の根拠",
+		);
+		expect(summary.closest("details")).not.toHaveAttribute("open");
+		fireEvent.click(summary);
+		expect(
+			screen.queryByText(
+				locale === "en"
+					? /Model count range at the upper limit/
+					: /上限値でのモデル上の本数/,
+			),
+		).toBeNull();
+		expect(
+			screen.queryByText(
+				locale === "en" ? /^Desired count:/ : /^希望する本数:/,
+			),
+		).toBeNull();
 		fireEvent.click(
 			screen.getByRole("button", {
 				name: locale === "en" ? "Use 100–200 kbps" : "全体を100–200 kbpsに変更",
@@ -97,6 +115,7 @@ describe("Per-Title calculation explanation", () => {
 			maxBitrate: 200000,
 			rows: original.rows,
 		});
+		expect(original).toEqual(before);
 	});
 	it.each([
 		"en",
@@ -136,6 +155,18 @@ describe("Per-Title calculation explanation", () => {
 			screen.getByText(locale === "en" ? "Why these settings" : "提案の根拠"),
 		);
 		expect(reason).toBeVisible();
+		expect(
+			screen.getByText(
+				locale === "en" ? /^Desired count: 5$/ : /^希望する本数: 5$/,
+			),
+		).toBeVisible();
+		expect(
+			screen.getByText(
+				locale === "en"
+					? /Model count range at the upper limit: 1–5/
+					: /上限値でのモデル上の本数: 1–5/,
+			),
+		).toBeVisible();
 		fireEvent.click(action);
 		expect(onChange).toHaveBeenCalledOnce();
 		const next = onChange.mock.calls[0]?.[0] as PerTitleGoal;

@@ -240,6 +240,41 @@ describe("joint Per-Title constraint optimization", () => {
 		expect(result.applicable).toBe(false);
 	});
 
+	it("reports returned API settings rather than a discarded additional-rendition trial", () => {
+		const configuration = {
+			forcedRenditionAboveHighestFixedRepresentation: 2,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.5,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"LAST_CALCULATED_BITRATE" as const,
+		};
+		const result = recommendPerTitleSettings({
+			...fixed,
+			maxBitrate: 400_000,
+			countPolicy: { kind: "exact", count: 1 },
+			rows: [
+				{ id: "a", height: 240, minBitrate: 400_000, maxBitrate: 400_000 },
+			],
+			fixedResolutionAndBitrateConfiguration: configuration,
+		});
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			configuration,
+		);
+		expect(result.derivation?.constraints?.forced).toMatchObject({
+			count: configuration.forcedRenditionAboveHighestFixedRepresentation,
+			factor:
+				configuration.forcedRenditionAboveHighestFixedRepresentationFactor,
+			calculationMode:
+				configuration.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+			conditional: true,
+			ranges: [],
+		});
+		expect(result.derivation?.constraints?.changes).toEqual([]);
+		expect(result.derivation?.constraints?.calibration).toBeUndefined();
+		expect(result.derivation?.constraints?.spacing).toBeUndefined();
+		expect(result.derivation?.constraints?.checkpoints).toEqual([]);
+	});
+
 	it("preserves a safe additional-rendition factor independently of ordinary spacing", () => {
 		const result = recommendPerTitleSettings({
 			...fixed,

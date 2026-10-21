@@ -130,7 +130,11 @@ export function perTitleSuggestions(goal: PerTitleGoal): PerTitleSuggestion[] {
 		// One original check plus at most one helper call per reason (five in total).
 		for (const variant of variants) {
 			const proposal = recommendPerTitleSettings(variant.goal);
-			if (!meetsGoal(variant.goal, proposal)) continue;
+			const explicitCorrection =
+				variant.reason !== "fixed-only" &&
+				proposal.status !== "conflict" &&
+				!proposal.diagnostics.some((item) => item.severity === "conflict");
+			if (!meetsGoal(variant.goal, proposal) && !explicitCorrection) continue;
 			const checkedGoal: PerTitleGoal = {
 				...variant.goal,
 				minBitrateStepSize: proposal.api.global.minBitrateStepSize,

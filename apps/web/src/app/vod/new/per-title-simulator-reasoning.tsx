@@ -240,9 +240,15 @@ export function PerTitleReasoning({
 					: copy.atMost(count.count)
 				: copy.undetermined;
 	const renderSuggestion = (suggestion: PerTitleSuggestion) => {
-		const high = suggestion.proposal.scenarios.find(
+		const scenario = suggestion.proposal.scenarios.find(
 			(item) => item.fraction === 1,
-		)?.modelCountRange;
+		);
+		const countChecked =
+			suggestion.proposal.applicable &&
+			suggestion.proposal.status === "candidate" &&
+			suggestion.proposal.derivation?.targetSatisfied === true &&
+			scenario?.status === "modelled";
+		const high = countChecked ? scenario.modelCountRange : undefined;
 		return (
 			<div
 				key={suggestion.id}
@@ -252,7 +258,7 @@ export function PerTitleReasoning({
 				<p>
 					{copy.maximum}: {suggestion.goal.maxBitrate / 1000}
 				</p>
-				{suggestion.goal.countPolicy.kind !== "unrestricted" ? (
+				{countChecked && suggestion.goal.countPolicy.kind !== "unrestricted" ? (
 					<p>
 						{copy.count}: {suggestion.goal.countPolicy.count}
 					</p>

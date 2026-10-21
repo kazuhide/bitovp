@@ -27,7 +27,14 @@ describe("analytic Per-Title suggestions", () => {
 		expect(suggestion?.goal.rows).toEqual(before.rows);
 		expect(suggestion?.changedFields).toContain("minBitrate");
 		expect(suggestion?.changedFields).toContain("maxBitrate");
-		expect(suggestion?.proposal.applicable).toBe(true);
+		expect(suggestion?.proposal.applicable).toBe(false);
+		expect(suggestion?.proposal.status).toBe("unknown");
+		expect(suggestion?.proposal.derivation?.targetSatisfied).toBe(false);
+		expect(
+			suggestion?.proposal.diagnostics.some(
+				(item) => item.severity === "conflict",
+			),
+		).toBe(false);
 	});
 	it("suppresses changes when the original model already meets the goal", () => {
 		expect(perTitleSuggestions(valid)).toEqual([]);
@@ -40,7 +47,14 @@ describe("analytic Per-Title suggestions", () => {
 		expect(suggestion?.goal.countPolicy).toEqual({ kind: "exact", count: 2 });
 		expect(suggestion?.goal.rows).toEqual(valid.rows);
 		expect(suggestion?.changedFields).toContain("countPolicy.count");
-		expect(suggestion?.proposal.applicable).toBe(true);
+		expect(suggestion?.proposal.applicable).toBe(false);
+		expect(suggestion?.proposal.status).toBe("unknown");
+		expect(suggestion?.proposal.derivation?.targetSatisfied).toBe(false);
+		expect(
+			suggestion?.proposal.diagnostics.some(
+				(item) => item.severity === "conflict",
+			),
+		).toBe(false);
 	});
 	it("offers removing automatic candidates only as an explicit, verified fixed-only tradeoff", () => {
 		const goal = {
@@ -82,7 +96,37 @@ describe("analytic Per-Title suggestions", () => {
 		);
 		expect(suggestion?.goal.rows).toEqual(goal.rows);
 		expect(suggestion?.goal.automaticTemplates).toBeUndefined();
-		expect(suggestion?.proposal.applicable).toBe(true);
+		expect(suggestion?.proposal.applicable).toBe(false);
+		expect(suggestion?.proposal.status).toBe("unknown");
+		expect(suggestion?.proposal.derivation?.targetSatisfied).toBe(false);
+		expect(
+			suggestion?.proposal.diagnostics.some(
+				(item) => item.severity === "conflict",
+			),
+		).toBe(false);
+	});
+	it("does not offer an input correction while another input conflict remains", () => {
+		const goal: PerTitleGoal = {
+			...valid,
+			minBitrate: 150000,
+			maxBitrate: 180000,
+			countPolicy: { kind: "exact", count: 1 },
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+			},
+		};
+		const before = structuredClone(goal);
+		expect(perTitleSuggestions(goal)).toEqual([]);
+		expect(goal).toEqual(before);
+	});
+	it("requires a proved count before offering removal of automatic templates", () => {
+		const goal: PerTitleGoal = {
+			...valid,
+			automaticTemplates: [{ id: "candidate", height: 720 }],
+		};
+		expect(
+			perTitleSuggestions(goal).find((item) => item.reason === "fixed-only"),
+		).toBeUndefined();
 	});
 	it("keeps input immutable and exposes exactly the step values actually checked", () => {
 		const goal = { ...valid, minBitrate: 150000, maxBitrate: 180000 };

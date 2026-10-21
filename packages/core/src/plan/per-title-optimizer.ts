@@ -3,7 +3,7 @@ import {
 	certifyComplexityIntervals,
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
-} from "./per-title-constraints.js";
+} from "./per-title-constraints";
 import type {
 	PerTitleGoal,
 	PerTitleGoalRow,
@@ -500,6 +500,25 @@ export function optimizePerTitleConstraints(
 				fallback.derivation.selectedMinStep = s;
 				fallback.derivation.selectedMaxStep = maximum;
 			}
+		} else {
+			const actual = fallback.api.global.fixedResolutionAndBitrateConfiguration;
+			report.inputRange = null;
+			report.floorRange = null;
+			delete report.calibration;
+			delete report.spacing;
+			report.forced = {
+				count: actual
+					? (actual.forcedRenditionAboveHighestFixedRepresentation ?? null)
+					: 0,
+				factor:
+					actual?.forcedRenditionAboveHighestFixedRepresentationFactor ?? null,
+				calculationMode:
+					actual?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+				conditional: true,
+				ranges: [],
+			};
+			report.changes = [];
+			report.checkpoints = [];
 		}
 		return orderUnknown ? unresolvedOrder(fallback) : fallback;
 	}

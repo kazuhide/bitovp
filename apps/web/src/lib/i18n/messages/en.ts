@@ -125,7 +125,7 @@ export const en = {
 		disabled: "Disabled",
 		emptyDisabled: "Leave blank to disable this timer.",
 		recordedHint:
-			"These are the last settings recorded by bitovp for this broadcast. Changes made elsewhere may differ. Updating replaces all three timers; it does not change the next broadcast's start settings.",
+			"These are the last settings recorded for this broadcast. Changes made elsewhere may differ. Updating replaces all three timers; it does not change the next broadcast's saved start settings.",
 		timingHint:
 			"The runtime timer starts again when the encoder accepts the update. The input-loss timer counts from the last received data. Waiting for first input has no effect after input connects.",
 		limitHint:
@@ -135,7 +135,7 @@ export const en = {
 		review: "Review settings",
 		reviewDelivery: "Review and retry",
 		unrecorded:
-			"bitovp has no delivery record for this update. Review the proposed settings before trying again.",
+			"No delivery record was found for this update. Review the proposed settings before trying again.",
 		reviewTitle: "Replace automatic stop settings",
 		apply: "Apply to this broadcast",
 		disarmAll: "Disable all three timers",

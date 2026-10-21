@@ -62,7 +62,7 @@ async function open(locale: "en" | "ja" = "en") {
 	);
 	await user.click(
 		await screen.findByText(
-			locale === "en" ? "Encoder automatic stop" : "エンコーダーの自動停止",
+			locale === "en" ? "Encoder automatic stop" : "エンコーダの自動停止",
 		),
 	);
 	await screen.findByRole("spinbutton", {

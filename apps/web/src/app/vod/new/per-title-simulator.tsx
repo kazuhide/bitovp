@@ -69,7 +69,6 @@ function GoalRows({
 			<h3 id={`${id}-rows`} className="font-medium text-sm text-zinc-200">
 				{copy.rows}
 			</h3>
-			<p className="text-xs text-zinc-400">{copy.rowsHint}</p>
 			{rows.map((row, index) => (
 				<div key={row.id} className="space-y-2 border-b border-zinc-800 pb-3">
 					<div
@@ -547,11 +546,7 @@ function SimulatorEditor({
 			/>
 			<div className="grid gap-5 lg:grid-cols-2">
 				<div className="space-y-5">
-					<Field
-						htmlFor={`${id}-codec`}
-						label={copy.codec}
-						hint={copy.codecHint}
-					>
+					<Field htmlFor={`${id}-codec`} label={copy.codec}>
 						<SelectNative
 							id={`${id}-codec`}
 							value={goal.codec}
@@ -630,14 +625,9 @@ function SimulatorEditor({
 								onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
 							/>
 						</div>
-						<p className="text-xs text-zinc-400">{copy.automaticSteps}</p>
 					</section>
 					<div className="grid gap-3 sm:grid-cols-2">
-						<Field
-							htmlFor={`${id}-count-policy`}
-							label={copy.countPolicy}
-							hint={copy.countHint}
-						>
+						<Field htmlFor={`${id}-count-policy`} label={copy.countPolicy}>
 							<SelectNative
 								id={`${id}-count-policy`}
 								value={goal.countPolicy.kind}
@@ -745,25 +735,11 @@ function SimulatorEditor({
 					) : null}
 				</div>
 				<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
-					<PerTitleRecommendation goal={goal} proposal={selected}>
-						<DiagnosticList
-							items={selected.diagnostics.filter(
-								(item) =>
-									item.severity === "conflict" ||
-									(item.severity === "warning" &&
-										item.code !== "count-not-guaranteed" &&
-										item.code !== "scenario-conflict" &&
-										item.code !== "complexity-analysis-required"),
-							)}
-							rows={goal.rows}
-							locale={locale}
-							copy={copy}
-							technicalDetails={false}
-						/>
-						{reference ? (
-							<p className="text-xs text-amber-300">{copy.referenceHint}</p>
-						) : null}
-					</PerTitleRecommendation>
+					<PerTitleRecommendation
+						goal={goal}
+						proposal={selected}
+						comparisonOnly={!!reference}
+					/>
 					<PerTitleReasoning
 						goal={goal}
 						proposal={selected}
@@ -773,6 +749,13 @@ function SimulatorEditor({
 			</div>
 			<details className="border-t border-zinc-800 pt-4 text-xs text-zinc-400">
 				<summary className="cursor-pointer">{copy.calculationDetails}</summary>
+				<div className="space-y-2 pt-3">
+					<p>{copy.codecHint}</p>
+					<p>{copy.countHint}</p>
+					<p>{copy.automaticSteps}</p>
+					{usesRows(goal) ? <p>{copy.rowsHint}</p> : null}
+					{reference ? <p>{copy.referenceHint}</p> : null}
+				</div>
 				<ProposalResults
 					selected={selected}
 					baseline={baseline}
@@ -914,13 +897,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		props.onOpenChange(open);
 	}
 	return (
-		<Dialog
-			open={props.open}
-			onOpenChange={changeOpen}
-			title={copy.title}
-			description={copy.description}
-			wide
-		>
+		<Dialog open={props.open} onOpenChange={changeOpen} title={copy.title} wide>
 			<SimulatorEditor
 				{...props}
 				applyError={codecError ? copy.referenceCodecError : props.applyError}

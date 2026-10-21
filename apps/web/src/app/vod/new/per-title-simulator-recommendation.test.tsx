@@ -41,6 +41,73 @@ describe("Per-Title recommendation flow", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("identifies a comparison-only result without advertising readiness (%s)", (locale) => {
+		const proposal = recommendPerTitleSettings(goal);
+		renderLocalized(
+			<PerTitleRecommendation goal={goal} proposal={proposal} comparisonOnly />,
+			locale,
+		);
+		expect(screen.getByRole("status")).toHaveTextContent(
+			locale === "en" ? "Comparison only" : "比較専用",
+		);
+		expect(
+			screen.queryByText(
+				locale === "en" ? /Use these values to review/ : /この値を使って/,
+			),
+		).toBeNull();
+	});
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps explanations closed while reviewing the same proposal (%s)", (locale) => {
+		show(goal, locale);
+		const panel = screen.getByRole("region", {
+			name: locale === "en" ? "Recommended settings" : "推奨設定",
+		});
+		expect(
+			screen.queryByText(
+				locale === "en"
+					? "Get recommended settings for your ladder requirements."
+					: "必要なラダー構成に合わせて、使う設定を提案します。",
+			),
+		).toBeNull();
+		expect(
+			screen.getByText(
+				locale === "en"
+					? /Switching codecs loads/
+					: /切り替えると、そのコーデック/,
+			),
+		).not.toBeVisible();
+		expect(
+			within(panel).getByText(
+				locale === "en"
+					? "Final outputs depend on content analysis."
+					: "実際の出力は素材解析で決まります。",
+			),
+		).not.toBeVisible();
+		expect(
+			within(panel).queryByText(
+				locale === "en"
+					? "Use these values to review the encoding changes."
+					: "この値でエンコード設定の差分を確認できます。",
+			),
+		).toBeNull();
+		fireEvent.click(
+			within(panel).getByText(
+				locale === "en" ? "API parameters" : "APIパラメータ",
+			),
+		);
+		expect(
+			within(panel).getByText(
+				locale === "en"
+					? "Final outputs depend on content analysis."
+					: "実際の出力は素材解析で決まります。",
+			),
+		).toBeVisible();
+	});
+	it.each([
+		"en",
+		"ja",
 	] as const)("does not turn an internal example warning into a failed recommendation (%s)", (locale) => {
 		const countGoal: PerTitleGoal = {
 			...goal,
@@ -238,7 +305,7 @@ describe("Per-Title recommendation flow", () => {
 			"推奨設定",
 			"自動生成の候補に付いたビットレート設定は元データとして保持します。",
 		],
-	] as const)("keeps inactive automatic settings visible as a warning in %s", (locale, title, warning) => {
+	] as const)("keeps inactive automatic warnings in closed details in %s", (locale, title, warning) => {
 		show(
 			{
 				...goal,
@@ -255,8 +322,18 @@ describe("Per-Title recommendation flow", () => {
 		);
 		const panel = screen.getByRole("region", { name: title });
 		expect(
-			within(panel).getByText((text) => text.startsWith(warning)),
-		).toBeVisible();
+			within(panel).queryByText((text) => text.startsWith(warning)),
+		).toBeNull();
+		const diagnostic = screen.getByText((text) => text.startsWith(warning));
+		expect(diagnostic).not.toBeVisible();
+		fireEvent.click(
+			screen.getByText(
+				locale === "en"
+					? "Comparison and calculation details"
+					: "比較・計算の詳細",
+			),
+		);
+		expect(diagnostic).toBeVisible();
 		expect(within(panel).queryByText(/rowIds|PER_TITLE_TEMPLATE/)).toBeNull();
 	});
 
@@ -268,14 +345,17 @@ describe("Per-Title recommendation flow", () => {
 		).toHaveLength(1);
 		expect(within(panel).getByText("100–2,000")).toBeVisible();
 		const table = within(panel).getByRole("table", {
-			name: "Required renditions",
+			name: "Allowed bitrate ranges (data)",
 		});
 		expect(
 			within(table).getByRole("row", { name: "360 100–400" }),
+		).toBeInTheDocument();
+		expect(
+			within(panel).getByRole("figure", { name: "Allowed bitrate ranges" }),
 		).toBeVisible();
 		expect(
 			within(table).getByRole("row", { name: "720 500–2,000" }),
-		).toBeVisible();
+		).toBeInTheDocument();
 		expect(within(panel).getByText("Minimum bitrate ratio")).not.toBeVisible();
 		expect(within(panel).getByText("Maximum bitrate ratio")).not.toBeVisible();
 		expect(within(panel).queryByRole("spinbutton")).toBeNull();
@@ -304,7 +384,9 @@ describe("Per-Title recommendation flow", () => {
 	it("keeps the Japanese recommendation visible while technical details start closed", () => {
 		show(goal, "ja");
 		const panel = screen.getByRole("region", { name: "推奨設定" });
-		expect(within(panel).getByText("指定した許容範囲 (kbps)")).toBeVisible();
+		expect(
+			within(panel).getByRole("figure", { name: "許容ビットレート範囲" }),
+		).toBeVisible();
 		expect(within(panel).getByText("最小ビットレート比率")).not.toBeVisible();
 		expect(
 			within(panel).getByText(
@@ -322,17 +404,19 @@ describe("Per-Title recommendation flow", () => {
 		).not.toBeVisible();
 	});
 
-	it("shows conflicting conditions beside the recommendation without opening details", () => {
+	it("shows a short conflict status and keeps its diagnostic in details", () => {
 		show({ ...goal, minBitrate: 3_000_000 });
 		const panel = screen.getByRole("region", { name: "Recommended settings" });
+		expect(within(panel).getByText("Needs adjustment")).toBeVisible();
 		expect(
-			within(panel).getByText(
-				"Resolve the conditions below before applying these settings.",
-			),
-		).toBeVisible();
-		expect(
-			within(panel).getByText("Enter a positive, ordered bitrate interval."),
-		).toBeVisible();
+			within(panel).queryByText("Enter a positive, ordered bitrate interval."),
+		).toBeNull();
+		const diagnostic = screen.getByText(
+			"Enter a positive, ordered bitrate interval.",
+		);
+		expect(diagnostic).not.toBeVisible();
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
+		expect(diagnostic).toBeVisible();
 		expect(
 			screen.getByRole("button", { name: "Review changes" }),
 		).toBeDisabled();
@@ -347,18 +431,17 @@ describe("Per-Title recommendation flow", () => {
 			},
 		});
 		const panel = screen.getByRole("region", { name: "Recommended settings" });
-		expect(
-			within(panel).getByText("Automatic candidate count").nextElementSibling,
-		).toHaveTextContent("1");
-		expect(
-			within(panel).getByText("Automatic candidate count"),
-		).not.toBeVisible();
+		expect(within(panel).getByText(/Automatic candidates.*1/)).toBeVisible();
 		expect(
 			within(panel).getByText(/candidate count is not the output count/),
 		).not.toBeVisible();
-		expect(
-			within(panel).getByText(/additional-rendition configuration/i),
-		).toBeVisible();
+		expect(within(panel).getByRole("status")).toHaveTextContent(
+			"Not established",
+		);
+		const warning = screen.getByText(/additional-rendition configuration/i);
+		expect(warning).not.toBeVisible();
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
+		expect(warning).toBeVisible();
 		expect(within(panel).queryByText("Calculated count limit")).toBeNull();
 		expect(
 			screen.getByRole("checkbox", {

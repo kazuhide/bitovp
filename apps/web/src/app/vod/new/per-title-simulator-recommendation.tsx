@@ -4,15 +4,18 @@ import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
 import { type ReactNode, useId } from "react";
 import { useT } from "@/lib/i18n/context";
 import { perTitleSimulatorCopy } from "./per-title-simulator-copy";
+import { PerTitleLadder } from "./per-title-simulator-ladder";
 
 export function PerTitleRecommendation({
 	goal,
 	proposal,
 	children,
+	comparisonOnly = false,
 }: {
 	goal: PerTitleGoal;
 	proposal: PerTitleProposal;
 	children?: ReactNode;
+	comparisonOnly?: boolean;
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
@@ -31,10 +34,12 @@ export function PerTitleRecommendation({
 		positive(lower) && positive(upper) && lower <= upper
 			? `${formatBitrate(lower)}–${formatBitrate(upper)}`
 			: copy.unknown;
-	const required = proposal.api.streams.filter(
+	const hasRequiredRows = proposal.api.streams.some(
 		(stream) => stream.mode !== "PER_TITLE_TEMPLATE",
 	);
-	const automaticCount = proposal.api.streams.length - required.length;
+	const hasAutomaticTemplates = proposal.api.streams.some(
+		(stream) => stream.mode === "PER_TITLE_TEMPLATE",
+	);
 	const global = proposal.api.global;
 	const derivation = proposal.derivation;
 	const checked =
@@ -94,18 +99,21 @@ export function PerTitleRecommendation({
 			>
 				{copy.recommendation}
 			</h3>
-			<p
-				className={`text-xs ${proposal.status === "conflict" ? "text-red-300" : proposal.status === "unknown" ? "text-amber-300" : "text-zinc-300"}`}
-			>
-				{proposal.status === "conflict"
-					? copy.recommendationConflict
-					: !checked
-						? copy.recommendationUnknown
-						: copy.recommendationReady}
-			</p>
-			<p className="text-xs text-zinc-300">
-				{copy.modeGuidance[goal.strategy]}
-			</p>
+			{comparisonOnly || !checked ? (
+				<p
+					role="status"
+					className="flex flex-wrap gap-x-3 text-xs text-zinc-400"
+				>
+					{comparisonOnly ? <span>{copy.comparisonOnly}</span> : null}
+					{!checked ? (
+						<span>
+							{proposal.status === "conflict"
+								? copy.recommendationConflict
+								: copy.recommendationUnknown}
+						</span>
+					) : null}
+				</p>
+			) : null}
 			<dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
 				<dt className="text-zinc-400">{copy.recommendedGlobal}</dt>
 				<dd className="text-right tabular-nums text-zinc-100">
@@ -120,45 +128,12 @@ export function PerTitleRecommendation({
 					</>
 				) : null}
 			</dl>
-			{required.length ? (
-				<div className="overflow-x-auto">
-					<table
-						aria-label={copy.rows}
-						className="w-full text-left text-xs text-zinc-300 [&_th]:py-2 [&_th]:font-medium [&_td]:py-2 [&_tbody_tr]:border-t [&_tbody_tr]:border-zinc-800"
-					>
-						<thead>
-							<tr>
-								<th scope="col">{copy.height}</th>
-								<th scope="col">{copy.requestedRange}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{required.map((stream) => (
-								<tr key={stream.rowId}>
-									<td>
-										{positive(stream.height)
-											? format(stream.height)
-											: copy.unknown}
-									</td>
-									<td>
-										{stream.mode ===
-										"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
-											? range(
-													stream.perTitleSettings?.minBitrate,
-													stream.perTitleSettings?.maxBitrate,
-												)
-											: copy.chosenWithinGlobal}
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-			) : null}
-			<p className="text-xs text-zinc-400">{copy.countScope}</p>
+			<PerTitleLadder proposal={proposal} />
 			{children}
 			<details className="space-y-2 border-t border-zinc-800 pt-3 text-xs text-zinc-400">
 				<summary className="cursor-pointer">{copy.apiParameters}</summary>
+				<p>{copy.modeGuidance[goal.strategy]}</p>
+				<p>{copy.countScope}</p>
 				<dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 pt-2">
 					<dt>{copy.minimumRatio}</dt>
 					<dd className="text-right tabular-nums text-zinc-100">
@@ -180,19 +155,11 @@ export function PerTitleRecommendation({
 							</dd>
 						</>
 					) : null}
-					{automaticCount ? (
-						<>
-							<dt>{copy.automaticCount}</dt>
-							<dd className="text-right tabular-nums text-zinc-100">
-								{automaticCount}
-							</dd>
-						</>
-					) : null}
 				</dl>
 				<p>{copy.ratioHint}</p>
 				{adjustmentRange ? <p>{copy.minimumStepRangeHint}</p> : null}
-				{required.length ? <p>{copy.requestedRangeHint}</p> : null}
-				{automaticCount ? <p>{copy.automaticCountHint}</p> : null}
+				{hasRequiredRows ? <p>{copy.requestedRangeHint}</p> : null}
+				{hasAutomaticTemplates ? <p>{copy.automaticCountHint}</p> : null}
 				{checkedCount ? <p>{copy.countCheckScope}</p> : null}
 			</details>
 		</section>

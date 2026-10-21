@@ -73,6 +73,13 @@ const texts = {
 			"without-forced":
 				"Compare the template conditions with the additional-rendition rules excluded. The original reference remains available.",
 		},
+		actions: {
+			"fixed-only": "Compare without automatic templates",
+			"without-forced": "Compare without additional rules",
+		},
+		rangeAction: (minimum: string, maximum: string) =>
+			`Use ${minimum}–${maximum} kbps`,
+		countAction: (count: number) => `Use ${count} renditions`,
 		use: "Use these conditions",
 		changes: "Fields to change",
 		maximum: "Overall maximum (kbps)",
@@ -144,6 +151,13 @@ const texts = {
 			"without-forced":
 				"追加レンディションのルールを外し、残りのテンプレート条件で比較する案です。元の参照設定は保持します。",
 		},
+		actions: {
+			"fixed-only": "自動テンプレートを外して比較",
+			"without-forced": "追加ルールを外して比較",
+		},
+		rangeAction: (minimum: string, maximum: string) =>
+			`全体を${minimum}–${maximum} kbpsに変更`,
+		countAction: (count: number) => `希望本数を${count}本に変更`,
 		use: "この条件で比較する",
 		changes: "変更する項目",
 		maximum: "全体の最大ビットレート (kbps)",
@@ -261,8 +275,35 @@ export function PerTitleReasoning({
 		);
 	};
 
+	const actionBitrate = (value: number) =>
+		new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
+			value / 1000,
+		);
+	const actionLabel = (suggestion: PerTitleSuggestion) => {
+		if (suggestion.reason === "global-range")
+			return copy.rangeAction(
+				actionBitrate(suggestion.goal.minBitrate),
+				actionBitrate(suggestion.goal.maxBitrate),
+			);
+		if (suggestion.reason === "required-count")
+			return suggestion.goal.countPolicy.kind === "unrestricted"
+				? copy.use
+				: copy.countAction(suggestion.goal.countPolicy.count);
+		return copy.actions[suggestion.reason];
+	};
+
+	const firstSuggestion = suggestions[0];
 	return (
 		<div className="space-y-3">
+			{firstSuggestion ? (
+				<Button
+					variant="secondary"
+					size="sm"
+					onClick={() => onChange(structuredClone(firstSuggestion.goal))}
+				>
+					{actionLabel(firstSuggestion)}
+				</Button>
+			) : null}
 			<details className="space-y-3 border-t border-zinc-800 pt-4 text-xs text-zinc-400">
 				<summary className="cursor-pointer">{copy.title}</summary>
 				<p className="text-xs text-zinc-300">{copy.objective}</p>
@@ -392,24 +433,24 @@ export function PerTitleReasoning({
 						{copy.constraints}
 					</a>
 				</div>
+				{suggestions.length ? (
+					<div className="space-y-3">
+						<h4 className="font-medium text-sm text-zinc-200">
+							{copy.suggestions}
+						</h4>
+						<p className="text-xs text-zinc-400">{copy.ranking}</p>
+						{suggestions[0] ? renderSuggestion(suggestions[0]) : null}
+						{suggestions.length > 1 ? (
+							<details className="space-y-3 text-xs text-zinc-400">
+								<summary className="cursor-pointer">
+									{copy.otherSuggestions}
+								</summary>
+								{suggestions.slice(1).map(renderSuggestion)}
+							</details>
+						) : null}
+					</div>
+				) : null}
 			</details>
-			{suggestions.length ? (
-				<div className="space-y-3">
-					<h4 className="font-medium text-sm text-zinc-200">
-						{copy.suggestions}
-					</h4>
-					<p className="text-xs text-zinc-400">{copy.ranking}</p>
-					{suggestions[0] ? renderSuggestion(suggestions[0]) : null}
-					{suggestions.length > 1 ? (
-						<details className="space-y-3 text-xs text-zinc-400">
-							<summary className="cursor-pointer">
-								{copy.otherSuggestions}
-							</summary>
-							{suggestions.slice(1).map(renderSuggestion)}
-						</details>
-					) : null}
-				</div>
-			) : null}
 		</div>
 	);
 }

@@ -220,15 +220,16 @@ describe("Per-Title simulator", () => {
 		expect(
 			screen.getByRole("spinbutton", { name: "Desired count" }),
 		).toHaveValue(2);
-		expect(
-			screen.getByText(
-				"Keep every required rendition and raise the count goal to accommodate them.",
-			),
-		).toBeVisible();
+		const rationale = screen.getByText(
+			"Keep every required rendition and raise the count goal to accommodate them.",
+		);
+		expect(rationale).not.toBeVisible();
+		fireEvent.click(screen.getByText("Why these settings"));
+		expect(rationale).toBeVisible();
 		expect(onApply).not.toHaveBeenCalled();
 		await userEvent
 			.setup()
-			.click(screen.getByRole("button", { name: "Use these conditions" }));
+			.click(screen.getByRole("button", { name: "Use 3 renditions" }));
 		expect(
 			screen.getByRole("spinbutton", { name: "Desired count" }),
 		).toHaveValue(3);
@@ -348,10 +349,27 @@ describe("Per-Title simulator", () => {
 			),
 		);
 		await waitFor(() =>
-			expect(screen.getByRole("status")).toHaveTextContent(
-				"Requirements loaded.",
-			),
+			expect(screen.getByText("Requirements loaded.")).toBeVisible(),
 		);
+		expect(screen.getByText("Comparison only")).toBeVisible();
+		expect(screen.getByText("Not established")).toBeVisible();
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Minimum bitrate (kbps)" }),
+			{ target: { value: "7000" } },
+		);
+		expect(screen.getByText("Comparison only")).toBeVisible();
+		expect(screen.getByText("Needs adjustment")).toBeVisible();
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeDisabled();
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Minimum bitrate (kbps)" }),
+			{ target: { value: "100" } },
+		);
+		const referenceHint = screen.getByText(
+			/This reference includes template and quality settings/,
+		);
+		expect(referenceHint).not.toBeVisible();
 		await user.click(screen.getByText("Additional settings"));
 		expect(
 			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
@@ -366,6 +384,7 @@ describe("Per-Title simulator", () => {
 			{ target: { value: "10000" } },
 		);
 		await user.click(screen.getByText("Comparison and calculation details"));
+		expect(referenceHint).toBeVisible();
 		const table = screen.getByRole("table", { name: "Compare settings" });
 		expect(
 			within(table).getByRole("row", {
@@ -434,9 +453,7 @@ describe("Per-Title simulator", () => {
 			),
 		);
 		await waitFor(() =>
-			expect(screen.getByRole("status")).toHaveTextContent(
-				"Requirements loaded.",
-			),
+			expect(screen.getByText("Requirements loaded.")).toBeVisible(),
 		);
 		await user.click(screen.getByRole("button", { name: "Add rendition" }));
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
@@ -630,11 +647,12 @@ describe("Per-Title simulator", () => {
 		expect(
 			screen.getByRole("spinbutton", { name: "Desired count" }),
 		).toHaveValue(20);
-		expect(
-			screen.getByText(
-				"Counts are requirements checked here. The API has no total-count parameter.",
-			),
-		).toBeVisible();
+		const countHint = screen.getByText(
+			"Counts are requirements checked here. The API has no total-count parameter.",
+		);
+		expect(countHint).not.toBeVisible();
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
+		expect(countHint).toBeVisible();
 		await userEvent.setup().click(screen.getByText("Proposed settings"));
 		const settings = JSON.parse(
 			screen.getByTestId("per-title-api-settings").textContent ?? "",
@@ -667,6 +685,10 @@ describe("Per-Title simulator", () => {
 			.click(screen.getByText("Comparison and calculation details"));
 		expect(
 			screen.getByText("Final outputs depend on content analysis."),
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("API parameters"));
+		expect(
+			screen.getByText("Final outputs depend on content analysis."),
 		).toBeVisible();
 	});
 
@@ -688,8 +710,12 @@ describe("Per-Title simulator", () => {
 		show(initialGoal, "ja");
 		fireEvent.click(screen.getByText("比較・計算の詳細"));
 		expect(
-			screen.getByRole("dialog", { name: "Per-Title の設定を検討" }),
+			screen.getByRole("dialog", { name: "Per-Title シミュレーター" }),
 		).toBeVisible();
+		expect(
+			screen.getByText("実際の出力は素材解析で決まります。"),
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("APIパラメータ"));
 		expect(
 			screen.getByText("実際の出力は素材解析で決まります。"),
 		).toBeVisible();
@@ -892,6 +918,10 @@ describe("Per-Title simulator", () => {
 		});
 		const user = userEvent.setup();
 		expect(screen.queryByRole("radio")).toBeNull();
+		expect(
+			screen.getByText(/Bitrate spacing is selected automatically/),
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
 		expect(
 			screen.getByText(/Bitrate spacing is selected automatically/),
 		).toBeVisible();

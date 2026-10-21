@@ -11,7 +11,7 @@ describe("Per-Title simulator wizard integration", () => {
 		render(<PerTitleSimulatorLauncher state={state} onPatch={onPatch} />);
 		fireEvent.click(screen.getByRole("button", { name: "Open simulator" }));
 		expect(
-			screen.getByRole("dialog", { name: "Explore Per-Title settings" }),
+			screen.getByRole("dialog", { name: "Per-Title simulator" }),
 		).toBeInTheDocument();
 		fireEvent.change(
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),

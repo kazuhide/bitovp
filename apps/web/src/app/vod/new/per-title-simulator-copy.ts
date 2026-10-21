@@ -1,5 +1,5 @@
 const en = {
-	title: "Explore Per-Title settings",
+	title: "Per-Title simulator",
 	description: "Get recommended settings for your ladder requirements.",
 	strategy: "What should Per-Title choose?",
 	strategies: {
@@ -74,11 +74,10 @@ const en = {
 	additionalSettings: "Additional settings",
 	calculationDetails: "Comparison and calculation details",
 	recommendation: "Recommended settings",
+	comparisonOnly: "Comparison only",
 	recommendationReady: "Use these values to review the encoding changes.",
-	recommendationConflict:
-		"Resolve the conditions below before applying these settings.",
-	recommendationUnknown:
-		"These proposed values need further checks before they can be applied.",
+	recommendationConflict: "Needs adjustment",
+	recommendationUnknown: "Not established",
 	recommendedGlobal: "Overall bitrate range (kbps)",
 	recommendedModelCount: "Calculated count limit",
 	countCheckScope:
@@ -142,7 +141,7 @@ const en = {
 };
 
 const ja: typeof en = {
-	title: "Per-Title の設定を検討",
+	title: "Per-Title シミュレーター",
 	description: "必要なラダー構成に合わせて、使う設定を提案します。",
 	strategy: "Per-Title に任せる範囲",
 	strategies: {
@@ -217,12 +216,11 @@ const ja: typeof en = {
 	additionalSettings: "追加設定",
 	calculationDetails: "比較・計算の詳細",
 	recommendation: "推奨設定",
+	comparisonOnly: "比較専用",
 	recommendationReady:
 		"この値を使って、エンコード設定への変更内容を確認できます。",
-	recommendationConflict:
-		"下の条件を確認・修正してから設定を反映してください。",
-	recommendationUnknown:
-		"この設定案を反映するには、さらに条件の確認が必要です。",
+	recommendationConflict: "要調整",
+	recommendationUnknown: "未確定",
 	recommendedGlobal: "全体のビットレート範囲 (kbps)",
 	recommendedModelCount: "計算上の本数上限",
 	countCheckScope:

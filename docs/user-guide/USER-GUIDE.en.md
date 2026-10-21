@@ -452,9 +452,9 @@ Choose what you want to specify:
 - **All resolutions specified:** list the resolutions to use; let Per-Title choose bitrates.
 - **Resolutions and bitrate bounds:** specify each resolution and its bitrate range.
 
-Enter the overall minimum and maximum bitrates, a desired count if needed, and any required rows. Add the same height twice when you need two renditions at that resolution. "Recommended settings" shows one proposed API configuration: the generation mode, your requested bitrate limits and a "Calculated count limit" when a count is requested and the model can establish it.
+Enter the overall minimum and maximum bitrates, a desired count if needed, and any required rows. Add the same height twice when you need two renditions at that resolution. "Recommended settings" shows one configuration beside the inputs, including a "Calculated count limit" when a count is requested and the model can establish it.
 
-The range beside each rendition is the range you requested, not a prediction of the bitrate the encoder will choose. Expand the details to see the API values, bitrate-step ratios and calculation rationale. Ratios are selected automatically; compatible existing values are retained.
+The chart shows allowed bitrate ranges for required rows. Its logarithmic kbps axis uses equal distances for equal bitrate ratios. Automatic templates are counted separately. These ranges are not predictions of the bitrates the encoder will choose. Open the details for API values, bitrate-step ratios, checks and explanations. Ratios are selected automatically; compatible existing values are retained.
 
 If a minimum-step adjustment range is shown, it keeps the same integer bitrate example and maximum ratio within the model's count limit. Its displayed endpoints are approximate. It does not describe optimal picture quality or all possible arrangements.
 

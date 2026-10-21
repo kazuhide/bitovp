@@ -22,6 +22,93 @@ function value(label: string) {
 }
 
 describe("Per-Title calculation explanation", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("names the actual corrected bitrate limits before applying them (%s)", (locale) => {
+		const original: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 150000,
+			maxBitrate: 180000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 2,
+			countPolicy: { kind: "exact", count: 2 },
+			rows: [
+				{ id: "low", height: 240, minBitrate: 100000, maxBitrate: 100000 },
+				{ id: "high", height: 480, minBitrate: 200000, maxBitrate: 200000 },
+			],
+		};
+		const onChange = vi.fn();
+		renderLocalized(
+			<PerTitleReasoning
+				goal={original}
+				proposal={recommendPerTitleSettings(original)}
+				onChange={onChange}
+			/>,
+			locale,
+		);
+		expect(onChange).not.toHaveBeenCalled();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "en" ? "Use 100–200 kbps" : "全体を100–200 kbpsに変更",
+			}),
+		);
+		expect(onChange).toHaveBeenCalledOnce();
+		expect(onChange.mock.calls[0]?.[0]).toMatchObject({
+			minBitrate: 100000,
+			maxBitrate: 200000,
+			rows: original.rows,
+		});
+	});
+	it.each([
+		"en",
+		"ja",
+	] as const)("names a rule-removal comparison explicitly without changing the goal before selection (%s)", (locale) => {
+		const original: PerTitleGoal = {
+			...goal,
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+			},
+		};
+		const before = structuredClone(original);
+		const onChange = vi.fn();
+		renderLocalized(
+			<PerTitleReasoning
+				goal={original}
+				proposal={recommendPerTitleSettings(original)}
+				onChange={onChange}
+			/>,
+			locale,
+		);
+		const action = screen.getByRole("button", {
+			name:
+				locale === "en"
+					? "Compare without additional rules"
+					: "追加ルールを外して比較",
+		});
+		expect(action).toBeVisible();
+		expect(onChange).not.toHaveBeenCalled();
+		const reason = screen.getByText(
+			locale === "en"
+				? /Compare the template conditions with the additional-rendition rules excluded/
+				: /追加レンディションのルールを外し、残りのテンプレート条件で比較する案/,
+		);
+		expect(reason).not.toBeVisible();
+		fireEvent.click(
+			screen.getByText(locale === "en" ? "Why these settings" : "提案の根拠"),
+		);
+		expect(reason).toBeVisible();
+		fireEvent.click(action);
+		expect(onChange).toHaveBeenCalledOnce();
+		const next = onChange.mock.calls[0]?.[0] as PerTitleGoal;
+		expect(next.fixedResolutionAndBitrateConfiguration).toBeUndefined();
+		expect(next.rows).toEqual(original.rows);
+		expect(original).toEqual(before);
+		expect(recommendPerTitleSettings(next).derivation?.targetSatisfied).toBe(
+			true,
+		);
+	});
 	it("explains the numeric inputs, chosen interior ratio and integer example", () => {
 		const proposal = recommendPerTitleSettings(goal);
 		expect(proposal.derivation?.method).toBe("geometric-count");

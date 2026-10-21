@@ -6,6 +6,8 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	liveOutputs: {
+		destination: "\u51fa\u529b\u5148",
+		access: "\u30a2\u30af\u30bb\u30b9\u6a29",
 		addMirror: "複製先を追加",
 		removeMirror: "複製先を削除",
 		mirrorNumber: "複製先 {number}",

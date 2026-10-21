@@ -40,7 +40,7 @@ function ManifestDestination({
 				/>
 			</Field>
 			<Field
-				label={t("liveArchive.destination")}
+				label={t("liveOutputs.destination")}
 				htmlFor={`${prefix}-destination`}
 			>
 				<SelectNative
@@ -65,7 +65,7 @@ function ManifestDestination({
 					onChange={(e) => patchDestination({ path: e.target.value })}
 				/>
 			</Field>
-			<Field label={t("liveArchive.access")} htmlFor={`${prefix}-access`}>
+			<Field label={t("liveOutputs.access")} htmlFor={`${prefix}-access`}>
 				<SelectNative
 					id={`${prefix}-access`}
 					value={destination.acl ?? ""}

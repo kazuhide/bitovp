@@ -21,6 +21,7 @@ import {
 	DEFAULT_LIVE_WIZARD_STATE,
 } from "./build-live-plan";
 import { LiveWizard } from "./live-wizard";
+import { LiveManifestListSection } from "./manifest-list-section";
 
 const CREDENTIALS = [
 	{
@@ -144,6 +145,23 @@ function optionFor(
 	}
 	return option;
 }
+
+it.each([
+	["en", "Output destination", "Access permissions"],
+	["ja", "\u51fa\u529b\u5148", "\u30a2\u30af\u30bb\u30b9\u6a29"],
+] as const)("labels every primary and additional manifest as output settings in %s", (locale, destination, access) => {
+	const state = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	state.manifests.hls.enabled = true;
+	state.manifests.dash.enabled = true;
+	state.manifests.additionalHls = [{ ...state.manifests.hls, key: "hls-2" }];
+	state.manifests.additionalDash = [{ ...state.manifests.dash, key: "dash-2" }];
+	renderWithQuery(
+		<LiveManifestListSection state={state} onPatch={vi.fn()} />,
+		locale,
+	);
+	expect(screen.getAllByLabelText(destination)).toHaveLength(4);
+	expect(screen.getAllByLabelText(access)).toHaveLength(4);
+});
 
 describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 	it("adds and removes later mirrors without changing the first destination", async () => {

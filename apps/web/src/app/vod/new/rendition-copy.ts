@@ -219,6 +219,20 @@ function prepareLadder(state: WizardState) {
 	for (const subtitle of state.subtitles ?? []) {
 		if (subtitle.muxing?.key !== undefined) reserved.add(subtitle.muxing.key);
 	}
+	// Reserve literal output names without requiring a complete, valid plan.
+	const staticFiles = [
+		...[...videos, ...audios].flatMap((rendition) => [
+			rendition.muxing,
+			...(rendition.extraMuxings ?? []),
+		]),
+		...(state.subtitles ?? []).map((subtitle) => subtitle.muxing),
+	].flatMap((muxing) => [
+		muxing?.filename,
+		muxing?.kind === "CMAF"
+			? muxing.initSegmentNameTemplate || muxing.initSegmentName
+			: muxing?.initSegmentName,
+		muxing?.segmentNamingTemplate || muxing?.segmentNaming,
+	]);
 	const uris = new Set([
 		state.manifests.hlsOptions?.audioMediaUri,
 		...audios.map((audio) => audio.extras?.hlsMedia?.uri),
@@ -227,9 +241,23 @@ function prepareLadder(state: WizardState) {
 		...(state.subtitles ?? []).map((subtitle) => subtitle.uri),
 		"stream.m3u8",
 		...(state.manifests.extra ?? []).flatMap((manifest) =>
-			manifest.kind === "HLS"
-				? [manifest.manifestName, manifest.hls?.audioMediaUri]
-				: [],
+			manifest.kind === "SMOOTH"
+				? [manifest.serverManifestName, manifest.clientManifestName]
+				: [
+						manifest.manifestName,
+						...(manifest.kind === "HLS" ? [manifest.hls?.audioMediaUri] : []),
+					],
+		),
+		...[
+			...staticFiles,
+			...(state.thumbnails ?? []).map((thumbnail) => thumbnail.pattern),
+			...(state.sprites ?? []).flatMap((sprite) => [
+				sprite.filename,
+				sprite.vttName,
+			]),
+			state.startOptions?.aiSceneAnalysis?.filename,
+		].flatMap((name) =>
+			name !== undefined && !/[%{}]/.test(name) ? [name, name.trim()] : [],
 		),
 	]);
 	const groups = [

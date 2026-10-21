@@ -28,6 +28,8 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	liveOutputs: {
+		destination: "Output destination",
+		access: "Access permissions",
 		addMirror: "Add storage mirror",
 		removeMirror: "Remove storage mirror",
 		mirrorNumber: "Storage mirror {number}",

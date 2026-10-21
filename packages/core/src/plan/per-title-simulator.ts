@@ -1,3 +1,7 @@
+import {
+	optimizePerTitleConstraints,
+	type PerTitleConstraintAnalysis,
+} from "./per-title-optimizer.js";
 import type { EncodingPlan } from "./schema.js";
 
 export type PerTitleStrategy =
@@ -148,6 +152,7 @@ export type PerTitleProposal = {
 
 export type PerTitleDerivation = {
 	method:
+		| "joint-constraints"
 		| "preserved-existing"
 		| "geometric-count"
 		| "required-intervals"
@@ -171,6 +176,7 @@ export type PerTitleDerivation = {
 		exampleCount: number;
 	};
 	rationale: string;
+	constraints?: PerTitleConstraintAnalysis;
 };
 
 /** Returns arithmetic examples and API candidates, without making provider requests. */
@@ -285,6 +291,10 @@ export function proposePerTitleSettings(
 export function recommendPerTitleSettings(
 	goal: PerTitleGoal,
 ): PerTitleProposal {
+	return optimizePerTitleConstraints(goal, recommendIntervalSettings);
+}
+
+function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 	const build = (input: PerTitleGoal, id: PerTitleProposal["id"]) =>
 		buildProposal(input, id, true);
 	const normalized: PerTitleGoal = {

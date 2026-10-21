@@ -25,6 +25,43 @@ describe("Per-Title calculation explanation", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("explains joint constraints without the independent-spacing formula (%s)", (locale) => {
+		const original = recommendPerTitleSettings(goal);
+		if (!original.derivation) throw new Error("Missing test derivation");
+		const proposal: PerTitleProposal = {
+			...original,
+			derivation: {
+				...original.derivation,
+				method: "joint-constraints",
+				requiredRowCount: 2,
+			},
+		};
+		renderLocalized(
+			<PerTitleReasoning goal={goal} proposal={proposal} onChange={vi.fn()} />,
+			locale,
+		);
+		const explanation = screen.queryByText(
+			locale === "en"
+				? /Required ranges, complexity boundaries and additional-rendition rules are checked together/
+				: /各段の範囲・複雑度境界・追加レンディションのルールを組み合わせ/,
+		);
+		expect(explanation).not.toBeNull();
+		expect(explanation).not.toBeVisible();
+		fireEvent.click(
+			screen.getByText(locale === "en" ? "Why these settings" : "提案の根拠"),
+		);
+		expect(explanation).toBeVisible();
+		fireEvent.click(
+			screen.getByText(
+				locale === "en" ? "Calculation and assumptions" : "計算手順と前提",
+			),
+		);
+		expect(screen.queryByText(/s\^N > U\/L/)).toBeNull();
+		expect(screen.queryByText(/p\[i\] = max/)).toBeNull();
+	});
+	it.each([
+		"en",
+		"ja",
 	] as const)("names the actual corrected bitrate limits before applying them (%s)", (locale) => {
 		const original: PerTitleGoal = {
 			strategy: "fixed-ranges",

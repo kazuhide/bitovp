@@ -1095,7 +1095,7 @@ describe("recommendPerTitleSettings", () => {
 		);
 	});
 
-	it("derives close spacing from narrow row intervals and ignores saved ratio constraints", () => {
+	it("derives narrow spacing while withholding application for unresolved dimension ordering", () => {
 		const goal = {
 			...narrow,
 			minBitrateStepSize: Number.NaN,
@@ -1103,7 +1103,11 @@ describe("recommendPerTitleSettings", () => {
 		};
 		const before = structuredClone(goal);
 		const result = recommendPerTitleSettings(goal);
-		expect(result.applicable).toBe(true);
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "row-order-unknown" }),
+		);
 		expect(result.api.global.minBitrateStepSize).toBeGreaterThan(1);
 		expect(result.api.global.minBitrateStepSize).toBeLessThan(1.5);
 		expect(
@@ -1136,7 +1140,7 @@ describe("recommendPerTitleSettings", () => {
 		expect(result.api.streams[1]?.perTitleSettings?.maxBitrate).toBe(800_000);
 	});
 
-	it("uses a count goal with touching intervals instead of imposing default spacing", () => {
+	it("keeps the touching-interval count calculation separate from unresolved probe order", () => {
 		const result = recommendPerTitleSettings({
 			...narrow,
 			countPolicy: { kind: "maximum", count: 2 },
@@ -1145,7 +1149,11 @@ describe("recommendPerTitleSettings", () => {
 				{ id: "high", height: 360, minBitrate: 301_000, maxBitrate: 302_000 },
 			],
 		});
-		expect(result.applicable).toBe(true);
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "row-order-unknown" }),
+		);
 		expect(result.scenarios[2]?.modelCountRange?.maximum).toBeLessThanOrEqual(
 			2,
 		);

@@ -199,6 +199,169 @@ describe("Per-Title wizard bridge", () => {
 		]);
 	});
 	it.each([
+		["H264", "h264"],
+		["H265", "h265"],
+		["H265V2", "h265"],
+		["VP9", "vp9"],
+		["AV1", "av1"],
+	] as const)("retains %s additional-rendition rules and refuses an unmodelled apply", (codec, slot) => {
+		const s = state();
+		const configuration = {
+			forcedRenditionAboveHighestFixedRepresentation: 2,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"MINIMUM" as const,
+		};
+		s.videos = [
+			{
+				codec,
+				height: 360,
+				bitrate: null,
+				extras: { key: "automatic", mode: "PER_TITLE_TEMPLATE" },
+			},
+		];
+		s.startOptions = {
+			perTitle: {
+				[slot]: { minBitrate: 100000, maxBitrate: 5000000, ...configuration },
+			},
+		};
+		const before = structuredClone(s);
+		const goal = perTitleGoalFromWizard(s, codec);
+		expect(goal.fixedResolutionAndBitrateConfiguration).toEqual(configuration);
+		const proposed = recommendPerTitleSettings(goal);
+		expect(proposed.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			configuration,
+		);
+		expect(proposed.applicable).toBe(false);
+		expect(proposed.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "forced-count-unknown" }),
+		);
+		expect(() => applyPerTitleProposal(s, proposed, codec)).toThrow(
+			"The proposal is not an applicable candidate for this codec.",
+		);
+		expect(s).toEqual(before);
+	});
+	it("keeps recommended additional renditions through the wizard and START_ENCODING", () => {
+		const s = state();
+		s.videos = [
+			{ height: 240, minimum: 160000, maximum: 200000 },
+			{ height: 480, minimum: 400000, maximum: 480000 },
+			{ height: 720, minimum: 1000000, maximum: 1200000 },
+		].map((row) => ({
+			codec: "H264",
+			height: row.height,
+			bitrate: null,
+			extras: {
+				key: `required-${row.height}`,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				perTitleSettings: { minBitrate: row.minimum, maxBitrate: row.maximum },
+			},
+		}));
+		const quality = {
+			targetQualityCrf: 21,
+			complexityFactor: 1.1,
+			codecMinBitrateFactor: 0.8,
+			codecMaxBitrateFactor: 1.2,
+			codecBufsizeFactor: 2,
+		};
+		s.startOptions = {
+			perTitle: {
+				h264: {
+					...quality,
+					minBitrate: 100000,
+					maxBitrate: 2400000,
+					forcedRenditionAboveHighestFixedRepresentation: 1,
+					forcedRenditionAboveHighestFixedRepresentationFactor: 1.8,
+					forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+						"MAXIMUM",
+				},
+			},
+		};
+		const before = structuredClone(s);
+		const proposed = recommendPerTitleSettings({
+			...perTitleGoalFromWizard(s),
+			countPolicy: { kind: "exact", count: 5 },
+		});
+		expect(proposed.derivation?.method).toBe("joint-constraints");
+		expect(proposed.derivation?.targetSatisfied).toBe(true);
+		expect(proposed.applicable).toBe(true);
+		const configuration = required(
+			proposed.api.global.fixedResolutionAndBitrateConfiguration,
+		);
+		expect(configuration.forcedRenditionAboveHighestFixedRepresentation).toBe(
+			2,
+		);
+		const next = applyPerTitleProposal(s, proposed, "H264");
+		expect(next.startOptions?.perTitle?.h264).toMatchObject({
+			...quality,
+			...configuration,
+		});
+		expect(next.startOptions?.perTitle?.h264).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
+		);
+		const { plan, operations } = compiled(next);
+		expect(
+			plan.perTitle?.h264Configuration?.fixedResolutionAndBitrateConfiguration,
+		).toEqual(configuration);
+		expect(
+			operations.find((operation) => operation.kind === "START_ENCODING")
+				?.payload.perTitle,
+		).toMatchObject({
+			h264Configuration: {
+				...quality,
+				fixedResolutionAndBitrateConfiguration: configuration,
+			},
+		});
+		expect(
+			perTitleGoalFromWizard(planToWizardState(plan))
+				.fixedResolutionAndBitrateConfiguration,
+		).toEqual(configuration);
+		expect(s).toEqual(before);
+	});
+	it.each([
+		{ forcedRenditionAboveHighestFixedRepresentation: 0 },
+		{ forcedRenditionAboveHighestFixedRepresentationFactor: 1.75 },
+		{
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"MAXIMUM" as const,
+		},
+	])("preserves explicit zero and partial additional-rendition settings: %j", (configuration) => {
+		const s = state();
+		s.startOptions = { perTitle: { h264: configuration } };
+		const source = buildPlan(s);
+		const imported = planToWizardState(source);
+		const goal = perTitleGoalFromWizard(imported, "H264");
+		expect(goal.fixedResolutionAndBitrateConfiguration).toEqual(configuration);
+		expect(buildPlan(imported).perTitle?.h264Configuration).toMatchObject({
+			fixedResolutionAndBitrateConfiguration: configuration,
+		});
+	});
+	it.each([
+		undefined,
+		{},
+		{
+			forcedRenditionAboveHighestFixedRepresentation: undefined,
+			forcedRenditionAboveHighestFixedRepresentationFactor: undefined,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: undefined,
+		},
+	])("does not invent an additional-rendition rule for absent fields: %j", (global) => {
+		const s = state();
+		s.startOptions = { perTitle: { h264: global } };
+		expect(perTitleGoalFromWizard(s)).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
+		);
+	});
+	it("keeps an empty imported additional-rendition block equivalent to omitted settings", () => {
+		const source = buildPlan(state());
+		source.perTitle = {
+			h264Configuration: { fixedResolutionAndBitrateConfiguration: {} },
+		};
+		const imported = planToWizardState(source);
+		expect(perTitleGoalFromWizard(imported)).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
+		);
+	});
+	it.each([
 		true,
 		false,
 	])("recognizes fixed and partially required resolution ladders (%s)", (allFixed) => {
@@ -283,8 +446,15 @@ describe("Per-Title wizard bridge", () => {
 			codecMinBitrateFactor:
 				s.startOptions?.perTitle?.h264?.codecMinBitrateFactor,
 		});
-		expect(next.startOptions?.perTitle?.h264).not.toHaveProperty(
+		for (const field of [
 			"forcedRenditionAboveHighestFixedRepresentation",
+			"forcedRenditionAboveHighestFixedRepresentationFactor",
+			"forcedRenditionAboveHighestFixedRepresentationCalculationMode",
+			"fixedResolutionAndBitrateConfiguration",
+		])
+			expect(next.startOptions?.perTitle?.h264).not.toHaveProperty(field);
+		expect(plan.perTitle?.h264Configuration).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
 		);
 		expect(
 			next.videos.map((v) => [

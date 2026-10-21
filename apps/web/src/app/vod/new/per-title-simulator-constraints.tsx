@@ -1,0 +1,275 @@
+"use client";
+
+import type { PerTitleProposal } from "@bitovp/core";
+import { useT } from "@/lib/i18n/context";
+
+const texts = {
+	en: {
+		title: "Parameter derivation",
+		checked: "Interval and count conditions checked",
+		unknown: "Joint conditions not established",
+		input: "Checked input interval (kbps)",
+		floor: "Calculated lower-limit interval (kbps)",
+		calibration: "Recommended complexity boundaries (kbps)",
+		calibrationHint:
+			"For missing boundaries, the tool maps each row's minimum and maximum to the calculated floor F and overall maximum U. F is the upper end of the calculated lower-limit interval. These boundaries are tool recommendations, not provider defaults; existing explicit boundaries are retained.",
+		minimumStep: "Minimum ratio",
+		maximumStep: "Maximum ratio",
+		minimumBound: "Local minimum-ratio check (excluded boundary)",
+		maximumBound: "Local minimum-ratio check (included upper boundary)",
+		segments: "Checked interval segments",
+		spacingHint:
+			"The minimum ratio is selected above the bound that prevents multiple points in each effective row interval, including integer rounding and the model's safety margin, and at or below the bound that connects adjacent rows. The maximum ratio covers those connections. Changing the minimum ratio requires another check: the effective intervals and lower limit are recalculated. Displayed bounds are approximate.",
+		forcedCount: "Additional-rendition count",
+		forcedFactor: "Additional-rendition factor",
+		forcedMode: "Additional-rendition calculation",
+		maximumFactor: "Calculated factor upper bound",
+		forcedRanges: "Additional-rendition intervals (kbps)",
+		forcedHint:
+			"With no automatic templates and an exact count N, N minus the required rows reserves the additional slots. For LAST_CALCULATED_BITRATE, repeated integer rounding from the highest row's maximum determines the factor limit that stays within U. A compatible existing factor is retained; otherwise the limit is used. Ordinary minimum and maximum bitrate steps do not apply to additional renditions. Their count and cap are checked separately; this targets count and cap, not optimal quality.",
+		conditional:
+			"Automatic templates or unresolved branches make this a conditional calculation. The additional-rendition values are not an output-count guarantee.",
+		conditions:
+			"The check assumes the stated row order. Source analysis, equal-resolution probe ordering and actual encoded outputs remain unverified. It does not establish optimal quality or provider output.",
+		changes: "Parameter changes",
+		parameter: "Parameter",
+		before: "Before",
+		after: "After",
+		unset: "Not set",
+		removed: "Removed",
+		undetermined: "Not established",
+		checkpoints: "Effective ranges at checkpoints",
+		checkpointInput: "Input (kbps)",
+		row: "Required row",
+		range: "Effective interval (kbps)",
+		modes: {
+			LAST_CALCULATED_BITRATE: "Last calculated bitrate",
+			MINIMUM: "Minimum bitrate",
+			MAXIMUM: "Maximum bitrate",
+			AVERAGE: "Average bitrate",
+		},
+	},
+	ja: {
+		title: "パラメータの導出",
+		checked: "区間・本数の条件を確認",
+		unknown: "組み合わせた条件は未確認",
+		input: "確認する入力の範囲 (kbps)",
+		floor: "計算に使う下限の範囲 (kbps)",
+		calibration: "推奨する複雑度境界 (kbps)",
+		calibrationHint:
+			"境界が未指定なら、各行の最小値・最大値を、計算した下限Fと全体の上限Uにそれぞれ対応させます。Fは、計算に使う下限範囲の上端です。この境界はツールが提案する値で、APIの既定値ではありません。明示された既存の境界は維持します。",
+		minimumStep: "最小比率",
+		maximumStep: "最大比率",
+		minimumBound: "選んだ設定での最小比率の下側境界（含まない）",
+		maximumBound: "選んだ設定での最小比率の上側境界（含む）",
+		segments: "確認した区間の数",
+		spacingHint:
+			"各有効範囲に2点以上入らない下限（整数への丸めとモデルの安全余裕を含む）より大きく、隣接段をつなげる上限以下の最小比率を選びます。最大比率はその接続を覆う値です。有効範囲と計算に使う下限も設定に依存するため、最小比率を変えたら再計算が必要です。表示した境界は概数です。",
+		forcedCount: "追加レンディション数",
+		forcedFactor: "追加レンディションの倍率",
+		forcedMode: "追加レンディションの計算方法",
+		maximumFactor: "計算上の倍率の上限",
+		forcedRanges: "追加レンディションの範囲 (kbps)",
+		forcedHint:
+			"自動テンプレートがなく総本数をN本ちょうどに指定した場合は、Nから必須行数を引いた数を追加枠にします。LAST_CALCULATED_BITRATEでの上限確認では、最上段の最大値から倍率の適用と整数への四捨五入を繰り返し、Uを超えない倍率の上限を求めます。実際の追加段は、最後に算出したビットレートが基準です。条件を満たす既存の倍率を維持し、なければその上限を採用します。通常の最小・最大ビットレート間隔は追加段には適用しません。本数と上限を別に確認する計算で、画質の最適化ではありません。",
+		conditional:
+			"自動テンプレートや未確定の分岐を含む条件付きの計算です。追加レンディションの設定値は、出力本数を保証しません。",
+		conditions:
+			"確認した行順を前提にした計算です。素材解析、同じ解像度の解析順、実際のエンコード結果は未確認です。画質の最適値やAPIの出力を保証するものではありません。",
+		changes: "パラメータの変更",
+		parameter: "項目",
+		before: "変更前",
+		after: "変更後",
+		unset: "未設定",
+		removed: "削除",
+		undetermined: "未確定",
+		checkpoints: "確認点ごとの有効範囲",
+		checkpointInput: "入力 (kbps)",
+		row: "必須の行",
+		range: "有効範囲 (kbps)",
+		modes: {
+			LAST_CALCULATED_BITRATE: "最後に算出したビットレート",
+			MINIMUM: "最小ビットレート",
+			MAXIMUM: "最大ビットレート",
+			AVERAGE: "平均ビットレート",
+		},
+	},
+};
+
+export function PerTitleConstraints({
+	proposal,
+}: {
+	proposal: PerTitleProposal;
+}) {
+	const { locale } = useT();
+	const report = proposal.derivation?.constraints;
+	if (!report) return null;
+	const copy = texts[locale];
+	const finite = (value: number | null | undefined): value is number =>
+		typeof value === "number" && Number.isFinite(value) && value >= 0;
+	const number = (value: number | null | undefined) =>
+		finite(value)
+			? new Intl.NumberFormat(locale, { maximumSignificantDigits: 6 }).format(
+					value,
+				)
+			: copy.undetermined;
+	const ratio = (value: number | null | undefined) =>
+		finite(value) && value > 0 ? `≈ ${number(value)}` : copy.undetermined;
+	const range = (value: { minimum: number; maximum: number } | null) =>
+		value &&
+		finite(value.minimum) &&
+		value.minimum > 0 &&
+		finite(value.maximum) &&
+		value.maximum >= value.minimum
+			? `${number(value.minimum / 1000)}–${number(value.maximum / 1000)}`
+			: copy.undetermined;
+	const mode = (value: string | undefined) =>
+		value && Object.hasOwn(copy.modes, value)
+			? copy.modes[value as keyof typeof copy.modes]
+			: copy.undetermined;
+	const labels = {
+		minimumStep: copy.minimumStep,
+		maximumStep: copy.maximumStep,
+		forcedCount: copy.forcedCount,
+		forcedFactor: copy.forcedFactor,
+		forcedMode: copy.forcedMode,
+	};
+	const changeValue = (
+		field: keyof typeof labels,
+		value: number | string | undefined,
+		removed = false,
+	) =>
+		value === undefined
+			? removed
+				? copy.removed
+				: copy.unset
+			: typeof value === "string"
+				? mode(value)
+				: field === "forcedCount"
+					? number(value)
+					: ratio(value);
+	const rows = [
+		[copy.input, range(report.inputRange)],
+		[copy.floor, range(report.floorRange)],
+		...(report.calibration
+			? [
+					[
+						copy.calibration,
+						range({
+							minimum: report.calibration.low,
+							maximum: report.calibration.high,
+						}),
+					],
+				]
+			: []),
+		[copy.minimumStep, ratio(proposal.derivation?.selectedMinStep)],
+		[copy.maximumStep, ratio(proposal.derivation?.selectedMaxStep)],
+		...(report.spacing
+			? [
+					[copy.minimumBound, ratio(report.spacing.minimumExclusive)],
+					...(report.spacing.maximumInclusive !== null
+						? [[copy.maximumBound, ratio(report.spacing.maximumInclusive)]]
+						: []),
+					[copy.segments, number(report.spacing.checkedSegments)],
+				]
+			: []),
+		[copy.forcedCount, number(report.forced.count)],
+		[copy.forcedFactor, ratio(report.forced.factor)],
+		[copy.forcedMode, mode(report.forced.calculationMode)],
+		...(report.forced.maximumFactor !== undefined
+			? [[copy.maximumFactor, ratio(report.forced.maximumFactor)]]
+			: []),
+		...(report.forced.ranges.length
+			? [[copy.forcedRanges, report.forced.ranges.map(range).join("; ")]]
+			: []),
+	];
+	const heights = new Map(
+		proposal.api.streams.map((row) => [row.rowId, row.height]),
+	);
+	const checked =
+		report.status === "checked" &&
+		proposal.status === "candidate" &&
+		proposal.applicable &&
+		proposal.derivation?.targetSatisfied === true;
+	return (
+		<details className="space-y-3 border-t border-zinc-800 pt-4 text-xs text-zinc-400">
+			<summary className="cursor-pointer">{copy.title}</summary>
+			<p className="text-zinc-300">{checked ? copy.checked : copy.unknown}</p>
+			<dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-md bg-zinc-900 p-3">
+				{rows.map(([label, value]) => (
+					<div key={label} className="contents">
+						<dt>{label}</dt>
+						<dd className="break-words text-zinc-200">{value}</dd>
+					</div>
+				))}
+			</dl>
+			{report.calibration ? <p>{copy.calibrationHint}</p> : null}
+			{report.spacing ? <p>{copy.spacingHint}</p> : null}
+			<p>{copy.forcedHint}</p>
+			{report.scope === "conditional" || report.forced.conditional ? (
+				<p>{copy.conditional}</p>
+			) : null}
+			{report.changes.length ? (
+				<div className="overflow-x-auto">
+					<table aria-label={copy.changes} className="w-full text-left">
+						<thead>
+							<tr>
+								<th scope="col">{copy.parameter}</th>
+								<th scope="col">{copy.before}</th>
+								<th scope="col">{copy.after}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{report.changes.map((change) => (
+								<tr key={change.field} className="border-t border-zinc-800">
+									<th scope="row" className="py-1 font-normal">
+										{labels[change.field]}
+									</th>
+									<td>{changeValue(change.field, change.before)}</td>
+									<td>{changeValue(change.field, change.after, true)}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			) : null}
+			{report.checkpoints.length ? (
+				<div className="overflow-x-auto">
+					<table aria-label={copy.checkpoints} className="w-full text-left">
+						<thead>
+							<tr>
+								<th scope="col">{copy.checkpointInput}</th>
+								<th scope="col">{copy.row}</th>
+								<th scope="col">{copy.range}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{report.checkpoints.flatMap((point, pointIndex) =>
+								point.rows.map((row, index) => (
+									<tr
+										key={`${pointIndex}-${row.rowId}`}
+										className="border-t border-zinc-800"
+									>
+										<td className="py-1">
+											{finite(point.input)
+												? number(point.input / 1000)
+												: copy.undetermined}
+										</td>
+										<th scope="row" className="font-normal">
+											{index + 1}
+											{finite(heights.get(row.rowId))
+												? ` (${number(heights.get(row.rowId))} px)`
+												: ""}
+										</th>
+										<td>{range(row)}</td>
+									</tr>
+								)),
+							)}
+						</tbody>
+					</table>
+				</div>
+			) : null}
+			<p>{copy.conditions}</p>
+		</details>
+	);
+}

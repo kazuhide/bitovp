@@ -22,6 +22,7 @@ import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import { PerTitleAutomaticTemplates } from "./per-title-simulator-automatic";
+import { PerTitleConstraints } from "./per-title-simulator-constraints";
 import {
 	type PerTitleSimulatorCopy,
 	perTitleSimulatorCopy,
@@ -255,7 +256,7 @@ const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 	"model-limit":
 		"このモデルの上限は、自動追加分を含む64テンプレート・9シナリオ・256のビットレート点です。間隔の下限や入力件数、シナリオの仮定値を確認してください。",
 	"row-order-unknown":
-		"同じ解像度のビットレート範囲が重なっており、計算上限までに成立する並びを確認できませんでした。範囲を絞って再比較してください。この結果だけで要件が実現できないとは判定しません。",
+		"指定した寸法と範囲だけでは、エンコーダーが各段を処理する順序を確認できません。同じ解像度の段の解析結果や、未指定の横幅を確認する必要があります。この結果だけで要件が実現できないとは判定しません。",
 	"linear-illustration":
 		"COMPLEXITY_RANGE の各点は、仮定した上端ビットレートを使い、行の最小・最大ビットレートの間を線形補間した例です。境界の外では最小値または最大値に収めます。",
 	"scenario-range-bound":
@@ -745,6 +746,7 @@ function SimulatorEditor({
 						proposal={selected}
 						onChange={setGoal}
 					/>
+					<PerTitleConstraints proposal={selected} />
 				</div>
 			</div>
 			<details className="border-t border-zinc-800 pt-4 text-xs text-zinc-400">

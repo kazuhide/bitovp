@@ -15,6 +15,8 @@ const texts = {
 		objective:
 			"Keep the required resolutions and bitrate ranges, and change existing settings only when the count or interval conditions require it.",
 		methods: {
+			"joint-constraints":
+				"Required ranges, complexity boundaries and additional-rendition rules are checked together for the stated input interval and row order. Open Parameter derivation for the values and their conditions.",
 			"preserved-existing":
 				"The existing bitrate steps satisfy the checked conditions, so they are retained. Raising the overall maximum does not scale the individual bitrate ranges.",
 			"geometric-count":
@@ -93,6 +95,8 @@ const texts = {
 		objective:
 			"必須の解像度とビットレート範囲を維持し、本数や配置の条件を満たすために必要な設定を変更します。",
 		methods: {
+			"joint-constraints":
+				"各段の範囲・複雑度境界・追加レンディションのルールを組み合わせ、指定した入力範囲と行順で確認しています。数値と条件は「パラメータの導出」で確認できます。",
 			"preserved-existing":
 				"元のビットレート間隔で確認対象の条件を満たすため、その値を維持します。全体の上限を上げても、各段のビットレート範囲は比例して変更しません。",
 			"geometric-count":
@@ -404,10 +408,13 @@ export function PerTitleReasoning({
 							</dl>
 							<p>{copy.definitions}</p>
 							<p>{copy.precision}</p>
-							<p>{copy.capacity}</p>
+							{derivation.method !== "joint-constraints" ? (
+								<p>{copy.capacity}</p>
+							) : null}
 							{interior ? <p>{copy.midpoint}</p> : null}
 							{witness ? <p>{copy.witnessHint}</p> : null}
-							{derivation.requiredRowCount > 1 ? (
+							{derivation.method !== "joint-constraints" &&
+							derivation.requiredRowCount > 1 ? (
 								<>
 									<p>{copy.intervals}</p>
 									<p>{copy.order}</p>

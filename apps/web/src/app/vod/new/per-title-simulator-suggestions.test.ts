@@ -55,7 +55,7 @@ describe("analytic Per-Title suggestions", () => {
 		expect(suggestion?.goal.rows).toEqual(goal.rows);
 		expect(suggestion?.changedFields).toContain("automaticTemplates");
 		const high = suggestion?.proposal.scenarios.find(
-			(scenario) => scenario.id === "high",
+			(scenario) => scenario.fraction === 1,
 		);
 		expect(high?.status).toBe("modelled");
 		expect(high?.modelCountRange?.maximum).toBeLessThanOrEqual(2);

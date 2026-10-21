@@ -352,7 +352,20 @@ describe("Per-Title simulator", () => {
 			expect(screen.getByText("Requirements loaded.")).toBeVisible(),
 		);
 		expect(screen.getByText("Comparison only")).toBeVisible();
-		expect(screen.getByText("Not established")).toBeVisible();
+		const recommendation = screen.getByRole("region", {
+			name: "Recommended settings",
+		});
+		expect(
+			within(within(recommendation).getByRole("status")).getByText(
+				"Not established",
+			),
+		).toBeVisible();
+		expect(
+			screen.getByText("Parameter derivation").closest("details"),
+		).not.toHaveAttribute("open");
+		expect(
+			screen.getByText("Joint conditions not established"),
+		).not.toBeVisible();
 		fireEvent.change(
 			screen.getByRole("spinbutton", { name: "Minimum bitrate (kbps)" }),
 			{ target: { value: "7000" } },

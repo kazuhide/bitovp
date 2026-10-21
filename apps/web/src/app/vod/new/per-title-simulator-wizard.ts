@@ -69,6 +69,28 @@ export function perTitleGoalFromWizard(
 		);
 	const keys = videoKeys(state.videos);
 	const global = state.startOptions?.perTitle?.[slotFor(codec)];
+	const fixedResolutionAndBitrateConfiguration = {
+		...(global?.forcedRenditionAboveHighestFixedRepresentation !== undefined
+			? {
+					forcedRenditionAboveHighestFixedRepresentation:
+						global.forcedRenditionAboveHighestFixedRepresentation,
+				}
+			: {}),
+		...(global?.forcedRenditionAboveHighestFixedRepresentationFactor !==
+		undefined
+			? {
+					forcedRenditionAboveHighestFixedRepresentationFactor:
+						global.forcedRenditionAboveHighestFixedRepresentationFactor,
+				}
+			: {}),
+		...(global?.forcedRenditionAboveHighestFixedRepresentationCalculationMode !==
+		undefined
+			? {
+					forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+						global.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+				}
+			: {}),
+	};
 	const rates = selected
 		.flatMap((row) => [
 			row.bitrate,
@@ -130,6 +152,9 @@ export function perTitleGoalFromWizard(
 			: {}),
 		...(global?.maxBitrateStepSize !== undefined
 			? { maxBitrateStepSize: global.maxBitrateStepSize }
+			: {}),
+		...(Object.keys(fixedResolutionAndBitrateConfiguration).length
+			? { fixedResolutionAndBitrateConfiguration }
 			: {}),
 		countPolicy: { kind: "unrestricted" },
 		...(automaticTemplates.length ? { automaticTemplates } : {}),
@@ -413,9 +438,12 @@ export function applyPerTitleProposal(
 		adoptConfigurationThreshold: _threshold,
 		...quality
 	} = previous ?? {};
+	const { fixedResolutionAndBitrateConfiguration, ...settings } =
+		proposal.api.global;
 	const global: WizardPerTitleCodec = {
 		...quality,
-		...proposal.api.global,
+		...settings,
+		...fixedResolutionAndBitrateConfiguration,
 		autoRepresentations: proposal.api.global.autoRepresentations !== undefined,
 	};
 	next.startOptions = {

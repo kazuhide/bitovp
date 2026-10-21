@@ -3923,7 +3923,7 @@ export const ja = {
 		advancedH264: "詳細設定(H264)",
 		advancedH265: "詳細設定(H265)",
 		advancedNeededOnlyForMultiAudioGroup:
-			"詳細設定:複数音声グループの HLS、または複数ラダーの DASH(Dolby DV/HDR10/SDR プリセット)でのみ必要です。上で宣言した DASH アダプテーションセットへレンディションを振り分け、HLS バリアントラベルを与え、あるいは EXT-X-MEDIA エントリを追加します。HLS/DASH マニフェストが 1 つだけなら未設定のままにしてください。",
+			"標準VODでは、動画プレイリストのファイル名を指定できます。HLS の音声グループやバリアントの表示名、DASH のアダプテーションセットへの振り分けもここで設定します。音声グループやラダーを分けない場合、振り分け設定は空欄のままで構いません。",
 		advancedPaddingAspect: "詳細設定(パディング、アスペクト)",
 		advancedPlacementHlsAudioGroups: "詳細な配置(HLS 音声グループ)",
 		advancedVp9: "詳細設定(VP9)",

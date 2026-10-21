@@ -3971,7 +3971,7 @@ export const en = {
 		advancedH264: "Advanced (H264)",
 		advancedH265: "Advanced (H265)",
 		advancedNeededOnlyForMultiAudioGroup:
-			"Advanced — needed only for multi-audio-group HLS or multi-ladder DASH (the Dolby DV/HDR10/SDR presets). Route a rendition into a DASH adaptation set declared above, give it an HLS variant label, or add an EXT-X-MEDIA entry. With a single HLS/DASH manifest these stay unset.",
+			"Standard VOD can use custom video playlist filenames. Other fields assign renditions to HLS audio groups or DASH adaptation sets and set HLS variant labels. Leave routing fields unset unless you need separate audio groups or ladders.",
 		advancedPaddingAspect: "Advanced (padding, aspect)",
 		advancedPlacementHlsAudioGroups: "Advanced placement (HLS audio groups)",
 		advancedVp9: "Advanced (VP9)",

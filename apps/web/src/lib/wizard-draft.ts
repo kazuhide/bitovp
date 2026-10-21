@@ -122,7 +122,7 @@ const muxing = fields(
 	{ muxedAudioKeys: strings },
 );
 const extras = fields(
-	"key name streamName source encodingKey hlsVariantLabel dashSetKey mode",
+	"key name streamName source encodingKey hlsVariantLabel hlsVariantUri dashSetKey mode",
 	"",
 	"",
 	{
@@ -310,13 +310,43 @@ const vod = fields(
 		),
 	},
 );
+const liveManifestDestination = group(
+	fields("outputKey path acl").required({ outputKey: true, path: true }),
+);
+const liveHlsManifest = fields(
+	"key name manifestName audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind",
+	"timeshift liveEdgeOffset",
+	"enabled insertProgramDateTime insertProgramDateTimeExplicit",
+	{
+		destination: liveManifestDestination,
+		programDateTimeSettings: group(
+			fields("source", "", "", {
+				placement: group(fields("mode", "interval")),
+			}),
+		),
+	},
+);
+const liveDashManifest = fields(
+	"key name manifestName audioLanguage representationType availabilityStartTimeMode",
+	"timeshift liveEdgeOffset suggestedPresentationDelay minimumUpdatePeriod",
+	"enabled",
+	{ destination: liveManifestDestination },
+);
 const live = fields(
-	"name accountId cloudRegion encoderVersion staticIpId inputKind",
+	"name accountId cloudRegion encoderVersion staticIpId inputKind mirrorKey",
 	"segmentLength",
 	"scte35AdMarkers",
 	{
 		...common,
 		mirror: group(location),
+		additionalMirrors: rows(
+			fields("key", "", "", { output: group(location) }).required({
+				key: true,
+				output: true,
+			}),
+		),
+		outputOrder: strings,
+		manifestOrder: strings,
 		adMarkerOptions: group(
 			fields(
 				"dashPeriodOption dashEventStreamSignalling",
@@ -376,26 +406,29 @@ const live = fields(
 		hlsIn: group(fields("name adMarkersSource")),
 		manifests: group(
 			fields("", "", "", {
-				hls: group(
-					fields(
-						"manifestName audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind",
-						"timeshift liveEdgeOffset",
-						"enabled insertProgramDateTime",
-						{
-							programDateTimeSettings: group(
-								fields("source", "", "", {
-									placement: group(fields("mode", "interval")),
-								}),
-							),
-						},
-					),
+				hls: group(liveHlsManifest),
+				dash: group(liveDashManifest),
+				additionalHls: rows(
+					liveHlsManifest.required({
+						key: true,
+						enabled: true,
+						manifestName: true,
+						audioGroupId: true,
+						audioLanguage: true,
+						videoMuxingKind: true,
+						audioMuxingKind: true,
+						insertProgramDateTime: true,
+					}),
 				),
-				dash: group(
-					fields(
-						"manifestName audioLanguage representationType availabilityStartTimeMode",
-						"timeshift liveEdgeOffset suggestedPresentationDelay minimumUpdatePeriod",
-						"enabled",
-					),
+				additionalDash: rows(
+					liveDashManifest.required({
+						key: true,
+						enabled: true,
+						manifestName: true,
+						audioLanguage: true,
+						representationType: true,
+						availabilityStartTimeMode: true,
+					}),
 				),
 			}),
 		),
@@ -519,6 +552,8 @@ export function mergeWizardDraft<T>(
 		output: outputFields,
 		mirror: outputFields,
 		"additionalOutputs.*": outputFields,
+		"additionalMirrors.*": ["key", "output"],
+		"additionalMirrors.*.output": outputFields,
 		"archive.output": outputFields,
 		"inputFiles.*": [
 			"key",

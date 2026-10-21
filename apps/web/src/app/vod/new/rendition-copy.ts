@@ -10,14 +10,26 @@ import {
 	type WizardVideoRendition,
 	wizardAudioLegs,
 } from "./build-plan";
+import { copiedHlsVideoUri } from "./hls-video-uri-copy";
 
 /** Preserve nested codec/input/filter settings without sharing mutable objects. */
-export function copyRendition<T extends { extras?: { key?: string } }>(
+export function copyRendition<
+	T extends { extras?: { key?: string; hlsVariantUri?: string } },
+>(
 	rendition: T,
 	key: string,
+	reservedUris: Iterable<string | undefined> = [],
+	groups: Iterable<string> = [],
 ): T {
 	const copy = structuredClone(rendition);
 	copy.extras = { ...copy.extras, key };
+	if (copy.extras.hlsVariantUri !== undefined)
+		copy.extras.hlsVariantUri = copiedHlsVideoUri(
+			copy.extras.hlsVariantUri,
+			key,
+			reservedUris,
+			groups,
+		);
 	return copy;
 }
 
@@ -207,12 +219,55 @@ function prepareLadder(state: WizardState) {
 	for (const subtitle of state.subtitles ?? []) {
 		if (subtitle.muxing?.key !== undefined) reserved.add(subtitle.muxing.key);
 	}
+	// Reserve literal output names without requiring a complete, valid plan.
+	const staticFiles = [
+		...[...videos, ...audios].flatMap((rendition) => [
+			rendition.muxing,
+			...(rendition.extraMuxings ?? []),
+		]),
+		...(state.subtitles ?? []).map((subtitle) => subtitle.muxing),
+	].flatMap((muxing) => [
+		muxing?.filename,
+		muxing?.kind === "CMAF"
+			? muxing.initSegmentNameTemplate || muxing.initSegmentName
+			: muxing?.initSegmentName,
+		muxing?.segmentNamingTemplate || muxing?.segmentNaming,
+	]);
 	const uris = new Set([
+		state.manifests.hlsOptions?.audioMediaUri,
 		...audios.map((audio) => audio.extras?.hlsMedia?.uri),
 		...videos.map((video) => video.extras?.hlsMedia?.uri),
+		...videos.map((video) => video.extras?.hlsVariantUri),
 		...(state.subtitles ?? []).map((subtitle) => subtitle.uri),
+		"stream.m3u8",
+		...(state.manifests.extra ?? []).flatMap((manifest) =>
+			manifest.kind === "SMOOTH"
+				? [manifest.serverManifestName, manifest.clientManifestName]
+				: [
+						manifest.manifestName,
+						...(manifest.kind === "HLS" ? [manifest.hls?.audioMediaUri] : []),
+					],
+		),
+		...[
+			...staticFiles,
+			...(state.thumbnails ?? []).map((thumbnail) => thumbnail.pattern),
+			...(state.sprites ?? []).flatMap((sprite) => [
+				sprite.filename,
+				sprite.vttName,
+			]),
+			state.startOptions?.aiSceneAnalysis?.filename,
+		].flatMap((name) =>
+			name !== undefined && !/[%{}]/.test(name) ? [name, name.trim()] : [],
+		),
 	]);
-	return { videos, audios, reserved, paths, uris, drm };
+	const groups = [
+		...new Set(
+			audios.flatMap((audio) =>
+				audio.extras?.hlsMedia ? [audio.extras.hlsMedia.groupId] : [],
+			),
+		),
+	];
+	return { videos, audios, reserved, paths, uris, groups, drm };
 }
 
 function unique(base: string, taken: Set<string | undefined>): string {
@@ -236,7 +291,8 @@ function duplicate<T extends WizardVideoRendition | WizardAudioRendition>(
 		base = `${prefix}${n}`;
 	}
 	const key = unique(base, context.reserved);
-	const copy = copyRendition(source, key);
+	const copy = copyRendition(source, key, context.uris, context.groups);
+	if (copy.extras?.hlsVariantUri) context.uris.add(copy.extras.hlsVariantUri);
 	const path = unique(`${kind}/${key}`, context.paths);
 	const sourcePath =
 		kind === "video"

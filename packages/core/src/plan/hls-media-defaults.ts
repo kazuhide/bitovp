@@ -1,4 +1,10 @@
 import { type HlsLegKind, hlsLegSelected } from "./hls-legs";
+import { resolveHlsVideoUri } from "./hls-video-uri";
+import {
+	outputFileNamesAtDestination,
+	staticManifestOutputFiles,
+	staticMuxingOutputFiles,
+} from "./output-files";
 import type { EncodingPlan, PlanRendition } from "./schema";
 
 /** Only packaged WebVTT resources produce EXT-X-MEDIA subtitle groups. */
@@ -186,6 +192,20 @@ export function hlsVariantUri(
 		bitrate: number | null;
 		height?: number | null;
 		hlsVariantLabel?: string;
+		hlsVariantUri?: string;
+	},
+	group?: string,
+): string {
+	if (rendition.hlsVariantUri !== undefined)
+		return resolveHlsVideoUri(rendition.hlsVariantUri, group);
+	return derivedHlsVariantUri(rendition, group);
+}
+
+function derivedHlsVariantUri(
+	rendition: {
+		bitrate: number | null;
+		height?: number | null;
+		hlsVariantLabel?: string;
 	},
 	group?: string,
 ): string {
@@ -216,6 +236,8 @@ export type HlsChildEntry = {
 	 * granularity. Absent on every other row.
 	 */
 	group?: string;
+	/** Explicit video names are reserved and must never be silently renamed. */
+	explicitUri?: true;
 };
 
 /**
@@ -269,6 +291,9 @@ export function hlsChildEntries(
 				renditionKey: rendition.key,
 				kind,
 				...(group !== undefined ? { group } : {}),
+				...(kind === "video" && rendition.hlsVariantUri !== undefined
+					? { explicitUri: true as const }
+					: {}),
 			});
 		};
 		if (isHlsAudioRendition(rendition)) {
@@ -343,10 +368,12 @@ function dedupeVideoChildUris(
 ): HlsChildEntry[] {
 	const ownerOf = new Map<string, string>();
 	const taken = new Set(reserved);
+	for (const entry of entries) if (entry.explicitUri) taken.add(entry.uri);
 	return entries.map((entry) => {
 		if (entry.kind !== "video") {
 			return entry;
 		}
+		if (entry.explicitUri) return entry;
 		const owner = ownerOf.get(entry.uri);
 		if (
 			(owner === undefined && !taken.has(entry.uri)) ||
@@ -392,6 +419,15 @@ export function hlsIframeUris(
 	if (!manifest.iframePlaylists || !manifest.variantsPerAudioGroup)
 		return new Map();
 	const entries = hlsChildEntries(plan, manifest);
+	const destination = plan.manifests.find(
+		(entry) => entry.key === manifest.key,
+	)?.destination;
+	const reserved = destination
+		? outputFileNamesAtDestination(plan, destination, [
+				...staticManifestOutputFiles(plan),
+				...staticMuxingOutputFiles(plan),
+			])
+		: new Set<string>();
 	// One I-frame writer per selected video muxing, not per audio group.
 	const writers = new Map<string, HlsChildEntry>();
 	for (const entry of entries) {
@@ -405,7 +441,8 @@ export function hlsIframeUris(
 		if (rendition && "bitrate" in rendition) {
 			writers.set(entry.muxingKey, {
 				...entry,
-				uri: hlsVariantUri(rendition, "iframe"),
+				uri: derivedHlsVariantUri(rendition, "iframe"),
+				explicitUri: undefined,
 			});
 		}
 	}
@@ -415,7 +452,7 @@ export function hlsIframeUris(
 	return new Map(
 		dedupeVideoChildUris(
 			[...writers.values()],
-			entries.map((e) => e.uri),
+			[...entries.map((e) => e.uri), ...reserved],
 		).map((entry) => [entry.muxingKey, entry.uri]),
 	);
 }

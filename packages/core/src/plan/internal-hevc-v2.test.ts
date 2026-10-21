@@ -39,6 +39,19 @@ function plan() {
 	return raw;
 }
 describe("internal HEVC v2", () => {
+	it("keeps the codec-independent HLS video playlist override", () => {
+		const raw = plan();
+		const video = raw.renditions.find(
+			(r: Record<string, unknown>) => r.codec === "H265",
+		);
+		if (!video) throw new Error("Missing video fixture");
+		video.hlsVariantUri = "custom-video.m3u8";
+		expect(
+			validatePlan(encodingPlanSchema.parse(raw)).filter((issue) =>
+				issue.code.startsWith("PLAN_INTERNAL_HEVC_V2"),
+			),
+		).toEqual([]);
+	});
 	it("is off without an exact configured account ID", () => {
 		expect(isInternalHevcV2Account(ACCOUNT, undefined)).toBe(false);
 		expect(isInternalHevcV2Account(ACCOUNT, "main")).toBe(false);

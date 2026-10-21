@@ -416,6 +416,10 @@ A manifest lists the video, audio, and subtitles available for playback and the 
 
 For HLS, check audio group IDs, languages, media URIs, and variant names. If you create multiple master playlists, give their child playlists unique paths too. Changing only the master filename does not prevent child files from being overwritten.
 
+For a fixed video rendition, **Video playlist URI** in manifest placement sets the child playlist filename, such as `main-720p.m3u8`. Live has the same field in each video card. Leave it blank to keep the derived name. Use a flat `.m3u8` filename starting with a letter or number, with letters, numbers, dots, underscores or hyphens; URLs, subdirectories, queries and fragments are unavailable. This sets [StreamInfo.uri](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/models/StreamInfo.ts), without changing segment filenames or timing.
+
+When variants are created per audio group, include `{group}`, for example `main-{group}.m3u8`; the app expands it to a separate filename for each group. Other tokens are unavailable. Live accepts literal filenames only. A playlist is written beside its master even when its encrypted segments are elsewhere, so explicit names must not overlap other video, audio, subtitle or master playlists. Copied video renditions receive distinct names; I-frame filenames remain generated. Per-Title does not support this individual override: clear it and keep the manifest's average-bitrate or codec-bitrate naming option.
+
 Check HLS `BANDWIDTH` against measured peak segment bitrates for the playable video/audio combination. [Apple's HLS authoring specification](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices/) requires the VOD measured peak to be within 10% of that attribute. Three recorded clear AV1 controls declared 1,628–3,128 kb/s while measured combined peaks were about 252–396 kb/s. Apple's validator reported required fixes despite exiting with code 0. Inspect the report as well as the exit code. bitovp currently has no HLS bandwidth-override field; these three configurations did not pass Apple HLS validation.
 
 A DASH adaptation set groups streams that a player can switch between. In multi-ladder or multilingual configurations, assign each rendition to a declared set. Do not put different video codecs in the same video adaptation set.
@@ -712,6 +716,12 @@ Under “Insert SCTE-35 cue”, specify a duration in seconds and select the tar
 | Live-to-VOD | VOD manifests referencing segments from the live broadcast |
 
 A mirror does not create an independent ladder. Choose a different storage credential or bucket from the primary output to avoid duplicate writes. Also check the mirror's permissions and delivery paths.
+
+After enabling a storage mirror in “Destinations”, use “Add storage mirror” to add more. Each mirror has its own credential, bucket or container, and resource name. The editor supports S3, compatible S3 storage, Azure and Google Cloud Storage; it does not add MSL or SFTP mirror authoring. If an archive or manifest references a mirror, change that destination before removing the mirror.
+
+In “Output groups and manifests”, use “Add HLS manifest” or “Add DASH manifest” for additional manifests. Each has independent settings and an output folder. New entries start in separate folders so HLS media playlists do not overwrite one another. Review the path and access setting before saving. Copying and reopening a supported plan retains all entries; manifests still use the channel's shared ladder rather than selecting different renditions for each output.
+
+Choose a manifest destination that also receives its media segments, such as the main delivery output or a storage mirror. Relative segment paths refer to files on that same storage. An output used only for an MP4 archive has no segments for the stream, so the editor excludes it from the destination choices. To deliver the stream there, add a storage mirror that writes the segments there too. An output alias pointing to storage that already receives the media remains usable.
 
 For an MP4 archive, first add 1 H.264 video stream and AAC audio to the ladder, then select the streams to save. Choose dedicated storage or an available existing storage output, and set the path, filename and access permissions. No separate encode is created. MSL cannot be used as the archive destination.
 

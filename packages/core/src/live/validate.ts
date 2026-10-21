@@ -3,6 +3,7 @@ import { checkH26xCodecControls } from "../plan/codec-controls";
 import { checkSecretEgressHosts, type EgressSite } from "../plan/egress";
 import { checkMslEncoderVersion } from "../plan/msl-encoder-version";
 import { muxingStreamKeys } from "../plan/muxing-streams";
+import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS } from "../plan/schema";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
 import {
@@ -15,6 +16,8 @@ import {
 	isLiveAacChannelLayout,
 	resolveLiveEncodingOption,
 } from "./encoding-option";
+import { checkLiveHlsVideoUris } from "./hls-video-uri-validation";
+import { liveManifestPathIssues } from "./manifest-paths";
 import type { LiveChannelPlan } from "./schema";
 import { SRT_LISTENER_PORTS } from "./schema";
 import { AGGREGATE_CLOUD_REGIONS } from "./startup";
@@ -151,7 +154,10 @@ export function validateLiveChannel(
 	plan: LiveChannelPlan,
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
-	const issues: PlanIssue[] = [];
+	const issues: PlanIssue[] = [
+		...liveManifestPathIssues(plan),
+		...checkLiveHlsVideoUris(plan),
+	];
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	if (plan.start.encodingOption === "HD") {
 		const resolution = resolveLiveEncodingOption(plan);
@@ -696,6 +702,31 @@ export function validateLiveChannel(
 			});
 		}
 		const selected = selectLiveManifestMuxings(plan, manifest);
+		if (outputKeys.has(manifest.destination.outputKey)) {
+			const manifestTargets = outputStorageKeys(
+				plan,
+				manifest.destination.outputKey,
+			);
+			const missing = selected.filter(({ muxing }) => {
+				if (
+					!muxing.destination ||
+					!outputKeys.has(muxing.destination.outputKey)
+				)
+					return false;
+				const mediaTargets = outputStorageKeys(
+					plan,
+					muxing.destination.outputKey,
+				);
+				return [...manifestTargets].some((target) => !mediaTargets.has(target));
+			});
+			if (missing.length)
+				issues.push({
+					code: "LIVE_MANIFEST_MEDIA_UNAVAILABLE",
+					level: "error",
+					path: `liveManifests[${index}].destination.outputKey`,
+					message: `liveManifest "${manifest.key}" references muxing(s) ${missing.map(({ muxing }) => muxing.key).join(", ")} whose segments are not delivered to every manifest output. Choose a destination receiving those segments or add a delivery mirror.`,
+				});
+		}
 		if (
 			manifest.kind === "HLS" &&
 			plan.renditions.some((r) => LIVE_VIDEO_CODECS.has(r.codec)) &&
@@ -753,8 +784,8 @@ export function validateLiveChannel(
 				}
 			}
 		}
-		// Mirrors PLAN_SEGMENT_PATH_NOT_UNDER_MANIFEST: segment paths the
-		// manifest cannot strip are emitted absolute → broken players.
+		// Flag references outside this manifest directory, matching the VOD rail.
+		// The compiler resolves these through parent or absolute paths.
 		const raw = manifest.destination.path;
 		const base = raw === "" || raw.endsWith("/") ? raw : `${raw}/`;
 		const outside = selected
@@ -767,7 +798,7 @@ export function validateLiveChannel(
 			issues.push({
 				code: "LIVE_SEGMENT_PATH_NOT_UNDER_MANIFEST",
 				level: "warning",
-				message: `muxing(s) ${outside.join(", ")} write outside liveManifest "${manifest.key}" base path — their segment paths will be emitted absolute`,
+				message: `muxing(s) ${outside.join(", ")} write outside liveManifest "${manifest.key}" base path — their segment references use parent or absolute paths`,
 				path: `liveManifests[${index}].destination.path`,
 			});
 		}

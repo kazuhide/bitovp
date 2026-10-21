@@ -117,6 +117,13 @@ An optional storage mirror receives the same segment/manifest paths as the main
 output. It is not an independently configured ladder. Check storage permissions
 and prevent duplicate destinations.
 
+Choose a manifest destination that also receives its media segments, such as the
+main delivery output or a storage mirror. Relative segment paths refer to files
+on that same storage. An output used only for an MP4 archive has no segments for
+the stream, so the editor excludes it from the destination choices. To deliver
+the stream there, add a storage mirror that writes the segments there too.
+An output alias pointing to storage that already receives the media remains usable.
+
 The optional MP4 archive combines an existing H.264 video stream with AAC audio
 in storage; it is separate from segmented delivery and Live-to-VOD manifests.
 After stopping, wait for provider completion, then inspect the file for that

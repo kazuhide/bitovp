@@ -5,6 +5,23 @@ const PROVISIONS_AT_CREATE =
 	"作成した時点でチャンネルの起動準備が始まり、課金もそこから始まります";
 
 export const ja = {
+	liveOutputs: {
+		destination: "\u51fa\u529b\u5148",
+		access: "\u30a2\u30af\u30bb\u30b9\u6a29",
+		addMirror: "複製先を追加",
+		removeMirror: "複製先を削除",
+		mirrorNumber: "複製先 {number}",
+		addHls: "HLSマニフェストを追加",
+		addDash: "DASHマニフェストを追加",
+		removeHls: "HLSマニフェストを削除",
+		removeDash: "DASHマニフェストを削除",
+		manifestNumber: "{kind} {number}",
+		primaryDestination: "{kind}：出力先とリソース名",
+		resourceName: "リソース名",
+		path: "出力パス",
+		referenced:
+			"この複製先を削除するには、先に録画やマニフェストの出力先を変更するか、その設定を削除してください。",
+	},
 	creationSubmission: {
 		responseUnavailable:
 			"作成結果を受信できませんでした。フォームを変更せずに再試行すると、同じジョブやチャンネルの結果を確認できます。",
@@ -3807,6 +3824,13 @@ export const ja = {
 		codecStrictCbrMode:
 			"厳密なCBRでは目標ビットレートを設定し、CRFと固定QPを指定しないでください。",
 		crf: "固定品質係数（CRF、0〜51）",
+		hlsVideoUri: "動画プレイリストURI",
+		hlsVideoUriHelp:
+			"任意の.m3u8ファイル名を指定します。空欄なら自動生成します。音声グループ別のバリアントでは{token}を含めてください。Per-Titleはビットレートから名前を生成します。",
+		hlsVideoUriLiveHelp:
+			"任意の.m3u8ファイル名を指定します。空欄なら自動生成します。Liveではパターンやサブディレクトリーは使用できません。",
+		hlsVideoUriPerTitle:
+			"Per-Titleでは動画プレイリスト名を個別指定できません。この指定を消し、マニフェストのビットレートから生成される名前を使ってください。",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",
@@ -3899,7 +3923,7 @@ export const ja = {
 		advancedH264: "詳細設定(H264)",
 		advancedH265: "詳細設定(H265)",
 		advancedNeededOnlyForMultiAudioGroup:
-			"詳細設定:複数音声グループの HLS、または複数ラダーの DASH(Dolby DV/HDR10/SDR プリセット)でのみ必要です。上で宣言した DASH アダプテーションセットへレンディションを振り分け、HLS バリアントラベルを与え、あるいは EXT-X-MEDIA エントリを追加します。HLS/DASH マニフェストが 1 つだけなら未設定のままにしてください。",
+			"標準VODでは、動画プレイリストのファイル名を指定できます。HLS の音声グループやファイル名の生成に使うラベル、DASH のアダプテーションセットへの振り分けもここで設定します。音声グループやラダーを分けない場合、振り分け設定は空欄のままで構いません。",
 		advancedPaddingAspect: "詳細設定(パディング、アスペクト)",
 		advancedPlacementHlsAudioGroups: "詳細な配置(HLS 音声グループ)",
 		advancedVp9: "詳細設定(VP9)",

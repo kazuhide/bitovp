@@ -24,10 +24,18 @@ export function LiveMirrorSection({
 	state,
 	credentials,
 	onPatch,
+	idPrefix = "lw-mirror",
+	title,
+	disableRemoval = false,
+	onRemove,
 }: {
 	state: LiveWizardState;
 	credentials: Pick<CredentialSummaryWire, "id" | "label" | "provider">[];
 	onPatch: (patch: Partial<LiveWizardState>) => void;
+	idPrefix?: string;
+	title?: string;
+	disableRemoval?: boolean;
+	onRemove?: () => void;
 }) {
 	const { t } = useT();
 	const mirror = state.mirror;
@@ -48,19 +56,20 @@ export function LiveMirrorSection({
 	const problem = liveMirrorProblem(state, credentials);
 	return (
 		<section
-			aria-label={t("liveMirror.title")}
+			aria-label={title ?? t("liveMirror.title")}
 			className="space-y-3 border-zinc-800 border-t pt-4"
 		>
 			<div className="flex items-center gap-2">
 				<label
-					htmlFor="lw-mirror-enabled"
+					htmlFor={`${idPrefix}-enabled`}
 					className="flex items-center gap-2 text-sm text-zinc-300"
 				>
 					<input
-						id="lw-mirror-enabled"
+						id={`${idPrefix}-enabled`}
 						type="checkbox"
 						className="h-4 w-4 accent-emerald-600"
 						checked={!!mirror}
+						disabled={!!mirror && disableRemoval}
 						onChange={(e) =>
 							onPatch({
 								mirror: e.target.checked
@@ -75,6 +84,9 @@ export function LiveMirrorSection({
 					{t("liveMirror.help")}
 				</HelpOverlay>
 			</div>
+			{disableRemoval ? (
+				<p className="text-xs text-zinc-400">{t("liveOutputs.referenced")}</p>
+			) : null}
 			{mirror ? (
 				<>
 					<div className="grid gap-3 sm:grid-cols-2">
@@ -84,10 +96,10 @@ export function LiveMirrorSection({
 						<div className="space-y-1.5">
 							<Field
 								label={t("liveArchive.credential")}
-								htmlFor="lw-mirror-credential"
+								htmlFor={`${idPrefix}-credential`}
 							>
 								<SelectNative
-									id="lw-mirror-credential"
+									id={`${idPrefix}-credential`}
 									value={mirror.credentialId}
 									onChange={(e) => {
 										if (!e.target.value) {
@@ -127,11 +139,11 @@ export function LiveMirrorSection({
 							label={
 								mirror.kind === "AZURE" ? t("ui.container") : t("ui.bucket")
 							}
-							htmlFor="lw-mirror-bucket"
+							htmlFor={`${idPrefix}-bucket`}
 						>
 							<div className="flex gap-2">
 								<Input
-									id="lw-mirror-bucket"
+									id={`${idPrefix}-bucket`}
 									value={mirror.bucket}
 									onChange={(e) =>
 										onPatch({ mirror: { ...mirror, bucket: e.target.value } })
@@ -150,6 +162,18 @@ export function LiveMirrorSection({
 							</div>
 						</Field>
 					</div>
+					<Field
+						label={t("liveOutputs.resourceName")}
+						htmlFor={`${idPrefix}-name`}
+					>
+						<Input
+							id={`${idPrefix}-name`}
+							value={mirror.name}
+							onChange={(e) =>
+								onPatch({ mirror: { ...mirror, name: e.target.value } })
+							}
+						/>
+					</Field>
 					<StoragePicker
 						open={browse}
 						mode="prefix"
@@ -175,6 +199,16 @@ export function LiveMirrorSection({
 						</p>
 					) : null}
 				</>
+			) : null}
+			{onRemove ? (
+				<Button
+					variant="ghost"
+					size="sm"
+					disabled={disableRemoval}
+					onClick={onRemove}
+				>
+					{t("liveOutputs.removeMirror")}
+				</Button>
 			) : null}
 		</section>
 	);

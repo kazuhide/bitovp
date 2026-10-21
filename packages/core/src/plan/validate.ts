@@ -20,6 +20,7 @@ import {
 	hlsSubtitleGroups,
 	isHlsAudioRendition,
 } from "./hls-media-defaults";
+import { checkHlsVideoUris } from "./hls-video-uri-validation";
 import {
 	inputStreamAncestry,
 	inputStreamDependencies,
@@ -186,6 +187,7 @@ export function validatePlan(
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST")
 			issues.push({
@@ -1857,11 +1859,15 @@ export function validatePlan(
 						r.codec === "VP9" ||
 						r.codec === "AV1";
 					if (videoCodec) {
-						if (!r.hlsVariantLabel || r.height === null || r.bitrate === null) {
+						if (
+							(!r.hlsVariantLabel && !r.hlsVariantUri) ||
+							r.height === null ||
+							r.bitrate === null
+						) {
 							issues.push({
 								code: "PLAN_HLS_VARIANT_GROUP_INCOMPLETE",
 								level: "error",
-								message: `rendition "${r.key}" needs hlsVariantLabel + fixed height/bitrate for variantsPerAudioGroup uris`,
+								message: `rendition "${r.key}" needs hlsVariantLabel or hlsVariantUri, plus fixed height/bitrate for variantsPerAudioGroup uris`,
 								path: `renditions[${rIndex}]`,
 							});
 						}
@@ -2429,8 +2435,8 @@ export function validatePlan(
 		}
 	}
 
-	// Segment paths a manifest can't strip produce broken playlists — warn
-	// when muxings don't sit under the manifest base. One aggregated issue
+	// Flag layouts whose segment references leave the manifest directory.
+	// The compiler resolves these through parent or absolute paths. One issue
 	// per manifest (stable issue identity for UIs). Empty base = bucket
 	// root: everything is under it (mirrors relativeSegmentPath).
 	for (const [mIndex, manifest] of plan.manifests.entries()) {
@@ -2453,7 +2459,7 @@ export function validatePlan(
 			issues.push({
 				code: "PLAN_SEGMENT_PATH_NOT_UNDER_MANIFEST",
 				level: "warning",
-				message: `muxing(s) ${outside.join(", ")} write outside manifest "${manifest.key}" base path — their segment paths will be emitted absolute`,
+				message: `muxing(s) ${outside.join(", ")} write outside manifest "${manifest.key}" base path — their segment references use parent or absolute paths`,
 				path: `manifests[${mIndex}].destination.path`,
 			});
 		}

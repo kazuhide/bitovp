@@ -299,6 +299,8 @@ function readExtras(
 	if (hlsVariantLabel !== undefined) {
 		extras.hlsVariantLabel = hlsVariantLabel;
 	}
+	const hlsVariantUri = asString(r.hlsVariantUri);
+	if (hlsVariantUri !== undefined) extras.hlsVariantUri = hlsVariantUri;
 	const dashSetKey = asString(r.dashSetKey);
 	if (dashSetKey !== undefined) {
 		extras.dashSetKey = dashSetKey;

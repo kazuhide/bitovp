@@ -60,8 +60,8 @@ import {
 	LivePlanPreview,
 } from "./live-plan-preview";
 import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
-import { LiveManifestsSection } from "./manifests-section";
-import { LiveMirrorSection } from "./mirror-section";
+import { LiveManifestListSection } from "./manifest-list-section";
+import { LiveMirrorListSection } from "./mirror-list-section";
 import {
 	EMPTY_SCHEDULE_DRAFT,
 	type ScheduleDraft,
@@ -393,18 +393,6 @@ export function LiveWizard({
 						container: a.codec === "AAC" ? "CMAF" : "FMP4",
 						ownContainer: true,
 					})),
-					manifests: {
-						hls: { ...withOutput.manifests.hls, enabled: false },
-						dash: { ...withOutput.manifests.dash, enabled: false },
-					},
-				};
-			if (prev.output.kind === "LIVE_MEDIA_INGEST")
-				return {
-					...withOutput,
-					manifests: {
-						hls: { ...withOutput.manifests.hls, enabled: true },
-						dash: { ...withOutput.manifests.dash, enabled: true },
-					},
 				};
 			return withOutput;
 		});
@@ -1071,7 +1059,7 @@ export function LiveWizard({
 					) : null}
 
 					{step === 3 ? (
-						<LiveMirrorSection
+						<LiveMirrorListSection
 							state={state}
 							credentials={allCredentials}
 							onPatch={patch}
@@ -1085,7 +1073,7 @@ export function LiveWizard({
 						/>
 					) : null}
 					{step === 4 ? (
-						<LiveManifestsSection state={state} onPatch={patch} />
+						<LiveManifestListSection state={state} onPatch={patch} />
 					) : null}
 
 					{step === 5 ? (

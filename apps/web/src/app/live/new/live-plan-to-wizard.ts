@@ -7,9 +7,12 @@ import {
 	DEFAULT_LIVE_WIZARD_STATE,
 	type LiveAdMarkerOptionsState,
 	type LiveAudioRendition,
+	type LiveDashManifestState,
+	type LiveHlsManifestState,
 	type LiveInputKind,
 	type LiveVideoRendition,
 	type LiveWizardState,
+	liveManifestDestination,
 } from "./build-live-plan";
 
 /**
@@ -64,22 +67,14 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const firstSegmented = plan.muxings.find((m) => m.kind !== "MP4");
 	const segmentLength = firstSegmented?.segmentLength ?? D.segmentLength;
 
-	// Output base path: a manifest destination IS the base. The schema requires
-	// liveManifests.min(1) with a string destination path, so the first branch
-	// always wins for a valid plan; the muxing-strip (remove the 2-segment
-	// video/{height}p | audio/{bitrate} rel) is a defensive fallback only.
+	// Manifests can have independent folders. Recover the media base from its
+	// video/{height}p or audio/{bitrate} suffix, not the first manifest's folder.
 	const muxPath = firstSegmented?.destination?.path;
 	const manifestPath = plan.liveManifests[0]?.destination?.path;
-	//  (re-audit BLOCKER-5): an Akamai MSL manifest is published at
-	// the EVENT ROOT ("") while the segments keep the channel folder — so for
-	// an empty manifest path the folder comes from the muxing strip, which is
-	// the wizard's base and what `buildManifests` re-emits as "" for MSL.
 	const base =
-		manifestPath !== undefined && manifestPath !== ""
-			? manifestPath
-			: muxPath
-				? muxPath.split("/").slice(0, -2).join("/")
-				: (manifestPath ?? "");
+		muxPath !== undefined
+			? muxPath.split("/").slice(0, -2).join("/")
+			: (manifestPath ?? "");
 
 	/**
 	 * The relation, copied off the plan .
@@ -101,7 +96,12 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const videos: LiveVideoRendition[] = plan.renditions
 		.filter(isVideoRendition)
 		.map((r) => ({
-			extras: { key: r.key },
+			extras: {
+				key: r.key,
+				...("hlsVariantUri" in r && typeof r.hlsVariantUri === "string"
+					? { hlsVariantUri: r.hlsVariantUri }
+					: {}),
+			},
 			codec: r.codec,
 			...(r.width !== undefined ? { width: r.width } : {}),
 			...readH26xCodecOptions(r),
@@ -151,6 +151,17 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 
 	const hlsM = plan.liveManifests.find((m) => m.kind === "HLS");
 	const dashM = plan.liveManifests.find((m) => m.kind === "DASH");
+	const primaryKey =
+		plan.muxings.find((m) => m.kind !== "MP4")?.destination?.outputKey ??
+		plan.outputs[0]?.key;
+	const primaryOutput = plan.outputs.find(
+		(output) => output.key === primaryKey,
+	);
+	const primaryState = outputState(primaryOutput, base, D, plan);
+	const defaultDestination = liveManifestDestination({
+		...D,
+		output: primaryState,
+	});
 	const adMarkerOptions = adMarkerOptionsState(plan.adMarkers);
 
 	return {
@@ -172,14 +183,16 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 			? { infrastructure: plan.bitmovin.infrastructure }
 			: {}),
 		...inputState(plan.liveInput, D),
-		output: outputState(plan.outputs[0], base, D, plan),
+		output: primaryState,
+		outputOrder: plan.outputs.map((output) => output.key),
+		manifestOrder: plan.liveManifests.map((manifest) => manifest.key),
 		...(() => {
 			const muxing = plan.muxings.find((m) => m.kind === "MP4");
 			if (!muxing?.destination || muxing.additionalStreamKeys?.length !== 1)
 				return {};
 			const key = muxing.destination.outputKey;
 			const separate =
-				key !== plan.outputs[0]?.key &&
+				key !== primaryKey &&
 				!plan.deliveryMirrors?.some((m) => m.outputKey === key);
 			const output = separate
 				? plan.outputs.find((o) => o.key === key)
@@ -202,19 +215,27 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 			if (!mirrors || mirrors.length === 0) {
 				return {};
 			}
-			// review-292 S2: the wizard state models ONE mirror; a >1-mirror plan
-			// (expert-authored — the schema allows it) must not silently lose
-			// mirrors 2..N on Duplicate. Refusing to map ANY here makes the
-			// round-trip gate fail loudly instead, which is the honest outcome
-			// until the form models a list.
-			if (mirrors.length > 1) {
-				return {};
-			}
 			const mirrorOutput = plan.outputs.find(
 				(o) => o.key === mirrors[0]?.outputKey,
 			);
 			return mirrorOutput
-				? { mirror: outputState(mirrorOutput, base, D, plan) }
+				? {
+						mirror: outputState(mirrorOutput, base, D, plan),
+						mirrorKey: mirrors[0]?.outputKey,
+						additionalMirrors: mirrors.slice(1).flatMap((mirror) => {
+							const output = plan.outputs.find(
+								(candidate) => candidate.key === mirror.outputKey,
+							);
+							return output
+								? [
+										{
+											key: mirror.outputKey,
+											output: outputState(output, base, D, plan),
+										},
+									]
+								: [];
+						}),
+					}
 				: {};
 		})(),
 		videos: videos.length > 0 ? videos : D.videos,
@@ -222,50 +243,23 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		segmentLength,
 		manifests: {
 			hls: hlsM
-				? {
-						enabled: true,
-						manifestName: hlsM.manifestName ?? "",
-						audioGroupId: hlsM.audioGroupId ?? "",
-						audioLanguage: hlsM.audioLanguage ?? "",
-						closedCaptions: hlsM.closedCaptions,
-						videoMuxingKind: hlsM.videoMuxingKind ?? "",
-						audioMuxingKind: hlsM.audioMuxingKind ?? "",
-						...(hlsM.timeshift !== undefined
-							? { timeshift: hlsM.timeshift }
-							: {}),
-						...(hlsM.liveEdgeOffset !== undefined
-							? { liveEdgeOffset: hlsM.liveEdgeOffset }
-							: {}),
-						insertProgramDateTime: hlsM.insertProgramDateTime === true,
-						// Verbatim (the state IS the SDK shape); absent ⇒ the rebuild
-						// emits no programDateTimeSettings key.
-						...(hlsM.programDateTimeSettings
-							? { programDateTimeSettings: hlsM.programDateTimeSettings }
-							: {}),
-					}
+				? readHlsManifest(hlsM, defaultDestination)
 				: { ...D.manifests.hls, enabled: false },
 			dash: dashM
-				? {
-						enabled: true,
-						manifestName: dashM.manifestName ?? "",
-						audioLanguage: dashM.audioLanguage ?? "",
-						representationType:
-							dashM.representationType === "TIMELINE" ? "TIMELINE" : "TEMPLATE",
-						...(dashM.timeshift !== undefined
-							? { timeshift: dashM.timeshift }
-							: {}),
-						...(dashM.liveEdgeOffset !== undefined
-							? { liveEdgeOffset: dashM.liveEdgeOffset }
-							: {}),
-						...(dashM.suggestedPresentationDelay !== undefined
-							? { suggestedPresentationDelay: dashM.suggestedPresentationDelay }
-							: {}),
-						...(dashM.minimumUpdatePeriod !== undefined
-							? { minimumUpdatePeriod: dashM.minimumUpdatePeriod }
-							: {}),
-						availabilityStartTimeMode: dashM.availabilityStartTimeMode ?? "",
-					}
+				? readDashManifest(dashM, defaultDestination)
 				: { ...D.manifests.dash, enabled: false },
+			additionalHls: plan.liveManifests
+				.filter(
+					(m): m is Extract<Plan["liveManifests"][number], { kind: "HLS" }> =>
+						m.kind === "HLS" && m !== hlsM,
+				)
+				.map((manifest) => readHlsManifest(manifest)),
+			additionalDash: plan.liveManifests
+				.filter(
+					(m): m is Extract<Plan["liveManifests"][number], { kind: "DASH" }> =>
+						m.kind === "DASH" && m !== dashM,
+				)
+				.map((manifest) => readDashManifest(manifest)),
 		},
 		// Absent adMarkers ⇒ off, so a plain plan rebuilds with no adMarkers key.
 		scte35AdMarkers: plan.adMarkers?.scte35 === true,
@@ -316,15 +310,18 @@ function outputState(
 	 * it the round-trip gate will catch the divergence rather than this silently
 	 * flattening it.
 	 */
-	const publicRead = plan.liveManifests.some(
-		(m) => m.destination.acl === "PUBLIC_READ",
+	const media = plan.muxings.filter(
+		(m) => m.kind !== "MP4" && m.destination?.outputKey === o?.key,
+	);
+	const destinations = media.length
+		? media
+		: plan.liveManifests.filter((m) => m.destination.outputKey === o?.key);
+	const publicRead = destinations.some(
+		(m) => m.destination?.acl === "PUBLIC_READ",
 	);
 	// Origins generate their own manifests, so segmented media must also carry
 	// this setting through readback. A progressive archive has an independent ACL.
-	const privateAcl = [
-		...plan.liveManifests,
-		...plan.muxings.filter((m) => m.kind !== "MP4"),
-	].some((m) => m.destination?.acl === "PRIVATE")
+	const privateAcl = destinations.some((m) => m.destination?.acl === "PRIVATE")
 		? { explicitPrivateAcl: true }
 		: {};
 	if (!o) {
@@ -406,6 +403,55 @@ function outputState(
 		bucket: bucket ?? "",
 		basePath: base,
 		name: o.name ?? "",
+	};
+}
+
+function readHlsManifest(
+	m: Extract<Plan["liveManifests"][number], { kind: "HLS" }>,
+	defaultDestination?: LiveHlsManifestState["destination"],
+): LiveHlsManifestState {
+	return {
+		enabled: true,
+		key: m.key,
+		name: m.name,
+		destination: plansDeepEqual(m.destination, defaultDestination)
+			? undefined
+			: m.destination,
+		manifestName: m.manifestName,
+		audioGroupId: m.audioGroupId,
+		audioLanguage: m.audioLanguage,
+		closedCaptions: m.closedCaptions,
+		videoMuxingKind: m.videoMuxingKind ?? "",
+		audioMuxingKind: m.audioMuxingKind ?? "",
+		timeshift: m.timeshift,
+		liveEdgeOffset: m.liveEdgeOffset,
+		insertProgramDateTime: m.insertProgramDateTime === true,
+		...(m.insertProgramDateTime === false
+			? { insertProgramDateTimeExplicit: true }
+			: {}),
+		programDateTimeSettings: m.programDateTimeSettings,
+	};
+}
+
+function readDashManifest(
+	m: Extract<Plan["liveManifests"][number], { kind: "DASH" }>,
+	defaultDestination?: LiveDashManifestState["destination"],
+): LiveDashManifestState {
+	return {
+		enabled: true,
+		key: m.key,
+		name: m.name,
+		destination: plansDeepEqual(m.destination, defaultDestination)
+			? undefined
+			: m.destination,
+		manifestName: m.manifestName,
+		audioLanguage: m.audioLanguage,
+		representationType: m.representationType,
+		timeshift: m.timeshift,
+		liveEdgeOffset: m.liveEdgeOffset,
+		suggestedPresentationDelay: m.suggestedPresentationDelay,
+		minimumUpdatePeriod: m.minimumUpdatePeriod,
+		availabilityStartTimeMode: m.availabilityStartTimeMode ?? "",
 	};
 }
 

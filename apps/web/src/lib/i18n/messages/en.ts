@@ -27,6 +27,23 @@ const PROVISIONS_AT_CREATE =
 	"The channel starts — and billing begins — the moment you create it";
 
 export const en = {
+	liveOutputs: {
+		destination: "Output destination",
+		access: "Access permissions",
+		addMirror: "Add storage mirror",
+		removeMirror: "Remove storage mirror",
+		mirrorNumber: "Storage mirror {number}",
+		addHls: "Add HLS manifest",
+		addDash: "Add DASH manifest",
+		removeHls: "Remove HLS manifest",
+		removeDash: "Remove DASH manifest",
+		manifestNumber: "{kind} {number}",
+		primaryDestination: "{kind}: destination and resource name",
+		resourceName: "Resource name",
+		path: "Output path",
+		referenced:
+			"Change or remove the archive or manifest destination before removing this storage mirror.",
+	},
 	creationSubmission: {
 		responseUnavailable:
 			"The creation response was incomplete. Retry without changing the form to recover the same job or channel.",
@@ -3854,6 +3871,13 @@ export const en = {
 		codecStrictCbrMode:
 			"Strict CBR requires a target bitrate without CRF or constant QP.",
 		crf: "Constant rate factor (0–51)",
+		hlsVideoUri: "Video playlist URI",
+		hlsVideoUriHelp:
+			"Optional flat .m3u8 filename. Leave blank for the derived name. For variants per audio group, include {token}. Per-Title keeps bitrate-derived names.",
+		hlsVideoUriLiveHelp:
+			"Optional flat .m3u8 filename. Leave blank for the derived name. Patterns and subdirectories are unavailable for Live.",
+		hlsVideoUriPerTitle:
+			"Individual video playlist filenames are unavailable for Per-Title. Clear this override and use the manifest's bitrate-derived names.",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",
@@ -3947,7 +3971,7 @@ export const en = {
 		advancedH264: "Advanced (H264)",
 		advancedH265: "Advanced (H265)",
 		advancedNeededOnlyForMultiAudioGroup:
-			"Advanced — needed only for multi-audio-group HLS or multi-ladder DASH (the Dolby DV/HDR10/SDR presets). Route a rendition into a DASH adaptation set declared above, give it an HLS variant label, or add an EXT-X-MEDIA entry. With a single HLS/DASH manifest these stay unset.",
+			"Standard VOD can use custom video playlist filenames. Other fields assign renditions to HLS audio groups or DASH adaptation sets and set HLS variant labels. Leave routing fields unset unless you need separate audio groups or ladders.",
 		advancedPaddingAspect: "Advanced (padding, aspect)",
 		advancedPlacementHlsAudioGroups: "Advanced placement (HLS audio groups)",
 		advancedVp9: "Advanced (VP9)",

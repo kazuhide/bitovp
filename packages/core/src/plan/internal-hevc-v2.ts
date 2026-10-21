@@ -29,6 +29,7 @@ const SUPPORTED_FIELDS = new Set([
 	"encodingKey",
 	"hlsMedia",
 	"hlsVariantLabel",
+	"hlsVariantUri",
 	"dashSetKey",
 	"codec",
 	"name",

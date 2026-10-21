@@ -42,10 +42,15 @@ not imply a control for every field.
   Check the accepted settings and the encoder's returned shutdown time before
   relying on a change. This affects the current broadcast; the next start uses
   the channel's saved plan. See the [Live guide](user-guide/LIVE.md#changing-automatic-stop-during-a-broadcast).
-- The Live form represents one storage mirror and one manifest of each type
-  (HLS and DASH). Some valid imported plans can contain more. When a form cannot
-  reproduce a plan without changing its settings, the application keeps it in
-  the JSON editor. Review the complete plan there before submitting.
+- The Live form supports multiple storage mirrors and multiple HLS and DASH
+  manifests. Each manifest has its own settings and destination, using the
+  channel's shared ladder. Mirror controls support S3, S3-compatible storage,
+  Azure, and Google Cloud Storage; MSL and SFTP mirror authoring is unavailable.
+  A valid imported plan stays in the JSON editor whenever the form cannot
+  preserve all its settings. Review the complete plan there before submitting.
+- Standard VOD and Live video renditions can set their HLS child-playlist
+  filenames. Live accepts literal flat `.m3u8` names; VOD can expand `{group}`
+  for variants per audio group. Per-Title keeps its derived filename options.
 - Account-specific features, including HEVCv2, appear only where enabled for the
   selected account. A codec or setting declared by the provider's software
   development kit (SDK) is not proof that your account or encoder accepts it.

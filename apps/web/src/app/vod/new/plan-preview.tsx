@@ -163,15 +163,18 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 				? t("wizard.onDemandDrmTemplateUnavailable")
 				: undefined;
 	const currentTab = templateUnavailable && tab === "yaml" ? "json" : tab;
-	const yaml = useMemo(
-		() =>
-			evaluation.ok && !evaluation.plan.internal?.hevcV2 && !templateUnavailable
-				? planToEncodingTemplateYaml(evaluation.plan)
-				: null,
-		[evaluation, templateUnavailable],
-	);
 	const blocked =
 		evaluation.ok && evaluation.issues.some((i) => i.level === "error");
+	const yaml = useMemo(
+		() =>
+			evaluation.ok &&
+			!blocked &&
+			!evaluation.plan.internal?.hevcV2 &&
+			!templateUnavailable
+				? planToEncodingTemplateYaml(evaluation.plan)
+				: null,
+		[evaluation, templateUnavailable, blocked],
+	);
 	// Template YAML is an exportable artifact — never offer one for a plan
 	// that semantic validation rejects. Plan JSON stays up for debugging.
 	const active =

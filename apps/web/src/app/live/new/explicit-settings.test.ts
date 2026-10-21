@@ -111,11 +111,22 @@ describe("Live wizard explicit settings", () => {
 		).toBe(true);
 	});
 
-	it("continues rejecting mixed ACLs that the single output control cannot represent", () => {
+	it("preserves manifest access permissions independently of segmented media", () => {
 		const plan = channel();
 		if (!plan.liveManifests[0]) throw new Error("missing manifest");
 		plan.liveManifests[0].destination.acl = "PRIVATE";
-		expect(tryImportLiveChannelIntoWizard(plan).ok).toBe(false);
+		expect(tryImportLiveChannelIntoWizard(plan).ok).toBe(true);
+		const rebuilt = liveChannelPlanSchema.parse(
+			buildLiveChannelPlan(planToLiveWizardState(plan)),
+		);
+		expect(rebuilt).toEqual(plan);
+		expect(rebuilt.liveManifests[0]?.destination.acl).toBe("PRIVATE");
+		expect(rebuilt.muxings.every((m) => m.destination?.acl === undefined)).toBe(
+			true,
+		);
+		expect(
+			validateLiveChannel(rebuilt).filter((issue) => issue.level === "error"),
+		).toEqual([]);
 	});
 
 	it.each([

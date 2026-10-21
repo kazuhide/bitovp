@@ -3923,7 +3923,7 @@ export const ja = {
 		advancedH264: "詳細設定(H264)",
 		advancedH265: "詳細設定(H265)",
 		advancedNeededOnlyForMultiAudioGroup:
-			"標準VODでは、動画プレイリストのファイル名を指定できます。HLS の音声グループやバリアントの表示名、DASH のアダプテーションセットへの振り分けもここで設定します。音声グループやラダーを分けない場合、振り分け設定は空欄のままで構いません。",
+			"標準VODでは、動画プレイリストのファイル名を指定できます。HLS の音声グループやファイル名の生成に使うラベル、DASH のアダプテーションセットへの振り分けもここで設定します。音声グループやラダーを分けない場合、振り分け設定は空欄のままで構いません。",
 		advancedPaddingAspect: "詳細設定(パディング、アスペクト)",
 		advancedPlacementHlsAudioGroups: "詳細な配置(HLS 音声グループ)",
 		advancedVp9: "詳細設定(VP9)",

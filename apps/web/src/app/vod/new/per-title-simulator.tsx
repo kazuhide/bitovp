@@ -365,11 +365,11 @@ function ProposalResults({
 	const format = (value: number) =>
 		new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(value);
 	const scenarioName = (scenario: PerTitleScenario) =>
-		scenario.id === "low"
+		scenario.fraction === 0.25
 			? copy.low
-			: scenario.id === "medium"
+			: scenario.fraction === 0.5
 				? copy.medium
-				: scenario.id === "high"
+				: scenario.fraction === 1
 					? copy.high
 					: copy.custom;
 	const countGoal = (value: PerTitleGoal) =>

@@ -766,6 +766,56 @@ describe("recommendPerTitleSettings", () => {
 		expect(result.derivation?.method).toBe("preserved-existing");
 	});
 
+	it("preserves valid saved spacing independently of the displayed scenario fractions", () => {
+		const goal = {
+			...automatic,
+			minBitrateStepSize: 1.25,
+			maxBitrateStepSize: 3,
+		};
+		const full = recommendPerTitleSettings(goal);
+		const displayed = recommendPerTitleSettings({
+			...goal,
+			scenarioFractions: [0.25, 0.5],
+		});
+		expect(displayed.derivation?.method).toBe("preserved-existing");
+		expect(displayed.api).toEqual(full.api);
+		expect(displayed.derivation?.targetSatisfied).toBe(true);
+		expect(displayed.scenarios.map((scenario) => scenario.fraction)).toEqual([
+			0.25, 0.5,
+		]);
+	});
+
+	it("checks a count target internally without appending a full-upper presentation scenario", () => {
+		const goal: PerTitleGoal = {
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			countPolicy: { kind: "exact", count: 6 },
+		};
+		const full = recommendPerTitleSettings(goal);
+		for (const fractions of [
+			[0.25, 0.5],
+			Array.from({ length: 9 }, (_, index) => (index + 1) / 20),
+		]) {
+			const displayed = recommendPerTitleSettings({
+				...goal,
+				scenarioFractions: fractions,
+			});
+			expect(displayed.api).toEqual(full.api);
+			expect(displayed.derivation).toEqual(full.derivation);
+			expect(displayed.derivation?.targetSatisfied).toBe(true);
+			expect(displayed.status).toBe("candidate");
+			expect(displayed.applicable).toBe(true);
+			expect(displayed.scenarios.map((scenario) => scenario.fraction)).toEqual(
+				fractions,
+			);
+			expect(
+				displayed.scenarios.every((scenario) => scenario.status === "conflict"),
+			).toBe(true);
+		}
+	});
+
 	it("replaces saved ratios that have no valid integer example for the exact count", () => {
 		const result = recommendPerTitleSettings({
 			strategy: "count",

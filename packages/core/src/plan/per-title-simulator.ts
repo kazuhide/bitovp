@@ -292,6 +292,34 @@ export function recommendPerTitleSettings(
 			: !hasAutomaticOutput(goal)
 				? initialRows.length
 				: undefined;
+	const internalUpperProofs = new WeakMap<PerTitleProposal, PerTitleProposal>();
+	const upperScenario = (
+		proposal: PerTitleProposal,
+		details: Pick<
+			PerTitleDerivation,
+			"fixedOrderRowIds" | "integerWitness"
+		> = {},
+	): PerTitleScenario | undefined => {
+		const displayed = proposal.scenarios.find(
+			(scenario) => scenario.fraction === 1,
+		);
+		if (displayed || forced) return displayed;
+		let proof = internalUpperProofs.get(proposal);
+		if (!proof) {
+			proof = build(
+				{
+					...goal,
+					minBitrateStepSize: proposal.api.global.minBitrateStepSize,
+					maxBitrateStepSize: proposal.api.global.maxBitrateStepSize,
+					scenarioFractions: [1],
+				},
+				proposal.id,
+			);
+			internalUpperProofs.set(proposal, proof);
+		}
+		useCheckedIntervalWitness(proof, goal, details);
+		return proof.scenarios[0];
+	};
 	const finish = (
 		proposal: PerTitleProposal,
 		details: Omit<
@@ -303,8 +331,10 @@ export function recommendPerTitleSettings(
 		>,
 	) => {
 		useCheckedIntervalWitness(proposal, goal, details);
+		const high = upperScenario(proposal, details);
 		if (
 			proposal.applicable &&
+			!hasValidIntegerExample(proposal, high) &&
 			!proposal.scenarios.some((scenario) =>
 				hasValidIntegerExample(proposal, scenario),
 			)
@@ -312,7 +342,6 @@ export function recommendPerTitleSettings(
 			proposal.applicable = false;
 			proposal.status = "unknown";
 		}
-		const high = proposal.scenarios.find((scenario) => scenario.fraction === 1);
 		proposal.derivation = {
 			...details,
 			...(desiredCount ? { desiredCount } : {}),
@@ -350,11 +379,7 @@ export function recommendPerTitleSettings(
 				(item) =>
 					item.severity === "conflict" || item.code === "row-order-unknown",
 			) &&
-			(forced ||
-				hasValidIntegerExample(
-					existing,
-					existing.scenarios.find((scenario) => scenario.fraction === 1),
-				))
+			(forced || hasValidIntegerExample(existing, upperScenario(existing)))
 		) {
 			return finish(existing, {
 				method: "preserved-existing",

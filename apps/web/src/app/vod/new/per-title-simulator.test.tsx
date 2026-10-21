@@ -80,6 +80,22 @@ function show(goal = initialGoal, locale: "en" | "ja" = "en") {
 }
 
 describe("Per-Title simulator", () => {
+	it("labels custom scenario ordering by the assumed fraction", () => {
+		show({ ...initialGoal, scenarioFractions: [1, 0.25, 0.5] });
+		const scenarios = screen.getByRole("region", {
+			name: "Illustrative scenarios",
+		});
+		expect(
+			within(scenarios).getByRole("row", { name: /^High \(100%\)/ }),
+		).toBeVisible();
+		expect(
+			within(scenarios).getByRole("row", { name: /^Low \(25%\)/ }),
+		).toBeVisible();
+		expect(
+			within(scenarios).getByRole("row", { name: /^Middle \(50%\)/ }),
+		).toBeVisible();
+	});
+
 	it.each([
 		"bitrate",
 		"codec",

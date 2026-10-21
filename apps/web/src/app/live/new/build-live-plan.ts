@@ -1248,12 +1248,17 @@ export function liveManifestDestination(state: LiveWizardState) {
 
 function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 	const destination = liveManifestDestination(state);
+	// The receiving Origin generates its own manifests. Keep their drafts in
+	// state, while still allowing manifests addressed to a storage mirror.
+	const sentToOrigin = (manifest: LiveManifestIdentity) =>
+		state.output.kind === "LIVE_MEDIA_INGEST" &&
+		(manifest.destination ?? destination).outputKey === "origin";
 	const manifests: LiveManifestInput[] = [];
 	for (const hls of [
 		state.manifests.hls,
 		...(state.manifests.additionalHls ?? []),
 	]) {
-		if (hls.enabled) {
+		if (hls.enabled && !sentToOrigin(hls)) {
 			manifests.push(
 				prune({
 					key: hls.key ?? "hls",
@@ -1283,7 +1288,7 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 		state.manifests.dash,
 		...(state.manifests.additionalDash ?? []),
 	]) {
-		if (dash.enabled) {
+		if (dash.enabled && !sentToOrigin(dash)) {
 			manifests.push(
 				prune({
 					key: dash.key ?? "dash",

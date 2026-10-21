@@ -394,6 +394,7 @@ export function LiveWizard({
 						ownContainer: true,
 					})),
 					manifests: {
+						...withOutput.manifests,
 						hls: { ...withOutput.manifests.hls, enabled: false },
 						dash: { ...withOutput.manifests.dash, enabled: false },
 					},
@@ -402,6 +403,7 @@ export function LiveWizard({
 				return {
 					...withOutput,
 					manifests: {
+						...withOutput.manifests,
 						hls: { ...withOutput.manifests.hls, enabled: true },
 						dash: { ...withOutput.manifests.dash, enabled: true },
 					},

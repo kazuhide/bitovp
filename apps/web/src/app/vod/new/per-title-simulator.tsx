@@ -308,11 +308,15 @@ const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 	"step-adjusted":
 		"変更するのはビットレート間隔だけです。指定した解像度とビットレート範囲は維持します。",
 	"model-limit":
-		"このモデルの上限は64行・9シナリオ・256のビットレート点です。間隔の下限や入力件数、シナリオの仮定値を確認してください。",
+		"このモデルの上限は、自動追加分を含む64テンプレート・9シナリオ・256のビットレート点です。間隔の下限や入力件数、シナリオの仮定値を確認してください。",
+	"row-order-unknown":
+		"同じ解像度のビットレート範囲が重なっており、計算上限までに成立する並びを確認できませんでした。範囲を絞って再比較してください。この結果だけで要件が実現できないとは判定しません。",
 	"linear-illustration":
 		"COMPLEXITY_RANGE の各点は、仮定した上端ビットレートを使い、行の最小・最大ビットレートの間を線形補間した例です。境界の外では最小値または最大値に収めます。",
 	"scenario-range-bound":
 		"本数の範囲は、指定した許容範囲全体から求めたものです。このシナリオに示すビットレートの点とは別に計算しています。",
+	"scenario-conflict":
+		"一部のシナリオで、本数や間隔の条件を満たしていません。設定を反映する前に、該当するシナリオと条件を確認してください。",
 };
 
 const tableClasses =
@@ -360,7 +364,7 @@ function DiagnosticList({
 					{locale === "ja"
 						? item.code === "row-step-conflict" &&
 							item.values?.ratio !== undefined
-							? "この線形補間の計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
+							? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
 							: diagnosticJa[item.code]
 						: item.message}
 					{item.rowIds?.length ? (
@@ -479,7 +483,7 @@ function ProposalResults({
 									<th scope="row">{label}</th>
 									{proposals.map((proposal) => (
 										<td key={proposal.id}>
-											{format(proposal.api.global[key])}
+											{String(proposal.api.global[key])}
 										</td>
 									))}
 								</tr>

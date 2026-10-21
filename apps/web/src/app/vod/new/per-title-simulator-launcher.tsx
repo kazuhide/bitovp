@@ -22,6 +22,33 @@ type Change = { path: string; before: unknown; after: unknown };
 function planChanges(before: unknown, after: unknown, path = ""): Change[] {
 	if (JSON.stringify(before) === JSON.stringify(after)) return [];
 	if (Array.isArray(before) && Array.isArray(after)) {
+		if (path === "renditions" || path === "muxings") {
+			const keyed = (items: unknown[]) => {
+				const map = new Map<string, unknown>();
+				for (const item of items) {
+					if (
+						!item ||
+						typeof item !== "object" ||
+						!("key" in item) ||
+						typeof item.key !== "string" ||
+						map.has(item.key)
+					)
+						return null;
+					map.set(item.key, item);
+				}
+				return map;
+			};
+			const a = keyed(before);
+			const b = keyed(after);
+			if (a && b)
+				return [...new Set([...a.keys(), ...b.keys()])].flatMap((key) =>
+					planChanges(
+						a.get(key),
+						b.get(key),
+						`${path}[key=${JSON.stringify(key)}]`,
+					),
+				);
+		}
 		return Array.from(
 			{ length: Math.max(before.length, after.length) },
 			(_, i) => planChanges(before[i], after[i], `${path}[${i}]`),

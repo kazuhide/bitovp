@@ -727,4 +727,101 @@ describe("Per-Title wizard bridge", () => {
 			after.muxings.find((m) => m.streamKey === "v720_1000k")?.destination,
 		).toBeUndefined();
 	});
+	it.each([
+		720,
+		null,
+	])("refuses mixed fixed-range and automatic templates with height %s without converting or deleting rows", (height) => {
+		const s = state();
+		s.videos = [
+			{
+				height: 360,
+				bitrate: null,
+				extras: {
+					key: "bounded",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					perTitleSettings: { minBitrate: 300000, maxBitrate: 700000 },
+				},
+			},
+			{
+				height,
+				bitrate: null,
+				extras: { key: "automatic", mode: "PER_TITLE_TEMPLATE" },
+			},
+		];
+		const before = structuredClone(s);
+		expect(() => perTitleGoalFromWizard(s)).toThrow(
+			expect.objectContaining({ code: "UNSUPPORTED_STATE" }),
+		);
+		expect(s).toEqual(before);
+		expect(videoKeys(s.videos)).toEqual(["bounded", "automatic"]);
+		expect(s.videos[1]?.extras?.mode).toBe("PER_TITLE_TEMPLATE");
+	});
+	it("reuses the automatic binding when a fixed row occupies the generated automatic ID", () => {
+		const s = partial();
+		s.videos[0] = {
+			...required(s.videos[0]),
+			extras: { ...s.videos[0]?.extras, key: "automatic-template" },
+		};
+		const before = compiled(s).plan;
+		const goal = perTitleGoalFromWizard(s);
+		expect(goal.rows?.map((row) => row.id)).toEqual(["automatic-template"]);
+		const candidate = required(
+			proposePerTitleSettings(goal).find((p) => p.applicable),
+		);
+		expect(candidate.api.streams.map((row) => [row.rowId, row.mode])).toEqual([
+			["automatic-template", "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"],
+			["automatic-template-1", "PER_TITLE_TEMPLATE"],
+		]);
+		const next = applyPerTitleProposal(s, candidate, "H264");
+		const { plan, operations } = compiled(next);
+		expect(videoKeys(next.videos)).toEqual(["automatic-template", "v720"]);
+		expect(plan.muxings).toEqual(before.muxings);
+		expect(
+			operations.find((o) => o.step === "stream:automatic-template")?.payload
+				.mode,
+		).toBe("PER_TITLE_TEMPLATE_FIXED_RESOLUTION");
+		expect(operations.find((o) => o.step === "stream:v720")?.payload.mode).toBe(
+			"PER_TITLE_TEMPLATE",
+		);
+	});
+
+	it("does not reuse a generated automatic ID belonging to a different codec", () => {
+		const s = partial();
+		s.videos[0] = {
+			...required(s.videos[0]),
+			extras: { ...s.videos[0]?.extras, key: "automatic-template" },
+		};
+		s.videos.push({
+			codec: "H265",
+			height: 1080,
+			bitrate: 2000000,
+			extras: { key: "automatic-template-1" },
+		});
+		const candidate = required(
+			proposePerTitleSettings(perTitleGoalFromWizard(s, "H264")).find(
+				(p) => p.applicable,
+			),
+		);
+		const before = structuredClone(s);
+		expect(() => applyPerTitleProposal(s, candidate, "H264")).toThrow(
+			expect.objectContaining({ code: "INVALID_PROPOSAL" }),
+		);
+		expect(s).toEqual(before);
+	});
+	it("keeps the unsafe reshape guard when automatic bindings are ambiguous", () => {
+		const s = partial();
+		s.videos.push({
+			height: 1080,
+			bitrate: null,
+			extras: { mode: "PER_TITLE_TEMPLATE" },
+		});
+		const candidate = required(
+			proposePerTitleSettings(perTitleGoalFromWizard(s)).find(
+				(p) => p.applicable,
+			),
+		);
+		expect(() => applyPerTitleProposal(s, candidate, "H264")).toThrow(
+			expect.objectContaining({ code: "UNSAFE_RESHAPE" }),
+		);
+	});
 });

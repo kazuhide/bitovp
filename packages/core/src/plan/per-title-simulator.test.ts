@@ -57,6 +57,60 @@ describe("proposePerTitleSettings", () => {
 		expect(candidate?.applicable).toBe(true);
 	});
 
+	it.each([
+		"automatic",
+		"count",
+	] as const)("keeps %s count suggestions compatible with integer examples without claiming all scenarios meet the goal", (strategy) => {
+		const [, candidate] = proposePerTitleSettings({
+			...automatic,
+			strategy,
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 6 },
+		});
+		expect(candidate?.applicable).toBe(true);
+		expect(candidate?.api.global).toMatchObject({
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+		});
+		expect(candidate?.api.global.minBitrateStepSize).toBeLessThan(
+			candidate?.api.global.maxBitrateStepSize ?? 0,
+		);
+		expect(candidate?.scenarios[2]?.modelCountRange?.maximum).toBe(6);
+		expect(candidate?.scenarios[2]?.modelRungs).toHaveLength(6);
+		expect(candidate?.scenarios[2]?.status).toBe("modelled");
+		for (const scenario of candidate?.scenarios ?? []) {
+			expect(
+				scenario.diagnostics.some((item) => item.code === "row-step-conflict"),
+			).toBe(false);
+			for (let index = 1; index < scenario.modelRungs.length; index++) {
+				const ratio =
+					(scenario.modelRungs[index]?.bitrate ?? 0) /
+					(scenario.modelRungs[index - 1]?.bitrate ?? 1);
+				expect(ratio).toBeGreaterThanOrEqual(
+					(candidate?.api.global.minBitrateStepSize ?? 1) - 1e-10,
+				);
+				expect(ratio).toBeLessThanOrEqual(
+					(candidate?.api.global.maxBitrateStepSize ?? 1) + 1e-10,
+				);
+			}
+		}
+		expect(
+			candidate?.scenarios[0]?.diagnostics.some(
+				(item) => item.code === "count-unreachable",
+			),
+		).toBe(true);
+		expect(candidate?.scenarios[0]?.status).toBe("conflict");
+		expect(candidate?.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "scenario-conflict",
+				severity: "warning",
+			}),
+		);
+		expect(candidate?.countGuarantee).toBe(false);
+	});
+
 	it("does not invent a second bitrate point in a single-point interval", () => {
 		const [proposal] = proposePerTitleSettings({
 			...automatic,
@@ -377,6 +431,163 @@ describe("proposePerTitleSettings", () => {
 			"low",
 			"high",
 		]);
+	});
+
+	it.each([
+		{
+			narrowMinimum: 110_000,
+			narrowMaximum: 110_000,
+			order: ["narrow", "wide"],
+		},
+		{
+			narrowMinimum: 800_000,
+			narrowMaximum: 900_000,
+			order: ["wide", "narrow"],
+		},
+	])("finds a feasible ordering of overlapping same-resolution ranges ($narrowMinimum)", ({
+		narrowMinimum,
+		narrowMaximum,
+		order,
+	}) => {
+		const wide = {
+			id: "wide",
+			height: 360,
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+		};
+		const narrow = {
+			id: "narrow",
+			height: 360,
+			minBitrate: narrowMinimum,
+			maxBitrate: narrowMaximum,
+		};
+		for (const rows of [
+			[wide, narrow],
+			[narrow, wide],
+		]) {
+			const [baseline] = proposePerTitleSettings({
+				...automatic,
+				strategy: "fixed-ranges",
+				maxBitrate: 1_000_000,
+				minBitrateStepSize: 1.5,
+				maxBitrateStepSize: 1.9,
+				rows,
+			});
+			expect(baseline?.applicable).toBe(true);
+			expect(baseline?.api.streams.map((row) => row.rowId)).toEqual(order);
+			expect(
+				baseline?.scenarios.every((scenario) => scenario.status === "modelled"),
+			).toBe(true);
+		}
+	});
+
+	it("reports bounded row-order exploration as unknown instead of proving an unsatisfiable ladder", () => {
+		const [baseline] = proposePerTitleSettings({
+			...automatic,
+			strategy: "fixed-ranges",
+			maxBitrate: 1_000_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			rows: [
+				...Array.from({ length: 7 }, (_, index) => ({
+					id: `overlap-${index}`,
+					height: 360,
+					minBitrate: 100_000,
+					maxBitrate: 2_000_000 + index,
+				})),
+				{ id: "later", height: 720, minBitrate: 110_000, maxBitrate: 110_000 },
+			],
+		});
+		expect(baseline?.applicable).toBe(false);
+		expect(baseline?.status).toBe("unknown");
+		expect(baseline?.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "row-order-unknown",
+				severity: "warning",
+				values: expect.objectContaining({ limit: 2048 }),
+			}),
+		);
+		const search = baseline?.diagnostics.find(
+			(item) => item.code === "row-order-unknown",
+		);
+		expect(search?.values?.states).toBeLessThanOrEqual(2048);
+		expect(
+			baseline?.diagnostics.some((item) => item.code === "row-step-conflict"),
+		).toBe(false);
+		expect(
+			baseline?.scenarios.every(
+				(scenario) =>
+					scenario.status === "unknown" && scenario.modelCountRange === null,
+			),
+		).toBe(true);
+	});
+
+	it("orders same-resolution illustrative targets independently of their feasible interval ordering", () => {
+		const boundaries = {
+			bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
+			lowComplexityBoundaryForMaxBitrate: 100_000,
+			highComplexityBoundaryForMaxBitrate: 1_000_000,
+		};
+		const [baseline] = proposePerTitleSettings({
+			...automatic,
+			strategy: "fixed-ranges",
+			maxBitrate: 1_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			scenarioFractions: [2 / 9],
+			rows: [
+				{
+					id: "wide",
+					height: 360,
+					minBitrate: 100_000,
+					maxBitrate: 1_000_000,
+					...boundaries,
+				},
+				{
+					id: "narrow",
+					height: 360,
+					minBitrate: 500_000,
+					maxBitrate: 600_000,
+					...boundaries,
+				},
+			],
+		});
+		expect(baseline?.applicable).toBe(true);
+		expect(baseline?.scenarios[0]?.status).toBe("modelled");
+		expect(
+			baseline?.scenarios[0]?.modelRungs.map((rung) => [
+				rung.rowId,
+				rung.bitrate,
+			]),
+		).toEqual([
+			["wide", 300_000],
+			["narrow", 522_222],
+		]);
+	});
+
+	it.each([
+		63, 64,
+	])("includes the automatic template when enforcing the stream limit (%s required rows)", (count) => {
+		const [baseline] = proposePerTitleSettings({
+			...automatic,
+			strategy: "required-resolutions",
+			minBitrateStepSize: 1.02,
+			rows: Array.from({ length: count }, (_, index) => ({
+				id: `r-${index}`,
+				height: 360,
+			})),
+		});
+		expect(baseline?.applicable).toBe(count === 63);
+		if (count === 64) {
+			expect(baseline?.diagnostics).toContainEqual(
+				expect.objectContaining({ code: "model-limit", severity: "conflict" }),
+			);
+			expect(
+				baseline?.scenarios.every((scenario) => scenario.status === "unknown"),
+			).toBe(true);
+		} else {
+			expect(baseline?.api.streams).toHaveLength(64);
+		}
 	});
 
 	it("does not count fractional bitrate points in a one-bit-per-second interval", () => {

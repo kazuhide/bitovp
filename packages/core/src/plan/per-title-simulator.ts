@@ -51,6 +51,7 @@ export type PerTitleDiagnostic = {
 		| "required-count-exceeded"
 		| "row-step-conflict"
 		| "row-gap-conflict"
+		| "row-order-unknown"
 		| "count-unreachable"
 		| "extra-rungs-possible"
 		| "count-not-guaranteed"
@@ -59,6 +60,7 @@ export type PerTitleDiagnostic = {
 		| "step-adjusted"
 		| "linear-illustration"
 		| "scenario-range-bound"
+		| "scenario-conflict"
 		| "model-limit";
 	severity: "info" | "warning" | "conflict";
 	message: string;
@@ -117,7 +119,7 @@ export type PerTitleScenario = {
 export type PerTitleProposal = {
 	id: "baseline" | "step-adjusted";
 	codec: PerTitleCodec;
-	status: "candidate" | "conflict";
+	status: "candidate" | "conflict" | "unknown";
 	applicable: boolean;
 	evidence: "model-only";
 	countGuarantee: false;
@@ -143,7 +145,12 @@ export function proposePerTitleSettings(
 	if (!desiredCount || desiredCount < 1 || desiredCount > MAX_MODEL_RUNGS) {
 		return [baseline];
 	}
-	const rows = orderedRows(goal);
+	const rowPositions = new Map(
+		baseline.api.streams.map((stream, index) => [stream.rowId, index]),
+	);
+	const rows = orderedRows(goal).sort(
+		(a, b) => (rowPositions.get(a.id) ?? 0) - (rowPositions.get(b.id) ?? 0),
+	);
 	const ranges = rowRanges(goal, rows);
 	let minimumStep = goal.minBitrateStepSize ?? DEFAULT_MIN_STEP;
 	let maximumStep = goal.maxBitrateStepSize ?? DEFAULT_MAX_STEP;
@@ -193,6 +200,11 @@ export function proposePerTitleSettings(
 			);
 		}
 	}
+	if (!isClosedStrategy(goal.strategy) && rows.length === 0) {
+		// Rounding a positive integer bitrate upward adds less than one bit per
+		// second. This ratio interval lets the example use those integer points.
+		maximumStep = Math.max(maximumStep, minimumStep + 1 / goal.minBitrate);
+	}
 	if (
 		Math.abs(minimumStep - (goal.minBitrateStepSize ?? DEFAULT_MIN_STEP)) <
 			1e-10 &&
@@ -227,6 +239,7 @@ const DEFAULT_MAX_STEP = 1.9;
 const MAX_MODEL_RUNGS = 256;
 const MAX_ROWS = 64;
 const MAX_SCENARIOS = 9;
+const MAX_ORDER_STATES = 2048;
 const EPSILON = 1e-10;
 
 const inputErrorCodes = new Set<PerTitleDiagnostic["code"]>([
@@ -264,6 +277,100 @@ function orderedRows(goal: PerTitleGoal): PerTitleGoalRow[] {
 							(a.maxBitrate ?? 0) - (b.maxBitrate ?? 0)
 						: 0),
 			);
+}
+
+/** Searches only interchangeable heights; the budget is shared by both step checks. */
+function resolveRowOrder(
+	goal: PerTitleGoal,
+	rows: PerTitleGoalRow[],
+	minimumStep: number,
+	maximumStep: number,
+): { rows: PerTitleGoalRow[]; unknown: boolean; states: number } {
+	if (
+		goal.strategy !== "fixed-ranges" ||
+		!rows.some(
+			(row, index) => index > 0 && row.height === rows[index - 1]?.height,
+		)
+	) {
+		return { rows, unknown: false, states: 0 };
+	}
+	const intervals = rowRanges(goal, rows).map((range) => ({
+		minimum: Math.log(range.minimum),
+		maximum: Math.log(range.maximum),
+	}));
+	const minimumDelta = Math.log(minimumStep);
+	let states = 0;
+	let exhausted = false;
+	const search = (maximum: number): number[] | null => {
+		const maximumDelta = Math.log(maximum);
+		const order: number[] = [];
+		const visit = (
+			remaining: number[],
+			previous?: Interval,
+		): number[] | null => {
+			if (states >= MAX_ORDER_STATES) {
+				exhausted = true;
+				return null;
+			}
+			states++;
+			if (remaining.length === 0) return [...order];
+			const height = rows[remaining[0] as number]?.height;
+			const candidates = remaining
+				.filter((index) => rows[index]?.height === height)
+				.sort(
+					(a, b) =>
+						(intervals[a]?.maximum ?? 0) - (intervals[b]?.maximum ?? 0) ||
+						(intervals[a]?.minimum ?? 0) - (intervals[b]?.minimum ?? 0),
+				);
+			const seen = new Set<string>();
+			for (const index of candidates) {
+				const range = intervals[index] as Interval;
+				const signature = `${range.minimum}:${range.maximum}`;
+				if (seen.has(signature)) continue;
+				seen.add(signature);
+				const next = {
+					minimum: Math.max(
+						range.minimum,
+						previous ? previous.minimum + minimumDelta : range.minimum,
+					),
+					maximum: Math.min(
+						range.maximum,
+						previous ? previous.maximum + maximumDelta : range.maximum,
+					),
+				};
+				if (next.minimum > next.maximum + EPSILON) continue;
+				order.push(index);
+				const found = visit(
+					remaining.filter((value) => value !== index),
+					next,
+				);
+				order.pop();
+				if (found) return found;
+				if (exhausted) return null;
+			}
+			return null;
+		};
+		return visit(rows.map((_row, index) => index));
+	};
+	const found = search(maximumStep);
+	if (found) {
+		return {
+			rows: found.map((index) => rows[index] as PerTitleGoalRow),
+			unknown: false,
+			states,
+		};
+	}
+	if (!exhausted) {
+		const minimumOnly = search(Number.MAX_VALUE);
+		if (minimumOnly) {
+			return {
+				rows: minimumOnly.map((index) => rows[index] as PerTitleGoalRow),
+				unknown: false,
+				states,
+			};
+		}
+	}
+	return { rows, unknown: exhausted, states };
 }
 
 function rowRanges(goal: PerTitleGoal, rows: PerTitleGoalRow[]): Interval[] {
@@ -417,13 +524,14 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 	) {
 		conflict("rows-required", "Add at least one required resolution.");
 	}
+	const streamCount = rows.length + (isClosedStrategy(goal.strategy) ? 0 : 1);
 	if (
-		rows.length > MAX_ROWS ||
+		streamCount > MAX_ROWS ||
 		(goal.scenarioFractions?.length ?? 0) > MAX_SCENARIOS
 	) {
 		conflict(
 			"model-limit",
-			"This model supports up to 64 rows and 9 scenarios.",
+			"This model supports up to 64 stream templates in total, including the automatic template, and 9 scenarios.",
 		);
 	}
 	if (
@@ -504,8 +612,21 @@ function buildProposal(
 ): PerTitleProposal {
 	const minimumStep = goal.minBitrateStepSize ?? DEFAULT_MIN_STEP;
 	const maximumStep = goal.maxBitrateStepSize ?? DEFAULT_MAX_STEP;
-	const rows = orderedRows(goal);
 	const diagnostics = validateGoal(goal);
+	const sortedRows = orderedRows(goal);
+	const ordering = diagnostics.some((item) => inputErrorCodes.has(item.code))
+		? { rows: sortedRows, unknown: false, states: 0 }
+		: resolveRowOrder(goal, sortedRows, minimumStep, maximumStep);
+	const rows = ordering.rows;
+	if (ordering.unknown) {
+		diagnostics.push({
+			code: "row-order-unknown",
+			severity: "warning",
+			message:
+				"The bounded search did not establish an ordering for these overlapping same-resolution intervals. This result is unknown, not a proof that the requested ladder is impossible.",
+			values: { states: ordering.states, limit: MAX_ORDER_STATES },
+		});
+	}
 	const api: PerTitleApiSettings = {
 		global: {
 			minBitrate: goal.minBitrate,
@@ -592,14 +713,22 @@ function buildProposal(
 	}
 	const invalid = diagnostics.some((item) => inputErrorCodes.has(item.code));
 	const ranges = rowRanges(goal, rows);
-	if (!invalid && !choosePoints(ranges, minimumStep, Number.MAX_VALUE, 0)) {
+	if (
+		!invalid &&
+		!ordering.unknown &&
+		!choosePoints(ranges, minimumStep, Number.MAX_VALUE, 0)
+	) {
 		diagnostics.push({
 			code: "row-step-conflict",
 			severity: "conflict",
 			message:
 				"The required rows cannot fit their intervals while preserving the minimum bitrate step.",
 		});
-	} else if (!invalid && !choosePoints(ranges, minimumStep, maximumStep, 0)) {
+	} else if (
+		!invalid &&
+		!ordering.unknown &&
+		!choosePoints(ranges, minimumStep, maximumStep, 0)
+	) {
 		diagnostics.push({
 			code: "row-gap-conflict",
 			severity: "conflict",
@@ -638,13 +767,16 @@ function buildProposal(
 			});
 		}
 	}
-	const applicable = !diagnostics.some((item) => item.severity === "conflict");
-	const canModel = !diagnostics.some(
-		(item) =>
-			inputErrorCodes.has(item.code) ||
-			item.code === "row-step-conflict" ||
-			item.code === "row-gap-conflict",
-	);
+	const hasConflicts = diagnostics.some((item) => item.severity === "conflict");
+	const applicable = !ordering.unknown && !hasConflicts;
+	const canModel =
+		!ordering.unknown &&
+		!diagnostics.some(
+			(item) =>
+				inputErrorCodes.has(item.code) ||
+				item.code === "row-step-conflict" ||
+				item.code === "row-gap-conflict",
+		);
 	const fractions = goal.scenarioFractions?.length
 		? goal.scenarioFractions.slice(0, MAX_SCENARIOS)
 		: [0.25, 0.5, 1];
@@ -660,15 +792,30 @@ function buildProposal(
 				modelCountRange: null,
 				rowModels: [],
 				modelRungs: [],
-				diagnostics: diagnostics.filter((item) => item.severity === "conflict"),
+				diagnostics: diagnostics.filter(
+					(item) =>
+						item.severity === "conflict" || item.code === "row-order-unknown",
+				),
 			};
 		}
 		return buildScenario(goal, rows, ranges, fraction, scenarioId);
 	});
+	const conflictingScenarios = scenarios.filter(
+		(scenario) => scenario.status === "conflict",
+	);
+	if (applicable && conflictingScenarios.length > 0) {
+		diagnostics.push({
+			code: "scenario-conflict",
+			severity: "warning",
+			message:
+				"The full-interval API candidate passes this model's constraints, but some hypothetical scenarios do not. Inspect each scenario before applying; the candidate does not promise that every scenario meets the goal.",
+			values: { scenarios: conflictingScenarios.length },
+		});
+	}
 	return {
 		id,
 		codec: goal.codec,
-		status: applicable ? "candidate" : "conflict",
+		status: applicable ? "candidate" : hasConflicts ? "conflict" : "unknown",
 		applicable,
 		evidence: "model-only",
 		countGuarantee: false,
@@ -737,6 +884,10 @@ function buildScenario(
 			kind: "required",
 		}),
 	);
+	// At one resolution, the illustrated bitrate order is independent of edit order.
+	modelRungs.sort(
+		(a, b) => (a.height ?? 0) - (b.height ?? 0) || a.bitrate - b.bitrate,
+	);
 	if (rowModels.some((row) => row.linearTargetBitrate !== null)) {
 		diagnostics.push({
 			code: "linear-illustration",
@@ -758,20 +909,34 @@ function buildScenario(
 			goal.countPolicy.kind === "exact"
 				? Math.min(goal.countPolicy.count, maximum)
 				: maximum;
-		const lastBitrate = Math.min(
-			assumedMaxBitrate,
-			goal.minBitrate * maximumStep ** (selectedCount - 1),
-		);
-		const exampleStep =
-			selectedCount > 1
-				? (lastBitrate / goal.minBitrate) ** (1 / (selectedCount - 1))
-				: 1;
 		for (let index = 0; index < selectedCount; index++) {
+			const previous = modelRungs.at(-1)?.bitrate;
+			const bitrate =
+				previous === undefined
+					? goal.minBitrate
+					: Math.max(
+							previous + 1,
+							Math.ceil(previous * (minimumStep - EPSILON)),
+						);
+			const upper =
+				previous === undefined
+					? assumedMaxBitrate
+					: Math.min(
+							assumedMaxBitrate,
+							Math.floor(previous * (maximumStep + EPSILON)),
+						);
+			if (!Number.isSafeInteger(bitrate) || bitrate > upper) {
+				diagnostics.push({
+					code: "row-step-conflict",
+					severity: "conflict",
+					message:
+						"The spacing bound has not produced an integer example within this scenario's bitrate and adjacent step bounds.",
+					values: { constructed: modelRungs.length, selected: selectedCount },
+				});
+				break;
+			}
 			modelRungs.push({
-				bitrate: Math.min(
-					assumedMaxBitrate,
-					Math.round(goal.minBitrate * exampleStep ** index),
-				),
+				bitrate,
 				kind: "illustrative",
 			});
 		}
@@ -785,7 +950,7 @@ function buildScenario(
 				severity: "conflict",
 				message:
 					"The illustrative integer bitrate points do not satisfy the requested adjacent step bounds.",
-				rowIds: [rows[index - 1]?.id, rows[index]?.id].filter(
+				rowIds: [modelRungs[index - 1]?.rowId, modelRungs[index]?.rowId].filter(
 					(value): value is string => value !== undefined,
 				),
 				values: { ratio },

@@ -88,6 +88,14 @@ export function perTitleGoalFromWizard(
 		(row) =>
 			row.extras?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
+	// The five intent modes cannot express bounded required rows plus a free template.
+	// Refuse this import rather than turning the free row into a requirement or dropping it.
+	if (hasRanges && selected.some((row) => !fixedMode(row))) {
+		throw new PerTitleWizardError(
+			"UNSUPPORTED_STATE",
+			"A ladder combining fixed bitrate ranges with automatic templates cannot be imported without changing its intent.",
+		);
+	}
 	const hasFixed = selected.some(fixedMode);
 	const strategy = hasRanges
 		? "fixed-ranges"
@@ -200,7 +208,7 @@ export function applyPerTitleProposal(
 	);
 	const explicitlyRequested = new Set(
 		proposal.api.streams
-			.filter((stream) => stream.rowId !== "automatic-template")
+			.filter((stream) => stream.mode !== "PER_TITLE_TEMPLATE")
 			.map((stream) => stream.rowId),
 	);
 	const automaticRows = selected.filter(
@@ -214,8 +222,11 @@ export function applyPerTitleProposal(
 			: proposal.api.streams.length === 1 && selected.length === 1
 				? selected[0]
 				: undefined;
+	const automaticStreams = proposal.api.streams.filter(
+		(stream) => stream.mode === "PER_TITLE_TEMPLATE",
+	);
 	const streams = proposal.api.streams.map((stream) =>
-		stream.rowId === "automatic-template" &&
+		automaticStreams.length === 1 &&
 		stream.mode === "PER_TITLE_TEMPLATE" &&
 		automaticIndex !== undefined &&
 		!keys.includes(stream.rowId)

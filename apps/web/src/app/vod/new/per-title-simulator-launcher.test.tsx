@@ -81,6 +81,27 @@ describe("PerTitleSimulatorLauncher", () => {
 		expect(onPatch).not.toHaveBeenCalled();
 	});
 
+	it("compares streams by key so an added video does not appear to replace audio", () => {
+		mocks.apply.mockImplementation((current: WizardState) => ({
+			...current,
+			videos: [
+				...current.videos,
+				{ codec: "H265", height: 720, bitrate: 1000000 },
+			],
+		}));
+		render(
+			<PerTitleSimulatorLauncher
+				state={structuredClone(DEFAULT_WIZARD_STATE)}
+				onPatch={vi.fn()}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Open simulator" }));
+		fireEvent.click(screen.getByRole("button", { name: "Review candidate" }));
+		expect(screen.getByRole("dialog")).not.toHaveTextContent("AAC");
+		expect(screen.getByRole("dialog")).not.toHaveTextContent("a64");
+		expect(screen.getByRole("dialog")).toHaveTextContent("H265");
+	});
+
 	it("rejects an old proposal when the wizard changes before applying", () => {
 		const initial = structuredClone(DEFAULT_WIZARD_STATE);
 		const onPatch = vi.fn();

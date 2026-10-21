@@ -1840,16 +1840,14 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 								<span className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-zinc-300">
 									{manifest.kind}
 								</span>
-								<FieldRowAction>
-									<RowRemoveButton
-										label={t("wizardX.removeManifestN", { n: index + 1 })}
-										onClick={() =>
-											patchManifests({
-												extra: extra.filter((_, i) => i !== index),
-											})
-										}
-									/>
-								</FieldRowAction>
+								<RowRemoveButton
+									label={t("wizardX.removeManifestN", { n: index + 1 })}
+									onClick={() =>
+										patchManifests({
+											extra: extra.filter((_, i) => i !== index),
+										})
+									}
+								/>
 							</div>
 							{manifest.kind === "SMOOTH" ? (
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -12,7 +12,11 @@ import {
 	liveManifestDestination,
 } from "./build-live-plan";
 import { addLiveManifest } from "./live-output-actions";
-import { liveMirrorEntries, liveOutputEntries } from "./live-output-model";
+import {
+	liveMirrorEntries,
+	liveOutputEntries,
+	liveOutputOptionLabel,
+} from "./live-output-model";
 import { LiveManifestsSection } from "./manifests-section";
 
 type Identity = Pick<LiveHlsManifestState, "destination">;
@@ -77,10 +81,12 @@ function ManifestDestination({
 					) : null}
 					{outputEntries.map((entry) => (
 						<option key={entry.key} value={entry.key}>
-							{entry.output.name ||
-								(entry.key === "origin"
+							{liveOutputOptionLabel(
+								entry,
+								entry.key === "origin"
 									? t("liveArchive.originStorage")
-									: entry.key)}
+									: entry.key,
+							)}
 						</option>
 					))}
 				</SelectNative>

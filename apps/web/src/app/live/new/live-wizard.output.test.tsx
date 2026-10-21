@@ -17,10 +17,12 @@ vi.mock("next/navigation", () => ({
 	useSearchParams: () => new URLSearchParams(),
 }));
 
+import { LiveArchiveSection } from "./archive-section";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
 } from "./build-live-plan";
+import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
 import { LiveWizard } from "./live-wizard";
 import { LiveManifestListSection } from "./manifest-list-section";
 
@@ -61,6 +63,71 @@ beforeEach(() => {
 		if (url === "/api/credentials") return CREDENTIALS;
 		return [];
 	});
+});
+
+it.each([
+	"en",
+	"ja",
+] as const)("distinguishes default-named mirrors in manifest and archive destinations after import (%s)", (locale) => {
+	const state = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	state.name = "Mirror destinations";
+	state.accountId = "00000000-0000-4000-8000-000000000001";
+	state.output = {
+		...state.output,
+		credentialId: "00000000-0000-4000-8000-000000000002",
+		bucket: "primary",
+		basePath: "live/test",
+	};
+	state.mirror = { ...state.output, bucket: "mirror-1" };
+	state.additionalMirrors = [2, 3].map((number) => ({
+		key: `mirror-${number}`,
+		output: { ...state.output, bucket: `mirror-${number}` },
+	}));
+	state.archive = {
+		muxing: {
+			key: "archive",
+			kind: "MP4",
+			streamKey: "v720",
+			additionalStreamKeys: ["a128"],
+			filename: "archive.mp4",
+			destination: { outputKey: "mirror-3", path: "live/test/archive" },
+		},
+	};
+	const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
+	const imported = tryImportLiveChannelIntoWizard(plan);
+	if (!imported.ok) throw new Error(imported.reasonKey);
+	expect(
+		liveChannelPlanSchema.parse(buildLiveChannelPlan(imported.state)),
+	).toEqual(plan);
+	renderWithQuery(
+		<>
+			<LiveManifestListSection state={imported.state} onPatch={vi.fn()} />
+			<LiveArchiveSection
+				state={imported.state}
+				credentials={[]}
+				onPatch={vi.fn()}
+			/>
+		</>,
+		locale,
+	);
+	const selects = [
+		...screen.getAllByLabelText<HTMLSelectElement>(
+			locale === "ja" ? "出力先" : "Output destination",
+		),
+		screen.getByLabelText<HTMLSelectElement>(
+			locale === "ja" ? "アーカイブの保存先" : "Archive destination",
+		),
+	];
+	for (const select of selects) {
+		const labels = [1, 2, 3].map((number) => {
+			const option = [...select.options].find(
+				(item) => item.value === `mirror-${number}`,
+			);
+			expect(option).toBeDefined();
+			return option?.text;
+		});
+		expect(new Set(labels).size).toBe(3);
+	}
 });
 
 it("offers AWS and Akamai storage without deployment-profile labeling", async () => {

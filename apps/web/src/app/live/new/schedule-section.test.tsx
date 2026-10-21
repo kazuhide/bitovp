@@ -183,7 +183,11 @@ describe("ScheduleSection", () => {
 		const view = renderWithQuery(
 			<ScheduleSection draft={DRAFT} onPatch={vi.fn()} />,
 		);
-		expect(screen.getByText(/billing begins/)).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"The channel begins starting up as soon as it is created (it does not wait for the planned input feed time).",
+			),
+		).toBeInTheDocument();
 		expect(screen.queryByText(/covers a CONNECTED input/)).toBeNull();
 
 		view.rerender(
@@ -245,12 +249,12 @@ describe("ScheduleSection", () => {
 	// the clause names the CHANNEL, the operator's
 	// object, not the provider's encoder — same fact, same position.
 	const CREATE_TIME_BILLING: Record<string, string> = {
-		en: "The channel starts — and billing begins — the moment you create it",
-		ja: "作成した時点でチャンネルの起動準備が始まり、課金もそこから始まります",
+		en: "The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan",
+		ja: "チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります",
 	};
 
 	for (const locale of LOCALES) {
-		it(`the stream-up help says billing starts at CREATION, never that provisioning is deferred (${locale})`, async () => {
+		it(`the stream-up help explains immediate preparation and possible charges before the feed (${locale})`, async () => {
 			const messages = messagesFor(locale);
 			renderWithQuery(
 				<ScheduleSection draft={DRAFT} onPatch={vi.fn()} />,
@@ -558,18 +562,18 @@ describe("ScheduleSection — auto-shutdown vs the slot", () => {
 	});
 
 	/**
-	 * The runaway-cap preview quotes a number the SERVER will compute
-	 * (`deriveProgramSchedule`: span + `MAX_RUN_CAP_MARGIN_MINUTES`). The
+	 * The runtime-limit estimate uses the planned feed-to-stop span plus
+	 * `MAX_RUN_CAP_MARGIN_MINUTES`. The actual limit is calculated at creation. The
 	 * expectation is built from the imported constant, not from a literal 30,
 	 * so moving the margin in core moves this expectation with it — and a
 	 * preview that retyped the number would then disagree with it. The slot is
 	 * 20:45 → 22:00, i.e. 75 minutes.
 	 */
-	it("previews the cap from the SERVER's margin constant, not a retyped 30", () => {
+	it("previews the runtime-limit estimate using the shared margin constant", () => {
 		renderWithQuery(<ScheduleSection draft={DRAFT} onPatch={vi.fn()} />);
 		expect(
 			screen.getByText(
-				`Runaway cap: the channel will hard-stop after ${75 + MAX_RUN_CAP_MARGIN_MINUTES} min even if the scheduled stop cannot fire.`,
+				`Runtime-limit estimate: ${75 + MAX_RUN_CAP_MARGIN_MINUTES} min. The actual limit is calculated when the channel is created; reaching it requests a stop.`,
 			),
 		).toBeInTheDocument();
 	});

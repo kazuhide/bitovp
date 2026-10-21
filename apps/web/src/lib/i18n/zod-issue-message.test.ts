@@ -45,7 +45,7 @@ describe("zodIssueMessage — the FORM-layer choke point", () => {
 		const raw = "customData is too large (12345 chars serialized; max 8192)";
 		expect(CUSTOM_DATA_TOO_LARGE.test(raw)).toBe(true);
 		expect(zodIssueMessage({ message: raw }, tFor("ja"))).toBe(
-			"customData が大きすぎます(シリアライズ後 12345 文字。上限 8192 文字)",
+			"customData が大きすぎます（JSON に変換した後で 12345 文字。上限は 8192 文字）",
 		);
 		expect(zodIssueMessage({ message: raw }, tFor("en"))).toBe(
 			"customData is too large (12345 chars serialized; max 8192)",

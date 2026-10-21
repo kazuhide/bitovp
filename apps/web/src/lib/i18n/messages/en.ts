@@ -24,7 +24,7 @@
 // Share the provisioning and billing clause so every lifecycle hint stays consistent.
 // No trailing punctuation: each call site continues the sentence its own way.
 const PROVISIONS_AT_CREATE =
-	"The channel starts — and billing begins — the moment you create it";
+	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
 	liveOutputs: {
@@ -1786,7 +1786,7 @@ export const en = {
 		summaryCrossResolution:
 			"Cross-resolution VMAF: the {rendition}p rendition was upscaled {upscale}× and scored against the {reference}p source.{model} Low scores are expected for aggressive ladders and are not, on their own, an encoder defect.",
 		summaryNative:
-			"Native-resolution VMAF: {rendition}p scored against a {reference}p source.{model} A low score here is a real quality problem.",
+			"VMAF comparison: {rendition}p scored against a {reference}p source.{model} Low scores can reflect quality loss or comparison conditions. Check the reference, frame alignment and model before drawing conclusions.",
 		summaryUnknownWithModel:
 			"Scored with {model}. Source geometry unknown, so the comparison's terms cannot be stated.",
 		summaryUnknownNoModel:
@@ -4365,7 +4365,7 @@ export const en = {
 		previewWatchWhileEncodingManifestListsOn:
 			"Preview = watch-while-encoding manifest lists on the start request",
 		producesOnlyThePerVideoQcMirror:
-			"Produces ONLY the per-video QC mirror MP4s (under the qc/ output prefix) — no HLS/DASH muxings or manifests, no audio, no thumbnails/sprites/DRM. A fast, cheap encode purely for a VMAF/PSNR measurement. You still choose the storage output (the mirrors write there); the delivery format + Manifests controls are disabled while this is on.",
+			"Produces only the per-video QC mirror files (MP4, or WebM for VP9, under the qc/ output prefix), with no HLS/DASH muxings or manifests, audio outputs, thumbnails, sprites or DRM. This configuration is for VMAF/PSNR measurement. Choose the storage output where the QC mirrors will be written. Delivery format and manifest controls are disabled while this is on.",
 		profile: "Profile",
 		psnrDbRidesTheSameLibvmafPass:
 			"PSNR (dB) rides the same libvmaf pass and shows alongside VMAF in the report.",
@@ -4716,7 +4716,7 @@ export const en = {
 		expiresDays: "Expires in (days, optional)",
 		expiresDaysHint: "Empty = never expires.",
 		intro:
-			"Bearer tokens authenticate scripts and CI against /api/* with the same reach as a signed-in session. The secret is stored only as a hash and shown exactly once. Tokens cannot mint tokens.",
+			"Bearer tokens authenticate scripts and CI against /api/* for the current organization. Tokens issued here have at most OPERATOR permissions, further limited by the issuer's current membership and role. The secret is stored only as a hash and shown exactly once. Tokens cannot mint tokens.",
 		lastUsed: "last used",
 		listHeading: "Tokens",
 		mint: "Mint token",
@@ -4730,7 +4730,8 @@ export const en = {
 		noneYet: "No tokens yet.",
 		revoke: "Revoke",
 		revokeFailed: "Revoking failed — the token is STILL ACTIVE. Retry.",
-		revokeLatencyHint: "Takes effect within 60 seconds (verifier cache TTL).",
+		revokeLatencyHint:
+			"Once revocation is saved, subsequent token checks reject it. Requests already authorized may still complete.",
 		confirmRevoke: "Revoke permanently?",
 		created: "created",
 		expires: "expires",
@@ -4744,7 +4745,7 @@ export const en = {
 			"Per-user accounts with roles. VIEWER reads; OPERATOR runs jobs and channels; ADMIN also manages credentials, settings, and users. A created user gets a temporary password shown once — they must change it at first sign-in.",
 		createHeading: "Create a user",
 		email: "Email",
-		emailHint: "Their Bitmovin-account email is the username.",
+		emailHint: "The email address used to log in to this account.",
 		displayName: "Display name",
 		role: "Role",
 		create: "Create user",
@@ -5009,9 +5010,9 @@ export const en = {
 		generatesDefaultVodManifestsOverThisChannel:
 			"Generates default VOD manifests over this channel’s recording, written next to it in the output this channel already uses.",
 		guardAudioRenditionsWithAudiostreamcountGt0:
-			"Guard audio renditions with AUDIOSTREAMCOUNT > 0 (skip audio for silent sources)",
+			"Guard audio renditions with AUDIOSTREAMCOUNT > 0 (only output audio when the input has an audio stream)",
 		guiFirstOnlineVideoPlatformExposingThe:
-			"GUI-first online video platform exposing the full Bitmovin Encoding API",
+			"Encoding GUI with the goal of covering the full Bitmovin Encoding API",
 		heightP: "Height (p)",
 		hideImport: "Hide import",
 		hint: "hint",
@@ -5116,7 +5117,7 @@ export const en = {
 		multipleIngestPointsWithAutomaticFailover:
 			"Multiple ingest points with automatic failover",
 		mustMatchTheVaultedPassphrase12816:
-			"Must match the vaulted passphrase: 128 ↔ 16 chars, 256 ↔ 32",
+			"Must match the passphrase saved in the credential (AES-128: 16 characters; AES-256: 32 characters).",
 		muxingInitFileIntervalS: "Muxing init-file interval (s)",
 		myPresets: "My presets",
 		namedBucketPrefixShortcutsOfferedAsOne:
@@ -5511,9 +5512,9 @@ export const en = {
 		shutDownNeverConnects:
 			"Shut down if the source never connects within this window after start. Reclaims a channel started early whose encoder never showed up.",
 		shutDownNoInput:
-			"Shut down if no input arrives for this long. Stops paying for an encoder after the source disconnects mid-stream. Note: an auto-restart does NOT reset this timer.",
+			"Shut down if no input arrives for this long. Use this to limit idle runtime after the source disconnects.",
 		shutDownTotalRuntime:
-			"Shut down after this total runtime regardless of input. A hard cost/runtime cap for a known-duration event.",
+			"Shut down after this total runtime regardless of input. Use this to limit runtime for an event of known duration.",
 		defaultEn: 'Default "en"',
 		defaultEnglishSample: 'Default "english - sample"',
 		defaultStreamIsm: 'Default "stream.ism"',
@@ -5964,7 +5965,7 @@ export const en = {
 		"fixed-bitrate-hls-streamcondition-on-aws": {
 			title: "Fixed-bitrate HLS + audio guard (AWS S3)",
 			description:
-				"Adds Condition(AUDIOSTREAMCOUNT > 0) on every audio rendition so silent sources skip audio outputs.",
+				"Adds Condition(AUDIOSTREAMCOUNT > 0) on every audio rendition so inputs without an audio stream skip audio outputs.",
 		},
 		"fixed-bitrate-hls-streamcondition-on-azure": {
 			title: "Fixed-bitrate HLS + audio guard (Azure Blob)",
@@ -6096,7 +6097,7 @@ export const en = {
 	},
 	schedule: {
 		upcomingCaption: "Reserved schedule actions, next 7 days",
-		// The planned input feed time is separate from channel creation, which starts provisioning and billing.
+		// The planned input feed time is separate from channel creation, which starts provisioning.
 		// The three schedule times describe the input feed, program start and channel stop.
 		enableAtCreation: "Set the planned input feed, program and stop times",
 		// Always visible, enabled or not: the one sentence separating the
@@ -6107,23 +6108,23 @@ export const en = {
 		// provisions immediately" reads as "with one it does not", which is the
 		// same false belief `streamUpHint` carried. Scheduling a slot changes
 		// what RUNS, never when the channel comes up.
-		disabledHint: `${PROVISIONS_AT_CREATE} either way — a planned time never defers that. Without one it simply runs until stopped by hand (or by its cap). Everything below can also be set later, from the channel's detail page.`,
+		disabledHint: `${PROVISIONS_AT_CREATE}. Scheduling does not delay provisioning. Without scheduled times, manual stop and configured shutdown limits still apply. These settings are also available later on the channel detail page.`,
 		streamUpAt: "Planned input feed time",
 		// Share PROVISIONS_AT_CREATE with rampHint to keep the lifecycle explanation consistent.
-		streamUpHint: `${PROVISIONS_AT_CREATE}, not at this time. What you set here are the planned input feed, program and stop times — not when the channel starts. The planned input feed time is the moment the schedule anchors to: have your feed arriving at the input endpoint by then, and the slate, if enabled, is inserted here and runs until the program starts. Billing runs from creation until the stop completes.`,
+		streamUpHint: `${PROVISIONS_AT_CREATE}. These are the planned input feed, program and stop times, not when the channel starts. Have your feed arriving at the input endpoint by the planned input feed time. If enabled, the slate is scheduled to play from that time until the program starts.`,
 		programStartAt: "Planned program start",
 		programStartHint:
-			"When the program begins. The slate, if enabled, runs until exactly here.",
+			"The planned program start. The slate, if enabled, is scheduled to play until this time.",
 		programEndAt: "Planned channel stop",
 		programEndHint:
-			"The channel stops here. A derived hard-stop cap backstops it in case the stop cannot run.",
+			"Requests a channel stop at this time. A runtime limit is also set as a fallback if the scheduled stop cannot run.",
 		enableSlate: "Insert a slate until the program starts",
 		slateSource: "Slate clip",
 		slateSourceHint:
-			"Browsed from your storage; registered once the channel is running. The slate cuts to the program at the planned program start, however late start-up ran.",
+			"Choose a clip from your storage. It is registered after the channel is running and scheduled to play until the planned program start.",
 		slatePickPlaceholder: "Pick a clip via Browse",
 		capPreview:
-			"Runaway cap: the channel will hard-stop after {minutes} min even if the scheduled stop cannot fire.",
+			"Runtime-limit estimate: {minutes} min. The actual limit is calculated when the channel is created; reaching it requests a stop.",
 		errIncomplete: "All three slot times are needed.",
 		errUpAfterStart:
 			"The planned input feed time must not be after the planned program start.",
@@ -6153,7 +6154,7 @@ export const en = {
 		//  (2026-08-15 incident): the three sentences the operator
 		// needed BEFORE the black stream, not after.
 		slateNeedsIngest:
-			"The reserved slate is waiting for a CONNECTED input — a slate can only cover a flowing input. Connect your feed (or a file input) and it will be inserted on its own.",
+			"The reserved slate is waiting for a CONNECTED input. A slate needs a flowing input. Connect your feed (or a file input). Once the clip is ready and the insertion window is open, insertion is requested automatically.",
 		rampHint: `${PROVISIONS_AT_CREATE}. The planned input feed time anchors the slate, the stop and the runtime cap. Start-up takes a few minutes before the channel accepts a feed.`,
 		slateIngestHint:
 			"A slate covers a CONNECTED input — it cannot render on an empty channel. Have your feed (or a file input) connected by the planned input feed time, or the slate waits and is marked not run (MISSED) when the window closes.",
@@ -6172,7 +6173,7 @@ export const en = {
 		title: "Schedule actions",
 		timelineEvents: "Schedule events",
 		explainer:
-			"Each action runs once at its scheduled time (±30 s). A start or slate that is too late is marked not run instead of running into a finished or on-air program; a stop always runs, however late.",
+			"Schedules are one-off actions, checked approximately every 30 s and dispatched when due. A start or slate that is too late is marked not run to avoid disrupting the program. Stops remain eligible even when late.",
 		action: "Action",
 		actionStart: "Start channel (START)",
 		actionStop: "Stop channel (STOP)",
@@ -6181,11 +6182,11 @@ export const en = {
 		airAt: "Air time (deadline alert)",
 		autoLead: "Auto-lead (derive run time)",
 		autoLeadExplainer:
-			"The run time is derived as air time minus this region's measured start-up time (90th percentile) minus a margin — or a default lead when there are too few measurements. A manually chosen EARLIER run time still wins.",
+			"The scheduled start is calculated as air time minus this region's measured start-up time (90th percentile) minus a margin. A default lead is used when there are too few measurements. An earlier manually selected start time takes precedence.",
 		autoLeadResolvedP90:
-			"Resolved: start-up begins {at} (from {n} recorded start-ups in this region, 90th percentile {p90}s plus margin).",
+			"Auto-lead calculation: {at} (based on {n} recorded start-ups in this region: 90th percentile {p90}s plus a margin). An earlier manual time takes precedence.",
 		autoLeadResolvedDefault:
-			"Resolved: provisioning starts {at} (insufficient data — default lead {lead}s).",
+			"Auto-lead calculation: {at} (insufficient data; default lead {lead}s). An earlier manual time takes precedence.",
 		deadlineMargin: "Deadline margin (seconds)",
 		invalidAirAt: "Enter a valid air time",
 		airAtLine: "on air {at}",

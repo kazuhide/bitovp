@@ -50,7 +50,7 @@ const EN_UNVERIFIED =
 const EN_REAUTHENTICATE =
 	"Your session has expired or was revoked. Sign in again to continue.";
 const JA_REAUTHENTICATE =
-	"セッションの有効期限が切れたか、無効になりました。続行するには、もう一度サインインしてください。";
+	"セッションの有効期限が切れたか、無効になりました。続行するには、もう一度ログインしてください。";
 
 /**
  * Rendered THROUGH the shell, not as a bare `PageAccessGate`: the gate only
@@ -273,7 +273,7 @@ describe("PageAccessGate — a direct URL to a privileged page", () => {
 			JA_REAUTHENTICATE,
 		);
 		expect(
-			screen.getByRole("link", { name: "もう一度サインイン" }),
+			screen.getByRole("link", { name: "もう一度ログイン" }),
 		).toHaveAttribute("href", "/login?next=%2Fsettings%2Fusers");
 		expect(screen.queryByText(EN_REAUTHENTICATE)).toBeNull();
 	});

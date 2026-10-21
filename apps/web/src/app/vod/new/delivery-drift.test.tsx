@@ -73,7 +73,9 @@ describe("delivery drift banner", () => {
 			).toBe(true);
 		});
 		await waitFor(() => {
-			expect(screen.queryByText(/件逸脱しています/)).toBeNull();
+			expect(
+				screen.queryByText(/要件を満たさない設定が \d+ 件あります/),
+			).toBeNull();
 		});
 	});
 
@@ -90,16 +92,21 @@ describe("delivery drift banner", () => {
 		first.bitrate = 30_000_000;
 		mockApi(deviating);
 		wrap(<VodWizard deliveryPresetId={spec.id} />, "ja");
-		const banner = await screen.findByText(/1 件逸脱しています/);
+		const banner =
+			await screen.findByText(/要件を満たさない設定が 1 件あります/);
 		expect(banner.textContent).toContain(spec.name);
 		// Expand: the deviation row names the requirement and the found value.
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "逸脱を表示" }));
+		await user.click(
+			screen.getByRole("button", { name: "該当する設定を表示" }),
+		);
 		expect(screen.getByText(/Video bitrate 45–55 Mbps/)).toBeInTheDocument();
 		expect(screen.getByText("30000000")).toBeInTheDocument();
 		// Dismiss stops tracking entirely.
 		await user.click(screen.getByRole("button", { name: "閉じる" }));
-		expect(screen.queryByText(/件逸脱しています/)).toBeNull();
+		expect(
+			screen.queryByText(/要件を満たさない設定が \d+ 件あります/),
+		).toBeNull();
 	});
 });
 
@@ -116,7 +123,9 @@ describe("drift sources (review-205 I5)", () => {
 		mockApi(spec.plan);
 		wrap(<VodWizard deliveryPresetId={spec.id} />, "ja");
 		await waitFor(() => {
-			expect(screen.queryByText(/件逸脱しています/)).toBeNull();
+			expect(
+				screen.queryByText(/要件を満たさない設定が \d+ 件あります/),
+			).toBeNull();
 		});
 		const deviating = JSON.parse(JSON.stringify(spec.plan)) as {
 			renditions: { bitrate: number | null }[];
@@ -139,7 +148,9 @@ describe("drift sources (review-205 I5)", () => {
 		await user.click(importBox);
 		await user.paste(JSON.stringify(deviating));
 		await user.click(screen.getByRole("button", { name: "検証して読み込む" }));
-		expect(await screen.findByText(/1 件逸脱しています/)).toBeInTheDocument();
+		expect(
+			await screen.findByText(/要件を満たさない設定が 1 件あります/),
+		).toBeInTheDocument();
 	});
 
 	it("a SAVED user preset carrying a spec re-arms the banner on load", async () => {
@@ -171,7 +182,8 @@ describe("drift sources (review-205 I5)", () => {
 			<VodWizard userPresetId="00000000-0000-4000-8000-0000000000a9" />,
 			"ja",
 		);
-		const banner = await screen.findByText(/1 件逸脱しています/);
+		const banner =
+			await screen.findByText(/要件を満たさない設定が 1 件あります/);
 		expect(banner.textContent).toContain("Org saved mezz");
 	});
 });
@@ -194,9 +206,9 @@ describe("the delivery COMMITMENT select (ledger #149 — #82's last unreachable
 		// Wait on the strip's TEXT first — findByLabelText's error swallows the
 		// "did the strip render at all" question.
 		await screen.findByText(/配信仕様:/);
-		const select = (await screen.findByLabelText(/適合の扱い/)) as
-			| HTMLSelectElement
-			| HTMLElement;
+		const select = (await screen.findByLabelText(
+			/要件を満たさない場合の動作/,
+		)) as HTMLSelectElement | HTMLElement;
 		if (!(select instanceof HTMLSelectElement)) {
 			throw new Error("commitment control is not a select");
 		}
@@ -241,11 +253,11 @@ describe("the delivery COMMITMENT select (ledger #149 — #82's last unreachable
 		for (const o of deviating.outputs ?? []) o.credentialId = cred;
 		mockApi(deviating);
 		wrap(<VodWizard deliveryPresetId={spec.id} />, "ja");
-		await screen.findByText(/1 件逸脱しています/);
+		await screen.findByText(/要件を満たさない設定が 1 件あります/);
 
-		const select = (await screen.findByLabelText(/適合の扱い/)) as
-			| HTMLSelectElement
-			| HTMLElement;
+		const select = (await screen.findByLabelText(
+			/要件を満たさない場合の動作/,
+		)) as HTMLSelectElement | HTMLElement;
 		if (!(select instanceof HTMLSelectElement)) {
 			throw new Error("commitment control is not a select");
 		}
@@ -259,7 +271,9 @@ describe("the delivery COMMITMENT select (ledger #149 — #82's last unreachable
 		);
 
 		await userEvent.click(screen.getByRole("button", { name: "閉じる" }));
-		expect(screen.queryByLabelText(/適合の扱い/)).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText(/要件を満たさない場合の動作/),
+		).not.toBeInTheDocument();
 		expect(screen.getByTestId("plan-json").textContent).not.toContain(
 			"onDeviation",
 		);

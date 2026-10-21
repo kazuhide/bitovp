@@ -167,7 +167,7 @@ describe("feederErrorMessage", () => {
 			differences: "frame rate 29.97 → 24/1",
 		});
 		expect(feederErrorMessage(ja, stored)).toBe(
-			"ソースがこのチャンネルの取り込み内容と一致しません（エンコーダの最新ハートビート）— エンコーダは属性の変化を警告して入力を切断し、プレイリストは静止した映像のまま進み続けます:\nframe rate 29.97 → 24/1",
+			"素材がこのチャンネルの入力と一致しません（比較対象: エンコーダの最新ハートビート）。エンコーダが入力の変化を検出して切断するため、プレイリストが更新されても映像が止まる場合があります:\nframe rate 29.97 → 24/1",
 		);
 	});
 
@@ -179,7 +179,9 @@ describe("feederErrorMessage", () => {
 			'Source cannot satisfy the channel\'s ingest: ingest "audio" needs audio, but the source carries video, data. The encoder would accept the connection and publish nothing.',
 		);
 		const jaMsg = feederErrorMessage(ja, stored);
-		expect(jaMsg).toContain("何も publish しません");
+		expect(jaMsg).toContain(
+			"エンコーダが接続を受け付けても、配信の出力は生成されません。",
+		);
 		expect(jaMsg).toContain('ingest "audio" needs audio');
 	});
 
@@ -189,7 +191,9 @@ describe("feederErrorMessage", () => {
 			"video stream at stream position 0, and this file carries audio there",
 		);
 		const jaMsg = feederErrorMessage(ja, stored);
-		expect(jaMsg).toContain("ストリーム位置 0 に映像ストリームを必要とします");
+		expect(jaMsg).toContain(
+			"Bitmovin では先頭（位置 0）に映像ストリームが必要ですが、このファイルでは audio です。",
+		);
 		expect(jaMsg).toContain("audio");
 	});
 

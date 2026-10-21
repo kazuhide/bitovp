@@ -481,7 +481,8 @@ describe("the source is chosen by CREDENTIAL, not by storage kind (owner 2026-08
 
 describe("the section's explanation lives behind a ?, not on the page (ledger #129)", () => {
 	/* Contextual explanations belong in an accessible help overlay beside the relevant section heading. */
-	const PROSE = /各入力ファイルはジョブが読み込む/;
+	const PROSE =
+		/入力ファイルごとに、ジョブが読み込むオブジェクトの認証情報・バケット・パスを指定します/;
 
 	function renderJa() {
 		render(
@@ -554,7 +555,11 @@ describe("the section's explanation lives behind a ?, not on the page (ledger #1
 		);
 		// Rendered directly, not behind a ?, because it explains the state the
 		// operator is looking at right now.
-		expect(screen.getByText(/暗黙の音声/)).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/音声を個別に指定しない場合は、映像と同じオブジェクトから読み込みます/,
+			),
+		).toBeInTheDocument();
 	});
 
 	it("every collapsible section that EXPLAINS something carries it behind a ?", () => {

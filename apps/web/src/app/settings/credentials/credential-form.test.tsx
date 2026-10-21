@@ -559,7 +559,7 @@ describe("CredentialForm — Japanese", () => {
 		const user = userEvent.setup();
 		renderL(<CredentialForm submitting={false} onSubmit={vi.fn()} />, "ja");
 		await user.selectOptions(
-			await screen.findByLabelText(/プロバイダ|Provider/),
+			await screen.findByLabelText("プロバイダ"),
 			"OCI_OBJECT_STORAGE",
 		);
 		// The hint is the interesting one: `hintKey` is optional, so a table entry
@@ -576,13 +576,17 @@ describe("CredentialForm — Japanese", () => {
 		const user = userEvent.setup();
 		renderL(<CredentialForm submitting={false} onSubmit={vi.fn()} />, "ja");
 		await user.selectOptions(
-			await screen.findByLabelText(/プロバイダ|Provider/),
+			await screen.findByLabelText("プロバイダ"),
 			"AKAMAI_MSL",
 		);
 		expect(
 			await screen.findByLabelText("配信エッジのベース URL(任意)"),
 		).toBeInTheDocument();
-		expect(screen.getByText(/視聴者側のエッジであり/)).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"視聴者向けの Akamai 配信 URL です。https のみ使えます。クエリや末尾のスラッシュは含めないでください。MSL4 は https://<ホスト名>/hls/live/<ストリーム ID>/<イベント名>、MSL5 は Akamai Control Center の表示値を指定します。アプリが /<マニフェスト名> を追加します。URL が設定されていても、実際に配信中とは限りません。",
+			),
+		).toBeInTheDocument();
 		expect(screen.getByLabelText("Akamai ホスト名")).toBeInTheDocument();
 		expect(
 			screen.getByRole("button", { name: "候補を入力" }),
@@ -601,7 +605,7 @@ describe("CredentialForm — Japanese", () => {
 		const onSubmit = vi.fn();
 		renderL(<CredentialForm submitting={false} onSubmit={onSubmit} />, "ja");
 		await user.selectOptions(
-			await screen.findByLabelText(/プロバイダ|Provider/),
+			await screen.findByLabelText("プロバイダ"),
 			"AKAMAI_MSL",
 		);
 		await user.type(screen.getByLabelText("ラベル"), "msl4");
@@ -611,7 +615,7 @@ describe("CredentialForm — Japanese", () => {
 			screen.getByLabelText("配信エッジのベース URL(任意)"),
 			"https://x.akamaized.net/hls/live/1/ev/",
 		);
-		await user.click(screen.getByRole("button", { name: "資格情報を作成" }));
+		await user.click(screen.getByRole("button", { name: "認証情報を作成" }));
 		expect(
 			await screen.findByText(/末尾にスラッシュを付けないでください/),
 		).toBeInTheDocument();

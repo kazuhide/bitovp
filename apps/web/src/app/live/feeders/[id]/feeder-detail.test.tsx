@@ -201,10 +201,12 @@ describe("FeederDetail — the compatibility diff, as written (ledger #239)", ()
 		const alert = await screen.findByRole("alert");
 		// The Japanese safety sentence and the localized reference phrase.
 		expect(alert.textContent).toContain(
-			"ソースがこのチャンネルの取り込み内容と一致しません",
+			"素材がこのチャンネルの入力と一致しません",
 		);
-		expect(alert.textContent).toContain("この run が開始したソース");
-		expect(alert.textContent).toContain("静止した映像のまま進み続けます");
+		expect(alert.textContent).toContain("この配信の開始時の素材");
+		expect(alert.textContent).toContain(
+			"プレイリストが更新されても映像が止まる場合があります",
+		);
 		// The per-attribute diff still rides along verbatim, newlines honoured.
 		expect(alert).toHaveClass("whitespace-pre-line");
 		for (const line of differences.split("\n")) {

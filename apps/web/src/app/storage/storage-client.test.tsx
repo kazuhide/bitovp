@@ -161,14 +161,16 @@ describe("StorageClient — Japanese", () => {
 		renderClient("ja");
 		expect(await screen.findByText("ストレージブラウザ")).toBeInTheDocument();
 		expect(
-			await screen.findByText(/参照を開始するにはストレージ資格情報/),
+			await screen.findByText(
+				"参照するストレージの認証情報を選択してください。",
+			),
 		).toBeInTheDocument();
 		expect(screen.queryByText("Storage Browser")).not.toBeInTheDocument();
 	});
 
 	it("labels the credential field in Japanese", async () => {
 		renderClient("ja");
-		expect(await screen.findByLabelText("資格情報")).toBeInTheDocument();
+		expect(await screen.findByLabelText("認証情報")).toBeInTheDocument();
 	});
 });
 

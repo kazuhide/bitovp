@@ -521,7 +521,7 @@ If a start request fails, you may not immediately know whether it never reached 
 
 New configurations start with region `AUTO`, which lets Bitmovin select a region. Review the selected account and region before creating the channel; saved or copied settings may specify a different region.
 
-Live encoding continuously processes incoming video and audio and writes output for delivery. Creating a channel starts provisioning immediately and incurs charges. Creating it in the wizard is not a reservation that delays processing until the planned input feed time.
+Live encoding continuously processes incoming video and audio and writes output for delivery. Creating a channel starts provisioning immediately. Depending on your Live Encoding pricing plan, charges may accrue before the planned input feed time. Creating it in the wizard is not a reservation that delays processing until that time.
 
 1. Open “Live Channels” and choose the action to create a channel.
 2. Configure the following 8 steps in order.
@@ -666,7 +666,7 @@ Stopping the channel, stopping the file input, stopping the current insertion an
 
 ### Planned input feed, program start, and stop times
 
-The Live creation wizard's “Schedule actions” step sets the planned input feed, program start and channel stop times. Channel provisioning and billing begin at creation. Connect your external input or file input by the planned input feed time.
+The Live creation wizard's “Schedule actions” step sets the planned input feed, program start and channel stop times. Channel provisioning begins at creation. Depending on your Live Encoding pricing plan, charges may accrue before the planned feed time; see the [Live Encoding calculation rules](https://legal.bitmovin.com/legal/emcm). Connect your external input or file input by the planned input feed time.
 
 | Time | Meaning |
 |---|---|

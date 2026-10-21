@@ -109,8 +109,10 @@ describe("InputSection — Japanese", () => {
 		// a table left holding an English literal would render it here.
 		expect(screen.getByText("冗長 RTMP")).toBeInTheDocument();
 		expect(screen.getByText("HLS プル")).toBeInTheDocument();
-		// Two elements start that way: the kind hint and the longer RTMP explainer.
-		expect(screen.getByText(/一覧取得で解決します/)).toBeInTheDocument();
+		// Pin the input-kind hint separately from the longer RTMP explanation.
+		expect(
+			screen.getByText(/アカウント既定の RTMP 入力を一覧から選びます/),
+		).toBeInTheDocument();
 		expect(screen.queryByText("Redundant RTMP")).not.toBeInTheDocument();
 	});
 

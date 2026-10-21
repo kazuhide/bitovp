@@ -786,7 +786,7 @@ export function LadderSection({
 										tooltip={
 											codec === "OPUS"
 												? ja
-													? "WebMに出力します。DASHの音声コンテナもWEBMを選択してください。HLSにはAACなどの別トラックを使用してください。"
+													? "WebMに出力します。DASHの音声コンテナーもWEBMを選択してください。HLSにはAACなどの別トラックを使用してください。"
 													: "Use WebM packaging and WEBM as the DASH audio muxing kind. Use a separate AAC or other supported track for HLS."
 												: undefined
 										}
@@ -991,7 +991,7 @@ export function LadderSection({
 										htmlFor={`wz-s-${index}-codec`}
 										tooltip={
 											ja
-												? "IMSCはTTMLファイル入力から生成し、DASHへ追加します。"
+												? "TTMLファイルからIMSC字幕を生成し、DASHに追加します。"
 												: "IMSC uses a TTML file input and is included in DASH."
 										}
 									>
@@ -1049,7 +1049,7 @@ export function LadderSection({
 										tooltip={
 											subtitle.codec === "IMSC"
 												? ja
-													? "ソースでTTMLファイルストリームを追加してください。"
+													? "「ソース」でTTMLファイルのストリームを追加してください。"
 													: "Add a TTML file stream in Sources."
 												: t("wizard.webvttFileStreamsComeFromTheSources")
 										}
@@ -1094,7 +1094,7 @@ export function LadderSection({
 										tooltip={
 											subtitle.codec === "IMSC"
 												? ja
-													? "既定: English"
+													? "既定: 英語"
 													: "Default: English"
 												: undefined
 										}

@@ -75,7 +75,9 @@ describe("LivePanels", () => {
 			locale,
 		);
 		expect(screen.getByRole("alert")).toHaveTextContent(
-			locale === "ja" ? "整列未検証" : "Alignment unverified",
+			locale === "ja"
+				? "フレームの位置合わせは未確認です。"
+				: "Alignment unverified",
 		);
 	});
 

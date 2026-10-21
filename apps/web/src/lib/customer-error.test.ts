@@ -164,7 +164,7 @@ describe("structured customer errors", () => {
 		{
 			code: "STORAGE_BROWSE_UNSUPPORTED",
 			en: /cannot browse.*enter.*manually/i,
-			ja: /参照できません.*手動で入力/,
+			ja: /^この認証情報では、ストレージの参照機能を使えません。バケット名とファイルのパスを手入力するか、参照できる認証情報を選択してください。$/,
 		},
 	])("keeps $code remediation locale-owned in JA and EN", ({
 		code,

@@ -226,7 +226,7 @@ describe("ProviderDiagnosticsPanel", () => {
 	it("hides final export from OPERATOR and translates the compact controls", async () => {
 		role = "OPERATOR";
 		renderWithQuery(panel(), "ja");
-		await userEvent.click(await screen.findByText("プロバイダー診断"));
+		await userEvent.click(await screen.findByText("エンコーダの診断"));
 		await screen.findByText(/: RUNNING/);
 		expect(screen.getByRole("button", { name: "更新" })).toBeInTheDocument();
 		expect(screen.queryByText("最終Heartbeatを取得")).not.toBeInTheDocument();

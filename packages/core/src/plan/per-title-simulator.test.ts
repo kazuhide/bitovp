@@ -522,6 +522,45 @@ describe("proposePerTitleSettings", () => {
 		).toBe(true);
 	});
 
+	it("keeps an already feasible bitrate ordering before spending the permutation budget", () => {
+		const rows = [
+			...Array.from({ length: 7 }, (_, index) => ({
+				id: `wide-${index}`,
+				height: 360,
+				minBitrate: 100_000,
+				maxBitrate: 10_000_000 + index,
+			})),
+			{
+				id: "fixed-360",
+				height: 360,
+				minBitrate: 200_000,
+				maxBitrate: 200_000,
+			},
+			{
+				id: "fixed-720",
+				height: 720,
+				minBitrate: 300_000,
+				maxBitrate: 300_000,
+			},
+		];
+		const [baseline] = proposePerTitleSettings({
+			...automatic,
+			strategy: "fixed-ranges",
+			maxBitrate: 10_000_006,
+			minBitrateStepSize: 1.1,
+			maxBitrateStepSize: 1.9,
+			rows,
+		});
+		expect(baseline?.status).toBe("candidate");
+		expect(baseline?.applicable).toBe(true);
+		expect(baseline?.api.streams.map((row) => row.rowId)).toEqual(
+			rows.map((row) => row.id),
+		);
+		expect(
+			baseline?.diagnostics.some((item) => item.code === "row-order-unknown"),
+		).toBe(false);
+	});
+
 	it("orders same-resolution illustrative targets independently of their feasible interval ordering", () => {
 		const boundaries = {
 			bitrateSelectionMode: "COMPLEXITY_RANGE" as const,

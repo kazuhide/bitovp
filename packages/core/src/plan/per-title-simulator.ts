@@ -294,7 +294,11 @@ function resolveRowOrder(
 	) {
 		return { rows, unknown: false, states: 0 };
 	}
-	const intervals = rowRanges(goal, rows).map((range) => ({
+	const ranges = rowRanges(goal, rows);
+	if (choosePoints(ranges, minimumStep, maximumStep, 0.5)) {
+		return { rows, unknown: false, states: 0 };
+	}
+	const intervals = ranges.map((range) => ({
 		minimum: Math.log(range.minimum),
 		maximum: Math.log(range.maximum),
 	}));

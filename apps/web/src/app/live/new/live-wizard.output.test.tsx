@@ -1,4 +1,4 @@
-import { liveChannelPlanSchema } from "@bitovp/core";
+import { liveChannelPlanSchema, validateLiveChannel } from "@bitovp/core";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -360,7 +360,7 @@ describe("live wizard — Origin credential transitions", () => {
 		if (!step) throw new Error(`Missing ${name} step`);
 		await userEvent.click(step);
 	}
-	async function mountStorageDraft() {
+	async function mountStorageDraft({ fmp4Only = false } = {}) {
 		apiFetch.mockImplementation(async (url: string) => {
 			if (url === "/api/credentials")
 				return [
@@ -378,6 +378,20 @@ describe("live wizard — Origin credential transitions", () => {
 			inputKind: "RTMP",
 			rtmp: { inputId: "22222222-2222-4222-8222-222222222222" },
 			start: { ...DEFAULT_LIVE_WIZARD_STATE.start, streamKey: "synthetic" },
+			...(fmp4Only
+				? {
+						videos: DEFAULT_LIVE_WIZARD_STATE.videos.map((video) => ({
+							...video,
+							codec: "H265" as const,
+							container: "FMP4" as const,
+						})),
+						audios: DEFAULT_LIVE_WIZARD_STATE.audios.map((audio) => ({
+							...audio,
+							codec: "DDPLUS" as const,
+							container: "FMP4" as const,
+						})),
+					}
+				: {}),
 			output: {
 				...DEFAULT_LIVE_WIZARD_STATE.output,
 				credentialId: storageId,
@@ -413,6 +427,89 @@ describe("live wizard — Origin credential transitions", () => {
 			JSON.parse(screen.getByTestId("live-plan-json").textContent ?? ""),
 		);
 	}
+	it.each([
+		["HLS", true],
+		["HLS", false],
+		["DASH", true],
+		["DASH", false],
+	] as const)("retains primary %s mirror settings with enabled=%s through Origin and back to storage", async (kind, enabled) => {
+		await mountStorageDraft({ fmp4Only: true });
+		await showStep("Output groups and manifests");
+		const family = kind.toLowerCase();
+		const checkbox = () => {
+			const field = document.getElementById(`lw-${family}-enabled`);
+			if (!(field instanceof HTMLInputElement))
+				throw new Error("Missing primary manifest checkbox");
+			return field;
+		};
+		if (!checkbox().checked) await userEvent.click(checkbox());
+		fireEvent.change(
+			document.getElementById(`lw-${family}-mname`) as HTMLInputElement,
+			{
+				target: {
+					value: `${family}-primary.${kind === "HLS" ? "m3u8" : "mpd"}`,
+				},
+			},
+		);
+		fireEvent.change(
+			document.getElementById(`lw-${family}-timeshift`) as HTMLInputElement,
+			{
+				target: { value: "240" },
+			},
+		);
+		const summary = screen.getByText(`${kind}: destination and resource name`);
+		await userEvent.click(summary);
+		const details = summary.closest("details");
+		if (!details) throw new Error("Missing primary destination fields");
+		await userEvent.selectOptions(
+			within(details).getByLabelText("Output destination"),
+			"mirror-1",
+		);
+		fireEvent.change(within(details).getByLabelText("Output path"), {
+			target: { value: `primary/${family}` },
+		});
+		await userEvent.selectOptions(
+			within(details).getByLabelText("Access permissions"),
+			"PRIVATE",
+		);
+		const configured = (await previewPlan()).liveManifests.find(
+			(manifest) => manifest.key === family,
+		);
+		expect(configured).toBeDefined();
+		if (!enabled) await userEvent.click(checkbox());
+		await showStep("Destinations");
+		await userEvent.selectOptions(
+			document.getElementById("lw-out-cred") as HTMLSelectElement,
+			originId,
+		);
+		await showStep("Output groups and manifests");
+		expect(checkbox().checked).toBe(enabled);
+		const originPlan = await previewPlan();
+		expect(originPlan.liveManifests).toEqual(enabled ? [configured] : []);
+		expect(
+			validateLiveChannel(originPlan).filter(
+				(issue) => issue.level === "error",
+			),
+		).toEqual([]);
+		await showStep("Destinations");
+		await userEvent.selectOptions(
+			document.getElementById("lw-out-cred") as HTMLSelectElement,
+			storageId,
+		);
+		await userEvent.click(
+			within(await screen.findByRole("dialog")).getByRole("button", {
+				name: "Close",
+			}),
+		);
+		await showStep("Output groups and manifests");
+		expect(checkbox().checked).toBe(enabled);
+		if (!enabled) await userEvent.click(checkbox());
+		expect(
+			(await previewPlan()).liveManifests.find(
+				(manifest) => manifest.key === family,
+			),
+		).toEqual(configured);
+	});
 	it("restores configured and disabled additional manifests after storage → Origin → storage", async () => {
 		await mountStorageDraft();
 		await showStep("Output groups and manifests");
@@ -470,7 +567,7 @@ describe("live wizard — Origin credential transitions", () => {
 		);
 		await showStep("Output groups and manifests");
 		expect(document.getElementById("lw-hls-enabled")).toBeChecked();
-		expect(document.getElementById("lw-dash-enabled")).toBeChecked();
+		expect(document.getElementById("lw-dash-enabled")).not.toBeChecked();
 		for (const kind of ["HLS", "DASH"] as const) {
 			for (const number of [2, 3]) {
 				const section = within(
@@ -492,7 +589,9 @@ describe("live wizard — Origin credential transitions", () => {
 						name: "Timeshift / DVR window (s)",
 					}),
 				).toHaveValue(number * 120);
-				expect(section.getByLabelText(/access$/i)).toHaveValue("PRIVATE");
+				expect(section.getByLabelText("Access permissions")).toHaveValue(
+					"PRIVATE",
+				);
 			}
 		}
 		const plan = await previewPlan();
@@ -519,7 +618,7 @@ describe("live wizard — Origin credential transitions", () => {
 		const select = await mountStorageDraft();
 		await userEvent.selectOptions(select, originId);
 		await showStep("Output groups and manifests");
-		expect(document.getElementById("lw-hls-enabled")).not.toBeChecked();
+		expect(document.getElementById("lw-hls-enabled")).toBeChecked();
 		expect(document.getElementById("lw-dash-enabled")).not.toBeChecked();
 		for (const kind of ["HLS", "DASH"])
 			await userEvent.click(

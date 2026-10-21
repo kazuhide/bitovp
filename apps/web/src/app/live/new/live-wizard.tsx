@@ -393,20 +393,6 @@ export function LiveWizard({
 						container: a.codec === "AAC" ? "CMAF" : "FMP4",
 						ownContainer: true,
 					})),
-					manifests: {
-						...withOutput.manifests,
-						hls: { ...withOutput.manifests.hls, enabled: false },
-						dash: { ...withOutput.manifests.dash, enabled: false },
-					},
-				};
-			if (prev.output.kind === "LIVE_MEDIA_INGEST")
-				return {
-					...withOutput,
-					manifests: {
-						...withOutput.manifests,
-						hls: { ...withOutput.manifests.hls, enabled: true },
-						dash: { ...withOutput.manifests.dash, enabled: true },
-					},
 				};
 			return withOutput;
 		});

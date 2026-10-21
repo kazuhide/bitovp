@@ -20,7 +20,11 @@ import {
 	type LiveWizardState,
 	liveBasePath,
 } from "./build-live-plan";
-import { liveMirrorEntries, liveOutputEntries } from "./live-output-model";
+import {
+	liveMirrorEntries,
+	liveOutputEntries,
+	liveOutputOptionLabel,
+} from "./live-output-model";
 import { liveStorageKind as storageKind } from "./mirror-model";
 
 type Archive = NonNullable<LiveWizardState["archive"]>;
@@ -225,10 +229,12 @@ export function LiveArchiveSection({
 								.filter((entry) => storageKind(entry.output.kind))
 								.map((entry, index) => (
 									<option key={entry.key} value={entry.key}>
-										{index === 0
-											? t("liveArchive.mirrorStorage")
-											: entry.output.name ||
-												t("liveOutputs.mirrorNumber", { number: index + 1 })}
+										{liveOutputOptionLabel(
+											entry,
+											index === 0
+												? t("liveArchive.mirrorStorage")
+												: t("liveOutputs.mirrorNumber", { number: index + 1 }),
+										)}
 									</option>
 								))}
 						</SelectNative>

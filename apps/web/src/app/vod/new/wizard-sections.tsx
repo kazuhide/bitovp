@@ -1836,31 +1836,18 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 							key={index}
 							className="space-y-3 rounded-md border border-zinc-800 p-3"
 						>
-							<div className="flex items-start gap-2">
+							<div className="flex items-start justify-between gap-2">
 								<span className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-zinc-300">
 									{manifest.kind}
 								</span>
-								<div className="flex-1">
-									<Field label={t("wizard.key")} htmlFor={`wz-xm-${index}-key`}>
-										<Input
-											id={`wz-xm-${index}-key`}
-											value={manifest.key}
-											onChange={(e) =>
-												patchExtra(index, { ...manifest, key: e.target.value })
-											}
-										/>
-									</Field>
-								</div>
-								<FieldRowAction>
-									<RowRemoveButton
-										label={t("wizardX.removeManifestN", { n: index + 1 })}
-										onClick={() =>
-											patchManifests({
-												extra: extra.filter((_, i) => i !== index),
-											})
-										}
-									/>
-								</FieldRowAction>
+								<RowRemoveButton
+									label={t("wizardX.removeManifestN", { n: index + 1 })}
+									onClick={() =>
+										patchManifests({
+											extra: extra.filter((_, i) => i !== index),
+										})
+									}
+								/>
 							</div>
 							{manifest.kind === "SMOOTH" ? (
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

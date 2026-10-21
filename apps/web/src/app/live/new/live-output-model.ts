@@ -24,6 +24,13 @@ export function liveOutputEntries(state: LiveWizardState) {
 	];
 }
 
+export function liveOutputOptionLabel(
+	entry: ReturnType<typeof liveOutputEntries>[number],
+	fallback: string,
+) {
+	return entry.output.name ? `${entry.output.name} (${entry.key})` : fallback;
+}
+
 export function liveOutputReferenced(state: LiveWizardState, key: string) {
 	return (
 		state.archive?.muxing.destination.outputKey === key ||

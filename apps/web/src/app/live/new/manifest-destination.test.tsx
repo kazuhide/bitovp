@@ -78,7 +78,9 @@ describe("Live manifest output selection", () => {
 			}),
 		).not.toBeInTheDocument();
 		expect(
-			within(destination(kind)).getByRole("option", { name: "Primary media" }),
+			within(destination(kind)).getByRole("option", {
+				name: "Primary media (origin)",
+			}),
 		).toBeEnabled();
 	});
 
@@ -100,7 +102,7 @@ describe("Live manifest output selection", () => {
 		renderLocalized(<Harness initial={state} />);
 		expect(
 			within(destination("HLS")).getByRole("option", {
-				name: "Dedicated recordings",
+				name: "Dedicated recordings (archive-output)",
 			}),
 		).toBeEnabled();
 	});

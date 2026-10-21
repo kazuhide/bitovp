@@ -108,6 +108,32 @@ function state(): LiveWizardState {
 }
 
 describe("multiple Live output authoring", () => {
+	it("uses automatic manifest labels and preserves imported labels in API requests", () => {
+		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state()));
+		const imported = tryImportLiveChannelIntoWizard(plan);
+		if (!imported.ok) throw new Error(imported.reasonKey);
+		const restored = liveChannelPlanSchema.parse(
+			buildLiveChannelPlan(imported.state),
+		);
+		expect(restored.liveManifests).toEqual(plan.liveManifests);
+		expect(
+			Object.fromEntries(
+				compileLiveChannel(restored)
+					.filter(
+						(operation) =>
+							operation.kind === "CREATE_MANIFEST_HLS" ||
+							operation.kind === "CREATE_MANIFEST_DASH",
+					)
+					.map((operation) => [operation.step, operation.payload.name]),
+			),
+		).toEqual({
+			"manifest:hls": "Live HLS Manifest",
+			"manifest:dash": "Live DASH Manifest",
+			"manifest:french": "French HLS",
+			"manifest:german": "Live HLS Manifest",
+			"manifest:dash-extra": "Alternate DASH",
+		});
+	});
 	it("points default additional HLS and DASH directories back to the shared ladder", () => {
 		let value = state();
 		value.videos = [

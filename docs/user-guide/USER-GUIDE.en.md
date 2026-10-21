@@ -717,7 +717,7 @@ Under “Insert SCTE-35 cue”, specify a duration in seconds and select the tar
 
 A mirror does not create an independent ladder. Choose a different storage credential or bucket from the primary output to avoid duplicate writes. Also check the mirror's permissions and delivery paths.
 
-After enabling a storage mirror in “Destinations”, use “Add storage mirror” to add more. Each mirror has its own credential, bucket or container, and resource name. The editor supports S3, compatible S3 storage, Azure and Google Cloud Storage; it does not add MSL or SFTP mirror authoring. If an archive or manifest references a mirror, change that destination before removing the mirror.
+After enabling a storage mirror in “Destinations”, use “Add storage mirror” to add more. Each mirror has its own credential and bucket or container. The editor supports S3, compatible S3 storage, Azure and Google Cloud Storage; it does not add MSL or SFTP mirror authoring. If an archive or manifest references a mirror, change that destination before removing the mirror.
 
 In “Output groups and manifests”, use “Add HLS manifest” or “Add DASH manifest” for additional manifests. Each has independent settings and an output folder. New entries start in separate folders so HLS media playlists do not overwrite one another. Review the path and access setting before saving. Copying and reopening a supported plan retains all entries; manifests still use the channel's shared ladder rather than selecting different renditions for each output.
 

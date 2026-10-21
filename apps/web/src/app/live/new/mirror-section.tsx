@@ -162,18 +162,6 @@ export function LiveMirrorSection({
 							</div>
 						</Field>
 					</div>
-					<Field
-						label={t("liveOutputs.resourceName")}
-						htmlFor={`${idPrefix}-name`}
-					>
-						<Input
-							id={`${idPrefix}-name`}
-							value={mirror.name}
-							onChange={(e) =>
-								onPatch({ mirror: { ...mirror, name: e.target.value } })
-							}
-						/>
-					</Field>
 					<StoragePicker
 						open={browse}
 						mode="prefix"

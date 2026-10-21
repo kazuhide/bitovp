@@ -108,6 +108,7 @@ describe("packaging and encoding audit regressions", () => {
 				onPatch={onPatch}
 			/>,
 		);
+		expect(screen.queryByRole("textbox", { name: "Key" })).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Add HLS" }));
 		const rows = onPatch.mock.calls[0]?.[0].manifests.extra;
 		expect(new Set(rows.map((row: { key: string }) => row.key)).size).toBe(

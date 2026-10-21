@@ -12,10 +12,14 @@ import {
 	liveManifestDestination,
 } from "./build-live-plan";
 import { addLiveManifest } from "./live-output-actions";
-import { liveMirrorEntries, liveOutputEntries } from "./live-output-model";
+import {
+	liveMirrorEntries,
+	liveOutputEntries,
+	liveOutputOptionLabel,
+} from "./live-output-model";
 import { LiveManifestsSection } from "./manifests-section";
 
-type Identity = Pick<LiveHlsManifestState, "name" | "destination">;
+type Identity = Pick<LiveHlsManifestState, "destination">;
 
 function manifestOutputEntries(state: LiveWizardState) {
 	const plan = buildLiveChannelPlan(state);
@@ -77,10 +81,12 @@ function ManifestDestination({
 					) : null}
 					{outputEntries.map((entry) => (
 						<option key={entry.key} value={entry.key}>
-							{entry.output.name ||
-								(entry.key === "origin"
+							{liveOutputOptionLabel(
+								entry,
+								entry.key === "origin"
 									? t("liveArchive.originStorage")
-									: entry.key)}
+									: entry.key,
+							)}
 						</option>
 					))}
 				</SelectNative>
@@ -113,17 +119,6 @@ function ManifestDestination({
 					<option value="PRIVATE">{t("liveArchive.private")}</option>
 					<option value="PUBLIC_READ">{t("liveArchive.publicRead")}</option>
 				</SelectNative>
-			</Field>
-			<Field
-				label={t("liveOutputs.resourceName")}
-				htmlFor={`${prefix}-name`}
-				help={t("liveOutputs.resourceNameHelp")}
-			>
-				<Input
-					id={`${prefix}-name`}
-					value={value.name ?? ""}
-					onChange={(e) => onPatch({ name: e.target.value })}
-				/>
 			</Field>
 		</>
 	);

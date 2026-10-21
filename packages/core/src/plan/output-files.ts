@@ -38,17 +38,27 @@ export function outputFilePath(base: string, filename: string): string {
 	return parts.join("/");
 }
 
-function addresses(plan: OutputPlan, file: OutputFile) {
+/** Physical storage targets written by a primary destination and its mirrors. */
+export function outputStorageKeys(
+	plan: OutputPlan,
+	outputKey: string,
+): Set<string> {
 	const keys = new Set([
-		file.destination.outputKey,
+		outputKey,
 		...(plan.deliveryMirrors ?? []).map((mirror) => mirror.outputKey),
 	]);
-	return plan.outputs
-		.filter((output) => keys.has(output.key))
-		.map((output) => ({
-			storage: storageIdentity(output),
+	return new Set(
+		plan.outputs.filter((output) => keys.has(output.key)).map(storageIdentity),
+	);
+}
+
+function addresses(plan: OutputPlan, file: OutputFile) {
+	return [...outputStorageKeys(plan, file.destination.outputKey)].map(
+		(storage) => ({
+			storage,
 			path: outputFilePath(file.destination.path, file.filename),
-		}));
+		}),
+	);
 }
 
 /** One writer may reach a physical file through several output aliases. */

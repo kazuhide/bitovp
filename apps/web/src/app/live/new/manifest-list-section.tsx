@@ -1,27 +1,52 @@
 "use client";
 
+import { outputStorageKeys, planOutputSchema } from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import {
+	buildLiveChannelPlan,
 	type LiveHlsManifestState,
 	type LiveWizardState,
 	liveManifestDestination,
 } from "./build-live-plan";
 import { addLiveManifest } from "./live-output-actions";
-import { liveOutputEntries } from "./live-output-model";
+import { liveMirrorEntries, liveOutputEntries } from "./live-output-model";
 import { LiveManifestsSection } from "./manifests-section";
 
 type Identity = Pick<LiveHlsManifestState, "name" | "destination">;
 
+function manifestOutputEntries(state: LiveWizardState) {
+	const plan = buildLiveChannelPlan(state);
+	const outputs = plan.outputs.flatMap((output) => {
+		const parsed = planOutputSchema.safeParse(output);
+		return parsed.success ? [parsed.data] : [];
+	});
+	const delivery = { outputs, deliveryMirrors: plan.deliveryMirrors };
+	const mediaTargets = outputStorageKeys(delivery, "origin");
+	const mirrors = new Set(liveMirrorEntries(state).map((entry) => entry.key));
+	// Wizard-authored segmented media shares origin and the delivery mirrors.
+	return liveOutputEntries(state).filter(
+		(entry) =>
+			entry.key === "origin" ||
+			mirrors.has(entry.key) ||
+			(outputs.some((output) => output.key === entry.key) &&
+				[...outputStorageKeys(delivery, entry.key)].every((target) =>
+					mediaTargets.has(target),
+				)),
+	);
+}
+
 function ManifestDestination({
 	state,
+	outputEntries,
 	value,
 	prefix,
 	onPatch,
 }: {
 	state: LiveWizardState;
+	outputEntries: ReturnType<typeof liveOutputEntries>;
 	value: Identity;
 	prefix: string;
 	onPatch: (patch: Partial<Identity>) => void;
@@ -48,7 +73,15 @@ function ManifestDestination({
 					value={destination.outputKey}
 					onChange={(e) => patchDestination({ outputKey: e.target.value })}
 				>
-					{liveOutputEntries(state).map((entry) => (
+					{!outputEntries.some(
+						(entry) => entry.key === destination.outputKey,
+					) ? (
+						<option value={destination.outputKey} disabled>
+							{t("liveArchive.unavailableDestination")} ({destination.outputKey}
+							)
+						</option>
+					) : null}
+					{outputEntries.map((entry) => (
 						<option key={entry.key} value={entry.key}>
 							{entry.output.name ||
 								(entry.key === "origin"
@@ -95,6 +128,7 @@ export function LiveManifestListSection({
 	onPatch: (patch: Partial<LiveWizardState>) => void;
 }) {
 	const { t } = useT();
+	const outputEntries = manifestOutputEntries(state);
 	return (
 		<div className="space-y-4">
 			<LiveManifestsSection state={state} onPatch={onPatch} />
@@ -111,6 +145,7 @@ export function LiveManifestListSection({
 						</summary>
 						<ManifestDestination
 							state={state}
+							outputEntries={outputEntries}
 							value={primary}
 							prefix={`lw-${kind}-destination`}
 							onPatch={(patch) =>
@@ -184,6 +219,7 @@ export function LiveManifestListSection({
 									</div>
 									<ManifestDestination
 										state={state}
+										outputEntries={outputEntries}
 										value={entry}
 										prefix={prefix}
 										onPatch={replace}

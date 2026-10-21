@@ -69,6 +69,170 @@ function parse(value: unknown) {
 }
 
 describe("Per-Title local presets", () => {
+	it.each([
+		{
+			codec: "H264",
+			metadata: {
+				profile: "MAIN",
+				subMe: "RD_IP",
+				slices: 2,
+				trellis: "ENABLED_FINAL_MB",
+				mvSearchRangeMax: 24,
+				motionEstimationMethod: "HEX",
+				mvPredictionMode: "TEMPORAL",
+				psyTrellis: 0.2,
+			},
+		},
+		{
+			codec: "H265",
+			metadata: { profile: "MAIN", subMe: 2, sao: true },
+		},
+		{
+			codec: "VP9",
+			metadata: {
+				cpuUsed: -2,
+				tileColumns: 1,
+				qpMax: 48,
+				rateUndershootPct: 20,
+				rateOvershootPct: 30,
+				quality: "GOOD",
+				aqMode: "VARIANCE",
+				arnrType: "CENTERED",
+				arnrMaxFrames: 5,
+				arnrStrength: 2,
+			},
+		},
+	] as const)("roundtrips synthetic $codec comparison metadata without adding encoding requirements", ({
+		codec,
+		metadata,
+	}) => {
+		const original = {
+			codec,
+			global: {
+				minBitrate: 100000,
+				maxBitrate: 2000000,
+				complexityFactor: 1.25,
+			},
+			streams: [
+				{
+					id: "generic-auto",
+					mode: "PER_TITLE_TEMPLATE",
+					height: 720,
+					level: null,
+					...metadata,
+					colorConfig: {
+						colorSpace: "BT709",
+						copyColorPrimariesFlag: true,
+						copyColorTransferFlag: false,
+						copyColorSpaceFlag: true,
+						copyChromaLocationFlag: false,
+						copyColorRangeFlag: true,
+					},
+				},
+				{
+					id: "generic-required",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					height: 360,
+					...metadata,
+					perTitleSettings: { minBitrate: 200000, maxBitrate: 600000 },
+				},
+			],
+		};
+		const parsed = parsePerTitlePreset(
+			JSON.stringify({ version: 1, reference: original }),
+			[codec],
+		);
+		expect(parsed.reference).toEqual(original);
+		expect(
+			parsePerTitlePreset(
+				serializePerTitlePreset(parsed.goal, parsed.reference),
+				[codec],
+			),
+		).toEqual(parsed);
+		expect(parsed.goal).not.toHaveProperty("complexityFactor");
+		expect(parsed.goal.rows?.[0]).toEqual({
+			id: "generic-required",
+			height: 360,
+			minBitrate: 200000,
+			maxBitrate: 600000,
+		});
+		expect(parsed.goal.automaticTemplates?.[0]).toEqual({
+			id: "generic-auto",
+			height: 720,
+		});
+	});
+
+	it.each([
+		["subMe", true],
+		["subMe", -1],
+		["slices", "2"],
+		["trellis", 1],
+		["mvSearchRangeMax", -1],
+		["motionEstimationMethod", []],
+		["mvPredictionMode", null],
+		["psyTrellis", -0.1],
+		["cpuUsed", 1.5],
+		["cpuUsed", "-2"],
+		["cpuUsed", Number.MAX_SAFE_INTEGER + 1],
+		["tileColumns", false],
+		["qpMax", "48"],
+		["rateUndershootPct", -1],
+		["rateOvershootPct", null],
+		["quality", {}],
+		["aqMode", "lowercase"],
+		["arnrType", "CENTERED;OTHER"],
+		["arnrMaxFrames", -1],
+		["arnrStrength", false],
+		["unexpectedMetadata", 1],
+	] as const)("rejects invalid reference metadata %s=%j", (key, value) => {
+		expect(() =>
+			parse({
+				version: 1,
+				reference: {
+					...reference,
+					streams: [{ ...reference.streams[0], [key]: value }],
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+	});
+
+	it.each([
+		0,
+		-1,
+		"1.25",
+		null,
+	])("rejects invalid reference complexity factor %j", (complexityFactor) => {
+		expect(() =>
+			parse({
+				version: 1,
+				reference: {
+					...reference,
+					global: { ...reference.global, complexityFactor },
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+	});
+
+	it.each([
+		"copyColorPrimariesFlag",
+		"copyColorTransferFlag",
+		"copyColorSpaceFlag",
+		"copyChromaLocationFlag",
+		"copyColorRangeFlag",
+	])("requires a boolean for %s", (flag) => {
+		expect(() =>
+			parse({
+				version: 1,
+				reference: {
+					...reference,
+					streams: [
+						{ ...reference.streams[0], colorConfig: { [flag]: "true" } },
+					],
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+	});
+
 	it("roundtrips a generic goal without inventing defaults", () => {
 		expect(
 			parsePerTitlePreset(serializePerTitlePreset(goal), ["H264"]),

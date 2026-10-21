@@ -3,6 +3,11 @@ import { z } from "zod";
 
 const MAX_BYTES = 128 * 1024;
 const integer = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const signedInteger = z
+	.number()
+	.int()
+	.min(-Number.MAX_SAFE_INTEGER)
+	.max(Number.MAX_SAFE_INTEGER);
 const nonnegative = z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER);
 const positive = nonnegative.refine((value) => value > 0);
 const id = z
@@ -100,7 +105,23 @@ const referenceStream = z
 		sao: z.boolean().optional(),
 		level: symbol.nullable().optional(),
 		qpMin: nonnegative.optional(),
-		subMe: nonnegative.optional(),
+		subMe: z.union([nonnegative, symbol]).optional(),
+		slices: nonnegative.optional(),
+		trellis: symbol.optional(),
+		mvSearchRangeMax: nonnegative.optional(),
+		motionEstimationMethod: symbol.optional(),
+		mvPredictionMode: symbol.optional(),
+		psyTrellis: nonnegative.optional(),
+		cpuUsed: signedInteger.optional(),
+		tileColumns: nonnegative.optional(),
+		qpMax: nonnegative.optional(),
+		rateUndershootPct: nonnegative.optional(),
+		rateOvershootPct: nonnegative.optional(),
+		quality: symbol.optional(),
+		aqMode: symbol.optional(),
+		arnrType: symbol.optional(),
+		arnrMaxFrames: nonnegative.optional(),
+		arnrStrength: nonnegative.optional(),
 		profile: symbol.optional(),
 		maxCtuSize: symbol.optional(),
 		colorConfig: z
@@ -108,6 +129,11 @@ const referenceStream = z
 				colorSpace: symbol.optional(),
 				colorTransfer: symbol.optional(),
 				colorPrimaries: symbol.optional(),
+				copyColorPrimariesFlag: z.boolean().optional(),
+				copyColorTransferFlag: z.boolean().optional(),
+				copyColorSpaceFlag: z.boolean().optional(),
+				copyChromaLocationFlag: z.boolean().optional(),
+				copyColorRangeFlag: z.boolean().optional(),
 			})
 			.strict()
 			.optional(),
@@ -136,6 +162,7 @@ const referenceSchema = z
 				maxBitrate: integer,
 				...stepFields,
 				targetQualityCrf: nonnegative.optional(),
+				complexityFactor: positive.optional(),
 				codecBufsizeFactor: positive.optional(),
 				codecMaxBitrateFactor: positive.optional(),
 				codecMinBitrateFactor: positive.optional(),

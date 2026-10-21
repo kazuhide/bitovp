@@ -169,6 +169,11 @@ it.each([
 		expect(groups).toHaveLength(2);
 		for (const group of groups) {
 			const settings = within(group);
+			expect(
+				settings.queryByLabelText(
+					locale === "ja" ? "リソース名" : "Resource name",
+				),
+			).not.toBeInTheDocument();
 			expect(settings.getByLabelText(destination)).toBeVisible();
 			expect(settings.getByLabelText(access)).toBeVisible();
 			expect(
@@ -196,6 +201,12 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 			screen.getByRole("button", { name: "Add storage mirror" }),
 		);
 		const second = screen.getByRole("region", { name: "Storage mirror 2" });
+		expect(within(second).queryByLabelText("Resource name")).toBeNull();
+		expect(
+			within(
+				screen.getByRole("region", { name: "Storage mirror" }),
+			).queryByLabelText("Resource name"),
+		).toBeNull();
 		await userEvent.selectOptions(
 			within(second).getByLabelText("Credential"),
 			"cred-aos",

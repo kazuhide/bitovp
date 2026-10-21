@@ -39,9 +39,6 @@ export const en = {
 		removeDash: "Remove DASH manifest",
 		manifestNumber: "{kind} {number}",
 		manifestSettings: "{kind} manifest settings",
-		resourceName: "Resource name",
-		resourceNameHelp:
-			"An optional label for this resource in Bitmovin. The manifest filename is set separately.",
 		destinationHelp:
 			"Choose a destination configured in step 4 that also receives the video and audio data.",
 		path: "Output path",

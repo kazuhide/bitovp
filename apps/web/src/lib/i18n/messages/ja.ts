@@ -17,9 +17,6 @@ export const ja = {
 		removeDash: "DASHマニフェストを削除",
 		manifestNumber: "{kind} {number}",
 		manifestSettings: "{kind} マニフェストの設定",
-		resourceName: "リソース名",
-		resourceNameHelp:
-			"Bitmovin 上で見分けるための名前で、省略できます。配信用ファイル名は「マニフェスト名」で指定します。",
 		destinationHelp:
 			"「4. 出力先」で設定した保存先から、映像・音声データの出力先を選びます。",
 		path: "出力パス",

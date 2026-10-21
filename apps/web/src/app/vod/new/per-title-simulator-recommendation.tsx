@@ -99,7 +99,7 @@ export function PerTitleRecommendation({
 			>
 				{proposal.status === "conflict"
 					? copy.recommendationConflict
-					: !proposal.applicable || proposal.status === "unknown"
+					: !checked
 						? copy.recommendationUnknown
 						: copy.recommendationReady}
 			</p>
@@ -111,92 +111,90 @@ export function PerTitleRecommendation({
 				<dd className="text-right tabular-nums text-zinc-100">
 					{range(global.minBitrate, global.maxBitrate)}
 				</dd>
-				{checkedCount ? (
+				{checkedCount && goal.countPolicy.kind !== "unrestricted" ? (
 					<>
 						<dt className="text-zinc-400">{copy.recommendedModelCount}</dt>
 						<dd className="text-right tabular-nums text-zinc-100">
-							{checkedCount.minimum === checkedCount.maximum
-								? format(checkedCount.minimum)
-								: `${format(checkedCount.minimum)}–${format(checkedCount.maximum)}`}
-						</dd>
-					</>
-				) : null}
-				<dt className="text-zinc-400">{copy.minimumRatio}</dt>
-				<dd className="text-right tabular-nums text-zinc-100">
-					{positive(global.minBitrateStepSize)
-						? `≈ ${format(global.minBitrateStepSize)}`
-						: copy.unknown}
-				</dd>
-				<dt className="text-zinc-400">{copy.maximumRatio}</dt>
-				<dd className="text-right tabular-nums text-zinc-100">
-					{positive(global.maxBitrateStepSize)
-						? `≈ ${format(global.maxBitrateStepSize)}`
-						: copy.unknown}
-				</dd>
-				{adjustmentRange ? (
-					<>
-						<dt className="text-zinc-400">{copy.minimumStepRange}</dt>
-						<dd className="break-words text-right tabular-nums text-zinc-100">
-							{adjustmentRange}
-						</dd>
-					</>
-				) : null}
-				{automaticCount ? (
-					<>
-						<dt className="text-zinc-400">{copy.automaticCount}</dt>
-						<dd className="text-right tabular-nums text-zinc-100">
-							{automaticCount}
+							{format(checkedCount.maximum)}
 						</dd>
 					</>
 				) : null}
 			</dl>
-			<p className="text-xs text-zinc-400">{copy.ratioHint}</p>
-			{adjustmentRange ? (
-				<p className="text-xs text-zinc-400">{copy.minimumStepRangeHint}</p>
-			) : null}
 			{required.length ? (
-				<>
-					<div className="overflow-x-auto">
-						<table
-							aria-label={copy.rows}
-							className="w-full text-left text-xs text-zinc-300 [&_th]:py-2 [&_th]:font-medium [&_td]:py-2 [&_tbody_tr]:border-t [&_tbody_tr]:border-zinc-800"
-						>
-							<thead>
-								<tr>
-									<th scope="col">{copy.height}</th>
-									<th scope="col">{copy.requestedRange}</th>
+				<div className="overflow-x-auto">
+					<table
+						aria-label={copy.rows}
+						className="w-full text-left text-xs text-zinc-300 [&_th]:py-2 [&_th]:font-medium [&_td]:py-2 [&_tbody_tr]:border-t [&_tbody_tr]:border-zinc-800"
+					>
+						<thead>
+							<tr>
+								<th scope="col">{copy.height}</th>
+								<th scope="col">{copy.requestedRange}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{required.map((stream) => (
+								<tr key={stream.rowId}>
+									<td>
+										{positive(stream.height)
+											? format(stream.height)
+											: copy.unknown}
+									</td>
+									<td>
+										{stream.mode ===
+										"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+											? range(
+													stream.perTitleSettings?.minBitrate,
+													stream.perTitleSettings?.maxBitrate,
+												)
+											: copy.chosenWithinGlobal}
+									</td>
 								</tr>
-							</thead>
-							<tbody>
-								{required.map((stream) => (
-									<tr key={stream.rowId}>
-										<td>
-											{positive(stream.height)
-												? format(stream.height)
-												: copy.unknown}
-										</td>
-										<td>
-											{stream.mode ===
-											"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
-												? range(
-														stream.perTitleSettings?.minBitrate,
-														stream.perTitleSettings?.maxBitrate,
-													)
-												: copy.chosenWithinGlobal}
-										</td>
-									</tr>
-								))}
-							</tbody>
-						</table>
-					</div>
-					<p className="text-xs text-zinc-400">{copy.requestedRangeHint}</p>
-				</>
-			) : null}
-			{automaticCount ? (
-				<p className="text-xs text-zinc-400">{copy.automaticCountHint}</p>
+							))}
+						</tbody>
+					</table>
+				</div>
 			) : null}
 			<p className="text-xs text-zinc-400">{copy.countScope}</p>
 			{children}
+			<details className="space-y-2 border-t border-zinc-800 pt-3 text-xs text-zinc-400">
+				<summary className="cursor-pointer">{copy.apiParameters}</summary>
+				<dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 pt-2">
+					<dt>{copy.minimumRatio}</dt>
+					<dd className="text-right tabular-nums text-zinc-100">
+						{positive(global.minBitrateStepSize)
+							? `≈ ${format(global.minBitrateStepSize)}`
+							: copy.unknown}
+					</dd>
+					<dt>{copy.maximumRatio}</dt>
+					<dd className="text-right tabular-nums text-zinc-100">
+						{positive(global.maxBitrateStepSize)
+							? `≈ ${format(global.maxBitrateStepSize)}`
+							: copy.unknown}
+					</dd>
+					{adjustmentRange ? (
+						<>
+							<dt>{copy.minimumStepRange}</dt>
+							<dd className="break-words text-right tabular-nums text-zinc-100">
+								{adjustmentRange}
+							</dd>
+						</>
+					) : null}
+					{automaticCount ? (
+						<>
+							<dt>{copy.automaticCount}</dt>
+							<dd className="text-right tabular-nums text-zinc-100">
+								{automaticCount}
+							</dd>
+						</>
+					) : null}
+				</dl>
+				<p>{copy.ratioHint}</p>
+				{adjustmentRange ? <p>{copy.minimumStepRangeHint}</p> : null}
+				{required.length ? <p>{copy.requestedRangeHint}</p> : null}
+				{automaticCount ? <p>{copy.automaticCountHint}</p> : null}
+				{checkedCount ? <p>{copy.countCheckScope}</p> : null}
+			</details>
 		</section>
 	);
 }

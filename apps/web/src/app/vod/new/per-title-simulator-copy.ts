@@ -1,6 +1,6 @@
 const en = {
 	title: "Explore Per-Title settings",
-	description: "Compare settings before changing the encoding ladder.",
+	description: "Get recommended settings for your ladder requirements.",
 	strategy: "What should Per-Title choose?",
 	strategies: {
 		automatic: "Choose all resolutions and bitrates",
@@ -76,7 +76,9 @@ const en = {
 	recommendationUnknown:
 		"These proposed values need further checks before they can be applied.",
 	recommendedGlobal: "Overall bitrate range (kbps)",
-	recommendedModelCount: "Model count range at overall maximum",
+	recommendedModelCount: "Calculated count limit",
+	countCheckScope:
+		"The count limit is an arithmetic upper bound at the overall maximum, not a predicted output count.",
 	requestedRange: "Specified allowable ranges (kbps)",
 	requestedRangeHint:
 		"These are your specified limits, not an optimized bitrate range.",
@@ -86,12 +88,13 @@ const en = {
 		count:
 			"Per-Title chooses resolutions and bitrates. The requested count is checked in the model.",
 		"required-resolutions":
-			"Keep the required resolution templates and allow Per-Title to add other renditions.",
+			"Keep the required resolutions and allow Per-Title to add other renditions.",
 		"fixed-resolutions":
-			"Keep the specified resolution templates and let Per-Title choose bitrates. One template does not guarantee one output.",
+			"Use the specified resolutions and let Per-Title choose bitrates.",
 		"fixed-ranges":
-			"Keep the specified resolution templates and bitrate limits. Per-Title chooses bitrates within these limits.",
+			"Use the specified resolutions and select bitrates within each specified range.",
 	},
+	apiParameters: "API parameters",
 	minimumRatio: "Minimum bitrate ratio",
 	maximumRatio: "Maximum bitrate ratio",
 	ratioHint:
@@ -102,8 +105,9 @@ const en = {
 	automaticCount: "Automatic candidate count",
 	automaticCountHint:
 		"The candidate count is not the output count. Per-Title selects the resulting renditions.",
-	countScope:
-		"The model checks arithmetic bitrate placements. Content analysis is needed for the actual rendition count and quality.",
+	countScope: "Final outputs depend on content analysis.",
+	internalCheckDifference:
+		"Some internal bitrate placements do not meet the requested count or spacing. The overall-maximum check does not establish every possible output.",
 	inactiveTemplateSettings:
 		"Automatic candidates retain their attached bitrate settings as source data. These settings do not constrain this mode and are omitted from the proposed API settings.",
 	selectionMode: "Bitrate selection mode",
@@ -121,32 +125,11 @@ const en = {
 	apiSettings: "Proposed settings",
 	apiHint:
 		"These settings are a proposal for the encoding form. No API request is sent here.",
-	scenarios: "Illustrative scenarios",
-	scenario: "Assumed upper bitrate",
-	modelCount: "Model count range",
-	scenarioLabel: "Scenario",
-	status: "Status",
 	rowReference: "Rendition",
 	unknown: "Not determined",
 	conflict: "Conflicting conditions",
-	modelled: "Arithmetic example",
-	low: "Low",
-	medium: "Middle",
-	high: "High",
-	custom: "Custom",
-	modelHint:
-		"Examples use assumed upper bitrates, not measured content complexity. They do not guarantee the encoder's output.",
-	actual: "No actual encoding results have been loaded.",
 	diagnostics: "Conditions to check",
-	rungs: "Show example renditions",
-	bitrate: "Example bitrate (kbps)",
-	allowedRange: "Allowed range (kbps)",
-	linearExample: "Linear example",
 	resolution: "Height (px)",
-	kind: "Requirement",
-	required: "Required row",
-	illustrative: "Illustrative row",
-	unassigned: "Chosen by Per-Title",
 	finitePositive: "Enter a number greater than zero.",
 	positiveInteger: "Enter a whole number greater than zero.",
 	empty: "No proposal is available for these conditions.",
@@ -156,7 +139,7 @@ const en = {
 
 const ja: typeof en = {
 	title: "Per-Title の設定を検討",
-	description: "エンコードのラダーを変更する前に、設定案を比較できます。",
+	description: "必要なラダー構成に合わせて、使う設定を提案します。",
 	strategy: "Per-Title に任せる範囲",
 	strategies: {
 		automatic: "解像度とビットレートをすべて任せる",
@@ -233,7 +216,9 @@ const ja: typeof en = {
 	recommendationUnknown:
 		"この設定案を反映するには、さらに条件の確認が必要です。",
 	recommendedGlobal: "全体のビットレート範囲 (kbps)",
-	recommendedModelCount: "全体の上限でのモデル上の本数範囲",
+	recommendedModelCount: "計算上の本数上限",
+	countCheckScope:
+		"全体の上限ビットレートでの、計算上の配置上限です。出力本数の予測値ではありません。",
 	requestedRange: "指定した許容範囲 (kbps)",
 	requestedRangeHint:
 		"入力した範囲であり、最適なビットレート範囲を算出したものではありません。",
@@ -243,12 +228,13 @@ const ja: typeof en = {
 		count:
 			"解像度とビットレートはPer-Titleが選び、希望する本数をモデルで照合します。",
 		"required-resolutions":
-			"必須の解像度テンプレートを残し、ほかのレンディションの追加をPer-Titleに任せます。",
+			"必須の解像度を残し、ほかのレンディションの追加をPer-Titleに任せます。",
 		"fixed-resolutions":
-			"指定した解像度テンプレートを残し、ビットレートをPer-Titleに任せます。1テンプレートから1本だけ出力される保証ではありません。",
+			"指定した解像度で、ビットレートをPer-Titleに任せます。",
 		"fixed-ranges":
-			"指定した解像度テンプレートとビットレート範囲を残し、その範囲内でPer-Titleがビットレートを選びます。",
+			"指定した解像度で、各段の範囲内からビットレートを選びます。",
 	},
+	apiParameters: "APIパラメータ",
 	minimumRatio: "最小ビットレート比率",
 	maximumRatio: "最大ビットレート比率",
 	ratioHint: "隣り合う段のビットレートを何倍離すかを表します。",
@@ -258,8 +244,9 @@ const ja: typeof en = {
 	automaticCount: "自動生成の候補数",
 	automaticCountHint:
 		"候補数は出力本数ではありません。実際のレンディションはPer-Titleが選びます。",
-	countScope:
-		"モデルでは、計算上ビットレートを配置できるかを確認します。実際の本数と画質の判断には素材解析が必要です。",
+	countScope: "実際の出力は素材解析で決まります。",
+	internalCheckDifference:
+		"一部の検算では、本数や間隔が希望どおりになりません。全体の上限での確認は、すべての出力条件を満たすことを示すものではありません。",
 	inactiveTemplateSettings:
 		"自動生成の候補に付いたビットレート設定は元データとして保持します。このモードの制約には使われず、APIへの設定案には含めません。",
 	selectionMode: "ビットレートの選択方法",
@@ -277,32 +264,11 @@ const ja: typeof en = {
 	apiSettings: "提案する設定",
 	apiHint:
 		"エンコード設定へ反映するための提案です。この画面では API リクエストを送信しません。",
-	scenarios: "仮定したシナリオ",
-	scenario: "仮定した上端ビットレート",
-	modelCount: "モデル上の本数の範囲",
-	scenarioLabel: "シナリオ",
-	status: "状態",
 	rowReference: "レンディション",
 	unknown: "未確定",
 	conflict: "条件が競合しています",
-	modelled: "計算例",
-	low: "低め",
-	medium: "中間",
-	high: "高め",
-	custom: "任意",
-	modelHint:
-		"上端ビットレートを仮定した計算例です。素材の複雑度の実測値ではなく、エンコーダの出力を保証するものでもありません。",
-	actual: "実際のエンコード結果は読み込んでいません。",
 	diagnostics: "確認が必要な条件",
-	rungs: "レンディションの計算例を表示",
-	bitrate: "ビットレートの計算例 (kbps)",
-	allowedRange: "許容範囲 (kbps)",
-	linearExample: "線形補間の例",
 	resolution: "高さ (px)",
-	kind: "要件との関係",
-	required: "必須の行",
-	illustrative: "参考の行",
-	unassigned: "Per-Title が選択",
 	finitePositive: "0 より大きい数値を入力してください。",
 	positiveInteger: "1 以上の整数を入力してください。",
 	empty: "この条件の設定案はありません。",

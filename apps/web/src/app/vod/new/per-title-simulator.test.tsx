@@ -1,4 +1,4 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import { type PerTitleGoal, recommendPerTitleSettings } from "@bitovp/core";
 import {
 	act,
 	fireEvent,
@@ -116,21 +116,40 @@ describe("Per-Title simulator", () => {
 		expect(diagnostics).not.toHaveTextContent(new RegExp(`${rowLabel}\\s+0`));
 		expect(diagnostics).toHaveTextContent(new RegExp(`${rowLabel}\\s+1`));
 	});
-	it("labels custom scenario ordering by the assumed fraction", () => {
-		show({ ...initialGoal, scenarioFractions: [1, 0.25, 0.5] });
-		fireEvent.click(screen.getByText("Comparison and calculation details"));
-		const scenarios = screen.getByRole("region", {
-			name: "Illustrative scenarios",
-		});
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps analysis cases internal and reviews one unchanged API proposal (%s)", (locale) => {
+		const goal = { ...initialGoal, scenarioFractions: [1, 0.25, 0.5] };
+		const expected = recommendPerTitleSettings(goal);
+		const { onApply } = show(goal, locale);
+		fireEvent.click(
+			screen.getByText(
+				locale === "en"
+					? "Comparison and calculation details"
+					: "比較・計算の詳細",
+			),
+		);
 		expect(
-			within(scenarios).getByRole("row", { name: /^High \(100%\)/ }),
-		).toBeVisible();
+			screen.queryByRole("region", {
+				name: locale === "en" ? "Illustrative scenarios" : "仮定したシナリオ",
+			}),
+		).toBeNull();
+		expect(screen.queryByText(locale === "en" ? /^Low\b/ : "低め")).toBeNull();
 		expect(
-			within(scenarios).getByRole("row", { name: /^Low \(25%\)/ }),
-		).toBeVisible();
-		expect(
-			within(scenarios).getByRole("row", { name: /^Middle \(50%\)/ }),
-		).toBeVisible();
+			screen.queryByText(locale === "en" ? /^Middle\b/ : "中間"),
+		).toBeNull();
+		expect(screen.queryByText(locale === "en" ? /^High\b/ : "高め")).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "en" ? "Review changes" : "差分を確認",
+			}),
+		);
+		expect(onApply).toHaveBeenCalledOnce();
+		expect(onApply.mock.calls[0]?.[0]).toEqual(expected);
+		expect(expected.scenarios.map((scenario) => scenario.fraction)).toEqual([
+			1, 0.25, 0.5,
+		]);
 	});
 
 	it.each([
@@ -647,7 +666,7 @@ describe("Per-Title simulator", () => {
 			.setup()
 			.click(screen.getByText("Comparison and calculation details"));
 		expect(
-			screen.getByText("No actual encoding results have been loaded."),
+			screen.getByText("Final outputs depend on content analysis."),
 		).toBeVisible();
 	});
 
@@ -665,16 +684,18 @@ describe("Per-Title simulator", () => {
 		expect(onApply).not.toHaveBeenCalled();
 	});
 
-	it("uses Japanese labels and explicitly separates examples from encoding results", () => {
+	it("uses Japanese labels and keeps the content-analysis limitation concise", () => {
 		show(initialGoal, "ja");
 		fireEvent.click(screen.getByText("比較・計算の詳細"));
 		expect(
 			screen.getByRole("dialog", { name: "Per-Title の設定を検討" }),
 		).toBeVisible();
 		expect(
-			screen.getByText("実際のエンコード結果は読み込んでいません。"),
+			screen.getByText("実際の出力は素材解析で決まります。"),
 		).toBeVisible();
-		expect(screen.getByText(/素材の複雑度の実測値ではなく/)).toBeVisible();
+		expect(
+			screen.getByText(/素材の解析や、エンコーダの出力の予測は行いません/),
+		).toBeVisible();
 		expect(screen.getByRole("button", { name: "差分を確認" })).toBeVisible();
 	});
 

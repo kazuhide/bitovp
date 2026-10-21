@@ -39,15 +39,73 @@ function show(initialGoal = goal, locale: "en" | "ja" = "en") {
 
 describe("Per-Title recommendation flow", () => {
 	it.each([
-		["en", "Model count range at overall maximum"],
-		["ja", "全体の上限でのモデル上の本数範囲"],
-	] as const)("reads the checked model range rather than echoing the requested six renditions in %s", (locale, label) => {
+		"en",
+		"ja",
+	] as const)("does not turn an internal example warning into a failed recommendation (%s)", (locale) => {
+		const countGoal: PerTitleGoal = {
+			...goal,
+			strategy: "count",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			countPolicy: { kind: "exact", count: 6 },
+			rows: [],
+		};
+		const proposal = recommendPerTitleSettings(countGoal);
+		expect(proposal.derivation?.targetSatisfied).toBe(true);
+		expect(proposal.status).toBe("candidate");
+		expect(
+			proposal.diagnostics.some((item) => item.code === "scenario-conflict"),
+		).toBe(true);
+		show(countGoal, locale);
+		const panel = screen.getByRole("region", {
+			name: locale === "en" ? "Recommended settings" : "推奨設定",
+		});
+		expect(
+			within(panel).queryByText(
+				/scenario|本数やビットレート間隔の条件を満たせません/i,
+			),
+		).toBeNull();
+		expect(
+			within(panel).getByText(
+				locale === "en" ? "Calculated count limit" : "計算上の本数上限",
+			).nextElementSibling,
+		).toHaveTextContent("6");
+		fireEvent.click(
+			screen.getByText(
+				locale === "en"
+					? "Comparison and calculation details"
+					: "比較・計算の詳細",
+			),
+		);
+		const diagnostics = screen.getByRole("region", {
+			name: locale === "en" ? "Conditions to check" : "確認が必要な条件",
+		});
+		expect(
+			within(diagnostics).queryByText(/inspect each scenario|該当するシナリオ/),
+		).toBeNull();
+		expect(
+			within(diagnostics).getByText(
+				locale === "en" ? /Some internal bitrate placements/ : /一部の検算では/,
+			),
+		).toBeVisible();
+		expect(
+			screen.getByRole("button", {
+				name: locale === "en" ? "Review changes" : "差分を確認",
+			}),
+		).toBeEnabled();
+	});
+	it.each([
+		["en", "Calculated count limit"],
+		["ja", "計算上の本数上限"],
+	] as const)("reads the calculated count limit rather than echoing the requested six renditions in %s", (locale, label) => {
 		const countGoal: PerTitleGoal = {
 			...goal,
 			strategy: "count",
 			minBitrate: 16_000,
 			maxBitrate: 256_000,
-			countPolicy: { kind: "exact", count: 6 },
+			countPolicy: { kind: "maximum", count: 6 },
+			minBitrateStepSize: 4,
+			maxBitrateStepSize: 5,
 			rows: [],
 		};
 		const proposal = recommendPerTitleSettings(countGoal);
@@ -58,29 +116,17 @@ describe("Per-Title recommendation flow", () => {
 		expect(upper?.status).toBe("modelled");
 		const actualRange = upper?.modelCountRange;
 		if (!actualRange) throw new Error("Missing model count range");
-		const { rerender } = renderLocalized(
+		expect(actualRange.maximum).toBeLessThan(6);
+		renderLocalized(
 			<PerTitleRecommendation goal={countGoal} proposal={proposal} />,
 			locale,
 		);
 		expect(screen.getByText(label).nextElementSibling).toHaveTextContent(
-			actualRange.minimum === actualRange.maximum
-				? String(actualRange.minimum)
-				: `${actualRange.minimum}–${actualRange.maximum}`,
+			String(actualRange.maximum),
 		);
-		rerender(
-			<PerTitleRecommendation
-				goal={countGoal}
-				proposal={{
-					...proposal,
-					scenarios: proposal.scenarios.map((scenario) =>
-						scenario.fraction === 1
-							? { ...scenario, modelCountRange: { minimum: 4, maximum: 6 } }
-							: scenario,
-					),
-				}}
-			/>,
+		expect(screen.getByText(label).nextElementSibling).not.toHaveTextContent(
+			"–",
 		);
-		expect(screen.getByText(label).nextElementSibling).toHaveTextContent("4–6");
 	});
 
 	it("withholds model counts when the upper scenario or the successful check is missing", () => {
@@ -96,9 +142,7 @@ describe("Per-Title recommendation flow", () => {
 		const { rerender } = renderLocalized(
 			<PerTitleRecommendation goal={countGoal} proposal={proposal} />,
 		);
-		expect(
-			screen.getByText("Model count range at overall maximum"),
-		).toBeVisible();
+		expect(screen.getByText("Calculated count limit")).toBeVisible();
 		const derivation = proposal.derivation;
 		if (!derivation) throw new Error("Missing derivation");
 		for (const unchecked of [
@@ -129,9 +173,7 @@ describe("Per-Title recommendation flow", () => {
 			rerender(
 				<PerTitleRecommendation goal={countGoal} proposal={unchecked} />,
 			);
-			expect(
-				screen.queryByText("Model count range at overall maximum"),
-			).toBeNull();
+			expect(screen.queryByText("Calculated count limit")).toBeNull();
 		}
 	});
 
@@ -156,7 +198,9 @@ describe("Per-Title recommendation flow", () => {
 			screen.getByText(
 				/retains the same integer placement example and maximum ratio/,
 			),
-		).toBeVisible();
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("API parameters"));
+		expect(screen.getByText("Minimum-step adjustment range")).toBeVisible();
 		const derivation = proposal.derivation;
 		if (!derivation) throw new Error("Missing derivation");
 		rerender(
@@ -216,7 +260,7 @@ describe("Per-Title recommendation flow", () => {
 		expect(within(panel).queryByText(/rowIds|PER_TITLE_TEMPLATE/)).toBeNull();
 	});
 
-	it("shows one recommendation with requested ranges and read-only spacing values", () => {
+	it("shows one recommendation with requested ranges and keeps spacing in closed API details", () => {
 		show();
 		const panel = screen.getByRole("region", { name: "Recommended settings" });
 		expect(
@@ -232,15 +276,18 @@ describe("Per-Title recommendation flow", () => {
 		expect(
 			within(table).getByRole("row", { name: "720 500–2,000" }),
 		).toBeVisible();
-		expect(within(panel).getByText("Minimum bitrate ratio")).toBeVisible();
-		expect(within(panel).getByText("Maximum bitrate ratio")).toBeVisible();
+		expect(within(panel).getByText("Minimum bitrate ratio")).not.toBeVisible();
+		expect(within(panel).getByText("Maximum bitrate ratio")).not.toBeVisible();
 		expect(within(panel).queryByRole("spinbutton")).toBeNull();
 		expect(
 			within(panel).getByText(/not an optimized bitrate range/),
-		).toBeVisible();
-		expect(
-			screen.getByRole("region", { name: "Illustrative scenarios" }),
 		).not.toBeVisible();
+		expect(
+			screen.queryByRole("region", { name: "Illustrative scenarios" }),
+		).toBeNull();
+		fireEvent.click(within(panel).getByText("API parameters"));
+		expect(within(panel).getByText("Minimum bitrate ratio")).toBeVisible();
+		expect(within(panel).getByText("Maximum bitrate ratio")).toBeVisible();
 		expect(
 			screen.getByRole("spinbutton", {
 				name: "Width (px, optional), rendition 1",
@@ -258,16 +305,16 @@ describe("Per-Title recommendation flow", () => {
 		show(goal, "ja");
 		const panel = screen.getByRole("region", { name: "推奨設定" });
 		expect(within(panel).getByText("指定した許容範囲 (kbps)")).toBeVisible();
-		expect(within(panel).getByText("最小ビットレート比率")).toBeVisible();
+		expect(within(panel).getByText("最小ビットレート比率")).not.toBeVisible();
 		expect(
 			within(panel).getByText(
 				/最適なビットレート範囲を算出したものではありません/,
 			),
-		).toBeVisible();
+		).not.toBeVisible();
 		expect(screen.getByText("比較・計算の詳細")).toBeVisible();
 		expect(
-			screen.getByRole("region", { name: "仮定したシナリオ" }),
-		).not.toBeVisible();
+			screen.queryByRole("region", { name: "仮定したシナリオ" }),
+		).toBeNull();
 		expect(
 			screen.getByRole("spinbutton", {
 				name: "幅 (px、省略可), レンディション 1",
@@ -304,14 +351,15 @@ describe("Per-Title recommendation flow", () => {
 			within(panel).getByText("Automatic candidate count").nextElementSibling,
 		).toHaveTextContent("1");
 		expect(
+			within(panel).getByText("Automatic candidate count"),
+		).not.toBeVisible();
+		expect(
 			within(panel).getByText(/candidate count is not the output count/),
-		).toBeVisible();
+		).not.toBeVisible();
 		expect(
 			within(panel).getByText(/additional-rendition configuration/i),
 		).toBeVisible();
-		expect(
-			within(panel).queryByText("Model count range at overall maximum"),
-		).toBeNull();
+		expect(within(panel).queryByText("Calculated count limit")).toBeNull();
 		expect(
 			screen.getByRole("checkbox", {
 				name: "Include original additional-rendition rules",

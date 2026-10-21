@@ -5,7 +5,6 @@ import {
 	type PerTitleGoal,
 	type PerTitleGoalRow,
 	type PerTitleProposal,
-	type PerTitleScenario,
 	recommendPerTitleSettings,
 } from "@bitovp/core";
 import {
@@ -262,8 +261,7 @@ const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 		"COMPLEXITY_RANGE の各点は、仮定した上端ビットレートを使い、行の最小・最大ビットレートの間を線形補間した例です。境界の外では最小値または最大値に収めます。",
 	"scenario-range-bound":
 		"本数の範囲は、指定した許容範囲全体から求めたものです。このシナリオに示すビットレートの点とは別に計算しています。",
-	"scenario-conflict":
-		"一部のシナリオで、本数や間隔の条件を満たしていません。設定を反映する前に、該当するシナリオと条件を確認してください。",
+	"scenario-conflict": perTitleSimulatorCopy.ja.internalCheckDifference,
 	"forced-count-unknown":
 		"追加レンディションのルールを保持しています。このルールを含む出力本数は、素材解析なしには算出できません。",
 	"inactive-template-settings":
@@ -272,18 +270,6 @@ const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 
 const tableClasses =
 	"w-full text-left text-xs text-zinc-300 [&_th]:px-2 [&_th]:py-2 [&_th]:font-medium [&_td]:px-2 [&_td]:py-2 [&_tbody_tr]:border-t [&_tbody_tr]:border-zinc-800";
-
-function countRange(
-	scenario: PerTitleScenario | undefined,
-	copy: PerTitleSimulatorCopy,
-) {
-	const range = scenario?.modelCountRange;
-	return range
-		? range.minimum === range.maximum
-			? String(range.minimum)
-			: `${range.minimum}–${range.maximum}`
-		: copy.unknown;
-}
 
 function DiagnosticList({
 	items,
@@ -316,12 +302,14 @@ function DiagnosticList({
 					) : null}
 					{item.code === "inactive-template-settings"
 						? copy.inactiveTemplateSettings
-						: locale === "ja"
-							? item.code === "row-step-conflict" &&
-								item.values?.ratio !== undefined
-								? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
-								: diagnosticJa[item.code]
-							: item.message}
+						: item.code === "scenario-conflict"
+							? copy.internalCheckDifference
+							: locale === "ja"
+								? item.code === "row-step-conflict" &&
+									item.values?.ratio !== undefined
+									? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
+									: diagnosticJa[item.code]
+								: item.message}
 					{technicalDetails &&
 					item.rowIds?.length &&
 					item.rowIds.every((rowId) =>
@@ -377,14 +365,6 @@ function ProposalResults({
 }) {
 	const format = (value: number) =>
 		new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(value);
-	const scenarioName = (scenario: PerTitleScenario) =>
-		scenario.fraction === 0.25
-			? copy.low
-			: scenario.fraction === 0.5
-				? copy.medium
-				: scenario.fraction === 1
-					? copy.high
-					: copy.custom;
 	const countGoal = (value: PerTitleGoal) =>
 		value.countPolicy.kind === "unrestricted"
 			? copy.countPolicies.unrestricted
@@ -451,18 +431,6 @@ function ProposalResults({
 									</td>
 								))}
 							</tr>
-							{selected.scenarios.map((scenario, index) => (
-								<tr key={scenario.id}>
-									<th scope="row">
-										{scenarioName(scenario)}: {copy.modelCount}
-									</th>
-									{proposals.map((proposal, column) => (
-										<td key={column === 0 ? "loaded" : "edited"}>
-											{countRange(proposal.scenarios[index], copy)}
-										</td>
-									))}
-								</tr>
-							))}
 						</tbody>
 					</table>
 				</div>
@@ -517,111 +485,6 @@ function ProposalResults({
 					</div>
 				</section>
 			) : null}
-			<section aria-labelledby={`${id}-scenarios`} className="space-y-3">
-				<h3
-					id={`${id}-scenarios`}
-					className="font-medium text-sm text-zinc-200"
-				>
-					{copy.scenarios}
-				</h3>
-				<p className="text-xs text-zinc-400">{copy.modelHint}</p>
-				<p className="text-xs text-zinc-400">{copy.actual}</p>
-				<div className="overflow-x-auto">
-					<table className={tableClasses}>
-						<thead>
-							<tr>
-								<th scope="col">{copy.scenarioLabel}</th>
-								<th scope="col">{copy.scenario} (kbps)</th>
-								<th scope="col">{copy.modelCount}</th>
-								<th scope="col">{copy.status}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{selected.scenarios.map((scenario) => (
-								<tr key={scenario.id}>
-									<th scope="row">
-										{scenarioName(scenario)} ({format(scenario.fraction * 100)}
-										%)
-									</th>
-									<td>{format(scenario.assumedMaxBitrate / 1000)}</td>
-									<td>{countRange(scenario, copy)}</td>
-									<td>
-										{scenario.status === "conflict"
-											? copy.conflict
-											: scenario.status === "unknown"
-												? copy.unknown
-												: copy.modelled}
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-				{selected.scenarios.map((scenario) => (
-					<div
-						key={scenario.id}
-						className="space-y-2 border-t border-zinc-800 pt-2"
-					>
-						<p className="font-medium text-xs text-zinc-300">
-							{scenarioName(scenario)}
-						</p>
-						<DiagnosticList
-							items={scenario.diagnostics}
-							rows={rows}
-							locale={locale}
-							copy={copy}
-						/>
-						{scenario.modelRungs.length ? (
-							<details className="text-xs text-zinc-400">
-								<summary className="cursor-pointer">{copy.rungs}</summary>
-								<div className="mt-2 overflow-x-auto">
-									<table className={tableClasses}>
-										<thead>
-											<tr>
-												<th scope="col">{copy.resolution}</th>
-												<th scope="col">{copy.allowedRange}</th>
-												<th scope="col">{copy.bitrate}</th>
-												<th scope="col">{copy.kind}</th>
-											</tr>
-										</thead>
-										<tbody>
-											{scenario.modelRungs.map((rung, index) => {
-												const model = scenario.rowModels.find(
-													(row) => row.rowId === rung.rowId,
-												);
-												return (
-													<tr key={rung.rowId ?? `illustrative-${index}`}>
-														<td>{rung.height ?? copy.unassigned}</td>
-														<td>
-															{model
-																? `${format(model.minimumBitrate / 1000)}–${format(model.maximumBitrate / 1000)}`
-																: copy.unknown}
-														</td>
-														<td>
-															{format(rung.bitrate / 1000)}
-															{model?.linearTargetBitrate !== null &&
-															model?.linearTargetBitrate !== undefined ? (
-																<span className="ml-1 text-zinc-400">
-																	({copy.linearExample})
-																</span>
-															) : null}
-														</td>
-														<td>
-															{rung.kind === "required"
-																? copy.required
-																: copy.illustrative}
-														</td>
-													</tr>
-												);
-											})}
-										</tbody>
-									</table>
-								</div>
-							</details>
-						) : null}
-					</div>
-				))}
-			</section>
 			<details className="text-xs text-zinc-400">
 				<summary className="cursor-pointer">{copy.apiSettings}</summary>
 				<p className="mt-2">{copy.apiHint}</p>
@@ -889,6 +752,7 @@ function SimulatorEditor({
 									item.severity === "conflict" ||
 									(item.severity === "warning" &&
 										item.code !== "count-not-guaranteed" &&
+										item.code !== "scenario-conflict" &&
 										item.code !== "complexity-analysis-required"),
 							)}
 							rows={goal.rows}

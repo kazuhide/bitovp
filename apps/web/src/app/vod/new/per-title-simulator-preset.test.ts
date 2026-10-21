@@ -338,6 +338,76 @@ describe("Per-Title local presets", () => {
 		}
 	});
 
+	it("roundtrips independently optional automatic bitrate bounds", () => {
+		for (const bounds of [
+			{ minBitrate: 150000 },
+			{ maxBitrate: 300000 },
+			{ lowComplexityBoundaryForMaxBitrate: 700000 },
+		]) {
+			const auto = { id: "optional-auto", height: 720, ...bounds };
+			const edited = { ...goal, automaticTemplates: [auto] };
+			expect(
+				parsePerTitlePreset(serializePerTitlePreset(edited), ["H264"]).goal,
+			).toEqual(edited);
+			const imported = parse({
+				version: 1,
+				reference: {
+					...reference,
+					streams: [
+						{
+							id: "optional-auto",
+							mode: "PER_TITLE_TEMPLATE",
+							perTitleSettings: bounds,
+						},
+					],
+				},
+			});
+			expect(imported.goal.automaticTemplates?.[0]).toEqual({
+				id: "optional-auto",
+				...bounds,
+			});
+		}
+		const incomplete = {
+			...goal,
+			automaticTemplates: [
+				{
+					id: "auto",
+					bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
+					lowComplexityBoundaryForMaxBitrate: 700000,
+				},
+			],
+		};
+		expect(() => serializePerTitlePreset(incomplete)).toThrow(
+			"Invalid Per-Title preset.",
+		);
+	});
+	it("preserves hidden bitrate ranges after switching to fixed resolutions", () => {
+		const edited: PerTitleGoal = {
+			...goal,
+			strategy: "fixed-resolutions",
+			maxBitrate: 500000,
+			rows: [
+				{ id: "retained", height: 360, minBitrate: 200000, maxBitrate: 600000 },
+			],
+		};
+		expect(
+			parsePerTitlePreset(serializePerTitlePreset(edited), ["H264"]).goal,
+		).toEqual(edited);
+		expect(() =>
+			serializePerTitlePreset({ ...edited, strategy: "fixed-ranges" }),
+		).toThrow("Invalid Per-Title preset.");
+		const oneSided = {
+			...edited,
+			rows: [{ id: "retained", height: 360, minBitrate: 200000 }],
+		};
+		expect(
+			parsePerTitlePreset(serializePerTitlePreset(oneSided), ["H264"]).goal,
+		).toEqual(oneSided);
+		expect(() =>
+			serializePerTitlePreset({ ...oneSided, strategy: "fixed-ranges" }),
+		).toThrow("Invalid Per-Title preset.");
+	});
+
 	it("bounds UTF-8 input before parsing and sanitizes JSON errors", () => {
 		for (const text of [
 			"{sensitive-sentinel",

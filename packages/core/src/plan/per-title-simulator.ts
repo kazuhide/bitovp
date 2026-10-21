@@ -303,6 +303,16 @@ export function recommendPerTitleSettings(
 		>,
 	) => {
 		useCheckedIntervalWitness(proposal, goal, details);
+		if (
+			proposal.applicable &&
+			!proposal.scenarios.some((scenario) =>
+				hasValidIntegerExample(proposal, scenario),
+			)
+		) {
+			proposal.applicable = false;
+			proposal.status = "unknown";
+		}
+		const high = proposal.scenarios.find((scenario) => scenario.fraction === 1);
 		proposal.derivation = {
 			...details,
 			...(desiredCount ? { desiredCount } : {}),
@@ -311,12 +321,9 @@ export function recommendPerTitleSettings(
 			selectedMaxStep: proposal.api.global.maxBitrateStepSize,
 			targetSatisfied:
 				proposal.applicable &&
+				hasValidIntegerExample(proposal, high) &&
 				(goal.countPolicy.kind !== "exact" ||
-					proposal.scenarios.some(
-						(scenario) =>
-							scenario.status === "modelled" &&
-							scenario.modelRungs.length === desiredCount,
-					)) &&
+					high?.modelRungs.length === desiredCount) &&
 				(!desiredCount ||
 					modelCapacity(
 						goal,
@@ -342,7 +349,12 @@ export function recommendPerTitleSettings(
 			!existing.diagnostics.some(
 				(item) =>
 					item.severity === "conflict" || item.code === "row-order-unknown",
-			)
+			) &&
+			(forced ||
+				hasValidIntegerExample(
+					existing,
+					existing.scenarios.find((scenario) => scenario.fraction === 1),
+				))
 		) {
 			return finish(existing, {
 				method: "preserved-existing",
@@ -368,21 +380,48 @@ export function recommendPerTitleSettings(
 		const lower =
 			goal.maxBitrate - goal.minBitrate + 1 <= count ? 1 : span ** (1 / count);
 		const ideal = count > 1 ? span ** (1 / (count - 1)) : undefined;
-		const witness = Array.from({ length: count }, (_, index) =>
-			Math.min(
-				goal.maxBitrate,
-				Math.round(goal.minBitrate * (ideal ?? 1) ** index),
-			),
-		);
-		const ratios = witness
+		const ranges = Array.from({ length: count }, () => ({
+			minimum: goal.minBitrate,
+			maximum: goal.maxBitrate,
+		}));
+		let feasibleLower = 1;
+		let feasibleUpper = ideal ?? span + 1;
+		let witness = integerPoints(ranges, 1);
+		if (count > 1 && witness) {
+			for (let index = 0; index < 64; index++) {
+				const midpoint = (feasibleLower + feasibleUpper) / 2;
+				const points = integerPoints(ranges, midpoint);
+				if (points) {
+					feasibleLower = midpoint;
+					witness = points;
+				} else feasibleUpper = midpoint;
+			}
+		}
+		let capLower = 1;
+		let capUpper = span + 1;
+		for (let index = 0; index < 64; index++) {
+			const midpoint = (capLower + capUpper) / 2;
+			if (modelCapacity(goal, [], midpoint) > count) capLower = midpoint;
+			else capUpper = midpoint;
+		}
+		const feasiblePoints = witness ?? [];
+		const feasibleRatios = feasiblePoints
 			.slice(1)
-			.map((point, index) => point / (witness[index] as number));
-		const upper = ideal === undefined ? undefined : Math.min(ideal, ...ratios);
+			.map((point, index) => point / (feasiblePoints[index] as number));
+		const upper =
+			ideal === undefined || !feasibleRatios.length
+				? undefined
+				: Math.min(ideal, ...feasibleRatios);
 		const minimumStep =
-			upper !== undefined && upper > lower
-				? Math.exp((Math.log(lower) + Math.log(upper)) / 2)
-				: Math.max(1 + Number.EPSILON, lower + (count === 1 ? 1 : 0));
-		const maximumStep = Math.max(minimumStep + 1 / goal.minBitrate, ...ratios);
+			upper !== undefined && upper > capUpper
+				? Math.exp((Math.log(capUpper) + Math.log(upper)) / 2)
+				: Math.max(1 + Number.EPSILON, capUpper);
+		witness = integerPoints(ranges, minimumStep);
+		const points = witness ?? [];
+		const ratios = points
+			.slice(1)
+			.map((point, index) => point / (points[index] as number));
+		const maximumStep = Math.max(minimumStep, ...ratios);
 		return finish(
 			build(
 				{
@@ -397,9 +436,9 @@ export function recommendPerTitleSettings(
 				ratioLowerExclusive: lower,
 				...(upper !== undefined ? { ratioUpperInclusive: upper } : {}),
 				...(ideal !== undefined ? { idealStep: ideal } : {}),
-				integerWitness: witness,
+				integerWitness: points,
 				rationale:
-					"Equal logarithmic spacing supplies an integer illustration. The minimum step is chosen inside the count-cap interval to leave rounding margin; this is a spacing model, not a provider or quality optimum.",
+					"The continuous count-cap interval guides a greedy integer placement. Bisection bounds its feasible minimum step, and an interior value leaves rounding margin. The maximum step covers the actual integer gaps; this is a spacing model, not a provider or quality optimum.",
 			},
 		);
 	}
@@ -514,6 +553,31 @@ export function recommendPerTitleSettings(
 				"The model intersects the count-cap lower bound with the largest feasible minimum step in this fixed row order, then chooses an interior value for rounding margin. The integer witness preserves every interval. Bounded ordering does not prove a global or provider quality optimum.",
 		},
 	);
+}
+
+function hasValidIntegerExample(
+	proposal: PerTitleProposal,
+	scenario: PerTitleScenario | undefined,
+): boolean {
+	if (scenario?.status !== "modelled" || !scenario.modelRungs.length)
+		return false;
+	return scenario.modelRungs.every((rung, index, rungs) => {
+		if (
+			!Number.isSafeInteger(rung.bitrate) ||
+			rung.bitrate < proposal.api.global.minBitrate ||
+			rung.bitrate > proposal.api.global.maxBitrate ||
+			rung.bitrate > scenario.assumedMaxBitrate
+		)
+			return false;
+		const previous = rungs[index - 1]?.bitrate;
+		if (previous === undefined) return true;
+		const ratio = rung.bitrate / previous;
+		return (
+			rung.bitrate > previous &&
+			ratio >= proposal.api.global.minBitrateStepSize - EPSILON &&
+			ratio <= proposal.api.global.maxBitrateStepSize + EPSILON
+		);
+	});
 }
 
 /** Uses a proved fixed-order example only where that scenario can contain it. */

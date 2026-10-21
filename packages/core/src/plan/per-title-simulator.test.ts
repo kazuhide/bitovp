@@ -766,6 +766,52 @@ describe("recommendPerTitleSettings", () => {
 		expect(result.derivation?.method).toBe("preserved-existing");
 	});
 
+	it("replaces saved ratios that have no valid integer example for the exact count", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 1,
+			maxBitrate: 2,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.5,
+			countPolicy: { kind: "exact", count: 2 },
+		});
+		expect(result.derivation?.method).toBe("geometric-count");
+		expect(result.applicable).toBe(true);
+		expect(result.derivation?.targetSatisfied).toBe(true);
+		const high = result.scenarios.find((scenario) => scenario.fraction === 1);
+		expect(high?.status).toBe("modelled");
+		expect(high?.modelRungs.map((rung) => rung.bitrate)).toEqual([1, 2]);
+		expect(result.api.global.minBitrateStepSize).toBeLessThanOrEqual(2);
+		expect(result.api.global.maxBitrateStepSize).toBeGreaterThanOrEqual(2);
+	});
+
+	it("finds an alternate integer placement when rounded equal-log points miss the count interval", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100,
+			maxBitrate: 104,
+			countPolicy: { kind: "exact", count: 4 },
+		});
+		expect(result.applicable).toBe(true);
+		expect(result.derivation?.targetSatisfied).toBe(true);
+		expect(result.api.global.minBitrateStepSize).toBeGreaterThan(1.04 ** 0.25);
+		const high = result.scenarios.find((scenario) => scenario.fraction === 1);
+		expect(high?.status).toBe("modelled");
+		expect(high?.modelCountRange?.maximum).toBe(4);
+		expect(high?.modelRungs).toHaveLength(4);
+		for (let index = 1; index < (high?.modelRungs.length ?? 0); index++) {
+			const ratio =
+				(high?.modelRungs[index]?.bitrate ?? 0) /
+				(high?.modelRungs[index - 1]?.bitrate ?? 1);
+			expect(ratio).toBeGreaterThanOrEqual(
+				result.api.global.minBitrateStepSize,
+			);
+			expect(ratio).toBeLessThanOrEqual(result.api.global.maxBitrateStepSize);
+		}
+	});
+
 	it("derives a count interval even when the default upper count would already be below the target", () => {
 		const result = recommendPerTitleSettings({
 			strategy: "count",

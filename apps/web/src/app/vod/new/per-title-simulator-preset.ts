@@ -83,9 +83,7 @@ const goalSchema = z
 			.optional(),
 	})
 	.strict();
-const perTitleSettings = z
-	.object({ ...rangeFields, minBitrate: integer, maxBitrate: integer })
-	.strict();
+const perTitleSettings = z.object(rangeFields).strict();
 const referenceStream = z
 	.object({
 		id,
@@ -168,8 +166,14 @@ export class PerTitlePresetError extends Error {
 function invalid(): never {
 	throw new PerTitlePresetError();
 }
-function checkRange(value: z.infer<typeof automatic>): void {
-	if ((value.minBitrate === undefined) !== (value.maxBitrate === undefined))
+function checkRange(
+	value: z.infer<typeof automatic>,
+	requireBounds = false,
+): void {
+	if (
+		requireBounds &&
+		(value.minBitrate === undefined || value.maxBitrate === undefined)
+	)
 		invalid();
 	if (
 		value.minBitrate !== undefined &&
@@ -180,16 +184,12 @@ function checkRange(value: z.infer<typeof automatic>): void {
 	const low = value.lowComplexityBoundaryForMaxBitrate;
 	const high = value.highComplexityBoundaryForMaxBitrate;
 	if (
-		(low === undefined) !== (high === undefined) ||
-		(low !== undefined && high !== undefined && low >= high)
-	)
-		invalid();
-	if (
 		value.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
-		(low === undefined || high === undefined)
+		(low === undefined || high === undefined || low >= high)
 	)
 		invalid();
 }
+
 function checkGoal(
 	goal: PerTitleGoal,
 	allowed: readonly PerTitleCodec[],
@@ -229,8 +229,9 @@ function checkGoal(
 		rows.length > goal.countPolicy.count
 	)
 		invalid();
-	for (const item of [...rows, ...(automaticRows ?? [])]) checkRange(item);
-	for (const item of rows) {
+	for (const item of automaticRows ?? []) checkRange(item);
+	for (const item of goal.strategy === "fixed-ranges" ? rows : []) {
+		checkRange(item, true);
 		if (
 			goal.strategy === "fixed-ranges" &&
 			(item.minBitrate === undefined || item.maxBitrate === undefined)
@@ -268,7 +269,10 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 			!stream.perTitleSettings
 		)
 			invalid();
-		checkRange({ id: stream.id, ...stream.perTitleSettings });
+		if (stream.mode === "PER_TITLE_TEMPLATE")
+			checkRange({ id: stream.id, ...stream.perTitleSettings });
+		else if (stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
+			checkRange({ id: stream.id, ...stream.perTitleSettings }, true);
 	}
 	const project = (stream: PerTitleReference["streams"][number]) => ({
 		id: stream.id,

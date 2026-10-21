@@ -9,6 +9,7 @@ import {
 import {
 	type Dispatch,
 	type SetStateAction,
+	useEffect,
 	useId,
 	useMemo,
 	useRef,
@@ -376,12 +377,29 @@ function SimulatorEditor({
 		() => JSON.stringify(referenceGoal),
 		[referenceGoal],
 	);
-	const sliderMinimum = Math.max(
-		slider.min,
-		Number.isFinite(goal.minBitrate) ? goal.minBitrate : slider.min,
-	);
+	const [sliderRange, setSliderRange] = useState({
+		baseline: referenceGoal,
+		maximum: slider.max,
+	});
+	useEffect(() => {
+		setSliderRange((current) => {
+			const baselineMaximum =
+				current.baseline === referenceGoal ? current.maximum : slider.max;
+			const maximum = Math.max(
+				baselineMaximum,
+				Number.isFinite(goal.maxBitrate) ? goal.maxBitrate : baselineMaximum,
+			);
+			return current.baseline === referenceGoal && current.maximum === maximum
+				? current
+				: { baseline: referenceGoal, maximum };
+		});
+	}, [referenceGoal, goal.maxBitrate, slider.max]);
+	const sliderMinimum =
+		Number.isSafeInteger(goal.minBitrate) && goal.minBitrate > 0
+			? goal.minBitrate
+			: slider.min;
 	const sliderMaximum = Math.max(
-		slider.max,
+		sliderRange.baseline === referenceGoal ? sliderRange.maximum : slider.max,
 		Number.isFinite(goal.maxBitrate) ? goal.maxBitrate : slider.max,
 		sliderMinimum,
 	);
@@ -747,11 +765,12 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 				reservedIds.add(rowId);
 				return rowId;
 			};
+			const inherited = autoTunePerTitleGoal(goal, referenceGoal, manualBounds);
 			const next = {
-				...copyGoal(goal),
+				...copyGoal(inherited),
 				codec,
-				rows: goal.rows?.map((row) => ({ ...row, id: freshId() })),
-				automaticTemplates: goal.automaticTemplates?.map((row) => ({
+				rows: inherited.rows?.map((row) => ({ ...row, id: freshId() })),
+				automaticTemplates: inherited.automaticTemplates?.map((row) => ({
 					...row,
 					id: freshId(),
 				})),

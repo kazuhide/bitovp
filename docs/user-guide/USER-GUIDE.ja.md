@@ -462,7 +462,7 @@ Per-Title は入力素材を解析し、内容に合わせた解像度やビッ�
 
 条件が両立しない場合は、勧める修正とその理由を示します。たとえば、各段の範囲が収まるよう全体の範囲を広げる、必須の段を残せる本数へ変更する、といった案です。修正案を使う操作をするまで、入力値は変わりません。
 
-幅やビットレートの選択パラメータは自動で扱います。読み込んだ寸法は保持し、高さを変えた場合は、元の幅と高さが分かる行で縦横比を保ちます。通常の`PER_TITLE_TEMPLATE`で指定した解像度は候補であり、出力の固定条件ではありません。また、`fixedResolutionAndBitrateSettings`内のmin/maxや`COMPLEXITY_RANGE`は、`PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE`専用です。通常テンプレートにこれらが残っている場合は警告を出し、元データには保持したまま、そのテンプレートの推奨設定から外します。モードを勝手に固定へ変えることはしません。[SDKの定義](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/models/StreamPerTitleSettings.ts)も参照できます。
+幅やビットレートの選択パラメータは自動で扱います。読み込んだ寸法は保持し、高さを変えた場合は、元の幅と高さが分かる行で縦横比を保ちます。新しい段の幅は、既存の段から共通の縦横比が分かる場合に補います。通常の`PER_TITLE_TEMPLATE`で指定した解像度は候補であり、出力の固定条件ではありません。また、`fixedResolutionAndBitrateSettings`内のmin/maxや`COMPLEXITY_RANGE`は、`PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE`専用です。通常テンプレートにこれらが残っている場合は警告を出し、元データには保持したまま、そのテンプレートの推奨設定から外します。モードを勝手に固定へ変えることはしません。[SDKの定義](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/models/StreamPerTitleSettings.ts)も参照できます。
 
 固定範囲テンプレートの`COMPLEXITY_RANGE`の境界は、素材解析で求める最上段のビットレートに関わる値です。その行の許容min/maxとは別なので、行の上限より大きくても矛盾ではありません。「パラメータの導出」で、条件を組み合わせた計算と変更点を確認できます。
 

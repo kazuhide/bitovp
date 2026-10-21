@@ -55,14 +55,46 @@ const texts = {
 };
 
 type AspectHistory = { ratio: number; height?: number; width?: number };
+const positiveInteger = (value: number | undefined): value is number =>
+	value !== undefined && Number.isSafeInteger(value) && value > 0;
+
+function widthForNewRow(goal: PerTitleGoal, height: number) {
+	const rows = goal.rows ?? [];
+	const known = rows.flatMap((row) =>
+		positiveInteger(row.height) && positiveInteger(row.width)
+			? [{ height: row.height, width: row.width }]
+			: [],
+	);
+	// Keep height-based ladders height-based rather than introducing a mixed-width row.
+	if (known.length !== rows.length) return {};
+	const fits = (ratio: number) =>
+		Number.isFinite(ratio) &&
+		ratio > 0 &&
+		known.every(
+			(row) => Math.abs(Math.round(row.height * ratio) - row.width) <= 1,
+		);
+	let ratio =
+		positiveInteger(goal.inputWidth) && positiveInteger(goal.inputHeight)
+			? goal.inputWidth / goal.inputHeight
+			: undefined;
+	if (ratio === undefined || !fits(ratio)) {
+		const first = known[0];
+		if (!first) return {};
+		const lower = Math.max(...known.map((row) => (row.width - 1) / row.height));
+		const upper = Math.min(...known.map((row) => (row.width + 1) / row.height));
+		if (lower > upper) return {};
+		ratio = first.width / first.height;
+		if (!fits(ratio)) ratio = (lower + upper) / 2;
+	}
+	const width = Math.round(ratio * height);
+	return positiveInteger(width) && fits(ratio) ? { width } : {};
+}
 
 function widthForHeight(
 	row: { id: string; height?: number; width?: number },
 	height: number | undefined,
 	history: Map<string, AspectHistory>,
 ) {
-	const positiveInteger = (value: number | undefined): value is number =>
-		value !== undefined && Number.isSafeInteger(value) && value > 0;
 	const previous = history.get(row.id);
 	// Partial input keeps the source ratio; externally replaced dimensions establish a new one.
 	const ratio =
@@ -278,7 +310,10 @@ export function PerTitleSimulatorRows({
 						if (!full)
 							onChange({
 								...goal,
-								rows: [...rows, { id: nextId(), height: 720 }],
+								rows: [
+									...rows,
+									{ id: nextId(), height: 720, ...widthForNewRow(goal, 720) },
+								],
 							});
 					}}
 				>

@@ -1,8 +1,9 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import { type PerTitleGoal, recommendPerTitleSettings } from "@bitovp/core";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
+import { autoTunePerTitleGoal } from "./per-title-simulator-auto";
 import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
 
 const goal: PerTitleGoal = {
@@ -404,6 +405,131 @@ describe("Unified Per-Title rendition inputs", () => {
 			height: 360,
 			width: 720,
 		});
+	});
+	it("infers the added required row width in the controlled tuning flow without creating mixed-width ordering", () => {
+		const events = callbacks();
+		const sized: PerTitleGoal = {
+			...goal,
+			countPolicy: { kind: "unrestricted" },
+			maxBitrate: 2400000,
+			rows: [
+				{
+					id: "small",
+					width: 400,
+					height: 240,
+					minBitrate: 160000,
+					maxBitrate: 200000,
+				},
+				{
+					id: "medium",
+					width: 800,
+					height: 480,
+					minBitrate: 400000,
+					maxBitrate: 480000,
+				},
+			],
+			automaticTemplates: [],
+		};
+		function Controlled() {
+			const [current, setCurrent] = useState(sized);
+			return (
+				<PerTitleSimulatorRows
+					id="rows"
+					goal={current}
+					manualBounds={{}}
+					{...events}
+					onChange={(next) => {
+						const tuned = autoTunePerTitleGoal(next, sized, {});
+						events.onChange(tuned);
+						setCurrent(tuned);
+					}}
+				/>
+			);
+		}
+		renderLocalized(<Controlled />);
+		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
+		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.at(-1)).toMatchObject({ height: 720, width: 1200 });
+		expect(next.rows?.slice(0, 2)).toEqual(sized.rows);
+		expect(new Set(next.rows?.map((row) => row.width)).size).toBe(3);
+		for (const row of next.rows ?? []) {
+			expect(row.minBitrate).toBeGreaterThanOrEqual(next.minBitrate);
+			expect(row.maxBitrate).toBeGreaterThanOrEqual(row.minBitrate ?? 0);
+			expect(row.maxBitrate).toBeLessThanOrEqual(next.maxBitrate);
+		}
+		expect(
+			recommendPerTitleSettings(next).diagnostics.some(
+				(item) => item.code === "row-order-unknown",
+			),
+		).toBe(false);
+	});
+	it.each([
+		{
+			name: "consistent source dimensions",
+			widths: [401, 801],
+			inputWidth: 400,
+			inputHeight: 240,
+			expected: 1200,
+		},
+		{
+			name: "inconsistent source dimensions",
+			widths: [400, 800],
+			inputWidth: 1920,
+			inputHeight: 1080,
+			expected: 1200,
+		},
+		{ name: "one-pixel explicit rounding", widths: [400, 801], expected: 1200 },
+		{
+			name: "inconsistent explicit ratios",
+			widths: [400, 960],
+			expected: undefined,
+		},
+		{
+			name: "omitted explicit widths",
+			widths: [undefined, undefined],
+			inputWidth: 1920,
+			inputHeight: 1080,
+			expected: undefined,
+		},
+	])("uses only reliable geometry for an added required row: $name", ({
+		widths,
+		inputWidth,
+		inputHeight,
+		expected,
+	}) => {
+		const events = callbacks();
+		const original: PerTitleGoal = {
+			...goal,
+			inputWidth,
+			inputHeight,
+			rows: [
+				{
+					id: "small",
+					height: 240,
+					...(widths[0] === undefined ? {} : { width: widths[0] }),
+				},
+				{
+					id: "medium",
+					height: 480,
+					...(widths[1] === undefined ? {} : { width: widths[1] }),
+				},
+			],
+		};
+		const before = structuredClone(original);
+		renderLocalized(
+			<PerTitleSimulatorRows
+				id="rows"
+				goal={original}
+				manualBounds={{}}
+				{...events}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
+		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.at(-1)?.width).toBe(expected);
+		expect(next.rows?.slice(0, 2)).toEqual(original.rows);
+		expect(next.automaticTemplates).toEqual(original.automaticTemplates);
+		expect(original).toEqual(before);
 	});
 	it("enforces the combined template limit for both add actions", () => {
 		const events = callbacks();

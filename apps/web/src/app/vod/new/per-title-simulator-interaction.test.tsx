@@ -43,6 +43,71 @@ function maximum(value: number) {
 }
 
 describe("Per-Title automatic interaction", () => {
+	it("represents current limits below the loaded minimum without a keyboard jump", () => {
+		show();
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Minimum bitrate (kbps)" }),
+			{ target: { value: "10" } },
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{ target: { value: "50" } },
+		);
+		const slider = screen.getByRole("slider", { name: /Maximum bitrate/ });
+		expect(slider).toHaveAttribute("min", "10");
+		expect(slider).toHaveValue("50");
+		fireEvent.keyDown(slider, { key: "ArrowRight" });
+		expect(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+		).toHaveValue(51);
+	});
+
+	it("keeps the slider domain stable after typing a higher maximum", () => {
+		show();
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{ target: { value: "12000" } },
+		);
+		const slider = screen.getByRole("slider", { name: /Maximum bitrate/ });
+		expect(slider).toHaveAttribute("max", "12000");
+		maximum(9000);
+		expect(slider).toHaveAttribute("max", "12000");
+		expect(slider).toHaveValue("9000");
+	});
+
+	it("inherits displayed ranges when switching to a codec without a saved seed", () => {
+		show();
+		maximum(4800);
+		const before = proposedApi();
+		fireEvent.change(screen.getByRole("combobox", { name: "Codec" }), {
+			target: { value: "VP9" },
+		});
+		const after = proposedApi();
+		expect(after.global.maxBitrate).toBe(before.global.maxBitrate);
+		expect(
+			after.streams.map(
+				(row: {
+					perTitleSettings: { minBitrate: number; maxBitrate: number };
+				}) => [
+					row.perTitleSettings.minBitrate,
+					row.perTitleSettings.maxBitrate,
+				],
+			),
+		).toEqual(
+			before.streams.map(
+				(row: {
+					perTitleSettings: { minBitrate: number; maxBitrate: number };
+				}) => [
+					row.perTitleSettings.minBitrate,
+					row.perTitleSettings.maxBitrate,
+				],
+			),
+		);
+		expect(
+			after.streams.map((row: { rowId: string }) => row.rowId),
+		).not.toEqual(before.streams.map((row: { rowId: string }) => row.rowId));
+	});
+
 	it("resets aspect-ratio history when a different codec supplies the same rounded dimensions", () => {
 		const tiny: PerTitleGoal = {
 			...goal,

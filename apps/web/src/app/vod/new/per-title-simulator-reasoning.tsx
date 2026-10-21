@@ -22,10 +22,34 @@ const texts = {
 				"No count or required-row constraint requires different spacing. The comparison uses the documented default ratios, 1.5 and 1.9.",
 		},
 		details: "Calculation and assumptions",
+		minimumL: "Overall minimum L (kbps)",
+		maximumU: "Overall maximum U (kbps)",
+		span: "Bitrate span U/L",
+		requestedCount: "Requested rendition count",
+		requiredRows: "Required rows",
+		modelCount: "Model count objective N",
+		selectedMin: "Selected minimum ratio s",
+		selectedMax: "Selected maximum ratio",
+		lower: "Model count boundary (excluded)",
+		upper: "Checked spacing upper bound (included)",
+		checkedOrder: "Feasible spacing for the checked row order",
+		witness: "Integer placement example (kbps)",
+		witnessHint:
+			"The model places integer bit/s values, shown here in kbps. This is an arithmetic existence example within the allowed ranges, not a prediction of encoder output.",
+		unrestricted: "Unrestricted",
+		undetermined: "Not established",
+		exact: (count: number) => `Exactly ${count}`,
+		atMost: (count: number) => `At most ${count}`,
+		definitions:
+			"L and U are the overall minimum and maximum bitrates. N is the model's count objective, when specified. s is the minimum ratio between neighboring bitrate points.",
+		precision:
+			"Displayed ratios are approximate. Checks use unrounded values; a displayed boundary is not an equality condition. The count boundary below is a model result and can differ from the continuous sufficient condition.",
+		midpoint:
+			"The selected ratio is based on the geometric midpoint of the checked spacing bounds, giving similar proportional room on either side. Integer bitrate placement is then checked again for rounding. This choice retains the required rows and their bitrate ranges.",
 		capacity:
 			"For continuous bitrate points in the overall range, s^N > U/L is a sufficient condition for at most N points. Equality permits another continuous point. Integer bitrate capacity is checked separately.",
 		intervals:
-			"For the checked required-row order, each integer point must satisfy p[i] = max(L[i], ceil(s × p[i−1])) ≤ U[i]. The model also checks the largest ratio between these points.",
+			"For the checked required-row order, each integer point must satisfy p[i] = max(L[i], ceil(s × p[i−1])) ≤ U[i]. L[i] and U[i] are that row's allowed limits; p[i] is an integer bitrate and ceil rounds upward. The model also checks the largest ratio between these points.",
 		order:
 			"The search checks a bounded set of row orders. This is not a proof of the best spacing across every possible order.",
 		unknown:
@@ -68,10 +92,34 @@ const texts = {
 				"本数や必須段の条件による間隔の変更が必要ないため、公開仕様の既定値である1.5・1.9を比較に使います。",
 		},
 		details: "計算手順と前提",
+		minimumL: "全体の下限 L (kbps)",
+		maximumU: "全体の上限 U (kbps)",
+		span: "全体の上限と下限の比 U/L",
+		requestedCount: "希望する本数",
+		requiredRows: "必須の行数",
+		modelCount: "モデルで確認する本数 N",
+		selectedMin: "選んだ最小比率 s",
+		selectedMax: "選んだ最大比率",
+		lower: "モデル上の本数条件の下側境界（含まない）",
+		upper: "確認した間隔の上側境界（含む）",
+		checkedOrder: "確認した並びで配置できる間隔の上限",
+		witness: "整数ビットレートの配置例 (kbps)",
+		witnessHint:
+			"モデルではbit/s単位の整数を配置し、ここではkbpsで表示しています。許容範囲内に値を置けることを示す計算例で、エンコーダの出力を予測したものではありません。",
+		unrestricted: "制限なし",
+		undetermined: "未確定",
+		exact: (count: number) => `${count}本ちょうど`,
+		atMost: (count: number) => `${count}本以下`,
+		definitions:
+			"LとUは全体の下限・上限ビットレートです。Nは本数の指定がある場合にモデルで確認する本数、sは隣り合うビットレート点の最小比率を表します。",
+		precision:
+			"表示した比率は概数です。判定には丸める前の値を使うため、表示上同じ数値でも境界と等しいとは限りません。本数条件の境界はモデルの計算結果で、連続値の十分条件とは異なる場合があります。",
+		midpoint:
+			"選んだ比率は、確認した間隔の上下の境界に対する比率の余裕が近くなるよう、幾何平均を基準にしています。その後、整数への切り上げを含めて配置を再確認しています。必須の行と各行のビットレート範囲は維持します。",
 		capacity:
 			"全体の範囲に連続値のビットレート点を高々N個置ける十分条件は s^N > U/L です。等号では連続値ならもう1点入る余地があります。整数値での上限は別途確認しています。",
 		intervals:
-			"確認した必須段の並びで、各整数点が p[i] = max(L[i], ceil(s × p[i−1])) ≤ U[i] を満たすかを調べます。隣り合う点の最大比率も確認します。",
+			"確認した必須段の並びで、各整数点が p[i] = max(L[i], ceil(s × p[i−1])) ≤ U[i] を満たすかを調べます。L[i]とU[i]はその行の許容範囲、p[i]は整数のビットレート、ceilは整数への切り上げです。隣り合う点の最大比率も確認します。",
 		order:
 			"並び順の探索には上限があります。すべての並びについて最良の間隔であることを証明するものではありません。",
 		unknown:
@@ -112,8 +160,62 @@ export function PerTitleReasoning({
 }) {
 	const { locale } = useT();
 	const copy = texts[locale];
-	const suggestions = useMemo(() => perTitleSuggestions(goal), [goal]);
+	const validRange =
+		Number.isSafeInteger(goal.minBitrate) &&
+		Number.isSafeInteger(goal.maxBitrate) &&
+		goal.minBitrate > 0 &&
+		goal.maxBitrate >= goal.minBitrate;
+	const suggestions = useMemo(
+		() => (validRange ? perTitleSuggestions(goal) : []),
+		[goal, validRange],
+	);
 	const derivation = proposal.derivation;
+	const number = (value: number) =>
+		new Intl.NumberFormat(locale, { maximumSignificantDigits: 10 }).format(
+			value,
+		);
+	const ratio = (value: number | undefined) =>
+		value !== undefined && Number.isFinite(value) && value >= 1;
+	const checked =
+		validRange &&
+		proposal.applicable &&
+		proposal.status === "candidate" &&
+		derivation?.targetSatisfied === true &&
+		ratio(derivation.selectedMinStep) &&
+		ratio(derivation.selectedMaxStep) &&
+		derivation.selectedMaxStep >= derivation.selectedMinStep;
+	const lower = derivation?.ratioLowerExclusive;
+	const upper = derivation?.ratioUpperInclusive;
+	const interior =
+		checked &&
+		(derivation.method === "geometric-count" ||
+			derivation.method === "required-intervals") &&
+		lower !== undefined &&
+		upper !== undefined &&
+		ratio(lower) &&
+		ratio(upper) &&
+		derivation.selectedMinStep > lower &&
+		derivation.selectedMinStep < upper;
+	const witness =
+		checked &&
+		derivation.integerWitness?.length &&
+		derivation.integerWitness.every(
+			(point) =>
+				Number.isSafeInteger(point) &&
+				point >= goal.minBitrate &&
+				point <= goal.maxBitrate,
+		)
+			? derivation.integerWitness
+			: undefined;
+	const count = goal.countPolicy;
+	const requestedCount =
+		count.kind === "unrestricted"
+			? copy.unrestricted
+			: Number.isSafeInteger(count.count) && count.count > 0
+				? count.kind === "exact"
+					? copy.exact(count.count)
+					: copy.atMost(count.count)
+				: copy.undetermined;
 	return (
 		<section
 			className="space-y-3 border-t border-zinc-800 pt-4"
@@ -123,22 +225,104 @@ export function PerTitleReasoning({
 			<p className="text-xs text-zinc-300">{copy.objective}</p>
 			{derivation ? (
 				<>
-					<p className="text-xs text-zinc-400">
-						{copy.methods[derivation.method]}
-					</p>
-					{!derivation.targetSatisfied ? (
+					{checked ? (
+						<p className="text-xs text-zinc-400">
+							{copy.methods[derivation.method]}
+						</p>
+					) : (
 						<p className="text-xs text-amber-300">{copy.unknown}</p>
-					) : null}
+					)}
 					<details className="space-y-2 text-xs text-zinc-400">
 						<summary className="cursor-pointer">{copy.details}</summary>
+						<dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-md bg-zinc-900 p-3">
+							{[
+								[
+									copy.minimumL,
+									validRange
+										? number(goal.minBitrate / 1000)
+										: copy.undetermined,
+								],
+								[
+									copy.maximumU,
+									validRange
+										? number(goal.maxBitrate / 1000)
+										: copy.undetermined,
+								],
+								[
+									copy.span,
+									validRange
+										? `≈ ${number(goal.maxBitrate / goal.minBitrate)}`
+										: copy.undetermined,
+								],
+								[copy.requestedCount, requestedCount],
+								[
+									copy.requiredRows,
+									Number.isSafeInteger(derivation.requiredRowCount) &&
+									derivation.requiredRowCount >= 0
+										? number(derivation.requiredRowCount)
+										: copy.undetermined,
+								],
+								...(Number.isSafeInteger(derivation.desiredCount) &&
+								(derivation.desiredCount ?? 0) > 0
+									? [
+											[
+												copy.modelCount,
+												number(derivation.desiredCount as number),
+											],
+										]
+									: []),
+								[
+									copy.selectedMin,
+									validRange && ratio(derivation.selectedMinStep)
+										? `≈ ${number(derivation.selectedMinStep)}`
+										: copy.undetermined,
+								],
+								[
+									copy.selectedMax,
+									validRange && ratio(derivation.selectedMaxStep)
+										? `≈ ${number(derivation.selectedMaxStep)}`
+										: copy.undetermined,
+								],
+								...(validRange && lower !== undefined && ratio(lower)
+									? [[copy.lower, `≈ ${number(lower)}`]]
+									: []),
+								...(validRange && upper !== undefined && ratio(upper)
+									? [[copy.upper, `≈ ${number(upper)}`]]
+									: []),
+								...(validRange &&
+								derivation.maximumFeasibleStep !== undefined &&
+								ratio(derivation.maximumFeasibleStep)
+									? [
+											[
+												copy.checkedOrder,
+												`≈ ${number(derivation.maximumFeasibleStep)}`,
+											],
+										]
+									: []),
+								...(witness
+									? [
+											[
+												copy.witness,
+												witness
+													.map((point) => number(point / 1000))
+													.join(" → "),
+											],
+										]
+									: []),
+							].map(([label, value]) => (
+								<div key={label} className="contents">
+									<dt>{label}</dt>
+									<dd className="max-w-md break-words text-right tabular-nums text-zinc-200">
+										{value}
+									</dd>
+								</div>
+							))}
+						</dl>
+						<p>{copy.definitions}</p>
+						<p>{copy.precision}</p>
 						<p>{copy.capacity}</p>
-						<pre className="overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-900 p-3">
-							{JSON.stringify(
-								{ L: goal.minBitrate, U: goal.maxBitrate, ...derivation },
-								null,
-								2,
-							)}
-						</pre>
+						{interior ? <p>{copy.midpoint}</p> : null}
+						{witness ? <p>{copy.witnessHint}</p> : null}
 						{derivation.requiredRowCount > 1 ? (
 							<>
 								<p>{copy.intervals}</p>

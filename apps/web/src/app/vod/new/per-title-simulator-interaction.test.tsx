@@ -1,0 +1,247 @@
+import type { PerTitleGoal } from "@bitovp/core";
+import { fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { renderLocalized } from "@/test/render";
+import { PerTitleSimulator } from "./per-title-simulator";
+
+const goal: PerTitleGoal = {
+	strategy: "fixed-ranges",
+	codec: "H264",
+	minBitrate: 100_000,
+	maxBitrate: 2_400_000,
+	countPolicy: { kind: "exact", count: 5 },
+	rows: [
+		{ id: "small", height: 240, minBitrate: 160_000, maxBitrate: 200_000 },
+		{ id: "middle", height: 480, minBitrate: 400_000, maxBitrate: 480_000 },
+		{ id: "large", height: 720, minBitrate: 1_000_000, maxBitrate: 1_200_000 },
+	],
+};
+
+function show(initialGoal = goal) {
+	const onApply = vi.fn();
+	renderLocalized(
+		<PerTitleSimulator
+			open
+			initialGoal={initialGoal}
+			onOpenChange={vi.fn()}
+			onApply={onApply}
+		/>,
+	);
+	return { onApply };
+}
+
+function proposedApi() {
+	return JSON.parse(
+		screen.getByTestId("per-title-api-settings").textContent ?? "",
+	);
+}
+
+function maximum(value: number) {
+	fireEvent.change(screen.getByRole("slider", { name: /Maximum bitrate/ }), {
+		target: { value: String(value) },
+	});
+}
+
+describe("Per-Title automatic interaction", () => {
+	it("resets aspect-ratio history when a different codec supplies the same rounded dimensions", () => {
+		const tiny: PerTitleGoal = {
+			...goal,
+			countPolicy: { kind: "exact", count: 1 },
+			rows: [
+				{
+					id: "same",
+					height: 9,
+					width: 16,
+					minBitrate: 160000,
+					maxBitrate: 200000,
+				},
+			],
+		};
+		renderLocalized(
+			<PerTitleSimulator
+				open
+				initialGoal={tiny}
+				goalsByCodec={{
+					H265: {
+						...tiny,
+						codec: "H265",
+						rows: [{ ...tiny.rows?.[0], id: "same", height: 3, width: 5 }],
+					},
+				}}
+				onOpenChange={vi.fn()}
+				onApply={vi.fn()}
+			/>,
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+			{ target: { value: "3" } },
+		);
+		expect(proposedApi().streams[0].width).toBe(5);
+		fireEvent.change(screen.getByRole("combobox", { name: "Codec" }), {
+			target: { value: "H265" },
+		});
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+			{ target: { value: "6" } },
+		);
+		expect(proposedApi().streams[0].width).toBe(10);
+	});
+
+	it("recalculates ranges and dependent API parameters from the maximum slider", () => {
+		const original = structuredClone(goal);
+		const { onApply } = show();
+		const first = proposedApi();
+		maximum(4800);
+		const second = proposedApi();
+		expect(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+		).toHaveValue(4800);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 2",
+			}),
+		).not.toHaveValue(480);
+		expect(second.global.maxBitrate).toBe(4_800_000);
+		expect(second.streams[0].perTitleSettings).not.toEqual(
+			first.streams[0].perTitleSettings,
+		);
+		expect(second.global.fixedResolutionAndBitrateConfiguration).not.toEqual(
+			first.global.fixedResolutionAndBitrateConfiguration,
+		);
+		expect(second.streams.map((row: { rowId: string }) => row.rowId)).toEqual(
+			first.streams.map((row: { rowId: string }) => row.rowId),
+		);
+		maximum(2400);
+		expect(proposedApi()).toEqual(first);
+		expect(goal).toEqual(original);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it("pins an edited bound while other bounds track the slider and supports reset", () => {
+		show();
+		const min = screen.getByRole("spinbutton", {
+			name: "Minimum bitrate (kbps), rendition 2",
+		});
+		const max = screen.getByRole("spinbutton", {
+			name: "Maximum bitrate (kbps), rendition 2",
+		});
+		fireEvent.change(min, { target: { value: "350" } });
+		maximum(4800);
+		expect(min).toHaveValue(350);
+		expect(max).not.toHaveValue(480);
+		fireEvent.click(
+			screen.getByRole("button", { name: /Reset.*automatic.*2/i }),
+		);
+		expect(min).not.toHaveValue(350);
+		maximum(2400);
+		expect(min).toHaveValue(400);
+		expect(max).toHaveValue(480);
+	});
+
+	it("keeps an out-of-range manual value visible and prevents review", () => {
+		show();
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 3",
+			}),
+			{ target: { value: "3000" } },
+		);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Maximum bitrate (kbps), rendition 3",
+			}),
+		).toHaveValue(3000);
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeDisabled();
+	});
+
+	it("keeps exact integer limits on the slider and supports useful keyboard steps", () => {
+		show({ ...goal, maxBitrate: 2_400_001 });
+		const slider = screen.getByRole("slider", { name: /Maximum bitrate/ });
+		expect(slider).toHaveValue("2400.001");
+		fireEvent.keyDown(slider, { key: "ArrowRight" });
+		expect(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+		).toHaveValue(2401.001);
+		fireEvent.keyDown(slider, { key: "ArrowLeft" });
+		expect(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+		).toHaveValue(2400.001);
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{ target: { value: "" } },
+		);
+		expect(slider).toBeDisabled();
+	});
+
+	it("keeps technical tuning and original template controls out of the form", () => {
+		show({
+			...goal,
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 2,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+		});
+		expect(screen.queryByText("Width and bitrate selection")).toBeNull();
+		expect(screen.queryByText("Original template settings")).toBeNull();
+		expect(
+			screen.queryByRole("checkbox", {
+				name: "Include original additional-rendition rules",
+			}),
+		).toBeNull();
+		expect(
+			screen.queryByRole("combobox", { name: "Bitrate selection mode" }),
+		).toBeNull();
+	});
+
+	it("proposes missing row ranges and keeps manual bounds separate between codecs", () => {
+		renderLocalized(
+			<PerTitleSimulator
+				open
+				initialGoal={goal}
+				goalsByCodec={{
+					H265: {
+						...goal,
+						codec: "H265",
+						rows: goal.rows?.map(
+							({ minBitrate: _min, maxBitrate: _max, ...row }) => row,
+						),
+					},
+				}}
+				onOpenChange={vi.fn()}
+				onApply={vi.fn()}
+			/>,
+		);
+		const rowMin = () =>
+			screen.getByRole("spinbutton", {
+				name: "Minimum bitrate (kbps), rendition 2",
+			});
+		fireEvent.change(rowMin(), { target: { value: "350" } });
+		fireEvent.change(screen.getByRole("combobox", { name: "Codec" }), {
+			target: { value: "H265" },
+		});
+		const automaticMinimum = (rowMin() as HTMLInputElement).valueAsNumber;
+		expect(automaticMinimum).toBeGreaterThan(100);
+		expect(automaticMinimum).toBeLessThan(2400);
+		fireEvent.change(rowMin(), { target: { value: "300" } });
+		maximum(4800);
+		expect(rowMin()).toHaveValue(300);
+		fireEvent.change(screen.getByRole("combobox", { name: "Codec" }), {
+			target: { value: "H264" },
+		});
+		expect(rowMin()).toHaveValue(350);
+		maximum(4800);
+		expect(rowMin()).toHaveValue(350);
+		fireEvent.click(
+			screen.getByRole("button", { name: /Reset.*automatic.*2/i }),
+		);
+		expect(rowMin()).not.toHaveValue(350);
+		fireEvent.change(screen.getByRole("combobox", { name: "Codec" }), {
+			target: { value: "H265" },
+		});
+		expect(rowMin()).toHaveValue(300);
+	});
+});

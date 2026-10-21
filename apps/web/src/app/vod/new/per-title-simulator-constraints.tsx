@@ -12,7 +12,7 @@ const texts = {
 		floor: "Calculated lower-limit interval (kbps)",
 		calibration: "Recommended complexity boundaries (kbps)",
 		calibrationHint:
-			"For missing boundaries, the tool maps each row's minimum and maximum to the calculated floor F and overall maximum U. F is the upper end of the calculated lower-limit interval. These boundaries are tool recommendations, not provider defaults; existing explicit boundaries are retained.",
+			"The tool maps each row's minimum and maximum to the calculated floor F and overall maximum U. F is the upper end of the calculated lower-limit interval. These boundaries are recalculated from your requirements; they are tool recommendations, not provider defaults.",
 		minimumStep: "Minimum ratio",
 		maximumStep: "Maximum ratio",
 		minimumBound: "Local minimum-ratio check (excluded boundary)",
@@ -26,7 +26,7 @@ const texts = {
 		maximumFactor: "Calculated factor upper bound",
 		forcedRanges: "Additional-rendition intervals (kbps)",
 		forcedHint:
-			"With no automatic templates and an exact count N, N minus the required rows reserves the additional slots. For LAST_CALCULATED_BITRATE, repeated integer rounding from the highest row's maximum determines the factor limit that stays within U. A compatible existing factor is retained; otherwise the limit is used. Ordinary minimum and maximum bitrate steps do not apply to additional renditions. Their count and cap are checked separately; this targets count and cap, not optimal quality.",
+			"With no automatic templates and an exact count N, N minus the required rows reserves the additional slots. For LAST_CALCULATED_BITRATE, repeated integer rounding from the highest row's maximum determines the factor limit that stays within U. The proposal uses this calculated limit. Ordinary minimum and maximum bitrate steps do not apply to additional renditions. Their count and cap are checked separately; this targets count and cap, not optimal quality.",
 		conditional:
 			"Automatic templates or unresolved branches make this a conditional calculation. The additional-rendition values are not an output-count guarantee.",
 		conditions:
@@ -57,7 +57,7 @@ const texts = {
 		floor: "計算に使う下限の範囲 (kbps)",
 		calibration: "推奨する複雑度境界 (kbps)",
 		calibrationHint:
-			"境界が未指定なら、各行の最小値・最大値を、計算した下限Fと全体の上限Uにそれぞれ対応させます。Fは、計算に使う下限範囲の上端です。この境界はツールが提案する値で、APIの既定値ではありません。明示された既存の境界は維持します。",
+			"各行の最小値・最大値を、計算した下限Fと全体の上限Uにそれぞれ対応させます。Fは、計算に使う下限範囲の上端です。境界は要件から計算し直します。ツールが提案する値で、APIの既定値ではありません。",
 		minimumStep: "最小比率",
 		maximumStep: "最大比率",
 		minimumBound: "選んだ設定での最小比率の下側境界（含まない）",
@@ -71,7 +71,7 @@ const texts = {
 		maximumFactor: "計算上の倍率の上限",
 		forcedRanges: "追加レンディションの範囲 (kbps)",
 		forcedHint:
-			"自動テンプレートがなく総本数をN本ちょうどに指定した場合は、Nから必須行数を引いた数を追加枠にします。LAST_CALCULATED_BITRATEでの上限確認では、最上段の最大値から倍率の適用と整数への四捨五入を繰り返し、Uを超えない倍率の上限を求めます。実際の追加段は、最後に算出したビットレートが基準です。条件を満たす既存の倍率を維持し、なければその上限を採用します。通常の最小・最大ビットレート間隔は追加段には適用しません。本数と上限を別に確認する計算で、画質の最適化ではありません。",
+			"自動テンプレートがなく総本数をN本ちょうどに指定した場合は、Nから必須行数を引いた数を追加枠にします。LAST_CALCULATED_BITRATEでの上限確認では、最上段の最大値から倍率の適用と整数への四捨五入を繰り返し、Uを超えない倍率の上限を求めて採用します。実際の追加段は、最後に算出したビットレートが基準です。通常の最小・最大ビットレート間隔は追加段には適用しません。本数と上限を別に確認する計算で、画質の最適化ではありません。",
 		conditional:
 			"自動テンプレートや未確定の分岐を含む条件付きの計算です。追加レンディションの設定値は、出力本数を保証しません。",
 		conditions:

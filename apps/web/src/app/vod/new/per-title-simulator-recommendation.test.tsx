@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleSimulator } from "./per-title-simulator";
-import { PerTitleAutomaticTemplates } from "./per-title-simulator-automatic";
 import { PerTitleRecommendation } from "./per-title-simulator-recommendation";
+import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
 
 const goal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -360,7 +360,7 @@ describe("Per-Title recommendation flow", () => {
 		expect(within(panel).getByText("Maximum bitrate ratio")).not.toBeVisible();
 		expect(within(panel).queryByRole("spinbutton")).toBeNull();
 		expect(
-			within(panel).getByText(/not an optimized bitrate range/),
+			within(panel).getByText(/do not predict encoding quality/),
 		).not.toBeVisible();
 		expect(
 			screen.queryByRole("region", { name: "Illustrative scenarios" }),
@@ -369,13 +369,14 @@ describe("Per-Title recommendation flow", () => {
 		expect(within(panel).getByText("Minimum bitrate ratio")).toBeVisible();
 		expect(within(panel).getByText("Maximum bitrate ratio")).toBeVisible();
 		expect(
-			screen.getByRole("spinbutton", {
+			screen.queryByRole("spinbutton", {
 				name: "Width (px, optional), rendition 1",
 			}),
-		).not.toBeVisible();
+		).toBeNull();
 		expect(
-			screen.getByRole("region", { name: "Automatic templates" }),
-		).not.toBeVisible();
+			screen.queryByRole("region", { name: "Automatic templates" }),
+		).toBeNull();
+		expect(screen.getByRole("region", { name: "Renditions" })).toBeVisible();
 		expect(
 			screen.getByRole("button", { name: "Review changes" }),
 		).toBeVisible();
@@ -389,19 +390,17 @@ describe("Per-Title recommendation flow", () => {
 		).toBeVisible();
 		expect(within(panel).getByText("最小ビットレート比率")).not.toBeVisible();
 		expect(
-			within(panel).getByText(
-				/最適なビットレート範囲を算出したものではありません/,
-			),
+			within(panel).getByText(/画質を予測した値ではありません/),
 		).not.toBeVisible();
 		expect(screen.getByText("比較・計算の詳細")).toBeVisible();
 		expect(
 			screen.queryByRole("region", { name: "仮定したシナリオ" }),
 		).toBeNull();
 		expect(
-			screen.getByRole("spinbutton", {
+			screen.queryByRole("spinbutton", {
 				name: "幅 (px、省略可), レンディション 1",
 			}),
-		).not.toBeVisible();
+		).toBeNull();
 	});
 
 	it("shows a short conflict status and keeps its diagnostic in details", () => {
@@ -438,22 +437,24 @@ describe("Per-Title recommendation flow", () => {
 		expect(within(panel).getByRole("status")).toHaveTextContent(
 			"Not established",
 		);
-		const warning = screen.getByText(/additional-rendition configuration/i);
-		expect(warning).not.toBeVisible();
-		fireEvent.click(screen.getByText("Comparison and calculation details"));
-		expect(warning).toBeVisible();
+		const proposedApi = JSON.parse(
+			screen.getByTestId("per-title-api-settings").textContent ?? "{}",
+		);
+		expect(proposedApi.global).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
+		);
 		expect(within(panel).queryByText("Calculated count limit")).toBeNull();
 		expect(
-			screen.getByRole("checkbox", {
+			screen.queryByRole("checkbox", {
 				name: "Include original additional-rendition rules",
 			}),
-		).not.toBeVisible();
+		).toBeNull();
 		expect(
 			screen.getByRole("button", { name: "Review changes" }),
 		).toBeDisabled();
 	});
 
-	it("offers only dimensions for automatic candidates while retaining inactive source settings", async () => {
+	it("offers only height for automatic candidates while retaining inactive source settings", async () => {
 		const onChange = vi.fn();
 		const automatic = {
 			id: "automatic",
@@ -466,12 +467,20 @@ describe("Per-Title recommendation flow", () => {
 			highComplexityBoundaryForMaxBitrate: 5_000_000,
 		};
 		renderLocalized(
-			<PerTitleAutomaticTemplates
+			<PerTitleSimulatorRows
+				id="rows"
 				goal={{ ...goal, automaticTemplates: [automatic] }}
 				onChange={onChange}
+				manualBounds={{}}
+				onBitrateChange={vi.fn()}
+				onResetBitrates={vi.fn()}
 			/>,
 		);
-		expect(screen.getAllByRole("spinbutton")).toHaveLength(2);
+		expect(
+			within(
+				screen.getByRole("listitem", { name: "Automatic template 1" }),
+			).getAllByRole("spinbutton"),
+		).toHaveLength(1);
 		expect(screen.queryByRole("combobox")).toBeNull();
 		await userEvent.setup().clear(
 			screen.getByRole("spinbutton", {
@@ -485,7 +494,7 @@ describe("Per-Title recommendation flow", () => {
 			{ target: { value: "720" } },
 		);
 		expect(onChange.mock.lastCall?.[0].automaticTemplates).toEqual([
-			{ ...automatic, height: 720 },
+			{ ...automatic, height: 720, width: 1280 },
 		]);
 	});
 });

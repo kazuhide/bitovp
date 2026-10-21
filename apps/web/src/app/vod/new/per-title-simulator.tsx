@@ -3,7 +3,6 @@
 import {
 	type PerTitleDiagnostic,
 	type PerTitleGoal,
-	type PerTitleGoalRow,
 	type PerTitleProposal,
 	recommendPerTitleSettings,
 } from "@bitovp/core";
@@ -21,7 +20,11 @@ import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
-import { PerTitleAutomaticTemplates } from "./per-title-simulator-automatic";
+import {
+	autoTunePerTitleGoal,
+	bitrateSliderBounds,
+	type PerTitleManualBounds,
+} from "./per-title-simulator-auto";
 import { PerTitleConstraints } from "./per-title-simulator-constraints";
 import {
 	type PerTitleSimulatorCopy,
@@ -32,6 +35,7 @@ import { PerTitleSimulatorFiles } from "./per-title-simulator-files";
 import type { PerTitleReference } from "./per-title-simulator-preset";
 import { PerTitleReasoning } from "./per-title-simulator-reasoning";
 import { PerTitleRecommendation } from "./per-title-simulator-recommendation";
+import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
 
 export type PerTitleSimulatorProps = {
 	open: boolean;
@@ -45,178 +49,6 @@ export type PerTitleSimulatorProps = {
 
 const usesRows = (goal: PerTitleGoal) =>
 	goal.strategy !== "automatic" && goal.strategy !== "count";
-
-function GoalRows({
-	goal,
-	onChange,
-	copy,
-	id,
-}: {
-	goal: PerTitleGoal;
-	onChange: (next: PerTitleGoal) => void;
-	copy: PerTitleSimulatorCopy;
-	id: string;
-}) {
-	const nextId = useRef(0);
-	const rows = goal.rows ?? [];
-	const ranged = goal.strategy === "fixed-ranges";
-	const patch = (index: number, values: Partial<PerTitleGoalRow>) =>
-		onChange({
-			...goal,
-			rows: rows.map((row, i) => (i === index ? { ...row, ...values } : row)),
-		});
-	return (
-		<section className="space-y-3" aria-labelledby={`${id}-rows`}>
-			<h3 id={`${id}-rows`} className="font-medium text-sm text-zinc-200">
-				{copy.rows}
-			</h3>
-			{rows.map((row, index) => (
-				<div key={row.id} className="space-y-2 border-b border-zinc-800 pb-3">
-					<div
-						className={`grid items-start gap-2 ${ranged ? "sm:grid-cols-3" : "sm:max-w-xs"}`}
-					>
-						<NumberField
-							id={`${id}-${row.id}-height`}
-							label={copy.height}
-							accessibleLabel={`${copy.height}, ${copy.rendition} ${index + 1}`}
-							value={row.height}
-							integer
-							minimum={1}
-							onChange={(height) =>
-								patch(index, { height: height ?? Number.NaN })
-							}
-						/>
-						{ranged ? (
-							<>
-								<NumberField
-									id={`${id}-${row.id}-min`}
-									label={copy.minimum}
-									accessibleLabel={`${copy.minimum}, ${copy.rendition} ${index + 1}`}
-									value={row.minBitrate}
-									unit={1000}
-									onChange={(minBitrate) => patch(index, { minBitrate })}
-								/>
-								<NumberField
-									id={`${id}-${row.id}-max`}
-									label={copy.maximum}
-									accessibleLabel={`${copy.maximum}, ${copy.rendition} ${index + 1}`}
-									value={row.maxBitrate}
-									unit={1000}
-									onChange={(maxBitrate) => patch(index, { maxBitrate })}
-								/>
-							</>
-						) : null}
-					</div>
-					<details className="text-xs text-zinc-400">
-						<summary className="cursor-pointer">{copy.rowDetails}</summary>
-						<div className="mt-3 grid gap-3 sm:grid-cols-3">
-							<NumberField
-								id={`${id}-${row.id}-width`}
-								label={copy.width}
-								accessibleLabel={`${copy.width}, ${copy.rendition} ${index + 1}`}
-								value={row.width}
-								integer
-								minimum={1}
-								optional
-								onChange={(width) => patch(index, { width })}
-							/>
-							{ranged ? (
-								<>
-									<Field
-										htmlFor={`${id}-${row.id}-selection`}
-										label={copy.selectionMode}
-									>
-										<SelectNative
-											id={`${id}-${row.id}-selection`}
-											value={row.bitrateSelectionMode ?? "OPTIMIZED"}
-											onChange={(event) =>
-												patch(index, {
-													bitrateSelectionMode: event.target
-														.value as PerTitleGoalRow["bitrateSelectionMode"],
-												})
-											}
-										>
-											<option value="OPTIMIZED">{copy.optimized}</option>
-											<option value="COMPLEXITY_RANGE">
-												{copy.complexityRange}
-											</option>
-										</SelectNative>
-									</Field>
-									{row.bitrateSelectionMode === "COMPLEXITY_RANGE" ? (
-										<>
-											<NumberField
-												id={`${id}-${row.id}-low`}
-												label={copy.lowBoundary}
-												value={row.lowComplexityBoundaryForMaxBitrate}
-												unit={1000}
-												onChange={(value) =>
-													patch(index, {
-														lowComplexityBoundaryForMaxBitrate: value,
-													})
-												}
-											/>
-											<NumberField
-												id={`${id}-${row.id}-high`}
-												label={copy.highBoundary}
-												value={row.highComplexityBoundaryForMaxBitrate}
-												unit={1000}
-												onChange={(value) =>
-													patch(index, {
-														highComplexityBoundaryForMaxBitrate: value,
-													})
-												}
-											/>
-										</>
-									) : null}
-								</>
-							) : null}
-						</div>
-					</details>
-					<div className="flex justify-end">
-						<Button
-							variant="ghost"
-							size="sm"
-							aria-label={`${copy.removeRendition} ${index + 1}`}
-							onClick={() =>
-								onChange({ ...goal, rows: rows.filter((_, i) => i !== index) })
-							}
-						>
-							{copy.remove}
-						</Button>
-					</div>
-				</div>
-			))}
-			<Button
-				variant="secondary"
-				size="sm"
-				onClick={() => {
-					do {
-						nextId.current += 1;
-					} while (
-						[...rows, ...(goal.automaticTemplates ?? [])].some(
-							(row) => row.id === `${id}-new-${nextId.current}`,
-						)
-					);
-					onChange({
-						...goal,
-						rows: [
-							...rows,
-							{
-								id: `${id}-new-${nextId.current}`,
-								height: 720,
-								...(ranged
-									? { minBitrate: goal.minBitrate, maxBitrate: goal.maxBitrate }
-									: {}),
-							},
-						],
-					});
-				}}
-			>
-				{copy.add}
-			</Button>
-		</section>
-	);
-}
 
 const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 	"model-only":
@@ -505,8 +337,11 @@ function SimulatorEditor({
 	onOpenChange,
 	onApply,
 	applyError,
-	goal,
+	goal: draftGoal,
 	setGoal,
+	manualBounds,
+	onBitrateChange,
+	onResetBitrates,
 	referenceGoal,
 	reference,
 	onLoad,
@@ -514,6 +349,13 @@ function SimulatorEditor({
 }: PerTitleSimulatorProps & {
 	goal: PerTitleGoal;
 	setGoal: Dispatch<SetStateAction<PerTitleGoal>>;
+	manualBounds: PerTitleManualBounds;
+	onBitrateChange: (
+		rowId: string,
+		bound: "min" | "max",
+		value: number | undefined,
+	) => void;
+	onResetBitrates: (rowId: string) => void;
 	referenceGoal: PerTitleGoal;
 	reference?: PerTitleReference;
 	onLoad: (goal: PerTitleGoal, reference?: PerTitleReference) => void;
@@ -522,6 +364,32 @@ function SimulatorEditor({
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
 	const id = useId();
+	const goal = useMemo(
+		() => autoTunePerTitleGoal(draftGoal, referenceGoal, manualBounds),
+		[draftGoal, referenceGoal, manualBounds],
+	);
+	const slider = useMemo(
+		() => bitrateSliderBounds(referenceGoal),
+		[referenceGoal],
+	);
+	const renditionSession = useMemo(
+		() => JSON.stringify(referenceGoal),
+		[referenceGoal],
+	);
+	const sliderMinimum = Math.max(
+		slider.min,
+		Number.isFinite(goal.minBitrate) ? goal.minBitrate : slider.min,
+	);
+	const sliderMaximum = Math.max(
+		slider.max,
+		Number.isFinite(goal.maxBitrate) ? goal.maxBitrate : slider.max,
+		sliderMinimum,
+	);
+	const sliderValid =
+		Number.isSafeInteger(goal.minBitrate) &&
+		goal.minBitrate > 0 &&
+		Number.isSafeInteger(goal.maxBitrate) &&
+		goal.maxBitrate >= goal.minBitrate;
 	const selected = useMemo(() => recommendPerTitleSettings(goal), [goal]);
 	const baseline = useMemo(
 		() => recommendPerTitleSettings(referenceGoal),
@@ -618,13 +486,63 @@ function SimulatorEditor({
 								unit={1000}
 								onChange={(value) => patch({ minBitrate: value ?? Number.NaN })}
 							/>
-							<NumberField
-								id={`${id}-max`}
-								label={copy.maximum}
-								value={goal.maxBitrate}
-								unit={1000}
-								onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
-							/>
+							<div className="space-y-2">
+								<NumberField
+									id={`${id}-max`}
+									label={copy.maximum}
+									value={goal.maxBitrate}
+									unit={1000}
+									onChange={(value) =>
+										patch({ maxBitrate: value ?? Number.NaN })
+									}
+								/>
+								<input
+									type="range"
+									aria-label={copy.maximumSlider}
+									aria-valuetext={
+										sliderValid
+											? `${new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(goal.maxBitrate / 1000)} kbps`
+											: undefined
+									}
+									min={sliderMinimum / 1000}
+									max={sliderMaximum / 1000}
+									step={0.001}
+									value={(sliderValid ? goal.maxBitrate : sliderMinimum) / 1000}
+									disabled={!sliderValid}
+									className="h-5 w-full cursor-pointer accent-emerald-500 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2 disabled:opacity-50"
+									onChange={(event) =>
+										patch({
+											maxBitrate: Math.round(Number(event.target.value) * 1000),
+										})
+									}
+									onKeyDown={(event) => {
+										const direction = [
+											"ArrowRight",
+											"ArrowUp",
+											"PageUp",
+										].includes(event.key)
+											? 1
+											: ["ArrowLeft", "ArrowDown", "PageDown"].includes(
+														event.key,
+													)
+												? -1
+												: 0;
+										if (!direction || !sliderValid) return;
+										event.preventDefault();
+										const increment =
+											slider.step * (event.key.startsWith("Page") ? 10 : 1);
+										patch({
+											maxBitrate: Math.min(
+												sliderMaximum,
+												Math.max(
+													sliderMinimum,
+													goal.maxBitrate + direction * increment,
+												),
+											),
+										});
+									}}
+								/>
+							</div>
 						</div>
 					</section>
 					<div className="grid gap-3 sm:grid-cols-2">
@@ -682,57 +600,15 @@ function SimulatorEditor({
 						) : null}
 					</div>
 					{usesRows(goal) ? (
-						<GoalRows id={id} goal={goal} onChange={setGoal} copy={copy} />
-					) : null}
-					{goal.strategy === "fixed-ranges" ||
-					goal.automaticTemplates?.length ||
-					referenceGoal.fixedResolutionAndBitrateConfiguration ||
-					reference ? (
-						<details className="text-xs text-zinc-400">
-							<summary className="cursor-pointer">
-								{copy.additionalSettings}
-							</summary>
-							<div className="mt-3 space-y-4">
-								{goal.strategy === "fixed-ranges" ||
-								goal.automaticTemplates?.length ? (
-									<PerTitleAutomaticTemplates goal={goal} onChange={setGoal} />
-								) : null}
-								{referenceGoal.fixedResolutionAndBitrateConfiguration ? (
-									<div className="space-y-2 text-xs text-zinc-400">
-										<label className="flex items-start gap-2">
-											<input
-												type="checkbox"
-												checked={!!goal.fixedResolutionAndBitrateConfiguration}
-												onChange={(event) =>
-													patch({
-														fixedResolutionAndBitrateConfiguration: event.target
-															.checked
-															? structuredClone(
-																	referenceGoal.fixedResolutionAndBitrateConfiguration,
-																)
-															: undefined,
-													})
-												}
-											/>
-											{copy.includeForced}
-										</label>
-										<p>{copy.forcedHint}</p>
-									</div>
-								) : null}
-								{reference ? (
-									<div className="space-y-2 text-xs text-zinc-400">
-										<details>
-											<summary className="cursor-pointer">
-												{copy.referenceSettings}
-											</summary>
-											<pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-900 p-3">
-												{JSON.stringify(reference, null, 2)}
-											</pre>
-										</details>
-									</div>
-								) : null}
-							</div>
-						</details>
+						<PerTitleSimulatorRows
+							key={renditionSession}
+							id={id}
+							goal={goal}
+							onChange={setGoal}
+							manualBounds={manualBounds}
+							onBitrateChange={onBitrateChange}
+							onResetBitrates={onResetBitrates}
+						/>
 					) : null}
 				</div>
 				<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
@@ -755,6 +631,9 @@ function SimulatorEditor({
 					<p>{copy.codecHint}</p>
 					<p>{copy.countHint}</p>
 					<p>{copy.automaticSteps}</p>
+					{goal.strategy === "fixed-ranges" ? (
+						<p>{copy.automaticRanges}</p>
+					) : null}
 					{usesRows(goal) ? <p>{copy.rowsHint}</p> : null}
 					{reference ? <p>{copy.referenceHint}</p> : null}
 				</div>
@@ -803,6 +682,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		copyGoal(props.initialGoal),
 	);
 	const [reference, setReference] = useState<PerTitleReference>();
+	const [manualBounds, setManualBounds] = useState<PerTitleManualBounds>({});
 	const [codecError, setCodecError] = useState(false);
 	const drafts = useRef(
 		new Map<
@@ -811,6 +691,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 				goal: PerTitleGoal;
 				referenceGoal: PerTitleGoal;
 				reference?: PerTitleReference;
+				manualBounds: PerTitleManualBounds;
 			}
 		>(),
 	);
@@ -822,6 +703,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 			goal: copyGoal(goal),
 			referenceGoal: copyGoal(referenceGoal),
 			reference,
+			manualBounds: structuredClone(manualBounds),
 		});
 		const cached = drafts.current.get(codec);
 		if (cached) {
@@ -829,6 +711,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 			setGoal(copyGoal(cached.goal));
 			setReferenceGoal(copyGoal(cached.referenceGoal));
 			setReference(cached.reference);
+			setManualBounds(structuredClone(cached.manualBounds));
 			return;
 		}
 		const seed = props.goalsByCodec?.[codec];
@@ -837,6 +720,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 			return;
 		}
 		setCodecError(false);
+		setManualBounds({});
 		if (seed?.codec === codec) {
 			setGoal(copyGoal(seed));
 			setReferenceGoal(copyGoal(seed));
@@ -883,10 +767,40 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 			goal: copyGoal(goal),
 			referenceGoal: copyGoal(referenceGoal),
 			reference,
+			manualBounds: structuredClone(manualBounds),
 		});
 		setGoal(copyGoal(next));
 		setReferenceGoal(copyGoal(next));
+		setManualBounds({});
 		setReference(loadedReference);
+	}
+	function changeBitrate(
+		rowId: string,
+		bound: "min" | "max",
+		value: number | undefined,
+	) {
+		setGoal((current) => ({
+			...current,
+			rows: current.rows?.map((row) =>
+				row.id === rowId
+					? {
+							...row,
+							[bound === "min" ? "minBitrate" : "maxBitrate"]: value,
+						}
+					: row,
+			),
+		}));
+		setManualBounds((current) => ({
+			...current,
+			[rowId]: { ...current[rowId], [bound]: true },
+		}));
+	}
+	function resetBitrates(rowId: string) {
+		setManualBounds((current) => {
+			const next = { ...current };
+			delete next[rowId];
+			return next;
+		});
 	}
 	function changeOpen(open: boolean) {
 		if (!open) {
@@ -895,6 +809,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 			setGoal(copyGoal(props.initialGoal));
 			setReferenceGoal(copyGoal(props.initialGoal));
 			setReference(undefined);
+			setManualBounds({});
 		}
 		props.onOpenChange(open);
 	}
@@ -906,6 +821,9 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 				onOpenChange={changeOpen}
 				goal={goal}
 				setGoal={setGoal}
+				manualBounds={manualBounds}
+				onBitrateChange={changeBitrate}
+				onResetBitrates={resetBitrates}
 				referenceGoal={referenceGoal}
 				reference={reference}
 				onLoad={loadGoal}

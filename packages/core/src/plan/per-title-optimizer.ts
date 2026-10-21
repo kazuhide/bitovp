@@ -209,6 +209,30 @@ function unresolvedOrder(proposal: PerTitleProposal) {
 	return proposal;
 }
 
+function discardTrial(
+	report: PerTitleConstraintAnalysis,
+	proposal: PerTitleProposal,
+) {
+	const actual = proposal.api.global.fixedResolutionAndBitrateConfiguration;
+	report.inputRange = null;
+	report.floorRange = null;
+	delete report.calibration;
+	delete report.spacing;
+	report.forced = {
+		count: actual
+			? (actual.forcedRenditionAboveHighestFixedRepresentation ?? null)
+			: 0,
+		factor:
+			actual?.forcedRenditionAboveHighestFixedRepresentationFactor ?? null,
+		calculationMode:
+			actual?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+		conditional: true,
+		ranges: [],
+	};
+	report.changes = [];
+	report.checkpoints = [];
+}
+
 function checkpoints(rows: CurvedRow[], input: BitrateInterval, s: number) {
 	const inputs = new Set([input.minimum, input.maximum]);
 	for (const row of rows) {
@@ -443,19 +467,81 @@ export function optimizePerTitleConstraints(
 		>)
 			if (before !== after) report.changes.push({ field, before, after });
 	}
-	if (rowsChecked && !exact && prepared) {
+	if (!exact && prepared) {
 		const conditional = recommendIntervals({
 			...goal,
 			rows: prepared.rows,
 			minBitrateStepSize: s,
 			maxBitrateStepSize: maximum,
 		});
-		conditional.api.global.minBitrateStepSize = s;
-		conditional.api.global.maxBitrateStepSize = maximum;
+		const returnedRows = new Map(
+			conditional.api.streams.map((stream) => [stream.rowId, stream]),
+		);
+		const actualRule =
+			conditional.api.global.fixedResolutionAndBitrateConfiguration;
+		const adopted =
+			conditional.api.global.minBitrate === goal.minBitrate &&
+			conditional.api.global.maxBitrate === goal.maxBitrate &&
+			conditional.api.global.minBitrateStepSize === s &&
+			conditional.api.global.maxBitrateStepSize === maximum &&
+			actualRule?.forcedRenditionAboveHighestFixedRepresentation ===
+				saved?.forcedRenditionAboveHighestFixedRepresentation &&
+			actualRule?.forcedRenditionAboveHighestFixedRepresentationFactor ===
+				saved?.forcedRenditionAboveHighestFixedRepresentationFactor &&
+			actualRule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode ===
+				saved?.forcedRenditionAboveHighestFixedRepresentationCalculationMode &&
+			prepared.rows.every((row) => {
+				const stream = returnedRows.get(row.id);
+				const settings = stream?.perTitleSettings;
+				return (
+					stream?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+					stream.height === row.height &&
+					stream.width === row.width &&
+					settings?.minBitrate === row.minBitrate &&
+					settings.maxBitrate === row.maxBitrate &&
+					settings.bitrateSelectionMode === row.bitrateSelectionMode &&
+					settings.lowComplexityBoundaryForMaxBitrate ===
+						row.lowComplexityBoundaryForMaxBitrate &&
+					settings.highComplexityBoundaryForMaxBitrate ===
+						row.highComplexityBoundaryForMaxBitrate
+				);
+			});
+		if (!adopted) discardTrial(report, conditional);
+		else {
+			report.forced.count = actualRule
+				? (actualRule.forcedRenditionAboveHighestFixedRepresentation ?? null)
+				: 0;
+			report.forced.factor =
+				actualRule?.forcedRenditionAboveHighestFixedRepresentationFactor ??
+				null;
+			report.forced.calculationMode =
+				actualRule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode;
+		}
 		if (conditional.derivation) {
 			conditional.derivation.constraints = report;
-			conditional.derivation.selectedMinStep = s;
-			conditional.derivation.selectedMaxStep = maximum;
+			conditional.derivation.selectedMinStep =
+				conditional.api.global.minBitrateStepSize;
+			conditional.derivation.selectedMaxStep =
+				conditional.api.global.maxBitrateStepSize;
+		}
+		if (
+			closed &&
+			goal.countPolicy.kind === "unrestricted" &&
+			saved === undefined &&
+			!orderUnknown
+		) {
+			if (conditional.derivation) {
+				conditional.derivation.targetSatisfied = false;
+				delete conditional.derivation.desiredCount;
+				delete conditional.derivation.minimumStepRange;
+				delete conditional.derivation.integerWitness;
+			}
+			conditional.scenarios = conditional.scenarios.map((scenario) => ({
+				...scenario,
+				status: "unknown",
+				modelCountRange: null,
+			}));
+			return conditional;
 		}
 		return orderUnknown ? unresolvedOrder(conditional) : unproven(conditional);
 	}
@@ -500,26 +586,7 @@ export function optimizePerTitleConstraints(
 				fallback.derivation.selectedMinStep = s;
 				fallback.derivation.selectedMaxStep = maximum;
 			}
-		} else {
-			const actual = fallback.api.global.fixedResolutionAndBitrateConfiguration;
-			report.inputRange = null;
-			report.floorRange = null;
-			delete report.calibration;
-			delete report.spacing;
-			report.forced = {
-				count: actual
-					? (actual.forcedRenditionAboveHighestFixedRepresentation ?? null)
-					: 0,
-				factor:
-					actual?.forcedRenditionAboveHighestFixedRepresentationFactor ?? null,
-				calculationMode:
-					actual?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
-				conditional: true,
-				ranges: [],
-			};
-			report.changes = [];
-			report.checkpoints = [];
-		}
+		} else discardTrial(report, fallback);
 		return orderUnknown ? unresolvedOrder(fallback) : fallback;
 	}
 	const next: PerTitleGoal = {

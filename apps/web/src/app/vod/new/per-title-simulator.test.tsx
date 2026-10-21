@@ -102,6 +102,15 @@ describe("Per-Title simulator", () => {
 			},
 			locale,
 		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name:
+					locale === "en"
+						? "Minimum bitrate (kbps), rendition 1"
+						: "最小ビットレート (kbps), レンディション 1",
+			}),
+			{ target: { value: "50" } },
+		);
 		fireEvent.click(
 			screen.getByText(
 				locale === "en"
@@ -121,7 +130,10 @@ describe("Per-Title simulator", () => {
 		"ja",
 	] as const)("keeps analysis cases internal and reviews one unchanged API proposal (%s)", (locale) => {
 		const goal = { ...initialGoal, scenarioFractions: [1, 0.25, 0.5] };
-		const expected = recommendPerTitleSettings(goal);
+		const automaticGoal = { ...goal };
+		delete automaticGoal.minBitrateStepSize;
+		delete automaticGoal.maxBitrateStepSize;
+		const expected = recommendPerTitleSettings(automaticGoal);
 		const { onApply } = show(goal, locale);
 		fireEvent.click(
 			screen.getByText(
@@ -256,7 +268,6 @@ describe("Per-Title simulator", () => {
 			],
 		});
 		const user = userEvent.setup();
-		await user.click(screen.getByText("Additional settings"));
 		await user.click(
 			screen.getByRole("button", { name: "Add automatic template" }),
 		);
@@ -276,9 +287,13 @@ describe("Per-Title simulator", () => {
 				name: "Maximum bitrate (kbps), automatic template 1",
 			}),
 		).toBeNull();
-		await user.click(screen.getByRole("button", { name: "Review changes" }));
-		expect(onApply).toHaveBeenCalledOnce();
-		const api = onApply.mock.calls[0]?.[0].api;
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeDisabled();
+		expect(onApply).not.toHaveBeenCalled();
+		const api = JSON.parse(
+			screen.getByTestId("per-title-api-settings").textContent ?? "",
+		);
 		expect(api.global.autoRepresentations).toEqual({});
 		expect(api.streams).toEqual(
 			expect.arrayContaining([
@@ -383,7 +398,6 @@ describe("Per-Title simulator", () => {
 			/This reference includes template and quality settings/,
 		);
 		expect(referenceHint).not.toBeVisible();
-		await user.click(screen.getByText("Additional settings"));
 		expect(
 			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
 		).toHaveValue(480);
@@ -404,16 +418,11 @@ describe("Per-Title simulator", () => {
 				name: "Maximum bitrate (kbps) 6,000 10,000",
 			}),
 		).toBeVisible();
-		await user.click(
-			screen.getByRole("checkbox", {
-				name: "Include original additional-rendition rules",
-			}),
-		);
 		expect(
-			screen.getByRole("checkbox", {
+			screen.queryByRole("checkbox", {
 				name: "Include original additional-rendition rules",
 			}),
-		).not.toBeChecked();
+		).toBeNull();
 		expect(
 			screen.getByRole("button", { name: "Review changes" }),
 		).toBeDisabled();
@@ -425,17 +434,36 @@ describe("Per-Title simulator", () => {
 		expect(screen.getByRole("alert")).toHaveTextContent(
 			"A reference file cannot be converted to another codec here.",
 		);
-		await user.click(screen.getByText("Original template settings"));
-		const originalDetails = screen.getByText(
-			"Original template settings",
-		).parentElement;
-		if (!originalDetails) throw new Error("missing reference details");
-		expect(
-			JSON.parse(
-				within(originalDetails).getByText(/"reference-fixed"/).textContent ??
-					"",
-			),
-		).toEqual(reference);
+		expect(screen.queryByText("Original template settings")).toBeNull();
+		const createObjectURL = vi.fn((_blob: Blob) => "blob:requirements");
+		const originalUrl = URL;
+		vi.stubGlobal(
+			"URL",
+			class extends originalUrl {
+				static createObjectURL = createObjectURL;
+				static revokeObjectURL = vi.fn();
+			},
+		);
+		const click = vi
+			.spyOn(HTMLAnchorElement.prototype, "click")
+			.mockImplementation(() => {});
+		try {
+			await user.click(
+				screen.getByRole("button", { name: "Download requirements" }),
+			);
+			const blob = createObjectURL.mock.calls[0]?.[0];
+			if (!blob) throw new Error("missing requirements download");
+			const contents = await new Promise<string>((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(String(reader.result));
+				reader.onerror = reject;
+				reader.readAsText(blob);
+			});
+			expect(JSON.parse(contents).reference).toEqual(reference);
+		} finally {
+			click.mockRestore();
+			vi.unstubAllGlobals();
+		}
 		expect(onApply).not.toHaveBeenCalled();
 	});
 
@@ -469,11 +497,14 @@ describe("Per-Title simulator", () => {
 			expect(screen.getByText("Requirements loaded.")).toBeVisible(),
 		);
 		await user.click(screen.getByRole("button", { name: "Add rendition" }));
-		await user.click(screen.getByRole("button", { name: "Review changes" }));
-		expect(onApply).toHaveBeenCalledOnce();
-		const ids = onApply.mock.calls[0]?.[0].api.streams.map(
-			(stream: { rowId: string }) => stream.rowId,
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeDisabled();
+		expect(onApply).not.toHaveBeenCalled();
+		const api = JSON.parse(
+			screen.getByTestId("per-title-api-settings").textContent ?? "",
 		);
+		const ids = api.streams.map((stream: { rowId: string }) => stream.rowId);
 		expect(ids).toHaveLength(3);
 		expect(new Set(ids).size).toBe(3);
 	});
@@ -947,10 +978,11 @@ describe("Per-Title simulator", () => {
 		).toEqual([360, 720]);
 	});
 
-	it("retains explicit per-row ranges and complexity settings in the proposed configuration", async () => {
+	it("retains loaded ranges and derives complexity settings automatically", async () => {
 		const { onApply } = show({
 			...initialGoal,
 			strategy: "fixed-ranges",
+			countPolicy: { kind: "exact", count: 1 },
 			rows: [
 				{
 					id: "ranged",
@@ -973,8 +1005,8 @@ describe("Per-Title simulator", () => {
 				minBitrate: 500_000,
 				maxBitrate: 2_000_000,
 				bitrateSelectionMode: "COMPLEXITY_RANGE",
-				lowComplexityBoundaryForMaxBitrate: 1_000_000,
-				highComplexityBoundaryForMaxBitrate: 6_000_000,
+				lowComplexityBoundaryForMaxBitrate: 500_000,
+				highComplexityBoundaryForMaxBitrate: 8_000_000,
 			},
 		});
 	});
@@ -1070,10 +1102,11 @@ describe("Per-Title simulator", () => {
 		).toBeVisible();
 	});
 
-	it("retains complexity boundaries without presenting a manufactured native prediction", async () => {
-		const { onApply } = show({
+	it("recomputes complexity boundaries from the maximum without exposing technical inputs", () => {
+		show({
 			...initialGoal,
 			strategy: "fixed-ranges",
+			countPolicy: { kind: "exact", count: 1 },
 			rows: [
 				{
 					id: "ranged",
@@ -1086,30 +1119,27 @@ describe("Per-Title simulator", () => {
 				},
 			],
 		});
-		const user = userEvent.setup();
-		await user.click(screen.getByText("Width and bitrate selection"));
-		await user.click(screen.getByRole("button", { name: "Review changes" }));
-		const first = onApply.mock.calls[0]?.[0];
-		fireEvent.change(
-			screen.getByRole("spinbutton", {
-				name: "High complexity boundary (kbps)",
-			}),
-			{ target: { value: "8000" } },
+		const before = JSON.parse(
+			screen.getByTestId("per-title-api-settings").textContent ?? "",
 		);
-		await user.click(screen.getByRole("button", { name: "Review changes" }));
-		const second = onApply.mock.calls[1]?.[0];
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{ target: { value: "16000" } },
+		);
+		const after = JSON.parse(
+			screen.getByTestId("per-title-api-settings").textContent ?? "",
+		);
 		expect(
-			first.api.streams[0].perTitleSettings.highComplexityBoundaryForMaxBitrate,
-		).toBe(6_000_000);
-		expect(
-			second.api.streams[0].perTitleSettings
-				.highComplexityBoundaryForMaxBitrate,
+			before.streams[0].perTitleSettings.highComplexityBoundaryForMaxBitrate,
 		).toBe(8_000_000);
 		expect(
-			second.scenarios.map((item: { modelRungs: unknown }) => item.modelRungs),
-		).toEqual(
-			first.scenarios.map((item: { modelRungs: unknown }) => item.modelRungs),
-		);
+			after.streams[0].perTitleSettings.highComplexityBoundaryForMaxBitrate,
+		).toBe(16_000_000);
+		expect(
+			screen.queryByRole("spinbutton", {
+				name: "High complexity boundary (kbps)",
+			}),
+		).toBeNull();
 		expect(screen.queryByText("(Linear example)")).toBeNull();
 	});
 });

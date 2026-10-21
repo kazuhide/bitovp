@@ -15,8 +15,11 @@ const en = {
 	global: "Overall bitrate limits",
 	minimum: "Minimum bitrate (kbps)",
 	maximum: "Maximum bitrate (kbps)",
+	maximumSlider: "Maximum bitrate slider (kbps)",
 	automaticSteps:
-		"Bitrate spacing is selected automatically; compatible existing values are retained.",
+		"Bitrate spacing is selected automatically from the current requirements.",
+	automaticRanges:
+		"Loaded ranges keep their relative positions on a logarithmic bitrate scale. New renditions use evenly spaced bands. Edited bounds stay fixed. Loading a file starts a new automatic baseline.",
 	loadRequirements: "Load requirements file",
 	testPresets: "Test presets",
 	requirementFiles: "Import or export requirements",
@@ -29,22 +32,11 @@ const en = {
 		"This requirements file could not be loaded. Check its format, codec and values.",
 	fileLoaded: "Requirements loaded.",
 	fileLoading: "Loading requirements…",
-	referenceSettings: "Original template settings",
 	referenceHint:
 		"This reference includes template and quality settings. It is available for comparison; applying it to the encoding draft is not supported here.",
 	referenceCodecError:
 		"Load a file for that codec or open the simulator from its encoding settings. A reference file cannot be converted to another codec here.",
 	automaticTemplates: "Automatic templates retained",
-	automaticRows: "Automatic templates",
-	automaticRow: "automatic template",
-	automaticHint:
-		"These are candidates for Per-Title, not required outputs. Their number and heights do not guarantee the resulting renditions. Attached bitrate settings are retained as source data; the model does not use those settings as count constraints for automatic candidates.",
-	addAutomatic: "Add automatic template",
-	removeAutomatic: "Remove automatic template",
-	optionalHeight: "Height (px, optional)",
-	includeForced: "Include original additional-rendition rules",
-	forcedHint:
-		"Counts with these rules need content analysis. Uncheck to compare the remaining template conditions; the original file is kept intact.",
 	countPolicy: "Rendition count",
 	countPolicies: {
 		unrestricted: "Let Per-Title choose",
@@ -64,14 +56,10 @@ const en = {
 	resolutionCountHint:
 		"Required rows are counted by height. The model checks extra capacity across the ladder; it does not calculate a maximum count for each resolution.",
 	height: "Height (px)",
-	width: "Width (px, optional)",
 	rendition: "rendition",
 	add: "Add rendition",
 	remove: "Remove",
 	removeRendition: "Remove rendition",
-	advanced: "Bitrate selection",
-	rowDetails: "Width and bitrate selection",
-	additionalSettings: "Additional settings",
 	calculationDetails: "Comparison and calculation details",
 	recommendation: "Recommended settings",
 	comparisonOnly: "Comparison only",
@@ -84,7 +72,7 @@ const en = {
 		"The count limit is an arithmetic upper bound at the overall maximum, not a predicted output count.",
 	requestedRange: "Specified allowable ranges (kbps)",
 	requestedRangeHint:
-		"These are your specified limits, not an optimized bitrate range.",
+		"Allowed ranges are proposed automatically. Edited bounds stay fixed. These limits do not predict encoding quality.",
 	chosenWithinGlobal: "Chosen within the overall limits",
 	modeGuidance: {
 		automatic: "Per-Title chooses the resolutions and bitrates.",
@@ -113,11 +101,6 @@ const en = {
 		"Some internal bitrate placements do not meet the requested count or spacing. The overall-maximum check does not establish every possible output.",
 	inactiveTemplateSettings:
 		"Automatic candidates retain their attached bitrate settings as source data. These settings do not constrain this mode and are omitted from the proposed API settings.",
-	selectionMode: "Bitrate selection mode",
-	optimized: "Let Per-Title optimize",
-	complexityRange: "Use a complexity range",
-	lowBoundary: "Low complexity boundary (kbps)",
-	highBoundary: "High complexity boundary (kbps)",
 	comparison: "Compare settings",
 	parameter: "Setting",
 	baseline: "Loaded settings",
@@ -157,8 +140,10 @@ const ja: typeof en = {
 	global: "全体のビットレート範囲",
 	minimum: "最小ビットレート (kbps)",
 	maximum: "最大ビットレート (kbps)",
-	automaticSteps:
-		"ビットレート間隔は自動で選びます。条件を満たす既存の値は維持します。",
+	maximumSlider: "最大ビットレートのスライダー (kbps)",
+	automaticSteps: "ビットレート間隔は、現在の要件から自動で計算します。",
+	automaticRanges:
+		"読み込んだ範囲は、対数目盛での位置を保って全体の上限・下限に追従します。新しい段には等間隔で範囲を割り当てます。手動で変更した端点は固定します。ファイルを読み込むと、その値を新たな自動計算の基準にします。",
 	loadRequirements: "要件ファイルを読み込む",
 	testPresets: "テスト用プリセット",
 	requirementFiles: "要件ファイルの読み書き",
@@ -171,22 +156,11 @@ const ja: typeof en = {
 		"要件ファイルを読み込めませんでした。形式・コーデック・入力値を確認してください。",
 	fileLoaded: "要件ファイルを読み込みました。",
 	fileLoading: "要件ファイルを読み込み中…",
-	referenceSettings: "元のテンプレート設定",
 	referenceHint:
 		"この参照設定には、テンプレートや品質の設定が含まれています。比較用として読み込み、エンコードの下書きへの反映は行いません。",
 	referenceCodecError:
 		"そのコーデックの要件ファイルを読み込むか、エンコード設定から開いてください。この画面では、参照ファイルを別のコーデックへ変換できません。",
 	automaticTemplates: "保持している自動テンプレート",
-	automaticRows: "自動生成の候補",
-	automaticRow: "自動生成の候補",
-	automaticHint:
-		"Per-Title に渡す候補です。候補の数や高さは、出力される本数・解像度の保証ではありません。候補に付いたビットレート設定は元データとして保持します。このモデルでは、自動候補の本数を制約する値として扱いません。",
-	addAutomatic: "自動生成の候補を追加",
-	removeAutomatic: "自動生成の候補を削除",
-	optionalHeight: "高さ (px、省略可)",
-	includeForced: "元の追加レンディションのルールを含める",
-	forcedHint:
-		"このルールを含む本数の算出には素材解析が必要です。チェックを外すと、残りのテンプレート条件を比較できます。元のファイルは変更しません。",
 	countPolicy: "レンディションの本数",
 	countPolicies: {
 		unrestricted: "Per-Title に任せる",
@@ -206,14 +180,10 @@ const ja: typeof en = {
 	resolutionCountHint:
 		"必須の行を高さごとに集計しています。追加の余地はラダー全体で確認し、各解像度の上限本数は算出しません。",
 	height: "高さ (px)",
-	width: "幅 (px、省略可)",
 	rendition: "レンディション",
 	add: "レンディションを追加",
 	remove: "削除",
 	removeRendition: "レンディションを削除",
-	advanced: "ビットレートの選び方",
-	rowDetails: "幅・ビットレートの選び方",
-	additionalSettings: "追加設定",
 	calculationDetails: "比較・計算の詳細",
 	recommendation: "推奨設定",
 	comparisonOnly: "比較専用",
@@ -227,7 +197,7 @@ const ja: typeof en = {
 		"全体の上限ビットレートでの、計算上の配置上限です。出力本数の予測値ではありません。",
 	requestedRange: "指定した許容範囲 (kbps)",
 	requestedRangeHint:
-		"入力した範囲であり、最適なビットレート範囲を算出したものではありません。",
+		"許容範囲は自動で提案し、手動で変更した端点は固定します。画質を予測した値ではありません。",
 	chosenWithinGlobal: "全体の範囲内で選択",
 	modeGuidance: {
 		automatic: "解像度とビットレートはPer-Titleが選びます。",
@@ -255,11 +225,6 @@ const ja: typeof en = {
 		"一部の検算では、本数や間隔が希望どおりになりません。全体の上限での確認は、すべての出力条件を満たすことを示すものではありません。",
 	inactiveTemplateSettings:
 		"自動生成の候補に付いたビットレート設定は元データとして保持します。このモードの制約には使われず、APIへの設定案には含めません。",
-	selectionMode: "ビットレートの選択方法",
-	optimized: "Per-Title が最適化する",
-	complexityRange: "複雑度の範囲を使う",
-	lowBoundary: "複雑度の下側境界 (kbps)",
-	highBoundary: "複雑度の上側境界 (kbps)",
 	comparison: "読み込み時との比較",
 	parameter: "設定項目",
 	baseline: "読み込んだ設定",

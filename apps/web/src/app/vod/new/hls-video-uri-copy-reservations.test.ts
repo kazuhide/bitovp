@@ -157,6 +157,32 @@ describe("copied video playlist filenames", () => {
 		expect(state.videos[1]?.extras?.hlsVariantUri).not.toBe(filename);
 	});
 
+	it.each([
+		["DASH master", "./video-v360-2.m3u8"],
+		["DASH master", "nested/../video-v360-2.m3u8"],
+		["DASH master", "video-v360-2.m3u8/nested/.."],
+		["FMP4 initialization", "./video-v360-2.m3u8"],
+		["FMP4 initialization", "nested/../video-v360-2.m3u8"],
+		["FMP4 initialization", "video-v360-2.m3u8/nested/.."],
+	])("reserves a normalized %s filename: %s", (target, filename) => {
+		const state = validState();
+		if (target === "DASH master")
+			state.manifests.extra = [
+				{ kind: "DASH", key: "alternate", manifestName: filename },
+			];
+		else {
+			const source = state.videos[0];
+			if (!source) throw new Error("Missing source video fixture");
+			source.muxing = { path: "", initSegmentName: filename };
+		}
+		expect(errors(state)).toEqual([]);
+		Object.assign(state, addVodVideo(state, 0));
+		expect(errors(state)).toEqual([]);
+		expect(state.videos[1]?.extras?.hlsVariantUri).not.toBe(
+			"video-v360-2.m3u8",
+		);
+	});
+
 	it("reserves static filenames while inputs and credentials are incomplete without mutating the source", () => {
 		const state = validState();
 		state.name = "";

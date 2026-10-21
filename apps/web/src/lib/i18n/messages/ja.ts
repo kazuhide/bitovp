@@ -3914,7 +3914,7 @@ export const ja = {
 		addWebvttSubtitle: "WebVTT 字幕を追加",
 		additionalManifests: "追加マニフェスト",
 		addsAProgressiveMp4QcMirrorPer:
-			"映像レンディションごとに、画質測定用のプログレッシブ MP4（QC ミラー）を出力先の qc/ 配下に作成します。エンコードが FINISHED になった後で、libvmaf により元映像と自動的に比較します。レポートは VMAF ラボ (/qc) に表示されます。",
+			"映像レンディションごとに、画質測定用の QC ミラーファイル（通常は MP4、VP9 は WebM）を出力先の qc/ 配下に作成します。エンコードが FINISHED になった後、libvmaf で元映像と自動的に比較します。レポートは VMAF ラボ (/qc) に表示されます。",
 		adoptConfigurationThreshold: "設定採用のしきい値",
 		advanced: "詳細設定",
 		advancedAv1: "詳細設定(AV1)",
@@ -5456,9 +5456,9 @@ export const ja = {
 			"(直近 {shown} 件 / 全 {total} 件:実時刻とソースのストリーム時刻の対応。VMAF の位置合わせに使用します)",
 		thisJobIsUnchanged: "このジョブは変更されていません。",
 		vmafOnlyManifestsNote:
-			"「VMAF のみ」が有効です（エンコーディングオプション → 品質管理）。映像ごとの QC ミラー MP4 だけを生成し、HLS/DASH のコンテナとマニフェストは生成しません。配信用のマニフェストを設定するには「VMAF のみ」を無効にしてください。",
+			"「VMAF のみ」が有効です（エンコーディングオプション → 品質管理）。映像ごとの QC ミラーファイル（通常は MP4、VP9 は WebM）だけを生成し、HLS/DASH のコンテナとマニフェストは生成しません。配信用のマニフェストを設定するには「VMAF のみ」を無効にしてください。",
 		vmafOnlyPackagingNote:
-			"「VMAF のみ」が有効です（エンコーディングオプション → 品質管理）。映像ごとの QC ミラー MP4 だけを出力し、配信用のコンテナ・サムネイル・スプライトは生成しません。これらを設定するには「VMAF のみ」を無効にしてください。",
+			"「VMAF のみ」が有効です（エンコーディングオプション → 品質管理）。映像ごとの QC ミラーファイル（通常は MP4、VP9 は WebM）だけを出力し、配信用のコンテナ・サムネイル・スプライトは生成しません。これらを設定するには「VMAF のみ」を無効にしてください。",
 		pickTwoReportsTail:
 			"を開き、レポートを 2 つ以上選択して「{label}」を選んでください。",
 		libvmafModelTooltip:

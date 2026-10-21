@@ -3967,7 +3967,7 @@ export const en = {
 		addWebvttSubtitle: "Add WebVTT subtitle",
 		additionalManifests: "Additional manifests",
 		addsAProgressiveMp4QcMirrorPer:
-			"Adds a progressive MP4 QC mirror per video rendition (under a qc/ output prefix), scores it against the source with libvmaf automatically after the encode FINISHES, and the report appears in the VMAF Lab (/qc).",
+			"Adds a QC mirror file for each video rendition (MP4, or WebM for VP9, under the qc/ output prefix). After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
 		adoptConfigurationThreshold: "Adopt configuration threshold",
 		advanced: "Advanced",
 		advancedAv1: "Advanced (AV1)",
@@ -5486,9 +5486,9 @@ export const en = {
 			"(showing last {shown} of {total} — wall clock vs source stream time; VMAF alignment input)",
 		thisJobIsUnchanged: " This job is unchanged.",
 		vmafOnlyManifestsNote:
-			"VMAF only is on (Encoding options → Quality control): this encode produces just the per-video QC mirror MP4s, so HLS/DASH muxings and manifests are skipped. Turn VMAF only off to configure delivery manifests.",
+			"VMAF only is on (Encoding options → Quality control): this encode produces just the per-video QC mirror files (MP4, or WebM for VP9), so HLS/DASH muxings and manifests are skipped. Turn VMAF only off to configure delivery manifests.",
 		vmafOnlyPackagingNote:
-			"VMAF only is on (Encoding options → Quality control): this encode emits just the per-video QC mirror MP4s, so delivery muxings, thumbnails and sprites are skipped. Turn VMAF only off to configure them.",
+			"VMAF only is on (Encoding options → Quality control): this encode emits just the per-video QC mirror files (MP4, or WebM for VP9), so delivery muxings, thumbnails and sprites are skipped. Turn VMAF only off to configure them.",
 		pickTwoReportsTail: ", tick two or more reports, then choose “{label}”.",
 		libvmafModelTooltip:
 			"Use the same model for reports you compare. The standard viewing condition is recommended for most comparisons.",

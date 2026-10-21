@@ -72,8 +72,12 @@ export function perTitleGoalFromWizard(
 	const rates = selected
 		.flatMap((row) => [
 			row.bitrate,
-			row.extras?.perTitleSettings?.minBitrate,
-			row.extras?.perTitleSettings?.maxBitrate,
+			...(row.extras?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+				? [
+						row.extras.perTitleSettings?.minBitrate,
+						row.extras.perTitleSettings?.maxBitrate,
+					]
+				: []),
 		])
 		.filter(positive);
 	const minBitrate =
@@ -104,6 +108,18 @@ export function perTitleGoalFromWizard(
 				? "fixed-resolutions"
 				: "required-resolutions"
 			: "automatic";
+	const automaticTemplates = state.videos.flatMap((row, index) =>
+		codecOf(row) !== codec || row.extras?.mode !== "PER_TITLE_TEMPLATE"
+			? []
+			: [
+					{
+						id: required(keys[index]),
+						...(row.height === null ? {} : { height: row.height }),
+						...(row.width === undefined ? {} : { width: row.width }),
+						...structuredClone(row.extras.perTitleSettings ?? {}),
+					},
+				],
+	);
 	return {
 		codec,
 		strategy,
@@ -116,9 +132,11 @@ export function perTitleGoalFromWizard(
 			? { maxBitrateStepSize: global.maxBitrateStepSize }
 			: {}),
 		countPolicy: { kind: "unrestricted" },
+		...(automaticTemplates.length ? { automaticTemplates } : {}),
 		rows: state.videos.flatMap((row, index) =>
 			codecOf(row) !== codec ||
 			row.height === null ||
+			row.extras?.mode === "PER_TITLE_TEMPLATE" ||
 			(strategy === "required-resolutions" && !fixedMode(row))
 				? []
 				: [
@@ -165,6 +183,8 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 				].includes(row.mode) ||
+				(row.mode !== "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+					row.perTitleSettings !== undefined) ||
 				(row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
 					(!row.perTitleSettings ||
 						!validInteger(row.perTitleSettings.minBitrate) ||

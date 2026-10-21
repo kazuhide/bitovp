@@ -29,6 +29,13 @@ describe("Per-Title calculation explanation", () => {
 		const { container } = renderLocalized(
 			<PerTitleReasoning goal={goal} proposal={proposal} onChange={vi.fn()} />,
 		);
+		expect(
+			screen.getByText(/The bitrate range and desired count define/),
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("Why these settings"));
+		expect(
+			screen.getByText(/The bitrate range and desired count define/),
+		).toBeVisible();
 		fireEvent.click(screen.getByText("Calculation and assumptions"));
 		expect(value("Overall minimum L (kbps)")).toHaveTextContent("16");
 		expect(value("Overall maximum U (kbps)")).toHaveTextContent("256");
@@ -70,6 +77,7 @@ describe("Per-Title calculation explanation", () => {
 		const { container } = renderLocalized(
 			<PerTitleReasoning goal={goal} proposal={proposal} onChange={vi.fn()} />,
 		);
+		fireEvent.click(screen.getByText("Why these settings"));
 		fireEvent.click(screen.getByText("Calculation and assumptions"));
 		expect(
 			screen.getByText(/count goal has not been established/),
@@ -101,6 +109,7 @@ describe("Per-Title calculation explanation", () => {
 				onChange={vi.fn()}
 			/>,
 		);
+		fireEvent.click(screen.getByText("Why these settings"));
 		fireEvent.click(screen.getByText("Calculation and assumptions"));
 		expect(screen.getByText(/existing bitrate steps satisfy/)).toBeVisible();
 		expect(value("Selected minimum ratio s")).toHaveTextContent("≈ 1.5");
@@ -117,6 +126,7 @@ describe("Per-Title calculation explanation", () => {
 			<PerTitleReasoning goal={goal} proposal={proposal} onChange={vi.fn()} />,
 			"ja",
 		);
+		fireEvent.click(screen.getByText("提案の根拠"));
 		fireEvent.click(screen.getByText("計算手順と前提"));
 		expect(value("全体の下限 L (kbps)")).toHaveTextContent("16");
 		expect(value("希望する本数")).toHaveTextContent("5本ちょうど");

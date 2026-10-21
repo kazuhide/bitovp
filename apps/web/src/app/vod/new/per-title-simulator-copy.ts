@@ -16,7 +16,7 @@ const en = {
 	minimum: "Minimum bitrate (kbps)",
 	maximum: "Maximum bitrate (kbps)",
 	automaticSteps:
-		"Bitrate steps are calculated from these limits, the desired count and each rendition's allowed range. You can inspect the API values under Proposed settings.",
+		"Bitrate spacing is selected automatically; compatible existing values are retained.",
 	loadRequirements: "Load requirements file",
 	saveRequirements: "Download requirements",
 	fileHint:
@@ -66,6 +66,46 @@ const en = {
 	remove: "Remove",
 	removeRendition: "Remove rendition",
 	advanced: "Bitrate selection",
+	rowDetails: "Width and bitrate selection",
+	additionalSettings: "Additional settings",
+	calculationDetails: "Comparison and calculation details",
+	recommendation: "Recommended settings",
+	recommendationReady: "Use these values to review the encoding changes.",
+	recommendationConflict:
+		"Resolve the conditions below before applying these settings.",
+	recommendationUnknown:
+		"These proposed values need further checks before they can be applied.",
+	recommendedGlobal: "Overall bitrate range (kbps)",
+	recommendedModelCount: "Model count range at overall maximum",
+	requestedRange: "Specified allowable ranges (kbps)",
+	requestedRangeHint:
+		"These are your specified limits, not an optimized bitrate range.",
+	chosenWithinGlobal: "Chosen within the overall limits",
+	modeGuidance: {
+		automatic: "Per-Title chooses the resolutions and bitrates.",
+		count:
+			"Per-Title chooses resolutions and bitrates. The requested count is checked in the model.",
+		"required-resolutions":
+			"Keep the required resolution templates and allow Per-Title to add other renditions.",
+		"fixed-resolutions":
+			"Keep the specified resolution templates and let Per-Title choose bitrates. One template does not guarantee one output.",
+		"fixed-ranges":
+			"Keep the specified resolution templates and bitrate limits. Per-Title chooses bitrates within these limits.",
+	},
+	minimumRatio: "Minimum bitrate ratio",
+	maximumRatio: "Maximum bitrate ratio",
+	ratioHint:
+		"Ratios describe the bitrate multiplier between neighboring rungs.",
+	minimumStepRange: "Minimum-step adjustment range",
+	minimumStepRangeHint:
+		"A calculated range that retains the same integer placement example and maximum ratio. Boundaries are approximate.",
+	automaticCount: "Automatic candidate count",
+	automaticCountHint:
+		"The candidate count is not the output count. Per-Title selects the resulting renditions.",
+	countScope:
+		"The model checks arithmetic bitrate placements. Content analysis is needed for the actual rendition count and quality.",
+	inactiveTemplateSettings:
+		"Automatic candidates retain their attached bitrate settings as source data. These settings do not constrain this mode and are omitted from the proposed API settings.",
 	selectionMode: "Bitrate selection mode",
 	optimized: "Let Per-Title optimize",
 	complexityRange: "Use a complexity range",
@@ -132,7 +172,7 @@ const ja: typeof en = {
 	minimum: "最小ビットレート (kbps)",
 	maximum: "最大ビットレート (kbps)",
 	automaticSteps:
-		"全体の範囲、希望する本数、各レンディションの許容範囲からビットレート間隔を求めます。API に渡す値は「提案する設定」で確認できます。",
+		"ビットレート間隔は自動で選びます。条件を満たす既存の値は維持します。",
 	loadRequirements: "要件ファイルを読み込む",
 	saveRequirements: "要件ファイルを保存",
 	fileHint:
@@ -182,6 +222,46 @@ const ja: typeof en = {
 	remove: "削除",
 	removeRendition: "レンディションを削除",
 	advanced: "ビットレートの選び方",
+	rowDetails: "幅・ビットレートの選び方",
+	additionalSettings: "追加設定",
+	calculationDetails: "比較・計算の詳細",
+	recommendation: "推奨設定",
+	recommendationReady:
+		"この値を使って、エンコード設定への変更内容を確認できます。",
+	recommendationConflict:
+		"下の条件を確認・修正してから設定を反映してください。",
+	recommendationUnknown:
+		"この設定案を反映するには、さらに条件の確認が必要です。",
+	recommendedGlobal: "全体のビットレート範囲 (kbps)",
+	recommendedModelCount: "全体の上限でのモデル上の本数範囲",
+	requestedRange: "指定した許容範囲 (kbps)",
+	requestedRangeHint:
+		"入力した範囲であり、最適なビットレート範囲を算出したものではありません。",
+	chosenWithinGlobal: "全体の範囲内で選択",
+	modeGuidance: {
+		automatic: "解像度とビットレートはPer-Titleが選びます。",
+		count:
+			"解像度とビットレートはPer-Titleが選び、希望する本数をモデルで照合します。",
+		"required-resolutions":
+			"必須の解像度テンプレートを残し、ほかのレンディションの追加をPer-Titleに任せます。",
+		"fixed-resolutions":
+			"指定した解像度テンプレートを残し、ビットレートをPer-Titleに任せます。1テンプレートから1本だけ出力される保証ではありません。",
+		"fixed-ranges":
+			"指定した解像度テンプレートとビットレート範囲を残し、その範囲内でPer-Titleがビットレートを選びます。",
+	},
+	minimumRatio: "最小ビットレート比率",
+	maximumRatio: "最大ビットレート比率",
+	ratioHint: "隣り合う段のビットレートを何倍離すかを表します。",
+	minimumStepRange: "最小ビットレート間隔の調整範囲",
+	minimumStepRangeHint:
+		"同じ整数の配置例と最大比率を維持する、計算上の範囲です。境界は概数です。",
+	automaticCount: "自動生成の候補数",
+	automaticCountHint:
+		"候補数は出力本数ではありません。実際のレンディションはPer-Titleが選びます。",
+	countScope:
+		"モデルでは、計算上ビットレートを配置できるかを確認します。実際の本数と画質の判断には素材解析が必要です。",
+	inactiveTemplateSettings:
+		"自動生成の候補に付いたビットレート設定は元データとして保持します。このモードの制約には使われず、APIへの設定案には含めません。",
 	selectionMode: "ビットレートの選択方法",
 	optimized: "Per-Title が最適化する",
 	complexityRange: "複雑度の範囲を使う",

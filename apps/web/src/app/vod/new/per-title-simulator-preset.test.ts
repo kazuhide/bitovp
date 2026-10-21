@@ -377,9 +377,33 @@ describe("Per-Title local presets", () => {
 				},
 			],
 		};
-		expect(() => serializePerTitlePreset(incomplete)).toThrow(
-			"Invalid Per-Title preset.",
-		);
+		expect(
+			parsePerTitlePreset(serializePerTitlePreset(incomplete), ["H264"]).goal,
+		).toEqual(incomplete);
+	});
+	it("retains inactive fixed-mode settings as source data without validating them as automatic constraints", () => {
+		const inactive = {
+			minBitrate: 800000,
+			maxBitrate: 300000,
+			bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
+			lowComplexityBoundaryForMaxBitrate: 2000000,
+		};
+		const original = {
+			...reference,
+			streams: [
+				{ ...reference.streams[0], perTitleSettings: inactive },
+				reference.streams[1],
+			],
+		};
+		const loaded = parse({ version: 1, reference: original });
+		expect(loaded.reference).toEqual(original);
+		expect(loaded.goal.automaticTemplates?.[0]).toMatchObject(inactive);
+		expect(
+			parsePerTitlePreset(
+				serializePerTitlePreset(loaded.goal, loaded.reference),
+				["H264"],
+			),
+		).toEqual(loaded);
 	});
 	it("preserves hidden bitrate ranges after switching to fixed resolutions", () => {
 		const edited: PerTitleGoal = {

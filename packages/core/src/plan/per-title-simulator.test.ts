@@ -766,6 +766,86 @@ describe("recommendPerTitleSettings", () => {
 		expect(result.derivation?.method).toBe("preserved-existing");
 	});
 
+	it("reports a checked minimum-step range that retains the integer example at a fixed maximum step", () => {
+		const goal: PerTitleGoal = {
+			...automatic,
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 3,
+			countPolicy: { kind: "exact", count: 5 },
+		};
+		const result = recommendPerTitleSettings(goal);
+		expect(result.derivation?.method).toBe("preserved-existing");
+		const range = result.derivation?.minimumStepRange;
+		expect(range).toBeDefined();
+		if (!range) return;
+		expect(range.exampleCount).toBe(5);
+		expect(range.maximumStep).toBe(3);
+		expect(range.lowerInclusive).toBeGreaterThan(16 ** 0.2);
+		expect(range.upperInclusive).toBe(2);
+		const points =
+			result.scenarios[2]?.modelRungs.map((rung) => rung.bitrate) ?? [];
+		for (const minimumStep of [
+			range.lowerInclusive,
+			(range.lowerInclusive + range.upperInclusive) / 2,
+			range.upperInclusive,
+		]) {
+			const [checked] = proposePerTitleSettings({
+				...goal,
+				minBitrateStepSize: minimumStep,
+				maxBitrateStepSize: range.maximumStep,
+			});
+			expect(checked?.applicable).toBe(true);
+			expect(checked?.scenarios[2]?.modelCountRange?.maximum).toBe(5);
+			expect(checked?.api.global.maxBitrateStepSize).toBe(3);
+			for (let index = 1; index < points.length; index++) {
+				const ratio = (points[index] as number) / (points[index - 1] as number);
+				expect(ratio).toBeGreaterThanOrEqual(minimumStep);
+				expect(ratio).toBeLessThanOrEqual(range.maximumStep);
+			}
+		}
+		const [below] = proposePerTitleSettings({
+			...goal,
+			minBitrateStepSize: 16 ** 0.2,
+		});
+		expect(below?.scenarios[2]?.modelCountRange?.maximum).toBe(6);
+	});
+
+	it("does not publish an adjustable range for unknown, invalid, or single-point results", () => {
+		for (const goal of [
+			{
+				...automatic,
+				fixedResolutionAndBitrateConfiguration: {
+					forcedRenditionAboveHighestFixedRepresentation: 1,
+				},
+			},
+			{ ...automatic, minBitrate: 0 },
+			{
+				...automatic,
+				countPolicy: { kind: "exact", count: 1 } as const,
+			},
+		]) {
+			const result = recommendPerTitleSettings(goal);
+			expect(result.derivation?.minimumStepRange).toBeUndefined();
+		}
+	});
+
+	it("does not use step comparison tolerance as proof of an adjustable interval", () => {
+		for (const steps of [
+			{ minBitrateStepSize: 2 + 5e-11, maxBitrateStepSize: 3 },
+			{ minBitrateStepSize: 1.5, maxBitrateStepSize: 2 - 5e-11 },
+		]) {
+			const result = recommendPerTitleSettings({
+				...automatic,
+				...steps,
+				minBitrate: 1,
+				maxBitrate: 2,
+				countPolicy: { kind: "exact", count: 2 },
+			});
+			expect(result.derivation?.targetSatisfied).toBe(true);
+			expect(result.derivation?.minimumStepRange).toBeUndefined();
+		}
+	});
+
 	it("preserves valid saved spacing independently of the displayed scenario fractions", () => {
 		const goal = {
 			...automatic,
@@ -1147,11 +1227,93 @@ describe("recommendPerTitleSettings", () => {
 				height: 180,
 				width: 320,
 				mode: "PER_TITLE_TEMPLATE",
-				perTitleSettings: { minBitrate: 100_000, maxBitrate: 200_000 },
 			},
 			{ rowId: "auto-b", height: 720, mode: "PER_TITLE_TEMPLATE" },
 		]);
 		expect(result.scenarios[2]?.modelCountRange?.minimum).toBe(2);
+	});
+
+	it("omits inactive fixed-only settings from automatic API streams while preserving the goal and count model", () => {
+		const goal: PerTitleGoal = {
+			...automatic,
+			automaticTemplates: [
+				{
+					id: "candidate-low",
+					height: 240,
+					width: 426,
+					minBitrate: 120_000,
+					maxBitrate: 240_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 800_000,
+					highComplexityBoundaryForMaxBitrate: 2_000_000,
+				},
+				{ id: "candidate-high", height: 720 },
+			],
+		};
+		const original = structuredClone(goal);
+		const expected = recommendPerTitleSettings({
+			...goal,
+			automaticTemplates: goal.automaticTemplates?.map(
+				({ id, height, width }) => ({
+					id,
+					height,
+					...(width !== undefined ? { width } : {}),
+				}),
+			),
+		});
+		const result = recommendPerTitleSettings(goal);
+		expect(result.api).toEqual(expected.api);
+		expect(result.scenarios).toEqual(expected.scenarios);
+		expect(result.derivation).toEqual(expected.derivation);
+		expect(goal).toEqual(original);
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "inactive-template-settings",
+				severity: "warning",
+				rowIds: ["candidate-low"],
+			}),
+		);
+		expect(
+			result.api.streams.every(
+				(stream) =>
+					stream.mode === "PER_TITLE_TEMPLATE" &&
+					stream.perTitleSettings === undefined,
+			),
+		).toBe(true);
+	});
+
+	it("ignores inactive automatic settings without weakening ID and dimension validation", () => {
+		const goal: PerTitleGoal = {
+			...automatic,
+			automaticTemplates: [
+				{
+					id: "candidate",
+					height: 480,
+					minBitrate: 600_000,
+					maxBitrate: 200_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 1_000_000,
+				},
+			],
+		};
+		const result = recommendPerTitleSettings(goal);
+		expect(result.applicable).toBe(true);
+		expect(
+			result.diagnostics.some((item) => item.severity === "conflict"),
+		).toBe(false);
+		for (const invalid of [{ id: "" }, { height: 0 }, { width: 1.5 }]) {
+			const rejected = recommendPerTitleSettings({
+				...goal,
+				automaticTemplates: goal.automaticTemplates?.map((row) => ({
+					...row,
+					...invalid,
+				})),
+			});
+			expect(rejected.applicable).toBe(false);
+			expect(rejected.diagnostics).toContainEqual(
+				expect.objectContaining({ code: "invalid-row" }),
+			);
+		}
 	});
 
 	it("preserves forced configuration while leaving its output count unknown and preventing application", () => {

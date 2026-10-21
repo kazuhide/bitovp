@@ -70,6 +70,7 @@ export type PerTitleDiagnostic = {
 		| "extra-rungs-possible"
 		| "count-not-guaranteed"
 		| "complexity-analysis-required"
+		| "inactive-template-settings"
 		| "upscale-required"
 		| "step-adjusted"
 		| "linear-illustration"
@@ -162,6 +163,13 @@ export type PerTitleDerivation = {
 	targetSatisfied: boolean;
 	fixedOrderRowIds?: string[];
 	integerWitness?: number[];
+	/** Keeps the same integer example at this maximum step, within the model count cap. */
+	minimumStepRange?: {
+		lowerInclusive: number;
+		upperInclusive: number;
+		maximumStep: number;
+		exampleCount: number;
+	};
 	rationale: string;
 };
 
@@ -360,6 +368,44 @@ export function recommendPerTitleSettings(
 						proposal.api.global.minBitrateStepSize,
 					) <= desiredCount),
 		};
+		if (
+			proposal.derivation.targetSatisfied &&
+			!forced &&
+			high &&
+			high.modelRungs.length > 1
+		) {
+			const ratios = high.modelRungs
+				.slice(1)
+				.map(
+					(rung, index) =>
+						rung.bitrate / (high.modelRungs[index]?.bitrate as number),
+				);
+			const minimumStep = proposal.api.global.minBitrateStepSize;
+			const maximumStep = proposal.api.global.maxBitrateStepSize;
+			const upper = Math.min(maximumStep, ...ratios);
+			const cap = desiredCount ?? MAX_MODEL_RUNGS;
+			const ranges = rowRanges(goal, initialRows);
+			if (
+				minimumStep <= upper &&
+				ratios.every((ratio) => ratio >= minimumStep && ratio <= maximumStep) &&
+				modelCapacity(goal, ranges, minimumStep) <= cap
+			) {
+				let good = minimumStep;
+				let bad = 1;
+				for (let index = 0; index < 64; index++) {
+					const midpoint = (bad + good) / 2;
+					if (midpoint > 1 && modelCapacity(goal, ranges, midpoint) <= cap)
+						good = midpoint;
+					else bad = midpoint;
+				}
+				proposal.derivation.minimumStepRange = {
+					lowerInclusive: good,
+					upperInclusive: upper,
+					maximumStep,
+					exampleCount: high.modelRungs.length,
+				};
+			}
+		}
 		return proposal;
 	};
 	if (validateGoal(normalized).length) {
@@ -1102,32 +1148,6 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 			);
 		}
 		ids.add(row.id);
-		if (
-			(row.minBitrate !== undefined && !positiveInteger(row.minBitrate)) ||
-			(row.maxBitrate !== undefined && !positiveInteger(row.maxBitrate)) ||
-			(row.minBitrate !== undefined &&
-				row.maxBitrate !== undefined &&
-				row.maxBitrate < row.minBitrate)
-		) {
-			conflict(
-				"invalid-row-range",
-				"Automatic template bitrate bounds must be positive and ordered when provided.",
-				[row.id],
-			);
-		}
-		if (
-			row.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
-			(!positiveInteger(row.lowComplexityBoundaryForMaxBitrate) ||
-				!positiveInteger(row.highComplexityBoundaryForMaxBitrate) ||
-				row.highComplexityBoundaryForMaxBitrate <=
-					row.lowComplexityBoundaryForMaxBitrate)
-		) {
-			conflict(
-				"invalid-complexity-range",
-				"COMPLEXITY_RANGE requires ordered low and high boundaries.",
-				[row.id],
-			);
-		}
 	}
 	const forced = goal.fixedResolutionAndBitrateConfiguration;
 	if (
@@ -1232,33 +1252,11 @@ function buildProposal(
 	};
 	if ((goal.automaticTemplates?.length ?? 0) > 0) {
 		for (const row of goal.automaticTemplates ?? []) {
-			const settings: NonNullable<
-				PerTitleApiSettings["streams"][number]["perTitleSettings"]
-			> = {
-				...(row.minBitrate !== undefined ? { minBitrate: row.minBitrate } : {}),
-				...(row.maxBitrate !== undefined ? { maxBitrate: row.maxBitrate } : {}),
-				...(row.bitrateSelectionMode !== undefined
-					? { bitrateSelectionMode: row.bitrateSelectionMode }
-					: {}),
-				...(row.lowComplexityBoundaryForMaxBitrate !== undefined
-					? {
-							lowComplexityBoundaryForMaxBitrate:
-								row.lowComplexityBoundaryForMaxBitrate,
-						}
-					: {}),
-				...(row.highComplexityBoundaryForMaxBitrate !== undefined
-					? {
-							highComplexityBoundaryForMaxBitrate:
-								row.highComplexityBoundaryForMaxBitrate,
-						}
-					: {}),
-			};
 			api.streams.push({
 				rowId: row.id,
 				mode: "PER_TITLE_TEMPLATE",
 				...(row.height !== undefined ? { height: row.height } : {}),
 				...(row.width !== undefined ? { width: row.width } : {}),
-				...(Object.keys(settings).length ? { perTitleSettings: settings } : {}),
 			});
 		}
 	} else if (!isClosedStrategy(goal.strategy)) {
@@ -1272,6 +1270,26 @@ function buildProposal(
 			...(goal.inputHeight !== undefined ? { height: goal.inputHeight } : {}),
 			...(goal.inputWidth !== undefined ? { width: goal.inputWidth } : {}),
 			mode: "PER_TITLE_TEMPLATE",
+		});
+	}
+	const inactiveTemplateIds = (goal.automaticTemplates ?? [])
+		.slice(0, MAX_ROWS)
+		.filter(
+			(row) =>
+				row.minBitrate !== undefined ||
+				row.maxBitrate !== undefined ||
+				row.bitrateSelectionMode !== undefined ||
+				row.lowComplexityBoundaryForMaxBitrate !== undefined ||
+				row.highComplexityBoundaryForMaxBitrate !== undefined,
+		)
+		.map((row) => row.id);
+	if (inactiveTemplateIds.length) {
+		diagnostics.push({
+			code: "inactive-template-settings",
+			severity: "warning",
+			message:
+				"The stored bitrate ranges and complexity settings apply only in PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE mode. They are retained as source data, omitted from these PER_TITLE_TEMPLATE API streams, and do not constrain this model.",
+			rowIds: inactiveTemplateIds,
 		});
 	}
 	diagnostics.push({

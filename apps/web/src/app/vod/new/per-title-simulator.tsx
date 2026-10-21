@@ -31,6 +31,7 @@ import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulat
 import { PerTitleSimulatorFiles } from "./per-title-simulator-files";
 import type { PerTitleReference } from "./per-title-simulator-preset";
 import { PerTitleReasoning } from "./per-title-simulator-reasoning";
+import { PerTitleRecommendation } from "./per-title-simulator-recommendation";
 
 export type PerTitleSimulatorProps = {
 	open: boolean;
@@ -73,7 +74,7 @@ function GoalRows({
 			{rows.map((row, index) => (
 				<div key={row.id} className="space-y-2 border-b border-zinc-800 pb-3">
 					<div
-						className={`grid items-start gap-2 ${ranged ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2"}`}
+						className={`grid items-start gap-2 ${ranged ? "sm:grid-cols-3" : "sm:max-w-xs"}`}
 					>
 						<NumberField
 							id={`${id}-${row.id}-height`}
@@ -85,16 +86,6 @@ function GoalRows({
 							onChange={(height) =>
 								patch(index, { height: height ?? Number.NaN })
 							}
-						/>
-						<NumberField
-							id={`${id}-${row.id}-width`}
-							label={copy.width}
-							accessibleLabel={`${copy.width}, ${copy.rendition} ${index + 1}`}
-							value={row.width}
-							integer
-							minimum={1}
-							optional
-							onChange={(width) => patch(index, { width })}
 						/>
 						{ranged ? (
 							<>
@@ -117,59 +108,71 @@ function GoalRows({
 							</>
 						) : null}
 					</div>
-					{ranged ? (
-						<details className="text-xs text-zinc-400">
-							<summary className="cursor-pointer">{copy.advanced}</summary>
-							<div className="mt-3 grid gap-3 sm:grid-cols-3">
-								<Field
-									htmlFor={`${id}-${row.id}-selection`}
-									label={copy.selectionMode}
-								>
-									<SelectNative
-										id={`${id}-${row.id}-selection`}
-										value={row.bitrateSelectionMode ?? "OPTIMIZED"}
-										onChange={(event) =>
-											patch(index, {
-												bitrateSelectionMode: event.target
-													.value as PerTitleGoalRow["bitrateSelectionMode"],
-											})
-										}
+					<details className="text-xs text-zinc-400">
+						<summary className="cursor-pointer">{copy.rowDetails}</summary>
+						<div className="mt-3 grid gap-3 sm:grid-cols-3">
+							<NumberField
+								id={`${id}-${row.id}-width`}
+								label={copy.width}
+								accessibleLabel={`${copy.width}, ${copy.rendition} ${index + 1}`}
+								value={row.width}
+								integer
+								minimum={1}
+								optional
+								onChange={(width) => patch(index, { width })}
+							/>
+							{ranged ? (
+								<>
+									<Field
+										htmlFor={`${id}-${row.id}-selection`}
+										label={copy.selectionMode}
 									>
-										<option value="OPTIMIZED">{copy.optimized}</option>
-										<option value="COMPLEXITY_RANGE">
-											{copy.complexityRange}
-										</option>
-									</SelectNative>
-								</Field>
-								{row.bitrateSelectionMode === "COMPLEXITY_RANGE" ? (
-									<>
-										<NumberField
-											id={`${id}-${row.id}-low`}
-											label={copy.lowBoundary}
-											value={row.lowComplexityBoundaryForMaxBitrate}
-											unit={1000}
-											onChange={(value) =>
+										<SelectNative
+											id={`${id}-${row.id}-selection`}
+											value={row.bitrateSelectionMode ?? "OPTIMIZED"}
+											onChange={(event) =>
 												patch(index, {
-													lowComplexityBoundaryForMaxBitrate: value,
+													bitrateSelectionMode: event.target
+														.value as PerTitleGoalRow["bitrateSelectionMode"],
 												})
 											}
-										/>
-										<NumberField
-											id={`${id}-${row.id}-high`}
-											label={copy.highBoundary}
-											value={row.highComplexityBoundaryForMaxBitrate}
-											unit={1000}
-											onChange={(value) =>
-												patch(index, {
-													highComplexityBoundaryForMaxBitrate: value,
-												})
-											}
-										/>
-									</>
-								) : null}
-							</div>
-						</details>
-					) : null}
+										>
+											<option value="OPTIMIZED">{copy.optimized}</option>
+											<option value="COMPLEXITY_RANGE">
+												{copy.complexityRange}
+											</option>
+										</SelectNative>
+									</Field>
+									{row.bitrateSelectionMode === "COMPLEXITY_RANGE" ? (
+										<>
+											<NumberField
+												id={`${id}-${row.id}-low`}
+												label={copy.lowBoundary}
+												value={row.lowComplexityBoundaryForMaxBitrate}
+												unit={1000}
+												onChange={(value) =>
+													patch(index, {
+														lowComplexityBoundaryForMaxBitrate: value,
+													})
+												}
+											/>
+											<NumberField
+												id={`${id}-${row.id}-high`}
+												label={copy.highBoundary}
+												value={row.highComplexityBoundaryForMaxBitrate}
+												unit={1000}
+												onChange={(value) =>
+													patch(index, {
+														highComplexityBoundaryForMaxBitrate: value,
+													})
+												}
+											/>
+										</>
+									) : null}
+								</>
+							) : null}
+						</div>
+					</details>
 					<div className="flex justify-end">
 						<Button
 							variant="ghost"
@@ -263,6 +266,8 @@ const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 		"一部のシナリオで、本数や間隔の条件を満たしていません。設定を反映する前に、該当するシナリオと条件を確認してください。",
 	"forced-count-unknown":
 		"追加レンディションのルールを保持しています。このルールを含む出力本数は、素材解析なしには算出できません。",
+	"inactive-template-settings":
+		perTitleSimulatorCopy.ja.inactiveTemplateSettings,
 };
 
 const tableClasses =
@@ -285,11 +290,13 @@ function DiagnosticList({
 	rows,
 	locale,
 	copy,
+	technicalDetails = true,
 }: {
 	items: PerTitleDiagnostic[];
 	rows: PerTitleGoal["rows"];
 	locale: Locale;
 	copy: PerTitleSimulatorCopy;
+	technicalDetails?: boolean;
 }) {
 	return (
 		<ul className="space-y-2 text-xs">
@@ -307,13 +314,19 @@ function DiagnosticList({
 					{item.severity === "conflict" ? (
 						<span className="font-medium">{copy.conflict}: </span>
 					) : null}
-					{locale === "ja"
-						? item.code === "row-step-conflict" &&
-							item.values?.ratio !== undefined
-							? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
-							: diagnosticJa[item.code]
-						: item.message}
-					{item.rowIds?.length ? (
+					{item.code === "inactive-template-settings"
+						? copy.inactiveTemplateSettings
+						: locale === "ja"
+							? item.code === "row-step-conflict" &&
+								item.values?.ratio !== undefined
+								? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
+								: diagnosticJa[item.code]
+							: item.message}
+					{technicalDetails &&
+					item.rowIds?.length &&
+					item.rowIds.every((rowId) =>
+						rows?.some((row) => row.id === rowId),
+					) ? (
 						<span className="ml-1">
 							({copy.rowReference}{" "}
 							{item.rowIds
@@ -325,7 +338,7 @@ function DiagnosticList({
 							)
 						</span>
 					) : null}
-					{item.values ? (
+					{technicalDetails && item.values ? (
 						<span className="ml-1 font-mono text-zinc-400">
 							(
 							{Object.entries(item.values)
@@ -669,191 +682,244 @@ function SimulatorEditor({
 				]}
 				onLoad={onLoad}
 			/>
-			<Field htmlFor={`${id}-codec`} label={copy.codec} hint={copy.codecHint}>
-				<SelectNative
-					id={`${id}-codec`}
-					value={goal.codec}
-					onChange={(event) =>
-						onCodecChange(event.target.value as PerTitleGoal["codec"])
-					}
-				>
-					{(
-						[
-							"H264",
-							"H265",
-							"VP9",
-							"AV1",
-							...(initialGoal.codec === "H265V2" || goalsByCodec?.H265V2
-								? ["H265V2"]
-								: []),
-						] as const
-					).map((codec) => (
-						<option key={codec} value={codec}>
-							{codec}
-						</option>
-					))}
-				</SelectNative>
-			</Field>
-			<Field htmlFor={`${id}-strategy`} label={copy.strategy}>
-				<SelectNative
-					id={`${id}-strategy`}
-					value={goal.strategy}
-					onChange={(event) => {
-						const strategy = event.target.value as PerTitleGoal["strategy"];
-						patch({
-							strategy,
-							...(strategy === "fixed-ranges"
-								? {
-										rows: goal.rows?.map((row) => ({
-											...row,
-											minBitrate: row.minBitrate ?? goal.minBitrate,
-											maxBitrate: row.maxBitrate ?? goal.maxBitrate,
-										})),
-									}
-								: {}),
-							...(strategy === "count" &&
-							goal.countPolicy.kind === "unrestricted"
-								? { countPolicy: { kind: "exact", count: 6 } }
-								: {}),
-						});
-					}}
-				>
-					{Object.entries(copy.strategies).map(([value, label]) => (
-						<option key={value} value={value}>
-							{label}
-						</option>
-					))}
-				</SelectNative>
-			</Field>
-			<section className="space-y-3" aria-labelledby={`${id}-global`}>
-				<h3 id={`${id}-global`} className="font-medium text-sm text-zinc-200">
-					{copy.global}
-				</h3>
-				<div className="grid gap-3 sm:grid-cols-2">
-					<NumberField
-						id={`${id}-min`}
-						label={copy.minimum}
-						value={goal.minBitrate}
-						unit={1000}
-						onChange={(value) => patch({ minBitrate: value ?? Number.NaN })}
-					/>
-					<NumberField
-						id={`${id}-max`}
-						label={copy.maximum}
-						value={goal.maxBitrate}
-						unit={1000}
-						onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
-					/>
-				</div>
-				<p className="text-xs text-zinc-400">{copy.automaticSteps}</p>
-			</section>
-			<div className="grid gap-3 sm:grid-cols-2">
-				<Field
-					htmlFor={`${id}-count-policy`}
-					label={copy.countPolicy}
-					hint={copy.countHint}
-				>
-					<SelectNative
-						id={`${id}-count-policy`}
-						value={goal.countPolicy.kind}
-						onChange={(event) => {
-							const kind = event.target
-								.value as PerTitleGoal["countPolicy"]["kind"];
-							patch({
-								countPolicy:
-									kind === "unrestricted"
-										? { kind }
-										: {
-												kind,
-												count:
-													goal.countPolicy.kind === "unrestricted"
-														? 6
-														: goal.countPolicy.count,
-											},
-							});
-						}}
+			<div className="grid gap-5 lg:grid-cols-2">
+				<div className="space-y-5">
+					<Field
+						htmlFor={`${id}-codec`}
+						label={copy.codec}
+						hint={copy.codecHint}
 					>
-						{Object.entries(copy.countPolicies).map(([value, label]) => (
-							<option
-								key={value}
-								value={value}
-								disabled={value === "unrestricted" && goal.strategy === "count"}
-							>
-								{label}
-							</option>
-						))}
-					</SelectNative>
-				</Field>
-				{goal.countPolicy.kind !== "unrestricted" ? (
-					<NumberField
-						id={`${id}-count`}
-						label={copy.count}
-						value={goal.countPolicy.count}
-						minimum={1}
-						integer
-						onChange={(value) => {
-							if (goal.countPolicy.kind !== "unrestricted")
-								patch({
-									countPolicy: {
-										...goal.countPolicy,
-										count: value ?? Number.NaN,
-									},
-								});
-						}}
-					/>
-				) : null}
-			</div>
-			{usesRows(goal) ? (
-				<GoalRows id={id} goal={goal} onChange={setGoal} copy={copy} />
-			) : null}
-			{goal.strategy === "fixed-ranges" || goal.automaticTemplates?.length ? (
-				<PerTitleAutomaticTemplates goal={goal} onChange={setGoal} />
-			) : null}
-			{referenceGoal.fixedResolutionAndBitrateConfiguration ? (
-				<div className="space-y-2 text-xs text-zinc-400">
-					<label className="flex items-start gap-2">
-						<input
-							type="checkbox"
-							checked={!!goal.fixedResolutionAndBitrateConfiguration}
+						<SelectNative
+							id={`${id}-codec`}
+							value={goal.codec}
 							onChange={(event) =>
-								patch({
-									fixedResolutionAndBitrateConfiguration: event.target.checked
-										? structuredClone(
-												referenceGoal.fixedResolutionAndBitrateConfiguration,
-											)
-										: undefined,
-								})
+								onCodecChange(event.target.value as PerTitleGoal["codec"])
 							}
+						>
+							{(
+								[
+									"H264",
+									"H265",
+									"VP9",
+									"AV1",
+									...(initialGoal.codec === "H265V2" || goalsByCodec?.H265V2
+										? ["H265V2"]
+										: []),
+								] as const
+							).map((codec) => (
+								<option key={codec} value={codec}>
+									{codec}
+								</option>
+							))}
+						</SelectNative>
+					</Field>
+					<Field htmlFor={`${id}-strategy`} label={copy.strategy}>
+						<SelectNative
+							id={`${id}-strategy`}
+							value={goal.strategy}
+							onChange={(event) => {
+								const strategy = event.target.value as PerTitleGoal["strategy"];
+								patch({
+									strategy,
+									...(strategy === "fixed-ranges"
+										? {
+												rows: goal.rows?.map((row) => ({
+													...row,
+													minBitrate: row.minBitrate ?? goal.minBitrate,
+													maxBitrate: row.maxBitrate ?? goal.maxBitrate,
+												})),
+											}
+										: {}),
+									...(strategy === "count" &&
+									goal.countPolicy.kind === "unrestricted"
+										? { countPolicy: { kind: "exact", count: 6 } }
+										: {}),
+								});
+							}}
+						>
+							{Object.entries(copy.strategies).map(([value, label]) => (
+								<option key={value} value={value}>
+									{label}
+								</option>
+							))}
+						</SelectNative>
+					</Field>
+					<section className="space-y-3" aria-labelledby={`${id}-global`}>
+						<h3
+							id={`${id}-global`}
+							className="font-medium text-sm text-zinc-200"
+						>
+							{copy.global}
+						</h3>
+						<div className="grid gap-3 sm:grid-cols-2">
+							<NumberField
+								id={`${id}-min`}
+								label={copy.minimum}
+								value={goal.minBitrate}
+								unit={1000}
+								onChange={(value) => patch({ minBitrate: value ?? Number.NaN })}
+							/>
+							<NumberField
+								id={`${id}-max`}
+								label={copy.maximum}
+								value={goal.maxBitrate}
+								unit={1000}
+								onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
+							/>
+						</div>
+						<p className="text-xs text-zinc-400">{copy.automaticSteps}</p>
+					</section>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<Field
+							htmlFor={`${id}-count-policy`}
+							label={copy.countPolicy}
+							hint={copy.countHint}
+						>
+							<SelectNative
+								id={`${id}-count-policy`}
+								value={goal.countPolicy.kind}
+								onChange={(event) => {
+									const kind = event.target
+										.value as PerTitleGoal["countPolicy"]["kind"];
+									patch({
+										countPolicy:
+											kind === "unrestricted"
+												? { kind }
+												: {
+														kind,
+														count:
+															goal.countPolicy.kind === "unrestricted"
+																? 6
+																: goal.countPolicy.count,
+													},
+									});
+								}}
+							>
+								{Object.entries(copy.countPolicies).map(([value, label]) => (
+									<option
+										key={value}
+										value={value}
+										disabled={
+											value === "unrestricted" && goal.strategy === "count"
+										}
+									>
+										{label}
+									</option>
+								))}
+							</SelectNative>
+						</Field>
+						{goal.countPolicy.kind !== "unrestricted" ? (
+							<NumberField
+								id={`${id}-count`}
+								label={copy.count}
+								value={goal.countPolicy.count}
+								minimum={1}
+								integer
+								onChange={(value) => {
+									if (goal.countPolicy.kind !== "unrestricted")
+										patch({
+											countPolicy: {
+												...goal.countPolicy,
+												count: value ?? Number.NaN,
+											},
+										});
+								}}
+							/>
+						) : null}
+					</div>
+					{usesRows(goal) ? (
+						<GoalRows id={id} goal={goal} onChange={setGoal} copy={copy} />
+					) : null}
+					{goal.strategy === "fixed-ranges" ||
+					goal.automaticTemplates?.length ||
+					referenceGoal.fixedResolutionAndBitrateConfiguration ||
+					reference ? (
+						<details className="text-xs text-zinc-400">
+							<summary className="cursor-pointer">
+								{copy.additionalSettings}
+							</summary>
+							<div className="mt-3 space-y-4">
+								{goal.strategy === "fixed-ranges" ||
+								goal.automaticTemplates?.length ? (
+									<PerTitleAutomaticTemplates goal={goal} onChange={setGoal} />
+								) : null}
+								{referenceGoal.fixedResolutionAndBitrateConfiguration ? (
+									<div className="space-y-2 text-xs text-zinc-400">
+										<label className="flex items-start gap-2">
+											<input
+												type="checkbox"
+												checked={!!goal.fixedResolutionAndBitrateConfiguration}
+												onChange={(event) =>
+													patch({
+														fixedResolutionAndBitrateConfiguration: event.target
+															.checked
+															? structuredClone(
+																	referenceGoal.fixedResolutionAndBitrateConfiguration,
+																)
+															: undefined,
+													})
+												}
+											/>
+											{copy.includeForced}
+										</label>
+										<p>{copy.forcedHint}</p>
+									</div>
+								) : null}
+								{reference ? (
+									<div className="space-y-2 text-xs text-zinc-400">
+										<details>
+											<summary className="cursor-pointer">
+												{copy.referenceSettings}
+											</summary>
+											<pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-900 p-3">
+												{JSON.stringify(reference, null, 2)}
+											</pre>
+										</details>
+									</div>
+								) : null}
+							</div>
+						</details>
+					) : null}
+				</div>
+				<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
+					<PerTitleRecommendation goal={goal} proposal={selected}>
+						<DiagnosticList
+							items={selected.diagnostics.filter(
+								(item) =>
+									item.severity === "conflict" ||
+									(item.severity === "warning" &&
+										item.code !== "count-not-guaranteed" &&
+										item.code !== "complexity-analysis-required"),
+							)}
+							rows={goal.rows}
+							locale={locale}
+							copy={copy}
+							technicalDetails={false}
 						/>
-						{copy.includeForced}
-					</label>
-					<p>{copy.forcedHint}</p>
+						{reference ? (
+							<p className="text-xs text-amber-300">{copy.referenceHint}</p>
+						) : null}
+					</PerTitleRecommendation>
+					<PerTitleReasoning
+						goal={goal}
+						proposal={selected}
+						onChange={setGoal}
+					/>
 				</div>
-			) : null}
-			<PerTitleReasoning goal={goal} proposal={selected} onChange={setGoal} />
-			<ProposalResults
-				selected={selected}
-				baseline={baseline}
-				goal={goal}
-				referenceGoal={referenceGoal}
-				rows={goal.rows}
-				copy={copy}
-				locale={locale}
-				id={id}
-			/>
-			{reference ? (
-				<div className="space-y-2 text-xs text-zinc-400">
-					<p>{copy.referenceHint}</p>
-					<details>
-						<summary className="cursor-pointer">
-							{copy.referenceSettings}
-						</summary>
-						<pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-zinc-900 p-3">
-							{JSON.stringify(reference, null, 2)}
-						</pre>
-					</details>
-				</div>
-			) : null}
+			</div>
+			<details className="border-t border-zinc-800 pt-4 text-xs text-zinc-400">
+				<summary className="cursor-pointer">{copy.calculationDetails}</summary>
+				<ProposalResults
+					selected={selected}
+					baseline={baseline}
+					goal={goal}
+					referenceGoal={referenceGoal}
+					rows={goal.rows}
+					copy={copy}
+					locale={locale}
+					id={id}
+				/>
+			</details>
 			{applyError ? (
 				<p role="alert" className="text-red-400 text-sm">
 					{applyError}

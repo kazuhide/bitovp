@@ -229,7 +229,8 @@ function checkGoal(
 		rows.length > goal.countPolicy.count
 	)
 		invalid();
-	for (const item of automaticRows ?? []) checkRange(item);
+	// Fixed-bitrate settings on ordinary templates are retained source data.
+	// Their semantics do not constrain the automatic template's output.
 	for (const item of goal.strategy === "fixed-ranges" ? rows : []) {
 		checkRange(item, true);
 		if (
@@ -269,9 +270,7 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 			!stream.perTitleSettings
 		)
 			invalid();
-		if (stream.mode === "PER_TITLE_TEMPLATE")
-			checkRange({ id: stream.id, ...stream.perTitleSettings });
-		else if (stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
+		if (stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
 			checkRange({ id: stream.id, ...stream.perTitleSettings }, true);
 	}
 	const project = (stream: PerTitleReference["streams"][number]) => ({

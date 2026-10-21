@@ -3,8 +3,6 @@
 import type { PerTitleAutomaticTemplate, PerTitleGoal } from "@bitovp/core";
 import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
-import { SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import { perTitleSimulatorCopy } from "./per-title-simulator-copy";
 import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulator-fields";
@@ -39,13 +37,11 @@ export function PerTitleAutomaticTemplates({
 			<p className="text-xs text-zinc-400">{copy.automaticHint}</p>
 			{rows.map((row, index) => (
 				<div key={row.id} className="space-y-2 border-b border-zinc-800 pb-3">
-					<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+					<div className="grid gap-2 sm:grid-cols-2">
 						{(
 							[
 								["height", copy.optionalHeight, 1, true],
 								["width", copy.width, 1, true],
-								["minBitrate", copy.minimum, 1000, false],
-								["maxBitrate", copy.maximum, 1000, false],
 							] as const
 						).map(([key, label, unit, integer]) => (
 							<NumberField
@@ -61,53 +57,6 @@ export function PerTitleAutomaticTemplates({
 							/>
 						))}
 					</div>
-					<details className="text-xs text-zinc-400">
-						<summary className="cursor-pointer">{copy.advanced}</summary>
-						<div className="mt-3 grid gap-3 sm:grid-cols-3">
-							<Field
-								htmlFor={`${id}-${row.id}-selection`}
-								label={copy.selectionMode}
-							>
-								<SelectNative
-									id={`${id}-${row.id}-selection`}
-									aria-label={`${copy.selectionMode}, ${copy.automaticRow} ${index + 1}`}
-									value={row.bitrateSelectionMode ?? "OPTIMIZED"}
-									onChange={(event) =>
-										patch(index, {
-											bitrateSelectionMode: event.target
-												.value as PerTitleAutomaticTemplate["bitrateSelectionMode"],
-										})
-									}
-								>
-									<option value="OPTIMIZED">{copy.optimized}</option>
-									<option value="COMPLEXITY_RANGE">
-										{copy.complexityRange}
-									</option>
-								</SelectNative>
-							</Field>
-							{row.bitrateSelectionMode === "COMPLEXITY_RANGE"
-								? (
-										[
-											["lowComplexityBoundaryForMaxBitrate", copy.lowBoundary],
-											[
-												"highComplexityBoundaryForMaxBitrate",
-												copy.highBoundary,
-											],
-										] as const
-									).map(([key, label]) => (
-										<NumberField
-											key={key}
-											id={`${id}-${row.id}-${key}`}
-											label={label}
-											accessibleLabel={`${label}, ${copy.automaticRow} ${index + 1}`}
-											value={row[key]}
-											unit={1000}
-											onChange={(value) => patch(index, { [key]: value })}
-										/>
-									))
-								: null}
-						</div>
-					</details>
 					<div className="flex justify-end">
 						<Button
 							variant="ghost"

@@ -80,8 +80,45 @@ function show(goal = initialGoal, locale: "en" | "ja" = "en") {
 }
 
 describe("Per-Title simulator", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("does not invent a required-row number for an automatic-template warning (%s)", (locale) => {
+		show(
+			{
+				...initialGoal,
+				strategy: "fixed-ranges",
+				rows: [
+					{
+						id: "required",
+						height: 480,
+						minBitrate: 50000,
+						maxBitrate: 200000,
+					},
+				],
+				automaticTemplates: [
+					{ id: "candidate", height: 960, minBitrate: 600000 },
+				],
+			},
+			locale,
+		);
+		fireEvent.click(
+			screen.getByText(
+				locale === "en"
+					? "Comparison and calculation details"
+					: "比較・計算の詳細",
+			),
+		);
+		const diagnostics = screen.getByRole("region", {
+			name: locale === "en" ? "Conditions to check" : "確認が必要な条件",
+		});
+		const rowLabel = locale === "en" ? "Rendition" : "レンディション";
+		expect(diagnostics).not.toHaveTextContent(new RegExp(`${rowLabel}\\s+0`));
+		expect(diagnostics).toHaveTextContent(new RegExp(`${rowLabel}\\s+1`));
+	});
 	it("labels custom scenario ordering by the assumed fraction", () => {
 		show({ ...initialGoal, scenarioFractions: [1, 0.25, 0.5] });
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
 		const scenarios = screen.getByRole("region", {
 			name: "Illustrative scenarios",
 		});
@@ -199,6 +236,7 @@ describe("Per-Title simulator", () => {
 			],
 		});
 		const user = userEvent.setup();
+		await user.click(screen.getByText("Additional settings"));
 		await user.click(
 			screen.getByRole("button", { name: "Add automatic template" }),
 		);
@@ -208,18 +246,16 @@ describe("Per-Title simulator", () => {
 			}),
 			{ target: { value: "1080" } },
 		);
-		fireEvent.change(
-			screen.getByRole("spinbutton", {
+		expect(
+			screen.queryByRole("spinbutton", {
 				name: "Minimum bitrate (kbps), automatic template 1",
 			}),
-			{ target: { value: "700" } },
-		);
-		fireEvent.change(
-			screen.getByRole("spinbutton", {
+		).toBeNull();
+		expect(
+			screen.queryByRole("spinbutton", {
 				name: "Maximum bitrate (kbps), automatic template 1",
 			}),
-			{ target: { value: "4000" } },
-		);
+		).toBeNull();
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		expect(onApply).toHaveBeenCalledOnce();
 		const api = onApply.mock.calls[0]?.[0].api;
@@ -238,13 +274,15 @@ describe("Per-Title simulator", () => {
 				expect.objectContaining({
 					mode: "PER_TITLE_TEMPLATE",
 					height: 1080,
-					perTitleSettings: expect.objectContaining({
-						minBitrate: 700_000,
-						maxBitrate: 4_000_000,
-					}),
 				}),
 			]),
 		);
+		expect(
+			api.streams.find(
+				(stream: { mode: string }) => stream.mode === "PER_TITLE_TEMPLATE",
+			),
+		).not.toHaveProperty("perTitleSettings");
+		await user.click(screen.getByText("Comparison and calculation details"));
 		const counts = screen.getByRole("table", {
 			name: "Requirements by resolution",
 		});
@@ -295,6 +333,7 @@ describe("Per-Title simulator", () => {
 				"Requirements loaded.",
 			),
 		);
+		await user.click(screen.getByText("Additional settings"));
 		expect(
 			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
 		).toHaveValue(480);
@@ -307,6 +346,7 @@ describe("Per-Title simulator", () => {
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 			{ target: { value: "10000" } },
 		);
+		await user.click(screen.getByText("Comparison and calculation details"));
 		const table = screen.getByRole("table", { name: "Compare settings" });
 		expect(
 			within(table).getByRole("row", {
@@ -425,9 +465,8 @@ describe("Per-Title simulator", () => {
 			.click(screen.getByRole("button", { name: "Review changes" }));
 		const proposal = onApply.mock.calls[0]?.[0];
 		expect(proposal.applicable).toBe(true);
-		expect(
-			screen.getByRole("region", { name: "Why these settings" }),
-		).toBeVisible();
+		expect(screen.getByText("Why these settings")).toBeVisible();
+		await userEvent.setup().click(screen.getByText("Why these settings"));
 		await userEvent
 			.setup()
 			.click(screen.getByText("Calculation and assumptions"));
@@ -442,6 +481,7 @@ describe("Per-Title simulator", () => {
 
 	it("compares the loaded maximum with an edited maximum without changing the reference", () => {
 		show();
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
 		fireEvent.change(
 			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
 			{
@@ -603,6 +643,9 @@ describe("Per-Title simulator", () => {
 			countGuarantee: false,
 			api: { global: { maxBitrate: 5_000_000 } },
 		});
+		await userEvent
+			.setup()
+			.click(screen.getByText("Comparison and calculation details"));
 		expect(
 			screen.getByText("No actual encoding results have been loaded."),
 		).toBeVisible();
@@ -624,6 +667,7 @@ describe("Per-Title simulator", () => {
 
 	it("uses Japanese labels and explicitly separates examples from encoding results", () => {
 		show(initialGoal, "ja");
+		fireEvent.click(screen.getByText("比較・計算の詳細"));
 		expect(
 			screen.getByRole("dialog", { name: "Per-Title の設定を検討" }),
 		).toBeVisible();
@@ -828,7 +872,7 @@ describe("Per-Title simulator", () => {
 		const user = userEvent.setup();
 		expect(screen.queryByRole("radio")).toBeNull();
 		expect(
-			screen.getByText(/Bitrate steps are calculated from these limits/),
+			screen.getByText(/Bitrate spacing is selected automatically/),
 		).toBeVisible();
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		const proposal = onApply.mock.calls[0]?.[0];
@@ -947,6 +991,7 @@ describe("Per-Title simulator", () => {
 				{ id: "high", height: 720 },
 			],
 		});
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
 		const table = screen.getByRole("table", {
 			name: "Requirements by resolution",
 		});
@@ -978,7 +1023,7 @@ describe("Per-Title simulator", () => {
 			],
 		});
 		const user = userEvent.setup();
-		await user.click(screen.getByText("Bitrate selection"));
+		await user.click(screen.getByText("Width and bitrate selection"));
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		const first = onApply.mock.calls[0]?.[0];
 		fireEvent.change(

@@ -7,6 +7,7 @@ import {
 	type PerTitleGoal,
 	type PerTitleProposal,
 	proposePerTitleSettings,
+	recommendPerTitleSettings,
 	validatePlan,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
@@ -91,6 +92,21 @@ function compiled(s: WizardState) {
 }
 
 describe("Per-Title wizard bridge", () => {
+	it.each([
+		"PER_TITLE_TEMPLATE",
+		"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+	] as const)("refuses fixed-bitrate settings on a %s proposal", (mode) => {
+		const before = state();
+		const invalid = proposal([
+			{
+				...fixed("v360", 360),
+				mode,
+			},
+		]);
+		expect(() => applyPerTitleProposal(before, invalid, "H264")).toThrow(
+			"The proposal is not an applicable candidate for this codec.",
+		);
+	});
 	it("opens fresh and empty ladders without inferring a guaranteed count", () => {
 		const before = structuredClone(DEFAULT_WIZARD_STATE);
 		const goal = perTitleGoalFromWizard(before);
@@ -104,6 +120,43 @@ describe("Per-Title wizard bridge", () => {
 			perTitleGoalFromWizard({ ...before, videos: [] }).countPolicy,
 		).toEqual({ kind: "unrestricted" });
 		expect(before).toEqual(DEFAULT_WIZARD_STATE);
+	});
+	it("keeps ordinary-template source metadata without using fixed-only bounds as global defaults", () => {
+		const before = state();
+		const inactive = {
+			minBitrate: 850000,
+			maxBitrate: 450000,
+			bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
+			lowComplexityBoundaryForMaxBitrate: 1200000,
+		};
+		before.videos = [
+			{
+				height: 240,
+				bitrate: null,
+				extras: {
+					key: "ordinary",
+					mode: "PER_TITLE_TEMPLATE",
+					perTitleSettings: inactive,
+				},
+			},
+		];
+		const clean = structuredClone(before);
+		if (clean.videos[0]?.extras) delete clean.videos[0].extras.perTitleSettings;
+		const fromSource = perTitleGoalFromWizard(before);
+		const withoutMetadata = perTitleGoalFromWizard(clean);
+		expect(fromSource.minBitrate).toBe(withoutMetadata.minBitrate);
+		expect(fromSource.maxBitrate).toBe(withoutMetadata.maxBitrate);
+		expect(fromSource.automaticTemplates).toEqual([
+			{ id: "ordinary", height: 240, ...inactive },
+		]);
+		const result = recommendPerTitleSettings(fromSource);
+		expect(result.api.streams).toEqual([
+			{ rowId: "ordinary", height: 240, mode: "PER_TITLE_TEMPLATE" },
+		]);
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "inactive-template-settings" }),
+		);
+		expect(before.videos[0]?.extras?.perTitleSettings).toEqual(inactive);
 	});
 	it("retains duplicate resolutions, row identities, bounds and explicit global settings", () => {
 		const s = state();
@@ -770,7 +823,7 @@ describe("Per-Title wizard bridge", () => {
 		);
 		expect(candidate.api.streams.map((row) => [row.rowId, row.mode])).toEqual([
 			["automatic-template", "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"],
-			["automatic-template-1", "PER_TITLE_TEMPLATE"],
+			["v720", "PER_TITLE_TEMPLATE"],
 		]);
 		const next = applyPerTitleProposal(s, candidate, "H264");
 		const { plan, operations } = compiled(next);
@@ -802,8 +855,16 @@ describe("Per-Title wizard bridge", () => {
 				(p) => p.applicable,
 			),
 		);
+		expect(candidate.api.streams.map((row) => row.rowId)).not.toContain(
+			"automatic-template-1",
+		);
+		const colliding = structuredClone(candidate);
+		for (const stream of colliding.api.streams) {
+			if (stream.mode === "PER_TITLE_TEMPLATE")
+				stream.rowId = "automatic-template-1";
+		}
 		const before = structuredClone(s);
-		expect(() => applyPerTitleProposal(s, candidate, "H264")).toThrow(
+		expect(() => applyPerTitleProposal(s, colliding, "H264")).toThrow(
 			expect.objectContaining({ code: "INVALID_PROPOSAL" }),
 		);
 		expect(s).toEqual(before);
@@ -815,8 +876,10 @@ describe("Per-Title wizard bridge", () => {
 			bitrate: null,
 			extras: { mode: "PER_TITLE_TEMPLATE" },
 		});
+		const goal = perTitleGoalFromWizard(s);
+		expect(goal.automaticTemplates).toHaveLength(2);
 		const candidate = required(
-			proposePerTitleSettings(perTitleGoalFromWizard(s)).find(
+			proposePerTitleSettings({ ...goal, automaticTemplates: undefined }).find(
 				(p) => p.applicable,
 			),
 		);

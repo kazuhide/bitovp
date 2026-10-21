@@ -16,9 +16,15 @@ export const ja = {
 		removeHls: "HLSマニフェストを削除",
 		removeDash: "DASHマニフェストを削除",
 		manifestNumber: "{kind} {number}",
-		primaryDestination: "{kind}：出力先とリソース名",
+		manifestSettings: "{kind} マニフェストの設定",
 		resourceName: "リソース名",
+		resourceNameHelp:
+			"Bitmovin 上で見分けるための名前で、省略できます。配信用ファイル名は「マニフェスト名」で指定します。",
+		destinationHelp:
+			"「4. 出力先」で設定した保存先から、映像・音声データの出力先を選びます。",
 		path: "出力パス",
+		pathHelp:
+			"選択した出力先内の、マニフェストファイルを保存するフォルダーです。",
 		referenced:
 			"この複製先を削除するには、先に録画やマニフェストの出力先を変更するか、その設定を削除してください。",
 	},

@@ -21,6 +21,7 @@ type ManifestsSectionProps = {
 	onPatch: (partial: Partial<LiveWizardState>) => void;
 	manifestKind?: "HLS" | "DASH";
 	idPrefix?: string;
+	outputSettings?: Partial<Record<"HLS" | "DASH", ReactNode>>;
 };
 
 /**
@@ -83,14 +84,21 @@ const HLS_MARKER_TYPES: LiveHlsMarkerType[] = [
 function ManifestCard({
 	kind,
 	selected,
+	label,
 	children,
 }: {
 	kind: "HLS" | "DASH" | "PRIMARY";
 	selected?: "HLS" | "DASH";
+	label?: string;
 	children: ReactNode;
 }) {
 	return !selected || kind === selected ? (
-		<div className="rounded-md border border-zinc-800 p-3">{children}</div>
+		<fieldset
+			aria-label={label}
+			className="min-w-0 rounded-md border border-zinc-800 p-3"
+		>
+			{children}
+		</fieldset>
 	) : null;
 }
 
@@ -99,6 +107,7 @@ export function LiveManifestsSection({
 	onPatch,
 	manifestKind,
 	idPrefix = "lw",
+	outputSettings,
 }: ManifestsSectionProps) {
 	const { t } = useT();
 	const hls = state.manifests.hls;
@@ -147,7 +156,11 @@ export function LiveManifestsSection({
 
 	return (
 		<div className="space-y-4">
-			<ManifestCard kind="HLS" selected={manifestKind}>
+			<ManifestCard
+				kind="HLS"
+				selected={manifestKind}
+				label={t("liveOutputs.manifestSettings", { kind: "HLS" })}
+			>
 				<label
 					htmlFor={`${idPrefix}-hls-enabled`}
 					className="flex items-center gap-2 font-medium text-sm text-zinc-200"
@@ -175,6 +188,7 @@ export function LiveManifestsSection({
 									onChange={(e) => patchHls({ manifestName: e.target.value })}
 								/>
 							</Field>
+							{outputSettings?.HLS}
 							<Field
 								label={t("ui.timeshiftDvrWindowS")}
 								htmlFor={`${idPrefix}-hls-timeshift`}
@@ -396,7 +410,11 @@ export function LiveManifestsSection({
 				) : null}
 			</ManifestCard>
 
-			<ManifestCard kind="DASH" selected={manifestKind}>
+			<ManifestCard
+				kind="DASH"
+				selected={manifestKind}
+				label={t("liveOutputs.manifestSettings", { kind: "DASH" })}
+			>
 				<label
 					htmlFor={`${idPrefix}-dash-enabled`}
 					className="flex items-center gap-2 font-medium text-sm text-zinc-200"
@@ -424,6 +442,7 @@ export function LiveManifestsSection({
 									onChange={(e) => patchDash({ manifestName: e.target.value })}
 								/>
 							</Field>
+							{outputSettings?.DASH}
 							<Field
 								label={t("ui.timeshiftDvrWindowS")}
 								htmlFor={`${idPrefix}-dash-timeshift`}

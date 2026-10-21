@@ -64,7 +64,7 @@ describe("metricProvenance customer copy", () => {
 		expect(en.alerts.metricOriginEdgeDelayAbove).toBe(
 			"Output delay above threshold",
 		);
-		expect(ja.live.list.filterErrorHint).toContain("更新が止まった出力");
+		expect(ja.live.list.filterErrorHint).toContain("出力の更新停止");
 		expect(ja.live.list.filterErrorHint).not.toContain("オリジン");
 		expect(en.live.list.filterErrorHint).toContain(
 			"an output that stopped advancing",

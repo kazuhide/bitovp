@@ -285,7 +285,9 @@ describe("WatchFoldersClient", () => {
 		expect(await screen.findByText("mezz-drop")).toBeInTheDocument();
 		expect(screen.getAllByText("監視フォルダ").length).toBeGreaterThan(0);
 		expect(
-			screen.getByText(/書き込み・移動・マーキングは一切行いません/),
+			screen.getByText(
+				"監視処理では、対象バケットの一覧取得だけを行います。入力オブジェクトの書き込み・移動や、処理済みマーカーの追加は行いません。処理済みかどうかはアプリ側で管理します。",
+			),
 		).toBeInTheDocument();
 		expect(screen.getByText("投入 2 · 待機 1 · エラー 1")).toBeInTheDocument();
 	});

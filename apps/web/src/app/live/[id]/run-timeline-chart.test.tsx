@@ -136,7 +136,7 @@ describe("state history outside the flattened chart (ledger #161)", () => {
 		expect(history.closest('[role="img"]')).toBeNull();
 		expect(screen.getByRole("img")).toHaveAccessibleDescription(
 			locale === "ja"
-				? /未観測の時刻の状態は推測しません/
+				? /記録がない時刻の状態は補いません/
 				: /Unobserved times are not inferred/,
 		);
 		const event = screen.getByText(

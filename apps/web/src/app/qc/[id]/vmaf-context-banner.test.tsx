@@ -112,12 +112,12 @@ describe("VmafContextBanner", () => {
 		expect(
 			screen.getByText(/360p → 1080p\(3\.0× アップスケール\)/),
 		).toBeInTheDocument();
-		expect(screen.getByText(/解像度をまたぐ VMAF/)).toBeInTheDocument();
+		expect(screen.getByText(/異なる解像度のVMAF比較/)).toBeInTheDocument();
 		// The quiet part, in Japanese: a low cross-resolution score is not by itself
 		// an encoder defect, and an operator who does not read that repeats the whole
 		// investigation this module came from.
 		expect(
-			screen.getByText(/エンコーダの欠陥を意味しません/),
+			screen.getByText(/それだけでエンコーダの不具合とは判断できません/),
 		).toBeInTheDocument();
 		// The {model} JUNCTIONS, spanned: 。 is the separator and no ASCII space may
 		// leak around the placeholder. Mutation-proven necessary — reverting ja.ts
@@ -126,7 +126,7 @@ describe("VmafContextBanner", () => {
 		// PR #152). One regex across sentence-end → model-part → next sentence.
 		expect(
 			screen.getByText(
-				/比較しました。モデル vmaf_v1\.0\.16_3d0h。攻めたラダー/,
+				/比較しました。モデル vmaf_v1\.0\.16_3d0h。解像度やビットレートを低くした構成/,
 			),
 		).toBeInTheDocument();
 		expectNoEnglishProse(container);
@@ -141,10 +141,12 @@ describe("VmafContextBanner", () => {
 			/>,
 			"ja",
 		);
-		expect(screen.getByText(/比較しました。攻めたラダー/)).toBeInTheDocument();
+		expect(
+			screen.getByText(/比較しました。解像度やビットレートを低くした構成/),
+		).toBeInTheDocument();
 	});
 
-	it("renders a NATIVE comparison in Japanese, saying a low score is real", () => {
+	it("renders a native comparison in Japanese with the comparison checks", () => {
 		renderLocalized(
 			<VmafContextBanner
 				results={[healthyResult(1080, 4_000_000, 95)]}
@@ -154,7 +156,9 @@ describe("VmafContextBanner", () => {
 			"ja",
 		);
 		expect(screen.getByText(/1080p → 1080p\(等倍\)/)).toBeInTheDocument();
-		expect(screen.getByText(/実際の品質問題です/)).toBeInTheDocument();
+		expect(
+			screen.getByText(/参照動画、フレームの同期、モデルを確認してください/),
+		).toBeInTheDocument();
 	});
 
 	it("states the comparison's terms, upscale factor included", () => {
@@ -235,7 +239,7 @@ describe("VmafContextBanner", () => {
 		expect(screen.queryByRole("alert")).toBeNull();
 	});
 
-	it("says a native comparison's low score IS a real problem", () => {
+	it("asks operators to check the comparison before interpreting a native score", () => {
 		renderLocalized(
 			<VmafContextBanner
 				results={[healthyResult(1080, 4_000_000, 60)]}
@@ -244,7 +248,11 @@ describe("VmafContextBanner", () => {
 			/>,
 		);
 		expect(screen.getByText(/1080p → 1080p \(native\)/)).toBeInTheDocument();
-		expect(screen.getByText(/a real quality problem/)).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/Check the reference, frame alignment and model before drawing conclusions/,
+			),
+		).toBeInTheDocument();
 	});
 
 	it("admits it does not know when the source geometry was never recorded", () => {

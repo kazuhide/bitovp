@@ -154,7 +154,7 @@ describe("DvrGauge component", () => {
 		expect(
 			screen.getByText(
 				locale === "ja"
-					? /DVR 予算は未算定.*空欄は配信サービスの既定値/
+					? /DVR の要素数は未計算.*空欄の場合は、配信サービスの既定値/
 					: /DVR budget is not estimated.*Empty timeshift uses the service default/,
 			),
 		).toBeVisible();

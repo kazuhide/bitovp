@@ -435,11 +435,14 @@ describe("SchedulePanel", () => {
 			expect(body.autoLeadTime).toBe(true);
 			expect(body.fireAt).toBeUndefined();
 		});
-		const resolution = await screen.findByText(/Resolved:/i);
+		const resolution = await screen.findByText(/Auto-lead calculation:/i);
 		// the sample count and percentile in words, not
 		// `n=20` / `P90` as a statistician's shorthand in customer copy.
-		expect(resolution.textContent).toContain("from 20 recorded start-ups");
+		expect(resolution.textContent).toContain("based on 20 recorded start-ups");
 		expect(resolution.textContent).toContain("600s");
+		expect(resolution.textContent).toContain(
+			"An earlier manual time takes precedence.",
+		);
 		expect(resolution.textContent).not.toContain("n=");
 	});
 

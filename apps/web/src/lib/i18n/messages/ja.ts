@@ -2,7 +2,7 @@ import type { Messages } from "./en";
 
 /* Japanese catalog. `satisfies Messages` checks complete key coverage without widening literal values. Keep wire identifiers verbatim, localize prose consistently, and share the provisioning clause so scheduling hints cannot contradict each other. Callers supply punctuation. */
 const PROVISIONS_AT_CREATE =
-	"作成した時点でチャンネルの起動準備が始まり、課金もそこから始まります";
+	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
 	liveOutputs: {
@@ -20,8 +20,7 @@ export const ja = {
 		destinationHelp:
 			"「4. 出力先」で設定した保存先から、映像・音声データの出力先を選びます。",
 		path: "出力パス",
-		pathHelp:
-			"選択した出力先内の、マニフェストファイルを保存するフォルダーです。",
+		pathHelp: "選択した出力先で、マニフェストを保存するフォルダーです。",
 		referenced:
 			"この複製先を削除するには、先に録画やマニフェストの出力先を変更するか、その設定を削除してください。",
 	},
@@ -33,7 +32,7 @@ export const ja = {
 		storageUnavailable:
 			"安全に再試行するための情報をブラウザーに保存できませんでした。セッションストレージを有効にして再試行してください。新しいリクエストは送信していません。",
 		pendingLimit:
-			"このタブには結果が未確認の作成リクエストが多すぎます。既存のリクエストを再試行するか、ジョブとチャンネルの一覧を確認してから新しく作成してください。",
+			"このタブで作成したジョブやチャンネルに、結果を確認できていないものが多くあります。作成操作を再試行するか、一覧で結果を確認してから新しく作成してください。",
 	},
 	branding: {
 		title: "表示名とアイコン",
@@ -70,7 +69,7 @@ export const ja = {
 		current: "現在の組織",
 		ipPolicy: "アクセスを許可するIP",
 		ipHelp:
-			"IPまたはCIDRを1行に1件入力。空欄は制限なし。管理者を含む組織メンバー全員に適用します。設定を誤った場合は全体管理者が変更できます。",
+			"IPアドレスまたはCIDR表記のアドレス範囲を、1行に1件入力します。空欄なら制限しません。管理者を含む組織メンバー全員に適用されます。設定を誤った場合は全体管理者が変更できます。",
 		ipPlaceholder: "203.0.113.10\n2001:db8::/32",
 		noHistory: "アクセス履歴はありません",
 		historyHelp:
@@ -126,7 +125,7 @@ export const ja = {
 		disabled: "無効",
 		emptyDisabled: "空欄にすると、このタイマーを解除します。",
 		recordedHint:
-			"この配信で最後に記録された設定です。ほかのツールで変更した内容は反映されない場合があります。更新すると3項目すべてを置き換えます。次回配信の保存済み開始設定は変わりません。",
+			"この配信で最後に記録された設定です。ほかのツールで変更した内容は反映されない場合があります。更新すると3項目すべてを置き換えます。次回の配信を開始するときの設定は変わりません。",
 		timingHint:
 			"停止までの時間は、エンコーダが更新を受け付けた時点から数え直します。入力断の時間は最後にデータを受信した時点から数えます。最初の入力を待つ設定は、すでに入力が接続済みなら働きません。",
 		limitHint:
@@ -166,7 +165,7 @@ export const ja = {
 		failed: "RTMP 更新を登録できませんでした",
 	},
 	providerDiagnostics: {
-		title: "プロバイダー診断",
+		title: "エンコーダの診断",
 		view: "表示",
 		summary: "状態",
 		events: "イベント",
@@ -182,16 +181,15 @@ export const ja = {
 		inputId: "入力ID",
 		apply: "適用",
 		invalidId: "有効なSRT入力UUIDを入力してください。",
-		unavailable:
-			"プロバイダー診断を取得できませんでした。更新をお試しください。",
+		unavailable: "診断情報を取得できませんでした。もう一度更新してください。",
 		previous: "前へ",
 		next: "次へ",
 		page: "{page}ページ",
 		total: "全{count}件",
 		getFinal: "最終Heartbeatを取得",
 		downloadFinal: "最終Heartbeatをダウンロード",
-		status: "プロバイダー状態",
-		empty: "この選択に対応するプロバイダーデータはありません。",
+		status: "エンコーダの状態",
+		empty: "この条件に対応する診断情報はありません。",
 		received: "受信レート",
 		lost: "損失パケット",
 		dropped: "破棄パケット",
@@ -592,7 +590,7 @@ export const ja = {
 		reload: "最新の内容を再読み込み",
 		linked: "登録済みコンテンツ",
 		identity:
-			"入力の同一性は未検証です。この参照はメディアの同一性を証明しません。",
+			"入力ファイルが同一かは確認していません。参照情報だけでは、同じメディアだと判断できません。",
 		newContent: "新しいコンテンツを作成",
 		destination: "登録先",
 		registerSuccess: "コンテンツを登録しました",
@@ -617,9 +615,9 @@ export const ja = {
 		templates: "テンプレート",
 		verification: "検証",
 		settings: "設定",
-		signOut: "サインアウト",
-		signingOut: "サインアウトしています…",
-		authDisabled: "認証は無効です。このインストールは誰でもアクセスできます。",
+		signOut: "ログアウト",
+		signingOut: "ログアウトしています…",
+		authDisabled: "認証は無効です。この環境には誰でもアクセスできます。",
 		sectionDiagnostics: "診断",
 		apiCoverage: "API カバレッジ",
 	},
@@ -631,34 +629,32 @@ export const ja = {
 		unverified:
 			"権限を確認できませんでした。ページを再読み込みするか、もう一度お試しください。",
 		retry: "再試行",
-		reauthenticationTitle: "サインインが必要です",
+		reauthenticationTitle: "ログインが必要です",
 		reauthenticationBody:
-			"セッションの有効期限が切れたか、無効になりました。続行するには、もう一度サインインしてください。",
-		reauthenticationAction: "もう一度サインイン",
+			"セッションの有効期限が切れたか、無効になりました。続行するには、もう一度ログインしてください。",
+		reauthenticationAction: "もう一度ログイン",
 	},
 	locale: {
 		label: "言語",
 		en: "English",
 		ja: "日本語",
 		description:
-			"UI の文言にのみ適用されます。Bitmovin API の値・リソース ID・ログ出力はそのまま表示されます。",
+			"画面の表示言語を変更します。Bitmovin API の値、リソース ID、ログの内容は翻訳せずに表示します。",
 	},
 	login: {
-		title: "サインイン",
-		subtitle:
-			"この Bitmovin OVP インストールのチーム共有パスワードを入力してください。",
+		title: "ログイン",
+		subtitle: "この環境のチーム共有パスワードを入力してください。",
 		passwordLabel: "チームパスワード",
-		usersSubtitle:
-			"メールアドレスとご自身のパスワードでサインインしてください。",
+		usersSubtitle: "メールアドレスとご自身のパスワードでログインしてください。",
 		userPasswordLabel: "パスワード",
 		emailLabel: "メールアドレス",
 		emailRequired: "メールアドレスを入力してください",
 		passwordRequired: "パスワードを入力してください",
-		submit: "サインイン",
-		submitting: "サインインしています…",
-		failed: "サインインに失敗しました",
+		submit: "ログイン",
+		submitting: "ログインしています…",
+		failed: "ログインに失敗しました",
 		notConfiguredTitle: "認証が設定されていません",
-		notConfiguredBody: "このインストールではまだサインインできません。",
+		notConfiguredBody: "認証の設定が終わるまでログインできません。",
 		disabledTitle: "認証は無効です",
 		disabledBody:
 			"この環境では認証を使用しません。アクセスできる利用者をネットワーク側で制限してください。",
@@ -667,7 +663,7 @@ export const ja = {
 	setup: {
 		title: "初回セットアップ",
 		subtitle:
-			"このインストールにはまだユーザーがいません。サーバーログの一回限りのセットアップコードで最初の ADMIN アカウントを作成してください。",
+			"まだユーザーが登録されていません。サーバーログの一度だけ使えるセットアップコードで、最初の管理者（ADMIN）アカウントを作成してください。",
 		codeLabel: "セットアップコード",
 		codeHint:
 			"サーバーログに一度だけ出力されます — docker compose logs web | grep setup-code",
@@ -679,14 +675,14 @@ export const ja = {
 		passwordLabel: "パスワード(12 文字以上)",
 		passwordRequired: "パスワードを入力してください",
 		passwordTooShort: "12 文字以上で入力してください",
-		submit: "管理者を作成してサインイン",
+		submit: "管理者を作成してログイン",
 		submitting: "作成しています…",
 		failed: "セットアップに失敗しました",
 	},
 	rotate: {
 		title: "新しいパスワードの設定",
 		subtitle:
-			"仮パスワードを置き換えるまで、このアカウントでは操作できません。本人だけが知る新しいパスワードを設定してください。",
+			"利用を開始するには、仮パスワードを変更してください。本人だけが知る新しいパスワードを設定します。",
 		currentLabel: "現在の(仮)パスワード",
 		currentRequired: "現在のパスワードを入力してください",
 		newLabel: "新しいパスワード(12 文字以上)",
@@ -754,21 +750,21 @@ export const ja = {
 		authPasswordExpired:
 			"仮パスワードの有効期限が切れています。管理者に再発行を依頼してください。",
 		authRateLimited:
-			"サインインの失敗が続いたため、一時的に受け付けていません。しばらく待ってから再実行してください。",
+			"ログインの失敗が続いたため、一時的に受け付けていません。しばらく待ってから再実行してください。",
 		authBusy:
-			"サインイン要求が集中しています。数秒待ってから再実行してください。",
+			"ログイン要求が集中しています。数秒待ってから再実行してください。",
 		authPasswordRequired: "パスワードを入力してください。",
 		authEmailRequired: "メールアドレスを入力してください。",
 		authCredentialsChanged:
-			"サインインの確認中に資格情報が変更されました。現在のパスワードで再実行してください。",
+			"ログインの確認中に認証情報が変更されました。現在のパスワードで再実行してください。",
 		authModeUnsupported:
 			"このログイン方法ではブラウザセッションを作成できません。管理者に認証設定の確認を依頼してください。",
 		authSetupRequired:
 			"管理者の初期設定が必要です。セットアップ画面で最初の管理者アカウントを作成してください。",
 		storageEndpointNotAllowed:
-			"このストレージ接続先は現在のデプロイ環境では許可されていません。資格情報を保存する前に、管理者へストレージ接続先の許可リストの確認を依頼してください。",
+			"この環境では、このストレージ接続先が許可されていません。認証情報を保存する前に、管理者へ接続先の許可リストの確認を依頼してください。",
 		storageBrowseUnsupported:
-			"この資格情報では、この画面からストレージを参照できません。バケット名とオブジェクトパスを手動で入力するか、参照可能なストレージ資格情報を選択してください。",
+			"この認証情報では、ストレージの参照機能を使えません。バケット名とファイルのパスを手入力するか、参照できる認証情報を選択してください。",
 		resetCleanupUnconfirmed:
 			"以前の処理で作成された配信リソースの後処理を確認できないため、データをリセットできません。システム管理者またはサポート窓口にお問い合わせください。",
 		resetProviderResourcesUnconfirmed:
@@ -919,28 +915,28 @@ export const ja = {
 		regionLabel: "次にやること",
 		startEncoderTitle: "チャンネルを開始する",
 		startEncoderBody:
-			"まだ何も動いていません。起動するとエンコーダのインスタンスが立ち上がり、その後は入力の接続を待ちます。起動時間はリージョンや構成で異なります。",
+			"チャンネルはまだ起動していません。開始するとエンコーダが起動し、入力の接続を待ちます。起動にかかる時間はリージョンや構成で異なります。",
 		recoverTitle: "前回の配信の状態を確認してください",
 		recoverBody:
 			"診断と終了理由、エンコーダの状態を確認してから次の操作を選んでください。",
 		bootTitle: "起動中",
 		bootBody:
 			"起動時間はリージョンと構成で異なります。取り消すには操作へ移動してください。",
-		stoppingTitle: "停止中 — 待つだけです",
+		stoppingTitle: "停止処理中",
 		stoppingBody:
 			"エンコーダを停止しています。下のステップログに停止手順が出ます。完了するとチャンネルは STOPPED になります。",
 		connectInputTitle: "入力を接続してください",
 		connectInputBody:
-			"エンコーダは起動済みで入力待ちです。入力がバインドされるまで出力タイムラインが存在しないため、スレートを差し込んでも何も映りません。フィーダーを起動するか、Ingest URL へ配信してください。",
+			"エンコーダは起動済みで、入力の接続を待っています。映像を受信するまではスレートも表示できません。ファイル入力を開始するか、入力先URLへ映像を送信してください。",
 		outputTitle: "最初のセグメントを待っています",
 		outputBody:
-			"入力は接続済みですが、マニフェストにまだ再生可能なレンディションがありません。実測ではプローブ開始から 31.8 秒で最初のセグメントが出ました。",
+			"入力は接続済みですが、マニフェストにまだ再生可能なレンディションがありません。最初のセグメントが出力されるまでお待ちください。",
 		alertsTitle: "アラートが発生中です",
 		alertsBody:
-			"配信中ですがルールが発火しています。他より先に内容を確認し、解消するかチャンネルを停止してください。",
+			"配信中にアラートの条件を検出しました。内容を確認して対処するか、チャンネルを停止してください。",
 		alertsUnknownTitle: "アラート状態を取得できませんでした",
 		alertsUnknownBody:
-			"アラート一覧を読み込めなかったため、このチャンネルが正常だとは誰にも言えません。取得失敗は「アラート 0 件」ではありません。アラートのカードを開いて再取得し、アプリが自身の API に到達できているか確認してから監視できている状態として扱ってください。",
+			"アラート一覧を読み込めないため、アラートの有無を確認できません。アラートのカードを開き、もう一度取得してください。",
 		/* An unreadable provider state proves neither running nor stopped. */
 		providerUnknownTitle: "Bitmovin エンコーダ状態未確認",
 		providerUnknownBody:
@@ -950,15 +946,15 @@ export const ja = {
 			"入力は接続済み、アラートなし、マニフェストは再生可能です。番組終了時にチャンネルを停止してください。",
 		startNewRunTitle: "新しい配信を開始",
 		startNewRunBody:
-			"このチャンネルの前回の配信は終了しています。エンコーディングは FINISHED で再起動できません(Bitmovin の仕様であり故障ではありません)。開始すると新しい配信が始まります — 新しいエンコーダ、同じチャンネル、スケジュールとルールはそのまま有効です。",
-		scheduledTitle: "スケジュールが実行します",
+			"前回の配信は終了しています。FINISHED のエンコードは再起動できないため、新しいエンコーダで配信を開始します。チャンネルの設定、スケジュール、ルールは引き継がれます。",
+		scheduledTitle: "予約時刻を待っています",
 		scheduledBody:
-			"待機中のスケジュール行が自動で発火します。手動で起動する必要はありません。",
-		idleTitle: "やることはありません",
+			"予約した操作は指定時刻に自動で実行されます。手動で開始する必要はありません。",
+		idleTitle: "チャンネルは停止中です",
 		idleBody:
 			"チャンネルは停止中で、待機中のスケジュールもありません。チャンネルを開始するか、スケジュールアクションを登録してください。",
 		goActions: "操作へ",
-		goFeeders: "フィーダーへ",
+		goFeeders: "ファイル入力へ",
 		goSchedule: "スケジュールへ",
 		goAlerts: "アラートへ",
 		goManifests: "マニフェストへ",
@@ -974,34 +970,33 @@ export const ja = {
 		programme: "番組・スケジュール",
 		programmeLead: "番組の予定・コンテンツ差し込み・緊急停止。",
 		input: "入力・擬似ライブ",
-		inputLead: "映像がどこから来て、何が送出しているか。",
+		inputLead: "入力先のアドレスとファイルからの送出状況。",
 		delivery: "出力・配信",
 		deliveryLead: "DVR・DNS・配信終了後の VOD 化・VMAF 品質キャプチャ",
 		deliveryHelp:
-			"出力グループとマニフェスト、DVR、配信終了後の VOD 化、VMAF 品質レポートの範囲です。",
+			"出力グループ、マニフェスト、DVR、配信終了後の VOD 化、VMAF 品質レポートを確認できます。",
 		diagnostics: "診断・履歴",
-		diagnosticsLead: "生のテレメトリ、過去の配信、一度だけ設定する項目。",
+		diagnosticsLead: "エンコーダの統計、配信履歴、初期設定。",
 		danger: "取り消せない操作",
-		dangerLead: "元に戻せません。日常の配信運用には含まれません。",
+		dangerLead: "実行後は元に戻せないため、内容を確認してください。",
 	},
 	/* Explain operational differences: input and output are separate observations; slate insertion is distinct from input switching, overlays and input-loss slates; file sources are not provider Input resources; automatic shutdown can precede the scheduled end. */
 	liveHelp: {
 		ingest:
 			"RTMP または SRT で接続する入力先のアドレスとストリームキーです。方向(push / listener / caller)は入力設定で決まります。ここに映像が届くと、入力・エンコーダの状態に受信中と表示されます。",
 		heartbeat:
-			"30 秒ごとにエンコーダから入力とエンコードの統計を取得して表示します。出力先の更新や視聴者側の再生を確認するものではありません — それは出力モニタリングで確認します。",
+			"30 秒ごとにエンコーダから入力とエンコードの統計を取得します。出力先の更新は出力モニタリングで、実際の再生はプレビューなどで別途確認してください。",
 		origin:
 			"出力先の HLS メディアプレイリストを読み取り、セグメント更新・ENDLIST・ライブエッジ遅延を表示します。チャンネル状態や入力・エンコーダの状態とは別の確認で、視聴者側の再生を保証するものではありません。",
 		schedule:
-			"指定時刻にチャンネルの開始・停止・スレート挿入を実行する予約です。予約済み、実行要求済み、プロバイダー受付済み、メディアで確認済みはそれぞれ別の状態として表示します。遅れた停止は必ず実行されますが、遅れすぎた開始・スレートは未実行になります。",
+			"指定時刻にチャンネルの開始・停止・スレート挿入を実行する予約です。予約、実行要求、エンコーダによる受付、実際の出力での確認を分けて表示します。停止は予定時刻を過ぎても実行しますが、開始・スレート挿入は遅れすぎると実行しません。",
 		slate:
 			"番組に上書きして差し込むコンテンツ(スレート)の予約です。予約済みは現在挿入中であることを示しません。AWS MediaLive の input switch・static image overlay・input-loss slate とは別の機能で、入力の切り替えや静止画の重ね合わせは行いません。",
 		insertion:
 			"差し込むコンテンツをここで登録します。指定時刻の挿入は下の「スケジュールアクション」で設定します。",
 		insertionStop:
 			"「スケジュールアクション」で挿入した内容を今すぐ停止します。予約リストには影響しません。",
-		feeders:
-			"保存済みのMP4を繰り返し送出し、ライブチャンネルの入力として使用します。AWS Elemental MediaLiveのInputリソースそのものではありません。",
+		feeders: "保存済みの MP4 を繰り返し送出し、ライブチャンネルへ入力します。",
 		runtimeCap:
 			"安全のための自動停止です。稼働時間がこの分数に達するとチャンネルを自動で停止します(稼働開始を確認した時点から計測)。予定している番組終了より前に停止することがあり、停止が完了するまでが課金対象です。",
 		liveToVod:
@@ -1013,11 +1008,11 @@ export const ja = {
 		enable: "ストレージにも同時出力する",
 		help: "主出力と同じパス・公開設定でセグメントとマニフェストを複製します。MP4アーカイブの公開設定は別です。",
 		unsupported:
-			"ミラーにはMSL・配信サーバーではなくストレージを選択してください。",
+			"複製先にはS3などのストレージを選択してください。MSLや配信サーバーは指定できません。",
 		sameDestination:
-			"主出力とは異なるストレージ資格情報かバケットを選択してください。",
+			"主出力とは異なるストレージ認証情報かバケットを選択してください。",
 		unavailable:
-			"ミラーの資格情報が利用できません。ストレージ資格情報を選択してください。",
+			"複製先の認証情報を利用できません。ストレージの認証情報を選択してください。",
 	},
 	liveArchive: {
 		title: "MP4 アーカイブ",
@@ -1039,14 +1034,14 @@ export const ja = {
 		bucket: "バケット / コンテナー",
 		path: "アーカイブの保存パス",
 		pathHelp:
-			"初回は指定パス、再放送は固有プレフィックス付きのパスに保存します。チャンネル複製時は別の保存パスを選んでください。ストレージの配信ミラーにも保存しますが、保存先自身には重複しません。MSL の配信ミラーとは併用できません。",
+			"初回は指定パスに保存し、2回目以降の配信は配信ごとのフォルダーに保存します。チャンネルを複製するときは別の保存パスを選んでください。ストレージの複製先にも保存しますが、同じ保存先には重複して書き込みません。MSL のミラーとは併用できません。",
 		filename: "ファイル名",
 		access: "アーカイブのアクセス権",
 		private: "非公開を指定（既定）",
 		publicRead: "公開読み取りを許可",
 		destinationDefault: "保存先の既定値を使用（権限を指定しない）",
 		verifyAfterStop:
-			"停止後にファイルの取得・再生と映像／音声の長さを確認してください。非公開は PRIVATE を指定しますが、バケットポリシーなどによる公開は別途確認が必要です。保存先の既定値では公開される場合があります。ライブ再生用 URL ではなく、配信検証だけではアーカイブ完成・プラン全体の検証は未確定です。",
+			"停止後にファイルを取得・再生し、映像と音声の長さを確認してください。非公開にする場合は PRIVATE を指定し、バケットポリシーなどで公開されていないことも確認します。保存先の既定値を使うと公開される場合があります。ライブ再生の確認だけでは、アーカイブが正しく保存されたかは判断できません。",
 	},
 	liveWizard: {
 		outputWidth: "幅（px）",
@@ -1100,10 +1095,10 @@ export const ja = {
 	},
 	/* Use one polite live region and announce only changes. */
 	liveAnnounce: {
-		ingestConnected: "取り込みが接続されました。",
-		ingestDisconnected: "取り込みが切断されました。",
+		ingestConnected: "入力が接続されました。",
+		ingestDisconnected: "入力が切断されました。",
 		heartbeatFresh: "ハートビートが最新に戻りました。",
-		heartbeatStale: "ハートビートが古くなりました。",
+		heartbeatStale: "ハートビートの更新が途切れました。",
 		alertOpened: "アラートが発生しました(発生中 {count} 件)。",
 		alertResolved: "アラートが解決しました(発生中 {count} 件)。",
 		scheduleArmed: "{time} に {action} を予約しました。",
@@ -1129,12 +1124,12 @@ export const ja = {
 		summaryLinks: "{count} 本",
 		summaryUnavailable: "取得できませんでした",
 		readUnavailable:
-			"取得できませんでした。「なし」ではありません。再取得し、アプリが自身の API に到達できているか確認してください。以下に表示されているものがあれば、最後に取得できた内容です。",
+			"現在の情報を取得できませんでした。もう一度取得してください。情報が表示されている場合は、最後に取得できた内容です。",
 		/* Two duration cells in the page header. */
 		nextEvent: "次の予定",
 		nextEventIn: "{countdown}後に{action}",
 		nextEventOverdue: "{action}が{countdown}超過",
-		nextEventSlate: "蓋 {seconds}秒",
+		nextEventSlate: "スレート {seconds}秒",
 		runtime: "稼働時間",
 		runtimeElapsed: "経過 {elapsed}",
 		runtimeRemaining: "経過 {elapsed} · 残り {remaining}",
@@ -1145,7 +1140,7 @@ export const ja = {
 	},
 	notFound: {
 		title: "ページが見つかりません",
-		body: "URL が誤っているか、指していた対象が削除されています。エンコードジョブやレポートは削除できるため、削除済みのものへのリンクはここに来ます。",
+		body: "URL が誤っているか、リンク先のジョブやレポートが削除されています。",
 		backToDashboard: "ダッシュボードに戻る",
 	},
 	dashboard: {
@@ -1173,7 +1168,7 @@ export const ja = {
 		formatMix: "配信フォーマット構成(直近の完了ジョブ)",
 		jobsByDay: "ジョブ数/日(14 日間)",
 		liveAirtime: "ライブ放送時間(チャンネル別・7 日間)",
-		minutesByDay: "パイプライン分数/日(実時間・14 日間)",
+		minutesByDay: "1日あたりのエンコード時間（実時間・14日間）",
 		moreChannels:
 			"+{count} チャンネルは非表示です(放送時間上位 10 件まで表示)。",
 		noFinishedJobs: "完了ジョブがまだありません。",
@@ -1185,7 +1180,7 @@ export const ja = {
 		seriesMinutes: "分",
 		seriesOther: "進行中・その他",
 		unparsedPlans:
-			"{count} 件の保存プランがパース不能のためフォーマット構成から除外しています(黙って落とさず計数)。",
+			"保存済みプランのうち {count} 件を読み取れなかったため、フォーマット構成の集計から除外しました。",
 	},
 	jobs: {
 		columns: "表示列",
@@ -1228,10 +1223,10 @@ export const ja = {
 		providerFailure:
 			"エンコードに失敗しました。技術情報を確認してから再実行してください。",
 		technicalDetails: "技術情報",
-		providerFailureDetail: "プロバイダーのエラー詳細",
+		providerFailureDetail: "エンコードサービスのエラー詳細",
 	},
 	playback: {
-		skipToDetail: "ジョブ詳細へスキップ",
+		skipToDetail: "ジョブ詳細へ移動",
 		railLabel: "再生とマニフェスト",
 		whyNoUrl: "再生可能な URL がありません",
 		enlarge: "拡大表示",
@@ -1242,12 +1237,11 @@ export const ja = {
 			"出力へのアクセスが拒否されました（401/403）。非公開出力の場合は、再生URLの認証と読み取り権限を確認してください。",
 		storageAccessDenied:
 			"保存先がMP4の取得を拒否しました。認証情報と読み取り権限を確認してください。",
-		previewWhileRunning: "エンコード実行中 — ジャストインタイム マニフェスト",
+		previewWhileRunning: "エンコード実行中 — 生成中のマニフェストで再生",
 		previewWaitingForOutput:
 			"映像出力を確認できるまで再生を待機しています。確認でき次第、自動で再生します。",
 		previewPlayNow: "今すぐ再生",
-		previewAfterFinish:
-			"エンコードが完了すると、ここで再生プレビューできます。",
+		previewAfterFinish: "エンコード完了後に、ここで再生を確認できます。",
 		initialManifestTimeout:
 			"初回の再生準備を時間内に確認できませんでした。入力の送出と公開バッファーを確認し、再生を再試行してください。",
 		waitingForFirstSegment:
@@ -1261,21 +1255,21 @@ export const ja = {
 		dashUnsupported: "このブラウザは DASH 再生に対応していません。",
 		corsCheckTitle: "再生の前提条件",
 		corsOk:
-			"バケットの CORS 設定はこのページを許可し、range 系ヘッダーも公開しています。CORS は原因ではありません。",
+			"バケットの CORS 設定では、このページからのアクセスと Range 関連のヘッダー公開が許可されています。",
 		corsNoRules:
-			"バケットに CORS 設定がありません。プレイヤーはマニフェストとセグメントを XHR で取得するため、このページのオリジンを許可する必要があります。公開読み取りだけでは不十分です。",
+			"バケットに CORS 設定がありません。ブラウザからマニフェストとセグメントを取得するには、このページのオリジン（ドメインなど）を許可する必要があります。ファイルの公開設定だけでは再生できません。",
 		corsOriginNotAllowed:
 			"{origin} からの GET を許可する CORS ルールがないため、再生開始前にすべての取得がブロックされます。",
 		corsRangeHeaderNotAllowed:
-			"CORS 設定が Range リクエストヘッダーを許可していません。バイト範囲を要求するプレイヤーはプリフライトされ、バケットがそれを拒否します。",
+			"CORS 設定で Range リクエストヘッダーが許可されていません。ファイルの一部を取得する再生方式では、ブラウザの事前確認リクエストが拒否されます。",
 		corsMissingExposeHeaders:
 			"CORS 設定で {headers} が公開されていません。必要なレスポンスヘッダーはプレイヤーにより異なるため、この結果だけでは影響を否定できません。Access-Control-Expose-Headers に追加し、ブラウザのネットワークログでマニフェストとセグメントの取得を確認してください。",
 		corsMissingExposeHeadersAdvisory:
 			"CORS 設定で {headers} が公開されていません。ただし、オープンソース版 HLS プレビューの hls.js は、このヘッダーが公開されていない状態でも再生できます。この項目は参考情報であり、今回の再生失敗の原因とは判定していません。",
 		corsDeclaredBase:
-			"このバケットには認証情報側で公開ベース URL が宣言されているため、再生はそのホスト経由になります。本チェックが読むのはオリジンバケットの CORS 設定ですが、宣言されたホストがバケットの前段にある CDN なのか(その場合、この設定はプレイヤーに適用されません)、バケット自身のアドレスなのか(その場合はまさにこの設定が適用されます)を判別できません。推測を避けるため、判定は行いません。宣言先がバケット自身であれば、このバケットの CORS 設定こそ確認すべき対象です。CDN やカスタムドメインであれば、そちら側の CORS を確認してください。",
+			"再生には、認証情報に設定した公開ベース URL を使います。ここで確認したのは元のバケットの CORS 設定です。URL がバケットを直接指す場合はこの設定を、CDN や別ドメインを指す場合は配信先の CORS 設定を確認してください。どちらを指すかは自動判定していません。",
 		corsUnknownDriver:
-			"このプロバイダの CORS 設定はまだ読み取れないため、CORS が原因かどうかは判定できません。",
+			"このストレージサービスの CORS 設定は読み取れないため、CORS が原因かどうかは判定できません。",
 		corsUnknownForbidden:
 			"この認証情報にはバケットの CORS 設定を読む権限(s3:GetBucketCORS)がないため、CORS が原因かどうかは判定できません。",
 		corsUnknownNoBucket:
@@ -1294,7 +1288,7 @@ export const ja = {
 		reasonSftpNoHttp:
 			"SFTP 出力は HTTP で配信されません。前段のオリジンにパスをコピーして使用してください。",
 		reasonNoBuckets:
-			"この認証情報は HTTP で参照できるバケットを持たないため、再生 URL は存在しません。",
+			"この認証情報には HTTP で参照できるバケットがないため、再生 URL を作成できません。",
 		reasonMissingConfig:
 			"公開 URL の組み立てに必要な {field} が、認証情報に設定されていません。",
 		reasonBadBaseUrl:
@@ -1346,16 +1340,16 @@ export const ja = {
 		ptCaptureFailed: "取得に失敗しました: {error}",
 		ptFromRun: "実行終了時に取得 — {at}",
 		ptFromBackfill: "Bitmovin から後追いで取得 — {at}",
-		ptScanStreamsListed: "列挙したストリーム数",
+		ptScanStreamsListed: "一覧から取得したストリーム数",
 		ptScanResultsCaptured: "取得した結果数",
-		ptScanMuxingsListed: "列挙した muxing 数",
-		ptScanTemplatesListed: "列挙したテンプレート数",
+		ptScanMuxingsListed: "一覧から取得した muxing 数",
+		ptScanTemplatesListed: "一覧から取得したテンプレート数",
 		ptScanTemplatesDeclared: "宣言されたテンプレート数",
 		ptScanUnattributed: "帰属先不明",
 		ptScanConfigErrors: "コーデック設定の読取り失敗数",
-		ptScanDetailLabel: "スキャン内訳 — 列挙数と取得数",
+		ptScanDetailLabel: "取得結果の内訳",
 		ptIncomplete:
-			"このスキャンは一覧の途中で打ち切られました。以下の段が全てとは限りません。",
+			"一覧の取得を途中で終了したため、すべてのレンディションを表示できていない可能性があります。",
 		ptConfigErrors:
 			"コーデック設定 {count} 件を読み取れなかったため、該当行にパラメータは表示されません。",
 		ptNoResults:
@@ -1368,7 +1362,7 @@ export const ja = {
 		ptColMuxing: "Muxing",
 		ptPathTitle:
 			"このレンディションが実際に出力されたパスです。エンコード完了後に確定します。",
-		ptDrmPathTitle: "このレグの {type} DRM が書き込む暗号化出力",
+		ptDrmPathTitle: "この出力で {type} DRM を使って保存する暗号化ファイル",
 		/* Include the object path in each copy button name so assistive technology can distinguish them. */
 		ptCopyPath:
 			"レンディション {rendition}・{muxing} の出力パスをコピー: {path}",
@@ -1398,7 +1392,7 @@ export const ja = {
 		collapseRowNamed: "{rendition} の詳細を隠す",
 		collapseRow: "詳細を隠す",
 		inputFiles: "入力ファイル",
-		deletedCredential: "削除済みの資格情報",
+		deletedCredential: "削除済みの認証情報",
 		storageIo: "ストレージ入出力",
 		storageInputs: "読み込み元",
 		storageOutputs: "書き込み先",
@@ -1459,12 +1453,12 @@ export const ja = {
 		noResources: "このジョブのリソースはまだ記録されていません。",
 		copyAsCurl: "cURL としてコピー",
 		resourceId: "リソース ID",
-		requeuing: "キューに再投入しています…",
-		retryResume: "リトライ(再開)",
+		requeuing: "再実行を準備しています…",
+		retryResume: "中断した処理を再開",
 		creating: "作成しています…",
-		rerunAsNew: "新規ジョブとして再実行（リトライ）",
+		rerunAsNew: "新しいジョブとして再実行",
 		copyAndEdit: "設定をコピーして編集",
-		retryFailed: "リトライに失敗しました",
+		retryFailed: "再試行に失敗しました",
 		alreadyTerminal: "このジョブは既に完了またはキャンセルされています。",
 		auxConfigLabel: "{key} — 全設定",
 		auxOutputs: "サムネイル・スプライト・キーフレーム",
@@ -1496,50 +1490,50 @@ export const ja = {
 	storage: {
 		title: "ストレージブラウザ",
 		locationPresets: "保存先プリセット",
-		selectCredential: "資格情報を選択…",
+		selectCredential: "認証情報を選択…",
 		//  (UX-02e): the option suffix for a credential this screen
 		// cannot browse — was a hard-coded English "(not browsable)".
 		notBrowsableSuffix: "（この画面から参照できません）",
-		credential: "資格情報",
+		credential: "認証情報",
 		bucket: "バケット",
 		bucketAccessDenied:
-			"この資格情報はこのバケット(コンテナ)で拒否されました。別のバケットにスコープされているか、このバケットの一覧権限が無い可能性があります。バケット一覧はアカウント全体を返すため、ここに出ていても開けないことがあります。別のバケットを選ぶか、権限を持つ資格情報を使ってください。",
+			"この認証情報ではバケット（コンテナ）にアクセスできません。別のバケット専用の認証情報か、このバケットを参照する権限がない可能性があります。一覧に表示されてもアクセスできるとは限りません。別のバケットを選ぶか、権限のある認証情報を使ってください。",
 		credentialRejected:
-			"拒否されたのはバケットではなく資格情報そのものです。アクセスキーとシークレットを確認してください(フォームは書き込み専用なので、打ち間違えたシークレットは読み返せません)。あわせてこのマシンの時刻も確認してください — 15 分以上ずれていると拒否されます。資格情報を再入力するのが通常の対処です。",
-		bucketListDenied: "この資格情報ではバケット一覧を取得できません。",
+			"認証情報が拒否されました。アクセスキーとシークレットを確認し、必要なら登録し直してください。保存済みのシークレットは再表示できません。また、アプリが動く環境の時刻が15分以上ずれていないか確認してください。",
+		bucketListDenied: "この認証情報ではバケット一覧を取得できません。",
 		browseUnsupported:
-			"この資格情報では、この画面からストレージを参照できません。バケット名とオブジェクトパスを手動で入力するか、参照可能なストレージ資格情報を選択してください。",
-		noAccess: "(この資格情報では権限なし)",
-		findCredentialFor: "開ける資格情報を探す:",
-		searchingCredentials: "他の資格情報を試しています…",
-		credentialCanOpen: "この資格情報で開けます:",
+			"この認証情報ではストレージを参照できません。バケット名とオブジェクトパスを直接入力するか、参照できるストレージ認証情報を選択してください。",
+		noAccess: "（この認証情報ではアクセスできません）",
+		findCredentialFor: "アクセスできる認証情報を探す:",
+		searchingCredentials: "他の認証情報を確認しています…",
+		credentialCanOpen: "アクセスできる認証情報:",
 		noCredentialCanOpen:
-			"他の資格情報でもこのバケットは開けませんでした。このバケットにスコープされた鍵が必要です。",
+			"他の認証情報でもこのバケットにアクセスできませんでした。このバケットへのアクセス権がある認証情報を登録してください。",
 		noCredentialCanOpenTruncated:
-			"試した範囲の資格情報では開けませんでした。上限に達したため全ては試していません。",
+			"確認した範囲では、アクセスできる認証情報が見つかりませんでした。確認件数の上限に達したため、すべては調べていません。",
 		bucketName: "バケット名",
 		bucketNamePlaceholder: "バケット名",
-		listingBuckets: "バケットを一覧しています…",
+		listingBuckets: "バケット一覧を取得しています…",
 		bucketListingUnavailable: "バケット一覧を取得できません",
 		noBucketsListed:
-			"この資格情報で一覧できるバケットがありません。アカウントにバケットが無いか、このキーの権限では見えません。",
+			"この認証情報で参照できるバケットがありません。バケットが未作成か、一覧を取得する権限がない可能性があります。",
 		open: "開く",
 		useCurrentPrefix: "現在のプレフィックスを出力先にする",
-		prefixBreadcrumb: "プレフィックスのパンくず",
-		credentialsLoadFailed: "ストレージ資格情報を読み込めませんでした。",
+		prefixBreadcrumb: "現在のフォルダー階層",
+		credentialsLoadFailed: "ストレージ認証情報を読み込めませんでした。",
 		loadMoreFailed: "追加の読み込みに失敗しました:",
 		tryAgain: "再試行してください",
 		listFailed: "オブジェクト一覧の取得に失敗しました",
 		presetSaveFailed: "プリセットの保存に失敗しました",
 		pickBucket: "参照するバケットを選択または入力してください。",
-		pickCredential: "参照を開始するにはストレージ資格情報を選択してください。",
+		pickCredential: "参照するストレージの認証情報を選択してください。",
 		size: "サイズ",
 		modified: "更新日時",
 		useAsOutput: "出力先に使う",
 		useAsInput: "入力に使う",
 		inspect: "検査",
 		emptyPrefix:
-			"表示するものがありません。プレフィックスが空か、絞り込みで除外されています。",
+			"表示するファイルがありません。このパスにファイルがないか、絞り込み条件に一致していません。",
 		filterByName: "名前で絞り込み",
 		filterByExtension: "拡張子で絞り込み",
 		extPlaceholder: "拡張子 (mp4)",
@@ -1556,11 +1550,11 @@ export const ja = {
 	},
 	inspect: {
 		requesting: "検査を要求しています…",
-		probing: "解析中:オブジェクトの先頭を上限付きで読み取っています…",
+		probing: "解析中:ファイルの先頭を、読み取り上限まで取得しています…",
 		container: "コンテナ",
 		bitrate: "ビットレート",
 		streams: "ストリーム",
-		rawJson: "生 JSON(ffprobe の全出力)",
+		rawJson: "JSON（ffprobe の全出力）",
 		requestFailed: "検査の要求に失敗しました",
 		inspecting: "検査しています…",
 		reinspect: "再検査",
@@ -1588,7 +1582,7 @@ export const ja = {
 		measureMethodDefault: "標準",
 		measureMethodFrameIndex: "フレーム番号・BT.709・10-bit",
 		measureMethodHint:
-			"フレーム番号による比較にはクラウド実行と既存MP4出力が必要です。標準とは異なるスコア世代になります。",
+			"フレーム番号による比較にはクラウド実行と既存のMP4出力が必要です。計測条件が異なるため、標準方式のスコアとは分けて比較してください。",
 		measureSelectJob: "計測する完了済みジョブを選択してください。",
 		measureJobsEmpty: "完了済みのジョブがありません。",
 		measureJobsLoadFailed: "完了済みジョブを取得できませんでした。",
@@ -1664,14 +1658,15 @@ export const ja = {
 		executionProfilesUnavailable:
 			"クラウド設定を取得できませんでした。ローカルで計測できます。",
 		executionCloudReport: "クラウド · {profile} · 予算 USD {budget}",
-		staleScoringGeneration: "計測世代 {version} — 過小評価",
+		staleScoringGeneration:
+			"旧計測方式 {version} — スコアが低く出る場合があります",
 		subsampledBadge: "{stride} フレームごと — 最小値はサンプル値",
 		mixedScoringGenerations:
-			"これらのレポートは異なる世代のパイプラインで計測されており({generations})、数値は比較できません。世代 1 は 2026-08-11 のタイムスタンプ修正より前で、品質を過小評価します(同一エンコードで修正前 23.08、修正後 84.21)。このグラフを品質差として読む前に、古いレポートを再実行してください。",
+			"レポート間で計測方式のバージョンが異なります（{generations}）。バージョン1にはタイムスタンプのずれでスコアが低く出る問題があるため、そのまま比較できません。古いレポートを再計測してください。",
 		mixedModels:
-			"これらのレポートは異なる VMAF モデルで計測されているため({models})、このグラフは 2 つのエンコードではなく 2 つの視聴条件を重ねて表示しています。モデルの違いは些細な差ではありません。同一のペアで実測したところ、vmaf_v1.0.16_3d0h は 83.01、vmaf_v1.0.16_3d0h_2160 は 92.44 で、モデルだけで 9.4 ポイント差が出ました。同じモデルのレポート同士で比較するか、各曲線を個別に読んでください。",
+			"レポート間で使用したVMAFモデルが異なります（{models}）。モデルは想定する視聴条件によって変わるため、同じ映像でもスコアに差が出ます。同じモデルで計測したレポートを比較するか、各グラフを個別に確認してください。",
 		mixedSubsampling:
-			"これらのレポートはフレームの間引き幅が異なります(n_subsample {strides})。そのため最小値は比較できません。間引きありのレポートの最小値は「サンプルの中での最悪フレーム」であり、フル精度のレポートの最小値は「実際の最悪フレーム」です。プール後の平均値はほぼ変わらないため、この違いは見落としやすいです。最小値や調和平均を品質差として読む前に、フル精度で再計測してください。",
+			"レポート間でフレームを間引く間隔が異なります（n_subsample {strides}）。間引いたレポートの最小値は、計測したフレーム内の最小値です。全フレームの最小値とは比較できません。最小値や調和平均を比較する場合は、間引きなしで再計測してください。",
 		title: "VMAF ラボ",
 		compareSelected: "選択したレポートを比較",
 		loadFailed: "VMAF レポートを読み込めませんでした。",
@@ -1713,57 +1708,57 @@ export const ja = {
 		noRenditionResults: "このレポートはレンディション結果なしで完了しました。",
 		loadingReport: "VMAF レポートを読み込んでいます",
 		windowedVmaf: "区間別 VMAF",
-		pooledSummary: "集計サマリ",
+		pooledSummary: "集計結果",
 		confidence: "信頼度",
 		offsetFrames: "オフセット(フレーム)",
 		reasonZerosDominate:
-			"{frames} フレーム中 {zeros} フレームが 1.0 未満({percent}%)。これは品質の測定値ではなく、位置ずれ・異常な入力・モデルの想定を大きく外れたラダーのいずれかです",
+			"{frames} フレーム中 {zeros} フレームが1.0未満です（{percent}%）。位置ずれ、入力の異常、モデルの想定を大きく外れたラダーが考えられるため、この値だけで画質を判断できません",
 		reasonZerosOrdinary:
 			"{frames} フレーム中 {zeros} フレームが 1.0 未満({percent}%)。ハードカットを含む素材では通常の範囲です",
 		reasonNoZeroFrames: "1.0 未満のフレームはありません",
 		reasonP25BelowOne:
-			"第1四分位が 1.0 未満です。少なくとも全体の 1/4 のフレームが 0 点であり、品質の測定値として成立していません",
+			"第1四分位数が1.0未満です。少なくとも全体の1/4のフレームが1点未満のため、画質の比較に使う前に入力と同期を確認してください",
 		reasonHarmonicCollapsed:
 			"算術平均は 0 でないのに調和平均が 0 に落ちています。0 点のフレームが少なくとも 1 つあり、この集計値は比較に使えません",
-		reasonSound: "分布は健全に見えます",
-		reasonTooFewRungs: "ビットレートを持つ段が 2 つ未満です",
-		reasonAllStepsMove:
-			"意味のあるビットレート差はすべてスコアを動かしています",
-		reasonFlatSteps: "スコアが動かなかったビットレート差: {steps}",
+		reasonSound: "スコアの分布に大きな偏りは見られません",
+		reasonTooFewRungs: "ビットレートを指定したレンディションが2つ未満です",
+		reasonAllStepsMove: "ビットレートの差に応じてスコアも変化しています",
+		reasonFlatSteps:
+			"ビットレートを変えてもスコアが変わらなかった区間: {steps}",
 		comparisonUnknown: "比較条件が不明",
 		hintHarmonicMean:
-			"調和平均(n ÷ Σ(1/score))。低スコアのフレームを算術平均より強く罰します — 体感品質のための標準的な VMAF 集約値です。",
+			"調和平均（n ÷ Σ(1/score)）です。算術平均よりも低スコアのフレームの影響を強く受けるため、画質が落ちる区間を確認するときに使います。",
 		hintLow1Percent:
-			"VMAF 1% low: 最悪 1% のフレームの平均。持続的なワーストケース品質 — 最も荒れた区間で視聴者が気づくものです。",
+			"VMAFスコアが低い方から1%のフレームの平均です。画質が大きく落ちる区間の傾向を確認できます。",
 		hintMean:
-			"全フレームの VMAF スコアの算術平均。高いほど良好です。通常は 0–100 ですが上限で切られてはいません — 大画面向けにチューニングされたモデルは同じバイト列で 100 を超えることがあり、軸はクリップせず伸びます。見出しの「平均品質」の数値です。",
+			"全フレームのVMAFスコアの算術平均です。高いほど良好で、通常は0〜100ですが、モデルによっては100を超える場合があります。グラフは100で切らずに表示します。見出しの「平均品質」に表示する値です。",
 		hintMinMax: "クリップ全体での単一フレーム VMAF の最小値と最大値。",
 		hintPercentiles:
 			"ソート済みフレームスコアのパーセンタイル。p5 = スコアがこの値を下回るフレームは全体の 5% のみ。低い側の裾(p1/p5/p10)は平均より体感品質を左右します。",
 		hintPsnr:
 			"ピーク信号対雑音比(dB、Y プレーン)。VMAF より単純な忠実度指標で、高いほど良好ですが体感品質との相関は弱めです。完全に同一のフレームは 100 dB で頭打ちになります。",
 		hintWorstFrame:
-			"スコア最低の単一フレーム(フレーム番号 + VMAF)。クリップ中で最も深い落ち込みで、時系列グラフにマークされます。",
+			"VMAFスコアが最も低いフレームの番号とスコアです。時系列グラフ上にも表示します。",
 		hintAlignmentConfidence:
-			"同期(位置合わせ)は ±1 フレームのベストエフォートです: B フレームの並べ替えとエンコーダのパイプライン遅延により、対応する出力フレームは 1 フレーム早く/遅く現れることがあります。1 フレームずれてもほぼ正しい VMAF になります(隣接フレームは非常に似ているため)が、厳密な一致の証明にはなりません。オフセットは ±1 の精度として扱い、この信頼度でゲートしてください。",
+			"位置合わせには±1フレーム程度の誤差が残る場合があります。Bフレームの並べ替えやエンコーダ内の処理遅延により、対応するフレームが前後するためです。厳密な一致を保証するものではないため、比較に使う前に同期の信頼度を確認してください。",
 		hintLoopMap:
-			"キャプチャしたウィンドウをループするソースへ写像し直したものです。各エントリはソースループの折り返し 1 回分: それが始まる出力フレーム、再開するソースフレーム(最初の部分ループを除き 0)、ループ番号。≥3 ループのキャプチャなら ≥3 エントリになります。",
+			"収録した区間と、繰り返し送出した元動画の対応表です。各行は1回のループに対応し、そのループが始まる出力フレーム、元動画の開始フレーム、ループ番号を示します。元動画の開始フレームは、最初の途中区間を除いて0になります。",
 		hintFrameOffset:
 			"復元されたフレームオフセット: source_index(i) = (i + offset) mod F。キャプチャウィンドウの先頭におけるループソースの位相を、フレーム毎シグネチャの相互相関でフレーム精度まで詰めたものです。",
 		geometryUpscaled: "{rendition}p → {reference}p({upscale}× アップスケール)",
 		geometryNative: "{rendition}p → {reference}p(等倍)",
 		summaryModelPart: "モデル {model}。",
 		summaryCrossResolution:
-			"解像度をまたぐ VMAF: {rendition}p のレンディションを {upscale}× にアップスケールし、{reference}p のソースと比較しました。{model}攻めたラダーではスコアが低く出るのは想定内で、それ自体はエンコーダの欠陥を意味しません。",
+			"異なる解像度のVMAF比較: {rendition}p のレンディションを {upscale} 倍に拡大し、{reference}p の元動画と比較しました。{model}解像度やビットレートを低くした構成ではスコアが下がることがあり、それだけでエンコーダの不具合とは判断できません。",
 		summaryNative:
-			"等倍解像度の VMAF: {rendition}p を {reference}p のソースと比較しました。{model}ここでのスコア低下は実際の品質問題です。",
+			"VMAF比較: {rendition}p を {reference}p の元動画と比較しました。{model}低いスコアには、画質の低下だけでなく比較条件も影響します。判断する前に、参照動画、フレームの同期、モデルを確認してください。",
 		summaryUnknownWithModel:
 			"{model} で採点しました。ソースの解像度が不明なため、比較条件を提示できません。",
 		summaryUnknownNoModel:
 			"比較条件が不明です: レンディション側もソース側も高さが記録されていません。",
 		degenerateBadge: "品質値として成立していません",
 		ladderFlatBadge: "ラダーが分離していません",
-		coarseAnchor: "粗アンカー",
+		coarseAnchor: "おおまかな同期位置",
 		coarseFullSearch: "全域探索",
 		loopOffsetMap: "ループオフセット表",
 		loop: "ループ",
@@ -1771,7 +1766,7 @@ export const ja = {
 		sourceFrameStart: "ソース側の開始フレーム",
 		confidenceCaveat: "同期信頼度の注意",
 		alignmentUnverified:
-			"整列未検証 — このスコアは診断用であり、品質評価の確定値ではありません。計算完了はフレーム位置合わせの確認完了を意味しません。",
+			"フレームの位置合わせは未確認です。このスコアは診断用で、画質評価の確定値ではありません。計算が完了しても、位置合わせが確認できたとは限りません。",
 		alignmentExcludedFrames: "信頼度による除外フレーム",
 		alignmentMaskedFrames: "ループ境界のマスクフレーム",
 		frameOffset: "フレームオフセット",
@@ -1819,7 +1814,7 @@ export const ja = {
 		channels: "チャンネル",
 		createChannel: "チャンネルを作成",
 		createFailed: "チャンネルを作成できませんでした。",
-		credential: "Webhook クレデンシャル",
+		credential: "Webhook 認証情報",
 		disable: "無効化",
 		disabled: "無効",
 		enable: "有効化",
@@ -1829,18 +1824,18 @@ export const ja = {
 		kind: "種別",
 		labelFilter: "ラベルフィルタ(任意)",
 		labelFilterHint:
-			"カンマ区切り。いずれかのラベルを持つジョブにマッチします。空欄なら選択した種別の全イベントに配送します。",
+			"ラベルをカンマで区切って入力します。いずれかのラベルを持つジョブが対象です。空欄なら、選択した種別のすべてのイベントを通知します。",
 		needsWebhookCredential:
-			"NOTIFICATION_WEBHOOK クレデンシャルがありません — 先に 設定 → クレデンシャル で作成してください(URL は vault 管理です)。",
+			"通知用の認証情報（NOTIFICATION_WEBHOOK）がありません。先に「設定 → 認証情報」で登録してください。Webhook URL は暗号化して保存します。",
 		noChannelsYet: "チャンネルはまだありません。",
-		noDeliveriesYet: "配送履歴はまだありません。",
-		recentDeliveries: "最近の配送(キューから読取)",
-		selectCredential: "クレデンシャルを選択…",
+		noDeliveriesYet: "通知の送信履歴はまだありません。",
+		recentDeliveries: "最近の通知履歴",
+		selectCredential: "認証情報を選択…",
 	},
 	verification: {
 		heading: "検証ラン",
 		caption:
-			"ハーネスの実行 1 回につき 1 行です。どのコードとスキーマに対して走ったか、どのソースのバイト列を読んだか、各シナリオの判定、そして生成されたレポートのシールを記録します。",
+			"検証を実行するたびに、使用したコードとスキーマ、入力ファイル、各シナリオの判定、レポートの改ざん確認情報を記録します。",
 		loading: "検証ランを読み込んでいます…",
 		loadFailed: "検証ランを読み込めませんでした。",
 		noRuns: "記録された検証ランはまだありません。",
@@ -1850,7 +1845,7 @@ export const ja = {
 		colStarted: "開始",
 		colCommit: "コミット",
 		colCounts: "判定",
-		notSealed: "シール未取得",
+		notSealed: "改ざん確認情報なし",
 		drift: "スキーマ乖離",
 		backToList: "検証ラン一覧へ戻る",
 		fingerprint: "フィンガープリント",
@@ -1880,19 +1875,19 @@ export const ja = {
 		colEncoding: "エンコード",
 		colChecks: "チェック",
 		colPlanSha: "プランのダイジェスト",
-		providerReadback: "プロバイダーからの読み戻し",
+		providerReadback: "エンコードサービスでの状態確認",
 		noProviderReadback:
-			"プロバイダーからの読み戻しはありません。このランが放棄したエンコードはありませんでした。",
+			"エンコードサービスでの状態確認はありません。この検証では、終了処理が必要なエンコードはありませんでした。",
 		cleanup: "クリーンアップ",
-		noCleanup: "終了状態まで追い込む必要のあったジョブはありません。",
+		noCleanup: "終了を確認する必要があるジョブはありません。",
 		providerTerminal: "プロバイダー側の終了",
 		viewJob: "エンコードジョブを開く",
-		seal: "レポートのシール",
+		seal: "レポートの改ざん確認情報",
 		reportPath: "レポートのパス",
 		reportSha: "レポートの SHA-256",
-		sealValue: "シール",
-		sealAlgorithm: "シール方式",
-		sealKeyId: "シール鍵 ID",
+		sealValue: "確認値（シール）",
+		sealAlgorithm: "確認方式",
+		sealKeyId: "確認用の鍵 ID",
 		evidenceVersion: "証跡形式のバージョン",
 		retentionUntil: "証跡の保持期限",
 		sealedAt: "シール取得日時",
@@ -1936,12 +1931,12 @@ export const ja = {
 	},
 	heartbeatWebhook: {
 		slots:
-			"エンコードの hook が上限の 5 件です。他アプリの登録は削除せず、Poll を継続します。",
+			"エンコードのWebhook登録が上限の5件に達しています。他のアプリの登録は削除せず、定期的な状態確認を続けます。",
 		ambiguous:
-			"登録結果が未確定です。再試行・削除前にプロバイダ側の所有関係を確認中です。Poll を継続します。",
+			"登録結果を確認中です。再試行や削除の前に登録先の所有関係を確認し、それまでは定期的な状態確認を続けます。",
 		providerFailed:
-			"プロバイダへの登録に失敗しました。アカウント権限と接続を確認してください。Poll を継続します。",
-		budget: "次の登録処理枠を待っています。Poll を継続します。",
+			"Webhookを登録できませんでした。アカウントの権限と接続を確認してください。定期的な状態確認は継続します。",
+		budget: "Webhookの登録待ちです。定期的な状態確認を続けます。",
 		modeLabel: "登録方式",
 		modeLegacy: "従来のアカウント単位",
 		title: "heartbeat webhook の間隔",
@@ -2079,7 +2074,7 @@ export const ja = {
 		dashboard: "ダッシュボード",
 		notFound: "ページが見つかりません",
 		notifications: "通知",
-		signIn: "サインイン",
+		signIn: "ログイン",
 		setup: "初回セットアップ",
 		changePassword: "パスワード変更",
 		users: "ユーザー",
@@ -2099,36 +2094,36 @@ export const ja = {
 		templates: "テンプレート",
 		settings: "設定",
 		bitmovinAccounts: "Bitmovin アカウント",
-		storageCredentials: "資格情報",
+		storageCredentials: "認証情報",
 		infrastructure: "インフラ",
 		live: "ライブ",
 		webhooks: "Webhook",
 	},
 	lifecycle: {
 		/* Lifecycle durations shown here must be measured and include their sample counts. */
-		aria: "エンコーダライフサイクル",
+		aria: "エンコーダの起動から停止まで",
 		s1: "① 起動要求",
 		s1Hint:
-			"エンコーダ未起動。手動起動またはスケジュールの START 行が起動します。",
+			"エンコーダはまだ起動していません。手動で開始するか、スケジュールの START の時刻を待ってください。",
 		s1ErrorHint:
-			"チャンネルは ERROR — Bitmovin 側でエンコーダが残っている可能性があります(停止で解放)。ここからの起動はプロビジョニング再開です。",
+			"チャンネルは ERROR 状態です。Bitmovin 側にエンコーダが残っている可能性があるため、解放するには停止してください。ここから開始すると、エンコーダの準備を再開します。",
 		/* Provider encoding state stays unknown until confirmed. A finished encoding must not imply that resources may still be running. */
 		providerUnknownHint:
-			"プロバイダー状態を確認できません — この配信のエンコーディングに対する Bitmovin の状態読み取りが失敗しています(最終確認 {at}、未確認 {since} から)。30 秒ごとに再確認します。停止は可能です。起動・再起動・スレート・SCTE-35・タイムシフト・新規フィーダーは再確認できるまで待機します。",
+			"Bitmovin からエンコーダの状態を取得できません（最終確認 {at}、{since} から未確認）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
 		providerUnobservedHint:
 			"Bitmovin エンコーダ状態の初回確認を待っています。確認できるまではオンエア中と判定しません。",
 		providerUnknownNever: "なし",
 		providerTerminalHint:
-			"Bitmovin がこの配信のエンコーディングを {status} と報告しました({at})— エンコーダは解放済みで再起動できません。起動すると新しい配信(新しいエンコーダ・新しい Ingest 座標)が始まります。",
+			"Bitmovin から {status} が報告されました（{at}）。エンコーダは解放済みで再起動できません。開始すると、新しいエンコーダと入力エンドポイントで次の配信を準備します。",
 		s2: "② インスタンス起動中",
 		s2Hint:
 			"Bitmovin がエンコーダインスタンスを起動中です。起動時間はリージョンや構成で異なります。過去の実測は設定の「ライブ」で確認できます。まだ入力は受信できません。",
 		s3: "③ 入力待機",
 		s3Hint:
-			"エンコーダは起動済みで listen 中。まだ何も配信されていません — スレートも出力も「接続済みの入力」が必要です。フィード(またはフィーダー)を接続してください。スレート素材の登録はこの段階から可能です。",
+			"エンコーダは起動済みで、入力の接続を待っています。スレートの差し込みや出力の生成には入力が必要です。送信元を接続するか、ファイル入力を開始してください。この段階からスレート素材を登録できます。",
 		s4: "④ 入力接続 — エンコード・配信中",
 		s4Hint:
-			"パイプライン稼働中: 蓋被せ(スレート挿入)はここから有効。稼働・給送中チャンネルでの再生プローブは開始 31.8 秒で初回セグメントを観測(n=1。接続→初回セグメント自体は未計測)。",
+			"入力を受信し、エンコードしています。スレートを差し込めます。再生できるかどうかは、出力の生成とプレビューで確認してください。",
 		s7: "⑦ 停止",
 		s7Hint:
 			"停止中は完了を待ってください。終了したエンコーディングは再起動できません。停止後は「新しい配信を開始」で新しいエンコーダを作成します。差し込み素材は新しい配信で再登録します。",
@@ -2176,7 +2171,7 @@ export const ja = {
 			filterActive: "稼働中",
 			filterError: "要対応",
 			filterErrorHint:
-				"「要対応」は ERROR 状態だけではありません。健全性列が示す異常 — 発生中のアラート、応答が止まったハートビート、失敗したフィーダー、更新が止まった出力 — もすべて含みます。",
+				"ERROR 状態に加え、アラート発生中、ハートビートの更新停止、ファイル入力の失敗、出力の更新停止も「要対応」に含みます。",
 			filterSoon: "まもなく予定あり",
 			sort: "並び順",
 			sortAnomaly: "異常を優先",
@@ -2214,35 +2209,35 @@ export const ja = {
 		push: {
 			pollOnly: "定期的な状態確認のみ（エンコーダ未対応）",
 			perEncoding: "エンコード単位＋customData",
-			pendingVersion: "対応する実選択版の確認待ち（Poll 継続）",
+			pendingVersion: "実際のエンコーダバージョンを確認中（定期取得を継続）",
 			actualVersion: "実際のエンコーダバージョン",
 			registration: "Webhook 登録",
 			registered: "登録済み（受信確認は別）",
-			notRegistered: "未登録・Poll 継続",
-			retired: "登録は退役済み",
-			title: "署名検証済み Push テレメトリー",
+			notRegistered: "未登録・定期取得を継続",
+			retired: "登録の使用を終了",
+			title: "署名を確認した Push 通知の計測値",
 			receiving: "新しいサンプルを確認",
 			unavailable: "受信情報を確認できません",
-			never: "表示できる Push 計測なし",
+			never: "表示できる Push 通知の計測値がありません",
 			stale: "最近のサンプル更新を確認できません",
 			clockSkew: "受信時刻を確認してください",
 			ended: "終了した配信の受信履歴",
 			receivedAt: "表示サンプルの初回受信",
-			sampledAt: "プロバイダーのサンプル時刻",
+			sampledAt: "Bitmovin の計測時刻",
 			observedCadence: "異なる直近 2 サンプルの受信間隔",
 			configuredCadence: "現在の送信間隔設定（実測ではありません）",
 			off: "無効",
 			sampleInput: "サンプル内の入力状態",
 			boundary:
-				"署名検証済み通知の重複を除いた計測です。受信・サンプル時刻とも 90 秒以内の Push を優先し、なければ新しい Poll を使います。受信時刻は表示サンプルの初回受信です。表示中の RUNNING 画面は約 15 秒ごとに更新します。",
+				"署名を確認した通知から、重複を除いて表示します。受信・計測ともに 90 秒以内の Push 通知を優先し、なければ定期取得（Poll）の新しい値を使います。受信時刻は、そのサンプルを最初に受け取った時刻です。RUNNING の画面を開いている間は約 15 秒ごとに更新します。",
 			sampleFresh:
-				"プロバイダーのサンプル時刻は直近です。Push の受信成功だけでは再生成功を保証しません。",
+				"最近の計測値です。Push 通知を受信できていても、再生できるとは限りません。",
 			sampleStale:
-				"プロバイダーのサンプルが古いため、現在の入力状態ではありません。",
+				"計測から時間が経っているため、現在の入力状態は確認できません。",
 			sampleUnknown:
 				"サンプル時刻が不明なため、現在の入力状態は確認できません。",
 			sampleSkew:
-				"プロバイダーのサンプル時刻が未来です。現在の入力状態は確認できません。",
+				"計測時刻が未来になっています。現在の入力状態は確認できません。",
 			sampleHistorical: "終了時のサンプルです。現在の入力状態ではありません。",
 		},
 		health: {
@@ -2258,14 +2253,14 @@ export const ja = {
 					"出力更新の停止を検出しました。出力先の詳細を確認してください。",
 				OUTPUT_UNKNOWN: "入力接続を確認しました。出力更新は未確認です。",
 				PUSH_UNAVAILABLE:
-					"Push の更新を確認できないため Poll で表示中です。配信停止を意味しません。",
+					"Push 通知の更新を確認できないため、定期取得した状態を表示しています。配信停止を示すものではありません。",
 				HEALTHY:
 					"入力接続・出力更新を確認しました。視聴側の再生を保証するものではありません。",
 			},
 			source: "状態の根拠: {source}",
 			qualityTitle: "入力品質の注意 {count} 件",
 			qualityHint:
-				"入力の観測値に基づく目安です。平均フレーム数・最大 GOP は直近1分で、出力設定の違反判定ではありません。",
+				"入力の計測値に基づく目安です。平均フレームレートと最大 GOP 間隔は直近 1 分間の値で、出力設定の違反を示すものではありません。",
 			packetStalled:
 				"入力 {streamIndex} ({mediaType}): {ageSeconds} 秒パケットなし。送信元を確認してください。",
 			rateLow:
@@ -2303,7 +2298,7 @@ export const ja = {
 			timelineTitle: "配信タイムライン",
 			stateHistory: "観測された状態",
 			stateHistoryDescription:
-				"入力・エンコーダ・出力の観測状態が続きます。状態が変わらない中間の観測は省略しています。未観測の時刻の状態は推測しません。",
+				"入力・エンコーダ・出力の状態を時系列で表示します。状態に変化がない途中の記録は省略します。記録がない時刻の状態は補いません。",
 			stateHistoryEmpty: "状態の観測データはありません。",
 			eventStartRequested: "開始要求",
 			eventQueued: "キュー投入",
@@ -2317,7 +2312,7 @@ export const ja = {
 			pushLanesTruncated:
 				"状態線に反映した Push は直近の受信分だけです。それ以前の区間は Poll で描いています。",
 			pushCoverage:
-				"Push イベントは直近300受信内の最大100件です。全履歴や映像反映の証明ではありません。",
+				"直近 300 件の受信から、最大 100 件の Push イベントを表示しています。すべての履歴ではなく、映像への反映を確認するものでもありません。",
 			pushTruncated:
 				"直近の通知・イベントを表示中。以前の記録は受信ログで確認できます。",
 			pushLogLink: "Push受信ログへ",
@@ -2380,7 +2375,7 @@ export const ja = {
 		destinationStorage: "オブジェクトストレージ",
 		destinationAkamaiMsl: "Akamai MSL",
 		outputDestinationHelp:
-			"オブジェクトストレージは、資格情報を登録済みのバケットにセグメントを書き出します。Akamai MSL は、Akamai 側で払い出されたストリームへ直接配信します。",
+			"オブジェクトストレージを選ぶと、認証情報を登録したバケットにセグメントを書き出します。Akamai MSL は、Akamai から発行されたストリームへ直接配信します。",
 		mslStreamId: "ストリーム ID",
 		mslStreamIdHelp: "このイベント用に Akamai が発行した数値のストリーム ID。",
 		mslEventName: "イベント名",
@@ -2388,10 +2383,10 @@ export const ja = {
 			"Akamai のイベント名。払い出された文字列をそのまま入力します。",
 		mslStreamFormat: "ストリーム形式",
 		mslStreamFormatHelp:
-			"これは表示上のラベルではなくエンコード構成への制約です。DASH は fMP4 セグメントと DASH マニフェスト、HLS は TS セグメントと HLS マニフェスト、CMAF は fMP4 と両方のマニフェストが必要です。食い違いは送信前にプラン内容の欄に表示されます。",
+			"形式に合うセグメントとマニフェストを設定してください。DASH は fMP4 と DASH、HLS は TS と HLS、CMAF は fMP4 と HLS・DASH の両方が必要です。設定の不一致は、送信前にプラン内容の欄に表示されます。",
 		mslVersion: "MSL プロトコルバージョン",
 		mslVersionHelp:
-			"MSL5 は encoder 2.283.0 以降が必要で、セグメント命名の文法も異なります(本アプリが自動で導出します)。EOL 2026-12-31 まで MSL4 が既定です。AKAMAI_MSL 資格情報の Digest publishing は MSL5 専用で、MSL4 出力に設定すると Bitmovin が拒否します。",
+			"MSL5 にはエンコーダ 2.283.0 以降が必要です。MSL4 と異なるセグメントの命名規則は、このアプリで自動設定します。MSL4 のサポート終了日（2026-12-31）までは MSL4 が既定です。AKAMAI_MSL 認証情報の Digest publishing は MSL5 専用で、MSL4 の出力に設定すると Bitmovin が拒否します。",
 		startResume: "チャンネルを開始(再開)",
 		stop: "チャンネルを停止",
 		restart: "チャンネルを再起動",
@@ -2414,7 +2409,7 @@ export const ja = {
 		duplicate: "設定をコピーして編集",
 		stopChannelTitle: "チャンネルを停止しますか?",
 		stopChannelBody:
-			"このチャンネルのライブエンコーディングを停止します。接続中のファイル入力セッションも一緒に停止します。視聴者はストリームを失います。",
+			"このチャンネルのライブエンコードと、接続中のファイル入力セッションを停止します。視聴中の配信も終了します。",
 		stopChannel: "チャンネルを停止",
 		restartChannelTitle: "チャンネルを再起動しますか?",
 		restartChannelBody:
@@ -2445,42 +2440,42 @@ export const ja = {
 		corruptVideo: "映像破損",
 		corruptAudio: "音声破損",
 		noHistory:
-			"heartbeat の履歴がまだありません。30 秒ごとの収集が進むとグラフが埋まります。",
-		loadingHistory: "heartbeat 履歴を読み込んでいます",
+			"ハートビートの履歴はまだありません。30 秒ごとに取得した状態をグラフに表示します。",
+		loadingHistory: "ハートビート履歴を読み込んでいます",
 	},
 	pushLog: {
 		title: "Push Heartbeat 受信ログ",
-		hint: "最新の受信が先頭です。署名検証済みの受信を再送も含めて1通知1行で表示します。過去の計測記録であり、現在の正常性や再生の証明ではありません。詳細は許可した計測項目のみです。Poll履歴・エクスポートは下段に分離しています。",
-		sampledAt: "Provider 計測時刻",
+		hint: "新しい受信から順に、署名を確認した通知を 1 行ずつ表示します。再送分も含みます。過去の計測記録のため、現在の状態や再生可否は判断できません。詳細には表示対象の計測項目のみを含みます。定期取得（Poll）の履歴とエクスポートは下段で確認できます。",
+		sampledAt: "Bitmovin 計測時刻",
 		receivedAt: "アプリ受信時刻",
-		auto: "現在の稼働runのログを前景で開いている間、最新受信を2秒ごとに更新します。",
+		auto: "現在の配信のログを開いている間は、最新の受信を 2 秒ごとに表示します。",
 		paused:
-			"自動更新は停止中です（閉じたログ・終了済み・過去run・過去ページ・背景）。",
+			"自動更新は停止中です。ログを閉じた場合、終了済みの配信や過去のページを表示している場合、画面が非表示の場合は更新しません。",
 		inspecting:
 			"詳細を確認中のため更新を停止しています。すべての詳細を閉じると再開します。",
 		details: "詳細",
-		empty: "このrunの署名検証済みPush受信は保存されていません。",
+		empty: "この配信には、署名を確認した Push 通知の受信記録がありません。",
 		older: "古い受信",
 		latest: "最新の受信へ",
 		retry: "再試行",
-		current: "現在のrun（再起動に追従）",
-		poll: "Poll履歴・エクスポート（約30秒間隔の計測）",
+		current: "現在の配信（再起動後も切り替えて表示）",
+		poll: "定期取得の履歴・エクスポート（約 30 秒間隔）",
 	},
 	heartbeatLog: {
-		title: "heartbeat ログ",
-		summary: "配信ごとのPush受信・Poll履歴を分けて確認",
+		title: "ハートビートログ",
+		summary: "配信ごとの Push 通知と定期取得の履歴",
 		run: "配信",
-		operatorOnly: "heartbeat ログはオペレーター向けです。",
+		operatorOnly: "ハートビートログはオペレーター向けです。",
 		noRuns:
-			"このチャンネルはまだ配信していないため、heartbeat ログはありません。",
-		loading: "heartbeat ログを読み込んでいます…",
-		empty: "この配信の heartbeat サンプルは保持されていません。",
+			"このチャンネルはまだ配信していないため、ハートビートログはありません。",
+		loading: "ハートビートログを読み込んでいます…",
+		empty: "この配信のハートビート計測値は保存されていません。",
 		eventsTitle: "エンコーダのイベント(最新サンプル時点)",
 		noEvents: "この配信でエンコーダはイベントを報告していません。",
 		export: "JSON をエクスポート(管理者)",
 		summaryLine:
 			"定期取得の要約: {samples} サンプル · 入力接続 {connectedMinutes} 分 · 警告/エラー {warnings} 件（Push受信は別表示）",
-		rowsPruned: "サマリー前にサンプルが削除済み",
+		rowsPruned: "元の計測値は削除済みです",
 		time: "時刻",
 		ingest: "入力",
 		incomingMbps: "受信 Mbps",
@@ -2495,7 +2490,7 @@ export const ja = {
 		rowsLoaded: "{count} 行を読み込み済み",
 		loadMore: "さらに読み込む",
 		columnsHint:
-			"受信 Mbps と fps は最初の映像ストリームの実測 incomingBitrate と rate、キーフレームは keyFrameIntervalAvg / Max、マニフェスト経過は取得時刻と最新 HLS マニフェスト更新の差、イベントはその取得で新たに現れたものだけです。すべてのプロバイダー項目は JSON で確認できます。",
+			"受信 Mbps と fps は、最初の映像ストリームの incomingBitrate と rate です。キーフレーム間隔は keyFrameIntervalAvg / Max、マニフェスト経過は取得時刻から最新 HLS マニフェストの更新時刻を引いた値です。イベントは、その取得で新たに確認したものだけを表示します。取得した全項目は JSON で確認できます。",
 	},
 	dvr: {
 		resetTitle: "タイムシフトをリセット(RUNNING 時のみ)",
@@ -2528,7 +2523,7 @@ export const ja = {
 		streamKey: "ストリームキー",
 		srtHost: "SRT ホスト",
 		srtPort: "SRT ポート",
-		passphraseCredential: "パスフレーズの資格情報",
+		passphraseCredential: "パスフレーズの認証情報",
 		hideForm: "フォームを隠す",
 		revealFill: "ストリームキーを取得",
 		revealing: "取得中…",
@@ -2539,7 +2534,7 @@ export const ja = {
 			"ストリームキーの情報を取得できません。チャンネルの Bitmovin アカウントを確認するか、入力先の準備完了までお待ちください。",
 		revealNone:
 			"このエンコーディングに割り当て済みのストリームキーがまだありません — チャンネルが RUNNING になると発行されます。",
-		revealFailed: "ストリームキーを開示できませんでした。",
+		revealFailed: "ストリームキーを取得できませんでした。",
 		revealMultiple:
 			"このエンコーディングには複数のストリームキー（プライマリとバックアップ）が割り当てられています。設定 → ライブ → ストリームキーで対象を選んで取得してください。",
 		staticKeyHint:
@@ -2547,9 +2542,9 @@ export const ja = {
 		newSession: "ファイル入力を開始",
 		/* A pushing feeder without a matching heartbeat is unconfirmed, not healthy; the worker can reconnect unbound sessions. */
 		pushingUnconfirmed:
-			"フィーダーは PUSHING を報告していますが、エンコーダが受信していることを確認できる最近の heartbeat がありません。heartbeat が届くまで push は未確認として扱ってください。",
+			"ファイルの送出側は PUSHING を報告していますが、エンコーダで受信できているかを確認できる最近のハートビートがありません。受信を確認できるまで、入力状態は未確認です。",
 		pushingNotBound:
-			"フィーダーは push 中ですが、エンコーダはまだ入力をバインドしていません。自動的に新しい接続で再試行します。長く続く場合は Ingest 座標とソースファイルを確認するか、フィーダーを作り直してください。",
+			"ファイルを送出していますが、エンコーダはまだ入力として認識していません。新しい接続で自動的に再試行します。長く続く場合は、入力エンドポイントとソースファイルを確認するか、ファイル入力セッションを作り直してください。",
 		inputConfirmed:
 			"入力を確認しました。ライブエンコーダがこのファイル入力を受信しています。",
 		prefilledFromEncoderIp:
@@ -2564,16 +2559,16 @@ export const ja = {
 		startSession: "ファイル入力を開始",
 		/* Immediate and scheduled switching both use two phases. */
 		switchFromActive:
-			"稼働中のフィーダーから切り替える(先に準備、その後入れ替え)",
+			"新しい素材を準備してから、現在のファイル入力と切り替える",
 		switchFromActiveHint:
-			"新しいソースのダウンロード・probe・稼働中フィードとの整合確認を済ませてから停止に入ります。稼働中のフィーダーは新しいソースの準備が完了してから停止し、旧プッシュの終了が確認されてから新しいプッシュを開始します — 同一 ingest への二重プッシュより無音区間を優先します。",
+			"新しい素材のダウンロード・検査・現在の入力との互換性確認が終わってから、現在の送出を停止します。停止を確認した後に新しい素材を送出するため、切り替え時に中断が生じます。同じ入力先への二重送信は行いません。",
 		switchSession: "準備して切り替え",
 		phaseStaging: "準備中",
 		phaseReady: "準備完了 — 切替待ち",
 		stopBeforeDeleting: "削除する前にセッションを停止してください",
 		deleteTitle: "このフィーダーセッションを削除しますか?",
 		deleteConfirm:
-			"このセッションと、そのログ末尾・ループ境界を削除します。送出中のプロセスには手を付けません。取り消せません。",
+			"このセッションと、保存したログ・ループの切り替わりの記録を削除します。送出中のプロセスは停止しません。この操作は取り消せません。",
 		stopTitle: "フィーダーセッションを停止しますか?",
 		stopBody:
 			"送出を停止します(停止要求 → 5 秒待機 → 強制終了)。セッションは 1 回限りです。もう一度流すには新しいセッションを作成してください。",
@@ -2628,11 +2623,11 @@ export const ja = {
 	},
 	feederError: {
 		ingestUnsatisfied:
-			"ソースがチャンネルの取り込み要件を満たせません: {detail}。エンコーダは接続を受け付けても何も publish しません。",
+			"素材がチャンネルの入力要件を満たしていません: {detail}。エンコーダが接続を受け付けても、配信の出力は生成されません。",
 		sourceMismatch:
-			"ソースがこのチャンネルの取り込み内容と一致しません（{origin}）— エンコーダは属性の変化を警告して入力を切断し、プレイリストは静止した映像のまま進み続けます:\n{differences}",
+			"素材がこのチャンネルの入力と一致しません（比較対象: {origin}）。エンコーダが入力の変化を検出して切断するため、プレイリストが更新されても映像が止まる場合があります:\n{differences}",
 		slatePosition:
-			"スレートクリップがライブストリームと一致しません: Bitmovin はストリーム位置 0 に映像ストリームを必要としますが、このファイルはそこに {found} を持っています。コンテンツは READY として登録された後、挿入時に失敗します。",
+			"スレート素材のストリーム順がライブ入力と一致しません。Bitmovin では先頭（位置 0）に映像ストリームが必要ですが、このファイルでは {found} です。READY として登録されても、差し込み時に失敗します。",
 		slateMismatch:
 			"スレートクリップがライブストリームと一致しないため、コンテンツが READY として登録されても挿入時（オンエア時）に失敗します:\n{differences}",
 		// C36: stills are admitted since ; renders only for rows refused before that.
@@ -2640,7 +2635,7 @@ export const ja = {
 			"静止画スレートを登録できませんでした。JPG または PNG を使い、差し込み時に表示時間を指定してください。",
 		/* Identify the comparison source substituted into the source-mismatch message. */
 		origin: {
-			runSource: "この run が開始したソース",
+			runSource: "この配信の開始時の素材",
 			heartbeat: "エンコーダの最新ハートビート",
 		},
 	},
@@ -2737,9 +2732,9 @@ export const ja = {
 		standDownInspectionFailed:
 			"ファイルの検査に失敗しました。理由はストレージブラウザーの「検査」で確認してください。",
 		standDownNoComparableAttribute:
-			"このチャンネルの入力参照には、このファイルと比較できる属性がありません。何も検証されていません。",
+			"このチャンネルの入力情報に、ファイルと比較できる項目がないため、互換性を確認できませんでした。",
 		comparedOn: "比較した属性: {compared}",
-		notComparable: "この参照では比較できない属性: {attributes}",
+		notComparable: "入力情報がなく比較できない項目: {attributes}",
 		leadingSlashStripped: "先頭のスラッシュを除去し、{path} として登録します。",
 		imageNotice:
 			"静止画です。無音で、黒背景に収めて表示されます。差し込み時に表示時間を指定してください。",
@@ -2887,22 +2882,22 @@ export const ja = {
 	},
 	prose: {
 		storageIntro:
-			"設定 → 資格情報 に登録した資格情報でバケットを参照します。アクセスの確認、URI のコピー、そして",
-		storageCredentialsHint: "設定 → 資格情報 で追加または確認してください。",
+			"設定 → 認証情報 に登録した情報でバケットを参照します。アクセスの確認、URI のコピー、",
+		storageCredentialsHint: "設定 → 認証情報 で追加または確認してください。",
 		inspectBounded:
-			"プレビューは意図的に上限付きです。先頭を上限まで読み、必要なら上限付きの再読み取りを 1 回だけ行います。オブジェクト全体は読みません。したがってインデックスがファイル末尾にあるコンテナ(faststart でない MP4)はここでは扱えません。その場合は",
+			"プレビューでは、ファイルの先頭を上限まで読み取ります。必要に応じて 1 回だけ読み直しますが、ファイル全体は読みません。再生に必要な索引が末尾にある MP4（faststart ではないファイル）は扱えないため、その場合は",
 		noHeartbeatSample:
-			"heartbeat のサンプルがまだありません。30 秒ごとに RUNNING の全チャンネルから収集します。",
+			"ハートビートの計測値はまだありません。RUNNING の全チャンネルから 30 秒ごとに取得します。",
 		heartbeatDeltas:
-			"差分は 30 秒ポーリングごとの値です。エンコーダのカウンタはエンコーディング開始からの累積で、下に累計を表示しています。開始直後の初回ポーリングは仕様上ゼロ差分になります。",
+			"差分は、30 秒ごとの取得で前回から増えた値です。エンコーダのカウンタは開始からの累計で、下段に表示しています。初回は比較対象がないため、差分を 0 として表示します。",
 		noConnectEvents:
-			"最新の heartbeat に接続/切断イベントはありません。正常なストリームでは初回接続以降は発生しません。",
+			"最新のハートビートに接続・切断イベントはありません。接続が維持されていれば、新たなイベントは発生しません。",
 		captureVmafIntro:
-			"直近の出力区間をキャプチャし、ループしているフィーダーのソースと libvmaf で比較採点します。疑似ライブ同期エンジンがループオフセットを復元し、信頼度を報告し、ドリフトを検出します。実行を開始するとレポートが開きます。",
+			"直近の出力を切り出し、ファイル入力の元映像と libvmaf で比較します。ループ内の対応位置を特定し、同期の確かさと時間のずれも調べます。開始するとレポートが開きます。",
 		captureVmafNoFeeder:
 			"接続中の疑似ライブフィーダーがありません。VMAF キャプチャには、参照としてループ元の MP4 が必要です。先にフィーダーセッションを開始してください。",
 		deliveryMirrorPathsFollowPrimary:
-			"ミラーは主出力と同じファイルを同じパスに書き出します。異なるのはバケットだけです。プレフィックスを別に指定する項目はありません。プランはミラーを出力への参照として記録し、各ファイルは主出力が使うパスへそのまま複製されます。主出力のフォルダを変更すれば、ミラーもそれに追従します。",
+			"ミラーは、主出力と同じファイルを別のバケットの同じパスに保存します。ミラー専用のフォルダーは指定できません。主出力のフォルダーを変更すると、ミラーの保存先も同じように変わります。",
 		esamNoAccount:
 			"このチャンネルに Bitmovin アカウントが紐付いていません。ESAM の挿入は利用できません。",
 		esamIntro:
@@ -2919,11 +2914,11 @@ export const ja = {
 			"ステップログにプロビジョニング済みのマニフェスト ID がありません。キューは全マニフェストに送られます。",
 		dnsLoadFailed: "DNS マッピングを読み込めませんでした",
 		dnsNoMapping:
-			"このエンコーディングの DNS マッピングはありません。上の Ingest 先情報にコントリビューションエンコーダを向けるか、設定 → ライブ でマッピングを作成してください。",
+			"このエンコーディングには DNS マッピングがありません。送信側のエンコーダに上の入力エンドポイントを設定するか、設定 → ライブ でマッピングを作成してください。",
 		noLoopBoundaries:
-			"ループ境界がまだ記録されていません。ソースが 1 周した時点で最初の 1 件が入ります。",
+			"ループの切り替わりはまだ記録されていません。素材の最初の再生が終わり、先頭に戻ると記録されます。",
 		vmafRunning:
-			"VMAF 実行中… libvmaf パイプラインが完了するとフレームスコアがここに表示されます。",
+			"VMAF を計測中です。完了すると、フレームごとのスコアがここに表示されます。",
 		noLadderMetadata:
 			"これらのレンディションにビットレート/高さのメタデータがありません。ラダー表示は利用できません。",
 		noLadderMetadataSelected:
@@ -2932,13 +2927,13 @@ export const ja = {
 		noSavedPresets:
 			"保存済みプリセットがまだありません。ウィザードでプランを作り、「プリセットとして保存」でここに保存してください。",
 		presetGalleryIntro:
-			"代表的な配信構成をすぐに試せるサンプルです。資格情報、入力パス、保存先を確認して使用してください。読み込むと、フォームで表現できる場合はウィザードのフォームに反映し、そうでない高度なシナリオではプレースホルダのチェックリスト付きでインポート済みプランモードを開きます。",
+			"代表的な配信構成のサンプルです。認証情報、入力パス、保存先を確認して使用してください。フォームで扱える構成は、読み込むと各項目に反映されます。それ以外はプランのインポート画面を開き、置き換えが必要な項目を表示します。",
 		noEncodingYet:
 			"このジョブにはまだ Bitmovin のエンコーディングがありません。エンコーディングが作成されると実行時操作が使えるようになります。",
 		lastStatusExplainer:
 			"このエンコーディングについて最後に観測した状態です。TRANSFER_ERROR はエンコーディングは完了したが出力のアップロードが失敗したことを意味します。転送だけを再試行することはできないため、復旧方法は再実行です。",
 		noAccountAttached:
-			"このジョブに Bitmovin アカウントが紐付いていません。インフラを一覧するには再度紐付けてください。",
+			"このジョブに Bitmovin アカウントが関連付けられていません。インフラの一覧を表示するには、アカウントを設定し直してください。",
 	},
 	settings: {
 		basic: "基本設定",
@@ -2953,7 +2948,7 @@ export const ja = {
 		acquiring: "取得しています…",
 		addAccount: "アカウントを追加",
 		addBitmovinAccount: "Bitmovin アカウントを追加",
-		addCredential: "資格情報を追加",
+		addCredential: "認証情報を追加",
 		addDnsMapping: "DNS マッピングを追加",
 		addId: "ID を追加",
 		addMapping: "マッピングを追加",
@@ -2961,23 +2956,23 @@ export const ja = {
 		addPoolIdManually: "プール ID を手入力",
 		addRegionSettings: "リージョン設定を追加",
 		addS3AkamaiOciGcsAzure:
-			"S3 / Akamai / OCI / GCS / Azure の資格情報を追加すると、バケットの参照と Bitmovin の入力・出力の作成ができます。",
+			"S3 / Akamai / OCI / GCS / Azure の認証情報を追加すると、バケットの参照や、Bitmovin の入力・出力の作成に使えます。",
 		addSchedule: "スケジュールを追加",
 		addYourBitmovinApiKeyTo:
 			"Bitmovin API キーを追加するとエンコーディングを作成できます。",
 		addYourFirstAccount: "最初のアカウントを追加",
-		addYourFirstCredential: "最初の資格情報を追加",
+		addYourFirstCredential: "最初の認証情報を追加",
 		adding: "追加しています…",
 		advancedLegacyStaticAccessKeysDeprecated:
 			"詳細設定(レガシー):静的アクセスキー(Bitmovin では非推奨)",
 		apiKey: "API キー",
 		apiKeyWriteOnlyOrgId:
-			"API キー(書き込み専用)、組織 ID、エンコーダバージョンの固定、既定リージョン、疎通確認。",
+			"API キー、組織 ID、エンコーダバージョン、既定リージョンを設定し、接続を確認できます。保存した API キーは読み出せません。",
 		apiKeysAreEncryptedAtRest:
 			"API キーは保存時に暗号化され、サーバー側でのみ使用されます。",
 		apiToken: "API トークン",
 		apiTokensCaption:
-			"スクリプト / CI 用の Bearer マシントークン — ここで発行、表示は一度きり",
+			"スクリプトや CI から使う Bearer トークンを発行します。値を表示できるのは発行時の 1 回だけです。",
 		awsAccountNumber: "AWS アカウント番号",
 		bitmovinAccount: "Bitmovin アカウント",
 		bitmovinAccounts: "Bitmovin アカウント",
@@ -2995,25 +2990,25 @@ export const ja = {
 		cloudConnectAwsGceAzureAkamai:
 			"Cloud Connect (AWS / GCE / Azure / Akamai / OCI) とリージョン設定、ライブ Ingest 用の静的 IP、開始・停止スケジュール付きの事前起動エンコーダプール。",
 		cloudConnectBringYourOwnCloud:
-			"Cloud Connect(自社クラウド持ち込み)、ライブ Ingest 用の静的 IP、事前起動エンコーダプール:いずれもサーバー側でプロキシします。クラウドの秘密情報は Bitmovin へ渡すだけで、ここには保存しません。",
+			"自社のクラウド環境を使う Cloud Connect、ライブ入力用の静的 IP、事前起動エンコーダプールを管理します。操作はサーバー経由で行います。クラウドの秘密情報は Bitmovin に送信し、このアプリには保存しません。",
 		cloudRegion: "クラウドリージョン",
 		compartmentOcid: "コンパートメント OCID",
 		copyTheseIntoYourContributionEncoder:
-			"これらをコントリビューションエンコーダに設定してください。このエンコーディングを管理チャンネルとして取り込む機能はまだ実装されていません。",
+			"送信側のエンコーダに、この接続情報を設定してください。このエンコーディングをアプリの管理対象チャンネルに追加することはできません。",
 		couldNotListPools: "プールを一覧できませんでした",
 		createAPoolOfPreStarted:
-			"事前起動したライブエンコーディングのプールを作成すると、即座にライブ開始できます。",
+			"事前に起動したライブエンコーダのプールを作成し、配信開始時の起動待ち時間を減らします。",
 		createAPoolOfStandingEncoders:
 			"常時起動エンコーダのプールを作成すると、エンコード開始の待ち時間を削減できます。",
 		createAccount: "アカウントを作成",
-		createCredential: "資格情報を作成",
+		createCredential: "認証情報を作成",
 		createPool: "プールを作成",
 		createPrewarmedEncoderPool: "事前起動エンコーダプールを作成",
 		createStandbyPool: "スタンバイプールを作成",
 		creating: "作成しています…",
-		credentialsMode: "資格情報のモード",
+		credentialsMode: "認証方法",
 		credentialsPassThroughToBitmovinThis:
-			"資格情報は Bitmovin へ渡すだけです。このアプリは保存しません。",
+			"認証情報は Bitmovin に送信し、このアプリには保存しません。",
 		defaultCloudRegion: "既定のクラウドリージョン",
 		diskSize: "ディスクサイズ",
 		dnsHostname: "DNS ホスト名",
@@ -3022,20 +3017,20 @@ export const ja = {
 		dynamicPoolGrowsOnDemandCapped:
 			"動的プール:需要に応じて増加し、上限は 10 インスタンスです",
 		editBitmovinAccount: "Bitmovin アカウントを編集",
-		editCredential: "資格情報を編集",
+		editCredential: "認証情報を編集",
 		emailPrivateKeyProject: "メールアドレス + 秘密鍵 + プロジェクト",
 		encoderVersion: "エンコーダバージョン",
 		encodingId: "エンコーディング ID",
 		encodingTemplate: "エンコーディングテンプレート",
 		encodingsEventLogAndAcquire: "エンコーディング、イベントログ、取得操作。",
 		encodingsKeptPreStartedSoA:
-			"チャンネルを数秒でライブにできるよう、事前に起動しておくエンコーディングです。",
+			"配信開始時の待ち時間を減らすため、事前に起動しておくエンコーダです。",
 		encryptedAtRestAes256Gcm:
-			"エンコーダが認証に使うものすべて — ストレージ、DRM、ライブ入力、連携。保存時に暗号化 (AES-256-GCM)。秘密情報は書き込み専用で、置き換えはできますが読み出しはできません。アクセス確認とバケット参照は ライブラリ → ストレージ から。",
+			"ストレージ・DRM・ライブ入力・外部連携に使う認証情報を管理します。秘密情報は AES-256-GCM で暗号化して保存します。保存後は置き換えのみ可能で、読み出せません。アクセス確認とバケットの参照は「ライブラリ → ストレージ」で行えます。",
 		failedToLoadAccounts: "アカウントを読み込めませんでした",
 		failedToLoadBitmovinAccounts: "Bitmovin アカウントを読み込めませんでした",
-		failedToLoadCredentials: "資格情報を読み込めませんでした",
-		failedToLoadDeliveries: "配信を読み込めませんでした。",
+		failedToLoadCredentials: "認証情報を読み込めませんでした",
+		failedToLoadDeliveries: "通知履歴を読み込めませんでした。",
 		failedToLoadDnsMappings: "DNS マッピングを読み込めませんでした",
 		failedToLoadEncodings: "エンコーディングを読み込めませんでした",
 		failedToLoadPools: "プールを読み込めませんでした",
@@ -3050,18 +3045,18 @@ export const ja = {
 		freesEveryKeyHeldByOne:
 			"1 つのエンコーディングが保持する全キーを解放します。解放はキー単位ではなくエンコーディング単位で行われます。",
 		giveALiveEncoderAStable:
-			"ライブエンコーダに安定したホスト名を与え、コントリビューションエンコーダが",
+			"ライブエンコーダに固定のホスト名を割り当て、送信側のエンコーダが",
 		gpuInstances: "GPU インスタンス",
 		iamRoleName: "IAM ロール名",
 		invalidDate: "日付が不正です",
 		leaveTheValueBlankAndBitmovin:
-			"値を空欄にすると Bitmovin が安全なランダムキーを生成します。推奨はこちらです。",
+			"空欄にすると Bitmovin がランダムなキーを生成します。通常は空欄のままで構いません。",
 		loadMore: "さらに読み込む",
 		loading: "読み込んでいます…",
 		loadingAccounts: "アカウントを読み込んでいます",
 		loadingBitmovinAccounts: "Bitmovin アカウントを読み込んでいます",
 		loadingCloudConnectAccounts: "Cloud Connect アカウントを読み込んでいます",
-		loadingCredentials: "資格情報を読み込んでいます",
+		loadingCredentials: "認証情報を読み込んでいます",
 		loadingDnsMappings: "DNS マッピングを読み込んでいます",
 		loadingPoolDetails: "プールの詳細を読み込んでいます",
 		loadingPoolEventLog: "プールのイベントログを読み込んでいます",
@@ -3080,9 +3075,9 @@ export const ja = {
 		noApiCallsRecordedYetTry:
 			"API 呼び出しの記録がまだありません。Bitmovin アカウントで「疎通確認」を試してください。",
 		noBitmovinAccountsYet: "Bitmovin アカウントがまだありません",
-		noCredentialsYet: "資格情報がまだありません",
+		noCredentialsYet: "認証情報がまだありません",
 		noDeliveriesYetWebhookEventsAppear:
-			"配信がまだありません。Bitmovin が送信すると webhook イベントがここに表示されます。",
+			"通知履歴はまだありません。Bitmovin から Webhook 通知を受信すると、ここに表示されます。",
 		noDnsMappingsYet: "DNS マッピングがまだありません",
 		noEventsLogged: "記録されたイベントはありません。",
 		noPoolsInThisAccountCreate:
@@ -3105,19 +3100,19 @@ export const ja = {
 		prewarmedPools: "事前起動プール",
 		privateKey: "秘密鍵",
 		projectId: "プロジェクト ID",
-		recentDeliveries: "直近の配信",
+		recentDeliveries: "最近の通知履歴",
 		regionSettings: "リージョン設定",
 		regionSettingsHaveNoUpdateApi:
 			"リージョン設定に更新 API はありません。変更するには削除して作り直してください。",
 		replaceSecretMaterial: "秘密情報を差し替え",
 		requestAFixedIngestAddressFor:
-			"ライブエンコーディング用に固定の Ingest アドレスを要求します。",
+			"ライブエンコーダへの入力に使う固定 IP アドレスを取得します。",
 		requestFailed: "リクエストに失敗しました",
 		requestIp: "IP を要求",
 		requestStaticIp: "静的 IP を要求",
 		requesting: "要求しています…",
 		reserveAKeyToGiveA:
-			"キーを予約すると、コントリビューションエンコーダに安定した Ingest 用資格情報を渡せます。",
+			"ストリームキーを予約すると、送信側のエンコーダで同じキーを使い続けられます。",
 		reserveKey: "キーを予約",
 		ingestPointWord: "Ingest ポイント",
 		reserveStreamKey: "ストリームキーを予約",
@@ -3128,7 +3123,7 @@ export const ja = {
 		reserving: "予約しています…",
 		resourceGroupId: "リソースグループ ID",
 		revealKey: "キーを表示",
-		rotateApiKey: "API キーをローテーション",
+		rotateApiKey: "API キーを交換",
 		s3CompatEndpoint: "S3 互換エンドポイント:",
 		mslEdgeCandidateLegend: "MSL4 配信 URL の候補",
 		mslEdgeCandidateExplain:
@@ -3163,7 +3158,7 @@ export const ja = {
 		// : renamed from "Storage credentials". The screen has
 		// always held DRM, live-ingest and integration secrets too, and a title
 		// that contradicts its contents teaches operators to distrust the labels.
-		storageCredentials: "資格情報",
+		storageCredentials: "認証情報",
 		groupStorage: "ストレージ",
 		groupDrm: "DRM",
 		groupLiveIngest: "ライブ入力",
@@ -3185,13 +3180,13 @@ export const ja = {
 		theMappingBelongsToOneLive:
 			"マッピングは 1 つのライブエンコーディングに属します。Bitmovin にアカウントレベルの作成 API はありません。",
 		timedStartStopActionsUtcBitmovin:
-			"時刻指定の START/STOP 動作(UTC。Bitmovin は秒を無視します)。",
+			"指定時刻に開始・停止します（UTC）。Bitmovin は秒を処理しないため、分単位の指定になります。",
 		triggerTime: "実行時刻",
 		unassignByEncoding: "エンコーディング単位で割り当て解除",
 		unassignStreamKeys: "ストリームキーの割り当てを解除",
 		unassigning: "解除しています…",
 		webhookEventsAreReceivedAndVerified:
-			"webhook イベントは診断用に受信・検証されます。ジョブとチャンネルの状態はポーリングで駆動しており、webhook 駆動のディスパッチは有効ではありません。",
+			"Webhook 通知を受信・検証し、診断用に保存します。ジョブとチャンネルの処理は、定期的な状態取得に基づいて進みます。Webhook 通知を起点とする処理は有効になっていません。",
 		webhookPayload: "webhook ペイロード",
 		workspaceConfiguration: "ワークスペースの設定。",
 	},
@@ -3247,34 +3242,34 @@ export const ja = {
 		historicalNotice:
 			"過去の調査スナップショットです。現在の API 対応率・利用可否、実行検証や課金検証を示すものではありません。",
 		noMatches: "条件に一致するエンドポイントはありません。",
-		loading: "カバレッジセンサスを読み込み中…",
-		loadFailed: "カバレッジセンサスの読み込みに失敗しました",
+		loading: "API 対応状況の集計を読み込んでいます…",
+		loadFailed: "API 対応状況の集計を読み込めませんでした",
 		staleWarning:
 			"インストール済み SDK は {installed}、調査対象 SDK は {surveyed} で異なります。このスナップショットは SDK 更新に合わせて更新されていません。",
 		sdkVersion: "インストール済み SDK",
 		surveyedAgainst: "調査対象 SDK: {version}",
-		operationsImplemented: "実装済みオペレーション",
-		createOperations: "create オペレーション",
+		operationsImplemented: "実装済みの API 操作",
+		createOperations: "作成（create）操作",
 		paramsReachable: "操作者が設定可能なパラメータ",
 		provenance:
 			"調査日: {date} · 調査コミット: {repo}。現在の利用可否は、各機能の設定画面で確認してください。",
-		byFamily: "ファミリ別オペレーション",
-		family: "ファミリ",
+		byFamily: "API 分類ごとの操作",
+		family: "API 分類",
 		total: "総数",
 		implemented: "実装済み",
 		substituted: "別経路で提供",
 		notImplemented: "未実装",
 		share: "割合",
-		paramsByFamily: "ファミリ別パラメータ(実装済みファミリ)",
+		paramsByFamily: "API 分類ごとの設定項目（実装済みの分類）",
 		paramsLegend:
-			"wizard/advanced = フォーム項目 · raw-JSON = プラン全体インポートのみ · auto-derived = コンパイラが導出 · not settable = プランスキーマに無く、どの経路でも到達不能",
+			"wizard/advanced = フォームで設定可能 · raw-JSON = プラン全体のインポートでのみ設定可能 · auto-derived = 自動で設定 · not settable = プランに定義がなく、設定不可",
 		fields: "フィールド数",
 		autoDerived: "自動/固定",
-		notSettable: "設定不能",
+		notSettable: "設定不可",
 		endpoints: "全エンドポイント",
 		searchLabel: "エンドポイントを検索",
 		searchPlaceholder: "パス・SDK メソッド・根拠ファイル…",
-		allFamilies: "全ファミリ",
+		allFamilies: "すべての API 分類",
 		allStates: "全状態",
 		matchCount: "{n} 件一致",
 		endpoint: "エンドポイント",
@@ -3286,16 +3281,16 @@ export const ja = {
 		next: "次へ",
 	},
 	settingsBuild: {
-		title: "この画面を配信する Web ビルド",
+		title: "この画面のアプリバージョン",
 		scope:
-			"この Web の情報です。worker、別の Web、Bitmovin エンコーダのバージョンは示しません。",
+			"この画面を表示している Web アプリの情報です。バックグラウンド処理、別の Web アプリ、Bitmovin エンコーダのバージョンは含みません。",
 		version: "アプリバージョン",
 		commit: "コミット",
 		unknown: "不明",
 	},
 	settingsX: {
 		users: "ユーザー",
-		usersCaption: "ロール付きの個人アカウント(ADMIN)",
+		usersCaption: "ユーザーのアカウントと権限を管理します（ADMIN）。",
 		resetQueuesUnreachable:
 			"データのリセットは完了しましたが、待機中の処理を一部消去できませんでした。新しい処理を開始する前に、システム管理者またはサポート窓口へお問い合わせください。",
 		features: "機能",
@@ -3321,16 +3316,16 @@ export const ja = {
 			"hls.js / Shaka Player のプレビューでは Bitmovin Analytics へデータを送信しません。",
 		playerLicenseKey: "Player ライセンスキー",
 		publicClientKeyHint:
-			"公開クライアントキー: 設計上ブラウザへ送る鍵で、Bitmovin 側でドメイン固定。",
+			"ブラウザで使用する公開キーです。Bitmovin 側で利用できるドメインを制限してください。",
 		analyticsLicenseKey: "Analytics ライセンスキー",
 		analyticsKeyHint:
-			"Bitmovin Player でのみ使用します。本番とは別のキーを使い、QA の視聴が視聴者データに混ざらないようにします。",
+			"Bitmovin Player でのみ使用します。本番とは別のキーを使うと、確認用の再生が本番の視聴データに混ざるのを防げます。",
 		playerSaveFailed: "プレイヤー設定の保存に失敗しました。",
 		playerSaved: "保存しました。次のページ読み込みから新しい設定が使われます。",
 		featuresCaption: "この環境で使う機能のオン・オフを切り替えます。",
 		featureQcVmaf: "VMAF ラボと QC",
 		featureQcVmafHint:
-			"既定はオフです。オフの間は VMAF ラボ・ウィザードの QC ゲート編集・ジョブごとの QC 表示が消え、新しい計測も作られず、qc ブロックを含むプランは拒否されます。既存のゲートで停止・失敗しているジョブは解除できるまま(QC パネル・オーバーライド・証跡出力は動きます)。",
+			"既定はオフです。オフにすると VMAF ラボ、品質基準の編集、ジョブごとの品質確認を非表示にし、新しい計測も作成しません。qc 設定を含むプランは使えません。既存の品質基準で停止・失敗したジョブは、引き続き結果の確認、基準を上書きしての再開、証跡の出力ができます。",
 		featuresLoadFailed: "機能設定を読み込めませんでした。",
 		featuresSavedReloadHint:
 			"保存しました。ナビゲーションとウィザードに反映するにはページを再読み込みしてください。",
@@ -3365,7 +3360,7 @@ export const ja = {
 		resetDeletePresets: "プリセット",
 		resetDeleteUsageStatistics: "使用量統計",
 		resetDeleteBitmovinAccounts: "Bitmovin アカウント",
-		resetDeleteCredentials: "資格情報",
+		resetDeleteCredentials: "認証情報",
 		resetDeleteApiTokens: "API トークン",
 		resetDeleteApplicationSettings: "アプリケーション設定",
 		resetDeleteSetupCodes: "初期設定コード",
@@ -3376,12 +3371,12 @@ export const ja = {
 		resetDeletePseudoLiveFeeds: "疑似ライブ配信の履歴",
 		resetDeleteVmafMeasurements: "VMAF 測定と結果",
 		resetDeleteStorageChecks: "ストレージ確認履歴",
-		resetDeleteWatchFolderHistory: "監視フォルダの検知履歴",
+		resetDeleteWatchFolderHistory: "監視フォルダーの検知履歴",
 		resetDeleteAlertHistory: "アラート履歴",
-		resetDeleteWebhookHistory: "Webhook 配信履歴",
+		resetDeleteWebhookHistory: "Webhook 通知履歴",
 		resetDeleteAuditHistory: "操作履歴",
 		resetKeeps:
-			"認証情報、Bitmovin アカウント、ストレージ保存先、プリセット、監視フォルダ、通知、API トークン、ユーザーアカウント、アプリ設定は保持されます。",
+			"認証情報、Bitmovin アカウント、ストレージ保存先、プリセット、監視フォルダー、通知、API トークン、ユーザーアカウント、アプリ設定は保持されます。",
 		resetPreserves:
 			"安全な運用に必要なシステム記録は保持され、削除件数には含まれません。",
 		resetBitmovinNote:
@@ -3391,17 +3386,17 @@ export const ja = {
 		resetBlocked:
 			"エンコーディングまたはライブ処理が実行中です。表示された処理を停止し、停止完了を待ってからデータのリセットを再実行してください。",
 		resetDisarmNote:
-			"監視ルール {count} 件を無効化します。検知履歴も削除されるため、有効のままだと対象プレフィックス配下の全オブジェクトを新規として再検知し、それぞれ課金対象のエンコードを投入します。次の案件を始めるときに再度有効化してください。",
+			"監視ルール {count} 件を無効化します。検知履歴も削除するため、有効のままでは監視先のすべてのファイルを新規とみなし、課金対象のエンコードを作成してしまいます。監視を再開するときに、必要なルールを有効にしてください。",
 		resetBlockedTruncated:
 			"{total} 件中 {shown} 件を表示しています。VOD ジョブ、ライブチャンネル、疑似ライブ配信、VMAF ラボの各画面で残りの処理を完了または停止してください。",
 		resetAuditUnknown:
 			"リセット履歴の保存を確認できませんでしたが、保存されている可能性があります。管理者が確認するまで、下のエンコーディング ID を控えてください。",
 		resetDisarmedList:
-			"無効化した監視ルール: {rules}。次の案件を始めるときに、必要なものを再度有効化してください。",
+			"無効化した監視ルール: {rules}。監視を再開するときに、必要なルールを有効にしてください。",
 		resetAuditMissing:
 			"リセット履歴を保存できませんでした。下のエンコーディング ID を控え、システム管理者またはサポート窓口にお問い合わせください。",
 		resetEncodersRecorded:
-			"Bitmovin のエンコーディング ID を {count} 件、監査証跡に記録しました。迷子のエンコーダが見つかってもここから辿れます。",
+			"Bitmovin のエンコーディング ID を {count} 件、監査証跡に記録しました。後からリソースを確認する際に参照できます。",
 		resetEncodersRecordedTruncated:
 			"Bitmovin のエンコーディング ID {total} 件中 {shown} 件を監査証跡に記録しました。残り {omitted} 件は保存されていません。システム管理者またはサポート窓口へお問い合わせください。",
 		resetProviderPointersHeading:
@@ -3465,15 +3460,15 @@ export const ja = {
 		addProviderCloudConnect: "{provider} Cloud Connect アカウントを追加",
 		awsInfrastructureSuffix: " · AWS インフラ {id}",
 		connectYourOwnProviderAccount:
-			"自社の {provider} アカウントを接続すると、自前のインフラでエンコーディングを実行できます。",
+			"自社の {provider} アカウントを接続すると、そのクラウド環境でエンコードを実行できます。",
 		connectedLatency: "接続成功 · {ms}ms",
 		couldNotListChannels: "このアプリのライブチャンネルを取得できませんでした",
 		deleteProviderAccountNamed:
-			"{provider} アカウント「{name}」を削除しますか? 更新用 API はないため、元に戻すには作り直すしかありません。",
+			"{provider} アカウント「{name}」を削除しますか? 更新 API はないため、変更や復元には再作成が必要です。",
 		deleteStreamKeyAssignedTail:
 			" このキーは現在 ASSIGNED です。割り当てを解除するまで Bitmovin は削除を拒否します。",
 		dnsIntro:
-			"ライブエンコーダに固定のホスト名を与えると、再起動で IP が変わってもコントリビューションエンコーダの向き先を変更する必要がなくなります。",
+			"ライブエンコーダに固定のホスト名を割り当てます。再起動で IP が変わっても、送信側のエンコーダの接続先を変更する必要はありません。",
 		encodingIdCopyLabel: "エンコーディング ID",
 		encodingIdLine: "エンコーディング {id}",
 		encodingWord: "エンコーディング",
@@ -3499,7 +3494,7 @@ export const ja = {
 		releaseStaticIpUsedTail:
 			" このアドレスは現在エンコーディングに USED として使われています。",
 		reservedKeyIntro:
-			"予約済みキーは複数のライブエンコーディングで再利用できるため、コントリビューションエンコーダの設定は 1 つで済みます。Bitmovin は単一エンコーディング用の",
+			"予約済みキーは複数のライブエンコーディングで再利用できるため、送信側のエンコーダでキーを変更する手間を省けます。Bitmovin は単一エンコーディング用の",
 		reservedKeyIntroTail: "キーも発行し、それもここに表示されます。",
 		roleArn: "ロール ARN:",
 		showingAccounts: "アカウント:{shown}",
@@ -3513,17 +3508,17 @@ export const ja = {
 		showingStreamKeys: "ストリームキー:{shown}",
 		shownOfTotal: "{total} 件中 {shown} 件",
 		standbyIntro:
-			"チャンネルを数秒で開始できるよう、事前起動しておくエンコーディングです。待機インスタンスはプールが存在する間、課金され続けます。",
+			"配信開始時の待ち時間を減らすため、事前に起動しておくエンコーダです。待機インスタンスは、プールが存在する間は課金されます。",
 		standbyPoolCounts:
 			"準備完了 {ready} · 準備中 {preparing} · エラー {error} · 目標 {target}",
 		staticIpIntro:
-			"静的 IP は LIVE エンコーディングの作成時に紐づけられます (Encoding.staticIpId)。アドレスのライフサイクルはここで管理し、選択はライブウィザードで行います。",
+			"静的 IP は LIVE エンコーディングの作成時に関連付けます（Encoding.staticIpId）。ここでアドレスを取得・解放し、ライブチャンネルの作成画面で選択します。",
 		templateSuffix: " · テンプレート {name}",
 		webhooks: "Webhook",
 		infrastructure: "インフラ",
 		deleteAccountNamed: "アカウント「{name}」を削除しますか?",
 		deleteCredentialNamed:
-			"資格情報「{name}」を削除しますか? これを使用している保存先プリセットも削除されます。",
+			"認証情報「{name}」を削除しますか? この認証情報を使う保存先プリセットも削除されます。",
 		deleteDnsMapping: "DNS マッピング {name} を削除しますか?",
 		deletePoolNamed: "プール「{name}」を削除しますか?",
 		deleteStreamKeyNamed: "ストリームキー「{name}」を削除しますか?",
@@ -3560,7 +3555,7 @@ export const ja = {
 		eachIpServesOneEncodingAtA:
 			"1 つの IP は同時に 1 つのエンコーディングにしか使えません:すでに USED の IP でエンコーディングを開始すると、そのエンコーディングは ERROR になります。何も参照していないときだけ解放(削除)してください。",
 		eachPoolStartsItsEncodingsFromAn:
-			"各プールはエンコーディングテンプレートからエンコーディングを起動します。プールは targetPoolSize に向けて自動的に補充されるため、不調なインスタンスを 1 つ削除しても安全です。取得すると、そのエンコーディングの Ingest ポイントとマニフェスト URL が渡されます。このアプリで管理チャンネルとして取り込む機能はまだ実装されていないため、座標をコピーして使ってください。",
+			"各プールはテンプレートに従ってエンコーダを起動し、targetPoolSize の台数を保つよう自動で補充します。不調なインスタンスを削除すると、代わりのインスタンスを準備します。取得すると入力エンドポイントとマニフェスト URL が表示されます。このアプリの管理対象チャンネルには追加できないため、接続情報をコピーして使用してください。",
 		edit: "編集",
 		eitherTheWholeServiceAccountJsonOr:
 			"サービスアカウント JSON 全体、またはメール / キー / プロジェクトに分けて指定します",
@@ -3586,9 +3581,9 @@ export const ja = {
 			"英小文字・数字・ハイフン、最大 63 文字",
 		manifest: "マニフェスト",
 		modernPathBitmovinAssumesThisRoleNo:
-			"推奨の方式:Bitmovin がこのロールを引き受けるため、固定キーは不要です",
+			"推奨の方式です。Bitmovin がこのロールを使ってアクセスするため、固定キーは不要です",
 		mustBeASpecificRegionOrExternal:
-			"個別のリージョンを指定してください(または EXTERNAL と Cloud Connect インフラ ID)。AUTO や大陸・プロバイダ単位の集約値は拒否されます",
+			"個別のリージョン、または EXTERNAL と Cloud Connect インフラ ID を指定してください。AUTO や、大陸・クラウドサービス全体を表す値は使えません",
 		mustBeGloballyUniqueAndUnguessableBlank:
 			"全体で一意かつ推測不可能な値にしてください。空欄のほうが安全です",
 		name: "名前",
@@ -3614,13 +3609,13 @@ export const ja = {
 		secretConfigured: "シークレット設定済み",
 		sentAsXTenantOrgIdOn:
 			"すべての API 呼び出しで X-Tenant-Org-Id として送信されます",
-		serviceAccountCredentialsJson: "サービスアカウントの資格情報(JSON)",
+		serviceAccountCredentialsJson: "サービスアカウントの認証情報（JSON）",
 		signature: "署名",
 		signatureUnverified: "未検証",
 		signatureVerified: "検証済み",
 		stableBetaOrAPinnedVersion: "STABLE / BETA、またはバージョン固定",
 		standingInstancesKeptWarmWhileStarted:
-			"STARTED の間、常時ウォーム状態で維持されるインスタンス数",
+			"プールが STARTED の間、起動済みの状態で待機させるインスタンス数",
 		start: "開始",
 		status: "ステータス",
 		stop: "停止",
@@ -3636,9 +3631,9 @@ export const ja = {
 		view: "表示",
 		webhooks: "Webhook",
 		writeOnlyEncryptedAtRestNeverShown:
-			"書き込み専用:保存時に暗号化され、二度と表示されません",
+			"暗号化して保存します。保存後は値を表示できません",
 		writeOnlyPassesThroughToBitmovinNever:
-			"書き込み専用:Bitmovin へ渡されるだけで、ここには保存されません",
+			"Bitmovin に送信し、このアプリには保存しません",
 	},
 	fields: {
 		spekeUrl: "SPEKEエンドポイント",
@@ -3666,7 +3661,7 @@ export const ja = {
 			"AES-128 はちょうど 16 文字、AES-256 はちょうど 32 文字。チャンネル開始時に解決し、プランには保存しません",
 		apiTokenConfigured: "API トークン設定済み(書き込み専用)",
 		appliesToBitmovinIOBrowsing:
-			"Bitmovin の入出力に適用されます。ブラウズは常に V4 で署名します",
+			"Bitmovin の入力・出力に適用します。ストレージを参照するときは、常に V4 署名を使います",
 		azureSummary: "{subscription} · {group} · テナント {tenant}",
 		bitmovinAssumesThisRoleNoStatic:
 			"Bitmovin がこのロールを引き受けます。固定キーは保存しません",
@@ -3683,13 +3678,13 @@ export const ja = {
 		mslEventName: "イベント名",
 		mslPublishingUsername: "MSL5 publishing ユーザー名 (Digest)",
 		mslPublishingPairBothOrNeither:
-			"MSL5 セグメント publishing 用の HTTP Digest ユーザー名。両方を指定するか、両方とも空にしてください — 片方だけは provisioning 時に Bitmovin から拒否されます。",
+			"MSL5 のセグメント送信に使う HTTP Digest 認証のユーザー名です。パスワードと両方を指定するか、両方とも空欄にしてください。片方のみでは、リソース作成時に Bitmovin が拒否します。",
 		mslPublishingPassword: "MSL5 publishing パスワード (Digest)",
 		mslPublishingOnlyMsl5:
 			"MSL5 専用: MSL4 出力にこれらを設定すると Bitmovin が拒否するため、MSL4 チャンネルでは無視されます。書き込み専用 — 保存後は読み取れません。",
 		mslEdgeBaseUrlOptional: "配信エッジのベース URL(任意)",
 		mslEdgeBaseUrlHint:
-			"視聴者がストリームを読み込む Akamai の配信ルート。https のみ、クエリと末尾のスラッシュは不可。MSL4 は https://<ホスト名>/hls/live/<ストリーム ID>/<イベント名>、MSL5 は Akamai Control Center に表示される値。アプリは /<マニフェスト名> を付加します。このリンクは視聴者側のエッジであり、エンコーダが配信中である証明ではありません。",
+			"視聴者向けの Akamai 配信 URL です。https のみ使えます。クエリや末尾のスラッシュは含めないでください。MSL4 は https://<ホスト名>/hls/live/<ストリーム ID>/<イベント名>、MSL5 は Akamai Control Center の表示値を指定します。アプリが /<マニフェスト名> を追加します。URL が設定されていても、実際に配信中とは限りません。",
 		kantarServicePassword: "Kantar サービスパスワード",
 		kantarServiceUserEncryptedAlongsideThe:
 			"Kantar のサービスユーザー。パスワードと共に暗号化され、保存後は読み出せません",
@@ -3721,7 +3716,7 @@ export const ja = {
 		regionEndpointEndingInLinodeobjectsCom:
 			".linodeobjects.com で終わるリージョンエンドポイント:Bitmovin の GenericS3 として V4 署名で保存されます",
 		resolvedByTheLiveWorkerAt:
-			"チャンネル開始時に解決します。プランは資格情報への参照のみを保持します",
+			"チャンネル開始時に認証情報から取得します。プランには認証情報の参照だけを保存します",
 		roleArn: "ロール ARN",
 		secretAccessKey: "シークレットアクセスキー",
 		secretKey: "シークレットキー",
@@ -3743,26 +3738,26 @@ export const ja = {
 	webhookReg: {
 		account: "Bitmovin アカウント",
 		accountLead:
-			"アカウント単位で残っている hook — このアプリの以前の登録と、他のアプリの登録。不要なものを削除してください。ここから新たに登録することはありません。",
+			"アカウント単位の Webhook 登録です。このアプリの以前の登録と、他のアプリによる登録を含みます。用途を確認し、不要なものだけを削除してください。この画面から新規登録はできません。",
 		colKind: "種別",
-		colLastDelivery: "最終配信",
+		colLastDelivery: "最終通知",
 		colSubject: "エンコーディング",
-		colUrl: "receiver URL",
+		colUrl: "受信 URL",
 		confirmExternalUnregister:
 			"このアプリの登録ではありません — もう一度クリックで削除",
 		external: "外部",
 		listFailed: "登録一覧を取得できませんでした。",
-		noDelivery: "未配信",
+		noDelivery: "通知履歴なし",
 		noneRegistered: "このアカウントに webhook 登録はありません。",
 		noPerEncoding:
 			"エンコーディング単位の登録はまだありません — ジョブやライブ配信にエンコーディングが作られると表示されます。",
-		noteIngressChanged: "公開 ingress が変わったため再登録",
-		noteIngressUnavailable: "公開 ingress がないため待機中",
+		noteIngressChanged: "公開アクセス先が変わったため再登録",
+		noteIngressUnavailable: "公開アクセス先がないため待機中",
 		noteKeyRotated: "署名鍵が更新されたため再登録",
-		noteOrphan: "エンコーディングが削除されたため hook を削除",
-		noteTerminal: "エンコーディングが終了したため hook を削除",
+		noteOrphan: "エンコーディングが削除されたため Webhook 登録を削除",
+		noteTerminal: "エンコーディングが終了したため Webhook 登録を削除",
 		perEncodingLead:
-			"実行中のジョブとライブ配信ごとに自動登録されます(finished / error / transfer error / live manifest ready)。エンコーディング終了時に削除され、公開 ingress が変わると再登録されます。",
+			"実行中のジョブとライブ配信ごとに、finished / error / transfer error / live manifest ready の通知を自動登録します。エンコーディングが終了すると登録を削除し、公開アクセス先が変わると再登録します。",
 		perEncodingTitle: "エンコーディング単位の登録",
 		removeFailed: "削除に失敗しました。",
 		reregisterFailed: "再登録を依頼できませんでした。",
@@ -3776,10 +3771,10 @@ export const ja = {
 		statusFailed: "失敗",
 		statusSkipped: "待機中",
 		thisApp: "このアプリ",
-		title: "アカウント単位の hook(Bitmovin → このアプリ)",
+		title: "アカウント単位の Webhook（Bitmovin → このアプリ）",
 		unregister: "登録解除",
-		urlCurrent: "現在の ingress",
-		urlStale: "以前の ingress",
+		urlCurrent: "現在の公開アクセス先",
+		urlStale: "以前の公開アクセス先",
 	},
 	ingress: {
 		snapshotNote:
@@ -3791,19 +3786,19 @@ export const ja = {
 		modeNone: "なし",
 		modeQuickTunnel: "quick tunnel(cloudflared)",
 		modeStatic: "static(PUBLIC_BASE_URL)",
-		none: "公開 ingress がありません — Bitmovin はこのインストールへ到達できません。{reason}",
+		none: "公開アクセス先がないため、Bitmovin からこのアプリに通知を送れません。{reason}",
 		notReported:
-			"公開 ingress がまだ報告されていません — バックグラウンド処理は起動していますか?",
-		receiver: "署名付き receiver",
+			"公開アクセス先の情報を取得できていません。バックグラウンド処理が起動しているか確認してください。",
+		receiver: "署名付き通知の受信先",
 		receiverHint:
-			"登録はエンコーディングごとに自動で行われ、それぞれ固有の receiver URL と署名鍵(表示されません)を持ちます。Bitmovin ダッシュボードで手動登録した hook は鍵を持てず、受信時に拒否されます。",
+			"エンコーディングごとに自動登録し、個別の受信 URL と署名鍵を使います。署名鍵は表示しません。Bitmovin ダッシュボードから手動登録した Webhook には必要な鍵がないため、通知を受信しても拒否します。",
 		secretEnv: "署名検証 有効(BITMOVIN_WEBHOOK_SECRET)",
 		secretGenerated: "署名検証 有効(自動生成鍵)",
 		secretUnavailable: "署名鍵を利用できません(MASTER_KEY)",
 		since: "{when} から",
 		stale:
 			"最終確認 {when} — バックグラウンド処理が停止している可能性があります。",
-		title: "公開 ingress",
+		title: "通知を受信する公開アクセス先",
 	},
 	wizard: {
 		codecDarPair: "表示アスペクト比の分子と分母を両方設定してください。",
@@ -3857,7 +3852,7 @@ export const ja = {
 		segmentNamingTemplateHint:
 			"指定時はセグメント名より優先されます。例: seg-{rand_chars:8}-%number%.m4s",
 		credentialsLoadFailed:
-			"資格情報を読み込めませんでした。再試行してストレージの資格情報を選択してください。",
+			"認証情報を読み込めませんでした。再試行してストレージの認証情報を選択してください。",
 		accountsLoadFailed:
 			"Bitmovinアカウントを読み込めませんでした。再試行してアカウントを選択してください。",
 		aisaDisabledQcOnly:
@@ -3877,17 +3872,17 @@ export const ja = {
 		muxedAudioNone: "同梱しない(映像のみ)",
 		muxedAudio: "同梱する音声",
 		muxedAudioHint:
-			"このセグメントの中を一緒に流れる音声です。自前で音声を運ぶ variant には EXT-X-MEDIA グループが不要で、運ばない variant は独立した音声コンテナを参照します。",
+			"映像と同じセグメントに含める音声です。音声を含むバリアントには EXT-X-MEDIA グループは不要です。音声を含まないバリアントは、独立した音声コンテナを参照します。",
 		ownContainer: "独立コンテナ",
 		ownContainerLabel: "この音声用に作る",
 		ownContainerOnHint:
-			"この音声だけのコンテナを作り、EXT-X-MEDIA グループから参照します。この音声を必要とする variant がすべて自前で運んでいる場合以外は、オンのままにしてください。",
+			"この音声だけのコンテナを作り、EXT-X-MEDIA グループから参照します。この音声を使うすべてのバリアントで映像に音声を同梱する場合を除き、オンのままにしてください。",
 		ownContainerOffHint:
 			"独立したコンテナを作りません。この音声は、同梱先の映像コンテナの中だけで配信されます。",
 		ownContainerOffUncarriedHint:
-			"この音声を運ぶ映像コンテナがないため、コンテナを作ります。オフのままだと音声が配信から丸ごと消えます。",
+			"この音声を含む映像コンテナがないため、独立した音声コンテナを作ります。オフのままでは、この音声が配信されません。",
 		aManifestInThisPlanMultipliesHls:
-			"このプランのマニフェストは音声グループごとに HLS バリアントを増やします:各音声レンディションにメディアエントリ(グループ ID / 名前 / URI)を、各映像レンディションにバリアントラベルを与えてください。指定しないとマスタープレイリストが不完全になります。dolby-dv-hdr10-sdr プリセットに完全な形があります。",
+			"このプランでは、音声グループごとに HLS バリアントを作成します。各音声レンディションにメディアエントリ（グループ ID / 名前 / URI）、各映像レンディションにバリアントラベルを指定してください。指定しないとマスタープレイリストが不完全になります。設定例は dolby-dv-hdr10-sdr プリセットを参照してください。",
 		aPresetWithThatNameAlreadyExists:
 			"同名のプリセットが既に存在します。別の名前を指定してください。",
 		aclPublicReadNeededForDirectPlayback:
@@ -3919,7 +3914,7 @@ export const ja = {
 		addWebvttSubtitle: "WebVTT 字幕を追加",
 		additionalManifests: "追加マニフェスト",
 		addsAProgressiveMp4QcMirrorPer:
-			"映像レンディションごとにプログレッシブ MP4 の QC ミラーを作成し(出力先の qc/ 配下)、エンコードが FINISHED した後で libvmaf によりソースと自動的に比較します。レポートは VMAF ラボ (/qc) に表示されます。",
+			"映像レンディションごとに、画質測定用の QC ミラーファイル（通常は MP4、VP9 は WebM）を出力先の qc/ 配下に作成します。エンコードが FINISHED になった後、libvmaf で元映像と自動的に比較します。レポートは VMAF ラボ (/qc) に表示されます。",
 		adoptConfigurationThreshold: "設定採用のしきい値",
 		advanced: "詳細設定",
 		advancedAv1: "詳細設定(AV1)",
@@ -3934,13 +3929,13 @@ export const ja = {
 		alsoComputePsnr: "PSNR も計算する",
 		alsoComputePsnrMoreInformation: "「PSNR も計算する」の説明",
 		anEncryptionRowTargetsThisOutputIts:
-			"暗号化行がこの出力を対象にしています。その宛先は省略され、DRM 出力側が書き込みます。ここに値を入れるとそれを上書きします。",
+			"この出力には暗号化が設定されているため、保存先を省略すると DRM 出力側の設定を使います。ここで保存先を指定すると、その設定を上書きします。",
 		analysisJson: "analysis.json",
 		apiDefaultCtr: "(API 既定は CTR)",
 		appliesWhileARenditionUsesTheImplicit:
-			"レンディションが暗黙の映像トラックを使う間、適用されます",
+			"映像トラックを個別に指定していないレンディションに適用されます",
 		appliesWhileARenditionUsesTheImplicit2:
-			"レンディションが暗黙の音声トラックを使う間、適用されます",
+			"音声トラックを個別に指定していないレンディションに適用されます",
 		apply: "適用",
 		aqMode: "AQ モード",
 		aqStrength: "AQ 強度",
@@ -3952,12 +3947,12 @@ export const ja = {
 		attachDolbyVisionMetadata: "Dolby Vision メタデータを添付",
 		attachFilter: "フィルタを適用",
 		attachmentOrderMattersPositionIsTheCreate:
-			"適用順序に意味があります。位置はストリーム上での作成順です。フィルタはラダーステップのフィルタ一覧で定義します。",
+			"フィルターを適用する順序によって結果が変わります。位置はストリーム上での作成順を示します。フィルターは「ラダー」のフィルター一覧で定義します。",
 		audioGroupId: "音声グループ ID",
 		audioInputFile: "音声入力ファイル",
 		audioLanguage: "音声言語",
 		audioMediaUri: "音声メディア URI",
-		audioMuxingKind: "音声 muxing 種別",
+		audioMuxingKind: "音声コンテナの種類",
 		audioRenditions: "音声レンディション",
 		audioVariantStreams: "音声バリアントストリーム",
 		audioVideoSyncMode: "音声 / 映像の同期モード",
@@ -4022,16 +4017,17 @@ export const ja = {
 		configuredInSettingsBitmovinAccounts:
 			"設定 → Bitmovin アカウントで登録します",
 		container: "コンテナ",
-		contentKeyVault: "コンテンツキー(保管庫)",
-		contentKey32Hex: "コンテンツキー(32 桁の hex)",
-		contentKeyMustBe32Hex: "キーは 32 桁の hex(16 バイト)で入力してください。",
+		contentKeyVault: "コンテンツキー（保存済みの認証情報）",
+		contentKey32Hex: "コンテンツキー（32 桁の16進数）",
+		contentKeyMustBe32Hex:
+			"キーは32桁の16進数（16 バイト）で入力してください。",
 		enterKeyDirectly: "キーを直接入力…",
 		inlineKeyDefaultLabel: "ウィザード入力キー",
 		inlineKeyStoredEncrypted:
-			"DRM_CENC 資格情報として保存します — AES-256-GCM で暗号化保管、以後は書き込み専用。プランには参照のみが載ります。",
+			"DRM_CENC 認証情報として AES-256-GCM で暗号化して保存します。保存後にキーを再表示することはできません。プランには、その参照先だけが保存されます。",
 		saveKeyAndUse: "キーを保存して使用",
 		contentKeysStayInTheVaultA:
-			"DRM資格情報は暗号化保管され、各行には参照のみが載ります。暗号化出力はDRMの宛先へ書き込まれます。",
+			"DRM認証情報は暗号化して保存され、各行にはその参照先だけが記録されます。暗号化された出力は、DRM設定の保存先へ書き込まれます。",
 		contentReference: "コンテンツ参照",
 		copyChromaLoc: "クロマ位置をコピー",
 		copyColorRange: "カラーレンジをコピー",
@@ -4041,14 +4037,14 @@ export const ja = {
 		copyTransfer: "伝達特性をコピー",
 		couldNotReadTheSelectedFile: "選択したファイルを読み込めませんでした",
 		couldNotSaveThePreset: "プリセットを保存できませんでした。",
-		cpuUsed: "CPU 使用度",
+		cpuUsed: "CPU 使用量",
 		creationMode: "作成モード",
-		credential: "資格情報",
-		credentials: "資格情報",
+		credential: "認証情報",
+		credentials: "認証情報",
 		current: "現在:",
 		dashAdaptationSet: "DASH アダプテーションセット",
 		dashAdaptationSetRoutingAppearsHereOnce:
-			"DASH アダプテーションセットの振り分けは、DASH マニフェストがアダプテーションセットを宣言すると(マニフェストステップ)ここに表示されます。Dolby の複数ラダープリセットで使用します。",
+			"「マニフェスト」で DASH のアダプテーションセットを定義すると、ここでレンディションを振り分けられます。Dolby の複数ラダープリセットで使用します。",
 		dashOptions: "DASH オプション",
 		dashStreamMpd: "DASH (stream.mpd)",
 		default: "(既定)",
@@ -4074,19 +4070,19 @@ export const ja = {
 		discardImport: "インポートを破棄",
 		dismissPresetNotice: "プリセットの通知を閉じる",
 		dolbyDvHdr10SdrLaddersRunAs:
-			"Dolby DV/HDR10/SDR のラダーは、別々のエンコーディングとして実行され(1 つのエンコーディングにダイナミックレンジ形式を混在させると API が拒否します)、その muxing が共有マニフェストへマージされます。複数エンコーディングのプランは POST_ENCODING 専用です。JIT ではプレビューで PLAN_MULTI_ENCODING_JIT が発生します。行を追加すると、ストリーム・レンディション・キーフレームにエンコーディングの選択欄が現れます。",
+			"Dolby DV/HDR10/SDR のラダーは、別々のエンコーディングとして実行し、各コンテナ出力を共通のマニフェストにまとめます。1 つのエンコーディングにダイナミックレンジ形式を混在させると API が拒否します。複数エンコーディングのプランは POST_ENCODING 専用です。JIT を選ぶと、プレビューで PLAN_MULTI_ENCODING_JIT が発生します。行を追加すると、ストリーム・レンディション・キーフレームにエンコーディングの選択欄が表示されます。",
 		dolbyVisionMetadata: "Dolby Vision メタデータ",
 		dolbyvisionBox: "DolbyVision ボックス",
 		drmCencCredentialTheKeyItselfNever:
-			"DRM_CENC 資格情報:キー自体はプランに入りません",
+			"DRM_CENC 認証情報：キー自体はプランに含まれません",
 		drmKind: "DRM 種別",
-		drmOutputOwnsTheDestination: "宛先は DRM 出力が保持します",
+		drmOutputOwnsTheDestination: "保存先は DRM 出力の設定を使います",
 		durationS: "長さ (秒)",
 		dvProfile: "DV プロファイル",
 		dvTrackSignalingOnTheMp4Box: "MP4 ボックス上の DV トラックシグナリング",
 		dynamicRangeFormat: "ダイナミックレンジ形式",
 		enableAiSceneAnalysisTheSamplesRun:
-			"AI シーン解析を有効にする(サンプルはエンコーダ BETA で実行しています)",
+			"AI シーン解析を有効にする（サンプルはエンコーダ BETA で実行しています）",
 		enableKantarAudioWatermarking: "Kantar 音声ウォーターマークを有効にする",
 		encoderVersion: "エンコーダバージョン",
 		encoding: "エンコーディング",
@@ -4116,7 +4112,7 @@ export const ja = {
 		defineAndAttachDeinterlace: "インターレース解除を定義して適用",
 		fixTheValidationIssuesAboveBeforeSaving:
 			"保存する前に上の検証エラーを解消してください。有効なプランのみプリセットとして保存できます。",
-		forcedRenditionAboveHighest: "最上位より上に強制レンディション",
+		forcedRenditionAboveHighest: "最上位を超えるレンディションを追加",
 		forcedRenditionFactor: "強制レンディションの係数",
 		forcedRenditionMode: "強制レンディションのモード",
 		fragmentDurationMs: "フラグメント長 (ms)",
@@ -4140,17 +4136,17 @@ export const ja = {
 		hlsVariantLabel: "HLS バリアントラベル",
 		host: "ホスト",
 		hostPortLiveInTheSftpCredential:
-			"ホストとポートは SFTP 資格情報側で設定します",
-		noCredentialNeeded: "資格情報不要",
+			"ホストとポートは SFTP 認証情報で設定します",
+		noCredentialNeeded: "認証情報不要",
 		httpsAuthFree: "HTTPS(認証なし)",
 		iFramePlaylists: "I フレームプレイリスト",
 		imageFilename: "画像ファイル名",
 		imagesPerFile: "1 ファイルあたりの画像数",
 		implicitAudioReadsTheSameObjectAs:
-			"暗黙の音声は既定で映像と同じオブジェクトを読み込みます。音声が別オブジェクト(A/V 分離)の場合は、別の入力ファイルを指定してください。",
-		implicitAudioTrackEncoding: "暗黙の音声トラック → エンコーディング",
-		implicitSet: "(暗黙に設定)",
-		implicitVideoTrackEncoding: "暗黙の映像トラック → エンコーディング",
+			"音声を個別に指定しない場合は、映像と同じオブジェクトから読み込みます。映像と音声が別々のオブジェクトの場合は、音声用の入力ファイルを指定してください。",
+		implicitAudioTrackEncoding: "既定の音声トラック → エンコーディング",
+		implicitSet: "（自動設定）",
+		implicitVideoTrackEncoding: "既定の映像トラック → エンコーディング",
 		importPlanJson: "プラン JSON をインポート…",
 		importPlanJsonExpert: "プラン JSON をインポート(上級者向け)",
 		incomplete: "不完全",
@@ -4165,15 +4161,15 @@ export const ja = {
 		cmafCompatibility:
 			"CMAFはH264/AACのDASHまたはLive Media Ingestに対応します。HLSとDRMは未対応です。",
 		injectedIntoBitmovinAccountidTheOneException:
-			"bitmovin.accountId に注入されます。そのまま送信するという原則の唯一の例外です",
-		inputAudioTrackImplicit: "入力音声トラック(暗黙)",
+			"選択したアカウントを bitmovin.accountId に設定します。インポート内容をそのまま送信する原則の唯一の例外です",
+		inputAudioTrackImplicit: "入力音声トラック（個別指定なし）",
 		inputFile: "入力ファイル",
 		inputFile1PrimaryRequired: "入力ファイル 1(主ファイル・必須)",
 		inputFiles: "入力ファイル",
 		inputFormat: "入力形式",
 		inputStreamNeedsAVisionMetadataSidecar:
 			"INPUT_STREAM には VISION_METADATA のサイドカーストリームが必要です",
-		inputVideoTrackImplicit: "入力映像トラック(暗黙)",
+		inputVideoTrackImplicit: "入力映像トラック（個別指定なし）",
 		intervalDistance: "間隔(距離)",
 		intervalStartRecommendedForTrickPlay:
 			"トリックプレイには INTERVAL_START を推奨します",
@@ -4185,7 +4181,7 @@ export const ja = {
 		k2RungH264AacJitHls: "H264 2 段 + AAC、JIT HLS",
 		kantarChannelThisContentIsReportedUnder:
 			"このコンテンツを Kantar に報告する際のチャンネル",
-		kantarCredential: "Kantar 資格情報",
+		kantarCredential: "Kantar 認証情報",
 		kantarLicenseIdInteger: "Kantar ライセンス ID(整数)",
 		kantarWatermarkingServiceEndpoint:
 			"Kantar ウォーターマークサービスのエンドポイント",
@@ -4233,20 +4229,20 @@ export const ja = {
 		motionSearch: "動き探索",
 		motionSearchRange: "動き探索範囲",
 		multiLegPlansWhichLegThisManifest:
-			"複数レッグのプラン:このマニフェストが列挙するレッグ",
+			"複数のコンテナ形式を使う場合に、このマニフェストで参照する形式を選択します。",
 		mustBeReplacedWithYourRealObject:
 			"を、開始前に実際のオブジェクトパスに置き換えてください。",
 		mvPredictionMode: "MV 予測モード",
 		mvSearchRangeMax: "MV 探索範囲の最大値",
 		myPresets: "マイプリセット",
 		namesThisLadderSVariantEntriesWhen:
-			"マスターが音声グループごとにバリアントを増やすとき、このラダーのバリアントエントリに付ける名前です。ラダー全体で揃えてください(dolby-dv-hdr10-sdr プリセットでは dv81 / sdr)。音声グループが 1 つだけの HLS では不要です。",
+			"音声グループごとにバリアントを作る場合に、このラダーのバリアントに付ける名前です。ラダー内で名前を揃えてください（dolby-dv-hdr10-sdr プリセットでは dv81 / sdr）。音声グループが 1 つだけの HLS では不要です。",
 		newVodJob: "VOD ジョブを作成",
 		nexguardLicense: "NexGuard ライセンス",
 		nexguardWatermarking: "NexGuard ウォーターマーク",
 		next: "次へ",
 		noAudioRenditionsVideoOnlyPlansSkip:
-			"音声レンディションがありません。映像のみのプランは暗黙の音声 Ingest トラックを使いません。",
+			"音声レンディションがありません。映像のみのプランでは、既定の音声入力トラックを使いません。",
 		noManifestsSelectedSegmentsWillBeWritten:
 			"セグメント出力が含まれていますが、マニフェストが選択されていません。セグメントには再生用プレイリストが付属しません。",
 		noVideoRenditionsAudioOnlyPlansAre:
@@ -4255,7 +4251,7 @@ export const ja = {
 		noneAddOneToExtractJpegThumbnails:
 			"なし。追加すると、指定位置でレンディションから JPEG サムネイルを抽出します。",
 		noneAddOneToGenerateATiled:
-			"なし。追加すると、レンディションから指定間隔でサンプリングしたタイル状のスクラブプレビュー画像と WebVTT インデックスを生成します。",
+			"未設定です。追加すると、レンディションから指定間隔で画像を取り出してタイル状に並べ、再生位置を探すためのプレビュー画像と WebVTT インデックスを生成します。",
 		null: "null",
 		offsetS: "オフセット (秒)",
 		onDemandProfile: "ON_DEMAND プロファイル",
@@ -4263,7 +4259,7 @@ export const ja = {
 			"レンディションごとに 1 つ以上のコンテナ出力を作り、それぞれの暗号化をその場で設定します。1 つのストリームに複数のコンテナを設定できます(per-title H264 サンプルのように DASH 用 fMP4 + HLS 用 TS など)。追加したコンテナには、それぞれ別のリソースキーが割り当てられます。",
 		oneTileEveryNUnits: "N 単位ごとに 1 タイル",
 		onlyNeededForMultiAudioGroupHls:
-			"複数音声グループの HLS(Dolby ラダー)でのみ必要です。dolby プリセットを参照してください。音声グループが 1 つなら既定の配置で正しいため、未設定のままにします。",
+			"複数の音声グループを使う HLS（Dolby ラダー）でのみ必要です。dolby プリセットを参照してください。音声グループが 1 つなら既定の配置を使えるため、未設定のままにします。",
 		optionalShownInThePresetGallery: "任意:プリセットギャラリーに表示されます",
 		optionalVtt: "任意、.vtt",
 		output: "出力",
@@ -4280,7 +4276,7 @@ export const ja = {
 		perRenditionPlacementHlsGroupsDashSets:
 			"レンディションごとの配置(HLS グループ / DASH セット)",
 		perTitleAndMultiEncodingPlansMust:
-			"Per-Title と複数エンコーディングのプランは、マニフェストをエンコード完了後に生成してください。プレビューの検証がこれを強制します。",
+			"Per-Title と複数エンコーディングのプランでは、マニフェストをエンコード完了後に生成してください。それ以外の設定はプレビューの検証でエラーになります。",
 		perTitleConfiguration: "Per-Title の設定",
 		perTitleFixedResolutionBitrate: "per-title の固定解像度とビットレート",
 		perTitleLeavesBitrateToTheAlgorithm:
@@ -4314,20 +4310,20 @@ export const ja = {
 		presetName: "プリセット名",
 		chooseFromTemplates: "テンプレートから選択…",
 		presetsAreThePythonSampleGoldenPlans:
-			"プリセットは代表的な配信構成のサンプルです:下のプレースホルダーの資格情報とストレージを自分のもの(設定 → 資格情報 で管理)に置き換えてから、Bitmovin アカウントを選択してください。ここで警告されないサンプルのオブジェクトパスも、自分のバケット構成に合わせて調整が必要な場合があります。自由に書き換えたい場合は、破棄して編集済みの JSON を再インポートしてください。",
+			"プリセットは代表的な配信構成のサンプルです。下の仮の認証情報とストレージを、使用する環境のもの（設定 → 認証情報で管理）に置き換えてから、Bitmovin アカウントを選択してください。警告が出ていないサンプルのオブジェクトパスも、バケットの構成に合わせて変更が必要な場合があります。JSON を直接書き換える場合は、現在のインポートを破棄し、編集した JSON を再インポートしてください。",
 		preview: "プレビュー",
 		previewWatchWhileEncodingManifestListsOn:
-			"プレビュー = 開始リクエストに載せる、エンコード中視聴用のマニフェスト一覧",
+			"エンコード中の視聴に使うマニフェストの一覧です。開始リクエストに含めて送信します。",
 		producesOnlyThePerVideoQcMirror:
-			"映像ごとの QC ミラー MP4(出力先の qc/ 配下)のみを生成します。HLS/DASH の muxing やマニフェスト、音声、サムネイル / スプライト / DRM は作りません。VMAF / PSNR の測定だけを目的とした、高速で安価なエンコードです。ストレージ出力の選択は必要です(ミラーがそこへ書き込まれます)。有効な間、配信形式とマニフェストの設定は無効になります。",
+			"映像ごとの QC ミラーファイル（通常は MP4、VP9 は WebM。出力先の qc/ 配下）のみを生成します。HLS/DASH のコンテナやマニフェスト、音声出力、サムネイル、スプライト、DRM は作りません。VMAF / PSNR の測定を目的とした構成です。QC ミラーの保存先となるストレージ出力を選択してください。有効な間、配信形式とマニフェストの設定は無効になります。",
 		profile: "プロファイル",
 		psnrDbRidesTheSameLibvmafPass:
-			"PSNR (dB) は同じ libvmaf のパスで計算され、レポート内で VMAF と並べて表示されます。",
+			"PSNR (dB) は VMAF と同じ libvmaf の処理で計算し、レポートに並べて表示します。",
 		psyRdo: "Psy RDO",
 		psyRdoq: "Psy RDOQ",
 		psyTrellis: "Psy トレリス",
 		publicInitializationVectorTheKeyStaysIn:
-			"公開される初期化ベクトルです。キーは保管庫に留まります",
+			"公開される初期化ベクトルです。キーは保存済みの認証情報で管理します",
 		qpMax: "QP 最大",
 		qpMin: "QP 最小",
 		quality: "品質",
@@ -4349,17 +4345,17 @@ export const ja = {
 		removeHlsMediaEntry: "HLS メディアエントリを削除",
 		removeNexguardWatermarking: "NexGuard ウォーターマークを削除",
 		renditionsJoinASetViaTheirDash:
-			"レンディションは「DASH アダプテーションセット」の追加設定でセットに参加します。指定がなければ暗黙の映像 + 音声のペアになります。",
-		replaceWithVaultCredential: "保管庫の資格情報に置き換える…",
+			"各レンディションの「DASH アダプテーションセット」で、所属するセットを指定します。指定しない場合は、映像と音声の組み合わせが自動で設定されます。",
+		replaceWithVaultCredential: "保存済みの認証情報に置き換える…",
 		reportPath: "レポートのパス",
 		reports: "レポート",
 		representationType: "Representation 種別",
 		requiredEGVideoMp4VideoIsmv: "必須(例: video.mp4 / video.ismv)",
 		review: "確認",
 		reviewThePlanOnTheRightThe:
-			"プランのプレビューを確認してください。操作一覧は、実際に実行される内容そのものです(順序も同じです)。",
+			"プランのプレビューを確認してください。操作一覧には、実行予定の内容が実行順に表示されます。",
 		routesThisRenditionIntoTheMatchingSet:
-			"マニフェスト → DASH オプション(ラベル振り分け)で宣言した、対応するセットへこのレンディションを振り分けます。Dolby の複数ラダープリセットが DV/HDR10/SDR のラダーを分けている仕組みです。未設定 = 暗黙の映像 / 音声ペア。",
+			"「マニフェスト → DASH オプション（ラベル振り分け）」で定義したセットに、このレンディションを割り当てます。Dolby の複数ラダープリセットでは、この設定で DV/HDR10/SDR のラダーを分けています。未設定の場合は、映像と音声の組み合わせを自動で設定します。",
 		runVmafQcAfterEncoding: "エンコード後に VMAF QC を実行する",
 		runVmafQcAfterEncodingMoreInformation:
 			"「エンコード後に VMAF QC を実行する」の説明",
@@ -4380,14 +4376,14 @@ export const ja = {
 		selectABitmovinAccountInStep1:
 			"開始する前に、ステップ 1 で Bitmovin アカウントを選択してください。",
 		selectAccount: "アカウントを選択…",
-		selectCredential: "資格情報を選択…",
+		selectCredential: "認証情報を選択…",
 		selectFileStream: "ファイルストリームを選択…",
 		selectFilter: "フィルタを選択…",
 		selectInputFile: "入力ファイルを選択…",
 		selectSourceStream: "ソースストリームを選択…",
 		selectStream: "ストリームを選択…",
 		selectingAnS3CredentialOpensTheBrowser:
-			"S3 の資格情報を選ぶとブラウザが開きます",
+			"S3 の認証情報を選ぶと、ストレージの参照画面が開きます",
 		selectionMode: "選択モード",
 		separateDolbyVisionMetadataSidecarEmptyEmbed:
 			"Dolby Vision メタデータの別サイドカー。空欄 = 埋め込み",
@@ -4442,7 +4438,7 @@ export const ja = {
 		targetQualityCrf: "目標品質 CRF",
 		targetQualityQp: "目標品質 QP",
 		templateYaml: "Template YAML",
-		theInputStreamThisTrimWraps: "このクリップが包む入力ストリーム",
+		theInputStreamThisTrimWraps: "このクリップで切り出す入力ストリーム",
 		theObjectAStreamReadsWhenIt:
 			"ストリームがこのファイルを参照したときに読み込むオブジェクト",
 		theObjectDeclaredInInputFilesThis:
@@ -4452,11 +4448,11 @@ export const ja = {
 		theProcessingReportIsOperationalDataSo:
 			"処理レポートは運用データなので、配信出力が公開設定でも通常は PRIVATE で書き込まれます。チェックを外すと、他の宛先と同じようにストレージ出力の公開 / 非公開設定を継承します。",
 		theseEncryptionRowsTargetAnOutputKey:
-			"これらの暗号化行は、既に存在しない出力キー(レンディションの名前変更または削除)を対象にしています。現在の出力へ付け替えるか、行を削除してください。そのままではプレビューが未解決の参照として警告します。",
+			"レンディションの名前変更または削除により、これらの暗号化設定の対象出力が見つかりません。現在の出力に変更するか、暗号化設定の行を削除してください。そのままでは、参照先が見つからないことを示す警告がプレビューに表示されます。",
 		thisPlanHasNoAudioRenditionAdd:
 			"このプランには音声レンディションがありません。ラダーステップで追加してください。追加しないとプランは拒否されます(Kantar は音声にウォーターマークを入れます)。",
 		thisPlanReferencesNoVaultCredentials:
-			"このプランは保管庫の資格情報を参照していません。",
+			"このプランは保存済みの認証情報を参照していません。",
 		thumbnail: "サムネイル",
 		thumbnailNumberJpg: "thumbnail-%number%.jpg",
 		thumbnails: "サムネイル",
@@ -4481,10 +4477,10 @@ export const ja = {
 			"バリアントラベルは主に映像レンディションに付けます。音声 / 字幕の配置は下のメディアエントリで行います。",
 		variantsPerAudioGroup: "音声グループごとのバリアント",
 		vaultCredentialTheLicenseItselfNeverEnters:
-			"保管庫の資格情報:ライセンス自体はプランに入りません",
+			"保存済みの認証情報：ライセンス自体はプランに含まれません",
 		vaultCredentialTheServiceLoginPasswordNever:
-			"保管庫の資格情報:サービスのログイン / パスワードはプランに入りません",
-		videoMuxingKind: "映像 muxing 種別",
+			"保存済みの認証情報：サービスのログイン情報 / パスワードはプランに含まれません",
+		videoMuxingKind: "映像コンテナの種類",
 		videoRenditions: "映像レンディション",
 		visionMetadataStreamsFromTheSourcesStep:
 			"ソースステップの VISION_METADATA ストリーム",
@@ -4521,12 +4517,12 @@ export const ja = {
 	delivery: {
 		galleryTitle: "納品プリセット",
 		galleryIntro:
-			"ファイル納品向けの仕様プリセットです。プランと機械可読な要件表がセットになっており、読み込むと wizard が仕様からの逸脱を警告します。.bitovp-preset.json としてエクスポートすれば、自社プラットフォームの納品仕様をファイルとして管理できます(同梱するのは汎用例のみで、他社仕様は含みません)。",
+			"ファイル納品向けのプリセットです。プランと、アプリで検証できる要件表が含まれます。読み込むと、要件を満たさない設定をウィザードが警告します。.bitovp-preset.json としてエクスポートすると、自社プラットフォームの納品仕様をファイルで管理できます。同梱されているのは汎用的な例だけで、他社の納品仕様は含みません。",
 		importButton: "プリセットファイルを取り込む",
 		importing: "取り込み中…",
 		importFailed: "取り込みに失敗しました: {error}",
 		importSelfDeviations:
-			"自己逸脱 {count} 件付きで取り込みました。ファイルの例プラン自身が要件を満たしていません — 利用前に確認してください。",
+			"要件を満たさない設定が {count} 件ある状態で取り込みました。プリセット内のサンプルプランを確認してから利用してください。",
 		requirementCol: "要件",
 		exportButton: "JSON をエクスポート",
 		suggestedGateLine: "推奨 QC ゲート: {metric} ≥ {gte}(参考値)",
@@ -4537,7 +4533,7 @@ export const ja = {
 		importCannotEditWithoutLoss:
 			"このプランにはウィザードで保持できない設定があります。元のJSONを保持しています。「JSONを編集」から変更してください。",
 		importEditJson: "JSONを編集",
-		muxedAudioCarrying: "このセグメントの中で {key} を運びます。",
+		muxedAudioCarrying: "このセグメントに {key} の音声を含めます。",
 		qcDisabledCarriedBlock:
 			"このプランは QC/VMAF の設定を含んでいますが、この環境では QC/VMAF がオフのため開始できません。設定を削除して続けるか、設定画面で QC/VMAF を有効にしてください。",
 		qcDisabledRemoveBlock: "QC 設定を削除",
@@ -4554,13 +4550,13 @@ export const ja = {
 			"BLOCK にはすべてのマニフェストをエンコード完了後に生成する必要があります。JIT マニフェストは測定前に生成されてしまうためです。",
 		// Delivery-spec drift banner .
 		deliverySpecLoaded: "配信仕様: {name}",
-		deliveryCommitmentLabel: "適合の扱い",
-		deliveryCommitNone: "バナーのみ(コミットしない)",
-		deliveryCommitWarn: "逸脱を記録して続行(WARN)",
-		deliveryCommitRefuse: "逸脱時は送信を拒否(REFUSE)",
-		deliveryDrift: "{name} から {count} 件逸脱しています",
-		deliveryDriftShow: "逸脱を表示",
-		deliveryDriftHide: "逸脱を隠す",
+		deliveryCommitmentLabel: "要件を満たさない場合の動作",
+		deliveryCommitNone: "画面に警告だけ表示",
+		deliveryCommitWarn: "不一致を記録して続行（WARN）",
+		deliveryCommitRefuse: "不一致があれば送信しない（REFUSE）",
+		deliveryDrift: "「{name}」の要件を満たさない設定が {count} 件あります",
+		deliveryDriftShow: "該当する設定を表示",
+		deliveryDriftHide: "該当する設定を閉じる",
 		deliveryDriftDismiss: "閉じる",
 		deliveryDriftRequirement: "要件",
 		deliveryDriftFound: "現在の値",
@@ -4590,7 +4586,7 @@ export const ja = {
 		deinterlaceFiltersCount: "フィルター設定 ({count})",
 		/* Multiple-output labels must not expose internal work-item references. */
 		deliveryMirrorsHint:
-			"全レンディションとマニフェストを各ミラーにも同一パス・同一 ACL で書き込みます — 1 回のエンコードで複数ストレージへ配信します。",
+			"1 回のエンコードで、全レンディションとマニフェストを複数のストレージへ配信します。各ミラーにも同じパス・同じ ACL で書き込みます。",
 		derivedPathHint:
 			"ベース出力パスからの相対パス:空欄 = 自動で決まるパス「{path}」。per-title の出力には {uuidToken}/{bitrateToken} のプレースホルダーが必要です。",
 		enableCodecPerTitle: "{codec} の per-title 設定を有効にする",
@@ -4612,7 +4608,7 @@ export const ja = {
 		labelsAndInfrastructure: "ラベルとインフラ",
 		loadedPreset: "プリセット:",
 		loadedPresetTail:
-			" をウィザードに読み込みました。サンプルの資格情報はクリアされています。ソースと出力のステップで自分のものを選び、各ステップを確認してから開始してください。",
+			" をウィザードに読み込みました。サンプルの認証情報は消去しています。「ソース」と「出力」で使用する認証情報を選び、各ステップを確認してから開始してください。",
 		loadingNamed: "「{name}」を読み込んでいます…",
 		loadingPreset: "プリセットを読み込んでいます",
 		locationLabelForSection: "{section}[{index}] の{label}",
@@ -4646,7 +4642,7 @@ export const ja = {
 		removeSubtitleN: "字幕 {n} を削除",
 		removeTrimmingStreamN: "入力クリップ {n} を削除",
 		removeVideoN: "映像 {n} を削除",
-		replacementCredentialFor: "{id} の置き換え先資格情報",
+		replacementCredentialFor: "{id} の置き換え先認証情報",
 		replacementFor: "{token} の置き換え先",
 		samplePlaceholderPaths: "{count} 件のサンプルプレースホルダーパス",
 		schemaColon: "スキーマ:",
@@ -4668,29 +4664,30 @@ export const ja = {
 	},
 	tokens: {
 		active: "有効",
-		dismissSecret: "保存した — 閉じる",
+		dismissSecret: "保存したので閉じる",
 		expired: "期限切れ",
 		expiresDays: "有効期限(日数、任意)",
 		expiresDaysHint: "空欄 = 無期限。",
 		intro:
-			"Bearer トークンはスクリプトや CI を /api/* に対して認証します(サインイン済みセッションと同等の権限)。シークレットはハッシュのみ保存され、表示は一度きりです。トークンからトークンは発行できません。",
+			"Bearer トークンは、スクリプトや CI からこの組織の /api/* を操作するために使います。ここで発行するトークンの権限は OPERATOR が上限で、発行者の現在の権限や所属状態に応じて制限されます。秘密値はハッシュだけを保存し、表示は一度限りです。トークンを使って別のトークンを発行することはできません。",
 		lastUsed: "最終使用",
 		listHeading: "トークン一覧",
 		mint: "トークンを発行",
 		mintFailed: "トークンを発行できませんでした。",
 		mintHeading: "トークンを発行",
 		mintedHint:
-			"保存されるのはハッシュのみ — この値は二度と表示できません。送信方法: Authorization: Bearer <secret>",
+			"保存されるのはハッシュだけです。この値は再表示できません。送信方法: Authorization: Bearer <secret>",
 		mintedOnce:
-			"トークン「{name}」を発行しました — 今すぐシークレットをコピーしてください:",
+			"トークン「{name}」を発行しました。表示を閉じる前に秘密値をコピーしてください:",
 		name: "名前",
 		never: "未使用",
 		noneYet: "トークンはまだありません。",
 		revoke: "失効",
 		revokeFailed:
-			"取り消しに失敗しました — トークンはまだ有効です。再試行してください。",
-		revokeLatencyHint: "60 秒以内に反映されます(検証キャッシュの TTL)。",
-		confirmRevoke: "完全に取り消しますか?",
+			"トークンの失効に失敗しました。トークンはまだ有効です。再試行してください。",
+		revokeLatencyHint:
+			"失効が保存されると、その後のトークン認証で拒否されます。認証済みのリクエストは処理が完了する場合があります。",
+		confirmRevoke: "このトークンを失効させますか?",
 		created: "作成",
 		expires: "期限",
 		listFailed: "トークン一覧を読み込めませんでした。",
@@ -4700,25 +4697,25 @@ export const ja = {
 	users: {
 		title: "ユーザー",
 		intro:
-			"ロール付きの個人アカウント。VIEWER は閲覧のみ、OPERATOR はジョブとチャンネルを実行、ADMIN は加えて資格情報・設定・ユーザーを管理します。作成したユーザーには一度だけ表示される仮パスワードが発行され、初回サインインで変更が必要です。",
+			"個人アカウントごとにロールを設定します。VIEWER は閲覧、OPERATOR はジョブとチャンネルの実行、ADMIN は加えて認証情報・設定・ユーザーの管理を行えます。新規ユーザーには、一度だけ表示される仮パスワードを発行します。初回ログイン時に変更が必要です。",
 		createHeading: "ユーザーを作成",
 		email: "メールアドレス",
-		emailHint: "Bitmovin アカウントのメールアドレスがユーザー名です。",
+		emailHint: "このアカウントへのログインに使うメールアドレスです。",
 		displayName: "表示名",
 		role: "ロール",
 		create: "ユーザーを作成",
 		createFailed: "ユーザーを作成できませんでした。",
 		createdOnce:
-			"ユーザー「{email}」を作成しました — 仮パスワードを今すぐコピーしてください:",
+			"ユーザー「{email}」を作成しました。表示を閉じる前に仮パスワードをコピーしてください:",
 		createdHint:
-			"一度だけ表示されます。これでサインインし、直ちに本人のパスワードを設定する必要があります。72 時間で失効します。",
-		dismissTempPassword: "送付しました — 閉じる",
+			"仮パスワードの表示は一度限りで、有効期限は72時間です。本人がこのパスワードでログインし、自分のパスワードに変更してください。",
+		dismissTempPassword: "渡したので閉じる",
 		listHeading: "ユーザー",
 		listFailed: "ユーザー一覧を読み込めませんでした。",
 		noneYet: "ユーザーがいません。",
 		active: "有効",
 		inactive: "無効",
-		lastLogin: "最終サインイン",
+		lastLogin: "最終ログイン",
 		never: "なし",
 		mustChange: "パスワード変更が必要",
 		deactivate: "無効化",
@@ -4755,11 +4752,11 @@ export const ja = {
 			"監視ルールがこのプリセットを参照しています。参照を解除してから削除してください。",
 		heading: "テンプレート",
 		intro:
-			"テンプレートは固めたワークフローの保存版です。起動時に聞かれるのは素材ファイル・出力プレフィックス・名前だけで、それ以外はテンプレートの設定のまま実行されます。VOD ウィザードのプリセット保存から作成できます。",
+			"テンプレートには、繰り返し使うエンコード設定を保存します。実行時に指定するのは素材ファイル・出力プレフィックス・名前で、それ以外は保存した設定を使います。VOD ウィザードでプリセットとして保存すると作成できます。",
 		loading: "読み込み中…",
 		empty: "テンプレートはまだありません。",
 		emptyHint:
-			"VOD ウィザードでジョブを組んでプリセットとして保存すると、ここに起動可能なテンプレートとして表示されます。",
+			"VOD ウィザードでジョブを設定し、プリセットとして保存すると、ここから実行できるテンプレートとして表示されます。",
 		revision: "rev {n}",
 		usesAndUpdated: "利用 {uses} 件 · 更新 {date}",
 		launch: "起動",
@@ -4769,14 +4766,14 @@ export const ja = {
 		delete: "削除",
 		confirmDelete: "本当に削除しますか?",
 		deleteBlockedByRules:
-			"ウォッチルールがこのテンプレートを参照しています。先にルールを削除するか付け替えてください。",
+			"監視フォルダーのルールがこのテンプレートを参照しています。先にルールを削除するか、参照先を変更してください。",
 		launchTitle: "「{name}」を起動",
 		notAPlan:
 			"このテンプレートの本文は有効なエンコーディングプランではありません。",
 		sources: "素材",
 		sourceOriginal:
 			"テンプレートの元パスです。そのままなら同じ素材で再実行します。",
-		sourceMoved: "この起動用に上書きされています。",
+		sourceMoved: "今回の実行用に変更されています。",
 		browse: "参照",
 		noSources: "このプランにはファイル素材がありません(差し替え対象なし)。",
 		outputPrefix: "出力プレフィックス",
@@ -4788,7 +4785,7 @@ export const ja = {
 		updateTemplate: "テンプレートを更新",
 		updating: "更新中…",
 		editingBanner:
-			"テンプレート「{name}」を編集中 — 更新は今後の起動に反映されます。起動済みジョブは各自のコピーを保持します。",
+			"テンプレート「{name}」を編集中です。更新は次回以降の実行に反映されます。すでに作成したジョブの設定は変わりません。",
 		launchLiveTitle: "「{name}」からチャンネルを起動",
 		notALivePlan:
 			"このテンプレートの本文は有効なライブチャンネルプランではありません。",
@@ -4804,19 +4801,19 @@ export const ja = {
 		templateSaved: "テンプレート「{name}」として保存しました。",
 		saveTemplateFailed: "保存に失敗しました: {error}",
 		livePrefixEmpty:
-			"出力プレフィックスが空に展開されました。テンプレート自身のパスに書くと前のチャンネルの出力を上書きします。空でないプレフィックスを指定してください。",
+			"展開後の出力プレフィックスが空です。テンプレートの元のパスに書き込むと、前のチャンネルの出力を上書きします。空でないプレフィックスを指定してください。",
 		editConflict:
 			"読み込み後にこのテンプレートが変更されています。ページを再読み込みして編集をやり直してください。",
 	},
 	ui: {
 		aChannelWithoutAManifestHasNo:
-			"マニフェストがないチャンネルには再生面がありません。HLS と DASH のいずれか、または両方を有効にしてください。",
+			"このチャンネルには再生用マニフェストがありません。HLS と DASH のいずれか、または両方を有効にしてください。",
 		aMovieFileNeedsItsVideoStream:
 			"動画ファイルは映像ストリームが位置 0 にあり、ライブストリームと完全に一致(コーデック・解像度・フレームレート)し、音声レイアウトも同じである必要があります。画像 (PNG, JPEG, GIF, BMP, TIFF, WebP など) には再生時間の情報がないため、画像をスケジュールするときは durationInSeconds が必須です。動画では任意です。指定より長いファイルは切り詰められ、短いファイルはループ再生されます。",
 		aTimeBasedRescheduleCloudConnectAccounts:
 			"。Cloud Connect アカウントは 設定 → インフラ で管理します。",
 		accountDefaultRtmpInputResolvedByListing:
-			"アカウント既定の RTMP 入力:一覧取得で解決します(API に作成用の呼び出しがありません)",
+			"アカウント既定の RTMP 入力を一覧から選びます。この入力を作成する API はありません。",
 		acquisitionPointIdentity: "取得ポイント識別子",
 		adAvailOffsetMs: "広告枠オフセット (ms)",
 		adBreakLengthSignalledToDownstreamSystems:
@@ -4831,24 +4828,24 @@ export const ja = {
 		adinsertionsettingsEnableesammediapointinser:
 			"adInsertionSettings.enableEsamMediaPointInsertion",
 		all: "すべて",
-		allLegs: "(すべてのレッグ)",
+		allLegs: "（すべてのコンテナ形式）",
 		audioGroupId: "音声グループ ID",
 		audioLanguage: "音声言語",
-		audioMuxingPin: "音声 muxing の固定",
+		audioMuxingPin: "音声コンテナ形式の指定",
 		audioRenditionsAacDdDd: "音声レンディション(AAC / DD+ / DD)",
 		autoRestart: "自動再起動",
 		autoShutdown: "自動停止",
 		automaticallyRestartWhenTheEncodingHitsAn:
-			"エンコーディングがエラーになったとき自動的に再起動します。無人で自己回復させたいチャンネルでは有効に、失敗をその場で止めて調査したい場合は無効にしてください。",
+			"エンコーディングがエラーになったときに自動で再起動します。自動復旧させる場合は有効にし、停止した状態で原因を調べる場合は無効にしてください。",
 		availabilityStartTime: "配信開始時刻",
 		back: "戻る",
 		backupSrtInputsFailover: "バックアップ SRT 入力(フェイルオーバー)",
 		basics: "基本",
 		bitmovinAccount: "Bitmovin アカウント",
 		bitmovinAposS: "Bitmovin’s",
-		bitmovinDialsYourSourceHost: "Bitmovin が送信元ホストに発信します",
+		bitmovinDialsYourSourceHost: "Bitmovin から送信元ホストへ接続します",
 		bitmovinListensYourEncoderCallsTheEncoder:
-			"Bitmovin が待ち受けます。エンコーダ側からエンコーダ IP に接続します",
+			"Bitmovin が接続を待ち受けます。送出側から Bitmovin のエンコーダ IP へ接続します",
 		bitmovinOvp: "Bitmovin OVP",
 		bitmovinPullsAnHlsSourceUrl: "Bitmovin が HLS のソース URL を取得します",
 		bitrateBps: "ビットレート (bps)",
@@ -4857,7 +4854,7 @@ export const ja = {
 		browseABucketAndChooseTheSource:
 			"バケットを参照してソースファイルを選んでください。",
 		browseStorageFillsCredentialBucketKeyThe:
-			"ストレージを参照すると資格情報 / バケット / キーが入力されます。実行時にローカルへ一時保存します",
+			"ストレージを参照すると、認証情報 / バケット / オブジェクトのキーが入力されます。素材は実行時にローカルへ一時保存します",
 		bucket: "バケット",
 		bucketNameManual: "バケット名(手入力)",
 		byDefaultAMarkerAppearsInThe:
@@ -4892,7 +4889,7 @@ export const ja = {
 		createFailed: "作成に失敗しました",
 		createLiveChannel: "ライブチャンネルを作成",
 		creating: "作成しています…",
-		credential: "資格情報",
+		credential: "認証情報",
 		ctrIv8Bytes: "CTR → IV_8_BYTES",
 		curlUnavailable: "cURL は利用できません",
 		curlNoEndpoint:
@@ -4901,7 +4898,7 @@ export const ja = {
 			"{kind} の URL パスパラメータをすべて解決できませんでした",
 		curlNoStepEntry: "ステップの記録がありません",
 		dagaaaaaaaaapWdwaa: "/DAgAAAAAAAAAP/wDwAA…",
-		dashDvrBudgetC8: "DASH の DVR 予算",
+		dashDvrBudgetC8: "DASH DVR の要素数",
 		dashManifest: "DASH マニフェスト",
 		dashManifestIntervalS: "DASH マニフェストの間隔 (秒)",
 		dashManifestsUpdateTimeoutS: "DASH マニフェスト更新のタイムアウト (秒)",
@@ -4926,11 +4923,11 @@ export const ja = {
 		dolbyDigital2: "Dolby Digital",
 		dynamicRtmpEncoderIpApplication: "動的 (rtmp://<encoder-ip>/<application>)",
 		eachInputFileIsOneObjectThe:
-			"各入力ファイルはジョブが読み込む 1 つのオブジェクトです。資格情報・バケット・オブジェクトパスはファイルごとに指定します。最初のものが主となる映像ソース(必須)で、音声マスターや Dolby サイドカー、字幕は追加してください。下のストリームはファイルを参照するだけで、パスはファイル側のものを使い、再入力はしません。",
+			"入力ファイルごとに、ジョブが読み込むオブジェクトの認証情報・バケット・パスを指定します。最初のファイルは主となる映像ソースで、必須です。音声マスター、Dolby サイドカー、字幕は追加の入力ファイルとして登録してください。下のストリームからは登録済みのファイルを参照するため、パスの再入力は不要です。",
 		eachMediaSegmentImmutableOnceWritten:
 			"各メディアセグメント:書き込み後は不変です",
 		embedsAnInaudibleKantarWatermarkInThe:
-			"可聴域外の Kantar ウォーターマークを音声レンディションに埋め込みます。映像のみのプランには埋め込む対象がないため、プラン検証で拒否されます。これはエンコーディング単位の設定で、1 エンコーディングにつき 1 つだけ指定できます。複数エンコーディングのラダーでは、同じプラン内の他のエンコーディングすべてに同じ設定が適用されます。Kantar サービスのログインとパスワードは保管庫にのみ保存されます(設定 → 資格情報 の「Kantar 音声ウォーターマーク」で管理)。プランは資格情報の参照だけを持ち、ログイン自体は持ちません。",
+			"聞こえない Kantar ウォーターマークを音声レンディションに埋め込みます。映像のみのプランには埋め込む対象がないため、プラン検証で拒否されます。エンコーディング単位の設定で、1 エンコーディングにつき 1 つだけ指定できます。複数エンコーディングのラダーでは、同じプラン内のすべてのエンコーディングに同じ設定が適用されます。Kantar サービスのログイン情報とパスワードは「設定 → 認証情報」の「Kantar 音声ウォーターマーク」で暗号化して保存します。プランには認証情報の参照先だけが保存され、ログイン情報自体は含まれません。",
 		emptyClStereo: "空欄 = CL_STEREO",
 		emptyNoDvrWindowLiveEdgeOnly: "空欄 = DVR ウィンドウなし(ライブエッジのみ)",
 		emsg: "emsg",
@@ -4947,16 +4944,16 @@ export const ja = {
 		esamPoisScte250: "ESAM / POIS (SCTE-250)",
 		eventStreamSignalling: "イベントストリームのシグナリング",
 		everySourceBeyondTheImplicitVideoAudio:
-			"暗黙の映像 / 音声ペア以外のすべてのソースをまとめた一覧です:追加の Ingest トラック、WebVTT 字幕サイドカー、Dolby Atmos / Vision / メタデータ入力。各ストリームは宣言済みの入力ファイルを読み込み、レンディションと字幕トラックは「配置と追加設定」でラベルによって参照します。",
+			"既定の映像・音声トラック以外のソースをまとめた一覧です。追加の入力トラック、WebVTT 字幕サイドカー、Dolby Atmos / Vision / メタデータ入力を設定します。各ストリームは登録済みの入力ファイルを読み込みます。レンディションや字幕トラックからは、「配置と追加設定」でラベルを指定して参照します。",
 		/* Explain restart conditions and their effect on delivery before listing API minimum values. */
 		everyTimeoutHasAnApiMinimumOf:
 			"入力が途切れた・出力が止まった・エンコーダが応答しないなどの条件を検知すると、エンコーダを自動で再起動します。再起動中は配信が中断し、視聴者にはストリームの途切れとして見えます。各タイムアウトの最小値は 30 秒で、それより短い値は切り上げではなく拒否されます。",
 		extXDaterange: "#EXT-X-DATERANGE",
 		failedToListObjects: "オブジェクト一覧の取得に失敗しました",
-		failedToLoadCredentials: "資格情報を読み込めませんでした。",
+		failedToLoadCredentials: "認証情報を読み込めませんでした。",
 		failoverDelayThresholdS: "フェイルオーバーの遅延しきい値 (秒)",
 		ffmpegLoopFeedersReStreamLoop1:
-			"ストレージ上の MP4 をこのチャンネルの Ingest へ繰り返し流し込むループフィーダーです。セッションは 1 回限りで、停止したら新しいセッションを作成してください。",
+			"ストレージ上の MP4 を、このチャンネルの入力先へ繰り返し送るフィーダーです。セッションは 1 回限りです。停止後にもう一度送る場合は、新しいセッションを作成してください。",
 		ffprobeReturnedNoRecognizableFormatOrStream:
 			"ffprobe が認識可能なフォーマット / ストリーム情報を返しませんでした。生の出力を下に示します。",
 		ffprobeStreams: "ffprobe のストリーム",
@@ -4967,19 +4964,19 @@ export const ja = {
 			"fMP4 の init.mp4:チャンネルの存続期間中は不変です",
 		framesWrittenTimeoutS: "フレーム書き込みのタイムアウト (秒)",
 		gateForInsertingEsamMediaPointsWhile:
-			"チャンネル稼働中に ESAM メディアポイントを挿入するためのゲートです:エンコーダが SCTE-35 データストリームを少なくとも 1 つ保持し、POIS 主導のメディアポイントを適用できるようにします。無効の場合、上の ESAM 設定はシグナルを報告するだけになります。",
+			"チャンネル稼働中に ESAM メディアポイントを挿入するための設定です。エンコーダが SCTE-35 データストリームを少なくとも 1 つ保持し、POIS からの指示によるメディアポイントを適用できるようにします。無効の場合、上の ESAM 設定ではシグナルの報告だけを行います。",
 		generateCreatesOneAssignUsesAnAccount:
 			"GENERATE は新規に生成し、ASSIGN はアカウントの StreamKey ID を使います",
 		generatesDefaultVodManifestsOverThisChannel:
 			"このチャンネルの録画に対して既定の VOD マニフェストを生成し、チャンネルが使用中の出力先の隣に書き込みます。",
 		guardAudioRenditionsWithAudiostreamcountGt0:
-			"AUDIOSTREAMCOUNT > 0 で音声レンディションをガードします(無音ソースでは音声をスキップ)",
+			"入力に音声ストリームがある場合だけ音声を出力する（AUDIOSTREAMCOUNT > 0）",
 		guiFirstOnlineVideoPlatformExposingThe:
-			"Bitmovin Encoding API の全機能を GUI から扱えるオンライン動画プラットフォーム",
+			"Bitmovin Encoding API の全機能への対応を目指す GUI アプリケーション",
 		heightP: "高さ (p)",
 		hideImport: "インポートを隠す",
 		hint: "ヒント",
-		hlsDvrBudgetC8: "HLS の DVR 予算",
+		hlsDvrBudgetC8: "HLS DVR の要素数",
 		hlsManifest: "HLS マニフェスト",
 		hlsManifestIntervalIsDeliberatelyAbsentThe:
 			"HLS マニフェストの間隔は意図的にありません。Bitmovin API が未使用と明記しています(メディアプレイリストが変わるたびにマスタープレイリストは再アップロードされます)。",
@@ -5010,7 +5007,7 @@ export const ja = {
 			"Ingest ポイント(混在できないため、モードは 1 つだけです)",
 		initSegment: "初期化セグメント",
 		injectedIntoBitmovinAccountidTheOneException:
-			"bitmovin.accountId に注入されます。そのまま送信するという原則の唯一の例外です",
+			"選択したアカウントを bitmovin.accountId に設定します。インポート内容をそのまま送信する原則の唯一の例外です",
 		input: "入力",
 		inputIdOrPasteOneFromAnother:
 			"入力 ID(他組織のものを貼り付けても構いません)",
@@ -5040,7 +5037,7 @@ export const ja = {
 		listenerPort: "リスナーポート",
 		listingUnavailableTypeBelow: "一覧を取得できません。下に入力してください",
 		noBucketsListedTypeBelow:
-			"一覧は成功しましたがバケットが 0 件でした。アカウントにバケットが無いか、このキーからは見えません。バケット名を入力すれば直接開けます。",
+			"一覧の取得は成功しましたが、バケットは 0 件でした。バケットがないか、このキーでは一覧を参照できません。バケット名を直接入力してください。",
 		liveChannelPlanJson: "ライブチャンネルのプラン JSON",
 		liveEdgeOffsetS: "ライブエッジのオフセット (秒)",
 		liveEncodingMode: "ライブエンコーディングモード",
@@ -5081,7 +5078,7 @@ export const ja = {
 		multipleIngestPointsWithAutomaticFailover:
 			"自動フェイルオーバー付きの複数 Ingest ポイント",
 		mustMatchTheVaultedPassphrase12816:
-			"保管庫のパスフレーズと一致させてください(128 ↔ 16 文字、256 ↔ 32 文字)",
+			"認証情報に保存したパスフレーズと一致させてください（AES-128 は16文字、AES-256 は32文字）。",
 		muxingInitFileIntervalS: "muxing 初期化ファイルの間隔 (秒)",
 		myPresets: "マイプリセット",
 		namedBucketPrefixShortcutsOfferedAsOne:
@@ -5112,14 +5109,14 @@ export const ja = {
 			"すべてのシグナルに付与するゾーン / リージョンのタグ(任意)",
 		orTypeBucket: "またはバケットを入力",
 		outOfBandAdSignalingTheEncoder:
-			"帯域外の広告シグナリングです:エンコーダは検出したすべての SCTE-35 メッセージを POIS に報告し、その応答を適用します。POIS の Basic 認証は POIS_ENDPOINT の保管庫資格情報を ID で参照します。設定 → 資格情報 で管理してください。ユーザー名とパスワードはプランに入らず、開始時に解決されます。稼働中のメディアポイント挿入には、下の広告挿入ゲートも必要です。",
-		outputCredential: "出力の資格情報",
+			"メディアとは別の通信で広告情報を通知します。エンコーダは検出したすべての SCTE-35 メッセージを POIS に報告し、その応答を適用します。POIS の Basic 認証には、POIS_ENDPOINT 認証情報の ID を指定します。「設定 → 認証情報」で管理してください。ユーザー名とパスワードはプランに含まれず、開始時に取得されます。稼働中にメディアポイントを挿入するには、下の広告挿入設定も有効にしてください。",
+		outputCredential: "出力の認証情報",
 		outputFolder: "出力フォルダ",
 		outputsScte35MarkersSoAnInserted:
 			"挿入したキューが下流で見えるように SCTE-35 マーカーを出力します。HLS は fMP4 と TS の両方で動作します。",
 		overview: "概要",
 		p1MoreInformation: "「p1」の説明",
-		passphraseCredential: "パスフレーズの資格情報",
+		passphraseCredential: "パスフレーズの認証情報",
 		pasteALivechannelplanEGALive:
 			"LiveChannelPlan を貼り付けてください。そのまま送信されます",
 		path: "パス",
@@ -5136,7 +5133,7 @@ export const ja = {
 			"このプロバイダのインフラから選ぶか、他組織の ID を貼り付けてください。",
 		pickOrTypeABucket: "バケットを選択するか入力してください。",
 		pinOneFamilyWhenRenditionsCarryFmp4:
-			"レンディションが FMP4 と TS のレッグを併せ持つ場合、どちらかに固定します",
+			"レンディションが FMP4 と TS の両方で出力される場合に、参照する形式を指定します",
 		pinThisEncodingOntoACloudConnect:
 			"このエンコーディングを Cloud Connect (BYOC) のインフラに固定します。Cloud Connect アカウントは 設定 → インフラ で管理します。2 つのフィールドは必ず両方指定してください。ここでのリージョンはインフラ「内部」のリージョンで、エンコーディング自身のクラウドリージョンは自動的に EXTERNAL に切り替わります(Cloud Connect では Bitmovin が要求します)。",
 		pinThisEncodingOntoACloudConnect2:
@@ -5147,14 +5144,14 @@ export const ja = {
 		placementMode: "配置モード",
 		planJson: "プラン JSON",
 		planLevelFilterResourcesAttachThemPer:
-			"プランレベルのフィルタリソースです。レンディションごとに「配置と追加設定」で適用してください。",
+			"プラン共通のフィルター設定です。レンディションごとに「配置と追加設定」で適用してください。",
 		playerFailedToLoad: "プレイヤーの読み込みに失敗しました",
 		playlistTagsAreWrittenAtTheManifest:
 			"のプレイリストタグはマニフェストレベルで書き出されます。セグメント内の",
-		poisCredentialId: "POIS 資格情報 ID",
+		poisCredentialId: "POIS 認証情報 ID",
 		poisEndpoint: "POIS エンドポイント",
 		poisEndpointVaultCredentialUsernamePasswordI:
-			"POIS_ENDPOINT の保管庫資格情報(ユーザー名 + パスワード):ID のみを指定します。空欄 = 認証なしの POIS",
+			"保存済みの POIS_ENDPOINT 認証情報（ユーザー名 + パスワード）の ID を指定します。空欄の場合、POIS に認証なしで接続します。",
 		port: "ポート",
 		prefixBreadcrumb: "プレフィックスのパンくず",
 		preset: "プリセット",
@@ -5167,7 +5164,7 @@ export const ja = {
 		rawResponse: "レスポンス",
 		rawSnapshots: "リクエスト/レスポンス(raw)",
 		rawSnapshotsLabel:
-			"ステップ {step} — 永続化スナップショット(秘匿値は除去済み)",
+			"ステップ {step} — 保存済みの要求・応答（秘密値は除去済み）",
 		reUploadSettings: "再アップロードの設定",
 		redundantRtmp: "冗長 RTMP",
 		refs: "参照",
@@ -5191,9 +5188,9 @@ export const ja = {
 		restartIfHlsManifestsStopUpdatingFor:
 			"HLS マニフェストがこの時間だけ更新されなくなったら再起動します(最小 30 秒)。HLS が主要な配信経路で、プレイリストの停止が問題になる場合に設定してください。",
 		restartIfNoDataAtAllIs:
-			"データがまったく書き込まれない状態がこの時間続いたら再起動します(最小 30 秒)。あらゆる出力停止を捉える、粗いストール監視です。",
+			"データがまったく書き込まれない状態がこの時間続いたら再起動します（最小 30 秒）。出力全体の停止を検知するための監視です。",
 		restartIfNoFramesAreEncodedFor:
-			"フレームがこの時間だけエンコードされなかったら再起動します(最小 30 秒)。muxing より上流のデコード / パイプラインのストールを捉えます。",
+			"フレームがこの時間エンコードされなかったら再起動します（最小 30 秒）。コンテナ出力より前のデコードやエンコード処理の停止を検知します。",
 		restartIfNoSegmentsAreWrittenFor:
 			"セグメントがこの時間だけ書き込まれなかったら再起動します(最小 30 秒)。セグメント出力に対する最も直接的な「出力停止」監視です。",
 		restartOnEncoderError: "エンコーダエラー時に再起動する",
@@ -5201,14 +5198,14 @@ export const ja = {
 			"「エンコーダエラー時に再起動する」の説明",
 		review: "確認",
 		reviewThePlanOnTheRightThe:
-			"プランのプレビューを確認してください。操作一覧は、実際にプロビジョニングされる内容そのものです(順序も同じです)。チャンネルは作成と同時にプロビジョニングが始まり、開始と停止はその後チャンネルに対する操作として行います。",
+			"プランのプレビューを確認してください。操作一覧には、起動準備で作成するリソースが処理順に表示されます。チャンネルを作成すると起動準備が始まり、その後はチャンネルの開始・停止操作を使います。",
 		rtmp: "RTMP",
 		rtmpEncoderIpLive: "rtmp://<encoder-ip>/live",
 		rtmpInputId: "RTMP 入力 ID",
 		running: "稼働中",
 		s3AzureBlobSftpLiveSegmentsAnd:
 			"S3 / Azure Blob / SFTP:ライブのセグメントとマニフェストがここに書き込まれます",
-		sameForAudioLegs: "音声レッグも同様",
+		sameForAudioLegs: "音声のコンテナ出力も同様に選択します",
 		samplePresets: "サンプルプリセット",
 		sampleRateHz: "サンプリング周波数 (Hz)",
 		scheduleExpression: "スケジュール式",
@@ -5228,13 +5225,13 @@ export const ja = {
 			"作成する前に、ステップ 1 で Bitmovin アカウントを選択してください。",
 		selectAccount: "アカウントを選択…",
 		selectBucket: "バケットを選択…",
-		selectCredential: "資格情報を選択…",
+		selectCredential: "認証情報を選択…",
 		// Owner request 2026-08-19: register a credential without abandoning
 		// a half-filled wizard. The copy says NEW TAB because the form's
 		// state does not survive a route change.
-		addCredentialNewTab: "資格情報を追加(新しいタブで開きます)",
+		addCredentialNewTab: "認証情報を追加（新しいタブで開きます）",
 		sharedByEveryMuxingFeedsTheC8:
-			"すべての muxing で共有されます。DVR 要素予算に影響します",
+			"すべてのコンテナ出力で共有されます。DVR の要素数に影響します",
 		shiftAppliedToTheWindowStart: "ウィンドウ開始位置に適用するシフト量",
 		showingTheFirst500InputsOnlyPaste:
 			"先頭 500 件の入力のみ表示しています。一覧にない場合は ID を貼り付けてください。",
@@ -5292,7 +5289,7 @@ export const ja = {
 		unsetApiDefaultsToTheSegmentDuration:
 			"未設定 = API はセグメント長を既定値とします",
 		unsetNotWrittenToTheMpd: "未設定 = MPD に書き出しません",
-		searchInputsByName: "名前で input を検索",
+		searchInputsByName: "入力を名前で検索",
 		search: "検索",
 		prewarmedPoolIds: "プリウォームプール id(このプランのみ)",
 		perPlanPoolPinningHint:
@@ -5315,18 +5312,18 @@ export const ja = {
 		useTheUseAsInputActionOn:
 			"ファイル行の「入力として使う」操作を使ってください。",
 		usesTheAccountSDefaultRtmpInput:
-			"アカウント既定の RTMP 入力を使います。アカウントの入力一覧から自動で選びます。アカウントに RTMP 入力がない場合や複数ある場合は、推測せずに明確なエラーでプロビジョニングを失敗させます。",
+			"アカウントの入力一覧から、既定の RTMP 入力を自動で選びます。RTMP 入力がない場合や複数ある場合は、推測では選ばず、起動準備をエラーで停止します。",
 		usingAPastedIdNotInThe:
 			"貼り付けた ID を使用しています。上の一覧にはありません。",
 		validateAmpLoad: "検証して読み込む",
 		validateSaveAmpCompare: "検証・保存して比較",
 		vaultSrtPassphraseRefResolvedAtSpawn:
-			"保管庫の SRT_PASSPHRASE 参照:起動時に解決され、保存されません",
+			"保存済みの SRT_PASSPHRASE 認証情報を参照します。パスフレーズは起動時に取得し、プランには保存しません",
 		vaultSrtPassphraseRefThePassphraseItself:
-			"保管庫の SRT_PASSPHRASE 参照:パスフレーズ自体はプランに入りません",
+			"保存済みの SRT_PASSPHRASE 認証情報を参照します。パスフレーズ自体はプランに含まれません",
 		vaultZixiRefPasswordAndOrDecryption:
-			"保管庫の ZIXI 参照(パスワードと復号キーのいずれかまたは両方):指定は必須です",
-		videoMuxingPin: "映像 muxing の固定",
+			"保存済みの ZIXI 認証情報（パスワードと復号キーのいずれか、または両方）を指定します。必須項目です",
+		videoMuxingPin: "映像コンテナ形式の指定",
 		videoRenditionsH264H265: "映像レンディション(H264 / H265)",
 		vmafLab: "VMAF ラボ",
 		vmafLab2: "← VMAF ラボ",
@@ -5344,7 +5341,7 @@ export const ja = {
 			"XML_BIN はバイナリの splice info を Signal.Binary として搬送し、XML は解析済みの SCTE-35 を XML 要素として書き出します",
 		zixi: "Zixi",
 		zixiBroadcasterPull: "Zixi ブロードキャスタから取得",
-		zixiCredential: "Zixi の資格情報",
+		zixiCredential: "Zixi の認証情報",
 		zixiFeederExampleCom: "zixi-feeder.example.com",
 		zoneIdentity: "ゾーン識別子",
 	},
@@ -5352,7 +5349,7 @@ export const ja = {
 		/* Name the output-side observation directly instead of exposing internal observer terminology. */
 		title: "出力モニタリング",
 		explainer:
-			"出力先のメディアプレイリストを直接読み取った結果です — エンコーダの自己申告とは独立した確認です。",
+			"出力先のメディアプレイリストを直接読み取った結果です。エンコーダからの状態報告とは別に確認しています。",
 		lastFetch: "取得 {at}",
 		noneYet:
 			"出力モニタリングはまだ始まっていません — チャンネルが稼働中になってから数秒以内に始まります。",
@@ -5362,20 +5359,20 @@ export const ja = {
 		playlistReadLimitReached:
 			"一部の HLS を完全に確認できません（取得上限 256 KiB）",
 		playlistReadLimitHelp:
-			"前回の直接確認で、一部のプレイリストが読み取り上限に達しました。完全性と進行を確認できず、不完全な内容で停止・ENDLIST を判定しません。マニフェストのサイズと DVR 設定を確認してください。Push/Poll の報告とは別の証拠です。",
+			"前回の確認で、一部のプレイリストが読み取り上限に達しました。全体を読み取れず、更新が続いているかを確認できていません。この結果では、出力の停止や ENDLIST の有無を判定しません。マニフェストのサイズと DVR 設定を確認してください。Push 通知や定期取得（Poll）とは別の確認結果です。",
 		stale: "停滞",
 		advancing: "進行中",
 		edgeDelay: "エッジ遅延 {s} 秒",
 	},
 	startup: {
 		reSaveForAccount:
-			"Bitmovin アカウント未設定 — この出力先を再保存し、プローブが動くアカウントを選択してください",
+			"Bitmovin アカウントが未設定です。プローブを実行するアカウントを選択し、この出力先を保存し直してください",
 		runsUnder: "{account} で実行",
 		account: "Bitmovin アカウント",
 		pickAccount: "アカウントを選択…",
 		title: "起動時間",
 		explainer:
-			"開始から RUNNING までに各リージョンが要した時間。このインストール自身のチャンネル起動から計測しています。キュー時間は Bitmovin のエンコーダ割り当て時間を、当方のリソース作成呼び出しと切り分けたものです。",
+			"各リージョンで、開始から RUNNING までにかかった時間です。この環境で実行したチャンネルの起動時間を計測しています。キュー時間は、Bitmovin がエンコーダを割り当てるまでの時間で、エンコード設定の作成にかかった時間とは分けて表示します。",
 		window: "期間",
 		windowDays: "直近 {days} 日",
 		loadFailed: "起動プロファイルを読み込めませんでした。",
@@ -5388,14 +5385,14 @@ export const ja = {
 		sourceChannel: "チャンネル",
 		sourceProbe: "プローブ",
 		smallNNote:
-			"P50/P90 のない行はサンプル不足（20 未満）でパーセンタイルが正直に出せないため、最大値と件数を表示しています。",
+			"サンプル数が20未満の行では、P50/P90（中央値／90パーセンタイル）の代わりに最大値と件数を表示します。",
 		probeDestination: "プローブ出力先",
 		probeDestinationExplainer:
-			"起動プローブはここで明示指定した領域だけに書き込みます — 顧客の出力先には決してデフォルトしません。保存時に削除権限を検証します（番兵キー方式）: プローブ後始末はこのアプリ唯一の破壊的ストレージ操作で、一覧専用の資格情報は 10 回のプローブ後ではなく今この場で失敗すべきだからです。",
+			"起動プローブは、ここで指定した専用の出力先だけに書き込みます。通常の配信先を自動で流用することはありません。検証後に出力を削除するため、保存時に検証用オブジェクトを使って削除権限も確認します。一覧の取得権限だけでは利用できません。",
 		abandonAfter: "{minutes} 分で打ち切り",
 		noDestinationYet: "プローブ出力先はまだ指定されていません。",
-		credential: "資格情報",
-		pickCredential: "資格情報を選択…",
+		credential: "認証情報",
+		pickCredential: "認証情報を選択…",
 		bucket: "バケット",
 		prefix: "プレフィックス",
 		prefixHint: "8 文字以上 — 短いものは拒否されます",
@@ -5413,13 +5410,13 @@ export const ja = {
 		acknowledgeWorstCase: "上記の最悪ケースの費用を了承します。",
 		launchProbes: "プローブを開始",
 		destinationFirst: "先に出力先を指定してください。",
-		launchFailed: "プローブバッチを投入できませんでした。",
+		launchFailed: "起動プローブの実行を登録できませんでした。",
 		probesEnqueued:
-			"プローブバッチを投入しました — サンプルが届き次第、上の表に反映されます。",
+			"起動プローブの実行を登録しました。計測結果を取得すると、上の表に反映されます。",
 		probeList: "プローブ",
 		noProbesYet: "プローブはまだ実行されていません。",
 		strandedProbe:
-			"停止未確認 — 開いて停止を再試行してください（データリセットを塞ぎます）",
+			"停止を確認できていません。詳細を開いて停止を再試行してください。確認できるまでデータのリセットは行えません。",
 		openProbe: "開く",
 	},
 	runs: {
@@ -5434,14 +5431,14 @@ export const ja = {
 	uiX: {
 		matchCountOne: "一致 {count} 件",
 		matchCountOther: "一致 {count} 件",
-		opPayloadLabel: "ステップ {step} — オペレーションペイロード",
-		opsListFailed: "オペレーション一覧を読み込めませんでした。",
-		opsListLabel: "{name} — コンパイル済みオペレーション",
-		scanningThePrefix: "プレフィックスを走査しています…",
+		opPayloadLabel: "ステップ {step} — 操作の詳細",
+		opsListFailed: "操作一覧を読み込めませんでした。",
+		opsListLabel: "{name} — 操作一覧",
+		scanningThePrefix: "プレフィックス内を確認しています…",
 		downsampledExportFull:
 			"表示用に間引いています · 全 {frames} フレームの系列はエクスポートしてください",
 		perFrameVmaf: "フレームごとの VMAF",
-		addOrCheckCredentials: "設定 → 資格情報 で追加または確認してください。",
+		addOrCheckCredentials: "設定 → 認証情報で追加または確認してください。",
 		cacheControlHint:
 			"ヘッダーをアップロード時に書き込みます。S3 / GCS / Azure の出力でのみ有効で、他のプロバイダは無視します(プラン検証が警告します)。空欄 = プロバイダの既定値。",
 		couldNotStartNewRun: "新しい実行を開始できませんでした",
@@ -5459,9 +5456,9 @@ export const ja = {
 			"(直近 {shown} 件 / 全 {total} 件:実時刻とソースのストリーム時刻の対応。VMAF の位置合わせに使用します)",
 		thisJobIsUnchanged: "このジョブは変更されていません。",
 		vmafOnlyManifestsNote:
-			"「VMAF のみ」が有効です(エンコーディングオプション → 品質管理):このエンコードは映像ごとの QC ミラー MP4 だけを生成するため、HLS/DASH の muxing とマニフェストはスキップされます。配信マニフェストを設定するには「VMAF のみ」を無効にしてください。",
+			"「VMAF のみ」が有効です（エンコーディングオプション → 品質管理）。映像ごとの QC ミラーファイル（通常は MP4、VP9 は WebM）だけを生成し、HLS/DASH のコンテナとマニフェストは生成しません。配信用のマニフェストを設定するには「VMAF のみ」を無効にしてください。",
 		vmafOnlyPackagingNote:
-			"「VMAF のみ」が有効です(エンコーディングオプション → 品質管理):このエンコードは映像ごとの QC ミラー MP4 だけを出力するため、配信用の muxing・サムネイル・スプライトはスキップされます。設定するには「VMAF のみ」を無効にしてください。",
+			"「VMAF のみ」が有効です（エンコーディングオプション → 品質管理）。映像ごとの QC ミラーファイル（通常は MP4、VP9 は WebM）だけを出力し、配信用のコンテナ・サムネイル・スプライトは生成しません。これらを設定するには「VMAF のみ」を無効にしてください。",
 		pickTwoReportsTail:
 			"を開き、レポートを 2 つ以上選択して「{label}」を選んでください。",
 		libvmafModelTooltip:
@@ -5484,11 +5481,11 @@ export const ja = {
 		restartOnFixedSchedule:
 			"決まったスケジュール(Unix crontab)で再起動します。24/7 チャンネルの計画メンテナンス用で、障害とは連動しません。",
 		shutDownNeverConnects:
-			"開始後この時間内にソースが一度も接続しなければシャットダウンします。早めに開始したもののエンコーダが現れなかったチャンネルを回収します。",
+			"開始後、この時間内に入力が一度も接続されなければ自動停止します。入力待ちのままになったチャンネルを停止するための設定です。",
 		shutDownNoInput:
-			"この時間だけ入力が来なければシャットダウンします。配信中にソースが切断された後、エンコーダの課金を止めます。注意: 自動再起動ではこのタイマーはリセットされません。",
+			"この時間入力が来なければ自動停止します。入力切断後に不要な稼働を続けないための設定です。",
 		shutDownTotalRuntime:
-			"入力の有無にかかわらず、この合計稼働時間でシャットダウンします。長さが決まっているイベントのコスト・稼働時間の上限です。",
+			"入力の有無にかかわらず、この合計稼働時間で自動停止します。長さが決まっているイベントの稼働時間を制限するための設定です。",
 		defaultEn: '既定 "en"',
 		defaultEnglishSample: '既定 "english - sample"',
 		defaultStreamIsm: '既定 "stream.ism"',
@@ -5501,7 +5498,7 @@ export const ja = {
 		emptyRedundantRtmpInput: '空欄 = "Redundant RTMP Input"',
 		emptySrtInput: '空欄 = "SRT Input"',
 		dvrBudgetTooltip:
-			"Live DVR/タイムシフトのマニフェストはまだ取得可能な全セグメントを列挙し、Bitmovin は合計 ~54,000 要素まで保持します。各レンディションが(timeshift ÷ セグメント長)個のセグメントを加えるため、ウィンドウが長い・セグメントが短い・レンディションが多いほど数が増えます。ウィンドウは ~3 時間(10,800 秒)以下を推奨 — 大きなマニフェストは更新を遅くします。このゲージは値を上限で切り詰めることはありません。予算の ~80% を超えたら警告するだけです。",
+			"Live DVR/タイムシフトのマニフェストには、まだ取得できる全セグメントが記載されます。Bitmovin が保持できる要素数は合計約54,000です。各レンディションに（timeshift ÷ セグメント長）個のセグメントが加わるため、ウィンドウが長い、セグメントが短い、レンディションが多いほど要素数が増えます。大きなマニフェストは更新に時間がかかるため、ウィンドウは約3時間（10,800秒）以内を推奨します。このゲージは上限の約80%を超えると警告しますが、入力値を自動で切り詰めることはありません。",
 		liveEdgeOffsetTooltip:
 			"プレイヤーが最新セグメントからどれだけ後ろで再生を始めるか。推奨は ~10–12 秒(セグメント約 2–3 個分 — Bitmovin のリファレンスサンプルは 10–12 を使用)。大きいほど遅延は増えるが ingest/CDN ジッタへのバッファ余裕が増し、小さいほど低遅延だがライブエッジ付近でのリバッファリスクが上がります。",
 		hlsLiveEdgeOffsetTooltip:
@@ -5532,10 +5529,10 @@ export const ja = {
 		liveToVodTail:
 			"録画である必要があります。セグメントの書き込みが続いている間に生成したマニフェストは途中で切れてしまいます。(ステータス: {status})",
 		noBrowsableCredential:
-			"参照できる資格情報がありません。設定で AWS S3 の資格情報を追加してください。",
+			"ストレージを参照できる認証情報がありません。設定で AWS S3 の認証情報を追加してください。",
 		asOfSweep: "{when} 時点(30 秒間隔で取得)",
 		credentialsUnavailable:
-			"資格情報を取得できません。上のエラーを確認してください。",
+			"認証情報を取得できません。上のエラーを確認してください。",
 		deletePresetLabel: "プリセット {label} を削除",
 		failedCount: "· 失敗 {count} 件",
 		feederSession: "フィーダーセッション",
@@ -5545,7 +5542,7 @@ export const ja = {
 			"{bucket}/{key}:上限付きの読み取りで ffprobe を実行します(先頭を上限まで読み、必要なら上限付きのリトライを 1 回だけ行います)。部分読み取りでは全体ビットレートを確定できないため、— と表示します。ストリーム別の値と生 JSON は ffprobe の観測値です。",
 		healthy: "正常",
 		sampleStale:
-			"サンプルが古く、現在の状態を保証しません(最終スイープが保証窓を超過)。",
+			"最終取得から一定時間が過ぎているため、このサンプルでは現在の状態を確認できません。",
 		ingestStatusBadge: "Ingest {status}",
 		lastCueInsertedAt: "最後にキューを挿入した時刻:",
 		lastMediaPointInsertedAt: "最後にメディアポイントを挿入した時刻:",
@@ -5563,7 +5560,7 @@ export const ja = {
 			"{matches}(先頭のみ)。{scanned} 件で走査を打ち切ったため、さらに存在する可能性があります。「さらに読み込む」で走査を続けるか、より狭いフォルダを開いてください。",
 		scanWholePrefix:
 			"{matches}。{scanned} 件のオブジェクトを走査し、プレフィックス全体を確認しました。",
-		selectCredentialToBrowse: "参照を始めるには資格情報を選択してください。",
+		selectCredentialToBrowse: "参照を始めるには認証情報を選択してください。",
 		startedStopped: "開始 {started} · 停止 {stopped}",
 		stepsFraction: "{done}/{total}",
 		targetProtocolMasked: "送信先({protocol};ストリームキーは非表示)",
@@ -5663,7 +5660,7 @@ export const ja = {
 		stoppedSiblingsOne:
 			"同じジョブの他のエンコーディング {count} 件を停止しました(このステップが失敗した時点でも課金は継続していました)",
 		auditErrorLabel: "Bitmovin 呼び出しエラー",
-		stoppedSiblingsLabel: "停止した兄弟エンコーディング(ID)",
+		stoppedSiblingsLabel: "停止した同一ジョブ内のエンコーディング（ID）",
 		stoppedSiblingsOther:
 			"同じジョブの他のエンコーディング {count} 件を停止しました(このステップが失敗した時点でも課金は継続していました)",
 		toggleSeries: "系列 {label} の表示を切り替え",
@@ -5685,8 +5682,8 @@ export const ja = {
 		dashSignalling: "DASH のシグナリング",
 		duplicatedFromNamed:
 			"「{name}」から複製しました。アカウント・入力・ストリームキーなど必要な項目を修正してから、新しいチャンネルを作成してください。",
-		dvrPerLegLabel: "レグ毎のセグメント数",
-		dvrLegName: "レグ {n}",
+		dvrPerLegLabel: "コンテナ出力ごとのセグメント数",
+		dvrLegName: "コンテナ出力 {n}",
 		dvrLegSegments: "{count} セグメント",
 		dvrMathMixed:
 			"Σ ceil({timeshift}s / segmentLength) を {renditions} レンディション分 = {total} / 約 {budget} 要素",
@@ -5697,17 +5694,17 @@ export const ja = {
 		hlsPlaylistMarkers: "HLS プレイリストマーカー",
 		ingestPoint: "Ingest ポイント",
 		intervalRequiredFor: "{mode} では間隔が必須です",
-		maxInBudgetTimeshift: "このラダーで予算内に収まる最大タイムシフト:",
+		maxInBudgetTimeshift: "このラダーで要素数の上限内に収まる最大タイムシフト:",
 		modeField: "モード",
 		moreInformationFor: "「{label}」の説明",
 		nameField: "名前",
 		namedNField: "{item} {n} の{field}",
 		noDvrWindowHint:
-			"DVR 予算は未算定です。タイムシフト空欄は配信サービスの既定値を使用します。正のタイムシフトと有効なセグメント設定で、マニフェスト要素予算(約 {budget} 要素)を見積もります。",
+			"DVR の要素数は未計算です。タイムシフトが空欄の場合は、配信サービスの既定値を使います。タイムシフトに0より大きい値を入力し、有効なセグメント設定を指定すると、マニフェストの要素数を見積もります（上限は約 {budget} 要素）。",
 		overBudgetBlocks:
-			"約 {budget} 要素の予算を超えています。検証がこのプランをブロックします。タイムシフトを短くする、セグメントを長くする、ラダーを削るなどしてください(値が自動で丸められることはありません)。",
-		overBudgetPct: "予算超過 +{pct}%",
-		pctOfBudget: "予算の {pct}%",
+			"要素数が上限の約 {budget} を超えているため、このプランは検証エラーになります。タイムシフトを短くする、セグメントを長くする、レンディションを減らすなどして調整してください。値が自動で丸められることはありません。",
+		overBudgetPct: "要素数の上限を超過 +{pct}%",
+		pctOfBudget: "要素数の上限に対して {pct}%",
 		recommendedSecTail: "({sec} 秒)。Bitmovin の推奨は 3 時間以内です。",
 		removeNamedN: "{item} {n} を削除",
 		staticPoint: "静的ポイント",
@@ -5731,7 +5728,7 @@ export const ja = {
 			"エンコーダの送信先をここに設定してください。下のストリームキーがストリーム名になります",
 		srtCallerHint: "エンコーダはコーラーモードで動作します",
 		srtCallerHintWithPassphrase:
-			"エンコーダはコーラーモードで動作します。保管庫のパスフレーズと一致させてください",
+			"エンコーダはコーラーモードで動作します。保存済みの認証情報と同じパスフレーズを指定してください",
 		srtCallerTarget: "SRT コーラーの接続先(Bitmovin が待ち受け)",
 		srtSourceBitmovinCalls: "SRT ソース(Bitmovin が接続)",
 		srtSourceHint:
@@ -5744,14 +5741,14 @@ export const ja = {
 		streamKey: "ストリームキー",
 		zixiSource: "Zixi ソース",
 		zixiSourceHint:
-			"Bitmovin がこの Zixi ブロードキャスタから取得します(資格情報は保管庫から)",
+			"Bitmovin がこの Zixi ブロードキャスタから取得します。保存済みの認証情報を使います",
 	},
 	presetGallery: {
 		// Family labels + one title/description pair per SAMPLE_PRESETS name
 		// (keys ARE the stable preset names — : core is UI-free, the
 		// copy lives here; the gallery's totality test fails on a missing pair).
 		family: {
-			"ai-scene-analysis": "AI Scene Analysis",
+			"ai-scene-analysis": "AI シーン解析",
 			"audio-only": "音声のみ",
 			"dash-timeline": "DASH セグメントタイムライン",
 			dolby: "Dolby Vision & Atmos",
@@ -5765,9 +5762,9 @@ export const ja = {
 			webvtt: "WebVTT 字幕",
 		},
 		"ai-scene-analysis-batch-item": {
-			title: "AI Scene Analysis — バッチランナー項目",
+			title: "AI シーン解析 — バッチ処理用",
 			description:
-				"AISA バッチドライバのパラメータ化された1実行分: per-title H264 + アセット記述、HLS+DASH。",
+				"AI シーン解析（AISA）のバッチ処理1回分の設定例です。H264 Per-Title ラダーとアセット記述を使い、HLS+DASH を出力します。",
 		},
 		"ai-scene-analysis-passthrough": {
 			title: "AI Scene Analysis — MP4 パススルー",
@@ -5775,29 +5772,29 @@ export const ja = {
 				"映像のみの最小 H264 MP4 に、ja/ko 出力付きの AI Scene Analysis アセット記述を添えた構成(エンコーダ BETA)。",
 		},
 		"ai-scene-analysis-passthrough-test": {
-			title: "AI Scene Analysis パススルー(test 実行系)",
+			title: "AI シーン解析パススルー（検証用）",
 			description:
-				"test_ スクリプトが実行する AISA パススルーの構造クローン(パスは秘匿化)。",
+				"AI シーン解析パススルーの検証用設定例です。入力・出力のパスは仮の値です。",
 		},
 		"ai-scene-analysis-pertitle": {
 			title: "AI Scene Analysis — per-title H264",
 			description:
-				"自動広告挿入キュータグと多言語 AISA 出力を備えた H264 per-title ラダー、HLS+DASH は post-encoding 生成。",
+				"H264 Per-Title ラダーに、広告挿入位置の自動指定と多言語の AI シーン解析出力を設定します。HLS+DASH はエンコード完了後に生成します。",
 		},
 		"ai-scene-analysis-pertitle-test": {
-			title: "AI Scene Analysis per-title(test 実行系)",
+			title: "AI シーン解析 Per-Title（検証用）",
 			description:
-				"test_ スクリプトが実行する per-title AISA の構造クローン(パスは秘匿化)。",
+				"Per-Title と AI シーン解析を組み合わせた検証用設定例です。入力・出力のパスは仮の値です。",
 		},
 		"audio-only-aac-fmp4-hls-dash": {
 			title: "音声のみ AAC → fMP4 HLS+DASH",
 			description:
-				"映像トラックなしの AAC 専用ラダー — 音声のみの adaptation set と HLS_V6 音声バリアントストリーム。",
+				"映像トラックを使わない AAC 専用ラダーです。音声だけのアダプテーションセットと、HLS_V6 の音声バリアントストリームを使います。",
 		},
 		"cenc-cbc-drm-on-aws": {
 			title: "CENC cbcs DRM(Widevine+PlayReady+FairPlay)fMP4、DASH+HLS",
 			description:
-				"5段 H264 ラダー。全 fMP4 muxing を CENC CBC で暗号化し、Widevine PSSH・PlayReady LA-URL・FairPlay iv/uri を搭載(IV は16バイト)。",
+				"5段の H264 ラダーです。全 fMP4 出力を CENC CBC で暗号化し、Widevine PSSH・PlayReady LA-URL・FairPlay iv/uri を設定します（IV は16バイト）。",
 		},
 		"dash-hls-sftp-output-just-in-time": {
 			title: "SFTP オリジン出力 — JIT マニフェスト",
@@ -5807,12 +5804,12 @@ export const ja = {
 		"dash-hls-sftp-output-post-encoding": {
 			title: "SFTP オリジン出力 — post-encoding マニフェスト",
 			description:
-				"SFTP ペアの POST_ENCODING 側: 同一プランで、マニフェストは FINISHED 後に生成。",
+				"SFTP 出力の POST_ENCODING 版です。JIT 版と同じプランを使い、マニフェストは FINISHED 後に生成します。",
 		},
 		"dash-template-and-timeline-on-aws": {
-			title: "DASH SegmentTemplate と SegmentTimeline の並置",
+			title: "DASH SegmentTemplate と SegmentTimeline の同時出力",
 			description:
-				"1つのエンコーディングに2つの DASH マニフェスト — 同じ fMP4 muxing 上の template.mpd(TEMPLATE)と timeline.mpd(TIMELINE)。",
+				"1つのエンコーディングで、同じ fMP4 出力を参照する2つの DASH マニフェストを作成します。ファイル名は template.mpd（TEMPLATE）と timeline.mpd（TIMELINE）です。",
 		},
 		"deinterlace-filter": {
 			title: "デインターレース・フィルタチェーン",
@@ -5822,7 +5819,7 @@ export const ja = {
 		"dolby-atmos-progressive-mp4": {
 			title: "Dolby Atmos → プログレッシブ MP4",
 			description:
-				"音声のみの Atmos DAMF マスターを単一のプログレッシブ MP4 ダウンロードへ多重化 — マニフェストなし。",
+				"音声のみの Atmos DAMF マスターを、ダウンロード用の単一プログレッシブ MP4 にまとめます。マニフェストは作成しません。",
 		},
 		"dolby-audio-only-atmos-adm": {
 			title: "音声のみ Dolby Atmos(ADM)→ HLS+DASH",
@@ -5837,32 +5834,32 @@ export const ja = {
 		"dolby-dv-3ladder-profile5-dash-ondemand": {
 			title: "DV P5 三重ラダー → DASH OnDemand",
 			description:
-				"3つの兄弟エンコーディングを単一 MP4 の SegmentBase DASH OnDemand マニフェストへ統合(DVH1 サンプルエントリ、HLS なし)。",
+				"同じプラン内の3つのエンコーディングを、単一 MP4 を参照する SegmentBase DASH OnDemand マニフェストにまとめます。DVH1 サンプルエントリを使い、HLS は作成しません。",
 		},
 		"dolby-dv-atmos-adm": {
 			title: "Dolby Vision + Atmos ADM、fMP4 DASH+HLS",
 			description:
-				"DV メザニン(埋め込みメタデータ)を DOLBY_VISION H265 レンディションへ、ADM Atmos 音声付き。",
+				"メタデータを含む Dolby Vision の中間素材（メザニン）から、DOLBY_VISION H265 レンディションを作成します。ADM Atmos 音声を組み合わせます。",
 		},
 		"dolby-dv-atmos-adm-https": {
 			title: "Dolby Vision + Atmos ADM(HTTPS 入力)",
 			description:
-				"DV+ADM フローを S3 でなく認証不要の HTTPS ホスト入力から供給。",
+				"DV+ADM 構成の入力を、S3 の代わりに認証不要の HTTPS URL から取得します。",
 		},
 		"dolby-dv-atmos-damf": {
 			title: "Dolby Vision + Atmos DAMF、fMP4 DASH+HLS",
 			description:
-				"DV メザニン(埋め込みメタデータ)を DOLBY_VISION H265 レンディションへ、DAMF Atmos 音声付き。",
+				"メタデータを含む Dolby Vision の中間素材（メザニン）から、DOLBY_VISION H265 レンディションを作成します。DAMF Atmos 音声を組み合わせます。",
 		},
 		"dolby-dv-atmos-damf-aac": {
 			title: "Dolby Vision + Atmos DAMF + AAC フォールバック",
 			description:
-				"Atmos グループの隣に AAC ラダーを追加 — グループ毎の media エントリを持つ多音声グループ HLS。",
+				"Atmos に対応しない再生環境向けに AAC ラダーも追加します。HLS では複数の音声グループを使い、グループごとにメディアエントリを設定します。",
 		},
 		"dolby-dv-atmos-damf-https": {
 			title: "Dolby Vision + Atmos DAMF(HTTPS 入力)",
 			description:
-				"DV+DAMF フローを S3 でなく認証不要の HTTPS ホスト入力から供給。",
+				"DV+DAMF 構成の入力を、S3 の代わりに認証不要の HTTPS URL から取得します。",
 		},
 		"dolby-dv-ddp-multi-audio": {
 			title: "Dolby Vision + DD+/DD/AAC 多音声",
@@ -5877,32 +5874,32 @@ export const ja = {
 		"dolby-dv-hdr10-sdr-2ladder-profile81": {
 			title: "DV P8.1 + SDR 二重ラダー・マルチエンコーディング",
 			description:
-				"2つの兄弟エンコーディング(Dolby Vision Profile 8.1 と SDR)を、共有 DASH adaptation set と音声グループ毎バリアントの HLS マスターへ統合(Atmos+AAC)。",
+				"Dolby Vision Profile 8.1 と SDR を2つのエンコーディングで処理し、共通の DASH アダプテーションセットにまとめます。HLS マスターは音声グループごとにバリアントを作ります（Atmos+AAC）。",
 		},
 		"dolby-dv-hdr10-sdr-2ladder-profile81-test": {
-			title: "DV P8.1 + SDR 二重ラダー(test 実行系)",
+			title: "DV P8.1 + SDR 二重ラダー（検証用）",
 			description:
-				"test_ スクリプトが実行する二重ラダーの構造クローン(パスは秘匿化)。",
+				"Dolby Vision プロファイル8.1 と SDR の二重ラダーを使う検証用設定例です。入力・出力のパスは仮の値です。",
 		},
 		"dolby-dv-hdr10-sdr-3ladder-profile5-dv-sdr-inputs": {
 			title: "DV P5 / HDR10 / SDR 三重ラダー(DV + SDR 入力)",
 			description:
-				"別々の DV/SDR メザニンから供給される3つの兄弟エンコーディング、マニフェストは post-encoding で統合。",
+				"DV と SDR の別々の中間素材を使い、同じプラン内の3つのエンコーディングで処理します。マニフェストはエンコード完了後にまとめます。",
 		},
 		"dolby-dv-hdr10-sdr-3ladder-profile5-dv-sdr-inputs-test": {
-			title: "DV P5 / HDR10 / SDR 三重ラダー、DV+SDR 入力(test 実行系)",
+			title: "DV P5 / HDR10 / SDR 三重ラダー、DV+SDR 入力（検証用）",
 			description:
-				"test_ スクリプトが実行する DV+SDR 入力三重ラダーの構造クローン(パスは秘匿化)。",
+				"DV と SDR の別々の入力を使う三重ラダーの検証用設定例です。入力・出力のパスは仮の値です。",
 		},
 		"dolby-dv-hdr10-sdr-3ladder-profile5-single-input": {
 			title: "DV P5 / HDR10 / SDR 三重ラダー(単一入力)",
 			description:
-				"1つの DV メザニンから導出した3つの兄弟エンコーディングを、post-encoding で1組の DASH+HLS マニフェストへ統合。",
+				"1つの DV 中間素材を、同じプラン内の3つのエンコーディングで処理します。エンコード完了後に、1組の DASH+HLS マニフェストにまとめます。",
 		},
 		"dolby-dv-hdr10-sdr-3ladder-profile5-single-input-test": {
-			title: "DV P5 / HDR10 / SDR 三重ラダー、単一入力(test 実行系)",
+			title: "DV P5 / HDR10 / SDR 三重ラダー、単一入力（検証用）",
 			description:
-				"test_ スクリプトが実行する単一入力三重ラダーの構造クローン(パスは秘匿化)。",
+				"単一入力から三重ラダーを作る検証用設定例です。入力・出力のパスは仮の値です。",
 		},
 		"dolby-dv-separated-metadata-adm": {
 			title: "Dolby Vision 分離メタデータ + Atmos ADM",
@@ -5930,16 +5927,17 @@ export const ja = {
 		"fixed-bitrate-hls-on-aws": {
 			title: "固定ビットレート H264+AAC → HLS(AWS S3)",
 			description:
-				"定番のスターター: 2段 H264 ラダー + AAC 2トラック、fMP4 セグメント、S3 上の just-in-time HLS マニフェスト1本。",
+				"2段の H264 ラダーと AAC 2トラックを使う基本構成です。fMP4 セグメントと、ジャストインタイムで生成する HLS マニフェスト1本を S3 に出力します。",
 		},
 		"fixed-bitrate-hls-on-azure": {
 			title: "固定ビットレート H264+AAC → HLS(Azure Blob)",
-			description: "スターターラダーの入出力を S3 でなく Azure Blob に。",
+			description:
+				"基本構成の入出力を、S3 の代わりに Azure Blob に設定します。",
 		},
 		"fixed-bitrate-hls-streamcondition-on-aws": {
 			title: "固定ビットレート HLS + 音声ガード(AWS S3)",
 			description:
-				"全音声レンディションに Condition(AUDIOSTREAMCOUNT > 0) を付け、無音ソースでは音声出力をスキップ。",
+				"全音声レンディションに Condition（AUDIOSTREAMCOUNT > 0）を設定し、音声ストリームがない入力では音声出力をスキップします。",
 		},
 		"fixed-bitrate-hls-streamcondition-on-azure": {
 			title: "固定ビットレート HLS + 音声ガード(Azure Blob)",
@@ -5962,12 +5960,12 @@ export const ja = {
 		"keyframes-segment-aligned": {
 			title: "広告キュー・キーフレーム — セグメント整合",
 			description:
-				"広告ブレーク時刻のエンコーディングレベル・キーフレームをセグメント格子上に配置(クリーンカット、セグメント数不変)。",
+				"広告ブレーク時刻のキーフレームを、セグメント境界に合わせてエンコーディング単位で指定します。セグメント数を変えずに区切る構成です。",
 		},
 		"keyframes-segment-non-aligned": {
 			title: "広告キュー・キーフレーム — 非整合",
 			description:
-				"セグメント格子から外れた広告ブレーク・キーフレームで、セグメントを途中分割。",
+				"セグメント境界に合わない広告ブレーク時刻にキーフレームを指定し、セグメントを途中で分割する構成です。",
 		},
 		"mp4-fixed-bitrate-hls-on-aws": {
 			title: "MP4 byte-range HLS(AWS S3)",
@@ -5990,17 +5988,17 @@ export const ja = {
 		"nexguard-watermarking": {
 			title: "NexGuard フォレンジック・ウォーターマーク(A/B 出力)",
 			description:
-				"映像ストリーム毎の FileMarker OTT ウォーターマークで A/B バリアント出力を生成。ライセンスは保管庫内に留まる。",
+				"映像ストリームごとに FileMarker OTT ウォーターマークを設定し、A/B バリアントを出力します。ライセンスは保存済みの認証情報で管理します。",
 		},
 		"pertitle-h264-fmp4-ts-dash-hls-on-aws": {
-			title: "Per-Title H264 — fMP4+TS 二重レグ、DASH+HLS",
+			title: "Per-Title H264 — fMP4+TS の2形式、DASH+HLS",
 			description:
-				"固定解像度ピン付き per-title テンプレート。全レンディションを fMP4(DASH)と TS(HLS)へ、{height}/{bitrate}/{uuid} プレースホルダーパス配下に多重化。",
+				"固定解像度を指定した Per-Title テンプレートです。全レンディションを fMP4（DASH）と TS（HLS）にまとめ、{height}/{bitrate}/{uuid} を含むパスに出力します。",
 		},
 		"pertitle-h264-fmp4-ts-drm-on-aws": {
-			title: "Per-Title H264 + CENC / FairPlay 二重レグ",
+			title: "Per-Title H264 + CENC / FairPlay の2形式",
 			description:
-				"per-title H264 ラダー上で、fMP4 レグ(DASH)に CENC、TS レグ(HLS)に FairPlay。",
+				"H264 Per-Title ラダーで、fMP4 出力（DASH）に CENC、TS 出力（HLS）に FairPlay を設定します。",
 		},
 		"pertitle-h264-mp4-smooth-drm-on-aws": {
 			title: "Per-Title H264 → Smooth Streaming + PlayReady",
@@ -6015,7 +6013,7 @@ export const ja = {
 		"pertitle-h264-separate-av-inputs": {
 			title: "Per-Title H264 — 映像/音声別ソースファイル",
 			description:
-				"1つの S3 入力から映像のみ/音声のみのファイルが別々の ingest トラックを供給 — 分離 A/V マルチパスシナリオ。",
+				"1つの S3 入力を使い、映像ファイルと音声ファイルを別々の入力トラックに割り当てます。映像と音声を分けて処理する設定例です。",
 		},
 		"pertitle-h265-fmp4-dash-hls-on-aws": {
 			title: "Per-Title H265 — fMP4 DASH+HLS、3パスエンコード",
@@ -6025,30 +6023,31 @@ export const ja = {
 		"pertitle-h265-fmp4-drm-on-aws": {
 			title: "Per-Title H265 + CENC / FairPlay(fMP4)",
 			description:
-				"per-title H265 ラダーに CENC(Widevine+PlayReady)と、同じ fMP4 muxing 上の独立 FairPlay レグ。",
+				"H265 Per-Title ラダーに CENC（Widevine+PlayReady）を設定し、同じ fMP4 コンテナから FairPlay 用の出力も作成します。",
 		},
 		"pertitle-vp9-webm-cenc-drm-on-aws": {
 			title: "Per-Title VP9 WebM + Widevine CENC、DASH",
 			description:
-				"VP9 per-title WebM muxing を CENC(Widevine)で暗号化し、fMP4 音声と並置 — DASH のみ。",
+				"VP9 Per-Title の WebM 出力を CENC（Widevine）で暗号化し、fMP4 音声と組み合わせます。DASH のみの構成です。",
 		},
 		"pertitle-vp9-webm-fmp4-dash-on-aws": {
 			title: "Per-Title VP9 — WebM 映像 + fMP4 音声、DASH",
 			description:
-				"VP9 per-title WebM muxing と AAC fMP4 音声を DASH 専用マニフェストに。",
+				"VP9 Per-Title の WebM 映像と AAC の fMP4 音声を、DASH 専用マニフェストにまとめます。",
 		},
 	},
 	rateCard: {
 		label: "ライブ料金カード(JSON)",
-		hint: "契約上のライブエンコーディング料金を出力解像度別に記録します — 実行コスト見積もりに使われます。空にするとカードは削除されます。",
+		hint: "契約上のライブエンコード料金を、出力解像度別に記録します。実行コストの見積もりに使います。空欄にすると料金カードを削除します。",
 		insertExample: "サンプルを挿入",
 		exampleBanner: "サンプル値です — 契約の料金に置き換えてください。",
 	},
 	estimate: {
-		invalidDuration: "見積もりには正の分数を入力してください。",
+		invalidDuration:
+			"見積もりには、0より大きい実行時間を分単位で入力してください。",
 		title: "実行コスト見積もり",
 		wizardExplainer:
-			"料金カードに基づく仮の実行時間での試算です — 請求額そのものではありません。",
+			"料金カードと仮の実行時間に基づく試算です。実際の請求額とは異なる場合があります。",
 		minutesLabel: "分",
 		line: "≈ {total} {currency}({perHour} {currency}/時、ティア ≤{tier}p)",
 		noRateCard:
@@ -6057,37 +6056,37 @@ export const ja = {
 			"高さが確定している映像レンディションがないため試算できません。",
 		exceedsTiers:
 			"ラダー({ladder}p)が料金カードの全ティア(最大 {max}p)を超えています — 見積もり不可。",
-		invalidMinutes: "分数は正の数で入力してください。",
+		invalidMinutes: "実行時間は、0より大きい値を分単位で入力してください。",
 		assumeEncodingOnly:
-			"エンコーディング分のみ(エグレス/ストレージ/フィーダー除く)",
+			"エンコード料金のみ（データ転送・ストレージ・フィーダーの料金は含まない）",
 		assumeNoIncrements: "最低課金単位は考慮しません",
-		assumeNullHeights: "自由スケーリングのレンディションはティア選定から除外",
+		assumeNullHeights: "高さ未指定のレンディションは料金区分の選定から除外",
 	},
 	schedule: {
 		upcomingCaption: "今後 7 日間の予約済みスケジュールアクション",
-		/* The three times schedule input delivery, program start and channel stop. Channel provisioning and charges begin immediately after creation. */
+		/* The three times schedule input delivery, program start and channel stop. Channel provisioning begins immediately after creation. */
 		enableAtCreation: "入力送出・番組・停止の予定を設定",
 		/* Always distinguish scheduled delivery time from encoder startup time. */
 		provisionsNote:
 			"チャンネルは作成後すぐに起動準備を開始します（入力送出予定時刻まで待機しません）。",
 		/* Use the shared provisioning clause so this hint cannot imply that scheduling delays provisioning. */
-		disabledHint: `${PROVISIONS_AT_CREATE} — 予定を設定しても起動は後ろ倒しになりません。予定がない場合は、手動停止(または上限)まで動き続けるだけです。以下の項目は後から詳細ページでも設定できます。`,
+		disabledHint: `${PROVISIONS_AT_CREATE}。予定を設定しても、起動時刻は遅くなりません。予定がない場合は、手動停止や稼働時間の上限などで停止します。以下の項目は、後から詳細ページでも設定できます。`,
 		streamUpAt: "入力送出予定時刻",
 		/* Share the provisioning clause with the ramp hint to keep both statements consistent. */
-		streamUpHint: `${PROVISIONS_AT_CREATE} — ここで設定するのは入力送出・番組・停止の予定であり、チャンネルの起動時刻ではありません。入力送出予定時刻は、スケジュールが基準にするフィード開始の予定時刻です。ここまでに入力エンドポイントへ映像を送ってください。スレートを有効にしている場合はこの時刻に挿入され、番組開始まで続きます。作成後から停止完了までが課金対象です。`,
+		streamUpHint: `${PROVISIONS_AT_CREATE}。ここで設定するのは入力送出・番組・停止の予定で、チャンネルの起動時刻ではありません。入力送出予定時刻は、入力を接続しておく時刻の目安です。この時刻までに入力エンドポイントへ映像を送ってください。スレートを有効にすると、この時刻から番組開始まで挿入する予定になります。`,
 		programStartAt: "番組開始予定時刻",
 		programStartHint:
-			"番組の開始時刻です。スレートを有効にした場合、ちょうどここまで挿入します。",
+			"番組の開始予定時刻です。スレートを有効にした場合、この時刻まで挿入する予定になります。",
 		programEndAt: "チャンネル停止予定時刻",
 		programEndHint:
-			"この時刻にチャンネルを停止します。停止が実行できない場合に備え、導出された強制停止の上限が後ろに控えます。",
+			"この時刻にチャンネルへ停止を要求します。予定の停止が実行できない場合に備え、稼働時間の上限による停止も設定されます。",
 		enableSlate: "番組開始までスレートを挿入",
 		slateSource: "スレート素材",
 		slateSourceHint:
-			"ストレージから選択します。チャンネルが稼働中になった後に登録され、起動準備がどれだけ遅れても番組開始予定時刻ちょうどで番組に切り替わります。",
+			"ストレージから素材を選択します。チャンネルの稼働後に登録し、番組開始予定時刻まで挿入する設定です。",
 		slatePickPlaceholder: "参照から素材を選択",
 		capPreview:
-			"強制停止の上限: 予定の停止が実行できなくても {minutes} 分後に停止します。",
+			"稼働時間上限の目安: {minutes} 分。実際の上限は作成時に計算され、到達すると停止を要求します。",
 		errIncomplete: "3 つの時刻すべてが必要です。",
 		errUpAfterStart: "入力送出予定時刻は番組開始予定時刻より後にできません。",
 		errEndBeforeStart:
@@ -6095,12 +6094,12 @@ export const ja = {
 		errNoSlateSource:
 			"スレート素材を選択するか、スレートをオフにしてください。",
 		errZeroSlateWindow:
-			"スレートには入力送出予定時刻が番組開始予定時刻より厳密に前である必要があります — 挿入する時間がありません。",
+			"スレートを挿入する時間がありません。入力送出予定時刻を、番組開始予定時刻より前に設定してください。",
 		/* Describe automatic shutdown in terms of its effect: stopping before the planned end. */
 		errStreamTimeoutShorterThanSlot:
 			"合計稼働時間の自動停止({minutes} 分)が配信枠({slot} 分)より短いため、予定終了前に停止します — その後に予定された停止・スレート・ファイル入力はすべて停止済みのチャンネルへ実行されます。「自動再起動・自動停止」ステップで時間を延ばすか、配信枠を短くしてください。",
 		autoShutdownConditionalNote:
-			"自動停止 {knobs} は、それでも実行を早く終わらせることがあります — 入力が途切れた場合や一度も接続されない場合の時刻は確定できないため、配信枠との突き合わせは行いません。",
+			"自動停止の設定 {knobs} により、予定より早く停止する場合があります。入力が途切れる時刻や、一度も接続されない場合の停止時刻は確定できないため、配信枠との比較は行いません。",
 		timelineIncomplete: "3 つの時刻が揃うとタイムラインが描画されます。",
 		timelineUnordered:
 			"時刻の順序が不正です — 修正するとタイムラインが表示されます。",
@@ -6116,10 +6115,10 @@ export const ja = {
 		reviewSlateSuffix: " · スレートあり",
 		/* Explain these prerequisites before the operator starts sending the input stream. */
 		slateNeedsIngest:
-			"予約済みのスレートは入力の接続待ちです — スレートは受信中の入力にしか挿入できません。入力エンドポイントへ映像(またはファイル入力)を接続すれば自動で挿入されます。",
+			"予約済みのスレートは入力の接続待ちです。スレートは受信中の入力にしか挿入できません。入力エンドポイントへ映像またはファイル入力を接続してください。素材の準備が整い、挿入可能な時間帯であれば、自動で挿入を要求します。",
 		rampHint: `${PROVISIONS_AT_CREATE}。入力送出予定時刻はスレート・停止・実行上限の基準として使われます。起動準備に数分かかり、その後フィードを受け付けます。`,
 		slateIngestHint:
-			"スレートは接続中の入力に挿入されます — 空のチャンネルには描画できません。入力送出予定時刻までにフィード(またはファイル入力)を接続してください。未接続のままだとスレートは待機し、窓が閉じた時点で未実行 (MISSED) になります。",
+			"スレートは受信中の入力に挿入します。入力がないチャンネルには表示できません。入力送出予定時刻までに外部入力またはファイル入力を接続してください。未接続のまま挿入可能な時間帯が終わると、未実行（MISSED）になります。",
 		/* File-fed programs have a dedicated pseudo-live screen; this text directs operators there. */
 		feederPointer:
 			"外部の入力を接続する代わりに、自分のバケットにあるクリップを番組として流す場合は、ファイル入力(擬似ライブ)の画面から作成します。このステップは外部入力の送出予定とそのスレートを設定する場所です。",
@@ -6134,20 +6133,20 @@ export const ja = {
 		title: "スケジュールアクション",
 		timelineEvents: "スケジュールイベント",
 		explainer:
-			"予約した時刻に一度だけ実行されます(±30 秒)。遅れすぎた開始・スレートは、終了済みや進行中の番組へ遅れて実行する代わりに未実行になります。停止はどれだけ遅れても必ず実行されます。",
+			"約30秒間隔で予定を確認し、指定時刻に達した操作の実行を要求します。各予定は単発の操作です。遅れすぎた開始・スレートは、番組への影響を避けるため未実行になります。停止は遅れても実行対象です。",
 		action: "動作",
 		actionStart: "チャンネルを開始 (START)",
 		actionStop: "チャンネルを停止 (STOP)",
 		actionSlate: "スレートを挿入 (SLATE_IN)",
 		fireAt: "実行時刻",
 		airAt: "放送開始時刻（デッドライン警報）",
-		autoLead: "自動リード（実行時刻を導出）",
+		autoLead: "自動リード（起動実績から実行時刻を計算）",
 		autoLeadExplainer:
-			"実行時刻を「放送開始時刻 − この地域の起動時間の実績(上位 90%) − 余裕」で導出します。実績が不足している場合は既定のリードを使います。手入力の実行時刻がそれより早い場合は手入力が優先されます。",
+			"「放送開始時刻 − このリージョンの起動実績の90パーセンタイル − 余裕時間」で実行時刻を求めます。実績が不足する場合は既定の準備時間を使います。手入力の実行時刻がそれより早い場合は、手入力を優先します。",
 		autoLeadResolvedP90:
-			"導出: {at} に起動開始（この地域の起動実績 {n} 件から算出、上位 90% で {p90} 秒 + 余裕）。",
+			"自動計算による実行時刻: {at}（このリージョンの起動実績 {n} 件から算出、90パーセンタイルの {p90} 秒 + 余裕時間）。これより早い手入力時刻があれば、そちらを優先します。",
 		autoLeadResolvedDefault:
-			"導出: {at} に起動開始（データ不足 — 既定リード {lead} 秒）。",
+			"自動計算による実行時刻: {at}（実績が不足するため、既定の準備時間 {lead} 秒を使用）。これより早い手入力時刻があれば、そちらを優先します。",
 		deadlineMargin: "デッドライン余裕（秒）",
 		invalidAirAt: "有効な放送開始時刻を入力してください",
 		airAtLine: "放送開始 {at}",
@@ -6205,7 +6204,7 @@ export const ja = {
 		slateDurationLine: "スレート {seconds} 秒",
 		capTitle: "最大実行時間",
 		capExplainer:
-			"安全上限です。稼働中がこの分数に達するとチャンネルを自動停止します。稼働開始を確認した時点から計測するため、開始の遅延で枠が減ることはありません。空欄 = 上限なし。",
+			"配信の稼働時間の上限です。指定した時間に達すると、チャンネルを自動停止します。稼働開始を確認した時点から数えるため、起動準備の遅延で稼働時間が短くなることはありません。空欄は上限なしです。",
 		capLabel: "分",
 		capNonePlaceholder: "上限なし",
 		capSave: "上限を保存",
@@ -6226,9 +6225,9 @@ export const ja = {
 
 		title: "監視フォルダ",
 		explainer:
-			"ホットフォルダのルールです。お客様のバケットのプレフィックスを一覧し、新しいオブジェクトが安定するのを待ってから、FULL_PLAN プリセットでエンコーディングジョブを自動投入します。",
+			"指定したバケットとプレフィックスのファイル一覧を定期的に取得します。新しいオブジェクトのサイズなどが一定であることを確認し、FULL_PLAN プリセットを使ってエンコードジョブを自動で登録します。",
 		noWritesPromise:
-			"契約事項: このアプリはバケットを一覧するだけです。オブジェクトの書き込み・移動・マーキングは一切行いません — 処理状態はこのアプリ自身のデータベースに保持されます。",
+			"監視処理では、対象バケットの一覧取得だけを行います。入力オブジェクトの書き込み・移動や、処理済みマーカーの追加は行いません。処理済みかどうかはアプリ側で管理します。",
 		name: "ルール名",
 		location: "監視場所",
 		pickLocation: "バケット / プレフィックスを選択…",
@@ -6248,7 +6247,7 @@ export const ja = {
 			"監視ルールがまだありません — ルールを作るまで新しいオブジェクトは検知されません。",
 		enabled: "有効",
 		disabled: "無効",
-		errorBadge: "スイープエラー",
+		errorBadge: "定期確認エラー",
 		countsLine: "投入 {submitted} · 待機 {pending}",
 		countsErrorsOne: "エラー {errors}",
 		countsErrorsOther: "エラー {errors}",
@@ -6256,10 +6255,10 @@ export const ja = {
 		reArmFailed: "再エンコードに失敗しました: {message}",
 		redetectConfirmTitle: "このプレフィックス配下を全再検知しますか？",
 		redetectConfirmBody:
-			"「{name}」はデータリセットで無効化され、エンコード済みオブジェクトの記憶も削除されています。有効化すると配下の全オブジェクトを新規として再検知し、それぞれ課金対象のエンコードを投入します。",
+			"「{name}」はデータリセットで無効化され、処理済みオブジェクトの記録も削除されています。有効化すると、配下のオブジェクトを新規として再検出し、課金対象のエンコードが作成されます。",
 		redetectConfirmEnable: "有効化して再検知",
-		lastSweep: "{time} にスイープ",
-		neverSwept: "未スイープ",
+		lastSweep: "最終確認 {time}",
+		neverSwept: "未確認",
 		objects: "オブジェクト",
 		collapse: "閉じる",
 		enable: "有効化",
@@ -6274,15 +6273,15 @@ export const ja = {
 		rulesTitle: "アラートルールと解決済み履歴",
 		title: "アラート",
 		openBannerLineOne:
-			"{count} 件のアラートが発火中です — 下のアラート欄を確認してください。",
+			"未解決のアラートが {count} 件あります。下のアラート欄を確認してください。",
 		openBannerLineOther:
-			"{count} 件のアラートが発火中です — 下のアラート欄を確認してください。",
+			"未解決のアラートが {count} 件あります。下のアラート欄を確認してください。",
 		fetchFailed: "アラートを読み込めませんでした: {message}",
 		resolveButton: "解決にする",
 		resolveFailed: "解決に失敗しました: {message}",
 		deleteCascadeWarning:
-			"ルールを削除すると、そのアラート履歴もすべて削除されます(カスケード)。履歴を残す場合は無効化してください。",
-		noneOpen: "発火中のアラートはありません。",
+			"ルールを削除すると、そのルールのアラート履歴もすべて削除されます。履歴を残す場合は、ルールを無効化してください。",
+		noneOpen: "未解決のアラートはありません。",
 		history: "解決済みの履歴",
 		noneHistory: "まだ発火していません。",
 		openedAt: "{time} に発火",
@@ -6304,17 +6303,17 @@ export const ja = {
 		subjectIngest: "入力",
 		subjectDelivery: "出力",
 		provenanceHelp:
-			"エンコーダ由来のシグナルはエンコーダ自身の報告に基づきます。出力由来のシグナルは出力先のプレイリストを直接計測したもので、エンコーダの報告と食い違っても独立に成立します。",
+			"エンコーダ由来のアラートは、エンコーダの報告に基づきます。出力由来のアラートは、出力先のプレイリストを直接確認した結果です。別々に確認しているため、両者の状態が異なる場合があります。",
 		threshold: "しきい値",
 		severity: "重大度",
-		windowPolls: "ウィンドウ(ポーリング回数)",
+		windowPolls: "判定期間（ポーリング回数）",
 		windowLineOne: "{polls} 回",
 		windowLineOther: "{polls} 回",
 		settingsTitle: "ライブアラートルール",
 		settingsExplainer:
-			"30 秒のハートビートスイープ内で評価されます — 検知遅延は最低でもスイープ間隔 × ウィンドウです。グローバルルールは全チャンネルに適用され、チャンネル専用ルールは各チャンネルのページから追加します。ルールを削除するとそのアラート履歴も削除されます。",
+			"30秒間隔のハートビート取得時に判定します。検知には、少なくとも取得間隔 × 判定期間のポーリング回数に相当する時間がかかります。グローバルルールは全チャンネルに適用します。チャンネル専用ルールは、各チャンネルのページから追加してください。ルールを削除すると、そのルールのアラート履歴も削除されます。",
 		noRules:
-			"ルールがまだありません — ルールを作るまでアラートは発火しません。",
+			"ルールがありません。アラートを検出するには、先にルールを作成してください。",
 		scopeGlobal: "グローバル",
 		scopeChannel: "チャンネル",
 		disabled: "無効",
@@ -6339,7 +6338,7 @@ export const ja = {
 			"ホストはホスト名のみで指定してください(スキーム・パス・ポート不可)",
 		watchRuleName: "ルール名は小文字の英字・数字・ハイフンのみ使用できます",
 		watchTemplateToken:
-			"テンプレートには basename または uuid トークンが必要です — ないと出力同士が上書きし合います",
+			"出力同士の上書きを避けるため、テンプレートに basename または uuid トークンを含めてください",
 		offsetIso8601:
 			"offset は ISO 8601 期間で指定してください(例: PT10S、-PT1.500S)",
 		binaryRequired: "binary は必須です",
@@ -6364,28 +6363,28 @@ export const ja = {
 		accessSecretTogether:
 			"accessKey と secretKey は両方まとめて指定してください",
 		gcsEitherOr:
-			"serviceAccountCredentials か、serviceAccountEmail/privateKey/projectId のどちらか一方だけを指定してください — 両方は指定できません",
+			"serviceAccountCredentials と serviceAccountEmail/privateKey/projectId は、どちらか一方だけを指定してください。同時には指定できません",
 		gcsAllOfTriple:
 			"serviceAccountCredentials を指定するか、serviceAccountEmail・privateKey・projectId の 3 つ全てを指定してください",
 		requiredUnlessJson: "serviceAccountCredentials を指定しない場合は必須です",
 		customDataTooLarge:
-			"customData が大きすぎます(シリアライズ後 {size} 文字。上限 {max} 文字)",
+			"customData が大きすぎます（JSON に変換した後で {size} 文字。上限は {max} 文字）",
 		apiTokenRequired: "API トークンは必須です",
 		awsAccountNumberRequired: "AWS アカウント番号は必須です",
 		compartmentOcidRequired: "Compartment OCID は必須です",
 		encoderVersionRequired: "エンコーダバージョンは必須です",
 		networkRequired: "ネットワークは必須です",
 		networkNameRequired: "ネットワーク名は必須です",
-		resourceGroupIdRequired: "リソースグループ id は必須です",
-		securityGroupIdRequired: "セキュリティグループ id は必須です",
+		resourceGroupIdRequired: "リソースグループ ID は必須です",
+		securityGroupIdRequired: "セキュリティグループ ID は必須です",
 		subnetOcidRequired: "Subnet OCID は必須です",
-		subnetIdRequired: "サブネット id は必須です",
+		subnetIdRequired: "サブネット ID は必須です",
 		subnetNameRequired: "サブネット名は必須です",
-		subscriptionIdRequired: "サブスクリプション id は必須です",
+		subscriptionIdRequired: "サブスクリプション ID は必須です",
 		tenancyOcidRequired: "Tenancy OCID は必須です",
-		tenantIdRequired: "テナント id は必須です",
-		credKeyHex: "16 バイトのコンテンツキーを 32 文字の hex で指定してください",
-		credAccessKeyIdRequired: "アクセスキー id は必須です",
+		tenantIdRequired: "テナント ID は必須です",
+		credKeyHex: "16 バイトのコンテンツキーを、32桁の16進数で指定してください",
+		credAccessKeyIdRequired: "アクセスキー ID は必須です",
 		credAccountKeyRequired: "アカウントキーは必須です",
 		credAccountNameRequired: "アカウント名は必須です",
 		credBucketNameRequired: "バケット名は必須です",
@@ -6407,7 +6406,7 @@ export const ja = {
 		credPasswordOrDecryptionKey:
 			"password か decryptionKey の少なくとも一方を指定してください",
 		credMslDigestBothOrNeither:
-			"Digest のユーザー名とパスワードは両方を指定するか、両方とも空にしてください — 片方だけは provisioning 時に Bitmovin から拒否されます",
+			"Digest のユーザー名とパスワードは両方指定するか、両方とも空欄にしてください。片方だけでは、起動準備時に Bitmovin が拒否します",
 		credMslEdgeTooLong: "エッジベース URL は 512 文字以内で入力してください",
 		credMslEdgeInvalid:
 			"エッジベース URL は絶対 https URL(https://ホスト/パス)で入力してください",
@@ -6425,11 +6424,12 @@ export const ja = {
 		credSecretAccessKeyRequired: "シークレットアクセスキーは必須です",
 		credUsernameRequired: "ユーザー名は必須です",
 		scheduleFeederDerivedOnly:
-			"フィーダー行は番組スケジュールが作成時に導出します — 手動 arm はできません",
+			"ファイル入力の予定は、番組スケジュールの作成時に自動設定されます。個別に手動登録することはできません",
 		scheduleAirAtStartOnly:
 			"放送開始デッドラインは START スケジュールにのみ設定できます",
-		scheduleAirAtAfterFireAt: "放送開始時刻は発火時刻より後に設定してください",
-		scheduleFireAtRequired: "発火時刻は必須です（自動リード導出時を除く）",
+		scheduleAirAtAfterFireAt: "放送開始時刻は実行時刻より後に設定してください",
+		scheduleFireAtRequired:
+			"実行時刻は必須です（自動リードで計算する場合を除く）",
 		scheduleAutoLeadStartOnly:
 			"自動リードは START スケジュールにのみ設定できます",
 		scheduleAutoLeadNeedsAirAt: "自動リードには放送開始時刻が必要です",

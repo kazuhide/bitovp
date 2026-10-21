@@ -44,7 +44,7 @@ describe("localizedTitle", () => {
 	it("returns the Japanese title when the cookie says so", async () => {
 		cookieJar.set(LOCALE_COOKIE, "ja");
 		expect(await localizedTitle("pageTitles.signIn")()).toEqual({
-			title: "サインイン",
+			title: "ログイン",
 		});
 	});
 

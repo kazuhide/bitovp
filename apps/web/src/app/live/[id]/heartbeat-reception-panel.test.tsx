@@ -214,7 +214,9 @@ describe("HeartbeatReceptionPanel", () => {
 			/>,
 			"ja",
 		);
-		expect(screen.getByText("表示できる Push 計測なし")).toBeInTheDocument();
+		expect(
+			screen.getByText("表示できる Push 通知の計測値がありません"),
+		).toBeInTheDocument();
 	});
 
 	it("can expand and collapse receipt metrics using its native summary", async () => {

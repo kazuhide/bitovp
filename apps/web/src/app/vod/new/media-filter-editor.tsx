@@ -60,10 +60,10 @@ const edges: Spec[] = [
 ];
 const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 	DENOISE_HQDN3D: [
-		["lumaSpatial", "Spatial luma", "空間輝度", "number"],
-		["chromaSpatial", "Spatial chroma", "空間色差", "number"],
-		["lumaTmp", "Temporal luma", "時間輝度", "number"],
-		["chromaTmp", "Temporal chroma", "時間色差", "number"],
+		["lumaSpatial", "Spatial luma", "輝度（空間方向）", "number"],
+		["chromaSpatial", "Spatial chroma", "色差（空間方向）", "number"],
+		["lumaTmp", "Temporal luma", "輝度（時間方向）", "number"],
+		["chromaTmp", "Temporal chroma", "色差（時間方向）", "number"],
 	],
 	UNSHARP: [
 		[
@@ -78,7 +78,7 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 			"輝度マトリクス高さ",
 			"number",
 		],
-		["lumaEffectStrength", "Luma strength", "輝度強度", "number"],
+		["lumaEffectStrength", "Luma strength", "輝度の処理強度", "number"],
 		[
 			"chromaMatrixHorizontalSize",
 			"Chroma matrix width",
@@ -91,12 +91,12 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 			"色差マトリクス高さ",
 			"number",
 		],
-		["chromaEffectStrength", "Chroma strength", "色差強度", "number"],
+		["chromaEffectStrength", "Chroma strength", "色差の処理強度", "number"],
 	],
 	CROP: edges,
 	ROTATE: [["rotation", "Rotation (degrees)", "回転角度", "number"]],
 	WATERMARK: [
-		["imagePath", "Image object path", "画像のオブジェクトパス", "text"],
+		["imagePath", "Image object path", "画像ファイルのパス", "text"],
 		...edges,
 	],
 	AUDIO_VOLUME: [
@@ -134,8 +134,8 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 		["lineSpacing", "Line spacing", "行間", "number"],
 		["fixBounds", "Keep within frame", "フレーム内に補正", ["true", "false"]],
 		["shadowColor", "Shadow color", "影の色", "text"],
-		["shadowX", "Shadow X", "影 X", "number"],
-		["shadowY", "Shadow Y", "影 Y", "number"],
+		["shadowX", "Shadow X", "影の横位置", "number"],
+		["shadowY", "Shadow Y", "影の縦位置", "number"],
 	],
 };
 

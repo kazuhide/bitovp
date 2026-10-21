@@ -209,7 +209,7 @@ describe("customer copy gate — catalogue arm", () => {
 			"Use the same model for reports you compare. The standard viewing condition is recommended for most comparisons.",
 		);
 		expect(ja.prose.presetGalleryIntro).toContain(
-			"資格情報、入力パス、保存先を確認して使用してください。",
+			"認証情報、入力パス、保存先を確認して使用してください。",
 		);
 		expect(en.prose.presetGalleryIntro).toContain(
 			"check the credentials, input paths and destinations",

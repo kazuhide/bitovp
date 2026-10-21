@@ -1185,7 +1185,7 @@ describe("both catalogues carry the navigation and the announcements", () => {
 		world.lastHeartbeat = heartbeatAt(NOW - 10_000, "DISCONNECTED");
 		await poll();
 		expect(document.querySelector("[data-live-announcer]")?.textContent).toBe(
-			"取り込みが切断されました。",
+			"入力が切断されました。",
 		);
 	});
 });

@@ -152,7 +152,11 @@ describe("DeliveryGallery", () => {
 				type: "application/json",
 			}),
 		);
-		expect(await screen.findByText(/自己逸脱 1 件付き/)).toBeInTheDocument();
+		expect(
+			await screen.findByText(
+				/要件を満たさない設定が 1 件ある状態で取り込みました/,
+			),
+		).toBeInTheDocument();
 		expect(apiFetch).toHaveBeenCalled();
 	});
 	it("drops the suggested QC gate line when QC/VMAF is OFF — no recommendation for a feature the deployment does not have (review-265 131-A9)", () => {

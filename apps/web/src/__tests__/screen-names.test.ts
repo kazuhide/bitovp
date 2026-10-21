@@ -72,7 +72,7 @@ describe("the credentials screen has one name", () => {
 			"Credentials",
 		);
 		expect(value(read("ja.ts"), "settings", "storageCredentials")).toBe(
-			"資格情報",
+			"認証情報",
 		);
 	});
 });

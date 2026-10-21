@@ -64,7 +64,7 @@ describe("LoginForm", () => {
 			expect(
 				screen.getByText(
 					locale === "ja"
-						? "メールアドレスとご自身のパスワードでサインインしてください。"
+						? "メールアドレスとご自身のパスワードでログインしてください。"
 						: "Sign in with your email address and password.",
 				),
 			).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe("LoginForm", () => {
 			);
 			await userEvent.click(
 				screen.getByRole("button", {
-					name: locale === "ja" ? "サインイン" : "Sign in",
+					name: locale === "ja" ? "ログイン" : "Sign in",
 				}),
 			);
 			await waitFor(() => {
@@ -101,7 +101,7 @@ describe("LoginForm", () => {
 			expect(
 				screen.getByText(
 					locale === "ja"
-						? "この Bitmovin OVP インストールのチーム共有パスワードを入力してください。"
+						? "この環境のチーム共有パスワードを入力してください。"
 						: "Enter the shared team password for this Bitmovin OVP install.",
 				),
 			).toBeInTheDocument();
@@ -172,7 +172,7 @@ describe("LoginForm", () => {
 			await screen.findByLabelText("チームパスワード"),
 			"nope",
 		);
-		await userEvent.click(screen.getByRole("button", { name: "サインイン" }));
+		await userEvent.click(screen.getByRole("button", { name: "ログイン" }));
 		expect(await screen.findByRole("alert")).toHaveTextContent(
 			"メールアドレスまたはパスワードが正しくありません。",
 		);

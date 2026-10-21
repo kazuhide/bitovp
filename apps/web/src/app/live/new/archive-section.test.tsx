@@ -89,7 +89,9 @@ describe("Live MP4 archive settings", () => {
 		).toBeVisible();
 		expect(
 			screen.getByText(
-				locale === "ja" ? /停止後にファイルの取得/ : /After stopping, download/,
+				locale === "ja"
+					? /停止後にファイルを取得・再生/
+					: /After stopping, download/,
 			),
 		).toBeInTheDocument();
 		expect(

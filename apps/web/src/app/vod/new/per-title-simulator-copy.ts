@@ -18,6 +18,10 @@ const en = {
 	automaticSteps:
 		"Bitrate spacing is selected automatically; compatible existing values are retained.",
 	loadRequirements: "Load requirements file",
+	testPresets: "Test presets",
+	requirementFiles: "Import or export requirements",
+	presetLoaded: "Preset loaded.",
+	presetError: "This preset cannot be loaded.",
 	saveRequirements: "Download requirements",
 	fileHint:
 		"Save or load a local JSON file. Loading a file does not change the encoding draft.",
@@ -157,6 +161,10 @@ const ja: typeof en = {
 	automaticSteps:
 		"ビットレート間隔は自動で選びます。条件を満たす既存の値は維持します。",
 	loadRequirements: "要件ファイルを読み込む",
+	testPresets: "テスト用プリセット",
+	requirementFiles: "要件ファイルの読み書き",
+	presetLoaded: "プリセットを読み込みました。",
+	presetError: "このプリセットを読み込めませんでした。",
 	saveRequirements: "要件ファイルを保存",
 	fileHint:
 		"ローカルの JSON ファイルに保存・読み込みできます。読み込んだ時点では、エンコードの下書きは変更しません。",

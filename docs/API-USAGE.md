@@ -80,7 +80,8 @@ tests):
   `/api/api-tokens`, `/api/users`, `/api/admin/reset`, writes under
   `/api/credentials`, `/api/bitmovin-accounts`, `/api/infrastructure/prewarmed-pools`,
   `/api/live/standby-pools`, settings (including `/api/settings/startup-probes/run`),
-  and `/api/live-channels/[id]/runs/[runId]/heartbeats/export`.
+  `/api/live-channels/[id]/runs/[runId]/heartbeats/export`,
+  and `/api/per-title-simulator-presets`.
   Refusal: `403 {"error":"This action requires the ADMIN role","minRole":"ADMIN"}`.
   OPERATOR is also required for credential-bearing reads at
   `/api/live/stream-keys/<id>`, `/api/credentials/<id>/storage/buckets`,
@@ -97,6 +98,11 @@ tests):
   properties with conservative direct property-key evidence, plus a separately
   dated historical parameter snapshot. No provider/DB calls. Source evidence
   is not proof of GUI reachability, API writeability, or runtime success.
+
+- `/api/per-title-simulator-presets` — GET (organization ADMIN, no view-as):
+  optional local simulator presets for the current organization, returned as
+  `{presets:[{id,label,contents}]}`. Unconfigured installations return an empty
+  list. Responses are private/no-store; no provider requests are made.
 
 - `/api/admin/reset` (organization ADMIN session, no tokens): GET `?categories=<comma list>` previews selected counts. POST `{confirm:"RESET",categories:[...]}` force-deletes selected organization data and returns `deletedCounts`. Empty/duplicate/unknown/incomplete dependencies fail validation. Global users, memberships, organizations and setup identity are excluded; reset does not reopen setup. Active work and unresolved cleanup do not block selected deletion; organization-owned encrypted receipts retain cleanup ownership.
 - `/api/admin/reset/reconcile`: POST ADMIN, audited, no tokens. Stamps terminal,

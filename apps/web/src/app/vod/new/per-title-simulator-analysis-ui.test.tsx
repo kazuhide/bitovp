@@ -66,6 +66,76 @@ const mixedLadder = (maximum: number): PerTitleGoal => ({
 
 describe("current Per-Title settings analysis", () => {
 	it.each([
+		"en",
+		"ja",
+	] as const)("preserves six declared outputs with alternative upper templates (%s)", (locale) => {
+		const goal: PerTitleGoal = {
+			...mixedLadder(7_200_000),
+			countPolicy: { kind: "exact", count: 6 },
+		};
+		const normalized = tunePerTitleSettings(goal, goal).goal;
+		const evaluated = analyzePerTitleSettings(normalized, "preserve");
+		expect(evaluated.countStructure.nativeCount).toBe("requires-media");
+		expect(evaluated.reach.count.status).not.toBe("model-checked");
+		expect(evaluated.advice.length).toBeGreaterThan(0);
+		expect(
+			evaluated.advice.every((item) => item.proof === "conditional-settings"),
+		).toBe(true);
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={goal}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		const api = () =>
+			JSON.parse(
+				screen.getByTestId("per-title-api-settings").textContent ?? "{}",
+			);
+		const before = api();
+		fireEvent.change(
+			screen.getByRole("combobox", { name: locale === "ja" ? "目的" : "Goal" }),
+			{ target: { value: "preserve" } },
+		);
+		const evaluate = () =>
+			fireEvent.click(
+				screen.getByRole("button", {
+					name: locale === "ja" ? "評価する" : "Evaluate",
+				}),
+			);
+		evaluate();
+		const summary = () =>
+			screen.getByText(
+				locale === "ja"
+					? "指定した出力構成: 6本 = 200p + 400p × 2 + 600p + 800p + (1000p または 1200p)。実際の本数は素材で確認します。"
+					: "Declared output structure: 6 = 200p + 400p × 2 + 600p + 800p + (1000p or 1200p). Native count requires media.",
+			);
+		expect(summary()).toBeVisible();
+		expect(summary().closest("details")).toBeNull();
+		expect(
+			screen.getByRole("region", {
+				name: locale === "ja" ? "調整案" : "Suggested adjustment",
+			}),
+		).toBeVisible();
+		expect(api()).toEqual(before);
+		const adopt = screen.getAllByRole("button", {
+			name: locale === "ja" ? "この調整を採用" : "Use this adjustment",
+		})[0];
+		if (!adopt) throw new Error("Expected the first checked adjustment.");
+		fireEvent.click(adopt);
+		expect(api()).not.toEqual(before);
+		evaluate();
+		expect(summary()).toBeVisible();
+		expect(api().global.minBitrate).toBe(before.global.minBitrate);
+		expect(api().global.maxBitrate).toBe(before.global.maxBitrate);
+		expect(api().streams).toHaveLength(7);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
 		["en", 4_800_000],
 		["ja", 4_800_000],
 		["en", 7_200_000],

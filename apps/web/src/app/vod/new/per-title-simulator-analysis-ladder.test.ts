@@ -1,5 +1,6 @@
 import type { PerTitleGoal } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
+import { applyPerTitleAdvice } from "./per-title-simulator-advice";
 import { analyzePerTitleSettings } from "./per-title-simulator-analysis";
 import {
 	assessPerTitleLadder,
@@ -155,19 +156,104 @@ describe("whole-ladder current-setting analysis", () => {
 		expect(result.upperSlots?.maximum).toBeGreaterThan(1);
 		expect(result.earlySaturationRows).toHaveLength(4);
 	});
-	it("does not claim to preserve an unknown native count in a mixed ladder", () => {
+	it.each([
+		4_800_000, 7_200_000,
+	])("evaluates a declared six-output mixed ladder at %i without claiming native count proof", (maximum) => {
 		const goal = {
-			...mixed(7_200_000),
+			...mixed(maximum),
 			countPolicy: { kind: "exact", count: 6 } as const,
 		};
 		const result = analyzePerTitleSettings(goal, "preserve");
-		expect(result.advice).toEqual([]);
-		expect(result.decision.status).toBe("inspect-only");
+		expect(result.search.generated).toBeGreaterThan(0);
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		expect(result.reach.count.status).toBe("unknown");
+		for (const item of result.advice) {
+			expect(item.proof).toBe("conditional-settings");
+			expect(item.goal.countPolicy).toEqual({ kind: "exact", count: 6 });
+			expect(item.goal.minBitrate).toBe(goal.minBitrate);
+			expect(item.goal.maxBitrate).toBe(goal.maxBitrate);
+			expect(item.goal.automaticTemplates).toEqual(goal.automaticTemplates);
+			expect(item.facts.preservedCount).toBe(0);
+			expect(item.facts.requiredCount).toBe(6);
+			expect(item.explanation?.en).toContain("required 6");
+			expect(item.explanation?.en).not.toContain("checked count of 6");
+			expect(
+				applyPerTitleAdvice(goal, item, { contextKey: "analysis:preserve" })
+					?.countPolicy,
+			).toEqual(goal.countPolicy);
+			expect(
+				applyPerTitleAdvice(
+					{ ...goal, countPolicy: { kind: "exact", count: 7 } },
+					item,
+					{ contextKey: "analysis:preserve" },
+				),
+			).toBeNull();
+		}
 		expect(
 			result.findings.some(
-				(finding) => finding.code === "preserve-count-unverified",
+				(finding) => finding.code === "declared-count-structure",
 			),
 		).toBe(true);
+	});
+	it("does not relabel a six-role mixed structure as a verified seven-output proposal", () => {
+		const goal = {
+			...mixed(7_200_000),
+			countPolicy: { kind: "exact", count: 7 } as const,
+		};
+		const result = analyzePerTitleSettings(goal, "preserve");
+		expect(result.search.generated).toBeGreaterThan(0);
+		expect(result.countStructure.status).not.toBe("declared-compatible");
+		expect(result.reach.count.status).toBe("unknown");
+		expect(result.advice).toEqual([]);
+		expect(result.decision.status).toBe("no-certified-candidate");
+	});
+	it("retains a whole-domain top connection when an upper boundary is held", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 16,
+			maxBitrate: 2304,
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 10,
+			countPolicy: { kind: "exact", count: 6 },
+			autoRepresentations: false,
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 2,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+			rows: [32, 72, 164, 384].map((minimum, index) => ({
+				id: `fixed-${index}`,
+				height: 200 * (index + 1),
+				minBitrate: minimum,
+				maxBitrate: minimum * 2,
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				lowComplexityBoundaryForMaxBitrate: 768,
+				highComplexityBoundaryForMaxBitrate: 1536,
+			})),
+			automaticTemplates: [
+				{ id: "lower", height: 100 },
+				{ id: "upper-a", height: 1000 },
+				{ id: "upper-b", height: 1200 },
+			],
+		};
+		const result = analyzePerTitleSettings(goal, "preserve", {
+			protectedFields: [
+				{
+					scope: "stream",
+					rowId: "fixed-3",
+					key: "highComplexityBoundaryForMaxBitrate",
+				},
+			],
+		});
+		expect(result.ladder.topResponse.status).toBe("tracked");
+		for (const item of result.advice)
+			expect(assess(item.goal).topResponse.status).toBe("tracked");
+		expect(result.search.rejected["top-tracking-regression"]).toBeGreaterThan(
+			0,
+		);
 	});
 	it("keeps the global limits and a checked count while optimizing a closed ladder", () => {
 		const goal: PerTitleGoal = {

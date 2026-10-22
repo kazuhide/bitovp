@@ -53,6 +53,56 @@ const dependencyStatus = {
 	},
 };
 
+function DeclaredOutputStructure({
+	result,
+	locale,
+}: {
+	result: PerTitleAnalysisResult;
+	locale: "en" | "ja";
+}) {
+	const structure = result.countStructure;
+	if (structure.status !== "declared-compatible") return null;
+	const ja = locale === "ja";
+	const templates = new Map(result.ladder.rows.map((row) => [row.rowId, row]));
+	const label = (rowId: string) => {
+		const row = templates.get(rowId);
+		return row?.width && row.height
+			? `${row.width}×${row.height} px`
+			: row?.height
+				? `${row.height}p`
+				: row?.width
+					? `${ja ? "幅" : "Width"} ${row.width} px`
+					: ja
+						? "未確定"
+						: "Unknown";
+	};
+	const fixed = new Map<string, number>();
+	for (const rowId of structure.fixedRowIds) {
+		const dimension = label(rowId);
+		fixed.set(dimension, (fixed.get(dimension) ?? 0) + 1);
+	}
+	const parts = [
+		...(structure.lower?.required ? structure.lower.rowIds.map(label) : []),
+		...[...fixed].map(([dimension, count]) =>
+			count > 1 ? `${dimension} × ${count}` : dimension,
+		),
+		...(structure.upper?.required
+			? [
+					structure.upper.selection === "one-of"
+						? `(${structure.upper.rowIds.map(label).join(ja ? " または " : " or ")})`
+						: structure.upper.rowIds.map(label).join(" + "),
+				]
+			: []),
+	];
+	return (
+		<p className="text-xs text-zinc-300">
+			{ja
+				? `指定した出力構成: ${structure.required}本 = ${parts.join(" + ")}。実際の本数は素材で確認します。`
+				: `Declared output structure: ${structure.required} = ${parts.join(" + ")}. Native count requires media.`}
+		</p>
+	);
+}
+
 function FullLadderDetails({
 	result,
 	locale,
@@ -354,6 +404,7 @@ export function PerTitleAnalysisPanel({
 						) : null}
 						{finding?.message[locale] ?? result.quality.message[locale]}
 					</p>
+					<DeclaredOutputStructure result={result} locale={locale} />
 					{result.reach.high || result.reach.low ? (
 						<dl className="space-y-1 text-xs">
 							{(["high", "low"] as const).map((bound) => {

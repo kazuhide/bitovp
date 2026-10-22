@@ -26,6 +26,12 @@ const symbol = z
 	.max(80)
 	.regex(/^[A-Z0-9_]+$/);
 const codec = z.enum(["H264", "H265", "H265V2", "VP9", "AV1"]);
+const countPolicy = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("unrestricted") }).strict(),
+	z
+		.object({ kind: z.enum(["exact", "maximum"]), count: integer.max(256) })
+		.strict(),
+]);
 const selection = z.enum(["OPTIMIZED", "COMPLEXITY_RANGE"]);
 const rangeFields = {
 	minBitrate: integer.optional(),
@@ -140,12 +146,7 @@ const goalSchema = z
 		autoRepresentations: z
 			.union([z.literal(false), autoRepresentations])
 			.optional(),
-		countPolicy: z.discriminatedUnion("kind", [
-			z.object({ kind: z.literal("unrestricted") }).strict(),
-			z
-				.object({ kind: z.enum(["exact", "maximum"]), count: integer.max(256) })
-				.strict(),
-		]),
+		countPolicy,
 		rows: z.array(row).max(64).optional(),
 		automaticTemplates: z.array(automatic).max(64).optional(),
 		fixedResolutionAndBitrateConfiguration: forced.optional(),
@@ -246,6 +247,7 @@ const preset = z
 		version: z.literal(1),
 		goal: goalSchema.optional(),
 		reference: referenceSchema.optional(),
+		requirements: z.object({ countPolicy }).strict().optional(),
 	})
 	.strict();
 
@@ -545,8 +547,20 @@ function validate(
 	const parsed = preset.parse(value);
 	if (!parsed.goal && !parsed.reference) invalid();
 	if (parsed.reference) checkGoal(referenceGoal(parsed.reference), allowed);
-	const goal =
-		parsed.goal ?? referenceGoal(parsed.reference as PerTitleReference);
+	// A template list does not define an output count; require explicit intent.
+	const requestedCount = parsed.requirements?.countPolicy;
+	const goal = parsed.goal ?? {
+		...referenceGoal(parsed.reference as PerTitleReference),
+		...(requestedCount ? { countPolicy: requestedCount } : {}),
+	};
+	if (
+		requestedCount &&
+		(requestedCount.kind !== goal.countPolicy.kind ||
+			(requestedCount.kind !== "unrestricted" &&
+				goal.countPolicy.kind !== "unrestricted" &&
+				requestedCount.count !== goal.countPolicy.count))
+	)
+		invalid();
 	checkGoal(goal, allowed);
 	if (parsed.reference && goal.codec !== parsed.reference.codec) invalid();
 	return { goal, ...(parsed.reference ? { reference: parsed.reference } : {}) };

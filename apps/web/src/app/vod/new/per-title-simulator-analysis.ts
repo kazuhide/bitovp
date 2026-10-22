@@ -7,6 +7,8 @@ import {
 	type PerTitleAdviceOptions,
 } from "./per-title-simulator-advice";
 import { perTitleAnalysisCandidates } from "./per-title-simulator-analysis-candidates";
+import { assessPerTitleCountStructure } from "./per-title-simulator-analysis-count";
+import { perTitleCountDirectedCandidates } from "./per-title-simulator-analysis-count-layouts";
 import {
 	assessPerTitleDependencies,
 	type PerTitleDependencyAssessment,
@@ -32,6 +34,7 @@ export type PerTitleAnalysisResult = {
 	intent: PerTitleAnalysisIntent;
 	reach: PerTitleReachAssessment;
 	ladder: PerTitleLadderAssessment;
+	countStructure: ReturnType<typeof assessPerTitleCountStructure>;
 	decision: {
 		status:
 			| "proposal"
@@ -99,6 +102,11 @@ function explanation(
 		return {
 			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits and the checked count of ${item.facts.preservedCount}. Recheck the revised boundaries and spacing over the whole input interval. This is a count-preserving configuration proposal, not a quality-equivalence result.`,
 			ja: `全体 ${rate(global.minBitrate)}～${rate(global.maxBitrate)} kbps と、検証済みの ${item.facts.preservedCount} 本を維持します。変更後の境界と段間隔も全区間で再検証した案です。画質が同等という判定ではありません。`,
+		};
+	if ((item.facts.requiredCount ?? 0) > 0)
+		return {
+			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits and the ${item.facts.countIsMaximum === 1 ? "maximum of" : "required"} ${item.facts.requiredCount} outputs. ${item.proof === "model-count" ? "The proposed count passes the configuration model." : "Template roles and whole-interval spacing are rechecked; upper alternatives share the same output slot."} The native generated count still needs a media check.`,
+			ja: `全体 ${rate(global.minBitrate)}～${rate(global.maxBitrate)} kbps と、${item.facts.countIsMaximum === 1 ? "最大" : "指定の"} ${item.facts.requiredCount} 本という要件を維持する案です。${item.proof === "model-count" ? "候補の本数は計算モデルで確認しています。" : "構成と段間隔を全区間で再検査し、上位候補は同じ1枠の選択肢として扱います。"}実際の生成本数は素材で確認してください。`,
 		};
 	if ((item.facts.wholeLadderImprovement ?? 0) > 0) {
 		const tracked = after.topResponse.status === "tracked";
@@ -182,6 +190,10 @@ export function analyzePerTitleSettings(
 	const proposal = normalized.proposal;
 	const reach = assessPerTitleReach(normalized.goal, proposal);
 	const ladder = assessPerTitleLadder(normalized.goal, proposal);
+	const countStructure = assessPerTitleCountStructure(
+		normalized.goal,
+		proposal,
+	);
 	const findings: PerTitleAnalysisResult["findings"] = [];
 	const add = (
 		code: string,
@@ -193,6 +205,7 @@ export function analyzePerTitleSettings(
 		intent,
 		reach,
 		ladder,
+		countStructure,
 		decision: {
 			status: "inspect-only",
 			message: {
@@ -207,6 +220,34 @@ export function analyzePerTitleSettings(
 		quality,
 	};
 	findings.push(...assessPerTitleValidity(goal, proposal));
+	if (countStructure.status === "declared-compatible")
+		add(
+			"declared-count-structure",
+			"info",
+			`The required ${countStructure.required} outputs are evaluated as ${countStructure.lower?.required ?? 0} lower + ${countStructure.fixedRowIds.length} fixed + ${countStructure.upper?.required ?? 0} upper. Upper templates are alternatives, not one output each. The declared requirement is separate from the native count check.`,
+			`指定の ${countStructure.required} 本を、下位 ${countStructure.lower?.required ?? 0} 本・固定 ${countStructure.fixedRowIds.length} 本・上位 ${countStructure.upper?.required ?? 0} 本として評価します。上位テンプレートは選択肢であり、候補ごとに1本とは数えません。指定要件と実際の生成本数は分けて確認します。`,
+		);
+	if (
+		countStructure.status === "declared-compatible" &&
+		countStructure.risks.includes("lower-extra-slot-capacity")
+	)
+		add(
+			"declared-lower-reuse-risk",
+			"warning",
+			`One lower output is required, but the current spacing leaves room for more bitrate points below the first fixed output. The lower ordinary template can be reused. Recheck the minimum step together with the first fixed band and its neighbours; a template count is not an output-count limit.`,
+			"下位は1本の要件ですが、現在の段間隔では最初の固定段より下に複数のビットレート点を置く余地があります。同じ通常テンプレートが複数回使われ得るため、最小段間隔・最初の固定段の範囲・隣接段を合わせて調整する必要があります。",
+		);
+	if (
+		countStructure.declaredCount !== null &&
+		countStructure.required !== null &&
+		countStructure.declaredCount !== countStructure.required
+	)
+		add(
+			"declared-count-roles-mismatch",
+			"warning",
+			`The declared template roles describe ${countStructure.declaredCount} outputs, while the requirement is ${countStructure.required}. Additional ordinary use or other output roles need analysis before a matching proposal can be checked.`,
+			`テンプレートの役割から組み立てた構成は ${countStructure.declaredCount} 本、指定は ${countStructure.required} 本です。通常テンプレートの追加利用など、ほかの出力枠も検討する必要があります。`,
+		);
 	if (ladder.earlySaturationRows.length)
 		add(
 			"early-fixed-saturation",
@@ -320,21 +361,23 @@ export function analyzePerTitleSettings(
 	}
 	if (
 		intent === "preserve" &&
-		(!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) ||
-			proposal.api.streams.some(
-				(stream) => stream.mode === "PER_TITLE_TEMPLATE",
-			) ||
-			(goal.strategy !== "fixed-ranges" && goal.countPolicy.kind !== "exact"))
+		!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal)
 	) {
 		add(
 			"preserve-count-unverified",
 			"warning",
-			"Global limits and configured templates can be retained, but the current count is not certified over the full analysis domain. Resolve count and spacing conflicts first; for ordinary or automatic templates, compare the current and candidate outputs with media before declaring the native count preserved.",
-			"全体の最小・最大とテンプレート構成は維持できますが、現在の本数を全区間では確認できません。本数と段間隔の競合を先に解消してください。通常・自動テンプレートを含む場合は、現設定と候補の出力を素材で比較して本数維持を判断します。",
+			"Evaluation uses the requested count as a requirement even when the current generated count is unresolved. Conditional proposals retain that requirement and the template roles; they do not certify that the native output count is unchanged.",
+			"現在の生成本数が未確定でも、指定した本数を要件として評価します。調整案はその要件とテンプレート構成を維持し、実際の本数は現設定と候補の出力で確認します。",
 		);
+	}
+	if (
+		intent === "preserve" &&
+		goal.strategy !== "fixed-ranges" &&
+		!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal)
+	) {
 		result.decision.message = {
-			en: "The current count is unresolved. A count-preserving optimization cannot yet be certified; check the count and template conditions below.",
-			ja: "現在の本数を確定できないため、本数を維持する案はまだ認定できません。以下の本数・テンプレート条件を確認してください。",
+			en: "The automatic template does not establish an output structure to retain. Use the count-focused goal to inspect spacing proposals for the requested count.",
+			ja: "現在の自動テンプレートからは、維持する出力構成を定められません。「本数の条件を優先」で、指定本数に向けた段間隔の案を確認してください。",
 		};
 		return result;
 	}
@@ -358,6 +401,9 @@ export function analyzePerTitleSettings(
 	const candidates = [
 		...perTitleAnalysisCandidates(goal, proposal, reach, intent, context),
 		...(intent === "cap" || intent === "preserve"
+			? perTitleCountDirectedCandidates(goal, proposal, context)
+			: []),
+		...(intent === "cap" || intent === "preserve"
 			? perTitleWholeLadderCandidates(goal, proposal, context)
 			: []),
 	];
@@ -370,6 +416,10 @@ export function analyzePerTitleSettings(
 		}
 		const checked = assessPerTitleReach(item.goal, item.proposal);
 		const checkedLadder = assessPerTitleLadder(item.goal, item.proposal);
+		const checkedStructure = assessPerTitleCountStructure(
+			item.goal,
+			item.proposal,
+		);
 		if (
 			item.goal.minBitrate !== goal.minBitrate ||
 			item.goal.maxBitrate !== goal.maxBitrate ||
@@ -426,6 +476,13 @@ export function analyzePerTitleSettings(
 			reject("lower-connection-regression");
 			continue;
 		}
+		if (
+			ladder.topResponse.status === "tracked" &&
+			checkedLadder.topResponse.status !== "tracked"
+		) {
+			reject("top-tracking-regression");
+			continue;
+		}
 		const wholeImprovement =
 			connected(
 				checkedLadder,
@@ -454,13 +511,42 @@ export function analyzePerTitleSettings(
 				reject("no-objective-improvement");
 				continue;
 			}
+		} else if (intent === "preserve") {
+			const declaredMixed =
+				countStructure.status === "declared-compatible" &&
+				checkedStructure.status === "declared-compatible" &&
+				checkedStructure.declaredCount === countStructure.declaredCount &&
+				checkedStructure.required === countStructure.required;
+			if (
+				(item.proof !== "model-count" && !declaredMixed) ||
+				(!wholeImprovement &&
+					(item.proof !== "model-count" ||
+						hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))) ||
+				reachRank(checked) < reachRank(reach)
+			) {
+				reject("count-or-objective-not-certified");
+				continue;
+			}
+			// A declared output budget is not permission to make a known source of
+			// additional placements worse, even when native selection is unresolved.
+			if (
+				item.proof !== "model-count" &&
+				(["lowerSlots", "upperSlots"] as const).some(
+					(side) =>
+						ladder[side] !== null &&
+						(checkedLadder[side] === null ||
+							checkedLadder[side].maximum > ladder[side].maximum),
+				)
+			) {
+				reject("declared-count-placement-regression");
+				continue;
+			}
 		} else if (
 			item.proof !== "model-count" ||
 			(!proposal.diagnostics.some(
 				(diagnostic) => diagnostic.severity === "conflict",
 			) &&
-				hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
-				!(intent === "preserve" && wholeImprovement))
+				hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))
 		) {
 			reject("count-or-objective-not-certified");
 			continue;
@@ -468,6 +554,7 @@ export function analyzePerTitleSettings(
 		if (
 			intent === "preserve" &&
 			goal.strategy === "fixed-ranges" &&
+			reach.count.status === "model-checked" &&
 			(checked.count.minimum !== reach.count.minimum ||
 				checked.count.maximum !== reach.count.maximum)
 		) {
@@ -497,11 +584,17 @@ export function analyzePerTitleSettings(
 						proposal.api.global.minBitrateStepSize,
 			),
 			upperSlots: checkedLadder.upperSlots?.maximum ?? 256,
+			lowerSlots: checkedLadder.lowerSlots?.maximum ?? 256,
 			earlySaturation: checkedLadder.earlySaturationRows.length,
 			preservedCount:
-				intent === "preserve" && goal.countPolicy.kind !== "unrestricted"
-					? (reach.count.maximum ?? goal.countPolicy.count)
+				intent === "preserve" && reach.count.status === "model-checked"
+					? (reach.count.maximum ?? 0)
 					: 0,
+			requiredCount:
+				intent === "preserve" && goal.countPolicy.kind !== "unrestricted"
+					? goal.countPolicy.count
+					: 0,
+			countIsMaximum: Number(goal.countPolicy.kind === "maximum"),
 		};
 		item.explanation = explainPlacementRisk(
 			explanation(item, checked, ladder, checkedLadder),
@@ -512,6 +605,12 @@ export function analyzePerTitleSettings(
 	}
 	result.advice.sort(
 		(a, b) =>
+			(intent === "preserve"
+				? (a.facts.lowerSlots ?? 256) +
+					(a.facts.upperSlots ?? 256) -
+					(b.facts.lowerSlots ?? 256) -
+					(b.facts.upperSlots ?? 256)
+				: 0) ||
 			(b.facts.reachRank ?? 0) - (a.facts.reachRank ?? 0) ||
 			(a.facts.capacityIncrease ?? 0) - (b.facts.capacityIncrease ?? 0) ||
 			(b.facts.tracked ?? 0) - (a.facts.tracked ?? 0) ||

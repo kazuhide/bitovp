@@ -1,5 +1,5 @@
 import type { PerTitleGoal } from "@bitovp/core";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import * as adviceModule from "./per-title-simulator-advice";
@@ -37,7 +37,96 @@ const source = (): PerTitleGoal =>
 		],
 	});
 
+function keepCurrent(label: string, locale: "en" | "ja" = "en") {
+	fireEvent.change(
+		screen.getByRole("combobox", {
+			name: `${locale === "en" ? "Decision" : "選択"}: ${label}`,
+		}),
+		{ target: { value: "keep" } },
+	);
+	fireEvent.click(
+		screen.getByRole("button", {
+			name:
+				locale === "en"
+					? "Re-evaluate selected decisions"
+					: "選択した内容で再評価",
+		}),
+	);
+}
+function expectBoundaryChange(locale: "en" | "ja" = "en") {
+	const row = screen
+		.getByRole("combobox", {
+			name:
+				locale === "en"
+					? "Decision: Upper complexity boundary (kbps), rendition 1"
+					: "選択: 複雑度の上側境界 (kbps), 段 1",
+		})
+		.closest("tr");
+	if (!row) throw new Error("Expected a parameter comparison row.");
+	expect(
+		within(row).getByRole("cell", { name: "4,000 kbps" }),
+	).toBeInTheDocument();
+	expect(
+		within(row).getByRole("cell", { name: "8,000 kbps" }),
+	).toBeInTheDocument();
+}
+
 describe("manual Per-Title adjustment advice", () => {
+	it("shows one candidate at a time and clears uncommitted choices when switching", () => {
+		const session = source();
+		const current = { ...session, maxBitrate: 8_000_000 };
+		const candidate = perTitleAdvice(session, current, {
+			scope: "global",
+			key: "maxBitrate",
+		})[0];
+		if (!candidate) throw new Error("Expected an adjustment.");
+		const other = { ...candidate, id: "alternative" };
+		const spy = vi
+			.spyOn(adviceModule, "perTitleAdvice")
+			.mockReturnValue([candidate, other]);
+		const onAdopt = vi.fn();
+		try {
+			const view = renderLocalized(
+				<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+			);
+			view.rerender(
+				<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+			);
+			expect(
+				screen.getAllByRole("table", { name: "Review parameter changes" }),
+			).toHaveLength(1);
+			fireEvent.change(
+				screen.getByRole("combobox", {
+					name: "Decision: Maximum bitrate ratio",
+				}),
+				{ target: { value: "keep" } },
+			);
+			expect(
+				screen.getByRole("button", { name: "Use this adjustment" }),
+			).toBeDisabled();
+			const selector = screen.getByRole("combobox", {
+				name: "Adjustment to review",
+			});
+			fireEvent.change(selector, { target: { value: other.id } });
+			expect(
+				screen.getByRole("combobox", {
+					name: "Decision: Maximum bitrate ratio",
+				}),
+			).toHaveValue("skip");
+			fireEvent.change(selector, { target: { value: candidate.id } });
+			expect(
+				screen.getByRole("combobox", {
+					name: "Decision: Maximum bitrate ratio",
+				}),
+			).toHaveValue("skip");
+			expect(
+				screen.queryByRole("region", { name: "Maintained values" }),
+			).toBeNull();
+			expect(onAdopt).not.toHaveBeenCalled();
+		} finally {
+			spy.mockRestore();
+		}
+	});
 	it.each([
 		"en",
 		"ja",
@@ -57,11 +146,7 @@ describe("manual Per-Title adjustment advice", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={edited} session={session} onAdopt={onAdopt} />,
 		);
-		expect(
-			screen.getByRole("region", {
-				name: locale === "en" ? "Suggested adjustment" : "調整案",
-			}),
-		).toHaveTextContent("4,000 → 8,000 kbps");
+		expectBoundaryChange(locale);
 		expect(edited.rows?.[0]?.highComplexityBoundaryForMaxBitrate).toBe(
 			4_000_000,
 		);
@@ -97,9 +182,7 @@ describe("manual Per-Title adjustment advice", () => {
 					onAdopt={onAdopt}
 				/>,
 			);
-		expect(
-			screen.getByRole("region", { name: "Suggested adjustment" }),
-		).toHaveTextContent("4,000 → 8,000 kbps");
+		expectBoundaryChange();
 		expect(onAdopt).not.toHaveBeenCalled();
 	});
 	it("clears old advice on load, codec change, or a multi-field replacement", () => {
@@ -290,11 +373,7 @@ describe("manual Per-Title adjustment advice", () => {
 		);
 		const field =
 			locale === "en" ? "Maximum bitrate ratio" : "ビットレート間隔の上限";
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: `${locale === "en" ? "Keep current value" : "現在値を維持"}: ${field}`,
-			}),
-		);
+		keepCurrent(field, locale);
 		const maintained = screen.getByRole("region", {
 			name: locale === "en" ? "Maintained values" : "維持する値",
 		});
@@ -370,11 +449,7 @@ describe("manual Per-Title adjustment advice", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Keep current value: Maximum bitrate ratio",
-			}),
-		);
+		keepCurrent("Maximum bitrate ratio");
 		current = { ...current, maxBitrateStepSize: 2.5 };
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
@@ -454,16 +529,8 @@ describe("manual Per-Title adjustment advice", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Keep current value: Maximum bitrate (kbps), rendition 1",
-			}),
-		);
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Keep current value: Maximum bitrate (kbps), rendition 2",
-			}),
-		);
+		keepCurrent("Maximum bitrate (kbps), rendition 1");
+		keepCurrent("Maximum bitrate (kbps), rendition 2");
 		const initialRelease = screen.getByRole("button", {
 			name: "Release: Maximum bitrate (kbps), rendition 1",
 		});
@@ -480,11 +547,7 @@ describe("manual Per-Title adjustment advice", () => {
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
 		for (const rendition of [1, 2])
-			fireEvent.click(
-				screen.getByRole("button", {
-					name: `Keep current value: Maximum bitrate (kbps), rendition ${rendition}`,
-				}),
-			);
+			keepCurrent(`Maximum bitrate (kbps), rendition ${rendition}`);
 		fireEvent.click(
 			screen.getByRole("button", { name: "Use this adjustment" }),
 		);
@@ -524,11 +587,7 @@ describe("manual Per-Title adjustment advice", () => {
 		);
 		const view = renderLocalized(content(session));
 		view.rerender(content(current));
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Keep current value: Maximum bitrate (kbps), rendition 1",
-			}),
-		);
+		keepCurrent("Maximum bitrate (kbps), rendition 1");
 		fireEvent.click(
 			screen.getByRole("button", { name: "Use this adjustment" }),
 		);
@@ -615,13 +674,6 @@ describe("manual Per-Title adjustment advice", () => {
 						onAdopt={vi.fn()}
 					/>,
 				);
-				expect(
-					screen.getByText(
-						locale === "en"
-							? "Changeable values rounded and rechecked."
-							: "変更可能な値を丸めて再確認済み。",
-					),
-				).toBeVisible();
 				const details = screen
 					.getByText(locale === "en" ? "Reasoning and scope" : "根拠と確認範囲")
 					.closest("details");
@@ -680,13 +732,6 @@ describe("manual Per-Title adjustment advice", () => {
 			view.rerender(
 				<PerTitleAdvisor goal={current} session={session} onAdopt={vi.fn()} />,
 			);
-			expect(
-				screen.getByText(
-					digits === 0
-						? "Unrounded values rechecked."
-						: "Changeable values rounded and rechecked.",
-				),
-			).toBeVisible();
 			const details = screen
 				.getByText("Reasoning and scope")
 				.closest("details");
@@ -714,11 +759,7 @@ describe("manual Per-Title adjustment advice", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Keep current value: Maximum bitrate (kbps), rendition 1",
-			}),
-		);
+		keepCurrent("Maximum bitrate (kbps), rendition 1");
 		expect(
 			screen.getByRole("region", { name: "Maintained values" }),
 		).toHaveTextContent("1,600 kbps");

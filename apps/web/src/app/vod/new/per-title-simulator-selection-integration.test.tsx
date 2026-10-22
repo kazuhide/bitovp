@@ -61,20 +61,20 @@ describe("selected advice simulator flow", () => {
 		});
 		fireEvent.change(input, { target: { value: "8000" } });
 		const edited = api();
-		const select = screen.getByRole("checkbox", {
+		const select = screen.getByRole("combobox", {
 			name:
 				locale === "ja"
-					? "反映する変更: 最小ビットレート (kbps), 段 1"
-					: "Select change: Minimum bitrate (kbps), rendition 1",
+					? "選択: 最小ビットレート (kbps), 段 1"
+					: "Decision: Minimum bitrate (kbps), rendition 1",
 		});
 		const button = screen.getByRole("button", {
 			name:
 				locale === "ja"
-					? "選択した変更を反映して再計算"
-					: "Apply selected changes and recalculate",
+					? "選択した内容で再評価"
+					: "Re-evaluate selected decisions",
 		});
 		expect(button).toBeDisabled();
-		fireEvent.click(select);
+		fireEvent.change(select, { target: { value: "apply" } });
 		expect(api()).toEqual(edited);
 		expect(button).toBeEnabled();
 		const before = { ...goal, maxBitrate: 8_000_000 };
@@ -108,14 +108,14 @@ describe("selected advice simulator flow", () => {
 		)[0];
 		if (!remaining) throw new Error("Expected recomputed remainder.");
 		expect(
-			screen.queryByRole("checkbox", {
+			screen.queryByRole("combobox", {
 				name: select.getAttribute("aria-label") ?? "",
 			}),
 		).toBeNull();
 		expect(
 			screen
-				.getAllByRole("checkbox")
-				.every((item) => !(item as HTMLInputElement).checked),
+				.getAllByRole("combobox", { name: /^(?:Decision:|選択:)/ })
+				.every((item) => (item as HTMLSelectElement).value === "skip"),
 		).toBe(true);
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -143,14 +143,15 @@ describe("selected advice simulator flow", () => {
 			name: "Maximum bitrate (kbps)",
 		});
 		fireEvent.change(input, { target: { value: "8000" } });
-		fireEvent.click(
-			screen.getByRole("checkbox", {
-				name: "Select change: Minimum bitrate (kbps), rendition 1",
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: "Decision: Minimum bitrate (kbps), rendition 1",
 			}),
+			{ target: { value: "apply" } },
 		);
 		fireEvent.click(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		);
 		const accepted = api().streams.find(
@@ -171,10 +172,10 @@ describe("selected advice simulator flow", () => {
 			}),
 		);
 		expect(
-			screen.getByRole("checkbox", {
-				name: "Select change: Minimum bitrate (kbps), rendition 1",
+			screen.getByRole("combobox", {
+				name: "Decision: Minimum bitrate (kbps), rendition 1",
 			}),
-		).toBeInTheDocument();
+		).toHaveValue("skip");
 		expect(
 			api().streams.find((row: { rowId: string }) => row.rowId === "required")
 				.perTitleSettings.minBitrate,
@@ -203,14 +204,15 @@ describe("selected advice simulator flow", () => {
 			screen.getByRole("spinbutton", { name: "Desired count" }),
 			{ target: { value: "3" } },
 		);
-		fireEvent.click(
-			screen.getByRole("checkbox", {
-				name: "Select change: Minimum bitrate ratio",
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: "Decision: Minimum bitrate ratio",
 			}),
+			{ target: { value: "apply" } },
 		);
 		fireEvent.click(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		);
 		expect(api().global.minBitrateStepSize).toBeGreaterThan(
@@ -220,8 +222,8 @@ describe("selected advice simulator flow", () => {
 			screen.getByRole("button", { name: "Review changes" }),
 		).toBeDisabled();
 		expect(
-			screen.getByRole("checkbox", {
-				name: "Select change: Maximum bitrate ratio",
+			screen.getByRole("combobox", {
+				name: "Decision: Maximum bitrate ratio",
 			}),
 		).toBeInTheDocument();
 		fireEvent.click(
@@ -248,27 +250,29 @@ describe("selected advice simulator flow", () => {
 			name: "Maximum bitrate (kbps)",
 		});
 		fireEvent.change(input, { target: { value: "8000" } });
-		fireEvent.click(
-			screen.getByRole("checkbox", {
-				name: "Select change: Minimum bitrate (kbps), rendition 1",
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: "Decision: Minimum bitrate (kbps), rendition 1",
 			}),
+			{ target: { value: "apply" } },
 		);
 		fireEvent.change(input, { target: { value: "9000" } });
 		expect(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		).toBeDisabled();
 		const edited = api();
 		for (const label of ["Minimum bitrate", "Maximum bitrate"])
-			fireEvent.click(
-				screen.getByRole("checkbox", {
-					name: `Select change: ${label} (kbps), rendition 1`,
+			fireEvent.change(
+				screen.getByRole("combobox", {
+					name: `Decision: ${label} (kbps), rendition 1`,
 				}),
+				{ target: { value: "apply" } },
 			);
 		fireEvent.click(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		);
 		const after = api();

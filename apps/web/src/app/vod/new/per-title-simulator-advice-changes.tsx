@@ -1,8 +1,9 @@
 "use client";
 
 import type { PerTitleGoal } from "@bitovp/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import {
 	type PerTitleAdvice,
@@ -30,107 +31,270 @@ export function perTitleAdviceValueText(
 		: String(value);
 }
 
+type ReviewArguments = [
+	advice: PerTitleAdvice,
+	selected: PerTitleAdviceField[],
+	kept: PerTitleAdviceField[],
+];
+type ReviewHandler =
+	| ((...args: ReviewArguments) => boolean)
+	| ((...args: ReviewArguments) => void);
+
 export function PerTitleAdviceChanges({
 	advice,
 	goal,
 	locale,
-	onKeep,
-	onApplySelected,
+	onReview,
+	onAdoptAll,
+	applying = false,
+	pendingFields = [],
 }: {
 	advice: PerTitleAdvice;
 	goal: PerTitleGoal;
 	locale: Locale;
-	onKeep: (fields: PerTitleAdviceField[]) => void;
-	onApplySelected: (
-		advice: PerTitleAdvice,
-		fields: PerTitleAdviceField[],
-	) => void;
+	onReview: ReviewHandler;
+	onAdoptAll?: (advice: PerTitleAdvice) => void;
+	applying?: boolean;
+	pendingFields?: readonly PerTitleAdviceField[];
 }) {
 	const ja = locale === "ja";
-	const [selection, setSelection] = useState<string[]>([]);
+	const pending = new Set(pendingFields.map(perTitleAdviceFieldKey));
+	type Choice = "keep" | "apply";
+	const fingerprint = advice.inputFingerprint;
+	const valueKey = (value: PerTitleSettingValue) =>
+		`${typeof value}:${Object.is(value, -0) ? "-0" : String(value)}`;
+	const changesKey = JSON.stringify(
+		advice.changes.map((change) => [
+			perTitleAdviceFieldKey(change),
+			valueKey(change.before),
+			valueKey(change.after),
+		]),
+	);
+	const [selection, setSelection] = useState({
+		advice,
+		goal,
+		fingerprint,
+		changesKey,
+		choices: new Map<string, Choice>(),
+	});
+	const current = (value: typeof selection) =>
+		value.advice === advice &&
+		value.goal === goal &&
+		value.fingerprint === fingerprint &&
+		value.changesKey === changesKey;
+	const choices = current(selection)
+		? selection.choices
+		: new Map<string, Choice>();
+	useEffect(() => {
+		setSelection({
+			advice,
+			goal,
+			fingerprint,
+			changesKey,
+			choices: new Map(),
+		});
+	}, [advice, goal, fingerprint, changesKey]);
+	const update = (
+		change: (value: Map<string, Choice>) => Map<string, Choice>,
+	) =>
+		setSelection((value) => ({
+			advice,
+			goal,
+			fingerprint,
+			changesKey,
+			choices: change(current(value) ? value.choices : new Map()),
+		}));
+	const fields = (choice: Choice) =>
+		advice.changes
+			.filter((field) => choices.get(perTitleAdviceFieldKey(field)) === choice)
+			.map(({ scope, key, rowId }) => ({
+				scope,
+				key,
+				...(rowId === undefined ? {} : { rowId }),
+			}));
+	const selected = fields("apply");
+	const kept = fields("keep");
+	const hasDecisions = selected.length + kept.length > 0;
+	const review = () => {
+		if (!hasDecisions || (applying && selected.length > 0)) return;
+		if (onReview(advice, selected, kept) !== false)
+			setSelection((value) =>
+				current(value) ? { ...value, choices: new Map() } : value,
+			);
+	};
 	const rows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	return (
-		<div className="space-y-3">
-			<ul className="space-y-2 text-xs">
-				{advice.changes.map(({ scope, key, rowId, before, after }) => {
-					const field = {
-						scope,
-						key,
-						...(rowId === undefined ? {} : { rowId }),
-					};
-					const identity = perTitleAdviceFieldKey(field);
-					const label = perTitleSettingLabel(key, locale);
-					const index = rows.findIndex((row) => row.id === rowId) + 1;
-					const suffix =
-						scope === "stream" ? `, ${ja ? "段" : "rendition"} ${index}` : "";
-					return (
-						<li
-							key={identity}
-							className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1"
-						>
-							<label className="flex min-w-0 cursor-pointer items-start gap-2 text-zinc-300">
-								<input
-									type="checkbox"
-									className="mt-0.5 accent-emerald-600"
-									aria-label={`${ja ? "反映する変更" : "Select change"}: ${label}${suffix}`}
-									checked={selection.includes(identity)}
-									onChange={(event) =>
-										setSelection((current) =>
-											event.target.checked
-												? [...current, identity]
-												: current.filter((item) => item !== identity),
-										)
-									}
-								/>
-								<span>
-									{scope === "stream"
-										? `${ja ? "段" : "Rendition"} ${index}: `
-										: ""}
-									{label}
-								</span>
-							</label>
-							<div className="flex min-w-0 flex-wrap items-center gap-2 text-zinc-100">
-								<span className="break-all tabular-nums">
-									{perTitleAdviceValueText(before, key, locale)} →{" "}
-									{perTitleAdviceValueText(after, key, locale)}
-									{isPerTitleBitrateKey(key) ? " kbps" : ""}
-								</span>
-								<Button
-									variant="secondary"
-									size="sm"
-									aria-label={`${ja ? "現在値を維持" : "Keep current value"}: ${label}${suffix}`}
-									onClick={() => onKeep([field])}
-								>
-									{ja ? "現在値を維持" : "Keep current value"}
-								</Button>
-							</div>
-						</li>
-					);
-				})}
-			</ul>
-			<Button
-				variant="secondary"
-				size="sm"
-				disabled={!selection.length}
-				onClick={() =>
-					onApplySelected(
-						advice,
-						advice.changes
-							.filter((field) =>
-								selection.includes(perTitleAdviceFieldKey(field)),
-							)
-							.map(({ scope, key, rowId }) => ({
+		<div className="min-w-0 space-y-3">
+			<div className="max-w-full overflow-x-auto">
+				<table className="w-full min-w-max text-left text-xs [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2 [&_th]:font-medium">
+					<caption className="sr-only">
+						{ja ? "項目ごとの変更" : "Review parameter changes"}
+					</caption>
+					<thead className="text-zinc-400">
+						<tr>
+							<th scope="col">{ja ? "対象" : "Target"}</th>
+							<th scope="col">{ja ? "項目" : "Parameter"}</th>
+							<th scope="col">{ja ? "現在値" : "Current"}</th>
+							<th scope="col">{ja ? "提案値" : "Proposed"}</th>
+							<th scope="col">{ja ? "選択" : "Decision"}</th>
+						</tr>
+					</thead>
+					<tbody className="divide-y divide-zinc-800">
+						{advice.changes.map(({ scope, key, rowId, before, after }) => {
+							const field = {
 								scope,
 								key,
 								...(rowId === undefined ? {} : { rowId }),
-							})),
-					)
-				}
-			>
-				{ja
-					? "選択した変更を反映して再計算"
-					: "Apply selected changes and recalculate"}
-			</Button>
+							};
+							const identity = perTitleAdviceFieldKey(field);
+							const label = perTitleSettingLabel(key, locale);
+							const index = rows.findIndex((row) => row.id === rowId);
+							const row = rows[index];
+							const suffix =
+								scope === "stream"
+									? `, ${ja ? "段" : "rendition"} ${index + 1 || "?"}`
+									: "";
+							const dimensions =
+								row?.width && row.height
+									? `${row.width}×${row.height} px`
+									: row?.height
+										? `${row.height}p`
+										: row?.width
+											? `${ja ? "幅" : "Width"} ${row.width} px`
+											: ja
+												? "寸法未定"
+												: "Dimensions unknown";
+							const precise =
+								!Object.is(before, after) &&
+								perTitleAdviceValueText(before, key, locale) ===
+									perTitleAdviceValueText(after, key, locale);
+							const text = (value: PerTitleSettingValue) => {
+								if (precise && typeof value === "number")
+									return `${Object.is(value, -0) ? "-0" : String(value)}${isPerTitleBitrateKey(key) ? " bps" : ""}`;
+								return `${perTitleAdviceValueText(value, key, locale)}${typeof value === "number" && isPerTitleBitrateKey(key) ? " kbps" : ""}`;
+							};
+							return (
+								<tr key={identity} data-field-key={identity}>
+									<td className="text-zinc-400">
+										<span className="block">
+											{scope === "global"
+												? ja
+													? "全体"
+													: "Global"
+												: `${ja ? "段" : "Rendition"} ${index + 1 || "?"}`}
+										</span>
+										{scope === "stream" ? (
+											<span className="block whitespace-nowrap">
+												{dimensions}
+											</span>
+										) : null}
+									</td>
+									<th
+										scope="row"
+										className="max-w-64 whitespace-normal text-zinc-300"
+									>
+										{label}
+									</th>
+									<td className="whitespace-nowrap tabular-nums text-zinc-200">
+										{text(before)}
+									</td>
+									<td className="whitespace-nowrap tabular-nums text-emerald-300">
+										{text(after)}
+									</td>
+									<td>
+										<SelectNative
+											aria-label={`${ja ? "選択" : "Decision"}: ${label}${suffix}`}
+											className="h-8 text-xs"
+											value={choices.get(identity) ?? "skip"}
+											onChange={(event) => {
+												const choice = event.target.value;
+												if (choice === "keep" && pending.has(identity)) return;
+												update((value) => {
+													const next = new Map(value);
+													if (choice === "keep" || choice === "apply")
+														next.set(identity, choice);
+													else next.delete(identity);
+													return next;
+												});
+											}}
+										>
+											<option value="skip">
+												{ja ? "未選択" : "No decision"}
+											</option>
+											<option value="keep" disabled={pending.has(identity)}>
+												{ja ? "現在値を維持" : "Keep current"}
+											</option>
+											<option value="apply">
+												{ja ? "提案を反映" : "Apply proposed"}
+											</option>
+										</SelectNative>
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+			{applying ? (
+				<p role="status" className="text-xs text-zinc-400">
+					{ja
+						? "設定の反映を待っています。"
+						: "Waiting for settings to update."}
+				</p>
+			) : null}
+			<div className="flex flex-wrap items-center gap-2 text-xs">
+				<Button
+					variant="ghost"
+					size="sm"
+					disabled={!advice.changes.length}
+					onClick={() =>
+						update(
+							() =>
+								new Map(
+									advice.changes.map((field) => [
+										perTitleAdviceFieldKey(field),
+										"apply",
+									]),
+								),
+						)
+					}
+				>
+					{ja ? "提案をすべて選択" : "Select all proposed"}
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					disabled={!hasDecisions}
+					onClick={() => update(() => new Map())}
+				>
+					{ja ? "選択をクリア" : "Clear decisions"}
+				</Button>
+				<span className="text-zinc-400">
+					{ja
+						? `反映 ${selected.length} · 維持 ${kept.length}`
+						: `Apply ${selected.length} · Keep ${kept.length}`}
+				</span>
+			</div>
+			<div className="flex flex-wrap gap-2">
+				<Button
+					size="sm"
+					disabled={!hasDecisions || (applying && selected.length > 0)}
+					onClick={review}
+				>
+					{ja ? "選択した内容で再評価" : "Re-evaluate selected decisions"}
+				</Button>
+				{onAdoptAll ? (
+					<Button
+						data-advisor-adopt
+						variant="secondary"
+						size="sm"
+						disabled={hasDecisions || applying}
+						onClick={() => onAdoptAll(advice)}
+					>
+						{ja ? "この調整を採用" : "Use this adjustment"}
+					</Button>
+				) : null}
+			</div>
 		</div>
 	);
 }

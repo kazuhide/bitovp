@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldRow, FieldRowAction } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
+import type { PerTitleAdvice } from "./per-title-simulator-advice";
 import {
 	isPerTitleBitrateKey,
 	perTitleAdviceValueText,
@@ -52,6 +53,15 @@ const dependencyStatus = {
 		unset: "未設定",
 	},
 };
+
+const rate = (value: number, locale: "en" | "ja") =>
+	Number.isFinite(value)
+		? new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
+				value / 1000,
+			)
+		: locale === "ja"
+			? "未確定"
+			: "Unknown";
 
 function DeclaredOutputStructure({
 	result,
@@ -106,16 +116,20 @@ function DeclaredOutputStructure({
 function FullLadderDetails({
 	result,
 	locale,
+	advice,
 }: {
 	result: PerTitleAnalysisResult;
 	locale: "en" | "ja";
+	advice?: PerTitleAdvice;
 }) {
 	const ja = locale === "ja";
-	const first = result.advice[0];
+	const selected = advice ?? result.advice[0];
 	const proposed = useMemo(
 		() =>
-			first ? assessPerTitleLadder(first.goal, first.proposal) : undefined,
-		[first],
+			selected
+				? assessPerTitleLadder(selected.goal, selected.proposal)
+				: undefined,
+		[selected],
 	);
 	const proposedRows = new Map(proposed?.rows.map((row) => [row.rowId, row]));
 	const unknown = ja ? "未確定" : "Unknown";
@@ -327,36 +341,47 @@ export function PerTitleAnalysisPanel({
 	const ja = locale === "ja";
 	const id = useId();
 	const title = ja ? "現在の設定を評価" : "Evaluate current settings";
-	const rate = (value: number) =>
-		Number.isFinite(value)
-			? new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
-					value / 1000,
-				)
-			: ja
-				? "未確定"
-				: "Unknown";
 	const count =
 		goal.countPolicy.kind === "unrestricted"
 			? ja
 				? "指定なし"
 				: "Unrestricted"
 			: `${goal.countPolicy.kind === "exact" ? (ja ? "指定" : "Exactly") : ja ? "最大" : "At most"} ${goal.countPolicy.count}`;
+	const conflict =
+		result?.findings.find(
+			(item) =>
+				item.severity === "conflict" && item.code !== "configuration-conflict",
+		) ?? result?.findings.find((item) => item.severity === "conflict");
+	const unavailable = result?.findings.find(
+		(item) => item.code === "automatic-settings",
+	);
 	const finding =
-		result?.findings.find((item) => item.severity === "conflict") ??
 		result?.findings.find((item) =>
 			intent === "cap"
 				? item.code.startsWith("cap-")
 				: intent === "bandwidth"
 					? item.code === "quality-measurement-required"
-					: intent === "count" &&
-						[
-							"count-required",
-							"count-model-checked",
-							"count-conditional",
-						].includes(item.code),
+					: ["count-required", "declared-count-roles-mismatch"].includes(
+							item.code,
+						),
 		) ??
+		result?.findings.find(
+			(item) =>
+				item.severity === "warning" &&
+				!["count-conditional", "preserve-count-unverified"].includes(item.code),
+		) ??
+		result?.findings.find((item) => item.severity === "warning") ??
 		result?.findings[0];
-	const rows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
+	const status =
+		result?.decision.status === "proposal"
+			? ja
+				? "調整案があります。"
+				: "A checked adjustment is available."
+			: (conflict?.message[locale] ??
+				unavailable?.message[locale] ??
+				(result?.decision.status === "no-certified-candidate"
+					? (finding?.message[locale] ?? result.decision.message[locale])
+					: result?.decision.message[locale]));
 	return (
 		<section
 			aria-labelledby={`${id}-title`}
@@ -392,139 +417,150 @@ export function PerTitleAnalysisPanel({
 				</FieldRowAction>
 			</FieldRow>
 			<p className="text-xs text-zinc-400">
-				{ja ? "全体上限" : "Overall maximum"}: {rate(goal.maxBitrate)} kbps
+				{ja ? "全体上限" : "Overall maximum"}: {rate(goal.maxBitrate, locale)}{" "}
+				kbps
 				{" · "}
 				{ja ? "本数条件" : "Count goal"}: {count}
 			</p>
 			{result ? (
 				<>
 					<p role="status" className="text-xs text-zinc-300">
-						{result.decision ? (
-							<span className="block">{result.decision.message[locale]}</span>
-						) : null}
-						{finding?.message[locale] ?? result.quality.message[locale]}
+						{status}
 					</p>
 					<DeclaredOutputStructure result={result} locale={locale} />
-					{result.reach.high || result.reach.low ? (
-						<dl className="space-y-1 text-xs">
-							{(["high", "low"] as const).map((bound) => {
-								const top = result.reach[bound];
-								if (!top) return null;
-								return (
-									<div
-										key={bound}
-										className="flex flex-wrap justify-between gap-x-3 gap-y-1"
-									>
-										<dt className="text-zinc-400">
-											{bound === "high"
-												? ja
-													? "解析値が上限の場合の最上段"
-													: "Top at high analysis input"
-												: ja
-													? "解析値が下限の場合の最上段"
-													: "Top at low analysis input"}
-										</dt>
-										<dd className="tabular-nums text-zinc-200">
-											{rate(top.minimum)}
-											{top.maximum !== top.minimum
-												? `–${rate(top.maximum)}`
-												: ""}{" "}
-											kbps
-										</dd>
-									</div>
-								);
-							})}
-						</dl>
-					) : null}
-					<details className="space-y-3 text-xs text-zinc-400">
-						<summary className="cursor-pointer">
-							{ja ? "根拠と画質確認" : "Reasoning and quality checks"}
-						</summary>
-						<FullLadderDetails result={result} locale={locale} />
-						<ul className="space-y-2">
-							{result.findings.map((item) => {
-								const affected = [
-									...new Set(
-										item.fields?.flatMap((field) =>
-											field.rowId ? [field.rowId] : [],
-										),
-									),
-								]
-									.map((rowId) => rows.findIndex((row) => row.id === rowId) + 1)
-									.filter((index) => index > 0);
-								return (
-									<li key={JSON.stringify([item.code, item.fields])}>
-										{affected.length
-											? `${ja ? "段" : "Rendition"} ${affected.join(", ")}: `
-											: ""}
-										{item.message[locale]}
-									</li>
-								);
-							})}
-						</ul>
-						<p>{result.quality.message[locale]}</p>
-						<ul className="list-disc space-y-1 pl-4">
-							{result.quality.checks.map((check) => (
-								<li key={check.en}>{check[locale]}</li>
-							))}
-						</ul>
-						<div className="overflow-x-auto">
-							<table className="w-full text-left [&_td]:py-2 [&_td]:pr-3 [&_th]:py-2 [&_th]:pr-3 [&_th]:font-medium">
-								<caption className="pb-2 text-left font-medium text-zinc-300">
-									{ja ? "全項目の依存関係" : "All parameter dependencies"}
-								</caption>
-								<thead>
-									<tr>
-										<th scope="col">{ja ? "項目" : "Parameter"}</th>
-										<th scope="col">{ja ? "現在値" : "Current"}</th>
-										<th scope="col">
-											{ja ? "状態・根拠" : "Status and reason"}
-										</th>
-									</tr>
-								</thead>
-								<tbody className="divide-y divide-zinc-800">
-									{result.dependencies.map((item) => (
-										<tr
-											key={JSON.stringify([item.scope, item.rowId, item.key])}
-										>
-											<th scope="row">
-												{item.scope === "stream"
-													? `${ja ? "段" : "Rendition"} ${rows.findIndex((row) => row.id === item.rowId) + 1 || item.rowId}: `
-													: ""}
-												{perTitleSettingLabel(item.key, locale)}
-											</th>
-											<td className="tabular-nums">
-												{perTitleAdviceValueText(item.value, item.key, locale)}
-												{isPerTitleBitrateKey(item.key) ? " kbps" : ""}
-											</td>
-											<td>
-												{dependencyStatus[locale][item.status]}:{" "}
-												{item.explanation[locale]}{" "}
-												<a
-													href={item.sourceUrl}
-													target="_blank"
-													rel="noreferrer"
-													className="underline"
-												>
-													{ja ? "出典" : "Source"}
-												</a>
-												{item.dependencies.length > 0 ? (
-													<p className="pt-1 text-zinc-500">
-														{ja ? "関連" : "Related"}:{" "}
-														{item.dependencies
-															.map((key) => perTitleSettingLabel(key, locale))
-															.join(", ")}
-													</p>
-												) : null}
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					</details>
 				</>
 			) : null}
 		</section>
+	);
+}
+
+export function PerTitleAnalysisDetails({
+	goal,
+	result,
+	advice,
+}: {
+	goal: PerTitleGoal;
+	result?: PerTitleAnalysisResult;
+	advice?: PerTitleAdvice;
+}) {
+	const { locale } = useT();
+	if (!result) return null;
+	const ja = locale === "ja";
+	const rows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
+	return (
+		<details className="space-y-3 text-xs text-zinc-400">
+			<summary className="cursor-pointer">
+				{ja ? "評価の詳細" : "Evaluation details"}
+			</summary>
+			{result.reach.high || result.reach.low ? (
+				<dl className="space-y-1 text-xs">
+					{(["high", "low"] as const).map((bound) => {
+						const top = result.reach[bound];
+						if (!top) return null;
+						return (
+							<div
+								key={bound}
+								className="flex flex-wrap justify-between gap-x-3 gap-y-1"
+							>
+								<dt className="text-zinc-400">
+									{bound === "high"
+										? ja
+											? "解析値が上限の場合の最上段"
+											: "Top at high analysis input"
+										: ja
+											? "解析値が下限の場合の最上段"
+											: "Top at low analysis input"}
+								</dt>
+								<dd className="tabular-nums text-zinc-200">
+									{rate(top.minimum, locale)}
+									{top.maximum !== top.minimum
+										? `–${rate(top.maximum, locale)}`
+										: ""}{" "}
+									kbps
+								</dd>
+							</div>
+						);
+					})}
+				</dl>
+			) : null}
+			<FullLadderDetails result={result} locale={locale} advice={advice} />
+			<ul className="space-y-2">
+				{result.findings.map((item) => {
+					const affected = [
+						...new Set(
+							item.fields?.flatMap((field) =>
+								field.rowId ? [field.rowId] : [],
+							),
+						),
+					]
+						.map((rowId) => rows.findIndex((row) => row.id === rowId) + 1)
+						.filter((index) => index > 0);
+					return (
+						<li key={JSON.stringify([item.code, item.fields])}>
+							{affected.length
+								? `${ja ? "段" : "Rendition"} ${affected.join(", ")}: `
+								: ""}
+							{item.message[locale]}
+						</li>
+					);
+				})}
+			</ul>
+			<p>{result.quality.message[locale]}</p>
+			<ul className="list-disc space-y-1 pl-4">
+				{result.quality.checks.map((check) => (
+					<li key={check.en}>{check[locale]}</li>
+				))}
+			</ul>
+			<div className="overflow-x-auto">
+				<table className="w-full text-left [&_td]:py-2 [&_td]:pr-3 [&_th]:py-2 [&_th]:pr-3 [&_th]:font-medium">
+					<caption className="pb-2 text-left font-medium text-zinc-300">
+						{ja ? "全項目の依存関係" : "All parameter dependencies"}
+					</caption>
+					<thead>
+						<tr>
+							<th scope="col">{ja ? "項目" : "Parameter"}</th>
+							<th scope="col">{ja ? "現在値" : "Current"}</th>
+							<th scope="col">{ja ? "状態・根拠" : "Status and reason"}</th>
+						</tr>
+					</thead>
+					<tbody className="divide-y divide-zinc-800">
+						{result.dependencies.map((item) => (
+							<tr key={JSON.stringify([item.scope, item.rowId, item.key])}>
+								<th scope="row">
+									{item.scope === "stream"
+										? `${ja ? "段" : "Rendition"} ${rows.findIndex((row) => row.id === item.rowId) + 1 || item.rowId}: `
+										: ""}
+									{perTitleSettingLabel(item.key, locale)}
+								</th>
+								<td className="tabular-nums">
+									{perTitleAdviceValueText(item.value, item.key, locale)}
+									{isPerTitleBitrateKey(item.key) ? " kbps" : ""}
+								</td>
+								<td>
+									{dependencyStatus[locale][item.status]}:{" "}
+									{item.explanation[locale]}{" "}
+									<a
+										href={item.sourceUrl}
+										target="_blank"
+										rel="noreferrer"
+										className="underline"
+									>
+										{ja ? "出典" : "Source"}
+									</a>
+									{item.dependencies.length > 0 ? (
+										<p className="pt-1 text-zinc-500">
+											{ja ? "関連" : "Related"}:{" "}
+											{item.dependencies
+												.map((key) => perTitleSettingLabel(key, locale))
+												.join(", ")}
+										</p>
+									) : null}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</details>
 	);
 }

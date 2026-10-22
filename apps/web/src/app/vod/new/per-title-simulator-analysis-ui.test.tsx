@@ -10,7 +10,10 @@ import {
 	type PerTitleAnalysisIntent,
 } from "./per-title-simulator-analysis";
 import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
-import { PerTitleAnalysisPanel } from "./per-title-simulator-analysis-panel";
+import {
+	PerTitleAnalysisDetails,
+	PerTitleAnalysisPanel,
+} from "./per-title-simulator-analysis-panel";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const source = (): PerTitleGoal => ({
@@ -115,11 +118,26 @@ describe("current Per-Title settings analysis", () => {
 			);
 		expect(summary()).toBeVisible();
 		expect(summary().closest("details")).toBeNull();
+		const comparison = screen.getByRole("region", {
+			name: locale === "ja" ? "調整案" : "Suggested adjustment",
+		});
+		expect(comparison).toBeVisible();
+		const evaluation = screen.getByRole("region", {
+			name: locale === "ja" ? "現在の設定を評価" : "Evaluate current settings",
+		});
+		const details = screen.getByText(
+			locale === "ja" ? "評価の詳細" : "Evaluation details",
+			{ selector: "summary" },
+		);
+		expect(details.closest("details")).not.toHaveAttribute("open");
 		expect(
-			screen.getByRole("region", {
-				name: locale === "ja" ? "調整案" : "Suggested adjustment",
-			}),
-		).toBeVisible();
+			evaluation.compareDocumentPosition(comparison) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(
+			comparison.compareDocumentPosition(details) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
 		expect(api()).toEqual(before);
 		const adopt = screen.getAllByRole("button", {
 			name: locale === "ja" ? "この調整を採用" : "Use this adjustment",
@@ -186,10 +204,9 @@ describe("current Per-Title settings analysis", () => {
 		);
 		expect(fullSummary.closest("details")).not.toHaveAttribute("open");
 		fireEvent.click(
-			screen.getByText(
-				locale === "ja" ? "根拠と画質確認" : "Reasoning and quality checks",
-				{ selector: "summary" },
-			),
+			screen.getByText(locale === "ja" ? "評価の詳細" : "Evaluation details", {
+				selector: "summary",
+			}),
 		);
 		fireEvent.click(fullSummary);
 		const table = screen.getByRole("table", {
@@ -254,18 +271,20 @@ describe("current Per-Title settings analysis", () => {
 					: "Placement slots and capacity are arithmetic, not the native output count.",
 			),
 		).toBeVisible();
-		const select = screen.getAllByRole("checkbox", {
-			name: locale === "ja" ? /反映する変更:/ : /Select change:/,
+		const select = screen.getAllByRole("combobox", {
+			name: locale === "ja" ? /^選択:/ : /^Decision:/,
 		})[0];
 		if (!select) throw new Error("Expected selectable changes.");
-		fireEvent.click(select);
+		expect(select).toHaveValue("skip");
+		fireEvent.change(select, { target: { value: "apply" } });
+		expect(select).toHaveValue("apply");
 		expect(
 			screen
 				.getAllByRole("button", {
 					name:
 						locale === "ja"
-							? "選択した変更を反映して再計算"
-							: "Apply selected changes and recalculate",
+							? "選択した内容で再評価"
+							: "Re-evaluate selected decisions",
 				})
 				.filter((button) => !button.hasAttribute("disabled")),
 		).toHaveLength(1);
@@ -311,31 +330,40 @@ describe("current Per-Title settings analysis", () => {
 		["ja", "no-certified-candidate"],
 		["en", "inspect-only"],
 		["ja", "inspect-only"],
-	] as const)("shows the supplied %s decision for %s outside collapsed details", (locale, status) => {
+	] as const)("shows a short proposal or the supplied %s outcome for %s outside collapsed details", (locale, status) => {
 		const goal = source();
 		const evaluated = analyzePerTitleSettings(goal, "count");
 		const message = { en: `Decision: ${status}`, ja: `評価結果: ${status}` };
+		const result = {
+			...evaluated,
+			findings: [],
+			advice: status === "proposal" ? evaluated.advice : [],
+			decision: { status, message },
+		};
 		renderLocalized(
-			<PerTitleAnalysisPanel
-				goal={goal}
-				intent="count"
-				onIntentChange={vi.fn()}
-				onEvaluate={vi.fn()}
-				result={{
-					...evaluated,
-					advice: status === "proposal" ? evaluated.advice : [],
-					decision: { status, message },
-				}}
-			/>,
+			<>
+				<PerTitleAnalysisPanel
+					goal={goal}
+					intent="count"
+					onIntentChange={vi.fn()}
+					onEvaluate={vi.fn()}
+					result={result}
+				/>
+				<PerTitleAnalysisDetails goal={goal} result={result} />
+			</>,
 			locale,
 		);
-		expect(screen.getByText(message[locale])).toBeVisible();
-		expect(screen.getByText(message[locale]).closest("details")).toBeNull();
+		const conclusion =
+			status === "proposal"
+				? locale === "ja"
+					? "調整案があります。"
+					: "A checked adjustment is available."
+				: message[locale];
+		expect(screen.getByText(conclusion)).toBeVisible();
+		expect(screen.getByText(conclusion).closest("details")).toBeNull();
 		expect(
 			screen
-				.getByText(
-					locale === "ja" ? "根拠と画質確認" : "Reasoning and quality checks",
-				)
+				.getByText(locale === "ja" ? "評価の詳細" : "Evaluation details")
 				.closest("details"),
 		).not.toHaveAttribute("open");
 	});
@@ -368,12 +396,69 @@ describe("current Per-Title settings analysis", () => {
 					: "Top at high analysis input",
 			),
 		).toBeNull();
-		const details = within(panel)
-			.getByText(
-				locale === "ja" ? "根拠と画質確認" : "Reasoning and quality checks",
-			)
+		expect(
+			within(panel).queryByText(
+				locale === "ja" ? "評価の詳細" : "Evaluation details",
+			),
+		).toBeNull();
+		const details = screen
+			.getByText(locale === "ja" ? "評価の詳細" : "Evaluation details")
 			.closest("details");
 		expect(details).not.toHaveAttribute("open");
+		expect(onAdopt).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("places explicitly maintained values before the closed diagnostics (%s)", (locale) => {
+		const goal = source();
+		const original = structuredClone(goal);
+		const onAdopt = vi.fn();
+		renderLocalized(
+			<PerTitleAdvisor goal={goal} session={goal} onAdopt={onAdopt} />,
+			locale,
+		);
+		fireEvent.change(
+			screen.getByRole("combobox", { name: locale === "ja" ? "目的" : "Goal" }),
+			{ target: { value: "count" } },
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "ja" ? "評価する" : "Evaluate",
+			}),
+		);
+		const decision = screen.getAllByRole("combobox", {
+			name: locale === "ja" ? /^選択:/ : /^Decision:/,
+		})[0];
+		if (!decision) throw new Error("Expected a parameter decision.");
+		fireEvent.change(decision, { target: { value: "keep" } });
+		expect(
+			screen.queryByRole("region", {
+				name: locale === "ja" ? "維持する値" : "Maintained values",
+			}),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name:
+					locale === "ja"
+						? "選択した内容で再評価"
+						: "Re-evaluate selected decisions",
+			}),
+		);
+		const maintained = screen.getByRole("region", {
+			name: locale === "ja" ? "維持する値" : "Maintained values",
+		});
+		const details = screen.getByText(
+			locale === "ja" ? "評価の詳細" : "Evaluation details",
+			{ selector: "summary" },
+		);
+		expect(details.closest("details")).not.toHaveAttribute("open");
+		expect(
+			maintained.compareDocumentPosition(details) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(goal).toEqual(original);
 		expect(onAdopt).not.toHaveBeenCalled();
 	});
 
@@ -467,6 +552,12 @@ describe("current Per-Title settings analysis", () => {
 				name: locale === "ja" ? "評価する" : "Evaluate",
 			}),
 		);
+		const detailSummary = screen.getByText(
+			locale === "ja" ? "評価の詳細" : "Evaluation details",
+			{ selector: "summary" },
+		);
+		expect(detailSummary.closest("details")).not.toHaveAttribute("open");
+		fireEvent.click(detailSummary);
 		const high = screen
 			.getByText(
 				locale === "ja"
@@ -482,7 +573,9 @@ describe("current Per-Title settings analysis", () => {
 			)
 			.closest("div");
 		expect(high).toHaveTextContent("6,000 kbps");
+		expect(high).toBeVisible();
 		expect(low).toHaveTextContent("1,000 kbps");
+		expect(low).toBeVisible();
 		expect(low).not.toHaveTextContent("6,000 kbps");
 	});
 
@@ -508,14 +601,16 @@ describe("current Per-Title settings analysis", () => {
 			],
 		};
 		renderLocalized(
-			<PerTitleAnalysisPanel
+			<PerTitleAnalysisDetails
 				goal={goal}
-				intent="cap"
-				onIntentChange={vi.fn()}
-				onEvaluate={vi.fn()}
 				result={analyzePerTitleSettings(goal, "cap")}
 			/>,
 		);
+		const summary = screen.getByText("Evaluation details", {
+			selector: "summary",
+		});
+		expect(summary.closest("details")).not.toHaveAttribute("open");
+		fireEvent.click(summary);
 		expect(
 			screen.getByText("Top at high analysis input").closest("div"),
 		).toHaveTextContent("4,000–4,461.538 kbps");
@@ -525,7 +620,7 @@ describe("current Per-Title settings analysis", () => {
 		["cap", "cap-unresolved", "count-conditional"],
 		["bandwidth", "quality-measurement-required", "cap-blocked"],
 		["count", "count-required", "cap-unresolved"],
-	] as const)("summarizes the chosen %s goal ahead of an unrelated warning", (intent, code, otherCode) => {
+	] as const)("explains the chosen %s goal ahead of an unrelated warning when no advice is available", (intent, code, otherCode) => {
 		const goal = source();
 		const result = analyzePerTitleSettings(goal, intent);
 		renderLocalized(
@@ -536,6 +631,8 @@ describe("current Per-Title settings analysis", () => {
 				onEvaluate={vi.fn()}
 				result={{
 					...result,
+					advice: [],
+					decision: { ...result.decision, status: "no-certified-candidate" },
 					findings: [
 						{
 							code: otherCode,
@@ -571,6 +668,8 @@ describe("current Per-Title settings analysis", () => {
 				onEvaluate={vi.fn()}
 				result={{
 					...result,
+					advice: [],
+					decision: { ...result.decision, status: "no-certified-candidate" },
 					findings: [
 						{
 							code: "cap-blocked",

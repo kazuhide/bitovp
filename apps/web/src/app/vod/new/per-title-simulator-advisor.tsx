@@ -1,8 +1,16 @@
 "use client";
 
 import type { PerTitleGoal } from "@bitovp/core";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Button } from "@/components/ui/button";
+import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -28,7 +36,10 @@ import {
 	type PerTitleAnalysisResult,
 	perTitleAnalysisContextKey,
 } from "./per-title-simulator-analysis";
-import { PerTitleAnalysisPanel } from "./per-title-simulator-analysis-panel";
+import {
+	PerTitleAnalysisDetails,
+	PerTitleAnalysisPanel,
+} from "./per-title-simulator-analysis-panel";
 import { perTitleSettingLabel } from "./per-title-simulator-control-copy";
 import {
 	getPerTitleGoalSetting,
@@ -75,22 +86,36 @@ function singleEdit(
 	return edits.length === 1 ? edits[0] : undefined;
 }
 
+function sameFieldValue(
+	before: PerTitleGoal,
+	after: PerTitleGoal,
+	field: PerTitleAdviceField,
+) {
+	return Object.is(
+		getPerTitleGoalSetting(before, field.scope, field.key, field.rowId),
+		getPerTitleGoalSetting(after, field.scope, field.key, field.rowId),
+	);
+}
+
 function AdviceOption({
 	advice,
 	goal,
 	onAdopt,
-	onKeep,
-	onApplySelected,
+	onReview,
+	applying,
+	pendingFields,
 	locale,
 }: {
 	advice: PerTitleAdvice;
 	goal: PerTitleGoal;
 	onAdopt: (advice: PerTitleAdvice) => void;
-	onKeep: (fields: PerTitleAdviceField[]) => void;
-	onApplySelected: (
+	onReview: (
 		advice: PerTitleAdvice,
-		fields: PerTitleAdviceField[],
-	) => void;
+		selected: PerTitleAdviceField[],
+		kept: PerTitleAdviceField[],
+	) => boolean;
+	applying: boolean;
+	pendingFields: readonly PerTitleAdviceField[];
 	locale: Locale;
 }) {
 	const ja = locale === "ja";
@@ -134,32 +159,21 @@ function AdviceOption({
 		high > 0 &&
 		complexity.every((row) => row.highComplexityBoundaryForMaxBitrate === high);
 	return (
-		<div className="space-y-3">
-			<p className="text-xs text-zinc-300">
-				{advice.explanation?.[locale] ?? reason}
-			</p>
-			{rounded || digits === 0 ? (
-				<p className="text-xs text-zinc-400">
-					{rounded
-						? ja
-							? "変更可能な値を丸めて再確認済み。"
-							: "Changeable values rounded and rechecked."
-						: ja
-							? "丸めない値で再確認済み。"
-							: "Unrounded values rechecked."}
-				</p>
-			) : null}
+		<div className="min-w-0 space-y-3">
 			<PerTitleAdviceChanges
 				advice={advice}
 				goal={goal}
 				locale={locale}
-				onKeep={onKeep}
-				onApplySelected={onApplySelected}
+				onReview={onReview}
+				onAdoptAll={onAdopt}
+				applying={applying}
+				pendingFields={pendingFields}
 			/>
 			<details className="space-y-2 text-xs text-zinc-400">
 				<summary className="cursor-pointer">
 					{ja ? "根拠と確認範囲" : "Reasoning and scope"}
 				</summary>
+				<p>{advice.explanation?.[locale] ?? reason}</p>
 				{advice.reason === "lower-boundary" ? (
 					<p>
 						{ja ? "下側境界" : "Lower boundary"} = trunc(
@@ -222,14 +236,6 @@ function AdviceOption({
 							: "The edited settings are recalculated. This check does not establish the actual generated count or quality."}
 				</p>
 			</details>
-			<Button
-				data-advisor-adopt
-				variant="secondary"
-				size="sm"
-				onClick={() => onAdopt(advice)}
-			>
-				{ja ? "この調整を採用" : "Use this adjustment"}
-			</Button>
 		</div>
 	);
 }
@@ -248,6 +254,7 @@ type AdvisorContext =
 	| { kind: "analysis"; intent: PerTitleAnalysisIntent };
 
 type AdvisorSnapshot = {
+	revision?: number;
 	goal: PerTitleGoal;
 	session: PerTitleGoal;
 	key: string;
@@ -300,6 +307,7 @@ export function PerTitleAdvisor({
 	const [intent, setIntent] = useState<PerTitleAnalysisIntent>("cap");
 	const liveIntent = useRef(intent);
 	const active = useRef<AdvisorContext | null>(null);
+	const [, refreshPending] = useState(0);
 	const pendingApplication = useRef<{
 		goal: PerTitleGoal;
 		active: NonNullable<typeof active.current>;
@@ -322,6 +330,14 @@ export function PerTitleAdvisor({
 	);
 	const key = protectionKey(fields);
 	const [snapshot, setSnapshot] = useState<AdvisorSnapshot | null>(null);
+	const revision = useRef(0);
+	const replaceSnapshot = useCallback((next: AdvisorSnapshot | null) => {
+		setSnapshot(next ? { ...next, revision: ++revision.current } : null);
+	}, []);
+	const [choice, setChoice] = useState<{
+		snapshot: AdvisorSnapshot;
+		id: string;
+	} | null>(null);
 	useEffect(() => {
 		const prior = previous.current;
 		previous.current = { goal, session };
@@ -329,7 +345,7 @@ export function PerTitleAdvisor({
 			active.current = null;
 			pendingApplication.current = null;
 			pendingFocus.current = null;
-			setSnapshot(null);
+			replaceSnapshot(null);
 			liveProtection.current = { session, codec: goal.codec, fields: [] };
 			setProtection(liveProtection.current);
 			return;
@@ -346,7 +362,7 @@ export function PerTitleAdvisor({
 			active.current = null;
 			pendingApplication.current = null;
 			pendingFocus.current = null;
-			setSnapshot(null);
+			replaceSnapshot(null);
 			liveProtection.current = { session, codec: goal.codec, fields: retained };
 			setProtection(liveProtection.current);
 			return;
@@ -360,7 +376,7 @@ export function PerTitleAdvisor({
 						? null
 						: pending.active;
 				if (pending.active.kind === "analysis")
-					setSnapshot(
+					replaceSnapshot(
 						analysisSnapshot(
 							goal,
 							session,
@@ -368,7 +384,7 @@ export function PerTitleAdvisor({
 							pending.active.intent,
 						),
 					);
-				else if (pending.complete) setSnapshot(null);
+				else if (pending.complete) replaceSnapshot(null);
 				liveProtection.current = {
 					session,
 					codec: goal.codec,
@@ -384,7 +400,7 @@ export function PerTitleAdvisor({
 			const edit = singleEdit(prior.goal, goal);
 			if (!edit) {
 				active.current = null;
-				setSnapshot(
+				replaceSnapshot(
 					hasAutomaticPerTitleSettings(goal)
 						? { goal, session, key, items: [] }
 						: null,
@@ -405,11 +421,11 @@ export function PerTitleAdvisor({
 				};
 		}
 		if (active.current?.kind === "analysis")
-			setSnapshot(
+			replaceSnapshot(
 				analysisSnapshot(goal, session, fields, active.current.intent),
 			);
 		else if (active.current)
-			setSnapshot({
+			replaceSnapshot({
 				goal,
 				session,
 				key,
@@ -420,7 +436,7 @@ export function PerTitleAdvisor({
 					{ ...options, appliedFields: active.current.appliedFields },
 				),
 			});
-	}, [goal, session, key, options, fields]);
+	}, [goal, session, key, options, fields, replaceSnapshot]);
 	const matches =
 		snapshot?.goal === goal &&
 		snapshot.session === session &&
@@ -429,6 +445,10 @@ export function PerTitleAdvisor({
 			snapshot.contextKey === perTitleAnalysisContextKey(intent));
 	const items = matches ? snapshot.items : [];
 	const first = items[0];
+	const chosen =
+		choice?.snapshot === snapshot
+			? (items.find((item) => item.id === choice.id) ?? first)
+			: first;
 	useEffect(() => {
 		const request = pendingFocus.current;
 		if (request === null) return;
@@ -464,16 +484,21 @@ export function PerTitleAdvisor({
 		active.current = null;
 		pendingApplication.current = null;
 		pendingFocus.current = null;
-		setSnapshot(null);
+		replaceSnapshot(null);
 		setIntent(next);
 	};
 	const evaluate = () => {
 		const live = liveProtection.current;
-		if (live.session !== session || live.codec !== goal.codec) return;
+		if (
+			pendingApplication.current ||
+			live.session !== session ||
+			live.codec !== goal.codec
+		)
+			return;
 		active.current = { kind: "analysis", intent: liveIntent.current };
 		pendingApplication.current = null;
 		pendingFocus.current = null;
-		setSnapshot(
+		replaceSnapshot(
 			analysisSnapshot(goal, session, live.fields, liveIntent.current),
 		);
 	};
@@ -523,6 +548,7 @@ export function PerTitleAdvisor({
 	const adopt = (advice: PerTitleAdvice) => {
 		const live = liveProtection.current;
 		if (
+			pendingApplication.current ||
 			!matches ||
 			!snapshot.items.includes(advice) ||
 			snapshot.contextKey !== adoptionContextKey() ||
@@ -549,14 +575,16 @@ export function PerTitleAdvisor({
 		} else {
 			active.current = null;
 			pendingApplication.current = null;
-			setSnapshot(null);
+			replaceSnapshot(null);
 		}
+		refreshPending((value) => value + 1);
 		onAdopt(advice, options);
 	};
 	const applySelected = (
 		advice: PerTitleAdvice,
 		selected: PerTitleAdviceField[],
-	) => {
+		kept: PerTitleAdviceField[] = [],
+	): boolean => {
 		const live = liveProtection.current;
 		if (
 			!matches ||
@@ -567,15 +595,43 @@ export function PerTitleAdvisor({
 			live.codec !== goal.codec ||
 			protectionKey(live.fields) !== snapshot.key
 		)
-			return;
+			return false;
+		const decisions = [...selected, ...kept];
+		const identities = decisions.map(perTitleAdviceFieldKey);
+		if (
+			decisions.length === 0 ||
+			new Set(identities).size !== decisions.length ||
+			decisions.some(
+				(field) =>
+					advice.changes.filter(
+						(change) =>
+							change.scope === field.scope &&
+							change.key === field.key &&
+							change.rowId === field.rowId,
+					).length !== 1,
+			)
+		)
+			return false;
+		const pending = pendingApplication.current;
+		if (
+			pending &&
+			(selected.length > 0 ||
+				kept.some((field) => !sameFieldValue(goal, pending.goal, field)))
+		)
+			return false;
 		const options = {
 			protectedFields: live.fields.map((field) => ({ ...field })),
 			...(snapshot.contextKey === undefined
 				? {}
 				: { contextKey: perTitleAnalysisContextKey(liveIntent.current) }),
 		};
+		if (selected.length === 0) {
+			if (!applyPerTitleAdvice(goal, advice, options)) return false;
+			keep(kept);
+			return true;
+		}
 		const next = applySelectedPerTitleAdvice(goal, advice, selected, options);
-		if (!next) return;
+		if (!next) return false;
 		const union = (
 			a: readonly PerTitleAdviceField[],
 			b: readonly PerTitleAdviceField[],
@@ -593,7 +649,7 @@ export function PerTitleAdvisor({
 							...active.current,
 							appliedFields: union(active.current.appliedFields, selected),
 						},
-			fields: union(live.fields, selected),
+			fields: union(union(live.fields, selected), kept),
 			complete: advice.changes.every((change) =>
 				selected.some(
 					(field) =>
@@ -601,11 +657,21 @@ export function PerTitleAdvisor({
 				),
 			),
 		};
+		// Publish only explicit keeps before the parent callback; selected pins await acknowledgement.
+		if (kept.length > 0) updateProtection(union(live.fields, kept));
+		refreshPending((value) => value + 1);
 		onAdopt(advice, options, selected);
+		return true;
 	};
 	const automatic = matches && hasAutomaticPerTitleSettings(goal);
 	const unavailable = matches && fields.length > 0 && !first;
 	const allRows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
+	const pending = pendingApplication.current;
+	const pendingFields = pending
+		? (chosen?.changes ?? []).filter(
+				(field) => !sameFieldValue(goal, pending.goal, field),
+			)
+		: EMPTY_FIELDS;
 	return (
 		<div ref={rootRef} className="space-y-3">
 			<PerTitleAnalysisPanel
@@ -615,6 +681,49 @@ export function PerTitleAdvisor({
 				onEvaluate={evaluate}
 				result={matches ? snapshot.analysis : undefined}
 			/>
+			{chosen ? (
+				<section
+					aria-labelledby={id}
+					className="min-w-0 space-y-3 rounded-md border border-zinc-700 p-3"
+				>
+					<h3 id={id} className="font-medium text-sm text-zinc-200">
+						{ja ? "調整案" : "Suggested adjustment"}
+					</h3>
+					{items.length > 1 ? (
+						<div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+							<label htmlFor={`${id}-option`}>
+								{ja ? "表示する案" : "Adjustment to review"}
+							</label>
+							<SelectNative
+								id={`${id}-option`}
+								className="h-8 w-auto text-xs"
+								value={chosen.id}
+								onChange={(event) => {
+									if (snapshot) setChoice({ snapshot, id: event.target.value });
+								}}
+							>
+								{items.map((item, index) => (
+									<option key={item.id} value={item.id}>
+										{ja
+											? `案 ${index + 1}（${item.changes.length}項目）`
+											: `Option ${index + 1} (${item.changes.length} changes)`}
+									</option>
+								))}
+							</SelectNative>
+						</div>
+					) : null}
+					<AdviceOption
+						key={`${snapshot?.revision}-${chosen.id}-${chosen.inputFingerprint}`}
+						advice={chosen}
+						goal={goal}
+						onAdopt={adopt}
+						onReview={applySelected}
+						applying={pendingApplication.current !== null}
+						pendingFields={pendingFields}
+						locale={locale}
+					/>
+				</section>
+			) : null}
 			{fields.length > 0 ? (
 				<section
 					aria-label={ja ? "維持する値" : "Maintained values"}
@@ -680,43 +789,11 @@ export function PerTitleAdvisor({
 						: "No checked adjustment is available for these maintained values."}
 				</p>
 			) : null}
-			{first ? (
-				<section
-					aria-labelledby={id}
-					className="space-y-3 rounded-md border border-zinc-700 p-3"
-				>
-					<h3 id={id} className="font-medium text-sm text-zinc-200">
-						{ja ? "調整案" : "Suggested adjustment"}
-					</h3>
-					<AdviceOption
-						key={`${first.id}-${first.inputFingerprint}`}
-						advice={first}
-						goal={goal}
-						onAdopt={adopt}
-						onKeep={keep}
-						onApplySelected={applySelected}
-						locale={locale}
-					/>
-					{items.length > 1 ? (
-						<details className="space-y-3 text-xs text-zinc-400">
-							<summary className="cursor-pointer">
-								{ja ? "ほかの案" : "Other adjustments"}
-							</summary>
-							{items.slice(1).map((item) => (
-								<AdviceOption
-									key={`${item.id}-${item.inputFingerprint}`}
-									advice={item}
-									goal={goal}
-									onAdopt={adopt}
-									onKeep={keep}
-									onApplySelected={applySelected}
-									locale={locale}
-								/>
-							))}
-						</details>
-					) : null}
-				</section>
-			) : null}
+			<PerTitleAnalysisDetails
+				goal={goal}
+				result={matches ? snapshot.analysis : undefined}
+				advice={chosen}
+			/>
 		</div>
 	);
 }

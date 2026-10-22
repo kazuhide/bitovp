@@ -57,14 +57,15 @@ describe("advice selection identity and acknowledgement", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
-		fireEvent.click(
-			screen.getByRole("checkbox", {
-				name: `Select change: ${label}, rendition 1`,
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: `Decision: ${label}, rendition 1`,
 			}),
+			{ target: { value: "apply" } },
 		);
 		fireEvent.click(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		);
 		const [advice, options, fields] = onAdopt.mock.calls[0] ?? [];
@@ -83,21 +84,21 @@ describe("advice selection identity and acknowledgement", () => {
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
 		expect(
-			screen.queryByRole("checkbox", {
-				name: `Select change: ${label}, rendition 1`,
+			screen.queryByRole("combobox", {
+				name: `Decision: ${label}, rendition 1`,
 			}),
 		).toBeNull();
 		fireEvent.click(
 			screen.getByRole("button", { name: `Release: ${label}, rendition 1` }),
 		);
 		expect(
-			screen.getByRole("checkbox", {
-				name: `Select change: ${label}, rendition 1`,
+			screen.getByRole("combobox", {
+				name: `Decision: ${label}, rendition 1`,
 			}),
-		).not.toBeChecked();
+		).toHaveValue("skip");
 		expect(
-			screen.getByRole("checkbox", {
-				name: `Select change: ${label}, rendition 2`,
+			screen.getByRole("combobox", {
+				name: `Decision: ${label}, rendition 2`,
 			}),
 		).toBeInTheDocument();
 	});
@@ -111,18 +112,18 @@ describe("advice selection identity and acknowledgement", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
-		const first = screen.getByRole("checkbox", {
-			name: "Select change: Upper complexity boundary (kbps), rendition 1",
+		const first = screen.getByRole("combobox", {
+			name: "Decision: Upper complexity boundary (kbps), rendition 1",
 		});
-		const second = screen.getByRole("checkbox", {
-			name: "Select change: Upper complexity boundary (kbps), rendition 2",
+		const second = screen.getByRole("combobox", {
+			name: "Decision: Upper complexity boundary (kbps), rendition 2",
 		});
-		fireEvent.click(first);
-		expect(first).toBeChecked();
-		expect(second).not.toBeChecked();
+		fireEvent.change(first, { target: { value: "apply" } });
+		expect(first).toHaveValue("apply");
+		expect(second).toHaveValue("skip");
 		fireEvent.click(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		);
 		expect(onAdopt).toHaveBeenCalledTimes(1);
@@ -148,11 +149,11 @@ describe("advice selection identity and acknowledgement", () => {
 		).toBeNull();
 		expect(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Re-evaluate selected decisions",
 			}),
 		).toBeDisabled();
 	});
-	it("rejects a selected snapshot if a current-value protection was added in the same batch", () => {
+	it("commits staged keeps with a selected change once and rejects a repeated stale batch", () => {
 		const session = source(),
 			current = { ...session, maxBitrate: 8_000_000 },
 			onAdopt = vi.fn();
@@ -162,33 +163,50 @@ describe("advice selection identity and acknowledgement", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 		);
-		fireEvent.click(
-			screen.getByRole("checkbox", {
-				name: "Select change: Minimum bitrate (kbps), rendition 1",
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: "Decision: Minimum bitrate (kbps), rendition 1",
 			}),
+			{ target: { value: "apply" } },
 		);
 		const apply = screen.getByRole("button", {
-			name: "Apply selected changes and recalculate",
+			name: "Re-evaluate selected decisions",
 		});
-		const keep = screen.getByRole("button", {
-			name: "Keep current value: Maximum bitrate (kbps), rendition 1",
+		const keep = screen.getByRole("combobox", {
+			name: "Decision: Maximum bitrate (kbps), rendition 1",
 		});
-		act(() => {
-			fireEvent.click(keep);
-			fireEvent.click(apply);
-		});
+		fireEvent.change(keep, { target: { value: "keep" } });
 		expect(onAdopt).not.toHaveBeenCalled();
 		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		act(() => {
+			fireEvent.click(apply);
+			fireEvent.click(apply);
+		});
+		expect(onAdopt).toHaveBeenCalledTimes(1);
+		expect(onAdopt.mock.calls[0]?.[2]).toEqual([
+			{ scope: "stream", key: "minBitrate", rowId: "lower" },
+		]);
+		expect(
 			screen.getByRole("button", {
-				name: "Apply selected changes and recalculate",
+				name: "Release: Maximum bitrate (kbps), rendition 1",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", {
+				name: "Release: Minimum bitrate (kbps), rendition 1",
+			}),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: "Re-evaluate selected decisions",
 			}),
 		).toBeDisabled();
 		const loaded = source();
 		view.rerender(
 			<PerTitleAdvisor goal={loaded} session={loaded} onAdopt={onAdopt} />,
 		);
-		expect(
-			screen.queryByRole("checkbox", { name: /Select change:/ }),
-		).toBeNull();
+		expect(screen.queryByRole("combobox", { name: /Decision:/ })).toBeNull();
 	});
 });

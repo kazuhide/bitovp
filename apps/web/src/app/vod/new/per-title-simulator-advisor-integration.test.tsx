@@ -37,6 +37,70 @@ function api() {
 }
 
 describe("Fixed simulator advice integration", () => {
+	it("commits a mixed keep/apply decision only after review and reevaluates the remaining changes", () => {
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={goal}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Maximum bitrate (kbps)" }),
+			{ target: { value: "8000" } },
+		);
+		const edited = api();
+		fireEvent.change(
+			screen.getByRole("combobox", { name: "Decision: Maximum bitrate ratio" }),
+			{ target: { value: "keep" } },
+		);
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: "Decision: Upper complexity boundary (kbps), rendition 1",
+			}),
+			{ target: { value: "apply" } },
+		);
+		expect(api()).toEqual(edited);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		).toBeDisabled();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Re-evaluate selected decisions" }),
+		);
+		const applied = api();
+		expect(applied).toEqual({
+			...edited,
+			streams: edited.streams.map(
+				(stream: {
+					rowId: string;
+					perTitleSettings?: Record<string, unknown>;
+				}) =>
+					stream.rowId === "required"
+						? {
+								...stream,
+								perTitleSettings: {
+									...stream.perTitleSettings,
+									highComplexityBoundaryForMaxBitrate: 8_000_000,
+								},
+							}
+						: stream,
+			),
+		});
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("Maximum bitrate ratio: 4");
+		expect(
+			screen.getByRole("button", {
+				name: "Release: Upper complexity boundary (kbps), rendition 1",
+			}),
+		).toBeInTheDocument();
+		expect(onApply).not.toHaveBeenCalled();
+	});
 	it.each([
 		"en",
 		"ja",
@@ -130,10 +194,14 @@ describe("Fixed simulator advice integration", () => {
 			{ target: { value: "3" } },
 		);
 		const edited = api();
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Keep current value: Maximum bitrate ratio",
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: "Decision: Maximum bitrate ratio",
 			}),
+			{ target: { value: "keep" } },
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Re-evaluate selected decisions" }),
 		);
 		expect(api()).toEqual(edited);
 		expect(onApply).not.toHaveBeenCalled();

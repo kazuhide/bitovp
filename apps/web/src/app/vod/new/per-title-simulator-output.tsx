@@ -444,42 +444,44 @@ export function PerTitleOutputChart({
 					<p id={`${id}-description`} className="sr-only">
 						{text.description}
 					</p>
-					<table aria-label={dataTitle} className="sr-only">
-						<thead>
-							<tr>
-								<th scope="col">{text.rendition}</th>
-								<th scope="col">{text.mode}</th>
-								<th scope="col">{text.bitrate}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{rows.map(
-								({
-									row,
-									index,
-									label,
-									status,
-									values,
-									targetText,
-									effective,
-									basis,
-								}) => (
-									<tr key={`${row.id}-${index}`}>
-										<th scope="row">{label}</th>
-										<td>
-											{row.mode ??
-												(row.kind === "additional" ? text.additional : "")}
-										</td>
-										<td>
-											{values} {status} {basis}
-											{targetText ? ` ${targetText}` : ""}
-											{effective ? ` ${effective}` : ""}
-										</td>
-									</tr>
-								),
-							)}
-						</tbody>
-					</table>
+					<div className="sr-only">
+						<table aria-label={dataTitle}>
+							<thead>
+								<tr>
+									<th scope="col">{text.rendition}</th>
+									<th scope="col">{text.mode}</th>
+									<th scope="col">{text.bitrate}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{rows.map(
+									({
+										row,
+										index,
+										label,
+										status,
+										values,
+										targetText,
+										effective,
+										basis,
+									}) => (
+										<tr key={`${row.id}-${index}`}>
+											<th scope="row">{label}</th>
+											<td>
+												{row.mode ??
+													(row.kind === "additional" ? text.additional : "")}
+											</td>
+											<td>
+												{values} {status} {basis}
+												{targetText ? ` ${targetText}` : ""}
+												{effective ? ` ${effective}` : ""}
+											</td>
+										</tr>
+									),
+								)}
+							</tbody>
+						</table>
+					</div>
 				</>
 			) : (
 				<p className="text-xs text-zinc-400">{text.unavailable}</p>

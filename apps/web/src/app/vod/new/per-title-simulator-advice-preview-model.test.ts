@@ -1,6 +1,8 @@
 import type { PerTitleGoal } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
+	applyPerTitleAdvice,
+	applySelectedPerTitleAdvice,
 	createPerTitleEvaluationAdvice,
 	type PerTitleAdvice,
 	type PerTitleAdviceField,
@@ -35,6 +37,63 @@ function fixture(options: PerTitleAdviceOptions = {}) {
 }
 
 describe("read-only staged advice preview", () => {
+	it("compares equivalent API objects independently of optional-setting insertion order", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 10,
+			countPolicy: { kind: "unrestricted" },
+			autoRepresentations: false,
+			rows: [
+				{
+					id: "fixed",
+					height: 720,
+					minBitrate: 1_000_000,
+					maxBitrate: 2_000_000,
+				},
+			],
+		};
+		const candidate: PerTitleGoal = {
+			...goal,
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+		};
+		const advice = createPerTitleEvaluationAdvice(goal, candidate);
+		if (!advice) throw new Error("Expected an optional-setting adjustment.");
+		const offered = advice.changes.map(({ scope, key, rowId }) => ({
+			scope,
+			key,
+			...(rowId === undefined ? {} : { rowId }),
+		}));
+		const fullGoal = applyPerTitleAdvice(goal, advice);
+		const selectedGoal = applySelectedPerTitleAdvice(goal, advice, offered);
+		if (!fullGoal || !selectedGoal)
+			throw new Error("Expected both adoption paths to accept the advice.");
+		const fullApi = tunePerTitleSettings(fullGoal, fullGoal).proposal.api;
+		const selectedApi = tunePerTitleSettings(selectedGoal, selectedGoal)
+			.proposal.api;
+		expect(selectedApi).toEqual(fullApi);
+		expect(JSON.stringify(selectedApi)).not.toBe(JSON.stringify(fullApi));
+		for (const selection of [
+			empty,
+			{ selected: offered, kept: [] },
+			{ selected: [], kept: offered },
+		]) {
+			const preview = perTitleAdvicePreview(goal, advice, selection);
+			expect(preview.status).toBe("ready");
+			expect(preview.after?.api).toEqual(
+				preview.mode === "keep" ? preview.current.api : fullApi,
+			);
+		}
+	});
+
 	it("previews the full recommendation, selected fields, keeps, and a cleared selection", () => {
 		const { goal, advice, candidate } = fixture();
 		const full = perTitleAdvicePreview(goal, advice, empty);

@@ -436,7 +436,12 @@ describe("Per-Title output chart", () => {
 			),
 		).toBeGreaterThan(0);
 		expect(screen.queryByRole("status")).toBeNull();
-		expect(screen.getByRole("table")).toHaveClass("sr-only");
+		const table = screen.getByRole("table", {
+			name: locale === "en" ? "Simulated output (data)" : "想定出力（データ）",
+		});
+		expect(table).toHaveTextContent("500–1,500");
+		expect(table).not.toHaveClass("sr-only");
+		expect(table.parentElement).toHaveClass("sr-only");
 		expect(previewPerTitleOutput).toHaveBeenCalledWith(proposal);
 	});
 

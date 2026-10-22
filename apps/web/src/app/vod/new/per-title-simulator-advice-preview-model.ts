@@ -6,6 +6,7 @@ import {
 	type PerTitleAdviceField,
 	type PerTitleAdviceOptions,
 	perTitleAdviceFieldKey,
+	samePerTitleAdviceApi,
 } from "./per-title-simulator-advice";
 import { protectedPerTitleAdviceFields } from "./per-title-simulator-advice-fields";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
@@ -78,9 +79,10 @@ export function perTitleAdvicePreview(
 		if (!allOffered) return result;
 		const full = tunePerTitleSettings(fullGoal, fullGoal).proposal;
 		if (
-			JSON.stringify(
+			!samePerTitleAdviceApi(
 				tunePerTitleSettings(allOffered, allOffered).proposal.api,
-			) !== JSON.stringify(full.api)
+				full.api,
+			)
 		)
 			return result;
 		const minimum = Math.min(

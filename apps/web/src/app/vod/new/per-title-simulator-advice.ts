@@ -77,6 +77,16 @@ export function samePerTitleAdviceInput(a: PerTitleGoal, b: PerTitleGoal) {
 		return false;
 	}
 }
+export function samePerTitleAdviceApi(
+	a: PerTitleProposal["api"],
+	b: PerTitleProposal["api"],
+) {
+	try {
+		return same(a, b);
+	} catch {
+		return false;
+	}
+}
 type Field = PerTitleAdviceField;
 type Variant = {
 	reason: PerTitleAdvice["reason"];

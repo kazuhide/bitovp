@@ -2,7 +2,10 @@ import type { PerTitleGoal } from "@bitovp/core";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
-import type { PerTitleAdvice } from "./per-title-simulator-advice";
+import type {
+	PerTitleAdvice,
+	PerTitleAdviceField,
+} from "./per-title-simulator-advice";
 import { PerTitleAdviceChanges } from "./per-title-simulator-advice-changes";
 
 function fixture(): { goal: PerTitleGoal; advice: PerTitleAdvice } {
@@ -100,6 +103,100 @@ const decision = (locale: "en" | "ja", rendition: number) =>
 	});
 
 describe("parameter review table", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("renders a live staged preview before the comparison without committing decisions (%s)", (locale) => {
+		const { advice, goal } = fixture();
+		const before = structuredClone({ advice, goal });
+		const onReview = vi.fn();
+		const renderPreview = vi.fn(
+			(selection: {
+				selected: readonly PerTitleAdviceField[];
+				kept: readonly PerTitleAdviceField[];
+			}) => (
+				<output aria-label="Ladder preview">{JSON.stringify(selection)}</output>
+			),
+		);
+		renderLocalized(
+			<PerTitleAdviceChanges
+				advice={advice}
+				goal={goal}
+				locale={locale}
+				onReview={onReview}
+				renderPreview={renderPreview}
+			/>,
+			locale,
+		);
+		const preview = screen.getByLabelText("Ladder preview");
+		expect(preview).toBeVisible();
+		expect(renderPreview).toHaveBeenLastCalledWith({ selected: [], kept: [] });
+		expect(
+			preview.compareDocumentPosition(screen.getByRole("table")) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		fireEvent.change(decision(locale, 1), { target: { value: "apply" } });
+		const selected = [{ scope: "stream", rowId: "first", key: "maxBitrate" }];
+		expect(renderPreview).toHaveBeenLastCalledWith({ selected, kept: [] });
+		fireEvent.change(decision(locale, 2), { target: { value: "keep" } });
+		const kept = [{ scope: "stream", rowId: "second", key: "maxBitrate" }];
+		expect(renderPreview).toHaveBeenLastCalledWith({ selected, kept });
+		expect(JSON.parse(preview.textContent ?? "{}")).toEqual({ selected, kept });
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "ja" ? "選択をクリア" : "Clear decisions",
+			}),
+		);
+		expect(renderPreview).toHaveBeenLastCalledWith({ selected: [], kept: [] });
+		expect(onReview).not.toHaveBeenCalled();
+		expect({ advice, goal }).toEqual(before);
+	});
+
+	it.each([
+		"advice",
+		"goal",
+	] as const)("resets preview decisions when a fresh %s arrives", (snapshot) => {
+		const { advice, goal } = fixture();
+		const onReview = vi.fn();
+		const renderPreview = vi.fn(
+			(selection: {
+				selected: readonly PerTitleAdviceField[];
+				kept: readonly PerTitleAdviceField[];
+			}) => (
+				<output aria-label="Ladder preview">{JSON.stringify(selection)}</output>
+			),
+		);
+		const view = renderLocalized(
+			<PerTitleAdviceChanges
+				advice={advice}
+				goal={goal}
+				locale="en"
+				onReview={onReview}
+				renderPreview={renderPreview}
+			/>,
+		);
+		fireEvent.change(decision("en", 1), { target: { value: "apply" } });
+		fireEvent.change(decision("en", 2), { target: { value: "keep" } });
+		expect(renderPreview).toHaveBeenLastCalledWith({
+			selected: [{ scope: "stream", rowId: "first", key: "maxBitrate" }],
+			kept: [{ scope: "stream", rowId: "second", key: "maxBitrate" }],
+		});
+		view.rerender(
+			<PerTitleAdviceChanges
+				advice={snapshot === "advice" ? { ...advice } : advice}
+				goal={snapshot === "goal" ? { ...goal, maxBitrate: 9_000_000 } : goal}
+				locale="en"
+				onReview={onReview}
+				renderPreview={renderPreview}
+			/>,
+		);
+		expect(renderPreview).toHaveBeenLastCalledWith({ selected: [], kept: [] });
+		expect(
+			JSON.parse(screen.getByLabelText("Ladder preview").textContent ?? "{}"),
+		).toEqual({ selected: [], kept: [] });
+		expect(onReview).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		"en",
 		"ja",

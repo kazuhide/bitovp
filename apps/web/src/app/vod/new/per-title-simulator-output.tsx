@@ -93,13 +93,21 @@ export function PerTitleOutputChart({
 	proposal,
 	axis,
 	analysisInput,
+	title,
 }: {
 	proposal: PerTitleProposal;
 	axis?: PerTitleChartAxis;
 	analysisInput?: number;
+	title?: string;
 }) {
 	const { locale } = useT();
 	const text = copy[locale];
+	const dataTitle =
+		title === undefined
+			? text.data
+			: locale === "ja"
+				? `${title}（データ）`
+				: `${title} (data)`;
 	const id = useId();
 	const preview =
 		analysisInput === undefined
@@ -260,7 +268,7 @@ export function PerTitleOutputChart({
 		<figure aria-labelledby={`${id}-title`} className="space-y-2">
 			<figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
 				<span id={`${id}-title`} className="font-medium text-zinc-200">
-					{text.title}
+					{title ?? text.title}
 				</span>
 				<span className="text-zinc-400">
 					{positiveInteger(preview.analysisInput)
@@ -436,7 +444,7 @@ export function PerTitleOutputChart({
 					<p id={`${id}-description`} className="sr-only">
 						{text.description}
 					</p>
-					<table aria-label={text.data} className="sr-only">
+					<table aria-label={dataTitle} className="sr-only">
 						<thead>
 							<tr>
 								<th scope="col">{text.rendition}</th>

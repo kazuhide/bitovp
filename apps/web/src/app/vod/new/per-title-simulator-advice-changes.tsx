@@ -1,7 +1,7 @@
 "use client";
 
 import type { PerTitleGoal } from "@bitovp/core";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
@@ -46,6 +46,7 @@ export function PerTitleAdviceChanges({
 	locale,
 	onReview,
 	onAdoptAll,
+	renderPreview,
 	applying = false,
 	pendingFields = [],
 }: {
@@ -54,6 +55,10 @@ export function PerTitleAdviceChanges({
 	locale: Locale;
 	onReview: ReviewHandler;
 	onAdoptAll?: (advice: PerTitleAdvice) => void;
+	renderPreview?: (selection: {
+		selected: readonly PerTitleAdviceField[];
+		kept: readonly PerTitleAdviceField[];
+	}) => ReactNode;
 	applying?: boolean;
 	pendingFields?: readonly PerTitleAdviceField[];
 }) {
@@ -125,6 +130,7 @@ export function PerTitleAdviceChanges({
 	const rows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	return (
 		<div className="min-w-0 space-y-3">
+			{renderPreview?.({ selected, kept })}
 			<div className="min-w-0 max-w-full overflow-x-auto">
 				<table className="w-full min-w-[40rem] table-fixed text-left text-xs [&_td]:px-2 [&_td]:py-2 [&_td]:align-top [&_th]:px-2 [&_th]:py-2 [&_th]:align-top [&_th]:font-medium">
 					<caption className="sr-only">

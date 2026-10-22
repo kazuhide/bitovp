@@ -29,6 +29,7 @@ import {
 	PerTitleAdviceChanges,
 	perTitleAdviceValueText as valueText,
 } from "./per-title-simulator-advice-changes";
+import { PerTitleAdvicePreview } from "./per-title-simulator-advice-preview";
 import {
 	analyzePerTitleSettings,
 	type PerTitleAnalysisIntent,
@@ -103,6 +104,7 @@ function AdviceOption({
 	onReview,
 	applying,
 	pendingFields,
+	options,
 	locale,
 }: {
 	advice: PerTitleAdvice;
@@ -115,6 +117,7 @@ function AdviceOption({
 	) => boolean;
 	applying: boolean;
 	pendingFields: readonly PerTitleAdviceField[];
+	options: PerTitleAdviceOptions;
 	locale: Locale;
 }) {
 	const ja = locale === "ja";
@@ -167,6 +170,17 @@ function AdviceOption({
 				onAdoptAll={onAdopt}
 				applying={applying}
 				pendingFields={pendingFields}
+				renderPreview={({ selected, kept }) =>
+					applying ? null : (
+						<PerTitleAdvicePreview
+							goal={goal}
+							advice={advice}
+							options={options}
+							selected={selected}
+							kept={kept}
+						/>
+					)
+				}
 			/>
 			<details className="space-y-2 text-xs text-zinc-400">
 				<summary className="cursor-pointer">
@@ -689,6 +703,12 @@ export function PerTitleAdvisor({
 						onReview={applySelected}
 						applying={pendingApplication.current !== null}
 						pendingFields={pendingFields}
+						options={{
+							...options,
+							...(snapshot?.contextKey === undefined
+								? {}
+								: { contextKey: snapshot.contextKey }),
+						}}
 						locale={locale}
 					/>
 				</section>

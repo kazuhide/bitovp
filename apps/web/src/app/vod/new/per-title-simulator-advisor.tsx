@@ -10,7 +10,6 @@ import {
 	useState,
 } from "react";
 import { Button } from "@/components/ui/button";
-import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -334,10 +333,7 @@ export function PerTitleAdvisor({
 	const replaceSnapshot = useCallback((next: AdvisorSnapshot | null) => {
 		setSnapshot(next ? { ...next, revision: ++revision.current } : null);
 	}, []);
-	const [choice, setChoice] = useState<{
-		snapshot: AdvisorSnapshot;
-		id: string;
-	} | null>(null);
+
 	useEffect(() => {
 		const prior = previous.current;
 		previous.current = { goal, session };
@@ -443,12 +439,7 @@ export function PerTitleAdvisor({
 		snapshot.key === key &&
 		(!snapshot.analysis ||
 			snapshot.contextKey === perTitleAnalysisContextKey(intent));
-	const items = matches ? snapshot.items : [];
-	const first = items[0];
-	const chosen =
-		choice?.snapshot === snapshot
-			? (items.find((item) => item.id === choice.id) ?? first)
-			: first;
+	const first = matches ? snapshot.items[0] : undefined;
 	useEffect(() => {
 		const request = pendingFocus.current;
 		if (request === null) return;
@@ -668,7 +659,7 @@ export function PerTitleAdvisor({
 	const allRows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	const pending = pendingApplication.current;
 	const pendingFields = pending
-		? (chosen?.changes ?? []).filter(
+		? (first?.changes ?? []).filter(
 				(field) => !sameFieldValue(goal, pending.goal, field),
 			)
 		: EMPTY_FIELDS;
@@ -681,7 +672,7 @@ export function PerTitleAdvisor({
 				onEvaluate={evaluate}
 				result={matches ? snapshot.analysis : undefined}
 			/>
-			{chosen ? (
+			{first ? (
 				<section
 					aria-labelledby={id}
 					className="min-w-0 space-y-3 rounded-md border border-zinc-700 p-3"
@@ -689,32 +680,10 @@ export function PerTitleAdvisor({
 					<h3 id={id} className="font-medium text-sm text-zinc-200">
 						{ja ? "調整案" : "Suggested adjustment"}
 					</h3>
-					{items.length > 1 ? (
-						<div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-							<label htmlFor={`${id}-option`}>
-								{ja ? "表示する案" : "Adjustment to review"}
-							</label>
-							<SelectNative
-								id={`${id}-option`}
-								className="h-8 w-auto text-xs"
-								value={chosen.id}
-								onChange={(event) => {
-									if (snapshot) setChoice({ snapshot, id: event.target.value });
-								}}
-							>
-								{items.map((item, index) => (
-									<option key={item.id} value={item.id}>
-										{ja
-											? `案 ${index + 1}（${item.changes.length}項目）`
-											: `Option ${index + 1} (${item.changes.length} changes)`}
-									</option>
-								))}
-							</SelectNative>
-						</div>
-					) : null}
+
 					<AdviceOption
-						key={`${snapshot?.revision}-${chosen.id}-${chosen.inputFingerprint}`}
-						advice={chosen}
+						key={`${snapshot?.revision}-${first.id}-${first.inputFingerprint}`}
+						advice={first}
 						goal={goal}
 						onAdopt={adopt}
 						onReview={applySelected}
@@ -792,7 +761,7 @@ export function PerTitleAdvisor({
 			<PerTitleAnalysisDetails
 				goal={goal}
 				result={matches ? snapshot.analysis : undefined}
-				advice={chosen}
+				advice={first}
 			/>
 		</div>
 	);

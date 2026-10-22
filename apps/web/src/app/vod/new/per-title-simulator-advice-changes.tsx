@@ -125,11 +125,18 @@ export function PerTitleAdviceChanges({
 	const rows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	return (
 		<div className="min-w-0 space-y-3">
-			<div className="max-w-full overflow-x-auto">
-				<table className="w-full min-w-max text-left text-xs [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2 [&_th]:font-medium">
+			<div className="min-w-0 max-w-full overflow-x-auto">
+				<table className="w-full min-w-[40rem] table-fixed text-left text-xs [&_td]:px-2 [&_td]:py-2 [&_td]:align-top [&_th]:px-2 [&_th]:py-2 [&_th]:align-top [&_th]:font-medium">
 					<caption className="sr-only">
 						{ja ? "項目ごとの変更" : "Review parameter changes"}
 					</caption>
+					<colgroup>
+						<col className="w-[14%]" />
+						<col className="w-[24%]" />
+						<col className="w-[18%]" />
+						<col className="w-[18%]" />
+						<col className="w-[26%]" />
+					</colgroup>
 					<thead className="text-zinc-400">
 						<tr>
 							<th scope="col">{ja ? "対象" : "Target"}</th>
@@ -175,7 +182,7 @@ export function PerTitleAdviceChanges({
 							};
 							return (
 								<tr key={identity} data-field-key={identity}>
-									<td className="text-zinc-400">
+									<td className="text-zinc-400 [overflow-wrap:anywhere]">
 										<span className="block">
 											{scope === "global"
 												? ja
@@ -184,27 +191,25 @@ export function PerTitleAdviceChanges({
 												: `${ja ? "段" : "Rendition"} ${index + 1 || "?"}`}
 										</span>
 										{scope === "stream" ? (
-											<span className="block whitespace-nowrap">
-												{dimensions}
-											</span>
+											<span className="block">{dimensions}</span>
 										) : null}
 									</td>
 									<th
 										scope="row"
-										className="max-w-64 whitespace-normal text-zinc-300"
+										className="whitespace-normal text-zinc-300 [overflow-wrap:anywhere]"
 									>
 										{label}
 									</th>
-									<td className="whitespace-nowrap tabular-nums text-zinc-200">
+									<td className="tabular-nums text-zinc-200 [overflow-wrap:anywhere]">
 										{text(before)}
 									</td>
-									<td className="whitespace-nowrap tabular-nums text-emerald-300">
+									<td className="tabular-nums text-emerald-300 [overflow-wrap:anywhere]">
 										{text(after)}
 									</td>
 									<td>
 										<SelectNative
 											aria-label={`${ja ? "選択" : "Decision"}: ${label}${suffix}`}
-											className="h-8 text-xs"
+											className="h-8 min-w-0 px-2 text-xs"
 											value={choices.get(identity) ?? "skip"}
 											onChange={(event) => {
 												const choice = event.target.value;

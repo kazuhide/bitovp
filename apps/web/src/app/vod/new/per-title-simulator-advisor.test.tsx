@@ -72,7 +72,10 @@ function expectBoundaryChange(locale: "en" | "ja" = "en") {
 }
 
 describe("manual Per-Title adjustment advice", () => {
-	it("shows one candidate at a time and clears uncommitted choices when switching", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("shows only the highest-ranked recommendation and retains partial decisions (%s)", (locale) => {
 		const session = source();
 		const current = { ...session, maxBitrate: 8_000_000 };
 		const candidate = perTitleAdvice(session, current, {
@@ -88,41 +91,48 @@ describe("manual Per-Title adjustment advice", () => {
 		try {
 			const view = renderLocalized(
 				<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+				locale,
 			);
 			view.rerender(
 				<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
 			);
 			expect(
-				screen.getAllByRole("table", { name: "Review parameter changes" }),
+				screen.queryByRole("combobox", {
+					name: locale === "en" ? "Adjustment to review" : "表示する案",
+				}),
+			).toBeNull();
+			expect(
+				screen.getAllByRole("table", {
+					name: locale === "en" ? "Review parameter changes" : "項目ごとの変更",
+				}),
 			).toHaveLength(1);
+			const all = screen.getByRole("button", {
+				name: locale === "en" ? "Use this adjustment" : "この調整を採用",
+			});
 			fireEvent.change(
 				screen.getByRole("combobox", {
-					name: "Decision: Maximum bitrate ratio",
+					name:
+						locale === "en"
+							? "Decision: Maximum bitrate ratio"
+							: "選択: ビットレート間隔の上限",
 				}),
 				{ target: { value: "keep" } },
 			);
-			expect(
-				screen.getByRole("button", { name: "Use this adjustment" }),
-			).toBeDisabled();
-			const selector = screen.getByRole("combobox", {
-				name: "Adjustment to review",
-			});
-			fireEvent.change(selector, { target: { value: other.id } });
-			expect(
-				screen.getByRole("combobox", {
-					name: "Decision: Maximum bitrate ratio",
-				}),
-			).toHaveValue("skip");
-			fireEvent.change(selector, { target: { value: candidate.id } });
-			expect(
-				screen.getByRole("combobox", {
-					name: "Decision: Maximum bitrate ratio",
-				}),
-			).toHaveValue("skip");
-			expect(
-				screen.queryByRole("region", { name: "Maintained values" }),
-			).toBeNull();
+			expect(all).toBeDisabled();
 			expect(onAdopt).not.toHaveBeenCalled();
+			expect(
+				screen.queryByRole("region", {
+					name: locale === "en" ? "Maintained values" : "維持する値",
+				}),
+			).toBeNull();
+			fireEvent.click(
+				screen.getByRole("button", {
+					name: locale === "en" ? "Clear decisions" : "選択をクリア",
+				}),
+			);
+			fireEvent.click(all);
+			expect(onAdopt).toHaveBeenCalledTimes(1);
+			expect(onAdopt.mock.calls[0]?.[0]).toBe(candidate);
 		} finally {
 			spy.mockRestore();
 		}

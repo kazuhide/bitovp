@@ -455,8 +455,8 @@ function SimulatorEditor({
 				]}
 				onLoad={onLoad}
 			/>
-			<div className="grid gap-5 lg:grid-cols-2">
-				<div className="space-y-5">
+			<div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+				<div className="min-w-0 space-y-5">
 					<Field htmlFor={`${id}-codec`} label={copy.codec}>
 						<SelectNative
 							id={`${id}-codec`}
@@ -639,7 +639,7 @@ function SimulatorEditor({
 						</div>
 					)}
 				</div>
-				<div className="min-w-0 space-y-4 overflow-x-clip lg:sticky lg:top-0 lg:self-start">
+				<div className="min-w-0 space-y-4 overflow-x-clip xl:sticky xl:top-0 xl:self-start">
 					<PerTitleAdvisor
 						goal={goal}
 						session={referenceGoal}
@@ -957,7 +957,12 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		props.onOpenChange(open);
 	}
 	return (
-		<Dialog open={props.open} onOpenChange={changeOpen} title={copy.title} wide>
+		<Dialog
+			open={props.open}
+			onOpenChange={changeOpen}
+			title={copy.title}
+			size="workspace"
+		>
 			<SimulatorEditor
 				{...props}
 				applyError={codecError ? copy.referenceCodecError : props.applyError}

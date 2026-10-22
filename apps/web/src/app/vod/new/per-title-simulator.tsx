@@ -1,10 +1,9 @@
 "use client";
 
-import {
-	type PerTitleDiagnostic,
-	type PerTitleGoal,
-	type PerTitleProposal,
-	recommendPerTitleSettings,
+import type {
+	PerTitleDiagnostic,
+	PerTitleGoal,
+	PerTitleProposal,
 } from "@bitovp/core";
 import {
 	type Dispatch,
@@ -21,6 +20,8 @@ import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
+import { applyPerTitleAdvice } from "./per-title-simulator-advice";
+import { PerTitleAdvisor } from "./per-title-simulator-advisor";
 import {
 	bitrateSliderBounds,
 	type PerTitleManualBounds,
@@ -42,6 +43,7 @@ import { PerTitleReasoning } from "./per-title-simulator-reasoning";
 import { PerTitleRecommendation } from "./per-title-simulator-recommendation";
 import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
 import {
+	initializePerTitleSettings,
 	perTitleGlobalFields,
 	perTitleStreamFields,
 	setPerTitleAdjustment,
@@ -429,7 +431,7 @@ function SimulatorEditor({
 		validSliderBitrate(goal.maxBitrate) &&
 		goal.maxBitrate >= goal.minBitrate;
 	const baseline = useMemo(
-		() => recommendPerTitleSettings(referenceGoal),
+		() => tunePerTitleSettings(referenceGoal, referenceGoal).proposal,
 		[referenceGoal],
 	);
 	const patch = (next: Partial<PerTitleGoal>) =>
@@ -642,10 +644,24 @@ function SimulatorEditor({
 						axis={{ minimum: slider.min, maximum: slider.max }}
 						comparisonOnly={!!reference}
 					/>
+					<PerTitleAdvisor
+						goal={goal}
+						session={referenceGoal}
+						onAdopt={(advice) =>
+							setGoal((current) => {
+								const normalized = tunePerTitleSettings(
+									current,
+									referenceGoal,
+								).goal;
+								return applyPerTitleAdvice(normalized, advice) ?? current;
+							})
+						}
+					/>
 					<PerTitleReasoning
 						goal={goal}
 						proposal={selected}
 						onChange={setGoal}
+						showSuggestions={false}
 					/>
 					<PerTitleConstraints proposal={selected} />
 				</div>
@@ -696,7 +712,7 @@ function SimulatorEditor({
 }
 
 function copyGoal(goal: PerTitleGoal): PerTitleGoal {
-	return structuredClone(goal);
+	return initializePerTitleSettings(goal);
 }
 
 function projectCodecSettings(

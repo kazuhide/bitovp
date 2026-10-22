@@ -17,12 +17,51 @@ const goal: PerTitleGoal = {
 	],
 };
 
+function automatic(goal: PerTitleGoal): PerTitleGoal {
+	return {
+		...goal,
+		adjustments: {
+			...goal.adjustments,
+			global: {
+				minBitrateStepSize: { mode: "auto", method: "constraints" },
+				maxBitrateStepSize: { mode: "auto", method: "constraints" },
+				"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentation":
+					{ mode: "auto", method: "constraints" },
+				"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor":
+					{ mode: "auto", method: "constraints" },
+				"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationCalculationMode":
+					{ mode: "auto", method: "constraints" },
+				...goal.adjustments?.global,
+			},
+			streams: Object.fromEntries(
+				(goal.rows ?? []).map(({ id }) => [
+					id,
+					{
+						minBitrate: { mode: "auto", method: "logarithmic" },
+						maxBitrate: { mode: "auto", method: "logarithmic" },
+						bitrateSelectionMode: { mode: "auto", method: "constraints" },
+						lowComplexityBoundaryForMaxBitrate: {
+							mode: "auto",
+							method: "constraints",
+						},
+						highComplexityBoundaryForMaxBitrate: {
+							mode: "auto",
+							method: "constraints",
+						},
+						...goal.adjustments?.streams?.[id],
+					},
+				]),
+			),
+		},
+	};
+}
+
 function show(initialGoal = goal) {
 	const onApply = vi.fn();
 	renderLocalized(
 		<PerTitleSimulator
 			open
-			initialGoal={initialGoal}
+			initialGoal={automatic(initialGoal)}
 			onOpenChange={vi.fn()}
 			onApply={onApply}
 		/>,
@@ -240,13 +279,13 @@ describe("Per-Title automatic interaction", () => {
 		renderLocalized(
 			<PerTitleSimulator
 				open
-				initialGoal={tiny}
+				initialGoal={automatic(tiny)}
 				goalsByCodec={{
-					H265: {
+					H265: automatic({
 						...tiny,
 						codec: "H265",
 						rows: [{ ...tiny.rows?.[0], id: "same", height: 3, width: 5 }],
-					},
+					}),
 				}}
 				onOpenChange={vi.fn()}
 				onApply={vi.fn()}
@@ -383,15 +422,15 @@ describe("Per-Title automatic interaction", () => {
 		renderLocalized(
 			<PerTitleSimulator
 				open
-				initialGoal={goal}
+				initialGoal={automatic(goal)}
 				goalsByCodec={{
-					H265: {
+					H265: automatic({
 						...goal,
 						codec: "H265",
 						rows: goal.rows?.map(
 							({ minBitrate: _min, maxBitrate: _max, ...row }) => row,
 						),
-					},
+					}),
 				}}
 				onOpenChange={vi.fn()}
 				onApply={vi.fn()}

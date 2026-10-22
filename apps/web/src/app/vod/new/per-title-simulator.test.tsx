@@ -80,6 +80,37 @@ function show(goal = initialGoal, locale: "en" | "ja" = "en") {
 	return { ...result, onApply, onOpenChange };
 }
 
+function automaticCalibration(goal: PerTitleGoal): PerTitleGoal {
+	return {
+		...goal,
+		adjustments: {
+			...goal.adjustments,
+			global: {
+				minBitrateStepSize: { mode: "auto", method: "constraints" },
+				maxBitrateStepSize: { mode: "auto", method: "constraints" },
+				...goal.adjustments?.global,
+			},
+			streams: Object.fromEntries(
+				(goal.rows ?? []).map(({ id }) => [
+					id,
+					{
+						bitrateSelectionMode: { mode: "auto", method: "constraints" },
+						lowComplexityBoundaryForMaxBitrate: {
+							mode: "auto",
+							method: "constraints",
+						},
+						highComplexityBoundaryForMaxBitrate: {
+							mode: "auto",
+							method: "constraints",
+						},
+						...goal.adjustments?.streams?.[id],
+					},
+				]),
+			),
+		},
+	};
+}
+
 describe("Per-Title simulator", () => {
 	it.each([
 		"en",
@@ -216,30 +247,39 @@ describe("Per-Title simulator", () => {
 		}
 	});
 
-	it("offers a verified count change that preserves required rows and waits for explicit selection", async () => {
-		const { onApply } = show({
-			...initialGoal,
-			strategy: "fixed-resolutions",
-			countPolicy: { kind: "maximum", count: 2 },
-			rows: [
-				{ id: "first", height: 360 },
-				{ id: "second", height: 720 },
-				{ id: "third", height: 1080 },
-			],
-		});
+	it("keeps an invalid loaded count until an explicit correction preserves every required row", async () => {
+		const { onApply } = show(
+			automaticCalibration({
+				...initialGoal,
+				strategy: "fixed-resolutions",
+				countPolicy: { kind: "maximum", count: 2 },
+				rows: [
+					{ id: "first", height: 360 },
+					{ id: "second", height: 720 },
+					{ id: "third", height: 1080 },
+				],
+			}),
+		);
 		expect(
 			screen.getByRole("spinbutton", { name: "Desired count" }),
 		).toHaveValue(2);
-		const rationale = screen.getByText(
-			"Keep every required rendition and raise the count goal to accommodate them.",
+		expect(
+			screen.getByRole("button", { name: "Review changes" }),
+		).toBeDisabled();
+		expect(
+			screen.queryByRole("button", { name: "Use 3 renditions" }),
+		).toBeNull();
+		const diagnostic = screen.getByText(
+			"Required rows exceed the total count goal.",
 		);
-		expect(rationale).not.toBeVisible();
-		fireEvent.click(screen.getByText("Why these settings"));
-		expect(rationale).toBeVisible();
+		expect(diagnostic).not.toBeVisible();
+		fireEvent.click(screen.getByText("Comparison and calculation details"));
+		expect(diagnostic).toBeVisible();
 		expect(onApply).not.toHaveBeenCalled();
-		await userEvent
-			.setup()
-			.click(screen.getByRole("button", { name: "Use 3 renditions" }));
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Desired count" }),
+			{ target: { value: "3" } },
+		);
 		expect(
 			screen.getByRole("spinbutton", { name: "Desired count" }),
 		).toHaveValue(3);
@@ -253,18 +293,25 @@ describe("Per-Title simulator", () => {
 	});
 
 	it("keeps automatic candidate ranges inactive and separate from required bitrate ranges", async () => {
-		const { onApply } = show({
-			...initialGoal,
-			strategy: "fixed-ranges",
-			rows: [
-				{
-					id: "required",
-					height: 480,
-					minBitrate: 200_000,
-					maxBitrate: 600_000,
+		const { onApply } = show(
+			automaticCalibration({
+				...initialGoal,
+				strategy: "fixed-ranges",
+				adjustments: {
+					global: {
+						autoRepresentations: { mode: "auto", method: "constraints" },
+					},
 				},
-			],
-		});
+				rows: [
+					{
+						id: "required",
+						height: 480,
+						minBitrate: 200_000,
+						maxBitrate: 600_000,
+					},
+				],
+			}),
+		);
 		const user = userEvent.setup();
 		await user.click(
 			screen.getByRole("button", { name: "Add automatic template" }),
@@ -384,12 +431,20 @@ describe("Per-Title simulator", () => {
 				"Not established",
 			),
 		).toBeVisible();
+		expect(screen.queryByText("Parameter derivation")).toBeNull();
+		const loadedApi = JSON.parse(
+			screen.getByTestId("per-title-api-settings").textContent ?? "",
+		);
+		expect(loadedApi.streams[0].perTitleSettings).toEqual({
+			minBitrate: 200000,
+			maxBitrate: 600000,
+			bitrateSelectionMode: "OPTIMIZED",
+		});
 		expect(
-			screen.getByText("Parameter derivation").closest("details"),
-		).not.toHaveAttribute("open");
-		expect(
-			screen.getByText("Joint conditions not established"),
-		).not.toBeVisible();
+			screen.getByRole("combobox", {
+				name: "Bitrate selection mode, rendition 1 adjustment",
+			}),
+		).toHaveValue("fixed");
 		fireEvent.change(
 			screen.getByRole("spinbutton", { name: "Minimum bitrate (kbps)" }),
 			{ target: { value: "7000" } },
@@ -537,11 +592,13 @@ describe("Per-Title simulator", () => {
 	});
 
 	it("derives bitrate steps from the desired count without requiring ratio inputs", async () => {
-		const { onApply } = show({
-			...initialGoal,
-			strategy: "count",
-			countPolicy: { kind: "exact", count: 6 },
-		});
+		const { onApply } = show(
+			automaticCalibration({
+				...initialGoal,
+				strategy: "count",
+				countPolicy: { kind: "exact", count: 6 },
+			}),
+		);
 		expect(
 			screen.queryByRole("spinbutton", { name: "Minimum bitrate step" }),
 		).toBeNull();
@@ -710,7 +767,11 @@ describe("Per-Title simulator", () => {
 		const settings = JSON.parse(
 			screen.getByTestId("per-title-api-settings").textContent ?? "",
 		);
-		expect(settings).toHaveProperty("global.autoRepresentations", {});
+		expect(settings).not.toHaveProperty("global.autoRepresentations");
+		expect(settings.global).toMatchObject({
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+		});
 		expect(settings).not.toHaveProperty("countPolicy");
 		expect(settings).not.toHaveProperty("maxRenditions");
 		expect(settings).not.toHaveProperty("count");
@@ -960,23 +1021,29 @@ describe("Per-Title simulator", () => {
 	});
 
 	it("automatically reviews count-driven settings while preserving required resolutions", async () => {
-		const { onApply } = show({
-			...initialGoal,
-			strategy: "fixed-resolutions",
-			countPolicy: { kind: "exact", count: 2 },
-			rows: [
-				{ id: "small", height: 360 },
-				{ id: "large", height: 720 },
-			],
-		});
+		const { onApply } = show(
+			automaticCalibration({
+				...initialGoal,
+				strategy: "fixed-resolutions",
+				countPolicy: { kind: "exact", count: 2 },
+				rows: [
+					{ id: "small", height: 360 },
+					{ id: "large", height: 720 },
+				],
+			}),
+		);
 		const user = userEvent.setup();
 		expect(screen.queryByRole("radio")).toBeNull();
 		expect(
-			screen.getByText(/Automatic spacing follows the selected method/),
+			screen.getByText(
+				"Settings start Fixed. Manual edits keep the other values unchanged; use a suggested adjustment explicitly.",
+			),
 		).not.toBeVisible();
 		fireEvent.click(screen.getByText("Comparison and calculation details"));
 		expect(
-			screen.getByText(/Automatic spacing follows the selected method/),
+			screen.getByText(
+				"Settings start Fixed. Manual edits keep the other values unchanged; use a suggested adjustment explicitly.",
+			),
 		).toBeVisible();
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		const proposal = onApply.mock.calls[0]?.[0];
@@ -988,22 +1055,24 @@ describe("Per-Title simulator", () => {
 	});
 
 	it("retains loaded ranges and derives complexity settings automatically", async () => {
-		const { onApply } = show({
-			...initialGoal,
-			strategy: "fixed-ranges",
-			countPolicy: { kind: "exact", count: 1 },
-			rows: [
-				{
-					id: "ranged",
-					height: 720,
-					minBitrate: 500_000,
-					maxBitrate: 2_000_000,
-					bitrateSelectionMode: "COMPLEXITY_RANGE",
-					lowComplexityBoundaryForMaxBitrate: 1_000_000,
-					highComplexityBoundaryForMaxBitrate: 6_000_000,
-				},
-			],
-		});
+		const { onApply } = show(
+			automaticCalibration({
+				...initialGoal,
+				strategy: "fixed-ranges",
+				countPolicy: { kind: "exact", count: 1 },
+				rows: [
+					{
+						id: "ranged",
+						height: 720,
+						minBitrate: 500_000,
+						maxBitrate: 2_000_000,
+						bitrateSelectionMode: "COMPLEXITY_RANGE",
+						lowComplexityBoundaryForMaxBitrate: 1_000_000,
+						highComplexityBoundaryForMaxBitrate: 6_000_000,
+					},
+				],
+			}),
+		);
 		await userEvent
 			.setup()
 			.click(screen.getByRole("button", { name: "Review changes" }));
@@ -1022,7 +1091,7 @@ describe("Per-Title simulator", () => {
 
 	it("retains the reviewed draft when the dialog is hidden and reopened", async () => {
 		const props = {
-			initialGoal: {
+			initialGoal: automaticCalibration({
 				...initialGoal,
 				strategy: "fixed-resolutions" as const,
 				countPolicy: { kind: "exact" as const, count: 2 },
@@ -1030,7 +1099,7 @@ describe("Per-Title simulator", () => {
 					{ id: "low", height: 360 },
 					{ id: "high", height: 720 },
 				],
-			},
+			}),
 			onApply: vi.fn(),
 			onOpenChange: vi.fn(),
 		};
@@ -1112,22 +1181,24 @@ describe("Per-Title simulator", () => {
 	});
 
 	it("recomputes complexity boundaries from the maximum without exposing technical inputs", () => {
-		show({
-			...initialGoal,
-			strategy: "fixed-ranges",
-			countPolicy: { kind: "exact", count: 1 },
-			rows: [
-				{
-					id: "ranged",
-					height: 720,
-					minBitrate: 500_000,
-					maxBitrate: 2_000_000,
-					bitrateSelectionMode: "COMPLEXITY_RANGE",
-					lowComplexityBoundaryForMaxBitrate: 1_000_000,
-					highComplexityBoundaryForMaxBitrate: 6_000_000,
-				},
-			],
-		});
+		show(
+			automaticCalibration({
+				...initialGoal,
+				strategy: "fixed-ranges",
+				countPolicy: { kind: "exact", count: 1 },
+				rows: [
+					{
+						id: "ranged",
+						height: 720,
+						minBitrate: 500_000,
+						maxBitrate: 2_000_000,
+						bitrateSelectionMode: "COMPLEXITY_RANGE",
+						lowComplexityBoundaryForMaxBitrate: 1_000_000,
+						highComplexityBoundaryForMaxBitrate: 6_000_000,
+					},
+				],
+			}),
+		);
 		const before = JSON.parse(
 			screen.getByTestId("per-title-api-settings").textContent ?? "",
 		);

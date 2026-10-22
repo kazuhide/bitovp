@@ -256,7 +256,14 @@ describe("Per-Title recommendation flow", () => {
 	});
 
 	it("keeps a fixed chart ceiling as bitrate limits change and defaults to simulated output", () => {
-		show();
+		show({
+			...goal,
+			adjustments: {
+				streams: {
+					lower: { maxBitrate: { mode: "auto", method: "logarithmic" } },
+				},
+			},
+		});
 		const panel = screen.getByRole("region", { name: "Simulation" });
 		expect(
 			within(panel).getByRole("figure", { name: "Simulated output" }),
@@ -370,6 +377,12 @@ describe("Per-Title recommendation flow", () => {
 			maxBitrate: 8_000_000,
 			countPolicy: { kind: "exact", count: 6 },
 			rows: [],
+			adjustments: {
+				global: {
+					minBitrateStepSize: { mode: "auto", method: "constraints" },
+					maxBitrateStepSize: { mode: "auto", method: "constraints" },
+				},
+			},
 		};
 		const proposal = recommendPerTitleSettings(countGoal);
 		expect(proposal.derivation?.targetSatisfied).toBe(true);

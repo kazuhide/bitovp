@@ -79,7 +79,23 @@ describe("Per-Title local presets", () => {
 		"high",
 	] as const)("round-trips a tuned fixed selection with %s boundary requirements", (fixedBoundary) => {
 		let draft = setPerTitleSetting(
-			goal,
+			{
+				...goal,
+				adjustments: {
+					streams: {
+						"sample-low": {
+							lowComplexityBoundaryForMaxBitrate: {
+								mode: "auto",
+								method: "constraints",
+							},
+							highComplexityBoundaryForMaxBitrate: {
+								mode: "auto",
+								method: "constraints",
+							},
+						},
+					},
+				},
+			},
 			"stream",
 			"bitrateSelectionMode",
 			"COMPLEXITY_RANGE",
@@ -231,12 +247,22 @@ describe("Per-Title local presets", () => {
 		["minBitrateStepSize", 3],
 		["maxBitrateStepSize", 1.2],
 	] as const)("round-trips a tuned fixed %s with an automatic unset peer", (key, value) => {
-		const draft = setPerTitleSetting(goal, "global", key, value);
-		const tuned = tunePerTitleSettings(draft, goal);
 		const peer =
 			key === "minBitrateStepSize"
 				? "maxBitrateStepSize"
 				: "minBitrateStepSize";
+		const draft = setPerTitleSetting(
+			{
+				...goal,
+				adjustments: {
+					global: { [peer]: { mode: "auto", method: "constraints" } },
+				},
+			},
+			"global",
+			key,
+			value,
+		);
+		const tuned = tunePerTitleSettings(draft, goal);
 		expect(tuned.goal[key]).toBe(value);
 		expect(tuned.goal[peer]).toBeUndefined();
 		expect(parse(JSON.parse(serializePerTitlePreset(tuned.goal))).goal).toEqual(

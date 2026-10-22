@@ -246,28 +246,23 @@ export function getPerTitleAdjustment(
 				: undefined;
 	const explicit =
 		scoped && Object.hasOwn(scoped, key) ? scoped[key] : undefined;
-	if (explicit) return explicit;
-	if (scope === "global") {
-		if (key === "minBitrate" || key === "maxBitrate") return { mode: "fixed" };
-		if (key.endsWith("BitrateStepSize"))
-			return { mode: "auto", method: "constraints" };
-		if (key.startsWith(RULE) || key === "autoRepresentations") {
-			return getPerTitleGoalSetting(draft, scope, key) === undefined
-				? { mode: "auto", method: "constraints" }
-				: { mode: "fixed" };
-		}
-	} else {
-		if (key === "minBitrate" || key === "maxBitrate")
-			return { mode: "auto", method: "logarithmic" };
+	return explicit ?? { mode: "fixed" };
+}
+
+/** Preserve source values; only required, unset fixed steps receive model defaults. */
+export function initializePerTitleSettings(goal: PerTitleGoal): PerTitleGoal {
+	const next = structuredClone(goal);
+	for (const [key, value] of [
+		["minBitrateStepSize", 1.5],
+		["maxBitrateStepSize", 1.9],
+	] as const) {
 		if (
-			key === "bitrateSelectionMode" ||
-			key.endsWith("ComplexityBoundaryForMaxBitrate")
+			next[key] === undefined &&
+			getPerTitleAdjustment(next, next, "global", key).mode === "fixed"
 		)
-			return { mode: "auto", method: "constraints" };
+			next[key] = value;
 	}
-	return getPerTitleGoalSetting(draft, scope, key, rowId) === undefined
-		? { mode: "auto", method: "default" }
-		: { mode: "fixed" };
+	return next;
 }
 
 function putValue(
@@ -575,9 +570,10 @@ function rejectAdjustments(proposal: PerTitleProposal, invalid: string[]) {
 
 /** Resolve field policies before the solver, so every proof uses the final inputs. */
 export function tunePerTitleSettings(
-	draft: PerTitleGoal,
+	input: PerTitleGoal,
 	anchor: PerTitleGoal,
 ): { goal: PerTitleGoal; proposal: PerTitleProposal } {
+	const draft = initializePerTitleSettings(input);
 	let next = structuredClone(draft);
 	delete next.settingLocks;
 	const malformed = invalidAdjustments(draft);

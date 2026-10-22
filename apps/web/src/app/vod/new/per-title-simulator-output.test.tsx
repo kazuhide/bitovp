@@ -88,6 +88,222 @@ beforeEach(() => {
 
 describe("Per-Title output chart", () => {
 	it.each([
+		["en", "Configured 200–800", "Target 300", "Target 650"],
+		["ja", "設定範囲 200–800", "計算点 300", "計算点 650"],
+	] as const)("keeps configured bitrate bands fixed as the assumed point changes (%s)", (locale, configured, initialTarget, nextTarget) => {
+		const input: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "fixed-a",
+						height: 360,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 200000, maxBitrate: 800000 },
+					},
+					{
+						rowId: "fixed-b",
+						height: 360,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 900000, maxBitrate: 1200000 },
+					},
+					{
+						rowId: "candidate",
+						height: 720,
+						mode: "PER_TITLE_TEMPLATE",
+						perTitleSettings: { minBitrate: 333000, maxBitrate: 999000 },
+					},
+				],
+			},
+		};
+		const snapshot = structuredClone(input);
+		const result: PerTitleOutputPreview = {
+			...preview,
+			rows: [
+				{
+					id: "fixed-a",
+					rowId: "fixed-a",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					kind: "fixed",
+					status: "conditional",
+					bitrate: 300000,
+					minimumBitrate: 300000,
+					maximumBitrate: 300000,
+				},
+				{
+					id: "fixed-b",
+					rowId: "fixed-b",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					kind: "fixed",
+					status: "conditional",
+					bitrate: 1100000,
+					minimumBitrate: 1100000,
+					maximumBitrate: 1100000,
+				},
+				{
+					id: "candidate",
+					rowId: "candidate",
+					height: 720,
+					mode: "PER_TITLE_TEMPLATE",
+					kind: "automatic",
+					status: "unknown",
+				},
+			],
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
+		const axis = { minimum: 100000, maximum: 2000000 };
+		const { rerender } = renderLocalized(
+			<PerTitleOutputChart
+				proposal={input}
+				axis={axis}
+				analysisInput={1000000}
+			/>,
+			locale,
+		);
+		const row = required(
+			screen
+				.getAllByTestId("per-title-output-row")
+				.find((item) => item.textContent?.includes(configured)),
+		);
+		expect(within(row).getByText(configured)).toBeVisible();
+		expect(within(row).getByText(initialTarget)).toBeVisible();
+		const band = within(row).getByTestId("per-title-output-band");
+		const bounds = [band.getAttribute("x1"), band.getAttribute("x2")];
+		expect(Number(bounds[0])).toBeLessThan(Number(bounds[1]));
+		const endpoint = Number(
+			within(row).getByTestId("per-title-output-endpoint").getAttribute("x1"),
+		);
+		expect(endpoint).toBeGreaterThan(Number(bounds[0]));
+		expect(endpoint).toBeLessThan(Number(bounds[1]));
+		expect(band).not.toHaveAttribute("stroke-dasharray");
+		expect(screen.getByRole("img")).toHaveTextContent(
+			locale === "en" ? "Configured 900–1,200" : "設定範囲 900–1,200",
+		);
+		const candidate = required(
+			screen.getAllByTestId("per-title-output-row").at(-1),
+		);
+		expect(candidate).not.toHaveTextContent("333–999");
+		expect(
+			within(candidate).queryByTestId("per-title-output-target"),
+		).toBeNull();
+		expect(
+			within(candidate).getByTestId("per-title-output-band"),
+		).toHaveAttribute("stroke-dasharray", "4 3");
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...result,
+			rows: result.rows.map((item) =>
+				item.rowId === "fixed-a"
+					? {
+							...item,
+							bitrate: 650000,
+							minimumBitrate: 650000,
+							maximumBitrate: 650000,
+						}
+					: item,
+			),
+		});
+		rerender(
+			<PerTitleOutputChart
+				proposal={input}
+				axis={axis}
+				analysisInput={1500000}
+			/>,
+		);
+		expect(within(row).getByText(nextTarget)).toBeVisible();
+		expect([band.getAttribute("x1"), band.getAttribute("x2")]).toEqual(bounds);
+		expect(
+			Number(
+				within(row).getByTestId("per-title-output-endpoint").getAttribute("x1"),
+			),
+		).toBeGreaterThan(endpoint);
+		expect(screen.getByRole("table")).toHaveTextContent(`${configured}`);
+		expect(screen.getByRole("table")).toHaveTextContent(nextTarget);
+		expect(input).toEqual(snapshot);
+	});
+
+	it.each([
+		["en", "Configured 200–800", "Target 484", "Effective interval 250–484"],
+		["ja", "設定範囲 200–800", "計算点 484", "有効範囲 250–484"],
+	] as const)("keeps the effective interval separate from configured bitrate bands (%s)", (locale, configured, target, effective) => {
+		const input: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "fixed",
+						height: 360,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 200000, maxBitrate: 800000 },
+					},
+				],
+			},
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			rows: [
+				{
+					id: "fixed",
+					rowId: "fixed",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					kind: "fixed",
+					status: "conditional",
+					bitrate: 484000,
+					minimumBitrate: 250000,
+					maximumBitrate: 484000,
+				},
+			],
+		});
+		renderLocalized(<PerTitleOutputChart proposal={input} />, locale);
+		const row = screen.getByTestId("per-title-output-row");
+		expect(within(row).getByText(configured)).toBeVisible();
+		expect(within(row).getByText(target)).toHaveAttribute("title", effective);
+		expect(screen.getByRole("table")).toHaveTextContent(effective);
+	});
+
+	it("shows a configured band for an unknown fixed-range row without inventing a point", () => {
+		const input: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "fixed",
+						height: 360,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 200000, maxBitrate: 800000 },
+					},
+				],
+			},
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			rows: [
+				{
+					id: "fixed",
+					rowId: "fixed",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					kind: "fixed",
+					status: "unknown",
+				},
+			],
+		});
+		renderLocalized(<PerTitleOutputChart proposal={input} />);
+		const row = screen.getByTestId("per-title-output-row");
+		expect(row).toHaveTextContent("Configured 200–800");
+		expect(row).toHaveTextContent("Unknown");
+		expect(within(row).queryByTestId("per-title-output-endpoint")).toBeNull();
+		expect(
+			within(row).getByTestId("per-title-output-band"),
+		).not.toHaveAttribute("stroke-dasharray");
+	});
+
+	it.each([
 		["en", "Candidates 960 / 1,280 px", "Analysis-selected top"],
 		["ja", "候補 960 / 1,280 px", "解析による上段"],
 	] as const)("groups unresolved upper resolutions under the analysis basis (%s)", (locale, candidates, origin) => {

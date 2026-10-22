@@ -9,6 +9,7 @@ import {
 	PerTitleStreamControls,
 } from "./per-title-simulator-controls";
 import {
+	initializePerTitleSettings,
 	perTitleGlobalFields,
 	perTitleStreamFields,
 	tunePerTitleSettings,
@@ -40,7 +41,7 @@ function Harness({
 	scope?: "global" | "stream";
 	initial?: PerTitleGoal;
 }) {
-	const [draft, setDraft] = useState(() => structuredClone(initial));
+	const [draft, setDraft] = useState(() => initializePerTitleSettings(initial));
 	const tuned = tunePerTitleSettings(draft, anchor);
 	const context = {
 		draft,
@@ -86,7 +87,19 @@ function Harness({
 
 describe("Per-Title setting controls", () => {
 	it("captures the displayed automatic spacing and retains it after another requirement changes", () => {
-		renderLocalized(<Harness fieldKey="minBitrateStepSize" />);
+		renderLocalized(
+			<Harness
+				fieldKey="minBitrateStepSize"
+				initial={{
+					...anchor,
+					adjustments: {
+						global: {
+							minBitrateStepSize: { mode: "auto", method: "constraints" },
+						},
+					},
+				}}
+			/>,
+		);
 		const field = screen.getByRole("spinbutton");
 		const displayed = (field as HTMLInputElement).valueAsNumber;
 		expect(displayed).toBeGreaterThan(1);
@@ -102,7 +115,20 @@ describe("Per-Title setting controls", () => {
 	});
 
 	it("offers automatic methods and switches a manually edited stream value to Fixed", () => {
-		renderLocalized(<Harness fieldKey="minBitrate" scope="stream" />);
+		renderLocalized(
+			<Harness
+				fieldKey="minBitrate"
+				scope="stream"
+				initial={{
+					...anchor,
+					adjustments: {
+						streams: {
+							a: { minBitrate: { mode: "auto", method: "logarithmic" } },
+						},
+					},
+				}}
+			/>,
+		);
 		const method = screen.getByRole("combobox", { name: /method$/ });
 		for (const value of ["constraints", "proportional", "logarithmic"])
 			expect(
@@ -133,7 +159,19 @@ describe("Per-Title setting controls", () => {
 	});
 
 	it("keeps optional defaults unset, accepts zero and negative SDK limits, and preserves explicit clearing", () => {
-		renderLocalized(<Harness fieldKey="resolutionScaleFactor" />);
+		renderLocalized(
+			<Harness
+				fieldKey="resolutionScaleFactor"
+				initial={{
+					...anchor,
+					adjustments: {
+						global: {
+							resolutionScaleFactor: { mode: "auto", method: "default" },
+						},
+					},
+				}}
+			/>,
+		);
 		expect(screen.getByText("Encoder default")).toBeVisible();
 		expect(screen.queryByRole("combobox", { name: /method$/ })).toBeNull();
 		fireEvent.change(screen.getByRole("spinbutton"), {

@@ -4,7 +4,10 @@ import type { PerTitleGoal } from "@bitovp/core";
 import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
-import type { PerTitleManualBounds } from "./per-title-simulator-auto";
+import {
+	autoTunePerTitleGoal,
+	type PerTitleManualBounds,
+} from "./per-title-simulator-auto";
 import { PerTitleSimulatorBitrateField } from "./per-title-simulator-bitrate-field";
 import {
 	type PerTitleControlContext,
@@ -441,14 +444,29 @@ export function PerTitleSimulatorRows({
 					size="sm"
 					disabled={full}
 					onClick={() => {
-						if (!full)
-							onChange({
-								...goal,
-								rows: [
-									...rows,
-									{ id: nextId(), height: 720, ...widthForNewRow(goal, 720) },
-								],
-							});
+						if (full) return;
+						let added: NonNullable<PerTitleGoal["rows"]>[number] = {
+							id: nextId(),
+							height: 720,
+							...widthForNewRow(goal, 720),
+						};
+						if (ranged) {
+							const manual = Object.fromEntries(
+								rows.map((row) => [row.id, { min: true, max: true }]),
+							);
+							const seeded = autoTunePerTitleGoal(
+								{ ...goal, rows: [...rows, added] },
+								tuning?.anchor ?? goal,
+								manual,
+							).rows?.find((row) => row.id === added.id);
+							if (seeded)
+								added = {
+									...added,
+									minBitrate: seeded.minBitrate,
+									maxBitrate: seeded.maxBitrate,
+								};
+						}
+						onChange({ ...goal, rows: [...rows, added] });
 					}}
 				>
 					{copy.add}

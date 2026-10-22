@@ -176,10 +176,12 @@ export function PerTitleReasoning({
 	goal,
 	proposal,
 	onChange,
+	showSuggestions = true,
 }: {
 	goal: PerTitleGoal;
 	proposal: PerTitleProposal;
 	onChange: (goal: PerTitleGoal) => void;
+	showSuggestions?: boolean;
 }) {
 	const { locale } = useT();
 	const copy = texts[locale];
@@ -189,8 +191,8 @@ export function PerTitleReasoning({
 		goal.minBitrate > 0 &&
 		goal.maxBitrate >= goal.minBitrate;
 	const suggestions = useMemo(
-		() => (validRange ? perTitleSuggestions(goal) : []),
-		[goal, validRange],
+		() => (validRange && showSuggestions ? perTitleSuggestions(goal) : []),
+		[goal, validRange, showSuggestions],
 	);
 	const derivation = proposal.derivation;
 	const number = (value: number) =>

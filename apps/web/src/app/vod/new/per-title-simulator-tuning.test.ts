@@ -4,6 +4,7 @@ import {
 	getPerTitleAdjustment,
 	getPerTitleGoalSetting,
 	getPerTitleSetting,
+	initializePerTitleSettings,
 	perTitleGlobalFields,
 	perTitleStreamFields,
 	setPerTitleAdjustment,
@@ -24,9 +25,184 @@ const anchor: PerTitleGoal = {
 	],
 };
 
+const automaticCalibration: PerTitleGoal = {
+	...anchor,
+	adjustments: {
+		global: {
+			minBitrateStepSize: { mode: "auto", method: "constraints" },
+			maxBitrateStepSize: { mode: "auto", method: "constraints" },
+		},
+		streams: Object.fromEntries(
+			(anchor.rows ?? []).map(({ id }) => [
+				id,
+				{
+					bitrateSelectionMode: { mode: "auto", method: "constraints" },
+					lowComplexityBoundaryForMaxBitrate: {
+						mode: "auto",
+						method: "constraints",
+					},
+					highComplexityBoundaryForMaxBitrate: {
+						mode: "auto",
+						method: "constraints",
+					},
+				},
+			]),
+		),
+	},
+};
+
 describe("Per-Title adjustment controls", () => {
+	it.each([
+		"H264",
+		"H265",
+		"H265V2",
+		"VP9",
+		"AV1",
+	] as const)("defaults every supported setting to fixed, including absent optional values (%s)", (codec) => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			codec,
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 4,
+			resolutionScaleFactor: 0,
+			autoRepresentations: false,
+			automaticTemplates: [{ id: "candidate", height: 1080 }],
+		};
+		for (const { key } of perTitleGlobalFields(loaded.codec))
+			expect(getPerTitleAdjustment(loaded, loaded, "global", key)).toEqual({
+				mode: "fixed",
+			});
+		for (const row of [
+			...(loaded.rows ?? []),
+			...(loaded.automaticTemplates ?? []),
+		])
+			for (const { key } of perTitleStreamFields(loaded.codec))
+				expect(
+					getPerTitleAdjustment(loaded, loaded, "stream", key, row.id),
+				).toEqual({ mode: "fixed" });
+	});
+
+	it("preserves imported settings when a different fixed input changes", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 4,
+			resolutionScaleFactor: 0,
+			autoRepresentations: false,
+			rows: anchor.rows?.map((row) => ({
+				...row,
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				lowComplexityBoundaryForMaxBitrate: 6_000_000,
+				highComplexityBoundaryForMaxBitrate: 10_000_000,
+			})),
+		};
+		const snapshot = structuredClone(loaded);
+		const result = tunePerTitleSettings(
+			{ ...loaded, maxBitrate: 20_000_000 },
+			loaded,
+		);
+		expect(result.goal.rows).toEqual(loaded.rows);
+		expect(result.proposal.api.global).toMatchObject({
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 4,
+			resolutionScaleFactor: 0,
+		});
+		expect(result.proposal.api.global.autoRepresentations).toBeUndefined();
+		expect(result.proposal.api.global.targetQualityCrf).toBeUndefined();
+		expect(loaded).toEqual(snapshot);
+	});
+
+	it("materializes only missing required step defaults before fixing them", () => {
+		const snapshot = structuredClone(anchor);
+		const result = tunePerTitleSettings(anchor, anchor);
+		expect(result.goal).toMatchObject({
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+		});
+		expect(result.goal.rows).toEqual(anchor.rows);
+		expect(result.goal.targetQualityCrf).toBeUndefined();
+		expect(result.goal.resolutionScaleFactor).toBeUndefined();
+		expect(result.proposal.diagnostics).not.toContainEqual(
+			expect.objectContaining({ code: "invalid-setting" }),
+		);
+		expect(anchor).toEqual(snapshot);
+	});
+
+	it("initializes optional unset, zero, false and saved automatic policies without altering the source", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			resolutionScaleFactor: 0,
+			autoRepresentations: false,
+			adjustments: {
+				global: { minBitrateStepSize: { mode: "auto", method: "constraints" } },
+				inactiveAutoRepresentationThreshold: 0,
+			},
+		};
+		const snapshot = structuredClone(loaded);
+		const initialized = initializePerTitleSettings(loaded);
+		expect(initialized).toEqual({ ...loaded, maxBitrateStepSize: 1.9 });
+		expect(initialized.minBitrateStepSize).toBeUndefined();
+		expect(initialized.targetQualityCrf).toBeUndefined();
+		expect(initialized).not.toBe(loaded);
+		expect(loaded).toEqual(snapshot);
+	});
+
+	it("keeps a supplied step when the missing peer's default creates a conflict", () => {
+		const loaded = { ...anchor, minBitrateStepSize: 2 };
+		const result = tunePerTitleSettings(loaded, loaded);
+		expect(result.goal).toMatchObject({
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 1.9,
+		});
+		expect(result.proposal.api.global).toMatchObject({
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 1.9,
+		});
+		expect(result.proposal.status).toBe("conflict");
+		expect(result.proposal.applicable).toBe(false);
+	});
+
+	it("restores explicit automatic policies without making their peers automatic", () => {
+		const optedIn: PerTitleGoal = {
+			...anchor,
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 4,
+			adjustments: {
+				streams: {
+					b: { maxBitrate: { mode: "auto", method: "proportional" } },
+				},
+			},
+		};
+		const result = tunePerTitleSettings(
+			{ ...optedIn, maxBitrate: 20_000_000 },
+			optedIn,
+		);
+		expect(result.goal.rows?.find((row) => row.id === "b")).toEqual({
+			...optedIn.rows?.find((row) => row.id === "b"),
+			maxBitrate: 2_000_000,
+		});
+		expect(result.goal.rows?.find((row) => row.id === "a")).toEqual(
+			optedIn.rows?.find((row) => row.id === "a"),
+		);
+		expect(result.proposal.api.global).toMatchObject({
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 4,
+		});
+	});
+
 	it("captures the displayed automatic value when it is fixed, independently for each endpoint", () => {
-		let draft = { ...anchor, maxBitrate: 20_000_000 };
+		let draft: PerTitleGoal = {
+			...anchor,
+			maxBitrate: 20_000_000,
+			adjustments: {
+				streams: {
+					b: {
+						minBitrate: { mode: "auto", method: "logarithmic" },
+						maxBitrate: { mode: "auto", method: "logarithmic" },
+					},
+				},
+			},
+		};
 		const current = tunePerTitleSettings(draft, anchor);
 		const fixed = getPerTitleSetting(
 			current.proposal,
@@ -81,7 +257,15 @@ describe("Per-Title adjustment controls", () => {
 	});
 
 	it("offers logarithmic placement separately from proportional scaling", () => {
-		const draft = { ...anchor, maxBitrate: 20_000_000 };
+		const draft: PerTitleGoal = {
+			...anchor,
+			maxBitrate: 20_000_000,
+			adjustments: {
+				streams: {
+					b: { maxBitrate: { mode: "auto", method: "logarithmic" } },
+				},
+			},
+		};
 		const logarithmic = tunePerTitleSettings(draft, anchor);
 		const proportional = tunePerTitleSettings(
 			setPerTitleAdjustment(
@@ -202,7 +386,13 @@ describe("Per-Title adjustment controls", () => {
 			true,
 		],
 	] as const)("keeps %s fixed while calculating %s/%s (fixed selection %s)", (key, value, automatic, fixedSelection) => {
-		let draft = setPerTitleSetting(anchor, "stream", key, value, "b");
+		let draft = setPerTitleSetting(
+			automaticCalibration,
+			"stream",
+			key,
+			value,
+			"b",
+		);
 		if (fixedSelection)
 			draft = setPerTitleSetting(
 				draft,
@@ -249,7 +439,7 @@ describe("Per-Title adjustment controls", () => {
 
 	it("calculates both automatic boundaries when only the selection method is fixed", () => {
 		const draft = setPerTitleSetting(
-			anchor,
+			automaticCalibration,
 			"stream",
 			"bitrateSelectionMode",
 			"COMPLEXITY_RANGE",

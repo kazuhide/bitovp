@@ -28,6 +28,11 @@ const copy = {
 		example: "Example",
 		conditional: "Conditional",
 		unknown: "Unknown",
+		configured: (minimum: string, maximum: string) =>
+			`Configured ${minimum}–${maximum}`,
+		point: (rate: string) => `Target ${rate}`,
+		effective: (minimum: string, maximum: string) =>
+			`Effective interval ${minimum}–${maximum}`,
 		target: (rate: string) => `Upper target ${rate}`,
 		unresolved: "Additional outputs unknown",
 		unavailable: "Output unavailable",
@@ -59,6 +64,11 @@ const copy = {
 		example: "計算例",
 		conditional: "条件付き",
 		unknown: "未確定",
+		configured: (minimum: string, maximum: string) =>
+			`設定範囲 ${minimum}–${maximum}`,
+		point: (rate: string) => `計算点 ${rate}`,
+		effective: (minimum: string, maximum: string) =>
+			`有効範囲 ${minimum}–${maximum}`,
 		target: (rate: string) => `上限の目安 ${rate}`,
 		unresolved: "追加出力は未確定",
 		unavailable: "想定出力を表示できません",
@@ -115,6 +125,19 @@ export function PerTitleOutputChart({
 	const bitrate = (value: number) => numbers.format(value / 1000);
 	const rows = preview.rows
 		.map((row, index) => {
+			const matches = proposal.api.streams.filter(
+				(stream) => stream.rowId === row.rowId,
+			);
+			const stream = matches.length === 1 ? matches[0] : undefined;
+			const settings = stream?.perTitleSettings;
+			const configured =
+				row.kind === "fixed" &&
+				stream?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+				positiveInteger(settings?.minBitrate) &&
+				positiveInteger(settings.maxBitrate) &&
+				settings.minBitrate <= settings.maxBitrate
+					? { minimum: settings.minBitrate, maximum: settings.maxBitrate }
+					: undefined;
 			const numeric = row.status !== "unknown";
 			const target =
 				numeric && positiveInteger(row.bitrate) ? row.bitrate : undefined;
@@ -158,13 +181,36 @@ export function PerTitleOutputChart({
 					: row.status === "conditional"
 						? text.conditional
 						: text.example;
-			const values = range
-				? range.minimum === range.maximum
-					? bitrate(range.minimum)
-					: `${bitrate(range.minimum)}–${bitrate(range.maximum)}`
-				: target !== undefined
-					? bitrate(target)
-					: "";
+			const values = configured
+				? text.configured(
+						bitrate(configured.minimum),
+						bitrate(configured.maximum),
+					)
+				: range
+					? range.minimum === range.maximum
+						? bitrate(range.minimum)
+						: `${bitrate(range.minimum)}–${bitrate(range.maximum)}`
+					: target !== undefined
+						? bitrate(target)
+						: "";
+			const targetText =
+				target === undefined
+					? undefined
+					: configured
+						? text.point(bitrate(target))
+						: row.status === "conditional" &&
+								range &&
+								range.minimum !== range.maximum
+							? text.target(bitrate(target))
+							: undefined;
+			const effective =
+				configured &&
+				range &&
+				range.minimum !== range.maximum &&
+				(range.minimum !== configured.minimum ||
+					range.maximum !== configured.maximum)
+					? text.effective(bitrate(range.minimum), bitrate(range.maximum))
+					: undefined;
 			const basis =
 				target === undefined
 					? undefined
@@ -180,6 +226,9 @@ export function PerTitleOutputChart({
 				index,
 				target,
 				range,
+				configured,
+				targetText,
+				effective,
 				label,
 				status,
 				values,
@@ -261,6 +310,9 @@ export function PerTitleOutputChart({
 								index,
 								target,
 								range,
+								configured,
+								targetText,
+								effective,
 								label,
 								status,
 								values,
@@ -268,7 +320,9 @@ export function PerTitleOutputChart({
 								basis,
 							}) => {
 								const band =
-									range ?? (target === undefined ? permitted : undefined);
+									configured ??
+									range ??
+									(target === undefined ? permitted : undefined);
 								const lower = band?.minimum ?? target;
 								const upper = band?.maximum ?? target;
 								const below = lower !== undefined && lower < scale.minimum;
@@ -297,12 +351,9 @@ export function PerTitleOutputChart({
 												) : null}
 												{values ? <span>{values}</span> : null}
 												<span className="text-zinc-400">{status}</span>
-												{conditional &&
-												range &&
-												range.minimum !== range.maximum &&
-												target !== undefined ? (
-													<span className="text-zinc-400">
-														{text.target(bitrate(target))}
+												{targetText ? (
+													<span className="text-zinc-400" title={effective}>
+														{targetText}
 													</span>
 												) : null}
 												{below || above ? (
@@ -337,8 +388,8 @@ export function PerTitleOutputChart({
 														y1={6}
 														y2={6}
 														className="stroke-zinc-400"
-														strokeWidth={2}
-														strokeDasharray="4 3"
+														strokeWidth={configured ? 6 : 2}
+														strokeDasharray={configured ? undefined : "4 3"}
 														vectorEffect="non-scaling-stroke"
 													/>
 												) : null}
@@ -401,8 +452,8 @@ export function PerTitleOutputChart({
 									label,
 									status,
 									values,
-									range,
-									target,
+									targetText,
+									effective,
 									basis,
 								}) => (
 									<tr key={`${row.id}-${index}`}>
@@ -413,11 +464,8 @@ export function PerTitleOutputChart({
 										</td>
 										<td>
 											{values} {status} {basis}
-											{row.status === "conditional" &&
-											range &&
-											target !== undefined
-												? ` ${text.target(bitrate(target))}`
-												: ""}
+											{targetText ? ` ${targetText}` : ""}
+											{effective ? ` ${effective}` : ""}
 										</td>
 									</tr>
 								),

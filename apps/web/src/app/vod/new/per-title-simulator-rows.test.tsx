@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { autoTunePerTitleGoal } from "./per-title-simulator-auto";
 import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
-import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import {
+	getPerTitleAdjustment,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 
 const goal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -43,12 +46,108 @@ const callbacks = () => ({
 });
 
 describe("Unified Per-Title rendition inputs", () => {
+	it.each([
+		false,
+		true,
+	])("seeds only a newly added fixed-range row once, preserving existing unset limits (%s)", (missingExistingMinimum) => {
+		const initial: PerTitleGoal = {
+			...goal,
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 4,
+			countPolicy: { kind: "unrestricted" },
+			rows: goal.rows?.map((row) => ({
+				...row,
+				...(missingExistingMinimum ? { minBitrate: undefined } : {}),
+			})),
+		};
+		const snapshot = structuredClone(initial);
+		const events = callbacks();
+		renderLocalized(
+			<PerTitleSimulatorRows
+				id="fixed-add"
+				goal={initial}
+				manualBounds={{}}
+				{...events}
+				tuning={{
+					draft: initial,
+					anchor: initial,
+					proposal: tunePerTitleSettings(initial, initial).proposal,
+					onChange: events.onChange,
+				}}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
+		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		const added = next.rows?.at(-1);
+		if (!added) throw new Error("Missing added rendition");
+		expect(added.minBitrate).toBeTypeOf("number");
+		expect(added.maxBitrate).toBeTypeOf("number");
+		expect(added.minBitrate).toBeGreaterThanOrEqual(initial.minBitrate);
+		expect(added.maxBitrate).toBeLessThanOrEqual(initial.maxBitrate);
+		expect(added.minBitrate).toBeLessThanOrEqual(added.maxBitrate ?? 0);
+		expect(next.rows?.slice(0, -1)).toEqual(initial.rows);
+		expect(next.automaticTemplates).toEqual(initial.automaticTemplates);
+		expect(next.minBitrateStepSize).toBe(1.2);
+		expect(next.maxBitrateStepSize).toBe(4);
+		for (const key of ["minBitrate", "maxBitrate"])
+			expect(
+				getPerTitleAdjustment(next, initial, "stream", key, added.id),
+			).toEqual({ mode: "fixed" });
+		const changed = tunePerTitleSettings(
+			{ ...next, maxBitrate: 4_000_000 },
+			initial,
+		);
+		expect(changed.goal.rows).toEqual(next.rows);
+		expect(initial).toEqual(snapshot);
+	});
+
+	it("does not invent initial row bounds while the global range is invalid", () => {
+		const initial = { ...goal, maxBitrate: Number.NaN };
+		const events = callbacks();
+		renderLocalized(
+			<PerTitleSimulatorRows
+				id="invalid-add"
+				goal={initial}
+				manualBounds={{}}
+				{...events}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
+		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.slice(0, -1)).toEqual(initial.rows);
+		expect(next.rows?.at(-1)?.minBitrate).toBeUndefined();
+		expect(next.rows?.at(-1)?.maxBitrate).toBeUndefined();
+		expect(next.maxBitrate).toBeNaN();
+	});
+
 	it("removes a deleted row's fixed-setting policies while preserving a feasible remaining ladder", () => {
 		const initial: PerTitleGoal = {
 			...goal,
 			maxBitrate: 2400000,
 			countPolicy: { kind: "unrestricted" },
 			automaticTemplates: [],
+			adjustments: {
+				global: {
+					minBitrateStepSize: { mode: "auto", method: "constraints" },
+					maxBitrateStepSize: { mode: "auto", method: "constraints" },
+				},
+				streams: Object.fromEntries(
+					["a", "b", "c"].map((id) => [
+						id,
+						{
+							bitrateSelectionMode: { mode: "auto", method: "constraints" },
+							lowComplexityBoundaryForMaxBitrate: {
+								mode: "auto",
+								method: "constraints",
+							},
+							highComplexityBoundaryForMaxBitrate: {
+								mode: "auto",
+								method: "constraints",
+							},
+						},
+					]),
+				),
+			},
 			rows: [
 				{ id: "a", height: 240, minBitrate: 160000, maxBitrate: 200000 },
 				{ id: "b", height: 480, minBitrate: 400000, maxBitrate: 480000 },

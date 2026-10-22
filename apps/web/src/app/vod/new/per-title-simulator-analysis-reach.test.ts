@@ -243,11 +243,90 @@ describe("current-setting Per-Title reach assessment", () => {
 		"MINIMUM",
 		"MAXIMUM",
 		"AVERAGE",
-	] as const)("identifies a constant forced %s base as flat across the hypotheses", (mode) => {
+	] as const)("identifies a constant forced %s top as flat when it exceeds the entire fixed band", (mode) => {
 		const goal = forced(mode);
 		const result = assessPerTitleReach(goal, proposal(goal));
 		expect(result.adaptation).toBe("flat");
 		expect(result.low).toEqual(result.high);
+		expect(result.high?.minimum).toBeGreaterThan(101);
+		expect(result.blockers).not.toContain("forced-not-increasing");
+	});
+
+	it.each([
+		["MINIMUM", 1.1, 88],
+		["AVERAGE", 1.1, 100],
+		["MINIMUM", 101 / 80, 101],
+		["AVERAGE", 101 / 90.5, 101],
+	] as const)("retains the existing fixed highest rate when %s first forces %s", (mode, factor, first) => {
+		const goal = forced(mode);
+		goal.maxBitrate = 500;
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: factor,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: mode,
+		};
+		const result = assessPerTitleReach(goal, proposal(goal));
+		expect(result).toMatchObject({
+			status: "blocked",
+			high: { minimum: 101, maximum: 101 },
+			low: { minimum: first, maximum: first },
+			adaptation: first === 101 ? "flat" : "conditional",
+			count: { status: "unknown", minimum: null, maximum: null },
+		});
+		expect(result.blockers).toContain("forced-not-increasing");
+	});
+
+	it("keeps both endpoints of the existing fixed interval in the reported highest rate", () => {
+		const goal = forced("MINIMUM");
+		goal.maxBitrate = 500;
+		goal.rows = goal.rows?.map((row) => ({
+			...row,
+			bitrateSelectionMode: "OPTIMIZED",
+		}));
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: "MINIMUM",
+		};
+		expect(assessPerTitleReach(goal, proposal(goal))).toMatchObject({
+			high: { minimum: 88, maximum: 101 },
+			low: { minimum: 88, maximum: 101 },
+			adaptation: "unknown",
+		});
+	});
+
+	it("retains earlier forced points in the highest rate of an invalid decreasing chain", () => {
+		const goal = forced("AVERAGE");
+		goal.maxBitrate = 500;
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 2,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 0.9,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: "AVERAGE",
+		};
+		const result = assessPerTitleReach(goal, proposal(goal));
+		expect(result).toMatchObject({
+			status: "blocked",
+			high: { minimum: 101, maximum: 101 },
+			low: { minimum: 81, maximum: 81 },
+		});
+		expect(result.blockers).toContain("forced-not-increasing");
+	});
+
+	it.each([
+		["MAXIMUM", 111],
+		["LAST_CALCULATED_BITRATE", 88],
+	] as const)("accepts increasing %s points above their applicable existing fixed rate", (mode, low) => {
+		const goal = forced(mode);
+		goal.maxBitrate = 500;
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: mode,
+		};
+		const result = assessPerTitleReach(goal, proposal(goal));
+		expect(result.high).toEqual({ minimum: 111, maximum: 111 });
+		expect(result.low).toEqual({ minimum: low, maximum: low });
+		expect(result.blockers).not.toContain("forced-not-increasing");
 	});
 
 	it("rounds an odd-sum average only after applying its first forced factor", () => {

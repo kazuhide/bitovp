@@ -533,6 +533,8 @@ export function assessPerTitleReach(
 				blockers.push("forced-cap-exceeded");
 			if (
 				points?.some((point, index) => {
+					if (index === 0 && mode !== "LAST_CALCULATED_BITRATE")
+						return point.minimum <= configured.maximum;
 					const previous = points[index - 1] ?? base;
 					return (
 						point.minimum <= previous.minimum ||
@@ -544,9 +546,19 @@ export function assessPerTitleReach(
 		}
 		const fallback = (base: Interval) => {
 			if (!count || factor === undefined || !mode) return base;
+			const points = forcedPoints(
+				forcedBase(mode, configured, base),
+				count,
+				factor,
+			);
+			// Forced points extend the ladder; they never remove its existing fixed top.
 			return (
-				forcedPoints(forcedBase(mode, configured, base), count, factor)?.at(
-					-1,
+				points?.reduce(
+					(highest, point) => ({
+						minimum: Math.max(highest.minimum, point.minimum),
+						maximum: Math.max(highest.maximum, point.maximum),
+					}),
+					base,
 				) ?? null
 			);
 		};

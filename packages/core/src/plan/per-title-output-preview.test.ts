@@ -78,6 +78,31 @@ function mixed(): PerTitleProposal {
 }
 
 describe("Per-Title output previews", () => {
+	it.each([
+		false,
+		true,
+	])("checks every tied first fixed dimension before binding the minimum (reversed %s)", (reversed) => {
+		const proposal = mixed();
+		proposal.api.global.minBitrateStepSize = 2;
+		const high = required(proposal.api.streams[0]);
+		Object.assign(required(high.perTitleSettings), {
+			minBitrate: 400,
+			maxBitrate: 500,
+			lowComplexityBoundaryForMaxBitrate: 100,
+			highComplexityBoundaryForMaxBitrate: 1000,
+		});
+		const low = structuredClone(high);
+		low.rowId = "lower-range";
+		Object.assign(required(low.perTitleSettings), {
+			minBitrate: 110,
+			maxBitrate: 150,
+		});
+		if (reversed) proposal.api.streams.unshift(low);
+		else proposal.api.streams.push(low);
+		expect(
+			previewPerTitleOutput(proposal).rows.find((row) => row.rowId === "small"),
+		).toMatchObject({ status: "unknown" });
+	});
 	it("starts the unique smaller explicit template at the global minimum", () => {
 		const proposal = mixed();
 		const before = structuredClone(proposal);

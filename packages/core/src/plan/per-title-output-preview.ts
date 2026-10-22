@@ -287,7 +287,9 @@ export function previewPerTitleOutput(
 		const firstFixed = ordered.find(
 			(stream) => stream.mode !== "PER_TITLE_TEMPLATE",
 		);
-		const firstRange = firstFixed ? rangeFor(firstFixed) : null;
+		const firstRanges = fixed
+			.filter((stream) => stream[basis] === firstFixed?.[basis])
+			.map(rangeFor);
 		const lowerCandidates = ordered.filter(
 			(stream) =>
 				stream.mode === "PER_TITLE_TEMPLATE" &&
@@ -299,9 +301,13 @@ export function previewPerTitleOutput(
 		if (
 			lowerCandidates.length === 1 &&
 			minimumRow &&
-			firstRange &&
-			Math.floor(firstRange.minimum / global.minBitrateStepSize) >=
-				global.minBitrate
+			firstRanges.length > 0 &&
+			firstRanges.every(
+				(range) =>
+					range !== null &&
+					Math.floor(range.minimum / global.minBitrateStepSize) >=
+						global.minBitrate,
+			)
 		) {
 			Object.assign(minimumRow, {
 				basis: "minimum",

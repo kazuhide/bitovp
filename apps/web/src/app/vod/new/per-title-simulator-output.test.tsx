@@ -319,6 +319,62 @@ describe("Per-Title output chart", () => {
 		expect(row).not.toHaveTextContent(/180 px|360 px|720 px/);
 	});
 
+	it.each([
+		"en",
+		"ja",
+	] as const)("warns when a conditional addition exceeds the global cap inside the display axis (%s)", (locale) => {
+		const row: PerTitleOutputPreview["rows"][number] = {
+			id: "forced",
+			rowId: "candidate",
+			height: 1080,
+			kind: "automatic",
+			mode: "PER_TITLE_TEMPLATE",
+			status: "conditional",
+			basis: "forced",
+			bitrate: 3000000,
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			rows: [row],
+		});
+		const input = structuredClone(proposal);
+		const snapshot = structuredClone(input);
+		const axis = { minimum: 100000, maximum: 8000000 };
+		const { rerender } = renderLocalized(
+			<PerTitleOutputChart proposal={input} axis={axis} />,
+			locale,
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			locale === "en"
+				? "Additional value 3,000 kbps exceeds the overall maximum of 2,000 kbps. Lower the additional factor or fixed-rendition maximum."
+				: "追加値 3,000 kbps が全体上限 2,000 kbps を超えます。追加倍率か固定段の上限を下げてください。",
+		);
+		expect(screen.getByRole("alert")).toBeVisible();
+		const visible = screen.getByTestId("per-title-output-row");
+		expect(within(visible).getByText("3,000")).toBeVisible();
+		expect(visible).toHaveTextContent(
+			locale === "en" ? "Conditional" : "条件付き",
+		);
+		expect(
+			screen.queryByText(locale === "en" ? /Outside scale/ : /目盛りの範囲外/),
+		).toBeNull();
+		const position = Number(
+			screen.getByTestId("per-title-output-target").getAttribute("x2"),
+		);
+		expect(position).toBeGreaterThan(0);
+		expect(position).toBeLessThan(100);
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			rows: [{ ...row, bitrate: 2000000 }],
+		});
+		rerender(<PerTitleOutputChart proposal={input} axis={axis} />);
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(
+			Number(screen.getByTestId("per-title-output-target").getAttribute("x2")),
+		).toBeLessThan(position);
+		expect(input).toEqual(snapshot);
+	});
+
 	it("limits an unknown candidate envelope to actual global bounds on the fixed display axis", () => {
 		vi.mocked(previewPerTitleOutput).mockReturnValue({
 			...preview,

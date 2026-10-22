@@ -27,6 +27,8 @@ const copy = {
 		target: (rate: string) => `Upper target ${rate}`,
 		unresolved: "Additional outputs unknown",
 		unavailable: "Output unavailable",
+		exceedsGlobal: (value: string, maximum: string) =>
+			`Additional value ${value} kbps exceeds the overall maximum of ${maximum} kbps. Lower the additional factor or fixed-rendition maximum.`,
 		overflow: "Outside scale",
 		rendition: "Rendition",
 		mode: "Mode",
@@ -52,6 +54,8 @@ const copy = {
 		target: (rate: string) => `上限の目安 ${rate}`,
 		unresolved: "追加出力は未確定",
 		unavailable: "想定出力を表示できません",
+		exceedsGlobal: (value: string, maximum: string) =>
+			`追加値 ${value} kbps が全体上限 ${maximum} kbps を超えます。追加倍率か固定段の上限を下げてください。`,
 		overflow: "目盛りの範囲外",
 		rendition: "レンディション",
 		mode: "モード",
@@ -163,6 +167,13 @@ export function PerTitleOutputChart({
 		({ row, target, range }) =>
 			row.basis === "forced" && (target !== undefined || range !== undefined),
 	);
+	const forcedOverflow = rows.find(
+		({ row, target }) =>
+			row.basis === "forced" &&
+			target !== undefined &&
+			permitted !== undefined &&
+			target > permitted.maximum,
+	)?.target;
 	return (
 		<figure aria-labelledby={`${id}-title`} className="space-y-2">
 			<figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
@@ -378,6 +389,14 @@ export function PerTitleOutputChart({
 			) : (
 				<p className="text-xs text-zinc-400">{text.unavailable}</p>
 			)}
+			{forcedOverflow !== undefined && permitted ? (
+				<p role="alert" className="text-amber-300 text-xs">
+					{text.exceedsGlobal(
+						bitrate(forcedOverflow),
+						bitrate(permitted.maximum),
+					)}
+				</p>
+			) : null}
 			{preview.unresolvedAdditional && !forcedOutput ? (
 				<p className="text-xs text-zinc-400">{text.unresolved}</p>
 			) : null}

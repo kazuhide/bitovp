@@ -85,14 +85,15 @@ export function autoTunePerTitleGoal(
 			),
 		);
 	const usableAnchor =
-		anchor.codec === goal.codec &&
-		validGlobal(anchor) &&
-		(anchor.rows?.length ?? 0) <= 64;
+		anchor.codec === goal.codec && (anchor.rows?.length ?? 0) <= 64;
 	const anchors = usableAnchor ? (anchor.rows ?? []) : [];
 	const unchangedGlobal =
 		goal.minBitrate === anchor.minBitrate &&
 		goal.maxBitrate === anchor.maxBitrate;
-	const anchorSpan = Math.log(anchor.maxBitrate) - Math.log(anchor.minBitrate);
+	const validAnchorGlobal = validGlobal(anchor);
+	const anchorSpan = validAnchorGlobal
+		? Math.log(anchor.maxBitrate) - Math.log(anchor.minBitrate)
+		: 0;
 
 	next.rows = rows.map((row, index) => {
 		const matches = anchors.filter(
@@ -105,6 +106,7 @@ export function autoTunePerTitleGoal(
 		const originalMinimum = original?.minBitrate;
 		const originalMaximum = original?.maxBitrate;
 		const validOriginal =
+			validAnchorGlobal &&
 			validRate(originalMinimum) &&
 			validRate(originalMaximum) &&
 			originalMinimum <= originalMaximum &&

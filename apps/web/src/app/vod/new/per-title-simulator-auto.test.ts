@@ -75,6 +75,61 @@ describe("automatic Per-Title requirements", () => {
 			40000000,
 		);
 	});
+	it("preserves matched explicit rows when repairing an invalid anchor global range", () => {
+		for (const global of [
+			{ minBitrate: 0, maxBitrate: 4000000 },
+			{ minBitrate: 100000, maxBitrate: 0 },
+			{ minBitrate: 5000000, maxBitrate: 4000000 },
+		]) {
+			const loaded: PerTitleGoal = {
+				...anchor,
+				...global,
+				countPolicy: { kind: "unrestricted" },
+				rows: [
+					{
+						id: "loaded",
+						height: 360,
+						minBitrate: 200000,
+						maxBitrate: 40000000,
+					},
+				],
+			};
+			const snapshot = structuredClone(loaded);
+			const repaired = { ...loaded, minBitrate: 100000, maxBitrate: 4000000 };
+			const effective = autoTunePerTitleGoal(repaired, loaded, {});
+			expect(effective.rows).toEqual(loaded.rows);
+			expect(recommendPerTitleSettings(effective).diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "row-outside-global-range",
+					severity: "conflict",
+				}),
+			);
+			for (const fresh of [
+				{ ...repaired, rows: [{ id: "new", height: 360 }] },
+				{ ...repaired, codec: "VP9" as const },
+			]) {
+				expect(autoTunePerTitleGoal(fresh, loaded, {}).rows?.[0]).toMatchObject(
+					{
+						minBitrate: 100000,
+						maxBitrate: 4000000,
+					},
+				);
+			}
+			expect(loaded).toEqual(snapshot);
+		}
+	});
+	it("keeps valid explicit row bounds without logarithmic remapping from an invalid anchor", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			minBitrate: 0,
+			rows: [
+				{ id: "loaded", height: 360, minBitrate: 200000, maxBitrate: 400000 },
+			],
+		};
+		expect(
+			autoTunePerTitleGoal({ ...loaded, minBitrate: 100000 }, loaded, {}).rows,
+		).toEqual(loaded.rows);
+	});
 	it("retains a mixed unrestricted rule in the actual proposal rather than only in source metadata", () => {
 		const loaded: PerTitleGoal = {
 			...anchor,

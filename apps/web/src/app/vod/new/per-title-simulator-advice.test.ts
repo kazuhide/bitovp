@@ -440,7 +440,9 @@ describe("dependent Per-Title advice", () => {
 		expect(item?.goal.rows).toEqual(current.rows);
 	});
 
-	it("withholds row-range spacing advice when the final solver cannot establish a repair", () => {
+	it.each([
+		700_000, 900_000,
+	])("checks spacing repairs against the actual edited row range (%i)", (minimum) => {
 		const previous: PerTitleGoal = {
 			strategy: "fixed-ranges",
 			codec: "H264",
@@ -455,17 +457,42 @@ describe("dependent Per-Title advice", () => {
 				{ id: "c", height: 720, minBitrate: 1_200_000, maxBitrate: 1_200_000 },
 			],
 		};
-		const current = changeRow(previous, "b", "minBitrate", 700_000);
+		const current = changeRow(previous, "b", "minBitrate", minimum);
 		const item = perTitleAdvice(previous, current, {
 			scope: "stream",
 			key: "minBitrate",
 			rowId: "b",
 		}).find((a) => a.reason === "spacing");
-		expect(item).toBeUndefined();
+		if (minimum === 900_000) {
+			expect(item).toBeUndefined();
+		} else {
+			const advice = required(item);
+			expect(advice.proof).toBe("conditional-settings");
+			expect(
+				advice.changes.every(
+					(change) =>
+						change.scope === "global" &&
+						["minBitrateStepSize", "maxBitrateStepSize"].includes(change.key),
+				),
+			).toBe(true);
+			expect(advice.goal.rows).toEqual(current.rows);
+			expect(advice.goal.minBitrateStepSize).toBeLessThanOrEqual(
+				1_200_000 / 800_000,
+			);
+			expect(advice.goal.maxBitrateStepSize).toBeGreaterThanOrEqual(
+				700_000 / 200_000,
+			);
+			expect(
+				advice.proposal.diagnostics.some(
+					(diagnostic) => diagnostic.severity === "conflict",
+				),
+			).toBe(false);
+			expect(applyPerTitleAdvice(current, advice)).toEqual(advice.goal);
+		}
 		expect(tunePerTitleSettings(current, current).proposal.applicable).toBe(
 			false,
 		);
-		expect(current.rows?.[1]?.minBitrate).toBe(700_000);
+		expect(current.rows?.[1]?.minBitrate).toBe(minimum);
 	});
 	it("does not turn a mixed range edit into unverified count advice", () => {
 		const previous: PerTitleGoal = {

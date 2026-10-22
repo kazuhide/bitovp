@@ -2,11 +2,13 @@ import {
 	certifyComplexityIntervals,
 	complexityTargetsDoNotDecrease,
 	evaluateComplexityRange,
+	evaluateForcedRenditions,
 	type PerTitleGoal,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	applyPerTitleAdvice,
+	applySelectedPerTitleAdvice,
 	perTitleAdvice,
 } from "./per-title-simulator-advice";
 import { perTitleAdviceFieldKey } from "./per-title-simulator-advice-fields";
@@ -207,6 +209,65 @@ describe("joint Per-Title range advice", () => {
 		expect(first).toBeGreaterThan(3);
 		expect(second).toBeGreaterThan(first);
 		expect(second).toBeLessThanOrEqual(16);
+	});
+
+	it("uses an adopted protected factor when checking the remaining range expansion", () => {
+		const previous: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 1,
+			maxBitrate: 6,
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 4,
+			countPolicy: { kind: "unrestricted" },
+			rows: [{ id: "fixed", height: 240, minBitrate: 1, maxBitrate: 4 }],
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.62,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+		};
+		const { current, advice } = joint(previous, 7);
+		const factor = {
+			scope: "global" as const,
+			key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+		};
+		expect(advice.goal.rows?.[0]?.maxBitrate).toBe(5);
+		expect(
+			advice.goal.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(1.49);
+		const partial = applySelectedPerTitleAdvice(current, advice, [factor]);
+		if (!partial) throw new Error("Expected to adopt only the offered factor.");
+		expect(partial.rows?.[0]?.maxBitrate).toBe(4);
+		const options = { protectedFields: [factor], appliedFields: [factor] };
+		const next = perTitleAdvice(
+			previous,
+			partial,
+			{ scope: "global", key: "maxBitrate" },
+			options,
+		)[0];
+		if (!next) throw new Error("Expected the remaining range adjustment.");
+		expect(next.goal.rows?.[0]?.maxBitrate).toBe(5);
+		expect(
+			next.goal.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(1.49);
+		expect(next.changes.some((change) => change.key === factor.key)).toBe(
+			false,
+		);
+		expect(next.facts.capacity).toBeLessThanOrEqual(
+			next.facts.previousCapacity ?? 0,
+		);
+		expect(
+			evaluateForcedRenditions({
+				base: { minimum: 5, maximum: 5 },
+				count: 1,
+				factor: 1.49,
+			}),
+		).toEqual([{ minimum: 7, maximum: 7 }]);
+		expect(applyPerTitleAdvice(partial, next, options)).toEqual(next.goal);
 	});
 
 	it("raises the mapped minimum step when integer rounding otherwise adds a placement", () => {

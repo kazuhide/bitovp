@@ -400,7 +400,8 @@ function jointPerTitleExpansionAtRangeMaximum(
 		const factorKey =
 			"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor";
 		let factor = held("global", factorKey)
-			? rule.forcedRenditionAboveHighestFixedRepresentationFactor
+			? base.fixedResolutionAndBitrateConfiguration
+					?.forcedRenditionAboveHighestFixedRepresentationFactor
 			: rule.forcedRenditionAboveHighestFixedRepresentationFactor ** p;
 		if (!step(factor)) return [];
 		const top = Math.max(

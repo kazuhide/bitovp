@@ -283,8 +283,10 @@ function putValue(
 		};
 		return {
 			...goal,
-			rows: goal.rows?.map(patch),
-			automaticTemplates: goal.automaticTemplates?.map(patch),
+			...(goal.rows === undefined ? {} : { rows: goal.rows.map(patch) }),
+			...(goal.automaticTemplates === undefined
+				? {}
+				: { automaticTemplates: goal.automaticTemplates.map(patch) }),
 		};
 	}
 	if (key === "autoRepresentations") {

@@ -6,7 +6,10 @@ import {
 	type PerTitleAdviceField,
 	perTitleAdvice,
 } from "./per-title-simulator-advice";
-import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import {
+	setPerTitleSetting,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 
 const source = (): PerTitleGoal => ({
 	strategy: "fixed-ranges",
@@ -46,6 +49,66 @@ function required<T>(value: T | null | undefined): T {
 }
 
 describe("selected Per-Title advice", () => {
+	it.each([
+		"rows",
+		"automaticTemplates",
+	] as const)("preserves omitted %s when editing the other stream collection", (missing) => {
+		const goal = source();
+		delete goal[missing];
+		const rows = missing === "rows" ? goal.automaticTemplates : goal.rows;
+		const row = required(rows?.[0]);
+		const changed = setPerTitleSetting(
+			goal,
+			"stream",
+			"maxBitrate",
+			2_000_000,
+			row.id,
+		);
+		expect(Object.hasOwn(changed, missing)).toBe(false);
+	});
+	it("continues partial boundary adoption when automatic templates were omitted", () => {
+		const before = source();
+		delete before.automaticTemplates;
+		before.rows = [
+			{
+				...required(before.rows?.[0]),
+				id: "lower",
+				height: 240,
+				minBitrate: 200_000,
+				maxBitrate: 400_000,
+			},
+			...required(before.rows),
+		];
+		const current = { ...before, maxBitrate: 3_000_000 };
+		const field = {
+			scope: "stream",
+			rowId: "lower",
+			key: "highComplexityBoundaryForMaxBitrate",
+		} as const;
+		const advice = required(
+			perTitleAdvice(before, current, driver).find(
+				(item) => item.reason === "upper-boundary",
+			),
+		);
+		const next = required(
+			applySelectedPerTitleAdvice(current, advice, [field]),
+		);
+		expect(Object.hasOwn(next, "automaticTemplates")).toBe(false);
+		const remaining = required(
+			perTitleAdvice(before, next, driver, {
+				protectedFields: [field],
+				appliedFields: [field],
+			})[0],
+		);
+		expect(
+			remaining.changes.some(
+				(item) => item.rowId === "required" && item.key === field.key,
+			),
+		).toBe(true);
+		expect(
+			applyPerTitleAdvice(next, remaining, { protectedFields: [field] }),
+		).not.toBeNull();
+	});
 	it.each([
 		1, 2,
 	])("patches only %i selected fields and leaves the source untouched", (count) => {

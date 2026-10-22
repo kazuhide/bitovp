@@ -8,6 +8,10 @@ import {
 import { perTitleAdviceFieldKey } from "./per-title-simulator-advice-fields";
 import { protectedPerTitleRangeMap } from "./per-title-simulator-joint-mapping";
 import {
+	roundedPerTitleJointGoal,
+	sharedPerTitleJointHigh,
+} from "./per-title-simulator-joint-numbers";
+import {
 	initializePerTitleSettings,
 	type PerTitleSettingScope,
 	type PerTitleSettingValue,
@@ -339,8 +343,8 @@ export function jointPerTitleExpansion(
 		? (base.maxBitrateStepSize as number)
 		: before.maxBitrateStepSize ** p;
 	if (!step(s) || !step(maximum)) return [];
-	const fits = (spacing: number) =>
-		capacity(base.minBitrate, base.maxBitrate, spacing) <=
+	const fits = (spacing: number, target = base) =>
+		capacity(target.minBitrate, target.maxBitrate, spacing) <=
 			capacity(
 				before.minBitrate,
 				before.maxBitrate,
@@ -349,8 +353,8 @@ export function jointPerTitleExpansion(
 		before.rows?.every(
 			(row, i) =>
 				capacity(
-					base.rows?.[i]?.minBitrate ?? 0,
-					base.rows?.[i]?.maxBitrate ?? 0,
+					target.rows?.[i]?.minBitrate ?? 0,
+					target.rows?.[i]?.maxBitrate ?? 0,
 					spacing,
 				) <=
 				capacity(
@@ -439,6 +443,7 @@ export function jointPerTitleExpansion(
 		? Math.trunc(map(highest.minBitrate as number) * s)
 		: undefined;
 	const candidates = [];
+	const seen = new Set<string>();
 	for (const policy of [
 		...(newLow !== undefined && rate(newLow)
 			? [
@@ -480,19 +485,77 @@ export function jointPerTitleExpansion(
 				goal = set(goal, "stream", key, calibrated[key], row.id);
 		}
 		if (!valid) continue;
-		goal = connect(
-			goal,
-			!policy.recipe && !held("global", "minBitrateStepSize"),
-			fits,
-			held("global", "maxBitrateStepSize"),
-		);
-		const evaluated = evaluate(before, goal);
-		if (evaluated)
-			candidates.push({
-				goal,
-				facts: { ...evaluated.facts, exponent: p },
-				rank: [...evaluated.rank, policy.recipe ? 0 : 1],
-			});
+		const shared = sharedPerTitleJointHigh(before, goal, protectedKeys);
+		for (const boundaryGoal of shared ? [shared, goal] : [goal]) {
+			const connected = connect(
+				boundaryGoal,
+				!policy.recipe && !held("global", "minBitrateStepSize"),
+				fits,
+				held("global", "maxBitrateStepSize"),
+			);
+			for (const digits of [2, 3, 4, 0]) {
+				let trial = digits
+					? roundedPerTitleJointGoal(
+							before,
+							current,
+							connected,
+							digits,
+							protectedKeys,
+						)
+					: connected;
+				if (!trial) continue;
+				if (digits) {
+					const rounded = trial;
+					const repaired = connect(
+						rounded,
+						!policy.recipe && !held("global", "minBitrateStepSize"),
+						(spacing) => fits(spacing, rounded),
+						held("global", "maxBitrateStepSize"),
+					);
+					trial = roundedPerTitleJointGoal(
+						before,
+						current,
+						repaired,
+						digits,
+						protectedKeys,
+					);
+					if (!trial) continue;
+				}
+				const key = JSON.stringify(trial);
+				if (seen.has(key)) continue;
+				seen.add(key);
+				const evaluated = evaluate(before, trial);
+				if (!evaluated) continue;
+				const curves = (trial.rows ?? []).filter(
+					(row) => row.bitrateSelectionMode === "COMPLEXITY_RANGE",
+				);
+				const high = curves[0]?.highComplexityBoundaryForMaxBitrate;
+				const common =
+					curves.length >= 2 &&
+					rate(high) &&
+					curves.every(
+						(row) => row.highComplexityBoundaryForMaxBitrate === high,
+					);
+				const highFacts: Record<string, number> = {};
+				if (common) highFacts.sharedHighBoundary = high;
+				candidates.push({
+					goal: trial,
+					facts: {
+						...evaluated.facts,
+						...highFacts,
+						exponent: p,
+						roundingDigits: digits,
+					},
+					rank: [
+						evaluated.rank[0] ?? 0,
+						digits || 5,
+						common ? 0 : 1,
+						...evaluated.rank.slice(1),
+						policy.recipe ? 0 : 1,
+					],
+				});
+			}
+		}
 	}
 	return candidates.sort((a, b) => {
 		for (let i = 0; i < a.rank.length; i++) {

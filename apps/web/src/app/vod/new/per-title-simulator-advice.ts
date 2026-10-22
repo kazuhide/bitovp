@@ -470,7 +470,8 @@ export function perTitleAdvice(
 		const result: PerTitleAdvice[] = [];
 		const seen = new Set<string>();
 		const allFields = settings(current);
-		for (const variant of variants.slice(0, 4)) {
+		// Four boundary policies, each with two H layouts and four numeric precisions.
+		for (const variant of variants.slice(0, 36)) {
 			const trial = tunePerTitleSettings(variant.goal, variant.goal);
 			const allowed = new Set(variant.allowed.map(fieldKey));
 			const changes: PerTitleAdviceChange[] = allFields.flatMap((f) => {
@@ -567,6 +568,8 @@ export function perTitleAdvice(
 				facts: variant.facts,
 				inputFingerprint,
 			});
+			// Joint variants are ranked and must pass the count gate before reaching here.
+			if (variant.reason === "joint-range") break;
 		}
 		const ranked = result.sort(
 			(a, b) =>

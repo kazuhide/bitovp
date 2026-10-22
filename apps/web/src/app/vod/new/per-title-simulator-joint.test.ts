@@ -1,4 +1,8 @@
-import { evaluateComplexityRange, type PerTitleGoal } from "@bitovp/core";
+import {
+	certifyComplexityIntervals,
+	evaluateComplexityRange,
+	type PerTitleGoal,
+} from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	applyPerTitleAdvice,
@@ -70,11 +74,10 @@ describe("joint Per-Title range advice", () => {
 		expect(advice.goal.countPolicy).toEqual(previous.countPolicy);
 		expect(advice.goal.targetQualityCrf).toBe(18);
 		const exponent = Math.log(80) / Math.log(40);
-		expect(advice.goal.rows?.[0]?.minBitrate).toBe(
-			Math.round(100_000 * 2 ** exponent),
-		);
+		expect(advice.goal.rows?.[0]?.minBitrate).toBe(230_000);
 		expect(advice.goal.rows?.[0]?.minBitrate).not.toBe(400_000);
-		expect(advice.goal.minBitrateStepSize).toBeCloseTo(1.25 ** exponent, 10);
+		expect(advice.facts.exponent).toBe(exponent);
+		expect(advice.goal.minBitrateStepSize).toBe(1.31);
 		expect(advice.goal.maxBitrateStepSize).toBeGreaterThanOrEqual(
 			4 ** exponent,
 		);
@@ -86,7 +89,7 @@ describe("joint Per-Title range advice", () => {
 		expect(
 			advice.goal.fixedResolutionAndBitrateConfiguration
 				?.forcedRenditionAboveHighestFixedRepresentationFactor,
-		).toBeCloseTo(1.2 ** exponent, 10);
+		).toBe(1.24);
 		expect(
 			advice.goal.fixedResolutionAndBitrateConfiguration
 				?.forcedRenditionAboveHighestFixedRepresentation,
@@ -214,7 +217,7 @@ describe("joint Per-Title range advice", () => {
 		const { advice } = joint(previous, 8);
 		const spacing = advice.goal.minBitrateStepSize ?? 0;
 		expect(spacing).toBeGreaterThan(1.6 ** 1.5);
-		expect(spacing).toBeCloseTo(2.125, 12);
+		expect(spacing).toBe(2.13);
 		expect(
 			Math.round(Math.round(Math.round(1 * spacing) * spacing) * spacing),
 		).toBeGreaterThan(8);
@@ -222,7 +225,7 @@ describe("joint Per-Title range advice", () => {
 		expect(advice.facts.capacity).toBe(3);
 	});
 
-	it("reduces the initial step to a certified connection limit without increasing placement room", () => {
+	it("retains certified connections after rounding ranges and steps without increasing placement room", () => {
 		const previous: PerTitleGoal = {
 			strategy: "fixed-ranges",
 			codec: "H264",
@@ -255,8 +258,23 @@ describe("joint Per-Title range advice", () => {
 			automaticTemplates: [{ id: "top", height: 1080 }],
 		};
 		const { advice } = joint(previous, 30_000);
-		const powered = 1.5 ** (Math.log(300) / Math.log(100));
-		expect(advice.goal.minBitrateStepSize).toBeLessThan(powered);
+		const step = advice.goal.minBitrateStepSize ?? 0;
+		expect(step).toBe(Number(step.toFixed(2)));
+		const certificate = certifyComplexityIntervals(
+			(advice.goal.rows ?? []).map((row) => ({
+				minimum: row.minBitrate ?? 0,
+				maximum: row.maxBitrate ?? 0,
+				low: row.lowComplexityBoundaryForMaxBitrate ?? 0,
+				high: row.highComplexityBoundaryForMaxBitrate ?? 0,
+			})),
+			{ minimum: 1, maximum: advice.goal.maxBitrate },
+			step,
+		);
+		expect(certificate).not.toBeNull();
+		expect(certificate?.minimumAdjacentRatio).toBeGreaterThanOrEqual(step);
+		expect(certificate?.maximumAdjacentRatio).toBeLessThanOrEqual(
+			advice.goal.maxBitrateStepSize ?? 0,
+		);
 		expect(
 			advice.goal.rows?.[0]?.highComplexityBoundaryForMaxBitrate,
 		).toBeGreaterThan(10_000);

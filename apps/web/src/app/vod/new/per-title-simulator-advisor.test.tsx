@@ -2,6 +2,7 @@ import type { PerTitleGoal } from "@bitovp/core";
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
+import * as adviceModule from "./per-title-simulator-advice";
 import {
 	applyPerTitleAdvice,
 	perTitleAdvice,
@@ -553,6 +554,154 @@ describe("manual Per-Title adjustment advice", () => {
 			screen.getByRole("button", { name: "Use this adjustment" }),
 		).toBeInTheDocument();
 		expect(input).toHaveFocus();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("explains checked rounding and final common versus per-row H (%s)", (locale) => {
+		const session = source(),
+			current = { ...session, maxBitrate: 8_000_000 };
+		const original = perTitleAdvice(session, current, {
+			scope: "global",
+			key: "maxBitrate",
+		}).find((item) => item.reason === "joint-range");
+		if (!original) throw new Error("Expected joint adjustment.");
+		const fixed = original.proposal.api.streams.find(
+			(row) =>
+				row.perTitleSettings?.bitrateSelectionMode === "COMPLEXITY_RANGE",
+		);
+		if (!fixed?.perTitleSettings)
+			throw new Error("Expected fixed complexity settings.");
+		const spy = vi.spyOn(adviceModule, "perTitleAdvice");
+		try {
+			for (const shared of [true, false]) {
+				const item = structuredClone(original);
+				item.facts.roundingDigits = 3;
+				item.facts.sharedHighBoundary = 99_000_000;
+				item.proposal.api.streams = [
+					{
+						...fixed,
+						perTitleSettings: {
+							...fixed.perTitleSettings,
+							highComplexityBoundaryForMaxBitrate: 8_000_000,
+						},
+					},
+					{
+						...fixed,
+						rowId: "b",
+						height: 1080,
+						perTitleSettings: {
+							...fixed.perTitleSettings,
+							highComplexityBoundaryForMaxBitrate: shared
+								? 8_000_000
+								: 7_000_000,
+						},
+					},
+				];
+				spy.mockReturnValue([item]);
+				const view = renderLocalized(
+					<PerTitleAdvisor
+						goal={session}
+						session={session}
+						onAdopt={vi.fn()}
+					/>,
+					locale,
+				);
+				view.rerender(
+					<PerTitleAdvisor
+						goal={current}
+						session={session}
+						onAdopt={vi.fn()}
+					/>,
+				);
+				expect(
+					screen.getByText(
+						locale === "en"
+							? "Changeable values rounded and rechecked."
+							: "変更可能な値を丸めて再確認済み。",
+					),
+				).toBeVisible();
+				const details = screen
+					.getByText(locale === "en" ? "Reasoning and scope" : "根拠と確認範囲")
+					.closest("details");
+				if (!details) throw new Error("Expected closed reasoning.");
+				expect(details).not.toHaveAttribute("open");
+				fireEvent.click(details.querySelector("summary") as HTMLElement);
+				expect(details).toHaveTextContent(
+					locale === "en" ? "3 significant digits" : "有効数字3桁",
+				);
+				expect(details).toHaveTextContent(
+					locale === "en"
+						? "Kept values are unchanged"
+						: "維持する値は変更しません",
+				);
+				expect(details).toHaveTextContent(
+					shared
+						? locale === "en"
+							? "Common H: 8,000 kbps"
+							: "共通H: 8,000 kbps"
+						: locale === "en"
+							? "H is set per rendition"
+							: "Hは各段で設定",
+				);
+				expect(details).not.toHaveTextContent("99,000");
+				expect(details).toHaveTextContent(
+					locale === "en"
+						? "each rendition's own maximum"
+						: "各段それぞれの最大値",
+				);
+				view.unmount();
+			}
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it.each([
+		0, 2, 4,
+	])("shows checked precision %s without inventing a common H for one row", (digits) => {
+		const session = source(),
+			current = { ...session, maxBitrate: 8_000_000 };
+		const item = perTitleAdvice(session, current, {
+			scope: "global",
+			key: "maxBitrate",
+		}).find((candidate) => candidate.reason === "joint-range");
+		if (!item) throw new Error("Expected joint adjustment.");
+		item.facts.roundingDigits = digits;
+		item.facts.sharedHighBoundary = 99_000_000;
+		const spy = vi
+			.spyOn(adviceModule, "perTitleAdvice")
+			.mockReturnValue([item]);
+		try {
+			const view = renderLocalized(
+				<PerTitleAdvisor goal={session} session={session} onAdopt={vi.fn()} />,
+			);
+			view.rerender(
+				<PerTitleAdvisor goal={current} session={session} onAdopt={vi.fn()} />,
+			);
+			expect(
+				screen.getByText(
+					digits === 0
+						? "Unrounded values rechecked."
+						: "Changeable values rounded and rechecked.",
+				),
+			).toBeVisible();
+			const details = screen
+				.getByText("Reasoning and scope")
+				.closest("details");
+			if (!details) throw new Error("Expected reasoning.");
+			fireEvent.click(details.querySelector("summary") as HTMLElement);
+			expect(details).toHaveTextContent(
+				digits === 0
+					? "No rounded candidate passed the checks"
+					: `${digits} decimal places`,
+			);
+			expect(details).toHaveTextContent("H is set per rendition");
+			expect(details).not.toHaveTextContent("Common H:");
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	it("prunes a maintained field only when its rendition is removed", () => {

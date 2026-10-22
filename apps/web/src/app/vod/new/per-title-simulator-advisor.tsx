@@ -130,10 +130,37 @@ function AdviceOption({
 			? "変更した値と各段の範囲を保って、ビットレート間隔を調整する案です。"
 			: "Keep the value you changed and the rendition ranges, and adjust the bitrate steps.",
 	}[advice.reason];
+	const digits =
+		advice.reason === "joint-range" ? advice.facts.roundingDigits : undefined;
+	const rounded = digits === 2 || digits === 3 || digits === 4;
+	const complexity = advice.proposal.api.streams.flatMap((row) =>
+		row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+		row.perTitleSettings?.bitrateSelectionMode === "COMPLEXITY_RANGE"
+			? [row.perTitleSettings]
+			: [],
+	);
+	const high = complexity[0]?.highComplexityBoundaryForMaxBitrate;
+	const commonHigh =
+		complexity.length >= 2 &&
+		typeof high === "number" &&
+		Number.isSafeInteger(high) &&
+		high > 0 &&
+		complexity.every((row) => row.highComplexityBoundaryForMaxBitrate === high);
 	const allRows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	return (
 		<div className="space-y-3">
 			<p className="text-xs text-zinc-300">{reason}</p>
+			{rounded || digits === 0 ? (
+				<p className="text-xs text-zinc-400">
+					{rounded
+						? ja
+							? "変更可能な値を丸めて再確認済み。"
+							: "Changeable values rounded and rechecked."
+						: ja
+							? "丸めない値で再確認済み。"
+							: "Unrounded values rechecked."}
+				</p>
+			) : null}
 			<dl className="space-y-2 text-xs">
 				{changeGroups(advice.changes).map((group) => {
 					const first = group[0];
@@ -199,6 +226,38 @@ function AdviceOption({
 						)}{" "}
 						bps
 					</p>
+				) : null}
+				{rounded ? (
+					<p>
+						{ja
+							? `変更可能なビットレートは有効数字${digits}桁、間隔・追加倍率は小数${digits}桁で丸め、再確認します。維持する値は変更しません。`
+							: `Changeable bitrates use ${digits} significant digits; steps and the additional factor use ${digits} decimal places, followed by rechecking. Kept values are unchanged.`}
+					</p>
+				) : digits === 0 ? (
+					<p>
+						{ja
+							? "確認条件を満たす丸め案がなく、丸めない値を使います。維持する値は変更しません。"
+							: "No rounded candidate passed the checks, so unrounded values are used. Kept values are unchanged."}
+					</p>
+				) : null}
+				{advice.reason === "joint-range" && complexity.length > 0 ? (
+					<>
+						<p>
+							{commonHigh
+								? `${ja ? "共通H" : "Common H"}: ${valueText(high, "maxBitrate", locale)} kbps. `
+								: ja
+									? "Hは各段で設定します。"
+									: "H is set per rendition. "}
+							{ja
+								? "Hは上側目標が各段それぞれの最大値に達する解析値で、共通Hでも各段のビットレートが同じになる意味ではありません。"
+								: "H is the analysis threshold where the upper target reaches each rendition's own maximum; a common H does not mean equal bitrates."}
+						</p>
+						<p>
+							{ja
+								? "対象の段では共通Hの候補を確認し、独自・維持するHは保持します。行別のHを使う場合も、共通Hが不可能と証明したわけではありません。"
+								: "Eligible rows try a common H; custom or kept H values are retained. Per-row H does not prove that a common H is impossible."}
+						</p>
+					</>
 				) : null}
 				{advice.reason === "joint-range" ? (
 					<p>

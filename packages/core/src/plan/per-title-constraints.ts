@@ -39,6 +39,34 @@ function affine(row: Row, input: number): Fraction {
 	};
 }
 
+/**
+ * Sufficient same-input upper-target proof, not a prediction of analysis or output.
+ * Comparing the unrounded affine pieces also orders their floors; false can reject
+ * curves whose integer targets coincide. This does not compare q-lower relaxation.
+ */
+export function complexityTargetsDoNotDecrease(
+	before: Row,
+	after: Row,
+	input: BitrateInterval,
+): boolean {
+	if (!validRow(before) || !validRow(after) || !validInterval(input))
+		return false;
+	// Each target difference is affine between these at most six breakpoints.
+	const points = new Set([
+		input.minimum,
+		input.maximum,
+		before.low,
+		before.high,
+		after.low,
+		after.high,
+	]);
+	return [...points]
+		.filter((point) => point >= input.minimum && point <= input.maximum)
+		.every(
+			(point) => compare(affine(after, point), affine(before, point)) >= 0n,
+		);
+}
+
 /** Conditional bounds for an explicit analysis input; not a prediction of that input. */
 export function evaluateComplexityRange(
 	args: Row & { input: number; minStep: number },

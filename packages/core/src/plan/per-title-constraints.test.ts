@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	certifyComplexityIntervals,
 	certifyComplexitySpacing,
+	complexityTargetsDoNotDecrease,
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
 } from "./per-title-constraints";
@@ -69,6 +70,190 @@ describe("conditional complexity bounds", () => {
 		expect(
 			evaluateComplexityRange({ ...row, input: 400, minStep: 2, ...invalid }),
 		).toBeNull();
+	});
+});
+
+describe("same-input complexity target nondecrease", () => {
+	const before = { minimum: 100, maximum: 200, low: 200, high: 400 };
+	it("rejects increasing H alone when an interior target decreases", () => {
+		expect(
+			complexityTargetsDoNotDecrease(
+				before,
+				{ ...before, high: 1600 },
+				{ minimum: 100, maximum: 1600 },
+			),
+		).toBe(false);
+	});
+	it.each([
+		{ minimum: 100, maximum: 400, low: 400, high: 1600 },
+		{ minimum: 100, maximum: 600, low: 600, high: 1600 },
+	])("rejects increased endpoint values when rescaled calibration lowers a same-input target", (after) => {
+		expect(after.minimum).toBeGreaterThanOrEqual(before.minimum);
+		expect(after.maximum).toBeGreaterThanOrEqual(before.maximum);
+		expect(
+			evaluateComplexityRange({ ...before, input: 300, minStep: 1 })?.maximum,
+		).toBe(150);
+		expect(
+			evaluateComplexityRange({ ...after, input: 300, minStep: 1 })?.maximum,
+		).toBe(100);
+		expect(
+			complexityTargetsDoNotDecrease(before, after, {
+				minimum: 100,
+				maximum: 1600,
+			}),
+		).toBe(false);
+	});
+	it("accepts equal curves and increased row values with preserved calibration", () => {
+		expect(
+			complexityTargetsDoNotDecrease(before, before, {
+				minimum: 1,
+				maximum: 2000,
+			}),
+		).toBe(true);
+		expect(
+			complexityTargetsDoNotDecrease(
+				before,
+				{ ...before, minimum: 101, maximum: 250 },
+				{ minimum: 1, maximum: 2000 },
+			),
+		).toBe(true);
+	});
+	it("limits its certificate to the requested domain, including singleton and clamp equality", () => {
+		const after = { ...before, high: 800 };
+		expect(
+			complexityTargetsDoNotDecrease(before, after, {
+				minimum: 1,
+				maximum: 200,
+			}),
+		).toBe(true);
+		expect(
+			complexityTargetsDoNotDecrease(before, after, {
+				minimum: 800,
+				maximum: 1000,
+			}),
+		).toBe(true);
+		expect(
+			complexityTargetsDoNotDecrease(before, after, {
+				minimum: 300,
+				maximum: 300,
+			}),
+		).toBe(false);
+		expect(
+			complexityTargetsDoNotDecrease(before, after, {
+				minimum: 200,
+				maximum: 200,
+			}),
+		).toBe(true);
+	});
+	it("is sufficient rather than necessary when both rounded targets coincide", () => {
+		const old = { minimum: 10, maximum: 11, low: 1, high: 101 },
+			after = { ...old, high: 102 };
+		expect(
+			evaluateComplexityRange({ ...old, input: 2, minStep: 1 })?.maximum,
+		).toBe(10);
+		expect(
+			evaluateComplexityRange({ ...after, input: 2, minStep: 1 })?.maximum,
+		).toBe(10);
+		expect(
+			complexityTargetsDoNotDecrease(old, after, { minimum: 2, maximum: 2 }),
+		).toBe(false);
+		expect(
+			evaluateComplexityRange({ ...old, input: 101, minStep: 1 })?.maximum,
+		).toBe(11);
+		expect(
+			evaluateComplexityRange({ ...after, input: 101, minStep: 1 })?.maximum,
+		).toBe(10);
+		expect(
+			complexityTargetsDoNotDecrease(old, after, {
+				minimum: 101,
+				maximum: 101,
+			}),
+		).toBe(false);
+	});
+	it("uses exact rational comparisons near the safe integer limit", () => {
+		const old = {
+			minimum: Number.MAX_SAFE_INTEGER - 1000,
+			maximum: Number.MAX_SAFE_INTEGER - 100,
+			low: 10,
+			high: 30,
+		};
+		expect(
+			complexityTargetsDoNotDecrease(
+				old,
+				{ ...old, maximum: old.maximum - 1 },
+				{ minimum: 11, maximum: 11 },
+			),
+		).toBe(false);
+		expect(
+			complexityTargetsDoNotDecrease(
+				old,
+				{ ...old, minimum: old.minimum + 1, maximum: old.maximum + 1 },
+				{ minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+			),
+		).toBe(true);
+	});
+	it.each([
+		{ minimum: 0 },
+		{ maximum: 99 },
+		{ low: 400 },
+		{ high: NaN },
+		{ maximum: Number.MAX_SAFE_INTEGER + 1 },
+		{ minimum: 1.5 },
+	])("refuses invalid row values %j", (invalid) => {
+		expect(
+			complexityTargetsDoNotDecrease({ ...before, ...invalid }, before, {
+				minimum: 1,
+				maximum: 1000,
+			}),
+		).toBe(false);
+		expect(
+			complexityTargetsDoNotDecrease(
+				before,
+				{ ...before, ...invalid },
+				{ minimum: 1, maximum: 1000 },
+			),
+		).toBe(false);
+	});
+	it.each([
+		{ minimum: 0, maximum: 100 },
+		{ minimum: 3, maximum: 2 },
+		{ minimum: 1, maximum: Infinity },
+		{ minimum: 1, maximum: Number.MAX_SAFE_INTEGER + 1 },
+	])("refuses invalid domains %j", (input) => {
+		expect(complexityTargetsDoNotDecrease(before, before, input)).toBe(false);
+	});
+	it("accepted certificates preserve discrete upper targets across a deterministic domain", () => {
+		let accepted = 0;
+		for (let offset = 0; offset < 12; offset++) {
+			const old = {
+				minimum: 7 + offset,
+				maximum: 40 + 2 * offset,
+				low: 11,
+				high: 67,
+			};
+			for (const after of [
+				{ ...old, minimum: old.minimum + 1, maximum: old.maximum + 3 },
+				{ ...old, low: 8, high: 60 },
+				{ ...old, high: 90 },
+			]) {
+				if (
+					!complexityTargetsDoNotDecrease(old, after, {
+						minimum: 1,
+						maximum: 100,
+					})
+				)
+					continue;
+				accepted++;
+				for (let input = 1; input <= 100; input++) {
+					const a = evaluateComplexityRange({ ...old, input, minStep: 2 }),
+						b = evaluateComplexityRange({ ...after, input, minStep: 2 });
+					expect(a).not.toBeNull();
+					expect(b).not.toBeNull();
+					expect(b?.maximum).toBeGreaterThanOrEqual(a?.maximum ?? Infinity);
+				}
+			}
+		}
+		expect(accepted).toBeGreaterThan(0);
 	});
 });
 

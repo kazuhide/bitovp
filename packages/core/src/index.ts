@@ -704,6 +704,12 @@ export {
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
 export { outputStorageKeys } from "./plan/output-files";
+export {
+	certifyComplexityIntervals,
+	complexityTargetsDoNotDecrease,
+	evaluateComplexityRange,
+	evaluateForcedRenditions,
+} from "./plan/per-title-constraints";
 export type { PerTitleOutputPreview } from "./plan/per-title-output-preview";
 export { previewPerTitleOutput } from "./plan/per-title-output-preview";
 export type {

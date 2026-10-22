@@ -260,4 +260,41 @@ describe("whole-ladder current-setting analysis", () => {
 		expect(perTitlePlacementCapacity(120_000, 440_000, 1.5)).toBe(4);
 		expect(perTitlePlacementCapacity(120_000, 440_000, 1)).toBeNull();
 	});
+	it("ranks placement capacity beyond the model bound as unknown risk, never zero increase", () => {
+		const goal = mixed(7_200_000);
+		goal.maxBitrateStepSize = 10;
+		goal.rows = goal.rows?.map((row) =>
+			row.id === "highest" ? { ...row, minBitrate: 1_572_864 } : row,
+		);
+		goal.fixedResolutionAndBitrateConfiguration = {
+			...goal.fixedResolutionAndBitrateConfiguration,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1025 / 1024,
+		};
+		const result = analyzePerTitleSettings(goal, "cap");
+		const unbounded = result.advice.find(
+			(item) => assess(item.goal).globalCapacity === null,
+		);
+		expect(unbounded).toBeDefined();
+		expect(unbounded?.facts.capacityIncrease).toBeGreaterThan(0);
+		expect(unbounded?.facts.capacityUnresolved).toBe(1);
+		expect(unbounded?.explanation?.en).toContain("model bound");
+		expect(
+			assess(result.advice[0]?.goal ?? goal).globalCapacity,
+		).not.toBeNull();
+	});
+	it("describes a lower forced floor without calling it an increase", () => {
+		const goal = mixed(7_200_000);
+		goal.minBitrateStepSize = 1.2;
+		goal.fixedResolutionAndBitrateConfiguration = {
+			...goal.fixedResolutionAndBitrateConfiguration,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.5,
+		};
+		const floor = assess(goal).topResponse.floor ?? 0;
+		const lowered = analyzePerTitleSettings(goal, "cap").advice.find(
+			(item) => (assess(item.goal).topResponse.floor ?? Infinity) < floor,
+		);
+		expect(lowered).toBeDefined();
+		expect(lowered?.explanation?.ja).not.toContain("上がります");
+		expect(lowered?.explanation?.ja).toContain("変わります");
+	});
 });

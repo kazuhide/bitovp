@@ -104,13 +104,11 @@ function explanation(
 		const tracked = after.topResponse.status === "tracked";
 		const simpleBefore = before.topResponse.floor;
 		const simpleAfter = after.topResponse.floor;
-		const capacity =
-			before.globalCapacity !== null &&
-			after.globalCapacity !== null &&
-			after.globalCapacity > before.globalCapacity;
+		const capacity = (item.facts.capacityIncrease ?? 0) > 0;
+		const unbounded = item.facts.capacityUnresolved === 1;
 		return {
-			en: `${tracked ? `Direct connection passes over the whole ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}–${rate(global.maxBitrate)} kbps analysis interval.` : `Extend the fixed curves toward ${rate(global.maxBitrate)} kbps; spacing is rechecked over the whole input interval.`} Upper placement room: ${before.upperSlots?.maximum ?? "unknown"}→${after.upperSlots?.maximum ?? "unknown"} (not output count).${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? ` Simple-input forced target: ${rate(simpleBefore)}→${rate(simpleAfter)} kbps.` : ""}${capacity ? " Smaller minimum spacing allows more ordinary rungs elsewhere." : ""} Global limits and quality controls stay unchanged; actual count and quality require media.`,
-			ja: `${tracked ? `解析値 ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}～${rate(global.maxBitrate)} kbps の全区間で、最上固定段から直接接続できる案です。` : `固定段が ${rate(global.maxBitrate)} kbps まで応答するよう調整し、段間隔を全区間で再検証した案です。`} 上側の配置余地は ${before.upperSlots?.maximum ?? "未確定"}→${after.upperSlots?.maximum ?? "未確定"} 段です。${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? `単純側の強制追加目標は ${rate(simpleBefore)}→${rate(simpleAfter)} kbps に上がります。` : ""}${capacity ? "最小段間隔を下げるため、ほかの区間で本数が増える余地があります。" : ""} 全体範囲と画質設定は維持します。実際の本数と画質は素材で確認してください。`,
+			en: `${tracked ? `Direct connection passes over the whole ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}–${rate(global.maxBitrate)} kbps analysis interval.` : `Extend the fixed curves toward ${rate(global.maxBitrate)} kbps; spacing is rechecked over the whole input interval.`} Upper placement room: ${before.upperSlots?.maximum ?? "unknown"}→${after.upperSlots?.maximum ?? "unknown"} (not output count).${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? ` Simple-input forced target: ${rate(simpleBefore)}→${rate(simpleAfter)} kbps.` : ""}${unbounded ? " Smaller spacing exceeds the placement-count model bound; the increase is unresolved, not zero." : capacity ? " Smaller minimum spacing allows more ordinary rungs elsewhere." : ""} Global limits and quality controls stay unchanged; actual count and quality require media.`,
+			ja: `${tracked ? `解析値 ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}～${rate(global.maxBitrate)} kbps の全区間で、最上固定段から直接接続できる案です。` : `固定段が ${rate(global.maxBitrate)} kbps まで応答するよう調整し、段間隔を全区間で再検証した案です。`} 上側の配置余地は ${before.upperSlots?.maximum ?? "未確定"}→${after.upperSlots?.maximum ?? "未確定"} 段です。${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? `単純側の強制追加目標は ${rate(simpleBefore)}→${rate(simpleAfter)} kbps に変わります。` : ""}${unbounded ? "最小段間隔を下げると配置本数の検証上限を超えます。増加量は未確定で、増えないという意味ではありません。" : capacity ? "最小段間隔を下げるため、ほかの区間で本数が増える余地があります。" : ""} 全体範囲と画質設定は維持します。実際の本数と画質は素材で確認してください。`,
 		};
 	}
 	if (
@@ -467,7 +465,16 @@ export function analyzePerTitleSettings(
 			capacityIncrease:
 				ladder.globalCapacity !== null && checkedLadder.globalCapacity !== null
 					? Math.max(0, checkedLadder.globalCapacity - ladder.globalCapacity)
-					: 0,
+					: item.proposal.api.global.minBitrateStepSize <
+							proposal.api.global.minBitrateStepSize
+						? Number.MAX_SAFE_INTEGER
+						: 0,
+			capacityUnresolved: Number(
+				(ladder.globalCapacity === null ||
+					checkedLadder.globalCapacity === null) &&
+					item.proposal.api.global.minBitrateStepSize <
+						proposal.api.global.minBitrateStepSize,
+			),
 			upperSlots: checkedLadder.upperSlots?.maximum ?? 256,
 			earlySaturation: checkedLadder.earlySaturationRows.length,
 			preservedCount:

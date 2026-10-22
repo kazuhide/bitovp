@@ -1,5 +1,9 @@
 import type { PerTitleCodec, PerTitleGoal } from "@bitovp/core";
 import { z } from "zod";
+import {
+	perTitleGlobalFields,
+	perTitleStreamFields,
+} from "./per-title-simulator-tuning";
 
 const MAX_BYTES = 128 * 1024;
 const integer = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
@@ -10,6 +14,7 @@ const signedInteger = z
 	.max(Number.MAX_SAFE_INTEGER);
 const nonnegative = z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER);
 const positive = nonnegative.refine((value) => value > 0);
+const finite = z.number().finite();
 const id = z
 	.string()
 	.min(1)
@@ -28,14 +33,67 @@ const rangeFields = {
 	bitrateSelectionMode: selection.optional(),
 	lowComplexityBoundaryForMaxBitrate: integer.optional(),
 	highComplexityBoundaryForMaxBitrate: integer.optional(),
+	codecMaxBitrateFactor: positive.optional(),
+	codecBufsizeFactor: positive.optional(),
 };
+const globalFields = {
+	targetQualityCrf: finite.optional(),
+	targetQualityQp: finite.optional(),
+	complexityFactor: positive.optional(),
+	resolutionScaleFactor: finite.min(-15).max(15).optional(),
+	codecMinBitrateFactor: positive.optional(),
+	codecMaxBitrateFactor: positive.optional(),
+	codecBufsizeFactor: positive.optional(),
+};
+const forcedKeys = [
+	"forcedRenditionAboveHighestFixedRepresentation",
+	"forcedRenditionAboveHighestFixedRepresentationFactor",
+	"forcedRenditionAboveHighestFixedRepresentationCalculationMode",
+] as const;
+const globalKeys = [
+	"minBitrate",
+	"maxBitrate",
+	"minBitrateStepSize",
+	"maxBitrateStepSize",
+	...Object.keys(globalFields),
+	"autoRepresentations",
+	"autoRepresentations.adoptConfigurationThreshold",
+	...forcedKeys.map((key) => `fixedResolutionAndBitrateConfiguration.${key}`),
+];
+const streamKeys = Object.keys(rangeFields);
+const keySchema = (keys: readonly string[]) =>
+	z.string().refine((key) => keys.includes(key));
+const globalKey = keySchema(globalKeys);
+const streamKey = keySchema(streamKeys);
+const adjustment = z.discriminatedUnion("mode", [
+	z.object({ mode: z.literal("fixed") }).strict(),
+	z
+		.object({
+			mode: z.literal("auto"),
+			method: z.enum(["constraints", "proportional", "logarithmic", "default"]),
+		})
+		.strict(),
+]);
+const settingLocks = z
+	.object({
+		global: z.array(globalKey).max(globalKeys.length).optional(),
+		streams: z.record(id, z.array(streamKey).max(streamKeys.length)).optional(),
+	})
+	.strict();
+const adjustments = z
+	.object({
+		inactiveAutoRepresentationThreshold: finite.min(0).max(1).optional(),
+		global: z.record(globalKey, adjustment).optional(),
+		streams: z.record(id, z.record(streamKey, adjustment)).optional(),
+	})
+	.strict();
 const forced = z
 	.object({
 		forcedRenditionAboveHighestFixedRepresentation: z
 			.number()
 			.int()
 			.min(0)
-			.max(64)
+			.max(256)
 			.optional(),
 		forcedRenditionAboveHighestFixedRepresentationFactor: positive.optional(),
 		forcedRenditionAboveHighestFixedRepresentationCalculationMode: z
@@ -76,6 +134,9 @@ const goalSchema = z
 		minBitrate: integer,
 		maxBitrate: integer,
 		...stepFields,
+		...globalFields,
+		settingLocks: settingLocks.optional(),
+		adjustments: adjustments.optional(),
 		autoRepresentations: z
 			.union([z.literal(false), autoRepresentations])
 			.optional(),
@@ -170,11 +231,7 @@ const referenceSchema = z
 				maxBitrate: integer,
 				...stepFields,
 				autoRepresentations: autoRepresentations.optional(),
-				targetQualityCrf: nonnegative.optional(),
-				complexityFactor: positive.optional(),
-				codecBufsizeFactor: positive.optional(),
-				codecMaxBitrateFactor: positive.optional(),
-				codecMinBitrateFactor: positive.optional(),
+				...globalFields,
 				fixedResolutionAndBitrateConfiguration: forced.optional(),
 			})
 			.strict(),
@@ -232,7 +289,47 @@ function checkGoal(
 ): void {
 	if (!allowed.includes(goal.codec) || goal.minBitrate > goal.maxBitrate)
 		invalid();
-	if ((goal.maxBitrateStepSize ?? 1.9) < (goal.minBitrateStepSize ?? 1.5))
+	const supportedGlobals = new Map(
+		perTitleGlobalFields(goal.codec).map((field) => [field.key, field]),
+	);
+	const supportedStreams = new Map(
+		perTitleStreamFields(goal.codec).map((field) => [field.key, field]),
+	);
+	const supportedGlobal = (key: string) => supportedGlobals.has(key);
+	if (
+		Object.keys(globalFields).some(
+			(key) => key in goal && !supportedGlobal(key),
+		)
+	)
+		invalid();
+	for (const key of [
+		...(goal.settingLocks?.global ?? []),
+		...Object.keys(goal.adjustments?.global ?? {}),
+	]) {
+		if (!supportedGlobal(key)) invalid();
+	}
+	for (const [key, adjustment] of Object.entries(
+		goal.adjustments?.global ?? {},
+	)) {
+		if (
+			adjustment.mode === "auto" &&
+			!supportedGlobals.get(key)?.methods.includes(adjustment.method)
+		)
+			invalid();
+	}
+	for (const key of ["minBitrateStepSize", "maxBitrateStepSize"] as const) {
+		if (
+			(goal.settingLocks?.global?.includes(key) ||
+				goal.adjustments?.global?.[key]?.mode === "fixed") &&
+			goal[key] === undefined
+		)
+			invalid();
+	}
+	if (
+		goal.minBitrateStepSize !== undefined &&
+		goal.maxBitrateStepSize !== undefined &&
+		goal.maxBitrateStepSize < goal.minBitrateStepSize
+	)
 		invalid();
 	const storedRows = goal.rows ?? [];
 	const rows =
@@ -247,6 +344,48 @@ function checkGoal(
 			? 1
 			: 0;
 	const templates = [...storedRows, ...(automaticRows ?? [])];
+	const ids = new Set(templates.map((item) => item.id));
+	const streamMetadata = {
+		...goal.settingLocks?.streams,
+		...goal.adjustments?.streams,
+	};
+	if (Object.keys(streamMetadata).some((key) => !ids.has(key))) invalid();
+	for (const fields of Object.values(goal.settingLocks?.streams ?? {})) {
+		if (fields.some((key) => !supportedStreams.has(key))) invalid();
+	}
+	for (const fields of Object.values(goal.adjustments?.streams ?? {})) {
+		for (const [key, adjustment] of Object.entries(fields)) {
+			if (
+				!supportedStreams.has(key) ||
+				(adjustment.mode === "auto" &&
+					!supportedStreams.get(key)?.methods.includes(adjustment.method))
+			)
+				invalid();
+		}
+	}
+	if (goal.codec !== "H264" && goal.codec !== "H265") {
+		if (
+			templates.some(
+				(item) =>
+					item.codecMaxBitrateFactor !== undefined ||
+					item.codecBufsizeFactor !== undefined,
+			)
+		)
+			invalid();
+		const keys = [
+			...Object.values(goal.settingLocks?.streams ?? {}).flat(),
+			...Object.values(goal.adjustments?.streams ?? {}).flatMap((value) =>
+				Object.keys(value),
+			),
+		];
+		if (
+			keys.some(
+				(key) =>
+					key === "codecMaxBitrateFactor" || key === "codecBufsizeFactor",
+			)
+		)
+			invalid();
+	}
 	if (
 		templates.length + implicitAutomatic > 64 ||
 		new Set(templates.map((row) => row.id)).size !== templates.length
@@ -322,6 +461,7 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		maxBitrateStepSize,
 		fixedResolutionAndBitrateConfiguration,
 		autoRepresentations,
+		...parameters
 	} = reference.global;
 	return {
 		strategy: ranged.length
@@ -336,6 +476,7 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		codec: reference.codec,
 		minBitrate,
 		maxBitrate,
+		...parameters,
 		autoRepresentations:
 			autoRepresentations === undefined
 				? false

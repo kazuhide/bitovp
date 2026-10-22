@@ -271,6 +271,8 @@ export type WizardPerTitleStreamSettings = {
 	bitrateSelectionMode?: "OPTIMIZED" | "COMPLEXITY_RANGE";
 	lowComplexityBoundaryForMaxBitrate?: number;
 	highComplexityBoundaryForMaxBitrate?: number;
+	codecMaxBitrateFactor?: number;
+	codecBufsizeFactor?: number;
 };
 
 export type WizardStreamMode =
@@ -754,6 +756,7 @@ export type WizardPerTitleCodec = {
 	targetQualityCrf?: number;
 	targetQualityQp?: number;
 	complexityFactor?: number;
+	resolutionScaleFactor?: number;
 	minBitrate?: number;
 	maxBitrate?: number;
 	minBitrateStepSize?: number;
@@ -1352,7 +1355,7 @@ function perTitleSettingsField(extras: WizardRenditionExtras | undefined) {
 }
 
 function buildPerTitleCodec(
-	codec: "h264" | "h265" | "vp9" | "av1",
+	codec: "h264" | "h265" | "h265V2" | "vp9" | "av1",
 	options: WizardPerTitleCodec | undefined,
 ) {
 	if (!options) {
@@ -1369,11 +1372,13 @@ function buildPerTitleCodec(
 	return prune({
 		minBitrate: options.minBitrate,
 		maxBitrate: options.maxBitrate,
-		targetQualityCrf: options.targetQualityCrf,
-		targetQualityQp: options.targetQualityQp,
+		...(codec === "h265V2"
+			? { targetQualityQp: options.targetQualityQp }
+			: { targetQualityCrf: options.targetQualityCrf }),
 		minBitrateStepSize: options.minBitrateStepSize,
 		maxBitrateStepSize: options.maxBitrateStepSize,
 		complexityFactor: options.complexityFactor,
+		resolutionScaleFactor: options.resolutionScaleFactor,
 		autoRepresentations: options.autoRepresentations
 			? prune({
 					adoptConfigurationThreshold: options.adoptConfigurationThreshold,
@@ -1387,7 +1392,9 @@ function buildPerTitleCodec(
 			: {
 					codecMinBitrateFactor: options.codecMinBitrateFactor,
 					codecMaxBitrateFactor: options.codecMaxBitrateFactor,
-					codecBufsizeFactor: options.codecBufsizeFactor,
+					...(codec === "h265V2"
+						? {}
+						: { codecBufsizeFactor: options.codecBufsizeFactor }),
 				}),
 	});
 }
@@ -2342,7 +2349,10 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					state.startOptions.perTitle.h264,
 				),
 				[hevcV2 ? "h265V2Configuration" : "h265Configuration"]:
-					buildPerTitleCodec("h265", state.startOptions.perTitle.h265),
+					buildPerTitleCodec(
+						hevcV2 ? "h265V2" : "h265",
+						state.startOptions.perTitle.h265,
+					),
 				vp9Configuration: buildPerTitleCodec(
 					"vp9",
 					state.startOptions.perTitle.vp9,

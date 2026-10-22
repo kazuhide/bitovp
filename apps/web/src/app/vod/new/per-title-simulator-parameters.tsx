@@ -3,6 +3,11 @@
 import type { PerTitleProposal } from "@bitovp/core";
 import { useId } from "react";
 import { useT } from "@/lib/i18n/context";
+import {
+	getPerTitleSetting,
+	perTitleGlobalFields,
+	perTitleStreamFields,
+} from "./per-title-simulator-tuning";
 
 const texts = {
 	en: {
@@ -81,6 +86,34 @@ export function PerTitleParameterView({
 				? value
 				: text.invalid;
 	const forced = global.fixedResolutionAndBitrateConfiguration;
+	const optionalNumeric = (value: unknown, key: string) => {
+		if (value === undefined) return text.unset;
+		if (typeof value !== "number" || !Number.isFinite(value))
+			return text.invalid;
+		if (key === "resolutionScaleFactor")
+			return value >= -15 && value <= 15 ? String(value) : text.invalid;
+		if (key === "autoRepresentations.adoptConfigurationThreshold")
+			return value >= 0 && value <= 1 ? String(value) : text.invalid;
+		if (key.includes("Factor") && value <= 0) return text.invalid;
+		return String(value);
+	};
+	const extraGlobal = perTitleGlobalFields(proposal.codec).filter(
+		(field) =>
+			field.group !== "range" &&
+			field.group !== "spacing" &&
+			field.group !== "additional" &&
+			field.key !== "autoRepresentations" &&
+			getPerTitleSetting(proposal, "global", field.key) !== undefined,
+	);
+	const outerFields = perTitleStreamFields(proposal.codec).filter(
+		(field) =>
+			!settingKeys.some((key) => key === field.key) &&
+			proposal.api.streams.some(
+				(stream) =>
+					getPerTitleSetting(proposal, "stream", field.key, stream.rowId) !==
+					undefined,
+			),
+	);
 	const pairs = [
 		["minBitrate (kbps)", numeric(global.minBitrate, "bitrate")],
 		["maxBitrate (kbps)", numeric(global.maxBitrate, "bitrate")],
@@ -90,6 +123,13 @@ export function PerTitleParameterView({
 			"autoRepresentations",
 			global.autoRepresentations === undefined ? text.unset : text.included,
 		],
+		...extraGlobal.map((field) => [
+			field.key,
+			optionalNumeric(
+				getPerTitleSetting(proposal, "global", field.key),
+				field.key,
+			),
+		]),
 		...(forced
 			? [
 					[
@@ -161,6 +201,15 @@ export function PerTitleParameterView({
 								>
 									perTitleSettings.fixedResolutionAndBitrateSettings
 								</th>
+								{outerFields.length ? (
+									<th
+										colSpan={outerFields.length}
+										scope="colgroup"
+										className="px-2 py-1 font-medium"
+									>
+										perTitleSettings
+									</th>
+								) : null}
 							</tr>
 							<tr>
 								{settingKeys.map((key) => (
@@ -172,6 +221,17 @@ export function PerTitleParameterView({
 										<span className="block max-w-40 break-words">
 											{key}
 											{key === "bitrateSelectionMode" ? "" : " (kbps)"}
+										</span>
+									</th>
+								))}
+								{outerFields.map((field) => (
+									<th
+										key={field.key}
+										scope="col"
+										className="px-2 py-1 align-bottom font-medium"
+									>
+										<span className="block max-w-40 break-words">
+											{field.key}
 										</span>
 									</th>
 								))}
@@ -223,6 +283,19 @@ export function PerTitleParameterView({
 											</td>
 										);
 									})}
+									{outerFields.map((field) => (
+										<td key={field.key} className="px-2 py-2 align-top">
+											{optionalNumeric(
+												getPerTitleSetting(
+													proposal,
+													"stream",
+													field.key,
+													stream.rowId,
+												),
+												field.key,
+											)}
+										</td>
+									))}
 								</tr>
 							))}
 						</tbody>

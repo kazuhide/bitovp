@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { autoTunePerTitleGoal } from "./per-title-simulator-auto";
 import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
+import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const goal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -42,6 +43,69 @@ const callbacks = () => ({
 });
 
 describe("Unified Per-Title rendition inputs", () => {
+	it("removes a deleted row's fixed-setting policies while preserving a feasible remaining ladder", () => {
+		const initial: PerTitleGoal = {
+			...goal,
+			maxBitrate: 2400000,
+			countPolicy: { kind: "unrestricted" },
+			automaticTemplates: [],
+			rows: [
+				{ id: "a", height: 240, minBitrate: 160000, maxBitrate: 200000 },
+				{ id: "b", height: 480, minBitrate: 400000, maxBitrate: 480000 },
+				{ id: "c", height: 720, minBitrate: 1000000, maxBitrate: 1200000 },
+			],
+		};
+		const onChange = vi.fn();
+		function Controlled() {
+			const [draft, setDraft] = useState(initial);
+			const tuned = tunePerTitleSettings(draft, initial);
+			const change = (next: PerTitleGoal) => {
+				onChange(next);
+				setDraft(next);
+			};
+			return (
+				<PerTitleSimulatorRows
+					id="tuned"
+					goal={tuned.goal}
+					onChange={change}
+					manualBounds={{}}
+					onBitrateChange={vi.fn()}
+					onResetBitrates={vi.fn()}
+					tuning={{
+						draft,
+						anchor: initial,
+						proposal: tuned.proposal,
+						onChange: change,
+					}}
+				/>
+			);
+		}
+		renderLocalized(<Controlled />);
+		const first = screen.getByRole("listitem", { name: "Rendition 1" });
+		fireEvent.click(within(first).getByText("Per-Title settings"));
+		fireEvent.change(
+			within(first).getByRole("spinbutton", {
+				name: "Codec maximum bitrate factor, rendition 1",
+			}),
+			{ target: { value: "1.3" } },
+		);
+		expect(
+			onChange.mock.lastCall?.[0].adjustments.streams.a.codecMaxBitrateFactor,
+		).toEqual({ mode: "fixed" });
+		fireEvent.click(
+			within(first).getByRole("button", { name: "Remove rendition 1" }),
+		);
+		const next = onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.map((row) => row.id)).toEqual(["b", "c"]);
+		expect(next.adjustments?.streams?.a).toBeUndefined();
+		expect(next.settingLocks?.streams?.a).toBeUndefined();
+		const remaining = tunePerTitleSettings(next, initial).proposal;
+		expect(
+			remaining.diagnostics.some((item) => item.code === "invalid-setting"),
+		).toBe(false);
+		expect(remaining.applicable).toBe(true);
+	});
+
 	it.each([
 		"en",
 		"ja",

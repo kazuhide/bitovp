@@ -2476,6 +2476,20 @@ export function validatePlan(
 	const perTitleRenditions = plan.renditions.filter(isPerTitleRendition);
 	for (const [index, rendition] of plan.renditions.entries()) {
 		if (
+			rendition.codec === "H265" &&
+			plan.internal?.hevcV2 &&
+			(rendition.perTitleSettings?.codecMaxBitrateFactor !== undefined ||
+				rendition.perTitleSettings?.codecBufsizeFactor !== undefined)
+		) {
+			issues.push({
+				code: "PLAN_PER_TITLE_STREAM_CODEC_FACTOR",
+				level: "error",
+				message:
+					"Per-Title stream codec factors are supported for H264 and H265, not H265V2",
+				path: `renditions.${index}.perTitleSettings`,
+			});
+		}
+		if (
 			isPerTitleRendition(rendition) &&
 			"bitrate" in rendition &&
 			rendition.bitrate !== null

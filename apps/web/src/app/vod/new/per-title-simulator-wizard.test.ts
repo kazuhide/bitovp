@@ -18,6 +18,10 @@ import {
 	type WizardState,
 } from "./build-plan";
 import {
+	setPerTitleSetting,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
+import {
 	applyPerTitleProposal,
 	perTitleGoalFromWizard,
 } from "./per-title-simulator-wizard";
@@ -92,6 +96,173 @@ function compiled(s: WizardState) {
 }
 
 describe("Per-Title wizard bridge", () => {
+	it("applies an applicable tuned fixed-range proposal with an explicitly unset optional selection mode", () => {
+		const s = state();
+		s.videos = [
+			{
+				height: 360,
+				bitrate: null,
+				extras: {
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					perTitleSettings: {
+						minBitrate: 200000,
+						maxBitrate: 400000,
+						codecMaxBitrateFactor: 1.7,
+						codecBufsizeFactor: 2.3,
+					},
+				},
+			},
+		];
+		const anchor = perTitleGoalFromWizard(s);
+		let goal = anchor;
+		for (const key of [
+			"bitrateSelectionMode",
+			"codecMaxBitrateFactor",
+			"codecBufsizeFactor",
+		]) {
+			goal = setPerTitleSetting(goal, "stream", key, undefined, "v360");
+		}
+		const { proposal: p } = tunePerTitleSettings(goal, anchor);
+		expect(p).toMatchObject({ status: "candidate", applicable: true });
+		expect(p.api.streams[0]?.perTitleSettings).not.toHaveProperty(
+			"bitrateSelectionMode",
+		);
+		const next = applyPerTitleProposal(s, p, "H264");
+		const { operations } = compiled(next);
+		expect(
+			operations.find((operation) => operation.kind === "CREATE_STREAM")
+				?.payload.perTitleSettings,
+		).toEqual({
+			fixedResolutionAndBitrateSettings: {
+				minBitrate: 200000,
+				maxBitrate: 400000,
+			},
+		});
+		expect(s.videos[0]?.extras?.perTitleSettings).toEqual({
+			minBitrate: 200000,
+			maxBitrate: 400000,
+			codecMaxBitrateFactor: 1.7,
+			codecBufsizeFactor: 2.3,
+		});
+	});
+	it("imports and applies global quality fields and independent ordinary-stream factors", () => {
+		const s = state();
+		s.videos = [
+			{
+				height: 360,
+				bitrate: null,
+				extras: {
+					mode: "PER_TITLE_TEMPLATE",
+					perTitleSettings: {
+						codecMaxBitrateFactor: 1.7,
+						codecBufsizeFactor: 2.3,
+					},
+				},
+			},
+		];
+		const settings = {
+			targetQualityCrf: 0,
+			complexityFactor: 0.75,
+			resolutionScaleFactor: -1.25,
+			codecMinBitrateFactor: 0.4,
+			codecMaxBitrateFactor: 1.8,
+			codecBufsizeFactor: 2.4,
+		};
+		s.startOptions = { perTitle: { h264: settings } };
+		const goal = perTitleGoalFromWizard(s);
+		expect(goal).toMatchObject(settings);
+		expect(goal.automaticTemplates?.[0]).toMatchObject({
+			codecMaxBitrateFactor: 1.7,
+			codecBufsizeFactor: 2.3,
+		});
+		const p = proposal([
+			{
+				rowId: "v360",
+				height: 360,
+				mode: "PER_TITLE_TEMPLATE",
+				perTitleSettings: {
+					codecMaxBitrateFactor: 1.9,
+					codecBufsizeFactor: 2.6,
+				},
+			},
+		]);
+		Object.assign(p.api.global, { ...settings, resolutionScaleFactor: 2.25 });
+		const next = applyPerTitleProposal(s, p, "H264");
+		expect(next.startOptions?.perTitle?.h264).toMatchObject({
+			...settings,
+			resolutionScaleFactor: 2.25,
+		});
+		const { operations } = compiled(next);
+		expect(
+			operations.find((operation) => operation.kind === "CREATE_STREAM")
+				?.payload.perTitleSettings,
+		).toEqual({ codecMaxBitrateFactor: 1.9, codecBufsizeFactor: 2.6 });
+		expect(
+			operations.find((operation) => operation.kind === "START_ENCODING")
+				?.payload.perTitle,
+		).toMatchObject({
+			h264Configuration: { ...settings, resolutionScaleFactor: 2.25 },
+		});
+	});
+
+	it.each([
+		"VP9",
+		"AV1",
+		"H265V2",
+	] as const)("refuses unsupported %s outer stream factors", (codec) => {
+		const s = state();
+		s.videos = [
+			{
+				codec,
+				height: 360,
+				bitrate: null,
+				extras: { mode: "PER_TITLE_TEMPLATE" },
+			},
+		];
+		const p = {
+			...proposal([
+				{
+					rowId: "v360",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE",
+					perTitleSettings: { codecMaxBitrateFactor: 1.7 },
+				},
+			]),
+			codec,
+		};
+		expect(() => applyPerTitleProposal(s, p, codec)).toThrow(
+			expect.objectContaining({ code: "INVALID_PROPOSAL" }),
+		);
+	});
+	it("clears explicitly managed omitted quality settings without changing legacy proposals", () => {
+		const s = state();
+		s.startOptions = {
+			perTitle: {
+				h264: {
+					targetQualityCrf: 20,
+					complexityFactor: 1.3,
+					resolutionScaleFactor: 2,
+					codecMaxBitrateFactor: 1.9,
+				},
+			},
+		};
+		const p = proposal([
+			{ rowId: "v360", height: 360, mode: "PER_TITLE_TEMPLATE" },
+		]);
+		expect(
+			applyPerTitleProposal(s, p, "H264").startOptions?.perTitle?.h264,
+		).toMatchObject(s.startOptions.perTitle?.h264 ?? {});
+		p.managedGlobalSettings = [
+			"targetQualityCrf",
+			"complexityFactor",
+			"resolutionScaleFactor",
+			"codecMaxBitrateFactor",
+		];
+		const next = applyPerTitleProposal(s, p, "H264");
+		for (const key of p.managedGlobalSettings)
+			expect(next.startOptions?.perTitle?.h264).not.toHaveProperty(key);
+		expect(s.startOptions.perTitle?.h264?.targetQualityCrf).toBe(20);
+	});
 	it.each([
 		{
 			autoRepresentations: undefined,

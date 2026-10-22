@@ -22,12 +22,15 @@ import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
-	autoTunePerTitleGoal,
 	bitrateSliderBounds,
 	type PerTitleManualBounds,
 } from "./per-title-simulator-auto";
-import { PerTitleSimulatorBitrateField as BitrateField } from "./per-title-simulator-bitrate-field";
 import { PerTitleConstraints } from "./per-title-simulator-constraints";
+import {
+	PerTitleGlobalControls,
+	PerTitleSettingControl,
+	PerTitleStreamControls,
+} from "./per-title-simulator-controls";
 import {
 	type PerTitleSimulatorCopy,
 	perTitleSimulatorCopy,
@@ -38,6 +41,13 @@ import type { PerTitleReference } from "./per-title-simulator-preset";
 import { PerTitleReasoning } from "./per-title-simulator-reasoning";
 import { PerTitleRecommendation } from "./per-title-simulator-recommendation";
 import { PerTitleSimulatorRows } from "./per-title-simulator-rows";
+import {
+	perTitleGlobalFields,
+	perTitleStreamFields,
+	setPerTitleAdjustment,
+	setPerTitleSetting,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 
 export type PerTitleSimulatorProps = {
 	open: boolean;
@@ -56,6 +66,7 @@ const validSliderBitrate = (value: number) =>
 	Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
 
 const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
+	"invalid-setting": "Per-Title の設定値または調整方法を確認してください。",
 	"model-only":
 		"許容範囲とビットレート間隔から計算した例です。素材の解析や、エンコーダの出力の予測は行いません。",
 	"invalid-global-range":
@@ -369,10 +380,17 @@ function SimulatorEditor({
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
 	const id = useId();
-	const goal = useMemo(
-		() => autoTunePerTitleGoal(draftGoal, referenceGoal, manualBounds),
-		[draftGoal, referenceGoal, manualBounds],
+	const tuned = useMemo(
+		() => tunePerTitleSettings(draftGoal, referenceGoal),
+		[draftGoal, referenceGoal],
 	);
+	const { goal, proposal: selected } = tuned;
+	const controlContext = {
+		draft: draftGoal,
+		anchor: referenceGoal,
+		proposal: selected,
+		onChange: setGoal,
+	};
 	const slider = useMemo(
 		() => bitrateSliderBounds(referenceGoal),
 		[referenceGoal],
@@ -410,7 +428,6 @@ function SimulatorEditor({
 		validSliderBitrate(goal.minBitrate) &&
 		validSliderBitrate(goal.maxBitrate) &&
 		goal.maxBitrate >= goal.minBitrate;
-	const selected = useMemo(() => recommendPerTitleSettings(goal), [goal]);
 	const baseline = useMemo(
 		() => recommendPerTitleSettings(referenceGoal),
 		[referenceGoal],
@@ -499,28 +516,33 @@ function SimulatorEditor({
 							{copy.global}
 						</h3>
 						<div className="grid gap-3 sm:grid-cols-2">
-							<BitrateField
-								id={`${id}-min`}
-								label={copy.minimum}
-								sliderLabel={copy.minimumSlider}
-								value={goal.minBitrate}
-								minimum={1}
-								maximum={goal.maxBitrate}
-								keyboardStep={slider.step}
-								disabled={!sliderValid}
-								onChange={(value) => patch({ minBitrate: value ?? Number.NaN })}
-							/>
-							<BitrateField
-								id={`${id}-max`}
-								label={copy.maximum}
-								sliderLabel={copy.maximumSlider}
-								value={goal.maxBitrate}
-								minimum={sliderMinimum}
-								maximum={sliderMaximum}
-								keyboardStep={slider.step}
-								disabled={!sliderValid}
-								onChange={(value) => patch({ maxBitrate: value ?? Number.NaN })}
-							/>
+							{perTitleGlobalFields(goal.codec)
+								.filter((field) => field.group === "range")
+								.map((field) => (
+									<PerTitleSettingControl
+										key={field.key}
+										id={`${id}-${field.key}`}
+										context={controlContext}
+										scope="global"
+										field={field}
+										label={
+											field.key === "minBitrate" ? copy.minimum : copy.maximum
+										}
+										slider={{
+											label:
+												field.key === "minBitrate"
+													? copy.minimumSlider
+													: copy.maximumSlider,
+											minimum: field.key === "minBitrate" ? 1 : sliderMinimum,
+											maximum:
+												field.key === "minBitrate"
+													? goal.maxBitrate
+													: sliderMaximum,
+											keyboardStep: slider.step,
+											disabled: !sliderValid,
+										}}
+									/>
+								))}
 						</div>
 					</section>
 					<div className="grid gap-3 sm:grid-cols-2">
@@ -577,6 +599,10 @@ function SimulatorEditor({
 							/>
 						) : null}
 					</div>
+					<PerTitleGlobalControls
+						id={`${id}-parameters`}
+						context={controlContext}
+					/>
 					{usesRows(goal) ? (
 						<PerTitleSimulatorRows
 							key={renditionSession}
@@ -586,8 +612,27 @@ function SimulatorEditor({
 							manualBounds={manualBounds}
 							onBitrateChange={onBitrateChange}
 							onResetBitrates={onResetBitrates}
+							tuning={controlContext}
 						/>
-					) : null}
+					) : (
+						<div className="space-y-3">
+							{selected.api.streams.map((stream, index) => (
+								<section
+									key={stream.rowId}
+									aria-label={`${copy.rowReference} ${index + 1}`}
+									className="space-y-2"
+								>
+									<code className="text-xs text-zinc-400">{stream.mode}</code>
+									<PerTitleStreamControls
+										id={`${id}-${stream.rowId}-settings`}
+										context={controlContext}
+										rowId={stream.rowId}
+										suffix={`${copy.rendition} ${index + 1}`}
+									/>
+								</section>
+							))}
+						</div>
+					)}
 				</div>
 				<div className="min-w-0 space-y-4 overflow-x-clip lg:sticky lg:top-0 lg:self-start">
 					<PerTitleRecommendation
@@ -652,6 +697,57 @@ function SimulatorEditor({
 
 function copyGoal(goal: PerTitleGoal): PerTitleGoal {
 	return structuredClone(goal);
+}
+
+function projectCodecSettings(
+	goal: PerTitleGoal,
+	codec: PerTitleGoal["codec"],
+): PerTitleGoal {
+	const next = copyGoal(goal);
+	const codecs: PerTitleGoal["codec"][] = [
+		"H264",
+		"H265",
+		"H265V2",
+		"VP9",
+		"AV1",
+	];
+	const globalKeys = new Set(perTitleGlobalFields(codec).map(({ key }) => key));
+	const streamKeys = new Set(perTitleStreamFields(codec).map(({ key }) => key));
+	// Quality values are codec-specific, even when both codecs use CRF.
+	globalKeys.delete("targetQualityCrf");
+	globalKeys.delete("targetQualityQp");
+	for (const field of codecs.flatMap(perTitleGlobalFields)) {
+		if (!globalKeys.has(field.key)) Reflect.deleteProperty(next, field.key);
+	}
+	for (const row of [
+		...(next.rows ?? []),
+		...(next.automaticTemplates ?? []),
+	]) {
+		for (const field of codecs.flatMap(perTitleStreamFields)) {
+			if (!streamKeys.has(field.key)) Reflect.deleteProperty(row, field.key);
+		}
+	}
+	if (next.adjustments) {
+		const supported = (
+			policies: NonNullable<PerTitleGoal["adjustments"]>["global"],
+			keys: Set<string>,
+		) =>
+			Object.fromEntries(
+				Object.entries(policies ?? {}).filter(([key]) => keys.has(key)),
+			);
+		next.adjustments = {
+			...next.adjustments,
+			global: supported(next.adjustments.global, globalKeys),
+			streams: Object.fromEntries(
+				Object.entries(next.adjustments.streams ?? {}).map(([id, policies]) => [
+					id,
+					supported(policies, streamKeys),
+				]),
+			),
+		};
+	}
+	delete next.settingLocks;
+	return next;
 }
 
 export function PerTitleSimulator(props: PerTitleSimulatorProps) {
@@ -727,16 +823,35 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 				reservedIds.add(rowId);
 				return rowId;
 			};
-			const inherited = autoTunePerTitleGoal(goal, referenceGoal, manualBounds);
+			const inherited = projectCodecSettings(
+				tunePerTitleSettings(goal, referenceGoal).goal,
+				codec,
+			);
+			const remapped = new Map<string, string>();
+			const rowId = (previous: string) => {
+				const next = freshId();
+				remapped.set(previous, next);
+				return next;
+			};
 			const next = {
 				...copyGoal(inherited),
 				codec,
-				rows: inherited.rows?.map((row) => ({ ...row, id: freshId() })),
+				rows: inherited.rows?.map((row) => ({ ...row, id: rowId(row.id) })),
 				automaticTemplates: inherited.automaticTemplates?.map((row) => ({
 					...row,
-					id: freshId(),
+					id: rowId(row.id),
 				})),
 			};
+			if (next.adjustments?.streams)
+				next.adjustments = {
+					...next.adjustments,
+					streams: Object.fromEntries(
+						Object.entries(next.adjustments.streams).flatMap(([id, value]) => {
+							const target = remapped.get(id);
+							return target ? [[target, value]] : [];
+						}),
+					),
+				};
 			setGoal(next);
 			setReferenceGoal(copyGoal(next));
 		}
@@ -760,23 +875,41 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		bound: "min" | "max",
 		value: number | undefined,
 	) {
-		setGoal((current) => ({
-			...current,
-			rows: current.rows?.map((row) =>
-				row.id === rowId
-					? {
-							...row,
-							[bound === "min" ? "minBitrate" : "maxBitrate"]: value,
-						}
-					: row,
+		setGoal((current) =>
+			setPerTitleSetting(
+				current,
+				"stream",
+				bound === "min" ? "minBitrate" : "maxBitrate",
+				value ?? Number.NaN,
+				rowId,
 			),
-		}));
+		);
 		setManualBounds((current) => ({
 			...current,
 			[rowId]: { ...current[rowId], [bound]: true },
 		}));
 	}
 	function resetBitrates(rowId: string) {
+		setGoal((current) => {
+			const proposal = tunePerTitleSettings(current, referenceGoal).proposal;
+			let next = setPerTitleAdjustment(
+				current,
+				proposal,
+				"stream",
+				"minBitrate",
+				{ mode: "auto", method: "logarithmic" },
+				rowId,
+			);
+			next = setPerTitleAdjustment(
+				next,
+				proposal,
+				"stream",
+				"maxBitrate",
+				{ mode: "auto", method: "logarithmic" },
+				rowId,
+			);
+			return next;
+		});
 		setManualBounds((current) => {
 			const next = { ...current };
 			delete next[rowId];

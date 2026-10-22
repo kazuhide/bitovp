@@ -1,7 +1,9 @@
-import type {
-	PerTitleCodec,
-	PerTitleGoal,
-	PerTitleProposal,
+import {
+	type PerTitleCodec,
+	type PerTitleGoal,
+	type PerTitleProposal,
+	perTitleSchema,
+	perTitleStreamSettingsSchema,
 } from "@bitovp/core";
 import {
 	videoKeys,
@@ -48,6 +50,29 @@ function required<T>(value: T | undefined | null): T {
 	return value;
 }
 const codecOf = (row: WizardVideoRendition) => row.codec ?? "H264";
+const parameterKeys = [
+	"targetQualityCrf",
+	"targetQualityQp",
+	"complexityFactor",
+	"resolutionScaleFactor",
+	"codecMinBitrateFactor",
+	"codecMaxBitrateFactor",
+	"codecBufsizeFactor",
+] as const;
+const codecField = (codec: PerTitleCodec) =>
+	({
+		H264: "h264Configuration",
+		H265: "h265Configuration",
+		H265V2: "h265V2Configuration",
+		VP9: "vp9Configuration",
+		AV1: "av1Configuration",
+	})[codec];
+const parameters = (global: WizardPerTitleCodec | undefined) =>
+	Object.fromEntries(
+		parameterKeys
+			.filter((key) => global?.[key] !== undefined)
+			.map((key) => [key, global?.[key]]),
+	);
 const positive = (value: number | undefined | null): value is number =>
 	typeof value === "number" && Number.isFinite(value) && value > 0;
 const fixedMode = (row: WizardVideoRendition) =>
@@ -69,6 +94,22 @@ export function perTitleGoalFromWizard(
 		);
 	const keys = videoKeys(state.videos);
 	const global = state.startOptions?.perTitle?.[slotFor(codec)];
+	const quality = parameters(global);
+	if (
+		!perTitleSchema.safeParse({ [codecField(codec)]: quality }).success ||
+		(codec !== "H264" &&
+			codec !== "H265" &&
+			selected.some(
+				(row) =>
+					row.extras?.perTitleSettings?.codecMaxBitrateFactor !== undefined ||
+					row.extras?.perTitleSettings?.codecBufsizeFactor !== undefined,
+			))
+	) {
+		throw new PerTitleWizardError(
+			"UNSUPPORTED_STATE",
+			"The saved Per-Title settings are not supported by this codec.",
+		);
+	}
 	const fixedResolutionAndBitrateConfiguration = {
 		...(global?.forcedRenditionAboveHighestFixedRepresentation !== undefined
 			? {
@@ -147,6 +188,7 @@ export function perTitleGoalFromWizard(
 		strategy,
 		minBitrate,
 		maxBitrate,
+		...quality,
 		autoRepresentations:
 			global?.autoRepresentations === true
 				? {
@@ -206,9 +248,31 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 					automatic.adoptConfigurationThreshold <= 1)));
 	const validInteger = (n: number | undefined): n is number =>
 		typeof n === "number" && Number.isSafeInteger(n) && n > 0;
+	const validSettings = (row: PerTitleProposal["api"]["streams"][number]) => {
+		const settings = row.perTitleSettings;
+		if (settings === undefined) return true;
+		if (!perTitleStreamSettingsSchema.safeParse(settings).success) return false;
+		if (
+			(settings.codecMaxBitrateFactor !== undefined ||
+				settings.codecBufsizeFactor !== undefined) &&
+			codec !== "H264" &&
+			codec !== "H265"
+		)
+			return false;
+		const {
+			codecMaxBitrateFactor: _max,
+			codecBufsizeFactor: _buf,
+			...fixed
+		} = settings;
+		return (
+			row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" ||
+			Object.keys(fixed).length === 0
+		);
+	};
 	if (
 		proposal.codec !== codec ||
 		!validAutomatic ||
+		!perTitleSchema.safeParse({ [codecField(codec)]: global }).success ||
 		!proposal.applicable ||
 		proposal.status !== "candidate" ||
 		streams.length === 0 ||
@@ -233,16 +297,16 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 				].includes(row.mode) ||
-				(row.mode !== "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
-					row.perTitleSettings !== undefined) ||
+				!validSettings(row) ||
 				(row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
 					(!row.perTitleSettings ||
 						!validInteger(row.perTitleSettings.minBitrate) ||
 						!validInteger(row.perTitleSettings.maxBitrate) ||
 						row.perTitleSettings.minBitrate > row.perTitleSettings.maxBitrate ||
-						!["OPTIMIZED", "COMPLEXITY_RANGE"].includes(
-							row.perTitleSettings.bitrateSelectionMode ?? "",
-						) ||
+						(row.perTitleSettings.bitrateSelectionMode !== undefined &&
+							!["OPTIMIZED", "COMPLEXITY_RANGE"].includes(
+								row.perTitleSettings.bitrateSelectionMode,
+							)) ||
 						(row.perTitleSettings.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
 							(!positive(
 								row.perTitleSettings.lowComplexityBoundaryForMaxBitrate,
@@ -469,7 +533,11 @@ export function applyPerTitleProposal(
 		...settings
 	} = proposal.api.global;
 	const global: WizardPerTitleCodec = {
-		...quality,
+		...Object.fromEntries(
+			Object.entries(quality).filter(
+				([key]) => !proposal.managedGlobalSettings?.includes(key),
+			),
+		),
 		...settings,
 		...fixedResolutionAndBitrateConfiguration,
 		autoRepresentations: autoRepresentations !== undefined,

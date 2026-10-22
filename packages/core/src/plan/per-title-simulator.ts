@@ -1,6 +1,10 @@
 import {
+	applyPerTitleSettingLocks,
 	optimizePerTitleConstraints,
 	type PerTitleConstraintAnalysis,
+	perTitleGlobalLocked,
+	perTitleStreamLocked,
+	validPerTitleSettingLocks,
 } from "./per-title-optimizer";
 import type { EncodingPlan } from "./schema.js";
 
@@ -17,6 +21,57 @@ export type PerTitleCountPolicy =
 	| { kind: "unrestricted" }
 	| { kind: "exact" | "maximum"; count: number };
 
+export type PerTitleSettingLocks = {
+	global?: readonly string[];
+	streams?: Record<string, readonly string[]>;
+};
+export type PerTitleAdjustmentMethod =
+	| "constraints"
+	| "proportional"
+	| "logarithmic"
+	| "default";
+export type PerTitleAdjustment =
+	| { mode: "fixed" }
+	| { mode: "auto"; method: PerTitleAdjustmentMethod };
+export type PerTitleAdjustments = {
+	global?: Record<string, PerTitleAdjustment>;
+	streams?: Record<string, Record<string, PerTitleAdjustment>>;
+	inactiveAutoRepresentationThreshold?: number;
+};
+
+type PerTitleOptionalSettings = {
+	targetQualityCrf?: number;
+	targetQualityQp?: number;
+	complexityFactor?: number;
+	resolutionScaleFactor?: number;
+	codecMinBitrateFactor?: number;
+	codecMaxBitrateFactor?: number;
+	codecBufsizeFactor?: number;
+};
+const optionalSettingKeys = [
+	"targetQualityCrf",
+	"targetQualityQp",
+	"complexityFactor",
+	"resolutionScaleFactor",
+	"codecMinBitrateFactor",
+	"codecMaxBitrateFactor",
+	"codecBufsizeFactor",
+] as const;
+const optionalSettings = (goal: PerTitleGoal) =>
+	Object.fromEntries(
+		optionalSettingKeys
+			.filter((key) => goal[key] !== undefined)
+			.map((key) => [key, goal[key]]),
+	);
+const outerStreamSettings = (row: PerTitleAutomaticTemplate) => ({
+	...(row.codecMaxBitrateFactor !== undefined
+		? { codecMaxBitrateFactor: row.codecMaxBitrateFactor }
+		: {}),
+	...(row.codecBufsizeFactor !== undefined
+		? { codecBufsizeFactor: row.codecBufsizeFactor }
+		: {}),
+});
+
 export type PerTitleGoalRow = {
 	id: string;
 	height: number;
@@ -26,6 +81,8 @@ export type PerTitleGoalRow = {
 	bitrateSelectionMode?: "OPTIMIZED" | "COMPLEXITY_RANGE";
 	lowComplexityBoundaryForMaxBitrate?: number;
 	highComplexityBoundaryForMaxBitrate?: number;
+	codecMaxBitrateFactor?: number;
+	codecBufsizeFactor?: number;
 };
 
 export type PerTitleAutomaticTemplate = Omit<PerTitleGoalRow, "height"> & {
@@ -38,7 +95,7 @@ export type PerTitleFixedResolutionAndBitrateConfiguration = NonNullable<
 	>["fixedResolutionAndBitrateConfiguration"]
 >;
 
-export type PerTitleGoal = {
+export type PerTitleGoal = PerTitleOptionalSettings & {
 	strategy: PerTitleStrategy;
 	codec: PerTitleCodec;
 	minBitrate: number;
@@ -55,12 +112,15 @@ export type PerTitleGoal = {
 	inputHeight?: number;
 	inputWidth?: number;
 	scenarioFractions?: readonly number[];
+	settingLocks?: PerTitleSettingLocks;
+	adjustments?: PerTitleAdjustments;
 };
 
 export type PerTitleDiagnostic = {
 	code:
 		| "model-only"
 		| "invalid-global-range"
+		| "invalid-setting"
 		| "invalid-step"
 		| "invalid-count"
 		| "count-required"
@@ -92,7 +152,7 @@ export type PerTitleDiagnostic = {
 };
 
 export type PerTitleApiSettings = {
-	global: {
+	global: PerTitleOptionalSettings & {
 		minBitrate: number;
 		maxBitrate: number;
 		minBitrateStepSize: number;
@@ -114,6 +174,8 @@ export type PerTitleApiSettings = {
 			bitrateSelectionMode?: "OPTIMIZED" | "COMPLEXITY_RANGE";
 			lowComplexityBoundaryForMaxBitrate?: number;
 			highComplexityBoundaryForMaxBitrate?: number;
+			codecMaxBitrateFactor?: number;
+			codecBufsizeFactor?: number;
 		};
 	}>;
 };
@@ -141,6 +203,7 @@ export type PerTitleScenario = {
 };
 
 export type PerTitleProposal = {
+	managedGlobalSettings?: readonly string[];
 	id: "baseline" | "step-adjusted";
 	codec: PerTitleCodec;
 	status: "candidate" | "conflict" | "unknown";
@@ -270,11 +333,14 @@ export function proposePerTitleSettings(
 		return [baseline];
 	}
 	const adjusted = buildProposal(
-		{
-			...goal,
-			minBitrateStepSize: minimumStep,
-			maxBitrateStepSize: maximumStep,
-		},
+		applyPerTitleSettingLocks(
+			{
+				...goal,
+				minBitrateStepSize: minimumStep,
+				maxBitrateStepSize: maximumStep,
+			},
+			goal,
+		),
 		"step-adjusted",
 	);
 	adjusted.diagnostics.unshift({
@@ -299,12 +365,15 @@ export function recommendPerTitleSettings(
 
 function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 	const build = (input: PerTitleGoal, id: PerTitleProposal["id"]) =>
-		buildProposal(input, id, true);
-	const normalized: PerTitleGoal = {
-		...goal,
-		minBitrateStepSize: DEFAULT_MIN_STEP,
-		maxBitrateStepSize: DEFAULT_MAX_STEP,
-	};
+		buildProposal(applyPerTitleSettingLocks(input, goal), id, true);
+	const normalized: PerTitleGoal = applyPerTitleSettingLocks(
+		{
+			...goal,
+			minBitrateStepSize: DEFAULT_MIN_STEP,
+			maxBitrateStepSize: DEFAULT_MAX_STEP,
+		},
+		goal,
+	);
 	const initialRows = orderedRows(normalized);
 	const forced = goal.fixedResolutionAndBitrateConfiguration !== undefined;
 	const desiredCount =
@@ -773,6 +842,7 @@ const MAX_ORDER_STATES = 2048;
 const EPSILON = 1e-10;
 
 const inputErrorCodes = new Set<PerTitleDiagnostic["code"]>([
+	"invalid-setting",
 	"invalid-global-range",
 	"invalid-step",
 	"invalid-count",
@@ -1021,6 +1091,81 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 		message: string,
 		rowIds?: string[],
 	) => diagnostics.push({ code, severity: "conflict", message, rowIds });
+	if (!validPerTitleSettingLocks(goal.settingLocks)) {
+		conflict("invalid-setting", "A setting lock uses an unsupported field.");
+	}
+	for (const key of [
+		"minBitrate",
+		"maxBitrate",
+		"minBitrateStepSize",
+		"maxBitrateStepSize",
+	] as const) {
+		if (perTitleGlobalLocked(goal, key) && goal[key] === undefined) {
+			conflict(
+				"invalid-setting",
+				"A locked required setting needs a numeric value before it can be held.",
+			);
+		}
+	}
+	for (const key of optionalSettingKeys) {
+		const value = goal[key];
+		if (value === undefined) continue;
+		if (
+			!Number.isFinite(value) ||
+			(key === "targetQualityCrf" && goal.codec === "H265V2") ||
+			(key === "targetQualityQp" && goal.codec !== "H265V2") ||
+			(key.startsWith("codec") &&
+				(goal.codec === "VP9" ||
+					goal.codec === "AV1" ||
+					(key === "codecBufsizeFactor" && goal.codec === "H265V2"))) ||
+			(key === "resolutionScaleFactor" && (value < -15 || value > 15)) ||
+			((key === "complexityFactor" || key.startsWith("codec")) && value <= 0)
+		) {
+			conflict(
+				"invalid-setting",
+				"An optional Per-Title setting is invalid or unsupported for this codec.",
+			);
+		}
+	}
+	for (const row of [
+		...orderedRows(goal),
+		...(goal.automaticTemplates ?? []),
+	].slice(0, MAX_ROWS * 2)) {
+		for (const key of [
+			"codecMaxBitrateFactor",
+			"codecBufsizeFactor",
+		] as const) {
+			if (
+				row[key] !== undefined &&
+				(!Number.isFinite(row[key]) ||
+					row[key] <= 0 ||
+					(goal.codec !== "H264" && goal.codec !== "H265"))
+			) {
+				conflict(
+					"invalid-setting",
+					"Stream bitrate factors require positive finite values and an H264 or H265 codec.",
+					[row.id],
+				);
+			}
+		}
+		if (goal.strategy === "fixed-ranges") {
+			for (const key of [
+				"lowComplexityBoundaryForMaxBitrate",
+				"highComplexityBoundaryForMaxBitrate",
+			] as const) {
+				if (
+					perTitleStreamLocked(goal, row.id, key) &&
+					row[key] !== undefined &&
+					!positiveInteger(row[key])
+				)
+					conflict(
+						"invalid-setting",
+						"An emitted complexity boundary must be a positive integer.",
+						[row.id],
+					);
+			}
+		}
+	}
 	if (
 		!positiveInteger(goal.minBitrate) ||
 		!positiveInteger(goal.maxBitrate) ||
@@ -1244,12 +1389,15 @@ function buildProposal(
 		});
 	}
 	const autoRepresentations =
-		goal.autoRepresentations === false
+		goal.autoRepresentations === false ||
+		(perTitleGlobalLocked(goal, "autoRepresentations") &&
+			goal.autoRepresentations === undefined)
 			? undefined
 			: (goal.autoRepresentations ??
 				(hasAutomaticOutput(goal) ? {} : undefined));
 	const api: PerTitleApiSettings = {
 		global: {
+			...optionalSettings(goal),
 			minBitrate: goal.minBitrate,
 			maxBitrate: goal.maxBitrate,
 			minBitrateStepSize: minimumStep,
@@ -1276,20 +1424,49 @@ function buildProposal(
 			...(goal.strategy === "fixed-ranges"
 				? {
 						perTitleSettings: {
+							...outerStreamSettings(row),
 							minBitrate: row.minBitrate as number,
 							maxBitrate: row.maxBitrate as number,
-							bitrateSelectionMode: row.bitrateSelectionMode ?? "OPTIMIZED",
+							...(row.bitrateSelectionMode !== undefined
+								? { bitrateSelectionMode: row.bitrateSelectionMode }
+								: perTitleStreamLocked(goal, row.id, "bitrateSelectionMode")
+									? {}
+									: { bitrateSelectionMode: "OPTIMIZED" as const }),
 							...(row.bitrateSelectionMode === "COMPLEXITY_RANGE"
 								? {
-										lowComplexityBoundaryForMaxBitrate:
-											row.lowComplexityBoundaryForMaxBitrate,
-										highComplexityBoundaryForMaxBitrate:
-											row.highComplexityBoundaryForMaxBitrate,
+										...(row.lowComplexityBoundaryForMaxBitrate !== undefined
+											? {
+													lowComplexityBoundaryForMaxBitrate:
+														row.lowComplexityBoundaryForMaxBitrate,
+												}
+											: {}),
+										...(row.highComplexityBoundaryForMaxBitrate !== undefined
+											? {
+													highComplexityBoundaryForMaxBitrate:
+														row.highComplexityBoundaryForMaxBitrate,
+												}
+											: {}),
 									}
 								: {}),
+							...Object.fromEntries(
+								(
+									[
+										"lowComplexityBoundaryForMaxBitrate",
+										"highComplexityBoundaryForMaxBitrate",
+									] as const
+								)
+									.filter(
+										(key) =>
+											perTitleStreamLocked(goal, row.id, key) &&
+											row[key] !== undefined,
+									)
+									.map((key) => [key, row[key]]),
+							),
 						},
 					}
-				: {}),
+				: Object.keys(outerStreamSettings(row)).length
+					? { perTitleSettings: outerStreamSettings(row) }
+					: {}),
 		})),
 	};
 	if ((goal.automaticTemplates?.length ?? 0) > 0) {
@@ -1299,6 +1476,9 @@ function buildProposal(
 				mode: "PER_TITLE_TEMPLATE",
 				...(row.height !== undefined ? { height: row.height } : {}),
 				...(row.width !== undefined ? { width: row.width } : {}),
+				...(Object.keys(outerStreamSettings(row)).length
+					? { perTitleSettings: outerStreamSettings(row) }
+					: {}),
 			});
 		}
 	} else if (!isClosedStrategy(goal.strategy)) {

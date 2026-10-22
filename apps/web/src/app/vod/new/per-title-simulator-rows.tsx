@@ -6,7 +6,16 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import type { PerTitleManualBounds } from "./per-title-simulator-auto";
 import { PerTitleSimulatorBitrateField } from "./per-title-simulator-bitrate-field";
+import {
+	type PerTitleControlContext,
+	PerTitleSettingControl,
+	PerTitleStreamControls,
+} from "./per-title-simulator-controls";
 import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulator-fields";
+import {
+	getPerTitleAdjustment,
+	perTitleStreamFields,
+} from "./per-title-simulator-tuning";
 
 const texts = {
 	en: {
@@ -124,6 +133,21 @@ function widthForHeight(
 	return width === row.width ? {} : { width };
 }
 
+function withoutRowPolicies(goal: PerTitleGoal, rowId: string): PerTitleGoal {
+	const next = { ...goal };
+	if (goal.adjustments?.streams) {
+		const streams = { ...goal.adjustments.streams };
+		delete streams[rowId];
+		next.adjustments = { ...goal.adjustments, streams };
+	}
+	if (goal.settingLocks?.streams) {
+		const streams = { ...goal.settingLocks.streams };
+		delete streams[rowId];
+		next.settingLocks = { ...goal.settingLocks, streams };
+	}
+	return next;
+}
+
 export function PerTitleSimulatorRows({
 	id,
 	goal,
@@ -131,6 +155,7 @@ export function PerTitleSimulatorRows({
 	manualBounds,
 	onBitrateChange,
 	onResetBitrates,
+	tuning,
 }: {
 	id: string;
 	goal: PerTitleGoal;
@@ -142,6 +167,7 @@ export function PerTitleSimulatorRows({
 		value: number | undefined,
 	) => void;
 	onResetBitrates: (rowId: string) => void;
+	tuning?: PerTitleControlContext;
 }) {
 	const { locale } = useT();
 	const counter = useRef(0);
@@ -190,7 +216,26 @@ export function PerTitleSimulatorRows({
 			</h3>
 			<ul className="space-y-3">
 				{entries.map(({ kind, row, index }) => {
-					const manual = manualBounds[row.id];
+					const manual = tuning
+						? {
+								min:
+									getPerTitleAdjustment(
+										tuning.draft,
+										tuning.anchor,
+										"stream",
+										"minBitrate",
+										row.id,
+									).mode === "fixed",
+								max:
+									getPerTitleAdjustment(
+										tuning.draft,
+										tuning.anchor,
+										"stream",
+										"maxBitrate",
+										row.id,
+									).mode === "fixed",
+							}
+						: manualBounds[row.id];
 					const isAutomatic = kind === "automatic";
 					const rowRanged = ranged && !isAutomatic;
 					return (
@@ -201,7 +246,7 @@ export function PerTitleSimulatorRows({
 						>
 							<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
 								<span>{isAutomatic ? copy.automatic : copy.required}</span>
-								{rowRanged
+								{rowRanged && !tuning
 									? (["min", "max"] as const).map((bound) => (
 											<span
 												key={bound}
@@ -229,16 +274,21 @@ export function PerTitleSimulatorRows({
 										size="sm"
 										aria-label={`${isAutomatic ? copy.removeAutomatic : copy.removeRendition} ${index + 1}`}
 										onClick={() =>
-											onChange({
-												...goal,
-												...(isAutomatic
-													? {
-															automaticTemplates: automatic.filter(
-																(_, i) => i !== index,
-															),
-														}
-													: { rows: rows.filter((_, i) => i !== index) }),
-											})
+											onChange(
+												withoutRowPolicies(
+													{
+														...goal,
+														...(isAutomatic
+															? {
+																	automaticTemplates: automatic.filter(
+																		(_, i) => i !== index,
+																	),
+																}
+															: { rows: rows.filter((_, i) => i !== index) }),
+													},
+													row.id,
+												),
+											)
 										}
 									>
 										{copy.remove}
@@ -294,42 +344,93 @@ export function PerTitleSimulatorRows({
 									}
 								/>
 								{rowRanged
-									? (["min", "max"] as const).map((bound) => (
-											<PerTitleSimulatorBitrateField
-												key={bound}
-												id={`${id}-${row.id}-${bound}`}
-												label={bound === "min" ? copy.minimum : copy.maximum}
-												accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${index + 1}`}
-												sliderLabel={`${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${index + 1}`}
-												value={
-													bound === "min" ? row.minBitrate : row.maxBitrate
-												}
-												minimum={
-													validGlobal
-														? bound === "max" &&
-															manual?.min &&
-															inGlobal(row.minBitrate)
-															? row.minBitrate
-															: goal.minBitrate
-														: 1
-												}
-												maximum={
-													validGlobal
-														? bound === "min" &&
-															manual?.max &&
-															inGlobal(row.maxBitrate)
-															? row.maxBitrate
-															: goal.maxBitrate
-														: 2_147_483_647
-												}
-												disabled={!validGlobal}
-												onChange={(value) =>
-													onBitrateChange(row.id, bound, value)
-												}
-											/>
-										))
+									? (["min", "max"] as const).map((bound) => {
+											const field = perTitleStreamFields(goal.codec).find(
+												(item) =>
+													item.key ===
+													(bound === "min" ? "minBitrate" : "maxBitrate"),
+											);
+											const minimum = validGlobal
+												? bound === "max" &&
+													manual?.min &&
+													inGlobal(row.minBitrate)
+													? row.minBitrate
+													: goal.minBitrate
+												: 1;
+											const maximum = validGlobal
+												? bound === "min" &&
+													manual?.max &&
+													inGlobal(row.maxBitrate)
+													? row.maxBitrate
+													: goal.maxBitrate
+												: 2_147_483_647;
+											if (tuning && field)
+												return (
+													<PerTitleSettingControl
+														key={bound}
+														id={`${id}-${row.id}-${bound}`}
+														context={tuning}
+														scope="stream"
+														field={field}
+														rowId={row.id}
+														label={
+															bound === "min" ? copy.minimum : copy.maximum
+														}
+														accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${index + 1}`}
+														slider={{
+															label: `${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${index + 1}`,
+															minimum,
+															maximum,
+															disabled: !validGlobal,
+														}}
+													/>
+												);
+											return (
+												<PerTitleSimulatorBitrateField
+													key={bound}
+													id={`${id}-${row.id}-${bound}`}
+													label={bound === "min" ? copy.minimum : copy.maximum}
+													accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${index + 1}`}
+													sliderLabel={`${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${index + 1}`}
+													value={
+														bound === "min" ? row.minBitrate : row.maxBitrate
+													}
+													minimum={
+														validGlobal
+															? bound === "max" &&
+																manual?.min &&
+																inGlobal(row.minBitrate)
+																? row.minBitrate
+																: goal.minBitrate
+															: 1
+													}
+													maximum={
+														validGlobal
+															? bound === "min" &&
+																manual?.max &&
+																inGlobal(row.maxBitrate)
+																? row.maxBitrate
+																: goal.maxBitrate
+															: 2_147_483_647
+													}
+													disabled={!validGlobal}
+													onChange={(value) =>
+														onBitrateChange(row.id, bound, value)
+													}
+												/>
+											);
+										})
 									: null}
 							</div>
+							{tuning ? (
+								<PerTitleStreamControls
+									id={`${id}-${row.id}-settings`}
+									context={tuning}
+									rowId={row.id}
+									omitBounds={rowRanged}
+									suffix={`${isAutomatic ? copy.candidate : copy.rendition} ${index + 1}`}
+								/>
+							) : null}
 						</li>
 					);
 				})}

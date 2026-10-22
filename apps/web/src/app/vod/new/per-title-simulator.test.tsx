@@ -1,4 +1,4 @@
-import { type PerTitleGoal, recommendPerTitleSettings } from "@bitovp/core";
+import type { PerTitleGoal } from "@bitovp/core";
 import {
 	act,
 	fireEvent,
@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleSimulator } from "./per-title-simulator";
+import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const initialGoal: PerTitleGoal = {
 	strategy: "automatic",
@@ -130,10 +131,7 @@ describe("Per-Title simulator", () => {
 		"ja",
 	] as const)("keeps analysis cases internal and reviews one unchanged API proposal (%s)", (locale) => {
 		const goal = { ...initialGoal, scenarioFractions: [1, 0.25, 0.5] };
-		const automaticGoal = { ...goal };
-		delete automaticGoal.minBitrateStepSize;
-		delete automaticGoal.maxBitrateStepSize;
-		const expected = recommendPerTitleSettings(automaticGoal);
+		const expected = tunePerTitleSettings(goal, goal).proposal;
 		const { onApply } = show(goal, locale);
 		fireEvent.click(
 			screen.getByText(
@@ -254,7 +252,7 @@ describe("Per-Title simulator", () => {
 		).toBeEnabled();
 	});
 
-	it("edits automatic candidates separately from required bitrate ranges", async () => {
+	it("keeps automatic candidate ranges inactive and separate from required bitrate ranges", async () => {
 		const { onApply } = show({
 			...initialGoal,
 			strategy: "fixed-ranges",
@@ -278,15 +276,26 @@ describe("Per-Title simulator", () => {
 			{ target: { value: "1080" } },
 		);
 		expect(
-			screen.queryByRole("spinbutton", {
+			screen.getByRole("spinbutton", {
 				name: "Minimum bitrate (kbps), automatic template 1",
 			}),
-		).toBeNull();
+		).not.toBeVisible();
 		expect(
-			screen.queryByRole("spinbutton", {
+			screen.getByRole("spinbutton", {
 				name: "Maximum bitrate (kbps), automatic template 1",
 			}),
-		).toBeNull();
+		).not.toBeVisible();
+		const candidate = screen.getByRole("listitem", {
+			name: "Automatic template 1",
+		});
+		await user.click(
+			within(candidate).getByText("Per-Title settings", {
+				selector: "summary",
+			}),
+		);
+		expect(
+			within(candidate).getAllByText("Not used in this mode"),
+		).toHaveLength(5);
 		expect(
 			screen.getByRole("button", { name: "Review changes" }),
 		).toBeDisabled();
@@ -963,11 +972,11 @@ describe("Per-Title simulator", () => {
 		const user = userEvent.setup();
 		expect(screen.queryByRole("radio")).toBeNull();
 		expect(
-			screen.getByText(/Bitrate spacing is selected automatically/),
+			screen.getByText(/Automatic spacing follows the selected method/),
 		).not.toBeVisible();
 		fireEvent.click(screen.getByText("Comparison and calculation details"));
 		expect(
-			screen.getByText(/Bitrate spacing is selected automatically/),
+			screen.getByText(/Automatic spacing follows the selected method/),
 		).toBeVisible();
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		const proposal = onApply.mock.calls[0]?.[0];

@@ -522,13 +522,20 @@ export const streamModeSchema = z.enum([
 ]);
 
 /** StreamPerTitleSettings.fixedResolutionAndBitrateSettings (flat here). */
-export const perTitleStreamSettingsSchema = z.strictObject({
+export const perTitleFixedResolutionAndBitrateSettingsSchema = z.strictObject({
 	minBitrate: z.number().int().positive().optional(),
 	maxBitrate: z.number().int().positive().optional(),
 	bitrateSelectionMode: z.enum(["OPTIMIZED", "COMPLEXITY_RANGE"]).optional(),
 	lowComplexityBoundaryForMaxBitrate: z.number().int().positive().optional(),
 	highComplexityBoundaryForMaxBitrate: z.number().int().positive().optional(),
 });
+
+/** Plan form of StreamPerTitleSettings; codec factors are outer SDK fields. */
+export const perTitleStreamSettingsSchema =
+	perTitleFixedResolutionAndBitrateSettingsSchema.extend({
+		codecMaxBitrateFactor: z.number().positive().optional(),
+		codecBufsizeFactor: z.number().positive().optional(),
+	});
 
 /**
  * Nagra NexGuard forensic watermarking (stream-level). The license is
@@ -840,7 +847,7 @@ export const vp9RenditionSchema = z.strictObject({
 	arnrMaxFrames: z.number().int().min(0).optional(),
 	arnrStrength: z.number().int().min(0).optional(),
 	colorConfig: colorConfigSchema.optional(),
-	perTitleSettings: perTitleStreamSettingsSchema.optional(),
+	perTitleSettings: perTitleFixedResolutionAndBitrateSettingsSchema.optional(),
 });
 
 /**
@@ -873,7 +880,7 @@ export const av1RenditionSchema = z.strictObject({
 	autoLevelSetup: z.enum(["ENABLED", "DISABLED"]).optional(),
 	dynamicRangeFormat: z.enum(AV1_DYNAMIC_RANGE_FORMATS).optional(),
 	colorConfig: colorConfigSchema.optional(),
-	perTitleSettings: perTitleStreamSettingsSchema.optional(),
+	perTitleSettings: perTitleFixedResolutionAndBitrateSettingsSchema.optional(),
 });
 
 export const OPUS_CHANNEL_LAYOUTS = [
@@ -1469,10 +1476,11 @@ const perTitleCodecConfigurationBase = {
 	maxBitrateStepSize: z.number().positive().optional(),
 	/** SDK PerTitleConfiguration base carries it for every codec. */
 	complexityFactor: z.number().positive().optional(),
+	resolutionScaleFactor: z.number().min(-15).max(15).optional(),
 	/** Empty object = enable auto representations with defaults (hdr10). */
 	autoRepresentations: z
 		.strictObject({
-			adoptConfigurationThreshold: z.number().optional(),
+			adoptConfigurationThreshold: z.number().min(0).max(1).optional(),
 		})
 		.optional(),
 	fixedResolutionAndBitrateConfiguration:
@@ -1486,8 +1494,6 @@ export const perTitleSchema = z.strictObject({
 			codecMinBitrateFactor: z.number().positive().optional(),
 			codecMaxBitrateFactor: z.number().positive().optional(),
 			codecBufsizeFactor: z.number().positive().optional(),
-			/** H264-only knob — H265/VP9 configurations don't have it. */
-			complexityFactor: z.number().positive().optional(),
 		})
 		.optional(),
 	h265Configuration: z

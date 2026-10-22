@@ -18,9 +18,9 @@ const en = {
 	minimumSlider: "Minimum bitrate slider (kbps)",
 	maximumSlider: "Maximum bitrate slider (kbps)",
 	automaticSteps:
-		"Bitrate spacing is selected automatically from the current requirements.",
+		"Automatic spacing follows the selected method. Fixed ratios are retained.",
 	automaticRanges:
-		"Loaded ranges keep their relative positions on a logarithmic bitrate scale. New renditions use evenly spaced bands. Edited bounds stay fixed. Loading a file starts a new automatic baseline.",
+		"Each bound follows its selected adjustment method. Fixed values are retained. Loading a file establishes a new baseline.",
 	loadRequirements: "Load requirements file",
 	testPresets: "Test presets",
 	requirementFiles: "Import or export requirements",
@@ -146,9 +146,10 @@ const ja: typeof en = {
 	maximum: "最大ビットレート (kbps)",
 	minimumSlider: "最小ビットレートのスライダー (kbps)",
 	maximumSlider: "最大ビットレートのスライダー (kbps)",
-	automaticSteps: "ビットレート間隔は、現在の要件から自動で計算します。",
+	automaticSteps:
+		"自動のビットレート間隔は、選んだ方法で計算します。固定した比率は維持します。",
 	automaticRanges:
-		"読み込んだ範囲は、対数目盛での位置を保って全体の上限・下限に追従します。新しい段には等間隔で範囲を割り当てます。手動で変更した端点は固定します。ファイルを読み込むと、その値を新たな自動計算の基準にします。",
+		"各端点は、選んだ調整方法に従います。固定値は維持します。ファイルを読み込むと、その値を新たな基準にします。",
 	loadRequirements: "要件ファイルを読み込む",
 	testPresets: "テスト用プリセット",
 	requirementFiles: "要件ファイルの読み書き",

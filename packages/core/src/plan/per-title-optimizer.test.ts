@@ -24,6 +24,364 @@ const fixed: PerTitleGoal = {
 };
 
 describe("joint Per-Title constraint optimization", () => {
+	it("derives both automatic boundaries when only COMPLEXITY_RANGE mode is fixed", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			maxBitrate: 10000000,
+			countPolicy: { kind: "unrestricted" },
+			rows: fixed.rows?.map((row) =>
+				row.id === "b"
+					? { ...row, bitrateSelectionMode: "COMPLEXITY_RANGE" }
+					: row,
+			),
+			settingLocks: { streams: { b: ["bitrateSelectionMode"] } },
+		};
+		const result = recommendPerTitleSettings(goal);
+		const settings = result.api.streams.find(
+			(stream) => stream.rowId === "b",
+		)?.perTitleSettings;
+		expect(settings).toMatchObject({
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			highComplexityBoundaryForMaxBitrate: 10000000,
+		});
+		expect(settings?.lowComplexityBoundaryForMaxBitrate).toBeGreaterThan(0);
+		expect(settings?.lowComplexityBoundaryForMaxBitrate).toBeLessThan(10000000);
+		expect(result.diagnostics).not.toContainEqual(
+			expect.objectContaining({ code: "invalid-complexity-range" }),
+		);
+		const legacy = recommendPerTitleSettings({
+			...goal,
+			settingLocks: undefined,
+		});
+		expect(legacy.applicable).toBe(false);
+		expect(legacy.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "invalid-complexity-range" }),
+		);
+	});
+	it.each([
+		["lowComplexityBoundaryForMaxBitrate", 3000000],
+		["highComplexityBoundaryForMaxBitrate", 8000000],
+	] as const)("completes an automatic boundary with both the mode and %s fixed", (key, value) => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			maxBitrate: 10000000,
+			countPolicy: { kind: "unrestricted" },
+			rows: fixed.rows?.map((row) =>
+				row.id === "b"
+					? { ...row, bitrateSelectionMode: "COMPLEXITY_RANGE", [key]: value }
+					: row,
+			),
+			settingLocks: { streams: { b: ["bitrateSelectionMode", key] } },
+		};
+		const result = recommendPerTitleSettings(goal);
+		const settings = result.api.streams.find(
+			(stream) => stream.rowId === "b",
+		)?.perTitleSettings;
+		expect(settings).toMatchObject({
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			[key]: value,
+		});
+		expect(settings?.lowComplexityBoundaryForMaxBitrate).toBeGreaterThan(0);
+		expect(settings?.highComplexityBoundaryForMaxBitrate).toBeGreaterThan(
+			settings?.lowComplexityBoundaryForMaxBitrate ?? Infinity,
+		);
+		expect(result.diagnostics).not.toContainEqual(
+			expect.objectContaining({ code: "invalid-complexity-range" }),
+		);
+	});
+	it("does not defer invalid boundary data or a locked-unset counterpart", () => {
+		for (const low of [0, NaN, Infinity, 3000000]) {
+			const goal: PerTitleGoal = {
+				...fixed,
+				maxBitrate: 10000000,
+				rows: fixed.rows?.map((row) =>
+					row.id === "b"
+						? {
+								...row,
+								bitrateSelectionMode: "COMPLEXITY_RANGE",
+								lowComplexityBoundaryForMaxBitrate: low,
+							}
+						: row,
+				),
+				settingLocks: {
+					streams: {
+						b: [
+							"bitrateSelectionMode",
+							"lowComplexityBoundaryForMaxBitrate",
+							...(low === 3000000
+								? ["highComplexityBoundaryForMaxBitrate"]
+								: []),
+						],
+					},
+				},
+			};
+			const result = recommendPerTitleSettings(goal);
+			expect(result.applicable).toBe(false);
+			expect(result.diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "invalid-complexity-range",
+					severity: "conflict",
+				}),
+			);
+			expect(
+				result.api.streams.find((stream) => stream.rowId === "b")
+					?.perTitleSettings?.highComplexityBoundaryForMaxBitrate,
+			).toBeUndefined();
+		}
+	});
+	it.each([
+		[
+			"lowComplexityBoundaryForMaxBitrate",
+			3000000,
+			"highComplexityBoundaryForMaxBitrate",
+		],
+		[
+			"highComplexityBoundaryForMaxBitrate",
+			8000000,
+			"lowComplexityBoundaryForMaxBitrate",
+		],
+	] as const)("fills only the unlocked counterpart of a fixed %s", (key, value, automaticKey) => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			maxBitrate: 10000000,
+			countPolicy: { kind: "unrestricted" },
+			rows: fixed.rows?.map((row) =>
+				row.id === "b" ? { ...row, [key]: value } : row,
+			),
+			settingLocks: { streams: { b: [key] } },
+		};
+		const result = recommendPerTitleSettings(goal);
+		const settings = result.api.streams.find(
+			(stream) => stream.rowId === "b",
+		)?.perTitleSettings;
+		expect(settings?.[key]).toBe(value);
+		expect(settings?.bitrateSelectionMode).toBe("COMPLEXITY_RANGE");
+		if (automaticKey === "highComplexityBoundaryForMaxBitrate")
+			expect(settings?.[automaticKey]).toBe(10000000);
+		else {
+			expect(settings?.[automaticKey]).toBeGreaterThan(0);
+			expect(settings?.[automaticKey]).toBeLessThan(value);
+		}
+	});
+	it("does not fill a locked-unset mode or change legacy partial curves without calibration locks", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			maxBitrate: 10000000,
+			countPolicy: { kind: "unrestricted" },
+			rows: fixed.rows?.map((row) =>
+				row.id === "b"
+					? { ...row, lowComplexityBoundaryForMaxBitrate: 3000000 }
+					: row,
+			),
+		};
+		const legacy = recommendPerTitleSettings(goal).api.streams.find(
+			(stream) => stream.rowId === "b",
+		)?.perTitleSettings;
+		expect(legacy?.bitrateSelectionMode).toBe("OPTIMIZED");
+		expect(legacy?.highComplexityBoundaryForMaxBitrate).toBeUndefined();
+		const held = recommendPerTitleSettings({
+			...goal,
+			settingLocks: {
+				streams: {
+					b: ["lowComplexityBoundaryForMaxBitrate", "bitrateSelectionMode"],
+				},
+			},
+		});
+		expect(
+			held.api.streams.find((stream) => stream.rowId === "b")?.perTitleSettings,
+		).not.toHaveProperty("bitrateSelectionMode");
+		expect(held.derivation?.constraints?.status).not.toBe("checked");
+	});
+	it("discards a locked unsuccessful trial when its restored API steps differ", () => {
+		const result = recommendPerTitleSettings({
+			...fixed,
+			rows: [
+				{ id: "a", height: 240, minBitrate: 200000, maxBitrate: 200000 },
+				{ id: "b", height: 480, minBitrate: 400000, maxBitrate: 400000 },
+				{ id: "c", height: 720, minBitrate: 800000, maxBitrate: 800000 },
+			],
+			maxBitrateStepSize: 1.2,
+			settingLocks: { global: ["maxBitrateStepSize"] },
+		});
+		expect(result.api.global.minBitrateStepSize).toBe(1.2);
+		expect(result.api.global.maxBitrateStepSize).toBe(1.2);
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.derivation?.constraints).toMatchObject({
+			status: "unknown",
+			inputRange: null,
+			floorRange: null,
+			changes: [],
+			checkpoints: [],
+		});
+		expect(result.derivation?.constraints).not.toHaveProperty("calibration");
+		expect(result.derivation?.constraints).not.toHaveProperty("spacing");
+		expect(result.derivation?.selectedMinStep).toBe(
+			result.api.global.minBitrateStepSize,
+		);
+	});
+	it("does not certify a partial forced rule whose count is locked unset", () => {
+		const result = recommendPerTitleSettings({
+			...fixed,
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+			},
+			settingLocks: {
+				global: [
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentation",
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				],
+			},
+		});
+		expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual({
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+		});
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).not.toBe(true);
+		expect(result.derivation?.constraints?.status).not.toBe("checked");
+	});
+	it("keeps outer SDK stream factors even when a joint trial remains unproven", () => {
+		const result = recommendPerTitleSettings({
+			...fixed,
+			rows: fixed.rows?.map((row) => ({
+				...row,
+				codecMaxBitrateFactor: 1.6,
+				codecBufsizeFactor: 2,
+			})),
+			minBitrateStepSize: 20,
+			settingLocks: { global: ["minBitrateStepSize"] },
+		});
+		expect(
+			result.api.streams.every(
+				(s) =>
+					s.perTitleSettings?.codecMaxBitrateFactor === 1.6 &&
+					s.perTitleSettings.codecBufsizeFactor === 2,
+			),
+		).toBe(true);
+		expect(result.applicable).toBe(false);
+	});
+	it("keeps a locked minimum step while deriving only the maximum step", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			minBitrateStepSize: 1.8,
+			settingLocks: { global: ["minBitrateStepSize"] },
+		};
+		const result = recommendPerTitleSettings(goal);
+		expect(result.api.global.minBitrateStepSize).toBe(1.8);
+		expect(result.derivation?.selectedMinStep).toBe(1.8);
+		expect(result.derivation?.targetSatisfied).toBe(true);
+	});
+	it("does not reuse a proof after locked spacing makes the requested count infeasible", () => {
+		for (const [key, value] of [
+			["minBitrateStepSize", 4],
+			["maxBitrateStepSize", 1.2],
+		] as const) {
+			const result = recommendPerTitleSettings({
+				...fixed,
+				[key]: value,
+				settingLocks: { global: [key] },
+			});
+			expect(result.api.global[key]).toBe(value);
+			expect(result.applicable).toBe(false);
+			expect(result.derivation?.targetSatisfied).not.toBe(true);
+			expect(result.derivation?.constraints?.status).not.toBe("checked");
+		}
+	});
+	it("preserves a locked additional count instead of replacing it with the desired count", () => {
+		const key =
+			"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentation";
+		const result = recommendPerTitleSettings({
+			...fixed,
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+			settingLocks: { global: [key] },
+		});
+		expect(
+			result.api.global.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentation,
+		).toBe(1);
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).not.toBe(true);
+	});
+	it("retains locked optional absence rather than adding calibration or additional-rule defaults", () => {
+		const result = recommendPerTitleSettings({
+			...fixed,
+			countPolicy: { kind: "exact", count: 4 },
+			settingLocks: {
+				global: [
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				],
+				streams: {
+					a: [
+						"bitrateSelectionMode",
+						"lowComplexityBoundaryForMaxBitrate",
+						"highComplexityBoundaryForMaxBitrate",
+					],
+				},
+			},
+		});
+		expect(
+			result.api.streams.find((s) => s.rowId === "a")?.perTitleSettings,
+		).not.toHaveProperty("bitrateSelectionMode");
+		expect(
+			result.api.streams.find((s) => s.rowId === "a")?.perTitleSettings,
+		).not.toHaveProperty("lowComplexityBoundaryForMaxBitrate");
+		expect(
+			result.api.global.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBeUndefined();
+		expect(result.derivation?.targetSatisfied).not.toBe(true);
+	});
+	it("preserves a locked calculation mode and zero count without a false LAST proof", () => {
+		for (const rule of [
+			{
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"MINIMUM" as const,
+			},
+			{ forcedRenditionAboveHighestFixedRepresentation: 0 },
+		]) {
+			const result = recommendPerTitleSettings({
+				...fixed,
+				countPolicy: { kind: "exact", count: 4 },
+				fixedResolutionAndBitrateConfiguration: rule,
+				settingLocks: {
+					global: Object.keys(rule).map(
+						(k) => `fixedResolutionAndBitrateConfiguration.${k}`,
+					),
+				},
+			});
+			expect(
+				result.api.global.fixedResolutionAndBitrateConfiguration,
+			).toMatchObject(rule);
+			expect(result.applicable).toBe(false);
+			expect(result.derivation?.targetSatisfied).not.toBe(true);
+		}
+	});
+	it("holds a saved additional factor while optimizing the remaining dependencies", () => {
+		const result = recommendPerTitleSettings({
+			...fixed,
+			countPolicy: { kind: "exact", count: 4 },
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.1,
+			},
+			settingLocks: {
+				global: [
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				],
+			},
+		});
+		expect(
+			result.api.global.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(1.1);
+		expect(result.derivation?.targetSatisfied).toBe(true);
+	});
 	it("derives the row calibration and spacing together for a fully specified count", () => {
 		const source = structuredClone(fixed);
 		const result = recommendPerTitleSettings(fixed);

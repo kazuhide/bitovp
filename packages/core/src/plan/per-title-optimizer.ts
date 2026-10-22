@@ -51,6 +51,155 @@ const STEP_TOLERANCE = 0.01;
 const MAX_BITRATE = 2_147_483_647;
 const positive = (n: number | undefined): n is number =>
 	n !== undefined && Number.isSafeInteger(n) && n > 0 && n <= MAX_BITRATE;
+
+export const perTitleGlobalLockKeys = new Set([
+	"minBitrate",
+	"maxBitrate",
+	"minBitrateStepSize",
+	"maxBitrateStepSize",
+	"targetQualityCrf",
+	"targetQualityQp",
+	"complexityFactor",
+	"resolutionScaleFactor",
+	"codecMinBitrateFactor",
+	"codecMaxBitrateFactor",
+	"codecBufsizeFactor",
+	"autoRepresentations",
+	"autoRepresentations.adoptConfigurationThreshold",
+	...[
+		"forcedRenditionAboveHighestFixedRepresentation",
+		"forcedRenditionAboveHighestFixedRepresentationFactor",
+		"forcedRenditionAboveHighestFixedRepresentationCalculationMode",
+	].map((key) => `fixedResolutionAndBitrateConfiguration.${key}`),
+]);
+export const perTitleStreamLockKeys = new Set([
+	"minBitrate",
+	"maxBitrate",
+	"bitrateSelectionMode",
+	"lowComplexityBoundaryForMaxBitrate",
+	"highComplexityBoundaryForMaxBitrate",
+	"codecMaxBitrateFactor",
+	"codecBufsizeFactor",
+]);
+const record = (value: unknown): value is Record<string, unknown> =>
+	value !== null && typeof value === "object" && !Array.isArray(value);
+const globalLocks = (goal: PerTitleGoal): readonly string[] =>
+	Array.isArray(goal.settingLocks?.global)
+		? goal.settingLocks.global.filter((key) => typeof key === "string")
+		: [];
+const streamLocks = (goal: PerTitleGoal, id: string): readonly string[] => {
+	const streams = goal.settingLocks?.streams;
+	const keys =
+		record(streams) && Object.hasOwn(streams, id) ? streams[id] : undefined;
+	return Array.isArray(keys)
+		? keys.filter((key): key is string => typeof key === "string")
+		: [];
+};
+export function validPerTitleSettingLocks(value: unknown): boolean {
+	if (value === undefined) return true;
+	if (
+		!record(value) ||
+		Object.keys(value).some((key) => key !== "global" && key !== "streams")
+	)
+		return false;
+	if (
+		value.global !== undefined &&
+		(!Array.isArray(value.global) ||
+			value.global.some(
+				(key) => typeof key !== "string" || !perTitleGlobalLockKeys.has(key),
+			))
+	)
+		return false;
+	return (
+		value.streams === undefined ||
+		(record(value.streams) &&
+			Object.values(value.streams).every(
+				(keys) =>
+					Array.isArray(keys) &&
+					keys.every(
+						(key) => typeof key === "string" && perTitleStreamLockKeys.has(key),
+					),
+			))
+	);
+}
+export const perTitleGlobalLocked = (goal: PerTitleGoal, key: string) =>
+	perTitleGlobalLockKeys.has(key) && globalLocks(goal).includes(key);
+export const perTitleStreamLocked = (
+	goal: PerTitleGoal,
+	id: string,
+	key: string,
+) => perTitleStreamLockKeys.has(key) && streamLocks(goal, id).includes(key);
+
+/** Restore constraints on candidate inputs before any API or scenario is built. */
+export function applyPerTitleSettingLocks(
+	candidate: PerTitleGoal,
+	original: PerTitleGoal,
+): PerTitleGoal {
+	if (!original.settingLocks) return candidate;
+	const next = { ...candidate };
+	for (const key of globalLocks(original)) {
+		if (!perTitleGlobalLockKeys.has(key)) continue;
+		const [parent, child] = key.split(".");
+		if (!parent) continue;
+		const source = original as unknown as Record<string, unknown>;
+		const target = next as unknown as Record<string, unknown>;
+		if (child) {
+			const value = (source[parent] as Record<string, unknown> | undefined)?.[
+				child
+			];
+			const nested =
+				typeof target[parent] === "object" && target[parent] !== null
+					? { ...(target[parent] as Record<string, unknown>) }
+					: {};
+			if (value === undefined) delete nested[child];
+			else nested[child] = value;
+			if (Object.keys(nested).length || typeof source[parent] === "object")
+				target[parent] = nested;
+			else delete target[parent];
+		} else if (source[parent] === undefined) delete target[parent];
+		else target[parent] = structuredClone(source[parent]);
+	}
+	const restoreRows = <T extends { id: string }>(
+		rows: readonly T[] | undefined,
+		source: readonly T[] | undefined,
+	) =>
+		rows?.map((row) => {
+			const before = source?.find((item) => item.id === row.id);
+			if (!before) return row;
+			const nextRow = { ...row };
+			for (const key of streamLocks(original, row.id)) {
+				if (!perTitleStreamLockKeys.has(key)) continue;
+				const value = (before as Record<string, unknown>)[key];
+				if (value === undefined)
+					delete (nextRow as Record<string, unknown>)[key];
+				else (nextRow as Record<string, unknown>)[key] = value;
+			}
+			return nextRow;
+		});
+	next.rows = restoreRows(candidate.rows, original.rows);
+	next.automaticTemplates = restoreRows(
+		candidate.automaticTemplates,
+		original.automaticTemplates,
+	);
+	// A single fixed endpoint still permits the other spacing endpoint to move.
+	if (
+		perTitleGlobalLocked(original, "maxBitrateStepSize") &&
+		!perTitleGlobalLocked(original, "minBitrateStepSize") &&
+		next.maxBitrateStepSize !== undefined &&
+		next.maxBitrateStepSize > 1 &&
+		(next.minBitrateStepSize ?? Infinity) > next.maxBitrateStepSize
+	)
+		next.minBitrateStepSize = next.maxBitrateStepSize;
+	if (
+		perTitleGlobalLocked(original, "minBitrateStepSize") &&
+		!perTitleGlobalLocked(original, "maxBitrateStepSize") &&
+		next.minBitrateStepSize !== undefined &&
+		next.minBitrateStepSize > 1 &&
+		(next.maxBitrateStepSize ?? 0) < next.minBitrateStepSize
+	)
+		next.maxBitrateStepSize = next.minBitrateStepSize;
+	return next;
+}
 type RangeRow = PerTitleGoalRow & { minBitrate: number; maxBitrate: number };
 type CurvedRow = RangeRow & {
 	bitrateSelectionMode: "COMPLEXITY_RANGE";
@@ -147,18 +296,44 @@ function prepare(
 	const generated: string[] = [];
 	const calibrated = rows.map((row) => {
 		if (row.bitrateSelectionMode === "OPTIMIZED") return { ...row };
-		if (
+		const hasBound =
 			row.lowComplexityBoundaryForMaxBitrate !== undefined ||
-			row.highComplexityBoundaryForMaxBitrate !== undefined
+			row.highComplexityBoundaryForMaxBitrate !== undefined;
+		const calibrationLocked = [
+			"bitrateSelectionMode",
+			"lowComplexityBoundaryForMaxBitrate",
+			"highComplexityBoundaryForMaxBitrate",
+		].some((key) => perTitleStreamLocked(goal, row.id, key));
+		if (
+			hasBound &&
+			(!calibrationLocked ||
+				(row.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
+					row.lowComplexityBoundaryForMaxBitrate !== undefined &&
+					row.highComplexityBoundaryForMaxBitrate !== undefined))
 		)
 			return { ...row };
-		generated.push(row.id);
-		return {
+		const candidate = {
 			...row,
-			bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
-			lowComplexityBoundaryForMaxBitrate: floor.maximum,
-			highComplexityBoundaryForMaxBitrate: goal.maxBitrate,
+			bitrateSelectionMode:
+				row.bitrateSelectionMode ?? ("COMPLEXITY_RANGE" as const),
+			lowComplexityBoundaryForMaxBitrate:
+				row.lowComplexityBoundaryForMaxBitrate ?? floor.maximum,
+			highComplexityBoundaryForMaxBitrate:
+				row.highComplexityBoundaryForMaxBitrate ?? goal.maxBitrate,
 		};
+		const restored = applyPerTitleSettingLocks(
+			{ ...goal, rows: [candidate] },
+			goal,
+		).rows?.[0] as RangeRow;
+		if (
+			(row.lowComplexityBoundaryForMaxBitrate === undefined ||
+				row.highComplexityBoundaryForMaxBitrate === undefined) &&
+			restored.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
+			restored.lowComplexityBoundaryForMaxBitrate === floor.maximum &&
+			restored.highComplexityBoundaryForMaxBitrate === goal.maxBitrate
+		)
+			generated.push(row.id);
+		return restored;
 	});
 	const validCurve = (row: RangeRow): row is CurvedRow =>
 		row.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
@@ -265,22 +440,61 @@ export function optimizePerTitleConstraints(
 ): PerTitleProposal {
 	const fallback = recommendIntervals(goal);
 	if (!validRows(goal)) return fallback;
+	const deferredBoundary = (
+		diagnostic: PerTitleProposal["diagnostics"][number],
+	) =>
+		diagnostic.code === "invalid-complexity-range" &&
+		(diagnostic.rowIds?.length ?? 0) > 0 &&
+		diagnostic.rowIds?.every((id) => {
+			const row = goal.rows.find((item) => item.id === id);
+			if (
+				row?.bitrateSelectionMode !== "COMPLEXITY_RANGE" ||
+				![
+					"bitrateSelectionMode",
+					"lowComplexityBoundaryForMaxBitrate",
+					"highComplexityBoundaryForMaxBitrate",
+				].some((key) => perTitleStreamLocked(goal, id, key))
+			)
+				return false;
+			const low = row.lowComplexityBoundaryForMaxBitrate;
+			const high = row.highComplexityBoundaryForMaxBitrate;
+			return (
+				(low === undefined || high === undefined) &&
+				(low === undefined
+					? !perTitleStreamLocked(
+							goal,
+							id,
+							"lowComplexityBoundaryForMaxBitrate",
+						)
+					: positive(low)) &&
+				(high === undefined
+					? !perTitleStreamLocked(
+							goal,
+							id,
+							"highComplexityBoundaryForMaxBitrate",
+						)
+					: positive(high))
+			);
+		}) === true;
 	if (
-		fallback.diagnostics.some((d) =>
-			[
-				"invalid-global-range",
-				"invalid-step",
-				"invalid-count",
-				"count-required",
-				"rows-required",
-				"invalid-row",
-				"invalid-row-range",
-				"row-outside-global-range",
-				"invalid-complexity-range",
-				"required-count-exceeded",
-				"upscale-required",
-				"model-limit",
-			].includes(d.code),
+		fallback.diagnostics.some(
+			(d) =>
+				!deferredBoundary(d) &&
+				[
+					"invalid-setting",
+					"invalid-global-range",
+					"invalid-step",
+					"invalid-count",
+					"count-required",
+					"rows-required",
+					"invalid-row",
+					"invalid-row-range",
+					"row-outside-global-range",
+					"invalid-complexity-range",
+					"required-count-exceeded",
+					"upscale-required",
+					"model-limit",
+				].includes(d.code),
 		)
 	)
 		return fallback;
@@ -298,28 +512,51 @@ export function optimizePerTitleConstraints(
 		goal.countPolicy.count >= rows.length &&
 		goal.countPolicy.count <= 256;
 	const saved = goal.fixedResolutionAndBitrateConfiguration;
-	const n = exact
-		? (goal.countPolicy as { count: number }).count - rows.length
-		: (saved?.forcedRenditionAboveHighestFixedRepresentation ?? 0);
+	const forcedKey = (key: string) =>
+		`fixedResolutionAndBitrateConfiguration.${key}`;
+	const countLocked = perTitleGlobalLocked(
+		goal,
+		forcedKey("forcedRenditionAboveHighestFixedRepresentation"),
+	);
+	const factorLocked = perTitleGlobalLocked(
+		goal,
+		forcedKey("forcedRenditionAboveHighestFixedRepresentationFactor"),
+	);
+	const modeLocked = perTitleGlobalLocked(
+		goal,
+		forcedKey("forcedRenditionAboveHighestFixedRepresentationCalculationMode"),
+	);
+	const minimumLocked = perTitleGlobalLocked(goal, "minBitrateStepSize");
+	const maximumLocked = perTitleGlobalLocked(goal, "maxBitrateStepSize");
+	const n =
+		exact && !countLocked
+			? (goal.countPolicy as { count: number }).count - rows.length
+			: (saved?.forcedRenditionAboveHighestFixedRepresentation ?? 0);
 	const savedFactor =
 		saved?.forcedRenditionAboveHighestFixedRepresentationFactor;
 	const savedMode =
 		saved?.forcedRenditionAboveHighestFixedRepresentationCalculationMode;
-	const mode = exact && n ? "LAST_CALCULATED_BITRATE" : savedMode;
+	const mode =
+		exact && n && !modeLocked ? "LAST_CALCULATED_BITRATE" : savedMode;
 	const limit = factorLimit(top.maxBitrate, n, goal.maxBitrate);
 	let factor =
-		exact && n
-			? savedFactor &&
-				savedFactor > 1 &&
-				limit &&
-				savedFactor <= limit &&
-				savedMode === "LAST_CALCULATED_BITRATE"
-				? savedFactor
-				: (limit ?? NaN)
-			: (savedFactor ?? 1);
+		factorLocked && n
+			? (savedFactor ?? NaN)
+			: exact && n
+				? savedFactor &&
+					savedFactor > 1 &&
+					limit &&
+					savedFactor <= limit &&
+					savedMode === "LAST_CALCULATED_BITRATE"
+					? savedFactor
+					: (limit ?? NaN)
+				: (savedFactor ?? 1);
 	const complete =
 		!saved ||
-		exact ||
+		(exact &&
+			(!n ||
+				((!factorLocked || savedFactor !== undefined) &&
+					(!modeLocked || savedMode !== undefined)))) ||
 		(savedFactor !== undefined &&
 			savedMode !== undefined &&
 			saved.forcedRenditionAboveHighestFixedRepresentation !== undefined);
@@ -330,7 +567,7 @@ export function optimizePerTitleConstraints(
 		!Number.isFinite(factor) ||
 		factor <= 0
 	)
-		return fallback;
+		return goal.settingLocks ? unproven(fallback) : fallback;
 	let s = fallback.api.global.minBitrateStepSize;
 	let maximum = fallback.api.global.maxBitrateStepSize;
 	let prepared = complete ? prepare(goal, rows, s, n, factor, basis) : null;
@@ -355,9 +592,14 @@ export function optimizePerTitleConstraints(
 			1 + 0.5 / minimumBitrate,
 		);
 		upper = certificate.minimumAdjacentRatio;
-		maximum = Math.max(s, certificate.maximumAdjacentRatio ?? s);
+		maximum = maximumLocked
+			? (goal.maxBitrateStepSize as number)
+			: Math.max(s, certificate.maximumAdjacentRatio ?? s);
 		if (
 			s > lower &&
+			maximum >= s &&
+			(certificate.maximumAdjacentRatio === undefined ||
+				maximum >= certificate.maximumAdjacentRatio) &&
 			(upper === undefined || s <= upper) &&
 			rows.every((row) => Math.round(row.minBitrate * s) > row.minBitrate) &&
 			(!n ||
@@ -367,15 +609,19 @@ export function optimizePerTitleConstraints(
 					Math.round(top.minBitrate * factor) > top.minBitrate))
 		) {
 			rowsChecked = true;
-			checked = exact;
+			checked =
+				exact &&
+				count === (goal.countPolicy as { count: number }).count &&
+				(!n || mode === "LAST_CALCULATED_BITRATE");
 			break;
 		}
-		if (exact && n && limit && factor !== limit) {
+		if (exact && n && !factorLocked && limit && factor !== limit) {
 			factor = limit;
 		}
 		const nextUpper = upper;
-		const next =
-			nextUpper === undefined
+		const next = minimumLocked
+			? s
+			: nextUpper === undefined
 				? lower + 1 / minimumBitrate
 				: nextUpper > lower
 					? Math.sqrt(lower * nextUpper)
@@ -550,6 +796,75 @@ export function optimizePerTitleConstraints(
 			fallback.derivation.constraints = report;
 		}
 		if (tune) unproven(fallback);
+		if (exact && prepared && goal.settingLocks) {
+			const actual = recommendIntervals(
+				applyPerTitleSettingLocks(
+					{
+						...goal,
+						rows: prepared.rows,
+						minBitrateStepSize: s,
+						maxBitrateStepSize: maximum,
+						fixedResolutionAndBitrateConfiguration: n
+							? {
+									forcedRenditionAboveHighestFixedRepresentation: n,
+									forcedRenditionAboveHighestFixedRepresentationFactor: factor,
+									forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+										mode,
+								}
+							: undefined,
+					},
+					goal,
+				),
+			);
+			const actualRule =
+				actual.api.global.fixedResolutionAndBitrateConfiguration;
+			const actualRows = new Map(
+				actual.api.streams.map((stream) => [stream.rowId, stream]),
+			);
+			if (
+				actual.api.global.minBitrateStepSize !== s ||
+				actual.api.global.maxBitrateStepSize !== maximum ||
+				(actualRule
+					? actualRule.forcedRenditionAboveHighestFixedRepresentation
+					: 0) !== n ||
+				(n > 0 &&
+					(actualRule?.forcedRenditionAboveHighestFixedRepresentationFactor !==
+						factor ||
+						actualRule.forcedRenditionAboveHighestFixedRepresentationCalculationMode !==
+							mode)) ||
+				prepared.rows.some((row) => {
+					const stream = actualRows.get(row.id);
+					const settings = stream?.perTitleSettings;
+					return (
+						stream?.mode !==
+							"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" ||
+						stream.height !== row.height ||
+						stream.width !== row.width ||
+						settings?.minBitrate !== row.minBitrate ||
+						settings.maxBitrate !== row.maxBitrate ||
+						settings.bitrateSelectionMode !== row.bitrateSelectionMode ||
+						settings.lowComplexityBoundaryForMaxBitrate !==
+							row.lowComplexityBoundaryForMaxBitrate ||
+						settings.highComplexityBoundaryForMaxBitrate !==
+							row.highComplexityBoundaryForMaxBitrate
+					);
+				})
+			)
+				discardTrial(report, actual);
+			if (actual.derivation) {
+				actual.derivation.constraints = { ...report, status: "unknown" };
+				delete actual.derivation.minimumStepRange;
+				delete actual.derivation.integerWitness;
+			}
+			actual.scenarios = actual.scenarios.map((scenario) => ({
+				...scenario,
+				status: "unknown",
+				modelCountRange: null,
+				modelRungs: [],
+				rowModels: [],
+			}));
+			return unproven(actual);
+		}
 		if (exact && prepared) {
 			fallback.api.global.minBitrateStepSize = s;
 			fallback.api.global.maxBitrateStepSize = maximum;
@@ -558,6 +873,7 @@ export function optimizePerTitleConstraints(
 				const row = byId.get(stream.rowId);
 				if (row)
 					stream.perTitleSettings = {
+						...stream.perTitleSettings,
 						minBitrate: row.minBitrate,
 						maxBitrate: row.maxBitrate,
 						bitrateSelectionMode: row.bitrateSelectionMode,
@@ -608,6 +924,67 @@ export function optimizePerTitleConstraints(
 				"LAST_CALCULATED_BITRATE",
 		};
 	else delete result.api.global.fixedResolutionAndBitrateConfiguration;
+	if (goal.settingLocks) {
+		result.api = recommendIntervals(
+			applyPerTitleSettingLocks(
+				{
+					...next,
+					fixedResolutionAndBitrateConfiguration: n
+						? {
+								forcedRenditionAboveHighestFixedRepresentation: n,
+								forcedRenditionAboveHighestFixedRepresentationFactor: factor,
+								forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+									mode,
+							}
+						: undefined,
+				},
+				goal,
+			),
+		).api;
+		const actual = result.api.global.fixedResolutionAndBitrateConfiguration;
+		const actualRows = new Map(
+			result.api.streams.map((stream) => [stream.rowId, stream]),
+		);
+		if (
+			result.api.global.minBitrateStepSize !== s ||
+			result.api.global.maxBitrateStepSize !== maximum ||
+			(actual ? actual.forcedRenditionAboveHighestFixedRepresentation : 0) !==
+				n ||
+			(n > 0 &&
+				(actual?.forcedRenditionAboveHighestFixedRepresentationFactor !==
+					factor ||
+					actual.forcedRenditionAboveHighestFixedRepresentationCalculationMode !==
+						mode)) ||
+			prepared.rows.some((row) => {
+				const settings = actualRows.get(row.id)?.perTitleSettings;
+				return (
+					settings?.minBitrate !== row.minBitrate ||
+					settings.maxBitrate !== row.maxBitrate ||
+					settings.bitrateSelectionMode !== row.bitrateSelectionMode ||
+					settings.lowComplexityBoundaryForMaxBitrate !==
+						row.lowComplexityBoundaryForMaxBitrate ||
+					settings.highComplexityBoundaryForMaxBitrate !==
+						row.highComplexityBoundaryForMaxBitrate
+				);
+			})
+		) {
+			discardTrial(report, result);
+			report.status = "unknown";
+			if (result.derivation) {
+				result.derivation.constraints = report;
+				delete result.derivation.minimumStepRange;
+				delete result.derivation.integerWitness;
+			}
+			result.scenarios = result.scenarios.map((scenario) => ({
+				...scenario,
+				status: "unknown",
+				modelCountRange: null,
+				modelRungs: [],
+				rowModels: [],
+			}));
+			return unproven(result);
+		}
+	}
 	const selected = prepared;
 	const scenarios: PerTitleScenario[] = [];
 	const fractions = goal.scenarioFractions?.length

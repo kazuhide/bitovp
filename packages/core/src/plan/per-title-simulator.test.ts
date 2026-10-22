@@ -16,6 +16,245 @@ const automatic: PerTitleGoal = {
 };
 
 describe("proposePerTitleSettings", () => {
+	it("treats prototype-like row IDs as ordinary JSON keys in setting locks", () => {
+		for (const id of ["__proto__", "constructor", "toString"]) {
+			for (const streams of [
+				{},
+				JSON.parse(`{"${id}":["bitrateSelectionMode"]}`),
+			]) {
+				const goal: PerTitleGoal = JSON.parse(
+					JSON.stringify({
+						...automatic,
+						strategy: "fixed-ranges",
+						rows: [{ id, height: 360, minBitrate: 200000, maxBitrate: 400000 }],
+						settingLocks: { global: ["minBitrate"], streams },
+					}),
+				);
+				expect(() => recommendPerTitleSettings(goal)).not.toThrow();
+				const result = recommendPerTitleSettings(goal);
+				expect(result.api.streams[0]?.rowId).toBe(id);
+				if (Object.hasOwn(streams, id))
+					expect(result.api.streams[0]?.perTitleSettings).not.toHaveProperty(
+						"bitrateSelectionMode",
+					);
+			}
+		}
+	});
+	it("rejects malformed JSON setting-lock arrays with a diagnostic rather than throwing", () => {
+		for (const settingLocks of [
+			null,
+			[],
+			{ global: "minBitrate" },
+			{ global: [null] },
+			{ streams: [] },
+			{ streams: { a: null } },
+			{ streams: { a: "minBitrate" } },
+			{ streams: { a: [false] } },
+		]) {
+			const goal = JSON.parse(
+				JSON.stringify({
+					...automatic,
+					strategy: "fixed-ranges",
+					rows: [
+						{ id: "a", height: 360, minBitrate: 200000, maxBitrate: 400000 },
+					],
+					settingLocks,
+				}),
+			) as PerTitleGoal;
+			expect(() => recommendPerTitleSettings(goal)).not.toThrow();
+			expect(recommendPerTitleSettings(goal).diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "invalid-setting",
+					severity: "conflict",
+				}),
+			);
+		}
+	});
+	it("emits supported optional settings and independent outer stream factors without defaults", () => {
+		const goal: PerTitleGoal = {
+			...automatic,
+			strategy: "fixed-ranges",
+			targetQualityCrf: 0,
+			complexityFactor: 1.2,
+			resolutionScaleFactor: -2,
+			codecMinBitrateFactor: 0.8,
+			codecMaxBitrateFactor: 1.5,
+			codecBufsizeFactor: 2,
+			rows: [
+				{
+					id: "fixed",
+					height: 360,
+					minBitrate: 200000,
+					maxBitrate: 400000,
+					codecMaxBitrateFactor: 1.4,
+					codecBufsizeFactor: 1.8,
+				},
+			],
+			automaticTemplates: [
+				{
+					id: "auto",
+					height: 720,
+					codecMaxBitrateFactor: 1.6,
+					codecBufsizeFactor: 2.2,
+				},
+			],
+		};
+		const before = structuredClone(goal);
+		const result = recommendPerTitleSettings(goal);
+		expect(result.api.global).toMatchObject({
+			targetQualityCrf: 0,
+			complexityFactor: 1.2,
+			resolutionScaleFactor: -2,
+			codecMinBitrateFactor: 0.8,
+			codecMaxBitrateFactor: 1.5,
+			codecBufsizeFactor: 2,
+		});
+		expect(
+			result.api.streams.find((s) => s.rowId === "fixed")?.perTitleSettings,
+		).toMatchObject({ codecMaxBitrateFactor: 1.4, codecBufsizeFactor: 1.8 });
+		expect(
+			result.api.streams.find((s) => s.rowId === "auto")?.perTitleSettings,
+		).toEqual({ codecMaxBitrateFactor: 1.6, codecBufsizeFactor: 2.2 });
+		expect(goal).toEqual(before);
+		expect(recommendPerTitleSettings(automatic).api.global).not.toHaveProperty(
+			"targetQualityCrf",
+		);
+	});
+	it("rejects unsupported codec settings and nonfinite SDK values without hiding them", () => {
+		for (const extras of [
+			{ codec: "H265V2" as const, targetQualityCrf: 20 },
+			{ codec: "H264" as const, targetQualityQp: 20 },
+			{ codec: "VP9" as const, codecBufsizeFactor: 2 },
+			{ codec: "AV1" as const, codecMaxBitrateFactor: 2 },
+			{ complexityFactor: 0 },
+			{ resolutionScaleFactor: 16 },
+			{ targetQualityCrf: NaN },
+		]) {
+			const result = recommendPerTitleSettings({ ...automatic, ...extras });
+			expect(result.applicable).toBe(false);
+			expect(result.diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "invalid-setting",
+					severity: "conflict",
+				}),
+			);
+		}
+		const v2 = recommendPerTitleSettings({
+			...automatic,
+			codec: "H265V2",
+			targetQualityQp: 0,
+		});
+		expect(v2.api.global.targetQualityQp).toBe(0);
+	});
+	it("keeps explicit unset/false/zero locks out of inference and provider metadata", () => {
+		for (const autoRepresentations of [
+			undefined,
+			false,
+			{ adoptConfigurationThreshold: 0 },
+		] as const) {
+			const goal: PerTitleGoal = {
+				...automatic,
+				autoRepresentations,
+				settingLocks: { global: ["autoRepresentations", "targetQualityCrf"] },
+				adjustments: { global: { targetQualityCrf: { mode: "fixed" } } },
+			};
+			const result = recommendPerTitleSettings(goal);
+			expect(result.api.global.autoRepresentations).toEqual(
+				autoRepresentations === false ? undefined : autoRepresentations,
+			);
+			expect(result.api.global).not.toHaveProperty("targetQualityCrf");
+			expect(result.api).not.toHaveProperty("settingLocks");
+			expect(result.api).not.toHaveProperty("adjustments");
+		}
+	});
+	it("rejects unknown lock keys and unsupported independent stream factors", () => {
+		for (const goal of [
+			{ ...automatic, settingLocks: { global: ["countPolicy"] } },
+			{ ...automatic, settingLocks: { streams: { a: ["width"] } } },
+			{
+				...automatic,
+				codec: "H265V2" as const,
+				automaticTemplates: [{ id: "auto", codecBufsizeFactor: 2 }],
+			},
+		]) {
+			expect(recommendPerTitleSettings(goal).diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "invalid-setting",
+					severity: "conflict",
+				}),
+			);
+		}
+	});
+	it("emits outer factors independently of fixed-block modes and retains locked boundary values", () => {
+		const goal: PerTitleGoal = {
+			...automatic,
+			strategy: "fixed-resolutions",
+			rows: [{ id: "a", height: 360, codecMaxBitrateFactor: 1.4 }],
+		};
+		expect(
+			recommendPerTitleSettings(goal).api.streams[0]?.perTitleSettings,
+		).toEqual({ codecMaxBitrateFactor: 1.4 });
+		const locked: PerTitleGoal = {
+			...goal,
+			strategy: "fixed-ranges",
+			rows: [
+				{
+					id: "a",
+					height: 360,
+					minBitrate: 200000,
+					maxBitrate: 400000,
+					bitrateSelectionMode: "OPTIMIZED",
+					lowComplexityBoundaryForMaxBitrate: 0,
+				},
+			],
+			settingLocks: { streams: { a: ["lowComplexityBoundaryForMaxBitrate"] } },
+		};
+		expect(
+			recommendPerTitleSettings(locked).api.streams[0]?.perTitleSettings
+				?.lowComplexityBoundaryForMaxBitrate,
+		).toBe(0);
+		expect(recommendPerTitleSettings(locked).applicable).toBe(false);
+	});
+	it("ignores parked stream factor restrictions while enforcing emitted automatic factors", () => {
+		const parked = {
+			...automatic,
+			codec: "VP9" as const,
+			rows: [{ id: "parked", height: 360, codecMaxBitrateFactor: 2 }],
+		};
+		expect(recommendPerTitleSettings(parked).diagnostics).not.toContainEqual(
+			expect.objectContaining({ code: "invalid-setting" }),
+		);
+		const active = {
+			...parked,
+			automaticTemplates: [{ id: "auto", codecMaxBitrateFactor: 2 }],
+		};
+		expect(recommendPerTitleSettings(active).diagnostics).toContainEqual(
+			expect.objectContaining({ code: "invalid-setting" }),
+		);
+	});
+	it("reports a locked missing required step and never adjusts an explicitly locked step", () => {
+		const missing = recommendPerTitleSettings({
+			...automatic,
+			minBitrateStepSize: undefined,
+			settingLocks: { global: ["minBitrateStepSize"] },
+		});
+		expect(missing.applicable).toBe(false);
+		expect(missing.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "invalid-setting",
+				severity: "conflict",
+			}),
+		);
+		const results = proposePerTitleSettings({
+			...automatic,
+			strategy: "count",
+			countPolicy: { kind: "exact", count: 6 },
+			settingLocks: { global: ["minBitrateStepSize"] },
+		});
+		expect(results.every((r) => r.api.global.minBitrateStepSize === 2)).toBe(
+			true,
+		);
+	});
 	it("does not accept automatic resolution generation without an ordinary template", () => {
 		const [proposal] = proposePerTitleSettings({
 			...automatic,

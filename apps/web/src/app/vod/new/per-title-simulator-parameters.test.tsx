@@ -61,6 +61,39 @@ const globalValue = (key: string) => {
 };
 
 describe("calculated Per-Title parameter view", () => {
+	it("shows emitted optional quality, analysis and outer stream factors without inventing omitted values", () => {
+		const value = proposal();
+		Object.assign(value.api.global, {
+			targetQualityCrf: 21,
+			complexityFactor: 1.2,
+			resolutionScaleFactor: -1,
+			codecMinBitrateFactor: 0.5,
+			codecMaxBitrateFactor: 1.1,
+			codecBufsizeFactor: 2,
+			autoRepresentations: { adoptConfigurationThreshold: 0 },
+		});
+		if (value.api.streams[0]?.perTitleSettings)
+			Object.assign(value.api.streams[0].perTitleSettings, {
+				codecMaxBitrateFactor: 1.3,
+				codecBufsizeFactor: 2.2,
+			});
+		renderLocalized(<PerTitleParameterView proposal={value} />);
+		for (const [key, expected] of [
+			["targetQualityCrf", "21"],
+			["complexityFactor", "1.2"],
+			["resolutionScaleFactor", "-1"],
+			["codecMinBitrateFactor", "0.5"],
+			["codecMaxBitrateFactor", "1.1"],
+			["codecBufsizeFactor", "2"],
+			["autoRepresentations.adoptConfigurationThreshold", "0"],
+		] as const)
+			expect(globalValue(key)).toHaveTextContent(expected);
+		const row = screen.getByRole("row", { name: /Rendition 1/ });
+		expect(within(row).getByText("1.3")).toBeVisible();
+		expect(within(row).getByText("2.2")).toBeVisible();
+		expect(screen.queryByText("targetQualityQp")).toBeNull();
+	});
+
 	it.each([
 		"en",
 		"ja",

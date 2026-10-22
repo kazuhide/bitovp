@@ -744,6 +744,9 @@ export {
 	templateStreamRefSchema,
 } from "./plan/per-title-results";
 export type {
+	PerTitleAdjustment,
+	PerTitleAdjustmentMethod,
+	PerTitleAdjustments,
 	PerTitleApiSettings,
 	PerTitleAutomaticTemplate,
 	PerTitleCodec,
@@ -755,6 +758,7 @@ export type {
 	PerTitleGoalRow,
 	PerTitleProposal,
 	PerTitleScenario,
+	PerTitleSettingLocks,
 	PerTitleStrategy,
 } from "./plan/per-title-simulator";
 export {
@@ -842,6 +846,9 @@ export {
 	opusRenditionSchema,
 	PLAN_VERSION,
 	paddingSequenceSchema,
+	perTitleFixedResolutionAndBitrateSettingsSchema,
+	perTitleSchema,
+	perTitleStreamSettingsSchema,
 	planInputSchema,
 	planManifestSchema,
 	planMuxingSchema,

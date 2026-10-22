@@ -4,6 +4,10 @@ import {
 	parsePerTitlePreset,
 	serializePerTitlePreset,
 } from "./per-title-simulator-preset";
+import {
+	setPerTitleSetting,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 
 const goal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -69,6 +73,170 @@ function parse(value: unknown) {
 }
 
 describe("Per-Title local presets", () => {
+	it.each([
+		["minBitrateStepSize", 3],
+		["maxBitrateStepSize", 1.2],
+	] as const)("round-trips a tuned fixed %s with an automatic unset peer", (key, value) => {
+		const draft = setPerTitleSetting(goal, "global", key, value);
+		const tuned = tunePerTitleSettings(draft, goal);
+		const peer =
+			key === "minBitrateStepSize"
+				? "maxBitrateStepSize"
+				: "minBitrateStepSize";
+		expect(tuned.goal[key]).toBe(value);
+		expect(tuned.goal[peer]).toBeUndefined();
+		expect(parse(JSON.parse(serializePerTitlePreset(tuned.goal))).goal).toEqual(
+			tuned.goal,
+		);
+	});
+	it.each([
+		0, 0.35, 1,
+	])("preserves a parked automatic-representation threshold %s", (inactiveAutoRepresentationThreshold) => {
+		const edited = {
+			...goal,
+			autoRepresentations: false as const,
+			adjustments: { inactiveAutoRepresentationThreshold },
+		};
+		expect(parse(JSON.parse(serializePerTitlePreset(edited))).goal).toEqual(
+			edited,
+		);
+	});
+	it.each([
+		-0.01, 1.01,
+	])("rejects an out-of-range parked threshold %s", (inactiveAutoRepresentationThreshold) => {
+		expect(() =>
+			parse({
+				version: 1,
+				goal: { ...goal, adjustments: { inactiveAutoRepresentationThreshold } },
+			}),
+		).toThrow("Invalid Per-Title preset.");
+	});
+	it("retains all supported global and outer stream settings in an editable reference", () => {
+		const original = {
+			...reference,
+			global: {
+				...reference.global,
+				targetQualityCrf: 0,
+				complexityFactor: 0.8,
+				resolutionScaleFactor: -1.25,
+				codecMinBitrateFactor: 0.5,
+				codecMaxBitrateFactor: 1.8,
+				codecBufsizeFactor: 2.4,
+			},
+			streams: reference.streams.map((stream) => ({
+				...stream,
+				perTitleSettings: {
+					...stream.perTitleSettings,
+					codecMaxBitrateFactor: 1.6,
+					codecBufsizeFactor: 2.2,
+				},
+			})),
+		};
+		const parsed = parse({ version: 1, reference: original });
+		expect(parsed.goal).toMatchObject(original.global);
+		expect(parsed.goal.automaticTemplates?.[0]).toMatchObject({
+			codecMaxBitrateFactor: 1.6,
+			codecBufsizeFactor: 2.2,
+		});
+		expect(parsed.goal.rows?.[0]).toMatchObject({
+			codecMaxBitrateFactor: 1.6,
+			codecBufsizeFactor: 2.2,
+		});
+		expect(
+			parse(JSON.parse(serializePerTitlePreset(parsed.goal, parsed.reference))),
+		).toEqual(parsed);
+	});
+
+	it("round-trips canonical setting locks and automatic adjustment methods", () => {
+		const edited = {
+			...goal,
+			settingLocks: {
+				global: [
+					"resolutionScaleFactor",
+					"autoRepresentations.adoptConfigurationThreshold",
+				],
+				streams: { "sample-low": ["codecMaxBitrateFactor", "minBitrate"] },
+			},
+			adjustments: {
+				global: {
+					resolutionScaleFactor: { mode: "fixed" as const },
+					maxBitrateStepSize: {
+						mode: "auto" as const,
+						method: "constraints" as const,
+					},
+				},
+				streams: {
+					"sample-low": {
+						minBitrate: {
+							mode: "auto" as const,
+							method: "proportional" as const,
+						},
+					},
+				},
+			},
+		};
+		expect(parse(JSON.parse(serializePerTitlePreset(edited))).goal).toEqual(
+			edited,
+		);
+	});
+
+	it.each([
+		{ settingLocks: { global: ["credentials"] } },
+		{ settingLocks: { streams: { "sample-low": ["codecMinBitrateFactor"] } } },
+		{
+			adjustments: {
+				global: { maxBitrate: { mode: "auto", method: "guess" } },
+			},
+		},
+		{
+			adjustments: { streams: { "sample-low": { secret: { mode: "fixed" } } } },
+		},
+		{
+			adjustments: {
+				global: { targetQualityCrf: { mode: "auto", method: "proportional" } },
+			},
+		},
+	])("rejects unsupported tuning metadata %j", (metadata) => {
+		expect(() => parse({ version: 1, goal: { ...goal, ...metadata } })).toThrow(
+			"Invalid Per-Title preset.",
+		);
+	});
+	it("rejects a fixed required step without a stored value", () => {
+		const edited = {
+			...goal,
+			minBitrateStepSize: undefined,
+			adjustments: { global: { minBitrateStepSize: { mode: "fixed" } } },
+		};
+		expect(() => parse({ version: 1, goal: edited })).toThrow(
+			"Invalid Per-Title preset.",
+		);
+	});
+
+	it.each([
+		["VP9", { codecMaxBitrateFactor: 1.5 }],
+		["AV1", { codecBufsizeFactor: 2 }],
+		["H265V2", { targetQualityCrf: 20 }],
+		["H265", { targetQualityQp: 20 }],
+	] as const)("rejects unsupported %s global settings", (codec, fields) => {
+		expect(() =>
+			parsePerTitlePreset(
+				JSON.stringify({ version: 1, goal: { ...goal, codec, ...fields } }),
+				[codec],
+			),
+		).toThrow("Invalid Per-Title preset.");
+	});
+
+	it("supports a zero H265V2 probe QP without adding a CRF", () => {
+		const edited = {
+			...goal,
+			codec: "H265V2" as const,
+			targetQualityQp: 0,
+			resolutionScaleFactor: 0,
+		};
+		expect(
+			parsePerTitlePreset(serializePerTitlePreset(edited), ["H265V2"]).goal,
+		).toEqual(edited);
+	});
 	it("preserves disabled auto representations when the original reference omits the object", () => {
 		const parsed = parse({ version: 1, reference });
 		expect(parsed.goal.autoRepresentations).toBe(false);
@@ -204,7 +372,7 @@ describe("Per-Title local presets", () => {
 				[codec],
 			),
 		).toEqual(parsed);
-		expect(parsed.goal).not.toHaveProperty("complexityFactor");
+		expect(parsed.goal).toHaveProperty("complexityFactor", 1.25);
 		expect(parsed.goal.rows?.[0]).toEqual({
 			id: "generic-required",
 			height: 360,

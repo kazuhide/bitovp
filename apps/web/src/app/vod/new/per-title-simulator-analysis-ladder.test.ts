@@ -327,6 +327,41 @@ describe("whole-ladder current-setting analysis", () => {
 			assess(result.advice[0]?.goal ?? goal).globalCapacity,
 		).not.toBeNull();
 	});
+	it("explains unresolved placement growth on a direct cap repair without a whole-ladder certificate", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 120_000,
+			maxBitrate: 7_200_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 10,
+			countPolicy: { kind: "unrestricted" },
+			autoRepresentations: false,
+			rows: [
+				{
+					id: "fixed",
+					height: 400,
+					minBitrate: 7_190_000,
+					maxBitrate: 7_190_000,
+					bitrateSelectionMode: "OPTIMIZED",
+				},
+			],
+			automaticTemplates: [{ id: "upper-auto", height: 800 }],
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1025 / 1024,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+		};
+		const unresolved = analyzePerTitleSettings(goal, "cap").advice.find(
+			(item) => item.facts.capacityUnresolved === 1,
+		);
+		expect(unresolved).toBeDefined();
+		expect(unresolved?.facts.wholeLadderImprovement).toBe(0);
+		expect(unresolved?.explanation?.en).toContain("model bound");
+		expect(unresolved?.explanation?.ja).toContain("検証上限");
+	});
 	it("describes a lower forced floor without calling it an increase", () => {
 		const goal = mixed(7_200_000);
 		goal.minBitrateStepSize = 1.2;

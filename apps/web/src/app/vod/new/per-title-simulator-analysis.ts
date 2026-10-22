@@ -104,11 +104,9 @@ function explanation(
 		const tracked = after.topResponse.status === "tracked";
 		const simpleBefore = before.topResponse.floor;
 		const simpleAfter = after.topResponse.floor;
-		const capacity = (item.facts.capacityIncrease ?? 0) > 0;
-		const unbounded = item.facts.capacityUnresolved === 1;
 		return {
-			en: `${tracked ? `Direct connection passes over the whole ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}–${rate(global.maxBitrate)} kbps analysis interval.` : `Extend the fixed curves toward ${rate(global.maxBitrate)} kbps; spacing is rechecked over the whole input interval.`} Upper placement room: ${before.upperSlots?.maximum ?? "unknown"}→${after.upperSlots?.maximum ?? "unknown"} (not output count).${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? ` Simple-input forced target: ${rate(simpleBefore)}→${rate(simpleAfter)} kbps.` : ""}${unbounded ? " Smaller spacing exceeds the placement-count model bound; the increase is unresolved, not zero." : capacity ? " Smaller minimum spacing allows more ordinary rungs elsewhere." : ""} Global limits and quality controls stay unchanged; actual count and quality require media.`,
-			ja: `${tracked ? `解析値 ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}～${rate(global.maxBitrate)} kbps の全区間で、最上固定段から直接接続できる案です。` : `固定段が ${rate(global.maxBitrate)} kbps まで応答するよう調整し、段間隔を全区間で再検証した案です。`} 上側の配置余地は ${before.upperSlots?.maximum ?? "未確定"}→${after.upperSlots?.maximum ?? "未確定"} 段です。${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? `単純側の強制追加目標は ${rate(simpleBefore)}→${rate(simpleAfter)} kbps に変わります。` : ""}${unbounded ? "最小段間隔を下げると配置本数の検証上限を超えます。増加量は未確定で、増えないという意味ではありません。" : capacity ? "最小段間隔を下げるため、ほかの区間で本数が増える余地があります。" : ""} 全体範囲と画質設定は維持します。実際の本数と画質は素材で確認してください。`,
+			en: `${tracked ? `Direct connection passes over the whole ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}–${rate(global.maxBitrate)} kbps analysis interval.` : `Extend the fixed curves toward ${rate(global.maxBitrate)} kbps; spacing is rechecked over the whole input interval.`} Upper placement room: ${before.upperSlots?.maximum ?? "unknown"}→${after.upperSlots?.maximum ?? "unknown"} (not output count).${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? ` Simple-input forced target: ${rate(simpleBefore)}→${rate(simpleAfter)} kbps.` : ""} Global limits and quality controls stay unchanged; actual count and quality require media.`,
+			ja: `${tracked ? `解析値 ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}～${rate(global.maxBitrate)} kbps の全区間で、最上固定段から直接接続できる案です。` : `固定段が ${rate(global.maxBitrate)} kbps まで応答するよう調整し、段間隔を全区間で再検証した案です。`} 上側の配置余地は ${before.upperSlots?.maximum ?? "未確定"}→${after.upperSlots?.maximum ?? "未確定"} 段です。${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? `単純側の強制追加目標は ${rate(simpleBefore)}→${rate(simpleAfter)} kbps に変わります。` : ""} 全体範囲と画質設定は維持します。実際の本数と画質は素材で確認してください。`,
 		};
 	}
 	if (
@@ -148,6 +146,29 @@ function explanation(
 	return {
 		en: `${method.en} At analysis input ${rate(reach.highInput)} kbps, the top can reach ${rate(reach.high.maximum)} kbps; at input ${rate(reach.lowInput)} kbps, its upper target is ${rate(reach.low.maximum)} kbps. These are conditional settings examples.`,
 		ja: `${method.ja} 解析値を ${rate(reach.highInput)} kbps と置くと上限 ${rate(reach.high.maximum)} kbps、${rate(reach.lowInput)} kbps と置くと最上段の上側目標は ${rate(reach.low.maximum)} kbps になります。`,
+	};
+}
+
+/** Placement-risk wording applies to every certified objective and explanation path. */
+function explainPlacementRisk(
+	message: Message,
+	facts: PerTitleAdvice["facts"],
+): Message {
+	if (!((facts.capacityIncrease ?? 0) > 0 || facts.capacityUnresolved === 1))
+		return message;
+	const warning =
+		facts.capacityUnresolved === 1
+			? {
+					en: "Minimum spacing was reduced; arithmetic placement capacity exceeds the model bound. The increase is unresolved, not zero.",
+					ja: "最小段間隔を下げると配置本数の検証上限を超えます。増加量は未確定で、増えないという意味ではありません。",
+				}
+			: {
+					en: "Arithmetic placement room increases under the smaller minimum spacing. This is not a native output-count prediction.",
+					ja: "最小段間隔を下げるため、計算上の配置余地が増えます。実際の出力本数の予測ではありません。",
+				};
+	return {
+		en: `${message.en} ${warning.en}`,
+		ja: `${message.ja}${warning.ja}`,
 	};
 }
 
@@ -482,7 +503,10 @@ export function analyzePerTitleSettings(
 					? (reach.count.maximum ?? goal.countPolicy.count)
 					: 0,
 		};
-		item.explanation = explanation(item, checked, ladder, checkedLadder);
+		item.explanation = explainPlacementRisk(
+			explanation(item, checked, ladder, checkedLadder),
+			item.facts,
+		);
 		result.advice.push(item);
 		result.search.certified++;
 	}

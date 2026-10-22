@@ -5,8 +5,12 @@ import {
 	type PerTitleGoal,
 	type PerTitleGoalRow,
 } from "@bitovp/core";
+import { perTitleAdviceFieldKey } from "./per-title-simulator-advice-fields";
+import { protectedPerTitleRangeMap } from "./per-title-simulator-joint-mapping";
 import {
 	initializePerTitleSettings,
+	type PerTitleSettingScope,
+	type PerTitleSettingValue,
 	setPerTitleSetting,
 } from "./per-title-simulator-tuning";
 
@@ -80,17 +84,20 @@ function connect(
 	goal: PerTitleGoal,
 	lowerStep: boolean,
 	fits: (spacing: number) => boolean | undefined,
+	maximumFixed: boolean,
 ) {
 	let next = goal;
 	for (let attempt = 0; attempt < 32; attempt++) {
 		const certificate = connections(next);
 		if (!certificate) break;
 		const s = next.minBitrateStepSize ?? 0;
-		const t = Math.max(
-			next.maxBitrateStepSize ?? 0,
-			s,
-			certificate.maximumAdjacentRatio ?? 0,
-		);
+		const t = maximumFixed
+			? (next.maxBitrateStepSize ?? 0)
+			: Math.max(
+					next.maxBitrateStepSize ?? 0,
+					s,
+					certificate.maximumAdjacentRatio ?? 0,
+				);
 		if (!step(t)) break;
 		next = setPerTitleSetting(next, "global", "maxBitrateStepSize", t);
 		const limit = certificate.minimumAdjacentRatio ?? s;
@@ -272,6 +279,7 @@ function evaluate(
 export function jointPerTitleExpansion(
 	previous: PerTitleGoal,
 	current: PerTitleGoal,
+	protectedKeys: ReadonlySet<string> = new Set(),
 ) {
 	const before = initializePerTitleSettings(previous);
 	if (
@@ -299,21 +307,38 @@ export function jointPerTitleExpansion(
 	const p =
 		Math.log(current.maxBitrate / before.minBitrate) /
 		Math.log(before.maxBitrate / before.minBitrate);
-	const map = (value: number) =>
-		Math.round(before.minBitrate * (value / before.minBitrate) ** p);
+	const held = (scope: PerTitleSettingScope, key: string, rowId?: string) =>
+		protectedKeys.has(
+			perTitleAdviceFieldKey({
+				scope,
+				key,
+				...(rowId === undefined ? {} : { rowId }),
+			}),
+		);
+	const set = (
+		goal: PerTitleGoal,
+		scope: PerTitleSettingScope,
+		key: string,
+		value: PerTitleSettingValue,
+		rowId?: string,
+	) =>
+		held(scope, key, rowId)
+			? goal
+			: setPerTitleSetting(goal, scope, key, value, rowId);
+	const map = protectedPerTitleRangeMap(before, current, protectedKeys);
+	if (!map) return [];
 	let base = initializePerTitleSettings(current);
 	for (const row of before.rows) {
 		for (const key of ["minBitrate", "maxBitrate"] as const)
-			base = setPerTitleSetting(
-				base,
-				"stream",
-				key,
-				map(row[key] as number),
-				row.id,
-			);
+			base = set(base, "stream", key, map(row[key] as number), row.id);
 	}
-	let s = before.minBitrateStepSize ** p;
-	if (!step(s) || !step(before.maxBitrateStepSize ** p)) return [];
+	let s = held("global", "minBitrateStepSize")
+		? (base.minBitrateStepSize as number)
+		: before.minBitrateStepSize ** p;
+	const maximum = held("global", "maxBitrateStepSize")
+		? (base.maxBitrateStepSize as number)
+		: before.maxBitrateStepSize ** p;
+	if (!step(s) || !step(maximum)) return [];
 	const fits = (spacing: number) =>
 		capacity(base.minBitrate, base.maxBitrate, spacing) <=
 			capacity(
@@ -335,6 +360,7 @@ export function jointPerTitleExpansion(
 				),
 		);
 	if (!fits(s)) {
+		if (held("global", "minBitrateStepSize")) return [];
 		let lower = s,
 			upper = Math.max(s, base.maxBitrate / base.minBitrate + 1);
 		for (let i = 0; i < 64; i++) {
@@ -345,13 +371,8 @@ export function jointPerTitleExpansion(
 		}
 		s = upper;
 	}
-	base = setPerTitleSetting(base, "global", "minBitrateStepSize", s);
-	base = setPerTitleSetting(
-		base,
-		"global",
-		"maxBitrateStepSize",
-		Math.max(s, before.maxBitrateStepSize ** p),
-	);
+	base = set(base, "global", "minBitrateStepSize", s);
+	base = set(base, "global", "maxBitrateStepSize", Math.max(s, maximum));
 	const rule = before.fixedResolutionAndBitrateConfiguration;
 	if (rule && rule.forcedRenditionAboveHighestFixedRepresentation !== 0) {
 		if (
@@ -362,7 +383,11 @@ export function jointPerTitleExpansion(
 			!rule.forcedRenditionAboveHighestFixedRepresentationCalculationMode
 		)
 			return [];
-		let factor = rule.forcedRenditionAboveHighestFixedRepresentationFactor ** p;
+		const factorKey =
+			"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor";
+		let factor = held("global", factorKey)
+			? rule.forcedRenditionAboveHighestFixedRepresentationFactor
+			: rule.forcedRenditionAboveHighestFixedRepresentationFactor ** p;
 		if (!step(factor)) return [];
 		const top = Math.max(
 			...(base.rows ?? []).map((row) => row.maxBitrate ?? 0),
@@ -378,6 +403,7 @@ export function jointPerTitleExpansion(
 			);
 		};
 		if (!fitsCap(factor)) {
+			if (held("global", factorKey)) return [];
 			let lower = 1,
 				upper = factor;
 			for (let i = 0; i < 64; i++) {
@@ -388,7 +414,7 @@ export function jointPerTitleExpansion(
 			}
 			factor = lower;
 		}
-		base = setPerTitleSetting(
+		base = set(
 			base,
 			"global",
 			"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
@@ -432,11 +458,17 @@ export function jointPerTitleExpansion(
 				valid = false;
 				break;
 			}
-			if (policy.recipe && row.lowComplexityBoundaryForMaxBitrate === oldLow)
+			if (
+				policy.recipe &&
+				!held("stream", "lowComplexityBoundaryForMaxBitrate", row.id) &&
+				row.lowComplexityBoundaryForMaxBitrate === oldLow
+			)
 				next = { ...next, lowComplexityBoundaryForMaxBitrate: newLow };
-			const calibrated = policy.expand
-				? expandedHigh(row, next, before.maxBitrate, current.maxBitrate)
-				: next;
+			const calibrated =
+				policy.expand &&
+				!held("stream", "highComplexityBoundaryForMaxBitrate", row.id)
+					? expandedHigh(row, next, before.maxBitrate, current.maxBitrate)
+					: next;
 			if (!calibrated) {
 				valid = false;
 				break;
@@ -445,10 +477,15 @@ export function jointPerTitleExpansion(
 				"lowComplexityBoundaryForMaxBitrate",
 				"highComplexityBoundaryForMaxBitrate",
 			] as const)
-				goal = setPerTitleSetting(goal, "stream", key, calibrated[key], row.id);
+				goal = set(goal, "stream", key, calibrated[key], row.id);
 		}
 		if (!valid) continue;
-		goal = connect(goal, !policy.recipe, fits);
+		goal = connect(
+			goal,
+			!policy.recipe && !held("global", "minBitrateStepSize"),
+			fits,
+			held("global", "maxBitrateStepSize"),
+		);
 		const evaluated = evaluate(before, goal);
 		if (evaluated)
 			candidates.push({

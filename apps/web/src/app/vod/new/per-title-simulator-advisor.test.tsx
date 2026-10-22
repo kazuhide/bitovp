@@ -47,7 +47,11 @@ describe("manual Per-Title adjustment advice", () => {
 			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
 			locale,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", {
+				name: locale === "en" ? "Use this adjustment" : "この調整を採用",
+			}),
+		).toBeNull();
 		const edited = { ...session, maxBitrate: 8_000_000 };
 		view.rerender(
 			<PerTitleAdvisor goal={edited} session={session} onAdopt={onAdopt} />,
@@ -72,7 +76,11 @@ describe("manual Per-Title adjustment advice", () => {
 		expect(accepted?.rows?.[0]?.highComplexityBoundaryForMaxBitrate).toBe(
 			8_000_000,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", {
+				name: locale === "en" ? "Use this adjustment" : "この調整を採用",
+			}),
+		).toBeNull();
 	});
 	it("retains the original dependency through intermediate numeric edits", () => {
 		const session = source();
@@ -106,7 +114,9 @@ describe("manual Per-Title adjustment advice", () => {
 				onAdopt={onAdopt}
 			/>,
 		);
-		expect(screen.getByRole("button")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		).toBeInTheDocument();
 		const loaded = source();
 		view.rerender(
 			<PerTitleAdvisor
@@ -115,7 +125,9 @@ describe("manual Per-Title adjustment advice", () => {
 				onAdopt={onAdopt}
 			/>,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
 		view.rerender(
 			<PerTitleAdvisor
 				goal={{ ...loaded, codec: "VP9", maxBitrate: 10_000_000 }}
@@ -123,7 +135,9 @@ describe("manual Per-Title adjustment advice", () => {
 				onAdopt={onAdopt}
 			/>,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
 		view.rerender(
 			<PerTitleAdvisor
 				goal={{ ...loaded, minBitrate: 200_000, maxBitrate: 11_000_000 }}
@@ -131,7 +145,9 @@ describe("manual Per-Title adjustment advice", () => {
 				onAdopt={onAdopt}
 			/>,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
 	});
 	it("drops the previous suggestion when a different field is edited", () => {
 		const session = source();
@@ -143,7 +159,9 @@ describe("manual Per-Title adjustment advice", () => {
 		view.rerender(
 			<PerTitleAdvisor goal={changed} session={session} onAdopt={onAdopt} />,
 		);
-		expect(screen.getByRole("button")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		).toBeInTheDocument();
 		view.rerender(
 			<PerTitleAdvisor
 				goal={{ ...changed, targetQualityCrf: 20 }}
@@ -151,7 +169,9 @@ describe("manual Per-Title adjustment advice", () => {
 				onAdopt={onAdopt}
 			/>,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
 	});
 	it("explains the automatic workflow after an edit without offering incompatible advice", () => {
 		const session: PerTitleGoal = {
@@ -172,7 +192,9 @@ describe("manual Per-Title adjustment advice", () => {
 				onAdopt={onAdopt}
 			/>,
 		);
-		expect(screen.queryByRole("button")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
 		expect(screen.getByRole("status")).toHaveTextContent(
 			"Set the fields to Fixed",
 		);
@@ -238,5 +260,202 @@ describe("manual Per-Title adjustment advice", () => {
 		expect(
 			screen.getByRole("region", { name: "Suggested adjustment" }),
 		).toHaveTextContent("trunc(1,200,001 × 1.25) = 1,500,001 bps");
+	});
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps current values without editing data, and recalculates after release (%s)", (locale) => {
+		const session: PerTitleGoal = {
+			strategy: "count",
+			codec: "VP9",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 5 },
+		};
+		const current: PerTitleGoal = {
+			...session,
+			countPolicy: { kind: "exact", count: 3 },
+		};
+		const snapshot = structuredClone(current),
+			onAdopt = vi.fn();
+		const view = renderLocalized(
+			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+			locale,
+		);
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		const field =
+			locale === "en" ? "Maximum bitrate ratio" : "ビットレート間隔の上限";
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: `${locale === "en" ? "Keep current value" : "現在値を維持"}: ${field}`,
+			}),
+		);
+		const maintained = screen.getByRole("region", {
+			name: locale === "en" ? "Maintained values" : "維持する値",
+		});
+		expect(maintained).toHaveTextContent("1.9");
+		expect(
+			screen.getByRole("button", {
+				name: `${locale === "en" ? "Release" : "解除"}: ${field}`,
+			}),
+		).toHaveFocus();
+		expect(
+			screen.queryByRole("button", {
+				name: locale === "en" ? "Use this adjustment" : "この調整を採用",
+			}),
+		).toBeNull();
+		expect(screen.getByRole("status")).toHaveTextContent(
+			locale === "en"
+				? "No checked adjustment"
+				: "確認できる調整案はありません",
+		);
+		expect(current).toEqual(snapshot);
+		expect(onAdopt).not.toHaveBeenCalled();
+		const oldAdvice = perTitleAdvice(session, current, {
+			scope: "count",
+			key: "count",
+		})[0];
+		if (!oldAdvice) throw new Error("Expected initial advice.");
+		expect(
+			applyPerTitleAdvice(current, oldAdvice, {
+				protectedFields: [{ scope: "global", key: "maxBitrateStepSize" }],
+			}),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: `${locale === "en" ? "Release" : "解除"}: ${field}`,
+			}),
+		);
+		expect(
+			screen.queryByRole("region", {
+				name: locale === "en" ? "Maintained values" : "維持する値",
+			}),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: locale === "en" ? "Use this adjustment" : "この調整を採用",
+			}),
+		).toHaveFocus();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "en" ? "Use this adjustment" : "この調整を採用",
+			}),
+		);
+		expect(onAdopt).toHaveBeenCalledTimes(1);
+		expect(onAdopt.mock.calls[0]?.[1]).toEqual({ protectedFields: [] });
+	});
+	it("keeps the latest manually edited pin through adoption, and clears it on a new session", () => {
+		const session: PerTitleGoal = {
+			strategy: "count",
+			codec: "VP9",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 5 },
+		};
+		let current: PerTitleGoal = {
+			...session,
+			countPolicy: { kind: "exact", count: 3 },
+		};
+		const onAdopt = vi.fn();
+		const view = renderLocalized(
+			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+		);
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate ratio",
+			}),
+		);
+		current = { ...current, maxBitrateStepSize: 2.5 };
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("2.5");
+		current = { ...current, countPolicy: { kind: "exact", count: 5 } };
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		);
+		const [advice, options] = onAdopt.mock.calls[0] ?? [];
+		expect(options).toEqual({
+			protectedFields: [{ scope: "global", key: "maxBitrateStepSize" }],
+		});
+		const accepted = applyPerTitleAdvice(current, advice, options);
+		expect(accepted).not.toBeNull();
+		expect(accepted?.maxBitrateStepSize).toBe(2.5);
+		view.rerender(
+			<PerTitleAdvisor
+				goal={accepted ?? current}
+				session={session}
+				onAdopt={onAdopt}
+			/>,
+		);
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("2.5");
+
+		view.rerender(
+			<PerTitleAdvisor
+				goal={{ ...(accepted ?? current), codec: "H264" }}
+				session={session}
+				onAdopt={onAdopt}
+			/>,
+		);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		const loaded = { ...session };
+		view.rerender(
+			<PerTitleAdvisor goal={loaded} session={loaded} onAdopt={onAdopt} />,
+		);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: /Release:/ })).toBeNull();
+	});
+	it("prunes a maintained field only when its rendition is removed", () => {
+		const session = source(),
+			onAdopt = vi.fn();
+		const current = { ...session, maxBitrate: 8_000_000 };
+		const view = renderLocalized(
+			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+		);
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate (kbps), rendition 1",
+			}),
+		);
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("1,600 kbps");
+		view.rerender(
+			<PerTitleAdvisor
+				goal={{ ...current, rows: [] }}
+				session={session}
+				onAdopt={onAdopt}
+			/>,
+		);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /Release:.*rendition/ }),
+		).toBeNull();
+		expect(onAdopt).not.toHaveBeenCalled();
 	});
 });

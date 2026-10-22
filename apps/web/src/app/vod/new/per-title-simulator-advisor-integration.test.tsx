@@ -106,4 +106,55 @@ describe("Fixed simulator advice integration", () => {
 		expect(goal).toEqual(original);
 		expect(onApply).not.toHaveBeenCalled();
 	});
+	it("keeps current step settings while pinning and unpinning advice, without applying a job", () => {
+		const initial: PerTitleGoal = {
+			strategy: "count",
+			codec: "VP9",
+			minBitrate: 100_000,
+			maxBitrate: 8_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 5 },
+		};
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={initial}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Desired count" }),
+			{ target: { value: "3" } },
+		);
+		const edited = api();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate ratio",
+			}),
+		);
+		expect(api()).toEqual(edited);
+		expect(onApply).not.toHaveBeenCalled();
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Release: Maximum bitrate ratio" }),
+		);
+		expect(api()).toEqual(edited);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		);
+		expect(api().global.minBitrateStepSize).not.toBe(
+			edited.global.minBitrateStepSize,
+		);
+		expect(api().global.minBitrate).toBe(edited.global.minBitrate);
+		expect(api().global.maxBitrate).toBe(edited.global.maxBitrate);
+		expect(
+			screen.getByRole("spinbutton", { name: "Desired count" }),
+		).toHaveValue(3);
+		expect(onApply).not.toHaveBeenCalled();
+	});
 });

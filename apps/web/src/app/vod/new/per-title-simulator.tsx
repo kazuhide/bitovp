@@ -640,13 +640,15 @@ function SimulatorEditor({
 					<PerTitleAdvisor
 						goal={goal}
 						session={referenceGoal}
-						onAdopt={(advice) =>
+						onAdopt={(advice, options) =>
 							setGoal((current) => {
 								const normalized = tunePerTitleSettings(
 									current,
 									referenceGoal,
 								).goal;
-								return applyPerTitleAdvice(normalized, advice) ?? current;
+								return (
+									applyPerTitleAdvice(normalized, advice, options) ?? current
+								);
 							})
 						}
 					/>

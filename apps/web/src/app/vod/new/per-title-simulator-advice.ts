@@ -1,13 +1,25 @@
 import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
+import {
+	type PerTitleAdviceField,
+	type PerTitleAdviceOptions,
+	perTitleAdviceFieldKey,
+	perTitleAdviceFields,
+	protectedPerTitleAdviceFields,
+} from "./per-title-simulator-advice-fields";
 import { jointPerTitleExpansion } from "./per-title-simulator-joint";
+
+export {
+	type PerTitleAdviceField,
+	type PerTitleAdviceOptions,
+	perTitleAdviceFieldKey,
+} from "./per-title-simulator-advice-fields";
+
 import {
 	getPerTitleAdjustment,
 	getPerTitleGoalSetting,
 	getPerTitleSetting,
 	type PerTitleSettingScope,
 	type PerTitleSettingValue,
-	perTitleGlobalFields,
-	perTitleStreamFields,
 	setPerTitleAdjustment,
 	setPerTitleSetting,
 	tunePerTitleSettings,
@@ -55,7 +67,7 @@ const rate = (value: unknown): value is number =>
 	value > 0 &&
 	value <= 2_147_483_647;
 const same = (a: unknown, b: unknown) => fingerprint(a) === fingerprint(b);
-type Field = Pick<PerTitleAdviceChange, "scope" | "key" | "rowId">;
+type Field = PerTitleAdviceField;
 type Variant = {
 	reason: PerTitleAdvice["reason"];
 	goal: PerTitleGoal;
@@ -63,8 +75,8 @@ type Variant = {
 	facts: Record<string, number>;
 	solver?: boolean;
 };
-const fieldKey = (field: Field) =>
-	JSON.stringify([field.scope, field.rowId, field.key]);
+const fieldKey = perTitleAdviceFieldKey;
+const settings = perTitleAdviceFields;
 
 // A bounded exact-input token includes unset/non-finite values; it is not authentication.
 function fingerprint(value: unknown): string {
@@ -113,21 +125,8 @@ function bounded(goal: PerTitleGoal) {
 		(goal.scenarioFractions?.length ?? 0) <= 9
 	);
 }
-function settings(goal: PerTitleGoal): Field[] {
-	return [
-		...perTitleGlobalFields(goal.codec).map((f) => ({
-			scope: "global" as const,
-			key: f.key,
-		})),
-		...[...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])].flatMap(
-			(row) =>
-				perTitleStreamFields(goal.codec).map((f) => ({
-					scope: "stream" as const,
-					key: f.key,
-					rowId: row.id,
-				})),
-		),
-	];
+function adviceFingerprint(goal: PerTitleGoal, fields: readonly Field[]) {
+	return `${fingerprint(goal)}\n${JSON.stringify(fields.map(fieldKey))}`;
 }
 function editedOnly(
 	previous: PerTitleGoal,
@@ -279,6 +278,7 @@ export function perTitleAdvice(
 	previous: PerTitleGoal,
 	current: PerTitleGoal,
 	edit: PerTitleAdviceEdit,
+	options: PerTitleAdviceOptions = {},
 ): PerTitleAdvice[] {
 	try {
 		if (
@@ -288,7 +288,9 @@ export function perTitleAdvice(
 			!editedOnly(previous, current, edit)
 		)
 			return [];
-		const inputFingerprint = fingerprint(current);
+		const protectedFields = protectedPerTitleAdviceFields(current, options);
+		const protectedKeys = new Set(protectedFields.map(fieldKey));
+		const inputFingerprint = adviceFingerprint(current, protectedFields);
 		const baseline = tunePerTitleSettings(current, current);
 		const variants: Variant[] = [];
 		const rows =
@@ -307,6 +309,7 @@ export function perTitleAdvice(
 			value: (f: Field) => PerTitleSettingValue,
 			facts: Record<string, number>,
 		) => {
+			fields = fields.filter((f) => !protectedKeys.has(fieldKey(f)));
 			if (fields.length)
 				variants.push({
 					reason,
@@ -321,7 +324,11 @@ export function perTitleAdvice(
 			rate(current.maxBitrate)
 		) {
 			if (current.maxBitrate > previous.maxBitrate) {
-				for (const candidate of jointPerTitleExpansion(previous, current))
+				for (const candidate of jointPerTitleExpansion(
+					previous,
+					current,
+					protectedKeys,
+				))
 					variants.push({
 						reason: "joint-range",
 						goal: candidate.goal,
@@ -443,8 +450,11 @@ export function perTitleAdvice(
 				current.fixedResolutionAndBitrateConfiguration === undefined
 			)
 				keys.push(...FORCED);
+			const adjustableKeys = keys.filter(
+				(key) => !protectedKeys.has(fieldKey(field(key))),
+			);
 			let trial = current;
-			for (const key of keys)
+			for (const key of adjustableKeys)
 				trial = setPerTitleAdjustment(trial, baseline.proposal, "global", key, {
 					mode: "auto",
 					method: "constraints",
@@ -452,7 +462,7 @@ export function perTitleAdvice(
 			variants.push({
 				reason: "spacing",
 				goal: trial,
-				allowed: keys.map((key) => field(key)),
+				allowed: adjustableKeys.map((key) => field(key)),
 				facts: {},
 				solver: true,
 			});
@@ -478,6 +488,7 @@ export function perTitleAdvice(
 				changes.some(
 					(c) =>
 						!allowed.has(fieldKey(c)) ||
+						protectedKeys.has(fieldKey(c)) ||
 						(edit.scope !== "count" && fieldKey(c) === fieldKey(edit as Field)),
 				)
 			)
@@ -497,6 +508,16 @@ export function perTitleAdvice(
 					),
 				current,
 			);
+			if (
+				protectedFields.some(
+					(f) =>
+						!Object.is(
+							getPerTitleGoalSetting(current, f.scope, f.key, f.rowId),
+							getPerTitleGoalSetting(adopted, f.scope, f.key, f.rowId),
+						),
+				)
+			)
+				continue;
 			const checked = tunePerTitleSettings(adopted, adopted);
 			if (
 				!same(checked.proposal.api, trial.proposal.api) ||
@@ -568,12 +589,21 @@ export function perTitleAdvice(
 export function applyPerTitleAdvice(
 	current: PerTitleGoal,
 	advice: PerTitleAdvice,
+	options: PerTitleAdviceOptions = {},
 ): PerTitleGoal | null {
 	try {
+		const protectedFields = protectedPerTitleAdviceFields(current, options);
 		if (
 			!bounded(current) ||
 			!bounded(advice.goal) ||
-			fingerprint(current) !== advice.inputFingerprint
+			adviceFingerprint(current, protectedFields) !== advice.inputFingerprint ||
+			protectedFields.some(
+				(f) =>
+					!Object.is(
+						getPerTitleGoalSetting(current, f.scope, f.key, f.rowId),
+						getPerTitleGoalSetting(advice.goal, f.scope, f.key, f.rowId),
+					),
+			)
 		)
 			return null;
 		const checked = tunePerTitleSettings(advice.goal, advice.goal);

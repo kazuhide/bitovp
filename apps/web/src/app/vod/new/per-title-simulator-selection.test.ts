@@ -194,4 +194,64 @@ describe("selected Per-Title advice", () => {
 			advice.proposal.api,
 		);
 	});
+	it.each([
+		"lower",
+		"upper",
+	] as const)("recalculates a released %s boundary after continuing the same driver", (boundary) => {
+		const before = source();
+		before.rows = [
+			{
+				...required(before.rows?.[0]),
+				id: "lower",
+				height: 240,
+				minBitrate: 200_000,
+				maxBitrate: 400_000,
+			},
+			...required(before.rows),
+		];
+		const low = boundary === "lower";
+		const edit = {
+			scope: "global",
+			key: low ? "minBitrateStepSize" : "maxBitrate",
+		} as const;
+		const field = {
+			scope: "stream",
+			rowId: "lower",
+			key: low
+				? "lowComplexityBoundaryForMaxBitrate"
+				: "highComplexityBoundaryForMaxBitrate",
+		} as const;
+		const current = { ...before, [edit.key]: low ? 1.5 : 3_000_000 };
+		const advice = required(
+			perTitleAdvice(before, current, edit).find(
+				(item) => item.reason === (low ? "lower-boundary" : "upper-boundary"),
+			),
+		);
+		const next = required(
+			applySelectedPerTitleAdvice(current, advice, [field]),
+		);
+		const edited = { ...next, [edit.key]: low ? 1.6 : 3_500_000 };
+		const released = required(
+			perTitleAdvice(before, edited, edit, { appliedFields: [field] }).find(
+				(item) => item.reason === advice.reason,
+			),
+		);
+		expect(
+			released.changes.find(
+				(item) => item.rowId === field.rowId && item.key === field.key,
+			)?.after,
+		).toBe(low ? 1_600_000 : 3_500_000);
+		expect(released.goal[edit.key]).toBe(edited[edit.key]);
+		const protectedAdvice = required(
+			perTitleAdvice(before, edited, edit, {
+				appliedFields: [field],
+				protectedFields: [field],
+			}).find((item) => item.reason === advice.reason),
+		);
+		expect(
+			protectedAdvice.changes.some(
+				(item) => item.rowId === field.rowId && item.key === field.key,
+			),
+		).toBe(false);
+	});
 });

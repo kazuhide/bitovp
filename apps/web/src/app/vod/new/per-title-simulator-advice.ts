@@ -299,6 +299,7 @@ export function perTitleAdvice(
 		const applied = protectedPerTitleAdviceFields(current, {
 			protectedFields: options.appliedFields,
 		});
+		const appliedKeys = new Set(applied.map(fieldKey));
 		// Retain the original driver; only explicit adoptions may accompany it.
 		const manual = patch(current, applied, (f) =>
 			getPerTitleGoalSetting(previous, f.scope, f.key, f.rowId),
@@ -371,7 +372,8 @@ export function perTitleAdvice(
 			} else {
 				const coupled = curveRows.filter(
 					(row) =>
-						row.highComplexityBoundaryForMaxBitrate === previous.maxBitrate &&
+						(row.highComplexityBoundaryForMaxBitrate === previous.maxBitrate ||
+							appliedKeys.has(fieldKey(field(HIGH, row.id)))) &&
 						previous.rows?.find((old) => old.id === row.id)
 							?.highComplexityBoundaryForMaxBitrate === previous.maxBitrate,
 				);
@@ -394,7 +396,8 @@ export function perTitleAdvice(
 		) {
 			const coupled = curveRows.filter(
 				(row) =>
-					row.lowComplexityBoundaryForMaxBitrate === oldLow.lower &&
+					(row.lowComplexityBoundaryForMaxBitrate === oldLow.lower ||
+						appliedKeys.has(fieldKey(field(LOW, row.id)))) &&
 					previous.rows?.find((old) => old.id === row.id)
 						?.lowComplexityBoundaryForMaxBitrate === oldLow.lower,
 			);

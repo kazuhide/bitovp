@@ -2,6 +2,7 @@ import type { PerTitleGoal } from "@bitovp/core";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
+import { applySelectedPerTitleAdvice } from "./per-title-simulator-advice";
 import { PerTitleAdvisor } from "./per-title-simulator-advisor";
 
 const source = (): PerTitleGoal => ({
@@ -40,6 +41,66 @@ const source = (): PerTitleGoal => ({
 });
 
 describe("advice selection identity and acknowledgement", () => {
+	it.each([
+		"lower",
+		"upper",
+	] as const)("returns an applied %s boundary to advice after release and another driver edit", (boundary) => {
+		const session = source(),
+			onAdopt = vi.fn();
+		const low = boundary === "lower";
+		const driver = low ? "minBitrateStepSize" : "maxBitrate";
+		const label = `${low ? "Lower" : "Upper"} complexity boundary (kbps)`;
+		let current = { ...session, [driver]: low ? 1.5 : 3_000_000 };
+		const view = renderLocalized(
+			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+		);
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		fireEvent.click(
+			screen.getByRole("checkbox", {
+				name: `Select change: ${label}, rendition 1`,
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Apply selected changes and recalculate",
+			}),
+		);
+		const [advice, options, fields] = onAdopt.mock.calls[0] ?? [];
+		const accepted = applySelectedPerTitleAdvice(
+			current,
+			advice,
+			fields,
+			options,
+		);
+		if (!accepted) throw new Error("Expected selected boundary draft.");
+		view.rerender(
+			<PerTitleAdvisor goal={accepted} session={session} onAdopt={onAdopt} />,
+		);
+		current = { ...accepted, [driver]: low ? 1.6 : 3_500_000 };
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		expect(
+			screen.queryByRole("checkbox", {
+				name: `Select change: ${label}, rendition 1`,
+			}),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: `Release: ${label}, rendition 1` }),
+		);
+		expect(
+			screen.getByRole("checkbox", {
+				name: `Select change: ${label}, rendition 1`,
+			}),
+		).not.toBeChecked();
+		expect(
+			screen.getByRole("checkbox", {
+				name: `Select change: ${label}, rendition 2`,
+			}),
+		).toBeInTheDocument();
+	});
 	it("selects one row independently when multiple upper boundaries have the same values", () => {
 		const session = source(),
 			current = { ...session, maxBitrate: 8_000_000 },

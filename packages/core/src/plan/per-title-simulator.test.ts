@@ -16,6 +16,110 @@ const automatic: PerTitleGoal = {
 };
 
 describe("proposePerTitleSettings", () => {
+	it("checks every retained witness against the emitted steps across a bounded lock corpus", () => {
+		let retained = 0;
+		for (const maxBitrate of [4000000, 10000000])
+			for (const count of [2, 3, 4, 5, 6])
+				for (const minimum of [2, 4, 8, 12])
+					for (const maximum of [undefined, 3, 8])
+						for (const fixedMaximum of [false, true]) {
+							const goal: PerTitleGoal = {
+								strategy: "count",
+								codec: "H264",
+								minBitrate: 100000,
+								maxBitrate,
+								countPolicy: { kind: "exact", count },
+								minBitrateStepSize: minimum,
+								maxBitrateStepSize: maximum,
+								settingLocks: {
+									global: [
+										"minBitrateStepSize",
+										...(fixedMaximum ? ["maxBitrateStepSize"] : []),
+									],
+								},
+							};
+							const result = recommendPerTitleSettings(goal);
+							const context = JSON.stringify({
+								maxBitrate,
+								count,
+								minimum,
+								maximum,
+								fixedMaximum,
+							});
+							for (const scenario of result.scenarios.filter(
+								(item) => item.status === "modelled",
+							)) {
+								for (const [index, rung] of scenario.modelRungs.entries()) {
+									expect(Number.isSafeInteger(rung.bitrate), context).toBe(
+										true,
+									);
+									expect(rung.bitrate, context).toBeGreaterThanOrEqual(
+										goal.minBitrate,
+									);
+									expect(rung.bitrate, context).toBeLessThanOrEqual(
+										Math.min(goal.maxBitrate, scenario.assumedMaxBitrate),
+									);
+									if (index === 0) continue;
+									const ratio =
+										rung.bitrate /
+										(scenario.modelRungs[index - 1]?.bitrate ?? NaN);
+									expect(ratio, context).toBeGreaterThanOrEqual(
+										result.api.global.minBitrateStepSize,
+									);
+									expect(ratio, context).toBeLessThanOrEqual(
+										result.api.global.maxBitrateStepSize,
+									);
+								}
+							}
+							if (result.derivation?.targetSatisfied) {
+								expect(result.applicable, context).toBe(true);
+								const high = result.scenarios.find(
+									(item) => item.fraction === 1,
+								);
+								expect(high?.status, context).toBe("modelled");
+								expect(high?.modelRungs, context).toHaveLength(count);
+							}
+							const witness = result.derivation?.integerWitness;
+							if (!witness?.length) continue;
+							retained++;
+							for (const [index, bitrate] of witness.entries()) {
+								expect(Number.isSafeInteger(bitrate), context).toBe(true);
+								expect(bitrate, context).toBeGreaterThanOrEqual(
+									goal.minBitrate,
+								);
+								expect(bitrate, context).toBeLessThanOrEqual(goal.maxBitrate);
+								if (index === 0) continue;
+								const ratio = bitrate / (witness[index - 1] ?? NaN);
+								expect(ratio, context).toBeGreaterThanOrEqual(
+									result.api.global.minBitrateStepSize,
+								);
+								expect(ratio, context).toBeLessThanOrEqual(
+									result.api.global.maxBitrateStepSize,
+								);
+							}
+						}
+		expect(retained).toBeGreaterThan(0);
+	});
+	it("preserves the valid exact-three locked-eight case without inventing a trial witness", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100000,
+			maxBitrate: 10000000,
+			countPolicy: { kind: "exact", count: 3 },
+			minBitrateStepSize: 8,
+			settingLocks: { global: ["minBitrateStepSize"] },
+		});
+		expect(result.api.global).toMatchObject({
+			minBitrateStepSize: 8,
+			maxBitrateStepSize: 8,
+		});
+		expect(result.derivation).toMatchObject({
+			method: "preserved-existing",
+			targetSatisfied: true,
+		});
+		expect(result.derivation).not.toHaveProperty("integerWitness");
+	});
 	it("treats prototype-like row IDs as ordinary JSON keys in setting locks", () => {
 		for (const id of ["__proto__", "constructor", "toString"]) {
 			for (const streams of [

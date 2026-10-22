@@ -74,6 +74,160 @@ function parse(value: unknown) {
 
 describe("Per-Title local presets", () => {
 	it.each([
+		"both",
+		"low",
+		"high",
+	] as const)("round-trips a tuned fixed selection with %s boundary requirements", (fixedBoundary) => {
+		let draft = setPerTitleSetting(
+			goal,
+			"stream",
+			"bitrateSelectionMode",
+			"COMPLEXITY_RANGE",
+			"sample-low",
+		);
+		if (fixedBoundary === "low")
+			draft = setPerTitleSetting(
+				draft,
+				"stream",
+				"lowComplexityBoundaryForMaxBitrate",
+				800000,
+				"sample-low",
+			);
+		if (fixedBoundary === "high")
+			draft = setPerTitleSetting(
+				draft,
+				"stream",
+				"highComplexityBoundaryForMaxBitrate",
+				3000000,
+				"sample-low",
+			);
+		const before = structuredClone(draft);
+		const tuned = tunePerTitleSettings(draft, goal);
+		const settings = tuned.proposal.api.streams[0]?.perTitleSettings;
+		expect(settings?.bitrateSelectionMode).toBe("COMPLEXITY_RANGE");
+		expect(settings?.lowComplexityBoundaryForMaxBitrate).toBeTypeOf("number");
+		expect(settings?.highComplexityBoundaryForMaxBitrate).toBeTypeOf("number");
+		const loaded = parse(JSON.parse(serializePerTitlePreset(tuned.goal)));
+		expect(loaded.goal).toEqual(tuned.goal);
+		expect(tunePerTitleSettings(loaded.goal, loaded.goal).proposal.api).toEqual(
+			tuned.proposal.api,
+		);
+		expect(draft).toEqual(before);
+	});
+
+	it("does not allow missing source-reference boundaries or a fixed-unset boundary", () => {
+		const incomplete = {
+			minBitrate: 200000,
+			maxBitrate: 400000,
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			lowComplexityBoundaryForMaxBitrate: 800000,
+		};
+		expect(() =>
+			parse({
+				version: 1,
+				goal: {
+					...goal,
+					rows: [{ id: "sample-low", height: 240, ...incomplete }],
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+		expect(() =>
+			parse({
+				version: 1,
+				reference: {
+					...reference,
+					streams: [{ ...reference.streams[1], perTitleSettings: incomplete }],
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+		const fixedUnset = {
+			...goal,
+			rows: [{ id: "sample-low", height: 240, ...incomplete }],
+			adjustments: {
+				streams: {
+					"sample-low": {
+						highComplexityBoundaryForMaxBitrate: { mode: "fixed" },
+					},
+				},
+			},
+			settingLocks: {
+				streams: {
+					"sample-low": [
+						"bitrateSelectionMode",
+						"highComplexityBoundaryForMaxBitrate",
+					],
+				},
+			},
+		};
+		expect(() => parse({ version: 1, goal: fixedUnset })).toThrow(
+			"Invalid Per-Title preset.",
+		);
+	});
+	it("accepts explicit automatic boundary policies without derived locks", () => {
+		const draft: PerTitleGoal = {
+			...goal,
+			rows: goal.rows?.map((row) => ({
+				...row,
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+			})),
+			adjustments: {
+				streams: {
+					"sample-low": {
+						bitrateSelectionMode: { mode: "fixed" },
+						lowComplexityBoundaryForMaxBitrate: {
+							mode: "auto",
+							method: "constraints",
+						},
+						highComplexityBoundaryForMaxBitrate: {
+							mode: "auto",
+							method: "constraints",
+						},
+					},
+				},
+			},
+		};
+		const loaded = parse(JSON.parse(serializePerTitlePreset(draft))).goal;
+		expect(
+			tunePerTitleSettings(loaded, loaded).proposal.api.streams[0]
+				?.perTitleSettings?.bitrateSelectionMode,
+		).toBe("COMPLEXITY_RANGE");
+	});
+	it.each([
+		{ lowComplexityBoundaryForMaxBitrate: 0 },
+		{
+			lowComplexityBoundaryForMaxBitrate: 3000000,
+			highComplexityBoundaryForMaxBitrate: 2000000,
+		},
+	])("rejects defined invalid automatic boundary values %j", (boundaries) => {
+		expect(() =>
+			parse({
+				version: 1,
+				goal: {
+					...goal,
+					rows: goal.rows?.map((row) => ({
+						...row,
+						bitrateSelectionMode: "COMPLEXITY_RANGE",
+						...boundaries,
+					})),
+					adjustments: {
+						streams: {
+							"sample-low": {
+								lowComplexityBoundaryForMaxBitrate: {
+									mode: "auto",
+									method: "constraints",
+								},
+								highComplexityBoundaryForMaxBitrate: {
+									mode: "auto",
+									method: "constraints",
+								},
+							},
+						},
+					},
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+	});
+	it.each([
 		["minBitrateStepSize", 3],
 		["maxBitrateStepSize", 1.2],
 	] as const)("round-trips a tuned fixed %s with an automatic unset peer", (key, value) => {

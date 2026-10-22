@@ -262,6 +262,7 @@ function invalid(): never {
 function checkRange(
 	value: z.infer<typeof automatic>,
 	requireBounds = false,
+	automaticBoundaries: { low?: boolean; high?: boolean } = {},
 ): void {
 	if (
 		requireBounds &&
@@ -278,9 +279,39 @@ function checkRange(
 	const high = value.highComplexityBoundaryForMaxBitrate;
 	if (
 		value.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
-		(low === undefined || high === undefined || low >= high)
+		((low === undefined && !automaticBoundaries.low) ||
+			(high === undefined && !automaticBoundaries.high) ||
+			(low !== undefined && high !== undefined && low >= high))
 	)
 		invalid();
+}
+
+function automaticBoundary(
+	goal: PerTitleGoal,
+	rowId: string,
+	key:
+		| "lowComplexityBoundaryForMaxBitrate"
+		| "highComplexityBoundaryForMaxBitrate",
+): boolean {
+	const policies = goal.adjustments?.streams;
+	const rowPolicies =
+		policies && Object.hasOwn(policies, rowId) ? policies[rowId] : undefined;
+	const policy =
+		rowPolicies && Object.hasOwn(rowPolicies, key)
+			? rowPolicies[key]
+			: undefined;
+	if (policy) return policy.mode === "auto";
+	const streams = goal.settingLocks?.streams;
+	const locks =
+		streams && Object.hasOwn(streams, rowId) ? (streams[rowId] ?? []) : [];
+	return (
+		!locks.includes(key) &&
+		[
+			"bitrateSelectionMode",
+			"lowComplexityBoundaryForMaxBitrate",
+			"highComplexityBoundaryForMaxBitrate",
+		].some((field) => locks.includes(field))
+	);
 }
 
 function checkGoal(
@@ -407,7 +438,18 @@ function checkGoal(
 	// Fixed-bitrate settings on ordinary templates are retained source data.
 	// Their semantics do not constrain the automatic template's output.
 	for (const item of goal.strategy === "fixed-ranges" ? rows : []) {
-		checkRange(item, true);
+		checkRange(item, true, {
+			low: automaticBoundary(
+				goal,
+				item.id,
+				"lowComplexityBoundaryForMaxBitrate",
+			),
+			high: automaticBoundary(
+				goal,
+				item.id,
+				"highComplexityBoundaryForMaxBitrate",
+			),
+		});
 		if (
 			goal.strategy === "fixed-ranges" &&
 			(item.minBitrate === undefined || item.maxBitrate === undefined)

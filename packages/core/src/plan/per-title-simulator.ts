@@ -421,13 +421,64 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 		>,
 	) => {
 		useCheckedIntervalWitness(proposal, goal, details);
+		const validLockedPoints = (points: readonly number[]) =>
+			points.length > 0 &&
+			points.every((bitrate, index) => {
+				if (
+					!Number.isSafeInteger(bitrate) ||
+					bitrate < proposal.api.global.minBitrate ||
+					bitrate > proposal.api.global.maxBitrate
+				)
+					return false;
+				const previous = points[index - 1];
+				return (
+					previous === undefined ||
+					(bitrate > previous &&
+						bitrate / previous >= proposal.api.global.minBitrateStepSize &&
+						bitrate / previous <= proposal.api.global.maxBitrateStepSize)
+				);
+			});
+		const validExample = (scenario: PerTitleScenario | undefined) =>
+			hasValidIntegerExample(proposal, scenario) &&
+			(!goal.settingLocks ||
+				validLockedPoints(
+					scenario?.modelRungs.map((rung) => rung.bitrate) ?? [],
+				));
+		if (goal.settingLocks) {
+			proposal.scenarios = proposal.scenarios.map((scenario) =>
+				scenario.status === "modelled" && !validExample(scenario)
+					? {
+							...scenario,
+							status: "unknown",
+							modelCountRange: null,
+							modelRungs: [],
+							rowModels: [],
+						}
+					: scenario,
+			);
+		}
 		const high = upperScenario(proposal, details);
 		if (
-			proposal.applicable &&
-			!hasValidIntegerExample(proposal, high) &&
-			!proposal.scenarios.some((scenario) =>
-				hasValidIntegerExample(proposal, scenario),
+			goal.settingLocks &&
+			details.integerWitness &&
+			!validLockedPoints(details.integerWitness)
+		) {
+			details = { ...details };
+			if (
+				validExample(high) &&
+				(!details.fixedOrderRowIds ||
+					(details.fixedOrderRowIds.length === high?.modelRungs.length &&
+						details.fixedOrderRowIds.every(
+							(id, index) => high?.modelRungs[index]?.rowId === id,
+						)))
 			)
+				details.integerWitness = high?.modelRungs.map((rung) => rung.bitrate);
+			else delete details.integerWitness;
+		}
+		if (
+			proposal.applicable &&
+			!validExample(high) &&
+			!proposal.scenarios.some((scenario) => validExample(scenario))
 		) {
 			proposal.applicable = false;
 			proposal.status = "unknown";
@@ -440,7 +491,7 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 			selectedMaxStep: proposal.api.global.maxBitrateStepSize,
 			targetSatisfied:
 				proposal.applicable &&
-				hasValidIntegerExample(proposal, high) &&
+				validExample(high) &&
 				(goal.countPolicy.kind !== "exact" ||
 					high?.modelRungs.length === desiredCount) &&
 				(!desiredCount ||

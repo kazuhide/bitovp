@@ -97,6 +97,43 @@ describe("Per-Title parameter derivation", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("explains the mixed-template calibration independently of the lower limit (%s)", (locale) => {
+		const value = proposal();
+		analysis(value).calibration = {
+			low: 1_250_000,
+			high: 2_000_000,
+			rowIds: ["private-looking-row-id"],
+			origin: {
+				kind: "fixed-minimum-step",
+				minimumBitrate: 1_000_000,
+				minimumStep: 1.25,
+			},
+		};
+		renderLocalized(<PerTitleConstraints proposal={value} />, locale);
+		const explanation = screen.getByText(/1,000 × 1.25 = 1,250 kbps/);
+		expect(explanation).not.toBeVisible();
+		fireEvent.click(
+			screen.getByText(
+				locale === "en" ? "Parameter derivation" : "パラメータの導出",
+			),
+		);
+		expect(explanation).toBeVisible();
+		expect(explanation).toHaveTextContent(
+			locale === "en"
+				? /not the additional-rendition factor/
+				: /追加段の倍率とは別/,
+		);
+		expect(
+			screen.queryByText(
+				locale === "en"
+					? /F is the upper end/
+					: /Fは、計算に使う下限範囲の上端/,
+			),
+		).not.toBeInTheDocument();
+	});
+	it.each([
+		"en",
+		"ja",
 	] as const)("keeps numeric derivation closed and localizes its scope (%s)", (locale) => {
 		const value = proposal();
 		const before = structuredClone(value);

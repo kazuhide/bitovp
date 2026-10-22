@@ -1,4 +1,8 @@
-import { type PerTitleGoal, recommendPerTitleSettings } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	type PerTitleProposal,
+	recommendPerTitleSettings,
+} from "@bitovp/core";
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -38,6 +42,138 @@ function show(initialGoal = goal, locale: "en" | "ja" = "en") {
 }
 
 describe("Per-Title recommendation flow", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps the analyzed-top assumption local, editable and stable across API changes (%s)", (locale) => {
+		const proposal: PerTitleProposal = {
+			id: "baseline",
+			codec: "H264",
+			status: "unknown",
+			applicable: false,
+			evidence: "model-only",
+			countGuarantee: false,
+			api: {
+				global: {
+					minBitrate: 100000,
+					maxBitrate: 3000000,
+					minBitrateStepSize: 1.2,
+					maxBitrateStepSize: 4,
+				},
+				streams: [
+					{ rowId: "start", height: 160, mode: "PER_TITLE_TEMPLATE" },
+					{
+						rowId: "fixed-a",
+						height: 320,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: {
+							minBitrate: 240000,
+							maxBitrate: 400000,
+							bitrateSelectionMode: "COMPLEXITY_RANGE",
+							lowComplexityBoundaryForMaxBitrate: 1000000,
+							highComplexityBoundaryForMaxBitrate: 3000000,
+						},
+					},
+					{
+						rowId: "fixed-b",
+						height: 640,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: {
+							minBitrate: 800000,
+							maxBitrate: 1200000,
+							bitrateSelectionMode: "COMPLEXITY_RANGE",
+							lowComplexityBoundaryForMaxBitrate: 1000000,
+							highComplexityBoundaryForMaxBitrate: 3000000,
+						},
+					},
+					{ rowId: "option-a", height: 960, mode: "PER_TITLE_TEMPLATE" },
+					{ rowId: "option-b", height: 1280, mode: "PER_TITLE_TEMPLATE" },
+				],
+			},
+			scenarios: [],
+			diagnostics: [],
+		};
+		const baseline = structuredClone(proposal);
+		const snapshot = structuredClone({ proposal, baseline, goal });
+		const axis = { minimum: 100000, maximum: 12000000 };
+		const { rerender } = renderLocalized(
+			<PerTitleRecommendation
+				goal={goal}
+				proposal={proposal}
+				baseline={baseline}
+				axis={axis}
+			/>,
+			locale,
+		);
+		const label =
+			locale === "en"
+				? "Assumed top bitrate (kbps)"
+				: "解析後の最大ビットレート（仮定、kbps）";
+		const sliderLabel =
+			locale === "en"
+				? "Assumed top bitrate slider (kbps)"
+				: "解析後の最大ビットレート（仮定）のスライダー (kbps)";
+		const input = screen.getByRole("spinbutton", { name: label });
+		const slider = screen.getByRole("slider", { name: sliderLabel });
+		expect(input).toHaveValue(3000);
+		const updated = {
+			...proposal,
+			api: {
+				...proposal.api,
+				global: { ...proposal.api.global, maxBitrate: 4000000 },
+			},
+		};
+		rerender(
+			<PerTitleRecommendation
+				goal={goal}
+				proposal={updated}
+				baseline={baseline}
+				axis={axis}
+			/>,
+		);
+		expect(input).toHaveValue(4000);
+		fireEvent.change(input, { target: { value: "2000" } });
+		expect(slider).toHaveValue("2000");
+		const next = {
+			...proposal,
+			api: {
+				...proposal.api,
+				global: { ...proposal.api.global, maxBitrate: 2500000 },
+			},
+		};
+		rerender(
+			<PerTitleRecommendation
+				goal={goal}
+				proposal={next}
+				baseline={baseline}
+				axis={axis}
+			/>,
+		);
+		expect(input).toHaveValue(2000);
+		fireEvent.change(slider, { target: { value: "1500" } });
+		expect(input).toHaveValue(1500);
+		expect(
+			screen.getByRole("img", {
+				name: locale === "en" ? "Simulated output" : "想定出力",
+			}),
+		).toHaveTextContent("1,500");
+		fireEvent.change(input, { target: { value: "" } });
+		expect(input).toHaveValue(null);
+		expect(slider).toBeDisabled();
+		expect(screen.queryByTestId("per-title-output-target")).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name:
+					locale === "en"
+						? "Reset assumed top bitrate"
+						: "解析ビットレートの仮定をリセット",
+			}),
+		);
+		expect(input).toHaveValue(2500);
+		expect(slider).toBeEnabled();
+		expect({ proposal, baseline, goal }).toEqual(snapshot);
+	});
+
 	it.each([
 		"en",
 		"ja",

@@ -16,7 +16,16 @@ export type PerTitleConstraintAnalysis = {
 	scope: "closed-ladder" | "conditional";
 	inputRange: BitrateInterval | null;
 	floorRange: BitrateInterval | null;
-	calibration?: { low: number; high: number; rowIds: string[] };
+	calibration?: {
+		low: number;
+		high: number;
+		rowIds: string[];
+		origin?: {
+			kind: "fixed-minimum-step";
+			minimumBitrate: number;
+			minimumStep: number;
+		};
+	};
 	spacing?: {
 		minimumExclusive: number;
 		maximumInclusive: number | null;
@@ -283,6 +292,43 @@ function factorLimit(
 	return lower > 1 ? lower : undefined;
 }
 
+function mixedCalibration(
+	goal: PerTitleGoal,
+	rows: RangeRow[],
+	minimumStep: number,
+	basis: "height" | "width",
+) {
+	const highest = rows.at(-1);
+	const candidates = goal.automaticTemplates ?? [];
+	const explicitOnly =
+		goal.autoRepresentations === false ||
+		(goal.autoRepresentations === undefined &&
+			perTitleGlobalLocked(goal, "autoRepresentations"));
+	if (
+		!highest ||
+		!explicitOnly ||
+		rows.filter((row) => row[basis] === highest[basis]).length !== 1 ||
+		!candidates.every((row) =>
+			basis === "height"
+				? row.width === undefined && positive(row.height)
+				: positive(row.width),
+		) ||
+		!candidates.some(
+			(row) => (row[basis] as number) > (highest[basis] as number),
+		)
+	)
+		return undefined;
+	// This is a calibration recommendation, separate from the encoder's lower limit.
+	return {
+		low: Math.trunc(highest.minBitrate * minimumStep),
+		origin: {
+			kind: "fixed-minimum-step" as const,
+			minimumBitrate: highest.minBitrate,
+			minimumStep,
+		},
+	};
+}
+
 function prepare(
 	goal: PerTitleGoal,
 	rows: RangeRow[],
@@ -293,6 +339,8 @@ function prepare(
 ) {
 	const floor = floorRange(rows, s, n, factor, basis);
 	if (!floor) return null;
+	const mixed = mixedCalibration(goal, rows, s, basis);
+	const calibrationLow = mixed?.low ?? floor.maximum;
 	const generated: string[] = [];
 	const calibrated = rows.map((row) => {
 		if (row.bitrateSelectionMode === "OPTIMIZED") return { ...row };
@@ -317,7 +365,7 @@ function prepare(
 			bitrateSelectionMode:
 				row.bitrateSelectionMode ?? ("COMPLEXITY_RANGE" as const),
 			lowComplexityBoundaryForMaxBitrate:
-				row.lowComplexityBoundaryForMaxBitrate ?? floor.maximum,
+				row.lowComplexityBoundaryForMaxBitrate ?? calibrationLow,
 			highComplexityBoundaryForMaxBitrate:
 				row.highComplexityBoundaryForMaxBitrate ?? goal.maxBitrate,
 		};
@@ -329,7 +377,7 @@ function prepare(
 			(row.lowComplexityBoundaryForMaxBitrate === undefined ||
 				row.highComplexityBoundaryForMaxBitrate === undefined) &&
 			restored.bitrateSelectionMode === "COMPLEXITY_RANGE" &&
-			restored.lowComplexityBoundaryForMaxBitrate === floor.maximum &&
+			restored.lowComplexityBoundaryForMaxBitrate === calibrationLow &&
 			restored.highComplexityBoundaryForMaxBitrate === goal.maxBitrate
 		)
 			generated.push(row.id);
@@ -350,7 +398,12 @@ function prepare(
 			maximum: Math.max(floor.maximum, goal.maxBitrate),
 		},
 		calibration: generated.length
-			? { low: floor.maximum, high: goal.maxBitrate, rowIds: generated }
+			? {
+					low: calibrationLow,
+					high: goal.maxBitrate,
+					rowIds: generated,
+					...(mixed ? { origin: mixed.origin } : {}),
+				}
 			: undefined,
 	};
 }

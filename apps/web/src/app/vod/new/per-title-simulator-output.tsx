@@ -14,12 +14,16 @@ const copy = {
 		data: "Simulated output (data)",
 		axis: "kbps (log scale)",
 		input: (rate: string) => `Upper input assumed at ${rate} kbps`,
+		cappedInput: (rate: string, requested: string) =>
+			`Capped top: ${rate} kbps (assumed ${requested})`,
 		inputUnknown: "Upper input unavailable",
 		candidate: "Candidate",
+		candidates: (heights: string) => `Candidates ${heights} px`,
 		automatic: "Automatic candidate",
 		additional: "Additional",
 		start: "Start",
 		forced: "Additional (if fixed is highest)",
+		analysis: "Analysis-selected top",
 		heightUnknown: "Resolution unknown",
 		example: "Example",
 		conditional: "Conditional",
@@ -41,12 +45,16 @@ const copy = {
 		data: "想定出力（データ）",
 		axis: "kbps（対数目盛）",
 		input: (rate: string) => `解析値を ${rate} kbps と仮定`,
+		cappedInput: (rate: string, requested: string) =>
+			`上限適用後 ${rate} kbps（仮定値 ${requested}）`,
 		inputUnknown: "解析値の上限は未確定",
 		candidate: "候補",
+		candidates: (heights: string) => `候補 ${heights} px`,
 		automatic: "自動生成の候補",
 		additional: "追加",
 		start: "開始",
 		forced: "固定レンディションが最上位の場合に追加",
+		analysis: "解析による上段",
 		heightUnknown: "解像度未確定",
 		example: "計算例",
 		conditional: "条件付き",
@@ -74,14 +82,19 @@ const positiveInteger = (value: number | undefined | null): value is number =>
 export function PerTitleOutputChart({
 	proposal,
 	axis,
+	analysisInput,
 }: {
 	proposal: PerTitleProposal;
 	axis?: PerTitleChartAxis;
+	analysisInput?: number;
 }) {
 	const { locale } = useT();
 	const text = copy[locale];
 	const id = useId();
-	const preview = previewPerTitleOutput(proposal);
+	const preview =
+		analysisInput === undefined
+			? previewPerTitleOutput(proposal)
+			: previewPerTitleOutput(proposal, { analysisInput });
 	const global = proposal.api.global;
 	const permitted =
 		positiveInteger(global.minBitrate) &&
@@ -114,13 +127,31 @@ export function PerTitleOutputChart({
 					: undefined;
 			const automatic =
 				row.kind === "automatic" || row.mode === "PER_TITLE_TEMPLATE";
-			const label = automatic
-				? positiveInteger(row.height)
-					? `${text.candidate} ${row.height} px`
-					: text.automatic
-				: positiveInteger(row.height)
-					? `${row.height} px`
-					: text.heightUnknown;
+			const candidateHeights = [
+				...new Set(
+					(row.candidateRowIds ?? []).flatMap((rowId) => {
+						const stream = proposal.api.streams.find(
+							(item) =>
+								item.rowId === rowId && item.mode === "PER_TITLE_TEMPLATE",
+						);
+						return positiveInteger(stream?.height) ? [stream.height] : [];
+					}),
+				),
+			];
+			const label =
+				row.basis === "analysis" && candidateHeights.length
+					? text.candidates(
+							candidateHeights
+								.map((height) => numbers.format(height))
+								.join(" / "),
+						)
+					: automatic
+						? positiveInteger(row.height)
+							? `${text.candidate} ${row.height} px`
+							: text.automatic
+						: positiveInteger(row.height)
+							? `${row.height} px`
+							: text.heightUnknown;
 			const status =
 				target === undefined && range === undefined
 					? text.unknown
@@ -141,7 +172,9 @@ export function PerTitleOutputChart({
 						? text.start
 						: row.basis === "forced"
 							? text.forced
-							: undefined;
+							: row.basis === "analysis"
+								? text.analysis
+								: undefined;
 			return {
 				row,
 				index,
@@ -182,7 +215,13 @@ export function PerTitleOutputChart({
 				</span>
 				<span className="text-zinc-400">
 					{positiveInteger(preview.analysisInput)
-						? text.input(bitrate(preview.analysisInput))
+						? positiveInteger(preview.requestedAnalysisInput) &&
+							preview.requestedAnalysisInput !== preview.analysisInput
+							? text.cappedInput(
+									bitrate(preview.analysisInput),
+									bitrate(preview.requestedAnalysisInput),
+								)
+							: text.input(bitrate(preview.analysisInput))
 						: text.inputUnknown}
 				</span>
 			</figcaption>

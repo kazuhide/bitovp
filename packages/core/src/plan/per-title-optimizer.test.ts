@@ -24,6 +24,141 @@ const fixed: PerTitleGoal = {
 };
 
 describe("joint Per-Title constraint optimization", () => {
+	it("calibrates a mixed ladder from the highest fixed minimum and minimum step", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			countPolicy: { kind: "unrestricted" },
+			minBitrateStepSize: 1.25,
+			maxBitrateStepSize: 4,
+			autoRepresentations: false,
+			automaticTemplates: [
+				{ id: "start", height: 120 },
+				{ id: "upper", height: 1080 },
+			],
+			settingLocks: { global: ["minBitrateStepSize", "maxBitrateStepSize"] },
+		};
+		const before = structuredClone(goal);
+		for (const rule of [
+			undefined,
+			{
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.6,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE" as const,
+			},
+		]) {
+			const result = recommendPerTitleSettings({
+				...goal,
+				fixedResolutionAndBitrateConfiguration: rule,
+			});
+			for (const stream of result.api.streams.filter(
+				(item) =>
+					item.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			))
+				expect(stream.perTitleSettings).toMatchObject({
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 1_250_000,
+					highComplexityBoundaryForMaxBitrate: 2_400_000,
+				});
+			expect(result.derivation?.constraints?.calibration).toMatchObject({
+				low: 1_250_000,
+				high: 2_400_000,
+				origin: {
+					kind: "fixed-minimum-step",
+					minimumBitrate: 1_000_000,
+					minimumStep: 1.25,
+				},
+			});
+			expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+				rule,
+			);
+			expect(result.applicable).toBe(false);
+		}
+		const heldAbsence = recommendPerTitleSettings({
+			...goal,
+			minBitrateStepSize: 1.5,
+			autoRepresentations: undefined,
+			settingLocks: {
+				global: [
+					"minBitrateStepSize",
+					"maxBitrateStepSize",
+					"autoRepresentations",
+				],
+			},
+		});
+		expect(heldAbsence.api.global.autoRepresentations).toBeUndefined();
+		expect(heldAbsence.derivation?.constraints?.calibration).toMatchObject({
+			low: 1_500_000,
+			origin: { minimumStep: 1.5 },
+		});
+		expect(goal).toEqual(before);
+	});
+	it.each([
+		"low",
+		"high",
+		"both",
+	] as const)("keeps %s fixed calibration boundaries in a mixed ladder", (locked) => {
+		const low = locked === "low" || locked === "both";
+		const high = locked === "high" || locked === "both";
+		const result = recommendPerTitleSettings({
+			...fixed,
+			countPolicy: { kind: "unrestricted" },
+			minBitrateStepSize: 1.25,
+			maxBitrateStepSize: 4,
+			autoRepresentations: false,
+			automaticTemplates: [{ id: "upper", height: 1080 }],
+			rows: fixed.rows?.map((row) => ({
+				...row,
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				...(low ? { lowComplexityBoundaryForMaxBitrate: 700_000 } : {}),
+				...(high ? { highComplexityBoundaryForMaxBitrate: 2_000_000 } : {}),
+			})),
+			settingLocks: {
+				global: ["minBitrateStepSize", "maxBitrateStepSize"],
+				streams: Object.fromEntries(
+					(fixed.rows ?? []).map((row) => [
+						row.id,
+						[
+							"bitrateSelectionMode",
+							...(low ? ["lowComplexityBoundaryForMaxBitrate"] : []),
+							...(high ? ["highComplexityBoundaryForMaxBitrate"] : []),
+						],
+					]),
+				),
+			},
+		});
+		for (const stream of result.api.streams.filter(
+			(item) => item.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		))
+			expect(stream.perTitleSettings).toMatchObject({
+				lowComplexityBoundaryForMaxBitrate: low ? 700_000 : 1_250_000,
+				highComplexityBoundaryForMaxBitrate: high ? 2_000_000 : 2_400_000,
+			});
+	});
+	it("keeps the lower-limit calibration for closed and unresolved template sets", () => {
+		for (const extra of [
+			{},
+			{ automaticTemplates: [{ id: "start", height: 120 }] },
+			{ automaticTemplates: [{ id: "upper", height: 1080 }] },
+			{
+				automaticTemplates: [{ id: "upper", height: 1080 }],
+				autoRepresentations: {},
+			},
+			{ automaticTemplates: [{ id: "upper" }] },
+		]) {
+			const result = recommendPerTitleSettings({
+				...fixed,
+				countPolicy: { kind: "unrestricted" },
+				minBitrateStepSize: 1.25,
+				maxBitrateStepSize: 4,
+				...extra,
+			});
+			expect(result.derivation?.constraints?.calibration?.low).toBe(1_000_000);
+			expect(
+				result.derivation?.constraints?.calibration?.origin,
+			).toBeUndefined();
+		}
+	});
 	it("derives both automatic boundaries when only COMPLEXITY_RANGE mode is fixed", () => {
 		const goal: PerTitleGoal = {
 			...fixed,

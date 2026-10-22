@@ -35,6 +35,7 @@ const proposal: PerTitleProposal = {
 
 const preview: PerTitleOutputPreview = {
 	analysisInput: 2000000,
+	requestedAnalysisInput: 2000000,
 	status: "partial",
 	unresolvedAdditional: true,
 	rows: [
@@ -86,6 +87,80 @@ beforeEach(() => {
 });
 
 describe("Per-Title output chart", () => {
+	it.each([
+		["en", "Candidates 960 / 1,280 px", "Analysis-selected top"],
+		["ja", "候補 960 / 1,280 px", "解析による上段"],
+	] as const)("groups unresolved upper resolutions under the analysis basis (%s)", (locale, candidates, origin) => {
+		const input: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{ rowId: "option-a", height: 960, mode: "PER_TITLE_TEMPLATE" },
+					{ rowId: "option-b", height: 1280, mode: "PER_TITLE_TEMPLATE" },
+				],
+			},
+		};
+		const snapshot = structuredClone(input);
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			analysisInput: 1500000,
+			requestedAnalysisInput: 1500000,
+			status: "partial",
+			unresolvedAdditional: false,
+			rows: [
+				{
+					id: "analysis-top",
+					kind: "automatic",
+					mode: "PER_TITLE_TEMPLATE",
+					status: "conditional",
+					basis: "analysis",
+					candidateRowIds: ["option-a", "option-b"],
+					bitrate: 1500000,
+				},
+			],
+		});
+		renderLocalized(
+			<PerTitleOutputChart proposal={input} analysisInput={1500000} />,
+			locale,
+		);
+		const row = screen.getByTestId("per-title-output-row");
+		expect(row).toHaveTextContent(candidates);
+		expect(within(row).getByText(origin)).toBeVisible();
+		expect(row).toHaveTextContent("1,500");
+		expect(within(row).getByTestId("per-title-output-target")).toHaveAttribute(
+			"stroke-dasharray",
+			"3 2",
+		);
+		expect(screen.getAllByTestId("per-title-output-row")).toHaveLength(1);
+		expect(
+			screen.queryByText(
+				locale === "en"
+					? "Additional (if fixed is highest)"
+					: "固定レンディションが最上位の場合に追加",
+			),
+		).toBeNull();
+		expect(screen.queryByText("960 px", { exact: true })).toBeNull();
+		expect(previewPerTitleOutput).toHaveBeenCalledWith(input, {
+			analysisInput: 1500000,
+		});
+		expect(input).toEqual(snapshot);
+	});
+
+	it.each([
+		["en", "Capped top: 2,000 kbps (assumed 3,000)"],
+		["ja", "上限適用後 2,000 kbps（仮定値 3,000）"],
+	] as const)("distinguishes the requested analysis input from its capped value (%s)", (locale, caption) => {
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			requestedAnalysisInput: 3000000,
+		});
+		renderLocalized(
+			<PerTitleOutputChart proposal={proposal} analysisInput={3000000} />,
+			locale,
+		);
+		expect(screen.getByText(caption)).toBeVisible();
+	});
+
 	it.each([
 		[
 			"en",
@@ -500,6 +575,7 @@ describe("Per-Title output chart", () => {
 	it("never plots unknown or invalid numeric values", () => {
 		vi.mocked(previewPerTitleOutput).mockReturnValue({
 			analysisInput: Number.NaN,
+			requestedAnalysisInput: Number.NaN,
 			status: "partial",
 			unresolvedAdditional: false,
 			rows: [

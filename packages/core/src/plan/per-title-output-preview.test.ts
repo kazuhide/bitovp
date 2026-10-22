@@ -78,6 +78,138 @@ function mixed(): PerTitleProposal {
 }
 
 describe("Per-Title output previews", () => {
+	it("uses an explicit capped analysis input for exact row interpolation", () => {
+		const proposal = conditional();
+		const before = structuredClone(proposal);
+		expect(
+			previewPerTitleOutput(proposal, { analysisInput: 575 }),
+		).toMatchObject({
+			requestedAnalysisInput: 575,
+			analysisInput: 575,
+			rows: [{ bitrate: 250, minimumBitrate: 250, maximumBitrate: 250 }],
+		});
+		expect(
+			previewPerTitleOutput(proposal, { analysisInput: 3000 }),
+		).toMatchObject({
+			requestedAnalysisInput: 3000,
+			analysisInput: 1000,
+			rows: [{ bitrate: 294 }],
+		});
+		expect(previewPerTitleOutput(proposal).requestedAnalysisInput).toBe(1000);
+		expect(proposal).toEqual(before);
+	});
+
+	it("preserves the effective interval's interior min-step relaxation", () => {
+		const proposal = conditional();
+		proposal.api.global.minBitrateStepSize = 4;
+		required(proposal.api.streams[0]?.perTitleSettings).maxBitrate = 800;
+		expect(
+			previewPerTitleOutput(proposal, { analysisInput: 1000 }).rows[0],
+		).toMatchObject({
+			minimumBitrate: 250,
+			maximumBitrate: 484,
+			bitrate: 484,
+		});
+	});
+
+	it.each([
+		Number.NaN,
+		Infinity,
+		0,
+		-1,
+		1.5,
+		Number.MAX_SAFE_INTEGER,
+	])("keeps an invalid explicit analysis input unavailable (%s)", (analysisInput) => {
+		const result = previewPerTitleOutput(mixed(), { analysisInput });
+		expect(result.analysisInput).toBeNull();
+		expect(result.status).toBe("unavailable");
+		expect(result.rows.every((row) => row.bitrate === undefined)).toBe(true);
+	});
+
+	it("groups higher automatic candidates into one conditional analysis-selected top", () => {
+		const proposal = mixed();
+		const result = previewPerTitleOutput(proposal, { analysisInput: 900 });
+		const top = result.rows.filter((row) => row.basis === "analysis");
+		expect(top).toEqual([
+			expect.objectContaining({
+				kind: "automatic",
+				status: "conditional",
+				bitrate: 900,
+				minimumBitrate: 900,
+				maximumBitrate: 900,
+				candidateRowIds: ["large", "largest"],
+			}),
+		]);
+		expect(top[0]?.height).toBeUndefined();
+		expect(top[0]?.width).toBeUndefined();
+		expect(top[0]?.rowId).toBeUndefined();
+		expect(
+			result.rows.some(
+				(row) => row.rowId === "large" || row.rowId === "largest",
+			),
+		).toBe(false);
+		expect(result.rows.some((row) => row.basis === "forced")).toBe(false);
+		expect(result.unresolvedAdditional).toBe(false);
+		expect(result.rows.find((row) => row.basis === "minimum")?.bitrate).toBe(
+			100,
+		);
+		expect(result.status).toBe("partial");
+	});
+
+	it("does not require a forced rule or select a resolution for one upper candidate", () => {
+		const proposal = mixed();
+		delete proposal.api.global.fixedResolutionAndBitrateConfiguration;
+		proposal.api.streams = proposal.api.streams.filter(
+			(stream) => stream.rowId !== "largest",
+		);
+		const top = previewPerTitleOutput(proposal).rows.find(
+			(row) => row.basis === "analysis",
+		);
+		expect(top).toMatchObject({
+			bitrate: 1000,
+			status: "conditional",
+			candidateRowIds: ["large"],
+		});
+		expect(top?.height).toBeUndefined();
+		expect(top?.rowId).toBeUndefined();
+	});
+
+	it("requires valid actual spacing and candidate order for an analysis-selected top", () => {
+		const proposal = mixed();
+		for (const analysisInput of [100, 250]) {
+			expect(
+				previewPerTitleOutput(proposal, { analysisInput }).rows.some(
+					(row) => row.basis === "analysis",
+				),
+			).toBe(false);
+		}
+		proposal.api.global.maxBitrateStepSize = 2;
+		expect(
+			previewPerTitleOutput(proposal).rows.some(
+				(row) => row.basis === "analysis",
+			),
+		).toBe(false);
+		proposal.api.global.maxBitrateStepSize = 4;
+		proposal.api.streams.push({
+			rowId: "same-dimension",
+			height: 900,
+			mode: "PER_TITLE_TEMPLATE",
+		});
+		expect(
+			previewPerTitleOutput(proposal).rows.some(
+				(row) => row.basis === "analysis",
+			),
+		).toBe(false);
+	});
+
+	it("does not reuse an upper scenario as proof for a different analysis input", () => {
+		const proposal = recommendPerTitleSettings(fixed);
+		const result = previewPerTitleOutput(proposal, {
+			analysisInput: 1_500_000,
+		});
+		expect(result.rows.every((row) => row.status !== "example")).toBe(true);
+	});
+
 	it.each([
 		false,
 		true,
@@ -119,13 +251,13 @@ describe("Per-Title output previews", () => {
 	});
 
 	it("shows a conditional LAST_CALCULATED_BITRATE addition on the highest explicit template", () => {
-		const result = previewPerTitleOutput(mixed());
+		const result = previewPerTitleOutput(mixed(), { analysisInput: 100 });
 		expect(result.rows).toContainEqual(
 			expect.objectContaining({
 				rowId: "largest",
 				basis: "forced",
 				status: "conditional",
-				bitrate: 368,
+				bitrate: 250,
 			}),
 		);
 		expect(result.rows.find((row) => row.rowId === "large")).toMatchObject({
@@ -139,13 +271,13 @@ describe("Per-Title output previews", () => {
 		const rule = required(
 			proposal.api.global.fixedResolutionAndBitrateConfiguration,
 		);
-		rule.forcedRenditionAboveHighestFixedRepresentation = 2;
+		rule.forcedRenditionAboveHighestFixedRepresentation = 3;
 		rule.forcedRenditionAboveHighestFixedRepresentationFactor = 2.1;
 		expect(
-			previewPerTitleOutput(proposal)
+			previewPerTitleOutput(proposal, { analysisInput: 100 })
 				.rows.filter((row) => row.basis === "forced")
 				.map((row) => row.bitrate),
-		).toEqual([617, 1296]);
+		).toEqual([420, 882, 1852]);
 	});
 
 	it("does not bind arithmetic examples to templates expanded by autoRepresentations", () => {
@@ -275,27 +407,10 @@ describe("Per-Title output previews", () => {
 		expect(result.status).toBe("partial");
 		expect(result.rows.filter((row) => row.kind === "fixed")).toHaveLength(3);
 		expect(result.rows.filter((row) => row.kind === "automatic")).toEqual([
-			expect.objectContaining({
-				rowId: "small-candidate",
-				height: 180,
-				status: "unknown",
-				mode: "PER_TITLE_TEMPLATE",
-			}),
-			expect.objectContaining({
-				rowId: "large-candidate",
-				height: 1080,
-				status: "unknown",
-				mode: "PER_TITLE_TEMPLATE",
-			}),
+			expect.objectContaining({ rowId: "small-candidate", status: "unknown" }),
+			expect.objectContaining({ rowId: "large-candidate", status: "unknown" }),
 		]);
-		expect(
-			result.rows
-				.filter((row) => row.kind === "automatic")
-				.every(
-					(row) =>
-						row.bitrate === undefined && row.minimumBitrate === undefined,
-				),
-		).toBe(true);
+		expect(result.rows.some((row) => row.basis === "analysis")).toBe(false);
 		expect(result.unresolvedAdditional).toBe(true);
 		expect(proposal).toEqual(before);
 	});

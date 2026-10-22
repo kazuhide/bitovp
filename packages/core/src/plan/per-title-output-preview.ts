@@ -5,7 +5,10 @@ import type {
 } from "./per-title-simulator.js";
 
 export type PerTitleOutputPreview = {
+	/** Effective hypothetical top, capped at the emitted global maximum. */
 	analysisInput: number | null;
+	/** Requested hypothetical top before the cap; null means invalid input. */
+	requestedAnalysisInput: number | null;
 	status: "example" | "partial" | "unavailable";
 	rows: Array<{
 		id: string;
@@ -15,7 +18,8 @@ export type PerTitleOutputPreview = {
 		mode?: PerTitleApiSettings["streams"][number]["mode"];
 		kind: "fixed" | "automatic" | "additional" | "unassigned";
 		status: "example" | "conditional" | "unknown";
-		basis?: "minimum" | "forced";
+		basis?: "minimum" | "forced" | "analysis";
+		candidateRowIds?: string[];
 		bitrate?: number;
 		minimumBitrate?: number;
 		maximumBitrate?: number;
@@ -26,6 +30,7 @@ export type PerTitleOutputPreview = {
 /** Read-only arithmetic examples and unresolved candidates from the emitted API settings. */
 export function previewPerTitleOutput(
 	proposal: PerTitleProposal,
+	options: { analysisInput?: number } = {},
 ): PerTitleOutputPreview {
 	const global = proposal.api.global;
 	const streams = proposal.api.streams;
@@ -38,7 +43,15 @@ export function previewPerTitleOutput(
 		positive(global.minBitrate) &&
 		positive(global.maxBitrate) &&
 		global.minBitrate <= global.maxBitrate;
-	const analysisInput = validGlobal ? global.maxBitrate : null;
+	const requested =
+		options.analysisInput === undefined
+			? global.maxBitrate
+			: options.analysisInput;
+	const requestedAnalysisInput = positive(requested) ? requested : null;
+	const analysisInput =
+		validGlobal && requestedAnalysisInput !== null
+			? Math.min(requestedAnalysisInput, global.maxBitrate)
+			: null;
 	const validSteps =
 		Number.isFinite(global.minBitrateStepSize) &&
 		global.minBitrateStepSize > 1 &&
@@ -50,7 +63,11 @@ export function previewPerTitleOutput(
 			(stream) => typeof stream.rowId === "string" && stream.rowId.length > 0,
 		);
 	const eligible =
-		validGlobal && validSteps && uniqueIds && streams.length <= 64;
+		validGlobal &&
+		analysisInput !== null &&
+		validSteps &&
+		uniqueIds &&
+		streams.length <= 64;
 	const automatic = streams.some(
 		(stream) => stream.mode === "PER_TITLE_TEMPLATE",
 	);
@@ -111,7 +128,7 @@ export function previewPerTitleOutput(
 			maximum: settings.maxBitrate,
 			low: settings.lowComplexityBoundaryForMaxBitrate,
 			high: settings.highComplexityBoundaryForMaxBitrate,
-			input: global.maxBitrate,
+			input: analysisInput as number,
 			minStep: global.minBitrateStepSize,
 		});
 	};
@@ -123,6 +140,7 @@ export function previewPerTitleOutput(
 	const extra: PerTitleOutputPreview["rows"] = [];
 	let justified =
 		eligible &&
+		analysisInput === global.maxBitrate &&
 		scenario?.status === "modelled" &&
 		scenario.modelRungs.length > 0 &&
 		scenario.modelRungs.length <= 256 &&
@@ -321,6 +339,47 @@ export function previewPerTitleOutput(
 		const highestFixed = [...fixedExamples].sort(
 			(a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0),
 		)[0];
+		const highestFixedDimension = Math.max(
+			...fixed.map((stream) => stream[basis] as number),
+		);
+		const topCandidates = ordered.filter(
+			(stream) =>
+				stream.mode === "PER_TITLE_TEMPLATE" &&
+				(stream[basis] as number) > highestFixedDimension,
+		);
+		const candidateDimensions = topCandidates.map((stream) => stream[basis]);
+		const ratio =
+			highestFixed && positive(highestFixed.bitrate) && analysisInput !== null
+				? analysisInput / highestFixed.bitrate
+				: null;
+		const analysisSelected =
+			analysisInput !== null &&
+			analysisInput >= global.minBitrate &&
+			topCandidates.length > 0 &&
+			new Set(candidateDimensions).size === topCandidates.length &&
+			fixedExamples.every((row) => positive(row.bitrate)) &&
+			ratio !== null &&
+			ratio >= global.minBitrateStepSize &&
+			ratio <= global.maxBitrateStepSize;
+		if (analysisSelected) {
+			const candidateRowIds = topCandidates.map((stream) => stream.rowId);
+			// The analysis selects a template; dimensions cannot be inferred from its target bitrate.
+			for (let index = rows.length - 1; index >= 0; index--) {
+				if (candidateRowIds.includes(rows[index]?.rowId ?? ""))
+					rows.splice(index, 1);
+			}
+			rows.push({
+				id: "analysis:top",
+				kind: "automatic",
+				basis: "analysis",
+				mode: "PER_TITLE_TEMPLATE",
+				status: "conditional",
+				candidateRowIds,
+				bitrate: analysisInput,
+				minimumBitrate: analysisInput,
+				maximumBitrate: analysisInput,
+			});
+		}
 		const last = ordered.at(-1);
 		const destinations = ordered.filter(
 			(stream) => stream[basis] === last?.[basis],
@@ -328,6 +387,7 @@ export function previewPerTitleOutput(
 		const destination = destinations.length === 1 ? destinations[0] : undefined;
 		const destinationRow = rows.find((row) => row.rowId === destination?.rowId);
 		if (
+			!analysisSelected &&
 			count !== undefined &&
 			Number.isSafeInteger(count) &&
 			count > 0 &&
@@ -373,11 +433,13 @@ export function previewPerTitleOutput(
 		}
 	}
 	const unresolvedAdditional =
+		!rows.some((row) => row.basis === "analysis") &&
 		rule !== undefined &&
 		count !== 0 &&
 		!(justified && checkedAdditional && additional === count);
 	return {
 		analysisInput,
+		requestedAnalysisInput,
 		status: !rows.some((row) => row.bitrate !== undefined)
 			? "unavailable"
 			: rows.every((row) => row.status === "example") && !unresolvedAdditional

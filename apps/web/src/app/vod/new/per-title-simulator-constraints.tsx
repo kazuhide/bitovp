@@ -13,6 +13,8 @@ const texts = {
 		calibration: "Recommended complexity boundaries (kbps)",
 		calibrationHint:
 			"The tool maps each row's minimum and maximum to the calculated floor F and overall maximum U. F is the upper end of the calculated lower-limit interval. These boundaries are recalculated from your requirements; they are tool recommendations, not provider defaults.",
+		mixedCalibrationHint: (minimum: string, step: string, lower: string) =>
+			`With automatic resolution generation disabled and explicit candidates above one highest fixed row, the shared lower boundary uses that fixed minimum × minimum step: ${minimum} × ${step} = ${lower} kbps, truncated to whole bps. The upper boundary is the overall maximum. This is a calibration recommendation, not the additional-rendition factor or an API default.`,
 		minimumStep: "Minimum ratio",
 		maximumStep: "Maximum ratio",
 		minimumBound: "Local minimum-ratio check (excluded boundary)",
@@ -58,6 +60,8 @@ const texts = {
 		calibration: "推奨する複雑度境界 (kbps)",
 		calibrationHint:
 			"各行の最小値・最大値を、計算した下限Fと全体の上限Uにそれぞれ対応させます。Fは、計算に使う下限範囲の上端です。境界は要件から計算し直します。ツールが提案する値で、APIの既定値ではありません。",
+		mixedCalibrationHint: (minimum: string, step: string, lower: string) =>
+			`解像度の自動生成を使わず、最高固定段が1つで、その上に明示した候補がある場合、下側境界は「最高固定段の最小値 × 最小間隔」で求めます（${minimum} × ${step} = ${lower} kbps、1 bps未満切り捨て）。上側境界は全体上限です。追加段の倍率とは別の提案方法で、APIの既定値ではありません。`,
 		minimumStep: "最小比率",
 		maximumStep: "最大比率",
 		minimumBound: "選んだ設定での最小比率の下側境界（含まない）",
@@ -105,6 +109,7 @@ export function PerTitleConstraints({
 	const report = proposal.derivation?.constraints;
 	if (!report) return null;
 	const copy = texts[locale];
+	const calibrationOrigin = report.calibration?.origin;
 	const finite = (value: number | null | undefined): value is number =>
 		typeof value === "number" && Number.isFinite(value) && value >= 0;
 	const number = (value: number | null | undefined) =>
@@ -203,7 +208,17 @@ export function PerTitleConstraints({
 					</div>
 				))}
 			</dl>
-			{report.calibration ? <p>{copy.calibrationHint}</p> : null}
+			{report.calibration ? (
+				<p>
+					{calibrationOrigin?.kind === "fixed-minimum-step"
+						? copy.mixedCalibrationHint(
+								number(calibrationOrigin.minimumBitrate / 1000),
+								number(calibrationOrigin.minimumStep),
+								number(report.calibration.low / 1000),
+							)
+						: copy.calibrationHint}
+				</p>
+			) : null}
 			{report.spacing ? <p>{copy.spacingHint}</p> : null}
 			<p>{copy.forcedHint}</p>
 			{report.scope === "conditional" || report.forced.conditional ? (

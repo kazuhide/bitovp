@@ -4,6 +4,7 @@ import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
 import { type ReactNode, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
+import { PerTitleSimulatorBitrateField } from "./per-title-simulator-bitrate-field";
 import { PerTitleComplexity } from "./per-title-simulator-complexity";
 import { perTitleSimulatorCopy } from "./per-title-simulator-copy";
 import { PerTitleLadder } from "./per-title-simulator-ladder";
@@ -29,6 +30,21 @@ export function PerTitleRecommendation({
 	const copy = perTitleSimulatorCopy[locale];
 	const id = useId();
 	const [view, setView] = useState<"output" | "ranges">("output");
+	const [analysisInput, setAnalysisInput] = useState<number>();
+	const analysisCopy =
+		locale === "en"
+			? {
+					label: "Assumed top bitrate (kbps)",
+					slider: "Assumed top bitrate slider (kbps)",
+					reset: "Reset",
+					resetLabel: "Reset assumed top bitrate",
+				}
+			: {
+					label: "解析後の最大ビットレート（仮定、kbps）",
+					slider: "解析後の最大ビットレート（仮定）のスライダー (kbps)",
+					reset: "リセット",
+					resetLabel: "解析ビットレートの仮定をリセット",
+				};
 	const format = (value: number, precision = 6) =>
 		new Intl.NumberFormat(locale, {
 			maximumSignificantDigits: precision,
@@ -50,6 +66,9 @@ export function PerTitleRecommendation({
 		(stream) => stream.mode === "PER_TITLE_TEMPLATE",
 	);
 	const global = proposal.api.global;
+	const analysisValue = analysisInput ?? global.maxBitrate;
+	const analysisMaximum =
+		axis?.maximum ?? Math.min(2_147_483_647, global.maxBitrate * 4);
 	const inputConflicts: string[] = [];
 	if (
 		!positive(global.minBitrate) ||
@@ -204,7 +223,35 @@ export function PerTitleRecommendation({
 				))}
 			</fieldset>
 			{view === "output" ? (
-				<PerTitleOutputChart proposal={proposal} axis={axis} />
+				<>
+					<div className="grid max-w-sm grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+						<PerTitleSimulatorBitrateField
+							id={`${id}-analysis-input`}
+							label={analysisCopy.label}
+							value={analysisValue}
+							onChange={(value) => setAnalysisInput(value ?? Number.NaN)}
+							minimum={1}
+							maximum={analysisMaximum}
+							sliderLabel={analysisCopy.slider}
+						/>
+						{analysisInput !== undefined ? (
+							<Button
+								size="sm"
+								variant="ghost"
+								className="mt-5"
+								aria-label={analysisCopy.resetLabel}
+								onClick={() => setAnalysisInput(undefined)}
+							>
+								{analysisCopy.reset}
+							</Button>
+						) : null}
+					</div>
+					<PerTitleOutputChart
+						proposal={proposal}
+						axis={axis}
+						analysisInput={analysisInput}
+					/>
+				</>
 			) : (
 				<PerTitleLadder proposal={proposal} axis={axis} />
 			)}

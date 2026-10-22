@@ -12,6 +12,8 @@ export type PerTitleAdviceField = {
 };
 export type PerTitleAdviceOptions = {
 	protectedFields?: readonly PerTitleAdviceField[];
+	/** Binds a current-settings evaluation to its explicit objective. */
+	contextKey?: string;
 	/** Previously selected changes accompanying the original edit, including released fields. */
 	appliedFields?: readonly PerTitleAdviceField[];
 };

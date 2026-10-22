@@ -39,6 +39,7 @@ export type PerTitleAdviceChange = {
 export type PerTitleAdvice = {
 	id: string;
 	reason:
+		| "evaluation"
 		| "joint-range"
 		| "upper-boundary"
 		| "lower-boundary"
@@ -51,6 +52,7 @@ export type PerTitleAdvice = {
 	proof: "model-count" | "conditional-settings";
 	facts: Record<string, number>;
 	inputFingerprint: string;
+	explanation?: { en: string; ja: string };
 };
 
 const LOW = "lowComplexityBoundaryForMaxBitrate";
@@ -132,8 +134,20 @@ function bounded(goal: PerTitleGoal) {
 		(goal.scenarioFractions?.length ?? 0) <= 9
 	);
 }
-function adviceFingerprint(goal: PerTitleGoal, fields: readonly Field[]) {
-	return `${fingerprint(goal)}\n${JSON.stringify(fields.map(fieldKey))}`;
+function adviceFingerprint(
+	goal: PerTitleGoal,
+	fields: readonly Field[],
+	contextKey?: string,
+) {
+	if (
+		contextKey !== undefined &&
+		(typeof contextKey !== "string" || contextKey.length > 128)
+	)
+		throw new Error("Invalid advice context.");
+	const input = `${fingerprint(goal)}\n${JSON.stringify(fields.map(fieldKey))}`;
+	return contextKey === undefined
+		? input
+		: `${input}\n${JSON.stringify(contextKey)}`;
 }
 function editedOnly(
 	previous: PerTitleGoal,
@@ -310,7 +324,11 @@ export function perTitleAdvice(
 				applied.some((f) => fieldKey(f) === fieldKey(edit as Field)))
 		)
 			return [];
-		const inputFingerprint = adviceFingerprint(current, protectedFields);
+		const inputFingerprint = adviceFingerprint(
+			current,
+			protectedFields,
+			options.contextKey,
+		);
 		const baseline = tunePerTitleSettings(current, current);
 		const variants: Variant[] = [];
 		let jointVariants: Iterable<Variant> = [];
@@ -621,6 +639,109 @@ export function perTitleAdvice(
 	}
 }
 
+/** Certify a current-input candidate without inventing a prior manual edit. */
+export function createPerTitleEvaluationAdvice(
+	current: PerTitleGoal,
+	candidate: PerTitleGoal,
+	options: PerTitleAdviceOptions = {},
+	facts: Record<string, number> = {},
+): PerTitleAdvice | null {
+	try {
+		if (
+			!bounded(current) ||
+			!bounded(candidate) ||
+			hasAutomaticPerTitleSettings(current)
+		)
+			return null;
+		const protectedFields = protectedPerTitleAdviceFields(current, options);
+		const held = new Set(protectedFields.map(fieldKey));
+		const baseline = tunePerTitleSettings(current, current).proposal;
+		const trial = tunePerTitleSettings(candidate, candidate).proposal;
+		const changes = settings(current).flatMap(
+			(field): PerTitleAdviceChange[] => {
+				const before = getPerTitleSetting(
+					baseline,
+					field.scope,
+					field.key,
+					field.rowId,
+				);
+				const after = getPerTitleSetting(
+					trial,
+					field.scope,
+					field.key,
+					field.rowId,
+				);
+				return Object.is(before, after) ? [] : [{ ...field, before, after }];
+			},
+		);
+		if (
+			!changes.length ||
+			changes.some((field) => held.has(fieldKey(field))) ||
+			!same(wireWithChanges(baseline, changes), trial.api)
+		)
+			return null;
+		const adopted = changes.reduce(
+			(goal, field) =>
+				setPerTitleSetting(
+					goal,
+					field.scope,
+					field.key,
+					field.after,
+					field.rowId,
+				),
+			current,
+		);
+		const checked = tunePerTitleSettings(adopted, adopted).proposal;
+		if (
+			!noConflict(checked) ||
+			!same(checked.api, trial.api) ||
+			protectedFields.some(
+				(field) =>
+					!Object.is(
+						getPerTitleGoalSetting(
+							current,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+						getPerTitleGoalSetting(
+							adopted,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					),
+			)
+		)
+			return null;
+		const proof = closedCount(adopted, checked)
+			? "model-count"
+			: "conditional-settings";
+		if (
+			current.countPolicy.kind !== "unrestricted" &&
+			!current.automaticTemplates?.length &&
+			proof !== "model-count"
+		)
+			return null;
+		return {
+			id: "evaluation",
+			reason: "evaluation",
+			changes,
+			goal: adopted,
+			proposal: checked,
+			proof,
+			facts,
+			inputFingerprint: adviceFingerprint(
+				current,
+				protectedFields,
+				options.contextKey,
+			),
+		};
+	} catch {
+		return null;
+	}
+}
+
 /** A stale result is never applied; this does not authorize an encoding job. */
 export function applyPerTitleAdvice(
 	current: PerTitleGoal,
@@ -632,7 +753,8 @@ export function applyPerTitleAdvice(
 		if (
 			!bounded(current) ||
 			!bounded(advice.goal) ||
-			adviceFingerprint(current, protectedFields) !== advice.inputFingerprint ||
+			adviceFingerprint(current, protectedFields, options.contextKey) !==
+				advice.inputFingerprint ||
 			protectedFields.some(
 				(f) =>
 					!Object.is(

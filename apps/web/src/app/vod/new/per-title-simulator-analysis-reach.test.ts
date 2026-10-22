@@ -254,9 +254,9 @@ describe("current-setting Per-Title reach assessment", () => {
 
 	it.each([
 		["MINIMUM", 1.1, 88],
-		["AVERAGE", 1.1, 100],
+		["AVERAGE", 1.1, 99],
 		["MINIMUM", 101 / 80, 101],
-		["AVERAGE", 101 / 90.5, 101],
+		["AVERAGE", 101 / 90, 101],
 	] as const)("retains the existing fixed highest rate when %s first forces %s", (mode, factor, first) => {
 		const goal = forced(mode);
 		goal.maxBitrate = 500;
@@ -329,16 +329,20 @@ describe("current-setting Per-Title reach assessment", () => {
 		expect(result.blockers).not.toContain("forced-not-increasing");
 	});
 
-	it("rounds an odd-sum average only after applying its first forced factor", () => {
+	it("truncates an odd-sum average before the repeated forced multiplications", () => {
 		const goal = forced("AVERAGE");
 		goal.maxBitrate = 204;
 		expect(assessPerTitleReach(goal, proposal(goal))).toMatchObject({
-			status: "conditional-reachable",
+			status: "blocked",
 			branch: "forced",
-			high: { minimum: 204, maximum: 204 },
-			low: { minimum: 204, maximum: 204 },
+			high: { minimum: 203, maximum: 203 },
+			low: { minimum: 203, maximum: 203 },
 			adaptation: "flat",
 		});
+		goal.maxBitrate = 203;
+		expect(assessPerTitleReach(goal, proposal(goal)).status).toBe(
+			"conditional-reachable",
+		);
 	});
 
 	it.each([

@@ -197,7 +197,7 @@ function forcedBase(
 	if (mode === "MAXIMUM")
 		return { minimum: configured.maximum, maximum: configured.maximum };
 	if (mode === "AVERAGE") {
-		const average = (configured.minimum + configured.maximum) / 2;
+		const average = Math.trunc((configured.minimum + configured.maximum) / 2);
 		return { minimum: average, maximum: average };
 	}
 	return calculated;
@@ -208,19 +208,7 @@ function forcedPoints(
 	count: number,
 	factor: number,
 ): Interval[] | null {
-	if (Number.isSafeInteger(base.minimum) && Number.isSafeInteger(base.maximum))
-		return evaluateForcedRenditions({ base, count, factor });
-	// An odd-sum average is fractional until the first multiplication is rounded.
-	const first = {
-		minimum: Math.round(base.minimum * factor),
-		maximum: Math.round(base.maximum * factor),
-	};
-	const rest = evaluateForcedRenditions({
-		base: first,
-		count: count - 1,
-		factor,
-	});
-	return rest ? [first, ...rest] : null;
+	return evaluateForcedRenditions({ base, count, factor });
 }
 
 function directConnection(input: number, base: Interval, global: Global) {

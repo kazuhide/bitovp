@@ -232,6 +232,82 @@ function activation(
 	return low;
 }
 
+/**
+ * Sufficient proof of input / effective-row-rate spacing at EVERY integer input.
+ * Affine pieces, floor error and the rounded q branch are bounded separately;
+ * a failed certificate is inconclusive, not proof that a connection is impossible.
+ */
+export function certifyComplexityDirectConnection(
+	row: Row,
+	input: BitrateInterval,
+	steps: BitrateInterval,
+): { allPermittedRates: boolean; checkedSegments: number } | null {
+	if (
+		!validRow(row) ||
+		!validInterval(input) ||
+		!validStep(steps.minimum) ||
+		!validStep(steps.maximum) ||
+		steps.minimum <= 1 ||
+		steps.maximum < steps.minimum
+	)
+		return null;
+	const minimum = exactDouble(steps.minimum);
+	const maximum = exactDouble(steps.maximum);
+	const multiply = (a: Fraction, b: Fraction): Fraction => ({
+		n: a.n * b.n,
+		d: a.d * b.d,
+	});
+	const cuts = [
+		...new Set([
+			input.minimum,
+			row.low + 1,
+			row.high,
+			activation(row, input, steps.minimum),
+		]),
+	]
+		.filter(
+			(value): value is number =>
+				value !== undefined && value >= input.minimum && value <= input.maximum,
+		)
+		.sort((a, b) => a - b);
+	let allPermittedRates = true;
+	for (let index = 0; index < cuts.length; index++) {
+		const start = cuts[index] as number;
+		const end =
+			cuts[index + 1] === undefined
+				? input.maximum
+				: (cuts[index + 1] as number) - 1;
+		const target = boundsAtEnds(row, start, end);
+		for (const [side, value] of [start, end].entries()) {
+			const upper = target.points[side] as Fraction;
+			const lower = target.exact ? upper : lessOne(upper);
+			if (
+				lower.n <= 0n ||
+				compare(integer(value), multiply(upper, minimum)) < 0n ||
+				compare(multiply(lower, maximum), integer(value)) < 0n
+			)
+				allPermittedRates = false;
+			if (
+				start > row.low &&
+				end < row.high &&
+				Math.round(start / steps.minimum) >= row.minimum
+			) {
+				// One full bit is conservative for rounding and floating division error.
+				const qLower = {
+					n: BigInt(value) * minimum.d - minimum.n,
+					d: minimum.n,
+				};
+				if (
+					qLower.n <= 0n ||
+					compare(multiply(qLower, maximum), integer(value)) < 0n
+				)
+					allPermittedRates = false;
+			}
+		}
+	}
+	return { allPermittedRates, checkedSegments: cuts.length };
+}
+
 /** Sufficient rectangle bounds for every effective rate, over the integer input domain. */
 export function certifyComplexityIntervals(
 	rows: readonly Row[],

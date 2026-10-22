@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	certifyComplexityDirectConnection,
 	certifyComplexityIntervals,
 	certifyComplexitySpacing,
 	complexityTargetsDoNotDecrease,
@@ -9,6 +10,69 @@ import {
 
 const row = { minimum: 180, maximum: 380, low: 200, high: 600 };
 type Row = typeof row;
+
+describe("whole-interval direct connection certificate", () => {
+	it("certifies a derived curve over the complete input interval", () => {
+		expect(
+			certifyComplexityDirectConnection(
+				{ minimum: 160, maximum: 480, low: 240, high: 720 },
+				{ minimum: 240, maximum: 720 },
+				{ minimum: 1.5, maximum: 4 },
+			)?.allPermittedRates,
+		).toBe(true);
+	});
+	it("rejects a reachable endpoint whose interior cannot connect", () => {
+		expect(
+			certifyComplexityDirectConnection(
+				{ minimum: 160, maximum: 220, low: 200, high: 480 },
+				{ minimum: 200, maximum: 720 },
+				{ minimum: 1.5, maximum: 5 },
+			)?.allPermittedRates,
+		).toBe(false);
+	});
+	it("never certifies a false connection in independently enumerated small domains", () => {
+		let checked = 0;
+		for (const minimum of [8, 13, 24])
+			for (const maximum of [30, 48, 60])
+				for (const low of [15, 36, 60])
+					for (const high of [70, 96, 120])
+						for (const minimumStep of [1.2, 1.5, 2]) {
+							const curve = { minimum, maximum, low, high };
+							const domain = { minimum: 60, maximum: 140 };
+							const certificate = certifyComplexityDirectConnection(
+								curve,
+								domain,
+								{
+									minimum: minimumStep,
+									maximum: 5,
+								},
+							);
+							if (!certificate?.allPermittedRates) continue;
+							checked++;
+							for (
+								let input = domain.minimum;
+								input <= domain.maximum;
+								input++
+							) {
+								const range = evaluateComplexityRange({
+									...curve,
+									input,
+									minStep: minimumStep,
+								});
+								expect(range).not.toBeNull();
+								for (
+									let bitrate = range?.minimum ?? 0;
+									bitrate <= (range?.maximum ?? -1);
+									bitrate++
+								) {
+									expect(input / bitrate).toBeGreaterThanOrEqual(minimumStep);
+									expect(input / bitrate).toBeLessThanOrEqual(5);
+								}
+							}
+						}
+		expect(checked).toBeGreaterThan(10);
+	});
+});
 
 describe("conditional complexity bounds", () => {
 	it.each([

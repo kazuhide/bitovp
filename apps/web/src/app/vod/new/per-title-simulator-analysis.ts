@@ -12,21 +12,40 @@ import {
 	type PerTitleDependencyAssessment,
 } from "./per-title-simulator-analysis-dependencies";
 import {
+	assessPerTitleLadder,
+	type PerTitleLadderAssessment,
+} from "./per-title-simulator-analysis-ladder";
+import { perTitleWholeLadderCandidates } from "./per-title-simulator-analysis-layouts";
+import {
 	assessPerTitleReach,
 	type PerTitleReachAssessment,
 } from "./per-title-simulator-analysis-reach";
+import {
+	assessPerTitleValidity,
+	type PerTitleValidityFinding,
+} from "./per-title-simulator-analysis-validity";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
-export type PerTitleAnalysisIntent = "cap" | "bandwidth" | "count";
+export type PerTitleAnalysisIntent = "cap" | "bandwidth" | "count" | "preserve";
 type Message = { en: string; ja: string };
 export type PerTitleAnalysisResult = {
 	intent: PerTitleAnalysisIntent;
 	reach: PerTitleReachAssessment;
-	findings: Array<{
-		code: string;
-		severity: "conflict" | "warning" | "info";
+	ladder: PerTitleLadderAssessment;
+	decision: {
+		status:
+			| "proposal"
+			| "keep-current"
+			| "no-certified-candidate"
+			| "inspect-only";
 		message: Message;
-	}>;
+	};
+	search: {
+		generated: number;
+		certified: number;
+		rejected: Record<string, number>;
+	};
+	findings: PerTitleValidityFinding[];
 	dependencies: PerTitleDependencyAssessment[];
 	advice: PerTitleAdvice[];
 	quality: {
@@ -68,12 +87,32 @@ const reachRank = (reach: PerTitleReachAssessment) =>
 function explanation(
 	item: PerTitleAdvice,
 	reach: PerTitleReachAssessment,
+	before: PerTitleLadderAssessment,
+	after: PerTitleLadderAssessment,
 ): Message {
 	const rate = (value: number) =>
 		new Intl.NumberFormat("en", {
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
+	if ((item.facts.preservedCount ?? 0) > 0)
+		return {
+			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits and the checked count of ${item.facts.preservedCount}. Recheck the revised boundaries and spacing over the whole input interval. This is a count-preserving configuration proposal, not a quality-equivalence result.`,
+			ja: `全体 ${rate(global.minBitrate)}～${rate(global.maxBitrate)} kbps と、検証済みの ${item.facts.preservedCount} 本を維持します。変更後の境界と段間隔も全区間で再検証した案です。画質が同等という判定ではありません。`,
+		};
+	if ((item.facts.wholeLadderImprovement ?? 0) > 0) {
+		const tracked = after.topResponse.status === "tracked";
+		const simpleBefore = before.topResponse.floor;
+		const simpleAfter = after.topResponse.floor;
+		const capacity =
+			before.globalCapacity !== null &&
+			after.globalCapacity !== null &&
+			after.globalCapacity > before.globalCapacity;
+		return {
+			en: `${tracked ? `Direct connection passes over the whole ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}–${rate(global.maxBitrate)} kbps analysis interval.` : `Extend the fixed curves toward ${rate(global.maxBitrate)} kbps; spacing is rechecked over the whole input interval.`} Upper placement room: ${before.upperSlots?.maximum ?? "unknown"}→${after.upperSlots?.maximum ?? "unknown"} (not output count).${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? ` Simple-input forced target: ${rate(simpleBefore)}→${rate(simpleAfter)} kbps.` : ""}${capacity ? " Smaller minimum spacing allows more ordinary rungs elsewhere." : ""} Global limits and quality controls stay unchanged; actual count and quality require media.`,
+			ja: `${tracked ? `解析値 ${rate(after.topResponse.domain?.minimum ?? global.minBitrate)}～${rate(global.maxBitrate)} kbps の全区間で、最上固定段から直接接続できる案です。` : `固定段が ${rate(global.maxBitrate)} kbps まで応答するよう調整し、段間隔を全区間で再検証した案です。`} 上側の配置余地は ${before.upperSlots?.maximum ?? "未確定"}→${after.upperSlots?.maximum ?? "未確定"} 段です。${simpleBefore !== null && simpleAfter !== null && simpleAfter !== simpleBefore ? `単純側の強制追加目標は ${rate(simpleBefore)}→${rate(simpleAfter)} kbps に上がります。` : ""}${capacity ? "最小段間隔を下げるため、ほかの区間で本数が増える余地があります。" : ""} 全体範囲と画質設定は維持します。実際の本数と画質は素材で確認してください。`,
+		};
+	}
 	if (
 		item.proof === "model-count" &&
 		item.goal.strategy === "fixed-ranges" &&
@@ -123,6 +162,7 @@ export function analyzePerTitleSettings(
 	const normalized = tunePerTitleSettings(goal, goal);
 	const proposal = normalized.proposal;
 	const reach = assessPerTitleReach(normalized.goal, proposal);
+	const ladder = assessPerTitleLadder(normalized.goal, proposal);
 	const findings: PerTitleAnalysisResult["findings"] = [];
 	const add = (
 		code: string,
@@ -133,11 +173,49 @@ export function analyzePerTitleSettings(
 	const result: PerTitleAnalysisResult = {
 		intent,
 		reach,
+		ladder,
+		decision: {
+			status: "inspect-only",
+			message: {
+				en: "Further verification is needed before a checked adjustment can be offered.",
+				ja: "調整案の検証には追加の確認が必要です。",
+			},
+		},
+		search: { generated: 0, certified: 0, rejected: {} },
 		findings,
 		dependencies: assessPerTitleDependencies(normalized.goal, proposal),
 		advice: [],
 		quality,
 	};
+	findings.push(...assessPerTitleValidity(goal, proposal));
+	if (ladder.earlySaturationRows.length)
+		add(
+			"early-fixed-saturation",
+			"warning",
+			`${ladder.earlySaturationRows.length} fixed curve(s) reach their upper target before the overall maximum. A reachable top does not establish that the interior ladder scales with it.`,
+			`固定段 ${ladder.earlySaturationRows.length} 個が全体上限より前に上側目標へ到達します。最上段が上限に届いても、中間段が追従するとは限りません。`,
+		);
+	if (ladder.topResponse.status === "gap")
+		add(
+			"interior-top-connection-gap",
+			"warning",
+			`At analysis input ${ladder.topResponse.witnessInput} bps, some permitted fixed rates cannot connect directly under the selected spacing. Forced fallback and direct branches can therefore behave differently inside the interval.`,
+			`解析値 ${ladder.topResponse.witnessInput} bps では、許容される固定目標の一部が指定の段間比率で直接接続できません。区間の途中で強制追加と直接接続の挙動が変わり得ます。`,
+		);
+	const forcedCount =
+		proposal.api.global.fixedResolutionAndBitrateConfiguration
+			?.forcedRenditionAboveHighestFixedRepresentation ?? 0;
+	if (
+		ladder.upperSlots &&
+		forcedCount > 0 &&
+		ladder.upperSlots.maximum > forcedCount
+	)
+		add(
+			"upper-extra-slot-capacity",
+			"warning",
+			`Minimum spacing permits up to ${ladder.upperSlots.maximum} ordinary upper placements at the high-input hypothesis, more than the ${forcedCount} forced additions. Placement capacity is not a native count prediction.`,
+			`上限の想定では、最小の段間比率で上側に ${ladder.upperSlots.maximum} 段を置ける余地があります。強制追加 ${forcedCount} 本の指定だけでは通常段の追加を制限できません。配置余地であり、実際の本数の予測ではありません。`,
+		);
 	if (
 		proposal.status === "conflict" ||
 		proposal.diagnostics.some(
@@ -180,7 +258,7 @@ export function analyzePerTitleSettings(
 		);
 	if (
 		goal.countPolicy.kind !== "unrestricted" &&
-		reach.count.status !== "model-checked"
+		!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal)
 	)
 		add(
 			"count-conditional",
@@ -205,13 +283,40 @@ export function analyzePerTitleSettings(
 			"Bitrate and quality controls are not reduced without media evidence. Only a checked count or spacing repair can be proposed here; a quality-preserving optimum requires a rate-quality comparison.",
 			"画質を保てる根拠なしにビットレートや画質設定は下げません。ここでは本数・段間の条件を確認し、削減効果は素材で比較します。",
 		);
-	if (intent === "count" && goal.countPolicy.kind === "unrestricted") {
+	if (
+		(intent === "count" || intent === "preserve") &&
+		goal.countPolicy.kind === "unrestricted"
+	) {
 		add(
 			"count-required",
 			"info",
 			"Choose an exact or maximum rendition count in the requirements, then evaluate again.",
 			"左の要件で「本数を固定」または「本数の上限」を指定して、再評価してください。",
 		);
+		result.decision.message = {
+			en: "Choose the rendition count to preserve in the requirements, then evaluate again.",
+			ja: "左の要件で維持する本数を指定して、再評価してください。",
+		};
+		return result;
+	}
+	if (
+		intent === "preserve" &&
+		(!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) ||
+			proposal.api.streams.some(
+				(stream) => stream.mode === "PER_TITLE_TEMPLATE",
+			) ||
+			(goal.strategy !== "fixed-ranges" && goal.countPolicy.kind !== "exact"))
+	) {
+		add(
+			"preserve-count-unverified",
+			"warning",
+			"Global limits and configured templates can be retained, but the current count is not certified over the full analysis domain. Resolve count and spacing conflicts first; for ordinary or automatic templates, compare the current and candidate outputs with media before declaring the native count preserved.",
+			"全体の最小・最大とテンプレート構成は維持できますが、現在の本数を全区間では確認できません。本数と段間隔の競合を先に解消してください。通常・自動テンプレートを含む場合は、現設定と候補の出力を素材で比較して本数維持を判断します。",
+		);
+		result.decision.message = {
+			en: "The current count is unresolved. A count-preserving optimization cannot yet be certified; check the count and template conditions below.",
+			ja: "現在の本数を確定できないため、本数を維持する案はまだ認定できません。以下の本数・テンプレート条件を確認してください。",
+		};
 		return result;
 	}
 	if (hasAutomaticPerTitleSettings(goal)) {
@@ -228,36 +333,128 @@ export function analyzePerTitleSettings(
 		contextKey: perTitleAnalysisContextKey(intent),
 	};
 	const seen = new Set<string>();
-	for (const candidate of perTitleAnalysisCandidates(
-		goal,
-		proposal,
-		reach,
-		intent,
-		context,
-	)) {
+	const reject = (reason: string) => {
+		result.search.rejected[reason] = (result.search.rejected[reason] ?? 0) + 1;
+	};
+	const candidates = [
+		...perTitleAnalysisCandidates(goal, proposal, reach, intent, context),
+		...(intent === "cap" || intent === "preserve"
+			? perTitleWholeLadderCandidates(goal, proposal, context)
+			: []),
+	];
+	for (const candidate of candidates) {
+		result.search.generated++;
 		const item = createPerTitleEvaluationAdvice(goal, candidate, context);
-		if (!item) continue;
+		if (!item) {
+			reject("api-or-held-constraint");
+			continue;
+		}
 		const checked = assessPerTitleReach(item.goal, item.proposal);
+		const checkedLadder = assessPerTitleLadder(item.goal, item.proposal);
+		if (
+			item.goal.minBitrate !== goal.minBitrate ||
+			item.goal.maxBitrate !== goal.maxBitrate ||
+			JSON.stringify(item.goal.countPolicy) !== JSON.stringify(goal.countPolicy)
+		) {
+			reject("requirements-changed");
+			continue;
+		}
+		if (
+			assessPerTitleValidity(item.goal, item.proposal).some(
+				(finding) => finding.severity === "conflict",
+			)
+		) {
+			reject("invalid-candidate");
+			continue;
+		}
 		if (
 			reach.count.status === "model-checked" &&
 			checked.count.status !== "model-checked"
-		)
+		) {
+			reject("count-proof-lost");
 			continue;
+		}
+		const currentIntervals = ladder.intervals;
+		const nextIntervals = checkedLadder.intervals;
+		const connected = (
+			value: PerTitleLadderAssessment,
+			minimum: number,
+			maximum: number,
+		) =>
+			!!value.intervals &&
+			value.intervals.maximumWithinRowRatio < minimum &&
+			(value.intervals.minimumAdjacentRatio ?? Infinity) >= minimum &&
+			(value.intervals.maximumAdjacentRatio ?? 0) <= maximum;
+		if (
+			connected(
+				ladder,
+				proposal.api.global.minBitrateStepSize,
+				proposal.api.global.maxBitrateStepSize,
+			) &&
+			!connected(
+				checkedLadder,
+				item.proposal.api.global.minBitrateStepSize,
+				item.proposal.api.global.maxBitrateStepSize,
+			)
+		) {
+			reject("fixed-spacing-regression");
+			continue;
+		}
+		if (
+			ladder.lowerConnection?.fitsMaximum &&
+			checkedLadder.lowerConnection?.fitsMaximum === false
+		) {
+			reject("lower-connection-regression");
+			continue;
+		}
+		const wholeImprovement =
+			connected(
+				checkedLadder,
+				item.proposal.api.global.minBitrateStepSize,
+				item.proposal.api.global.maxBitrateStepSize,
+			) &&
+			checkedLadder.lowerConnection?.fitsMaximum !== false &&
+			((checkedLadder.topResponse.status === "tracked" &&
+				ladder.topResponse.status !== "tracked") ||
+				(ladder.upperSlots !== null &&
+					checkedLadder.upperSlots !== null &&
+					checkedLadder.upperSlots.maximum < ladder.upperSlots.maximum) ||
+				(checkedLadder.earlySaturationRows.length <
+					ladder.earlySaturationRows.length &&
+					!!currentIntervals &&
+					!!nextIntervals &&
+					nextIntervals.maximumWithinRowRatio <
+						item.proposal.api.global.minBitrateStepSize));
 		if (intent === "cap") {
 			if (
 				checked.status !== "conditional-reachable" ||
 				checked.adaptation !== "conditional" ||
-				reachRank(checked) <= reachRank(reach)
-			)
+				reachRank(checked) < reachRank(reach) ||
+				(reachRank(checked) === reachRank(reach) && !wholeImprovement)
+			) {
+				reject("no-objective-improvement");
 				continue;
+			}
 		} else if (
 			item.proof !== "model-count" ||
 			(!proposal.diagnostics.some(
 				(diagnostic) => diagnostic.severity === "conflict",
 			) &&
-				hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))
-		)
+				hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
+				!(intent === "preserve" && wholeImprovement))
+		) {
+			reject("count-or-objective-not-certified");
 			continue;
+		}
+		if (
+			intent === "preserve" &&
+			goal.strategy === "fixed-ranges" &&
+			(checked.count.minimum !== reach.count.minimum ||
+				checked.count.maximum !== reach.count.maximum)
+		) {
+			reject("count-changed");
+			continue;
+		}
 		const key = JSON.stringify(item.proposal.api);
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -265,13 +462,30 @@ export function analyzePerTitleSettings(
 			...item.facts,
 			reachRank: reachRank(checked),
 			maximum: goal.maxBitrate,
+			wholeLadderImprovement: Number(wholeImprovement),
+			tracked: Number(checkedLadder.topResponse.status === "tracked"),
+			capacityIncrease:
+				ladder.globalCapacity !== null && checkedLadder.globalCapacity !== null
+					? Math.max(0, checkedLadder.globalCapacity - ladder.globalCapacity)
+					: 0,
+			upperSlots: checkedLadder.upperSlots?.maximum ?? 256,
+			earlySaturation: checkedLadder.earlySaturationRows.length,
+			preservedCount:
+				intent === "preserve" && goal.countPolicy.kind !== "unrestricted"
+					? (reach.count.maximum ?? goal.countPolicy.count)
+					: 0,
 		};
-		item.explanation = explanation(item, checked);
+		item.explanation = explanation(item, checked, ladder, checkedLadder);
 		result.advice.push(item);
+		result.search.certified++;
 	}
 	result.advice.sort(
 		(a, b) =>
 			(b.facts.reachRank ?? 0) - (a.facts.reachRank ?? 0) ||
+			(a.facts.capacityIncrease ?? 0) - (b.facts.capacityIncrease ?? 0) ||
+			(b.facts.tracked ?? 0) - (a.facts.tracked ?? 0) ||
+			(a.facts.upperSlots ?? 256) - (b.facts.upperSlots ?? 256) ||
+			(a.facts.earlySaturation ?? 0) - (b.facts.earlySaturation ?? 0) ||
 			a.changes.length - b.changes.length ||
 			Number(
 				a.changes.some((change) => change.key.endsWith("BitrateStepSize")),
@@ -286,12 +500,46 @@ export function analyzePerTitleSettings(
 	result.advice = result.advice
 		.slice(0, 3)
 		.map((item, index) => ({ ...item, id: `evaluation-${intent}-${index}` }));
-	if (
-		!result.advice.length &&
-		(intent === "cap"
-			? reachRank(reach) < 5
-			: !hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))
+	if (result.advice.length)
+		result.decision = {
+			status: "proposal",
+			message: {
+				en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
+				ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
+			},
+		};
+	else if (
+		(intent === "count" || intent === "preserve") &&
+		hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
+		!findings.some(
+			(finding) =>
+				finding.severity !== "info" && finding.code !== "cap-blocked",
+		)
 	)
+		result.decision = {
+			status: "keep-current",
+			message: {
+				en: "The checked count and spacing constraints require no repair. This does not establish a quality or bandwidth optimum.",
+				ja: "確認した本数と段間隔の条件には修正が必要な点はありません。画質や転送量が最適という判定ではありません。",
+			},
+		};
+	else
+		result.decision = {
+			status: "no-certified-candidate",
+			message: {
+				en: "The search did not certify an improving adjustment under the current constraints. This is not a finding that the settings are optimal.",
+				ja: "現在の制約を守る改善案は今回の探索では検証できませんでした。現設定が最適という判定ではありません。",
+			},
+		};
+	if (!result.advice.length && intent === "bandwidth")
+		result.decision = {
+			status: "inspect-only",
+			message: {
+				en: "No quality-preserving bitrate reduction can be established without representative-media results. The configuration checks are available below.",
+				ja: "画質を保った削減案の判断には素材での比較が必要です。設定の整合性は以下で確認できます。",
+			},
+		};
+	if (result.decision.status === "no-certified-candidate")
 		add(
 			"no-checked-candidate",
 			"info",

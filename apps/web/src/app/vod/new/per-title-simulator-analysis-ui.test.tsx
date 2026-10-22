@@ -2,13 +2,16 @@ import type { PerTitleGoal } from "@bitovp/core";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
+import { PerTitleSimulator } from "./per-title-simulator";
 import { applyPerTitleAdvice } from "./per-title-simulator-advice";
 import { PerTitleAdvisor } from "./per-title-simulator-advisor";
 import {
 	analyzePerTitleSettings,
 	type PerTitleAnalysisIntent,
 } from "./per-title-simulator-analysis";
+import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
 import { PerTitleAnalysisPanel } from "./per-title-simulator-analysis-panel";
+import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const source = (): PerTitleGoal => ({
 	strategy: "count",
@@ -20,7 +23,253 @@ const source = (): PerTitleGoal => ({
 	countPolicy: { kind: "exact", count: 3 },
 });
 
+const mixedLadder = (maximum: number): PerTitleGoal => ({
+	strategy: "fixed-ranges",
+	codec: "H264",
+	minBitrate: 120_000,
+	maxBitrate: maximum,
+	minBitrateStepSize: 1.5,
+	maxBitrateStepSize: 5,
+	countPolicy: { kind: "unrestricted" },
+	targetQualityCrf: 19,
+	complexityFactor: 1,
+	resolutionScaleFactor: 0,
+	autoRepresentations: false,
+	fixedResolutionAndBitrateConfiguration: {
+		forcedRenditionAboveHighestFixedRepresentation: 1,
+		forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+		forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+			"LAST_CALCULATED_BITRATE",
+	},
+	rows: [
+		{ id: "first", height: 400, minBitrate: 240_000, maxBitrate: 440_000 },
+		{ id: "second", height: 400, minBitrate: 520_000, maxBitrate: 800_000 },
+		{ id: "middle", height: 600, minBitrate: 900_000, maxBitrate: 1_250_000 },
+		{
+			id: "highest",
+			height: 800,
+			minBitrate: 1_600_000,
+			maxBitrate: 2_200_000,
+		},
+	].map((row) => ({
+		...row,
+		bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
+		lowComplexityBoundaryForMaxBitrate: 2_000_000,
+		highComplexityBoundaryForMaxBitrate: 4_800_000,
+	})),
+	automaticTemplates: [
+		{ id: "bottom-auto", height: 200 },
+		{ id: "top-auto-a", height: 1000 },
+		{ id: "top-auto-b", height: 1200 },
+	],
+});
+
 describe("current Per-Title settings analysis", () => {
+	it.each([
+		["en", 4_800_000],
+		["ja", 4_800_000],
+		["en", 7_200_000],
+		["ja", 7_200_000],
+	] as const)("compares every mixed template with a checked whole-ladder proposal (%s, %i)", (locale, maximum) => {
+		const goal = mixedLadder(maximum);
+		const normalized = tunePerTitleSettings(goal, goal).goal;
+		const evaluated = analyzePerTitleSettings(normalized, "cap");
+		const first = evaluated.advice[0];
+		if (!first) throw new Error("Expected a certified whole-ladder proposal.");
+		const explanation = first.explanation?.[locale];
+		if (!explanation) throw new Error("Expected the proposal's reasoning.");
+		const proposed = assessPerTitleLadder(first.goal, first.proposal);
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={goal}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		const api = () =>
+			JSON.parse(
+				screen.getByTestId("per-title-api-settings").textContent ?? "{}",
+			);
+		const before = api();
+		fireEvent.change(
+			screen.getByRole("combobox", { name: locale === "ja" ? "目的" : "Goal" }),
+			{ target: { value: "cap" } },
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "ja" ? "評価する" : "Evaluate",
+			}),
+		);
+		expect(
+			screen.getByRole("region", {
+				name: locale === "ja" ? "調整案" : "Suggested adjustment",
+			}),
+		).toHaveTextContent(explanation);
+		expect(api()).toEqual(before);
+		expect(onApply).not.toHaveBeenCalled();
+		const fullSummary = screen.getByText(
+			locale === "ja" ? "ラダー全体" : "Full ladder",
+			{ selector: "summary" },
+		);
+		expect(fullSummary.closest("details")).not.toHaveAttribute("open");
+		fireEvent.click(
+			screen.getByText(
+				locale === "ja" ? "根拠と画質確認" : "Reasoning and quality checks",
+				{ selector: "summary" },
+			),
+		);
+		fireEvent.click(fullSummary);
+		const table = screen.getByRole("table", {
+			name: locale === "ja" ? "ラダー全体" : "Full ladder",
+		});
+		const renderedRows = within(table).getAllByRole("row").slice(1);
+		expect(renderedRows.map((row) => row.getAttribute("data-row-id"))).toEqual(
+			evaluated.ladder.rows.map((row) => row.rowId),
+		);
+		expect(renderedRows).toHaveLength(7);
+		const template = (id: string) => {
+			const row = renderedRows.find(
+				(item) => item.getAttribute("data-row-id") === id,
+			);
+			if (!row) throw new Error(`Missing template ${id}.`);
+			return within(row);
+		};
+		const firstCells = template("first").getAllByRole("cell");
+		expect(firstCells[0]).toHaveTextContent("240–440");
+		expect(firstCells[1]).toHaveTextContent("240");
+		expect(firstCells[2]).toHaveTextContent("440");
+		expect(template("first").getByRole("rowheader")).toHaveTextContent(
+			"400 px",
+		);
+		expect(template("second").getByRole("rowheader")).toHaveTextContent(
+			"400 px",
+		);
+		expect(
+			template("bottom-auto").getAllByText(
+				locale === "ja" ? "素材解析で決定" : "Determined by media",
+			),
+		).toHaveLength(4);
+		const target = proposed.rows.find(
+			(row) => row.rowId === "first",
+		)?.configured;
+		if (!target) throw new Error("Expected a proposed configured range.");
+		const format = (value: number) =>
+			new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
+				value / 1000,
+			);
+		expect(template("first").getAllByRole("cell").at(-1)).toHaveTextContent(
+			target.minimum === target.maximum
+				? format(target.minimum)
+				: `${format(target.minimum)}–${format(target.maximum)}`,
+		);
+		expect(
+			screen.getByText(
+				locale === "ja" ? "全区間の分割数" : "Full-interval segments",
+			),
+		).toBeVisible();
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? "上段の応答・確認範囲・分割数"
+					: "Top response, domain and segments",
+			).nextElementSibling,
+		).toHaveTextContent(locale === "ja" ? "追従確認" : "Tracked");
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? "配置余地と容量は算術値で、実際の出力本数ではありません。"
+					: "Placement slots and capacity are arithmetic, not the native output count.",
+			),
+		).toBeVisible();
+		const select = screen.getAllByRole("checkbox", {
+			name: locale === "ja" ? /反映する変更:/ : /Select change:/,
+		})[0];
+		if (!select) throw new Error("Expected selectable changes.");
+		fireEvent.click(select);
+		expect(
+			screen
+				.getAllByRole("button", {
+					name:
+						locale === "ja"
+							? "選択した変更を反映して再計算"
+							: "Apply selected changes and recalculate",
+				})
+				.filter((button) => !button.hasAttribute("disabled")),
+		).toHaveLength(1);
+		expect(api()).toEqual(before);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("offers the goal that preserves current bitrate limits and count (%s)", (locale) => {
+		const onIntentChange = vi.fn();
+		renderLocalized(
+			<PerTitleAnalysisPanel
+				goal={source()}
+				intent="cap"
+				onIntentChange={onIntentChange}
+				onEvaluate={vi.fn()}
+			/>,
+			locale,
+		);
+		expect(
+			screen.getByRole("option", {
+				name:
+					locale === "ja"
+						? "最小・最大と本数を保って見直す"
+						: "Optimize within the current bitrate limits and count",
+			}),
+		).toHaveValue("preserve");
+		fireEvent.change(
+			screen.getByRole("combobox", { name: locale === "ja" ? "目的" : "Goal" }),
+			{ target: { value: "preserve" } },
+		);
+		expect(onIntentChange).toHaveBeenCalledWith("preserve");
+	});
+
+	it.each([
+		["en", "proposal"],
+		["ja", "proposal"],
+		["en", "keep-current"],
+		["ja", "keep-current"],
+		["en", "no-certified-candidate"],
+		["ja", "no-certified-candidate"],
+		["en", "inspect-only"],
+		["ja", "inspect-only"],
+	] as const)("shows the supplied %s decision for %s outside collapsed details", (locale, status) => {
+		const goal = source();
+		const evaluated = analyzePerTitleSettings(goal, "count");
+		const message = { en: `Decision: ${status}`, ja: `評価結果: ${status}` };
+		renderLocalized(
+			<PerTitleAnalysisPanel
+				goal={goal}
+				intent="count"
+				onIntentChange={vi.fn()}
+				onEvaluate={vi.fn()}
+				result={{
+					...evaluated,
+					advice: status === "proposal" ? evaluated.advice : [],
+					decision: { status, message },
+				}}
+			/>,
+			locale,
+		);
+		expect(screen.getByText(message[locale])).toBeVisible();
+		expect(screen.getByText(message[locale]).closest("details")).toBeNull();
+		expect(
+			screen
+				.getByText(
+					locale === "ja" ? "根拠と画質確認" : "Reasoning and quality checks",
+				)
+				.closest("details"),
+		).not.toHaveAttribute("open");
+	});
+
 	it.each([
 		"en",
 		"ja",

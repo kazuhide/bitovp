@@ -68,7 +68,7 @@ export function perTitleAnalysisCandidates(
 	goal: PerTitleGoal,
 	proposal: PerTitleProposal,
 	reach: PerTitleReachAssessment,
-	intent: "cap" | "bandwidth" | "count",
+	intent: "cap" | "bandwidth" | "count" | "preserve",
 	options: PerTitleAdviceOptions,
 ): PerTitleGoal[] {
 	const held = new Set(
@@ -139,7 +139,7 @@ export function perTitleAnalysisCandidates(
 			// Recalibration is an explicit count-focused alternative, not a claim of
 			// equal quality or an automatic change to a custom / maintained boundary.
 			if (
-				intent === "count" &&
+				(intent === "count" || intent === "preserve") &&
 				goal.rows.every(
 					(row) =>
 						typeof row.lowComplexityBoundaryForMaxBitrate === "number" &&

@@ -463,9 +463,13 @@ The left side includes global settings and each stream's settings. Choose an aut
 
 When Auto is selected, calculations use the loaded reference rather than the previous slider position. Fixed values take precedence over adjustments: if they conflict, the dialog preserves them and reports the issue. Settings unsupported by the selected codec are not offered.
 
-**Evaluate current settings** is available before any edit. Choose **Use the maximum for complex content**, **Reduce bandwidth while keeping quality**, or **Prioritize the rendition count**, then select **Evaluate**. The count policy, overall bitrate bounds and required rows on the left are the evaluation requirements.
+**Evaluate current settings** is available before any edit. Choose **Optimize within the current bitrate limits and count**, **Use the maximum for complex content**, **Reduce bandwidth while keeping quality**, or **Prioritize the rendition count**, then select **Evaluate**. The count policy, overall bitrate bounds and required rows on the left are the evaluation requirements.
 
-The result distinguishes an allowed upper target from one reachable under stated conditions, and shows dependencies between fixed, analysis-selected and forced renditions. Count results describe the model; confirm actual outputs after media analysis. Open **Reasoning and quality checks** for all current codec SDK parameters and their active, inactive, no-effect, unset, media-dependent or unverified status.
+The evaluation checks each setting and its active conditions, row ranges against the overall limits, complexity boundaries, integer rounding, spacing and forced additions. Reaching the overall maximum alone is insufficient: it also checks interior input values, early saturation and room for additional rungs. The input interval between the overall minimum and maximum is an explicit analysis hypothesis, not a prediction of the media.
+
+**Optimize within the current bitrate limits and count** retains both overall limits, the templates and the checked current count. If the current count cannot be established, resolve count conflicts first or compare generated outputs with media. A configured count goal alone does not prove that ordinary or automatic templates produce that count.
+
+The result states whether it found a checked proposal, recommends retaining the checked settings, found no certified improvement, or needs further verification. An empty proposal list does not mean the settings are optimal. Open **Reasoning and quality checks → Full ladder** to compare every template, including automatic templates and repeated resolutions. Configured ranges, conditional targets and the first proposed ranges are separate. Arithmetic placement room is not an output-count prediction. The same details include all current codec SDK parameters and their active, inactive, no-effect, unset, media-dependent or unverified status.
 
 Quality and bandwidth savings require representative media, measured video bitrates, quality scores and visual comparisons. Do not raise CRF or shrink bitrate ranges without checking the quality effect.
 

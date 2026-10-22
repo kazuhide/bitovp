@@ -78,7 +78,8 @@ describe("current Per-Title evaluation", () => {
 			expect(reach.status).toBe("conditional-reachable");
 			expect(reach.high?.maximum).toBe(6_000_000);
 			expect(reach.low?.maximum).toBeLessThan(6_000_000);
-			expect(item.goal.rows?.[0]).toEqual(goal.rows?.[0]);
+			expect(item.goal.rows?.[0]?.minBitrate).toBe(goal.rows?.[0]?.minBitrate);
+			expect(item.goal.rows?.[0]?.maxBitrate).toBe(goal.rows?.[0]?.maxBitrate);
 			expect(item.goal.automaticTemplates).toEqual(goal.automaticTemplates);
 			expect(item.goal.targetQualityCrf).toBe(18);
 			expect(item.goal.complexityFactor).toBe(1);
@@ -183,13 +184,15 @@ describe("current Per-Title evaluation", () => {
 		const result = analyzePerTitleSettings(current, "cap");
 		expect(result.reach.status).toBe("blocked");
 		expect(result.advice.length).toBeGreaterThan(0);
-		for (const item of result.advice) {
-			expect(
+		expect(
+			result.advice.some((item) =>
 				item.changes.every(
 					(change) =>
 						change.scope === "global" && change.key.endsWith("BitrateStepSize"),
 				),
-			).toBe(true);
+			),
+		).toBe(true);
+		for (const item of result.advice) {
 			const evaluated = assessPerTitleReach(item.goal, item.proposal);
 			expect(evaluated.certainty).toBe("all-permitted-rates");
 			expect(evaluated.high).toEqual({

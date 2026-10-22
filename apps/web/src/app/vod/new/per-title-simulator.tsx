@@ -637,13 +637,6 @@ function SimulatorEditor({
 					)}
 				</div>
 				<div className="min-w-0 space-y-4 overflow-x-clip lg:sticky lg:top-0 lg:self-start">
-					<PerTitleRecommendation
-						goal={goal}
-						proposal={selected}
-						baseline={baseline}
-						axis={{ minimum: slider.min, maximum: slider.max }}
-						comparisonOnly={!!reference}
-					/>
 					<PerTitleAdvisor
 						goal={goal}
 						session={referenceGoal}
@@ -656,6 +649,13 @@ function SimulatorEditor({
 								return applyPerTitleAdvice(normalized, advice) ?? current;
 							})
 						}
+					/>
+					<PerTitleRecommendation
+						goal={goal}
+						proposal={selected}
+						baseline={baseline}
+						axis={{ minimum: slider.min, maximum: slider.max }}
+						comparisonOnly={!!reference}
 					/>
 					<PerTitleReasoning
 						goal={goal}

@@ -485,6 +485,8 @@ export function perTitleAdvice(
 			const proof = closedCount(adopted, checked.proposal)
 				? "model-count"
 				: "conditional-settings";
+			if (variant.solver && edit.scope === "count" && proof !== "model-count")
+				continue;
 			if (
 				variant.solver &&
 				rangeEdit &&

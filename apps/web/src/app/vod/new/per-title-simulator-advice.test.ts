@@ -5,7 +5,10 @@ import {
 	hasAutomaticPerTitleSettings,
 	perTitleAdvice,
 } from "./per-title-simulator-advice";
-import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import {
+	setPerTitleAdjustment,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 
 const mixed: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -476,5 +479,48 @@ describe("dependent Per-Title advice", () => {
 			true,
 		);
 		expect(item?.goal.autoRepresentations).toBeUndefined();
+	});
+	it("requires model-count proof for a count edit even when a mixed conflict disappears", () => {
+		const previous: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+			minBitrateStepSize: 1.25,
+			maxBitrateStepSize: 4,
+			countPolicy: { kind: "exact", count: 4 },
+			autoRepresentations: false,
+			rows: [
+				{ id: "fixed", height: 720, minBitrate: 500_000, maxBitrate: 500_000 },
+			],
+			automaticTemplates: [{ id: "top", height: 1080 }],
+		};
+		const current: PerTitleGoal = {
+			...previous,
+			countPolicy: { kind: "exact", count: 3 },
+		};
+		const baseline = tunePerTitleSettings(current, current).proposal;
+		expect(baseline.diagnostics.some((d) => d.severity === "conflict")).toBe(
+			true,
+		);
+		let trial = current;
+		for (const key of ["minBitrateStepSize", "maxBitrateStepSize"])
+			trial = setPerTitleAdjustment(trial, baseline, "global", key, {
+				mode: "auto",
+				method: "constraints",
+			});
+		const proposed = tunePerTitleSettings(trial, trial).proposal;
+		expect(proposed.status).toBe("unknown");
+		expect(proposed.applicable).toBe(false);
+		expect(proposed.derivation?.targetSatisfied).toBe(false);
+		expect(proposed.diagnostics.some((d) => d.severity === "conflict")).toBe(
+			false,
+		);
+		expect(
+			perTitleAdvice(previous, current, {
+				scope: "count",
+				key: "count",
+			}).filter((item) => item.reason === "spacing"),
+		).toEqual([]);
 	});
 });

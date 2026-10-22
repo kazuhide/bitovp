@@ -47,7 +47,6 @@ export function autoTunePerTitleGoal(
 	const next = { ...goal };
 	delete next.minBitrateStepSize;
 	delete next.maxBitrateStepSize;
-	delete next.fixedResolutionAndBitrateConfiguration;
 	// Other strategies retain their parked row data and existing core semantics.
 	if (
 		goal.strategy !== "fixed-ranges" ||
@@ -111,13 +110,17 @@ export function autoTunePerTitleGoal(
 			originalMinimum <= originalMaximum &&
 			originalMinimum >= anchor.minBitrate &&
 			originalMaximum <= anchor.maxBitrate;
+		const invalidExplicitOriginal =
+			original !== undefined &&
+			!validOriginal &&
+			(originalMinimum !== undefined || originalMaximum !== undefined);
 		// Equal logarithmic bands alternate with equally wide gaps. Extra requested
 		// slots stay above the required rows. Integer rounding can collapse tiny
 		// intervals; the solver must still diagnose feasibility and actual count.
 		const rank = ranks.get(index) ?? index;
 		const cells = 2 * slots - 1;
-		let minimum = at((2 * rank) / cells);
-		let maximum = at((2 * rank + 1) / cells);
+		let minimum: number | undefined = at((2 * rank) / cells);
+		let maximum: number | undefined = at((2 * rank + 1) / cells);
 		if (validOriginal) {
 			if (unchangedGlobal) {
 				minimum = originalMinimum;
@@ -128,16 +131,33 @@ export function autoTunePerTitleGoal(
 				minimum = at(position(originalMinimum));
 				maximum = at(position(originalMaximum));
 			}
+		} else if (invalidExplicitOriginal) {
+			// Explicit loaded constraints must reach validation unchanged; an invalid
+			// interval is not a missing band to replace with an automatic suggestion.
+			minimum = originalMinimum;
+			maximum = originalMaximum;
 		}
 		const pinned = manual[row.id];
 		const pinMinimum = pinned?.min === true;
 		const pinMaximum = pinned?.max === true;
 		const inGlobal = (value: number | undefined): value is number =>
 			validRate(value) && value >= goal.minBitrate && value <= goal.maxBitrate;
-		if (pinMinimum && !pinMaximum && inGlobal(row.minBitrate)) {
+		if (
+			!invalidExplicitOriginal &&
+			pinMinimum &&
+			!pinMaximum &&
+			inGlobal(row.minBitrate) &&
+			maximum !== undefined
+		) {
 			maximum = Math.max(maximum, row.minBitrate);
 		}
-		if (pinMaximum && !pinMinimum && inGlobal(row.maxBitrate)) {
+		if (
+			!invalidExplicitOriginal &&
+			pinMaximum &&
+			!pinMinimum &&
+			inGlobal(row.maxBitrate) &&
+			minimum !== undefined
+		) {
 			minimum = Math.min(minimum, row.maxBitrate);
 		}
 		return {

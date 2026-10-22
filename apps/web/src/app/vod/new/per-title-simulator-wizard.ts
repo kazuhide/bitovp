@@ -147,6 +147,17 @@ export function perTitleGoalFromWizard(
 		strategy,
 		minBitrate,
 		maxBitrate,
+		autoRepresentations:
+			global?.autoRepresentations === true
+				? {
+						...(global.adoptConfigurationThreshold !== undefined
+							? {
+									adoptConfigurationThreshold:
+										global.adoptConfigurationThreshold,
+								}
+							: {}),
+					}
+				: false,
 		...(global?.minBitrateStepSize !== undefined
 			? { minBitrateStepSize: global.minBitrateStepSize }
 			: {}),
@@ -180,10 +191,24 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 	const api = proposal.api;
 	const global = api.global;
 	const streams = api.streams;
+	const automatic = global.autoRepresentations;
+	const validAutomatic =
+		automatic === undefined ||
+		(automatic !== null &&
+			typeof automatic === "object" &&
+			!Array.isArray(automatic) &&
+			Object.keys(automatic).every(
+				(key) => key === "adoptConfigurationThreshold",
+			) &&
+			(automatic.adoptConfigurationThreshold === undefined ||
+				(Number.isFinite(automatic.adoptConfigurationThreshold) &&
+					automatic.adoptConfigurationThreshold >= 0 &&
+					automatic.adoptConfigurationThreshold <= 1)));
 	const validInteger = (n: number | undefined): n is number =>
 		typeof n === "number" && Number.isSafeInteger(n) && n > 0;
 	if (
 		proposal.codec !== codec ||
+		!validAutomatic ||
 		!proposal.applicable ||
 		proposal.status !== "candidate" ||
 		streams.length === 0 ||
@@ -438,13 +463,22 @@ export function applyPerTitleProposal(
 		adoptConfigurationThreshold: _threshold,
 		...quality
 	} = previous ?? {};
-	const { fixedResolutionAndBitrateConfiguration, ...settings } =
-		proposal.api.global;
+	const {
+		fixedResolutionAndBitrateConfiguration,
+		autoRepresentations,
+		...settings
+	} = proposal.api.global;
 	const global: WizardPerTitleCodec = {
 		...quality,
 		...settings,
 		...fixedResolutionAndBitrateConfiguration,
-		autoRepresentations: proposal.api.global.autoRepresentations !== undefined,
+		autoRepresentations: autoRepresentations !== undefined,
+		...(autoRepresentations?.adoptConfigurationThreshold !== undefined
+			? {
+					adoptConfigurationThreshold:
+						autoRepresentations.adoptConfigurationThreshold,
+				}
+			: {}),
 	};
 	next.startOptions = {
 		...next.startOptions,

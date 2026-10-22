@@ -93,6 +93,135 @@ function compiled(s: WizardState) {
 
 describe("Per-Title wizard bridge", () => {
 	it.each([
+		{
+			autoRepresentations: undefined,
+			adoptConfigurationThreshold: 0.8,
+			expected: false,
+		},
+		{
+			autoRepresentations: false,
+			adoptConfigurationThreshold: 0.8,
+			expected: false,
+		},
+		{
+			autoRepresentations: true,
+			adoptConfigurationThreshold: undefined,
+			expected: {},
+		},
+		{
+			autoRepresentations: true,
+			adoptConfigurationThreshold: 0,
+			expected: { adoptConfigurationThreshold: 0 },
+		},
+		{
+			autoRepresentations: true,
+			adoptConfigurationThreshold: 0.35,
+			expected: { adoptConfigurationThreshold: 0.35 },
+		},
+	])("imports automatic representations without enabling an absent setting: %j", ({
+		autoRepresentations,
+		adoptConfigurationThreshold,
+		expected,
+	}) => {
+		const before = state();
+		before.startOptions = {
+			perTitle: { h264: { autoRepresentations, adoptConfigurationThreshold } },
+		};
+		const snapshot = structuredClone(before);
+		expect(perTitleGoalFromWizard(before).autoRepresentations).toEqual(
+			expected,
+		);
+		expect(before).toEqual(snapshot);
+	});
+	it.each([
+		undefined,
+		{},
+		{ adoptConfigurationThreshold: 0 },
+		{ adoptConfigurationThreshold: 0.35 },
+		{ adoptConfigurationThreshold: 1 },
+	])("applies the emitted automatic representation object and clears stale thresholds: %j", (autoRepresentations) => {
+		const before = state();
+		before.videos = [
+			{
+				height: 360,
+				bitrate: null,
+				extras: { key: "ordinary", mode: "PER_TITLE_TEMPLATE" },
+			},
+		];
+		before.startOptions = {
+			perTitle: {
+				h264: {
+					autoRepresentations: true,
+					adoptConfigurationThreshold: 0.8,
+					targetQualityCrf: 22,
+				},
+			},
+		};
+		const snapshot = structuredClone(before);
+		const candidate = proposal([
+			{ rowId: "ordinary", height: 360, mode: "PER_TITLE_TEMPLATE" },
+		]);
+		if (autoRepresentations !== undefined)
+			candidate.api.global.autoRepresentations = autoRepresentations;
+		const next = applyPerTitleProposal(before, candidate, "H264");
+		expect(next.startOptions?.perTitle?.h264?.autoRepresentations).toBe(
+			autoRepresentations !== undefined,
+		);
+		expect(next.startOptions?.perTitle?.h264?.adoptConfigurationThreshold).toBe(
+			autoRepresentations?.adoptConfigurationThreshold,
+		);
+		expect(next.startOptions?.perTitle?.h264?.targetQualityCrf).toBe(22);
+		expect(before).toEqual(snapshot);
+	});
+	it.each([
+		-0.01,
+		1.01,
+		Number.NaN,
+	])("rejects an invalid emitted automatic representation threshold %s", (adoptConfigurationThreshold) => {
+		const candidate = proposal([
+			{ rowId: "v360", height: 360, mode: "PER_TITLE_TEMPLATE" },
+		]);
+		candidate.api.global.autoRepresentations = { adoptConfigurationThreshold };
+		expect(() => applyPerTitleProposal(state(), candidate, "H264")).toThrow(
+			"The proposal is not an applicable candidate for this codec.",
+		);
+	});
+	it.each([
+		false,
+		{},
+		{ adoptConfigurationThreshold: 0 },
+	] as const)("retains automatic representation intent through proposal, apply and plan compilation: %j", (autoRepresentations) => {
+		const before = state();
+		before.videos = [
+			{
+				height: 360,
+				bitrate: null,
+				extras: { key: "ordinary", mode: "PER_TITLE_TEMPLATE" },
+			},
+		];
+		before.startOptions = {
+			perTitle: {
+				h264: {
+					minBitrate: 100000,
+					maxBitrate: 5000000,
+					autoRepresentations: autoRepresentations !== false,
+					...(autoRepresentations === false ? {} : autoRepresentations),
+				},
+			},
+		};
+		const loaded = perTitleGoalFromWizard(before);
+		expect(loaded.autoRepresentations).toEqual(autoRepresentations);
+		const candidate = recommendPerTitleSettings(loaded);
+		expect(candidate.api.global.autoRepresentations).toEqual(
+			autoRepresentations === false ? undefined : autoRepresentations,
+		);
+		const next = applyPerTitleProposal(before, candidate, "H264");
+		const { plan } = compiled(next);
+		expect(plan.perTitle?.h264Configuration?.autoRepresentations).toEqual(
+			autoRepresentations === false ? undefined : autoRepresentations,
+		);
+	});
+	it.each([
 		"PER_TITLE_TEMPLATE",
 		"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 	] as const)("refuses fixed-bitrate settings on a %s proposal", (mode) => {

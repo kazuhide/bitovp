@@ -69,6 +69,61 @@ function parse(value: unknown) {
 }
 
 describe("Per-Title local presets", () => {
+	it("preserves disabled auto representations when the original reference omits the object", () => {
+		const parsed = parse({ version: 1, reference });
+		expect(parsed.goal.autoRepresentations).toBe(false);
+		expect(parsed.reference).toEqual(reference);
+		expect(
+			parse(JSON.parse(serializePerTitlePreset(parsed.goal, parsed.reference)))
+				.goal.autoRepresentations,
+		).toBe(false);
+	});
+	it.each([
+		{},
+		{ adoptConfigurationThreshold: 0 },
+		{ adoptConfigurationThreshold: 0.35 },
+		{ adoptConfigurationThreshold: 1 },
+	])("preserves explicit automatic representation configuration %j", (autoRepresentations) => {
+		const original = {
+			...reference,
+			global: { ...reference.global, autoRepresentations },
+		};
+		const parsed = parse({ version: 1, reference: original });
+		expect(parsed.goal.autoRepresentations).toEqual(autoRepresentations);
+		expect(parsed.reference).toEqual(original);
+		expect(
+			parse(JSON.parse(serializePerTitlePreset(parsed.goal, parsed.reference)))
+				.goal,
+		).toEqual(parsed.goal);
+	});
+	it.each([
+		false,
+		{},
+		{ adoptConfigurationThreshold: 0.6 },
+	] as const)("roundtrips an editable goal auto representation setting %j", (autoRepresentations) => {
+		const edited: PerTitleGoal = { ...goal, autoRepresentations };
+		expect(parse(JSON.parse(serializePerTitlePreset(edited))).goal).toEqual(
+			edited,
+		);
+	});
+	it.each([
+		false,
+		true,
+		{ adoptConfigurationThreshold: -0.01 },
+		{ adoptConfigurationThreshold: 1.01 },
+		{ adoptConfigurationThreshold: "0.5" },
+		{ unknown: "sentinel" },
+	])("rejects unsupported reference automatic representation data %j", (autoRepresentations) => {
+		expect(() =>
+			parse({
+				version: 1,
+				reference: {
+					...reference,
+					global: { ...reference.global, autoRepresentations },
+				},
+			}),
+		).toThrow("Invalid Per-Title preset.");
+	});
 	it.each([
 		{
 			codec: "H264",

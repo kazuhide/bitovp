@@ -117,27 +117,29 @@ describe("Per-Title output chart", () => {
 		expect(rows[1]).toHaveTextContent("360 px");
 		expect(rows[2]).toHaveTextContent("720 px");
 		expect(rows[3]).toHaveTextContent(unknownHeight);
-		expect(within(rows[2]).getByText(conditional)).toBeVisible();
+		expect(within(required(rows[2])).getByText(conditional)).toBeVisible();
 		expect(rows[2]).toHaveTextContent("500–1,500");
 		expect(rows[2]).toHaveTextContent(
 			locale === "en" ? "Upper target 1,500" : "上限の目安 1,500",
 		);
 		expect(
-			within(rows[0]).getByTestId("per-title-output-band"),
+			within(required(rows[0])).getByTestId("per-title-output-band"),
 		).toHaveAttribute("stroke-dasharray", "4 3");
-		expect(within(rows[0]).queryByTestId("per-title-output-target")).toBeNull();
 		expect(
-			within(rows[1]).getByTestId("per-title-output-target"),
+			within(required(rows[0])).queryByTestId("per-title-output-target"),
+		).toBeNull();
+		expect(
+			within(required(rows[1])).getByTestId("per-title-output-target"),
 		).not.toHaveAttribute("stroke-dasharray");
 		expect(
-			within(rows[2]).getByTestId("per-title-output-target"),
+			within(required(rows[2])).getByTestId("per-title-output-target"),
 		).toHaveAttribute("stroke-dasharray", "3 2");
 		expect(
-			within(rows[2]).getByTestId("per-title-output-target"),
+			within(required(rows[2])).getByTestId("per-title-output-target"),
 		).toHaveAttribute("x1", "0");
 		expect(
 			Number(
-				within(rows[2])
+				within(required(rows[2]))
 					.getByTestId("per-title-output-target")
 					.getAttribute("x2"),
 			),
@@ -147,13 +149,13 @@ describe("Per-Title output chart", () => {
 		expect(previewPerTitleOutput).toHaveBeenCalledWith(proposal);
 	});
 
-	it("does not present automatic candidate metadata as numeric output", () => {
+	it("does not present unknown automatic candidate metadata as numeric output", () => {
 		vi.mocked(previewPerTitleOutput).mockReturnValue({
 			...preview,
 			rows: [
 				{
 					...required(preview.rows[1]),
-					status: "example",
+					status: "unknown",
 					bitrate: 700000,
 					minimumBitrate: 200000,
 					maximumBitrate: 800000,
@@ -166,6 +168,147 @@ describe("Per-Title output chart", () => {
 		expect(within(row).queryByTestId("per-title-output-target")).toBeNull();
 		expect(row).not.toHaveTextContent("200–800");
 		expect(row).not.toHaveTextContent("700");
+	});
+
+	it.each([
+		[
+			"en",
+			"Start",
+			"Additional (if fixed is highest)",
+			"Conditional",
+			"Unknown",
+		],
+		[
+			"ja",
+			"開始",
+			"固定レンディションが最上位の場合に追加",
+			"条件付き",
+			"未確定",
+		],
+	] as const)("shows conditional automatic starts and additions separately from unknown candidates (%s)", (locale, start, forced, conditional, unknown) => {
+		const rows: PerTitleOutputPreview["rows"] = [
+			{
+				id: "start",
+				rowId: "start",
+				height: 180,
+				kind: "automatic",
+				status: "conditional",
+				mode: "PER_TITLE_TEMPLATE",
+				basis: "minimum",
+				bitrate: 100000,
+			},
+			{
+				id: "pending",
+				rowId: "pending",
+				height: 720,
+				kind: "automatic",
+				status: "unknown",
+				mode: "PER_TITLE_TEMPLATE",
+			},
+			{
+				id: "forced-first",
+				rowId: "pending",
+				height: 1080,
+				kind: "automatic",
+				status: "conditional",
+				mode: "PER_TITLE_TEMPLATE",
+				basis: "forced",
+				bitrate: 1800000,
+			},
+			{
+				id: "forced-next",
+				rowId: "pending",
+				height: 1080,
+				kind: "additional",
+				status: "conditional",
+				mode: "PER_TITLE_TEMPLATE",
+				basis: "forced",
+				bitrate: 1980000,
+			},
+		];
+		const snapshot = structuredClone(rows);
+		vi.mocked(previewPerTitleOutput).mockReturnValue({ ...preview, rows });
+		renderLocalized(
+			<PerTitleOutputChart
+				proposal={proposal}
+				axis={{ minimum: 100000, maximum: 8000000 }}
+			/>,
+			locale,
+		);
+		const visibleRows = screen.getAllByTestId("per-title-output-row");
+		expect(visibleRows).toHaveLength(4);
+		expect(screen.getByRole("img")).toHaveAccessibleDescription(
+			locale === "en"
+				? /source analysis may change resolutions.*fixed rendition is highest/
+				: /素材解析で解像度が変わる場合があります.*固定レンディションが最上位の場合/,
+		);
+		expect(within(required(visibleRows[0])).getByText(start)).toBeVisible();
+		expect(visibleRows[0]).toHaveTextContent("100");
+		expect(
+			within(required(visibleRows[0])).getByText(conditional),
+		).toBeVisible();
+		expect(
+			within(required(visibleRows[0])).getByTestId("per-title-output-target"),
+		).toHaveAttribute("stroke-dasharray", "3 2");
+		expect(
+			within(required(visibleRows[0])).getByTestId("per-title-output-endpoint"),
+		).toHaveAttribute("x1", "0");
+		expect(
+			within(required(visibleRows[0])).getByTestId("per-title-output-endpoint"),
+		).toHaveAttribute("y1", "2");
+		expect(
+			within(required(visibleRows[0])).getByTestId("per-title-output-endpoint"),
+		).toHaveAttribute("y2", "10");
+		expect(visibleRows[1]).toHaveTextContent(unknown);
+		expect(
+			within(required(visibleRows[1])).queryByTestId("per-title-output-target"),
+		).toBeNull();
+		for (const [index, value] of [
+			[2, "1,800"],
+			[3, "1,980"],
+		] as const) {
+			const row = required(visibleRows[index]);
+			expect(within(row).getByText(forced)).toBeVisible();
+			expect(row).toHaveTextContent(value);
+			expect(row).toHaveTextContent(
+				locale === "en" ? "Candidate 1080 px" : "候補 1080 px",
+			);
+			expect(within(row).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
+			expect(
+				within(row).getByTestId("per-title-output-target"),
+			).toHaveAttribute("stroke-dasharray", "3 2");
+		}
+		expect(
+			screen.queryByText(
+				locale === "en" ? "Additional outputs unknown" : "追加出力は未確定",
+			),
+		).toBeNull();
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(rows).toEqual(snapshot);
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps the unknown-additions footer when no forced value can be calculated (%s)", (locale) => {
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			rows: [
+				{
+					...required(preview.rows[1]),
+					basis: "forced",
+					status: "unknown",
+					bitrate: 700000,
+				},
+			],
+		});
+		renderLocalized(<PerTitleOutputChart proposal={proposal} />, locale);
+		expect(
+			screen.getByText(
+				locale === "en" ? "Additional outputs unknown" : "追加出力は未確定",
+			),
+		).toBeVisible();
+		expect(screen.queryByTestId("per-title-output-target")).toBeNull();
 	});
 
 	it("keeps anonymous model points separate without assigning API candidate resolutions", () => {

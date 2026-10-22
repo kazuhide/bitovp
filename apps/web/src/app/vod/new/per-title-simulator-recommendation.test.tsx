@@ -38,6 +38,87 @@ function show(initialGoal = goal, locale: "en" | "ja" = "en") {
 }
 
 describe("Per-Title recommendation flow", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("shows a loaded out-of-global maximum and a concrete correction (%s)", (locale) => {
+		show(
+			{
+				...goal,
+				maxBitrate: 4_000_000,
+				countPolicy: { kind: "unrestricted" },
+				rows: [
+					{
+						id: "large-limit",
+						height: 360,
+						minBitrate: 200_000,
+						maxBitrate: 40_000_000,
+					},
+				],
+			},
+			locale,
+		);
+		const alert = screen.getByRole("alert");
+		expect(alert).toHaveTextContent("360 px");
+		expect(alert).toHaveTextContent("40,000");
+		expect(alert).toHaveTextContent("4,000");
+		expect(alert).toHaveTextContent(
+			locale === "ja" ? "全体の上限を上げるか" : "Raise the overall maximum",
+		);
+		expect(
+			screen.getByRole("button", {
+				name: locale === "ja" ? "差分を確認" : "Review changes",
+			}),
+		).toBeDisabled();
+	});
+
+	it("explains a minimum below the global floor without flagging complexity boundaries alone", () => {
+		const invalid: PerTitleGoal = {
+			...goal,
+			rows: [
+				{
+					id: "below-floor",
+					height: 240,
+					minBitrate: 50_000,
+					maxBitrate: 200_000,
+				},
+			],
+		};
+		const { unmount } = renderLocalized(
+			<PerTitleRecommendation
+				goal={invalid}
+				proposal={recommendPerTitleSettings(invalid)}
+			/>,
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent("50");
+		expect(screen.getByRole("alert")).toHaveTextContent("100");
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"Lower the overall minimum",
+		);
+		unmount();
+		const valid: PerTitleGoal = {
+			...goal,
+			rows: [
+				{
+					id: "boundary",
+					height: 240,
+					minBitrate: 100_000,
+					maxBitrate: 200_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 3_000_000,
+					highComplexityBoundaryForMaxBitrate: 4_000_000,
+				},
+			],
+		};
+		renderLocalized(
+			<PerTitleRecommendation
+				goal={valid}
+				proposal={recommendPerTitleSettings(valid)}
+			/>,
+		);
+		expect(screen.queryByRole("alert")).toBeNull();
+	});
+
 	it("keeps a fixed chart ceiling as bitrate limits change and defaults to simulated output", () => {
 		show();
 		const panel = screen.getByRole("region", { name: "Simulation" });
@@ -497,9 +578,9 @@ describe("Per-Title recommendation flow", () => {
 		const proposedApi = JSON.parse(
 			screen.getByTestId("per-title-api-settings").textContent ?? "{}",
 		);
-		expect(proposedApi.global).not.toHaveProperty(
-			"fixedResolutionAndBitrateConfiguration",
-		);
+		expect(proposedApi.global.fixedResolutionAndBitrateConfiguration).toEqual({
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+		});
 		expect(within(panel).queryByText("Calculated count limit")).toBeNull();
 		expect(
 			screen.queryByRole("checkbox", {

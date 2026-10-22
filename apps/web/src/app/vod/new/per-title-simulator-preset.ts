@@ -58,6 +58,11 @@ const stepFields = {
 	minBitrateStepSize: positive.refine((n) => n > 1).optional(),
 	maxBitrateStepSize: positive.refine((n) => n > 1).optional(),
 };
+const autoRepresentations = z
+	.object({
+		adoptConfigurationThreshold: z.number().finite().min(0).max(1).optional(),
+	})
+	.strict();
 const goalSchema = z
 	.object({
 		strategy: z.enum([
@@ -71,6 +76,9 @@ const goalSchema = z
 		minBitrate: integer,
 		maxBitrate: integer,
 		...stepFields,
+		autoRepresentations: z
+			.union([z.literal(false), autoRepresentations])
+			.optional(),
 		countPolicy: z.discriminatedUnion("kind", [
 			z.object({ kind: z.literal("unrestricted") }).strict(),
 			z
@@ -161,6 +169,7 @@ const referenceSchema = z
 				minBitrate: integer,
 				maxBitrate: integer,
 				...stepFields,
+				autoRepresentations: autoRepresentations.optional(),
 				targetQualityCrf: nonnegative.optional(),
 				complexityFactor: positive.optional(),
 				codecBufsizeFactor: positive.optional(),
@@ -312,6 +321,7 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		minBitrateStepSize,
 		maxBitrateStepSize,
 		fixedResolutionAndBitrateConfiguration,
+		autoRepresentations,
 	} = reference.global;
 	return {
 		strategy: ranged.length
@@ -326,6 +336,10 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		codec: reference.codec,
 		minBitrate,
 		maxBitrate,
+		autoRepresentations:
+			autoRepresentations === undefined
+				? false
+				: structuredClone(autoRepresentations),
 		...(minBitrateStepSize !== undefined ? { minBitrateStepSize } : {}),
 		...(maxBitrateStepSize !== undefined ? { maxBitrateStepSize } : {}),
 		countPolicy: { kind: "unrestricted" },

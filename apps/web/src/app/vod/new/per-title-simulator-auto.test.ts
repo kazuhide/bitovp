@@ -1,4 +1,4 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import { type PerTitleGoal, recommendPerTitleSettings } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	autoTunePerTitleGoal,
@@ -19,6 +19,128 @@ const anchor: PerTitleGoal = {
 };
 
 describe("automatic Per-Title requirements", () => {
+	it("preserves an explicit additional-rendition rule in every strategy", () => {
+		const rule = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"LAST_CALCULATED_BITRATE" as const,
+		};
+		for (const strategy of [
+			"automatic",
+			"count",
+			"required-resolutions",
+			"fixed-resolutions",
+			"fixed-ranges",
+		] as const) {
+			const goal = {
+				...anchor,
+				strategy,
+				fixedResolutionAndBitrateConfiguration: rule,
+			};
+			const snapshot = structuredClone(goal);
+			expect(
+				autoTunePerTitleGoal(goal, goal, {})
+					.fixedResolutionAndBitrateConfiguration,
+			).toEqual(rule);
+			expect(goal).toEqual(snapshot);
+		}
+	});
+	it("passes a loaded out-of-global row through to the core conflict instead of inventing another band", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			maxBitrate: 4000000,
+			countPolicy: { kind: "unrestricted" },
+			rows: [
+				{
+					id: "outside",
+					height: 360,
+					minBitrate: 100000,
+					maxBitrate: 40000000,
+				},
+			],
+		};
+		const effective = autoTunePerTitleGoal(loaded, loaded, {});
+		expect(effective.rows).toEqual(loaded.rows);
+		const proposal = recommendPerTitleSettings(effective);
+		expect(proposal.applicable).toBe(false);
+		expect(proposal.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "row-outside-global-range",
+				severity: "conflict",
+				rowIds: ["outside"],
+			}),
+		);
+		expect(proposal.api.streams[0]?.perTitleSettings?.maxBitrate).toBe(
+			40000000,
+		);
+	});
+	it("retains a mixed unrestricted rule in the actual proposal rather than only in source metadata", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			countPolicy: { kind: "unrestricted" },
+			automaticTemplates: [{ id: "candidate", height: 1080 }],
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+		};
+		const result = recommendPerTitleSettings(
+			autoTunePerTitleGoal(loaded, loaded, {}),
+		);
+		expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			loaded.fixedResolutionAndBitrateConfiguration,
+		);
+		expect(result.applicable).toBe(false);
+	});
+	it("preserves explicit malformed matched-anchor ranges for diagnostics while missing new bands still derive", () => {
+		for (const row of [
+			{ id: "invalid", height: 360, minBitrate: 900000, maxBitrate: 100000 },
+			{ id: "invalid", height: 360, minBitrate: NaN, maxBitrate: 100000 },
+			{ id: "invalid", height: 360, minBitrate: 0, maxBitrate: 100000 },
+			{ id: "invalid", height: 360, minBitrate: 200000 },
+		]) {
+			const loaded = { ...anchor, rows: [row] };
+			const effective = autoTunePerTitleGoal(loaded, loaded, {});
+			expect(effective.rows).toEqual([row]);
+			expect(recommendPerTitleSettings(effective).diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "invalid-row-range",
+					severity: "conflict",
+				}),
+			);
+			const fresh = autoTunePerTitleGoal(
+				{ ...loaded, rows: [{ id: "new", height: 360 }] },
+				loaded,
+				{},
+			);
+			expect(fresh.rows?.[0]?.minBitrate).toBeGreaterThan(0);
+			expect(fresh.rows?.[0]?.maxBitrate).toBeGreaterThanOrEqual(
+				fresh.rows?.[0]?.minBitrate ?? Infinity,
+			);
+		}
+	});
+	it("does not automatically repair the other explicit invalid anchor endpoint during a manual edit", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			rows: [
+				{ id: "reversed", height: 360, minBitrate: 900000, maxBitrate: 100000 },
+			],
+		};
+		const raw: PerTitleGoal = {
+			...loaded,
+			rows: [
+				{ id: "reversed", height: 360, minBitrate: 150000, maxBitrate: 100000 },
+			],
+		};
+		const next = autoTunePerTitleGoal(raw, loaded, { reversed: { min: true } });
+		expect(next.rows).toEqual(raw.rows);
+		expect(recommendPerTitleSettings(next).diagnostics).toContainEqual(
+			expect.objectContaining({ code: "invalid-row-range" }),
+		);
+	});
 	it("anchors a usable slider domain and caps it at the supported integer limit", () => {
 		expect(bitrateSliderBounds(anchor)).toEqual({
 			min: 100000,
@@ -160,7 +282,7 @@ describe("automatic Per-Title requirements", () => {
 			).not.toBe(200000);
 		}
 	});
-	it("drops tuning overrides on active ranges while retaining automatic source metadata", () => {
+	it("drops automatic tuning overrides while retaining explicit rules and automatic source metadata", () => {
 		const goal: PerTitleGoal = {
 			...anchor,
 			minBitrateStepSize: 1.5,
@@ -187,7 +309,9 @@ describe("automatic Per-Title requirements", () => {
 		const next = autoTunePerTitleGoal(goal, anchor, {});
 		expect(next.minBitrateStepSize).toBeUndefined();
 		expect(next.maxBitrateStepSize).toBeUndefined();
-		expect(next.fixedResolutionAndBitrateConfiguration).toBeUndefined();
+		expect(next.fixedResolutionAndBitrateConfiguration).toEqual(
+			goal.fixedResolutionAndBitrateConfiguration,
+		);
 		expect(next.rows).toEqual(anchor.rows);
 		expect(next.automaticTemplates).toEqual(goal.automaticTemplates);
 		expect(goal).toEqual(snapshot);
@@ -232,13 +356,13 @@ describe("automatic Per-Title requirements", () => {
 			expect(next.rows?.[0]?.maxBitrate).toBeLessThanOrEqual(maxBitrate);
 		}
 	});
-	it("handles degenerate or invalid anchors without dividing by zero or reusing bad bands", () => {
+	it("handles degenerate global anchors or unrelated invalid rows without dividing by zero", () => {
 		for (const baseline of [
 			{ ...anchor, minBitrate: 0 },
 			{ ...anchor, minBitrate: 100000, maxBitrate: 100000 },
 			{
 				...anchor,
-				rows: [{ id: "a", height: 240, minBitrate: -1, maxBitrate: 2 }],
+				rows: [{ id: "unrelated", height: 240, minBitrate: -1, maxBitrate: 2 }],
 			},
 		]) {
 			const next = autoTunePerTitleGoal(

@@ -18,6 +18,8 @@ const copy = {
 		candidate: "Candidate",
 		automatic: "Automatic candidate",
 		additional: "Additional",
+		start: "Start",
+		forced: "Additional (if fixed is highest)",
 		heightUnknown: "Resolution unknown",
 		example: "Example",
 		conditional: "Conditional",
@@ -30,7 +32,7 @@ const copy = {
 		mode: "Mode",
 		bitrate: "Bitrate (kbps)",
 		description:
-			"Arithmetic examples, not encoding results. Candidate resolutions remain unknown.",
+			"Explicit-template example; source analysis may change resolutions. Extra output assumes a fixed rendition is highest.",
 	},
 	ja: {
 		title: "想定出力",
@@ -41,6 +43,8 @@ const copy = {
 		candidate: "候補",
 		automatic: "自動生成の候補",
 		additional: "追加",
+		start: "開始",
+		forced: "固定レンディションが最上位の場合に追加",
 		heightUnknown: "解像度未確定",
 		example: "計算例",
 		conditional: "条件付き",
@@ -53,7 +57,7 @@ const copy = {
 		mode: "モード",
 		bitrate: "ビットレート (kbps)",
 		description:
-			"計算例で、エンコード結果ではありません。候補の解像度は未確定です。",
+			"指定したテンプレートの計算例です。素材解析で解像度が変わる場合があります。追加値は固定レンディションが最上位の場合を仮定します。",
 	},
 };
 
@@ -94,10 +98,7 @@ export function PerTitleOutputChart({
 	const bitrate = (value: number) => numbers.format(value / 1000);
 	const rows = preview.rows
 		.map((row, index) => {
-			const numeric =
-				preview.status !== "unavailable" &&
-				row.kind !== "automatic" &&
-				row.status !== "unknown";
+			const numeric = row.status !== "unknown";
 			const target =
 				numeric && positiveInteger(row.bitrate) ? row.bitrate : undefined;
 			const range =
@@ -107,14 +108,15 @@ export function PerTitleOutputChart({
 				row.minimumBitrate <= row.maximumBitrate
 					? { minimum: row.minimumBitrate, maximum: row.maximumBitrate }
 					: undefined;
-			const label =
-				row.kind === "automatic"
-					? positiveInteger(row.height)
-						? `${text.candidate} ${row.height} px`
-						: text.automatic
-					: positiveInteger(row.height)
-						? `${row.height} px`
-						: text.heightUnknown;
+			const automatic =
+				row.kind === "automatic" || row.mode === "PER_TITLE_TEMPLATE";
+			const label = automatic
+				? positiveInteger(row.height)
+					? `${text.candidate} ${row.height} px`
+					: text.automatic
+				: positiveInteger(row.height)
+					? `${row.height} px`
+					: text.heightUnknown;
 			const status =
 				target === undefined && range === undefined
 					? text.unknown
@@ -128,7 +130,25 @@ export function PerTitleOutputChart({
 				: target !== undefined
 					? bitrate(target)
 					: "";
-			return { row, index, target, range, label, status, values };
+			const basis =
+				target === undefined
+					? undefined
+					: row.basis === "minimum"
+						? text.start
+						: row.basis === "forced"
+							? text.forced
+							: undefined;
+			return {
+				row,
+				index,
+				target,
+				range,
+				label,
+				status,
+				values,
+				automatic,
+				basis,
+			};
 		})
 		.sort(
 			(a, b) =>
@@ -139,6 +159,10 @@ export function PerTitleOutputChart({
 						? b.row.height
 						: Number.POSITIVE_INFINITY) || a.index - b.index,
 		);
+	const forcedOutput = rows.some(
+		({ row, target, range }) =>
+			row.basis === "forced" && (target !== undefined || range !== undefined),
+	);
 	return (
 		<figure aria-labelledby={`${id}-title`} className="space-y-2">
 			<figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
@@ -182,7 +206,17 @@ export function PerTitleOutputChart({
 							</div>
 						</div>
 						{rows.map(
-							({ row, index, target, range, label, status, values }) => {
+							({
+								row,
+								index,
+								target,
+								range,
+								label,
+								status,
+								values,
+								automatic,
+								basis,
+							}) => {
 								const band =
 									range ?? (target === undefined ? permitted : undefined);
 								const lower = band?.minimum ?? target;
@@ -201,14 +235,14 @@ export function PerTitleOutputChart({
 										</span>
 										<div className="min-w-0">
 											<div className="flex flex-wrap justify-end gap-x-2 text-zinc-300 tabular-nums">
-												{row.kind === "automatic" ? (
+												{automatic ? (
 													<code className="text-zinc-400">
 														PER_TITLE_TEMPLATE
 													</code>
 												) : null}
-												{row.kind === "additional" ? (
+												{basis || row.kind === "additional" ? (
 													<span className="text-zinc-400">
-														{text.additional}
+														{basis ?? text.additional}
 													</span>
 												) : null}
 												{values ? <span>{values}</span> : null}
@@ -259,21 +293,37 @@ export function PerTitleOutputChart({
 													/>
 												) : null}
 												{target !== undefined ? (
-													<line
-														data-testid="per-title-output-target"
-														x1={0}
-														x2={scale.position(target)}
-														y1={6}
-														y2={6}
-														className={
-															conditional
-																? "stroke-amber-300"
-																: "stroke-emerald-400"
-														}
-														strokeWidth={4}
-														strokeDasharray={conditional ? "3 2" : undefined}
-														vectorEffect="non-scaling-stroke"
-													/>
+													<>
+														<line
+															data-testid="per-title-output-target"
+															x1={0}
+															x2={scale.position(target)}
+															y1={6}
+															y2={6}
+															className={
+																conditional
+																	? "stroke-amber-300"
+																	: "stroke-emerald-400"
+															}
+															strokeWidth={4}
+															strokeDasharray={conditional ? "3 2" : undefined}
+															vectorEffect="non-scaling-stroke"
+														/>
+														<line
+															data-testid="per-title-output-endpoint"
+															x1={scale.position(target)}
+															x2={scale.position(target)}
+															y1={2}
+															y2={10}
+															className={
+																conditional
+																	? "stroke-amber-300"
+																	: "stroke-emerald-400"
+															}
+															strokeWidth={1}
+															vectorEffect="non-scaling-stroke"
+														/>
+													</>
 												) : null}
 											</svg>
 										</div>
@@ -295,7 +345,16 @@ export function PerTitleOutputChart({
 						</thead>
 						<tbody>
 							{rows.map(
-								({ row, index, label, status, values, range, target }) => (
+								({
+									row,
+									index,
+									label,
+									status,
+									values,
+									range,
+									target,
+									basis,
+								}) => (
 									<tr key={`${row.id}-${index}`}>
 										<th scope="row">{label}</th>
 										<td>
@@ -303,7 +362,7 @@ export function PerTitleOutputChart({
 												(row.kind === "additional" ? text.additional : "")}
 										</td>
 										<td>
-											{values} {status}
+											{values} {status} {basis}
 											{row.status === "conditional" &&
 											range &&
 											target !== undefined
@@ -319,7 +378,7 @@ export function PerTitleOutputChart({
 			) : (
 				<p className="text-xs text-zinc-400">{text.unavailable}</p>
 			)}
-			{preview.unresolvedAdditional ? (
+			{preview.unresolvedAdditional && !forcedOutput ? (
 				<p className="text-xs text-zinc-400">{text.unresolved}</p>
 			) : null}
 		</figure>

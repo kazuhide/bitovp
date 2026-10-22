@@ -16,6 +16,33 @@ const automatic: PerTitleGoal = {
 };
 
 describe("proposePerTitleSettings", () => {
+	it("does not accept automatic resolution generation without an ordinary template", () => {
+		const [proposal] = proposePerTitleSettings({
+			...automatic,
+			strategy: "fixed-resolutions",
+			autoRepresentations: {},
+			rows: [{ id: "fixed", height: 480 }],
+		});
+		expect(proposal?.applicable).toBe(false);
+		expect(proposal?.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "invalid-row", severity: "conflict" }),
+		);
+	});
+	it("preserves an explicit disabled or configured automatic-resolution policy", () => {
+		const disabled = proposePerTitleSettings({
+			...automatic,
+			autoRepresentations: false,
+		});
+		expect(disabled[0]?.api.global.autoRepresentations).toBeUndefined();
+		const configured = proposePerTitleSettings({
+			...automatic,
+			autoRepresentations: { adoptConfigurationThreshold: 0.7 },
+		});
+		expect(configured[0]?.api.global.autoRepresentations).toEqual({
+			adoptConfigurationThreshold: 0.7,
+		});
+	});
+
 	it("keeps automatic output counts separate from API fields and provider evidence", () => {
 		const [proposal] = proposePerTitleSettings(automatic);
 		expect(proposal).toMatchObject({

@@ -48,6 +48,9 @@ export type PerTitleGoal = {
 	countPolicy: PerTitleCountPolicy;
 	rows?: readonly PerTitleGoalRow[];
 	automaticTemplates?: readonly PerTitleAutomaticTemplate[];
+	autoRepresentations?:
+		| false
+		| NonNullable<PerTitleApiSettings["global"]["autoRepresentations"]>;
 	fixedResolutionAndBitrateConfiguration?: PerTitleFixedResolutionAndBitrateConfiguration;
 	inputHeight?: number;
 	inputWidth?: number;
@@ -94,7 +97,7 @@ export type PerTitleApiSettings = {
 		maxBitrate: number;
 		minBitrateStepSize: number;
 		maxBitrateStepSize: number;
-		autoRepresentations?: Record<string, never>;
+		autoRepresentations?: { adoptConfigurationThreshold?: number };
 		fixedResolutionAndBitrateConfiguration?: PerTitleFixedResolutionAndBitrateConfiguration;
 	};
 	streams: Array<{
@@ -1029,6 +1032,28 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 		);
 	}
 	const minimumStep = goal.minBitrateStepSize ?? DEFAULT_MIN_STEP;
+	const automatic = goal.autoRepresentations;
+	if (automatic && !hasAutomaticOutput(goal)) {
+		conflict(
+			"invalid-row",
+			"Automatic resolution generation requires an ordinary Per-Title template.",
+		);
+	}
+	if (
+		automatic !== undefined &&
+		automatic !== false &&
+		(!automatic ||
+			typeof automatic !== "object" ||
+			(automatic.adoptConfigurationThreshold !== undefined &&
+				(!Number.isFinite(automatic.adoptConfigurationThreshold) ||
+					automatic.adoptConfigurationThreshold < 0 ||
+					automatic.adoptConfigurationThreshold > 1)))
+	) {
+		conflict(
+			"invalid-row",
+			"The automatic-resolution threshold must be between zero and one.",
+		);
+	}
 	const maximumStep = goal.maxBitrateStepSize ?? DEFAULT_MAX_STEP;
 	if (
 		!Number.isFinite(minimumStep) ||
@@ -1218,13 +1243,20 @@ function buildProposal(
 			values: { states: ordering.states, limit: MAX_ORDER_STATES },
 		});
 	}
+	const autoRepresentations =
+		goal.autoRepresentations === false
+			? undefined
+			: (goal.autoRepresentations ??
+				(hasAutomaticOutput(goal) ? {} : undefined));
 	const api: PerTitleApiSettings = {
 		global: {
 			minBitrate: goal.minBitrate,
 			maxBitrate: goal.maxBitrate,
 			minBitrateStepSize: minimumStep,
 			maxBitrateStepSize: maximumStep,
-			...(hasAutomaticOutput(goal) ? { autoRepresentations: {} } : {}),
+			...(autoRepresentations !== undefined
+				? { autoRepresentations: structuredClone(autoRepresentations) }
+				: {}),
 			...(goal.fixedResolutionAndBitrateConfiguration
 				? {
 						fixedResolutionAndBitrateConfiguration: structuredClone(
@@ -1314,7 +1346,7 @@ function buildProposal(
 			code: "forced-count-unknown",
 			severity: "warning",
 			message:
-				"The additional-rendition configuration is preserved, but this model does not calculate its output. Counts remain unknown and this comparison cannot be applied.",
+				"The additional-rendition configuration is preserved. Conditional output examples do not establish whether its branch runs or how many outputs the encoder generates.",
 		});
 	}
 	if (goal.countPolicy.kind !== "unrestricted") {

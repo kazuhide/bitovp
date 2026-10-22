@@ -50,6 +50,48 @@ export function PerTitleRecommendation({
 		(stream) => stream.mode === "PER_TITLE_TEMPLATE",
 	);
 	const global = proposal.api.global;
+	const inputConflicts: string[] = [];
+	if (
+		!positive(global.minBitrate) ||
+		!positive(global.maxBitrate) ||
+		global.minBitrate > global.maxBitrate
+	) {
+		inputConflicts.push(
+			locale === "ja"
+				? "全体の最小・最大ビットレートには正の値を指定し、最小値を最大値以下にしてください。"
+				: "Use positive overall bitrate limits, with the minimum no greater than the maximum.",
+		);
+	} else {
+		for (const stream of proposal.api.streams) {
+			if (stream.mode !== "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
+				continue;
+			const minimum = stream.perTitleSettings?.minBitrate;
+			const maximum = stream.perTitleSettings?.maxBitrate;
+			const label = stream.height ? `${stream.height} px` : stream.rowId;
+			if (!positive(minimum) || !positive(maximum) || minimum > maximum) {
+				inputConflicts.push(
+					locale === "ja"
+						? `${label} の最小・最大ビットレートを確認してください。正の値を指定し、最小値を最大値以下にしてください。`
+						: `${label}: use positive bitrate limits, with the minimum no greater than the maximum.`,
+				);
+				continue;
+			}
+			if (minimum < global.minBitrate) {
+				inputConflicts.push(
+					locale === "ja"
+						? `${label} の下限 ${formatBitrate(minimum)} kbps が全体の下限 ${formatBitrate(global.minBitrate)} kbps を下回っています。全体の下限を下げるか、このレンディションの下限を上げてください。`
+						: `${label}: minimum ${formatBitrate(minimum)} kbps is below the overall minimum ${formatBitrate(global.minBitrate)} kbps. Lower the overall minimum or raise this rendition's minimum.`,
+				);
+			}
+			if (maximum > global.maxBitrate) {
+				inputConflicts.push(
+					locale === "ja"
+						? `${label} の上限 ${formatBitrate(maximum)} kbps が全体の上限 ${formatBitrate(global.maxBitrate)} kbps を超えています。全体の上限を上げるか、このレンディションの上限を下げてください。`
+						: `${label}: maximum ${formatBitrate(maximum)} kbps exceeds the overall maximum ${formatBitrate(global.maxBitrate)} kbps. Raise the overall maximum or lower this rendition's maximum.`,
+				);
+			}
+		}
+	}
 	const derivation = proposal.derivation;
 	const checked =
 		proposal.status === "candidate" &&
@@ -108,6 +150,16 @@ export function PerTitleRecommendation({
 			>
 				{copy.recommendation}
 			</h3>
+			{inputConflicts.length ? (
+				<div
+					role="alert"
+					className="space-y-1 rounded-md border border-amber-800/60 bg-amber-950/20 p-2 text-xs text-amber-200"
+				>
+					{inputConflicts.map((message, index) => (
+						<p key={`${index}:${message}`}>{message}</p>
+					))}
+				</div>
+			) : null}
 			{comparisonOnly || !checked ? (
 				<p
 					role="status"

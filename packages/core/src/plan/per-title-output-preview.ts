@@ -15,6 +15,7 @@ export type PerTitleOutputPreview = {
 		mode?: PerTitleApiSettings["streams"][number]["mode"];
 		kind: "fixed" | "automatic" | "additional" | "unassigned";
 		status: "example" | "conditional" | "unknown";
+		basis?: "minimum" | "forced";
 		bitrate?: number;
 		minimumBitrate?: number;
 		maximumBitrate?: number;
@@ -259,6 +260,112 @@ export function previewPerTitleOutput(
 			: row;
 	});
 	if (justified) rows.push(...extra);
+	// These examples assume the listed templates share an aspect ratio when only
+	// heights are known. Automatic resolution generation makes that set incomplete.
+	const basis = streams.every((stream) => positive(stream.width))
+		? "width"
+		: streams.every(
+					(stream) => stream.width === undefined && positive(stream.height),
+				)
+			? "height"
+			: null;
+	const explicitMixed =
+		eligible &&
+		automatic &&
+		global.autoRepresentations === undefined &&
+		basis !== null &&
+		fixed.length > 0 &&
+		fixed.every(
+			(stream) =>
+				stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+				rangeFor(stream) !== null,
+		);
+	if (explicitMixed && basis) {
+		const ordered = [...streams].sort(
+			(a, b) => (a[basis] as number) - (b[basis] as number),
+		);
+		const firstFixed = ordered.find(
+			(stream) => stream.mode !== "PER_TITLE_TEMPLATE",
+		);
+		const firstRange = firstFixed ? rangeFor(firstFixed) : null;
+		const lowerCandidates = ordered.filter(
+			(stream) =>
+				stream.mode === "PER_TITLE_TEMPLATE" &&
+				(stream[basis] as number) <= (firstFixed?.[basis] as number),
+		);
+		const minimumRow = rows.find(
+			(row) => row.rowId === lowerCandidates[0]?.rowId,
+		);
+		if (
+			lowerCandidates.length === 1 &&
+			minimumRow &&
+			firstRange &&
+			Math.floor(firstRange.minimum / global.minBitrateStepSize) >=
+				global.minBitrate
+		) {
+			Object.assign(minimumRow, {
+				basis: "minimum",
+				status: "conditional",
+				bitrate: global.minBitrate,
+				minimumBitrate: global.minBitrate,
+				maximumBitrate: global.minBitrate,
+			});
+		}
+		const fixedExamples = rows.filter((row) => row.kind === "fixed");
+		const highestFixed = [...fixedExamples].sort(
+			(a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0),
+		)[0];
+		const last = ordered.at(-1);
+		const destinations = ordered.filter(
+			(stream) => stream[basis] === last?.[basis],
+		);
+		const destination = destinations.length === 1 ? destinations[0] : undefined;
+		const destinationRow = rows.find((row) => row.rowId === destination?.rowId);
+		if (
+			count !== undefined &&
+			Number.isSafeInteger(count) &&
+			count > 0 &&
+			count <= 256 &&
+			factor !== undefined &&
+			Number.isFinite(factor) &&
+			factor > 1 &&
+			rule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode ===
+				"LAST_CALCULATED_BITRATE" &&
+			fixedExamples.every((row) => positive(row.bitrate)) &&
+			highestFixed &&
+			positive(highestFixed.bitrate) &&
+			destinationRow
+		) {
+			let rate = highestFixed.bitrate;
+			const points: number[] = [];
+			for (let index = 0; index < count; index++) {
+				const next = Math.round(rate * factor);
+				if (!positive(next) || next <= rate) break;
+				points.push(next);
+				rate = next;
+			}
+			if (points.length === count) {
+				for (const [index, bitrate] of points.entries()) {
+					const value = {
+						...destinationRow,
+						basis: "forced" as const,
+						status: "conditional" as const,
+						bitrate,
+						minimumBitrate: bitrate,
+						maximumBitrate: bitrate,
+					};
+					if (index === 0 && destinationRow.bitrate === undefined)
+						Object.assign(destinationRow, value);
+					else
+						rows.push({
+							...value,
+							id: `forced:${index}:${destinationRow.id}`,
+							kind: "additional",
+						});
+				}
+			}
+		}
+	}
 	const unresolvedAdditional =
 		rule !== undefined &&
 		count !== 0 &&

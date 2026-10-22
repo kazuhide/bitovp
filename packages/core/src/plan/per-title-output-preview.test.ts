@@ -60,7 +60,124 @@ function conditional(): PerTitleProposal {
 	};
 }
 
+function mixed(): PerTitleProposal {
+	const proposal = conditional();
+	required(proposal.api.streams[0]).width = undefined;
+	proposal.api.streams.push(
+		{ rowId: "small", height: 180, mode: "PER_TITLE_TEMPLATE" },
+		{ rowId: "large", height: 900, mode: "PER_TITLE_TEMPLATE" },
+		{ rowId: "largest", height: 1080, mode: "PER_TITLE_TEMPLATE" },
+	);
+	proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+		forcedRenditionAboveHighestFixedRepresentation: 1,
+		forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+		forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+			"LAST_CALCULATED_BITRATE",
+	};
+	return proposal;
+}
+
 describe("Per-Title output previews", () => {
+	it("starts the unique smaller explicit template at the global minimum", () => {
+		const proposal = mixed();
+		const before = structuredClone(proposal);
+		expect(previewPerTitleOutput(proposal).rows).toContainEqual(
+			expect.objectContaining({
+				rowId: "small",
+				kind: "automatic",
+				basis: "minimum",
+				status: "conditional",
+				bitrate: 100,
+			}),
+		);
+		expect(proposal).toEqual(before);
+	});
+
+	it("shows a conditional LAST_CALCULATED_BITRATE addition on the highest explicit template", () => {
+		const result = previewPerTitleOutput(mixed());
+		expect(result.rows).toContainEqual(
+			expect.objectContaining({
+				rowId: "largest",
+				basis: "forced",
+				status: "conditional",
+				bitrate: 368,
+			}),
+		);
+		expect(result.rows.find((row) => row.rowId === "large")).toMatchObject({
+			status: "unknown",
+		});
+		expect(result.status).toBe("partial");
+	});
+
+	it("rounds each conditional additional step and does not clip it to the global maximum", () => {
+		const proposal = mixed();
+		const rule = required(
+			proposal.api.global.fixedResolutionAndBitrateConfiguration,
+		);
+		rule.forcedRenditionAboveHighestFixedRepresentation = 2;
+		rule.forcedRenditionAboveHighestFixedRepresentationFactor = 2.1;
+		expect(
+			previewPerTitleOutput(proposal)
+				.rows.filter((row) => row.basis === "forced")
+				.map((row) => row.bitrate),
+		).toEqual([617, 1296]);
+	});
+
+	it("does not bind arithmetic examples to templates expanded by autoRepresentations", () => {
+		const proposal = mixed();
+		proposal.api.global.autoRepresentations = {};
+		const result = previewPerTitleOutput(proposal);
+		expect(
+			result.rows
+				.filter((row) => row.kind === "automatic")
+				.every((row) => row.status === "unknown" && row.bitrate === undefined),
+		).toBe(true);
+		expect(result.unresolvedAdditional).toBe(true);
+	});
+
+	it("does not choose among several lower candidates or bind an unresolved dimension order", () => {
+		const proposal = mixed();
+		proposal.api.streams.push({
+			rowId: "another-small",
+			height: 240,
+			mode: "PER_TITLE_TEMPLATE",
+		});
+		expect(
+			previewPerTitleOutput(proposal).rows.every(
+				(row) => row.basis !== "minimum",
+			),
+		).toBe(true);
+		required(proposal.api.streams[0]).width = 640;
+		expect(
+			previewPerTitleOutput(proposal).rows.every(
+				(row) => row.basis === undefined,
+			),
+		).toBe(true);
+	});
+
+	it("requires room below the first fixed bound for a minimum example", () => {
+		const proposal = mixed();
+		const settings = required(proposal.api.streams[0]?.perTitleSettings);
+		settings.minBitrate = 100;
+		settings.maxBitrate = 110;
+		settings.bitrateSelectionMode = "OPTIMIZED";
+		expect(
+			previewPerTitleOutput(proposal).rows.every(
+				(row) => row.basis !== "minimum",
+			),
+		).toBe(true);
+	});
+
+	it("does not turn a range outside the global limits into a simulated ladder", () => {
+		const proposal = mixed();
+		required(proposal.api.streams[0]?.perTitleSettings).maxBitrate = 40_000_000;
+		expect(
+			previewPerTitleOutput(proposal).rows.every(
+				(row) => row.bitrate === undefined,
+			),
+		).toBe(true);
+	});
+
 	it("exposes a checked upper arithmetic example without changing the proposal", () => {
 		const proposal = recommendPerTitleSettings(fixed);
 		const before = structuredClone(proposal);

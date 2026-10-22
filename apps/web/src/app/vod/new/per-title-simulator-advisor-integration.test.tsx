@@ -3,6 +3,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleSimulator } from "./per-title-simulator";
+import { perTitleAdvice } from "./per-title-simulator-advice";
 
 const goal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -81,24 +82,21 @@ describe("Fixed simulator advice integration", () => {
 			}),
 		);
 		const after = api();
-		expect(after).toEqual({
-			...edited,
-			streams: edited.streams.map(
-				(stream: {
-					rowId: string;
-					perTitleSettings?: Record<string, unknown>;
-				}) =>
-					stream.rowId === "required"
-						? {
-								...stream,
-								perTitleSettings: {
-									...stream.perTitleSettings,
-									highComplexityBoundaryForMaxBitrate: 8_000_000,
-								},
-							}
-						: stream,
-			),
-		});
+		const advice = perTitleAdvice(
+			goal,
+			{ ...goal, maxBitrate: 8_000_000 },
+			{ scope: "global", key: "maxBitrate" },
+		)[0];
+		expect(advice?.reason).toBe("joint-range");
+		expect(after).toEqual(advice?.proposal.api);
+		expect(after.global.minBitrate).toBe(before.global.minBitrate);
+		expect(after.global.minBitrateStepSize).toBeGreaterThan(
+			before.global.minBitrateStepSize,
+		);
+		expect(
+			after.streams.find((row: { rowId: string }) => row.rowId === "required")
+				.perTitleSettings.minBitrate,
+		).toBeGreaterThan(1_000_000);
 		for (const policy of policies) expect(policy).toHaveValue("fixed");
 		expect(
 			screen.queryByRole("region", {

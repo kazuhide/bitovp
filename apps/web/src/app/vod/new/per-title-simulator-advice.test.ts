@@ -63,7 +63,7 @@ const changeRow = (
 });
 
 describe("dependent Per-Title advice", () => {
-	it("proposes only previously coupled high boundaries and holds the edited maximum", () => {
+	it("jointly expands dependent ranges and holds the edited maximum until adoption", () => {
 		const previous = structuredClone(mixed);
 		const current = { ...previous, maxBitrate: 8_000_000 };
 		const snapshot = structuredClone(current);
@@ -71,14 +71,17 @@ describe("dependent Per-Title advice", () => {
 			scope: "global",
 			key: "maxBitrate",
 		});
-		const item = advice.find((a) => a.reason === "upper-boundary");
+		const item = advice.find((a) => a.reason === "joint-range");
 		expect(item).toBeDefined();
 		expect(
-			item?.changes.map((c) => [c.rowId, c.key, c.before, c.after]),
-		).toEqual([
-			["a", "highComplexityBoundaryForMaxBitrate", 4_000_000, 8_000_000],
-			["b", "highComplexityBoundaryForMaxBitrate", 4_000_000, 8_000_000],
-		]);
+			item?.changes.some((c) => c.key === "minBitrate" && c.rowId === "a"),
+		).toBe(true);
+		expect(
+			item?.changes.some((c) => c.key === "maxBitrate" && c.rowId === "b"),
+		).toBe(true);
+		expect(item?.changes.some((c) => c.key === "minBitrateStepSize")).toBe(
+			true,
+		);
 		expect(item?.goal.maxBitrate).toBe(8_000_000);
 		expect(item?.proof).toBe("conditional-settings");
 		expect(item?.proposal.api.global.targetQualityCrf).toBe(18);
@@ -104,8 +107,14 @@ describe("dependent Per-Title advice", () => {
 			previous,
 			{ ...previous, maxBitrate: 8_000_000 },
 			{ scope: "global", key: "maxBitrate" },
-		).find((a) => a.reason === "upper-boundary");
-		expect(item?.changes.map((c) => c.rowId)).toEqual(["b"]);
+		).find((a) => a.reason === "joint-range");
+		expect(item).toBeDefined();
+		expect(
+			item?.changes.some(
+				(c) =>
+					c.rowId === "a" && c.key === "highComplexityBoundaryForMaxBitrate",
+			),
+		).toBe(false);
 		expect(item?.goal.rows?.[0]?.highComplexityBoundaryForMaxBitrate).toBe(
 			3_000_000,
 		);
@@ -198,7 +207,7 @@ describe("dependent Per-Title advice", () => {
 		for (const c of item?.changes ?? [])
 			expect(item?.goal.adjustments?.global?.[c.key]?.mode).toBe("fixed");
 	});
-	it("keeps the latest step and all templates or forced fields unchanged", () => {
+	it("keeps the latest step, templates, and the additional-rendition count and mode", () => {
 		const previous: PerTitleGoal = {
 			strategy: "count",
 			codec: "H264",
@@ -235,9 +244,18 @@ describe("dependent Per-Title advice", () => {
 			expect(item.goal.automaticTemplates).toEqual(
 				fixedRule.automaticTemplates,
 			);
-			expect(item.goal.fixedResolutionAndBitrateConfiguration).toEqual(
-				fixedRule.fixedResolutionAndBitrateConfiguration,
-			);
+			expect(
+				item.goal.fixedResolutionAndBitrateConfiguration
+					?.forcedRenditionAboveHighestFixedRepresentation,
+			).toBe(1);
+			expect(
+				item.goal.fixedResolutionAndBitrateConfiguration
+					?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+			).toBe("LAST_CALCULATED_BITRATE");
+			if (item.reason !== "joint-range")
+				expect(item.goal.fixedResolutionAndBitrateConfiguration).toEqual(
+					fixedRule.fixedResolutionAndBitrateConfiguration,
+				);
 		}
 	});
 	it("suppresses unchanged inputs, false edit descriptions and oversized inputs", () => {

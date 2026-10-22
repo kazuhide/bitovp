@@ -106,6 +106,9 @@ function AdviceOption({
 }) {
 	const ja = locale === "ja";
 	const reason = {
+		"joint-range": ja
+			? "全体の下限と段構成を保ち、各段の範囲・複雑度境界・間隔・追加倍率をまとめて調整する案です。"
+			: "Keep the overall minimum and template structure, and adjust rendition ranges, complexity boundaries, steps and the additional-rendition factor together.",
 		"upper-boundary": ja
 			? "全体上限と揃えていた複雑度の上側境界も、新しい上限に合わせる案です。各段のビットレート範囲は維持します。"
 			: "Align the previously coupled upper complexity boundaries with the new overall maximum. Keep each rendition's bitrate range.",
@@ -172,6 +175,13 @@ function AdviceOption({
 							advice.facts.lower ?? Number.NaN,
 						)}{" "}
 						bps
+					</p>
+				) : null}
+				{advice.reason === "joint-range" ? (
+					<p>
+						{ja
+							? "下限を支点に対数上の配置を保って範囲と倍率を求めます。複雑度境界は、同じ解析値で補間の上限目標が下がらない範囲に限定します。丸め後の配置余地・固定段同士の接続・追加段の上限も評価しています。配置余地は実際の出力本数ではありません。"
+							: "Ranges and ratios retain their logarithmic placement above the overall minimum. Complexity boundaries are limited so interpolated upper targets do not decrease for the same analysis input. Rounded placement room, fixed-row connections and the additional-rendition cap are also evaluated. Placement room is not the actual output count."}
 					</p>
 				) : null}
 				<p>

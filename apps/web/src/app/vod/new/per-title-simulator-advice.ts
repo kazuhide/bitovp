@@ -1,4 +1,5 @@
 import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
+import { jointPerTitleExpansion } from "./per-title-simulator-joint";
 import {
 	getPerTitleAdjustment,
 	getPerTitleGoalSetting,
@@ -26,6 +27,7 @@ export type PerTitleAdviceChange = {
 export type PerTitleAdvice = {
 	id: string;
 	reason:
+		| "joint-range"
 		| "upper-boundary"
 		| "lower-boundary"
 		| "global-range"
@@ -318,18 +320,37 @@ export function perTitleAdvice(
 			edit.key === "maxBitrate" &&
 			rate(current.maxBitrate)
 		) {
-			const coupled = curveRows.filter(
-				(row) =>
-					row.highComplexityBoundaryForMaxBitrate === previous.maxBitrate &&
-					previous.rows?.find((old) => old.id === row.id)
-						?.highComplexityBoundaryForMaxBitrate === previous.maxBitrate,
-			);
-			push(
-				"upper-boundary",
-				coupled.map((row) => field(HIGH, row.id)),
-				() => current.maxBitrate,
-				{ previousMaximum: previous.maxBitrate, maximum: current.maxBitrate },
-			);
+			if (current.maxBitrate > previous.maxBitrate) {
+				for (const candidate of jointPerTitleExpansion(previous, current))
+					variants.push({
+						reason: "joint-range",
+						goal: candidate.goal,
+						allowed: [
+							field("minBitrateStepSize"),
+							field("maxBitrateStepSize"),
+							field(FORCED[1] as string),
+							...rows.flatMap((row) =>
+								["minBitrate", "maxBitrate", LOW, HIGH].map((key) =>
+									field(key, row.id),
+								),
+							),
+						],
+						facts: candidate.facts,
+					});
+			} else {
+				const coupled = curveRows.filter(
+					(row) =>
+						row.highComplexityBoundaryForMaxBitrate === previous.maxBitrate &&
+						previous.rows?.find((old) => old.id === row.id)
+							?.highComplexityBoundaryForMaxBitrate === previous.maxBitrate,
+				);
+				push(
+					"upper-boundary",
+					coupled.map((row) => field(HIGH, row.id)),
+					() => current.maxBitrate,
+					{ previousMaximum: previous.maxBitrate, maximum: current.maxBitrate },
+				);
+			}
 		}
 		const oldLow = sharedLow(previous),
 			newLow = sharedLow(current);
@@ -485,6 +506,13 @@ export function perTitleAdvice(
 			const proof = closedCount(adopted, checked.proposal)
 				? "model-count"
 				: "conditional-settings";
+			if (
+				variant.reason === "joint-range" &&
+				current.countPolicy.kind !== "unrestricted" &&
+				!current.automaticTemplates?.length &&
+				proof !== "model-count"
+			)
+				continue;
 			if (variant.solver && edit.scope === "count" && proof !== "model-count")
 				continue;
 			if (
@@ -509,7 +537,7 @@ export function perTitleAdvice(
 			if (seen.has(key)) continue;
 			seen.add(key);
 			result.push({
-				id: variant.reason,
+				id: `${variant.reason}-${result.length}`,
 				reason: variant.reason,
 				changes,
 				goal: adopted,
@@ -519,12 +547,18 @@ export function perTitleAdvice(
 				inputFingerprint,
 			});
 		}
-		return result
-			.sort(
-				(a, b) =>
-					a.changes.length - b.changes.length || a.id.localeCompare(b.id),
-			)
-			.slice(0, 3);
+		const ranked = result.sort(
+			(a, b) =>
+				Number(b.proof === "model-count") - Number(a.proof === "model-count") ||
+				Number(b.reason === "joint-range") -
+					Number(a.reason === "joint-range") ||
+				(a.facts.connectionRisk ?? 0) - (b.facts.connectionRisk ?? 0) ||
+				(a.facts.capacity ?? 0) - (b.facts.capacity ?? 0) ||
+				(a.facts.boundaryGap ?? 0) - (b.facts.boundaryGap ?? 0) ||
+				a.changes.length - b.changes.length ||
+				a.id.localeCompare(b.id),
+		);
+		return ranked.slice(0, ranked[0]?.reason === "joint-range" ? 1 : 3);
 	} catch {
 		return [];
 	}

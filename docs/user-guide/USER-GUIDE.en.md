@@ -442,7 +442,7 @@ Automatic rendition generation includes `autoRepresentations` and configuration-
 
 **Per-Title simulator**
 
-Select "Open simulator" in "Ladder". Enter the ladder requirements; the dialog presents one recommended configuration. It does not change the encoding draft until you review and apply the differences.
+Select "Open simulator" in "Ladder" to evaluate the current settings or review a recommended configuration for your requirements. It does not change the encoding draft until you review and apply the differences.
 
 Choose what you want to specify:
 
@@ -463,13 +463,19 @@ The left side includes global settings and each stream's settings. Choose an aut
 
 When Auto is selected, calculations use the loaded reference rather than the previous slider position. Fixed values take precedence over adjustments: if they conflict, the dialog preserves them and reports the issue. Settings unsupported by the selected codec are not offered.
 
-After a manual edit, **Suggested adjustment** lists concrete before/after values and a reason. Check one or more changes and select **Apply selected changes and recalculate**, or select **Use this adjustment** to adopt the entire option. Checking a box alone does not change settings. When you increase the overall maximum, a joint option can preserve the overall minimum, template structure and count goal while adjusting rendition ranges and spacing together. It does not simply move the upper complexity boundary. Other options address coupled lower boundaries, ranges outside the overall limits, and dependent steps after range, count or spacing edits. The latest manual edit is retained, and candidates are recalculated to reject unlisted API changes or remaining conflicts. Advice requires all settings Fixed; explicit Auto choices use the automatic workflow above. Loading a preset starts a new comparison.
+**Evaluate current settings** is available before any edit. Choose **Use the maximum for complex content**, **Reduce bandwidth while keeping quality**, or **Prioritize the rendition count**, then select **Evaluate**. The count policy, overall bitrate bounds and required rows on the left are the evaluation requirements.
+
+The result distinguishes an allowed upper target from one reachable under stated conditions, and shows dependencies between fixed, analysis-selected and forced renditions. Count results describe the model; confirm actual outputs after media analysis. Open **Reasoning and quality checks** for all current codec SDK parameters and their active, inactive, no-effect, unset, media-dependent or unverified status.
+
+Quality and bandwidth savings require representative media, measured video bitrates, quality scores and visual comparisons. Do not raise CRF or shrink bitrate ranges without checking the quality effect.
+
+When an adjustment is available after evaluation or a manual edit, **Suggested adjustment** lists concrete before/after values and a reason. Check one or more changes and select **Apply selected changes and recalculate**, or select **Use this adjustment** to adopt the entire option. Checking a box alone does not change settings. When you increase the overall maximum, a joint option can preserve the overall minimum, template structure and count goal while adjusting rendition ranges and spacing together. It does not simply move the upper complexity boundary. Other options address coupled lower boundaries, ranges outside the overall limits, and dependent steps after range, count or spacing edits. The latest manual edit is retained, and candidates are recalculated to reject unlisted API changes or remaining conflicts. Suggested adjustments require all settings Fixed; explicit Auto choices use the automatic workflow above. Loading a preset starts a new comparison.
 
 Keeping a lower rendition range can require smaller increases in other ranges. The tool tries several growth amounts under your overall maximum and rechecks the constraints.
 
-Applied changes appear in **Maintained values** and anchor the next calculation. Remaining recommendations are recalculated for those values and the original manual edit. **Release** lets an applied field be adjusted again. A partial change can leave a temporary conflict; the simulator reports it and checks the complete current settings before allowing application to the wizard.
+Applied changes appear in **Maintained values** and anchor the next calculation. Remaining recommendations are recalculated with those values. **Release** lets an applied field be adjusted again. After partial adoption, evaluate again with the maintained values. A partial change can leave a temporary conflict; the simulator reports it and checks the complete current settings before allowing application to the wizard.
 
-Select **Keep current value** beside a proposed change to retain its Before value and recalculate from the original edit. **Maintained values** lists these constraints; **Release** removes one and recalculates. The list remains available even when no checked option is found. These proposal constraints are separate from Auto/Fixed and remain after adoption or later manual edits, retaining each field's latest value. Reloading a preset, changing codec or starting a new session clears them. They are not included in API settings or saved preset and requirements files.
+Select **Keep current value** beside a proposed change to retain its Before value and reevaluate the remaining options. **Maintained values** lists these constraints; **Release** removes one and recalculates. The list remains available even when no checked option is found. These proposal constraints are separate from Auto/Fixed and remain after adoption or later manual edits, retaining each field's latest value. Reloading a preset, changing codec or starting a new session clears them. They are not included in API settings or saved preset and requirements files.
 
 The joint maximum-bitrate option uses this calculation:
 

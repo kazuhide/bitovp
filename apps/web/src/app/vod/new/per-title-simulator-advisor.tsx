@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
+	applyPerTitleAdvice,
 	applySelectedPerTitleAdvice,
 	hasAutomaticPerTitleSettings,
 	type PerTitleAdvice,
@@ -21,6 +22,13 @@ import {
 	PerTitleAdviceChanges,
 	perTitleAdviceValueText as valueText,
 } from "./per-title-simulator-advice-changes";
+import {
+	analyzePerTitleSettings,
+	type PerTitleAnalysisIntent,
+	type PerTitleAnalysisResult,
+	perTitleAnalysisContextKey,
+} from "./per-title-simulator-analysis";
+import { PerTitleAnalysisPanel } from "./per-title-simulator-analysis-panel";
 import { perTitleSettingLabel } from "./per-title-simulator-control-copy";
 import {
 	getPerTitleGoalSetting,
@@ -87,6 +95,9 @@ function AdviceOption({
 }) {
 	const ja = locale === "ja";
 	const reason = {
+		evaluation: ja
+			? "現在の条件と維持する値に合わせた調整案です。"
+			: "Adjust the current settings while preserving your conditions and maintained values.",
 		"joint-range": ja
 			? "全体の下限と段構成を保ち、各段の範囲・複雑度境界・間隔・追加倍率をまとめて調整する案です。"
 			: "Keep the overall minimum and template structure, and adjust rendition ranges, complexity boundaries, steps and the additional-rendition factor together.",
@@ -124,7 +135,9 @@ function AdviceOption({
 		complexity.every((row) => row.highComplexityBoundaryForMaxBitrate === high);
 	return (
 		<div className="space-y-3">
-			<p className="text-xs text-zinc-300">{reason}</p>
+			<p className="text-xs text-zinc-300">
+				{advice.explanation?.[locale] ?? reason}
+			</p>
 			{rounded || digits === 0 ? (
 				<p className="text-xs text-zinc-400">
 					{rounded
@@ -225,6 +238,45 @@ const EMPTY_FIELDS: readonly PerTitleAdviceField[] = [];
 const protectionKey = (fields: readonly PerTitleAdviceField[]) =>
 	JSON.stringify(fields.map(perTitleAdviceFieldKey).sort());
 
+type AdvisorContext =
+	| {
+			kind: "edit";
+			before: PerTitleGoal;
+			edit: PerTitleAdviceEdit;
+			appliedFields: readonly PerTitleAdviceField[];
+	  }
+	| { kind: "analysis"; intent: PerTitleAnalysisIntent };
+
+type AdvisorSnapshot = {
+	goal: PerTitleGoal;
+	session: PerTitleGoal;
+	key: string;
+	contextKey?: string;
+	items: PerTitleAdvice[];
+	analysis?: PerTitleAnalysisResult;
+};
+
+function analysisSnapshot(
+	goal: PerTitleGoal,
+	session: PerTitleGoal,
+	fields: readonly PerTitleAdviceField[],
+	intent: PerTitleAnalysisIntent,
+): AdvisorSnapshot {
+	const contextKey = perTitleAnalysisContextKey(intent);
+	const analysis = analyzePerTitleSettings(goal, intent, {
+		protectedFields: fields,
+		contextKey,
+	});
+	return {
+		goal,
+		session,
+		key: protectionKey(fields),
+		contextKey,
+		items: analysis.advice,
+		analysis,
+	};
+}
+
 /** Keep continuous edits and retained fields scoped to the loaded simulator session. */
 export function PerTitleAdvisor({
 	goal,
@@ -245,11 +297,9 @@ export function PerTitleAdvisor({
 	const rootRef = useRef<HTMLDivElement>(null);
 	const pendingFocus = useRef<string | null>(null);
 	const previous = useRef({ goal, session });
-	const active = useRef<{
-		before: PerTitleGoal;
-		edit: PerTitleAdviceEdit;
-		appliedFields: readonly PerTitleAdviceField[];
-	} | null>(null);
+	const [intent, setIntent] = useState<PerTitleAnalysisIntent>("cap");
+	const liveIntent = useRef(intent);
+	const active = useRef<AdvisorContext | null>(null);
 	const pendingApplication = useRef<{
 		goal: PerTitleGoal;
 		active: NonNullable<typeof active.current>;
@@ -271,12 +321,7 @@ export function PerTitleAdvisor({
 		[fields],
 	);
 	const key = protectionKey(fields);
-	const [snapshot, setSnapshot] = useState<{
-		goal: PerTitleGoal;
-		session: PerTitleGoal;
-		key: string;
-		items: PerTitleAdvice[];
-	} | null>(null);
+	const [snapshot, setSnapshot] = useState<AdvisorSnapshot | null>(null);
 	useEffect(() => {
 		const prior = previous.current;
 		previous.current = { goal, session };
@@ -310,8 +355,20 @@ export function PerTitleAdvisor({
 			const pending = pendingApplication.current;
 			pendingApplication.current = null;
 			if (samePerTitleAdviceInput(goal, pending.goal)) {
-				active.current = pending.complete ? null : pending.active;
-				if (pending.complete) setSnapshot(null);
+				active.current =
+					pending.complete && pending.active.kind === "edit"
+						? null
+						: pending.active;
+				if (pending.active.kind === "analysis")
+					setSnapshot(
+						analysisSnapshot(
+							goal,
+							session,
+							pending.fields,
+							pending.active.intent,
+						),
+					);
+				else if (pending.complete) setSnapshot(null);
 				liveProtection.current = {
 					session,
 					codec: goal.codec,
@@ -322,7 +379,7 @@ export function PerTitleAdvisor({
 				return;
 			}
 		}
-		if (prior.goal !== goal) {
+		if (prior.goal !== goal && active.current?.kind !== "analysis") {
 			pendingFocus.current = null;
 			const edit = singleEdit(prior.goal, goal);
 			if (!edit) {
@@ -340,9 +397,18 @@ export function PerTitleAdvisor({
 				active.current.edit.key !== edit.key ||
 				active.current.edit.rowId !== edit.rowId
 			)
-				active.current = { before: prior.goal, edit, appliedFields: [] };
+				active.current = {
+					kind: "edit",
+					before: prior.goal,
+					edit,
+					appliedFields: [],
+				};
 		}
-		if (active.current)
+		if (active.current?.kind === "analysis")
+			setSnapshot(
+				analysisSnapshot(goal, session, fields, active.current.intent),
+			);
+		else if (active.current)
 			setSnapshot({
 				goal,
 				session,
@@ -358,7 +424,9 @@ export function PerTitleAdvisor({
 	const matches =
 		snapshot?.goal === goal &&
 		snapshot.session === session &&
-		snapshot.key === key;
+		snapshot.key === key &&
+		(!snapshot.analysis ||
+			snapshot.contextKey === perTitleAnalysisContextKey(intent));
 	const items = matches ? snapshot.items : [];
 	const first = items[0];
 	useEffect(() => {
@@ -391,6 +459,24 @@ export function PerTitleAdvisor({
 		liveProtection.current = { session, codec: goal.codec, fields: next };
 		setProtection(liveProtection.current);
 	};
+	const changeIntent = (next: PerTitleAnalysisIntent) => {
+		liveIntent.current = next;
+		active.current = null;
+		pendingApplication.current = null;
+		pendingFocus.current = null;
+		setSnapshot(null);
+		setIntent(next);
+	};
+	const evaluate = () => {
+		const live = liveProtection.current;
+		if (live.session !== session || live.codec !== goal.codec) return;
+		active.current = { kind: "analysis", intent: liveIntent.current };
+		pendingApplication.current = null;
+		pendingFocus.current = null;
+		setSnapshot(
+			analysisSnapshot(goal, session, live.fields, liveIntent.current),
+		);
+	};
 	const keep = (added: PerTitleAdviceField[]) => {
 		const current =
 			liveProtection.current.session === session &&
@@ -417,22 +503,42 @@ export function PerTitleAdvisor({
 			active.current || remaining.length > 0 ? "adopt" : null;
 		updateProtection(remaining);
 	};
+	const adoptionContextKey = () =>
+		active.current?.kind === "analysis"
+			? perTitleAnalysisContextKey(liveIntent.current)
+			: undefined;
 	const adopt = (advice: PerTitleAdvice) => {
 		const live = liveProtection.current;
 		if (
 			!matches ||
 			!snapshot.items.includes(advice) ||
+			snapshot.contextKey !== adoptionContextKey() ||
 			live.session !== session ||
 			live.codec !== goal.codec ||
 			protectionKey(live.fields) !== snapshot.key
 		)
 			return;
-		active.current = null;
-		pendingApplication.current = null;
-		setSnapshot(null);
-		onAdopt(advice, {
+		const options = {
 			protectedFields: live.fields.map((field) => ({ ...field })),
-		});
+			...(snapshot.contextKey === undefined
+				? {}
+				: { contextKey: perTitleAnalysisContextKey(liveIntent.current) }),
+		};
+		if (active.current?.kind === "analysis") {
+			const next = applyPerTitleAdvice(goal, advice, options);
+			if (!next) return;
+			pendingApplication.current = {
+				goal: next,
+				active: active.current,
+				fields: live.fields,
+				complete: true,
+			};
+		} else {
+			active.current = null;
+			pendingApplication.current = null;
+			setSnapshot(null);
+		}
+		onAdopt(advice, options);
 	};
 	const applySelected = (
 		advice: PerTitleAdvice,
@@ -443,6 +549,7 @@ export function PerTitleAdvisor({
 			!matches ||
 			!active.current ||
 			!snapshot.items.includes(advice) ||
+			snapshot.contextKey !== adoptionContextKey() ||
 			live.session !== session ||
 			live.codec !== goal.codec ||
 			protectionKey(live.fields) !== snapshot.key
@@ -450,6 +557,9 @@ export function PerTitleAdvisor({
 			return;
 		const options = {
 			protectedFields: live.fields.map((field) => ({ ...field })),
+			...(snapshot.contextKey === undefined
+				? {}
+				: { contextKey: perTitleAnalysisContextKey(liveIntent.current) }),
 		};
 		const next = applySelectedPerTitleAdvice(goal, advice, selected, options);
 		if (!next) return;
@@ -463,10 +573,13 @@ export function PerTitleAdvisor({
 		];
 		pendingApplication.current = {
 			goal: next,
-			active: {
-				...active.current,
-				appliedFields: union(active.current.appliedFields, selected),
-			},
+			active:
+				active.current.kind === "analysis"
+					? active.current
+					: {
+							...active.current,
+							appliedFields: union(active.current.appliedFields, selected),
+						},
 			fields: union(live.fields, selected),
 			complete: advice.changes.every((change) =>
 				selected.some(
@@ -479,10 +592,16 @@ export function PerTitleAdvisor({
 	};
 	const automatic = matches && hasAutomaticPerTitleSettings(goal);
 	const unavailable = matches && fields.length > 0 && !first;
-	if (!first && !fields.length && !automatic) return null;
 	const allRows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	return (
 		<div ref={rootRef} className="space-y-3">
+			<PerTitleAnalysisPanel
+				goal={goal}
+				intent={intent}
+				onIntentChange={changeIntent}
+				onEvaluate={evaluate}
+				result={matches ? snapshot.analysis : undefined}
+			/>
 			{fields.length > 0 ? (
 				<section
 					aria-label={ja ? "維持する値" : "Maintained values"}

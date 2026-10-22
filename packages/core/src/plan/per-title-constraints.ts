@@ -232,6 +232,36 @@ function activation(
 	return low;
 }
 
+/** Exact extrema over all integer inputs, including the downward q-activation jump. */
+export function boundComplexityRange(
+	row: Row,
+	input: BitrateInterval,
+	minStep: number,
+): BitrateInterval | null {
+	if (!validRow(row) || !validInterval(input) || !validStep(minStep))
+		return null;
+	// On each clamp/q branch both effective endpoints are nondecreasing. Its
+	// first point captures a possible minimum; the final upper target is maximal.
+	const starts = [
+		input.minimum,
+		input.maximum,
+		row.low + 1,
+		row.high,
+		activation(row, input, minStep),
+	].filter(
+		(value): value is number =>
+			value !== undefined && value >= input.minimum && value <= input.maximum,
+	);
+	const ranges = starts.map((value) =>
+		evaluateComplexityRange({ ...row, input: value, minStep }),
+	);
+	if (ranges.some((value) => value === null)) return null;
+	return {
+		minimum: Math.min(...ranges.map((value) => value?.minimum ?? Infinity)),
+		maximum: Math.max(...ranges.map((value) => value?.maximum ?? -Infinity)),
+	};
+}
+
 /**
  * Sufficient proof of input / effective-row-rate spacing at EVERY integer input.
  * Affine pieces, floor error and the rounded q branch are bounded separately;

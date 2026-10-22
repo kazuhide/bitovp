@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	boundComplexityRange,
 	certifyComplexityDirectConnection,
 	certifyComplexityIntervals,
 	certifyComplexitySpacing,
@@ -10,6 +11,45 @@ import {
 
 const row = { minimum: 180, maximum: 380, low: 200, high: 600 };
 type Row = typeof row;
+
+describe("effective bounds over every analysis input", () => {
+	it("includes a lower target that drops at interior q activation", () => {
+		expect(
+			boundComplexityRange(
+				{ minimum: 100, maximum: 2000, low: 1, high: 1000 },
+				{ minimum: 100, maximum: 4000 },
+				2,
+			),
+		).toEqual({ minimum: 100, maximum: 2000 });
+	});
+	it("matches independently enumerated effective minima and maxima", () => {
+		for (const minimum of [3, 10, 24])
+			for (const maximum of [30, 48])
+				for (const low of [1, 12, 35])
+					for (const high of [50, 80])
+						for (const step of [1.2, 1.5, 2]) {
+							const curve = { minimum, maximum, low, high };
+							const input = { minimum: 8, maximum: 96 };
+							const ranges = Array.from(
+								{ length: input.maximum - input.minimum + 1 },
+								(_, index) =>
+									evaluateComplexityRange({
+										...curve,
+										input: index + input.minimum,
+										minStep: step,
+									}),
+							);
+							expect(boundComplexityRange(curve, input, step)).toEqual({
+								minimum: Math.min(
+									...ranges.map((value) => value?.minimum ?? Infinity),
+								),
+								maximum: Math.max(
+									...ranges.map((value) => value?.maximum ?? -Infinity),
+								),
+							});
+						}
+	});
+});
 
 describe("whole-interval direct connection certificate", () => {
 	it("certifies a derived curve over the complete input interval", () => {

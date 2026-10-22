@@ -705,6 +705,7 @@ export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
 export { outputStorageKeys } from "./plan/output-files";
 export {
+	boundComplexityRange,
 	certifyComplexityDirectConnection,
 	certifyComplexityIntervals,
 	complexityTargetsDoNotDecrease,

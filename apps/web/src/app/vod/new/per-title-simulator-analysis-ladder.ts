@@ -1,4 +1,5 @@
 import {
+	boundComplexityRange,
 	certifyComplexityDirectConnection,
 	certifyComplexityIntervals,
 	evaluateComplexityRange,
@@ -104,6 +105,12 @@ export function assessPerTitleLadder(
 				minStep: global.minBitrateStepSize,
 			});
 		const setting = stream.perTitleSettings;
+		if (
+			setting?.bitrateSelectionMode === "COMPLEXITY_RANGE" ||
+			(setting?.bitrateSelectionMode !== undefined &&
+				setting.bitrateSelectionMode !== "OPTIMIZED")
+		)
+			return null;
 		return rate(setting?.minBitrate) &&
 			rate(setting?.maxBitrate) &&
 			setting.minBitrate <= setting.maxBitrate
@@ -181,6 +188,12 @@ export function assessPerTitleLadder(
 	const bottom = ordered[0];
 	const bottomLow = bottom && at(bottom, input.minimum);
 	const bottomHigh = bottom && at(bottom, input.maximum);
+	const bottomCurve = bottom && perTitleAnalysisCurve(bottom);
+	const bottomBounds = bottomCurve
+		? boundComplexityRange(bottomCurve, input, global.minBitrateStepSize)
+		: bottomLow && bottomHigh
+			? { minimum: bottomLow.minimum, maximum: bottomHigh.maximum }
+			: null;
 	const hasLowerAutomatic =
 		basis &&
 		bottom &&
@@ -190,20 +203,20 @@ export function assessPerTitleLadder(
 				typeof stream[basis] === "number" &&
 				(stream[basis] as number) < (bottom[basis] ?? 0),
 		);
-	if (hasLowerAutomatic && bottomLow && bottomHigh) {
+	if (hasLowerAutomatic && bottomBounds) {
 		const minimum = perTitlePlacementCapacity(
 			input.minimum,
-			bottomLow.minimum,
+			bottomBounds.minimum,
 			global.minBitrateStepSize,
 		);
 		const maximum = perTitlePlacementCapacity(
 			input.minimum,
-			bottomHigh.maximum,
+			bottomBounds.maximum,
 			global.minBitrateStepSize,
 		);
 		if (minimum !== null && maximum !== null)
 			result.lowerSlots = { minimum: minimum - 1, maximum: maximum - 1 };
-		const maximumRatio = bottomHigh.maximum / input.minimum;
+		const maximumRatio = bottomBounds.maximum / input.minimum;
 		result.lowerConnection = {
 			maximumRatio,
 			fitsMaximum: maximumRatio <= global.maxBitrateStepSize,

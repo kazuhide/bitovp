@@ -51,6 +51,51 @@ const assess = (goal: PerTitleGoal) =>
 	assessPerTitleLadder(goal, tunePerTitleSettings(goal, goal).proposal);
 
 describe("whole-ladder current-setting analysis", () => {
+	it("includes interior q-activation in the lower-side placement range", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100,
+			maxBitrate: 4000,
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 100,
+			countPolicy: { kind: "unrestricted" },
+			rows: [
+				{
+					id: "fixed",
+					height: 400,
+					minBitrate: 100,
+					maxBitrate: 2000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 1,
+					highComplexityBoundaryForMaxBitrate: 1000,
+				},
+			],
+			automaticTemplates: [
+				{ id: "bottom", height: 200 },
+				{ id: "top", height: 800 },
+			],
+		};
+		expect(assess(goal).lowerSlots).toEqual({ minimum: 0, maximum: 4 });
+	});
+	it.each([
+		"missing",
+		"reversed",
+	] as const)("does not present conditional targets for %s complexity boundaries", (type) => {
+		const goal = mixed();
+		goal.rows = goal.rows?.map((row) => ({
+			...row,
+			lowComplexityBoundaryForMaxBitrate:
+				type === "missing" ? undefined : 5_000_000,
+		}));
+		for (const row of assess(goal).rows.filter(
+			(row) => row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		)) {
+			expect(row.configured).not.toBeNull();
+			expect(row.low).toBeNull();
+			expect(row.high).toBeNull();
+		}
+	});
 	it.each([
 		4_800_000, 7_200_000,
 	])("proposes a checked interior improvement even when the top already reaches %i", (maximum) => {

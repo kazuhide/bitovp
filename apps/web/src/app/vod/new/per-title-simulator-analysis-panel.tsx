@@ -159,11 +159,15 @@ function FullLadderDetails({
 			read: saturated,
 		},
 		{
-			label: ja ? "上側の配置余地（算術）" : "Upper slots (arithmetic)",
+			label: ja
+				? "上限解析値での上側配置余地（算術）"
+				: "Upper slots at high input (arithmetic)",
 			read: (ladder: PerTitleLadderAssessment) => range(ladder.upperSlots, 1),
 		},
 		{
-			label: ja ? "下側の配置余地（算術）" : "Lower slots (arithmetic)",
+			label: ja
+				? "全解析範囲の下側配置余地（算術）"
+				: "Lower slots across inputs (arithmetic)",
 			read: (ladder: PerTitleLadderAssessment) => range(ladder.lowerSlots, 1),
 		},
 		{

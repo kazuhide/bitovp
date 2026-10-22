@@ -17,6 +17,7 @@ const copy = {
 		candidates: (count: number) => `Automatic candidates: ${count}`,
 		empty: "No required resolutions",
 		invalid: "Ranges unavailable",
+		overflow: "Outside scale",
 	},
 	ja: {
 		title: "許容ビットレート範囲",
@@ -30,8 +31,41 @@ const copy = {
 		candidates: (count: number) => `自動生成の候補: ${count}`,
 		empty: "必須の解像度なし",
 		invalid: "範囲を表示できません",
+		overflow: "目盛りの範囲外",
 	},
 };
+
+export type PerTitleChartAxis = { minimum: number; maximum: number };
+
+export function perTitlePlotAxis(axis: PerTitleChartAxis) {
+	const { minimum, maximum } = axis;
+	if (
+		!Number.isSafeInteger(minimum) ||
+		minimum <= 0 ||
+		!Number.isSafeInteger(maximum) ||
+		maximum < minimum
+	)
+		return null;
+	const span = Math.log1p((maximum - minimum) / minimum);
+	const position = (value: number) => {
+		if (span === 0) return value < minimum ? 0 : value > maximum ? 100 : 50;
+		if (value <= minimum) return 0;
+		if (value >= maximum) return 100;
+		return (Math.log1p((value - minimum) / minimum) / span) * 100;
+	};
+	return {
+		minimum,
+		maximum,
+		position,
+		ticks: [
+			...new Set([
+				minimum,
+				Math.min(maximum, minimum * Math.exp(span / 2)),
+				maximum,
+			]),
+		],
+	};
+}
 
 function plotData(proposal: PerTitleProposal) {
 	const { minBitrate: minimum, maxBitrate: maximum } = proposal.api.global;
@@ -84,7 +118,13 @@ function plotData(proposal: PerTitleProposal) {
 	return { minimum, maximum, rows, candidates };
 }
 
-export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
+export function PerTitleLadder({
+	proposal,
+	axis,
+}: {
+	proposal: PerTitleProposal;
+	axis?: PerTitleChartAxis;
+}) {
 	const { locale } = useT();
 	const text = copy[locale];
 	const id = useId();
@@ -96,28 +136,7 @@ export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
 	const bitrate = (value: number) => numbers.format(value / 1000);
 	const rangeText = (minimum: number, maximum: number) =>
 		`${bitrate(minimum)}–${bitrate(maximum)}`;
-	const span = data
-		? Math.log1p((data.maximum - data.minimum) / data.minimum)
-		: 0;
-	const position = (value: number) =>
-		!data || span === 0
-			? 50
-			: Math.max(
-					0,
-					Math.min(
-						100,
-						(Math.log1p((value - data.minimum) / data.minimum) / span) * 100,
-					),
-				);
-	const ticks = data
-		? [
-				...new Set([
-					data.minimum,
-					Math.min(data.maximum, data.minimum * Math.exp(span / 2)),
-					data.maximum,
-				]),
-			]
-		: [];
+	const scale = data ? perTitlePlotAxis(axis ?? data) : null;
 	return (
 		<figure aria-labelledby={`${id}-title`} className="space-y-2">
 			<figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
@@ -130,7 +149,7 @@ export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
 					</span>
 				) : null}
 			</figcaption>
-			{data ? (
+			{data && scale ? (
 				<>
 					<div
 						role="img"
@@ -139,13 +158,16 @@ export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
 						title={text.description}
 						className="space-y-2"
 					>
-						<div className="ml-14 text-xs text-zinc-400">
+						<div
+							data-testid="per-title-ladder-axis"
+							className="ml-14 text-xs text-zinc-400"
+						>
 							<div id={`${id}-axis`} className="text-right">
 								{text.axis}
 							</div>
 							<div className="relative h-6 border-b border-zinc-700">
-								{ticks.map((tick) => {
-									const percent = position(tick);
+								{scale.ticks.map((tick) => {
+									const percent = scale.position(tick);
 									return (
 										<span
 											key={tick}
@@ -172,6 +194,14 @@ export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
 										{row.auto ? (
 											<span className="text-zinc-400">{text.auto}</span>
 										) : null}
+										{row.minimum < scale.minimum ||
+										row.maximum > scale.maximum ? (
+											<span className="text-amber-300">
+												{row.minimum < scale.minimum ? "← " : ""}
+												{text.overflow}
+												{row.maximum > scale.maximum ? " →" : ""}
+											</span>
+										) : null}
 									</div>
 									<svg
 										viewBox="0 0 100 12"
@@ -191,8 +221,8 @@ export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
 										/>
 										<line
 											data-testid="per-title-ladder-range"
-											x1={position(row.minimum)}
-											x2={position(row.maximum)}
+											x1={scale.position(row.minimum)}
+											x2={scale.position(row.maximum)}
 											y1={6}
 											y2={6}
 											className={
@@ -206,8 +236,8 @@ export function PerTitleLadder({ proposal }: { proposal: PerTitleProposal }) {
 											? [row.minimum, row.maximum].map((value, endpoint) => (
 													<line
 														key={endpoint === 0 ? "minimum" : "maximum"}
-														x1={position(value)}
-														x2={position(value)}
+														x1={scale.position(value)}
+														x2={scale.position(value)}
 														y1={2}
 														y2={10}
 														className="stroke-emerald-400"

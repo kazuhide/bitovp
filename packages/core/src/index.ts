@@ -704,6 +704,8 @@ export {
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
 export { outputStorageKeys } from "./plan/output-files";
+export type { PerTitleOutputPreview } from "./plan/per-title-output-preview";
+export { previewPerTitleOutput } from "./plan/per-title-output-preview";
 export type {
 	CapturedPerTitleSettings,
 	EncodingApiSubset,

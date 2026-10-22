@@ -171,6 +171,90 @@ describe("Per-Title bitrate range plot", () => {
 		expect(screen.queryByText("2160 px")).toBeNull();
 	});
 
+	it("keeps a supplied axis fixed while a changed global maximum moves the band", () => {
+		const axis = { minimum: 100000, maximum: 10000000 };
+		const stream = {
+			...lower,
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION" as const,
+		};
+		const initial = proposal({ streams: [stream] });
+		const { rerender } = renderLocalized(
+			<PerTitleLadder proposal={initial} axis={axis} />,
+		);
+		const before = Number(
+			screen.getByTestId("per-title-ladder-range").getAttribute("x2"),
+		);
+		const tickText = screen.getByTestId("per-title-ladder-axis").textContent;
+		rerender(
+			<PerTitleLadder
+				proposal={proposal({
+					global: { ...global, maxBitrate: 4000000 },
+					streams: [stream],
+				})}
+				axis={axis}
+			/>,
+		);
+		expect(screen.getByTestId("per-title-ladder-axis").textContent).toBe(
+			tickText,
+		);
+		expect(
+			Number(screen.getByTestId("per-title-ladder-range").getAttribute("x2")),
+		).toBeGreaterThan(before);
+		expect(
+			within(screen.getByRole("table")).getByRole("row", {
+				name: "360 100–4,000 Auto",
+			}),
+		).toBeInTheDocument();
+		expect(initial.api.global.maxBitrate).toBe(2000000);
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("clips display geometry with visible overflow while retaining legal API limits (%s)", (locale) => {
+		const input = proposal();
+		const original = structuredClone(input);
+		renderLocalized(
+			<PerTitleLadder
+				proposal={input}
+				axis={{ minimum: 200000, maximum: 1000000 }}
+			/>,
+			locale,
+		);
+		const ranges = screen.getAllByTestId("per-title-ladder-range");
+		expect(ranges[0]).toHaveAttribute("x1", "0");
+		expect(ranges[1]).toHaveAttribute("x2", "100");
+		expect(
+			screen.getAllByText(locale === "en" ? /Outside scale/ : /目盛りの範囲外/),
+		).toHaveLength(2);
+		expect(
+			within(screen.getByRole("table")).getByRole("row", {
+				name: "360 100–400",
+			}),
+		).toBeInTheDocument();
+		expect(
+			within(screen.getByRole("table")).getByRole("row", {
+				name: "720 500–2,000",
+			}),
+		).toBeInTheDocument();
+		expect(input).toEqual(original);
+	});
+
+	it.each([
+		{ minimum: 0, maximum: 1000000 },
+		{ minimum: 1.5, maximum: 1000000 },
+		{ minimum: Number.NaN, maximum: 1000000 },
+		{ minimum: 100000, maximum: Number.POSITIVE_INFINITY },
+		{ minimum: 2000000, maximum: 100000 },
+	])("withholds geometry for an invalid explicit axis $minimum–$maximum", (axis) => {
+		const { container } = renderLocalized(
+			<PerTitleLadder proposal={proposal()} axis={axis} />,
+		);
+		expect(screen.getByRole("status")).toHaveTextContent("Ranges unavailable");
+		expect(container.querySelector("svg")).toBeNull();
+		expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
+	});
+
 	it.each([
 		{
 			name: "nonfinite global minimum",

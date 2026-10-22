@@ -368,7 +368,7 @@ describe("Per-Title simulator", () => {
 		);
 		expect(screen.getByText("Comparison only")).toBeVisible();
 		const recommendation = screen.getByRole("region", {
-			name: "Recommended settings",
+			name: "Simulation",
 		});
 		expect(
 			within(within(recommendation).getByRole("status")).getByText(

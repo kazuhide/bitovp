@@ -594,6 +594,7 @@ function SimulatorEditor({
 						goal={goal}
 						proposal={selected}
 						baseline={baseline}
+						axis={{ minimum: slider.min, maximum: slider.max }}
 						comparisonOnly={!!reference}
 					/>
 					<PerTitleReasoning

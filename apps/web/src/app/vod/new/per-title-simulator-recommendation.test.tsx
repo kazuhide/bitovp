@@ -38,6 +38,43 @@ function show(initialGoal = goal, locale: "en" | "ja" = "en") {
 }
 
 describe("Per-Title recommendation flow", () => {
+	it("keeps a fixed chart ceiling as bitrate limits change and defaults to simulated output", () => {
+		show();
+		const panel = screen.getByRole("region", { name: "Simulation" });
+		expect(
+			within(panel).getByRole("figure", { name: "Simulated output" }),
+		).toBeVisible();
+		fireEvent.click(
+			within(panel).getByRole("button", { name: "Allowed ranges" }),
+		);
+		const figure = within(panel).getByRole("figure", {
+			name: "Allowed bitrate ranges",
+		});
+		expect(within(figure).getByText("8,000")).toBeVisible();
+		const before = Number(
+			within(figure)
+				.getAllByTestId("per-title-ladder-range")[0]
+				?.getAttribute("x2"),
+		);
+		fireEvent.change(
+			screen.getByRole("slider", { name: "Maximum bitrate slider (kbps)" }),
+			{ target: { value: "4000" } },
+		);
+		expect(within(figure).getByText("8,000")).toBeVisible();
+		expect(
+			Number(
+				within(figure)
+					.getAllByTestId("per-title-ladder-range")[0]
+					?.getAttribute("x2"),
+			),
+		).toBeGreaterThan(before);
+		fireEvent.click(
+			within(panel).getByRole("button", { name: "Simulated output" }),
+		);
+		expect(
+			within(panel).getByRole("figure", { name: "Simulated output" }),
+		).toBeVisible();
+	});
 	it.each([
 		"en",
 		"ja",
@@ -62,7 +99,7 @@ describe("Per-Title recommendation flow", () => {
 	] as const)("keeps explanations closed while reviewing the same proposal (%s)", (locale) => {
 		show(goal, locale);
 		const panel = screen.getByRole("region", {
-			name: locale === "en" ? "Recommended settings" : "推奨設定",
+			name: locale === "en" ? "Simulation" : "シミュレーション",
 		});
 		expect(
 			screen.queryByText(
@@ -125,7 +162,7 @@ describe("Per-Title recommendation flow", () => {
 		).toBe(true);
 		show(countGoal, locale);
 		const panel = screen.getByRole("region", {
-			name: locale === "en" ? "Recommended settings" : "推奨設定",
+			name: locale === "en" ? "Simulation" : "シミュレーション",
 		});
 		expect(
 			within(panel).queryByText(
@@ -297,12 +334,12 @@ describe("Per-Title recommendation flow", () => {
 	it.each([
 		[
 			"en",
-			"Recommended settings",
+			"Simulation",
 			"Automatic candidates retain their attached bitrate settings as source data.",
 		],
 		[
 			"ja",
-			"推奨設定",
+			"シミュレーション",
 			"自動生成の候補に付いたビットレート設定は元データとして保持します。",
 		],
 	] as const)("keeps inactive automatic warnings in closed details in %s", (locale, title, warning) => {
@@ -334,16 +371,33 @@ describe("Per-Title recommendation flow", () => {
 			),
 		);
 		expect(diagnostic).toBeVisible();
-		expect(within(panel).queryByText(/rowIds|PER_TITLE_TEMPLATE/)).toBeNull();
+		expect(
+			within(
+				within(panel).getByRole("region", {
+					name:
+						locale === "en"
+							? "Calculated Per-Title settings"
+							: "計算後のPer-Title設定",
+				}),
+			).getByText("PER_TITLE_TEMPLATE", { exact: true }),
+		).toBeVisible();
 	});
 
-	it("shows one recommendation with requested ranges and keeps spacing in closed API details", () => {
+	it("shows simulated output first and keeps requested ranges available on the same axis", () => {
 		show();
-		const panel = screen.getByRole("region", { name: "Recommended settings" });
-		expect(
-			screen.getAllByRole("region", { name: "Recommended settings" }),
-		).toHaveLength(1);
+		const panel = screen.getByRole("region", { name: "Simulation" });
+		expect(screen.getAllByRole("region", { name: "Simulation" })).toHaveLength(
+			1,
+		);
 		expect(within(panel).getByText("100–2,000")).toBeVisible();
+		expect(
+			within(panel).getByRole("figure", { name: "Simulated output" }),
+		).toBeVisible();
+		expect(within(panel).getByText("minBitrateStepSize")).toBeVisible();
+		expect(within(panel).getByText("maxBitrateStepSize")).toBeVisible();
+		fireEvent.click(
+			within(panel).getByRole("button", { name: "Allowed ranges" }),
+		);
 		const table = within(panel).getByRole("table", {
 			name: "Allowed bitrate ranges (data)",
 		});
@@ -382,11 +436,11 @@ describe("Per-Title recommendation flow", () => {
 		).toBeVisible();
 	});
 
-	it("keeps the Japanese recommendation visible while technical details start closed", () => {
+	it("keeps Japanese output and calculated settings visible while explanations start closed", () => {
 		show(goal, "ja");
-		const panel = screen.getByRole("region", { name: "推奨設定" });
+		const panel = screen.getByRole("region", { name: "シミュレーション" });
 		expect(
-			within(panel).getByRole("figure", { name: "許容ビットレート範囲" }),
+			within(panel).getByRole("figure", { name: "想定出力" }),
 		).toBeVisible();
 		expect(within(panel).getByText("最小ビットレート比率")).not.toBeVisible();
 		expect(
@@ -405,7 +459,7 @@ describe("Per-Title recommendation flow", () => {
 
 	it("shows a short conflict status and keeps its diagnostic in details", () => {
 		show({ ...goal, minBitrate: 3_000_000 });
-		const panel = screen.getByRole("region", { name: "Recommended settings" });
+		const panel = screen.getByRole("region", { name: "Simulation" });
 		expect(within(panel).getByText("Needs adjustment")).toBeVisible();
 		expect(
 			within(panel).queryByText("Enter a positive, ordered bitrate interval."),
@@ -429,7 +483,10 @@ describe("Per-Title recommendation flow", () => {
 				forcedRenditionAboveHighestFixedRepresentation: 1,
 			},
 		});
-		const panel = screen.getByRole("region", { name: "Recommended settings" });
+		const panel = screen.getByRole("region", { name: "Simulation" });
+		fireEvent.click(
+			within(panel).getByRole("button", { name: "Allowed ranges" }),
+		);
 		expect(within(panel).getByText(/Automatic candidates.*1/)).toBeVisible();
 		expect(
 			within(panel).getByText(/candidate count is not the output count/),

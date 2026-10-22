@@ -1,28 +1,34 @@
 "use client";
 
 import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useId, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import { PerTitleComplexity } from "./per-title-simulator-complexity";
 import { perTitleSimulatorCopy } from "./per-title-simulator-copy";
 import { PerTitleLadder } from "./per-title-simulator-ladder";
+import { PerTitleOutputChart } from "./per-title-simulator-output";
+import { PerTitleParameterView } from "./per-title-simulator-parameters";
 
 export function PerTitleRecommendation({
 	goal,
 	proposal,
 	baseline,
+	axis,
 	children,
 	comparisonOnly = false,
 }: {
 	goal: PerTitleGoal;
 	proposal: PerTitleProposal;
 	baseline?: PerTitleProposal;
+	axis?: { minimum: number; maximum: number };
 	children?: ReactNode;
 	comparisonOnly?: boolean;
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
 	const id = useId();
+	const [view, setView] = useState<"output" | "ranges">("output");
 	const format = (value: number, precision = 6) =>
 		new Intl.NumberFormat(locale, {
 			maximumSignificantDigits: precision,
@@ -131,8 +137,27 @@ export function PerTitleRecommendation({
 					</>
 				) : null}
 			</dl>
-			<PerTitleLadder proposal={proposal} />
+			<fieldset className="flex flex-wrap gap-1">
+				<legend className="sr-only">{copy.chartView}</legend>
+				{(["output", "ranges"] as const).map((value) => (
+					<Button
+						key={value}
+						size="sm"
+						variant={view === value ? "secondary" : "ghost"}
+						aria-pressed={view === value}
+						onClick={() => setView(value)}
+					>
+						{value === "output" ? copy.outputView : copy.rangesView}
+					</Button>
+				))}
+			</fieldset>
+			{view === "output" ? (
+				<PerTitleOutputChart proposal={proposal} axis={axis} />
+			) : (
+				<PerTitleLadder proposal={proposal} axis={axis} />
+			)}
 			<PerTitleComplexity proposal={proposal} baseline={baseline} />
+			<PerTitleParameterView proposal={proposal} />
 			{children}
 			<details className="space-y-2 border-t border-zinc-800 pt-3 text-xs text-zinc-400">
 				<summary className="cursor-pointer">{copy.apiParameters}</summary>

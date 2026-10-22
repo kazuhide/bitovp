@@ -1,4 +1,5 @@
 import {
+	certifyComplexityIntervals,
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
@@ -117,6 +118,90 @@ export function perTitleAnalysisCandidates(
 			});
 	}
 	if (solver !== goal) result.push(solver);
+	if (
+		goal.strategy === "fixed-ranges" &&
+		goal.countPolicy.kind !== "unrestricted" &&
+		!goal.automaticTemplates?.length &&
+		proposal.api.global.autoRepresentations === undefined &&
+		goal.rows?.length &&
+		goal.rows.every((row) => row.bitrateSelectionMode === "COMPLEXITY_RANGE")
+	) {
+		const basis = goal.rows.every((row) => row.width === undefined)
+			? "height"
+			: goal.rows.every((row) => row.width !== undefined)
+				? "width"
+				: null;
+		if (
+			basis &&
+			new Set(goal.rows.map((row) => row[basis])).size === goal.rows.length
+		) {
+			const seeds = [goal];
+			// Recalibration is an explicit count-focused alternative, not a claim of
+			// equal quality or an automatic change to a custom / maintained boundary.
+			if (
+				intent === "count" &&
+				goal.rows.every(
+					(row) =>
+						typeof row.lowComplexityBoundaryForMaxBitrate === "number" &&
+						row.lowComplexityBoundaryForMaxBitrate < goal.maxBitrate,
+				)
+			) {
+				seeds.push(
+					goal.rows.reduce(
+						(next, row) => set(next, HIGH, goal.maxBitrate, row.id),
+						goal,
+					),
+				);
+			}
+			for (const seed of seeds) {
+				const rows = [...(seed.rows ?? [])].sort(
+					(a, b) => (a[basis] ?? 0) - (b[basis] ?? 0),
+				);
+				const curves = rows.map((row) => ({
+					minimum: row.minBitrate ?? 0,
+					maximum: row.maxBitrate ?? 0,
+					low: row.lowComplexityBoundaryForMaxBitrate ?? 0,
+					high: row.highComplexityBoundaryForMaxBitrate ?? 0,
+				}));
+				let step = proposal.api.global.minBitrateStepSize;
+				const visited = new Set<number>();
+				for (let attempt = 0; attempt < 12 && !visited.has(step); attempt++) {
+					visited.add(step);
+					const certificate = certifyComplexityIntervals(
+						curves,
+						{ minimum: goal.minBitrate, maximum: goal.maxBitrate },
+						step,
+					);
+					if (!certificate) break;
+					const lower = Math.max(1, certificate.maximumWithinRowRatio);
+					const upper = certificate.minimumAdjacentRatio ?? Infinity;
+					if (step > lower && step <= upper) {
+						const maximum = Math.max(
+							proposal.api.global.maxBitrateStepSize,
+							step,
+							up(certificate.maximumAdjacentRatio ?? step),
+						);
+						result.push(
+							set(
+								set(seed, "minBitrateStepSize", step),
+								"maxBitrateStepSize",
+								maximum,
+							),
+						);
+						break;
+					}
+					if (!can("minBitrateStepSize") || lower >= upper) break;
+					const strictLower =
+						lower + Math.max(Number.MIN_VALUE, Number.EPSILON * lower);
+					const next = Number.isFinite(upper)
+						? Math.sqrt(strictLower * upper)
+						: strictLower;
+					const readable = up(next);
+					step = readable <= upper && readable > lower ? readable : next;
+				}
+			}
+		}
+	}
 	if (intent !== "cap" || !reach.topFixed) return result;
 	const top = goal.rows?.find((row) => row.id === reach.topFixed?.rowId);
 	if (!top) return result;

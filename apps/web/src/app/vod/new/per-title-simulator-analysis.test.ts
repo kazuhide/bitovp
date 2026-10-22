@@ -103,6 +103,66 @@ describe("current Per-Title evaluation", () => {
 		).toBe(true);
 		expect(item?.proposal.api.global.targetQualityCrf).toBeUndefined();
 	});
+	it("requires the entire explicit analysis interval before declaring a closed count checked", () => {
+		const current: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 1,
+			maxBitrate: 1000,
+			minBitrateStepSize: 1.2,
+			maxBitrateStepSize: 10,
+			countPolicy: { kind: "exact", count: 2 },
+			rows: [
+				{
+					id: "lower",
+					height: 360,
+					minBitrate: 10,
+					maxBitrate: 80,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 1,
+					highComplexityBoundaryForMaxBitrate: 100,
+				},
+				{
+					id: "upper",
+					height: 720,
+					minBitrate: 100,
+					maxBitrate: 200,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 100,
+					highComplexityBoundaryForMaxBitrate: 1000,
+				},
+			],
+		};
+		expect(
+			tunePerTitleSettings(current, current).proposal.derivation
+				?.targetSatisfied,
+		).toBe(true);
+		const result = analyzePerTitleSettings(current, "count");
+		expect(result.reach.count.status).toBe("unknown");
+		expect(
+			result.findings.some((finding) => finding.code === "count-model-checked"),
+		).toBe(false);
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const item of result.advice) {
+			expect(assessPerTitleReach(item.goal, item.proposal).count.status).toBe(
+				"model-checked",
+			);
+			expect(item.proof).toBe("model-count");
+		}
+		const held = analyzePerTitleSettings(current, "count", {
+			protectedFields: [
+				{
+					scope: "stream",
+					rowId: "lower",
+					key: "highComplexityBoundaryForMaxBitrate",
+				},
+			],
+		});
+		expect(held.advice).toEqual([]);
+		expect(
+			held.findings.some((finding) => finding.code === "count-model-checked"),
+		).toBe(false);
+	});
 	it.each([
 		{ upper: 2_400_000, minimumStep: 1.5, maximumStep: 2 },
 		{ upper: 4_800_000, minimumStep: 1.5, maximumStep: 4 },

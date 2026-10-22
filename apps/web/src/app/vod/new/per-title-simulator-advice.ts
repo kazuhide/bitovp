@@ -6,6 +6,7 @@ import {
 	perTitleAdviceFields,
 	protectedPerTitleAdviceFields,
 } from "./per-title-simulator-advice-fields";
+import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
 import { jointPerTitleExpansionLayouts } from "./per-title-simulator-joint";
 
 export {
@@ -247,6 +248,18 @@ function closedCount(goal: PerTitleGoal, proposal: PerTitleProposal) {
 		high.modelCountRange.maximum <= goal.countPolicy.count &&
 		(goal.countPolicy.kind !== "exact" ||
 			high.modelRungs.length === goal.countPolicy.count)
+	);
+}
+
+/** Closed interval ladders also need the full explicit analysis-input domain. */
+export function hasPerTitleEvaluationCountEvidence(
+	goal: PerTitleGoal,
+	proposal: PerTitleProposal,
+): boolean {
+	return (
+		closedCount(goal, proposal) &&
+		(goal.strategy !== "fixed-ranges" ||
+			assessPerTitleReach(goal, proposal).count.status === "model-checked")
 	);
 }
 function sharedLow(
@@ -714,7 +727,7 @@ export function createPerTitleEvaluationAdvice(
 			)
 		)
 			return null;
-		const proof = closedCount(adopted, checked)
+		const proof = hasPerTitleEvaluationCountEvidence(adopted, checked)
 			? "model-count"
 			: "conditional-settings";
 		if (

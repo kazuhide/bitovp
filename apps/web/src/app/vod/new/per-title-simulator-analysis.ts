@@ -2,6 +2,7 @@ import type { PerTitleGoal } from "@bitovp/core";
 import {
 	createPerTitleEvaluationAdvice,
 	hasAutomaticPerTitleSettings,
+	hasPerTitleEvaluationCountEvidence,
 	type PerTitleAdvice,
 	type PerTitleAdviceOptions,
 } from "./per-title-simulator-advice";
@@ -73,6 +74,17 @@ function explanation(
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
+	if (
+		item.proof === "model-count" &&
+		item.goal.strategy === "fixed-ranges" &&
+		item.changes.some((change) =>
+			change.key.endsWith("ComplexityBoundaryForMaxBitrate"),
+		)
+	)
+		return {
+			en: "Keep the requested bitrate bands and adjust complexity boundaries and steps. The count model is rechecked over the entire explicit minimum-to-maximum analysis interval; this is not a quality-equivalence result.",
+			ja: "指定したビットレート範囲を保ち、複雑度境界と段間比率を調整します。全体下限～上限の解析値で本数条件を再検証した案で、画質が同等という判定ではありません。",
+		};
 	if (reach.status !== "conditional-reachable" || !reach.high || !reach.low)
 		return {
 			en: `The count model satisfies the requested count with bitrate steps ${global.minBitrateStepSize}–${global.maxBitrateStepSize}; rendition ranges and quality controls are unchanged.`,
@@ -177,7 +189,7 @@ export function analyzePerTitleSettings(
 			"指定した本数は条件として維持しますが、実際に生成される本数は設定だけでは保証できません。素材で出力ラダーを確認してください。",
 		);
 	if (
-		proposal.derivation?.targetSatisfied === true &&
+		hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
 		goal.countPolicy.kind !== "unrestricted"
 	)
 		add(
@@ -243,7 +255,7 @@ export function analyzePerTitleSettings(
 			(!proposal.diagnostics.some(
 				(diagnostic) => diagnostic.severity === "conflict",
 			) &&
-				proposal.derivation?.targetSatisfied === true)
+				hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))
 		)
 			continue;
 		const key = JSON.stringify(item.proposal.api);
@@ -278,7 +290,7 @@ export function analyzePerTitleSettings(
 		!result.advice.length &&
 		(intent === "cap"
 			? reachRank(reach) < 5
-			: proposal.derivation?.targetSatisfied !== true)
+			: !hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))
 	)
 		add(
 			"no-checked-candidate",

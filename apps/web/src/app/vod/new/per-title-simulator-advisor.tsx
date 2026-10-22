@@ -382,7 +382,7 @@ export function PerTitleAdvisor({
 		updateProtection([...unique.values()]);
 	};
 	const release = (field: PerTitleAdviceField) => {
-		pendingFocus.current = "adopt";
+		pendingFocus.current = active.current ? "adopt" : null;
 		const current =
 			liveProtection.current.session === session &&
 			liveProtection.current.codec === goal.codec

@@ -425,6 +425,50 @@ describe("manual Per-Title adjustment advice", () => {
 		).toBeNull();
 		expect(screen.queryByRole("button", { name: /Release:/ })).toBeNull();
 	});
+	it("does not carry a release focus request into a later manual edit", () => {
+		const session = source(),
+			onAdopt = vi.fn();
+		let current = { ...session, maxBitrate: 8_000_000 };
+		const content = (goal: PerTitleGoal) => (
+			<>
+				<input aria-label="Manual maximum" />
+				<PerTitleAdvisor goal={goal} session={session} onAdopt={onAdopt} />
+			</>
+		);
+		const view = renderLocalized(content(session));
+		view.rerender(content(current));
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate (kbps), rendition 1",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		);
+		const [advice, options] = onAdopt.mock.calls[0] ?? [];
+		expect(advice.changes.length).toBeGreaterThan(1);
+		const accepted = applyPerTitleAdvice(current, advice, options);
+		expect(accepted).not.toBeNull();
+		if (!accepted) throw new Error("Expected checked adjustment.");
+		view.rerender(content(accepted));
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Release: Maximum bitrate (kbps), rendition 1",
+			}),
+		);
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
+		const input = screen.getByRole("textbox", { name: "Manual maximum" });
+		input.focus();
+		current = { ...accepted, maxBitrate: 16_000_000 };
+		view.rerender(content(current));
+		expect(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		).toBeInTheDocument();
+		expect(input).toHaveFocus();
+	});
+
 	it("prunes a maintained field only when its rendition is removed", () => {
 		const session = source(),
 			onAdopt = vi.fn();

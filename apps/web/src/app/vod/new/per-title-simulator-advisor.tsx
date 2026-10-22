@@ -302,6 +302,7 @@ export function PerTitleAdvisor({
 			return;
 		}
 		if (prior.goal !== goal) {
+			pendingFocus.current = null;
 			const edit = singleEdit(prior.goal, goal);
 			if (!edit) {
 				active.current = null;
@@ -342,6 +343,7 @@ export function PerTitleAdvisor({
 	useEffect(() => {
 		const request = pendingFocus.current;
 		if (request === null) return;
+		if (request === "adopt" && active.current && !matches) return;
 		const releases = [
 			...(rootRef.current?.querySelectorAll<HTMLButtonElement>(
 				"button[data-maintained-field]",
@@ -382,18 +384,17 @@ export function PerTitleAdvisor({
 		updateProtection([...unique.values()]);
 	};
 	const release = (field: PerTitleAdviceField) => {
-		pendingFocus.current = active.current ? "adopt" : null;
 		const current =
 			liveProtection.current.session === session &&
 			liveProtection.current.codec === goal.codec
 				? liveProtection.current.fields
 				: EMPTY_FIELDS;
-		updateProtection(
-			current.filter(
-				(item) =>
-					perTitleAdviceFieldKey(item) !== perTitleAdviceFieldKey(field),
-			),
+		const remaining = current.filter(
+			(item) => perTitleAdviceFieldKey(item) !== perTitleAdviceFieldKey(field),
 		);
+		pendingFocus.current =
+			active.current || remaining.length > 0 ? "adopt" : null;
+		updateProtection(remaining);
 	};
 	const adopt = (advice: PerTitleAdvice) => {
 		const live = liveProtection.current;

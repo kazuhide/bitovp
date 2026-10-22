@@ -425,6 +425,92 @@ describe("manual Per-Title adjustment advice", () => {
 		).toBeNull();
 		expect(screen.queryByRole("button", { name: /Release:/ })).toBeNull();
 	});
+	it("focuses the remaining release after adopting a multi-pin adjustment", () => {
+		const session: PerTitleGoal = {
+				...source(),
+				rows: [
+					...(source().rows ?? []),
+					{
+						id: "b",
+						height: 1080,
+						minBitrate: 2_000_000,
+						maxBitrate: 3_000_000,
+						bitrateSelectionMode: "COMPLEXITY_RANGE",
+						lowComplexityBoundaryForMaxBitrate: 2_500_000,
+						highComplexityBoundaryForMaxBitrate: 4_000_000,
+					},
+				],
+				automaticTemplates: [
+					{ id: "base", height: 120 },
+					{ id: "top", height: 1440 },
+				],
+			},
+			onAdopt = vi.fn();
+		const current = { ...session, maxBitrate: 8_000_000 };
+		let view = renderLocalized(
+			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+		);
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate (kbps), rendition 1",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate (kbps), rendition 2",
+			}),
+		);
+		const initialRelease = screen.getByRole("button", {
+			name: "Release: Maximum bitrate (kbps), rendition 1",
+		});
+		initialRelease.focus();
+		fireEvent.click(initialRelease);
+		expect(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		).toHaveFocus();
+		view.unmount();
+		view = renderLocalized(
+			<PerTitleAdvisor goal={session} session={session} onAdopt={onAdopt} />,
+		);
+		view.rerender(
+			<PerTitleAdvisor goal={current} session={session} onAdopt={onAdopt} />,
+		);
+		for (const rendition of [1, 2])
+			fireEvent.click(
+				screen.getByRole("button", {
+					name: `Keep current value: Maximum bitrate (kbps), rendition ${rendition}`,
+				}),
+			);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Use this adjustment" }),
+		);
+		const [advice, options] = onAdopt.mock.calls[0] ?? [];
+		expect(options.protectedFields).toHaveLength(2);
+		expect(advice.changes.length).toBeGreaterThan(1);
+		const accepted = applyPerTitleAdvice(current, advice, options);
+		expect(accepted).not.toBeNull();
+		if (!accepted) throw new Error("Expected checked adjustment.");
+		view.rerender(
+			<PerTitleAdvisor goal={accepted} session={session} onAdopt={onAdopt} />,
+		);
+		const release = screen.getByRole("button", {
+			name: "Release: Maximum bitrate (kbps), rendition 1",
+		});
+		release.focus();
+		fireEvent.click(release);
+		expect(
+			screen.queryByRole("button", { name: "Use this adjustment" }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: "Release: Maximum bitrate (kbps), rendition 2",
+			}),
+		).toHaveFocus();
+	});
+
 	it("does not carry a release focus request into a later manual edit", () => {
 		const session = source(),
 			onAdopt = vi.fn();

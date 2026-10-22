@@ -12,6 +12,8 @@ export type PerTitleAdviceField = {
 };
 export type PerTitleAdviceOptions = {
 	protectedFields?: readonly PerTitleAdviceField[];
+	/** Previously selected changes accompanying the original edit, including released fields. */
+	appliedFields?: readonly PerTitleAdviceField[];
 };
 export const perTitleAdviceFieldKey = (field: PerTitleAdviceField) =>
 	JSON.stringify([field.scope, field.rowId, field.key]);

@@ -20,7 +20,10 @@ import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
-import { applyPerTitleAdvice } from "./per-title-simulator-advice";
+import {
+	applyPerTitleAdvice,
+	applySelectedPerTitleAdvice,
+} from "./per-title-simulator-advice";
 import { PerTitleAdvisor } from "./per-title-simulator-advisor";
 import {
 	bitrateSliderBounds,
@@ -640,14 +643,22 @@ function SimulatorEditor({
 					<PerTitleAdvisor
 						goal={goal}
 						session={referenceGoal}
-						onAdopt={(advice, options) =>
+						onAdopt={(advice, options, fields) =>
 							setGoal((current) => {
 								const normalized = tunePerTitleSettings(
 									current,
 									referenceGoal,
 								).goal;
 								return (
-									applyPerTitleAdvice(normalized, advice, options) ?? current
+									(fields
+										? applySelectedPerTitleAdvice(
+												normalized,
+												advice,
+												fields,
+												options,
+											)
+										: applyPerTitleAdvice(normalized, advice, options)) ??
+									current
 								);
 							})
 						}

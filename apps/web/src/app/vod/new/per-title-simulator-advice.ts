@@ -6,7 +6,7 @@ import {
 	perTitleAdviceFields,
 	protectedPerTitleAdviceFields,
 } from "./per-title-simulator-advice-fields";
-import { jointPerTitleExpansion } from "./per-title-simulator-joint";
+import { jointPerTitleExpansionLayouts } from "./per-title-simulator-joint";
 
 export {
 	type PerTitleAdviceField,
@@ -67,6 +67,13 @@ const rate = (value: unknown): value is number =>
 	value > 0 &&
 	value <= 2_147_483_647;
 const same = (a: unknown, b: unknown) => fingerprint(a) === fingerprint(b);
+export function samePerTitleAdviceInput(a: PerTitleGoal, b: PerTitleGoal) {
+	try {
+		return same(a, b);
+	} catch {
+		return false;
+	}
+}
 type Field = PerTitleAdviceField;
 type Variant = {
 	reason: PerTitleAdvice["reason"];
@@ -284,15 +291,28 @@ export function perTitleAdvice(
 		if (
 			!bounded(previous) ||
 			!bounded(current) ||
-			hasAutomaticPerTitleSettings(current) ||
-			!editedOnly(previous, current, edit)
+			hasAutomaticPerTitleSettings(current)
 		)
 			return [];
 		const protectedFields = protectedPerTitleAdviceFields(current, options);
 		const protectedKeys = new Set(protectedFields.map(fieldKey));
+		const applied = protectedPerTitleAdviceFields(current, {
+			protectedFields: options.appliedFields,
+		});
+		// Retain the original driver; only explicit adoptions may accompany it.
+		const manual = patch(current, applied, (f) =>
+			getPerTitleGoalSetting(previous, f.scope, f.key, f.rowId),
+		);
+		if (
+			!editedOnly(previous, manual, edit) ||
+			(edit.scope !== "count" &&
+				applied.some((f) => fieldKey(f) === fieldKey(edit as Field)))
+		)
+			return [];
 		const inputFingerprint = adviceFingerprint(current, protectedFields);
 		const baseline = tunePerTitleSettings(current, current);
 		const variants: Variant[] = [];
+		let jointVariants: Iterable<Variant> = [];
 		const rows =
 			current.strategy === "fixed-ranges" ? (current.rows ?? []) : [];
 		const curveRows = rows.filter(
@@ -324,26 +344,30 @@ export function perTitleAdvice(
 			rate(current.maxBitrate)
 		) {
 			if (current.maxBitrate > previous.maxBitrate) {
-				for (const candidate of jointPerTitleExpansion(
-					previous,
-					current,
-					protectedKeys,
-				))
-					variants.push({
-						reason: "joint-range",
-						goal: candidate.goal,
-						allowed: [
-							field("minBitrateStepSize"),
-							field("maxBitrateStepSize"),
-							field(FORCED[1] as string),
-							...rows.flatMap((row) =>
-								["minBitrate", "maxBitrate", LOW, HIGH].map((key) =>
-									field(key, row.id),
-								),
-							),
-						],
-						facts: candidate.facts,
-					});
+				jointVariants = (function* (): Generator<Variant> {
+					for (const layout of jointPerTitleExpansionLayouts(
+						previous,
+						current,
+						protectedKeys,
+					)) {
+						for (const candidate of layout)
+							yield {
+								reason: "joint-range",
+								goal: candidate.goal,
+								allowed: [
+									field("minBitrateStepSize"),
+									field("maxBitrateStepSize"),
+									field(FORCED[1] as string),
+									...rows.flatMap((row) =>
+										["minBitrate", "maxBitrate", LOW, HIGH].map((key) =>
+											field(key, row.id),
+										),
+									),
+								],
+								facts: candidate.facts,
+							};
+					}
+				})();
 			} else {
 				const coupled = curveRows.filter(
 					(row) =>
@@ -470,8 +494,14 @@ export function perTitleAdvice(
 		const result: PerTitleAdvice[] = [];
 		const seen = new Set<string>();
 		const allFields = settings(current);
-		// Four boundary policies, each with two H layouts and four numeric precisions.
-		for (const variant of variants.slice(0, 36)) {
+		function* candidates() {
+			yield* jointVariants;
+			yield* variants;
+		}
+		let attempts = 0;
+		// Five endpoint layouts, each with four policies, two H layouts and four precisions.
+		for (const variant of candidates()) {
+			if (attempts++ >= 164) break;
 			const trial = tunePerTitleSettings(variant.goal, variant.goal);
 			const allowed = new Set(variant.allowed.map(fieldKey));
 			const changes: PerTitleAdviceChange[] = allFields.flatMap((f) => {
@@ -613,6 +643,63 @@ export function applyPerTitleAdvice(
 		return noConflict(checked.proposal) &&
 			same(checked.proposal.api, advice.proposal.api)
 			? structuredClone(advice.goal)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** Patch a simulator draft only. A subset may conflict and carries no bundle proof. */
+export function applySelectedPerTitleAdvice(
+	current: PerTitleGoal,
+	advice: PerTitleAdvice,
+	selected: readonly PerTitleAdviceField[],
+	options: PerTitleAdviceOptions = {},
+): PerTitleGoal | null {
+	try {
+		const validated = applyPerTitleAdvice(current, advice, options);
+		if (!validated) return null;
+		const fields = protectedPerTitleAdviceFields(current, {
+			protectedFields: selected,
+		});
+		if (!fields.length) return null;
+		const held = new Set(
+			protectedPerTitleAdviceFields(current, options).map(fieldKey),
+		);
+		const baseline = tunePerTitleSettings(current, current).proposal;
+		const changes: PerTitleAdviceChange[] = [];
+		for (const field of fields) {
+			if (held.has(fieldKey(field))) return null;
+			const offered = advice.changes.filter(
+				(change) => fieldKey(change) === fieldKey(field),
+			);
+			const before = getPerTitleSetting(
+				baseline,
+				field.scope,
+				field.key,
+				field.rowId,
+			);
+			const after = getPerTitleGoalSetting(
+				validated,
+				field.scope,
+				field.key,
+				field.rowId,
+			);
+			if (
+				offered.length !== 1 ||
+				!Object.is(offered[0]?.before, before) ||
+				!Object.is(offered[0]?.after, after) ||
+				Object.is(before, after)
+			)
+				return null;
+			changes.push({ ...field, before, after });
+		}
+		const patched = patch(current, fields, (field) =>
+			getPerTitleGoalSetting(validated, field.scope, field.key, field.rowId),
+		);
+		const checked = tunePerTitleSettings(patched, patched);
+		return same(wireWithChanges(baseline, changes), checked.proposal.api)
+			? checked.goal
 			: null;
 	} catch {
 		return null;

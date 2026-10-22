@@ -6,19 +6,24 @@ import { Button } from "@/components/ui/button";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import {
+	applySelectedPerTitleAdvice,
 	hasAutomaticPerTitleSettings,
 	type PerTitleAdvice,
-	type PerTitleAdviceChange,
 	type PerTitleAdviceEdit,
 	type PerTitleAdviceField,
 	type PerTitleAdviceOptions,
 	perTitleAdvice,
 	perTitleAdviceFieldKey,
+	samePerTitleAdviceInput,
 } from "./per-title-simulator-advice";
+import {
+	isPerTitleBitrateKey as bitrateKey,
+	PerTitleAdviceChanges,
+	perTitleAdviceValueText as valueText,
+} from "./per-title-simulator-advice-changes";
 import { perTitleSettingLabel } from "./per-title-simulator-control-copy";
 import {
 	getPerTitleGoalSetting,
-	type PerTitleSettingValue,
 	perTitleGlobalFields,
 	perTitleStreamFields,
 } from "./per-title-simulator-tuning";
@@ -62,51 +67,22 @@ function singleEdit(
 	return edits.length === 1 ? edits[0] : undefined;
 }
 
-const bitrateKey = (key: string) =>
-	key.endsWith("Bitrate") && !key.endsWith("StepSize");
-
-function valueText(
-	value: PerTitleSettingValue,
-	key: string,
-	locale: Locale,
-): string {
-	if (value === undefined) return locale === "ja" ? "未設定" : "Unset";
-	if (typeof value === "boolean") return value ? "true" : "false";
-	if (typeof value !== "number") return value;
-	return bitrateKey(key)
-		? new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
-				value / 1000,
-			)
-		: String(value);
-}
-
-function changeGroups(changes: PerTitleAdviceChange[]) {
-	const groups: PerTitleAdviceChange[][] = [];
-	for (const change of changes) {
-		const matching = groups.find(
-			([first]) =>
-				first?.scope === change.scope &&
-				first.key === change.key &&
-				Object.is(first.before, change.before) &&
-				Object.is(first.after, change.after),
-		);
-		if (matching) matching.push(change);
-		else groups.push([change]);
-	}
-	return groups;
-}
-
 function AdviceOption({
 	advice,
 	goal,
 	onAdopt,
 	onKeep,
+	onApplySelected,
 	locale,
 }: {
 	advice: PerTitleAdvice;
 	goal: PerTitleGoal;
 	onAdopt: (advice: PerTitleAdvice) => void;
 	onKeep: (fields: PerTitleAdviceField[]) => void;
+	onApplySelected: (
+		advice: PerTitleAdvice,
+		fields: PerTitleAdviceField[],
+	) => void;
 	locale: Locale;
 }) {
 	const ja = locale === "ja";
@@ -146,7 +122,6 @@ function AdviceOption({
 		Number.isSafeInteger(high) &&
 		high > 0 &&
 		complexity.every((row) => row.highComplexityBoundaryForMaxBitrate === high);
-	const allRows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	return (
 		<div className="space-y-3">
 			<p className="text-xs text-zinc-300">{reason}</p>
@@ -161,55 +136,13 @@ function AdviceOption({
 							: "Unrounded values rechecked."}
 				</p>
 			) : null}
-			<dl className="space-y-2 text-xs">
-				{changeGroups(advice.changes).map((group) => {
-					const first = group[0];
-					if (!first) return null;
-					const label = perTitleSettingLabel(first.key, locale);
-					const rows = group
-						.map(
-							(change) =>
-								allRows.findIndex((row) => row.id === change.rowId) + 1,
-						)
-						.join(", ");
-					return (
-						<div
-							key={`${first.scope}-${first.key}-${first.rowId ?? "global"}`}
-							className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"
-						>
-							<dt className="min-w-0 text-zinc-400">
-								{first.scope === "stream"
-									? `${ja ? "段" : "Rendition"} ${rows}: `
-									: ""}
-								{label}
-							</dt>
-							<dd className="flex min-w-0 flex-wrap items-center gap-2 text-zinc-100">
-								<span className="break-all tabular-nums">
-									{valueText(first.before, first.key, locale)} →{" "}
-									{valueText(first.after, first.key, locale)}
-									{bitrateKey(first.key) ? " kbps" : ""}
-								</span>
-								<Button
-									variant="secondary"
-									size="sm"
-									aria-label={`${ja ? "現在値を維持" : "Keep current value"}: ${label}${first.scope === "stream" ? `, ${ja ? "段" : "rendition"} ${rows}` : ""}`}
-									onClick={() =>
-										onKeep(
-											group.map(({ scope, key, rowId }) => ({
-												scope,
-												key,
-												...(rowId === undefined ? {} : { rowId }),
-											})),
-										)
-									}
-								>
-									{ja ? "現在値を維持" : "Keep current value"}
-								</Button>
-							</dd>
-						</div>
-					);
-				})}
-			</dl>
+			<PerTitleAdviceChanges
+				advice={advice}
+				goal={goal}
+				locale={locale}
+				onKeep={onKeep}
+				onApplySelected={onApplySelected}
+			/>
 			<details className="space-y-2 text-xs text-zinc-400">
 				<summary className="cursor-pointer">
 					{ja ? "根拠と確認範囲" : "Reasoning and scope"}
@@ -300,7 +233,11 @@ export function PerTitleAdvisor({
 }: {
 	goal: PerTitleGoal;
 	session: PerTitleGoal;
-	onAdopt: (advice: PerTitleAdvice, options?: PerTitleAdviceOptions) => void;
+	onAdopt: (
+		advice: PerTitleAdvice,
+		options?: PerTitleAdviceOptions,
+		selected?: readonly PerTitleAdviceField[],
+	) => void;
 }) {
 	const { locale } = useT();
 	const ja = locale === "ja";
@@ -311,6 +248,13 @@ export function PerTitleAdvisor({
 	const active = useRef<{
 		before: PerTitleGoal;
 		edit: PerTitleAdviceEdit;
+		appliedFields: readonly PerTitleAdviceField[];
+	} | null>(null);
+	const pendingApplication = useRef<{
+		goal: PerTitleGoal;
+		active: NonNullable<typeof active.current>;
+		fields: readonly PerTitleAdviceField[];
+		complete: boolean;
 	} | null>(null);
 	const [protection, setProtection] = useState<{
 		session: PerTitleGoal;
@@ -338,6 +282,7 @@ export function PerTitleAdvisor({
 		previous.current = { goal, session };
 		if (prior.session !== session || prior.goal.codec !== goal.codec) {
 			active.current = null;
+			pendingApplication.current = null;
 			pendingFocus.current = null;
 			setSnapshot(null);
 			liveProtection.current = { session, codec: goal.codec, fields: [] };
@@ -354,11 +299,28 @@ export function PerTitleAdvisor({
 		);
 		if (retained.length !== fields.length) {
 			active.current = null;
+			pendingApplication.current = null;
 			pendingFocus.current = null;
 			setSnapshot(null);
 			liveProtection.current = { session, codec: goal.codec, fields: retained };
 			setProtection(liveProtection.current);
 			return;
+		}
+		if (prior.goal !== goal && pendingApplication.current) {
+			const pending = pendingApplication.current;
+			pendingApplication.current = null;
+			if (samePerTitleAdviceInput(goal, pending.goal)) {
+				active.current = pending.complete ? null : pending.active;
+				if (pending.complete) setSnapshot(null);
+				liveProtection.current = {
+					session,
+					codec: goal.codec,
+					fields: pending.fields,
+				};
+				setProtection(liveProtection.current);
+				pendingFocus.current = "adopt";
+				return;
+			}
 		}
 		if (prior.goal !== goal) {
 			pendingFocus.current = null;
@@ -378,7 +340,7 @@ export function PerTitleAdvisor({
 				active.current.edit.key !== edit.key ||
 				active.current.edit.rowId !== edit.rowId
 			)
-				active.current = { before: prior.goal, edit };
+				active.current = { before: prior.goal, edit, appliedFields: [] };
 		}
 		if (active.current)
 			setSnapshot({
@@ -389,7 +351,7 @@ export function PerTitleAdvisor({
 					active.current.before,
 					goal,
 					active.current.edit,
-					options,
+					{ ...options, appliedFields: active.current.appliedFields },
 				),
 			});
 	}, [goal, session, key, options, fields]);
@@ -466,10 +428,54 @@ export function PerTitleAdvisor({
 		)
 			return;
 		active.current = null;
+		pendingApplication.current = null;
 		setSnapshot(null);
 		onAdopt(advice, {
 			protectedFields: live.fields.map((field) => ({ ...field })),
 		});
+	};
+	const applySelected = (
+		advice: PerTitleAdvice,
+		selected: PerTitleAdviceField[],
+	) => {
+		const live = liveProtection.current;
+		if (
+			!matches ||
+			!active.current ||
+			!snapshot.items.includes(advice) ||
+			live.session !== session ||
+			live.codec !== goal.codec ||
+			protectionKey(live.fields) !== snapshot.key
+		)
+			return;
+		const options = {
+			protectedFields: live.fields.map((field) => ({ ...field })),
+		};
+		const next = applySelectedPerTitleAdvice(goal, advice, selected, options);
+		if (!next) return;
+		const union = (
+			a: readonly PerTitleAdviceField[],
+			b: readonly PerTitleAdviceField[],
+		) => [
+			...new Map(
+				[...a, ...b].map((field) => [perTitleAdviceFieldKey(field), field]),
+			).values(),
+		];
+		pendingApplication.current = {
+			goal: next,
+			active: {
+				...active.current,
+				appliedFields: union(active.current.appliedFields, selected),
+			},
+			fields: union(live.fields, selected),
+			complete: advice.changes.every((change) =>
+				selected.some(
+					(field) =>
+						perTitleAdviceFieldKey(field) === perTitleAdviceFieldKey(change),
+				),
+			),
+		};
+		onAdopt(advice, options, selected);
 	};
 	const automatic = matches && hasAutomaticPerTitleSettings(goal);
 	const unavailable = matches && fields.length > 0 && !first;
@@ -551,10 +557,12 @@ export function PerTitleAdvisor({
 						{ja ? "調整案" : "Suggested adjustment"}
 					</h3>
 					<AdviceOption
+						key={`${first.id}-${first.inputFingerprint}`}
 						advice={first}
 						goal={goal}
 						onAdopt={adopt}
 						onKeep={keep}
+						onApplySelected={applySelected}
 						locale={locale}
 					/>
 					{items.length > 1 ? (
@@ -564,11 +572,12 @@ export function PerTitleAdvisor({
 							</summary>
 							{items.slice(1).map((item) => (
 								<AdviceOption
-									key={item.id}
+									key={`${item.id}-${item.inputFingerprint}`}
 									advice={item}
 									goal={goal}
 									onAdopt={adopt}
 									onKeep={keep}
+									onApplySelected={applySelected}
 									locale={locale}
 								/>
 							))}

@@ -144,6 +144,11 @@ function expandedHigh(
 }
 
 type Evaluation = { facts: Record<string, number>; rank: number[] };
+type JointCandidate = {
+	goal: PerTitleGoal;
+	facts: Record<string, number>;
+	rank: number[];
+};
 function evaluate(
 	before: PerTitleGoal,
 	after: PerTitleGoal,
@@ -279,11 +284,11 @@ function evaluate(
 	};
 }
 
-/** Bounded setting candidates, not a reconstruction of the encoder's content analysis. */
-export function jointPerTitleExpansion(
+function jointPerTitleExpansionAtRangeMaximum(
 	previous: PerTitleGoal,
 	current: PerTitleGoal,
-	protectedKeys: ReadonlySet<string> = new Set(),
+	protectedKeys: ReadonlySet<string>,
+	rangeMaximum: number,
 ) {
 	const before = initializePerTitleSettings(previous);
 	if (
@@ -329,7 +334,12 @@ export function jointPerTitleExpansion(
 		held(scope, key, rowId)
 			? goal
 			: setPerTitleSetting(goal, scope, key, value, rowId);
-	const map = protectedPerTitleRangeMap(before, current, protectedKeys);
+	const map = protectedPerTitleRangeMap(
+		before,
+		current,
+		protectedKeys,
+		rangeMaximum,
+	);
 	if (!map) return [];
 	let base = initializePerTitleSettings(current);
 	for (const row of before.rows) {
@@ -442,7 +452,7 @@ export function jointPerTitleExpansion(
 	const newLow = recipe
 		? Math.trunc(map(highest.minBitrate as number) * s)
 		: undefined;
-	const candidates = [];
+	const candidates: JointCandidate[] = [];
 	const seen = new Set<string>();
 	for (const policy of [
 		...(newLow !== undefined && rate(newLow)
@@ -564,4 +574,43 @@ export function jointPerTitleExpansion(
 		}
 		return 0;
 	});
+}
+
+/** Ordered, lazy endpoint layouts; each candidate still needs the caller's count and API checks. */
+export function* jointPerTitleExpansionLayouts(
+	previous: PerTitleGoal,
+	current: PerTitleGoal,
+	protectedKeys: ReadonlySet<string> = new Set(),
+): Generator<JointCandidate[], undefined, void> {
+	// A protected lower band can leave too little certified connection room for
+	// full range growth. Retry smaller endpoint layouts under the same global cap
+	// and the same complete checks, retaining the usual layout whenever it works.
+	const seen = new Set<number>();
+	for (const fraction of [1, 0.75, 0.5, 0.25, 0]) {
+		const rangeMaximum = Math.round(
+			previous.maxBitrate +
+				(current.maxBitrate - previous.maxBitrate) * fraction,
+		);
+		if (seen.has(rangeMaximum)) continue;
+		seen.add(rangeMaximum);
+		const candidates = jointPerTitleExpansionAtRangeMaximum(
+			previous,
+			current,
+			protectedKeys,
+			rangeMaximum,
+		);
+		if (candidates.length) yield candidates;
+	}
+}
+
+/** Bounded setting candidates, not a reconstruction of the encoder's content analysis. */
+export function jointPerTitleExpansion(
+	previous: PerTitleGoal,
+	current: PerTitleGoal,
+	protectedKeys: ReadonlySet<string> = new Set(),
+) {
+	return (
+		jointPerTitleExpansionLayouts(previous, current, protectedKeys).next()
+			.value ?? []
+	);
 }

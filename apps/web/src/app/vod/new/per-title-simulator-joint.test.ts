@@ -1,5 +1,6 @@
 import {
 	certifyComplexityIntervals,
+	complexityTargetsDoNotDecrease,
 	evaluateComplexityRange,
 	type PerTitleGoal,
 } from "@bitovp/core";
@@ -8,6 +9,11 @@ import {
 	applyPerTitleAdvice,
 	perTitleAdvice,
 } from "./per-title-simulator-advice";
+import { perTitleAdviceFieldKey } from "./per-title-simulator-advice-fields";
+import {
+	jointPerTitleExpansion,
+	jointPerTitleExpansionLayouts,
+} from "./per-title-simulator-joint";
 
 const source = (): PerTitleGoal => ({
 	strategy: "fixed-ranges",
@@ -295,6 +301,113 @@ describe("joint Per-Title range advice", () => {
 				{ scope: "global", key: "maxBitrate" },
 			);
 			expect(result.some((item) => item.reason === "joint-range")).toBe(false);
+		}
+	});
+
+	it("retries free range growth when the fully expanded layout loses a protected connection", () => {
+		const previous: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 120_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 4,
+			countPolicy: { kind: "unrestricted" },
+			autoRepresentations: false,
+			rows: [
+				[280_000, 480_000, 240],
+				[560_000, 840_000, 240],
+				[960_000, 1_320_000, 540],
+				[1_720_000, 2_280_000, 720],
+			].map(([minBitrate, maxBitrate, height], i) => ({
+				id: `row-${i}`,
+				height: height as number,
+				minBitrate,
+				maxBitrate,
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				lowComplexityBoundaryForMaxBitrate: 2_100_000,
+				highComplexityBoundaryForMaxBitrate: 4_000_000,
+			})),
+			automaticTemplates: [{ id: "top", height: 1080 }],
+		};
+		const current = { ...previous, maxBitrate: 6_000_000 };
+		const snapshots = structuredClone({ previous, current });
+		const pins = new Set(
+			["minBitrate", "maxBitrate"].map((key) =>
+				perTitleAdviceFieldKey({ scope: "stream", key, rowId: "row-0" }),
+			),
+		);
+		const candidates = jointPerTitleExpansion(previous, current, pins);
+		expect(candidates.length).toBeGreaterThan(0);
+		const candidate = candidates[0];
+		if (!candidate) throw new Error("Expected a certified partial expansion.");
+		const { goal, facts } = candidate;
+		expect(goal.rows?.[0]).toMatchObject({
+			minBitrate: 280_000,
+			maxBitrate: 480_000,
+		});
+		expect(goal.maxBitrate).toBe(6_000_000);
+		expect(goal.rows?.[3]?.maxBitrate).toBeGreaterThan(2_280_000);
+		expect(facts.capacity).toBeLessThanOrEqual(facts.previousCapacity ?? 0);
+		expect(facts.connectionRisk).toBe(0);
+		const asCurve = (row: NonNullable<PerTitleGoal["rows"]>[number]) => ({
+			minimum: row.minBitrate ?? 0,
+			maximum: row.maxBitrate ?? 0,
+			low: row.lowComplexityBoundaryForMaxBitrate ?? 0,
+			high: row.highComplexityBoundaryForMaxBitrate ?? 0,
+		});
+		for (const [i, row] of (goal.rows ?? []).entries()) {
+			const old = previous.rows?.[i];
+			if (!old) throw new Error("Missing source row.");
+			expect(
+				complexityTargetsDoNotDecrease(asCurve(old), asCurve(row), {
+					minimum: 1,
+					maximum: previous.maxBitrate,
+				}),
+			).toBe(true);
+		}
+		const certificate = certifyComplexityIntervals(
+			(goal.rows ?? []).map(asCurve),
+			{ minimum: 1, maximum: goal.maxBitrate },
+			goal.minBitrateStepSize ?? 0,
+		);
+		expect(certificate?.minimumAdjacentRatio).toBeGreaterThanOrEqual(
+			goal.minBitrateStepSize ?? Infinity,
+		);
+		expect(certificate?.maximumAdjacentRatio).toBeLessThanOrEqual(
+			goal.maxBitrateStepSize ?? 0,
+		);
+		expect({ previous, current }).toEqual(snapshots);
+	});
+
+	it("offers later endpoint layouts in order after preserving the primary protected option", () => {
+		const previous = source();
+		const current = { ...previous, maxBitrate: 8_000_000 };
+		const pins = new Set(
+			["minBitrate", "maxBitrate"].map((key) =>
+				perTitleAdviceFieldKey({ scope: "stream", key, rowId: "a" }),
+			),
+		);
+		const layouts = jointPerTitleExpansionLayouts(previous, current, pins);
+		const first = layouts.next().value;
+		expect(first).toEqual(jointPerTitleExpansion(previous, current, pins));
+		if (!first?.length) throw new Error("Missing primary endpoint layout.");
+		const second = layouts.next().value;
+		if (!second?.length) throw new Error("Missing fallback endpoint layout.");
+		expect(second[0]?.goal.rows?.[1]?.maxBitrate).toBeLessThan(
+			first[0]?.goal.rows?.[1]?.maxBitrate ?? 0,
+		);
+		const all = [first, second, ...layouts];
+		expect(all.length).toBeLessThanOrEqual(5);
+		for (const candidates of all) {
+			expect(candidates.length).toBeLessThanOrEqual(32);
+			for (const { goal } of candidates) {
+				expect(goal.maxBitrate).toBe(8_000_000);
+				expect(goal.rows?.[0]).toMatchObject({
+					minBitrate: 200_000,
+					maxBitrate: 400_000,
+				});
+			}
 		}
 	});
 });

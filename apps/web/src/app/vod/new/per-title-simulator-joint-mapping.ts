@@ -6,7 +6,14 @@ export function protectedPerTitleRangeMap(
 	before: PerTitleGoal,
 	current: PerTitleGoal,
 	protectedKeys: ReadonlySet<string>,
+	rangeMaximum = current.maxBitrate,
 ) {
+	if (
+		!Number.isSafeInteger(rangeMaximum) ||
+		rangeMaximum < before.maxBitrate ||
+		rangeMaximum > current.maxBitrate
+	)
+		return null;
 	const anchors = new Map<number, number>([
 		[before.minBitrate, current.minBitrate],
 	]);
@@ -38,7 +45,7 @@ export function protectedPerTitleRangeMap(
 	}
 	// A fixed row at the old cap can stay there while the independent global cap grows.
 	if (!anchors.has(before.maxBitrate))
-		anchors.set(before.maxBitrate, current.maxBitrate);
+		anchors.set(before.maxBitrate, rangeMaximum);
 	const points = [...anchors.entries()].sort(([a], [b]) => a - b);
 	if (
 		points.some(

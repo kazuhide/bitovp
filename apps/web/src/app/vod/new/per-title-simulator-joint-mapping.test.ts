@@ -43,6 +43,45 @@ describe("protected rendition range mapping", () => {
 		expect(map?.(4_000_000)).toBe(8_000_000);
 	});
 
+	it("bounds free endpoint growth independently from the requested global cap", () => {
+		const before = source();
+		const current = structuredClone(before);
+		current.maxBitrate = 8_000_000;
+		const row = current.rows?.[0];
+		if (!row) throw new Error("Missing fixture row.");
+		row.minBitrate = 210_000;
+		row.maxBitrate = 420_000;
+		const map = protectedPerTitleRangeMap(
+			before,
+			current,
+			new Set([pin("low", "minBitrate"), pin("low", "maxBitrate")]),
+			5_000_000,
+		);
+		expect(map?.(200_000)).toBe(210_000);
+		expect(map?.(400_000)).toBe(420_000);
+		expect(map?.(2_000_000)).toBeGreaterThan(2_000_000);
+		expect(map?.(2_000_000)).toBeLessThan(4_000_000);
+		expect(map?.(4_000_000)).toBe(5_000_000);
+		expect(current.maxBitrate).toBe(8_000_000);
+	});
+
+	it.each([
+		3_000_000,
+		9_000_000,
+		Number.NaN,
+		5_000_000.5,
+	])("rejects a range-layout cap outside the expansion: %s", (rangeMaximum) => {
+		const before = source();
+		expect(
+			protectedPerTitleRangeMap(
+				before,
+				{ ...before, maxBitrate: 8_000_000 },
+				new Set(),
+				rangeMaximum,
+			),
+		).toBeNull();
+	});
+
 	it("rejects incompatible targets sharing the same source endpoint", () => {
 		const before = source();
 		before.rows = [

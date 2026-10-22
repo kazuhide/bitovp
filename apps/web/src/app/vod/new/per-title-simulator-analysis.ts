@@ -492,6 +492,9 @@ export function analyzePerTitleSettings(
 			checkedLadder.lowerConnection?.fitsMaximum !== false &&
 			((checkedLadder.topResponse.status === "tracked" &&
 				ladder.topResponse.status !== "tracked") ||
+				(ladder.lowerSlots !== null &&
+					checkedLadder.lowerSlots !== null &&
+					checkedLadder.lowerSlots.maximum < ladder.lowerSlots.maximum) ||
 				(ladder.upperSlots !== null &&
 					checkedLadder.upperSlots !== null &&
 					checkedLadder.upperSlots.maximum < ladder.upperSlots.maximum) ||

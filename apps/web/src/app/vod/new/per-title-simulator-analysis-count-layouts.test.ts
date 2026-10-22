@@ -1,5 +1,6 @@
 import type { PerTitleGoal } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
+import { analyzePerTitleSettings } from "./per-title-simulator-analysis";
 import { assessPerTitleCountStructure } from "./per-title-simulator-analysis-count";
 import { perTitleCountDirectedCandidates } from "./per-title-simulator-analysis-count-layouts";
 import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
@@ -52,6 +53,24 @@ const candidates = (goal: PerTitleGoal) =>
 	);
 
 describe("derived mixed-count candidate family", () => {
+	it("retains a checked lower-placement improvement when upper room is already zero", () => {
+		const goal = mixed();
+		goal.minBitrateStepSize = 1.7;
+		const result = analyzePerTitleSettings(goal, "preserve");
+		expect(result.ladder.lowerSlots).toEqual({ minimum: 2, maximum: 2 });
+		expect(result.ladder.upperSlots).toEqual({ minimum: 0, maximum: 0 });
+		expect(result.decision.status).toBe("proposal");
+		expect(
+			result.advice.some(
+				(item) => item.facts.lowerSlots === 1 && item.facts.upperSlots === 0,
+			),
+		).toBe(true);
+		for (const item of result.advice) {
+			expect(item.proof).toBe("conditional-settings");
+			expect(item.facts.requiredCount).toBe(6);
+			expect(item.facts.preservedCount).toBe(0);
+		}
+	});
 	it("reduces ordinary placement room with the unchanged full-domain certificate", () => {
 		const goal = mixed();
 		const result = candidates(goal);

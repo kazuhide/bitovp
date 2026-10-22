@@ -236,8 +236,8 @@ function AdviceOption({
 				) : digits === 0 ? (
 					<p>
 						{ja
-							? "確認条件を満たす丸め案がなく、丸めない値を使います。維持する値は変更しません。"
-							: "No rounded candidate passed the checks, so unrounded values are used. Kept values are unchanged."}
+							? "検証済みの丸めない値を使います。維持する値は変更しません。"
+							: "Checked unrounded values are used. Kept values are unchanged."}
 					</p>
 				) : null}
 				{advice.reason === "joint-range" && complexity.length > 0 ? (

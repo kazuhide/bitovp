@@ -694,7 +694,7 @@ describe("manual Per-Title adjustment advice", () => {
 			fireEvent.click(details.querySelector("summary") as HTMLElement);
 			expect(details).toHaveTextContent(
 				digits === 0
-					? "No rounded candidate passed the checks"
+					? "Checked unrounded values are used"
 					: `${digits} decimal places`,
 			);
 			expect(details).toHaveTextContent("H is set per rendition");

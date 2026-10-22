@@ -589,7 +589,7 @@ function SimulatorEditor({
 						/>
 					) : null}
 				</div>
-				<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
+				<div className="min-w-0 space-y-4 overflow-x-clip lg:sticky lg:top-0 lg:self-start">
 					<PerTitleRecommendation
 						goal={goal}
 						proposal={selected}

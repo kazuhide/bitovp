@@ -483,12 +483,19 @@ export function PerTitleAdvisor({
 			liveProtection.current.codec === goal.codec
 				? liveProtection.current.fields
 				: EMPTY_FIELDS;
-		const unique = new Map(
-			current.map((field) => [perTitleAdviceFieldKey(field), field]),
-		);
-		for (const field of added) unique.set(perTitleAdviceFieldKey(field), field);
+		const withAddedFields = (fields: readonly PerTitleAdviceField[]) => [
+			...new Map(
+				[...fields, ...added].map((field) => [
+					perTitleAdviceFieldKey(field),
+					field,
+				]),
+			).values(),
+		];
+		// Keep later pin actions in the delayed set without publishing selected fields.
+		const pending = pendingApplication.current;
+		if (pending) pending.fields = withAddedFields(pending.fields);
 		pendingFocus.current = added[0] ? perTitleAdviceFieldKey(added[0]) : null;
-		updateProtection([...unique.values()]);
+		updateProtection(withAddedFields(current));
 	};
 	const release = (field: PerTitleAdviceField) => {
 		const current =
@@ -499,6 +506,12 @@ export function PerTitleAdvisor({
 		const remaining = current.filter(
 			(item) => perTitleAdviceFieldKey(item) !== perTitleAdviceFieldKey(field),
 		);
+		const pending = pendingApplication.current;
+		if (pending)
+			pending.fields = pending.fields.filter(
+				(item) =>
+					perTitleAdviceFieldKey(item) !== perTitleAdviceFieldKey(field),
+			);
 		pendingFocus.current =
 			active.current || remaining.length > 0 ? "adopt" : null;
 		updateProtection(remaining);

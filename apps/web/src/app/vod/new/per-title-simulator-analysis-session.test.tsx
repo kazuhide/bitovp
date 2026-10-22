@@ -53,8 +53,10 @@ const source = (): PerTitleGoal => ({
 function Harness({
 	session,
 	onAdopt,
+	deferred = false,
 }: {
 	session: PerTitleGoal;
+	deferred?: boolean;
 	onAdopt: (
 		advice: PerTitleAdvice,
 		options?: PerTitleAdviceOptions,
@@ -62,12 +64,21 @@ function Harness({
 	) => void;
 }) {
 	const [goal, setGoal] = useState(session);
+	const [pending, setPending] = useState<{
+		advice: PerTitleAdvice;
+		options?: PerTitleAdviceOptions;
+		selected?: readonly PerTitleAdviceField[];
+	} | null>(null);
 	const adopt = (
 		advice: PerTitleAdvice,
 		options?: PerTitleAdviceOptions,
 		selected?: readonly PerTitleAdviceField[],
 	) => {
 		onAdopt(advice, options, selected);
+		if (deferred) {
+			setPending({ advice, options, selected });
+			return;
+		}
 		setGoal(
 			(current) =>
 				(selected
@@ -75,9 +86,42 @@ function Harness({
 					: applyPerTitleAdvice(current, advice, options)) ?? current,
 		);
 	};
+	const acknowledge = (reject = false) => {
+		if (!pending) return;
+		const { advice, options, selected } = pending;
+		setGoal((current) => {
+			const latest = reject
+				? { ...current, maxBitrate: current.maxBitrate + 1 }
+				: current;
+			return (
+				(selected
+					? applySelectedPerTitleAdvice(latest, advice, selected, options)
+					: applyPerTitleAdvice(latest, advice, options)) ?? latest
+			);
+		});
+		setPending(null);
+	};
 	return (
 		<>
 			<PerTitleAdvisor goal={goal} session={session} onAdopt={adopt} />
+			{deferred ? (
+				<>
+					<button
+						type="button"
+						disabled={!pending}
+						onClick={() => acknowledge()}
+					>
+						Acknowledge adoption
+					</button>
+					<button
+						type="button"
+						disabled={!pending}
+						onClick={() => acknowledge(true)}
+					>
+						Reject adoption
+					</button>
+				</>
+			) : null}
 			<output data-testid="analysis-current-goal">
 				{JSON.stringify(goal)}
 			</output>
@@ -95,6 +139,184 @@ function currentGoal(): PerTitleGoal {
 }
 
 describe("current analysis adoption sessions", () => {
+	it("preserves a release and new keep made after full adoption but before its exact acknowledgement", () => {
+		const session = source();
+		renderLocalized(<Harness session={session} onAdopt={vi.fn()} deferred />);
+		evaluate();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Minimum bitrate ratio",
+			}),
+		);
+		const adopt = screen.getByRole("button", { name: "Use this adjustment" });
+		const release = screen.getByRole("button", {
+			name: "Release: Minimum bitrate ratio",
+		});
+		const keep = screen.getByRole("button", {
+			name: "Keep current value: Maximum bitrate ratio",
+		});
+		act(() => {
+			fireEvent.click(adopt);
+			fireEvent.click(release);
+			fireEvent.click(keep);
+		});
+		expect(currentGoal()).toEqual(session);
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("Maximum bitrate ratio");
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("1.9");
+		fireEvent.click(
+			screen.getByRole("button", { name: "Acknowledge adoption" }),
+		);
+		expect(currentGoal().maxBitrateStepSize).toBe(2.09);
+		// A pin identifies the current field; it does not cancel the dispatched change.
+		expect(
+			screen.getByRole("region", { name: "Maintained values" }),
+		).toHaveTextContent("2.09");
+		expect(
+			screen.getByRole("button", { name: "Release: Maximum bitrate ratio" }),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		).toBeNull();
+	});
+
+	it("adds selected fields only on exact acknowledgement while preserving a new keep", () => {
+		const session = source();
+		renderLocalized(<Harness session={session} onAdopt={vi.fn()} deferred />);
+		evaluate();
+		fireEvent.click(
+			screen.getByRole("checkbox", {
+				name: "Select change: Minimum bitrate ratio",
+			}),
+		);
+		const apply = screen.getByRole("button", {
+			name: "Apply selected changes and recalculate",
+		});
+		const keep = screen.getByRole("button", {
+			name: "Keep current value: Maximum bitrate ratio",
+		});
+		act(() => {
+			fireEvent.click(apply);
+			fireEvent.click(keep);
+		});
+		expect(currentGoal()).toEqual(session);
+		expect(
+			screen.queryByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Acknowledge adoption" }),
+		);
+		expect(currentGoal().minBitrateStepSize).toBe(1.65);
+		expect(currentGoal().maxBitrateStepSize).toBe(1.9);
+		expect(
+			screen.getByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Release: Maximum bitrate ratio" }),
+		).toBeInTheDocument();
+	});
+
+	it("does not restore a released pin when a partial adoption is acknowledged", () => {
+		renderLocalized(<Harness session={source()} onAdopt={vi.fn()} deferred />);
+		evaluate();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Minimum bitrate ratio",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("checkbox", {
+				name: "Select change: Maximum bitrate ratio",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Apply selected changes and recalculate",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Acknowledge adoption" }),
+		);
+		expect(currentGoal().maxBitrateStepSize).toBe(2.09);
+		expect(
+			screen.getByRole("button", { name: "Release: Maximum bitrate ratio" }),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		).toBeNull();
+	});
+
+	it("honors an explicit release of a selected field before acknowledgement", () => {
+		renderLocalized(<Harness session={source()} onAdopt={vi.fn()} deferred />);
+		evaluate();
+		fireEvent.click(
+			screen.getByRole("checkbox", {
+				name: "Select change: Minimum bitrate ratio",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Apply selected changes and recalculate",
+			}),
+		);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Minimum bitrate ratio",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Acknowledge adoption" }),
+		);
+		expect(currentGoal().minBitrateStepSize).toBe(1.65);
+		expect(
+			screen.queryByRole("region", { name: "Maintained values" }),
+		).toBeNull();
+	});
+
+	it("never publishes selected pins when the parent rejects the old goal", () => {
+		renderLocalized(<Harness session={source()} onAdopt={vi.fn()} deferred />);
+		evaluate();
+		fireEvent.click(
+			screen.getByRole("checkbox", {
+				name: "Select change: Minimum bitrate ratio",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Apply selected changes and recalculate",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Keep current value: Maximum bitrate ratio",
+			}),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Reject adoption" }));
+		expect(currentGoal().minBitrateStepSize).toBe(1.5);
+		expect(currentGoal().maxBitrate).toBe(8_000_001);
+		expect(
+			screen.queryByRole("button", { name: "Release: Minimum bitrate ratio" }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Release: Maximum bitrate ratio" }),
+		).toBeInTheDocument();
+	});
+
 	it("keeps pins through re-evaluation and releases a current value without changing it", () => {
 		const session = source();
 		renderLocalized(<Harness session={session} onAdopt={vi.fn()} />);

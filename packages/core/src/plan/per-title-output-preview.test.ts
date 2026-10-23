@@ -455,7 +455,8 @@ describe("Per-Title output previews", () => {
 		expect(result).toMatchObject({
 			analysisInput: fixed.maxBitrate,
 			status: "partial",
-			unresolvedAdditional: false,
+			// Per-row intervals do not establish closure of the entire ladder.
+			unresolvedAdditional: true,
 		});
 		expect(
 			result.rows.every(

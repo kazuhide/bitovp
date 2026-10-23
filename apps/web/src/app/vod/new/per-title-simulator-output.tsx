@@ -420,8 +420,15 @@ export function PerTitleOutputChart({
 									(target === undefined ? permitted : undefined);
 								const lower = band?.minimum ?? target;
 								const upper = band?.maximum ?? target;
-								const below = lower !== undefined && lower < scale.minimum;
-								const above = upper !== undefined && upper > scale.maximum;
+								const displayed = [
+									lower,
+									upper,
+									target,
+									configured?.minimum,
+									configured?.maximum,
+								].filter((value): value is number => value !== undefined);
+								const below = displayed.some((value) => value < scale.minimum);
+								const above = displayed.some((value) => value > scale.maximum);
 								const conditional = row.status === "conditional";
 								return (
 									<div

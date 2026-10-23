@@ -111,6 +111,29 @@ beforeEach(() => {
 
 describe("Per-Title output evidence", () => {
 	it.each([
+		["en", 100_000, 1_000_000, false, true],
+		["ja", 100_000, 1_000_000, false, true],
+		["en", 300_000, 2_000_000, true, false],
+		["ja", 300_000, 2_000_000, true, false],
+		["en", 300_000, 1_000_000, true, true],
+		["ja", 300_000, 1_000_000, true, true],
+	] as const)("marks a clipped configured background while the effective interval stays in scale (%s %s %s)", (locale, minimum, maximum, below, above) => {
+		renderLocalized(
+			<PerTitleOutputChart proposal={proposal} axis={{ minimum, maximum }} />,
+			locale,
+		);
+		const chart = screen.getByRole("img");
+		const warning = within(chart).getByText(
+			locale === "ja" ? /目盛りの範囲外/ : /Outside scale/,
+		);
+		expect(warning.textContent?.includes("←")).toBe(below);
+		expect(warning.textContent?.includes("→")).toBe(above);
+		const band = within(chart).getByTestId("per-title-output-band");
+		expect(Number(band.getAttribute("x1"))).toBeGreaterThan(0);
+		expect(Number(band.getAttribute("x2"))).toBeLessThan(100);
+		expect(within(chart).queryByTestId("per-title-output-target")).toBeNull();
+	});
+	it.each([
 		"en",
 		"ja",
 	] as const)("shows an aggregate automatic band without selecting resolutions or points (%s)", (locale) => {

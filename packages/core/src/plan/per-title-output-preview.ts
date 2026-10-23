@@ -152,6 +152,7 @@ export function previewPerTitleOutput(
 		const range = ranges.get(stream.rowId);
 		if (!range) return row;
 		const effective =
+			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
 			stream.perTitleSettings?.bitrateSelectionMode === "COMPLEXITY_RANGE";
 		// A closed narrow interval starts at its lower endpoint; there is no room for a second ordinary step.
 		const narrow =
@@ -370,6 +371,8 @@ export function previewPerTitleOutput(
 		singleRange.maximum / singleRange.minimum <
 			global.minBitrateStepSize - 0.01;
 	const unresolvedAdditional =
+		// Per-row points do not prove that a multi-row ladder is feasible or closed.
+		fixedRows.length > 1 ||
 		automatic.length > 0 ||
 		expanded ||
 		fixedRows.some(

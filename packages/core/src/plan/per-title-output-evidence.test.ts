@@ -158,6 +158,41 @@ describe("Per-Title output evidence boundaries", () => {
 		);
 	});
 
+	it.each([
+		[200_000, 2_000_000],
+		[2_000_000, 200_000],
+		[200_000, 300_000],
+	])("keeps the count unresolved for multiple point rows (%s %s)", (lower, upper) => {
+		const proposal = band();
+		proposal.api.global.maxBitrate = 2_000_000;
+		const row = firstStream(proposal);
+		proposal.api.streams = [lower, upper].map((bitrate, index) => ({
+			...row,
+			rowId: `point-${index}`,
+			height: index === 0 ? 360 : 720,
+			perTitleSettings: {
+				...row.perTitleSettings,
+				minBitrate: bitrate,
+				maxBitrate: bitrate,
+			},
+		}));
+		const result = previewPerTitleOutput(proposal);
+		expect(result.rows.map((entry) => entry.bitrate)).toEqual([lower, upper]);
+		expect(result.rows.every((entry) => entry.status === "conditional")).toBe(
+			true,
+		);
+		expect(result.unresolvedAdditional).toBe(true);
+	});
+
+	it("keeps parked complexity settings from relabeling a fixed-resolution envelope", () => {
+		const proposal = band();
+		firstStream(proposal).mode = "PER_TITLE_TEMPLATE_FIXED_RESOLUTION";
+		expect(previewPerTitleOutput(proposal).rows[0]).toMatchObject({
+			rangeBasis: "configured",
+			minimumBitrate: 100_000,
+			maximumBitrate: 4_000_000,
+		});
+	});
 	it("does not certify a single output from a point near the step tolerance", () => {
 		const proposal = band();
 		proposal.api.global.minBitrateStepSize = 1.005;

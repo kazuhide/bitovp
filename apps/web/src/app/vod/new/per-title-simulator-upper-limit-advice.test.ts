@@ -157,6 +157,14 @@ describe("a declared single upper output is an adoption requirement", () => {
 				),
 			).toEqual([]);
 			expect(advice.goal.countPolicy).toEqual(current.countPolicy);
+			expect(advice.explanation?.en).toContain("required 4 outputs");
+			expect(advice.explanation?.ja).toContain("指定の 4 本");
+			expect(advice.explanation?.en).toContain(
+				"does not certify the total native count",
+			);
+			expect(advice.explanation?.ja).toContain(
+				"総出力本数・解像度・画質は素材で確認",
+			);
 		}
 	});
 

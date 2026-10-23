@@ -140,10 +140,13 @@ function explanation(
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
-	if (item.facts.upperLimitRepair === 1)
+	if (
+		item.facts.upperLimitRepair === 1 &&
+		item.goal.countPolicy.kind === "exact"
+	)
 		return {
-			en: "Keep the overall bitrate limits, output requirement and template roles. The revised fixed ranges, complexity boundaries and spacing exclude two ordinary upper outputs over the checked analysis interval, including rounding margins. Forced additions are checked separately as an alternative. This upper-output limit does not certify the total native count, resolutions or quality.",
-			ja: "全体のビットレート範囲・本数要件・テンプレート構成を保つ案です。固定段の範囲・複雑度境界・段間隔を再検査し、丸めを含めた評価区間で上位2本を作る条件を除外しました。強制追加も別経路として確認しています。総出力本数・解像度・画質は素材で確認してください。",
+			en: `Keep the overall bitrate limits, required ${item.goal.countPolicy.count} outputs and template roles. The revised fixed ranges, complexity boundaries and spacing exclude two ordinary upper outputs over the checked analysis interval, including rounding margins. Forced additions are checked separately as an alternative. This upper-output limit does not certify the total native count, resolutions or quality.`,
+			ja: `全体のビットレート範囲・指定の ${item.goal.countPolicy.count} 本という要件・テンプレート構成を保つ案です。固定段の範囲・複雑度境界・段間隔を再検査し、丸めを含めた評価区間で上位2本を作る条件を除外しました。強制追加も別経路として確認しています。総出力本数・解像度・画質は素材で確認してください。`,
 		};
 	if (item.facts.bandwidthStructureRepair === 1) {
 		const lowerRoom = `${before.lowerSlots?.maximum ?? "?"}→${after.lowerSlots?.maximum ?? "?"}`;

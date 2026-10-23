@@ -67,6 +67,44 @@ function setting(value: ReturnType<typeof fixture>, row = 0) {
 
 describe("Per-Title configuration validity", () => {
 	it.each([
+		["goal", "minBitrate"],
+		["goal", "maxBitrate"],
+		["emitted", "minBitrate"],
+		["emitted", "maxBitrate"],
+	] as const)("links a below-floor %s %s to the global control", (location, key) => {
+		const current = fixture();
+		Object.assign(current.goal, { minBitrate: 10000, maxBitrate: 20000 });
+		Object.assign(current.proposal.api.global, {
+			minBitrate: 10000,
+			maxBitrate: 20000,
+		});
+		const value =
+			location === "goal" ? current.goal : current.proposal.api.global;
+		value[key] = 9999;
+		expect(
+			assessPerTitleValidity(current.goal, current.proposal),
+		).toContainEqual(
+			expect.objectContaining({
+				code: "global-bitrate-below-api-minimum",
+				severity: "conflict",
+				fields: [{ scope: "global", key }],
+				message: {
+					en: expect.stringContaining("10,000"),
+					ja: expect.stringContaining("10,000"),
+				},
+			}),
+		);
+	});
+	it("accepts equal global bounds at the API minimum without changing row validation", () => {
+		const current = fixture();
+		Object.assign(current.goal, { minBitrate: 10000, maxBitrate: 10000 });
+		Object.assign(current.proposal.api.global, {
+			minBitrate: 10000,
+			maxBitrate: 10000,
+		});
+		expect(codes(current)).not.toContain("global-bitrate-below-api-minimum");
+	});
+	it.each([
 		["minBitrate", 0],
 		["maxBitrate", 2_147_483_648],
 		["minBitrateStepSize", Number.NaN],

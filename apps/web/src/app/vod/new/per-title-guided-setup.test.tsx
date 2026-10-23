@@ -37,7 +37,7 @@ const copy = {
 		minimum: "Minimum bitrate (kbps)",
 		maximum: "Maximum bitrate (kbps)",
 		codec: "Video codec",
-		count: "Rendition count",
+		count: "Requested video outputs",
 		conditions: "Requirements",
 		review: "Review",
 		strategies: [
@@ -56,7 +56,7 @@ const copy = {
 		minimum: "最小ビットレート (kbps)",
 		maximum: "最大ビットレート (kbps)",
 		codec: "映像コーデック",
-		count: "レンディション数",
+		count: "希望する映像出力数",
 		conditions: "条件",
 		review: "確認",
 		strategies: [
@@ -88,10 +88,21 @@ const click = (name: string) =>
 	fireEvent.click(screen.getByRole("button", { name }));
 
 describe("PerTitleGuidedSetup", () => {
+	it("blocks a global minimum below ten kbps", () => {
+		const { text } = mount();
+		click(text.next);
+		fireEvent.change(screen.getByRole("spinbutton", { name: text.minimum }), {
+			target: { value: "9.999" },
+		});
+		expect(screen.getByRole("button", { name: text.next })).toBeDisabled();
+		expect(
+			screen.getByRole("spinbutton", { name: text.minimum }),
+		).toHaveAttribute("min", "10");
+	});
 	it.each([
-		"1.001",
-		"1.0010",
-		"1.001e0",
+		"10.001",
+		"10.0010",
+		"10.001e0",
 	])("preserves an exact integer bitrate entered as %s kbps", (minimum) => {
 		const { text, onComplete } = mount();
 		click(text.next);
@@ -99,19 +110,19 @@ describe("PerTitleGuidedSetup", () => {
 			target: { value: minimum },
 		});
 		fireEvent.change(screen.getByRole("spinbutton", { name: text.maximum }), {
-			target: { value: "1.009" },
+			target: { value: "10.009" },
 		});
 		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
 		click(text.next);
 		click(text.complete);
 		expect(onComplete).toHaveBeenCalledWith(
-			expect.objectContaining({ minBitrate: 1001, maxBitrate: 1009 }),
+			expect.objectContaining({ minBitrate: 10001, maxBitrate: 10009 }),
 		);
 	});
 
 	it.each([
-		"1.0001",
-		"1.0000000000000001",
+		"10.0001",
+		"10.0000000000000001",
 	])("rejects genuinely fractional bits/s entered as %s kbps", (minimum) => {
 		const { text, onComplete } = mount();
 		click(text.next);
@@ -127,31 +138,31 @@ describe("PerTitleGuidedSetup", () => {
 		fireEvent.click(screen.getByRole("radio", { name: text.strategies[4] }));
 		click(text.next);
 		fireEvent.change(screen.getByRole("spinbutton", { name: text.minimum }), {
-			target: { value: "0.001" },
+			target: { value: "10" },
 		});
 		fireEvent.change(screen.getByRole("spinbutton", { name: text.maximum }), {
-			target: { value: "10" },
+			target: { value: "100" },
 		});
 		click("Remove rendition 3");
 		click("Remove rendition 2");
 		const minimum = screen.getByRole("spinbutton", {
 			name: "Minimum bitrate (kbps, optional)",
 		});
-		fireEvent.change(minimum, { target: { value: "1.001" } });
+		fireEvent.change(minimum, { target: { value: "10.001" } });
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
 				name: "Maximum bitrate (kbps, optional)",
 			}),
-			{ target: { value: "1.009" } },
+			{ target: { value: "10.009" } },
 		);
 		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
-		fireEvent.change(minimum, { target: { value: "1.0000000000000001" } });
+		fireEvent.change(minimum, { target: { value: "10.0000000000000001" } });
 		expect(screen.getByRole("button", { name: text.next })).toBeDisabled();
-		fireEvent.change(minimum, { target: { value: "1.001" } });
+		fireEvent.change(minimum, { target: { value: "10.001" } });
 		click(text.next);
 		click(text.complete);
 		expect(onComplete.mock.calls[0]?.[0].rows).toEqual([
-			expect.objectContaining({ minBitrate: 1001, maxBitrate: 1009 }),
+			expect.objectContaining({ minBitrate: 10001, maxBitrate: 10009 }),
 		]);
 	});
 
@@ -249,7 +260,9 @@ describe("PerTitleGuidedSetup", () => {
 		click(text.next);
 		if (strategy === "required-resolutions")
 			expect(
-				screen.getByRole("spinbutton", { name: "Rendition count (optional)" }),
+				screen.getByRole("spinbutton", {
+					name: "Requested video outputs (optional)",
+				}),
 			).toHaveValue(null);
 		click(text.next);
 		expect(
@@ -272,6 +285,51 @@ describe("PerTitleGuidedSetup", () => {
 				expect(row.maxBitrate).toBeLessThanOrEqual(goal.maxBitrate);
 				expect(row.bitrateSelectionMode).toBe("COMPLEXITY_RANGE");
 			}
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("labels the requested count as video outputs (%s)", (locale) => {
+		const { text } = mount(locale);
+		fireEvent.click(screen.getByRole("radio", { name: text.strategies[1] }));
+		click(text.next);
+		fireEvent.change(screen.getByRole("spinbutton", { name: text.count }), {
+			target: { value: "4" },
+		});
+		click(text.next);
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? "希望する映像出力数：4本"
+					: "Requested video outputs: 4",
+			),
+		).toBeVisible();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("distinguishes required renditions from an optional output count (%s)", (locale) => {
+		const { text } = mount(locale);
+		fireEvent.click(screen.getByRole("radio", { name: text.strategies[2] }));
+		click(text.next);
+		expect(
+			screen.getByRole("spinbutton", {
+				name:
+					locale === "ja"
+						? "希望する映像出力数（任意）"
+						: "Requested video outputs (optional)",
+			}),
+		).toHaveValue(null);
+		click(text.next);
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? "必須のレンディション（3本）"
+					: "Required renditions: 3",
+			),
+		).toBeVisible();
 	});
 
 	it("preserves edits when going back and never completes on cancellation", () => {

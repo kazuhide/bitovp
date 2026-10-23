@@ -87,12 +87,12 @@ function validate(
 			"このアカウントで利用できるコーデックを選択してください。",
 		);
 	for (const key of ["minBitrate", "maxBitrate"] as const)
-		if (!rate(input[key]))
+		if (!rate(input[key]) || input[key] < 10_000)
 			add(
 				"invalid-bitrate",
 				key,
-				"Enter a whole bitrate from 1 to 2,147,483,647 bits/s.",
-				"ビットレートは1〜2,147,483,647 bit/sの整数で入力してください。",
+				"Enter a whole bitrate from 10,000 to 2,147,483,647 bits/s.",
+				"ビットレートは10,000〜2,147,483,647 bit/sの整数で入力してください。",
 			);
 	if (
 		rate(input.minBitrate) &&
@@ -626,11 +626,10 @@ export function buildPerTitleSetup(
 			en: "Missing bands start at equal logarithmic positions. The highest fixed minimum anchors the shared complexity scale so the analysis floor reaches each minimum and the overall ceiling reaches each maximum. Spacing is rechecked after rounding; this is a starting allocation, not a measured quality optimum.",
 			ja: "未指定の範囲は対数上で等間隔に配分します。最高固定段の最小値を共通の複雑度境界の下側に合わせ、解析範囲の下端で各段の最小値、全体上限で各段の最大値に達するようにしています。丸め後に段間隔を再確認した初期案で、画質を実測した最適値ではありません。",
 		});
-	if (!isClosed || input.count !== undefined)
-		reasoning.push({
-			en: "The count is a requirements check, not an Encoding API count parameter or a native output guarantee. Automatic templates may produce a content-dependent ladder.",
-			ja: "本数は要件の確認に使う値で、Encoding APIの本数指定や実出力の保証ではありません。自動生成する段は素材によって変わります。",
-		});
+	reasoning.push({
+		en: "The count is a requirements check, not an Encoding API count parameter or a native output guarantee. One template can produce several video outputs; count the generated video streams after encoding.",
+		ja: "本数は要件の確認に使う値で、Encoding APIの本数指定や実出力の保証ではありません。テンプレート1つから複数の映像出力が生成される場合があるため、完了後に映像ストリームの本数を確認してください。",
+	});
 	return {
 		status: issues.length ? "unverified" : "ready",
 		goal: loaded,

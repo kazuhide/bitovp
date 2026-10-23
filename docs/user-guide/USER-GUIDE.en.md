@@ -430,6 +430,8 @@ Distinguish post-encoding manifest generation from just-in-time generation. Just
 
 Per-Title analyzes the source and creates outputs with resolutions and bitrates suited to its content. A fixed ladder uses values you specify; Per-Title uses templates and analysis conditions.
 
+A template is an input to that analysis, not a generated video output. One ordinary `PER_TITLE_TEMPLATE` can produce several `PER_TITLE_RESULT` video streams. The simulator's requested count refers to those video outputs, excluding audio streams and manifests; it is not an API output-count parameter. Two outputs are not a universal minimum: the short checks below also produced a single output. If exactly one video output is a hard requirement, configuring one ordinary rendition with Per-Title disabled is the simplest approach.
+
 1. Select a Per-Title stream mode in the ladder.
 2. In "Encoding", open the Per-Title settings for that codec.
 3. Specify minimum and maximum bitrates, quality targets, spacing between adjacent bitrates, and other required settings.
@@ -437,6 +439,8 @@ Per-Title analyzes the source and creates outputs with resolutions and bitrates 
 5. Check that manifests are configured to be generated after the result renditions are known.
 
 `PER_TITLE_TEMPLATE_FIXED_RESOLUTION` fixes the resolution. `PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE` also handles bitrate conditions. Set the fixed bitrate to `null` for ordinary Per-Title templates. `minBitrateStepSize` is a ratio, not a difference in bps: `1.5` requires the higher of two adjacent output bitrates to be at least 1.5 times the lower. HEVCv2 QP values cannot be treated as equivalent to conventional quality targets.
+
+Both overall bitrate limits must be at least 10 kb/s (10,000 bit/s). Equal minimum and maximum values are allowed, both for the overall range and for an individual fixed rendition.
 
 Automatic rendition generation includes `autoRepresentations` and configuration-adoption thresholds. Advanced fixed-resolution and fixed-bitrate settings provide conditions and calculation methods for adding higher outputs. Complexity factors and codec bitrate factors are separate from the basic minimum and maximum values.
 
@@ -449,6 +453,26 @@ For a new configuration, select **Open simulator** in "Ladder", then **New setup
 3. Review one proposed configuration and its ladder. **Inspect in simulator** opens it for further inspection. The encoding draft changes only after the existing difference review and **Apply to draft**.
 
 Spacing and complexity boundaries are calculated internally; the API settings remain available under details. For a fully specified ladder, every listed rendition, including the lowest, is required. No ordinary template or forced upper addition is inserted into that configuration. Calculated bitrate ranges are a starting allocation, not a measured quality optimum. A requested count and a checked settings model do not guarantee the native output count. Canceling setup returns to the simulator with its previous settings unchanged.
+
+For a newly calculated count-only request of one, bitovp sets the spacing so the next arithmetic bitrate lies at least 1% above the overall maximum, rounded up to whole bit/s with a minimum margin of 1 bit/s. This is a tool policy prompted by the checks below, not an Encoding API default or an output-count guarantee. This guard only applies to fresh spacing calculations; existing Fixed values stay unchanged.
+
+**Single-output checks — 23 October 2026**
+
+These completed H.264 encodings used a synthetic 1080p, 10-second source, Encoder `2.287.0`, and overall limits of 100–200 kb/s. Each used one template. The table counts generated video `PER_TITLE_RESULT` streams after completion.
+
+| Template and spacing | Video outputs | Result stream target bitrates |
+| --- | --- | --- |
+| Ordinary template with automatic generation; both steps approximately `2.00000000014` | 2 | 100 and 200 kb/s |
+| Same configuration; both steps `2.02` | 1 | 100 kb/s |
+| Ordinary template with automatic generation; steps `1.5`–`1.9` | 2 | 100 and 190 kb/s |
+| Fixed resolution, 720p; steps approximately `2.82843` | 1 | 200 kb/s |
+| Fixed resolution and bitrate range, 720p at 100–200 kb/s; steps approximately `2.82843` | 1 | 200 kb/s |
+
+Separate H.264 checks produced one output with overall limits of 100–100 kb/s, and three outputs from three fixed-range templates whose lowest range was 100–100 kb/s. A request with an overall minimum of 5 kb/s was rejected with a 10 kb/s minimum requirement.
+
+With both steps set to `2.02`, separate HEVC, VP9 and AV1 encodings also completed with one video output each. A 10-second Big Buck Bunny control produced one H.264 output at overall limits of 100–200 kb/s and one at 10–20 kb/s using the same guard. The latter also confirmed acceptance of the 10 kb/s lower limit. These checks used Encoder `2.287.0`.
+
+All 23 video output files from 16 completed encodings were 10 seconds long and decoded completely with FFmpeg without errors. These are configuration-specific results, not a general minimum count or a quality guarantee. Listed bitrates are result-stream settings, not measured media bitrates. API acceptance, completion, output count and decoding are separate checks; browser playback was not tested here.
 
 Select "Open simulator" in "Ladder" to evaluate the current settings or review a recommended configuration for your requirements. It does not change the encoding draft until you review and apply the differences.
 

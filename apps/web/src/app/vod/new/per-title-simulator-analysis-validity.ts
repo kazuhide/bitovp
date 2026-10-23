@@ -234,6 +234,15 @@ function auditValues(goal: PerTitleGoal, proposal: PerTitleProposal, add: Add) {
 
 function auditGlobal(goal: PerTitleGoal, global: Global, add: Add) {
 	for (const value of [goal, global]) {
+		for (const key of ["minBitrate", "maxBitrate"] as const)
+			if (rate(value[key]) && value[key] < 10_000)
+				add(
+					"global-bitrate-below-api-minimum",
+					"conflict",
+					`Set the global ${key} to at least 10,000 bits/s before creating an encoding.`,
+					`全体の${key === "minBitrate" ? "最小" : "最大"}ビットレートは10,000 bit/s以上にしてください。`,
+					globals(key),
+				);
 		if (
 			rate(value.minBitrate) &&
 			rate(value.maxBitrate) &&

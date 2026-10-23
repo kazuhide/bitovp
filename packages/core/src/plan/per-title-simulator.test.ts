@@ -1107,6 +1107,59 @@ describe("proposePerTitleSettings", () => {
 });
 
 describe("recommendPerTitleSettings", () => {
+	it.each([
+		"exact",
+		"maximum",
+	] as const)("leaves a measurable cap margin for a fresh %s one-output request", (kind) => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 200_000,
+			countPolicy: { kind, count: 1 },
+		});
+		expect(result.api.global.minBitrateStepSize).toBe(2.02);
+		expect(result.api.global.maxBitrateStepSize).toBe(2.02);
+		expect(
+			Math.round(100_000 * result.api.global.minBitrateStepSize),
+		).toBeGreaterThan(200_000);
+		expect(result.evidence).toBe("model-only");
+		expect(result.countGuarantee).toBe(false);
+	});
+
+	it.each([
+		[1, 2],
+		[10_000, 10_001],
+		[2_000_000_000, 2_000_000_001],
+	])("keeps the next integer point above a one-output cap of %i–%i", (minimum, maximum) => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: minimum,
+			maxBitrate: maximum,
+			countPolicy: { kind: "exact", count: 1 },
+		});
+		const step = result.api.global.minBitrateStepSize;
+		expect(Number.isFinite(step)).toBe(true);
+		expect(step).toBeGreaterThan(1);
+		expect(Math.round(minimum * step)).toBeGreaterThan(maximum);
+	});
+
+	it("retains explicitly supplied one-output spacing without claiming a verified count", () => {
+		const result = recommendPerTitleSettings({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 200_000,
+			minBitrateStepSize: 2.0000000001386296,
+			maxBitrateStepSize: 2.0000000001386296,
+			countPolicy: { kind: "exact", count: 1 },
+			settingLocks: { global: ["minBitrateStepSize", "maxBitrateStepSize"] },
+		});
+		expect(result.api.global.minBitrateStepSize).toBe(2.0000000001386296);
+		expect(result.countGuarantee).toBe(false);
+	});
+
 	const narrow: PerTitleGoal = {
 		strategy: "fixed-ranges",
 		codec: "H264",

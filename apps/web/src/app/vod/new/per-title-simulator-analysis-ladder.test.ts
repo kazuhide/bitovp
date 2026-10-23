@@ -212,8 +212,8 @@ describe("whole-ladder current-setting analysis", () => {
 		const goal: PerTitleGoal = {
 			strategy: "fixed-ranges",
 			codec: "H264",
-			minBitrate: 16,
-			maxBitrate: 2304,
+			minBitrate: 16_000,
+			maxBitrate: 2_304_000,
 			minBitrateStepSize: 2,
 			maxBitrateStepSize: 10,
 			countPolicy: { kind: "exact", count: 6 },
@@ -224,14 +224,14 @@ describe("whole-ladder current-setting analysis", () => {
 				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
 					"LAST_CALCULATED_BITRATE",
 			},
-			rows: [32, 72, 164, 384].map((minimum, index) => ({
+			rows: [32_000, 72_000, 164_000, 384_000].map((minimum, index) => ({
 				id: `fixed-${index}`,
 				height: 200 * (index + 1),
 				minBitrate: minimum,
 				maxBitrate: minimum * 2,
 				bitrateSelectionMode: "COMPLEXITY_RANGE",
-				lowComplexityBoundaryForMaxBitrate: 768,
-				highComplexityBoundaryForMaxBitrate: 1536,
+				lowComplexityBoundaryForMaxBitrate: 768_000,
+				highComplexityBoundaryForMaxBitrate: 1_536_000,
 			})),
 			automaticTemplates: [
 				{ id: "lower", height: 100 },

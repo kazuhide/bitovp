@@ -36,6 +36,24 @@ function requireGoal(result: ReturnType<typeof buildPerTitleSetup>) {
 }
 
 describe("new Per-Title requirements", () => {
+	it("rejects global bitrates below the API floor before creating a setup", () => {
+		const result = buildPerTitleSetup({
+			...input("automatic"),
+			minBitrate: 9_999,
+		});
+		expect(result.status).toBe("conflict");
+		expect(result.proposal).toBeNull();
+		expect(result.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					field: "minBitrate",
+					message: expect.objectContaining({
+						en: expect.stringContaining("10,000"),
+					}),
+				}),
+			]),
+		);
+	});
 	it.each([
 		"automatic",
 		"count",
@@ -140,6 +158,24 @@ describe("new Per-Title requirements", () => {
 		expect(
 			proposal.api.streams.some((row) => row.mode === "PER_TITLE_TEMPLATE"),
 		).toBe(false);
+	});
+
+	it.each([
+		"fixed-resolutions",
+		"fixed-ranges",
+	] as const)("distinguishes a %s row count from a verified video output count", (strategy) => {
+		const result = buildPerTitleSetup(input(strategy));
+		expect(
+			result.reasoning.some((item) =>
+				item.en.includes("Encoding API count parameter"),
+			),
+		).toBe(true);
+		expect(
+			result.reasoning.some((item) =>
+				item.ja.includes("実出力の保証ではありません"),
+			),
+		).toBe(true);
+		expect(result.proposal?.countGuarantee).toBe(false);
 	});
 
 	it("derives common-boundary ranges with rounding-aware spacing", () => {
@@ -258,6 +294,25 @@ describe("new Per-Title requirements", () => {
 			maxBitrate: 6_000_000,
 		});
 		expect(proposal.api.streams).toHaveLength(1);
+	});
+
+	it("loads the qualified single-count spacing without changing it on inspection", () => {
+		const result = buildPerTitleSetup({
+			strategy: "count",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 200_000,
+			count: 1,
+			inputHeight: 1080,
+			rows: [],
+		});
+		const { goal, proposal } = requireGoal(result);
+		expect(result.status).toBe("ready");
+		expect(proposal.api.global.minBitrateStepSize).toBe(2.02);
+		expect(proposal.api.global.maxBitrateStepSize).toBe(2.02);
+		expect(proposal.api.streams).toHaveLength(1);
+		expect(tunePerTitleSettings(goal, goal).proposal.api).toEqual(proposal.api);
+		expect(proposal.countGuarantee).toBe(false);
 	});
 
 	it("supports one constant rendition when the overall range is a point", () => {
@@ -401,8 +456,8 @@ describe("new Per-Title requirements", () => {
 	it("rejects an exact count that has too few distinct integer bitrate values", () => {
 		const result = buildPerTitleSetup({
 			...input("count"),
-			minBitrate: 100,
-			maxBitrate: 102,
+			minBitrate: 10_000,
+			maxBitrate: 10_002,
 			count: 4,
 		});
 		expect(result.status).toBe("conflict");
@@ -412,8 +467,8 @@ describe("new Per-Title requirements", () => {
 	it("never labels a tiny unresolved spacing interval ready", () => {
 		const result = buildPerTitleSetup({
 			...input(),
-			minBitrate: 100,
-			maxBitrate: 101,
+			minBitrate: 10_000,
+			maxBitrate: 10_001,
 			rows: rows().slice(0, 2),
 		});
 		expect(["conflict", "unverified"]).toContain(result.status);

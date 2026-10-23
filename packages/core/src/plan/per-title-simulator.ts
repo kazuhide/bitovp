@@ -617,9 +617,12 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 				? undefined
 				: Math.min(ideal, ...feasibleRatios);
 		const minimumStep =
-			upper !== undefined && upper > capUpper
-				? Math.exp((Math.log(capUpper) + Math.log(upper)) / 2)
-				: Math.max(1 + Number.EPSILON, capUpper);
+			count === 1
+				? (goal.maxBitrate + Math.max(1, Math.ceil(goal.maxBitrate / 100))) /
+					goal.minBitrate
+				: upper !== undefined && upper > capUpper
+					? Math.exp((Math.log(capUpper) + Math.log(upper)) / 2)
+					: Math.max(1 + Number.EPSILON, capUpper);
 		witness = integerPoints(ranges, minimumStep);
 		const points = witness ?? [];
 		const ratios = points
@@ -642,7 +645,9 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 				...(ideal !== undefined ? { idealStep: ideal } : {}),
 				integerWitness: points,
 				rationale:
-					"The continuous count-cap interval guides a greedy integer placement. Bisection bounds its feasible minimum step, and an interior value leaves rounding margin. The maximum step covers the actual integer gaps; this is a spacing model, not a provider or quality optimum.",
+					count === 1
+						? "A single-output request places the next arithmetic bitrate at least 1% above the overall cap, with a minimum one-bit/s margin. Short-input checks found two outputs with an infinitesimal cap margin and one with this wider margin. This is a tool policy, not an API count guarantee or a quality optimum."
+						: "The continuous count-cap interval guides a greedy integer placement. Bisection bounds its feasible minimum step, and an interior value leaves rounding margin. The maximum step covers the actual integer gaps; this is a spacing model, not a provider or quality optimum.",
 			},
 		);
 	}

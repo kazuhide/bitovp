@@ -108,8 +108,8 @@ describe("current Per-Title evaluation", () => {
 		const current: PerTitleGoal = {
 			strategy: "fixed-ranges",
 			codec: "H264",
-			minBitrate: 1,
-			maxBitrate: 1000,
+			minBitrate: 10000,
+			maxBitrate: 10000000,
 			minBitrateStepSize: 1.2,
 			maxBitrateStepSize: 10,
 			countPolicy: { kind: "exact", count: 2 },
@@ -117,20 +117,20 @@ describe("current Per-Title evaluation", () => {
 				{
 					id: "lower",
 					height: 360,
-					minBitrate: 10,
-					maxBitrate: 80,
+					minBitrate: 100000,
+					maxBitrate: 800000,
 					bitrateSelectionMode: "COMPLEXITY_RANGE",
-					lowComplexityBoundaryForMaxBitrate: 1,
-					highComplexityBoundaryForMaxBitrate: 100,
+					lowComplexityBoundaryForMaxBitrate: 10000,
+					highComplexityBoundaryForMaxBitrate: 1000000,
 				},
 				{
 					id: "upper",
 					height: 720,
-					minBitrate: 100,
-					maxBitrate: 200,
+					minBitrate: 1000000,
+					maxBitrate: 2000000,
 					bitrateSelectionMode: "COMPLEXITY_RANGE",
-					lowComplexityBoundaryForMaxBitrate: 100,
-					highComplexityBoundaryForMaxBitrate: 1000,
+					lowComplexityBoundaryForMaxBitrate: 1000000,
+					highComplexityBoundaryForMaxBitrate: 10000000,
 				},
 			],
 		};
@@ -233,18 +233,18 @@ describe("current Per-Title evaluation", () => {
 	it("solves repeated rounded forced steps rather than using an unrounded power", () => {
 		const current: PerTitleGoal = {
 			...goal,
-			minBitrate: 1,
-			maxBitrate: 226,
+			minBitrate: 10_000,
+			maxBitrate: 22_601,
 			automaticTemplates: undefined,
 			rows: [
 				{
 					id: "upper",
 					height: 720,
-					minBitrate: 20,
-					maxBitrate: 100,
+					minBitrate: 10_000,
+					maxBitrate: 10_001,
 					bitrateSelectionMode: "COMPLEXITY_RANGE",
-					lowComplexityBoundaryForMaxBitrate: 50,
-					highComplexityBoundaryForMaxBitrate: 200,
+					lowComplexityBoundaryForMaxBitrate: 10_000,
+					highComplexityBoundaryForMaxBitrate: 20_000,
 				},
 			],
 			fixedResolutionAndBitrateConfiguration: {
@@ -255,17 +255,21 @@ describe("current Per-Title evaluation", () => {
 			},
 		};
 		const result = analyzePerTitleSettings(current, "cap");
-		expect(result.reach.high?.maximum).toBe(225);
+		expect(result.reach.high?.maximum).toBe(22_503);
+		const powerEstimate = Math.sqrt(22_601 / 10_001);
+		expect(Math.round(Math.round(10_001 * powerEstimate) * powerEstimate)).toBe(
+			22_600,
+		);
 		const candidate = result.advice[0];
 		expect(candidate).toBeDefined();
 		if (!candidate) throw new Error("Expected integer-checked extra steps.");
 		expect(
 			candidate.goal.fixedResolutionAndBitrateConfiguration
 				?.forcedRenditionAboveHighestFixedRepresentationFactor,
-		).toBe(1.504);
+		).toBe(1.503299);
 		expect(
 			assessPerTitleReach(candidate.goal, candidate.proposal).high?.maximum,
-		).toBe(226);
+		).toBe(22_601);
 	});
 	it("preserves the current count policy and never offers a quality-control shortcut for cap reach", () => {
 		const current: PerTitleGoal = {

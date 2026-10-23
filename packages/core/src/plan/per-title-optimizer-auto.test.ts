@@ -28,9 +28,7 @@ const requiredStreams = (proposal: PerTitleProposal) =>
 			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
 
-function expectUnproven(proposal: PerTitleProposal) {
-	expect(proposal.applicable).toBe(false);
-	expect(proposal.status).not.toBe("candidate");
+function expectUnknownCount(proposal: PerTitleProposal) {
 	expect(proposal.derivation?.targetSatisfied).toBe(false);
 	expect(proposal.derivation?.constraints?.status).toBe("unknown");
 	expect(proposal.countGuarantee).toBe(false);
@@ -40,6 +38,21 @@ function expectUnproven(proposal: PerTitleProposal) {
 	expect(proposal.derivation?.selectedMaxStep).toBe(
 		proposal.api.global.maxBitrateStepSize,
 	);
+}
+
+function expectUnproven(proposal: PerTitleProposal) {
+	expectUnknownCount(proposal);
+	expect(proposal.applicable).toBe(false);
+	expect(proposal.status).not.toBe("candidate");
+}
+
+function expectAuthoringCandidate(proposal: PerTitleProposal) {
+	expectUnknownCount(proposal);
+	expect(proposal.applicable).toBe(true);
+	expect(proposal.status).toBe("candidate");
+	expect(
+		proposal.scenarios.every((scenario) => scenario.modelCountRange === null),
+	).toBe(true);
 }
 
 describe("conditional Per-Title calibration", () => {
@@ -66,7 +79,7 @@ describe("conditional Per-Title calibration", () => {
 			["candidate-small", 180, undefined],
 			["candidate-large", 1080, undefined],
 		]);
-		expectUnproven(result);
+		expectAuthoringCandidate(result);
 		expect(result.derivation?.constraints?.scope).toBe("conditional");
 		expect(mixed).toEqual(before);
 	});
@@ -92,7 +105,7 @@ describe("conditional Per-Title calibration", () => {
 				mixed.rows?.[index]?.maxBitrate,
 			);
 		}
-		expectUnproven(enlarged);
+		expectAuthoringCandidate(enlarged);
 	});
 
 	it("keeps an unrestricted closed candidate applicable without certifying a total count", () => {
@@ -158,7 +171,7 @@ describe("conditional Per-Title calibration", () => {
 			"medium",
 			"large",
 		]);
-		expectUnproven(result);
+		expectAuthoringCandidate(result);
 	});
 
 	it("does not replace an explicit optimized selection when preparation is unavailable", () => {
@@ -180,6 +193,7 @@ describe("conditional Per-Title calibration", () => {
 		}
 		expect(result.derivation?.constraints?.calibration).toBeUndefined();
 		expect(result.derivation?.constraints?.inputRange).toBeNull();
+		expectAuthoringCandidate(result);
 	});
 
 	it("retains explicit zero-count rule metadata in the API and conditional report", () => {
@@ -203,7 +217,7 @@ describe("conditional Per-Title calibration", () => {
 			conditional: true,
 			ranges: [],
 		});
-		expectUnproven(result);
+		expectAuthoringCandidate(result);
 	});
 
 	it("withholds trial arithmetic when the returned interval settings use different steps", () => {

@@ -3,8 +3,10 @@ import {
 	evaluateForcedRenditions,
 } from "./per-title-constraints";
 import { resolvePerTitleAnalysis } from "./per-title-output-analysis";
+import { projectIntegerBitrateSlots } from "./per-title-output-count";
 import type {
 	PerTitleApiSettings,
+	PerTitleCountPolicy,
 	PerTitleProposal,
 } from "./per-title-simulator.js";
 
@@ -14,10 +16,17 @@ type PreviewRow = {
 	height?: number;
 	width?: number;
 	mode?: PerTitleApiSettings["streams"][number]["mode"];
-	kind: "fixed" | "automatic" | "automatic-group" | "additional" | "unassigned";
+	kind:
+		| "fixed"
+		| "automatic"
+		| "automatic-group"
+		| "count-slot"
+		| "additional"
+		| "unassigned";
 	status: "example" | "conditional" | "unknown";
-	basis?: "minimum" | "forced" | "analysis";
-	rangeBasis?: "effective" | "configured" | "assumed";
+	basis?: "minimum" | "forced" | "analysis" | "count";
+	rangeBasis?: "effective" | "configured" | "assumed" | "spacing";
+	ordinal?: number;
 	candidateRowIds?: string[];
 	bitrate?: number;
 	minimumBitrate?: number;
@@ -35,6 +44,19 @@ export type PerTitleOutputPreview = {
 	status: "example" | "partial" | "unavailable";
 	rows: PreviewRow[];
 	unresolvedAdditional: boolean;
+	/** Conditional placements only; their count is not a native output guarantee. */
+	countProjection?: {
+		kind: "exact" | "maximum";
+		requestedCount: number;
+		status: "conditional" | "infeasible" | "unavailable";
+		reason?:
+			| "invalid-count"
+			| "model-limit"
+			| "invalid-input"
+			| "unsupported-configuration"
+			| "integer-chain-infeasible"
+			| "maximum-only";
+	};
 	/** Alternative only: applies when normal calculation ends on a fixed output. */
 	forcedFallback?: {
 		baseMinimumBitrate: number;
@@ -55,7 +77,7 @@ const positive = (value: number | undefined): value is number =>
 /** Show parameter-derived intervals, never spacing witnesses as encoded outputs. */
 export function previewPerTitleOutput(
 	proposal: PerTitleProposal,
-	options: { analysisInput?: number } = {},
+	options: { analysisInput?: number; countPolicy?: PerTitleCountPolicy } = {},
 ): PerTitleOutputPreview {
 	const global = proposal.api.global;
 	const streams = proposal.api.streams;
@@ -190,6 +212,55 @@ export function previewPerTitleOutput(
 			maximumBitrate: Math.max(global.minBitrate, analysisInput as number),
 		});
 	}
+	let countProjection: PerTitleOutputPreview["countProjection"];
+	const policy = options.countPolicy;
+	if (
+		fixed.length === 0 &&
+		automatic.length === streams.length &&
+		(policy?.kind === "exact" || policy?.kind === "maximum")
+	) {
+		countProjection = {
+			kind: policy.kind,
+			requestedCount: policy.count,
+			status: "unavailable",
+		};
+		if (!Number.isSafeInteger(policy.count) || policy.count < 1)
+			countProjection.reason = "invalid-count";
+		else if (policy.count > 256) countProjection.reason = "model-limit";
+		else if (policy.kind === "maximum") countProjection.reason = "maximum-only";
+		else if (!eligible || analysis.complexityInput === null)
+			countProjection.reason = "invalid-input";
+		else if (rule !== undefined && count !== 0)
+			countProjection.reason = "unsupported-configuration";
+		else {
+			const projection = projectIntegerBitrateSlots({
+				minimumBitrate: global.minBitrate,
+				ceiling: analysis.complexityInput,
+				minimumStep: global.minBitrateStepSize,
+				maximumStep: global.maxBitrateStepSize,
+				count: policy.count,
+			});
+			countProjection.status = projection.status;
+			if (projection.status === "conditional") {
+				rows.splice(
+					0,
+					rows.length,
+					...projection.slots.map(
+						(slot, index): PreviewRow => ({
+							id: `count:slot:${index + 1}`,
+							kind: "count-slot",
+							status: "conditional",
+							basis: "count",
+							rangeBasis: "spacing",
+							ordinal: index + 1,
+							minimumBitrate: slot.minimum,
+							maximumBitrate: slot.maximum,
+						}),
+					),
+				);
+			} else countProjection.reason = projection.reason;
+		}
+	}
 	const basis = streams.every((s) => positive(s.width))
 		? "width"
 		: streams.every((s) => s.width === undefined && positive(s.height))
@@ -263,6 +334,9 @@ export function previewPerTitleOutput(
 			});
 		}
 	}
+	const ordinaryUpper = rows.some(
+		(row) => row.kind === "automatic-group" && row.basis === "analysis",
+	);
 	const fixedRows = rows.filter((row) => row.kind === "fixed");
 	const highest = [...fixedRows].sort(
 		(a, b) => (b.maximumBitrate ?? 0) - (a.maximumBitrate ?? 0),
@@ -342,8 +416,13 @@ export function previewPerTitleOutput(
 				count,
 				factor,
 			};
-			// A candidate resolution is not selected merely because it is the largest template.
-			if (!expanded && (automatic.length === 0 || topCandidates.length > 0))
+			// Ordinary upper output and the forced fallback are alternative branches.
+			// Candidate dimensions do not identify the selected output resolution.
+			if (
+				!expanded &&
+				!ordinaryUpper &&
+				(automatic.length === 0 || topCandidates.length > 0)
+			)
 				for (const [index, range] of (extra ?? []).entries())
 					rows.push({
 						id: `forced:${index}`,
@@ -394,6 +473,7 @@ export function previewPerTitleOutput(
 			: "unavailable",
 		rows,
 		unresolvedAdditional,
+		...(countProjection ? { countProjection } : {}),
 		...(forcedFallback ? { forcedFallback } : {}),
 	};
 }

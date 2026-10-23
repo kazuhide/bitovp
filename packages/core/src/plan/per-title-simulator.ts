@@ -253,8 +253,7 @@ export function proposePerTitleSettings(
 	if (baseline.diagnostics.some((item) => inputErrorCodes.has(item.code))) {
 		return [baseline];
 	}
-	if (goal.fixedResolutionAndBitrateConfiguration !== undefined)
-		return [baseline];
+	if (hasUnresolvedForcedRule(goal)) return [baseline];
 	const desiredCount =
 		goal.countPolicy.kind === "unrestricted"
 			? isClosedStrategy(goal.strategy)
@@ -375,7 +374,7 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 		goal,
 	);
 	const initialRows = orderedRows(normalized);
-	const forced = goal.fixedResolutionAndBitrateConfiguration !== undefined;
+	const forced = hasUnresolvedForcedRule(goal);
 	const desiredCount =
 		goal.countPolicy.kind !== "unrestricted"
 			? goal.countPolicy.count
@@ -922,6 +921,14 @@ function hasAutomaticOutput(goal: PerTitleGoal): boolean {
 	return (
 		!isClosedStrategy(goal.strategy) ||
 		(goal.automaticTemplates?.length ?? 0) > 0
+	);
+}
+
+function hasUnresolvedForcedRule(goal: PerTitleGoal): boolean {
+	const rule = goal.fixedResolutionAndBitrateConfiguration;
+	return (
+		rule !== undefined &&
+		rule?.forcedRenditionAboveHighestFixedRepresentation !== 0
 	);
 }
 
@@ -1577,7 +1584,8 @@ function buildProposal(
 			? "Examples use the allowed bitrate intervals and spacing only. They do not simulate content complexity, quality, or provider output."
 			: "Examples use interval spacing and an explicitly linear illustration of complexity boundaries. They do not reproduce content analysis or predict provider output.",
 	});
-	if (goal.fixedResolutionAndBitrateConfiguration) {
+	const forcedUnknown = hasUnresolvedForcedRule(goal);
+	if (forcedUnknown) {
 		diagnostics.push({
 			code: "forced-count-unknown",
 			severity: "warning",
@@ -1643,7 +1651,7 @@ function buildProposal(
 	}
 	if (
 		!invalid &&
-		goal.fixedResolutionAndBitrateConfiguration === undefined &&
+		!forcedUnknown &&
 		modelCapacity(goal, ranges, minimumStep) > MAX_MODEL_RUNGS
 	) {
 		diagnostics.push({
@@ -1653,11 +1661,7 @@ function buildProposal(
 				"The spacing bound exceeds the model's 256-point limit. Increase the minimum step to inspect a smaller model.",
 		});
 	}
-	if (
-		!invalid &&
-		goal.fixedResolutionAndBitrateConfiguration === undefined &&
-		goal.countPolicy.kind !== "unrestricted"
-	) {
+	if (!invalid && !forcedUnknown && goal.countPolicy.kind !== "unrestricted") {
 		const capacity = modelCapacity(goal, ranges, minimumStep);
 		if (
 			goal.countPolicy.kind === "exact" &&
@@ -1681,8 +1685,6 @@ function buildProposal(
 		}
 	}
 	const hasConflicts = diagnostics.some((item) => item.severity === "conflict");
-	const forcedUnknown =
-		goal.fixedResolutionAndBitrateConfiguration !== undefined;
 	const applicable = !ordering.unknown && !forcedUnknown && !hasConflicts;
 	const canModel =
 		!ordering.unknown &&

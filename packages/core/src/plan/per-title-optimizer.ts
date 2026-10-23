@@ -426,6 +426,26 @@ function unproven(proposal: PerTitleProposal) {
 	return proposal;
 }
 
+function clearCountEvidence(
+	proposal: PerTitleProposal,
+	report: PerTitleConstraintAnalysis,
+) {
+	report.status = "unknown";
+	if (proposal.derivation) {
+		proposal.derivation.constraints = report;
+		proposal.derivation.targetSatisfied = false;
+		delete proposal.derivation.desiredCount;
+		delete proposal.derivation.minimumStepRange;
+		delete proposal.derivation.integerWitness;
+	}
+	proposal.scenarios = proposal.scenarios.map((scenario) => ({
+		...scenario,
+		status: "unknown",
+		modelCountRange: null,
+	}));
+	return proposal;
+}
+
 function unresolvedOrder(proposal: PerTitleProposal) {
 	unproven(proposal);
 	proposal.diagnostics.push({
@@ -564,7 +584,18 @@ export function optimizePerTitleConstraints(
 		goal.countPolicy.kind === "exact" &&
 		goal.countPolicy.count >= rows.length &&
 		goal.countPolicy.count <= 256;
+	const bounded =
+		closed &&
+		(goal.countPolicy.kind === "exact" ||
+			goal.countPolicy.kind === "maximum") &&
+		Number.isSafeInteger(goal.countPolicy.count) &&
+		goal.countPolicy.count >= rows.length &&
+		goal.countPolicy.count <= 256;
 	const saved = goal.fixedResolutionAndBitrateConfiguration;
+	const unrestrictedAuthoring =
+		goal.countPolicy.kind === "unrestricted" &&
+		(saved === undefined ||
+			saved.forcedRenditionAboveHighestFixedRepresentation === 0);
 	const forcedKey = (key: string) =>
 		`fixedResolutionAndBitrateConfiguration.${key}`;
 	const countLocked = perTitleGlobalLocked(
@@ -606,6 +637,7 @@ export function optimizePerTitleConstraints(
 				: (savedFactor ?? 1);
 	const complete =
 		!saved ||
+		saved.forcedRenditionAboveHighestFixedRepresentation === 0 ||
 		(exact &&
 			(!n ||
 				((!factorLocked || savedFactor !== undefined) &&
@@ -663,8 +695,11 @@ export function optimizePerTitleConstraints(
 		) {
 			rowsChecked = true;
 			checked =
-				exact &&
-				count === (goal.countPolicy as { count: number }).count &&
+				bounded &&
+				count > 0 &&
+				(exact
+					? count === (goal.countPolicy as { count: number }).count
+					: count <= (goal.countPolicy as { count: number }).count) &&
 				(!n || mode === "LAST_CALCULATED_BITRATE");
 			break;
 		}
@@ -714,7 +749,7 @@ export function optimizePerTitleConstraints(
 			count: complete ? n : null,
 			factor: complete && n ? factor : null,
 			calculationMode: n ? mode : undefined,
-			conditional: !exact,
+			conditional: !checked,
 			maximumFactor: limit,
 			ranges: [],
 		},
@@ -733,7 +768,7 @@ export function optimizePerTitleConstraints(
 		report.conditions.push(
 			"Missing additional-rendition fields have no assumed defaults.",
 		);
-	if (!exact)
+	if (!closed)
 		report.conditions.push(
 			"Automatic templates and the actual highest-stream branch remain content dependent.",
 		);
@@ -766,7 +801,7 @@ export function optimizePerTitleConstraints(
 		>)
 			if (before !== after) report.changes.push({ field, before, after });
 	}
-	if (!exact && prepared) {
+	if (!exact && !checked && prepared) {
 		const conditional = recommendIntervals({
 			...goal,
 			rows: prepared.rows,
@@ -824,23 +859,13 @@ export function optimizePerTitleConstraints(
 				conditional.api.global.maxBitrateStepSize;
 		}
 		if (
-			closed &&
-			goal.countPolicy.kind === "unrestricted" &&
-			saved === undefined &&
-			!orderUnknown
+			unrestrictedAuthoring &&
+			adopted &&
+			!orderUnknown &&
+			conditional.applicable &&
+			!conditional.diagnostics.some((item) => item.severity === "conflict")
 		) {
-			if (conditional.derivation) {
-				conditional.derivation.targetSatisfied = false;
-				delete conditional.derivation.desiredCount;
-				delete conditional.derivation.minimumStepRange;
-				delete conditional.derivation.integerWitness;
-			}
-			conditional.scenarios = conditional.scenarios.map((scenario) => ({
-				...scenario,
-				status: "unknown",
-				modelCountRange: null,
-			}));
-			return conditional;
+			return clearCountEvidence(conditional, report);
 		}
 		return orderUnknown ? unresolvedOrder(conditional) : unproven(conditional);
 	}
@@ -956,6 +981,13 @@ export function optimizePerTitleConstraints(
 				fallback.derivation.selectedMaxStep = maximum;
 			}
 		} else discardTrial(report, fallback);
+		if (
+			unrestrictedAuthoring &&
+			!orderUnknown &&
+			fallback.applicable &&
+			!fallback.diagnostics.some((item) => item.severity === "conflict")
+		)
+			return clearCountEvidence(fallback, report);
 		return orderUnknown ? unresolvedOrder(fallback) : fallback;
 	}
 	const next: PerTitleGoal = {
@@ -1124,7 +1156,8 @@ export function optimizePerTitleConstraints(
 	);
 	result.derivation = {
 		method: "joint-constraints",
-		desiredCount: count,
+		desiredCount:
+			goal.countPolicy.kind === "unrestricted" ? count : goal.countPolicy.count,
 		requiredRowCount: rows.length,
 		selectedMinStep: s,
 		selectedMaxStep: maximum,

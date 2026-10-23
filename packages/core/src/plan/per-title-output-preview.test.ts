@@ -77,6 +77,294 @@ function mixed(): PerTitleProposal {
 	return proposal;
 }
 
+function ordinary(): PerTitleProposal {
+	const proposal = conditional();
+	proposal.api.global = {
+		minBitrate: 128_000,
+		maxBitrate: 4_000_000,
+		minBitrateStepSize: 1.5,
+		maxBitrateStepSize: 1.9,
+		autoRepresentations: {},
+	};
+	proposal.api.streams = [
+		{ rowId: "ordinary", height: 720, mode: "PER_TITLE_TEMPLATE" },
+	];
+	return proposal;
+}
+
+describe("count-conditioned Per-Title output previews", () => {
+	it("projects a requested six-count placement into six unselected integer slots", () => {
+		const proposal = ordinary();
+		const before = structuredClone(proposal);
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count: 6 },
+		});
+		expect(result.countProjection).toEqual({
+			kind: "exact",
+			requestedCount: 6,
+			status: "conditional",
+		});
+		expect(result.rows).toHaveLength(6);
+		expect(result.rows.map((row) => row.ordinal)).toEqual([1, 2, 3, 4, 5, 6]);
+		for (const row of result.rows) {
+			expect(row).toMatchObject({
+				kind: "count-slot",
+				status: "conditional",
+				basis: "count",
+				rangeBasis: "spacing",
+			});
+			expect(Number.isInteger(row.minimumBitrate)).toBe(true);
+			expect(Number.isInteger(row.maximumBitrate)).toBe(true);
+			expect(row.bitrate).toBeUndefined();
+			expect(row.height).toBeUndefined();
+			expect(row.width).toBeUndefined();
+			expect(row.rowId).toBeUndefined();
+		}
+		expect(result.rows[0]).toMatchObject({
+			minimumBitrate: 128_000,
+			maximumBitrate: 128_000,
+		});
+		expect(result.rows.at(-1)?.maximumBitrate).toBeLessThan(4_000_000);
+		expect(result.unresolvedAdditional).toBe(true);
+		expect(proposal).toEqual(before);
+	});
+
+	it("rejects an integer hole instead of rounding a noninteger fixed step into a slot", () => {
+		const proposal = ordinary();
+		Object.assign(proposal.api.global, {
+			minBitrate: 10_001,
+			maxBitrate: 20_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.5,
+		});
+		const baseline = previewPerTitleOutput(proposal);
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count: 2 },
+		});
+		expect(result.countProjection).toEqual({
+			kind: "exact",
+			requestedCount: 2,
+			status: "infeasible",
+			reason: "integer-chain-infeasible",
+		});
+		expect(result.rows).toEqual(baseline.rows);
+		expect(result.rows.some((row) => row.kind === "count-slot")).toBe(false);
+	});
+
+	it("projects only values that can connect to every remaining slot below the analysis ceiling", () => {
+		const proposal = ordinary();
+		Object.assign(proposal.api.global, {
+			minBitrate: 100,
+			maxBitrate: 1_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 2,
+		});
+		const result = previewPerTitleOutput(proposal, {
+			analysisInput: 500,
+			countPolicy: { kind: "exact", count: 4 },
+		});
+		expect(
+			result.rows.map((row) => [row.minimumBitrate, row.maximumBitrate]),
+		).toEqual([
+			[100, 100],
+			[150, 200],
+			[225, 333],
+			[338, 500],
+		]);
+		expect(result.complexityInput).toBe(500);
+	});
+
+	it("shows one minimum slot at count one even when the raw analysis input is below the floor", () => {
+		const result = previewPerTitleOutput(ordinary(), {
+			analysisInput: 1,
+			countPolicy: { kind: "exact", count: 1 },
+		});
+		expect(result).toMatchObject({
+			analysisInput: 1,
+			floor: 128_000,
+			complexityInput: 128_000,
+			countProjection: {
+				kind: "exact",
+				requestedCount: 1,
+				status: "conditional",
+			},
+			rows: [
+				{
+					kind: "count-slot",
+					ordinal: 1,
+					minimumBitrate: 128_000,
+					maximumBitrate: 128_000,
+				},
+			],
+		});
+		expect(result.rows[0]?.bitrate).toBeUndefined();
+		expect(result.unresolvedAdditional).toBe(true);
+	});
+
+	it("keeps the aggregate band when the hypothetical ceiling cannot fit the requested count", () => {
+		const proposal = ordinary();
+		const result = previewPerTitleOutput(proposal, {
+			analysisInput: 500_000,
+			countPolicy: { kind: "exact", count: 6 },
+		});
+		expect(result.countProjection).toMatchObject({
+			requestedCount: 6,
+			status: "infeasible",
+			reason: "integer-chain-infeasible",
+		});
+		expect(result.rows).toEqual(
+			previewPerTitleOutput(proposal, { analysisInput: 500_000 }).rows,
+		);
+	});
+
+	it("does not require the last slot to reach the global maximum for a narrow decimal ratio band", () => {
+		const proposal = ordinary();
+		proposal.api.global.minBitrateStepSize = 1.8795574353431477;
+		proposal.api.global.maxBitrateStepSize = 1.8795625;
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count: 6 },
+		});
+		expect(result.countProjection?.status).toBe("conditional");
+		expect(result.rows).toHaveLength(6);
+		expect(result.rows.at(-1)?.maximumBitrate).toBeLessThan(4_000_000);
+		expect(result.rows.at(-1)?.maximumBitrate).toBeGreaterThan(3_000_000);
+	});
+
+	it.each([
+		false,
+		true,
+	])("projects placements independently of ordinary candidate dimensions and expansion (%s)", (expanded) => {
+		const proposal = ordinary();
+		if (!expanded) delete proposal.api.global.autoRepresentations;
+		const options = { countPolicy: { kind: "exact", count: 3 } } as const;
+		const before = previewPerTitleOutput(proposal, options);
+		proposal.api.streams = [
+			{ rowId: "first", mode: "PER_TITLE_TEMPLATE" },
+			{
+				rowId: "second",
+				width: 1920,
+				height: 1080,
+				mode: "PER_TITLE_TEMPLATE",
+			},
+		];
+		expect(previewPerTitleOutput(proposal, options)).toEqual(before);
+	});
+
+	it("does not turn a maximum count into a mandatory exact layout", () => {
+		const proposal = ordinary();
+		const baseline = previewPerTitleOutput(proposal);
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "maximum", count: 6 },
+		});
+		expect(result.countProjection).toEqual({
+			kind: "maximum",
+			requestedCount: 6,
+			status: "unavailable",
+			reason: "maximum-only",
+		});
+		expect(result.rows).toEqual(baseline.rows);
+		expect(
+			previewPerTitleOutput(proposal, {
+				countPolicy: { kind: "unrestricted" },
+			}),
+		).toEqual(baseline);
+	});
+
+	it("ignores spacing witnesses and scenario metadata when projecting requested slots", () => {
+		const proposal = ordinary();
+		const options = { countPolicy: { kind: "exact", count: 3 } } as const;
+		const before = previewPerTitleOutput(proposal, options);
+		const unrelated = recommendPerTitleSettings(fixed);
+		proposal.scenarios = unrelated.scenarios;
+		proposal.derivation = unrelated.derivation;
+		expect(previewPerTitleOutput(proposal, options)).toEqual(before);
+		proposal.scenarios = [];
+		delete proposal.derivation;
+		expect(previewPerTitleOutput(proposal, options)).toEqual(before);
+	});
+
+	it.each([
+		conditional,
+		mixed,
+		() => recommendPerTitleSettings(fixed),
+	])("keeps fixed or mixed structures outside the pure ordinary projection", (fixture) => {
+		const proposal = fixture();
+		const baseline = previewPerTitleOutput(proposal);
+		for (const kind of ["exact", "maximum"] as const) {
+			const result = previewPerTitleOutput(proposal, {
+				countPolicy: { kind, count: 3 },
+			});
+			expect(result.countProjection).toBeUndefined();
+			expect(result).toEqual(baseline);
+		}
+	});
+
+	it("does not apply the ordinary proof to positive forced counts", () => {
+		const proposal = ordinary();
+		proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 2,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: "MAXIMUM",
+		};
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count: 3 },
+		});
+		expect(result.countProjection).toMatchObject({
+			status: "unavailable",
+			reason: "unsupported-configuration",
+		});
+		expect(result.rows).toEqual(previewPerTitleOutput(proposal).rows);
+	});
+
+	it("treats a zero forced-count object like absence for this placement proof", () => {
+		const proposal = ordinary();
+		const options = { countPolicy: { kind: "exact", count: 3 } } as const;
+		const baseline = previewPerTitleOutput(proposal, options);
+		proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 0,
+		};
+		expect(previewPerTitleOutput(proposal, options)).toEqual(baseline);
+	});
+
+	it.each([
+		0,
+		-1,
+		1.5,
+		Number.NaN,
+		Infinity,
+		257,
+	])("keeps invalid or unsupported requested count %s out of slot rows", (count) => {
+		const proposal = ordinary();
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count },
+		});
+		expect(result.countProjection).toMatchObject({
+			status: "unavailable",
+			reason: count === 257 ? "model-limit" : "invalid-count",
+		});
+		expect(result.rows).toEqual(previewPerTitleOutput(proposal).rows);
+	});
+
+	it.each([
+		{ minBitrate: 0 },
+		{ maxBitrate: 2_147_483_648 },
+		{ minBitrateStepSize: 1 },
+		{ maxBitrateStepSize: Number.NaN },
+		{ maxBitrateStepSize: 1.49 },
+	])("keeps invalid API arithmetic inputs out of slot rows (%j)", (override) => {
+		const proposal = ordinary();
+		Object.assign(proposal.api.global, override);
+		const result = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count: 3 },
+		});
+		expect(result.countProjection).toMatchObject({
+			status: "unavailable",
+			reason: "invalid-input",
+		});
+		expect(result.rows.some((row) => row.kind === "count-slot")).toBe(false);
+	});
+});
+
 describe("Per-Title output previews", () => {
 	it("uses an explicit capped analysis input for exact row interpolation", () => {
 		const proposal = conditional();
@@ -155,13 +443,11 @@ describe("Per-Title output previews", () => {
 				(row) => row.rowId === "large" || row.rowId === "largest",
 			),
 		).toBe(false);
-		expect(result.rows.filter((row) => row.basis === "forced")).toEqual([
-			expect.objectContaining({
-				status: "conditional",
-				bitrate: 355,
-				candidateRowIds: ["large", "largest"],
-			}),
-		]);
+		expect(result.rows.filter((row) => row.basis === "forced")).toEqual([]);
+		expect(result.forcedFallback).toMatchObject({
+			minimumBitrate: 355,
+			maximumBitrate: 355,
+		});
 		expect(result.unresolvedAdditional).toBe(true);
 		expect(result.rows.find((row) => row.basis === "minimum")?.bitrate).toBe(
 			100,
@@ -198,12 +484,11 @@ describe("Per-Title output previews", () => {
 			count: 1,
 			factor: 1.2,
 		});
-		expect(result.rows.filter((row) => row.basis === "forced")).toEqual([
-			expect.objectContaining({
-				status: "conditional",
-				bitrate: 720,
-				candidateRowIds: ["large", "largest"],
-			}),
+		expect(result.rows.filter((row) => row.basis === "forced")).toEqual([]);
+		expect(result.rows.map((row) => row.kind)).toEqual([
+			"fixed",
+			"automatic",
+			"automatic-group",
 		]);
 		expect(result.unresolvedAdditional).toBe(true);
 		expect(proposal).toEqual(before);
@@ -689,12 +974,12 @@ describe("Per-Title output previews", () => {
 		rule.forcedRenditionAboveHighestFixedRepresentation = 2;
 		rule.forcedRenditionAboveHighestFixedRepresentationFactor = 1.5;
 		expect(
-			previewPerTitleOutput(proposal)
+			previewPerTitleOutput(proposal, { analysisInput: 100 })
 				.rows.filter((row) => row.basis === "forced")
 				.map((row) => row.bitrate),
 		).toEqual([302, 453]);
 		rule.forcedRenditionAboveHighestFixedRepresentationFactor = 1.01;
-		const result = previewPerTitleOutput(proposal);
+		const result = previewPerTitleOutput(proposal, { analysisInput: 100 });
 		expect(result.unresolvedAdditional).toBe(true);
 		// The emitted factor now rounds 201*1.01 to 203, then 203*1.01 to 205.
 		expect(
@@ -749,13 +1034,33 @@ describe("Per-Title output previews", () => {
 		expect(result.rows[0]?.width).toBe(640);
 	});
 
-	it.each([
-		["LAST_CALCULATED_BITRATE", 294, 662],
-		["MINIMUM", 200, 450],
-		["MAXIMUM", 400, 900],
-		["AVERAGE", 300, 675],
-	] as const)("uses the %s base rather than conflating nominal and calculated fixed bitrates", (mode, base, last) => {
+	it.each(
+		(
+			[
+				["LAST_CALCULATED_BITRATE", 294, 662],
+				["MINIMUM", 200, 450],
+				["MAXIMUM", 400, 900],
+				["AVERAGE", 300, 675],
+			] as const
+		).flatMap(([mode, base, last]) =>
+			[false, true].map((ordinaryUpper) => ({
+				mode,
+				base,
+				last,
+				ordinaryUpper,
+			})),
+		),
+	)("uses the $mode base without simultaneous alternative outputs (ordinary upper: $ordinaryUpper)", ({
+		mode,
+		base,
+		last,
+		ordinaryUpper,
+	}) => {
 		const proposal = mixed();
+		if (!ordinaryUpper)
+			proposal.api.streams = proposal.api.streams.filter(
+				(stream) => stream.mode !== "PER_TITLE_TEMPLATE",
+			);
 		Object.assign(
 			required(proposal.api.global.fixedResolutionAndBitrateConfiguration),
 			{
@@ -776,8 +1081,16 @@ describe("Per-Title output previews", () => {
 			factor: 1.5,
 		});
 		const additional = result.rows.filter((row) => row.basis === "forced");
-		expect(additional).toHaveLength(2);
-		expect(additional.at(-1)?.bitrate).toBe(last);
+		if (ordinaryUpper) {
+			expect(additional).toEqual([]);
+			expect(
+				result.rows.filter((row) => row.basis === "analysis"),
+			).toHaveLength(1);
+		} else {
+			expect(additional).toHaveLength(2);
+			expect(additional.at(-1)?.bitrate).toBe(last);
+			expect(result.rows.some((row) => row.basis === "analysis")).toBe(false);
+		}
 		expect(
 			additional.every(
 				(row) =>
@@ -787,7 +1100,7 @@ describe("Per-Title output previews", () => {
 					row.rowId === undefined,
 			),
 		).toBe(true);
-		expect(additional[0]?.candidateRowIds).toEqual(["large", "largest"]);
+		expect(additional[0]?.candidateRowIds).toBeUndefined();
 	});
 
 	it("does not invent a selected bitrate when an effective interval admits another step", () => {
@@ -834,7 +1147,7 @@ describe("Per-Title output previews", () => {
 		);
 		// A nominal point remains 200 even when F=trunc(200*factor) changes.
 		// Factor .5 adds 100 below G=150; factor 1 adds a second 200 point.
-		const result = previewPerTitleOutput(proposal);
+		const result = previewPerTitleOutput(proposal, { analysisInput: 150 });
 		expect(result.forcedFallback).toMatchObject({
 			baseMinimumBitrate: 200,
 			baseMaximumBitrate: 200,

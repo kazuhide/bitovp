@@ -52,6 +52,34 @@ describe("effective bounds over every analysis input", () => {
 });
 
 describe("whole-interval direct connection certificate", () => {
+	it("certifies the canonical decimal 1.9 boundary at 100000 to 190000", () => {
+		expect(
+			certifyComplexityDirectConnection(
+				{ minimum: 100_000, maximum: 100_000, low: 100, high: 200 },
+				{ minimum: 190_000, maximum: 190_000 },
+				{ minimum: 1.5, maximum: 1.9 },
+			)?.allPermittedRates,
+		).toBe(true);
+	});
+	it("matches integer cross products at decimal step boundaries over small point domains", () => {
+		for (const [sn, sd, tn, td] of [
+			[11, 10, 6, 5],
+			[6, 5, 3, 2],
+			[3, 2, 19, 10],
+			[19, 10, 19, 10],
+		] as const)
+			for (let bitrate = 1; bitrate <= 30; bitrate++)
+				for (let input = 2; input <= 80; input++) {
+					const proof = certifyComplexityDirectConnection(
+						{ minimum: bitrate, maximum: bitrate, low: 1, high: 2 },
+						{ minimum: input, maximum: input },
+						{ minimum: sn / sd, maximum: tn / td },
+					);
+					expect(proof?.allPermittedRates).toBe(
+						input * sd >= bitrate * sn && input * td <= bitrate * tn,
+					);
+				}
+	});
 	it("certifies a derived curve over the complete input interval", () => {
 		expect(
 			certifyComplexityDirectConnection(

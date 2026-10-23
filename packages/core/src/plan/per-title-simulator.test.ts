@@ -1661,7 +1661,11 @@ describe("recommendPerTitleSettings", () => {
 			},
 			{ rowId: "auto-b", height: 720, mode: "PER_TITLE_TEMPLATE" },
 		]);
-		expect(result.scenarios[2]?.modelCountRange?.minimum).toBe(2);
+		expect(result).toMatchObject({ status: "candidate", applicable: true });
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.derivation?.constraints?.status).toBe("unknown");
+		expect(result.scenarios[2]?.modelCountRange).toBeNull();
+		expect(result.countGuarantee).toBe(false);
 	});
 
 	it("omits inactive fixed-only settings from automatic API streams while preserving the goal and count model", () => {

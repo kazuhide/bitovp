@@ -1,3 +1,5 @@
+import { decimalParameter } from "./per-title-numeric";
+
 export type BitrateInterval = { minimum: number; maximum: number };
 type Row = BitrateInterval & { low: number; high: number };
 type Fraction = { n: bigint; d: bigint };
@@ -281,8 +283,8 @@ export function certifyComplexityDirectConnection(
 		steps.maximum < steps.minimum
 	)
 		return null;
-	const minimum = exactDouble(steps.minimum);
-	const maximum = exactDouble(steps.maximum);
+	const minimum = decimalParameter(steps.minimum);
+	const maximum = decimalParameter(steps.maximum);
 	const multiply = (a: Fraction, b: Fraction): Fraction => ({
 		n: a.n * b.n,
 		d: a.d * b.d,
@@ -371,7 +373,7 @@ export function certifyComplexityIntervals(
 			),
 		]),
 	].sort((a, b) => a - b);
-	const step = exactDouble(minStep);
+	const step = decimalParameter(minStep);
 	const qLower = (c: number): Fraction => ({
 		n: 2n * BigInt(c) * step.d - step.n,
 		d: 2n * step.n,

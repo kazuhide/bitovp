@@ -24,6 +24,124 @@ const fixed: PerTitleGoal = {
 };
 
 describe("joint Per-Title constraint optimization", () => {
+	it("keeps a checked closed count when exact one is weakened to maximum one", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			autoRepresentations: false,
+			countPolicy: { kind: "exact", count: 1 },
+			rows: [
+				{
+					id: "point",
+					height: 720,
+					minBitrate: 200_000,
+					maxBitrate: 200_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 400_000,
+					highComplexityBoundaryForMaxBitrate: 1_000_000,
+				},
+			],
+		};
+		const exact = recommendPerTitleSettings(goal);
+		expect(exact.derivation?.constraints?.status).toBe("checked");
+		expect(exact.derivation?.targetSatisfied).toBe(true);
+		const maximum = recommendPerTitleSettings({
+			...goal,
+			countPolicy: { kind: "maximum", count: 1 },
+		});
+		expect(maximum.derivation?.constraints?.status).toBe("checked");
+		expect(maximum.derivation?.targetSatisfied).toBe(true);
+		expect(
+			maximum.scenarios.every(
+				(scenario) =>
+					scenario.modelCountRange?.minimum === 1 &&
+					scenario.modelCountRange.maximum === 1,
+			),
+		).toBe(true);
+		expect(maximum.api).toEqual(exact.api);
+		expect(maximum.countGuarantee).toBe(false);
+	});
+	it("certifies fewer closed outputs than the maximum without filling unused slots", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			countPolicy: { kind: "maximum", count: 6 },
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 5,
+			rows: [
+				{ id: "a", height: 360, minBitrate: 200_000, maxBitrate: 200_000 },
+				{ id: "b", height: 720, minBitrate: 800_000, maxBitrate: 800_000 },
+			],
+		};
+		const before = structuredClone(goal);
+		const result = recommendPerTitleSettings(goal);
+		expect(result.derivation?.constraints?.status).toBe("checked");
+		expect(result.derivation?.targetSatisfied).toBe(true);
+		expect(result.derivation?.desiredCount).toBe(6);
+		expect(result.derivation?.constraints?.forced.count).toBe(0);
+		expect(
+			result.api.global.fixedResolutionAndBitrateConfiguration,
+		).toBeUndefined();
+		expect(
+			result.scenarios.every(
+				(scenario) =>
+					scenario.modelCountRange?.minimum === 2 &&
+					scenario.modelCountRange.maximum === 2 &&
+					scenario.modelRungs.length === 2,
+			),
+		).toBe(true);
+		expect(result.countGuarantee).toBe(false);
+		expect(goal).toEqual(before);
+	});
+	it("does not certify a maximum below the closed row count", () => {
+		const result = recommendPerTitleSettings({
+			...fixed,
+			countPolicy: { kind: "maximum", count: 2 },
+		});
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.derivation?.constraints?.status).not.toBe("checked");
+		expect(result.applicable).toBe(false);
+	});
+	it.each([
+		1, 2, 5,
+	])("keeps a saved positive forced count within, rather than equal to, maximum %i", (count) => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			maxBitrate: 1_000_000,
+			countPolicy: { kind: "maximum", count },
+			rows: [
+				{ id: "point", height: 720, minBitrate: 200_000, maxBitrate: 200_000 },
+			],
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.5,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+		};
+		const result = recommendPerTitleSettings(goal);
+		if (count === 1) {
+			expect(result.derivation?.constraints?.status).not.toBe("checked");
+			expect(result.derivation?.targetSatisfied).toBe(false);
+		} else {
+			expect(result.derivation?.constraints?.status).toBe("checked");
+			expect(result.derivation?.targetSatisfied).toBe(true);
+			expect(
+				result.scenarios.every(
+					(scenario) =>
+						scenario.modelCountRange?.minimum === 2 &&
+						scenario.modelCountRange.maximum === 2,
+				),
+			).toBe(true);
+		}
+		expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			goal.fixedResolutionAndBitrateConfiguration,
+		);
+		expect(result.countGuarantee).toBe(false);
+	});
 	it("calibrates a mixed ladder from the highest fixed minimum and minimum step", () => {
 		const goal: PerTitleGoal = {
 			...fixed,
@@ -72,7 +190,9 @@ describe("joint Per-Title constraint optimization", () => {
 			expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
 				rule,
 			);
-			expect(result.applicable).toBe(false);
+			expect(result.applicable).toBe(rule === undefined);
+			expect(result.derivation?.targetSatisfied).toBe(false);
+			expect(result.derivation?.constraints?.status).toBe("unknown");
 		}
 		const heldAbsence = recommendPerTitleSettings({
 			...goal,

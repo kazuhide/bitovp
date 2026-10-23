@@ -149,11 +149,60 @@ describe("Per-Title output previews", () => {
 			),
 		).toBe(false);
 		expect(result.rows.some((row) => row.basis === "forced")).toBe(false);
-		expect(result.unresolvedAdditional).toBe(false);
+		expect(result.unresolvedAdditional).toBe(true);
 		expect(result.rows.find((row) => row.basis === "minimum")?.bitrate).toBe(
 			100,
 		);
 		expect(result.status).toBe("partial");
+	});
+
+	it("separates an ordinary upper hypothesis from the conditional forced fallback", () => {
+		const proposal = mixed();
+		proposal.api.global.maxBitrate = 2400;
+		proposal.api.global.minBitrateStepSize = 1.5;
+		const settings = required(proposal.api.streams[0]?.perTitleSettings);
+		settings.maxBitrate = 600;
+		const rule = required(
+			proposal.api.global.fixedResolutionAndBitrateConfiguration,
+		);
+		rule.forcedRenditionAboveHighestFixedRepresentationFactor = 1.2;
+		const before = structuredClone(proposal);
+		const result = previewPerTitleOutput(proposal);
+		expect(result.rows.find((row) => row.basis === "analysis")?.bitrate).toBe(
+			2400,
+		);
+		expect(result.forcedFallback).toEqual({
+			baseMinimumBitrate: 600,
+			baseMaximumBitrate: 600,
+			minimumBitrate: 720,
+			maximumBitrate: 720,
+			count: 1,
+			factor: 1.2,
+		});
+		expect(result.rows.some((row) => row.basis === "forced")).toBe(false);
+		expect(result.unresolvedAdditional).toBe(true);
+		expect(proposal).toEqual(before);
+	});
+
+	it("rounds each hypothetical forced step and omits an unsupported fallback mode", () => {
+		const proposal = mixed();
+		proposal.api.global.maxBitrate = 600;
+		const settings = required(proposal.api.streams[0]?.perTitleSettings);
+		settings.minBitrate = 201;
+		settings.maxBitrate = 201;
+		const rule = required(
+			proposal.api.global.fixedResolutionAndBitrateConfiguration,
+		);
+		rule.forcedRenditionAboveHighestFixedRepresentation = 2;
+		rule.forcedRenditionAboveHighestFixedRepresentationFactor = 1.5;
+		expect(previewPerTitleOutput(proposal).forcedFallback).toMatchObject({
+			minimumBitrate: 453,
+			maximumBitrate: 453,
+			count: 2,
+		});
+		rule.forcedRenditionAboveHighestFixedRepresentationCalculationMode =
+			"MAXIMUM";
+		expect(previewPerTitleOutput(proposal).forcedFallback).toBeUndefined();
 	});
 
 	it("does not require a forced rule or select a resolution for one upper candidate", () => {

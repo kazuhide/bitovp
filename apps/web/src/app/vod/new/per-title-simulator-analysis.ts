@@ -1,4 +1,8 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import {
+	complexityTargetsDoNotDecrease,
+	type PerTitleGoal,
+	type PerTitleProposal,
+} from "@bitovp/core";
 import {
 	createPerTitleEvaluationAdvice,
 	hasAutomaticPerTitleSettings,
@@ -16,6 +20,7 @@ import {
 import {
 	assessPerTitleLadder,
 	type PerTitleLadderAssessment,
+	perTitleAnalysisCurve,
 } from "./per-title-simulator-analysis-ladder";
 import { perTitleWholeLadderCandidates } from "./per-title-simulator-analysis-layouts";
 import {
@@ -87,6 +92,42 @@ const reachRank = (reach: PerTitleReachAssessment) =>
 			(reach.adaptation === "conditional" ? 1 : 0)
 		: 0;
 
+const bandwidthGlobalFields = new Set([
+	"minBitrateStepSize",
+	"maxBitrateStepSize",
+	"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+]);
+const bandwidthRangeFields = [
+	"minBitrate",
+	"maxBitrate",
+	"lowComplexityBoundaryForMaxBitrate",
+	"highComplexityBoundaryForMaxBitrate",
+] as const;
+const bandwidthStreamFields = new Set<string>(bandwidthRangeFields);
+
+/** A structural repair must retain each old upper target at the same input. */
+function preservesBandwidthTargets(
+	before: PerTitleProposal,
+	after: PerTitleProposal,
+	input: PerTitleLadderAssessment["input"],
+): boolean {
+	return before.api.streams.every((row) => {
+		if (row.mode !== "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
+			return true;
+		const next = after.api.streams.find((value) => value.rowId === row.rowId);
+		if (!next || next.mode !== row.mode) return false;
+		const curve = perTitleAnalysisCurve(row);
+		const nextCurve = perTitleAnalysisCurve(next);
+		if (curve && nextCurve)
+			return complexityTargetsDoNotDecrease(curve, nextCurve, input);
+		// Without an explicit curve, a changed calibration has no same-input proof.
+		return (["bitrateSelectionMode", ...bandwidthRangeFields] as const).every(
+			(key) =>
+				Object.is(row.perTitleSettings?.[key], next.perTitleSettings?.[key]),
+		);
+	});
+}
+
 function explanation(
 	item: PerTitleAdvice,
 	reach: PerTitleReachAssessment,
@@ -98,6 +139,14 @@ function explanation(
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
+	if (item.facts.bandwidthStructureRepair === 1) {
+		const lowerRoom = `${before.lowerSlots?.maximum ?? "?"}→${after.lowerSlots?.maximum ?? "?"}`;
+		const upperRoom = `${before.upperSlots?.maximum ?? "?"}→${after.upperSlots?.maximum ?? "?"}`;
+		return {
+			en: `Retain global bitrate limits, count policy, template roles and quality controls while repairing ladder structure. Arithmetic placement room: lower ${lowerRoom}, upper ${upperRoom} (not native output count). Fixed upper targets never decrease over the analysis interval; some configured bitrates may increase. Savings, equal quality and native output count still require representative-media verification.`,
+			ja: `全体のビットレート範囲・本数条件・テンプレート構成・画質設定を保って、段構成を調整します。計算上の配置余地は下位 ${lowerRoom}、上位 ${upperRoom} です（実際の本数ではありません）。固定段の上側目標は下げず、設定ビットレートが増える場合があります。削減効果・同等画質・生成本数は素材で確認します。`,
+		};
+	}
 	if ((item.facts.preservedCount ?? 0) > 0)
 		return {
 			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits and the checked count of ${item.facts.preservedCount}. Recheck the revised boundaries and spacing over the whole input interval. This is a count-preserving configuration proposal, not a quality-equivalence result.`,
@@ -340,8 +389,8 @@ export function analyzePerTitleSettings(
 		add(
 			"quality-measurement-required",
 			"info",
-			"Bitrate and quality controls are not reduced without media evidence. Only a checked count or spacing repair can be proposed here; a quality-preserving optimum requires a rate-quality comparison.",
-			"画質を保てる根拠なしにビットレートや画質設定は下げません。ここでは本数・段間の条件を確認し、削減効果は素材で比較します。",
+			"Quality controls stay unchanged and fixed upper-target curves are not lowered. Spacing and forced additions may change output bitrates. Verify savings and equal quality with representative media.",
+			"画質設定は維持し、固定段の上側目標は下げません。段間隔や強制追加の調整で出力ビットレートは変わるため、削減効果と同等画質は素材で確かめます。",
 		);
 	if (
 		(intent === "count" || intent === "preserve") &&
@@ -400,10 +449,10 @@ export function analyzePerTitleSettings(
 	};
 	const candidates = [
 		...perTitleAnalysisCandidates(goal, proposal, reach, intent, context),
-		...(intent === "cap" || intent === "preserve"
+		...(intent === "cap" || intent === "preserve" || intent === "bandwidth"
 			? perTitleCountDirectedCandidates(goal, proposal, context)
 			: []),
-		...(intent === "cap" || intent === "preserve"
+		...(intent === "cap" || intent === "preserve" || intent === "bandwidth"
 			? perTitleWholeLadderCandidates(goal, proposal, context)
 			: []),
 	];
@@ -435,6 +484,34 @@ export function analyzePerTitleSettings(
 		) {
 			reject("invalid-candidate");
 			continue;
+		}
+		// Maximum capacity bounds redundant placements; the minimum must still
+		// accommodate the declared lower role throughout the analysis domain.
+		const requiredLower = checkedStructure.lower?.required;
+		if (
+			requiredLower !== undefined &&
+			checkedLadder.lowerSlots !== null &&
+			checkedLadder.lowerSlots.minimum < requiredLower
+		) {
+			reject("required-lower-role-unavailable");
+			continue;
+		}
+		if (intent === "bandwidth") {
+			if (
+				item.changes.some(
+					(change) =>
+						!(change.scope === "global"
+							? bandwidthGlobalFields.has(change.key)
+							: bandwidthStreamFields.has(change.key)),
+				)
+			) {
+				reject("bandwidth-quality-or-role-change");
+				continue;
+			}
+			if (!preservesBandwidthTargets(proposal, item.proposal, ladder.input)) {
+				reject("bandwidth-target-reduction");
+				continue;
+			}
 		}
 		if (
 			reach.count.status === "model-checked" &&
@@ -544,6 +621,76 @@ export function analyzePerTitleSettings(
 				reject("declared-count-placement-regression");
 				continue;
 			}
+		} else if (intent === "bandwidth") {
+			const declaredMixed =
+				countStructure.status === "declared-compatible" &&
+				checkedStructure.status === "declared-compatible" &&
+				checkedStructure.declaredCount === countStructure.declaredCount &&
+				checkedStructure.required === countStructure.required;
+			if (
+				goal.countPolicy.kind !== "unrestricted" &&
+				item.proof !== "model-count" &&
+				!declaredMixed
+			) {
+				reject("bandwidth-count-not-certified");
+				continue;
+			}
+			if (
+				reachRank(checked) < reachRank(reach) ||
+				(["lowerSlots", "upperSlots"] as const).some(
+					(side) =>
+						ladder[side] !== null &&
+						(checkedLadder[side] === null ||
+							checkedLadder[side].maximum > ladder[side].maximum),
+				) ||
+				(ladder.globalCapacity !== null &&
+					(checkedLadder.globalCapacity === null ||
+						checkedLadder.globalCapacity > ladder.globalCapacity)) ||
+				((ladder.globalCapacity === null ||
+					checkedLadder.globalCapacity === null) &&
+					item.proposal.api.global.minBitrateStepSize <
+						proposal.api.global.minBitrateStepSize)
+			) {
+				reject("bandwidth-placement-regression");
+				continue;
+			}
+			const countRepair =
+				item.proof === "model-count" &&
+				!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal);
+			const capacityRepair =
+				(["lowerSlots", "upperSlots"] as const).some(
+					(side) =>
+						ladder[side] !== null &&
+						checkedLadder[side] !== null &&
+						checkedLadder[side].maximum < ladder[side].maximum,
+				) ||
+				(ladder.globalCapacity !== null &&
+					checkedLadder.globalCapacity !== null &&
+					checkedLadder.globalCapacity < ladder.globalCapacity);
+			const nextConnected = connected(
+				checkedLadder,
+				item.proposal.api.global.minBitrateStepSize,
+				item.proposal.api.global.maxBitrateStepSize,
+			);
+			const spacingRepair =
+				nextConnected &&
+				checkedLadder.lowerConnection?.fitsMaximum !== false &&
+				((currentIntervals !== null &&
+					!connected(
+						ladder,
+						proposal.api.global.minBitrateStepSize,
+						proposal.api.global.maxBitrateStepSize,
+					)) ||
+					ladder.lowerConnection?.fitsMaximum === false);
+			if (
+				(!capacityRepair && !spacingRepair && !countRepair) ||
+				(item.proof !== "model-count" &&
+					(!nextConnected ||
+						checkedLadder.lowerConnection?.fitsMaximum === false))
+			) {
+				reject("bandwidth-no-structural-improvement");
+				continue;
+			}
 		} else if (
 			item.proof !== "model-count" ||
 			(!proposal.diagnostics.some(
@@ -569,6 +716,7 @@ export function analyzePerTitleSettings(
 		seen.add(key);
 		item.facts = {
 			...item.facts,
+			bandwidthStructureRepair: Number(intent === "bandwidth"),
 			reachRank: reachRank(checked),
 			maximum: goal.maxBitrate,
 			wholeLadderImprovement: Number(wholeImprovement),
@@ -608,7 +756,7 @@ export function analyzePerTitleSettings(
 	}
 	result.advice.sort(
 		(a, b) =>
-			(intent === "preserve"
+			(intent === "preserve" || intent === "bandwidth"
 				? (a.facts.lowerSlots ?? 256) +
 					(a.facts.upperSlots ?? 256) -
 					(b.facts.lowerSlots ?? 256) -

@@ -23,7 +23,10 @@ const copy = {
 		additional: "Additional",
 		start: "Start",
 		forced: "Additional (if fixed is highest)",
-		analysis: "Analysis-selected top",
+		analysis: "Normal calculation (count unresolved)",
+		assumed: (rate: string) => `Assumed ${rate}`,
+		forcedFallback: (range: string, count: number, factor: string) =>
+			`If fixed is highest: ${range} kbps (${count} ${count === 1 ? "step" : "steps"}, ×${factor} each). This factor does not cap normal upper outputs.`,
 		heightUnknown: "Resolution unknown",
 		example: "Example",
 		conditional: "Conditional",
@@ -59,7 +62,10 @@ const copy = {
 		additional: "追加",
 		start: "開始",
 		forced: "固定レンディションが最上位の場合に追加",
-		analysis: "解析による上段",
+		analysis: "通常計算の上位候補（本数未確定）",
+		assumed: (rate: string) => `仮定 ${rate}`,
+		forcedFallback: (range: string, count: number, factor: string) =>
+			`固定段が最上位なら ${range} kbps（${count}段・各段×${factor}）。通常上段の上限ではありません。`,
 		heightUnknown: "解像度未確定",
 		example: "計算例",
 		conditional: "条件付き",
@@ -189,7 +195,7 @@ export function PerTitleOutputChart({
 					: row.status === "conditional"
 						? text.conditional
 						: text.example;
-			const values = configured
+			const value = configured
 				? text.configured(
 						bitrate(configured.minimum),
 						bitrate(configured.maximum),
@@ -201,6 +207,8 @@ export function PerTitleOutputChart({
 					: target !== undefined
 						? bitrate(target)
 						: "";
+			const values =
+				row.basis === "analysis" && value ? text.assumed(value) : value;
 			const targetText =
 				target === undefined
 					? undefined
@@ -257,13 +265,20 @@ export function PerTitleOutputChart({
 		({ row, target, range }) =>
 			row.basis === "forced" && (target !== undefined || range !== undefined),
 	);
-	const forcedOverflow = rows.find(
-		({ row, target }) =>
-			row.basis === "forced" &&
-			target !== undefined &&
-			permitted !== undefined &&
-			target > permitted.maximum,
-	)?.target;
+	const forcedFallback = rows.some(
+		({ row, target, range }) =>
+			row.basis === "analysis" && (target !== undefined || range !== undefined),
+	)
+		? preview.forcedFallback
+		: undefined;
+	const forcedMaximum = Math.max(
+		scale ? (forcedFallback?.maximumBitrate ?? 0) : 0,
+		...rows.map(({ row, target }) =>
+			row.basis === "forced" ? (target ?? 0) : 0,
+		),
+	);
+	const forcedOverflow =
+		permitted && forcedMaximum > permitted.maximum ? forcedMaximum : undefined;
 	return (
 		<figure aria-labelledby={`${id}-title`} className="space-y-2">
 			<figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
@@ -287,7 +302,7 @@ export function PerTitleOutputChart({
 					<div
 						role="img"
 						aria-labelledby={`${id}-title`}
-						aria-describedby={`${id}-axis ${id}-description`}
+						aria-describedby={`${id}-axis ${id}-description${forcedFallback ? ` ${id}-fallback` : ""}`}
 						className="space-y-2"
 					>
 						<div
@@ -444,6 +459,21 @@ export function PerTitleOutputChart({
 					<p id={`${id}-description`} className="sr-only">
 						{text.description}
 					</p>
+					{forcedFallback ? (
+						<p
+							id={`${id}-fallback`}
+							data-testid="per-title-forced-fallback"
+							className="text-xs text-zinc-400"
+						>
+							{text.forcedFallback(
+								forcedFallback.minimumBitrate === forcedFallback.maximumBitrate
+									? bitrate(forcedFallback.minimumBitrate)
+									: `${bitrate(forcedFallback.minimumBitrate)}–${bitrate(forcedFallback.maximumBitrate)}`,
+								forcedFallback.count,
+								String(forcedFallback.factor),
+							)}
+						</p>
+					) : null}
 					<div className="sr-only">
 						<table aria-label={dataTitle}>
 							<thead>

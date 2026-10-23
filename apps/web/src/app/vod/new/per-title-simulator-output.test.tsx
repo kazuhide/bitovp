@@ -77,6 +77,62 @@ const preview: PerTitleOutputPreview = {
 	],
 };
 
+const mixedProposal: PerTitleProposal = {
+	...proposal,
+	api: {
+		global: { ...proposal.api.global, maxBitrate: 7200000 },
+		streams: [
+			{
+				rowId: "fixed",
+				height: 640,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				perTitleSettings: { minBitrate: 800000, maxBitrate: 1200000 },
+			},
+			{ rowId: "upper-a", height: 960, mode: "PER_TITLE_TEMPLATE" },
+			{ rowId: "upper-b", height: 1280, mode: "PER_TITLE_TEMPLATE" },
+		],
+	},
+};
+
+const mixedPreview: PerTitleOutputPreview = {
+	analysisInput: 7200000,
+	requestedAnalysisInput: 7200000,
+	status: "partial",
+	unresolvedAdditional: true,
+	forcedFallback: {
+		baseMinimumBitrate: 800000,
+		baseMaximumBitrate: 1200000,
+		minimumBitrate: 1000000,
+		maximumBitrate: 1500000,
+		count: 1,
+		factor: 1.25,
+	},
+	rows: [
+		{
+			id: "fixed",
+			rowId: "fixed",
+			height: 640,
+			kind: "fixed",
+			status: "conditional",
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			bitrate: 1200000,
+			minimumBitrate: 800000,
+			maximumBitrate: 1200000,
+		},
+		{
+			id: "analysis:top",
+			kind: "automatic",
+			status: "conditional",
+			mode: "PER_TITLE_TEMPLATE",
+			basis: "analysis",
+			bitrate: 7200000,
+			minimumBitrate: 7200000,
+			maximumBitrate: 7200000,
+			candidateRowIds: ["upper-a", "upper-b"],
+		},
+	],
+};
+
 function required<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error("Missing test fixture");
 	return value;
@@ -87,6 +143,218 @@ beforeEach(() => {
 });
 
 describe("Per-Title output chart", () => {
+	it.each([
+		[
+			"en",
+			"Normal calculation (count unresolved)",
+			"Assumed 7,200",
+			"Candidates 960 / 1,280 px",
+			"If fixed is highest: 1,000–1,500 kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.",
+		],
+		[
+			"ja",
+			"通常計算の上位候補（本数未確定）",
+			"仮定 7,200",
+			"候補 960 / 1,280 px",
+			"固定段が最上位なら 1,000–1,500 kbps（1段・各段×1.25）。通常上段の上限ではありません。",
+		],
+	] as const)("visibly separates the hypothetical normal top from its fixed-highest fallback without adding outputs (%s)", (locale, normal, assumed, candidates, fallback) => {
+		const input = structuredClone(mixedProposal);
+		const result = structuredClone(mixedPreview);
+		const inputSnapshot = structuredClone(input);
+		const resultSnapshot = structuredClone(result);
+		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
+		renderLocalized(<PerTitleOutputChart proposal={input} />, locale);
+		const chart = screen.getByRole("img");
+		const rows = within(chart).getAllByTestId("per-title-output-row");
+		expect(rows).toHaveLength(2);
+		const upper = required(rows[1]);
+		expect(within(upper).getByText(normal)).toBeVisible();
+		expect(within(upper).getByText(assumed)).toBeVisible();
+		expect(within(upper).getByText(candidates)).toBeVisible();
+		expect(
+			within(upper).getByTestId("per-title-output-target"),
+		).toHaveAttribute("x2", "100");
+		expect(rows[0]).toHaveTextContent(
+			locale === "en" ? "Configured 800–1,200" : "設定範囲 800–1,200",
+		);
+		const explanation = screen.getByText(fallback);
+		expect(explanation).toBeVisible();
+		expect(explanation.closest(".sr-only")).toBeNull();
+		expect(chart).toHaveAccessibleDescription(
+			expect.stringContaining(fallback),
+		);
+		expect(
+			screen.getByText(
+				locale === "en" ? "Additional outputs unknown" : "追加出力は未確定",
+			),
+		).toBeVisible();
+		expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(
+			3,
+		);
+		expect(
+			within(chart).queryByText(
+				locale === "en" ? "Candidate 960 px" : "候補 960 px",
+			),
+		).toBeNull();
+		expect(
+			within(chart).queryByText(
+				locale === "en" ? "Candidate 1280 px" : "候補 1280 px",
+			),
+		).toBeNull();
+		expect(input).toEqual(inputSnapshot);
+		expect(result).toEqual(resultSnapshot);
+	});
+
+	it("does not invent a fixed-highest fallback when the model provides none", () => {
+		const { forcedFallback: _fallback, ...result } =
+			structuredClone(mixedPreview);
+		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
+		renderLocalized(<PerTitleOutputChart proposal={mixedProposal} />);
+		expect(screen.getByRole("img")).toHaveTextContent(
+			"Normal calculation (count unresolved)",
+		);
+		expect(screen.queryByText(/If fixed is highest:/)).toBeNull();
+	});
+
+	it("formats a single fallback point without presenting an extra rendition", () => {
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...mixedPreview,
+			forcedFallback: {
+				...required(mixedPreview.forcedFallback),
+				minimumBitrate: 1500000,
+				maximumBitrate: 1500000,
+			},
+		});
+		renderLocalized(<PerTitleOutputChart proposal={mixedProposal} />);
+		expect(
+			screen.getByText(
+				"If fixed is highest: 1,500 kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.",
+			),
+		).toBeVisible();
+		expect(screen.getAllByTestId("per-title-output-row")).toHaveLength(2);
+	});
+
+	it.each([
+		[
+			"en",
+			"If fixed is highest: 450 kbps (2 steps, ×1.5 each). This factor does not cap normal upper outputs.",
+		],
+		[
+			"ja",
+			"固定段が最上位なら 450 kbps（2段・各段×1.5）。通常上段の上限ではありません。",
+		],
+	] as const)("explains a multi-step fallback without inferring total rendition count (%s)", (locale, explanation) => {
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...mixedPreview,
+			forcedFallback: {
+				baseMinimumBitrate: 200000,
+				baseMaximumBitrate: 200000,
+				minimumBitrate: 450000,
+				maximumBitrate: 450000,
+				count: 2,
+				factor: 1.5,
+			},
+		});
+		renderLocalized(<PerTitleOutputChart proposal={mixedProposal} />, locale);
+		const note = screen.getByTestId("per-title-forced-fallback");
+		expect(note).toBeVisible();
+		expect(note).toHaveTextContent(explanation);
+		expect(screen.getAllByTestId("per-title-output-row")).toHaveLength(2);
+		expect(
+			screen.getByText(
+				locale === "en" ? "Additional outputs unknown" : "追加出力は未確定",
+			),
+		).toBeVisible();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("warns about an above-cap fallback without clipping it or changing normal output (%s)", (locale) => {
+		const input: PerTitleProposal = {
+			...mixedProposal,
+			api: {
+				global: {
+					...mixedProposal.api.global,
+					maxBitrate: 2400000,
+					maxBitrateStepSize: 5,
+					fixedResolutionAndBitrateConfiguration: {
+						forcedRenditionAboveHighestFixedRepresentation: 2,
+						forcedRenditionAboveHighestFixedRepresentationFactor: 3,
+						forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+							"LAST_CALCULATED_BITRATE",
+					},
+				},
+				streams: mixedProposal.api.streams.map((row) =>
+					row.rowId === "fixed"
+						? {
+								...row,
+								perTitleSettings: { minBitrate: 600000, maxBitrate: 600000 },
+							}
+						: row,
+				),
+			},
+		};
+		const result: PerTitleOutputPreview = {
+			...mixedPreview,
+			analysisInput: 2400000,
+			requestedAnalysisInput: 2400000,
+			rows: mixedPreview.rows.map((row) => ({
+				...row,
+				bitrate: row.basis === "analysis" ? 2400000 : 600000,
+				minimumBitrate: row.basis === "analysis" ? 2400000 : 600000,
+				maximumBitrate: row.basis === "analysis" ? 2400000 : 600000,
+			})),
+			forcedFallback: {
+				baseMinimumBitrate: 600000,
+				baseMaximumBitrate: 600000,
+				minimumBitrate: 5400000,
+				maximumBitrate: 5400000,
+				count: 2,
+				factor: 3,
+			},
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
+		const { rerender } = renderLocalized(
+			<PerTitleOutputChart proposal={input} />,
+			locale,
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			locale === "en"
+				? "Additional value 5,400 kbps exceeds the overall maximum of 2,400 kbps. Lower the additional factor or fixed-rendition maximum."
+				: "追加値 5,400 kbps が全体上限 2,400 kbps を超えます。追加倍率か固定段の上限を下げてください。",
+		);
+		expect(screen.getByRole("alert")).toBeVisible();
+		expect(screen.getByTestId("per-title-forced-fallback")).toHaveTextContent(
+			locale === "en"
+				? "5,400 kbps (2 steps, ×3 each)"
+				: "5,400 kbps（2段・各段×3）",
+		);
+		const rows = screen.getAllByTestId("per-title-output-row");
+		expect(rows).toHaveLength(2);
+		const normal = required(rows[1]);
+		expect(
+			within(normal).getByText(
+				locale === "en" ? "Assumed 2,400" : "仮定 2,400",
+			),
+		).toBeVisible();
+		expect(
+			within(normal).getByTestId("per-title-output-target"),
+		).toHaveAttribute("x2", "100");
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...result,
+			forcedFallback: {
+				...required(result.forcedFallback),
+				minimumBitrate: 2400000,
+				maximumBitrate: 2400000,
+			},
+		});
+		rerender(<PerTitleOutputChart proposal={input} />);
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(screen.getAllByTestId("per-title-output-row")).toHaveLength(2);
+	});
+
 	it.each([
 		["en", "Configured 200–800", "Target 300", "Target 650"],
 		["ja", "設定範囲 200–800", "計算点 300", "計算点 650"],
@@ -304,8 +572,12 @@ describe("Per-Title output chart", () => {
 	});
 
 	it.each([
-		["en", "Candidates 960 / 1,280 px", "Analysis-selected top"],
-		["ja", "候補 960 / 1,280 px", "解析による上段"],
+		[
+			"en",
+			"Candidates 960 / 1,280 px",
+			"Normal calculation (count unresolved)",
+		],
+		["ja", "候補 960 / 1,280 px", "通常計算の上位候補（本数未確定）"],
 	] as const)("groups unresolved upper resolutions under the analysis basis (%s)", (locale, candidates, origin) => {
 		const input: PerTitleProposal = {
 			...proposal,

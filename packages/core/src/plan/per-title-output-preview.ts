@@ -1,4 +1,7 @@
-import { evaluateComplexityRange } from "./per-title-constraints";
+import {
+	evaluateComplexityRange,
+	evaluateForcedRenditions,
+} from "./per-title-constraints";
 import type {
 	PerTitleApiSettings,
 	PerTitleProposal,
@@ -25,6 +28,15 @@ export type PerTitleOutputPreview = {
 		maximumBitrate?: number;
 	}>;
 	unresolvedAdditional: boolean;
+	/** Alternative only: applies when normal calculation ends on a fixed output. */
+	forcedFallback?: {
+		baseMinimumBitrate: number;
+		baseMaximumBitrate: number;
+		minimumBitrate: number;
+		maximumBitrate: number;
+		count: number;
+		factor: number;
+	};
 };
 
 /** Read-only arithmetic examples and unresolved candidates from the emitted API settings. */
@@ -137,6 +149,7 @@ export function previewPerTitleOutput(
 	);
 	const scenario = upper.length === 1 ? upper[0] : undefined;
 	const examples = new Map<string, number>();
+	let forcedFallback: PerTitleOutputPreview["forcedFallback"];
 	const extra: PerTitleOutputPreview["rows"] = [];
 	let justified =
 		eligible &&
@@ -387,6 +400,45 @@ export function previewPerTitleOutput(
 		const destination = destinations.length === 1 ? destinations[0] : undefined;
 		const destinationRow = rows.find((row) => row.rowId === destination?.rowId);
 		if (
+			highestFixed &&
+			positive(highestFixed.minimumBitrate) &&
+			positive(highestFixed.maximumBitrate) &&
+			fixedExamples.every(
+				(row) =>
+					row === highestFixed ||
+					(positive(row.maximumBitrate) &&
+						row.maximumBitrate < (highestFixed.minimumBitrate as number)),
+			) &&
+			count !== undefined &&
+			Number.isSafeInteger(count) &&
+			count > 0 &&
+			count <= 256 &&
+			factor !== undefined &&
+			Number.isFinite(factor) &&
+			factor > 1 &&
+			rule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode ===
+				"LAST_CALCULATED_BITRATE" &&
+			destination
+		) {
+			const last = evaluateForcedRenditions({
+				base: {
+					minimum: highestFixed.minimumBitrate,
+					maximum: highestFixed.maximumBitrate,
+				},
+				count,
+				factor,
+			})?.at(-1);
+			if (last)
+				forcedFallback = {
+					baseMinimumBitrate: highestFixed.minimumBitrate,
+					baseMaximumBitrate: highestFixed.maximumBitrate,
+					minimumBitrate: last.minimum,
+					maximumBitrate: last.maximum,
+					count,
+					factor,
+				};
+		}
+		if (
 			!analysisSelected &&
 			count !== undefined &&
 			Number.isSafeInteger(count) &&
@@ -433,10 +485,10 @@ export function previewPerTitleOutput(
 		}
 	}
 	const unresolvedAdditional =
-		!rows.some((row) => row.basis === "analysis") &&
-		rule !== undefined &&
-		count !== 0 &&
-		!(justified && checkedAdditional && additional === count);
+		rows.some((row) => row.basis === "analysis") ||
+		(rule !== undefined &&
+			count !== 0 &&
+			!(justified && checkedAdditional && additional === count));
 	return {
 		analysisInput,
 		requestedAnalysisInput,
@@ -447,5 +499,6 @@ export function previewPerTitleOutput(
 				: "partial",
 		rows,
 		unresolvedAdditional,
+		...(forcedFallback ? { forcedFallback } : {}),
 	};
 }

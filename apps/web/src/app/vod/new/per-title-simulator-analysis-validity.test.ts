@@ -280,6 +280,106 @@ describe("Per-Title configuration validity", () => {
 			]),
 		);
 	});
+	it("checks the lifted complexity domain when a higher fixed-resolution row raises its floor above the cap", () => {
+		const current = fixture();
+		const global = {
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 4,
+		};
+		Object.assign(current.goal, global);
+		Object.assign(current.proposal.api.global, global);
+		current.proposal.api.streams = [
+			{
+				rowId: "lower",
+				height: 360,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				perTitleSettings: {
+					minBitrate: 200_000,
+					maxBitrate: 900_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					[low]: 1_000_000,
+					[high]: 1_100_000,
+				},
+			},
+			{
+				rowId: "higher",
+				height: 720,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				perTitleSettings: {
+					minBitrate: 600_000,
+					maxBitrate: 700_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					[low]: 2_000_000,
+					[high]: 3_000_000,
+				},
+			},
+			{
+				rowId: "fixed-resolution-only",
+				height: 1080,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			},
+		];
+		const result = assessPerTitleValidity(current.goal, current.proposal);
+		// F = 600k * 2 = 1.2M. At C = 1.2M the row points are 900k
+		// and 600k (ratio 2/3); the raw 100k..1M domain gives 200k/600k.
+		expect(result.map(({ code }) => code)).toContain(
+			"adjacent-spacing-unproved",
+		);
+		expect(
+			result.find(({ code }) => code === "complexity-domain-checked")?.message
+				.en,
+		).toContain("1200000 to 1200000");
+		expect(
+			result.some(
+				({ code, fields }) =>
+					code === "complexity-always-minimum" &&
+					fields?.some(({ rowId }) => rowId === "lower"),
+			),
+		).toBe(false);
+	});
+	it("uses the complexity floor for lower-end saturation advice", () => {
+		const current = fixture();
+		Object.assign(setting(current), {
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			[low]: 200,
+			[high]: 300,
+		});
+		// The highest fixed minimum is 400, so all C are at least 400.
+		expect(codes(current)).toContain("complexity-always-maximum");
+	});
+	it("withholds interval and saturation claims when the complexity floor is ambiguous", () => {
+		const current = fixture();
+		stream(current, 1).height = stream(current).height;
+		for (const row of [0, 1])
+			Object.assign(setting(current, row), {
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				[low]: 1100,
+				[high]: 1400,
+			});
+		const result = codes(current);
+		expect(result).toContain("interval-analysis-unresolved");
+		expect(result).not.toContain("complexity-domain-checked");
+		expect(result).not.toContain("complexity-always-minimum");
+		expect(result).not.toContain("complexity-always-maximum");
+	});
+	it("does not bound a LAST forced base through an unresolved complexity floor", () => {
+		const current = fixture();
+		stream(current, 1).width = 1280;
+		Object.assign(setting(current, 1), {
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			[low]: 300,
+			[high]: 900,
+		});
+		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			[count]: 1,
+			[factor]: 1.2,
+			[mode]: "LAST_CALCULATED_BITRATE",
+		};
+		// Height order is known, but explicit widths and height-only rows are mixed.
+		expect(codes(current)).toContain("forced-base-unresolved");
+	});
 	it("does not mistake a sufficient interval bound for proof of an actual native count failure", () => {
 		const current = fixture();
 		for (const row of [0, 1])

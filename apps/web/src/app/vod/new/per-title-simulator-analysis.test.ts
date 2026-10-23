@@ -244,7 +244,8 @@ describe("current Per-Title evaluation", () => {
 					maxBitrate: 10_001,
 					bitrateSelectionMode: "COMPLEXITY_RANGE",
 					lowComplexityBoundaryForMaxBitrate: 10_000,
-					highComplexityBoundaryForMaxBitrate: 20_000,
+					// Keep the curve above the forced floor so low and high inputs can differ.
+					highComplexityBoundaryForMaxBitrate: 22_601,
 				},
 			],
 			fixedResolutionAndBitrateConfiguration: {
@@ -254,6 +255,12 @@ describe("current Per-Title evaluation", () => {
 					"LAST_CALCULATED_BITRATE",
 			},
 		};
+		const saturated = structuredClone(current);
+		if (saturated.rows?.[0])
+			saturated.rows[0].highComplexityBoundaryForMaxBitrate = 20_000;
+		const flat = analyzePerTitleSettings(saturated, "cap");
+		expect(flat.reach.adaptation).toBe("flat");
+		expect(flat.advice).toHaveLength(0);
 		const result = analyzePerTitleSettings(current, "cap");
 		expect(result.reach.high?.maximum).toBe(22_503);
 		const powerEstimate = Math.sqrt(22_601 / 10_001);

@@ -4,6 +4,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 import {
 	getPerTitleGoalSetting,
@@ -62,6 +63,22 @@ const positive = (value: unknown): value is number =>
 	finite(value) && value > 0;
 const rate = (value: unknown): value is number =>
 	positive(value) && Number.isSafeInteger(value) && value <= RATE_MAX;
+
+function complexityDomain(global: Global, configured: Stream[]) {
+	const api = { global, streams: configured };
+	const minimum = resolvePerTitleAnalysis(
+		api,
+		global.minBitrate,
+	).complexityInput;
+	const maximum = resolvePerTitleAnalysis(
+		api,
+		global.maxBitrate,
+	).complexityInput;
+	return minimum !== null && maximum !== null && minimum <= maximum
+		? { minimum, maximum }
+		: null;
+}
+
 const globalInventory = [
 	...new Map(
 		CODECS.flatMap((codec) => perTitleGlobalFields(codec)).map((field) => [
@@ -351,6 +368,7 @@ function auditStreams(
 	add: Add,
 ) {
 	const seen = new Set<string>();
+	const domain = complexityDomain(proposal.api.global, proposal.api.streams);
 	for (const key of ["inputWidth", "inputHeight"] as const)
 		if (goal[key] !== undefined && !rate(goal[key]))
 			add(
@@ -470,24 +488,21 @@ function auditStreams(
 				"複雑度の下側境界は上側境界より小さくする必要があります。補間や段間隔の調整案を求める前に順序を修正してください。",
 				ref(LOW, HIGH),
 			);
-		else if (
-			rate(proposal.api.global.minBitrate) &&
-			rate(proposal.api.global.maxBitrate)
-		) {
-			if (settings[LOW] >= proposal.api.global.maxBitrate)
+		else if (domain) {
+			if (settings[LOW] >= domain.maximum)
 				add(
 					"complexity-always-minimum",
 					"warning",
-					"Within the explicitly checked global input interval this row remains at its minimum. Lower the complexity boundaries if this row is intended to respond before that interval ends.",
-					"全体の最小値から最大値までを仮定した検証範囲では、この段は最小値のままです。この範囲で変化させたい場合は複雑度境界を下げてください。",
+					"After the fixed-stream constraints adjust the assumed analysis range, this row stays at its minimum. Lower the complexity boundaries if the bitrate should vary within that range.",
+					"固定段の制約を含めて計算すると、この段は最小ビットレートのままです。値を変化させたい場合は複雑度境界を下げてください。",
 					[...ref(LOW, HIGH), ...globals("maxBitrate")],
 				);
-			if (settings[HIGH] <= proposal.api.global.minBitrate)
+			if (settings[HIGH] <= domain.minimum)
 				add(
 					"complexity-always-maximum",
 					"warning",
-					"Within the explicitly checked global input interval this row is already saturated at its maximum. Raise the complexity boundaries if simpler-input bitrate savings are intended.",
-					"仮定した全体の検証範囲では、この段はすでに最大値です。単純な素材でビットレートを下げたい場合は複雑度境界を上げてください。",
+					"After the fixed-stream constraints adjust the assumed analysis range, this row stays at its maximum. Raise the complexity boundaries if simpler content should use a lower bitrate.",
+					"固定段の制約を含めて計算すると、この段は最大ビットレートのままです。単純な素材で値を下げたい場合は複雑度境界を上げてください。",
 					[...ref(LOW, HIGH), ...globals("minBitrate")],
 				);
 		}
@@ -638,17 +653,40 @@ function auditIntervals(global: Global, configured: Stream[], add: Add) {
 		);
 		return;
 	}
+	const domain = complexityDomain(global, configured);
+	if (!domain) {
+		add(
+			"interval-analysis-unresolved",
+			"warning",
+			"Check the fixed-stream dimensions, bitrate ranges and additional-rendition settings. Their analysis floor is unresolved, so the interval spacing cannot be checked.",
+			"固定段の寸法・ビットレート範囲・追加段の設定を確認してください。解析値の補正範囲が定まらず、段間隔を判定できません。",
+			[
+				...globals(
+					"minBitrate",
+					"maxBitrate",
+					"minBitrateStepSize",
+					"maxBitrateStepSize",
+					`${RULE}${COUNT}`,
+					`${RULE}${FACTOR}`,
+				),
+				...configured.flatMap(({ rowId }) =>
+					streams(rowId, "width", "height", "minBitrate", "maxBitrate"),
+				),
+			],
+		);
+		return;
+	}
 	const checked = certifyComplexityIntervals(
 		rows,
-		{ minimum: global.minBitrate, maximum: global.maxBitrate },
+		domain,
 		global.minBitrateStepSize,
 	);
 	if (!checked) return;
 	add(
 		"complexity-domain-checked",
 		"info",
-		`Conditional interval bounds were checked over every integer analysis input from ${global.minBitrate} to ${global.maxBitrate}, including clamp and spacing-relaxation branches. This domain is an explicit hypothesis, not a prediction of the media-derived input.`,
-		`${global.minBitrate}から${global.maxBitrate}までの全整数入力について、上下限と段間隔による緩和を含めて条件付きの範囲を検証しました。この範囲は仮定であり、素材分析で得る値の予測ではありません。`,
+		`Conditional interval bounds were checked over every integer complexity input from ${domain.minimum} to ${domain.maximum}, after applying the analysis floor to the assumed raw input interval ${global.minBitrate} to ${global.maxBitrate}, including clamp and spacing-relaxation branches. This domain is an explicit hypothesis, not a prediction of the media-derived input.`,
+		`解析値の仮定${global.minBitrate}〜${global.maxBitrate}を補正し、${domain.minimum}〜${domain.maximum}の全整数値で上下限と段間隔を確認しました。素材の解析結果を予測するものではありません。`,
 		globals("minBitrate", "maxBitrate", "minBitrateStepSize"),
 	);
 	if (checked.maximumWithinRowRatio >= global.minBitrateStepSize)
@@ -805,13 +843,15 @@ function auditForced(global: Global, configured: Stream[], add: Add) {
 			high: settings[HIGH] ?? 0,
 			minStep: global.minBitrateStepSize,
 		};
-		const high = evaluateComplexityRange({ ...row, input: global.maxBitrate });
+		const domain = complexityDomain(global, configured);
+		const high = domain
+			? evaluateComplexityRange({ ...row, input: domain.maximum })
+			: null;
 		// The upper affine target is monotone. Keep the configured minimum as
 		// a conservative lower bound across interior q-activation jumps.
-		bases =
-			high && global.minBitrate <= global.maxBitrate
-				? [{ minimum: configuredRange.minimum, maximum: high.maximum }]
-				: [];
+		bases = high
+			? [{ minimum: configuredRange.minimum, maximum: high.maximum }]
+			: [];
 	} else bases = [configuredRange];
 	if (!bases.length) {
 		add(

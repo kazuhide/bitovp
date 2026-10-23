@@ -4,6 +4,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 
 type Interval = { minimum: number; maximum: number };
@@ -447,10 +448,28 @@ export function assessPerTitleReach(
 			fixed.filter((stream) => stream[basis] === top[basis]).length !== 1
 		)
 			return unknown("unresolved-order");
+		const rule = global.fixedResolutionAndBitrateConfiguration;
+		const count =
+			rule?.forcedRenditionAboveHighestFixedRepresentation ?? (rule ? NaN : 0);
+		const factor = rule?.forcedRenditionAboveHighestFixedRepresentationFactor;
+		const mode =
+			rule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode;
+		if (
+			!Number.isSafeInteger(count) ||
+			count < 0 ||
+			count > 256 ||
+			(factor !== undefined && !finitePositive(factor)) ||
+			(mode !== undefined && !calculationModes.has(mode)) ||
+			(count > 0 &&
+				(!finitePositive(factor) || !mode || !calculationModes.has(mode)))
+		)
+			return unknown("forced-settings-incomplete");
+		const highAnalysis = resolvePerTitleAnalysis(proposal.api, cap);
+		const lowAnalysis = resolvePerTitleAnalysis(proposal.api, lowInput);
 		const evaluated = fixed.map((stream) => ({
 			stream,
-			high: rangeAt(stream, global, cap),
-			low: rangeAt(stream, global, lowInput),
+			high: rangeAt(stream, global, highAnalysis.complexityInput ?? 0),
+			low: rangeAt(stream, global, lowAnalysis.complexityInput ?? 0),
 		}));
 		if (evaluated.some((row) => !row.high || !row.low)) {
 			const malformedCurve = fixed.some((stream) => {
@@ -492,22 +511,6 @@ export function assessPerTitleReach(
 			return unknown("unresolved-order");
 		if (automatic.length && !upper.length)
 			return unknown("automatic-templates-unresolved");
-		const rule = global.fixedResolutionAndBitrateConfiguration;
-		const count =
-			rule?.forcedRenditionAboveHighestFixedRepresentation ?? (rule ? NaN : 0);
-		const factor = rule?.forcedRenditionAboveHighestFixedRepresentationFactor;
-		const mode =
-			rule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode;
-		if (
-			!Number.isSafeInteger(count) ||
-			count < 0 ||
-			count > 256 ||
-			(factor !== undefined && !finitePositive(factor)) ||
-			(mode !== undefined && !calculationModes.has(mode)) ||
-			(count > 0 &&
-				(!finitePositive(factor) || !mode || !calculationModes.has(mode)))
-		)
-			return unknown("forced-settings-incomplete");
 		const settings = top.perTitleSettings;
 		const configured = {
 			minimum: settings?.minBitrate ?? 0,

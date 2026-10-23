@@ -51,7 +51,146 @@ const mixed = (maximum = 4_800_000): PerTitleGoal => ({
 const assess = (goal: PerTitleGoal) =>
 	assessPerTitleLadder(goal, tunePerTitleSettings(goal, goal).proposal);
 
+const fixedCurve = (): PerTitleGoal => ({
+	strategy: "fixed-ranges",
+	codec: "H264",
+	minBitrate: 100_000,
+	maxBitrate: 1_000_000,
+	minBitrateStepSize: 1.2,
+	maxBitrateStepSize: 4,
+	countPolicy: { kind: "unrestricted" },
+	rows: [
+		{
+			id: "fixed",
+			height: 360,
+			width: 640,
+			minBitrate: 200_000,
+			maxBitrate: 400_000,
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			lowComplexityBoundaryForMaxBitrate: 100_000,
+			highComplexityBoundaryForMaxBitrate: 2_000_000,
+		},
+	],
+	automaticTemplates: [
+		{ id: "lower", height: 180, width: 320 },
+		{ id: "upper", height: 720, width: 1280 },
+	],
+});
+
 describe("whole-ladder current-setting analysis", () => {
+	it("lifts row endpoints by the analysis floor while keeping raw placement limits", () => {
+		const result = assess(fixedCurve());
+		// V=100000 is lifted to C=200000. The target is
+		// 200000+floor((200000-100000)*200000/1900000)=210526.
+		expect(result.rows.find((row) => row.rowId === "fixed")).toMatchObject({
+			low: { minimum: 210_526, maximum: 210_526 },
+			high: { minimum: 294_736, maximum: 294_736 },
+		});
+		expect(result.input).toEqual({ minimum: 100_000, maximum: 1_000_000 });
+		expect(result.globalCapacity).toBe(13);
+	});
+	it("uses the lifted analysis floor domain for interior lower-side bounds", () => {
+		const goal = fixedCurve();
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"LAST_CALCULATED_BITRATE",
+		};
+		const result = assess(goal);
+		// F=250000 and C cannot fall below it. At F, q=208333 and t=215789;
+		// the unreachable raw-input interval used to include the 200000 minimum.
+		expect(result.rows.find((row) => row.rowId === "fixed")?.low).toEqual({
+			minimum: 208_333,
+			maximum: 215_789,
+		});
+		expect(result.lowerSlots).toEqual({ minimum: 4, maximum: 5 });
+	});
+	it("keeps a floor above the global cap in the analysis interval certificate", () => {
+		const goal = fixedCurve();
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 10,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"LAST_CALCULATED_BITRATE",
+		};
+		const result = assess(goal);
+		// F=2000000 exceeds U=1000000, so every permitted V maps to the
+		// high clamp C=2000000. The raw global interval remains unchanged.
+		expect(result.rows.find((row) => row.rowId === "fixed")).toMatchObject({
+			low: { minimum: 400_000, maximum: 400_000 },
+			high: { minimum: 400_000, maximum: 400_000 },
+		});
+		expect(result.intervals?.maximumWithinRowRatio).toBe(1);
+		expect(result.input).toEqual({ minimum: 100_000, maximum: 1_000_000 });
+		expect(result.topResponse.status).toBe("unknown");
+	});
+	it.each([
+		[10, 2_000_000, "LAST_CALCULATED_BITRATE"],
+		[5, 1_000_000, "MINIMUM"],
+	] as const)("reports saturation when F equals H, including F above U (%s)", (factor, high, mode) => {
+		const goal = fixedCurve();
+		if (goal.rows?.[0]) goal.rows[0].highComplexityBoundaryForMaxBitrate = high;
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: factor,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: mode,
+		};
+		const result = assess(goal);
+		expect(result.rows.find((row) => row.rowId === "fixed")).toMatchObject({
+			low: { minimum: 400_000, maximum: 400_000 },
+			high: { minimum: 400_000, maximum: 400_000 },
+		});
+		expect(result.earlySaturationRows).toContain("fixed");
+	});
+	it("withholds curve bounds when the analysis floor ordering is unresolved", () => {
+		const goal = fixedCurve();
+		const first = goal.rows?.[0];
+		if (!first) throw new Error("Expected the fixed row.");
+		goal.rows = [
+			...(goal.rows ?? []),
+			{ ...first, id: "same-width", minBitrate: 250_000 },
+		];
+		const result = assess(goal);
+		expect(
+			result.rows
+				.filter(
+					(row) =>
+						row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				)
+				.every((row) => row.low === null && row.high === null),
+		).toBe(true);
+		expect(result.intervals).toBeNull();
+		expect(result.lowerSlots).toBeNull();
+		expect(result.globalCapacity).toBe(13);
+	});
+	it("uses the truncated analysis floor for a raw-input connection domain", () => {
+		const goal = fixedCurve();
+		goal.minBitrate = 10_000;
+		goal.maxBitrate = 50_000;
+		goal.minBitrateStepSize = 1.5;
+		goal.rows = goal.rows?.map((row) => ({
+			...row,
+			minBitrate: 10_001,
+			maxBitrate: 20_000,
+			lowComplexityBoundaryForMaxBitrate: 20_000,
+			highComplexityBoundaryForMaxBitrate: 40_000,
+		}));
+		goal.fixedResolutionAndBitrateConfiguration = {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.5,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"LAST_CALCULATED_BITRATE",
+		};
+		const result = assess(goal);
+		// F=trunc(10001*1.5)=15001, not the separately rounded addition 15002.
+		expect(result.topResponse.floor).toBe(15_001);
+		expect(result.topResponse.domain).toEqual({
+			minimum: 15_001,
+			maximum: 50_000,
+		});
+		expect(result.topResponse.status).not.toBe("tracked");
+	});
 	it("includes interior q-activation in the lower-side placement range", () => {
 		const goal: PerTitleGoal = {
 			strategy: "fixed-ranges",

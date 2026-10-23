@@ -36,6 +36,9 @@ const proposal: PerTitleProposal = {
 const preview: PerTitleOutputPreview = {
 	analysisInput: 2000000,
 	requestedAnalysisInput: 2000000,
+	floor: 100000,
+	complexityInput: 2000000,
+	usesAspectRatioAssumption: false,
 	status: "partial",
 	unresolvedAdditional: true,
 	rows: [
@@ -97,6 +100,9 @@ const mixedProposal: PerTitleProposal = {
 const mixedPreview: PerTitleOutputPreview = {
 	analysisInput: 7200000,
 	requestedAnalysisInput: 7200000,
+	floor: 800000,
+	complexityInput: 7200000,
+	usesAspectRatioAssumption: false,
 	status: "partial",
 	unresolvedAdditional: true,
 	forcedFallback: {
@@ -115,18 +121,17 @@ const mixedPreview: PerTitleOutputPreview = {
 			kind: "fixed",
 			status: "conditional",
 			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
-			bitrate: 1200000,
+			rangeBasis: "configured",
 			minimumBitrate: 800000,
 			maximumBitrate: 1200000,
 		},
 		{
-			id: "analysis:top",
-			kind: "automatic",
+			id: "analysis:range",
+			kind: "automatic-group",
 			status: "conditional",
-			mode: "PER_TITLE_TEMPLATE",
 			basis: "analysis",
-			bitrate: 7200000,
-			minimumBitrate: 7200000,
+			rangeBasis: "assumed",
+			minimumBitrate: 100000,
 			maximumBitrate: 7200000,
 			candidateRowIds: ["upper-a", "upper-b"],
 		},
@@ -146,19 +151,19 @@ describe("Per-Title output chart", () => {
 	it.each([
 		[
 			"en",
-			"Normal calculation (count unresolved)",
-			"Assumed 7,200",
-			"Candidates 960 / 1,280 px",
+			"Analysis assumption (count unresolved)",
+			"Assumed range 100–7,200",
+			"Automatic range (assumed)",
 			"If fixed is highest: 1,000–1,500 kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.",
 		],
 		[
 			"ja",
-			"通常計算の上位候補（本数未確定）",
-			"仮定 7,200",
-			"候補 960 / 1,280 px",
+			"解析値の仮定（本数未確定）",
+			"仮定の範囲 100–7,200",
+			"自動生成の範囲（仮定）",
 			"固定段が最上位なら 1,000–1,500 kbps（1段・各段×1.25）。通常上段の上限ではありません。",
 		],
-	] as const)("visibly separates the hypothetical normal top from its fixed-highest fallback without adding outputs (%s)", (locale, normal, assumed, candidates, fallback) => {
+	] as const)("separates the aggregate assumption from its fixed-highest fallback without selecting outputs (%s)", (locale, normal, assumed, group, fallback) => {
 		const input = structuredClone(mixedProposal);
 		const result = structuredClone(mixedPreview);
 		const inputSnapshot = structuredClone(input);
@@ -171,10 +176,13 @@ describe("Per-Title output chart", () => {
 		const upper = required(rows[1]);
 		expect(within(upper).getByText(normal)).toBeVisible();
 		expect(within(upper).getByText(assumed)).toBeVisible();
-		expect(within(upper).getByText(candidates)).toBeVisible();
-		expect(
-			within(upper).getByTestId("per-title-output-target"),
-		).toHaveAttribute("x2", "100");
+		expect(within(upper).getByText(group)).toBeVisible();
+		expect(within(upper).getByTestId("per-title-output-band")).toHaveAttribute(
+			"x2",
+			"100",
+		);
+		expect(within(upper).queryByTestId("per-title-output-target")).toBeNull();
+		expect(upper).not.toHaveTextContent(/960|1,280/);
 		expect(rows[0]).toHaveTextContent(
 			locale === "en" ? "Configured 800–1,200" : "設定範囲 800–1,200",
 		);
@@ -212,7 +220,7 @@ describe("Per-Title output chart", () => {
 		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
 		renderLocalized(<PerTitleOutputChart proposal={mixedProposal} />);
 		expect(screen.getByRole("img")).toHaveTextContent(
-			"Normal calculation (count unresolved)",
+			"Analysis assumption (count unresolved)",
 		);
 		expect(screen.queryByText(/If fixed is highest:/)).toBeNull();
 	});
@@ -300,12 +308,16 @@ describe("Per-Title output chart", () => {
 			...mixedPreview,
 			analysisInput: 2400000,
 			requestedAnalysisInput: 2400000,
-			rows: mixedPreview.rows.map((row) => ({
-				...row,
-				bitrate: row.basis === "analysis" ? 2400000 : 600000,
-				minimumBitrate: row.basis === "analysis" ? 2400000 : 600000,
-				maximumBitrate: row.basis === "analysis" ? 2400000 : 600000,
-			})),
+			rows: mixedPreview.rows.map((row) =>
+				row.kind === "automatic-group"
+					? { ...row, maximumBitrate: 2400000 }
+					: {
+							...row,
+							bitrate: 600000,
+							minimumBitrate: 600000,
+							maximumBitrate: 600000,
+						},
+			),
 			forcedFallback: {
 				baseMinimumBitrate: 600000,
 				baseMaximumBitrate: 600000,
@@ -336,12 +348,14 @@ describe("Per-Title output chart", () => {
 		const normal = required(rows[1]);
 		expect(
 			within(normal).getByText(
-				locale === "en" ? "Assumed 2,400" : "仮定 2,400",
+				locale === "en" ? "Assumed range 100–2,400" : "仮定の範囲 100–2,400",
 			),
 		).toBeVisible();
-		expect(
-			within(normal).getByTestId("per-title-output-target"),
-		).toHaveAttribute("x2", "100");
+		expect(within(normal).getByTestId("per-title-output-band")).toHaveAttribute(
+			"x2",
+			"100",
+		);
+		expect(within(normal).queryByTestId("per-title-output-target")).toBeNull();
 		vi.mocked(previewPerTitleOutput).mockReturnValue({
 			...result,
 			forcedFallback: {
@@ -356,9 +370,14 @@ describe("Per-Title output chart", () => {
 	});
 
 	it.each([
-		["en", "Configured 200–800", "Target 300", "Target 650"],
+		[
+			"en",
+			"Configured 200–800",
+			"Calculated point 300",
+			"Calculated point 650",
+		],
 		["ja", "設定範囲 200–800", "計算点 300", "計算点 650"],
-	] as const)("keeps configured bitrate bands fixed as the assumed point changes (%s)", (locale, configured, initialTarget, nextTarget) => {
+	] as const)("keeps nominal bounds fixed while an effective point moves with the analysis input (%s)", (locale, configured, initialTarget, nextTarget) => {
 		const input: PerTitleProposal = {
 			...proposal,
 			api: {
@@ -396,6 +415,7 @@ describe("Per-Title output chart", () => {
 					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 					kind: "fixed",
 					status: "conditional",
+					rangeBasis: "effective",
 					bitrate: 300000,
 					minimumBitrate: 300000,
 					maximumBitrate: 300000,
@@ -407,6 +427,7 @@ describe("Per-Title output chart", () => {
 					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 					kind: "fixed",
 					status: "conditional",
+					rangeBasis: "effective",
 					bitrate: 1100000,
 					minimumBitrate: 1100000,
 					maximumBitrate: 1100000,
@@ -438,15 +459,24 @@ describe("Per-Title output chart", () => {
 		);
 		expect(within(row).getByText(configured)).toBeVisible();
 		expect(within(row).getByText(initialTarget)).toBeVisible();
-		const band = within(row).getByTestId("per-title-output-band");
-		const bounds = [band.getAttribute("x1"), band.getAttribute("x2")];
+		const configuredBand = within(row).getByTestId(
+			"per-title-output-configured-band",
+		);
+		const bounds = [
+			configuredBand.getAttribute("x1"),
+			configuredBand.getAttribute("x2"),
+		];
 		expect(Number(bounds[0])).toBeLessThan(Number(bounds[1]));
+		const effectiveBand = within(row).getByTestId("per-title-output-band");
+		expect(effectiveBand.getAttribute("x1")).toBe(
+			effectiveBand.getAttribute("x2"),
+		);
 		const endpoint = Number(
 			within(row).getByTestId("per-title-output-endpoint").getAttribute("x1"),
 		);
 		expect(endpoint).toBeGreaterThan(Number(bounds[0]));
 		expect(endpoint).toBeLessThan(Number(bounds[1]));
-		expect(band).not.toHaveAttribute("stroke-dasharray");
+		expect(effectiveBand).not.toHaveAttribute("stroke-dasharray");
 		expect(screen.getByRole("img")).toHaveTextContent(
 			locale === "en" ? "Configured 900–1,200" : "設定範囲 900–1,200",
 		);
@@ -481,7 +511,14 @@ describe("Per-Title output chart", () => {
 			/>,
 		);
 		expect(within(row).getByText(nextTarget)).toBeVisible();
-		expect([band.getAttribute("x1"), band.getAttribute("x2")]).toEqual(bounds);
+		expect([
+			configuredBand.getAttribute("x1"),
+			configuredBand.getAttribute("x2"),
+		]).toEqual(bounds);
+		expect(Number(effectiveBand.getAttribute("x2"))).toBeGreaterThan(endpoint);
+		expect(effectiveBand.getAttribute("x1")).toBe(
+			effectiveBand.getAttribute("x2"),
+		);
 		expect(
 			Number(
 				within(row).getByTestId("per-title-output-endpoint").getAttribute("x1"),
@@ -493,9 +530,14 @@ describe("Per-Title output chart", () => {
 	});
 
 	it.each([
-		["en", "Configured 200–800", "Target 484", "Effective interval 250–484"],
+		[
+			"en",
+			"Configured 200–800",
+			"Calculated point 484",
+			"Effective interval 250–484",
+		],
 		["ja", "設定範囲 200–800", "計算点 484", "有効範囲 250–484"],
-	] as const)("keeps the effective interval separate from configured bitrate bands (%s)", (locale, configured, target, effective) => {
+	] as const)("shows the effective interval visibly above its nominal bounds and supplied point (%s)", (locale, configured, target, effective) => {
 		const input: PerTitleProposal = {
 			...proposal,
 			api: {
@@ -520,6 +562,7 @@ describe("Per-Title output chart", () => {
 					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 					kind: "fixed",
 					status: "conditional",
+					rangeBasis: "effective",
 					bitrate: 484000,
 					minimumBitrate: 250000,
 					maximumBitrate: 484000,
@@ -529,7 +572,16 @@ describe("Per-Title output chart", () => {
 		renderLocalized(<PerTitleOutputChart proposal={input} />, locale);
 		const row = screen.getByTestId("per-title-output-row");
 		expect(within(row).getByText(configured)).toBeVisible();
-		expect(within(row).getByText(target)).toHaveAttribute("title", effective);
+		expect(within(row).getByText(target)).toBeVisible();
+		expect(within(row).getByText(effective)).toBeVisible();
+		const band = within(row).getByTestId("per-title-output-band");
+		const nominal = within(row).getByTestId("per-title-output-configured-band");
+		expect(Number(band.getAttribute("x1"))).toBeGreaterThan(
+			Number(nominal.getAttribute("x1")),
+		);
+		expect(Number(band.getAttribute("x2"))).toBeLessThan(
+			Number(nominal.getAttribute("x2")),
+		);
 		expect(screen.getByRole("table")).toHaveTextContent(effective);
 	});
 
@@ -566,19 +618,20 @@ describe("Per-Title output chart", () => {
 		expect(row).toHaveTextContent("Configured 200–800");
 		expect(row).toHaveTextContent("Unknown");
 		expect(within(row).queryByTestId("per-title-output-endpoint")).toBeNull();
-		expect(
-			within(row).getByTestId("per-title-output-band"),
-		).not.toHaveAttribute("stroke-dasharray");
+		expect(within(row).getByTestId("per-title-output-band")).toHaveAttribute(
+			"stroke-dasharray",
+			"4 3",
+		);
 	});
 
 	it.each([
 		[
 			"en",
-			"Candidates 960 / 1,280 px",
-			"Normal calculation (count unresolved)",
+			"Automatic range (assumed)",
+			"Analysis assumption (count unresolved)",
 		],
-		["ja", "候補 960 / 1,280 px", "通常計算の上位候補（本数未確定）"],
-	] as const)("groups unresolved upper resolutions under the analysis basis (%s)", (locale, candidates, origin) => {
+		["ja", "自動生成の範囲（仮定）", "解析値の仮定（本数未確定）"],
+	] as const)("does not assign candidate resolutions to an aggregate analysis band (%s)", (locale, group, origin) => {
 		const input: PerTitleProposal = {
 			...proposal,
 			api: {
@@ -593,17 +646,21 @@ describe("Per-Title output chart", () => {
 		vi.mocked(previewPerTitleOutput).mockReturnValue({
 			analysisInput: 1500000,
 			requestedAnalysisInput: 1500000,
+			floor: 100000,
+			complexityInput: 1500000,
+			usesAspectRatioAssumption: false,
 			status: "partial",
 			unresolvedAdditional: false,
 			rows: [
 				{
-					id: "analysis-top",
-					kind: "automatic",
-					mode: "PER_TITLE_TEMPLATE",
+					id: "analysis-range",
+					kind: "automatic-group",
 					status: "conditional",
 					basis: "analysis",
+					rangeBasis: "assumed",
 					candidateRowIds: ["option-a", "option-b"],
-					bitrate: 1500000,
+					minimumBitrate: 100000,
+					maximumBitrate: 1500000,
 				},
 			],
 		});
@@ -612,13 +669,11 @@ describe("Per-Title output chart", () => {
 			locale,
 		);
 		const row = screen.getByTestId("per-title-output-row");
-		expect(row).toHaveTextContent(candidates);
+		expect(row).toHaveTextContent(group);
 		expect(within(row).getByText(origin)).toBeVisible();
 		expect(row).toHaveTextContent("1,500");
-		expect(within(row).getByTestId("per-title-output-target")).toHaveAttribute(
-			"stroke-dasharray",
-			"3 2",
-		);
+		expect(within(row).queryByTestId("per-title-output-target")).toBeNull();
+		expect(row).not.toHaveTextContent(/960|1,280/);
 		expect(screen.getAllByTestId("per-title-output-row")).toHaveLength(1);
 		expect(
 			screen.queryByText(
@@ -847,10 +902,10 @@ describe("Per-Title output chart", () => {
 			).toHaveAttribute("stroke-dasharray", "3 2");
 		}
 		expect(
-			screen.queryByText(
+			screen.getByText(
 				locale === "en" ? "Additional outputs unknown" : "追加出力は未確定",
 			),
-		).toBeNull();
+		).toBeVisible();
 		expect(screen.queryByRole("status")).toBeNull();
 		expect(rows).toEqual(snapshot);
 	});
@@ -1069,6 +1124,9 @@ describe("Per-Title output chart", () => {
 		vi.mocked(previewPerTitleOutput).mockReturnValue({
 			analysisInput: Number.NaN,
 			requestedAnalysisInput: Number.NaN,
+			floor: null,
+			complexityInput: null,
+			usesAspectRatioAssumption: false,
 			status: "partial",
 			unresolvedAdditional: false,
 			rows: [
@@ -1101,37 +1159,76 @@ describe("Per-Title output chart", () => {
 		}
 	});
 
-	it("renders real core preview examples as bars, not equal-range ticks or duplicate limits", async () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("renders real core effective intervals and an automatic assumption without selecting outputs (%s)", async (locale) => {
 		const actual =
 			await vi.importActual<typeof import("@bitovp/core")>("@bitovp/core");
 		vi.mocked(previewPerTitleOutput).mockImplementation(
 			actual.previewPerTitleOutput,
 		);
-		const candidate = actual.recommendPerTitleSettings({
-			strategy: "fixed-ranges",
-			codec: "H264",
-			minBitrate: 100000,
-			maxBitrate: 2400000,
-			countPolicy: { kind: "exact", count: 3 },
-			rows: [
-				{ id: "a", height: 240, minBitrate: 160000, maxBitrate: 200000 },
-				{ id: "b", height: 480, minBitrate: 400000, maxBitrate: 480000 },
-				{ id: "c", height: 720, minBitrate: 1000000, maxBitrate: 1200000 },
-			],
-		});
+		const candidate: PerTitleProposal = {
+			...proposal,
+			api: {
+				global: { ...proposal.api.global, autoRepresentations: {} },
+				streams: [
+					{
+						rowId: "fixed",
+						height: 360,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: {
+							minBitrate: 200000,
+							maxBitrate: 800000,
+							bitrateSelectionMode: "COMPLEXITY_RANGE",
+							lowComplexityBoundaryForMaxBitrate: 200000,
+							highComplexityBoundaryForMaxBitrate: 1200000,
+						},
+					},
+					{ rowId: "automatic", height: 1080, mode: "PER_TITLE_TEMPLATE" },
+				],
+			},
+		};
 		const before = structuredClone(candidate);
-		renderLocalized(<PerTitleOutputChart proposal={candidate} />);
-		expect(screen.getByText("Upper input assumed at 2,400 kbps")).toBeVisible();
-		expect(screen.getAllByTestId("per-title-output-row")).toHaveLength(3);
-		for (const bar of screen.getAllByTestId("per-title-output-target")) {
-			expect(bar).toHaveAttribute("x1", "0");
-			expect(Number(bar.getAttribute("x2"))).toBeGreaterThan(0);
-			expect(bar).not.toHaveAttribute("stroke-dasharray");
-		}
-		expect(screen.getAllByTestId("per-title-output-target")).toHaveLength(3);
-		expect(screen.getByRole("img")).not.toHaveTextContent(
-			/200–200|480–480|1,200–1,200|Unknown/,
+		renderLocalized(
+			<PerTitleOutputChart proposal={candidate} analysisInput={600000} />,
+			locale,
 		);
+		expect(
+			screen.getByText(
+				locale === "en"
+					? "Upper input assumed at 600 kbps"
+					: "解析値を 600 kbps と仮定",
+			),
+		).toBeVisible();
+		const rows = screen.getAllByTestId("per-title-output-row");
+		expect(rows).toHaveLength(2);
+		const fixed = required(rows[0]);
+		expect(fixed).toHaveTextContent(
+			locale === "en" ? "Effective interval 400–440" : "有効範囲 400–440",
+		);
+		expect(fixed).toHaveTextContent(
+			locale === "en" ? "Configured 200–800" : "設定範囲 200–800",
+		);
+		const band = within(fixed).getByTestId("per-title-output-band");
+		expect(Number(band.getAttribute("x1"))).toBeLessThan(
+			Number(band.getAttribute("x2")),
+		);
+		const automatic = required(rows[1]);
+		expect(automatic).toHaveTextContent(
+			locale === "en" ? "Automatic range (assumed)" : "自動生成の範囲（仮定）",
+		);
+		expect(automatic).toHaveTextContent(
+			locale === "en" ? "Assumed range 100–600" : "仮定の範囲 100–600",
+		);
+		expect(automatic).not.toHaveTextContent("1080");
+		expect(screen.queryByTestId("per-title-output-target")).toBeNull();
+		expect(screen.queryByTestId("per-title-output-endpoint")).toBeNull();
+		expect(
+			screen.getByText(
+				locale === "en" ? "Additional outputs unknown" : "追加出力は未確定",
+			),
+		).toBeVisible();
 		expect(candidate).toEqual(before);
 	});
 });

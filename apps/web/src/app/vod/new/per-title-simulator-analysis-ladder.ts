@@ -5,6 +5,7 @@ import {
 	evaluateComplexityRange,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
 
@@ -94,16 +95,32 @@ export function assessPerTitleLadder(
 ): PerTitleLadderAssessment {
 	const global = proposal.api.global;
 	const input = { minimum: global.minBitrate, maximum: global.maxBitrate };
+	const lowAnalysis = resolvePerTitleAnalysis(proposal.api, input.minimum);
+	const highAnalysis = resolvePerTitleAnalysis(proposal.api, input.maximum);
+	const complexityDomain =
+		lowAnalysis.complexityInput !== null &&
+		highAnalysis.complexityInput !== null
+			? {
+					minimum: lowAnalysis.complexityInput,
+					maximum: highAnalysis.complexityInput,
+				}
+			: null;
 	const at = (stream: Stream, value: number): Interval | null => {
 		if (stream.mode !== "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
 			return null;
 		const curve = perTitleAnalysisCurve(stream);
-		if (curve)
+		if (curve) {
+			const complexityInput = resolvePerTitleAnalysis(
+				proposal.api,
+				value,
+			).complexityInput;
+			if (complexityInput === null) return null;
 			return evaluateComplexityRange({
 				...curve,
-				input: value,
+				input: complexityInput,
 				minStep: global.minBitrateStepSize,
 			});
+		}
 		const setting = stream.perTitleSettings;
 		if (
 			setting?.bitrateSelectionMode === "COMPLEXITY_RANGE" ||
@@ -160,13 +177,26 @@ export function assessPerTitleLadder(
 			high: at(stream, input.maximum),
 		})),
 		intervals:
-			curves.length && curves.every((row): row is Curve => row !== null)
-				? certifyComplexityIntervals(curves, input, global.minBitrateStepSize)
+			complexityDomain &&
+			curves.length &&
+			curves.every((row): row is Curve => row !== null)
+				? certifyComplexityIntervals(
+						curves,
+						complexityDomain,
+						global.minBitrateStepSize,
+					)
 				: null,
 		earlySaturationRows: fixed
 			.filter((stream) => {
 				const row = perTitleAnalysisCurve(stream);
-				return row && row.minimum < row.maximum && row.high < input.maximum;
+				return (
+					row &&
+					complexityDomain &&
+					row.minimum < row.maximum &&
+					input.minimum < input.maximum &&
+					(row.high < complexityDomain.maximum ||
+						row.high <= complexityDomain.minimum)
+				);
 			})
 			.map((stream) => stream.rowId),
 		globalCapacity: perTitlePlacementCapacity(
@@ -190,7 +220,13 @@ export function assessPerTitleLadder(
 	const bottomHigh = bottom && at(bottom, input.maximum);
 	const bottomCurve = bottom && perTitleAnalysisCurve(bottom);
 	const bottomBounds = bottomCurve
-		? boundComplexityRange(bottomCurve, input, global.minBitrateStepSize)
+		? complexityDomain
+			? boundComplexityRange(
+					bottomCurve,
+					complexityDomain,
+					global.minBitrateStepSize,
+				)
+			: null
 		: bottomLow && bottomHigh
 			? { minimum: bottomLow.minimum, maximum: bottomHigh.maximum }
 			: null;
@@ -251,6 +287,7 @@ export function assessPerTitleLadder(
 	}
 	const rule = global.fixedResolutionAndBitrateConfiguration;
 	if (
+		!top ||
 		!curve ||
 		!rule ||
 		rule.forcedRenditionAboveHighestFixedRepresentation !== 1 ||
@@ -261,7 +298,7 @@ export function assessPerTitleLadder(
 	const factor = rule.forcedRenditionAboveHighestFixedRepresentationFactor;
 	if (typeof factor !== "number" || !Number.isFinite(factor) || factor <= 1)
 		return result;
-	const floor = Math.round(curve.minimum * factor);
+	const floor = lowAnalysis.floor;
 	if (!rate(floor) || floor >= input.maximum) return result;
 	const domain = {
 		minimum: Math.max(input.minimum, floor),
@@ -269,6 +306,9 @@ export function assessPerTitleLadder(
 	};
 	result.topResponse.domain = domain;
 	result.topResponse.floor = floor;
+	// This certificate compares raw V with the effective row rate. Its explicit
+	// domain starts at F, so C=max(V,F)=V throughout; a C-only certificate would
+	// not establish the same ratio for raw inputs below the floor.
 	const certificate = certifyComplexityDirectConnection(curve, domain, {
 		minimum: global.minBitrateStepSize,
 		maximum: global.maxBitrateStepSize,
@@ -289,11 +329,7 @@ export function assessPerTitleLadder(
 		domain.maximum,
 	]) {
 		if (value < domain.minimum || value > domain.maximum) continue;
-		const range = evaluateComplexityRange({
-			...curve,
-			input: value,
-			minStep: global.minBitrateStepSize,
-		});
+		const range = at(top, value);
 		if (
 			range &&
 			(value / range.maximum < global.minBitrateStepSize ||

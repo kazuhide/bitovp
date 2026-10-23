@@ -70,6 +70,30 @@ function forced(
 }
 
 describe("current-setting Per-Title reach assessment", () => {
+	it("applies the fixed-stream analysis floor before evaluating low-input savings", () => {
+		const goal = mixed({
+			maxBitrate: 1_200_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			automaticTemplates: [],
+			rows: [
+				{
+					id: "fixed",
+					height: 720,
+					minBitrate: 200_000,
+					maxBitrate: 1_200_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 100_000,
+					highComplexityBoundaryForMaxBitrate: 1_200_000,
+				},
+			],
+		});
+		const result = assessPerTitleReach(goal, proposal(goal));
+		// The fixed minimum raises the 100k hypothesis to 200k before interpolation.
+		expect(result.lowInput).toBe(100_000);
+		expect(result.low).toEqual({ minimum: 290_909, maximum: 290_909 });
+	});
+
 	it("uses the cap and minimum as explicit hypotheses, independently of graph examples", () => {
 		const goal = mixed();
 		const current = proposal(goal);
@@ -215,7 +239,8 @@ describe("current-setting Per-Title reach assessment", () => {
 			status: "conditional-reachable",
 			branch: "forced",
 			high: { minimum: 228, maximum: 228 },
-			low: { minimum: 180, maximum: 180 },
+			// The fixed analysis floor is 180; the effective base is 96, then 144, 216.
+			low: { minimum: 216, maximum: 216 },
 			adaptation: "conditional",
 		});
 	});
@@ -307,14 +332,16 @@ describe("current-setting Per-Title reach assessment", () => {
 		expect(result).toMatchObject({
 			status: "blocked",
 			high: { minimum: 101, maximum: 101 },
-			low: { minimum: 81, maximum: 81 },
+			// The fixed analysis floor is 64; the effective fixed top is 85.
+			low: { minimum: 85, maximum: 85 },
 		});
 		expect(result.blockers).toContain("forced-not-increasing");
 	});
 
 	it.each([
 		["MAXIMUM", 111],
-		["LAST_CALCULATED_BITRATE", 88],
+		// The fixed analysis floor is 88, giving base 87 and rounded forced point 96.
+		["LAST_CALCULATED_BITRATE", 96],
 	] as const)("accepts increasing %s points above their applicable existing fixed rate", (mode, low) => {
 		const goal = forced(mode);
 		goal.maxBitrate = 500;

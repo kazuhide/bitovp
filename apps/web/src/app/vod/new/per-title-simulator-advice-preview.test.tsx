@@ -192,7 +192,7 @@ describe.each(["en", "ja"] as const)("staged ladder preview (%s)", (locale) => {
 		expect(input).toEqual(before);
 	});
 
-	it("retains conditional bars and automatic candidates while the output count is unknown", () => {
+	it("retains conditional constraints and aggregate automatic ranges while the output count is unknown", () => {
 		const input = fixture();
 		expect(input.advice.proposal.status).toBe("unknown");
 		expect(input.advice.proposal.countGuarantee).toBe(false);
@@ -207,9 +207,30 @@ describe.each(["en", "ja"] as const)("staged ladder preview (%s)", (locale) => {
 				within(figure).getAllByTestId("per-title-output-band").length,
 			).toBeGreaterThan(0);
 			expect(figure).toHaveTextContent("PER_TITLE_TEMPLATE");
+			expect(
+				within(figure).getByText(
+					ja ? "追加出力は未確定" : "Additional outputs unknown",
+				),
+			).toBeVisible();
+			const automatic = within(figure)
+				.getAllByTestId("per-title-output-row")
+				.find((row) =>
+					row.textContent?.includes(
+						ja ? "自動生成の範囲（仮定）" : "Automatic range (assumed)",
+					),
+				);
+			if (!automatic) throw new Error("Expected an aggregate automatic range.");
+			expect(automatic).toHaveTextContent(ja ? "条件付き" : "Conditional");
+			expect(
+				within(automatic).queryByTestId("per-title-output-target"),
+			).toBeNull();
+			expect(
+				within(automatic).queryByTestId("per-title-output-endpoint"),
+			).toBeNull();
+			expect(automatic).not.toHaveTextContent("1080 px");
 		}
 		expect(getFigure(currentTitle)).toHaveTextContent(
-			ja ? "計算点 1,600" : "Target 1,600",
+			ja ? "計算点 1,600" : "Calculated point 1,600",
 		);
 		expect(
 			screen.getByText(
@@ -220,22 +241,70 @@ describe.each(["en", "ja"] as const)("staged ladder preview (%s)", (locale) => {
 		).toBeVisible();
 	});
 
-	it("compares forced upper values when the fixed rendition is highest", () => {
+	it("keeps forced upper values in a conditional fallback when no upper template is declared", () => {
 		const input = fixture(false);
+		const before = structuredClone(input);
 		renderLocalized(
 			<PerTitleAdvicePreview {...input} selected={[]} kept={[]} />,
 			locale,
 		);
-		for (const name of [currentTitle, allTitle]) {
+		for (const [name, rate] of [
+			[currentTitle, "2,000"],
+			[allTitle, "3,000"],
+		] as const) {
 			const figure = getFigure(name);
-			expect(figure).toHaveTextContent(
+			expect(
+				within(figure).getByTestId("per-title-forced-fallback"),
+			).toHaveTextContent(
 				ja
-					? "固定レンディションが最上位の場合に追加"
-					: "Additional (if fixed is highest)",
+					? `固定段が最上位なら ${rate} kbps（1段・各段×1.25）。通常上段の上限ではありません。`
+					: `If fixed is highest: ${rate} kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.`,
 			);
+			expect(
+				within(figure).getByText(
+					ja ? "追加出力は未確定" : "Additional outputs unknown",
+				),
+			).toBeVisible();
+			const rows = within(figure).getAllByTestId("per-title-output-row");
+			expect(rows).toHaveLength(2);
+			for (const row of rows)
+				expect(row).not.toHaveTextContent(
+					ja
+						? "固定レンディションが最上位の場合に追加"
+						: "Additional (if fixed is highest)",
+				);
 		}
-		expect(getFigure(currentTitle)).toHaveTextContent("2,000");
-		expect(getFigure(allTitle)).toHaveTextContent("3,000");
+		fireEvent.change(screen.getByRole("spinbutton", { name: fieldTitle }), {
+			target: { value: "1000" },
+		});
+		const after = getFigure(allTitle);
+		expect(
+			within(after).getByTestId("per-title-forced-fallback"),
+		).toHaveTextContent(
+			ja
+				? "固定段が最上位なら 1,500–1,636.363 kbps（1段・各段×1.25）。通常上段の上限ではありません。"
+				: "If fixed is highest: 1,500–1,636.363 kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.",
+		);
+		const fixed = within(after)
+			.getAllByTestId("per-title-output-row")
+			.find((row) => row.textContent?.includes(configured("1,200–2,400")));
+		if (!fixed) throw new Error("Expected the configured fixed row.");
+		expect(fixed).toHaveTextContent(
+			ja ? "有効範囲 1,200–1,309.09" : "Effective interval 1,200–1,309.09",
+		);
+		expect(fixed).toHaveTextContent(ja ? "条件付き" : "Conditional");
+		expect(within(fixed).queryByTestId("per-title-output-target")).toBeNull();
+		expect(within(fixed).queryByTestId("per-title-output-endpoint")).toBeNull();
+		const band = within(fixed).getByTestId("per-title-output-band");
+		expect(Number(band.getAttribute("x1"))).toBeLessThan(
+			Number(band.getAttribute("x2")),
+		);
+		expect(
+			within(after).getByText(
+				ja ? "追加出力は未確定" : "Additional outputs unknown",
+			),
+		).toBeVisible();
+		expect(input).toEqual(before);
 	});
 
 	it("shows a concise conflict instead of a feasible after chart for an invalid subset", () => {

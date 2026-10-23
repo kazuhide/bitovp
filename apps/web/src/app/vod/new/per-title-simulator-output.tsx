@@ -20,10 +20,14 @@ const copy = {
 		candidate: "Candidate",
 		candidates: (heights: string) => `Candidates ${heights} px`,
 		automatic: "Automatic candidate",
+		automaticGroup: "Automatic range (assumed)",
+		automaticHint: "Count and resolutions are determined by content analysis.",
+		assumedRange: (minimum: string, maximum: string) =>
+			`Assumed range ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		additional: "Additional",
 		start: "Start",
 		forced: "Additional (if fixed is highest)",
-		analysis: "Normal calculation (count unresolved)",
+		analysis: "Analysis assumption (count unresolved)",
 		assumed: (rate: string) => `Assumed ${rate}`,
 		forcedFallback: (range: string, count: number, factor: string) =>
 			`If fixed is highest: ${range} kbps (${count} ${count === 1 ? "step" : "steps"}, ×${factor} each). This factor does not cap normal upper outputs.`,
@@ -32,10 +36,17 @@ const copy = {
 		conditional: "Conditional",
 		unknown: "Unknown",
 		configured: (minimum: string, maximum: string) =>
-			`Configured ${minimum}–${maximum}`,
-		point: (rate: string) => `Target ${rate}`,
+			`Configured ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
+		point: (rate: string) => `Calculated point ${rate}`,
 		effective: (minimum: string, maximum: string) =>
-			`Effective interval ${minimum}–${maximum}`,
+			minimum === maximum
+				? `Effective value ${minimum}`
+				: `Effective interval ${minimum}–${maximum}`,
+		floorApplied: (input: string, complexity: string) =>
+			`Complexity input ${input} → ${complexity} kbps (fixed-rendition floor).`,
+		floorUnknown:
+			"The fixed-rendition floor is unresolved; complexity targets are unavailable.",
+		aspectAssumption: "Height-only templates assume a shared aspect ratio.",
 		target: (rate: string) => `Upper target ${rate}`,
 		unresolved: "Additional outputs unknown",
 		unavailable: "Output unavailable",
@@ -46,7 +57,7 @@ const copy = {
 		mode: "Mode",
 		bitrate: "Bitrate (kbps)",
 		description:
-			"Explicit-template example; source analysis may change resolutions. Extra output assumes a fixed rendition is highest.",
+			"Parameter-derived intervals and conditional calculation points; source analysis may change resolutions. Extra output assumes a fixed rendition is highest.",
 	},
 	ja: {
 		title: "想定出力",
@@ -59,10 +70,14 @@ const copy = {
 		candidate: "候補",
 		candidates: (heights: string) => `候補 ${heights} px`,
 		automatic: "自動生成の候補",
+		automaticGroup: "自動生成の範囲（仮定）",
+		automaticHint: "本数と解像度は素材解析で決まります。",
+		assumedRange: (minimum: string, maximum: string) =>
+			`仮定の範囲 ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		additional: "追加",
 		start: "開始",
 		forced: "固定レンディションが最上位の場合に追加",
-		analysis: "通常計算の上位候補（本数未確定）",
+		analysis: "解析値の仮定（本数未確定）",
 		assumed: (rate: string) => `仮定 ${rate}`,
 		forcedFallback: (range: string, count: number, factor: string) =>
 			`固定段が最上位なら ${range} kbps（${count}段・各段×${factor}）。通常上段の上限ではありません。`,
@@ -71,10 +86,17 @@ const copy = {
 		conditional: "条件付き",
 		unknown: "未確定",
 		configured: (minimum: string, maximum: string) =>
-			`設定範囲 ${minimum}–${maximum}`,
+			`設定範囲 ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		point: (rate: string) => `計算点 ${rate}`,
 		effective: (minimum: string, maximum: string) =>
-			`有効範囲 ${minimum}–${maximum}`,
+			minimum === maximum
+				? `有効値 ${minimum}`
+				: `有効範囲 ${minimum}–${maximum}`,
+		floorApplied: (input: string, complexity: string) =>
+			`複雑度の計算値 ${input} → ${complexity} kbps（固定段の下限を適用）。`,
+		floorUnknown: "固定段の下限が未確定のため、複雑度に応じた値は未確定です。",
+		aspectAssumption:
+			"高さのみを指定したテンプレートは、共通のアスペクト比を仮定しています。",
 		target: (rate: string) => `上限の目安 ${rate}`,
 		unresolved: "追加出力は未確定",
 		unavailable: "想定出力を表示できません",
@@ -85,7 +107,7 @@ const copy = {
 		mode: "モード",
 		bitrate: "ビットレート (kbps)",
 		description:
-			"指定したテンプレートの計算例です。素材解析で解像度が変わる場合があります。追加値は固定レンディションが最上位の場合を仮定します。",
+			"設定から導いた範囲と条件付きの計算点です。素材解析で解像度が変わる場合があります。追加値は固定レンディションが最上位の場合を仮定します。",
 	},
 };
 
@@ -137,6 +159,25 @@ export function PerTitleOutputChart({
 		maximumSignificantDigits: 3,
 	});
 	const bitrate = (value: number) => numbers.format(value / 1000);
+	const floorNote =
+		positiveInteger(preview.analysisInput) &&
+		positiveInteger(preview.complexityInput) &&
+		preview.complexityInput > preview.analysisInput
+			? text.floorApplied(
+					bitrate(preview.analysisInput),
+					bitrate(preview.complexityInput),
+				)
+			: undefined;
+	const floorUnknown =
+		preview.floor === null &&
+		proposal.api.streams.some(
+			(stream) =>
+				stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+				stream.perTitleSettings?.bitrateSelectionMode === "COMPLEXITY_RANGE",
+		);
+	const automaticGroup = preview.rows.some(
+		(row) => row.kind === "automatic-group",
+	);
 	const rows = preview.rows
 		.map((row, index) => {
 			const matches = proposal.api.streams.filter(
@@ -154,9 +195,13 @@ export function PerTitleOutputChart({
 					: undefined;
 			const numeric = row.status !== "unknown";
 			const target =
-				numeric && positiveInteger(row.bitrate) ? row.bitrate : undefined;
-			const range =
+				row.kind !== "automatic-group" &&
 				numeric &&
+				positiveInteger(row.bitrate)
+					? row.bitrate
+					: undefined;
+			const range =
+				(numeric || row.rangeBasis === "configured") &&
 				positiveInteger(row.minimumBitrate) &&
 				positiveInteger(row.maximumBitrate) &&
 				row.minimumBitrate <= row.maximumBitrate
@@ -176,59 +221,72 @@ export function PerTitleOutputChart({
 				),
 			];
 			const label =
-				row.basis === "analysis" && candidateHeights.length
-					? text.candidates(
-							candidateHeights
-								.map((height) => numbers.format(height))
-								.join(" / "),
-						)
-					: automatic
-						? positiveInteger(row.height)
-							? `${text.candidate} ${row.height} px`
-							: text.automatic
-						: positiveInteger(row.height)
-							? `${row.height} px`
-							: text.heightUnknown;
+				row.kind === "automatic-group"
+					? text.automaticGroup
+					: row.basis === "analysis" && candidateHeights.length
+						? text.candidates(
+								candidateHeights
+									.map((height) => numbers.format(height))
+									.join(" / "),
+							)
+						: automatic
+							? positiveInteger(row.height)
+								? `${text.candidate} ${row.height} px`
+								: text.automatic
+							: positiveInteger(row.height)
+								? `${row.height} px`
+								: text.heightUnknown;
 			const status =
-				target === undefined && range === undefined
+				row.status === "unknown" ||
+				(target === undefined && range === undefined)
 					? text.unknown
 					: row.status === "conditional"
 						? text.conditional
 						: text.example;
-			const value = configured
-				? text.configured(
-						bitrate(configured.minimum),
-						bitrate(configured.maximum),
-					)
-				: range
-					? range.minimum === range.maximum
-						? bitrate(range.minimum)
-						: `${bitrate(range.minimum)}–${bitrate(range.maximum)}`
+			const value = range
+				? row.rangeBasis === "effective"
+					? text.effective(bitrate(range.minimum), bitrate(range.maximum))
+					: row.rangeBasis === "configured"
+						? text.configured(bitrate(range.minimum), bitrate(range.maximum))
+						: row.rangeBasis === "assumed"
+							? text.assumedRange(
+									bitrate(range.minimum),
+									bitrate(range.maximum),
+								)
+							: range.minimum === range.maximum
+								? bitrate(range.minimum)
+								: `${bitrate(range.minimum)}–${bitrate(range.maximum)}`
+				: configured
+					? text.configured(
+							bitrate(configured.minimum),
+							bitrate(configured.maximum),
+						)
 					: target !== undefined
 						? bitrate(target)
 						: "";
 			const values =
-				row.basis === "analysis" && value ? text.assumed(value) : value;
+				row.basis === "analysis" && row.rangeBasis !== "assumed" && value
+					? text.assumed(value)
+					: value;
 			const targetText =
 				target === undefined
 					? undefined
-					: configured
+					: configured || row.rangeBasis === "effective"
 						? text.point(bitrate(target))
 						: row.status === "conditional" &&
 								range &&
 								range.minimum !== range.maximum
 							? text.target(bitrate(target))
 							: undefined;
-			const effective =
-				configured &&
-				range &&
-				range.minimum !== range.maximum &&
-				(range.minimum !== configured.minimum ||
-					range.maximum !== configured.maximum)
-					? text.effective(bitrate(range.minimum), bitrate(range.maximum))
+			const configuredText =
+				configured && range && row.rangeBasis !== "configured"
+					? text.configured(
+							bitrate(configured.minimum),
+							bitrate(configured.maximum),
+						)
 					: undefined;
 			const basis =
-				target === undefined
+				target === undefined && range === undefined
 					? undefined
 					: row.basis === "minimum"
 						? text.start
@@ -244,7 +302,7 @@ export function PerTitleOutputChart({
 				range,
 				configured,
 				targetText,
-				effective,
+				configuredText,
 				label,
 				status,
 				values,
@@ -265,16 +323,11 @@ export function PerTitleOutputChart({
 		({ row, target, range }) =>
 			row.basis === "forced" && (target !== undefined || range !== undefined),
 	);
-	const forcedFallback = rows.some(
-		({ row, target, range }) =>
-			row.basis === "analysis" && (target !== undefined || range !== undefined),
-	)
-		? preview.forcedFallback
-		: undefined;
+	const forcedFallback = forcedOutput ? undefined : preview.forcedFallback;
 	const forcedMaximum = Math.max(
-		scale ? (forcedFallback?.maximumBitrate ?? 0) : 0,
-		...rows.map(({ row, target }) =>
-			row.basis === "forced" ? (target ?? 0) : 0,
+		forcedFallback?.maximumBitrate ?? 0,
+		...rows.map(({ row, target, range }) =>
+			row.basis === "forced" ? Math.max(target ?? 0, range?.maximum ?? 0) : 0,
 		),
 	);
 	const forcedOverflow =
@@ -297,12 +350,31 @@ export function PerTitleOutputChart({
 						: text.inputUnknown}
 				</span>
 			</figcaption>
+			{floorNote ? (
+				<p id={`${id}-floor`} className="text-xs text-zinc-400">
+					{floorNote}
+				</p>
+			) : floorUnknown ? (
+				<p id={`${id}-floor`} className="text-xs text-zinc-400">
+					{text.floorUnknown}
+				</p>
+			) : null}
+			{preview.usesAspectRatioAssumption ? (
+				<p id={`${id}-aspect`} className="text-xs text-zinc-400">
+					{text.aspectAssumption}
+				</p>
+			) : null}
+			{automaticGroup ? (
+				<p id={`${id}-automatic`} className="text-xs text-zinc-400">
+					{text.automaticHint}
+				</p>
+			) : null}
 			{scale && rows.length ? (
 				<>
 					<div
 						role="img"
 						aria-labelledby={`${id}-title`}
-						aria-describedby={`${id}-axis ${id}-description${forcedFallback ? ` ${id}-fallback` : ""}`}
+						aria-describedby={`${id}-axis ${id}-description${forcedFallback ? ` ${id}-fallback` : ""}${floorNote || floorUnknown ? ` ${id}-floor` : ""}${preview.usesAspectRatioAssumption ? ` ${id}-aspect` : ""}${automaticGroup ? ` ${id}-automatic` : ""}`}
 						className="space-y-2"
 					>
 						<div
@@ -335,7 +407,7 @@ export function PerTitleOutputChart({
 								range,
 								configured,
 								targetText,
-								effective,
+								configuredText,
 								label,
 								status,
 								values,
@@ -343,8 +415,8 @@ export function PerTitleOutputChart({
 								basis,
 							}) => {
 								const band =
-									configured ??
 									range ??
+									configured ??
 									(target === undefined ? permitted : undefined);
 								const lower = band?.minimum ?? target;
 								const upper = band?.maximum ?? target;
@@ -375,9 +447,7 @@ export function PerTitleOutputChart({
 												{values ? <span>{values}</span> : null}
 												<span className="text-zinc-400">{status}</span>
 												{targetText ? (
-													<span className="text-zinc-400" title={effective}>
-														{targetText}
-													</span>
+													<span className="text-zinc-400">{targetText}</span>
 												) : null}
 												{below || above ? (
 													<span className="text-amber-300">
@@ -387,6 +457,11 @@ export function PerTitleOutputChart({
 													</span>
 												) : null}
 											</div>
+											{configuredText ? (
+												<p className="text-right text-zinc-500 tabular-nums">
+													{configuredText}
+												</p>
+											) : null}
 											<svg
 												viewBox="0 0 100 12"
 												preserveAspectRatio="none"
@@ -403,6 +478,20 @@ export function PerTitleOutputChart({
 													strokeWidth={1}
 													vectorEffect="non-scaling-stroke"
 												/>
+												{configured &&
+												range &&
+												row.rangeBasis !== "configured" ? (
+													<line
+														data-testid="per-title-output-configured-band"
+														x1={scale.position(configured.minimum)}
+														x2={scale.position(configured.maximum)}
+														y1={6}
+														y2={6}
+														className="stroke-zinc-700"
+														strokeWidth={6}
+														vectorEffect="non-scaling-stroke"
+													/>
+												) : null}
 												{band ? (
 													<line
 														data-testid="per-title-output-band"
@@ -410,9 +499,12 @@ export function PerTitleOutputChart({
 														x2={scale.position(band.maximum)}
 														y1={6}
 														y2={6}
-														className="stroke-zinc-400"
-														strokeWidth={configured ? 6 : 2}
-														strokeDasharray={configured ? undefined : "4 3"}
+														className="stroke-zinc-300"
+														strokeWidth={3}
+														strokeDasharray={
+															band.minimum === band.maximum ? undefined : "4 3"
+														}
+														strokeLinecap="round"
 														vectorEffect="non-scaling-stroke"
 													/>
 												) : null}
@@ -459,21 +551,6 @@ export function PerTitleOutputChart({
 					<p id={`${id}-description`} className="sr-only">
 						{text.description}
 					</p>
-					{forcedFallback ? (
-						<p
-							id={`${id}-fallback`}
-							data-testid="per-title-forced-fallback"
-							className="text-xs text-zinc-400"
-						>
-							{text.forcedFallback(
-								forcedFallback.minimumBitrate === forcedFallback.maximumBitrate
-									? bitrate(forcedFallback.minimumBitrate)
-									: `${bitrate(forcedFallback.minimumBitrate)}–${bitrate(forcedFallback.maximumBitrate)}`,
-								forcedFallback.count,
-								String(forcedFallback.factor),
-							)}
-						</p>
-					) : null}
 					<div className="sr-only">
 						<table aria-label={dataTitle}>
 							<thead>
@@ -492,7 +569,7 @@ export function PerTitleOutputChart({
 										status,
 										values,
 										targetText,
-										effective,
+										configuredText,
 										basis,
 									}) => (
 										<tr key={`${row.id}-${index}`}>
@@ -504,7 +581,7 @@ export function PerTitleOutputChart({
 											<td>
 												{values} {status} {basis}
 												{targetText ? ` ${targetText}` : ""}
-												{effective ? ` ${effective}` : ""}
+												{configuredText ? ` ${configuredText}` : ""}
 											</td>
 										</tr>
 									),
@@ -516,6 +593,21 @@ export function PerTitleOutputChart({
 			) : (
 				<p className="text-xs text-zinc-400">{text.unavailable}</p>
 			)}
+			{forcedFallback ? (
+				<p
+					id={`${id}-fallback`}
+					data-testid="per-title-forced-fallback"
+					className="text-xs text-zinc-400"
+				>
+					{text.forcedFallback(
+						forcedFallback.minimumBitrate === forcedFallback.maximumBitrate
+							? bitrate(forcedFallback.minimumBitrate)
+							: `${bitrate(forcedFallback.minimumBitrate)}–${bitrate(forcedFallback.maximumBitrate)}`,
+						forcedFallback.count,
+						String(forcedFallback.factor),
+					)}
+				</p>
+			) : null}
 			{forcedOverflow !== undefined && permitted ? (
 				<p role="alert" className="text-amber-300 text-xs">
 					{text.exceedsGlobal(
@@ -524,7 +616,7 @@ export function PerTitleOutputChart({
 					)}
 				</p>
 			) : null}
-			{preview.unresolvedAdditional && !forcedOutput ? (
+			{preview.unresolvedAdditional ? (
 				<p className="text-xs text-zinc-400">{text.unresolved}</p>
 			) : null}
 		</figure>

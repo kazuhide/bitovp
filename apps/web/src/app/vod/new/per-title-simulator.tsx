@@ -42,6 +42,7 @@ import {
 } from "./per-title-simulator-copy";
 import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulator-fields";
 import { PerTitleSimulatorFiles } from "./per-title-simulator-files";
+import { focusPerTitleSetting } from "./per-title-simulator-focus";
 import type { PerTitleReference } from "./per-title-simulator-preset";
 import { PerTitleReasoning } from "./per-title-simulator-reasoning";
 import { PerTitleRecommendation } from "./per-title-simulator-recommendation";
@@ -389,6 +390,7 @@ function SimulatorEditor({
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
 	const id = useId();
+	const editorRef = useRef<HTMLDivElement>(null);
 	const tuned = useMemo(
 		() => tunePerTitleSettings(draftGoal, referenceGoal),
 		[draftGoal, referenceGoal],
@@ -448,7 +450,7 @@ function SimulatorEditor({
 	const patch = (next: Partial<PerTitleGoal>) =>
 		setGoal((current) => ({ ...current, ...next }));
 	return (
-		<div className="space-y-5">
+		<div ref={editorRef} className="space-y-5">
 			<div className="flex justify-end">
 				<Button variant="secondary" size="sm" onClick={onSetup}>
 					{locale === "ja" ? "新規設定ウィザード" : "New setup wizard"}
@@ -563,7 +565,12 @@ function SimulatorEditor({
 								))}
 						</div>
 					</section>
-					<div className="grid gap-3 sm:grid-cols-2">
+					<div
+						className="grid gap-3 sm:grid-cols-2"
+						data-setting-scope="global"
+						data-setting-key="countPolicy"
+						data-setting-control={`${id}-${goal.countPolicy.kind === "unrestricted" ? "count-policy" : "count"}`}
+					>
 						<Field htmlFor={`${id}-count-policy`} label={copy.countPolicy}>
 							<SelectNative
 								id={`${id}-count-policy`}
@@ -656,6 +663,9 @@ function SimulatorEditor({
 					<PerTitleAdvisor
 						goal={goal}
 						session={referenceGoal}
+						onInspectField={(field) =>
+							focusPerTitleSetting(editorRef.current, field)
+						}
 						onAdopt={(advice, options, fields) =>
 							setGoal((current) => {
 								const normalized = tunePerTitleSettings(

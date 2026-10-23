@@ -10,7 +10,10 @@ import {
 	type PerTitleAdviceField,
 	perTitleAdviceFieldKey,
 } from "./per-title-simulator-advice";
-import { perTitleSettingLabel } from "./per-title-simulator-control-copy";
+import {
+	perTitleControlCopy,
+	perTitleSettingLabel,
+} from "./per-title-simulator-control-copy";
 import type { PerTitleSettingValue } from "./per-title-simulator-tuning";
 
 export const isPerTitleBitrateKey = (key: string) =>
@@ -73,6 +76,8 @@ export function PerTitleAdviceChanges({
 			perTitleAdviceFieldKey(change),
 			valueKey(change.before),
 			valueKey(change.after),
+			change.beforeAdjustment,
+			change.afterAdjustment,
 		]),
 	);
 	const [selection, setSelection] = useState({
@@ -153,7 +158,9 @@ export function PerTitleAdviceChanges({
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-zinc-800">
-						{advice.changes.map(({ scope, key, rowId, before, after }) => {
+						{advice.changes.map((change) => {
+							const { scope, key, rowId, before, after } = change;
+							const { beforeAdjustment, afterAdjustment } = change;
 							const field = {
 								scope,
 								key,
@@ -161,6 +168,13 @@ export function PerTitleAdviceChanges({
 							};
 							const identity = perTitleAdviceFieldKey(field);
 							const label = perTitleSettingLabel(key, locale);
+							const modeChange =
+								beforeAdjustment?.mode === "auto" &&
+								afterAdjustment?.mode === "fixed"
+									? ja
+										? `自動（${perTitleControlCopy[locale].methods[beforeAdjustment.method]}） → 固定`
+										: `Auto (${perTitleControlCopy[locale].methods[beforeAdjustment.method]}) → Fixed`
+									: undefined;
 							const index = rows.findIndex((row) => row.id === rowId);
 							const row = rows[index];
 							const suffix =
@@ -205,6 +219,11 @@ export function PerTitleAdviceChanges({
 										className="whitespace-normal text-zinc-300 [overflow-wrap:anywhere]"
 									>
 										{label}
+										{modeChange ? (
+											<span className="block font-normal text-zinc-400">
+												{modeChange}
+											</span>
+										) : null}
 									</th>
 									<td className="tabular-nums text-zinc-200 [overflow-wrap:anywhere]">
 										{text(before)}

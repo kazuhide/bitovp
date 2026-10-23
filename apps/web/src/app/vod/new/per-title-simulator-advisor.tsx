@@ -286,6 +286,7 @@ function analysisSnapshot(
 	const analysis = analyzePerTitleSettings(goal, intent, {
 		protectedFields: fields,
 		contextKey,
+		referenceGoal: session,
 	});
 	return {
 		goal,
@@ -302,6 +303,7 @@ export function PerTitleAdvisor({
 	goal,
 	session,
 	onAdopt,
+	onInspectField,
 }: {
 	goal: PerTitleGoal;
 	session: PerTitleGoal;
@@ -310,6 +312,7 @@ export function PerTitleAdvisor({
 		options?: PerTitleAdviceOptions,
 		selected?: readonly PerTitleAdviceField[],
 	) => void;
+	onInspectField?: (field: PerTitleAdviceField) => void;
 }) {
 	const { locale } = useT();
 	const ja = locale === "ja";
@@ -338,8 +341,8 @@ export function PerTitleAdvisor({
 			? protection.fields
 			: EMPTY_FIELDS;
 	const options = useMemo<PerTitleAdviceOptions>(
-		() => ({ protectedFields: fields }),
-		[fields],
+		() => ({ protectedFields: fields, referenceGoal: session }),
+		[fields, session],
 	);
 	const key = protectionKey(fields);
 	const [snapshot, setSnapshot] = useState<AdvisorSnapshot | null>(null);
@@ -546,6 +549,32 @@ export function PerTitleAdvisor({
 			active.current || remaining.length > 0 ? "adopt" : null;
 		updateProtection(remaining);
 	};
+	const releaseForEvaluation = () => {
+		const live = liveProtection.current;
+		const relaxation = snapshot?.analysis?.relaxation;
+		if (
+			pendingApplication.current ||
+			!matches ||
+			active.current?.kind !== "analysis" ||
+			snapshot.contextKey !== perTitleAnalysisContextKey(liveIntent.current) ||
+			live.session !== session ||
+			live.codec !== goal.codec ||
+			protectionKey(live.fields) !== snapshot.key ||
+			!relaxation ||
+			!(relaxation.certifiedAlternatives > 0) ||
+			relaxation.fields.length === 0
+		)
+			return;
+		const held = new Set(live.fields.map(perTitleAdviceFieldKey));
+		const release = new Set(relaxation.fields.map(perTitleAdviceFieldKey));
+		if ([...release].some((key) => !held.has(key))) return;
+		pendingFocus.current = "adopt";
+		updateProtection(
+			live.fields.filter(
+				(field) => !release.has(perTitleAdviceFieldKey(field)),
+			),
+		);
+	};
 	const adoptionContextKey = () =>
 		active.current?.kind === "analysis"
 			? perTitleAnalysisContextKey(liveIntent.current)
@@ -564,6 +593,7 @@ export function PerTitleAdvisor({
 			return;
 		const options = {
 			protectedFields: live.fields.map((field) => ({ ...field })),
+			referenceGoal: session,
 			...(snapshot.contextKey === undefined
 				? {}
 				: { contextKey: perTitleAnalysisContextKey(liveIntent.current) }),
@@ -626,6 +656,7 @@ export function PerTitleAdvisor({
 			return false;
 		const options = {
 			protectedFields: live.fields.map((field) => ({ ...field })),
+			referenceGoal: session,
 			...(snapshot.contextKey === undefined
 				? {}
 				: { contextKey: perTitleAnalysisContextKey(liveIntent.current) }),
@@ -668,8 +699,10 @@ export function PerTitleAdvisor({
 		onAdopt(advice, options, selected);
 		return true;
 	};
-	const automatic = matches && hasAutomaticPerTitleSettings(goal);
-	const unavailable = matches && fields.length > 0 && !first;
+	const automatic =
+		matches && !snapshot.analysis && hasAutomaticPerTitleSettings(goal);
+	const unavailable =
+		matches && !snapshot.analysis && fields.length > 0 && !first;
 	const allRows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
 	const pending = pendingApplication.current;
 	const pendingFields = pending
@@ -681,10 +714,14 @@ export function PerTitleAdvisor({
 		<div ref={rootRef} className="space-y-3">
 			<PerTitleAnalysisPanel
 				goal={goal}
+				referenceGoal={session}
 				intent={intent}
 				onIntentChange={changeIntent}
 				onEvaluate={evaluate}
 				result={matches ? snapshot.analysis : undefined}
+				onInspectField={onInspectField}
+				onReleaseMaintained={releaseForEvaluation}
+				applying={pending !== null}
 			/>
 			{first ? (
 				<section

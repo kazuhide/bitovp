@@ -8,8 +8,11 @@ import {
 	hasAutomaticPerTitleSettings,
 	hasPerTitleEvaluationCountEvidence,
 	type PerTitleAdvice,
+	type PerTitleAdviceField,
 	type PerTitleAdviceOptions,
+	perTitleAdviceFieldKey,
 } from "./per-title-simulator-advice";
+import { protectedPerTitleAdviceFields } from "./per-title-simulator-advice-fields";
 import { perTitleAnalysisCandidates } from "./per-title-simulator-analysis-candidates";
 import { assessPerTitleCountStructure } from "./per-title-simulator-analysis-count";
 import { perTitleCountDirectedCandidates } from "./per-title-simulator-analysis-count-layouts";
@@ -57,6 +60,11 @@ export type PerTitleAnalysisResult = {
 	findings: PerTitleValidityFinding[];
 	dependencies: PerTitleDependencyAssessment[];
 	advice: PerTitleAdvice[];
+	/** One checked alternative; the released fields are neither unique nor minimal. */
+	relaxation?: {
+		fields: readonly PerTitleAdviceField[];
+		certifiedAlternatives: number;
+	};
 	quality: {
 		status: "requires-media";
 		message: Message;
@@ -140,6 +148,11 @@ function explanation(
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
+	if (item.facts.countRequirementRepair === 1)
+		return {
+			en: `Keep the requested ${item.goal.countPolicy.kind === "maximum" ? "maximum of " : ""}${item.goal.countPolicy.kind === "unrestricted" ? "" : item.goal.countPolicy.count} outputs, overall bitrate limits, template roles and quality controls. The revised spacing satisfies the count requirement in the configuration model. This does not establish native output count, resolutions, use of the upper bitrate limit or equal quality; verify those with representative media.`,
+			ja: `指定した${item.goal.countPolicy.kind === "maximum" ? "最大" : ""}${item.goal.countPolicy.kind === "unrestricted" ? "" : item.goal.countPolicy.count}本・全体のビットレート範囲・テンプレート構成・画質設定を保つ案です。変更後の段間隔は、計算モデル上で本数条件を満たします。実際の本数・解像度・上限ビットレートの使用・同等画質は素材で確認してください。`,
+		};
 	if (
 		item.facts.upperLimitRepair === 1 &&
 		item.goal.countPolicy.kind === "exact"
@@ -239,12 +252,12 @@ function explainPlacementRisk(
 }
 
 /** Configuration dependency analysis, not a replacement for native media analysis. */
-export function analyzePerTitleSettings(
+function analyzeCurrentSettings(
 	goal: PerTitleGoal,
 	intent: PerTitleAnalysisIntent,
 	options: PerTitleAdviceOptions = {},
 ): PerTitleAnalysisResult {
-	const normalized = tunePerTitleSettings(goal, goal);
+	const normalized = tunePerTitleSettings(goal, options.referenceGoal ?? goal);
 	const proposal = normalized.proposal;
 	const upperLimit = assessPerTitleUpperLimit(normalized.goal, proposal);
 	const reach = assessPerTitleReach(normalized.goal, proposal);
@@ -259,7 +272,14 @@ export function analyzePerTitleSettings(
 		severity: "conflict" | "warning" | "info",
 		en: string,
 		ja: string,
-	) => findings.push({ code, severity, message: { en, ja } });
+		fields?: PerTitleValidityFinding["fields"],
+	) =>
+		findings.push({
+			code,
+			severity,
+			message: { en, ja },
+			...(fields ? { fields } : {}),
+		});
 	const result: PerTitleAnalysisResult = {
 		intent,
 		reach,
@@ -412,11 +432,27 @@ export function analyzePerTitleSettings(
 			"info",
 			"Choose an exact or maximum rendition count in the requirements, then evaluate again.",
 			"左の要件で「本数を固定」または「本数の上限」を指定して、再評価してください。",
+			[{ scope: "global", key: "countPolicy" }],
 		);
 		result.decision.message = {
 			en: "Choose the rendition count to preserve in the requirements, then evaluate again.",
 			ja: "左の要件で維持する本数を指定して、再評価してください。",
 		};
+		return result;
+	}
+	if (
+		goal.countPolicy.kind !== "unrestricted" &&
+		Number.isSafeInteger(goal.countPolicy.count) &&
+		goal.countPolicy.count > 256
+	) {
+		const message = {
+			en: "The configuration model supports up to 256 requested outputs. This is a simulator limit, not a provider limit. Reduce the requested count and evaluate again.",
+			ja: "指定本数が配置モデルの上限256本を超えています。プロバイダーの制限を示す判定ではありません。指定本数を減らして再評価してください。",
+		};
+		add("count-model-limit", "warning", message.en, message.ja, [
+			{ scope: "global", key: "countPolicy" },
+		]);
+		result.decision.message = message;
 		return result;
 	}
 	if (
@@ -430,25 +466,13 @@ export function analyzePerTitleSettings(
 			"現在の生成本数が未確定でも、指定した本数を要件として評価します。調整案はその要件とテンプレート構成を維持し、実際の本数は現設定と候補の出力で確認します。",
 		);
 	}
-	if (
-		intent === "preserve" &&
-		goal.strategy !== "fixed-ranges" &&
-		!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal)
-	) {
-		result.decision.message = {
-			en: "The automatic template does not establish an output structure to retain. Use the count-focused goal to inspect spacing proposals for the requested count.",
-			ja: "現在の自動テンプレートからは、維持する出力構成を定められません。「本数の条件を優先」で、指定本数に向けた段間隔の案を確認してください。",
-		};
-		return result;
-	}
 	if (hasAutomaticPerTitleSettings(goal)) {
 		add(
 			"automatic-settings",
 			"info",
-			"The resolved automatic settings are evaluated. Freeze them to review explicit changes before adoption.",
-			"自動調整後の値を評価しています。個別の変更案を確認するには、各設定を「固定」にしてください。",
+			"Resolved automatic settings are evaluated against the loaded reference. A proposal fixes only its listed changes; unchanged automatic methods are retained and rechecked before adoption.",
+			"読み込んだ基準値から自動調整後の設定を評価します。提案した変更項目だけを固定にし、変更しない自動調整の方法は維持して、反映前に再検証します。",
 		);
-		return result;
 	}
 	const context = {
 		...options,
@@ -479,6 +503,10 @@ export function analyzePerTitleSettings(
 		const repairsUpperLimit =
 			upperLimit.finding !== null &&
 			assessPerTitleUpperLimit(item.goal, item.proposal).status === "satisfied";
+		const repairsCountRequirement =
+			goal.countPolicy.kind !== "unrestricted" &&
+			!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
+			item.proof === "model-count";
 		if (
 			item.goal.minBitrate !== goal.minBitrate ||
 			item.goal.maxBitrate !== goal.maxBitrate ||
@@ -592,12 +620,29 @@ export function analyzePerTitleSettings(
 						!!nextIntervals &&
 						nextIntervals.maximumWithinRowRatio <
 							item.proposal.api.global.minBitrateStepSize)));
+		const declaredCountRepair =
+			countStructure.status === "declared-compatible" &&
+			checkedStructure.status === "declared-compatible" &&
+			checkedStructure.declaredCount === countStructure.declaredCount &&
+			checkedStructure.required === countStructure.required &&
+			wholeImprovement &&
+			reachRank(checked) >= reachRank(reach) &&
+			(["lowerSlots", "upperSlots"] as const).every(
+				(side) =>
+					ladder[side] === null ||
+					(checkedLadder[side] !== null &&
+						checkedLadder[side].maximum <= ladder[side].maximum),
+			) &&
+			(ladder.globalCapacity === null ||
+				(checkedLadder.globalCapacity !== null &&
+					checkedLadder.globalCapacity <= ladder.globalCapacity));
 		if (intent === "cap") {
 			if (
-				checked.status !== "conditional-reachable" ||
-				checked.adaptation !== "conditional" ||
 				reachRank(checked) < reachRank(reach) ||
-				(reachRank(checked) === reachRank(reach) && !wholeImprovement)
+				(!repairsCountRequirement &&
+					(checked.status !== "conditional-reachable" ||
+						checked.adaptation !== "conditional" ||
+						(reachRank(checked) === reachRank(reach) && !wholeImprovement)))
 			) {
 				reject("no-objective-improvement");
 				continue;
@@ -705,6 +750,7 @@ export function analyzePerTitleSettings(
 			}
 		} else if (
 			!repairsUpperLimit &&
+			!declaredCountRepair &&
 			(item.proof !== "model-count" ||
 				(!proposal.diagnostics.some(
 					(diagnostic) => diagnostic.severity === "conflict",
@@ -729,6 +775,8 @@ export function analyzePerTitleSettings(
 		seen.add(key);
 		item.facts = {
 			...item.facts,
+			countRequirementRepair: Number(repairsCountRequirement),
+			declaredCountRepair: Number(intent === "count" && declaredCountRepair),
 			upperLimitRepair: Number(repairsUpperLimit),
 			bandwidthStructureRepair: Number(intent === "bandwidth"),
 			reachRank: reachRank(checked),
@@ -756,7 +804,9 @@ export function analyzePerTitleSettings(
 					? (reach.count.maximum ?? 0)
 					: 0,
 			requiredCount:
-				intent === "preserve" && goal.countPolicy.kind !== "unrestricted"
+				(intent === "preserve" ||
+					(intent === "count" && declaredCountRepair)) &&
+				goal.countPolicy.kind !== "unrestricted"
 					? goal.countPolicy.count
 					: 0,
 			countIsMaximum: Number(goal.countPolicy.kind === "maximum"),
@@ -770,6 +820,9 @@ export function analyzePerTitleSettings(
 	}
 	result.advice.sort(
 		(a, b) =>
+			(b.facts.countRequirementRepair ?? 0) -
+				(a.facts.countRequirementRepair ?? 0) ||
+			(b.facts.declaredCountRepair ?? 0) - (a.facts.declaredCountRepair ?? 0) ||
 			(intent === "preserve" || intent === "bandwidth"
 				? (a.facts.lowerSlots ?? 256) +
 					(a.facts.upperSlots ?? 256) -
@@ -798,10 +851,23 @@ export function analyzePerTitleSettings(
 	if (result.advice.length)
 		result.decision = {
 			status: "proposal",
-			message: {
-				en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
-				ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
-			},
+			message:
+				intent === "cap" &&
+				result.advice.some((item) => item.facts.countRequirementRepair === 1)
+					? {
+							en: "A spacing adjustment satisfies the requested count in the configuration model. This does not establish use of the upper bitrate limit or native output count. Review the proposed changes before adoption.",
+							ja: "指定本数に向けた段間隔の調整案を計算モデルで確認しました。上限ビットレートの使用や実際の出力本数を保証する判定ではありません。変更内容を確認してから反映できます。",
+						}
+					: intent === "count" &&
+							result.advice.some((item) => item.facts.declaredCountRepair === 1)
+						? {
+								en: "A conditional spacing adjustment improves the declared output structure while retaining the requested count. Native output count remains unverified; review the changes and media checks before adoption.",
+								ja: "指定本数を要件として維持し、宣言した出力構成と段間隔を改善する条件付きの案があります。実際の出力本数は未確定です。変更内容と素材での確認事項を確認してから反映できます。",
+							}
+						: {
+								en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
+								ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
+							},
 		};
 	else if (
 		(intent === "count" || intent === "preserve") &&
@@ -830,8 +896,8 @@ export function analyzePerTitleSettings(
 		result.decision = {
 			status: "inspect-only",
 			message: {
-				en: "No quality-preserving bitrate reduction can be established without representative-media results. The configuration checks are available below.",
-				ja: "画質を保った削減案の判断には素材での比較が必要です。設定の整合性は以下で確認できます。",
+				en: "No structural adjustment passed this bounded search under the current requirements and held values. Quality-preserving bitrate savings also require representative-media results; inspect the configuration findings below.",
+				ja: "現在の要件と保持中の値を守る構成の調整案は、今回の探索では検証できませんでした。画質を保った削減の判断には素材での比較も必要です。以下の設定の評価結果を確認してください。",
 			},
 		};
 	if (result.decision.status === "no-certified-candidate")
@@ -841,5 +907,53 @@ export function analyzePerTitleSettings(
 			"The bounded search found no certified improvement with the held values. This does not establish impossibility; review the fixed constraints and media-dependent settings below.",
 			"固定した値を守る調整案は、今回の探索では検証できませんでした。実現不可能という意味ではありません。固定条件と素材に依存する設定を確認してください。",
 		);
+	if (
+		!result.advice.length &&
+		result.decision.status !== "keep-current" &&
+		hasAutomaticPerTitleSettings(goal)
+	)
+		add(
+			"automatic-policy-unresolved",
+			"info",
+			"No candidate was certified with the current automatic methods and loaded reference while preserving unlisted settings. Review the automatic methods and held fields; this search does not establish that no valid configuration exists.",
+			"現在の自動調整方法と読み込んだ基準値を使い、提案外の設定を維持する案は検証できませんでした。自動調整の方法と保持する項目を確認してください。実現可能な設定が無いという判定ではありません。",
+		);
+	return result;
+}
+
+/** Evaluate held constraints, then identify a release only from a checked alternative. */
+export function analyzePerTitleSettings(
+	goal: PerTitleGoal,
+	intent: PerTitleAnalysisIntent,
+	options: PerTitleAdviceOptions = {},
+): PerTitleAnalysisResult {
+	const result = analyzeCurrentSettings(goal, intent, options);
+	if (result.advice.length) return result;
+	const held = protectedPerTitleAdviceFields(goal, options);
+	if (!held.length) return result;
+	const relaxed = analyzeCurrentSettings(goal, intent, {
+		...options,
+		protectedFields: [],
+	});
+	const blockedFields = (item: PerTitleAdvice) => {
+		const changed = new Set(item.changes.map(perTitleAdviceFieldKey));
+		return held.filter((field) => changed.has(perTitleAdviceFieldKey(field)));
+	};
+	const alternative = relaxed.advice.find((item) => blockedFields(item).length);
+	if (!alternative) return result;
+	const fields = blockedFields(alternative);
+	const released = new Set(fields.map(perTitleAdviceFieldKey));
+	result.relaxation = {
+		fields,
+		certifiedAlternatives: relaxed.advice.filter((item) =>
+			blockedFields(item).every((field) =>
+				released.has(perTitleAdviceFieldKey(field)),
+			),
+		).length,
+	};
+	result.decision.message = {
+		en: "The held values prevent a checked alternative found by this search. Review the listed fields before releasing them and evaluating again; no values have been changed.",
+		ja: "今回確認できた調整案は、保持中の値と両立しません。提示した項目の保持を解除するか確認して、再評価できます。設定値は変更していません。",
+	};
 	return result;
 }

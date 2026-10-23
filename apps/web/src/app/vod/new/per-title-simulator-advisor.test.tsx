@@ -167,7 +167,9 @@ describe("manual Per-Title adjustment advice", () => {
 			}),
 		);
 		expect(onAdopt).toHaveBeenCalledTimes(1);
-		const accepted = applyPerTitleAdvice(edited, onAdopt.mock.calls[0]?.[0]);
+		const [advice, options] = onAdopt.mock.calls[0] ?? [];
+		expect(options.referenceGoal).toBe(session);
+		const accepted = applyPerTitleAdvice(edited, advice, options);
 		expect(accepted?.maxBitrate).toBe(8_000_000);
 		expect(accepted?.rows?.[0]?.highComplexityBoundaryForMaxBitrate).toBe(
 			8_000_000,
@@ -436,7 +438,10 @@ describe("manual Per-Title adjustment advice", () => {
 			}),
 		);
 		expect(onAdopt).toHaveBeenCalledTimes(1);
-		expect(onAdopt.mock.calls[0]?.[1]).toEqual({ protectedFields: [] });
+		expect(onAdopt.mock.calls[0]?.[1]).toEqual({
+			protectedFields: [],
+			referenceGoal: session,
+		});
 	});
 	it("keeps the latest manually edited pin through adoption, and clears it on a new session", () => {
 		const session: PerTitleGoal = {
@@ -477,6 +482,7 @@ describe("manual Per-Title adjustment advice", () => {
 		const [advice, options] = onAdopt.mock.calls[0] ?? [];
 		expect(options).toEqual({
 			protectedFields: [{ scope: "global", key: "maxBitrateStepSize" }],
+			referenceGoal: session,
 		});
 		const accepted = applyPerTitleAdvice(current, advice, options);
 		expect(accepted).not.toBeNull();

@@ -12,6 +12,8 @@ export type PerTitleAdviceField = {
 };
 export type PerTitleAdviceOptions = {
 	protectedFields?: readonly PerTitleAdviceField[];
+	/** Immutable loaded values used by proportional and logarithmic adjustments. */
+	referenceGoal?: PerTitleGoal;
 	/** Binds a current-settings evaluation to its explicit objective. */
 	contextKey?: string;
 	/** Previously selected changes accompanying the original edit, including released fields. */

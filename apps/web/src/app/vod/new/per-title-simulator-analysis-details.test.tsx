@@ -190,10 +190,16 @@ describe.each([
 		expect({ goal, result, selected }).toEqual(before);
 	});
 
-	it("shows a concrete conflict when no adjustment is available", () => {
+	it("keeps the search conclusion visible alongside the concrete conflict", () => {
 		const { goal, result } = fixture();
 		result.advice = [];
-		result.decision.status = "no-certified-candidate";
+		result.decision = {
+			status: "no-certified-candidate",
+			message: {
+				en: "No improving adjustment passed the checks; this is not an optimum.",
+				ja: "改善案は検証できませんでした。最適という判定ではありません。",
+			},
+		};
 		result.findings.push({
 			code: "invalid-range",
 			severity: "conflict",
@@ -217,7 +223,97 @@ describe.each([
 				? "最小値が最大値を超えています。"
 				: "The minimum exceeds the maximum.",
 		);
-		expect(screen.queryByText(result.decision.message[locale])).toBeNull();
+		expect(screen.getByText(result.decision.message[locale])).toBeVisible();
+		expect(
+			screen.getByText(result.decision.message[locale]).closest("details"),
+		).toBeNull();
+	});
+
+	it("offers the affected input without replacing a no-proposal conclusion with a warning", () => {
+		const { goal, result } = fixture();
+		result.advice = [];
+		result.decision = {
+			status: "no-certified-candidate",
+			message: {
+				en: "The search did not certify an improving adjustment.",
+				ja: "今回の探索では改善案を検証できませんでした。",
+			},
+		};
+		result.findings = [
+			{
+				code: "invalid-range",
+				severity: "conflict",
+				message: {
+					en: "Correct the highest rendition's maximum before evaluating again.",
+					ja: "再評価する前に、最上位段の最大値を修正してください。",
+				},
+				fields: [
+					{ scope: "stream", key: "maxBitrate", rowId: "top" },
+					{ scope: "stream", key: "width", rowId: "top" },
+				],
+			},
+		];
+		goal.rows = [{ id: "top", height: 720 }];
+		const onInspectField = vi.fn();
+		renderLocalized(
+			<PerTitleAnalysisPanel
+				goal={goal}
+				intent="count"
+				result={result}
+				onEvaluate={vi.fn()}
+				onIntentChange={vi.fn()}
+				onInspectField={onInspectField}
+			/>,
+			locale,
+		);
+		expect(screen.getByRole("status")).toHaveTextContent(
+			result.decision.message[locale],
+		);
+		expect(screen.getByRole("status")).toHaveTextContent(
+			result.findings[0]?.message[locale] ?? "",
+		);
+		const inspect = screen.getByRole("button", {
+			name: ja ? /設定を確認:.*段 1/ : /Review setting:.*rendition 1/,
+		});
+		expect(
+			screen.queryByRole("button", {
+				name: /(?:Review setting|設定を確認): width/,
+			}),
+		).toBeNull();
+		fireEvent.click(inspect);
+		expect(onInspectField).toHaveBeenCalledExactlyOnceWith({
+			scope: "stream",
+			key: "maxBitrate",
+			rowId: "top",
+		});
+	});
+
+	it("points a missing count requirement to its input", () => {
+		const { goal } = fixture();
+		goal.strategy = "automatic";
+		goal.countPolicy = { kind: "unrestricted" };
+		const result = analyzePerTitleSettings(goal, "count");
+		const onInspectField = vi.fn();
+		renderLocalized(
+			<PerTitleAnalysisPanel
+				goal={goal}
+				intent="count"
+				result={result}
+				onEvaluate={vi.fn()}
+				onIntentChange={vi.fn()}
+				onInspectField={onInspectField}
+			/>,
+			locale,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? /設定を確認:/ : /Review setting:/,
+			}),
+		);
+		expect(onInspectField).toHaveBeenCalledExactlyOnceWith({
+			scope: "global",
+			key: "countPolicy",
+		});
 	});
 
 	it("renders no results before evaluation", () => {
@@ -243,7 +339,7 @@ describe.each([
 		).toBeVisible();
 	});
 
-	it("explains why automatic settings cannot offer individual changes", () => {
+	it("shows the evaluated Auto conclusion instead of requiring every control to be fixed", () => {
 		const original = fixture().goal;
 		const goal: PerTitleGoal = {
 			...original,
@@ -258,7 +354,8 @@ describe.each([
 		);
 		if (!reason)
 			throw new Error("Expected the automatic-settings explanation.");
-		expect(result.decision.status).toBe("inspect-only");
+		expect(result.search.generated).toBeGreaterThan(0);
+		expect(result.decision.status).not.toBe("inspect-only");
 		expect(result.findings.some((item) => item.severity === "conflict")).toBe(
 			false,
 		);
@@ -273,7 +370,14 @@ describe.each([
 			locale,
 		);
 		expect(screen.getByRole("status")).toHaveTextContent(
-			reason.message[locale],
+			result.decision.status === "proposal"
+				? ja
+					? "調整案があります。"
+					: "A checked adjustment is available."
+				: result.decision.message[locale],
 		);
+		expect(
+			screen.queryByText(/Set the fields to Fixed|各項目を固定に/),
+		).toBeNull();
 	});
 });

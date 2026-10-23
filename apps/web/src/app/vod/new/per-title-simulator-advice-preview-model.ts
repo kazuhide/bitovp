@@ -44,7 +44,8 @@ export function perTitleAdvicePreview(
 	selection: PerTitleAdvicePreviewSelection,
 	options: PerTitleAdviceOptions = {},
 ): PerTitleAdvicePreviewModel {
-	const current = tunePerTitleSettings(goal, goal).proposal;
+	const reference = options.referenceGoal ?? goal;
+	const current = tunePerTitleSettings(goal, reference).proposal;
 	const mode =
 		Array.isArray(selection?.selected) && selection.selected.length > 0
 			? "selected"
@@ -78,10 +79,10 @@ export function perTitleAdvicePreview(
 			options,
 		);
 		if (!allOffered) return result;
-		const full = tunePerTitleSettings(fullGoal, fullGoal).proposal;
+		const full = tunePerTitleSettings(fullGoal, reference).proposal;
 		if (
 			!samePerTitleAdviceApi(
-				tunePerTitleSettings(allOffered, allOffered).proposal.api,
+				tunePerTitleSettings(allOffered, reference).proposal.api,
 				full.api,
 			)
 		)
@@ -128,7 +129,7 @@ export function perTitleAdvicePreview(
 			);
 			if (!patched) return result;
 			afterGoal = patched;
-			after = tunePerTitleSettings(patched, patched).proposal;
+			after = tunePerTitleSettings(patched, reference).proposal;
 		}
 		return {
 			...result,

@@ -21,6 +21,7 @@ const reviewControl = vi.hoisted(() => ({
 				kept: PerTitleAdviceField[],
 		  ) => boolean),
 }));
+const analysisControl = vi.hoisted(() => ({ offerRelaxation: false }));
 
 vi.mock("./per-title-simulator-advice-changes", async (importOriginal) => {
 	const original =
@@ -62,7 +63,19 @@ vi.mock("./per-title-simulator-analysis", async (importOriginal) => {
 				if (!held.has(perTitleAdviceFieldKey({ scope: "global", key })))
 					candidate[key] = Number(((goal[key] ?? 1.5) * 1.1).toFixed(6));
 			const advice = createPerTitleEvaluationAdvice(goal, candidate, options);
-			return { ...result, advice: advice ? [advice] : [] };
+			return {
+				...result,
+				advice: advice ? [advice] : [],
+				relaxation:
+					!advice && analysisControl.offerRelaxation
+						? {
+								fields: [
+									{ scope: "global" as const, key: "minBitrateStepSize" },
+								],
+								certifiedAlternatives: 1,
+							}
+						: undefined,
+			};
 		},
 	};
 });
@@ -209,9 +222,93 @@ function expectNoPin(label: string) {
 
 beforeEach(() => {
 	reviewControl.current = null;
+	analysisControl.offerRelaxation = false;
 });
 
 describe("current analysis adoption sessions", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("releases only the identified maintained values and re-evaluates without adopting (%s)", (locale) => {
+		analysisControl.offerRelaxation = true;
+		const session = source();
+		const onAdopt = vi.fn();
+		renderLocalized(<Harness session={session} onAdopt={onAdopt} />, locale);
+		const ja = locale === "ja";
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		for (const label of ja
+			? ["ビットレート間隔の下限", "ビットレート間隔の上限"]
+			: ["Minimum bitrate ratio", "Maximum bitrate ratio"]) {
+			fireEvent.change(
+				screen.getByRole("combobox", {
+					name: `${ja ? "選択" : "Decision"}: ${label}`,
+				}),
+				{ target: { value: "keep" } },
+			);
+		}
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? "選択した内容で再評価" : "Re-evaluate selected decisions",
+			}),
+		);
+		expect(
+			screen.queryByRole("region", {
+				name: ja ? "調整案" : "Suggested adjustment",
+			}),
+		).toBeNull();
+		const panel = screen.getByRole("region", {
+			name: ja ? "現在の設定を評価" : "Evaluate current settings",
+		});
+		expect(panel).toHaveTextContent(
+			ja
+				? "維持を解除すると検証済みの別案があります"
+				: "A checked alternative is available if you release these maintained values",
+		);
+		fireEvent.click(
+			within(panel).getByRole("button", {
+				name: ja
+					? "該当項目の維持を解除して再評価"
+					: "Release these maintained values and re-evaluate",
+			}),
+		);
+		expect(
+			screen.getByRole("region", {
+				name: ja ? "調整案" : "Suggested adjustment",
+			}),
+		).toBeVisible();
+		const maintained = screen.getByRole("region", {
+			name: ja ? "維持する値" : "Maintained values",
+		});
+		expect(within(maintained).getAllByRole("button")).toHaveLength(1);
+		expect(maintained).toHaveTextContent(
+			ja ? "ビットレート間隔の上限" : "Maximum bitrate ratio",
+		);
+		expect(maintained).not.toHaveTextContent(
+			ja ? "ビットレート間隔の下限" : "Minimum bitrate ratio",
+		);
+		expect(currentGoal()).toEqual(session);
+		expect(onAdopt).not.toHaveBeenCalled();
+	});
+
+	it("does not blame maintained values without a certified alternative", () => {
+		renderLocalized(<Harness session={source()} onAdopt={vi.fn()} />);
+		evaluate();
+		decision("Minimum bitrate ratio", "keep");
+		decision("Maximum bitrate ratio", "keep");
+		review();
+		expect(
+			screen.queryByRole("button", {
+				name: "Release these maintained values and re-evaluate",
+			}),
+		).toBeNull();
+		expect(
+			screen.queryByText(/A checked alternative is available if/),
+		).toBeNull();
+		expectPin("Minimum bitrate ratio");
+		expectPin("Maximum bitrate ratio");
+	});
 	it("stages decisions without changing settings, pins, or dispatching adoption", () => {
 		const session = source(),
 			onAdopt = vi.fn();
@@ -271,6 +368,7 @@ describe("current analysis adoption sessions", () => {
 		review();
 		expect(onAdopt).toHaveBeenCalledTimes(1);
 		expect(onAdopt.mock.calls[0]?.[1]?.protectedFields).toEqual([]);
+		expect(onAdopt.mock.calls[0]?.[1]?.referenceGoal).toBe(session);
 		expect(onAdopt.mock.calls[0]?.[2]).toEqual([
 			{ scope: "global", key: "minBitrateStepSize" },
 		]);
@@ -331,6 +429,47 @@ describe("current analysis adoption sessions", () => {
 		expect(currentGoal().maxBitrateStepSize).toBe(1.9);
 		expectPin("Minimum bitrate ratio");
 		expectPin("Maximum bitrate ratio");
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("explains the pending acknowledgement instead of accepting a silent evaluation (%s)", (locale) => {
+		const session = source();
+		const onAdopt = vi.fn();
+		renderLocalized(
+			<Harness session={session} onAdopt={onAdopt} deferred />,
+			locale,
+		);
+		const ja = locale === "ja";
+		const evaluateButton = () =>
+			screen.getByRole("button", {
+				name: ja ? "評価する" : "Evaluate",
+			});
+		fireEvent.click(evaluateButton());
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? "この調整を採用" : "Use this adjustment",
+			}),
+		);
+		expect(evaluateButton()).toBeDisabled();
+		const panel = screen.getByRole("region", {
+			name: ja ? "現在の設定を評価" : "Evaluate current settings",
+		});
+		expect(panel).toHaveAttribute("aria-busy", "true");
+		expect(within(panel).getByRole("status")).toHaveTextContent(
+			ja
+				? "調整の反映を待っています"
+				: "Waiting for the adjustment to be applied",
+		);
+		fireEvent.click(evaluateButton());
+		expect(onAdopt).toHaveBeenCalledOnce();
+		expect(currentGoal()).toEqual(session);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Acknowledge adoption" }),
+		);
+		expect(evaluateButton()).toBeEnabled();
+		expect(panel).not.toHaveAttribute("aria-busy", "true");
 	});
 
 	it("does not restore a released pin when a partial adoption is acknowledged", () => {

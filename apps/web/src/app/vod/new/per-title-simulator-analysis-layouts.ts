@@ -125,7 +125,8 @@ export function perTitleWholeLadderCandidates(
 		const row = ordered[index];
 		if (!previous || !row || !can("maxBitrate", row.rowId)) continue;
 		for (let attempt = 0; attempt < 12; attempt++) {
-			const api = tunePerTitleSettings(extended, extended).proposal.api;
+			const api = tunePerTitleSettings(extended, options.referenceGoal ?? goal)
+				.proposal.api;
 			const pair = [previous, row]
 				.map((source) =>
 					api.streams.find((stream) => stream.rowId === source.rowId),
@@ -146,7 +147,8 @@ export function perTitleWholeLadderCandidates(
 		}
 	}
 	if (extended !== goal) {
-		const api = tunePerTitleSettings(extended, extended).proposal.api;
+		const api = tunePerTitleSettings(extended, options.referenceGoal ?? goal)
+			.proposal.api;
 		if (
 			ordered.every((row) => {
 				const before = perTitleAnalysisCurve(row);
@@ -195,8 +197,8 @@ export function perTitleWholeLadderCandidates(
 				continue;
 			let aligned = set(set(goal, "minBitrateStepSize", step), FACTOR, step);
 			if (
-				tunePerTitleSettings(aligned, aligned).proposal.api.global
-					.minBitrateStepSize !== step ||
+				tunePerTitleSettings(aligned, options.referenceGoal ?? goal).proposal
+					.api.global.minBitrateStepSize !== step ||
 				aligned.fixedResolutionAndBitrateConfiguration
 					?.forcedRenditionAboveHighestFixedRepresentationFactor !== step
 			)

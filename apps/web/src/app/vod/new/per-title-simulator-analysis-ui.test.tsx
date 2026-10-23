@@ -71,6 +71,436 @@ describe("current Per-Title settings analysis", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("discloses changed Auto fields while retaining unrelated Auto controls after adoption (%s)", (locale) => {
+		const ja = locale === "ja";
+		const goal: PerTitleGoal = {
+			strategy: "automatic",
+			codec: "H264",
+			minBitrate: 128_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 6 },
+			autoRepresentations: {},
+			automaticTemplates: [{ id: "automatic-template" }],
+			adjustments: {
+				global: {
+					minBitrateStepSize: { mode: "auto", method: "default" },
+					targetQualityCrf: { mode: "auto", method: "default" },
+				},
+			},
+		};
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={goal}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		const minimumMode = () =>
+			screen.getByRole("combobox", {
+				name: ja
+					? "ビットレート間隔の下限 の調整"
+					: "Minimum bitrate ratio adjustment",
+			});
+		const qualityMode = () =>
+			screen.getByRole("combobox", {
+				name: ja ? "目標品質 (CRF) の調整" : "Target quality (CRF) adjustment",
+			});
+		expect(minimumMode()).toHaveValue("auto");
+		expect(qualityMode()).toHaveValue("auto");
+		const before = screen.getByTestId("per-title-api-settings").textContent;
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		const suggestion = screen.getByRole("region", {
+			name: ja ? "調整案" : "Suggested adjustment",
+		});
+		expect(
+			within(suggestion).getByText(
+				ja
+					? "自動（エンコーダの既定値） → 固定"
+					: "Auto (Encoder default) → Fixed",
+			),
+		).toBeVisible();
+		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
+			before,
+		);
+		fireEvent.click(
+			within(suggestion).getByRole("button", {
+				name: ja ? "この調整を採用" : "Use this adjustment",
+			}),
+		);
+		expect(minimumMode()).toHaveValue("fixed");
+		expect(qualityMode()).toHaveValue("auto");
+		expect(screen.getByTestId("per-title-api-settings").textContent).not.toBe(
+			before,
+		);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: ja ? "希望する本数" : "Desired count",
+			}),
+		).toHaveValue(6);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("recovers a checked real count proposal by releasing its identified maintained step (%s)", (locale) => {
+		const ja = locale === "ja";
+		const goal: PerTitleGoal = {
+			strategy: "automatic",
+			codec: "H264",
+			minBitrate: 128_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 6 },
+			autoRepresentations: {},
+			automaticTemplates: [{ id: "automatic-template" }],
+		};
+		const before = structuredClone(goal);
+		const onAdopt = vi.fn();
+		renderLocalized(
+			<PerTitleAdvisor goal={goal} session={goal} onAdopt={onAdopt} />,
+			locale,
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: ja
+					? "選択: ビットレート間隔の下限"
+					: "Decision: Minimum bitrate ratio",
+			}),
+			{ target: { value: "keep" } },
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? "選択した内容で再評価" : "Re-evaluate selected decisions",
+			}),
+		);
+		expect(
+			screen.queryByRole("region", {
+				name: ja ? "調整案" : "Suggested adjustment",
+			}),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja
+					? "該当項目の維持を解除して再評価"
+					: "Release these maintained values and re-evaluate",
+			}),
+		);
+		expect(
+			screen.getByRole("region", {
+				name: ja ? "調整案" : "Suggested adjustment",
+			}),
+		).toBeVisible();
+		expect(
+			screen.queryByRole("region", {
+				name: ja ? "維持する値" : "Maintained values",
+			}),
+		).toBeNull();
+		expect(goal).toEqual(before);
+		expect(onAdopt).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["en", "all"],
+		["ja", "all"],
+		["en", "partial"],
+		["ja", "partial"],
+	] as const)("offers count-repair values after all-automatic setup without changing the default evaluation goal (%s, %s)", (locale, adoption) => {
+		const ja = locale === "ja";
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={source()}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? "新規設定ウィザード" : "New setup wizard",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("radio", {
+				name: ja ? "すべて任せる" : "Let the encoder choose",
+			}),
+		);
+		const next = () =>
+			fireEvent.click(
+				screen.getByRole("button", { name: ja ? "次へ" : "Next" }),
+			);
+		next();
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: ja ? "最小ビットレート (kbps)" : "Minimum bitrate (kbps)",
+			}),
+			{ target: { value: "128" } },
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: ja ? "最大ビットレート (kbps)" : "Maximum bitrate (kbps)",
+			}),
+			{ target: { value: "4000" } },
+		);
+		next();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? "シミュレーターで確認" : "Inspect in simulator",
+			}),
+		);
+		fireEvent.change(
+			screen.getByRole("combobox", {
+				name: ja ? "レンディションの本数" : "Rendition count",
+			}),
+			{ target: { value: "exact" } },
+		);
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: ja ? "希望する本数" : "Desired count",
+			}),
+			{ target: { value: "6" } },
+		);
+		const purpose = screen.getByRole("combobox", {
+			name: ja ? "目的" : "Goal",
+		});
+		expect(purpose).toHaveValue("cap");
+		const api = () =>
+			JSON.parse(
+				screen.getByTestId("per-title-api-settings").textContent ?? "{}",
+			);
+		const before = api();
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		const suggestion = screen.getByRole("region", {
+			name: ja ? "調整案" : "Suggested adjustment",
+		});
+		expect(suggestion).toBeVisible();
+		expect(
+			within(suggestion).getAllByRole("combobox", {
+				name: ja ? /^選択:/ : /^Decision:/,
+			}).length,
+		).toBeGreaterThan(0);
+		expect(api()).toEqual(before);
+		if (adoption === "partial") {
+			fireEvent.change(
+				within(suggestion).getByRole("combobox", {
+					name: ja
+						? "選択: ビットレート間隔の上限"
+						: "Decision: Maximum bitrate ratio",
+				}),
+				{ target: { value: "apply" } },
+			);
+			fireEvent.click(
+				within(suggestion).getByRole("button", {
+					name: ja ? "選択した内容で再評価" : "Re-evaluate selected decisions",
+				}),
+			);
+			expect(api().global.minBitrateStepSize).toBe(
+				before.global.minBitrateStepSize,
+			);
+			expect(api().global.maxBitrateStepSize).not.toBe(
+				before.global.maxBitrateStepSize,
+			);
+		}
+		fireEvent.click(
+			within(
+				screen.getByRole("region", {
+					name: ja ? "調整案" : "Suggested adjustment",
+				}),
+			).getByRole("button", {
+				name: ja ? "この調整を採用" : "Use this adjustment",
+			}),
+		);
+		const after = api();
+		expect([
+			after.global.minBitrateStepSize,
+			after.global.maxBitrateStepSize,
+		]).not.toEqual([
+			before.global.minBitrateStepSize,
+			before.global.maxBitrateStepSize,
+		]);
+		expect(after.global.minBitrate).toBe(128_000);
+		expect(after.global.maxBitrate).toBe(4_000_000);
+		expect(
+			screen.getByRole("combobox", {
+				name: ja ? "レンディションの本数" : "Rendition count",
+			}),
+		).toHaveValue("exact");
+		expect(
+			screen.getByRole("spinbutton", {
+				name: ja ? "希望する本数" : "Desired count",
+			}),
+		).toHaveValue(6);
+		expect(purpose).toHaveValue("cap");
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		expect(
+			within(
+				screen.getByRole("region", {
+					name: ja ? "現在の設定を評価" : "Evaluate current settings",
+				}),
+			)
+				.getByRole("status")
+				.textContent?.trim(),
+		).not.toBe("");
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("takes a missing count requirement to the current simulator input (%s)", (locale) => {
+		const ja = locale === "ja";
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={{
+					...source(),
+					strategy: "automatic",
+					countPolicy: { kind: "unrestricted" },
+				}}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		fireEvent.change(
+			screen.getByRole("combobox", { name: ja ? "目的" : "Goal" }),
+			{ target: { value: "count" } },
+		);
+		const before = screen.getByTestId("per-title-api-settings").textContent;
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja ? "設定を確認: 本数条件" : "Review setting: Count goal",
+			}),
+		);
+		expect(
+			screen.getByRole("combobox", {
+				name: ja ? "レンディションの本数" : "Rendition count",
+			}),
+		).toHaveFocus();
+		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
+			before,
+		);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("opens the affected global spacing input without changing the draft (%s)", (locale) => {
+		const ja = locale === "ja";
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={{
+					...source(),
+					strategy: "automatic",
+					countPolicy: { kind: "unrestricted" },
+					minBitrateStepSize: 0,
+				}}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		const before = screen.getByTestId("per-title-api-settings").textContent;
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja
+					? "設定を確認: ビットレート間隔の下限"
+					: "Review setting: Minimum bitrate ratio",
+			}),
+		);
+		const field = screen.getByRole("spinbutton", {
+			name: ja ? "ビットレート間隔の下限" : "Minimum bitrate ratio",
+		});
+		expect(field).toHaveFocus();
+		expect(field.closest("details")).toHaveAttribute("open");
+		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
+			before,
+		);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("opens the affected rendition range input without changing the draft (%s)", (locale) => {
+		const ja = locale === "ja";
+		const onApply = vi.fn();
+		const goal: PerTitleGoal = {
+			...source(),
+			strategy: "fixed-ranges",
+			countPolicy: { kind: "unrestricted" },
+			rows: [
+				{
+					id: "top",
+					height: 720,
+					minBitrate: Number.NaN,
+					maxBitrate: 6_000_000,
+				},
+			],
+		};
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={goal}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		const before = screen.getByTestId("per-title-api-settings").textContent;
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: ja
+					? "設定を確認: 最小ビットレート (kbps), 段 1"
+					: "Review setting: Minimum bitrate (kbps), rendition 1",
+			}),
+		);
+		expect(
+			screen.getByRole("spinbutton", {
+				name: ja
+					? "最小ビットレート (kbps), レンディション 1"
+					: "Minimum bitrate (kbps), rendition 1",
+			}),
+		).toHaveFocus();
+		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
+			before,
+		);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
 	] as const)("preserves six declared outputs with alternative upper templates (%s)", (locale) => {
 		const goal: PerTitleGoal = {
 			...mixedLadder(7_200_000),
@@ -500,17 +930,25 @@ describe("current Per-Title settings analysis", () => {
 			},
 		};
 		const original = structuredClone(goal);
+		const evaluated = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+		});
+		expect(evaluated.search.generated).toBeGreaterThan(0);
 		const onAdopt = vi.fn();
 		renderLocalized(
 			<PerTitleAdvisor goal={goal} session={goal} onAdopt={onAdopt} />,
 		);
 		fireEvent.click(screen.getByRole("button", { name: "Evaluate" }));
 		expect(
-			screen.getByText(/Automatic adjustment is enabled/),
-		).toBeInTheDocument();
-		expect(
-			screen.queryByRole("button", { name: "Use this adjustment" }),
-		).toBeNull();
+			within(
+				screen.getByRole("region", { name: "Evaluate current settings" }),
+			).getByRole("status"),
+		).toHaveTextContent(
+			evaluated.decision.status === "proposal"
+				? "A checked adjustment is available."
+				: evaluated.decision.message.en,
+		);
+		expect(screen.queryByText(/Automatic adjustment is enabled/)).toBeNull();
 		expect(goal).toEqual(original);
 		expect(onAdopt).not.toHaveBeenCalled();
 	});
@@ -617,10 +1055,15 @@ describe("current Per-Title settings analysis", () => {
 	});
 
 	it.each([
-		["cap", "cap-unresolved", "count-conditional"],
-		["bandwidth", "quality-measurement-required", "cap-blocked"],
-		["count", "count-required", "cap-unresolved"],
-	] as const)("explains the chosen %s goal ahead of an unrelated warning when no advice is available", (intent, code, otherCode) => {
+		["cap", "cap-unresolved", "count-conditional", "Chosen goal conclusion"],
+		[
+			"bandwidth",
+			"quality-measurement-required",
+			"cap-blocked",
+			"Other condition",
+		],
+		["count", "count-required", "cap-unresolved", "Chosen goal conclusion"],
+	] as const)("keeps the %s decision visible with a relevant cause instead of substituting media advice for a configuration warning", (intent, code, otherCode, cause) => {
 		const goal = source();
 		const result = analyzePerTitleSettings(goal, intent);
 		renderLocalized(
@@ -632,7 +1075,13 @@ describe("current Per-Title settings analysis", () => {
 				result={{
 					...result,
 					advice: [],
-					decision: { ...result.decision, status: "no-certified-candidate" },
+					decision: {
+						status: "no-certified-candidate",
+						message: {
+							en: "No checked improving adjustment.",
+							ja: "検証済みの改善案はありません。",
+						},
+					},
 					findings: [
 						{
 							code: otherCode,
@@ -652,8 +1101,9 @@ describe("current Per-Title settings analysis", () => {
 			/>,
 		);
 		expect(screen.getByRole("status")).toHaveTextContent(
-			"Chosen goal conclusion",
+			"No checked improving adjustment.",
 		);
+		expect(screen.getByRole("status")).toHaveTextContent(cause);
 	});
 
 	it("prioritizes a configuration conflict over the selected goal conclusion", () => {

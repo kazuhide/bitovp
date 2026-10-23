@@ -1,4 +1,8 @@
-import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
+import type {
+	PerTitleAdjustment,
+	PerTitleGoal,
+	PerTitleProposal,
+} from "@bitovp/core";
 import {
 	type PerTitleAdviceField,
 	type PerTitleAdviceOptions,
@@ -37,6 +41,9 @@ export type PerTitleAdviceChange = {
 	rowId?: string;
 	before: PerTitleSettingValue;
 	after: PerTitleSettingValue;
+	/** Existing automatic policies are fixed only for these explicitly reviewed changes. */
+	beforeAdjustment?: PerTitleAdjustment;
+	afterAdjustment?: PerTitleAdjustment;
 };
 export type PerTitleAdvice = {
 	id: string;
@@ -150,13 +157,14 @@ function adviceFingerprint(
 	goal: PerTitleGoal,
 	fields: readonly Field[],
 	contextKey?: string,
+	referenceGoal?: PerTitleGoal,
 ) {
 	if (
 		contextKey !== undefined &&
 		(typeof contextKey !== "string" || contextKey.length > 128)
 	)
 		throw new Error("Invalid advice context.");
-	const input = `${fingerprint(goal)}\n${JSON.stringify(fields.map(fieldKey))}`;
+	const input = `${fingerprint(goal)}\n${JSON.stringify(fields.map(fieldKey))}${referenceGoal === undefined ? "" : `\nreference:${fingerprint(referenceGoal)}`}`;
 	return contextKey === undefined
 		? input
 		: `${input}\n${JSON.stringify(contextKey)}`;
@@ -249,8 +257,15 @@ function noConflict(proposal: PerTitleProposal, goal: PerTitleGoal) {
 }
 function closedCount(goal: PerTitleGoal, proposal: PerTitleProposal) {
 	const high = proposal.scenarios.find((s) => s.fraction === 1);
+	// Ordinary templates are alternatives for the same placement model. Explicit
+	// template metadata must not change the proof used by an implicit template.
+	const automaticOnly =
+		proposal.api.streams.length > 0 &&
+		proposal.api.streams.every(
+			(stream) => stream.mode === "PER_TITLE_TEMPLATE",
+		);
 	return (
-		!goal.automaticTemplates?.length &&
+		(!goal.automaticTemplates?.length || automaticOnly) &&
 		goal.countPolicy.kind !== "unrestricted" &&
 		proposal.applicable &&
 		proposal.status === "candidate" &&
@@ -353,8 +368,10 @@ export function perTitleAdvice(
 			current,
 			protectedFields,
 			options.contextKey,
+			options.referenceGoal,
 		);
-		const baseline = tunePerTitleSettings(current, current);
+		const reference = options.referenceGoal ?? current;
+		const baseline = tunePerTitleSettings(current, reference);
 		const variants: Variant[] = [];
 		let jointVariants: Iterable<Variant> = [];
 		const rows =
@@ -548,7 +565,7 @@ export function perTitleAdvice(
 		// Five endpoint layouts, each with four policies, two H layouts and four precisions.
 		for (const variant of candidates()) {
 			if (attempts++ >= 164) break;
-			const trial = tunePerTitleSettings(variant.goal, variant.goal);
+			const trial = tunePerTitleSettings(variant.goal, reference);
 			const allowed = new Set(variant.allowed.map(fieldKey));
 			const changes: PerTitleAdviceChange[] = allFields.flatMap((f) => {
 				const before = getPerTitleSetting(
@@ -595,7 +612,7 @@ export function perTitleAdvice(
 				)
 			)
 				continue;
-			const checked = tunePerTitleSettings(adopted, adopted);
+			const checked = tunePerTitleSettings(adopted, reference);
 			if (
 				!same(checked.proposal.api, trial.proposal.api) ||
 				!noConflict(checked.proposal, adopted)
@@ -675,13 +692,16 @@ export function createPerTitleEvaluationAdvice(
 		if (
 			!bounded(current) ||
 			!bounded(candidate) ||
-			hasAutomaticPerTitleSettings(current)
+			(options.referenceGoal !== undefined &&
+				(!bounded(options.referenceGoal) ||
+					options.referenceGoal.codec !== current.codec))
 		)
 			return null;
 		const protectedFields = protectedPerTitleAdviceFields(current, options);
 		const held = new Set(protectedFields.map(fieldKey));
-		const baseline = tunePerTitleSettings(current, current).proposal;
-		const trial = tunePerTitleSettings(candidate, candidate).proposal;
+		const reference = options.referenceGoal ?? current;
+		const baseline = tunePerTitleSettings(current, reference).proposal;
+		const trial = tunePerTitleSettings(candidate, reference).proposal;
 		const changes = settings(current).flatMap(
 			(field): PerTitleAdviceChange[] => {
 				const before = getPerTitleSetting(
@@ -696,7 +716,27 @@ export function createPerTitleEvaluationAdvice(
 					field.key,
 					field.rowId,
 				);
-				return Object.is(before, after) ? [] : [{ ...field, before, after }];
+				if (Object.is(before, after)) return [];
+				const adjustment = getPerTitleAdjustment(
+					current,
+					reference,
+					field.scope,
+					field.key,
+					field.rowId,
+				);
+				return [
+					{
+						...field,
+						before,
+						after,
+						...(adjustment.mode === "auto"
+							? {
+									beforeAdjustment: adjustment,
+									afterAdjustment: { mode: "fixed" as const },
+								}
+							: {}),
+					},
+				];
 			},
 		);
 		if (
@@ -716,7 +756,7 @@ export function createPerTitleEvaluationAdvice(
 				),
 			current,
 		);
-		const checked = tunePerTitleSettings(adopted, adopted).proposal;
+		const checked = tunePerTitleSettings(adopted, reference).proposal;
 		if (
 			!noConflict(checked, adopted) ||
 			!same(checked.api, trial.api) ||
@@ -760,6 +800,7 @@ export function createPerTitleEvaluationAdvice(
 				current,
 				protectedFields,
 				options.contextKey,
+				options.referenceGoal,
 			),
 		};
 	} catch {
@@ -778,8 +819,12 @@ export function applyPerTitleAdvice(
 		if (
 			!bounded(current) ||
 			!bounded(advice.goal) ||
-			adviceFingerprint(current, protectedFields, options.contextKey) !==
-				advice.inputFingerprint ||
+			adviceFingerprint(
+				current,
+				protectedFields,
+				options.contextKey,
+				options.referenceGoal,
+			) !== advice.inputFingerprint ||
 			protectedFields.some(
 				(f) =>
 					!Object.is(
@@ -789,7 +834,90 @@ export function applyPerTitleAdvice(
 			)
 		)
 			return null;
-		const checked = tunePerTitleSettings(advice.goal, advice.goal);
+		const reference = options.referenceGoal ?? current;
+		const baseline = tunePerTitleSettings(current, reference).proposal;
+		const checked = tunePerTitleSettings(advice.goal, reference);
+		if (
+			protectedFields.some(
+				(field) =>
+					!Object.is(
+						getPerTitleSetting(baseline, field.scope, field.key, field.rowId),
+						getPerTitleSetting(
+							checked.proposal,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					) ||
+					!same(
+						getPerTitleAdjustment(
+							current,
+							reference,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+						getPerTitleAdjustment(
+							advice.goal,
+							reference,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					),
+			)
+		)
+			return null;
+		const changed = new Set(advice.changes.map(fieldKey));
+		if (
+			advice.changes.some((field) => {
+				const before = getPerTitleAdjustment(
+					current,
+					reference,
+					field.scope,
+					field.key,
+					field.rowId,
+				);
+				const after = getPerTitleAdjustment(
+					advice.goal,
+					reference,
+					field.scope,
+					field.key,
+					field.rowId,
+				);
+				return (
+					(before.mode === "auto" ||
+						field.beforeAdjustment !== undefined ||
+						field.afterAdjustment !== undefined) &&
+					(!same(field.beforeAdjustment, before) ||
+						!same(field.afterAdjustment, after))
+				);
+			})
+		)
+			return null;
+		if (
+			settings(current).some(
+				(field) =>
+					!changed.has(fieldKey(field)) &&
+					!same(
+						getPerTitleAdjustment(
+							current,
+							reference,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+						getPerTitleAdjustment(
+							advice.goal,
+							reference,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					),
+			)
+		)
+			return null;
 		return noConflict(checked.proposal, advice.goal) &&
 			same(checked.proposal.api, advice.proposal.api)
 			? structuredClone(advice.goal)
@@ -816,7 +944,8 @@ export function applySelectedPerTitleAdvice(
 		const held = new Set(
 			protectedPerTitleAdviceFields(current, options).map(fieldKey),
 		);
-		const baseline = tunePerTitleSettings(current, current).proposal;
+		const reference = options.referenceGoal ?? current;
+		const baseline = tunePerTitleSettings(current, reference).proposal;
 		const changes: PerTitleAdviceChange[] = [];
 		for (const field of fields) {
 			if (held.has(fieldKey(field))) return null;
@@ -839,6 +968,24 @@ export function applySelectedPerTitleAdvice(
 				offered.length !== 1 ||
 				!Object.is(offered[0]?.before, before) ||
 				!Object.is(offered[0]?.after, after) ||
+				(getPerTitleAdjustment(
+					current,
+					reference,
+					field.scope,
+					field.key,
+					field.rowId,
+				).mode === "auto" &&
+					(!same(
+						offered[0]?.beforeAdjustment,
+						getPerTitleAdjustment(
+							current,
+							reference,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					) ||
+						!same(offered[0]?.afterAdjustment, { mode: "fixed" }))) ||
 				Object.is(before, after)
 			)
 				return null;
@@ -847,7 +994,7 @@ export function applySelectedPerTitleAdvice(
 		const patched = patch(current, fields, (field) =>
 			getPerTitleGoalSetting(validated, field.scope, field.key, field.rowId),
 		);
-		const checked = tunePerTitleSettings(patched, patched);
+		const checked = tunePerTitleSettings(patched, reference);
 		return same(wireWithChanges(baseline, changes), checked.proposal.api)
 			? checked.goal
 			: null;

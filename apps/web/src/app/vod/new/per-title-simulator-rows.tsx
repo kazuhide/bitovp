@@ -301,51 +301,58 @@ export function PerTitleSimulatorRows({
 							<div
 								className={`grid items-start gap-2 ${rowRanged ? "sm:grid-cols-3" : "sm:max-w-xs"}`}
 							>
-								<NumberField
-									id={`${id}-${row.id}-height`}
-									label={isAutomatic ? copy.optionalHeight : copy.height}
-									accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${isAutomatic ? copy.candidate : copy.rendition} ${index + 1}`}
-									value={row.height}
-									optional={isAutomatic}
-									integer
-									minimum={1}
-									onChange={(height) =>
-										onChange({
-											...goal,
-											...(isAutomatic
-												? {
-														automaticTemplates: automatic.map((item, i) =>
-															i === index
-																? {
-																		...item,
-																		height,
-																		...widthForHeight(
-																			item,
+								<div
+									data-setting-scope="stream"
+									data-setting-key="height"
+									data-setting-row={row.id}
+									data-setting-control={`${id}-${row.id}-height`}
+								>
+									<NumberField
+										id={`${id}-${row.id}-height`}
+										label={isAutomatic ? copy.optionalHeight : copy.height}
+										accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${isAutomatic ? copy.candidate : copy.rendition} ${index + 1}`}
+										value={row.height}
+										optional={isAutomatic}
+										integer
+										minimum={1}
+										onChange={(height) =>
+											onChange({
+												...goal,
+												...(isAutomatic
+													? {
+															automaticTemplates: automatic.map((item, i) =>
+																i === index
+																	? {
+																			...item,
 																			height,
-																			aspectHistory.current,
-																		),
-																	}
-																: item,
-														),
-													}
-												: {
-														rows: rows.map((item, i) =>
-															i === index
-																? {
-																		...item,
-																		height: height ?? Number.NaN,
-																		...widthForHeight(
-																			item,
-																			height,
-																			aspectHistory.current,
-																		),
-																	}
-																: item,
-														),
-													}),
-										})
-									}
-								/>
+																			...widthForHeight(
+																				item,
+																				height,
+																				aspectHistory.current,
+																			),
+																		}
+																	: item,
+															),
+														}
+													: {
+															rows: rows.map((item, i) =>
+																i === index
+																	? {
+																			...item,
+																			height: height ?? Number.NaN,
+																			...widthForHeight(
+																				item,
+																				height,
+																				aspectHistory.current,
+																			),
+																		}
+																	: item,
+															),
+														}),
+											})
+										}
+									/>
+								</div>
 								{rowRanged
 									? (["min", "max"] as const).map((bound) => {
 											const field = perTitleStreamFields(goal.codec).find(

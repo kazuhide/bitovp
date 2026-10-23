@@ -4,6 +4,8 @@ import {
 	applyPerTitleAdvice,
 	applySelectedPerTitleAdvice,
 	createPerTitleEvaluationAdvice,
+	hasPerTitleEvaluationCountEvidence,
+	type PerTitleAdviceOptions,
 } from "./per-title-simulator-advice";
 import {
 	analyzePerTitleSettings,
@@ -63,6 +65,108 @@ const countGoal: PerTitleGoal = {
 };
 
 describe("current Per-Title evaluation", () => {
+	it.each([
+		"cap",
+		"bandwidth",
+		"count",
+		"preserve",
+	] as const)("repairs an explicit six-output requirement in automatic mode for %s", (intent) => {
+		const current: PerTitleGoal = {
+			strategy: "automatic",
+			codec: "VP9",
+			minBitrate: 128_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 6 },
+			autoRepresentations: {},
+			rows: [],
+			automaticTemplates: [{ id: "automatic-template" }],
+		};
+		const result = analyzePerTitleSettings(current, intent);
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const item of result.advice) {
+			expect(item.proof).toBe("model-count");
+			expect(hasPerTitleEvaluationCountEvidence(item.goal, item.proposal)).toBe(
+				true,
+			);
+			expect(item.goal.strategy).toBe("automatic");
+			expect(item.goal.countPolicy).toEqual(current.countPolicy);
+			expect(item.goal.minBitrate).toBe(128_000);
+			expect(item.goal.maxBitrate).toBe(4_000_000);
+			expect(item.goal.rows).toEqual([]);
+			expect(item.goal.autoRepresentations).toEqual({});
+			expect(item.goal.automaticTemplates).toEqual(current.automaticTemplates);
+			expect(assessPerTitleReach(item.goal, item.proposal).status).toBe(
+				"unknown",
+			);
+			expect(item.explanation?.en).toContain("count");
+			expect(
+				applyPerTitleAdvice(current, item, {
+					contextKey: perTitleAnalysisContextKey(intent),
+				}),
+			).not.toBeNull();
+		}
+	});
+	it("offers an explicit complexity-selection repair for an optimized fixed cap", () => {
+		const current: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "unrestricted" },
+			autoRepresentations: false,
+			rows: [
+				{
+					id: "fixed",
+					height: 720,
+					minBitrate: 200_000,
+					maxBitrate: 400_000,
+					bitrateSelectionMode: "OPTIMIZED",
+				},
+			],
+		};
+		const candidate: PerTitleGoal = {
+			...current,
+			rows: current.rows?.map((row) => ({
+				...row,
+				maxBitrate: current.maxBitrate,
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				lowComplexityBoundaryForMaxBitrate: 400_000,
+				highComplexityBoundaryForMaxBitrate: current.maxBitrate,
+			})),
+		};
+		const options = { contextKey: perTitleAnalysisContextKey("cap") };
+		const explicit = createPerTitleEvaluationAdvice(
+			current,
+			candidate,
+			options,
+		);
+		expect(explicit).not.toBeNull();
+		if (!explicit) throw new Error("Expected a valid explicit repair.");
+		expect(assessPerTitleReach(explicit.goal, explicit.proposal)).toMatchObject(
+			{
+				status: "conditional-reachable",
+				adaptation: "conditional",
+				low: { minimum: 200_000, maximum: 200_000 },
+				high: { minimum: 1_000_000, maximum: 1_000_000 },
+			},
+		);
+		const result = analyzePerTitleSettings(current, "cap");
+		expect(
+			result.advice.some((item) =>
+				item.changes.some(
+					(change) =>
+						change.rowId === "fixed" &&
+						change.key === "bitrateSelectionMode" &&
+						change.after === "COMPLEXITY_RANGE",
+				),
+			),
+		).toBe(true);
+	});
 	it("evaluates unchanged settings and repairs cap reach without a fabricated edit", () => {
 		const snapshot = structuredClone(goal);
 		const result = analyzePerTitleSettings(goal, "cap", {
@@ -307,7 +411,59 @@ describe("current Per-Title evaluation", () => {
 		expect(
 			result.findings.some((finding) => finding.code === "count-required"),
 		).toBe(true);
+		expect(
+			result.findings.find((finding) => finding.code === "count-required")
+				?.fields,
+		).toEqual([{ scope: "global", key: "countPolicy" }]);
 		expect(result.advice).toEqual([]);
+	});
+	it("identifies the requested-count model limit and its input field", () => {
+		const result = analyzePerTitleSettings(
+			{ ...countGoal, countPolicy: { kind: "exact", count: 257 } },
+			"cap",
+		);
+		expect(result.advice).toEqual([]);
+		expect(result.decision.status).toBe("inspect-only");
+		expect(
+			result.findings.find((finding) => finding.code === "count-model-limit"),
+		).toMatchObject({
+			fields: [{ scope: "global", key: "countPolicy" }],
+			message: { en: expect.stringContaining("not a provider limit") },
+		});
+	});
+	it("identifies held fields only when releasing them permits a checked alternative", () => {
+		const fields = [
+			{ scope: "global" as const, key: "minBitrateStepSize" },
+			{ scope: "global" as const, key: "maxBitrateStepSize" },
+		];
+		const result = analyzePerTitleSettings(countGoal, "cap", {
+			protectedFields: fields,
+		});
+		expect(result.advice).toEqual([]);
+		expect(result.relaxation?.certifiedAlternatives).toBeGreaterThan(0);
+		expect(result.relaxation?.fields.length).toBeGreaterThan(0);
+		expect(
+			result.relaxation?.fields.every((field) =>
+				fields.some(
+					(held) => held.scope === field.scope && held.key === field.key,
+				),
+			),
+		).toBe(true);
+		const released = new Set(
+			result.relaxation?.fields.map((field) => field.key),
+		);
+		expect(
+			analyzePerTitleSettings(countGoal, "cap", {
+				protectedFields: fields.filter((field) => !released.has(field.key)),
+			}).advice.length,
+		).toBeGreaterThan(0);
+		const unrelated = analyzePerTitleSettings(
+			{ ...countGoal, countPolicy: { kind: "unrestricted" } },
+			"cap",
+			{ protectedFields: [{ scope: "global", key: "targetQualityCrf" }] },
+		);
+		expect(unrelated.advice).toEqual([]);
+		expect(unrelated.relaxation).toBeUndefined();
 	});
 	it("does not assert a quality optimum or savings without media evidence", () => {
 		const result = analyzePerTitleSettings(goal, "bandwidth");
@@ -368,7 +524,7 @@ describe("current Per-Title evaluation", () => {
 			true,
 		);
 	});
-	it("keeps automatic inputs assessable but does not silently adopt their settings", () => {
+	it("evaluates automatic inputs while retaining unchanged automatic policies", () => {
 		const current: PerTitleGoal = {
 			...goal,
 			adjustments: {
@@ -379,7 +535,13 @@ describe("current Per-Title evaluation", () => {
 		};
 		const result = analyzePerTitleSettings(current, "cap");
 		expect(result.dependencies.length).toBeGreaterThan(0);
-		expect(result.advice).toEqual([]);
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const item of result.advice) {
+			if (!item.changes.some((change) => change.key === "minBitrateStepSize"))
+				expect(item.goal.adjustments?.global?.minBitrateStepSize).toEqual(
+					current.adjustments?.global?.minBitrateStepSize,
+				);
+		}
 		expect(
 			result.findings.some((finding) => finding.code === "automatic-settings"),
 		).toBe(true);
@@ -387,6 +549,112 @@ describe("current Per-Title evaluation", () => {
 });
 
 describe("evaluation advice certification", () => {
+	it("shows changed automatic policies and certifies adoption against the loaded reference", () => {
+		const reference: PerTitleGoal = {
+			...goal,
+			maxBitrateStepSize: 1.9,
+			rows: goal.rows?.map((row) =>
+				row.id === "upper" ? { ...row, maxBitrate: 2_400_000 } : row,
+			),
+		};
+		const current = tunePerTitleSettings(
+			{
+				...reference,
+				adjustments: {
+					global: {
+						maxBitrateStepSize: { mode: "auto", method: "default" },
+					},
+					streams: {
+						lower: {
+							minBitrate: { mode: "auto", method: "proportional" },
+							maxBitrate: { mode: "auto", method: "logarithmic" },
+						},
+					},
+				},
+			},
+			reference,
+		).goal;
+		const options: PerTitleAdviceOptions = {
+			referenceGoal: reference,
+			contextKey: perTitleAnalysisContextKey("cap"),
+		};
+		const result = analyzePerTitleSettings(current, "cap", options);
+		const item = result.advice.find((advice) =>
+			advice.changes.some((change) => change.key === "maxBitrateStepSize"),
+		);
+		expect(item).toBeDefined();
+		if (!item) throw new Error("Expected an explicit automatic-policy change.");
+		expect(
+			item.changes.find((change) => change.key === "maxBitrateStepSize"),
+		).toMatchObject({
+			beforeAdjustment: { mode: "auto", method: "default" },
+			afterAdjustment: { mode: "fixed" },
+		});
+		const applied = applyPerTitleAdvice(current, item, options);
+		expect(applied).not.toBeNull();
+		if (!applied) throw new Error("Expected reference-bound adoption.");
+		expect(tunePerTitleSettings(applied, reference).proposal.api).toEqual(
+			item.proposal.api,
+		);
+		expect(applied.adjustments?.streams).toEqual(current.adjustments?.streams);
+		const selected = applySelectedPerTitleAdvice(
+			current,
+			item,
+			[{ scope: "global", key: "maxBitrateStepSize" }],
+			options,
+		);
+		expect(selected).not.toBeNull();
+		expect(selected?.adjustments?.streams).toEqual(
+			current.adjustments?.streams,
+		);
+		expect(selected?.adjustments?.global?.maxBitrateStepSize).toEqual({
+			mode: "fixed",
+		});
+		const hiddenPolicy = structuredClone(item);
+		for (const change of hiddenPolicy.changes) {
+			delete change.beforeAdjustment;
+			delete change.afterAdjustment;
+		}
+		expect(applyPerTitleAdvice(current, hiddenPolicy, options)).toBeNull();
+		const stale = {
+			...options,
+			referenceGoal: { ...reference, maxBitrate: 7_000_000 },
+		};
+		expect(applyPerTitleAdvice(current, item, stale)).toBeNull();
+		expect(
+			applySelectedPerTitleAdvice(current, item, item.changes, stale),
+		).toBeNull();
+	});
+	it("rejects a candidate when a held automatic value moves through a dependency", () => {
+		const reference: PerTitleGoal = {
+			...countGoal,
+			strategy: "automatic",
+			countPolicy: { kind: "unrestricted" },
+		};
+		const current: PerTitleGoal = {
+			...reference,
+			adjustments: {
+				global: { minBitrate: { mode: "auto", method: "proportional" } },
+			},
+		};
+		expect(
+			createPerTitleEvaluationAdvice(
+				current,
+				{ ...current, maxBitrate: 4_000_000 },
+				{ referenceGoal: reference },
+			),
+		).not.toBeNull();
+		expect(
+			createPerTitleEvaluationAdvice(
+				current,
+				{ ...current, maxBitrate: 4_000_000 },
+				{
+					referenceGoal: reference,
+					protectedFields: [{ scope: "global", key: "minBitrate" }],
+				},
+			),
+		).toBeNull();
+	});
 	it("binds both full and selected adoption to the evaluated objective", () => {
 		const options = { contextKey: perTitleAnalysisContextKey("cap") };
 		const item = createPerTitleEvaluationAdvice(

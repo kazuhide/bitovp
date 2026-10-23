@@ -138,7 +138,13 @@ export function PerTitleSettingControl({
 				stream?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")) ||
 		field.key.endsWith("BitrateStepSize");
 	return (
-		<div className="min-w-0 space-y-1.5" data-setting-key={field.key}>
+		<div
+			className="min-w-0 space-y-1.5"
+			data-setting-key={field.key}
+			data-setting-scope={scope}
+			data-setting-row={rowId}
+			data-setting-control={id}
+		>
 			<div className="flex flex-wrap items-center gap-1.5">
 				<SelectNative
 					className="w-auto text-xs"

@@ -1,7 +1,10 @@
 import type { PerTitleGoal } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { applyPerTitleAdvice } from "./per-title-simulator-advice";
-import { analyzePerTitleSettings } from "./per-title-simulator-analysis";
+import {
+	analyzePerTitleSettings,
+	perTitleAnalysisContextKey,
+} from "./per-title-simulator-analysis";
 import {
 	assessPerTitleLadder,
 	perTitlePlacementCapacity,
@@ -456,7 +459,7 @@ describe("whole-ladder current-setting analysis", () => {
 		expect(result.decision.status).toBe("keep-current");
 		expect(result.decision.message.en).toContain("does not establish");
 	});
-	it("requires a checked existing count rather than treating a count requirement as evidence", () => {
+	it("repairs the requested count without claiming the existing count is checked", () => {
 		const goal: PerTitleGoal = {
 			strategy: "count",
 			codec: "VP9",
@@ -467,8 +470,22 @@ describe("whole-ladder current-setting analysis", () => {
 			countPolicy: { kind: "exact", count: 3 },
 		};
 		const result = analyzePerTitleSettings(goal, "preserve");
-		expect(result.advice).toEqual([]);
-		expect(result.decision.status).toBe("inspect-only");
+		expect(result.reach.count.status).not.toBe("model-checked");
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const item of result.advice) {
+			expect(item.facts.countRequirementRepair).toBe(1);
+			expect(item.facts.preservedCount).toBe(0);
+			expect(item.proposal.countGuarantee).toBe(false);
+			expect(item.goal.countPolicy).toEqual(goal.countPolicy);
+			expect(item.goal.minBitrate).toBe(goal.minBitrate);
+			expect(item.goal.maxBitrate).toBe(goal.maxBitrate);
+			expect(
+				applyPerTitleAdvice(goal, item, {
+					contextKey: perTitleAnalysisContextKey("preserve"),
+				}),
+			).not.toBeNull();
+		}
 		expect(
 			analyzePerTitleSettings(goal, "count").advice.length,
 		).toBeGreaterThan(0);

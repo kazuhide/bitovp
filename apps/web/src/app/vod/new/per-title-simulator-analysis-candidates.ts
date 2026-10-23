@@ -3,6 +3,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 import {
 	type PerTitleAdviceOptions,
@@ -22,6 +23,7 @@ const COUNT = `${RULE}forcedRenditionAboveHighestFixedRepresentation`;
 const FACTOR = `${COUNT}Factor`;
 const MODE = `${COUNT}CalculationMode`;
 const HIGH = "highComplexityBoundaryForMaxBitrate";
+const LOW = "lowComplexityBoundaryForMaxBitrate";
 
 /** Directed decimal rounding never tightens a derived feasibility boundary. */
 const down = (value: number) => Math.floor(value * 10_000) / 10_000;
@@ -98,6 +100,90 @@ export function perTitleAnalysisCandidates(
 				)
 			: draft;
 	const result: PerTitleGoal[] = [];
+	const reference = options.referenceGoal ?? goal;
+	const addClosedSpacing = (seed: PerTitleGoal) => {
+		const normalized = tunePerTitleSettings(seed, reference).proposal;
+		if (
+			seed.strategy !== "fixed-ranges" ||
+			seed.countPolicy.kind === "unrestricted" ||
+			seed.automaticTemplates?.length ||
+			normalized.api.global.autoRepresentations !== undefined ||
+			!seed.rows?.length ||
+			!seed.rows.every((row) => row.bitrateSelectionMode === "COMPLEXITY_RANGE")
+		)
+			return;
+		const basis = seed.rows.every((row) => row.width === undefined)
+			? "height"
+			: seed.rows.every((row) => row.width !== undefined)
+				? "width"
+				: null;
+		if (
+			!basis ||
+			new Set(seed.rows.map((row) => row[basis])).size !== seed.rows.length
+		)
+			return;
+		const curves = [...seed.rows]
+			.sort((a, b) => (a[basis] ?? 0) - (b[basis] ?? 0))
+			.map((row) => ({
+				minimum: row.minBitrate ?? 0,
+				maximum: row.maxBitrate ?? 0,
+				low: row.lowComplexityBoundaryForMaxBitrate ?? 0,
+				high: row.highComplexityBoundaryForMaxBitrate ?? 0,
+			}));
+		let step = normalized.api.global.minBitrateStepSize;
+		const visited = new Set<number>();
+		for (let attempt = 0; attempt < 12 && !visited.has(step); attempt++) {
+			visited.add(step);
+			const api = tunePerTitleSettings(
+				set(seed, "minBitrateStepSize", step),
+				reference,
+			).proposal.api;
+			const minimum = resolvePerTitleAnalysis(
+				api,
+				api.global.minBitrate,
+			).complexityInput;
+			const maximum = resolvePerTitleAnalysis(
+				api,
+				api.global.maxBitrate,
+			).complexityInput;
+			if (minimum === null || maximum === null) break;
+			// Count certification also retains the full explicit analysis interval.
+			const certificate = certifyComplexityIntervals(
+				curves,
+				{
+					minimum: Math.min(api.global.minBitrate, minimum),
+					maximum: Math.max(api.global.maxBitrate, maximum),
+				},
+				step,
+			);
+			if (!certificate) break;
+			const lower = Math.max(1, certificate.maximumWithinRowRatio);
+			const upper = certificate.minimumAdjacentRatio ?? Infinity;
+			if (step > lower && step <= upper) {
+				const maximumStep = Math.max(
+					normalized.api.global.maxBitrateStepSize,
+					step,
+					up(certificate.maximumAdjacentRatio ?? step),
+				);
+				result.push(
+					set(
+						set(seed, "minBitrateStepSize", step),
+						"maxBitrateStepSize",
+						maximumStep,
+					),
+				);
+				break;
+			}
+			if (!can("minBitrateStepSize") || lower >= upper) break;
+			const strictLower =
+				lower + Math.max(Number.MIN_VALUE, Number.EPSILON * lower);
+			const next = Number.isFinite(upper)
+				? Math.sqrt(strictLower * upper)
+				: strictLower;
+			const readable = up(next);
+			step = readable <= upper && readable > lower ? readable : next;
+		}
+	};
 	// Spacing follows the existing exact-count / interval solver, with all other
 	// fields locked. Its emitted values are later materialized as fixed settings.
 	let solver = goal;
@@ -118,90 +204,22 @@ export function perTitleAnalysisCandidates(
 			});
 	}
 	if (solver !== goal) result.push(solver);
+	addClosedSpacing(goal);
+	// Recalibration is explicit and remains subject to the same count proof.
 	if (
-		goal.strategy === "fixed-ranges" &&
-		goal.countPolicy.kind !== "unrestricted" &&
-		!goal.automaticTemplates?.length &&
-		proposal.api.global.autoRepresentations === undefined &&
-		goal.rows?.length &&
-		goal.rows.every((row) => row.bitrateSelectionMode === "COMPLEXITY_RANGE")
-	) {
-		const basis = goal.rows.every((row) => row.width === undefined)
-			? "height"
-			: goal.rows.every((row) => row.width !== undefined)
-				? "width"
-				: null;
-		if (
-			basis &&
-			new Set(goal.rows.map((row) => row[basis])).size === goal.rows.length
-		) {
-			const seeds = [goal];
-			// Recalibration is an explicit count-focused alternative, not a claim of
-			// equal quality or an automatic change to a custom / maintained boundary.
-			if (
-				(intent === "count" || intent === "preserve") &&
-				goal.rows.every(
-					(row) =>
-						typeof row.lowComplexityBoundaryForMaxBitrate === "number" &&
-						row.lowComplexityBoundaryForMaxBitrate < goal.maxBitrate,
-				)
-			) {
-				seeds.push(
-					goal.rows.reduce(
-						(next, row) => set(next, HIGH, goal.maxBitrate, row.id),
-						goal,
-					),
-				);
-			}
-			for (const seed of seeds) {
-				const rows = [...(seed.rows ?? [])].sort(
-					(a, b) => (a[basis] ?? 0) - (b[basis] ?? 0),
-				);
-				const curves = rows.map((row) => ({
-					minimum: row.minBitrate ?? 0,
-					maximum: row.maxBitrate ?? 0,
-					low: row.lowComplexityBoundaryForMaxBitrate ?? 0,
-					high: row.highComplexityBoundaryForMaxBitrate ?? 0,
-				}));
-				let step = proposal.api.global.minBitrateStepSize;
-				const visited = new Set<number>();
-				for (let attempt = 0; attempt < 12 && !visited.has(step); attempt++) {
-					visited.add(step);
-					const certificate = certifyComplexityIntervals(
-						curves,
-						{ minimum: goal.minBitrate, maximum: goal.maxBitrate },
-						step,
-					);
-					if (!certificate) break;
-					const lower = Math.max(1, certificate.maximumWithinRowRatio);
-					const upper = certificate.minimumAdjacentRatio ?? Infinity;
-					if (step > lower && step <= upper) {
-						const maximum = Math.max(
-							proposal.api.global.maxBitrateStepSize,
-							step,
-							up(certificate.maximumAdjacentRatio ?? step),
-						);
-						result.push(
-							set(
-								set(seed, "minBitrateStepSize", step),
-								"maxBitrateStepSize",
-								maximum,
-							),
-						);
-						break;
-					}
-					if (!can("minBitrateStepSize") || lower >= upper) break;
-					const strictLower =
-						lower + Math.max(Number.MIN_VALUE, Number.EPSILON * lower);
-					const next = Number.isFinite(upper)
-						? Math.sqrt(strictLower * upper)
-						: strictLower;
-					const readable = up(next);
-					step = readable <= upper && readable > lower ? readable : next;
-				}
-			}
-		}
-	}
+		(intent === "count" || intent === "preserve") &&
+		goal.rows?.every(
+			(row) =>
+				typeof row.lowComplexityBoundaryForMaxBitrate === "number" &&
+				row.lowComplexityBoundaryForMaxBitrate < goal.maxBitrate,
+		)
+	)
+		addClosedSpacing(
+			goal.rows.reduce(
+				(next, row) => set(next, HIGH, goal.maxBitrate, row.id),
+				goal,
+			),
+		);
 	if (intent !== "cap" || !reach.topFixed) return result;
 	const top = goal.rows?.find((row) => row.id === reach.topFixed?.rowId);
 	if (!top) return result;
@@ -211,6 +229,37 @@ export function perTitleAnalysisCandidates(
 	const high = top.highComplexityBoundaryForMaxBitrate;
 	const low = top.lowComplexityBoundaryForMaxBitrate;
 	const seeds = [goal];
+	// A media-selected band cannot establish distinct low/high responses. Offer
+	// an explicit selection-policy alternative; every changed field remains in
+	// the reviewed adoption diff and its intervals are certified by the caller.
+	const minimumAnalysis = resolvePerTitleAnalysis(
+		proposal.api,
+		proposal.api.global.minBitrate,
+	).complexityInput;
+	if (
+		top.bitrateSelectionMode !== "COMPLEXITY_RANGE" &&
+		can("bitrateSelectionMode", top.id) &&
+		minimumAnalysis !== null &&
+		minimumAnalysis < cap
+	) {
+		const boundary = Math.max(
+			minimumAnalysis,
+			Math.min(top.maxBitrate ?? minimumAnalysis, cap - 1),
+		);
+		seeds.push(
+			set(
+				set(
+					set(goal, "bitrateSelectionMode", "COMPLEXITY_RANGE", top.id),
+					LOW,
+					boundary,
+					top.id,
+				),
+				HIGH,
+				cap,
+				top.id,
+			),
+		);
+	}
 	// If an explicit high boundary lies beyond the selected analysis hypothesis,
 	// saturation at that hypothesis is an alternative, never an assumed default.
 	if (
@@ -223,7 +272,7 @@ export function perTitleAnalysisCandidates(
 	)
 		seeds.push(set(goal, HIGH, cap, top.id));
 	for (const seed of seeds) {
-		const normalized = tunePerTitleSettings(seed, seed).proposal;
+		const normalized = tunePerTitleSettings(seed, reference).proposal;
 		const settings = normalized.api.streams.find(
 			(stream) => stream.rowId === top.id,
 		)?.perTitleSettings;
@@ -276,6 +325,7 @@ export function perTitleAnalysisCandidates(
 			if (typeof high === "number" && high > cap)
 				raised = set(raised, HIGH, cap, top.id);
 			result.push(raised);
+			addClosedSpacing(raised);
 		}
 	}
 	return result.slice(0, 24);

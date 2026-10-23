@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldRow, FieldRowAction } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
-import type { PerTitleAdvice } from "./per-title-simulator-advice";
+import {
+	type PerTitleAdvice,
+	type PerTitleAdviceField,
+	perTitleAdviceFieldKey,
+} from "./per-title-simulator-advice";
 import {
 	isPerTitleBitrateKey,
 	perTitleAdviceValueText,
@@ -20,7 +24,11 @@ import {
 	type PerTitleLadderAssessment,
 } from "./per-title-simulator-analysis-ladder";
 import { perTitleSettingLabel } from "./per-title-simulator-control-copy";
-import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import {
+	perTitleGlobalFields,
+	perTitleStreamFields,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 const purpose = {
@@ -328,25 +336,33 @@ function FullLadderDetails({
 
 export function PerTitleAnalysisPanel({
 	goal,
+	referenceGoal = goal,
 	intent,
 	onIntentChange,
 	onEvaluate,
 	result,
+	onInspectField,
+	onReleaseMaintained,
+	applying = false,
 }: {
 	goal: PerTitleGoal;
+	referenceGoal?: PerTitleGoal;
 	intent: PerTitleAnalysisIntent;
 	onIntentChange: (intent: PerTitleAnalysisIntent) => void;
 	onEvaluate: () => void;
 	result?: PerTitleAnalysisResult;
+	onInspectField?: (field: PerTitleAdviceField) => void;
+	onReleaseMaintained?: () => void;
+	applying?: boolean;
 }) {
 	const { locale } = useT();
 	const ja = locale === "ja";
 	const id = useId();
 	const title = ja ? "現在の設定を評価" : "Evaluate current settings";
 	const upperLimitFinding = useMemo(() => {
-		const current = tunePerTitleSettings(goal, goal);
+		const current = tunePerTitleSettings(goal, referenceGoal);
 		return assessPerTitleUpperLimit(current.goal, current.proposal).finding;
-	}, [goal]);
+	}, [goal, referenceGoal]);
 	const count =
 		goal.countPolicy.kind === "unrestricted"
 			? ja
@@ -358,15 +374,12 @@ export function PerTitleAnalysisPanel({
 			(item) =>
 				item.severity === "conflict" && item.code !== "configuration-conflict",
 		) ?? result?.findings.find((item) => item.severity === "conflict");
-	const unavailable = result?.findings.find(
-		(item) => item.code === "automatic-settings",
-	);
 	const finding =
 		result?.findings.find((item) =>
 			intent === "cap"
 				? item.code.startsWith("cap-")
 				: intent === "bandwidth"
-					? item.code === "quality-measurement-required"
+					? item.severity === "warning" && item.code !== "count-conditional"
 					: ["count-required", "declared-count-roles-mismatch"].includes(
 							item.code,
 						),
@@ -378,19 +391,67 @@ export function PerTitleAnalysisPanel({
 		) ??
 		result?.findings.find((item) => item.severity === "warning") ??
 		result?.findings[0];
-	const status =
+	const cause =
 		result?.decision.status === "proposal"
+			? undefined
+			: (conflict ??
+				(result?.decision.status === "keep-current" ? undefined : finding));
+	const affectedFields = [
+		...new Map(
+			(cause?.fields ?? []).map((field) => [
+				perTitleAdviceFieldKey(field),
+				field,
+			]),
+		).values(),
+	].filter((field) =>
+		field.scope === "global"
+			? field.key === "countPolicy" ||
+				(perTitleGlobalFields(goal.codec).some(
+					({ key }) => key === field.key,
+				) &&
+					(field.key !== "autoRepresentations.adoptConfigurationThreshold" ||
+						(goal.autoRepresentations !== undefined &&
+							goal.autoRepresentations !== false)))
+			: [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])].some(
+					(row) => row.id === field.rowId,
+				) &&
+				((field.key === "height" &&
+					goal.strategy !== "automatic" &&
+					goal.strategy !== "count") ||
+					perTitleStreamFields(goal.codec).some(
+						({ key }) => key === field.key,
+					)),
+	);
+	const rows = [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])];
+	const fieldName = (field: PerTitleAdviceField) => {
+		const name =
+			field.key === "countPolicy"
+				? ja
+					? "本数条件"
+					: "Count goal"
+				: field.key === "height"
+					? ja
+						? "高さ (px)"
+						: "Height (px)"
+					: perTitleSettingLabel(field.key, locale);
+		const row = rows.findIndex((item) => item.id === field.rowId) + 1;
+		return field.scope === "stream"
+			? `${name}, ${ja ? "段" : "rendition"} ${row || "?"}`
+			: name;
+	};
+	const status = applying
+		? ja
+			? "調整の反映を待っています。反映後に再評価できます。"
+			: "Waiting for the adjustment to be applied. Evaluate again after it finishes."
+		: result?.decision.status === "proposal"
 			? ja
 				? "調整案があります。"
 				: "A checked adjustment is available."
-			: (conflict?.message[locale] ??
-				unavailable?.message[locale] ??
-				(result?.decision.status === "no-certified-candidate"
-					? (finding?.message[locale] ?? result.decision.message[locale])
-					: result?.decision.message[locale]));
+			: result?.decision.message[locale];
 	return (
 		<section
 			aria-labelledby={`${id}-title`}
+			aria-busy={applying || undefined}
 			className="space-y-3 rounded-md border border-zinc-700 p-3"
 		>
 			<h3 id={`${id}-title`} className="font-medium text-sm text-zinc-200">
@@ -417,7 +478,13 @@ export function PerTitleAnalysisPanel({
 					</Field>
 				</div>
 				<FieldRowAction>
-					<Button variant="secondary" size="sm" onClick={onEvaluate}>
+					<Button
+						variant="secondary"
+						size="sm"
+						onClick={onEvaluate}
+						disabled={applying}
+						aria-describedby={applying ? `${id}-status` : undefined}
+					>
 						{ja ? "評価する" : "Evaluate"}
 					</Button>
 				</FieldRowAction>
@@ -439,9 +506,57 @@ export function PerTitleAnalysisPanel({
 			) : null}
 			{result ? (
 				<>
-					<p role="status" className="text-xs text-zinc-300">
-						{status}
-					</p>
+					<div
+						id={`${id}-status`}
+						role="status"
+						className="space-y-2 text-xs text-zinc-300"
+					>
+						<p>{status}</p>
+						{!applying && cause && cause.message[locale] !== status ? (
+							<p>{cause.message[locale]}</p>
+						) : null}
+					</div>
+					{!applying && onInspectField && affectedFields.length > 0 ? (
+						<div className="flex flex-wrap gap-2">
+							{affectedFields.map((field) => (
+								<Button
+									key={perTitleAdviceFieldKey(field)}
+									variant="secondary"
+									size="sm"
+									className="h-auto whitespace-normal text-left"
+									onClick={() => onInspectField(field)}
+								>
+									{ja ? "設定を確認: " : "Review setting: "}
+									{fieldName(field)}
+								</Button>
+							))}
+						</div>
+					) : null}
+					{!applying &&
+					result.advice.length === 0 &&
+					onReleaseMaintained &&
+					result.relaxation &&
+					result.relaxation.certifiedAlternatives > 0 &&
+					result.relaxation.fields.length > 0 ? (
+						<div className="space-y-2 text-xs text-zinc-300">
+							<p>
+								{ja
+									? "次の項目の維持を解除すると検証済みの別案があります: "
+									: "A checked alternative is available if you release these maintained values: "}
+								{result.relaxation.fields.map(fieldName).join(ja ? "、" : "; ")}
+							</p>
+							<Button
+								variant="secondary"
+								size="sm"
+								className="h-auto whitespace-normal text-left"
+								onClick={onReleaseMaintained}
+							>
+								{ja
+									? "該当項目の維持を解除して再評価"
+									: "Release these maintained values and re-evaluate"}
+							</Button>
+						</div>
+					) : null}
 					<DeclaredOutputStructure result={result} locale={locale} />
 				</>
 			) : null}

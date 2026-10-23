@@ -149,7 +149,10 @@ export function perTitleCountDirectedCandidates(
 		}
 		if (!draft) continue;
 		const candidate: PerTitleGoal = draft;
-		const checked = tunePerTitleSettings(candidate, candidate).proposal;
+		const checked = tunePerTitleSettings(
+			candidate,
+			options.referenceGoal ?? goal,
+		).proposal;
 		if (
 			checked.status === "conflict" ||
 			checked.diagnostics.some((item) => item.severity === "conflict") ||

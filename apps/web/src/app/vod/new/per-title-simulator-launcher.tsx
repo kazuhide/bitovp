@@ -76,7 +76,6 @@ function planChanges(before: unknown, after: unknown, path = ""): Change[] {
 const copy = {
 	en: {
 		open: "Open simulator",
-		setup: "Set up Per-Title",
 		title: "Review ladder changes",
 		description:
 			"Review changes to the encoding plan before applying them to this draft.",
@@ -100,7 +99,6 @@ const copy = {
 	},
 	ja: {
 		open: "シミュレーターを開く",
-		setup: "Per-Titleを設定",
 		title: "ラダー設定の変更を確認",
 		description:
 			"エンコード設定の変更内容を確認して、編集中の設定へ反映します。",
@@ -129,7 +127,6 @@ type Session = {
 	fingerprint: string;
 	goal: ReturnType<typeof perTitleGoalFromWizard>;
 	goalsByCodec: Partial<Record<PerTitleCodec, PerTitleGoal>>;
-	initialView: "editor" | "setup";
 };
 
 export function PerTitleSimulatorLauncher({
@@ -152,7 +149,7 @@ export function PerTitleSimulatorLauncher({
 	const [error, setError] = useState<string>();
 	const stale = () => session?.fingerprint !== JSON.stringify(state);
 
-	const open = (initialView: Session["initialView"]) => {
+	const open = () => {
 		setError(undefined);
 		try {
 			const snapshot = structuredClone(state);
@@ -178,7 +175,6 @@ export function PerTitleSimulatorLauncher({
 				fingerprint: JSON.stringify(state),
 				goal,
 				goalsByCodec,
-				initialView,
 			});
 		} catch {
 			setError(text.unsupported);
@@ -246,15 +242,10 @@ export function PerTitleSimulatorLauncher({
 
 	return (
 		<>
-			<div className="flex flex-wrap gap-2">
-				<Button variant="secondary" size="sm" onClick={() => open("setup")}>
-					{text.setup}
-				</Button>
-				<Button variant="secondary" size="sm" onClick={() => open("editor")}>
-					<SlidersHorizontal aria-hidden className="h-3.5 w-3.5" />
-					{text.open}
-				</Button>
-			</div>
+			<Button variant="secondary" size="sm" onClick={open}>
+				<SlidersHorizontal aria-hidden className="h-3.5 w-3.5" />
+				{text.open}
+			</Button>
 			{error && !session ? (
 				<p role="alert" className="mt-2 text-amber-300 text-xs">
 					{error}
@@ -271,7 +262,6 @@ export function PerTitleSimulatorLauncher({
 					}}
 					initialGoal={session.goal}
 					goalsByCodec={session.goalsByCodec}
-					initialView={session.initialView}
 					onApply={inspect}
 					applyError={review ? undefined : error}
 				/>

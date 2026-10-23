@@ -6,11 +6,26 @@ import { DEFAULT_WIZARD_STATE } from "./build-plan";
 import { PerTitleSimulator } from "./per-title-simulator";
 import { PerTitleSimulatorLauncher } from "./per-title-simulator-launcher";
 
+function openSetupFromSimulator(locale: "en" | "ja") {
+	fireEvent.click(
+		screen.getByRole("button", {
+			name: locale === "ja" ? "シミュレーターを開く" : "Open simulator",
+		}),
+	);
+	const before = screen.getByTestId("per-title-api-settings").textContent;
+	fireEvent.click(
+		screen.getByRole("button", {
+			name: locale === "ja" ? "新規設定ウィザード" : "New setup wizard",
+		}),
+	);
+	return before;
+}
+
 describe("guided setup enters the existing simulator and draft review", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("opens from the encoding form without changing the draft (%s)", (locale) => {
+	] as const)("keeps one form entry and opens setup inside the simulator (%s)", (locale) => {
 		const state = structuredClone(DEFAULT_WIZARD_STATE);
 		const snapshot = structuredClone(state);
 		const onPatch = vi.fn();
@@ -18,11 +33,13 @@ describe("guided setup enters the existing simulator and draft review", () => {
 			<PerTitleSimulatorLauncher state={state} onPatch={onPatch} />,
 			locale,
 		);
-		fireEvent.click(
-			screen.getByRole("button", {
+		expect(screen.getAllByRole("button")).toHaveLength(1);
+		expect(
+			screen.queryByRole("button", {
 				name: locale === "ja" ? "Per-Titleを設定" : "Set up Per-Title",
 			}),
-		);
+		).toBeNull();
+		const before = openSetupFromSimulator(locale);
 		expect(
 			screen.getByRole("dialog", {
 				name:
@@ -33,6 +50,9 @@ describe("guided setup enters the existing simulator and draft review", () => {
 			screen.getByRole("button", {
 				name: locale === "ja" ? "キャンセル" : "Cancel",
 			}),
+		);
+		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
+			before,
 		);
 		expect(onPatch).not.toHaveBeenCalled();
 		expect(state).toEqual(snapshot);
@@ -49,11 +69,7 @@ describe("guided setup enters the existing simulator and draft review", () => {
 			<PerTitleSimulatorLauncher state={state} onPatch={onPatch} />,
 			locale,
 		);
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: locale === "ja" ? "Per-Titleを設定" : "Set up Per-Title",
-			}),
-		);
+		openSetupFromSimulator(locale);
 		fireEvent.click(
 			screen.getByRole("radio", {
 				name: locale === "ja" ? "すべて任せる" : "Let the encoder choose",
@@ -142,9 +158,7 @@ describe("guided setup enters the existing simulator and draft review", () => {
 			/>,
 		);
 		const before = screen.getByTestId("per-title-api-settings").textContent;
-		fireEvent.click(
-			screen.getByRole("button", { name: "Create from requirements" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "New setup wizard" }));
 		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
 			before,

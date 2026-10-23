@@ -64,7 +64,6 @@ export type PerTitleSimulatorProps = {
 	goalsByCodec?: Partial<Record<PerTitleGoal["codec"], PerTitleGoal>>;
 	onApply: (proposal: PerTitleProposal) => void;
 	applyError?: string | null;
-	initialView?: "editor" | "setup";
 };
 
 const usesRows = (goal: PerTitleGoal) =>
@@ -452,7 +451,7 @@ function SimulatorEditor({
 		<div className="space-y-5">
 			<div className="flex justify-end">
 				<Button variant="secondary" size="sm" onClick={onSetup}>
-					{locale === "ja" ? "要件から新しく作る" : "Create from requirements"}
+					{locale === "ja" ? "新規設定ウィザード" : "New setup wizard"}
 				</Button>
 			</div>
 			<PerTitleSimulatorFiles
@@ -804,9 +803,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	const [reference, setReference] = useState<PerTitleReference>();
 	const [manualBounds, setManualBounds] = useState<PerTitleManualBounds>({});
 	const [codecError, setCodecError] = useState(false);
-	const [setupMode, setSetupMode] = useState<"initial" | "editor" | null>(
-		props.initialView === "setup" ? "initial" : null,
-	);
+	const [setupOpen, setSetupOpen] = useState(false);
 	const drafts = useRef(
 		new Map<
 			PerTitleGoal["codec"],
@@ -965,7 +962,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	}
 	function changeOpen(open: boolean) {
 		if (!open) {
-			setSetupMode(props.initialView === "setup" ? "initial" : null);
+			setSetupOpen(false);
 			setCodecError(false);
 			drafts.current.clear();
 			setGoal(copyGoal(props.initialGoal));
@@ -980,15 +977,15 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 			open={props.open}
 			onOpenChange={changeOpen}
 			title={
-				setupMode
+				setupOpen
 					? locale === "ja"
 						? "Per-Title を新しく設定"
 						: "New Per-Title setup"
 					: copy.title
 			}
-			size={setupMode ? "wide" : "workspace"}
+			size={setupOpen ? "wide" : "workspace"}
 		>
-			{setupMode ? (
+			{setupOpen ? (
 				<PerTitleGuidedSetup
 					initialGoal={goal}
 					allowedCodecs={[
@@ -1001,13 +998,10 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 							? ["H265V2" as const]
 							: []),
 					]}
-					onCancel={() => {
-						if (setupMode === "initial") changeOpen(false);
-						else setSetupMode(null);
-					}}
+					onCancel={() => setSetupOpen(false)}
 					onComplete={(next) => {
 						loadGoal(next);
-						setSetupMode(null);
+						setSetupOpen(false);
 					}}
 				/>
 			) : (
@@ -1024,7 +1018,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 					reference={reference}
 					onLoad={loadGoal}
 					onCodecChange={switchCodec}
-					onSetup={() => setSetupMode("editor")}
+					onSetup={() => setSetupOpen(true)}
 				/>
 			)}
 		</Dialog>

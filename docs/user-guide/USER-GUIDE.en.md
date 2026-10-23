@@ -442,13 +442,13 @@ Automatic rendition generation includes `autoRepresentations` and configuration-
 
 **Per-Title simulator**
 
-For a new configuration, select **Set up Per-Title** in "Ladder". The setup has three steps:
+For a new configuration, select **Open simulator** in "Ladder", then **New setup wizard** inside the simulator. The setup has three steps:
 
 1. Choose how much to specify: let the encoder choose, enter only a count, require some resolutions, specify every resolution, or specify resolutions with bitrate ranges.
 2. Enter the overall bitrate limits and the count or resolutions your choice needs. In the bitrate-range option, leave individual limits empty to request an initial allocation, or enter the limits you need.
 3. Review one proposed configuration and its ladder. **Inspect in simulator** opens it for further inspection. The encoding draft changes only after the existing difference review and **Apply to draft**.
 
-Spacing and complexity boundaries are calculated internally; the API settings remain available under details. For a fully specified ladder, every listed rendition, including the lowest, is required. No ordinary template or forced upper addition is inserted into that configuration. Calculated bitrate ranges are a starting allocation, not a measured quality optimum. A requested count and a checked settings model do not guarantee the native output count. Canceling setup leaves the previous settings unchanged. You can also start setup from **Create from requirements** inside the simulator.
+Spacing and complexity boundaries are calculated internally; the API settings remain available under details. For a fully specified ladder, every listed rendition, including the lowest, is required. No ordinary template or forced upper addition is inserted into that configuration. Calculated bitrate ranges are a starting allocation, not a measured quality optimum. A requested count and a checked settings model do not guarantee the native output count. Canceling setup returns to the simulator with its previous settings unchanged.
 
 Select "Open simulator" in "Ladder" to evaluate the current settings or review a recommended configuration for your requirements. It does not change the encoding draft until you review and apply the differences.
 

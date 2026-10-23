@@ -71,6 +71,49 @@ describe("current Per-Title settings analysis", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("retains the count-model-limit action beside a generic configuration conflict (%s)", (locale) => {
+		const ja = locale === "ja";
+		const onApply = vi.fn();
+		renderLocalized(
+			<PerTitleSimulator
+				initialGoal={{
+					...source(),
+					maxBitrate: 4_000_000,
+					countPolicy: { kind: "exact", count: 257 },
+				}}
+				open
+				onOpenChange={vi.fn()}
+				onApply={onApply}
+			/>,
+			locale,
+		);
+		const before = screen.getByTestId("per-title-api-settings").textContent;
+		fireEvent.click(
+			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
+		);
+		const panel = screen.getByRole("region", {
+			name: ja ? "現在の設定を評価" : "Evaluate current settings",
+		});
+		expect(within(panel).getByRole("status")).toHaveTextContent("256");
+		fireEvent.click(
+			within(panel).getByRole("button", {
+				name: ja ? "設定を確認: 本数条件" : "Review setting: Count goal",
+			}),
+		);
+		const countInput = screen.getByRole("spinbutton", {
+			name: ja ? "希望する本数" : "Desired count",
+		});
+		expect(countInput).toHaveFocus();
+		expect(countInput).toHaveValue(257);
+		expect(screen.getByTestId("per-title-api-settings").textContent).toBe(
+			before,
+		);
+		expect(onApply).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"en",
+		"ja",
 	] as const)("discloses changed Auto fields while retaining unrelated Auto controls after adoption (%s)", (locale) => {
 		const ja = locale === "ja";
 		const goal: PerTitleGoal = {

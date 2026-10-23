@@ -396,9 +396,16 @@ export function PerTitleAnalysisPanel({
 			? undefined
 			: (conflict ??
 				(result?.decision.status === "keep-current" ? undefined : finding));
+	const fieldCause = cause?.fields?.length
+		? cause
+		: cause
+			? result?.findings.find(
+					(item) => item.severity !== "info" && item.fields?.length,
+				)
+			: undefined;
 	const affectedFields = [
 		...new Map(
-			(cause?.fields ?? []).map((field) => [
+			(fieldCause?.fields ?? []).map((field) => [
 				perTitleAdviceFieldKey(field),
 				field,
 			]),

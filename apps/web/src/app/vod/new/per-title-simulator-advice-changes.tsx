@@ -224,6 +224,18 @@ export function PerTitleAdviceChanges({
 												{modeChange}
 											</span>
 										) : null}
+										<span
+											aria-hidden="true"
+											data-testid="per-title-advice-mobile-values"
+											className="mt-1 block font-normal text-zinc-300 sm:hidden"
+										>
+											<span className="text-zinc-400">
+												{ja ? "現在 → 提案: " : "Current → Proposed: "}
+											</span>
+											<span className="block">
+												{text(before)} → {text(after)}
+											</span>
+										</span>
 									</th>
 									<td className="tabular-nums text-zinc-200 [overflow-wrap:anywhere]">
 										{text(before)}

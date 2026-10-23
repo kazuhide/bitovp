@@ -33,6 +33,45 @@ describe("parameter adjustment mode changes", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("keeps exact mobile values with the parameter while preserving the existing accessible cells (%s)", (locale) => {
+		const { goal, advice } = fixture();
+		const change = advice.changes[0];
+		if (!change) throw new Error("Expected a parameter change.");
+		change.after = 1.8795574353431477;
+		renderLocalized(
+			<PerTitleAdviceChanges
+				goal={goal}
+				advice={advice}
+				locale={locale}
+				onReview={vi.fn()}
+			/>,
+			locale,
+		);
+		const ja = locale === "ja";
+		const heading = screen.getByRole("rowheader", {
+			name: ja ? /ビットレート間隔の下限/ : /Minimum bitrate ratio/,
+		});
+		const values = within(heading).getByTestId(
+			"per-title-advice-mobile-values",
+		);
+		expect(values).toHaveTextContent(
+			ja
+				? "現在 → 提案: 1.5 → 1.8795574353431477"
+				: "Current → Proposed: 1.5 → 1.8795574353431477",
+		);
+		expect(values).toHaveAttribute("aria-hidden", "true");
+		expect(values).toHaveClass("sm:hidden");
+		expect(heading).not.toHaveAccessibleName(/1\.5|1\.879/);
+		const row = heading.closest("tr");
+		if (!row) throw new Error("Expected the parameter row.");
+		const cells = within(row).getAllByRole("cell");
+		expect(cells[1]).toHaveTextContent(/^1\.5$/);
+		expect(cells[2]).toHaveTextContent(/^1\.8795574353431477$/);
+	});
+
+	it.each([
+		"en",
+		"ja",
 	] as const)("makes an Auto-to-Fixed change explicit on its parameter row (%s)", (locale) => {
 		const { goal, advice } = fixture();
 		const onReview = vi.fn();

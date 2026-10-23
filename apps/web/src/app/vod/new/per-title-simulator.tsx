@@ -20,6 +20,7 @@ import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
+import { PerTitleGuidedSetup } from "./per-title-guided-setup";
 import {
 	applyPerTitleAdvice,
 	applySelectedPerTitleAdvice,
@@ -63,6 +64,7 @@ export type PerTitleSimulatorProps = {
 	goalsByCodec?: Partial<Record<PerTitleGoal["codec"], PerTitleGoal>>;
 	onApply: (proposal: PerTitleProposal) => void;
 	applyError?: string | null;
+	initialView?: "editor" | "setup";
 };
 
 const usesRows = (goal: PerTitleGoal) =>
@@ -368,6 +370,7 @@ function SimulatorEditor({
 	reference,
 	onLoad,
 	onCodecChange,
+	onSetup,
 }: PerTitleSimulatorProps & {
 	goal: PerTitleGoal;
 	setGoal: Dispatch<SetStateAction<PerTitleGoal>>;
@@ -382,6 +385,7 @@ function SimulatorEditor({
 	reference?: PerTitleReference;
 	onLoad: (goal: PerTitleGoal, reference?: PerTitleReference) => void;
 	onCodecChange: (codec: PerTitleGoal["codec"]) => void;
+	onSetup: () => void;
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
@@ -446,6 +450,11 @@ function SimulatorEditor({
 		setGoal((current) => ({ ...current, ...next }));
 	return (
 		<div className="space-y-5">
+			<div className="flex justify-end">
+				<Button variant="secondary" size="sm" onClick={onSetup}>
+					{locale === "ja" ? "要件から新しく作る" : "Create from requirements"}
+				</Button>
+			</div>
 			<PerTitleSimulatorFiles
 				goal={goal}
 				reference={reference}
@@ -795,6 +804,9 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	const [reference, setReference] = useState<PerTitleReference>();
 	const [manualBounds, setManualBounds] = useState<PerTitleManualBounds>({});
 	const [codecError, setCodecError] = useState(false);
+	const [setupMode, setSetupMode] = useState<"initial" | "editor" | null>(
+		props.initialView === "setup" ? "initial" : null,
+	);
 	const drafts = useRef(
 		new Map<
 			PerTitleGoal["codec"],
@@ -953,6 +965,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	}
 	function changeOpen(open: boolean) {
 		if (!open) {
+			setSetupMode(props.initialView === "setup" ? "initial" : null);
 			setCodecError(false);
 			drafts.current.clear();
 			setGoal(copyGoal(props.initialGoal));
@@ -966,23 +979,54 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		<Dialog
 			open={props.open}
 			onOpenChange={changeOpen}
-			title={copy.title}
-			size="workspace"
+			title={
+				setupMode
+					? locale === "ja"
+						? "Per-Title を新しく設定"
+						: "New Per-Title setup"
+					: copy.title
+			}
+			size={setupMode ? "wide" : "workspace"}
 		>
-			<SimulatorEditor
-				{...props}
-				applyError={codecError ? copy.referenceCodecError : props.applyError}
-				onOpenChange={changeOpen}
-				goal={goal}
-				setGoal={setGoal}
-				manualBounds={manualBounds}
-				onBitrateChange={changeBitrate}
-				onResetBitrates={resetBitrates}
-				referenceGoal={referenceGoal}
-				reference={reference}
-				onLoad={loadGoal}
-				onCodecChange={switchCodec}
-			/>
+			{setupMode ? (
+				<PerTitleGuidedSetup
+					initialGoal={goal}
+					allowedCodecs={[
+						"H264",
+						"H265",
+						"VP9",
+						"AV1",
+						...(props.initialGoal.codec === "H265V2" ||
+						props.goalsByCodec?.H265V2
+							? ["H265V2" as const]
+							: []),
+					]}
+					onCancel={() => {
+						if (setupMode === "initial") changeOpen(false);
+						else setSetupMode(null);
+					}}
+					onComplete={(next) => {
+						loadGoal(next);
+						setSetupMode(null);
+					}}
+				/>
+			) : (
+				<SimulatorEditor
+					{...props}
+					applyError={codecError ? copy.referenceCodecError : props.applyError}
+					onOpenChange={changeOpen}
+					goal={goal}
+					setGoal={setGoal}
+					manualBounds={manualBounds}
+					onBitrateChange={changeBitrate}
+					onResetBitrates={resetBitrates}
+					referenceGoal={referenceGoal}
+					reference={reference}
+					onLoad={loadGoal}
+					onCodecChange={switchCodec}
+					onSetup={() => setSetupMode("editor")}
+				/>
+			)}
 		</Dialog>
 	);
 }

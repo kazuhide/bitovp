@@ -8,6 +8,7 @@ import {
 } from "./per-title-simulator-advice-fields";
 import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
 import { jointPerTitleExpansionLayouts } from "./per-title-simulator-joint";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 export {
 	type PerTitleAdviceField,
@@ -239,10 +240,11 @@ function wireWithChanges(
 	}
 	return api;
 }
-function noConflict(proposal: PerTitleProposal) {
+function noConflict(proposal: PerTitleProposal, goal: PerTitleGoal) {
 	return (
 		proposal.status !== "conflict" &&
-		!proposal.diagnostics.some((d) => d.severity === "conflict")
+		!proposal.diagnostics.some((d) => d.severity === "conflict") &&
+		assessPerTitleUpperLimit(goal, proposal).finding === null
 	);
 }
 function closedCount(goal: PerTitleGoal, proposal: PerTitleProposal) {
@@ -596,7 +598,7 @@ export function perTitleAdvice(
 			const checked = tunePerTitleSettings(adopted, adopted);
 			if (
 				!same(checked.proposal.api, trial.proposal.api) ||
-				!noConflict(checked.proposal)
+				!noConflict(checked.proposal, adopted)
 			)
 				continue;
 			const proof = closedCount(adopted, checked.proposal)
@@ -625,7 +627,7 @@ export function perTitleAdvice(
 				!(
 					baseline.proposal.diagnostics.some(
 						(d) => d.severity === "conflict",
-					) && noConflict(checked.proposal)
+					) && noConflict(checked.proposal, adopted)
 				)
 			)
 				continue;
@@ -716,7 +718,7 @@ export function createPerTitleEvaluationAdvice(
 		);
 		const checked = tunePerTitleSettings(adopted, adopted).proposal;
 		if (
-			!noConflict(checked) ||
+			!noConflict(checked, adopted) ||
 			!same(checked.api, trial.api) ||
 			protectedFields.some(
 				(field) =>
@@ -788,7 +790,7 @@ export function applyPerTitleAdvice(
 		)
 			return null;
 		const checked = tunePerTitleSettings(advice.goal, advice.goal);
-		return noConflict(checked.proposal) &&
+		return noConflict(checked.proposal, advice.goal) &&
 			same(checked.proposal.api, advice.proposal.api)
 			? structuredClone(advice.goal)
 			: null;

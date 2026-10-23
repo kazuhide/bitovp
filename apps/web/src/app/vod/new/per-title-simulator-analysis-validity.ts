@@ -12,6 +12,7 @@ import {
 	perTitleGlobalFields,
 	perTitleStreamFields,
 } from "./per-title-simulator-tuning";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 type Field = { scope: "global" | "stream"; key: string; rowId?: string };
 export type PerTitleValidityFinding = {
@@ -967,5 +968,10 @@ export function assessPerTitleValidity(
 	auditIntervals(proposal.api.global, proposal.api.streams, add);
 	auditForced(proposal.api.global, proposal.api.streams, add);
 	auditCodec(goal, proposal.api.global, proposal.api.streams, add);
+	const upperLimit = assessPerTitleUpperLimit(goal, proposal);
+	if (upperLimit.finding) {
+		const { code, severity, message } = upperLimit.finding;
+		add(code, severity, message.en, message.ja);
+	}
 	return result;
 }

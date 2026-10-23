@@ -53,6 +53,7 @@ import {
 	setPerTitleSetting,
 	tunePerTitleSettings,
 } from "./per-title-simulator-tuning";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 export type PerTitleSimulatorProps = {
 	open: boolean;
@@ -390,6 +391,10 @@ function SimulatorEditor({
 		[draftGoal, referenceGoal],
 	);
 	const { goal, proposal: selected } = tuned;
+	const upperLimitFinding = useMemo(
+		() => assessPerTitleUpperLimit(goal, selected).finding,
+		[goal, selected],
+	);
 	const controlContext = {
 		draft: draftGoal,
 		anchor: referenceGoal,
@@ -712,9 +717,10 @@ function SimulatorEditor({
 					{copy.cancel}
 				</Button>
 				<Button
-					disabled={!selected.applicable || !!reference}
+					disabled={!selected.applicable || !!reference || !!upperLimitFinding}
 					onClick={() => {
-						if (selected.applicable && !reference) onApply(selected);
+						if (selected.applicable && !reference && !upperLimitFinding)
+							onApply(selected);
 					}}
 				>
 					{copy.apply}

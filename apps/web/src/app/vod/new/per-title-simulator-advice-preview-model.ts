@@ -10,6 +10,7 @@ import {
 } from "./per-title-simulator-advice";
 import { protectedPerTitleAdviceFields } from "./per-title-simulator-advice-fields";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 export type PerTitleAdvicePreviewSelection = {
 	selected: readonly PerTitleAdviceField[];
@@ -113,9 +114,12 @@ export function perTitleAdvicePreview(
 		)
 			return result;
 		let after: PerTitleProposal;
+		let afterGoal = fullGoal;
 		if (mode === "all") after = full;
-		else if (mode === "keep") after = current;
-		else {
+		else if (mode === "keep") {
+			after = current;
+			afterGoal = goal;
+		} else {
 			const patched = applySelectedPerTitleAdvice(
 				goal,
 				advice,
@@ -123,6 +127,7 @@ export function perTitleAdvicePreview(
 				options,
 			);
 			if (!patched) return result;
+			afterGoal = patched;
 			after = tunePerTitleSettings(patched, patched).proposal;
 		}
 		return {
@@ -130,7 +135,8 @@ export function perTitleAdvicePreview(
 			after,
 			status:
 				after.status === "conflict" ||
-				after.diagnostics.some((item) => item.severity === "conflict")
+				after.diagnostics.some((item) => item.severity === "conflict") ||
+				assessPerTitleUpperLimit(afterGoal, after).finding !== null
 					? "conflict"
 					: "ready",
 		};

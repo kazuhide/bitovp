@@ -32,6 +32,7 @@ import {
 	type PerTitleValidityFinding,
 } from "./per-title-simulator-analysis-validity";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 export type PerTitleAnalysisIntent = "cap" | "bandwidth" | "count" | "preserve";
 type Message = { en: string; ja: string };
@@ -139,6 +140,11 @@ function explanation(
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
+	if (item.facts.upperLimitRepair === 1)
+		return {
+			en: "Keep the overall bitrate limits, output requirement and template roles. The revised fixed ranges, complexity boundaries and spacing exclude two ordinary upper outputs over the checked analysis interval, including rounding margins. Forced additions are checked separately as an alternative. This upper-output limit does not certify the total native count, resolutions or quality.",
+			ja: "全体のビットレート範囲・本数要件・テンプレート構成を保つ案です。固定段の範囲・複雑度境界・段間隔を再検査し、丸めを含めた評価区間で上位2本を作る条件を除外しました。強制追加も別経路として確認しています。総出力本数・解像度・画質は素材で確認してください。",
+		};
 	if (item.facts.bandwidthStructureRepair === 1) {
 		const lowerRoom = `${before.lowerSlots?.maximum ?? "?"}→${after.lowerSlots?.maximum ?? "?"}`;
 		const upperRoom = `${before.upperSlots?.maximum ?? "?"}→${after.upperSlots?.maximum ?? "?"}`;
@@ -237,6 +243,7 @@ export function analyzePerTitleSettings(
 ): PerTitleAnalysisResult {
 	const normalized = tunePerTitleSettings(goal, goal);
 	const proposal = normalized.proposal;
+	const upperLimit = assessPerTitleUpperLimit(normalized.goal, proposal);
 	const reach = assessPerTitleReach(normalized.goal, proposal);
 	const ladder = assessPerTitleLadder(normalized.goal, proposal);
 	const countStructure = assessPerTitleCountStructure(
@@ -315,6 +322,7 @@ export function analyzePerTitleSettings(
 		proposal.api.global.fixedResolutionAndBitrateConfiguration
 			?.forcedRenditionAboveHighestFixedRepresentation ?? 0;
 	if (
+		upperLimit.limit !== 1 &&
 		ladder.upperSlots &&
 		forcedCount > 0 &&
 		ladder.upperSlots.maximum > forcedCount
@@ -449,12 +457,8 @@ export function analyzePerTitleSettings(
 	};
 	const candidates = [
 		...perTitleAnalysisCandidates(goal, proposal, reach, intent, context),
-		...(intent === "cap" || intent === "preserve" || intent === "bandwidth"
-			? perTitleCountDirectedCandidates(goal, proposal, context)
-			: []),
-		...(intent === "cap" || intent === "preserve" || intent === "bandwidth"
-			? perTitleWholeLadderCandidates(goal, proposal, context)
-			: []),
+		...perTitleCountDirectedCandidates(goal, proposal, context),
+		...perTitleWholeLadderCandidates(goal, proposal, context),
 	];
 	for (const candidate of candidates) {
 		result.search.generated++;
@@ -469,6 +473,9 @@ export function analyzePerTitleSettings(
 			item.goal,
 			item.proposal,
 		);
+		const repairsUpperLimit =
+			upperLimit.finding !== null &&
+			assessPerTitleUpperLimit(item.goal, item.proposal).status === "satisfied";
 		if (
 			item.goal.minBitrate !== goal.minBitrate ||
 			item.goal.maxBitrate !== goal.maxBitrate ||
@@ -561,26 +568,27 @@ export function analyzePerTitleSettings(
 			continue;
 		}
 		const wholeImprovement =
-			connected(
+			repairsUpperLimit ||
+			(connected(
 				checkedLadder,
 				item.proposal.api.global.minBitrateStepSize,
 				item.proposal.api.global.maxBitrateStepSize,
 			) &&
-			checkedLadder.lowerConnection?.fitsMaximum !== false &&
-			((checkedLadder.topResponse.status === "tracked" &&
-				ladder.topResponse.status !== "tracked") ||
-				(ladder.lowerSlots !== null &&
-					checkedLadder.lowerSlots !== null &&
-					checkedLadder.lowerSlots.maximum < ladder.lowerSlots.maximum) ||
-				(ladder.upperSlots !== null &&
-					checkedLadder.upperSlots !== null &&
-					checkedLadder.upperSlots.maximum < ladder.upperSlots.maximum) ||
-				(checkedLadder.earlySaturationRows.length <
-					ladder.earlySaturationRows.length &&
-					!!currentIntervals &&
-					!!nextIntervals &&
-					nextIntervals.maximumWithinRowRatio <
-						item.proposal.api.global.minBitrateStepSize));
+				checkedLadder.lowerConnection?.fitsMaximum !== false &&
+				((checkedLadder.topResponse.status === "tracked" &&
+					ladder.topResponse.status !== "tracked") ||
+					(ladder.lowerSlots !== null &&
+						checkedLadder.lowerSlots !== null &&
+						checkedLadder.lowerSlots.maximum < ladder.lowerSlots.maximum) ||
+					(ladder.upperSlots !== null &&
+						checkedLadder.upperSlots !== null &&
+						checkedLadder.upperSlots.maximum < ladder.upperSlots.maximum) ||
+					(checkedLadder.earlySaturationRows.length <
+						ladder.earlySaturationRows.length &&
+						!!currentIntervals &&
+						!!nextIntervals &&
+						nextIntervals.maximumWithinRowRatio <
+							item.proposal.api.global.minBitrateStepSize)));
 		if (intent === "cap") {
 			if (
 				checked.status !== "conditional-reachable" ||
@@ -655,8 +663,9 @@ export function analyzePerTitleSettings(
 				continue;
 			}
 			const countRepair =
-				item.proof === "model-count" &&
-				!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal);
+				repairsUpperLimit ||
+				(item.proof === "model-count" &&
+					!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal));
 			const capacityRepair =
 				(["lowerSlots", "upperSlots"] as const).some(
 					(side) =>
@@ -692,11 +701,12 @@ export function analyzePerTitleSettings(
 				continue;
 			}
 		} else if (
-			item.proof !== "model-count" ||
-			(!proposal.diagnostics.some(
-				(diagnostic) => diagnostic.severity === "conflict",
-			) &&
-				hasPerTitleEvaluationCountEvidence(normalized.goal, proposal))
+			!repairsUpperLimit &&
+			(item.proof !== "model-count" ||
+				(!proposal.diagnostics.some(
+					(diagnostic) => diagnostic.severity === "conflict",
+				) &&
+					hasPerTitleEvaluationCountEvidence(normalized.goal, proposal)))
 		) {
 			reject("count-or-objective-not-certified");
 			continue;
@@ -716,6 +726,7 @@ export function analyzePerTitleSettings(
 		seen.add(key);
 		item.facts = {
 			...item.facts,
+			upperLimitRepair: Number(repairsUpperLimit),
 			bandwidthStructureRepair: Number(intent === "bandwidth"),
 			reachRank: reachRank(checked),
 			maximum: goal.maxBitrate,

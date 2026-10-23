@@ -20,6 +20,8 @@ import {
 	type PerTitleLadderAssessment,
 } from "./per-title-simulator-analysis-ladder";
 import { perTitleSettingLabel } from "./per-title-simulator-control-copy";
+import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 const purpose = {
 	en: {
@@ -341,6 +343,10 @@ export function PerTitleAnalysisPanel({
 	const ja = locale === "ja";
 	const id = useId();
 	const title = ja ? "現在の設定を評価" : "Evaluate current settings";
+	const upperLimitFinding = useMemo(() => {
+		const current = tunePerTitleSettings(goal, goal);
+		return assessPerTitleUpperLimit(current.goal, current.proposal).finding;
+	}, [goal]);
 	const count =
 		goal.countPolicy.kind === "unrestricted"
 			? ja
@@ -422,6 +428,15 @@ export function PerTitleAnalysisPanel({
 				{" · "}
 				{ja ? "本数条件" : "Count goal"}: {count}
 			</p>
+			{upperLimitFinding ? (
+				<p
+					role="alert"
+					className="rounded-md border border-red-800/60 bg-red-950/20 p-2 text-red-300 text-xs"
+				>
+					<span className="font-medium">{ja ? "エラー: " : "Error: "}</span>
+					{upperLimitFinding.message[locale]}
+				</p>
+			) : null}
 			{result ? (
 				<>
 					<p role="status" className="text-xs text-zinc-300">

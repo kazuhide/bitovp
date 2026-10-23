@@ -717,7 +717,7 @@ describe("Per-Title recommendation flow", () => {
 		fireEvent.click(
 			within(panel).getByRole("button", { name: "Allowed ranges" }),
 		);
-		expect(within(panel).getByText(/Automatic candidates.*1/)).toBeVisible();
+		expect(within(panel).getByText(/Ordinary templates.*1/)).toBeVisible();
 		expect(
 			within(panel).getByText(/candidate count is not the output count/),
 		).not.toBeVisible();

@@ -19,7 +19,9 @@ export type PerTitleAdvicePreviewSelection = {
 
 export type PerTitleAdvicePreviewModel = {
 	current: PerTitleProposal;
+	currentCountPolicy: PerTitleGoal["countPolicy"];
 	after: PerTitleProposal | null;
+	afterCountPolicy?: PerTitleGoal["countPolicy"];
 	mode: "all" | "selected" | "keep";
 	status: "ready" | "conflict" | "unavailable";
 	axis?: { minimum: number; maximum: number };
@@ -54,6 +56,7 @@ export function perTitleAdvicePreview(
 				: "all";
 	const result: PerTitleAdvicePreviewModel = {
 		current,
+		currentCountPolicy: goal.countPolicy,
 		after: null,
 		mode,
 		status: "unavailable",
@@ -134,6 +137,7 @@ export function perTitleAdvicePreview(
 		return {
 			...result,
 			after,
+			afterCountPolicy: afterGoal.countPolicy,
 			status:
 				after.status === "conflict" ||
 				after.diagnostics.some((item) => item.severity === "conflict") ||

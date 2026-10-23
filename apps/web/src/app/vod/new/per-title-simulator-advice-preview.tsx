@@ -71,6 +71,7 @@ export function PerTitleAdvicePreview({
 			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<PerTitleOutputChart
 					proposal={preview.current}
+					countPolicy={preview.currentCountPolicy}
 					axis={axis}
 					analysisInput={analysisValue}
 					title={ja ? "現在のラダー" : "Current ladder"}
@@ -78,6 +79,7 @@ export function PerTitleAdvicePreview({
 				{preview.status === "ready" && preview.after ? (
 					<PerTitleOutputChart
 						proposal={preview.after}
+						countPolicy={preview.afterCountPolicy}
 						axis={axis}
 						analysisInput={analysisValue}
 						title={afterTitle}

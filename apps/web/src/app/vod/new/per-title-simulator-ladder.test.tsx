@@ -51,14 +51,14 @@ describe("Per-Title bitrate range plot", () => {
 			"Allowed bitrate ranges",
 			"Allowed bitrate ranges (data)",
 			"kbps (log scale)",
-			"Automatic candidates: 1",
+			"Ordinary templates: 1",
 		],
 		[
 			"ja",
 			"許容ビットレート範囲",
 			"許容ビットレート範囲（データ）",
 			"kbps（対数目盛）",
-			"自動生成の候補: 1",
+			"通常テンプレート: 1",
 		],
 	] as const)("shows requested bands and accessible row data in %s", (locale, title, dataTitle, axis, candidateCount) => {
 		renderLocalized(<PerTitleLadder proposal={proposal()} />, locale);
@@ -164,7 +164,7 @@ describe("Per-Title bitrate range plot", () => {
 				})}
 			/>,
 		);
-		expect(screen.getByText("Automatic candidates: 2")).toBeVisible();
+		expect(screen.getByText("Ordinary templates: 2")).toBeVisible();
 		expect(screen.queryByRole("table")).toBeNull();
 		expect(screen.queryByTestId("per-title-ladder-range")).toBeNull();
 		expect(screen.queryByText("1080 px")).toBeNull();

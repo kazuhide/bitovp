@@ -1253,7 +1253,7 @@ describe("Per-Title wizard bridge", () => {
 	it.each([
 		720,
 		null,
-	])("refuses mixed fixed-range and automatic templates with height %s without converting or deleting rows", (height) => {
+	])("round-trips mixed fixed-range and automatic templates with height %s through the simulator and compiler", (height) => {
 		const s = state();
 		s.videos = [
 			{
@@ -1262,22 +1262,94 @@ describe("Per-Title wizard bridge", () => {
 				extras: {
 					key: "bounded",
 					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
-					perTitleSettings: { minBitrate: 300000, maxBitrate: 700000 },
+					perTitleSettings: {
+						minBitrate: 300000,
+						maxBitrate: 700000,
+						bitrateSelectionMode: "COMPLEXITY_RANGE",
+						lowComplexityBoundaryForMaxBitrate: 1000000,
+						highComplexityBoundaryForMaxBitrate: 5000000,
+					},
 				},
 			},
 			{
+				width: 1280,
 				height,
 				bitrate: null,
-				extras: { key: "automatic", mode: "PER_TITLE_TEMPLATE" },
+				extras: {
+					key: "automatic",
+					mode: "PER_TITLE_TEMPLATE",
+					perTitleSettings: { codecMaxBitrateFactor: 1.7 },
+				},
+				extraMuxings: [{ key: "auto-ts", kind: "TS", path: "auto/ts/{uuid}" }],
 			},
 		];
+		s.startOptions = {
+			perTitle: {
+				h264: {
+					minBitrate: 100000,
+					maxBitrate: 5000000,
+					minBitrateStepSize: 1.5,
+					maxBitrateStepSize: 4,
+					autoRepresentations: true,
+				},
+			},
+		};
+		s.timing = "POST_ENCODING";
+		const before = structuredClone(s);
+		const beforePlan = compiled(s).plan;
+		const goal = perTitleGoalFromWizard(s);
+		expect(goal.strategy).toBe("fixed-ranges");
+		expect(goal.rows?.map((row) => row.id)).toEqual(["bounded"]);
+		expect(goal.automaticTemplates).toEqual([
+			{
+				id: "automatic",
+				width: 1280,
+				...(height === null ? {} : { height }),
+				codecMaxBitrateFactor: 1.7,
+			},
+		]);
+		const { proposal: candidate } = tunePerTitleSettings(goal, goal);
+		expect(candidate).toMatchObject({ status: "candidate", applicable: true });
+		expect(candidate.countGuarantee).toBe(false);
+		expect(candidate.derivation?.targetSatisfied).toBe(false);
+		const next = applyPerTitleProposal(s, candidate, "H264");
+		const { plan, operations } = compiled(next);
+		expect(videoKeys(next.videos)).toEqual(["bounded", "automatic"]);
+		expect(plan.renditions).toEqual(beforePlan.renditions);
+		expect(plan.muxings).toEqual(beforePlan.muxings);
+		expect(plan.perTitle).toEqual(beforePlan.perTitle);
+		expect(
+			operations.find((operation) => operation.step === "stream:bounded")
+				?.payload.perTitleSettings,
+		).toEqual({
+			fixedResolutionAndBitrateSettings: s.videos[0]?.extras?.perTitleSettings,
+		});
+		expect(
+			operations.find((operation) => operation.step === "stream:automatic")
+				?.payload,
+		).toMatchObject({
+			mode: "PER_TITLE_TEMPLATE",
+			perTitleSettings: { codecMaxBitrateFactor: 1.7 },
+		});
+		expect(perTitleGoalFromWizard(planToWizardState(plan))).toMatchObject(goal);
+		expect(s).toEqual(before);
+	});
+	it("refuses a mixed fixed-resolution and fixed-range import that would change a stream mode", () => {
+		const s = partial();
+		s.videos = s.videos.slice(0, 1);
+		s.videos.push({
+			height: 1080,
+			bitrate: null,
+			extras: {
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				perTitleSettings: { minBitrate: 2000000, maxBitrate: 4000000 },
+			},
+		});
 		const before = structuredClone(s);
 		expect(() => perTitleGoalFromWizard(s)).toThrow(
 			expect.objectContaining({ code: "UNSUPPORTED_STATE" }),
 		);
 		expect(s).toEqual(before);
-		expect(videoKeys(s.videos)).toEqual(["bounded", "automatic"]);
-		expect(s.videos[1]?.extras?.mode).toBe("PER_TITLE_TEMPLATE");
 	});
 	it("reuses the automatic binding when a fixed row occupies the generated automatic ID", () => {
 		const s = partial();

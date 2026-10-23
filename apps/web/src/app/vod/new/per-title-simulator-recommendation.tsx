@@ -15,6 +15,7 @@ export function PerTitleRecommendation({
 	goal,
 	proposal,
 	baseline,
+	session,
 	axis,
 	children,
 	comparisonOnly = false,
@@ -22,6 +23,7 @@ export function PerTitleRecommendation({
 	goal: PerTitleGoal;
 	proposal: PerTitleProposal;
 	baseline?: PerTitleProposal;
+	session?: PerTitleGoal;
 	axis?: { minimum: number; maximum: number };
 	children?: ReactNode;
 	comparisonOnly?: boolean;
@@ -31,6 +33,12 @@ export function PerTitleRecommendation({
 	const id = useId();
 	const [view, setView] = useState<"output" | "ranges">("output");
 	const [analysisInput, setAnalysisInput] = useState<number>();
+	const [displaySession, setDisplaySession] = useState(session);
+	if (displaySession !== session) {
+		setDisplaySession(session);
+		setView("output");
+		setAnalysisInput(undefined);
+	}
 	const analysisCopy =
 		locale === "en"
 			? {
@@ -248,6 +256,7 @@ export function PerTitleRecommendation({
 					</div>
 					<PerTitleOutputChart
 						proposal={proposal}
+						countPolicy={goal.countPolicy}
 						axis={axis}
 						analysisInput={analysisInput}
 					/>

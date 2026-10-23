@@ -220,7 +220,7 @@ export function perTitleAnalysisCandidates(
 				goal,
 			),
 		);
-	if (intent !== "cap" || !reach.topFixed) return result;
+	if (intent === "bandwidth" || !reach.topFixed) return result;
 	const top = goal.rows?.find((row) => row.id === reach.topFixed?.rowId);
 	if (!top) return result;
 	const cap = proposal.api.global.maxBitrate;
@@ -260,6 +260,41 @@ export function perTitleAnalysisCandidates(
 			),
 		);
 	}
+	if (
+		goal.strategy === "fixed-ranges" &&
+		goal.countPolicy.kind !== "unrestricted" &&
+		!goal.automaticTemplates?.length &&
+		proposal.api.global.autoRepresentations === undefined &&
+		minimumAnalysis !== null &&
+		minimumAnalysis < cap
+	) {
+		// A closed count proof needs explicit curves for every required row,
+		// rather than only the highest. Retain existing curves and bitrate bands.
+		let calibrated = goal;
+		for (const row of goal.rows ?? []) {
+			if (
+				row.bitrateSelectionMode === "COMPLEXITY_RANGE" ||
+				!can("bitrateSelectionMode", row.id)
+			)
+				continue;
+			const boundary = Math.max(
+				minimumAnalysis,
+				Math.min(row.maxBitrate ?? minimumAnalysis, cap - 1),
+			);
+			calibrated = set(
+				set(
+					set(calibrated, "bitrateSelectionMode", "COMPLEXITY_RANGE", row.id),
+					LOW,
+					boundary,
+					row.id,
+				),
+				HIGH,
+				cap,
+				row.id,
+			);
+		}
+		if (calibrated !== goal) seeds.push(calibrated);
+	}
 	// If an explicit high boundary lies beyond the selected analysis hypothesis,
 	// saturation at that hypothesis is an alternative, never an assumed default.
 	if (
@@ -271,6 +306,15 @@ export function perTitleAnalysisCandidates(
 		can(HIGH, top.id)
 	)
 		seeds.push(set(goal, HIGH, cap, top.id));
+	if (intent !== "cap") {
+		// A selection-policy change can repair a count without pursuing the cap.
+		// Keep bounds and roles; the caller certifies the emitted API and count.
+		for (const seed of seeds.slice(1)) {
+			result.push(seed);
+			addClosedSpacing(seed);
+		}
+		return result;
+	}
 	for (const seed of seeds) {
 		const normalized = tunePerTitleSettings(seed, reference).proposal;
 		const settings = normalized.api.streams.find(

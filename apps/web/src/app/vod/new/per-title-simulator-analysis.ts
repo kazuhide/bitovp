@@ -113,6 +113,14 @@ const bandwidthRangeFields = [
 	"highComplexityBoundaryForMaxBitrate",
 ] as const;
 const bandwidthStreamFields = new Set<string>(bandwidthRangeFields);
+// These findings concern cap utilization, adaptation or native media selection.
+// Keep displaying them when the narrower count/spacing requirement is checked.
+const countAdvisoryFindings = new Set([
+	"cap-blocked",
+	"flat-top",
+	"early-fixed-saturation",
+	"automatic-count-unresolved",
+]);
 
 /** A structural repair must retain each old upper target at the same input. */
 function preservesBandwidthTargets(
@@ -874,7 +882,9 @@ function analyzeCurrentSettings(
 		hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
 		!findings.some(
 			(finding) =>
-				finding.severity !== "info" && finding.code !== "cap-blocked",
+				finding.severity === "conflict" ||
+				(finding.severity === "warning" &&
+					!countAdvisoryFindings.has(finding.code)),
 		)
 	)
 		result.decision = {
@@ -928,7 +938,8 @@ export function analyzePerTitleSettings(
 	options: PerTitleAdviceOptions = {},
 ): PerTitleAnalysisResult {
 	const result = analyzeCurrentSettings(goal, intent, options);
-	if (result.advice.length) return result;
+	if (result.advice.length || result.decision.status === "keep-current")
+		return result;
 	const held = protectedPerTitleAdviceFields(goal, options);
 	if (!held.length) return result;
 	const relaxed = analyzeCurrentSettings(goal, intent, {

@@ -385,7 +385,7 @@ function SimulatorEditor({
 	reference?: PerTitleReference;
 	onLoad: (goal: PerTitleGoal, reference?: PerTitleReference) => void;
 	onCodecChange: (codec: PerTitleGoal["codec"]) => void;
-	onSetup: () => void;
+	onSetup: (trigger: HTMLButtonElement) => void;
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
@@ -452,7 +452,11 @@ function SimulatorEditor({
 	return (
 		<div ref={editorRef} className="space-y-5">
 			<div className="flex justify-end">
-				<Button variant="secondary" size="sm" onClick={onSetup}>
+				<Button
+					variant="secondary"
+					size="sm"
+					onClick={(event) => onSetup(event.currentTarget)}
+				>
 					{locale === "ja" ? "新規設定ウィザード" : "New setup wizard"}
 				</Button>
 			</div>
@@ -690,6 +694,7 @@ function SimulatorEditor({
 						goal={goal}
 						proposal={selected}
 						baseline={baseline}
+						session={referenceGoal}
 						axis={{ minimum: slider.min, maximum: slider.max }}
 						comparisonOnly={!!reference}
 					/>
@@ -814,6 +819,13 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	const [manualBounds, setManualBounds] = useState<PerTitleManualBounds>({});
 	const [codecError, setCodecError] = useState(false);
 	const [setupOpen, setSetupOpen] = useState(false);
+	const setupTrigger = useRef<HTMLElement | null>(null);
+	useEffect(() => {
+		if (!setupOpen && setupTrigger.current) {
+			setupTrigger.current.focus();
+			setupTrigger.current = null;
+		}
+	}, [setupOpen]);
 	const drafts = useRef(
 		new Map<
 			PerTitleGoal["codec"],
@@ -972,6 +984,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	}
 	function changeOpen(open: boolean) {
 		if (!open) {
+			setupTrigger.current = null;
 			setSetupOpen(false);
 			setCodecError(false);
 			drafts.current.clear();
@@ -1014,7 +1027,8 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 						setSetupOpen(false);
 					}}
 				/>
-			) : (
+			) : null}
+			<div hidden={setupOpen}>
 				<SimulatorEditor
 					{...props}
 					applyError={codecError ? copy.referenceCodecError : props.applyError}
@@ -1028,9 +1042,12 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 					reference={reference}
 					onLoad={loadGoal}
 					onCodecChange={switchCodec}
-					onSetup={() => setSetupOpen(true)}
+					onSetup={(trigger) => {
+						setupTrigger.current = trigger;
+						setSetupOpen(true);
+					}}
 				/>
-			)}
+			</div>
 		</Dialog>
 	);
 }

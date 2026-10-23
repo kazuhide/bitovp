@@ -1,4 +1,4 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import { type PerTitleGoal, previewPerTitleOutput } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	applyPerTitleAdvice,
@@ -9,6 +9,10 @@ import {
 	type PerTitleAdviceOptions,
 } from "./per-title-simulator-advice";
 import { perTitleAdvicePreview } from "./per-title-simulator-advice-preview-model";
+import {
+	analyzePerTitleSettings,
+	perTitleAnalysisContextKey,
+} from "./per-title-simulator-analysis";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const field = (key: string): PerTitleAdviceField => ({ scope: "global", key });
@@ -37,6 +41,73 @@ function fixture(options: PerTitleAdviceOptions = {}) {
 }
 
 describe("read-only staged advice preview", () => {
+	it("keeps the exact output-count requirement through full, partial and keep-only comparisons", () => {
+		const goal: PerTitleGoal = {
+			codec: "H264",
+			strategy: "automatic",
+			minBitrate: 128_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 6 },
+			autoRepresentations: {},
+		};
+		const options = {
+			referenceGoal: goal,
+			contextKey: perTitleAnalysisContextKey("count"),
+		};
+		const advice = analyzePerTitleSettings(goal, "count", options).advice[0];
+		if (!advice) throw new Error("Expected a count-spacing adjustment.");
+		const offered = advice.changes.map(({ scope, key, rowId }) => ({
+			scope,
+			key,
+			...(rowId === undefined ? {} : { rowId }),
+		}));
+		const first = offered[0];
+		if (!first) throw new Error("Expected an offered setting change.");
+		const selections = [
+			empty,
+			{ selected: [first], kept: offered.slice(1) },
+			{ selected: [], kept: [first] },
+		];
+		for (const selection of selections) {
+			const result = perTitleAdvicePreview(goal, advice, selection, options);
+			const expected =
+				result.mode === "keep"
+					? goal
+					: result.mode === "all"
+						? applyPerTitleAdvice(goal, advice, options)
+						: applySelectedPerTitleAdvice(
+								goal,
+								advice,
+								selection.selected,
+								options,
+							);
+			if (!expected || !result.after)
+				throw new Error("Expected a calculated comparison.");
+			expect(result.currentCountPolicy).toEqual(goal.countPolicy);
+			expect(result.afterCountPolicy).toEqual(expected.countPolicy);
+			expect(result.after.api).toEqual(
+				tunePerTitleSettings(expected, goal).proposal.api,
+			);
+			for (const [proposal, countPolicy] of [
+				[result.current, result.currentCountPolicy],
+				[result.after, result.afterCountPolicy],
+			] as const) {
+				const chart = previewPerTitleOutput(proposal, { countPolicy });
+				expect(chart.countProjection).toMatchObject({
+					kind: "exact",
+					requestedCount: 6,
+					status: "conditional",
+				});
+				expect(chart.rows).toHaveLength(6);
+				expect(chart.rows.map((row) => row.ordinal)).toEqual([
+					1, 2, 3, 4, 5, 6,
+				]);
+				expect(chart.rows.every((row) => row.bitrate === undefined)).toBe(true);
+			}
+		}
+	});
 	it("compares equivalent API objects independently of optional-setting insertion order", () => {
 		const goal: PerTitleGoal = {
 			strategy: "fixed-ranges",

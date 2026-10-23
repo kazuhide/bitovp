@@ -292,7 +292,7 @@ describe("Per-Title simulator", () => {
 		).toBeEnabled();
 	});
 
-	it("keeps automatic candidate ranges inactive and separate from required bitrate ranges", async () => {
+	it("keeps automatic candidate ranges inactive while allowing unrestricted draft review", async () => {
 		const { onApply } = show(
 			automaticCalibration({
 				...initialGoal,
@@ -345,7 +345,7 @@ describe("Per-Title simulator", () => {
 		).toHaveLength(5);
 		expect(
 			screen.getByRole("button", { name: "Review changes" }),
-		).toBeDisabled();
+		).toBeEnabled();
 		expect(onApply).not.toHaveBeenCalled();
 		const api = JSON.parse(
 			screen.getByTestId("per-title-api-settings").textContent ?? "",
@@ -378,6 +378,16 @@ describe("Per-Title simulator", () => {
 			name: "Requirements by resolution",
 		});
 		expect(within(counts).queryByRole("row", { name: /1080/ })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Review changes" }));
+		expect(onApply).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				status: "candidate",
+				applicable: true,
+				countGuarantee: false,
+				api,
+				derivation: expect.objectContaining({ targetSatisfied: false }),
+			}),
+		);
 	});
 
 	it("loads a local mixed reference for comparison and retains its original settings after editing", async () => {

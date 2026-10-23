@@ -155,12 +155,20 @@ export function perTitleGoalFromWizard(
 		(row) =>
 			row.extras?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	// The five intent modes cannot express bounded required rows plus a free template.
-	// Refuse this import rather than turning the free row into a requirement or dropping it.
-	if (hasRanges && selected.some((row) => !fixedMode(row))) {
+	// Automatic templates have their own collection. A fixed-resolution row would
+	// instead become a fixed-bitrate row, which this import cannot preserve.
+	if (
+		hasRanges &&
+		selected.some(
+			(row) =>
+				row.extras?.mode !==
+					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+				row.extras?.mode !== "PER_TITLE_TEMPLATE",
+		)
+	) {
 		throw new PerTitleWizardError(
 			"UNSUPPORTED_STATE",
-			"A ladder combining fixed bitrate ranges with automatic templates cannot be imported without changing its intent.",
+			"The simulator cannot import this ladder without changing a stream's mode. Use fixed bitrate ranges with automatic templates, or edit the streams directly.",
 		);
 	}
 	const hasFixed = selected.some(fixedMode);

@@ -1,6 +1,10 @@
 "use client";
 
-import { type PerTitleProposal, previewPerTitleOutput } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	type PerTitleProposal,
+	previewPerTitleOutput,
+} from "@bitovp/core";
 import { useId } from "react";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -22,6 +26,18 @@ const copy = {
 		automatic: "Automatic candidate",
 		automaticGroup: "Automatic range (assumed)",
 		automaticHint: "Count and resolutions are determined by content analysis.",
+		countSlot: (ordinal: number) => `Rendition ${ordinal}`,
+		countExact: (count: number) =>
+			`${count} requested renditions (spacing model)`,
+		countMaximum: (count: number) =>
+			`At most ${count} renditions; count unresolved`,
+		countInfeasible:
+			"The requested count does not fit these bitrate intervals and spacing.",
+		countUnavailable:
+			"A count-specific model is unavailable for these settings.",
+		countLimit: "Count-specific display supports up to 256 renditions.",
+		spacing: (minimum: string, maximum: string) =>
+			`Spacing interval ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		assumedRange: (minimum: string, maximum: string) =>
 			`Assumed range ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		additional: "Additional",
@@ -72,6 +88,15 @@ const copy = {
 		automatic: "自動生成の候補",
 		automaticGroup: "自動生成の範囲（仮定）",
 		automaticHint: "本数と解像度は素材解析で決まります。",
+		countSlot: (ordinal: number) => `${ordinal}段目`,
+		countExact: (count: number) => `指定${count}本の間隔モデル`,
+		countMaximum: (count: number) => `最大${count}本（本数未確定）`,
+		countInfeasible:
+			"このビットレート範囲と間隔では、指定本数を配置できません。",
+		countUnavailable: "この設定では、本数別の範囲を計算できません。",
+		countLimit: "本数別の表示は256本まで対応しています。",
+		spacing: (minimum: string, maximum: string) =>
+			`間隔からの範囲 ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		assumedRange: (minimum: string, maximum: string) =>
 			`仮定の範囲 ${minimum === maximum ? minimum : `${minimum}–${maximum}`}`,
 		additional: "追加",
@@ -119,11 +144,13 @@ const positiveInteger = (value: number | undefined | null): value is number =>
 
 export function PerTitleOutputChart({
 	proposal,
+	countPolicy,
 	axis,
 	analysisInput,
 	title,
 }: {
 	proposal: PerTitleProposal;
+	countPolicy?: PerTitleGoal["countPolicy"];
 	axis?: PerTitleChartAxis;
 	analysisInput?: number;
 	title?: string;
@@ -138,9 +165,12 @@ export function PerTitleOutputChart({
 				: `${title} (data)`;
 	const id = useId();
 	const preview =
-		analysisInput === undefined
+		analysisInput === undefined && countPolicy === undefined
 			? previewPerTitleOutput(proposal)
-			: previewPerTitleOutput(proposal, { analysisInput });
+			: previewPerTitleOutput(proposal, {
+					...(analysisInput === undefined ? {} : { analysisInput }),
+					...(countPolicy === undefined ? {} : { countPolicy }),
+				});
 	const global = proposal.api.global;
 	const permitted =
 		positiveInteger(global.minBitrate) &&
@@ -178,6 +208,22 @@ export function PerTitleOutputChart({
 	const automaticGroup = preview.rows.some(
 		(row) => row.kind === "automatic-group",
 	);
+	const countProjection = preview.countProjection;
+	const countLabel =
+		countProjection && positiveInteger(countProjection.requestedCount)
+			? countProjection.kind === "maximum"
+				? text.countMaximum(countProjection.requestedCount)
+				: text.countExact(countProjection.requestedCount)
+			: undefined;
+	const countProblem =
+		countProjection?.status === "infeasible"
+			? text.countInfeasible
+			: countProjection?.status === "unavailable" &&
+					countProjection.reason !== "maximum-only"
+				? countProjection.reason === "model-limit"
+					? text.countLimit
+					: text.countUnavailable
+				: undefined;
 	const rows = preview.rows
 		.map((row, index) => {
 			const matches = proposal.api.streams.filter(
@@ -221,21 +267,23 @@ export function PerTitleOutputChart({
 				),
 			];
 			const label =
-				row.kind === "automatic-group"
-					? text.automaticGroup
-					: row.basis === "analysis" && candidateHeights.length
-						? text.candidates(
-								candidateHeights
-									.map((height) => numbers.format(height))
-									.join(" / "),
-							)
-						: automatic
-							? positiveInteger(row.height)
-								? `${text.candidate} ${row.height} px`
-								: text.automatic
-							: positiveInteger(row.height)
-								? `${row.height} px`
-								: text.heightUnknown;
+				row.kind === "count-slot" && positiveInteger(row.ordinal)
+					? text.countSlot(row.ordinal)
+					: row.kind === "automatic-group"
+						? text.automaticGroup
+						: row.basis === "analysis" && candidateHeights.length
+							? text.candidates(
+									candidateHeights
+										.map((height) => numbers.format(height))
+										.join(" / "),
+								)
+							: automatic
+								? positiveInteger(row.height)
+									? `${text.candidate} ${row.height} px`
+									: text.automatic
+								: positiveInteger(row.height)
+									? `${row.height} px`
+									: text.heightUnknown;
 			const status =
 				row.status === "unknown" ||
 				(target === undefined && range === undefined)
@@ -253,9 +301,11 @@ export function PerTitleOutputChart({
 									bitrate(range.minimum),
 									bitrate(range.maximum),
 								)
-							: range.minimum === range.maximum
-								? bitrate(range.minimum)
-								: `${bitrate(range.minimum)}–${bitrate(range.maximum)}`
+							: row.rangeBasis === "spacing"
+								? text.spacing(bitrate(range.minimum), bitrate(range.maximum))
+								: range.minimum === range.maximum
+									? bitrate(range.minimum)
+									: `${bitrate(range.minimum)}–${bitrate(range.maximum)}`
 				: configured
 					? text.configured(
 							bitrate(configured.minimum),
@@ -350,6 +400,14 @@ export function PerTitleOutputChart({
 						: text.inputUnknown}
 				</span>
 			</figcaption>
+			{countLabel || countProblem ? (
+				<div id={`${id}-count`} className="space-y-1 text-xs">
+					{countLabel ? <p className="text-zinc-300">{countLabel}</p> : null}
+					{countProblem ? (
+						<p className="text-amber-300">{countProblem}</p>
+					) : null}
+				</div>
+			) : null}
 			{floorNote ? (
 				<p id={`${id}-floor`} className="text-xs text-zinc-400">
 					{floorNote}
@@ -374,7 +432,7 @@ export function PerTitleOutputChart({
 					<div
 						role="img"
 						aria-labelledby={`${id}-title`}
-						aria-describedby={`${id}-axis ${id}-description${forcedFallback ? ` ${id}-fallback` : ""}${floorNote || floorUnknown ? ` ${id}-floor` : ""}${preview.usesAspectRatioAssumption ? ` ${id}-aspect` : ""}${automaticGroup ? ` ${id}-automatic` : ""}`}
+						aria-describedby={`${id}-axis ${id}-description${forcedFallback ? ` ${id}-fallback` : ""}${floorNote || floorUnknown ? ` ${id}-floor` : ""}${preview.usesAspectRatioAssumption ? ` ${id}-aspect` : ""}${automaticGroup ? ` ${id}-automatic` : ""}${countLabel || countProblem ? ` ${id}-count` : ""}`}
 						className="space-y-2"
 					>
 						<div
@@ -583,7 +641,11 @@ export function PerTitleOutputChart({
 											<th scope="row">{label}</th>
 											<td>
 												{row.mode ??
-													(row.kind === "additional" ? text.additional : "")}
+													(row.kind === "count-slot"
+														? "PER_TITLE_TEMPLATE"
+														: row.kind === "additional"
+															? text.additional
+															: "")}
 											</td>
 											<td>
 												{values} {status} {basis}

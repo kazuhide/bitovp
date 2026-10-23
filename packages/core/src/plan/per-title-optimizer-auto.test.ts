@@ -236,7 +236,18 @@ describe("conditional Per-Title calibration", () => {
 		expect(result.derivation?.constraints?.floorRange).toBeNull();
 		expect(result.derivation?.constraints?.calibration).toBeUndefined();
 		expect(result.derivation?.constraints?.spacing).toBeUndefined();
-		expect(result.derivation?.constraints?.changes).toEqual([]);
+		expect(result.derivation?.constraints?.changes).toEqual([
+			{
+				field: "minimumStep",
+				before: 1.9,
+				after: result.api.global.minBitrateStepSize,
+			},
+			{
+				field: "maximumStep",
+				before: 3,
+				after: result.api.global.maxBitrateStepSize,
+			},
+		]);
 		expect(result.derivation?.constraints?.checkpoints).toEqual([]);
 	});
 });

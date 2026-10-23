@@ -511,6 +511,50 @@ export function optimizePerTitleConstraints(
 	goal: PerTitleGoal,
 	recommendIntervals: (goal: PerTitleGoal) => PerTitleProposal,
 ): PerTitleProposal {
+	const proposal = optimizeConstraintTrial(goal, recommendIntervals);
+	const report = proposal.derivation?.constraints;
+	if (report) {
+		const originalRule = goal.fixedResolutionAndBitrateConfiguration;
+		const global = proposal.api.global;
+		const emittedRule = global.fixedResolutionAndBitrateConfiguration;
+		// API edits remain observable even when the trial's count proof is discarded.
+		report.changes = (
+			[
+				["minimumStep", goal.minBitrateStepSize, global.minBitrateStepSize],
+				["maximumStep", goal.maxBitrateStepSize, global.maxBitrateStepSize],
+				[
+					"forcedCount",
+					originalRule?.forcedRenditionAboveHighestFixedRepresentation,
+					emittedRule?.forcedRenditionAboveHighestFixedRepresentation,
+				],
+				[
+					"forcedFactor",
+					originalRule?.forcedRenditionAboveHighestFixedRepresentationFactor,
+					emittedRule?.forcedRenditionAboveHighestFixedRepresentationFactor,
+				],
+				[
+					"forcedMode",
+					originalRule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+					emittedRule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+				],
+			] satisfies Array<
+				[
+					PerTitleConstraintAnalysis["changes"][number]["field"],
+					number | string | undefined,
+					number | string | undefined,
+				]
+			>
+		).flatMap(([field, before, after]) =>
+			Object.is(before, after) ? [] : [{ field, before, after }],
+		);
+	}
+	return proposal;
+}
+
+function optimizeConstraintTrial(
+	goal: PerTitleGoal,
+	recommendIntervals: (goal: PerTitleGoal) => PerTitleProposal,
+): PerTitleProposal {
 	const fallback = recommendIntervals(goal);
 	if (!validRows(goal)) return fallback;
 	const deferredBoundary = (
@@ -664,7 +708,6 @@ export function optimizePerTitleConstraints(
 		? certifyComplexityIntervals(curves(prepared.rows), prepared.input, s)
 		: null;
 	let checked = false;
-	let rowsChecked = false;
 	let lower = 1;
 	let upper: number | undefined;
 	const count = rows.length + n;
@@ -697,7 +740,6 @@ export function optimizePerTitleConstraints(
 					factor <= limit &&
 					Math.round(top.minBitrate * factor) > top.minBitrate))
 		) {
-			rowsChecked = true;
 			checked =
 				bounded &&
 				count > 0 &&
@@ -788,22 +830,6 @@ export function optimizePerTitleConstraints(
 		}
 		report.forced.ranges =
 			evaluateForcedRenditions({ base, count: n, factor }) ?? [];
-	}
-	if ((exact && prepared) || rowsChecked) {
-		for (const [field, before, after] of [
-			["minimumStep", goal.minBitrateStepSize, s],
-			["maximumStep", goal.maxBitrateStepSize, maximum],
-			["forcedCount", saved?.forcedRenditionAboveHighestFixedRepresentation, n],
-			["forcedFactor", savedFactor, n ? factor : undefined],
-			["forcedMode", savedMode, n ? mode : undefined],
-		] as Array<
-			[
-				PerTitleConstraintAnalysis["changes"][number]["field"],
-				number | string | undefined,
-				number | string | undefined,
-			]
-		>)
-			if (before !== after) report.changes.push({ field, before, after });
 	}
 	if (!exact && !checked && prepared) {
 		const conditional = recommendIntervals({

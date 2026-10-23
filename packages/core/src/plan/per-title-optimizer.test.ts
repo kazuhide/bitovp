@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	type PerTitleGoal,
+	type PerTitleProposal,
 	recommendPerTitleModel,
 	recommendPerTitleSettings,
 } from "./per-title-simulator.js";
@@ -467,7 +468,7 @@ describe("joint Per-Title constraint optimization", () => {
 			status: "unknown",
 			inputRange: null,
 			floorRange: null,
-			changes: [],
+			changes: [{ field: "minimumStep", before: undefined, after: 1.2 }],
 			checkpoints: [],
 		});
 		expect(result.derivation?.constraints).not.toHaveProperty("calibration");
@@ -698,7 +699,11 @@ describe("joint Per-Title constraint optimization", () => {
 			result.api.global.fixedResolutionAndBitrateConfiguration,
 		).toBeUndefined();
 		expect(result.derivation?.constraints?.changes).toContainEqual(
-			expect.objectContaining({ field: "forcedCount", before: 2, after: 0 }),
+			expect.objectContaining({
+				field: "forcedCount",
+				before: 2,
+				after: undefined,
+			}),
 		);
 		expect(result.derivation?.targetSatisfied).toBe(true);
 		expect(goal).toEqual(before);
@@ -883,7 +888,18 @@ describe("joint Per-Title constraint optimization", () => {
 			conditional: true,
 			ranges: [],
 		});
-		expect(result.derivation?.constraints?.changes).toEqual([]);
+		expect(result.derivation?.constraints?.changes).toEqual([
+			{
+				field: "minimumStep",
+				before: undefined,
+				after: result.api.global.minBitrateStepSize,
+			},
+			{
+				field: "maximumStep",
+				before: undefined,
+				after: result.api.global.maxBitrateStepSize,
+			},
+		]);
 		expect(result.derivation?.constraints?.calibration).toBeUndefined();
 		expect(result.derivation?.constraints?.spacing).toBeUndefined();
 		expect(result.derivation?.constraints?.checkpoints).toEqual([]);
@@ -1020,5 +1036,271 @@ describe("joint Per-Title constraint optimization", () => {
 		expect(result.derivation?.constraints?.status).toBe("unknown");
 		expect(result.derivation?.targetSatisfied).toBe(false);
 		expect(result.applicable).toBe(false);
+	});
+});
+
+function expectEmittedConstraintChanges(
+	goal: PerTitleGoal,
+	proposal: PerTitleProposal,
+) {
+	const before = goal.fixedResolutionAndBitrateConfiguration;
+	const global = proposal.api.global;
+	const after = global.fixedResolutionAndBitrateConfiguration;
+	const expected = [
+		{
+			field: "minimumStep",
+			before: goal.minBitrateStepSize,
+			after: global.minBitrateStepSize,
+		},
+		{
+			field: "maximumStep",
+			before: goal.maxBitrateStepSize,
+			after: global.maxBitrateStepSize,
+		},
+		{
+			field: "forcedCount",
+			before: before?.forcedRenditionAboveHighestFixedRepresentation,
+			after: after?.forcedRenditionAboveHighestFixedRepresentation,
+		},
+		{
+			field: "forcedFactor",
+			before: before?.forcedRenditionAboveHighestFixedRepresentationFactor,
+			after: after?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		},
+		{
+			field: "forcedMode",
+			before:
+				before?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+			after:
+				after?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+		},
+	].filter((change) => !Object.is(change.before, change.after));
+	expect(proposal.derivation?.constraints).toBeDefined();
+	expect(proposal.derivation?.constraints?.changes).toEqual(expected);
+}
+
+describe("constraint changes describe the final emitted API", () => {
+	const ruleKey = "fixedResolutionAndBitrateConfiguration.";
+	const point: PerTitleGoal = {
+		strategy: "fixed-ranges",
+		codec: "H264",
+		minBitrate: 100_000,
+		maxBitrate: 1_000_000,
+		minBitrateStepSize: 1.5,
+		maxBitrateStepSize: 1.9,
+		countPolicy: { kind: "maximum", count: 1 },
+		rows: [
+			{ id: "point", height: 720, minBitrate: 200_000, maxBitrate: 200_000 },
+		],
+	};
+	const modes = [
+		"LAST_CALCULATED_BITRATE",
+		"MINIMUM",
+		"MAXIMUM",
+		"AVERAGE",
+	] as const;
+	const rules: Array<{
+		name: string;
+		rule: PerTitleGoal["fixedResolutionAndBitrateConfiguration"];
+	}> = [
+		{ name: "omitted", rule: undefined },
+		{
+			name: "explicit zero",
+			rule: { forcedRenditionAboveHighestFixedRepresentation: 0 },
+		},
+		...modes.flatMap((mode) =>
+			([0, 1] as const).map((count) => ({
+				name: `count ${count}, ${mode}`,
+				rule: {
+					forcedRenditionAboveHighestFixedRepresentation: count,
+					forcedRenditionAboveHighestFixedRepresentationFactor: 1.37,
+					forcedRenditionAboveHighestFixedRepresentationCalculationMode: mode,
+				},
+			})),
+		),
+		{
+			name: "partial count",
+			rule: { forcedRenditionAboveHighestFixedRepresentation: 1 },
+		},
+		{
+			name: "partial factor",
+			rule: { forcedRenditionAboveHighestFixedRepresentationFactor: 1.37 },
+		},
+		{
+			name: "partial mode",
+			rule: {
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"MINIMUM",
+			},
+		},
+	];
+	const cases = (["H264", "H265", "H265V2", "VP9", "AV1"] as const).flatMap(
+		(codec) =>
+			(
+				[
+					{ kind: "exact", count: 1 },
+					{ kind: "maximum", count: 1 },
+					{ kind: "unrestricted" },
+				] as const
+			).flatMap((policy) =>
+				[false, true].flatMap((locked) =>
+					rules.map(({ name, rule }) => ({
+						codec,
+						policy,
+						locked,
+						name,
+						rule,
+					})),
+				),
+			),
+	);
+
+	it.each(
+		cases,
+	)("matches every changed field: $codec/$policy.kind/locked=$locked/$name", ({
+		codec,
+		policy,
+		locked,
+		rule,
+		name,
+	}) => {
+		const goal: PerTitleGoal = {
+			...point,
+			codec,
+			countPolicy: policy,
+			fixedResolutionAndBitrateConfiguration: rule,
+			...(locked
+				? {
+						settingLocks: {
+							global: [
+								`${ruleKey}forcedRenditionAboveHighestFixedRepresentation`,
+								`${ruleKey}forcedRenditionAboveHighestFixedRepresentationFactor`,
+								`${ruleKey}forcedRenditionAboveHighestFixedRepresentationCalculationMode`,
+							],
+						},
+					}
+				: {}),
+		};
+		const before = structuredClone(goal);
+		const result = recommendPerTitleSettings(goal);
+		if (locked && name === "partial count") {
+			// A locked missing factor rejects the trial before a report exists.
+			expect(result.derivation?.constraints).toBeUndefined();
+			expect(result.applicable).toBe(false);
+			expect(result.derivation?.targetSatisfied).not.toBe(true);
+			expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+				rule,
+			);
+		} else expectEmittedConstraintChanges(goal, result);
+		expect(result.countGuarantee).toBe(false);
+		expect(goal).toEqual(before);
+	});
+
+	it("reports neither a phantom zero nor removal of retained zero-rule metadata", () => {
+		const unchanged = { ...point, maxBitrateStepSize: 1.5 };
+		const omitted = recommendPerTitleSettings(unchanged);
+		expect(omitted.api.global).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
+		);
+		expect(omitted.derivation?.constraints?.changes).toEqual([]);
+		const rule = {
+			forcedRenditionAboveHighestFixedRepresentation: 0,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.37,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"MINIMUM" as const,
+		};
+		const result = recommendPerTitleSettings({
+			...unchanged,
+			fixedResolutionAndBitrateConfiguration: rule,
+		});
+		expect(result.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			rule,
+		);
+		expect(result.derivation?.constraints?.changes).toEqual([]);
+		expect(result.derivation?.constraints?.status).toBe("checked");
+		expect(result.derivation?.targetSatisfied).toBe(true);
+	});
+
+	it("reports actual additions and deletions without substituting an inferred zero", () => {
+		const addedGoal: PerTitleGoal = {
+			...fixed,
+			countPolicy: { kind: "exact", count: 4 },
+		};
+		const added = recommendPerTitleSettings(addedGoal);
+		expectEmittedConstraintChanges(addedGoal, added);
+		expect(
+			added.derivation?.constraints?.changes.map((change) => change.field),
+		).toEqual([
+			"minimumStep",
+			"maximumStep",
+			"forcedCount",
+			"forcedFactor",
+			"forcedMode",
+		]);
+		expect(added.derivation?.constraints?.status).toBe("checked");
+		const removedGoal: PerTitleGoal = {
+			...point,
+			maxBitrateStepSize: 1.5,
+			countPolicy: { kind: "exact", count: 1 },
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.37,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"MINIMUM",
+			},
+		};
+		const removed = recommendPerTitleSettings(removedGoal);
+		expectEmittedConstraintChanges(removedGoal, removed);
+		expect(removed.derivation?.constraints?.changes).toEqual([
+			{ field: "forcedCount", before: 1, after: undefined },
+			{ field: "forcedFactor", before: 1.37, after: undefined },
+			{ field: "forcedMode", before: "MINIMUM", after: undefined },
+		]);
+		expect(removed.api.global).not.toHaveProperty(
+			"fixedResolutionAndBitrateConfiguration",
+		);
+	});
+
+	it("retains real step edits when a trial is discarded and its count remains unknown", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			rows: [
+				{ id: "a", height: 240, minBitrate: 200_000, maxBitrate: 200_000 },
+				{ id: "b", height: 480, minBitrate: 400_000, maxBitrate: 400_000 },
+				{ id: "c", height: 720, minBitrate: 800_000, maxBitrate: 800_000 },
+			],
+			maxBitrateStepSize: 1.2,
+			settingLocks: { global: ["maxBitrateStepSize"] },
+		};
+		const result = recommendPerTitleSettings(goal);
+		expectEmittedConstraintChanges(goal, result);
+		expect(result.derivation?.constraints?.changes).toEqual([
+			{ field: "minimumStep", before: undefined, after: 1.2 },
+		]);
+		expect(result.derivation?.constraints?.status).toBe("unknown");
+		expect(result.derivation?.constraints?.inputRange).toBeNull();
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).toBe(false);
+	});
+
+	it("keeps final-API differences visible in a conditional mixed layout", () => {
+		const goal: PerTitleGoal = {
+			...fixed,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "maximum", count: 6 },
+			autoRepresentations: false,
+			automaticTemplates: [
+				{ id: "lower", height: 120 },
+				{ id: "upper", height: 1080 },
+			],
+		};
+		const result = recommendPerTitleSettings(goal);
+		expectEmittedConstraintChanges(goal, result);
+		expect(result.derivation?.constraints?.scope).toBe("conditional");
+		expect(result.derivation?.constraints?.status).toBe("unknown");
+		expect(result.applicable).toBe(false);
+		expect(result.derivation?.targetSatisfied).toBe(false);
+		expect(result.countGuarantee).toBe(false);
 	});
 });

@@ -1,4 +1,8 @@
-import type { PerTitleProposal } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	type PerTitleProposal,
+	recommendPerTitleSettings,
+} from "@bitovp/core";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderLocalized } from "@/test/render";
@@ -93,7 +97,254 @@ function required<T>(value: T | undefined): T {
 const analysis = (value: PerTitleProposal) =>
 	required(required(value.derivation).constraints);
 
+function disabledAdditionalRuleGoal(): PerTitleGoal {
+	return {
+		strategy: "fixed-ranges",
+		codec: "H264",
+		minBitrate: 100_000,
+		maxBitrate: 2_400_000,
+		minBitrateStepSize: 1.5,
+		maxBitrateStepSize: 1.9,
+		countPolicy: { kind: "maximum", count: 6 },
+		autoRepresentations: false,
+		rows: [
+			{ id: "lower", height: 240, minBitrate: 160_000, maxBitrate: 200_000 },
+			{ id: "middle", height: 480, minBitrate: 400_000, maxBitrate: 480_000 },
+			{
+				id: "upper",
+				height: 720,
+				minBitrate: 1_000_000,
+				maxBitrate: 1_200_000,
+			},
+		],
+		fixedResolutionAndBitrateConfiguration: {
+			forcedRenditionAboveHighestFixedRepresentation: 0,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.37,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode: "MINIMUM",
+		},
+	};
+}
+
+function derivationValues(
+	settings: Pick<
+		PerTitleGoal,
+		| "minBitrateStepSize"
+		| "maxBitrateStepSize"
+		| "fixedResolutionAndBitrateConfiguration"
+	>,
+) {
+	const rule = settings.fixedResolutionAndBitrateConfiguration;
+	return {
+		minimumStep: settings.minBitrateStepSize,
+		maximumStep: settings.maxBitrateStepSize,
+		forcedCount: rule?.forcedRenditionAboveHighestFixedRepresentation,
+		forcedFactor: rule?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		forcedMode:
+			rule?.forcedRenditionAboveHighestFixedRepresentationCalculationMode,
+	};
+}
+
+function expectApiConsistentChanges(
+	goal: PerTitleGoal,
+	value: PerTitleProposal,
+	locale: "en" | "ja",
+) {
+	const source = derivationValues(goal);
+	const emitted = derivationValues(
+		JSON.parse(JSON.stringify(value.api.global)),
+	);
+	const report = analysis(value);
+	const changes = screen.getByRole("table", {
+		name: locale === "en" ? "Parameter changes" : "パラメータの変更",
+	});
+	const rows = within(changes).getAllByRole("row").slice(1);
+	const actual = report.changes;
+	const expected = (Object.keys(source) as (keyof typeof source)[])
+		.filter((field) => source[field] !== emitted[field])
+		.map((field) => ({ field, before: source[field], after: emitted[field] }));
+	expect(actual).toEqual(expected);
+	expect(rows).toHaveLength(expected.length);
+	const labels = {
+		minimumStep: locale === "en" ? "Minimum ratio" : "最小比率",
+		maximumStep: locale === "en" ? "Maximum ratio" : "最大比率",
+		forcedCount:
+			locale === "en" ? "Additional-rendition count" : "追加レンディション数",
+		forcedFactor:
+			locale === "en"
+				? "Additional-rendition factor"
+				: "追加レンディションの倍率",
+		forcedMode:
+			locale === "en"
+				? "Additional-rendition calculation"
+				: "追加レンディションの計算方法",
+	};
+	const number = new Intl.NumberFormat(locale, { maximumSignificantDigits: 6 });
+	for (const change of expected) {
+		const row = within(changes).getByRole("row", {
+			name: new RegExp(labels[change.field]),
+		});
+		const cells = within(row).getAllByRole("cell");
+		for (const [index, value] of [change.before, change.after].entries()) {
+			expect(typeof value).toBe("number");
+			if (typeof value !== "number") throw new Error("Expected a ratio change");
+			expect(cells[index]).toHaveTextContent(`≈ ${number.format(value)}`);
+		}
+	}
+	expect(changes).not.toHaveTextContent(locale === "en" ? "Removed" : "削除");
+}
+
 describe("Per-Title parameter derivation", () => {
+	it.each([
+		{ locale: "en", locked: false },
+		{ locale: "ja", locked: false },
+		{ locale: "en", locked: true },
+		{ locale: "ja", locked: true },
+	] as const)("explains a retained compatible factor independently of its upper limit ($locale, locked=$locked)", ({
+		locale,
+		locked,
+	}) => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 2 },
+			autoRepresentations: false,
+			rows: [
+				{ id: "point", height: 720, minBitrate: 200_000, maxBitrate: 200_000 },
+			],
+			fixedResolutionAndBitrateConfiguration: {
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 2,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"LAST_CALCULATED_BITRATE",
+			},
+			...(locked
+				? {
+						settingLocks: {
+							global: [
+								"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+							],
+						},
+					}
+				: {}),
+		};
+		const before = structuredClone(goal);
+		const value = recommendPerTitleSettings(goal);
+		const report = analysis(value);
+		expect(value.applicable).toBe(true);
+		expect(
+			value.api.global.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(2);
+		expect(report.forced.factor).toBe(2);
+		expect(report.forced.maximumFactor).toBeGreaterThan(4.9);
+		expect(
+			report.changes.some((change) => change.field === "forcedFactor"),
+		).toBe(false);
+		renderLocalized(<PerTitleConstraints proposal={value} />, locale);
+		fireEvent.click(
+			screen.getByText(
+				locale === "en" ? "Parameter derivation" : "パラメータの導出",
+			),
+		);
+		const factor = screen.getByText(
+			locale === "en"
+				? "Additional-rendition factor"
+				: "追加レンディションの倍率",
+		);
+		expect(factor.nextElementSibling).toHaveTextContent("≈ 2");
+		const limit = screen.getByText(
+			locale === "en" ? "Calculated factor upper bound" : "計算上の倍率の上限",
+		);
+		expect(limit.nextElementSibling).not.toHaveTextContent(/^≈ 2$/);
+		expect(
+			screen.getByText(
+				locale === "en"
+					? /Compatible saved factors within the limit are kept/
+					: /条件に合う上限内の既存倍率は維持/,
+			),
+		).toBeVisible();
+		expect(
+			screen.queryByText(
+				locale === "en"
+					? /The proposal uses this calculated limit/
+					: /倍率の上限を求めて採用します/,
+			),
+		).toBeNull();
+		expect(goal).toEqual(before);
+	});
+	it.each([
+		"en",
+		"ja",
+	] as const)("matches all five change fields to the emitted API with saved disabled-rule metadata (%s)", (locale) => {
+		const goal = disabledAdditionalRuleGoal();
+		const before = structuredClone(goal);
+		const value = recommendPerTitleSettings(goal);
+		expect(value.applicable).toBe(true);
+		expect(value.api.global.fixedResolutionAndBitrateConfiguration).toEqual(
+			goal.fixedResolutionAndBitrateConfiguration,
+		);
+		renderLocalized(<PerTitleConstraints proposal={value} />, locale);
+		fireEvent.click(
+			screen.getByText(
+				locale === "en" ? "Parameter derivation" : "パラメータの導出",
+			),
+		);
+		expect(
+			screen.queryAllByText(locale === "en" ? "Removed" : "削除"),
+		).toHaveLength(0);
+		expectApiConsistentChanges(goal, value, locale);
+		expect(analysis(value).changes.map((change) => change.field)).toEqual([
+			"minimumStep",
+			"maximumStep",
+		]);
+		expect(goal).toEqual(before);
+	});
+	it.each([
+		"en",
+		"ja",
+	] as const)("recomputes the change table after adopting one ratio and keeping metadata (%s)", (locale) => {
+		const goal = disabledAdditionalRuleGoal();
+		const first = recommendPerTitleSettings(goal);
+		const selected: PerTitleGoal = {
+			...goal,
+			minBitrateStepSize: first.api.global.minBitrateStepSize,
+			settingLocks: {
+				global: [
+					"minBitrateStepSize",
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentation",
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+					"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationCalculationMode",
+				],
+			},
+		};
+		const before = structuredClone(selected);
+		const reevaluated = recommendPerTitleSettings(selected);
+		expect(reevaluated.api.global.minBitrateStepSize).toBe(
+			selected.minBitrateStepSize,
+		);
+		expect(
+			reevaluated.api.global.fixedResolutionAndBitrateConfiguration,
+		).toEqual(goal.fixedResolutionAndBitrateConfiguration);
+		const { rerender } = renderLocalized(
+			<PerTitleConstraints proposal={first} />,
+			locale,
+		);
+		fireEvent.click(
+			screen.getByText(
+				locale === "en" ? "Parameter derivation" : "パラメータの導出",
+			),
+		);
+		rerender(<PerTitleConstraints proposal={reevaluated} />);
+		expectApiConsistentChanges(selected, reevaluated, locale);
+		expect(analysis(reevaluated).changes.map((change) => change.field)).toEqual(
+			["maximumStep"],
+		);
+		expect(selected).toEqual(before);
+	});
 	it.each([
 		"en",
 		"ja",

@@ -28,7 +28,7 @@ const texts = {
 		maximumFactor: "Calculated factor upper bound",
 		forcedRanges: "Additional-rendition intervals (kbps)",
 		forcedHint:
-			"With no automatic templates and an exact count N, N minus the required rows reserves the additional slots. For LAST_CALCULATED_BITRATE, repeated integer rounding from the highest row's maximum determines the factor limit that stays within U. The proposal uses this calculated limit. Ordinary minimum and maximum bitrate steps do not apply to additional renditions. Their count and cap are checked separately; this targets count and cap, not optimal quality.",
+			"With no automatic templates and an exact count N, N minus the required rows reserves the additional slots. For LAST_CALCULATED_BITRATE, repeated integer rounding from the highest row's maximum determines the factor limit that stays within U. Compatible saved factors within the limit are kept; the limit is proposed when adjustment is needed. Locked values are kept, with conflicts reported. Ordinary minimum and maximum bitrate steps do not apply to additional renditions. Their count and cap are checked separately; this targets count and cap, not optimal quality.",
 		conditional:
 			"Automatic templates or unresolved branches make this a conditional calculation. The additional-rendition values are not an output-count guarantee.",
 		conditions:
@@ -75,7 +75,7 @@ const texts = {
 		maximumFactor: "計算上の倍率の上限",
 		forcedRanges: "追加レンディションの範囲 (kbps)",
 		forcedHint:
-			"自動テンプレートがなく総本数をN本ちょうどに指定した場合は、Nから必須行数を引いた数を追加枠にします。LAST_CALCULATED_BITRATEでの上限確認では、最上段の最大値から倍率の適用と整数への四捨五入を繰り返し、Uを超えない倍率の上限を求めて採用します。実際の追加段は、最後に算出したビットレートが基準です。通常の最小・最大ビットレート間隔は追加段には適用しません。本数と上限を別に確認する計算で、画質の最適化ではありません。",
+			"自動テンプレートがなく総本数をN本ちょうどに指定した場合は、Nから必須行数を引いた数を追加枠にします。LAST_CALCULATED_BITRATEでの上限確認では、最上段の最大値から倍率の適用と整数への四捨五入を繰り返し、Uを超えない倍率の上限を求めます。条件に合う上限内の既存倍率は維持し、調整が必要な場合に上限を提案します。固定した値は維持し、条件が合わなければ診断を示します。実際の追加段は、最後に算出したビットレートが基準です。通常の最小・最大ビットレート間隔は追加段には適用しません。本数と上限を別に確認する計算で、画質の最適化ではありません。",
 		conditional:
 			"自動テンプレートや未確定の分岐を含む条件付きの計算です。追加レンディションの設定値は、出力本数を保証しません。",
 		conditions:

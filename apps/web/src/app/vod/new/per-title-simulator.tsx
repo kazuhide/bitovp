@@ -1,9 +1,11 @@
 "use client";
 
-import type {
-	PerTitleDiagnostic,
-	PerTitleGoal,
-	PerTitleProposal,
+import {
+	PER_TITLE_MIN_BITRATE,
+	PER_TITLE_SIMULATOR_MAX_BITRATE,
+	type PerTitleDiagnostic,
+	type PerTitleGoal,
+	type PerTitleProposal,
 } from "@bitovp/core";
 import {
 	type Dispatch,
@@ -71,14 +73,16 @@ const usesRows = (goal: PerTitleGoal) =>
 	goal.strategy !== "automatic" && goal.strategy !== "count";
 
 const validSliderBitrate = (value: number) =>
-	Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647;
+	Number.isSafeInteger(value) &&
+	value >= PER_TITLE_MIN_BITRATE &&
+	value <= PER_TITLE_SIMULATOR_MAX_BITRATE;
 
 const diagnosticJa: Record<PerTitleDiagnostic["code"], string> = {
 	"invalid-setting": "Per-Title の設定値または調整方法を確認してください。",
 	"model-only":
 		"許容範囲とビットレート間隔から計算した例です。素材の解析や、エンコーダの出力の予測は行いません。",
 	"invalid-global-range":
-		"全体の最小・最大ビットレートを、1 bps 以上の整数で、小さい順に指定してください。",
+		"全体の最小・最大ビットレートを10 kbps以上、1 bps単位で、小さい順に指定してください。",
 	"invalid-step":
 		"ビットレート間隔は1より大きい比率で指定し、下限が上限を超えないようにしてください。",
 	"invalid-count": "希望する本数を1〜256の整数で指定してください。",
@@ -158,14 +162,18 @@ function DiagnosticList({
 					) : null}
 					{item.code === "inactive-template-settings"
 						? copy.inactiveTemplateSettings
-						: item.code === "scenario-conflict"
-							? copy.internalCheckDifference
-							: locale === "ja"
-								? item.code === "row-step-conflict" &&
-									item.values?.ratio !== undefined
-									? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
-									: diagnosticJa[item.code]
-								: item.message}
+						: item.code === "model-limit" && item.values?.limit === "bitrate"
+							? locale === "ja"
+								? `このシミュレーターで扱えるビットレートの上限は${PER_TITLE_SIMULATOR_MAX_BITRATE.toLocaleString("ja-JP")} bit/sです。値を下げるか、通常の入力画面で設定してください。`
+								: item.message
+							: item.code === "scenario-conflict"
+								? copy.internalCheckDifference
+								: locale === "ja"
+									? item.code === "row-step-conflict" &&
+										item.values?.ratio !== undefined
+										? "この計算例では、隣り合うビットレートの比率が指定した間隔の範囲に収まりません。"
+										: diagnosticJa[item.code]
+									: item.message}
 					{technicalDetails &&
 					item.rowIds?.length &&
 					item.rowIds.every((rowId) =>
@@ -431,9 +439,10 @@ function SimulatorEditor({
 				: { baseline: referenceGoal, maximum };
 		});
 	}, [referenceGoal, goal.maxBitrate, slider.max]);
-	const sliderMinimum = validSliderBitrate(goal.minBitrate)
-		? goal.minBitrate
-		: slider.min;
+	const sliderMinimum = Math.max(
+		PER_TITLE_MIN_BITRATE,
+		validSliderBitrate(goal.minBitrate) ? goal.minBitrate : slider.min,
+	);
 	const sliderMaximum = Math.max(
 		sliderRange.baseline === referenceGoal ? sliderRange.maximum : slider.max,
 		validSliderBitrate(goal.maxBitrate) ? goal.maxBitrate : slider.max,
@@ -557,10 +566,18 @@ function SimulatorEditor({
 												field.key === "minBitrate"
 													? copy.minimumSlider
 													: copy.maximumSlider,
-											minimum: field.key === "minBitrate" ? 1 : sliderMinimum,
+											minimum:
+												field.key === "minBitrate"
+													? PER_TITLE_MIN_BITRATE
+													: sliderMinimum,
 											maximum:
 												field.key === "minBitrate"
-													? goal.maxBitrate
+													? Math.max(
+															PER_TITLE_MIN_BITRATE,
+															validSliderBitrate(goal.maxBitrate)
+																? goal.maxBitrate
+																: PER_TITLE_MIN_BITRATE,
+														)
 													: sliderMaximum,
 											keyboardStep: slider.step,
 											disabled: !sliderValid,

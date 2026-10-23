@@ -54,6 +54,22 @@ function fixture(): { goal: PerTitleGoal; proposal: PerTitleProposal } {
 
 const codes = (value: ReturnType<typeof fixture>) =>
 	assessPerTitleValidity(value.goal, value.proposal).map(({ code }) => code);
+
+function apiScaleFixture() {
+	const current = fixture();
+	for (const global of [current.goal, current.proposal.api.global]) {
+		global.minBitrate *= 100;
+		global.maxBitrate *= 100;
+	}
+	for (const row of [
+		...(current.goal.rows ?? []),
+		...current.proposal.api.streams.map((item) => item.perTitleSettings),
+	]) {
+		if (row?.minBitrate !== undefined) row.minBitrate *= 100;
+		if (row?.maxBitrate !== undefined) row.maxBitrate *= 100;
+	}
+	return current;
+}
 function stream(value: ReturnType<typeof fixture>, row = 0) {
 	const result = value.proposal.api.streams[row];
 	if (!result) throw new Error(`Missing fixture stream ${row}`);
@@ -137,7 +153,7 @@ describe("Per-Title configuration validity", () => {
 		expect(codes(current)).toContain("step-range-order");
 	});
 	it("distinguishes positive API spacing outside the increasing-rung model", () => {
-		const current = fixture();
+		const current = apiScaleFixture();
 		current.proposal.api.global.minBitrateStepSize = 1;
 		expect(
 			assessPerTitleValidity(current.goal, current.proposal),
@@ -420,7 +436,7 @@ describe("Per-Title configuration validity", () => {
 		);
 	});
 	it("keeps absent forced defaults unresolved and limits its own model without inventing an API count maximum", () => {
-		const current = fixture();
+		const current = apiScaleFixture();
 		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
 			[count]: 300,
 		};

@@ -28,7 +28,7 @@ const copy = {
 		automaticHint: "Count and resolutions are determined by content analysis.",
 		countSlot: (ordinal: number) => `Rendition ${ordinal}`,
 		countExact: (count: number) =>
-			`${count} requested renditions (spacing model)`,
+			`Bitrate ranges for ${count} requested renditions`,
 		countMaximum: (count: number) =>
 			`At most ${count} renditions; count unresolved`,
 		countInfeasible:
@@ -60,6 +60,8 @@ const copy = {
 				: `Effective interval ${minimum}–${maximum}`,
 		floorApplied: (input: string, complexity: string) =>
 			`Complexity input ${input} → ${complexity} kbps (fixed-rendition floor).`,
+		overallFloorApplied: (input: string, complexity: string) =>
+			`Complexity input ${input} → ${complexity} kbps (overall minimum).`,
 		floorUnknown:
 			"The fixed-rendition floor is unresolved; complexity targets are unavailable.",
 		aspectAssumption: "Height-only templates assume a shared aspect ratio.",
@@ -89,7 +91,7 @@ const copy = {
 		automaticGroup: "自動生成の範囲（仮定）",
 		automaticHint: "本数と解像度は素材解析で決まります。",
 		countSlot: (ordinal: number) => `${ordinal}段目`,
-		countExact: (count: number) => `指定${count}本の間隔モデル`,
+		countExact: (count: number) => `指定${count}本のビットレート範囲`,
 		countMaximum: (count: number) => `最大${count}本（本数未確定）`,
 		countInfeasible:
 			"このビットレート範囲と間隔では、指定本数を配置できません。",
@@ -119,6 +121,8 @@ const copy = {
 				: `有効範囲 ${minimum}–${maximum}`,
 		floorApplied: (input: string, complexity: string) =>
 			`複雑度の計算値 ${input} → ${complexity} kbps（固定段の下限を適用）。`,
+		overallFloorApplied: (input: string, complexity: string) =>
+			`複雑度の計算値 ${input} → ${complexity} kbps（全体の下限を適用）。`,
 		floorUnknown: "固定段の下限が未確定のため、複雑度に応じた値は未確定です。",
 		aspectAssumption:
 			"高さのみを指定したテンプレートは、共通のアスペクト比を仮定しています。",
@@ -189,11 +193,16 @@ export function PerTitleOutputChart({
 		maximumSignificantDigits: 3,
 	});
 	const bitrate = (value: number) => numbers.format(value / 1000);
+	// Match the resolver's branch even when a fixed-template floor is below the global minimum.
+	const usesFixedBitrateFloor = proposal.api.streams.some(
+		(stream) =>
+			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+	);
 	const floorNote =
 		positiveInteger(preview.analysisInput) &&
 		positiveInteger(preview.complexityInput) &&
 		preview.complexityInput > preview.analysisInput
-			? text.floorApplied(
+			? (usesFixedBitrateFloor ? text.floorApplied : text.overallFloorApplied)(
 					bitrate(preview.analysisInput),
 					bitrate(preview.complexityInput),
 				)

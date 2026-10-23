@@ -2,6 +2,8 @@ import {
 	certifyComplexityIntervals,
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
+	PER_TITLE_MIN_BITRATE,
+	PER_TITLE_SIMULATOR_MAX_BITRATE,
 	type PerTitleGoal,
 	type PerTitleProposal,
 	resolvePerTitleAnalysis,
@@ -32,7 +34,7 @@ type Add = (
 	fields?: Field[],
 ) => void;
 
-const RATE_MAX = 2_147_483_647;
+const RATE_MAX = PER_TITLE_SIMULATOR_MAX_BITRATE;
 const RULE = "fixedResolutionAndBitrateConfiguration.";
 const COUNT = "forcedRenditionAboveHighestFixedRepresentation";
 const FACTOR = `${COUNT}Factor`;
@@ -152,14 +154,32 @@ function auditValues(goal: PerTitleGoal, proposal: PerTitleProposal, add: Add) {
 					`${field.key}は${goal.codec}のPer-Title設定に対応していません。削除するか、このコーデックに対応する項目を使ってください。`,
 					[ref],
 				);
-			if (values.some((value) => invalid(field, value)))
+			if (values.some((value) => invalid(field, value))) {
+				const belowGlobalFloor =
+					scope === "global" &&
+					(field.key === "minBitrate" || field.key === "maxBitrate") &&
+					values.some((value) => rate(value) && value < PER_TITLE_MIN_BITRATE);
+				const exceedsBitrateDomain =
+					field.kind === "bitrate" &&
+					values.some(
+						(value) => finite(value) && value > PER_TITLE_SIMULATOR_MAX_BITRATE,
+					);
 				add(
 					"invalid-value",
 					"conflict",
-					`${field.key} has an invalid type, enum or numeric range. Correct this value before evaluating a recommendation.`,
-					`${field.key}の型・選択値・数値範囲が不正です。調整案を評価する前に修正してください。`,
+					belowGlobalFloor
+						? `Set the overall ${field.key === "minBitrate" ? "minimum" : "maximum"} bitrate to at least ${PER_TITLE_MIN_BITRATE.toLocaleString("en-US")} bits/s (${PER_TITLE_MIN_BITRATE / 1000} kbps).`
+						: exceedsBitrateDomain
+							? `This simulator supports bitrates up to ${PER_TITLE_SIMULATOR_MAX_BITRATE.toLocaleString("en-US")} bits/s. Lower this value or edit it in the encoding form.`
+							: `${field.key} has an invalid type, enum or numeric range. Correct this value before evaluating a recommendation.`,
+					belowGlobalFloor
+						? `全体の${field.key === "minBitrate" ? "最小" : "最大"}ビットレートを${PER_TITLE_MIN_BITRATE.toLocaleString("ja-JP")} bit/s（${PER_TITLE_MIN_BITRATE / 1000} kbps）以上にしてください。`
+						: exceedsBitrateDomain
+							? `このシミュレーターのビットレート上限は${PER_TITLE_SIMULATOR_MAX_BITRATE.toLocaleString("ja-JP")} bit/sです。値を下げるか、通常の入力画面で設定してください。`
+							: `${field.key}の型・選択値・数値範囲が不正です。調整案を評価する前に修正してください。`,
 					[ref],
 				);
+			}
 		}
 	};
 	check({ scope: "global" });
@@ -252,7 +272,7 @@ function auditValues(goal: PerTitleGoal, proposal: PerTitleProposal, add: Add) {
 function auditGlobal(goal: PerTitleGoal, global: Global, add: Add) {
 	for (const value of [goal, global]) {
 		for (const key of ["minBitrate", "maxBitrate"] as const)
-			if (rate(value[key]) && value[key] < 10_000)
+			if (rate(value[key]) && value[key] < PER_TITLE_MIN_BITRATE)
 				add(
 					"global-bitrate-below-api-minimum",
 					"conflict",

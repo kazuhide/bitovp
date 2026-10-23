@@ -1,3 +1,4 @@
+import { constrainPerTitleApiCandidate } from "./per-title-candidate-api";
 import {
 	applyPerTitleSettingLocks,
 	optimizePerTitleConstraints,
@@ -249,6 +250,11 @@ export type PerTitleDerivation = {
 export function proposePerTitleSettings(
 	goal: PerTitleGoal,
 ): PerTitleProposal[] {
+	return proposePerTitleModel(goal).map(constrainPerTitleApiCandidate);
+}
+
+/** @internal Arithmetic model; public candidates also require API validation. */
+export function proposePerTitleModel(goal: PerTitleGoal): PerTitleProposal[] {
 	const baseline = buildProposal(goal, "baseline");
 	if (baseline.diagnostics.some((item) => inputErrorCodes.has(item.code))) {
 		return [baseline];
@@ -359,6 +365,11 @@ export function proposePerTitleSettings(
 export function recommendPerTitleSettings(
 	goal: PerTitleGoal,
 ): PerTitleProposal {
+	return constrainPerTitleApiCandidate(recommendPerTitleModel(goal));
+}
+
+/** @internal Arithmetic model; public candidates also require API validation. */
+export function recommendPerTitleModel(goal: PerTitleGoal): PerTitleProposal {
 	return optimizePerTitleConstraints(goal, recommendIntervalSettings);
 }
 

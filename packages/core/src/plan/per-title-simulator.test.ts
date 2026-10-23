@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
 	type PerTitleGoal,
+	proposePerTitleModel,
 	proposePerTitleSettings,
+	recommendPerTitleModel,
 	recommendPerTitleSettings,
 } from "./per-title-simulator.js";
 
@@ -1001,7 +1003,7 @@ describe("proposePerTitleSettings", () => {
 	});
 
 	it("does not count fractional bitrate points in a one-bit-per-second interval", () => {
-		const [proposal] = proposePerTitleSettings({
+		const [proposal] = proposePerTitleModel({
 			...automatic,
 			minBitrate: 100,
 			maxBitrate: 101,
@@ -1257,7 +1259,7 @@ describe("recommendPerTitleSettings", () => {
 			{ minBitrateStepSize: 2 + 5e-11, maxBitrateStepSize: 3 },
 			{ minBitrateStepSize: 1.5, maxBitrateStepSize: 2 - 5e-11 },
 		]) {
-			const result = recommendPerTitleSettings({
+			const result = recommendPerTitleModel({
 				...automatic,
 				...steps,
 				minBitrate: 1,
@@ -1320,7 +1322,7 @@ describe("recommendPerTitleSettings", () => {
 	});
 
 	it("replaces saved ratios that have no valid integer example for the exact count", () => {
-		const result = recommendPerTitleSettings({
+		const result = recommendPerTitleModel({
 			strategy: "count",
 			codec: "H264",
 			minBitrate: 1,
@@ -1340,7 +1342,7 @@ describe("recommendPerTitleSettings", () => {
 	});
 
 	it("finds an alternate integer placement when rounded equal-log points miss the count interval", () => {
-		const result = recommendPerTitleSettings({
+		const result = recommendPerTitleModel({
 			strategy: "count",
 			codec: "H264",
 			minBitrate: 100,
@@ -1449,7 +1451,7 @@ describe("recommendPerTitleSettings", () => {
 	});
 
 	it("uses the integer capacity when a short interval cannot contain an extra bitrate point", () => {
-		const result = recommendPerTitleSettings({
+		const result = recommendPerTitleModel({
 			strategy: "count",
 			codec: "H264",
 			minBitrate: 1,

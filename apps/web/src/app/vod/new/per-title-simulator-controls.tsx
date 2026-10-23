@@ -10,6 +10,7 @@ import {
 	perTitleControlCopy,
 	perTitleSettingLabel,
 } from "./per-title-simulator-control-copy";
+import { perTitleSimulatorCopy } from "./per-title-simulator-copy";
 import { PerTitleSimulatorNumberField } from "./per-title-simulator-fields";
 import {
 	getPerTitleAdjustment,
@@ -245,6 +246,15 @@ export function PerTitleSettingControl({
 						minimum={slider.minimum}
 						maximum={slider.maximum}
 						keyboardStep={slider.keyboardStep}
+						inputLimits={{
+							minimum: field.minimum,
+							maximum: field.maximum,
+							integer: field.integer,
+							errorMessage:
+								scope === "global" && field.group === "range"
+									? perTitleSimulatorCopy[locale].globalBitrateMinimum
+									: text.invalid,
+						}}
 						disabled={slider.disabled}
 						onChange={(next) => changeValue(next ?? Number.NaN)}
 					/>

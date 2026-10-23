@@ -1,9 +1,10 @@
 "use client";
 
+import { PER_TITLE_SIMULATOR_MAX_BITRATE } from "@bitovp/core";
 import { useT } from "@/lib/i18n/context";
 import { PerTitleSimulatorNumberField } from "./per-title-simulator-fields";
 
-const MAX_BITRATE = 2147483647;
+const MAX_BITRATE = PER_TITLE_SIMULATOR_MAX_BITRATE;
 const validRate = (value: number | undefined): value is number =>
 	value !== undefined &&
 	Number.isSafeInteger(value) &&
@@ -30,6 +31,7 @@ export function PerTitleSimulatorBitrateField({
 	accessibleLabel,
 	sliderLabel,
 	keyboardStep,
+	inputLimits,
 	disabled = false,
 }: {
 	id: string;
@@ -41,6 +43,12 @@ export function PerTitleSimulatorBitrateField({
 	accessibleLabel?: string;
 	sliderLabel: string;
 	keyboardStep?: number;
+	inputLimits?: {
+		minimum?: number;
+		maximum?: number;
+		integer?: boolean;
+		errorMessage?: string;
+	};
 	disabled?: boolean;
 }) {
 	const { locale } = useT();
@@ -76,6 +84,12 @@ export function PerTitleSimulatorBitrateField({
 				onChange={(next) => onChange(withoutConversionNoise(next))}
 				unit={1000}
 				accessibleLabel={accessibleLabel}
+				{...(inputLimits ?? {
+					minimum: 1,
+					maximum: MAX_BITRATE,
+					integer: true,
+				})}
+				inclusiveMinimum
 			/>
 			<input
 				id={`${id}-slider`}

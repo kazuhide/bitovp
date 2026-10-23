@@ -1,4 +1,6 @@
 import {
+	PER_TITLE_MIN_BITRATE,
+	PER_TITLE_SIMULATOR_MAX_BITRATE,
 	type PerTitleAdjustment,
 	type PerTitleAdjustmentMethod,
 	type PerTitleCodec,
@@ -35,7 +37,7 @@ const CALCULATION = `${COUNT}CalculationMode`;
 const THRESHOLD = "autoRepresentations.adoptConfigurationThreshold";
 const RANGE_METHODS = ["constraints", "proportional", "logarithmic"] as const;
 const CONSTRAINT_METHODS = ["constraints", "default"] as const;
-const RATE_MAXIMUM = 2_147_483_647;
+const RATE_MAXIMUM = PER_TITLE_SIMULATOR_MAX_BITRATE;
 const rate = (value: unknown): value is number =>
 	typeof value === "number" &&
 	Number.isSafeInteger(value) &&
@@ -64,12 +66,12 @@ export function perTitleGlobalFields(
 ): readonly PerTitleSettingField[] {
 	return [
 		field("minBitrate", "bitrate", "range", ["proportional", "default"], {
-			minimum: 1,
+			minimum: PER_TITLE_MIN_BITRATE,
 			maximum: RATE_MAXIMUM,
 			integer: true,
 		}),
 		field("maxBitrate", "bitrate", "range", ["proportional", "default"], {
-			minimum: 1,
+			minimum: PER_TITLE_MIN_BITRATE,
 			maximum: RATE_MAXIMUM,
 			integer: true,
 		}),
@@ -457,6 +459,7 @@ function validGlobal(goal: PerTitleGoal) {
 	return (
 		rate(goal.minBitrate) &&
 		rate(goal.maxBitrate) &&
+		goal.minBitrate >= PER_TITLE_MIN_BITRATE &&
 		goal.minBitrate <= goal.maxBitrate
 	);
 }

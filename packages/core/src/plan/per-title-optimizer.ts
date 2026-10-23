@@ -592,6 +592,10 @@ export function optimizePerTitleConstraints(
 		goal.countPolicy.count >= rows.length &&
 		goal.countPolicy.count <= 256;
 	const saved = goal.fixedResolutionAndBitrateConfiguration;
+	const disabledRule =
+		saved?.forcedRenditionAboveHighestFixedRepresentation === 0
+			? structuredClone(saved)
+			: undefined;
 	const unrestrictedAuthoring =
 		goal.countPolicy.kind === "unrestricted" &&
 		(saved === undefined ||
@@ -889,7 +893,7 @@ export function optimizePerTitleConstraints(
 									forcedRenditionAboveHighestFixedRepresentationCalculationMode:
 										mode,
 								}
-							: undefined,
+							: disabledRule,
 					},
 					goal,
 				),
@@ -968,6 +972,9 @@ export function optimizePerTitleConstraints(
 					forcedRenditionAboveHighestFixedRepresentationCalculationMode:
 						"LAST_CALCULATED_BITRATE",
 				};
+			else if (disabledRule)
+				fallback.api.global.fixedResolutionAndBitrateConfiguration =
+					structuredClone(disabledRule);
 			else delete fallback.api.global.fixedResolutionAndBitrateConfiguration;
 			fallback.scenarios = fallback.scenarios.map((scenario) => ({
 				...scenario,
@@ -1008,6 +1015,9 @@ export function optimizePerTitleConstraints(
 			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
 				"LAST_CALCULATED_BITRATE",
 		};
+	else if (disabledRule)
+		result.api.global.fixedResolutionAndBitrateConfiguration =
+			structuredClone(disabledRule);
 	else delete result.api.global.fixedResolutionAndBitrateConfiguration;
 	if (goal.settingLocks) {
 		result.api = recommendIntervals(
@@ -1021,7 +1031,7 @@ export function optimizePerTitleConstraints(
 								forcedRenditionAboveHighestFixedRepresentationCalculationMode:
 									mode,
 							}
-						: undefined,
+						: disabledRule,
 				},
 				goal,
 			),

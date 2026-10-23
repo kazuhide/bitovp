@@ -1468,9 +1468,11 @@ const perTitleFixedResolutionAndBitrateConfigurationSchema = z.strictObject({
 		.optional(),
 });
 
+export const PER_TITLE_MIN_BITRATE = 10_000;
+
 const perTitleCodecConfigurationBase = {
-	minBitrate: z.number().int().min(10_000).optional(),
-	maxBitrate: z.number().int().min(10_000).optional(),
+	minBitrate: z.number().int().min(PER_TITLE_MIN_BITRATE).optional(),
+	maxBitrate: z.number().int().min(PER_TITLE_MIN_BITRATE).optional(),
 	targetQualityCrf: z.number().optional(),
 	minBitrateStepSize: z.number().positive().optional(),
 	maxBitrateStepSize: z.number().positive().optional(),

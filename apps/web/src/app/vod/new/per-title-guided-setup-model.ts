@@ -1,5 +1,7 @@
 import {
 	certifyComplexityIntervals,
+	PER_TITLE_MIN_BITRATE,
+	PER_TITLE_SIMULATOR_MAX_BITRATE,
 	type PerTitleCodec,
 	type PerTitleGoal,
 	type PerTitleGoalRow,
@@ -47,7 +49,7 @@ const STRATEGIES: readonly PerTitleGoal["strategy"][] = [
 	"fixed-resolutions",
 	"fixed-ranges",
 ];
-const MAX_RATE = 2_147_483_647;
+const MAX_RATE = PER_TITLE_SIMULATOR_MAX_BITRATE;
 const MAX_ROWS = 64;
 const integer = (value: number) => Number.isSafeInteger(value) && value > 0;
 const rate = (value: number) => integer(value) && value <= MAX_RATE;
@@ -87,7 +89,7 @@ function validate(
 			"このアカウントで利用できるコーデックを選択してください。",
 		);
 	for (const key of ["minBitrate", "maxBitrate"] as const)
-		if (!rate(input[key]) || input[key] < 10_000)
+		if (!rate(input[key]) || input[key] < PER_TITLE_MIN_BITRATE)
 			add(
 				"invalid-bitrate",
 				key,

@@ -1,6 +1,11 @@
 "use client";
 
-import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
+import {
+	PER_TITLE_MIN_BITRATE,
+	PER_TITLE_SIMULATOR_MAX_BITRATE,
+	type PerTitleGoal,
+	type PerTitleProposal,
+} from "@bitovp/core";
 import { type ReactNode, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
@@ -81,12 +86,16 @@ export function PerTitleRecommendation({
 	if (
 		!positive(global.minBitrate) ||
 		!positive(global.maxBitrate) ||
+		!Number.isSafeInteger(global.minBitrate) ||
+		!Number.isSafeInteger(global.maxBitrate) ||
+		global.minBitrate < PER_TITLE_MIN_BITRATE ||
+		global.maxBitrate > PER_TITLE_SIMULATOR_MAX_BITRATE ||
 		global.minBitrate > global.maxBitrate
 	) {
 		inputConflicts.push(
 			locale === "ja"
-				? "全体の最小・最大ビットレートには正の値を指定し、最小値を最大値以下にしてください。"
-				: "Use positive overall bitrate limits, with the minimum no greater than the maximum.",
+				? `${copy.globalBitrateMinimum} 最小値は最大値以下にしてください。`
+				: `${copy.globalBitrateMinimum} Keep the minimum no greater than the maximum.`,
 		);
 	} else {
 		for (const stream of proposal.api.streams) {

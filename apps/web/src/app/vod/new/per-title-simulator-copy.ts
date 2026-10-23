@@ -13,6 +13,8 @@ const en = {
 	codecHint:
 		"Switching codecs loads that codec's settings. Edits are kept separately during this session.",
 	global: "Overall bitrate limits",
+	globalBitrateMinimum:
+		"Use overall limits from 10 to 2,147,483.647 kbps, in whole bps.",
 	minimum: "Minimum bitrate (kbps)",
 	maximum: "Maximum bitrate (kbps)",
 	minimumSlider: "Minimum bitrate slider (kbps)",
@@ -142,6 +144,8 @@ const ja: typeof en = {
 	codecHint:
 		"切り替えると、そのコーデックの設定案を読み込みます。検討中の編集内容はコーデックごとに保持します。",
 	global: "全体のビットレート範囲",
+	globalBitrateMinimum:
+		"全体の範囲は10〜2,147,483.647 kbpsです。1 bps単位で指定してください。",
 	minimum: "最小ビットレート (kbps)",
 	maximum: "最大ビットレート (kbps)",
 	minimumSlider: "最小ビットレートのスライダー (kbps)",

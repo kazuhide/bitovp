@@ -486,6 +486,8 @@ Choose what you want to specify:
 
 Enter the overall minimum and maximum bitrates, a desired count if needed, and the required heights. Required renditions and automatic candidates share one list. Add the same height twice when you need two renditions at that resolution. Each Per-Title parameter has an **Auto / Fixed** control and starts **Fixed**. Missing bitrate steps use 1.5 and 1.9; optional unset values stay unset. Saved explicit Auto choices are retained. Fixed captures the value currently displayed and keeps it unchanged when other requirements change. Editing a value also fixes it. Choose Auto explicitly to make that field follow the selected method. "Simulation" shows the output example and actual settings beside the inputs, including a "Calculated count limit" when the model can establish it.
 
+Overall bitrate limits must be at least 10 kbps (10,000 bps), in whole bits per second. Rendition bounds must also use positive whole bits per second and fit inside the overall range. The simulator supports bitrate values up to 2,147,483,647 bps as its calculation range.
+
 The left side includes global settings and each stream's settings. Choose an automatic method where available:
 
 - **From requirements:** calculate bitrate bands, steps, complexity boundaries or additional-rendition rules from the current requirements and fixed values.

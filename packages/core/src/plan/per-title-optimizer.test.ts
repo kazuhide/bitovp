@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	type PerTitleGoal,
+	recommendPerTitleModel,
 	recommendPerTitleSettings,
 } from "./per-title-simulator.js";
 
@@ -787,7 +788,7 @@ describe("joint Per-Title constraint optimization", () => {
 	});
 
 	it("replaces unsafe near-unit spacing rather than certifying rounded duplicate points", () => {
-		const result = recommendPerTitleSettings({
+		const result = recommendPerTitleModel({
 			...fixed,
 			minBitrate: 3,
 			maxBitrate: 12,

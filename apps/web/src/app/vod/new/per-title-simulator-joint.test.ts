@@ -3,6 +3,7 @@ import {
 	complexityTargetsDoNotDecrease,
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
+	PER_TITLE_MIN_BITRATE,
 	type PerTitleGoal,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
@@ -16,6 +17,61 @@ import {
 	jointPerTitleExpansion,
 	jointPerTitleExpansionLayouts,
 } from "./per-title-simulator-joint";
+
+const BITRATE_SCALE = 10_000;
+
+/** Keep all bitrate units proportional; ratios, codec controls and dimensions stay unchanged. */
+function apiBitrates(goal: PerTitleGoal): PerTitleGoal {
+	const scaleSettings = <
+		T extends {
+			minBitrate?: number;
+			maxBitrate?: number;
+			lowComplexityBoundaryForMaxBitrate?: number;
+			highComplexityBoundaryForMaxBitrate?: number;
+		},
+	>(
+		row: T,
+	) => ({
+		...row,
+		...(row.minBitrate === undefined
+			? {}
+			: { minBitrate: row.minBitrate * BITRATE_SCALE }),
+		...(row.maxBitrate === undefined
+			? {}
+			: { maxBitrate: row.maxBitrate * BITRATE_SCALE }),
+		...(row.lowComplexityBoundaryForMaxBitrate === undefined
+			? {}
+			: {
+					lowComplexityBoundaryForMaxBitrate:
+						row.lowComplexityBoundaryForMaxBitrate * BITRATE_SCALE,
+				}),
+		...(row.highComplexityBoundaryForMaxBitrate === undefined
+			? {}
+			: {
+					highComplexityBoundaryForMaxBitrate:
+						row.highComplexityBoundaryForMaxBitrate * BITRATE_SCALE,
+				}),
+	});
+	return {
+		...goal,
+		minBitrate: goal.minBitrate * BITRATE_SCALE,
+		maxBitrate: goal.maxBitrate * BITRATE_SCALE,
+		...(goal.rows ? { rows: goal.rows.map(scaleSettings) } : {}),
+		...(goal.automaticTemplates
+			? { automaticTemplates: goal.automaticTemplates.map(scaleSettings) }
+			: {}),
+	};
+}
+
+function arithmeticJoint(previous: PerTitleGoal, maximum: number) {
+	const candidate = jointPerTitleExpansion(
+		previous,
+		{ ...previous, maxBitrate: maximum },
+		new Set(),
+	)[0];
+	if (!candidate) throw new Error("Expected a checked arithmetic adjustment.");
+	return candidate;
+}
 
 const source = (): PerTitleGoal => ({
 	strategy: "fixed-ranges",
@@ -61,6 +117,8 @@ const source = (): PerTitleGoal => ({
 
 function joint(previous: PerTitleGoal, maximum = previous.maxBitrate * 2) {
 	const current = { ...previous, maxBitrate: maximum };
+	expect(previous.minBitrate).toBeGreaterThanOrEqual(PER_TITLE_MIN_BITRATE);
+	expect(current.maxBitrate).toBeGreaterThanOrEqual(PER_TITLE_MIN_BITRATE);
 	const items = perTitleAdvice(previous, current, {
 		scope: "global",
 		key: "maxBitrate",
@@ -132,13 +190,32 @@ describe("joint Per-Title range advice", () => {
 				},
 			],
 		};
-		const { advice } = joint(previous, 1600);
+		const scaled = apiBitrates(previous);
+		const { advice } = joint(scaled, 1600 * BITRATE_SCALE);
 		const row = advice.goal.rows?.[0];
-		expect(row?.minBitrate).toBe(100);
-		expect(row?.maxBitrate).toBe(400);
-		expect(row?.lowComplexityBoundaryForMaxBitrate).toBe(200);
-		expect(row?.highComplexityBoundaryForMaxBitrate).toBe(800);
-		for (let input = 1; input <= 400; input++) {
+		expect(row?.minBitrate).toBe(100 * BITRATE_SCALE);
+		expect(row?.maxBitrate).toBe(400 * BITRATE_SCALE);
+		expect(row?.lowComplexityBoundaryForMaxBitrate).toBe(200 * BITRATE_SCALE);
+		expect(row?.highComplexityBoundaryForMaxBitrate).toBe(800 * BITRATE_SCALE);
+		expect(
+			complexityTargetsDoNotDecrease(
+				{
+					minimum: 100 * BITRATE_SCALE,
+					maximum: 200 * BITRATE_SCALE,
+					low: 200 * BITRATE_SCALE,
+					high: 400 * BITRATE_SCALE,
+				},
+				{
+					minimum: row?.minBitrate ?? 0,
+					maximum: row?.maxBitrate ?? 0,
+					low: row?.lowComplexityBoundaryForMaxBitrate ?? 0,
+					high: row?.highComplexityBoundaryForMaxBitrate ?? 0,
+				},
+				{ minimum: 1, maximum: scaled.maxBitrate },
+			),
+		).toBe(true);
+		for (let sample = 1; sample <= 400; sample++) {
+			const input = sample * BITRATE_SCALE;
 			const after = evaluateComplexityRange({
 				minimum: row?.minBitrate ?? 0,
 				maximum: row?.maxBitrate ?? 0,
@@ -148,10 +225,10 @@ describe("joint Per-Title range advice", () => {
 				minStep: advice.goal.minBitrateStepSize ?? 0,
 			});
 			const before = evaluateComplexityRange({
-				minimum: 100,
-				maximum: 200,
-				low: 200,
-				high: 400,
+				minimum: 100 * BITRATE_SCALE,
+				maximum: 200 * BITRATE_SCALE,
+				low: 200 * BITRATE_SCALE,
+				high: 400 * BITRATE_SCALE,
 				input,
 				minStep: 2,
 			});
@@ -198,17 +275,46 @@ describe("joint Per-Title range advice", () => {
 					"LAST_CALCULATED_BITRATE",
 			},
 		};
-		const { advice } = joint(previous, 16);
+		// Preserve the one-bit rounding counterexample in the shared arithmetic engine.
+		const arithmetic = arithmeticJoint(previous, 16);
+		expect(arithmetic.goal.rows?.[0]?.maxBitrate).toBe(3);
+		expect(
+			arithmetic.goal.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(2.35);
+		expect(
+			evaluateForcedRenditions({
+				base: { minimum: 3, maximum: 3 },
+				count: 2,
+				factor: 2.35,
+			}),
+		).toEqual([
+			{ minimum: 7, maximum: 7 },
+			{ minimum: 16, maximum: 16 },
+		]);
+		const { advice } = joint(apiBitrates(previous), 16 * BITRATE_SCALE);
 		const factor =
 			advice.goal.fixedResolutionAndBitrateConfiguration
 				?.forcedRenditionAboveHighestFixedRepresentationFactor ?? 0;
 		expect(factor).toBeGreaterThan(1);
 		expect(factor).toBeLessThan(2 ** (4 / 3));
-		const first = Math.round(3 * factor),
+		const top = advice.goal.rows?.[0]?.maxBitrate ?? 0;
+		expect(top).toBe(25_200);
+		const first = Math.round(top * factor),
 			second = Math.round(first * factor);
-		expect(first).toBeGreaterThan(3);
+		const unclamped = 2 ** (4 / 3);
+		expect(Math.round(Math.round(top * unclamped) * unclamped)).toBeGreaterThan(
+			16 * BITRATE_SCALE,
+		);
+		expect(first).toBeGreaterThan(top);
 		expect(second).toBeGreaterThan(first);
-		expect(second).toBeLessThanOrEqual(16);
+		expect(second).toBeLessThanOrEqual(16 * BITRATE_SCALE);
+		expect(
+			applyPerTitleAdvice(
+				{ ...apiBitrates(previous), maxBitrate: 16 * BITRATE_SCALE },
+				advice,
+			),
+		).toEqual(advice.goal);
 	});
 
 	it("uses an adopted protected factor when checking the remaining range expansion", () => {
@@ -228,32 +334,63 @@ describe("joint Per-Title range advice", () => {
 					"LAST_CALCULATED_BITRATE",
 			},
 		};
-		const { current, advice } = joint(previous, 7);
+		const arithmetic = arithmeticJoint(previous, 7);
+		expect(arithmetic.goal.rows?.[0]?.maxBitrate).toBe(5);
+		expect(
+			arithmetic.goal.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(1.49);
+		expect(
+			evaluateForcedRenditions({
+				base: { minimum: 5, maximum: 5 },
+				count: 1,
+				factor: 1.49,
+			}),
+		).toEqual([{ minimum: 7, maximum: 7 }]);
+		const scaled = apiBitrates(previous);
+		const { current, advice } = joint(scaled, 7 * BITRATE_SCALE);
 		const factor = {
 			scope: "global" as const,
 			key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
 		};
-		expect(advice.goal.rows?.[0]?.maxBitrate).toBe(5);
+		const arithmeticHeld = jointPerTitleExpansion(
+			previous,
+			{
+				...previous,
+				maxBitrate: 7,
+				fixedResolutionAndBitrateConfiguration: {
+					...previous.fixedResolutionAndBitrateConfiguration,
+					forcedRenditionAboveHighestFixedRepresentationFactor: 1.49,
+				},
+			},
+			new Set([perTitleAdviceFieldKey(factor)]),
+		)[0];
+		expect(arithmeticHeld?.goal.rows?.[0]?.maxBitrate).toBe(5);
+		expect(
+			arithmeticHeld?.goal.fixedResolutionAndBitrateConfiguration
+				?.forcedRenditionAboveHighestFixedRepresentationFactor,
+		).toBe(1.49);
+		expect(advice.goal.rows?.[0]?.maxBitrate).toBe(45_067);
 		expect(
 			advice.goal.fixedResolutionAndBitrateConfiguration
 				?.forcedRenditionAboveHighestFixedRepresentationFactor,
-		).toBe(1.49);
+		).toBe(1.5532540439789644);
 		const partial = applySelectedPerTitleAdvice(current, advice, [factor]);
 		if (!partial) throw new Error("Expected to adopt only the offered factor.");
-		expect(partial.rows?.[0]?.maxBitrate).toBe(4);
+		expect(partial.rows?.[0]?.maxBitrate).toBe(4 * BITRATE_SCALE);
 		const options = { protectedFields: [factor], appliedFields: [factor] };
 		const next = perTitleAdvice(
-			previous,
+			scaled,
 			partial,
 			{ scope: "global", key: "maxBitrate" },
 			options,
 		)[0];
 		if (!next) throw new Error("Expected the remaining range adjustment.");
-		expect(next.goal.rows?.[0]?.maxBitrate).toBe(5);
+		expect(next.goal.rows?.[0]?.maxBitrate).toBe(45_067);
 		expect(
 			next.goal.fixedResolutionAndBitrateConfiguration
 				?.forcedRenditionAboveHighestFixedRepresentationFactor,
-		).toBe(1.49);
+		).toBe(1.5532540439789644);
 		expect(next.changes.some((change) => change.key === factor.key)).toBe(
 			false,
 		);
@@ -262,11 +399,11 @@ describe("joint Per-Title range advice", () => {
 		);
 		expect(
 			evaluateForcedRenditions({
-				base: { minimum: 5, maximum: 5 },
+				base: { minimum: 45_067, maximum: 45_067 },
 				count: 1,
-				factor: 1.49,
+				factor: 1.5532540439789644,
 			}),
-		).toEqual([{ minimum: 7, maximum: 7 }]);
+		).toEqual([{ minimum: 70_000, maximum: 70_000 }]);
 		expect(applyPerTitleAdvice(partial, next, options)).toEqual(next.goal);
 	});
 
@@ -281,13 +418,28 @@ describe("joint Per-Title range advice", () => {
 			countPolicy: { kind: "unrestricted" },
 			rows: [{ id: "fixed", height: 240, minBitrate: 1, maxBitrate: 2 }],
 		};
-		const { advice } = joint(previous, 8);
+		// Scaling removes this small-integer collision, so retain its exact arithmetic proof.
+		const arithmetic = arithmeticJoint(previous, 8);
+		const integerSpacing = arithmetic.goal.minBitrateStepSize ?? 0;
+		expect(integerSpacing).toBe(2.13);
+		expect(integerSpacing).toBeGreaterThan(1.6 ** 1.5);
+		expect(
+			Math.round(
+				Math.round(Math.round(1 * integerSpacing) * integerSpacing) *
+					integerSpacing,
+			),
+		).toBeGreaterThan(8);
+		expect(arithmetic.facts.previousCapacity).toBe(3);
+		expect(arithmetic.facts.capacity).toBe(3);
+		const { advice } = joint(apiBitrates(previous), 8 * BITRATE_SCALE);
 		const spacing = advice.goal.minBitrateStepSize ?? 0;
 		expect(spacing).toBeGreaterThan(1.6 ** 1.5);
-		expect(spacing).toBe(2.13);
+		expect(spacing).toBe(2.03);
 		expect(
-			Math.round(Math.round(Math.round(1 * spacing) * spacing) * spacing),
-		).toBeGreaterThan(8);
+			Math.round(
+				Math.round(Math.round(BITRATE_SCALE * spacing) * spacing) * spacing,
+			),
+		).toBeGreaterThan(8 * BITRATE_SCALE);
 		expect(advice.facts.previousCapacity).toBe(3);
 		expect(advice.facts.capacity).toBe(3);
 	});
@@ -324,7 +476,7 @@ describe("joint Per-Title range advice", () => {
 			],
 			automaticTemplates: [{ id: "top", height: 1080 }],
 		};
-		const { advice } = joint(previous, 30_000);
+		const { advice } = joint(apiBitrates(previous), 30_000 * BITRATE_SCALE);
 		const step = advice.goal.minBitrateStepSize ?? 0;
 		expect(step).toBe(Number(step.toFixed(2)));
 		const certificate = certifyComplexityIntervals(
@@ -344,7 +496,7 @@ describe("joint Per-Title range advice", () => {
 		);
 		expect(
 			advice.goal.rows?.[0]?.highComplexityBoundaryForMaxBitrate,
-		).toBeGreaterThan(10_000);
+		).toBeGreaterThan(10_000 * BITRATE_SCALE);
 		expect(advice.facts.capacity).toBeLessThanOrEqual(
 			advice.facts.previousCapacity ?? 0,
 		);

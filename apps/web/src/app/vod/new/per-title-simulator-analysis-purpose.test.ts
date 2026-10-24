@@ -1,4 +1,4 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import { type PerTitleGoal, previewPerTitleOutput } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	applyPerTitleAdvice,
@@ -7,10 +7,12 @@ import {
 	type PerTitleAdviceOptions,
 } from "./per-title-simulator-advice";
 import { perTitleAdviceFields } from "./per-title-simulator-advice-fields";
+import { perTitleAdvicePreview } from "./per-title-simulator-advice-preview-model";
 import {
 	analyzePerTitleSettings,
 	perTitleAnalysisContextKey,
 } from "./per-title-simulator-analysis";
+import { assessPerTitleOrdinaryCap } from "./per-title-simulator-analysis-ordinary-cap";
 import { assessPerTitleValidity } from "./per-title-simulator-analysis-validity";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
@@ -84,7 +86,364 @@ function requirements(goal: PerTitleGoal) {
 	};
 }
 
+function ordinaryCountGoal(codec: PerTitleGoal["codec"]): PerTitleGoal {
+	return {
+		strategy: "count",
+		codec,
+		minBitrate: 300_000,
+		maxBitrate: 4_000_000,
+		minBitrateStepSize: 2.128663656502157,
+		maxBitrateStepSize: 2.1286666666666667,
+		countPolicy: { kind: "exact", count: 4 },
+		targetQualityCrf: 18,
+		rows: [],
+		autoRepresentations: {},
+		automaticTemplates: [{ id: "ordinary" }],
+	};
+}
+
+function ordinarySlots(goal: PerTitleGoal) {
+	const proposal = tunePerTitleSettings(goal, goal).proposal;
+	return previewPerTitleOutput(proposal, {
+		countPolicy: goal.countPolicy,
+	}).rows.filter((row) => row.kind === "count-slot");
+}
+
 describe("Per-Title evaluation purpose boundaries", () => {
+	it.each(
+		codecs,
+	)("repairs %s ordinary cap spacing without changing a held minimum step or claiming native reach", (codec) => {
+		const goal = ordinaryCountGoal(codec);
+		const before = structuredClone(goal);
+		const context = {
+			referenceGoal: goal,
+			contextKey: perTitleAnalysisContextKey("cap"),
+			protectedFields: [
+				{ scope: "global" as const, key: "minBitrateStepSize" },
+				{ scope: "global" as const, key: "targetQualityCrf" },
+			],
+		};
+		const current = tunePerTitleSettings(goal, goal).proposal;
+		expect(hasPerTitleEvaluationCountEvidence(goal, current)).toBe(true);
+		expect(ordinarySlots(goal).at(-1)?.maximumBitrate).toBe(2_893_637);
+		const result = analyzePerTitleSettings(goal, "cap", context);
+		expect(result.reach.status).toBe("unknown");
+		expect(result.quality.status).toBe("requires-media");
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const advice of result.advice) {
+			expect(advice.proof).toBe("model-count");
+			expect(advice.changes.map(({ scope, key }) => ({ scope, key }))).toEqual([
+				{ scope: "global", key: "maxBitrateStepSize" },
+			]);
+			const applied = applyPerTitleAdvice(goal, advice, context);
+			if (!applied)
+				throw new Error("Expected an adoptable cap-spacing repair.");
+			expect(requirements(applied)).toEqual(requirements(goal));
+			expect(applied.minBitrateStepSize).toBe(goal.minBitrateStepSize);
+			expect(ordinarySlots(applied)).toHaveLength(4);
+			expect(ordinarySlots(applied).at(-1)?.maximumBitrate).toBe(
+				goal.maxBitrate,
+			);
+			const checked = tunePerTitleSettings(applied, goal).proposal;
+			expect(checked.api).toEqual(advice.proposal.api);
+			expect(hasPerTitleEvaluationCountEvidence(applied, checked)).toBe(true);
+			expect(checked.countGuarantee).toBe(false);
+			const selected = advice.changes.map(({ scope, key, rowId }) => ({
+				scope,
+				key,
+				...(rowId === undefined ? {} : { rowId }),
+			}));
+			const full = perTitleAdvicePreview(
+				goal,
+				advice,
+				{ selected: [], kept: [] },
+				context,
+			);
+			const partial = perTitleAdvicePreview(
+				goal,
+				advice,
+				{ selected, kept: [] },
+				context,
+			);
+			const kept = perTitleAdvicePreview(
+				goal,
+				advice,
+				{ selected: [], kept: selected },
+				context,
+			);
+			expect(full.status).toBe("ready");
+			expect(full.after?.api).toEqual(checked.api);
+			expect(partial.after?.api).toEqual(checked.api);
+			expect(kept.after?.api).toEqual(current.api);
+			expect(
+				analyzePerTitleSettings(applied, "count", context).decision.status,
+			).toBe("keep-current");
+			const rechecked = analyzePerTitleSettings(applied, "cap", context);
+			expect(rechecked.decision.status).toBe("keep-current");
+			expect(rechecked.advice).toEqual([]);
+			expect(rechecked.ordinaryCap.status).toBe("permitted");
+			expect(rechecked.reach.status).toBe("unknown");
+		}
+		expect(goal).toEqual(before);
+	});
+
+	it.each(
+		codecs,
+	)("requires %s cap proposals to permit the cap as well as repair the requested count", (codec) => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal(codec),
+			strategy: "automatic",
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 6,
+		};
+		const result = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+		});
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const advice of result.advice) {
+			expect(advice.proof).toBe("model-count");
+			expect(requirements(advice.goal)).toEqual(requirements(goal));
+			expect(ordinarySlots(advice.goal)).toHaveLength(4);
+			expect(ordinarySlots(advice.goal).at(-1)?.maximumBitrate).toBe(
+				goal.maxBitrate,
+			);
+		}
+	});
+
+	it.each(
+		codecs,
+	)("keeps %s count and preserve objectives distinct from ordinary cap utilization", (codec) => {
+		const goal = ordinaryCountGoal(codec);
+		for (const intent of ["count", "preserve"] as const) {
+			const result = analyzePerTitleSettings(goal, intent, {
+				referenceGoal: goal,
+			});
+			expect(result.decision.status).toBe("keep-current");
+			expect(result.advice).toEqual([]);
+			expect(result.reach.status).toBe("unknown");
+		}
+		const bandwidth = analyzePerTitleSettings(goal, "bandwidth", {
+			referenceGoal: goal,
+		});
+		expect(bandwidth.decision.status).toBe("inspect-only");
+		expect(bandwidth.advice).toEqual([]);
+		expect(ordinarySlots(goal).at(-1)?.maximumBitrate).toBe(2_893_637);
+	});
+
+	it("identifies a held maximum step that prevents four ordinary outputs from permitting the cap", () => {
+		const goal = { ...ordinaryCountGoal("H264"), maxBitrateStepSize: 2.37 };
+		const before = structuredClone(goal);
+		const minimumStep = { scope: "global" as const, key: "minBitrateStepSize" };
+		const maximumStep = { scope: "global" as const, key: "maxBitrateStepSize" };
+		const result = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+			protectedFields: [minimumStep, maximumStep],
+		});
+		// Even the largest integer path allowed by this maximum ratio ends at
+		// 3,993,615 bps: 300,000 -> 711,000 -> 1,685,070 -> 3,993,615.
+		expect(ordinarySlots(goal).at(-1)?.maximumBitrate).toBe(3_993_615);
+		expect(result.advice).toEqual([]);
+		expect(result.decision.status).toBe("no-certified-candidate");
+		expect(result.relaxation?.fields).toEqual([maximumStep]);
+		expect(result.relaxation?.certifiedAlternatives).toBeGreaterThan(0);
+		expect(
+			result.findings.some(
+				(finding) =>
+					finding.severity === "warning" &&
+					finding.fields?.some(
+						({ scope, key }) =>
+							scope === "global" && key === "maxBitrateStepSize",
+					),
+			),
+		).toBe(true);
+		expect(goal).toEqual(before);
+	});
+
+	it("does not substitute a count-only repair for an impossible one-slot cap objective", () => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal("H264"),
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 6,
+			countPolicy: { kind: "exact", count: 1 },
+		};
+		const result = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+		});
+		expect(result.advice).toEqual([]);
+		expect(result.decision.status).toBe("no-certified-candidate");
+		expect(result.reach.status).toBe("unknown");
+		expect(ordinarySlots(goal)).toHaveLength(1);
+		expect(ordinarySlots(goal)[0]?.maximumBitrate).toBe(goal.minBitrate);
+	});
+
+	it.each([
+		[2.3712633333333333, "blocked"],
+		[2.3712633333333337, "permitted"],
+	] as const)("uses emitted decimal spacing at the ordinary cap boundary %s", (maximumStep, status) => {
+		const goal = {
+			...ordinaryCountGoal("H264"),
+			maxBitrateStepSize: maximumStep,
+		};
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		expect(hasPerTitleEvaluationCountEvidence(goal, proposal)).toBe(true);
+		const cap = assessPerTitleOrdinaryCap(goal, proposal);
+		expect(cap.status).toBe(status);
+		expect(cap.scope).toBe("spacing-only");
+		if (status === "permitted")
+			expect(cap.lastSlot?.maximum).toBe(goal.maxBitrate);
+		else expect(cap.lastSlot?.maximum).toBeLessThan(goal.maxBitrate);
+	});
+
+	it.each([
+		"maximum",
+		"unrestricted",
+	] as const)("does not interpret %s count requirements as exact ordinary cap evidence", (kind) => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal("H264"),
+			countPolicy: kind === "maximum" ? { kind, count: 4 } : { kind },
+		};
+		const result = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+		});
+		expect(result.ordinaryCap.status).toBe("unavailable");
+		expect(result.ordinaryCap.count).toBeNull();
+		expect(result.reach.status).toBe("unknown");
+		expect(result.advice).toEqual([]);
+		expect(result.decision.status).not.toBe("keep-current");
+	});
+
+	it("preserves inactive forced-rule metadata in an ordinary cap-spacing repair", () => {
+		const rule = {
+			forcedRenditionAboveHighestFixedRepresentation: 0,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"MAXIMUM" as const,
+		};
+		const goal = {
+			...ordinaryCountGoal("H264"),
+			fixedResolutionAndBitrateConfiguration: rule,
+		};
+		const context = {
+			referenceGoal: goal,
+			contextKey: perTitleAnalysisContextKey("cap"),
+		};
+		const result = analyzePerTitleSettings(goal, "cap", context);
+		expect(result.ordinaryCap.status).toBe("blocked");
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const advice of result.advice) {
+			expect(
+				advice.proposal.api.global.fixedResolutionAndBitrateConfiguration,
+			).toEqual(rule);
+			expect(
+				advice.changes.every(({ key }) => key === "maxBitrateStepSize"),
+			).toBe(true);
+			const applied = applyPerTitleAdvice(goal, advice, context);
+			if (!applied)
+				throw new Error("Expected an adoptable inactive-rule cap repair.");
+			expect(applied.fixedResolutionAndBitrateConfiguration).toEqual(rule);
+			expect(ordinarySlots(applied).at(-1)?.maximumBitrate).toBe(
+				goal.maxBitrate,
+			);
+		}
+	});
+
+	it("does not use the ordinary spacing proof for active or incomplete forced rules", () => {
+		for (const rule of [
+			{
+				forcedRenditionAboveHighestFixedRepresentation: 1,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
+				forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+					"MAXIMUM" as const,
+			},
+			{ forcedRenditionAboveHighestFixedRepresentationFactor: 1.2 },
+		]) {
+			const goal = {
+				...ordinaryCountGoal("H264"),
+				fixedResolutionAndBitrateConfiguration: rule,
+			};
+			const proposal = tunePerTitleSettings(goal, goal).proposal;
+			expect(assessPerTitleOrdinaryCap(goal, proposal).status).toBe(
+				"unavailable",
+			);
+		}
+	});
+
+	it("does not certify ordinary cap spacing for API-invalid stream settings", () => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal("H264"),
+			automaticTemplates: [{ id: "ordinary", codecMaxBitrateFactor: 0 }],
+		};
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		expect(proposal.applicable).toBe(false);
+		expect(proposal.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "invalid-setting",
+				severity: "conflict",
+			}),
+		);
+		expect(assessPerTitleOrdinaryCap(goal, proposal).status).toBe(
+			"unavailable",
+		);
+	});
+
+	it("recognizes a one-slot cap only when the first and last bitrate are the same", () => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal("H264"),
+			maxBitrate: 300_000,
+			countPolicy: { kind: "exact", count: 1 },
+		};
+		const result = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+		});
+		expect(result.ordinaryCap.status).toBe("permitted");
+		expect(result.ordinaryCap.lastSlot).toEqual({
+			minimum: 300_000,
+			maximum: 300_000,
+		});
+		expect(result.reach.status).toBe("unknown");
+		expect(result.advice).toEqual([]);
+		expect(result.decision.status).toBe("keep-current");
+	});
+
+	it("checks cap proposals against the resolved automatic upper bound without replacing its policy", () => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal("H264"),
+			adjustments: {
+				global: { maxBitrate: { mode: "auto", method: "default" } },
+			},
+		};
+		const reference = { ...ordinaryCountGoal("H264"), maxBitrate: 6_000_000 };
+		const context = {
+			referenceGoal: reference,
+			contextKey: perTitleAnalysisContextKey("cap"),
+		};
+		const result = analyzePerTitleSettings(goal, "cap", context);
+		expect(result.ordinaryCap.cap).toBe(reference.maxBitrate);
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const advice of result.advice) {
+			const applied = applyPerTitleAdvice(goal, advice, context);
+			if (!applied)
+				throw new Error("Expected an adoptable resolved-cap repair.");
+			expect(applied.adjustments?.global?.maxBitrate).toEqual(
+				goal.adjustments?.global?.maxBitrate,
+			);
+			expect(applied.maxBitrate).toBe(goal.maxBitrate);
+			expect(advice.changes.some(({ key }) => key === "maxBitrate")).toBe(
+				false,
+			);
+			const checked = tunePerTitleSettings(applied, reference).proposal;
+			expect(checked.api.global.maxBitrate).toBe(reference.maxBitrate);
+			const rows = previewPerTitleOutput(checked, {
+				countPolicy: applied.countPolicy,
+			}).rows;
+			expect(
+				rows.filter(({ kind }) => kind === "count-slot").at(-1)?.maximumBitrate,
+			).toBe(reference.maxBitrate);
+		}
+	});
+
 	it.each(
 		codecs.flatMap((codec) =>
 			([1, 2, 6] as const).flatMap((count) =>
@@ -142,11 +501,11 @@ describe("Per-Title evaluation purpose boundaries", () => {
 			automaticTemplates: [{ id: "ordinary" }],
 		};
 		const options = { referenceGoal: goal };
-		const repair = analyzePerTitleSettings(goal, "cap", options).advice[0];
+		const repair = analyzePerTitleSettings(goal, "count", options).advice[0];
 		if (!repair) throw new Error("Expected a count-spacing repair.");
 		const applied = applyPerTitleAdvice(goal, repair, {
 			...options,
-			contextKey: perTitleAnalysisContextKey("cap"),
+			contextKey: perTitleAnalysisContextKey("count"),
 		});
 		if (!applied) throw new Error("Expected an adoptable count repair.");
 		const result = analyzePerTitleSettings(applied, "count", options);

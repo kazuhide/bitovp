@@ -705,6 +705,7 @@ export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
 export { outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
+export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
 export {
 	boundComplexityRange,
 	certifyComplexityDirectConnection,

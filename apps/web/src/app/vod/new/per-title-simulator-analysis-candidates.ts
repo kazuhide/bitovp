@@ -1,10 +1,12 @@
 import {
 	certifyComplexityIntervals,
 	evaluateForcedRenditions,
+	findCapReachingMaximumStep,
 	type PerTitleGoal,
 	type PerTitleProposal,
 	resolvePerTitleAnalysis,
 } from "@bitovp/core";
+import { hasPerTitleEvaluationCountEvidence } from "./per-title-simulator-advice";
 import {
 	type PerTitleAdviceOptions,
 	perTitleAdviceFieldKey,
@@ -101,6 +103,18 @@ export function perTitleAnalysisCandidates(
 			: draft;
 	const result: PerTitleGoal[] = [];
 	const reference = options.referenceGoal ?? goal;
+	const ordinaryCap =
+		intent === "cap" &&
+		goal.countPolicy.kind === "exact" &&
+		proposal.api.streams.length > 0 &&
+		proposal.api.streams.every(
+			(stream) => stream.mode === "PER_TITLE_TEMPLATE",
+		) &&
+		(proposal.api.global.fixedResolutionAndBitrateConfiguration === undefined ||
+			proposal.api.global.fixedResolutionAndBitrateConfiguration
+				.forcedRenditionAboveHighestFixedRepresentation === 0);
+	const checkedOrdinaryCount =
+		ordinaryCap && hasPerTitleEvaluationCountEvidence(goal, proposal);
 	const addClosedSpacing = (seed: PerTitleGoal) => {
 		const normalized = tunePerTitleSettings(seed, reference).proposal;
 		if (
@@ -203,7 +217,40 @@ export function perTitleAnalysisCandidates(
 				method: "constraints",
 			});
 	}
-	if (solver !== goal) result.push(solver);
+	// A checked ordinary count needs no count repair. Offer the cap change against
+	// its current minimum step instead of replacing an unrelated fixed value.
+	if (solver !== goal && !checkedOrdinaryCount) result.push(solver);
+	if (ordinaryCap && can("maxBitrateStepSize")) {
+		const seed = checkedOrdinaryCount ? goal : solver;
+		const checked = tunePerTitleSettings(seed, reference);
+		if (hasPerTitleEvaluationCountEvidence(checked.goal, checked.proposal)) {
+			const global = checked.proposal.api.global;
+			const maximum = findCapReachingMaximumStep({
+				minimumBitrate: global.minBitrate,
+				maximumBitrate: global.maxBitrate,
+				minimumStep: global.minBitrateStepSize,
+				count: goal.countPolicy.kind === "exact" ? goal.countPolicy.count : 0,
+			});
+			if (
+				maximum !== null &&
+				(can("minBitrateStepSize") ||
+					global.minBitrateStepSize === proposal.api.global.minBitrateStepSize)
+			) {
+				let capped = goal;
+				if (
+					global.minBitrateStepSize !== proposal.api.global.minBitrateStepSize
+				)
+					capped = set(capped, "minBitrateStepSize", global.minBitrateStepSize);
+				result.push(
+					set(
+						capped,
+						"maxBitrateStepSize",
+						Math.max(maximum, global.maxBitrateStepSize),
+					),
+				);
+			}
+		}
+	}
 	addClosedSpacing(goal);
 	// Recalibration is explicit and remains subject to the same count proof.
 	if (

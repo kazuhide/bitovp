@@ -1,4 +1,8 @@
-import type { PerTitleGoal } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	type PerTitleProposal,
+	previewPerTitleOutput,
+} from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { buildPerTitleSetup } from "./per-title-guided-setup-model";
 import {
@@ -36,7 +40,7 @@ const matrix = [
 	["required-resolutions", "bandwidth", "media-count"],
 	["required-resolutions", "count", "media-count"],
 	["required-resolutions", "preserve", "media-count"],
-	["fixed-resolutions", "cap", "repair"],
+	["fixed-resolutions", "cap", "media-cap"],
 	["fixed-resolutions", "bandwidth", "repair"],
 	["fixed-resolutions", "count", "repair"],
 	["fixed-resolutions", "preserve", "repair"],
@@ -164,6 +168,22 @@ function checkAdoption(
 	}
 }
 
+function checkOrdinaryCap(goal: PerTitleGoal, proposal: PerTitleProposal) {
+	expect(goal.countPolicy.kind).toBe("exact");
+	if (goal.countPolicy.kind !== "exact")
+		throw new Error("An exact count is required for the last-slot assertion.");
+	const projection = previewPerTitleOutput(proposal, {
+		countPolicy: goal.countPolicy,
+	});
+	expect(projection.countProjection).toMatchObject({
+		kind: "exact",
+		status: "conditional",
+	});
+	const slots = projection.rows.filter(({ kind }) => kind === "count-slot");
+	expect(slots).toHaveLength(goal.countPolicy.count);
+	expect(slots.at(-1)?.maximumBitrate).toBe(goal.maxBitrate);
+}
+
 describe("Per-Title evaluation coverage", () => {
 	it.each(
 		(
@@ -207,6 +227,7 @@ describe("Per-Title evaluation coverage", () => {
 				),
 			).toBe(true);
 			expect(advice.goal.automaticTemplates).toEqual(goal.automaticTemplates);
+			if (intent === "cap") checkOrdinaryCap(advice.goal, advice.proposal);
 		}
 		// This certifies spacing capacity, not which alternative or dimensions the
 		// native encoder selects. Mixed fixed/ordinary settings stay conditional.
@@ -409,6 +430,8 @@ describe("Per-Title evaluation coverage", () => {
 			phase === "wizard" ? wizardGoal(strategy) : matrixGoal(strategy);
 		const before = structuredClone(goal);
 		const result = analyzePerTitleSettings(goal, intent, protectedQuality);
+		if (strategy === "fixed-resolutions" && intent === "cap")
+			expect(result.advice).toEqual([]);
 		if (expected === "repair") {
 			expect(result.advice.length).toBeGreaterThan(0);
 			expect(result.decision.status).toBe("proposal");
@@ -419,6 +442,25 @@ describe("Per-Title evaluation coverage", () => {
 				expect(result.findings.map(({ code }) => code)).toContain(
 					"cap-unresolved",
 				);
+				if (strategy === "fixed-resolutions") {
+					// Resolving a count does not determine media-selected bitrates at
+					// fixed resolutions. Keep the count repair as a separate operation.
+					expect(result.reach.blockers).toContain("fixed-bitrate-unresolved");
+					expect(result.ordinaryCap.status).toBe("unavailable");
+					const countRepair = analyzePerTitleSettings(
+						goal,
+						"count",
+						protectedQuality,
+					);
+					expect(countRepair.advice.length).toBeGreaterThan(0);
+					for (const advice of countRepair.advice) {
+						expect(advice.proof).toBe("model-count");
+						expect(
+							assessPerTitleReach(advice.goal, advice.proposal).status,
+						).toBe("unknown");
+					}
+					checkAdoption(goal, "count", countRepair);
+				}
 			} else {
 				// Freely selected resolutions do not certify the native count.
 				expect(result.reach.count.status).not.toBe("model-checked");
@@ -528,7 +570,7 @@ describe("Per-Title evaluation coverage", () => {
 				),
 			),
 		),
-	)("repairs automatic %s count %s (%s) under the unchanged %s objective", (codec, count, kind, intent) => {
+	)("separates automatic %s count %s (%s) repair from the %s objective's proof", (codec, count, kind, intent) => {
 		const goal: PerTitleGoal = {
 			...wizardGoal("automatic"),
 			codec,
@@ -538,6 +580,54 @@ describe("Per-Title evaluation coverage", () => {
 		const current = tunePerTitleSettings(goal, goal).proposal;
 		expect(hasPerTitleEvaluationCountEvidence(goal, current)).toBe(false);
 		const result = analyzePerTitleSettings(goal, intent);
+		if (intent === "cap" && (kind === "maximum" || count === 1)) {
+			expect(result.advice).toEqual([]);
+			expect(result.decision.status).toBe("no-certified-candidate");
+			expect(result.reach.status).toBe("unknown");
+			if (kind === "maximum") {
+				// A maximum does not identify an exact last slot to place at the cap.
+				expect(result.ordinaryCap.status).toBe("unavailable");
+				expect(result.ordinaryCap.count).toBeNull();
+				expect(result.ordinaryCap.lastSlot).toBeNull();
+			} else {
+				// In the fixed-start model one placement remains at the minimum,
+				// regardless of how large the ratios become.
+				expect(result.ordinaryCap.status).toBe("blocked");
+				expect(result.ordinaryCap.lastSlot).toEqual({
+					minimum: goal.minBitrate,
+					maximum: goal.minBitrate,
+				});
+				expect(result.findings).toContainEqual(
+					expect.objectContaining({
+						code: "ordinary-cap-spacing-blocked",
+						severity: "warning",
+						fields: expect.arrayContaining([
+							{ scope: "global", key: "countPolicy" },
+						]),
+					}),
+				);
+			}
+			const countRepair = analyzePerTitleSettings(goal, "count");
+			expect(countRepair.decision.status).toBe("proposal");
+			expect(countRepair.advice.length).toBeGreaterThan(0);
+			for (const advice of countRepair.advice) {
+				expect(advice.proof).toBe("model-count");
+				expect(advice.facts.countRequirementRepair).toBe(1);
+				expect(advice.goal.countPolicy).toEqual(goal.countPolicy);
+				const applied = applyPerTitleAdvice(goal, advice, {
+					contextKey: perTitleAnalysisContextKey("count"),
+				});
+				if (!applied)
+					throw new Error("Expected an adoptable count-only repair.");
+				const capAfterCountRepair = analyzePerTitleSettings(applied, "cap");
+				expect(capAfterCountRepair.advice).toEqual([]);
+				expect(capAfterCountRepair.decision.status).toBe(
+					"no-certified-candidate",
+				);
+			}
+			checkAdoption(goal, "count", countRepair, {});
+			return;
+		}
 		expect(result.advice.length).toBeGreaterThan(0);
 		expect(result.decision.status).toBe("proposal");
 		for (const advice of result.advice) {
@@ -550,6 +640,9 @@ describe("Per-Title evaluation coverage", () => {
 			expect(assessPerTitleReach(advice.goal, advice.proposal).status).toBe(
 				"unknown",
 			);
+			if (intent === "cap") {
+				checkOrdinaryCap(advice.goal, advice.proposal);
+			}
 		}
 		checkAdoption(goal, intent, result, {});
 	});

@@ -27,6 +27,10 @@ import {
 } from "./per-title-simulator-analysis-ladder";
 import { perTitleWholeLadderCandidates } from "./per-title-simulator-analysis-layouts";
 import {
+	assessPerTitleOrdinaryCap,
+	type PerTitleOrdinaryCapAssessment,
+} from "./per-title-simulator-analysis-ordinary-cap";
+import {
 	assessPerTitleReach,
 	type PerTitleReachAssessment,
 } from "./per-title-simulator-analysis-reach";
@@ -42,6 +46,7 @@ type Message = { en: string; ja: string };
 export type PerTitleAnalysisResult = {
 	intent: PerTitleAnalysisIntent;
 	reach: PerTitleReachAssessment;
+	ordinaryCap: PerTitleOrdinaryCapAssessment;
 	ladder: PerTitleLadderAssessment;
 	countStructure: ReturnType<typeof assessPerTitleCountStructure>;
 	decision: {
@@ -120,6 +125,7 @@ const countAdvisoryFindings = new Set([
 	"flat-top",
 	"early-fixed-saturation",
 	"automatic-count-unresolved",
+	"ordinary-cap-spacing-blocked",
 ]);
 
 /** A structural repair must retain each old upper target at the same input. */
@@ -156,6 +162,11 @@ function explanation(
 			maximumFractionDigits: 3,
 		}).format(value / 1000);
 	const global = item.proposal.api.global;
+	if (item.facts.ordinaryCapRepair === 1)
+		return {
+			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits, requested ${item.goal.countPolicy.kind === "exact" ? item.goal.countPolicy.count : ""} outputs, template roles and quality controls. The revised spacing passes the count model and permits an integer chain ending at ${rate(global.maxBitrate)} kbps. Native output count, resolutions, use of that bitrate and quality still depend on the media.`,
+			ja: `全体 ${rate(global.minBitrate)}～${rate(global.maxBitrate)} kbps、指定の ${item.goal.countPolicy.kind === "exact" ? item.goal.countPolicy.count : ""} 本、テンプレート構成・画質設定を保ちます。変更後の段間隔は本数の計算条件を満たし、最上段を ${rate(global.maxBitrate)} kbps に置くこともできます。実際の本数・解像度・ビットレート・画質は素材で確認してください。`,
+		};
 	if (item.facts.countRequirementRepair === 1)
 		return {
 			en: `Keep the requested ${item.goal.countPolicy.kind === "maximum" ? "maximum of " : ""}${item.goal.countPolicy.kind === "unrestricted" ? "" : item.goal.countPolicy.count} outputs, overall bitrate limits, template roles and quality controls. The revised spacing satisfies the count requirement in the configuration model. This does not establish native output count, resolutions, use of the upper bitrate limit or equal quality; verify those with representative media.`,
@@ -269,6 +280,7 @@ function analyzeCurrentSettings(
 	const proposal = normalized.proposal;
 	const upperLimit = assessPerTitleUpperLimit(normalized.goal, proposal);
 	const reach = assessPerTitleReach(normalized.goal, proposal);
+	const ordinaryCap = assessPerTitleOrdinaryCap(normalized.goal, proposal);
 	const ladder = assessPerTitleLadder(normalized.goal, proposal);
 	const countStructure = assessPerTitleCountStructure(
 		normalized.goal,
@@ -291,6 +303,7 @@ function analyzeCurrentSettings(
 	const result: PerTitleAnalysisResult = {
 		intent,
 		reach,
+		ordinaryCap,
 		ladder,
 		countStructure,
 		decision: {
@@ -396,6 +409,32 @@ function analyzeCurrentSettings(
 			"info",
 			"The upper limit is reachable under the stated high-input hypothesis. This is a configuration result, not a prediction that the media will use the limit.",
 			"複雑度が高い想定では上限に届く設定です。実際にそのビットレートを使うかは素材の解析で決まります。",
+		);
+	if (ordinaryCap.status === "blocked" && ordinaryCap.lastSlot) {
+		const one = ordinaryCap.count === 1;
+		add(
+			"ordinary-cap-spacing-blocked",
+			"warning",
+			one
+				? `One integer placement starts and ends at the overall minimum of ${proposal.api.global.minBitrate} bps, so spacing cannot make it reach ${ordinaryCap.cap} bps. Reconsider the requested count or overall limits if use of the upper limit is required.`
+				: `With ${ordinaryCap.count} integer placements, the current maximum step permits a last bitrate of at most ${ordinaryCap.lastSlot.maximum} bps, below the ${ordinaryCap.cap} bps upper limit. Review maxBitrateStepSize; reducing the minimum step alone cannot raise this upper bound.`,
+			one
+				? `1本の配置では、先頭と末尾は全体下限の ${proposal.api.global.minBitrate} bps と同じです。段間隔を変えても上限 ${ordinaryCap.cap} bps には届きません。上限まで使える条件が必要なら、指定本数か全体の範囲を見直してください。`
+				: `${ordinaryCap.count} 本を配置すると、現在の最大段間比率で置ける最上段は ${ordinaryCap.lastSlot.maximum} bps までで、全体上限 ${ordinaryCap.cap} bps を許容しません。maxBitrateStepSize の調整が必要です。最小段間比率を下げるだけでは、この上端は増えません。`,
+			one
+				? [
+						{ scope: "global", key: "countPolicy" },
+						{ scope: "global", key: "minBitrate" },
+						{ scope: "global", key: "maxBitrate" },
+					]
+				: [{ scope: "global", key: "maxBitrateStepSize" }],
+		);
+	} else if (ordinaryCap.status === "permitted")
+		add(
+			"ordinary-cap-spacing-permitted",
+			"info",
+			`The step bounds permit a ${ordinaryCap.count}-placement integer chain ending at ${ordinaryCap.cap} bps. This spacing result is separate from the count-cap check and does not predict native output count, resolutions or use of the upper bitrate limit.`,
+			`段間比率の範囲内で、${ordinaryCap.count} 本の最上段を ${ordinaryCap.cap} bps に置くことができます。本数上限の検証とは別の配置条件であり、実際の本数・解像度・上限ビットレートの使用を予測するものではありません。`,
 		);
 	if (reach.adaptation === "flat")
 		add(
@@ -503,6 +542,10 @@ function analyzeCurrentSettings(
 			continue;
 		}
 		const checked = assessPerTitleReach(item.goal, item.proposal);
+		const checkedOrdinaryCap = assessPerTitleOrdinaryCap(
+			tunePerTitleSettings(item.goal, options.referenceGoal ?? goal).goal,
+			item.proposal,
+		);
 		const checkedLadder = assessPerTitleLadder(item.goal, item.proposal);
 		const checkedStructure = assessPerTitleCountStructure(
 			item.goal,
@@ -515,6 +558,10 @@ function analyzeCurrentSettings(
 			goal.countPolicy.kind !== "unrestricted" &&
 			!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
 			item.proof === "model-count";
+		const repairsOrdinaryCap =
+			item.proof === "model-count" &&
+			checkedOrdinaryCap.status === "permitted" &&
+			(ordinaryCap.status !== "permitted" || repairsCountRequirement);
 		if (
 			item.goal.minBitrate !== goal.minBitrate ||
 			item.goal.maxBitrate !== goal.maxBitrate ||
@@ -647,7 +694,7 @@ function analyzeCurrentSettings(
 		if (intent === "cap") {
 			if (
 				reachRank(checked) < reachRank(reach) ||
-				(!repairsCountRequirement &&
+				(!repairsOrdinaryCap &&
 					(checked.status !== "conditional-reachable" ||
 						checked.adaptation !== "conditional" ||
 						(reachRank(checked) === reachRank(reach) && !wholeImprovement)))
@@ -783,6 +830,7 @@ function analyzeCurrentSettings(
 		seen.add(key);
 		item.facts = {
 			...item.facts,
+			ordinaryCapRepair: Number(intent === "cap" && repairsOrdinaryCap),
 			countRequirementRepair: Number(repairsCountRequirement),
 			declaredCountRepair: Number(intent === "count" && declaredCountRepair),
 			upperLimitRepair: Number(repairsUpperLimit),
@@ -861,21 +909,49 @@ function analyzeCurrentSettings(
 			status: "proposal",
 			message:
 				intent === "cap" &&
-				result.advice.some((item) => item.facts.countRequirementRepair === 1)
+				result.advice.some((item) => item.facts.ordinaryCapRepair === 1)
 					? {
-							en: "A spacing adjustment satisfies the requested count in the configuration model. This does not establish use of the upper bitrate limit or native output count. Review the proposed changes before adoption.",
-							ja: "指定本数に向けた段間隔の調整案を計算モデルで確認しました。上限ビットレートの使用や実際の出力本数を保証する判定ではありません。変更内容を確認してから反映できます。",
+							en: "The revised spacing satisfies the requested count in the configuration model and permits a last placement at the overall maximum. Native output count, resolutions, bitrate use and quality remain media-dependent; review the changes before adoption.",
+							ja: "指定本数の計算条件を保ちながら、最上段を全体上限に置ける段間隔の案です。実際の本数・解像度・ビットレート・画質は素材によって変わります。変更内容を確認してから反映できます。",
 						}
-					: intent === "count" &&
-							result.advice.some((item) => item.facts.declaredCountRepair === 1)
+					: intent === "cap" &&
+							result.advice.some(
+								(item) => item.facts.countRequirementRepair === 1,
+							)
 						? {
-								en: "A conditional spacing adjustment improves the declared output structure while retaining the requested count. Native output count remains unverified; review the changes and media checks before adoption.",
-								ja: "指定本数を要件として維持し、宣言した出力構成と段間隔を改善する条件付きの案があります。実際の出力本数は未確定です。変更内容と素材での確認事項を確認してから反映できます。",
+								en: "A spacing adjustment satisfies the requested count in the configuration model. This does not establish use of the upper bitrate limit or native output count. Review the proposed changes before adoption.",
+								ja: "指定本数に向けた段間隔の調整案を計算モデルで確認しました。上限ビットレートの使用や実際の出力本数を保証する判定ではありません。変更内容を確認してから反映できます。",
 							}
-						: {
-								en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
-								ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
-							},
+						: intent === "count" &&
+								result.advice.some(
+									(item) => item.facts.declaredCountRepair === 1,
+								)
+							? {
+									en: "A conditional spacing adjustment improves the declared output structure while retaining the requested count. Native output count remains unverified; review the changes and media checks before adoption.",
+									ja: "指定本数を要件として維持し、宣言した出力構成と段間隔を改善する条件付きの案があります。実際の出力本数は未確定です。変更内容と素材での確認事項を確認してから反映できます。",
+								}
+							: {
+									en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
+									ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
+								},
+		};
+	else if (
+		intent === "cap" &&
+		ordinaryCap.status === "permitted" &&
+		hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
+		!findings.some(
+			(finding) =>
+				finding.severity === "conflict" ||
+				(finding.severity === "warning" &&
+					!countAdvisoryFindings.has(finding.code)),
+		)
+	)
+		result.decision = {
+			status: "keep-current",
+			message: {
+				en: "The checked count and spacing already permit a last placement at the overall maximum. Actual bitrate use and quality still require representative-media verification.",
+				ja: "確認した本数と段間隔では、最上段を全体上限に置くことができます。実際のビットレートと画質は素材で確認してください。",
+			},
 		};
 	else if (
 		(intent === "count" || intent === "preserve") &&

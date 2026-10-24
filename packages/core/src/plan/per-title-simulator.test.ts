@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { projectIntegerBitrateSlots } from "./per-title-output-count";
+import { previewPerTitleOutput } from "./per-title-output-preview";
 import {
 	type PerTitleGoal,
 	proposePerTitleModel,
@@ -102,7 +104,7 @@ describe("proposePerTitleSettings", () => {
 						}
 		expect(retained).toBeGreaterThan(0);
 	});
-	it("preserves the valid exact-three locked-eight case without inventing a trial witness", () => {
+	it("keeps a locked minimum of eight while completing the automatic upper step", () => {
 		const result = recommendPerTitleSettings({
 			strategy: "count",
 			codec: "H264",
@@ -114,13 +116,17 @@ describe("proposePerTitleSettings", () => {
 		});
 		expect(result.api.global).toMatchObject({
 			minBitrateStepSize: 8,
-			maxBitrateStepSize: 8,
+			maxBitrateStepSize: 10,
 		});
 		expect(result.derivation).toMatchObject({
-			method: "preserved-existing",
+			method: "geometric-count",
 			targetSatisfied: true,
 		});
 		expect(result.derivation).not.toHaveProperty("integerWitness");
+		expect(
+			result.scenarios.find((scenario) => scenario.fraction === 1)?.modelRungs,
+		).toHaveLength(3);
+		expect(result.countGuarantee).toBe(false);
 	});
 	it("treats prototype-like row IDs as ordinary JSON keys in setting locks", () => {
 		for (const id of ["__proto__", "constructor", "toString"]) {
@@ -1105,6 +1111,219 @@ describe("proposePerTitleSettings", () => {
 				(item) => item.code === "required-count-exceeded",
 			),
 		).toBe(true);
+	});
+});
+
+describe("ordinary exact-count cap headroom", () => {
+	const goal: PerTitleGoal = {
+		strategy: "count",
+		codec: "H264",
+		minBitrate: 300_000,
+		maxBitrate: 4_000_000,
+		countPolicy: { kind: "exact", count: 4 },
+		autoRepresentations: {},
+		automaticTemplates: [{ id: "ordinary" }],
+	};
+	const preview = (value: ReturnType<typeof recommendPerTitleSettings>) =>
+		previewPerTitleOutput(value, {
+			analysisInput: goal.maxBitrate,
+			countPolicy: goal.countPolicy,
+		});
+
+	it.each(
+		(["H264", "H265", "H265V2", "VP9", "AV1"] as const).flatMap((codec) =>
+			(["automatic", "count"] as const).map((strategy) => ({
+				codec,
+				strategy,
+			})),
+		),
+	)("allows the overall cap in a generated four-slot model: $codec/$strategy", ({
+		codec,
+		strategy,
+	}) => {
+		const input: PerTitleGoal = { ...goal, codec, strategy };
+		const before = structuredClone(input);
+		const value = recommendPerTitleSettings(input);
+		const output = preview(value);
+		expect(value.applicable).toBe(true);
+		expect(value.derivation?.targetSatisfied).toBe(true);
+		expect(value.countGuarantee).toBe(false);
+		expect(output.countProjection?.status).toBe("conditional");
+		expect(output.rows).toHaveLength(4);
+		expect(output.rows[0]?.minimumBitrate).toBe(goal.minBitrate);
+		expect(output.rows[0]?.maximumBitrate).toBe(goal.minBitrate);
+		expect(output.rows.at(-1)?.maximumBitrate).toBe(goal.maxBitrate);
+		expect(
+			projectIntegerBitrateSlots({
+				minimumBitrate: goal.minBitrate,
+				ceiling: goal.maxBitrate,
+				minimumStep: value.api.global.minBitrateStepSize,
+				maximumStep: goal.maxBitrate / goal.minBitrate + 1,
+				count: 5,
+			}).status,
+		).toBe("infeasible");
+		expect(input).toEqual(before);
+	});
+
+	it("separates the minimum-step count bound from a cap-reaching maximum step", () => {
+		const value = recommendPerTitleSettings({
+			...goal,
+			minBitrateStepSize: 2,
+			maxBitrateStepSize: 2.5,
+		});
+		expect(value.applicable).toBe(true);
+		expect(value.derivation?.targetSatisfied).toBe(true);
+		expect(value.countGuarantee).toBe(false);
+		expect(
+			preview(value).rows.map((row) => [
+				row.minimumBitrate,
+				row.maximumBitrate,
+			]),
+		).toEqual([
+			[300_000, 300_000],
+			[600_000, 750_000],
+			[1_200_000, 1_875_000],
+			[2_400_000, 4_000_000],
+		]);
+		expect(
+			projectIntegerBitrateSlots({
+				minimumBitrate: goal.minBitrate,
+				ceiling: goal.maxBitrate,
+				minimumStep: 2,
+				maximumStep: goal.maxBitrate / goal.minBitrate + 1,
+				count: 5,
+			}).status,
+		).toBe("infeasible");
+	});
+
+	it("checks integer holes instead of treating the continuous cap root as sufficient", () => {
+		const parameters = {
+			minimumBitrate: 10,
+			ceiling: 18,
+			minimumStep: 1.3,
+			count: 3,
+		};
+		const continuous = projectIntegerBitrateSlots({
+			...parameters,
+			maximumStep: Math.sqrt(18 / 10),
+		});
+		expect(continuous.status).toBe("conditional");
+		if (continuous.status !== "conditional")
+			throw new Error("Missing integer slots");
+		expect(continuous.slots.at(-1)).toEqual({ minimum: 17, maximum: 17 });
+		const reaching = projectIntegerBitrateSlots({
+			...parameters,
+			maximumStep: 1.3846153846153848,
+		});
+		expect(reaching.status).toBe("conditional");
+		if (reaching.status !== "conditional")
+			throw new Error("Missing integer slots");
+		expect(reaching.slots.at(-1)).toEqual({ minimum: 17, maximum: 18 });
+	});
+
+	it.each([
+		false,
+		true,
+	])("retains an explicit narrow maximum instead of expanding the graph (locked=%s)", (locked) => {
+		const value = recommendPerTitleSettings({
+			...goal,
+			minBitrateStepSize: 2.128663656502157,
+			maxBitrateStepSize: 2.1286666666666667,
+			...(locked ? { settingLocks: { global: ["maxBitrateStepSize"] } } : {}),
+		});
+		expect(value.api.global.maxBitrateStepSize).toBe(2.1286666666666667);
+		expect(preview(value).rows.at(-1)?.maximumBitrate).toBe(2_893_637);
+		expect(value.countGuarantee).toBe(false);
+	});
+
+	it.each([
+		false,
+		true,
+	])("completes an unset automatic maximum while preserving a compatible minimum (locked=%s)", (locked) => {
+		const countPolicy = { kind: "exact", count: 6 } as const;
+		const value = recommendPerTitleSettings({
+			...goal,
+			minBitrate: 128_000,
+			minBitrateStepSize: 1.8,
+			countPolicy,
+			...(locked ? { settingLocks: { global: ["minBitrateStepSize"] } } : {}),
+		});
+		expect(value.api.global.minBitrateStepSize).toBe(1.8);
+		expect(value.api.global.maxBitrateStepSize).toBeGreaterThan(1.9);
+		expect(value.derivation?.targetSatisfied).toBe(true);
+		expect(value.countGuarantee).toBe(false);
+		const output = previewPerTitleOutput(value, {
+			analysisInput: goal.maxBitrate,
+			countPolicy,
+		});
+		expect(output.rows).toHaveLength(6);
+		expect(output.rows.at(-1)?.maximumBitrate).toBe(goal.maxBitrate);
+	});
+
+	it("preserves an explicitly selected default maximum rather than treating it as automatic", () => {
+		const value = recommendPerTitleSettings({
+			...goal,
+			minBitrate: 128_000,
+			minBitrateStepSize: 1.8,
+			maxBitrateStepSize: 1.9,
+			countPolicy: { kind: "exact", count: 6 },
+			settingLocks: { global: ["maxBitrateStepSize"] },
+		});
+		expect(value.api.global.maxBitrateStepSize).toBe(1.9);
+		expect(value.derivation?.method).toBe("preserved-existing");
+		expect(value.countGuarantee).toBe(false);
+	});
+
+	it("does not fill a required maximum that is locked unset", () => {
+		const value = recommendPerTitleSettings({
+			...goal,
+			minBitrate: 128_000,
+			minBitrateStepSize: 1.8,
+			countPolicy: { kind: "exact", count: 6 },
+			settingLocks: { global: ["maxBitrateStepSize"] },
+		});
+		expect(value.api.global.maxBitrateStepSize).toBe(1.9);
+		expect(value.applicable).toBe(false);
+		expect(value.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "invalid-setting",
+				severity: "conflict",
+			}),
+		);
+		expect(value.countGuarantee).toBe(false);
+	});
+
+	it("retains the fixed first slot for the separate single-output policy", () => {
+		const countPolicy = { kind: "exact", count: 1 } as const;
+		const value = recommendPerTitleSettings({ ...goal, countPolicy });
+		const output = previewPerTitleOutput(value, {
+			analysisInput: goal.maxBitrate,
+			countPolicy,
+		});
+		expect(output.rows).toHaveLength(1);
+		expect(output.rows[0]?.minimumBitrate).toBe(goal.minBitrate);
+		expect(output.rows[0]?.maximumBitrate).toBe(goal.minBitrate);
+		expect(value.countGuarantee).toBe(false);
+	});
+
+	it.each([
+		{ kind: "maximum", count: 4 },
+		{ kind: "unrestricted" },
+	] as const)("does not turn $kind into an exact-count output claim", (countPolicy) => {
+		const value = recommendPerTitleSettings({
+			...goal,
+			strategy: "automatic",
+			countPolicy,
+		});
+		const output = previewPerTitleOutput(value, {
+			analysisInput: goal.maxBitrate,
+			countPolicy,
+		});
+		expect(output.rows.some((row) => row.kind === "count-slot")).toBe(false);
+		if (countPolicy.kind === "maximum")
+			expect(output.countProjection?.reason).toBe("maximum-only");
+		else expect(output.countProjection).toBeUndefined();
+		expect(value.countGuarantee).toBe(false);
 	});
 });
 

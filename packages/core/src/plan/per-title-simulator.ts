@@ -1,4 +1,5 @@
 import { constrainPerTitleApiCandidate } from "./per-title-candidate-api";
+import { findCapReachingMaximumStep } from "./per-title-cap-reach";
 import {
 	applyPerTitleSettingLocks,
 	optimizePerTitleConstraints,
@@ -392,6 +393,33 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 			: !hasAutomaticOutput(goal)
 				? initialRows.length
 				: undefined;
+	const capCount =
+		!initialRows.length &&
+		!forced &&
+		goal.countPolicy.kind === "exact" &&
+		goal.countPolicy.count > 1
+			? goal.countPolicy.count
+			: undefined;
+	const withCapMaximum = (input: PerTitleGoal): PerTitleGoal => {
+		const candidate = applyPerTitleSettingLocks(input, goal);
+		if (!capCount || perTitleGlobalLocked(goal, "maxBitrateStepSize"))
+			return candidate;
+		const maximum = findCapReachingMaximumStep({
+			minimumBitrate: candidate.minBitrate,
+			maximumBitrate: candidate.maxBitrate,
+			minimumStep: candidate.minBitrateStepSize ?? DEFAULT_MIN_STEP,
+			count: capCount,
+		});
+		return maximum === null
+			? candidate
+			: {
+					...candidate,
+					maxBitrateStepSize: Math.max(
+						candidate.maxBitrateStepSize ?? DEFAULT_MAX_STEP,
+						maximum,
+					),
+				};
+	};
 	const internalUpperProofs = new WeakMap<PerTitleProposal, PerTitleProposal>();
 	const upperScenario = (
 		proposal: PerTitleProposal,
@@ -570,6 +598,26 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 			) &&
 			(forced || hasValidIntegerExample(existing, upperScenario(existing)))
 		) {
+			if (
+				capCount &&
+				goal.maxBitrateStepSize === undefined &&
+				!perTitleGlobalLocked(goal, "maxBitrateStepSize")
+			) {
+				const completed = withCapMaximum({
+					...goal,
+					minBitrateStepSize: existing.api.global.minBitrateStepSize,
+					maxBitrateStepSize: existing.api.global.maxBitrateStepSize,
+				});
+				if (
+					completed.maxBitrateStepSize !==
+					existing.api.global.maxBitrateStepSize
+				)
+					return finish(build(completed, "step-adjusted"), {
+						method: "geometric-count",
+						rationale:
+							"The existing minimum step keeps the count bound. The automatic maximum step also permits an integer placement ending at the overall cap; this is not an encoded-output or quality prediction.",
+					});
+			}
 			return finish(existing, {
 				method: "preserved-existing",
 				rationale:
@@ -641,11 +689,11 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 		const maximumStep = Math.max(minimumStep, ...ratios);
 		return finish(
 			build(
-				{
+				withCapMaximum({
 					...normalized,
 					minBitrateStepSize: minimumStep,
 					maxBitrateStepSize: maximumStep,
-				},
+				}),
 				"step-adjusted",
 			),
 			{
@@ -657,7 +705,7 @@ function recommendIntervalSettings(goal: PerTitleGoal): PerTitleProposal {
 				rationale:
 					count === 1
 						? "A single-output request places the next arithmetic bitrate at least 1% above the overall cap, with a minimum one-bit/s margin. Short-input checks found two outputs with an infinitesimal cap margin and one with this wider margin. This is a tool policy, not an API count guarantee or a quality optimum."
-						: "The continuous count-cap interval guides a greedy integer placement. Bisection bounds its feasible minimum step, and an interior value leaves rounding margin. The maximum step covers the actual integer gaps; this is a spacing model, not a provider or quality optimum.",
+						: "The continuous count-cap interval guides a greedy integer placement. Bisection bounds its feasible minimum step, and an interior value leaves rounding margin. The maximum step covers the retained integer gaps and, for exact requests with an automatic upper step, permits an integer placement ending at the overall cap. This is a spacing model, not a provider or quality optimum.",
 			},
 		);
 	}

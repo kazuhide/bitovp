@@ -957,7 +957,14 @@ async function install(
 		stage("fresh Web and Worker Docker builds");
 		notify("Building the current source into separate Web and Worker images");
 		await compose(
-			["build", "--build-arg", `GIT_COMMIT=${revision}`, "worker", "web"],
+			[
+				"build",
+				"--pull",
+				"--build-arg",
+				`GIT_COMMIT=${revision}`,
+				"worker",
+				"web",
+			],
 			{ timeout: 1_200_000 },
 		);
 		notify("Web and Worker Docker builds passed");

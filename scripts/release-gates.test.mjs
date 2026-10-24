@@ -101,6 +101,10 @@ test("fixed local gates include API freshness and the runner tests, never deploy
 		readFileSync(new URL("../package.json", import.meta.url)),
 	);
 	assert(COMMANDS.some((c) => c.join(" ") === "pnpm test"));
+	assert.deepEqual(
+		COMMANDS.find((command) => command[1] === "audit"),
+		["pnpm", "audit", "--audit-level", "low"],
+	);
 	assert.equal(
 		pkg.scripts.test,
 		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner",

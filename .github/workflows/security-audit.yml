@@ -1,0 +1,39 @@
+name: Dependency security
+
+on:
+  schedule:
+    - cron: "23 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - name: Resolve the committed dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check all dependency advisories
+        run: pnpm audit --audit-level low
+      - name: Verify registry package signatures
+        run: pnpm audit signatures

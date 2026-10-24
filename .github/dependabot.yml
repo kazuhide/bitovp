@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Security updates use a separate limit. Keep routine npm version PRs off.
+    open-pull-requests-limit: 0
+    groups:
+      npm-security-patch-minor:
+        applies-to: security-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions-patch-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      runtime-patch-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      services-patch-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]

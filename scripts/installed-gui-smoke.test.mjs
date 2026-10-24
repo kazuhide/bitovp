@@ -167,6 +167,16 @@ test("overrides both root env files, all published ports and the media bind moun
 		composeOverride({ id: "main", directory: "/private/smoke" }),
 	);
 });
+test("installed application builds refresh their base image", () => {
+	const source = readFileSync(
+		new URL("./installed-gui-smoke.mjs", import.meta.url),
+		"utf8",
+	);
+	assert(
+		/"build",\s*"--pull"/.test(source),
+		"Installed application builds must refresh the base image",
+	);
+});
 test("requires every named browser case to run and pass once without skipping or retrying", () => {
 	validateReport(report());
 	for (const key of ["skipped", "flaky", "unexpected"]) {

@@ -10,10 +10,16 @@ const operations = read("docs/OPERATIONS.md");
 describe("onboarding agrees with deployment boundaries", () => {
 	it("prepares restricted database access before starting web and worker", () => {
 		const prepare = installation.indexOf("db:runtime:prepare");
-		const build = installation.indexOf(
-			"docker compose build migrate worker web",
+		const pull = installation.indexOf("docker compose pull postgres redis");
+		const database = installation.indexOf(
+			"docker compose up -d postgres redis",
 		);
-		expect(prepare).toBeGreaterThan(0);
+		const build = installation.indexOf(
+			"docker compose build --pull --no-cache migrate worker web",
+		);
+		expect(pull).toBeGreaterThan(0);
+		expect(database).toBeGreaterThan(pull);
+		expect(prepare).toBeGreaterThan(database);
 		expect(build).toBeGreaterThan(prepare);
 		expect(installation).toContain("docker compose up -d --no-build");
 		expect(installation).toContain(".env.migrate");

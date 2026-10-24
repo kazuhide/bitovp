@@ -126,7 +126,7 @@ describe("installed Azure Identity and MSAL interoperability", () => {
 		expect(form?.get("scope")).toContain(
 			"https://batch.core.windows.net/.default",
 		);
-		expect(form?.get("x-client-VER")).toBe("7.1.0");
+		expect(form?.get("x-client-VER")).toBe("7.1.1");
 	});
 
 	it("reuses the in-memory token without another token request", async () => {

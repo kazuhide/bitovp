@@ -1,17 +1,18 @@
 # syntax=docker/dockerfile:1
 # Worker image with FFmpeg, streaming protocols, and VMAF models.
-FROM node:24-bookworm-slim
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
 
 # Pin release names and verify bytes because upstream rotates build assets.
-ARG FFMPEG_BUILD="autobuild-2026-10-17-20-51"
-ARG FFMPEG_VER="n8.1.3-18-g46d899d7a0"
-ARG FFMPEG_SHA256_AMD64="44a434bd1b3f98ab92f8e6545b17fc64c2e8af508688c912eb4e8447c115680c"
-ARG FFMPEG_SHA256_ARM64="a3de0970c7785bd53950053307883cb289e285d6e44cc1e2b7c3d22f960241a6"
+ARG FFMPEG_BUILD="autobuild-2026-10-24-13-02"
+ARG FFMPEG_VER="n8.1.3-24-g92611900bb"
+ARG FFMPEG_SHA256_AMD64="3c2d43d951c1d7936240ec77dbc274d6214fc64973e9993f63e16f03ac908ff1"
+ARG FFMPEG_SHA256_ARM64="d638add9b6fd0c139db23d73a46ffb2218f087481d63585e703c1b465ed5c43f"
 ARG FFMPEG_URL=""
 ARG FFMPEG_SHA256=""
 ARG TARGETARCH
 
 RUN apt-get update \
+	&& apt-get upgrade -y \
 	&& apt-get install -y --no-install-recommends \
 		openssl \
 		ca-certificates \
@@ -88,7 +89,7 @@ RUN apt-get update \
 
 ENV COREPACK_HOME=/corepack
 RUN corepack enable \
-	&& corepack prepare pnpm@11.20.0 --activate \
+	&& corepack prepare pnpm@11.28.8+sha512.f6988a32046b9a3f78d7d7ee0747926bbe905ff9dff73bf19abb87bd7d1906a2ac90d93f73be32b5f9e14c2899569bcb0c9c5ec8a19e083f5d71bbab6dd9e0b8 --activate \
 	&& chmod -R a+rX /corepack
 
 WORKDIR /app

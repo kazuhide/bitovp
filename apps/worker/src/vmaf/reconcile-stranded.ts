@@ -1,5 +1,5 @@
 import { QUEUE_NAMES } from "@bitovp/core";
-import type { AppPrismaClient } from "@bitovp/db";
+import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { autoTriggerKey } from "@bitovp/db";
 import type { Queue } from "bullmq";
 import { qcContinuationJobId } from "./processor";
@@ -61,7 +61,8 @@ export const STRANDED_VMAF_ERROR =
  */
 const DEAD_STATES = new Set(["completed", "failed", "unknown"]);
 
-type OrchestratorQueueLike = Pick<Queue, "add">;
+type OrchestratorQueueLike = Pick<Queue, "add" | "getJob">;
+const CONTINUATION_SCAN_LIMIT = 500;
 
 export function createStrandedVmafReconciler(deps: {
 	prisma: AppPrismaClient;
@@ -78,6 +79,11 @@ export function createStrandedVmafReconciler(deps: {
 			`stranded-VMAF reconcile needs the ${VMAF_QUEUE_NAME} queue, got ${deps.queue.name}`,
 		);
 	}
+	// Each tenant owns its reconciler instance. Parked rows remain eligible
+	// while their continuation waits, so a fixed first page would starve the
+	// tail. Advance even when Redis is unavailable and revisit on the next lap.
+	let continuationCursor: string | undefined;
+	let inFlight: Promise<number> | undefined;
 
 	/**
 	 * review-3 I1: retiring the report is not enough when its job is PARKED.
@@ -127,33 +133,92 @@ export function createStrandedVmafReconciler(deps: {
 			return;
 		}
 		try {
+			const jobId = qcContinuationJobId(encodingJobId, vmafJobId);
+			const existing = await deps.orchestratorQueue.getJob(jobId);
+			const state = existing ? await existing.getState() : undefined;
 			const parked = await deps.prisma.encodingJob.findFirst({
-				where: { id: encodingJobId, status: "AWAITING_QC" },
+				where: {
+					id: encodingJobId,
+					status: "AWAITING_QC",
+					vmafJobs: {
+						some: {
+							id: vmafJobId,
+							mode: "VOD",
+							triggerKey: autoTriggerKey(encodingJobId),
+							status: { in: ["FINISHED", "ERROR"] },
+						},
+					},
+				},
 				select: { id: true },
 			});
 			if (!parked) {
+				return;
+			}
+			if (existing) {
+				if (existing.data?.encodingJobId !== encodingJobId) {
+					console.error(
+						`[vmaf] continuation ${jobId} belongs to a different encoding`,
+					);
+					return;
+				}
+				// add() silently deduplicates settled jobs too. BullMQ's retry
+				// atomically checks the state, preserving a job that became active
+				// since the probe. A failed race is retried on a later sweep.
+				if (state === "completed" || state === "failed") {
+					await existing.retry(state);
+				}
 				return;
 			}
 			await deps.orchestratorQueue.add(
 				"orchestrate",
 				{ encodingJobId },
 				{
-					jobId: qcContinuationJobId(encodingJobId, vmafJobId),
+					jobId,
 					removeOnComplete: 1000,
 					removeOnFail: 1000,
 				},
 			);
 		} catch (err) {
-			// Best-effort, like the processor's own enqueue: the row is already
-			// retired and the job can still be resumed by hand.
+			// The terminal report and parked parent retain the retry intent.
+			// A later sweep retries without rewriting the measurement verdict.
 			console.error(
-				`[vmaf] could not wake encoding ${encodingJobId} parked behind a retired report:`,
+				`[vmaf] could not wake encoding ${encodingJobId} parked behind a QC report:`,
 				err instanceof Error ? err.message : err,
 			);
 		}
 	}
 
-	return async function reconcileStrandedVmafJobs(): Promise<number> {
+	async function recoverContinuations(skip: Set<string>): Promise<void> {
+		const page = async () => {
+			const where: Prisma.VmafJobWhereInput = {
+				mode: "VOD",
+				status: { in: ["FINISHED", "ERROR"] },
+				triggerKey: { startsWith: "vod-auto:" },
+				encodingJob: { is: { status: "AWAITING_QC" } },
+				...(continuationCursor ? { id: { gt: continuationCursor } } : {}),
+			};
+			return deps.prisma.vmafJob.findMany({
+				where,
+				select: { id: true, encodingJobId: true, triggerKey: true },
+				orderBy: { id: "asc" },
+				take: CONTINUATION_SCAN_LIMIT,
+			});
+		};
+		let rows = await page();
+		if (rows.length === 0 && continuationCursor) {
+			continuationCursor = undefined;
+			rows = await page();
+		}
+		for (const row of rows) {
+			if (!skip.has(row.id)) {
+				await wakeParkedJob(row.id, row.encodingJobId, row.triggerKey);
+			}
+		}
+		continuationCursor =
+			rows.length === CONTINUATION_SCAN_LIMIT ? rows.at(-1)?.id : undefined;
+	}
+
+	async function reconcile(): Promise<number> {
 		const running = await deps.prisma.vmafJob.findMany({
 			where: { status: "RUNNING" },
 			select: { id: true, encodingJobId: true, triggerKey: true },
@@ -167,6 +232,7 @@ export function createStrandedVmafReconciler(deps: {
 			take: 500,
 		});
 		let retired = 0;
+		const newlyRetired = new Set<string>();
 		for (const row of running) {
 			const job = await deps.queue.getJob(row.id);
 			// A job still on the queue in a state nobody has classified as dead
@@ -184,8 +250,17 @@ export function createStrandedVmafReconciler(deps: {
 				continue;
 			}
 			retired += count;
+			newlyRetired.add(row.id);
 			await wakeParkedJob(row.id, row.encodingJobId, row.triggerKey);
 		}
+		await recoverContinuations(newlyRetired);
 		return retired;
+	}
+
+	return function reconcileStrandedVmafJobs(): Promise<number> {
+		inFlight ??= reconcile().finally(() => {
+			inFlight = undefined;
+		});
+		return inFlight;
 	};
 }

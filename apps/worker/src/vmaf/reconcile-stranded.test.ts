@@ -21,17 +21,39 @@ function harness(
 ) {
 	const updates: { where: unknown; data: unknown }[] = [];
 	const added: { name: string; data: unknown; opts: unknown }[] = [];
+	const reports = rows.map((row) => ({
+		encodingJobId: null,
+		triggerKey: null,
+		status: "RUNNING",
+		...row,
+	}));
 	const prisma = {
 		vmafJob: {
-			findMany: vi.fn(async () =>
-				rows.map((r) => ({ encodingJobId: null, triggerKey: null, ...r })),
+			findMany: vi.fn(
+				async ({ where }: { where: { status: string | { in: string[] } } }) =>
+					reports
+						.filter((row) =>
+							typeof where.status === "string"
+								? row.status === where.status
+								: where.status.in.includes(row.status),
+						)
+						.map((row) => ({ ...row })),
 			),
-			updateMany: vi.fn(async (args: { where: unknown; data: unknown }) => {
-				updates.push(args);
-				// review-3: a hardcoded 1 made `retired += count` unpinnable and
-				// hid the peer-finished-first path entirely.
-				return { count: options.updateCount ?? 1 };
-			}),
+			updateMany: vi.fn(
+				async (args: {
+					where: { id: string; status: string };
+					data: { status: string; error: string };
+				}) => {
+					updates.push(args);
+					const row = reports.find(
+						(row) =>
+							row.id === args.where.id && row.status === args.where.status,
+					);
+					const count = row ? (options.updateCount ?? 1) : 0;
+					if (row && count) Object.assign(row, args.data);
+					return { count };
+				},
+			),
 		},
 		encodingJob: {
 			findFirst: vi.fn(async (args: { where: { id: string } }) =>
@@ -47,6 +69,7 @@ function harness(
 		}),
 	} as unknown as Parameters<typeof createStrandedVmafReconciler>[0]["queue"];
 	const orchestratorQueue = {
+		getJob: vi.fn(async () => undefined),
 		add: vi.fn(async (name: string, data: unknown, opts: unknown) => {
 			added.push({ name, data, opts });
 		}),

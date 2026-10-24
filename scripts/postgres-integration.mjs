@@ -48,6 +48,7 @@ export const GROUPS = [
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 4,
 			"src/live/owned-transition-locking.integration.test.ts": 10,
+			"src/watch/sweep.capacity.integration.test.ts": 11,
 		},
 	},
 ];

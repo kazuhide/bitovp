@@ -57,6 +57,12 @@ const copy = {
 		height: "Height (px)",
 		rowMinimum: "Minimum bitrate (kbps, optional)",
 		rowMaximum: "Maximum bitrate (kbps, optional)",
+		lowerHeight: "Lower automatic rendition height (px, optional)",
+		upperHeights: "Upper rendition candidates (px, optional)",
+		upperHint:
+			"Separate heights with commas; choose candidates for one upper output.",
+		upperChoice:
+			"These candidates share one requested upper output. Confirm the actual count by encoding.",
 		add: "Add rendition",
 		removeLabel: "Remove",
 		rangesHint: "Leave bitrate limits blank to calculate a starting range.",
@@ -96,6 +102,11 @@ const copy = {
 		height: "高さ (px)",
 		rowMinimum: "最小ビットレート (kbps・任意)",
 		rowMaximum: "最大ビットレート (kbps・任意)",
+		lowerHeight: "下位の自動段の高さ (px・任意)",
+		upperHeights: "上位段の候補 (px・任意)",
+		upperHint: "上位1段の候補となる高さをカンマで区切ります。",
+		upperChoice:
+			"上位の希望本数は、候補を合わせて1本です。実際の本数はエンコードして確認してください。",
 		add: "レンディションを追加",
 		removeLabel: "削除",
 		rangesHint: "ビットレートを空欄にすると、初期案を計算します。",
@@ -177,6 +188,8 @@ function issueLabel(
 		inputHeight: text.source,
 		count: text.count,
 		height: text.height,
+		lowerHeight: text.lowerHeight,
+		upperHeights: text.upperHeights,
 	};
 	return [
 		rowIndex >= 0 ? text.rendition(rowIndex + 1) : undefined,
@@ -328,6 +341,8 @@ export function PerTitleGuidedSetup({
 	);
 	const [count, setCount] = useState("5");
 	const [requiredCount, setRequiredCount] = useState("");
+	const [lowerHeight, setLowerHeight] = useState("");
+	const [upperHeights, setUpperHeights] = useState("");
 	const [rows, setRows] = useState(() => starterRows(initialGoal.inputHeight));
 	const [submitted, setSubmitted] = useState(false);
 	const completed = useRef(false);
@@ -349,6 +364,19 @@ export function PerTitleGuidedSetup({
 					: {}),
 			...(sourceHeight.trim() !== ""
 				? { inputHeight: requiredNumber(sourceHeight) }
+				: {}),
+			...(strategy === "fixed-ranges" &&
+			(lowerHeight.trim() !== "" || upperHeights.trim() !== "")
+				? {
+						automaticEdges: {
+							...(lowerHeight.trim() !== ""
+								? { lowerHeight: requiredNumber(lowerHeight) }
+								: {}),
+							...(upperHeights.trim() !== ""
+								? { upperHeights: upperHeights.split(",").map(requiredNumber) }
+								: {}),
+						},
+					}
 				: {}),
 			rows: usesRows
 				? rows.map((row) => {
@@ -375,6 +403,8 @@ export function PerTitleGuidedSetup({
 			count,
 			requiredCount,
 			sourceHeight,
+			lowerHeight,
+			upperHeights,
 			usesRows,
 			rows,
 		],
@@ -525,6 +555,28 @@ export function PerTitleGuidedSetup({
 							}
 						/>
 					) : null}
+					{strategy === "fixed-ranges" ? (
+						<div className="grid min-w-0 gap-3 sm:grid-cols-2">
+							{numberField(
+								"lower-height",
+								text.lowerHeight,
+								lowerHeight,
+								setLowerHeight,
+								true,
+							)}
+							<Field
+								htmlFor={`${id}-upper-heights`}
+								label={text.upperHeights}
+								hint={text.upperHint}
+							>
+								<Input
+									id={`${id}-upper-heights`}
+									value={upperHeights}
+									onChange={(event) => setUpperHeights(event.target.value)}
+								/>
+							</Field>
+						</div>
+					) : null}
 				</div>
 			) : null}
 			{step > 0 &&
@@ -569,7 +621,7 @@ export function PerTitleGuidedSetup({
 						<p className="text-xs text-zinc-400">
 							{strategy === "automatic"
 								? text.automatic
-								: strategy === "count"
+								: strategy === "count" || input.automaticEdges
 									? text.countSummary(
 											result.goal.countPolicy.kind === "unrestricted"
 												? Number(count)
@@ -577,6 +629,9 @@ export function PerTitleGuidedSetup({
 										)
 									: text.rowsSummary(result.goal.rows?.length ?? 0)}
 						</p>
+						{input.automaticEdges?.upperHeights?.length ? (
+							<p className="text-xs text-zinc-400">{text.upperChoice}</p>
+						) : null}
 						<PerTitleLadder proposal={result.proposal} />
 					</section>
 					{result.status === "unverified" ? (

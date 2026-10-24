@@ -8,6 +8,11 @@ import {
 	type PerTitleProposal,
 	recommendPerTitleSettings,
 } from "@bitovp/core";
+import {
+	automaticEdgeCount,
+	buildPerTitleEdgeSetup,
+	validateAutomaticEdges,
+} from "./per-title-guided-setup-edges";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 export type PerTitleSetupInput = {
@@ -17,6 +22,10 @@ export type PerTitleSetupInput = {
 	maxBitrate: number;
 	count?: number;
 	inputHeight?: number;
+	automaticEdges?: {
+		lowerHeight?: number;
+		upperHeights?: readonly number[];
+	};
 	rows: readonly {
 		id: string;
 		height: number;
@@ -61,6 +70,7 @@ function validate(
 	allowedCodecs: readonly PerTitleCodec[],
 ): PerTitleSetupIssue[] {
 	const issues: PerTitleSetupIssue[] = [];
+	issues.push(...validateAutomaticEdges(input));
 	const add = (
 		code: string,
 		field: string,
@@ -165,12 +175,15 @@ function validate(
 			"必須の解像度を1行以上追加してください。",
 		);
 	if (input.count !== undefined && integer(input.count)) {
-		if (closed(input.strategy) && input.count !== input.rows.length)
+		if (
+			closed(input.strategy) &&
+			input.count !== input.rows.length + automaticEdgeCount(input)
+		)
 			add(
 				"closed-count",
 				"count",
-				"For a closed ladder, set the count to the number of required rows or add the missing rows.",
-				"すべての段を指定する場合は、本数を必須行の数に合わせるか、足りない行を追加してください。",
+				"Set the count to the required rows plus any starting and upper roles, or add the missing rows.",
+				"本数は固定行と上下の自動段を合わせた数にするか、足りない行を追加してください。",
 			);
 		else if (input.count < input.rows.length)
 			add(
@@ -286,7 +299,11 @@ function validate(
 /** Equal log positions are an initial allocation, not a content-quality optimum. */
 function allocateRanges(input: PerTitleSetupInput): PerTitleGoalRow[] {
 	const ordered = [...input.rows].sort((a, b) => a.height - b.height);
-	const size = ordered.length;
+	const lowerSlots = Number(input.automaticEdges?.lowerHeight !== undefined);
+	const upperSlots = Number(
+		(input.automaticEdges?.upperHeights?.length ?? 0) > 0,
+	);
+	const size = ordered.length + lowerSlots + upperSlots;
 	const ratio =
 		size > 1 ? (input.maxBitrate / input.minBitrate) ** (1 / (size - 1)) : 1;
 	// One third of each log step supplies band width; the remaining two thirds
@@ -298,7 +315,7 @@ function allocateRanges(input: PerTitleSetupInput): PerTitleGoalRow[] {
 			? 1000
 			: 1;
 	const assigned = input.rows.map((row) => {
-		const index = ordered.indexOf(row);
+		const index = ordered.indexOf(row) + lowerSlots;
 		const maximum =
 			size === 1 || index === size - 1
 				? input.maxBitrate
@@ -465,6 +482,8 @@ export function buildPerTitleSetup(
 			issues,
 			reasoning: [],
 		};
+	if (automaticEdgeCount(input) > 0)
+		return buildPerTitleEdgeSetup(input, allocateRanges(input));
 	const isClosed = closed(input.strategy);
 	const goal: PerTitleGoal = {
 		strategy: input.strategy,

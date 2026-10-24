@@ -5,9 +5,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Security updates use a separate limit. Keep routine npm version PRs off.
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 2
+    # Routine patch/minor updates also catch fixes without published advisories.
+    # These version-update limits do not restrict security update majors.
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
     groups:
+      npm-version-patch-minor:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
       npm-security-patch-minor:
         applies-to: security-updates
         patterns: ["*"]

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { feederJobId } from "./queues";
@@ -100,13 +101,10 @@ describe("BullMQ custom job ids", () => {
 	});
 
 	it("the constraint is real, quoted from the installed BullMQ", () => {
-		// Pinned against the dependency rather than trusted from memory: if a future BullMQ
-		// relaxes this, the reason for the dashes should be re-checked and not just inherited.
+		// Resolve the worker's active dependency; stale store entries must not mask an update.
+		const workerRequire = createRequire(join(root, "apps/worker/package.json"));
 		const jobSrc = readFileSync(
-			join(
-				root,
-				"node_modules/.pnpm/bullmq@5.78.0/node_modules/bullmq/dist/cjs/classes/job.js",
-			),
+			workerRequire.resolve("bullmq/dist/cjs/classes/job.js"),
 			"utf8",
 		);
 		expect(jobSrc).toContain("Custom Id cannot contain :");

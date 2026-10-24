@@ -158,6 +158,9 @@ test("overrides both root env files, all published ports and the media bind moun
 	assert.match(text, /volumes: !override \[\]/);
 	assert.match(text, /pg_isready --host=127\.0\.0\.1/);
 	assert.match(text, /networks:\n {2}default:\n {4}labels:/);
+	assert.match(text, /networks:\n {2}default:[\s\S]*\n {4}internal: true/);
+	assert.match(text, / {2}web:[\s\S]*ports: !override \[\]/);
+	assert.match(text, / {2}gateway:[\s\S]*127\.0\.0\.1::3100/);
 	assert(!text.includes("verify-runs"));
 	assert(!text.includes("3330"));
 	assert.throws(() =>
@@ -198,6 +201,8 @@ test("failure summaries expose only known case names and safe statuses", () => {
 		`Browser case: ${CASES[3]}; status=retried`,
 		`Browser case: ${CASES[4]}; status=unknown`,
 		`Browser case: ${CASES[5]}; status=passed`,
+		`Browser case: ${CASES[6]}; status=passed`,
+		`Browser case: ${CASES[7]}; status=passed`,
 	]);
 	assert(!summary.join("\n").includes("private"));
 });

@@ -19,6 +19,11 @@ import {
 	recordConsoleError,
 	selectGuiStates,
 } from "./diagnostics";
+import {
+	nonpaidLivePlan,
+	nonpaidVodPlan,
+	writeNonpaidSubmission,
+} from "./nonpaid-submit";
 
 const fixture = JSON.parse(
 	readFileSync(process.env.BITOVP_GUI_SMOKE_FIXTURE as string, "utf8"),
@@ -28,6 +33,7 @@ const CREDENTIAL = "44444444-4444-4444-8444-444444444444";
 const JOB = "55555555-5555-4555-8555-555555555555";
 const CHANNEL = "66666666-6666-4666-8666-666666666666";
 let authenticated: Awaited<ReturnType<BrowserContext["storageState"]>>;
+let syntheticProvider: { accountId: string; credentialId: string };
 test.describe.configure({ mode: "serial" });
 
 function only<T>(items: T[]): T {
@@ -716,6 +722,245 @@ test("keep independent installation sessions isolated", async ({
 			unexpected,
 		);
 		throw error;
+	} finally {
+		await context.close();
+	}
+});
+
+async function openSubmission(browser: Browser) {
+	const context = await browser.newContext({
+		baseURL: fixture.baseURL,
+		storageState: authenticated,
+		viewport: { width: 1440, height: 1000 },
+		locale: "en-US",
+		serviceWorkers: "block",
+	});
+	const unexpected: string[] = [];
+	await context.route("**/*", async (route) => {
+		const request = route.request();
+		const url = new URL(request.url());
+		if (url.origin !== fixture.baseURL) {
+			unexpected.push(`${request.method()} external request`);
+			return route.abort();
+		}
+		if (request.method() === "GET" && url.pathname.endsWith("/storage/buckets"))
+			return route.fulfill({ json: { buckets: [] } });
+		if (request.method() === "GET" && url.pathname.endsWith("/storage/objects"))
+			return route.fulfill({ json: { prefixes: [], objects: [] } });
+		if (
+			!["GET", "HEAD"].includes(request.method()) &&
+			!(
+				request.method() === "POST" &&
+				["/api/encoding-jobs", "/api/live-channels"].includes(url.pathname)
+			)
+		) {
+			unexpected.push(`${request.method()} ${url.pathname}`);
+			return route.abort();
+		}
+		return route.continue();
+	});
+	const page = await context.newPage();
+	page.on("pageerror", (error) => unexpected.push(error.message));
+	page.on("console", (message) => {
+		if (message.type() === "error") unexpected.push("Browser console error");
+	});
+	return { context, page, unexpected };
+}
+
+test("persist VOD through the authenticated submission API", async ({
+	browser,
+	request,
+}) => {
+	const { context, page, unexpected } = await openSubmission(browser);
+	try {
+		const account = await context.request.post("/api/bitmovin-accounts", {
+			headers: { origin: fixture.baseURL },
+			maxRedirects: 0,
+			data: {
+				label: "Nonpaid synthetic account",
+				apiKey: "synthetic-never-valid",
+			},
+		});
+		expect(account.status()).toBe(201);
+		const credential = await context.request.post("/api/credentials", {
+			headers: { origin: fixture.baseURL },
+			maxRedirects: 0,
+			data: {
+				label: "Nonpaid synthetic storage",
+				provider: "AWS_S3",
+				config: { region: "ap-northeast-1" },
+				secret: {
+					accessKeyId: "synthetic-access-key",
+					secretAccessKey: "synthetic-secret-key",
+				},
+			},
+		});
+		expect(credential.status()).toBe(201);
+		syntheticProvider = {
+			accountId: (await account.json()).id,
+			credentialId: (await credential.json()).id,
+		};
+		const plan = nonpaidVodPlan(
+			syntheticProvider.accountId,
+			syntheticProvider.credentialId,
+		);
+		await page.goto("/vod/new");
+		await page.getByRole("button", { name: /Import plan JSON/ }).click();
+		await page
+			.getByRole("textbox", { name: /Import plan JSON/ })
+			.fill(JSON.stringify(plan));
+		await page.getByRole("button", { name: /Validate.*load/i }).click();
+		await expect(page.locator("#wz-name")).toHaveValue(plan.name);
+		plan.name = "Nonpaid VOD reviewed";
+		await page.locator("#wz-name").fill(plan.name);
+		await goTo(page, /ladder/i);
+		await page.locator("#wz-v-0-bitrate").fill("1600000");
+		const video = plan.renditions[0];
+		if (video?.codec !== "H264") throw new Error("Expected H264 video");
+		video.bitrate = 1_600_000;
+		await goTo(page, /^8\. Review$/);
+		const created = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === "/api/encoding-jobs" &&
+				response.request().method() === "POST",
+		);
+		await page
+			.getByRole("button", { name: "Start encoding", exact: true })
+			.click();
+		const response = await created;
+		expect(response.status()).toBe(201);
+		const requestPlan = response.request().postDataJSON().plan;
+		expect(encodingPlanSchema.parse(requestPlan)).toEqual(plan);
+		const { id } = await response.json();
+		expect(id).toMatch(/^[a-f0-9-]{36}$/);
+		await expect(page).toHaveURL(`${fixture.baseURL}/vod/jobs/${id}`);
+		const saved = await context.request.get(`/api/encoding-jobs/${id}`, {
+			maxRedirects: 0,
+		});
+		expect(saved.status()).toBe(200);
+		const savedJob = await saved.json();
+		expect(savedJob.status).toBe("QUEUED");
+		expect(savedJob.bitmovinEncodingId).toBeNull();
+		expect(savedJob.plan).toEqual(plan);
+		expect(savedJob.plan.renditions[0]).not.toHaveProperty("crf");
+		expect(savedJob.plan.renditions[0]).toMatchObject({
+			minGop: 0,
+			openGop: false,
+			cabac: false,
+			colorConfig: { copyColorSpaceFlag: false },
+			hlsVariantUri: "main-video.m3u8",
+		});
+		const key = response.request().headers()["idempotency-key"];
+		expect(key).toMatch(/^[a-f0-9]{64}$/);
+		const repeated = await context.request.post("/api/encoding-jobs", {
+			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			maxRedirects: 0,
+			data: { plan: requestPlan },
+		});
+		expect(repeated.status()).toBe(200);
+		expect((await repeated.json()).id).toBe(id);
+		const conflict = await context.request.post("/api/encoding-jobs", {
+			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			maxRedirects: 0,
+			data: { plan: { ...requestPlan, name: "Conflicting VOD request" } },
+		});
+		expect(conflict.status()).toBe(409);
+		const denied = await request.post("/api/encoding-jobs", {
+			maxRedirects: 0,
+			data: { plan: requestPlan },
+		});
+		expect(denied.status()).toBe(401);
+		writeNonpaidSubmission(fixture.directory, "vod", {
+			id,
+			requestPlan,
+			savedPlan: savedJob.plan,
+		});
+		expect(unexpected).toEqual([]);
+	} finally {
+		await context.close();
+	}
+});
+
+test("persist Live through the authenticated submission API", async ({
+	browser,
+	request,
+}) => {
+	const { context, page, unexpected } = await openSubmission(browser);
+	try {
+		const plan = nonpaidLivePlan(
+			syntheticProvider.accountId,
+			syntheticProvider.credentialId,
+		);
+		await page.goto("/live/new");
+		await page.getByRole("button", { name: /Import plan JSON/ }).click();
+		await page.getByLabel("Live channel plan JSON").fill(JSON.stringify(plan));
+		await page.getByRole("button", { name: "Load plan", exact: true }).click();
+		await expect(page.locator("#lw-name")).toHaveValue(plan.name);
+		plan.name = "Nonpaid Live reviewed";
+		await page.locator("#lw-name").fill(plan.name);
+		await goTo(page, /^\d+\. Video and audio encodes$/);
+		await page.locator("#lw-v-0-bitrate").fill("4600000");
+		const video = plan.renditions[0];
+		if (video?.codec !== "H264") throw new Error("Expected H264 video");
+		video.bitrate = 4_600_000;
+		await goTo(page, /^8\. Review$/);
+		const created = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === "/api/live-channels" &&
+				response.request().method() === "POST",
+		);
+		await page
+			.getByRole("button", { name: "Create live channel", exact: true })
+			.click();
+		const response = await created;
+		expect(response.status()).toBe(201);
+		const requestPlan = response.request().postDataJSON().plan;
+		expect(liveChannelPlanSchema.parse(requestPlan)).toEqual(plan);
+		const { id } = await response.json();
+		expect(id).toMatch(/^[a-f0-9-]{36}$/);
+		await expect(page).toHaveURL(`${fixture.baseURL}/live/${id}`);
+		const saved = await context.request.get(`/api/live-channels/${id}`, {
+			maxRedirects: 0,
+		});
+		expect(saved.status()).toBe(200);
+		const savedChannel = await saved.json();
+		expect(savedChannel.status).toBe("CREATED");
+		expect(savedChannel.bitmovinEncodingId).toBeNull();
+		expect(savedChannel.plan).toEqual(plan);
+		expect(savedChannel.plan.renditions[0]).not.toHaveProperty("maxGop");
+		expect(savedChannel.plan.liveManifests[0]).toMatchObject({
+			liveEdgeOffset: 0,
+			insertProgramDateTime: false,
+		});
+		expect(savedChannel.plan.start.autoRestart).toMatchObject({
+			restartOnEncoderError: false,
+		});
+		const key = response.request().headers()["idempotency-key"];
+		expect(key).toMatch(/^[a-f0-9]{64}$/);
+		const repeated = await context.request.post("/api/live-channels", {
+			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			maxRedirects: 0,
+			data: { plan: requestPlan },
+		});
+		expect(repeated.status()).toBe(200);
+		expect((await repeated.json()).id).toBe(id);
+		const conflict = await context.request.post("/api/live-channels", {
+			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			maxRedirects: 0,
+			data: { plan: { ...requestPlan, name: "Conflicting Live request" } },
+		});
+		expect(conflict.status()).toBe(409);
+		const denied = await request.post("/api/live-channels", {
+			maxRedirects: 0,
+			data: { plan: requestPlan },
+		});
+		expect(denied.status()).toBe(401);
+		writeNonpaidSubmission(fixture.directory, "live", {
+			id,
+			requestPlan,
+			savedPlan: savedChannel.plan,
+		});
+		expect(unexpected).toEqual([]);
 	} finally {
 		await context.close();
 	}

@@ -33,7 +33,7 @@ jobs:
           run_install: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bitovp/db build
-      - run: node --test scripts/installed-gui-smoke.test.mjs
+      - run: node --test scripts/installed-gui-smoke.test.mjs scripts/nonpaid-submit-proof.test.mjs scripts/database-restore-proof.test.mjs
       - run: pnpm --filter @bitovp/web exec tsc --project ../../tests/browser/tsconfig.json
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: node scripts/installed-gui-smoke.mjs --state-file "$RUNNER_TEMP/bitovp-gui-state.json"

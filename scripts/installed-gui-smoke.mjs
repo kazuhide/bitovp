@@ -25,6 +25,11 @@ import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
 import { selectGuiStates } from "../tests/browser/diagnostics.ts";
+import { proveDatabaseRestore } from "./database-restore-proof.mjs";
+import {
+	assertPendingSubmissions,
+	assertSubmissionIsolation,
+} from "./nonpaid-submit-proof.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
@@ -43,6 +48,8 @@ export const CASES = [
 	"configure and submit Live and inspect heartbeat",
 	"persist and reset heartbeat cadence",
 	"keep independent installation sessions isolated",
+	"persist VOD through the authenticated submission API",
+	"persist Live through the authenticated submission API",
 ];
 const QUEUES = [
 	"usageStatistics",
@@ -96,11 +103,15 @@ export function composeOverride({ id, directory, imageId = id }) {
 	const owned = `labels:\n      ${LABEL}: ${id}`;
 	const build = (dockerfile) =>
 		`build:\n      context: ${JSON.stringify(ROOT)}\n      dockerfile: ${dockerfile}\n      labels:\n        ${LABEL}: ${id}`;
+	// Only this fixed-target relay and PostgreSQL can use the host-access network.
+	// Web and Worker stay on the internal network without an external route.
+	const relay = `const net = require('node:net'); net.createServer(client => { const upstream = net.connect(3100, 'web'); client.on('error', () => upstream.destroy()); upstream.on('error', () => client.destroy()); client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy()); client.pipe(upstream).pipe(client); }).listen(3100, '0.0.0.0');`;
 	return `services:
   postgres:
     ${env(".env.migrate")}
     ${owned}
     ports: !override ["127.0.0.1::5432"]
+    networks: [default, fixture-access]
     healthcheck:
       test: ["CMD-SHELL", 'pg_isready --host=127.0.0.1 --username "$\${POSTGRES_USER}" --dbname "$\${POSTGRES_DB}"']
       interval: 1s
@@ -128,10 +139,29 @@ export function composeOverride({ id, directory, imageId = id }) {
     ${owned}
     ${build("Dockerfile.web")}
     image: bitovp-gui-web:${imageId}
-    ports: !override ["127.0.0.1::3100"]
+    ports: !override []
+    restart: "no"
+  gateway:
+    ${owned}
+    image: bitovp-gui-web:${imageId}
+    entrypoint: ["node", "-e", ${JSON.stringify(relay)}]
+    command: []
+    networks: [default, fixture-access]
+    ports: ["127.0.0.1::3100"]
+    depends_on:
+      web:
+        condition: service_started
+    mem_limit: 128m
+    memswap_limit: 128m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     restart: "no"
 networks:
   default:
+    ${owned}
+    internal: true
+  fixture-access:
     ${owned}
 volumes:
   pgdata:
@@ -438,6 +468,141 @@ async function ownedPrimaryWeb(state, env, execute) {
 			labels.service === "web",
 	);
 	return ids[0];
+}
+
+async function verifySubmissionIsolation(state, compose, env, execute) {
+	const webId = await ownedPrimaryWeb(state, env, execute);
+	const workerId = await compose(["ps", "--all", "--quiet", "worker"]);
+	assert(/^[a-f0-9]{64}$/.test(workerId), "Owned Worker was not found");
+	const [web, worker] = JSON.parse(
+		await docker(
+			[
+				"inspect",
+				"--format",
+				'{"labels":{{json .Config.Labels}},"networks":{{json .NetworkSettings.Networks}},"running":{{json .State.Running}},"status":{{json .State.Status}},"restart":{{json .HostConfig.RestartPolicy.Name}}}',
+				webId,
+				workerId,
+			],
+			env,
+			execute,
+		).then((raw) => `[${raw.split("\n").join(",")}]`),
+	);
+	assert.equal(worker.labels?.[LABEL], state.id);
+	assert.equal(
+		worker.labels?.["com.docker.compose.project"],
+		ownedName(state.id),
+	);
+	assert.equal(worker.labels?.["com.docker.compose.service"], "worker");
+	const network = `${ownedName(state.id)}_default`;
+	const [details] = JSON.parse(
+		await docker(["network", "inspect", network], env, execute),
+	);
+	assert.equal(details.Labels?.[LABEL], state.id);
+	assert.equal(
+		details.Labels?.["com.docker.compose.project"],
+		ownedName(state.id),
+	);
+	assertSubmissionIsolation({
+		internal: details.Internal,
+		network,
+		networks: Object.keys(web.networks),
+		worker: {
+			running: worker.running,
+			status: worker.status,
+			restart: worker.restart,
+		},
+	});
+}
+
+async function verifyPendingSubmissions(state, primary, env, execute, notify) {
+	const submissions = JSON.parse(
+		readFileSync(join(state.directory, "nonpaid-submissions.json"), "utf8"),
+	);
+	const database = JSON.parse(
+		await primary.compose([
+			"exec",
+			"--no-TTY",
+			"postgres",
+			"psql",
+			"--username",
+			"bitovp",
+			"--dbname",
+			"bitovp",
+			"--tuples-only",
+			"--no-align",
+			"--command",
+			`SELECT json_build_object(
+			'counts', json_build_object(
+				'accounts', (SELECT count(*) FROM "BitmovinAccount"),
+				'credentials', (SELECT count(*) FROM "Credential"),
+				'vod', (SELECT count(*) FROM "EncodingJob"),
+				'live', (SELECT count(*) FROM "LiveChannel")),
+			'vod', (SELECT coalesce(json_agg(json_build_object('id', id, 'plan', plan,
+				'stepLog', "stepLog", 'status', status, 'bitmovinEncodingId', "bitmovinEncodingId")), '[]') FROM "EncodingJob"),
+			'live', (SELECT coalesce(json_agg(json_build_object('id', id, 'plan', plan,
+				'stepLog', "stepLog", 'status', status, 'bitmovinEncodingId', "bitmovinEncodingId")), '[]') FROM "LiveChannel"))`,
+		]),
+	);
+	assertPendingSubmissions(database, submissions);
+	for (const [kind, queue] of [
+		["vod", "encoding-orchestrator"],
+		["live", "live-channel-lifecycle"],
+	]) {
+		const redis = (args) =>
+			primary.compose([
+				"exec",
+				"--no-TTY",
+				"redis",
+				"redis-cli",
+				"--raw",
+				...args,
+			]);
+		assert.equal(
+			await redis(["LRANGE", `bull:${queue}:wait`, "0", "-1"]),
+			submissions[kind].id,
+			"The saved job must be the only waiting delivery",
+		);
+		assert.equal(
+			await redis(["LLEN", `bull:${queue}:active`]),
+			"0",
+			"No delivery may be active",
+		);
+	}
+	await verifySubmissionIsolation(state, primary.compose, env, execute);
+	const proof = join(state.directory, "nonpaid-proof.json");
+	writeFileSync(proof, JSON.stringify({ ...submissions, database }), {
+		mode: 0o600,
+		flag: "wx",
+	});
+	const sdk = await primary.compose(
+		[
+			"run",
+			"--rm",
+			"--no-deps",
+			"--user",
+			"0:0",
+			"--entrypoint",
+			"pnpm",
+			"--volume",
+			`${proof}:/proof/nonpaid-proof.json:ro`,
+			"worker",
+			"--filter",
+			"@bitovp/worker",
+			"exec",
+			"tsx",
+			"scripts/nonpaid-sdk-contract.ts",
+			"/proof/nonpaid-proof.json",
+		],
+		{ timeout: 60_000 },
+	);
+	// The contract script emits only a bounded, credential-free summary.
+	const summary = JSON.parse(sdk);
+	assert.equal(summary.status, "passed", "SDK serialization did not pass");
+	assert.equal(summary.providerRequests, 0);
+	assert.equal(summary.startRequests, 0);
+	notify(
+		"Real VOD and Live submissions: persisted plans, pending queues and offline SDK serialization passed; provider requests 0",
+	);
 }
 
 /** Inspect only the owned primary Web's labels and lifecycle fields after failure. */
@@ -801,9 +966,9 @@ async function install(
 		"up",
 		"--detach",
 		"--no-build",
-		...(worker ? ["worker", "web"] : ["web"]),
+		...(worker ? ["worker", "web", "gateway"] : ["web", "gateway"]),
 	]);
-	const binding = await compose(["port", "web", "3100"]);
+	const binding = await compose(["port", "gateway", "3100"]);
 	assert(
 		/^127\.0\.0\.1:[1-9]\d*$/.test(binding),
 		"Web must use a random IPv4 loopback port",
@@ -974,6 +1139,12 @@ export async function runFixture({
 				},
 			});
 			installations.push(secondary);
+			stage = "stopping the primary Worker before real submissions";
+			await primary.compose(["stop", "--timeout", "30", "worker"]);
+			await verifySubmissionIsolation(state, primary.compose, env, execute);
+			notify(
+				"Worker stopped; the dedicated submission network has no external routing",
+			);
 			const fixture = join(state.directory, "browser.json");
 			writeFileSync(
 				fixture,
@@ -1021,28 +1192,38 @@ export async function runFixture({
 			notify(
 				`${CASES.length} installed GUI browser tests passed without skips or retries`,
 			);
+			stage = "persisted submission and offline SDK verification";
+			await verifyPendingSubmissions(state, primary, env, execute, notify);
+			stage = "database backup and isolated restore verification";
+			const restored = await proveDatabaseRestore({
+				id: state.id,
+				directory: state.directory,
+				primary: primary.compose,
+				secondary: secondary.compose,
+			});
+			notify(
+				`Database backup and isolated restore passed: ${restored.tables} tables; data, schema and access policies preserved`,
+			);
 		} else
 			notify("Local Docker runtime checks passed; browser tests were not run");
 		for (const instance of installations) {
-			const resources = await instance.compose([
-				"exec",
-				"--no-TTY",
-				"postgres",
-				"psql",
-				"--username",
-				"bitovp",
-				"--dbname",
-				"bitovp",
-				"--tuples-only",
-				"--no-align",
-				"--command",
-				'SELECT (SELECT count(*) FROM "BitmovinAccount") + (SELECT count(*) FROM "Credential") + (SELECT count(*) FROM "EncodingJob") + (SELECT count(*) FROM "LiveChannel")',
-			]);
-			assert.equal(
-				resources,
-				"0",
-				"Browser fixtures must not register provider accounts or enqueue real jobs",
-			);
+			if (runtimeOnly || instance !== primary) {
+				const resources = await instance.compose([
+					"exec",
+					"--no-TTY",
+					"postgres",
+					"psql",
+					"--username",
+					"bitovp",
+					"--dbname",
+					"bitovp",
+					"--tuples-only",
+					"--no-align",
+					"--command",
+					'SELECT (SELECT count(*) FROM "BitmovinAccount") + (SELECT count(*) FROM "Credential") + (SELECT count(*) FROM "EncodingJob") + (SELECT count(*) FROM "LiveChannel")',
+				]);
+				assert.equal(resources, "0", "Unexpected provider fixture resources");
+			}
 			const running = (
 				await instance.compose(["ps", "--status", "running", "--services"])
 			).split(/\s+/);
@@ -1050,14 +1231,16 @@ export async function runFixture({
 				running.includes("web"),
 				"A Web service stopped during the smoke test",
 			);
-			if (instance === primary)
+			if (instance === primary && runtimeOnly)
 				assert(
 					running.includes("worker"),
 					"The Worker stopped during the smoke test",
 				);
 		}
 		notify(
-			"Provider accounts, storage credentials, encoding jobs and Live channels remained absent",
+			runtimeOnly
+				? "Provider accounts, storage credentials, encoding jobs and Live channels remained absent"
+				: "Only synthetic provider fixtures were saved; all job steps remained pending",
 		);
 	} catch (error) {
 		notify(`Installed GUI smoke failed during ${stage}`);

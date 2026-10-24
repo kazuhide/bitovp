@@ -492,9 +492,8 @@ export function applyPerTitleProposal(
 		const { perTitleSettings: _old, ...extras } = row.extras ?? {};
 		return {
 			...row,
-			width:
-				stream.width ?? (stream.height === undefined ? row.width : undefined),
-			height: stream.height ?? row.height,
+			width: stream.width,
+			height: stream.height ?? null,
 			bitrate: null,
 			extras: {
 				...extras,

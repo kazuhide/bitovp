@@ -686,6 +686,149 @@ describe("Per-Title wizard bridge", () => {
 			allFixed ? "fixed-resolutions" : "required-resolutions",
 		);
 	});
+	it.each(
+		(["H264", "H265", "H265V2", "VP9", "AV1"] as const).flatMap((codec) => {
+			const dimensions: readonly {
+				label: string;
+				dimensions: { width?: number; height?: number };
+			}[] = [
+				{ label: "unspecified", dimensions: {} },
+				{ label: "width only", dimensions: { width: 1280 } },
+				{ label: "height only", dimensions: { height: 720 } },
+				{ label: "both axes", dimensions: { width: 1280, height: 720 } },
+			];
+			return dimensions
+				.filter(
+					({ dimensions }) =>
+						codec === "H264" ||
+						codec === "H265" ||
+						dimensions.width === undefined,
+				)
+				.flatMap(({ label, dimensions }) =>
+					[false, true].map((added) => ({ codec, label, dimensions, added })),
+				);
+		}),
+	)("applies exact ordinary dimensions for $codec ($label, added=$added)", ({
+		codec,
+		dimensions,
+		added,
+	}) => {
+		const s = state();
+		s.manifests = { hls: false, dash: true };
+		const otherCodec = codec === "H264" ? "H265" : "H264";
+		s.videos = [
+			{
+				codec,
+				width: codec === "H264" || codec === "H265" ? 640 : undefined,
+				height: 360,
+				bitrate: 300000,
+				encodingMode: "THREE_PASS",
+				h264: { profile: "HIGH", bframes: 3 },
+				h265: { profile: "MAIN", bframes: 3 },
+				vp9: { tileColumns: 2 },
+				av1: { presetConfiguration: "VOD_STANDARD" },
+				extras: { key: "retained" },
+				muxing: {
+					kind: codec === "VP9" ? "WEBM" : "FMP4",
+					path: "preserved/{uuid}",
+				},
+			},
+			{
+				codec: otherCodec,
+				height: 1080,
+				bitrate: 2000000,
+				encodingMode: "THREE_PASS",
+				extras: { key: "other-codec" },
+				muxing: { kind: "FMP4", path: "other/unchanged" },
+			},
+		];
+		if (codec === "H265V2") {
+			const template = required(s.videos[0]);
+			s.videos = [
+				{
+					...template,
+					width: undefined,
+					h265: undefined,
+					encodingMode: "SMART_PASS",
+				},
+			];
+			s.internal = { hevcV2: { bcfVersion: INTERNAL_HEVC_V2_BCF_VERSION } };
+			s.startOptions = { perTitle: { h265: { targetQualityQp: 20 } } };
+		}
+		const before = structuredClone(s);
+		const beforePlan = encodingPlanSchema.parse(buildPlan(s));
+		const stream = {
+			rowId: "generated-ordinary",
+			mode: "PER_TITLE_TEMPLATE" as const,
+			...dimensions,
+		};
+		const candidate = {
+			...proposal(added ? [fixed("retained", 360), stream] : [stream], true),
+			codec,
+		};
+		if (codec === "H265V2") candidate.api.global.targetQualityQp = 20;
+		const next = applyPerTitleProposal(s, candidate, codec);
+		const index = next.videos.findIndex(
+			(video) =>
+				video.codec === codec && video.extras?.mode === "PER_TITLE_TEMPLATE",
+		);
+		const row = next.videos[index];
+		expect(row).toBeDefined();
+		if (!row) throw new Error("Missing applied ordinary template");
+		const key = required(videoKeys(next.videos)[index]);
+		expect(row.width).toBe(dimensions.width);
+		expect(row.height).toBe(dimensions.height ?? null);
+		expect(row.codec).toBe(codec);
+		for (const option of ["h264", "h265", "vp9", "av1"] as const)
+			expect(row[option]).toEqual(before.videos[0]?.[option]);
+		expect(next.internal).toEqual(before.internal);
+		const { plan, operations } = compiled(next);
+		const config = required(
+			operations.find((operation) => operation.step === `codec:${key}`),
+		).payload;
+		expect(config.width).toBe(dimensions.width);
+		expect(config.height).toBe(dimensions.height ?? null);
+		const imported = perTitleGoalFromWizard(next, codec);
+		const api = tunePerTitleSettings(imported, imported).proposal.api;
+		const canonical = (streams: PerTitleProposal["api"]["streams"]) =>
+			streams.map(({ rowId: _rowId, ...value }) => value);
+		expect(api.global).toEqual(candidate.api.global);
+		expect(canonical(api.streams)).toEqual(canonical(candidate.api.streams));
+		const audio = (value: typeof plan) =>
+			value.renditions.filter((rendition) => rendition.codec === "AAC");
+		const audioKeys = new Set(
+			audio(beforePlan).map((rendition) => rendition.key),
+		);
+		expect(audio(plan)).toEqual(audio(beforePlan));
+		expect(
+			plan.muxings.filter((muxing) => audioKeys.has(muxing.streamKey)),
+		).toEqual(
+			beforePlan.muxings.filter((muxing) => audioKeys.has(muxing.streamKey)),
+		);
+		expect(
+			plan.renditions.filter((rendition) => rendition.key === "other-codec"),
+		).toEqual(
+			beforePlan.renditions.filter(
+				(rendition) => rendition.key === "other-codec",
+			),
+		);
+		expect(
+			plan.muxings.filter((muxing) => muxing.streamKey === "other-codec"),
+		).toEqual(
+			beforePlan.muxings.filter((muxing) => muxing.streamKey === "other-codec"),
+		);
+		expect(
+			plan.muxings.find((muxing) => muxing.streamKey === "retained")
+				?.destination,
+		).toEqual(
+			beforePlan.muxings.find((muxing) => muxing.streamKey === "retained")
+				?.destination,
+		);
+		expect(next.output).toEqual(before.output);
+		expect(next.inputFiles).toEqual(before.inputFiles);
+		expect(s).toEqual(before);
+	});
+
 	it("applies an automatic proposal to a fresh wizard through validated plan and START", () => {
 		const s = state();
 		const before = structuredClone(s);
@@ -922,7 +1065,13 @@ describe("Per-Title wizard bridge", () => {
 		const next = applyPerTitleProposal(
 			s,
 			proposal(
-				[{ rowId: "automatic-template", mode: "PER_TITLE_TEMPLATE" }],
+				[
+					{
+						rowId: "automatic-template",
+						width: 1920,
+						mode: "PER_TITLE_TEMPLATE",
+					},
+				],
 				true,
 			),
 			"H264",

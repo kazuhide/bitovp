@@ -841,16 +841,19 @@ test("persist VOD through the authenticated submission API", async ({
 			syntheticProvider.credentialId,
 		);
 		await rejectInvalidSubmissions(context, "/api/encoding-jobs", plan);
+		const imported = structuredClone(plan);
+		Object.assign(imported.renditions[0] as object, { level: "4.1" });
 		await page.goto("/vod/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
 		await page
 			.getByRole("textbox", { name: /Import plan JSON/ })
-			.fill(JSON.stringify(plan));
+			.fill(JSON.stringify(imported));
 		await page.getByRole("button", { name: /Validate.*load/i }).click();
 		await expect(page.locator("#wz-name")).toHaveValue(plan.name);
 		plan.name = "Nonpaid VOD reviewed";
 		await page.locator("#wz-name").fill(plan.name);
 		await goTo(page, /ladder/i);
+		await expect(page.locator("#wz-v-0-h264-level")).toHaveValue("L4_1");
 		await page.locator("#wz-v-0-bitrate").fill("1600000");
 		const video = plan.renditions[0];
 		if (video?.codec !== "H264") throw new Error("Expected H264 video");
@@ -930,16 +933,19 @@ test("persist Live through the authenticated submission API", async ({
 			syntheticProvider.credentialId,
 		);
 		await rejectInvalidSubmissions(context, "/api/live-channels", plan);
+		const imported = structuredClone(plan);
+		Object.assign(imported.renditions[0] as object, { level: "4.1" });
 		await page.goto("/live/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
 		await page
 			.getByRole("textbox", { name: "Live channel plan JSON", exact: true })
-			.fill(JSON.stringify(plan));
+			.fill(JSON.stringify(imported));
 		await page.getByRole("button", { name: "Load plan", exact: true }).click();
 		await expect(page.locator("#lw-name")).toHaveValue(plan.name);
 		plan.name = "Nonpaid Live reviewed";
 		await page.locator("#lw-name").fill(plan.name);
 		await goTo(page, /^\d+\. Video and audio encodes$/);
+		await expect(page.locator("#lw-v-0-h264-level")).toHaveValue("L4_1");
 		await page.locator("#lw-v-0-bitrate").fill("4600000");
 		const video = plan.renditions[0];
 		if (video?.codec !== "H264") throw new Error("Expected H264 video");

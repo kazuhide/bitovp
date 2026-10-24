@@ -45,7 +45,7 @@ export function nonpaidVodPlan(accountId: string, credentialId: string) {
 					bitrate: 1_500_000,
 					h264: {
 						profile: "HIGH",
-						level: "4.1",
+						level: "L4_1",
 						minGop: 0,
 						openGop: false,
 						cabac: false,
@@ -95,7 +95,7 @@ export function nonpaidLivePlan(accountId: string, credentialId: string) {
 	for (const rendition of plan.renditions) {
 		if (rendition.codec !== "H264") continue;
 		rendition.minGop = 0;
-		rendition.level = "4.1";
+		rendition.level = "L4_1";
 		rendition.openGop = false;
 		rendition.cabac = false;
 		rendition.colorConfig = { copyColorSpaceFlag: false };

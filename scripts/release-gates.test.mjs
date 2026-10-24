@@ -206,6 +206,24 @@ test("child environment excludes application secrets and unsafe Node injection",
 	});
 	assert.deepEqual(env, { PATH: "/safe", CI: "1", TURBO_FORCE: "true" });
 });
+test("child environment preserves the existing HOME without Compose or cloud overrides", () => {
+	const env = childEnvironment({
+		PATH: "/safe",
+		HOME: "/fixture-home",
+		COMPOSE_FILE: "/unsafe.yml",
+		COMPOSE_PROFILES: "unwanted",
+		DOCKER_HOST: "unsafe",
+		AWS_ACCESS_KEY_ID: "secret",
+		AWS_SECRET_ACCESS_KEY: "secret",
+		GOOGLE_APPLICATION_CREDENTIALS: "/unsafe.json",
+	});
+	assert.deepEqual(env, {
+		PATH: "/safe",
+		HOME: "/fixture-home",
+		CI: "1",
+		TURBO_FORCE: "true",
+	});
+});
 test("nightly preflight initializes diagnostics before refusal and pins build revision", () => {
 	const source = readFileSync(
 		new URL("../docker/verify-nightly.sh", import.meta.url),

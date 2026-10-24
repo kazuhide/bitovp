@@ -79,6 +79,7 @@ export function childEnvironment(env) {
 	const clean = {};
 	for (const key of [
 		"PATH",
+		"HOME",
 		"TMPDIR",
 		"LANG",
 		"LC_ALL",

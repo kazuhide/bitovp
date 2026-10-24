@@ -456,9 +456,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 	 * Wake the parked encoding job . SWALLOWS failures by
 	 * design: the verdict transaction has already committed, and flipping this
 	 * green run to ERROR over a Redis hiccup would misreport a real
-	 * measurement. The residual (verdict written, wake lost) is healed by the
-	 * claim-failed path below on any stalled-redelivery of this vmaf job, and
-	 * recorded in  for the Redis-outage-survivor case it can't reach.
+	 * measurement. A stalled redelivery repairs the wake below; periodic
+	 * reconciliation also retries terminal automatic reports whose encoding
+	 * remains parked, including deliveries that already acknowledged success.
 	 */
 	async function enqueueContinuation(
 		encodingJobId: string,

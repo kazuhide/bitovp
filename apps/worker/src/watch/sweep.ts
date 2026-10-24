@@ -13,7 +13,8 @@ import type { EmitProductEvent } from "../notify/emitter";
  * bucket — never writes a byte to it; processed-state lives in OUR rows.
  *
  * Multi-worker safety is layered: the SEEN→STABLE→SUBMITTED transitions
- * are status-guarded updateMany claims, and the (rule, key, contentId)
+ * are status-guarded updateMany claims. A rule-row lock serializes capacity
+ * reservations across workers, and the (rule, key, contentId)
  * unique index makes the racing-insert loser's P2002 a no-op (#14
  * precedent). A rule's failures back off exponentially (cap 15 min) and
  * never affect other rules.
@@ -24,7 +25,7 @@ const BACKOFF_CAP_MS = 15 * 60_000;
 /**
  * review-87b I-2: a worker that dies between the claim and the submit
  * leaves SUBMITTED ∧ encodingJobId NULL forever — unretried, unsurfaced,
- * and invisible to backpressure. After this window such rows are swept to
+ * and keeps a capacity reservation. After this window such rows are swept to
  * ERROR (visible, re-armable). NOT back to STABLE: the crash may have
  * landed AFTER the job row was created but BEFORE the link write, and an
  * auto-retry there is a second paid encoding. At-most-once wins.
@@ -72,6 +73,59 @@ function isP2002(err: unknown): boolean {
 		typeof err === "object" &&
 		err !== null &&
 		(err as { code?: string }).code === "P2002"
+	);
+}
+
+/**
+ * Reserve one object while holding the rule row, then release the transaction
+ * before plan submission. Unlinked SUBMITTED rows already occupy a slot.
+ */
+export async function claimStableWatchObjects(
+	prisma: AppPrismaClient,
+	ruleId: string,
+): Promise<{ id: string; objectKey: string }[]> {
+	return prisma.$transaction(
+		async (tx) => {
+			const [rule] = await tx.$queryRaw<
+				{ id: string; maxConcurrentJobs: number }[]
+			>`
+			SELECT id, "maxConcurrentJobs" FROM "WatchRule"
+			WHERE id = ${ruleId}::uuid AND enabled
+			FOR UPDATE`;
+			if (!rule) return [];
+			const active: Prisma.WatchedObjectWhereInput = {
+				watchRuleId: ruleId,
+				state: "SUBMITTED",
+				OR: [
+					{ encodingJobId: null },
+					{ encodingJob: { is: { status: { in: ["QUEUED", "RUNNING"] } } } },
+				],
+			};
+			const inFlight = await tx.watchedObject.count({ where: active });
+			const budget = Math.max(0, rule.maxConcurrentJobs - inFlight);
+			if (budget === 0) return [];
+			const stable = await tx.watchedObject.findMany({
+				where: { watchRuleId: ruleId, state: "STABLE" },
+				orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+				take: budget,
+				select: { id: true, objectKey: true },
+			});
+			for (const object of stable) {
+				// A re-upload of the same key waits for the earlier reservation.
+				const sameKey = await tx.watchedObject.findFirst({
+					where: { ...active, objectKey: object.objectKey },
+					select: { id: true },
+				});
+				if (sameKey) continue;
+				const { count } = await tx.watchedObject.updateMany({
+					where: { id: object.id, state: "STABLE" },
+					data: { state: "SUBMITTED" },
+				});
+				if (count === 1) return [object];
+			}
+			return [];
+		},
+		{ isolationLevel: "ReadCommitted", maxWait: 5_000, timeout: 5_000 },
 	);
 }
 
@@ -181,62 +235,11 @@ export function createWatchSweep(deps: WatchSweepDeps) {
 	}): Promise<{ submitted: number; errors: number }> {
 		let submitted = 0;
 		let errors = 0;
-		// Backpressure: in-flight = SUBMITTED rows whose job is not terminal.
-		const inFlight = await deps.prisma.watchedObject.count({
-			where: {
-				watchRuleId: rule.id,
-				state: "SUBMITTED",
-				encodingJob: { is: { status: { in: ["QUEUED", "RUNNING"] } } },
-			},
-		});
-		let budget = Math.max(0, rule.maxConcurrentJobs - inFlight);
-		if (budget === 0) {
-			return { submitted, errors };
-		}
-		const stable = await deps.prisma.watchedObject.findMany({
-			where: { watchRuleId: rule.id, state: "STABLE" },
-			orderBy: { createdAt: "asc" },
-			take: budget,
-		});
-		// review-87b C-1: per-objectKey serialization AT the money gate. Two
-		// STABLE rows for one key (a re-arm race, or a re-upload landing while
-		// the previous content encodes) must submit ONE at a time — the later
-		// row stays STABLE and waits for the in-flight encoding to reach a
-		// terminal state. A lost claim (SUBMITTED ∧ jobId NULL) blocks its key
-		// too, until the reaper surfaces it.
-		const claimedKeysThisPass = new Set<string>();
-		for (const object of stable) {
-			if (budget === 0) {
-				break;
-			}
-			if (claimedKeysThisPass.has(object.objectKey)) {
-				continue;
-			}
-			const activeSameKey = await deps.prisma.watchedObject.findFirst({
-				where: {
-					watchRuleId: rule.id,
-					objectKey: object.objectKey,
-					state: "SUBMITTED",
-					OR: [
-						{ encodingJobId: null },
-						{ encodingJob: { is: { status: { in: ["QUEUED", "RUNNING"] } } } },
-					],
-				},
-				select: { id: true },
-			});
-			if (activeSameKey) {
-				continue;
-			}
-			// The atomic claim: STABLE→SUBMITTED; the loser walks away.
-			const { count } = await deps.prisma.watchedObject.updateMany({
-				where: { id: object.id, state: "STABLE" },
-				data: { state: "SUBMITTED" },
-			});
-			if (count === 0) {
-				continue;
-			}
-			claimedKeysThisPass.add(object.objectKey);
-			budget -= 1;
+		// Reserve just before each submission so an aborted pass leaves later
+		// objects STABLE. Every reservation rechecks the current database cap.
+		for (let attempt = 0; attempt < rule.maxConcurrentJobs; attempt++) {
+			const [object] = await claimStableWatchObjects(deps.prisma, rule.id);
+			if (!object) break;
 			const instantiated = instantiateWatchPlan({
 				presetBody: rule.presetBody,
 				objectKey: object.objectKey,

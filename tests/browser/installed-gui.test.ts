@@ -893,7 +893,9 @@ test("persist Live through the authenticated submission API", async ({
 		);
 		await page.goto("/live/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
-		await page.getByLabel("Live channel plan JSON").fill(JSON.stringify(plan));
+		await page
+			.getByRole("textbox", { name: "Live channel plan JSON", exact: true })
+			.fill(JSON.stringify(plan));
 		await page.getByRole("button", { name: "Load plan", exact: true }).click();
 		await expect(page.locator("#lw-name")).toHaveValue(plan.name);
 		plan.name = "Nonpaid Live reviewed";

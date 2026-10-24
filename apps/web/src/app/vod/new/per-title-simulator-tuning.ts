@@ -38,6 +38,8 @@ const THRESHOLD = "autoRepresentations.adoptConfigurationThreshold";
 const RANGE_METHODS = ["constraints", "proportional", "logarithmic"] as const;
 const CONSTRAINT_METHODS = ["constraints", "default"] as const;
 const RATE_MAXIMUM = PER_TITLE_SIMULATOR_MAX_BITRATE;
+const isContainer = (value: unknown): value is Record<string, unknown> =>
+	value !== null && typeof value === "object" && !Array.isArray(value);
 const rate = (value: unknown): value is number =>
 	typeof value === "number" &&
 	Number.isSafeInteger(value) &&
@@ -629,9 +631,10 @@ export function tunePerTitleSettings(
 			.mode === "fixed" &&
 		automaticContainer !== undefined &&
 		automaticContainer !== false &&
-		(automaticContainer === null ||
-			typeof automaticContainer !== "object" ||
-			Array.isArray(automaticContainer));
+		!isContainer(automaticContainer);
+	const forcedContainer = draft.fixedResolutionAndBitrateConfiguration;
+	const invalidForcedContainer =
+		forcedContainer !== undefined && !isContainer(forcedContainer);
 	const minMode = getPerTitleAdjustment(draft, anchor, "global", "minBitrate");
 	const maxMode = getPerTitleAdjustment(draft, anchor, "global", "maxBitrate");
 	// Only a fixed peer drives an automatic bound. With two automatic bounds,
@@ -661,7 +664,10 @@ export function tunePerTitleSettings(
 		const { key } = descriptor;
 		const mode = modeFor("global", descriptor);
 		// A child policy must not repair a malformed container held by its parent.
-		if (key === THRESHOLD && invalidFixedAutomaticContainer) {
+		if (
+			(key === THRESHOLD && invalidFixedAutomaticContainer) ||
+			(key.startsWith(RULE) && invalidForcedContainer)
+		) {
 			lock("global", key);
 			continue;
 		}

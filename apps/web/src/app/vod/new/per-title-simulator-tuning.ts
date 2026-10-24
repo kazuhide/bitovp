@@ -623,6 +623,15 @@ export function tunePerTitleSettings(
 		}
 	};
 	const globalFields = perTitleGlobalFields(draft.codec);
+	const automaticContainer = draft.autoRepresentations;
+	const invalidFixedAutomaticContainer =
+		getPerTitleAdjustment(draft, anchor, "global", "autoRepresentations")
+			.mode === "fixed" &&
+		automaticContainer !== undefined &&
+		automaticContainer !== false &&
+		(automaticContainer === null ||
+			typeof automaticContainer !== "object" ||
+			Array.isArray(automaticContainer));
 	const minMode = getPerTitleAdjustment(draft, anchor, "global", "minBitrate");
 	const maxMode = getPerTitleAdjustment(draft, anchor, "global", "maxBitrate");
 	// Only a fixed peer drives an automatic bound. With two automatic bounds,
@@ -651,6 +660,11 @@ export function tunePerTitleSettings(
 	for (const descriptor of globalFields) {
 		const { key } = descriptor;
 		const mode = modeFor("global", descriptor);
+		// A child policy must not repair a malformed container held by its parent.
+		if (key === THRESHOLD && invalidFixedAutomaticContainer) {
+			lock("global", key);
+			continue;
+		}
 		if (mode.mode === "fixed") {
 			if (key === THRESHOLD) {
 				const hasAutomaticOutput =

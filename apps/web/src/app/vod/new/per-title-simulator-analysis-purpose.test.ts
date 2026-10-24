@@ -11,7 +11,10 @@ import {
 	hasPerTitleEvaluationCountEvidence,
 	type PerTitleAdviceOptions,
 } from "./per-title-simulator-advice";
-import { perTitleAdviceFields } from "./per-title-simulator-advice-fields";
+import {
+	perTitleAdviceFieldKey,
+	perTitleAdviceFields,
+} from "./per-title-simulator-advice-fields";
 import { perTitleAdvicePreview } from "./per-title-simulator-advice-preview-model";
 import {
 	analyzePerTitleSettings,
@@ -23,7 +26,11 @@ import { assessPerTitleOrdinaryCap } from "./per-title-simulator-analysis-ordina
 import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
 import { perTitleRetainedFactorCandidates } from "./per-title-simulator-analysis-retained-factor";
 import { assessPerTitleValidity } from "./per-title-simulator-analysis-validity";
-import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import {
+	getPerTitleAdjustment,
+	getPerTitleGoalSetting,
+	tunePerTitleSettings,
+} from "./per-title-simulator-tuning";
 import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 const codecs = ["H264", "H265", "VP9", "AV1"] as const;
@@ -165,6 +172,265 @@ function mixedPreserveGoal(
 }
 
 describe("Per-Title evaluation purpose boundaries", () => {
+	it.each([
+		"overall",
+		"stream",
+	] as const)("keeps protected and unselected raw %s Auto values through selected adoption", (scope) => {
+		const source = mixedPreserveGoal("H264");
+		const reference: PerTitleGoal = {
+			...source,
+			maxBitrate: scope === "overall" ? 6_000_000 : source.maxBitrate,
+			fixedResolutionAndBitrateConfiguration: {
+				...source.fixedResolutionAndBitrateConfiguration,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+			},
+		};
+		const goal: PerTitleGoal =
+			scope === "overall"
+				? {
+						...reference,
+						maxBitrate: 4_000_000,
+						adjustments: {
+							global: { maxBitrate: { mode: "auto", method: "default" } },
+						},
+					}
+				: {
+						...reference,
+						maxBitrate: 6_000_000,
+						rows: reference.rows?.map((row, index) =>
+							index === 0
+								? { ...row, highComplexityBoundaryForMaxBitrate: 3_000_000 }
+								: row,
+						),
+						adjustments: {
+							streams: {
+								"band-0": {
+									highComplexityBoundaryForMaxBitrate: {
+										mode: "auto",
+										method: "proportional",
+									},
+								},
+							},
+						},
+					};
+		const held =
+			scope === "overall"
+				? { scope: "global" as const, key: "maxBitrate" }
+				: {
+						scope: "stream" as const,
+						rowId: "band-0",
+						key: "highComplexityBoundaryForMaxBitrate",
+					};
+		const options = {
+			referenceGoal: reference,
+			contextKey: perTitleAnalysisContextKey("preserve"),
+			protectedFields: [
+				held,
+				{
+					scope: "global" as const,
+					key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				},
+			],
+		};
+		const input = structuredClone(goal);
+		const advice = analyzePerTitleSettings(goal, "preserve", options).advice[0];
+		if (!advice) throw new Error("Expected a checked mixed Auto adjustment.");
+		const full = applyPerTitleAdvice(goal, advice, options);
+		if (!full) throw new Error("Expected full adoption.");
+		expect(
+			getPerTitleGoalSetting(
+				full,
+				held.scope,
+				held.key,
+				"rowId" in held ? held.rowId : undefined,
+			),
+		).toBe(
+			getPerTitleGoalSetting(
+				goal,
+				held.scope,
+				held.key,
+				"rowId" in held ? held.rowId : undefined,
+			),
+		);
+		const offered = advice.changes.map(({ scope, key, rowId }) => ({
+			scope,
+			key,
+			...(rowId === undefined ? {} : { rowId }),
+		}));
+		const step = offered.find(
+			({ scope, key }) => scope === "global" && key === "minBitrateStepSize",
+		);
+		if (!step) throw new Error("Expected an offered spacing adjustment.");
+		for (const selected of [[step], offered]) {
+			const adopted = applySelectedPerTitleAdvice(
+				goal,
+				advice,
+				selected,
+				options,
+			);
+			if (!adopted) throw new Error("Expected selected adoption.");
+			const selectedKeys = new Set(selected.map(perTitleAdviceFieldKey));
+			for (const field of perTitleAdviceFields(goal)) {
+				if (selectedKeys.has(perTitleAdviceFieldKey(field))) {
+					expect(
+						getPerTitleAdjustment(
+							adopted,
+							reference,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					).toEqual({ mode: "fixed" });
+					continue;
+				}
+				expect(
+					getPerTitleGoalSetting(adopted, field.scope, field.key, field.rowId),
+				).toBe(
+					getPerTitleGoalSetting(goal, field.scope, field.key, field.rowId),
+				);
+				expect(
+					getPerTitleAdjustment(
+						adopted,
+						reference,
+						field.scope,
+						field.key,
+						field.rowId,
+					),
+				).toEqual(
+					getPerTitleAdjustment(
+						goal,
+						reference,
+						field.scope,
+						field.key,
+						field.rowId,
+					),
+				);
+			}
+			const checked = tunePerTitleSettings(adopted, reference);
+			if (selected.length === offered.length)
+				expect(checked.proposal.api).toEqual(
+					tunePerTitleSettings(full, reference).proposal.api,
+				);
+			expect(
+				perTitleAdvicePreview(goal, advice, { selected, kept: [] }, options)
+					.after?.api,
+			).toEqual(checked.proposal.api);
+			expect(
+				analyzePerTitleSettings(adopted, "preserve", options).ladder,
+			).toEqual(assessPerTitleLadder(checked.goal, checked.proposal));
+		}
+		expect(
+			perTitleAdvicePreview(
+				goal,
+				advice,
+				{ selected: [], kept: offered },
+				options,
+			).after?.api,
+		).toEqual(tunePerTitleSettings(goal, reference).proposal.api);
+		expect(goal).toEqual(input);
+	});
+
+	it.each([
+		{ name: "boolean", value: true },
+		{ name: "array", value: [] },
+	] as const)("retains a malformed Fixed container with an automatic child threshold ($name)", ({
+		value,
+	}) => {
+		const goal: PerTitleGoal = {
+			strategy: "automatic",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 6,
+			countPolicy: { kind: "unrestricted" },
+			adjustments: {
+				global: {
+					autoRepresentations: { mode: "fixed" },
+					"autoRepresentations.adoptConfigurationThreshold": {
+						mode: "auto",
+						method: "default",
+					},
+				},
+			},
+		};
+		Object.assign(goal, { autoRepresentations: structuredClone(value) });
+		const resolved = tunePerTitleSettings(goal, goal);
+		expect(resolved.goal.autoRepresentations).toEqual(value);
+		expect(analyzePerTitleSettings(goal, "cap").findings).toContainEqual(
+			expect.objectContaining({
+				code: "invalid-value",
+				severity: "conflict",
+				fields: [{ scope: "global", key: "autoRepresentations" }],
+			}),
+		);
+	});
+
+	it.each([
+		{ name: "boolean", value: true },
+		{ name: "array", value: [] },
+	] as const)("allows explicit parent Auto recalculation instead of validating its stale raw container ($name)", ({
+		value,
+	}) => {
+		const goal: PerTitleGoal = {
+			strategy: "automatic",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 6,
+			countPolicy: { kind: "unrestricted" },
+			adjustments: {
+				global: {
+					autoRepresentations: { mode: "auto", method: "default" },
+					"autoRepresentations.adoptConfigurationThreshold": {
+						mode: "auto",
+						method: "default",
+					},
+				},
+			},
+		};
+		Object.assign(goal, { autoRepresentations: structuredClone(value) });
+		expect(tunePerTitleSettings(goal, goal).goal.autoRepresentations).toBe(
+			false,
+		);
+		expect(
+			analyzePerTitleSettings(goal, "cap").findings.filter(
+				({ code, fields }) =>
+					code === "invalid-value" &&
+					fields?.some(({ key }) => key === "autoRepresentations"),
+			),
+		).toEqual([]);
+	});
+
+	it.each([
+		["autoRepresentations", true],
+		["autoRepresentations", []],
+		["fixedResolutionAndBitrateConfiguration", true],
+		["fixedResolutionAndBitrateConfiguration", []],
+	] as const)("retains a malformed Fixed %s container diagnostic (%j)", (key, value) => {
+		const goal: PerTitleGoal = {
+			strategy: "automatic",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 6,
+			countPolicy: { kind: "unrestricted" },
+		};
+		Object.assign(goal, { [key]: structuredClone(value) });
+		const input = structuredClone(goal);
+		const result = analyzePerTitleSettings(goal, "cap");
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				code: "invalid-value",
+				severity: "conflict",
+				fields: [{ scope: "global", key }],
+			}),
+		);
+		expect(goal).toEqual(input);
+	});
+
 	it.each(
 		mixedCodecs.flatMap((codec) =>
 			[false, true].map((repeatedHeight) => [codec, repeatedHeight] as const),

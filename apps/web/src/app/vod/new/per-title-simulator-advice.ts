@@ -997,7 +997,7 @@ export function applySelectedPerTitleAdvice(
 		);
 		const checked = tunePerTitleSettings(patched, reference);
 		return same(wireWithChanges(baseline, changes), checked.proposal.api)
-			? checked.goal
+			? structuredClone(patched)
 			: null;
 	} catch {
 		return null;

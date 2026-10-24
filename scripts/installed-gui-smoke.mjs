@@ -29,6 +29,7 @@ import { proveDatabaseRestore } from "./database-restore-proof.mjs";
 import {
 	assertPendingSubmissions,
 	assertSubmissionIsolation,
+	restoreFailureSummary,
 } from "./nonpaid-submit-proof.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -1244,6 +1245,8 @@ export async function runFixture({
 		);
 	} catch (error) {
 		notify(`Installed GUI smoke failed during ${stage}`);
+		const restoreDiagnostic = restoreFailureSummary(error);
+		if (restoreDiagnostic) notify(restoreDiagnostic);
 		if (stage === "installed GUI browser tests") {
 			await reportPrimaryWebFailure(state, { env, notify });
 			let report;

@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
 
+export function restoreFailureSummary(error) {
+	if (!(error instanceof Error)) return null;
+	const stage =
+		/^Database restore proof failed at (fixture verification|backup|isolated restore|restored data and schema comparison|cleanup); fixture diagnostics are private$/.exec(
+			error.message,
+		)?.[1];
+	return stage ? `Database restore diagnostic: ${stage}` : null;
+}
+
 export function assertSubmissionIsolation(proof) {
 	assert.equal(proof.internal, true, "Submission network must be internal");
 	assert.deepEqual(

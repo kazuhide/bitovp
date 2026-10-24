@@ -3,7 +3,35 @@ import test from "node:test";
 import {
 	assertPendingSubmissions,
 	assertSubmissionIsolation,
+	restoreFailureSummary,
 } from "./nonpaid-submit-proof.mjs";
+
+test("restore diagnostics expose only fixed stages without raw error details", () => {
+	for (const stage of [
+		"fixture verification",
+		"backup",
+		"isolated restore",
+		"restored data and schema comparison",
+		"cleanup",
+	])
+		assert.equal(
+			restoreFailureSummary(
+				new Error(
+					`Database restore proof failed at ${stage}; fixture diagnostics are private`,
+				),
+			),
+			`Database restore diagnostic: ${stage}`,
+		);
+	for (const value of [
+		null,
+		{ message: "private" },
+		new Error("private URL or secret"),
+		new Error(
+			"Database restore proof failed at private-secret; fixture diagnostics are private",
+		),
+	])
+		assert.equal(restoreFailureSummary(value), null);
+});
 
 const isolation = () => ({
 	internal: true,

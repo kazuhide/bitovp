@@ -21,6 +21,15 @@ const object = (value: unknown): ObjectValue => {
 };
 const json = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const SYNTHETIC_KEY = "nonpaid-synthetic-only";
+const MANIFEST_REFS = [
+	"vodHlsManifestIds",
+	"vodDashManifestIds",
+	"vodSmoothManifestIds",
+	"previewHlsManifestIds",
+	"previewDashManifestIds",
+	"liveHlsManifestIds",
+	"liveDashManifestIds",
+] as const;
 
 export type CapturedRequest = {
 	step: string;
@@ -130,7 +139,56 @@ export function assertCompiledStart(
 	assert.equal(starts.length, 1);
 	const start = starts[0];
 	assert(start);
-	if (!live) return;
+	if (!live) {
+		const encoding = plan.encodings?.[0];
+		assert.equal(
+			start.refs.encodingId,
+			encoding ? `encoding:${encoding.key}` : "encoding",
+		);
+		const jit = plan.generation.timing === "JUST_IN_TIME";
+		copyFields(start.payload, { manifestGenerator: jit ? "V2" : undefined }, [
+			"manifestGenerator",
+		]);
+		const expected: Record<string, string[]> = {};
+		if (jit && !plan.qc?.only)
+			for (const manifest of plan.manifests) {
+				const reference = `manifest:${manifest.key}`;
+				const include = (family: string) => {
+					const references = expected[family] ?? [];
+					references.push(reference);
+					expected[family] = references;
+				};
+				if (manifest.kind === "SMOOTH") {
+					include("vodSmoothManifestIds");
+					continue;
+				}
+				const family = manifest.kind === "HLS" ? "Hls" : "Dash";
+				if (manifest.jitPlacement !== "PREVIEW")
+					include(`vod${family}ManifestIds`);
+				if (
+					manifest.jitPlacement === "PREVIEW" ||
+					manifest.jitPlacement === "VOD_AND_PREVIEW"
+				)
+					include(`preview${family}ManifestIds`);
+			}
+		copyFields(start.refs, expected, MANIFEST_REFS);
+		return;
+	}
+	assert.equal(start.refs.encodingId, "encoding");
+	const hls = plan.liveManifests
+		.filter((manifest) => manifest.kind === "HLS")
+		.map((manifest) => `manifest:${manifest.key}`);
+	const dash = plan.liveManifests
+		.filter((manifest) => manifest.kind === "DASH")
+		.map((manifest) => `manifest:${manifest.key}`);
+	copyFields(
+		start.refs,
+		{
+			liveHlsManifestIds: hls.length ? hls : undefined,
+			liveDashManifestIds: dash.length ? dash : undefined,
+		},
+		MANIFEST_REFS,
+	);
 	copyFields(
 		start.payload,
 		{

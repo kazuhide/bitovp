@@ -171,6 +171,127 @@ describe("nonpaid submission SDK contract", () => {
 		expect(() => assertCompiledStart(plan, operations)).toThrow();
 	});
 
+	const vodStart = (operations: ReturnType<typeof compilePlan>) => {
+		const start = operations.find(
+			(operation) => operation.kind === "START_ENCODING",
+		);
+		if (!start) throw new Error("Missing VOD START fixture");
+		return start;
+	};
+	it.each([
+		{
+			name: "a missing JIT manifest generator",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				delete start.payload.manifestGenerator;
+			},
+		},
+		{
+			name: "a different JIT manifest generator",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.payload.manifestGenerator = "V1";
+			},
+		},
+		{
+			name: "missing VOD HLS references",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				delete start.refs.vodHlsManifestIds;
+			},
+		},
+		{
+			name: "missing VOD DASH references",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				delete start.refs.vodDashManifestIds;
+			},
+		},
+		{
+			name: "VOD HLS references bound to DASH",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.refs.vodHlsManifestIds = ["manifest:dash"];
+			},
+		},
+		{
+			name: "an extra VOD manifest reference",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.refs.vodDashManifestIds = ["manifest:dash", "manifest:hls"];
+			},
+		},
+		{
+			name: "unrequested preview references",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.refs.previewHlsManifestIds = ["manifest:hls"];
+			},
+		},
+		{
+			name: "a START bound to the wrong encoding",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.refs.encodingId = "output:origin";
+			},
+		},
+	])("detects $name without dispatching VOD START", ({ mutate }) => {
+		const plan = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		const operations = compilePlan(plan);
+		expect(() => assertCompiledStart(plan, operations)).not.toThrow();
+		mutate(vodStart(operations));
+		expect(() => assertCompiledStart(plan, operations)).toThrow();
+	});
+
+	it.each([
+		"liveHlsManifestIds",
+		"liveDashManifestIds",
+		"encodingId",
+	])("detects a missing Live %s binding without dispatching START", (reference) => {
+		const plan = liveChannelPlanSchema.parse(fixture().live.savedPlan);
+		const operations = compileLiveChannel(plan);
+		expect(() => assertCompiledStart(plan, operations)).not.toThrow();
+		const start = operations.find(
+			(operation) => operation.kind === "START_LIVE_ENCODING",
+		);
+		if (!start) throw new Error("Missing Live START fixture");
+		delete start.refs[reference];
+		expect(() => assertCompiledStart(plan, operations)).toThrow();
+	});
+
+	it.each([
+		{
+			name: "manifest generator",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.payload.manifestGenerator = "V2";
+			},
+		},
+		{
+			name: "HLS references",
+			mutate: (start: ReturnType<typeof vodStart>) => {
+				start.refs.vodHlsManifestIds = ["manifest:hls"];
+			},
+		},
+	])("rejects unexpected $name for post-encoding manifests", ({ mutate }) => {
+		const plan = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		plan.generation.timing = "POST_ENCODING";
+		const operations = compilePlan(plan);
+		expect(() => assertCompiledStart(plan, operations)).not.toThrow();
+		mutate(vodStart(operations));
+		expect(() => assertCompiledStart(plan, operations)).toThrow();
+	});
+
+	it("keeps VOD and preview manifest placement separate", () => {
+		const plan = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		for (const manifest of plan.manifests) {
+			if (manifest.kind === "HLS") manifest.jitPlacement = "PREVIEW";
+			if (manifest.kind === "DASH") manifest.jitPlacement = "VOD_AND_PREVIEW";
+		}
+		const operations = compilePlan(plan);
+		expect(() => assertCompiledStart(plan, operations)).not.toThrow();
+		const start = vodStart(operations);
+		expect(start.refs).toMatchObject({
+			previewHlsManifestIds: ["manifest:hls"],
+			vodDashManifestIds: ["manifest:dash"],
+			previewDashManifestIds: ["manifest:dash"],
+		});
+		expect(start.refs).not.toHaveProperty("vodHlsManifestIds");
+		start.refs.vodHlsManifestIds = ["manifest:hls"];
+		expect(() => assertCompiledStart(plan, operations)).toThrow();
+	});
+
 	const body = (captured: CapturedSdkRequests, step: string) => {
 		const found = captured.requests.find(
 			(request) => request.step === step && request.method === "POST",

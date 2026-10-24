@@ -23,6 +23,8 @@ const REQUIRED = [
 
 // Only hashes and counts leave PostgreSQL. Full rows include encrypted secrets,
 // stored plans, receipts and step logs; schema hashes include RLS and grants.
+// DROP COLUMN leaves ordinal gaps that pg_dump removes. Dense visible ordinals
+// preserve column order without treating those physical gaps as schema drift.
 const SNAPSHOT_SQL = `
 SET TIME ZONE 'UTC';
 CREATE TEMP TABLE restore_proof_snapshot(name text PRIMARY KEY, rows bigint, sha256 text);
@@ -37,7 +39,8 @@ BEGIN
   END LOOP;
 END $snapshot$;
 WITH objects AS (
-  SELECT jsonb_build_array('column', table_name, column_name, ordinal_position, is_nullable,
+  SELECT jsonb_build_array('column', table_name, column_name,
+    row_number() OVER (PARTITION BY table_name ORDER BY ordinal_position), is_nullable,
     data_type, udt_name, column_default, character_maximum_length, numeric_precision, numeric_scale) AS value
     FROM information_schema.columns WHERE table_schema = 'public'
   UNION ALL SELECT jsonb_build_array('table', c.relname, c.relrowsecurity, c.relforcerowsecurity)

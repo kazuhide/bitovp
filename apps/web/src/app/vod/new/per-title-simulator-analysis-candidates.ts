@@ -12,6 +12,7 @@ import {
 	perTitleAdviceFieldKey,
 	protectedPerTitleAdviceFields,
 } from "./per-title-simulator-advice-fields";
+import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
 import type { PerTitleReachAssessment } from "./per-title-simulator-analysis-reach";
 import {
 	type PerTitleSettingValue,
@@ -72,7 +73,7 @@ export function perTitleAnalysisCandidates(
 	goal: PerTitleGoal,
 	proposal: PerTitleProposal,
 	reach: PerTitleReachAssessment,
-	intent: "cap" | "bandwidth" | "count" | "preserve",
+	intent: "adaptive" | "cap" | "bandwidth" | "count" | "preserve",
 	options: PerTitleAdviceOptions,
 ): PerTitleGoal[] {
 	const held = new Set(
@@ -104,8 +105,7 @@ export function perTitleAnalysisCandidates(
 	const result: PerTitleGoal[] = [];
 	const reference = options.referenceGoal ?? goal;
 	const ordinaryCap =
-		intent === "cap" &&
-		goal.countPolicy.kind === "exact" &&
+		(intent === "cap" || intent === "adaptive") &&
 		proposal.api.streams.length > 0 &&
 		proposal.api.streams.every(
 			(stream) => stream.mode === "PER_TITLE_TEMPLATE",
@@ -113,8 +113,17 @@ export function perTitleAnalysisCandidates(
 		(proposal.api.global.fixedResolutionAndBitrateConfiguration === undefined ||
 			proposal.api.global.fixedResolutionAndBitrateConfiguration
 				.forcedRenditionAboveHighestFixedRepresentation === 0);
-	const checkedOrdinaryCount =
-		ordinaryCap && hasPerTitleEvaluationCountEvidence(goal, proposal);
+	const hasRequiredSeedEvidence = (
+		seed: PerTitleGoal,
+		checked: PerTitleProposal,
+	) =>
+		seed.countPolicy.kind === "unrestricted"
+			? checked.applicable &&
+				checked.status === "candidate" &&
+				!checked.diagnostics.some((item) => item.severity === "conflict")
+			: hasPerTitleEvaluationCountEvidence(seed, checked);
+	const preserveOrdinaryMinimum =
+		ordinaryCap && hasRequiredSeedEvidence(goal, proposal);
 	const addClosedSpacing = (seed: PerTitleGoal) => {
 		const normalized = tunePerTitleSettings(seed, reference).proposal;
 		if (
@@ -217,37 +226,109 @@ export function perTitleAnalysisCandidates(
 				method: "constraints",
 			});
 	}
-	// A checked ordinary count needs no count repair. Offer the cap change against
-	// its current minimum step instead of replacing an unrelated fixed value.
-	if (solver !== goal && !checkedOrdinaryCount) result.push(solver);
-	if (ordinaryCap && can("maxBitrateStepSize")) {
-		const seed = checkedOrdinaryCount ? goal : solver;
-		const checked = tunePerTitleSettings(seed, reference);
-		if (hasPerTitleEvaluationCountEvidence(checked.goal, checked.proposal)) {
-			const global = checked.proposal.api.global;
-			const maximum = findCapReachingMaximumStep({
-				minimumBitrate: global.minBitrate,
-				maximumBitrate: global.maxBitrate,
-				minimumStep: global.minBitrateStepSize,
-				count: goal.countPolicy.kind === "exact" ? goal.countPolicy.count : 0,
-			});
-			if (
-				maximum !== null &&
-				(can("minBitrateStepSize") ||
-					global.minBitrateStepSize === proposal.api.global.minBitrateStepSize)
-			) {
-				let capped = goal;
-				if (
-					global.minBitrateStepSize !== proposal.api.global.minBitrateStepSize
-				)
-					capped = set(capped, "minBitrateStepSize", global.minBitrateStepSize);
-				result.push(
+	// Prefer the current minimum when the ordinary count is checked or unrestricted.
+	if (solver !== goal && !preserveOrdinaryMinimum) result.push(solver);
+	if (ordinaryCap && (can("maxBitrateStepSize") || can("minBitrateStepSize"))) {
+		const seeds = [preserveOrdinaryMinimum ? goal : solver];
+		// An at-most count can be valid with only its first placement. If that
+		// minimum step excludes every cap-ending chain, try the editable solver.
+		if (
+			preserveOrdinaryMinimum &&
+			goal.countPolicy.kind !== "exact" &&
+			solver !== goal &&
+			can("minBitrateStepSize")
+		)
+			seeds.push(solver);
+		if (
+			goal.countPolicy.kind !== "exact" &&
+			can("minBitrateStepSize") &&
+			!can("maxBitrateStepSize")
+		) {
+			// A held maximum can make the ordinary solver preserve a one-slot
+			// minimum. Borrow only a minimum seed from an independent spacing trial;
+			// the actual candidate keeps the held maximum and is certified again.
+			const independent = tunePerTitleSettings(
+				setPerTitleAdjustment(
+					solver,
+					proposal,
+					"global",
+					"maxBitrateStepSize",
+					{
+						mode: "auto",
+						method: "constraints",
+					},
+				),
+				reference,
+			);
+			if (hasRequiredSeedEvidence(independent.goal, independent.proposal))
+				seeds.push(
 					set(
-						capped,
-						"maxBitrateStepSize",
-						Math.max(maximum, global.maxBitrateStepSize),
+						goal,
+						"minBitrateStepSize",
+						independent.proposal.api.global.minBitrateStepSize,
 					),
 				);
+		}
+		for (const seed of seeds) {
+			const checked = tunePerTitleSettings(seed, reference);
+			if (hasRequiredSeedEvidence(checked.goal, checked.proposal)) {
+				const global = checked.proposal.api.global;
+				const limit =
+					goal.countPolicy.kind === "unrestricted"
+						? 256
+						: goal.countPolicy.count;
+				let maximum: number | null = null;
+				const find = (count: number) =>
+					findCapReachingMaximumStep({
+						minimumBitrate: global.minBitrate,
+						maximumBitrate: global.maxBitrate,
+						minimumStep: global.minBitrateStepSize,
+						count,
+					});
+				if (Number.isSafeInteger(limit) && limit >= 2 && limit <= 256) {
+					if (goal.countPolicy.kind === "exact") maximum = find(limit);
+					else {
+						// With a freely chosen maximum step, feasible minimum-step chains
+						// are prefix-closed. Prefer the longest one using a bounded search;
+						// every accepted result still has an exact integer cap witness.
+						let lower = 2,
+							upper = limit;
+						while (lower <= upper) {
+							const middle = Math.ceil((lower + upper) / 2);
+							const step = find(middle);
+							if (step === null) upper = middle - 1;
+							else {
+								maximum = step;
+								lower = middle + 1;
+							}
+						}
+					}
+				}
+				if (
+					maximum !== null &&
+					(can("maxBitrateStepSize") || maximum <= global.maxBitrateStepSize) &&
+					(can("minBitrateStepSize") ||
+						global.minBitrateStepSize ===
+							proposal.api.global.minBitrateStepSize)
+				) {
+					let capped = goal;
+					if (
+						global.minBitrateStepSize !== proposal.api.global.minBitrateStepSize
+					)
+						capped = set(
+							capped,
+							"minBitrateStepSize",
+							global.minBitrateStepSize,
+						);
+					result.push(
+						set(
+							capped,
+							"maxBitrateStepSize",
+							Math.max(maximum, global.maxBitrateStepSize),
+						),
+					);
+					break;
+				}
 			}
 		}
 	}
@@ -353,7 +434,7 @@ export function perTitleAnalysisCandidates(
 		can(HIGH, top.id)
 	)
 		seeds.push(set(goal, HIGH, cap, top.id));
-	if (intent !== "cap") {
+	if (intent !== "cap" && intent !== "adaptive") {
 		// A selection-policy change can repair a count without pursuing the cap.
 		// Keep bounds and roles; the caller certifies the emitted API and count.
 		for (const seed of seeds.slice(1)) {
@@ -363,7 +444,23 @@ export function perTitleAnalysisCandidates(
 		return result;
 	}
 	for (const seed of seeds) {
-		const normalized = tunePerTitleSettings(seed, reference).proposal;
+		const resolved = tunePerTitleSettings(seed, reference);
+		const normalized = resolved.proposal;
+		if (can("maxBitrateStepSize")) {
+			const ladder = assessPerTitleLadder(resolved.goal, normalized);
+			if (ladder.intervals) {
+				const maximum = Math.max(
+					normalized.api.global.maxBitrateStepSize,
+					ladder.intervals.maximumAdjacentRatio ?? 0,
+					ladder.lowerConnection?.maximumRatio ?? 0,
+				);
+				if (
+					Number.isFinite(maximum) &&
+					maximum > normalized.api.global.maxBitrateStepSize
+				)
+					result.push(set(seed, "maxBitrateStepSize", up(maximum)));
+			}
+		}
 		const settings = normalized.api.streams.find(
 			(stream) => stream.rowId === top.id,
 		)?.perTitleSettings;

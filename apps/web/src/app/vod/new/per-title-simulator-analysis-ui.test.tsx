@@ -319,7 +319,7 @@ describe("current Per-Title settings analysis", () => {
 		const purpose = screen.getByRole("combobox", {
 			name: ja ? "目的" : "Goal",
 		});
-		expect(purpose).toHaveValue("cap");
+		expect(purpose).toHaveValue("adaptive");
 		const api = () =>
 			JSON.parse(
 				screen.getByTestId("per-title-api-settings").textContent ?? "{}",
@@ -388,7 +388,7 @@ describe("current Per-Title settings analysis", () => {
 				name: ja ? "希望する本数" : "Desired count",
 			}),
 		).toHaveValue(6);
-		expect(purpose).toHaveValue("cap");
+		expect(purpose).toHaveValue("adaptive");
 		fireEvent.click(
 			screen.getByRole("button", { name: ja ? "評価する" : "Evaluate" }),
 		);
@@ -632,9 +632,9 @@ describe("current Per-Title settings analysis", () => {
 		["en", 7_200_000],
 		["ja", 7_200_000],
 	] as const)("compares every mixed template with a checked whole-ladder proposal (%s, %i)", (locale, maximum) => {
-		const goal = mixedLadder(maximum);
+		const goal = { ...mixedLadder(maximum), maxBitrateStepSize: 1.6 };
 		const normalized = tunePerTitleSettings(goal, goal).goal;
-		const evaluated = analyzePerTitleSettings(normalized, "cap");
+		const evaluated = analyzePerTitleSettings(normalized, "adaptive");
 		const first = evaluated.advice[0];
 		if (!first) throw new Error("Expected a certified whole-ladder proposal.");
 		const explanation = first.explanation?.[locale];
@@ -657,7 +657,7 @@ describe("current Per-Title settings analysis", () => {
 		const before = api();
 		fireEvent.change(
 			screen.getByRole("combobox", { name: locale === "ja" ? "目的" : "Goal" }),
-			{ target: { value: "cap" } },
+			{ target: { value: "adaptive" } },
 		);
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -730,13 +730,38 @@ describe("current Per-Title settings analysis", () => {
 				locale === "ja" ? "全区間の分割数" : "Full-interval segments",
 			),
 		).toBeVisible();
+		expect(evaluated.ladder.topResponse.status).toBe("gap");
+		const response = (ladder: typeof proposed) => {
+			const labels =
+				locale === "ja"
+					? {
+							tracked: "追従確認",
+							gap: "接続条件外",
+							unknown: "未確認",
+							"not-applicable": "対象外",
+						}
+					: {
+							tracked: "Tracked",
+							gap: "Connection gap",
+							unknown: "Unknown",
+							"not-applicable": "Not applicable",
+						};
+			const { status, domain, checkedSegments } = ladder.topResponse;
+			return `${labels[status]}${domain ? ` · ${domain.minimum === domain.maximum ? format(domain.minimum) : `${format(domain.minimum)}–${format(domain.maximum)}`} kbps · ${checkedSegments}` : ""}`;
+		};
+		const currentResponse = response(evaluated.ladder);
+		const nextResponse = response(proposed);
 		expect(
 			screen.getByText(
 				locale === "ja"
 					? "上段の応答・確認範囲・分割数"
 					: "Top response, domain and segments",
 			).nextElementSibling,
-		).toHaveTextContent(locale === "ja" ? "追従確認" : "Tracked");
+		).toHaveTextContent(
+			currentResponse === nextResponse
+				? currentResponse
+				: `${currentResponse} → ${nextResponse}`,
+		);
 		expect(
 			screen.getByText(
 				locale === "ja"
@@ -973,7 +998,7 @@ describe("current Per-Title settings analysis", () => {
 			},
 		};
 		const original = structuredClone(goal);
-		const evaluated = analyzePerTitleSettings(goal, "cap", {
+		const evaluated = analyzePerTitleSettings(goal, "adaptive", {
 			referenceGoal: goal,
 		});
 		expect(evaluated.search.generated).toBeGreaterThan(0);

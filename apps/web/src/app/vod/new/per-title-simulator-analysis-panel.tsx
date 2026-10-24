@@ -33,15 +33,13 @@ import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 const purpose = {
 	en: {
+		adaptive: "Adapt bitrate to the content",
 		preserve: "Optimize within the current bitrate limits and count",
-		cap: "Use the maximum for complex content",
-		bandwidth: "Reduce bandwidth while keeping quality",
 		count: "Prioritize the rendition count",
 	},
 	ja: {
+		adaptive: "素材に合わせて帯域を調整",
 		preserve: "最小・最大と本数を保って見直す",
-		cap: "複雑な素材で上限まで使う",
-		bandwidth: "画質を保って転送量を減らす",
 		count: "本数の条件を優先",
 	},
 };
@@ -364,6 +362,8 @@ export function PerTitleAnalysisPanel({
 	const ja = locale === "ja";
 	const id = useId();
 	const title = ja ? "現在の設定を評価" : "Evaluate current settings";
+	const visibleIntent =
+		intent === "cap" || intent === "bandwidth" ? "adaptive" : intent;
 	const upperLimitFinding = useMemo(() => {
 		const current = tunePerTitleSettings(goal, referenceGoal);
 		return assessPerTitleUpperLimit(current.goal, current.proposal).finding;
@@ -381,10 +381,10 @@ export function PerTitleAnalysisPanel({
 		) ?? result?.findings.find((item) => item.severity === "conflict");
 	const finding =
 		result?.findings.find((item) =>
-			intent === "cap"
-				? item.code.startsWith("cap-")
-				: intent === "bandwidth"
-					? item.severity === "warning" && item.code !== "count-conditional"
+			intent === "adaptive" || intent === "bandwidth"
+				? item.severity === "warning" && item.code !== "count-conditional"
+				: intent === "cap"
+					? item.code.startsWith("cap-")
 					: ["count-required", "declared-count-roles-mismatch"].includes(
 							item.code,
 						),
@@ -397,10 +397,11 @@ export function PerTitleAnalysisPanel({
 		result?.findings.find((item) => item.severity === "warning") ??
 		result?.findings[0];
 	const cause =
-		result?.decision.status === "proposal"
+		conflict ??
+		(result?.decision.status === "proposal" ||
+		result?.decision.status === "keep-current"
 			? undefined
-			: (conflict ??
-				(result?.decision.status === "keep-current" ? undefined : finding));
+			: finding);
 	const fieldCause = cause?.fields?.length
 		? cause
 		: cause
@@ -471,21 +472,29 @@ export function PerTitleAnalysisPanel({
 			</h3>
 			<FieldRow>
 				<div className="min-w-0 flex-1">
-					<Field htmlFor={`${id}-purpose`} label={ja ? "目的" : "Goal"}>
+					<Field
+						htmlFor={`${id}-purpose`}
+						label={ja ? "目的" : "Goal"}
+						hint={
+							visibleIntent === "adaptive"
+								? ja
+									? "単純な素材では低く、複雑な素材では必要に応じて上限まで選べるかを確認します。画質関連の設定は維持します。"
+									: "Check whether simple content can use less bitrate and complex content can use the ceiling when needed. Quality settings are retained."
+								: undefined
+						}
+					>
 						<SelectNative
 							id={`${id}-purpose`}
-							value={intent}
+							value={visibleIntent}
 							onChange={(event) =>
 								onIntentChange(event.target.value as PerTitleAnalysisIntent)
 							}
 						>
-							{(["preserve", "cap", "bandwidth", "count"] as const).map(
-								(value) => (
-									<option key={value} value={value}>
-										{purpose[locale][value]}
-									</option>
-								),
-							)}
+							{(["adaptive", "preserve", "count"] as const).map((value) => (
+								<option key={value} value={value}>
+									{purpose[locale][value]}
+								</option>
+							))}
 						</SelectNative>
 					</Field>
 				</div>

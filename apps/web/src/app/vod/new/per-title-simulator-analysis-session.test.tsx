@@ -226,6 +226,39 @@ beforeEach(() => {
 });
 
 describe("current analysis adoption sessions", () => {
+	it("retains partial decisions across a purpose change and certifies adoption in the new context", () => {
+		const session = source(),
+			onAdopt = vi.fn();
+		renderLocalized(<Harness session={session} onAdopt={onAdopt} />);
+		expect(screen.getByRole("combobox", { name: "Goal" })).toHaveValue(
+			"adaptive",
+		);
+		evaluate();
+		decision("Minimum bitrate ratio", "apply");
+		decision("Maximum bitrate ratio", "keep");
+		review();
+		expect(onAdopt.mock.calls[0]?.[1]?.contextKey).toBe("analysis:adaptive");
+		expect(currentGoal().minBitrateStepSize).toBe(1.65);
+		expect(currentGoal().maxBitrateStepSize).toBe(1.9);
+		fireEvent.change(screen.getByRole("combobox", { name: "Goal" }), {
+			target: { value: "preserve" },
+		});
+		expectPin("Minimum bitrate ratio");
+		expectPin("Maximum bitrate ratio");
+		release("Minimum bitrate ratio");
+		evaluate();
+		decision("Minimum bitrate ratio", "apply");
+		review();
+		expect(onAdopt).toHaveBeenCalledTimes(2);
+		expect(onAdopt.mock.calls[1]?.[1]?.contextKey).toBe("analysis:preserve");
+		expect(onAdopt.mock.calls[1]?.[1]?.protectedFields).toEqual([
+			{ scope: "global", key: "maxBitrateStepSize" },
+		]);
+		expect(currentGoal().minBitrateStepSize).toBe(1.815);
+		expect(currentGoal().maxBitrateStepSize).toBe(1.9);
+		expectPin("Maximum bitrate ratio");
+	});
+
 	it.each([
 		"en",
 		"ja",
@@ -369,6 +402,7 @@ describe("current analysis adoption sessions", () => {
 		expect(onAdopt).toHaveBeenCalledTimes(1);
 		expect(onAdopt.mock.calls[0]?.[1]?.protectedFields).toEqual([]);
 		expect(onAdopt.mock.calls[0]?.[1]?.referenceGoal).toBe(session);
+		expect(onAdopt.mock.calls[0]?.[1]?.contextKey).toBe("analysis:adaptive");
 		expect(onAdopt.mock.calls[0]?.[2]).toEqual([
 			{ scope: "global", key: "minBitrateStepSize" },
 		]);
@@ -666,7 +700,7 @@ describe("current analysis adoption sessions", () => {
 		});
 		act(() => {
 			fireEvent.change(screen.getByRole("combobox", { name: "Goal" }), {
-				target: { value: "bandwidth" },
+				target: { value: "preserve" },
 			});
 			fireEvent.click(stale);
 		});

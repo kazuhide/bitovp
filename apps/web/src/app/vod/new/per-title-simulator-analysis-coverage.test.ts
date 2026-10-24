@@ -169,19 +169,30 @@ function checkAdoption(
 }
 
 function checkOrdinaryCap(goal: PerTitleGoal, proposal: PerTitleProposal) {
-	expect(goal.countPolicy.kind).toBe("exact");
-	if (goal.countPolicy.kind !== "exact")
-		throw new Error("An exact count is required for the last-slot assertion.");
-	const projection = previewPerTitleOutput(proposal, {
-		countPolicy: goal.countPolicy,
+	if (goal.countPolicy.kind === "unrestricted")
+		throw new Error("This check requires an explicit placement budget.");
+	const counts =
+		goal.countPolicy.kind === "exact"
+			? [goal.countPolicy.count]
+			: Array.from({ length: goal.countPolicy.count }, (_, index) => index + 1);
+	// Exhaust the permitted lengths independently of the binary assessment.
+	const permitsCap = counts.some((count) => {
+		const projection = previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count },
+		});
+		const slots = projection.rows.filter(({ kind }) => kind === "count-slot");
+		return (
+			projection.countProjection?.status === "conditional" &&
+			slots.length === count &&
+			slots.at(-1)?.maximumBitrate === goal.maxBitrate
+		);
 	});
-	expect(projection.countProjection).toMatchObject({
-		kind: "exact",
-		status: "conditional",
-	});
-	const slots = projection.rows.filter(({ kind }) => kind === "count-slot");
-	expect(slots).toHaveLength(goal.countPolicy.count);
-	expect(slots.at(-1)?.maximumBitrate).toBe(goal.maxBitrate);
+	expect(permitsCap).toBe(true);
+	if (goal.countPolicy.kind === "maximum")
+		expect(
+			previewPerTitleOutput(proposal, { countPolicy: goal.countPolicy })
+				.countProjection,
+		).toMatchObject({ kind: "maximum", reason: "maximum-only" });
 }
 
 describe("Per-Title evaluation coverage", () => {
@@ -205,7 +216,7 @@ describe("Per-Title evaluation coverage", () => {
 				],
 			] as const
 		).flatMap(([label, templates]) =>
-			(["cap", "bandwidth", "count", "preserve"] as const).map(
+			(["adaptive", "cap", "bandwidth", "count", "preserve"] as const).map(
 				(intent) => [label, intent, templates] as const,
 			),
 		),
@@ -227,7 +238,8 @@ describe("Per-Title evaluation coverage", () => {
 				),
 			).toBe(true);
 			expect(advice.goal.automaticTemplates).toEqual(goal.automaticTemplates);
-			if (intent === "cap") checkOrdinaryCap(advice.goal, advice.proposal);
+			if (intent === "cap" || intent === "adaptive")
+				checkOrdinaryCap(advice.goal, advice.proposal);
 		}
 		// This certifies spacing capacity, not which alternative or dimensions the
 		// native encoder selects. Mixed fixed/ordinary settings stay conditional.
@@ -564,7 +576,7 @@ describe("Per-Title evaluation coverage", () => {
 		(["H264", "H265", "VP9", "AV1"] as const).flatMap((codec) =>
 			[1, 2, 3, 6, 8].flatMap((count) =>
 				(["exact", "maximum"] as const).flatMap((kind) =>
-					(["cap", "preserve"] as const).map(
+					(["adaptive", "cap", "preserve"] as const).map(
 						(intent) => [codec, count, kind, intent] as const,
 					),
 				),
@@ -580,33 +592,25 @@ describe("Per-Title evaluation coverage", () => {
 		const current = tunePerTitleSettings(goal, goal).proposal;
 		expect(hasPerTitleEvaluationCountEvidence(goal, current)).toBe(false);
 		const result = analyzePerTitleSettings(goal, intent);
-		if (intent === "cap" && (kind === "maximum" || count === 1)) {
+		if ((intent === "cap" || intent === "adaptive") && count === 1) {
 			expect(result.advice).toEqual([]);
 			expect(result.decision.status).toBe("no-certified-candidate");
 			expect(result.reach.status).toBe("unknown");
-			if (kind === "maximum") {
-				// A maximum does not identify an exact last slot to place at the cap.
-				expect(result.ordinaryCap.status).toBe("unavailable");
-				expect(result.ordinaryCap.count).toBeNull();
-				expect(result.ordinaryCap.lastSlot).toBeNull();
-			} else {
-				// In the fixed-start model one placement remains at the minimum,
-				// regardless of how large the ratios become.
-				expect(result.ordinaryCap.status).toBe("blocked");
-				expect(result.ordinaryCap.lastSlot).toEqual({
-					minimum: goal.minBitrate,
-					maximum: goal.minBitrate,
-				});
-				expect(result.findings).toContainEqual(
-					expect.objectContaining({
-						code: "ordinary-cap-spacing-blocked",
-						severity: "warning",
-						fields: expect.arrayContaining([
-							{ scope: "global", key: "countPolicy" },
-						]),
-					}),
-				);
-			}
+			// A single placement starts at the minimum, for either count policy.
+			expect(result.ordinaryCap.status).toBe("blocked");
+			expect(result.ordinaryCap.lastSlot).toEqual({
+				minimum: goal.minBitrate,
+				maximum: goal.minBitrate,
+			});
+			expect(result.findings).toContainEqual(
+				expect.objectContaining({
+					code: "ordinary-cap-spacing-blocked",
+					severity: "warning",
+					fields: expect.arrayContaining([
+						{ scope: "global", key: "countPolicy" },
+					]),
+				}),
+			);
 			const countRepair = analyzePerTitleSettings(goal, "count");
 			expect(countRepair.decision.status).toBe("proposal");
 			expect(countRepair.advice.length).toBeGreaterThan(0);
@@ -640,7 +644,7 @@ describe("Per-Title evaluation coverage", () => {
 			expect(assessPerTitleReach(advice.goal, advice.proposal).status).toBe(
 				"unknown",
 			);
-			if (intent === "cap") {
+			if (intent === "cap" || intent === "adaptive") {
 				checkOrdinaryCap(advice.goal, advice.proposal);
 			}
 		}

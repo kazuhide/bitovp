@@ -13,6 +13,11 @@ import {
 	perTitleAdviceFieldKey,
 } from "./per-title-simulator-advice";
 import { protectedPerTitleAdviceFields } from "./per-title-simulator-advice-fields";
+import {
+	adaptiveCountSatisfied,
+	adaptiveSatisfied,
+	preservesAdaptiveRolesAndQuality,
+} from "./per-title-simulator-analysis-adaptive";
 import { perTitleAnalysisCandidates } from "./per-title-simulator-analysis-candidates";
 import { assessPerTitleCountStructure } from "./per-title-simulator-analysis-count";
 import { perTitleCountDirectedCandidates } from "./per-title-simulator-analysis-count-layouts";
@@ -43,7 +48,12 @@ import {
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
-export type PerTitleAnalysisIntent = "cap" | "bandwidth" | "count" | "preserve";
+export type PerTitleAnalysisIntent =
+	| "adaptive"
+	| "cap"
+	| "bandwidth"
+	| "count"
+	| "preserve";
 type Message = { en: string; ja: string };
 export type PerTitleAnalysisResult = {
 	intent: PerTitleAnalysisIntent;
@@ -166,8 +176,13 @@ function explanation(
 	const global = item.proposal.api.global;
 	if (item.facts.ordinaryCapRepair === 1)
 		return {
-			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits, requested ${item.goal.countPolicy.kind === "exact" ? item.goal.countPolicy.count : ""} outputs, template roles and quality controls. The revised spacing passes the count model and permits an integer chain ending at ${rate(global.maxBitrate)} kbps. Native output count, resolutions, use of that bitrate and quality still depend on the media.`,
-			ja: `全体 ${rate(global.minBitrate)}～${rate(global.maxBitrate)} kbps、指定の ${item.goal.countPolicy.kind === "exact" ? item.goal.countPolicy.count : ""} 本、テンプレート構成・画質設定を保ちます。変更後の段間隔は本数の計算条件を満たし、最上段を ${rate(global.maxBitrate)} kbps に置くこともできます。実際の本数・解像度・ビットレート・画質は素材で確認してください。`,
+			en: `Keep the overall ${rate(global.minBitrate)}–${rate(global.maxBitrate)} kbps limits, ${item.goal.countPolicy.kind === "unrestricted" ? "unrestricted output count" : `${item.goal.countPolicy.kind === "maximum" ? "maximum of " : "requested "}${item.goal.countPolicy.count} outputs`}, template roles and quality controls. The revised spacing satisfies the count requirement when one is specified and permits an example with ${item.facts.capWitnessCount} placements ending at ${rate(global.maxBitrate)} kbps. The example is not a native output count or bitrate prediction; verify the generated ladder and quality with media.`,
+			ja: `全体 ${rate(global.minBitrate)}～${rate(global.maxBitrate)} kbps、${item.goal.countPolicy.kind === "unrestricted" ? "本数を指定しない条件" : `${item.goal.countPolicy.kind === "maximum" ? "最大" : "指定の"}${item.goal.countPolicy.count}本`}、テンプレート構成・画質設定を保つ案です。本数を指定した場合はその条件を満たし、${item.facts.capWitnessCount}本で最上段を ${rate(global.maxBitrate)} kbps に置く配置例を確認しました。例の本数やビットレートが実際に出力されるという予測ではありません。素材でラダーと画質を確認してください。`,
+		};
+	if (item.facts.adaptiveRepair === 1)
+		return {
+			en: `Keep the bitrate limits, template roles and quality controls. ${item.goal.countPolicy.kind === "unrestricted" ? "No output count was specified or certified." : "The specified count constraint passes."} Cap permission and whole-interval spacing are checked under the explicit source conditions. Actual quality, savings and use of the cap require media verification.`,
+			ja: `ビットレート範囲・テンプレート構成・画質設定を保つ案です。${item.goal.countPolicy.kind === "unrestricted" ? "本数は指定されておらず、本数の認定は行っていません。" : "指定した本数条件を満たします。"}明示した素材条件の下で、上限を使える配置と評価区間全体の段間隔を確認しました。実際の画質・削減率・上限の使用は、素材で確認してください。`,
 		};
 	if (item.facts.countRequirementRepair === 1)
 		return {
@@ -413,16 +428,27 @@ function analyzeCurrentSettings(
 			"複雑度が高い想定では上限に届く設定です。実際にそのビットレートを使うかは素材の解析で決まります。",
 		);
 	if (ordinaryCap.status === "blocked" && ordinaryCap.lastSlot) {
-		const one = ordinaryCap.count === 1;
+		const one =
+			goal.countPolicy.kind !== "unrestricted" && goal.countPolicy.count === 1;
+		const budget =
+			goal.countPolicy.kind === "unrestricted"
+				? "the checked placement model"
+				: goal.countPolicy.kind === "maximum"
+					? `a maximum of ${goal.countPolicy.count} placements`
+					: `${goal.countPolicy.count} placements`;
+		const budgetJa =
+			goal.countPolicy.kind === "unrestricted"
+				? "確認した配置モデル"
+				: `${goal.countPolicy.kind === "maximum" ? "最大" : "指定の"}${goal.countPolicy.count}本の条件`;
 		add(
 			"ordinary-cap-spacing-blocked",
 			"warning",
 			one
 				? `One integer placement starts and ends at the overall minimum of ${proposal.api.global.minBitrate} bps, so spacing cannot make it reach ${ordinaryCap.cap} bps. Reconsider the requested count or overall limits if use of the upper limit is required.`
-				: `With ${ordinaryCap.count} integer placements, the current maximum step permits a last bitrate of at most ${ordinaryCap.lastSlot.maximum} bps, below the ${ordinaryCap.cap} bps upper limit. Review maxBitrateStepSize; reducing the minimum step alone cannot raise this upper bound.`,
+				: `Under ${budget}, the current step bounds permit a last bitrate of at most ${ordinaryCap.lastSlot.maximum} bps, below the ${ordinaryCap.cap} bps upper limit. Review the minimum and maximum step together; an example with ${ordinaryCap.count} placements is not the requested output count.`,
 			one
 				? `1本の配置では、先頭と末尾は全体下限の ${proposal.api.global.minBitrate} bps と同じです。段間隔を変えても上限 ${ordinaryCap.cap} bps には届きません。上限まで使える条件が必要なら、指定本数か全体の範囲を見直してください。`
-				: `${ordinaryCap.count} 本を配置すると、現在の最大段間比率で置ける最上段は ${ordinaryCap.lastSlot.maximum} bps までで、全体上限 ${ordinaryCap.cap} bps を許容しません。maxBitrateStepSize の調整が必要です。最小段間比率を下げるだけでは、この上端は増えません。`,
+				: `${budgetJa}では、現在の段間比率で置ける最上段は ${ordinaryCap.lastSlot.maximum} bps までで、全体上限 ${ordinaryCap.cap} bps を許容しません。最小・最大の段間比率を合わせて確認してください。配置例の${ordinaryCap.count}本は、指定した出力本数を表すものではありません。`,
 			one
 				? [
 						{ scope: "global", key: "countPolicy" },
@@ -437,6 +463,17 @@ function analyzeCurrentSettings(
 			"info",
 			`The step bounds permit a ${ordinaryCap.count}-placement integer chain ending at ${ordinaryCap.cap} bps. This spacing result is separate from the count-cap check and does not predict native output count, resolutions or use of the upper bitrate limit.`,
 			`段間比率の範囲内で、${ordinaryCap.count} 本の最上段を ${ordinaryCap.cap} bps に置くことができます。本数上限の検証とは別の配置条件であり、実際の本数・解像度・上限ビットレートの使用を予測するものではありません。`,
+		);
+	else if (
+		intent === "adaptive" &&
+		proposal.api.streams.length > 0 &&
+		proposal.api.streams.every((row) => row.mode === "PER_TITLE_TEMPLATE")
+	)
+		add(
+			"ordinary-cap-spacing-unverified",
+			"warning",
+			"A finite integer placement example reaching the cap has not been established within this model. This is not a proof of impossibility or an optimal configuration.",
+			"この計算モデルでは、上限に届く有限の配置例をまだ確認できていません。実現不可能、または最適な設定という判定ではありません。",
 		);
 	if (reach.adaptation === "flat")
 		add(
@@ -471,6 +508,13 @@ function analyzeCurrentSettings(
 			"info",
 			"Quality controls stay unchanged and fixed upper-target curves are not lowered. Spacing and forced additions may change output bitrates. Verify savings and equal quality with representative media.",
 			"画質設定は維持し、固定段の上側目標は下げません。段間隔や強制追加の調整で出力ビットレートは変わるため、削減効果と同等画質は素材で確かめます。",
+		);
+	if (intent === "adaptive")
+		add(
+			"adaptive-media-verification-required",
+			"info",
+			"Quality controls remain unchanged. Count constraints and permission to reach the cap are checked together; actual quality, bitrate savings and whether the source needs the cap require representative-media results.",
+			"画質設定を保ち、本数条件と上限を使える配置を合わせて確認します。実際の画質・削減率・素材が上限を必要とするかどうかは、素材での比較が必要です。",
 		);
 	if (
 		(intent === "count" || intent === "preserve") &&
@@ -523,6 +567,20 @@ function analyzeCurrentSettings(
 			"読み込んだ基準値から自動調整後の設定を評価します。提案した変更項目だけを固定にし、変更しない自動調整の方法は維持して、反映前に再検証します。",
 		);
 	}
+	if (
+		intent === "adaptive" &&
+		adaptiveSatisfied(normalized.goal, proposal, reach, ordinaryCap, ladder) &&
+		!findings.some((finding) => finding.severity === "conflict")
+	) {
+		result.decision = {
+			status: "keep-current",
+			message: {
+				en: `${goal.countPolicy.kind === "unrestricted" ? "No output count was specified or certified. The spacing permits a cap-ending placement example." : "The specified count and cap-permission checks pass together."} These are configuration-model checks under the explicit source conditions. No spacing repair is required; actual quality, savings and use of the cap still require media verification.`,
+				ja: `${goal.countPolicy.kind === "unrestricted" ? "本数は指定されておらず、本数の認定は行っていません。上限に届く配置例を確認できました。" : "本数条件と上限を使える配置の両方を確認できました。"}明示した素材条件の下での計算結果であり、段間隔の修正は必要ありません。実際の画質・削減率・上限の使用は、素材で確認してください。`,
+			},
+		};
+		return result;
+	}
 	const context = {
 		...options,
 		contextKey: perTitleAnalysisContextKey(intent),
@@ -564,10 +622,18 @@ function analyzeCurrentSettings(
 				"satisfied";
 		const repairsCountRequirement =
 			goal.countPolicy.kind !== "unrestricted" &&
-			!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
-			item.proof === "model-count";
+			(intent === "adaptive"
+				? !adaptiveCountSatisfied(normalized.goal, proposal) &&
+					adaptiveCountSatisfied(checkedGoal, item.proposal)
+				: !hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
+					item.proof === "model-count");
 		const repairsOrdinaryCap =
-			item.proof === "model-count" &&
+			(item.proof === "model-count" ||
+				((intent === "adaptive" ||
+					(intent === "cap" && goal.countPolicy.kind === "unrestricted")) &&
+					item.proposal.applicable &&
+					item.proposal.status === "candidate" &&
+					adaptiveCountSatisfied(checkedGoal, item.proposal))) &&
 			checkedOrdinaryCap.status === "permitted" &&
 			(ordinaryCap.status !== "permitted" || repairsCountRequirement);
 		if (
@@ -576,6 +642,13 @@ function analyzeCurrentSettings(
 			JSON.stringify(item.goal.countPolicy) !== JSON.stringify(goal.countPolicy)
 		) {
 			reject("requirements-changed");
+			continue;
+		}
+		if (
+			intent === "adaptive" &&
+			!preservesAdaptiveRolesAndQuality(proposal, item.proposal)
+		) {
+			reject("adaptive-quality-or-role-change");
 			continue;
 		}
 		if (
@@ -699,7 +772,25 @@ function analyzeCurrentSettings(
 			(ladder.globalCapacity === null ||
 				(checkedLadder.globalCapacity !== null &&
 					checkedLadder.globalCapacity <= ladder.globalCapacity));
-		if (intent === "cap") {
+		if (intent === "adaptive") {
+			if (!adaptiveCountSatisfied(checkedGoal, item.proposal)) {
+				reject("adaptive-count-unverified");
+				continue;
+			}
+			if (
+				!adaptiveSatisfied(
+					checkedGoal,
+					item.proposal,
+					checked,
+					checkedOrdinaryCap,
+					checkedLadder,
+				) ||
+				reachRank(checked) < reachRank(reach)
+			) {
+				reject("adaptive-cap-unverified");
+				continue;
+			}
+		} else if (intent === "cap") {
 			if (
 				reachRank(checked) < reachRank(reach) ||
 				(!repairsOrdinaryCap &&
@@ -844,7 +935,11 @@ function analyzeCurrentSettings(
 				checkedStructure,
 				checkedLadder,
 			),
-			ordinaryCapRepair: Number(intent === "cap" && repairsOrdinaryCap),
+			adaptiveRepair: Number(intent === "adaptive"),
+			capWitnessCount: checkedOrdinaryCap.count ?? 0,
+			ordinaryCapRepair: Number(
+				(intent === "cap" || intent === "adaptive") && repairsOrdinaryCap,
+			),
 			countRequirementRepair: Number(repairsCountRequirement),
 			declaredCountRepair: Number(intent === "count" && declaredCountRepair),
 			upperLimitRepair: Number(repairsUpperLimit),
@@ -874,7 +969,8 @@ function analyzeCurrentSettings(
 					? (reach.count.maximum ?? 0)
 					: 0,
 			requiredCount:
-				(intent === "preserve" ||
+				(intent === "adaptive" ||
+					intent === "preserve" ||
 					(intent === "count" && declaredCountRepair)) &&
 				goal.countPolicy.kind !== "unrestricted"
 					? goal.countPolicy.count
@@ -893,7 +989,7 @@ function analyzeCurrentSettings(
 			(b.facts.countRequirementRepair ?? 0) -
 				(a.facts.countRequirementRepair ?? 0) ||
 			(b.facts.declaredCountRepair ?? 0) - (a.facts.declaredCountRepair ?? 0) ||
-			(intent === "preserve" || intent === "bandwidth"
+			(intent === "adaptive" || intent === "preserve" || intent === "bandwidth"
 				? a.facts.roleBudgetKnown === 1 && b.facts.roleBudgetKnown === 1
 					? (a.facts.roleBudgetExcess ?? 0) - (b.facts.roleBudgetExcess ?? 0)
 					: (a.facts.lowerSlots ?? 256) +
@@ -901,7 +997,7 @@ function analyzeCurrentSettings(
 						(b.facts.lowerSlots ?? 256) -
 						(b.facts.upperSlots ?? 256)
 				: 0) ||
-			(intent === "preserve" &&
+			((intent === "adaptive" || intent === "preserve") &&
 			a.facts.roleBudgetKnown === 1 &&
 			b.facts.roleBudgetKnown === 1
 				? (a.facts.forcingChanges ?? 0) - (b.facts.forcingChanges ?? 0) ||
@@ -924,43 +1020,51 @@ function analyzeCurrentSettings(
 			),
 	);
 	result.advice = result.advice
-		.slice(0, 3)
+		.slice(0, intent === "adaptive" ? 1 : 3)
 		.map((item, index) => ({ ...item, id: `evaluation-${intent}-${index}` }));
 	if (result.advice.length)
 		result.decision = {
 			status: "proposal",
 			message:
-				intent === "cap" &&
-				result.advice.some((item) => item.facts.ordinaryCapRepair === 1)
+				intent === "adaptive"
 					? {
-							en: "The revised spacing satisfies the requested count in the configuration model and permits a last placement at the overall maximum. Native output count, resolutions, bitrate use and quality remain media-dependent; review the changes before adoption.",
-							ja: "指定本数の計算条件を保ちながら、最上段を全体上限に置ける段間隔の案です。実際の本数・解像度・ビットレート・画質は素材によって変わります。変更内容を確認してから反映できます。",
+							en: `One adjustment permits use of the cap under the configuration model and its explicit source conditions, while retaining quality controls. ${goal.countPolicy.kind === "unrestricted" ? "No output count was specified or certified." : "The specified count constraint also passes."} Review the changes and verify actual quality and bitrate use with media.`,
+							ja: `明示した素材条件の下で、上限を使える配置を確認した案です。画質設定は維持しています。${goal.countPolicy.kind === "unrestricted" ? "本数は指定されておらず、本数の認定は行っていません。" : "指定した本数条件も満たします。"}変更内容を確認し、実際の画質とビットレートは素材で比較してください。`,
 						}
 					: intent === "cap" &&
-							result.advice.some(
-								(item) => item.facts.countRequirementRepair === 1,
-							)
+							result.advice.some((item) => item.facts.ordinaryCapRepair === 1)
 						? {
-								en: "A spacing adjustment satisfies the requested count in the configuration model. This does not establish use of the upper bitrate limit or native output count. Review the proposed changes before adoption.",
-								ja: "指定本数に向けた段間隔の調整案を計算モデルで確認しました。上限ビットレートの使用や実際の出力本数を保証する判定ではありません。変更内容を確認してから反映できます。",
+								en: `${goal.countPolicy.kind === "unrestricted" ? "No output count was specified or certified." : "The specified count constraint passes in the configuration model."} The revised spacing permits a last placement at the overall maximum. Native output count, resolutions, bitrate use and quality remain media-dependent; review the changes before adoption.`,
+								ja: `${goal.countPolicy.kind === "unrestricted" ? "本数は指定されておらず、本数の認定は行っていません。" : "指定した本数の計算条件を保つ案です。"}最上段を全体上限に置ける段間隔を確認しました。実際の本数・解像度・ビットレート・画質は素材によって変わります。変更内容を確認してから反映できます。`,
 							}
-						: intent === "count" &&
+						: intent === "cap" &&
 								result.advice.some(
-									(item) => item.facts.declaredCountRepair === 1,
+									(item) => item.facts.countRequirementRepair === 1,
 								)
 							? {
-									en: "A conditional spacing adjustment improves the declared output structure while retaining the requested count. Native output count remains unverified; review the changes and media checks before adoption.",
-									ja: "指定本数を要件として維持し、宣言した出力構成と段間隔を改善する条件付きの案があります。実際の出力本数は未確定です。変更内容と素材での確認事項を確認してから反映できます。",
+									en: "A spacing adjustment satisfies the requested count in the configuration model. This does not establish use of the upper bitrate limit or native output count. Review the proposed changes before adoption.",
+									ja: "指定本数に向けた段間隔の調整案を計算モデルで確認しました。上限ビットレートの使用や実際の出力本数を保証する判定ではありません。変更内容を確認してから反映できます。",
 								}
-							: {
-									en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
-									ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
-								},
+							: intent === "count" &&
+									result.advice.some(
+										(item) => item.facts.declaredCountRepair === 1,
+									)
+								? {
+										en: "A conditional spacing adjustment improves the declared output structure while retaining the requested count. Native output count remains unverified; review the changes and media checks before adoption.",
+										ja: "指定本数を要件として維持し、宣言した出力構成と段間隔を改善する条件付きの案があります。実際の出力本数は未確定です。変更内容と素材での確認事項を確認してから反映できます。",
+									}
+								: {
+										en: "A configuration adjustment passed the selected goal and constraint checks. Review its changes and tradeoffs before adoption.",
+										ja: "目的と制約の検証を通った調整案があります。変更内容と影響を確認してから反映できます。",
+									},
 		};
 	else if (
 		intent === "cap" &&
 		ordinaryCap.status === "permitted" &&
-		hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
+		proposal.applicable &&
+		proposal.status === "candidate" &&
+		(goal.countPolicy.kind === "unrestricted" ||
+			hasPerTitleEvaluationCountEvidence(normalized.goal, proposal)) &&
 		!findings.some(
 			(finding) =>
 				finding.severity === "conflict" ||
@@ -971,8 +1075,8 @@ function analyzeCurrentSettings(
 		result.decision = {
 			status: "keep-current",
 			message: {
-				en: "The checked count and spacing already permit a last placement at the overall maximum. Actual bitrate use and quality still require representative-media verification.",
-				ja: "確認した本数と段間隔では、最上段を全体上限に置くことができます。実際のビットレートと画質は素材で確認してください。",
+				en: `${goal.countPolicy.kind === "unrestricted" ? "No output count was specified or certified; the spacing permits a cap-ending integer example." : "The checked count and spacing already permit a last placement at the overall maximum."} Actual bitrate use and quality still require representative-media verification.`,
+				ja: `${goal.countPolicy.kind === "unrestricted" ? "本数は指定されておらず、本数の認定は行っていません。上限に届く整数の配置例を確認できました。" : "確認した本数と段間隔では、最上段を全体上限に置くことができます。"}実際のビットレートと画質は素材で確認してください。`,
 			},
 		};
 	else if (

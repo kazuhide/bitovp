@@ -79,9 +79,9 @@ describe.each([
 		expect(onEvaluate).toHaveBeenCalledOnce();
 		fireEvent.change(
 			screen.getByRole("combobox", { name: ja ? "目的" : "Goal" }),
-			{ target: { value: "cap" } },
+			{ target: { value: "adaptive" } },
 		);
-		expect(onIntentChange).toHaveBeenCalledWith("cap");
+		expect(onIntentChange).toHaveBeenCalledWith("adaptive");
 		expect({ goal, result }).toEqual(before);
 	});
 

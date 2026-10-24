@@ -93,11 +93,10 @@ describe("live upper-output requirement", () => {
 		const before = api();
 		fireEvent.change(
 			screen.getByRole("combobox", { name: locale === "ja" ? "目的" : "Goal" }),
-			{ target: { value: "bandwidth" } },
+			{ target: { value: "adaptive" } },
 		);
 		fireEvent.click(evaluate);
-		const offered = analyzePerTitleSettings(current.goal, "bandwidth")
-			.advice[0];
+		const offered = analyzePerTitleSettings(current.goal, "adaptive").advice[0];
 		if (!offered) throw new Error("Expected a checked structural repair.");
 		expect(
 			assessPerTitleUpperLimit(offered.goal, offered.proposal).status,
@@ -130,6 +129,11 @@ describe("live upper-output requirement", () => {
 	] as const)("updates the error and Apply gate from live edits without evaluation (%s)", (locale) => {
 		const initial = mixed(4_000_000);
 		const current = tunePerTitleSettings(initial, initial);
+		expect(current.proposal).toMatchObject({
+			status: "candidate",
+			applicable: true,
+			countGuarantee: false,
+		});
 		expect(
 			assessPerTitleUpperLimit(current.goal, current.proposal).finding,
 		).toBeNull();
@@ -153,7 +157,7 @@ describe("live upper-output requirement", () => {
 			name:
 				locale === "ja" ? "最大ビットレート (kbps)" : "Maximum bitrate (kbps)",
 		});
-		expect(review).toBeDisabled();
+		expect(review).toBeEnabled();
 		expect(within(evaluation).queryByRole("alert")).toBeNull();
 		fireEvent.change(maximum, { target: { value: "6000" } });
 		expect(within(evaluation).getByRole("alert")).toBeVisible();
@@ -162,7 +166,7 @@ describe("live upper-output requirement", () => {
 		expect(onApply).not.toHaveBeenCalled();
 		fireEvent.change(maximum, { target: { value: "4000" } });
 		expect(within(evaluation).queryByRole("alert")).toBeNull();
-		expect(review).toBeDisabled();
+		expect(review).toBeEnabled();
 		expect(
 			screen.getByRole("button", {
 				name: locale === "ja" ? "評価する" : "Evaluate",

@@ -320,7 +320,7 @@ export function PerTitleAdvisor({
 	const rootRef = useRef<HTMLDivElement>(null);
 	const pendingFocus = useRef<string | null>(null);
 	const previous = useRef({ goal, session });
-	const [intent, setIntent] = useState<PerTitleAnalysisIntent>("cap");
+	const [intent, setIntent] = useState<PerTitleAnalysisIntent>("adaptive");
 	const liveIntent = useRef(intent);
 	const active = useRef<AdvisorContext | null>(null);
 	const [, refreshPending] = useState(0);

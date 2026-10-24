@@ -7,9 +7,11 @@ import {
 
 export type PerTitleOrdinaryCapAssessment = {
 	status: "permitted" | "blocked" | "unavailable";
+	/** Available spacing bound's placement length, not a predicted output count. */
 	count: number | null;
 	cap: number;
 	lastSlot: { minimum: number; maximum: number } | null;
+	reason?: "placement-limit";
 	/** Integer spacing compatibility only, independent of native media selection. */
 	scope: "spacing-only";
 };
@@ -26,8 +28,12 @@ export function assessPerTitleOrdinaryCap(
 		lastSlot: null,
 		scope: "spacing-only",
 	};
+	const limit =
+		goal.countPolicy.kind === "unrestricted" ? 256 : goal.countPolicy.count;
 	if (
-		goal.countPolicy.kind !== "exact" ||
+		!Number.isSafeInteger(limit) ||
+		limit < 1 ||
+		limit > 256 ||
 		proposal.codec !== goal.codec ||
 		proposal.api.global.minBitrate !== goal.minBitrate ||
 		proposal.api.global.maxBitrate !== goal.maxBitrate ||
@@ -42,24 +48,45 @@ export function assessPerTitleOrdinaryCap(
 		proposal.api.streams.some((stream) => stream.mode !== "PER_TITLE_TEMPLATE")
 	)
 		return result;
-	const preview = previewPerTitleOutput(proposal, {
-		countPolicy: goal.countPolicy,
-	});
+	// These are placement hypotheses, not changes to the actual count policy.
+	const project = (count: number) =>
+		previewPerTitleOutput(proposal, {
+			countPolicy: { kind: "exact", count },
+		});
+	let count = limit;
+	if (goal.countPolicy.kind !== "exact") {
+		if (project(1).countProjection?.status !== "conditional") return result;
+		let lower = 1,
+			upper = limit;
+		// Feasibility is prefix-closed. Among feasible lengths the final upper
+		// bound never decreases, so the longest chain also decides cap permission.
+		while (lower < upper) {
+			const middle = Math.ceil((lower + upper) / 2);
+			const status = project(middle).countProjection?.status;
+			if (status === "conditional") lower = middle;
+			else if (status === "infeasible") upper = middle - 1;
+			else return result;
+		}
+		count = lower;
+	}
+	const preview = project(count);
 	if (preview.countProjection?.status !== "conditional") return result;
 	const slots = preview.rows.filter((row) => row.kind === "count-slot");
 	const last = slots.at(-1);
 	if (
-		slots.length !== goal.countPolicy.count ||
+		slots.length !== count ||
 		last?.minimumBitrate === undefined ||
 		last.maximumBitrate === undefined
 	)
 		return result;
+	const permitted = last.maximumBitrate === goal.maxBitrate;
+	// A longer unrestricted chain may still work beyond the finite model bound.
+	if (!permitted && goal.countPolicy.kind === "unrestricted" && count === limit)
+		return { ...result, reason: "placement-limit" };
 	return {
 		...result,
-		status: last.maximumBitrate === goal.maxBitrate ? "permitted" : "blocked",
-		lastSlot: {
-			minimum: last.minimumBitrate,
-			maximum: last.maximumBitrate,
-		},
+		count,
+		status: permitted ? "permitted" : "blocked",
+		lastSlot: { minimum: last.minimumBitrate, maximum: last.maximumBitrate },
 	};
 }

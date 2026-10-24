@@ -1073,19 +1073,67 @@ describe("Per-Title evaluation purpose boundaries", () => {
 	it.each([
 		"maximum",
 		"unrestricted",
-	] as const)("does not interpret %s count requirements as exact ordinary cap evidence", (kind) => {
+	] as const)("keeps %s cap evidence distinct from exact count and native reach", (kind) => {
 		const goal: PerTitleGoal = {
 			...ordinaryCountGoal("H264"),
+			...(kind === "unrestricted" ? { strategy: "automatic" } : {}),
 			countPolicy: kind === "maximum" ? { kind, count: 4 } : { kind },
 		};
 		const result = analyzePerTitleSettings(goal, "cap", {
 			referenceGoal: goal,
 		});
-		expect(result.ordinaryCap.status).toBe("unavailable");
-		expect(result.ordinaryCap.count).toBeNull();
 		expect(result.reach.status).toBe("unknown");
+		expect(result.ordinaryCap.status).toBe("blocked");
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const advice of result.advice) {
+			expect(advice.goal.countPolicy).toEqual(goal.countPolicy);
+			expect(advice.proposal.countGuarantee).toBe(false);
+			if (kind === "maximum") {
+				expect(
+					previewPerTitleOutput(advice.proposal, {
+						countPolicy: goal.countPolicy,
+					}).countProjection,
+				).toMatchObject({
+					kind: "maximum",
+					status: "unavailable",
+					reason: "maximum-only",
+				});
+			} else {
+				expect(
+					hasPerTitleEvaluationCountEvidence(advice.goal, advice.proposal),
+				).toBe(false);
+				expect(
+					previewPerTitleOutput(advice.proposal, {
+						countPolicy: goal.countPolicy,
+					}).countProjection,
+				).toBeUndefined();
+			}
+		}
+		expect(result.decision.status).not.toBe("keep-current");
+	});
+
+	it("retains an invalid count strategy without a count requirement", () => {
+		const goal: PerTitleGoal = {
+			...ordinaryCountGoal("H264"),
+			countPolicy: { kind: "unrestricted" },
+		};
+		const result = analyzePerTitleSettings(goal, "cap", {
+			referenceGoal: goal,
+		});
+		expect(tunePerTitleSettings(goal, goal).proposal.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "count-required",
+					severity: "conflict",
+				}),
+			]),
+		);
 		expect(result.advice).toEqual([]);
 		expect(result.decision.status).not.toBe("keep-current");
+		expect(
+			result.findings.some((finding) => finding.severity === "conflict"),
+		).toBe(true);
 	});
 
 	it("preserves inactive forced-rule metadata in an ordinary cap-spacing repair", () => {

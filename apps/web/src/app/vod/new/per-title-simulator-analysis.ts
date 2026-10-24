@@ -30,10 +30,12 @@ import {
 	assessPerTitleOrdinaryCap,
 	type PerTitleOrdinaryCapAssessment,
 } from "./per-title-simulator-analysis-ordinary-cap";
+import { perTitleAnalysisCandidateCosts } from "./per-title-simulator-analysis-ranking";
 import {
 	assessPerTitleReach,
 	type PerTitleReachAssessment,
 } from "./per-title-simulator-analysis-reach";
+import { perTitleRetainedFactorCandidates } from "./per-title-simulator-analysis-retained-factor";
 import {
 	assessPerTitleValidity,
 	type PerTitleValidityFinding,
@@ -319,7 +321,7 @@ function analyzeCurrentSettings(
 		advice: [],
 		quality,
 	};
-	findings.push(...assessPerTitleValidity(goal, proposal));
+	findings.push(...assessPerTitleValidity(normalized.goal, proposal));
 	if (countStructure.status === "declared-compatible")
 		add(
 			"declared-count-structure",
@@ -532,6 +534,7 @@ function analyzeCurrentSettings(
 	const candidates = [
 		...perTitleAnalysisCandidates(goal, proposal, reach, intent, context),
 		...perTitleCountDirectedCandidates(goal, proposal, context),
+		...perTitleRetainedFactorCandidates(goal, proposal, context),
 		...perTitleWholeLadderCandidates(goal, proposal, context),
 	];
 	for (const candidate of candidates) {
@@ -541,19 +544,24 @@ function analyzeCurrentSettings(
 			reject("api-or-held-constraint");
 			continue;
 		}
-		const checked = assessPerTitleReach(item.goal, item.proposal);
+		const checkedGoal = tunePerTitleSettings(
+			item.goal,
+			options.referenceGoal ?? goal,
+		).goal;
+		const checked = assessPerTitleReach(checkedGoal, item.proposal);
 		const checkedOrdinaryCap = assessPerTitleOrdinaryCap(
-			tunePerTitleSettings(item.goal, options.referenceGoal ?? goal).goal,
+			checkedGoal,
 			item.proposal,
 		);
-		const checkedLadder = assessPerTitleLadder(item.goal, item.proposal);
+		const checkedLadder = assessPerTitleLadder(checkedGoal, item.proposal);
 		const checkedStructure = assessPerTitleCountStructure(
-			item.goal,
+			checkedGoal,
 			item.proposal,
 		);
 		const repairsUpperLimit =
 			upperLimit.finding !== null &&
-			assessPerTitleUpperLimit(item.goal, item.proposal).status === "satisfied";
+			assessPerTitleUpperLimit(checkedGoal, item.proposal).status ===
+				"satisfied";
 		const repairsCountRequirement =
 			goal.countPolicy.kind !== "unrestricted" &&
 			!hasPerTitleEvaluationCountEvidence(normalized.goal, proposal) &&
@@ -571,7 +579,7 @@ function analyzeCurrentSettings(
 			continue;
 		}
 		if (
-			assessPerTitleValidity(item.goal, item.proposal).some(
+			assessPerTitleValidity(checkedGoal, item.proposal).some(
 				(finding) => finding.severity === "conflict",
 			)
 		) {
@@ -830,6 +838,12 @@ function analyzeCurrentSettings(
 		seen.add(key);
 		item.facts = {
 			...item.facts,
+			...perTitleAnalysisCandidateCosts(
+				proposal,
+				item.proposal,
+				checkedStructure,
+				checkedLadder,
+			),
 			ordinaryCapRepair: Number(intent === "cap" && repairsOrdinaryCap),
 			countRequirementRepair: Number(repairsCountRequirement),
 			declaredCountRepair: Number(intent === "count" && declaredCountRepair),
@@ -880,10 +894,18 @@ function analyzeCurrentSettings(
 				(a.facts.countRequirementRepair ?? 0) ||
 			(b.facts.declaredCountRepair ?? 0) - (a.facts.declaredCountRepair ?? 0) ||
 			(intent === "preserve" || intent === "bandwidth"
-				? (a.facts.lowerSlots ?? 256) +
-					(a.facts.upperSlots ?? 256) -
-					(b.facts.lowerSlots ?? 256) -
-					(b.facts.upperSlots ?? 256)
+				? a.facts.roleBudgetKnown === 1 && b.facts.roleBudgetKnown === 1
+					? (a.facts.roleBudgetExcess ?? 0) - (b.facts.roleBudgetExcess ?? 0)
+					: (a.facts.lowerSlots ?? 256) +
+						(a.facts.upperSlots ?? 256) -
+						(b.facts.lowerSlots ?? 256) -
+						(b.facts.upperSlots ?? 256)
+				: 0) ||
+			(intent === "preserve" &&
+			a.facts.roleBudgetKnown === 1 &&
+			b.facts.roleBudgetKnown === 1
+				? (a.facts.forcingChanges ?? 0) - (b.facts.forcingChanges ?? 0) ||
+					(a.facts.fixedBandMovement ?? 0) - (b.facts.fixedBandMovement ?? 0)
 				: 0) ||
 			(b.facts.reachRank ?? 0) - (a.facts.reachRank ?? 0) ||
 			(a.facts.capacityIncrease ?? 0) - (b.facts.capacityIncrease ?? 0) ||

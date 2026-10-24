@@ -13,6 +13,7 @@ import {
 	perTitleAnalysisCurve,
 } from "./per-title-simulator-analysis-ladder";
 import * as wholeCandidates from "./per-title-simulator-analysis-layouts";
+import * as retainedFactorCandidates from "./per-title-simulator-analysis-retained-factor";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const mixed = (): PerTitleGoal => ({
@@ -105,6 +106,10 @@ function offerOnly(candidate: PerTitleGoal) {
 	vi.spyOn(wholeCandidates, "perTitleWholeLadderCandidates").mockReturnValue(
 		[],
 	);
+	vi.spyOn(
+		retainedFactorCandidates,
+		"perTitleRetainedFactorCandidates",
+	).mockReturnValue([]);
 }
 
 afterEach(() => vi.restoreAllMocks());

@@ -47,7 +47,8 @@ export function perTitleAdvicePreview(
 	options: PerTitleAdviceOptions = {},
 ): PerTitleAdvicePreviewModel {
 	const reference = options.referenceGoal ?? goal;
-	const current = tunePerTitleSettings(goal, reference).proposal;
+	const currentResolved = tunePerTitleSettings(goal, reference);
+	const current = currentResolved.proposal;
 	const mode =
 		Array.isArray(selection?.selected) && selection.selected.length > 0
 			? "selected"
@@ -82,7 +83,8 @@ export function perTitleAdvicePreview(
 			options,
 		);
 		if (!allOffered) return result;
-		const full = tunePerTitleSettings(fullGoal, reference).proposal;
+		const fullResolved = tunePerTitleSettings(fullGoal, reference);
+		const full = fullResolved.proposal;
 		if (
 			!samePerTitleAdviceApi(
 				tunePerTitleSettings(allOffered, reference).proposal.api,
@@ -119,10 +121,12 @@ export function perTitleAdvicePreview(
 			return result;
 		let after: PerTitleProposal;
 		let afterGoal = fullGoal;
+		let afterMathGoal = fullResolved.goal;
 		if (mode === "all") after = full;
 		else if (mode === "keep") {
 			after = current;
 			afterGoal = goal;
+			afterMathGoal = currentResolved.goal;
 		} else {
 			const patched = applySelectedPerTitleAdvice(
 				goal,
@@ -132,7 +136,9 @@ export function perTitleAdvicePreview(
 			);
 			if (!patched) return result;
 			afterGoal = patched;
-			after = tunePerTitleSettings(patched, reference).proposal;
+			const partial = tunePerTitleSettings(patched, reference);
+			after = partial.proposal;
+			afterMathGoal = partial.goal;
 		}
 		return {
 			...result,
@@ -141,7 +147,7 @@ export function perTitleAdvicePreview(
 			status:
 				after.status === "conflict" ||
 				after.diagnostics.some((item) => item.severity === "conflict") ||
-				assessPerTitleUpperLimit(afterGoal, after).finding !== null
+				assessPerTitleUpperLimit(afterMathGoal, after).finding !== null
 					? "conflict"
 					: "ready",
 		};

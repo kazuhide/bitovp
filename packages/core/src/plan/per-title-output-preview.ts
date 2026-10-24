@@ -422,7 +422,16 @@ export function previewPerTitleOutput(
 				!expanded &&
 				!ordinaryUpper &&
 				(automatic.length === 0 || topCandidates.length > 0)
-			)
+			) {
+				const candidateIds = new Set(topCandidates.map((s) => s.rowId));
+				// These prototypes are possible destinations for the forced roles,
+				// rather than additional outputs alongside those roles.
+				for (let i = rows.length - 1; i >= 0; i--)
+					if (
+						rows[i]?.kind === "automatic" &&
+						candidateIds.has(rows[i]?.rowId ?? "")
+					)
+						rows.splice(i, 1);
 				for (const [index, range] of (extra ?? []).entries())
 					rows.push({
 						id: `forced:${index}`,
@@ -439,6 +448,7 @@ export function previewPerTitleOutput(
 							? { bitrate: range.minimum }
 							: {}),
 					});
+			}
 		}
 	}
 	const singleRange = fixed[0] ? ranges.get(fixed[0].rowId) : null;

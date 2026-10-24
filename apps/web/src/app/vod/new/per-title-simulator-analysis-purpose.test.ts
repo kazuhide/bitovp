@@ -1,7 +1,12 @@
-import { type PerTitleGoal, previewPerTitleOutput } from "@bitovp/core";
+import {
+	evaluateForcedRenditions,
+	type PerTitleGoal,
+	previewPerTitleOutput,
+} from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	applyPerTitleAdvice,
+	applySelectedPerTitleAdvice,
 	createPerTitleEvaluationAdvice,
 	hasPerTitleEvaluationCountEvidence,
 	type PerTitleAdviceOptions,
@@ -12,11 +17,17 @@ import {
 	analyzePerTitleSettings,
 	perTitleAnalysisContextKey,
 } from "./per-title-simulator-analysis";
+import { assessPerTitleCountStructure } from "./per-title-simulator-analysis-count";
+import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
 import { assessPerTitleOrdinaryCap } from "./per-title-simulator-analysis-ordinary-cap";
+import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
+import { perTitleRetainedFactorCandidates } from "./per-title-simulator-analysis-retained-factor";
 import { assessPerTitleValidity } from "./per-title-simulator-analysis-validity";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
 
 const codecs = ["H264", "H265", "VP9", "AV1"] as const;
+const mixedCodecs = [...codecs, "H265V2"] as const;
 const intents = ["count", "preserve"] as const;
 
 function pointGoal(
@@ -109,7 +120,504 @@ function ordinarySlots(goal: PerTitleGoal) {
 	}).rows.filter((row) => row.kind === "count-slot");
 }
 
+function mixedPreserveGoal(
+	codec: PerTitleGoal["codec"],
+	repeatedHeight = false,
+): PerTitleGoal {
+	return {
+		strategy: "fixed-ranges",
+		codec,
+		minBitrate: 155_000,
+		maxBitrate: 4_800_000,
+		minBitrateStepSize: 1.5,
+		maxBitrateStepSize: 3.9,
+		countPolicy: { kind: "exact", count: 6 },
+		autoRepresentations: false,
+		...(codec === "H265V2"
+			? { targetQualityQp: 20 }
+			: { targetQualityCrf: 18 }),
+		fixedResolutionAndBitrateConfiguration: {
+			forcedRenditionAboveHighestFixedRepresentation: 1,
+			forcedRenditionAboveHighestFixedRepresentationFactor: 1.3,
+			forcedRenditionAboveHighestFixedRepresentationCalculationMode:
+				"LAST_CALCULATED_BITRATE",
+		},
+		rows: [
+			[160, 350_000, 550_000],
+			[repeatedHeight ? 160 : 320, 760_000, 1_140_000],
+			[640, 1_550_000, 2_100_000],
+			[960, 2_200_000, 3_000_000],
+		].map(([height, minBitrate, maxBitrate], index) => ({
+			id: `band-${index}`,
+			height: height as number,
+			minBitrate,
+			maxBitrate,
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			lowComplexityBoundaryForMaxBitrate: 3_600_000,
+			highComplexityBoundaryForMaxBitrate: 4_800_000,
+		})),
+		automaticTemplates: [
+			{ id: "lower", height: 80 },
+			{ id: "upper-a", height: 1280 },
+			{ id: "upper-b", height: 1600 },
+		],
+	};
+}
+
 describe("Per-Title evaluation purpose boundaries", () => {
+	it.each(
+		mixedCodecs.flatMap((codec) =>
+			[false, true].map((repeatedHeight) => [codec, repeatedHeight] as const),
+		),
+	)("finds a %s mixed-count repair with a held factor and first minimum (repeated height=%s)", (codec, repeatedHeight) => {
+		const goal = mixedPreserveGoal(codec, repeatedHeight);
+		const before = structuredClone(goal);
+		const factorKey =
+			"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor";
+		const options = {
+			referenceGoal: goal,
+			contextKey: perTitleAnalysisContextKey("preserve"),
+			protectedFields: [
+				{ scope: "global" as const, key: factorKey },
+				{ scope: "stream" as const, rowId: "band-0", key: "minBitrate" },
+				{
+					scope: "global" as const,
+					key: codec === "H265V2" ? "targetQualityQp" : "targetQualityCrf",
+				},
+			],
+		};
+		const source = tunePerTitleSettings(goal, goal).proposal;
+		expect(
+			assessPerTitleLadder(goal, source).lowerSlots?.maximum,
+		).toBeGreaterThan(1);
+		const result = analyzePerTitleSettings(goal, "preserve", options);
+		expect(result.decision.status).toBe("proposal");
+		expect(result.advice.length).toBeGreaterThan(0);
+		expect(result.quality.status).toBe("requires-media");
+		for (const advice of result.advice) {
+			const applied = applyPerTitleAdvice(goal, advice, options);
+			if (!applied)
+				throw new Error("Expected an adoptable held-factor repair.");
+			expect(requirements(applied)).toEqual(requirements(goal));
+			expect(applied.fixedResolutionAndBitrateConfiguration).toEqual(
+				goal.fixedResolutionAndBitrateConfiguration,
+			);
+			expect(applied.rows?.find(({ id }) => id === "band-0")?.minBitrate).toBe(
+				goal.rows?.[0]?.minBitrate,
+			);
+			const checked = tunePerTitleSettings(applied, goal).proposal;
+			expect(checked.api).toEqual(advice.proposal.api);
+			expect(checked.countGuarantee).toBe(false);
+			expect(
+				assessPerTitleValidity(applied, checked).filter(
+					({ severity }) => severity === "conflict",
+				),
+			).toEqual([]);
+			expect(assessPerTitleCountStructure(applied, checked)).toMatchObject({
+				status: "declared-compatible",
+				required: 6,
+				declaredCount: 6,
+			});
+			const ladder = assessPerTitleLadder(applied, checked);
+			expect(ladder.lowerSlots).toEqual({ minimum: 1, maximum: 1 });
+			expect(ladder.upperSlots?.maximum).toBeLessThanOrEqual(1);
+			expect(assessPerTitleUpperLimit(applied, checked).status).toBe(
+				"satisfied",
+			);
+			expect(assessPerTitleReach(applied, checked)).toMatchObject({
+				status: "conditional-reachable",
+				certainty: "all-permitted-rates",
+				adaptation: "conditional",
+			});
+			const output = previewPerTitleOutput(checked, {
+				countPolicy: applied.countPolicy,
+			});
+			expect(output.rows).toHaveLength(6);
+			expect(output.rows.filter(({ kind }) => kind === "fixed")).toHaveLength(
+				4,
+			);
+		}
+		expect(goal).toEqual(before);
+	});
+
+	it.each(
+		mixedCodecs,
+	)("prefers retaining the %s forcing rule when a checked mixed-count repair can retain it", (codec) => {
+		const goal = mixedPreserveGoal(codec);
+		const result = analyzePerTitleSettings(goal, "preserve", {
+			referenceGoal: goal,
+		});
+		const preferred = result.advice[0];
+		expect(preferred).toBeDefined();
+		if (!preferred) throw new Error("Expected a preferred mixed-count repair.");
+		expect(
+			preferred.proposal.api.global.fixedResolutionAndBitrateConfiguration,
+		).toEqual(goal.fixedResolutionAndBitrateConfiguration);
+		expect(
+			assessPerTitleLadder(preferred.goal, preferred.proposal).lowerSlots,
+		).toEqual({ minimum: 1, maximum: 1 });
+		for (const rowId of ["band-1", "band-2"])
+			expect(
+				preferred.proposal.api.streams.find((row) => row.rowId === rowId)
+					?.perTitleSettings?.minBitrate,
+			).toBe(goal.rows?.find((row) => row.id === rowId)?.minBitrate);
+		expect(preferred.proposal.countGuarantee).toBe(false);
+	});
+
+	it("re-evaluates held-factor mixed repairs against the resolved automatic overall maximum", () => {
+		const initial = mixedPreserveGoal("H264");
+		const source = {
+			...initial,
+			fixedResolutionAndBitrateConfiguration: {
+				...initial.fixedResolutionAndBitrateConfiguration,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+			},
+		};
+		const goal: PerTitleGoal = {
+			...source,
+			maxBitrate: 4_000_000,
+			adjustments: {
+				global: { maxBitrate: { mode: "auto", method: "default" } },
+			},
+		};
+		const reference = { ...source, maxBitrate: 6_000_000 };
+		const options = {
+			referenceGoal: reference,
+			contextKey: perTitleAnalysisContextKey("preserve"),
+			protectedFields: [
+				{
+					scope: "global" as const,
+					key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				},
+			],
+		};
+		const result = analyzePerTitleSettings(goal, "preserve", options);
+		expect(result.advice.length).toBeGreaterThan(0);
+		const partialStatuses = new Set<string>();
+		for (const advice of result.advice) {
+			const applied = applyPerTitleAdvice(goal, advice, options);
+			if (!applied) throw new Error("Expected a resolved held-factor repair.");
+			expect(applied.maxBitrate).toBe(goal.maxBitrate);
+			expect(applied.adjustments?.global?.maxBitrate).toEqual(
+				goal.adjustments?.global?.maxBitrate,
+			);
+			const checked = tunePerTitleSettings(applied, reference);
+			expect(checked.proposal.api).toEqual(advice.proposal.api);
+			expect(checked.proposal.api.global.maxBitrate).toBe(reference.maxBitrate);
+			expect(
+				assessPerTitleLadder(checked.goal, checked.proposal).lowerSlots,
+			).toEqual({ minimum: 1, maximum: 1 });
+			expect(
+				assessPerTitleCountStructure(checked.goal, checked.proposal),
+			).toMatchObject({
+				status: "declared-compatible",
+				required: 6,
+				declaredCount: 6,
+			});
+			expect(assessPerTitleReach(checked.goal, checked.proposal).status).toBe(
+				"conditional-reachable",
+			);
+			expect(
+				previewPerTitleOutput(checked.proposal, {
+					countPolicy: applied.countPolicy,
+				}).rows,
+			).toHaveLength(6);
+			const selected = advice.changes.map(({ scope, key, rowId }) => ({
+				scope,
+				key,
+				...(rowId === undefined ? {} : { rowId }),
+			}));
+			for (const selection of [
+				{ selected: [], kept: [] },
+				{ selected, kept: [] },
+				{ selected: [], kept: selected },
+			]) {
+				const preview = perTitleAdvicePreview(goal, advice, selection, options);
+				expect(preview.status).toBe("ready");
+				expect(preview.after?.api).toEqual(
+					selection.kept.length > 0
+						? tunePerTitleSettings(goal, reference).proposal.api
+						: checked.proposal.api,
+				);
+			}
+			const partial = perTitleAdvicePreview(
+				goal,
+				advice,
+				{
+					selected: [{ scope: "global", key: "minBitrateStepSize" }],
+					kept: [],
+				},
+				options,
+			);
+			const partialGoal = applySelectedPerTitleAdvice(
+				goal,
+				advice,
+				[{ scope: "global", key: "minBitrateStepSize" }],
+				options,
+			);
+			if (!partialGoal) throw new Error("Expected a valid partial adoption.");
+			const partialChecked = tunePerTitleSettings(partialGoal, reference);
+			const partialConflict =
+				partialChecked.proposal.status === "conflict" ||
+				partialChecked.proposal.diagnostics.some(
+					({ severity }) => severity === "conflict",
+				) ||
+				assessPerTitleUpperLimit(partialChecked.goal, partialChecked.proposal)
+					.finding !== null;
+			expect(partial.status).toBe(partialConflict ? "conflict" : "ready");
+			expect(partial.after?.api).toEqual(partialChecked.proposal.api);
+			partialStatuses.add(partial.status);
+		}
+		expect(partialStatuses.has("ready")).toBe(true);
+	});
+
+	it("resolves automatic stream bounds before evaluating a retained-factor repair", () => {
+		const source = mixedPreserveGoal("H265V2");
+		const reference: PerTitleGoal = {
+			...source,
+			fixedResolutionAndBitrateConfiguration: {
+				...source.fixedResolutionAndBitrateConfiguration,
+				forcedRenditionAboveHighestFixedRepresentationFactor: 1.25,
+			},
+		};
+		const goal: PerTitleGoal = {
+			...reference,
+			maxBitrate: 6_000_000,
+			rows: reference.rows?.map((row, index) =>
+				index === 0 ? { ...row, maxBitrate: 450_000 } : row,
+			),
+			adjustments: {
+				streams: {
+					"band-0": { maxBitrate: { mode: "auto", method: "proportional" } },
+				},
+			},
+		};
+		const options = {
+			referenceGoal: reference,
+			contextKey: perTitleAnalysisContextKey("preserve"),
+			protectedFields: [
+				{
+					scope: "global" as const,
+					key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				},
+			],
+		};
+		const before = tunePerTitleSettings(goal, reference);
+		expect(
+			before.proposal.api.streams.find(({ rowId }) => rowId === "band-0")
+				?.perTitleSettings?.maxBitrate,
+		).toBe(687_500);
+		const result = analyzePerTitleSettings(goal, "preserve", options);
+		expect(result.advice.length).toBeGreaterThan(0);
+		for (const advice of result.advice) {
+			const applied = applyPerTitleAdvice(goal, advice, options);
+			if (!applied) throw new Error("Expected an automatic-stream repair.");
+			const checked = tunePerTitleSettings(applied, reference);
+			expect(checked.proposal.api).toEqual(advice.proposal.api);
+			expect(checked.proposal.api.global.targetQualityQp).toBe(
+				before.proposal.api.global.targetQualityQp,
+			);
+			expect(
+				assessPerTitleCountStructure(checked.goal, checked.proposal).status,
+			).toBe("declared-compatible");
+			expect(
+				assessPerTitleLadder(checked.goal, checked.proposal).lowerSlots,
+			).toEqual({ minimum: 1, maximum: 1 });
+			expect(
+				assessPerTitleUpperLimit(checked.goal, checked.proposal).status,
+			).toBe("satisfied");
+			expect(
+				previewPerTitleOutput(checked.proposal, {
+					countPolicy: goal.countPolicy,
+				}).rows,
+			).toHaveLength(6);
+		}
+	});
+
+	it("does not claim an exact-cap forced-only solution when integer rounding skips that cap", () => {
+		const source = mixedPreserveGoal("H264");
+		const goal = { ...source, maxBitrate: 6_000_000 };
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		const factor = 1.3;
+		const floor = Math.floor(goal.maxBitrate / factor);
+		for (const bitrate of [floor, floor + 1])
+			expect(
+				evaluateForcedRenditions({
+					base: { minimum: bitrate, maximum: bitrate },
+					count: 1,
+					factor,
+				})?.at(-1)?.maximum,
+			).not.toBe(goal.maxBitrate);
+		expect(assessPerTitleCountStructure(goal, proposal).status).toBe(
+			"declared-compatible",
+		);
+		expect(perTitleRetainedFactorCandidates(goal, proposal)).toEqual([]);
+		expect(goal).toEqual({ ...source, maxBitrate: 6_000_000 });
+	});
+
+	it("re-evaluates adopted mixed repairs without losing held roles or accepting stale advice", () => {
+		const goal = mixedPreserveGoal("H264", true);
+		const options = {
+			referenceGoal: goal,
+			contextKey: perTitleAnalysisContextKey("preserve"),
+			protectedFields: [
+				{
+					scope: "global" as const,
+					key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+				},
+			],
+		};
+		const advice = analyzePerTitleSettings(goal, "preserve", options).advice[0];
+		if (!advice) throw new Error("Expected a mixed repair.");
+		const fields = advice.changes.map(({ scope, key, rowId }) => ({
+			scope,
+			key,
+			...(rowId === undefined ? {} : { rowId }),
+		}));
+		const adopted = applySelectedPerTitleAdvice(goal, advice, fields, options);
+		if (!adopted) throw new Error("Expected selected-all adoption.");
+		const full = applyPerTitleAdvice(goal, advice, options);
+		if (!full) throw new Error("Expected full adoption.");
+		const checked = tunePerTitleSettings(adopted, goal);
+		expect(checked.proposal.api).toEqual(
+			tunePerTitleSettings(full, goal).proposal.api,
+		);
+		expect(requirements(adopted)).toEqual(requirements(full));
+		const evaluated = analyzePerTitleSettings(adopted, "preserve", options);
+		expect(checked.proposal.api).toEqual(advice.proposal.api);
+		expect(evaluated.ladder).toEqual(
+			assessPerTitleLadder(checked.goal, checked.proposal),
+		);
+		expect(evaluated.countStructure.status).toBe("declared-compatible");
+		expect(
+			evaluated.findings.filter(({ severity }) => severity === "conflict"),
+		).toEqual([]);
+		for (const next of evaluated.advice) {
+			expect(requirements(next.goal)).toEqual(requirements(goal));
+			expect(
+				next.proposal.api.global.fixedResolutionAndBitrateConfiguration,
+			).toEqual(goal.fixedResolutionAndBitrateConfiguration);
+			expect(
+				previewPerTitleOutput(next.proposal, { countPolicy: goal.countPolicy })
+					.rows,
+			).toHaveLength(6);
+		}
+		expect(applyPerTitleAdvice(adopted, advice, options)).toBeNull();
+	});
+
+	it.each([
+		{ kind: "maximum", count: 6 },
+		{ kind: "unrestricted" },
+		{ kind: "exact", count: 5 },
+		{ kind: "exact", count: 7 },
+	] satisfies PerTitleGoal["countPolicy"][])("does not rewrite an unsupported mixed-role count requirement: %j", (countPolicy) => {
+		const goal = { ...mixedPreserveGoal("H264"), countPolicy };
+		const before = structuredClone(goal);
+		const checked = tunePerTitleSettings(goal, goal);
+		expect(perTitleRetainedFactorCandidates(goal, checked.proposal)).toEqual(
+			[],
+		);
+		expect(goal).toEqual(before);
+	});
+
+	it("keeps a single fixed band's mixed-role family outside the multi-band search", () => {
+		const source = mixedPreserveGoal("H264");
+		const goal: PerTitleGoal = {
+			...source,
+			rows: source.rows?.slice(0, 1),
+			countPolicy: { kind: "exact", count: 3 },
+		};
+		const checked = tunePerTitleSettings(goal, goal);
+		expect(
+			assessPerTitleCountStructure(checked.goal, checked.proposal).status,
+		).toBe("declared-compatible");
+		expect(perTitleRetainedFactorCandidates(goal, checked.proposal)).toEqual(
+			[],
+		);
+	});
+
+	it("identifies a held first upper target and restores a factor-preserving repair after release", () => {
+		const source = mixedPreserveGoal("H264");
+		const goal: PerTitleGoal = {
+			...source,
+			rows: source.rows?.map((row, index) =>
+				index === 0 ? { ...row, maxBitrate: 650_000 } : row,
+			),
+		};
+		const factor = {
+			scope: "global" as const,
+			key: "fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor",
+		};
+		const firstMinimum = {
+			scope: "stream" as const,
+			rowId: "band-0",
+			key: "minBitrate",
+		};
+		const firstMaximum = {
+			scope: "stream" as const,
+			rowId: "band-0",
+			key: "maxBitrate",
+		};
+		const held = analyzePerTitleSettings(goal, "preserve", {
+			referenceGoal: goal,
+			protectedFields: [factor, firstMinimum, firstMaximum],
+		});
+		expect(held.advice).toEqual([]);
+		expect(held.relaxation?.fields).toEqual([firstMaximum]);
+		const options = {
+			referenceGoal: goal,
+			contextKey: perTitleAnalysisContextKey("preserve"),
+			protectedFields: [factor, firstMinimum],
+		};
+		const result = analyzePerTitleSettings(goal, "preserve", options);
+		expect(result.advice.length).toBeGreaterThan(0);
+		const advice = result.advice[0];
+		if (!advice)
+			throw new Error(
+				"Expected a repair after releasing the first upper target.",
+			);
+		expect(advice.changes).toContainEqual(
+			expect.objectContaining({ ...firstMaximum, after: expect.any(Number) }),
+		);
+		const full = applyPerTitleAdvice(goal, advice, options);
+		if (!full) throw new Error("Expected full adoption.");
+		expect(tunePerTitleSettings(full, goal).proposal.api).toEqual(
+			advice.proposal.api,
+		);
+		const keep = perTitleAdvicePreview(
+			goal,
+			advice,
+			{ selected: [], kept: [firstMaximum] },
+			options,
+		);
+		expect(keep.after?.api).toEqual(
+			tunePerTitleSettings(goal, goal).proposal.api,
+		);
+		const partial = perTitleAdvicePreview(
+			goal,
+			advice,
+			{ selected: [firstMaximum], kept: [] },
+			options,
+		);
+		expect(partial.after).not.toBeNull();
+		const selected = applySelectedPerTitleAdvice(
+			goal,
+			advice,
+			[firstMaximum],
+			options,
+		);
+		if (!selected) throw new Error("Expected partial adoption.");
+		expect(partial.after?.api).toEqual(
+			tunePerTitleSettings(selected, goal).proposal.api,
+		);
+		expect(
+			analyzePerTitleSettings(selected, "preserve", options).advice.length,
+		).toBeGreaterThan(0);
+		expect(full.fixedResolutionAndBitrateConfiguration).toEqual(
+			goal.fixedResolutionAndBitrateConfiguration,
+		);
+	});
+
 	it.each(
 		codecs,
 	)("repairs %s ordinary cap spacing without changing a held minimum step or claiming native reach", (codec) => {

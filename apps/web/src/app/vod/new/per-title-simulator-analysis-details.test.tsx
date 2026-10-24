@@ -4,10 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { createPerTitleEvaluationAdvice } from "./per-title-simulator-advice";
 import { analyzePerTitleSettings } from "./per-title-simulator-analysis";
+import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
 import {
 	PerTitleAnalysisDetails,
 	PerTitleAnalysisPanel,
 } from "./per-title-simulator-analysis-panel";
+import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const detailMessage = {
 	en: "Review the conditional template selection.",
@@ -188,6 +190,78 @@ describe.each([
 		expect(screen.getByText(detailMessage[locale])).toBeVisible();
 		expect(screen.getByText(result.quality.message[locale])).toBeVisible();
 		expect({ goal, result, selected }).toEqual(before);
+	});
+
+	it("uses the resolved automatic maximum for proposed ladder details", () => {
+		const goal: PerTitleGoal = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 2_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 5,
+			countPolicy: { kind: "unrestricted" },
+			autoRepresentations: false,
+			adjustments: {
+				global: { maxBitrate: { mode: "auto", method: "default" } },
+			},
+			rows: [
+				{
+					id: "band",
+					height: 480,
+					minBitrate: 300_000,
+					maxBitrate: 600_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 1_000_000,
+					highComplexityBoundaryForMaxBitrate: 4_000_000,
+				},
+			],
+			automaticTemplates: [{ id: "upper", height: 1080 }],
+		};
+		const reference = { ...goal, maxBitrate: 4_000_000 };
+		const candidate: PerTitleGoal = {
+			...goal,
+			rows: goal.rows?.map((row) => ({ ...row, maxBitrate: 900_000 })),
+		};
+		const advice = createPerTitleEvaluationAdvice(goal, candidate, {
+			referenceGoal: reference,
+		});
+		if (!advice)
+			throw new Error("Expected an automatic-limit range adjustment.");
+		const resolved = tunePerTitleSettings(advice.goal, reference);
+		const expected = assessPerTitleLadder(
+			resolved.goal,
+			resolved.proposal,
+		).upperSlots;
+		expect(expected).toEqual({ minimum: 3, maximum: 3 });
+		const result = analyzePerTitleSettings(goal, "preserve", {
+			referenceGoal: reference,
+		});
+		renderLocalized(
+			<PerTitleAnalysisDetails
+				goal={goal}
+				referenceGoal={reference}
+				result={result}
+				advice={advice}
+			/>,
+			locale,
+		);
+		fireEvent.click(
+			screen.getByText(ja ? "評価の詳細" : "Evaluation details", {
+				selector: "summary",
+			}),
+		);
+		fireEvent.click(
+			screen.getByText(ja ? "ラダー全体" : "Full ladder", {
+				selector: "summary",
+			}),
+		);
+		const label = ja
+			? "上限解析値での上側配置余地（算術）"
+			: "Upper slots at high input (arithmetic)";
+		const output = screen.getByText(label).parentElement;
+		expect(output).toHaveTextContent("4 → 3");
+		expect(output).not.toHaveTextContent(ja ? "未確定" : "Unknown");
 	});
 
 	it("keeps the search conclusion visible alongside the concrete conflict", () => {

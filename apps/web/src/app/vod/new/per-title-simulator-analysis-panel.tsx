@@ -127,19 +127,24 @@ function FullLadderDetails({
 	result,
 	locale,
 	advice,
+	referenceGoal,
 }: {
 	result: PerTitleAnalysisResult;
 	locale: "en" | "ja";
 	advice?: PerTitleAdvice;
+	referenceGoal: PerTitleGoal;
 }) {
 	const ja = locale === "ja";
 	const selected = advice ?? result.advice[0];
 	const proposed = useMemo(
 		() =>
 			selected
-				? assessPerTitleLadder(selected.goal, selected.proposal)
+				? assessPerTitleLadder(
+						tunePerTitleSettings(selected.goal, referenceGoal).goal,
+						selected.proposal,
+					)
 				: undefined,
-		[selected],
+		[selected, referenceGoal],
 	);
 	const proposedRows = new Map(proposed?.rows.map((row) => [row.rowId, row]));
 	const unknown = ja ? "未確定" : "Unknown";
@@ -573,10 +578,12 @@ export function PerTitleAnalysisPanel({
 
 export function PerTitleAnalysisDetails({
 	goal,
+	referenceGoal = goal,
 	result,
 	advice,
 }: {
 	goal: PerTitleGoal;
+	referenceGoal?: PerTitleGoal;
 	result?: PerTitleAnalysisResult;
 	advice?: PerTitleAdvice;
 }) {
@@ -620,7 +627,12 @@ export function PerTitleAnalysisDetails({
 					})}
 				</dl>
 			) : null}
-			<FullLadderDetails result={result} locale={locale} advice={advice} />
+			<FullLadderDetails
+				result={result}
+				locale={locale}
+				advice={advice}
+				referenceGoal={referenceGoal}
+			/>
 			<ul className="space-y-2">
 				{result.findings.map((item) => {
 					const affected = [

@@ -817,6 +817,7 @@ export function PerTitleAdvisor({
 			) : null}
 			<PerTitleAnalysisDetails
 				goal={goal}
+				referenceGoal={session}
 				result={matches ? snapshot.analysis : undefined}
 				advice={first}
 			/>

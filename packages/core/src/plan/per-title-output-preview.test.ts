@@ -652,10 +652,133 @@ describe("Per-Title output previews", () => {
 		expect(additional[0]?.height).toBeUndefined();
 		expect(additional[0]?.width).toBeUndefined();
 		expect(additional[0]?.rowId).toBeUndefined();
-		expect(result.rows.find((row) => row.rowId === "large")).toMatchObject({
-			status: "unknown",
-		});
+		expect(
+			result.rows.some(
+				(row) => row.rowId === "large" || row.rowId === "largest",
+			),
+		).toBe(false);
+		expect(result.rows.map((row) => row.kind)).toEqual([
+			"fixed",
+			"automatic",
+			"additional",
+		]);
 		expect(result.status).toBe("partial");
+	});
+
+	it.each([
+		undefined,
+		{ kind: "exact" as const, count: 2 },
+		{ kind: "exact" as const, count: 9 },
+		{ kind: "maximum" as const, count: 1 },
+	])("consumes upper prototypes only in the displayed forced branch, independently of count policy %j", (countPolicy) => {
+		const proposal = mixed();
+		const before = structuredClone(proposal);
+		const result = previewPerTitleOutput(proposal, {
+			analysisInput: 100,
+			countPolicy,
+		});
+		expect(result.rows.map((row) => row.kind)).toEqual([
+			"fixed",
+			"automatic",
+			"additional",
+		]);
+		expect(result.rows.map((row) => row.rowId)).toEqual([
+			"fixed",
+			"small",
+			undefined,
+		]);
+		expect(result.rows.at(-1)).toMatchObject({
+			basis: "forced",
+			status: "conditional",
+			minimumBitrate: 260,
+			maximumBitrate: 269,
+			candidateRowIds: ["large", "largest"],
+		});
+		expect(result.forcedFallback).toEqual({
+			baseMinimumBitrate: 208,
+			baseMaximumBitrate: 215,
+			minimumBitrate: 260,
+			maximumBitrate: 269,
+			count: 1,
+			factor: 1.25,
+		});
+		expect(result.countProjection).toBeUndefined();
+		expect(result.unresolvedAdditional).toBe(true);
+		expect(proposal).toEqual(before);
+	});
+
+	it.each([
+		["LAST_CALCULATED_BITRATE", [278, 348]],
+		["MINIMUM", [250, 313]],
+		["MAXIMUM", [500, 625]],
+		["AVERAGE", [375, 469]],
+	] as const)("keeps every rounded %s forced step as a role rather than repeating its destination candidates", (mode, points) => {
+		const proposal = mixed();
+		const rule = required(
+			proposal.api.global.fixedResolutionAndBitrateConfiguration,
+		);
+		rule.forcedRenditionAboveHighestFixedRepresentation = 2;
+		rule.forcedRenditionAboveHighestFixedRepresentationCalculationMode = mode;
+		const result = previewPerTitleOutput(proposal, { analysisInput: 100 });
+		expect(result.rows.map((row) => row.kind)).toEqual([
+			"fixed",
+			"automatic",
+			"additional",
+			"additional",
+		]);
+		expect(result.rows.filter((row) => row.basis === "forced")).toEqual(
+			points.map((point) =>
+				expect.objectContaining({
+					status: "conditional",
+					bitrate: point,
+					candidateRowIds: ["large", "largest"],
+				}),
+			),
+		);
+		expect(
+			result.rows
+				.filter((row) => row.basis === "forced")
+				.every(
+					(row) =>
+						row.rowId === undefined &&
+						row.height === undefined &&
+						row.width === undefined,
+				),
+		).toBe(true);
+	});
+
+	it.each([
+		"missing-count",
+		"unsupported-mode",
+		"invalid-fixed-range",
+		"overlapping-fixed-order",
+	] as const)("retains unknown upper prototypes when forced output is unresolved: %s", (reason) => {
+		const proposal = mixed();
+		const rule = required(
+			proposal.api.global.fixedResolutionAndBitrateConfiguration,
+		);
+		if (reason === "missing-count")
+			delete rule.forcedRenditionAboveHighestFixedRepresentation;
+		else if (reason === "unsupported-mode")
+			rule.forcedRenditionAboveHighestFixedRepresentationCalculationMode =
+				"UNKNOWN" as "MAXIMUM";
+		else if (reason === "invalid-fixed-range")
+			required(proposal.api.streams[0]?.perTitleSettings).maxBitrate = 1001;
+		else {
+			const duplicate = structuredClone(required(proposal.api.streams[0]));
+			duplicate.rowId = "overlapping-fixed";
+			proposal.api.streams.push(duplicate);
+		}
+		const before = structuredClone(proposal);
+		const result = previewPerTitleOutput(proposal, { analysisInput: 100 });
+		expect(result.rows.filter((row) => row.basis === "forced")).toEqual([]);
+		expect(result.forcedFallback).toBeUndefined();
+		for (const rowId of ["large", "largest"])
+			expect(result.rows.find((row) => row.rowId === rowId)).toMatchObject({
+				kind: "automatic",
+				status: "unknown",
+			});
+		expect(proposal).toEqual(before);
 	});
 
 	it("rounds each conditional additional step and does not clip it to the global maximum", () => {
@@ -683,6 +806,12 @@ describe("Per-Title output previews", () => {
 				.filter((row) => row.kind === "automatic")
 				.every((row) => row.status === "unknown" && row.bitrate === undefined),
 		).toBe(true);
+		expect(result.rows.map((row) => row.kind)).toEqual([
+			"fixed",
+			"automatic-group",
+		]);
+		expect(result.rows.filter((row) => row.basis === "forced")).toEqual([]);
+		expect(result.forcedFallback).toMatchObject({ count: 1, factor: 1.25 });
 		expect(result.unresolvedAdditional).toBe(true);
 	});
 

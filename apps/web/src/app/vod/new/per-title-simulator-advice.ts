@@ -615,10 +615,10 @@ export function perTitleAdvice(
 			const checked = tunePerTitleSettings(adopted, reference);
 			if (
 				!same(checked.proposal.api, trial.proposal.api) ||
-				!noConflict(checked.proposal, adopted)
+				!noConflict(checked.proposal, checked.goal)
 			)
 				continue;
-			const proof = closedCount(adopted, checked.proposal)
+			const proof = closedCount(checked.goal, checked.proposal)
 				? "model-count"
 				: "conditional-settings";
 			if (
@@ -644,7 +644,7 @@ export function perTitleAdvice(
 				!(
 					baseline.proposal.diagnostics.some(
 						(d) => d.severity === "conflict",
-					) && noConflict(checked.proposal, adopted)
+					) && noConflict(checked.proposal, checked.goal)
 				)
 			)
 				continue;
@@ -756,9 +756,10 @@ export function createPerTitleEvaluationAdvice(
 				),
 			current,
 		);
-		const checked = tunePerTitleSettings(adopted, reference).proposal;
+		const resolved = tunePerTitleSettings(adopted, reference);
+		const checked = resolved.proposal;
 		if (
-			!noConflict(checked, adopted) ||
+			!noConflict(checked, resolved.goal) ||
 			!same(checked.api, trial.api) ||
 			protectedFields.some(
 				(field) =>
@@ -779,7 +780,7 @@ export function createPerTitleEvaluationAdvice(
 			)
 		)
 			return null;
-		const proof = hasPerTitleEvaluationCountEvidence(adopted, checked)
+		const proof = hasPerTitleEvaluationCountEvidence(resolved.goal, checked)
 			? "model-count"
 			: "conditional-settings";
 		if (
@@ -918,7 +919,7 @@ export function applyPerTitleAdvice(
 			)
 		)
 			return null;
-		return noConflict(checked.proposal, advice.goal) &&
+		return noConflict(checked.proposal, checked.goal) &&
 			same(checked.proposal.api, advice.proposal.api)
 			? structuredClone(advice.goal)
 			: null;

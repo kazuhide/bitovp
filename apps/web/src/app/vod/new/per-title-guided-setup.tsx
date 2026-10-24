@@ -15,6 +15,7 @@ import {
 	type PerTitleSetupInput,
 	type PerTitleSetupIssue,
 } from "./per-title-guided-setup-model";
+import { PerTitleSourceConditions } from "./per-title-simulator-constraints";
 import { PerTitleLadder } from "./per-title-simulator-ladder";
 
 const strategies: readonly PerTitleStrategy[] = [
@@ -72,6 +73,7 @@ const copy = {
 		countSummary: (count: number) => `Requested video outputs: ${count}`,
 		rowsSummary: (count: number) => `Required renditions: ${count}`,
 		unverified: "Some conditions still need checking in the simulator.",
+		autoRanges: "Bitrate ranges calculated from your requirements.",
 		nativeCheck: "Confirm output count and quality by encoding your source.",
 		reasoning: "Why these settings",
 		api: "API settings",
@@ -116,6 +118,7 @@ const copy = {
 		countSummary: (count: number) => `希望する映像出力数：${count}本`,
 		rowsSummary: (count: number) => `必須のレンディション（${count}本）`,
 		unverified: "シミュレーターで確認が必要な条件があります。",
+		autoRanges: "入力した条件からビットレート幅を計算しました。",
 		nativeCheck: "本数と画質は、素材をエンコードして確認してください。",
 		reasoning: "設定の根拠",
 		api: "API 設定",
@@ -414,6 +417,11 @@ export function PerTitleGuidedSetup({
 		[input, allowedCodecs],
 	);
 	const available = allowedCodecs.includes(codec);
+	const calculatedRanges =
+		strategy === "fixed-ranges" &&
+		input.rows.some(
+			(row) => row.minBitrate === undefined || row.maxBitrate === undefined,
+		);
 	const canReview =
 		available &&
 		result.status !== "conflict" &&
@@ -634,9 +642,9 @@ export function PerTitleGuidedSetup({
 						) : null}
 						<PerTitleLadder proposal={result.proposal} />
 					</section>
-					{result.status === "unverified" ? (
+					{calculatedRanges || result.status === "unverified" ? (
 						<p role="status" className="text-xs text-amber-200">
-							{text.unverified}
+							{calculatedRanges ? text.autoRanges : text.unverified}
 						</p>
 					) : null}
 					<p className="text-xs text-zinc-400">{text.nativeCheck}</p>
@@ -650,6 +658,7 @@ export function PerTitleGuidedSetup({
 									<li key={`${reason.en}-${index}`}>{reason[locale]}</li>
 								))}
 							</ul>
+							<PerTitleSourceConditions proposal={result.proposal} />
 						</details>
 					) : null}
 					<details className="min-w-0 text-xs text-zinc-400">

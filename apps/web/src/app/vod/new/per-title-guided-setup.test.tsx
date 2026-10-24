@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleGuidedSetup } from "./per-title-guided-setup";
 import { buildPerTitleSetup } from "./per-title-guided-setup-model";
+import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
 const initialGoal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -102,6 +103,158 @@ const click = (name: string) =>
 	fireEvent.click(screen.getByRole("button", { name }));
 
 describe("PerTitleGuidedSetup", () => {
+	it.each(
+		(["H264", "H265", "VP9"] as const).flatMap((codec) =>
+			(["en", "ja"] as const).map((locale) => [locale, codec] as const),
+		),
+	)("calculates empty bitrate bands and explains unmeasured source conditions (%s, %s)", (locale, codec) => {
+		const { text, onComplete } = mount(locale);
+		fireEvent.click(screen.getByRole("radio", { name: text.strategies[4] }));
+		click(text.next);
+		fireEvent.change(screen.getByRole("combobox", { name: text.codec }), {
+			target: { value: codec },
+		});
+		for (const [name, value] of [
+			[text.minimum, "160"],
+			[text.maximum, "5000"],
+			[
+				locale === "ja"
+					? "入力の高さ (px・任意)"
+					: "Source height (px, optional)",
+				"1152",
+			],
+		] as const)
+			fireEvent.change(screen.getByRole("spinbutton", { name }), {
+				target: { value },
+			});
+		click(text.add);
+		for (const [index, height] of [320, 320, 576, 768].entries()) {
+			const row = screen.getByRole("group", {
+				name:
+					locale === "ja"
+						? `レンディション ${index + 1}`
+						: `Rendition ${index + 1}`,
+			});
+			fireEvent.change(
+				within(row).getByRole("spinbutton", { name: text.height }),
+				{
+					target: { value: String(height) },
+				},
+			);
+			expect(
+				within(row).getByRole("spinbutton", { name: text.rowMinimum }),
+			).toHaveValue(null);
+			expect(
+				within(row).getByRole("spinbutton", { name: text.rowMaximum }),
+			).toHaveValue(null);
+		}
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: text.lowerHeight }),
+			{
+				target: { value: "160" },
+			},
+		);
+		fireEvent.change(screen.getByRole("textbox", { name: text.upperHeights }), {
+			target: { value: "960, 1152" },
+		});
+		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
+		click(text.next);
+		expect(
+			screen.getAllByRole("region", {
+				name: locale === "ja" ? "作成する設定" : "Proposed configuration",
+			}),
+		).toHaveLength(1);
+		expect(
+			screen.getByText(
+				locale === "ja"
+					? "入力した条件からビットレート幅を計算しました。"
+					: "Bitrate ranges calculated from your requirements.",
+			),
+		).toBeVisible();
+		const apiElement = screen
+			.getByText(text.api)
+			.closest("details")
+			?.querySelector("pre");
+		if (!apiElement) throw new Error("Missing calculated API settings");
+		const api = JSON.parse(apiElement.textContent ?? "{}");
+		expect(api.streams).toHaveLength(7);
+		const fixed = api.streams.filter(
+			(row: { mode: string }) =>
+				row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		);
+		expect(fixed.map((row: { height: number }) => row.height)).toEqual([
+			320, 320, 576, 768,
+		]);
+		for (const row of fixed) {
+			expect(Number.isSafeInteger(row.perTitleSettings.minBitrate)).toBe(true);
+			expect(Number.isSafeInteger(row.perTitleSettings.maxBitrate)).toBe(true);
+			expect(row.perTitleSettings.minBitrate).toBeGreaterThanOrEqual(160000);
+			expect(row.perTitleSettings.maxBitrate).toBeGreaterThan(
+				row.perTitleSettings.minBitrate,
+			);
+			expect(row.perTitleSettings.maxBitrate).toBeLessThanOrEqual(5000000);
+		}
+		expect(onComplete).not.toHaveBeenCalled();
+		click(text.complete);
+		expect(onComplete).toHaveBeenCalledOnce();
+		const goal = onComplete.mock.calls[0]?.[0] as PerTitleGoal | undefined;
+		if (!goal) throw new Error("Missing completed setup");
+		expect(goal.countPolicy).toEqual({ kind: "exact", count: 6 });
+		expect(goal.adjustments).toBeUndefined();
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		expect(proposal.api).toEqual(api);
+		expect(proposal).toMatchObject({
+			status: "candidate",
+			applicable: true,
+			countGuarantee: false,
+		});
+		const conditions =
+			proposal.derivation?.constraints?.conditionalModel?.sourceConditions;
+		if (!conditions) throw new Error("Missing typed source conditions");
+		expect(conditions.lowerProbe.status).toBe("not-measured");
+		expect(conditions.geometry.status).toBe("not-measured");
+		expect(conditions.geometry.postRoundingWidthOrderPreserved.status).toBe(
+			"not-measured",
+		);
+		expect(conditions.fixedProbeOrder.status).toBe("not-measured");
+		const sourceLabel =
+			locale === "ja" ? "素材で未確認の条件" : "Unmeasured source conditions";
+		const source = screen.getByRole("region", { name: sourceLabel });
+		const reasoning = screen.getByText(
+			locale === "ja" ? "設定の根拠" : "Why these settings",
+		);
+		expect(reasoning.closest("details")).not.toHaveAttribute("open");
+		expect(source).not.toBeVisible();
+		fireEvent.click(reasoning);
+		expect(reasoning.closest("details")).toHaveAttribute("open");
+		expect(source).toBeVisible();
+		const format = (value: number) =>
+			new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
+				value / 1000,
+			);
+		expect(source).toHaveTextContent(
+			`${format(conditions.lowerProbe.minimum)}–${format(conditions.lowerProbe.maximum)} kbps`,
+		);
+		expect(source).toHaveTextContent(
+			locale === "ja"
+				? "出力のビットレート制限ではありません"
+				: "not an output bitrate limit",
+		);
+		expect(source).toHaveTextContent(
+			locale === "ja" ? "縦横比" : "aspect ratio",
+		);
+		expect(source).toHaveTextContent(
+			locale === "ja"
+				? "丸め後の幅も、指定した解像度の順序と同じ解像度の組を保つ前提です。素材では未確認です。"
+				: "Rounded widths must preserve the requested resolution order and groups at the same resolution; this has not been verified.",
+		);
+		expect(source).toHaveTextContent(
+			locale === "ja" ? "同じ解像度" : "same resolution",
+		);
+		expect(source).not.toHaveTextContent("setup-lower");
+		expect(source).not.toHaveTextContent("setup-row-");
+	});
+
 	it.each([
 		"en",
 		"ja",

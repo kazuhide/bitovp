@@ -4,6 +4,10 @@ import {
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
 } from "./per-title-constraints";
+import {
+	certifyPerTitleMixedSequence,
+	type PerTitleMixedSequenceCertificate,
+} from "./per-title-mixed-sequence";
 import type {
 	PerTitleGoal,
 	PerTitleGoalRow,
@@ -14,6 +18,7 @@ import type {
 export type PerTitleConstraintAnalysis = {
 	status: "checked" | "unknown";
 	scope: "closed-ladder" | "conditional";
+	conditionalModel?: PerTitleMixedSequenceCertificate;
 	inputRange: BitrateInterval | null;
 	floorRange: BitrateInterval | null;
 	calibration?: {
@@ -512,6 +517,47 @@ export function optimizePerTitleConstraints(
 	recommendIntervals: (goal: PerTitleGoal) => PerTitleProposal,
 ): PerTitleProposal {
 	const proposal = optimizeConstraintTrial(goal, recommendIntervals);
+	const conditionalModel = certifyPerTitleMixedSequence(goal, proposal.api);
+	if (
+		conditionalModel &&
+		proposal.codec === goal.codec &&
+		proposal.derivation?.constraints &&
+		!proposal.diagnostics.some((item) => item.severity === "conflict")
+	) {
+		const report = proposal.derivation.constraints;
+		report.status = "checked";
+		report.scope = "conditional";
+		report.conditionalModel = conditionalModel;
+		report.inputRange = conditionalModel.inputRange;
+		report.spacing = {
+			minimumExclusive:
+				conditionalModel.spacing.maximumWithinRowRatio + STEP_TOLERANCE,
+			maximumInclusive: conditionalModel.spacing.minimumAdjacentRatio,
+			checkedSegments: conditionalModel.spacing.checkedSegments,
+		};
+		report.forced.conditional = true;
+		report.conditions.push(
+			"The mixed sequence count is conditional on the unmeasured lower-probe interval and resolution/probe ordering in conditionalModel.sourceConditions.",
+			"The upper ordinary result and the one forced fallback occupy alternative branches of one upper role.",
+		);
+		proposal.applicable = true;
+		proposal.status = "candidate";
+		proposal.derivation.targetSatisfied = true;
+		proposal.derivation.fixedOrderRowIds = conditionalModel.fixedRowIds;
+		proposal.derivation.rationale =
+			"The fixed intervals and both upper branches satisfy the requested sequence under the explicit, unmeasured source conditions. Actual encoded count and quality remain unverified.";
+		proposal.diagnostics = proposal.diagnostics.filter(
+			(item) =>
+				item.code !== "row-order-unknown" &&
+				item.code !== "forced-count-unknown",
+		);
+		proposal.diagnostics.push({
+			code: "count-not-guaranteed",
+			severity: "warning",
+			message:
+				"This mixed count is a conditional model. Measure the lower probe and verify resolution ordering and the encoded output before relying on the count.",
+		});
+	}
 	const report = proposal.derivation?.constraints;
 	if (report) {
 		const originalRule = goal.fixedResolutionAndBitrateConfiguration;

@@ -233,6 +233,7 @@ export type PerTitleDerivation = {
 	idealStep?: number;
 	selectedMinStep: number;
 	selectedMaxStep: number;
+	/** Satisfied within the arithmetic model and any explicit conditional source hypotheses. */
 	targetSatisfied: boolean;
 	fixedOrderRowIds?: string[];
 	integerWitness?: number[];

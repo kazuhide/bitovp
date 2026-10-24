@@ -9,6 +9,7 @@ import type {
 	PerTitleSetupIssue,
 	PerTitleSetupResult,
 } from "./per-title-guided-setup-model";
+import { allocatePerTitleSetupRanges } from "./per-title-guided-setup-ranges";
 import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
@@ -160,12 +161,11 @@ function leavesOneUpperRole(
 /** Add declared edge roles without equating probe templates with output count. */
 export function buildPerTitleEdgeSetup(
 	input: PerTitleSetupInput,
-	initialRows: readonly PerTitleGoalRow[],
 ): PerTitleSetupResult {
 	const edges = input.automaticEdges;
 	const upper = edges?.upperHeights ?? [];
 	const hasUpper = upper.length > 0;
-	const ids = new Set(initialRows.map((row) => row.id));
+	const ids = new Set(input.rows.map((row) => row.id));
 	const identity = (base: string) => {
 		let id = base;
 		for (let suffix = 1; ids.has(id); suffix++) id = `${base}-${suffix}`;
@@ -181,25 +181,35 @@ export function buildPerTitleEdgeSetup(
 			height: value,
 		})),
 	];
-	const highestHeight = Math.max(...initialRows.map((row) => row.height));
-	const top = [...initialRows]
-		.filter((row) => row.height === highestHeight)
-		.sort((a, b) => (b.minBitrate ?? 0) - (a.minBitrate ?? 0))[0];
-	const topMin = top?.minBitrate ?? NaN;
-	const topMax = top?.maxBitrate ?? NaN;
 	// Prefer the usual minimum ratio. Other candidates are simple editing values,
 	// each certified again against the complete complexity interval below.
 	const steps = Array.from(
 		{ length: 59 },
 		(_, index) => (index + 22) / 20,
 	).sort((a, b) => Math.abs(a - 1.5) - Math.abs(b - 1.5) || a - b);
-	for (const minimumStep of steps) {
+	for (const { minimumStep, readable } of steps.flatMap((minimumStep) => [
+		{ minimumStep, readable: true },
+		{ minimumStep, readable: false },
+	])) {
 		// The logarithmic midpoint leaves a fallback below a normal ratio step.
 		// This is an authoring policy, not an Encoding API default.
 		const root = Math.sqrt(minimumStep);
 		const factor =
 			Math.floor(root * (root >= 1.1 ? 10 : 100)) / (root >= 1.1 ? 10 : 100);
-		const low = hasUpper ? Math.round(topMin * factor) : topMin;
+		const initialRows = allocatePerTitleSetupRanges(
+			input,
+			minimumStep,
+			factor,
+			readable,
+		);
+		if (!initialRows) continue;
+		const highestHeight = Math.max(...initialRows.map((row) => row.height));
+		const top = [...initialRows]
+			.filter((row) => row.height === highestHeight)
+			.sort((a, b) => (b.minBitrate ?? 0) - (a.minBitrate ?? 0))[0];
+		const topMin = top?.minBitrate ?? NaN;
+		const topMax = top?.maxBitrate ?? NaN;
+		const low = hasUpper ? Math.trunc(topMin * factor) : topMin;
 		if (
 			!Number.isSafeInteger(low) ||
 			low < 1 ||
@@ -264,6 +274,7 @@ export function buildPerTitleEdgeSetup(
 		const neededMaximum = Math.max(
 			4,
 			minimumStep,
+			...(hasUpper ? [input.maxBitrate / topMin] : []),
 			proof.maximumAdjacentRatio ?? minimumStep,
 			ladder.lowerConnection?.maximumRatio ?? minimumStep,
 		);
@@ -314,14 +325,24 @@ export function buildPerTitleEdgeSetup(
 				},
 			],
 			reasoning: [
+				...(input.rows.some(
+					(row) => row.minBitrate === undefined || row.maxBitrate === undefined,
+				)
+					? [
+							{
+								en: "Missing bitrate limits are calculated backward from the highest fixed band's budget. An upper role is reserved when upper candidates are supplied. Lower-complexity endpoints minimize lower-rendition bitrate within the nominal gap limit; higher-complexity endpoints balance multiplicative spacing margins. Supplied endpoints stay unchanged. Rounded settings are checked across the complexity range; these are bitrate budgets, not measured quality results.",
+								ja: "未指定の幅は、最高固定段の帯域から逆算します。上位候補があれば、その1段の余地も確保します。複雑度が低い側は段間隔の範囲内で下位段の帯域を抑え、高い側は段間隔の余裕を均等にします。入力済みの端点は維持し、丸め後に複雑度の全区間を確認しています。画質を計測して決めた値ではありません。",
+							},
+						]
+					: []),
 				hasUpper
 					? {
-							en: "Fixed bitrate bands are retained. A shared complexity scale follows the highest fixed band's fallback floor and the overall ceiling. Spacing is checked across that scale; the fallback is below a normal ratio step. These settings do not predict the source's quality or analysis result.",
-							ja: "固定段のビットレート幅を維持し、最高固定段の強制追加で生じる下限から全体上限までを共通の複雑度境界にしています。その区間で段間隔を確認し、強制追加の間隔は通常の段間隔より小さくしています。素材の画質や解析結果を予測した値ではありません。",
+							en: "A shared complexity scale follows the highest fixed band's fallback floor and the overall ceiling. Spacing is checked across that scale; the fallback is below a normal ratio step. These settings do not predict the source's quality or analysis result.",
+							ja: "最高固定段の強制追加で生じる下限から全体上限までを共通の複雑度境界にしています。その区間で段間隔を確認し、強制追加の間隔は通常の段間隔より小さくしています。素材の画質や解析結果を予測した値ではありません。",
 						}
 					: {
-							en: "Fixed bitrate bands are retained. The shared complexity scale runs from the highest fixed band's minimum to the overall ceiling. No forced upper addition is configured. Spacing is checked across that scale; these settings do not predict the source's quality or analysis result.",
-							ja: "固定段のビットレート幅を維持し、最高固定段の最小値から全体上限までを共通の複雑度境界にしています。上位の強制追加は設定しません。その区間で段間隔を確認した値で、素材の画質や解析結果を予測したものではありません。",
+							en: "The shared complexity scale runs from the highest fixed band's minimum to the overall ceiling. No forced upper addition is configured. Spacing is checked across that scale; these settings do not predict the source's quality or analysis result.",
+							ja: "最高固定段の最小値から全体上限までを共通の複雑度境界にしています。上位の強制追加は設定しません。その区間で段間隔を確認した値で、素材の画質や解析結果を予測したものではありません。",
 						},
 			],
 		};

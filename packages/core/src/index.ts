@@ -714,6 +714,8 @@ export {
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
 } from "./plan/per-title-constraints";
+export type { PerTitleMixedSequenceCertificate } from "./plan/per-title-mixed-sequence";
+export { certifyPerTitleMixedSequence } from "./plan/per-title-mixed-sequence";
 export { resolvePerTitleAnalysis } from "./plan/per-title-output-analysis";
 export type { PerTitleOutputPreview } from "./plan/per-title-output-preview";
 export { previewPerTitleOutput } from "./plan/per-title-output-preview";

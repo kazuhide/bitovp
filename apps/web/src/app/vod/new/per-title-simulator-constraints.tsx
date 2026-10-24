@@ -7,6 +7,7 @@ const texts = {
 	en: {
 		title: "Parameter derivation",
 		checked: "Interval and count conditions checked",
+		checkedConditional: "Configuration checked under source conditions",
 		unknown: "Joint conditions not established",
 		input: "Checked input interval (kbps)",
 		floor: "Calculated lower-limit interval (kbps)",
@@ -54,6 +55,7 @@ const texts = {
 	ja: {
 		title: "パラメータの導出",
 		checked: "区間・本数の条件を確認",
+		checkedConditional: "素材の条件を前提に設定を確認",
 		unknown: "組み合わせた条件は未確認",
 		input: "確認する入力の範囲 (kbps)",
 		floor: "計算に使う下限の範囲 (kbps)",
@@ -99,6 +101,85 @@ const texts = {
 		},
 	},
 };
+
+export function PerTitleSourceConditions({
+	proposal,
+}: {
+	proposal: PerTitleProposal;
+}) {
+	const { locale } = useT();
+	const report = proposal.derivation?.constraints;
+	const model = report?.conditionalModel;
+	if (
+		!report ||
+		!model ||
+		report.status !== "checked" ||
+		report.scope !== "conditional" ||
+		proposal.status !== "candidate" ||
+		!proposal.applicable
+	)
+		return null;
+	const conditions = model.sourceConditions;
+	const format = (value: number) =>
+		new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
+			value / 1000,
+		);
+	const interval = `${format(conditions.lowerProbe.minimum)}–${format(conditions.lowerProbe.maximum)} kbps`;
+	const sourceDimension = new Intl.NumberFormat(locale).format(
+		conditions.geometry.minimumSourceDimension,
+	);
+	const groups = conditions.fixedProbeOrder.equalDimensionGroups.map((group) =>
+		group
+			.map((rowId) => model.fixedRowIds.indexOf(rowId) + 1)
+			.join(locale === "ja" ? "・" : " / "),
+	);
+	const copy =
+		locale === "ja"
+			? {
+					title: "素材で未確認の条件",
+					lower: `このモデルは、最下位の自動候補を解析し、複雑度で補正した値が ${interval} に収まる前提です。素材では未測定で、出力のビットレート制限ではありません。`,
+					geometry: `素材の${conditions.geometry.basis === "height" ? "高さ" : "幅"}は ${sourceDimension} px 以上が必要です。${conditions.geometry.commonSourceAspectRatio ? "各段が同じ素材の縦横比を持つ前提です。" : ""}素材の寸法と実際の解像度の順序は未測定です。`,
+					rounding:
+						"丸め後の幅も、指定した解像度の順序と同じ解像度の組を保つ前提です。素材では未確認です。",
+					order: groups.length
+						? `同じ解像度の段（${groups.join("、")}）の実際の解析順は未確認です。`
+						: "固定段の素材解析後の順序は未確認です。",
+					count:
+						"実際の出力本数と画質は、素材をエンコードして確認してください。",
+				}
+			: {
+					title: "Unmeasured source conditions",
+					lower: `The starting template's analyzed bitrate, after complexity scaling, must be within ${interval} for this model. It has not been measured; this is not an output bitrate limit.`,
+					geometry: `This model needs a source ${conditions.geometry.basis} of at least ${sourceDimension} px. ${conditions.geometry.commonSourceAspectRatio ? "A common source aspect ratio is assumed. " : ""}Source dimensions and the resulting resolution order have not been measured.`,
+					rounding:
+						"Rounded widths must preserve the requested resolution order and groups at the same resolution; this has not been verified.",
+					order: groups.length
+						? `Required rows with the same resolution (${groups.join("; ")}) have an unmeasured analysis order.`
+						: "The required rows' analysis order has not been measured.",
+					count:
+						"Encode your source to confirm the actual output count and quality.",
+				};
+	return (
+		<section
+			aria-label={copy.title}
+			className="space-y-2 text-xs text-zinc-400"
+		>
+			<p className="font-medium text-zinc-300">{copy.title}</p>
+			<ul className="list-disc space-y-1 pl-4">
+				<li>{copy.lower}</li>
+				<li>
+					{copy.geometry}{" "}
+					{conditions.geometry.postRoundingWidthOrderPreserved.status ===
+					"not-measured"
+						? copy.rounding
+						: null}
+				</li>
+				<li>{copy.order}</li>
+			</ul>
+			<p>{copy.count}</p>
+		</section>
+	);
+}
 
 export function PerTitleConstraints({
 	proposal,
@@ -199,7 +280,13 @@ export function PerTitleConstraints({
 	return (
 		<details className="space-y-3 border-t border-zinc-800 pt-4 text-xs text-zinc-400">
 			<summary className="cursor-pointer">{copy.title}</summary>
-			<p className="text-zinc-300">{checked ? copy.checked : copy.unknown}</p>
+			<p className="text-zinc-300">
+				{checked
+					? report.conditionalModel
+						? copy.checkedConditional
+						: copy.checked
+					: copy.unknown}
+			</p>
 			<dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-md bg-zinc-900 p-3">
 				{rows.map(([label, value]) => (
 					<div key={label} className="contents">
@@ -285,6 +372,7 @@ export function PerTitleConstraints({
 				</div>
 			) : null}
 			<p>{copy.conditions}</p>
+			<PerTitleSourceConditions proposal={proposal} />
 		</details>
 	);
 }

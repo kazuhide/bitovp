@@ -482,8 +482,7 @@ export function buildPerTitleSetup(
 			issues,
 			reasoning: [],
 		};
-	if (automaticEdgeCount(input) > 0)
-		return buildPerTitleEdgeSetup(input, allocateRanges(input));
+	if (automaticEdgeCount(input) > 0) return buildPerTitleEdgeSetup(input);
 	const isClosed = closed(input.strategy);
 	const goal: PerTitleGoal = {
 		strategy: input.strategy,

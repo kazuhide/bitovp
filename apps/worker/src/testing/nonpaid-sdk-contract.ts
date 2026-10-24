@@ -140,15 +140,30 @@ export function assertCompiledStart(
 	const start = starts[0];
 	assert(start);
 	if (!live) {
-		const encoding = plan.encodings?.[0];
-		assert.equal(
-			start.refs.encodingId,
-			encoding ? `encoding:${encoding.key}` : "encoding",
+		// This VOD fixture qualifies manifest generation only. Add independent
+		// assertions before using fixtures with any other START settings.
+		const unverified =
+			"The VOD fixture does not verify optional START settings";
+		assert.deepEqual(
+			plan.generation,
+			{ timing: plan.generation.timing },
+			unverified,
 		);
+		for (const setting of [
+			plan.perTitle,
+			plan.aiSceneAnalysis,
+			plan.bitmovin.schedulingPriority,
+			plan.bitmovin.prewarmedEncoderPoolIds,
+		])
+			assert.equal(setting, undefined, unverified);
+		const encoding = plan.encodings?.[0];
+		const encodingId = encoding ? `encoding:${encoding.key}` : "encoding";
 		const jit = plan.generation.timing === "JUST_IN_TIME";
-		copyFields(start.payload, { manifestGenerator: jit ? "V2" : undefined }, [
-			"manifestGenerator",
-		]);
+		assert.deepEqual(
+			start.payload,
+			jit ? { manifestGenerator: "V2" } : {},
+			"Unexpected VOD START payload",
+		);
 		const expected: Record<string, string[]> = {};
 		if (jit && !plan.qc?.only)
 			for (const manifest of plan.manifests) {
@@ -171,7 +186,7 @@ export function assertCompiledStart(
 				)
 					include(`preview${family}ManifestIds`);
 			}
-		copyFields(start.refs, expected, MANIFEST_REFS);
+		assert.deepEqual(start.refs, { encodingId, ...expected });
 		return;
 	}
 	assert.equal(start.refs.encodingId, "encoding");

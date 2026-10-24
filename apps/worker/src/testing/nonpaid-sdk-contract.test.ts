@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
 	compileLiveChannel,
 	compilePlan,
+	type EncodingPlan,
 	encodingPlanSchema,
 	initStepLog,
 	liveChannelPlanSchema,
@@ -178,6 +179,108 @@ describe("nonpaid submission SDK contract", () => {
 		if (!start) throw new Error("Missing VOD START fixture");
 		return start;
 	};
+	it.each([
+		{
+			name: "a false variable-FPS control",
+			configure: (plan: EncodingPlan) => {
+				plan.generation.handleVariableInputFps = false;
+			},
+		},
+		{
+			name: "a START encoding mode",
+			configure: (plan: EncodingPlan) => {
+				plan.generation.encodingMode = "TWO_PASS";
+			},
+		},
+		{
+			name: "an audio/video synchronization tweak",
+			configure: (plan: EncodingPlan) => {
+				plan.generation.audioVideoSyncMode = "RESYNC_AT_START";
+			},
+		},
+		{
+			name: "a zero scheduling priority",
+			configure: (plan: EncodingPlan) => {
+				plan.bitmovin.schedulingPriority = 0;
+			},
+		},
+		{
+			name: "prewarmed encoder pools",
+			configure: (plan: EncodingPlan) => {
+				plan.bitmovin.prewarmedEncoderPoolIds = ["synthetic-pool"];
+			},
+		},
+		{
+			name: "explicitly empty prewarmed encoder pools",
+			configure: (plan: EncodingPlan) => {
+				plan.bitmovin.prewarmedEncoderPoolIds = [];
+			},
+		},
+		{
+			name: "Per-Title settings",
+			configure: (plan: EncodingPlan) => {
+				plan.perTitle = { h264Configuration: { autoRepresentations: {} } };
+			},
+		},
+		{
+			name: "AI Scene Analysis settings",
+			configure: (plan: EncodingPlan) => {
+				plan.aiSceneAnalysis = {
+					assetDescription: {
+						filename: "analysis.json",
+						destination: { outputKey: "origin", path: "synthetic-analysis/" },
+					},
+				};
+			},
+		},
+	])("refuses unverified $name even if the compiler omits it", ({
+		configure,
+	}) => {
+		const input = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		configure(input);
+		const plan = encodingPlanSchema.parse(input);
+		const operations = compilePlan(plan);
+		// Simulate the same omission in persistence and re-compilation.
+		vodStart(operations).payload = { manifestGenerator: "V2" };
+		expect(() => assertCompiledStart(plan, operations)).toThrow(
+			"The VOD fixture does not verify optional START settings",
+		);
+	});
+
+	it.each([
+		["handleVariableInputFps", false],
+		["encodingMode", "TWO_PASS"],
+		["tweaks", { audioVideoSyncMode: "RESYNC_AT_START" }],
+		["scheduling", { priority: 0 }],
+		["perTitle", { h264Configuration: { autoRepresentations: {} } }],
+		["aiSceneAnalysis", {}],
+		["unverifiedFutureOption", 0],
+	])("rejects an unconfigured VOD START payload field %s", (field, value) => {
+		const plan = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		const operations = compilePlan(plan);
+		vodStart(operations).payload[String(field)] = value;
+		expect(() => assertCompiledStart(plan, operations)).toThrow();
+	});
+
+	it("continues to allow settings owned by encoding and codec creation", () => {
+		const plan = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		plan.bitmovin.cloudRegion = "AUTO";
+		plan.bitmovin.fallbackCloudRegions = ["AWS_US_EAST_1"];
+		plan.bitmovin.labels = ["synthetic-label"];
+		const video = plan.renditions.find(
+			(rendition) => rendition.codec === "H264",
+		);
+		if (!video) throw new Error("Missing H264 fixture");
+		video.encodingMode = "TWO_PASS";
+		expect(() => assertCompiledStart(plan, compilePlan(plan))).not.toThrow();
+	});
+
+	it("rejects an unconfigured VOD START reference outside manifest generation", () => {
+		const plan = encodingPlanSchema.parse(fixture().vod.savedPlan);
+		const operations = compilePlan(plan);
+		vodStart(operations).refs.aiAssetDescriptionOutputId = "output:origin";
+		expect(() => assertCompiledStart(plan, operations)).toThrow();
+	});
 	it.each([
 		{
 			name: "a missing JIT manifest generator",

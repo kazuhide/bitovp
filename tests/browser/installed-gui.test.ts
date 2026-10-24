@@ -767,6 +767,42 @@ async function openSubmission(browser: Browser) {
 	return { context, page, unexpected };
 }
 
+async function rejectInvalidSubmissions(
+	context: BrowserContext,
+	path: "/api/encoding-jobs" | "/api/live-channels",
+	plan: ReturnType<typeof nonpaidVodPlan> | ReturnType<typeof nonpaidLivePlan>,
+) {
+	const patches: Record<string, unknown>[] = [
+		{ level: "INVALID_LEVEL" },
+		{ level: "toString" },
+		{ level: "__proto__" },
+		{ trellis: "" },
+		{ colorConfig: { colorSpace: "INVALID_COLOR_SPACE" } },
+	];
+	if (path === "/api/live-channels")
+		patches.push(
+			{ encodingMode: "TWO_PASS" },
+			{
+				burnInSrt: {
+					inputKey: "subtitles",
+					inputPath: "captions.srt",
+					characterEncoding: "UTF_8",
+				},
+			},
+		);
+	for (const patch of patches) {
+		const candidate = structuredClone(plan);
+		Object.assign(candidate.renditions[0] as object, patch);
+		const response = await context.request.post(path, {
+			headers: { origin: fixture.baseURL },
+			maxRedirects: 0,
+			data: { plan: candidate },
+		});
+		expect(response.status()).toBe(400);
+		expect(JSON.stringify(await response.json())).toContain("renditions");
+	}
+}
+
 test("persist VOD through the authenticated submission API", async ({
 	browser,
 	request,
@@ -804,16 +840,20 @@ test("persist VOD through the authenticated submission API", async ({
 			syntheticProvider.accountId,
 			syntheticProvider.credentialId,
 		);
+		await rejectInvalidSubmissions(context, "/api/encoding-jobs", plan);
+		const imported = structuredClone(plan);
+		Object.assign(imported.renditions[0] as object, { level: "4.1" });
 		await page.goto("/vod/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
 		await page
 			.getByRole("textbox", { name: /Import plan JSON/ })
-			.fill(JSON.stringify(plan));
+			.fill(JSON.stringify(imported));
 		await page.getByRole("button", { name: /Validate.*load/i }).click();
 		await expect(page.locator("#wz-name")).toHaveValue(plan.name);
 		plan.name = "Nonpaid VOD reviewed";
 		await page.locator("#wz-name").fill(plan.name);
 		await goTo(page, /ladder/i);
+		await expect(page.locator("#wz-v-0-h264-level")).toHaveValue("L4_1");
 		await page.locator("#wz-v-0-bitrate").fill("1600000");
 		const video = plan.renditions[0];
 		if (video?.codec !== "H264") throw new Error("Expected H264 video");
@@ -844,6 +884,7 @@ test("persist VOD through the authenticated submission API", async ({
 		expect(savedJob.plan).toEqual(plan);
 		expect(savedJob.plan.renditions[0]).not.toHaveProperty("crf");
 		expect(savedJob.plan.renditions[0]).toMatchObject({
+			level: "L4_1",
 			minGop: 0,
 			openGop: false,
 			cabac: false,
@@ -891,16 +932,20 @@ test("persist Live through the authenticated submission API", async ({
 			syntheticProvider.accountId,
 			syntheticProvider.credentialId,
 		);
+		await rejectInvalidSubmissions(context, "/api/live-channels", plan);
+		const imported = structuredClone(plan);
+		Object.assign(imported.renditions[0] as object, { level: "4.1" });
 		await page.goto("/live/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
 		await page
 			.getByRole("textbox", { name: "Live channel plan JSON", exact: true })
-			.fill(JSON.stringify(plan));
+			.fill(JSON.stringify(imported));
 		await page.getByRole("button", { name: "Load plan", exact: true }).click();
 		await expect(page.locator("#lw-name")).toHaveValue(plan.name);
 		plan.name = "Nonpaid Live reviewed";
 		await page.locator("#lw-name").fill(plan.name);
 		await goTo(page, /^\d+\. Video and audio encodes$/);
+		await expect(page.locator("#lw-v-0-h264-level")).toHaveValue("L4_1");
 		await page.locator("#lw-v-0-bitrate").fill("4600000");
 		const video = plan.renditions[0];
 		if (video?.codec !== "H264") throw new Error("Expected H264 video");
@@ -930,6 +975,7 @@ test("persist Live through the authenticated submission API", async ({
 		expect(savedChannel.bitmovinEncodingId).toBeNull();
 		expect(savedChannel.plan).toEqual(plan);
 		expect(savedChannel.plan.renditions[0]).not.toHaveProperty("maxGop");
+		expect(savedChannel.plan.renditions[0].level).toBe("L4_1");
 		expect(savedChannel.plan.liveManifests[0]).toMatchObject({
 			liveEdgeOffset: 0,
 			insertProgramDateTime: false,

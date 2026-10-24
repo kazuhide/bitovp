@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { LevelH264, LevelH265 } from "@bitmovin/api-sdk";
 import {
 	type CompiledOperation,
 	compileLiveChannel,
@@ -291,6 +292,17 @@ export function assertSdkContract(
 		const raw = rendition as unknown as ObjectValue;
 		copyFields(body, raw, ["width", "height", "bitrate", "rate"]);
 		if (rendition.codec === "H264" || rendition.codec === "H265") {
+			if (rendition.level == null) {
+				assert(!Object.hasOwn(body, "level"), "An unset level reached the SDK");
+			} else {
+				const levels = rendition.codec === "H264" ? LevelH264 : LevelH265;
+				assert(Object.hasOwn(levels, rendition.level));
+				assert.equal(
+					body.level,
+					(levels as Record<string, string>)[rendition.level],
+					"A codec level changed at the SDK",
+				);
+			}
 			copyFields(body, raw, [
 				"minGop",
 				"maxGop",

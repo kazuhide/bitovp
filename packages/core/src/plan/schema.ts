@@ -2,6 +2,7 @@ import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
 import { h26xPictureControlsSchema } from "./codec-controls";
+import { codecEnumSchema } from "./codec-enums";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
@@ -508,9 +509,9 @@ export const colorConfigSchema = z.strictObject({
 	copyColorSpaceFlag: z.boolean().optional(),
 	copyChromaLocationFlag: z.boolean().optional(),
 	copyColorRangeFlag: z.boolean().optional(),
-	colorSpace: z.string().optional(),
-	colorPrimaries: z.string().optional(),
-	colorTransfer: z.string().optional(),
+	colorSpace: codecEnumSchema("ColorSpace").optional(),
+	colorPrimaries: codecEnumSchema("ColorPrimaries").optional(),
+	colorTransfer: codecEnumSchema("ColorTransfer").optional(),
 });
 
 /** Stream modes — per-title templates expand at run time (C1). */
@@ -651,8 +652,10 @@ export const h264RenditionSchema = z.strictObject({
 	/** Per-title templates leave bitrate to the algorithm (null). */
 	bitrate: z.number().int().positive().nullable(),
 	/** Sample passes level=None explicitly — nullable, not optional. */
-	level: z.string().nullable().default(null),
-	presetConfiguration: z.string().nullable().default("VOD_HIGH_QUALITY"),
+	level: codecEnumSchema("LevelH264").nullable().default(null),
+	presetConfiguration: codecEnumSchema("PresetConfiguration")
+		.nullable()
+		.default("VOD_HIGH_QUALITY"),
 	mode: streamModeSchema.default("STANDARD"),
 	/** ProfileH264 (closed set, SDK 1.269); wire value = name. */
 	profile: z.enum(["BASELINE", "MAIN", "HIGH", "HIGH422"]).optional(),
@@ -662,15 +665,17 @@ export const h264RenditionSchema = z.strictObject({
 	maxKeyframeInterval: z.number().positive().optional(),
 	// Per-title tuning surface (pertitle samples set all of these).
 	slices: z.number().int().positive().optional(),
-	trellis: z.string().optional(),
+	trellis: codecEnumSchema("H264Trellis").optional(),
 	mvSearchRangeMax: z.number().int().positive().optional(),
 	rcLookahead: z.number().int().positive().optional(),
-	subMe: z.string().optional(),
-	motionEstimationMethod: z.string().optional(),
+	subMe: codecEnumSchema("H264SubMe").optional(),
+	motionEstimationMethod: codecEnumSchema(
+		"H264MotionEstimationMethod",
+	).optional(),
 	sceneCutThreshold: z.number().int().min(0).optional(),
-	adaptiveQuantizationMode: z.string().optional(),
+	adaptiveQuantizationMode: codecEnumSchema("AdaptiveQuantMode").optional(),
 	adaptiveQuantizationStrength: z.number().optional(),
-	mvPredictionMode: z.string().optional(),
+	mvPredictionMode: codecEnumSchema("MvPredictionMode").optional(),
 	psyRateDistortionOptimization: z.number().optional(),
 	psyTrellis: z.number().optional(),
 	// AISA samples' codec surface (SDK 1.269 names; wire = name).
@@ -720,7 +725,7 @@ export const h265RenditionSchema = z.strictObject({
 	/** HDR10 per-title template scales freely — height nullable. */
 	height: z.number().int().positive().nullable(),
 	bitrate: z.number().int().positive().nullable(),
-	level: z.string().nullable().default(null),
+	level: codecEnumSchema("LevelH265").nullable().default(null),
 	mode: streamModeSchema.default("STANDARD"),
 	/** ProfileH265 (closed set, SDK 1.269); MAIN10 required for HDR10. */
 	profile: z.enum(["MAIN", "MAIN10"]).optional(),
@@ -730,22 +735,22 @@ export const h265RenditionSchema = z.strictObject({
 	rcLookahead: z.number().int().positive().optional(),
 	/** H265 sub_me is numeric (H264's is an enum name). */
 	subMe: z.number().int().min(0).optional(),
-	maxCtuSize: z.string().optional(),
-	motionSearch: z.string().optional(),
-	tuIntraDepth: z.string().optional(),
-	tuInterDepth: z.string().optional(),
+	maxCtuSize: codecEnumSchema("MaxCtuSize").optional(),
+	motionSearch: codecEnumSchema("MotionSearch").optional(),
+	tuIntraDepth: codecEnumSchema("TuIntraDepth").optional(),
+	tuInterDepth: codecEnumSchema("TuInterDepth").optional(),
 	weightPredictionOnPSlice: z.boolean().optional(),
 	weightPredictionOnBSlice: z.boolean().optional(),
 	sceneCutThreshold: z.number().int().min(0).optional(),
 	motionSearchRange: z.number().int().positive().optional(),
-	adaptiveQuantizationMode: z.string().optional(),
+	adaptiveQuantizationMode: codecEnumSchema("AdaptiveQuantMode").optional(),
 	adaptiveQuantizationStrength: z.number().optional(),
 	psyRateDistortionOptimization: z.number().optional(),
 	psyRateDistortionOptimizedQuantization: z.number().optional(),
 	qpMin: z.number().int().min(0).optional(),
 	sao: z.boolean().optional(),
 	// HDR10 (ARCHITECTURE: MAIN10 + PQ + mastering metadata)
-	pixelFormat: z.string().optional(),
+	pixelFormat: codecEnumSchema("PixelFormat").optional(),
 	hdr: z.boolean().optional(),
 	masterDisplay: z.string().optional(),
 	maxContentLightLevel: z.number().int().positive().optional(),
@@ -753,7 +758,7 @@ export const h265RenditionSchema = z.strictObject({
 	colorConfig: colorConfigSchema.optional(),
 	perTitleSettings: perTitleStreamSettingsSchema.optional(),
 	// Dolby ladders (PR5): rate-control + dynamic range + preset
-	presetConfiguration: z.string().optional(),
+	presetConfiguration: codecEnumSchema("PresetConfiguration").optional(),
 	maxBitrate: z.number().int().nonnegative().optional(),
 	bufsize: z.number().int().nonnegative().optional(),
 	/** false = Main-tier level signaling (DASH OnDemand sample). */
@@ -806,7 +811,9 @@ export const ddPlusRenditionSchema = z.strictObject({
 	name: z.string().optional(),
 	bitrate: z.number().int().positive(),
 	rate: z.number().positive(),
-	channelLayout: z.string().default("CL_STEREO"),
+	channelLayout: codecEnumSchema("DolbyDigitalPlusChannelLayout").default(
+		"CL_STEREO",
+	),
 });
 
 export const ddRenditionSchema = z.strictObject({
@@ -815,7 +822,9 @@ export const ddRenditionSchema = z.strictObject({
 	name: z.string().optional(),
 	bitrate: z.number().int().positive(),
 	rate: z.number().positive(),
-	channelLayout: z.string().default("CL_STEREO"),
+	channelLayout: codecEnumSchema("DolbyDigitalChannelLayout").default(
+		"CL_STEREO",
+	),
 });
 
 export const vp9RenditionSchema = z.strictObject({
@@ -833,10 +842,10 @@ export const vp9RenditionSchema = z.strictObject({
 	qpMax: z.number().int().min(0).optional(),
 	rateUndershootPct: z.number().int().min(0).optional(),
 	rateOvershootPct: z.number().int().min(0).optional(),
-	quality: z.string().optional(),
+	quality: codecEnumSchema("Vp9Quality").optional(),
 	lossless: z.boolean().nullable().optional(),
-	aqMode: z.string().optional(),
-	arnrType: z.string().optional(),
+	aqMode: codecEnumSchema("Vp9AqMode").optional(),
+	arnrType: codecEnumSchema("Vp9ArnrType").optional(),
 	arnrMaxFrames: z.number().int().min(0).optional(),
 	arnrStrength: z.number().int().min(0).optional(),
 	colorConfig: colorConfigSchema.optional(),
@@ -912,7 +921,7 @@ export const aacRenditionSchema = z.strictObject({
 	name: z.string().optional(),
 	bitrate: z.number().int().positive(),
 	rate: z.number().positive(),
-	channelLayout: z.string().default("CL_STEREO"),
+	channelLayout: codecEnumSchema("AacChannelLayout").default("CL_STEREO"),
 });
 
 /**

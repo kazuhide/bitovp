@@ -314,10 +314,15 @@ export function buildPerTitleEdgeSetup(
 				},
 			],
 			reasoning: [
-				{
-					en: "Fixed bitrate bands are retained. A shared complexity scale follows the highest fixed band's fallback floor and the overall ceiling. Spacing is checked across that scale; the fallback is below a normal ratio step. These settings do not predict the source's quality or analysis result.",
-					ja: "固定段のビットレート幅を維持し、最高固定段の強制追加で生じる下限から全体上限までを共通の複雑度境界にしています。その区間で段間隔を確認し、強制追加の間隔は通常の段間隔より小さくしています。素材の画質や解析結果を予測した値ではありません。",
-				},
+				hasUpper
+					? {
+							en: "Fixed bitrate bands are retained. A shared complexity scale follows the highest fixed band's fallback floor and the overall ceiling. Spacing is checked across that scale; the fallback is below a normal ratio step. These settings do not predict the source's quality or analysis result.",
+							ja: "固定段のビットレート幅を維持し、最高固定段の強制追加で生じる下限から全体上限までを共通の複雑度境界にしています。その区間で段間隔を確認し、強制追加の間隔は通常の段間隔より小さくしています。素材の画質や解析結果を予測した値ではありません。",
+						}
+					: {
+							en: "Fixed bitrate bands are retained. The shared complexity scale runs from the highest fixed band's minimum to the overall ceiling. No forced upper addition is configured. Spacing is checked across that scale; these settings do not predict the source's quality or analysis result.",
+							ja: "固定段のビットレート幅を維持し、最高固定段の最小値から全体上限までを共通の複雑度境界にしています。上位の強制追加は設定しません。その区間で段間隔を確認した値で、素材の画質や解析結果を予測したものではありません。",
+						},
 			],
 		};
 	}

@@ -159,4 +159,40 @@ describe("new mixed Per-Title requirements", () => {
 		).toBe(true);
 		expect(result.status).toBe("unverified");
 	});
+
+	it("explains a lower-only setup without an upper fallback", () => {
+		const input: PerTitleSetupInput = {
+			strategy: "fixed-ranges",
+			codec: "H264",
+			minBitrate: 100_000,
+			maxBitrate: 1_000_000,
+			automaticEdges: { lowerHeight: 160 },
+			count: 3,
+			rows: [
+				{ id: "small", height: 320, minBitrate: 300_000, maxBitrate: 300_000 },
+				{ id: "large", height: 640, minBitrate: 900_000, maxBitrate: 900_000 },
+			],
+		};
+		const result = buildPerTitleSetup(input);
+		expect(result.goal).not.toBeNull();
+		expect(
+			result.proposal?.api.global.fixedResolutionAndBitrateConfiguration,
+		).toBeUndefined();
+		expect(result.goal?.automaticTemplates?.map((row) => row.height)).toEqual([
+			160,
+		]);
+		expect(
+			result.reasoning.some((item) =>
+				item.en.includes("No forced upper addition"),
+			),
+		).toBe(true);
+		expect(
+			result.reasoning.some((item) =>
+				item.ja.includes("上位の強制追加は設定しません"),
+			),
+		).toBe(true);
+		expect(
+			result.reasoning.some((item) => item.en.includes("fallback floor")),
+		).toBe(false);
+	});
 });

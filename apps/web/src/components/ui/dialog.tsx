@@ -12,7 +12,15 @@ type DialogProps = {
 	description?: string;
 	/** Wide layout for browsing UIs (storage picker). */
 	wide?: boolean;
+	/** Room for workspace editors; explicit sizes take precedence over wide. */
+	size?: "default" | "wide" | "workspace";
 	children: ReactNode;
+};
+
+const widths = {
+	default: "w-full max-w-lg",
+	wide: "w-full max-w-4xl",
+	workspace: "w-[calc(100vw-2rem)] max-w-[1600px]",
 };
 
 export function Dialog({
@@ -21,6 +29,7 @@ export function Dialog({
 	title,
 	description,
 	wide = false,
+	size,
 	children,
 }: DialogProps) {
 	const { t } = useT();
@@ -29,8 +38,8 @@ export function Dialog({
 			<DialogPrimitive.Portal>
 				<DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/60" />
 				<DialogPrimitive.Content
-					className={`fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-full ${
-						wide ? "max-w-4xl" : "max-w-lg"
+					className={`fixed top-1/2 left-1/2 z-50 max-h-[85vh] ${
+						widths[size ?? (wide ? "wide" : "default")]
 					} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-6 shadow-xl`}
 				>
 					<div className="flex items-start justify-between gap-4">

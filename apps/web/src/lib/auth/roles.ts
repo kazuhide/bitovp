@@ -75,6 +75,11 @@ const WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;
  */
 export const ROUTE_RULES: readonly RouteRule[] = [
 	{
+		prefix: "/api/per-title-simulator-presets",
+		minRole: "ADMIN",
+		reason: "Organization-scoped local simulator presets",
+	},
+	{
 		prefix: "/api/access-events",
 		minRole: "ADMIN",
 		reason: "Organization access history",

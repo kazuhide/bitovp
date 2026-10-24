@@ -450,6 +450,67 @@ describe("per-title attribution — abstains rather than guesses", () => {
 });
 
 describe("per-title attribution — provider-copied fixed settings (release audit §4.3)", () => {
+	it.each([
+		"codecMaxBitrateFactor",
+		"codecBufsizeFactor",
+	] as const)("abstains when the provider's outer %s override differs", (field) => {
+		const settings = {
+			fixedResolutionAndBitrateSettings: {
+				minBitrate: 200000,
+				maxBitrate: 400000,
+			},
+			codecMaxBitrateFactor: 1.7,
+			codecBufsizeFactor: 2.5,
+		};
+		const template: TemplateStreamRef = {
+			rendition: "factor-template",
+			codec: "H264",
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			height: 360,
+			perTitleSettings: settings,
+		};
+		const result = {
+			codecType: "H264",
+			appliedSettings: { height: 360 },
+			perTitleSettings: settings,
+		};
+		expect(attributeResult(result, [template])).toBe("factor-template");
+		expect(
+			attributeResult(
+				{
+					...result,
+					perTitleSettings: { ...settings, [field]: settings[field] + 0.1 },
+				},
+				[template],
+			),
+		).toBeUndefined();
+	});
+	it("distinguishes otherwise identical fixed templates by their outer codec overrides", () => {
+		const fixed = { minBitrate: 200000, maxBitrate: 400000 };
+		const templates: TemplateStreamRef[] = [1.7, 1.8].map((factor, index) => ({
+			rendition: `factor-${index}`,
+			codec: "H264",
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			height: 360,
+			perTitleSettings: {
+				fixedResolutionAndBitrateSettings: fixed,
+				codecMaxBitrateFactor: factor,
+			},
+		}));
+		expect(
+			attributeResult(
+				{
+					codecType: "H264",
+					appliedSettings: { height: 360 },
+					perTitleSettings: {
+						fixedResolutionAndBitrateSettings: fixed,
+						codecMaxBitrateFactor: 1.8,
+					},
+				},
+				templates,
+			),
+		).toBe("factor-1");
+	});
 	const common = {
 		bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
 		lowComplexityBoundaryForMaxBitrate: 2_160_000,
@@ -1861,6 +1922,20 @@ describe("bitmovinCapturePort — the row guards", () => {
 			},
 		};
 	}
+	it("keeps outer codec overrides independently of fixed-template settings", async () => {
+		const settings = { codecMaxBitrateFactor: 1.75, codecBufsizeFactor: 2.5 };
+		const port = bitmovinCapturePort(
+			api([
+				{
+					id: "factor-result",
+					mode: "PER_TITLE_RESULT",
+					perTitleSettings: settings,
+				},
+			]) as never,
+		);
+		const page = await port.listStreams("encoding");
+		expect(page.items[0]?.perTitleSettings).toEqual(settings);
+	});
 
 	it("treats an EMPTY id as unusable, not as a usable row", async () => {
 		const port = bitmovinCapturePort(

@@ -10,6 +10,7 @@ import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
 import { muxingStreamKeys } from "./muxing-streams";
+import { streamPerTitleSettings } from "./per-title-settings";
 import type { EncodingPlan } from "./schema";
 import { AUDIO_CODECS } from "./schema";
 import { SRT_CHARACTER_ENCODING_VALUES } from "./srt-character-encodings";
@@ -997,9 +998,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					: {}),
 				...(isVideoCodec(rendition) && rendition.perTitleSettings
 					? {
-							perTitleSettings: {
-								fixedResolutionAndBitrateSettings: rendition.perTitleSettings,
-							},
+							perTitleSettings: streamPerTitleSettings(
+								rendition.perTitleSettings,
+							),
 						}
 					: {}),
 			},

@@ -704,6 +704,21 @@ export {
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
 export { outputStorageKeys } from "./plan/output-files";
+export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
+export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
+export {
+	boundComplexityRange,
+	certifyComplexityDirectConnection,
+	certifyComplexityIntervals,
+	complexityTargetsDoNotDecrease,
+	evaluateComplexityRange,
+	evaluateForcedRenditions,
+} from "./plan/per-title-constraints";
+export type { PerTitleMixedSequenceCertificate } from "./plan/per-title-mixed-sequence";
+export { certifyPerTitleMixedSequence } from "./plan/per-title-mixed-sequence";
+export { resolvePerTitleAnalysis } from "./plan/per-title-output-analysis";
+export type { PerTitleOutputPreview } from "./plan/per-title-output-preview";
+export { previewPerTitleOutput } from "./plan/per-title-output-preview";
 export type {
 	CapturedPerTitleSettings,
 	EncodingApiSubset,
@@ -741,6 +756,28 @@ export {
 	SCAN_PAGE_CAP,
 	templateStreamRefSchema,
 } from "./plan/per-title-results";
+export type {
+	PerTitleAdjustment,
+	PerTitleAdjustmentMethod,
+	PerTitleAdjustments,
+	PerTitleApiSettings,
+	PerTitleAutomaticTemplate,
+	PerTitleCodec,
+	PerTitleCountPolicy,
+	PerTitleDerivation,
+	PerTitleDiagnostic,
+	PerTitleFixedResolutionAndBitrateConfiguration,
+	PerTitleGoal,
+	PerTitleGoalRow,
+	PerTitleProposal,
+	PerTitleScenario,
+	PerTitleSettingLocks,
+	PerTitleStrategy,
+} from "./plan/per-title-simulator";
+export {
+	proposePerTitleSettings,
+	recommendPerTitleSettings,
+} from "./plan/per-title-simulator";
 export type {
 	CreateLivePresetRequest,
 	CreatePlanPresetRequest,
@@ -820,8 +857,12 @@ export {
 	LIBVMAF_BUILTIN_MODELS,
 	OPUS_CHANNEL_LAYOUTS,
 	opusRenditionSchema,
+	PER_TITLE_MIN_BITRATE,
 	PLAN_VERSION,
 	paddingSequenceSchema,
+	perTitleFixedResolutionAndBitrateSettingsSchema,
+	perTitleSchema,
+	perTitleStreamSettingsSchema,
 	planInputSchema,
 	planManifestSchema,
 	planMuxingSchema,

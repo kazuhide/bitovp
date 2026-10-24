@@ -13,6 +13,7 @@ import {
 	assertInternalHevcV2Access,
 	type InternalHevcV2,
 } from "./internal-hevc-v2";
+import { createLiveStartFetch } from "./live-start-fetch";
 import { createMonitoringFetch } from "./monitoring-fetch";
 import { createOrphanStopFetch } from "./orphan-stop-fetch";
 import { createRetryingFetch } from "./retrying-fetch";
@@ -1606,6 +1607,9 @@ export function createBitmovinSdkOps(
 		: options.monitoringSignal
 			? createMonitoringFetch(options.monitoringSignal)
 			: createRetryingFetch();
+	const liveStartFetch = createLiveStartFetch(
+		options.stamp ? createStampingFetch(retrying, options.stamp) : retrying,
+	);
 	const api = new BitmovinApi({
 		apiKey: options.apiKey,
 		...(options.internalHevcV2
@@ -1620,9 +1624,7 @@ export function createBitmovinSdkOps(
 		// only a fetch REJECTION is retried, never a response the API actually
 		// sent. The stamping layer sits OUTSIDE the retrying layer so a retried
 		// request carries the same stamp bytes.
-		fetch: options.stamp
-			? createStampingFetch(retrying, options.stamp)
-			: retrying,
+		fetch: liveStartFetch.fetch,
 	});
 
 	/** Audits one SDK call; `requestSnapshot` must already be secret-free. */
@@ -1773,6 +1775,7 @@ export function createBitmovinSdkOps(
 
 	const ctx: OpsContext = {
 		api,
+		runLiveStart: liveStartFetch.run,
 		options,
 		record,
 		audited,

@@ -167,6 +167,60 @@ afterEach(() => {
 
 describe("POST /api/encoding-jobs", () => {
 	it.each([
+		["unknown level", 0, { level: "INVALID_LEVEL" }, "level"],
+		["inherited function", 0, { level: "toString" }, "level"],
+		["inherited object", 0, { level: "__proto__" }, "level"],
+		["empty trellis", 0, { trellis: "" }, "trellis"],
+		[
+			"unknown preset",
+			0,
+			{ presetConfiguration: "INVALID_PRESET" },
+			"presetConfiguration",
+		],
+		[
+			"unknown color space",
+			0,
+			{ colorConfig: { colorSpace: "INVALID_COLOR_SPACE" } },
+			"colorSpace",
+		],
+		[
+			"unknown audio layout",
+			2,
+			{ channelLayout: "INVALID_LAYOUT" },
+			"channelLayout",
+		],
+	] as const)("rejects %s before persisting or enqueueing", async (_name, index, patch, _field) => {
+		const candidate: Record<string, unknown> = structuredClone(
+			planWithAccount(),
+		);
+		const renditions = candidate.renditions as Record<string, unknown>[];
+		Object.assign(renditions[index] as Record<string, unknown>, patch);
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(400);
+		expect(JSON.stringify(await response.json())).toContain("renditions");
+		expect(create).not.toHaveBeenCalled();
+		expect(createRequestCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"L4_1",
+		"4.1",
+	])("persists the recognized H264 level %s in canonical form", async (level) => {
+		const candidate: Record<string, unknown> = structuredClone(
+			planWithAccount(),
+		);
+		const renditions = candidate.renditions as Record<string, unknown>[];
+		Object.assign(renditions[0] as Record<string, unknown>, { level });
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.plan.renditions[0].level).toBe(
+			"L4_1",
+		);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
 		[
 			"missing",
 			async () => [],

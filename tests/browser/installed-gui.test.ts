@@ -767,6 +767,42 @@ async function openSubmission(browser: Browser) {
 	return { context, page, unexpected };
 }
 
+async function rejectInvalidSubmissions(
+	context: BrowserContext,
+	path: "/api/encoding-jobs" | "/api/live-channels",
+	plan: ReturnType<typeof nonpaidVodPlan> | ReturnType<typeof nonpaidLivePlan>,
+) {
+	const patches: Record<string, unknown>[] = [
+		{ level: "INVALID_LEVEL" },
+		{ level: "toString" },
+		{ level: "__proto__" },
+		{ trellis: "" },
+		{ colorConfig: { colorSpace: "INVALID_COLOR_SPACE" } },
+	];
+	if (path === "/api/live-channels")
+		patches.push(
+			{ encodingMode: "TWO_PASS" },
+			{
+				burnInSrt: {
+					inputKey: "subtitles",
+					inputPath: "captions.srt",
+					characterEncoding: "UTF_8",
+				},
+			},
+		);
+	for (const patch of patches) {
+		const candidate = structuredClone(plan);
+		Object.assign(candidate.renditions[0] as object, patch);
+		const response = await context.request.post(path, {
+			headers: { origin: fixture.baseURL },
+			maxRedirects: 0,
+			data: { plan: candidate },
+		});
+		expect(response.status()).toBe(400);
+		expect(JSON.stringify(await response.json())).toContain("renditions");
+	}
+}
+
 test("persist VOD through the authenticated submission API", async ({
 	browser,
 	request,
@@ -804,6 +840,7 @@ test("persist VOD through the authenticated submission API", async ({
 			syntheticProvider.accountId,
 			syntheticProvider.credentialId,
 		);
+		await rejectInvalidSubmissions(context, "/api/encoding-jobs", plan);
 		await page.goto("/vod/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
 		await page
@@ -844,6 +881,7 @@ test("persist VOD through the authenticated submission API", async ({
 		expect(savedJob.plan).toEqual(plan);
 		expect(savedJob.plan.renditions[0]).not.toHaveProperty("crf");
 		expect(savedJob.plan.renditions[0]).toMatchObject({
+			level: "L4_1",
 			minGop: 0,
 			openGop: false,
 			cabac: false,
@@ -891,6 +929,7 @@ test("persist Live through the authenticated submission API", async ({
 			syntheticProvider.accountId,
 			syntheticProvider.credentialId,
 		);
+		await rejectInvalidSubmissions(context, "/api/live-channels", plan);
 		await page.goto("/live/new");
 		await page.getByRole("button", { name: /Import plan JSON/ }).click();
 		await page
@@ -930,6 +969,7 @@ test("persist Live through the authenticated submission API", async ({
 		expect(savedChannel.bitmovinEncodingId).toBeNull();
 		expect(savedChannel.plan).toEqual(plan);
 		expect(savedChannel.plan.renditions[0]).not.toHaveProperty("maxGop");
+		expect(savedChannel.plan.renditions[0].level).toBe("L4_1");
 		expect(savedChannel.plan.liveManifests[0]).toMatchObject({
 			liveEdgeOffset: 0,
 			insertProgramDateTime: false,

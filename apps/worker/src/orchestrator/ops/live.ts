@@ -78,7 +78,7 @@ export function createLiveOps(
 	| "listLiveInsertableContent"
 	| "listScheduledInsertableContent"
 > {
-	const { api, audited, id, options } = ctx;
+	const { api, audited, id, options, runLiveStart } = ctx;
 	// review-223 F3: the SDK default page is 25 — a channel that accumulated
 	// more contents (slates re-registered across restarts adopt by name, but
 	// every distinct schedule row mints one) would make adopt-by-name miss and
@@ -201,9 +201,11 @@ export function createLiveOps(
 			}
 			const live = api.encoding.encodings.live;
 			const start = (request: StartLiveEncodingRequest) =>
-				encodingOption === "HD"
-					? live.hd.start(encodingId, request)
-					: live.start(encodingId, request);
+				runLiveStart(encodingId, p.reuploadSettings, () =>
+					encodingOption === "HD"
+						? live.hd.start(encodingId, request)
+						: live.start(encodingId, request),
+				);
 			const Request =
 				encodingOption === "HD"
 					? StartLiveChannelEncodingRequest
@@ -332,9 +334,7 @@ export function createLiveOps(
 									),
 									reuploadSettings: p.reuploadSettings
 										? new ReuploadSettings({
-												// Explicit null = "never re-upload" (SDK-documented) and
-												// must reach the wire; the model types the fields as
-												// number? — the narrow cast carries null through.
+												// The request-scoped fetch restores null after SDK serialization.
 												dashManifestInterval: p.reuploadSettings
 													.dashManifestInterval as number | undefined,
 												muxingInitFileInterval: p.reuploadSettings

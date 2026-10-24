@@ -64,6 +64,7 @@ function fixture() {
 		});
 		plan.deliveryMirrors = [{ outputKey: "mirror" }];
 		Object.assign(plan.renditions[0], {
+			level: "L4_1",
 			minGop: 0,
 			openGop: false,
 			cabac: false,
@@ -403,6 +404,12 @@ describe("nonpaid submission SDK contract", () => {
 		return found.body;
 	};
 	it.each([
+		{
+			name: "a lost codec level",
+			mutate: (captured: CapturedSdkRequests) => {
+				delete body(captured, "codec:v360").level;
+			},
+		},
 		{
 			name: "a lost false value",
 			mutate: (captured: CapturedSdkRequests) => {

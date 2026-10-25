@@ -61,6 +61,62 @@ const globalValue = (key: string) => {
 };
 
 describe("calculated Per-Title parameter view", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("identifies mixed-order API streams by their modes and dimensions in %s", (locale) => {
+		const value = proposal();
+		const rangeStream = value.api.streams[0];
+		if (!rangeStream) throw new Error("Missing fixed-range fixture");
+		value.api.streams = [
+			{
+				rowId: "resolution",
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+				height: 576,
+			},
+			{ ...rangeStream, height: 768, width: undefined },
+			{ rowId: "sized-template", mode: "PER_TITLE_TEMPLATE", height: 320 },
+			{ rowId: "no-resolution", mode: "PER_TITLE_TEMPLATE" },
+		];
+		const snapshot = structuredClone(value);
+		const { container } = renderLocalized(
+			<PerTitleParameterView proposal={value} />,
+			locale,
+		);
+		expect(
+			screen.getAllByRole("rowheader").map((header) => header.textContent),
+		).toEqual([
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			locale === "en"
+				? "PER_TITLE_TEMPLATE (resolution specified)"
+				: "PER_TITLE_TEMPLATE (解像度指定)",
+			locale === "en"
+				? "PER_TITLE_TEMPLATE (no resolution)"
+				: "PER_TITLE_TEMPLATE (解像度なし)",
+		]);
+		expect(
+			screen.queryByRole("columnheader", {
+				name: locale === "en" ? "Stream" : "ストリーム",
+			}),
+		).toBeNull();
+		expect(
+			screen.getByRole("columnheader", {
+				name: locale === "en" ? "Mode" : "モード",
+			}),
+		).toBeVisible();
+		const range = screen.getByRole("row", {
+			name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
+		});
+		expect(range).toHaveTextContent("768");
+		expect(range).toHaveTextContent("160.001");
+		expect(range).toHaveTextContent("COMPLEXITY_RANGE");
+		expect(range).toHaveTextContent("1,000");
+		expect(range).toHaveTextContent("2,400");
+		expect(container).not.toHaveTextContent(/Rendition \d|レンディション \d/);
+		expect(value).toEqual(snapshot);
+	});
+
 	it("shows emitted optional quality, analysis and outer stream factors without inventing omitted values", () => {
 		const value = proposal();
 		Object.assign(value.api.global, {
@@ -88,7 +144,9 @@ describe("calculated Per-Title parameter view", () => {
 			["autoRepresentations.adoptConfigurationThreshold", "0"],
 		] as const)
 			expect(globalValue(key)).toHaveTextContent(expected);
-		const row = screen.getByRole("row", { name: /Rendition 1/ });
+		const row = screen.getByRole("row", {
+			name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
+		});
 		expect(within(row).getByText("1.3")).toBeVisible();
 		expect(within(row).getByText("2.2")).toBeVisible();
 		expect(screen.queryByText("targetQualityQp")).toBeNull();
@@ -122,7 +180,7 @@ describe("calculated Per-Title parameter view", () => {
 			locale === "en" ? "Included" : "指定あり",
 		);
 		const first = screen.getByRole("row", {
-			name: locale === "en" ? /Rendition 1/ : /レンディション 1/,
+			name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
 		});
 		expect(first).toHaveTextContent("640 × 360");
 		expect(first).toHaveTextContent("160.001");
@@ -131,11 +189,11 @@ describe("calculated Per-Title parameter view", () => {
 		expect(first).toHaveTextContent("2,400");
 		expect(
 			screen.getByRole("row", {
-				name: locale === "en" ? /Rendition 2/ : /レンディション 2/,
+				name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION(?!_AND_BITRATE)/,
 			}),
 		).toHaveTextContent("PER_TITLE_TEMPLATE_FIXED_RESOLUTION");
 		const automatic = screen.getByRole("row", {
-			name: locale === "en" ? /Rendition 3/ : /レンディション 3/,
+			name: /^PER_TITLE_TEMPLATE \(/,
 		});
 		expect(
 			within(automatic).getAllByText(
@@ -185,9 +243,11 @@ describe("calculated Per-Title parameter view", () => {
 		expect(screen.queryByText("h264Configuration")).toBeNull();
 		expect(globalValue("minBitrateStepSize")).toHaveTextContent(/^2.5$/);
 		expect(globalValue("maxBitrate (kbps)")).toHaveTextContent("4,800");
-		expect(screen.getByRole("row", { name: /Rendition 1/ })).toHaveTextContent(
-			"4,800",
-		);
+		expect(
+			screen.getByRole("row", {
+				name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
+			}),
+		).toHaveTextContent("4,800");
 	});
 	it("distinguishes absent fields from zero and does not invent selection defaults", () => {
 		const value = proposal();
@@ -216,7 +276,9 @@ describe("calculated Per-Title parameter view", () => {
 				"forcedRenditionAboveHighestFixedRepresentationCalculationMode",
 			),
 		).toHaveTextContent("Unset");
-		const row = screen.getByRole("row", { name: /Rendition 1/ });
+		const row = screen.getByRole("row", {
+			name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
+		});
 		expect(within(row).getAllByText("Unset").length).toBeGreaterThanOrEqual(5);
 		expect(row).not.toHaveTextContent("OPTIMIZED");
 	});
@@ -229,7 +291,9 @@ describe("calculated Per-Title parameter view", () => {
 		expect(
 			screen.queryByText("forcedRenditionAboveHighestFixedRepresentation"),
 		).toBeNull();
-		const row = screen.getByRole("row", { name: /Rendition 1/ });
+		const row = screen.getByRole("row", {
+			name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
+		});
 		expect(within(row).getAllByText("Not applicable")).toHaveLength(2);
 	});
 	it("labels invalid numbers without rendering nonfinite values as parameters", () => {
@@ -260,9 +324,11 @@ describe("calculated Per-Title parameter view", () => {
 		expect(
 			globalValue("forcedRenditionAboveHighestFixedRepresentation"),
 		).toHaveTextContent("Invalid");
-		expect(screen.getByRole("row", { name: /Rendition 1/ })).toHaveTextContent(
-			"Invalid",
-		);
+		expect(
+			screen.getByRole("row", {
+				name: /^PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE/,
+			}),
+		).toHaveTextContent("Invalid");
 		expect(container).not.toHaveTextContent(/NaN|Infinity/);
 	});
 	it("keeps global parameters visible for an empty stream list", () => {

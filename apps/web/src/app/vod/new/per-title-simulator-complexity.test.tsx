@@ -50,6 +50,40 @@ describe("Per-Title complexity boundary parameters", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("identifies a mixed-order API stream by its mode and dimensions in %s", (locale) => {
+		const current = proposal([
+			{
+				rowId: "resolution",
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+				height: 576,
+			},
+			{ ...stream("range"), height: 768 },
+			{ rowId: "sized-template", mode: "PER_TITLE_TEMPLATE", height: 320 },
+			{ rowId: "no-resolution", mode: "PER_TITLE_TEMPLATE" },
+		]);
+		const snapshot = structuredClone(current);
+		const { container } = renderLocalized(
+			<PerTitleComplexity proposal={current} />,
+			locale,
+		);
+		expect(
+			screen.getByText(
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE · 768 px",
+			),
+		).toBeVisible();
+		expect(container).not.toHaveTextContent(/Rendition \d|レンディション \d/);
+		expect(container.querySelectorAll("svg")).toHaveLength(1);
+		expect(
+			screen
+				.getAllByTestId("per-title-complexity-point")
+				.map((point) => point.getAttribute("data-value")),
+		).toEqual(["1000000", "2400000"]);
+		expect(current).toEqual(snapshot);
+	});
+
+	it.each([
+		"en",
+		"ja",
 	] as const)("shows emitted API values and before/current changes in %s", (locale) => {
 		const baseline = proposal([stream("first", 800_000, 2_000_000)]);
 		const current = proposal();
@@ -175,8 +209,11 @@ describe("Per-Title complexity boundary parameters", () => {
 				baseline={proposal([stream("same", 777_000, 1_700_000)])}
 			/>,
 		);
-		expect(screen.getByText("Rendition 1 · 360 px")).toBeVisible();
-		expect(screen.getByText("Rendition 2 · 360 px")).toBeVisible();
+		expect(
+			screen.getAllByText(
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE · 360 px",
+			),
+		).toHaveLength(2);
 		expect(container.querySelectorAll("svg")).toHaveLength(2);
 		expect(container).not.toHaveTextContent(/777|1,700|→/);
 		expect(

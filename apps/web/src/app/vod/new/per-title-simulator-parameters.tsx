@@ -8,12 +8,12 @@ import {
 	perTitleGlobalFields,
 	perTitleStreamFields,
 } from "./per-title-simulator-tuning";
+import { perTitleStreamLabel } from "./per-title-stream-mode";
 
 const texts = {
 	en: {
 		title: "Calculated Per-Title settings",
 		streams: "Streams",
-		stream: "Stream",
 		mode: "Mode",
 		dimensions: "Dimensions (px)",
 		unset: "Unset",
@@ -21,12 +21,10 @@ const texts = {
 		invalid: "Invalid",
 		included: "Included",
 		empty: "No streams",
-		row: (number: number) => `Rendition ${number}`,
 	},
 	ja: {
 		title: "計算後のPer-Title設定",
 		streams: "ストリーム",
-		stream: "ストリーム",
 		mode: "モード",
 		dimensions: "寸法 (px)",
 		unset: "未設定",
@@ -34,7 +32,6 @@ const texts = {
 		invalid: "無効な値",
 		included: "指定あり",
 		empty: "ストリームなし",
-		row: (number: number) => `レンディション ${number}`,
 	},
 };
 
@@ -184,7 +181,7 @@ export function PerTitleParameterView({
 						<caption className="sr-only">{text.streams}</caption>
 						<thead className="text-zinc-400">
 							<tr>
-								{[text.stream, text.mode, text.dimensions].map((label) => (
+								{[text.mode, text.dimensions].map((label) => (
 									<th
 										key={label}
 										rowSpan={2}
@@ -243,17 +240,11 @@ export function PerTitleParameterView({
 									key={`${stream.rowId}-${index}`}
 									className="border-t border-zinc-800"
 								>
-									<th
-										scope="row"
-										className="whitespace-nowrap px-2 py-2 align-top font-medium"
-									>
-										{text.row(index + 1)}
-									</th>
-									<td className="px-2 py-2 align-top">
-										<span className="block max-w-48 break-words">
-											{stream.mode}
+									<th scope="row" className="px-2 py-2 align-top font-medium">
+										<span className="block max-w-48 break-all">
+											{perTitleStreamLabel(stream, locale)}
 										</span>
-									</td>
+									</th>
 									<td className="whitespace-nowrap px-2 py-2 align-top">
 										{numeric(stream.width, "pixel")} ×{" "}
 										{numeric(stream.height, "pixel")}

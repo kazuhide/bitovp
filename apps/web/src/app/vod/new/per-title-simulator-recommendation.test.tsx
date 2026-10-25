@@ -609,7 +609,12 @@ describe("Per-Title recommendation flow", () => {
 							? "Calculated Per-Title settings"
 							: "計算後のPer-Title設定",
 				}),
-			).getByText("PER_TITLE_TEMPLATE", { exact: true }),
+			).getByText(
+				locale === "en"
+					? "PER_TITLE_TEMPLATE (resolution specified)"
+					: "PER_TITLE_TEMPLATE (解像度指定)",
+				{ exact: true },
+			),
 		).toBeVisible();
 	});
 

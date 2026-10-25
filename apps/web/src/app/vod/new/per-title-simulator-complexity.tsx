@@ -3,6 +3,7 @@
 import type { PerTitleProposal } from "@bitovp/core";
 import { useId } from "react";
 import { useT } from "@/lib/i18n/context";
+import { perTitleStreamLabel } from "./per-title-stream-mode";
 
 const lowField = "lowComplexityBoundaryForMaxBitrate";
 const highField = "highComplexityBoundaryForMaxBitrate";
@@ -17,7 +18,7 @@ const copy = {
 		low: "Low",
 		high: "High",
 		unavailable: "Boundary values unavailable",
-		row: (number: number) => `Rendition ${number}`,
+		width: (width: number) => `Width ${width} px`,
 	},
 	ja: {
 		title: "複雑度境界",
@@ -26,7 +27,7 @@ const copy = {
 		low: "下側",
 		high: "上側",
 		unavailable: "境界値が未設定または無効です",
-		row: (number: number) => `レンディション ${number}`,
+		width: (width: number) => `幅 ${width} px`,
 	},
 };
 
@@ -69,6 +70,20 @@ export function PerTitleComplexity({
 	const text = copy[locale];
 	const id = useId();
 	const currentCounts = idCounts(proposal.api.streams);
+	const dimensions = (stream: Stream) => {
+		const width =
+			Number.isSafeInteger(stream.width) && (stream.width ?? 0) > 0
+				? stream.width
+				: undefined;
+		const height =
+			Number.isSafeInteger(stream.height) && (stream.height ?? 0) > 0
+				? stream.height
+				: undefined;
+		if (width !== undefined && height !== undefined)
+			return `${width} × ${height} px`;
+		if (height !== undefined) return `${height} px`;
+		return width === undefined ? null : text.width(width);
+	};
 	const previousStreams =
 		baseline?.codec === proposal.codec ? baseline.api.streams : [];
 	const previousCounts = idCounts(previousStreams);
@@ -138,11 +153,9 @@ export function PerTitleComplexity({
 			{rows.map(({ stream, number, current, previous }) => (
 				<div key={`${stream.rowId}-${number}`} className="space-y-1">
 					<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-						<span className="text-zinc-300">
-							{text.row(number)}
-							{Number.isSafeInteger(stream.height) && (stream.height ?? 0) > 0
-								? ` · ${stream.height} px`
-								: ""}
+						<span className="min-w-0 break-all text-zinc-300">
+							{perTitleStreamLabel(stream, locale)}
+							{dimensions(stream) ? ` · ${dimensions(stream)}` : ""}
 						</span>
 						{current ? (
 							<dl className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums">

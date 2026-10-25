@@ -25,9 +25,9 @@
 		"check:fix": "biome check --write ."
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.2",
+		"@biomejs/biome": "^2.6.2",
 		"@playwright/test": "1.64.1",
 		"@types/node": "catalog:",
-		"turbo": "^2.5.8"
+		"turbo": "^2.11.10"
 	}
 }

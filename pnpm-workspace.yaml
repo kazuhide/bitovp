@@ -31,14 +31,14 @@ overrides:
 
 catalog:
   typescript: ^5.9.3
-  "@types/node": ^24.0.0
+  "@types/node": ^24.19.2
   vitest: 4.1.12
   "@vitejs/plugin-react": ^5.1.4
   zod: ^4.6.6
-  react: 19.2.9
-  react-dom: 19.2.9
-  "@types/react": ^19.2.14
-  "@types/react-dom": ^19.2.3
+  react: 19.3.1
+  react-dom: 19.3.1
+  "@types/react": ^19.3.0
+  "@types/react-dom": ^19.3.0
 
 minimumReleaseAgeExclude:
   - '@bitmovin/api-sdk@1.285.0'

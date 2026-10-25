@@ -13,7 +13,7 @@ x-logging: &logging
 
 services:
   postgres:
-    image: postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     mem_limit: 512m
     memswap_limit: 512m
     env_file:

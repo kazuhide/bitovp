@@ -189,6 +189,12 @@ export function certifyPerTitleMixedSequence(
 		!Number.isSafeInteger(goal.countPolicy.count) ||
 		goal.rows.length < 1 ||
 		goal.rows.length > 62 ||
+		goal.rows.some(
+			(row) =>
+				!record(row) ||
+				(row.mode !== undefined &&
+					row.mode !== "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"),
+		) ||
 		goal.countPolicy.count !== goal.rows.length + 2 ||
 		goal.automaticTemplates.length < 2 ||
 		api.global.autoRepresentations !== undefined ||

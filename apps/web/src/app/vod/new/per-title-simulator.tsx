@@ -36,7 +36,6 @@ import { PerTitleConstraints } from "./per-title-simulator-constraints";
 import {
 	PerTitleGlobalControls,
 	PerTitleSettingControl,
-	PerTitleStreamControls,
 } from "./per-title-simulator-controls";
 import {
 	type PerTitleSimulatorCopy,
@@ -649,36 +648,16 @@ function SimulatorEditor({
 						id={`${id}-parameters`}
 						context={controlContext}
 					/>
-					{usesRows(goal) ? (
-						<PerTitleSimulatorRows
-							key={renditionSession}
-							id={id}
-							goal={goal}
-							onChange={setGoal}
-							manualBounds={manualBounds}
-							onBitrateChange={onBitrateChange}
-							onResetBitrates={onResetBitrates}
-							tuning={controlContext}
-						/>
-					) : (
-						<div className="space-y-3">
-							{selected.api.streams.map((stream, index) => (
-								<section
-									key={stream.rowId}
-									aria-label={`${copy.rowReference} ${index + 1}`}
-									className="space-y-2"
-								>
-									<code className="text-xs text-zinc-400">{stream.mode}</code>
-									<PerTitleStreamControls
-										id={`${id}-${stream.rowId}-settings`}
-										context={controlContext}
-										rowId={stream.rowId}
-										suffix={`${copy.rendition} ${index + 1}`}
-									/>
-								</section>
-							))}
-						</div>
-					)}
+					<PerTitleSimulatorRows
+						key={renditionSession}
+						id={id}
+						goal={goal}
+						onChange={setGoal}
+						manualBounds={manualBounds}
+						onBitrateChange={onBitrateChange}
+						onResetBitrates={onResetBitrates}
+						tuning={controlContext}
+					/>
 				</div>
 				<div className="min-w-0 space-y-4 overflow-x-clip xl:sticky xl:top-0 xl:self-start">
 					<PerTitleAdvisor

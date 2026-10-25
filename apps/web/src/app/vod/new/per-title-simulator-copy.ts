@@ -39,7 +39,7 @@ const en = {
 		"This reference includes template and quality settings. It is available for comparison; applying it to the encoding draft is not supported here.",
 	referenceCodecError:
 		"Load a file for that codec or open the simulator from its encoding settings. A reference file cannot be converted to another codec here.",
-	automaticTemplates: "Automatic templates retained",
+	automaticTemplates: "PER_TITLE_TEMPLATE streams",
 	countPolicy: "Rendition count",
 	countPolicies: {
 		unrestricted: "Let Per-Title choose",
@@ -99,14 +99,14 @@ const en = {
 	minimumStepRange: "Minimum-step adjustment range",
 	minimumStepRangeHint:
 		"A calculated range that retains the same integer placement example and maximum ratio. Boundaries are approximate.",
-	automaticCount: "Automatic candidate count",
+	automaticCount: "PER_TITLE_TEMPLATE count",
 	automaticCountHint:
-		"The candidate count is not the output count. Per-Title selects the resulting renditions.",
+		"Stream template count is not output count. Per-Title selects the resulting renditions.",
 	countScope: "Final outputs depend on content analysis.",
 	internalCheckDifference:
 		"Some internal bitrate placements do not meet the requested count or spacing. The overall-maximum check does not establish every possible output.",
 	inactiveTemplateSettings:
-		"Automatic candidates retain their attached bitrate settings as source data. These settings do not constrain this mode and are omitted from the proposed API settings.",
+		"PER_TITLE_TEMPLATE retains attached bitrate settings as source data. These settings do not constrain this mode and are omitted from the proposed API settings.",
 	comparison: "Compare settings",
 	parameter: "Setting",
 	baseline: "Loaded settings",
@@ -170,7 +170,7 @@ const ja: typeof en = {
 		"この参照設定には、テンプレートや品質の設定が含まれています。比較用として読み込み、エンコードの下書きへの反映は行いません。",
 	referenceCodecError:
 		"そのコーデックの要件ファイルを読み込むか、エンコード設定から開いてください。この画面では、参照ファイルを別のコーデックへ変換できません。",
-	automaticTemplates: "保持している自動テンプレート",
+	automaticTemplates: "PER_TITLE_TEMPLATEのStream",
 	countPolicy: "レンディションの本数",
 	countPolicies: {
 		unrestricted: "Per-Title に任せる",
@@ -230,14 +230,14 @@ const ja: typeof en = {
 	minimumStepRange: "最小ビットレート間隔の調整範囲",
 	minimumStepRangeHint:
 		"同じ整数の配置例と最大比率を維持する、計算上の範囲です。境界は概数です。",
-	automaticCount: "自動生成の候補数",
+	automaticCount: "PER_TITLE_TEMPLATEの件数",
 	automaticCountHint:
-		"候補数は出力本数ではありません。実際のレンディションはPer-Titleが選びます。",
+		"Streamテンプレートの数は出力本数ではありません。実際のレンディションはPer-Titleが選びます。",
 	countScope: "実際の出力は素材解析で決まります。",
 	internalCheckDifference:
 		"一部の検算では、本数や間隔が希望どおりになりません。全体の上限での確認は、すべての出力条件を満たすことを示すものではありません。",
 	inactiveTemplateSettings:
-		"自動生成の候補に付いたビットレート設定は元データとして保持します。このモードの制約には使われず、APIへの設定案には含めません。",
+		"PER_TITLE_TEMPLATEに付いたビットレート設定は元データとして保持します。このモードの制約には使われず、APIへの設定案には含めません。",
 	comparison: "読み込み時との比較",
 	parameter: "設定項目",
 	baseline: "読み込んだ設定",

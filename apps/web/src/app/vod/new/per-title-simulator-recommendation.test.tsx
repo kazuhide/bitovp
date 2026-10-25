@@ -565,12 +565,12 @@ describe("Per-Title recommendation flow", () => {
 		[
 			"en",
 			"Simulation",
-			"Automatic candidates retain their attached bitrate settings as source data.",
+			"PER_TITLE_TEMPLATE retains attached bitrate settings as source data.",
 		],
 		[
 			"ja",
 			"シミュレーション",
-			"自動生成の候補に付いたビットレート設定は元データとして保持します。",
+			"PER_TITLE_TEMPLATEに付いたビットレート設定は元データとして保持します。",
 		],
 	] as const)("keeps inactive automatic warnings in closed details in %s", (locale, title, warning) => {
 		show(
@@ -632,13 +632,17 @@ describe("Per-Title recommendation flow", () => {
 			name: "Allowed bitrate ranges (data)",
 		});
 		expect(
-			within(table).getByRole("row", { name: "360 100–400" }),
+			within(table).getByRole("row", {
+				name: "360 PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE 100–400",
+			}),
 		).toBeInTheDocument();
 		expect(
 			within(panel).getByRole("figure", { name: "Allowed bitrate ranges" }),
 		).toBeVisible();
 		expect(
-			within(table).getByRole("row", { name: "720 500–2,000" }),
+			within(table).getByRole("row", {
+				name: "720 PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE 500–2,000",
+			}),
 		).toBeInTheDocument();
 		expect(within(panel).getByText("Minimum bitrate ratio")).not.toBeVisible();
 		expect(within(panel).getByText("Maximum bitrate ratio")).not.toBeVisible();
@@ -717,9 +721,14 @@ describe("Per-Title recommendation flow", () => {
 		fireEvent.click(
 			within(panel).getByRole("button", { name: "Allowed ranges" }),
 		);
-		expect(within(panel).getByText(/Ordinary templates.*1/)).toBeVisible();
+		expect(within(panel).getByText("Stream templates: 3")).toBeVisible();
 		expect(
-			within(panel).getByText(/candidate count is not the output count/),
+			within(panel).getByRole("cell", {
+				name: "PER_TITLE_TEMPLATE (resolution specified)",
+			}),
+		).toBeInTheDocument();
+		expect(
+			within(panel).getByText(/Stream template count is not output count/),
 		).not.toBeVisible();
 		expect(within(panel).getByRole("status")).toHaveTextContent(
 			"Not established",
@@ -765,18 +774,24 @@ describe("Per-Title recommendation flow", () => {
 		);
 		expect(
 			within(
-				screen.getByRole("listitem", { name: "Automatic template 1" }),
+				screen.getByRole("listitem", { name: "Rendition 3" }),
 			).getAllByRole("spinbutton"),
 		).toHaveLength(1);
-		expect(screen.queryByRole("combobox")).toBeNull();
+		expect(screen.getAllByRole("combobox")).toHaveLength(3);
+		expect(
+			within(screen.getByRole("listitem", { name: "Rendition 3" })).getByRole(
+				"combobox",
+				{ name: "Stream mode, rendition 3" },
+			),
+		).toHaveValue("template-resolution");
 		await userEvent.setup().clear(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), automatic template 1",
+				name: "Height (px, optional), rendition 3",
 			}),
 		);
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), automatic template 1",
+				name: "Height (px, optional), rendition 3",
 			}),
 			{ target: { value: "720" } },
 		);

@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleGuidedSetup } from "./per-title-guided-setup";
-import { buildPerTitleSetup } from "./per-title-guided-setup-model";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
+import { buildPerTitleStreamSetup } from "./per-title-stream-setup-model";
 
 const initialGoal: PerTitleGoal = {
 	strategy: "fixed-ranges",
@@ -39,8 +39,7 @@ const copy = {
 		maximum: "Maximum bitrate (kbps)",
 		codec: "Video codec",
 		count: "Requested video outputs",
-		lowerHeight: "Lower automatic rendition height (px, optional)",
-		upperHeights: "Upper rendition candidates (px, optional)",
+		mode: "Stream mode",
 		height: "Height (px)",
 		rowMinimum: "Minimum bitrate (kbps, optional)",
 		rowMaximum: "Maximum bitrate (kbps, optional)",
@@ -65,8 +64,7 @@ const copy = {
 		maximum: "最大ビットレート (kbps)",
 		codec: "映像コーデック",
 		count: "希望する映像出力数",
-		lowerHeight: "下位の自動段の高さ (px・任意)",
-		upperHeights: "上位段の候補 (px・任意)",
+		mode: "Streamモード",
 		height: "高さ (px)",
 		rowMinimum: "最小ビットレート (kbps・任意)",
 		rowMaximum: "最大ビットレート (kbps・任意)",
@@ -101,6 +99,35 @@ function mount(locale: "en" | "ja" = "en", allowedCodecs = codecs) {
 
 const click = (name: string) =>
 	fireEvent.click(screen.getByRole("button", { name }));
+
+function addTemplateRows(
+	locale: "en" | "ja",
+	text: (typeof copy)["en"],
+	heights: readonly number[],
+) {
+	return heights.map((height) => {
+		const count = screen.getAllByRole("group", {
+			name: locale === "ja" ? /^レンディション \d+$/ : /^Rendition \d+$/,
+		}).length;
+		click(text.add);
+		const row = screen.getByRole("group", {
+			name:
+				locale === "ja"
+					? `レンディション ${count + 1}`
+					: `Rendition ${count + 1}`,
+		});
+		fireEvent.change(within(row).getByRole("combobox", { name: text.mode }), {
+			target: { value: "template-resolution" },
+		});
+		fireEvent.change(
+			within(row).getByRole("spinbutton", { name: text.height }),
+			{
+				target: { value: String(height) },
+			},
+		);
+		return row;
+	});
+}
 
 describe("PerTitleGuidedSetup", () => {
 	it.each(
@@ -148,15 +175,7 @@ describe("PerTitleGuidedSetup", () => {
 				within(row).getByRole("spinbutton", { name: text.rowMaximum }),
 			).toHaveValue(null);
 		}
-		fireEvent.change(
-			screen.getByRole("spinbutton", { name: text.lowerHeight }),
-			{
-				target: { value: "160" },
-			},
-		);
-		fireEvent.change(screen.getByRole("textbox", { name: text.upperHeights }), {
-			target: { value: "960, 1152" },
-		});
+		addTemplateRows(locale, text, [160, 960, 1152]);
 		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
 		click(text.next);
 		expect(
@@ -258,7 +277,7 @@ describe("PerTitleGuidedSetup", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("builds a fresh mixed ladder with one upper choice rather than counting its templates (%s)", (locale) => {
+	] as const)("keeps seven Stream templates separate from six conditional outputs (%s)", (locale) => {
 		const { text, onComplete } = mount(locale);
 		fireEvent.click(screen.getByRole("radio", { name: text.strategies[4] }));
 		click(text.next);
@@ -285,22 +304,17 @@ describe("PerTitleGuidedSetup", () => {
 					target: { value: String(value) },
 				});
 		}
-		fireEvent.change(
-			screen.getByRole("spinbutton", { name: text.lowerHeight }),
-			{
-				target: { value: "176" },
-			},
-		);
-		fireEvent.change(screen.getByRole("textbox", { name: text.upperHeights }), {
-			target: { value: "880, 1056" },
-		});
-		expect(
-			screen.getByRole("textbox", { name: text.upperHeights }),
-		).toHaveAccessibleDescription(
-			locale === "ja"
-				? "上位1段の候補となる高さをカンマで区切ります。"
-				: "Separate heights with commas; choose candidates for one upper output.",
-		);
+		for (const row of addTemplateRows(locale, text, [176, 880, 1056])) {
+			expect(
+				within(row).getByRole("combobox", { name: text.mode }),
+			).toHaveValue("template-resolution");
+			expect(
+				within(row).queryByRole("spinbutton", { name: text.rowMinimum }),
+			).toBeNull();
+			expect(
+				within(row).queryByRole("spinbutton", { name: text.rowMaximum }),
+			).toBeNull();
+		}
 		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
 		const firstMinimum = within(
 			screen.getByRole("group", {
@@ -322,12 +336,8 @@ describe("PerTitleGuidedSetup", () => {
 			),
 		).toBeVisible();
 		expect(
-			screen.getByText(
-				locale === "ja"
-					? "上位の希望本数は、候補を合わせて1本です。実際の本数はエンコードして確認してください。"
-					: "These candidates share one requested upper output. Confirm the actual count by encoding.",
-			),
-		).toBeVisible();
+			screen.queryByText(/requested upper output|上位の希望本数/),
+		).toBeNull();
 		const apiElement = screen
 			.getByText(text.api)
 			.closest("details")
@@ -335,6 +345,10 @@ describe("PerTitleGuidedSetup", () => {
 		if (!apiElement) throw new Error("The proposed API settings are missing");
 		const api = JSON.parse(apiElement.textContent ?? "{}");
 		expect(api.streams).toHaveLength(7);
+		expect(
+			api.global.fixedResolutionAndBitrateConfiguration
+				.forcedRenditionAboveHighestFixedRepresentation,
+		).toBe(1);
 		expect(
 			api.streams
 				.filter((row: { mode: string }) => row.mode === "PER_TITLE_TEMPLATE")
@@ -361,50 +375,52 @@ describe("PerTitleGuidedSetup", () => {
 	});
 
 	it.each([
-		["en", "880, invalid, 1056"],
-		["ja", "880,,1056"],
-		["en", "880,"],
-		["ja", "880, 1056.5"],
-	] as const)("keeps malformed upper candidates visible and blocks review (%s, %s)", (locale, value) => {
+		["en", ""],
+		["ja", "0"],
+		["en", "-1"],
+		["ja", "1056.5"],
+	] as const)("keeps an invalid ordinary Stream height visible and blocks review (%s, %s)", (locale, value) => {
 		const { text, onComplete } = mount(locale);
 		fireEvent.click(screen.getByRole("radio", { name: text.strategies[4] }));
 		click(text.next);
-		fireEvent.change(screen.getByRole("textbox", { name: text.upperHeights }), {
-			target: { value },
-		});
-		expect(
-			screen.getByRole("textbox", { name: text.upperHeights }),
-		).toHaveValue(value);
+		const [row] = addTemplateRows(locale, text, [880]);
+		if (!row) throw new Error("Missing ordinary Stream row");
+		const height = within(row).getByRole("spinbutton", { name: text.height });
+		fireEvent.change(height, { target: { value } });
+		expect(height).toHaveValue(value === "" ? null : Number(value));
 		expect(screen.getByRole("button", { name: text.next })).toBeDisabled();
-		expect(screen.getByRole("alert")).toHaveTextContent(text.upperHeights);
+		expect(screen.getByRole("alert")).toHaveTextContent(text.height);
 		expect(onComplete).not.toHaveBeenCalled();
 	});
 
 	it.each([
 		"en",
 		"ja",
-	] as const)("omits inactive automatic edges when switching setup strategy (%s)", (locale) => {
+	] as const)("resets explicit Stream rows when switching to the automatic setup (%s)", (locale) => {
 		const { text, onComplete } = mount(locale);
 		fireEvent.click(screen.getByRole("radio", { name: text.strategies[4] }));
 		click(text.next);
+		const [, invalid] = addTemplateRows(locale, text, [176, 880]);
+		if (!invalid) throw new Error("Missing ordinary Stream row");
 		fireEvent.change(
-			screen.getByRole("spinbutton", { name: text.lowerHeight }),
+			within(invalid).getByRole("spinbutton", { name: text.height }),
 			{
-				target: { value: "176" },
+				target: { value: "" },
 			},
 		);
-		fireEvent.change(screen.getByRole("textbox", { name: text.upperHeights }), {
-			target: { value: "invalid" },
-		});
+		expect(screen.getByRole("button", { name: text.next })).toBeDisabled();
 		click(text.back);
 		fireEvent.click(screen.getByRole("radio", { name: text.strategies[0] }));
 		click(text.next);
 		expect(
-			screen.queryByRole("textbox", { name: text.upperHeights }),
-		).toBeNull();
-		expect(
-			screen.queryByRole("spinbutton", { name: text.lowerHeight }),
-		).toBeNull();
+			screen.getAllByRole("group", {
+				name: locale === "ja" ? /^レンディション \d+$/ : /^Rendition \d+$/,
+			}),
+		).toHaveLength(1);
+		expect(screen.getByRole("combobox", { name: text.mode })).toHaveValue(
+			"template",
+		);
+		expect(screen.queryByRole("spinbutton", { name: text.height })).toBeNull();
 		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
 		click(text.next);
 		click(text.complete);
@@ -540,14 +556,14 @@ describe("PerTitleGuidedSetup", () => {
 			text.review,
 		);
 		expect(onComplete).not.toHaveBeenCalled();
-		const expected = buildPerTitleSetup(
+		const expected = buildPerTitleStreamSetup(
 			{
 				strategy: "automatic",
 				codec: "H264",
 				minBitrate: 150_000,
 				maxBitrate: 6_000_000,
 				inputHeight: 1080,
-				rows: [],
+				streams: [{ id: "setup-row-1", mode: "PER_TITLE_TEMPLATE" }],
 			},
 			codecs,
 		);
@@ -641,7 +657,7 @@ describe("PerTitleGuidedSetup", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("distinguishes required renditions from an optional output count (%s)", (locale) => {
+	] as const)("distinguishes specified Stream templates from an optional output count (%s)", (locale) => {
 		const { text } = mount(locale);
 		fireEvent.click(screen.getByRole("radio", { name: text.strategies[2] }));
 		click(text.next);
@@ -656,11 +672,31 @@ describe("PerTitleGuidedSetup", () => {
 		click(text.next);
 		expect(
 			screen.getByText(
-				locale === "ja"
-					? "必須のレンディション（3本）"
-					: "Required renditions: 3",
+				locale === "ja" ? "Streamテンプレート：4件" : "Stream templates: 4",
+				{ selector: "p" },
 			),
 		).toBeVisible();
+		expect(
+			screen.queryByText(/Requested video outputs:|希望する映像出力数：/),
+		).toBeNull();
+		const apiElement = screen
+			.getByText(text.api)
+			.closest("details")
+			?.querySelector("pre");
+		if (!apiElement) throw new Error("Missing proposed Stream settings");
+		const api = JSON.parse(apiElement.textContent ?? "{}");
+		expect(
+			api.streams.filter(
+				(row: { mode: string }) =>
+					row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			),
+		).toHaveLength(3);
+		const templates = api.streams.filter(
+			(row: { mode: string }) => row.mode === "PER_TITLE_TEMPLATE",
+		);
+		expect(templates).toHaveLength(1);
+		expect(templates[0].height).toBeUndefined();
+		expect(templates[0].width).toBeUndefined();
 	});
 
 	it("preserves edits when going back and never completes on cancellation", () => {
@@ -751,9 +787,7 @@ describe("PerTitleGuidedSetup", () => {
 				name: "Minimum bitrate (kbps, optional)",
 			}),
 		).toHaveValue(null);
-		expect(screen.getAllByRole("textbox")).toEqual([
-			screen.getByRole("textbox", { name: copy.en.upperHeights }),
-		]);
+		expect(screen.queryAllByRole("textbox")).toEqual([]);
 		expect(screen.queryByDisplayValue("existing-row")).toBeNull();
 		click("Add rendition");
 		expect(
@@ -794,9 +828,10 @@ describe("PerTitleGuidedSetup", () => {
 		expect(screen.getByRole("button", { name: text.complete })).toBeEnabled();
 		click(text.back);
 		fireEvent.change(
-			screen
-				.getByRole("group", { name: "Rendition 1" })
-				.querySelector("input") as HTMLInputElement,
+			within(screen.getByRole("group", { name: "Rendition 1" })).getByRole(
+				"spinbutton",
+				{ name: text.height },
+			),
 			{ target: { value: "" } },
 		);
 		expect(screen.getByRole("alert")).toBeVisible();

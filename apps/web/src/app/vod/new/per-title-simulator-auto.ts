@@ -1,4 +1,8 @@
-import type { PerTitleGoal, PerTitleGoalRow } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	type PerTitleGoalRow,
+	resolvePerTitleFixedMode,
+} from "@bitovp/core";
 
 export type PerTitleManualBounds = Record<
 	string,
@@ -52,7 +56,12 @@ export function autoTunePerTitleGoal(
 		goal.strategy !== "fixed-ranges" ||
 		!validGlobal(goal) ||
 		!goal.rows?.length ||
-		goal.rows.length > 64
+		goal.rows.length > 64 ||
+		goal.rows.some(
+			(row) =>
+				resolvePerTitleFixedMode(goal, row) ===
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+		)
 	) {
 		return next;
 	}

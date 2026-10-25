@@ -155,22 +155,6 @@ export function perTitleGoalFromWizard(
 		(row) =>
 			row.extras?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	// Automatic templates have their own collection. A fixed-resolution row would
-	// instead become a fixed-bitrate row, which this import cannot preserve.
-	if (
-		hasRanges &&
-		selected.some(
-			(row) =>
-				row.extras?.mode !==
-					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
-				row.extras?.mode !== "PER_TITLE_TEMPLATE",
-		)
-	) {
-		throw new PerTitleWizardError(
-			"UNSUPPORTED_STATE",
-			"The simulator cannot import this ladder without changing a stream's mode. Use fixed bitrate ranges with automatic templates, or edit the streams directly.",
-		);
-	}
 	const hasFixed = selected.some(fixedMode);
 	const strategy = hasRanges
 		? "fixed-ranges"
@@ -229,6 +213,10 @@ export function perTitleGoalFromWizard(
 						{
 							id: required(keys[index]),
 							height: required(row.height),
+							...(hasRanges &&
+							row.extras?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
+								? { mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION" as const }
+								: {}),
 							...(row.width === undefined ? {} : { width: row.width }),
 							...structuredClone(row.extras?.perTitleSettings ?? {}),
 						},

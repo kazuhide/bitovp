@@ -67,6 +67,24 @@ function mixed(codec: PerTitleCodec = "H264"): PerTitleGoal {
 }
 
 describe("conditional mixed Per-Title sequence admission", () => {
+	it("rejects a ranged API certificate after the raw fixed stream mode changes", () => {
+		const original = mixed();
+		const api = recommendPerTitleSettings(original).api;
+		expect(certifyPerTitleMixedSequence(original, api)).not.toBeNull();
+		const changed: PerTitleGoal = {
+			...original,
+			rows: original.rows?.map((row, index) =>
+				index === 0
+					? {
+							...row,
+							mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+						}
+					: row,
+			),
+		};
+		expect(certifyPerTitleMixedSequence(changed, api)).toBeNull();
+		expect(recommendPerTitleSettings(changed).countGuarantee).toBe(false);
+	});
 	for (const codec of ["H264", "H265", "H265V2", "VP9", "AV1"] as const) {
 		it(`admits the ${codec} model under an explicit unmeasured lower-probe condition`, () => {
 			const goal = mixed(codec);

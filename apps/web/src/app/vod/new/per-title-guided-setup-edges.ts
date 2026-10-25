@@ -39,14 +39,14 @@ export function validateAutomaticEdges(
 	if (input.strategy !== "fixed-ranges")
 		add(
 			"strategy",
-			"Use bitrate ranges to combine required renditions with automatic edges.",
-			"上下の自動段を加える場合は、解像度とビットレート幅を指定してください。",
+			"Combine PER_TITLE_TEMPLATE streams with fixed bitrate ranges.",
+			"PER_TITLE_TEMPLATEと固定帯域のStreamを組み合わせてください。",
 		);
 	if (!record(edges)) {
 		add(
 			"rows",
-			"Enter automatic edge requirements.",
-			"上下の自動段の条件を確認してください。",
+			"Check the PER_TITLE_TEMPLATE definitions.",
+			"PER_TITLE_TEMPLATEの指定を確認してください。",
 		);
 		return issues;
 	}
@@ -59,8 +59,8 @@ export function validateAutomaticEdges(
 	)
 		add(
 			"lowerHeight",
-			"Set the starting height below every required resolution.",
-			"最下段の高さは、固定する解像度より低くしてください。",
+			"Specify this PER_TITLE_TEMPLATE height below the fixed Stream resolutions.",
+			"このPER_TITLE_TEMPLATEの高さは、固定モードのStreamより低くしてください。",
 		);
 	const upper = edges.upperHeights;
 	if (
@@ -73,8 +73,8 @@ export function validateAutomaticEdges(
 	)
 		add(
 			"upperHeights",
-			"Use distinct candidate heights above every required resolution.",
-			"上位段の候補は、固定する解像度より高い値を重複なく指定してください。",
+			"Use distinct PER_TITLE_TEMPLATE heights above the fixed Stream resolutions.",
+			"固定モードのStreamより高いPER_TITLE_TEMPLATEの高さは、重複なく指定してください。",
 		);
 	if (
 		height(input.inputHeight) &&
@@ -86,8 +86,8 @@ export function validateAutomaticEdges(
 	)
 		add(
 			"inputHeight",
-			"Keep automatic heights at or below the source height.",
-			"自動段の高さは、入力素材の高さ以下にしてください。",
+			"Keep PER_TITLE_TEMPLATE heights at or below the source height.",
+			"PER_TITLE_TEMPLATEの高さは、入力素材の高さ以下にしてください。",
 		);
 	if (
 		rows.length +
@@ -323,7 +323,7 @@ export function buildPerTitleEdgeSetup(
 					field: "count",
 					message: {
 						en: "The count describes required roles. Ordinary templates can be reused; confirm the actual count by encoding your source.",
-						ja: "本数は必要な段の構成を表します。自動段から複数本が生成される可能性があるため、実際の本数はエンコードで確認してください。",
+						ja: "本数は希望する出力の構成を表します。PER_TITLE_TEMPLATEは複数の出力で使われる可能性があるため、実際の本数はエンコードで確認してください。",
 					},
 				},
 			],
@@ -359,8 +359,8 @@ export function buildPerTitleEdgeSetup(
 				code: "mixed-spacing-conflict",
 				field: "rows",
 				message: {
-					en: "No checked spacing candidate retains these bands and the automatic edge requirements. Narrow overlapping bands or leave more room above the highest fixed band.",
-					ja: "この範囲と上下の自動段を保てる段間隔を確認できません。重なる幅を狭めるか、最高固定段より上の帯域を広げてください。",
+					en: "No checked spacing candidate retains these bands and PER_TITLE_TEMPLATE definitions. Narrow overlapping bands or leave more room above the highest fixed band.",
+					ja: "この帯域幅とPER_TITLE_TEMPLATEの指定を保てる段間隔を確認できません。重なる幅を狭めるか、最高固定段より上の帯域を広げてください。",
 				},
 			},
 		],

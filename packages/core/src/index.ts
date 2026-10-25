@@ -778,6 +778,7 @@ export type {
 export {
 	proposePerTitleSettings,
 	recommendPerTitleSettings,
+	resolvePerTitleFixedMode,
 } from "./plan/per-title-simulator";
 export type {
 	CreateLivePresetRequest,

@@ -45,20 +45,61 @@ function proposal(
 }
 
 describe("Per-Title bitrate range plot", () => {
+	it("lists every Stream mode and distinguishes unspecified bitrate from a fixed band", () => {
+		renderLocalized(
+			<PerTitleLadder
+				proposal={proposal({
+					streams: [
+						{ rowId: "free", mode: "PER_TITLE_TEMPLATE" },
+						{ rowId: "sized", mode: "PER_TITLE_TEMPLATE", height: 240 },
+						{
+							rowId: "fixed-size",
+							mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+							height: 480,
+						},
+						upper,
+					],
+				})}
+			/>,
+		);
+		const table = screen.getByRole("table");
+		expect(within(table).getAllByRole("row")).toHaveLength(5);
+		expect(
+			within(table).getByText("PER_TITLE_TEMPLATE (no resolution)"),
+		).toBeInTheDocument();
+		expect(
+			within(table).getByText("PER_TITLE_TEMPLATE (resolution specified)"),
+		).toBeInTheDocument();
+		expect(
+			within(table).getByText("PER_TITLE_TEMPLATE_FIXED_RESOLUTION"),
+		).toBeInTheDocument();
+		expect(
+			within(table).getByText(
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			),
+		).toBeInTheDocument();
+		expect(
+			within(table).getAllByText("Not specified; overall limits 100–2,000"),
+		).toHaveLength(1);
+		expect(
+			within(table).getAllByText("Not specified (content analysis)"),
+		).toHaveLength(2);
+		expect(within(table).getByText("500–2,000")).toBeInTheDocument();
+	});
 	it.each([
 		[
 			"en",
 			"Allowed bitrate ranges",
 			"Allowed bitrate ranges (data)",
 			"kbps (log scale)",
-			"Ordinary templates: 1",
+			"Stream templates: 3",
 		],
 		[
 			"ja",
 			"許容ビットレート範囲",
 			"許容ビットレート範囲（データ）",
 			"kbps（対数目盛）",
-			"通常テンプレート: 1",
+			"Streamテンプレート: 3",
 		],
 	] as const)("shows requested bands and accessible row data in %s", (locale, title, dataTitle, axis, candidateCount) => {
 		renderLocalized(<PerTitleLadder proposal={proposal()} />, locale);
@@ -73,14 +114,18 @@ describe("Per-Title bitrate range plot", () => {
 		).toBeVisible();
 		const table = screen.getByRole("table", { name: dataTitle });
 		expect(
-			within(table).getByRole("row", { name: "360 100–400" }),
+			within(table).getByRole("row", {
+				name: /360.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE.*100–400/,
+			}),
 		).toBeInTheDocument();
 		expect(
-			within(table).getByRole("row", { name: "720 500–2,000" }),
+			within(table).getByRole("row", {
+				name: /720.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE.*500–2,000/,
+			}),
 		).toBeInTheDocument();
 		expect(table).toHaveClass("sr-only");
 		expect(screen.getByText(candidateCount)).toBeVisible();
-		expect(screen.queryByText("1080 px")).toBeNull();
+		expect(screen.getByText("1080 px")).toBeVisible();
 	});
 
 	it("keeps duplicate required heights as separate ranges", () => {
@@ -111,17 +156,21 @@ describe("Per-Title bitrate range plot", () => {
 				})}
 			/>,
 		);
-		expect(screen.getByText("Auto")).toBeVisible();
+		expect(
+			within(screen.getByRole("img")).getByText(
+				"Not specified; overall limits 100–2,000",
+			),
+		).toBeVisible();
 		expect(
 			within(screen.getByRole("table")).getByRole("row", {
-				name: "540 100–2,000 Auto",
+				name: /540.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION.*Not specified; overall limits 100–2,000/,
 			}),
 		).toBeInTheDocument();
 		expect(screen.getByTestId("per-title-ladder-range")).toHaveAttribute(
 			"stroke-dasharray",
 			"4 3",
 		);
-		expect(screen.queryByText("1080 px")).toBeNull();
+		expect(screen.getByText("1080 px")).toBeVisible();
 	});
 
 	it("places the middle decade halfway along a logarithmic bitrate axis", () => {
@@ -153,7 +202,7 @@ describe("Per-Title bitrate range plot", () => {
 		}
 	});
 
-	it("shows automatic candidates without creating required output rows", () => {
+	it("shows ordinary Stream rows without fabricating bitrate bands", () => {
 		renderLocalized(
 			<PerTitleLadder
 				proposal={proposal({
@@ -164,11 +213,13 @@ describe("Per-Title bitrate range plot", () => {
 				})}
 			/>,
 		);
-		expect(screen.getByText("Ordinary templates: 2")).toBeVisible();
-		expect(screen.queryByRole("table")).toBeNull();
+		expect(screen.getByText("Stream templates: 2")).toBeVisible();
+		expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(
+			3,
+		);
 		expect(screen.queryByTestId("per-title-ladder-range")).toBeNull();
-		expect(screen.queryByText("1080 px")).toBeNull();
-		expect(screen.queryByText("2160 px")).toBeNull();
+		expect(screen.getByText("1080 px")).toBeVisible();
+		expect(screen.getByText("2160 px")).toBeVisible();
 	});
 
 	it("keeps a supplied axis fixed while a changed global maximum moves the band", () => {
@@ -202,7 +253,7 @@ describe("Per-Title bitrate range plot", () => {
 		).toBeGreaterThan(before);
 		expect(
 			within(screen.getByRole("table")).getByRole("row", {
-				name: "360 100–4,000 Auto",
+				name: /360.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION.*Not specified; overall limits 100–4,000/,
 			}),
 		).toBeInTheDocument();
 		expect(initial.api.global.maxBitrate).toBe(2000000);
@@ -229,12 +280,12 @@ describe("Per-Title bitrate range plot", () => {
 		).toHaveLength(2);
 		expect(
 			within(screen.getByRole("table")).getByRole("row", {
-				name: "360 100–400",
+				name: /360.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE.*100–400/,
 			}),
 		).toBeInTheDocument();
 		expect(
 			within(screen.getByRole("table")).getByRole("row", {
-				name: "720 500–2,000",
+				name: /720.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE.*500–2,000/,
 			}),
 		).toBeInTheDocument();
 		expect(input).toEqual(original);
@@ -361,7 +412,7 @@ describe("Per-Title bitrate range plot", () => {
 		expect(range).toHaveAttribute("x2", "50");
 		expect(
 			within(screen.getByRole("table")).getByRole("row", {
-				name: "360 100–100",
+				name: /360.*PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE.*100–100/,
 			}),
 		).toBeInTheDocument();
 	});

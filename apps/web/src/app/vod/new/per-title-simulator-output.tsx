@@ -11,6 +11,7 @@ import {
 	type PerTitleChartAxis,
 	perTitlePlotAxis,
 } from "./per-title-simulator-ladder";
+import { perTitleStreamLabel } from "./per-title-stream-mode";
 
 const copy = {
 	en: {
@@ -21,10 +22,9 @@ const copy = {
 		cappedInput: (rate: string, requested: string) =>
 			`Capped top: ${rate} kbps (assumed ${requested})`,
 		inputUnknown: "Upper input unavailable",
-		candidate: "Candidate",
-		candidates: (heights: string) => `Candidates ${heights} px`,
-		automatic: "Automatic candidate",
-		automaticGroup: "Automatic range (assumed)",
+		candidates: (heights: string) => `${heights} px`,
+		automatic: "Resolution not specified",
+		automaticGroup: "PER_TITLE_TEMPLATE (content analysis)",
 		automaticHint: "Count and resolutions are determined by content analysis.",
 		countSlot: (ordinal: number) => `Rendition ${ordinal}`,
 		countExact: (count: number) =>
@@ -85,10 +85,9 @@ const copy = {
 		cappedInput: (rate: string, requested: string) =>
 			`上限適用後 ${rate} kbps（仮定値 ${requested}）`,
 		inputUnknown: "解析値の上限は未確定",
-		candidate: "候補",
-		candidates: (heights: string) => `候補 ${heights} px`,
-		automatic: "自動生成の候補",
-		automaticGroup: "自動生成の範囲（仮定）",
+		candidates: (heights: string) => `${heights} px`,
+		automatic: "解像度未指定",
+		automaticGroup: "PER_TITLE_TEMPLATE（素材解析で決定）",
 		automaticHint: "本数と解像度は素材解析で決まります。",
 		countSlot: (ordinal: number) => `${ordinal}段目`,
 		countExact: (count: number) => `指定${count}本のビットレート範囲`,
@@ -275,6 +274,11 @@ export function PerTitleOutputChart({
 					}),
 				),
 			];
+			const dimension = positiveInteger(row.height)
+				? `${row.height} px`
+				: positiveInteger(row.width)
+					? `${locale === "ja" ? "幅" : "Width"} ${row.width} px`
+					: undefined;
 			const label =
 				row.kind === "count-slot" && positiveInteger(row.ordinal)
 					? text.countSlot(row.ordinal)
@@ -287,12 +291,8 @@ export function PerTitleOutputChart({
 										.join(" / "),
 								)
 							: automatic
-								? positiveInteger(row.height)
-									? `${text.candidate} ${row.height} px`
-									: text.automatic
-								: positiveInteger(row.height)
-									? `${row.height} px`
-									: text.heightUnknown;
+								? (dimension ?? text.automatic)
+								: (dimension ?? text.heightUnknown);
 			const status =
 				row.status === "unknown" ||
 				(target === undefined && range === undefined)
@@ -503,14 +503,21 @@ export function PerTitleOutputChart({
 										data-testid="per-title-output-row"
 										className="grid grid-cols-[6rem_minmax(0,1fr)] items-end gap-x-2 text-xs"
 									>
-										<span className="pb-1 text-zinc-300 tabular-nums">
+										<span className="min-w-0 break-all pb-1 text-zinc-300 tabular-nums">
 											{label}
 										</span>
 										<div className="min-w-0">
 											<div className="flex flex-wrap justify-end gap-x-2 text-zinc-300 tabular-nums">
-												{automatic ? (
-													<code className="text-zinc-400">
-														PER_TITLE_TEMPLATE
+												{row.mode || automatic ? (
+													<code className="min-w-0 break-all text-[10px] text-zinc-400">
+														{perTitleStreamLabel(
+															{
+																mode: row.mode ?? "PER_TITLE_TEMPLATE",
+																height: row.height,
+																width: row.width,
+															},
+															locale,
+														)}
 													</code>
 												) : null}
 												{basis || row.kind === "additional" ? (

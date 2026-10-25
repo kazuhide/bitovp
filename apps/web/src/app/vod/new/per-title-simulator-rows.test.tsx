@@ -479,16 +479,26 @@ describe("Unified Per-Title rendition inputs", () => {
 		expect(within(section).getAllByRole("list")).toHaveLength(1);
 		expect(within(section).getAllByRole("listitem")).toHaveLength(2);
 		expect(within(section).getAllByRole("spinbutton")).toHaveLength(4);
+		expect(within(section).getAllByRole("combobox")).toHaveLength(2);
 		expect(
-			within(section).getByText(locale === "en" ? "Required" : "必須"),
-		).toBeVisible();
+			within(section).getByRole("combobox", {
+				name:
+					locale === "en"
+						? "Stream mode, rendition 1"
+						: "Streamモード, レンディション 1",
+			}),
+		).toHaveValue("fixed-range");
 		expect(
-			within(section).getByText(locale === "en" ? "Automatic" : "自動"),
-		).toBeVisible();
+			within(section).getByRole("combobox", {
+				name:
+					locale === "en"
+						? "Stream mode, rendition 2"
+						: "Streamモード, レンディション 2",
+			}),
+		).toHaveValue("template-resolution");
 		expect(
 			within(section).getByText(locale === "en" ? "Min Auto" : "下限 自動"),
 		).toBeVisible();
-		expect(screen.queryByRole("combobox")).toBeNull();
 		expect(screen.queryByLabelText(/Width|幅|Complexity|複雑度/)).toBeNull();
 		expect(events.onChange).not.toHaveBeenCalled();
 	});
@@ -556,7 +566,7 @@ describe("Unified Per-Title rendition inputs", () => {
 		});
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), automatic template 1",
+				name: "Height (px, optional), rendition 2",
 			}),
 			{ target: { value: "" } },
 		);
@@ -567,10 +577,12 @@ describe("Unified Per-Title rendition inputs", () => {
 			],
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Remove rendition 1" }));
-		expect(events.onChange.mock.lastCall?.[0]).toEqual({ ...goal, rows: [] });
-		fireEvent.click(
-			screen.getByRole("button", { name: "Remove automatic template 1" }),
-		);
+		expect(events.onChange.mock.lastCall?.[0]).toEqual({
+			...goal,
+			strategy: "count",
+			rows: [],
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Remove rendition 2" }));
 		expect(events.onChange.mock.lastCall?.[0]).toEqual({
 			...goal,
 			automaticTemplates: [],
@@ -607,16 +619,14 @@ describe("Unified Per-Title rendition inputs", () => {
 				{...events}
 			/>,
 		);
-		fireEvent.click(
-			screen.getByRole("button", { name: "Add automatic template" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
 		const added = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
 		expect(added.automaticTemplates).toEqual([
 			...(goal.automaticTemplates ?? []),
 			{ id: reservedId },
-			{ id: addedId.replace(/-new-\d+$/, "-new-3") },
 		]);
-		expect(added.rows).toEqual(next.rows);
+		expect(added.rows?.slice(0, -1)).toEqual(next.rows);
+		expect(added.rows?.at(-1)?.id).toBe(addedId.replace(/-new-\d+$/, "-new-3"));
 		const ids = [
 			...(added.rows ?? []),
 			...(added.automaticTemplates ?? []),
@@ -676,15 +686,15 @@ describe("Unified Per-Title rendition inputs", () => {
 				.getAllByRole("listitem")
 				.map((row) => row.getAttribute("aria-label")),
 		).toEqual([
-			"Automatic template 1",
+			"Rendition 1",
 			"Rendition 2",
 			"Rendition 3",
-			"Automatic template 2",
-			"Rendition 1",
-			"Automatic template 3",
+			"Rendition 4",
+			"Rendition 5",
+			"Rendition 6",
 		]);
 		fireEvent.change(
-			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 5" }),
 			{ target: { value: "540" } },
 		);
 		expect(events.onChange.mock.lastCall?.[0].rows).toEqual([
@@ -711,7 +721,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			/>,
 		);
 		fireEvent.change(
-			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 2" }),
 			{ target: { value: "360" } },
 		);
 		expect(events.onChange.mock.lastCall?.[0].rows[0]).toEqual({
@@ -721,7 +731,7 @@ describe("Unified Per-Title rendition inputs", () => {
 		});
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), automatic template 1",
+				name: "Height (px, optional), rendition 3",
 			}),
 			{ target: { value: "360" } },
 		);
@@ -729,7 +739,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			{ ...goal.automaticTemplates?.[0], height: 360, width: 640 },
 		]);
 		fireEvent.change(
-			screen.getByRole("spinbutton", { name: "Height (px), rendition 2" }),
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
 			{ target: { value: "360" } },
 		);
 		expect(events.onChange.mock.lastCall?.[0].rows[1]).toEqual({
@@ -737,7 +747,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			height: 360,
 		});
 		fireEvent.change(
-			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 2" }),
 			{ target: { value: "" } },
 		);
 		expect(events.onChange.mock.lastCall?.[0].rows[0]).toEqual({
@@ -753,7 +763,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			/>,
 		);
 		fireEvent.change(
-			screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+			screen.getByRole("spinbutton", { name: "Height (px), rendition 2" }),
 			{ target: { value: "360.0" } },
 		);
 		expect(events.onChange.mock.lastCall?.[0].rows[0]).toEqual({
@@ -811,7 +821,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			height: 360,
 			width: 640,
 		});
-		change("Height (px, optional), automatic template 1");
+		change("Height (px, optional), rendition 2");
 		expect(events.onChange.mock.lastCall?.[0].automaticTemplates).toEqual([
 			{ ...goal.automaticTemplates?.[0], height: 360, width: 640 },
 		]);
@@ -948,7 +958,7 @@ describe("Unified Per-Title rendition inputs", () => {
 		expect(next.automaticTemplates).toEqual(original.automaticTemplates);
 		expect(original).toEqual(before);
 	});
-	it("enforces the combined template limit for both add actions", () => {
+	it("enforces the combined template limit for the unified add action", () => {
 		const events = callbacks();
 		const full: PerTitleGoal = {
 			...goal,
@@ -964,7 +974,7 @@ describe("Unified Per-Title rendition inputs", () => {
 				{...events}
 			/>,
 		);
-		for (const name of ["Add rendition", "Add automatic template"]) {
+		for (const name of ["Add rendition"]) {
 			const button = screen.getByRole("button", { name });
 			expect(button).toBeDisabled();
 			fireEvent.click(button);
@@ -974,7 +984,7 @@ describe("Unified Per-Title rendition inputs", () => {
 	it.each([
 		"automatic",
 		"count",
-	] as const)("does not activate parked required rows for %s", (strategy) => {
+	] as const)("shows editable ordinary rows without activating parked required rows for %s", (strategy) => {
 		const events = callbacks();
 		const { container } = renderLocalized(
 			<PerTitleSimulatorRows
@@ -984,7 +994,17 @@ describe("Unified Per-Title rendition inputs", () => {
 				{...events}
 			/>,
 		);
-		expect(container).toBeEmptyDOMElement();
+		expect(within(container).getAllByRole("listitem")).toHaveLength(1);
+		expect(
+			within(container).getByRole("combobox", {
+				name: "Stream mode, rendition 1",
+			}),
+		).toHaveValue("template-resolution");
+		expect(
+			within(container).queryByRole("spinbutton", {
+				name: "Height (px), rendition 1",
+			}),
+		).toBeNull();
 		expect(events.onChange).not.toHaveBeenCalled();
 	});
 	it("preserves parked bitrate metadata without displaying it in a resolution-only strategy", () => {

@@ -290,7 +290,7 @@ function assessUpperLimit(
 				code: "upper-output-limit",
 				severity: "conflict" as const,
 				message: {
-					en: `The upper role allows at most one output. At an analysis bitrate of ${kbps(input)} kbps, the highest fixed rate of ${kbps(range.minimum)} kbps permits upper rates of ${points.map(kbps).join(" / ")} kbps. Adjust the settings and re-evaluate; this is a conditional placement check.`,
+					en: `The PER_TITLE_TEMPLATE streams above the fixed resolutions allow at most one output. At an analysis bitrate of ${kbps(input)} kbps, the highest fixed rate of ${kbps(range.minimum)} kbps permits rates of ${points.map(kbps).join(" / ")} kbps above it. Adjust the settings and re-evaluate; this is a conditional placement check.`,
 					ja: `最高固定段より上は最大1出力という要件に対し、解析値が${kbps(input)} kbps、最高固定段が${kbps(range.minimum)} kbpsの場合、上位に${points.map(kbps).join(" / ")} kbpsの2本を置けます。設定を調整して再評価してください。これは解析値を仮定した配置検証です。`,
 				},
 			},

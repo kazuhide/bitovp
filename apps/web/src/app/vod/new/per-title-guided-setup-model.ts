@@ -199,8 +199,8 @@ function validate(
 			add(
 				"closed-count",
 				"count",
-				"Set the count to the required rows plus any starting and upper roles, or add the missing rows.",
-				"本数は固定行と上下の自動段を合わせた数にするか、足りない行を追加してください。",
+				"Match the count to the requested Stream configuration, or change the Stream definitions.",
+				"希望本数をStreamの構成に合わせるか、Streamの指定を変更してください。",
 			);
 		else if (input.count < input.rows.length)
 			add(

@@ -33,6 +33,37 @@ function openSetupFromSimulator(locale: "en" | "ja") {
 	return before;
 }
 
+function addTemplateRows(locale: "en" | "ja", heights: readonly number[]) {
+	for (const height of heights) {
+		const count = screen.getAllByRole("group", {
+			name: locale === "ja" ? /^レンディション \d+$/ : /^Rendition \d+$/,
+		}).length;
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "ja" ? "レンディションを追加" : "Add rendition",
+			}),
+		);
+		const row = screen.getByRole("group", {
+			name:
+				locale === "ja"
+					? `レンディション ${count + 1}`
+					: `Rendition ${count + 1}`,
+		});
+		fireEvent.change(
+			within(row).getByRole("combobox", {
+				name: locale === "ja" ? "Streamモード" : "Stream mode",
+			}),
+			{ target: { value: "template-resolution" } },
+		);
+		fireEvent.change(
+			within(row).getByRole("spinbutton", {
+				name: locale === "ja" ? "高さ (px)" : "Height (px)",
+			}),
+			{ target: { value: String(height) } },
+		);
+	}
+}
+
 describe("guided setup enters the existing simulator and draft review", () => {
 	it("keeps review disabled when extra automatic outputs have no mixed-sequence certificate", () => {
 		const result = buildPerTitleSetup({
@@ -182,24 +213,7 @@ describe("guided setup enters the existing simulator and draft review", () => {
 				}),
 			).toHaveValue(null);
 		}
-		fireEvent.change(
-			screen.getByRole("spinbutton", {
-				name:
-					locale === "ja"
-						? "下位の自動段の高さ (px・任意)"
-						: "Lower automatic rendition height (px, optional)",
-			}),
-			{ target: { value: "160" } },
-		);
-		fireEvent.change(
-			screen.getByRole("textbox", {
-				name:
-					locale === "ja"
-						? "上位段の候補 (px・任意)"
-						: "Upper rendition candidates (px, optional)",
-			}),
-			{ target: { value: "960, 1152" } },
-		);
+		addTemplateRows(locale, [160, 960, 1152]);
 		next();
 		expect(onPatch).not.toHaveBeenCalled();
 		fireEvent.click(

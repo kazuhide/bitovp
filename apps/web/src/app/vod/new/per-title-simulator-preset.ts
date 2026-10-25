@@ -1,4 +1,8 @@
-import type { PerTitleCodec, PerTitleGoal } from "@bitovp/core";
+import {
+	type PerTitleCodec,
+	type PerTitleGoal,
+	resolvePerTitleFixedMode,
+} from "@bitovp/core";
 import { z } from "zod";
 import {
 	perTitleGlobalFields,
@@ -108,7 +112,18 @@ const forced = z
 	})
 	.strict();
 const row = z
-	.object({ id, height: integer, width: integer.optional(), ...rangeFields })
+	.object({
+		id,
+		height: integer,
+		width: integer.optional(),
+		mode: z
+			.enum([
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			])
+			.optional(),
+		...rangeFields,
+	})
 	.strict();
 const automatic = z
 	.object({
@@ -439,7 +454,11 @@ function checkGoal(
 		invalid();
 	// Fixed-bitrate settings on ordinary templates are retained source data.
 	// Their semantics do not constrain the automatic template's output.
-	for (const item of goal.strategy === "fixed-ranges" ? rows : []) {
+	for (const item of rows.filter(
+		(item) =>
+			resolvePerTitleFixedMode(goal, item) ===
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+	)) {
 		checkRange(item, true, {
 			low: automaticBoundary(
 				goal,
@@ -452,10 +471,7 @@ function checkGoal(
 				"highComplexityBoundaryForMaxBitrate",
 			),
 		});
-		if (
-			goal.strategy === "fixed-ranges" &&
-			(item.minBitrate === undefined || item.maxBitrate === undefined)
-		)
+		if (item.minBitrate === undefined || item.maxBitrate === undefined)
 			invalid();
 		if (
 			(item.minBitrate !== undefined && item.minBitrate < goal.minBitrate) ||
@@ -472,8 +488,6 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		(stream) =>
 			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	// A single goal strategy cannot silently replace mixed fixed template modes.
-	if (ranged.length && ranged.length !== fixed.length) invalid();
 	const ids = new Set<string>();
 	for (const stream of reference.streams) {
 		if (
@@ -531,6 +545,9 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		rows: fixed.map((stream) => ({
 			...project(stream),
 			height: stream.height as number,
+			...(ranged.length && stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
+				? { mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION" as const }
+				: {}),
 		})),
 		automaticTemplates: reference.streams
 			.filter((stream) => stream.mode === "PER_TITLE_TEMPLATE")

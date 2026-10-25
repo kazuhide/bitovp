@@ -137,7 +137,7 @@ export function PerTitleSourceConditions({
 		locale === "ja"
 			? {
 					title: "素材で未確認の条件",
-					lower: `このモデルは、最下位の自動候補を解析し、複雑度で補正した値が ${interval} に収まる前提です。素材では未測定で、出力のビットレート制限ではありません。`,
+					lower: `最も低い解像度のPER_TITLE_TEMPLATEについて、解析値を複雑度で補正した結果が ${interval} に収まる前提です。素材では未測定で、出力のビットレート制限ではありません。`,
 					geometry: `素材の${conditions.geometry.basis === "height" ? "高さ" : "幅"}は ${sourceDimension} px 以上が必要です。${conditions.geometry.commonSourceAspectRatio ? "各段が同じ素材の縦横比を持つ前提です。" : ""}素材の寸法と実際の解像度の順序は未測定です。`,
 					rounding:
 						"丸め後の幅も、指定した解像度の順序と同じ解像度の組を保つ前提です。素材では未確認です。",
@@ -149,7 +149,7 @@ export function PerTitleSourceConditions({
 				}
 			: {
 					title: "Unmeasured source conditions",
-					lower: `The starting template's analyzed bitrate, after complexity scaling, must be within ${interval} for this model. It has not been measured; this is not an output bitrate limit.`,
+					lower: `The PER_TITLE_TEMPLATE at the lowest resolution must have an analyzed bitrate within ${interval} after complexity scaling. It has not been measured; this is not an output bitrate limit.`,
 					geometry: `This model needs a source ${conditions.geometry.basis} of at least ${sourceDimension} px. ${conditions.geometry.commonSourceAspectRatio ? "A common source aspect ratio is assumed. " : ""}Source dimensions and the resulting resolution order have not been measured.`,
 					rounding:
 						"Rounded widths must preserve the requested resolution order and groups at the same resolution; this has not been verified.",

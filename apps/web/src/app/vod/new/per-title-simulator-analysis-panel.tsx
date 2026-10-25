@@ -30,6 +30,7 @@ import {
 	tunePerTitleSettings,
 } from "./per-title-simulator-tuning";
 import { assessPerTitleUpperLimit } from "./per-title-simulator-upper-limit";
+import { perTitleStreamLabel } from "./per-title-stream-mode";
 
 const purpose = {
 	en: {
@@ -178,18 +179,7 @@ function FullLadderDetails({
 				: row.width
 					? `${ja ? "幅" : "Width"} ${row.width} px`
 					: media;
-	const mode = (row: Row) =>
-		row.mode === "PER_TITLE_TEMPLATE"
-			? ja
-				? "自動"
-				: "Automatic"
-			: row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
-				? ja
-					? "固定解像度"
-					: "Fixed resolution"
-				: ja
-					? "固定範囲"
-					: "Fixed range";
+	const mode = (row: Row) => perTitleStreamLabel(row, locale);
 	const segments = (ladder: PerTitleLadderAssessment) =>
 		ladder.intervals
 			? `${ladder.intervals.checkedSegments} (${range(ladder.input)} kbps)`
@@ -294,7 +284,8 @@ function FullLadderDetails({
 										{ja ? "テンプレート" : "Template"} {index + 1}
 									</span>
 									<span className="block text-zinc-500">
-										{dimension(row)} · {mode(row)}
+										{dimension(row)} ·{" "}
+										<span className="break-all">{mode(row)}</span>
 									</span>
 								</th>
 								<td className="tabular-nums">{cell(row, "configured")}</td>

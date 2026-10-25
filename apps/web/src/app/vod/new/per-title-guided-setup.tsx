@@ -10,13 +10,19 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
-import {
-	buildPerTitleSetup,
-	type PerTitleSetupInput,
-	type PerTitleSetupIssue,
-} from "./per-title-guided-setup-model";
+import type { PerTitleSetupIssue } from "./per-title-guided-setup-model";
 import { PerTitleSourceConditions } from "./per-title-simulator-constraints";
 import { PerTitleLadder } from "./per-title-simulator-ladder";
+import {
+	PER_TITLE_STREAM_CHOICES,
+	type PerTitleStreamChoice,
+	perTitleStreamChoiceLabel,
+	perTitleStreamMode,
+} from "./per-title-stream-mode";
+import {
+	buildPerTitleStreamSetup,
+	type PerTitleStreamSetupInput,
+} from "./per-title-stream-setup-model";
 
 const strategies: readonly PerTitleStrategy[] = [
 	"automatic",
@@ -61,20 +67,14 @@ const copy = {
 		height: "Height (px)",
 		rowMinimum: "Minimum bitrate (kbps, optional)",
 		rowMaximum: "Maximum bitrate (kbps, optional)",
-		lowerHeight: "Lower automatic rendition height (px, optional)",
-		upperHeights: "Upper rendition candidates (px, optional)",
-		upperHint:
-			"Separate heights with commas; choose candidates for one upper output.",
-		upperChoice:
-			"These candidates share one requested upper output. Confirm the actual count by encoding.",
+		mode: "Stream mode",
 		add: "Add rendition",
 		removeLabel: "Remove",
 		rangesHint: "Leave bitrate limits blank to calculate a starting range.",
 		issues: "Check these requirements",
 		proposal: "Proposed configuration",
-		automatic: "The encoder chooses the resolutions and bitrates.",
 		countSummary: (count: number) => `Requested video outputs: ${count}`,
-		rowsSummary: (count: number) => `Required renditions: ${count}`,
+		streamsSummary: (count: number) => `Stream templates: ${count}`,
 		unverified: "Some conditions still need checking in the simulator.",
 		autoRanges: "Bitrate ranges calculated from your requirements.",
 		nativeCheck: "Confirm output count and quality by encoding your source.",
@@ -110,19 +110,14 @@ const copy = {
 		height: "高さ (px)",
 		rowMinimum: "最小ビットレート (kbps・任意)",
 		rowMaximum: "最大ビットレート (kbps・任意)",
-		lowerHeight: "下位の自動段の高さ (px・任意)",
-		upperHeights: "上位段の候補 (px・任意)",
-		upperHint: "上位1段の候補となる高さをカンマで区切ります。",
-		upperChoice:
-			"上位の希望本数は、候補を合わせて1本です。実際の本数はエンコードして確認してください。",
+		mode: "Streamモード",
 		add: "レンディションを追加",
 		removeLabel: "削除",
 		rangesHint: "ビットレートを空欄にすると、初期案を計算します。",
 		issues: "条件を確認してください",
 		proposal: "作成する設定",
-		automatic: "解像度とビットレートはエンコーダーが選びます。",
 		countSummary: (count: number) => `希望する映像出力数：${count}本`,
-		rowsSummary: (count: number) => `必須のレンディション（${count}本）`,
+		streamsSummary: (count: number) => `Streamテンプレート：${count}件`,
 		unverified: "シミュレーターで確認が必要な条件があります。",
 		autoRanges: "入力した条件からビットレート幅を計算しました。",
 		nativeCheck: "本数と画質は、素材をエンコードして確認してください。",
@@ -134,6 +129,7 @@ const copy = {
 type Text = (typeof copy)["en"];
 type SetupRow = {
 	id: string;
+	choice: PerTitleStreamChoice;
 	height: string;
 	minimum: string;
 	maximum: string;
@@ -166,7 +162,18 @@ const hint = (value: number | undefined, fallback: string, divisor = 1) =>
 	value !== undefined && Number.isSafeInteger(value) && value > 0
 		? String(value / divisor)
 		: fallback;
-const starterRows = (inputHeight: number | undefined): SetupRow[] => {
+const starterRows = (
+	strategy: PerTitleStrategy,
+	inputHeight: number | undefined,
+): SetupRow[] => {
+	const template: SetupRow = {
+		id: "setup-row-1",
+		choice: "template",
+		height: "",
+		minimum: "",
+		maximum: "",
+	};
+	if (strategy === "automatic" || strategy === "count") return [template];
 	const ceiling =
 		inputHeight !== undefined &&
 		Number.isSafeInteger(inputHeight) &&
@@ -174,12 +181,18 @@ const starterRows = (inputHeight: number | undefined): SetupRow[] => {
 			? inputHeight
 			: 1080;
 	const heights = [360, 720, 1080].filter((height) => height <= ceiling);
-	return (heights.length ? heights : [ceiling]).map((height, index) => ({
-		id: `setup-row-${index + 1}`,
-		height: String(height),
-		minimum: "",
-		maximum: "",
-	}));
+	const rows: SetupRow[] = (heights.length ? heights : [ceiling]).map(
+		(height, index) => ({
+			id: `setup-row-${index + 1}`,
+			choice: strategy === "fixed-ranges" ? "fixed-range" : "fixed-resolution",
+			height: String(height),
+			minimum: "",
+			maximum: "",
+		}),
+	);
+	if (strategy === "required-resolutions")
+		rows.push({ ...template, id: `setup-row-${rows.length + 1}` });
+	return rows;
 };
 
 function issueLabel(
@@ -198,8 +211,7 @@ function issueLabel(
 		inputHeight: text.source,
 		count: text.count,
 		height: text.height,
-		lowerHeight: text.lowerHeight,
-		upperHeights: text.upperHeights,
+		mode: text.mode,
 	};
 	return [
 		rowIndex >= 0 ? text.rendition(rowIndex + 1) : undefined,
@@ -244,7 +256,7 @@ function SetupNumber({
 function SetupRows({
 	id,
 	rows,
-	ranges,
+	locale,
 	text,
 	onChange,
 	onAdd,
@@ -252,7 +264,7 @@ function SetupRows({
 }: {
 	id: string;
 	rows: readonly SetupRow[];
-	ranges: boolean;
+	locale: "en" | "ja";
 	text: Text;
 	onChange: (rowId: string, patch: Partial<SetupRow>) => void;
 	onAdd: () => void;
@@ -260,7 +272,7 @@ function SetupRows({
 }) {
 	return (
 		<div className="min-w-0 space-y-3">
-			{ranges ? (
+			{rows.some((row) => row.choice === "fixed-range") ? (
 				<p className="text-xs text-zinc-400">{text.rangesHint}</p>
 			) : null}
 			{rows.map((row, index) => (
@@ -271,16 +283,41 @@ function SetupRows({
 					<legend className="px-1 text-xs text-zinc-300">
 						{text.rendition(index + 1)}
 					</legend>
+					<div className="mb-3 min-w-0">
+						<Field htmlFor={`${id}-${row.id}-mode`} label={text.mode}>
+							<SelectNative
+								id={`${id}-${row.id}-mode`}
+								value={row.choice}
+								onChange={(event) => {
+									const choice = event.target.value as PerTitleStreamChoice;
+									onChange(row.id, {
+										choice,
+										height: choice === "template" ? "" : row.height || "720",
+										minimum: choice === "fixed-range" ? row.minimum : "",
+										maximum: choice === "fixed-range" ? row.maximum : "",
+									});
+								}}
+							>
+								{PER_TITLE_STREAM_CHOICES.map((choice) => (
+									<option key={choice} value={choice}>
+										{perTitleStreamChoiceLabel(choice, locale)}
+									</option>
+								))}
+							</SelectNative>
+						</Field>
+					</div>
 					<div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-						<SetupNumber
-							id={`${id}-${row.id}-height`}
-							label={text.height}
-							value={row.height}
-							min={1}
-							step={1}
-							onChange={(height) => onChange(row.id, { height })}
-						/>
-						{ranges ? (
+						{row.choice !== "template" ? (
+							<SetupNumber
+								id={`${id}-${row.id}-height`}
+								label={text.height}
+								value={row.height}
+								min={1}
+								step={1}
+								onChange={(height) => onChange(row.id, { height })}
+							/>
+						) : null}
+						{row.choice === "fixed-range" ? (
 							<>
 								<SetupNumber
 									id={`${id}-${row.id}-minimum`}
@@ -354,17 +391,16 @@ export function PerTitleGuidedSetup({
 	);
 	const [count, setCount] = useState("5");
 	const [requiredCount, setRequiredCount] = useState("");
-	const [lowerHeight, setLowerHeight] = useState("");
-	const [upperHeights, setUpperHeights] = useState("");
-	const [rows, setRows] = useState(() => starterRows(initialGoal.inputHeight));
+	const [rows, setRows] = useState(() =>
+		starterRows("automatic", initialGoal.inputHeight),
+	);
 	const [submitted, setSubmitted] = useState(false);
 	const completed = useRef(false);
-	const nextRowId = useRef(4);
+	const nextRowId = useRef(2);
 	useEffect(() => {
 		document.getElementById(`${id}-step-${step}`)?.focus();
 	}, [id, step]);
-	const usesRows = strategy !== "automatic" && strategy !== "count";
-	const input = useMemo<PerTitleSetupInput>(
+	const input = useMemo<PerTitleStreamSetupInput>(
 		() => ({
 			strategy,
 			codec,
@@ -381,35 +417,23 @@ export function PerTitleGuidedSetup({
 			...(sourceHeight.trim() !== ""
 				? { inputHeight: requiredNumber(sourceHeight) }
 				: {}),
-			...(strategy === "fixed-ranges" &&
-			(lowerHeight.trim() !== "" || upperHeights.trim() !== "")
-				? {
-						automaticEdges: {
-							...(lowerHeight.trim() !== ""
-								? { lowerHeight: requiredNumber(lowerHeight) }
-								: {}),
-							...(upperHeights.trim() !== ""
-								? { upperHeights: upperHeights.split(",").map(requiredNumber) }
-								: {}),
-						},
-					}
-				: {}),
-			rows: usesRows
-				? rows.map((row) => {
-						const minBitrate = optionalBitrate(row.minimum);
-						const maxBitrate = optionalBitrate(row.maximum);
-						return {
-							id: row.id,
-							height: requiredNumber(row.height),
-							...(strategy === "fixed-ranges"
-								? {
-										...(minBitrate !== undefined ? { minBitrate } : {}),
-										...(maxBitrate !== undefined ? { maxBitrate } : {}),
-									}
-								: {}),
-						};
-					})
-				: [],
+			streams: rows.map((row) => {
+				const minBitrate = optionalBitrate(row.minimum);
+				const maxBitrate = optionalBitrate(row.maximum);
+				return {
+					id: row.id,
+					mode: perTitleStreamMode(row.choice),
+					...(row.choice === "template"
+						? {}
+						: { height: requiredNumber(row.height) }),
+					...(row.choice === "fixed-range"
+						? {
+								...(minBitrate !== undefined ? { minBitrate } : {}),
+								...(maxBitrate !== undefined ? { maxBitrate } : {}),
+							}
+						: {}),
+				};
+			}),
 		}),
 		[
 			strategy,
@@ -420,22 +444,19 @@ export function PerTitleGuidedSetup({
 			count,
 			requiredCount,
 			sourceHeight,
-			lowerHeight,
-			upperHeights,
-			usesRows,
 			rows,
 		],
 	);
 	const result = useMemo(
-		() => buildPerTitleSetup(input, allowedCodecs),
+		() => buildPerTitleStreamSetup(input, allowedCodecs),
 		[input, allowedCodecs],
 	);
 	const available = allowedCodecs.includes(codec);
-	const calculatedRanges =
-		strategy === "fixed-ranges" &&
-		input.rows.some(
-			(row) => row.minBitrate === undefined || row.maxBitrate === undefined,
-		);
+	const calculatedRanges = input.streams.some(
+		(row) =>
+			row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
+			(row.minBitrate === undefined || row.maxBitrate === undefined),
+	);
 	const canReview =
 		available &&
 		result.status !== "conflict" &&
@@ -501,7 +522,19 @@ export function PerTitleGuidedSetup({
 								type="radio"
 								name={`${id}-strategy`}
 								checked={strategy === item}
-								onChange={() => setStrategy(item)}
+								onChange={() => {
+									if (strategy !== item) {
+										const next = starterRows(
+											item,
+											sourceHeight.trim()
+												? requiredNumber(sourceHeight)
+												: initialGoal.inputHeight,
+										);
+										setRows(next);
+										nextRowId.current = next.length + 1;
+									}
+									setStrategy(item);
+								}}
 							/>
 							<span>{text.strategies[index]}</span>
 						</label>
@@ -563,53 +596,43 @@ export function PerTitleGuidedSetup({
 									)
 								: null}
 					</div>
-					{usesRows ? (
-						<SetupRows
-							id={id}
-							rows={rows}
-							ranges={strategy === "fixed-ranges"}
-							text={text}
-							onChange={(rowId, patch) =>
-								setRows((current) =>
-									current.map((row) =>
-										row.id === rowId ? { ...row, ...patch, id: row.id } : row,
-									),
-								)
-							}
-							onAdd={() => {
-								const rowId = `setup-row-${nextRowId.current++}`;
-								setRows((current) => [
-									...current,
-									{ id: rowId, height: "720", minimum: "", maximum: "" },
-								]);
-							}}
-							onRemove={(rowId) =>
-								setRows((current) => current.filter((row) => row.id !== rowId))
-							}
-						/>
-					) : null}
-					{strategy === "fixed-ranges" ? (
-						<div className="grid min-w-0 gap-3 sm:grid-cols-2">
-							{numberField(
-								"lower-height",
-								text.lowerHeight,
-								lowerHeight,
-								setLowerHeight,
-								true,
-							)}
-							<Field
-								htmlFor={`${id}-upper-heights`}
-								label={text.upperHeights}
-								hint={text.upperHint}
-							>
-								<Input
-									id={`${id}-upper-heights`}
-									value={upperHeights}
-									onChange={(event) => setUpperHeights(event.target.value)}
-								/>
-							</Field>
-						</div>
-					) : null}
+					<SetupRows
+						id={id}
+						rows={rows}
+						locale={locale}
+						text={text}
+						onChange={(rowId, patch) =>
+							setRows((current) =>
+								current.map((row) =>
+									row.id === rowId ? { ...row, ...patch, id: row.id } : row,
+								),
+							)
+						}
+						onAdd={() => {
+							const rowId = `setup-row-${nextRowId.current++}`;
+							setRows((current) => [
+								...current,
+								{
+									id: rowId,
+									choice:
+										strategy === "automatic" || strategy === "count"
+											? "template"
+											: strategy === "fixed-ranges"
+												? "fixed-range"
+												: "fixed-resolution",
+									height:
+										strategy === "automatic" || strategy === "count"
+											? ""
+											: "720",
+									minimum: "",
+									maximum: "",
+								},
+							]);
+						}}
+						onRemove={(rowId) =>
+							setRows((current) => current.filter((row) => row.id !== rowId))
+						}
+					/>
 				</div>
 			) : null}
 			{step > 0 &&
@@ -652,19 +675,10 @@ export function PerTitleGuidedSetup({
 							kbps
 						</p>
 						<p className="text-xs text-zinc-400">
-							{strategy === "automatic"
-								? text.automatic
-								: strategy === "count" || input.automaticEdges
-									? text.countSummary(
-											result.goal.countPolicy.kind === "unrestricted"
-												? Number(count)
-												: result.goal.countPolicy.count,
-										)
-									: text.rowsSummary(result.goal.rows?.length ?? 0)}
+							{result.goal.countPolicy.kind === "unrestricted"
+								? text.streamsSummary(result.proposal.api.streams.length)
+								: text.countSummary(result.goal.countPolicy.count)}
 						</p>
-						{input.automaticEdges?.upperHeights?.length ? (
-							<p className="text-xs text-zinc-400">{text.upperChoice}</p>
-						) : null}
 						<PerTitleLadder proposal={result.proposal} />
 					</section>
 					{calculatedRanges || result.status === "unverified" ? (

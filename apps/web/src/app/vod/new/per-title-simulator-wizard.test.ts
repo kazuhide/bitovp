@@ -1483,7 +1483,7 @@ describe("Per-Title wizard bridge", () => {
 		expect(perTitleGoalFromWizard(planToWizardState(plan))).toMatchObject(goal);
 		expect(s).toEqual(before);
 	});
-	it("refuses a mixed fixed-resolution and fixed-range import that would change a stream mode", () => {
+	it("imports mixed fixed-resolution and fixed-range modes without changing either stream mode", () => {
 		const s = partial();
 		s.videos = s.videos.slice(0, 1);
 		s.videos.push({
@@ -1495,9 +1495,13 @@ describe("Per-Title wizard bridge", () => {
 			},
 		});
 		const before = structuredClone(s);
-		expect(() => perTitleGoalFromWizard(s)).toThrow(
-			expect.objectContaining({ code: "UNSUPPORTED_STATE" }),
-		);
+		const goal = perTitleGoalFromWizard(s);
+		const candidate = tunePerTitleSettings(goal, goal).proposal;
+		expect(candidate.api.streams.map(({ mode }) => mode)).toEqual([
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		]);
+		expect(candidate.api.streams[0]?.perTitleSettings).toBeUndefined();
 		expect(s).toEqual(before);
 	});
 	it("reuses the automatic binding when a fixed row occupies the generated automatic ID", () => {

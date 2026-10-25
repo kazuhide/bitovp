@@ -7,6 +7,7 @@ import {
 	type PerTitleGoal,
 	type PerTitleProposal,
 	recommendPerTitleSettings,
+	resolvePerTitleFixedMode,
 } from "@bitovp/core";
 import { autoTunePerTitleGoal } from "./per-title-simulator-auto";
 
@@ -737,9 +738,26 @@ export function tunePerTitleSettings(
 	]) {
 		const automatic =
 			next.automaticTemplates?.some((r) => r.id === row.id) === true;
+		const resolutionOnly =
+			!automatic &&
+			resolvePerTitleFixedMode(next, row) ===
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION";
 		for (const descriptor of streamFields) {
 			const { key } = descriptor;
 			const mode = modeFor("stream", descriptor, row.id);
+			if (
+				resolutionOnly &&
+				[
+					"minBitrate",
+					"maxBitrate",
+					"bitrateSelectionMode",
+					"lowComplexityBoundaryForMaxBitrate",
+					"highComplexityBoundaryForMaxBitrate",
+				].includes(key)
+			) {
+				lock("stream", key, row.id);
+				continue;
+			}
 			if (mode.mode === "fixed") {
 				lock("stream", key, row.id);
 				continue;

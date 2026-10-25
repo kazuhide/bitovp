@@ -149,18 +149,64 @@ beforeEach(() => {
 
 describe("Per-Title output chart", () => {
 	it.each([
+		"en",
+		"ja",
+	] as const)("retains a width-only ordinary Stream's resolution in its caption (%s)", (locale) => {
+		const source: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{ rowId: "width-only", mode: "PER_TITLE_TEMPLATE", width: 1920 },
+				],
+			},
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue({
+			...preview,
+			rows: [
+				{
+					id: "width-only",
+					rowId: "width-only",
+					width: 1920,
+					mode: "PER_TITLE_TEMPLATE",
+					kind: "automatic",
+					status: "unknown",
+				},
+			],
+		});
+		renderLocalized(<PerTitleOutputChart proposal={source} />, locale);
+		const row = within(screen.getByRole("img")).getByTestId(
+			"per-title-output-row",
+		);
+		expect(
+			within(row).getByText(locale === "en" ? "Width 1920 px" : "幅 1920 px"),
+		).toBeVisible();
+		expect(
+			within(row).getByText(
+				locale === "en"
+					? "PER_TITLE_TEMPLATE (resolution specified)"
+					: "PER_TITLE_TEMPLATE (解像度指定)",
+			),
+		).toBeVisible();
+		expect(row).not.toHaveTextContent(
+			locale === "en" ? "no resolution" : "解像度なし",
+		);
+		expect(within(row).queryByTestId("per-title-output-target")).toBeNull();
+	});
+
+	it.each([
 		[
 			"en",
 			"Analysis assumption (count unresolved)",
 			"Assumed range 100–7,200",
-			"Automatic range (assumed)",
+			"PER_TITLE_TEMPLATE (content analysis)",
 			"If fixed is highest: 1,000–1,500 kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.",
 		],
 		[
 			"ja",
 			"解析値の仮定（本数未確定）",
 			"仮定の範囲 100–7,200",
-			"自動生成の範囲（仮定）",
+			"PER_TITLE_TEMPLATE（素材解析で決定）",
 			"固定段が最上位なら 1,000–1,500 kbps（1段・各段×1.25）。通常上段の上限ではありません。",
 		],
 	] as const)("separates the aggregate assumption from its fixed-highest fallback without selecting outputs (%s)", (locale, normal, assumed, group, fallback) => {
@@ -201,14 +247,10 @@ describe("Per-Title output chart", () => {
 			3,
 		);
 		expect(
-			within(chart).queryByText(
-				locale === "en" ? "Candidate 960 px" : "候補 960 px",
-			),
+			within(chart).queryByText(locale === "en" ? "960 px" : "960 px"),
 		).toBeNull();
 		expect(
-			within(chart).queryByText(
-				locale === "en" ? "Candidate 1280 px" : "候補 1280 px",
-			),
+			within(chart).queryByText(locale === "en" ? "1280 px" : "1280 px"),
 		).toBeNull();
 		expect(input).toEqual(inputSnapshot);
 		expect(result).toEqual(resultSnapshot);
@@ -627,10 +669,14 @@ describe("Per-Title output chart", () => {
 	it.each([
 		[
 			"en",
-			"Automatic range (assumed)",
+			"PER_TITLE_TEMPLATE (content analysis)",
 			"Analysis assumption (count unresolved)",
 		],
-		["ja", "自動生成の範囲（仮定）", "解析値の仮定（本数未確定）"],
+		[
+			"ja",
+			"PER_TITLE_TEMPLATE（素材解析で決定）",
+			"解析値の仮定（本数未確定）",
+		],
 	] as const)("does not assign candidate resolutions to an aggregate analysis band (%s)", (locale, group, origin) => {
 		const input: PerTitleProposal = {
 			...proposal,
@@ -708,7 +754,7 @@ describe("Per-Title output chart", () => {
 		[
 			"en",
 			"Simulated output",
-			"Candidate 180 px",
+			"180 px",
 			"Upper input assumed at 2,000 kbps",
 			"Conditional",
 			"Resolution unknown",
@@ -716,7 +762,7 @@ describe("Per-Title output chart", () => {
 		[
 			"ja",
 			"想定出力",
-			"候補 180 px",
+			"180 px",
 			"解析値を 2,000 kbps と仮定",
 			"条件付き",
 			"解像度未確定",
@@ -729,7 +775,13 @@ describe("Per-Title output chart", () => {
 		const chart = screen.getByRole("img", { name: title });
 		expect(chart).toHaveAccessibleDescription(/kbps/);
 		expect(within(chart).getByText(candidate)).toBeVisible();
-		expect(within(chart).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
+		expect(
+			within(chart).getByText(
+				locale === "en"
+					? "PER_TITLE_TEMPLATE (resolution specified)"
+					: "PER_TITLE_TEMPLATE (解像度指定)",
+			),
+		).toBeVisible();
 		const rows = within(chart).getAllByTestId("per-title-output-row");
 		expect(rows[0]).toHaveTextContent(candidate);
 		expect(rows[1]).toHaveTextContent("360 px");
@@ -893,10 +945,14 @@ describe("Per-Title output chart", () => {
 			const row = required(visibleRows[index]);
 			expect(within(row).getByText(forced)).toBeVisible();
 			expect(row).toHaveTextContent(value);
-			expect(row).toHaveTextContent(
-				locale === "en" ? "Candidate 1080 px" : "候補 1080 px",
-			);
-			expect(within(row).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
+			expect(row).toHaveTextContent(locale === "en" ? "1080 px" : "1080 px");
+			expect(
+				within(row).getByText(
+					locale === "en"
+						? "PER_TITLE_TEMPLATE (resolution specified)"
+						: "PER_TITLE_TEMPLATE (解像度指定)",
+				),
+			).toBeVisible();
 			expect(
 				within(row).getByTestId("per-title-output-target"),
 			).toHaveAttribute("stroke-dasharray", "3 2");
@@ -1216,7 +1272,9 @@ describe("Per-Title output chart", () => {
 		);
 		const automatic = required(rows[1]);
 		expect(automatic).toHaveTextContent(
-			locale === "en" ? "Automatic range (assumed)" : "自動生成の範囲（仮定）",
+			locale === "en"
+				? "PER_TITLE_TEMPLATE (content analysis)"
+				: "PER_TITLE_TEMPLATE（素材解析で決定）",
 		);
 		expect(automatic).toHaveTextContent(
 			locale === "en" ? "Assumed range 100–600" : "仮定の範囲 100–600",

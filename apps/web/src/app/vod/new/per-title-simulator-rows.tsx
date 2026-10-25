@@ -1,8 +1,10 @@
 "use client";
 
-import type { PerTitleGoal } from "@bitovp/core";
+import { type PerTitleGoal, resolvePerTitleFixedMode } from "@bitovp/core";
 import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import {
 	autoTunePerTitleGoal,
@@ -16,15 +18,25 @@ import {
 } from "./per-title-simulator-controls";
 import { PerTitleSimulatorNumberField as NumberField } from "./per-title-simulator-fields";
 import {
+	changePerTitleStreamChoice,
+	editablePerTitleStreams,
+	withPerTitleStreamRows,
+} from "./per-title-simulator-row-mode";
+import {
 	getPerTitleAdjustment,
 	perTitleStreamFields,
 } from "./per-title-simulator-tuning";
+import {
+	PER_TITLE_STREAM_CHOICES,
+	type PerTitleStreamChoice,
+	perTitleStreamChoice,
+	perTitleStreamChoiceLabel,
+} from "./per-title-stream-mode";
 
 const texts = {
 	en: {
 		title: "Renditions",
-		required: "Required",
-		automatic: "Automatic",
+		mode: "Stream mode",
 		auto: "Auto",
 		manual: "Manual",
 		minimum: "Minimum bitrate (kbps)",
@@ -36,19 +48,14 @@ const texts = {
 		optionalHeight: "Height (px, optional)",
 		rendition: "rendition",
 		row: "Rendition",
-		candidate: "automatic template",
-		candidateRow: "Automatic template",
 		add: "Add rendition",
-		addAutomatic: "Add automatic template",
 		remove: "Remove",
 		removeRendition: "Remove rendition",
-		removeAutomatic: "Remove automatic template",
 		reset: "Reset to automatic",
 	},
 	ja: {
 		title: "レンディション",
-		required: "必須",
-		automatic: "自動",
+		mode: "Streamモード",
 		auto: "自動",
 		manual: "手動",
 		minimum: "最小ビットレート (kbps)",
@@ -60,13 +67,9 @@ const texts = {
 		optionalHeight: "高さ (px、省略可)",
 		rendition: "レンディション",
 		row: "レンディション",
-		candidate: "自動生成の候補",
-		candidateRow: "自動生成の候補",
 		add: "レンディションを追加",
-		addAutomatic: "自動生成の候補を追加",
 		remove: "削除",
 		removeRendition: "レンディションを削除",
-		removeAutomatic: "自動生成の候補を削除",
 		reset: "自動設定に戻す",
 	},
 };
@@ -176,10 +179,12 @@ export function PerTitleSimulatorRows({
 	const counter = useRef(0);
 	const mountId = useId();
 	const aspectHistory = useRef(new Map<string, AspectHistory>());
-	if (goal.strategy === "automatic" || goal.strategy === "count") return null;
+	const rowOrder = useRef(new Map<string, number>());
 	const copy = texts[locale];
-	const rows = goal.rows ?? [];
-	const automatic = goal.automaticTemplates ?? [];
+	const { fixed: rows, ordinary: automatic } = editablePerTitleStreams(
+		goal,
+		tuning?.proposal,
+	);
 	const ranged = goal.strategy === "fixed-ranges";
 	const full = rows.length + automatic.length >= 64;
 	const inGlobal = (value: number | undefined): value is number =>
@@ -203,6 +208,14 @@ export function PerTitleSimulatorRows({
 			index,
 		})),
 	].sort((a, b) => heightOrder(a.row) - heightOrder(b.row) || 0);
+	for (const entry of entries)
+		if (!rowOrder.current.has(entry.row.id))
+			rowOrder.current.set(entry.row.id, rowOrder.current.size);
+	entries.sort(
+		(a, b) =>
+			(rowOrder.current.get(a.row.id) ?? 0) -
+			(rowOrder.current.get(b.row.id) ?? 0),
+	);
 	const nextId = () => {
 		const reserved = new Set([...rows, ...automatic].map((row) => row.id));
 		let next: string;
@@ -212,13 +225,53 @@ export function PerTitleSimulatorRows({
 		} while (reserved.has(next));
 		return next;
 	};
+	const changeMode = (rowId: string, choice: PerTitleStreamChoice) => {
+		let next = changePerTitleStreamChoice(
+			goal,
+			rowId,
+			choice,
+			tuning?.proposal,
+		);
+		if (choice === "fixed-range") {
+			const changed = next.rows?.find((row) => row.id === rowId);
+			if (
+				changed &&
+				(changed.minBitrate === undefined || changed.maxBitrate === undefined)
+			) {
+				const manual = Object.fromEntries(
+					(next.rows ?? [])
+						.filter((row) => row.id !== rowId)
+						.map((row) => [row.id, { min: true, max: true }]),
+				);
+				const seeded = autoTunePerTitleGoal(
+					next,
+					tuning?.anchor ?? next,
+					manual,
+				).rows?.find((row) => row.id === rowId);
+				if (seeded)
+					next = {
+						...next,
+						rows: next.rows?.map((row) =>
+							row.id === rowId
+								? {
+										...row,
+										minBitrate: seeded.minBitrate,
+										maxBitrate: seeded.maxBitrate,
+									}
+								: row,
+						),
+					};
+			}
+		}
+		onChange(next);
+	};
 	return (
 		<section className="space-y-3" aria-labelledby={`${id}-renditions`}>
 			<h3 id={`${id}-renditions`} className="font-medium text-sm text-zinc-200">
 				{copy.title}
 			</h3>
 			<ul className="space-y-3">
-				{entries.map(({ kind, row, index }) => {
+				{entries.map(({ kind, row, index }, position) => {
 					const manual = tuning
 						? {
 								min:
@@ -240,15 +293,26 @@ export function PerTitleSimulatorRows({
 							}
 						: manualBounds[row.id];
 					const isAutomatic = kind === "automatic";
-					const rowRanged = ranged && !isAutomatic;
+					const mode = isAutomatic
+						? "PER_TITLE_TEMPLATE"
+						: resolvePerTitleFixedMode(
+								goal,
+								row as NonNullable<PerTitleGoal["rows"]>[number],
+							);
+					const choice = perTitleStreamChoice({ ...row, mode });
+					const rowRanged =
+						mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
+					const number = position + 1;
 					return (
 						<li
 							key={row.id}
-							aria-label={`${isAutomatic ? copy.candidateRow : copy.row} ${index + 1}`}
+							aria-label={`${copy.row} ${number}`}
 							className="space-y-2 border-b border-zinc-800 pb-3"
 						>
 							<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
-								<span>{isAutomatic ? copy.automatic : copy.required}</span>
+								<span>
+									{copy.row} {number}
+								</span>
 								{rowRanged && !tuning
 									? (["min", "max"] as const).map((bound) => (
 											<span
@@ -266,7 +330,7 @@ export function PerTitleSimulatorRows({
 										<Button
 											variant="ghost"
 											size="sm"
-											aria-label={`${copy.reset}, ${copy.rendition} ${index + 1}`}
+											aria-label={`${copy.reset}, ${copy.rendition} ${number}`}
 											onClick={() => onResetBitrates(row.id)}
 										>
 											{copy.reset}
@@ -275,20 +339,20 @@ export function PerTitleSimulatorRows({
 									<Button
 										variant="ghost"
 										size="sm"
-										aria-label={`${isAutomatic ? copy.removeAutomatic : copy.removeRendition} ${index + 1}`}
+										aria-label={`${copy.removeRendition} ${number}`}
+										disabled={entries.length === 1}
 										onClick={() =>
 											onChange(
 												withoutRowPolicies(
-													{
-														...goal,
-														...(isAutomatic
-															? {
-																	automaticTemplates: automatic.filter(
-																		(_, i) => i !== index,
-																	),
-																}
-															: { rows: rows.filter((_, i) => i !== index) }),
-													},
+													withPerTitleStreamRows(
+														goal,
+														isAutomatic
+															? rows
+															: rows.filter((_, i) => i !== index),
+														isAutomatic
+															? automatic.filter((_, i) => i !== index)
+															: automatic,
+													),
 													row.id,
 												),
 											)
@@ -298,61 +362,82 @@ export function PerTitleSimulatorRows({
 									</Button>
 								</div>
 							</div>
+							<Field htmlFor={`${id}-${row.id}-mode`} label={copy.mode}>
+								<SelectNative
+									id={`${id}-${row.id}-mode`}
+									aria-label={`${copy.mode}, ${copy.rendition} ${number}`}
+									value={choice}
+									onChange={(event) =>
+										changeMode(
+											row.id,
+											event.target.value as PerTitleStreamChoice,
+										)
+									}
+								>
+									{PER_TITLE_STREAM_CHOICES.map((option) => (
+										<option key={option} value={option}>
+											{perTitleStreamChoiceLabel(option, locale)}
+										</option>
+									))}
+								</SelectNative>
+							</Field>
 							<div
 								className={`grid items-start gap-2 ${rowRanged ? "sm:grid-cols-3" : "sm:max-w-xs"}`}
 							>
-								<div
-									data-setting-scope="stream"
-									data-setting-key="height"
-									data-setting-row={row.id}
-									data-setting-control={`${id}-${row.id}-height`}
-								>
-									<NumberField
-										id={`${id}-${row.id}-height`}
-										label={isAutomatic ? copy.optionalHeight : copy.height}
-										accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${isAutomatic ? copy.candidate : copy.rendition} ${index + 1}`}
-										value={row.height}
-										optional={isAutomatic}
-										integer
-										minimum={1}
-										onChange={(height) =>
-											onChange({
-												...goal,
-												...(isAutomatic
-													? {
-															automaticTemplates: automatic.map((item, i) =>
-																i === index
-																	? {
-																			...item,
-																			height,
-																			...widthForHeight(
-																				item,
+								{choice !== "template" ? (
+									<div
+										data-setting-scope="stream"
+										data-setting-key="height"
+										data-setting-row={row.id}
+										data-setting-control={`${id}-${row.id}-height`}
+									>
+										<NumberField
+											id={`${id}-${row.id}-height`}
+											label={isAutomatic ? copy.optionalHeight : copy.height}
+											accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${copy.rendition} ${number}`}
+											value={row.height}
+											optional={isAutomatic}
+											integer
+											minimum={1}
+											onChange={(height) =>
+												onChange({
+													...goal,
+													...(isAutomatic
+														? {
+																automaticTemplates: automatic.map((item, i) =>
+																	i === index
+																		? {
+																				...item,
 																				height,
-																				aspectHistory.current,
-																			),
-																		}
-																	: item,
-															),
-														}
-													: {
-															rows: rows.map((item, i) =>
-																i === index
-																	? {
-																			...item,
-																			height: height ?? Number.NaN,
-																			...widthForHeight(
-																				item,
-																				height,
-																				aspectHistory.current,
-																			),
-																		}
-																	: item,
-															),
-														}),
-											})
-										}
-									/>
-								</div>
+																				...widthForHeight(
+																					item,
+																					height,
+																					aspectHistory.current,
+																				),
+																			}
+																		: item,
+																),
+															}
+														: {
+																rows: rows.map((item, i) =>
+																	i === index
+																		? {
+																				...item,
+																				height: height ?? Number.NaN,
+																				...widthForHeight(
+																					item,
+																					height,
+																					aspectHistory.current,
+																				),
+																			}
+																		: item,
+																),
+															}),
+												})
+											}
+										/>
+									</div>
+								) : null}
 								{rowRanged
 									? (["min", "max"] as const).map((bound) => {
 											const field = perTitleStreamFields(goal.codec).find(
@@ -386,9 +471,9 @@ export function PerTitleSimulatorRows({
 														label={
 															bound === "min" ? copy.minimum : copy.maximum
 														}
-														accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${index + 1}`}
+														accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${number}`}
 														slider={{
-															label: `${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${index + 1}`,
+															label: `${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${number}`,
 															minimum,
 															maximum,
 															disabled: !validGlobal,
@@ -400,8 +485,8 @@ export function PerTitleSimulatorRows({
 													key={bound}
 													id={`${id}-${row.id}-${bound}`}
 													label={bound === "min" ? copy.minimum : copy.maximum}
-													accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${index + 1}`}
-													sliderLabel={`${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${index + 1}`}
+													accessibleLabel={`${bound === "min" ? copy.minimum : copy.maximum}, ${copy.rendition} ${number}`}
+													sliderLabel={`${bound === "min" ? copy.minimumSlider : copy.maximumSlider}, ${copy.rendition} ${number}`}
 													value={
 														bound === "min" ? row.minBitrate : row.maxBitrate
 													}
@@ -438,7 +523,7 @@ export function PerTitleSimulatorRows({
 									context={tuning}
 									rowId={row.id}
 									omitBounds={rowRanged}
-									suffix={`${isAutomatic ? copy.candidate : copy.rendition} ${index + 1}`}
+									suffix={`${copy.rendition} ${number}`}
 								/>
 							) : null}
 						</li>
@@ -452,9 +537,19 @@ export function PerTitleSimulatorRows({
 					disabled={full}
 					onClick={() => {
 						if (full) return;
+						if (goal.strategy === "automatic" || goal.strategy === "count") {
+							onChange({
+								...goal,
+								automaticTemplates: [...automatic, { id: nextId() }],
+							});
+							return;
+						}
 						let added: NonNullable<PerTitleGoal["rows"]>[number] = {
 							id: nextId(),
 							height: 720,
+							mode: ranged
+								? "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+								: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 							...widthForNewRow(goal, 720),
 						};
 						if (ranged) {
@@ -473,24 +568,10 @@ export function PerTitleSimulatorRows({
 									maxBitrate: seeded.maxBitrate,
 								};
 						}
-						onChange({ ...goal, rows: [...rows, added] });
+						onChange(withPerTitleStreamRows(goal, [...rows, added], automatic));
 					}}
 				>
 					{copy.add}
-				</Button>
-				<Button
-					variant="secondary"
-					size="sm"
-					disabled={full}
-					onClick={() => {
-						if (!full)
-							onChange({
-								...goal,
-								automaticTemplates: [...automatic, { id: nextId() }],
-							});
-					}}
-				>
-					{copy.addAutomatic}
 				</Button>
 			</div>
 		</section>

@@ -232,6 +232,8 @@ const validRows = (
 	goal.rows.length <= 64 &&
 	goal.rows.every(
 		(row) =>
+			(row.mode === undefined ||
+				row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE") &&
 			positive(row.height) &&
 			positive(row.minBitrate) &&
 			positive(row.maxBitrate) &&

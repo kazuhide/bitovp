@@ -313,27 +313,29 @@ describe("Per-Title simulator", () => {
 			}),
 		);
 		const user = userEvent.setup();
-		await user.click(
-			screen.getByRole("button", { name: "Add automatic template" }),
+		await user.click(screen.getByRole("button", { name: "Add rendition" }));
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Stream mode, rendition 2" }),
+			"template-resolution",
 		);
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), automatic template 1",
+				name: "Height (px, optional), rendition 2",
 			}),
 			{ target: { value: "1080" } },
 		);
 		expect(
 			screen.getByRole("spinbutton", {
-				name: "Minimum bitrate (kbps), automatic template 1",
+				name: "Minimum bitrate (kbps), rendition 2",
 			}),
 		).not.toBeVisible();
 		expect(
 			screen.getByRole("spinbutton", {
-				name: "Maximum bitrate (kbps), automatic template 1",
+				name: "Maximum bitrate (kbps), rendition 2",
 			}),
 		).not.toBeVisible();
 		const candidate = screen.getByRole("listitem", {
-			name: "Automatic template 1",
+			name: "Rendition 2",
 		});
 		await user.click(
 			within(candidate).getByText("Per-Title settings", {
@@ -477,7 +479,7 @@ describe("Per-Title simulator", () => {
 		).toHaveValue(480);
 		expect(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), automatic template 1",
+				name: "Height (px, optional), rendition 2",
 			}),
 		).toHaveValue(1080);
 		fireEvent.change(
@@ -657,7 +659,7 @@ describe("Per-Title simulator", () => {
 		expect(maximum).toBeVisible();
 	});
 
-	it("offers the five intent modes and shows rows only for resolution constraints", async () => {
+	it("offers the five intent modes with editable Stream rows in each", async () => {
 		show();
 		const user = userEvent.setup();
 		const strategy = screen.getByRole("combobox", {
@@ -667,8 +669,11 @@ describe("Per-Title simulator", () => {
 		for (const value of ["automatic", "count"]) {
 			await user.selectOptions(strategy, value);
 			expect(
-				screen.queryByRole("button", { name: "Add rendition" }),
-			).toBeNull();
+				screen.getByRole("button", { name: "Add rendition" }),
+			).toBeVisible();
+			expect(
+				screen.getByRole("combobox", { name: "Stream mode, rendition 1" }),
+			).toHaveValue("template");
 		}
 		for (const value of [
 			"required-resolutions",
@@ -680,7 +685,7 @@ describe("Per-Title simulator", () => {
 				screen.getByRole("button", { name: "Add rendition" }),
 			).toBeVisible();
 			expect(
-				screen.getByRole("spinbutton", { name: "Height (px), rendition 1" }),
+				screen.getByRole("spinbutton", { name: /^Height \(px\), rendition/ }),
 			).toHaveValue(360);
 		}
 		expect(
@@ -1022,7 +1027,10 @@ describe("Per-Title simulator", () => {
 		expect(
 			screen.getByRole("combobox", { name: "What should Per-Title choose?" }),
 		).toHaveValue("automatic");
-		expect(screen.queryByRole("button", { name: "Add rendition" })).toBeNull();
+		expect(screen.getByRole("button", { name: "Add rendition" })).toBeVisible();
+		expect(
+			screen.getByRole("combobox", { name: "Stream mode, rendition 1" }),
+		).toHaveValue("template");
 		await user.click(screen.getByRole("button", { name: "Review changes" }));
 		expect(onApply.mock.calls[0]?.[0]).toMatchObject({
 			codec: "VP9",

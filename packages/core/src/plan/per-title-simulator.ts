@@ -76,6 +76,9 @@ const outerStreamSettings = (row: PerTitleAutomaticTemplate) => ({
 
 export type PerTitleGoalRow = {
 	id: string;
+	mode?:
+		| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
+		| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
 	height: number;
 	width?: number;
 	minBitrate?: number;
@@ -87,7 +90,10 @@ export type PerTitleGoalRow = {
 	codecBufsizeFactor?: number;
 };
 
-export type PerTitleAutomaticTemplate = Omit<PerTitleGoalRow, "height"> & {
+export type PerTitleAutomaticTemplate = Omit<
+	PerTitleGoalRow,
+	"height" | "mode"
+> & {
 	height?: number;
 };
 
@@ -117,6 +123,26 @@ export type PerTitleGoal = PerTitleOptionalSettings & {
 	settingLocks?: PerTitleSettingLocks;
 	adjustments?: PerTitleAdjustments;
 };
+
+/** Explicit stream modes take precedence over legacy strategy defaults. */
+export function resolvePerTitleFixedMode(
+	goal: Pick<PerTitleGoal, "strategy">,
+	row: Pick<PerTitleGoalRow, "id" | "mode">,
+): NonNullable<PerTitleGoalRow["mode"]> {
+	return (
+		row.mode ??
+		(goal.strategy === "fixed-ranges"
+			? "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+			: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION")
+	);
+}
+
+const hasFixedBitrate = (
+	goal: PerTitleGoal,
+	row: Pick<PerTitleGoalRow, "id" | "mode">,
+) =>
+	resolvePerTitleFixedMode(goal, row) ===
+	"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
 
 export type PerTitleDiagnostic = {
 	code:
@@ -1002,7 +1028,7 @@ function orderedRows(goal: PerTitleGoal): PerTitleGoalRow[] {
 		: [...(goal.rows ?? [])].sort(
 				(a, b) =>
 					a.height - b.height ||
-					(goal.strategy === "fixed-ranges"
+					(hasFixedBitrate(goal, a) || hasFixedBitrate(goal, b)
 						? (a.minBitrate ?? 0) - (b.minBitrate ?? 0) ||
 							(a.maxBitrate ?? 0) - (b.maxBitrate ?? 0)
 						: 0),
@@ -1018,7 +1044,7 @@ function resolveRowOrder(
 	acceptOrder?: (rows: PerTitleGoalRow[]) => boolean,
 ): { rows: PerTitleGoalRow[]; unknown: boolean; states: number } {
 	if (
-		goal.strategy !== "fixed-ranges" ||
+		!rows.some((row) => hasFixedBitrate(goal, row)) ||
 		!rows.some(
 			(row, index) => index > 0 && row.height === rows[index - 1]?.height,
 		)
@@ -1117,14 +1143,12 @@ function resolveRowOrder(
 
 function rowRanges(goal: PerTitleGoal, rows: PerTitleGoalRow[]): Interval[] {
 	return rows.map((row) => ({
-		minimum:
-			goal.strategy === "fixed-ranges"
-				? (row.minBitrate as number)
-				: goal.minBitrate,
-		maximum:
-			goal.strategy === "fixed-ranges"
-				? (row.maxBitrate as number)
-				: goal.maxBitrate,
+		minimum: hasFixedBitrate(goal, row)
+			? (row.minBitrate as number)
+			: goal.minBitrate,
+		maximum: hasFixedBitrate(goal, row)
+			? (row.maxBitrate as number)
+			: goal.maxBitrate,
 	}));
 }
 
@@ -1149,7 +1173,10 @@ function modelCapacity(
 		{ minimum: goal.minBitrate, maximum: goal.maxBitrate },
 		minimumStep,
 	);
-	if (goal.strategy !== "fixed-ranges" || hasAutomaticOutput(goal))
+	if (
+		!(goal.rows ?? []).some((row) => hasFixedBitrate(goal, row)) ||
+		hasAutomaticOutput(goal)
+	)
 		return globalCapacity;
 	return Math.min(
 		globalCapacity,
@@ -1271,7 +1298,11 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 				);
 			}
 		}
-		if (goal.strategy === "fixed-ranges") {
+		if (
+			goal.rows?.some(
+				(saved) => saved.id === row.id && hasFixedBitrate(goal, saved),
+			)
+		) {
 			for (const key of [
 				"lowComplexityBoundaryForMaxBitrate",
 				"highComplexityBoundaryForMaxBitrate",
@@ -1392,6 +1423,11 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 		if (
 			!row.id ||
 			ids.has(row.id) ||
+			(row.mode !== undefined &&
+				![
+					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+				].includes(row.mode)) ||
 			!positiveInteger(row.height) ||
 			(row.width !== undefined && !positiveInteger(row.width))
 		) {
@@ -1402,7 +1438,7 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 			);
 		}
 		ids.add(row.id);
-		if (goal.strategy !== "fixed-ranges") continue;
+		if (!hasFixedBitrate(goal, row)) continue;
 		if (
 			!positiveInteger(row.minBitrate) ||
 			!positiveInteger(row.maxBitrate) ||
@@ -1540,11 +1576,8 @@ function buildProposal(
 			rowId: row.id,
 			height: row.height,
 			...(row.width !== undefined ? { width: row.width } : {}),
-			mode:
-				goal.strategy === "fixed-ranges"
-					? "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
-					: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
-			...(goal.strategy === "fixed-ranges"
+			mode: resolvePerTitleFixedMode(goal, row),
+			...(hasFixedBitrate(goal, row)
 				? {
 						perTitleSettings: {
 							...outerStreamSettings(row),
@@ -1662,8 +1695,11 @@ function buildProposal(
 		});
 	}
 	if (
-		rows.some((row) => row.bitrateSelectionMode === "COMPLEXITY_RANGE") &&
-		goal.strategy === "fixed-ranges"
+		rows.some(
+			(row) =>
+				hasFixedBitrate(goal, row) &&
+				row.bitrateSelectionMode === "COMPLEXITY_RANGE",
+		)
 	) {
 		diagnostics.push({
 			code: "complexity-analysis-required",
@@ -1838,7 +1874,7 @@ function buildScenario(
 		const range = ranges[index] as Interval;
 		const boundaryFraction =
 			allowLinearIllustration &&
-			goal.strategy === "fixed-ranges" &&
+			hasFixedBitrate(goal, row) &&
 			row.bitrateSelectionMode === "COMPLEXITY_RANGE"
 				? Math.min(
 						1,

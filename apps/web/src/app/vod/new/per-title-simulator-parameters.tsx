@@ -240,7 +240,10 @@ export function PerTitleParameterView({
 									key={`${stream.rowId}-${index}`}
 									className="border-t border-zinc-800"
 								>
-									<th scope="row" className="px-2 py-2 align-top font-medium">
+									<th
+										scope="row"
+										className="min-w-48 px-2 py-2 align-top font-medium"
+									>
 										<span className="block max-w-48 break-all">
 											{perTitleStreamLabel(stream, locale)}
 										</span>

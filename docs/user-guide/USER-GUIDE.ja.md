@@ -10,7 +10,7 @@ bitovp のインストールから、初回管理者の作成、Bitmovin とス�
 
 以下は、macOS または Linux に Docker で新しく導入する場合の手順です。導入済みの環境を更新する場合は、データベースを変更する前に[第18章の更新・バックアップ](https://kazuhide.github.io/bitovp/ja/guide/appendix/#upgrades-backups-and-shutdown)を確認してください。
 
-Docker Engine または Docker Desktop と、Docker Compose 2.30.0 以降を用意します。初期設定には Git、Node.js 24 以降、pnpm 11 も使います。既定のポートは、Web が3100、PostgreSQL が5432、Redis が6379です。
+Docker Engine または Docker Desktop と、Docker Compose 2.30.0 以降を用意します。初期設定には Git、セキュリティ修正を適用した Node.js 24 LTS、pnpm 11 も使います。既定のポートは、Web が3100、PostgreSQL が5432、Redis が6379です。
 
 Compose 2.30.0 以降が必要なのは、パスワードハッシュ内の `$` をそのまま読み込む `env_file.format: raw` を使っているためです。Web コンテナーのメモリ上限は既定で1 GiBです。以前の `.env` に `WEB_MEMORY_LIMIT=512m` が残っている場合は、既定値の更新だけでは変わりません。必要に応じて `1g` に変更します。
 
@@ -55,6 +55,7 @@ raw 形式では、引用符や値の後ろのコメントも文字列として�
 
 ```sh
 pnpm --filter @bitovp/db db:runtime:init
+docker compose pull postgres redis
 docker compose up -d postgres redis
 pnpm --filter @bitovp/db db:runtime:prepare
 ```
@@ -66,7 +67,7 @@ pnpm --filter @bitovp/db db:runtime:prepare
 ```sh
 export GIT_COMMIT=$(git rev-parse HEAD)
 docker compose config --quiet
-docker compose build migrate worker web
+docker compose build --pull --no-cache migrate worker web
 docker compose up -d --no-build
 ```
 
@@ -1261,6 +1262,8 @@ INGRESS_QUICKTUNNEL_METRICS_URL=
 データベース、`.env`、`.env.migrate` を、暗号化したバックアップとしてリポジトリ外に保管します。データベースと暗号鍵がそろうと認証情報を復号できるため、どちらにもアクセス制限を設けます。復元は稼働中のデータベースへ上書きせず、別のデータベースで確認します。
 
 更新前には、現在のアプリ・イメージの版と、実行中の外部リソースを記録します。新しい処理を受け付けないようにし、マイグレーションの注意事項を確認してから Web と Worker を同じ版へ更新します。停止やクリーンアップが未確認のリソースがある間は、必要な Worker と認証情報を失わないようにします。
+
+バックアップと処理の終了を確認してから、`docker compose pull postgres redis` で選択したデータサービスの固定イメージを取得し、`docker compose build --pull --no-cache migrate worker web` でアプリのベースと OS パッケージを更新します。イメージの取得だけでは、稼働中の PostgreSQL/Redis は切り替わりません。更新時の注意事項を確認し、ボリュームを保持したうえで保守時間中に再作成します。更新順序は[運用手順（英語）](../OPERATIONS.md#upgrades)を参照してください。
 
 既存データベースの条件は[データベース更新手順（英語）](../DATABASE-UPGRADES.md)を参照してください。イメージを以前の版へ戻しても、適用したデータベース変更を戻せるとは限りません。
 

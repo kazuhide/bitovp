@@ -14,7 +14,8 @@ The details below also cover alternative ports and authentication modes.
 
 - Docker Engine or Docker Desktop, running.
 - Docker Compose 2.30.0 or newer.
-- Node.js 24 or newer, pnpm 11, and Git for initial database setup.
+- Node.js 24 LTS with current security patches, pnpm 11, and Git for initial
+  database setup.
 - A current browser and outbound HTTPS access to image registries and providers.
 - Available ports: 3100 for the web application, 5432 for PostgreSQL, and 6379
   for Redis. If these are in use, follow the separate-port and sign-in guidance
@@ -133,6 +134,7 @@ For a new installation:
 
 ```bash
 pnpm --filter @bitovp/db db:runtime:init
+docker compose pull postgres redis
 docker compose up -d postgres redis
 pnpm --filter @bitovp/db db:runtime:prepare
 ```
@@ -148,7 +150,7 @@ instead of initializing new credentials.
 ```bash
 export GIT_COMMIT=$(git rev-parse HEAD)
 docker compose config --quiet
-docker compose build migrate worker web
+docker compose build --pull --no-cache migrate worker web
 docker compose up -d --no-build
 ```
 

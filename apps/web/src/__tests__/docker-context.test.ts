@@ -28,6 +28,75 @@ describe("release Docker context", () => {
 	});
 });
 
+describe("security maintenance images", () => {
+	it("pins the same patched Node 24 base by digest for Web and Worker", () => {
+		const bases = ["Dockerfile", "Dockerfile.web"].map(
+			(file) =>
+				readFileSync(join(root, file), "utf8").match(/^FROM (\S+)$/m)?.[1],
+		);
+		expect(bases[0]).toMatch(
+			/^node:24\.\d+\.\d+-bookworm-slim@sha256:[a-f0-9]{64}$/,
+		);
+		expect(bases[1]).toBe(bases[0]);
+		const version = bases[0]?.match(/^node:24\.(\d+)\.(\d+)-/);
+		const minor = Number(version?.[1]);
+		const patch = Number(version?.[2]);
+		expect(minor > 22 || (minor === 22 && patch >= 1)).toBe(true);
+	});
+
+	it.each([
+		"Dockerfile",
+		"Dockerfile.web",
+	])("%s upgrades installed OS packages before adding runtime dependencies", (file) => {
+		const source = readFileSync(join(root, file), "utf8").replace(
+			/\\\s*\n\s*/g,
+			" ",
+		);
+		expect(source).toMatch(
+			/RUN apt-get update\s+&& apt-get upgrade -y\s+&& apt-get install /,
+		);
+	});
+
+	it("uses the same PostgreSQL and Redis security patch images in both deployments", () => {
+		const images = ["docker-compose.yml", "docker-compose.customer.yml"].map(
+			(file) => readFileSync(join(root, file), "utf8"),
+		);
+		for (const image of ["postgres:17.11-alpine", "redis:8.8.3-alpine"]) {
+			const pinned = images.map((text) =>
+				text
+					.split("\n")
+					.find((line) => line.trim().startsWith(`image: ${image}@`)),
+			);
+			expect(pinned[0]?.trim()).toMatch(/@sha256:[a-f0-9]{64}$/);
+			expect(pinned[1]?.trim()).toBe(pinned[0]?.trim());
+		}
+	});
+
+	it.each([
+		"ci.yml",
+		"pages.yml",
+		"installed-gui.yml",
+		"offline-media.yml",
+	])("%s installs the committed package-manager identity with Corepack", (file) => {
+		const workflow = readFileSync(
+			join(root, ".github/workflows", file),
+			"utf8",
+		);
+		const installs =
+			workflow.match(/pnpm install --frozen-lockfile/g)?.length ?? 0;
+		expect(workflow).not.toContain("pnpm/action-setup");
+		expect(installs).toBeGreaterThan(0);
+		expect(
+			workflow.match(/corepack enable\n\s+corepack install\n/g)?.length,
+		).toBe(installs);
+		expect(
+			workflow.match(/mktemp -d "\$RUNNER_TEMP\/corepack-bitovp\.XXXXXX"/g)
+				?.length,
+		).toBe(installs);
+		expect(workflow.match(/>> "\$GITHUB_ENV"/g)?.length).toBe(installs);
+	});
+});
+
 // Source contract only: an offline image-start test must still prove that the
 // prepared package manager is usable as node, without a runtime download.
 describe("non-root Docker package-manager cache", () => {
@@ -46,7 +115,8 @@ describe("non-root Docker package-manager cache", () => {
 		const { packageManager } = JSON.parse(
 			readFileSync(join(root, "package.json"), "utf8"),
 		) as { packageManager: string };
-		const pinnedPnpm = packageManager.split("+")[0];
+		const pinnedPnpm = packageManager;
+		expect(pinnedPnpm).toMatch(/^pnpm@\d+\.\d+\.\d+\+sha512\.[a-f0-9]{128}$/);
 		const cache = instructions.indexOf("ENV COREPACK_HOME=/corepack");
 		const prepare = instructions.findIndex((line) =>
 			line.startsWith("RUN corepack enable"),

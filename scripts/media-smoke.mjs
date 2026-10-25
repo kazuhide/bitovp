@@ -450,6 +450,7 @@ export async function runFixture(
 		await docker(
 			[
 				"build",
+				"--pull",
 				"--label",
 				`${LABEL}=${state.id}`,
 				"--tag",

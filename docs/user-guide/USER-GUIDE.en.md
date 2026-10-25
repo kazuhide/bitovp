@@ -10,7 +10,7 @@ If an administrator has already installed bitovp, obtain the application URL and
 
 The following steps describe a new Docker installation on macOS or Linux. For an existing installation, read [Upgrades, backups, and shutdown](https://kazuhide.github.io/bitovp/guide/appendix/#upgrades-backups-and-shutdown) before changing its database.
 
-Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Git, Node.js 24 or later, and pnpm 11. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
+Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Git, Node.js 24 LTS with current security patches, and pnpm 11. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
 
 Compose 2.30.0 or later is required because `env_file.format: raw` preserves the `$` characters in password hashes. The Web container's default memory limit is 1 GiB. If an older `.env` still contains `WEB_MEMORY_LIMIT=512m`, changing the default does not update that value. Change it to `1g` if needed.
 
@@ -55,6 +55,7 @@ For a new installation, run the following in order.
 
 ```sh
 pnpm --filter @bitovp/db db:runtime:init
+docker compose pull postgres redis
 docker compose up -d postgres redis
 pnpm --filter @bitovp/db db:runtime:prepare
 ```
@@ -66,7 +67,7 @@ Administrative connection information is saved in `.env.migrate`, and the restri
 ```sh
 export GIT_COMMIT=$(git rev-parse HEAD)
 docker compose config --quiet
-docker compose build migrate worker web
+docker compose build --pull --no-cache migrate worker web
 docker compose up -d --no-build
 ```
 
@@ -1259,6 +1260,8 @@ If you change the database host port, the initialization option `--database-port
 Keep encrypted backups of the database, `.env`, and `.env.migrate` outside the repository. Having both the database and encryption key permits credential decryption, so restrict access to both. Test restoration in a separate database rather than overwriting a running database.
 
 Before upgrading, record the current app and image versions and active external resources. Stop accepting new work, review migration notes, and update Web and Worker to the same version. While any resource still has unconfirmed shutdown or cleanup, retain the Worker and credentials it needs.
+
+After backups and draining work, run `docker compose pull postgres redis` to fetch the selected data-service pins and `docker compose build --pull --no-cache migrate worker web` to refresh the application base and OS packages. Pulling images does not replace running PostgreSQL/Redis services; recreate them during the maintenance window after checking their upgrade notes and preserving their volumes. See [Operations](../OPERATIONS.md#upgrades) for the upgrade sequence.
 
 See the [database upgrade procedure](../DATABASE-UPGRADES.md) for requirements on existing databases. Reverting an image to an earlier version does not necessarily reverse database changes already applied.
 

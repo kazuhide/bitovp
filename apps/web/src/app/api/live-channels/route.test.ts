@@ -183,6 +183,92 @@ afterEach(() => {
 });
 
 describe("POST /api/live-channels", () => {
+	it.each([
+		["unknown level", 0, { level: "INVALID_LEVEL" }, "level"],
+		["inherited function", 0, { level: "toString" }, "level"],
+		["inherited object", 0, { level: "__proto__" }, "level"],
+		["empty trellis", 0, { trellis: "" }, "trellis"],
+		[
+			"unknown preset",
+			0,
+			{ presetConfiguration: "INVALID_PRESET" },
+			"presetConfiguration",
+		],
+		[
+			"unknown color space",
+			0,
+			{ colorConfig: { colorSpace: "INVALID_COLOR_SPACE" } },
+			"colorSpace",
+		],
+		[
+			"unknown audio layout",
+			1,
+			{ channelLayout: "INVALID_LAYOUT" },
+			"channelLayout",
+		],
+	] as const)("rejects %s before persisting or enqueueing", async (_name, index, patch, _field) => {
+		const candidate: Record<string, unknown> = structuredClone(withAccount());
+		const renditions = candidate.renditions as Record<string, unknown>[];
+		Object.assign(renditions[index] as Record<string, unknown>, patch);
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(400);
+		expect(JSON.stringify(await response.json())).toContain("renditions");
+		expect(create).not.toHaveBeenCalled();
+		expect(createRequestCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"L4_1",
+		"4.1",
+	])("persists the recognized H264 level %s in canonical form", async (level) => {
+		const candidate: Record<string, unknown> = structuredClone(withAccount());
+		const renditions = candidate.renditions as Record<string, unknown>[];
+		Object.assign(renditions[0] as Record<string, unknown>, { level });
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.plan.renditions[0].level).toBe(
+			"L4_1",
+		);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		"H264",
+		"H265",
+	] as const)("rejects unsupported %s codec settings before persisting or enqueueing", async (codec) => {
+		for (const patch of [
+			{ encodingMode: "TWO_PASS" },
+			{
+				burnInSrt: {
+					inputKey: "subtitles",
+					inputPath: "captions.srt",
+					characterEncoding: "UTF_8",
+				},
+			},
+		]) {
+			const candidate: Record<string, unknown> = structuredClone(withAccount());
+			const renditions = candidate.renditions as Record<string, unknown>[];
+			delete (renditions[0] as Record<string, unknown>).level;
+			Object.assign(renditions[0] as Record<string, unknown>, { codec }, patch);
+			const response = await POST(postRequest({ plan: candidate }));
+			expect(response.status).toBe(400);
+			expect(await response.json()).toMatchObject({
+				details: {
+					issues: expect.arrayContaining([
+						expect.objectContaining({
+							code: "LIVE_RENDITION_FEATURE_UNSUPPORTED",
+							path: `renditions[0].${Object.keys(patch)[0]}`,
+						}),
+					]),
+				},
+			});
+			expect(create).not.toHaveBeenCalled();
+			expect(createRequestCreate).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		}
+	});
+
 	it("refuses a BARE plan — the wrapper is required (API-USAGE.md)", async () => {
 		/**
 		 * The behavioural half of the doc's wrapper claim. `api-usage-doc.test.ts`

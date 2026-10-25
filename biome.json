@@ -42,6 +42,8 @@
 			"packages/**",
 			"tests/browser/**",
 			"scripts/installed-gui-smoke*.mjs",
+			"scripts/nonpaid-submit-proof*.mjs",
+			"scripts/database-restore-proof*.mjs",
 			"scripts/media-smoke*.mjs",
 			"scripts/site-smoke.mjs",
 			"scripts/guide-smoke.mjs",

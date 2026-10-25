@@ -115,13 +115,13 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 12);
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 13);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		65,
+		76,
 	);
 });
 
@@ -361,6 +361,7 @@ for (const cancellation of [false, true])
 		let state;
 		let removed = false;
 		let ran = false;
+		let image;
 		let probe;
 		let credentialFile;
 		const controller = new AbortController();
@@ -374,6 +375,7 @@ for (const cancellation of [false, true])
 				]);
 				const dockerArgs = args.slice(2);
 				if (dockerArgs[0] === "run") {
+					image = dockerArgs.at(-1);
 					state = JSON.parse(readFileSync(statePath, "utf8"));
 					assert.equal(statSync(statePath).mode & 0o777, 0o600);
 					assert.equal(statSync(state.directory).mode & 0o777, 0o700);
@@ -439,6 +441,10 @@ for (const cancellation of [false, true])
 					execute,
 				),
 			);
+			const expectedImage = readFileSync(join(root, "docker-compose.yml"), "utf8")
+				.match(/image: (postgres:\S+)/)?.[1];
+			assert.match(expectedImage, /^postgres:17\.11-alpine@sha256:[a-f0-9]{64}$/);
+			assert.equal(image, expectedImage);
 			assert.equal(ran, true);
 			assert.equal(removed, true);
 			assert.deepEqual(probe, [

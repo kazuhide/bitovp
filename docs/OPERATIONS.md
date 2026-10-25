@@ -17,9 +17,23 @@ automatically and do not require those manual repairs.
    runtime URLs in `.env`. For an existing installation that still has a single
    administrative URL, use `pnpm --filter @bitovp/db db:runtime:import-admin`
    before `db:runtime:prepare`; preserve encryption and authentication values.
-5. Build the chosen commit, apply migrations, and replace web and worker together.
+5. Pull the chosen PostgreSQL/Redis image pins, build the chosen commit with fresh
+   base and package layers, apply migrations, and replace web and worker together.
 6. Check migration exit status, health, authentication, organization isolation,
    worker queues, and the image revision before accepting new work.
+
+After the backup and drain steps, prepare the selected images with:
+
+```bash
+docker compose pull postgres redis
+docker compose build --pull --no-cache migrate worker web
+```
+
+Pulling images does not replace running data services. Recreate PostgreSQL/Redis
+during the maintenance window after checking their upgrade notes and preserving
+their volumes. Record the selected versions and image digests. The Node and data
+service pins must be updated for later security releases; `--no-cache` refreshes
+the available OS packages within the selected base.
 
 Never run web or worker with a PostgreSQL superuser or BYPASSRLS role. An image
 rollback may be incompatible with an already-applied migration. Preserve the

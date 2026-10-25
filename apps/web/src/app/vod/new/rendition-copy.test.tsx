@@ -225,36 +225,46 @@ describe("rendition Add reuses complete settings", () => {
 				renderWithQuery(
 					<LiveLadderSection state={liveState()} onPatch={onPatch} />,
 				);
-			fireEvent.change(screen.getByLabelText("Video settings to reuse"), {
+			const addVideo = screen.getByRole("button", { name: /Add video/ });
+			const addAudio = screen.getByRole("button", { name: /Add audio/ });
+			if (!addVideo.parentElement || !addAudio.parentElement)
+				throw new Error("Expected rendition Add controls");
+			const videoSource = within(addVideo.parentElement).getByRole("combobox", {
+				name: "Video settings to reuse",
+			});
+			const audioSource = within(addAudio.parentElement).getByRole("combobox", {
+				name: "Audio settings to reuse",
+			});
+			fireEvent.change(videoSource, {
 				target: { value: "v360" },
 			});
-			fireEvent.click(screen.getByRole("button", { name: /Add video/ }));
+			fireEvent.click(addVideo);
 			expect(onPatch.mock.lastCall?.[0].videos[2]).toMatchObject({
 				height: 360,
 				bitrate: 400_000,
 			});
 			expect(onPatch.mock.lastCall?.[0].videos[2].h265).toBeUndefined();
-			fireEvent.change(screen.getByLabelText("Audio settings to reuse"), {
+			fireEvent.change(audioSource, {
 				target: { value: "a64" },
 			});
-			fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+			fireEvent.click(addAudio);
 			expect(onPatch.mock.lastCall?.[0].audios[2]).toMatchObject({
 				bitrate: 64_000,
 				rate: 44100,
 			});
-			fireEvent.change(screen.getByLabelText("Video settings to reuse"), {
+			fireEvent.change(videoSource, {
 				target: { value: "" },
 			});
-			fireEvent.click(screen.getByRole("button", { name: /Add video/ }));
+			fireEvent.click(addVideo);
 			expect(onPatch.mock.lastCall?.[0].videos[2]).toMatchObject({
 				height: 720,
 				bitrate: 1_500_000,
 			});
 			expect(onPatch.mock.lastCall?.[0].videos[2].h265).toBeUndefined();
-			fireEvent.change(screen.getByLabelText("Audio settings to reuse"), {
+			fireEvent.change(audioSource, {
 				target: { value: "" },
 			});
-			fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+			fireEvent.click(addAudio);
 			expect(onPatch.mock.lastCall?.[0].audios[2]).toMatchObject({
 				bitrate: 128_000,
 				rate: 48_000,

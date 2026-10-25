@@ -48,6 +48,7 @@ export const GROUPS = [
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 4,
 			"src/live/owned-transition-locking.integration.test.ts": 10,
+			"src/watch/sweep.capacity.integration.test.ts": 11,
 		},
 	},
 ];
@@ -471,7 +472,7 @@ export async function runFixture(
 				"127.0.0.1::5432",
 				"--env-file",
 				postgresEnv,
-				"postgres:17-alpine",
+				"postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb",
 			],
 			env,
 			execute,

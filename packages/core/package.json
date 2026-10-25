@@ -15,7 +15,7 @@
 		"generate:presets": "node scripts/generate-sample-presets.mjs && ../../node_modules/.bin/biome format --write src/plan/sample-presets.ts"
 	},
 	"dependencies": {
-		"yaml": "^2.8.2",
+		"yaml": "^2.9.1",
 		"zod": "catalog:"
 	},
 	"devDependencies": {

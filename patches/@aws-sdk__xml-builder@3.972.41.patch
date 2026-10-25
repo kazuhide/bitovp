@@ -1,0 +1,34 @@
+diff --git a/dist-cjs/index.js b/dist-cjs/index.js
+index 450cf9c6078411bd90a3e5d6500cd75e55fe0381..1ea33e676a2b43a8e4c4e677079f706b32425fc4 100644
+--- a/dist-cjs/index.js
++++ b/dist-cjs/index.js
+@@ -357,10 +357,10 @@ class AwsXmlParser {
+     decodeEntities(s) {
+         return s.replace(/&(?:#x([0-9a-fA-F]{1,6})|#(\d{1,7})|([a-zA-Z][a-zA-Z0-9]{0,30}));/g, (_, hex, dec, named) => {
+             if (hex) {
+-                return String.fromCharCode(parseInt(hex, 16));
++                return String.fromCodePoint(parseInt(hex, 16));
+             }
+             if (dec) {
+-                return String.fromCharCode(parseInt(dec, 10));
++                return String.fromCodePoint(parseInt(dec, 10));
+             }
+             return AwsXmlParser.ENTITIES[named] ?? "";
+         });
+diff --git a/dist-es/xml-parser.js b/dist-es/xml-parser.js
+index 447ac1f779cc4b0d9239975e713a4a694b72b7e9..faf0d16d1f93048dc8c6054654a7c12dbe2c0617 100644
+--- a/dist-es/xml-parser.js
++++ b/dist-es/xml-parser.js
+@@ -233,10 +233,10 @@ class AwsXmlParser {
+     decodeEntities(s) {
+         return s.replace(/&(?:#x([0-9a-fA-F]{1,6})|#(\d{1,7})|([a-zA-Z][a-zA-Z0-9]{0,30}));/g, (_, hex, dec, named) => {
+             if (hex) {
+-                return String.fromCharCode(parseInt(hex, 16));
++                return String.fromCodePoint(parseInt(hex, 16));
+             }
+             if (dec) {
+-                return String.fromCharCode(parseInt(dec, 10));
++                return String.fromCodePoint(parseInt(dec, 10));
+             }
+             return AwsXmlParser.ENTITIES[named] ?? "";
+         });

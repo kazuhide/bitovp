@@ -1,7 +1,7 @@
 # Local deployment. Keep application and migration credentials separate.
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
     mem_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
     memswap_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
     env_file:
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.8.3-alpine@sha256:dc95ea2fcf5d5c4253be0f967c28143d0f625846197eed2fd32c748eb99abfca
     mem_limit: ${REDIS_MEMORY_LIMIT:-256m}
     memswap_limit: ${REDIS_MEMORY_LIMIT:-256m}
     command: ["redis-server", "--appendonly", "yes"]

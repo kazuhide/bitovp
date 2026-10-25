@@ -437,6 +437,11 @@ export function validateLiveChannel(
 		// VOD-only stream attachments the live compiler does not emit —
 		// rejecting beats silently dropping plan data.
 		const unsupported: [string, boolean][] = [
+			["burnInSrt", rendition.burnInSrt !== undefined],
+			[
+				"encodingMode",
+				"encodingMode" in rendition && rendition.encodingMode !== undefined,
+			],
 			[
 				"motionCompensatedTemporalFiltering",
 				"motionCompensatedTemporalFiltering" in rendition &&
@@ -477,7 +482,10 @@ export function validateLiveChannel(
 				issues.push({
 					code: "LIVE_RENDITION_FEATURE_UNSUPPORTED",
 					level: "error",
-					message: `rendition "${rendition.key}" sets ${field} — a VOD-only feature the live compiler does not emit`,
+					message:
+						field === "encodingMode"
+							? `rendition "${rendition.key}" sets codec encodingMode — configure start.liveEncodingMode for Live channels`
+							: `rendition "${rendition.key}" sets ${field} — a VOD-only feature the live compiler does not emit`,
 					path: `renditions[${index}].${field}`,
 				});
 			}

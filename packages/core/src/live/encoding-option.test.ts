@@ -112,9 +112,7 @@ describe("Live HD option resolution", () => {
 		).toBe("HD");
 	});
 	it.each([
-		"STEREO",
 		"CL_MONO",
-		"4.0",
 		"__proto__",
 		"constructor",
 		"toString",
@@ -123,19 +121,43 @@ describe("Live HD option resolution", () => {
 		const a = p.renditions.find((r) => r.codec === "AAC");
 		if (a?.codec !== "AAC") throw new Error("fixture audio missing");
 		a.channelLayout = channelLayout;
-		const parsed = liveChannelPlanSchema.parse(p);
-		expect(validateLiveChannel(parsed)).toContainEqual(
+		const parsed = liveChannelPlanSchema.safeParse(p);
+		expect(parsed.success).toBe(false);
+		if (!parsed.success)
+			expect(parsed.error.issues[0]?.path).toEqual([
+				"renditions",
+				3,
+				"channelLayout",
+			]);
+		expect(validateLiveChannel(p)).toContainEqual(
 			expect.objectContaining({
 				code: "LIVE_AAC_CHANNEL_LAYOUT",
 				level: "error",
 				path: "renditions[3].channelLayout",
 			}),
 		);
-		expect(core.resolveLiveEncodingOption(parsed)).toMatchObject({
+		expect(core.resolveLiveEncodingOption(p)).toMatchObject({
 			encodingOption: "CUSTOM",
 		});
-		parsed.start.encodingOption = "HD";
-		expect(() => compileLiveChannel(parsed)).toThrow(/Live HD/);
+		p.start.encodingOption = "HD";
+		expect(() => compileLiveChannel(p)).toThrow(/Live HD/);
+	});
+	it.each([
+		["STEREO", "CL_STEREO", "HD"],
+		["4.0", "CL_4_0", "CUSTOM"],
+	] as const)("normalizes valid AAC wire value %s to %s before HD resolution", (wire, canonical, encodingOption) => {
+		const p = plan();
+		const audio = p.renditions.find((r) => r.codec === "AAC");
+		if (audio?.codec !== "AAC") throw new Error("fixture audio missing");
+		audio.channelLayout = wire;
+		const parsed = liveChannelPlanSchema.parse(p);
+		expect(parsed.renditions[3]).toHaveProperty("channelLayout", canonical);
+		expect(
+			validateLiveChannel(parsed).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		expect(core.resolveLiveEncodingOption(parsed).encodingOption).toBe(
+			encodingOption,
+		);
 	});
 	it.each([
 		"MONO",

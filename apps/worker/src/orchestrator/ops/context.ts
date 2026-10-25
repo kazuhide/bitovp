@@ -8,10 +8,12 @@
 
 import type BitmovinApiImport from "@bitmovin/api-sdk";
 import type { PerTitleCapturePort } from "@bitovp/core";
+import type { createLiveStartFetch } from "../live-start-fetch";
 import type { AuditRecorder, SdkOpsOptions } from "../sdk-ops";
 
 export type OpsContext = {
 	api: BitmovinApiImport;
+	runLiveStart: ReturnType<typeof createLiveStartFetch>["run"];
 	options: SdkOpsOptions;
 	record: AuditRecorder;
 	audited: <T>(

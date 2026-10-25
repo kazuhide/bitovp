@@ -28,12 +28,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        with:
-          run_install: false
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bitovp/db build
-      - run: node --test scripts/installed-gui-smoke.test.mjs
+      - run: node --test scripts/installed-gui-smoke.test.mjs scripts/nonpaid-submit-proof.test.mjs scripts/database-restore-proof.test.mjs
       - run: pnpm --filter @bitovp/web exec tsc --project ../../tests/browser/tsconfig.json
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: node scripts/installed-gui-smoke.mjs --state-file "$RUNNER_TEMP/bitovp-gui-state.json"

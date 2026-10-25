@@ -204,6 +204,17 @@ test("media execution is offline, read-only and bounded without mounting the sou
 	);
 });
 
+test("media builds refresh the base image before offline execution", () => {
+	const source = readFileSync(
+		new URL("./media-smoke.mjs", import.meta.url),
+		"utf8",
+	);
+	assert(
+		/"build",\s*"--pull"/.test(source),
+		"Media builds must refresh the base image",
+	);
+});
+
 test("a corrupt or oversized source is rejected before media processing", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "media-source-test-"));
 	try {

@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-10-24T14:14:05.432Z",
-		"sourceCommit": "c33cf7eb2320e1c7cd5ff41961b3ea8f2c249d30",
-		"sourceFingerprint": "8916b124384f7de45a31dd6abbe47ec9baee4ddbb4463d35e181e9fdd2a76388",
+		"generatedAt": "2026-10-25T01:12:02.149Z",
+		"sourceCommit": "f07fd648b5d1b82474d2310c9c95a0b7d4353792",
+		"sourceFingerprint": "3e3b3c0694066478e18023a8b41d35b4acd6ac7ec39455b1d140f8ab119d2b60",
 		"sdkVersion": "1.285.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "ca6c9cf0b84701c18888291145575997495d2201f2d8615f92660ddcf978b5ea",
@@ -2384,7 +2384,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 206
+					"line": 207
 				}
 			]
 		},
@@ -2444,7 +2444,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
-					"line": 205
+					"line": 206
 				}
 			]
 		},

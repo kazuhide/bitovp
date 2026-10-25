@@ -104,11 +104,33 @@ function makeRule(over: Partial<RuleRow> = {}): RuleRow {
 function makeStore(rules: RuleRow[], objects: ObjectRow[] = []) {
 	let nextId = 0;
 	const jobStatuses = new Map<string, string>();
+	let transactionTail = Promise.resolve();
 	const store = {
 		rules,
 		objects,
 		jobStatuses,
 		prisma: {
+			$queryRaw: vi.fn(async (_sql: TemplateStringsArray, ruleId: string) =>
+				rules
+					.filter((rule) => rule.id === ruleId && rule.enabled)
+					.map((rule) => ({
+						id: rule.id,
+						maxConcurrentJobs: rule.maxConcurrentJobs,
+					})),
+			),
+			$transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => {
+				const previous = transactionTail;
+				let release!: () => void;
+				transactionTail = new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				await previous;
+				try {
+					return await run(store.prisma);
+				} finally {
+					release();
+				}
+			}),
 			watchRule: {
 				findMany: vi.fn(async () => rules.map((rule) => ({ ...rule }))),
 				update: vi.fn(
@@ -280,15 +302,23 @@ function makeStore(rules: RuleRow[], objects: ObjectRow[] = []) {
 							.map((row) => ({ ...row })),
 				),
 				count: vi.fn(
-					async (args: { where: { watchRuleId: string; state: string } }) =>
+					async (args: {
+						where: {
+							watchRuleId: string;
+							state: string;
+							OR?: ({ encodingJobId: null } | { encodingJob: unknown })[];
+						};
+					}) =>
 						store.objects.filter(
 							(row) =>
 								row.watchRuleId === args.where.watchRuleId &&
 								row.state === args.where.state &&
-								row.encodingJobId !== null &&
-								["QUEUED", "RUNNING"].includes(
-									jobStatuses.get(row.encodingJobId) ?? "",
-								),
+								((row.encodingJobId === null &&
+									args.where.OR?.some((branch) => "encodingJobId" in branch)) ||
+									(row.encodingJobId !== null &&
+										["QUEUED", "RUNNING"].includes(
+											jobStatuses.get(row.encodingJobId) ?? "",
+										))),
 						).length,
 				),
 			},
@@ -644,40 +674,93 @@ function stableRow(over: Partial<ObjectRow> = {}): ObjectRow {
 	};
 }
 
-describe("the money gate (review-87b folds)", () => {
-	it("TWO interleaved workers claim the same row; exactly ONE submits (I-1 — the CAS double-bill guard)", async () => {
-		// The reviewer's forced interleave, over the existing harness: hold
-		// EVERY claim until both workers have issued theirs, so neither can
-		// observe the other's write before deciding. Only the CAS state
-		// predicate separates one paid encoding from two.
-		const store = makeStore([makeRule()], [stableRow()]);
-		const a = makeSweep(store);
-		const b = makeSweep(store);
-		const updateMany = store.prisma.watchedObject.updateMany;
-		const original = updateMany.getMockImplementation();
-		if (!original) {
-			throw new Error("store.updateMany has no implementation");
-		}
-		let claimsIssued = 0;
-		let release: (() => void) | undefined;
-		const bothIssued = new Promise<void>((resolve) => {
+describe("rule capacity reservations", () => {
+	it("leaves unstarted objects stable if processing the previous reservation aborts", async () => {
+		const store = makeStore(
+			[makeRule({ maxConcurrentJobs: 2 })],
+			[
+				stableRow({ id: "first" }),
+				stableRow({
+					id: "second",
+					objectKey: "in/b.mp4",
+					createdAt: new Date(2),
+				}),
+			],
+		);
+		const runner = makeSweep(store, {
+			submit: async () => ({
+				ok: false,
+				code: "ACCOUNT_MISSING",
+				message: "Synthetic refusal",
+			}),
+		});
+		runner.emitEvent.mockRejectedValue(
+			new Error("Synthetic notification outage"),
+		);
+		await runner.sweep();
+		expect(store.objects.find((row) => row.id === "first")?.state).toBe(
+			"ERROR",
+		);
+		expect(store.objects.find((row) => row.id === "second")?.state).toBe(
+			"STABLE",
+		);
+	});
+
+	it("counts an unlinked reservation while another sweep is still submitting", async () => {
+		const store = makeStore(
+			[makeRule({ maxConcurrentJobs: 1 })],
+			[
+				stableRow({ id: "first" }),
+				stableRow({
+					id: "second",
+					objectKey: "in/b.mp4",
+					createdAt: new Date(2),
+				}),
+			],
+		);
+		let enter!: () => void;
+		let release!: () => void;
+		const entered = new Promise<void>((resolve) => {
+			enter = resolve;
+		});
+		const held = new Promise<void>((resolve) => {
 			release = resolve;
 		});
-		updateMany.mockImplementation(async (args) => {
-			if ((args.data as { state?: string }).state === "SUBMITTED") {
-				claimsIssued += 1;
-				if (claimsIssued === 2) {
-					release?.();
-				}
-				await bothIssued;
-			}
-			return original(args);
+		const first = makeSweep(store, {
+			submit: async () => {
+				enter();
+				await held;
+				store.jobStatuses.set("job-first", "QUEUED");
+				return { ok: true, id: "job-first", plan: {} as never, issues: [] };
+			},
 		});
-		await Promise.all([a.sweep(), b.sweep()]);
-		expect(claimsIssued).toBe(2);
-		const submits =
-			a.submitPlan.mock.calls.length + b.submitPlan.mock.calls.length;
-		expect(submits).toBe(1);
+		const second = makeSweep(store);
+		const running = first.sweep();
+		try {
+			await entered;
+			await second.sweep();
+			expect(second.submitPlan).not.toHaveBeenCalled();
+			expect(
+				store.objects.filter((row) => row.state === "SUBMITTED"),
+			).toHaveLength(1);
+		} finally {
+			release();
+			await running;
+		}
+	});
+});
+
+describe("the money gate (review-87b folds)", () => {
+	it("two sweep instances submit the same stable object only once", async () => {
+		// Capacity reservation now serializes before the object CAS. Requiring
+		// both CAS writes to arrive together would deadlock that ownership.
+		const store = makeStore([makeRule()], [stableRow()]);
+		const first = makeSweep(store);
+		const second = makeSweep(store);
+		await Promise.all([first.sweep(), second.sweep()]);
+		expect(
+			first.submitPlan.mock.calls.length + second.submitPlan.mock.calls.length,
+		).toBe(1);
 		expect(
 			store.objects.filter((row) => row.state === "SUBMITTED"),
 		).toHaveLength(1);

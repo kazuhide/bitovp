@@ -607,6 +607,7 @@ export {
 	audioMixPreset,
 	audioMixStreamSchema,
 } from "./plan/audio-mix";
+export { CODEC_ENUM_VALUES, CODEC_OPTIONS } from "./plan/codec-enums";
 export type { CompiledOperation, OperationKind } from "./plan/compiler";
 export {
 	compilePlan,

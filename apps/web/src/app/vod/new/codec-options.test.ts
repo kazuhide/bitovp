@@ -1,8 +1,11 @@
 import {
+	AacChannelLayout,
 	AdaptiveQuantMode,
 	ColorPrimaries,
 	ColorSpace,
 	ColorTransfer,
+	DolbyDigitalChannelLayout,
+	DolbyDigitalPlusChannelLayout,
 	H264MotionEstimationMethod,
 	H264SubMe,
 	H264Trellis,
@@ -12,6 +15,7 @@ import {
 	MotionSearch,
 	MvPredictionMode,
 	PixelFormat,
+	PresetConfiguration,
 	TuInterDepth,
 	TuIntraDepth,
 	Vp9AqMode,
@@ -40,6 +44,10 @@ const sdk = {
 	Vp9Quality,
 	Vp9AqMode,
 	Vp9ArnrType,
+	PresetConfiguration,
+	AacChannelLayout,
+	DolbyDigitalChannelLayout,
+	DolbyDigitalPlusChannelLayout,
 };
 describe("codec option contract", () => {
 	it.each(

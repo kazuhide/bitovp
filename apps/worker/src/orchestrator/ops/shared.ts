@@ -33,17 +33,21 @@ import type {
 } from "../sdk-ops";
 import type { CreateStamp } from "../stamping-fetch";
 
-/** Maps an enum NAME to its wire value; throws on unknown names. */
+/** Resolves a known enum name or wire value; inherited/non-string members reject. */
 export function sdkEnumValue<T extends Record<string, string>>(
 	enumObject: T,
 	name: string,
 	label: string,
 ): T[keyof T] {
-	const value = enumObject[name as keyof T];
-	if (value === undefined) {
-		throw new Error(`Unknown ${label} "${name}"`);
+	if (Object.hasOwn(enumObject, name)) {
+		const value = enumObject[name as keyof T];
+		if (typeof value === "string") return value;
 	}
-	return value;
+	const wire = Object.values(enumObject).find(
+		(value) => typeof value === "string" && value === name,
+	);
+	if (wire !== undefined) return wire as T[keyof T];
+	throw new Error(`Unknown ${label} "${name}"`);
 }
 
 /** sdkEnumValue for optional fields — undefined passes through as unset. */

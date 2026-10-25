@@ -2422,7 +2422,8 @@ export function tryImportPresetIntoWizard(
 	// the form like any other field; the wizard's Start gate (formPlaceholders)
 	// keeps them from being submitted until the user replaces them in the path
 	// inputs. (C4 {uuid}/{bitrate}/{height} are run-time placeholders, kept.)
-	const state = planToWizardState(raw);
+	// Use normalized enum names in the form as well as in the rebuilt plan.
+	const state = planToWizardState(parsed.data);
 	let rebuilt: unknown;
 	try {
 		rebuilt = encodingPlanSchema.parse(buildPlan(state));

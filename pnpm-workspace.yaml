@@ -12,33 +12,37 @@ allowBuilds:
 
 # Keep the exact transitive security fixes selected for the release candidate.
 # Parent-qualified rules are used only where the patched version crosses the
-# dependency's declared major range.
+# dependency's declared version range.
 overrides:
-  "next@16.2.11>postcss": "8.5.23"
+  "next@16.4.3>postcss": "8.5.31"
   "sharp@": "0.35.5"
   "source-map-js@": "1.2.2"
-  "postcss@": "8.5.23"
-  "nanoid@": "3.3.18"
+  "postcss@": "8.5.31"
+  "nanoid@": "3.3.20"
   "form-data@": "2.5.6"
   "@prisma/config@6.19.3>deepmerge-ts": "8.0.2"
-  "@azure/identity@4.13.3>@azure/msal-node": "7.1.0"
-  "esbuild@": "0.28.1"
-  "fast-uri@": "3.1.7"
+  "@azure/identity@4.13.3>@azure/msal-node": "7.1.1"
+  "esbuild@": "0.28.2"
+  "fast-uri@": "3.1.9"
   "undici@": "7.30.1"
-  "browserslist@": "4.28.7"
+  "browserslist@": "4.28.9"
   "gaxios@6.7.1>uuid": "11.1.1"
   "teeny-request@9.0.0>uuid": "11.1.1"
 
 catalog:
   typescript: ^5.9.3
   "@types/node": ^24.0.0
-  vitest: ^4.0.18
+  vitest: 4.1.12
   "@vitejs/plugin-react": ^5.1.4
   zod: ^4.6.6
-  react: ^19.2.4
-  react-dom: ^19.2.4
+  react: 19.2.9
+  react-dom: 19.2.9
   "@types/react": ^19.2.14
   "@types/react-dom": ^19.2.3
 
 minimumReleaseAgeExclude:
   - '@bitmovin/api-sdk@1.285.0'
+
+# Preserve supplementary characters in the SDK's numeric XML references.
+patchedDependencies:
+  '@aws-sdk/xml-builder@3.972.41': patches/@aws-sdk__xml-builder@3.972.41.patch

@@ -44,7 +44,7 @@ describe("Live optional input and manifest fields", () => {
 					? {
 							h264: {
 								profile: "HIGH",
-								level: "4.1",
+								level: "L4_1",
 								rate: 25,
 								bframes: 0,
 								cabac: false,
@@ -55,7 +55,7 @@ describe("Live optional input and manifest fields", () => {
 					: {
 							h265: {
 								profile: "MAIN10",
-								level: "4.1",
+								level: "L4_1",
 								rate: null,
 								subMe: 0,
 								sao: false,
@@ -68,7 +68,7 @@ describe("Live optional input and manifest fields", () => {
 			},
 		];
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
-		expect(plan.renditions[0]).toMatchObject({ level: "4.1" });
+		expect(plan.renditions[0]).toMatchObject({ level: "L4_1" });
 		const imported = tryImportLiveChannelIntoWizard(plan);
 		expect(imported.ok).toBe(true);
 		if (!imported.ok) throw new Error("Expected editable codec tuning");
@@ -80,6 +80,28 @@ describe("Live optional input and manifest fields", () => {
 		).toMatchObject(
 			state.videos[0]?.[codec === "H264" ? "h264" : "h265"] ?? {},
 		);
+	});
+
+	it.each([
+		"H264",
+		"H265",
+	] as const)("normalizes imported %s wire levels into editable codec options", (codec) => {
+		const raw = buildLiveChannelPlan(fixtureState());
+		const first = raw.renditions[0];
+		if (!first || (first.codec !== "H264" && first.codec !== "H265"))
+			throw new Error("Expected a video fixture");
+		first.codec = codec;
+		first.level = "4.1";
+		const imported = tryImportLiveChannelIntoWizard(raw);
+		expect(imported.ok).toBe(true);
+		if (!imported.ok) throw new Error("Expected editable wire level");
+		expect(
+			imported.state.videos[0]?.[codec === "H264" ? "h264" : "h265"],
+		).toHaveProperty("level", "L4_1");
+		const normalized = liveChannelPlanSchema.parse(raw);
+		expect(
+			liveChannelPlanSchema.parse(buildLiveChannelPlan(imported.state)),
+		).toEqual(normalized);
 	});
 
 	it("edits a backup SRT path, compiles it and preserves it on duplicate", () => {

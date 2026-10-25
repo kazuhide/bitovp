@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 export const COMMANDS = Object.freeze(
 	[
 		["pnpm", "install", "--frozen-lockfile"],
-		["pnpm", "audit", "--audit-level", "high"],
+		["pnpm", "audit", "--audit-level", "low"],
 		["pnpm", "typecheck"],
 		["pnpm", "check"],
 		["pnpm", "test"],
@@ -79,6 +79,7 @@ export function childEnvironment(env) {
 	const clean = {};
 	for (const key of [
 		"PATH",
+		"HOME",
 		"TMPDIR",
 		"LANG",
 		"LC_ALL",

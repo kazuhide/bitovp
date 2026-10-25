@@ -105,9 +105,7 @@ describe("the first-installation guide path", () => {
 					),
 				).toBe(true);
 			}
-			expect(appendix?.html).not.toContain(
-				"docker compose build migrate worker web",
-			);
+			expect(appendix?.html).not.toContain("docker compose up -d --no-build");
 			expect(appendix?.html).toContain("docker compose down");
 		});
 	}

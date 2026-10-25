@@ -43,9 +43,12 @@ describe("copied video keys follow height in the ladder", () => {
 				'["v1080","v1080-2"]',
 			),
 		);
-		fireEvent.change(screen.getByLabelText("Video 2 height"), {
-			target: { value: "900" },
-		});
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Video 2 height" }),
+			{
+				target: { value: "900" },
+			},
+		);
 		expect(screen.getByTestId("keys").textContent).toBe('["v1080","v900"]');
 		const plan = JSON.parse(screen.getByTestId("plan").textContent ?? "{}");
 		expect(plan.renditions[1]).toMatchObject({ key: "v900", height: 900 });
@@ -56,18 +59,24 @@ describe("copied video keys follow height in the ladder", () => {
 		const initial = initialState();
 		initial.videos.push({ height: 900, bitrate: 3_000_000 });
 		renderWithQuery(<Harness initial={initial} />);
-		fireEvent.change(screen.getByLabelText("Video settings to reuse"), {
-			target: { value: "v1080" },
-		});
+		fireEvent.change(
+			screen.getByRole("combobox", { name: "Video settings to reuse" }),
+			{
+				target: { value: "v1080" },
+			},
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Add video" }));
 		await waitFor(() =>
 			expect(screen.getByTestId("keys").textContent).toBe(
 				'["v1080","v900","v1080-2"]',
 			),
 		);
-		fireEvent.change(screen.getByLabelText("Video 3 height"), {
-			target: { value: "900" },
-		});
+		fireEvent.change(
+			screen.getByRole("spinbutton", { name: "Video 3 height" }),
+			{
+				target: { value: "900" },
+			},
+		);
 		expect(screen.getByTestId("keys").textContent).toBe(
 			'["v1080","v900","v900-2"]',
 		);

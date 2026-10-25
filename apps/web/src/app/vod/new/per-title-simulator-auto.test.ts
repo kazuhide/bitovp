@@ -19,6 +19,46 @@ const anchor: PerTitleGoal = {
 };
 
 describe("automatic Per-Title requirements", () => {
+	it("allocates a mixed ladder's active band without changing parked resolution-only fields", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			strategy: "fixed-resolutions",
+			maxBitrate: 5_000_000,
+			countPolicy: { kind: "unrestricted" },
+			rows: [
+				{
+					id: "resolution",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+					minBitrate: 120_000,
+					maxBitrate: 240_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 300_000,
+					highComplexityBoundaryForMaxBitrate: 600_000,
+				},
+				{
+					id: "range",
+					height: 720,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					minBitrate: 1_000_000,
+					maxBitrate: 2_000_000,
+				},
+			],
+		};
+		const goal = { ...loaded, maxBitrate: 1_500_000 };
+		const before = structuredClone(goal);
+		const result = autoTunePerTitleGoal(
+			goal,
+			{ ...loaded, rows: [] },
+			{ range: { min: true } },
+		);
+		expect(result.rows?.[0]).toEqual(goal.rows?.[0]);
+		expect(result.rows?.[1]).toMatchObject({
+			minBitrate: 1_000_000,
+			maxBitrate: 1_500_000,
+		});
+		expect(goal).toEqual(before);
+	});
 	it("preserves an explicit additional-rendition rule in every strategy", () => {
 		const rule = {
 			forcedRenditionAboveHighestFixedRepresentation: 1,

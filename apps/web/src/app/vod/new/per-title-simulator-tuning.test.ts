@@ -52,6 +52,60 @@ const automaticCalibration: PerTitleGoal = {
 };
 
 describe("Per-Title adjustment controls", () => {
+	it("recalculates an active mixed-mode Auto maximum after the overall ceiling shrinks", () => {
+		const loaded: PerTitleGoal = {
+			...anchor,
+			strategy: "fixed-resolutions",
+			maxBitrate: 5_000_000,
+			minBitrateStepSize: 1.5,
+			maxBitrateStepSize: 4,
+			rows: [
+				{
+					id: "resolution",
+					height: 360,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+				},
+				{
+					id: "range",
+					height: 720,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					minBitrate: 1_000_000,
+					maxBitrate: 2_000_000,
+				},
+			],
+		};
+		const goal: PerTitleGoal = {
+			...loaded,
+			maxBitrate: 1_500_000,
+			adjustments: {
+				streams: {
+					range: { maxBitrate: { mode: "auto", method: "constraints" } },
+				},
+			},
+		};
+		const before = structuredClone(goal);
+		const result = tunePerTitleSettings(goal, loaded);
+		expect(result.proposal.applicable).toBe(true);
+		expect(result.goal.rows?.[0]).toEqual(loaded.rows?.[0]);
+		expect(
+			result.proposal.api.streams.find(({ rowId }) => rowId === "resolution"),
+		).toEqual({
+			rowId: "resolution",
+			height: 360,
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+		});
+		expect(
+			result.proposal.api.streams.find(({ rowId }) => rowId === "range")
+				?.perTitleSettings?.maxBitrate,
+		).toBe(1_500_000);
+		expect(
+			result.proposal.diagnostics.some(
+				({ code }) => code === "row-outside-global-range",
+			),
+		).toBe(false);
+		expect(result.proposal.countGuarantee).toBe(false);
+		expect(goal).toEqual(before);
+	});
 	it.each([
 		"H264",
 		"H265",

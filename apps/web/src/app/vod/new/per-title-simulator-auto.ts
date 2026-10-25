@@ -51,18 +51,13 @@ export function autoTunePerTitleGoal(
 	const next = { ...goal };
 	delete next.minBitrateStepSize;
 	delete next.maxBitrateStepSize;
-	// Inactive row collections and resolution-only streams keep their parked data.
+	// Inactive row collections keep their parked data.
 	if (
 		goal.strategy === "automatic" ||
 		goal.strategy === "count" ||
 		!validGlobal(goal) ||
 		!goal.rows?.length ||
-		goal.rows.length > 64 ||
-		goal.rows.some(
-			(row) =>
-				resolvePerTitleFixedMode(goal, row) !==
-				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
-		)
+		goal.rows.length > 64
 	) {
 		return next;
 	}
@@ -106,11 +101,18 @@ export function autoTunePerTitleGoal(
 		: 0;
 
 	next.rows = rows.map((row, index) => {
+		if (
+			resolvePerTitleFixedMode(goal, row) !==
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+		)
+			return row;
 		const matches = anchors.filter(
 			(candidate) =>
 				candidate.id === row.id &&
 				candidate.height === row.height &&
-				candidate.width === row.width,
+				candidate.width === row.width &&
+				resolvePerTitleFixedMode(anchor, candidate) ===
+					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 		);
 		const original = matches.length === 1 ? matches[0] : undefined;
 		const originalMinimum = original?.minBitrate;

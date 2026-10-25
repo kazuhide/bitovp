@@ -42,3 +42,7 @@ catalog:
 
 minimumReleaseAgeExclude:
   - '@bitmovin/api-sdk@1.285.0'
+
+# Preserve supplementary characters in the SDK's numeric XML references.
+patchedDependencies:
+  '@aws-sdk/xml-builder@3.972.41': patches/@aws-sdk__xml-builder@3.972.41.patch

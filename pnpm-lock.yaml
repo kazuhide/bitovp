@@ -50,6 +50,9 @@ overrides:
   gaxios@6.7.1>uuid: 11.1.1
   teeny-request@9.0.0>uuid: 11.1.1
 
+patchedDependencies:
+  '@aws-sdk/xml-builder@3.972.41': 8a751b45833248706d788c0318de950367f7987cfd7099e14de8eaa70b1d3405
+
 importers:
 
   .:
@@ -4018,7 +4021,7 @@ snapshots:
   '@aws-sdk/core@3.978.1':
     dependencies:
       '@aws-sdk/types': 3.974.6
-      '@aws-sdk/xml-builder': 3.972.41
+      '@aws-sdk/xml-builder': 3.972.41(patch_hash=8a751b45833248706d788c0318de950367f7987cfd7099e14de8eaa70b1d3405)
       '@aws/lambda-invoke-store': 0.3.0
       '@smithy/core': 3.35.0
       '@smithy/signature-v4': 5.7.3
@@ -4170,7 +4173,7 @@ snapshots:
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
-  '@aws-sdk/xml-builder@3.972.41':
+  '@aws-sdk/xml-builder@3.972.41(patch_hash=8a751b45833248706d788c0318de950367f7987cfd7099e14de8eaa70b1d3405)':
     dependencies:
       '@smithy/types': 4.19.0
       tslib: 2.8.1

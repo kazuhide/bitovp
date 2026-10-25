@@ -16,6 +16,7 @@ import {
 	applyPerTitleProposal,
 	perTitleGoalFromWizard,
 } from "./per-title-simulator-wizard";
+import { buildPerTitleStreamSetup } from "./per-title-stream-setup-model";
 import { planToWizardState } from "./plan-to-wizard";
 
 const resolution = "PER_TITLE_TEMPLATE_FIXED_RESOLUTION" as const;
@@ -50,13 +51,76 @@ function mixed(codec: PerTitleGoal["codec"] = "H264"): PerTitleGoal {
 
 describe("Per-Title stream-mode persistence", () => {
 	it.each([
+		"minBitrate",
+		"maxBitrate",
+	] as const)("recalculates an explicit ranged Stream's %s when the global bound changes", (key) => {
+		const anchor = mixed();
+		anchor.strategy = "fixed-resolutions";
+		anchor.rows = anchor.rows?.filter(({ id }) => id === "range");
+		const goal = structuredClone(anchor);
+		goal[key] = key === "minBitrate" ? 64_000 : 6_000_000;
+		goal.adjustments = {
+			streams: { range: { [key]: { mode: "auto", method: "constraints" } } },
+		};
+		const result = tunePerTitleSettings(goal, anchor);
+		const stream = result.proposal.api.streams.find(
+			({ rowId }) => rowId === "range",
+		);
+		expect(result.proposal.applicable).toBe(true);
+		expect(stream?.mode).toBe(range);
+		expect(stream?.perTitleSettings?.[key]).toBe(goal[key]);
+		expect(stream?.perTitleSettings?.[key]).not.toBe(anchor.rows?.[0]?.[key]);
+	});
+	it.each([
+		"minBitrate",
+		"maxBitrate",
+	] as const)("retains an active %s Auto bound when the row mode overrides the strategy", (key) => {
+		const goal = mixed();
+		goal.strategy = "fixed-resolutions";
+		goal.adjustments = {
+			streams: { range: { [key]: { mode: "auto", method: "constraints" } } },
+		};
+		const result = tunePerTitleSettings(goal, goal);
+		expect(result.proposal.applicable).toBe(true);
+		expect(
+			result.proposal.api.streams.find(({ rowId }) => rowId === "range"),
+		).toMatchObject({
+			mode: range,
+			perTitleSettings: { minBitrate: 1_000_000, maxBitrate: 2_000_000 },
+		});
+		expect(
+			result.proposal.diagnostics.some(
+				({ code }) => code === "invalid-row-range",
+			),
+		).toBe(false);
+	});
+	it.each([
 		"H264",
 		"H265",
 		"VP9",
 	] as const)("applies, compiles and reimports all four %s stream definitions", (codec) => {
-		const goal = mixed(codec);
-		const { proposal } = tunePerTitleSettings(goal, goal);
-		expect(proposal.applicable).toBe(true);
+		const result = buildPerTitleStreamSetup({
+			strategy: "fixed-ranges",
+			codec,
+			targetQualityCrf: 17,
+			minBitrate: 160_000,
+			maxBitrate: 5_000_000,
+			streams: [
+				{ id: "ordinary", mode: "PER_TITLE_TEMPLATE" },
+				{ id: "dimensioned", mode: "PER_TITLE_TEMPLATE", height: 320 },
+				{ id: "resolution", mode: resolution, height: 576 },
+				{
+					id: "range",
+					mode: range,
+					height: 768,
+					minBitrate: 2_000_000,
+					maxBitrate: 2_800_000,
+				},
+			],
+		});
+		const proposal = result.proposal;
+		expect(proposal?.applicable).toBe(true);
+		if (!proposal) throw new Error("Expected a generated Stream proposal.");
 		const state = structuredClone(DEFAULT_WIZARD_STATE);
 		state.name = "mixed-stream-modes";
 		const input = state.inputFiles[0];

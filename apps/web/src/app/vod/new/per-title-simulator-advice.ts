@@ -283,9 +283,13 @@ export function hasPerTitleEvaluationCountEvidence(
 	goal: PerTitleGoal,
 	proposal: PerTitleProposal,
 ): boolean {
+	const hasFixedBitrateStreams = proposal.api.streams.some(
+		(stream) =>
+			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+	);
 	return (
 		closedCount(goal, proposal) &&
-		(goal.strategy !== "fixed-ranges" ||
+		(!hasFixedBitrateStreams ||
 			assessPerTitleReach(goal, proposal).count.status === "model-checked")
 	);
 }

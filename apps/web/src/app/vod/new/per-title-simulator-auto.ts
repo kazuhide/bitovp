@@ -51,16 +51,17 @@ export function autoTunePerTitleGoal(
 	const next = { ...goal };
 	delete next.minBitrateStepSize;
 	delete next.maxBitrateStepSize;
-	// Other strategies retain their parked row data and existing core semantics.
+	// Inactive row collections and resolution-only streams keep their parked data.
 	if (
-		goal.strategy !== "fixed-ranges" ||
+		goal.strategy === "automatic" ||
+		goal.strategy === "count" ||
 		!validGlobal(goal) ||
 		!goal.rows?.length ||
 		goal.rows.length > 64 ||
 		goal.rows.some(
 			(row) =>
-				resolvePerTitleFixedMode(goal, row) ===
-				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+				resolvePerTitleFixedMode(goal, row) !==
+				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 		)
 	) {
 		return next;

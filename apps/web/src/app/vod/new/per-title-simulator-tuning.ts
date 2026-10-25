@@ -738,10 +738,10 @@ export function tunePerTitleSettings(
 	]) {
 		const automatic =
 			next.automaticTemplates?.some((r) => r.id === row.id) === true;
-		const resolutionOnly =
-			!automatic &&
-			resolvePerTitleFixedMode(next, row) ===
-				"PER_TITLE_TEMPLATE_FIXED_RESOLUTION";
+		const fixedMode = automatic
+			? undefined
+			: resolvePerTitleFixedMode(next, row);
+		const resolutionOnly = fixedMode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION";
 		for (const descriptor of streamFields) {
 			const { key } = descriptor;
 			const mode = modeFor("stream", descriptor, row.id);
@@ -763,7 +763,10 @@ export function tunePerTitleSettings(
 				continue;
 			}
 			const bound = key === "minBitrate" || key === "maxBitrate";
-			if (bound && !automatic && next.strategy === "fixed-ranges") {
+			if (
+				bound &&
+				fixedMode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+			) {
 				const source = (
 					mode.method === "constraints" ? equalBands : logarithmic
 				).rows?.find((r) => r.id === row.id);

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
 	applyPerTitleAdvice,
 	hasAutomaticPerTitleSettings,
+	hasPerTitleEvaluationCountEvidence,
 	perTitleAdvice,
 } from "./per-title-simulator-advice";
+import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
 import {
 	setPerTitleAdjustment,
 	tunePerTitleSettings,
@@ -63,6 +65,101 @@ const changeRow = (
 });
 
 describe("dependent Per-Title advice", () => {
+	it.each([
+		"fixed-resolutions",
+		"fixed-ranges",
+	] as const)("requires full-domain count evidence for explicit fixed-bitrate modes under %s", (strategy) => {
+		const goal: PerTitleGoal = {
+			strategy,
+			codec: "H264",
+			minBitrate: 300_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 4,
+			maxBitrateStepSize: 4,
+			countPolicy: { kind: "exact", count: 2 },
+			autoRepresentations: false,
+			rows: [
+				{
+					id: "small",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					height: 360,
+					minBitrate: 300_000,
+					maxBitrate: 1_000_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 100_000,
+					highComplexityBoundaryForMaxBitrate: 300_000,
+				},
+				{
+					id: "large",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					height: 720,
+					minBitrate: 1_000_000,
+					maxBitrate: 4_000_000,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 3_000_000,
+					highComplexityBoundaryForMaxBitrate: 4_000_000,
+				},
+			],
+		};
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		expect(
+			proposal.api.streams.every(
+				(row) => row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			),
+		).toBe(true);
+		const sameModes = { ...goal, strategy: "fixed-resolutions" as const };
+		expect(proposal.api).toEqual(
+			tunePerTitleSettings(sameModes, sameModes).proposal.api,
+		);
+		if (strategy === "fixed-resolutions")
+			expect(
+				proposal.scenarios.find((scenario) => scenario.fraction === 1),
+			).toMatchObject({
+				status: "modelled",
+				modelCountRange: { minimum: 2, maximum: 2 },
+			});
+		expect(assessPerTitleReach(goal, proposal).count.status).not.toBe(
+			"model-checked",
+		);
+		expect(hasPerTitleEvaluationCountEvidence(goal, proposal)).toBe(false);
+		expect(proposal.countGuarantee).toBe(false);
+	});
+	it.each([
+		"fixed-resolutions",
+		"fixed-ranges",
+	] as const)("keeps resolution-only count evidence independent of the %s strategy default", (strategy) => {
+		const goal: PerTitleGoal = {
+			strategy,
+			codec: "H264",
+			minBitrate: 1_000_000,
+			maxBitrate: 4_000_000,
+			minBitrateStepSize: 4,
+			maxBitrateStepSize: 4,
+			countPolicy: { kind: "exact", count: 2 },
+			autoRepresentations: false,
+			rows: [
+				{
+					id: "small",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+					height: 360,
+				},
+				{
+					id: "large",
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+					height: 720,
+				},
+			],
+		};
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		expect(
+			proposal.api.streams.every(
+				(row) => row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			),
+		).toBe(true);
+		expect(hasPerTitleEvaluationCountEvidence(goal, proposal)).toBe(true);
+		expect(proposal.countGuarantee).toBe(false);
+	});
+
 	it("jointly expands dependent ranges and holds the edited maximum until adoption", () => {
 		const previous = structuredClone(mixed);
 		const current = { ...previous, maxBitrate: 8_000_000 };

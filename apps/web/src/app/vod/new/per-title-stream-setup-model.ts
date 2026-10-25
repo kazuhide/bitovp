@@ -4,6 +4,7 @@ import type {
 	PerTitleGoal,
 	PerTitleGoalRow,
 } from "@bitovp/core";
+import { recommendPerTitleSettings } from "@bitovp/core";
 import {
 	buildPerTitleSetup,
 	type PerTitleSetupInput,
@@ -171,11 +172,45 @@ function finish(
 	reasoning: PerTitleSetupResult["reasoning"],
 	issues: PerTitleSetupIssue[] = [],
 ): PerTitleSetupResult {
-	const draft = structuredClone(goal);
+	let draft = structuredClone(goal);
 	delete draft.settingLocks;
 	delete draft.adjustments;
-	const tuned = tunePerTitleSettings(draft, draft);
-	const proposal = tuned.proposal;
+	let proposal = tunePerTitleSettings(draft, draft).proposal;
+	if (!proposal.applicable) {
+		// A range-only seed may not supply valid integer spacing after other modes
+		// are added. Derive spacing for the complete fresh configuration instead.
+		const recommended = recommendPerTitleSettings(draft);
+		if (recommended.applicable) {
+			const revised = {
+				...draft,
+				minBitrateStepSize: recommended.api.global.minBitrateStepSize,
+				maxBitrateStepSize: recommended.api.global.maxBitrateStepSize,
+			};
+			const checked = tunePerTitleSettings(revised, revised).proposal;
+			if (checked.applicable) {
+				draft = revised;
+				proposal = {
+					...checked,
+					...(checked.derivation && recommended.derivation
+						? {
+								derivation: {
+									...checked.derivation,
+									method: recommended.derivation.method,
+									rationale: recommended.derivation.rationale,
+								},
+							}
+						: {}),
+				};
+				reasoning = [
+					...reasoning,
+					{
+						en: "Spacing was recalculated from all Stream modes and bitrate intervals, then checked again with those values fixed. This is an arithmetic placement, not a content-quality optimum.",
+						ja: "Stream全体のモードと帯域幅から段間隔を計算し、その値で再検証しました。区間に収まる配置であり、素材の画質が最適という判定ではありません。",
+					},
+				];
+			}
+		}
+	}
 	const preserved =
 		proposal.api.streams.length === input.streams.length &&
 		input.streams.every((stream) => {

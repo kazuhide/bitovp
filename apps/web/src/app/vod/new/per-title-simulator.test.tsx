@@ -316,11 +316,11 @@ describe("Per-Title simulator", () => {
 		await user.click(screen.getByRole("button", { name: "Add rendition" }));
 		await user.selectOptions(
 			screen.getByRole("combobox", { name: "Stream mode, rendition 2" }),
-			"template-resolution",
+			"template",
 		);
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), rendition 2",
+				name: "Height hint (px, optional), rendition 2",
 			}),
 			{ target: { value: "1080" } },
 		);
@@ -479,7 +479,7 @@ describe("Per-Title simulator", () => {
 		).toHaveValue(480);
 		expect(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), rendition 2",
+				name: "Height hint (px, optional), rendition 2",
 			}),
 		).toHaveValue(1080);
 		fireEvent.change(

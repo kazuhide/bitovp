@@ -72,27 +72,45 @@ describe("Per-Title stream-mode persistence", () => {
 		expect(stream?.perTitleSettings?.[key]).not.toBe(anchor.rows?.[0]?.[key]);
 	});
 	it.each([
-		"minBitrate",
-		"maxBitrate",
-	] as const)("retains an active %s Auto bound when the row mode overrides the strategy", (key) => {
+		["minBitrate", 2 / 3, 1_473_613, "maxBitrate", 2_000_000],
+		["maxBitrate", 1, 5_000_000, "minBitrate", 1_000_000],
+	] as const)("recalculates an active %s Auto bound while preserving its fixed peer across mixed modes", (key, fraction, expected, pinnedKey, pinnedValue) => {
 		const goal = mixed();
 		goal.strategy = "fixed-resolutions";
 		goal.adjustments = {
 			streams: { range: { [key]: { mode: "auto", method: "constraints" } } },
 		};
+		const before = structuredClone(goal);
+		// Two required rows occupy alternating logarithmic bands across three cells.
+		const endpoint = Math.round(
+			goal.minBitrate * (goal.maxBitrate / goal.minBitrate) ** fraction,
+		);
+		expect(endpoint).toBe(expected);
 		const result = tunePerTitleSettings(goal, goal);
 		expect(result.proposal.applicable).toBe(true);
-		expect(
-			result.proposal.api.streams.find(({ rowId }) => rowId === "range"),
-		).toMatchObject({
-			mode: range,
-			perTitleSettings: { minBitrate: 1_000_000, maxBitrate: 2_000_000 },
+		expect(result.proposal.countGuarantee).toBe(false);
+		expect(result.proposal.api.streams).toHaveLength(4);
+		const ranged = result.proposal.api.streams.find(
+			({ rowId }) => rowId === "range",
+		);
+		expect(ranged?.mode).toBe(range);
+		expect(ranged?.perTitleSettings?.[key]).toBe(endpoint);
+		expect(ranged?.perTitleSettings?.[key]).not.toBe(before.rows?.[1]?.[key]);
+		expect(ranged?.perTitleSettings?.[pinnedKey]).toBe(pinnedValue);
+		const fixedResolution = result.proposal.api.streams.find(
+			({ rowId }) => rowId === "resolution",
+		);
+		expect(fixedResolution).toMatchObject({
+			mode: resolution,
+			height: 320,
 		});
+		expect(fixedResolution).not.toHaveProperty("perTitleSettings");
 		expect(
 			result.proposal.diagnostics.some(
 				({ code }) => code === "invalid-row-range",
 			),
 		).toBe(false);
+		expect(goal).toEqual(before);
 	});
 	it.each([
 		"H264",

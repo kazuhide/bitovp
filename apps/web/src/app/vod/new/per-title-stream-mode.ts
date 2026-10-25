@@ -2,7 +2,6 @@ import type { PerTitleApiSettings } from "@bitovp/core";
 
 export const PER_TITLE_STREAM_CHOICES = [
 	"template",
-	"template-resolution",
 	"fixed-resolution",
 	"fixed-range",
 ] as const;
@@ -21,32 +20,17 @@ export function perTitleStreamMode(choice: PerTitleStreamChoice): StreamMode {
 
 export function perTitleStreamChoice({
 	mode,
-	height,
-	width,
 }: StreamDimensions): PerTitleStreamChoice {
 	if (mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION") return "fixed-resolution";
 	if (mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE")
 		return "fixed-range";
-	return height === undefined && width === undefined
-		? "template"
-		: "template-resolution";
+	return "template";
 }
 
-export function perTitleStreamChoiceLabel(
-	choice: PerTitleStreamChoice,
-	locale: "en" | "ja",
-) {
-	const mode = perTitleStreamMode(choice);
-	if (choice === "template")
-		return `${mode} (${locale === "ja" ? "解像度なし" : "no resolution"})`;
-	if (choice === "template-resolution")
-		return `${mode} (${locale === "ja" ? "解像度指定" : "resolution specified"})`;
-	return mode;
+export function perTitleStreamChoiceLabel(choice: PerTitleStreamChoice) {
+	return perTitleStreamMode(choice);
 }
 
-export function perTitleStreamLabel(
-	stream: StreamDimensions,
-	locale: "en" | "ja",
-) {
-	return perTitleStreamChoiceLabel(perTitleStreamChoice(stream), locale);
+export function perTitleStreamLabel(stream: StreamDimensions) {
+	return stream.mode;
 }

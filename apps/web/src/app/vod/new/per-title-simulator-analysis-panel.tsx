@@ -179,7 +179,7 @@ function FullLadderDetails({
 				: row.width
 					? `${ja ? "幅" : "Width"} ${row.width} px`
 					: media;
-	const mode = (row: Row) => perTitleStreamLabel(row, locale);
+	const mode = (row: Row) => perTitleStreamLabel(row);
 	const segments = (ladder: PerTitleLadderAssessment) =>
 		ladder.intervals
 			? `${ladder.intervals.checkedSegments} (${range(ladder.input)} kbps)`

@@ -215,11 +215,14 @@ describe.each(["en", "ja"] as const)("staged ladder preview (%s)", (locale) => {
 			const automatic = within(figure)
 				.getAllByTestId("per-title-output-row")
 				.find((row) =>
-					row.textContent?.includes(
-						ja ? "自動生成の範囲（仮定）" : "Automatic range (assumed)",
+					within(row).queryByText(
+						ja
+							? "解析値の仮定（本数未確定）"
+							: "Analysis assumption (count unresolved)",
 					),
 				);
 			if (!automatic) throw new Error("Expected an aggregate automatic range.");
+			expect(within(automatic).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
 			expect(automatic).toHaveTextContent(ja ? "条件付き" : "Conditional");
 			expect(
 				within(automatic).queryByTestId("per-title-output-target"),

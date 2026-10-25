@@ -65,6 +65,7 @@ const copy = {
 		rendition: (index: number) => `Rendition ${index}`,
 		remove: (index: number) => `Remove rendition ${index}`,
 		height: "Height (px)",
+		heightHint: "Height hint (px, optional)",
 		rowMinimum: "Minimum bitrate (kbps, optional)",
 		rowMaximum: "Maximum bitrate (kbps, optional)",
 		mode: "Stream mode",
@@ -108,6 +109,7 @@ const copy = {
 		rendition: (index: number) => `レンディション ${index}`,
 		remove: (index: number) => `レンディション ${index} を削除`,
 		height: "高さ (px)",
+		heightHint: "高さのヒント (px・任意)",
 		rowMinimum: "最小ビットレート (kbps・任意)",
 		rowMaximum: "最大ビットレート (kbps・任意)",
 		mode: "Streamモード",
@@ -210,7 +212,10 @@ function issueLabel(
 		targetQualityCrf: text.quality,
 		inputHeight: text.source,
 		count: text.count,
-		height: text.height,
+		height:
+			rowIndex >= 0 && rows[rowIndex]?.choice === "template"
+				? text.heightHint
+				: text.height,
 		mode: text.mode,
 	};
 	return [
@@ -256,7 +261,6 @@ function SetupNumber({
 function SetupRows({
 	id,
 	rows,
-	locale,
 	text,
 	onChange,
 	onAdd,
@@ -264,7 +268,6 @@ function SetupRows({
 }: {
 	id: string;
 	rows: readonly SetupRow[];
-	locale: "en" | "ja";
 	text: Text;
 	onChange: (rowId: string, patch: Partial<SetupRow>) => void;
 	onAdd: () => void;
@@ -292,7 +295,8 @@ function SetupRows({
 									const choice = event.target.value as PerTitleStreamChoice;
 									onChange(row.id, {
 										choice,
-										height: choice === "template" ? "" : row.height || "720",
+										height:
+											choice === "template" ? row.height : row.height || "720",
 										minimum: choice === "fixed-range" ? row.minimum : "",
 										maximum: choice === "fixed-range" ? row.maximum : "",
 									});
@@ -300,23 +304,21 @@ function SetupRows({
 							>
 								{PER_TITLE_STREAM_CHOICES.map((choice) => (
 									<option key={choice} value={choice}>
-										{perTitleStreamChoiceLabel(choice, locale)}
+										{perTitleStreamChoiceLabel(choice)}
 									</option>
 								))}
 							</SelectNative>
 						</Field>
 					</div>
 					<div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-						{row.choice !== "template" ? (
-							<SetupNumber
-								id={`${id}-${row.id}-height`}
-								label={text.height}
-								value={row.height}
-								min={1}
-								step={1}
-								onChange={(height) => onChange(row.id, { height })}
-							/>
-						) : null}
+						<SetupNumber
+							id={`${id}-${row.id}-height`}
+							label={row.choice === "template" ? text.heightHint : text.height}
+							value={row.height}
+							min={1}
+							step={1}
+							onChange={(height) => onChange(row.id, { height })}
+						/>
 						{row.choice === "fixed-range" ? (
 							<>
 								<SetupNumber
@@ -423,9 +425,9 @@ export function PerTitleGuidedSetup({
 				return {
 					id: row.id,
 					mode: perTitleStreamMode(row.choice),
-					...(row.choice === "template"
-						? {}
-						: { height: requiredNumber(row.height) }),
+					...(row.choice !== "template" || row.height.trim() !== ""
+						? { height: requiredNumber(row.height) }
+						: {}),
 					...(row.choice === "fixed-range"
 						? {
 								...(minBitrate !== undefined ? { minBitrate } : {}),
@@ -599,7 +601,6 @@ export function PerTitleGuidedSetup({
 					<SetupRows
 						id={id}
 						rows={rows}
-						locale={locale}
 						text={text}
 						onChange={(rowId, patch) =>
 							setRows((current) =>

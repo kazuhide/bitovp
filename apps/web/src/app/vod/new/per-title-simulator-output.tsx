@@ -24,7 +24,7 @@ const copy = {
 		inputUnknown: "Upper input unavailable",
 		candidates: (heights: string) => `${heights} px`,
 		automatic: "Resolution not specified",
-		automaticGroup: "PER_TITLE_TEMPLATE (content analysis)",
+		automaticGroup: "PER_TITLE_TEMPLATE",
 		automaticHint: "Count and resolutions are determined by content analysis.",
 		countSlot: (ordinal: number) => `Rendition ${ordinal}`,
 		countExact: (count: number) =>
@@ -87,7 +87,7 @@ const copy = {
 		inputUnknown: "解析値の上限は未確定",
 		candidates: (heights: string) => `${heights} px`,
 		automatic: "解像度未指定",
-		automaticGroup: "PER_TITLE_TEMPLATE（素材解析で決定）",
+		automaticGroup: "PER_TITLE_TEMPLATE",
 		automaticHint: "本数と解像度は素材解析で決まります。",
 		countSlot: (ordinal: number) => `${ordinal}段目`,
 		countExact: (count: number) => `指定${count}本のビットレート範囲`,
@@ -510,14 +510,11 @@ export function PerTitleOutputChart({
 											<div className="flex flex-wrap justify-end gap-x-2 text-zinc-300 tabular-nums">
 												{row.mode || automatic ? (
 													<code className="min-w-0 break-all text-[10px] text-zinc-400">
-														{perTitleStreamLabel(
-															{
-																mode: row.mode ?? "PER_TITLE_TEMPLATE",
-																height: row.height,
-																width: row.width,
-															},
-															locale,
-														)}
+														{perTitleStreamLabel({
+															mode: row.mode ?? "PER_TITLE_TEMPLATE",
+															height: row.height,
+															width: row.width,
+														})}
 													</code>
 												) : null}
 												{basis || row.kind === "additional" ? (

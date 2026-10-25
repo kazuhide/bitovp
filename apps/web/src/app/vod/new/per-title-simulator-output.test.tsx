@@ -181,13 +181,7 @@ describe("Per-Title output chart", () => {
 		expect(
 			within(row).getByText(locale === "en" ? "Width 1920 px" : "幅 1920 px"),
 		).toBeVisible();
-		expect(
-			within(row).getByText(
-				locale === "en"
-					? "PER_TITLE_TEMPLATE (resolution specified)"
-					: "PER_TITLE_TEMPLATE (解像度指定)",
-			),
-		).toBeVisible();
+		expect(within(row).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
 		expect(row).not.toHaveTextContent(
 			locale === "en" ? "no resolution" : "解像度なし",
 		);
@@ -199,14 +193,14 @@ describe("Per-Title output chart", () => {
 			"en",
 			"Analysis assumption (count unresolved)",
 			"Assumed range 100–7,200",
-			"PER_TITLE_TEMPLATE (content analysis)",
+			"PER_TITLE_TEMPLATE",
 			"If fixed is highest: 1,000–1,500 kbps (1 step, ×1.25 each). This factor does not cap normal upper outputs.",
 		],
 		[
 			"ja",
 			"解析値の仮定（本数未確定）",
 			"仮定の範囲 100–7,200",
-			"PER_TITLE_TEMPLATE（素材解析で決定）",
+			"PER_TITLE_TEMPLATE",
 			"固定段が最上位なら 1,000–1,500 kbps（1段・各段×1.25）。通常上段の上限ではありません。",
 		],
 	] as const)("separates the aggregate assumption from its fixed-highest fallback without selecting outputs (%s)", (locale, normal, assumed, group, fallback) => {
@@ -667,16 +661,8 @@ describe("Per-Title output chart", () => {
 	});
 
 	it.each([
-		[
-			"en",
-			"PER_TITLE_TEMPLATE (content analysis)",
-			"Analysis assumption (count unresolved)",
-		],
-		[
-			"ja",
-			"PER_TITLE_TEMPLATE（素材解析で決定）",
-			"解析値の仮定（本数未確定）",
-		],
+		["en", "PER_TITLE_TEMPLATE", "Analysis assumption (count unresolved)"],
+		["ja", "PER_TITLE_TEMPLATE", "解析値の仮定（本数未確定）"],
 	] as const)("does not assign candidate resolutions to an aggregate analysis band (%s)", (locale, group, origin) => {
 		const input: PerTitleProposal = {
 			...proposal,
@@ -775,13 +761,7 @@ describe("Per-Title output chart", () => {
 		const chart = screen.getByRole("img", { name: title });
 		expect(chart).toHaveAccessibleDescription(/kbps/);
 		expect(within(chart).getByText(candidate)).toBeVisible();
-		expect(
-			within(chart).getByText(
-				locale === "en"
-					? "PER_TITLE_TEMPLATE (resolution specified)"
-					: "PER_TITLE_TEMPLATE (解像度指定)",
-			),
-		).toBeVisible();
+		expect(within(chart).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
 		const rows = within(chart).getAllByTestId("per-title-output-row");
 		expect(rows[0]).toHaveTextContent(candidate);
 		expect(rows[1]).toHaveTextContent("360 px");
@@ -946,13 +926,7 @@ describe("Per-Title output chart", () => {
 			expect(within(row).getByText(forced)).toBeVisible();
 			expect(row).toHaveTextContent(value);
 			expect(row).toHaveTextContent(locale === "en" ? "1080 px" : "1080 px");
-			expect(
-				within(row).getByText(
-					locale === "en"
-						? "PER_TITLE_TEMPLATE (resolution specified)"
-						: "PER_TITLE_TEMPLATE (解像度指定)",
-				),
-			).toBeVisible();
+			expect(within(row).getByText("PER_TITLE_TEMPLATE")).toBeVisible();
 			expect(
 				within(row).getByTestId("per-title-output-target"),
 			).toHaveAttribute("stroke-dasharray", "3 2");
@@ -1271,11 +1245,7 @@ describe("Per-Title output chart", () => {
 			Number(band.getAttribute("x2")),
 		);
 		const automatic = required(rows[1]);
-		expect(automatic).toHaveTextContent(
-			locale === "en"
-				? "PER_TITLE_TEMPLATE (content analysis)"
-				: "PER_TITLE_TEMPLATE（素材解析で決定）",
-		);
+		expect(automatic).toHaveTextContent("PER_TITLE_TEMPLATE");
 		expect(automatic).toHaveTextContent(
 			locale === "en" ? "Assumed range 100–600" : "仮定の範囲 100–600",
 		);

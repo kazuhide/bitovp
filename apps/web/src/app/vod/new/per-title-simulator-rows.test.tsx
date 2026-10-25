@@ -495,7 +495,7 @@ describe("Unified Per-Title rendition inputs", () => {
 						? "Stream mode, rendition 2"
 						: "Streamモード, レンディション 2",
 			}),
-		).toHaveValue("template-resolution");
+		).toHaveValue("template");
 		expect(
 			within(section).getByText(locale === "en" ? "Min Auto" : "下限 自動"),
 		).toBeVisible();
@@ -566,14 +566,18 @@ describe("Unified Per-Title rendition inputs", () => {
 		});
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), rendition 2",
+				name: "Height hint (px, optional), rendition 2",
 			}),
 			{ target: { value: "" } },
 		);
 		expect(events.onChange.mock.lastCall?.[0]).toEqual({
 			...goal,
 			automaticTemplates: [
-				{ ...goal.automaticTemplates?.[0], height: undefined },
+				{
+					...goal.automaticTemplates?.[0],
+					height: undefined,
+					width: undefined,
+				},
 			],
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Remove rendition 1" }));
@@ -731,7 +735,7 @@ describe("Unified Per-Title rendition inputs", () => {
 		});
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), rendition 3",
+				name: "Height hint (px, optional), rendition 3",
 			}),
 			{ target: { value: "360" } },
 		);
@@ -772,7 +776,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			width: 641,
 		});
 	});
-	it("keeps the source aspect ratio through controlled clearing and typing, and refreshes it for replaced dimensions", () => {
+	it("retains the fixed aspect ratio during typing and clears ordinary dimension hints explicitly", () => {
 		const events = callbacks();
 		const sized: PerTitleGoal = {
 			...goal,
@@ -821,9 +825,9 @@ describe("Unified Per-Title rendition inputs", () => {
 			height: 360,
 			width: 640,
 		});
-		change("Height (px, optional), rendition 2");
+		change("Height hint (px, optional), rendition 2");
 		expect(events.onChange.mock.lastCall?.[0].automaticTemplates).toEqual([
-			{ ...goal.automaticTemplates?.[0], height: 360, width: 640 },
+			{ ...goal.automaticTemplates?.[0], height: 360, width: undefined },
 		]);
 		fireEvent.click(screen.getByRole("button", { name: "Replace dimensions" }));
 		change("Height (px), rendition 1");
@@ -999,7 +1003,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			within(container).getByRole("combobox", {
 				name: "Stream mode, rendition 1",
 			}),
-		).toHaveValue("template-resolution");
+		).toHaveValue("template");
 		expect(
 			within(container).queryByRole("spinbutton", {
 				name: "Height (px), rendition 1",

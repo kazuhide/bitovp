@@ -4,7 +4,7 @@ import { renderLocalized } from "@/test/render";
 import { PerTitleSimulator } from "./per-title-simulator";
 import { buildPerTitleStreamSetup } from "./per-title-stream-setup-model";
 
-describe("four Stream modes reach draft review", () => {
+describe("mixed Stream definitions reach draft review", () => {
 	it.each(
 		(["H264", "H265", "VP9"] as const).flatMap((codec) =>
 			(["en", "ja"] as const).map((locale) => [codec, locale] as const),
@@ -35,6 +35,7 @@ describe("four Stream modes reach draft review", () => {
 		});
 		if (!result.goal)
 			throw new Error("Expected a generated Stream configuration.");
+		const goalBefore = structuredClone(result.goal);
 		const onApply = vi.fn();
 		renderLocalized(
 			<PerTitleSimulator
@@ -62,6 +63,16 @@ describe("four Stream modes reach draft review", () => {
 		).not.toHaveProperty("height");
 		expect(
 			proposal.api.streams.find(
+				(row: { rowId: string }) => row.rowId === "unconstrained",
+			),
+		).not.toHaveProperty("width");
+		expect(
+			proposal.api.streams.find(
+				(row: { rowId: string }) => row.rowId === "probe",
+			),
+		).toMatchObject({ mode: "PER_TITLE_TEMPLATE", height: 320 });
+		expect(
+			proposal.api.streams.find(
 				(row: { rowId: string }) => row.rowId === "resolution",
 			),
 		).toMatchObject({
@@ -76,5 +87,6 @@ describe("four Stream modes reach draft review", () => {
 			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			perTitleSettings: { minBitrate: 2_000_000, maxBitrate: 2_800_000 },
 		});
+		expect(result.goal).toEqual(goalBefore);
 	});
 });

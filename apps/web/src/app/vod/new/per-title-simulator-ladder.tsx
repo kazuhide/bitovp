@@ -210,7 +210,7 @@ export function PerTitleLadder({
 											{dimension(stream, true)}
 										</span>
 										<code className="min-w-0 break-all text-[10px] text-zinc-400">
-											{perTitleStreamLabel(stream, locale)}
+											{perTitleStreamLabel(stream)}
 										</code>
 									</div>
 									<div className="flex flex-wrap justify-end gap-x-2 text-zinc-300 tabular-nums">
@@ -295,7 +295,7 @@ export function PerTitleLadder({
 								{data.rows.map((row, index) => (
 									<tr key={`${row.stream.rowId}-${index}`}>
 										<th scope="row">{dimension(row.stream, false)}</th>
-										<td>{perTitleStreamLabel(row.stream, locale)}</td>
+										<td>{perTitleStreamLabel(row.stream)}</td>
 										<td>{rangeLabel(row)}</td>
 									</tr>
 								))}

@@ -78,7 +78,7 @@ function required<T>(value: T | undefined): T {
 
 const copy = {
 	en: {
-		group: "Automatic range (assumed)",
+		group: "PER_TITLE_TEMPLATE",
 		assumed: "Assumed range 100–2,000",
 		groupHint: "Count and resolutions are determined by content analysis.",
 		effective: "Effective interval 400–600",
@@ -91,7 +91,7 @@ const copy = {
 		unresolved: "Additional outputs unknown",
 	},
 	ja: {
-		group: "自動生成の範囲（仮定）",
+		group: "PER_TITLE_TEMPLATE",
 		assumed: "仮定の範囲 100–2,000",
 		groupHint: "本数と解像度は素材解析で決まります。",
 		effective: "有効範囲 400–600",

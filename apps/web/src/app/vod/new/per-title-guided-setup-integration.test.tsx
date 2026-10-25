@@ -53,11 +53,14 @@ function addTemplateRows(locale: "en" | "ja", heights: readonly number[]) {
 			within(row).getByRole("combobox", {
 				name: locale === "ja" ? "Streamモード" : "Stream mode",
 			}),
-			{ target: { value: "template-resolution" } },
+			{ target: { value: "template" } },
 		);
 		fireEvent.change(
 			within(row).getByRole("spinbutton", {
-				name: locale === "ja" ? "高さ (px)" : "Height (px)",
+				name:
+					locale === "ja"
+						? "高さのヒント (px・任意)"
+						: "Height hint (px, optional)",
 			}),
 			{ target: { value: String(height) } },
 		);

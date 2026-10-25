@@ -609,12 +609,7 @@ describe("Per-Title recommendation flow", () => {
 							? "Calculated Per-Title settings"
 							: "計算後のPer-Title設定",
 				}),
-			).getByText(
-				locale === "en"
-					? "PER_TITLE_TEMPLATE (resolution specified)"
-					: "PER_TITLE_TEMPLATE (解像度指定)",
-				{ exact: true },
-			),
+			).getByText("PER_TITLE_TEMPLATE", { exact: true }),
 		).toBeVisible();
 	});
 
@@ -729,7 +724,7 @@ describe("Per-Title recommendation flow", () => {
 		expect(within(panel).getByText("Stream templates: 3")).toBeVisible();
 		expect(
 			within(panel).getByRole("cell", {
-				name: "PER_TITLE_TEMPLATE (resolution specified)",
+				name: "PER_TITLE_TEMPLATE",
 			}),
 		).toBeInTheDocument();
 		expect(
@@ -788,15 +783,15 @@ describe("Per-Title recommendation flow", () => {
 				"combobox",
 				{ name: "Stream mode, rendition 3" },
 			),
-		).toHaveValue("template-resolution");
+		).toHaveValue("template");
 		await userEvent.setup().clear(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), rendition 3",
+				name: "Height hint (px, optional), rendition 3",
 			}),
 		);
 		fireEvent.change(
 			screen.getByRole("spinbutton", {
-				name: "Height (px, optional), rendition 3",
+				name: "Height hint (px, optional), rendition 3",
 			}),
 			{ target: { value: "720" } },
 		);

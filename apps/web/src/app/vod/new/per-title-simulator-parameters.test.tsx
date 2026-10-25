@@ -88,13 +88,22 @@ describe("calculated Per-Title parameter view", () => {
 		).toEqual([
 			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
-			locale === "en"
-				? "PER_TITLE_TEMPLATE (resolution specified)"
-				: "PER_TITLE_TEMPLATE (解像度指定)",
-			locale === "en"
-				? "PER_TITLE_TEMPLATE (no resolution)"
-				: "PER_TITLE_TEMPLATE (解像度なし)",
+			"PER_TITLE_TEMPLATE",
+			"PER_TITLE_TEMPLATE",
 		]);
+		const unset = locale === "en" ? "Unset" : "未設定";
+		const dimensioned = screen.getByRole("row", {
+			name: new RegExp(`^PER_TITLE_TEMPLATE ${unset} × 320 `),
+		});
+		expect(
+			within(dimensioned).getByRole("cell", { name: `${unset} × 320` }),
+		).toBeVisible();
+		const unspecified = screen.getByRole("row", {
+			name: new RegExp(`^PER_TITLE_TEMPLATE ${unset} × ${unset} `),
+		});
+		expect(
+			within(unspecified).getByRole("cell", { name: `${unset} × ${unset}` }),
+		).toBeVisible();
 		expect(
 			screen.queryByRole("columnheader", {
 				name: locale === "en" ? "Stream" : "ストリーム",
@@ -193,7 +202,7 @@ describe("calculated Per-Title parameter view", () => {
 			}),
 		).toHaveTextContent("PER_TITLE_TEMPLATE_FIXED_RESOLUTION");
 		const automatic = screen.getByRole("row", {
-			name: /^PER_TITLE_TEMPLATE \(/,
+			name: /^PER_TITLE_TEMPLATE /,
 		});
 		expect(
 			within(automatic).getAllByText(

@@ -41,6 +41,7 @@ const copy = {
 		count: "Requested video outputs",
 		mode: "Stream mode",
 		height: "Height (px)",
+		heightHint: "Height hint (px, optional)",
 		rowMinimum: "Minimum bitrate (kbps, optional)",
 		rowMaximum: "Maximum bitrate (kbps, optional)",
 		add: "Add rendition",
@@ -66,6 +67,7 @@ const copy = {
 		count: "希望する映像出力数",
 		mode: "Streamモード",
 		height: "高さ (px)",
+		heightHint: "高さのヒント (px・任意)",
 		rowMinimum: "最小ビットレート (kbps・任意)",
 		rowMaximum: "最大ビットレート (kbps・任意)",
 		add: "レンディションを追加",
@@ -117,10 +119,10 @@ function addTemplateRows(
 					: `Rendition ${count + 1}`,
 		});
 		fireEvent.change(within(row).getByRole("combobox", { name: text.mode }), {
-			target: { value: "template-resolution" },
+			target: { value: "template" },
 		});
 		fireEvent.change(
-			within(row).getByRole("spinbutton", { name: text.height }),
+			within(row).getByRole("spinbutton", { name: text.heightHint }),
 			{
 				target: { value: String(height) },
 			},
@@ -307,7 +309,7 @@ describe("PerTitleGuidedSetup", () => {
 		for (const row of addTemplateRows(locale, text, [176, 880, 1056])) {
 			expect(
 				within(row).getByRole("combobox", { name: text.mode }),
-			).toHaveValue("template-resolution");
+			).toHaveValue("template");
 			expect(
 				within(row).queryByRole("spinbutton", { name: text.rowMinimum }),
 			).toBeNull();
@@ -375,7 +377,7 @@ describe("PerTitleGuidedSetup", () => {
 	});
 
 	it.each([
-		["en", ""],
+		["en", "0.5"],
 		["ja", "0"],
 		["en", "-1"],
 		["ja", "1056.5"],
@@ -385,11 +387,13 @@ describe("PerTitleGuidedSetup", () => {
 		click(text.next);
 		const [row] = addTemplateRows(locale, text, [880]);
 		if (!row) throw new Error("Missing ordinary Stream row");
-		const height = within(row).getByRole("spinbutton", { name: text.height });
+		const height = within(row).getByRole("spinbutton", {
+			name: text.heightHint,
+		});
 		fireEvent.change(height, { target: { value } });
-		expect(height).toHaveValue(value === "" ? null : Number(value));
+		expect(height).toHaveValue(Number(value));
 		expect(screen.getByRole("button", { name: text.next })).toBeDisabled();
-		expect(screen.getByRole("alert")).toHaveTextContent(text.height);
+		expect(screen.getByRole("alert")).toHaveTextContent(text.heightHint);
 		expect(onComplete).not.toHaveBeenCalled();
 	});
 
@@ -403,9 +407,9 @@ describe("PerTitleGuidedSetup", () => {
 		const [, invalid] = addTemplateRows(locale, text, [176, 880]);
 		if (!invalid) throw new Error("Missing ordinary Stream row");
 		fireEvent.change(
-			within(invalid).getByRole("spinbutton", { name: text.height }),
+			within(invalid).getByRole("spinbutton", { name: text.heightHint }),
 			{
-				target: { value: "" },
+				target: { value: "0" },
 			},
 		);
 		expect(screen.getByRole("button", { name: text.next })).toBeDisabled();
@@ -421,6 +425,9 @@ describe("PerTitleGuidedSetup", () => {
 			"template",
 		);
 		expect(screen.queryByRole("spinbutton", { name: text.height })).toBeNull();
+		expect(
+			screen.getByRole("spinbutton", { name: text.heightHint }),
+		).toHaveValue(null);
 		expect(screen.getByRole("button", { name: text.next })).toBeEnabled();
 		click(text.next);
 		click(text.complete);

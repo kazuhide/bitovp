@@ -45,7 +45,7 @@ function proposal(
 }
 
 describe("Per-Title bitrate range plot", () => {
-	it("lists every Stream mode and distinguishes unspecified bitrate from a fixed band", () => {
+	it("lists each Stream's API mode and distinguishes unspecified dimensions and bitrate from a fixed band", () => {
 		renderLocalized(
 			<PerTitleLadder
 				proposal={proposal({
@@ -65,10 +65,21 @@ describe("Per-Title bitrate range plot", () => {
 		const table = screen.getByRole("table");
 		expect(within(table).getAllByRole("row")).toHaveLength(5);
 		expect(
-			within(table).getByText("PER_TITLE_TEMPLATE (no resolution)"),
-		).toBeInTheDocument();
+			within(table).getAllByRole("cell", { name: "PER_TITLE_TEMPLATE" }),
+		).toHaveLength(2);
+		const unspecified = within(table).getByRole("row", {
+			name: /^Not specified PER_TITLE_TEMPLATE /,
+		});
 		expect(
-			within(table).getByText("PER_TITLE_TEMPLATE (resolution specified)"),
+			within(unspecified).getByRole("rowheader", {
+				name: "Not specified",
+			}),
+		).toBeInTheDocument();
+		const dimensioned = within(table).getByRole("row", {
+			name: /^240 PER_TITLE_TEMPLATE /,
+		});
+		expect(
+			within(dimensioned).getByRole("rowheader", { name: "240" }),
 		).toBeInTheDocument();
 		expect(
 			within(table).getByText("PER_TITLE_TEMPLATE_FIXED_RESOLUTION"),

@@ -14,6 +14,7 @@ const copy = {
 		add: "Add rendition",
 		row: (n: number) => `Rendition ${n}`,
 		height: "Height (px)",
+		heightHint: "Height hint (px, optional)",
 		minimum: "Minimum bitrate (kbps, optional)",
 		maximum: "Maximum bitrate (kbps, optional)",
 		api: "API settings",
@@ -27,6 +28,7 @@ const copy = {
 		add: "レンディションを追加",
 		row: (n: number) => `レンディション ${n}`,
 		height: "高さ (px)",
+		heightHint: "高さのヒント (px・任意)",
 		minimum: "最小ビットレート (kbps・任意)",
 		maximum: "最大ビットレート (kbps・任意)",
 		api: "API 設定",
@@ -71,29 +73,66 @@ describe("unified Stream requirements", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("authors all four Stream definitions in the same list (%s)", (locale) => {
+	] as const)("uses one template mode with an optional resolution hint (%s)", (locale) => {
+		const { text } = mount(locale);
+		click(text.next);
+		const row = () => within(screen.getByRole("group", { name: text.row(1) }));
+		const hint = () => row().getByRole("spinbutton", { name: text.heightHint });
+		expect(hint()).toHaveValue(null);
+		expect(
+			row()
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual([
+			"PER_TITLE_TEMPLATE",
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		]);
+		click(text.next);
+		expect(api(text).streams[0]).not.toHaveProperty("height");
+		expect(api(text).streams[0]).not.toHaveProperty("width");
+		click(text.back);
+		change(hint(), "480");
+		change(
+			row().getByRole("combobox", { name: text.mode }),
+			"fixed-resolution",
+		);
+		expect(row().getByRole("spinbutton", { name: text.height })).toHaveValue(
+			480,
+		);
+		change(row().getByRole("combobox", { name: text.mode }), "template");
+		expect(hint()).toHaveValue(480);
+		click(text.next);
+		expect(api(text).streams).toMatchObject([
+			{ mode: "PER_TITLE_TEMPLATE", height: 480 },
+		]);
+		click(text.back);
+		change(hint(), "");
+		click(text.next);
+		expect(api(text).streams[0]).not.toHaveProperty("height");
+		expect(api(text).streams[0]).not.toHaveProperty("width");
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("authors all Stream modes with optional template hints in the same list (%s)", (locale) => {
 		const { text, onComplete } = mount(locale);
 		fireEvent.click(screen.getByRole("radio", { name: text.ranges }));
 		click(text.next);
 		click(text.add);
-		const choices = [
-			"template",
-			"template-resolution",
-			"fixed-resolution",
-			"fixed-range",
-		];
+		const choices = ["template", "template", "fixed-resolution", "fixed-range"];
 		for (const [index, choice] of choices.entries()) {
 			const row = within(
 				screen.getByRole("group", { name: text.row(index + 1) }),
 			);
 			change(row.getByRole("combobox", { name: text.mode }), choice);
-			if (choice === "template") {
-				expect(row.queryByRole("spinbutton", { name: text.height })).toBeNull();
-			} else
-				change(
-					row.getByRole("spinbutton", { name: text.height }),
-					String([0, 320, 576, 768][index]),
-				);
+			change(
+				row.getByRole("spinbutton", {
+					name: choice === "template" ? text.heightHint : text.height,
+				}),
+				index === 0 ? "" : String([0, 320, 576, 768][index]),
+			);
 			if (choice !== "fixed-range") {
 				expect(
 					row.queryByRole("spinbutton", { name: text.minimum }),
@@ -146,19 +185,17 @@ describe("unified Stream requirements", () => {
 		expect(row.getByRole("combobox", { name: text.mode })).toHaveValue(
 			"template",
 		);
-		expect(row.queryByRole("spinbutton", { name: text.height })).toBeNull();
-		change(
-			row.getByRole("combobox", { name: text.mode }),
-			"template-resolution",
+		expect(row.getByRole("spinbutton", { name: text.heightHint })).toHaveValue(
+			null,
 		);
-		change(row.getByRole("spinbutton", { name: text.height }), "480");
+		change(row.getByRole("spinbutton", { name: text.heightHint }), "480");
 		click(text.next);
 		expect(api(text).streams).toMatchObject([
 			{ mode: "PER_TITLE_TEMPLATE", height: 480 },
 		]);
 		click(text.back);
 		const same = within(screen.getByRole("group", { name: text.row(1) }));
-		change(same.getByRole("combobox", { name: text.mode }), "template");
+		change(same.getByRole("spinbutton", { name: text.heightHint }), "");
 		click(text.next);
 		expect(api(text).streams[0]).not.toHaveProperty("height");
 		expect(api(text).streams[0]).not.toHaveProperty("width");

@@ -245,7 +245,7 @@ export function PerTitleParameterView({
 										className="min-w-48 px-2 py-2 align-top font-medium"
 									>
 										<span className="block max-w-48 break-all">
-											{perTitleStreamLabel(stream, locale)}
+											{perTitleStreamLabel(stream)}
 										</span>
 									</th>
 									<td className="whitespace-nowrap px-2 py-2 align-top">

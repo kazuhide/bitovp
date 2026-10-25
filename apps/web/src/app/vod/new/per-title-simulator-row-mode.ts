@@ -68,7 +68,6 @@ function clearInactivePolicies(
 					"highComplexityBoundaryForMaxBitrate",
 				],
 	);
-	if (choice === "template") inactive.add("height");
 	const next = { ...goal };
 	if (goal.adjustments?.streams?.[rowId]) {
 		const streams = { ...goal.adjustments.streams };
@@ -143,14 +142,15 @@ export function changePerTitleStreamChoice(
 		delete row.lowComplexityBoundaryForMaxBitrate;
 		delete row.highComplexityBoundaryForMaxBitrate;
 	}
-	if (choice === "template") {
-		delete row.height;
-		delete row.width;
-	} else if (row.height === undefined && row.width === undefined)
+	if (
+		choice !== "template" &&
+		row.height === undefined &&
+		row.width === undefined
+	)
 		row.height = 720;
 	const retainedFixed = fixed.filter((item) => item.id !== rowId);
 	const retainedOrdinary = ordinary.filter((item) => item.id !== rowId);
-	if (choice === "template" || choice === "template-resolution") {
+	if (choice === "template") {
 		delete row.mode;
 		retainedOrdinary.push(row);
 	} else {

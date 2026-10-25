@@ -45,7 +45,7 @@ const texts = {
 		maximumSlider: "Maximum bitrate slider (kbps)",
 		short: { min: "Min", max: "Max" },
 		height: "Height (px)",
-		optionalHeight: "Height (px, optional)",
+		optionalHeight: "Height hint (px, optional)",
 		rendition: "rendition",
 		row: "Rendition",
 		add: "Add rendition",
@@ -64,7 +64,7 @@ const texts = {
 		maximumSlider: "最大ビットレートのスライダー (kbps)",
 		short: { min: "下限", max: "上限" },
 		height: "高さ (px)",
-		optionalHeight: "高さ (px、省略可)",
+		optionalHeight: "高さのヒント (px・任意)",
 		rendition: "レンディション",
 		row: "レンディション",
 		add: "レンディションを追加",
@@ -376,7 +376,7 @@ export function PerTitleSimulatorRows({
 								>
 									{PER_TITLE_STREAM_CHOICES.map((option) => (
 										<option key={option} value={option}>
-											{perTitleStreamChoiceLabel(option, locale)}
+											{perTitleStreamChoiceLabel(option)}
 										</option>
 									))}
 								</SelectNative>
@@ -384,60 +384,62 @@ export function PerTitleSimulatorRows({
 							<div
 								className={`grid items-start gap-2 ${rowRanged ? "sm:grid-cols-3" : "sm:max-w-xs"}`}
 							>
-								{choice !== "template" ? (
-									<div
-										data-setting-scope="stream"
-										data-setting-key="height"
-										data-setting-row={row.id}
-										data-setting-control={`${id}-${row.id}-height`}
-									>
-										<NumberField
-											id={`${id}-${row.id}-height`}
-											label={isAutomatic ? copy.optionalHeight : copy.height}
-											accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${copy.rendition} ${number}`}
-											value={row.height}
-											optional={isAutomatic}
-											integer
-											minimum={1}
-											onChange={(height) =>
-												onChange({
-													...goal,
-													...(isAutomatic
-														? {
-																automaticTemplates: automatic.map((item, i) =>
-																	i === index
-																		? {
-																				...item,
+								<div
+									data-setting-scope="stream"
+									data-setting-key="height"
+									data-setting-row={row.id}
+									data-setting-control={`${id}-${row.id}-height`}
+								>
+									<NumberField
+										id={`${id}-${row.id}-height`}
+										label={isAutomatic ? copy.optionalHeight : copy.height}
+										accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${copy.rendition} ${number}`}
+										value={row.height}
+										optional={isAutomatic}
+										integer
+										minimum={1}
+										onChange={(height) => {
+											if (isAutomatic && height === undefined)
+												aspectHistory.current.delete(row.id);
+											onChange({
+												...goal,
+												...(isAutomatic
+													? {
+															automaticTemplates: automatic.map((item, i) =>
+																i === index
+																	? {
+																			...item,
+																			height,
+																			...(height === undefined
+																				? { width: undefined }
+																				: widthForHeight(
+																						item,
+																						height,
+																						aspectHistory.current,
+																					)),
+																		}
+																	: item,
+															),
+														}
+													: {
+															rows: rows.map((item, i) =>
+																i === index
+																	? {
+																			...item,
+																			height: height ?? Number.NaN,
+																			...widthForHeight(
+																				item,
 																				height,
-																				...widthForHeight(
-																					item,
-																					height,
-																					aspectHistory.current,
-																				),
-																			}
-																		: item,
-																),
-															}
-														: {
-																rows: rows.map((item, i) =>
-																	i === index
-																		? {
-																				...item,
-																				height: height ?? Number.NaN,
-																				...widthForHeight(
-																					item,
-																					height,
-																					aspectHistory.current,
-																				),
-																			}
-																		: item,
-																),
-															}),
-												})
-											}
-										/>
-									</div>
-								) : null}
+																				aspectHistory.current,
+																			),
+																		}
+																	: item,
+															),
+														}),
+											});
+										}}
+									/>
+								</div>
 								{rowRanged
 									? (["min", "max"] as const).map((bound) => {
 											const field = perTitleStreamFields(goal.codec).find(

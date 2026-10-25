@@ -455,16 +455,15 @@ For a new configuration, select **Open simulator** in "Ladder", then **New setup
 
 You can also enter **Quality target (TargetQualityCrf, optional)** for H.264, HEVC, VP9 or AV1. The proposal keeps your entered value, including when you switch codecs. Leaving it empty does not copy a previous configuration's quality target. Lower values favor quality, but the same number does not imply equal quality across codecs. The target does not determine bitrate bands without source analysis; supplied limits stay unchanged and omitted limits receive an initial allocation.
 
-The setup wizard and simulator use the same four choices. The first two share the same API mode; only their dimension settings differ.
+The setup wizard and simulator use the same three API Stream modes. `PER_TITLE_TEMPLATE` has an optional resolution hint in the same row. Leave it blank to let source analysis choose the resolution; a supplied hint does not require an output at that resolution.
 
-| Stream choice | Resolution | Bitrate |
+| Stream mode | Resolution | Bitrate |
 | --- | --- | --- |
-| `PER_TITLE_TEMPLATE` (no resolution) | Chosen from source analysis | Chosen from source analysis |
-| `PER_TITLE_TEMPLATE` (resolution specified) | Supplied as a template, without requiring an output at that resolution | Chosen from source analysis |
+| `PER_TITLE_TEMPLATE` | Optional resolution hint; otherwise chosen from source analysis | Chosen from source analysis |
 | `PER_TITLE_TEMPLATE_FIXED_RESOLUTION` | Required resolution | Chosen from source analysis |
 | `PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE` | Required resolution | Selected within the specified minimum and maximum |
 
-Use **Add rendition** for any of these choices. Repeat a resolution in separate fixed-bitrate rows when you need two bands at that height. Add each `PER_TITLE_TEMPLATE` probe as its own row. Stream template count is not output count: in a checked mixed configuration, alternative template heights may share one possible output. The model checks the requested output structure separately.
+Use **Add rendition** for any of these modes. Repeat a resolution in separate fixed-bitrate rows when you need two bands at that height. Add each `PER_TITLE_TEMPLATE` probe as its own row and enter its height hint if needed. Switching to `PER_TITLE_TEMPLATE` preserves existing dimensions as hints; clearing its height hint removes both height and width. Stream template count is not output count: in a checked mixed configuration, alternative template heights may share one possible output. The model checks the requested output structure separately.
 
 For fixed-bitrate rows, supplied endpoints stay unchanged and empty endpoints receive an initial allocation. Compatible mixed configurations also derive spacing, shared complexity boundaries and forced-addition settings together. Rounded settings are checked across the complexity range. These are starting bitrate budgets, not measurements of source quality or savings, and are not provider defaults.
 

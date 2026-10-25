@@ -48,6 +48,61 @@ const readGoal = () =>
 	JSON.parse(screen.getByTestId("goal").textContent ?? "{}");
 
 describe("explicit Stream modes in the simulator list", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps one template mode and preserves its optional height hint across mode changes (%s)", (locale) => {
+		renderLocalized(
+			<Editor
+				initial={{
+					...goal,
+					strategy: "automatic",
+					rows: [],
+					automaticTemplates: [{ id: "ordinary" }],
+				}}
+			/>,
+			locale,
+		);
+		const select = screen.getByRole("combobox", {
+			name:
+				locale === "en"
+					? "Stream mode, rendition 1"
+					: "Streamモード, レンディション 1",
+		});
+		const hintLabel =
+			locale === "en"
+				? "Height hint (px, optional), rendition 1"
+				: "高さのヒント (px・任意), レンディション 1";
+		expect(screen.getByRole("spinbutton", { name: hintLabel })).toHaveValue(
+			null,
+		);
+		expect(
+			within(select)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual([
+			"PER_TITLE_TEMPLATE",
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		]);
+		fireEvent.change(screen.getByRole("spinbutton", { name: hintLabel }), {
+			target: { value: "480" },
+		});
+		fireEvent.change(select, { target: { value: "fixed-resolution" } });
+		fireEvent.change(select, { target: { value: "template" } });
+		expect(screen.getByRole("spinbutton", { name: hintLabel })).toHaveValue(
+			480,
+		);
+		expect(readGoal().automaticTemplates).toEqual([
+			{ id: "ordinary", height: 480 },
+		]);
+		expect(readGoal().targetQualityCrf).toBe(17);
+		fireEvent.change(screen.getByRole("spinbutton", { name: hintLabel }), {
+			target: { value: "" },
+		});
+		expect(readGoal().automaticTemplates).toEqual([{ id: "ordinary" }]);
+	});
+
 	it("preserves legacy fixed-resolution modes when one row changes the overall strategy", () => {
 		const initial: PerTitleGoal = {
 			...goal,
@@ -131,8 +186,10 @@ describe("explicit Stream modes in the simulator list", () => {
 			{ target: { value: "template" } },
 		);
 		value = readGoal();
-		expect(value.adjustments.streams.fixed).toBeUndefined();
-		expect(value.settingLocks.streams.fixed).toBeUndefined();
+		expect(value.adjustments.streams.fixed).toEqual({
+			height: { mode: "fixed" },
+		});
+		expect(value.settingLocks.streams.fixed).toEqual(["height"]);
 		expect(value.adjustments.global).toEqual(initial.adjustments?.global);
 		expect(value.settingLocks.global).toEqual(initial.settingLocks?.global);
 		expect(value.inputHeight).toBe(1080);
@@ -141,7 +198,12 @@ describe("explicit Stream modes in the simulator list", () => {
 		const emitted = recommendPerTitleSettings(value).api.streams.find(
 			(row) => row.rowId === "fixed",
 		);
-		expect(emitted).toEqual({ rowId: "fixed", mode: "PER_TITLE_TEMPLATE" });
+		expect(emitted).toEqual({
+			rowId: "fixed",
+			mode: "PER_TITLE_TEMPLATE",
+			height: 720,
+			width: 1280,
+		});
 	});
 
 	it.each([
@@ -166,7 +228,7 @@ describe("explicit Stream modes in the simulator list", () => {
 		).toBeNull();
 	});
 
-	it("moves a row between all four choices while keeping its identity and common settings", () => {
+	it("changes Stream modes while retaining hints until explicitly cleared", () => {
 		renderLocalized(<Editor />);
 		const select = () =>
 			screen.getByRole("combobox", { name: "Stream mode, rendition 2" });
@@ -186,7 +248,7 @@ describe("explicit Stream modes in the simulator list", () => {
 				name: "Minimum bitrate (kbps), rendition 2",
 			}),
 		).toBeNull();
-		fireEvent.change(select(), { target: { value: "template-resolution" } });
+		fireEvent.change(select(), { target: { value: "template" } });
 		value = readGoal();
 		expect(value.rows).toEqual([]);
 		expect(
@@ -194,7 +256,12 @@ describe("explicit Stream modes in the simulator list", () => {
 				(row: { id: string }) => row.id === "fixed",
 			),
 		).toEqual({ id: "fixed", height: 720, width: 1280 });
-		fireEvent.change(select(), { target: { value: "template" } });
+		fireEvent.change(
+			screen.getByRole("spinbutton", {
+				name: "Height hint (px, optional), rendition 2",
+			}),
+			{ target: { value: "" } },
+		);
 		value = readGoal();
 		expect(
 			value.automaticTemplates.find(
@@ -204,6 +271,11 @@ describe("explicit Stream modes in the simulator list", () => {
 		expect(
 			screen.queryByRole("spinbutton", { name: "Height (px), rendition 2" }),
 		).toBeNull();
+		expect(
+			screen.getByRole("spinbutton", {
+				name: "Height hint (px, optional), rendition 2",
+			}),
+		).toHaveValue(null);
 	});
 
 	it("keeps an imported width-only ordinary template dimensioned until explicitly cleared", () => {
@@ -219,8 +291,19 @@ describe("explicit Stream modes in the simulator list", () => {
 		const select = screen.getByRole("combobox", {
 			name: "Stream mode, rendition 1",
 		});
-		expect(select).toHaveValue("template-resolution");
-		fireEvent.change(select, { target: { value: "template" } });
+		expect(select).toHaveValue("template");
+		expect(readGoal().automaticTemplates).toEqual([
+			{ id: "width-only", width: 1280 },
+		]);
+		const hint = screen.getByRole("spinbutton", {
+			name: "Height hint (px, optional), rendition 1",
+		});
+		expect(hint).toHaveValue(null);
+		fireEvent.change(hint, { target: { value: "720" } });
+		expect(readGoal().automaticTemplates).toEqual([
+			{ id: "width-only", width: 1280, height: 720 },
+		]);
+		fireEvent.change(hint, { target: { value: "" } });
 		expect(readGoal().automaticTemplates).toEqual([{ id: "width-only" }]);
 	});
 

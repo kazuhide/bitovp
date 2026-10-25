@@ -154,7 +154,7 @@ export function PerTitleComplexity({
 				<div key={`${stream.rowId}-${number}`} className="space-y-1">
 					<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
 						<span className="min-w-0 break-all text-zinc-300">
-							{perTitleStreamLabel(stream, locale)}
+							{perTitleStreamLabel(stream)}
 							{dimensions(stream) ? ` · ${dimensions(stream)}` : ""}
 						</span>
 						{current ? (

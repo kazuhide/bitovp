@@ -129,6 +129,12 @@ describe("guided setup enters the existing simulator and draft review", () => {
 				locale === "ja" ? "最大ビットレート (kbps)" : "Maximum bitrate (kbps)",
 				"5000",
 			],
+			[
+				locale === "ja"
+					? "画質の基準 (TargetQualityCrf・任意)"
+					: "Quality target (TargetQualityCrf, optional)",
+				"17",
+			],
 		] as const)
 			fireEvent.change(screen.getByRole("spinbutton", { name }), {
 				target: { value },
@@ -208,6 +214,7 @@ describe("guided setup enters the existing simulator and draft review", () => {
 		expect(api.global).toMatchObject({
 			minBitrate: 160000,
 			maxBitrate: 5000000,
+			targetQualityCrf: 17,
 		});
 		const fixed = api.streams.filter(
 			(row: { mode: string }) =>
@@ -293,6 +300,8 @@ describe("guided setup enters the existing simulator and draft review", () => {
 		expect(state).toEqual(snapshot);
 		const imported = perTitleGoalFromWizard(adopted, codec);
 		const reimported = tunePerTitleSettings(imported, imported).proposal;
+		expect(imported.targetQualityCrf).toBe(17);
+		expect(reimported.api.global.targetQualityCrf).toBe(17);
 		const canonical = (settings: PerTitleProposal["api"]) => ({
 			global: settings.global,
 			streams: settings.streams

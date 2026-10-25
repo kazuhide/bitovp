@@ -346,7 +346,7 @@ describe("new Per-Title requirements", () => {
 	it("does not import unrelated quality targets, rules, or locks", () => {
 		const source = {
 			...input("automatic"),
-			targetQualityCrf: 14,
+			targetQualityQp: 14,
 			complexityFactor: 4,
 			fixedResolutionAndBitrateConfiguration: {
 				forcedRenditionAboveHighestFixedRepresentation: 2,
@@ -356,6 +356,7 @@ describe("new Per-Title requirements", () => {
 		};
 		const { goal } = requireGoal(buildPerTitleSetup(source));
 		expect(goal.targetQualityCrf).toBeUndefined();
+		expect(goal.targetQualityQp).toBeUndefined();
 		expect(goal.complexityFactor).toBeUndefined();
 		expect(goal.fixedResolutionAndBitrateConfiguration).toBeUndefined();
 		expect(goal.adjustments).toBeUndefined();

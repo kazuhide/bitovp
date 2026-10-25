@@ -50,6 +50,9 @@ const copy = {
 		codec: "Video codec",
 		minimum: "Minimum bitrate (kbps)",
 		maximum: "Maximum bitrate (kbps)",
+		quality: "Quality target (TargetQualityCrf, optional)",
+		qualityHint:
+			"Lower values favor quality; bitrate ranges are set separately.",
 		source: "Source height (px, optional)",
 		count: "Requested video outputs",
 		optionalCount: "Requested video outputs (optional)",
@@ -96,6 +99,9 @@ const copy = {
 		codec: "映像コーデック",
 		minimum: "最小ビットレート (kbps)",
 		maximum: "最大ビットレート (kbps)",
+		quality: "画質の基準 (TargetQualityCrf・任意)",
+		qualityHint:
+			"小さい値ほど画質を優先します。ビットレート幅は別に指定します。",
 		source: "入力の高さ (px・任意)",
 		count: "希望する映像出力数",
 		optionalCount: "希望する映像出力数（任意）",
@@ -188,6 +194,7 @@ function issueLabel(
 		codec: text.codec,
 		minBitrate: text.minimum,
 		maxBitrate: text.maximum,
+		targetQualityCrf: text.quality,
 		inputHeight: text.source,
 		count: text.count,
 		height: text.height,
@@ -209,6 +216,7 @@ function SetupNumber({
 	onChange,
 	min = 10,
 	step = 0.001,
+	hint,
 }: {
 	id: string;
 	label: string;
@@ -216,9 +224,10 @@ function SetupNumber({
 	onChange: (value: string) => void;
 	min?: number;
 	step?: number;
+	hint?: string;
 }) {
 	return (
-		<Field htmlFor={id} label={label}>
+		<Field htmlFor={id} label={label} hint={hint}>
 			<Input
 				id={id}
 				type="number"
@@ -339,6 +348,7 @@ export function PerTitleGuidedSetup({
 	const [maximum, setMaximum] = useState(() =>
 		hint(initialGoal.maxBitrate, "4000", 1000),
 	);
+	const [quality, setQuality] = useState("");
 	const [sourceHeight, setSourceHeight] = useState(() =>
 		hint(initialGoal.inputHeight, ""),
 	);
@@ -360,6 +370,9 @@ export function PerTitleGuidedSetup({
 			codec,
 			minBitrate: requiredBitrate(minimum),
 			maxBitrate: requiredBitrate(maximum),
+			...(codec !== "H265V2" && quality.trim() !== ""
+				? { targetQualityCrf: requiredNumber(quality) }
+				: {}),
 			...(strategy === "count"
 				? { count: requiredNumber(count) }
 				: strategy === "required-resolutions" && requiredCount.trim() !== ""
@@ -403,6 +416,7 @@ export function PerTitleGuidedSetup({
 			codec,
 			minimum,
 			maximum,
+			quality,
 			count,
 			requiredCount,
 			sourceHeight,
@@ -526,6 +540,17 @@ export function PerTitleGuidedSetup({
 						)}
 						{numberField("minimum", text.minimum, minimum, setMinimum)}
 						{numberField("maximum", text.maximum, maximum, setMaximum)}
+						{codec !== "H265V2" ? (
+							<SetupNumber
+								id={`${id}-quality`}
+								label={text.quality}
+								hint={text.qualityHint}
+								value={quality}
+								onChange={setQuality}
+								min={0}
+								step={0.1}
+							/>
+						) : null}
 						{strategy === "count"
 							? numberField("count", text.count, count, setCount, true)
 							: strategy === "required-resolutions"

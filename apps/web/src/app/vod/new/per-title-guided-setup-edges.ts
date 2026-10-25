@@ -226,6 +226,9 @@ export function buildPerTitleEdgeSetup(
 			codec: input.codec,
 			minBitrate: input.minBitrate,
 			maxBitrate: input.maxBitrate,
+			...(input.targetQualityCrf === undefined
+				? {}
+				: { targetQualityCrf: input.targetQualityCrf }),
 			minBitrateStepSize: minimumStep,
 			// A wide fixed-range starting ceiling also connects a lower template.
 			// Four is a documented example, not the provider's default ceiling.

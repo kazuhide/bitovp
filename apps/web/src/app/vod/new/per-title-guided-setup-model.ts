@@ -20,6 +20,7 @@ export type PerTitleSetupInput = {
 	codec: PerTitleCodec;
 	minBitrate: number;
 	maxBitrate: number;
+	targetQualityCrf?: number;
 	count?: number;
 	inputHeight?: number;
 	automaticEdges?: {
@@ -98,6 +99,22 @@ function validate(
 			"Choose a codec available for this account.",
 			"このアカウントで利用できるコーデックを選択してください。",
 		);
+	if (input.targetQualityCrf !== undefined) {
+		if (!Number.isFinite(input.targetQualityCrf))
+			add(
+				"invalid-quality-target",
+				"targetQualityCrf",
+				"Enter a finite quality target, or leave it empty.",
+				"画質の基準を数値で入力するか、空欄にしてください。",
+			);
+		if (input.codec === "H265V2")
+			add(
+				"unsupported-quality-target",
+				"targetQualityCrf",
+				"This codec uses TargetQualityQp. Set it in the simulator's detailed settings.",
+				"このコーデックではTargetQualityQpを使います。シミュレーターの詳細設定で指定してください。",
+			);
+	}
 	for (const key of ["minBitrate", "maxBitrate"] as const)
 		if (!rate(input[key]) || input[key] < PER_TITLE_MIN_BITRATE)
 			add(
@@ -489,6 +506,9 @@ export function buildPerTitleSetup(
 		codec: input.codec,
 		minBitrate: input.minBitrate,
 		maxBitrate: input.maxBitrate,
+		...(input.targetQualityCrf === undefined
+			? {}
+			: { targetQualityCrf: input.targetQualityCrf }),
 		countPolicy: isClosed
 			? { kind: "exact", count: input.rows.length }
 			: input.count === undefined

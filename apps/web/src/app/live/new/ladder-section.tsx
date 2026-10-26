@@ -50,6 +50,7 @@ const VOD_PRESETS = [
 	"VOD_HIGH_SPEED",
 ].filter((preset) => CODEC_OPTIONS.PresetConfiguration.includes(preset));
 const PRESET_CHOICES = [...LIVE_PRESETS, ...VOD_PRESETS];
+const H264_NO_PRESET = "__none__";
 
 type LadderSectionProps = {
 	state: LiveWizardState;
@@ -132,11 +133,17 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 	const patchPreset = (index: number, presetConfiguration: string) => {
 		const video = stableVideos[index];
 		if (!video) return;
+		const noPreset =
+			video.codec === "H264" && presetConfiguration === H264_NO_PRESET;
 		const h264 = video.h264 ? { ...video.h264 } : undefined;
 		const h265 = video.h265 ? { ...video.h265 } : undefined;
 		if (h264) delete h264.presetConfiguration;
 		if (h265) delete h265.presetConfiguration;
-		patchVideo(index, { presetConfiguration, h264, h265 });
+		patchVideo(index, {
+			presetConfiguration: noPreset ? undefined : presetConfiguration,
+			h264: noPreset ? { ...h264, presetConfiguration: null } : h264,
+			h265,
+		});
 	};
 	/**
 	 * The relation, derived from the SAME state the builder reads :
@@ -337,16 +344,24 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									>
 										<SelectNative
 											id={`lw-v-${index}-preset`}
-											value={liveVideoPreset(video) ?? ""}
+											value={
+												video.codec === "H264" &&
+												liveVideoPreset(video) === null
+													? H264_NO_PRESET
+													: (liveVideoPreset(video) ?? "")
+											}
 											onChange={(e) => patchPreset(index, e.target.value)}
 										>
 											<option value="">
-												{liveVideoPreset(video) === null
-													? t("wizard.noPreset")
-													: video.codec === "H264"
-														? t("ui.schemaDefaultVodWarns")
-														: t("wizard.defaultApi")}
+												{video.codec === "H264"
+													? t("ui.schemaDefaultVodWarns")
+													: t("wizard.defaultApi")}
 											</option>
+											{video.codec === "H264" ? (
+												<option value={H264_NO_PRESET}>
+													{t("wizard.noPreset")}
+												</option>
+											) : null}
 											{liveVideoPreset(video) &&
 											!PRESET_CHOICES.includes(liveVideoPreset(video) ?? "") ? (
 												<option value={liveVideoPreset(video) ?? ""}>

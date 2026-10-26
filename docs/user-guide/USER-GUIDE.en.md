@@ -736,6 +736,8 @@ Stream keys are secrets. If the configuration uses a key from a managed ingest p
 
 The Live form supports H.264 and H.265 video, and AAC, Dolby Digital and Dolby Digital Plus audio. The VOD codec and DRM options do not all apply to the Live form. Check each rendition's resolution, bitrate, preset and advanced settings. Also review any warning shown when you select a VOD preset.
 
+For H.264, “Default (VOD_HIGH_QUALITY)” and “None (use encoding mode)” are separate choices. None omits `presetConfiguration` from the API request. The H.265 default also leaves this parameter unspecified. Saved values outside the available choices remain visible for validation; select another preset if needed.
+
 Configure the audio bundled with video, independent audio containers and segment length. Match TS, fMP4, CMAF and other packaging choices to the codec and manifest compatibility conditions. Segment length is in seconds, bitrate in bps and audio sample rate in Hz.
 
 Each rendition's "Advanced" section includes its input track position and input path. Track positions start at zero; blank keeps video position `0` or audio position `1`. Leave the path blank to use the input protocol's default.
@@ -895,7 +897,7 @@ Under “Insert SCTE-35 cue”, specify a duration in seconds and select the tar
 
 A mirror does not create an independent ladder. Choose a different storage credential or bucket from the primary output to avoid duplicate writes. Also check the mirror's permissions and delivery paths.
 
-After enabling a storage mirror in “Destinations”, use “Add storage mirror” to add more. Each mirror has its own credential and bucket or container. The editor supports S3, compatible S3 storage, Azure and Google Cloud Storage; it does not add MSL or SFTP mirror authoring. If an archive or manifest references a mirror, change that destination before removing the mirror.
+After enabling a storage mirror in “Output”, use “Add storage mirror” to add more. Each mirror has its own credential and bucket or container. The editor supports S3, compatible S3 storage, Azure and Google Cloud Storage; it does not add MSL or SFTP mirror authoring. If an archive or manifest references a mirror, change that destination before removing the mirror.
 
 In “Manifests”, use “Add HLS manifest” or “Add DASH manifest” for additional manifests. Each has independent settings and an output folder. New entries start in separate folders so HLS media playlists do not overwrite one another. Review the path and access setting before saving. Copying and reopening a supported plan retains all entries; manifests still use the channel's shared ladder rather than selecting different renditions for each output.
 

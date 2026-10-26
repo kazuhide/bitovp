@@ -554,7 +554,7 @@ function str(value: string | undefined): string | undefined {
 	return value === "" || value === undefined ? undefined : value;
 }
 
-/** Older drafts stored Advanced edits inside the codec options. */
+/** Preserve explicit H264 no-preset choices and older Advanced overrides. */
 export function liveVideoPreset(
 	video: LiveVideoRendition,
 ): string | null | undefined {

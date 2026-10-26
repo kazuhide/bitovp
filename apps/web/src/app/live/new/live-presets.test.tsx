@@ -112,9 +112,14 @@ describe("Live video preset selection", () => {
 		const options = within(select).getAllByRole(
 			"option",
 		) as HTMLOptionElement[];
+		const noPresetOption = within(select).queryByRole("option", {
+			name: "None (use encoding mode)",
+		});
+		if (codec === "H264") expect(noPresetOption).toBeInTheDocument();
+		else expect(noPresetOption).not.toBeInTheDocument();
 		expect(
 			options
-				.filter((option) => option.value)
+				.filter((option) => option.value && option !== noPresetOption)
 				.map((option) => option.value)
 				.sort(),
 		).toEqual(
@@ -220,6 +225,82 @@ describe("Live video preset selection", () => {
 		expect(tryImportLiveChannelIntoWizard(plan).ok).toBe(true);
 	});
 
+	it("authors H264 without a preset, restores the draft, and can return to explicit or default presets", () => {
+		const initial = stateFor("H264");
+		const first = initial.videos[0];
+		if (!first) throw new Error("Missing video rendition");
+		const startingState: LiveWizardState = {
+			...initial,
+			videos: [
+				{ ...first, h265: { presetConfiguration: "LIVE_HIGH_QUALITY" } },
+			],
+		};
+		let latest = startingState;
+		function Harness({ initialState }: { initialState: LiveWizardState }) {
+			const [state, setState] = useState<LiveWizardState>(initialState);
+			latest = state;
+			return (
+				<LiveLadderSection
+					state={state}
+					onPatch={(partial) =>
+						setState((current) => ({ ...current, ...partial }))
+					}
+				/>
+			);
+		}
+		const view = renderLocalized(<Harness initialState={startingState} />);
+		let select = screen.getByLabelText("Preset configuration");
+		const none = within(select).getByRole("option", {
+			name: "None (use encoding mode)",
+		});
+		const noneValue = none.getAttribute("value");
+		if (!noneValue)
+			throw new Error(
+				"No-preset and schema-default choices must have distinct values",
+			);
+		fireEvent.change(select, { target: { value: noneValue } });
+		expect(select).toHaveValue(noneValue);
+		const chosen = latest.videos[0];
+		if (!chosen) throw new Error("Missing updated video rendition");
+		expect(chosen.presetConfiguration).toBeUndefined();
+		expect(chosen.h264?.presetConfiguration).toBeNull();
+		expect(chosen.h265?.presetConfiguration).toBeUndefined();
+		const restored: LiveWizardState = JSON.parse(JSON.stringify(latest));
+		view.rerender(<Harness key="restored" initialState={restored} />);
+		select = screen.getByLabelText("Preset configuration");
+		expect(select).toHaveValue(noneValue);
+		const noPresetPlan = liveChannelPlanSchema.parse(
+			buildLiveChannelPlan(latest),
+		);
+		expect(tryImportLiveChannelIntoWizard(noPresetPlan).ok).toBe(true);
+		const noPresetCodec = compileLiveChannel(noPresetPlan).find(
+			(operation) => operation.kind === "CREATE_CODEC_H264",
+		);
+		if (!noPresetCodec) throw new Error("Missing compiled H264 codec request");
+		expect(noPresetCodec.payload).not.toHaveProperty("presetConfiguration");
+		fireEvent.change(select, { target: { value: "LIVE_LOW_LATENCY" } });
+		expect(latest.videos[0]?.h264?.presetConfiguration).toBeUndefined();
+		const explicitPlan = liveChannelPlanSchema.parse(
+			buildLiveChannelPlan(latest),
+		);
+		expect(
+			compileLiveChannel(explicitPlan).find(
+				(operation) => operation.kind === "CREATE_CODEC_H264",
+			)?.payload,
+		).toHaveProperty("presetConfiguration", "LIVE_LOW_LATENCY");
+		fireEvent.change(select, { target: { value: noneValue } });
+		fireEvent.change(select, { target: { value: "" } });
+		expect(latest.videos[0]?.h264?.presetConfiguration).toBeUndefined();
+		const defaultPlan = liveChannelPlanSchema.parse(
+			buildLiveChannelPlan(latest),
+		);
+		expect(
+			compileLiveChannel(defaultPlan).find(
+				(operation) => operation.kind === "CREATE_CODEC_H264",
+			)?.payload,
+		).toHaveProperty("presetConfiguration", "VOD_HIGH_QUALITY");
+	});
+
 	it.each([
 		{
 			codec: "H264",
@@ -246,8 +327,13 @@ describe("Live video preset selection", () => {
 		];
 		renderLocalized(<LiveLadderSection state={state} onPatch={() => {}} />);
 		const select = screen.getByLabelText("Preset configuration");
-		expect(select).toHaveValue("");
-		expect(within(select).getByRole("option", { name: label })).toHaveValue("");
+		const selectedValue = within(select)
+			.getByRole("option", { name: label })
+			.getAttribute("value");
+		if (selectedValue === null) throw new Error("Missing preset option value");
+		expect(select).toHaveValue(selectedValue);
+		if (explicitNull) expect(selectedValue).not.toBe("");
+		else expect(selectedValue).toBe("");
 		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
 		const operation = compileLiveChannel(plan).find(
 			(operation) => operation.kind === `CREATE_CODEC_${codec}`,

@@ -1054,11 +1054,11 @@ export const ja = {
 			"自動生成される保存先全体を置き換えます。コンテナごとに別フォルダを指定してください。/ は出力先のルートです。",
 		segmentNaming: "セグメントファイル名パターン",
 		segmentNamingHint:
-			"%number%を含む、ディレクトリなしの.m4sまたは.tsファイル名です。未指定時は自動命名を使います。",
+			"%number%を含む、ディレクトリなしのファイル名です。未指定時は自動命名を使います。メディア形式はコンテナで決まります。",
 		segmentTemplate: "セグメント命名テンプレート",
 		segmentTemplateHint:
 			"%number%と{rand_chars:8}で再起動ごとに接頭辞を変えられます。{segment_rand_chars:8}はセグメントごとに変わります。パターンかテンプレートの一方を指定します。",
-		initName: "初期化セグメントのファイル名（.mp4）",
+		initName: "初期化セグメントのファイル名",
 		storageRequired:
 			"メディアのファイル名とパスはストレージ出力で指定できます。MSLとLive Media Ingestは配信先の設定を使います。",
 		ownContainerRequired:
@@ -1067,11 +1067,11 @@ export const ja = {
 		conflictingNaming:
 			"セグメントファイル名パターンか命名テンプレートの一方を指定してください。",
 		invalidSegmentName:
-			"%number%またはセグメントごとのランダムテンプレートを含む.m4sか.tsファイル名を使ってください。ディレクトリやURLの文字は使えません。",
+			"%number%またはセグメントごとのランダムテンプレートを含むファイル名を使ってください。ディレクトリやURLの文字は使えません。",
 		initRequiresFmp4:
 			"初期化ファイル名の指定にはfMP4コンテナが必要です。fMP4に戻すか、メディア設定をリセットしてください。",
 		invalidInitName:
-			"ディレクトリやURLの文字を含まない.mp4初期化ファイル名を指定してください。",
+			"ディレクトリやURLの文字を含まない初期化ファイル名を指定してください。",
 		invalidOutputPath:
 			"親ディレクトリ参照、エンコードされたパス、空白、URLの文字を含まないサブディレクトリを指定してください。",
 		sharedFolder:

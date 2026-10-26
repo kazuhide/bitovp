@@ -20,15 +20,10 @@ export function liveStorageOptionsAvailable(state: LiveWizardState): boolean {
 	);
 }
 
-function validSegmentName(
-	value: string,
-	template: boolean,
-	extension: string,
-): boolean {
+function validSegmentName(value: string, template: boolean): boolean {
 	const token = /\{(?:segment_)?rand_chars(?::[1-9]\d*)?\}/g;
 	const literal = template ? value.replace(token, "random") : value;
 	return (
-		value.endsWith(`.${extension}`) &&
 		(value.includes("%number%") ||
 			(template && /\{segment_rand_chars(?::[1-9]\d*)?\}/.test(value))) &&
 		/^[A-Za-z0-9_.-]+$/.test(literal.replaceAll("%number%", "0")) &&
@@ -73,16 +68,15 @@ function assertLiveMuxingOptions(
 			"liveRendition.conflictingNaming",
 			"Choose either segment naming or a segment naming template, not both.",
 		);
-	const extension = muxing.kind === "TS" ? "ts" : "m4s";
 	for (const field of ["segmentNaming", "segmentNamingTemplate"] as const) {
 		const value = options[field];
 		if (
 			value !== undefined &&
-			!validSegmentName(value, field === "segmentNamingTemplate", extension)
+			!validSegmentName(value, field === "segmentNamingTemplate")
 		)
 			throw new LiveOptionsError(
 				"liveRendition.invalidSegmentName",
-				`Use a flat .${extension} segment filename with %number% (or a per-segment random template), without directory or URL characters.`,
+				"Use a flat segment filename with %number% (or a per-segment random template), without directory or URL characters.",
 			);
 	}
 	if (options.initSegmentName !== undefined) {
@@ -92,12 +86,12 @@ function assertLiveMuxingOptions(
 				"Custom init filenames here require an fMP4 container.",
 			);
 		if (
-			!/^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.mp4$/.test(options.initSegmentName) ||
+			!/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(options.initSegmentName) ||
 			options.initSegmentName.includes("..")
 		)
 			throw new LiveOptionsError(
 				"liveRendition.invalidInitName",
-				"Use a flat .mp4 init filename without directory or URL characters.",
+				"Use a flat init filename without directory or URL characters.",
 			);
 	}
 	if (

@@ -147,10 +147,7 @@ export function enumerateLiveCaptureTargets(
 				: kind === "FMP4" && "initSegmentName" in muxing
 					? { initSegmentName: muxing.initSegmentName }
 					: {}),
-			segmentNaming:
-				muxing.kind === "CMAF"
-					? (muxing.segmentNamingTemplate ?? muxing.segmentNaming)
-					: muxing.segmentNaming,
+			segmentNaming: muxing.segmentNamingTemplate ?? muxing.segmentNaming,
 			segmentLengthSec: muxing.segmentLength,
 		});
 	}

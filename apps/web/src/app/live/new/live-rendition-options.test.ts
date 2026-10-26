@@ -132,11 +132,68 @@ describe("Live rendition input and storage options", () => {
 	});
 
 	it.each([
+		"part_%number%.mp4",
+		"video_%number%.cmfv",
+		"audio_%number%.cmfa",
+		"segment_%number%",
+	])("accepts a safe segment pattern %s without prescribing an extension", (segmentNaming) => {
+		const value = state();
+		first(value.videos).muxing = {
+			segmentNaming,
+			initSegmentName: "bootstrap.m4s",
+		};
+		const evaluation = evaluateLiveWizardState(value);
+		expect(evaluation.ok).toBe(true);
+		if (!evaluation.ok) throw new Error(evaluation.zodMessage);
+		expect(
+			evaluation.issues.filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const imported = tryImportLiveChannelIntoWizard(evaluation.plan);
+		expect(imported.ok).toBe(true);
+		if (!imported.ok) throw new Error("Import refused");
+		expect(imported.state.videos[0]?.muxing).toMatchObject({
+			segmentNaming,
+			initSegmentName: "bootstrap.m4s",
+		});
+	});
+
+	it("keeps a template-only choice effective after schema defaults and form import", () => {
+		const value = state();
+		const segmentNamingTemplate = "part_{rand_chars:8}_%number%.mp4";
+		first(value.videos).muxing = { segmentNamingTemplate };
+		const raw = buildLiveChannelPlan(value);
+		expect(first(raw.muxings)).not.toHaveProperty("segmentNaming");
+		const plan = liveChannelPlanSchema.parse(raw);
+		expect(first(plan.muxings)).toMatchObject({
+			segmentNaming: "segment_%number%.m4s",
+			segmentNamingTemplate,
+		});
+		const imported = tryImportLiveChannelIntoWizard(plan);
+		expect(imported.ok).toBe(true);
+		if (!imported.ok) throw new Error("Import refused");
+		expect(imported.state.videos[0]?.muxing).toEqual({ segmentNamingTemplate });
+		const evaluation = evaluateLiveWizardState(imported.state);
+		expect(evaluation.ok).toBe(true);
+		if (!evaluation.ok) throw new Error(evaluation.zodMessage);
+		expect(
+			evaluation.issues.filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const payload = evaluation.ops.find(
+			(operation) => operation.step === "muxing:v720",
+		)?.payload;
+		expect(payload).toHaveProperty(
+			"segmentNamingTemplate",
+			segmentNamingTemplate,
+		);
+		expect(payload).not.toHaveProperty("segmentNaming");
+	});
+
+	it.each([
 		{ path: "../outside" },
 		{ path: "folder/%2e%2e/other" },
 		{ segmentNaming: "../segment_%number%.m4s" },
 		{ segmentNaming: "same.m4s" },
-		{ segmentNaming: "video_%number%.ts" },
+		{ segmentNaming: "video_%unknown%.m4s" },
 		{
 			segmentNaming: "v_%number%.m4s",
 			segmentNamingTemplate: "v_{rand_chars:8}_%number%.m4s",

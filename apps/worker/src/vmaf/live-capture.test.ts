@@ -65,6 +65,30 @@ describe("segmentNamePattern", () => {
 
 describe("selectWindowSegments", () => {
 	const base = Date.parse("2026-06-18T12:00:00.000Z");
+	it.each([
+		"mp4",
+		"cmfv",
+		"cmfa",
+	])("selects configured .%s fragments independently of the default .m4s extension", (extension) => {
+		const target = {
+			...FMP4_TARGET,
+			segmentNaming: `part_{rand_chars:8}_%number%.${extension}`,
+		};
+		const objects = [
+			obj(`${target.segmentPrefix}/part_Ab12Cd34_17.${extension}`),
+			obj(`${target.segmentPrefix}/part_Ab12Cd34_18.${extension}`),
+			obj(`${target.segmentPrefix}/part_Ab12Cd34_19.m4s`),
+			obj(`${target.segmentPrefix}/init.mp4`),
+		];
+		const selected = selectWindowSegments(objects, target, {
+			now: base,
+			windowSeconds: 60,
+			fallbackCount: 2,
+		});
+		expect(selected.segments.map((segment) => segment.number)).toEqual([
+			17, 18,
+		]);
+	});
 	it("keeps only segments within the window by lastModified, ordered by number", () => {
 		const objects = [
 			obj("output/live/video/1080p/segment_1.m4s", "2026-06-18T11:50:00.000Z"), // old

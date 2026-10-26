@@ -7,7 +7,10 @@ import { createBitmovinSdkOps } from "./sdk-ops";
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("serializes Live track selections and storage naming through the real SDK", async () => {
+it.each([
+	"mp4",
+	"cmfv",
+])("serializes template-only Live .%s naming through the real SDK despite schema defaults", async (extension) => {
 	const plan = liveChannelPlanSchema.parse(
 		JSON.parse(
 			readFileSync(
@@ -26,7 +29,8 @@ it("serializes Live track selections and storage naming through the real SDK", a
 	const video = plan.muxings[0];
 	if (video?.kind !== "FMP4" || !video.destination)
 		throw new Error("Missing video fixture");
-	video.segmentNamingTemplate = "picture_{rand_chars:8}_%number%.m4s";
+	video.segmentNamingTemplate = `picture_{rand_chars:8}_%number%.${extension}`;
+	expect(video.segmentNaming).toBe("segment_%number%.m4s");
 	video.initSegmentName = "picture-init.mp4";
 	video.destination.path = "delivery/picture";
 	plan.muxings.push({
@@ -101,7 +105,7 @@ it("serializes Live track selections and storage naming through the real SDK", a
 	}
 	const fmp4 = calls.find((call) => call.path.endsWith("/muxings/fmp4"));
 	expect(fmp4?.body).toMatchObject({
-		segmentNamingTemplate: "picture_{rand_chars:8}_%number%.m4s",
+		segmentNamingTemplate: `picture_{rand_chars:8}_%number%.${extension}`,
 		initSegmentName: "picture-init.mp4",
 		outputs: [
 			{

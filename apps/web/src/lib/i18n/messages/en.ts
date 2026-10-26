@@ -1083,11 +1083,11 @@ export const en = {
 			"Replaces the complete automatic media subdirectory. Give each container a separate folder; / selects the output root.",
 		segmentNaming: "Segment filename pattern",
 		segmentNamingHint:
-			"Use a flat .m4s or .ts filename containing %number%. Leave unset for automatic naming.",
+			"Use a flat filename containing %number%. Leave unset for automatic naming; the container determines the media format.",
 		segmentTemplate: "Segment naming template",
 		segmentTemplateHint:
 			"Use %number% with {rand_chars:8} for a new prefix on restart, or {segment_rand_chars:8} per segment. Choose a pattern or a template.",
-		initName: "Init segment filename (.mp4)",
+		initName: "Init segment filename",
 		storageRequired:
 			"Custom media filenames and paths are available for storage outputs. MSL and Live Media Ingest use their delivery settings.",
 		ownContainerRequired:
@@ -1096,11 +1096,11 @@ export const en = {
 		conflictingNaming:
 			"Choose either a segment filename pattern or a naming template.",
 		invalidSegmentName:
-			"Use a flat .m4s or .ts segment filename with %number% or a per-segment random template, without directory or URL characters.",
+			"Use a flat segment filename with %number% or a per-segment random template, without directory or URL characters.",
 		initRequiresFmp4:
 			"The custom init filename requires an fMP4 container. Restore fMP4 or reset the media settings.",
 		invalidInitName:
-			"Use a flat .mp4 init filename without directory or URL characters.",
+			"Use a flat init filename without directory or URL characters.",
 		invalidOutputPath:
 			"Use an output subdirectory without parent traversal, encoded paths, whitespace or URL characters.",
 		sharedFolder:

@@ -49,6 +49,7 @@ import {
 } from "./build-plan";
 import { editFilter } from "./filter-editing";
 import { MediaFilterEditor } from "./media-filter-editor";
+import { PerTitleSimulatorLauncher } from "./per-title-simulator-launcher";
 import {
 	audioCopyLabel,
 	RenditionAddControls,
@@ -187,6 +188,8 @@ export function LadderSection({
 	const { t, locale } = useT();
 	const ja = locale === "ja";
 	const { videos, audios } = state;
+	const perTitleSelected =
+		videos.length > 0 && videos.every((video) => isPerTitle(video.extras));
 	const vKeys = videoKeys(videos);
 	const aKeys = audioKeys(audios);
 	const subtitles = state.subtitles ?? [];
@@ -360,6 +363,13 @@ export function LadderSection({
 					<h2 className="shrink-0 font-medium text-sm text-zinc-200">
 						{t("wizard.videoRenditions")}
 					</h2>
+					{perTitleSelected ? (
+						<PerTitleSimulatorLauncher
+							state={state}
+							onPatch={onPatch}
+							hevcV2Available={hevcV2Available}
+						/>
+					) : null}
 					{/* (a): PER_TITLE vs STANDARD reshapes the whole ladder,
 					    yet lived one disclosure deep PER RENDITION. This writes every
 					    video rendition's mode at once; the per-rendition select stays

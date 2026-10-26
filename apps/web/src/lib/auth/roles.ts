@@ -75,6 +75,13 @@ const WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;
  */
 export const ROUTE_RULES: readonly RouteRule[] = [
 	{
+		prefix: "/api/per-title-simulator/encodings/import",
+		methods: ["POST"],
+		minRole: "ADMIN",
+		reason:
+			"Organization-scoped provider import using saved or temporary credentials",
+	},
+	{
 		prefix: "/api/access-events",
 		minRole: "ADMIN",
 		reason: "Organization access history",

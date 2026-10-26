@@ -18,6 +18,7 @@ import {
 	perTitleTemplates,
 	planHasPerTitle,
 } from "./per-title-results";
+import { streamPerTitleSettings } from "./per-title-settings";
 import { qcMirrorFilename, qcMirrorMuxingKind } from "./qc-mirror";
 import type { EncodingPlan, PlanRendition } from "./schema";
 import { AUDIO_CODECS } from "./schema";
@@ -1466,11 +1467,9 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					...(rendition.conditions ? { conditions: rendition.conditions } : {}),
 					...(isVideoCodec(rendition) && rendition.perTitleSettings
 						? {
-								// SDK shape: StreamPerTitleSettings wraps the
-								// fixed-resolution-and-bitrate block.
-								perTitleSettings: {
-									fixedResolutionAndBitrateSettings: rendition.perTitleSettings,
-								},
+								perTitleSettings: streamPerTitleSettings(
+									rendition.perTitleSettings,
+								),
 							}
 						: {}),
 				},

@@ -166,6 +166,23 @@ describe("segment-aware prefix matching", () => {
 });
 
 describe("the §4 decisions", () => {
+	it("provider Per-Title imports require ADMIN", () => {
+		for (const role of USER_ROLES) {
+			expect(
+				evaluateRole(role, "/api/per-title-simulator/encodings/import", "POST"),
+			).toMatchObject({
+				minRole: "ADMIN",
+				allowed: role === "ADMIN",
+			});
+		}
+		expect(
+			evaluateRole(
+				"OPERATOR",
+				"/api/per-title-simulator/encodings/import-archive",
+				"POST",
+			).minRole,
+		).toBe("OPERATOR");
+	});
 	it("read-only Live inventory counts use the existing VIEWER floor", () => {
 		expect(
 			evaluateRole("VIEWER", "/api/live/orphan-inventory", "GET"),
@@ -466,8 +483,9 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// Branding adds one route and two methods.
 		// Live automatic stop adds one guarded route with VIEWER GET and
 		// OPERATOR POST handlers. Both populations were measured from disk.
-		expect(guarded.length).toBe(151);
 		// Historical imports replace the old insights GET with GET + POST.
-		expect(methods.length).toBe(216);
+		// Local simulator presets add one ADMIN GET route and handler.
+		expect(guarded.length).toBe(152);
+		expect(methods.length).toBe(217);
 	});
 });

@@ -24,13 +24,15 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 #    The literal is a string that lives INSIDE the package's own source (an
 #    API-client/telemetry token), appears in server output iff the source was
 #    compiled in, and — verified at adoption — has zero occurrences in our own
-#    tree: bitmovin's X-Api-Client value, GCS's invocation-id header, Azure's
+#    production code: Bitmovin's REST-client version header, GCS's invocation-id header, Azure's
 #    telemetry prefix.
+#    The Bitmovin repository name also appears in public source links, so it
+#    cannot distinguish an ordinary URL from compiled REST-client machinery.
 # `|| true`: grep exits 1 on NO MATCH, and with `pipefail` that aborted the whole
 # script before it could report a pass — the instrument failing in a way that reads
 # as a finding, which is the failure mode this file exists to avoid.
 SDKS='
-@bitmovin/api-sdk|bitmovin-api-sdk-javascript|@bitmovin|api-sdk*
+@bitmovin/api-sdk|X-Api-Client-Version|@bitmovin|api-sdk*
 @google-cloud/storage|gccl-invocation-id|@google-cloud|storage*
 @azure/storage-blob|azsdk-js-azure-storage-blob|@azure|storage-blob*
 '

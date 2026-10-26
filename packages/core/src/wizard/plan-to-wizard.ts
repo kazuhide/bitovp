@@ -980,6 +980,7 @@ const PER_TITLE_NUMBER_KEYS = [
 	"minBitrateStepSize",
 	"maxBitrateStepSize",
 	"complexityFactor",
+	"resolutionScaleFactor",
 	"codecMinBitrateFactor",
 	"codecMaxBitrateFactor",
 	"codecBufsizeFactor",

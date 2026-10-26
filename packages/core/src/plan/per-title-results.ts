@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { streamPerTitleSettings } from "./per-title-settings";
 import {
 	isQcMirrorOutputPath,
 	QC_MIRROR_MUXING_TYPES,
@@ -7,7 +8,8 @@ import {
 import {
 	type EncodingPlan,
 	type PlanRendition,
-	perTitleStreamSettingsSchema,
+	perTitleFixedResolutionAndBitrateSettingsSchema,
+	type perTitleStreamSettingsSchema,
 } from "./schema";
 
 /**
@@ -95,7 +97,10 @@ export const SCAN_PAGE_CAP = 50;
 
 /** The normalized provider/plan shape used for exact fixed-template identity. */
 export const capturedPerTitleSettingsSchema = z.strictObject({
-	fixedResolutionAndBitrateSettings: perTitleStreamSettingsSchema.optional(),
+	fixedResolutionAndBitrateSettings:
+		perTitleFixedResolutionAndBitrateSettingsSchema.optional(),
+	codecMaxBitrateFactor: z.number().positive().optional(),
+	codecBufsizeFactor: z.number().positive().optional(),
 });
 export type CapturedPerTitleSettings = z.infer<
 	typeof capturedPerTitleSettingsSchema
@@ -375,7 +380,7 @@ type PerTitlePlanRendition = PlanRendition & {
 		| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
 		| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
 	height: number | null;
-	perTitleSettings?: CapturedPerTitleSettings["fixedResolutionAndBitrateSettings"];
+	perTitleSettings?: z.infer<typeof perTitleStreamSettingsSchema>;
 };
 
 /**
@@ -395,9 +400,7 @@ export function perTitleTemplates(plan: EncodingPlan): TemplateStreamRef[] {
 		height: rendition.height,
 		...(rendition.perTitleSettings
 			? {
-					perTitleSettings: {
-						fixedResolutionAndBitrateSettings: rendition.perTitleSettings,
-					},
+					perTitleSettings: streamPerTitleSettings(rendition.perTitleSettings),
 				}
 			: {}),
 		...(() => {
@@ -579,6 +582,10 @@ export function attributeResult(
 			"lowComplexityBoundaryForMaxBitrate",
 			"highComplexityBoundaryForMaxBitrate",
 		] as const;
+		const outerFields = [
+			"codecMaxBitrateFactor",
+			"codecBufsizeFactor",
+		] as const;
 		if (!fields.some((field) => resultFixed[field] !== undefined)) {
 			return undefined;
 		}
@@ -590,7 +597,12 @@ export function attributeResult(
 				template.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
 				template.height === resultHeight &&
 				templateFixed !== undefined &&
-				fields.every((field) => templateFixed[field] === resultFixed[field])
+				fields.every((field) => templateFixed[field] === resultFixed[field]) &&
+				outerFields.every(
+					(field) =>
+						template.perTitleSettings?.[field] ===
+						result.perTitleSettings?.[field],
+				)
 			);
 		});
 		return matched.length === 1 ? matched[0]?.rendition : undefined;
@@ -1105,6 +1117,8 @@ function readStreamRow(row: unknown): ScannedStream | null {
 		appliedSettings?: { width?: unknown; height?: unknown };
 		perTitleSettings?: {
 			fixedResolutionAndBitrateSettings?: unknown;
+			codecMaxBitrateFactor?: unknown;
+			codecBufsizeFactor?: unknown;
 		};
 	};
 	// NON-EMPTY, not merely a string. The hand-written version this replaced used
@@ -1118,8 +1132,8 @@ function readStreamRow(row: unknown): ScannedStream | null {
 		return null;
 	}
 	const applied = stream.appliedSettings;
-	const fixed = perTitleStreamSettingsSchema.safeParse(
-		stream.perTitleSettings?.fixedResolutionAndBitrateSettings,
+	const settings = capturedPerTitleSettingsSchema.safeParse(
+		stream.perTitleSettings,
 	);
 	return {
 		streamId: stream.id,
@@ -1139,11 +1153,9 @@ function readStreamRow(row: unknown): ScannedStream | null {
 					},
 				}
 			: {}),
-		...(fixed.success
+		...(settings.success
 			? {
-					perTitleSettings: {
-						fixedResolutionAndBitrateSettings: fixed.data,
-					},
+					perTitleSettings: settings.data,
 				}
 			: {}),
 	};

@@ -122,7 +122,7 @@ describe("API usage documentation contract", () => {
 		expect(DOC).toContain(`On the ${word} that do paginate`);
 	});
 
-	it("counts the 422 routes the way the doc claims — comment-stripped", () => {
+	it("pins direct 422 responses and documents the import resource limit", () => {
 		const routes = execFileSync("git", ["ls-files", "apps/web/src/app/api"], {
 			cwd: REPO,
 			encoding: "utf8",
@@ -137,7 +137,9 @@ describe("API usage documentation contract", () => {
 		});
 
 		expect(withA422).toHaveLength(19);
-		expect(DOC).toContain("Nineteen route files return 422 today");
+		expect(DOC).toContain(
+			"Per-Title encoding import also returns 422 when its resource limit is exceeded",
+		);
 	});
 
 	it("documents config failure as closed for tokens, without a raw-mode exception", () => {

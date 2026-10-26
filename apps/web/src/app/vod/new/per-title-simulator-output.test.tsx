@@ -151,6 +151,111 @@ describe("Per-Title output chart", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("orders width-only rows by declared width and keeps tied rows stable (%s)", (locale) => {
+		const source: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{ rowId: "large-first", width: 1280, minimum: 800000 },
+					{ rowId: "small", width: 640, minimum: 200000 },
+					{ rowId: "large-second", width: 1280, minimum: 1000000 },
+				].map(({ minimum, ...stream }) => ({
+					...stream,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					perTitleSettings: { minBitrate: minimum, maxBitrate: minimum },
+				})),
+			},
+		};
+		const result: PerTitleOutputPreview = {
+			...preview,
+			rows: [
+				...source.api.streams.map((stream) => ({
+					id: stream.rowId,
+					rowId: stream.rowId,
+					width: stream.width,
+					mode: stream.mode,
+					kind: "fixed" as const,
+					status: "conditional" as const,
+					rangeBasis: "configured" as const,
+					minimumBitrate: stream.perTitleSettings?.minBitrate,
+					maximumBitrate: stream.perTitleSettings?.maxBitrate,
+				})),
+				{ id: "unknown", kind: "unassigned", status: "unknown" },
+			],
+		};
+		const sourceSnapshot = structuredClone(source);
+		const resultSnapshot = structuredClone(result);
+		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
+		renderLocalized(<PerTitleOutputChart proposal={source} />, locale);
+		const rows = within(screen.getByRole("img")).getAllByTestId(
+			"per-title-output-row",
+		);
+		const width = locale === "en" ? "Width" : "幅";
+		const configured = locale === "en" ? "Configured" : "設定範囲";
+		expect(rows[0]).toHaveTextContent(`${width} 640 px`);
+		expect(rows[0]).toHaveTextContent(`${configured} 200`);
+		expect(rows[1]).toHaveTextContent(`${width} 1280 px`);
+		expect(rows[1]).toHaveTextContent(`${configured} 800`);
+		expect(rows[2]).toHaveTextContent(`${width} 1280 px`);
+		expect(rows[2]).toHaveTextContent(`${configured} 1,000`);
+		expect(rows[3]).toHaveTextContent(
+			locale === "en" ? "Resolution unknown" : "解像度未確定",
+		);
+		const dataRows = within(screen.getByRole("table")).getAllByRole("row");
+		expect(dataRows[1]).toHaveTextContent(`${width} 640 px`);
+		expect(dataRows[2]).toHaveTextContent(`${configured} 800`);
+		expect(dataRows[3]).toHaveTextContent(`${configured} 1,000`);
+		expect(screen.queryByTestId("per-title-output-target")).toBeNull();
+		expect(source).toEqual(sourceSnapshot);
+		expect(result).toEqual(resultSnapshot);
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps the input order when declared dimensions have no common axis (%s)", (locale) => {
+		const result: PerTitleOutputPreview = {
+			...preview,
+			rows: [
+				{
+					id: "width-only",
+					width: 1280,
+					kind: "fixed",
+					status: "unknown",
+				},
+				{
+					id: "height-only",
+					height: 360,
+					kind: "fixed",
+					status: "unknown",
+				},
+				{ id: "unknown", kind: "unassigned", status: "unknown" },
+			],
+		};
+		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
+		renderLocalized(<PerTitleOutputChart proposal={proposal} />, locale);
+		const rows = within(screen.getByRole("img")).getAllByTestId(
+			"per-title-output-row",
+		);
+		expect(rows[0]).toHaveTextContent(
+			locale === "en" ? "Width 1280 px" : "幅 1280 px",
+		);
+		expect(rows[1]).toHaveTextContent("360 px");
+		expect(rows[2]).toHaveTextContent(
+			locale === "en" ? "Resolution unknown" : "解像度未確定",
+		);
+		expect(screen.queryByTestId("per-title-output-target")).toBeNull();
+		expect(result.rows.map((row) => row.height)).toEqual([
+			undefined,
+			360,
+			undefined,
+		]);
+	});
+
+	it.each([
+		"en",
+		"ja",
 	] as const)("retains a width-only ordinary Stream's resolution in its caption (%s)", (locale) => {
 		const source: PerTitleProposal = {
 			...proposal,

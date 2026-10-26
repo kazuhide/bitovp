@@ -139,11 +139,7 @@ export function assessPerTitleLadder(
 		(stream) =>
 			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	const basis = perTitleDimensionAxis(
-		proposal.api.streams.filter(
-			(stream) => stream.mode !== "PER_TITLE_TEMPLATE",
-		),
-	);
+	const basis = perTitleDimensionAxis(proposal.api.streams);
 	const ordered = basis
 		? [...fixed].sort(
 				(a, b) =>

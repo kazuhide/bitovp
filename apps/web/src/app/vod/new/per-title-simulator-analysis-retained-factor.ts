@@ -2,6 +2,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 } from "@bitovp/core";
 import {
 	type PerTitleAdviceOptions,
@@ -172,9 +173,8 @@ export function perTitleRetainedFactorCandidates(
 	const fixed = proposal.api.streams.filter(
 		(row) => row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	const basis = fixed.every((row) => row.width === undefined)
-		? "height"
-		: "width";
+	const basis = perTitleDimensionAxis(proposal.api.streams);
+	if (!basis) return [];
 	const ordered = [...fixed].sort(
 		(a, b) =>
 			(a[basis] ?? 0) - (b[basis] ?? 0) ||

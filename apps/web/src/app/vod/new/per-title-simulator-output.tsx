@@ -3,6 +3,7 @@
 import {
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 	previewPerTitleOutput,
 } from "@bitovp/core";
 import { useId } from "react";
@@ -232,6 +233,11 @@ export function PerTitleOutputChart({
 					? text.countLimit
 					: text.countUnavailable
 				: undefined;
+	const dimensionAxis = perTitleDimensionAxis(
+		preview.rows.filter(
+			(row) => row.width !== undefined || row.height !== undefined,
+		),
+	);
 	const rows = preview.rows
 		.map((row, index) => {
 			const matches = proposal.api.streams.filter(
@@ -369,15 +375,16 @@ export function PerTitleOutputChart({
 				basis,
 			};
 		})
-		.sort(
-			(a, b) =>
-				(positiveInteger(a.row.height)
-					? a.row.height
-					: Number.POSITIVE_INFINITY) -
-					(positiveInteger(b.row.height)
-						? b.row.height
-						: Number.POSITIVE_INFINITY) || a.index - b.index,
-		);
+		.sort((a, b) => {
+			if (!dimensionAxis) return a.index - b.index;
+			const first = a.row[dimensionAxis];
+			const second = b.row[dimensionAxis];
+			return (
+				(positiveInteger(first) ? first : Number.POSITIVE_INFINITY) -
+					(positiveInteger(second) ? second : Number.POSITIVE_INFINITY) ||
+				a.index - b.index
+			);
+		});
 	const forcedOutput = rows.some(
 		({ row, target, range }) =>
 			row.basis === "forced" && (target !== undefined || range !== undefined),

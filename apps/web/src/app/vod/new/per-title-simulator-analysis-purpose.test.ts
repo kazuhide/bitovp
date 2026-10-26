@@ -1,6 +1,7 @@
 import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
+	type PerTitleProposal,
 	previewPerTitleOutput,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
@@ -18,10 +19,14 @@ import {
 import { perTitleAdvicePreview } from "./per-title-simulator-advice-preview-model";
 import {
 	analyzePerTitleSettings,
+	type PerTitleAnalysisIntent,
 	perTitleAnalysisContextKey,
 } from "./per-title-simulator-analysis";
+import { perTitleAnalysisCandidates } from "./per-title-simulator-analysis-candidates";
 import { assessPerTitleCountStructure } from "./per-title-simulator-analysis-count";
+import { perTitleCountDirectedCandidates } from "./per-title-simulator-analysis-count-layouts";
 import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
+import { perTitleWholeLadderCandidates } from "./per-title-simulator-analysis-layouts";
 import { assessPerTitleOrdinaryCap } from "./per-title-simulator-analysis-ordinary-cap";
 import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
 import { perTitleRetainedFactorCandidates } from "./per-title-simulator-analysis-retained-factor";
@@ -1567,5 +1572,343 @@ describe("Per-Title evaluation purpose boundaries", () => {
 		expect(result.findings.map(({ code }) => code)).toContain(
 			"global-bitrate-below-api-minimum",
 		);
+	});
+});
+
+const geometryShapes = [
+	"partial-width",
+	"width-only",
+	"all-dimensions",
+	"fixed-dimensions",
+] as const;
+type GeometryShape = (typeof geometryShapes)[number];
+const allIntents: readonly PerTitleAnalysisIntent[] = [
+	"adaptive",
+	"cap",
+	"bandwidth",
+	"count",
+	"preserve",
+];
+const heldFactor =
+	"fixedResolutionAndBitrateConfiguration.forcedRenditionAboveHighestFixedRepresentationFactor";
+
+function equivalentGeometry(
+	goal: PerTitleGoal,
+	shape: GeometryShape,
+): PerTitleGoal {
+	const transform = <T extends { height?: number; width?: number }>(
+		row: T,
+		include: boolean,
+	) => {
+		if (!include) return { ...row };
+		if (row.height === undefined)
+			throw new Error("Expected an explicit fixture height");
+		const { height, ...rest } = row;
+		return {
+			...rest,
+			...(shape === "width-only" ? {} : { height }),
+			width: height * 2,
+		};
+	};
+	return {
+		...goal,
+		rows: goal.rows?.map((row, index) =>
+			transform(row, shape !== "partial-width" || index === 0),
+		),
+		automaticTemplates: goal.automaticTemplates?.map((row) =>
+			transform(row, shape === "width-only" || shape === "all-dimensions"),
+		),
+	};
+}
+
+function declaredGeometry(goal: PerTitleGoal) {
+	return [...(goal.rows ?? []), ...(goal.automaticTemplates ?? [])].map(
+		(row) => ({
+			id: row.id,
+			...(Object.hasOwn(row, "height") ? { height: row.height } : {}),
+			...(Object.hasOwn(row, "width") ? { width: row.width } : {}),
+			...("mode" in row ? { mode: row.mode } : {}),
+		}),
+	);
+}
+
+const stableValue = (value: unknown) =>
+	JSON.stringify(value, (_key, item) =>
+		item !== null && typeof item === "object" && !Array.isArray(item)
+			? Object.fromEntries(
+					Object.entries(item).sort(([a], [b]) => a.localeCompare(b)),
+				)
+			: item,
+	);
+const withoutDimensions = <T extends { height?: number; width?: number }>(
+	row: T,
+) => {
+	const { height: _height, width: _width, ...settings } = row;
+	return settings;
+};
+const candidateSettings = (goal: PerTitleGoal) =>
+	stableValue({
+		...goal,
+		rows: goal.rows?.map(withoutDimensions),
+		automaticTemplates: goal.automaticTemplates?.map(withoutDimensions),
+	});
+const apiSettings = (api: PerTitleProposal["api"]) =>
+	stableValue({
+		global: api.global,
+		streams: api.streams
+			.map(withoutDimensions)
+			.sort((a, b) => a.rowId.localeCompare(b.rowId)),
+	});
+
+function mixedGeometryGoal(codec: PerTitleGoal["codec"]): PerTitleGoal {
+	const goal = mixedPreserveGoal(codec);
+	return {
+		...goal,
+		rows: goal.rows?.map((row) => ({
+			...row,
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+		})),
+	};
+}
+
+function geometryOptions(
+	goal: PerTitleGoal,
+	intent: PerTitleAnalysisIntent,
+	mask: number,
+): PerTitleAdviceOptions {
+	return {
+		referenceGoal: goal,
+		contextKey: perTitleAnalysisContextKey(intent),
+		protectedFields: [
+			{
+				scope: "global",
+				key: goal.codec === "H265V2" ? "targetQualityQp" : "targetQualityCrf",
+			},
+			...(mask & 1 ? [{ scope: "global" as const, key: heldFactor }] : []),
+			...(mask & 2
+				? [{ scope: "stream" as const, rowId: "band-0", key: "minBitrate" }]
+				: []),
+			...(mask & 4
+				? [{ scope: "stream" as const, rowId: "band-0", key: "maxBitrate" }]
+				: []),
+		],
+	};
+}
+
+describe("geometry invariance across every Per-Title evaluation candidate family", () => {
+	it.each([
+		"partial-width",
+		"fixed-dimensions",
+	] as const)("retains the held-factor repair with %s declarations", (shape) => {
+		const goal = mixedGeometryGoal("H264");
+		const transformed = equivalentGeometry(goal, shape);
+		const result = analyzePerTitleSettings(
+			transformed,
+			"preserve",
+			geometryOptions(transformed, "preserve", 3),
+		);
+		expect(result.ladder.lowerSlots, shape).not.toBeNull();
+		expect(result.decision.status, shape).toBe("proposal");
+		expect(result.advice.length, shape).toBeGreaterThan(0);
+	});
+
+	it.each(
+		mixedCodecs.flatMap((codec) =>
+			allIntents.flatMap((intent) =>
+				Array.from({ length: 8 }, (_, mask) => [codec, intent, mask] as const),
+			),
+		),
+	)("keeps %s %s results for every equivalent geometry with protected mask %s", (codec, intent, mask) => {
+		const goal = mixedGeometryGoal(codec);
+		const baseline = analyzePerTitleSettings(
+			goal,
+			intent,
+			geometryOptions(goal, intent, mask),
+		);
+		const baselineApis = baseline.advice
+			.map((advice) => apiSettings(advice.proposal.api))
+			.sort();
+		for (const shape of geometryShapes) {
+			const transformed = equivalentGeometry(goal, shape);
+			const before = structuredClone(transformed);
+			const options = geometryOptions(transformed, intent, mask);
+			const result = analyzePerTitleSettings(transformed, intent, options);
+			expect(result.decision.status, shape).toBe(baseline.decision.status);
+			expect(
+				result.advice.map((advice) => apiSettings(advice.proposal.api)).sort(),
+				shape,
+			).toEqual(baselineApis);
+			expect(result.ladder.lowerSlots, shape).toEqual(
+				baseline.ladder.lowerSlots,
+			);
+			expect(result.ladder.upperSlots, shape).toEqual(
+				baseline.ladder.upperSlots,
+			);
+			expect(result.countStructure.status, shape).toBe(
+				baseline.countStructure.status,
+			);
+			expect(result.reach.count, shape).toEqual(baseline.reach.count);
+			for (const advice of result.advice) {
+				expect(declaredGeometry(advice.goal), shape).toEqual(
+					declaredGeometry(transformed),
+				);
+				expect(advice.goal.automaticTemplates, shape).toEqual(
+					transformed.automaticTemplates,
+				);
+				expect(advice.proposal.countGuarantee).toBe(false);
+				for (const field of options.protectedFields ?? []) {
+					if (typeof field === "string")
+						throw new Error("Expected a structured fixture field");
+					expect(
+						getPerTitleGoalSetting(
+							advice.goal,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					).toEqual(
+						getPerTitleGoalSetting(
+							transformed,
+							field.scope,
+							field.key,
+							field.rowId,
+						),
+					);
+				}
+			}
+			expect(transformed).toEqual(before);
+		}
+	});
+
+	it.each([
+		"generic-closed",
+		"count-directed",
+		"whole-ladder",
+		"retained-factor",
+	] as const)("keeps the %s candidate family equivalent before ranking and certification", (family) => {
+		let goal = mixedGeometryGoal("H264");
+		if (family === "generic-closed") goal = pointGoal("H264", 2, 4_000_000);
+		if (family === "count-directed")
+			goal = {
+				...goal,
+				minBitrate: 100_000,
+				maxBitrate: 5_600_000,
+				maxBitrateStepSize: 5,
+				rows: [
+					[400, 300_000, 420_000],
+					[400, 640_000, 840_000],
+					[600, 1_300_000, 1_700_000],
+					[800, 2_700_000, 3_500_000],
+				].map(([height, minBitrate, maxBitrate], index) => ({
+					id: `band-${index}`,
+					height,
+					minBitrate,
+					maxBitrate,
+					bitrateSelectionMode: "COMPLEXITY_RANGE",
+					lowComplexityBoundaryForMaxBitrate: 3_240_000,
+					highComplexityBoundaryForMaxBitrate: 5_600_000,
+				})),
+				automaticTemplates: [
+					{ id: "lower", height: 200 },
+					{ id: "upper-a", height: 1000 },
+					{ id: "upper-b", height: 1200 },
+				],
+			};
+		const collect = (source: PerTitleGoal) => {
+			const proposal = tunePerTitleSettings(source, source).proposal;
+			const options = geometryOptions(
+				source,
+				"preserve",
+				family === "retained-factor" ? 3 : 0,
+			);
+			if (family === "generic-closed")
+				return perTitleAnalysisCandidates(
+					source,
+					proposal,
+					assessPerTitleReach(source, proposal),
+					"preserve",
+					options,
+				);
+			if (family === "count-directed")
+				return perTitleCountDirectedCandidates(source, proposal, options);
+			if (family === "whole-ladder")
+				return perTitleWholeLadderCandidates(source, proposal, options);
+			return perTitleRetainedFactorCandidates(source, proposal, options);
+		};
+		const baseline = collect(goal);
+		expect(baseline.length).toBeGreaterThan(0);
+		for (const shape of geometryShapes) {
+			const transformed = equivalentGeometry(goal, shape);
+			const candidates = collect(transformed);
+			expect(candidates.map(candidateSettings).sort(), shape).toEqual(
+				baseline.map(candidateSettings).sort(),
+			);
+			for (const candidate of candidates)
+				expect(declaredGeometry(candidate), shape).toEqual(
+					declaredGeometry(transformed),
+				);
+		}
+	});
+
+	it.each([
+		"no-shared-axis",
+		"invalid-width",
+		"invalid-height",
+		"tied-highest",
+	] as const)("does not certify %s geometry under any purpose or candidate family", (shape) => {
+		let goal = mixedGeometryGoal("H264");
+		if (shape === "no-shared-axis")
+			goal = {
+				...goal,
+				rows: goal.rows?.map(({ height, ...row }, index) =>
+					index === 0 ? { ...row, width: 320 } : { ...row, height },
+				),
+			};
+		if (shape === "invalid-width")
+			goal = {
+				...goal,
+				rows: goal.rows?.map((row, index) =>
+					index === 0 ? { ...row, width: Number.NaN } : row,
+				),
+			};
+		if (shape === "invalid-height" || shape === "tied-highest") {
+			goal = equivalentGeometry(goal, "width-only");
+			goal.rows = goal.rows?.map((row, index) =>
+				shape === "invalid-height"
+					? index === 0
+						? { ...row, height: Number.NaN }
+						: row
+					: index === 2
+						? { ...row, width: 1920 }
+						: row,
+			);
+		}
+		const before = structuredClone(goal);
+		const proposal = tunePerTitleSettings(goal, goal).proposal;
+		for (const intent of allIntents) {
+			const options = geometryOptions(goal, intent, 0);
+			const result = analyzePerTitleSettings(goal, intent, options);
+			expect(result.advice, intent).toEqual([]);
+			expect(result.decision.status, intent).not.toBe("proposal");
+			const candidates = [
+				...perTitleAnalysisCandidates(
+					goal,
+					proposal,
+					assessPerTitleReach(goal, proposal),
+					intent,
+					options,
+				),
+				...perTitleCountDirectedCandidates(goal, proposal, options),
+				...perTitleWholeLadderCandidates(goal, proposal, options),
+				...perTitleRetainedFactorCandidates(goal, proposal, options),
+			];
+			for (const candidate of candidates) {
+				expect(declaredGeometry(candidate)).toEqual(declaredGeometry(goal));
+				expect(
+					createPerTitleEvaluationAdvice(goal, candidate, options),
+				).toBeNull();
+			}
+		}
+		expect(goal).toEqual(before);
 	});
 });

@@ -4,6 +4,7 @@ import {
 	findCapReachingMaximumStep,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 import { hasPerTitleEvaluationCountEvidence } from "./per-title-simulator-advice";
@@ -135,11 +136,7 @@ export function perTitleAnalysisCandidates(
 			!seed.rows.every((row) => row.bitrateSelectionMode === "COMPLEXITY_RANGE")
 		)
 			return;
-		const basis = seed.rows.every((row) => row.width === undefined)
-			? "height"
-			: seed.rows.every((row) => row.width !== undefined)
-				? "width"
-				: null;
+		const basis = perTitleDimensionAxis(seed.rows);
 		if (
 			!basis ||
 			new Set(seed.rows.map((row) => row[basis])).size !== seed.rows.length

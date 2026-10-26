@@ -3,6 +3,7 @@ import {
 	complexityTargetsDoNotDecrease,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 } from "@bitovp/core";
 import {
 	type PerTitleAdviceOptions,
@@ -40,13 +41,7 @@ export function perTitleWholeLadderCandidates(
 	const fixed = proposal.api.streams.filter(
 		(row) => row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	const basis = fixed.every(
-		(row) => row.width === undefined && typeof row.height === "number",
-	)
-		? "height"
-		: fixed.every((row) => typeof row.width === "number")
-			? "width"
-			: null;
+	const basis = perTitleDimensionAxis(proposal.api.streams);
 	if (
 		!basis ||
 		fixed.length !== goal.rows.length ||

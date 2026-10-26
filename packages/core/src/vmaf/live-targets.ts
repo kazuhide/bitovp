@@ -149,7 +149,7 @@ export function enumerateLiveCaptureTargets(
 				: kind === "FMP4" && "initSegmentName" in muxing
 					? { initSegmentName: muxing.initSegmentName }
 					: {}),
-			segmentNaming: muxing.segmentNamingTemplate ?? muxing.segmentNaming,
+			segmentNaming: muxing.segmentNamingTemplate || muxing.segmentNaming,
 			...(muxing.segmentNamingTemplate
 				? { segmentNamingIsTemplate: true }
 				: {}),

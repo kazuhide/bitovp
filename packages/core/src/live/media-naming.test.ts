@@ -74,6 +74,101 @@ describe("Live media naming", () => {
 	});
 
 	it.each([
+		false,
+		true,
+	])("expands random-looking segment tokens only for a real template (template=%s)", (template) => {
+		const plan = fixture();
+		const muxing = plan.muxings[0];
+		if (muxing?.kind !== "FMP4") throw new Error("Missing fMP4");
+		const filename = "seg-{rand_chars}-%number%.mp4";
+		muxing.segmentNaming = filename;
+		if (template) muxing.segmentNamingTemplate = filename;
+		muxing.initSegmentName = `seg-${"A".repeat(32)}-0.mp4`;
+		const issues = liveManifestPathIssues(plan);
+		if (template)
+			expect(issues).toContainEqual(
+				expect.objectContaining({ code: "LIVE_OUTPUT_NAMESPACE_COLLISION" }),
+			);
+		else expect(issues).toEqual([]);
+	});
+
+	it("detects a literal random-looking segment name colliding with a manifest", () => {
+		const plan = fixture();
+		const muxing = plan.muxings[0],
+			manifest = plan.liveManifests[0];
+		if (muxing?.kind !== "FMP4" || !muxing.destination || !manifest)
+			throw new Error("Missing fixtures");
+		muxing.segmentNaming = "seg-{rand_chars}-%number%.m3u8";
+		manifest.destination = { ...muxing.destination };
+		manifest.manifestName = "seg-{rand_chars}-0.m3u8";
+		expect(liveManifestPathIssues(plan)).toContainEqual(
+			expect.objectContaining({
+				code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
+				path: "muxings[0].segmentNaming",
+			}),
+		);
+	});
+
+	it.each([
+		false,
+		true,
+	])("keeps a template's directory prefix literal (expanded directory=%s)", (expandedDirectory) => {
+		const plan = fixture();
+		const muxing = plan.muxings[0],
+			manifest = plan.liveManifests[0];
+		if (muxing?.kind !== "FMP4" || !muxing.destination || !manifest)
+			throw new Error("Missing fixtures");
+		muxing.destination.path = "media/{rand_chars}/";
+		muxing.segmentNamingTemplate = "seg-{rand_chars:8}-%number%.m3u8";
+		manifest.destination = {
+			outputKey: muxing.destination.outputKey,
+			path: expandedDirectory
+				? `media/${"A".repeat(32)}/`
+				: "media/{rand_chars}/",
+		};
+		manifest.manifestName = "seg-Ab12Cd34-0.m3u8";
+		const issues = liveManifestPathIssues(plan);
+		if (expandedDirectory) expect(issues).toEqual([]);
+		else
+			expect(issues).toContainEqual(
+				expect.objectContaining({ code: "LIVE_OUTPUT_NAMESPACE_COLLISION" }),
+			);
+	});
+
+	it("compares normalized physical paths while retaining filename token origin", () => {
+		const plan = fixture();
+		const muxing = plan.muxings[0];
+		const manifest = plan.liveManifests[0];
+		if (muxing?.kind !== "FMP4" || !muxing.destination || !manifest)
+			throw new Error("Missing fixtures");
+		muxing.destination.path = "root/./media/unused/..";
+		muxing.segmentNamingTemplate = "child/../seg-{rand_chars:8}-%number%.m3u8";
+		manifest.destination = {
+			outputKey: muxing.destination.outputKey,
+			path: "root/media",
+		};
+		manifest.manifestName = "seg-Ab12Cd34-0.m3u8";
+		expect(liveManifestPathIssues(plan)).toContainEqual(
+			expect.objectContaining({ code: "LIVE_OUTPUT_NAMESPACE_COLLISION" }),
+		);
+	});
+
+	it("checks the literal fallback when a segment template is empty", () => {
+		const plan = fixture();
+		const muxing = plan.muxings[0];
+		if (muxing?.kind !== "FMP4") throw new Error("Missing fMP4");
+		muxing.segmentNaming = "segment_%number%.mp4";
+		muxing.segmentNamingTemplate = "";
+		muxing.initSegmentName = "segment_0.mp4";
+		expect(liveManifestPathIssues(plan)).toContainEqual(
+			expect.objectContaining({
+				code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
+				path: "muxings[0].segmentNaming",
+			}),
+		);
+	});
+
+	it.each([
 		["track_%number%.mp4", "track_meta.mp4"],
 		["seg_{rand_chars:8}_%number%.mp4", "seg_short_0.mp4"],
 		["seg_{rand_chars}_%number%.mp4", "seg_short_0.mp4"],

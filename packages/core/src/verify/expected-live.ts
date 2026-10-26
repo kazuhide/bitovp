@@ -372,8 +372,8 @@ export function compileExpectedLiveArtefacts(
 				...(muxing.kind === "CMAF" ? { muxingKind: "CMAF" as const } : {}),
 				outputKey: dest?.outputKey ?? "",
 				dir: pathPattern(withTrailingSlash(dest?.path ?? "")),
-				segmentNaming: muxing.segmentNamingTemplate ?? muxing.segmentNaming,
-				...(muxing.segmentNamingTemplate !== undefined
+				segmentNaming: muxing.segmentNamingTemplate || muxing.segmentNaming,
+				...(muxing.segmentNamingTemplate
 					? { segmentNamingIsTemplate: true as const }
 					: {}),
 				segmentLengthSec: muxing.segmentLength,

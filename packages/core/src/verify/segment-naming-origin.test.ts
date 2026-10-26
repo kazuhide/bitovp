@@ -14,6 +14,7 @@ describe.each([
 	it.each([
 		false,
 		true,
+		"",
 	])("preserves literal versus template origin (template=%s)", (template) => {
 		const naming = `seg-{rand_chars}-%number%.${kind === "TS" ? "ts" : "m4s"}`;
 		for (const live of [false, true]) {
@@ -40,7 +41,10 @@ describe.each([
 					segmentNaming: "literal_%number%.m4s",
 					...(template
 						? { segmentNamingTemplate: naming }
-						: { segmentNaming: naming }),
+						: {
+								segmentNaming: naming,
+								...(template === "" ? { segmentNamingTemplate: "" } : {}),
+							}),
 				}),
 			);
 			const expected = live

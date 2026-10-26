@@ -9,25 +9,49 @@ import type { LiveChannelPlan } from "./schema";
 
 /** Match provider-expanded names while treating every other character literally. */
 function segmentPathPattern(
-	pattern: string,
+	directory: string,
+	filename: string,
+	namingTemplate: boolean,
 	literalCharacterLimit: number,
 ): RegExp {
-	const source = pattern
-		.split(/(%[a-zA-Z]+%|\{(?:segment_)?rand_chars(?::[1-9]\d*)?\})/g)
-		.map((part) => {
-			if (part === "%number%") return "\\d+";
-			if (/^%[a-zA-Z]+%$/.test(part)) return "[^/]+";
-			const random = /^\{(?:segment_)?rand_chars(?::([1-9]\d*))?\}$/.exec(part);
-			if (random) {
-				const length = Number(random[1] ?? 32);
-				// Longer tokens cannot match any reserved filename; avoid unbounded quantifiers.
-				return length > literalCharacterLimit
-					? "(?!)"
-					: `[A-Za-z0-9]{${length}}`;
-			}
-			return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	// Apply outputFilePath's normalization while retaining which components came
+	// from the filename. Output directory names never expand filename tokens.
+	const parts: { value: string; fromFilename: boolean }[] = [];
+	for (const [value, fromFilename] of [
+		[directory, false],
+		[filename, true],
+	] as const) {
+		for (const part of value.split("/")) {
+			if (part === ".." && parts.length && parts.at(-1)?.value !== "..")
+				parts.pop();
+			else if (part && part !== ".") parts.push({ value: part, fromFilename });
+		}
+	}
+	const escapePattern = (literal: string) =>
+		literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const source = parts
+		.map(({ value, fromFilename }) => {
+			if (!fromFilename) return escapePattern(value);
+			return value
+				.split(/(%[a-zA-Z]+%|\{(?:segment_)?rand_chars(?::[1-9]\d*)?\})/g)
+				.map((part) => {
+					if (part === "%number%") return "\\d+";
+					if (/^%[a-zA-Z]+%$/.test(part)) return "[^/]+";
+					const random = /^\{(?:segment_)?rand_chars(?::([1-9]\d*))?\}$/.exec(
+						part,
+					);
+					if (random && namingTemplate) {
+						const length = Number(random[1] ?? 32);
+						// Longer tokens cannot match any reserved filename; avoid unbounded quantifiers.
+						return length > literalCharacterLimit
+							? "(?!)"
+							: `[A-Za-z0-9]{${length}}`;
+					}
+					return escapePattern(part);
+				})
+				.join("");
 		})
-		.join("");
+		.join("/");
 	return new RegExp(`^${source}$`);
 }
 
@@ -89,14 +113,19 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 	// init file, playlist or archive. Check the physical targets already reserved.
 	for (const [index, muxing] of plan.muxings.entries()) {
 		if (muxing.kind === "MP4" || !muxing.destination) continue;
-		const filename = muxing.segmentNamingTemplate ?? muxing.segmentNaming;
+		const filename = muxing.segmentNamingTemplate || muxing.segmentNaming;
 		if (!/[%{]/.test(filename)) continue;
 		for (const token of outputFileKeys(plan, {
 			destination: muxing.destination,
 			filename,
 		})) {
 			const dynamic: { storage: string; path: string } = JSON.parse(token);
-			const pattern = segmentPathPattern(dynamic.path, literalCharacterLimit);
+			const pattern = segmentPathPattern(
+				muxing.destination.path,
+				filename,
+				Boolean(muxing.segmentNamingTemplate),
+				literalCharacterLimit,
+			);
 			for (const literal of literalFiles) {
 				if (literal.storage !== dynamic.storage || !pattern.test(literal.path))
 					continue;

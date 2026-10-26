@@ -628,8 +628,8 @@ export function compileExpectedArtefacts(
 				"segmentNamingTemplate" in muxing
 					? muxing.segmentNamingTemplate
 					: undefined;
-			expected.segmentNaming = template ?? muxing.segmentNaming;
-			if (template !== undefined) expected.segmentNamingIsTemplate = true;
+			expected.segmentNaming = template || muxing.segmentNaming;
+			if (template) expected.segmentNamingIsTemplate = true;
 			expected.segmentLengthSec = muxing.segmentLength;
 		}
 		if (muxing.kind === "CMAF") expected.muxingKind = "CMAF";

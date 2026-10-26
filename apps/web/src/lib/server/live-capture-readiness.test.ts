@@ -157,6 +157,34 @@ describe("Live capture readiness at the request boundary", () => {
 			).toBe(kind);
 		}
 	});
+	it.each([
+		true,
+		false,
+	])("uses the literal fallback for an empty template (numbered=%s)", async (numbered) => {
+		const literal = structuredClone(plan);
+		for (const muxing of literal.muxings) {
+			if (muxing.kind === "MP4") continue;
+			muxing.segmentNamingTemplate = "";
+			muxing.segmentNaming = `seg-{rand_chars}-${numbered ? "%number%" : "latest"}.ts`;
+		}
+		const resolve = vi.fn(async () =>
+			browser(
+				vi.fn(async ({ prefix }) => ({
+					objects: [
+						object(
+							`${prefix}seg-{rand_chars}-${numbered ? "17" : "latest"}.ts`,
+						),
+					],
+					prefixes: [],
+				})),
+			),
+		);
+		expect(
+			(await checkLiveCaptureReadiness(literal, createdAt, resolve, () => now))
+				.kind,
+		).toBe(numbered ? "ready" : "unobservable");
+		if (!numbered) expect(resolve).not.toHaveBeenCalled();
+	});
 	it("requires a fresh CMAF init segment and media segment before capture is ready", async () => {
 		const cmaf = structuredClone(plan);
 		cmaf.muxings = cmaf.muxings.map((muxing) => ({

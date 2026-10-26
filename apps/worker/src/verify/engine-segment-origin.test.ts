@@ -3,6 +3,8 @@ import { join } from "node:path";
 import {
 	compileExpectedArtefacts,
 	compileExpectedLiveArtefacts,
+	compileLiveChannel,
+	compilePlan,
 	encodingPlanSchema,
 	liveChannelPlanSchema,
 } from "@bitovp/core";
@@ -10,9 +12,16 @@ import { describe, expect, it } from "vitest";
 import { type EngineDeps, verifyArtefacts } from "./engine";
 import { verifyLiveChannel } from "./engine-live";
 
-const cases = [false, true].flatMap((template) =>
-	["rand_chars", "rand_chars:8"].map((token) => ({ template, token })),
-);
+const cases = [
+	...[false, true].flatMap((template) =>
+		["rand_chars", "rand_chars:8"].map((token) => ({
+			template,
+			token,
+			emptyTemplate: false,
+		})),
+	),
+	{ template: false, token: "rand_chars", emptyTemplate: true },
+];
 const kinds = ["FMP4", "TS", "CMAF"] as const;
 
 function fixture(family: "live" | "plan", name: string) {
@@ -34,6 +43,7 @@ function naming(
 	kind: (typeof kinds)[number],
 	template: boolean,
 	token: string,
+	emptyTemplate: boolean,
 ) {
 	const suffix = kind === "TS" ? "ts" : "m4s";
 	const literal = `seg-{${token}}-%number%.${suffix}`;
@@ -44,7 +54,10 @@ function naming(
 					segmentNaming: `default_%number%.${suffix}`,
 					segmentNamingTemplate: literal,
 				}
-			: { segmentNaming: literal },
+			: {
+					segmentNaming: literal,
+					...(emptyTemplate ? { segmentNamingTemplate: "" } : {}),
+				},
 		written: template ? expanded : literal.replace("%number%", "1"),
 		wrong: template ? literal.replace("%number%", "1") : expanded,
 	};
@@ -75,15 +88,16 @@ function depsFor(keys: string[]): EngineDeps {
 describe.each(kinds)("%s segment source origin", (kind) => {
 	it.each(
 		cases,
-	)("verifies Live source names (template=$template, token=$token)", async ({
+	)("verifies Live source names (template=$template, empty=$emptyTemplate, token=$token)", async ({
 		template,
 		token,
+		emptyTemplate,
 	}) => {
 		const raw = fixture(
 			"live",
 			kind === "TS" && !template ? "live-akamai-msl-ts" : "live-rtmp-simple",
 		);
-		const names = naming(kind, template, token);
+		const names = naming(kind, template, token, emptyTemplate);
 		raw.muxings = raw.muxings.map(
 			(muxing: { key: string; streamKey: string; destination: unknown }) => ({
 				key: muxing.key,
@@ -94,9 +108,21 @@ describe.each(kinds)("%s segment source origin", (kind) => {
 				...names.fields,
 			}),
 		);
-		const expected = compileExpectedLiveArtefacts(
-			liveChannelPlanSchema.parse(raw),
-		);
+		const plan = liveChannelPlanSchema.parse(raw);
+		const expected = compileExpectedLiveArtefacts(plan);
+		for (const muxing of expected.muxings) {
+			const payload = compileLiveChannel(plan).find(
+				(op) => op.step === `muxing:${muxing.muxingKey}`,
+			)?.payload;
+			expect(payload).toHaveProperty(
+				template ? "segmentNamingTemplate" : "segmentNaming",
+				muxing.segmentNaming,
+			);
+			expect(payload).not.toHaveProperty(
+				template ? "segmentNaming" : "segmentNamingTemplate",
+			);
+			expect(muxing.segmentNamingIsTemplate === true).toBe(template);
+		}
 		const objects = (filename: string) =>
 			expected.muxings.flatMap((muxing) => [
 				...(kind === "TS"
@@ -132,16 +158,17 @@ describe.each(kinds)("%s segment source origin", (kind) => {
 		cases.flatMap((entry) =>
 			[false, true].map((perTitle) => ({ ...entry, perTitle })),
 		),
-	)("verifies VOD source names (template=$template, token=$token, perTitle=$perTitle)", async ({
+	)("verifies VOD source names (template=$template, empty=$emptyTemplate, token=$token, perTitle=$perTitle)", async ({
 		template,
 		token,
 		perTitle,
+		emptyTemplate,
 	}) => {
 		const raw = fixture("plan", "fixed-bitrate-hls-on-aws");
 		const video = raw.renditions.find(
 			(row: { codec: string }) => row.codec === "H264",
 		);
-		const names = naming(kind, template, token);
+		const names = naming(kind, template, token, emptyTemplate);
 		raw.renditions = [
 			{
 				...video,
@@ -166,7 +193,21 @@ describe.each(kinds)("%s segment source origin", (kind) => {
 			},
 		];
 		raw.manifests = [];
-		const expected = compileExpectedArtefacts(encodingPlanSchema.parse(raw));
+		const plan = encodingPlanSchema.parse(raw);
+		const expected = compileExpectedArtefacts(plan);
+		const payload = compilePlan(plan).find(
+			(op) => op.step === "muxing:video",
+		)?.payload;
+		expect(payload).toHaveProperty(
+			template ? "segmentNamingTemplate" : "segmentNaming",
+			expected.muxings[0]?.segmentNaming,
+		);
+		expect(payload).not.toHaveProperty(
+			template ? "segmentNaming" : "segmentNamingTemplate",
+		);
+		expect(expected.muxings[0]?.segmentNamingIsTemplate === true).toBe(
+			template,
+		);
 		const prefix = perTitle ? "out/video/360p_400000_unit/" : "out/video/";
 		for (const [filename, verdict] of [
 			[names.written, "PASS"],

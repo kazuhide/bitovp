@@ -11,6 +11,7 @@ import {
 	denoiseHqdn3dFilterSchema,
 	ebuR128FilterSchema,
 	rotateFilterSchema,
+	scaleFilterSchema,
 	textFilterSchema,
 	unsharpFilterSchema,
 	watermarkFilterSchema,
@@ -1193,6 +1194,7 @@ export const deinterlaceFilterSchema = z.strictObject({
 
 export const planFilterSchema = z.discriminatedUnion("kind", [
 	deinterlaceFilterSchema,
+	scaleFilterSchema,
 	cropFilterSchema,
 	rotateFilterSchema,
 	watermarkFilterSchema,

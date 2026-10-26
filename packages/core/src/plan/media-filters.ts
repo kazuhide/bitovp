@@ -14,6 +14,45 @@ const edges = {
 	bottom: distance.optional(),
 	unit: unit.optional(),
 };
+export const SCALING_ALGORITHMS = [
+	"FAST_BILINEAR",
+	"BILINEAR",
+	"BICUBIC",
+	"EXPERIMENTAL",
+	"NEAREST_NEIGHBOR",
+	"AVERAGING_AREA",
+	"BICUBIC_LUMA_BILINEAR_CHROMA",
+	"GAUSS",
+	"SINC",
+	"LANCZOS",
+	"SPLINE",
+] as const;
+const positiveInt32 = z.number().int().positive().max(2147483647);
+export const scaleFilterSchema = z
+	.strictObject({
+		key,
+		kind: z.literal("SCALE"),
+		width: positiveInt32.optional(),
+		height: positiveInt32.optional(),
+		scalingAlgorithm: z.enum(SCALING_ALGORITHMS).optional(),
+		sampleAspectRatioNumerator: positiveInt32.optional(),
+		sampleAspectRatioDenominator: positiveInt32.optional(),
+	})
+	.superRefine((v, ctx) => {
+		if (
+			(v.sampleAspectRatioNumerator === undefined) !==
+			(v.sampleAspectRatioDenominator === undefined)
+		)
+			ctx.addIssue({
+				code: "custom",
+				message: "Set both the sample aspect ratio numerator and denominator.",
+				path: [
+					v.sampleAspectRatioNumerator === undefined
+						? "sampleAspectRatioNumerator"
+						: "sampleAspectRatioDenominator",
+				],
+			});
+	});
 export const cropFilterSchema = z
 	.strictObject({ key, kind: z.literal("CROP"), ...edges })
 	.superRefine((v, ctx) => {
@@ -169,6 +208,7 @@ export const unsharpFilterSchema = z.strictObject({
 	chromaEffectStrength: z.number().min(-1.5).max(1.5).optional(),
 });
 export const mediaFilterSchema = z.discriminatedUnion("kind", [
+	scaleFilterSchema,
 	cropFilterSchema,
 	rotateFilterSchema,
 	watermarkFilterSchema,
@@ -181,6 +221,7 @@ export const mediaFilterSchema = z.discriminatedUnion("kind", [
 export type MediaFilter = z.infer<typeof mediaFilterSchema>;
 export const FILTER_ENDPOINTS = {
 	DEINTERLACE: "deinterlace",
+	SCALE: "scale",
 	CROP: "crop",
 	ROTATE: "rotate",
 	WATERMARK: "watermark",

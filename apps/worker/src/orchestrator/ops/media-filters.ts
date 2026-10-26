@@ -7,6 +7,8 @@ import {
 	EbuR128SinglePassFilter,
 	PositionUnit,
 	RotateFilter,
+	ScaleFilter,
+	ScalingAlgorithm,
 	TextFilter,
 	TextFilterFont,
 	UnsharpFilter,
@@ -17,7 +19,7 @@ import type { OpsContext } from "./context";
 import { optStr } from "./exec-shared";
 import { optEnum } from "./shared";
 
-/** SDK 1.280.0 boundary. Snapshot only the resource id: image URLs are capabilities. */
+/** SDK 1.285.0 boundary. Snapshot only the resource id: image URLs are capabilities. */
 export async function createMediaFilter(
 	ctx: OpsContext,
 	kind: MediaFilter["kind"],
@@ -26,6 +28,7 @@ export async function createMediaFilter(
 	const { api, audited, id } = ctx;
 	const endpoints = {
 		CROP: "crop",
+		SCALE: "scale",
 		DENOISE_HQDN3D: "denoise-hqdn3d",
 		UNSHARP: "unsharp",
 		ROTATE: "rotate",
@@ -47,6 +50,17 @@ export async function createMediaFilter(
 					new CropFilter({
 						...p,
 						unit: optEnum(PositionUnit, optStr(p.unit), "PositionUnit"),
+					}),
+				);
+			case "SCALE":
+				return api.encoding.filters.scale.create(
+					new ScaleFilter({
+						...p,
+						scalingAlgorithm: optEnum(
+							ScalingAlgorithm,
+							optStr(p.scalingAlgorithm),
+							"ScalingAlgorithm",
+						),
 					}),
 				);
 			case "ROTATE":

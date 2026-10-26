@@ -247,6 +247,7 @@ export async function executeMediaStep(
 		case "CREATE_FILTER_DENOISE_HQDN3D":
 		case "CREATE_FILTER_UNSHARP":
 		case "CREATE_FILTER_CROP":
+		case "CREATE_FILTER_SCALE":
 		case "CREATE_FILTER_ROTATE":
 		case "CREATE_FILTER_WATERMARK":
 		case "CREATE_FILTER_TEXT":

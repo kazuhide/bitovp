@@ -3867,6 +3867,12 @@ export const en = {
 		codecGopRange:
 			"Minimum GOP length must not exceed maximum GOP length (frames).",
 		codecSarPair: "Set both the sample aspect ratio numerator and denominator.",
+		scaleFilterDimensionsHelp:
+			"Optional filter output size. One dimension preserves the source aspect ratio; both blank keep the source dimensions.",
+		scaleFilterAlgorithmHelp:
+			"Algorithm for this filter. Blank uses the API default. Later codec resizing is configured separately.",
+		scaleFilterSarHelp:
+			"Pixel aspect ratio. Set both numerator and denominator, or leave both blank.",
 		codecAspectConflict:
 			"Choose sample aspect ratio or display aspect ratio, not both.",
 		codecQpRange:

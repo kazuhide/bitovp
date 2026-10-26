@@ -40,6 +40,10 @@ export const SENTENCE_TO_KEY: ReadonlyMap<string, MessageKey> = new Map<
 		"wizard.codecDarPair",
 	],
 	[
+		"Set both the sample aspect ratio numerator and denominator.",
+		"wizard.codecSarPair",
+	],
+	[
 		"Provide both Basic authentication username and password",
 		"zerr.spekeBasicPair",
 	],

@@ -232,6 +232,7 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/chunked-text",
 	},
 	CREATE_FILTER_CROP: { method: "POST", template: "/encoding/filters/crop" },
+	CREATE_FILTER_SCALE: { method: "POST", template: "/encoding/filters/scale" },
 	CREATE_FILTER_ROTATE: {
 		method: "POST",
 		template: "/encoding/filters/rotate",

@@ -6,11 +6,13 @@ function escapePattern(literal: string): string {
 export function expandRandomFilenameTokens(
 	escaped: string,
 	maximumLength = Number.MAX_SAFE_INTEGER,
+	allowDefaultLength = false,
 ): string {
-	// The pinned SDK's muxing models specify alphanumeric strings, default 32.
+	// Only known naming templates opt into the SDK's default 32-character length.
 	return escaped.replace(
 		/\\\{(?:segment_)?rand_chars(?::([^{}]*))?\\\}/g,
 		(_token, requested: string | undefined) => {
+			if (requested === undefined && !allowDefaultLength) return _token;
 			const length = requested === undefined ? 32 : Number(requested);
 			return (requested === undefined || /^[1-9]\d*$/.test(requested)) &&
 				Number.isSafeInteger(length) &&
@@ -28,7 +30,9 @@ export function segmentNamePattern(
 ): RegExp {
 	const escaped = escapePattern(segmentNaming);
 	const source = (
-		expandRandomTokens ? expandRandomFilenameTokens(escaped) : escaped
+		expandRandomTokens
+			? expandRandomFilenameTokens(escaped, Number.MAX_SAFE_INTEGER, true)
+			: escaped
 	).replace(/%number%/g, "([0-9]+)");
 	// A strict end assertion also excludes an unexpected trailing newline.
 	return new RegExp(`^${source}(?![\\s\\S])`);
@@ -47,6 +51,7 @@ export function initSegmentCandidates(
 		const source = expandRandomFilenameTokens(
 			escapePattern(template),
 			maximumLength,
+			true,
 		);
 		const matcher = new RegExp(`^${source}(?![\\s\\S])`);
 		return keys.filter((key) => matcher.test(key.split("/").pop() ?? ""));

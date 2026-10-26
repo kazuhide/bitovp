@@ -6,6 +6,16 @@ import {
 } from "./filename-template";
 
 describe("provider filename templates", () => {
+	it("leaves bare random tokens literal by default for generic filenames and paths", () => {
+		expect(
+			expandRandomFilenameTokens(
+				"out/\\{rand_chars\\}/thumb-\\{segment_rand_chars\\}-%number%.jpg",
+			),
+		).toBe("out/\\{rand_chars\\}/thumb-\\{segment_rand_chars\\}-%number%.jpg");
+		expect(expandRandomFilenameTokens("out/\\{rand_chars:8\\}/")).toBe(
+			"out/[A-Za-z0-9]{8}/",
+		);
+	});
 	it.each([
 		"rand_chars",
 		"segment_rand_chars",

@@ -373,6 +373,7 @@ describe("live:segment-naming — the cheapest of the unread expectations", () =
 			m.initSegment = undefined;
 			m.initSegmentNameTemplate = "init-{rand_chars:8}.mp4";
 			m.segmentNaming = "seg-{rand_chars:8}-%number%.m4s";
+			m.segmentNamingIsTemplate = true;
 		}
 		const deps = healthy();
 		for (const [index, sample] of deps.samples.entries()) {

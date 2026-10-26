@@ -81,6 +81,8 @@ export type ExpectedMuxing = {
 	initSegment?: string;
 	/** Segment naming pattern (`%number%` intact) for segmented families. */
 	segmentNaming?: string;
+	/** Random tokens expand only when the source used segmentNamingTemplate. */
+	segmentNamingIsTemplate?: true;
 	/** Segment length in seconds — the engine turns this into a count. */
 	segmentLengthSec?: number;
 	/** Single-file name, for the MP4 families. */
@@ -622,10 +624,12 @@ export function compileExpectedArtefacts(
 		};
 
 		if ("segmentNaming" in muxing) {
-			expected.segmentNaming =
-				muxing.kind === "CMAF"
-					? (muxing.segmentNamingTemplate ?? muxing.segmentNaming)
-					: muxing.segmentNaming;
+			const template =
+				"segmentNamingTemplate" in muxing
+					? muxing.segmentNamingTemplate
+					: undefined;
+			expected.segmentNaming = template ?? muxing.segmentNaming;
+			if (template !== undefined) expected.segmentNamingIsTemplate = true;
 			expected.segmentLengthSec = muxing.segmentLength;
 		}
 		if (muxing.kind === "CMAF") expected.muxingKind = "CMAF";

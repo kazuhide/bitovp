@@ -649,7 +649,10 @@ function verifyLadderShape(
 	// while its siblings fill, which a union count hides completely.
 	const silent: string[] = [];
 	for (const muxing of expected.muxings) {
-		const rx = patternToRegExp(muxing.segmentNaming);
+		const rx = patternToRegExp(
+			muxing.segmentNaming,
+			muxing.segmentNamingIsTemplate === true,
+		);
 		const initKeys = new Set(
 			initSegmentCandidates(
 				objects
@@ -689,7 +692,10 @@ function verifyLadderShape(
 	 */
 	const unexpected: string[] = [];
 	for (const muxing of expected.muxings) {
-		const rx = patternToRegExp(muxing.segmentNaming);
+		const rx = patternToRegExp(
+			muxing.segmentNaming,
+			muxing.segmentNamingIsTemplate === true,
+		);
 		const initKeys = new Set(
 			initSegmentCandidates(
 				objects
@@ -724,11 +730,12 @@ function verifyLadderShape(
 }
 
 /** `%number%`-style pattern → a matcher, same rule the VOD engine uses. */
-function patternToRegExp(pattern: string): RegExp {
+function patternToRegExp(pattern: string, namingTemplate: boolean): RegExp {
 	const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	return new RegExp(
-		`^${expandRandomFilenameTokens(escaped).replace(/%[a-zA-Z]+%/g, "[^/]+")}$`,
-	);
+	const random = namingTemplate
+		? expandRandomFilenameTokens(escaped, Number.MAX_SAFE_INTEGER, true)
+		: escaped;
+	return new RegExp(`^${random.replace(/%[a-zA-Z]+%/g, "[^/]+")}$`);
 }
 
 /**

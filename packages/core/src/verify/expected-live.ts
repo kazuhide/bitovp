@@ -98,6 +98,8 @@ export type ExpectedLiveMuxing = {
 	outputKey: string;
 	dir: PathPattern;
 	segmentNaming: string;
+	/** Random tokens expand only when the source used segmentNamingTemplate. */
+	segmentNamingIsTemplate?: true;
 	segmentLengthSec: number;
 	initSegment?: string;
 };
@@ -371,6 +373,9 @@ export function compileExpectedLiveArtefacts(
 				outputKey: dest?.outputKey ?? "",
 				dir: pathPattern(withTrailingSlash(dest?.path ?? "")),
 				segmentNaming: muxing.segmentNamingTemplate ?? muxing.segmentNaming,
+				...(muxing.segmentNamingTemplate !== undefined
+					? { segmentNamingIsTemplate: true as const }
+					: {}),
 				segmentLengthSec: muxing.segmentLength,
 				...(muxing.kind === "CMAF" && muxing.initSegmentNameTemplate
 					? { initSegmentNameTemplate: muxing.initSegmentNameTemplate }

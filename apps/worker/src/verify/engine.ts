@@ -434,12 +434,21 @@ export class ReportBuilder {
 }
 
 /** Turn a `%number%`-style pattern into a matcher for real keys. */
-function patternToRegExp(pattern: string): RegExp {
+function patternToRegExp(pattern: string, namingTemplate?: boolean): RegExp {
 	const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	// `%number%` and `{uuid}`/`{bitrate}` are runtime expansions, not literals.
-	const withHoles = expandRandomFilenameTokens(escaped)
-		.replace(/%[a-zA-Z]+%/g, "[^/]+")
-		.replace(/\\\{[a-zA-Z]+\\\}/g, "[^/]+");
+	// Generic paths retain explicit-length expansion; literal segment names expand none.
+	const random =
+		namingTemplate === false
+			? escaped
+			: expandRandomFilenameTokens(
+					escaped,
+					Number.MAX_SAFE_INTEGER,
+					namingTemplate === true,
+				);
+	let withHoles = random.replace(/%[a-zA-Z]+%/g, "[^/]+");
+	// Directory placeholders do not define a policy for literal segment filenames.
+	if (namingTemplate === undefined)
+		withHoles = withHoles.replace(/\\\{[a-zA-Z]+\\\}/g, "[^/]+");
 	return new RegExp(`^${withHoles}$`);
 }
 
@@ -662,7 +671,10 @@ async function verifyMuxing(
 		);
 	}
 	if (muxing.segmentNaming) {
-		const rx = patternToRegExp(muxing.segmentNaming);
+		const rx = patternToRegExp(
+			muxing.segmentNaming,
+			muxing.segmentNamingIsTemplate === true,
+		);
 		const segments = keys.filter((k) => rx.test(k.split("/").pop() ?? ""));
 
 		/**
@@ -994,7 +1006,10 @@ async function verifyPerTitleRungs(
 	const refDuration = outputDurationSec(expected, deps, muxing);
 	const segLen = muxing.segmentLengthSec;
 	const rx = muxing.segmentNaming
-		? patternToRegExp(muxing.segmentNaming)
+		? patternToRegExp(
+				muxing.segmentNaming,
+				muxing.segmentNamingIsTemplate === true,
+			)
 		: undefined;
 
 	for (const [rung, rungKeys] of [...rungs.entries()].sort(([a], [b]) =>

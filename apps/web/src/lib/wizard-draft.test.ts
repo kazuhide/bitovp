@@ -1,8 +1,11 @@
+import { liveChannelPlanSchema } from "@bitovp/core";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
+	type LiveWizardState,
 } from "@/app/live/new/build-live-plan";
+import { planToLiveWizardState } from "@/app/live/new/live-plan-to-wizard";
 import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
@@ -24,6 +27,166 @@ import {
 } from "./wizard-draft";
 
 beforeEach(() => localStorage.clear());
+
+it("restores Live video/audio input positions and paths through persisted browser drafts", () => {
+	const state: LiveWizardState = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	const video = state.videos[0],
+		audio = state.audios[0];
+	if (!video || !audio) throw new Error("Missing default rendition");
+	state.videos.push({
+		...video,
+		width: 640,
+		height: 360,
+		bitrate: 1000000,
+	});
+	state.videos = state.videos.map((row, index) => ({
+		...row,
+		input: { position: index === 0 ? 0 : 2, inputPath: "video-alternate" },
+	}));
+	state.audios = state.audios.map((row) => ({
+		...row,
+		input: { position: 0, inputPath: "audio-alternate" },
+	}));
+	state.audios.push({
+		...audio,
+		bitrate: 96000,
+		input: { position: 2, inputPath: "audio-second" },
+	});
+	writeWizardDraft("live-inputs", "live", state, 2);
+	const saved = readWizardDraft("live-inputs", "live");
+	if (!saved) throw new Error("Missing saved draft");
+	const restored = mergeWizardDraft(
+		DEFAULT_LIVE_WIZARD_STATE,
+		saved.value,
+		"live",
+	);
+	expect(restored.videos.map((row) => row.input)).toEqual(
+		state.videos.map((row) => row.input),
+	);
+	expect(restored.audios.map((row) => row.input)).toEqual(
+		state.audios.map((row) => row.input),
+	);
+	expect(buildLiveChannelPlan(restored)).toEqual(buildLiveChannelPlan(state));
+});
+
+it("preserves shared imported Live selections and their resource order after a draft reload", () => {
+	const source: LiveWizardState = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	const video = source.videos[0],
+		audio = source.audios[0];
+	if (!video || !audio) throw new Error("Missing default rendition");
+	source.name = "Shared input draft";
+	source.output.credentialId = "11111111-1111-4111-8111-111111111111";
+	source.output.bucket = "bucket";
+	source.videos.push({
+		...video,
+		width: 640,
+		height: 360,
+		bitrate: 1000000,
+	});
+	source.audios.push({ ...audio, bitrate: 96000 });
+	source.videos = source.videos.map((row) => ({
+		...row,
+		input: { key: "shared-video", position: 2, inputPath: "video-alternate" },
+	}));
+	source.audios = source.audios.map((row) => ({
+		...row,
+		input: { key: "shared-audio", position: 0, inputPath: "audio-alternate" },
+	}));
+	source.ingestOrder = ["shared-audio", "shared-video"];
+	const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(source));
+	const imported = planToLiveWizardState(plan);
+	writeWizardDraft("shared-live-inputs", "live", imported, 2);
+	const saved = readWizardDraft("shared-live-inputs", "live");
+	if (!saved) throw new Error("Missing saved draft");
+	const restored = mergeWizardDraft(
+		DEFAULT_LIVE_WIZARD_STATE,
+		saved.value,
+		"live",
+	);
+	expect(liveChannelPlanSchema.parse(buildLiveChannelPlan(restored))).toEqual(
+		plan,
+	);
+	expect(restored.ingestOrder).toEqual(["shared-audio", "shared-video"]);
+});
+
+it.each([
+	undefined,
+	{},
+])("clears copied Live input selections and ordering when the saved state is blank (%j)", (input) => {
+	const source: LiveWizardState = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	source.videos = source.videos.map((row) => ({
+		...row,
+		input: { key: "shared-video", position: 2, inputPath: "video-alternate" },
+	}));
+	source.audios = source.audios.map((row) => ({
+		...row,
+		input: { key: "shared-audio", position: 0, inputPath: "audio-alternate" },
+	}));
+	source.ingestOrder = ["shared-audio", "shared-video"];
+	const cleared: LiveWizardState = {
+		...structuredClone(DEFAULT_LIVE_WIZARD_STATE),
+		videos: source.videos.map(({ input: _input, ...row }) => ({
+			...row,
+			input,
+		})),
+		audios: source.audios.map(({ input: _input, ...row }) => ({
+			...row,
+			input,
+		})),
+	};
+	writeWizardDraft("cleared-live-inputs", "live", cleared, 2);
+	const saved = readWizardDraft("cleared-live-inputs", "live");
+	if (!saved) throw new Error("Missing saved draft");
+	const restored = mergeWizardDraft(source, saved.value, "live");
+	expect(restored.ingestOrder).toBeUndefined();
+	expect(buildLiveChannelPlan(restored)).toEqual(buildLiveChannelPlan(cleared));
+	expect(
+		buildLiveChannelPlan(restored).ingest.map(
+			(selection) => selection.position,
+		),
+	).toEqual([0, 1]);
+});
+
+it("allowlists only Live input selection fields and excludes nested credentials and URLs", () => {
+	const value = {
+		...DEFAULT_LIVE_WIZARD_STATE,
+		videos: [
+			{
+				...DEFAULT_LIVE_WIZARD_STATE.videos[0],
+				input: {
+					key: "safe-selection",
+					position: 0,
+					inputPath: "alternate",
+					credentialId: "SECRET_CREDENTIAL",
+					secret: "SECRET_VALUE",
+					url: "https://user:SECRET_AUTH@host/path",
+				},
+			},
+		],
+		audios: [
+			{
+				...DEFAULT_LIVE_WIZARD_STATE.audios[0],
+				input: {
+					inputPath: "https://user:SECRET_URL@host/path?token=SECRET_TOKEN",
+					password: "SECRET_PASSWORD",
+				},
+			},
+		],
+	};
+	writeWizardDraft("safe-live-inputs", "live", value, 2);
+	const saved = readWizardDraft("safe-live-inputs", "live");
+	expect(saved?.value.videos).toMatchObject([
+		{ input: { key: "safe-selection", position: 0, inputPath: "alternate" } },
+	]);
+	expect(localStorage.getItem("safe-live-inputs")).not.toMatch(
+		/SECRET|"url"|"secret"|"password"/,
+	);
+	expect(projectWizardDraft("vod", value).videos).not.toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ input: expect.anything() }),
+		]),
+	);
+});
 it.each([
 	{ backend: "CLOUD", profileId: "gcp-qc", budgetUsd: 12 },
 	{ backend: "CLOUD", profileId: "gcp-qc", budgetUsd: 0 },

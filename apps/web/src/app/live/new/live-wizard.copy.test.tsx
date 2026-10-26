@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { liveChannelPlanSchema } from "@bitovp/core";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
@@ -15,6 +16,78 @@ vi.mock("next/navigation", () => ({
 	useSearchParams: () => new URLSearchParams(),
 }));
 beforeEach(() => vi.clearAllMocks());
+
+it("shows the existing refusal when source conversion cannot rebuild an unresolved output", async () => {
+	const id = "9f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
+	const raw = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+			),
+			"utf8",
+		),
+	);
+	raw.muxings[0].destination.outputKey = "missing-output";
+	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	apiFetch.mockImplementation(async (url: string) =>
+		url === `/api/live-channels/${id}` ? { name: raw.name, plan: raw } : [],
+	);
+	renderWithQuery(<LiveWizard duplicateFrom={id} />);
+	expect(await screen.findByRole("alert")).toBeInTheDocument();
+	expect(screen.queryByRole("textbox", { name: /channel name/i })).toBeNull();
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+});
+
+it.each([
+	"OPUS",
+	"AV1",
+	"H264",
+] as const)("shows the existing refusal for a schema-valid unrepresented %s duplicate", async (codec) => {
+	const id = "9f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
+	const raw = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+			),
+			"utf8",
+		),
+	);
+	raw.renditions = [
+		{
+			key: "unsupported",
+			codec,
+			ingestKey: codec === "OPUS" ? "audio" : "video",
+			...(codec === "H264"
+				? { height: 720, bitrate: null }
+				: {
+						bitrate: 128000,
+						...(codec === "OPUS" ? { rate: 48000 } : { height: 720 }),
+					}),
+		},
+	];
+	raw.muxings = [
+		{
+			key: "unsupported",
+			kind: "FMP4",
+			streamKey: "unsupported",
+			destination: { outputKey: "origin", path: "unsupported" },
+		},
+	];
+	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	apiFetch.mockImplementation(async (url: string) =>
+		url === `/api/live-channels/${id}` ? { name: raw.name, plan: raw } : [],
+	);
+	renderWithQuery(<LiveWizard duplicateFrom={id} />);
+	expect(await screen.findByRole("alert")).toBeInTheDocument();
+	expect(screen.queryByRole("textbox", { name: /channel name/i })).toBeNull();
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+});
 
 it.each([
 	"",

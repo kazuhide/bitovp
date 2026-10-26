@@ -156,6 +156,9 @@ const rendition = fields(
 		),
 	},
 );
+const liveRendition = rendition.extend({
+	input: group(fields("key inputPath", "position")),
+});
 const perTitle = fields(
 	"forcedRenditionAboveHighestFixedRepresentationCalculationMode",
 	"adoptConfigurationThreshold targetQualityCrf complexityFactor minBitrate maxBitrate minBitrateStepSize maxBitrateStepSize codecMinBitrateFactor codecMaxBitrateFactor codecBufsizeFactor forcedRenditionAboveHighestFixedRepresentation forcedRenditionAboveHighestFixedRepresentationFactor",
@@ -338,6 +341,8 @@ const live = fields(
 	"scte35AdMarkers",
 	{
 		...common,
+		videos: rows(liveRendition),
+		audios: rows(liveRendition),
 		mirror: group(location),
 		additionalMirrors: rows(
 			fields("key", "", "", { output: group(location) }).required({
@@ -346,6 +351,7 @@ const live = fields(
 			}),
 		),
 		outputOrder: strings,
+		ingestOrder: strings,
 		manifestOrder: strings,
 		adMarkerOptions: group(
 			fields(

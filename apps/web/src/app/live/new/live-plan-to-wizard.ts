@@ -706,9 +706,10 @@ export function tryImportLiveChannelIntoWizard(
 	if (!parsed.success) {
 		return { ok: false, reasonKey: "uiX.couldNotDuplicateInvalidPlan" };
 	}
-	const state = planToLiveWizardState(parsed.data);
+	let state: LiveWizardState;
 	let rebuilt: unknown;
 	try {
+		state = planToLiveWizardState(parsed.data);
 		rebuilt = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
 	} catch {
 		// The rebuild not even PARSING is the same answer as a mismatch: the

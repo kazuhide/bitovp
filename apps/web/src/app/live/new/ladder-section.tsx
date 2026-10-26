@@ -52,6 +52,13 @@ const VOD_PRESETS = [
 const PRESET_CHOICES = [...LIVE_PRESETS, ...VOD_PRESETS];
 const H264_NO_PRESET = "__none__";
 
+/** Retained unknown presets must not collide with the UI-only None value. */
+function h264NoPresetOption(video: LiveVideoRendition): string {
+	return liveVideoPreset(video) === H264_NO_PRESET
+		? `${H264_NO_PRESET}_`
+		: H264_NO_PRESET;
+}
+
 type LadderSectionProps = {
 	state: LiveWizardState;
 	onPatch: (partial: Partial<LiveWizardState>) => void;
@@ -134,7 +141,8 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 		const video = stableVideos[index];
 		if (!video) return;
 		const noPreset =
-			video.codec === "H264" && presetConfiguration === H264_NO_PRESET;
+			video.codec === "H264" &&
+			presetConfiguration === h264NoPresetOption(video);
 		const h264 = video.h264 ? { ...video.h264 } : undefined;
 		const h265 = video.h265 ? { ...video.h265 } : undefined;
 		if (h264) delete h264.presetConfiguration;
@@ -347,7 +355,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 											value={
 												video.codec === "H264" &&
 												liveVideoPreset(video) === null
-													? H264_NO_PRESET
+													? h264NoPresetOption(video)
 													: (liveVideoPreset(video) ?? "")
 											}
 											onChange={(e) => patchPreset(index, e.target.value)}
@@ -358,7 +366,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 													: t("wizard.defaultApi")}
 											</option>
 											{video.codec === "H264" ? (
-												<option value={H264_NO_PRESET}>
+												<option value={h264NoPresetOption(video)}>
 													{t("wizard.noPreset")}
 												</option>
 											) : null}

@@ -225,6 +225,66 @@ describe("Live video preset selection", () => {
 		expect(tryImportLiveChannelIntoWizard(plan).ok).toBe(true);
 	});
 
+	it.each([
+		"top-level",
+		"nested",
+	] as const)("keeps a restored %s __none__ preset distinct from the no-preset control", (location) => {
+		const initial = stateFor("H264");
+		const first = initial.videos[0];
+		if (!first) throw new Error("Missing video rendition");
+		const saved: LiveWizardState = {
+			...initial,
+			videos: [
+				{
+					...first,
+					...(location === "top-level"
+						? { presetConfiguration: "__none__" }
+						: { h264: { presetConfiguration: "__none__" } }),
+				},
+			],
+		};
+		const restored: LiveWizardState = JSON.parse(JSON.stringify(saved));
+		let latest = restored;
+		function Harness() {
+			const [state, setState] = useState<LiveWizardState>(restored);
+			latest = state;
+			return (
+				<LiveLadderSection
+					state={state}
+					onPatch={(partial) =>
+						setState((current) => ({ ...current, ...partial }))
+					}
+				/>
+			);
+		}
+		renderLocalized(<Harness />);
+		const select = screen.getByLabelText("Preset configuration");
+		if (!(select instanceof HTMLSelectElement))
+			throw new Error("Missing preset selector");
+		expect(select).toHaveValue("__none__");
+		expect(select.selectedOptions[0]?.textContent).toBe("__none__");
+		expect(evaluateLiveWizardState(latest).ok).toBe(false);
+		const noneValue = within(select)
+			.getByRole("option", { name: "None (use encoding mode)" })
+			.getAttribute("value");
+		if (!noneValue) throw new Error("Missing no-preset control value");
+		expect(noneValue).not.toBe("__none__");
+		fireEvent.change(select, { target: { value: noneValue } });
+		expect(select.selectedOptions[0]?.textContent).toBe(
+			"None (use encoding mode)",
+		);
+		expect(latest.videos[0]?.presetConfiguration).toBeUndefined();
+		expect(latest.videos[0]?.h264?.presetConfiguration).toBeNull();
+		const evaluation = evaluateLiveWizardState(latest);
+		expect(evaluation.ok).toBe(true);
+		if (!evaluation.ok) throw new Error(evaluation.zodMessage);
+		const codec = evaluation.ops.find(
+			(operation) => operation.kind === "CREATE_CODEC_H264",
+		);
+		if (!codec) throw new Error("Missing compiled H264 codec request");
+		expect(codec.payload).not.toHaveProperty("presetConfiguration");
+	});
+
 	it("authors H264 without a preset, restores the draft, and can return to explicit or default presets", () => {
 		const initial = stateFor("H264");
 		const first = initial.videos[0];

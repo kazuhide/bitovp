@@ -57,15 +57,14 @@ const locales = {
 		sources: /^2\. Sources$/,
 		ladder: /^3\. Ladder$/,
 		output: /^4\. Output$/,
+		packaging: /^5\. Packaging$/,
+		encoding: /^6\. Encoding$/,
 		review: /^8\. Review$/,
+		liveReview: /^9\. Review$/,
 		advancedH264: "Advanced (H264)",
 		close: "Close",
 		summary: "Show summary",
 		manual: "Enter manually",
-		liveInput: /^2\. Input$/,
-		liveEncodes: /^3\. Video and audio encodes$/,
-		liveDestinations: /^4\. Destinations$/,
-		liveRunSafety: /^6\. Automatic restart and stop$/,
 		liveTimeline: "Broadcast timeline",
 		createVod: "Create demo job",
 		createLive: "Create demo channel",
@@ -80,15 +79,14 @@ const locales = {
 		sources: /^2\. ソース$/,
 		ladder: /^3\. ラダー$/,
 		output: /^4\. 出力$/,
+		packaging: /^5\. パッケージング$/,
+		encoding: /^6\. エンコーディング$/,
 		review: /^8\. 確認$/,
+		liveReview: /^9\. 確認$/,
 		advancedH264: "詳細設定(H264)",
 		close: "閉じる",
 		summary: "概要を表示",
 		manual: "手入力する",
-		liveInput: /^2\. 入力$/,
-		liveEncodes: /^3\. 映像・音声エンコード$/,
-		liveDestinations: /^4\. 出力先$/,
-		liveRunSafety: /^6\. 自動再起動・自動停止$/,
 		liveTimeline: "配信タイムライン",
 		createVod: "デモジョブを作成",
 		createLive: "デモチャンネルを作成",
@@ -337,7 +335,7 @@ async function runLocale(locale, copy) {
 		.waitFor();
 	await screenshot("live-monitoring.png");
 	await visit(`/live/new?from=${channelId}`);
-	await step(copy.liveEncodes);
+	await step(copy.ladder);
 	await screenshot("live-settings.png");
 	await visit(`/qc/${qualityId}`);
 	await page.locator(".recharts-surface").first().waitFor();
@@ -394,21 +392,22 @@ async function runLocale(locale, copy) {
 	await visit("/live/new");
 	await page.locator("#lw-name").fill(copy.liveName);
 	await page.locator("#lw-account").selectOption(accountId);
-	await step(copy.liveInput);
+	await step(copy.sources);
 	await page.locator("#lw-input-kind").selectOption("RTMP");
-	await step(copy.liveEncodes);
+	await step(copy.ladder);
 	await page.locator("#lw-v-0-width").fill("1280");
 	await page.locator("#lw-v-0-height").fill("720");
 	await page.locator("#lw-v-0-bitrate").fill("1500000");
+	await step(copy.packaging);
 	await page.locator("#lw-seglen").fill("2");
-	await step(copy.liveDestinations);
+	await step(copy.output);
 	await page.locator("#lw-out-cred").selectOption(credentialId);
 	await closePicker();
 	await page.locator("#lw-out-bucket").fill("demo-media");
 	await page.locator("#lw-out-base").fill("my-demo-live");
-	await step(copy.liveRunSafety);
+	await step(copy.encoding);
 	await page.locator("#lw-streamkey").fill("demoStream");
-	await step(copy.review);
+	await step(copy.liveReview);
 	await page
 		.getByRole("button", { name: copy.createLive, exact: true })
 		.click();

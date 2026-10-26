@@ -1,5 +1,6 @@
 "use client";
 
+import { CODEC_OPTIONS } from "@bitovp/core";
 import { AUDIO_CHANNEL_LAYOUTS } from "@/app/vod/new/audio-channel-layouts";
 import {
 	audioKeys,
@@ -28,36 +29,27 @@ import type {
 	LiveVideoRendition,
 	LiveWizardState,
 } from "./build-live-plan";
-import { liveBasePath } from "./build-live-plan";
+import { liveBasePath, liveVideoPreset } from "./build-live-plan";
 import { LiveRenditionFields } from "./live-rendition-fields";
 
 /**
  * Live ladder — the VOD ladder narrowed to the live codec rails
  * (H264/H265 video, AAC/DD/DDPLUS audio; VP9/Atmos/WebVTT are VOD-only)
- * with the H264/H265 advanced editors reused verbatim. The
- * presetConfiguration select surfaces LIVE_* presets first because the
- * shared schema defaults to VOD_HIGH_QUALITY and the validator warns on
- * VOD presets (LIVE_PRESET_VOD).
+ * with the shared H264/H265 advanced editors and one Live preset selector.
+ * VOD choices retain their warning; other saved values remain visible for validation.
  */
 
-const LIVE_PRESETS = [
-	"LIVE_STANDARD",
-	"LIVE_LOW_LATENCY",
-	"LIVE_LOWER_LATENCY",
-	"LIVE_VERYLOW_LATENCY",
-	"LIVE_ULTRALOW_LATENCY",
-	"LIVE_HIGH_QUALITY",
-	"LIVE_VERYHIGH_QUALITY",
-	"LIVE_ULTRAHIGH_QUALITY",
-] as const;
-
+const LIVE_PRESETS = CODEC_OPTIONS.PresetConfiguration.filter((preset) =>
+	preset.startsWith("LIVE_"),
+);
 const VOD_PRESETS = [
 	"VOD_HIGH_QUALITY",
 	"VOD_QUALITY",
 	"VOD_STANDARD",
 	"VOD_SPEED",
 	"VOD_HIGH_SPEED",
-] as const;
+].filter((preset) => CODEC_OPTIONS.PresetConfiguration.includes(preset));
+const PRESET_CHOICES = [...LIVE_PRESETS, ...VOD_PRESETS];
 
 type LadderSectionProps = {
 	state: LiveWizardState;
@@ -137,6 +129,15 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 		next[index] = { ...current, ...partial };
 		patchLadder({ videos: next });
 	};
+	const patchPreset = (index: number, presetConfiguration: string) => {
+		const video = stableVideos[index];
+		if (!video) return;
+		const h264 = video.h264 ? { ...video.h264 } : undefined;
+		const h265 = video.h265 ? { ...video.h265 } : undefined;
+		if (h264) delete h264.presetConfiguration;
+		if (h265) delete h265.presetConfiguration;
+		patchVideo(index, { presetConfiguration, h264, h265 });
+	};
 	/**
 	 * The relation, derived from the SAME state the builder reads :
 	 * the tracks a rung may carry, and the tracks something already carries.
@@ -190,11 +191,11 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 			<div>
 				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
 					<h2 className="shrink-0 font-medium text-sm text-zinc-200">
-						{t("ui.videoRenditionsH264H265")}
+						{t("wizard.videoRenditions")}
 					</h2>
 					<RenditionAddControls
 						kind="video"
-						label={t("ui.addVideo")}
+						label={t("wizard.addVideo")}
 						choices={state.videos.map((video, index) => ({
 							key: vKeys[index] ?? String(index),
 							index,
@@ -240,7 +241,10 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							className="space-y-3 rounded-md border border-zinc-800 p-3"
 						>
 							<div className="flex flex-wrap items-start gap-2">
-								<Field label={t("ui.codec")} htmlFor={`lw-v-${index}-codec`}>
+								<Field
+									label={t("wizard.codec")}
+									htmlFor={`lw-v-${index}-codec`}
+								>
 									<SelectNative
 										id={`lw-v-${index}-codec`}
 										className="w-24"
@@ -281,7 +285,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 
 								<div className="min-w-24 flex-1">
 									<Field
-										label={t("ui.heightP")}
+										label={t("wizard.heightP")}
 										htmlFor={`lw-v-${index}-height`}
 									>
 										<Input
@@ -301,7 +305,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 								</div>
 								<div className="min-w-28 flex-1">
 									<Field
-										label={t("ui.bitrateBps")}
+										label={t("wizard.bitrateBps")}
 										htmlFor={`lw-v-${index}-bitrate`}
 										tooltip={t("ui.requiredForLiveFixedLaddersOnly")}
 									>
@@ -322,20 +326,33 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 								</div>
 								<div className="min-w-44 flex-1">
 									<Field
-										label={t("ui.preset")}
+										label={t("wizard.presetConfiguration")}
 										htmlFor={`lw-v-${index}-preset`}
-										help={t("ui.pickALivePresetTheValidatorWarns")}
+										help={
+											liveVideoPreset(video) &&
+											!PRESET_CHOICES.includes(liveVideoPreset(video) ?? "")
+												? t("liveWizard.presetRetained")
+												: t("ui.pickALivePresetTheValidatorWarns")
+										}
 									>
 										<SelectNative
 											id={`lw-v-${index}-preset`}
-											value={video.presetConfiguration ?? ""}
-											onChange={(e) =>
-												patchVideo(index, {
-													presetConfiguration: e.target.value,
-												})
-											}
+											value={liveVideoPreset(video) ?? ""}
+											onChange={(e) => patchPreset(index, e.target.value)}
 										>
-											<option value="">{t("ui.schemaDefaultVodWarns")}</option>
+											<option value="">
+												{liveVideoPreset(video) === null
+													? t("wizard.noPreset")
+													: video.codec === "H264"
+														? t("ui.schemaDefaultVodWarns")
+														: t("wizard.defaultApi")}
+											</option>
+											{liveVideoPreset(video) &&
+											!PRESET_CHOICES.includes(liveVideoPreset(video) ?? "") ? (
+												<option value={liveVideoPreset(video) ?? ""}>
+													{liveVideoPreset(video)}
+												</option>
+											) : null}
 											<optgroup label={t("ui.livePresets")}>
 												{LIVE_PRESETS.map((preset) => (
 													<option key={preset} value={preset}>
@@ -354,7 +371,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</Field>
 								</div>
 								<Field
-									label={t("ui.container")}
+									label={t("wizard.container")}
 									htmlFor={`lw-v-${index}-container`}
 									tooltip={`${t("ui.tsHlsOnlyH264Only")} ${t("wizard.cmafCompatibility")}`}
 								>
@@ -455,6 +472,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							{video.codec === "H264" ? (
 								<H264AdvancedEditor
 									allowCrf={false}
+									showPreset={false}
 									idBase={`lw-v-${index}-h264`}
 									value={video.h264}
 									onChange={(h264) => patchVideo(index, { h264 })}
@@ -472,6 +490,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							) : (
 								<H265AdvancedEditor
 									allowCrf={false}
+									showPreset={false}
 									idBase={`lw-v-${index}-h265`}
 									value={video.h265}
 									visionMetadataKeys={[]}
@@ -501,11 +520,11 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 			<div>
 				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
 					<h2 className="shrink-0 font-medium text-sm text-zinc-200">
-						{t("ui.audioRenditionsAacDdDd")}
+						{t("wizard.audioRenditions")}
 					</h2>
 					<RenditionAddControls
 						kind="audio"
-						label={t("ui.addAudio")}
+						label={t("wizard.addAudio")}
 						choices={state.audios.map((audio, index) => ({
 							key: aKeys[index] ?? String(index),
 							index,
@@ -534,7 +553,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							key={index}
 							className="flex flex-wrap items-start gap-2 rounded-md border border-zinc-800 p-3"
 						>
-							<Field label={t("ui.codec")} htmlFor={`lw-a-${index}-codec`}>
+							<Field label={t("wizard.codec")} htmlFor={`lw-a-${index}-codec`}>
 								<SelectNative
 									id={`lw-a-${index}-codec`}
 									className="w-28"
@@ -552,7 +571,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							</Field>
 							<div className="min-w-28 flex-1">
 								<Field
-									label={t("ui.bitrateBps")}
+									label={t("wizard.bitrateBps")}
 									htmlFor={`lw-a-${index}-bitrate`}
 								>
 									<Input
@@ -573,7 +592,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							{/* Allow enough label width for the localized sampling-frequency label on one line. Let the outer flex row wrap on narrow screens instead of misaligning this control. */}
 							<div className="min-w-40 flex-1">
 								<Field
-									label={t("ui.sampleRateHz")}
+									label={t("wizard.sampleRateHz")}
 									htmlFor={`lw-a-${index}-rate`}
 								>
 									<Input
@@ -590,7 +609,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							</div>
 							<div className="min-w-32 flex-1">
 								<Field
-									label={t("ui.channelLayout")}
+									label={t("wizard.channelLayout")}
 									htmlFor={`lw-a-${index}-layout`}
 									tooltip={t("ui.emptyClStereo")}
 								>
@@ -622,7 +641,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 								</Field>
 							</div>
 							<Field
-								label={t("ui.container")}
+								label={t("wizard.container")}
 								htmlFor={`lw-a-${index}-container`}
 								tooltip={`${t("ui.tsHlsOnlyAacOnly")} ${t("wizard.cmafCompatibility")}`}
 							>
@@ -732,22 +751,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 					))}
 				</div>
 			</div>
-
-			<Field
-				label={t("ui.segmentLengthS")}
-				htmlFor="lw-seglen"
-				help={t("ui.sharedByEveryMuxingFeedsTheC8")}
-			>
-				<Input
-					id="lw-seglen"
-					type="number"
-					className="w-32"
-					value={state.segmentLength}
-					onChange={(e) =>
-						onPatch({ segmentLength: Math.max(0, Number(e.target.value)) })
-					}
-				/>
-			</Field>
 		</div>
 	);
 }

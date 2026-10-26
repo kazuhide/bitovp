@@ -1114,14 +1114,10 @@ export const ja = {
 		customPreset: "プリセット {actual} はLive HDの対応範囲外です。",
 		customManifests:
 			"出力マニフェスト数 {actual}：Live HDは最大{limit}本です。",
-		stepBasics: "基本設定",
-		stepInput: "入力",
-		stepEncodes: "映像・音声エンコード",
-		stepDestinations: "出力先",
-		stepOutputGroups: "出力グループ・マニフェスト",
 		stepRunSafety: "自動再起動・自動停止",
-		stepScheduleActions: "スケジュールアクション",
-		stepReview: "確認",
+		stepScheduleActions: "スケジュール",
+		presetRetained:
+			"保存されたプリセットは現在のLive用候補にありません。別の値を選ぶまで保持し、実行前に設定を検証します。",
 	},
 	/* In-page navigation uses a side rail on wide screens and a menu on narrow screens. */
 	liveNav: {
@@ -5258,7 +5254,7 @@ export const ja = {
 		samplePresets: "サンプルプリセット",
 		sampleRateHz: "サンプリング周波数 (Hz)",
 		scheduleExpression: "スケジュール式",
-		schemaDefaultVodWarns: "(スキーマ既定:VOD、警告あり)",
+		schemaDefaultVodWarns: "既定値（VOD_HIGH_QUALITY）",
 		sdkPassthroughEGAes128: "Bitmovin API にそのまま渡します(例: AES_128)",
 		searchPresets: "プリセットを検索",
 		searchTitleDescriptionFamily: "タイトル・説明・ファミリーを検索…",

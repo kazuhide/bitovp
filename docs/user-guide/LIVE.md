@@ -13,16 +13,17 @@ Open `/live/new` and configure the existing wizard from top to bottom:
 New configurations start with region `AUTO`, which lets Bitmovin select a
 region. Review the selected account and any saved or copied region settings.
 
-1. Name the channel and choose its Bitmovin account, region, and encoder version.
-2. Choose **RTMP**, **redundant RTMP**, **SRT**, **Zixi**, or **HLS pull** input.
+1. In **Basics**, name the channel and choose its Bitmovin account, region, and encoder version.
+2. In **Sources**, choose **RTMP**, **redundant RTMP**, **SRT**, **Zixi**, or **HLS pull** input.
    Pseudo-live is a feeder that sends stored files to an input, not a separate
    encoder input type.
-3. Configure video/audio renditions and their codec settings.
-4. Choose output storage or delivery service, paths, optional mirror, and archive.
-5. Configure output groups, HLS/DASH manifests, and DVR.
-6. Review automatic restart/stop controls and optional features.
-7. Configure scheduled actions. A schedule does not postpone provisioning.
-8. Read the plan preview and any Custom Live warnings, then create the channel.
+3. In **Ladder**, configure video/audio renditions and their codec settings.
+4. In **Output**, choose storage or a delivery service, paths, and optional mirrors.
+5. In **Packaging**, set the shared segment length and optional MP4 archive.
+6. In **Encoding**, review automatic restart/stop controls and optional features.
+7. In **Manifests**, configure HLS/DASH, DVR, and publication settings.
+8. In **Schedule**, configure planned actions. A schedule does not postpone provisioning.
+9. In **Review**, read the plan preview and any Custom Live warnings, then create the channel.
 
 New channels normally target Live HD where eligible. Settings outside that shape
 are identified as Custom Live before start. Account eligibility and provider

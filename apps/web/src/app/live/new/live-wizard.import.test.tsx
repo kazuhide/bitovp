@@ -120,7 +120,7 @@ it("saves and submits an edited multi-output import without dropping later resou
 	load(raw);
 	const name = await screen.findByRole("textbox", { name: "Channel name" });
 	fireEvent.change(name, { target: { value: "Edited multiple outputs" } });
-	fireEvent.click(screen.getByRole("button", { name: /^8\. Review/ }));
+	fireEvent.click(screen.getByRole("button", { name: /^9\. Review/ }));
 	fireEvent.click(
 		await screen.findByRole("button", { name: "Save as template" }),
 	);
@@ -159,7 +159,7 @@ it("imports into editable wizard and saves edited plan separately without creati
 	const name = screen.getByRole("textbox", { name: "Channel name" });
 	expect(name).toHaveValue(fixture.name);
 	fireEvent.change(name, { target: { value: "Edited imported Live" } });
-	fireEvent.click(screen.getByRole("button", { name: /^8\. Review/ }));
+	fireEvent.click(screen.getByRole("button", { name: /^9\. Review/ }));
 	fireEvent.click(
 		await screen.findByRole("button", { name: "Save as template" }),
 	);
@@ -322,7 +322,7 @@ it("excludes mapped JSON imports from unrelated new-channel browser drafts", asy
 	await act(async () => vi.advanceTimersByTime(400));
 	expect(localStorage.getItem(key)).toBe(existing);
 	vi.useRealTimers();
-	fireEvent.click(screen.getByRole("button", { name: /^8\. Review/ }));
+	fireEvent.click(screen.getByRole("button", { name: /^9\. Review/ }));
 	const create = screen.getByRole("button", { name: "Create live channel" });
 	await waitFor(() => expect(create).toBeEnabled());
 	fireEvent.click(create);
@@ -352,7 +352,7 @@ it.each([
 	const view = renderWithQuery(<LiveWizard />);
 	load(raw);
 	if (!rawMode)
-		fireEvent.click(screen.getByRole("button", { name: /^8\. Review/ }));
+		fireEvent.click(screen.getByRole("button", { name: /^9\. Review/ }));
 	await waitFor(() =>
 		expect(view.client.getQueryState(["auth", "session"])?.status).toBe(
 			access === "failed-session" ? "error" : "success",

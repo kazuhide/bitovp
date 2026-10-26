@@ -134,9 +134,9 @@ it("offers AWS and Akamai storage without deployment-profile labeling", async ()
 	renderWithQuery(<LiveWizard />);
 	expect(screen.queryByText(/Akamai-only deployment/)).toBeNull();
 	const step = (
-		await screen.findAllByRole("button", { name: /^\d+\. Destinations$/ })
+		await screen.findAllByRole("button", { name: /^\d+\. Output$/ })
 	)[0];
-	if (!step) throw Error("missing Destinations step");
+	if (!step) throw Error("missing Output step");
 	await userEvent.click(step);
 	await waitFor(() =>
 		expect(
@@ -182,12 +182,12 @@ it("keeps a valid AWS import available across rerenders", async () => {
 /** Walk to the output step and hand back its credential select. */
 async function outputCredentialSelect(): Promise<HTMLSelectElement> {
 	renderWithQuery(<LiveWizard />);
-	// "4. Destinations" — a bare /output/i now lands on
-	// "5. Output groups and manifests", one step past the credential select.
+	// "4. Output" — a bare /output/i now lands on
+	// "5. Manifests", one step past the credential select.
 	const step = (
-		await screen.findAllByRole("button", { name: /^\d+\. Destinations$/ })
+		await screen.findAllByRole("button", { name: /^\d+\. Output$/ })
 	)[0];
-	if (!step) throw new Error("no Destinations step button");
+	if (!step) throw new Error("no Output step button");
 	await userEvent.click(step);
 	// By ID, not by label: the step has more than one field whose label
 	// contains "credential", so findByLabelText throws on the ambiguity.
@@ -298,7 +298,7 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 		renderWithQuery(<LiveWizard />);
 		const step = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Output groups and manifests$/,
+				name: /^\d+\. Manifests$/,
 			})
 		)[0];
 		if (!step) throw new Error("missing manifests step");
@@ -334,7 +334,7 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 		renderWithQuery(<LiveWizard />);
 		const step = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Output groups and manifests$/,
+				name: /^\d+\. Manifests$/,
 			})
 		)[0];
 		if (!step) throw new Error("missing manifests step");
@@ -371,6 +371,9 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 		await userEvent.selectOptions(select, "cred-aos");
 		await userEvent.type(within(mirror).getByLabelText("Bucket"), "qa-media");
 		await userEvent.click(
+			screen.getByRole("button", { name: /^5\. Packaging$/ }),
+		);
+		await userEvent.click(
 			screen.getByRole("checkbox", { name: "Save an MP4 archive" }),
 		);
 		const destination = document.getElementById("lw-archive-destination");
@@ -378,11 +381,17 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 			throw new Error("no archive select");
 		await userEvent.selectOptions(destination, "mirror-1");
 		expect(destination.value).toBe("mirror-1");
-		await userEvent.click(enable);
-		expect(destination.value).toBe("mirror-1");
-		expect(enable).toBeDisabled();
+		await userEvent.click(screen.getByRole("button", { name: /^4\. Output$/ }));
 		expect(
-			within(destination).queryByRole("option", { name: /unavailable/i }),
+			screen.getByRole("checkbox", { name: "Also deliver to storage" }),
+		).toBeDisabled();
+		await userEvent.click(
+			screen.getByRole("button", { name: /^5\. Packaging$/ }),
+		);
+		const restored = screen.getByLabelText("Archive destination");
+		expect(restored).toHaveValue("mirror-1");
+		expect(
+			within(restored).queryByRole("option", { name: /unavailable/i }),
 		).not.toBeInTheDocument();
 	});
 
@@ -445,9 +454,7 @@ describe("live wizard — output destinations (owner, 2026-08-21)", () => {
 describe("live wizard — Origin credential transitions", () => {
 	const storageId = "44444444-4444-4444-8444-444444444444";
 	const originId = "77777777-7777-4777-8777-777777777777";
-	async function showStep(
-		name: "Destinations" | "Output groups and manifests",
-	) {
+	async function showStep(name: "Output" | "Manifests") {
 		const [step] = screen.getAllByRole("button", {
 			name: new RegExp(`^\\d+\\. ${name}$`),
 		});
@@ -509,7 +516,7 @@ describe("live wizard — Origin credential transitions", () => {
 		});
 		await userEvent.click(screen.getByRole("button", { name: "Load plan" }));
 		expect(screen.getByLabelText("Channel name")).toHaveValue("Manifest draft");
-		await showStep("Destinations");
+		await showStep("Output");
 		const select = document.getElementById("lw-out-cred");
 		if (!(select instanceof HTMLSelectElement))
 			throw new Error("Missing output credential select");
@@ -528,7 +535,7 @@ describe("live wizard — Origin credential transitions", () => {
 		["DASH", false],
 	] as const)("retains primary %s mirror settings with enabled=%s through Origin and back to storage", async (kind, enabled) => {
 		await mountStorageDraft({ fmp4Only: true });
-		await showStep("Output groups and manifests");
+		await showStep("Manifests");
 		const family = kind.toLowerCase();
 		const checkbox = () => {
 			const field = document.getElementById(`lw-${family}-enabled`);
@@ -570,12 +577,12 @@ describe("live wizard — Origin credential transitions", () => {
 		);
 		expect(configured).toBeDefined();
 		if (!enabled) await userEvent.click(checkbox());
-		await showStep("Destinations");
+		await showStep("Output");
 		await userEvent.selectOptions(
 			document.getElementById("lw-out-cred") as HTMLSelectElement,
 			originId,
 		);
-		await showStep("Output groups and manifests");
+		await showStep("Manifests");
 		expect(checkbox().checked).toBe(enabled);
 		const originPlan = await previewPlan();
 		expect(originPlan.liveManifests).toEqual(enabled ? [configured] : []);
@@ -584,7 +591,7 @@ describe("live wizard — Origin credential transitions", () => {
 				(issue) => issue.level === "error",
 			),
 		).toEqual([]);
-		await showStep("Destinations");
+		await showStep("Output");
 		await userEvent.selectOptions(
 			document.getElementById("lw-out-cred") as HTMLSelectElement,
 			storageId,
@@ -594,7 +601,7 @@ describe("live wizard — Origin credential transitions", () => {
 				name: "Close",
 			}),
 		);
-		await showStep("Output groups and manifests");
+		await showStep("Manifests");
 		expect(checkbox().checked).toBe(enabled);
 		if (!enabled) await userEvent.click(checkbox());
 		expect(
@@ -605,7 +612,7 @@ describe("live wizard — Origin credential transitions", () => {
 	});
 	it("restores configured and disabled additional manifests after storage → Origin → storage", async () => {
 		await mountStorageDraft();
-		await showStep("Output groups and manifests");
+		await showStep("Manifests");
 		for (const kind of ["HLS", "DASH"] as const) {
 			for (const number of [2, 3]) {
 				await userEvent.click(
@@ -644,7 +651,7 @@ describe("live wizard — Origin credential transitions", () => {
 					screen.getByRole("region", { name: `${kind} 3` }),
 				).getByLabelText(`${kind} manifest`),
 			);
-		await showStep("Destinations");
+		await showStep("Output");
 		await userEvent.selectOptions(
 			document.getElementById("lw-out-cred") as HTMLSelectElement,
 			originId,
@@ -658,7 +665,7 @@ describe("live wizard — Origin credential transitions", () => {
 				name: "Close",
 			}),
 		);
-		await showStep("Output groups and manifests");
+		await showStep("Manifests");
 		expect(document.getElementById("lw-hls-enabled")).toBeChecked();
 		expect(document.getElementById("lw-dash-enabled")).not.toBeChecked();
 		for (const kind of ["HLS", "DASH"] as const) {
@@ -710,7 +717,7 @@ describe("live wizard — Origin credential transitions", () => {
 	it("keeps Origin-directed manifest drafts out of the plan while allowing a storage mirror destination", async () => {
 		const select = await mountStorageDraft();
 		await userEvent.selectOptions(select, originId);
-		await showStep("Output groups and manifests");
+		await showStep("Manifests");
 		expect(document.getElementById("lw-hls-enabled")).toBeChecked();
 		expect(document.getElementById("lw-dash-enabled")).not.toBeChecked();
 		for (const kind of ["HLS", "DASH"])
@@ -801,16 +808,16 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 			"lw-msl-format",
 		) as HTMLSelectElement;
 
-		// step names: "3. Video and audio encodes" is the
-		// ladder, "4. Destinations" the output credential.
+		// step names: "3. Ladder" is the
+		// ladder, "4. Output" the output credential.
 		const ladderStep = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Video and audio encodes$/,
+				name: /^\d+\. Ladder$/,
 			})
 		)[0];
 		if (!ladderStep) throw new Error("no encodes step");
 		const outputStep = (
-			await screen.findAllByRole("button", { name: /^\d+\. Destinations$/ })
+			await screen.findAllByRole("button", { name: /^\d+\. Output$/ })
 		)[0];
 		if (!outputStep) throw new Error("no destinations step");
 
@@ -895,7 +902,7 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 		// ...and the ladder must ALREADY agree, with no dropdown touch: HLS ⇒ TS.
 		const ladderStep = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Video and audio encodes$/,
+				name: /^\d+\. Ladder$/,
 			})
 		)[0];
 		if (!ladderStep) throw new Error("no encodes step");
@@ -913,7 +920,7 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 		// Control: choosing DASH from the dropdown flips the SAME selects to
 		// fMP4 — the select-time normalization is format-aware, not a blanket TS.
 		const outputStep = (
-			await screen.findAllByRole("button", { name: /^\d+\. Destinations$/ })
+			await screen.findAllByRole("button", { name: /^\d+\. Output$/ })
 		)[0];
 		if (!outputStep) throw new Error("no destinations step");
 		await userEvent.click(outputStep);
@@ -943,16 +950,15 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 describe("live wizard — the Start step's auto-shutdown reaches the Schedule step", () => {
 	async function fillShutdownThenSlot(streamTimeoutMinutes: string) {
 		renderWithQuery(<LiveWizard />);
-		// The step buttons are numbered ("6. Automatic restart and stop",
-		// "7. Schedule actions" — the step names changed), so anchor on
+		// The step buttons are numbered ("6. Encoding",
+		// "7. Schedule" — the step names changed), so anchor on
 		// the number-and-name shape rather than the bare word.
 		const startStep = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Automatic restart and stop$/,
+				name: /^\d+\. Encoding$/,
 			})
 		)[0];
-		if (!startStep)
-			throw new Error("no Automatic restart and stop step button");
+		if (!startStep) throw new Error("no Encoding step button");
 		await userEvent.click(startStep);
 		const timeout = document.getElementById("lw-as-stream");
 		if (!(timeout instanceof HTMLInputElement)) {
@@ -962,10 +968,10 @@ describe("live wizard — the Start step's auto-shutdown reaches the Schedule st
 
 		const scheduleStep = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Schedule actions$/,
+				name: /^\d+\. Schedule$/,
 			})
 		)[0];
-		if (!scheduleStep) throw new Error("no Schedule actions step button");
+		if (!scheduleStep) throw new Error("no Schedule step button");
 		await userEvent.click(scheduleStep);
 		await userEvent.click(
 			await screen.findByRole("checkbox", {
@@ -1098,9 +1104,7 @@ it("keeps an unavailable account and output credential visible after duplication
 	expect(
 		screen.getByRole("option", { name: `${accountId} (missing)` }),
 	).toBeInTheDocument();
-	await userEvent.click(
-		screen.getByRole("button", { name: /^4\. Destinations$/ }),
-	);
+	await userEvent.click(screen.getByRole("button", { name: /^4\. Output$/ }));
 	expect(document.getElementById("lw-out-cred")).toHaveValue(credentialId);
 	expect(
 		screen.getByRole("option", { name: `${credentialId} (missing)` }),

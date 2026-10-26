@@ -48,23 +48,26 @@ describe("wizard step labels", () => {
 		},
 		{
 			file: "live/new/live-wizard.tsx",
-			// the AWS MediaLive vocabulary, as
-			// live-specific keys — "Start" named a step that never started
-			// anything (the channel provisions at creation; the step holds the
-			// automatic restart / stop settings).
 			expected: [
 				"Basics",
-				"Input",
-				"Video and audio encodes",
-				"Destinations",
-				"Output groups and manifests",
-				"Automatic restart and stop",
-				// Ledger #94: the broadcast slot, before review.
-				"Schedule actions",
+				"Sources",
+				"Ladder",
+				"Output",
+				"Packaging",
+				"Encoding",
+				"Manifests",
+				"Schedule",
 				"Review",
 			],
 		},
 	];
+	it("uses the same keys for shared VOD and Live steps", () => {
+		const vod = stepKeys("vod/new/wizard.tsx");
+		const live = stepKeys("live/new/live-wizard.tsx");
+		expect(
+			live.filter((key) => key !== "liveWizard.stepScheduleActions"),
+		).toEqual(vod);
+	});
 
 	for (const { file, expected } of WIZARDS) {
 		it(`${file} keeps its English step names, capitalised`, () => {

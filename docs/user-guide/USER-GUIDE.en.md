@@ -695,24 +695,25 @@ New configurations start with region `AUTO`, which lets Bitmovin select a region
 Live encoding continuously processes incoming video and audio and writes output for delivery. Creating a channel starts provisioning immediately. Depending on your Live Encoding pricing plan, charges may accrue before the planned input feed time. Creating it in the wizard is not a reservation that delays processing until that time.
 
 1. Open “Live Channels” and choose the action to create a channel.
-2. Configure the following 8 steps in order.
+2. Configure the following 9 steps in order. Common step names match the VOD wizard.
 3. Review the plan, warnings, destinations and stop conditions, then create the channel.
 4. Send your feed to the input endpoint shown on the detail page, and follow Chapter 8 to confirm reception and delivery.
 
 | Step | Main settings |
 |---|---|
 | Basics | Name, Bitmovin account, region and encoder version |
-| Input | Protocol, connection direction, redundancy, authentication and encryption |
-| Video and audio encodes | Video and audio renditions, codecs and containers |
-| Destinations | Storage or delivery service, mirror and MP4 archive |
-| Output groups and manifests | HLS, DASH, DVR, publication delay, time and ad information |
-| Automatic restart and stop | Monitoring conditions, timeouts, scheduled restarts and caching |
-| Schedule actions | Planned input feed, program start and stop times, and a pre-program slate |
+| Sources | Protocol, connection direction, redundancy, authentication and encryption |
+| Ladder | Video and audio renditions, codecs and per-rendition containers |
+| Output | Storage or delivery service and mirrors |
+| Packaging | Shared segment length and MP4 archive |
+| Encoding | Automatic restart and stop, monitoring conditions, timeouts and caching |
+| Manifests | HLS, DASH, DVR, publication delay, time and ad information |
+| Schedule | Planned input feed, program start and stop times, and a pre-program slate |
 | Review | Validation results, Live HD or Custom Live assessment, schedule and paths |
 
 ![Sample Live settings screen](../../apps/site/public/screenshots/en/live-settings.png)
 
-Figure 7-1. Live video and audio encoding settings in the demo. The screen uses sample settings.
+Figure 7-1. Live ladder settings in the demo. The screen uses sample settings.
 
 Settings outside the Live HD conditions produce a Custom Live warning. In addition to this assessment, check the account's eligibility and the provider's acceptance. As with VOD, copying settings or loading a plan does not start a new broadcast. Use JSON editing for settings that cannot be represented in the form. After restoring a draft, also check the settings excluded from draft storage.
 
@@ -843,7 +844,7 @@ Stopping the channel, stopping the file input, stopping the current insertion an
 
 ### Planned input feed, program start, and stop times
 
-The Live creation wizard's “Schedule actions” step sets the planned input feed, program start and channel stop times. Channel provisioning begins at creation. Depending on your Live Encoding pricing plan, charges may accrue before the planned feed time; see the [Live Encoding calculation rules](https://legal.bitmovin.com/legal/emcm). Connect your external input or file input by the planned input feed time.
+The Live creation wizard's “Schedule” step sets the planned input feed, program start and channel stop times. Channel provisioning begins at creation. Depending on your Live Encoding pricing plan, charges may accrue before the planned feed time; see the [Live Encoding calculation rules](https://legal.bitmovin.com/legal/emcm). Connect your external input or file input by the planned input feed time.
 
 | Time | Meaning |
 |---|---|
@@ -896,7 +897,7 @@ A mirror does not create an independent ladder. Choose a different storage crede
 
 After enabling a storage mirror in “Destinations”, use “Add storage mirror” to add more. Each mirror has its own credential and bucket or container. The editor supports S3, compatible S3 storage, Azure and Google Cloud Storage; it does not add MSL or SFTP mirror authoring. If an archive or manifest references a mirror, change that destination before removing the mirror.
 
-In “Output groups and manifests”, use “Add HLS manifest” or “Add DASH manifest” for additional manifests. Each has independent settings and an output folder. New entries start in separate folders so HLS media playlists do not overwrite one another. Review the path and access setting before saving. Copying and reopening a supported plan retains all entries; manifests still use the channel's shared ladder rather than selecting different renditions for each output.
+In “Manifests”, use “Add HLS manifest” or “Add DASH manifest” for additional manifests. Each has independent settings and an output folder. New entries start in separate folders so HLS media playlists do not overwrite one another. Review the path and access setting before saving. Copying and reopening a supported plan retains all entries; manifests still use the channel's shared ladder rather than selecting different renditions for each output.
 
 Choose a manifest destination that also receives its media segments, such as the main delivery output or a storage mirror. Relative segment paths refer to files on that same storage. An output used only for an MP4 archive has no segments for the stream, so the editor excludes it from the destination choices. To deliver the stream there, add a storage mirror that writes the segments there too. An output alias pointing to storage that already receives the media remains usable.
 

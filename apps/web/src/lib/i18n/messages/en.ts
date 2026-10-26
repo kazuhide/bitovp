@@ -1142,14 +1142,10 @@ export const en = {
 		customPreset: "Preset {actual} is outside the Live HD preset range.",
 		customManifests:
 			"Output manifests: {actual}; Live HD allows up to {limit}.",
-		stepBasics: "Basics",
-		stepInput: "Input",
-		stepEncodes: "Video and audio encodes",
-		stepDestinations: "Destinations",
-		stepOutputGroups: "Output groups and manifests",
 		stepRunSafety: "Automatic restart and stop",
-		stepScheduleActions: "Schedule actions",
-		stepReview: "Review",
+		stepScheduleActions: "Schedule",
+		presetRetained:
+			"This saved preset is outside the Live choices. It is kept until you select another preset; validation still applies.",
 	},
 	/**
 	 * : the in-page navigation over those layers — a rail in the right
@@ -5296,7 +5292,7 @@ export const en = {
 		samplePresets: "Sample presets",
 		sampleRateHz: "Sample rate (Hz)",
 		scheduleExpression: "Schedule expression",
-		schemaDefaultVodWarns: "(schema default — VOD, warns)",
+		schemaDefaultVodWarns: "Default (VOD_HIGH_QUALITY)",
 		sdkPassthroughEGAes128: "Passed to the Bitmovin API as-is, e.g. AES_128",
 		searchPresets: "Search presets",
 		searchTitleDescriptionFamily: "Search title, description, family…",

@@ -188,6 +188,22 @@ describe("Live rendition input and storage options", () => {
 		expect(payload).not.toHaveProperty("segmentNaming");
 	});
 
+	it("keeps provider-valid random-only templates available for encoding", () => {
+		const value = state();
+		const segmentNamingTemplate = "seg_{segment_rand_chars:8}.mp4";
+		first(value.videos).muxing = { segmentNamingTemplate };
+		const evaluation = evaluateLiveWizardState(value);
+		expect(evaluation.ok).toBe(true);
+		if (!evaluation.ok) throw new Error(evaluation.zodMessage);
+		expect(
+			evaluation.issues.filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		expect(
+			evaluation.ops.find((operation) => operation.step === "muxing:v720")
+				?.payload,
+		).toHaveProperty("segmentNamingTemplate", segmentNamingTemplate);
+	});
+
 	it.each([
 		{ path: "../outside" },
 		{ path: "folder/%2e%2e/other" },

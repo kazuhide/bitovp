@@ -16,6 +16,28 @@ const tFor = (locale: "en" | "ja"): Translator => {
 
 describe("structured customer errors", () => {
 	it.each([
+		"en",
+		"ja",
+	] as const)("explains capture-specific sequence naming without exposing the raw error in %s", (locale) => {
+		const visible = localizedCustomerError(
+			tFor(locale),
+			new ApiError(409, "private raw template path", {
+				code: "LIVE_VMAF_SEGMENT_NUMBER_REQUIRED",
+				rendition: "v720",
+			}),
+			"captureVmaf.failed",
+		);
+		expect(visible).toContain("v720");
+		expect(visible).toContain("%number%");
+		expect(visible).toMatch(
+			locale === "ja"
+				? /順序.*エンコード.*利用/
+				: /order.*encoding.*available/i,
+		);
+		expect(visible).not.toContain("private raw");
+	});
+
+	it.each([
 		"ja",
 		"en",
 	] as const)("distinguishes awaiting media from unobservable readiness in %s", (locale) => {

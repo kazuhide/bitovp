@@ -835,6 +835,8 @@ export const ja = {
 			"VMAF キャプチャはチャンネルが RUNNING の間だけ利用できます。現在の状態は {status} です。",
 		vmafOutputUnreadable:
 			"出力 {output} のレンディション {rendition} を VMAF で読み取れません。このキャプチャには読み取り可能なオブジェクトストレージ出力を使用してください。",
+		vmafSegmentNumberRequired:
+			"VMAF キャプチャでは、レンディション {rendition} のセグメント名に %number% が必要です。順序を確認するための制限で、エンコードには引き続きこの命名を利用できます。",
 		vmafFeederRequired:
 			"VMAF キャプチャには比較元となる疑似ライブのファイル入力が必要です。ファイル入力を開始または関連付けてから再実行してください。",
 		vmafFirstSegmentPending:

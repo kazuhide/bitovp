@@ -61,6 +61,7 @@ export const CUSTOMER_ERROR_CODES = [
 	"LIVE_RUNTIME_ACCOUNT_UNAVAILABLE",
 	"LIVE_VMAF_NOT_RUNNING",
 	"LIVE_VMAF_OUTPUT_UNREADABLE",
+	"LIVE_VMAF_SEGMENT_NUMBER_REQUIRED",
 	"LIVE_VMAF_FEEDER_REQUIRED",
 	"LIVE_VMAF_FIRST_SEGMENT_PENDING",
 	"LIVE_VMAF_READINESS_UNOBSERVABLE",
@@ -328,6 +329,10 @@ export function localizedCustomerError(
 			});
 		case "LIVE_VMAF_FEEDER_REQUIRED":
 			return t("customerError.vmafFeederRequired");
+		case "LIVE_VMAF_SEGMENT_NUMBER_REQUIRED":
+			return t("customerError.vmafSegmentNumberRequired", {
+				rendition: safeDetail(details, "rendition", t("common.unknown")),
+			});
 		case "LIVE_VMAF_FIRST_SEGMENT_PENDING":
 			return t("customerError.vmafFirstSegmentPending");
 		case "LIVE_VMAF_READINESS_UNOBSERVABLE":

@@ -860,6 +860,8 @@ export const en = {
 			"VMAF capture is available while the channel is RUNNING. Its current state is {status}.",
 		vmafOutputUnreadable:
 			"VMAF cannot read output {output} for rendition {rendition}. Use a readable object-storage destination for this capture.",
+		vmafSegmentNumberRequired:
+			"VMAF capture needs %number% in rendition {rendition}'s segment filename to determine segment order. Encoding with this filename is still available.",
 		vmafFeederRequired:
 			"VMAF capture needs a pseudo-live file input as its reference. Start or attach a file input, then capture again.",
 		vmafFirstSegmentPending:

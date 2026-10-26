@@ -28,6 +28,15 @@ New channels normally target Live HD where eligible. Settings outside that shape
 are identified as Custom Live before start. Account eligibility and provider
 acceptance still apply.
 
+Each rendition's **Advanced** section lets you select its input track position
+(zero-based; blank keeps video `0` or audio `1`) and protocol input path.
+For storage outputs, it also exposes the media output subdirectory, a segment
+filename pattern or naming template, and the fMP4 init filename. A custom
+subdirectory replaces the complete generated media folder rather than extending
+the Output folder. Blank keeps automatic paths; `/` selects the output root.
+Use a separate folder for each container. Audio needs its own container for
+separate media files. Storage mirrors follow the same path.
+
 Turning off **Restart on encoder error** sends an explicit disabled setting.
 An untouched control leaves an omitted setting unspecified. Import and duplicate
 also preserve explicitly private output permissions (`PRIVATE`).

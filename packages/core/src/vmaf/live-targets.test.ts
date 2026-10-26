@@ -162,6 +162,20 @@ describe("enumerateLiveCaptureTargets", () => {
 		expect(muxing?.segmentLength).toBeGreaterThan(0);
 		expect(v1080?.segmentLengthSec).toBe(muxing?.segmentLength);
 	});
+	it("retains whether random tokens came from a template or a literal filename", () => {
+		const plan = loadPlan("live-rtmp-simple");
+		const muxing = plan.muxings.find((m) => m.key === "v1080");
+		if (!muxing || muxing.kind === "MP4") throw new Error("missing muxing");
+		muxing.segmentNaming = "seg-{rand_chars:8}-%number%.m4s";
+		expect(
+			enumerateLiveCaptureTargets(plan)[0]?.segmentNamingIsTemplate,
+		).toBeUndefined();
+		muxing.segmentNamingTemplate = "part-{segment_rand_chars}-%number%.mp4";
+		expect(enumerateLiveCaptureTargets(plan)[0]).toMatchObject({
+			segmentNaming: "part-{segment_rand_chars}-%number%.mp4",
+			segmentNamingIsTemplate: true,
+		});
+	});
 
 	it("prefers fMP4 over TS and carries the init name only for fMP4", () => {
 		const plan = loadPlan("live-rtmp-simple");

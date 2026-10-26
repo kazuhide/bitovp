@@ -37,6 +37,50 @@ const legalToSave = (raw: unknown) => {
 };
 
 describe("tryImportLiveChannelIntoWizard", () => {
+	it("refuses an unresolved output without leaking the converter's schema exception", () => {
+		const raw = structuredClone(muxed);
+		raw.muxings[0].destination.outputKey = "missing-output";
+		expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+		expect(tryImportLiveChannelIntoWizard(raw)).toEqual({
+			ok: false,
+			reasonKey: "uiX.couldNotDuplicateUnrepresentedOptions",
+		});
+	});
+	it.each([
+		"OPUS",
+		"AV1",
+		"H264",
+	] as const)("refuses a schema-valid unrepresented %s ladder without throwing during conversion", (codec) => {
+		const raw = {
+			...muxed,
+			renditions: [
+				{
+					key: "unsupported",
+					codec,
+					ingestKey: codec === "OPUS" ? "audio" : "video",
+					...(codec === "H264"
+						? { height: 720, bitrate: null }
+						: {
+								bitrate: 128000,
+								...(codec === "OPUS" ? { rate: 48000 } : { height: 720 }),
+							}),
+				},
+			],
+			muxings: [
+				{
+					key: "unsupported",
+					kind: "FMP4",
+					streamKey: "unsupported",
+					destination: { outputKey: "origin", path: "unsupported" },
+				},
+			],
+		};
+		expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+		expect(tryImportLiveChannelIntoWizard(raw)).toEqual({
+			ok: false,
+			reasonKey: "uiX.couldNotDuplicateUnrepresentedOptions",
+		});
+	});
 	it("opens a uniform channel — the counterfactual that keeps the refusals meaningful", () => {
 		legalToSave(muxed);
 		const result = tryImportLiveChannelIntoWizard(muxed);

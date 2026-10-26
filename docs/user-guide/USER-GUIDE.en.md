@@ -737,6 +737,12 @@ The Live form supports H.264 and H.265 video, and AAC, Dolby Digital and Dolby D
 
 Configure the audio bundled with video, independent audio containers and segment length. Match TS, fMP4, CMAF and other packaging choices to the codec and manifest compatibility conditions. Segment length is in seconds, bitrate in bps and audio sample rate in Hz.
 
+Each rendition's "Advanced" section includes its input track position and input path. Track positions start at zero; blank keeps video position `0` or audio position `1`. Leave the path blank to use the input protocol's default.
+
+For storage outputs, the same section provides media filenames and a media output subdirectory. This subdirectory replaces the complete generated media folder; it is not appended to the folder in "Output". Blank keeps automatic paths, `/` selects the output root, and each container needs a separate folder. Storage mirrors use the same path.
+
+Choose either a segment filename pattern such as `seg_%number%.m4s`, or a naming template with random tokens. A custom init filename is available for fMP4. Audio needs its own container to use separate filenames or paths.
+
 Choose storage or a supported delivery service as the destination. For Akamai MSL, match the credential's stream ID and event name with the output's MSL version and stream format. MSL5 requires a compatible numeric encoder version of `2.283.0` or later. MSL5 publishing supports HTTP Digest or no authentication; Header-only authentication is not supported. Digest publishing is for MSL5 and must not be used with MSL4.
 
 MSL playback links use the public edge base URL configured in the credential. The input encoder's IP does not determine the playback hostname. Use a distinct path for each broadcast, and check that an earlier publisher is no longer sending to the same destination.
@@ -1001,6 +1007,8 @@ Live measurement compares pseudo-live output with the known MP4 sent by the feed
 On a `RUNNING` channel's detail page, open “VMAF capture”, enter an integer from 10–600 in “Capture window (s)” and select “Capture VMAF”. The initial value is 120 seconds. Output segments corresponding to the current broadcast run must be available and readable for every video rendition. If they are not ready yet, check input and output, wait briefly and retry.
 
 The feeder source used as the reference and a readable storage destination for that broadcast are required. If the primary output cannot be read, explicitly configure a supported storage mirror. Do not substitute an MP4 archive for live segments. If output names or destinations cannot be identified, the application does not treat the measurement as successful.
+
+The effective segment filename must contain `%number%` so that capture can determine segment order. Random-only naming remains available for encoding, but cannot be used for VMAF capture.
 
 ### Reports and comparison
 

@@ -12,10 +12,12 @@ import {
 	type StorageObject,
 } from "@bitovp/storage";
 import {
-	expandRandomFilenameTokens,
 	initSegmentCandidates,
+	segmentNamePattern,
 } from "../bitmovin/filename-template";
 import type { ResolvedCredential } from "../orchestrator/executor";
+
+export { segmentNamePattern } from "../bitmovin/filename-template";
 
 /**
  * Live segment capture (P4-PR6b). Reconstructs the "distorted" clip for a
@@ -137,26 +139,17 @@ export const defaultCaptureBrowserFactory: CaptureBrowserFactory = (
 		secret: credential.secret,
 	});
 
-/**
- * Builds a RegExp + capture for a `%number%`-templated segment name so a
- * listed object can be recognised and its sequence number parsed. The template
- * is otherwise treated literally (its non-%number% chars are escaped). e.g.
- * "segment_%number%.m4s" → /^segment_(\d+)\.m4s$/.
- */
-export function segmentNamePattern(segmentNaming: string): RegExp {
-	const escaped = segmentNaming
-		.split("%number%")
-		.map((part) =>
-			expandRandomFilenameTokens(part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-		)
-		.join("(\\d+)");
-	return new RegExp(`^${escaped}$`);
+/** Muxing paths are relative to the storage root, with optional outer slashes. */
+function directoryPrefix(path: string): string {
+	const trimmed = path.replace(/^\/+|\/+$/g, "");
+	return trimmed ? `${trimmed}/` : "";
 }
 
-/** Basename of a storage key (the part after the last "/"). */
-function baseName(key: string): string {
-	const slash = key.lastIndexOf("/");
-	return slash >= 0 ? key.slice(slash + 1) : key;
+/** Only this container's own files; another container may use a child folder. */
+function ownFilename(key: string, prefix: string): string | undefined {
+	if (!key.startsWith(prefix)) return undefined;
+	const name = key.slice(prefix.length);
+	return name && !/[\\/]/.test(name) ? name : undefined;
 }
 
 /**
@@ -191,7 +184,7 @@ export async function listAllUnderPrefix(
 	 * into "/" would silently scope to a root directory that does not exist.
 	 * `destinationSchema.path` has no `min(1)`, so "" is reachable.
 	 */
-	const scoped = prefix === "" || prefix.endsWith("/") ? prefix : `${prefix}/`;
+	const scoped = directoryPrefix(prefix);
 	const all: StorageObject[] = [];
 	let cursor: string | undefined;
 	// Guard against a pathological unbounded listing (a huge DVR window); the
@@ -262,15 +255,21 @@ export function selectWindowSegments(
 	target: LiveCaptureTarget,
 	opts: { windowSeconds: number; now: number; fallbackCount: number },
 ): WindowSelection {
-	const pattern = segmentNamePattern(target.segmentNaming);
+	const pattern = segmentNamePattern(
+		target.segmentNaming,
+		target.segmentNamingIsTemplate === true,
+	);
+	const prefix = directoryPrefix(target.segmentPrefix);
 	const matched: DiscoveredSegment[] = [];
 	for (const obj of objects) {
-		const m = pattern.exec(baseName(obj.key));
+		const name = ownFilename(obj.key, prefix);
+		if (!name) continue;
+		const m = pattern.exec(name);
 		if (!m) {
 			continue;
 		}
 		const number = Number.parseInt(m[1] as string, 10);
-		if (!Number.isFinite(number)) {
+		if (!Number.isSafeInteger(number)) {
 			continue;
 		}
 		matched.push({ key: obj.key, number, lastModified: obj.lastModified });
@@ -412,10 +411,14 @@ export async function captureRenditionWindow(args: {
 	const makeBrowser = args.deps.makeBrowser ?? defaultCaptureBrowserFactory;
 	const browser = makeBrowser(args.credential);
 	try {
-		const objects = await listAllUnderPrefix(
+		const listed = await listAllUnderPrefix(
 			browser,
 			args.bucket,
 			args.target.segmentPrefix,
+		);
+		const storagePrefix = directoryPrefix(args.target.segmentPrefix);
+		const objects = listed.filter((object) =>
+			ownFilename(object.key, storagePrefix),
 		);
 		const { segments, selection } = selectWindowSegments(objects, args.target, {
 			windowSeconds: args.windowSeconds,
@@ -527,5 +530,5 @@ export async function captureRenditionWindow(args: {
 
 /** Joins a prefix and a name with exactly one slash. */
 function joinKey(prefix: string, name: string): string {
-	return prefix.endsWith("/") ? `${prefix}${name}` : `${prefix}/${name}`;
+	return `${directoryPrefix(prefix)}${name}`;
 }

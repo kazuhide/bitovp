@@ -1,4 +1,9 @@
 export { hashApiTokenSecret } from "./auth/api-token-hash";
+export {
+	expandRandomFilenameTokens,
+	initSegmentCandidates,
+	segmentNamePattern,
+} from "./bitmovin/filename-template";
 export type {
 	BitmovinAccountDefaults,
 	BitmovinAccountSummaryWire,

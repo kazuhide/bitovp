@@ -197,6 +197,64 @@ it("retains unrepresented options in raw import and exposes JSON editing without
 	);
 });
 
+it("keeps an unresolved output editable as the exact imported JSON", async () => {
+	const raw = plan();
+	raw.muxings[0].destination.outputKey = "missing-output";
+	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	renderWithQuery(<LiveWizard />);
+	load(raw);
+	await act(async () => {});
+	expect(screen.queryByRole("textbox", { name: "Channel name" })).toBeNull();
+	fireEvent.click(screen.getByRole("button", { name: "Edit JSON" }));
+	expect(screen.getByLabelText("Live channel plan JSON")).toHaveValue(
+		JSON.stringify(raw, null, 2),
+	);
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+});
+
+it.each([
+	"OPUS",
+	"AV1",
+	"H264",
+] as const)("keeps a schema-valid unrepresented %s import available in the raw JSON editor", async (codec) => {
+	const raw = plan();
+	raw.renditions = [
+		{
+			key: "unsupported",
+			codec,
+			ingestKey: codec === "OPUS" ? "audio" : "video",
+			...(codec === "H264"
+				? { height: 720, bitrate: null }
+				: {
+						bitrate: 128000,
+						...(codec === "OPUS" ? { rate: 48000 } : { height: 720 }),
+					}),
+		},
+	];
+	raw.muxings = [
+		{
+			key: "unsupported",
+			kind: "FMP4",
+			streamKey: "unsupported",
+			destination: { outputKey: "origin", path: "unsupported" },
+		},
+	];
+	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	renderWithQuery(<LiveWizard />);
+	load(raw);
+	await act(async () => {});
+	expect(screen.queryByRole("textbox", { name: "Channel name" })).toBeNull();
+	fireEvent.click(screen.getByRole("button", { name: "Edit JSON" }));
+	expect(screen.getByLabelText("Live channel plan JSON")).toHaveValue(
+		JSON.stringify(raw, null, 2),
+	);
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+});
+
 it.each([
 	true,
 	false,

@@ -1,7 +1,12 @@
 "use client";
 
 import { AUDIO_CHANNEL_LAYOUTS } from "@/app/vod/new/audio-channel-layouts";
-import { audioKeys, videoKeys } from "@/app/vod/new/build-plan";
+import {
+	audioKeys,
+	audioMuxingRelPath,
+	videoKeys,
+	videoMuxingRelPath,
+} from "@/app/vod/new/build-plan";
 import { CMAF_CHUNK_FIELDS } from "@/app/vod/new/cmaf-fields";
 import { HlsVideoUriField } from "@/app/vod/new/hls-video-uri-field";
 import {
@@ -14,7 +19,7 @@ import {
 	H264AdvancedEditor,
 	H265AdvancedEditor,
 } from "@/app/vod/new/rendition-editors";
-import { OptionsGrid } from "@/app/vod/new/wizard-fields";
+import { Collapsible, OptionsGrid } from "@/app/vod/new/wizard-fields";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
@@ -23,6 +28,8 @@ import type {
 	LiveVideoRendition,
 	LiveWizardState,
 } from "./build-live-plan";
+import { liveBasePath } from "./build-live-plan";
+import { LiveRenditionFields } from "./live-rendition-fields";
 
 /**
  * Live ladder — the VOD ladder narrowed to the live codec rails
@@ -77,6 +84,38 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 	);
 	const patchLadder = (partial: Partial<LiveWizardState>) =>
 		onPatch({ videos: stableVideos, audios: stableAudios, ...partial });
+	const copyLive = <T extends LiveVideoRendition | LiveAudioRendition>(
+		row: T,
+		key: string,
+		uris: Iterable<string | undefined> = [],
+	): T => {
+		const copy = copyRendition(row, key, uris);
+		if (copy.muxing?.path !== undefined) {
+			const normalize = (path: string) =>
+				path.split("/").filter(Boolean).join("/");
+			const base = liveBasePath(state);
+			const reserved = new Set(
+				[
+					...stableVideos.map(
+						(video, index) =>
+							video.muxing?.path ??
+							`${base}/${videoMuxingRelPath({ ...video, extras: undefined }, vKeys[index] ?? "")}`,
+					),
+					...stableAudios.map(
+						(audio, index) =>
+							audio.muxing?.path ??
+							`${base}/${audioMuxingRelPath({ ...audio, extras: undefined }, aKeys[index] ?? "")}`,
+					),
+				].map(normalize),
+			);
+			const prefix = `${copy.muxing.path.replace(/\/+$/, "") || "media"}-${key}`;
+			let path = prefix,
+				n = 2;
+			while (reserved.has(normalize(path))) path = `${prefix}-${n++}`;
+			copy.muxing = { ...copy.muxing, path };
+		}
+		return copy;
+	};
 	const nextKey = (prefix: "v" | "a") => {
 		const reserved = new Set([
 			...vKeys,
@@ -165,7 +204,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							patchLadder({
 								videos: [
 									...stableVideos,
-									copyRendition<LiveVideoRendition>(
+									copyLive<LiveVideoRendition>(
 										stableVideos[index ?? -1] ?? {
 											codec: "H264",
 											width: 1280,
@@ -419,7 +458,17 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									idBase={`lw-v-${index}-h264`}
 									value={video.h264}
 									onChange={(h264) => patchVideo(index, { h264 })}
-								/>
+								>
+									<LiveRenditionFields
+										idBase={`lw-v-${index}`}
+										state={state}
+										input={video.input}
+										muxing={video.muxing}
+										container={video.container ?? "FMP4"}
+										onInputChange={(input) => patchVideo(index, { input })}
+										onMuxingChange={(muxing) => patchVideo(index, { muxing })}
+									/>
+								</H264AdvancedEditor>
 							) : (
 								<H265AdvancedEditor
 									allowCrf={false}
@@ -427,7 +476,17 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									value={video.h265}
 									visionMetadataKeys={[]}
 									onChange={(h265) => patchVideo(index, { h265 })}
-								/>
+								>
+									<LiveRenditionFields
+										idBase={`lw-v-${index}`}
+										state={state}
+										input={video.input}
+										muxing={video.muxing}
+										container={video.container ?? "FMP4"}
+										onInputChange={(input) => patchVideo(index, { input })}
+										onMuxingChange={(muxing) => patchVideo(index, { muxing })}
+									/>
+								</H265AdvancedEditor>
 							)}
 						</div>
 					))}
@@ -456,7 +515,7 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							patchLadder({
 								audios: [
 									...stableAudios,
-									copyRendition<LiveAudioRendition>(
+									copyLive<LiveAudioRendition>(
 										stableAudios[index ?? -1] ?? {
 											codec: "AAC",
 											bitrate: 128_000,
@@ -651,6 +710,24 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									/>
 								</div>
 							) : null}
+							<div className="w-full">
+								<Collapsible summary={t("wizard.advanced")}>
+									<LiveRenditionFields
+										idBase={`lw-a-${index}`}
+										state={state}
+										input={audio.input}
+										muxing={audio.muxing}
+										container={audio.container ?? "FMP4"}
+										audio
+										ownsContainer={
+											audio.ownContainer !== false ||
+											!carriedAudioKeys.has(aKeys[index] ?? "")
+										}
+										onInputChange={(input) => patchAudio(index, { input })}
+										onMuxingChange={(muxing) => patchAudio(index, { muxing })}
+									/>
+								</Collapsible>
+							</div>
 						</div>
 					))}
 				</div>

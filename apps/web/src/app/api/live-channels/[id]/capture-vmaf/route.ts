@@ -132,6 +132,15 @@ export async function POST(req: Request, { params }: RouteParams) {
 			// 201 here and threw there, which is exactly the walked-away failure
 			// (d) exists to prevent.
 			for (const target of enumerateLiveCaptureTargets(parsedPlan.data)) {
+				if (!target.segmentNaming.includes("%number%")) {
+					return jsonError(
+						409,
+						`VMAF capture needs %number% in segment naming for rendition "${target.renditionKey}" to order captured segments; encoding remains available.`,
+						customerErrorDetails("LIVE_VMAF_SEGMENT_NUMBER_REQUIRED", {
+							rendition: target.renditionKey,
+						}),
+					);
+				}
 				const output = parsedPlan.data.outputs.find(
 					(o) => o.key === target.outputKey,
 				);

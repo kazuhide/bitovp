@@ -14,6 +14,7 @@ import {
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
 import { inResourceOrder, liveMirrorEntries } from "./live-output-model";
+import { applyLiveMuxingOptions } from "./live-rendition-options";
 
 /**
  * Pure mapping from live wizard state to a LiveChannelPlan (input shape —
@@ -103,6 +104,21 @@ export type LiveCmafOptions = {
 	framesPerCmafChunk?: number;
 };
 
+export type LiveInputSelection = {
+	/** Retained for imported references; never edited as a resource key. */
+	key?: string;
+	position?: number;
+	inputPath?: string;
+};
+
+export type LiveMuxingOptions = {
+	segmentNaming?: string;
+	segmentNamingTemplate?: string;
+	initSegmentName?: string;
+	/** Complete subdirectory on the selected output, overriding automatic paths. */
+	path?: string;
+};
+
 /**
  * rev433 (owner 2026-09-07): with STATIC ingest points the stream key an
  * encoder pushes with is the point's own (`streamKeyConfiguration`
@@ -134,6 +150,8 @@ export type LiveStaticIngestPoint = {
 };
 
 export type LiveVideoRendition = {
+	input?: LiveInputSelection;
+	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
 	extras?: { key?: string; hlsVariantUri?: string };
 	codec: "H264" | "H265";
@@ -165,6 +183,8 @@ export type LiveVideoRendition = {
 };
 
 export type LiveAudioRendition = {
+	input?: LiveInputSelection;
+	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
 	extras?: { key?: string };
 	codec: "AAC" | "DDPLUS" | "DD";
@@ -386,6 +406,8 @@ export type LiveWizardState = {
 	/** Imported resource order is independent of mirror-reference order. */
 	outputOrder?: string[];
 	manifestOrder?: string[];
+	/** Preserve imported source selection order independently of rendition order. */
+	ingestOrder?: string[];
 	/** One progressive archive, reusing existing streams. No separate encode.
 	 * Keep the schema shape so imported names, paths and ACL remain verbatim.
 	 * output is absent when the archive explicitly references origin/mirror-1.
@@ -572,8 +594,69 @@ function joinPath(base: string, rel: string): string {
  * at the root "/" — matching Bitmovin's own live .bitmovin.yml templates, where
  * the application is defined by the input's ingest point, not the path.
  */
-function ingestInputPath(inputKind: LiveInputKind): string {
+export function ingestInputPath(inputKind: LiveInputKind): string {
 	return inputKind === "RTMP" ? "live" : "/";
+}
+
+/** Allocate selection keys privately while keeping untouched legacy plans exact. */
+function buildIngest(
+	state: LiveWizardState,
+	videoKeys: string[],
+	audioKeys: string[],
+) {
+	const groups = [
+		{ rows: state.videos, keys: videoKeys, key: "video", position: 0 },
+		{ rows: state.audios, keys: audioKeys, key: "audio", position: 1 },
+	];
+	const reserved = new Set([
+		"video",
+		"audio",
+		...groups.flatMap(({ rows }) => rows.map((row) => row.input?.key)),
+	]);
+	const selections = new Map<string, LiveChannelPlanInput["ingest"][number]>();
+	const keys = groups.map(({ rows, keys, key, position }) =>
+		rows.map((row, index) => {
+			let selectionKey = row.input?.key ?? key;
+			if (
+				(row.input?.position !== undefined ||
+					row.input?.inputPath !== undefined) &&
+				!row.input.key
+			) {
+				const prefix = `input-${keys[index] ?? `${key}${index + 1}`}`.slice(
+					0,
+					58,
+				);
+				selectionKey = prefix;
+				let n = 2;
+				while (reserved.has(selectionKey)) selectionKey = `${prefix}-${n++}`;
+				reserved.add(selectionKey);
+			}
+			const selection = {
+				key: selectionKey,
+				inputPath: row.input?.inputPath ?? ingestInputPath(state.inputKind),
+				position: row.input?.position ?? position,
+			};
+			const previous = selections.get(selectionKey);
+			if (
+				previous &&
+				(previous.position !== selection.position ||
+					previous.inputPath !== selection.inputPath)
+			)
+				throw new Error(
+					"Renditions sharing an input selection must use the same position and input path.",
+				);
+			selections.set(selectionKey, selection);
+			return selectionKey;
+		}),
+	);
+	return {
+		ingest: inResourceOrder(
+			[...selections.values()],
+			state.ingestOrder ?? ["video", "audio"],
+		),
+		video: keys[0] ?? [],
+		audio: keys[1] ?? [],
+	};
 }
 
 function buildLiveInput(state: LiveWizardState): LivePlanInputUnion {
@@ -892,6 +975,7 @@ function buildOutputFrom(
 function videoRendition(
 	video: LiveVideoRendition,
 	key: string,
+	ingestKey: string,
 ): LiveRenditionInput {
 	const derivedName =
 		video.height === null
@@ -904,7 +988,7 @@ function videoRendition(
 			codec: "H265" as const,
 			hlsVariantUri: video.extras?.hlsVariantUri,
 			name: str(video.name) ?? derivedName,
-			ingestKey: "video",
+			ingestKey,
 			height: video.height,
 			bitrate: video.bitrate,
 			presetConfiguration: str(video.presetConfiguration),
@@ -965,7 +1049,7 @@ function videoRendition(
 		codec: "H264" as const,
 		hlsVariantUri: video.extras?.hlsVariantUri,
 		name: str(video.name) ?? derivedName,
-		ingestKey: "video",
+		ingestKey,
 		width: video.width,
 		height: video.height,
 		bitrate: video.bitrate,
@@ -1009,11 +1093,12 @@ function videoRendition(
 function audioRendition(
 	audio: LiveAudioRendition,
 	key: string,
+	ingestKey: string,
 ): LiveRenditionInput {
 	return prune({
 		key,
 		codec: audio.codec,
-		ingestKey: "audio",
+		ingestKey,
 		bitrate: audio.bitrate,
 		rate: audio.rate,
 		channelLayout: str(audio.channelLayout),
@@ -1326,13 +1411,22 @@ export function buildLiveChannelPlan(
 	const base = liveBasePath(state);
 	const vKeys = videoKeys(state.videos);
 	const aKeys = audioKeys(state.audios);
+	const ingest = buildIngest(state, vKeys, aKeys);
 
 	const renditions: LiveRenditionInput[] = [
 		...state.videos.map((video, index) =>
-			videoRendition(video, vKeys[index] ?? `video${index + 1}`),
+			videoRendition(
+				video,
+				vKeys[index] ?? `video${index + 1}`,
+				ingest.video[index] ?? "video",
+			),
 		),
 		...state.audios.map((audio, index) =>
-			audioRendition(audio, aKeys[index] ?? `audio${index + 1}`),
+			audioRendition(
+				audio,
+				aKeys[index] ?? `audio${index + 1}`,
+				ingest.audio[index] ?? "audio",
+			),
 		),
 	];
 
@@ -1370,19 +1464,22 @@ export function buildLiveChannelPlan(
 		...state.videos.map((video, index) => {
 			const key = vKeys[index] ?? `video${index + 1}`;
 			const container = video.container ?? "FMP4";
-			return muxing(
-				key,
-				container,
-				state.segmentLength,
-				joinPath(
-					base,
-					videoMuxingRelPath({ ...video, extras: undefined }, key),
+			return applyLiveMuxingOptions(
+				muxing(
+					key,
+					container,
+					state.segmentLength,
+					joinPath(
+						base,
+						videoMuxingRelPath({ ...video, extras: undefined }, key),
+					),
+					segmentAcl,
+					mslNaming,
+					mslVersion,
+					carriedPerRung[index],
+					video.cmaf,
 				),
-				segmentAcl,
-				mslNaming,
-				mslVersion,
-				carriedPerRung[index],
-				video.cmaf,
+				video.muxing,
 			);
 		}),
 		// A track riding inside the video containers emits none of its own —
@@ -1397,19 +1494,22 @@ export function buildLiveChannelPlan(
 			.map((audio) => {
 				const index = state.audios.indexOf(audio);
 				const key = aKeys[index] ?? `audio${index + 1}`;
-				return muxing(
-					key,
-					audio.container ?? "FMP4",
-					state.segmentLength,
-					joinPath(
-						base,
-						audioMuxingRelPath({ ...audio, extras: undefined }, key),
+				return applyLiveMuxingOptions(
+					muxing(
+						key,
+						audio.container ?? "FMP4",
+						state.segmentLength,
+						joinPath(
+							base,
+							audioMuxingRelPath({ ...audio, extras: undefined }, key),
+						),
+						segmentAcl,
+						mslNaming,
+						mslVersion,
+						undefined,
+						audio.cmaf,
 					),
-					segmentAcl,
-					mslNaming,
-					mslVersion,
-					undefined,
-					audio.cmaf,
+					audio.muxing,
 				);
 			}),
 	];
@@ -1460,26 +1560,7 @@ export function buildLiveChannelPlan(
 		// sample and bitmovin-live templates inline the selection per stream:
 		// video position 0, audio position 1 (C13). These entries are the
 		// per-ingestKey selection spec the compiler inlines onto each stream.
-		ingest: [
-			...(state.videos.length > 0
-				? [
-						{
-							key: "video",
-							inputPath: ingestInputPath(state.inputKind),
-							position: 0,
-						},
-					]
-				: []),
-			...(state.audios.length > 0
-				? [
-						{
-							key: "audio",
-							inputPath: ingestInputPath(state.inputKind),
-							position: 1,
-						},
-					]
-				: []),
-		],
+		ingest: ingest.ingest,
 		renditions,
 		muxings,
 		liveManifests: buildManifests(state),

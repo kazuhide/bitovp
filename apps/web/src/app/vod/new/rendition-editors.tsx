@@ -4,6 +4,7 @@ import {
 	AV1_DYNAMIC_RANGE_FORMATS,
 	type CredentialSummaryWire,
 } from "@bitovp/core";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
@@ -550,11 +551,13 @@ export function H264AdvancedEditor({
 	idBase,
 	value,
 	allowCrf = true,
+	children,
 	onChange,
 }: {
 	idBase: string;
 	value: WizardH264Options | undefined;
 	allowCrf?: boolean;
+	children?: ReactNode;
 	onChange: (next: WizardH264Options) => void;
 }) {
 	const { t } = useT();
@@ -594,6 +597,7 @@ export function H264AdvancedEditor({
 				value={options.colorConfig}
 				onChange={(colorConfig) => onChange({ ...options, colorConfig })}
 			/>
+			{children}
 		</Collapsible>
 	);
 }
@@ -660,6 +664,7 @@ export function H265AdvancedEditor({
 	value,
 	allowCrf = true,
 	visionMetadataKeys,
+	children,
 	onChange,
 }: {
 	idBase: string;
@@ -667,6 +672,7 @@ export function H265AdvancedEditor({
 	allowCrf?: boolean;
 	/** VISION_METADATA dolbyStream keys (separated-metadata flow). */
 	visionMetadataKeys: string[];
+	children?: ReactNode;
 	onChange: (next: WizardH265Options) => void;
 }) {
 	const { t } = useT();
@@ -826,6 +832,7 @@ export function H265AdvancedEditor({
 					</Button>
 				)}
 			</Collapsible>
+			{children}
 		</Collapsible>
 	);
 }

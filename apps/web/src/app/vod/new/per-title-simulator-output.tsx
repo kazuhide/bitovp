@@ -233,8 +233,9 @@ export function PerTitleOutputChart({
 					? text.countLimit
 					: text.countUnavailable
 				: undefined;
+	// Aggregating preview rows must not change the declared comparison axis.
 	const dimensionAxis = perTitleDimensionAxis(
-		preview.rows.filter(
+		proposal.api.streams.filter(
 			(row) => row.width !== undefined || row.height !== undefined,
 		),
 	);

@@ -27,7 +27,19 @@ const proposal: PerTitleProposal = {
 			minBitrateStepSize: 1.5,
 			maxBitrateStepSize: 2,
 		},
-		streams: [],
+		streams: [
+			{
+				rowId: "upper",
+				height: 720,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			},
+			{ rowId: "candidate", height: 180, mode: "PER_TITLE_TEMPLATE" },
+			{
+				rowId: "lower",
+				height: 360,
+				mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+			},
+		],
 	},
 	scenarios: [],
 	diagnostics: [],
@@ -151,6 +163,168 @@ describe("Per-Title output chart", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("keeps fixed row ordering across the real upper-template aggregation threshold (%s)", async (locale) => {
+		const actual =
+			await vi.importActual<typeof import("@bitovp/core")>("@bitovp/core");
+		vi.mocked(previewPerTitleOutput).mockImplementation(
+			actual.previewPerTitleOutput,
+		);
+		const source: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "wide",
+						width: 1920,
+						height: 720,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 200000, maxBitrate: 200000 },
+					},
+					{
+						rowId: "tall",
+						width: 1280,
+						height: 1080,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 600000, maxBitrate: 600000 },
+					},
+					{ rowId: "upper", height: 1440, mode: "PER_TITLE_TEMPLATE" },
+				],
+			},
+		};
+		const before = structuredClone(source);
+		const inputs = [893999, 894000] as const;
+		expect(
+			actual
+				.previewPerTitleOutput(source, { analysisInput: inputs[0] })
+				.rows.some((row) => row.kind === "automatic-group"),
+		).toBe(false);
+		expect(
+			actual
+				.previewPerTitleOutput(source, { analysisInput: inputs[1] })
+				.rows.some((row) => row.kind === "automatic-group"),
+		).toBe(true);
+		const { rerender } = renderLocalized(
+			<PerTitleOutputChart proposal={source} analysisInput={inputs[0]} />,
+			locale,
+		);
+		for (const analysisInput of inputs) {
+			rerender(
+				<PerTitleOutputChart proposal={source} analysisInput={analysisInput} />,
+			);
+			const rows = within(screen.getByRole("img")).getAllByTestId(
+				"per-title-output-row",
+			);
+			expect(rows[0]).toHaveTextContent("720 px");
+			expect(rows[1]).toHaveTextContent("1080 px");
+			const dataRows = within(screen.getByRole("table")).getAllByRole("row");
+			expect(dataRows[1]).toHaveTextContent("720 px");
+			expect(dataRows[2]).toHaveTextContent("1080 px");
+		}
+		expect(source).toEqual(before);
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("keeps width ordering when a real source template has no dimensions (%s)", async (locale) => {
+		const actual =
+			await vi.importActual<typeof import("@bitovp/core")>("@bitovp/core");
+		vi.mocked(previewPerTitleOutput).mockImplementation(
+			actual.previewPerTitleOutput,
+		);
+		const source: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "large",
+						width: 1280,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 800000, maxBitrate: 800000 },
+					},
+					{
+						rowId: "small",
+						width: 640,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 200000, maxBitrate: 200000 },
+					},
+					{ rowId: "unknown", mode: "PER_TITLE_TEMPLATE" },
+				],
+			},
+		};
+		const before = structuredClone(source);
+		renderLocalized(<PerTitleOutputChart proposal={source} />, locale);
+		const rows = within(screen.getByRole("img")).getAllByTestId(
+			"per-title-output-row",
+		);
+		const width = locale === "en" ? "Width" : "幅";
+		expect(rows[0]).toHaveTextContent(`${width} 640 px`);
+		expect(rows[1]).toHaveTextContent(`${width} 1280 px`);
+		expect(rows[2]).toHaveTextContent(
+			locale === "en" ? "Resolution not specified" : "解像度未指定",
+		);
+		expect(
+			within(required(rows[2])).queryByTestId("per-title-output-target"),
+		).toBeNull();
+		expect(source).toEqual(before);
+	});
+
+	it.each([
+		["en", "height"],
+		["ja", "height"],
+		["en", "width"],
+		["ja", "width"],
+	] as const)("keeps source order when the real preview omits an invalid %s %s", async (locale, invalidAxis) => {
+		const actual =
+			await vi.importActual<typeof import("@bitovp/core")>("@bitovp/core");
+		vi.mocked(previewPerTitleOutput).mockImplementation(
+			actual.previewPerTitleOutput,
+		);
+		const source: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "large-invalid",
+						height: 720,
+						width: 1280,
+						[invalidAxis]: Number.NaN,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 800000, maxBitrate: 800000 },
+					},
+					{
+						rowId: "small",
+						height: 360,
+						width: 640,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+						perTitleSettings: { minBitrate: 200000, maxBitrate: 200000 },
+					},
+				],
+			},
+		};
+		const before = structuredClone(source);
+		renderLocalized(<PerTitleOutputChart proposal={source} />, locale);
+		const rows = within(screen.getByRole("img")).getAllByTestId(
+			"per-title-output-row",
+		);
+		expect(rows[0]).toHaveTextContent(
+			invalidAxis === "width"
+				? "720 px"
+				: locale === "en"
+					? "Width 1280 px"
+					: "幅 1280 px",
+		);
+		expect(rows[1]).toHaveTextContent("360 px");
+		expect(screen.queryByTestId("per-title-output-target")).toBeNull();
+		expect(source).toEqual(before);
+	});
+
+	it.each([
+		"en",
+		"ja",
 	] as const)("orders width-only rows by declared width and keeps tied rows stable (%s)", (locale) => {
 		const source: PerTitleProposal = {
 			...proposal,
@@ -215,6 +389,24 @@ describe("Per-Title output chart", () => {
 		"en",
 		"ja",
 	] as const)("keeps the input order when declared dimensions have no common axis (%s)", (locale) => {
+		const source: PerTitleProposal = {
+			...proposal,
+			api: {
+				...proposal.api,
+				streams: [
+					{
+						rowId: "width-only",
+						width: 1280,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					},
+					{
+						rowId: "height-only",
+						height: 360,
+						mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+					},
+				],
+			},
+		};
 		const result: PerTitleOutputPreview = {
 			...preview,
 			rows: [
@@ -234,7 +426,7 @@ describe("Per-Title output chart", () => {
 			],
 		};
 		vi.mocked(previewPerTitleOutput).mockReturnValue(result);
-		renderLocalized(<PerTitleOutputChart proposal={proposal} />, locale);
+		renderLocalized(<PerTitleOutputChart proposal={source} />, locale);
 		const rows = within(screen.getByRole("img")).getAllByTestId(
 			"per-title-output-row",
 		);

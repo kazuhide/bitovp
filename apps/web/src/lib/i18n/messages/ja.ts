@@ -3958,6 +3958,13 @@ export const ja = {
 		audioVideoSyncMode: "音声 / 映像の同期モード",
 		autoEnable: "自動有効化",
 		autoLevelSetup: "レベル自動設定",
+		av1MaxLevel: "AV1 レベル上限",
+		av1MaxLevelHelp:
+			"自動選択するレベルの上限です。空欄はプロバイダーの既定値を使います。レベル自動設定が無効の間は効果がありません。",
+		av1MaxLevelDisabled:
+			"レベル自動設定が無効の間は、AV1 レベル上限の指定に効果がありません。",
+		av1HdrMetadataHelp:
+			"任意の HDR10 静的メタデータです。マスターディスプレイは G(...)B(...)R(...)WP(...)L(...) 形式です。MaxCLL と MaxFALL は 0〜65535、空欄は未指定になります。",
 		autoNull: "自動 (null)",
 		automaticAdPlacementAllsceneboundaries:
 			"広告位置の自動挿入 (allSceneBoundaries)",

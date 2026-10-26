@@ -8,6 +8,7 @@ const messages: Record<string, MessageKey> = {
 	PLAN_CODEC_ASPECT_CONFLICT: "wizard.codecAspectConflict",
 	PLAN_CODEC_QP_RANGE: "wizard.codecQpRange",
 	PLAN_CODEC_STRICT_CBR_MODE: "wizard.codecStrictCbrMode",
+	PLAN_AV1_MAX_LEVEL_DISABLED: "wizard.av1MaxLevelDisabled",
 };
 
 export function codecControlIssueMessage(

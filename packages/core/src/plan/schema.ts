@@ -839,6 +839,7 @@ export const vp9RenditionSchema = z.strictObject({
 	codec: z.literal("VP9"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	name: z.string().optional(),
+	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().nullable(),
 	bitrate: z.number().int().positive().nullable(),
 	mode: streamModeSchema.default("STANDARD"),
@@ -861,7 +862,7 @@ export const vp9RenditionSchema = z.strictObject({
 
 /**
  * AV1 (Av1VideoConfiguration). This app exposes a subset of the SDK's
- * AV1-specific settings: preset, level setup and dynamic range format.
+ * AV1-specific settings: preset, level setup and dynamic range metadata.
  * Shared settings include nullable height/bitrate, stream mode, colorConfig,
  * and per-title options. Other SDK AV1 settings are not represented here.
  */
@@ -877,6 +878,7 @@ export const av1RenditionSchema = z.strictObject({
 	codec: z.literal("AV1"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	name: z.string().optional(),
+	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().nullable(),
 	bitrate: z.number().int().positive().nullable(),
 	mode: streamModeSchema.default("STANDARD"),
@@ -887,7 +889,11 @@ export const av1RenditionSchema = z.strictObject({
 		.optional(),
 	/** AutoLevelSetup is an enum (not an object) in this SDK version. */
 	autoLevelSetup: z.enum(["ENABLED", "DISABLED"]).optional(),
+	maxLevel: codecEnumSchema("LevelAv1").optional(),
 	dynamicRangeFormat: z.enum(AV1_DYNAMIC_RANGE_FORMATS).optional(),
+	masterDisplay: z.string().min(1).optional(),
+	maxContentLightLevel: z.number().int().min(0).max(65_535).optional(),
+	maxPictureAverageLightLevel: z.number().int().min(0).max(65_535).optional(),
 	colorConfig: colorConfigSchema.optional(),
 	perTitleSettings: perTitleFixedResolutionAndBitrateSettingsSchema.optional(),
 });

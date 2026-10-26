@@ -96,3 +96,24 @@ export function checkH26xCodecControls(
 	}
 	return issues;
 }
+
+/** Preserve explicit provider settings while explaining a documented no-effect value. */
+export function checkAv1CodecControls(
+	renditions: EncodingPlan["renditions"],
+): PlanIssue[] {
+	return renditions.flatMap((rendition, index) =>
+		rendition.codec === "AV1" &&
+		rendition.maxLevel !== undefined &&
+		rendition.autoLevelSetup === "DISABLED"
+			? [
+					{
+						code: "PLAN_AV1_MAX_LEVEL_DISABLED",
+						path: `renditions[${index}].maxLevel`,
+						level: "warning" as const,
+						message:
+							"AV1 maximum level has no effect while automatic level setup is disabled",
+					},
+				]
+			: [],
+	);
+}

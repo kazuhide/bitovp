@@ -269,7 +269,11 @@ const AV1_OPTION_KEYS = [
 	"rate",
 	"presetConfiguration",
 	"autoLevelSetup",
+	"maxLevel",
 	"dynamicRangeFormat",
+	"masterDisplay",
+	"maxContentLightLevel",
+	"maxPictureAverageLightLevel",
 	"colorConfig",
 ];
 

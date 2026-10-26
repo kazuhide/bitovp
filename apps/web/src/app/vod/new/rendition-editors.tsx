@@ -360,8 +360,7 @@ const H265_FIELDS: OptionFieldSpec[] = [
 	{ key: "sao", labelKey: "wizard.sao", control: "bool" },
 ];
 
-const H265_HDR10_FIELDS: OptionFieldSpec[] = [
-	{ key: "hdr", labelKey: "wizard.hdr", control: "bool" },
+const HDR10_METADATA_FIELDS: OptionFieldSpec[] = [
 	{
 		key: "masterDisplay",
 		labelKey: "wizard.masterDisplay",
@@ -374,6 +373,11 @@ const H265_HDR10_FIELDS: OptionFieldSpec[] = [
 		labelKey: "wizard.maxfall",
 		control: "num",
 	},
+];
+
+const H265_HDR10_FIELDS: OptionFieldSpec[] = [
+	{ key: "hdr", labelKey: "wizard.hdr", control: "bool" },
+	...HDR10_METADATA_FIELDS,
 	{
 		key: "pixelFormat",
 		labelKey: "wizard.pixelFormat",
@@ -424,8 +428,7 @@ const VP9_FIELDS: OptionFieldSpec[] = [
 	{ key: "arnrStrength", labelKey: "wizard.arnrStrength", control: "num" },
 ];
 
-// AV1 (Av1VideoConfiguration) exposes only these knobs beyond bitrate/height.
-// The preset select lives on the rendition row directly; these are Advanced.
+// Keep optional AV1 controls in the existing advanced section.
 const AV1_FIELDS: OptionFieldSpec[] = [
 	{
 		key: "dynamicRangeFormat",
@@ -449,6 +452,19 @@ const AV1_FIELDS: OptionFieldSpec[] = [
 		labelKey: "wizard.autoLevelSetup",
 		control: { options: ["ENABLED", "DISABLED"] },
 	},
+	{
+		key: "maxLevel",
+		labelKey: "wizard.av1MaxLevel",
+		control: { options: CODEC_OPTIONS.LevelAv1 },
+		hintKey: "wizard.av1MaxLevelHelp",
+	},
+	...HDR10_METADATA_FIELDS.map((field) => ({
+		...field,
+		hintKey:
+			field.key === "masterDisplay"
+				? ("wizard.av1HdrMetadataHelp" as const)
+				: field.hintKey,
+	})),
 ];
 
 export const LOUDNESS_FIELDS: OptionFieldSpec[] = [

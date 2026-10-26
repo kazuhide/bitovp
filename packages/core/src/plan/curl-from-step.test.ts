@@ -30,6 +30,50 @@ function step(
 
 describe("curlForStep — endpoint mapping", () => {
 	it.each([
+		"L4_1",
+		"4.1",
+	])("uses the AV1 maximum-level wire value for request snapshot %s", (maxLevel) => {
+		const request = Object.freeze({ width: 1280, maxLevel, refs: {} });
+		const entry = step({
+			kind: "CREATE_CODEC_AV1",
+			payload: { width: 1280, maxLevel: "L4_1" },
+			request,
+		});
+		const result = curlForStep(entry);
+		if (!result.ok) throw new Error("Expected AV1 cURL");
+		const body = result.command.match(/--data '([\s\S]*)'$/)?.[1];
+		if (body === undefined) throw new Error("Missing cURL JSON body");
+		expect(JSON.parse(body)).toEqual({ width: 1280, maxLevel: "4.1" });
+		expect(request.maxLevel).toBe(maxLevel);
+		expect(entry.payload.maxLevel).toBe("L4_1");
+	});
+	it("leaves an omitted AV1 maximum level absent from cURL", () => {
+		const result = curlForStep(
+			step({ kind: "CREATE_CODEC_AV1", request: { width: 1280, refs: {} } }),
+		);
+		if (!result.ok) throw new Error("Expected AV1 cURL");
+		expect(result.command).toContain('"width": 1280');
+		expect(result.command).not.toContain("maxLevel");
+	});
+	it.each([
+		"",
+		"toString",
+		"constructor",
+		"__proto__",
+		"FUTURE_LEVEL",
+		null,
+		0,
+		false,
+		{},
+		[],
+	])("does not generate cURL for an invalid AV1 maximum level %j", (maxLevel) => {
+		expect(
+			curlForStep(
+				step({ kind: "CREATE_CODEC_AV1", request: { maxLevel, refs: {} } }),
+			),
+		).toEqual({ ok: false, code: "NO_ENDPOINT", kind: "CREATE_CODEC_AV1" });
+	});
+	it.each([
 		"HD",
 		"CUSTOM",
 		undefined,

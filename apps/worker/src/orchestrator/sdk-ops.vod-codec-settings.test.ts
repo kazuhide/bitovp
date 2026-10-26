@@ -1,4 +1,10 @@
-import type { CompiledOperation } from "@bitovp/core";
+import { readFileSync } from "node:fs";
+import {
+	type CompiledOperation,
+	compilePlan,
+	curlForStep,
+	encodingPlanSchema,
+} from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
@@ -21,7 +27,7 @@ async function serialized(
 		{ apiKey: "test-only", tenantOrgId: null, bitmovinAccountId: "account" },
 		async () => {},
 	);
-	await executeStep(
+	const result = await executeStep(
 		{ step: "codec:video", kind, refs: {}, payload },
 		{
 			sdk,
@@ -32,7 +38,11 @@ async function serialized(
 	);
 	expect(fetch).toHaveBeenCalledOnce();
 	const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-	return { path: new URL(url).pathname, body: JSON.parse(init.body as string) };
+	return {
+		path: new URL(url).pathname,
+		body: JSON.parse(init.body as string),
+		request: result.request,
+	};
 }
 
 it.each([
@@ -79,4 +89,36 @@ it("rejects an unknown AV1 maximum level before transport", async () => {
 		sdk.createAv1Config({ maxLevel: "FUTURE_LEVEL" }),
 	).rejects.toThrow("LevelAv1");
 	expect(fetch).not.toHaveBeenCalled();
+});
+
+it.each([
+	"L4_1",
+	"4.1",
+	undefined,
+])("matches the installed SDK body when copying compiled AV1 maximum level %s as cURL", async (maxLevel) => {
+	const raw = JSON.parse(
+		readFileSync(
+			new URL(
+				"../../../../packages/core/src/plan/__fixtures__/av1-fmp4-dash-hls.plan.json",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	for (const row of raw.renditions)
+		if (row.codec === "AV1") row.maxLevel = maxLevel;
+	const plan = encodingPlanSchema.parse(raw);
+	const op = compilePlan(plan).find((op) => op.kind === "CREATE_CODEC_AV1");
+	if (!op) throw new Error("Missing AV1 fixture operation");
+	const sent = await serialized(op.kind, op.payload);
+	const before = structuredClone({ op, request: sent.request });
+	const curl = curlForStep({ ...op, status: "DONE", request: sent.request });
+	if (!curl.ok) throw new Error("Expected AV1 cURL");
+	const data = curl.command.match(/--data '([\s\S]*)'$/)?.[1];
+	if (data === undefined) throw new Error("Missing AV1 cURL JSON body");
+	const body = JSON.parse(data.replaceAll("'\\''", "'"));
+	// The SDK adds its model discriminator; the cURL endpoint already identifies AV1.
+	expect({ type: "AV1", ...body }).toEqual(sent.body);
+	expect(body.maxLevel).toBe(maxLevel === undefined ? undefined : "4.1");
+	expect({ op, request: sent.request }).toEqual(before);
 });

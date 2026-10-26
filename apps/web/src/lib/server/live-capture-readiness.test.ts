@@ -44,6 +44,119 @@ function browser(
 afterEach(() => vi.useRealTimers());
 
 describe("Live capture readiness at the request boundary", () => {
+	it.each([
+		"/",
+		"/custom/media/",
+	])("reads storage keys relative to output root for %s", async (path) => {
+		const rooted = structuredClone(plan);
+		rooted.renditions = rooted.renditions.slice(0, 1);
+		rooted.muxings = rooted.muxings.slice(0, 1);
+		const muxing = rooted.muxings[0];
+		if (!muxing?.destination) throw new Error("missing muxing");
+		muxing.destination.path = path;
+		const prefix = path === "/" ? "" : "custom/media/";
+		const driver = browser(
+			vi.fn(async () => ({
+				objects: [object(`${prefix}segment_17.ts`)],
+				prefixes: [],
+			})),
+		);
+		expect(
+			(
+				await checkLiveCaptureReadiness(
+					rooted,
+					createdAt,
+					async () => driver,
+					() => now,
+				)
+			).kind,
+		).toBe("ready");
+		expect(driver.listObjects).toHaveBeenCalledWith(
+			expect.objectContaining({ prefix }),
+		);
+	});
+	it.each([
+		["{rand_chars:8}", "Ab12Cd34"],
+		["{segment_rand_chars:8}", "98765432"],
+		["{rand_chars}", "A".repeat(32)],
+		["{segment_rand_chars}", "9".repeat(32)],
+	])("recognises expanded %s before the numeric segment index", async (token, random) => {
+		const templated = structuredClone(plan);
+		for (const muxing of templated.muxings) {
+			if (muxing.kind !== "MP4")
+				muxing.segmentNamingTemplate = `v.part+${token}_%number%.mp4`;
+		}
+		const result = await checkLiveCaptureReadiness(
+			templated,
+			createdAt,
+			async () =>
+				browser(
+					vi.fn(async ({ prefix }) => ({
+						objects: [object(`${prefix}v.part+${random}_17.mp4`)],
+						prefixes: [],
+					})),
+				),
+			() => now,
+		);
+		expect(result).toMatchObject({ kind: "ready", ready: 2, total: 2 });
+	});
+	it.each([
+		"v.part+Ab12Cd3_17.mp4",
+		"v.part+Ab12Cd345_17.mp4",
+		"v.part+Ab12C-34_17.mp4",
+		"vXpart+Ab12Cd34_17Xmp4",
+		"v.part+Ab12Cd34_latest.mp4",
+		"v.part+Ab12Cd34_9007199254740992.mp4",
+		"v.part+{rand_chars:8}_17.mp4",
+	])("does not admit an invalid expanded template object: %s", async (name) => {
+		const templated = structuredClone(plan);
+		for (const muxing of templated.muxings) {
+			if (muxing.kind !== "MP4")
+				muxing.segmentNamingTemplate = "v.part+{rand_chars:8}_%number%.mp4";
+		}
+		expect(
+			await checkLiveCaptureReadiness(
+				templated,
+				createdAt,
+				async () =>
+					browser(
+						vi.fn(async ({ prefix }) => ({
+							objects: [object(`${prefix}${name}`)],
+							prefixes: [],
+						})),
+					),
+				() => now,
+			),
+		).toMatchObject({ kind: "awaiting", ready: 0, total: 2 });
+	});
+	it("keeps random-looking tokens literal when declared in segmentNaming", async () => {
+		const literal = structuredClone(plan);
+		for (const muxing of literal.muxings) {
+			if (muxing.kind !== "MP4")
+				muxing.segmentNaming = "seg-{rand_chars:8}-%number%.ts";
+		}
+		for (const [name, kind] of [
+			["seg-{rand_chars:8}-17.ts", "ready"],
+			["seg-Ab12Cd34-17.ts", "awaiting"],
+		] as const) {
+			expect(
+				(
+					await checkLiveCaptureReadiness(
+						literal,
+						createdAt,
+						async () =>
+							browser(
+								vi.fn(async ({ prefix }) => ({
+									objects: [object(`${prefix}${name}`)],
+									prefixes: [],
+								})),
+							),
+						() => now,
+					)
+				).kind,
+			).toBe(kind);
+		}
+	});
 	it("requires a fresh CMAF init segment and media segment before capture is ready", async () => {
 		const cmaf = structuredClone(plan);
 		cmaf.muxings = cmaf.muxings.map((muxing) => ({
@@ -75,6 +188,45 @@ describe("Live capture readiness at the request boundary", () => {
 			);
 			expect(result.kind).toBe(hasInit ? "ready" : "awaiting");
 		}
+	});
+	it.each([
+		false,
+		true,
+	])("requires one fresh expanded CMAF init across all listing pages (ambiguous=%s)", async (ambiguous) => {
+		const cmaf = structuredClone(plan);
+		cmaf.muxings = cmaf.muxings.map((muxing) => ({
+			key: muxing.key,
+			streamKey: muxing.streamKey,
+			destination: muxing.destination,
+			kind: "CMAF",
+			segmentLength: 6,
+			segmentNaming: "segment_%number%.m4s",
+			initSegmentName: "init.mp4",
+			initSegmentNameTemplate: "init-{rand_chars}.mp4",
+		}));
+		const result = await checkLiveCaptureReadiness(
+			cmaf,
+			createdAt,
+			async () =>
+				browser(
+					vi.fn(async ({ prefix, cursor }) => ({
+						objects: cursor
+							? ambiguous
+								? [object(`${prefix}init-${"B".repeat(32)}.mp4`)]
+								: []
+							: [
+									object(`${prefix}segment_17.m4s`),
+									// This materialized literal default does not select the init object.
+									object(`${prefix}init.mp4`),
+									object(`${prefix}init-${"A".repeat(32)}.mp4`),
+								],
+						prefixes: [],
+						...(cursor ? {} : { nextCursor: "more" }),
+					})),
+				),
+			() => now,
+		);
+		expect(result.kind).toBe(ambiguous ? "unobservable" : "ready");
 	});
 	it.each([
 		1, 2,

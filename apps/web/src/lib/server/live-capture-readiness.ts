@@ -1,7 +1,9 @@
 import {
 	enumerateLiveCaptureTargets,
+	initSegmentCandidates,
 	type LiveCaptureTarget,
 	type LiveChannelPlan,
+	segmentNamePattern,
 	vmafSourceFor,
 } from "@bitovp/core";
 import type { ObjectStorageBrowser } from "@bitovp/storage";
@@ -44,7 +46,7 @@ export async function checkLiveCaptureReadiness(
 			if (!output) return "unobservable";
 			const source = vmafSourceFor(output);
 			if (!source.streamable) return "unobservable";
-			const path = target.segmentPrefix.replace(/\/+$/, "");
+			const path = target.segmentPrefix.replace(/^\/+|\/+$/g, "");
 			const safeName = (name: string) =>
 				name.length > 0 &&
 				!/[\\/]/.test(name) &&
@@ -52,18 +54,20 @@ export async function checkLiveCaptureReadiness(
 				name !== "." &&
 				name !== "..";
 			if (
-				path.startsWith("/") ||
 				path.includes("\\") ||
 				path.split("/").some((part) => part === ".." || part === ".") ||
 				!safeName(target.segmentNaming) ||
 				!target.segmentNaming.includes("%number%") ||
 				(target.kind === "FMP4" &&
-					(!target.initSegmentName || !safeName(target.initSegmentName)))
+					!safeName(
+						target.initSegmentNameTemplate ?? target.initSegmentName ?? "",
+					))
 			)
 				return "unobservable";
 			const prefix = path ? `${path}/` : "";
-			const pattern = new RegExp(
-				`^${target.segmentNaming.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%number%/g, "([0-9]+)")}$`,
+			const pattern = segmentNamePattern(
+				target.segmentNaming,
+				target.segmentNamingIsTemplate === true,
 			);
 			if (now() >= expiresAt) return "unobservable";
 			browser = await resolveBrowser(source.credentialId);
@@ -71,6 +75,7 @@ export async function checkLiveCaptureReadiness(
 			let segment = false;
 			let init = target.kind === "TS";
 			let uncertain = false;
+			const initNames = new Set<string>();
 			let cursor: string | undefined;
 			const cursors = new Set<string>();
 			for (let page = 0; page < MAX_PAGES; page++) {
@@ -89,11 +94,24 @@ export async function checkLiveCaptureReadiness(
 				for (const object of result.objects) {
 					if (!object.key.startsWith(prefix)) continue;
 					const name = object.key.slice(prefix.length);
+					if (!safeName(name)) continue;
 					const match = pattern.exec(name);
 					const isSegment =
-						!!match && Number.isFinite(Number.parseInt(match[1] ?? "", 10));
+						!!match &&
+						Number.isSafeInteger(Number.parseInt(match[1] ?? "", 10));
 					const isInit =
-						target.kind === "FMP4" && name === target.initSegmentName;
+						target.kind === "FMP4" &&
+						(target.initSegmentNameTemplate
+							? initSegmentCandidates(
+									[name],
+									target.initSegmentName,
+									target.initSegmentNameTemplate,
+								).length === 1
+							: name === target.initSegmentName);
+					if (isInit) {
+						initNames.add(name);
+						if (initNames.size > 1) return "unobservable";
+					}
 					if (!isSegment && !isInit) continue;
 					if (!Number.isFinite(object.size) || object.size <= 0) continue;
 					const modified = Date.parse(object.lastModified ?? "");
@@ -105,8 +123,13 @@ export async function checkLiveCaptureReadiness(
 					segment ||= isSegment;
 					init ||= isInit;
 				}
-				if (segment && init) return "ready";
-				if (!result.nextCursor) return uncertain ? "unobservable" : "awaiting";
+				if (segment && init && !target.initSegmentNameTemplate) return "ready";
+				if (!result.nextCursor)
+					return segment && init
+						? "ready"
+						: uncertain
+							? "unobservable"
+							: "awaiting";
 				if (cursors.has(result.nextCursor)) return "unobservable";
 				cursors.add(result.nextCursor);
 				cursor = result.nextCursor;

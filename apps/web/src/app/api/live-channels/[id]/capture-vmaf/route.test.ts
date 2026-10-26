@@ -153,6 +153,34 @@ afterEach(() => {
 
 describe("POST /api/live-channels/[id]/capture-vmaf", () => {
 	it.each([
+		["{rand_chars:8}", "Ab12Cd34"],
+		["{segment_rand_chars}", "9".repeat(32)],
+	])("enqueues a numbered %s template after finding actual expanded segment objects", async (token, random) => {
+		const plan = liveChannelPlanSchema.parse(PLAN);
+		const muxing = plan.muxings[0];
+		if (!muxing || muxing.kind === "MP4") throw new Error("missing muxing");
+		muxing.segmentNamingTemplate = `part_${token}_%number%.mp4`;
+		channelFindUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "RUNNING",
+			bitmovinEncodingId: RUN.bitmovinEncodingId,
+			plan,
+		});
+		listObjects.mockImplementation(async ({ prefix }) => ({
+			prefixes: [],
+			objects: [
+				{
+					key: `${prefix}part_${random}_17.mp4`,
+					size: 188,
+					lastModified: new Date(Date.now() - 1000).toISOString(),
+				},
+			],
+		}));
+		expect((await postCapture()).status).toBe(201);
+		expect(vmafCreate).toHaveBeenCalledTimes(1);
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
+	it.each([
 		0, 1,
 	])("rejects random-only naming on video target %i before reading storage or creating a capture job", async (index) => {
 		const plan = liveChannelPlanSchema.parse(PLAN);

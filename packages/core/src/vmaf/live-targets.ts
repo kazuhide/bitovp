@@ -45,6 +45,8 @@ export type LiveCaptureTarget = {
 	 * recognise segment objects under the prefix and to order them by number.
 	 */
 	segmentNaming: string;
+	/** Random tokens expand only when the muxing used segmentNamingTemplate. */
+	segmentNamingIsTemplate?: boolean;
 	/**
 	 * The muxing's segment length in seconds : the per-segment
 	 * aligner splits the captured window on the encoder's real segment size,
@@ -148,6 +150,9 @@ export function enumerateLiveCaptureTargets(
 					? { initSegmentName: muxing.initSegmentName }
 					: {}),
 			segmentNaming: muxing.segmentNamingTemplate ?? muxing.segmentNaming,
+			...(muxing.segmentNamingTemplate
+				? { segmentNamingIsTemplate: true }
+				: {}),
 			segmentLengthSec: muxing.segmentLength,
 		});
 	}

@@ -73,6 +73,7 @@ describe("selectWindowSegments", () => {
 		const target = {
 			...FMP4_TARGET,
 			segmentNaming: `part_{rand_chars:8}_%number%.${extension}`,
+			segmentNamingIsTemplate: true,
 		};
 		const objects = [
 			obj(`${target.segmentPrefix}/part_Ab12Cd34_17.${extension}`),
@@ -88,6 +89,66 @@ describe("selectWindowSegments", () => {
 		expect(selected.segments.map((segment) => segment.number)).toEqual([
 			17, 18,
 		]);
+	});
+	it("uses the numeric index after default-length random tokens to select the latest tail", () => {
+		const target = {
+			...FMP4_TARGET,
+			segmentNaming: "part_{rand_chars}_{segment_rand_chars}_%number%.mp4",
+			segmentNamingIsTemplate: true,
+		};
+		const names = [
+			`part_${"9".repeat(32)}_${"A".repeat(32)}_2.mp4`,
+			`part_${"1".repeat(32)}_${"B".repeat(32)}_10.mp4`,
+			`part_${"2".repeat(32)}_${"C".repeat(32)}_11.mp4`,
+			`part_${"3".repeat(31)}_${"D".repeat(32)}_12.mp4`,
+			`part_${"-".repeat(32)}_${"E".repeat(32)}_12.mp4`,
+			`part_${"4".repeat(32)}_${"F".repeat(32)}_latest.mp4`,
+			`part_${"5".repeat(32)}_${"G".repeat(32)}_9007199254740992.mp4`,
+		];
+		const result = selectWindowSegments(
+			names.map((name) => obj(`${target.segmentPrefix}/${name}`)),
+			target,
+			{ now: base, windowSeconds: 60, fallbackCount: 2 },
+		);
+		expect(result.segments.map((segment) => segment.number)).toEqual([10, 11]);
+		expect(result.selection.contiguous).toBe(true);
+	});
+	it("preserves literal MSL tokens rather than selecting another expanded object's index", () => {
+		const target = {
+			...TS_TARGET,
+			segmentNaming: "seg-{rand_chars:8}-%number%.ts",
+		};
+		const result = selectWindowSegments(
+			[
+				obj(`${target.segmentPrefix}/seg-{rand_chars:8}-17.ts`),
+				obj(`${target.segmentPrefix}/seg-Ab12Cd34-99.ts`),
+			],
+			target,
+			{ now: base, windowSeconds: 60, fallbackCount: 2 },
+		);
+		expect(result.segments.map((segment) => segment.number)).toEqual([17]);
+	});
+	it("rejects finite sequence numbers beyond exact integer precision", () => {
+		const result = selectWindowSegments(
+			[
+				obj(`${TS_TARGET.segmentPrefix}/seg_17.ts`),
+				obj(`${TS_TARGET.segmentPrefix}/seg_9007199254740992.ts`),
+			],
+			TS_TARGET,
+			{ now: base, windowSeconds: 60, fallbackCount: 2 },
+		);
+		expect(result.segments.map((segment) => segment.number)).toEqual([17]);
+	});
+	it("never captures another container's segments from a child folder", () => {
+		const result = selectWindowSegments(
+			[
+				obj(`${TS_TARGET.segmentPrefix}/seg_17.ts`),
+				obj(`${TS_TARGET.segmentPrefix}/audio/seg_99.ts`),
+			],
+			TS_TARGET,
+			{ now: base, windowSeconds: 60, fallbackCount: 2 },
+		);
+		expect(result.segments.map((segment) => segment.number)).toEqual([17]);
 	});
 	it("keeps only segments within the window by lastModified, ordered by number", () => {
 		const objects = [
@@ -394,6 +455,68 @@ function captureDeps(browser: ObjectStorageBrowser): CaptureDeps {
 }
 
 describe("captureRenditionWindow (fMP4)", () => {
+	it.each([
+		"/",
+		"/custom/media/",
+	])("uses storage keys relative to output root for %s", async (path) => {
+		const prefix = path === "/" ? "" : "custom/media/";
+		const target = { ...FMP4_TARGET, segmentPrefix: path };
+		const { browser, gets } = fakeBrowser({
+			pages: [
+				{
+					objects: [
+						obj(`${prefix}init.mp4`),
+						obj(`${prefix}segment_1.m4s`),
+						obj(`${prefix}audio/segment_99.m4s`),
+					],
+				},
+			],
+		});
+		await captureRenditionWindow({
+			deps: captureDeps(browser),
+			credential,
+			bucket: "b",
+			target,
+			jobDir: workDir,
+			windowSeconds: 120,
+			now: Date.now(),
+			fallbackCount: 10,
+		});
+		expect(browser.listObjects).toHaveBeenCalledWith(
+			expect.objectContaining({ prefix }),
+		);
+		expect(gets).toEqual([`${prefix}init.mp4`, `${prefix}segment_1.m4s`]);
+	});
+	it("uses a default-length CMAF init template ahead of a literal schema default", async () => {
+		const dir = FMP4_TARGET.segmentPrefix;
+		const init = `${dir}/init-${"A".repeat(32)}.mp4`;
+		const { browser, gets } = fakeBrowser({
+			pages: [
+				{
+					objects: [
+						obj(`${dir}/init.mp4`),
+						obj(init),
+						obj(`${dir}/segment_1.m4s`),
+					],
+				},
+			],
+		});
+		await captureRenditionWindow({
+			deps: captureDeps(browser),
+			credential,
+			bucket: "b",
+			target: {
+				...FMP4_TARGET,
+				initSegmentNameTemplate: "init-{rand_chars}.mp4",
+			},
+			jobDir: workDir,
+			windowSeconds: 120,
+			now: Date.now(),
+			fallbackCount: 10,
+		});
+		expect(gets[0]).toBe(init);
+		expect(gets).not.toContain(`${dir}/init.mp4`);
+	});
 	it.each([
 		false,
 		true,

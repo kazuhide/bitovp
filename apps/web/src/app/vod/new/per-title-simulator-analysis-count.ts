@@ -1,4 +1,8 @@
-import type { PerTitleGoal, PerTitleProposal } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	type PerTitleProposal,
+	perTitleDimensionAxis,
+} from "@bitovp/core";
 import { assessPerTitleLadder } from "./per-title-simulator-analysis-ladder";
 
 export type PerTitleCountStructureAssessment = {
@@ -159,27 +163,8 @@ export function assessPerTitleCountStructure(
 			)
 		)
 			return unknown("template-roles-mismatch");
-		const basis = streams.every(
-			(stream) => stream.width === undefined && rate(stream.height),
-		)
-			? "height"
-			: streams.every((stream) => rate(stream.width))
-				? "width"
-				: null;
-		if (
-			!basis ||
-			streams.some((a) =>
-				streams.some(
-					(b) =>
-						rate(a.width) &&
-						rate(b.width) &&
-						rate(a.height) &&
-						rate(b.height) &&
-						(a.width - b.width) * (a.height - b.height) < 0,
-				),
-			)
-		)
-			return unknown("mixed-resolution-order-unresolved");
+		const basis = perTitleDimensionAxis(streams);
+		if (!basis) return unknown("mixed-resolution-order-unresolved");
 		const ordered = [...fixed].sort(
 			(a, b) =>
 				(a[basis] as number) - (b[basis] as number) ||

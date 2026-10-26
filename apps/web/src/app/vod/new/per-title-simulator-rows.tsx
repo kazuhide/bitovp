@@ -590,11 +590,12 @@ export function PerTitleSimulatorRows({
 						}
 						let added: NonNullable<PerTitleGoal["rows"]>[number] = {
 							id: nextId(),
-							height: 720,
+							...(dimensionAxis === "width"
+								? { width: 1280 }
+								: { height: 720, ...widthForNewRow(goal, 720) }),
 							mode: ranged
 								? "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
 								: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
-							...widthForNewRow(goal, 720),
 						};
 						if (ranged) {
 							const manual = Object.fromEntries(

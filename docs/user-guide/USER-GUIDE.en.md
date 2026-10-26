@@ -463,7 +463,7 @@ The import reads the encoding-level Per-Title configuration and source Stream te
 
 If a spacing parameter is absent, the import review shows the simulator's starting value: 1.5 for `minBitrateStepSize` or 1.9 for `maxBitrateStepSize`. These are tool settings, not evidence of the original encoder's effective defaults. The comparison source retains the omitted values.
 
-A temporary key is used only for this fetch and cleared when the import screen closes. Fetching or loading settings does not start encoding or change the job draft. Use the existing difference review and **Apply to draft** to apply changes later.
+A temporary key is used only for this fetch and cleared when the import screen closes. Imported settings are for comparison and analysis only: **Apply to draft** is disabled, and the original job remains unchanged. You can save adjusted values with **Download requirements**. Fetching or loading never starts an encoding.
 
 You can also enter **Quality target (TargetQualityCrf, optional)** for H.264, HEVC, VP9 or AV1. The proposal keeps your entered value, including when you switch codecs. Leaving it empty does not copy a previous configuration's quality target. Lower values favor quality, but the same number does not imply equal quality across codecs. The target does not determine bitrate bands without source analysis; supplied limits stay unchanged and omitted limits receive an initial allocation.
 

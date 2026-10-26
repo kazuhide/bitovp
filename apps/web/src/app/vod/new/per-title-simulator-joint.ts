@@ -4,6 +4,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleGoalRow,
+	perTitleDimensionAxis,
 } from "@bitovp/core";
 import { perTitleAdviceFieldKey } from "./per-title-simulator-advice-fields";
 import { protectedPerTitleRangeMap } from "./per-title-simulator-joint-mapping";
@@ -65,11 +66,10 @@ function connections(goal: PerTitleGoal) {
 		rows.some((row) => row.bitrateSelectionMode !== "COMPLEXITY_RANGE")
 	)
 		return null;
-	const basis = rows.every((row) => rate(row.width))
-		? "width"
-		: rows.every((row) => row.width === undefined && rate(row.height))
-			? "height"
-			: null;
+	const basis = perTitleDimensionAxis([
+		...rows,
+		...(goal.automaticTemplates ?? []),
+	]);
 	if (!basis) return null;
 	const ordered = [...rows].sort(
 		(a, b) =>
@@ -313,6 +313,11 @@ function jointPerTitleExpansionAtRangeMaximum(
 		)
 	)
 		return [];
+	const basis = perTitleDimensionAxis([
+		...before.rows,
+		...(before.automaticTemplates ?? []),
+	]);
+	if (!basis) return [];
 	const p =
 		Math.log(current.maxBitrate / before.minBitrate) /
 		Math.log(before.maxBitrate / before.minBitrate);
@@ -436,20 +441,17 @@ function jointPerTitleExpansionAtRangeMaximum(
 			factor,
 		);
 	}
-	const heightRows = before.rows.filter(
-		(row): row is PerTitleGoalRow & { height: number } =>
-			row.width === undefined && rate(row.height),
+	const top = [...before.rows].sort(
+		(a, b) => (b[basis] as number) - (a[basis] as number),
 	);
-	const top = heightRows.sort((a, b) => b.height - a.height);
 	const highest = top[0];
 	const recipe =
-		heightRows.length === before.rows.length &&
 		highest &&
-		top[1]?.height !== highest.height &&
+		top[1]?.[basis] !== highest[basis] &&
 		rate(highest.minBitrate) &&
 		before.autoRepresentations === false &&
 		before.automaticTemplates?.some(
-			(row) => row.width === undefined && (row.height ?? 0) > highest.height,
+			(row) => (row[basis] as number) > (highest[basis] as number),
 		);
 	const oldLow = recipe
 		? Math.trunc((highest.minBitrate as number) * before.minBitrateStepSize)

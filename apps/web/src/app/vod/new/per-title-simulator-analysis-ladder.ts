@@ -5,6 +5,7 @@ import {
 	evaluateComplexityRange,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 import { assessPerTitleReach } from "./per-title-simulator-analysis-reach";
@@ -138,13 +139,11 @@ export function assessPerTitleLadder(
 		(stream) =>
 			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 	);
-	const basis = fixed.every(
-		(stream) => stream.width === undefined && rate(stream.height),
-	)
-		? "height"
-		: fixed.every((stream) => stream.width !== undefined && rate(stream.width))
-			? "width"
-			: null;
+	const basis = perTitleDimensionAxis(
+		proposal.api.streams.filter(
+			(stream) => stream.mode !== "PER_TITLE_TEMPLATE",
+		),
+	);
 	const ordered = basis
 		? [...fixed].sort(
 				(a, b) =>

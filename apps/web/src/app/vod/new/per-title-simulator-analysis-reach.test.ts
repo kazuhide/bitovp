@@ -400,13 +400,13 @@ describe("current-setting Per-Title reach assessment", () => {
 		}
 	});
 
-	it("does not resolve a tied highest template or a mixed dimension basis", () => {
+	it("does not resolve a tied highest template or dimensions with no shared axis", () => {
 		for (const templates of [
 			[
 				{ id: "first", height: 1080 },
 				{ id: "second", height: 1080 },
 			],
-			[{ id: "top", height: 1080, width: 1920 }],
+			[{ id: "top", width: 1920 }],
 		]) {
 			const goal = mixed({ automaticTemplates: templates });
 			expect(assessPerTitleReach(goal, proposal(goal))).toMatchObject({

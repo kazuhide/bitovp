@@ -29,7 +29,7 @@ export const encodingImportCopy = {
 		empty: "No settings can be loaded from this encoding.",
 		select: "Select codecs to load",
 		count:
-			"Output count remains unspecified. Loading does not change the encoding draft.",
+			"Imported settings are for comparison and analysis only. They cannot be applied to the original job or a draft. Adjusted values can be saved in a requirements file. Output count remains unspecified.",
 		streams: (count: number) => `${count} Stream templates`,
 		stepInitialValues: (values: string) =>
 			`Simulator initial values for unspecified settings: ${values}. This does not identify the API defaults or the source job's effective values.`,
@@ -74,7 +74,8 @@ export const encodingImportCopy = {
 			"取得した設定を読み込めません。編集中の値は変更していません。",
 		empty: "このエンコードから読み込める設定はありません。",
 		select: "読み込むコーデック",
-		count: "出力本数は未指定で読み込みます。元のジョブ下書きは変更しません。",
+		count:
+			"読み込んだ設定は比較・分析用です。元のジョブや下書きには反映できません。調整した値は要件ファイルに保存できます。出力本数は未指定です。",
 		streams: (count: number) => `Streamテンプレート ${count}件`,
 		stepInitialValues: (values: string) =>
 			`未指定の項目はシミュレーターの初期値（${values}）で開きます。API既定値や元ジョブの実効値を示すものではありません。`,

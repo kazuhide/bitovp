@@ -5,6 +5,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 } from "@bitovp/core";
 import { perTitleAnalysisCurve } from "./per-title-simulator-analysis-ladder";
 
@@ -167,27 +168,8 @@ function assessUpperLimit(
 			)
 		)
 			return result;
-		const basis = streams.every(
-			(stream) => stream.width === undefined && rate(stream.height),
-		)
-			? "height"
-			: streams.every((stream) => rate(stream.width))
-				? "width"
-				: null;
-		if (
-			!basis ||
-			streams.some((a) =>
-				streams.some(
-					(b) =>
-						rate(a.width) &&
-						rate(b.width) &&
-						rate(a.height) &&
-						rate(b.height) &&
-						(a.width - b.width) * (a.height - b.height) < 0,
-				),
-			)
-		)
-			return result;
+		const basis = perTitleDimensionAxis(streams);
+		if (!basis) return result;
 		const ordered = [...fixed].sort(
 			(a, b) => (a[basis] as number) - (b[basis] as number),
 		);

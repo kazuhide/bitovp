@@ -112,7 +112,10 @@ tests):
   remain absent in the reference; the UI identifies the simulator's starting values
   before loading them. Only provider GETs run,
   with a shared 20-second deadline and bounded pagination. Responses are
-  private/no-store; loading never creates or starts an encoding.
+  private/no-store. In the simulator, imported settings are for comparison and
+  analysis only: Apply to draft is disabled, and the original job is unchanged.
+  Adjusted values can be saved as a requirements file. Importing never creates
+  or starts an encoding.
 
 - `/api/admin/reset` (organization ADMIN session, no tokens): GET `?categories=<comma list>` previews selected counts. POST `{confirm:"RESET",categories:[...]}` force-deletes selected organization data and returns `deletedCounts`. Empty/duplicate/unknown/incomplete dependencies fail validation. Global users, memberships, organizations and setup identity are excluded; reset does not reopen setup. Active work and unresolved cleanup do not block selected deletion; organization-owned encrypted receipts retain cleanup ownership.
 - `/api/admin/reset/reconcile`: POST ADMIN, audited, no tokens. Stamps terminal,

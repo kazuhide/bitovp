@@ -46,6 +46,119 @@ const callbacks = () => ({
 });
 
 describe("Unified Per-Title rendition inputs", () => {
+	it.each(
+		(["en", "ja"] as const).flatMap((locale) =>
+			(["fixed-resolutions", "fixed-ranges"] as const).flatMap((strategy) =>
+				[false, true].map((dimensionlessCandidate) => ({
+					locale,
+					strategy,
+					dimensionlessCandidate,
+				})),
+			),
+		),
+	)("adds an editable width row without a height ($locale, $strategy, dimensionless candidate=$dimensionlessCandidate)", ({
+		locale,
+		strategy,
+		dimensionlessCandidate,
+	}) => {
+		const initial: PerTitleGoal = {
+			...goal,
+			strategy,
+			countPolicy: { kind: "unrestricted" },
+			rows: [
+				{
+					id: "width-fixed",
+					width: 640,
+					minBitrate: 300_000,
+					maxBitrate: 700_000,
+				},
+			],
+			automaticTemplates: dimensionlessCandidate
+				? [{ id: "dimensionless" }]
+				: [],
+		};
+		const before = structuredClone(initial);
+		const events = callbacks();
+		function Controlled() {
+			const [value, setValue] = useState(initial);
+			return (
+				<PerTitleSimulatorRows
+					id="width-add"
+					goal={value}
+					manualBounds={{}}
+					{...events}
+					onChange={(next) => {
+						events.onChange(next);
+						setValue(next);
+					}}
+				/>
+			);
+		}
+		renderLocalized(<Controlled />, locale);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: locale === "en" ? "Add rendition" : "レンディションを追加",
+			}),
+		);
+		let next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		const added = next.rows?.at(-1);
+		expect(added?.width).toBeGreaterThan(0);
+		expect(added).not.toHaveProperty("height");
+		const number = dimensionlessCandidate ? 3 : 2;
+		const label =
+			locale === "en"
+				? `Width (px), rendition ${number}`
+				: `幅 (px), レンディション ${number}`;
+		const field = screen.getByRole("spinbutton", { name: label });
+		expect(field).toHaveValue(added?.width);
+		fireEvent.change(field, { target: { value: "960" } });
+		next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.at(-1)).toMatchObject({ width: 960 });
+		expect(next.rows?.at(-1)).not.toHaveProperty("height");
+		expect(next.rows?.slice(0, 1)).toEqual(initial.rows);
+		expect(next.automaticTemplates).toEqual(initial.automaticTemplates);
+		expect(initial).toEqual(before);
+	});
+
+	it.each([
+		{
+			name: "incomparable dimensions",
+			rows: [
+				{ id: "width", width: 640 },
+				{ id: "height", height: 360 },
+			],
+		},
+		{
+			name: "invalid declared dimension",
+			rows: [{ id: "invalid", width: Number.NaN, height: 360 }],
+		},
+	])("does not turn $name into an applicable ladder when adding a row", ({
+		rows,
+	}) => {
+		const initial: PerTitleGoal = {
+			...goal,
+			strategy: "fixed-resolutions",
+			countPolicy: { kind: "unrestricted" },
+			rows,
+			automaticTemplates: [],
+		};
+		const before = structuredClone(initial);
+		const events = callbacks();
+		renderLocalized(
+			<PerTitleSimulatorRows
+				id="unknown-add"
+				goal={initial}
+				manualBounds={{}}
+				{...events}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
+		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(recommendPerTitleSettings(next).applicable).toBe(false);
+		expect(next.rows?.slice(0, rows.length)).toEqual(rows);
+		expect(initial).toEqual(before);
+	});
+
 	it.each([
 		"en",
 		"ja",
@@ -907,7 +1020,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			width: 720,
 		});
 	});
-	it("infers the added required row width in the controlled tuning flow without creating mixed-width ordering", () => {
+	it("adds a width-based required row without synthesizing height in the controlled tuning flow", () => {
 		const events = callbacks();
 		const sized: PerTitleGoal = {
 			...goal,
@@ -950,7 +1063,8 @@ describe("Unified Per-Title rendition inputs", () => {
 		renderLocalized(<Controlled />);
 		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
 		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
-		expect(next.rows?.at(-1)).toMatchObject({ height: 720, width: 1200 });
+		expect(next.rows?.at(-1)).toMatchObject({ width: 1280 });
+		expect(next.rows?.at(-1)).not.toHaveProperty("height");
 		expect(next.rows?.slice(0, 2)).toEqual(sized.rows);
 		expect(new Set(next.rows?.map((row) => row.width)).size).toBe(3);
 		for (const row of next.rows ?? []) {
@@ -1003,6 +1117,7 @@ describe("Unified Per-Title rendition inputs", () => {
 			...goal,
 			inputWidth,
 			inputHeight,
+			automaticTemplates: [{ id: "height-candidate", height: 720 }],
 			rows: [
 				{
 					id: "small",
@@ -1028,6 +1143,7 @@ describe("Unified Per-Title rendition inputs", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Add rendition" }));
 		const next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
 		expect(next.rows?.at(-1)?.width).toBe(expected);
+		expect(next.rows?.at(-1)?.height).toBe(720);
 		expect(next.rows?.slice(0, 2)).toEqual(original.rows);
 		expect(next.automaticTemplates).toEqual(original.automaticTemplates);
 		expect(original).toEqual(before);

@@ -4,6 +4,7 @@ import {
 	evaluateForcedRenditions,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 
@@ -240,6 +241,7 @@ function countAssessment(
 	fixed: Stream[],
 	forcedCount: number,
 	rule: ForcedRule | undefined,
+	basis: "width" | "height",
 ): PerTitleReachAssessment["count"] {
 	const unknown: PerTitleReachAssessment["count"] = {
 		status: "unknown",
@@ -296,10 +298,7 @@ function countAssessment(
 		)
 	)
 		return unknown;
-	if (
-		new Set(fixed.map((stream) => stream.width ?? stream.height)).size !==
-		fixed.length
-	)
+	if (new Set(fixed.map((stream) => stream[basis])).size !== fixed.length)
 		return unknown;
 	const global = proposal.api.global;
 	const certificate = certifyComplexityIntervals(
@@ -418,13 +417,7 @@ export function assessPerTitleReach(
 			return unknown("unsupported-settings");
 		if (global.autoRepresentations !== undefined)
 			return unknown("automatic-generation-unresolved");
-		const basis = streams.every(
-			(stream) => stream.width === undefined && rate(stream.height),
-		)
-			? "height"
-			: streams.every((stream) => rate(stream.width))
-				? "width"
-				: null;
+		const basis = perTitleDimensionAxis(streams);
 		if (!basis) return unknown("unresolved-order");
 		const fixed = streams
 			.filter((stream) => stream.mode !== "PER_TITLE_TEMPLATE")
@@ -586,7 +579,7 @@ export function assessPerTitleReach(
 				blockers.push("gap-too-narrow");
 			else blockers.push("gap-integer-placement");
 		}
-		result.count = countAssessment(goal, proposal, fixed, count, rule);
+		result.count = countAssessment(goal, proposal, fixed, count, rule, basis);
 		if (result.count.status === "conflict") blockers.push("count-conflict");
 		if (high.range && low.range) {
 			if (high.range.minimum > low.range.maximum)

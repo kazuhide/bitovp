@@ -1,7 +1,8 @@
-import type {
-	PerTitleAdjustment,
-	PerTitleGoal,
-	PerTitleProposal,
+import {
+	type PerTitleAdjustment,
+	type PerTitleGoal,
+	type PerTitleProposal,
+	perTitleDimensionAxis,
 } from "@bitovp/core";
 import {
 	type PerTitleAdviceField,
@@ -311,11 +312,7 @@ function sharedLow(
 		return undefined;
 	const rows = goal.rows;
 	const all = [...rows, ...(goal.automaticTemplates ?? [])];
-	const basis = all.every((row) => row.width === undefined && rate(row.height))
-		? "height"
-		: all.every((row) => rate(row.width))
-			? "width"
-			: null;
+	const basis = perTitleDimensionAxis(all);
 	if (!basis) return undefined;
 	const max = Math.max(...rows.map((row) => row[basis] as number));
 	const top = rows.filter((row) => row[basis] === max);

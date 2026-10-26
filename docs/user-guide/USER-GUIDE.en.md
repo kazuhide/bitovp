@@ -447,7 +447,7 @@ Automatic rendition generation includes `autoRepresentations` and configuration-
 
 **Per-Title simulator**
 
-For a new configuration, select **Open simulator** in "Ladder", then **New setup wizard** inside the simulator. The setup has three steps:
+For a new configuration, select **Per-Title** under **Stream mode (all video renditions)** in "Ladder", then **Open simulator** → **New setup wizard**. The setup has three steps:
 
 1. Choose how much to specify: let the encoder choose, enter only a count, require some resolutions, specify every resolution, or specify resolutions with bitrate ranges.
 2. Enter the overall bitrate limits and any count requirement. Edit each Stream in the same rendition list, choosing its mode and the dimensions or bitrate limits it needs.
@@ -503,7 +503,7 @@ With both steps set to `2.02`, separate HEVC, VP9 and AV1 encodings also complet
 
 All 23 video output files from 16 completed encodings were 10 seconds long and decoded completely with FFmpeg without errors. These are configuration-specific results, not a general minimum count or a quality guarantee. Listed bitrates are result-stream settings, not measured media bitrates. API acceptance, completion, output count and decoding are separate checks; browser playback was not tested here.
 
-Select "Open simulator" in "Ladder" to evaluate the current settings or review a recommended configuration for your requirements. It does not change the encoding draft until you review and apply the differences.
+With **Per-Title** selected for all video renditions in "Ladder", select **Open simulator** to evaluate the current settings or review a recommended configuration for your requirements. It does not change the encoding draft until you review and apply the differences.
 
 Choose what you want to specify:
 

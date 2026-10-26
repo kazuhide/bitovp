@@ -2,6 +2,7 @@ import {
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
 } from "./per-title-constraints";
+import { perTitleDimensionAxis } from "./per-title-dimensions";
 import { resolvePerTitleAnalysis } from "./per-title-output-analysis";
 import { projectIntegerBitrateSlots } from "./per-title-output-count";
 import type {
@@ -261,11 +262,7 @@ export function previewPerTitleOutput(
 			} else countProjection.reason = projection.reason;
 		}
 	}
-	const basis = streams.every((s) => positive(s.width))
-		? "width"
-		: streams.every((s) => s.width === undefined && positive(s.height))
-			? "height"
-			: null;
+	const basis = perTitleDimensionAxis(streams);
 	const explicitMixed =
 		eligible &&
 		validFixed &&

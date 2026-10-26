@@ -87,10 +87,17 @@ export function perTitleGoalFromWizard(
 	const codec =
 		selectedCodec ?? codecOf(state.videos[0] ?? { height: 360, bitrate: null });
 	const selected = state.videos.filter((row) => codecOf(row) === codec);
-	if (selected.some((row) => row.height === null && fixedMode(row)))
+	if (
+		selected.some(
+			(row) =>
+				(row.height === null || row.height === undefined) &&
+				row.width === undefined &&
+				fixedMode(row),
+		)
+	)
 		throw new PerTitleWizardError(
 			"UNSUPPORTED_STATE",
-			"A freely scaled template has no explicit height to import into the simulator.",
+			"A fixed template needs an explicit width or height to import into the simulator.",
 		);
 	const keys = videoKeys(state.videos);
 	const global = state.startOptions?.perTitle?.[slotFor(codec)];
@@ -205,14 +212,16 @@ export function perTitleGoalFromWizard(
 		...(automaticTemplates.length ? { automaticTemplates } : {}),
 		rows: state.videos.flatMap((row, index) =>
 			codecOf(row) !== codec ||
-			row.height === null ||
+			((row.height === null || row.height === undefined) && !fixedMode(row)) ||
 			row.extras?.mode === "PER_TITLE_TEMPLATE" ||
 			(strategy === "required-resolutions" && !fixedMode(row))
 				? []
 				: [
 						{
 							id: required(keys[index]),
-							height: required(row.height),
+							...(row.height === null || row.height === undefined
+								? {}
+								: { height: row.height }),
 							...(hasRanges &&
 							row.extras?.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
 								? { mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION" as const }
@@ -284,10 +293,11 @@ function assertProposal(proposal: PerTitleProposal, codec: PerTitleCodec) {
 		streams.some(
 			(row) =>
 				!row.rowId ||
-				(row.height === undefined
-					? row.mode !== "PER_TITLE_TEMPLATE"
-					: !validInteger(row.height)) ||
+				(row.height !== undefined && !validInteger(row.height)) ||
 				(row.width !== undefined && !validInteger(row.width)) ||
+				(row.mode !== "PER_TITLE_TEMPLATE" &&
+					row.height === undefined &&
+					row.width === undefined) ||
 				![
 					"PER_TITLE_TEMPLATE",
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",

@@ -193,10 +193,11 @@ describe("declared mixed-ladder count structure", () => {
 	});
 	it("supports a consistent width basis alongside explicit heights", () => {
 		const goal = mixed();
-		goal.rows = goal.rows?.map((row) => ({
-			...row,
-			width: row.height * 2,
-		}));
+		goal.rows = goal.rows?.map((row) => {
+			if (row.height === undefined)
+				throw new Error("Fixture height is required");
+			return { ...row, width: row.height * 2 };
+		});
 		goal.automaticTemplates = goal.automaticTemplates?.map((row) => ({
 			...row,
 			width: (row.height ?? 0) * 2,

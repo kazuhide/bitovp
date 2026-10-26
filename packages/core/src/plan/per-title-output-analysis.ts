@@ -1,3 +1,4 @@
+import { perTitleDimensionAxis } from "./per-title-dimensions";
 import type { PerTitleApiSettings } from "./per-title-simulator.js";
 
 type Analysis = {
@@ -90,17 +91,15 @@ export function resolvePerTitleAnalysis(
 	)
 		return result(global.minBitrate);
 
-	const useWidths = fixed.every((stream) => stream.width !== undefined);
-	const useHeights = fixed.every(
-		(stream) => stream.width === undefined && stream.height !== undefined,
-	);
-	if (!useWidths && !useHeights) return result(null);
+	const basis = perTitleDimensionAxis(fixed);
+	if (!basis) return result(null);
+	const useHeights = basis === "height";
 	const dimensions: Array<{
 		stream: PerTitleApiSettings["streams"][number];
 		size: number;
 	}> = [];
 	for (const stream of fixed) {
-		const size = useWidths ? stream.width : stream.height;
+		const size = stream[basis];
 		if (size === undefined) return result(null, useHeights);
 		dimensions.push({ stream, size });
 	}

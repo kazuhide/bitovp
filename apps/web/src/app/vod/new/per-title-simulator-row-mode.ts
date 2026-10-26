@@ -156,7 +156,6 @@ export function changePerTitleStreamChoice(
 	} else {
 		retainedFixed.push({
 			...row,
-			height: row.height ?? Number.NaN,
 			mode:
 				choice === "fixed-range"
 					? "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"

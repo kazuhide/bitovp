@@ -7,6 +7,11 @@ import {
 	recommendPerTitleSettings,
 } from "./per-title-simulator";
 
+function requiredHeight(row: { height?: number }): number {
+	if (row.height === undefined) throw new Error("Expected a fixture height");
+	return row.height;
+}
+
 const forced = {
 	forcedRenditionAboveHighestFixedRepresentation: 1,
 	forcedRenditionAboveHighestFixedRepresentationFactor: 1.2,
@@ -173,7 +178,10 @@ describe("conditional mixed Per-Title sequence admission", () => {
 
 	it("checks explicit widths instead of silently assuming height order", () => {
 		const goal = mixed();
-		goal.rows = goal.rows?.map((row) => ({ ...row, width: row.height * 2 }));
+		goal.rows = goal.rows?.map((row) => ({
+			...row,
+			width: requiredHeight(row) * 2,
+		}));
 		goal.automaticTemplates = goal.automaticTemplates?.map((row) => ({
 			...row,
 			width: (row.height ?? 0) * 2,
@@ -193,13 +201,76 @@ describe("conditional mixed Per-Title sequence admission", () => {
 		});
 	});
 
+	it("retains a width-only mixed sequence without materializing any heights", () => {
+		const heightGoal = mixed();
+		const goal = mixed();
+		goal.rows = goal.rows?.map(({ height, ...row }) => ({
+			...row,
+			width: requiredHeight({ height }) * 2,
+		}));
+		goal.automaticTemplates = goal.automaticTemplates?.map(
+			({ height, ...row }) => ({
+				...row,
+				width: requiredHeight({ height }) * 2,
+			}),
+		);
+		delete goal.inputHeight;
+		goal.inputWidth = 3200;
+		const before = structuredClone(goal);
+		const proposal = recommendPerTitleSettings(goal);
+		const heightProposal = recommendPerTitleSettings(heightGoal);
+		expect(proposal.applicable).toBe(true);
+		expect(proposal.api.global).toEqual(heightProposal.api.global);
+		expect(
+			proposal.api.streams.map(({ perTitleSettings }) => perTitleSettings),
+		).toEqual(
+			heightProposal.api.streams.map(
+				({ perTitleSettings }) => perTitleSettings,
+			),
+		);
+		expect(
+			proposal.derivation?.constraints?.conditionalModel?.sourceConditions
+				.geometry,
+		).toEqual({
+			status: "not-measured",
+			basis: "width",
+			commonSourceAspectRatio: false,
+			minimumSourceDimension: 3200,
+			postRoundingWidthOrderPreserved: { status: "not-measured" },
+		});
+		for (const stream of proposal.api.streams) {
+			expect(Object.hasOwn(stream, "height")).toBe(false);
+			expect(stream.width).toBeGreaterThan(0);
+		}
+		expect(proposal.countGuarantee).toBe(false);
+		expect(goal).toEqual(before);
+	});
+
+	it("uses a shared height axis when some explicit widths are also retained", () => {
+		const goal = mixed();
+		goal.rows = goal.rows?.map((row, index) =>
+			index === 0 ? { ...row, width: 480 } : row,
+		);
+		const proposal = recommendPerTitleSettings(goal);
+		expect(proposal.applicable).toBe(true);
+		expect(
+			proposal.derivation?.constraints?.conditionalModel?.sourceConditions
+				.geometry,
+		).toMatchObject({
+			basis: "height",
+			commonSourceAspectRatio: true,
+			minimumSourceDimension: 1600,
+		});
+		expect(proposal.api.streams[0]?.width).toBe(480);
+	});
+
 	for (const basis of ["height", "width"] as const) {
 		it(`keeps an omitted source ${basis} as an explicit minimum-extent hypothesis`, () => {
 			const goal = mixed();
 			if (basis === "width") {
 				goal.rows = goal.rows?.map((row) => ({
 					...row,
-					width: row.height * 2,
+					width: requiredHeight(row) * 2,
 				}));
 				goal.automaticTemplates = goal.automaticTemplates?.map((row) => ({
 					...row,
@@ -247,7 +318,10 @@ describe("conditional mixed Per-Title sequence admission", () => {
 
 	it("rejects a known undersized height even when explicit widths select the width basis", () => {
 		const goal = mixed();
-		goal.rows = goal.rows?.map((row) => ({ ...row, width: row.height * 2 }));
+		goal.rows = goal.rows?.map((row) => ({
+			...row,
+			width: requiredHeight(row) * 2,
+		}));
 		goal.automaticTemplates = goal.automaticTemplates?.map((row) => ({
 			...row,
 			width: (row.height ?? 0) * 2,
@@ -356,10 +430,10 @@ describe("conditional mixed Per-Title sequence admission", () => {
 			},
 		],
 		[
-			"a mixed width/height basis",
+			"an incomparable width/height basis",
 			(goal) => {
-				goal.rows = goal.rows?.map((row, i) =>
-					i === 0 ? { ...row, width: 480 } : row,
+				goal.rows = goal.rows?.map(({ height, ...row }, i) =>
+					i === 0 ? { ...row, width: 480 } : { ...row, height },
 				);
 			},
 		],

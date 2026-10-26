@@ -69,7 +69,7 @@ tests):
   Older routes differ. Live create returns400 for plan validation and unknown
   account/template; startup-probes returns422 for the same unknown-account message.
   Read the actual status; unchanged invalid bodies are not transient retries.
-  Nineteen route files return 422 today (include wrapped `jsonError` calls).
+  Per-Title encoding import also returns 422 when its resource limit is exceeded.
   Live-to-VOD reports supported manifest families; incompatible slate input has
   `details.code = "SLATE_INCOMPATIBLE"` and attribute differences before creation.
   Picked sources may enter normalization instead; see Workflow2.
@@ -81,7 +81,7 @@ tests):
   `/api/credentials`, `/api/bitmovin-accounts`, `/api/infrastructure/prewarmed-pools`,
   `/api/live/standby-pools`, settings (including `/api/settings/startup-probes/run`),
   `/api/live-channels/[id]/runs/[runId]/heartbeats/export`,
-  and `/api/per-title-simulator-presets`.
+  and `POST /api/per-title-simulator/encodings/import`.
   Refusal: `403 {"error":"This action requires the ADMIN role","minRole":"ADMIN"}`.
   OPERATOR is also required for credential-bearing reads at
   `/api/live/stream-keys/<id>`, `/api/credentials/<id>/storage/buckets`,
@@ -99,10 +99,20 @@ tests):
   dated historical parameter snapshot. No provider/DB calls. Source evidence
   is not proof of GUI reachability, API writeability, or runtime success.
 
-- `/api/per-title-simulator-presets` — GET (organization ADMIN, no view-as):
-  optional local simulator presets for the current organization, returned as
-  `{presets:[{id,label,contents}]}`. Unconfigured installations return an empty
-  list. Responses are private/no-store; no provider requests are made.
+- `/api/per-title-simulator/encodings/import` — POST (organization ADMIN, no view-as):
+  read the original Per-Title settings of an Encoding ID. Send either
+  `{encodingId, bitmovinAccountId}` for an account in the current organization,
+  or `{encodingId, apiKey, tenantOrgId?}` for temporary credentials; the two forms
+  cannot be mixed. IDs must be UUIDs. The temporary key is not saved.
+  Returns `{configurations:[{codec,goal,reference}],issues:[{codec?,code,fields?}]}`.
+  Each codec has separate encoding-level and source-template Stream settings.
+  Generated result streams, audio, storage bindings and credentials are excluded.
+  Output-count intent is unspecified. Missing overall bitrate limits or unsupported
+  settings are reported without silently discarding them. Omitted spacing parameters
+  remain absent in the reference; the UI identifies the simulator's starting values
+  before loading them. Only provider GETs run,
+  with a shared 20-second deadline and bounded pagination. Responses are
+  private/no-store; loading never creates or starts an encoding.
 
 - `/api/admin/reset` (organization ADMIN session, no tokens): GET `?categories=<comma list>` previews selected counts. POST `{confirm:"RESET",categories:[...]}` force-deletes selected organization data and returns `deletedCounts`. Empty/duplicate/unknown/incomplete dependencies fail validation. Global users, memberships, organizations and setup identity are excluded; reset does not reopen setup. Active work and unresolved cleanup do not block selected deletion; organization-owned encrypted receipts retain cleanup ownership.
 - `/api/admin/reset/reconcile`: POST ADMIN, audited, no tokens. Stamps terminal,

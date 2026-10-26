@@ -377,6 +377,33 @@ describe("automatic Per-Title requirements", () => {
 			).not.toBe(200000);
 		}
 	});
+	it("allocates width-only bands in declared width order without adding a height", () => {
+		const goal: PerTitleGoal = {
+			...anchor,
+			rows: [
+				{ id: "high", width: 1280 },
+				{ id: "low", width: 640 },
+			],
+		};
+		const next = autoTunePerTitleGoal(goal, { ...anchor, rows: [] }, {});
+		expect(next.rows?.[1]?.minBitrate).toBe(anchor.minBitrate);
+		expect(next.rows?.[1]?.maxBitrate).toBeLessThan(
+			next.rows?.[0]?.minBitrate ?? 0,
+		);
+		expect(next.rows?.every((row) => !Object.hasOwn(row, "height"))).toBe(true);
+	});
+	it("preserves incomparable dimensions instead of assigning bands in arbitrary order", () => {
+		const goal: PerTitleGoal = {
+			...anchor,
+			rows: [
+				{ id: "width", width: 640 },
+				{ id: "height", height: 720 },
+			],
+		};
+		expect(
+			autoTunePerTitleGoal(goal, { ...anchor, rows: [] }, {}).rows,
+		).toEqual(goal.rows);
+	});
 	it("drops automatic tuning overrides while retaining explicit rules and automatic source metadata", () => {
 		const goal: PerTitleGoal = {
 			...anchor,

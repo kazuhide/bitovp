@@ -33,6 +33,25 @@ const rangeGoal: PerTitleGoal = {
 };
 
 describe("ordinary-template resolution hints", () => {
+	it.each([
+		"fixed-resolution",
+		"fixed-range",
+	] as const)("keeps an absent height when a width-only template becomes %s", (choice) => {
+		const goal: PerTitleGoal = {
+			...rangeGoal,
+			strategy: "automatic",
+			rows: [],
+			automaticTemplates: [{ id: "sample", width: 640 }],
+		};
+		const before = structuredClone(goal);
+		const next = changePerTitleStreamChoice(goal, "sample", choice);
+		expect(next.rows?.[0]?.width).toBe(640);
+		expect(next.rows?.[0]).not.toHaveProperty("height");
+		const ordinary = changePerTitleStreamChoice(next, "sample", "template");
+		expect(ordinary.automaticTemplates).toEqual([{ id: "sample", width: 640 }]);
+		expect(goal).toEqual(before);
+	});
+
 	it("retains dimensions and their policy when a fixed range becomes a template", () => {
 		const before = structuredClone(rangeGoal);
 		const next = changePerTitleStreamChoice(rangeGoal, "sample", "template");

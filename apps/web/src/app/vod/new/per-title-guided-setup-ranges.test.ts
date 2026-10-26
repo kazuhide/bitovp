@@ -16,6 +16,32 @@ const requirements = (): PerTitleSetupInput => ({
 });
 
 describe("automatic bitrate bands from requirements", () => {
+	it("rejects a width-only row at the height-based setup allocation boundary", () => {
+		const source = JSON.parse(
+			JSON.stringify({
+				...requirements(),
+				rows: [
+					{
+						id: "width-only",
+						width: 640,
+						minBitrate: 300_000,
+						maxBitrate: 700_000,
+					},
+				],
+			}),
+		) as PerTitleSetupInput;
+		const before = structuredClone(source);
+		expect(allocatePerTitleSetupRanges(source, 1.5, 1.2)).toBeNull();
+		expect(buildPerTitleSetup(source)).toMatchObject({
+			status: "conflict",
+			goal: null,
+			issues: expect.arrayContaining([
+				expect.objectContaining({ code: "invalid-height" }),
+			]),
+		});
+		expect(source).toEqual(before);
+	});
+
 	it.each([
 		"H264",
 		"H265",

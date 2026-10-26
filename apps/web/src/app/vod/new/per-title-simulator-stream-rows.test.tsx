@@ -296,12 +296,12 @@ describe("explicit Stream modes in the simulator list", () => {
 			{ id: "width-only", width: 1280 },
 		]);
 		const hint = screen.getByRole("spinbutton", {
-			name: "Height hint (px, optional), rendition 1",
+			name: "Width hint (px, optional), rendition 1",
 		});
-		expect(hint).toHaveValue(null);
-		fireEvent.change(hint, { target: { value: "720" } });
+		expect(hint).toHaveValue(1280);
+		fireEvent.change(hint, { target: { value: "1920" } });
 		expect(readGoal().automaticTemplates).toEqual([
-			{ id: "width-only", width: 1280, height: 720 },
+			{ id: "width-only", width: 1920 },
 		]);
 		fireEvent.change(hint, { target: { value: "" } });
 		expect(readGoal().automaticTemplates).toEqual([{ id: "width-only" }]);

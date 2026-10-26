@@ -10,7 +10,6 @@ import {
 	parsePerTitlePreset,
 	serializePerTitlePreset,
 } from "./per-title-simulator-preset";
-import { useSimulatorPresets } from "./use-simulator-presets";
 
 export function PerTitleSimulatorFiles({
 	goal,
@@ -25,15 +24,14 @@ export function PerTitleSimulatorFiles({
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
-	const presets = useSimulatorPresets();
 	const input = useRef<HTMLInputElement>(null);
 	const reader = useRef<FileReader | null>(null);
 	const pendingGoal = useRef<PerTitleGoal | undefined>(undefined);
 	const context = useRef(goal);
 	context.current = goal;
-	const [status, setStatus] = useState<
-		"idle" | "loading" | "loaded" | "error" | "preset-loaded" | "preset-error"
-	>("idle");
+	const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">(
+		"idle",
+	);
 	useEffect(
 		() => () => {
 			reader.current?.abort();
@@ -99,18 +97,6 @@ export function PerTitleSimulatorFiles({
 			setStatus("error");
 		}
 	}
-	function loadPreset(contents: string) {
-		const pending = reader.current;
-		reader.current = null;
-		pending?.abort();
-		try {
-			const preset = parsePerTitlePreset(contents, allowedCodecs);
-			onLoad(preset.goal, preset.reference);
-			setStatus("preset-loaded");
-		} catch {
-			setStatus("preset-error");
-		}
-	}
 	const fileControls = (
 		<>
 			<div className="flex flex-wrap gap-2">
@@ -146,52 +132,22 @@ export function PerTitleSimulatorFiles({
 			<p className="text-xs text-zinc-400">{copy.fileHint}</p>
 		</>
 	);
-	const error = status === "error" || status === "preset-error";
 	return (
-		<div className="space-y-3 border-b border-zinc-800 pb-4">
-			{presets.length ? (
-				<>
-					<div className="space-y-2">
-						<p className="text-xs text-zinc-400">{copy.testPresets}</p>
-						<div className="flex flex-wrap gap-2">
-							{presets.map((preset) => (
-								<Button
-									key={preset.id}
-									variant="secondary"
-									size="sm"
-									onClick={() => loadPreset(preset.contents)}
-								>
-									{preset.label}
-								</Button>
-							))}
-						</div>
-					</div>
-					<details className="space-y-2 text-xs text-zinc-400">
-						<summary className="cursor-pointer">
-							{copy.requirementFiles}
-						</summary>
-						{fileControls}
-					</details>
-				</>
-			) : (
-				fileControls
-			)}
+		<details className="space-y-3 border-b border-zinc-800 pb-4 text-xs text-zinc-400">
+			<summary className="cursor-pointer">{copy.requirementFiles}</summary>
+			{fileControls}
 			{status !== "idle" ? (
 				<p
-					role={error ? "alert" : "status"}
-					className={`text-xs ${error ? "text-red-300" : "text-zinc-400"}`}
+					role={status === "error" ? "alert" : "status"}
+					className={`text-xs ${status === "error" ? "text-red-300" : "text-zinc-400"}`}
 				>
-					{status === "preset-error"
-						? copy.presetError
-						: status === "preset-loaded"
-							? copy.presetLoaded
-							: status === "error"
-								? copy.fileError
-								: status === "loading"
-									? copy.fileLoading
-									: copy.fileLoaded}
+					{status === "error"
+						? copy.fileError
+						: status === "loading"
+							? copy.fileLoading
+							: copy.fileLoaded}
 				</p>
 			) : null}
-		</div>
+		</details>
 	);
 }

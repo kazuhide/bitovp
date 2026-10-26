@@ -986,11 +986,11 @@ describe("joint Per-Title constraint optimization", () => {
 		).toBe(true);
 	});
 
-	it("requires resolved dimension ordering when explicit widths are mixed with omitted widths", () => {
+	it("requires a common dimension when width-only and height-only rows are mixed", () => {
 		const result = recommendPerTitleSettings({
 			...fixed,
-			rows: fixed.rows?.map((row, index) =>
-				index === 0 ? { ...row, width: 4000 } : row,
+			rows: fixed.rows?.map(({ height, ...row }, index) =>
+				index === 0 ? { ...row, width: 4000 } : { ...row, height },
 			),
 		});
 		expect(result.derivation?.targetSatisfied).toBe(false);

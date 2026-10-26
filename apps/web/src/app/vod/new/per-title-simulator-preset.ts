@@ -114,7 +114,7 @@ const forced = z
 const row = z
 	.object({
 		id,
-		height: integer,
+		height: integer.optional(),
 		width: integer.optional(),
 		mode: z
 			.enum([
@@ -124,7 +124,8 @@ const row = z
 			.optional(),
 		...rangeFields,
 	})
-	.strict();
+	.strict()
+	.refine((value) => value.height !== undefined || value.width !== undefined);
 const automatic = z
 	.object({
 		id,
@@ -238,7 +239,7 @@ const referenceStream = z
 		psyRateDistortionOptimizedQuantization: nonnegative.optional(),
 	})
 	.strict();
-const referenceSchema = z
+export const perTitleReferenceSchema = z
 	.object({
 		codec,
 		global: z
@@ -256,12 +257,12 @@ const referenceSchema = z
 	.strict();
 
 /** A local comparison baseline, without account, input or storage bindings. */
-export type PerTitleReference = z.infer<typeof referenceSchema>;
+export type PerTitleReference = z.infer<typeof perTitleReferenceSchema>;
 const preset = z
 	.object({
 		version: z.literal(1),
 		goal: goalSchema.optional(),
-		reference: referenceSchema.optional(),
+		reference: perTitleReferenceSchema.optional(),
 		requirements: z.object({ countPolicy }).strict().optional(),
 	})
 	.strict();
@@ -496,7 +497,11 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		)
 			invalid();
 		ids.add(stream.id);
-		if (stream.mode !== "PER_TITLE_TEMPLATE" && stream.height === undefined)
+		if (
+			stream.mode !== "PER_TITLE_TEMPLATE" &&
+			stream.height === undefined &&
+			stream.width === undefined
+		)
 			invalid();
 		if (
 			stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" &&
@@ -544,7 +549,6 @@ function referenceGoal(reference: PerTitleReference): PerTitleGoal {
 		countPolicy: { kind: "unrestricted" },
 		rows: fixed.map((stream) => ({
 			...project(stream),
-			height: stream.height as number,
 			...(ranged.length && stream.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
 				? { mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION" as const }
 				: {}),

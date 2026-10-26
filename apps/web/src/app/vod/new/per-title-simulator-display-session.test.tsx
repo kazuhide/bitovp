@@ -77,7 +77,6 @@ function show(locale: "en" | "ja" = "en", initialGoal = source()) {
 
 beforeEach(() => {
 	vi.mocked(apiFetch).mockReset();
-	vi.mocked(apiFetch).mockResolvedValue({ presets: [] });
 });
 
 describe("simulator display sessions", () => {
@@ -147,6 +146,13 @@ describe("simulator display sessions", () => {
 		const { onApply } = show(locale);
 		const user = userEvent.setup();
 		const original = api();
+		fireEvent.click(
+			screen.getByText(
+				locale === "ja"
+					? "要件ファイルの読み書き"
+					: "Import or export requirements",
+			),
+		);
 		for (const value of ["128", "256"]) {
 			setAnalysis(value, locale);
 			fireEvent.click(
@@ -187,18 +193,38 @@ describe("simulator display sessions", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("clears display and comparison assumptions when the same saved preset is reloaded (%s)", async (locale) => {
-		vi.mocked(apiFetch).mockResolvedValue({
-			presets: [
-				{
-					id: "saved-setup",
-					label: "Saved setup",
-					contents: JSON.stringify({ version: 1, goal: source() }),
-				},
-			],
-		});
+	] as const)("clears display and comparison assumptions when the same encoding is loaded again (%s)", async (locale) => {
+		const goal = {
+			...source(),
+			countPolicy: { kind: "unrestricted" as const },
+		};
+		vi.mocked(apiFetch).mockImplementation(async (path) =>
+			path === "/api/bitmovin-accounts"
+				? [{ id: "saved-account", label: "Saved account" }]
+				: {
+						configurations: [
+							{
+								codec: "H264",
+								goal,
+								reference: {
+									codec: "H264",
+									global: {
+										minBitrate: 128_000,
+										maxBitrate: 4_000_000,
+										minBitrateStepSize: 1.5,
+										maxBitrateStepSize: 1.9,
+										autoRepresentations: {},
+									},
+									streams: [
+										{ id: "automatic-template", mode: "PER_TITLE_TEMPLATE" },
+									],
+								},
+							},
+						],
+						issues: [],
+					},
+		);
 		const { onApply } = show(locale);
-		const load = await screen.findByRole("button", { name: "Saved setup" });
 		const original = api();
 		for (const value of ["512", "768"]) {
 			setAnalysis(value, locale);
@@ -215,7 +241,38 @@ describe("simulator display sessions", () => {
 					target: { value: "2500" },
 				},
 			);
-			fireEvent.click(load);
+			fireEvent.click(
+				screen.getByRole("button", {
+					name:
+						locale === "ja"
+							? "Encoding IDから読み込む"
+							: "Load from Encoding ID",
+				}),
+			);
+			await screen.findByRole("option", { name: "Saved account" });
+			fireEvent.change(
+				screen.getByRole("combobox", {
+					name: locale === "ja" ? "Bitmovinアカウント" : "Bitmovin account",
+				}),
+				{ target: { value: "saved-account" } },
+			);
+			fireEvent.change(screen.getByLabelText("Encoding ID"), {
+				target: { value: "11111111-1111-4111-8111-111111111111" },
+			});
+			fireEvent.click(
+				screen.getByRole("button", {
+					name: locale === "ja" ? "設定を取得" : "Fetch settings",
+				}),
+			);
+			await screen.findByRole("checkbox", { name: /H264/ });
+			fireEvent.click(
+				screen.getByRole("button", {
+					name:
+						locale === "ja"
+							? "選択した設定を読み込む"
+							: "Load selected settings",
+				}),
+			);
 			expect(analysis(locale)).toHaveValue(4000);
 			expect(
 				screen.queryByRole("spinbutton", {
@@ -223,6 +280,19 @@ describe("simulator display sessions", () => {
 				}),
 			).toBeNull();
 			expect(api()).toEqual(original);
+			// Provider settings do not contain the user's desired output count.
+			fireEvent.change(
+				screen.getByRole("combobox", {
+					name: locale === "ja" ? "レンディションの本数" : "Rendition count",
+				}),
+				{ target: { value: "exact" } },
+			);
+			fireEvent.change(
+				screen.getByRole("spinbutton", {
+					name: locale === "ja" ? "希望する本数" : "Desired count",
+				}),
+				{ target: { value: "6" } },
+			);
 			fireEvent.click(
 				screen.getByRole("button", {
 					name: copy[locale].evaluate,
@@ -235,7 +305,7 @@ describe("simulator display sessions", () => {
 			).toHaveValue(4000);
 		}
 		expect(onApply).not.toHaveBeenCalled();
-		expect(apiFetch).toHaveBeenCalledTimes(1);
+		expect(apiFetch).toHaveBeenCalledTimes(4);
 	});
 
 	it("preserves evaluated advice, staged decisions and both analysis assumptions when setup is canceled", () => {
@@ -285,7 +355,7 @@ describe("simulator display sessions", () => {
 		expect(setup()).toHaveFocus();
 		expect(api()).toEqual(original);
 		expect(onApply).not.toHaveBeenCalled();
-		expect(apiFetch).toHaveBeenCalledTimes(1);
+		expect(apiFetch).not.toHaveBeenCalled();
 	});
 
 	it("preserves maintained values and the selected chart view when setup is canceled", () => {

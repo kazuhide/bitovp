@@ -8,7 +8,7 @@ function cancelWithoutWaiting(
 }
 
 export async function readBoundedBody(
-	req: Request,
+	req: Pick<Request, "headers" | "body">,
 	limit: number,
 ): Promise<Uint8Array | null> {
 	if (declaredBodyTooLarge(req.headers.get("content-length"), limit)) {

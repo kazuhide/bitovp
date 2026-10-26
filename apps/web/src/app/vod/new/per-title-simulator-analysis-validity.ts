@@ -6,6 +6,7 @@ import {
 	PER_TITLE_SIMULATOR_MAX_BITRATE,
 	type PerTitleGoal,
 	type PerTitleProposal,
+	perTitleDimensionAxis,
 	resolvePerTitleAnalysis,
 } from "@bitovp/core";
 import {
@@ -598,8 +599,8 @@ function auditStreams(
 			add(
 				"dimension-order-ambiguous",
 				"warning",
-				"Width and height imply different resolution orders. Use consistent aspect ratios or supply the missing input geometry before certifying the highest fixed template.",
-				"幅と高さで解像度の順序が逆転しています。縦横比を揃えるか、入力の寸法条件を確認してから最上位の固定テンプレートを判定してください。",
+				"Width and height imply different resolution orders. Conditional calculations use a shared declared width when available, otherwise a shared height. Verify the intended dimensions and native probe order.",
+				"幅と高さで解像度の順序が逆転しています。条件付き計算では共通の幅、なければ共通の高さで比較します。意図した寸法と実際のプローブ順を確認してください。",
 				[
 					...streams(a.rowId, "width", "height"),
 					...streams(b.rowId, "width", "height"),
@@ -619,33 +620,24 @@ function auditIntervals(global: Global, configured: Stream[], add: Add) {
 		global.minBitrateStepSize <= 1
 	)
 		return;
-	const heightOrder = fixed.every(({ height }) => rate(height));
-	const widthOrder = fixed.every(({ width }) => rate(width));
-	const contradictory = fixed.some((a) =>
-		fixed.some(
-			(b) =>
-				rate(a.height) &&
-				rate(b.height) &&
-				rate(a.width) &&
-				rate(b.width) &&
-				(a.height - b.height) * (a.width - b.width) < 0,
-		),
+	const fixedTemplates = configured.filter(
+		({ mode }) =>
+			mode === FIXED || mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 	);
-	if ((!heightOrder && !widthOrder) || contradictory) {
+	const axis = perTitleDimensionAxis(fixedTemplates);
+	if (!axis || !fixedTemplates.every((row) => rate(row[axis]))) {
 		add(
 			"interval-order-unresolved",
 			"warning",
 			"The fixed rows have no consistent resolution order from the supplied dimensions. Supply comparable height or width values before checking adjacent intervals; array position is not a resolution constraint.",
 			"指定された寸法から固定段の解像度順を確定できません。高さまたは幅を比較できる形で指定してください。配列内の順番を解像度の制約とは見なしません。",
-			fixed.flatMap(({ rowId }) => streams(rowId, "width", "height")),
+			fixedTemplates.flatMap(({ rowId }) => streams(rowId, "width", "height")),
 		);
 		return;
 	}
-	const axis = heightOrder ? "height" : "width";
 	fixed.sort(
 		(a, b) =>
-			(a[axis] ?? 0) - (b[axis] ?? 0) ||
-			(heightOrder && widthOrder ? (a.width ?? 0) - (b.width ?? 0) : 0) ||
+			(a[axis] as number) - (b[axis] as number) ||
 			(a.perTitleSettings?.minBitrate ?? 0) -
 				(b.perTitleSettings?.minBitrate ?? 0) ||
 			a.rowId.localeCompare(b.rowId),
@@ -810,16 +802,20 @@ function auditForced(global: Global, configured: Stream[], add: Add) {
 		({ mode }) =>
 			mode === FIXED || mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 	);
-	const dimensions = fixed.map(({ height }) => height);
-	const highest = fixed.reduce<Stream | undefined>(
-		(top, row) => (!top || (row.height ?? 0) > (top.height ?? 0) ? row : top),
-		undefined,
-	);
+	const axis = perTitleDimensionAxis(fixed);
+	const highest = axis
+		? fixed.reduce<Stream | undefined>(
+				(top, row) =>
+					!top || (row[axis] as number) > (top[axis] as number) ? row : top,
+				undefined,
+			)
+		: undefined;
 	const settings = highest?.perTitleSettings;
 	if (
+		!axis ||
 		!highest ||
-		!dimensions.every(rate) ||
-		fixed.filter(({ height }) => height === highest.height).length !== 1 ||
+		!fixed.every((row) => rate(row[axis])) ||
+		fixed.filter((row) => row[axis] === highest[axis]).length !== 1 ||
 		highest.mode !== FIXED ||
 		!rate(settings?.minBitrate) ||
 		!rate(settings?.maxBitrate) ||

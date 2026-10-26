@@ -35,6 +35,12 @@ export type PerTitleSetupInput = {
 	}[];
 };
 
+/** Fresh setup rows have an explicitly supplied height. Imported goals need not. */
+export type PerTitleSetupRow = PerTitleGoalRow & { height: number };
+type PerTitleSetupGoal = Omit<PerTitleGoal, "rows"> & {
+	rows: readonly PerTitleSetupRow[];
+};
+
 type Localized = { en: string; ja: string };
 export type PerTitleSetupIssue = {
 	code: string;
@@ -314,7 +320,7 @@ function validate(
 }
 
 /** Equal log positions are an initial allocation, not a content-quality optimum. */
-function allocateRanges(input: PerTitleSetupInput): PerTitleGoalRow[] {
+function allocateRanges(input: PerTitleSetupInput): PerTitleSetupRow[] {
 	const ordered = [...input.rows].sort((a, b) => a.height - b.height);
 	const lowerSlots = Number(input.automaticEdges?.lowerHeight !== undefined);
 	const upperSlots = Number(
@@ -385,9 +391,9 @@ function allocateRanges(input: PerTitleSetupInput): PerTitleGoalRow[] {
 }
 
 function materialize(
-	goal: PerTitleGoal,
+	goal: PerTitleSetupGoal,
 	proposal: PerTitleProposal,
-): PerTitleGoal {
+): PerTitleSetupGoal {
 	const streams = new Map(
 		proposal.api.streams.map((stream) => [stream.rowId, stream]),
 	);
@@ -419,7 +425,7 @@ function apiKey(api: PerTitleProposal["api"]): string {
 	);
 }
 
-function initialSpacing(goal: PerTitleGoal): PerTitleGoal {
+function initialSpacing(goal: PerTitleSetupGoal): PerTitleSetupGoal {
 	if (
 		goal.strategy === "required-resolutions" &&
 		goal.countPolicy.kind === "exact"
@@ -501,7 +507,7 @@ export function buildPerTitleSetup(
 		};
 	if (automaticEdgeCount(input) > 0) return buildPerTitleEdgeSetup(input);
 	const isClosed = closed(input.strategy);
-	const goal: PerTitleGoal = {
+	const goal: PerTitleSetupGoal = {
 		strategy: input.strategy,
 		codec: input.codec,
 		minBitrate: input.minBitrate,

@@ -40,12 +40,6 @@ const reference = {
 		},
 	],
 };
-const preset = {
-	id: "reference-hevc",
-	label: "Reference HEVC",
-	contents: JSON.stringify({ version: 1, goal }),
-};
-
 function show(
 	locale: "en" | "ja" = "en",
 	allowedCodecs: Array<"H264" | "H265"> = ["H264", "H265"],
@@ -78,85 +72,71 @@ function show(
 
 beforeEach(() => {
 	vi.mocked(apiFetch).mockReset();
-	vi.mocked(apiFetch).mockResolvedValue({ presets: [] });
 });
 
-describe("local simulator presets", () => {
+describe("simulator requirement files", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("loads the named preset with one click and restores its original values on reuse (%s)", async (locale) => {
-		vi.mocked(apiFetch).mockResolvedValue({ presets: [preset] });
+	] as const)("keeps file operations in details without requesting local presets (%s)", async (locale) => {
 		const { onLoad } = show(locale);
-		const button = await screen.findByRole("button", {
-			name: "Reference HEVC",
-		});
 		expect(onLoad).not.toHaveBeenCalled();
-		expect(
-			screen.getByText(locale === "en" ? "Test presets" : "テスト用プリセット"),
-		).toBeVisible();
-		expect(
-			screen.getByRole("button", {
-				name:
-					locale === "en" ? "Load requirements file" : "要件ファイルを読み込む",
-			}),
-		).not.toBeVisible();
-		await userEvent.setup().click(button);
-		expect(onLoad).toHaveBeenLastCalledWith(goal, undefined);
-		fireEvent.click(screen.getByRole("button", { name: "Edit limit" }));
-		expect(screen.getByTestId("maximum")).toHaveTextContent("9000000");
-		await userEvent.setup().click(button);
-		expect(screen.getByTestId("maximum")).toHaveTextContent("5000000");
-		expect(onLoad).toHaveBeenCalledTimes(2);
-		expect(apiFetch).toHaveBeenCalledTimes(1);
-		expect(apiFetch).toHaveBeenCalledWith(
-			"/api/per-title-simulator-presets",
-			expect.objectContaining({
-				cache: "no-store",
-				signal: expect.any(AbortSignal),
-			}),
+		const name =
+			locale === "en" ? "Load requirements file" : "要件ファイルを読み込む";
+		expect(screen.getByRole("button", { name })).not.toBeVisible();
+		fireEvent.click(
+			screen.getByText(
+				locale === "en"
+					? "Import or export requirements"
+					: "要件ファイルの読み書き",
+			),
 		);
+		expect(screen.getByRole("button", { name })).toBeVisible();
+		expect(apiFetch).not.toHaveBeenCalled();
 	});
 
-	it("keeps file controls available when no local presets are configured", async () => {
+	it("loads a requirements file with its source reference", async () => {
 		const { onLoad } = show();
-		await waitFor(() => expect(apiFetch).toHaveBeenCalledOnce());
-		expect(screen.queryByText("Test presets")).toBeNull();
-		expect(
-			screen.getByRole("button", { name: "Load requirements file" }),
-		).toBeVisible();
-		expect(onLoad).not.toHaveBeenCalled();
-	});
-
-	it("preserves reference-only metadata when loading a local preset", async () => {
-		vi.mocked(apiFetch).mockResolvedValue({
-			presets: [
-				{
-					...preset,
-					contents: JSON.stringify({ version: 1, goal, reference }),
-				},
-			],
-		});
-		const { onLoad } = show();
+		fireEvent.click(screen.getByText("Import or export requirements"));
 		await userEvent
 			.setup()
-			.click(await screen.findByRole("button", { name: "Reference HEVC" }));
+			.upload(
+				screen.getByLabelText("Load requirements file"),
+				new File(
+					[JSON.stringify({ version: 1, goal, reference })],
+					"requirements.json",
+					{ type: "application/json" },
+				),
+			);
+		await waitFor(() => expect(onLoad).toHaveBeenCalledOnce());
 		expect(onLoad).toHaveBeenLastCalledWith(goal, reference);
 	});
 
-	it("rejects a codec that the current session does not allow", async () => {
-		vi.mocked(apiFetch).mockResolvedValue({ presets: [preset] });
+	it("rejects an unavailable codec without changing the current goal", async () => {
 		const { onLoad } = show("en", ["H264"]);
-		await userEvent
-			.setup()
-			.click(await screen.findByRole("button", { name: "Reference HEVC" }));
-		expect(onLoad).not.toHaveBeenCalled();
-		expect(screen.getByRole("alert")).toHaveTextContent(
-			"This preset cannot be loaded.",
+		fireEvent.click(screen.getByText("Import or export requirements"));
+		await userEvent.setup().upload(
+			screen.getByLabelText("Load requirements file"),
+			new File([JSON.stringify({ version: 1, goal })], "requirements.json", {
+				type: "application/json",
+			}),
 		);
+		await screen.findByRole("alert");
+		expect(onLoad).not.toHaveBeenCalled();
+		expect(screen.getByTestId("maximum")).toHaveTextContent("5000000");
 	});
 
-	it("aborts a pending file before loading the preset so that the file cannot overwrite it", async () => {
+	it("rejects oversized files without reading or changing the goal", () => {
+		const { onLoad } = show();
+		fireEvent.click(screen.getByText("Import or export requirements"));
+		fireEvent.change(screen.getByLabelText("Load requirements file"), {
+			target: { files: [new File(["x".repeat(128 * 1024 + 1)], "large.json")] },
+		});
+		expect(screen.getByRole("alert")).toBeVisible();
+		expect(onLoad).not.toHaveBeenCalled();
+	});
+
+	it("aborts a pending file when the editing context changes and ignores its late result", () => {
 		const readers: Array<{
 			result: string;
 			onload?: () => void;
@@ -180,37 +160,17 @@ describe("local simulator presets", () => {
 		}
 		vi.stubGlobal("FileReader", DelayedReader);
 		try {
-			vi.mocked(apiFetch).mockResolvedValue({ presets: [preset] });
 			const { onLoad } = show();
-			const button = await screen.findByRole("button", {
-				name: "Reference HEVC",
-			});
 			fireEvent.change(screen.getByLabelText("Load requirements file"), {
 				target: { files: [new File(["{}"], "slow.json")] },
 			});
-			await userEvent.setup().click(button);
+			fireEvent.click(screen.getByRole("button", { name: "Edit limit" }));
 			act(() => readers[0]?.onload?.());
 			expect(readers[0]?.abort).toHaveBeenCalled();
-			expect(onLoad).toHaveBeenCalledOnce();
-			expect(onLoad).toHaveBeenCalledWith(goal, undefined);
+			expect(onLoad).not.toHaveBeenCalled();
+			expect(screen.getByTestId("maximum")).toHaveTextContent("9000000");
 		} finally {
 			vi.unstubAllGlobals();
 		}
-	});
-
-	it("ignores a late list response after unmount and cancels its request", async () => {
-		let resolve!: (value: unknown) => void;
-		vi.mocked(apiFetch).mockReturnValue(
-			new Promise((done) => {
-				resolve = done;
-			}),
-		);
-		const { unmount, onLoad } = show();
-		expect(apiFetch).toHaveBeenCalledOnce();
-		const signal = vi.mocked(apiFetch).mock.calls[0]?.[1]?.signal;
-		unmount();
-		expect(signal?.aborted).toBe(true);
-		await act(async () => resolve({ presets: [preset] }));
-		expect(onLoad).not.toHaveBeenCalled();
 	});
 });

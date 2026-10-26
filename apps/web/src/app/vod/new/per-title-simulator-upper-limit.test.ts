@@ -232,7 +232,7 @@ describe("upper requirement metadata", () => {
 		const goal = mixed();
 		goal.rows = required(goal.rows).map((row) => ({
 			...row,
-			width: row.height * 2,
+			width: required(row.height) * 2,
 		}));
 		goal.automaticTemplates = required(goal.automaticTemplates).map((row) => ({
 			...row,

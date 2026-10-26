@@ -4,8 +4,7 @@ import {
 	previewPerTitleOutput,
 } from "@bitovp/core";
 import { act, fireEvent, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch } from "@/lib/api";
+import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleSimulator } from "./per-title-simulator";
 import { PerTitleOutputChart } from "./per-title-simulator-output";
@@ -13,8 +12,6 @@ import {
 	perTitleGlobalFields,
 	perTitleStreamFields,
 } from "./per-title-simulator-tuning";
-
-vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
 const source = (): PerTitleGoal => ({
 	strategy: "automatic",
@@ -26,11 +23,6 @@ const source = (): PerTitleGoal => ({
 	countPolicy: { kind: "unrestricted" },
 	autoRepresentations: {},
 	automaticTemplates: [{ id: "automatic" }],
-});
-
-beforeEach(() => {
-	vi.mocked(apiFetch).mockReset();
-	vi.mocked(apiFetch).mockResolvedValue({ presets: [] });
 });
 
 describe("global SDK bitrate floor in the simulator", () => {

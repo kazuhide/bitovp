@@ -5,6 +5,7 @@ import {
 	certifyComplexityIntervals,
 	evaluateForcedRenditions,
 } from "./per-title-constraints";
+import { perTitleDimensionAxis } from "./per-title-dimensions";
 import { decimalParameter } from "./per-title-numeric";
 import { resolvePerTitleAnalysis } from "./per-title-output-analysis";
 import type { PerTitleApiSettings, PerTitleGoal } from "./per-title-simulator";
@@ -255,13 +256,8 @@ export function certifyPerTitleMixedSequence(
 		new Set(api.streams.map((row) => row?.rowId)).size !== api.streams.length
 	)
 		return null;
-	const useWidth = templates.every((row) => positive(row.width));
-	const basis = useWidth ? "width" : "height";
-	if (
-		!useWidth &&
-		templates.some((row) => row.width !== undefined || !positive(row.height))
-	)
-		return null;
+	const basis = perTitleDimensionAxis(templates);
+	if (!basis) return null;
 	const size = (row: { height?: number; width?: number }) =>
 		row[basis] as number;
 	for (const axis of ["height", "width"] as const) {
@@ -417,7 +413,7 @@ export function certifyPerTitleMixedSequence(
 			geometry: {
 				status: "not-measured",
 				basis,
-				commonSourceAspectRatio: !useWidth,
+				commonSourceAspectRatio: basis === "height",
 				minimumSourceDimension,
 				postRoundingWidthOrderPreserved: { status: "not-measured" },
 			},

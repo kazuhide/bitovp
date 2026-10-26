@@ -1,6 +1,7 @@
 import {
 	type PerTitleGoal,
 	type PerTitleGoalRow,
+	perTitleDimensionAxis,
 	resolvePerTitleFixedMode,
 } from "@bitovp/core";
 
@@ -62,6 +63,8 @@ export function autoTunePerTitleGoal(
 		return next;
 	}
 	const rows = goal.rows;
+	const axis = perTitleDimensionAxis(rows);
+	if (axis === null) return next;
 	const requested =
 		goal.countPolicy.kind !== "unrestricted" &&
 		Number.isSafeInteger(goal.countPolicy.count) &&
@@ -73,10 +76,7 @@ export function autoTunePerTitleGoal(
 	const ordered = rows
 		.map((row, index) => ({ row, index }))
 		.sort(
-			(a, b) =>
-				a.row.height - b.row.height ||
-				(a.row.width ?? 0) - (b.row.width ?? 0) ||
-				a.index - b.index,
+			(a, b) => (a.row[axis] ?? 0) - (b.row[axis] ?? 0) || a.index - b.index,
 		);
 	const ranks = new Map(ordered.map(({ index }, rank) => [index, rank]));
 	const logMinimum = Math.log(goal.minBitrate);

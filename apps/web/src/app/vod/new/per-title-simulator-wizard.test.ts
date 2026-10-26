@@ -17,6 +17,7 @@ import {
 	videoKeys,
 	type WizardState,
 } from "./build-plan";
+import { parsePerTitlePreset } from "./per-title-simulator-preset";
 import {
 	setPerTitleSetting,
 	tunePerTitleSettings,
@@ -96,6 +97,114 @@ function compiled(s: WizardState) {
 }
 
 describe("Per-Title wizard bridge", () => {
+	it.each([
+		"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+		"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+	] as const)("imports a saved width-only %s without inventing a height", (mode) => {
+		const s = state();
+		s.videos = [
+			{
+				height: null,
+				width: 640,
+				bitrate: null,
+				extras: {
+					key: "width-only",
+					mode,
+					...(mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+						? { perTitleSettings: { minBitrate: 300_000, maxBitrate: 700_000 } }
+						: {}),
+				},
+			},
+		];
+		const before = structuredClone(s);
+		const goal = perTitleGoalFromWizard(s);
+		expect(goal.rows).toHaveLength(1);
+		expect(goal.rows?.[0]?.width).toBe(640);
+		expect(goal.rows?.[0]).not.toHaveProperty("height");
+		expect(recommendPerTitleSettings(goal).api.streams[0]?.mode).toBe(mode);
+		expect(s).toEqual(before);
+	});
+
+	it.each([
+		"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+		"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
+	] as const)("round-trips an imported width-only %s through draft apply and reopen", (mode) => {
+		const settings =
+			mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE"
+				? {
+						minBitrate: 300_000,
+						maxBitrate: 700_000,
+						bitrateSelectionMode: "COMPLEXITY_RANGE" as const,
+						lowComplexityBoundaryForMaxBitrate: 1_000_000,
+						highComplexityBoundaryForMaxBitrate: 5_000_000,
+						codecMaxBitrateFactor: 1.7,
+						codecBufsizeFactor: 2.3,
+					}
+				: { codecMaxBitrateFactor: 1.7, codecBufsizeFactor: 2.3 };
+		const reference = {
+			codec: "H264",
+			global: {
+				minBitrate: 100_000,
+				maxBitrate: 5_000_000,
+				minBitrateStepSize: 1.5,
+				maxBitrateStepSize: 4,
+				autoRepresentations: {},
+			},
+			streams: [
+				{ id: "width-fixed", width: 640, mode, perTitleSettings: settings },
+				{
+					id: "width-ordinary",
+					width: 1280,
+					mode: "PER_TITLE_TEMPLATE",
+					perTitleSettings: { codecMaxBitrateFactor: 1.8 },
+				},
+			],
+		};
+		const loaded = parsePerTitlePreset(
+			JSON.stringify({ version: 1, reference }),
+			["H264"],
+		);
+		const candidate = tunePerTitleSettings(loaded.goal, loaded.goal).proposal;
+		expect(candidate.applicable).toBe(true);
+		const s = state();
+		const before = structuredClone(s);
+		const next = applyPerTitleProposal(s, candidate, "H264");
+		expect(next.videos.map(({ height, width }) => ({ height, width }))).toEqual(
+			[
+				{ height: null, width: 640 },
+				{ height: null, width: 1280 },
+			],
+		);
+		expect(next.videos[0]?.extras?.mode).toBe(mode);
+		expect(next.videos[0]?.extras?.perTitleSettings).toEqual(settings);
+		const reopened = perTitleGoalFromWizard(next);
+		expect(reopened.rows?.[0]).not.toHaveProperty("height");
+		const after = tunePerTitleSettings(reopened, reopened).proposal;
+		const canonical = (api: PerTitleProposal["api"]) => ({
+			global: api.global,
+			streams: api.streams.map(({ rowId: _rowId, ...stream }) => stream),
+		});
+		expect(canonical(after.api)).toEqual(canonical(candidate.api));
+		const { plan, operations } = compiled(next);
+		expect(
+			operations.find(
+				(operation) => operation.step === `codec:${videoKeys(next.videos)[0]}`,
+			)?.payload,
+		).toMatchObject({
+			width: 640,
+			height: null,
+		});
+		expect(
+			canonical(
+				tunePerTitleSettings(
+					perTitleGoalFromWizard(planToWizardState(plan)),
+					reopened,
+				).proposal.api,
+			),
+		).toEqual(canonical(candidate.api));
+		expect(s).toEqual(before);
+	});
+
 	it("applies an applicable tuned fixed-range proposal with an explicitly unset optional selection mode", () => {
 		const s = state();
 		s.videos = [
@@ -1402,7 +1511,7 @@ describe("Per-Title wizard bridge", () => {
 	it.each([
 		720,
 		null,
-	])("round-trips mixed fixed-range and automatic templates with height %s through the simulator and compiler", (height) => {
+	])("preserves mixed fixed and ordinary templates and rejects incomparable dimensions (ordinary height %s)", (height) => {
 		const s = state();
 		s.videos = [
 			{
@@ -1458,6 +1567,17 @@ describe("Per-Title wizard bridge", () => {
 			},
 		]);
 		const { proposal: candidate } = tunePerTitleSettings(goal, goal);
+		if (height === null) {
+			expect(candidate).toMatchObject({ status: "unknown", applicable: false });
+			expect(candidate.diagnostics).toContainEqual(
+				expect.objectContaining({ code: "row-order-unknown" }),
+			);
+			expect(() => applyPerTitleProposal(s, candidate, "H264")).toThrow(
+				expect.objectContaining({ code: "INVALID_PROPOSAL" }),
+			);
+			expect(s).toEqual(before);
+			return;
+		}
 		expect(candidate).toMatchObject({ status: "candidate", applicable: true });
 		expect(candidate.countGuarantee).toBe(false);
 		expect(candidate.derivation?.targetSatisfied).toBe(false);

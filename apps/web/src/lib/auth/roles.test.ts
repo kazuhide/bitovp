@@ -166,22 +166,22 @@ describe("segment-aware prefix matching", () => {
 });
 
 describe("the §4 decisions", () => {
-	it.each([
-		"GET",
-		"HEAD",
-	])("local simulator presets require ADMIN for %s", (method) => {
+	it("provider Per-Title imports require ADMIN", () => {
 		for (const role of USER_ROLES) {
 			expect(
-				evaluateRole(role, "/api/per-title-simulator-presets", method),
+				evaluateRole(role, "/api/per-title-simulator/encodings/import", "POST"),
 			).toMatchObject({
 				minRole: "ADMIN",
 				allowed: role === "ADMIN",
 			});
 		}
 		expect(
-			evaluateRole("VIEWER", "/api/per-title-simulator-presets-archive", method)
-				.minRole,
-		).toBe("VIEWER");
+			evaluateRole(
+				"OPERATOR",
+				"/api/per-title-simulator/encodings/import-archive",
+				"POST",
+			).minRole,
+		).toBe("OPERATOR");
 	});
 	it("read-only Live inventory counts use the existing VIEWER floor", () => {
 		expect(

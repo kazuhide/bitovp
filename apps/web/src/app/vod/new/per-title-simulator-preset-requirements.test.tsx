@@ -1,15 +1,12 @@
 import type { PerTitleGoal } from "@bitovp/core";
-import { fireEvent, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch } from "@/lib/api";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PerTitleSimulator } from "./per-title-simulator";
 import {
 	parsePerTitlePreset,
 	serializePerTitlePreset,
 } from "./per-title-simulator-preset";
-
-vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
 const reference = {
 	codec: "H264",
@@ -45,11 +42,6 @@ const requirements = { countPolicy: { kind: "exact", count: 6 } };
 const contents = JSON.stringify({ version: 1, reference, requirements });
 const parse = (value: unknown) =>
 	parsePerTitlePreset(JSON.stringify(value), ["H264"]);
-
-beforeEach(() => {
-	vi.mocked(apiFetch).mockReset();
-	vi.mocked(apiFetch).mockResolvedValue({ presets: [] });
-});
 
 describe("explicit preset count requirements", () => {
 	it("loads six as a requirement while retaining all seven source templates", () => {
@@ -125,9 +117,6 @@ describe("explicit preset count requirements", () => {
 		"en",
 		"ja",
 	] as const)("loads the explicit count into the simulator without treating candidates as outputs (%s)", async (locale) => {
-		vi.mocked(apiFetch).mockResolvedValue({
-			presets: [{ id: "mixed-reference", label: "Mixed reference", contents }],
-		});
 		const onApply = vi.fn();
 		renderLocalized(
 			<PerTitleSimulator
@@ -145,13 +134,33 @@ describe("explicit preset count requirements", () => {
 			locale,
 		);
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Mixed reference" }),
+			screen.getByText(
+				locale === "ja"
+					? "要件ファイルの読み書き"
+					: "Import or export requirements",
+			),
 		);
-		expect(
-			screen.getByRole("combobox", {
-				name: locale === "ja" ? "レンディションの本数" : "Rendition count",
-			}),
-		).toHaveValue("exact");
+		fireEvent.change(
+			screen.getByLabelText(
+				locale === "ja" ? "要件ファイルを読み込む" : "Load requirements file",
+			),
+			{
+				target: {
+					files: [
+						new File([contents], "requirements.json", {
+							type: "application/json",
+						}),
+					],
+				},
+			},
+		);
+		await waitFor(() =>
+			expect(
+				screen.getByRole("combobox", {
+					name: locale === "ja" ? "レンディションの本数" : "Rendition count",
+				}),
+			).toHaveValue("exact"),
+		);
 		expect(
 			screen.getByRole("spinbutton", {
 				name: locale === "ja" ? "希望する本数" : "Desired count",

@@ -47,6 +47,76 @@ const callbacks = () => ({
 
 describe("Unified Per-Title rendition inputs", () => {
 	it.each([
+		"en",
+		"ja",
+	] as const)("edits width-only fixed and ordinary rows without adding heights (%s)", (locale) => {
+		const initial: PerTitleGoal = {
+			...goal,
+			rows: [
+				{
+					id: "width-fixed",
+					width: 640,
+					minBitrate: 300_000,
+					maxBitrate: 700_000,
+				},
+			],
+			automaticTemplates: [{ id: "width-ordinary", width: 1280 }],
+		};
+		const events = callbacks();
+		function Controlled() {
+			const [value, setValue] = useState(initial);
+			return (
+				<PerTitleSimulatorRows
+					id="width-only"
+					goal={value}
+					manualBounds={{}}
+					{...events}
+					onChange={(next) => {
+						events.onChange(next);
+						setValue(next);
+					}}
+				/>
+			);
+		}
+		renderLocalized(<Controlled />, locale);
+		const fixedLabel =
+			locale === "en" ? "Width (px), rendition 1" : "幅 (px), レンディション 1";
+		const ordinaryLabel =
+			locale === "en"
+				? "Width hint (px, optional), rendition 2"
+				: "幅のヒント (px・任意), レンディション 2";
+		expect(screen.getByRole("spinbutton", { name: fixedLabel })).toHaveValue(
+			640,
+		);
+		expect(screen.getByRole("spinbutton", { name: ordinaryLabel })).toHaveValue(
+			1280,
+		);
+		expect(
+			screen.queryByRole("spinbutton", { name: /Height|高さ/ }),
+		).toBeNull();
+		fireEvent.change(screen.getByRole("spinbutton", { name: fixedLabel }), {
+			target: { value: "960" },
+		});
+		let next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.[0]?.width).toBe(960);
+		expect(next.rows?.[0]).not.toHaveProperty("height");
+		fireEvent.change(screen.getByRole("spinbutton", { name: ordinaryLabel }), {
+			target: { value: "1920" },
+		});
+		next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.automaticTemplates?.[0]).toEqual({
+			id: "width-ordinary",
+			width: 1920,
+		});
+		fireEvent.change(screen.getByRole("spinbutton", { name: fixedLabel }), {
+			target: { value: "" },
+		});
+		next = events.onChange.mock.lastCall?.[0] as PerTitleGoal;
+		expect(next.rows?.[0]?.width).toBeNaN();
+		expect(next.rows?.[0]).not.toHaveProperty("height");
+	});
+
+	it.each([
 		false,
 		true,
 	])("seeds only a newly added fixed-range row once, preserving existing unset limits (%s)", (missingExistingMinimum) => {

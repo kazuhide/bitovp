@@ -828,6 +828,7 @@ describe("Per-Title output previews", () => {
 			),
 		).toBe(true);
 		required(proposal.api.streams[0]).width = 640;
+		delete required(proposal.api.streams[0]).height;
 		expect(
 			previewPerTitleOutput(proposal).rows.every(
 				(row) => row.basis === undefined,

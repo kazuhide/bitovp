@@ -107,7 +107,11 @@ function wizardGoal(strategy: PerTitleGoal["strategy"]): PerTitleGoal {
 		minBitrate: fixture.minBitrate,
 		maxBitrate: fixture.maxBitrate,
 		...(strategy === "automatic" ? {} : { count: 3 }),
-		rows: fixture.rows ?? [],
+		rows: (fixture.rows ?? []).map((row) => {
+			if (row.height === undefined)
+				throw new Error("Fixture height is required");
+			return { ...row, height: row.height };
+		}),
 	});
 	expect(setup.goal).not.toBeNull();
 	if (!setup.goal) throw new Error("Expected a loadable guided setup.");

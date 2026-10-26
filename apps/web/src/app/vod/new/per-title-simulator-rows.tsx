@@ -1,6 +1,10 @@
 "use client";
 
-import { type PerTitleGoal, resolvePerTitleFixedMode } from "@bitovp/core";
+import {
+	type PerTitleGoal,
+	perTitleDimensionAxis,
+	resolvePerTitleFixedMode,
+} from "@bitovp/core";
 import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -46,6 +50,8 @@ const texts = {
 		short: { min: "Min", max: "Max" },
 		height: "Height (px)",
 		optionalHeight: "Height hint (px, optional)",
+		width: "Width (px)",
+		optionalWidth: "Width hint (px, optional)",
 		rendition: "rendition",
 		row: "Rendition",
 		add: "Add rendition",
@@ -65,6 +71,8 @@ const texts = {
 		short: { min: "下限", max: "上限" },
 		height: "高さ (px)",
 		optionalHeight: "高さのヒント (px・任意)",
+		width: "幅 (px)",
+		optionalWidth: "幅のヒント (px・任意)",
 		rendition: "レンディション",
 		row: "レンディション",
 		add: "レンディションを追加",
@@ -196,10 +204,6 @@ export function PerTitleSimulatorRows({
 		positiveInteger(goal.maxBitrate) &&
 		goal.minBitrate <= goal.maxBitrate &&
 		goal.maxBitrate <= 2_147_483_647;
-	const heightOrder = (row: { height?: number }) =>
-		row.height !== undefined && Number.isFinite(row.height)
-			? row.height
-			: Infinity;
 	const entries = [
 		...rows.map((row, index) => ({ kind: "required" as const, row, index })),
 		...automatic.map((row, index) => ({
@@ -207,7 +211,18 @@ export function PerTitleSimulatorRows({
 			row,
 			index,
 		})),
-	].sort((a, b) => heightOrder(a.row) - heightOrder(b.row) || 0);
+	];
+	const dimensionAxis = perTitleDimensionAxis(
+		entries
+			.filter(({ row }) => row.height !== undefined || row.width !== undefined)
+			.map(({ row }) => row),
+	);
+	if (dimensionAxis)
+		entries.sort(
+			(a, b) =>
+				(a.row[dimensionAxis] ?? Infinity) -
+					(b.row[dimensionAxis] ?? Infinity) || 0,
+		);
 	for (const entry of entries)
 		if (!rowOrder.current.has(entry.row.id))
 			rowOrder.current.set(entry.row.id, rowOrder.current.size);
@@ -302,6 +317,15 @@ export function PerTitleSimulatorRows({
 					const choice = perTitleStreamChoice({ ...row, mode });
 					const rowRanged =
 						mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
+					const widthOnly = row.height === undefined && row.width !== undefined;
+					const dimension = widthOnly ? "width" : "height";
+					const dimensionLabel = widthOnly
+						? isAutomatic
+							? copy.optionalWidth
+							: copy.width
+						: isAutomatic
+							? copy.optionalHeight
+							: copy.height;
 					const number = position + 1;
 					return (
 						<li
@@ -386,19 +410,37 @@ export function PerTitleSimulatorRows({
 							>
 								<div
 									data-setting-scope="stream"
-									data-setting-key="height"
+									data-setting-key={dimension}
 									data-setting-row={row.id}
-									data-setting-control={`${id}-${row.id}-height`}
+									data-setting-control={`${id}-${row.id}-${dimension}`}
 								>
 									<NumberField
-										id={`${id}-${row.id}-height`}
-										label={isAutomatic ? copy.optionalHeight : copy.height}
-										accessibleLabel={`${isAutomatic ? copy.optionalHeight : copy.height}, ${copy.rendition} ${number}`}
-										value={row.height}
+										id={`${id}-${row.id}-${dimension}`}
+										label={dimensionLabel}
+										accessibleLabel={`${dimensionLabel}, ${copy.rendition} ${number}`}
+										value={row[dimension]}
 										optional={isAutomatic}
 										integer
 										minimum={1}
-										onChange={(height) => {
+										onChange={(size) => {
+											if (widthOnly) {
+												onChange({
+													...goal,
+													...(isAutomatic
+														? {
+																automaticTemplates: automatic.map((item, i) =>
+																	i === index ? { ...item, width: size } : item,
+																),
+															}
+														: {
+																rows: rows.map((item, i) =>
+																	i === index ? { ...item, width: size } : item,
+																),
+															}),
+												});
+												return;
+											}
+											const height = size;
 											if (isAutomatic && height === undefined)
 												aspectHistory.current.delete(row.id);
 											onChange({

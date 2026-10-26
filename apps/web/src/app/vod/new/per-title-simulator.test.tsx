@@ -423,6 +423,7 @@ describe("Per-Title simulator", () => {
 				},
 			],
 		};
+		fireEvent.click(screen.getByText("Import or export requirements"));
 		await user.upload(
 			screen.getByLabelText("Load requirements file"),
 			new File(
@@ -561,6 +562,7 @@ describe("Per-Title simulator", () => {
 			automaticTemplates: [{ id: `${prefix}-new-1`, height: 1080 }],
 		};
 		const user = userEvent.setup();
+		fireEvent.click(screen.getByText("Import or export requirements"));
 		await user.upload(
 			screen.getByLabelText("Load requirements file"),
 			new File(
@@ -587,6 +589,7 @@ describe("Per-Title simulator", () => {
 
 	it("rejects an invalid local file without replacing the current draft", async () => {
 		show();
+		fireEvent.click(screen.getByText("Import or export requirements"));
 		await userEvent.setup().upload(
 			screen.getByLabelText("Load requirements file"),
 			new File(['{"version":1,"apiKey":"example"}'], "invalid.json", {

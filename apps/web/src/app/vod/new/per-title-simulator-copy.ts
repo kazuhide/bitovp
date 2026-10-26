@@ -24,10 +24,8 @@ const en = {
 	automaticRanges:
 		"Auto is optional. It follows the selected method; Fixed retains the current value.",
 	loadRequirements: "Load requirements file",
-	testPresets: "Test presets",
 	requirementFiles: "Import or export requirements",
-	presetLoaded: "Preset loaded.",
-	presetError: "This preset cannot be loaded.",
+	loadFromEncodingId: "Load from Encoding ID",
 	saveRequirements: "Download requirements",
 	fileHint:
 		"Save or load a local JSON file. Loading a file does not change the encoding draft.",
@@ -155,10 +153,8 @@ const ja: typeof en = {
 	automaticRanges:
 		"自動調整も選べます。自動は選んだ方法で計算し、固定は現在の値を保持します。",
 	loadRequirements: "要件ファイルを読み込む",
-	testPresets: "テスト用プリセット",
 	requirementFiles: "要件ファイルの読み書き",
-	presetLoaded: "プリセットを読み込みました。",
-	presetError: "このプリセットを読み込めませんでした。",
+	loadFromEncodingId: "Encoding IDから読み込む",
 	saveRequirements: "要件ファイルを保存",
 	fileHint:
 		"ローカルの JSON ファイルに保存・読み込みできます。読み込んだ時点では、エンコードの下書きは変更しません。",

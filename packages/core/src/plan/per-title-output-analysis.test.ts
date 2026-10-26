@@ -140,7 +140,17 @@ describe("resolvePerTitleAnalysis", () => {
 				},
 			],
 		},
-		{ streams: [fixed("a", 360, 200_000, 640), fixed("b", 720)] },
+		{
+			streams: [
+				{
+					rowId: "a",
+					width: 640,
+					mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE" as const,
+					perTitleSettings: { minBitrate: 200_000, maxBitrate: 1_200_000 },
+				},
+				fixed("b", 720),
+			],
+		},
 	])("withholds a floor when the relevant ordering cannot be resolved: %j", ({
 		streams,
 	}) => {

@@ -4,6 +4,7 @@ import {
 	evaluateComplexityRange,
 	evaluateForcedRenditions,
 } from "./per-title-constraints";
+import { perTitleDimensionAxis } from "./per-title-dimensions";
 import {
 	certifyPerTitleMixedSequence,
 	type PerTitleMixedSequenceCertificate,
@@ -234,21 +235,15 @@ const validRows = (
 		(row) =>
 			(row.mode === undefined ||
 				row.mode === "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE") &&
-			positive(row.height) &&
+			(row.height === undefined || positive(row.height)) &&
+			(row.width === undefined || positive(row.width)) &&
+			(row.height !== undefined || row.width !== undefined) &&
 			positive(row.minBitrate) &&
 			positive(row.maxBitrate) &&
 			row.minBitrate <= row.maxBitrate &&
 			row.minBitrate >= goal.minBitrate &&
 			row.maxBitrate <= goal.maxBitrate,
 	);
-
-function dimensions(
-	rows: readonly PerTitleGoalRow[],
-): "height" | "width" | null {
-	if (rows.every((row) => row.width === undefined)) return "height";
-	if (rows.every((row) => positive(row.width))) return "width";
-	return null;
-}
 
 function ordered(rows: readonly RangeRow[], basis: "height" | "width") {
 	return [...rows].sort(
@@ -315,11 +310,7 @@ function mixedCalibration(
 		!highest ||
 		!explicitOnly ||
 		rows.filter((row) => row[basis] === highest[basis]).length !== 1 ||
-		!candidates.every((row) =>
-			basis === "height"
-				? row.width === undefined && positive(row.height)
-				: positive(row.width),
-		) ||
+		!candidates.every((row) => positive(row[basis])) ||
 		!candidates.some(
 			(row) => (row[basis] as number) > (highest[basis] as number),
 		)
@@ -663,7 +654,12 @@ function optimizeConstraintTrial(
 		)
 	)
 		return fallback;
-	const basis = dimensions(goal.rows);
+	const basis = perTitleDimensionAxis([
+		...goal.rows,
+		...(goal.automaticTemplates ?? []).filter(
+			(row) => row.height !== undefined || row.width !== undefined,
+		),
+	]);
 	if (!basis) return unresolvedOrder(fallback);
 	const rows = ordered(goal.rows, basis);
 	const top = rows.at(-1);
@@ -1182,7 +1178,8 @@ function optimizeConstraintTrial(
 		const points: PerTitleScenario["modelRungs"] = evaluated.map(
 			({ row, range }) => ({
 				rowId: row.id,
-				height: row.height,
+				...(row.height !== undefined ? { height: row.height } : {}),
+				...(row.width !== undefined ? { width: row.width } : {}),
 				bitrate: range.maximum,
 				kind: "required",
 			}),
@@ -1200,7 +1197,8 @@ function optimizeConstraintTrial(
 			}) ?? [];
 		points.push(
 			...extra.map((range) => ({
-				height: top.height,
+				...(top.height !== undefined ? { height: top.height } : {}),
+				...(top.width !== undefined ? { width: top.width } : {}),
 				bitrate: range.maximum,
 				kind: "illustrative" as const,
 			})),

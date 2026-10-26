@@ -78,6 +78,7 @@ describe("Per-Title field policy integration", () => {
 			target: { value: "H265" },
 		});
 		expect(maximum()).toHaveValue(3600);
+		fireEvent.click(screen.getByText("Import or export requirements"));
 		await userEvent
 			.setup()
 			.upload(

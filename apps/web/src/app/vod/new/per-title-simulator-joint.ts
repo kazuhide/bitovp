@@ -436,17 +436,21 @@ function jointPerTitleExpansionAtRangeMaximum(
 			factor,
 		);
 	}
-	const top = [...before.rows].sort((a, b) => b.height - a.height);
+	const heightRows = before.rows.filter(
+		(row): row is PerTitleGoalRow & { height: number } =>
+			row.width === undefined && rate(row.height),
+	);
+	const top = heightRows.sort((a, b) => b.height - a.height);
 	const highest = top[0];
 	const recipe =
+		heightRows.length === before.rows.length &&
 		highest &&
 		top[1]?.height !== highest.height &&
 		rate(highest.minBitrate) &&
 		before.autoRepresentations === false &&
 		before.automaticTemplates?.some(
 			(row) => row.width === undefined && (row.height ?? 0) > highest.height,
-		) &&
-		before.rows.every((row) => row.width === undefined);
+		);
 	const oldLow = recipe
 		? Math.trunc((highest.minBitrate as number) * before.minBitrateStepSize)
 		: undefined;

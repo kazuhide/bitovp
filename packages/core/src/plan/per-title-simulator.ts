@@ -1,5 +1,6 @@
 import { constrainPerTitleApiCandidate } from "./per-title-candidate-api";
 import { findCapReachingMaximumStep } from "./per-title-cap-reach";
+import { perTitleDimensionAxis } from "./per-title-dimensions";
 import {
 	applyPerTitleSettingLocks,
 	optimizePerTitleConstraints,
@@ -79,7 +80,7 @@ export type PerTitleGoalRow = {
 	mode?:
 		| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION"
 		| "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE";
-	height: number;
+	height?: number;
 	width?: number;
 	minBitrate?: number;
 	maxBitrate?: number;
@@ -224,6 +225,7 @@ export type PerTitleScenario = {
 	modelRungs: Array<{
 		rowId?: string;
 		height?: number;
+		width?: number;
 		bitrate: number;
 		kind: "required" | "illustrative";
 	}>;
@@ -895,6 +897,8 @@ function useCheckedIntervalWitness(
 	const ordered = ids.map((id) => byId.get(id));
 	if (ordered.some((row) => !row)) return;
 	const actualRows = ordered as PerTitleGoalRow[];
+	const basis = rowDimensionAxis(goal, actualRows);
+	if (!basis) return;
 	const ranges = rowRanges(goal, actualRows);
 	for (let index = 0; index < points.length; index++) {
 		const point = points[index] as number;
@@ -908,8 +912,8 @@ function useCheckedIntervalWitness(
 		if (index > 0) {
 			const ratio = point / (points[index - 1] as number);
 			if (
-				(actualRows[index]?.height ?? 0) <
-					(actualRows[index - 1]?.height ?? 0) ||
+				(actualRows[index]?.[basis] as number) <
+					(actualRows[index - 1]?.[basis] as number) ||
 				ratio < proposal.api.global.minBitrateStepSize - EPSILON ||
 				ratio > proposal.api.global.maxBitrateStepSize + EPSILON
 			)
@@ -933,7 +937,12 @@ function useCheckedIntervalWitness(
 			...scenario,
 			modelRungs: points.map((bitrate, index) => ({
 				rowId: ids[index],
-				height: actualRows[index]?.height,
+				...(actualRows[index]?.height !== undefined
+					? { height: actualRows[index]?.height }
+					: {}),
+				...(actualRows[index]?.width !== undefined
+					? { width: actualRows[index]?.width }
+					: {}),
 				bitrate,
 				kind: "required" as const,
 			})),
@@ -1022,20 +1031,32 @@ function positiveInteger(value: number | undefined): value is number {
 	return value !== undefined && Number.isSafeInteger(value) && value > 0;
 }
 
-function orderedRows(goal: PerTitleGoal): PerTitleGoalRow[] {
-	return goal.strategy === "automatic" || goal.strategy === "count"
-		? []
-		: [...(goal.rows ?? [])].sort(
-				(a, b) =>
-					a.height - b.height ||
-					(hasFixedBitrate(goal, a) || hasFixedBitrate(goal, b)
-						? (a.minBitrate ?? 0) - (b.minBitrate ?? 0) ||
-							(a.maxBitrate ?? 0) - (b.maxBitrate ?? 0)
-						: 0),
-			);
+function rowDimensionAxis(
+	goal: PerTitleGoal,
+	rows: readonly PerTitleGoalRow[],
+) {
+	const dimensionedTemplates = (goal.automaticTemplates ?? []).filter(
+		(row) => row.width !== undefined || row.height !== undefined,
+	);
+	return perTitleDimensionAxis([...rows, ...dimensionedTemplates]);
 }
 
-/** Searches only interchangeable heights; the budget is shared by both step checks. */
+function orderedRows(goal: PerTitleGoal): PerTitleGoalRow[] {
+	if (goal.strategy === "automatic" || goal.strategy === "count") return [];
+	const rows = [...(goal.rows ?? [])];
+	const basis = rowDimensionAxis(goal, rows);
+	if (!basis) return rows;
+	return rows.sort(
+		(a, b) =>
+			(a[basis] as number) - (b[basis] as number) ||
+			(hasFixedBitrate(goal, a) || hasFixedBitrate(goal, b)
+				? (a.minBitrate ?? 0) - (b.minBitrate ?? 0) ||
+					(a.maxBitrate ?? 0) - (b.maxBitrate ?? 0)
+				: 0),
+	);
+}
+
+/** Searches only interchangeable declared sizes; both step checks share a budget. */
 function resolveRowOrder(
 	goal: PerTitleGoal,
 	rows: PerTitleGoalRow[],
@@ -1043,10 +1064,13 @@ function resolveRowOrder(
 	maximumStep: number,
 	acceptOrder?: (rows: PerTitleGoalRow[]) => boolean,
 ): { rows: PerTitleGoalRow[]; unknown: boolean; states: number } {
+	if (!rows.length) return { rows, unknown: false, states: 0 };
+	const basis = rowDimensionAxis(goal, rows);
+	if (!basis) return { rows, unknown: true, states: 0 };
 	if (
 		!rows.some((row) => hasFixedBitrate(goal, row)) ||
 		!rows.some(
-			(row, index) => index > 0 && row.height === rows[index - 1]?.height,
+			(row, index) => index > 0 && row[basis] === rows[index - 1]?.[basis],
 		)
 	) {
 		return { rows, unknown: false, states: 0 };
@@ -1082,9 +1106,9 @@ function resolveRowOrder(
 					acceptOrder(order.map((index) => rows[index] as PerTitleGoalRow))
 					? [...order]
 					: null;
-			const height = rows[remaining[0] as number]?.height;
+			const size = rows[remaining[0] as number]?.[basis];
 			const candidates = remaining
-				.filter((index) => rows[index]?.height === height)
+				.filter((index) => rows[index]?.[basis] === size)
 				.sort(
 					(a, b) =>
 						(intervals[a]?.maximum ?? 0) - (intervals[b]?.maximum ?? 0) ||
@@ -1428,7 +1452,8 @@ function validateGoal(goal: PerTitleGoal): PerTitleDiagnostic[] {
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
 					"PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 				].includes(row.mode)) ||
-			!positiveInteger(row.height) ||
+			(row.height !== undefined && !positiveInteger(row.height)) ||
+			(row.height === undefined && row.width === undefined) ||
 			(row.width !== undefined && !positiveInteger(row.width))
 		) {
 			conflict(
@@ -1543,7 +1568,7 @@ function buildProposal(
 			code: "row-order-unknown",
 			severity: "warning",
 			message:
-				"The bounded search did not establish an ordering for these overlapping same-resolution intervals. This result is unknown, not a proof that the requested ladder is impossible.",
+				"A common declared dimension or a bounded ordering for overlapping same-resolution intervals was not established. This result is unknown, not a proof that the requested ladder is impossible.",
 			values: { states: ordering.states, limit: MAX_ORDER_STATES },
 		});
 	}
@@ -1574,7 +1599,7 @@ function buildProposal(
 		},
 		streams: rows.map((row) => ({
 			rowId: row.id,
-			height: row.height,
+			...(row.height !== undefined ? { height: row.height } : {}),
 			...(row.width !== undefined ? { width: row.width } : {}),
 			mode: resolvePerTitleFixedMode(goal, row),
 			...(hasFixedBitrate(goal, row)
@@ -1710,12 +1735,21 @@ function buildProposal(
 		});
 	}
 	for (const row of rows) {
-		if (goal.inputHeight !== undefined && row.height > goal.inputHeight) {
+		const exceedsHeight =
+			goal.inputHeight !== undefined &&
+			row.height !== undefined &&
+			row.height > goal.inputHeight;
+		const exceedsWidth =
+			goal.inputWidth !== undefined &&
+			row.width !== undefined &&
+			row.width > goal.inputWidth;
+		if (exceedsHeight || exceedsWidth) {
 			diagnostics.push({
 				code: "upscale-required",
 				severity: "warning",
-				message:
-					"This required resolution is larger than the stated input height.",
+				message: exceedsHeight
+					? "This required resolution is larger than the stated input height."
+					: "This required resolution is larger than the stated input width.",
 				rowIds: [row.id],
 			});
 		}
@@ -1747,6 +1781,7 @@ function buildProposal(
 	}
 	if (
 		!invalid &&
+		!ordering.unknown &&
 		!forcedUnknown &&
 		modelCapacity(goal, ranges, minimumStep) > MAX_MODEL_RUNGS
 	) {
@@ -1757,7 +1792,12 @@ function buildProposal(
 				"The spacing bound exceeds the model's 256-point limit. Increase the minimum step to inspect a smaller model.",
 		});
 	}
-	if (!invalid && !forcedUnknown && goal.countPolicy.kind !== "unrestricted") {
+	if (
+		!invalid &&
+		!ordering.unknown &&
+		!forcedUnknown &&
+		goal.countPolicy.kind !== "unrestricted"
+	) {
 		const capacity = modelCapacity(goal, ranges, minimumStep);
 		if (
 			goal.countPolicy.kind === "exact" &&
@@ -1904,14 +1944,21 @@ function buildScenario(
 	const modelRungs: PerTitleScenario["modelRungs"] = points.map(
 		(bitrate, index) => ({
 			rowId: rows[index]?.id,
-			height: rows[index]?.height,
+			...(rows[index]?.height !== undefined
+				? { height: rows[index]?.height }
+				: {}),
+			...(rows[index]?.width !== undefined
+				? { width: rows[index]?.width }
+				: {}),
 			bitrate: rowModels[index]?.linearTargetBitrate ?? Math.round(bitrate),
 			kind: "required",
 		}),
 	);
 	// At one resolution, the illustrated bitrate order is independent of edit order.
+	const basis = rowDimensionAxis(goal, rows);
 	modelRungs.sort(
-		(a, b) => (a.height ?? 0) - (b.height ?? 0) || a.bitrate - b.bitrate,
+		(a, b) =>
+			(basis ? (a[basis] ?? 0) - (b[basis] ?? 0) : 0) || a.bitrate - b.bitrate,
 	);
 	if (rowModels.some((row) => row.linearTargetBitrate !== null)) {
 		diagnostics.push({

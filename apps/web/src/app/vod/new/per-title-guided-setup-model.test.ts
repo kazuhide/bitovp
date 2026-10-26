@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildPerTitleSetup,
 	type PerTitleSetupInput,
+	type PerTitleSetupRow,
 } from "./per-title-guided-setup-model";
 import { tunePerTitleSettings } from "./per-title-simulator-tuning";
 
@@ -32,7 +33,17 @@ function requireGoal(result: ReturnType<typeof buildPerTitleSetup>) {
 	expect(result.goal).not.toBeNull();
 	expect(result.proposal).not.toBeNull();
 	if (!result.goal || !result.proposal) throw new Error("Expected a setup.");
-	return { goal: result.goal, proposal: result.proposal };
+	const rows = result.goal.rows ?? [];
+	if (
+		!rows.every(
+			(row): row is PerTitleSetupRow =>
+				row.height !== undefined &&
+				Number.isSafeInteger(row.height) &&
+				row.height > 0,
+		)
+	)
+		throw new Error("Expected explicit setup heights.");
+	return { goal: { ...result.goal, rows }, proposal: result.proposal };
 }
 
 describe("new Per-Title requirements", () => {

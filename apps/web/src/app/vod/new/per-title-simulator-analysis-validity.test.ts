@@ -380,7 +380,29 @@ describe("Per-Title configuration validity", () => {
 		expect(result).not.toContain("complexity-always-minimum");
 		expect(result).not.toContain("complexity-always-maximum");
 	});
-	it("does not bound a LAST forced base through an unresolved complexity floor", () => {
+	it.each([
+		"MINIMUM",
+		"MAXIMUM",
+		"AVERAGE",
+		"LAST_CALCULATED_BITRATE",
+	] as const)("does not bound a %s forced base when fixed dimensions have no shared axis", (calculationMode) => {
+		const current = fixture();
+		stream(current, 1).width = 1280;
+		delete stream(current, 1).height;
+		Object.assign(setting(current, 1), {
+			bitrateSelectionMode: "COMPLEXITY_RANGE",
+			[low]: 300,
+			[high]: 900,
+		});
+		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			[count]: 1,
+			[factor]: 1.2,
+			[mode]: calculationMode,
+		};
+		// A height-only fixed row and a width-only fixed row share no comparison axis.
+		expect(codes(current)).toContain("forced-base-unresolved");
+	});
+	it("uses a shared height axis to bound a LAST forced base when only some widths are supplied", () => {
 		const current = fixture();
 		stream(current, 1).width = 1280;
 		Object.assign(setting(current, 1), {
@@ -390,11 +412,61 @@ describe("Per-Title configuration validity", () => {
 		});
 		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
 			[count]: 1,
-			[factor]: 1.2,
+			[factor]: 3,
 			[mode]: "LAST_CALCULATED_BITRATE",
 		};
-		// Height order is known, but explicit widths and height-only rows are mixed.
-		expect(codes(current)).toContain("forced-base-unresolved");
+		const result = codes(current);
+		expect(result).not.toContain("forced-base-unresolved");
+		expect(result).toContain("forced-cap-exceeded");
+	});
+	it.each([
+		"MINIMUM",
+		"MAXIMUM",
+		"AVERAGE",
+		"LAST_CALCULATED_BITRATE",
+	] as const)("checks a width-only %s forced base without requiring heights", (calculationMode) => {
+		const current = fixture();
+		for (const [index, width] of [426, 1280].entries()) {
+			const row = stream(current, index);
+			delete row.height;
+			row.width = width;
+		}
+		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			[count]: 2,
+			[factor]: 2,
+			[mode]: calculationMode,
+		};
+		const before = structuredClone(current);
+		const result = codes(current);
+		expect(result).not.toContain("forced-base-unresolved");
+		expect(result).toContain("forced-cap-exceeded");
+		expect(current).toEqual(before);
+	});
+	it("keeps a repeated highest width unresolved even when the heights are distinct", () => {
+		const current = fixture();
+		for (const row of current.proposal.api.streams) row.width = 1280;
+		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			[count]: 1,
+			[factor]: 3,
+			[mode]: "MAXIMUM",
+		};
+		const result = codes(current);
+		expect(result).toContain("forced-base-unresolved");
+		expect(result).not.toContain("forced-cap-exceeded");
+	});
+	it("selects the forced base on a shared width axis when heights imply another order", () => {
+		const current = fixture();
+		stream(current).width = 1920;
+		stream(current, 1).width = 640;
+		current.proposal.api.global.fixedResolutionAndBitrateConfiguration = {
+			[count]: 1,
+			[factor]: 2.5,
+			[mode]: "MAXIMUM",
+		};
+		const result = codes(current);
+		expect(result).toContain("dimension-order-ambiguous");
+		expect(result).not.toContain("forced-base-unresolved");
+		expect(result).not.toContain("forced-cap-exceeded");
 	});
 	it("does not mistake a sufficient interval bound for proof of an actual native count failure", () => {
 		const current = fixture();
@@ -551,6 +623,43 @@ describe("Per-Title configuration validity", () => {
 		const result = codes(current);
 		expect(result).toContain("interval-order-unresolved");
 		expect(result).not.toContain("complexity-domain-checked");
+		expect(result).not.toContain("adjacent-spacing-unproved");
+	});
+	it("uses the shared width axis for interval checks when height order differs", () => {
+		const current = fixture();
+		stream(current).width = 426;
+		stream(current).height = 720;
+		stream(current, 1).width = 1280;
+		stream(current, 1).height = 240;
+		for (const row of [0, 1])
+			Object.assign(setting(current, row), {
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				[low]: 300,
+				[high]: 900,
+			});
+		const result = codes(current);
+		expect(result).toContain("dimension-order-ambiguous");
+		expect(result).not.toContain("interval-order-unresolved");
+		expect(result).toContain("complexity-domain-checked");
+	});
+	it("uses the same axis as the analysis floor when a fixed-resolution-only row lacks a width", () => {
+		const current = fixture();
+		stream(current).width = 1280;
+		stream(current, 1).width = 640;
+		current.proposal.api.streams.push({
+			rowId: "higher-resolution-only",
+			height: 1080,
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+		});
+		for (const row of [0, 1])
+			Object.assign(setting(current, row), {
+				bitrateSelectionMode: "COMPLEXITY_RANGE",
+				[low]: 300,
+				[high]: 900,
+			});
+		const result = codes(current);
+		expect(result).toContain("complexity-domain-checked");
+		expect(result).not.toContain("interval-order-unresolved");
 		expect(result).not.toContain("adjacent-spacing-unproved");
 	});
 	it("checks LAST_CALCULATED_BITRATE against the reachable upper curve, not an unreachable configured maximum", () => {

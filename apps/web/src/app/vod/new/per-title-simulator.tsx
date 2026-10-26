@@ -22,6 +22,8 @@ import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import type { Locale } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
+import type { PerTitleEncodingImportedConfiguration } from "./per-title-encoding-import";
+import { PerTitleEncodingImportPanel } from "./per-title-encoding-import-panel";
 import { PerTitleGuidedSetup } from "./per-title-guided-setup";
 import {
 	applyPerTitleAdvice,
@@ -378,6 +380,7 @@ function SimulatorEditor({
 	onLoad,
 	onCodecChange,
 	onSetup,
+	onEncodingImport,
 }: PerTitleSimulatorProps & {
 	goal: PerTitleGoal;
 	setGoal: Dispatch<SetStateAction<PerTitleGoal>>;
@@ -393,6 +396,7 @@ function SimulatorEditor({
 	onLoad: (goal: PerTitleGoal, reference?: PerTitleReference) => void;
 	onCodecChange: (codec: PerTitleGoal["codec"]) => void;
 	onSetup: (trigger: HTMLButtonElement) => void;
+	onEncodingImport: (trigger: HTMLButtonElement) => void;
 }) {
 	const { locale } = useT();
 	const copy = perTitleSimulatorCopy[locale];
@@ -459,13 +463,20 @@ function SimulatorEditor({
 		setGoal((current) => ({ ...current, ...next }));
 	return (
 		<div ref={editorRef} className="space-y-5">
-			<div className="flex justify-end">
+			<div className="flex flex-wrap gap-2">
 				<Button
 					variant="secondary"
 					size="sm"
 					onClick={(event) => onSetup(event.currentTarget)}
 				>
 					{locale === "ja" ? "新規設定ウィザード" : "New setup wizard"}
+				</Button>
+				<Button
+					variant="secondary"
+					size="sm"
+					onClick={(event) => onEncodingImport(event.currentTarget)}
+				>
+					{copy.loadFromEncodingId}
 				</Button>
 			</div>
 			<PerTitleSimulatorFiles
@@ -815,13 +826,36 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 	const [manualBounds, setManualBounds] = useState<PerTitleManualBounds>({});
 	const [codecError, setCodecError] = useState(false);
 	const [setupOpen, setSetupOpen] = useState(false);
+	const [importOpen, setImportOpen] = useState(false);
 	const setupTrigger = useRef<HTMLElement | null>(null);
 	useEffect(() => {
-		if (!setupOpen && setupTrigger.current) {
+		if (!setupOpen && !importOpen && setupTrigger.current) {
 			setupTrigger.current.focus();
 			setupTrigger.current = null;
 		}
-	}, [setupOpen]);
+	}, [setupOpen, importOpen]);
+	const importContext = useMemo(
+		() => ({
+			goal,
+			referenceGoal,
+			initialGoal: props.initialGoal,
+			goalsByCodec: props.goalsByCodec,
+		}),
+		[goal, referenceGoal, props.initialGoal, props.goalsByCodec],
+	);
+	const importCodecs = useMemo(
+		() =>
+			[
+				"H264",
+				"H265",
+				"VP9",
+				"AV1",
+				...(props.initialGoal.codec === "H265V2" || props.goalsByCodec?.H265V2
+					? ["H265V2" as const]
+					: []),
+			] as const,
+		[props.initialGoal.codec, props.goalsByCodec?.H265V2],
+	);
 	const drafts = useRef(
 		new Map<
 			PerTitleGoal["codec"],
@@ -932,6 +966,35 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		setManualBounds({});
 		setReference(loadedReference);
 	}
+	function loadConfigurations(
+		configurations: PerTitleEncodingImportedConfiguration[],
+	) {
+		const active =
+			configurations.find(
+				(configuration) => configuration.codec === goal.codec,
+			) ?? configurations[0];
+		if (!active) return;
+		drafts.current.set(goal.codec, {
+			goal: copyGoal(goal),
+			referenceGoal: copyGoal(referenceGoal),
+			reference,
+			manualBounds: structuredClone(manualBounds),
+		});
+		for (const configuration of configurations) {
+			drafts.current.set(configuration.codec, {
+				goal: copyGoal(configuration.goal),
+				referenceGoal: copyGoal(configuration.goal),
+				reference: structuredClone(configuration.reference),
+				manualBounds: {},
+			});
+		}
+		setCodecError(false);
+		setGoal(copyGoal(active.goal));
+		setReferenceGoal(copyGoal(active.goal));
+		setReference(structuredClone(active.reference));
+		setManualBounds({});
+		setImportOpen(false);
+	}
 	function changeBitrate(
 		rowId: string,
 		bound: "min" | "max",
@@ -982,6 +1045,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 		if (!open) {
 			setupTrigger.current = null;
 			setSetupOpen(false);
+			setImportOpen(false);
 			setCodecError(false);
 			drafts.current.clear();
 			setGoal(copyGoal(props.initialGoal));
@@ -1000,10 +1064,20 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 					? locale === "ja"
 						? "Per-Title を新しく設定"
 						: "New Per-Title setup"
-					: copy.title
+					: importOpen
+						? copy.loadFromEncodingId
+						: copy.title
 			}
-			size={setupOpen ? "wide" : "workspace"}
+			size={setupOpen || importOpen ? "wide" : "workspace"}
 		>
+			{importOpen ? (
+				<PerTitleEncodingImportPanel
+					context={importContext}
+					allowedCodecs={importCodecs}
+					onCancel={() => setImportOpen(false)}
+					onComplete={loadConfigurations}
+				/>
+			) : null}
 			{setupOpen ? (
 				<PerTitleGuidedSetup
 					initialGoal={goal}
@@ -1024,7 +1098,7 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 					}}
 				/>
 			) : null}
-			<div hidden={setupOpen}>
+			<div hidden={setupOpen || importOpen}>
 				<SimulatorEditor
 					{...props}
 					applyError={codecError ? copy.referenceCodecError : props.applyError}
@@ -1041,6 +1115,10 @@ export function PerTitleSimulator(props: PerTitleSimulatorProps) {
 					onSetup={(trigger) => {
 						setupTrigger.current = trigger;
 						setSetupOpen(true);
+					}}
+					onEncodingImport={(trigger) => {
+						setupTrigger.current = trigger;
+						setImportOpen(true);
 					}}
 				/>
 			</div>

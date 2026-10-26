@@ -1,5 +1,7 @@
-import type { PerTitleGoalRow } from "@bitovp/core";
-import type { PerTitleSetupInput } from "./per-title-guided-setup-model";
+import type {
+	PerTitleSetupInput,
+	PerTitleSetupRow,
+} from "./per-title-guided-setup-model";
 
 const NOMINAL_MAXIMUM_STEP = 1.9;
 const STEP_MARGIN = 0.01;
@@ -8,6 +10,8 @@ const validRate = (value: number | undefined): value is number =>
 	Number.isSafeInteger(value) &&
 	value >= 1 &&
 	value <= 2_147_483_647;
+const validHeight = (value: unknown): value is number =>
+	typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
 /** Allocate bitrate budgets; this does not estimate source quality or complexity. */
 export function allocatePerTitleSetupRanges(
@@ -15,7 +19,7 @@ export function allocatePerTitleSetupRanges(
 	minimumStep: number,
 	factor: number,
 	readable = true,
-): PerTitleGoalRow[] | null {
+): PerTitleSetupRow[] | null {
 	const { minBitrate: lower, maxBitrate: upper } = input;
 	if (
 		!validRate(lower) ||
@@ -25,7 +29,8 @@ export function allocatePerTitleSetupRanges(
 		minimumStep <= 1 + STEP_MARGIN ||
 		!Array.isArray(input.rows) ||
 		!input.rows.length ||
-		input.rows.length > 64
+		input.rows.length > 64 ||
+		input.rows.some((row) => !validHeight(row?.height))
 	)
 		return null;
 	const hasLower = input.automaticEdges?.lowerHeight !== undefined;
@@ -42,7 +47,7 @@ export function allocatePerTitleSetupRanges(
 	const ordered = [...input.rows].sort((a, b) => a.height - b.height);
 	const rank = new Map(ordered.map((row, index) => [row.id, index]));
 	if (rank.size !== ordered.length) return null;
-	const finish = (rows: PerTitleGoalRow[]) =>
+	const finish = (rows: PerTitleSetupRow[]) =>
 		rows.every(
 			(row) =>
 				validRate(row.minBitrate) &&

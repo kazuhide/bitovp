@@ -5,11 +5,13 @@ import {
 	buildLiveChannelPlan,
 	collapseGroup,
 	DEFAULT_LIVE_WIZARD_STATE,
+	ingestInputPath,
 	type LiveAdMarkerOptionsState,
 	type LiveAudioRendition,
 	type LiveDashManifestState,
 	type LiveHlsManifestState,
 	type LiveInputKind,
+	type LiveMuxingOptions,
 	type LiveVideoRendition,
 	type LiveWizardState,
 	liveManifestDestination,
@@ -69,12 +71,26 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 
 	// Manifests can have independent folders. Recover the media base from its
 	// video/{height}p or audio/{bitrate} suffix, not the first manifest's folder.
-	const muxPath = firstSegmented?.destination?.path;
+	const muxPath = plan.muxings.find(
+		(muxing) =>
+			muxing.kind !== "MP4" &&
+			/(?:^|\/)(?:video|audio)\/[^/]+$/.test(muxing.destination?.path ?? ""),
+	)?.destination?.path;
 	const manifestPath = plan.liveManifests[0]?.destination?.path;
 	const base =
 		muxPath !== undefined
 			? muxPath.split("/").slice(0, -2).join("/")
 			: (manifestPath ?? "");
+	const selections = new Map(plan.ingest.map((entry) => [entry.key, entry]));
+	const inputOf = (rendition: Rendition, key: string, position: number) => {
+		const selection = selections.get(rendition.ingestKey);
+		return selection &&
+			(rendition.ingestKey !== key ||
+				selection.position !== position ||
+				selection.inputPath !== ingestInputPath(plan.liveInput.kind))
+			? { input: { ...selection } }
+			: {};
+	};
 
 	/**
 	 * The relation, copied off the plan .
@@ -96,6 +112,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const videos: LiveVideoRendition[] = plan.renditions
 		.filter(isVideoRendition)
 		.map((r) => ({
+			...inputOf(r, "video", 0),
 			extras: {
 				key: r.key,
 				...("hlsVariantUri" in r && typeof r.hlsVariantUri === "string"
@@ -133,6 +150,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const audios: LiveAudioRendition[] = plan.renditions
 		.filter(isAudioRendition)
 		.map((r) => ({
+			...inputOf(r, "audio", 1),
 			extras: { key: r.key },
 			codec: r.codec,
 			bitrate: r.bitrate ?? 0,
@@ -164,7 +182,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	});
 	const adMarkerOptions = adMarkerOptionsState(plan.adMarkers);
 
-	return {
+	const state: LiveWizardState = {
 		name: plan.name,
 		accountId: plan.bitmovin?.accountId ?? "",
 		cloudRegion: plan.bitmovin?.cloudRegion ?? D.cloudRegion,
@@ -186,6 +204,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		output: primaryState,
 		outputOrder: plan.outputs.map((output) => output.key),
 		manifestOrder: plan.liveManifests.map((manifest) => manifest.key),
+		ingestOrder: plan.ingest.map((selection) => selection.key),
 		...(() => {
 			const muxing = plan.muxings.find((m) => m.kind === "MP4");
 			if (!muxing?.destination || muxing.additionalStreamKeys?.length !== 1)
@@ -266,6 +285,35 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		...(adMarkerOptions ? { adMarkerOptions } : {}),
 		start: startState(plan.start, D),
 	};
+	const defaults = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
+	for (const row of [...state.videos, ...state.audios]) {
+		const muxing = plan.muxings.find((entry) => entry.key === row.extras?.key);
+		const original = defaults.muxings.find(
+			(entry) => entry.key === row.extras?.key,
+		);
+		if (
+			!muxing ||
+			muxing.kind === "MP4" ||
+			!original ||
+			original.kind === "MP4"
+		)
+			continue;
+		const options: LiveMuxingOptions = {};
+		if (muxing.segmentNamingTemplate !== undefined)
+			options.segmentNamingTemplate = muxing.segmentNamingTemplate;
+		else if (muxing.segmentNaming !== original.segmentNaming)
+			options.segmentNaming = muxing.segmentNaming;
+		if (
+			muxing.kind === "FMP4" &&
+			original.kind === "FMP4" &&
+			muxing.initSegmentName !== original.initSegmentName
+		)
+			options.initSegmentName = muxing.initSegmentName;
+		if (muxing.destination?.path !== original.destination?.path)
+			options.path = muxing.destination?.path;
+		if (Object.keys(options).length) row.muxing = options;
+	}
+	return state;
 }
 
 /**

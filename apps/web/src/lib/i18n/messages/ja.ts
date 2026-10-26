@@ -1043,6 +1043,40 @@ export const ja = {
 		verifyAfterStop:
 			"停止後にファイルを取得・再生し、映像と音声の長さを確認してください。非公開にする場合は PRIVATE を指定し、バケットポリシーなどで公開されていないことも確認します。保存先の既定値を使うと公開される場合があります。ライブ再生の確認だけでは、アーカイブが正しく保存されたかは判断できません。",
 	},
+	liveRendition: {
+		inputPosition: "入力トラック位置",
+		inputPositionHint:
+			"0から始まる入力トラック番号です。未指定時は映像0、音声1を使います。",
+		inputPath: "入力パス",
+		inputPathHint: "未指定時は入力プロトコルの既定パスを使います。",
+		outputPath: "メディア保存先サブディレクトリ",
+		outputPathHint:
+			"自動生成される保存先全体を置き換えます。コンテナごとに別フォルダを指定してください。/ は出力先のルートです。",
+		segmentNaming: "セグメントファイル名パターン",
+		segmentNamingHint:
+			"%number%を含む、ディレクトリなしの.m4sまたは.tsファイル名です。未指定時は自動命名を使います。",
+		segmentTemplate: "セグメント命名テンプレート",
+		segmentTemplateHint:
+			"%number%と{rand_chars:8}で再起動ごとに接頭辞を変えられます。{segment_rand_chars:8}はセグメントごとに変わります。パターンかテンプレートの一方を指定します。",
+		initName: "初期化セグメントのファイル名（.mp4）",
+		storageRequired:
+			"メディアのファイル名とパスはストレージ出力で指定できます。MSLとLive Media Ingestは配信先の設定を使います。",
+		ownContainerRequired:
+			"メディアファイルを指定するには、この音声の独立コンテナを有効にしてください。",
+		clearMediaSettings: "メディアのファイル名とパスをリセット",
+		conflictingNaming:
+			"セグメントファイル名パターンか命名テンプレートの一方を指定してください。",
+		invalidSegmentName:
+			"%number%またはセグメントごとのランダムテンプレートを含む.m4sか.tsファイル名を使ってください。ディレクトリやURLの文字は使えません。",
+		initRequiresFmp4:
+			"初期化ファイル名の指定にはfMP4コンテナが必要です。fMP4に戻すか、メディア設定をリセットしてください。",
+		invalidInitName:
+			"ディレクトリやURLの文字を含まない.mp4初期化ファイル名を指定してください。",
+		invalidOutputPath:
+			"親ディレクトリ参照、エンコードされたパス、空白、URLの文字を含まないサブディレクトリを指定してください。",
+		sharedFolder:
+			"Liveのメディアコンテナごとに別の保存先フォルダを指定してください。このパスは別のレンディションと重複しています。",
+	},
 	liveWizard: {
 		outputWidth: "幅（px）",
 		outputWidthHint:

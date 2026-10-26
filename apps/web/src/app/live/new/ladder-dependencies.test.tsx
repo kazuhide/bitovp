@@ -152,10 +152,15 @@ it("round-trips stable imported keys and their existing muxing paths exactly", (
 	).toEqual(plan);
 	required(required(plan.muxings[0]).destination).path =
 		"custom/preserved/provider-path";
-	expect(tryImportLiveChannelIntoWizard(plan)).toEqual({
-		ok: false,
-		reasonKey: "uiX.couldNotDuplicateUnrepresentedOptions",
-	});
+	const custom = tryImportLiveChannelIntoWizard(plan);
+	expect(custom.ok).toBe(true);
+	if (!custom.ok) throw new Error("Custom path import refused");
+	expect(custom.state.videos[0]?.muxing?.path).toBe(
+		"custom/preserved/provider-path",
+	);
+	expect(
+		liveChannelPlanSchema.parse(buildLiveChannelPlan(custom.state)),
+	).toEqual(plan);
 });
 
 it("bundles only the selected audio by default and preserves an explicit standalone override", () => {

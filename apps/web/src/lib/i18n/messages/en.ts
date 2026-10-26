@@ -1072,6 +1072,40 @@ export const en = {
 		verifyAfterStop:
 			"After stopping, download and check the file and audio/video duration. Private requests PRIVATE; verify that bucket policies or other settings do not grant public access. The destination default may be public. This is not a live playback URL. Delivery checks alone do not verify the archive or whole plan.",
 	},
+	liveRendition: {
+		inputPosition: "Input track position",
+		inputPositionHint:
+			"Zero-based source track index. Leave unset for video 0 or audio 1.",
+		inputPath: "Input path",
+		inputPathHint: "Leave unset to use the input protocol's default path.",
+		outputPath: "Media output subdirectory",
+		outputPathHint:
+			"Replaces the complete automatic media subdirectory. Give each container a separate folder; / selects the output root.",
+		segmentNaming: "Segment filename pattern",
+		segmentNamingHint:
+			"Use a flat .m4s or .ts filename containing %number%. Leave unset for automatic naming.",
+		segmentTemplate: "Segment naming template",
+		segmentTemplateHint:
+			"Use %number% with {rand_chars:8} for a new prefix on restart, or {segment_rand_chars:8} per segment. Choose a pattern or a template.",
+		initName: "Init segment filename (.mp4)",
+		storageRequired:
+			"Custom media filenames and paths are available for storage outputs. MSL and Live Media Ingest use their delivery settings.",
+		ownContainerRequired:
+			"Enable this audio rendition's own container to customize its media files.",
+		clearMediaSettings: "Reset media filenames and path",
+		conflictingNaming:
+			"Choose either a segment filename pattern or a naming template.",
+		invalidSegmentName:
+			"Use a flat .m4s or .ts segment filename with %number% or a per-segment random template, without directory or URL characters.",
+		initRequiresFmp4:
+			"The custom init filename requires an fMP4 container. Restore fMP4 or reset the media settings.",
+		invalidInitName:
+			"Use a flat .mp4 init filename without directory or URL characters.",
+		invalidOutputPath:
+			"Use an output subdirectory without parent traversal, encoded paths, whitespace or URL characters.",
+		sharedFolder:
+			"Give each Live media container a separate output folder; this path overlaps another rendition.",
+	},
 	liveWizard: {
 		outputWidth: "Width (px)",
 		outputWidthHint:

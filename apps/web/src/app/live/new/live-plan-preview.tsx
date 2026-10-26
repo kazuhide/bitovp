@@ -20,6 +20,7 @@ import { useT } from "@/lib/i18n/context";
 import { zodIssueMessage } from "@/lib/i18n/zod-issue-message";
 import type { LiveWizardState } from "./build-live-plan";
 import { buildLiveChannelPlan } from "./build-live-plan";
+import { liveRenditionOptionsProblem } from "./live-rendition-options";
 import { liveMirrorProblem } from "./mirror-model";
 
 export type LivePlanEvaluation =
@@ -44,11 +45,24 @@ export function evaluateLiveWizardState(
 			ok: false,
 			zodMessage: translate ? translate(mirrorProblem) : mirrorProblem,
 		};
-	return evaluateLivePlanDocument(
-		buildLiveChannelPlan(state),
-		translate,
-		options,
-	);
+	try {
+		const plan = buildLiveChannelPlan(state);
+		const problem = liveRenditionOptionsProblem(state, plan);
+		return problem
+			? {
+					ok: false,
+					zodMessage:
+						translate && problem.messageKey
+							? translate(problem.messageKey)
+							: problem.message,
+				}
+			: evaluateLivePlanDocument(plan, translate, options);
+	} catch (error) {
+		return {
+			ok: false,
+			zodMessage: error instanceof Error ? error.message : String(error),
+		};
+	}
 }
 
 /** Raw imports retain all fields; profile and credential metadata are current. */

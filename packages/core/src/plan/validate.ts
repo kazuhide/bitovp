@@ -4,7 +4,10 @@ import {
 	enumerateQcTargets,
 } from "../vmaf/targets";
 import { checkAkamaiMslConstraints } from "./akamai-msl-constraint";
-import { checkH26xCodecControls } from "./codec-controls";
+import {
+	checkAv1CodecControls,
+	checkH26xCodecControls,
+} from "./codec-controls";
 import { qcMirrorMuxingKind, renditionOutputBase } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import {
@@ -187,6 +190,7 @@ export function validatePlan(
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST")

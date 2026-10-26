@@ -428,13 +428,16 @@ export type WizardVp9Options = {
 	colorConfig?: WizardColorConfig;
 };
 
-/** AV1 (Av1VideoConfiguration) — preset, level setup and dynamic range
- * as a subset of the SDK's AV1-specific settings. */
+/** AV1 (Av1VideoConfiguration) level setup and HDR metadata. */
 export type WizardAv1Options = {
 	rate?: number | null;
 	presetConfiguration?: "VOD_QUALITY" | "VOD_STANDARD" | "VOD_SPEED";
 	autoLevelSetup?: "ENABLED" | "DISABLED";
+	maxLevel?: string;
 	dynamicRangeFormat?: (typeof AV1_DYNAMIC_RANGE_FORMATS)[number];
+	masterDisplay?: string;
+	maxContentLightLevel?: number;
+	maxPictureAverageLightLevel?: number;
 	colorConfig?: WizardColorConfig;
 };
 
@@ -1823,7 +1826,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				rate: o.rate,
 				presetConfiguration: o.presetConfiguration,
 				autoLevelSetup: o.autoLevelSetup,
+				maxLevel: str(o.maxLevel),
 				dynamicRangeFormat: o.dynamicRangeFormat,
+				masterDisplay: str(o.masterDisplay),
+				maxContentLightLevel: o.maxContentLightLevel,
+				maxPictureAverageLightLevel: o.maxPictureAverageLightLevel,
 				colorConfig: pruneColorConfig(o.colorConfig),
 				perTitleSettings: perTitleSettingsField(video.extras),
 			});

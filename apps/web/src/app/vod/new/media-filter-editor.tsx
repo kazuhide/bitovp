@@ -1,6 +1,10 @@
 "use client";
 
-import { AUDIO_VOLUME_FORMATS, TEXT_FILTER_FONTS } from "@bitovp/core";
+import {
+	AUDIO_VOLUME_FORMATS,
+	SCALING_ALGORITHMS,
+	TEXT_FILTER_FONTS,
+} from "@bitovp/core";
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
@@ -8,6 +12,7 @@ import type { WizardFilter, WizardInputFile } from "./build-plan";
 
 export const FILTER_KINDS = [
 	"DEINTERLACE",
+	"SCALE",
 	"CROP",
 	"ROTATE",
 	"WATERMARK",
@@ -44,6 +49,7 @@ export function newFilter(
 		case "AUDIO_VOLUME":
 			return { key, kind, volume: 100, unit: "PERCENT" };
 		case "DENOISE_HQDN3D":
+		case "SCALE":
 		case "UNSHARP":
 		case "EBU_R128_SINGLE_PASS":
 			return { key, kind };
@@ -59,6 +65,28 @@ const edges: Spec[] = [
 	["unit", "Unit", "単位", ["PIXELS", "PERCENTS"]],
 ];
 const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
+	SCALE: [
+		["width", "Filter width (px)", "フィルターの幅 (px)", "number"],
+		["height", "Filter height (px)", "フィルターの高さ (px)", "number"],
+		[
+			"scalingAlgorithm",
+			"Scaling algorithm",
+			"スケーリングアルゴリズム",
+			SCALING_ALGORITHMS,
+		],
+		[
+			"sampleAspectRatioNumerator",
+			"Pixel aspect ratio numerator",
+			"画素の縦横比（分子）",
+			"number",
+		],
+		[
+			"sampleAspectRatioDenominator",
+			"Pixel aspect ratio denominator",
+			"画素の縦横比（分母）",
+			"number",
+		],
+	],
 	DENOISE_HQDN3D: [
 		["lumaSpatial", "Spatial luma", "輝度（空間方向）", "number"],
 		["chromaSpatial", "Spatial chroma", "色差（空間方向）", "number"],
@@ -150,7 +178,7 @@ export function MediaFilterEditor({
 	inputFiles: WizardInputFile[];
 	onChange: (next: WizardFilter) => void;
 }) {
-	const { locale } = useT();
+	const { locale, t } = useT();
 	const ja = locale === "ja";
 	const inputs = inputFiles.filter(
 		(f, i, all) =>
@@ -225,15 +253,23 @@ export function MediaFilterEditor({
 							htmlFor={id}
 							label={ja ? jp : en}
 							tooltip={
-								filter.kind === "UNSHARP"
-									? ja
-										? "サイズ: 3〜23の奇数。強度: -1.5〜1.5（正は鮮鋭化、負はぼかし）。空欄はAPIの既定値。"
-										: "Matrix: odd 3–23. Strength: -1.5–1.5 (positive sharpens, negative blurs). Blank uses the API default."
-									: filter.kind === "DENOISE_HQDN3D"
+								filter.kind === "SCALE"
+									? t(
+											key === "width" || key === "height"
+												? "wizard.scaleFilterDimensionsHelp"
+												: key === "scalingAlgorithm"
+													? "wizard.scaleFilterAlgorithmHelp"
+													: "wizard.scaleFilterSarHelp",
+										)
+									: filter.kind === "UNSHARP"
 										? ja
-											? "0以上。空欄はAPIの既定値。"
-											: "Non-negative. Blank uses the API default."
-										: undefined
+											? "サイズ: 3〜23の奇数。強度: -1.5〜1.5（正は鮮鋭化、負はぼかし）。空欄はAPIの既定値。"
+											: "Matrix: odd 3–23. Strength: -1.5–1.5 (positive sharpens, negative blurs). Blank uses the API default."
+										: filter.kind === "DENOISE_HQDN3D"
+											? ja
+												? "0以上。空欄はAPIの既定値。"
+												: "Non-negative. Blank uses the API default."
+											: undefined
 							}
 						>
 							{typeof control === "string" ? (

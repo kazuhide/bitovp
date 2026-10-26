@@ -1,3 +1,4 @@
+import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
 import type { StepLogEntry } from "./steplog";
 
@@ -232,6 +233,7 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/chunked-text",
 	},
 	CREATE_FILTER_CROP: { method: "POST", template: "/encoding/filters/crop" },
+	CREATE_FILTER_SCALE: { method: "POST", template: "/encoding/filters/scale" },
 	CREATE_FILTER_ROTATE: {
 		method: "POST",
 		template: "/encoding/filters/rotate",
@@ -573,6 +575,25 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	if (
+		entry.kind === "CREATE_CODEC_AV1" &&
+		request !== null &&
+		typeof request === "object" &&
+		!Array.isArray(request)
+	) {
+		const snapshot = request as Record<string, unknown>;
+		if (
+			Object.hasOwn(snapshot, "maxLevel") &&
+			snapshot.maxLevel !== undefined
+		) {
+			const level = codecEnumSchema("LevelAv1").safeParse(snapshot.maxLevel);
+			if (!level.success)
+				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+			const levels: Readonly<Record<string, string>> =
+				CODEC_ENUM_VALUES.LevelAv1;
+			request = { ...snapshot, maxLevel: levels[level.data] };
+		}
+	}
 	if (
 		entry.kind === "CREATE_DASH_REPRESENTATION_MP4" ||
 		entry.kind === "CREATE_DASH_CONTENT_PROTECTION"

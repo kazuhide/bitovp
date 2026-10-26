@@ -149,6 +149,7 @@ export async function executeConfigStep(
 			const resourceId = await ctx.sdk.createVp9Config({
 				encodingMode: optStr(p.encodingMode),
 				name: optStr(p.name),
+				width: optNum(p.width),
 				height: optNum(p.height),
 				bitrate: optNum(p.bitrate),
 				rate: optNum(p.rate),
@@ -173,12 +174,17 @@ export async function executeConfigStep(
 			const resourceId = await ctx.sdk.createAv1Config({
 				encodingMode: optStr(p.encodingMode),
 				name: optStr(p.name),
+				width: optNum(p.width),
 				height: optNum(p.height),
 				bitrate: optNum(p.bitrate),
 				rate: optNum(p.rate),
 				presetConfiguration: optStr(p.presetConfiguration),
 				autoLevelSetup: optStr(p.autoLevelSetup),
+				maxLevel: optStr(p.maxLevel),
 				dynamicRangeFormat: optStr(p.dynamicRangeFormat),
+				masterDisplay: optStr(p.masterDisplay),
+				maxContentLightLevel: optNum(p.maxContentLightLevel),
+				maxPictureAverageLightLevel: optNum(p.maxPictureAverageLightLevel),
 				colorConfig: colorConfigOf(p.colorConfig),
 			});
 			return { resourceId, request, response: { id: resourceId } };

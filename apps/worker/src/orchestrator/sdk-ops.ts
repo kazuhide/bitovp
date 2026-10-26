@@ -201,6 +201,7 @@ export type H265ConfigParams = H265V2QualityControls & {
 export type Vp9ConfigParams = {
 	encodingMode?: string;
 	name?: string;
+	width?: number;
 	height?: number;
 	bitrate?: number;
 	rate?: number;
@@ -223,6 +224,7 @@ export type Vp9ConfigParams = {
 export type Av1ConfigParams = {
 	encodingMode?: string;
 	name?: string;
+	width?: number;
 	height?: number;
 	bitrate?: number;
 	rate?: number;
@@ -230,7 +232,11 @@ export type Av1ConfigParams = {
 	presetConfiguration?: string;
 	/** AutoLevelSetup name (ENABLED|DISABLED). */
 	autoLevelSetup?: string;
+	maxLevel?: string;
 	dynamicRangeFormat?: string;
+	masterDisplay?: string;
+	maxContentLightLevel?: number;
+	maxPictureAverageLightLevel?: number;
 	colorConfig?: ColorConfigParams;
 };
 

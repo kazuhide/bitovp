@@ -1,5 +1,6 @@
 import { stringify } from "yaml";
 import { h26xPictureControls } from "./codec-controls";
+import { CODEC_ENUM_VALUES } from "./codec-enums";
 import {
 	joinFilePath,
 	relativeFilePath,
@@ -598,6 +599,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
 					name: rendition.name,
+					width: rendition.width,
 					height: rendition.height,
 					bitrate: rendition.bitrate,
 					rate: rendition.rate,
@@ -629,6 +631,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				properties: dense({
 					encodingMode: rendition.encodingMode,
 					name: rendition.name,
+					width: rendition.width,
 					height: rendition.height,
 					bitrate: rendition.bitrate,
 					rate: rendition.rate,
@@ -636,7 +639,14 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					// wire values per the schema.
 					presetConfiguration: rendition.presetConfiguration,
 					autoLevelSetup: rendition.autoLevelSetup,
+					maxLevel:
+						rendition.maxLevel === undefined
+							? undefined
+							: wire(CODEC_ENUM_VALUES.LevelAv1, rendition.maxLevel),
 					dynamicRangeFormat: rendition.dynamicRangeFormat,
+					masterDisplay: rendition.masterDisplay,
+					maxContentLightLevel: rendition.maxContentLightLevel,
+					maxPictureAverageLightLevel: rendition.maxPictureAverageLightLevel,
 					colorConfig: rendition.colorConfig
 						? dense({ ...rendition.colorConfig })
 						: undefined,

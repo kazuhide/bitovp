@@ -96,7 +96,7 @@ const color = fields(
 	"copyColorPrimariesFlag copyColorTransferFlag copyColorSpaceFlag copyChromaLocationFlag copyColorRangeFlag",
 );
 const codec = fields(
-	"motionCompensatedTemporalFiltering profile level presetConfiguration trellis subMe motionEstimationMethod adaptiveQuantizationMode mvPredictionMode weightedPredictionPFrames dynamicRangeFormat maxCtuSize motionSearch tuIntraDepth tuInterDepth masterDisplay pixelFormat quality aqMode arnrType autoLevelSetup",
+	"motionCompensatedTemporalFiltering profile level maxLevel presetConfiguration trellis subMe motionEstimationMethod adaptiveQuantizationMode mvPredictionMode weightedPredictionPFrames dynamicRangeFormat maxCtuSize motionSearch tuIntraDepth tuInterDepth masterDisplay pixelFormat quality aqMode arnrType autoLevelSetup",
 	"crf minBitrate minGop maxGop qp sampleAspectRatioNumerator sampleAspectRatioDenominator rate minKeyframeInterval maxKeyframeInterval slices mvSearchRangeMax rcLookahead sceneCutThreshold adaptiveQuantizationStrength psyRateDistortionOptimization psyTrellis refFrames bframes maxBitrate bufsize motionSearchRange psyRateDistortionOptimizedQuantization qpMin qpMax maxContentLightLevel maxPictureAverageLightLevel cpuUsed tileColumns rateUndershootPct rateOvershootPct arnrMaxFrames arnrStrength",
 	"openGop strictCbr cabac adaptiveSpatialTransform levelHighTier weightPredictionOnPSlice weightPredictionOnBSlice sao hdr lossless",
 	{

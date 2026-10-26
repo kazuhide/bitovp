@@ -3816,6 +3816,12 @@ export const ja = {
 			"コーデックの最小ビットレートは最大ビットレート以下にしてください（bps）。",
 		codecGopRange: "最小GOP長は最大GOP長以下にしてください（フレーム数）。",
 		codecSarPair: "サンプルアスペクト比の分子と分母を両方設定してください。",
+		scaleFilterDimensionsHelp:
+			"フィルター出力の寸法を任意指定します。片方だけなら元の縦横比を維持し、両方空欄なら元の寸法を使います。",
+		scaleFilterAlgorithmHelp:
+			"このフィルターのアルゴリズムです。空欄はAPIの既定値を使います。後段のコーデックによるサイズ変更は別の設定です。",
+		scaleFilterSarHelp:
+			"画素のアスペクト比です。分子と分母を両方設定するか、両方空欄にしてください。",
 		codecAspectConflict:
 			"サンプルアスペクト比と表示アスペクト比は、どちらか一方を設定してください。",
 		codecQpRange: "量子化係数の最大値は最小値以上にしてください。",
@@ -3958,6 +3964,13 @@ export const ja = {
 		audioVideoSyncMode: "音声 / 映像の同期モード",
 		autoEnable: "自動有効化",
 		autoLevelSetup: "レベル自動設定",
+		av1MaxLevel: "AV1 レベル上限",
+		av1MaxLevelHelp:
+			"自動選択するレベルの上限です。空欄はプロバイダーの既定値を使います。レベル自動設定が無効の間は効果がありません。",
+		av1MaxLevelDisabled:
+			"レベル自動設定が無効の間は、AV1 レベル上限の指定に効果がありません。",
+		av1HdrMetadataHelp:
+			"任意の HDR10 静的メタデータです。マスターディスプレイは G(...)B(...)R(...)WP(...)L(...) 形式です。MaxCLL と MaxFALL は 0〜65535、空欄は未指定になります。",
 		autoNull: "自動 (null)",
 		automaticAdPlacementAllsceneboundaries:
 			"広告位置の自動挿入 (allSceneBoundaries)",

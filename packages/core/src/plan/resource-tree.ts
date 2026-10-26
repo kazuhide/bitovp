@@ -93,6 +93,7 @@ const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	CREATE_FILTER_WATERMARK: "filters",
 	CREATE_FILTER_ROTATE: "filters",
 	CREATE_FILTER_CROP: "filters",
+	CREATE_FILTER_SCALE: "filters",
 	CREATE_FILTER_UNSHARP: "filters",
 	CREATE_FILTER_DENOISE_HQDN3D: "filters",
 	CREATE_STREAM_FILTERS: "filters",

@@ -3867,6 +3867,12 @@ export const en = {
 		codecGopRange:
 			"Minimum GOP length must not exceed maximum GOP length (frames).",
 		codecSarPair: "Set both the sample aspect ratio numerator and denominator.",
+		scaleFilterDimensionsHelp:
+			"Optional filter output size. One dimension preserves the source aspect ratio; both blank keep the source dimensions.",
+		scaleFilterAlgorithmHelp:
+			"Algorithm for this filter. Blank uses the API default. Later codec resizing is configured separately.",
+		scaleFilterSarHelp:
+			"Pixel aspect ratio. Set both numerator and denominator, or leave both blank.",
 		codecAspectConflict:
 			"Choose sample aspect ratio or display aspect ratio, not both.",
 		codecQpRange:
@@ -4011,6 +4017,13 @@ export const en = {
 		audioVideoSyncMode: "Audio/video sync mode",
 		autoEnable: "Auto enable",
 		autoLevelSetup: "Auto level setup",
+		av1MaxLevel: "Maximum AV1 level",
+		av1MaxLevelHelp:
+			"Upper limit for automatic level selection. Leave blank for the provider default. Has no effect when automatic level setup is disabled.",
+		av1MaxLevelDisabled:
+			"AV1 maximum level has no effect while automatic level setup is disabled.",
+		av1HdrMetadataHelp:
+			"Optional HDR10 static metadata. Master display uses G(...)B(...)R(...)WP(...)L(...). MaxCLL and MaxFALL accept 0–65535; blank leaves them unset.",
 		autoNull: "auto (null)",
 		automaticAdPlacementAllsceneboundaries:
 			"Automatic ad placement (allSceneBoundaries)",

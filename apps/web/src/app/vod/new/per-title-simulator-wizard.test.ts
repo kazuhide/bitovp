@@ -809,9 +809,7 @@ describe("Per-Title wizard bridge", () => {
 			return dimensions
 				.filter(
 					({ dimensions }) =>
-						codec === "H264" ||
-						codec === "H265" ||
-						dimensions.width === undefined,
+						codec !== "H265V2" || dimensions.width === undefined,
 				)
 				.flatMap(({ label, dimensions }) =>
 					[false, true].map((added) => ({ codec, label, dimensions, added })),
@@ -828,14 +826,22 @@ describe("Per-Title wizard bridge", () => {
 		s.videos = [
 			{
 				codec,
-				width: codec === "H264" || codec === "H265" ? 640 : undefined,
+				width: codec === "H265V2" ? undefined : 640,
 				height: 360,
 				bitrate: 300000,
 				encodingMode: "THREE_PASS",
 				h264: { profile: "HIGH", bframes: 3 },
 				h265: { profile: "MAIN", bframes: 3 },
 				vp9: { tileColumns: 2 },
-				av1: { presetConfiguration: "VOD_STANDARD" },
+				av1: {
+					presetConfiguration: "VOD_STANDARD",
+					maxLevel: "L4_1",
+					dynamicRangeFormat: "HDR10",
+					masterDisplay:
+						"G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
+					maxContentLightLevel: 0,
+					maxPictureAverageLightLevel: 1000,
+				},
 				extras: { key: "retained" },
 				muxing: {
 					kind: codec === "VP9" ? "WEBM" : "FMP4",

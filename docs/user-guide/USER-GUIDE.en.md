@@ -327,14 +327,16 @@ Open each video row's "Advanced" section to configure its profile, level, frame 
 | H.265 | Profile, level, High Tier, CTU, look-ahead, motion search, AQ, SAO, and related settings |
 | HEVCv2 | Dedicated presets, pixel format, MCTF, perceptual quality, and dedicated Per-Title QP settings |
 | VP9 | Quality and speed, tiles, quantization range, AQ, ARNR, and related settings |
-| AV1 | Preset, frame rate, automatic level selection, and dynamic range (SDR, HDR10, Dolby Vision Profile 10.0 or 10.1) |
+| AV1 | Preset, frame rate, automatic level selection and its ceiling, HDR10 metadata, and dynamic range (SDR, HDR10, Dolby Vision Profile 10.0 or 10.1) |
 | Color and HDR | Color space, primaries, transfer characteristics, copying input values, HDR10, and Dolby Vision metadata |
 
 A blank field often means "not specified", rather than zero or disabled. "Default", "Auto", and "OFF" also have different meanings.
 
 H.264 and H.265 advanced settings include minimum/maximum codec bitrate in bps and buffer size in bits. The VOD form also exposes CRF (0–51); leave the target bitrate blank for CRF alone. These codec settings are separate from Per-Title rendition bitrate bounds. The Live form exposes the bitrate, GOP and aspect controls too, while retaining its fixed target bitrate requirement. H.265 also exposes constant QP, maximum QP, reference/B-frame counts and strict CBR; strict CBR requires target-bitrate mode without CRF or constant QP. See the [H.264](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoh264) and [H.265 configuration references](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoh265).
 
-GOP minimum/maximum lengths count frames; the existing keyframe intervals count seconds. Open GOP can reference frames in a previous GOP. Set both parts of a sample aspect ratio, or both parts of a display aspect ratio; do not combine the two ratios. Width is optional for H.264 and H.265. Explicit values override presets where supported, so inspect the actual output when checking compatibility.
+GOP minimum/maximum lengths count frames; the existing keyframe intervals count seconds. Open GOP can reference frames in a previous GOP. Set both parts of a sample aspect ratio, or both parts of a display aspect ratio; do not combine the two ratios. Width is optional for H.264, H.265, VP9 and AV1. Explicit values override presets where supported, so inspect the actual output when checking compatibility.
+
+In AV1's advanced settings, the level ceiling limits automatic level selection. It has no effect while automatic level selection is disabled; the form warns about this and retains the value. HDR10 mastering-display and light-level metadata can also be entered here. Use values that match the source metadata. Blank light-level fields are omitted; an explicit zero is retained. See the [AV1 configuration reference](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1).
 
 For AV1, leave "Dynamic range format" at its default to omit the setting. Dolby Vision Profile 10.0/10.1 uses the fMP4 path in this application. Bitmovin added these profiles and Dolby Vision-to-SDR/HDR10 conversion in Encoder 2.287.0; encrypting Dolby Vision AV1 fMP4 requires the feature introduced in 2.290.0 (BETA). Check the selected encoder version and account availability before running a job. See the [official encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990). Selecting a format does not establish playback or display compatibility.
 
@@ -364,11 +366,14 @@ Define a filter with "Add filter", then assign it to the target rendition with "
 
 | Processing | Main settings |
 |---|---|
+| Scale | Filter dimensions, scaling algorithm, and the pixel aspect ratio |
 | Deinterlace, crop, and rotate | Field order, processing mode, crop amounts, and angle |
 | Images and text | Input image, text, font, position, color, opacity, outline, and shadow |
 | Volume and EBU R128 | Volume, loudness, and peak targets. Distinguish %, dB, LUFS, and dBTP. |
 | HQDN3D | Luma and chroma noise reduction in the spatial and temporal dimensions |
 | Unsharp | Sharpening or blurring through processing area and strength |
+
+The Scale filter preserves the source aspect ratio when only one dimension is set, and the source dimensions when both are blank. Set both parts of the pixel aspect ratio or leave both blank. Its algorithm controls this filter's scaling; rendition output dimensions remain a separate setting. See the [Scale filter reference](https://developer.bitmovin.com/encoding/reference/postencodingfiltersscale).
 
 Filter order matters. For operations whose results change with order, such as cropping and drawing text, check the filter sequence on each rendition.
 

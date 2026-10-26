@@ -95,6 +95,7 @@ export type OperationKind =
 	| "CREATE_FILTER_DENOISE_HQDN3D"
 	| "CREATE_FILTER_UNSHARP"
 	| "CREATE_FILTER_CROP"
+	| "CREATE_FILTER_SCALE"
 	| "CREATE_FILTER_ROTATE"
 	| "CREATE_FILTER_WATERMARK"
 	| "CREATE_FILTER_TEXT"
@@ -1321,6 +1322,9 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							? { encodingMode: rendition.encodingMode }
 							: {}),
 						...(rendition.name ? { name: rendition.name } : {}),
+						...(rendition.width !== undefined
+							? { width: rendition.width }
+							: {}),
 						height: rendition.height,
 						bitrate: rendition.bitrate,
 						...(rendition.rate !== undefined ? { rate: rendition.rate } : {}),
@@ -1369,6 +1373,9 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							? { encodingMode: rendition.encodingMode }
 							: {}),
 						...(rendition.name ? { name: rendition.name } : {}),
+						...(rendition.width !== undefined
+							? { width: rendition.width }
+							: {}),
 						height: rendition.height,
 						bitrate: rendition.bitrate,
 						...(rendition.rate !== undefined ? { rate: rendition.rate } : {}),
@@ -1378,8 +1385,23 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						...(rendition.autoLevelSetup
 							? { autoLevelSetup: rendition.autoLevelSetup }
 							: {}),
+						...(rendition.maxLevel !== undefined
+							? { maxLevel: rendition.maxLevel }
+							: {}),
 						...(rendition.dynamicRangeFormat
 							? { dynamicRangeFormat: rendition.dynamicRangeFormat }
+							: {}),
+						...(rendition.masterDisplay !== undefined
+							? { masterDisplay: rendition.masterDisplay }
+							: {}),
+						...(rendition.maxContentLightLevel !== undefined
+							? { maxContentLightLevel: rendition.maxContentLightLevel }
+							: {}),
+						...(rendition.maxPictureAverageLightLevel !== undefined
+							? {
+									maxPictureAverageLightLevel:
+										rendition.maxPictureAverageLightLevel,
+								}
 							: {}),
 						...(rendition.colorConfig
 							? { colorConfig: rendition.colorConfig }

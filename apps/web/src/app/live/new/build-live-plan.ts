@@ -554,6 +554,19 @@ function str(value: string | undefined): string | undefined {
 	return value === "" || value === undefined ? undefined : value;
 }
 
+/** Preserve explicit H264 no-preset choices and older Advanced overrides. */
+export function liveVideoPreset(
+	video: LiveVideoRendition,
+): string | null | undefined {
+	const nested =
+		video.codec === "H264"
+			? video.h264?.presetConfiguration
+			: video.h265?.presetConfiguration;
+	return nested === null
+		? null
+		: str(nested === undefined ? video.presetConfiguration : nested);
+}
+
 /** Pruned group object, or undefined when every field is unset. */
 function group<T extends Record<string, unknown>>(value: T): T | undefined {
 	const pruned = prune(value);
@@ -991,7 +1004,7 @@ function videoRendition(
 			ingestKey,
 			height: video.height,
 			bitrate: video.bitrate,
-			presetConfiguration: str(video.presetConfiguration),
+			presetConfiguration: liveVideoPreset(video) ?? undefined,
 			profile: o.profile,
 			width: video.width,
 			crf: o.crf,
@@ -1053,7 +1066,7 @@ function videoRendition(
 		width: video.width,
 		height: video.height,
 		bitrate: video.bitrate,
-		presetConfiguration: str(video.presetConfiguration),
+		presetConfiguration: liveVideoPreset(video),
 		profile: o.profile,
 		crf: o.crf,
 		minBitrate: o.minBitrate,

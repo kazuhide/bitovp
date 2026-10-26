@@ -41,7 +41,6 @@ import {
 } from "@/lib/output-path";
 import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
-import { LiveArchiveSection } from "./archive-section";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
@@ -62,6 +61,7 @@ import {
 import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
 import { LiveManifestListSection } from "./manifest-list-section";
 import { LiveMirrorListSection } from "./mirror-list-section";
+import { LivePackagingSection } from "./packaging-section";
 import {
 	EMPTY_SCHEDULE_DRAFT,
 	type ScheduleDraft,
@@ -70,23 +70,17 @@ import {
 } from "./schedule-section";
 import { LiveStartSection } from "./start-section";
 
-/**
- * the step names an AWS MediaLive operator
- * expects — Input / Encodes / Destinations / Output groups / Schedule
- * actions — as LIVE-SPECIFIC keys. The generic `ui.*` labels the VOD wizard
- * shares (`ui.ladder`, `ui.start`, …) are deliberately not renamed: "Start"
- * read as "start the channel here", when the channel provisions the moment
- * it is created and that step holds the automatic restart / stop settings.
- */
+// Common steps share the VOD vocabulary; scheduling remains Live-specific.
 const STEPS: MessageKey[] = [
-	"liveWizard.stepBasics",
-	"liveWizard.stepInput",
-	"liveWizard.stepEncodes",
-	"liveWizard.stepDestinations",
-	"liveWizard.stepOutputGroups",
-	"liveWizard.stepRunSafety",
+	"wizard.basics",
+	"wizard.sources",
+	"wizard.ladder",
+	"wizard.output",
+	"wizard.packaging",
+	"wizard.encoding",
+	"wizard.manifests",
 	"liveWizard.stepScheduleActions",
-	"liveWizard.stepReview",
+	"wizard.review",
 ];
 
 const ENCODER_VERSION_OPTIONS = ["STABLE", "BETA"] as const;
@@ -572,7 +566,7 @@ export function LiveWizard({
 							</p>
 						) : (
 							<Field
-								label={t("ui.bitmovinAccount")}
+								label={t("wizard.bitmovinAccount")}
 								htmlFor="lw-import-account"
 								help={t("ui.injectedIntoBitmovinAccountidTheOneException")}
 							>
@@ -716,7 +710,7 @@ export function LiveWizard({
 								/>
 							</Field>
 							<Field
-								label={t("ui.bitmovinAccount")}
+								label={t("wizard.bitmovinAccount")}
 								htmlFor="lw-account"
 								help={t("ui.configuredInSettingsBitmovinAccounts")}
 							>
@@ -743,7 +737,7 @@ export function LiveWizard({
 								</SelectNative>
 							</Field>
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<Field label={t("ui.cloudRegion")} htmlFor="lw-region">
+								<Field label={t("wizard.cloudRegion")} htmlFor="lw-region">
 									<SelectNative
 										id="lw-region"
 										value={state.cloudRegion}
@@ -757,7 +751,7 @@ export function LiveWizard({
 									</SelectNative>
 								</Field>
 								<Field
-									label={t("ui.encoderVersion")}
+									label={t("wizard.encoderVersion")}
 									htmlFor="lw-version"
 									help={
 										pinnedVersion ? t("ui.pinnedVersionEG22660") : undefined
@@ -813,7 +807,7 @@ export function LiveWizard({
 					{step === 3 ? (
 						<>
 							<Field
-								label={t("ui.outputCredential")}
+								label={t("wizard.credential")}
 								htmlFor="lw-out-cred"
 								help={t("ui.s3AzureBlobSftpLiveSegmentsAnd")}
 							>
@@ -822,7 +816,7 @@ export function LiveWizard({
 									value={state.output.credentialId}
 									onChange={(e) => selectOutputCredential(e.target.value)}
 								>
-									<option value="">{t("ui.selectCredential")}</option>
+									<option value="">{t("wizard.selectCredential")}</option>
 									{state.output.credentialId &&
 									!allCredentials.some(
 										(c) => c.id === state.output.credentialId,
@@ -974,8 +968,8 @@ export function LiveWizard({
 								<Field
 									label={
 										state.output.kind === "AZURE"
-											? t("ui.container")
-											: t("ui.bucket")
+											? t("wizard.container")
+											: t("wizard.bucket")
 									}
 									htmlFor="lw-out-bucket"
 								>
@@ -1007,7 +1001,7 @@ export function LiveWizard({
 								</Field>
 							) : null}
 							<Field
-								label={t("ui.outputFolder")}
+								label={t("uiX.outputFolderLabel")}
 								htmlFor="lw-out-base"
 								help={t("ui.theChannelNameIsAppendedAutomaticallyOutputs", {
 									heightToken: "{height}",
@@ -1065,30 +1059,35 @@ export function LiveWizard({
 							onPatch={patch}
 						/>
 					) : null}
-					{step === 3 ? (
-						<LiveArchiveSection
+					{step === 4 ? (
+						<LivePackagingSection
 							state={state}
 							credentials={allCredentials}
 							onPatch={patch}
 						/>
 					) : null}
-					{step === 4 ? (
+					{step === 6 ? (
 						<LiveManifestListSection state={state} onPatch={patch} />
 					) : null}
 
 					{step === 5 ? (
-						<LiveStartSection
-							state={state}
-							onPatch={patch}
-							scheduledEndAt={
-								scheduleVerdict.ok && scheduleVerdict.schedule
-									? scheduleVerdict.schedule.programEndAt
-									: null
-							}
-						/>
+						<>
+							<h2 className="font-medium text-sm">
+								{t("liveWizard.stepRunSafety")}
+							</h2>
+							<LiveStartSection
+								state={state}
+								onPatch={patch}
+								scheduledEndAt={
+									scheduleVerdict.ok && scheduleVerdict.schedule
+										? scheduleVerdict.schedule.programEndAt
+										: null
+								}
+							/>
+						</>
 					) : null}
 
-					{step === 6 ? (
+					{step === 7 ? (
 						<ScheduleSection
 							draft={scheduleDraft}
 							onPatch={(partial) =>
@@ -1097,7 +1096,7 @@ export function LiveWizard({
 							autoShutdown={submittedAutoShutdown}
 						/>
 					) : null}
-					{step === 7 ? (
+					{step === 8 ? (
 						<div className="space-y-3">
 							<p className="text-sm text-zinc-400">
 								{t("ui.reviewThePlanOnTheRightThe")}

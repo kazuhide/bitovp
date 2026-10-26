@@ -520,21 +520,23 @@ test("configure and submit Live and inspect heartbeat", async ({
 		await page.goto("/live/new");
 		await page.locator("#lw-name").fill("Browser Live smoke");
 		await page.locator("#lw-account").selectOption(ACCOUNT);
-		await goTo(page, /input/i);
+		await goTo(page, /^2\. Sources$/);
 		await page.locator("#lw-input-kind").selectOption("RTMP");
-		await goTo(page, /^\d+\. Video and audio encodes$/);
+		await goTo(page, /^3\. Ladder$/);
 		await page.locator("#lw-v-0-width").fill("1280");
 		await page.locator("#lw-v-0-height").fill("720");
 		await page.locator("#lw-v-0-bitrate").fill("1500000");
+		await page.locator("#lw-v-0-preset").selectOption("LIVE_LOW_LATENCY");
+		await goTo(page, /^5\. Packaging$/);
 		await page.locator("#lw-seglen").fill("2");
-		await goTo(page, /destinations/i);
+		await goTo(page, /^4\. Output$/);
 		await page.locator("#lw-out-cred").selectOption(CREDENTIAL);
 		await closePicker(page);
 		await page.locator("#lw-out-bucket").fill("synthetic-output");
 		await page.locator("#lw-out-base").fill("browser-live");
-		await goTo(page, /output groups and manifests/i);
+		await goTo(page, /^7\. Manifests$/);
 		await expect(page.locator("#lw-hls-enabled")).toBeChecked();
-		await goTo(page, /start/i);
+		await goTo(page, /^6\. Encoding$/);
 		await page.locator("#lw-streamkey").fill("browserStream");
 		await goTo(page, /review/i);
 		submissionStage(info, "submit-clicked");
@@ -550,6 +552,7 @@ test("configure and submit Live and inspect heartbeat", async ({
 			width: 1280,
 			height: 720,
 			bitrate: 1_500_000,
+			presetConfiguration: "LIVE_LOW_LATENCY",
 		});
 		expect(creation.plan.muxings[0]).toMatchObject({ segmentLength: 2 });
 		await page.locator("#sec-heartbeat > summary").click();
@@ -944,13 +947,13 @@ test("persist Live through the authenticated submission API", async ({
 		await expect(page.locator("#lw-name")).toHaveValue(plan.name);
 		plan.name = "Nonpaid Live reviewed";
 		await page.locator("#lw-name").fill(plan.name);
-		await goTo(page, /^\d+\. Video and audio encodes$/);
+		await goTo(page, /^3\. Ladder$/);
 		await expect(page.locator("#lw-v-0-h264-level")).toHaveValue("L4_1");
 		await page.locator("#lw-v-0-bitrate").fill("4600000");
 		const video = plan.renditions[0];
 		if (video?.codec !== "H264") throw new Error("Expected H264 video");
 		video.bitrate = 4_600_000;
-		await goTo(page, /^8\. Review$/);
+		await goTo(page, /^9\. Review$/);
 		const created = page.waitForResponse(
 			(response) =>
 				new URL(response.url()).pathname === "/api/live-channels" &&

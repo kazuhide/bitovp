@@ -86,13 +86,15 @@ describe("customer copy gate — catalogue arm", () => {
 		expect(mixedTerms).toEqual([]);
 	});
 
-	it("preserves Live output-group labels and action-oriented English buttons", () => {
+	it("uses shared VOD and Live step names and action-oriented English buttons", () => {
 		const ja = messagesFor("ja");
 		const en = messagesFor("en");
 		expect(ja.liveArchive.audio).toBe("AAC 音声");
 		expect(ja.ingest.encoderIp).toBe("エンコーダ IP");
-		expect(ja.liveWizard.stepOutputGroups).toBe("出力グループ・マニフェスト");
-		expect(en.liveWizard.stepOutputGroups).toBe("Output groups and manifests");
+		expect(ja.wizard.packaging).toBe("パッケージング");
+		expect(en.wizard.packaging).toBe("Packaging");
+		expect(ja.wizard.manifests).toBe("マニフェスト");
+		expect(en.wizard.manifests).toBe("Manifests");
 		expect(en.common.save).toBe("Save");
 		expect(en.common.cancel).toBe("Cancel");
 		expect(en.common.delete).toBe("Delete");

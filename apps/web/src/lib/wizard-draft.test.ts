@@ -354,6 +354,84 @@ it("stores a typed partial form and step, expiring it after seven days", () => {
 	).toBeNull();
 	expect(localStorage.getItem("draft")).toBeNull();
 });
+it("persists the ninth Live step without remapping it on reload", () => {
+	writeWizardDraft(
+		"live-review",
+		"live",
+		{ name: "Ready to review", segmentLength: 6 },
+		8,
+		localStorage,
+		100,
+	);
+	expect(readWizardDraft("live-review", "live", localStorage, 101)).toEqual({
+		step: 8,
+		value: { name: "Ready to review", segmentLength: 6 },
+	});
+	expect(
+		JSON.parse(localStorage.getItem("live-review") ?? "null"),
+	).toMatchObject({
+		version: 2,
+		kind: "live",
+		step: 8,
+	});
+});
+it.each([
+	[0, 0],
+	[1, 1],
+	[2, 2],
+	[3, 3],
+	[4, 6],
+	[5, 5],
+	[6, 7],
+	[7, 8],
+])("maps legacy Live step %i to step %i without changing the settings", (previous, current) => {
+	const value = { name: "Saved channel", segmentLength: 6 };
+	localStorage.setItem(
+		"legacy-live",
+		JSON.stringify({
+			version: 1,
+			kind: "live",
+			savedAt: 100,
+			step: previous,
+			value,
+		}),
+	);
+	expect(readWizardDraft("legacy-live", "live", localStorage, 101)).toEqual({
+		step: current,
+		value,
+	});
+});
+it("keeps the eight-step VOD draft format and rejects out-of-range steps", () => {
+	writeWizardDraft(
+		"vod-review",
+		"vod",
+		{ name: "Saved job" },
+		7,
+		localStorage,
+		100,
+	);
+	expect(readWizardDraft("vod-review", "vod", localStorage, 101)).toEqual({
+		step: 7,
+		value: { name: "Saved job" },
+	});
+	expect(JSON.parse(localStorage.getItem("vod-review") ?? "null").version).toBe(
+		1,
+	);
+	writeWizardDraft("invalid-vod-step", "vod", {}, 8, localStorage, 100);
+	expect(localStorage.getItem("invalid-vod-step")).toBeNull();
+	for (const [kind, version, step] of [
+		["live", 1, 8],
+		["live", 2, 9],
+		["vod", 2, 8],
+	] as const) {
+		localStorage.setItem(
+			"invalid-step",
+			JSON.stringify({ version, kind, step, savedAt: 100, value: {} }),
+		);
+		expect(readWizardDraft("invalid-step", kind, localStorage, 101)).toBeNull();
+		expect(localStorage.getItem("invalid-step")).toBeNull();
+	}
+});
 it("never persists nested secrets, auth URLs or arbitrary imported/options JSON", () => {
 	const value = {
 		...DEFAULT_LIVE_WIZARD_STATE,

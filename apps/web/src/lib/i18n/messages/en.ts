@@ -1142,14 +1142,10 @@ export const en = {
 		customPreset: "Preset {actual} is outside the Live HD preset range.",
 		customManifests:
 			"Output manifests: {actual}; Live HD allows up to {limit}.",
-		stepBasics: "Basics",
-		stepInput: "Input",
-		stepEncodes: "Video and audio encodes",
-		stepDestinations: "Destinations",
-		stepOutputGroups: "Output groups and manifests",
 		stepRunSafety: "Automatic restart and stop",
-		stepScheduleActions: "Schedule actions",
-		stepReview: "Review",
+		stepScheduleActions: "Schedule",
+		presetRetained:
+			"This saved preset is outside the Live choices. It is kept until you select another preset; validation still applies.",
 	},
 	/**
 	 * : the in-page navigation over those layers — a rail in the right
@@ -5296,7 +5292,7 @@ export const en = {
 		samplePresets: "Sample presets",
 		sampleRateHz: "Sample rate (Hz)",
 		scheduleExpression: "Schedule expression",
-		schemaDefaultVodWarns: "(schema default — VOD, warns)",
+		schemaDefaultVodWarns: "Default (VOD_HIGH_QUALITY)",
 		sdkPassthroughEGAes128: "Passed to the Bitmovin API as-is, e.g. AES_128",
 		searchPresets: "Search presets",
 		searchTitleDescriptionFamily: "Search title, description, family…",
@@ -6184,7 +6180,7 @@ export const en = {
 			"A slate needs the planned input feed time strictly before the planned program start — there is no window to cover.",
 		// Describe the consequence of automatic shutdown before the planned end rather than its raw property name.
 		errStreamTimeoutShorterThanSlot:
-			"Automatic stop after {minutes} minutes of total run time is shorter than this {slot}-minute slot, so the channel stops before the planned end — every stop, slate and file-input action scheduled after it would run against a stopped channel. Raise the limit on the Automatic restart and stop step, or shorten the slot.",
+			"Automatic stop after {minutes} minutes of total run time is shorter than this {slot}-minute slot, so the channel stops before the planned end — every stop, slate and file-input action scheduled after it would run against a stopped channel. Raise the limit in the Automatic restart and stop settings, or shorten the slot.",
 		autoShutdownConditionalNote:
 			"Automatic shutdown {knobs} can still end the run early — an idle or never-connected input has no fixed time, so the slot is not checked against it.",
 		timelineIncomplete: "The timeline draws once all three times are set.",

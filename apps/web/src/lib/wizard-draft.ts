@@ -715,13 +715,19 @@ export function mergeWizardDraft<T>(
 }
 
 export type WizardDraft = { step: number; value: DraftValue };
-const envelope = z.object({
-	version: z.literal(1),
-	kind: z.enum(["vod", "live"]),
-	savedAt: z.number().finite(),
-	step: z.number().int().min(0).max(7),
-	value: z.unknown(),
-});
+const envelope = z
+	.object({
+		version: z.union([z.literal(1), z.literal(2)]),
+		kind: z.enum(["vod", "live"]),
+		savedAt: z.number().finite(),
+		step: z.number().int().min(0).max(8),
+		value: z.unknown(),
+	})
+	.refine((record) =>
+		record.version === 2 ? record.kind === "live" : record.step <= 7,
+	);
+// Version 2 separates packaging from manifests in the Live navigation only.
+const LEGACY_LIVE_STEPS = [0, 1, 2, 3, 6, 5, 7, 8] as const;
 export function discardWizardDraft(key: string, storage?: DraftStorage) {
 	try {
 		(storage ?? localStorage).removeItem(key);
@@ -739,7 +745,7 @@ export function writeWizardDraft(
 ) {
 	try {
 		const record = envelope.parse({
-			version: 1,
+			version: kind === "live" ? 2 : 1,
 			kind,
 			savedAt: now,
 			step,
@@ -769,7 +775,15 @@ export function readWizardDraft(
 			now - record.savedAt >= WIZARD_DRAFT_TTL
 		)
 			throw new Error("expired");
-		return { step: record.step, value: projectWizardDraft(kind, record.value) };
+		const step =
+			kind === "live" && record.version === 1
+				? LEGACY_LIVE_STEPS[record.step]
+				: record.step;
+		if (step === undefined) throw new Error("step");
+		return {
+			step,
+			value: projectWizardDraft(kind, record.value),
+		};
 	} catch {
 		discardWizardDraft(key, storage);
 		return null;

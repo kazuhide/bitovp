@@ -1114,14 +1114,10 @@ export const ja = {
 		customPreset: "プリセット {actual} はLive HDの対応範囲外です。",
 		customManifests:
 			"出力マニフェスト数 {actual}：Live HDは最大{limit}本です。",
-		stepBasics: "基本設定",
-		stepInput: "入力",
-		stepEncodes: "映像・音声エンコード",
-		stepDestinations: "出力先",
-		stepOutputGroups: "出力グループ・マニフェスト",
 		stepRunSafety: "自動再起動・自動停止",
-		stepScheduleActions: "スケジュールアクション",
-		stepReview: "確認",
+		stepScheduleActions: "スケジュール",
+		presetRetained:
+			"保存されたプリセットは現在のLive用候補にありません。別の値を選ぶまで保持し、実行前に設定を検証します。",
 	},
 	/* In-page navigation uses a side rail on wide screens and a menu on narrow screens. */
 	liveNav: {
@@ -5258,7 +5254,7 @@ export const ja = {
 		samplePresets: "サンプルプリセット",
 		sampleRateHz: "サンプリング周波数 (Hz)",
 		scheduleExpression: "スケジュール式",
-		schemaDefaultVodWarns: "(スキーマ既定:VOD、警告あり)",
+		schemaDefaultVodWarns: "既定値（VOD_HIGH_QUALITY）",
 		sdkPassthroughEGAes128: "Bitmovin API にそのまま渡します(例: AES_128)",
 		searchPresets: "プリセットを検索",
 		searchTitleDescriptionFamily: "タイトル・説明・ファミリーを検索…",
@@ -6146,7 +6142,7 @@ export const ja = {
 			"スレートを挿入する時間がありません。入力送出予定時刻を、番組開始予定時刻より前に設定してください。",
 		/* Describe automatic shutdown in terms of its effect: stopping before the planned end. */
 		errStreamTimeoutShorterThanSlot:
-			"合計稼働時間の自動停止({minutes} 分)が配信枠({slot} 分)より短いため、予定終了前に停止します — その後に予定された停止・スレート・ファイル入力はすべて停止済みのチャンネルへ実行されます。「自動再起動・自動停止」ステップで時間を延ばすか、配信枠を短くしてください。",
+			"合計稼働時間の自動停止({minutes} 分)が配信枠({slot} 分)より短いため、予定終了前に停止します — その後に予定された停止・スレート・ファイル入力はすべて停止済みのチャンネルへ実行されます。「自動再起動・自動停止」の設定で時間を延ばすか、配信枠を短くしてください。",
 		autoShutdownConditionalNote:
 			"自動停止の設定 {knobs} により、予定より早く停止する場合があります。入力が途切れる時刻や、一度も接続されない場合の停止時刻は確定できないため、配信枠との比較は行いません。",
 		timelineIncomplete: "3 つの時刻が揃うとタイムラインが描画されます。",

@@ -551,12 +551,14 @@ export function H264AdvancedEditor({
 	idBase,
 	value,
 	allowCrf = true,
+	showPreset = true,
 	children,
 	onChange,
 }: {
 	idBase: string;
 	value: WizardH264Options | undefined;
 	allowCrf?: boolean;
+	showPreset?: boolean;
 	children?: ReactNode;
 	onChange: (next: WizardH264Options) => void;
 }) {
@@ -564,17 +566,19 @@ export function H264AdvancedEditor({
 	const options = value ?? {};
 	return (
 		<Collapsible summary={t("wizard.advancedH264")}>
-			<PresetSelect
-				id={`${idBase}-presetConfiguration`}
-				codec="H264"
-				value={options.presetConfiguration}
-				onChange={(presetConfiguration) =>
-					onChange({
-						...options,
-						presetConfiguration: presetConfiguration ?? null,
-					})
-				}
-			/>
+			{showPreset ? (
+				<PresetSelect
+					id={`${idBase}-presetConfiguration`}
+					codec="H264"
+					value={options.presetConfiguration}
+					onChange={(presetConfiguration) =>
+						onChange({
+							...options,
+							presetConfiguration: presetConfiguration ?? null,
+						})
+					}
+				/>
+			) : null}
 			<OptionsGrid
 				idBase={idBase}
 				value={options}
@@ -663,6 +667,7 @@ export function H265AdvancedEditor({
 	idBase,
 	value,
 	allowCrf = true,
+	showPreset = true,
 	visionMetadataKeys,
 	children,
 	onChange,
@@ -670,6 +675,7 @@ export function H265AdvancedEditor({
 	idBase: string;
 	value: WizardH265Options | undefined;
 	allowCrf?: boolean;
+	showPreset?: boolean;
 	/** VISION_METADATA dolbyStream keys (separated-metadata flow). */
 	visionMetadataKeys: string[];
 	children?: ReactNode;
@@ -680,14 +686,16 @@ export function H265AdvancedEditor({
 	const dvm = options.dolbyVisionMetadata;
 	return (
 		<Collapsible summary={t("wizard.advancedH265")}>
-			<PresetSelect
-				id={`${idBase}-presetConfiguration`}
-				codec="H265"
-				value={options.presetConfiguration}
-				onChange={(presetConfiguration) =>
-					onChange({ ...options, presetConfiguration })
-				}
-			/>
+			{showPreset ? (
+				<PresetSelect
+					id={`${idBase}-presetConfiguration`}
+					codec="H265"
+					value={options.presetConfiguration}
+					onChange={(presetConfiguration) =>
+						onChange({ ...options, presetConfiguration })
+					}
+				/>
+			) : null}
 			<OptionsGrid
 				idBase={idBase}
 				value={options}

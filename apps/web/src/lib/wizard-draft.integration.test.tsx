@@ -210,7 +210,7 @@ it("Live restores safe fields and step, requires its secret again, retains failu
 		"Saved live",
 	);
 	await act(async () =>
-		fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/i })),
+		fireEvent.click(screen.getByRole("button", { name: /^9\. Review$/i })),
 	);
 	const submit = screen.getByRole("button", { name: /^Create live channel$/i });
 	await waitFor(() => expect(submit).toBeEnabled());

@@ -5,7 +5,7 @@ import {
 } from "@/app/vod/new/per-title-encoding-import";
 import { authError } from "@/lib/auth/route-context";
 import { requireOrganizationAdmin } from "@/lib/auth/tenancy";
-import { contextForOrganization } from "@/lib/server/context";
+import { getServerContext } from "@/lib/server/context";
 import { createPerTitleEncodingHttpPort } from "@/lib/server/per-title-encoding-http";
 import {
 	loadPerTitleEncodingSnapshot,
@@ -46,7 +46,18 @@ export async function POST(req: Request) {
 		const input = parsed.data;
 		let credentials: { apiKey: string; tenantOrgId?: string };
 		if ("bitmovinAccountId" in input) {
-			const ctx = contextForOrganization(tenant.organizationId, false, tenant);
+			let ctx: Awaited<ReturnType<typeof getServerContext>>;
+			try {
+				ctx = await getServerContext();
+			} catch (error) {
+				const response = authError(error);
+				response.headers.set("cache-control", headers["cache-control"]);
+				return response;
+			}
+			if (ctx.tenant?.role !== "ADMIN" || ctx.tenant.isImpersonating)
+				return failure(403, "An organization administrator is required");
+			if (ctx.tenant.organizationId !== tenant.organizationId)
+				return failure(409, "Organization changed — reload before continuing");
 			const account = await ctx.bitmovinAccounts.get(input.bitmovinAccountId);
 			if (!account) return failure(404, "Account not found");
 			credentials = {

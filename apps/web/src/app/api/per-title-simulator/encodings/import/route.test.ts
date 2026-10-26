@@ -22,7 +22,7 @@ vi.mock("@/lib/auth/tenancy", () => ({
 	},
 }));
 vi.mock("@/lib/server/context", () => ({
-	contextForOrganization: mocks.context,
+	getServerContext: mocks.context,
 }));
 vi.mock("@/lib/server/per-title-encoding-http", () => ({
 	createPerTitleEncodingHttpPort: mocks.httpPort,
@@ -64,6 +64,7 @@ const tenant = {
 	isImpersonating: false,
 };
 const context = {
+	tenant,
 	bitmovinAccounts: {
 		get: mocks.accountGet,
 		revealApiKey: mocks.accountReveal,
@@ -106,11 +107,7 @@ describe("POST Per-Title encoding import", () => {
 		expect(res.headers.get("cache-control")).toBe("private, no-store");
 		expect(await res.json()).toEqual(projected);
 		expect(mocks.admin).toHaveBeenCalledWith(expect.any(Headers));
-		expect(mocks.context).toHaveBeenCalledWith(
-			tenant.organizationId,
-			false,
-			tenant,
-		);
+		expect(mocks.context).toHaveBeenCalledExactlyOnceWith();
 		expect(mocks.accountGet).toHaveBeenCalledWith(accountId);
 		expect(mocks.accountReveal).toHaveBeenCalledWith(accountId);
 		expect(mocks.httpPort).toHaveBeenCalledWith({
@@ -122,6 +119,96 @@ describe("POST Per-Title encoding import", () => {
 			signal: expect.any(AbortSignal),
 		});
 		expect(mocks.project).toHaveBeenCalledExactlyOnceWith(snapshot);
+	});
+
+	it.each([
+		{ name: "missing tenant", currentTenant: undefined, status: 403 },
+		{
+			name: "changed organization",
+			currentTenant: { ...tenant, organizationId: "another-app-organization" },
+			status: 409,
+		},
+		{
+			name: "operator role",
+			currentTenant: { ...tenant, role: "OPERATOR" },
+			status: 403,
+		},
+		{
+			name: "viewer role",
+			currentTenant: { ...tenant, role: "VIEWER" },
+			status: 403,
+		},
+		{
+			name: "view-as session",
+			currentTenant: { ...tenant, isImpersonating: true },
+			status: 403,
+		},
+	])("stops stored-account reads when refreshed authentication has a $name", async ({
+		currentTenant,
+		status,
+	}) => {
+		mocks.context.mockReturnValue({ ...context, tenant: currentTenant });
+		const res = await POST(request());
+		expect(res.status).toBe(status);
+		expect(res.headers.get("cache-control")).toBe("private, no-store");
+		const body = JSON.stringify(await res.json());
+		expect(body).not.toContain(apiKey);
+		expect(body).not.toContain(tenantOrgId);
+		expect(body).not.toContain("stored-fixture-api-key");
+		expect(mocks.admin).toHaveBeenCalledExactlyOnceWith(expect.any(Headers));
+		expect(mocks.context).toHaveBeenCalledExactlyOnceWith();
+		expect(mocks.accountGet).not.toHaveBeenCalled();
+		expect(mocks.accountReveal).not.toHaveBeenCalled();
+		expect(mocks.httpPort).not.toHaveBeenCalled();
+		expect(mocks.load).not.toHaveBeenCalled();
+		expect(mocks.project).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			name: "authentication refusal",
+			failure: new AuthContextError(401, `private ${apiKey} ${tenantOrgId}`),
+			status: 401,
+			code: "AUTH_INVALID_CREDENTIALS",
+		},
+		{
+			name: "organization mismatch",
+			failure: new AuthContextError(
+				409,
+				"Organization changed — reload before continuing",
+			),
+			status: 409,
+			code: "TENANT_CHANGED",
+		},
+		{
+			name: "unclassified context failure",
+			failure: new Error(`private ${apiKey} ${tenantOrgId}`),
+			status: 503,
+			code: "AUTH_PROVIDER_UNAVAILABLE",
+		},
+	])("curates a refreshed-context $name before reading credentials", async ({
+		failure,
+		status,
+		code,
+	}) => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		mocks.context.mockImplementation(() => {
+			throw failure;
+		});
+		const res = await POST(request());
+		expect(res.status).toBe(status);
+		expect(res.headers.get("cache-control")).toBe("private, no-store");
+		const body = await res.json();
+		expect(body.details).toEqual({ code });
+		expect(JSON.stringify(body)).not.toContain(apiKey);
+		expect(JSON.stringify(body)).not.toContain(tenantOrgId);
+		expect(mocks.accountGet).not.toHaveBeenCalled();
+		expect(mocks.accountReveal).not.toHaveBeenCalled();
+		expect(mocks.httpPort).not.toHaveBeenCalled();
+		expect(mocks.load).not.toHaveBeenCalled();
+		expect(error).not.toHaveBeenCalled();
+		expect(warn).not.toHaveBeenCalled();
 	});
 
 	it("uses a temporary key only in the read port and does not save or reveal an account", async () => {
@@ -157,6 +244,7 @@ describe("POST Per-Title encoding import", () => {
 		const res = await POST(request());
 		expect(res.status).toBe(403);
 		expect(res.headers.get("cache-control")).toBe("private, no-store");
+		expect(mocks.context).not.toHaveBeenCalled();
 		expect(mocks.load).not.toHaveBeenCalled();
 		expect(mocks.accountGet).not.toHaveBeenCalled();
 	});

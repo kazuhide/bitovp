@@ -74,8 +74,18 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 			"スケーリングアルゴリズム",
 			SCALING_ALGORITHMS,
 		],
-		["sampleAspectRatioNumerator", "SAR numerator", "SAR 分子", "number"],
-		["sampleAspectRatioDenominator", "SAR denominator", "SAR 分母", "number"],
+		[
+			"sampleAspectRatioNumerator",
+			"Pixel aspect ratio numerator",
+			"画素の縦横比（分子）",
+			"number",
+		],
+		[
+			"sampleAspectRatioDenominator",
+			"Pixel aspect ratio denominator",
+			"画素の縦横比（分母）",
+			"number",
+		],
 	],
 	DENOISE_HQDN3D: [
 		["lumaSpatial", "Spatial luma", "輝度（空間方向）", "number"],

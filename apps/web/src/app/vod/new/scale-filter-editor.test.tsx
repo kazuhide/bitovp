@@ -70,14 +70,14 @@ describe("Scale filter editor", () => {
 			...filter,
 			scalingAlgorithm: undefined,
 		});
-		fireEvent.change(screen.getByLabelText("SAR numerator"), {
+		fireEvent.change(screen.getByLabelText("Pixel aspect ratio numerator"), {
 			target: { value: "4" },
 		});
 		expect(onChange).toHaveBeenLastCalledWith({
 			...filter,
 			sampleAspectRatioNumerator: 4,
 		});
-		fireEvent.change(screen.getByLabelText("SAR denominator"), {
+		fireEvent.change(screen.getByLabelText("Pixel aspect ratio denominator"), {
 			target: { value: "3" },
 		});
 		expect(onChange).toHaveBeenLastCalledWith({
@@ -98,7 +98,7 @@ describe("Scale filter editor", () => {
 		expect(screen.getByLabelText("フィルターの幅 (px)")).toHaveValue(null);
 		expect(screen.getByLabelText("フィルターの高さ (px)")).toHaveValue(null);
 		expect(screen.getByLabelText("スケーリングアルゴリズム")).toHaveValue("");
-		expect(screen.getByLabelText("SAR 分子")).toHaveValue(null);
-		expect(screen.getByLabelText("SAR 分母")).toHaveValue(null);
+		expect(screen.getByLabelText("画素の縦横比（分子）")).toHaveValue(null);
+		expect(screen.getByLabelText("画素の縦横比（分母）")).toHaveValue(null);
 	});
 });

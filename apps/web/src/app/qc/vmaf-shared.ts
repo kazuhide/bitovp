@@ -465,6 +465,25 @@ export function mixesScoringGenerations(
 	return scoringGenerations(jobs).length > 1;
 }
 
+/** Equal canvases keep legacy and SAR-aware 1:1 measurements comparable. */
+export function mixesReferenceCanvases(
+	jobs: readonly { reference?: { width?: number; height?: number } | null }[],
+): boolean {
+	const sizes = new Set<string>();
+	for (const { reference } of jobs) {
+		const width = reference?.width,
+			height = reference?.height;
+		if (
+			Number.isSafeInteger(width) &&
+			(width ?? 0) > 0 &&
+			Number.isSafeInteger(height) &&
+			(height ?? 0) > 0
+		)
+			sizes.add(`${width}x${height}`);
+	}
+	return sizes.size > 1;
+}
+
 /**
  * Which libvmaf MODELS these jobs were scored with.
  *

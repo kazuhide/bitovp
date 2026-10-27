@@ -294,6 +294,30 @@ describe("CompareClient", () => {
 	});
 });
 
+describe("CompareClient — reference display sizes", () => {
+	it("warns when same-generation reports use different reference display sizes", async () => {
+		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
+		serve([
+			{ ...JOB_A, scoringVersion: 6, reference: { width: 1440, height: 1080 } },
+			{ ...JOB_B, scoringVersion: 6, reference: { width: 1920, height: 1080 } },
+		]);
+		wrap(<CompareClient />);
+		expect(
+			await screen.findByText(/reference display sizes differ/i),
+		).toBeInTheDocument();
+	});
+	it("stays quiet for equal square-pixel canvases across old and new reports", async () => {
+		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
+		serve([
+			{ ...JOB_A, scoringVersion: 6 },
+			{ ...JOB_B, scoringVersion: 6 },
+		]);
+		wrap(<CompareClient />);
+		await screen.findByText("clip-low · 360p");
+		expect(screen.queryByText(/reference display sizes differ/i)).toBeNull();
+	});
+});
+
 describe("CompareClient — mixed scoring generations", () => {
 	/**
 	 * The 2026-08-11 PTS fix changed what a VMAF number MEANS: the same encode

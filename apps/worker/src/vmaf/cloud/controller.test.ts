@@ -478,17 +478,21 @@ describe("cloud cost and resource ownership", () => {
 });
 
 it.each([
-	[false, false],
-	[true, false],
-	[false, true],
-	[true, true],
-])("accepts only verified cloud receipt (tampered=%s, direct=%s)", async (tampered, direct) => {
+	[false, false, false],
+	[true, false, false],
+	[false, true, false],
+	[true, true, false],
+	[false, false, true],
+])("accepts only verified cloud receipt (tampered=%s, direct=%s, display=%s)", async (tampered, direct, display) => {
 	const dir = await mkdtemp(join(tmpdir(), "cloud-result-"));
 	dirs.push(dir);
 	const path = join(dir, "input");
 	await writeFile(path, "video");
 	const t = setup();
-	t.db.vmafJob.findUnique.mockResolvedValue({ status: "RUNNING" } as never);
+	t.db.vmafJob.findUnique.mockResolvedValue({
+		status: "RUNNING",
+		...(display ? { scoringVersion: 6 } : {}),
+	} as never);
 	const files = new Map<string, string>();
 	vi.mocked(t.store.upload).mockImplementation(async (key, file) => {
 		files.set(key, await readFile(file, "utf8"));
@@ -503,6 +507,13 @@ it.each([
 		if (!entry) throw Error("missing manifest");
 		const manifest = JSON.parse(entry[1]);
 		expect(manifest.scoring.threads).toBe(8);
+		if (display)
+			expect(manifest.scoring.referenceGeometry).toEqual({
+				width: 1440,
+				height: 1080,
+				sampleAspectRatio: "4:3",
+			});
+		else expect(manifest.scoring).not.toHaveProperty("referenceGeometry");
 		const prefix = entry[0].replace("manifest.json", "");
 		const result = JSON.stringify({
 			frames: [{ frameNum: 0, metrics: { vmaf: 95 } }],
@@ -522,6 +533,26 @@ it.each([
 				referenceFrames: 1,
 				ffmpegVersion: "test",
 				completedAt: when.toISOString(),
+				...(display
+					? {
+							measurementMethod: "FRAME_INDEX_BT709_10BIT",
+							scoringVersion: 6,
+							cropPolicy: VMAF_FRAME_INDEX_CROP_POLICY,
+							cadence: {
+								reference: {
+									width: 1440,
+									height: 1080,
+									sampleAspectRatio: "4:3",
+									sampleAspectRatioPolicy: "reported",
+								},
+								displayGeometry: {
+									width: 1920,
+									height: 1080,
+									policy: "sample-aspect-ratio-display-v1",
+								},
+							},
+						}
+					: {}),
 			}),
 		);
 		return "provider";
@@ -551,6 +582,18 @@ it.each([
 		signal: new AbortController().signal,
 		options: {
 			threads: 1,
+			...(display
+				? {
+						measurementMethod: "FRAME_INDEX_BT709_10BIT" as const,
+						referenceFrameRate: "25/1",
+						distortedOriginal: { width: 1920, height: 1080, bitdepth: 8 },
+						referenceGeometry: {
+							width: 1440,
+							height: 1080,
+							sampleAspectRatio: "4:3",
+						},
+					}
+				: {}),
 			scaleToReference: { width: 1920, height: 1080 },
 			referencePath: path,
 			distortedPath: path,
@@ -892,6 +935,67 @@ describe("frame-index receipt generation and crop policy", () => {
 			),
 		).toBe(false);
 		expect(receiptMatchesMeasurement(current, method, undefined)).toBe(false);
+	});
+	it("requires actual coded geometry, reported SAR and display policy for a display-aware claim", () => {
+		const referenceGeometry = {
+			width: 1440,
+			height: 1080,
+			sampleAspectRatio: "4:3",
+		};
+		const current = {
+			...receipt,
+			scoringVersion: 6 as const,
+			cropPolicy: VMAF_FRAME_INDEX_CROP_POLICY,
+			cadence: {
+				reference: {
+					...referenceGeometry,
+					sampleAspectRatioPolicy: "reported",
+				},
+				displayGeometry: {
+					width: 1920,
+					height: 1080,
+					policy: "sample-aspect-ratio-display-v1",
+				},
+			},
+		} satisfies Parameters<typeof receiptMatchesMeasurement>[0];
+		expect(
+			receiptMatchesMeasurement(current, method, 6, referenceGeometry),
+		).toBe(true);
+		for (const mutate of [
+			(value: typeof current) => {
+				value.cadence.reference.sampleAspectRatio = "N/A";
+			},
+			(value: typeof current) => {
+				value.cadence.reference.width = 1920;
+			},
+			(value: typeof current) => {
+				value.cadence.reference.sampleAspectRatioPolicy = "legacy-square-pixel";
+			},
+			(value: typeof current) => {
+				value.cadence.displayGeometry.width = 1440;
+			},
+			(value: typeof current) => {
+				value.cadence.displayGeometry.policy = "legacy-coded-canvas-v1";
+			},
+		]) {
+			const invalid = structuredClone(current);
+			mutate(invalid);
+			expect(
+				receiptMatchesMeasurement(invalid, method, 6, referenceGeometry),
+			).toBe(false);
+		}
+		expect(
+			receiptMatchesMeasurement(
+				{
+					...receipt,
+					scoringVersion: 6,
+					cropPolicy: VMAF_FRAME_INDEX_CROP_POLICY,
+				},
+				method,
+				6,
+				referenceGeometry,
+			),
+		).toBe(false);
 	});
 });
 

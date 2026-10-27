@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { VmafReferenceGeometry } from "./command";
 
 const key = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/);
 // Profiles are readable configuration: SAS tokens and URL userinfo belong in
@@ -217,6 +218,7 @@ export type VmafCloudManifest = {
 		measurementMethod?: "FRAME_INDEX_BT709_10BIT";
 		referenceFrameRate?: string;
 		distortedOriginal?: { width: number; height: number; bitdepth: number };
+		referenceGeometry?: VmafReferenceGeometry;
 		threads?: number;
 		subsample?: number;
 		psnr?: boolean;

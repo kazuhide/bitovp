@@ -67,6 +67,61 @@ export const VMAF_FRAME_INDEX_SCORING_VERSION = 6;
 export const VMAF_FRAME_INDEX_CROP_POLICY =
 	"codec-only-ignore-container-aperture-v1";
 
+export type VmafReferenceGeometry = {
+	width: number;
+	height: number;
+	sampleAspectRatio: string;
+};
+
+/** Unknown ffprobe sentinels preserve the documented legacy coded canvas only. */
+export function sampleAspectRatioFromProbe(value: unknown): string | undefined {
+	if (
+		value === undefined ||
+		value === "N/A" ||
+		value === "0:1" ||
+		value === "0/1"
+	)
+		return undefined;
+	if (
+		typeof value !== "string" ||
+		!/^[1-9]\d{0,8}[:/][1-9]\d{0,8}$/.test(value)
+	)
+		throw new Error("INVALID_SAMPLE_ASPECT_RATIO");
+	let [numerator, denominator] = value.split(/[:/]/).map(Number) as [
+		number,
+		number,
+	];
+	let a = numerator,
+		b = denominator;
+	while (b) [a, b] = [b, a % b];
+	numerator /= a;
+	denominator /= a;
+	return `${numerator}:${denominator}`;
+}
+
+/** Display width is derived from coded samples, never from a caller's canvas claim. */
+export function frameIndexDisplayGeometry(reference: VmafReferenceGeometry): {
+	width: number;
+	height: number;
+} {
+	if (
+		![reference.width, reference.height].every(
+			(v) => Number.isSafeInteger(v) && v > 0 && v <= 16384,
+		)
+	)
+		throw new Error("INVALID_REFERENCE_DISPLAY_GEOMETRY");
+	const sar = sampleAspectRatioFromProbe(reference.sampleAspectRatio);
+	if (!sar) throw new Error("INVALID_SAMPLE_ASPECT_RATIO");
+	const [numerator, denominator] = sar.split(":").map(Number) as [
+		number,
+		number,
+	];
+	const width = (reference.width * numerator) / denominator;
+	if (!Number.isSafeInteger(width) || width < 1 || width > 16384)
+		throw new Error("INVALID_REFERENCE_DISPLAY_GEOMETRY");
+	return { width, height: reference.height };
+}
+
 export type VmafCommandOptions = {
 	/** Explicit full-frame report methodology; omitted preserves generation 3. */
 	measurementMethod?: "FRAME_INDEX_BT709_10BIT";
@@ -74,6 +129,10 @@ export type VmafCommandOptions = {
 	referenceFrameRate?: string;
 	/** Original encoded geometry/precision for the VMAF v1 CAMBI feature. */
 	distortedOriginal?: { width: number; height: number; bitdepth: number };
+	/** Known reference SAR enables a validated square-pixel display canvas.
+	 * Omitted on legacy payloads: scaleToReference remains the coded canvas,
+	 * including when ffprobe reports absent/N/A/0:1 SAR. */
+	referenceGeometry?: VmafReferenceGeometry;
 	/** Reference (pristine) video — libvmaf input #1 ([1:v]). */
 	referencePath: string;
 	/** Distorted (encoded) video — libvmaf input #0 ([0:v]). */
@@ -149,6 +208,11 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 			(opts.subsample ?? 1) !== 1
 		) {
 			throw new Error("INVALID_FRAME_INDEX_MEASUREMENT_OPTIONS");
+		}
+		if (opts.referenceGeometry) {
+			const display = frameIndexDisplayGeometry(opts.referenceGeometry);
+			if (display.width !== size.width || display.height !== size.height)
+				throw new Error("INPUT_GEOMETRY_CLAIM_MISMATCH");
 		}
 		const model = opts.modelPath
 			? `path=${opts.modelPath}`

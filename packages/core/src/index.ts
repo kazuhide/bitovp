@@ -1316,9 +1316,11 @@ export {
 	DEFAULT_LINEAR_RADIUS,
 } from "./vmaf/align-linear";
 export * from "./vmaf/cloud";
-export type { VmafCommandOptions } from "./vmaf/command";
+export type { VmafCommandOptions, VmafReferenceGeometry } from "./vmaf/command";
 export {
 	buildVmafCommand,
+	frameIndexDisplayGeometry,
+	sampleAspectRatioFromProbe,
 	VMAF_FRAME_INDEX_CROP_POLICY,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_SCORING_VERSION,

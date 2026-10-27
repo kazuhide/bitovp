@@ -456,6 +456,134 @@ test("gen5 cadence is rational, exact count, with only the bounded known rounded
 		/INPUT_GEOMETRY_CLAIM_MISMATCH/,
 	);
 });
+test("anamorphic reference metadata validates the square-pixel display canvas", () => {
+	const data = {
+		streams: [
+			{ nb_read_frames: 4, r_frame_rate: "25/1", sample_aspect_ratio: "4:3" },
+		],
+		frames: Array.from({ length: 4 }, (_, i) => ({
+			best_effort_timestamp_time: String(i / 25),
+			width: 1440,
+			height: 1080,
+			pix_fmt: "yuv420p",
+			interlaced_frame: 0,
+			sample_aspect_ratio: "4:3",
+		})),
+	};
+	const reference = validateFullFrameProbe(data, { reference: true });
+	assert.equal(reference.sampleAspectRatio, "4:3");
+	const distorted = {
+		...reference,
+		width: 640,
+		height: 360,
+		sampleAspectRatio: "1:1",
+	};
+	const scoring = {
+		...gen5Scoring,
+		referenceFrameRate: "25/1",
+		referenceGeometry: { width: 1440, height: 1080, sampleAspectRatio: "4:3" },
+	};
+	assert.deepEqual(
+		validateFrameIndexPair(reference, distorted, scoring).displayGeometry,
+		{ width: 1920, height: 1080, policy: "sample-aspect-ratio-display-v1" },
+	);
+	assert.throws(
+		() =>
+			validateFrameIndexPair(reference, distorted, {
+				...scoring,
+				scaleToReference: { width: 1440, height: 1080 },
+			}),
+		/INPUT_GEOMETRY_CLAIM_MISMATCH/,
+	);
+	assert.throws(
+		() =>
+			validateFrameIndexPair(reference, distorted, {
+				...scoring,
+				referenceGeometry: {
+					...scoring.referenceGeometry,
+					sampleAspectRatio: "1:1",
+				},
+			}),
+		/INPUT_GEOMETRY_CLAIM_MISMATCH/,
+	);
+});
+test("display geometry claims are strict and confined to the full-frame method", () => {
+	const { manifest } = fixture();
+	manifest.scoring = {
+		...gen5Scoring,
+		referenceGeometry: { width: 1440, height: 1080, sampleAspectRatio: "4:3" },
+	};
+	assert.equal(validateManifest(manifest), manifest);
+	for (const value of [undefined, "N/A", "0:1", "1:0", "-4:3", "1:1"]) {
+		const invalid = structuredClone(manifest);
+		invalid.scoring.referenceGeometry.sampleAspectRatio = value;
+		assert.throws(() => validateManifest(invalid));
+	}
+	const invalid = structuredClone(manifest);
+	delete invalid.scoring.measurementMethod;
+	assert.throws(() => validateManifest(invalid));
+	manifest.scoring.referenceGeometry.unexpected = true;
+	assert.throws(() => validateManifest(manifest));
+});
+test("reported invalid or changing sample aspect ratios fail closed", () => {
+	const data = () => ({
+		streams: [
+			{ nb_read_frames: 4, r_frame_rate: "25/1", sample_aspect_ratio: "1:1" },
+		],
+		frames: Array.from({ length: 4 }, (_, i) => ({
+			best_effort_timestamp_time: String(i / 25),
+			width: 640,
+			height: 360,
+			pix_fmt: "yuv420p",
+			interlaced_frame: 0,
+			sample_aspect_ratio: "1:1",
+		})),
+	});
+	for (const value of ["1:0", "-1:1", "bad", "4:3"]) {
+		const probe = data();
+		probe.frames[2].sample_aspect_ratio = value;
+		assert.throws(() => validateFullFrameProbe(probe, { reference: true }));
+	}
+});
+test("legacy missing or unknown SAR preserves coded canvas but cannot prove a new display claim", () => {
+	for (const sample_aspect_ratio of [undefined, "N/A", "0:1"]) {
+		const probe = validateFullFrameProbe({
+			streams: [
+				{ nb_read_frames: 4, r_frame_rate: "25/1", sample_aspect_ratio },
+			],
+			frames: Array.from({ length: 4 }, (_, i) => ({
+				best_effort_timestamp_time: String(i / 25),
+				width: 640,
+				height: 360,
+				pix_fmt: "yuv420p",
+				interlaced_frame: 0,
+				sample_aspect_ratio,
+			})),
+		});
+		assert.equal(probe.sampleAspectRatioPolicy, "legacy-square-pixel");
+		const scoring = {
+			...gen5Scoring,
+			referenceFrameRate: "25/1",
+			scaleToReference: { width: 640, height: 360 },
+		};
+		assert.equal(
+			validateFrameIndexPair(probe, probe, scoring).displayGeometry.policy,
+			"legacy-coded-canvas-v1",
+		);
+		assert.throws(
+			() =>
+				validateFrameIndexPair(probe, probe, {
+					...scoring,
+					referenceGeometry: {
+						width: 640,
+						height: 360,
+						sampleAspectRatio: "1:1",
+					},
+				}),
+			/INPUT_GEOMETRY_CLAIM_MISMATCH/,
+		);
+	}
+});
 test("distributed content evidence rejects actual shifted frames and ambiguous static images", () => {
 	const frames = 1000,
 		starts = [10, 200, 500, 800],
@@ -491,7 +619,113 @@ test("distributed content evidence rejects actual shifted frames and ambiguous s
 	);
 });
 
-test("real gen6 cloud worker ignores container aperture in scoring and alignment for v06 and v1 CAMBI", async (t) => {
+test("actual H264 and AV1 probes retain reported SAR and accept legacy no-claim payloads", async (t) => {
+	const command = promisify(execFile);
+	const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
+	const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
+	let encoders;
+	try {
+		encoders = (await command(ffmpegPath, ["-hide_banner", "-encoders"]))
+			.stdout;
+		await command(ffprobePath, ["-version"]);
+	} catch {
+		return t.skip("ffmpeg/ffprobe unavailable");
+	}
+	const dir = await mkdtemp("/tmp/cloud-sar-codecs-");
+	try {
+		for (const [codec, suffix, sar, extra] of [
+			["libx264", "mp4", "1:1", ["-preset", "ultrafast"]],
+			["libx264", "mkv", "4:3", ["-preset", "ultrafast"]],
+			["libsvtav1", "ivf", "0:1", ["-preset", "12", "-svtav1-params", "lp=2"]],
+		]) {
+			await t.test(
+				`${codec} ${sar}`,
+				{ skip: !encoders.includes(codec) },
+				async () => {
+					const path = join(dir, `${codec}-${suffix}.${suffix}`);
+					await command(
+						ffmpegPath,
+						[
+							"-v",
+							"error",
+							"-f",
+							"lavfi",
+							"-i",
+							"testsrc2=size=144x108:rate=25",
+							"-vf",
+							`setsar=${sar.replace(":", "/")}`,
+							"-frames:v",
+							"4",
+							"-c:v",
+							codec,
+							...extra,
+							path,
+						],
+						{ timeout: 20_000 },
+					);
+					const { stdout } = await command(ffprobePath, [
+						"-v",
+						"error",
+						"-select_streams",
+						"v:0",
+						"-count_frames",
+						"-show_frames",
+						"-show_entries",
+						"stream=codec_name,nb_read_frames,r_frame_rate,sample_aspect_ratio:frame=sample_aspect_ratio,width,height,interlaced_frame,pix_fmt,best_effort_timestamp_time",
+						"-of",
+						"json",
+						path,
+					]);
+					const probe = validateFullFrameProbe(JSON.parse(stdout), {
+						reference: true,
+					});
+					assert.equal(probe.frames, 4);
+					if (codec === "libsvtav1")
+						assert.ok(
+							probe.sampleAspectRatio === undefined ||
+								probe.sampleAspectRatio === "1:1",
+						);
+					else assert.equal(probe.sampleAspectRatio, sar);
+					const scoring = {
+						...gen5Scoring,
+						referenceFrameRate: "25/1",
+						scaleToReference: { width: 144, height: 108 },
+						distortedOriginal: { width: 144, height: 108, bitdepth: 8 },
+					};
+					assert.equal(
+						validateFrameIndexPair(probe, probe, scoring).displayGeometry
+							.policy,
+						"legacy-coded-canvas-v1",
+					);
+					const displayScoring = {
+						...scoring,
+						referenceGeometry: {
+							width: 144,
+							height: 108,
+							sampleAspectRatio: probe.sampleAspectRatio ?? "1:1",
+						},
+						scaleToReference: { width: sar === "4:3" ? 192 : 144, height: 108 },
+					};
+					if (probe.sampleAspectRatio)
+						assert.equal(
+							validateFrameIndexPair(probe, probe, displayScoring)
+								.displayGeometry.policy,
+							"sample-aspect-ratio-display-v1",
+						);
+					else
+						assert.throws(
+							() => validateFrameIndexPair(probe, probe, displayScoring),
+							/INPUT_GEOMETRY_CLAIM_MISMATCH/,
+						);
+				},
+			);
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("real gen6 worker validates aperture and anamorphic display geometry for v06 and v1 CAMBI", async (t) => {
 	const command = promisify(execFile),
 		ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg",
 		ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
@@ -501,6 +735,11 @@ test("real gen6 cloud worker ignores container aperture in scoring and alignment
 		{
 			name: "vmaf_v1.0.16_3d0h",
 			path: join(root, "vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json"),
+		},
+		{
+			name: "vmaf_v1.0.16_3d0h",
+			path: join(root, "vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json"),
+			anamorphic: true,
 		},
 	];
 	try {
@@ -517,9 +756,50 @@ test("real gen6 cloud worker ignores container aperture in scoring and alignment
 			ffmpegPath,
 			{ width: 640, height: 360, frames: 1000 },
 		);
-		const referenceMedia = await readFile(cropped);
-		const media = await readFile(path);
+		const croppedMedia = await readFile(cropped);
+		const originalMedia = await readFile(path);
+		const anamorphicPath = join(dir, "anamorphic.mkv");
+		const displayPath = join(dir, "display.mkv");
+		await command(ffmpegPath, [
+			"-v",
+			"error",
+			"-i",
+			path,
+			"-vf",
+			"scale=480:360:flags=bicubic,setsar=4/3",
+			"-c:v",
+			"ffv1",
+			anamorphicPath,
+		]);
+		const normalization = buildVmafCommand({
+			...gen5Scoring,
+			referenceFrameRate: "24/1",
+			referencePath: anamorphicPath,
+			distortedPath: displayPath,
+			logPath: join(dir, "unused.json"),
+			scaleToReference: { width: 640, height: 360 },
+			distortedOriginal: { width: 640, height: 360, bitdepth: 10 },
+			referenceGeometry: { width: 480, height: 360, sampleAspectRatio: "4:3" },
+		});
+		const leg = normalization[
+			normalization.indexOf("-filter_complex") + 1
+		].match(/\[1:v:0\](.*?)\[ref\]/)[1];
+		await command(ffmpegPath, [
+			"-v",
+			"error",
+			"-i",
+			anamorphicPath,
+			"-vf",
+			leg,
+			"-c:v",
+			"ffv1",
+			displayPath,
+		]);
+		const anamorphicMedia = await readFile(anamorphicPath);
+		const displayMedia = await readFile(displayPath);
 		for (const model of models) {
+			const referenceMedia = model.anamorphic ? anamorphicMedia : croppedMedia;
+			const media = model.anamorphic ? displayMedia : originalMedia;
 			const f = fixture();
 			f.manifest.checkpoint = {
 				write: { url: "https://fixture.invalid/checkpoint" },
@@ -530,7 +810,20 @@ test("real gen6 cloud worker ignores container aperture in scoring and alignment
 				model: model.name,
 				referenceFrameRate: "24/1",
 				scaleToReference: { width: 640, height: 360 },
-				distortedOriginal: { width: 640, height: 360, bitdepth: 8 },
+				distortedOriginal: {
+					width: 640,
+					height: 360,
+					bitdepth: model.anamorphic ? 10 : 8,
+				},
+				...(model.anamorphic
+					? {
+							referenceGeometry: {
+								width: 480,
+								height: 360,
+								sampleAspectRatio: "4:3",
+							},
+						}
+					: {}),
 				psnr: true,
 				threads: 2,
 			};
@@ -568,10 +861,21 @@ test("real gen6 cloud worker ignores container aperture in scoring and alignment
 				receipt.cropPolicy,
 				"codec-only-ignore-container-aperture-v1",
 			);
-			assert.equal(
-				receipt.cadence.alignment.referenceBufferSha256,
-				receipt.cadence.alignment.distortedBufferSha256,
-			);
+			if (model.anamorphic) {
+				assert.deepEqual(receipt.cadence.displayGeometry, {
+					width: 640,
+					height: 360,
+					policy: "sample-aspect-ratio-display-v1",
+				});
+				assert.equal(receipt.cadence.reference.width, 480);
+				assert.equal(receipt.cadence.reference.sampleAspectRatio, "4:3");
+				assert.equal(receipt.cadence.distorted.width, 640);
+				assert.equal(receipt.cadence.distorted.bitdepth, 10);
+			} else
+				assert.equal(
+					receipt.cadence.alignment.referenceBufferSha256,
+					receipt.cadence.alignment.distortedBufferSha256,
+				);
 			assert.ok(receipt.cadence.alignment.confirmedWindows >= 4);
 			const result = JSON.parse(f.uploads.get(f.manifest.output.url));
 			assert.equal(result.frames.length, 1000);
@@ -622,6 +926,13 @@ test("real gen6 cloud worker ignores container aperture in scoring and alignment
 				for (const mutate of [
 					(value) => {
 						value.referenceProbe.maxAbsGridErrorFrames = 0.2;
+					},
+					(value) => {
+						value.referenceProbe.sampleAspectRatioPolicy =
+							"legacy-square-pixel";
+					},
+					(value) => {
+						value.cadence.displayGeometry.width = 639;
 					},
 					(value) => {
 						const window = value.cadence.alignment.windows[1];
@@ -730,6 +1041,14 @@ test("only reference MPEG-2 can accept bounded linear timestamp clock drift", ()
 
 test("diagnostics allow only exact known codes and never echo secrets", () => {
 	const secret = "https://secret.invalid/file?token=TOP_SECRET";
+	for (const code of [
+		"INVALID_SAMPLE_ASPECT_RATIO",
+		"INVALID_REFERENCE_DISPLAY_GEOMETRY",
+	])
+		assert.equal(
+			safeFailureDiagnostic(new Error(code), "REFERENCE_PROBE").code,
+			code,
+		);
 	for (const error of [
 		new Error(secret),
 		{

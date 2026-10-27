@@ -9,7 +9,9 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
 	automaticVmafProfile,
+	frameIndexDisplayGeometry,
 	parseVmafJson,
+	sampleAspectRatioFromProbe,
 	VMAF_FRAME_INDEX_CROP_POLICY,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	type VmafCloudManifest,
@@ -17,6 +19,7 @@ import {
 	type VmafCloudReceipt,
 	type VmafCommandOptions,
 	type VmafComputeAdapter,
+	type VmafReferenceGeometry,
 	type VmafStagingStore,
 	vmafCloudProfileSchema,
 } from "@bitovp/core";
@@ -59,13 +62,38 @@ export function receiptMatchesMeasurement(
 	receipt: VmafCloudReceipt,
 	method: VmafCommandOptions["measurementMethod"],
 	generation: number | undefined,
+	referenceGeometry?: VmafReferenceGeometry,
 ): boolean {
-	if (!method) return true;
+	if (!method) return referenceGeometry === undefined;
 	if (
 		receipt.measurementMethod !== method ||
 		receipt.scoringVersion !== generation
 	)
 		return false;
+	if (referenceGeometry) {
+		try {
+			const expected = frameIndexDisplayGeometry(referenceGeometry);
+			const reference = receipt.cadence?.reference as
+				| Record<string, unknown>
+				| undefined;
+			const display = receipt.cadence?.displayGeometry as
+				| Record<string, unknown>
+				| undefined;
+			if (
+				reference?.width !== referenceGeometry.width ||
+				reference?.height !== referenceGeometry.height ||
+				reference?.sampleAspectRatioPolicy !== "reported" ||
+				sampleAspectRatioFromProbe(reference?.sampleAspectRatio) !==
+					sampleAspectRatioFromProbe(referenceGeometry.sampleAspectRatio) ||
+				display?.policy !== "sample-aspect-ratio-display-v1" ||
+				display.width !== expected.width ||
+				display.height !== expected.height
+			)
+				return false;
+		} catch {
+			return false;
+		}
+	}
 	return (
 		generation === 5 ||
 		(generation === VMAF_FRAME_INDEX_SCORING_VERSION &&
@@ -262,6 +290,17 @@ export function createVmafCloudController(deps: Deps) {
 			throw new Error("VMAF compute profile mismatch");
 		if ((request.options.subsample ?? 1) !== 1) {
 			throw new Error("Cloud VMAF requires full-frame scoring (subsample=1)");
+		}
+		if (request.options.referenceGeometry) {
+			const display = frameIndexDisplayGeometry(
+				request.options.referenceGeometry,
+			);
+			if (
+				request.options.measurementMethod !== "FRAME_INDEX_BT709_10BIT" ||
+				display.width !== request.options.scaleToReference?.width ||
+				display.height !== request.options.scaleToReference?.height
+			)
+				throw new Error("INPUT_GEOMETRY_CLAIM_MISMATCH");
 		}
 		if (!request.options.modelPath) {
 			throw new Error(
@@ -643,6 +682,7 @@ export function createVmafCloudController(deps: Deps) {
 							receipt,
 							request.options.measurementMethod,
 							parent.scoringVersion,
+							request.options.referenceGeometry,
 						) ||
 						receipt.version !== 1 ||
 						receipt.taskId !== id ||

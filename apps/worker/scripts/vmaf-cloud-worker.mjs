@@ -9,6 +9,8 @@ import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import {
 	buildVmafCommand,
+	frameIndexDisplayGeometry,
+	sampleAspectRatioFromProbe,
 	VMAF_FRAME_INDEX_CROP_POLICY,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 } from "../../../packages/core/src/vmaf/command.ts";
@@ -56,6 +58,8 @@ const diagnosticCodes = new Set([
 	"INPUT_FRAME_RATE_MISMATCH",
 	"INPUT_FRAME_COUNT_MISMATCH",
 	"INPUT_GEOMETRY_CLAIM_MISMATCH",
+	"INVALID_SAMPLE_ASPECT_RATIO",
+	"INVALID_REFERENCE_DISPLAY_GEOMETRY",
 	"ALIGNMENT_INCOMPLETE",
 	"NONZERO_CONTENT_OFFSET",
 	"INSUFFICIENT_ALIGNMENT_EVIDENCE",
@@ -234,6 +238,7 @@ export function validateManifest(value, now = Date.now()) {
 			"measurementMethod",
 			"referenceFrameRate",
 			"distortedOriginal",
+			"referenceGeometry",
 		],
 	);
 	if (typeof s.model !== "string" || !identifier.test(s.model))
@@ -275,9 +280,19 @@ export function validateManifest(value, now = Date.now()) {
 		integer(s.distortedOriginal.height, 1, 16384);
 		if (![8, 10, 12, 16].includes(s.distortedOriginal.bitdepth))
 			fail("INVALID_MANIFEST");
+		if (s.referenceGeometry !== undefined) {
+			object(s.referenceGeometry, ["width", "height", "sampleAspectRatio"]);
+			const display = frameIndexDisplayGeometry(s.referenceGeometry);
+			if (
+				display.width !== s.scaleToReference.width ||
+				display.height !== s.scaleToReference.height
+			)
+				fail("INPUT_GEOMETRY_CLAIM_MISMATCH");
+		}
 	} else if (
 		s.referenceFrameRate !== undefined ||
-		s.distortedOriginal !== undefined
+		s.distortedOriginal !== undefined ||
+		s.referenceGeometry !== undefined
 	)
 		fail("INVALID_MANIFEST");
 	return value;
@@ -434,6 +449,11 @@ export function validateFullFrameProbe(data, { reference = false } = {}) {
 	if (fps > 1000) fail("INVALID_FRAME_RATE");
 	const first = decoded[0],
 		firstTime = Number(first.best_effort_timestamp_time);
+	const streamSar = sampleAspectRatioFromProbe(stream.sample_aspect_ratio);
+	const firstSar = sampleAspectRatioFromProbe(first.sample_aspect_ratio);
+	if (streamSar && firstSar && streamSar !== firstSar)
+		fail("INVALID_SAMPLE_ASPECT_RATIO");
+	const sampleAspectRatio = firstSar ?? streamSar;
 	const endpointInterval =
 		decoded.length > 1
 			? (Number(decoded.at(-1).best_effort_timestamp_time) - firstTime) /
@@ -446,6 +466,9 @@ export function validateFullFrameProbe(data, { reference = false } = {}) {
 	const ptsHash = createHash("sha256");
 	for (const [i, frame] of decoded.entries()) {
 		const time = Number(frame.best_effort_timestamp_time);
+		const frameSar = sampleAspectRatioFromProbe(frame.sample_aspect_ratio);
+		if (frameSar && frameSar !== sampleAspectRatio)
+			fail("INVALID_SAMPLE_ASPECT_RATIO");
 		if (
 			!Number.isFinite(time) ||
 			time <= previous ||
@@ -502,6 +525,10 @@ export function validateFullFrameProbe(data, { reference = false } = {}) {
 		width: first.width,
 		height: first.height,
 		bitdepth,
+		...(sampleAspectRatio ? { sampleAspectRatio } : {}),
+		sampleAspectRatioPolicy: sampleAspectRatio
+			? "reported"
+			: "legacy-square-pixel",
 		timestampPolicy,
 		maxAbsGridErrorFrames,
 		maxAbsIntervalErrorFrames,
@@ -523,10 +550,26 @@ export function validateFrameIndexPair(reference, distorted, scoring) {
 	)
 		fail("INPUT_FRAME_RATE_MISMATCH");
 	if (reference.frames !== distorted.frames) fail("INPUT_FRAME_COUNT_MISMATCH");
+	let display = { width: reference.width, height: reference.height };
+	if (scoring.referenceGeometry) {
+		const claimed = scoring.referenceGeometry;
+		if (
+			claimed.width !== reference.width ||
+			claimed.height !== reference.height ||
+			!reference.sampleAspectRatio ||
+			sampleAspectRatioFromProbe(claimed.sampleAspectRatio) !==
+				reference.sampleAspectRatio
+		)
+			fail("INPUT_GEOMETRY_CLAIM_MISMATCH");
+		display = frameIndexDisplayGeometry({
+			...reference,
+			sampleAspectRatio: reference.sampleAspectRatio,
+		});
+	}
 	if (
 		scoring.referenceFrameRate !== reference.frameRate ||
-		scoring.scaleToReference.width !== reference.width ||
-		scoring.scaleToReference.height !== reference.height ||
+		scoring.scaleToReference.width !== display.width ||
+		scoring.scaleToReference.height !== display.height ||
 		["width", "height", "bitdepth"].some(
 			(k) => scoring.distortedOriginal[k] !== distorted[k],
 		)
@@ -539,6 +582,12 @@ export function validateFrameIndexPair(reference, distorted, scoring) {
 		referenceFps: reference.frameRate,
 		distortedFps: distorted.frameRate,
 		accumulatedDriftFrames: drift,
+		displayGeometry: {
+			...display,
+			policy: scoring.referenceGeometry
+				? "sample-aspect-ratio-display-v1"
+				: "legacy-coded-canvas-v1",
+		},
 		reference,
 		distorted,
 	};
@@ -678,7 +727,7 @@ async function probeFrames(
 				...(full ? ["-show_frames"] : []),
 				"-show_entries",
 				full
-					? "frame=best_effort_timestamp_time,width,height,pix_fmt,interlaced_frame,repeat_pict:stream=codec_name,nb_read_frames,avg_frame_rate,r_frame_rate,width,height,pix_fmt,bits_per_raw_sample"
+					? "frame=best_effort_timestamp_time,width,height,pix_fmt,sample_aspect_ratio,interlaced_frame,repeat_pict:stream=codec_name,nb_read_frames,avg_frame_rate,r_frame_rate,width,height,pix_fmt,bits_per_raw_sample,sample_aspect_ratio"
 					: "stream=nb_read_frames,avg_frame_rate,r_frame_rate",
 				"-of",
 				"json",
@@ -741,7 +790,9 @@ function checkpointBinding(manifest, modelSha256) {
 		.update(
 			JSON.stringify(
 				canonical({
-					algorithm: "decoded-coverage-and-content-alignment-v1",
+					algorithm: manifest.scoring.measurementMethod
+						? "decoded-coverage-and-display-alignment-v2"
+						: "decoded-coverage-and-content-alignment-v1",
 					scoringVersion: VMAF_FRAME_INDEX_SCORING_VERSION,
 					cropPolicy: VMAF_FRAME_INDEX_CROP_POLICY,
 					image: manifest.image,
@@ -817,6 +868,8 @@ function validateCheckpoint(
 						"width",
 						"height",
 						"bitdepth",
+						"sampleAspectRatio",
+						"sampleAspectRatioPolicy",
 						"timestampPolicy",
 						"maxAbsGridErrorFrames",
 						"maxAbsIntervalErrorFrames",
@@ -835,6 +888,12 @@ function validateCheckpoint(
 			if (probe.fps !== n / d) fail("INVALID_FRAME_PROBE");
 			integer(probe.width, 1, 16384);
 			integer(probe.height, 1, 16384);
+			const sar = sampleAspectRatioFromProbe(probe.sampleAspectRatio);
+			if (
+				probe.sampleAspectRatioPolicy !==
+				(sar ? "reported" : "legacy-square-pixel")
+			)
+				fail("INVALID_FRAME_PROBE");
 			if (
 				![8, 10, 12, 16].includes(probe.bitdepth) ||
 				!digest.test(probe.ptsSha256) ||

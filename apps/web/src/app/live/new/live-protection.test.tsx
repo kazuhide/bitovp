@@ -32,7 +32,6 @@ function encrypted(kind: "CENC" | "FAIRPLAY" | "SPEKE"): LiveWizardState {
 	const s = state(),
 		clear = buildLiveChannelPlan(s);
 	s.cloudRegion = "AWS_US_EAST_1";
-	s.fallbackCloudRegions = ["AWS_US_WEST_2", "AUTO"];
 	s.drm = clear.muxings.map((m) => {
 		if (!m.destination) throw new Error("destination missing");
 		const common = {
@@ -63,19 +62,89 @@ function encrypted(kind: "CENC" | "FAIRPLAY" | "SPEKE"): LiveWizardState {
 	return s;
 }
 
-it("keeps AUTO-region fallbacks on the provider already selected", () => {
-	const current = state();
-	current.cloudRegion = "AUTO";
-	current.fallbackCloudRegions = ["AWS_US_WEST_2"];
-	renderWithQuery(<LiveFallbackRegions state={current} onPatch={vi.fn()} />);
-	const options = within(screen.getByRole("combobox"));
-	expect(
-		options.getByRole("option", { name: "AWS_US_EAST_1" }),
-	).toBeInTheDocument();
-	expect(options.getByRole("option", { name: "AUTO" })).toBeInTheDocument();
-	expect(
-		options.queryByRole("option", { name: "GOOGLE_US_CENTRAL_1" }),
-	).toBeNull();
+describe("unsupported Live fallback regions", () => {
+	it.each([
+		{ regions: undefined },
+		{ regions: [] },
+	])("shows no selector or notice for empty new forms (%j)", ({ regions }) => {
+		const current = state();
+		current.fallbackCloudRegions = regions;
+		const patch = vi.fn();
+		const { container } = renderWithQuery(
+			<LiveFallbackRegions state={current} onPatch={patch} />,
+		);
+		expect(container).toBeEmptyDOMElement();
+		expect(patch).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"en",
+			"Live Encoding does not support fallback regions.",
+			"Clear fallback regions",
+		],
+		[
+			"ja",
+			"Live Encodingでは代替リージョンを指定できません。",
+			"代替リージョンを解除",
+		],
+	] as const)("preserves imported and draft values until explicitly cleared (%s)", (locale, notice, clearLabel) => {
+		const initial = state();
+		initial.cloudRegion = "AWS_US_EAST_1";
+		initial.fallbackCloudRegions = ["AWS_US_WEST_2", "AUTO"];
+		const saved = liveChannelPlanSchema.parse(buildLiveChannelPlan(initial));
+		const imported = tryImportLiveChannelIntoWizard(saved);
+		expect(imported.ok).toBe(true);
+		if (!imported.ok) throw new Error(imported.reasonKey);
+		expect(imported.state.fallbackCloudRegions).toEqual(
+			initial.fallbackCloudRegions,
+		);
+		const restored = mergeWizardDraft(
+			DEFAULT_LIVE_WIZARD_STATE,
+			projectWizardDraft("live", imported.state),
+			"live",
+		);
+		expect(restored.fallbackCloudRegions).toEqual(initial.fallbackCloudRegions);
+		function Harness() {
+			const [current, set] = useState(restored);
+			return (
+				<>
+					<LiveFallbackRegions
+						state={current}
+						onPatch={(patch) => set({ ...current, ...patch })}
+					/>
+					<output data-testid="fallback-plan">
+						{JSON.stringify(buildLiveChannelPlan(current))}
+					</output>
+				</>
+			);
+		}
+		renderWithQuery(<Harness />, locale);
+		expect(screen.getByRole("alert")).toHaveTextContent(notice);
+		expect(
+			within(screen.getByRole("alert")).getByText("AWS_US_WEST_2, AUTO"),
+		).toBeVisible();
+		expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+		const readPlan = () =>
+			liveChannelPlanSchema.parse(
+				JSON.parse(screen.getByTestId("fallback-plan").textContent ?? "{}"),
+			);
+		expect(readPlan().bitmovin.fallbackCloudRegions).toEqual(
+			initial.fallbackCloudRegions,
+		);
+		expect(validateLiveChannel(readPlan())).toContainEqual(
+			expect.objectContaining({ code: "LIVE_FALLBACK_REGIONS" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: clearLabel }));
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(readPlan().bitmovin.fallbackCloudRegions).toEqual([]);
+		expect(readPlan().bitmovin.cloudRegion).toBe(initial.cloudRegion);
+		expect(
+			validateLiveChannel(readPlan()).filter(
+				(issue) => issue.code === "LIVE_FALLBACK_REGIONS",
+			),
+		).toEqual([]);
+	});
 });
 
 describe("Live encrypted plan form round trips", () => {
@@ -189,10 +258,9 @@ it("keeps an invalid imported fallback visible so validation can explain it", ()
 	s.fallbackCloudRegions = ["GOOGLE_US_CENTRAL_1"];
 	renderWithQuery(<LiveFallbackRegions state={s} onPatch={vi.fn()} />);
 	expect(
-		within(screen.getByRole("combobox")).getByRole("option", {
-			name: "GOOGLE_US_CENTRAL_1",
-		}),
-	).toBeInTheDocument();
+		within(screen.getByRole("alert")).getByText("GOOGLE_US_CENTRAL_1"),
+	).toBeVisible();
+	expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 });
 it("edits the encryption selector inside each Live manifest", () => {
 	const s = encrypted("CENC"),

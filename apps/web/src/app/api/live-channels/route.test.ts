@@ -184,6 +184,53 @@ afterEach(() => {
 
 describe("POST /api/live-channels", () => {
 	it.each([
+		{ regions: undefined },
+		{ regions: [] },
+	])("creates channels with omitted or empty fallbacks (%j) without an API field", async ({
+		regions,
+	}) => {
+		const candidate = withAccount();
+		Object.assign(candidate.bitmovin, { fallbackCloudRegions: regions });
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(201);
+		expect(
+			create.mock.calls[0]?.[0].data.plan.bitmovin.fallbackCloudRegions,
+		).toEqual(regions);
+		const entries = create.mock.calls[0]?.[0].data.stepLog as {
+			kind: string;
+			payload: object;
+		}[];
+		expect(
+			entries.find((entry) => entry.kind === "CREATE_ENCODING")?.payload,
+		).not.toHaveProperty("fallbackCloudRegions");
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		["AWS_US_WEST_2"],
+		["AUTO"],
+		["AWS_US_WEST_2", "AUTO"],
+	])("rejects unsupported fallback regions %j before persistence or dispatch", async (...regions) => {
+		const candidate = withAccount();
+		Object.assign(candidate.bitmovin, {
+			cloudRegion: "AWS_US_EAST_1",
+			fallbackCloudRegions: regions,
+		});
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			details: {
+				issues: [expect.objectContaining({ code: "LIVE_FALLBACK_REGIONS" })],
+			},
+		});
+		expect(prismaMock.$transaction).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(createRequestCreate).not.toHaveBeenCalled();
+		expect(sealSourceIdentity).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
 		["unknown level", 0, { level: "INVALID_LEVEL" }, "level"],
 		["inherited function", 0, { level: "toString" }, "level"],
 		["inherited object", 0, { level: "__proto__" }, "level"],

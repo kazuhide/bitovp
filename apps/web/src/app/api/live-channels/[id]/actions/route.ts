@@ -7,6 +7,7 @@ import {
 	type LiveEffectIntent,
 	liveChannelPlanSchema,
 	liveEffectIntentSchema,
+	liveFallbackRegionIssues,
 	liveResetTimeshiftParamsSchema,
 	liveRtmpIngestParamsSchema,
 	liveScte35ParamsSchema,
@@ -631,6 +632,16 @@ export async function POST(req: Request, { params }: RouteParams) {
 		const row = await ctx.prisma.liveChannel.findUnique({ where: { id } });
 		if (!row) {
 			return jsonError(404, "Not found");
+		}
+		if (action.action === "start" || action.action === "restart") {
+			const parsedPlan = liveChannelPlanSchema.safeParse(row.plan);
+			if (!parsedPlan.success) return validationError(parsedPlan.error);
+			const issues = liveFallbackRegionIssues(parsedPlan.data);
+			if (issues.length > 0) {
+				return jsonError(400, "Live channel plan validation failed", {
+					issues,
+				});
+			}
 		}
 
 		switch (action.action) {

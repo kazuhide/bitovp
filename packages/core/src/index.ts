@@ -414,6 +414,10 @@ export {
 	slateSourceSchema,
 	sourceIdentitySchema,
 } from "./live/program-schedule";
+export {
+	LIVE_FALLBACK_REGIONS_UNSUPPORTED,
+	liveFallbackRegionIssues,
+} from "./live/protection";
 export type {
 	PersistedProviderState,
 	ProviderEffectIdentity,

@@ -329,6 +329,68 @@ afterEach(() => {
 
 describe("POST /api/live-channels/[id]/actions", () => {
 	it.each([
+		"start",
+		"restart",
+	])("refuses %s of a legacy fallback-bearing plan before any mutation or queue delivery", async (action) => {
+		const saved = liveChannelPlanSchema.parse(reairPlan());
+		saved.bitmovin.fallbackCloudRegions = ["AWS_US_EAST_1", "AUTO"];
+		findUnique.mockResolvedValue(
+			channel({
+				status: "ERROR",
+				plan: saved,
+				stepLog: [
+					{
+						step: "encoding",
+						kind: "CREATE_ENCODING",
+						payload: {
+							fallbackCloudRegions: saved.bitmovin.fallbackCloudRegions,
+						},
+						refs: {},
+						status: "FAILED",
+						error: "previous attempt failed",
+					},
+				],
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "ERROR",
+			providerStatus: "RUNNING",
+			providerStatusObservedAt: new Date(),
+		});
+		const response = await postAction({ action });
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			details: {
+				issues: [expect.objectContaining({ code: "LIVE_FALLBACK_REGIONS" })],
+			},
+		});
+		expect(update).not.toHaveBeenCalled();
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(runCreate).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(saved.bitmovin.fallbackCloudRegions).toEqual([
+			"AWS_US_EAST_1",
+			"AUTO",
+		]);
+	});
+
+	it("still allows stopping a legacy fallback-bearing channel", async () => {
+		const saved = liveChannelPlanSchema.parse(reairPlan());
+		saved.bitmovin.fallbackCloudRegions = ["AUTO"];
+		findUnique.mockResolvedValue(channel({ plan: saved }));
+		const response = await postAction({ action: "stop" });
+		expect(response.status).toBe(202);
+		expect(queueAdd).toHaveBeenCalledWith(
+			"live-channel",
+			expect.objectContaining({ action: "stop" }),
+			expect.anything(),
+		);
+	});
+
+	it.each([
 		"STOPPING",
 		"STOPPED",
 		"ERROR",

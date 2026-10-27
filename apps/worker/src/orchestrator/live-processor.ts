@@ -109,6 +109,7 @@ import {
 } from "../scheduler/schedule-outcome";
 import type { SlatePreparer } from "../slate/prepare";
 import { executeStep, type ResolvedCredential } from "./executor";
+import { liveFallbackAdmissionError } from "./live-fallback-admission";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import { CancelRequested, LiveEncodingCanceled } from "./ops/exec-shared";
 import {
@@ -1362,6 +1363,10 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			effect?: LiveEffectFence,
 		): Promise<void> {
 			const row = await loadChannel(liveChannelId);
+			const fallbackError = liveFallbackAdmissionError(
+				liveChannelPlanSchema.parse(row.plan),
+			);
+			if (fallbackError) throw new ChannelStateError(fallbackError);
 			const encodingId = encodingIdOf(row);
 			let resetSdk: SdkOps | undefined;
 			const restartEffectIsCurrent = async (): Promise<boolean> => {
@@ -5030,10 +5035,13 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let cancelRecovery = false;
 		let activeEntry: StepLogEntry | undefined;
 		let isVerificationRun = false;
+		let fallbackError: string | undefined;
 		try {
 			const plan = liveChannelPlanSchema.parse(row.plan);
 			entries = stepLogSchema.parse(row.stepLog);
 			resetOwner.entries = entries;
+			fallbackError = liveFallbackAdmissionError(plan, entries);
+			if (fallbackError && !cancelling) throw new Error(fallbackError);
 			const verification = verificationCreateIdentity(
 				row.verificationKey,
 				row.verificationRequestSha256,
@@ -5571,6 +5579,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				await persist(entries);
 
 				try {
+					// A cancellation-only setup cannot become new provisioning work.
+					if (fallbackError) throw new Error(fallbackError);
 					activeEntry = entry;
 					stampStep = entry.attempt
 						? `${entry.step}#${entry.attempt}`

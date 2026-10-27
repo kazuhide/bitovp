@@ -36,7 +36,6 @@ for (const kind of ["CENC", "FAIRPLAY", "SPEKE"] as const)
 				"utf8",
 			),
 		);
-		raw.bitmovin.fallbackCloudRegions = ["AWS_US_WEST_2", "AUTO"];
 		raw.drm = raw.muxings.map(
 			(m: { key: string; destination: Record<string, unknown> }) => ({
 				key: `${m.key}-enc`,
@@ -113,10 +112,7 @@ for (const kind of ["CENC", "FAIRPLAY", "SPEKE"] as const)
 			const call = calls.at(-1);
 			expect(call).toBeDefined();
 			if (op.kind === "CREATE_ENCODING")
-				expect(call?.body.fallbackCloudRegions).toEqual([
-					"AWS_US_WEST_2",
-					"AUTO",
-				]);
+				expect(call?.body).not.toHaveProperty("fallbackCloudRegions");
 			if (op.kind === `CREATE_DRM_${kind}`) {
 				expect(call?.path).toContain(`/drm/${kind.toLowerCase()}`);
 				expect(call?.body.outputs).toEqual([

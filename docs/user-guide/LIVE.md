@@ -82,10 +82,12 @@ and duplicate preserve encryption settings and destinations. Browser drafts keep
 vault references and public non-URL metadata; re-enter omitted license/FairPlay
 URLs after restoring a draft.
 
-In **Basics → Fallback cloud regions**, optionally select up to three distinct
-concrete regions or `AUTO` on the primary cloud provider. The API receives them
-in the selected order. They are alternatives if the preferred region is
-unavailable, not three parallel encoders. Cloud Connect does not use this list.
+The API client library (SDK) exposes `fallbackCloudRegions` on its shared
+encoding model, but the Live Encoding API rejects nonempty fallback lists at
+startup. Leave this setting unset for Live; VOD fallback regions remain
+available. Imported plans and restored drafts retain saved regions. **Basics**
+shows those values and **Clear fallback regions** so they can be removed before
+creating the channel.
 
 ## Send input and confirm delivery
 

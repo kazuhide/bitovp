@@ -155,34 +155,47 @@ describe("Live encrypted output compilation", () => {
 	});
 });
 describe("Live fallback regions", () => {
-	it("preserves unset payloads and emits the configured order", () => {
+	it.each([
+		{ regions: undefined },
+		{ regions: [] },
+	])("accepts omitted or empty fallbacks without emitting an API field (%j)", ({
+		regions,
+	}) => {
 		const p = fixture();
-		expect(
-			compileLiveChannel(p).find((o) => o.kind === "CREATE_ENCODING")?.payload
-				.fallbackCloudRegions,
-		).toBeUndefined();
-		p.bitmovin.cloudRegion = "AWS_US_EAST_1";
-		p.bitmovin.fallbackCloudRegions = ["AWS_US_WEST_2", "AUTO"];
+		p.bitmovin.fallbackCloudRegions = regions;
 		expect(errors(p)).toEqual([]);
 		expect(
-			compileLiveChannel(p).find((o) => o.kind === "CREATE_ENCODING")?.payload
-				.fallbackCloudRegions,
-		).toEqual(["AWS_US_WEST_2", "AUTO"]);
+			compileLiveChannel(p).find((o) => o.kind === "CREATE_ENCODING")?.payload,
+		).not.toHaveProperty("fallbackCloudRegions");
 	});
 	for (const regions of [
+		["AWS_US_WEST_2"],
+		["AUTO"],
+		["AWS_US_WEST_2", "AUTO"],
 		["GOOGLE_US_CENTRAL_1"],
 		["AWS_EU"],
 		["INVALID"],
 		["AUTO", "AUTO"],
 		["AUTO", "AWS_US_EAST_1", "AWS_US_EAST_2", "AWS_US_WEST_1"],
 	])
-		it(`rejects invalid fallbacks ${regions.join(",")}`, () => {
+		it(`rejects unsupported Live fallbacks before compilation: ${regions.join(",")}`, () => {
 			const p = fixture();
 			p.bitmovin.cloudRegion = "AWS_US_EAST_1";
 			p.bitmovin.fallbackCloudRegions = regions;
-			expect(errors(p).some((i) => i.code === "LIVE_FALLBACK_REGIONS")).toBe(
-				true,
+			expect(errors(p)).toContainEqual(
+				expect.objectContaining({
+					code: "LIVE_FALLBACK_REGIONS",
+					level: "error",
+					path: "bitmovin.fallbackCloudRegions",
+					message: expect.stringMatching(
+						/Live Encoding does not support fallback regions/,
+					),
+				}),
 			);
+			expect(() => compileLiveChannel(p)).toThrow(
+				/Live Encoding does not support fallback regions/,
+			);
+			expect(p.bitmovin.fallbackCloudRegions).toEqual(regions);
 		});
 });
 

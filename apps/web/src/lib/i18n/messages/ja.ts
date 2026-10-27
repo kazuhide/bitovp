@@ -17,10 +17,9 @@ export const ja = {
 			"暗号化しない出力も作成する（保存先のフォルダを分けてください）",
 		copyToAll: "暗号化設定を対応するすべてのトラックにコピー",
 		orphan: "削除されたトラックを参照する暗号化設定があります。",
-		fallbackRegions: "代替クラウドリージョン",
-		fallbackRegion: "代替リージョン",
-		fallbackHelp:
-			"同じクラウドの具体的なリージョン、またはAUTOを最大3件指定できます。指定順を保持します。Cloud Connectでは使用できません。",
+		fallbackUnsupported:
+			"Live Encodingでは代替リージョンを指定できません。チャンネルを作成するには、保存されている代替リージョンを解除してください。",
+		clearFallbackRegions: "代替リージョンを解除",
 		clear: "暗号化なし",
 	},
 	manifestDetail: {

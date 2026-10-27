@@ -38,10 +38,9 @@ export const en = {
 		writeClear: "Also write unencrypted output (use a separate folder)",
 		copyToAll: "Copy encryption settings to all compatible tracks",
 		orphan: "An encrypted output refers to a removed track.",
-		fallbackRegions: "Fallback cloud regions",
-		fallbackRegion: "Fallback region",
-		fallbackHelp:
-			"Optional, up to three distinct concrete regions or AUTO on the same cloud provider. Order is preserved. Cloud Connect is not supported.",
+		fallbackUnsupported:
+			"Live Encoding does not support fallback regions. Clear the saved regions to create this channel.",
+		clearFallbackRegions: "Clear fallback regions",
 		clear: "Unencrypted",
 	},
 	manifestDetail: {

@@ -766,7 +766,7 @@ In **Packaging → Encryption**, choose CENC, FairPlay or SPEKE for fMP4, or Fai
 
 Clear output is replaced by encrypted output unless you also request an unencrypted copy. Give those copies separate folders. HLS CENC intended for FairPlay needs CBC and FairPlay IV/URI metadata. Playback still requires the appropriate license configuration and player support. CMAF and the progressive MP4 archive do not use these encryption controls. Browser drafts omit URLs, including FairPlay URIs; re-enter them after restoring a draft.
 
-**Basics → Fallback cloud regions** accepts up to three distinct concrete regions or `AUTO` on the primary cloud provider, in order. These are alternatives when the preferred region is unavailable; Cloud Connect is excluded.
+The API client library (SDK) exposes `fallbackCloudRegions` on its shared encoding model, but the Live Encoding API rejects nonempty fallback lists at startup. Leave this setting unset for Live. VOD fallback regions remain available. If an imported plan or restored draft contains saved regions, **Basics** shows the list and **Clear fallback regions**. Clear them before creating the channel.
 
 ### HLS, DASH, and latency
 

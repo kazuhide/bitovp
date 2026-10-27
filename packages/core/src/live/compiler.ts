@@ -10,7 +10,11 @@ import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import type { PlanRendition } from "../plan/schema";
 import { resolveLiveEncodingOption } from "./encoding-option";
 import { compileLiveManifestDetails } from "./manifest-details";
-import { liveManifestDrm, liveMediaDestination } from "./protection";
+import {
+	liveFallbackRegionIssues,
+	liveManifestDrm,
+	liveMediaDestination,
+} from "./protection";
 import type { LiveChannelPlan, LiveManifestPlan, LiveMuxing } from "./schema";
 
 /**
@@ -679,6 +683,8 @@ function codecKind(
 }
 
 export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
+	const fallbackIssue = liveFallbackRegionIssues(plan)[0];
+	if (fallbackIssue) throw new Error(fallbackIssue.message);
 	const versionError = checkMslEncoderVersion(
 		plan.outputs,
 		plan.bitmovin.encoderVersion,
@@ -822,9 +828,6 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 		payload: {
 			name: plan.name,
 			cloudRegion: plan.bitmovin.cloudRegion,
-			...(plan.bitmovin.fallbackCloudRegions?.length
-				? { fallbackCloudRegions: plan.bitmovin.fallbackCloudRegions }
-				: {}),
 			encoderVersion: plan.bitmovin.encoderVersion,
 			...(plan.bitmovin.staticIpId
 				? { staticIpId: plan.bitmovin.staticIpId }

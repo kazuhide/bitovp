@@ -513,6 +513,7 @@ it.each([
 				height: 1080,
 				sampleAspectRatio: "4:3",
 			});
+		else expect(manifest.scoring).not.toHaveProperty("referenceGeometry");
 		const prefix = entry[0].replace("manifest.json", "");
 		const result = JSON.stringify({
 			frames: [{ frameNum: 0, metrics: { vmaf: 95 } }],

@@ -1241,13 +1241,16 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				const sar = measurementMethod
 					? sampleAspectRatioFromProbe(videoStream?.sample_aspect_ratio)
 					: undefined;
-				const referenceGeometry = sar
-					? {
-							width: codedGeometry.width,
-							height: codedGeometry.height,
-							sampleAspectRatio: sar,
-						}
-					: undefined;
+				// Square pixels need no display claim. Preserve the request accepted
+				// by existing digest-pinned generation-6 cloud workers.
+				const referenceGeometry =
+					sar && sar !== "1:1"
+						? {
+								width: codedGeometry.width,
+								height: codedGeometry.height,
+								sampleAspectRatio: sar,
+							}
+						: undefined;
 				const geometry = {
 					...codedGeometry,
 					...(referenceGeometry

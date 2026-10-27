@@ -2914,6 +2914,7 @@ it.each([
 it.each([
 	"4:3",
 	"1:1",
+	"4:4",
 	undefined,
 	"N/A",
 	"0:1",
@@ -2962,18 +2963,20 @@ it.each([
 		status: "FINISHED",
 		results: 2,
 	});
-	const known = sar === "4:3" || sar === "1:1";
+	const known = sar === "4:3" || sar === "1:1" || sar === "4:4";
 	for (const [request] of cloudScore.mock.calls) {
 		expect(request.options.scaleToReference).toEqual({
 			width: 1920,
 			height: 1080,
 		});
-		if (known)
+		if (sar === "4:3")
 			expect(request.options.referenceGeometry).toEqual({
 				width: codedWidth,
 				height: 1080,
 				sampleAspectRatio: sar,
 			});
+		// This option is copied into manifest.scoring. Old generation-6 images
+		// reject the new field even when its geometry is equivalent to 1:1.
 		else expect(request.options).not.toHaveProperty("referenceGeometry");
 	}
 	expect((t.job.params as Row).reference).toMatchObject({
@@ -2982,6 +2985,7 @@ it.each([
 		codedWidth,
 		codedHeight: 1080,
 		sampleAspectRatioPolicy: known ? "reported" : "legacy-square-pixel",
+		...(known ? { sampleAspectRatio: sar === "4:4" ? "1:1" : sar } : {}),
 	});
 });
 

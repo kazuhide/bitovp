@@ -1,5 +1,6 @@
 import { stringify } from "yaml";
 import { h26xPictureControls } from "./codec-controls";
+import { codecDetailWireControls } from "./codec-detail-controls";
 import { CODEC_ENUM_VALUES } from "./codec-enums";
 import {
 	joinFilePath,
@@ -175,15 +176,9 @@ function isAudioCodec(
 	rendition: AnyRendition,
 ): rendition is Extract<
 	AnyRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" }
+	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
 > {
-	return (
-		rendition.codec === "AAC" ||
-		rendition.codec === "OPUS" ||
-		rendition.codec === "DOLBY_ATMOS" ||
-		rendition.codec === "DDPLUS" ||
-		rendition.codec === "DD"
-	);
+	return AUDIO_CODECS.has(rendition.codec);
 }
 
 function isPerTitle(rendition: AnyRendition): boolean {
@@ -498,6 +493,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const vp9: Tree = {};
 	const av1: Tree = {};
 	const aac: Tree = {};
+	const ac3: Tree = {};
+	const eac3: Tree = {};
 	const opus: Tree = {};
 	const imsc: Tree = {};
 	const dolbyAtmos: Tree = {};
@@ -527,6 +524,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		if (rendition.codec === "H265") {
 			h265[rendition.key] = {
 				properties: dense({
+					...codecDetailWireControls("H265", rendition),
 					encodingMode: rendition.encodingMode,
 					...h26xPictureControls(rendition),
 					width: rendition.width,
@@ -597,6 +595,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		if (rendition.codec === "VP9") {
 			vp9[rendition.key] = {
 				properties: dense({
+					...codecDetailWireControls("VP9", rendition),
 					encodingMode: rendition.encodingMode,
 					name: rendition.name,
 					width: rendition.width,
@@ -629,6 +628,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		if (rendition.codec === "AV1") {
 			av1[rendition.key] = {
 				properties: dense({
+					...codecDetailWireControls("AV1", rendition),
 					encodingMode: rendition.encodingMode,
 					name: rendition.name,
 					width: rendition.width,
@@ -661,6 +661,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		if (rendition.codec === "H264") {
 			h264[rendition.key] = {
 				properties: dense({
+					...codecDetailWireControls("H264", rendition),
 					encodingMode: rendition.encodingMode,
 					...h26xPictureControls(rendition),
 					width: rendition.width,
@@ -731,6 +732,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		} else if (rendition.codec === "AAC") {
 			aac[rendition.key] = {
 				properties: {
+					...(rendition.cutoffFrequency !== undefined
+						? { cutoffFrequency: rendition.cutoffFrequency }
+						: {}),
 					...(rendition.name ? { name: rendition.name } : {}),
 					bitrate: rendition.bitrate,
 					rate: rendition.rate,
@@ -740,6 +744,24 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			codecRef.set(
 				rendition.key,
 				`$/configurations/audio/aac/${rendition.key}`,
+			);
+		} else if (rendition.codec === "AC3" || rendition.codec === "EAC3") {
+			const tree = rendition.codec === "AC3" ? ac3 : eac3;
+			tree[rendition.key] = {
+				properties: dense({
+					name: rendition.name,
+					bitrate: rendition.bitrate,
+					rate: rendition.rate,
+					cutoffFrequency: rendition.cutoffFrequency,
+					channelLayout:
+						CODEC_ENUM_VALUES.Ac3ChannelLayout[
+							rendition.channelLayout as keyof typeof CODEC_ENUM_VALUES.Ac3ChannelLayout
+						],
+				}),
+			};
+			codecRef.set(
+				rendition.key,
+				`$/configurations/audio/${rendition.codec.toLowerCase()}/${rendition.key}`,
 			);
 		} else if (rendition.codec === "DOLBY_ATMOS") {
 			dolbyAtmos[rendition.key] = {
@@ -1950,6 +1972,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					}
 				: {}),
 			...(Object.keys(aac).length > 0 ||
+			Object.keys(ac3).length > 0 ||
+			Object.keys(eac3).length > 0 ||
 			Object.keys(opus).length > 0 ||
 			Object.keys(dolbyAtmos).length > 0 ||
 			Object.keys(ddPlus).length > 0 ||
@@ -1957,6 +1981,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				? {
 						audio: {
 							...(Object.keys(aac).length > 0 ? { aac } : {}),
+							...(Object.keys(ac3).length > 0 ? { ac3 } : {}),
+							...(Object.keys(eac3).length > 0 ? { eac3 } : {}),
 							...(Object.keys(opus).length > 0 ? { opus } : {}),
 							...(Object.keys(dolbyAtmos).length > 0 ? { dolbyAtmos } : {}),
 							...(Object.keys(ddPlus).length > 0

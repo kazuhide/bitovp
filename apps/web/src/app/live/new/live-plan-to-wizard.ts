@@ -155,6 +155,9 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 			codec: r.codec,
 			bitrate: r.bitrate ?? 0,
 			rate: r.rate ?? 0,
+			...("cutoffFrequency" in r && r.cutoffFrequency !== undefined
+				? { cutoffFrequency: r.cutoffFrequency }
+				: {}),
 			...(r.channelLayout ? { channelLayout: r.channelLayout } : {}),
 			...(containerOf(r.key) ? { container: containerOf(r.key) } : {}),
 			...(cmafOf(r.key) ? { cmaf: cmafOf(r.key) } : {}),

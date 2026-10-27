@@ -9,6 +9,7 @@ import {
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
 import { CMAF_CHUNK_FIELDS } from "@/app/vod/new/cmaf-fields";
+import { AudioCutoffEditor } from "@/app/vod/new/codec-detail-editor";
 import { HlsVideoUriField } from "@/app/vod/new/hls-video-uri-field";
 import {
 	audioCopyLabel,
@@ -584,6 +585,8 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									onChange={(e) =>
 										patchAudio(index, {
 											codec: e.target.value as LiveAudioRendition["codec"],
+											cutoffFrequency: undefined,
+											channelLayout: undefined,
 										})
 									}
 								>
@@ -663,6 +666,15 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</SelectNative>
 								</Field>
 							</div>
+							{audio.codec === "AAC" ? (
+								<AudioCutoffEditor
+									id={`lw-a-${index}-cutoff`}
+									value={audio.cutoffFrequency}
+									onChange={(cutoffFrequency) =>
+										patchAudio(index, { cutoffFrequency })
+									}
+								/>
+							) : null}
 							<Field
 								label={t("wizard.container")}
 								htmlFor={`lw-a-${index}-container`}

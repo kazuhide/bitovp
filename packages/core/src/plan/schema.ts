@@ -2,6 +2,12 @@ import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
 import { h26xPictureControlsSchema } from "./codec-controls";
+import {
+	av1DetailControlsSchema,
+	h264DetailControlsSchema,
+	h265DetailControlsSchema,
+	vp9DetailControlsSchema,
+} from "./codec-detail-controls";
 import { codecEnumSchema } from "./codec-enums";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
@@ -49,6 +55,8 @@ export const AUDIO_CODECS = new Set([
 	"DOLBY_ATMOS",
 	"DDPLUS",
 	"DD",
+	"AC3",
+	"EAC3",
 ]);
 
 /**
@@ -643,6 +651,7 @@ const codecEncodingModeSchema = z.enum([
 ]);
 
 export const h264RenditionSchema = z.strictObject({
+	...h264DetailControlsSchema.shape,
 	...renditionBase,
 	...h26xPictureControlsSchema.shape,
 	codec: z.literal("H264"),
@@ -716,6 +725,7 @@ export const h265V2QualityControlsSchema = z.strictObject({
 export type H265V2QualityControls = z.infer<typeof h265V2QualityControlsSchema>;
 
 export const h265RenditionSchema = z.strictObject({
+	...h265DetailControlsSchema.shape,
 	...renditionBase,
 	...h26xPictureControlsSchema.shape,
 	...h265V2QualityControlsSchema.shape,
@@ -824,6 +834,20 @@ export const ddPlusRenditionSchema = z.strictObject({
 	),
 });
 
+/** AC3/EAC3 configuration endpoints, distinct from the Dolby Digital models. */
+export const ac3RenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("AC3"),
+	name: z.string().optional(),
+	bitrate: z.number().int().positive(),
+	rate: z.number().positive(),
+	channelLayout: codecEnumSchema("Ac3ChannelLayout").default("CL_STEREO"),
+	cutoffFrequency: z.number().int().nonnegative().optional(),
+});
+export const eac3RenditionSchema = ac3RenditionSchema.extend({
+	codec: z.literal("EAC3"),
+});
+
 export const ddRenditionSchema = z.strictObject({
 	...renditionBase,
 	codec: z.literal("DD"),
@@ -836,6 +860,7 @@ export const ddRenditionSchema = z.strictObject({
 });
 
 export const vp9RenditionSchema = z.strictObject({
+	...vp9DetailControlsSchema.shape,
 	...renditionBase,
 	codec: z.literal("VP9"),
 	encodingMode: codecEncodingModeSchema.optional(),
@@ -875,6 +900,7 @@ export const AV1_DYNAMIC_RANGE_FORMATS = [
 ] as const;
 
 export const av1RenditionSchema = z.strictObject({
+	...av1DetailControlsSchema.shape,
 	...renditionBase,
 	codec: z.literal("AV1"),
 	encodingMode: codecEncodingModeSchema.optional(),
@@ -931,6 +957,7 @@ export const imscRenditionSchema = z.strictObject({
 export const aacRenditionSchema = z.strictObject({
 	...renditionBase,
 	codec: z.literal("AAC"),
+	cutoffFrequency: z.number().int().nonnegative().optional(),
 	/** audio-only sample names its config; the ladder samples don't. */
 	name: z.string().optional(),
 	bitrate: z.number().int().positive(),
@@ -953,6 +980,8 @@ export const webVttRenditionSchema = z.strictObject({
 });
 
 export const renditionSchema = z.discriminatedUnion("codec", [
+	ac3RenditionSchema,
+	eac3RenditionSchema,
 	h264RenditionSchema,
 	h265RenditionSchema,
 	vp9RenditionSchema,

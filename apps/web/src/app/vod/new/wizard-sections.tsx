@@ -47,6 +47,7 @@ import {
 	videoKeys,
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
+import { AudioCutoffEditor } from "./codec-detail-editor";
 import { editFilter } from "./filter-editing";
 import { MediaFilterEditor } from "./media-filter-editor";
 import { PerTitleSimulatorLauncher } from "./per-title-simulator-launcher";
@@ -98,6 +99,8 @@ type LadderSectionProps = {
 const VIDEO_CODECS: WizardVideoCodec[] = ["H264", "H265", "VP9", "AV1"];
 const AUDIO_CODECS: WizardAudioCodec[] = [
 	"AAC",
+	"AC3",
+	"EAC3",
 	"OPUS",
 	"DOLBY_ATMOS",
 	"DDPLUS",
@@ -809,6 +812,7 @@ export function LadderSection({
 												patchAudio(index, {
 													codec: e.target.value as WizardAudioCodec,
 													channelLayout: undefined,
+													cutoffFrequency: undefined,
 													...(e.target.value === "OPUS"
 														? {
 																rate: 48000,
@@ -934,6 +938,15 @@ export function LadderSection({
 										onPatch={onPatch}
 									/>
 								)}
+								{(["AAC", "AC3", "EAC3"] as string[]).includes(codec) ? (
+									<AudioCutoffEditor
+										id={`wz-a-${index}-cutoff`}
+										value={audio.cutoffFrequency}
+										onChange={(cutoffFrequency) =>
+											patchAudio(index, { cutoffFrequency })
+										}
+									/>
+								) : null}
 								<ExtrasEditor
 									idBase={`wz-a-${index}-x`}
 									family="audio"

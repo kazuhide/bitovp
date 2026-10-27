@@ -276,6 +276,34 @@ describe("native HEVCv2 quality controls", () => {
 		});
 		return { ops, calls, sdk };
 	}
+	it("serializes width and aspect ratio within the eligible HEVCv2 profile", async () => {
+		const { ops, calls } = setup();
+		const geometry = {
+			width: 1280,
+			displayAspectRatio: { numerator: 16, denominator: 9 },
+		};
+		await executeStep(
+			{
+				step: "codec:v",
+				kind: "CREATE_CODEC_H265",
+				payload: { ...native, ...geometry },
+				refs: {},
+			},
+			{
+				sdk: ops,
+				ids: new Map(),
+				resolveCredential: vi.fn(),
+				poll: { intervalMs: 1, timeoutMs: 10, sleep: async () => {} },
+			},
+		);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.url).toMatch(/video\/h265v2$/);
+		expect(calls[0]?.body).toMatchObject(geometry);
+		expect(calls[0]?.body).toMatchObject({
+			encodingMode: "SMART_PASS",
+			presetConfiguration: "VOD_HIGH_QUALITY",
+		});
+	});
 	it("preserves OFF and every perceptual field through executor, subtype mapping and fetch", async () => {
 		const { ops, calls, sdk } = setup();
 		const quality = {

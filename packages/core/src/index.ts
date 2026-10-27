@@ -612,6 +612,18 @@ export {
 	audioMixPreset,
 	audioMixStreamSchema,
 } from "./plan/audio-mix";
+export type {
+	AV1DetailControls,
+	DetailCodec,
+	H264DetailControls,
+	H265DetailControls,
+	VP9DetailControls,
+} from "./plan/codec-detail-controls";
+export {
+	CODEC_DETAIL_SCHEMAS,
+	codecDetailControls,
+	codecDetailWireControls,
+} from "./plan/codec-detail-controls";
 export { CODEC_ENUM_VALUES, CODEC_OPTIONS } from "./plan/codec-enums";
 export type { CompiledOperation, OperationKind } from "./plan/compiler";
 export {

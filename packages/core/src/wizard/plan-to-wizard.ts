@@ -1,4 +1,5 @@
 import { audioMixStreamSchema } from "../plan/audio-mix";
+import { CODEC_DETAIL_SCHEMAS } from "../plan/codec-detail-controls";
 import { mediaFilterSchema } from "../plan/media-filters";
 import { qcGateSchema } from "../plan/qc-gate";
 import {
@@ -167,6 +168,7 @@ function bagOrUndefined<T extends Record<string, unknown>>(
 // structural (key/ingestKey/codec/height/bitrate) and extras/mode/name
 // fields handled separately. level/presetConfiguration are special-cased.
 const H264_OPTION_KEYS = [
+	...Object.keys(CODEC_DETAIL_SCHEMAS.H264.shape),
 	"minGop",
 	"maxGop",
 	"openGop",
@@ -201,6 +203,7 @@ const H264_OPTION_KEYS = [
 	"colorConfig",
 ];
 const H265_OPTION_KEYS = [
+	...Object.keys(CODEC_DETAIL_SCHEMAS.H265.shape),
 	"minGop",
 	"maxGop",
 	"openGop",
@@ -250,6 +253,7 @@ const H265_OPTION_KEYS = [
 	"dolbyVisionMetadata",
 ];
 const VP9_OPTION_KEYS = [
+	...Object.keys(CODEC_DETAIL_SCHEMAS.VP9.shape),
 	"rate",
 	"cpuUsed",
 	"tileColumns",
@@ -266,6 +270,7 @@ const VP9_OPTION_KEYS = [
 	"colorConfig",
 ];
 const AV1_OPTION_KEYS = [
+	...Object.keys(CODEC_DETAIL_SCHEMAS.AV1.shape),
 	"rate",
 	"presetConfiguration",
 	"autoLevelSetup",
@@ -414,6 +419,8 @@ function readAudio(r: Record<string, unknown>): WizardAudioRendition {
 		rate: asNumber(r.rate) ?? 0,
 		codec,
 	};
+	if (typeof r.cutoffFrequency === "number")
+		audio.cutoffFrequency = r.cutoffFrequency;
 	const extras = readExtras(r, "audio");
 	if (extras) {
 		audio.extras = extras;

@@ -1,10 +1,14 @@
 import type {
+	AV1DetailControls,
+	H264DetailControls,
+	H265DetailControls,
 	H265V2QualityControls,
 	LiveAutoShutdownConfiguration,
 	ScannedMuxing,
 	ScannedStream,
 	ScanPage,
 	VerificationEncodingIdentity,
+	VP9DetailControls,
 } from "@bitovp/core";
 import { bitmovinCapturePort } from "@bitovp/core";
 import type { AuditEntry } from "@bitovp/db";
@@ -100,7 +104,7 @@ export type ColorConfigParams = {
 };
 
 /** Full compiler surface for CREATE_CODEC_H264 (enum fields carry NAMES). */
-export type H264ConfigParams = {
+export type H264ConfigParams = H264DetailControls & {
 	minGop?: number;
 	maxGop?: number;
 	openGop?: boolean;
@@ -143,62 +147,63 @@ export type H264ConfigParams = {
 };
 
 /** Full compiler surface for CREATE_CODEC_H265 (subMe is numeric here). */
-export type H265ConfigParams = H265V2QualityControls & {
-	width?: number;
-	bframes?: number;
-	refFrames?: number;
-	qp?: number;
-	qpMax?: number;
-	strictCbr?: boolean;
-	minGop?: number;
-	maxGop?: number;
-	openGop?: boolean;
-	sampleAspectRatioNumerator?: number;
-	sampleAspectRatioDenominator?: number;
-	displayAspectRatio?: { numerator?: number; denominator?: number };
-	crf?: number;
-	minBitrate?: number;
-	internalHevcV2?: true;
-	encodingMode?: string;
-	name?: string;
-	profile?: string;
-	height?: number;
-	bitrate?: number;
-	rate?: number;
-	level?: string;
-	pixelFormat?: string;
-	minKeyframeInterval?: number;
-	maxKeyframeInterval?: number;
-	rcLookahead?: number;
-	subMe?: number;
-	maxCTUSize?: string;
-	motionSearch?: string;
-	tuIntraDepth?: string;
-	tuInterDepth?: string;
-	weightPredictionOnPSlice?: boolean;
-	weightPredictionOnBSlice?: boolean;
-	sceneCutThreshold?: number;
-	motionSearchRange?: number;
-	adaptiveQuantizationMode?: string;
-	adaptiveQuantizationStrength?: number;
-	psyRateDistortionOptimization?: number;
-	psyRateDistortionOptimizedQuantization?: number;
-	qpMin?: number;
-	sao?: boolean;
-	hdr?: boolean;
-	masterDisplay?: string;
-	maxContentLightLevel?: number;
-	maxPictureAverageLightLevel?: number;
-	colorConfig?: ColorConfigParams;
-	presetConfiguration?: string;
-	maxBitrate?: number;
-	bufsize?: number;
-	dynamicRangeFormat?: string;
-	levelHighTier?: boolean;
-};
+export type H265ConfigParams = H265DetailControls &
+	H265V2QualityControls & {
+		width?: number;
+		bframes?: number;
+		refFrames?: number;
+		qp?: number;
+		qpMax?: number;
+		strictCbr?: boolean;
+		minGop?: number;
+		maxGop?: number;
+		openGop?: boolean;
+		sampleAspectRatioNumerator?: number;
+		sampleAspectRatioDenominator?: number;
+		displayAspectRatio?: { numerator?: number; denominator?: number };
+		crf?: number;
+		minBitrate?: number;
+		internalHevcV2?: true;
+		encodingMode?: string;
+		name?: string;
+		profile?: string;
+		height?: number;
+		bitrate?: number;
+		rate?: number;
+		level?: string;
+		pixelFormat?: string;
+		minKeyframeInterval?: number;
+		maxKeyframeInterval?: number;
+		rcLookahead?: number;
+		subMe?: number;
+		maxCTUSize?: string;
+		motionSearch?: string;
+		tuIntraDepth?: string;
+		tuInterDepth?: string;
+		weightPredictionOnPSlice?: boolean;
+		weightPredictionOnBSlice?: boolean;
+		sceneCutThreshold?: number;
+		motionSearchRange?: number;
+		adaptiveQuantizationMode?: string;
+		adaptiveQuantizationStrength?: number;
+		psyRateDistortionOptimization?: number;
+		psyRateDistortionOptimizedQuantization?: number;
+		qpMin?: number;
+		sao?: boolean;
+		hdr?: boolean;
+		masterDisplay?: string;
+		maxContentLightLevel?: number;
+		maxPictureAverageLightLevel?: number;
+		colorConfig?: ColorConfigParams;
+		presetConfiguration?: string;
+		maxBitrate?: number;
+		bufsize?: number;
+		dynamicRangeFormat?: string;
+		levelHighTier?: boolean;
+	};
 
 /** Full compiler surface for CREATE_CODEC_VP9. */
-export type Vp9ConfigParams = {
+export type Vp9ConfigParams = VP9DetailControls & {
 	encodingMode?: string;
 	name?: string;
 	width?: number;
@@ -221,7 +226,7 @@ export type Vp9ConfigParams = {
 };
 
 /** Full compiler surface for CREATE_CODEC_AV1. */
-export type Av1ConfigParams = {
+export type Av1ConfigParams = AV1DetailControls & {
 	encodingMode?: string;
 	name?: string;
 	width?: number;
@@ -757,6 +762,7 @@ export type SdkOps = {
 	createVp9Config(p: Vp9ConfigParams): Promise<string>;
 	createAv1Config(p: Av1ConfigParams): Promise<string>;
 	createAacConfig(p: {
+		cutoffFrequency?: number;
 		name?: string;
 		bitrate: number;
 		rate: number;
@@ -771,6 +777,20 @@ export type SdkOps = {
 			dialogueIntelligence?: string;
 			speechThreshold?: number;
 		};
+	}): Promise<string>;
+	createAc3Config(p: {
+		name?: string;
+		bitrate: number;
+		rate: number;
+		channelLayout: string;
+		cutoffFrequency?: number;
+	}): Promise<string>;
+	createEac3Config(p: {
+		name?: string;
+		bitrate: number;
+		rate: number;
+		channelLayout: string;
+		cutoffFrequency?: number;
 	}): Promise<string>;
 	createDolbyDigitalPlusConfig(p: {
 		name?: string;

@@ -23,6 +23,7 @@ import type {
 	WizardVp9Options,
 } from "./build-plan";
 import { BurnInSrtEditor } from "./burn-in-srt-editor";
+import { CodecDetailEditor } from "./codec-detail-editor";
 import { CODEC_OPTIONS } from "./codec-options";
 import { HevcV2QualityEditor } from "./hevc-v2-quality-editor";
 import { HlsVideoUriField } from "./hls-video-uri-field";
@@ -596,6 +597,12 @@ export function H264AdvancedEditor({
 					onChange({ ...options, displayAspectRatio })
 				}
 			/>
+			<CodecDetailEditor
+				idBase={`${idBase}-detail`}
+				codec="H264"
+				value={options}
+				onChange={onChange}
+			/>
 			<ColorConfigEditor
 				idBase={`${idBase}-color`}
 				value={options.colorConfig}
@@ -607,6 +614,9 @@ export function H264AdvancedEditor({
 }
 
 const H265V2_FIELDS: OptionFieldSpec[] = [
+	...H26X_PICTURE_FIELDS.filter((field) =>
+		field.key.startsWith("sampleAspectRatio"),
+	),
 	{
 		key: "rate",
 		labelKey: "wizard.frameRateFps",
@@ -654,6 +664,13 @@ export function H265V2AdvancedEditor({
 					onChange={onChange}
 				/>
 			) : null}
+			<DisplayAspectRatioEditor
+				idBase={idBase}
+				value={options.displayAspectRatio}
+				onChange={(displayAspectRatio) =>
+					onChange({ ...options, displayAspectRatio })
+				}
+			/>
 			<ColorConfigEditor
 				idBase={`${idBase}-color`}
 				value={options.colorConfig}
@@ -721,6 +738,12 @@ export function H265AdvancedEditor({
 					onChange={onChange}
 				/>
 			</Collapsible>
+			<CodecDetailEditor
+				idBase={`${idBase}-detail`}
+				codec="H265"
+				value={options}
+				onChange={onChange}
+			/>
 			<ColorConfigEditor
 				idBase={`${idBase}-color`}
 				value={options.colorConfig}
@@ -864,6 +887,12 @@ export function Vp9AdvancedEditor({
 				fields={VP9_FIELDS}
 				onChange={onChange}
 			/>
+			<CodecDetailEditor
+				idBase={`${idBase}-detail`}
+				codec="VP9"
+				value={options}
+				onChange={onChange}
+			/>
 			<ColorConfigEditor
 				idBase={`${idBase}-color`}
 				value={options.colorConfig}
@@ -915,6 +944,12 @@ export function Av1AdvancedEditor({
 				idBase={idBase}
 				value={options}
 				fields={AV1_FIELDS}
+				onChange={onChange}
+			/>
+			<CodecDetailEditor
+				idBase={`${idBase}-detail`}
+				codec="AV1"
+				value={options}
 				onChange={onChange}
 			/>
 			<ColorConfigEditor

@@ -1,4 +1,8 @@
 import { h26xPictureControls } from "./codec-controls";
+import {
+	codecAspectRatioControls,
+	codecDetailControls,
+} from "./codec-detail-controls";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import {
 	type HlsAudioMediaDefaults,
@@ -82,6 +86,8 @@ export type OperationKind =
 	| "CREATE_CODEC_OPUS"
 	| "CREATE_CODEC_IMSC"
 	| "CREATE_CODEC_DOLBY_ATMOS"
+	| "CREATE_CODEC_AC3"
+	| "CREATE_CODEC_EAC3"
 	| "CREATE_CODEC_DDPLUS"
 	| "CREATE_CODEC_DD"
 	| "CREATE_CODEC_WEBVTT"
@@ -379,12 +385,14 @@ function isAudioCodec(
 	rendition: PlanRendition,
 ): rendition is Extract<
 	PlanRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" }
+	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
 > {
 	return (
 		rendition.codec === "AAC" ||
 		rendition.codec === "OPUS" ||
 		rendition.codec === "DOLBY_ATMOS" ||
+		rendition.codec === "AC3" ||
+		rendition.codec === "EAC3" ||
 		rendition.codec === "DDPLUS" ||
 		rendition.codec === "DD"
 	);
@@ -430,8 +438,10 @@ function streamName(rendition: PlanRendition): string {
 			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
 		case "DOLBY_ATMOS":
 			return `Stream Atmos ${rendition.bitrate}bps`;
+		case "AC3":
+		case "EAC3":
 		case "DDPLUS":
-			return `Stream DDPLUS ${kbps(rendition.bitrate)}`;
+			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
 		case "DD":
 			return `Stream DD ${kbps(rendition.bitrate)}`;
 		case "WEBVTT":
@@ -1031,6 +1041,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					step: `codec:${rendition.key}`,
 					kind: "CREATE_CODEC_H264",
 					payload: {
+						...codecDetailControls("H264", rendition),
 						...(rendition.encodingMode
 							? { encodingMode: rendition.encodingMode }
 							: {}),
@@ -1137,6 +1148,10 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						step: `codec:${rendition.key}`,
 						kind: "CREATE_CODEC_H265",
 						payload: {
+							...codecAspectRatioControls(rendition),
+							...(rendition.width !== undefined
+								? { width: rendition.width }
+								: {}),
 							internalHevcV2: true,
 							bcfVersion: plan.internal.hevcV2.bcfVersion,
 							...(rendition.name ? { name: rendition.name } : {}),
@@ -1175,6 +1190,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						kind: "CREATE_CODEC_H265",
 						// Field order mirrors the python sample constructors.
 						payload: {
+							...codecDetailControls("H265", rendition),
 							...h26xPictureControls(rendition),
 							...(rendition.width !== undefined
 								? { width: rendition.width }
@@ -1318,6 +1334,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					step: `codec:${rendition.key}`,
 					kind: "CREATE_CODEC_VP9",
 					payload: {
+						...codecDetailControls("VP9", rendition),
 						...(rendition.encodingMode
 							? { encodingMode: rendition.encodingMode }
 							: {}),
@@ -1369,6 +1386,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					step: `codec:${rendition.key}`,
 					kind: "CREATE_CODEC_AV1",
 					payload: {
+						...codecDetailControls("AV1", rendition),
 						...(rendition.encodingMode
 							? { encodingMode: rendition.encodingMode }
 							: {}),
@@ -1426,6 +1444,10 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							? "CREATE_CODEC_OPUS"
 							: "CREATE_CODEC_AAC",
 					payload: {
+						...(rendition.codec === "AAC" &&
+						rendition.cutoffFrequency !== undefined
+							? { cutoffFrequency: rendition.cutoffFrequency }
+							: {}),
 						...(rendition.name ? { name: rendition.name } : {}),
 						bitrate: rendition.bitrate,
 						rate: rendition.rate,
@@ -1442,6 +1464,24 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						bitrate: rendition.bitrate,
 						rate: rendition.rate,
 						loudnessControl: rendition.loudnessControl,
+					},
+					refs: {},
+				});
+			} else if (rendition.codec === "AC3" || rendition.codec === "EAC3") {
+				ops.push({
+					step: `codec:${rendition.key}`,
+					kind:
+						rendition.codec === "AC3"
+							? "CREATE_CODEC_AC3"
+							: "CREATE_CODEC_EAC3",
+					payload: {
+						...(rendition.name ? { name: rendition.name } : {}),
+						bitrate: rendition.bitrate,
+						rate: rendition.rate,
+						channelLayout: rendition.channelLayout,
+						...(rendition.cutoffFrequency !== undefined
+							? { cutoffFrequency: rendition.cutoffFrequency }
+							: {}),
 					},
 					refs: {},
 				});

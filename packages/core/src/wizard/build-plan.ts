@@ -2,6 +2,13 @@ import {
 	type H26xPictureControls,
 	h26xPictureControls,
 } from "../plan/codec-controls";
+import {
+	type AV1DetailControls,
+	codecDetailControls,
+	type H264DetailControls,
+	type H265DetailControls,
+	type VP9DetailControls,
+} from "../plan/codec-detail-controls";
 import { hlsLegSelected, hlsVersionForLegs } from "../plan/hls-legs";
 import type { QcGate } from "../plan/qc-gate";
 import {
@@ -321,97 +328,99 @@ export type WizardRenditionExtras = {
 	filters?: { filterKey: string; position: number }[];
 };
 
-export type WizardH264Options = H26xPictureControls & {
-	crf?: number;
-	minBitrate?: number;
-	maxBitrate?: number;
-	bufsize?: number;
-	profile?: "BASELINE" | "MAIN" | "HIGH" | "HIGH422";
-	level?: string;
-	/** null = per-title templates leave the preset to the algorithm. */
-	presetConfiguration?: string | null;
-	rate?: number;
-	minKeyframeInterval?: number;
-	maxKeyframeInterval?: number;
-	slices?: number;
-	trellis?: string;
-	mvSearchRangeMax?: number;
-	rcLookahead?: number;
-	subMe?: string;
-	motionEstimationMethod?: string;
-	sceneCutThreshold?: number;
-	adaptiveQuantizationMode?: string;
-	adaptiveQuantizationStrength?: number;
-	mvPredictionMode?: string;
-	psyRateDistortionOptimization?: number;
-	psyTrellis?: number;
-	refFrames?: number;
-	bframes?: number;
-	cabac?: boolean;
-	adaptiveSpatialTransform?: boolean;
-	weightedPredictionPFrames?: "DISABLED" | "SIMPLE" | "SMART";
-	colorConfig?: WizardColorConfig;
-};
-
-export type WizardH265Options = H26xPictureControls & {
-	bframes?: number;
-	refFrames?: number;
-	qp?: number;
-	qpMax?: number;
-	strictCbr?: boolean;
-	crf?: number;
-	minBitrate?: number;
-	/** Native HEVCv2 controls; retained on codec changes for explicit validation. */
-	motionCompensatedTemporalFiltering?: "AUTO" | "OFF" | "ON";
-	rateControlModeConfig?: H265V2PerceptualQualityModeConfig;
-	level?: string;
-	profile?: "MAIN" | "MAIN10";
-	presetConfiguration?: string;
-	/** Explicit null = "leave to the algorithm" (per-title samples). */
-	rate?: number | null;
-	maxBitrate?: number;
-	bufsize?: number;
-	levelHighTier?: boolean;
-	dynamicRangeFormat?:
-		| "DOLBY_VISION"
-		| "DOLBY_VISION_PROFILE_5"
-		| "DOLBY_VISION_PROFILE_8_1"
-		| "HDR10"
-		| "HLG"
-		| "SDR";
-	minKeyframeInterval?: number;
-	maxKeyframeInterval?: number;
-	rcLookahead?: number;
-	subMe?: number;
-	maxCtuSize?: string;
-	motionSearch?: string;
-	tuIntraDepth?: string;
-	tuInterDepth?: string;
-	weightPredictionOnPSlice?: boolean;
-	weightPredictionOnBSlice?: boolean;
-	sceneCutThreshold?: number;
-	motionSearchRange?: number;
-	adaptiveQuantizationMode?: string;
-	adaptiveQuantizationStrength?: number;
-	psyRateDistortionOptimization?: number;
-	psyRateDistortionOptimizedQuantization?: number;
-	qpMin?: number;
-	sao?: boolean;
-	// HDR10 group (MAIN10 + PQ + mastering metadata)
-	hdr?: boolean;
-	masterDisplay?: string;
-	maxContentLightLevel?: number;
-	maxPictureAverageLightLevel?: number;
-	pixelFormat?: string;
-	colorConfig?: WizardColorConfig;
-	dolbyVisionMetadata?: {
-		profile: "DVHE_04" | "DVHE_05" | "DVHE_07" | "HEV1_08" | "AVC3_09";
-		metadataSource: "INPUT_STREAM" | "EMBEDDED";
-		metadataStreamKey?: string;
+export type WizardH264Options = H264DetailControls &
+	H26xPictureControls & {
+		crf?: number;
+		minBitrate?: number;
+		maxBitrate?: number;
+		bufsize?: number;
+		profile?: "BASELINE" | "MAIN" | "HIGH" | "HIGH422";
+		level?: string;
+		/** null = per-title templates leave the preset to the algorithm. */
+		presetConfiguration?: string | null;
+		rate?: number;
+		minKeyframeInterval?: number;
+		maxKeyframeInterval?: number;
+		slices?: number;
+		trellis?: string;
+		mvSearchRangeMax?: number;
+		rcLookahead?: number;
+		subMe?: string;
+		motionEstimationMethod?: string;
+		sceneCutThreshold?: number;
+		adaptiveQuantizationMode?: string;
+		adaptiveQuantizationStrength?: number;
+		mvPredictionMode?: string;
+		psyRateDistortionOptimization?: number;
+		psyTrellis?: number;
+		refFrames?: number;
+		bframes?: number;
+		cabac?: boolean;
+		adaptiveSpatialTransform?: boolean;
+		weightedPredictionPFrames?: "DISABLED" | "SIMPLE" | "SMART";
+		colorConfig?: WizardColorConfig;
 	};
-};
 
-export type WizardVp9Options = {
+export type WizardH265Options = H265DetailControls &
+	H26xPictureControls & {
+		bframes?: number;
+		refFrames?: number;
+		qp?: number;
+		qpMax?: number;
+		strictCbr?: boolean;
+		crf?: number;
+		minBitrate?: number;
+		/** Native HEVCv2 controls; retained on codec changes for explicit validation. */
+		motionCompensatedTemporalFiltering?: "AUTO" | "OFF" | "ON";
+		rateControlModeConfig?: H265V2PerceptualQualityModeConfig;
+		level?: string;
+		profile?: "MAIN" | "MAIN10";
+		presetConfiguration?: string;
+		/** Explicit null = "leave to the algorithm" (per-title samples). */
+		rate?: number | null;
+		maxBitrate?: number;
+		bufsize?: number;
+		levelHighTier?: boolean;
+		dynamicRangeFormat?:
+			| "DOLBY_VISION"
+			| "DOLBY_VISION_PROFILE_5"
+			| "DOLBY_VISION_PROFILE_8_1"
+			| "HDR10"
+			| "HLG"
+			| "SDR";
+		minKeyframeInterval?: number;
+		maxKeyframeInterval?: number;
+		rcLookahead?: number;
+		subMe?: number;
+		maxCtuSize?: string;
+		motionSearch?: string;
+		tuIntraDepth?: string;
+		tuInterDepth?: string;
+		weightPredictionOnPSlice?: boolean;
+		weightPredictionOnBSlice?: boolean;
+		sceneCutThreshold?: number;
+		motionSearchRange?: number;
+		adaptiveQuantizationMode?: string;
+		adaptiveQuantizationStrength?: number;
+		psyRateDistortionOptimization?: number;
+		psyRateDistortionOptimizedQuantization?: number;
+		qpMin?: number;
+		sao?: boolean;
+		// HDR10 group (MAIN10 + PQ + mastering metadata)
+		hdr?: boolean;
+		masterDisplay?: string;
+		maxContentLightLevel?: number;
+		maxPictureAverageLightLevel?: number;
+		pixelFormat?: string;
+		colorConfig?: WizardColorConfig;
+		dolbyVisionMetadata?: {
+			profile: "DVHE_04" | "DVHE_05" | "DVHE_07" | "HEV1_08" | "AVC3_09";
+			metadataSource: "INPUT_STREAM" | "EMBEDDED";
+			metadataStreamKey?: string;
+		};
+	};
+
+export type WizardVp9Options = VP9DetailControls & {
 	rate?: number | null;
 	cpuUsed?: number;
 	tileColumns?: number;
@@ -429,7 +438,7 @@ export type WizardVp9Options = {
 };
 
 /** AV1 (Av1VideoConfiguration) level setup and HDR metadata. */
-export type WizardAv1Options = {
+export type WizardAv1Options = AV1DetailControls & {
 	rate?: number | null;
 	presetConfiguration?: "VOD_QUALITY" | "VOD_STANDARD" | "VOD_SPEED";
 	autoLevelSetup?: "ENABLED" | "DISABLED";
@@ -530,7 +539,14 @@ export type WizardMuxing = {
 };
 
 export type WizardVideoCodec = "H264" | "H265" | "H265V2" | "VP9" | "AV1";
-export type WizardAudioCodec = "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD";
+export type WizardAudioCodec =
+	| "AAC"
+	| "OPUS"
+	| "DOLBY_ATMOS"
+	| "DDPLUS"
+	| "DD"
+	| "AC3"
+	| "EAC3";
 
 export type WizardVideoRendition = {
 	width?: number;
@@ -557,6 +573,7 @@ export type WizardVideoRendition = {
 };
 
 export type WizardAudioRendition = {
+	cutoffFrequency?: number;
 	bitrate: number;
 	rate: number;
 	codec?: WizardAudioCodec;
@@ -1729,6 +1746,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			return prune({
 				...shared,
 				codec: "H265" as const,
+				...codecDetailControls("H265", o),
 				name: str(video.extras?.name),
 				height: video.height,
 				bitrate,
@@ -1794,6 +1812,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			return prune({
 				...shared,
 				codec: "VP9" as const,
+				...codecDetailControls("VP9", o),
 				name: str(video.extras?.name),
 				height: video.height,
 				bitrate,
@@ -1820,6 +1839,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			return prune({
 				...shared,
 				codec: "AV1" as const,
+				...codecDetailControls("AV1", o),
 				name: str(video.extras?.name),
 				height: video.height,
 				bitrate,
@@ -1840,6 +1860,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		return prune({
 			...shared,
 			codec: "H264" as const,
+			...codecDetailControls("H264", o),
 			name: str(video.extras?.name),
 			height: video.height,
 			bitrate,
@@ -1910,13 +1931,21 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				loudnessControl: audio.loudness ? prune(audio.loudness) : undefined,
 			});
 		}
-		if (codec === "DDPLUS" || codec === "DD") {
+		if (
+			codec === "DDPLUS" ||
+			codec === "DD" ||
+			codec === "AC3" ||
+			codec === "EAC3"
+		) {
 			return prune({
 				...shared,
 				codec,
 				bitrate: audio.bitrate,
 				rate: audio.rate,
 				channelLayout: str(audio.channelLayout),
+				...(codec === "AC3" || codec === "EAC3"
+					? { cutoffFrequency: audio.cutoffFrequency }
+					: {}),
 			});
 		}
 		if (codec === "OPUS")
@@ -1931,6 +1960,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		return prune({
 			...shared,
 			codec: "AAC" as const,
+			cutoffFrequency: audio.cutoffFrequency,
 			bitrate: audio.bitrate,
 			rate: audio.rate,
 			channelLayout: audio.channelLayout ?? "CL_STEREO",

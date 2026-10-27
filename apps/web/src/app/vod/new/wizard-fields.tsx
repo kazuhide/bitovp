@@ -51,7 +51,9 @@ export type OptionValue = string | number | boolean | null | undefined;
 
 export type OptionFieldSpec = {
 	key: string;
-	labelKey: MessageKey;
+	labelKey?: MessageKey;
+	label?: string;
+	help?: string;
 	/** "num" | "text" | "bool" | enum options for a select. */
 	control:
 		| "num"
@@ -212,9 +214,13 @@ export function OptionsGrid<T extends object>({
 				return (
 					<Field
 						key={spec.key}
-						label={t(spec.labelKey)}
+						label={spec.label ?? (spec.labelKey ? t(spec.labelKey) : spec.key)}
 						htmlFor={id}
-						{...(spec.hintKey ? { help: t(spec.hintKey) } : {})}
+						{...(spec.help
+							? { help: spec.help }
+							: spec.hintKey
+								? { help: t(spec.hintKey) }
+								: {})}
 					>
 						<OptionControl
 							id={id}

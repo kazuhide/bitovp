@@ -38,6 +38,8 @@ const EXPECTED: Record<string, "video" | "audio" | "subtitle"> = {
 	OPUS: "audio",
 	DOLBY_ATMOS: "audio",
 	DDPLUS: "audio",
+	AC3: "audio",
+	EAC3: "audio",
 	DD: "audio",
 	WEBVTT: "subtitle",
 	IMSC: "subtitle",
@@ -70,6 +72,6 @@ describe("codec → rendition family", () => {
 		for (const codec of AUDIO_CODECS) {
 			expect(renditionFamily({ codec } as never), String(codec)).toBe("audio");
 		}
-		expect(AUDIO_CODECS.size).toBe(5);
+		expect(AUDIO_CODECS.size).toBe(7);
 	});
 });

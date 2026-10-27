@@ -1,4 +1,4 @@
-import { OPUS_CHANNEL_LAYOUTS } from "@bitovp/core";
+import { CODEC_OPTIONS, OPUS_CHANNEL_LAYOUTS } from "@bitovp/core";
 
 // SDK enum keys, not wire values: sdkEnumValue resolves them at execution.
 // Kept browser-safe; parity with the installed SDK is covered by UI tests.
@@ -31,10 +31,12 @@ const DOLBY_CHANNEL_LAYOUTS = [
 ] as const;
 
 export const AUDIO_CHANNEL_LAYOUTS: Record<
-	"AAC" | "OPUS" | "DD" | "DDPLUS",
+	"AAC" | "OPUS" | "DD" | "DDPLUS" | "AC3" | "EAC3",
 	readonly string[]
 > = {
 	AAC: AAC_CHANNEL_LAYOUTS,
+	AC3: CODEC_OPTIONS.Ac3ChannelLayout,
+	EAC3: CODEC_OPTIONS.Ac3ChannelLayout,
 	OPUS: OPUS_CHANNEL_LAYOUTS,
 	DD: DOLBY_CHANNEL_LAYOUTS,
 	DDPLUS: DOLBY_CHANNEL_LAYOUTS,

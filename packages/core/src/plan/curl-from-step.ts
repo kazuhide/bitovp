@@ -1,3 +1,7 @@
+import {
+	codecDetailWireControls,
+	type DetailCodec,
+} from "./codec-detail-controls";
 import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
 import type { StepLogEntry } from "./steplog";
@@ -194,6 +198,14 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 	CREATE_CODEC_DOLBY_ATMOS: {
 		method: "POST",
 		template: "/encoding/configurations/audio/dolby-atmos",
+	},
+	CREATE_CODEC_AC3: {
+		method: "POST",
+		template: "/encoding/configurations/audio/ac3",
+	},
+	CREATE_CODEC_EAC3: {
+		method: "POST",
+		template: "/encoding/configurations/audio/eac3",
 	},
 	CREATE_CODEC_DDPLUS: {
 		method: "POST",
@@ -575,6 +587,46 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	if (
+		["CREATE_CODEC_AAC", "CREATE_CODEC_AC3", "CREATE_CODEC_EAC3"].includes(
+			entry.kind,
+		) &&
+		request !== null &&
+		typeof request === "object" &&
+		!Array.isArray(request)
+	) {
+		const snapshot = request as Record<string, unknown>;
+		if (snapshot.channelLayout !== undefined) {
+			const name =
+				entry.kind === "CREATE_CODEC_AAC"
+					? "AacChannelLayout"
+					: "Ac3ChannelLayout";
+			const layout = codecEnumSchema(name).safeParse(snapshot.channelLayout);
+			if (!layout.success)
+				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+			const values: Readonly<Record<string, string>> = CODEC_ENUM_VALUES[name];
+			request = { ...snapshot, channelLayout: values[layout.data] };
+		}
+	}
+	if (
+		[
+			"CREATE_CODEC_H264",
+			"CREATE_CODEC_H265",
+			"CREATE_CODEC_VP9",
+			"CREATE_CODEC_AV1",
+		].includes(entry.kind) &&
+		request !== null &&
+		typeof request === "object" &&
+		!Array.isArray(request)
+	) {
+		try {
+			const codec = entry.kind.slice("CREATE_CODEC_".length) as DetailCodec;
+			request = { ...request, ...codecDetailWireControls(codec, request) };
+		} catch {
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+		}
+	}
+
 	if (
 		entry.kind === "CREATE_CODEC_AV1" &&
 		request !== null &&

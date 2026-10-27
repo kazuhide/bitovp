@@ -37,5 +37,39 @@ export async function sampleLiveStorageObjects(
 			})),
 		),
 	);
-	return listed.flat();
+	type SampledObject = NonNullable<LiveSample["objects"]>[number];
+	const objects = new Map<string, SampledObject>();
+	const ambiguous = new Set<string>();
+	for (const route of listed) {
+		for (const observed of route) {
+			const candidate: SampledObject = observed;
+			const identity = JSON.stringify([candidate.outputKey, candidate.key]);
+			if (ambiguous.has(identity)) continue;
+			const previous = objects.get(identity);
+			if (
+				(candidate.size !== undefined &&
+					(!Number.isSafeInteger(candidate.size) || candidate.size < 0)) ||
+				(previous?.size !== undefined &&
+					candidate.size !== undefined &&
+					previous.size !== candidate.size) ||
+				(previous?.lastModified !== undefined &&
+					candidate.lastModified !== undefined &&
+					previous.lastModified !== candidate.lastModified)
+			) {
+				// Conflicting listings cannot certify bytes; later duplicates do not cure them.
+				objects.delete(identity);
+				ambiguous.add(identity);
+				continue;
+			}
+			const size = previous?.size ?? candidate.size;
+			const lastModified = previous?.lastModified ?? candidate.lastModified;
+			objects.set(identity, {
+				...previous,
+				...candidate,
+				...(size !== undefined ? { size } : {}),
+				...(lastModified !== undefined ? { lastModified } : {}),
+			});
+		}
+	}
+	return [...objects.values()];
 }

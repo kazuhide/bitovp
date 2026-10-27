@@ -108,7 +108,7 @@ const color = fields(
 	"copyColorPrimariesFlag copyColorTransferFlag copyColorSpaceFlag copyChromaLocationFlag copyColorRangeFlag",
 );
 const codec = fields(
-	"motionCompensatedTemporalFiltering profile level maxLevel presetConfiguration trellis subMe motionEstimationMethod adaptiveQuantizationMode mvPredictionMode weightedPredictionPFrames dynamicRangeFormat maxCtuSize motionSearch tuIntraDepth tuInterDepth masterDisplay pixelFormat quality aqMode arnrType autoLevelSetup bAdapt bAdaptiveStrategy bPyramid forceFlush interlaceMode limitReferences limitTransformUnitDepthRecursion maximumTransformUnitSize minCodingUnitSize nalHrd quantizationGroupSize rateDistortionLevelForQuantization rateDistortionPenalty transformSkip videoFormat",
+	"motionCompensatedTemporalFiltering profile level maxLevel detailPreservationMode presetConfiguration trellis subMe motionEstimationMethod adaptiveQuantizationMode mvPredictionMode weightedPredictionPFrames dynamicRangeFormat maxCtuSize motionSearch tuIntraDepth tuInterDepth masterDisplay pixelFormat quality aqMode arnrType autoLevelSetup bAdapt bAdaptiveStrategy bPyramid forceFlush interlaceMode limitReferences limitTransformUnitDepthRecursion maximumTransformUnitSize minCodingUnitSize nalHrd quantizationGroupSize rateDistortionLevelForQuantization rateDistortionPenalty transformSkip videoFormat",
 	"crf minBitrate minGop maxGop qp sampleAspectRatioNumerator sampleAspectRatioDenominator rate minKeyframeInterval maxKeyframeInterval slices mvSearchRangeMax rcLookahead sceneCutThreshold adaptiveQuantizationStrength psyRateDistortionOptimization psyTrellis refFrames bframes maxBitrate bufsize motionSearchRange psyRateDistortionOptimizedQuantization qpMin qpMax maxContentLightLevel maxPictureAverageLightLevel cpuUsed tileColumns rateUndershootPct rateOvershootPct arnrMaxFrames arnrStrength allowedRADLBeforeIDR bframeBias biasPct blurComplexity blurQuants clientBufferSize clientInitialBufferSize deblockAlpha deblockBeta dynamicRateDistortionStrength gopLookahead ipRatio lagInFrames lookaheadSlices maxIntraRate maxMerge noiseReductionInter noiseReductionIntra pbRatio qpOffsetChromaCb qpOffsetChromaCr qpStep quantizerCurveCompression quantizerCurveCompressionFactor rateDistortionLevelForModeDecision scenecutBias sharpness staticThresh targetLevel tileRows",
 	"openGop strictCbr cabac adaptiveSpatialTransform levelHighTier weightPredictionOnPSlice weightPredictionOnBSlice sao hdr lossless adaptiveQuantizationMotion analyzeSourceFramePixels asymetricMotionPartitionsAnalysis automaticAltRefFramesEnabled codingUnitLossless constrainedIntraPrediction copyPicture cutree earlySkip enableHlgSignaling enableHrdSignaling errorResiliencyEnabled evaluationOfIntraModesInBSlices fastSearchForAngularIntraPredictions fastSkipDetectionPFrames frameParallel grainOptimizedRateControl limitModes limitSao lowpassDct macroblockTreeRatecontrol mixedReferences noiseSensitivity rectangularMotionPartitionsAnalysis recursionSkip refineRateDistortionCost rowMultiThreadingEnabled saoNonDeblock signHide skipSplitRateDistortionAnalysis ssimRateDistortionOptimization strongIntraSmoothing temporalMotionVectorPredictors wavefrontParallelProcessing weightedPredictionBFrames",
 	{
@@ -376,7 +376,7 @@ const vod = fields(
 						),
 					}).required({ sources: true }),
 				),
-				encodings: rows(fields("key name cloudRegion")),
+				encodings: rows(fields("key name cloudRegion encoderVersion")),
 				keyframes: rows(fields("key encodingKey", "time")),
 				implicitEncodingKeys: group(fields("video audio")),
 				audioMixStreams: rows(
@@ -902,7 +902,12 @@ export function mergeWizardDraft<T>(
 		}
 		return next;
 	};
-	return merge(base, value, projectWizardDraft(kind, base)) as T;
+	// Older VOD drafts without a version used STABLE, independently of new-form defaults.
+	const snapshot =
+		kind === "vod" && value.encoderVersion === undefined
+			? { ...value, encoderVersion: "STABLE" }
+			: value;
+	return merge(base, snapshot, projectWizardDraft(kind, base)) as T;
 }
 
 export type WizardDraft = { step: number; value: DraftValue };

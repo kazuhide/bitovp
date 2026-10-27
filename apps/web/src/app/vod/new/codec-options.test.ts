@@ -3,6 +3,7 @@ import {
 	Ac3ChannelLayout,
 	AdaptiveQuantMode,
 	AutoLevelSetup,
+	Av1DetailPreservationMode,
 	BAdapt,
 	ColorPrimaries,
 	ColorSpace,
@@ -49,6 +50,7 @@ import { CODEC_OPTIONS } from "./codec-options";
 const sdk = {
 	Ac3ChannelLayout,
 	AutoLevelSetup,
+	Av1DetailPreservationMode,
 	BAdapt,
 	ForceFlushMode,
 	H264BPyramid,

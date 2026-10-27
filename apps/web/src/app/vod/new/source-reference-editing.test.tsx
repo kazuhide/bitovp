@@ -1,17 +1,24 @@
+import { compilePlan, encodingPlanSchema, validatePlan } from "@bitovp/core";
 import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { renderWithQuery as render } from "@/test/render";
 import {
+	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	remapEncodingKeyRefs,
 	type WizardState,
 } from "./build-plan";
+import { planToWizardState } from "./plan-to-wizard";
 import { SourcesSection } from "./sources-section";
 import { LadderSection } from "./wizard-sections";
 
-function mount(initial: WizardState, ladder = false) {
+function mount(
+	initial: WizardState,
+	ladder = false,
+	locale: "en" | "ja" = "en",
+) {
 	function Harness() {
 		const [state, setState] = useState(initial);
 		const patch = (partial: Partial<WizardState>) =>
@@ -27,7 +34,7 @@ function mount(initial: WizardState, ladder = false) {
 			</>
 		);
 	}
-	return render(<Harness />);
+	return render(<Harness />, locale);
 }
 const stateNow = () =>
 	JSON.parse(screen.getByTestId("state").textContent ?? "{}") as WizardState;
@@ -69,6 +76,83 @@ const base: WizardState = {
 	},
 };
 describe("source resource editing", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("edits and clears an imported encoder override in the existing owner row in %s", (locale) => {
+		const plan = encodingPlanSchema.parse(
+			buildPlan({
+				...DEFAULT_WIZARD_STATE,
+				name: "Owner version",
+				timing: "POST_ENCODING",
+				inputFiles: [
+					{
+						key: "main",
+						inputKey: "main",
+						kind: "S3",
+						credentialId: "00000000-0000-4000-8000-000000000001",
+						bucket: "input",
+						path: "source.mp4",
+					},
+				],
+				output: {
+					...DEFAULT_WIZARD_STATE.output,
+					credentialId: "00000000-0000-4000-8000-000000000002",
+					bucket: "output",
+					basePath: "owner-version",
+				},
+				videos: [
+					{
+						codec: "AV1",
+						height: 720,
+						bitrate: 1000000,
+						av1: { detailPreservationMode: "ON" },
+						extras: { encodingKey: "owner" },
+					},
+				],
+				audios: [],
+				sources: {
+					encodings: [
+						{ key: "owner", name: "Owner", encoderVersion: "2.287.0" },
+					],
+					implicitEncodingKeys: { video: "owner" },
+				},
+			}),
+		);
+		mount(planToWizardState(plan), false, locale);
+		const input = screen.getByLabelText(
+			locale === "ja" ? "エンコーダバージョン" : "Encoder version",
+		);
+		expect(input).toHaveValue("2.287.0");
+		expect(input).toHaveAttribute(
+			"placeholder",
+			locale === "ja" ? "(プランの既定)" : "(plan default)",
+		);
+		const currentPlan = () => encodingPlanSchema.parse(buildPlan(stateNow()));
+		const errors = () =>
+			validatePlan(currentPlan()).filter((issue) => issue.level === "error");
+		expect(errors()).toEqual([
+			expect.objectContaining({ code: "PLAN_AV1_DETAIL_PRESERVATION_VERSION" }),
+		]);
+		fireEvent.change(input, { target: { value: "2.291.0" } });
+		expect(stateNow().sources?.encodings?.[0]?.encoderVersion).toBe("2.291.0");
+		expect(currentPlan().encodings?.[0]?.encoderVersion).toBe("2.291.0");
+		expect(errors()).toEqual([]);
+		fireEvent.change(input, { target: { value: "" } });
+		expect(input).toHaveValue("");
+		expect(currentPlan().encodings?.[0]).not.toHaveProperty("encoderVersion");
+		expect(errors()).toEqual([]);
+		expect(
+			compilePlan(currentPlan()).find((op) => op.kind === "CREATE_ENCODING")
+				?.payload.encoderVersion,
+		).toBe("2.291.0");
+	});
+
+	it("keeps encoder override controls out of ordinary single-encoding sources", () => {
+		mount(base);
+		expect(screen.queryByLabelText("Encoder version")).not.toBeInTheDocument();
+	});
+
 	it("allows a complete trim rename without losing focus and preserves references", async () => {
 		const user = userEvent.setup();
 		mount(base);

@@ -154,6 +154,9 @@ export const vp9DetailControlsSchema = z.strictObject({
 export type VP9DetailControls = z.input<typeof vp9DetailControlsSchema>;
 
 export const av1DetailControlsSchema = z.strictObject({
+	detailPreservationMode: codecEnumSchema(
+		"Av1DetailPreservationMode",
+	).optional(),
 	displayAspectRatio: aspectRatioControlsSchema.shape.displayAspectRatio
 		.unwrap()
 		.optional(),
@@ -217,7 +220,10 @@ const DETAIL_ENUM_FIELDS: Partial<
 		pixelFormat: "PixelFormat",
 		presetConfiguration: "PresetConfiguration",
 	},
-	AV1: { pixelFormat: "PixelFormat" },
+	AV1: {
+		detailPreservationMode: "Av1DetailPreservationMode",
+		pixelFormat: "PixelFormat",
+	},
 };
 
 /** Resolve SDK enum names independently for SDK requests, cURL and template exports. */
@@ -390,6 +396,52 @@ export function checkCodecDetailControls(
 				"cutoffFrequency",
 				"Cutoff frequency must not exceed half the audio sample rate (Hz)",
 			);
+	}
+	return issues;
+}
+
+/** Match compiler ownership; aliases remain unresolved external state. */
+export function checkAv1DetailPreservationVersion(
+	plan: EncodingPlan,
+): PlanIssue[] {
+	const issues: PlanIssue[] = [];
+	const minimum = [2, 291, 0] as const;
+	for (const [index, rendition] of plan.renditions.entries()) {
+		if (
+			rendition.codec !== "AV1" ||
+			!["AUTO", "ON"].includes(rendition.detailPreservationMode ?? "")
+		)
+			continue;
+		const owner =
+			plan.encodings?.find(
+				(encoding) => encoding.key === rendition.encodingKey,
+			) ?? plan.encodings?.[0];
+		const selected = owner?.encoderVersion ?? plan.bitmovin.encoderVersion;
+		const parts = /^\d+\.\d+\.\d+$/.test(selected)
+			? selected.split(".").map(Number)
+			: null;
+		const version = parts?.every(Number.isSafeInteger)
+			? (parts as [number, number, number])
+			: null;
+		if (
+			version !== null &&
+			(version[0] - minimum[0] ||
+				version[1] - minimum[1] ||
+				version[2] - minimum[2]) >= 0
+		)
+			continue;
+		issues.push({
+			code:
+				version === null
+					? "PLAN_AV1_DETAIL_PRESERVATION_VERSION_UNRESOLVED"
+					: "PLAN_AV1_DETAIL_PRESERVATION_VERSION",
+			level: version === null ? "warning" : "error",
+			path: `renditions[${index}].detailPreservationMode`,
+			message:
+				version === null
+					? `AV1 detail preservation ${rendition.detailPreservationMode} requires Encoder 2.291.0 or newer. The selected version ${selected} is unresolved; pin a supported numeric version to confirm compatibility.`
+					: `AV1 detail preservation ${rendition.detailPreservationMode} requires Encoder 2.291.0 or newer; selected ${selected}.`,
+		});
 	}
 	return issues;
 }

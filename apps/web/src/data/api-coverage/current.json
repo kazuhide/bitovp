@@ -1,12 +1,12 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-10-27T11:23:01.423Z",
-		"sourceCommit": "0075b5f7c1b7a6dcaffabbcc7d3db97a1b7b4d36",
-		"sourceFingerprint": "5190befd01ba6e053514807f67bf2e8a353996e27d81ad57cfa4fec907fe77d5",
-		"sdkVersion": "1.285.0",
+		"generatedAt": "2026-10-27T15:05:49.069Z",
+		"sourceCommit": "07621442f2b8d74851c87bc312bd33d4e74120c8",
+		"sourceFingerprint": "19cc4ce86f56e5b9894d7be0b72e7f824107f03b1c4dff66e800948c35475719",
+		"sdkVersion": "1.286.0",
 		"typescriptVersion": "5.9.3",
-		"sdkFingerprint": "ca6c9cf0b84701c18888291145575997495d2201f2d8615f92660ddcf978b5ea",
+		"sdkFingerprint": "1fa4b700777546b38554d1c67dcdd0ef0c4d57b41aecc3293278163ef9b6ac32",
 		"method": "typescript-resolved-sdk-signatures-v1",
 		"scope": "encoding"
 	},
@@ -11490,9 +11490,9 @@
 			"bodyOperations": 229,
 			"expandedOperations": 226,
 			"unexpandedOperations": 3,
-			"totalFields": 2561,
+			"totalFields": 2562,
 			"sourceAssigned": 267,
-			"unconfirmed": 2294
+			"unconfirmed": 2295
 		},
 		"operations": [
 			{
@@ -13792,7 +13792,7 @@
 						"type": "AutoLevelSetup | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 29
+							"line": 30
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -13848,6 +13848,16 @@
 						"evidence": []
 					},
 					{
+						"name": "detailPreservationMode",
+						"type": "Av1DetailPreservationMode | undefined",
+						"sdkEvidence": {
+							"file": "models/Av1VideoConfiguration.d.ts",
+							"line": 42
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
 						"name": "displayAspectRatio",
 						"type": "DisplayAspectRatio | undefined",
 						"sdkEvidence": {
@@ -13862,7 +13872,7 @@
 						"type": "Av1DynamicRangeFormat | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 41
+							"line": 48
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -13902,7 +13912,7 @@
 						"type": "string | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 47
+							"line": 54
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -13912,7 +13922,7 @@
 						"type": "number | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 53
+							"line": 60
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -13922,7 +13932,7 @@
 						"type": "LevelAv1 | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 35
+							"line": 36
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -13932,7 +13942,7 @@
 						"type": "number | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 59
+							"line": 66
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -13972,7 +13982,7 @@
 						"type": "Av1PresetConfiguration | undefined",
 						"sdkEvidence": {
 							"file": "models/Av1VideoConfiguration.d.ts",
-							"line": 23
+							"line": 24
 						},
 						"status": "unconfirmed",
 						"evidence": []

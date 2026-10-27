@@ -28,6 +28,42 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it("keeps a sparse legacy VOD draft on its implicit STABLE version", () => {
+	expect(
+		mergeWizardDraft(DEFAULT_WIZARD_STATE, { name: "Legacy draft" }, "vod")
+			.encoderVersion,
+	).toBe("STABLE");
+	expect(DEFAULT_WIZARD_STATE.encoderVersion).toBe("2.291.0");
+	expect(
+		mergeWizardDraft(DEFAULT_LIVE_WIZARD_STATE, { name: "Live draft" }, "live")
+			.encoderVersion,
+	).toBe("BETA");
+});
+
+it.each([
+	"STABLE",
+	"BETA",
+	"2.287.0",
+	"2.291.0",
+	"custom-version",
+])("retains explicit saved VOD encoder %s and per-encoding overrides", (encoderVersion) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.encoderVersion = encoderVersion;
+	state.sources = {
+		...state.sources,
+		encodings: [
+			{ key: "first", name: "First", encoderVersion: "2.291.0" },
+			{ key: "second", name: "Second", encoderVersion: "STABLE" },
+		],
+	};
+	writeWizardDraft("encoder-version", "vod", state, 2);
+	const draft = readWizardDraft("encoder-version", "vod");
+	if (!draft) throw new Error("Missing encoder version draft");
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, draft.value, "vod");
+	expect(restored.encoderVersion).toBe(encoderVersion);
+	expect(restored.sources?.encodings).toEqual(state.sources.encodings);
+});
+
 it("restores Live video/audio input positions and paths through persisted browser drafts", () => {
 	const state: LiveWizardState = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
 	const video = state.videos[0],
@@ -675,11 +711,12 @@ it("restores safe advanced settings without silently disabling BCF, delivery, QC
 	expect(malformed.output).toEqual(DEFAULT_LIVE_WIZARD_STATE.output);
 	expect(malformed.videos).toEqual(DEFAULT_LIVE_WIZARD_STATE.videos);
 	expect(malformed.start).toEqual(DEFAULT_LIVE_WIZARD_STATE.start);
-	expect(mergeWizardDraft(DEFAULT_WIZARD_STATE, {}, "vod")).toEqual(
-		DEFAULT_WIZARD_STATE,
-	);
+	expect(mergeWizardDraft(DEFAULT_WIZARD_STATE, {}, "vod")).toEqual({
+		...DEFAULT_WIZARD_STATE,
+		encoderVersion: "STABLE",
+	});
 	expect(buildPlan(mergeWizardDraft(DEFAULT_WIZARD_STATE, {}, "vod"))).toEqual(
-		buildPlan(DEFAULT_WIZARD_STATE),
+		buildPlan({ ...DEFAULT_WIZARD_STATE, encoderVersion: "STABLE" }),
 	);
 	expect(
 		buildLiveChannelPlan(

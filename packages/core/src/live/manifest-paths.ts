@@ -1,8 +1,4 @@
-import {
-	outputFileKeys,
-	outputFilePath,
-	staticMuxingOutputFiles,
-} from "../plan/output-files";
+import { outputFileKeys, outputFilePath } from "../plan/output-files";
 import type { PlanIssue } from "../plan/validate";
 import { liveHlsEntryUris, selectLiveManifestMuxings } from "./compiler";
 import {
@@ -10,6 +6,7 @@ import {
 	literalFilenameLanguage,
 	outputFilenameLanguage,
 } from "./filename-language";
+import { liveOutputFilenames } from "./protection";
 import type { LiveChannelPlan } from "./schema";
 
 /** Reserve files on their actual storage targets, including delivery mirrors. */
@@ -56,8 +53,35 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 			}
 		}
 	}
-	for (const file of staticMuxingOutputFiles(plan))
-		reserve(file.destination, file.filename, file.owner, file.path);
+	for (const [index, muxing] of plan.muxings.entries()) {
+		const destinations = [
+			...(muxing.destination
+				? [
+						{
+							destination: muxing.destination,
+							owner: `muxing:${muxing.key}`,
+							path: `muxings[${index}].destination`,
+						},
+					]
+				: []),
+			...(plan.drm ?? []).flatMap((drm, drmIndex) =>
+				drm.muxingKey === muxing.key
+					? [
+							{
+								destination: drm.destination,
+								owner: `drm:${drm.key}`,
+								path: `drm[${drmIndex}].destination`,
+							},
+						]
+					: [],
+			),
+		];
+		for (const file of liveOutputFilenames(muxing)) {
+			if (file.policyTokens || file.randomTokens) continue;
+			for (const { destination, owner, path } of destinations)
+				reserve(destination, file.pattern, owner, path);
+		}
+	}
 	const literalFiles = [...reservations].map(([token, owner]) => {
 		const address = JSON.parse(token) as { storage: string; path: string };
 		return {
@@ -66,10 +90,9 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 			language: literalFilenameLanguage(address.path),
 		};
 	});
-	// A segment may use any extension, so a dynamic name can also overwrite an
-	// init file, playlist or archive. Check the physical targets already reserved.
+	// Dynamic segment or init templates can overwrite a literal file of any kind.
+	// Compare their physical targets without expanding tokens in literal fields.
 	for (const [index, muxing] of plan.muxings.entries()) {
-		if (muxing.kind === "MP4") continue;
 		for (const destination of [
 			muxing.destination,
 			...(plan.drm ?? [])
@@ -77,30 +100,31 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 				.map((d) => d.destination),
 		]) {
 			if (!destination) continue;
-			const filename = muxing.segmentNamingTemplate || muxing.segmentNaming;
-			if (!/[%{]/.test(filename)) continue;
-			for (const token of outputFileKeys(plan, {
-				destination,
-				filename,
-			})) {
-				const dynamic: { storage: string; path: string } = JSON.parse(token);
+			for (const filename of liveOutputFilenames(muxing)) {
+				if (!filename.policyTokens && !filename.randomTokens) continue;
 				const pattern = outputFilenameLanguage(
 					destination.path,
+					filename.pattern,
 					filename,
-					Boolean(muxing.segmentNamingTemplate),
 				);
-				for (const literal of literalFiles) {
-					if (
-						literal.storage !== dynamic.storage ||
-						!filenameLanguagesOverlap(pattern, literal.language)
-					)
-						continue;
-					issues.push({
-						code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
-						level: "error",
-						path: `muxings[${index}].${muxing.segmentNamingTemplate ? "segmentNamingTemplate" : "segmentNaming"}`,
-						message: `Live segment pattern "${filename}" may overwrite output file "${literal.path}" owned by ${literal.owner}. Use distinct output filenames or folders.`,
-					});
+				for (const token of outputFileKeys(plan, {
+					destination,
+					filename: filename.pattern,
+				})) {
+					const dynamic: { storage: string; path: string } = JSON.parse(token);
+					for (const literal of literalFiles) {
+						if (
+							literal.storage !== dynamic.storage ||
+							!filenameLanguagesOverlap(pattern, literal.language)
+						)
+							continue;
+						issues.push({
+							code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
+							level: "error",
+							path: `muxings[${index}].${filename.field}`,
+							message: `Live output filename "${filename.pattern}" may overwrite output file "${literal.path}" owned by ${literal.owner}. Use distinct output filenames or folders.`,
+						});
+					}
 				}
 			}
 		}

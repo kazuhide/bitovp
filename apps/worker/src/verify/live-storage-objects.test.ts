@@ -5,12 +5,13 @@ import { join } from "node:path";
 import {
 	compileExpectedLiveArtefacts,
 	liveChannelPlanSchema,
+	validateLiveChannel,
 } from "@bitovp/core";
 import { expect, it } from "vitest";
 import { liveStorageObjects } from "./live-storage-objects";
 
-function muxing() {
-	const plan = liveChannelPlanSchema.parse(
+function fixture() {
+	return liveChannelPlanSchema.parse(
 		JSON.parse(
 			readFileSync(
 				join(
@@ -21,7 +22,9 @@ function muxing() {
 			),
 		),
 	);
-	const value = compileExpectedLiveArtefacts(plan).muxings[0];
+}
+function muxing() {
+	const value = compileExpectedLiveArtefacts(fixture()).muxings[0];
 	if (!value) throw new Error("Missing muxing fixture");
 	return value;
 }
@@ -112,4 +115,57 @@ it("does not promote exhausted init or segment membership into evidence", () => 
 			writer,
 		),
 	).toEqual({ init: [], media: [] });
+});
+
+it.each([
+	"FMP4",
+	"CMAF",
+] as const)("matches admitted %s init writers by their declared field provenance", (kind) => {
+	const plan = fixture();
+	const source = plan.muxings[0];
+	const audio = plan.muxings[3];
+	if (source?.kind !== "FMP4" || audio?.kind !== "FMP4" || !source.destination)
+		throw new Error("Missing fMP4 muxing fixtures");
+	const destination = { ...source.destination };
+	plan.muxings = [source, audio].map((m, i) => ({
+		...m,
+		kind,
+		destination,
+		segmentNaming: `writer_${i}_%number%.m4s`,
+		initSegmentName:
+			i === 0 ? "headers/init_%number%.mp4" : "headers/init_1.mp4",
+		...(i === 0 && kind === "CMAF"
+			? { initSegmentNameTemplate: "headers/init_{rand_chars:8}_%number%.mp4" }
+			: {}),
+	}));
+	if (kind === "CMAF")
+		plan.liveManifests = plan.liveManifests.filter((m) => m.kind === "DASH");
+	expect(validateLiveChannel(plan).filter((i) => i.level === "error")).toEqual(
+		[],
+	);
+	const writers = compileExpectedLiveArtefacts(plan).muxings;
+	expect(writers).toHaveLength(2);
+	const first = writers[0];
+	const second = writers[1];
+	if (!first || !second) throw new Error("Missing compiled writers");
+	const names = [
+		kind === "CMAF"
+			? "headers/init_Ab12Cd34_%number%.mp4"
+			: "headers/init_%number%.mp4",
+		"headers/init_1.mp4",
+		"writer_0_1.m4s",
+		"writer_1_1.m4s",
+	];
+	const objects = names.map((name) => ({
+		outputKey: first.outputKey,
+		key: `${first.dir.prefix}${name}`,
+	}));
+	expect(liveStorageObjects(objects, first)).toEqual({
+		init: [objects[0]],
+		media: [objects[2]],
+	});
+	expect(liveStorageObjects(objects, second)).toEqual({
+		init: [objects[1]],
+		media: [objects[3]],
+	});
 });

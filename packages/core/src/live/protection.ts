@@ -4,6 +4,7 @@ import { AUDIO_CODECS, type PlanDrm } from "../plan/schema";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
 import {
 	type FilenameLanguage,
+	type FilenameTokens,
 	filenameLanguagesOverlap,
 	outputFilenameLanguage,
 } from "./filename-language";
@@ -66,13 +67,28 @@ export function liveFallbackRegionIssues(plan: LiveChannelPlan): PlanIssue[] {
 	return issues;
 }
 
-function liveOutputFilenames(muxing: LiveMuxing) {
+/** Token expansion follows the API field, not the characters found in its value. */
+export function liveOutputFilenames(
+	muxing: LiveMuxing,
+): ({ pattern: string; field: string } & FilenameTokens)[] {
 	if (muxing.kind === "MP4")
-		return [{ pattern: muxing.filename, template: false }];
+		return [
+			{
+				pattern: muxing.filename,
+				field: "filename",
+				policyTokens: false,
+				randomTokens: false,
+			},
+		];
+	const segmentTemplate = Boolean(muxing.segmentNamingTemplate);
+	const initTemplate =
+		muxing.kind === "CMAF" && Boolean(muxing.initSegmentNameTemplate);
 	return [
 		{
 			pattern: muxing.segmentNamingTemplate || muxing.segmentNaming,
-			template: Boolean(muxing.segmentNamingTemplate),
+			field: segmentTemplate ? "segmentNamingTemplate" : "segmentNaming",
+			policyTokens: true,
+			randomTokens: segmentTemplate,
 		},
 		...(muxing.kind === "TS"
 			? []
@@ -82,8 +98,9 @@ function liveOutputFilenames(muxing: LiveMuxing) {
 							muxing.kind === "CMAF" && muxing.initSegmentNameTemplate
 								? muxing.initSegmentNameTemplate
 								: muxing.initSegmentName,
-						template:
-							muxing.kind === "CMAF" && Boolean(muxing.initSegmentNameTemplate),
+						field: initTemplate ? "initSegmentNameTemplate" : "initSegmentName",
+						policyTokens: false,
+						randomTokens: initTemplate,
 					},
 				]),
 	];
@@ -197,7 +214,7 @@ export function liveDrmIssues(
 				const language = outputFilenameLanguage(
 					destination.path,
 					filename.pattern,
-					filename.template,
+					filename,
 				);
 				if (!language) {
 					add(

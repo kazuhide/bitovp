@@ -5,14 +5,11 @@ export type FilenameLanguage = { states: FilenameState[]; end: number };
 const DIGITS = "0123456789";
 const ALPHANUMERIC = `${DIGITS}ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`;
 
-/** A bounded automaton for literals, numeric indices and random template tokens. */
+export type FilenameTokens = { policyTokens: boolean; randomTokens: boolean };
+
+/** A bounded automaton with explicit token provenance for every path component. */
 function filenameLanguage(
-	parts: readonly {
-		value: string;
-		literal: boolean;
-		template: boolean;
-		policy?: boolean;
-	}[],
+	parts: readonly ({ value: string } & FilenameTokens)[],
 ): FilenameLanguage | undefined {
 	const states: FilenameState[] = [{ transitions: [] }];
 	let current = 0;
@@ -25,12 +22,11 @@ function filenameLanguage(
 		current = next;
 		return true;
 	};
-	for (const { value: pattern, literal, template, policy } of parts) {
+	for (const { value: pattern, policyTokens, randomTokens } of parts) {
 		for (let at = 0; at < pattern.length; ) {
-			const numeric =
-				literal || policy === false
-					? null
-					: /^%([a-zA-Z]+)%/.exec(pattern.slice(at));
+			const numeric = policyTokens
+				? /^%([a-zA-Z]+)%/.exec(pattern.slice(at))
+				: null;
 			if (numeric) {
 				// Unknown provider tokens may expand to any non-directory filename text.
 				const characters = numeric[1] === "number" ? DIGITS : null;
@@ -38,10 +34,9 @@ function filenameLanguage(
 				at += numeric[0].length;
 				continue;
 			}
-			const random =
-				!literal && template
-					? /^\{(?:segment_)?rand_chars(?::([^{}]*))?\}/.exec(pattern.slice(at))
-					: null;
+			const random = randomTokens
+				? /^\{(?:segment_)?rand_chars(?::([^{}]*))?\}/.exec(pattern.slice(at))
+				: null;
 			if (random) {
 				const length = random[1] === undefined ? 32 : Number(random[1]);
 				if (
@@ -67,14 +62,12 @@ export type FilenameMembership = "MATCH" | "NO_MATCH" | "UNVERIFIED";
 /** Runtime evidence requires MATCH; unlike collision admission, unknown is not proof. */
 export function createFilenameMatcher(
 	pattern: string,
-	options: { policyTokens: boolean; randomTokens: boolean },
+	options: FilenameTokens,
 ): (filename: string) => FilenameMembership {
 	const language = filenameLanguage([
 		{
 			value: pattern,
-			literal: !options.policyTokens && !options.randomTokens,
-			template: options.randomTokens,
-			policy: options.policyTokens,
+			...options,
 		},
 	]);
 	return (filename) => {
@@ -139,20 +132,21 @@ export function filenameLanguagesOverlap(
 export function literalFilenameLanguage(
 	path: string,
 ): FilenameLanguage | undefined {
-	return filenameLanguage([{ value: path, literal: true, template: false }]);
+	return filenameLanguage([
+		{ value: path, policyTokens: false, randomTokens: false },
+	]);
 }
 
 /** Normalize a destination while retaining which components are filename templates. */
 export function outputFilenameLanguage(
 	directory: string,
 	filename: string,
-	template: boolean,
+	options: FilenameTokens,
 ): FilenameLanguage | undefined {
-	const components: { value: string; literal: boolean; template: boolean }[] =
-		[];
-	for (const [value, literal] of [
-		[directory, true],
-		[filename, false],
+	const components: ({ value: string } & FilenameTokens)[] = [];
+	for (const [value, tokens] of [
+		[directory, { policyTokens: false, randomTokens: false }],
+		[filename, options],
 	] as const) {
 		for (const part of value.split("/")) {
 			if (
@@ -164,14 +158,15 @@ export function outputFilenameLanguage(
 			else if (part && part !== ".")
 				components.push({
 					value: part,
-					literal,
-					template: !literal && template,
+					...tokens,
 				});
 		}
 	}
 	return filenameLanguage(
 		components.flatMap((part, i) =>
-			i ? [{ value: "/", literal: true, template: false }, part] : [part],
+			i
+				? [{ value: "/", policyTokens: false, randomTokens: false }, part]
+				: [part],
 		),
 	);
 }

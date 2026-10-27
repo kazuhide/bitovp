@@ -20,6 +20,79 @@ function fixture() {
 
 describe("Live physical output file reservations", () => {
 	it.each([
+		[
+			"FMP4",
+			"headers/init_%number%.mp4",
+			"headers/init_%number%.mp4",
+			false,
+			true,
+		],
+		["FMP4", "headers/init_%number%.mp4", "headers/init_1.mp4", false, false],
+		[
+			"CMAF",
+			"headers/init_%provider%.mp4",
+			"headers/init_%provider%.mp4",
+			false,
+			true,
+		],
+		[
+			"CMAF",
+			"headers/init_%provider%.mp4",
+			"headers/init_custom.mp4",
+			false,
+			false,
+		],
+		[
+			"CMAF",
+			"headers/init_{rand_chars:8}_%number%.mp4",
+			"headers/init_Ab12Cd34_%number%.mp4",
+			true,
+			true,
+		],
+		[
+			"CMAF",
+			"headers/init_{rand_chars:8}_%number%.mp4",
+			"headers/init_Ab12Cd34_1.mp4",
+			true,
+			false,
+		],
+		["MP4", "archive_%number%.mp4", "archive_%number%.mp4", false, true],
+		["MP4", "archive_%number%.mp4", "archive_1.mp4", false, false],
+	] as const)("reserves %s field %s against literal manifest %s", (kind, filename, manifestName, template, collision) => {
+		const p = fixture();
+		const source = p.muxings[0];
+		const manifest = p.liveManifests.find((m) => m.kind === "DASH");
+		if (source?.kind !== "FMP4" || !manifest)
+			throw new Error("Missing fixtures");
+		const destination = { ...manifest.destination };
+		p.muxings = [
+			kind === "MP4"
+				? {
+						key: source.key,
+						kind,
+						streamKey: source.streamKey,
+						filename,
+						destination,
+					}
+				: {
+						...source,
+						kind,
+						initSegmentName: filename,
+						...(kind === "CMAF" && template
+							? { initSegmentNameTemplate: filename }
+							: {}),
+						destination,
+					},
+		];
+		p.liveManifests = [manifest];
+		manifest.manifestName = manifestName;
+		expect(
+			liveManifestPathIssues(p).some(
+				(i) => i.code === "LIVE_OUTPUT_NAMESPACE_COLLISION",
+			),
+		).toBe(collision);
+	});
+	it.each([
 		[24, 48, false],
 		[300, 700, true],
 	] as const)(

@@ -220,6 +220,89 @@ it("rejects encrypted TS writers from different muxings sharing a physical path 
 	);
 });
 
+describe("Live output filename field provenance", () => {
+	it.each([
+		["FMP4", "init_%number%.mp4", "init_1.mp4", false, false],
+		["FMP4", "init_%provider%.mp4", "init_custom.mp4", false, false],
+		["FMP4", "init_{rand_chars:8}.mp4", "init_Ab12Cd34.mp4", false, false],
+		["FMP4", "init_%number%.mp4", "init_%number%.mp4", false, true],
+		["CMAF", "init_%number%.mp4", "init_1.mp4", false, false],
+		[
+			"CMAF",
+			"init_{rand_chars:8}_%number%.mp4",
+			"init_Ab12Cd34_1.mp4",
+			true,
+			false,
+		],
+		[
+			"CMAF",
+			"init_{rand_chars:8}_%number%.mp4",
+			"init_Ab12Cd34_%number%.mp4",
+			true,
+			true,
+		],
+		[
+			"CMAF",
+			"init_{rand_chars:8}_%number%.mp4",
+			"init_Ab12Cd34_%number%.mp4",
+			false,
+			false,
+		],
+		["MP4", "archive_%number%.mp4", "archive_1.mp4", false, false],
+		["MP4", "archive_%provider%.mp4", "archive_custom.mp4", false, false],
+		["MP4", "archive_{rand_chars:8}.mp4", "archive_Ab12Cd34.mp4", false, false],
+		["MP4", "archive_%number%.mp4", "archive_%number%.mp4", false, true],
+	] as const)("keeps %s filename provenance for %s against %s", (kind, left, right, template, collision) => {
+		const p = fixture();
+		const destination = required(required(p.muxings[0]).destination);
+		const sources = [required(p.muxings[0]), required(p.muxings[3])];
+		p.muxings = [left, right].map((pattern, i) => {
+			const source = required(sources[i]);
+			if (source.kind !== "FMP4") throw new Error("Missing fMP4 fixture");
+			if (kind === "MP4")
+				return {
+					key: source.key,
+					kind,
+					streamKey: source.streamKey,
+					filename: pattern,
+					destination: { ...destination },
+				};
+			return {
+				...source,
+				kind,
+				segmentNaming: `writer_${i}_%number%.m4s`,
+				initSegmentName: pattern,
+				...(kind === "CMAF" && template && i === 0
+					? { initSegmentNameTemplate: pattern }
+					: {}),
+				destination: { ...destination },
+			};
+		});
+		if (kind === "CMAF")
+			p.liveManifests = p.liveManifests.filter((m) => m.kind === "DASH");
+		expect(errors(p).some((i) => i.code === "LIVE_DRM_OUTPUT_COLLISION")).toBe(
+			collision,
+		);
+		if (!collision && kind !== "MP4") expect(errors(p)).toEqual([]);
+	});
+	it("still expands segment-policy tokens against a literal init filename", () => {
+		const p = fixture();
+		const a = required(p.muxings[0]);
+		const b = required(p.muxings[1]);
+		if (a.kind !== "FMP4" || b.kind !== "FMP4")
+			throw new Error("Missing fMP4 fixtures");
+		p.muxings = [a, b];
+		b.destination = { ...required(a.destination) };
+		a.segmentNaming = "init_%number%.mp4";
+		a.initSegmentName = "a-init.mp4";
+		b.segmentNaming = "b_%number%.m4s";
+		b.initSegmentName = "init_1.mp4";
+		expect(errors(p).some((i) => i.code === "LIVE_DRM_OUTPUT_COLLISION")).toBe(
+			true,
+		);
+	});
+});
+
 describe("Live output filename expansion collisions", () => {
 	it("rejects an unrepresentable pattern even with only one encrypted writer", () => {
 		const p = encrypted("FAIRPLAY", "TS");

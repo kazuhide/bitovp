@@ -8,6 +8,32 @@ import { useT } from "@/lib/i18n/context";
 import { CODEC_DETAIL_FIELDS } from "./codec-detail-fields";
 import { Collapsible, OptionsGrid } from "./wizard-fields";
 
+const JAPANESE_HELP: Record<string, string> = {
+	autoLevelSetup:
+		"maxBitrateやbufsizeを指定すると、レベルから算出する上限より指定値が優先されます。",
+	nalHrd:
+		"仮想参照デコーダー（HRD）へバッファー情報を通知します。0より大きいbufsizeが必要です。",
+	pixelFormat:
+		"出力映像の画素形式、ビット深度、色差サンプリングです。エンコーダーとプロファイルが対応する組み合わせを選んでください。",
+	allowedRADLBeforeIDR:
+		"固定のキーフレーム間隔が必要です。bframes以下に設定してください。",
+	gopLookahead:
+		"キーフレームの区切りを探す先読みフレーム数です。rcLookahead以下に設定してください。",
+	lookaheadSlices:
+		"先読みを並列化する分割数（0〜16）です。値を増やすと処理が速くなる一方、判断の精度が下がる場合があります。",
+	maxMerge: "マージ候補の最大数（1〜5）です。",
+	rateDistortionLevelForModeDecision:
+		"符号化モードの比較にかける処理量（0〜4）です。値を増やすと処理時間が長くなります。",
+	automaticAltRefFramesEnabled: "2パスエンコードで使用できます。",
+	clientBufferSize: "クライアント側バッファーの長さです。単位はミリ秒です。",
+	clientInitialBufferSize: "初期バッファーの長さです。単位はミリ秒です。",
+	maxIntraRate:
+		"Iフレームの最大ビットレートを割合（％）で指定します。0は無制限です。",
+	targetLevel:
+		"255はレベル指定を無効にします。10はレベル1.0、11は1.1を表します。",
+	tileRows: "タイルの行数を2の指数で指定します。0は1行、1は2行、2は4行です。",
+};
+
 function groupFor(key: string): number {
 	if (
 		/bitrate|buffer|crf|qp|quant|ratecontrol|biasPct|blur|Ratio|strictCbr/i.test(
@@ -57,9 +83,13 @@ export function CodecDetailEditor<T extends object>({
 					"Prediction and analysis",
 					"Colour, pixels and aspect ratio",
 				];
-	const fields = CODEC_DETAIL_FIELDS[codec].filter((field) =>
-		field.key.toLowerCase().includes(search.toLowerCase()),
-	);
+	const fields = CODEC_DETAIL_FIELDS[codec]
+		.filter((field) => field.key.toLowerCase().includes(search.toLowerCase()))
+		.map((field) => ({
+			...field,
+			help:
+				locale === "ja" ? (JAPANESE_HELP[field.key] ?? field.help) : field.help,
+		}));
 	const captions = (record.cea608708SubtitleConfig ?? {}) as Record<
 		string,
 		unknown

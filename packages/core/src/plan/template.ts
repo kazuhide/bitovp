@@ -176,15 +176,9 @@ function isAudioCodec(
 	rendition: AnyRendition,
 ): rendition is Extract<
 	AnyRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" }
+	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
 > {
-	return (
-		rendition.codec === "AAC" ||
-		rendition.codec === "OPUS" ||
-		rendition.codec === "DOLBY_ATMOS" ||
-		rendition.codec === "DDPLUS" ||
-		rendition.codec === "DD"
-	);
+	return AUDIO_CODECS.has(rendition.codec);
 }
 
 function isPerTitle(rendition: AnyRendition): boolean {

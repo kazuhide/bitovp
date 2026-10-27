@@ -1,5 +1,6 @@
 [
 	"createAacConfig",
+	"createAc3Config",
 	"createAkamaiMslOutput",
 	"createAkamaiNetStorageInput",
 	"createAkamaiNetStorageOutput",
@@ -34,6 +35,7 @@
 	"createDolbyVisionInputStream",
 	"createDolbyVisionMetadataInputStream",
 	"createDolbyVisionStreamHdr",
+	"createEac3Config",
 	"createEncoding",
 	"createFairPlayDrm",
 	"createFileInputStream",

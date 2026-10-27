@@ -1,6 +1,4 @@
-import { AudioCutoffEditor } from "./codec-detail-editor";
-
-("use client");
+"use client";
 
 import type { CredentialSummaryWire } from "@bitovp/core";
 import {
@@ -49,6 +47,7 @@ import {
 	videoKeys,
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
+import { AudioCutoffEditor } from "./codec-detail-editor";
 import { editFilter } from "./filter-editing";
 import { MediaFilterEditor } from "./media-filter-editor";
 import { PerTitleSimulatorLauncher } from "./per-title-simulator-launcher";

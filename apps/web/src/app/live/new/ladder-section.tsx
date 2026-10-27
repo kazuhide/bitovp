@@ -1,6 +1,4 @@
-import { AudioCutoffEditor } from "../../vod/new/codec-detail-editor";
-
-("use client");
+"use client";
 
 import { CODEC_OPTIONS } from "@bitovp/core";
 import { AUDIO_CHANNEL_LAYOUTS } from "@/app/vod/new/audio-channel-layouts";
@@ -11,6 +9,7 @@ import {
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
 import { CMAF_CHUNK_FIELDS } from "@/app/vod/new/cmaf-fields";
+import { AudioCutoffEditor } from "@/app/vod/new/codec-detail-editor";
 import { HlsVideoUriField } from "@/app/vod/new/hls-video-uri-field";
 import {
 	audioCopyLabel,

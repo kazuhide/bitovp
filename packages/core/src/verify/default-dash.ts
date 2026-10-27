@@ -127,7 +127,16 @@ function matchCondition(
 		unverified.add(`${attribute} depends on source or runtime metadata`);
 		return "unknown";
 	}
-	const target = typeof actual === "number" ? Number(value) : value;
+	// Imported codec enum conditions can use lower case; language strings stay intact.
+	const codecEquality =
+		(attribute === "video.codec" || attribute === "audio.codec") &&
+		(operator === "==" || operator === "!=");
+	const target =
+		typeof actual === "number"
+			? Number(value)
+			: codecEquality
+				? value.toUpperCase()
+				: value;
 	if (
 		typeof target === "number" &&
 		(!value.trim() || !Number.isFinite(target))

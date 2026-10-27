@@ -3,6 +3,39 @@ import { loadPlan } from "../plan/test-support";
 import { compileExpectedArtefacts } from "./expected";
 
 describe("advanced manifest artifact expectations", () => {
+	it.each([
+		["AAC", "==", 1],
+		["aac", "==", 1],
+		["AaC", "==", 1],
+		["aac", "!=", 0],
+		["mp3", "==", 0],
+		["mp3", "!=", 1],
+	] as const)("matches codec identifier %s with %s in Default DASH conditions", (value, operator, count) => {
+		const plan = loadPlan("av1-fmp4-dash-hls");
+		const dash = plan.manifests.find((row) => row.kind === "DASH");
+		if (dash?.kind !== "DASH") throw new Error("missing DASH fixture");
+		dash.generationMode = "DEFAULT";
+		dash.defaultPeriods = [
+			{
+				encodingKeys: ["default"],
+				adaptationSets: [
+					{
+						type: "CONDITION",
+						attribute: "audio.codec",
+						operator,
+						value,
+					},
+				],
+			},
+		];
+		const period = compileExpectedArtefacts(plan).manifests.find(
+			(row) => row.kind === "DASH",
+		)?.dashPeriods?.[0];
+		expect(period?.counts.audio).toEqual({ min: count, max: count });
+		expect(period?.topology.audio).toHaveLength(count);
+		expect(period?.unverified).toEqual([]);
+	});
+
 	it("does not require a RESULT for each flexible Default DASH template", () => {
 		const plan = loadPlan("pertitle-h264-fmp4-ts-dash-hls-on-aws");
 		const video = plan.renditions.find((row) => row.codec === "H264");

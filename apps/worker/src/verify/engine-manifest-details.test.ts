@@ -729,7 +729,11 @@ describe("configured DASH artifact verification", () => {
 			)?.verdict,
 		).toBe("FAIL");
 	});
-	it("checks each conditional period independently, including missing periods and wrong codec families", async () => {
+	it.each([
+		["H264", "AAC"],
+		["h264", "aac"],
+		["H264", "AaC"],
+	])("checks each conditional period independently for %s/%s, including missing periods and wrong codec families", async (videoCodec, audioCodec) => {
 		const plan = manifestPlan();
 		const manifest = plan.manifests[0];
 		if (manifest?.kind !== "DASH") throw new Error("missing DASH");
@@ -737,11 +741,11 @@ describe("configured DASH artifact verification", () => {
 		manifest.defaultPeriods = [
 			{
 				encodingKeys: ["default"],
-				adaptationSets: [condition("video.codec", "H264")],
+				adaptationSets: [condition("video.codec", videoCodec)],
 			},
 			{
 				encodingKeys: ["default"],
-				adaptationSets: [condition("audio.codec", "AAC")],
+				adaptationSets: [condition("audio.codec", audioCodec)],
 			},
 		];
 		const healthy = await verifyManifest(plan, mpd(VIDEO, AUDIO));

@@ -63,6 +63,52 @@ const qc = (
 });
 
 describe("perTitleActualPopulations", () => {
+	it("retains sanitized RESULT codec parameters and prefers applied dimensions", () => {
+		const actual = perTitleActualPopulations({
+			origin: "step",
+			snapshot: snapshot([
+				{
+					...result("stream-a", "template-a", []),
+					params: { width: 640, height: 360, bitrate: 200_000, rate: 24 },
+					appliedSettings: { width: 320, height: 180 },
+				},
+				{
+					...result("stream-b", "template-a", []),
+					params: { width: 960, height: 540, bitrate: 800_000, rate: 30 },
+				},
+			]),
+		});
+		expect(actual).toMatchObject({
+			status: "complete",
+			results: [
+				{ video: { width: 320, height: 180, bitrate: 200_000, fps: 24 } },
+				{ video: { width: 960, height: 540, bitrate: 800_000, fps: 30 } },
+			],
+		});
+	});
+
+	it.each([
+		0,
+		-1,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		"180",
+		null,
+	])("does not promote invalid RESULT parameters into media expectations (%s)", (value) => {
+		const actual = perTitleActualPopulations({
+			origin: "snapshot",
+			snapshot: snapshot([
+				{
+					...result("stream-a", "template-a", []),
+					params: { width: value, height: value, bitrate: value, rate: value },
+				},
+			]),
+		});
+		expect(actual.status).toBe("complete");
+		if (actual.status !== "complete") return;
+		expect(actual.results[0]).not.toHaveProperty("video");
+	});
+
 	it("derives one QC unit per RESULT rung while keeping every delivery output leg", () => {
 		const actual = perTitleActualPopulations({
 			origin: "step",

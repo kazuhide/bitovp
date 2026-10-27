@@ -32,6 +32,10 @@ import {
 } from "../plan/hls-media-defaults";
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import { outputFilePath } from "../plan/output-files";
+import {
+	isPerTitleRendition,
+	type TemplateStreamRef,
+} from "../plan/per-title-results";
 import type {
 	EncodingPlan,
 	PlanManifest,
@@ -103,12 +107,13 @@ export type ExpectedMuxing = {
 	 * row's outputs instead. The engine must resolve those before listing.
 	 */
 	viaDrmKeys?: string[];
-	/** Video geometry/codec the artefact must carry; absent for audio/text. */
+	/** Configured video fields; flexible Per-title geometry is a hint until RESULT binding. */
 	video?: {
+		width?: number;
 		height: number | null;
 		codec: PlanRendition["codec"];
 		profile?: string;
-		/** Target bitrate in bps; null for per-title (algorithm decides). */
+		/** Target bitrate or template hint in bps; null when the encoder chooses it. */
 		bitrate: number | null;
 		fps?: number;
 	};
@@ -119,12 +124,12 @@ export type ExpectedMuxing = {
 		channelLayout?: string;
 	};
 	text?: { language?: string };
-	/** True when the rendition is per-title, so bitrate/height are algorithmic. */
+	/** True when a provider RESULT population must resolve this template. */
 	perTitle: boolean;
 	/**
 	 * Which per-title mode, because the expected RUNG COUNT differs.
 	 *
-	 * A `FIXED` muxing pins resolution and bitrate; its guaranteed rung contributes
+	 * A `FIXED` muxing uses fixed resolution and a bitrate range; its guaranteed rung contributes
 	 * to the verifier's lower bound. `TEMPLATE` includes fixed-resolution templates,
 	 * whose resolution is pinned but resulting rung count is not asserted here. The
 	 * engine could previously only assert "at least one rung", so a 7-rung ladder that
@@ -132,6 +137,8 @@ export type ExpectedMuxing = {
 	 * reading as fully green. With the mode it can assert a lower bound.
 	 */
 	perTitleMode?: "TEMPLATE" | "FIXED";
+	/** Raw stream mode: geometry constraints are independent of rung-count mode. */
+	perTitleStreamMode?: TemplateStreamRef["mode"];
 };
 
 /**
@@ -656,6 +663,9 @@ export function compileExpectedArtefacts(
 			renditionKey: rendition?.key ?? muxing.streamKey,
 			container: containerOf(muxing),
 			...(perTitle ? { perTitleMode: perTitleModeOf(rendition) } : {}),
+			...(rendition && isPerTitleRendition(rendition)
+				? { perTitleStreamMode: rendition.mode }
+				: {}),
 			outputKey: dest?.outputKey ?? "",
 			// withTrailingSlash: a slash-less directory made dir.prefix match
 			// SIBLING directories too (out/thumbs vs out/thumbsXL) — false PASS
@@ -722,6 +732,7 @@ export function compileExpectedArtefacts(
 			) {
 				const v = packaged as Extract<PlanRendition, { codec: "H264" }>;
 				expected.video = {
+					...(v.width !== undefined ? { width: v.width } : {}),
 					height: v.height ?? null,
 					codec: packagedCodec,
 					bitrate: v.bitrate ?? null,

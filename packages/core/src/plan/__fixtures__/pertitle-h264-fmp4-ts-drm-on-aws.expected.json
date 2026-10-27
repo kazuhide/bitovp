@@ -10,6 +10,7 @@
 			"renditionKey": "v180",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -36,6 +37,7 @@
 			"renditionKey": "v180",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -61,6 +63,7 @@
 			"renditionKey": "v360-300",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -87,6 +90,7 @@
 			"renditionKey": "v360-300",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -112,6 +116,7 @@
 			"renditionKey": "v360-600",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -138,6 +143,7 @@
 			"renditionKey": "v360-600",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -163,6 +169,7 @@
 			"renditionKey": "v540",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -189,6 +196,7 @@
 			"renditionKey": "v540",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -214,6 +222,7 @@
 			"renditionKey": "v720",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -240,6 +249,7 @@
 			"renditionKey": "v720",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -265,6 +275,7 @@
 			"renditionKey": "v900",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -291,6 +302,7 @@
 			"renditionKey": "v900",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -316,6 +328,7 @@
 			"renditionKey": "v1080",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -342,6 +355,7 @@
 			"renditionKey": "v1080",
 			"container": "TS_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",

@@ -74,6 +74,7 @@ import {
 	bindPerTitleDelivery,
 	type PerTitleDeliveryBinding,
 } from "./per-title-delivery";
+import { perTitleMediaExpectation } from "./per-title-media";
 import {
 	scopedPerTitleResults,
 	scopedPerTitleVideoFamilies,
@@ -1453,6 +1454,14 @@ async function verifyMediaProperties(
 	}
 
 	if (muxing.video) {
+		if (muxing.video.width !== undefined && !muxing.perTitle) {
+			report.assert(
+				`${id}:width`,
+				"rendition",
+				probe.width === muxing.video.width,
+				`width ${muxing.video.width} — ${probe.width ?? "none"}`,
+			);
+		}
 		const wantHeight = muxing.video.height;
 		if (wantHeight === null || muxing.perTitle) {
 			// Per-title heights are algorithmic (C1/C4): assert presence and sanity,
@@ -4550,24 +4559,6 @@ function sameStringSet(
 	return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-function exactPerTitleMuxing(binding: PerTitleDeliveryBinding): ExpectedMuxing {
-	const identity = `pertitle-delivery:${binding.id}`;
-	return {
-		...binding.expectedMuxing,
-		muxingKey: identity,
-		renditionKey: identity,
-		outputKey: binding.outputKey,
-		dir: {
-			pattern: binding.actual.resolvedPath,
-			prefix: binding.actual.resolvedPath,
-			templated: false,
-		},
-		perTitle: false,
-		perTitleMode: undefined,
-		viaDrmKeys: binding.expectedDrm ? [`${identity}:drm`] : undefined,
-	};
-}
-
 /** Verify each captured provider delivery leg once, at its resolved path. */
 async function verifyPerTitleDeliveryPopulation(
 	report: ReportBuilder,
@@ -4685,7 +4676,10 @@ async function verifyPerTitleDeliveryPopulation(
 			"muxing",
 			`provider material leg ${row.actual.outputId}:${row.actual.resolvedPath} is bound once to ${row.expectedMuxing.muxingKey}`,
 		);
-		const muxing = exactPerTitleMuxing(row);
+		const { muxing, checks } = perTitleMediaExpectation(row);
+		for (const check of checks) {
+			report.add(check.id, "rendition", check.verdict, check.detail);
+		}
 		try {
 			await verifyMuxing(report, deps, expected, muxing);
 		} catch (error) {

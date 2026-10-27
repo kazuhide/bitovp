@@ -1239,6 +1239,7 @@ export type {
 	PerTitleActualOutputLeg,
 	PerTitleActualPopulations,
 	PerTitleActualQcUnit,
+	PerTitleActualVideo,
 	PerTitleActualVideoFamilies,
 } from "./verify/per-title-actual";
 export {

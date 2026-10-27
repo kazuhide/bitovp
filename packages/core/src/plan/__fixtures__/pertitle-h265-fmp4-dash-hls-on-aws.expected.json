@@ -10,6 +10,7 @@
 			"renditionKey": "v180",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v180/{height}p_{bitrate}_{uuid}/",
@@ -34,6 +35,7 @@
 			"renditionKey": "v480-210",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-210/{height}p_{bitrate}_{uuid}/",
@@ -58,6 +60,7 @@
 			"renditionKey": "v480-420",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v480-420/{height}p_{bitrate}_{uuid}/",
@@ -82,6 +85,7 @@
 			"renditionKey": "v540",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v540/{height}p_{bitrate}_{uuid}/",
@@ -106,6 +110,7 @@
 			"renditionKey": "v720",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v720/{height}p_{bitrate}_{uuid}/",
@@ -130,6 +135,7 @@
 			"renditionKey": "v900",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v900/{height}p_{bitrate}_{uuid}/",
@@ -154,6 +160,7 @@
 			"renditionKey": "v1080",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h265-aac-fmp4-dash-hls-aws/video/v1080/{height}p_{bitrate}_{uuid}/",

@@ -10,6 +10,7 @@
 			"renditionKey": "pt-video",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-h264-aac-fmp4-ai-scene-analysis-aws-test/video/{height}_{bitrate}_{uuid}/",

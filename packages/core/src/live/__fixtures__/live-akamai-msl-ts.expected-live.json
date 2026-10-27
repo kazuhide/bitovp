@@ -68,6 +68,12 @@
 	"manifests": [
 		{
 			"manifestKey": "hls",
+			"muxingKeys": [
+				"v1080",
+				"v720",
+				"v360",
+				"a128"
+			],
 			"kind": "HLS",
 			"outputKey": "origin",
 			"dir": {

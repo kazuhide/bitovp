@@ -713,7 +713,7 @@ Live encoding continuously processes incoming video and audio and writes output 
 | Sources | Protocol, connection direction, redundancy, authentication and encryption |
 | Ladder | Video and audio renditions, codecs and per-rendition containers |
 | Output | Storage or delivery service and mirrors |
-| Packaging | Shared segment length and MP4 archive |
+| Packaging | Shared segment length, encryption and MP4 archive |
 | Encoding | Automatic restart and stop, monitoring conditions, timeouts and caching |
 | Manifests | HLS, DASH, DVR, publication delay, time and ad information |
 | Schedule | Planned input feed, program start and stop times, and a pre-program slate |
@@ -757,6 +757,14 @@ Choose either a segment filename pattern such as `seg_%number%.m4s`, or a naming
 Choose storage or a supported delivery service as the destination. For Akamai MSL, match the credential's stream ID and event name with the output's MSL version and stream format. MSL5 requires a compatible numeric encoder version of `2.283.0` or later. MSL5 publishing supports HTTP Digest or no authentication; Header-only authentication is not supported. Digest publishing is for MSL5 and must not be used with MSL4.
 
 MSL playback links use the public edge base URL configured in the credential. The input encoder's IP does not determine the playback hostname. Use a distinct path for each broadcast, and check that an earlier publisher is no longer sending to the same destination.
+
+### Encryption and fallback regions
+
+In **Packaging → Encryption**, choose CENC, FairPlay or SPEKE for fMP4, or FairPlay for MPEG-TS. Select a content-key credential or SPEKE provider, enter public DRM metadata, and use **Copy encryption settings to all compatible tracks** when the settings are shared. Keys remain in the encrypted credential store. Select the same encryption kind in each manifest so its media references and DASH encryption metadata use the correct output.
+
+Clear output is replaced by encrypted output unless you also request an unencrypted copy. Give those copies separate folders. HLS CENC intended for FairPlay needs CBC and FairPlay IV/URI metadata. Playback still requires the appropriate license configuration and player support. CMAF and the progressive MP4 archive do not use these encryption controls. Browser drafts omit URLs, including FairPlay URIs; re-enter them after restoring a draft.
+
+**Basics → Fallback cloud regions** accepts up to three distinct concrete regions or `AUTO` on the primary cloud provider, in order. These are alternatives when the preferred region is unavailable; Cloud Connect is excluded.
 
 ### HLS, DASH, and latency
 

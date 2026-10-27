@@ -1181,7 +1181,10 @@ export type {
 	ExpectedLiveMslEdgeOutput,
 	ExpectedLiveMuxing,
 } from "./verify/expected-live";
-export { compileExpectedLiveArtefacts } from "./verify/expected-live";
+export {
+	compileExpectedLiveArtefacts,
+	selectExpectedLiveManifestMuxings,
+} from "./verify/expected-live";
 export type {
 	CredentialEdgeBaseUrlDefect,
 	EdgeBaseUrlShapeDefect,

@@ -4,6 +4,7 @@ import {
 	destinationSchema,
 	fmp4MuxingSchema,
 	mp4MuxingSchema,
+	planDrmSchema,
 	planOutputSchema,
 	renditionSchema,
 	secretEgressUrlSchema,
@@ -303,6 +304,7 @@ export const liveHlsManifestPlanSchema = z.strictObject({
 	closedCaptions: z.string().default("NONE"),
 	/** Pin a muxing leg when a rendition carries both FMP4 and TS. */
 	videoMuxingKind: z.enum(["FMP4", "TS"]).optional(),
+	drmKind: z.enum(["CENC", "FAIRPLAY", "SPEKE"]).optional(),
 	audioMuxingKind: z.enum(["FMP4", "TS"]).optional(),
 	// LiveHlsManifest start-request surface
 	/** DVR window (seconds). C8: ≤10800 recommended — validated, not clamped. */
@@ -352,6 +354,7 @@ export const liveDashManifestPlanSchema = z.strictObject({
 	/** SegmentTemplate vs SegmentTimeline per representation family. */
 	representationType: z.enum(["TEMPLATE", "TIMELINE"]).default("TEMPLATE"),
 	videoMuxingKind: z.enum(["FMP4", "CMAF"]).optional(),
+	drmKind: z.enum(["CENC", "FAIRPLAY", "SPEKE"]).optional(),
 	audioMuxingKind: z.enum(["FMP4", "CMAF"]).optional(),
 	// LiveDashManifest start-request surface
 	timeshift: z.number().positive().optional(),
@@ -540,6 +543,7 @@ export const liveChannelPlanSchema = z
 			// .min(1): "" passes defaults (they fire on undefined only).
 			cloudRegion: z.string().min(1).default("AUTO"),
 			encoderVersion: z.string().min(1).default("STABLE"),
+			fallbackCloudRegions: z.array(z.string().min(1)).max(3).optional(),
 			/**
 			 * Encoding.staticIpId — pin a reserved static IP (live-only in the
 			 * API; consumed at ENCODING CREATE, not at live start). An already-
@@ -586,6 +590,8 @@ export const liveChannelPlanSchema = z
 		 */
 		renditions: z.array(renditionSchema).min(1),
 		muxings: z.array(liveMuxingSchema).min(1),
+		/** Encrypted output destinations; content keys remain vault references. */
+		drm: z.array(planDrmSchema).optional(),
 		/** A channel without a manifest has no playback surface. */
 		liveManifests: z.array(liveManifestPlanSchema),
 		/** SCTE-35 ad-marker output (C14). Absent = off (no SCTE carriers). */

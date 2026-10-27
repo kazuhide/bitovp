@@ -1,3 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+	compileLiveChannel,
+	initStepLog,
+	liveChannelPlanSchema,
+} from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
@@ -991,4 +998,41 @@ describe("POST /api/live-channels/[id]/live-to-vod", () => {
 		});
 		expect(bad.status).toBe(400);
 	});
+});
+
+it("enqueues Live-to-VOD for a compiled encrypted-only recording", async () => {
+	const p = liveChannelPlanSchema.parse(
+		JSON.parse(
+			readFileSync(
+				join(
+					__dirname,
+					"../../../../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+				),
+				"utf8",
+			),
+		),
+	);
+	p.drm = p.muxings.map((m) => {
+		if (!m.destination) throw new Error("Missing output");
+		return {
+			key: `${m.key}-enc`,
+			kind: "FAIRPLAY" as const,
+			muxingKey: m.key,
+			credentialId: "00000000-0000-4000-8000-000000000003",
+			iv: "a".repeat(32),
+			uri: "skd://synthetic",
+			destination: m.destination,
+		};
+	});
+	for (const m of p.muxings) delete m.destination;
+	for (const m of p.liveManifests) m.drmKind = "FAIRPLAY";
+	const log = initStepLog(compileLiveChannel(p)).map((e) => ({
+		...e,
+		status: "DONE",
+		resourceId: `provider-${e.step}`,
+	}));
+	findUnique.mockResolvedValue(channel({ stepLog: log }));
+	const res = await POST(postRequest({ manifests: ["HLS"] }), params);
+	expect(res.status).toBe(200);
+	expect(queueAdd).toHaveBeenCalled();
 });

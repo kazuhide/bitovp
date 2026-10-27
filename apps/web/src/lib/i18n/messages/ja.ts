@@ -5,6 +5,24 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	liveProtection: {
+		add: "追加",
+		remove: "削除",
+
+		encryption: "暗号化",
+		encryptionHelp:
+			"鍵は資格情報に保管します。マニフェストにも同じ暗号化方式を指定してください。HLSのCENCをFairPlayで再生するには、CBCとFairPlay情報が必要です。暗号化を追加すると、下の項目を選ばない限り平文出力は作成しません。",
+		cmafHelp: "これらの暗号化方式にはfMP4を使用してください。",
+		writeClear:
+			"暗号化しない出力も作成する（保存先のフォルダを分けてください）",
+		copyToAll: "暗号化設定を対応するすべてのトラックにコピー",
+		orphan: "削除されたトラックを参照する暗号化設定があります。",
+		fallbackRegions: "代替クラウドリージョン",
+		fallbackRegion: "代替リージョン",
+		fallbackHelp:
+			"同じクラウドの具体的なリージョン、またはAUTOを最大3件指定できます。指定順を保持します。Cloud Connectでは使用できません。",
+		clear: "暗号化なし",
+	},
 	liveOutputs: {
 		destination: "\u51fa\u529b\u5148",
 		access: "\u30a2\u30af\u30bb\u30b9\u6a29",

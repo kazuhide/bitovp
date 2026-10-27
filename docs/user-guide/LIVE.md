@@ -19,7 +19,7 @@ region. Review the selected account and any saved or copied region settings.
    encoder input type.
 3. In **Ladder**, configure video/audio renditions and their codec settings.
 4. In **Output**, choose storage or a delivery service, paths, and optional mirrors.
-5. In **Packaging**, set the shared segment length and optional MP4 archive.
+5. In **Packaging**, set the shared segment length, optional encryption, and MP4 archive.
 6. In **Encoding**, review automatic restart/stop controls and optional features.
 7. In **Manifests**, configure HLS/DASH, DVR, and publication settings.
 8. In **Schedule**, configure planned actions. A schedule does not postpone provisioning.
@@ -47,6 +47,32 @@ starting position. Blank uses the provider default, which can add latency.
 DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
+
+## Encrypted outputs and fallback regions
+
+In **Packaging → Encryption**, add CENC, FairPlay, or SPEKE to an fMP4 track,
+or FairPlay to an MPEG-TS track. These methods do not target CMAF containers or
+the progressive MP4 archive. Select an existing content-key or SPEKE-provider
+credential; the content key is never part of a channel plan. **Copy encryption
+settings to all compatible tracks** shares the public metadata and credential
+reference while retaining each track's own folder.
+
+Select the matching encryption kind in each HLS or DASH manifest. Its media
+references then use the encrypted destination; DASH also receives encryption
+metadata. HLS CENC intended for FairPlay playback requires CBC and the FairPlay
+IV and URI. Provisioning encrypted output does not configure a playback license
+service; verify the license configuration and target player's DRM support.
+
+Clear output is omitted for an encrypted track unless **Also write unencrypted
+output** is selected. Clear and encrypted copies need different folders. Import
+and duplicate preserve encryption settings and destinations. Browser drafts keep
+vault references and public non-URL metadata; re-enter omitted license/FairPlay
+URLs after restoring a draft.
+
+In **Basics → Fallback cloud regions**, optionally select up to three distinct
+concrete regions or `AUTO` on the primary cloud provider. The API receives them
+in the selected order. They are alternatives if the preferred region is
+unavailable, not three parallel encoders. Cloud Connect does not use this list.
 
 ## Send input and confirm delivery
 

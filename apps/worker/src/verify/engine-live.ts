@@ -76,7 +76,7 @@ export type LiveSample = {
 	/** Rows in the heartbeat time series at this instant. */
 	heartbeatRows?: number;
 	/** Objects under the muxing prefixes at this instant. */
-	objects?: ObjectEntry[];
+	objects?: (ObjectEntry & { outputKey: string })[];
 	/**
 	 * Storage or parse faults hit while taking this sample.
 	 *
@@ -656,7 +656,11 @@ function verifyLadderShape(
 		const initKeys = new Set(
 			initSegmentCandidates(
 				objects
-					.filter((o) => o.key.startsWith(muxing.dir.prefix))
+					.filter(
+						(o) =>
+							o.outputKey === muxing.outputKey &&
+							o.key.startsWith(muxing.dir.prefix),
+					)
 					.map((o) => o.key),
 				muxing.initSegment,
 				muxing.initSegmentNameTemplate,
@@ -664,6 +668,7 @@ function verifyLadderShape(
 		);
 		const mine = objects.filter(
 			(o) =>
+				o.outputKey === muxing.outputKey &&
 				o.key.startsWith(muxing.dir.prefix) &&
 				(rx.test(o.key.split("/").pop() ?? "") || initKeys.has(o.key)),
 		);
@@ -699,14 +704,21 @@ function verifyLadderShape(
 		const initKeys = new Set(
 			initSegmentCandidates(
 				objects
-					.filter((o) => o.key.startsWith(muxing.dir.prefix))
+					.filter(
+						(o) =>
+							o.outputKey === muxing.outputKey &&
+							o.key.startsWith(muxing.dir.prefix),
+					)
 					.map((o) => o.key),
 				muxing.initSegment,
 				muxing.initSegmentNameTemplate,
 			),
 		);
 		for (const o of objects) {
-			if (!o.key.startsWith(muxing.dir.prefix)) {
+			if (
+				o.outputKey !== muxing.outputKey ||
+				!o.key.startsWith(muxing.dir.prefix)
+			) {
 				continue;
 			}
 			const base = o.key.slice(muxing.dir.prefix.length);

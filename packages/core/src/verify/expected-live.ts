@@ -93,6 +93,8 @@ export type ExpectedLiveMuxing = {
 	muxingKind?: "CMAF";
 	initSegmentNameTemplate?: string;
 	muxingKey: string;
+	drmKey?: string;
+	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	streamKey: string;
 	container: "FMP4_SEGMENTED" | "TS_SEGMENTED";
 	outputKey: string;
@@ -107,6 +109,9 @@ export type ExpectedLiveMuxing = {
 /** One live manifest, its DVR window, and what that window costs. */
 export type ExpectedLiveManifest = {
 	manifestKey: string;
+	/** Exact muxing order selected by the manifest compiler. */
+	muxingKeys: string[];
+	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	kind: "HLS" | "DASH";
 	outputKey: string;
 	dir: PathPattern;
@@ -356,33 +361,48 @@ export function compileExpectedLiveArtefacts(
 		);
 	const muxings: ExpectedLiveMuxing[] = plan.muxings
 		.filter((muxing) => muxing.kind !== "MP4")
-		.map((muxing) => {
-			// A live muxing without a destination cannot be located, so it is a note rather
-			// than a guess — the engine turns it into a named SKIP.
-			const dest = muxing.destination;
-			if (dest === undefined) {
-				notes.push(
-					`live muxing ${muxing.key} declares no destination, so nothing knows where its segments should appear`,
-				);
-			}
-			return {
-				muxingKey: muxing.key,
-				streamKey: muxing.streamKey,
-				container: muxing.kind === "TS" ? "TS_SEGMENTED" : "FMP4_SEGMENTED",
-				...(muxing.kind === "CMAF" ? { muxingKind: "CMAF" as const } : {}),
-				outputKey: dest?.outputKey ?? "",
-				dir: pathPattern(withTrailingSlash(dest?.path ?? "")),
-				segmentNaming: muxing.segmentNamingTemplate || muxing.segmentNaming,
-				...(muxing.segmentNamingTemplate
-					? { segmentNamingIsTemplate: true as const }
-					: {}),
-				segmentLengthSec: muxing.segmentLength,
-				...(muxing.kind === "CMAF" && muxing.initSegmentNameTemplate
-					? { initSegmentNameTemplate: muxing.initSegmentNameTemplate }
-					: "initSegmentName" in muxing && muxing.initSegmentName
-						? { initSegment: muxing.initSegmentName }
+		.flatMap((muxing) => {
+			const destinations = [
+				...(muxing.destination ? [{ destination: muxing.destination }] : []),
+				...(plan.drm ?? [])
+					.filter((d) => d.muxingKey === muxing.key)
+					.map((d) => ({
+						destination: d.destination,
+						drmKey: d.key,
+						drmKind: d.kind,
+					})),
+			];
+			return (destinations.length ? destinations : [undefined]).map((leg) => {
+				const dest = leg?.destination;
+				// A live muxing without a destination cannot be located, so it is a note rather
+				// than a guess — the engine turns it into a named SKIP.
+				if (dest === undefined) {
+					notes.push(
+						`live muxing ${muxing.key} declares no destination, so nothing knows where its segments should appear`,
+					);
+				}
+				return {
+					muxingKey: muxing.key,
+					...(leg && "drmKey" in leg
+						? { drmKey: leg.drmKey, drmKind: leg.drmKind }
 						: {}),
-			};
+					streamKey: muxing.streamKey,
+					container: muxing.kind === "TS" ? "TS_SEGMENTED" : "FMP4_SEGMENTED",
+					...(muxing.kind === "CMAF" ? { muxingKind: "CMAF" as const } : {}),
+					outputKey: dest?.outputKey ?? "",
+					dir: pathPattern(withTrailingSlash(dest?.path ?? "")),
+					segmentNaming: muxing.segmentNamingTemplate || muxing.segmentNaming,
+					...(muxing.segmentNamingTemplate
+						? { segmentNamingIsTemplate: true as const }
+						: {}),
+					segmentLengthSec: muxing.segmentLength,
+					...(muxing.kind === "CMAF" && muxing.initSegmentNameTemplate
+						? { initSegmentNameTemplate: muxing.initSegmentNameTemplate }
+						: "initSegmentName" in muxing && muxing.initSegmentName
+							? { initSegment: muxing.initSegmentName }
+							: {}),
+				};
+			});
 		});
 
 	const manifests: ExpectedLiveManifest[] = plan.liveManifests.map(
@@ -442,6 +462,8 @@ export function compileExpectedLiveArtefacts(
 			];
 			return {
 				manifestKey: manifest.key,
+				muxingKeys: selected.map(({ muxing }) => muxing.key),
+				...(manifest.drmKind ? { drmKind: manifest.drmKind } : {}),
 				kind: manifest.kind,
 				outputKey: manifest.destination.outputKey,
 				dir: pathPattern(withTrailingSlash(manifest.destination.path)),
@@ -551,4 +573,16 @@ export function compileExpectedLiveArtefacts(
 		...(mslEdgeOutputs.length > 0 ? { mslEdgeOutputs } : {}),
 		notes,
 	};
+}
+
+/** Match one material route per selected muxing, retaining the manifest's order. */
+export function selectExpectedLiveManifestMuxings(
+	expected: ExpectedLiveArtefacts,
+	manifest: ExpectedLiveManifest,
+): ExpectedLiveMuxing[] {
+	return manifest.muxingKeys.flatMap((key) =>
+		expected.muxings.filter(
+			(m) => m.muxingKey === key && m.drmKind === manifest.drmKind,
+		),
+	);
 }

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import { LiveArchiveSection } from "./archive-section";
 import type { LiveWizardState } from "./build-live-plan";
+import { LiveEncryptionSection } from "./encryption-section";
 
 export function LivePackagingSection({
 	state,
@@ -34,6 +35,11 @@ export function LivePackagingSection({
 					}
 				/>
 			</Field>
+			<LiveEncryptionSection
+				state={state}
+				credentials={credentials}
+				onPatch={onPatch}
+			/>
 			<LiveArchiveSection
 				state={state}
 				credentials={credentials}

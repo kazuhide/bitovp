@@ -299,3 +299,36 @@ describe("a retry never overwrites a previous roll (review-357)", () => {
 		expect(result.target.nameFor("HLS")).toBe("vod-2.m3u8");
 	});
 });
+
+it("resolves encrypted-only segmented recordings from DRM destinations, including rebased runs", () => {
+	const p = structuredClone(PLAN);
+	p.drm = p.muxings.map((m) => {
+		if (!m.destination) throw new Error("Missing output");
+		return {
+			key: `${m.key}-enc`,
+			kind: "FAIRPLAY" as const,
+			muxingKey: m.key,
+			credentialId: "00000000-0000-4000-8000-000000000003",
+			iv: "a".repeat(32),
+			uri: "skd://synthetic",
+			destination: m.destination,
+		};
+	});
+	for (const m of p.muxings) delete m.destination;
+	for (const m of p.liveManifests) m.drmKind = "FAIRPLAY";
+	for (const run of [
+		{ seq: 1, runId: "11111111-1111-4111-8111-111111111111" },
+		{ seq: 2, runId: "22222222-2222-4222-8222-222222222222" },
+	]) {
+		const { entries, outputPrefix } = compileLiveRunStepLog(p, run);
+		expect(recordedLiveOutputs(entries).muxingPaths).toHaveLength(
+			p.muxings.length,
+		);
+		const target = resolveLiveToVodTarget(entries);
+		expect(target.ok).toBe(true);
+		if (target.ok)
+			expect(target.target.path).toBe(
+				run.seq === 1 ? "output/live-rtmp-simple" : outputPrefix,
+			);
+	}
+});

@@ -83,6 +83,13 @@
 	"manifests": [
 		{
 			"manifestKey": "hls",
+			"muxingKeys": [
+				"v1080",
+				"v720",
+				"v540",
+				"v360",
+				"a128"
+			],
 			"kind": "HLS",
 			"outputKey": "origin",
 			"dir": {
@@ -111,6 +118,13 @@
 		},
 		{
 			"manifestKey": "dash",
+			"muxingKeys": [
+				"v1080",
+				"v720",
+				"v540",
+				"v360",
+				"a128"
+			],
 			"kind": "DASH",
 			"outputKey": "origin",
 			"dir": {

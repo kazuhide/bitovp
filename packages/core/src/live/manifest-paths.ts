@@ -112,29 +112,40 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 	// A segment may use any extension, so a dynamic name can also overwrite an
 	// init file, playlist or archive. Check the physical targets already reserved.
 	for (const [index, muxing] of plan.muxings.entries()) {
-		if (muxing.kind === "MP4" || !muxing.destination) continue;
-		const filename = muxing.segmentNamingTemplate || muxing.segmentNaming;
-		if (!/[%{]/.test(filename)) continue;
-		for (const token of outputFileKeys(plan, {
-			destination: muxing.destination,
-			filename,
-		})) {
-			const dynamic: { storage: string; path: string } = JSON.parse(token);
-			const pattern = segmentPathPattern(
-				muxing.destination.path,
+		if (muxing.kind === "MP4") continue;
+		for (const destination of [
+			muxing.destination,
+			...(plan.drm ?? [])
+				.filter((d) => d.muxingKey === muxing.key)
+				.map((d) => d.destination),
+		]) {
+			if (!destination) continue;
+			const filename = muxing.segmentNamingTemplate || muxing.segmentNaming;
+			if (!/[%{]/.test(filename)) continue;
+			for (const token of outputFileKeys(plan, {
+				destination,
 				filename,
-				Boolean(muxing.segmentNamingTemplate),
-				literalCharacterLimit,
-			);
-			for (const literal of literalFiles) {
-				if (literal.storage !== dynamic.storage || !pattern.test(literal.path))
-					continue;
-				issues.push({
-					code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
-					level: "error",
-					path: `muxings[${index}].${muxing.segmentNamingTemplate ? "segmentNamingTemplate" : "segmentNaming"}`,
-					message: `Live segment pattern "${filename}" can overwrite output file "${literal.path}" owned by ${literal.owner}. Use distinct output filenames or folders.`,
-				});
+			})) {
+				const dynamic: { storage: string; path: string } = JSON.parse(token);
+				const pattern = segmentPathPattern(
+					destination.path,
+					filename,
+					Boolean(muxing.segmentNamingTemplate),
+					literalCharacterLimit,
+				);
+				for (const literal of literalFiles) {
+					if (
+						literal.storage !== dynamic.storage ||
+						!pattern.test(literal.path)
+					)
+						continue;
+					issues.push({
+						code: "LIVE_OUTPUT_NAMESPACE_COLLISION",
+						level: "error",
+						path: `muxings[${index}].${muxing.segmentNamingTemplate ? "segmentNamingTemplate" : "segmentNaming"}`,
+						message: `Live segment pattern "${filename}" can overwrite output file "${literal.path}" owned by ${literal.owner}. Use distinct output filenames or folders.`,
+					});
+				}
 			}
 		}
 	}

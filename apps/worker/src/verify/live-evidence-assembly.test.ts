@@ -183,8 +183,9 @@ function sample(
 	opts: { edge?: boolean } = {},
 ): LiveSample {
 	const objects = expected.muxings.flatMap((m) => [
-		{ key: `${m.dir.prefix}init.mp4`, size: 700 },
+		{ outputKey: m.outputKey, key: `${m.dir.prefix}init.mp4`, size: 700 },
 		...Array.from({ length: seq }, (_, i) => ({
+			outputKey: m.outputKey,
 			key: `${m.dir.prefix}seg-${i + 1}.m4s`,
 			size: 500_000,
 		})),
@@ -304,6 +305,7 @@ describe("assembleLiveEvidence", () => {
 		if (ambiguous) {
 			for (const s of samples)
 				s.objects?.push({
+					outputKey: "origin",
 					key: `${cmafExpected.muxings[0]?.dir.prefix}init-Ef56Gh78.mp4`,
 					size: 700,
 				});
@@ -373,7 +375,7 @@ describe("assembleLiveEvidence", () => {
 			...sample(42_000, 20),
 			objects: [
 				...(first.objects ?? []),
-				{ key: "foreign-run/seg-21.ts", size: 500_000 },
+				{ outputKey: "origin", key: "foreign-run/seg-21.ts", size: 500_000 },
 			],
 		};
 		const origin = assembleLiveEvidence(
@@ -680,4 +682,114 @@ describe("assembleLiveEvidence", () => {
 		expect(serialized).not.toContain("hdnts=");
 		expect(serialized).not.toMatch(/(secret|password|token)=/i);
 	});
+});
+
+it("binds an encrypted manifest to its encrypted folders rather than the optional clear copies", () => {
+	const p = liveChannelPlanSchema.parse(
+		JSON.parse(
+			readFileSync(join(FIXTURES, "live-rtmp-simple.plan.json"), "utf8"),
+		),
+	);
+	p.drm = p.muxings.map((m) => {
+		if (!m.destination) throw new Error("Missing destination");
+		return {
+			key: `${m.key}-enc`,
+			kind: "FAIRPLAY" as const,
+			muxingKey: m.key,
+			credentialId: "00000000-0000-4000-8000-000000000003",
+			iv: "a".repeat(32),
+			uri: "skd://test",
+			destination: { ...m.destination, path: `encrypted/${m.key}` },
+		};
+	});
+	p.liveManifests = p.liveManifests.map((m) => ({ ...m, drmKind: "FAIRPLAY" }));
+	const e = compileExpectedLiveArtefacts(p);
+	const blank = assembleLiveEvidence(
+		inputs({ plan: p, expected: e, samples: [sample(1000, 2)] }),
+	).find((l) => l.outputLeg === "hls@origin");
+	expect(blank?.children).toHaveLength(p.muxings.length);
+	expect(blank?.children.every((c) => c.media.length === 0)).toBe(true);
+	const objects = e.muxings
+		.filter((m) => m.drmKind)
+		.flatMap((m) => [
+			{ outputKey: m.outputKey, key: `${m.dir.prefix}init.mp4`, size: 700 },
+			{
+				outputKey: m.outputKey,
+				key: `${m.dir.prefix}segment_1.m4s`,
+				size: 2000,
+			},
+		]);
+	const leg = assembleLiveEvidence(
+		inputs({
+			plan: p,
+			expected: e,
+			samples: [{ ...sample(1000, 2), objects }],
+		}),
+	).find((l) => l.outputLeg === "hls@origin");
+	expect(leg?.children.map((c) => c.id)).toEqual(p.muxings.map((m) => m.key));
+	expect(
+		leg?.children.every((c) =>
+			c.media.every((m) => m.key.startsWith("encrypted/")),
+		),
+	).toBe(true);
+	expect(leg?.probes[0]?.children.map((c) => c.id)).toEqual(
+		leg?.children.map((c) => c.id),
+	);
+});
+
+it("does not prove an encrypted output using identical clear keys from another bucket", () => {
+	const p = liveChannelPlanSchema.parse(
+		JSON.parse(
+			readFileSync(join(FIXTURES, "live-rtmp-simple.plan.json"), "utf8"),
+		),
+	);
+	const origin = p.outputs[0];
+	if (origin?.kind !== "S3") throw new Error("Missing S3");
+	p.outputs.push({
+		...origin,
+		key: "encrypted",
+		bucket: "different-encrypted-bucket",
+	});
+	p.drm = p.muxings.map((m) => {
+		if (!m.destination) throw new Error("Missing destination");
+		return {
+			key: `${m.key}-enc`,
+			kind: "FAIRPLAY" as const,
+			muxingKey: m.key,
+			credentialId: "00000000-0000-4000-8000-000000000003",
+			iv: "a".repeat(32),
+			uri: "skd://synthetic",
+			destination: { ...m.destination, outputKey: "encrypted" },
+		};
+	});
+	p.liveManifests = p.liveManifests.map((m) => ({
+		...m,
+		drmKind: "FAIRPLAY",
+		destination: { ...m.destination, outputKey: "encrypted" },
+	}));
+	const e = compileExpectedLiveArtefacts(p);
+	const clearObjects = e.muxings
+		.filter((m) => !m.drmKind)
+		.flatMap((m) => [
+			{ outputKey: "origin", key: `${m.dir.prefix}init.mp4`, size: 700 },
+			{ outputKey: "origin", key: `${m.dir.prefix}segment_1.m4s`, size: 2000 },
+		]);
+	const make = (objects: typeof clearObjects) =>
+		assembleLiveEvidence(
+			inputs({
+				plan: p,
+				expected: e,
+				samples: [{ ...sample(1000, 2), objects }],
+			}),
+		).find((l) => l.outputLeg === "hls@encrypted");
+	const wrong = make(clearObjects);
+	expect(wrong?.children.every((c) => c.media.length === 0 && !c.init)).toBe(
+		true,
+	);
+	const right = make(
+		clearObjects.map((o) => ({ ...o, outputKey: "encrypted" })),
+	);
+	expect(right?.children.every((c) => c.media.length > 0 && !!c.init)).toBe(
+		true,
+	);
 });

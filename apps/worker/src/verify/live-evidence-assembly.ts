@@ -30,6 +30,7 @@ import {
 	liveEvidenceProgression,
 	redactUrl,
 	sealLiveEvidenceLeg,
+	selectExpectedLiveManifestMuxings,
 	selectLiveManifestMuxings,
 } from "@bitovp/core";
 import { initSegmentCandidates } from "../bitmovin/filename-template";
@@ -271,7 +272,11 @@ function mediaUnder(
 	const initKeys = new Set(
 		initSegmentCandidates(
 			(sample.objects ?? [])
-				.filter((o) => o.key.startsWith(muxing.dir.prefix))
+				.filter(
+					(o) =>
+						o.outputKey === muxing.outputKey &&
+						o.key.startsWith(muxing.dir.prefix),
+				)
 				.map((o) => o.key),
 			muxing.initSegment,
 			muxing.initSegmentNameTemplate,
@@ -280,6 +285,7 @@ function mediaUnder(
 	return (sample.objects ?? [])
 		.filter(
 			(o) =>
+				o.outputKey === muxing.outputKey &&
 				o.key.startsWith(muxing.dir.prefix) &&
 				!initKeys.has(o.key) &&
 				(o.size ?? 0) > 0,
@@ -301,7 +307,10 @@ function originProbe(
 		const keys = mediaUnder(sample, m)
 			.map((o) => o.key)
 			.sort();
-		return { id: m.muxingKey, served: keys.slice(-MAX_PROBE_KEYS) };
+		return {
+			id: m.muxingKey,
+			served: keys.slice(-MAX_PROBE_KEYS),
+		};
 	});
 	const readErrors = sample.readErrors ?? [];
 	return {
@@ -320,15 +329,17 @@ function originLeg(
 	);
 	const last = inputs.samples[inputs.samples.length - 1];
 	const selected = manifestMuxings(inputs, manifest.manifestKey);
-	const muxingKeys = new Set(selected.map(({ muxing }) => muxing.key));
-	const muxings = inputs.expected.muxings.filter((m) =>
-		muxingKeys.has(m.muxingKey),
-	);
+	const muxings = selectExpectedLiveManifestMuxings(
+		inputs.expected,
+		manifest,
+	).map((m) => ({ ...m, outputKey: manifest.outputKey }));
 	const children: LiveEvidenceChild[] = muxings.map((m) => {
 		const media = last ? mediaUnder(last, m) : [];
 		const initCandidates = initSegmentCandidates(
 			(last?.objects ?? [])
-				.filter((o) => o.key.startsWith(m.dir.prefix))
+				.filter(
+					(o) => o.outputKey === m.outputKey && o.key.startsWith(m.dir.prefix),
+				)
 				.map((o) => o.key),
 			m.initSegment,
 			m.initSegmentNameTemplate,
@@ -336,7 +347,10 @@ function originLeg(
 		const initKey = initCandidates.length === 1 ? initCandidates[0] : undefined;
 		const initObject = initKey
 			? (last?.objects ?? []).find(
-					(object) => object.key === initKey && (object.size ?? 0) > 0,
+					(object) =>
+						object.outputKey === m.outputKey &&
+						object.key === initKey &&
+						(object.size ?? 0) > 0,
 				)
 			: undefined;
 		return {

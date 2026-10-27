@@ -19,6 +19,11 @@ import {
 } from "./encoding-option";
 import { checkLiveHlsVideoUris } from "./hls-video-uri-validation";
 import { liveManifestPathIssues } from "./manifest-paths";
+import {
+	liveDrmIssues,
+	liveFallbackRegionIssues,
+	liveMediaDestination,
+} from "./protection";
 import type { LiveChannelPlan } from "./schema";
 import { SRT_LISTENER_PORTS } from "./schema";
 import { AGGREGATE_CLOUD_REGIONS } from "./startup";
@@ -157,6 +162,8 @@ export function validateLiveChannel(
 ): PlanIssue[] {
 	const issues: PlanIssue[] = [
 		...liveManifestPathIssues(plan),
+		...liveDrmIssues(plan, options),
+		...liveFallbackRegionIssues(plan),
 		...checkLiveHlsVideoUris(plan),
 	];
 	issues.push(...checkH26xCodecControls(plan.renditions));
@@ -218,6 +225,10 @@ export function validateLiveChannel(
 			...plan.muxings.map((muxing, index) => ({
 				path: `muxings.${index}`,
 				destination: muxing.destination,
+			})),
+			...(plan.drm ?? []).map((drm, index) => ({
+				path: `drm.${index}`,
+				destination: drm.destination,
 			})),
 			...plan.liveManifests.map((manifest, index) => ({
 				path: `liveManifests.${index}`,
@@ -494,7 +505,7 @@ export function validateLiveChannel(
 		}
 	}
 
-	// Muxings: refs, destination (no DRM in live PR1 to carry outputs),
+	// Muxings: refs, direct or encrypted destinations,
 	// container/codec matrix.
 	const renditionByKey = new Map(plan.renditions.map((r) => [r.key, r]));
 	const muxedRenditions = new Set<string>();
@@ -556,14 +567,20 @@ export function validateLiveChannel(
 				path: `muxings[${index}].additionalStreamKeys`,
 			});
 		}
-		if (!muxing.destination) {
+		if (
+			!muxing.destination &&
+			!plan.drm?.some((d) => d.muxingKey === muxing.key)
+		) {
 			issues.push({
 				code: "LIVE_MUXING_NO_DESTINATION",
 				level: "error",
-				message: `muxing "${muxing.key}" has no destination — live muxings always carry their output (no DRM resource exists to own it)`,
+				message: `muxing "${muxing.key}" has no destination — a muxing or one of its DRM resources must carry an output`,
 				path: `muxings[${index}]`,
 			});
-		} else if (!outputKeys.has(muxing.destination.outputKey)) {
+		} else if (
+			muxing.destination &&
+			!outputKeys.has(muxing.destination.outputKey)
+		) {
 			issues.push({
 				code: "LIVE_UNRESOLVED_REF",
 				level: "error",
@@ -718,15 +735,10 @@ export function validateLiveChannel(
 				manifest.destination.outputKey,
 			);
 			const missing = selected.filter(({ muxing }) => {
-				if (
-					!muxing.destination ||
-					!outputKeys.has(muxing.destination.outputKey)
-				)
+				const destination = liveMediaDestination(plan, muxing, manifest);
+				if (!destination || !outputKeys.has(destination.outputKey))
 					return false;
-				const mediaTargets = outputStorageKeys(
-					plan,
-					muxing.destination.outputKey,
-				);
+				const mediaTargets = outputStorageKeys(plan, destination.outputKey);
 				return [...manifestTargets].some((target) => !mediaTargets.has(target));
 			});
 			if (missing.length)
@@ -988,12 +1000,8 @@ export function validateLiveChannel(
 	// validateLiveChannel builds a completely separate issue list. At the time
 	// a pasted live plan was the only way to reach MSL at all (the wizard
 	// gained a destination selector on 2026-08-18), so the check ran nowhere it
-	// mattered. Live muxings always carry a
-	// destination (LIVE_MUXING_NO_DESTINATION above), and the live plan has no
-	// DRM, which is why that argument is simply absent. deliveryMirrors joined
-	// the live schema 2026-08-23 (the MSL4+Object-Storage simultaneous case),
-	// so mirrors now flow — an MSL output that receives everything AS A MIRROR
-	// satisfies C31 through the checker's own mirror arm.
+	// mattered. Encrypted destinations and delivery mirrors participate in
+	// the same provider constraints as direct muxing outputs.
 	issues.push(
 		...checkAkamaiMslConstraints({
 			encodingKind: "LIVE",
@@ -1002,6 +1010,7 @@ export function validateLiveChannel(
 			muxings: plan.muxings,
 			manifests: plan.liveManifests,
 			deliveryMirrors: plan.deliveryMirrors,
+			drm: plan.drm,
 		}),
 		...checkMslEncoderVersion(plan.outputs, plan.bitmovin.encoderVersion),
 	);

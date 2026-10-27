@@ -119,9 +119,9 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		pinWithDriftAid(long.length, 1437, "long");
+		pinWithDriftAid(long.length, 1440, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		pinWithDriftAid(short.size, 2789, "short");
+		pinWithDriftAid(short.size, 2797, "short");
 	});
 
 	/**

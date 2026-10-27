@@ -127,8 +127,18 @@ describe.each(kinds)("%s segment source origin", (kind) => {
 			expected.muxings.flatMap((muxing) => [
 				...(kind === "TS"
 					? []
-					: [{ key: `${muxing.dir.prefix}init.mp4`, size: 1000 }]),
-				{ key: `${muxing.dir.prefix}${filename}`, size: 1000 },
+					: [
+							{
+								outputKey: muxing.outputKey,
+								key: `${muxing.dir.prefix}init.mp4`,
+								size: 1000,
+							},
+						]),
+				{
+					outputKey: muxing.outputKey,
+					key: `${muxing.dir.prefix}${filename}`,
+					size: 1000,
+				},
 			]);
 		for (const [filename, verdict] of [
 			[names.written, "PASS"],

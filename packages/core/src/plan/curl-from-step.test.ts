@@ -30,6 +30,40 @@ function step(
 
 describe("curlForStep — endpoint mapping", () => {
 	it.each([
+		"CREATE_HLS_AUDIO_MEDIA",
+		"CREATE_HLS_STREAM_INFO",
+		"CREATE_HLS_SUBTITLES_MEDIA",
+	] as const)("requires resolved snapshot IDs for %s", (kind) => {
+		for (const missing of [
+			"manifestId",
+			"encodingId",
+			"streamId",
+			"muxingId",
+			"drmId",
+		]) {
+			const refs: Record<string, string> = {
+				manifestId: "manifest",
+				encodingId: "encoding",
+				streamId: "stream",
+				muxingId: "muxing",
+				drmId: "drm",
+			};
+			delete refs[missing];
+			expect(
+				curlForStep(
+					step({
+						kind,
+						refs: {
+							manifestId: "compiled-manifest-step",
+							drmId: "compiled-drm-step",
+						},
+						request: { uri: "video.m3u8", refs },
+					}),
+				),
+			).toEqual({ ok: false, code: "UNRESOLVED_PATH_PARAMS", kind });
+		}
+	});
+	it.each([
 		"L4_1",
 		"4.1",
 	])("uses the AV1 maximum-level wire value for request snapshot %s", (maxLevel) => {

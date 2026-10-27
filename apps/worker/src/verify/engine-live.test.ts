@@ -121,15 +121,20 @@ describe("progressive MP4 archive obligations", () => {
  * declared cannot demonstrate a ladder. Derived from the expectation, not guessed, which is
  * the rule the VOD side paid for eight times.
  */
-function ladderObjects(count: number): { key: string; size?: number }[] {
+function ladderObjects(count: number): NonNullable<LiveSample["objects"]> {
 	const expected = load("live-rtmp-simple");
-	const objects: { key: string; size?: number }[] = [];
+	const objects: NonNullable<LiveSample["objects"]> = [];
 	for (const m of expected.muxings) {
 		if (m.initSegment) {
-			objects.push({ key: `${m.dir.prefix}${m.initSegment}`, size: 900 });
+			objects.push({
+				outputKey: m.outputKey,
+				key: `${m.dir.prefix}${m.initSegment}`,
+				size: 900,
+			});
 		}
 		for (let i = 1; i <= count; i++) {
 			objects.push({
+				outputKey: m.outputKey,
 				key: `${m.dir.prefix}${m.segmentNaming.replace(/%number%/g, String(i))}`,
 				size: 500_000,
 			});
@@ -378,8 +383,13 @@ describe("live:segment-naming — the cheapest of the unread expectations", () =
 		const deps = healthy();
 		for (const [index, sample] of deps.samples.entries()) {
 			sample.objects = expected.muxings.flatMap((m) => [
-				{ key: `${m.dir.prefix}init-Ab12Cd34.mp4`, size: 900 },
+				{
+					outputKey: m.outputKey,
+					key: `${m.dir.prefix}init-Ab12Cd34.mp4`,
+					size: 900,
+				},
 				...Array.from({ length: index + 2 }, (_, n) => ({
+					outputKey: m.outputKey,
 					key: `${m.dir.prefix}seg-Ab12Cd34-${n + 1}.m4s`,
 					size: 500_000,
 				})),
@@ -409,7 +419,11 @@ describe("live:segment-naming — the cheapest of the unread expectations", () =
 		for (const sample of deps.samples) {
 			sample.objects = [
 				...(sample.objects ?? []),
-				{ key: `${first.dir.prefix}chunk-0001.mp4`, size: 500_000 },
+				{
+					outputKey: first.outputKey,
+					key: `${first.dir.prefix}chunk-0001.mp4`,
+					size: 500_000,
+				},
 			];
 		}
 		const report = await verifyLiveChannel(expected, deps);
@@ -1577,4 +1591,29 @@ describe("verifyMirrorDelivery — each delivery-mirror leg is judged on its own
 		const report = await verifyLiveChannel(load("live-rtmp-simple"), healthy());
 		expect(mirrorChecks(report)).toEqual([]);
 	});
+});
+
+it("rejects a missing encrypted ladder when only a different output contains the same keys", async () => {
+	const expected = load("live-rtmp-simple");
+	expected.muxings.push(
+		...expected.muxings.map((m) => ({
+			...m,
+			outputKey: "encrypted",
+			drmKey: `${m.muxingKey}-enc`,
+			drmKind: "FAIRPLAY" as const,
+		})),
+	);
+	const deps = healthy();
+	const report = await verifyLiveChannel(expected, deps);
+	expect(report.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+		"FAIL",
+	);
+	for (const s of deps.samples)
+		s.objects?.push(
+			...(s.objects ?? []).map((o) => ({ ...o, outputKey: "encrypted" })),
+		);
+	const correct = await verifyLiveChannel(expected, deps);
+	expect(correct.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+		"PASS",
+	);
 });

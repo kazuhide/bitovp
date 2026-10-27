@@ -424,20 +424,8 @@ export function checkAkamaiMslConstraints(input: MslCheckInput): PlanIssue[] {
 		) {
 			continue;
 		}
-		/*
-		 * RAILS 1 and 6 —  PR 1, and both DERIVE from
-		 * `AKAMAI_MSL_VERSION_BEHAVIOR` rather than restating it. That is the
-		 * requirement the review attached to the anchor: a Record nothing reads
-		 * is decoration sitting beside the `if`s that actually decide, and it
-		 * drifts silently because nothing executes it.
-		 *
-		 * Both are `error`. They mirror upstream validation rules that are
-		 * categorical (encoding-resource-service #2374 / encoder-service
-		 * #3383): a violating plan is rejected at Bitmovin, so refusing at
-		 * submit costs nothing and says which field in English. That is not the
-		 * case for the encoder-version rail, which is keyed to an external
-		 * state this repo cannot observe and is therefore a warning.
-		 */
+		// Validate format and encoding kind from the shared version rules.
+		// Encoder-version availability depends on external state and remains a warning.
 		const behavior = Object.hasOwn(
 			AKAMAI_MSL_VERSION_BEHAVIOR,
 			output.mslVersion ?? "",

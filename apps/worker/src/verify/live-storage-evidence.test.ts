@@ -7,12 +7,14 @@ import {
 import { expect, it } from "vitest";
 import type { LiveCleanupSeal } from "./live-cleanup-seal";
 import { assembleLiveEvidence } from "./live-evidence-assembly";
+import { listLiveOutputObjects } from "./live-storage-list";
 import { sampleLiveStorageObjects } from "./live-storage-sample";
 
 it.each([
-	false,
-	true,
-])("deduplicates nested encrypted listings before assembling complete evidence (conflict=%s)", async (conflict) => {
+	"healthy",
+	"missing",
+	"conflict",
+] as const)("collects nested encrypted storage through the runner's recursive listing (%s)", async (mode) => {
 	const plan = liveChannelPlanSchema.parse(
 		JSON.parse(
 			readFileSync(
@@ -24,10 +26,15 @@ it.each([
 			),
 		),
 	);
-	plan.muxings = plan.muxings.map((m) => ({
-		...m,
-		destination: { outputKey: "origin", path: `out/${m.key}` },
-	}));
+	plan.muxings = plan.muxings.map((m) => {
+		if (m.kind !== "FMP4") throw new Error("Missing fMP4 fixture");
+		return {
+			...m,
+			segmentNaming: "media/segment_%number%.m4s",
+			initSegmentName: "headers/init.mp4",
+			destination: { outputKey: "origin", path: `out/${m.key}` },
+		};
+	});
 	plan.drm = plan.muxings.map((m) => ({
 		key: `${m.key}-protected`,
 		kind: "FAIRPLAY" as const,
@@ -71,25 +78,53 @@ it.each([
 	const samples = [];
 	for (const [i, at] of [1000, 13000].entries()) {
 		const stored = expected.muxings.flatMap((m) => [
-			{ key: `${m.dir.prefix}init.mp4`, size: 700 },
+			{ key: `${m.dir.prefix}headers/init.mp4`, size: 700 },
 			...Array.from({ length: i + 2 }, (_, n) => ({
-				key: `${m.dir.prefix}segment_${n + 1}.m4s`,
+				key: `${m.dir.prefix}media/segment_${n + 1}.m4s`,
 				size: 2000,
 			})),
 		]);
 		const objects = await sampleLiveStorageObjects(
 			expected,
 			async (_output, prefix) =>
-				stored
-					.filter((o) => o.key.startsWith(prefix))
-					.map((o) => ({
-						...o,
-						...(conflict &&
-						prefix.endsWith("encrypted/") &&
-						o.key.endsWith("init.mp4")
-							? { size: 701 }
-							: {}),
-					})),
+				listLiveOutputObjects(
+					{
+						listObjects: async (input) => {
+							const matching = stored.filter(
+								(o) =>
+									o.key.startsWith(prefix) &&
+									!(
+										mode === "missing" &&
+										o.key.includes("/encrypted/headers/init.mp4")
+									),
+							);
+							if (!input.recursive)
+								return {
+									objects: matching.filter(
+										(o) => !o.key.slice(prefix.length).includes("/"),
+									),
+									prefixes: [`${prefix}headers/`, `${prefix}media/`],
+								};
+							const at = Number(input.cursor ?? 0);
+							return {
+								prefixes: [],
+								objects: matching.slice(at, at + 2).map((o) => ({
+									...o,
+									...(mode === "conflict" &&
+									prefix.endsWith("encrypted/") &&
+									o.key.endsWith("init.mp4")
+										? { size: 701 }
+										: {}),
+								})),
+								...(at + 2 < matching.length
+									? { nextCursor: String(at + 2) }
+									: {}),
+							};
+						},
+					},
+					"synthetic-bucket",
+					prefix,
+				),
 		);
 		samples.push({ at, status: "RUNNING", objects });
 	}
@@ -140,7 +175,7 @@ it.each([
 		},
 	}).find((candidate) => candidate.outputLeg === "hls@origin");
 	expect(leg).toBeDefined();
-	expect(leg?.complete, leg?.missing.join("; ")).toBe(!conflict);
+	expect(leg?.complete, leg?.missing.join("; ")).toBe(mode === "healthy");
 	expect(leg?.children.every((c) => c.media.length === 3)).toBe(true);
-	expect(leg?.children.every((c) => !!c.init)).toBe(!conflict);
+	expect(leg?.children.every((c) => !!c.init)).toBe(mode === "healthy");
 });

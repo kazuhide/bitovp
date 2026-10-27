@@ -221,6 +221,18 @@ it("rejects encrypted TS writers from different muxings sharing a physical path 
 });
 
 describe("Live output filename expansion collisions", () => {
+	it("rejects an unrepresentable pattern even with only one encrypted writer", () => {
+		const p = encrypted("FAIRPLAY", "TS");
+		const first = required(p.muxings[0]);
+		if (first.kind !== "TS") throw new Error("Missing TS fixture");
+		p.muxings = [first];
+		p.drm = [required(p.drm?.[0])];
+		p.liveManifests = p.liveManifests.filter((m) => m.kind === "HLS");
+		first.segmentNamingTemplate = "segment-{rand_chars:2049}-%number%.ts";
+		expect(
+			errors(p).some((i) => i.code === "LIVE_OUTPUT_PATTERN_UNVERIFIED"),
+		).toBe(true);
+	});
 	it.each([
 		["seg_%number%.ts", "seg_1%number%.ts", false, true],
 		["nested/seg_%number%.ts", "nested/seg_1%number%.ts", false, true],

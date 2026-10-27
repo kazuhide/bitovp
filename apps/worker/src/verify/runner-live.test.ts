@@ -3347,11 +3347,30 @@ describe("the evidence tuple rides on the result", () => {
 
 	it("with the edge wired, the samples probe it, the EDGE leg completes on progression, and the mirror check PASSes", async () => {
 		const { deps } = fakeProduct();
+		const channelPlan = liveChannelPlanSchema.parse(mslHlsPlan());
+		const originalListing = deps.listAll;
+		// The origin must emit the names this fixture declares, including literal tokens.
+		deps.listAll = async (outputKey, prefix) => {
+			const muxing = channelPlan.muxings.find(
+				(m) => m.destination && prefix.endsWith(`${m.destination.path}/`),
+			);
+			if (!muxing || muxing.kind === "MP4")
+				throw new Error("Unexpected listing route");
+			return (await originalListing(outputKey, prefix)).map((object) => {
+				const number = /segment_(\d+)\.m4s$/.exec(object.key)?.[1];
+				return number
+					? {
+							...object,
+							key: `${prefix}${muxing.segmentNaming.replace(/%number%/g, number)}`,
+						}
+					: object;
+			});
+		};
 		const { urls, readEdge } = liveEdge();
 		const result = await runLiveScenario(
 			{ ...deps, readEdge },
 			{
-				plan: mslHlsPlan(),
+				plan: channelPlan,
 				scenario: "live-akamai-msl-storage",
 				feed: FEED,
 				feedSeconds: 30,

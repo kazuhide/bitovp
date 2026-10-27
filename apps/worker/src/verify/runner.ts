@@ -88,6 +88,7 @@ import {
 	type LiveCleanupSeal,
 	unestablishedCleanupElements,
 } from "./live-cleanup-seal";
+import { listLiveOutputObjects } from "./live-storage-list";
 import type { Capability, PreflightReport } from "./preflight";
 import {
 	bucketFromLabel,
@@ -988,7 +989,7 @@ async function readOutputText(
 	return Buffer.concat(chunks).toString("utf8");
 }
 
-/** List one prefix in the output bucket, one level, as the engine's deps expect. */
+/** List the output prefix through the live storage collector. */
 async function listOutput(
 	config: RunnerConfig,
 	prefix: string,
@@ -1006,30 +1007,7 @@ async function listOutput(
 	 */
 	const browser = via?.browser ?? (await outputBrowser(config));
 	const bucket = via?.bucket ?? config.outputBucket;
-	const objects: { key: string; size?: number }[] = [];
-	let cursor: string | undefined;
-	const MAX_PAGES = 40;
-	for (let page = 0; page < MAX_PAGES; page++) {
-		const res = await browser.listObjects({
-			bucket,
-			prefix,
-			limit: 100,
-			...(cursor ? { cursor } : {}),
-		});
-		for (const o of res.objects as { key: string; size?: number }[]) {
-			objects.push({
-				key: o.key,
-				...(o.size !== undefined ? { size: o.size } : {}),
-			});
-		}
-		cursor = (res as { nextCursor?: string }).nextCursor;
-		if (!cursor) {
-			return objects;
-		}
-	}
-	throw new Error(
-		`listing ${prefix} exceeded ${MAX_PAGES * 100} objects — refusing to compare a truncated count, which would make a healthy channel look stalled`,
-	);
+	return listLiveOutputObjects(browser, bucket, prefix);
 }
 
 export function paidLiveRewrite(

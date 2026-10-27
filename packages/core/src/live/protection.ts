@@ -1,7 +1,12 @@
 import { BITMOVIN_CLOUD_REGIONS } from "../bitmovin/schemas";
-import { outputFilePath, outputStorageKeys } from "../plan/output-files";
+import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS, type PlanDrm } from "../plan/schema";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
+import {
+	type FilenameLanguage,
+	filenameLanguagesOverlap,
+	outputFilenameLanguage,
+} from "./filename-language";
 import type { LiveChannelPlan, LiveManifestPlan, LiveMuxing } from "./schema";
 
 /** A manifest selects the encrypted leg by kind; clear manifests use the muxing. */
@@ -59,95 +64,6 @@ export function liveFallbackRegionIssues(plan: LiveChannelPlan): PlanIssue[] {
 				"Choose up to three distinct concrete regions or AUTO on the primary cloud provider. Cloud Connect does not support managed fallback regions.",
 		});
 	return issues;
-}
-
-type FilenameState = {
-	transitions: { to: number; characters: string | null }[];
-};
-type FilenameLanguage = { states: FilenameState[]; end: number };
-const DIGITS = "0123456789";
-const ALPHANUMERIC = `${DIGITS}ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`;
-
-/** A bounded automaton for literals, numeric indices and random template tokens. */
-function filenameLanguage(
-	pattern: string,
-	template: boolean,
-): FilenameLanguage | undefined {
-	const states: FilenameState[] = [{ transitions: [] }];
-	let current = 0;
-	const append = (characters: string | null, repeat = false) => {
-		if (states.length >= 2048) return false;
-		const next = states.length;
-		states.push({ transitions: [] });
-		states[current]?.transitions.push({ to: next, characters });
-		if (repeat) states[next]?.transitions.push({ to: next, characters });
-		current = next;
-		return true;
-	};
-	for (let at = 0; at < pattern.length; ) {
-		const numeric = /^%([a-zA-Z]+)%/.exec(pattern.slice(at));
-		if (numeric) {
-			// Unknown provider tokens may expand to any non-directory filename text.
-			const characters = ["number", "time"].includes(numeric[1] ?? "")
-				? DIGITS
-				: null;
-			if (!append(characters, true)) return undefined;
-			at += numeric[0].length;
-			continue;
-		}
-		const random = template
-			? /^\{(?:segment_)?rand_chars(?::([^{}]*))?\}/.exec(pattern.slice(at))
-			: null;
-		if (random) {
-			const length = random[1] === undefined ? 32 : Number(random[1]);
-			if (
-				(random[1] !== undefined && !/^[1-9]\d*$/.test(random[1])) ||
-				!Number.isSafeInteger(length) ||
-				length > 2048
-			)
-				return undefined;
-			for (let i = 0; i < length; i++)
-				if (!append(ALPHANUMERIC)) return undefined;
-			at += random[0].length;
-			continue;
-		}
-		if (!append(pattern[at] ?? "")) return undefined;
-		at++;
-	}
-	return { states, end: current };
-}
-
-function filenameLanguagesOverlap(
-	left: FilenameLanguage | undefined,
-	right: FilenameLanguage | undefined,
-): boolean {
-	// Resource bounds and unknown expansions must never certify disjoint writers.
-	if (!left || !right) return true;
-	const pending: [number, number][] = [[0, 0]];
-	const seen = new Set<number>([0]);
-	for (let at = 0; at < pending.length; at++) {
-		const pair = pending[at];
-		if (!pair) continue;
-		const [a, b] = pair;
-		if (a === left.end && b === right.end) return true;
-		for (const x of left.states[a]?.transitions ?? []) {
-			for (const y of right.states[b]?.transitions ?? []) {
-				const common =
-					x.characters === null
-						? y.characters === null || [...y.characters].some((c) => c !== "/")
-						: y.characters === null
-							? [...x.characters].some((c) => c !== "/")
-							: [...x.characters].some((c) => y.characters?.includes(c));
-				if (!common) continue;
-				const key = x.to * right.states.length + y.to;
-				if (seen.has(key)) continue;
-				if (seen.size >= 50_000) return true;
-				seen.add(key);
-				pending.push([x.to, y.to]);
-			}
-		}
-	}
-	return false;
 }
 
 function liveOutputFilenames(muxing: LiveMuxing) {
@@ -267,7 +183,7 @@ export function liveDrmIssues(
 		{ owner: string; language: FilenameLanguage | undefined }[]
 	>();
 	const conflicts = new Set<string>();
-	for (const muxing of plan.muxings) {
+	for (const [index, muxing] of plan.muxings.entries()) {
 		const destinations = [
 			...(muxing.destination
 				? [{ destination: muxing.destination, owner: `muxing:${muxing.key}` }]
@@ -278,10 +194,19 @@ export function liveDrmIssues(
 		];
 		for (const { destination, owner } of destinations) {
 			for (const filename of liveOutputFilenames(muxing)) {
-				const language = filenameLanguage(
-					outputFilePath(destination.path, filename.pattern),
+				const language = outputFilenameLanguage(
+					destination.path,
+					filename.pattern,
 					filename.template,
 				);
+				if (!language) {
+					add(
+						"LIVE_OUTPUT_PATTERN_UNVERIFIED",
+						`muxings[${index}]`,
+						"The output filename pattern exceeds bounded validation or contains an unsupported random-token length. Choose a shorter, valid filename pattern.",
+					);
+					continue;
+				}
 				for (const storage of outputStorageKeys(plan, destination.outputKey)) {
 					const previous = reservations.get(storage) ?? [];
 					for (const writer of previous) {

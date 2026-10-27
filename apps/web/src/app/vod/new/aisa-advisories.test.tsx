@@ -8,6 +8,34 @@ import { EncodingOptionsSection } from "./wizard-sections";
 
 describe("AI advisory controls", () => {
 	it.each([
+		{},
+		{ topics: [] },
+		{ topics: ["UNKNOWN"] },
+		{ topics: ["TOBACCO", "TOBACCO"] },
+		{ topics: "TOBACCO" },
+	])("discards damaged advisory settings from drafts without losing the AI destination: %j", (regulatoryAdvisories) => {
+		const saved = projectWizardDraft("vod", {
+			...DEFAULT_WIZARD_STATE,
+			startOptions: {
+				aiSceneAnalysis: {
+					filename: "analysis.json",
+					path: "ai",
+					regulatoryAdvisories,
+				},
+			},
+		});
+		const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, saved, "vod");
+		expect(
+			restored.startOptions?.aiSceneAnalysis?.regulatoryAdvisories,
+		).toBeUndefined();
+		expect(restored.startOptions?.aiSceneAnalysis).toMatchObject({
+			filename: "analysis.json",
+			path: "ai",
+		});
+		render(<EncodingOptionsSection state={restored} onPatch={vi.fn()} />, "en");
+		expect(screen.getByLabelText("Detect tobacco (TOBACCO)")).not.toBeChecked();
+	});
+	it.each([
 		[
 			"en",
 			"Detect tobacco (TOBACCO)",

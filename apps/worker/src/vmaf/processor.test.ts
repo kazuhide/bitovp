@@ -2911,6 +2911,80 @@ it.each([
 	);
 });
 
+it.each([
+	"4:3",
+	"1:1",
+	undefined,
+	"N/A",
+	"0:1",
+	"-1:1",
+])("frame-index reference SAR %s preserves coded metadata and selects the display or legacy canvas", async (sar) => {
+	const plan = qcPlan();
+	delete plan.qc;
+	const codedWidth = sar === "4:3" ? 1440 : 1920;
+	const cloudScore = vi.fn(async (request) => {
+		await writeFile(request.options.logPath, vmafJson([96, 97]));
+	});
+	const t = setup({
+		plan,
+		cloudScore,
+		probeJson: JSON.stringify({
+			streams: [
+				{
+					codec_type: "video",
+					width: codedWidth,
+					height: 1080,
+					r_frame_rate: "25/1",
+					avg_frame_rate: "25/1",
+					pix_fmt: "yuv420p",
+					sample_aspect_ratio: sar,
+				},
+			],
+		}),
+		job: {
+			scoringVersion: 6,
+			triggerKey: `lab-manual:${ENCODING_JOB_ID}:output`,
+			params: {
+				source: "OUTPUT_MP4",
+				measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+			},
+		},
+	});
+	if (sar === "-1:1") {
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("INVALID_SAMPLE_ASPECT_RATIO");
+		expect(cloudScore).not.toHaveBeenCalled();
+		return;
+	}
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "FINISHED",
+		results: 2,
+	});
+	const known = sar === "4:3" || sar === "1:1";
+	for (const [request] of cloudScore.mock.calls) {
+		expect(request.options.scaleToReference).toEqual({
+			width: 1920,
+			height: 1080,
+		});
+		if (known)
+			expect(request.options.referenceGeometry).toEqual({
+				width: codedWidth,
+				height: 1080,
+				sampleAspectRatio: sar,
+			});
+		else expect(request.options).not.toHaveProperty("referenceGeometry");
+	}
+	expect((t.job.params as Row).reference).toMatchObject({
+		width: 1920,
+		height: 1080,
+		codedWidth,
+		codedHeight: 1080,
+		sampleAspectRatioPolicy: known ? "reported" : "legacy-square-pixel",
+	});
+});
+
 it("refuses fresh generation-5 frame-index launches without rewriting historical results", async () => {
 	const plan = qcPlan();
 	delete plan.qc;

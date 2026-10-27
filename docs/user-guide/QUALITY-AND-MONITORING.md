@@ -38,6 +38,14 @@ expected rendition count, and errors. Mean alone can hide poor frames; inspect
 percentiles, worst frames, and the frame graph too. A partial result is not a
 complete ladder measurement.
 
+Full-frame BT709 measurements honor the reference's reported sample aspect
+ratio, so anamorphic inputs use a square-pixel display canvas. Missing or
+unknown SAR retains the recorded legacy square-pixel assumption; it does not
+prove display geometry.
+Comparison warns when recorded reference display sizes differ. Confirm the
+same measurement size before comparing a historical anamorphic report with a
+new one, especially when older size metadata is unavailable.
+
 CSV and JSON downloads include every stored frame, including PSNR when measured.
 The graph keeps up to 1,500 points and preserves each bucket's worst frame.
 Large downloads arrive progressively; wait for the download to finish. If it is

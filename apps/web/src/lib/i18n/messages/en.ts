@@ -1770,6 +1770,8 @@ export const en = {
 			"These reports were scored with different VMAF models ({models}), so the chart overlays two viewing conditions rather than two encodes. A model is not a detail: measured on one identical pair, vmaf_v1.0.16_3d0h scored 83.01 and vmaf_v1.0.16_3d0h_2160 scored 92.44 — 9.4 points from the model alone. Compare reports that share a model, or read each curve on its own.",
 		mixedSubsampling:
 			"These reports were scored with different frame-sampling strides (n_subsample {strides}), so their minima are not comparable: a subsampled report's lowest score is the worst frame of a SAMPLE, while a full-precision report's is the worst frame there is. The pooled means stay close, which is what makes this easy to miss. Re-score at full precision before reading the minimum or the harmonic mean as a quality difference.",
+		mixedReferenceCanvases:
+			"Reference display sizes differ. Measure with the same reference display size before comparing scores.",
 		title: "VMAF Lab",
 		compareSelected: "Compare selected",
 		loadFailed: "Failed to load VMAF reports.",

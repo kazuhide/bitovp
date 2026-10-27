@@ -3,6 +3,7 @@ import {
 	comparedModels,
 	comparedSubsamples,
 	mixesModels,
+	mixesReferenceCanvases,
 	mixesScoringGenerations,
 	mixesSubsampling,
 	scoringGenerations,
@@ -38,6 +39,33 @@ describe("scoring generations", () => {
 		).toBe(false);
 		expect(mixesScoringGenerations([])).toBe(false);
 		expect(mixesScoringGenerations([{ scoringVersion: 2 }])).toBe(false);
+	});
+});
+
+describe("reference comparison canvas", () => {
+	it("warns when coded-square and SAR-aware reports used different sizes", () => {
+		expect(
+			mixesReferenceCanvases([
+				{ reference: { width: 1440, height: 1080 } },
+				{ reference: { width: 1920, height: 1080 } },
+			]),
+		).toBe(true);
+	});
+	it("keeps equal 1:1 canvases comparable and does not invent a size for missing metadata", () => {
+		expect(
+			mixesReferenceCanvases([
+				{ reference: { width: 1920, height: 1080 } },
+				{ reference: { width: 1920, height: 1080 } },
+			]),
+		).toBe(false);
+		expect(
+			mixesReferenceCanvases([
+				{ reference: null },
+				{},
+				{ reference: { width: 1920, height: 1080 } },
+			]),
+		).toBe(false);
+		expect(mixesReferenceCanvases([])).toBe(false);
 	});
 });
 

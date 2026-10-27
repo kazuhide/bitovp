@@ -11,6 +11,7 @@ import {
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
 	evaluateQcGate,
+	frameIndexDisplayGeometry,
 	gateExpectedRenditionKeys,
 	PER_TITLE_ATTRIBUTION_VERSION,
 	PER_TITLE_SCHEMA_VERSION,
@@ -23,10 +24,12 @@ import {
 	type QcTarget,
 	type RenditionPooled,
 	redactSecrets,
+	sampleAspectRatioFromProbe,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	type VmafCloudProfile,
 	type VmafCommandOptions,
 	type VmafExecution,
+	type VmafReferenceGeometry,
 	vmafCloudProfileSchema,
 	vmafExecutionSchema,
 	vmafJobSchema,
@@ -658,7 +661,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		wantPsnr: boolean,
 		target: QcTarget,
 		referencePath: string,
-		geometry: Geometry & { frameRate?: string },
+		geometry: Geometry & {
+			frameRate?: string;
+			referenceGeometry?: VmafReferenceGeometry;
+		},
 		referenceProvenance: DownloadProvenance,
 		jobDir: string,
 		out: { credential: ResolvedCredential; bucket: string },
@@ -763,6 +769,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								measurementMethod,
 								referenceFrameRate: geometry.frameRate,
 								distortedOriginal,
+								...(geometry.referenceGeometry
+									? { referenceGeometry: geometry.referenceGeometry }
+									: {}),
 							}
 						: {}),
 					...(modelPath ? { modelPath } : {}),
@@ -1167,7 +1176,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				string,
 				{
 					path: string;
-					geometry: Geometry & { frameRate?: string };
+					geometry: Geometry & {
+						frameRate?: string;
+						referenceGeometry?: VmafReferenceGeometry;
+					};
 					resourceVideo?: ResourceVideo;
 					provenance: DownloadProvenance;
 					credential: ResolvedCredential;
@@ -1177,7 +1189,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				target: QcTarget,
 			): Promise<{
 				path: string;
-				geometry: Geometry & { frameRate?: string };
+				geometry: Geometry & {
+					frameRate?: string;
+					referenceGeometry?: VmafReferenceGeometry;
+				};
 				resourceVideo?: ResourceVideo;
 				provenance: DownloadProvenance;
 				credential: ResolvedCredential;
@@ -1222,8 +1237,25 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				const videoStream = JSON.parse(probe.stdout).streams?.find(
 					(stream: { codec_type?: string }) => stream.codec_type === "video",
 				);
+				const codedGeometry = geometryFromProbe(probe.stdout);
+				const sar = measurementMethod
+					? sampleAspectRatioFromProbe(videoStream?.sample_aspect_ratio)
+					: undefined;
+				const referenceGeometry = sar
+					? {
+							width: codedGeometry.width,
+							height: codedGeometry.height,
+							sampleAspectRatio: sar,
+						}
+					: undefined;
 				const geometry = {
-					...geometryFromProbe(probe.stdout),
+					...codedGeometry,
+					...(referenceGeometry
+						? {
+								...frameIndexDisplayGeometry(referenceGeometry),
+								referenceGeometry,
+							}
+						: {}),
 					...(measurementMethod
 						? {
 								frameRate:
@@ -1264,6 +1296,16 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									reference: {
 										width: geometry.width,
 										height: geometry.height,
+										...(measurementMethod
+											? {
+													codedWidth: codedGeometry.width,
+													codedHeight: codedGeometry.height,
+													...(sar ? { sampleAspectRatio: sar } : {}),
+													sampleAspectRatioPolicy: sar
+														? "reported"
+														: "legacy-square-pixel",
+												}
+											: {}),
 										...(geometry.fps !== undefined
 											? { fps: geometry.fps }
 											: {}),

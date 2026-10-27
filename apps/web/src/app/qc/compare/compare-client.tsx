@@ -14,6 +14,7 @@ import {
 	fmtScore,
 	jobShortLabel,
 	mixesModels,
+	mixesReferenceCanvases,
 	mixesScoringGenerations,
 	mixesSubsampling,
 	renditionLabel,
@@ -284,6 +285,11 @@ export function CompareClient() {
 		<section>
 			<CompareHeader jobCount={loadedJobs.length} seriesCount={series.length} />
 			<VmafScoreLegend className="mt-3" />
+			{mixesReferenceCanvases(loadedJobs) ? (
+				<p role="alert" className="mt-3 text-amber-400 text-xs">
+					{t("qc.mixedReferenceCanvases")}
+				</p>
+			) : null}
 
 			{mixesScoringGenerations(loadedJobs) ? (
 				<p role="alert" className="mt-3 text-amber-400 text-xs">

@@ -342,4 +342,28 @@ describe("explicit frame-index BT709 10-bit method", () => {
 			);
 		}
 	});
+	it("validates the display canvas while retaining native CAMBI geometry", () => {
+		const referenceGeometry = {
+			width: 1440,
+			height: 1080,
+			sampleAspectRatio: "4:3",
+		};
+		expect(buildVmafCommand({ ...options, referenceGeometry })).toEqual(
+			buildVmafCommand(options),
+		);
+		for (const change of [
+			{ sampleAspectRatio: "N/A" },
+			{ sampleAspectRatio: "0:1" },
+			{ sampleAspectRatio: "-1:1" },
+			{ sampleAspectRatio: "1:1" },
+			{ width: 1439 },
+		]) {
+			expect(() =>
+				buildVmafCommand({
+					...options,
+					referenceGeometry: { ...referenceGeometry, ...change },
+				}),
+			).toThrow();
+		}
+	});
 });

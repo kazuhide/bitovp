@@ -8,6 +8,7 @@ import {
 	type PerTitleResultsView,
 	perTitleActualPopulations,
 	perTitleActualVideoFamilies,
+	validatePlan,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { parseDashText } from "./adapters";
@@ -129,6 +130,7 @@ async function run(
 	text = healthyMpd(),
 	legacy = false,
 	extraObjects: string[] = [],
+	adjust?: (deps: EngineDeps) => void,
 ) {
 	const objects = ["first", "second"].flatMap((key) =>
 		["init.mp4", "seg_1.m4s", "seg_2.m4s"].map(
@@ -158,6 +160,7 @@ async function run(
 		perTitlePopulations: population,
 		providerOutputIds: { origin: "provider-origin" },
 	};
+	adjust?.(deps);
 	return verifyArtefacts(compileExpectedArtefacts(configured), deps);
 }
 
@@ -168,6 +171,91 @@ function familyChecks(report: Awaited<ReturnType<typeof run>>) {
 }
 
 describe("Default DASH per-period Per-Title RESULT witnesses", () => {
+	it("accepts the captured progressive WebM type for an on-demand Per-Title RESULT", async () => {
+		const configured = encodingPlanSchema.parse({
+			...plan(),
+			encodings: [{ key: "first", name: "First" }],
+			ingest: plan().ingest.filter((row) => row.key === "first"),
+			renditions: [
+				{
+					key: "first-video",
+					codec: "VP9",
+					encodingKey: "first",
+					ingestKey: "first",
+					mode: "PER_TITLE_TEMPLATE",
+					height: null,
+					bitrate: null,
+				},
+			],
+			perTitle: { vp9Configuration: {} },
+			muxings: [
+				{
+					key: "first",
+					kind: "WEBM",
+					streamKey: "first-video",
+					progressive: true,
+					filename: "video.webm",
+					destination: {
+						outputKey: "origin",
+						path: "out/first/{height}p_{bitrate}_{uuid}/",
+					},
+				},
+			],
+			manifests: [
+				{
+					key: "dash",
+					kind: "DASH",
+					profile: "ON_DEMAND",
+					generationMode: "DEFAULT",
+					destination: { outputKey: "origin", path: "out/" },
+				},
+			],
+		});
+		// Imported provider metadata can be inspected without enabling this execution topology.
+		expect(
+			validatePlan(configured).some(
+				(issue) =>
+					issue.code === "PLAN_MANIFEST_DETAIL_INVALID" &&
+					issue.message === "Progressive WebM requires a standard video stream",
+			),
+		).toBe(true);
+		const view = capture();
+		view.snapshot.streams.splice(1);
+		const result = view.snapshot.streams[0],
+			muxing = result?.muxings[0];
+		if (!result || !muxing) throw new Error("capture missing");
+		result.codecType = "VP9";
+		muxing.muxingType = "PROGRESSIVE_WEBM";
+		muxing.filename = "video.webm";
+		view.snapshot.scan.resultsCaptured = 1;
+		view.snapshot.scan.muxingsListed = 1;
+		view.snapshot.scan.templatesDeclared = 1;
+		view.snapshot.scan.templatesListed = 1;
+		const text =
+			'<MPD type="static" mediaPresentationDuration="PT12S"><Period><AdaptationSet contentType="video" mimeType="video/webm" codecs="vp09.00.10.08"><Representation id="video" height="720" width="1280" bandwidth="2000000"><BaseURL>first/720p_2000000_first/video.webm</BaseURL><SegmentBase indexRange="0-100"/></Representation></AdaptationSet></Period></MPD>';
+		const report = await run(
+			configured,
+			view,
+			text,
+			false,
+			["out/first/720p_2000000_first/video.webm"],
+			(deps) => {
+				deps.probe = async () => ({
+					videoCodec: "vp9",
+					height: 720,
+					durationSec: 12,
+				});
+			},
+		);
+		expect(report.checks.filter((row) => row.verdict === "FAIL")).toEqual([]);
+		expect(
+			report.checks.find(
+				(row) =>
+					row.id ===
+					"manifest:dash:period:0:pertitle-result:result-first:present",
+			)?.verdict,
+		).toBe("PASS");
+	});
 	it.each([
 		"implicit",
 		"explicit",

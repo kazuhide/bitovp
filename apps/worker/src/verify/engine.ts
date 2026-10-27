@@ -4115,7 +4115,7 @@ function verifyDefaultDashPerTitleCoverage(
 						muxing.streamId === result.streamId &&
 						muxing.templateRendition === result.templateRendition &&
 						(manifest.dashOnDemand
-							? ["MP4", "WEBM"]
+							? ["MP4", "PROGRESSIVE_WEBM"]
 							: ["FMP4", "CMAF", "WEBM"]
 						).includes(muxing.muxingType.toUpperCase()) &&
 						muxing.legs.some((leg) => {

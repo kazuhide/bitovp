@@ -11,6 +11,7 @@ import {
 import { checkCodecDetailControls } from "./codec-detail-controls";
 import { qcMirrorMuxingKind, renditionOutputBase } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { defaultHlsPathConflicts } from "./default-manifest-paths";
 import { defaultManifestSelection } from "./default-manifest-selection";
 import {
 	checkSecretEgressHosts,
@@ -2261,6 +2262,25 @@ export function validatePlan(
 				message: `manifest "${manifest.key}" references unknown output "${manifest.destination.outputKey}"`,
 				path: `manifests[${index}].destination.outputKey`,
 			});
+		}
+		if (manifest.kind === "HLS" && manifest.generationMode === "DEFAULT") {
+			const conflicts = defaultHlsPathConflicts(plan, manifest.destination);
+			for (const level of ["error", "warning"] as const) {
+				const conflict = conflicts.find((row) => row.level === level);
+				if (!conflict) continue;
+				issues.push({
+					code:
+						level === "error"
+							? "PLAN_DEFAULT_HLS_OUTPUT_PATH"
+							: "PLAN_DEFAULT_HLS_OUTPUT_PATH_UNVERIFIED",
+					level,
+					message:
+						level === "error"
+							? `Default HLS manifest "${manifest.key}" must use the same directory as, or a parent of, every selected media output on its output resource. ${conflict.owner} writes to "${conflict.destination.path}" outside "${manifest.destination.path || "/"}". Choose a common parent directory or manual manifest generation for parent-relative media paths`
+							: `Default HLS manifest "${manifest.key}" has an unverified output hierarchy for ${conflict.owner}: a physical storage alias or dynamic path does not prove the provider's output selection. Use a common parent directory or verify this output mapping before encoding`,
+					path: `manifests[${index}].destination.path`,
+				});
+			}
 		}
 		// Default generation selects its own tracks on the provider. Manual
 		// representation leg checks apply only to the explicit resource tree.

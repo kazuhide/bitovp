@@ -1,4 +1,7 @@
-import { defaultManifestSelection } from "../plan/default-manifest-selection";
+import {
+	defaultHlsSelectedMuxings,
+	defaultManifestSelection,
+} from "../plan/default-manifest-selection";
 import { outputFilePath, outputStorageKeys } from "../plan/output-files";
 import {
 	AUDIO_CODECS,
@@ -39,6 +42,7 @@ export type DefaultHlsSelection = {
 /** The Default API chooses playlist identities; only the selected encoding's media is known. */
 export function defaultHlsSelection(plan: EncodingPlan): DefaultHlsSelection {
 	const selected = defaultManifestSelection(plan);
+	const selectedMuxings = defaultHlsSelectedMuxings(plan);
 	const result: DefaultHlsSelection = {
 		encodingKey: selected.encodingKey,
 		tracks: [],
@@ -56,13 +60,8 @@ export function defaultHlsSelection(plan: EncodingPlan): DefaultHlsSelection {
 			: rendition.codec === "WEBVTT" || rendition.codec === "IMSC"
 				? "text"
 				: "video";
-		const muxings = plan.muxings.filter(
-			(muxing) =>
-				muxing.streamKey === rendition.key &&
-				(kind === "text"
-					? rendition.codec === "WEBVTT" &&
-						["TEXT", "CHUNKED_TEXT"].includes(muxing.kind)
-					: ["FMP4", "TS", "MP4"].includes(muxing.kind)),
+		const muxings = selectedMuxings.filter(
+			(muxing) => muxing.streamKey === rendition.key,
 		);
 		const resources = muxings.flatMap((muxing) => {
 			const clear = expectedHlsWriterResource(plan, muxing.key);

@@ -48,7 +48,7 @@ export const en = {
 		defaultHlsConflict:
 			"Default HLS cannot use the saved per-rendition playlist names or media groups. Remove those settings, keep manual generation, or retain a separate manual HLS manifest that uses them.",
 		defaultHlsSelection:
-			"Default HLS uses the first rendition's encoding and generates playlist names and media groups. Shared naming settings apply only to manual HLS manifests.",
+			"Default HLS uses the first rendition's encoding and generates playlist names and media groups. Its output folder must be the same directory as, or a parent of, the selected media folders. Use manual generation for ../ media references.",
 		publicVttUrl:
 			"Use a public URL without credentials, query strings (?) or fragments (#). Signed URLs are not supported.",
 		templateUnavailable:

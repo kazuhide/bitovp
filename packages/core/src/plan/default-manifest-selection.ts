@@ -17,6 +17,28 @@ export function defaultManifestSelection<T extends SelectionSource>(plan: T) {
 	};
 }
 
+type HlsSelectionSource = SelectionSource & {
+	renditions: readonly { key: string; codec: string; encodingKey?: string }[];
+	muxings: readonly { key: string; streamKey: string; kind: string }[];
+};
+
+/** Share Default HLS media candidacy between preflight and output verification. */
+export function defaultHlsSelectedMuxings<T extends HlsSelectionSource>(
+	plan: T,
+) {
+	const selected = new Map(
+		defaultManifestSelection(plan).renditions.map((row) => [row.key, row]),
+	);
+	return plan.muxings.filter((muxing) => {
+		const rendition = selected.get(muxing.streamKey);
+		if (!rendition) return false;
+		return rendition.codec === "WEBVTT" || rendition.codec === "IMSC"
+			? rendition.codec === "WEBVTT" &&
+					["TEXT", "CHUNKED_TEXT"].includes(muxing.kind)
+			: ["FMP4", "TS", "MP4"].includes(muxing.kind);
+	}) as T["muxings"][number][];
+}
+
 type ManualSelectionSource = SelectionSource & {
 	renditions: readonly {
 		key: string;

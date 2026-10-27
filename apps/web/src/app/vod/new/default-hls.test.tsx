@@ -63,6 +63,55 @@ function plan() {
 }
 
 describe("Default HLS wizard selection", () => {
+	it("reports media outside the Default HLS parent without moving saved paths or an independent manual manifest", async () => {
+		const initial = fresh();
+		initial.output.basePath = "asset/manifests/";
+		initial.videos[0] = {
+			...required(initial.videos[0]),
+			muxing: { path: "../video/" },
+		};
+		initial.audios[0] = {
+			...required(initial.audios[0]),
+			muxing: { path: "../audio/" },
+		};
+		initial.manifests.extra = [
+			{ kind: "HLS", key: "manual", manifestName: "manual.m3u8" },
+		];
+		const before = buildPlan(initial);
+		renderLocalized(<Harness initial={initial} />);
+		await userEvent.click(
+			required(screen.getAllByText("Additional manifest options")[0]),
+		);
+		fireEvent.change(await screen.findByLabelText("Manifest generation"), {
+			target: { value: "DEFAULT" },
+		});
+		const result = plan();
+		expect(result.manifests[0]?.destination.path).toBe("asset/manifests/");
+		expect(result.muxings.map((row) => row.destination?.path)).toEqual(
+			before.muxings.map((row) => row.destination?.path),
+		);
+		expect(
+			result.manifests.find((row) => row.key === "manual")?.destination.path,
+		).toBe("asset/manifests/");
+		expect(
+			validatePlan(result).filter(
+				(issue) => issue.code === "PLAN_DEFAULT_HLS_OUTPUT_PATH",
+			),
+		).toMatchObject([{ level: "error" }]);
+		expect(
+			await screen.findByLabelText("Manifest generation"),
+		).toHaveAccessibleDescription(/same directory as, or a parent of/);
+	});
+	it("keeps a valid custom parent when Default HLS is selected", async () => {
+		const initial = fresh();
+		initial.output.basePath = "asset/custom/";
+		renderLocalized(<Harness initial={initial} />);
+		await userEvent.click(screen.getByText("Additional manifest options"));
+		fireEvent.change(await screen.findByLabelText("Manifest generation"), {
+			target: { value: "DEFAULT" },
+		});
+		expect(plan().manifests[0]?.destination.path).toBe("asset/custom/");
+	});
 	it.each([
 		"en",
 		"ja",

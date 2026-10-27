@@ -42,6 +42,8 @@ Use time or segment positions for Live custom tags. Live setup does not expose V
 
 Default HLS uses the encoding assigned to the plan's first rendition. Bitmovin chooses child playlist names and media groups. Clear custom per-track names and playlist URIs before selecting it. A separate manual HLS manifest can still use those shared settings.
 
+Keep a Default HLS manifest in the same directory as, or a parent of, its media outputs on the same output resource. For example, use `asset/` for the manifest when media is under `asset/video/` and `asset/audio/`; `asset/manifests/` is a sibling and the service rejects it. The wizard uses the output base directory and never moves it automatically. Use manual generation when media needs `../` references. Storage aliases and dynamic Per-Title paths can leave selection uncertain; the preflight reports that uncertainty separately.
+
 The checks follow generated playlists to declared media files and verify codec, resolution, audio properties and bytes. Multiple compatible containers remain possible choices until generated output identifies them.
 
 A flexible Per-Title template can be omitted from the generated ladder; a fixed-resolution template remains required. TS and fragmented MP4 copies of one video stream represent the same ladder rung.
@@ -56,4 +58,4 @@ Plans and saved jobs retain the complete configuration. Browser draft recovery s
 
 These controls configure the Encoding API. Availability still depends on the encoder version, codec, container and account. Check the generated manifest and playback on the intended devices when adopting a new combination.
 
-Reference: [DASH manifests](https://bitmovin.github.io/bitmovin-api-sdk-javascript/classes/DashManifest.html), [segmented representation ranges](https://bitmovin.github.io/bitmovin-api-sdk-javascript/classes/DashSegmentedRepresentation.html), [HLS stream information](https://bitmovin.github.io/bitmovin-api-sdk-javascript/classes/StreamInfo.html).
+Reference: [Default and custom manifests](https://developer.bitmovin.com/encoding/docs/default-vs-custom-manifest), [DASH manifests](https://bitmovin.github.io/bitmovin-api-sdk-javascript/classes/DashManifest.html), [segmented representation ranges](https://bitmovin.github.io/bitmovin-api-sdk-javascript/classes/DashSegmentedRepresentation.html), [HLS stream information](https://bitmovin.github.io/bitmovin-api-sdk-javascript/classes/StreamInfo.html).

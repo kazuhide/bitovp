@@ -4066,6 +4066,91 @@ async function verifyManifest(
 	}
 }
 
+/** A generated representation must reference its captured RESULT, not an alias of another rung. */
+function verifyDefaultDashPerTitleCoverage(
+	report: ReportBuilder,
+	id: string,
+	manifest: ExpectedManifest,
+	parsed: ParsedDash,
+	periodIndex: number,
+	deps: EngineDeps,
+	selected: ReturnType<typeof scopedPerTitleResults>,
+): void {
+	if (selected.status !== "complete") return;
+	const population = deps.perTitlePopulations;
+	const outputId = deps.providerOutputIds?.[manifest.outputKey];
+	const covered = new Set<string>();
+	let unresolved = !outputId || !parsed.playlists?.length;
+	if (population?.status === "complete" && outputId) {
+		const root = new URL("https://manifest-storage.invalid/");
+		const mpdUrl = storageObjectUrl(
+			root,
+			`${manifest.dir.prefix}${manifest.files[0] ?? "stream.mpd"}`,
+		);
+		for (const playlist of parsed.playlists ?? []) {
+			if (playlist.kind !== "video") continue;
+			const periods =
+				playlist.periodIndices ??
+				(playlist.periodIndex === undefined ? [] : [playlist.periodIndex]);
+			if (parsed.periods > 1 && !periods.length) {
+				unresolved = true;
+				continue;
+			}
+			if (periods.length && !periods.includes(periodIndex)) continue;
+			const refs = [
+				...(playlist.mapUri ? [playlist.mapUri] : []),
+				...playlist.segmentUris,
+			];
+			const keys = refs.map((uri) => referencedObjectKey(uri, mpdUrl, root));
+			if (
+				!playlist.segmentUris.length ||
+				keys.some((key) => key === undefined)
+			) {
+				unresolved = true;
+				continue;
+			}
+			const matches = selected.results.filter((result) =>
+				population.deliveryMuxings.some(
+					(muxing) =>
+						muxing.streamId === result.streamId &&
+						muxing.templateRendition === result.templateRendition &&
+						(manifest.dashOnDemand
+							? ["MP4", "WEBM"]
+							: ["FMP4", "CMAF", "WEBM"]
+						).includes(muxing.muxingType.toUpperCase()) &&
+						muxing.legs.some((leg) => {
+							if (leg.outputId !== outputId || leg.streamId !== result.streamId)
+								return false;
+							const directory = leg.resolvedPath.replace(/^\/+|\/+$/g, "");
+							return (
+								directory.length > 0 &&
+								keys.every((key) => key?.startsWith(`${directory}/`))
+							);
+						}),
+				),
+			);
+			if (matches.length === 1 && matches[0]) covered.add(matches[0].streamId);
+			else if (matches.length > 1 || periods.length > 1) unresolved = true;
+		}
+	}
+	for (const result of selected.results) {
+		const cid = `${id}:pertitle-result:${result.streamId}:present`;
+		if (!covered.has(result.streamId) && unresolved)
+			report.skip(
+				cid,
+				"manifest",
+				`UNVERIFIED — resolved period/media identities cannot establish whether RESULT ${result.streamId} is present`,
+			);
+		else
+			report.assert(
+				cid,
+				"manifest",
+				covered.has(result.streamId),
+				`Selected RESULT ${result.streamId} must be referenced in this period; alternative representations cannot replace another RESULT`,
+			);
+	}
+}
+
 function verifyDefaultDashPeriods(
 	report: ReportBuilder,
 	id: string,
@@ -4096,9 +4181,39 @@ function verifyDefaultDashPeriods(
 		const representations = parsed.representations.filter(
 			(row) => (row.periodIndex ?? 0) === index,
 		);
+		const selected = scopedPerTitleResults(
+			deps.perTitlePopulations,
+			period.perTitleSelection,
+		);
+		const population = deps.perTitlePopulations;
+		if (
+			population?.status === "complete" &&
+			population.results.every(
+				(result) => result.templateRendition !== undefined,
+			)
+		)
+			for (const template of (period.perTitleSelection ?? []).filter(
+				(row) => !row.optional && !row.conditional,
+			))
+				report.assert(
+					`${pid}:pertitle-required:${template.renditionKey}`,
+					"manifest",
+					population.results.some(
+						(result) => result.templateRendition === template.renditionKey,
+					),
+					`Selected fixed Per-Title template ${template.renditionKey} must produce a captured RESULT`,
+				);
 		for (const kind of ["video", "audio", "text"] as const) {
 			const seen = representations.filter((row) => row.kind === kind).length;
-			const { min, max } = period.counts[kind];
+			const { min: configuredMinimum, max } = period.counts[kind];
+			const min =
+				kind === "video" && selected.status === "complete"
+					? Math.max(
+							configuredMinimum,
+							selected.results.length +
+								period.topology.video.filter((row) => !row.optional).length,
+						)
+					: configuredMinimum;
 			report.assert(
 				`${pid}:${kind}-representations`,
 				"manifest",
@@ -4106,6 +4221,15 @@ function verifyDefaultDashPeriods(
 				`${kind} representation count in [${min}, ${max ?? "runtime-defined"}] — ${seen}`,
 			);
 		}
+		verifyDefaultDashPerTitleCoverage(
+			report,
+			pid,
+			manifest,
+			parsed,
+			index,
+			deps,
+			selected,
+		);
 		report.assert(
 			`${pid}:representation-kinds`,
 			"manifest",

@@ -128,6 +128,7 @@ async function run(
 	view: PerTitleResultsView = capture(),
 	text = healthyMpd(),
 	legacy = false,
+	extraObjects: string[] = [],
 ) {
 	const objects = ["first", "second"].flatMap((key) =>
 		["init.mp4", "seg_1.m4s", "seg_2.m4s"].map(
@@ -139,7 +140,7 @@ async function run(
 		for (const result of population.results) delete result.codecType;
 	const deps: EngineDeps = {
 		listAll: async (_output, prefix) =>
-			["out/stream.mpd", ...objects]
+			["out/stream.mpd", ...objects, ...extraObjects]
 				.filter((key) => key.startsWith(prefix))
 				.map((key) => ({ key, size: 1024 })),
 		readText: async () => text,
@@ -167,6 +168,111 @@ function familyChecks(report: Awaited<ReturnType<typeof run>>) {
 }
 
 describe("Default DASH per-period Per-Title RESULT witnesses", () => {
+	it.each([
+		"implicit",
+		"explicit",
+		"codec-condition",
+	] as const)("accepts a pruned flexible template in a %s period", async (periodKind) => {
+		const configured = plan(),
+			manifest = configured.manifests[0];
+		const template = configured.renditions[0],
+			muxing = configured.muxings[0];
+		if (manifest?.kind !== "DASH" || template?.codec !== "H264" || !muxing)
+			throw new Error("fixture missing");
+		configured.renditions.push({ ...template, key: "pruned", height: 540 });
+		configured.muxings.push({
+			...muxing,
+			key: "pruned",
+			streamKey: "pruned",
+			destination: { outputKey: "origin", path: "out/pruned/{uuid}/" },
+		});
+		manifest.defaultPeriods = [{ encodingKeys: ["first"] }];
+		const period = manifest.defaultPeriods[0];
+		if (!period) throw new Error("period missing");
+		if (periodKind === "implicit") delete manifest.defaultPeriods;
+		if (periodKind === "codec-condition")
+			period.adaptationSets = [
+				{
+					type: "CONDITION",
+					attribute: "video.codec",
+					operator: "==",
+					value: "H264",
+				},
+			];
+		const report = await run(
+			configured,
+			capture(),
+			mpd(video("first", "avc1.64001f")),
+		);
+		expect(report.checks.filter((row) => row.verdict === "FAIL")).toEqual([]);
+		expect(familyChecks(report).map((row) => row.verdict)).toEqual(["PASS"]);
+	});
+	it("does not treat an absent fixed template as a pruned flexible template", async () => {
+		const configured = plan(),
+			template = configured.renditions[0],
+			muxing = configured.muxings[0];
+		if (template?.codec !== "H264" || !muxing)
+			throw new Error("fixture missing");
+		configured.renditions.push({
+			...template,
+			key: "required",
+			mode: "PER_TITLE_TEMPLATE_FIXED_RESOLUTION",
+			height: 540,
+		});
+		configured.muxings.push({
+			...muxing,
+			key: "required",
+			streamKey: "required",
+			destination: { outputKey: "origin", path: "out/required/{uuid}/" },
+		});
+		expect(
+			(await run(configured)).checks.some((row) => row.verdict === "FAIL"),
+		).toBe(true);
+	});
+	it.each([
+		false,
+		true,
+	])("binds each selected RESULT rather than allowing two aliases of one (omit=%s)", async (omit) => {
+		const configured = plan(),
+			manifest = configured.manifests[0];
+		if (manifest?.kind !== "DASH") throw new Error("fixture missing");
+		manifest.defaultPeriods = [{ encodingKeys: ["first"] }];
+		const view = capture(),
+			original = view.snapshot.streams[0];
+		if (!original?.muxings[0]) throw new Error("capture missing");
+		const extra = structuredClone(original);
+		extra.streamId = "result-first-extra";
+		const extraMuxing = extra.muxings[0],
+			extraOutput = extraMuxing?.outputs[0];
+		if (!extraMuxing || !extraOutput) throw new Error("extra output missing");
+		extraMuxing.muxingId = "extra-muxing";
+		extraOutput.outputPath = "out/first/720p_2000000_first-extra/";
+		view.snapshot.streams.push(extra);
+		view.snapshot.scan.resultsCaptured++;
+		view.snapshot.scan.muxingsListed++;
+		view.snapshot.scan.streamsListed++;
+		const body = video("first", "avc1.64001f");
+		const alternate = body
+			.replace('id="video"', 'id="another"')
+			.replace(
+				/720p_2000000_first\//g,
+				omit ? "720p_2000000_first/" : "720p_2000000_first-extra/",
+			);
+		const objects = ["init.mp4", "seg_1.m4s", "seg_2.m4s"].map(
+			(name) => `out/first/720p_2000000_first-extra/${name}`,
+		);
+		const report = await run(
+			configured,
+			view,
+			mpd(body + alternate),
+			false,
+			objects,
+		);
+		if (omit)
+			expect(report.checks.some((row) => row.verdict === "FAIL")).toBe(true);
+		else
+			expect(report.checks.filter((row) => row.verdict === "FAIL")).toEqual([]);
+	});
 	it("binds different encodings' complete actual populations to their own periods", async () => {
 		const report = await run();
 		expect(familyChecks(report).map((check) => check.verdict)).toEqual([

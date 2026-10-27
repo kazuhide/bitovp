@@ -3,6 +3,29 @@ import { loadPlan } from "../plan/test-support";
 import { compileExpectedArtefacts } from "./expected";
 
 describe("advanced manifest artifact expectations", () => {
+	it("does not require a RESULT for each flexible Default DASH template", () => {
+		const plan = loadPlan("pertitle-h264-fmp4-ts-dash-hls-on-aws");
+		const video = plan.renditions.find((row) => row.codec === "H264");
+		const dash = plan.manifests.find((row) => row.kind === "DASH");
+		const muxing = plan.muxings.find(
+			(row) => row.streamKey === video?.key && row.kind === "FMP4",
+		);
+		if (video?.codec !== "H264" || dash?.kind !== "DASH" || !muxing)
+			throw new Error("fixture missing");
+		plan.renditions = [video];
+		plan.muxings = [muxing];
+		plan.renditions.push({ ...video, key: "pruned", height: 540 });
+		plan.muxings.push({ ...muxing, key: "pruned", streamKey: "pruned" });
+		dash.generationMode = "DEFAULT";
+		plan.manifests = [dash];
+		const period =
+			compileExpectedArtefacts(plan).manifests[0]?.dashPeriods?.[0];
+		expect(period?.counts.video).toEqual({ min: 1 });
+		expect(period?.perTitleSelection).toEqual([
+			{ renditionKey: video.key, optional: true },
+			{ renditionKey: "pruned", optional: true },
+		]);
+	});
 	it.each([
 		["==", 1],
 		["!=", 1],

@@ -303,7 +303,11 @@ export type ExpectedDashPeriod = {
 	topology: ManifestRenditionTopology;
 	perTitle: boolean;
 	/** Template identities selected by this period's encoding keys and conditions. */
-	perTitleSelection?: { renditionKey: string; conditional?: true }[];
+	perTitleSelection?: {
+		renditionKey: string;
+		conditional?: true;
+		optional?: true;
+	}[];
 	unverified: string[];
 };
 

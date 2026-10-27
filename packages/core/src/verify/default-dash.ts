@@ -165,6 +165,7 @@ export function defaultDashPeriods(
 	return periods.map((period) => {
 		const unverified = new Set<string>();
 		const perTitleSelection = new Map<string, boolean>();
+		let knownVideo = false;
 		const result: ExpectedDashPeriod = {
 			counts: {
 				video: { min: 0, max: 0 },
@@ -236,7 +237,10 @@ export function defaultDashPeriods(
 				const { kind, rendition } = first.candidate;
 				const known = group.some((entry) => entry.match === true);
 				const bounds = result.counts[kind];
-				if (known) bounds.min++;
+				const flexible =
+					"mode" in rendition && rendition.mode === "PER_TITLE_TEMPLATE";
+				if (known && kind === "video") knownVideo = true;
+				if (known && !flexible) bounds.min++;
 				if (group.some((entry) => entry.candidate.perTitle)) {
 					delete bounds.max;
 					result.perTitle = true;
@@ -300,11 +304,21 @@ export function defaultDashPeriods(
 			...new Set(result.topology.declaredVideoCodecFamilies),
 		].sort();
 		result.unverified = [...unverified].sort();
+		if (knownVideo)
+			result.counts.video.min = Math.max(1, result.counts.video.min);
 		if (result.perTitle)
 			result.perTitleSelection = [...perTitleSelection].map(
 				([renditionKey, known]) => ({
 					renditionKey,
 					...(known ? {} : { conditional: true as const }),
+					...(plan.renditions.some(
+						(row) =>
+							row.key === renditionKey &&
+							"mode" in row &&
+							row.mode === "PER_TITLE_TEMPLATE",
+					)
+						? { optional: true as const }
+						: {}),
 				}),
 			);
 		return result;

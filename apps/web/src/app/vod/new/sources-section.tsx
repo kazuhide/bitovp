@@ -806,6 +806,25 @@ export function SourcesSection({ state, onPatch }: SourcesSectionProps) {
 								}}
 							/>
 						</Field>
+						<Field
+							label={t("wizard.encoderVersion")}
+							htmlFor={`wz-enc-${index}-version`}
+						>
+							<Input
+								id={`wz-enc-${index}-version`}
+								className="w-44"
+								placeholder={t("wizard.planDefault")}
+								value={encoding.encoderVersion ?? ""}
+								onChange={(event) => {
+									const next = [...encodings];
+									next[index] = {
+										...encoding,
+										encoderVersion: event.target.value || undefined,
+									};
+									patchSources({ ...sources, encodings: next });
+								}}
+							/>
+						</Field>
 						<FieldRowAction>
 							<RowRemoveButton
 								label={t("wizardX.removeEncodingN", { n: index + 1 })}

@@ -222,6 +222,10 @@ Shared-password authentication does not provide separate roles for individual us
 
 Choose the display language and theme in "Settings". Display preferences are stored in your browser. Open the help button beside a field to read about its meaning, units, and conditions of use. Some advanced fields show API parameter names so that you can match them to the Bitmovin API.
 
+"Additional API settings" groups less common controls by rate control, frame structure/parallelism, prediction/analysis and colour/pixels. Search by API parameter name to find a field. H.264 includes deblocking, B-frame strategy, partitions and CEA-608/708 caption passthrough. H.265 adds motion/transform search, quantization, grain/noise controls, lookahead and parallelism. VP9 includes client buffers (milliseconds), row multithreading, frame parallelism, tiles and quality controls. These are tuning controls: changing them can affect encode time, quality and decoder compatibility. Leave them unset unless needed.
+
+AV1 and VP9 also expose output pixel format and aspect ratios. Supply both numerator and denominator for the sample aspect ratio (pixel shape), or the display aspect ratio (the displayed picture shape). The two kinds cannot be combined. Caption passthrough requires matching input/output frame rates, except for per-field deinterlacing that doubles the frame rate.
+
 A blank field often means "not specified". It does not necessarily mean disabled or zero. Some fields behave differently when left unspecified and when explicitly set to `0`, `false`, or `null`, so read the help before entering a value.
 
 ### Configuring, saving, and running
@@ -342,7 +346,7 @@ For AV1, leave "Dynamic range format" at its default to omit the setting. Dolby 
 
 Use one conversion format per Dolby Vision input stream within an encoding. Different resolutions can share that format, but mixing Profile 10.0 with 10.1, or Dolby Vision with SDR/HDR10 conversions of the same input stream, is rejected before the job starts. This also applies through trimming or concatenation. Create separate encodings when that input needs multiple conversion formats.
 
-HEVCv2 appears for eligible accounts. Selecting a BCF is separate from selecting an encoder version. MCTF reduces temporal noise using motion compensation; choose `AUTO`, `OFF`, or `ON`. Conventional H.265 CRF and x265 settings are not automatically converted into HEVCv2 values. If incompatible settings remain after changing codecs, explicitly remove them.
+HEVCv2 appears for eligible accounts. The current profile retains `SMART_PASS`, `VOD_HIGH_QUALITY` and SDR; these are applicability limits, not ordinary H.265 choices. Width and sample/display aspect ratios can be set without changing account eligibility. Selecting a BCF is separate from selecting an encoder version. MCTF reduces temporal noise using motion compensation; choose `AUTO`, `OFF`, or `ON`. Conventional H.265 CRF and x265 settings are not automatically converted into HEVCv2 values. If incompatible settings remain after changing codecs, explicitly remove them.
 
 When using H.264 or H.265 presets or rendition-level modes, avoid conflicting settings at the job level. If the interface displays "Use ladder encoding modes / presets", configure them in the ladder.
 
@@ -351,6 +355,8 @@ With H.264 VOD_STANDARD, selecting HIGH can still produce a Main-profile bitstre
 ### Audio, subtitles, and watermarking
 
 For audio, choose a suitable codec such as AAC, Opus, Dolby Digital, Dolby Digital Plus, or Dolby Atmos. In addition to bitrate, sample rate, and channel layout, supported codecs provide loudness measurement methods and dialogue detection. "Audio channel mix" defines the mapping and gain from input channels to output channels.
+
+AAC, AC3 and EAC3 provide an optional cutoff frequency in Hz: the highest audio frequency passed by the encoder. Blank uses the API default. The cutoff cannot exceed half the sample rate. AC3/EAC3 use their own configuration endpoints; they are distinct choices from Dolby Digital/Dolby Digital Plus, whose API models do not expose this setting. For VOD, native AC3/EAC3 can use fMP4 or progressive MP4; AC3 also supports unencrypted TS. AC3/EAC3 audio in encrypted TS is rejected before submission. Live retains AAC and the existing Dolby Digital choices; cutoff is available for Live AAC.
 
 The ladder's `AUDIOSTREAMCOUNT > 0` guard creates audio only when the input contains an audio stream. Use it when handling files without audio. This is different from a file that contains an audio stream whose content is silent.
 

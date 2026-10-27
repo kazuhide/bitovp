@@ -122,6 +122,8 @@ export async function executeStep(
 		case "CREATE_CODEC_IMSC":
 		case "CREATE_CODEC_AAC":
 		case "CREATE_CODEC_DOLBY_ATMOS":
+		case "CREATE_CODEC_AC3":
+		case "CREATE_CODEC_EAC3":
 		case "CREATE_CODEC_DDPLUS":
 		case "CREATE_CODEC_DD":
 		case "CREATE_CODEC_WEBVTT":

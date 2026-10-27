@@ -96,11 +96,15 @@ const color = fields(
 	"copyColorPrimariesFlag copyColorTransferFlag copyColorSpaceFlag copyChromaLocationFlag copyColorRangeFlag",
 );
 const codec = fields(
-	"motionCompensatedTemporalFiltering profile level maxLevel presetConfiguration trellis subMe motionEstimationMethod adaptiveQuantizationMode mvPredictionMode weightedPredictionPFrames dynamicRangeFormat maxCtuSize motionSearch tuIntraDepth tuInterDepth masterDisplay pixelFormat quality aqMode arnrType autoLevelSetup",
-	"crf minBitrate minGop maxGop qp sampleAspectRatioNumerator sampleAspectRatioDenominator rate minKeyframeInterval maxKeyframeInterval slices mvSearchRangeMax rcLookahead sceneCutThreshold adaptiveQuantizationStrength psyRateDistortionOptimization psyTrellis refFrames bframes maxBitrate bufsize motionSearchRange psyRateDistortionOptimizedQuantization qpMin qpMax maxContentLightLevel maxPictureAverageLightLevel cpuUsed tileColumns rateUndershootPct rateOvershootPct arnrMaxFrames arnrStrength",
-	"openGop strictCbr cabac adaptiveSpatialTransform levelHighTier weightPredictionOnPSlice weightPredictionOnBSlice sao hdr lossless",
+	"motionCompensatedTemporalFiltering profile level maxLevel presetConfiguration trellis subMe motionEstimationMethod adaptiveQuantizationMode mvPredictionMode weightedPredictionPFrames dynamicRangeFormat maxCtuSize motionSearch tuIntraDepth tuInterDepth masterDisplay pixelFormat quality aqMode arnrType autoLevelSetup bAdapt bAdaptiveStrategy bPyramid forceFlush interlaceMode limitReferences limitTransformUnitDepthRecursion maximumTransformUnitSize minCodingUnitSize nalHrd quantizationGroupSize rateDistortionLevelForQuantization rateDistortionPenalty transformSkip videoFormat",
+	"crf minBitrate minGop maxGop qp sampleAspectRatioNumerator sampleAspectRatioDenominator rate minKeyframeInterval maxKeyframeInterval slices mvSearchRangeMax rcLookahead sceneCutThreshold adaptiveQuantizationStrength psyRateDistortionOptimization psyTrellis refFrames bframes maxBitrate bufsize motionSearchRange psyRateDistortionOptimizedQuantization qpMin qpMax maxContentLightLevel maxPictureAverageLightLevel cpuUsed tileColumns rateUndershootPct rateOvershootPct arnrMaxFrames arnrStrength allowedRADLBeforeIDR bframeBias biasPct blurComplexity blurQuants clientBufferSize clientInitialBufferSize deblockAlpha deblockBeta dynamicRateDistortionStrength gopLookahead ipRatio lagInFrames lookaheadSlices maxIntraRate maxMerge noiseReductionInter noiseReductionIntra pbRatio qpOffsetChromaCb qpOffsetChromaCr qpStep quantizerCurveCompression quantizerCurveCompressionFactor rateDistortionLevelForModeDecision scenecutBias sharpness staticThresh targetLevel tileRows",
+	"openGop strictCbr cabac adaptiveSpatialTransform levelHighTier weightPredictionOnPSlice weightPredictionOnBSlice sao hdr lossless adaptiveQuantizationMotion analyzeSourceFramePixels asymetricMotionPartitionsAnalysis automaticAltRefFramesEnabled codingUnitLossless constrainedIntraPrediction copyPicture cutree earlySkip enableHlgSignaling enableHrdSignaling errorResiliencyEnabled evaluationOfIntraModesInBSlices fastSearchForAngularIntraPredictions fastSkipDetectionPFrames frameParallel grainOptimizedRateControl limitModes limitSao lowpassDct macroblockTreeRatecontrol mixedReferences noiseSensitivity rectangularMotionPartitionsAnalysis recursionSkip refineRateDistortionCost rowMultiThreadingEnabled saoNonDeblock signHide skipSplitRateDistortionAnalysis ssimRateDistortionOptimization strongIntraSmoothing temporalMotionVectorPredictors wavefrontParallelProcessing weightedPredictionBFrames",
 	{
 		displayAspectRatio: group(fields("", "numerator denominator")),
+		partitions: strings,
+		cea608708SubtitleConfig: group(
+			fields("passthroughMode", "", "passthroughActivated"),
+		),
 		presetConfiguration: z.union([z.null(), text]),
 		subMe: z.union([z.number().finite().nullable(), text]),
 		rateControlModeConfig: group(
@@ -139,7 +143,7 @@ const extras = fields(
 );
 const rendition = fields(
 	"codec encodingMode channelLayout name presetConfiguration container autoKey",
-	"width height bitrate rate",
+	"width height bitrate rate cutoffFrequency",
 	"ownContainer",
 	{
 		h264: group(codec),

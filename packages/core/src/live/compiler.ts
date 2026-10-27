@@ -1,4 +1,5 @@
 import { h26xPictureControls } from "../plan/codec-controls";
+import { codecDetailControls } from "../plan/codec-detail-controls";
 import type { CompiledOperation } from "../plan/compiler";
 import { relativeSegmentPath } from "../plan/compiler";
 import {
@@ -86,7 +87,7 @@ function streamName(rendition: PlanRendition): string {
 		case "AAC":
 			return `Stream AAC ${kbps(rendition.bitrate)}`;
 		case "DDPLUS":
-			return `Stream DDPLUS ${kbps(rendition.bitrate)}`;
+			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
 		case "DD":
 			return `Stream DD ${kbps(rendition.bitrate)}`;
 		default:
@@ -439,6 +440,7 @@ function compileLiveInput(plan: LiveChannelPlan): CompiledOperation {
 function codecPayload(rendition: PlanRendition): Record<string, unknown> {
 	if (rendition.codec === "H264") {
 		return {
+			...codecDetailControls("H264", rendition),
 			...h26xPictureControls(rendition),
 			...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
 			...(rendition.minBitrate !== undefined
@@ -520,6 +522,7 @@ function codecPayload(rendition: PlanRendition): Record<string, unknown> {
 	}
 	if (rendition.codec === "H265") {
 		return {
+			...codecDetailControls("H265", rendition),
 			...h26xPictureControls(rendition),
 			...(rendition.crf !== undefined ? { crf: rendition.crf } : {}),
 			...(rendition.minBitrate !== undefined
@@ -640,6 +643,10 @@ function codecPayload(rendition: PlanRendition): Record<string, unknown> {
 			bitrate: rendition.bitrate,
 			rate: rendition.rate,
 			channelLayout: rendition.channelLayout,
+			...("cutoffFrequency" in rendition &&
+			rendition.cutoffFrequency !== undefined
+				? { cutoffFrequency: rendition.cutoffFrequency }
+				: {}),
 		};
 	}
 	return unsupportedCodec(rendition.codec);

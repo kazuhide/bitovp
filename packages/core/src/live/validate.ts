@@ -1,5 +1,6 @@
 import { checkAkamaiMslConstraints } from "../plan/akamai-msl-constraint";
 import { checkH26xCodecControls } from "../plan/codec-controls";
+import { checkCodecDetailControls } from "../plan/codec-detail-controls";
 import { checkSecretEgressHosts, type EgressSite } from "../plan/egress";
 import { checkMslEncoderVersion } from "../plan/msl-encoder-version";
 import { muxingStreamKeys } from "../plan/muxing-streams";
@@ -159,6 +160,7 @@ export function validateLiveChannel(
 		...checkLiveHlsVideoUris(plan),
 	];
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkCodecDetailControls(plan.renditions));
 	if (plan.start.encodingOption === "HD") {
 		const resolution = resolveLiveEncodingOption(plan);
 		if (resolution.encodingOption !== "HD")

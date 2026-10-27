@@ -81,6 +81,8 @@ export const CODEC_CONFIG_API_PATH: Readonly<
 	OPUS: ["audio", "opus"],
 	DOLBY_ATMOS: ["audio", "dolbyAtmos"],
 	DDPLUS: ["audio", "dolbyDigitalPlus"],
+	AC3: ["audio", "ac3"],
+	EAC3: ["audio", "eac3"],
 	DD: ["audio", "dolbyDigital"],
 	WEBVTT: ["subtitles", "webvtt"],
 	IMSC: ["subtitles", "imsc"],

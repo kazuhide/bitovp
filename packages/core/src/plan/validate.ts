@@ -8,6 +8,7 @@ import {
 	checkAv1CodecControls,
 	checkH26xCodecControls,
 } from "./codec-controls";
+import { checkCodecDetailControls } from "./codec-detail-controls";
 import { qcMirrorMuxingKind, renditionOutputBase } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import {
@@ -191,6 +192,7 @@ export function validatePlan(
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	issues.push(...checkAv1CodecControls(plan.renditions));
+	issues.push(...checkCodecDetailControls(plan.renditions));
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST")
@@ -774,7 +776,11 @@ export function validatePlan(
 		// Digital (Plus) / Atmos — the API rejects the combination.
 		const dolby = plan.renditions.find(
 			(r) =>
-				r.codec === "DOLBY_ATMOS" || r.codec === "DDPLUS" || r.codec === "DD",
+				r.codec === "DOLBY_ATMOS" ||
+				r.codec === "DDPLUS" ||
+				r.codec === "DD" ||
+				r.codec === "AC3" ||
+				r.codec === "EAC3",
 		);
 		if (dolby) {
 			issues.push({
@@ -1239,10 +1245,20 @@ export function validatePlan(
 		if (target) {
 			const allowed: Record<string, string[]> = {
 				// AV1 packages into fMP4 and WebM; dedicated CMAF is H264/AAC only.
-				FMP4: ["H264", "H265", "AV1", "AAC", "DOLBY_ATMOS", "DDPLUS", "DD"],
+				FMP4: [
+					"H264",
+					"H265",
+					"AV1",
+					"AAC",
+					"DOLBY_ATMOS",
+					"DDPLUS",
+					"DD",
+					"AC3",
+					"EAC3",
+				],
 				CMAF: ["H264", "AAC"],
-				MP4: ["H264", "H265", "AAC", "DOLBY_ATMOS"],
-				TS: ["H264", "AAC"],
+				MP4: ["H264", "H265", "AAC", "DOLBY_ATMOS", "AC3", "EAC3"],
+				TS: ["H264", "AAC", "AC3"],
 				WEBM: ["VP9", "AV1", "OPUS"],
 				TEXT: ["IMSC"],
 				CHUNKED_TEXT: ["WEBVTT"],
@@ -1342,6 +1358,21 @@ export function validatePlan(
 	};
 	for (const [index, drm] of plan.drm.entries()) {
 		const muxing = muxingByKey.get(drm.muxingKey);
+		if (
+			muxing?.kind === "TS" &&
+			muxingStreamKeys(muxing).some((key) => {
+				const codec = renditionByKey.get(key)?.codec;
+				return codec === "AC3" || codec === "EAC3";
+			})
+		) {
+			issues.push({
+				code: "PLAN_DRM_AUDIO_TS_UNSUPPORTED",
+				level: "error",
+				path: `drm[${index}].muxingKey`,
+				message:
+					"AC3/EAC3 audio cannot be encrypted in TS containers; choose fMP4 encryption or an unencrypted supported container",
+			});
+		}
 		if (!muxing) {
 			issues.push({
 				code: "PLAN_UNRESOLVED_REF",
@@ -1568,7 +1599,7 @@ export function validatePlan(
 	}
 
 	// H264/H265 presets populate encodingMode (provider preset tests).
-	// VP9 presets are already rejected by the current plan schema.
+	// VP9 quality presets are handled by the same explicit-mode conflict rule.
 	// AV1 has a separate preset family; do not infer its mode from this evidence.
 	// Even the same value cannot also be sent at START (R43 / provider 2025).
 	// Do not silently drop either setting: that changes the author's quality intent.
@@ -2255,6 +2286,8 @@ export function validatePlan(
 					target.codec === "AAC" ||
 					target.codec === "OPUS" ||
 					target.codec === "DOLBY_ATMOS" ||
+					target.codec === "AC3" ||
+					target.codec === "EAC3" ||
 					target.codec === "DDPLUS" ||
 					target.codec === "DD"
 				) {

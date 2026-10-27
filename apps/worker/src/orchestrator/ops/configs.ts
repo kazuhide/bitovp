@@ -1,3 +1,9 @@
+import {
+	Ac3AudioConfiguration,
+	Ac3ChannelLayout,
+	Eac3AudioConfiguration,
+} from "@bitmovin/api-sdk";
+import { codecDetailWireControls } from "@bitovp/core";
 /**
  * : configs members extracted VERBATIM from sdk-ops.ts. The
  * Pick<SdkOps, …> return type restores the contextual typing the members had
@@ -80,6 +86,8 @@ export function createConfigOps(
 	| "createVp9Config"
 	| "createAv1Config"
 	| "createAacConfig"
+	| "createAc3Config"
+	| "createEac3Config"
 	| "createDolbyAtmosConfig"
 	| "createDolbyDigitalPlusConfig"
 	| "createDolbyDigitalConfig"
@@ -101,6 +109,7 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.h264.create(
 						new H264VideoConfiguration({
+							...codecDetailWireControls("H264", p),
 							minGop: p.minGop,
 							maxGop: p.maxGop,
 							openGop: p.openGop,
@@ -182,6 +191,10 @@ export function createConfigOps(
 					"bitrate",
 					"rate",
 					"internalHevcV2",
+					"width",
+					"sampleAspectRatioNumerator",
+					"sampleAspectRatioDenominator",
+					"displayAspectRatio",
 					"encodingMode",
 					"presetConfiguration",
 					"pixelFormat",
@@ -210,6 +223,10 @@ export function createConfigOps(
 					rateControlModeConfig: p.rateControlModeConfig,
 				});
 				const body = {
+					width: p.width,
+					sampleAspectRatioNumerator: p.sampleAspectRatioNumerator,
+					sampleAspectRatioDenominator: p.sampleAspectRatioDenominator,
+					displayAspectRatio: p.displayAspectRatio,
 					name: p.name,
 					height: p.height,
 					bitrate: p.bitrate,
@@ -261,6 +278,7 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.h265.create(
 						new H265VideoConfiguration({
+							...codecDetailWireControls("H265", p),
 							width: p.width,
 							bframes: p.bframes,
 							refFrames: p.refFrames,
@@ -352,6 +370,7 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.vp9.create(
 						new Vp9VideoConfiguration({
+							...codecDetailWireControls("VP9", p),
 							encodingMode: ordinaryEncodingMode(p.encodingMode),
 							name: p.name,
 							width: p.width,
@@ -387,6 +406,7 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.video.av1.create(
 						new Av1VideoConfiguration({
+							...codecDetailWireControls("AV1", p),
 							encodingMode: ordinaryEncodingMode(p.encodingMode),
 							name: p.name,
 							width: p.width,
@@ -427,6 +447,7 @@ export function createConfigOps(
 				() =>
 					api.encoding.configurations.audio.aac.create(
 						new AacAudioConfiguration({
+							cutoffFrequency: p.cutoffFrequency,
 							name: p.name,
 							bitrate: p.bitrate,
 							rate: p.rate,
@@ -440,6 +461,48 @@ export function createConfigOps(
 				(r) => ({ id: r.id }),
 			).then(id),
 
+		createAc3Config: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/ac3",
+				p,
+				() =>
+					api.encoding.configurations.audio.ac3.create(
+						new Ac3AudioConfiguration({
+							name: p.name,
+							bitrate: p.bitrate,
+							rate: p.rate,
+							cutoffFrequency: p.cutoffFrequency,
+							channelLayout: sdkEnumValue(
+								Ac3ChannelLayout,
+								p.channelLayout,
+								"Ac3ChannelLayout",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createEac3Config: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/eac3",
+				p,
+				() =>
+					api.encoding.configurations.audio.eac3.create(
+						new Eac3AudioConfiguration({
+							name: p.name,
+							bitrate: p.bitrate,
+							rate: p.rate,
+							cutoffFrequency: p.cutoffFrequency,
+							channelLayout: sdkEnumValue(
+								Ac3ChannelLayout,
+								p.channelLayout,
+								"Ac3ChannelLayout",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
 		createDolbyAtmosConfig: (p) =>
 			audited(
 				"POST",

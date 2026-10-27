@@ -692,9 +692,11 @@ export function MuxingsSection({
 						kinds={
 							audio.codec === "OPUS"
 								? ["WEBM"]
-								: audio.codec === undefined || audio.codec === "AAC"
-									? AUDIO_KINDS
-									: AUDIO_KINDS.filter((kind) => kind !== "CMAF")
+								: audio.codec === "EAC3"
+									? ["FMP4", "MP4"]
+									: audio.codec === undefined || audio.codec === "AAC"
+										? AUDIO_KINDS
+										: AUDIO_KINDS.filter((kind) => kind !== "CMAF")
 						}
 						derivedPath={audioMuxingRelPath(audio, key)}
 						drm={drm}

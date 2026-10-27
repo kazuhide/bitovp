@@ -2,6 +2,7 @@ import type { LiveChannelPlanInput } from "@bitovp/core";
 import {
 	akamaiMsl5InitSegmentName,
 	akamaiMslSegmentNaming,
+	codecDetailControls,
 } from "@bitovp/core";
 import type {
 	WizardH264Options,
@@ -183,6 +184,7 @@ export type LiveVideoRendition = {
 };
 
 export type LiveAudioRendition = {
+	cutoffFrequency?: number;
 	input?: LiveInputSelection;
 	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
@@ -999,6 +1001,7 @@ function videoRendition(
 		return prune({
 			key,
 			codec: "H265" as const,
+			...codecDetailControls("H265", o),
 			hlsVariantUri: video.extras?.hlsVariantUri,
 			name: str(video.name) ?? derivedName,
 			ingestKey,
@@ -1060,6 +1063,7 @@ function videoRendition(
 	return prune({
 		key,
 		codec: "H264" as const,
+		...codecDetailControls("H264", o),
 		hlsVariantUri: video.extras?.hlsVariantUri,
 		name: str(video.name) ?? derivedName,
 		ingestKey,
@@ -1114,6 +1118,9 @@ function audioRendition(
 		ingestKey,
 		bitrate: audio.bitrate,
 		rate: audio.rate,
+		...(audio.codec === "AAC"
+			? { cutoffFrequency: audio.cutoffFrequency }
+			: {}),
 		channelLayout: str(audio.channelLayout),
 	});
 }

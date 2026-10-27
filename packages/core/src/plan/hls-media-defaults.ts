@@ -68,6 +68,8 @@ export function isHlsAudioRendition(
 	return (
 		rendition.codec === "AAC" ||
 		rendition.codec === "DD" ||
+		rendition.codec === "AC3" ||
+		rendition.codec === "EAC3" ||
 		rendition.codec === "DDPLUS" ||
 		rendition.codec === "DOLBY_ATMOS"
 	);

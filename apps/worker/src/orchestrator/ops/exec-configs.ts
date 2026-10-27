@@ -6,7 +6,11 @@
  * monolithic one did. The default is unreachable by construction.
  */
 import type { CompiledOperation } from "@bitovp/core";
-import { h264RenditionSchema, h265V2QualityControlsSchema } from "@bitovp/core";
+import {
+	codecDetailControls,
+	h264RenditionSchema,
+	h265V2QualityControlsSchema,
+} from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { ExecStepContext } from "./exec-shared";
 import {
@@ -27,6 +31,7 @@ export async function executeConfigStep(
 	switch (op.kind) {
 		case "CREATE_CODEC_H264": {
 			const resourceId = await ctx.sdk.createH264Config({
+				...codecDetailControls("H264", p),
 				minGop: optNum(p.minGop),
 				maxGop: optNum(p.maxGop),
 				openGop: optBool(p.openGop),
@@ -81,6 +86,7 @@ export async function executeConfigStep(
 				rateControlModeConfig: p.rateControlModeConfig,
 			});
 			const resourceId = await ctx.sdk.createH265Config({
+				...codecDetailControls("H265", p),
 				...(p.width !== undefined ? { width: optNum(p.width) } : {}),
 				bframes: optNum(p.bframes),
 				refFrames: optNum(p.refFrames),
@@ -147,6 +153,7 @@ export async function executeConfigStep(
 
 		case "CREATE_CODEC_VP9": {
 			const resourceId = await ctx.sdk.createVp9Config({
+				...codecDetailControls("VP9", p),
 				encodingMode: optStr(p.encodingMode),
 				name: optStr(p.name),
 				width: optNum(p.width),
@@ -172,6 +179,7 @@ export async function executeConfigStep(
 
 		case "CREATE_CODEC_AV1": {
 			const resourceId = await ctx.sdk.createAv1Config({
+				...codecDetailControls("AV1", p),
 				encodingMode: optStr(p.encodingMode),
 				name: optStr(p.name),
 				width: optNum(p.width),
@@ -207,6 +215,7 @@ export async function executeConfigStep(
 		}
 		case "CREATE_CODEC_AAC": {
 			const resourceId = await ctx.sdk.createAacConfig({
+				cutoffFrequency: optNum(p.cutoffFrequency),
 				name: optStr(p.name),
 				bitrate: num(p.bitrate, 0),
 				rate: num(p.rate, 0),
@@ -231,6 +240,21 @@ export async function executeConfigStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_CODEC_AC3":
+		case "CREATE_CODEC_EAC3": {
+			const params = {
+				name: optStr(p.name),
+				bitrate: num(p.bitrate, 0),
+				rate: num(p.rate, 0),
+				channelLayout: str(p.channelLayout),
+				cutoffFrequency: optNum(p.cutoffFrequency),
+			};
+			const resourceId =
+				op.kind === "CREATE_CODEC_AC3"
+					? await ctx.sdk.createAc3Config(params)
+					: await ctx.sdk.createEac3Config(params);
+			return { resourceId, request, response: { id: resourceId } };
+		}
 		case "CREATE_CODEC_DDPLUS": {
 			const resourceId = await ctx.sdk.createDolbyDigitalPlusConfig({
 				name: optStr(p.name),

@@ -2,6 +2,125 @@ import { z } from "zod";
 
 /** SDK 1.285.0 enum names and wire values; safe to share with browser code. */
 export const CODEC_ENUM_VALUES = {
+	Ac3ChannelLayout: {
+		NONE: "NONE",
+		MONO: "MONO",
+		CL_STEREO: "STEREO",
+		CL_SURROUND: "SURROUND",
+		CL_QUAD: "QUAD",
+		CL_2_1: "2.1",
+		CL_2_2: "2.2",
+		CL_3_1: "3.1",
+		CL_4_0: "4.0",
+		CL_4_1: "4.1",
+		CL_5_0: "5.0",
+		CL_5_0_BACK: "5.0_BACK",
+		CL_5_1: "5.1",
+		CL_5_1_BACK: "5.1_BACK",
+	},
+	AutoLevelSetup: {
+		ENABLED: "ENABLED",
+		DISABLED: "DISABLED",
+	},
+	BAdapt: {
+		NONE: "NONE",
+		FAST: "FAST",
+		FULL: "FULL",
+	},
+	H264BPyramid: {
+		NONE: "NONE",
+		STRICT: "STRICT",
+		NORMAL: "NORMAL",
+	},
+	PassthroughMode: {
+		VIDEO_STREAM: "VIDEO_STREAM",
+		CAPTION_STREAM: "CAPTION_STREAM",
+		VIDEO_CAPTION_STREAM: "VIDEO_CAPTION_STREAM",
+	},
+	H264DynamicRangeFormat: {
+		SDR: "SDR",
+	},
+	H264InterlaceMode: {
+		NONE: "NONE",
+		TOP_FIELD_FIRST: "TOP_FIELD_FIRST",
+		BOTTOM_FIELD_FIRST: "BOTTOM_FIELD_FIRST",
+	},
+	H264NalHrd: {
+		NONE: "NONE",
+		VBR: "VBR",
+		CBR: "CBR",
+	},
+	H264Partition: {
+		NONE: "NONE",
+		P8X8: "P8X8",
+		P4X4: "P4X4",
+		B8X8: "B8X8",
+		I8X8: "I8X8",
+		I4X4: "I4X4",
+		ALL: "ALL",
+	},
+	ForceFlushMode: {
+		DISABLED: "DISABLED",
+		ALL_FRAMES: "ALL_FRAMES",
+		SLICE_TYPE: "SLICE_TYPE",
+	},
+	LimitReferences: {
+		DISABLED: "DISABLED",
+		DEPTH: "DEPTH",
+		CU: "CU",
+		DEPTH_AND_CU: "DEPTH_AND_CU",
+	},
+	LimitTransformUnitDepthRecursionMode: {
+		DISABLED: "DISABLED",
+		LEVEL_1: "LEVEL_1",
+		LEVEL_2: "LEVEL_2",
+		LEVEL_3: "LEVEL_3",
+		LEVEL_4: "LEVEL_4",
+	},
+	MaxTransformUnitSize: {
+		MTU_4x4: "MTU_4x4",
+		MTU_8x8: "MTU_8x8",
+		MTU_16x16: "MTU_16x16",
+		MTU_32x32: "MTU_32x32",
+	},
+	MinCodingUnitSize: {
+		MCU_8x8: "MCU_8x8",
+		MCU_16x16: "MCU_16x16",
+		MCU_32x32: "MCU_32x32",
+	},
+	QuantizationGroupSize: {
+		QGS_8x8: "QGS_8x8",
+		QGS_16x16: "QGS_16x16",
+		QGS_32x32: "QGS_32x32",
+		QGS_64x64: "QGS_64x64",
+	},
+	RateDistortionLevelForQuantization: {
+		DISABLED: "DISABLED",
+		LEVELS: "LEVELS",
+		LEVELS_AND_CODING_GROUPS: "LEVELS_AND_CODING_GROUPS",
+	},
+	RateDistortionPenaltyMode: {
+		DISABLED: "DISABLED",
+		NORMAL: "NORMAL",
+		MAXIMUM: "MAXIMUM",
+	},
+	TransformSkipMode: {
+		NONE: "NONE",
+		NORMAL: "NORMAL",
+		FAST: "FAST",
+	},
+	VideoFormat: {
+		UNDEFINED: "UNDEFINED",
+		COMPONENT: "COMPONENT",
+		PAL: "PAL",
+		NTSC: "NTSC",
+		SECAM: "SECAM",
+		MAC: "MAC",
+	},
+	Vp9DynamicRangeFormat: {
+		HLG: "HLG",
+		SDR: "SDR",
+	},
 	ColorSpace: {
 		UNSPECIFIED: "UNSPECIFIED",
 		RGB: "RGB",
@@ -270,6 +389,32 @@ export type CodecEnumName = keyof typeof CODEC_ENUM_VALUES;
 export const CODEC_OPTIONS: {
 	readonly [K in CodecEnumName]: readonly string[];
 } = {
+	Ac3ChannelLayout: Object.keys(CODEC_ENUM_VALUES.Ac3ChannelLayout),
+	AutoLevelSetup: Object.keys(CODEC_ENUM_VALUES.AutoLevelSetup),
+	BAdapt: Object.keys(CODEC_ENUM_VALUES.BAdapt),
+	H264BPyramid: Object.keys(CODEC_ENUM_VALUES.H264BPyramid),
+	PassthroughMode: Object.keys(CODEC_ENUM_VALUES.PassthroughMode),
+	H264DynamicRangeFormat: Object.keys(CODEC_ENUM_VALUES.H264DynamicRangeFormat),
+	H264InterlaceMode: Object.keys(CODEC_ENUM_VALUES.H264InterlaceMode),
+	H264NalHrd: Object.keys(CODEC_ENUM_VALUES.H264NalHrd),
+	H264Partition: Object.keys(CODEC_ENUM_VALUES.H264Partition),
+	ForceFlushMode: Object.keys(CODEC_ENUM_VALUES.ForceFlushMode),
+	LimitReferences: Object.keys(CODEC_ENUM_VALUES.LimitReferences),
+	LimitTransformUnitDepthRecursionMode: Object.keys(
+		CODEC_ENUM_VALUES.LimitTransformUnitDepthRecursionMode,
+	),
+	MaxTransformUnitSize: Object.keys(CODEC_ENUM_VALUES.MaxTransformUnitSize),
+	MinCodingUnitSize: Object.keys(CODEC_ENUM_VALUES.MinCodingUnitSize),
+	QuantizationGroupSize: Object.keys(CODEC_ENUM_VALUES.QuantizationGroupSize),
+	RateDistortionLevelForQuantization: Object.keys(
+		CODEC_ENUM_VALUES.RateDistortionLevelForQuantization,
+	),
+	RateDistortionPenaltyMode: Object.keys(
+		CODEC_ENUM_VALUES.RateDistortionPenaltyMode,
+	),
+	TransformSkipMode: Object.keys(CODEC_ENUM_VALUES.TransformSkipMode),
+	VideoFormat: Object.keys(CODEC_ENUM_VALUES.VideoFormat),
+	Vp9DynamicRangeFormat: Object.keys(CODEC_ENUM_VALUES.Vp9DynamicRangeFormat),
 	ColorSpace: Object.keys(CODEC_ENUM_VALUES.ColorSpace),
 	ColorPrimaries: Object.keys(CODEC_ENUM_VALUES.ColorPrimaries),
 	ColorTransfer: Object.keys(CODEC_ENUM_VALUES.ColorTransfer),

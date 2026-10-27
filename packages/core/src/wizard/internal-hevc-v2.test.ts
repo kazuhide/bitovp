@@ -35,6 +35,35 @@ const state: WizardState = {
 		basePath: "test",
 	},
 };
+it("keeps width and display aspect ratio through eligible HEVCv2 plan import", () => {
+	const geometry = {
+		width: 1280,
+		displayAspectRatio: { numerator: 16, denominator: 9 },
+	};
+	const plan = encodingPlanSchema.parse(
+		buildPlan({
+			...state,
+			videos: [
+				{
+					codec: "H265V2",
+					width: geometry.width,
+					height: 720,
+					bitrate: 1000000,
+					h265: { displayAspectRatio: geometry.displayAspectRatio },
+				},
+			],
+			internal: { hevcV2: { bcfVersion: INTERNAL_HEVC_V2_BCF_VERSION } },
+		}),
+	);
+	expect(checkInternalHevcV2Plan(plan)).toEqual([]);
+	expect(
+		compilePlan(plan).find((op) => op.kind === "CREATE_CODEC_H265")?.payload,
+	).toMatchObject(geometry);
+	const imported = tryImportPresetIntoWizard(plan);
+	expect(imported.ok).toBe(true);
+	if (!imported.ok) throw new Error("HEVCv2 geometry must be editable");
+	expect(encodingPlanSchema.parse(buildPlan(imported.state))).toEqual(plan);
+});
 it.each([
 	"STABLE",
 	"BETA",

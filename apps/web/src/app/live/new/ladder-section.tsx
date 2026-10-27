@@ -1,4 +1,6 @@
-"use client";
+import { AudioCutoffEditor } from "../../vod/new/codec-detail-editor";
+
+("use client");
 
 import { CODEC_OPTIONS } from "@bitovp/core";
 import { AUDIO_CHANNEL_LAYOUTS } from "@/app/vod/new/audio-channel-layouts";
@@ -584,6 +586,8 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									onChange={(e) =>
 										patchAudio(index, {
 											codec: e.target.value as LiveAudioRendition["codec"],
+											cutoffFrequency: undefined,
+											channelLayout: undefined,
 										})
 									}
 								>
@@ -663,6 +667,15 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</SelectNative>
 								</Field>
 							</div>
+							{audio.codec === "AAC" ? (
+								<AudioCutoffEditor
+									id={`lw-a-${index}-cutoff`}
+									value={audio.cutoffFrequency}
+									onChange={(cutoffFrequency) =>
+										patchAudio(index, { cutoffFrequency })
+									}
+								/>
+							) : null}
 							<Field
 								label={t("wizard.container")}
 								htmlFor={`lw-a-${index}-container`}

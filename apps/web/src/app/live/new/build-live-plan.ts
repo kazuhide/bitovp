@@ -213,6 +213,7 @@ type LiveManifestIdentity = {
 };
 
 export type LiveHlsManifestState = LiveManifestIdentity & {
+	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	enabled: boolean;
 	manifestName: string;
 	audioGroupId: string;
@@ -236,6 +237,7 @@ export type LiveHlsManifestState = LiveManifestIdentity & {
 };
 
 export type LiveDashManifestState = LiveManifestIdentity & {
+	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	enabled: boolean;
 	manifestName: string;
 	audioLanguage: string;
@@ -286,6 +288,10 @@ export type LiveWizardState = {
 	name: string;
 	accountId: string;
 	cloudRegion: string;
+	fallbackCloudRegions?: string[];
+	drm?: LiveChannelPlanInput["drm"];
+	/** Optional clear output alongside encryption. */
+	unencryptedMuxingKeys?: string[];
 	encoderVersion: string;
 	/**
 	 * Encoding.staticIpId — pin a reserved static IP (bitmovin.staticIpId,
@@ -1372,6 +1378,7 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 					manifestName: str(hls.manifestName),
 					destination: hls.destination ?? destination,
 					audioGroupId: str(hls.audioGroupId),
+					drmKind: hls.drmKind,
 					audioLanguage: str(hls.audioLanguage),
 					closedCaptions: str(hls.closedCaptions),
 					videoMuxingKind:
@@ -1403,6 +1410,7 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 					destination: dash.destination ?? destination,
 					audioLanguage: str(dash.audioLanguage),
 					representationType: dash.representationType,
+					drmKind: dash.drmKind,
 					timeshift: dash.timeshift,
 					liveEdgeOffset: dash.liveEdgeOffset,
 					suggestedPresentationDelay: dash.suggestedPresentationDelay,
@@ -1535,6 +1543,13 @@ export function buildLiveChannelPlan(
 	];
 
 	if (state.archive) muxings.push(state.archive.muxing);
+	for (const muxing of muxings) {
+		if (
+			state.drm?.some((d) => d.muxingKey === muxing.key) &&
+			!state.unencryptedMuxingKeys?.includes(muxing.key)
+		)
+			delete muxing.destination;
+	}
 	const outputs = [buildOutput(state)];
 	for (const mirror of mirrors)
 		outputs.push(buildOutputFrom(mirror.output, mirror.key));
@@ -1558,6 +1573,7 @@ export function buildLiveChannelPlan(
 		bitmovin: prune({
 			accountId: str(state.accountId),
 			cloudRegion: str(state.cloudRegion),
+			fallbackCloudRegions: state.fallbackCloudRegions,
 			encoderVersion: str(state.encoderVersion),
 			// P5 encoding-level extras — all pruned when unset so the 5 live
 			// goldens stay byte-identical (labels only when non-empty).
@@ -1583,6 +1599,7 @@ export function buildLiveChannelPlan(
 		ingest: ingest.ingest,
 		renditions,
 		muxings,
+		drm: state.drm,
 		liveManifests: buildManifests(state),
 		// Pruned when off ⇒ default plans (and the 5 goldens) stay byte-identical.
 		// The carrier knobs ride INSIDE adMarkers, so they can only reach the plan

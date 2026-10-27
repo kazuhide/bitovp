@@ -130,6 +130,7 @@ export function recordedLiveOutputs(entries: readonly StepLogEntry[]): {
 	const muxingPaths: string[] = [];
 	const manifestFiles: string[] = [];
 	const archivePaths: string[] = [];
+	const kindByStep = new Map(entries.map((entry) => [entry.step, entry.kind]));
 	for (const entry of entries) {
 		const path = entry.payload.outputPath;
 		if (typeof path !== "string") {
@@ -144,6 +145,26 @@ export function recordedLiveOutputs(entries: readonly StepLogEntry[]): {
 			} else {
 				muxingPaths.push(path);
 			}
+			continue;
+		}
+		if (
+			["CREATE_DRM_CENC", "CREATE_DRM_FAIRPLAY", "CREATE_DRM_SPEKE"].includes(
+				entry.kind,
+			)
+		) {
+			const parentKind =
+				typeof entry.refs.muxingId === "string"
+					? kindByStep.get(entry.refs.muxingId)
+					: undefined;
+			if (
+				parentKind &&
+				[
+					"CREATE_MUXING_FMP4",
+					"CREATE_MUXING_TS",
+					"CREATE_MUXING_CMAF",
+				].includes(parentKind)
+			)
+				muxingPaths.push(path);
 			continue;
 		}
 		if (entry.kind.startsWith("CREATE_MANIFEST_")) {

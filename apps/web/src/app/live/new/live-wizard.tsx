@@ -47,6 +47,7 @@ import {
 	type LiveWizardState,
 	withMslStreamFormat,
 } from "./build-live-plan";
+import { LiveFallbackRegions } from "./fallback-regions-section";
 import { InputSection } from "./input-section";
 import { LiveLadderSection } from "./ladder-section";
 import {
@@ -750,6 +751,7 @@ export function LiveWizard({
 										))}
 									</SelectNative>
 								</Field>
+								<LiveFallbackRegions state={state} onPatch={patch} />
 								<Field
 									label={t("wizard.encoderVersion")}
 									htmlFor="lw-version"

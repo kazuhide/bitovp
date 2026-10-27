@@ -2208,7 +2208,13 @@ describe("collectEdgeClosures — reads the MSL mirror back on the delivery edge
 			...full,
 			muxings: full.muxings.slice(0, 1),
 			manifests: hls
-				? [{ ...hls, mediaPlaylists: hls.mediaPlaylists.slice(0, 1) }]
+				? [
+						{
+							...hls,
+							muxingKeys: hls.muxingKeys.slice(0, 1),
+							mediaPlaylists: hls.mediaPlaylists.slice(0, 1),
+						},
+					]
 				: [],
 		};
 	}
@@ -3341,11 +3347,30 @@ describe("the evidence tuple rides on the result", () => {
 
 	it("with the edge wired, the samples probe it, the EDGE leg completes on progression, and the mirror check PASSes", async () => {
 		const { deps } = fakeProduct();
+		const channelPlan = liveChannelPlanSchema.parse(mslHlsPlan());
+		const originalListing = deps.listAll;
+		// The origin must emit the names this fixture declares, including literal tokens.
+		deps.listAll = async (outputKey, prefix) => {
+			const muxing = channelPlan.muxings.find(
+				(m) => m.destination && prefix.endsWith(`${m.destination.path}/`),
+			);
+			if (!muxing || muxing.kind === "MP4")
+				throw new Error("Unexpected listing route");
+			return (await originalListing(outputKey, prefix)).map((object) => {
+				const number = /segment_(\d+)\.m4s$/.exec(object.key)?.[1];
+				return number
+					? {
+							...object,
+							key: `${prefix}${muxing.segmentNaming.replace(/%number%/g, number)}`,
+						}
+					: object;
+			});
+		};
 		const { urls, readEdge } = liveEdge();
 		const result = await runLiveScenario(
 			{ ...deps, readEdge },
 			{
-				plan: mslHlsPlan(),
+				plan: channelPlan,
 				scenario: "live-akamai-msl-storage",
 				feed: FEED,
 				feedSeconds: 30,
@@ -3451,5 +3476,102 @@ describe("the evidence tuple rides on the result", () => {
 		expect(
 			result.evidence?.find((l) => l.outputLeg === "hls@mirror-1")?.complete,
 		).toBe(false);
+	});
+});
+
+describe("encrypted edge topology", () => {
+	const EDGE = "https://edge.example.net/cmaf/live/1/ev/",
+		PREFIX = "verify/route/";
+	const binding = [
+		{
+			outputKey: "mirror-1",
+			credentialId: "credential-msl",
+			streamId: 1,
+			eventName: "ev",
+			streamFormat: "CMAF" as const,
+			mslVersion: "MSL4",
+			eventRoot: EDGE,
+		},
+	];
+	const base: LiveRunnerDeps = {
+		api: async () => ({ status: 200, json: null }),
+		readText: async () => "",
+		listAll: async () => [],
+		sleep: async () => {},
+		now: () => 0,
+	};
+	it("counts only the encrypted representations selected by a DASH manifest", async () => {
+		const p = liveChannelPlanSchema.parse(plan("live-akamai-msl-storage"));
+		p.liveManifests = p.liveManifests
+			.filter((m) => m.kind === "DASH")
+			.map((m) => ({ ...m, drmKind: "FAIRPLAY" }));
+		p.drm = p.muxings.map((m) => {
+			if (!m.destination) throw new Error("Missing destination");
+			return {
+				key: `${m.key}-enc`,
+				kind: "FAIRPLAY" as const,
+				muxingKey: m.key,
+				credentialId: "00000000-0000-4000-8000-000000000003",
+				iv: "a".repeat(32),
+				uri: "skd://synthetic",
+				destination: { ...m.destination, path: `${PREFIX}encrypted/${m.key}` },
+			};
+		});
+		const expected = compileExpectedLiveArtefacts(p);
+		const mpd = `<MPD mediaPresentationDuration="PT12S" type="static"><Period><AdaptationSet mimeType="video/mp4">${p.muxings.map((m, i) => `<Representation id="r${i}" bandwidth="1000000"><SegmentList duration="6"><Initialization sourceURL="${PREFIX}encrypted/${m.key}/init.mp4"/><SegmentURL media="${PREFIX}encrypted/${m.key}/seg-1.m4s"/><SegmentURL media="${PREFIX}encrypted/${m.key}/seg-2.m4s"/></SegmentList></Representation>`).join("")}</AdaptationSet></Period></MPD>`;
+		const readEdge = async (url: string) => ({
+			status: 200,
+			bytes: url.endsWith(".mpd") ? mpd.length : 10,
+			text: url.endsWith(".mpd") ? mpd : "media-bytes",
+		});
+		const closures = await collectEdgeClosures(
+			{ ...base, readEdge },
+			expected,
+			binding,
+			{ "mirror-1": "provider-output" },
+			PREFIX,
+		);
+		expect(closures).toHaveLength(1);
+		expect(closures[0]?.closed, JSON.stringify(closures)).toBe(true);
+		expect(closures[0]?.children).toHaveLength(p.muxings.length);
+	});
+	it("requires init only for the selected fMP4 HLS child, not an unselected fMP4 copy of the TS child", async () => {
+		const p = liveChannelPlanSchema.parse(plan("live-akamai-msl-storage"));
+		const video = p.muxings.find((m) => m.streamKey.startsWith("v"));
+		if (!video?.destination) throw new Error("Missing video");
+		p.muxings.push({
+			kind: "TS",
+			key: "video-ts",
+			streamKey: video.streamKey,
+			segmentLength: 6,
+			segmentNaming: "seg-%number%.ts",
+			destination: { ...video.destination, path: `${PREFIX}ts` },
+		});
+		p.liveManifests = p.liveManifests
+			.filter((m) => m.kind === "HLS")
+			.map((m) => ({ ...m, videoMuxingKind: "TS", audioMuxingKind: "FMP4" }));
+		const e = compileExpectedLiveArtefacts(p),
+			manifest = e.manifests[0];
+		if (!manifest) throw new Error("Missing HLS");
+		const master = `#EXTM3U\n${manifest.mediaPlaylists.map((uri) => `#EXT-X-STREAM-INF:BANDWIDTH=1000000\n${uri}`).join("\n")}\n`;
+		const readEdge = async (url: string) => {
+			if (url.endsWith("stream.m3u8"))
+				return { status: 200, bytes: master.length, text: master };
+			if (url.endsWith(".m3u8")) {
+				const audio = url.includes("audio_");
+				const body = `#EXTM3U\n${audio ? `#EXT-X-MAP:URI="${PREFIX}audio/init.mp4"\n` : ""}#EXTINF:6,\n${PREFIX}${audio ? "audio/seg-1.m4s" : "ts/seg-1.ts"}\n#EXTINF:6,\n${PREFIX}${audio ? "audio/seg-2.m4s" : "ts/seg-2.ts"}\n`;
+				return { status: 200, bytes: body.length, text: body };
+			}
+			return { status: 200, bytes: 10, text: "media-bytes" };
+		};
+		const closures = await collectEdgeClosures(
+			{ ...base, readEdge },
+			e,
+			binding,
+			{ "mirror-1": "provider-output" },
+			PREFIX,
+		);
+		expect(closures).toHaveLength(1);
+		expect(closures[0]?.closed).toBe(true);
 	});
 });

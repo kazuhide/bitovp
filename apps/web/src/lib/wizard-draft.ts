@@ -48,7 +48,7 @@ export function draftFingerprint(value: unknown): string {
 	return (hash >>> 0).toString(16);
 }
 
-// Explicit form shapes only. URLs, DRM, filter/options JSON and imported plans
+// Explicit form shapes only. URLs, raw DRM keys, filter/options JSON and imported plans
 // are deliberately absent; even a nested unknown property cannot enter storage.
 const text = z
 	.string()
@@ -324,7 +324,7 @@ const liveManifestDestination = group(
 	fields("outputKey path acl").required({ outputKey: true, path: true }),
 );
 const liveHlsManifest = fields(
-	"key name manifestName audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind",
+	"key name manifestName audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind drmKind",
 	"timeshift liveEdgeOffset",
 	"enabled insertProgramDateTime insertProgramDateTimeExplicit",
 	{
@@ -337,17 +337,62 @@ const liveHlsManifest = fields(
 	},
 );
 const liveDashManifest = fields(
-	"key name manifestName audioLanguage representationType availabilityStartTimeMode",
+	"key name manifestName audioLanguage representationType availabilityStartTimeMode drmKind",
 	"timeshift liveEdgeOffset suggestedPresentationDelay minimumUpdatePeriod",
 	"enabled",
 	{ destination: liveManifestDestination },
 );
+// DRM keys remain vault references; URLs still use the URL-excluding text schema.
+const liveDrmDestination = z
+	.object({
+		outputKey: text.default(""),
+		path: text.default(""),
+		acl: text,
+	})
+	.default({ outputKey: "", path: "" })
+	.catch({ outputKey: "", path: "" });
+const liveDrmCommon = {
+	key: text.default(""),
+	muxingKey: text.default(""),
+	credentialId: text.default(""),
+	destination: liveDrmDestination,
+	name: text,
+};
+const liveDrm = z.discriminatedUnion("kind", [
+	z.object({
+		...liveDrmCommon,
+		kind: z.literal("CENC"),
+		kid: text.default(""),
+		encryptionMode: text,
+		ivSize: text,
+		widevine: group(fields("pssh")),
+		playReady: group(fields("pssh laUrl")),
+		fairPlay: group(z.object({ iv: text.default(""), uri: text.default("") })),
+	}),
+	z.object({
+		...liveDrmCommon,
+		kind: z.literal("FAIRPLAY"),
+		iv: text.default(""),
+		uri: text.default(""),
+	}),
+	z.object({
+		...liveDrmCommon,
+		kind: z.literal("SPEKE"),
+		contentId: text,
+		kid: text,
+		iv: text,
+		systemIds: z.array(text.default("")).max(100).default([]).catch([]),
+	}),
+]);
 const live = fields(
 	"name accountId cloudRegion encoderVersion staticIpId inputKind mirrorKey",
 	"segmentLength",
 	"scte35AdMarkers",
 	{
 		...common,
+		fallbackCloudRegions: strings,
+		drm: rows(liveDrm),
+		unencryptedMuxingKeys: strings,
 		videos: rows(liveRendition),
 		audios: rows(liveRendition),
 		mirror: group(location),

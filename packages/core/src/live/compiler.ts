@@ -9,6 +9,7 @@ import {
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import type { PlanRendition } from "../plan/schema";
 import { resolveLiveEncodingOption } from "./encoding-option";
+import { liveManifestDrm, liveMediaDestination } from "./protection";
 import type { LiveChannelPlan, LiveManifestPlan, LiveMuxing } from "./schema";
 
 /**
@@ -820,6 +821,9 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 		payload: {
 			name: plan.name,
 			cloudRegion: plan.bitmovin.cloudRegion,
+			...(plan.bitmovin.fallbackCloudRegions?.length
+				? { fallbackCloudRegions: plan.bitmovin.fallbackCloudRegions }
+				: {}),
 			encoderVersion: plan.bitmovin.encoderVersion,
 			...(plan.bitmovin.staticIpId
 				? { staticIpId: plan.bitmovin.staticIpId }
@@ -897,8 +901,8 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 			// Names follow the container's OWN rendition, which differs from
 			// `rendition` only when this muxing is emitted on a muxed-in stream.
 			const primary = liveRenditionByKey.get(muxing.streamKey) ?? rendition;
-			// Live muxings always carry their destination (no DRM in PR1 to
-			// own the output) — validateLiveChannel errors otherwise.
+			// Clear output belongs to the muxing; encrypted output belongs
+			// to its DRM resources.
 			const destinationFields = muxing.destination
 				? {
 						outputPath: muxing.destination.path,
@@ -998,6 +1002,32 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 
 	// 4. Pre-created manifests (referenced by manifestId in the start
 	//    request — never started: the live encoder generates them).
+	for (const drm of plan.drm ?? []) {
+		const muxing = plan.muxings.find((m) => m.key === drm.muxingKey);
+		if (!muxing) throw new Error(`Unknown DRM muxing ${drm.muxingKey}`);
+		const { key, kind, muxingKey: _muxingKey, destination, ...metadata } = drm;
+		ops.push({
+			step: `drm:${key}`,
+			kind:
+				kind === "CENC"
+					? "CREATE_DRM_CENC"
+					: kind === "SPEKE"
+						? "CREATE_DRM_SPEKE"
+						: "CREATE_DRM_FAIRPLAY",
+			payload: {
+				...metadata,
+				muxingKind: muxing.kind,
+				outputPath: destination.path,
+				...(destination.acl ? { acl: destination.acl } : {}),
+			},
+			refs: {
+				encodingId: ENCODING_STEP,
+				muxingId: `muxing:${drm.muxingKey}`,
+				outputId: `output:${destination.outputKey}`,
+				...mirrorOutputRefs(plan, destination.outputKey),
+			},
+		});
+	}
 	for (const manifest of plan.liveManifests) {
 		ops.push(
 			...(manifest.kind === "HLS"
@@ -1184,8 +1214,9 @@ function compileLiveHlsManifest(
 	).length;
 	const entryUris = liveHlsEntryUris(plan);
 	for (const { muxing, rendition } of selected) {
+		const drm = liveManifestDrm(plan, muxing, manifest);
 		const segmentPath = relativeSegmentPath(
-			muxing.destination?.path ?? "",
+			liveMediaDestination(plan, muxing, manifest)?.path ?? "",
 			manifest.destination.path,
 		);
 		const refs = {
@@ -1193,6 +1224,7 @@ function compileLiveHlsManifest(
 			encodingId: ENCODING_STEP,
 			streamId: `stream:${rendition.key}`,
 			muxingId: `muxing:${muxing.key}`,
+			...(drm ? { drmId: `drm:${drm.key}` } : {}),
 		};
 		if (isLiveAudioCodec(rendition)) {
 			ops.push({
@@ -1332,7 +1364,7 @@ function compileLiveDashManifest(
 				type: manifest.representationType,
 				mode: "TEMPLATE_REPRESENTATION",
 				segmentPath: relativeSegmentPath(
-					muxing.destination?.path ?? "",
+					liveMediaDestination(plan, muxing, manifest)?.path ?? "",
 					manifest.destination.path,
 				),
 			},
@@ -1346,6 +1378,24 @@ function compileLiveDashManifest(
 				muxingId: `muxing:${muxing.key}`,
 			},
 		});
+		const drm = liveManifestDrm(plan, muxing, manifest);
+		if (drm)
+			ops.push({
+				step: `${manifestStep}:cp:${muxing.key}`,
+				kind: "CREATE_DASH_CONTENT_PROTECTION",
+				payload: {},
+				refs: {
+					manifestId: manifestStep,
+					periodId: periodStep,
+					adaptationSetId: isLiveVideoCodec(rendition)
+						? videoSetStepFor(rendition.codec)
+						: audioSetStep,
+					representationId: `${manifestStep}:rep:${muxing.key}`,
+					encodingId: ENCODING_STEP,
+					muxingId: `muxing:${muxing.key}`,
+					drmId: `drm:${drm.key}`,
+				},
+			});
 	}
 	return ops;
 }

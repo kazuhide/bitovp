@@ -51,7 +51,7 @@ function rich(): LiveEngineDeps {
 				mediaSequence: 5,
 				playlistSegments: 6,
 				heartbeatRows: 2,
-				objects: [{ key: "a", size: 1 }],
+				objects: [{ outputKey: "origin", key: "a", size: 1 }],
 			},
 			{
 				at: T0 + 20_000,
@@ -60,8 +60,8 @@ function rich(): LiveEngineDeps {
 				playlistSegments: 8,
 				heartbeatRows: 4,
 				objects: [
-					{ key: "a", size: 1 },
-					{ key: "b", size: 1 },
+					{ outputKey: "origin", key: "a", size: 1 },
+					{ outputKey: "origin", key: "b", size: 1 },
 				],
 			},
 		],

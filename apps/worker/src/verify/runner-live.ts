@@ -41,6 +41,7 @@ import {
 	mslPlaybackEventPath,
 	redactUrl,
 	STATIC_INGEST_URL,
+	selectExpectedLiveManifestMuxings,
 	VERIFICATION_KEY_SHA_CONFLICT,
 	type VerificationDispatchFence,
 	verificationCreateErrorCode,
@@ -74,6 +75,7 @@ import {
 	assembleLiveEvidence,
 	providerTerminalFromIntentDossier,
 } from "./live-evidence-assembly";
+import { sampleLiveStorageObjects } from "./live-storage-sample";
 import {
 	classifySendFailure,
 	type IntentHandle,
@@ -819,11 +821,7 @@ export async function collectEdgeClosures(
 				binding.eventRoot,
 				deps.edgeAllowedRoots ?? [],
 			);
-			const selected = expected.muxings.filter(
-				(muxing) =>
-					muxing.outputKey === manifest.outputKey &&
-					(manifest.kind === "HLS" || muxing.container === "FMP4_SEGMENTED"),
-			);
+			const selected = selectExpectedLiveManifestMuxings(expected, manifest);
 			const freshness = runningSince !== undefined ? { runningSince } : {};
 			const requirements: LiveEdgeRequirements =
 				manifest.kind === "HLS"
@@ -1093,13 +1091,10 @@ async function sample(
 
 	// EVERY muxing prefix, not just the first: a ladder where one rendition stalls while the
 	// others keep writing is invisible to a single-prefix count.
-	let objects: { key: string; size?: number }[] | undefined;
+	let objects: LiveSample["objects"];
 	let listError: string | undefined;
 	try {
-		const listed = await Promise.all(
-			expected.muxings.map((m) => deps.listAll(m.outputKey, m.dir.prefix)),
-		);
-		objects = listed.flat();
+		objects = await sampleLiveStorageObjects(expected, deps.listAll);
 	} catch (err) {
 		listError = err instanceof Error ? err.message : String(err);
 	}

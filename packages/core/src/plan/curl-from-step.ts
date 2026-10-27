@@ -549,6 +549,8 @@ function curlBody(
 export type CurlUnavailable =
 	/** No single Bitmovin endpoint maps to this step kind (reads, list-resolves, fan-outs). */
 	| { code: "NO_ENDPOINT"; kind: string }
+	/** The request needs vault fields that are intentionally absent from saved logs. */
+	| { code: "VAULT_FIELDS_OMITTED"; kind: string }
 	/** The endpoint exists but the step lacks a ref the URL template needs. */
 	| { code: "UNRESOLVED_PATH_PARAMS"; kind: string };
 
@@ -564,6 +566,13 @@ export function curlForStep(
 	entry: StepLogEntry,
 	options: CurlOptions = {},
 ): CurlResult {
+	if (
+		entry.kind === "CREATE_DRM_CENC" ||
+		entry.kind === "CREATE_DRM_FAIRPLAY" ||
+		entry.kind === "CREATE_DRM_SPEKE"
+	) {
+		return { ok: false, code: "VAULT_FIELDS_OMITTED", kind: entry.kind };
+	}
 	let endpoint = ENDPOINTS[entry.kind];
 	if (
 		entry.kind === "CREATE_CODEC_H265" &&
@@ -645,6 +654,44 @@ export function curlForStep(
 				CODEC_ENUM_VALUES.LevelAv1;
 			request = { ...snapshot, maxLevel: levels[level.data] };
 		}
+	}
+	if (
+		entry.kind === "CREATE_HLS_AUDIO_MEDIA" ||
+		entry.kind === "CREATE_HLS_STREAM_INFO" ||
+		entry.kind === "CREATE_HLS_SUBTITLES_MEDIA"
+	) {
+		const snapshot =
+			request !== null && typeof request === "object" && !Array.isArray(request)
+				? (request as Record<string, unknown>)
+				: {};
+		const refs =
+			snapshot.refs !== null &&
+			typeof snapshot.refs === "object" &&
+			!Array.isArray(snapshot.refs)
+				? (snapshot.refs as Record<string, unknown>)
+				: {};
+		const encrypted = "drmId" in entry.refs || Object.hasOwn(refs, "drmId");
+		const resolved: Record<string, string> = {};
+		for (const key of [
+			"manifestId",
+			"encodingId",
+			"streamId",
+			"muxingId",
+			...(encrypted ? ["drmId"] : []),
+		]) {
+			const value = refs[key];
+			if (typeof value !== "string" || value.length === 0)
+				return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+			resolved[key] = value;
+		}
+		entry = { ...entry, refs: resolved };
+		request = {
+			...snapshot,
+			encodingId: resolved.encodingId,
+			streamId: resolved.streamId,
+			muxingId: resolved.muxingId,
+			...(encrypted ? { drmId: resolved.drmId } : {}),
+		};
 	}
 	if (
 		entry.kind === "CREATE_DASH_REPRESENTATION_MP4" ||

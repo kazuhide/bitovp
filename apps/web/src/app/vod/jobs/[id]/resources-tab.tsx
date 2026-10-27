@@ -104,7 +104,9 @@ function ResourceRow({
 				? undefined
 				: curl.code === "NO_ENDPOINT"
 					? t("ui.curlNoEndpoint", { kind: curl.kind })
-					: t("ui.curlUnresolvedPathParams", { kind: curl.kind });
+					: curl.code === "VAULT_FIELDS_OMITTED"
+						? t("ui.curlVaultFieldsOmitted")
+						: t("ui.curlUnresolvedPathParams", { kind: curl.kind });
 	return (
 		<li
 			id={anchorId(node.step)}

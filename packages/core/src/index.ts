@@ -260,6 +260,10 @@ export {
 	type FeederTarget,
 	STATIC_INGEST_URL,
 } from "./live/feeder-target";
+export {
+	createFilenameMatcher,
+	type FilenameMembership,
+} from "./live/filename-language";
 export type {
 	HeartbeatSampleRef,
 	HeartbeatStateChange,
@@ -1181,7 +1185,10 @@ export type {
 	ExpectedLiveMslEdgeOutput,
 	ExpectedLiveMuxing,
 } from "./verify/expected-live";
-export { compileExpectedLiveArtefacts } from "./verify/expected-live";
+export {
+	compileExpectedLiveArtefacts,
+	selectExpectedLiveManifestMuxings,
+} from "./verify/expected-live";
 export type {
 	CredentialEdgeBaseUrlDefect,
 	EdgeBaseUrlShapeDefect,

@@ -36,6 +36,7 @@ const policy = edgeUrlPolicy(BASE);
 
 function manifest(kind: "HLS" | "DASH", file: string): ExpectedLiveManifest {
 	return {
+		muxingKeys: [],
 		manifestKey: kind.toLowerCase(),
 		kind,
 		outputKey: "mirror-1",

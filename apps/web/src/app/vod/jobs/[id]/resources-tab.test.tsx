@@ -45,6 +45,32 @@ describe("anchorId — injective over the key alphabet (review-181 F1)", () => {
 });
 
 describe("ResourcesTab — raw snapshots in place", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("explains why vault-backed DRM requests cannot be copied in %s", (locale) => {
+		const entry: StepLogEntry = {
+			step: "drm:video",
+			kind: "CREATE_DRM_CENC",
+			status: "DONE",
+			payload: { muxingKind: "FMP4", credentialId: "vault-reference" },
+			refs: { encodingId: "encoding", muxingId: "muxing" },
+			request: {
+				muxingKind: "FMP4",
+				refs: { encodingId: "encoding-id", muxingId: "muxing-id" },
+			},
+		};
+		renderLocalized(<ResourcesTab entries={[entry]} />, locale);
+		const unavailable = screen.getByText(
+			locale === "ja" ? "cURL は利用できません" : "cURL unavailable",
+		);
+		expect(unavailable).toHaveAttribute(
+			"title",
+			locale === "ja"
+				? "暗号化の作成には保存済みの鍵が必要です。履歴には鍵を含めていないため、cURL は利用できません。"
+				: "Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
+		);
+	});
 	it("opens the persisted request/response, each body under ITS label", async () => {
 		renderLocalized(<ResourcesTab entries={ENTRIES} />);
 		await userEvent.click(

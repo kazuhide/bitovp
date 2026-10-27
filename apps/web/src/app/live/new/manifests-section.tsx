@@ -189,6 +189,37 @@ export function LiveManifestsSection({
 								/>
 							</Field>
 							{outputSettings?.HLS}
+							{state.drm?.length || hls.drmKind ? (
+								<Field
+									label={t("liveProtection.encryption")}
+									htmlFor={`${idPrefix}-hls-drm`}
+								>
+									<SelectNative
+										id={`${idPrefix}-hls-drm`}
+										value={hls.drmKind ?? ""}
+										onChange={(e) =>
+											patchHls({
+												drmKind:
+													e.target.value === ""
+														? undefined
+														: (e.target.value as "CENC" | "FAIRPLAY" | "SPEKE"),
+											})
+										}
+									>
+										<option value="">{t("liveProtection.clear")}</option>
+										{[
+											...new Set([
+												...(state.drm ?? []).map((d) => d.kind),
+												...(hls.drmKind ? [hls.drmKind] : []),
+											]),
+										].map((kind) => (
+											<option key={kind} value={kind}>
+												{kind}
+											</option>
+										))}
+									</SelectNative>
+								</Field>
+							) : null}
 							<Field
 								label={t("ui.timeshiftDvrWindowS")}
 								htmlFor={`${idPrefix}-hls-timeshift`}
@@ -443,6 +474,37 @@ export function LiveManifestsSection({
 								/>
 							</Field>
 							{outputSettings?.DASH}
+							{state.drm?.length || dash.drmKind ? (
+								<Field
+									label={t("liveProtection.encryption")}
+									htmlFor={`${idPrefix}-dash-drm`}
+								>
+									<SelectNative
+										id={`${idPrefix}-dash-drm`}
+										value={dash.drmKind ?? ""}
+										onChange={(e) =>
+											patchDash({
+												drmKind:
+													e.target.value === ""
+														? undefined
+														: (e.target.value as "CENC" | "FAIRPLAY" | "SPEKE"),
+											})
+										}
+									>
+										<option value="">{t("liveProtection.clear")}</option>
+										{[
+											...new Set([
+												...(state.drm ?? []).map((d) => d.kind),
+												...(dash.drmKind ? [dash.drmKind] : []),
+											]),
+										].map((kind) => (
+											<option key={kind} value={kind}>
+												{kind}
+											</option>
+										))}
+									</SelectNative>
+								</Field>
+							) : null}
 							<Field
 								label={t("ui.timeshiftDvrWindowS")}
 								htmlFor={`${idPrefix}-dash-timeshift`}

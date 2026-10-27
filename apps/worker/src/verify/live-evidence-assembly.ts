@@ -30,12 +30,13 @@ import {
 	liveEvidenceProgression,
 	redactUrl,
 	sealLiveEvidenceLeg,
+	selectExpectedLiveManifestMuxings,
 	selectLiveManifestMuxings,
 } from "@bitovp/core";
-import { initSegmentCandidates } from "../bitmovin/filename-template";
 import { closureProbe, type LiveEdgeClosure, sha256Hex } from "./edge-resolver";
 import type { LiveSample } from "./engine-live";
 import type { LiveCleanupSeal } from "./live-cleanup-seal";
+import { liveStorageObjects } from "./live-storage-objects";
 import type { BoundLiveMslOutput } from "./runner-live";
 
 /** At most this many object keys per child per probe are persisted. */
@@ -268,22 +269,8 @@ function mediaUnder(
 	sample: LiveSample,
 	muxing: ExpectedLiveArtefacts["muxings"][number],
 ): { key: string; bytes: number }[] {
-	const initKeys = new Set(
-		initSegmentCandidates(
-			(sample.objects ?? [])
-				.filter((o) => o.key.startsWith(muxing.dir.prefix))
-				.map((o) => o.key),
-			muxing.initSegment,
-			muxing.initSegmentNameTemplate,
-		),
-	);
-	return (sample.objects ?? [])
-		.filter(
-			(o) =>
-				o.key.startsWith(muxing.dir.prefix) &&
-				!initKeys.has(o.key) &&
-				(o.size ?? 0) > 0,
-		)
+	return liveStorageObjects(sample.objects ?? [], muxing)
+		.media.filter((o) => (o.size ?? 0) > 0)
 		.map((o) => ({ key: o.key, bytes: o.size ?? 0 }));
 }
 
@@ -301,7 +288,10 @@ function originProbe(
 		const keys = mediaUnder(sample, m)
 			.map((o) => o.key)
 			.sort();
-		return { id: m.muxingKey, served: keys.slice(-MAX_PROBE_KEYS) };
+		return {
+			id: m.muxingKey,
+			served: keys.slice(-MAX_PROBE_KEYS),
+		};
 	});
 	const readErrors = sample.readErrors ?? [];
 	return {
@@ -320,25 +310,17 @@ function originLeg(
 	);
 	const last = inputs.samples[inputs.samples.length - 1];
 	const selected = manifestMuxings(inputs, manifest.manifestKey);
-	const muxingKeys = new Set(selected.map(({ muxing }) => muxing.key));
-	const muxings = inputs.expected.muxings.filter((m) =>
-		muxingKeys.has(m.muxingKey),
-	);
+	const muxings = selectExpectedLiveManifestMuxings(
+		inputs.expected,
+		manifest,
+	).map((m) => ({ ...m, outputKey: manifest.outputKey }));
 	const children: LiveEvidenceChild[] = muxings.map((m) => {
 		const media = last ? mediaUnder(last, m) : [];
-		const initCandidates = initSegmentCandidates(
-			(last?.objects ?? [])
-				.filter((o) => o.key.startsWith(m.dir.prefix))
-				.map((o) => o.key),
-			m.initSegment,
-			m.initSegmentNameTemplate,
-		);
-		const initKey = initCandidates.length === 1 ? initCandidates[0] : undefined;
-		const initObject = initKey
-			? (last?.objects ?? []).find(
-					(object) => object.key === initKey && (object.size ?? 0) > 0,
-				)
-			: undefined;
+		const candidates = liveStorageObjects(last?.objects ?? [], m).init;
+		const initObject =
+			candidates.length === 1 && (candidates[0]?.size ?? 0) > 0
+				? candidates[0]
+				: undefined;
 		return {
 			id: m.muxingKey,
 			requiresInit:

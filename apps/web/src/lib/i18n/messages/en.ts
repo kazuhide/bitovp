@@ -27,6 +27,23 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	liveProtection: {
+		add: "Add",
+		remove: "Remove",
+
+		encryption: "Encryption",
+		encryptionHelp:
+			"Keys are stored in credentials. Choose the same encryption kind in each manifest. FairPlay playback with HLS CENC needs CBC and FairPlay metadata. Encrypted output replaces clear output unless selected below.",
+		cmafHelp: "Use fMP4 for these encryption methods.",
+		writeClear: "Also write unencrypted output (use a separate folder)",
+		copyToAll: "Copy encryption settings to all compatible tracks",
+		orphan: "An encrypted output refers to a removed track.",
+		fallbackRegions: "Fallback cloud regions",
+		fallbackRegion: "Fallback region",
+		fallbackHelp:
+			"Optional, up to three distinct concrete regions or AUTO on the same cloud provider. Order is preserved. Cloud Connect is not supported.",
+		clear: "Unencrypted",
+	},
 	liveOutputs: {
 		destination: "Output destination",
 		access: "Access permissions",
@@ -4980,6 +4997,8 @@ export const en = {
 		ctrIv8Bytes: "CTR → IV_8_BYTES",
 		curlUnavailable: "cURL unavailable",
 		curlNoEndpoint: "No single Bitmovin endpoint maps to {kind}",
+		curlVaultFieldsOmitted:
+			"Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
 		curlUnresolvedPathParams:
 			"Could not resolve all URL path parameters for {kind}",
 		curlNoStepEntry: "The step entry is unavailable",

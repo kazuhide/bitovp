@@ -5,7 +5,10 @@ import { compileLiveChannel } from "../live/compiler";
 import { LIVE_MANIFEST_ELEMENT_BUDGET } from "../live/dvr";
 import { liveChannelPlanSchema } from "../live/schema";
 import { AUDIO_CODECS } from "../plan/schema";
-import { compileExpectedLiveArtefacts } from "./expected-live";
+import {
+	compileExpectedLiveArtefacts,
+	selectExpectedLiveManifestMuxings,
+} from "./expected-live";
 
 /**
  * Golden expectations for every live fixture, plus the properties that must hold for all
@@ -283,4 +286,36 @@ describe("shared-bitrate playlist names reach the verifier (row #325, review-538
 			[...emitted].sort(),
 		);
 	});
+});
+
+it("pins each manifest's selected muxing order to its actual compiled child resources", () => {
+	for (const file of planFiles) {
+		const plan = liveChannelPlanSchema.parse(
+			JSON.parse(readFileSync(join(FIXTURES, file), "utf8")),
+		);
+		const expected = compileExpectedLiveArtefacts(plan),
+			ops = compileLiveChannel(plan);
+		for (const manifest of expected.manifests) {
+			const kinds =
+				manifest.kind === "HLS"
+					? ["CREATE_HLS_AUDIO_MEDIA", "CREATE_HLS_STREAM_INFO"]
+					: [
+							"CREATE_DASH_REPRESENTATION_FMP4",
+							"CREATE_DASH_REPRESENTATION_CMAF",
+						];
+			const compiled = ops
+				.filter(
+					(o) =>
+						o.refs.manifestId === `manifest:${manifest.manifestKey}` &&
+						kinds.includes(o.kind),
+				)
+				.map((o) => String(o.refs.muxingId).slice("muxing:".length));
+			expect(manifest.muxingKeys).toEqual(compiled);
+			expect(
+				selectExpectedLiveManifestMuxings(expected, manifest).map(
+					(m) => m.muxingKey,
+				),
+			).toEqual(compiled);
+		}
+	}
 });

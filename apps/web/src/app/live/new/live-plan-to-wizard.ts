@@ -53,6 +53,11 @@ const isAudioRendition = (r: Rendition): r is AudioRendition =>
 export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const D = DEFAULT_LIVE_WIZARD_STATE;
 	const muxingByKey = new Map(plan.muxings.map((m) => [m.key, m]));
+	const mediaDestination = (m: Plan["muxings"][number] | undefined) =>
+		m
+			? (m.destination ??
+				plan.drm?.find((d) => d.muxingKey === m.key)?.destination)
+			: undefined;
 	const containerOf = (key: string): "TS" | "CMAF" | undefined => {
 		const kind = muxingByKey.get(key)?.kind;
 		return kind === "TS" || kind === "CMAF" ? kind : undefined;
@@ -71,11 +76,16 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 
 	// Manifests can have independent folders. Recover the media base from its
 	// video/{height}p or audio/{bitrate} suffix, not the first manifest's folder.
-	const muxPath = plan.muxings.find(
+	const muxPathMuxing = plan.muxings.find(
 		(muxing) =>
 			muxing.kind !== "MP4" &&
-			/(?:^|\/)(?:video|audio)\/[^/]+$/.test(muxing.destination?.path ?? ""),
-	)?.destination?.path;
+			/(?:^|\/)(?:video|audio)\/[^/]+$/.test(
+				mediaDestination(muxing)?.path ?? "",
+			),
+	);
+	const muxPath = muxPathMuxing
+		? mediaDestination(muxPathMuxing)?.path
+		: undefined;
 	const manifestPath = plan.liveManifests[0]?.destination?.path;
 	const base =
 		muxPath !== undefined
@@ -173,8 +183,9 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const hlsM = plan.liveManifests.find((m) => m.kind === "HLS");
 	const dashM = plan.liveManifests.find((m) => m.kind === "DASH");
 	const primaryKey =
-		plan.muxings.find((m) => m.kind !== "MP4")?.destination?.outputKey ??
-		plan.outputs[0]?.key;
+		mediaDestination(
+			plan.muxings.find((m) => m.kind !== "MP4") ?? plan.muxings[0],
+		)?.outputKey ?? plan.outputs[0]?.key;
 	const primaryOutput = plan.outputs.find(
 		(output) => output.key === primaryKey,
 	);
@@ -189,6 +200,18 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		name: plan.name,
 		accountId: plan.bitmovin?.accountId ?? "",
 		cloudRegion: plan.bitmovin?.cloudRegion ?? D.cloudRegion,
+		fallbackCloudRegions: plan.bitmovin.fallbackCloudRegions,
+		drm: plan.drm,
+		...(plan.drm
+			? {
+					unencryptedMuxingKeys: plan.muxings
+						.filter(
+							(m) =>
+								m.destination && plan.drm?.some((d) => d.muxingKey === m.key),
+						)
+						.map((m) => m.key),
+				}
+			: {}),
 		encoderVersion: plan.bitmovin?.encoderVersion ?? D.encoderVersion,
 		// Encoding-level extras: absent plan keys leave the optional state
 		// fields undefined so the rebuild emits nothing back (goldens stay
@@ -470,6 +493,7 @@ function readHlsManifest(
 			: m.destination,
 		manifestName: m.manifestName,
 		audioGroupId: m.audioGroupId,
+		drmKind: m.drmKind,
 		audioLanguage: m.audioLanguage,
 		closedCaptions: m.closedCaptions,
 		videoMuxingKind: m.videoMuxingKind ?? "",
@@ -498,6 +522,7 @@ function readDashManifest(
 		manifestName: m.manifestName,
 		audioLanguage: m.audioLanguage,
 		representationType: m.representationType,
+		drmKind: m.drmKind,
 		timeshift: m.timeshift,
 		liveEdgeOffset: m.liveEdgeOffset,
 		suggestedPresentationDelay: m.suggestedPresentationDelay,

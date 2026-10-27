@@ -33,10 +33,6 @@ import {
 	type MediaFreshness,
 	mediaFreshness,
 } from "@bitovp/core";
-import {
-	expandRandomFilenameTokens,
-	initSegmentCandidates,
-} from "../bitmovin/filename-template";
 import { HEARTBEAT_SWEEP_INTERVAL_MS } from "../heartbeat-cadence";
 import { closureProbe, type LiveEdgeClosure } from "./edge-resolver";
 import {
@@ -45,6 +41,7 @@ import {
 	ReportBuilder,
 	type VerificationReport,
 } from "./engine";
+import { liveStorageObjects } from "./live-storage-objects";
 
 // The closure types live with the resolver that builds them; re-exported so
 // the engine stays the import site the runner and the tests already use.
@@ -76,7 +73,7 @@ export type LiveSample = {
 	/** Rows in the heartbeat time series at this instant. */
 	heartbeatRows?: number;
 	/** Objects under the muxing prefixes at this instant. */
-	objects?: ObjectEntry[];
+	objects?: (ObjectEntry & { outputKey: string })[];
 	/**
 	 * Storage or parse faults hit while taking this sample.
 	 *
@@ -647,27 +644,13 @@ function verifyLadderShape(
 	// Every declared muxing must have written SOMETHING under its own prefix, with the
 	// segment name the plan gave it. A rendition that never started leaves an empty prefix
 	// while its siblings fill, which a union count hides completely.
+	const bindings = expected.muxings.map((muxing) => ({
+		muxing,
+		files: liveStorageObjects(objects, muxing),
+	}));
 	const silent: string[] = [];
-	for (const muxing of expected.muxings) {
-		const rx = patternToRegExp(
-			muxing.segmentNaming,
-			muxing.segmentNamingIsTemplate === true,
-		);
-		const initKeys = new Set(
-			initSegmentCandidates(
-				objects
-					.filter((o) => o.key.startsWith(muxing.dir.prefix))
-					.map((o) => o.key),
-				muxing.initSegment,
-				muxing.initSegmentNameTemplate,
-			),
-		);
-		const mine = objects.filter(
-			(o) =>
-				o.key.startsWith(muxing.dir.prefix) &&
-				(rx.test(o.key.split("/").pop() ?? "") || initKeys.has(o.key)),
-		);
-		if (mine.length === 0) {
+	for (const { muxing, files } of bindings) {
+		if (files.media.length === 0 && files.init.length === 0) {
 			silent.push(`${muxing.muxingKey} (${muxing.container})`);
 		}
 	}
@@ -690,34 +673,55 @@ function verifyLadderShape(
 	 * Extra files are the finding, not missing ones: a rung still starting has no segments
 	 * yet and `live:ladder` above owns that.
 	 */
-	const unexpected: string[] = [];
-	for (const muxing of expected.muxings) {
-		const rx = patternToRegExp(
-			muxing.segmentNaming,
-			muxing.segmentNamingIsTemplate === true,
-		);
-		const initKeys = new Set(
-			initSegmentCandidates(
-				objects
-					.filter((o) => o.key.startsWith(muxing.dir.prefix))
-					.map((o) => o.key),
-				muxing.initSegment,
-				muxing.initSegmentNameTemplate,
-			),
-		);
-		for (const o of objects) {
-			if (!o.key.startsWith(muxing.dir.prefix)) {
-				continue;
-			}
-			const base = o.key.slice(muxing.dir.prefix.length);
-			// Only this prefix's own level, and never the init segment.
-			if (base.includes("/") || initKeys.has(o.key)) {
-				continue;
-			}
-			if (!rx.test(base)) {
-				unexpected.push(`${muxing.muxingKey}/${base}`);
-			}
+	// Admission permits disjoint writers to share a destination. A proven match
+	// belongs to that namespace, but never satisfies a sibling's own ladder check.
+	const declared = new Set(
+		bindings.flatMap(({ files }) => [...files.init, ...files.media]),
+	);
+	// These routes describe where a writer also emits files. They classify names
+	// only; primary ladder, movement, byte and evidence checks keep their own route.
+	for (const muxing of expected.muxings)
+		for (const outputKey of muxing.namingOnlyOutputKeys ?? []) {
+			const files = liveStorageObjects(objects, { ...muxing, outputKey });
+			for (const object of [...files.init, ...files.media])
+				declared.add(object);
 		}
+	// Other declared files may share the folder, but their presence proves no media.
+	// Archive and manifest filenames are literals, including any token-looking text.
+	const literalFiles = new Set([
+		...(expected.namingOnlyFiles ?? []).map((file) =>
+			JSON.stringify([file.outputKey, file.key]),
+		),
+		...expected.manifests.flatMap((manifest) =>
+			[...manifest.files, ...manifest.mediaPlaylists].map((filename) =>
+				JSON.stringify([
+					manifest.outputKey,
+					`${manifest.dir.prefix}${filename}`,
+				]),
+			),
+		),
+		...(expected.archives ?? []).flatMap((archive) =>
+			[archive.outputKey, ...archive.mirrorOutputKeys].map((outputKey) =>
+				JSON.stringify([outputKey, `${archive.dir.prefix}${archive.filename}`]),
+			),
+		),
+	]);
+	const unexpected: string[] = [];
+	for (const object of objects) {
+		if (
+			declared.has(object) ||
+			literalFiles.has(JSON.stringify([object.outputKey, object.key]))
+		)
+			continue;
+		const owner = expected.muxings.find(
+			(muxing) =>
+				object.outputKey === muxing.outputKey &&
+				object.key.startsWith(muxing.dir.prefix),
+		);
+		if (owner)
+			unexpected.push(
+				`${owner.muxingKey}/${object.key.slice(owner.dir.prefix.length)}`,
+			);
 	}
 	report.assert(
 		"live:segment-naming",
@@ -727,15 +731,6 @@ function verifyLadderShape(
 			? `every segment matches the naming template its muxing declared`
 			: `these objects match no declared segment name, so a manifest referencing the template would point at files the origin never wrote: ${unexpected.slice(0, 3).join(", ")}`,
 	);
-}
-
-/** `%number%`-style pattern → a matcher, same rule the VOD engine uses. */
-function patternToRegExp(pattern: string, namingTemplate: boolean): RegExp {
-	const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const random = namingTemplate
-		? expandRandomFilenameTokens(escaped, Number.MAX_SAFE_INTEGER, true)
-		: escaped;
-	return new RegExp(`^${random.replace(/%[a-zA-Z]+%/g, "[^/]+")}$`);
 }
 
 /**

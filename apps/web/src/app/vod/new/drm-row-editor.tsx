@@ -69,12 +69,16 @@ export function DrmRowEditor({
 	drmCredentials,
 	onChange,
 	onRemove,
+	showDestination = true,
+	showResourceKey = true,
 }: {
 	idBase: string;
 	row: WizardDrmRow;
 	drmCredentials: CredentialSummaryWire[];
 	onChange: (next: WizardDrmRow) => void;
 	onRemove: () => void;
+	showDestination?: boolean;
+	showResourceKey?: boolean;
 }) {
 	const { t } = useT();
 	const [inlineOpen, setInlineOpen] = useState(false);
@@ -84,6 +88,7 @@ export function DrmRowEditor({
 				idBase={idBase}
 				row={row}
 				credentials={drmCredentials}
+				showDestination={showDestination}
 				onChange={onChange}
 				onRemove={onRemove}
 			/>
@@ -94,10 +99,12 @@ export function DrmRowEditor({
 				<span className="rounded bg-zinc-800 px-2 py-1 font-mono text-xs text-zinc-300">
 					{row.kind}
 				</span>
-				<span className="text-xs text-zinc-500">
-					{t("wizardX.keyColon")} {row.muxingKey || "—"}-
-					{row.kind === "CENC" ? "cenc" : "fairplay"}
-				</span>
+				{showResourceKey ? (
+					<span className="text-xs text-zinc-500">
+						{t("wizardX.keyColon")} {row.muxingKey || "—"}-
+						{row.kind === "CENC" ? "cenc" : "fairplay"}
+					</span>
+				) : null}
 				<div className="ml-auto">
 					<RowRemoveButton
 						label={t("wizard.removeEncryption")}
@@ -298,25 +305,27 @@ export function DrmRowEditor({
 					</Field>
 				</div>
 			)}
-			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				<Field
-					label={t("wizard.destinationPath")}
-					htmlFor={`${idBase}-path`}
-					help={t("wizard.relativeToBaseEmptyTheMuxingS")}
-				>
-					<Input
-						id={`${idBase}-path`}
-						value={row.path ?? ""}
-						onChange={(e) =>
-							onChange({
-								...row,
-								path: e.target.value === "" ? undefined : e.target.value,
-								autoPath: undefined,
-							})
-						}
-					/>
-				</Field>
-			</div>
+			{showDestination ? (
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					<Field
+						label={t("wizard.destinationPath")}
+						htmlFor={`${idBase}-path`}
+						help={t("wizard.relativeToBaseEmptyTheMuxingS")}
+					>
+						<Input
+							id={`${idBase}-path`}
+							value={row.path ?? ""}
+							onChange={(e) =>
+								onChange({
+									...row,
+									path: e.target.value === "" ? undefined : e.target.value,
+									autoPath: undefined,
+								})
+							}
+						/>
+					</Field>
+				</div>
+			) : null}
 		</div>
 	);
 }
@@ -410,6 +419,7 @@ function InlineKeyEntry({
 }
 
 function SpekeRowEditor({
+	showDestination = true,
 	idBase,
 	row,
 	credentials,
@@ -419,6 +429,7 @@ function SpekeRowEditor({
 	idBase: string;
 	row: Extract<WizardDrmRow, { kind: "SPEKE" }>;
 	credentials: CredentialSummaryWire[];
+	showDestination?: boolean;
 	onChange: (row: WizardDrmRow) => void;
 	onRemove: () => void;
 }) {
@@ -556,19 +567,21 @@ function SpekeRowEditor({
 						}
 					/>
 				</Field>
-				<Field label={t("wizard.destinationPath")} htmlFor={`${idBase}-path`}>
-					<Input
-						id={`${idBase}-path`}
-						value={row.path ?? ""}
-						onChange={(e) =>
-							onChange({
-								...row,
-								path: e.target.value || undefined,
-								autoPath: undefined,
-							})
-						}
-					/>
-				</Field>
+				{showDestination ? (
+					<Field label={t("wizard.destinationPath")} htmlFor={`${idBase}-path`}>
+						<Input
+							id={`${idBase}-path`}
+							value={row.path ?? ""}
+							onChange={(e) =>
+								onChange({
+									...row,
+									path: e.target.value || undefined,
+									autoPath: undefined,
+								})
+							}
+						/>
+					</Field>
+				) : null}
 			</div>
 		</div>
 	);

@@ -4088,6 +4088,18 @@ export const en = {
 			"Upper limit for automatic level selection. Leave blank for the provider default. Has no effect when automatic level setup is disabled.",
 		av1MaxLevelDisabled:
 			"AV1 maximum level has no effect while automatic level setup is disabled.",
+		av1DetailPreservation: "Detail preservation",
+		av1DetailPreservationHelp:
+			"Tunes film grain and fine detail. AUTO applies at 25% or more of the largest AV1 output’s pixel count in the same encoding. ON/AUTO require VOD Encoder 2.291.0 or later. Blank uses the API default (OFF).",
+		av1DetailPreservationVersion:
+			"AUTO and ON require Encoder 2.291.0 or later. Select a supported encoder version or leave detail preservation OFF.",
+		av1DetailPreservationVersionUnresolved:
+			"AUTO and ON require Encoder 2.291.0 or later. This version alias has not been resolved; pin a supported numeric version to confirm compatibility.",
+		encoderVersion2291Help:
+			"Encoder 2.291.0 is a Beta release. Select STABLE to use the current stable release.",
+		av1DetailPreservationOff: "OFF — Standard encoding",
+		av1DetailPreservationAuto: "AUTO — Apply by resolution",
+		av1DetailPreservationOn: "ON — Apply to all renditions",
 		av1HdrMetadataHelp:
 			"Optional HDR10 static metadata. Master display uses G(...)B(...)R(...)WP(...)L(...). MaxCLL and MaxFALL accept 0–65535; blank leaves them unset.",
 		autoNull: "auto (null)",

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** SDK 1.285.0 enum names and wire values; safe to share with browser code. */
+/** SDK 1.286.0 enum names and wire values; safe to share with browser code. */
 export const CODEC_ENUM_VALUES = {
 	Ac3ChannelLayout: {
 		NONE: "NONE",
@@ -21,6 +21,11 @@ export const CODEC_ENUM_VALUES = {
 	AutoLevelSetup: {
 		ENABLED: "ENABLED",
 		DISABLED: "DISABLED",
+	},
+	Av1DetailPreservationMode: {
+		AUTO: "AUTO",
+		ON: "ON",
+		OFF: "OFF",
 	},
 	BAdapt: {
 		NONE: "NONE",
@@ -391,6 +396,9 @@ export const CODEC_OPTIONS: {
 } = {
 	Ac3ChannelLayout: Object.keys(CODEC_ENUM_VALUES.Ac3ChannelLayout),
 	AutoLevelSetup: Object.keys(CODEC_ENUM_VALUES.AutoLevelSetup),
+	Av1DetailPreservationMode: Object.keys(
+		CODEC_ENUM_VALUES.Av1DetailPreservationMode,
+	),
 	BAdapt: Object.keys(CODEC_ENUM_VALUES.BAdapt),
 	H264BPyramid: Object.keys(CODEC_ENUM_VALUES.H264BPyramid),
 	PassthroughMode: Object.keys(CODEC_ENUM_VALUES.PassthroughMode),

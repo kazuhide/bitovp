@@ -269,7 +269,7 @@ Figure 4-1. VOD ladder and detailed codec settings in the demo. The screen uses 
 
 ### Basic settings and input files
 
-Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. Then select an encoder version. The usual options are `STABLE` and `BETA`. If you pin a version, also check that it supports the features you need.
+Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.291.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
 
 In "Sources", specify the input file's credentials, bucket, and path. For supported destinations, use "Browse storage…" to select from a list. Enter paths directly for destinations that do not support browsing. For HTTPS inputs, provide a URL from which the source can be retrieved.
 
@@ -331,7 +331,7 @@ Open each video row's "Advanced" section to configure its profile, level, frame 
 | H.265 | Profile, level, High Tier, CTU, look-ahead, motion search, AQ, SAO, and related settings |
 | HEVCv2 | Dedicated presets, pixel format, MCTF, perceptual quality, and dedicated Per-Title QP settings |
 | VP9 | Quality and speed, tiles, quantization range, AQ, ARNR, and related settings |
-| AV1 | Preset, frame rate, automatic level selection and its ceiling, HDR10 metadata, and dynamic range (SDR, HDR10, Dolby Vision Profile 10.0 or 10.1) |
+| AV1 | Preset, frame rate, automatic level selection and its ceiling, detail preservation, HDR10 metadata, and dynamic range (SDR, HDR10, Dolby Vision Profile 10.0 or 10.1) |
 | Color and HDR | Color space, primaries, transfer characteristics, copying input values, HDR10, and Dolby Vision metadata |
 
 A blank field often means "not specified", rather than zero or disabled. "Default", "Auto", and "OFF" also have different meanings.
@@ -341,6 +341,8 @@ H.264 and H.265 advanced settings include minimum/maximum codec bitrate in bps a
 GOP minimum/maximum lengths count frames; the existing keyframe intervals count seconds. Open GOP can reference frames in a previous GOP. Set both parts of a sample aspect ratio, or both parts of a display aspect ratio; do not combine the two ratios. Width is optional for H.264, H.265, VP9 and AV1. Explicit values override presets where supported, so inspect the actual output when checking compatibility.
 
 In AV1's advanced settings, the level ceiling limits automatic level selection. It has no effect while automatic level selection is disabled; the form warns about this and retains the value. HDR10 mastering-display and light-level metadata can also be entered here. Use values that match the source metadata. Blank light-level fields are omitted; an explicit zero is retained. See the [AV1 configuration reference](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1).
+
+`detailPreservationMode` tunes AV1 to retain film grain and fine texture. Leave it blank to use the API default, `OFF`. `ON` applies the tuning to all AV1 renditions; `AUTO` applies it to renditions with at least 25% of the largest AV1 rendition's pixel count in the same encoding. For a largest output of 1920 × 1080, 960 × 540 meets that threshold. `ON` and `AUTO` require VOD Encoder `2.291.0` or later. A version alias cannot be checked locally; pin a compatible version if the form reports a warning.
 
 For AV1, leave "Dynamic range format" at its default to omit the setting. Dolby Vision Profile 10.0/10.1 uses the fMP4 path in this application. Bitmovin added these profiles and Dolby Vision-to-SDR/HDR10 conversion in Encoder 2.287.0; encrypting Dolby Vision AV1 fMP4 requires the feature introduced in 2.290.0 (BETA). Check the selected encoder version and account availability before running a job. See the [official encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990). Selecting a format does not establish playback or display compatibility.
 
@@ -779,6 +781,8 @@ The API client library (SDK) exposes `fallbackCloudRegions` on its shared encodi
 | SCTE-35 | Signals intervals such as ad breaks. Configure the HLS tag or DASH event format |
 
 Blank HLS fields use the provider's defaults. Omitting the live-edge offset does not remove latency. A blank HLS DVR field does not necessarily mean no DVR either. In contrast, a blank DASH DVR field means live edge only. Check the field help for each setting.
+
+Encoder `2.291.0` changes the omitted live-edge offset to 12 seconds for both HLS and DASH; earlier defaults were 120 seconds for HLS and 60 seconds for DASH. Explicit offsets are retained. An encoding that uses the `BETA` alias can therefore change behavior as the alias advances. See the [Encoder 2.291.0 release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22910-beta).
 
 The DVR gauge estimates the number of manifest elements from the segment length and output configuration. If the estimate exceeds the limit, revise the window or configuration. Do not assume that entered values will be silently reduced to fit the limit.
 

@@ -1270,6 +1270,8 @@ function readEncodings(raw: Record<string, unknown>): WizardEncodingRow[] {
 			if (cloudRegion !== undefined) {
 				row.cloudRegion = cloudRegion;
 			}
+			const encoderVersion = asString(e.encoderVersion);
+			if (encoderVersion !== undefined) row.encoderVersion = encoderVersion;
 			return row;
 		});
 }

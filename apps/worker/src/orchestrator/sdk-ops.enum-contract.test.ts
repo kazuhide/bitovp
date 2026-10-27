@@ -3,6 +3,7 @@ import {
 	Ac3ChannelLayout,
 	AdaptiveQuantMode,
 	AutoLevelSetup,
+	Av1DetailPreservationMode,
 	BAdapt,
 	ColorPrimaries,
 	ColorSpace,
@@ -52,6 +53,7 @@ afterEach(() => vi.unstubAllGlobals());
 const sdkEnums = {
 	Ac3ChannelLayout,
 	AutoLevelSetup,
+	Av1DetailPreservationMode,
 	BAdapt,
 	ForceFlushMode,
 	H264BPyramid,

@@ -1081,7 +1081,11 @@ export function VodWizard({
 									label={t("wizard.encoderVersion")}
 									htmlFor="wz-version"
 									help={
-										pinnedVersion ? t("wizard.pinnedVersionEG22660") : undefined
+										state.encoderVersion === "2.291.0"
+											? t("wizard.encoderVersion2291Help")
+											: pinnedVersion
+												? t("wizard.pinnedVersionEG22660")
+												: undefined
 									}
 								>
 									<div className="space-y-3">

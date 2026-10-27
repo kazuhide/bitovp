@@ -4035,6 +4035,18 @@ export const ja = {
 			"自動選択するレベルの上限です。空欄はプロバイダーの既定値を使います。レベル自動設定が無効の間は効果がありません。",
 		av1MaxLevelDisabled:
 			"レベル自動設定が無効の間は、AV1 レベル上限の指定に効果がありません。",
+		av1DetailPreservation: "細部の保持",
+		av1DetailPreservationHelp:
+			"フィルムの粒状感や細かな質感を残す調整です。AUTO は同じエンコード内で最大の AV1 出力の画素数の25%以上に適用します。AUTO・ON は VOD の Encoder 2.291.0 以降で利用できます。空欄は API の既定値（OFF）を使います。",
+		av1DetailPreservationVersion:
+			"AUTO・ON には Encoder 2.291.0 以降が必要です。対応するバージョンを指定するか、細部の保持を OFF にしてください。",
+		av1DetailPreservationVersionUnresolved:
+			"AUTO・ON には Encoder 2.291.0 以降が必要です。別名が指すバージョンは未確認のため、対応する数値バージョンを指定してください。",
+		encoderVersion2291Help:
+			"Encoder 2.291.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
+		av1DetailPreservationOff: "OFF — 通常のエンコード",
+		av1DetailPreservationAuto: "AUTO — 解像度に応じて適用",
+		av1DetailPreservationOn: "ON — 全レンディションに適用",
 		av1HdrMetadataHelp:
 			"任意の HDR10 静的メタデータです。マスターディスプレイは G(...)B(...)R(...)WP(...)L(...) 形式です。MaxCLL と MaxFALL は 0〜65535、空欄は未指定になります。",
 		autoNull: "自動 (null)",

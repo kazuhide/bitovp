@@ -604,6 +604,30 @@ describe("validateLiveChannel", () => {
 	});
 
 	describe("live support-matrix rails", () => {
+		it.each([
+			"OFF",
+			"AUTO",
+			"ON",
+		])("keeps AV1 detail preservation %s VOD-only", (detailPreservationMode) => {
+			const plan = basePlan();
+			plan.renditions[0] = {
+				key: "v720",
+				codec: "AV1",
+				ingestKey: "video",
+				height: 720,
+				bitrate: 3000000,
+				mode: "STANDARD",
+				detailPreservationMode,
+			};
+			expect(validateLiveChannel(plan)).toContainEqual(
+				expect.objectContaining({
+					code: "LIVE_CODEC_UNSUPPORTED",
+					level: "error",
+					path: "renditions[0].codec",
+				}),
+			);
+		});
+
 		it("LIVE_CODEC_UNSUPPORTED for VP9, Atmos and WebVTT", () => {
 			const plan = basePlan();
 			plan.renditions.push(

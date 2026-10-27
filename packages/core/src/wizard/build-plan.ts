@@ -194,6 +194,7 @@ export type WizardEncodingRow = {
 	key: string;
 	name: string;
 	cloudRegion?: string;
+	encoderVersion?: string;
 };
 
 export type WizardKeyframe = {
@@ -1074,7 +1075,7 @@ export const DEFAULT_WIZARD_STATE: WizardState = {
 	name: "",
 	accountId: "",
 	cloudRegion: "AUTO",
-	encoderVersion: "STABLE",
+	encoderVersion: "2.291.0",
 	inputFiles: [
 		{
 			key: "main",
@@ -2479,6 +2480,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 							key: encoding.key,
 							name: encoding.name,
 							cloudRegion: str(encoding.cloudRegion),
+							encoderVersion: str(encoding.encoderVersion),
 						}),
 					),
 				}

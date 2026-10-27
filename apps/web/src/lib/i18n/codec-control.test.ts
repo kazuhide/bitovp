@@ -16,6 +16,8 @@ it.each([
 		"PLAN_CODEC_QP_RANGE",
 		"PLAN_CODEC_STRICT_CBR_MODE",
 		"PLAN_AV1_MAX_LEVEL_DISABLED",
+		"PLAN_AV1_DETAIL_PRESERVATION_VERSION",
+		"PLAN_AV1_DETAIL_PRESERVATION_VERSION_UNRESOLVED",
 	]) {
 		const value = codecControlIssueMessage(code, t);
 		expect(value).toBeTruthy();

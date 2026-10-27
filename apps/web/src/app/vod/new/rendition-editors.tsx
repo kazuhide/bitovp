@@ -943,7 +943,22 @@ export function Av1AdvancedEditor({
 			<OptionsGrid
 				idBase={idBase}
 				value={options}
-				fields={AV1_FIELDS}
+				fields={[
+					{
+						key: "detailPreservationMode",
+						labelKey: "wizard.av1DetailPreservation",
+						hintKey: "wizard.av1DetailPreservationHelp",
+						control: {
+							options: CODEC_OPTIONS.Av1DetailPreservationMode,
+							labels: {
+								OFF: t("wizard.av1DetailPreservationOff"),
+								AUTO: t("wizard.av1DetailPreservationAuto"),
+								ON: t("wizard.av1DetailPreservationOn"),
+							},
+						},
+					},
+					...AV1_FIELDS,
+				]}
 				onChange={onChange}
 			/>
 			<CodecDetailEditor

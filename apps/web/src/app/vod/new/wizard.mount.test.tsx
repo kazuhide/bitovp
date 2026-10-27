@@ -46,6 +46,31 @@ beforeEach(() => {
 
 describe("VodWizard — the first mount (ledger #91)", () => {
 	it.each([
+		"en",
+		"ja",
+	] as const)("starts a new VOD form on the pinned Beta release with visible help in %s", async (locale) => {
+		renderWithQuery(<VodWizard />, locale);
+		expect(
+			screen.getByLabelText(
+				locale === "ja"
+					? "固定するエンコーダバージョン"
+					: "Pinned encoder version",
+			),
+		).toHaveValue("2.291.0");
+		await userEvent.click(
+			screen.getByRole("button", {
+				name:
+					locale === "ja"
+						? "「エンコーダバージョン」の説明"
+						: /Encoder version.*more information/i,
+			}),
+		);
+		expect(
+			await screen.findByText(/Encoder 2\.291\.0.*Beta/),
+		).toBeInTheDocument();
+	});
+
+	it.each([
 		"ja",
 		"en",
 	] as const)("omits deployment-profile labeling in %s", async (locale) => {

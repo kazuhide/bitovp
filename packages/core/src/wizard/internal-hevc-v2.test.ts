@@ -94,7 +94,7 @@ it.each([
 it("keeps normal H265 opt-out and preserves unsupported options for explicit rejection", () => {
 	const normal = buildPlan(state);
 	expect(normal.internal).toBeUndefined();
-	expect(normal.bitmovin.encoderVersion).toBe("STABLE");
+	expect(normal.bitmovin.encoderVersion).toBe("2.291.0");
 	expect(normal.generation?.encodingMode).toBeUndefined();
 	const plan = encodingPlanSchema.parse(
 		buildPlan({

@@ -8,7 +8,10 @@ import {
 	checkAv1CodecControls,
 	checkH26xCodecControls,
 } from "./codec-controls";
-import { checkCodecDetailControls } from "./codec-detail-controls";
+import {
+	checkAv1DetailPreservationVersion,
+	checkCodecDetailControls,
+} from "./codec-detail-controls";
 import { qcMirrorMuxingKind, renditionOutputBase } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import { defaultHlsPathConflicts } from "./default-manifest-paths";
@@ -196,6 +199,7 @@ export function validatePlan(
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkCodecDetailControls(plan.renditions));
+	issues.push(...checkAv1DetailPreservationVersion(plan));
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST")

@@ -735,3 +735,99 @@ it("preserves and clears native HEVCv2 quality controls through browser draft st
 		"rateControlModeConfig",
 	);
 });
+
+it("preserves safe manifest details and drops malformed nested detail groups", () => {
+	const draft = projectWizardDraft("vod", {
+		name: "Draft",
+		manifests: {
+			hls: true,
+			dash: true,
+			hlsOptions: {
+				detailed: {
+					channelsAttributeForAudio: "ALWAYS",
+					audioMedia: { isDefault: false, startSegmentNumber: 0 },
+					streams: {
+						forceFrameRateAttribute: false,
+						audioGroups: {
+							droppingMode: "AUDIO",
+							groups: [{ name: "audio", priority: 0 }],
+						},
+					},
+					additionalMedia: [
+						{
+							type: "VTT",
+							vttUrl: "https://secret.example/?token=credential",
+							uri: "subs.m3u8",
+							name: "Subtitles",
+							groupId: "subtitles",
+						},
+					],
+					mediaCustomTags: [
+						{ positionMode: "TIME", time: 0, data: "#TOKEN:credential" },
+					],
+				},
+			},
+			dashOptions: {
+				detailed: {
+					minBufferTime: 3,
+					period: { start: 0, duration: 10 },
+					representations: [{ muxingKey: "v720", startSegmentNumber: 0 }],
+				},
+			},
+		},
+	});
+	expect(draft).toMatchObject({
+		name: "Draft",
+		manifests: {
+			hlsOptions: {
+				detailed: {
+					channelsAttributeForAudio: "ALWAYS",
+					audioMedia: { isDefault: false, startSegmentNumber: 0 },
+					streams: { forceFrameRateAttribute: false },
+				},
+			},
+			dashOptions: {
+				detailed: { minBufferTime: 3, period: { start: 0, duration: 10 } },
+			},
+		},
+	});
+	expect(JSON.stringify(draft)).not.toContain("credential");
+	const malformed = projectWizardDraft("vod", {
+		name: "Keep",
+		manifests: {
+			hls: true,
+			hlsOptions: {
+				masterVersion: "HLS_V6",
+				detailed: { streams: { audioGroups: {} } },
+			},
+			dashOptions: {
+				detailed: { representations: [{}] },
+				defaultPeriods: [
+					{
+						encodingKeys: ["default"],
+						adaptationSets: [{ type: "AND", conditions: [{}] }],
+					},
+				],
+			},
+		},
+	});
+	expect(malformed).toMatchObject({
+		name: "Keep",
+		manifests: { hlsOptions: { masterVersion: "HLS_V6" } },
+	});
+	expect(
+		(
+			malformed.manifests as {
+				hlsOptions: { detailed?: unknown };
+				dashOptions: { detailed?: unknown; defaultPeriods?: unknown };
+			}
+		).hlsOptions.detailed,
+	).toBeUndefined();
+	expect(
+		(
+			malformed.manifests as {
+				dashOptions: { detailed?: unknown; defaultPeriods?: unknown };
+			}
+		).dashOptions,
+	).toMatchObject({ detailed: undefined, defaultPeriods: undefined });
+});

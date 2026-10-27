@@ -1,9 +1,15 @@
 import type {
 	AV1DetailControls,
+	DashAdaptationOptions,
+	DashGlobalOptions,
 	H264DetailControls,
 	H265DetailControls,
 	H265V2QualityControls,
+	HlsGlobalOptions,
+	HlsMediaAttributes,
+	HlsStreamOptions,
 	LiveAutoShutdownConfiguration,
+	ManifestCondition,
 	ScannedMuxing,
 	ScannedStream,
 	ScanPage,
@@ -1125,44 +1131,145 @@ export type SdkOps = {
 			name?: string;
 		},
 	): Promise<string>;
-	createHlsManifest(p: {
-		manifestName: string;
-		name: string;
-		masterVersion?: string;
-		mediaVersion?: string;
-		destination: Destination;
-	}): Promise<string>;
+	createHlsVideoMedia(
+		manifestId: string,
+		p: HlsMediaAttributes & {
+			name: string;
+			groupId: string;
+			language?: string;
+			segmentPath: string;
+			uri: string;
+			encodingId: string;
+			streamId: string;
+			muxingId: string;
+			drmId?: string;
+		},
+	): Promise<string>;
+	createHlsClosedCaptionsMedia(
+		manifestId: string,
+		p: HlsMediaAttributes & {
+			name: string;
+			groupId: string;
+			language?: string;
+			instreamId: string;
+			segmentPath: string;
+			encodingId: string;
+			streamId: string;
+			muxingId: string;
+			drmId?: string;
+		},
+	): Promise<string>;
+	createHlsVttMedia(
+		manifestId: string,
+		p: HlsMediaAttributes & {
+			name: string;
+			groupId: string;
+			language?: string;
+			vttUrl: string;
+			uri: string;
+		},
+	): Promise<string>;
+	createHlsCustomTag(
+		manifestId: string,
+		parentId: string,
+		target: "MEDIA" | "STREAM",
+		p: {
+			positionMode: "TIME" | "SEGMENT" | "KEYFRAME";
+			data: string;
+			time?: number;
+			segment?: number;
+			keyframeId?: string;
+		},
+	): Promise<string>;
+	createDashPeriodXml(
+		manifestId: string,
+		periodId: string,
+		data: string,
+	): Promise<string>;
+	createDashImageAdaptationSet(
+		manifestId: string,
+		periodId: string,
+		p: DashAdaptationOptions,
+	): Promise<string>;
+	createDashProgressiveWebmRepresentation(
+		manifestId: string,
+		periodId: string,
+		adaptationSetId: string,
+		p: {
+			encodingId: string;
+			muxingId: string;
+			filePath: string;
+			dependencyId?: string;
+		},
+	): Promise<string>;
+	createDashVttRepresentation(
+		manifestId: string,
+		periodId: string,
+		adaptationSetId: string,
+		p: { vttUrl: string },
+	): Promise<string>;
+	createDashSpriteRepresentation(
+		manifestId: string,
+		periodId: string,
+		adaptationSetId: string,
+		p: {
+			encodingId: string;
+			streamId: string;
+			spriteId: string;
+			segmentPath: string;
+		},
+	): Promise<string>;
+	createHlsManifest(
+		p: HlsGlobalOptions & {
+			manifestName: string;
+			name: string;
+			masterVersion?: string;
+			mediaVersion?: string;
+			destination: Destination;
+		},
+	): Promise<string>;
 	/**
 	 * DEFAULT manifests (the generator enumerates every muxing of the given
 	 * encoding itself). Used by live-to-VOD: a stopped live encoding's
 	 * recorded output becomes a VOD manifest with no per-rendition entries
 	 * to build. `version` carries the SDK enum NAME (HLS: V1; DASH: V1|V2).
 	 */
-	createDefaultHlsManifest(p: {
-		encodingId: string;
-		manifestName: string;
-		name: string;
-		destination: Destination;
-		version?: string;
-		/** Live-to-VOD: lookup ambiguity/error blocks a billable create. */
-		strictIdentity?: boolean;
-		/** Reconciliation-only delivery: may adopt, must never POST. */
-		allowCreate?: boolean;
-	}): Promise<string>;
-	createDefaultDashManifest(p: {
-		encodingId: string;
-		manifestName: string;
-		name: string;
-		destination: Destination;
-		version?: string;
-		/** Live-to-VOD: lookup ambiguity/error blocks a billable create. */
-		strictIdentity?: boolean;
-		/** Reconciliation-only delivery: may adopt, must never POST. */
-		allowCreate?: boolean;
-	}): Promise<string>;
+	createDefaultHlsManifest(
+		p: HlsGlobalOptions & {
+			masterVersion?: string;
+			mediaVersion?: string;
+			encodingId: string;
+			manifestName: string;
+			name: string;
+			destination: Destination;
+			version?: string;
+			/** Live-to-VOD: lookup ambiguity/error blocks a billable create. */
+			strictIdentity?: boolean;
+			/** Reconciliation-only delivery: may adopt, must never POST. */
+			allowCreate?: boolean;
+		},
+	): Promise<string>;
+	createDefaultDashManifest(
+		p: DashGlobalOptions & {
+			profile?: string;
+			periods?: {
+				encodingIds: string[];
+				adaptationSets?: ManifestCondition[];
+			}[];
+			encodingId?: string;
+			manifestName: string;
+			name: string;
+			destination: Destination;
+			version?: string;
+			/** Live-to-VOD: lookup ambiguity/error blocks a billable create. */
+			strictIdentity?: boolean;
+			/** Reconciliation-only delivery: may adopt, must never POST. */
+			allowCreate?: boolean;
+		},
+	): Promise<string>;
 	createHlsAudioMedia(
 		manifestId: string,
-		p: {
+		p: HlsMediaAttributes & {
 			name: string;
 			groupId: string;
 			language: string;
@@ -1178,7 +1285,7 @@ export type SdkOps = {
 	): Promise<string>;
 	createHlsStreamInfo(
 		manifestId: string,
-		p: {
+		p: HlsStreamOptions & {
 			/**
 			 * Optional, as on the SDK model: a muxed self-contained variant has NO
 			 * audio group, and the API doc says a present value MUST match an
@@ -1198,7 +1305,7 @@ export type SdkOps = {
 	): Promise<string>;
 	createHlsSubtitlesMedia(
 		manifestId: string,
-		p: {
+		p: HlsMediaAttributes & {
 			name: string;
 			groupId: string;
 			language: string;
@@ -1207,6 +1314,7 @@ export type SdkOps = {
 			encodingId: string;
 			streamId: string;
 			muxingId: string;
+			drmId?: string;
 		},
 	): Promise<string>;
 	createHlsIframePlaylist(
@@ -1214,28 +1322,34 @@ export type SdkOps = {
 		streamInfoId: string,
 		p: { filename: string },
 	): Promise<string>;
-	createDashManifest(p: {
-		manifestName: string;
-		name: string;
-		profile?: string;
-		destination: Destination;
-	}): Promise<string>;
+	createDashManifest(
+		p: DashGlobalOptions & {
+			manifestName: string;
+			name: string;
+			profile?: string;
+			destination: Destination;
+		},
+	): Promise<string>;
 	/** Optional explicit start in seconds; omission preserves the provider default. */
-	createDashPeriod(manifestId: string, start?: number): Promise<string>;
+	createDashPeriod(
+		manifestId: string,
+		start?: number,
+		duration?: number,
+	): Promise<string>;
 	createDashVideoAdaptationSet(
 		manifestId: string,
 		periodId: string,
-		p?: { labels?: { value: string }[] },
+		p?: DashAdaptationOptions,
 	): Promise<string>;
 	createDashAudioAdaptationSet(
 		manifestId: string,
 		periodId: string,
-		p: { lang?: string; labels?: { value: string }[] },
+		p: DashAdaptationOptions & { lang?: string },
 	): Promise<string>;
 	createDashSubtitleAdaptationSet(
 		manifestId: string,
 		periodId: string,
-		p: { lang: string; labels?: { value: string }[] },
+		p: DashAdaptationOptions & { lang: string },
 	): Promise<string>;
 	createDashImscRepresentation(
 		manifestId: string,
@@ -1248,6 +1362,12 @@ export type SdkOps = {
 		periodId: string,
 		adaptationSetId: string,
 		p: {
+			dependencyId?: string;
+			startSegmentNumber?: number;
+			endSegmentNumber?: number;
+			startKeyframeId?: string;
+			endKeyframeId?: string;
+			mode?: string;
 			type: string;
 			segmentPath: string;
 			encodingId: string;
@@ -1259,6 +1379,12 @@ export type SdkOps = {
 		periodId: string,
 		adaptationSetId: string,
 		p: {
+			dependencyId?: string;
+			startSegmentNumber?: number;
+			endSegmentNumber?: number;
+			startKeyframeId?: string;
+			endKeyframeId?: string;
+			drmId?: string;
 			type: string;
 			mode?: string;
 			segmentPath: string;
@@ -1271,6 +1397,11 @@ export type SdkOps = {
 		periodId: string,
 		adaptationSetId: string,
 		p: {
+			dependencyId?: string;
+			startSegmentNumber?: number;
+			endSegmentNumber?: number;
+			startKeyframeId?: string;
+			endKeyframeId?: string;
 			type: string;
 			mode?: string;
 			segmentPath: string;
@@ -1283,6 +1414,12 @@ export type SdkOps = {
 		periodId: string,
 		adaptationSetId: string,
 		p: {
+			dependencyId?: string;
+			startSegmentNumber?: number;
+			endSegmentNumber?: number;
+			startKeyframeId?: string;
+			endKeyframeId?: string;
+			mode?: string;
 			type: string;
 			segmentPath: string;
 			encodingId: string;
@@ -1294,6 +1431,11 @@ export type SdkOps = {
 		periodId: string,
 		adaptationSetId: string,
 		p: {
+			dependencyId?: string;
+			startSegmentNumber?: number;
+			endSegmentNumber?: number;
+			startKeyframeId?: string;
+			endKeyframeId?: string;
 			type: string;
 			filePath: string;
 			encodingId: string;
@@ -1306,11 +1448,21 @@ export type SdkOps = {
 			manifestId: string;
 			periodId: string;
 			adaptationSetId: string;
-			representationId: string;
+			representationId?: string;
 			/** Which representation endpoint owns the child (URL differs). */
-			representationKind: "FMP4" | "WEBM";
+			representationKind:
+				| "FMP4"
+				| "WEBM"
+				| "CMAF"
+				| "FMP4_DRM"
+				| "ADAPTATION_SET";
 		},
-		p: { drmId: string; encodingId: string; muxingId: string },
+		p: {
+			drmId: string;
+			encodingId: string;
+			muxingId: string;
+			dependencyId?: string;
+		},
 	): Promise<string>;
 	createSmoothManifest(p: {
 		serverManifestName: string;

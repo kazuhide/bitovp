@@ -31,6 +31,7 @@ describe("edgeReaderFor — the delivery-edge GET as a player would issue it", (
 		// Byte-for-byte (EV-02): the hash of `body` is the hash of the segment.
 		expect(Array.from(got.body)).toEqual(Array.from(SEGMENT));
 		expect(got.bytes).toBe(SEGMENT.byteLength);
+		expect(got.bodyComplete).toBe(true);
 		expect(got.text).toBe(Buffer.from(SEGMENT).toString("utf8"));
 		expect(got.redirected).toBe(false);
 	});

@@ -8,7 +8,6 @@ import {
 	videoKeys,
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
-import { CMAF_CHUNK_FIELDS } from "@/app/vod/new/cmaf-fields";
 import { AudioCutoffEditor } from "@/app/vod/new/codec-detail-editor";
 import { HlsVideoUriField } from "@/app/vod/new/hls-video-uri-field";
 import {
@@ -21,7 +20,7 @@ import {
 	H264AdvancedEditor,
 	H265AdvancedEditor,
 } from "@/app/vod/new/rendition-editors";
-import { Collapsible, OptionsGrid } from "@/app/vod/new/wizard-fields";
+import { Collapsible } from "@/app/vod/new/wizard-fields";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
@@ -31,7 +30,7 @@ import type {
 	LiveWizardState,
 } from "./build-live-plan";
 import { liveBasePath, liveVideoPreset } from "./build-live-plan";
-import { LiveRenditionFields } from "./live-rendition-fields";
+import { LiveInputFields } from "./live-rendition-fields";
 
 /**
  * Live ladder — the VOD ladder narrowed to the live codec rails
@@ -154,28 +153,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 			h265,
 		});
 	};
-	/**
-	 * The relation, derived from the SAME state the builder reads :
-	 * the tracks a rung may carry, and the tracks something already carries.
-	 */
-	const audioChoices = state.audios.map((audio, index) => ({
-		key: aKeys[index] ?? `audio${index + 1}`,
-		label: `${audio.codec} ${Math.round(audio.bitrate / 1000)}k`,
-	}));
-	/**
-	 * This rung's selection, resolved against the tracks that CURRENTLY exist —
-	 * a stored key outlives the rendition it named, and a stale key is not a
-	 * selection. `buildLiveChannelPlan` filters the same way.
-	 */
-	const selectedFor = (video: LiveVideoRendition): string | undefined =>
-		(video.muxedAudioKeys ?? []).find((key) =>
-			audioChoices.some((choice) => choice.key === key),
-		);
-	const carriedAudioKeys = new Set(
-		state.videos.flatMap((video) =>
-			(video.container ?? "FMP4") === "TS" ? (video.muxedAudioKeys ?? []) : [],
-		),
-	);
 
 	const patchAudio = (index: number, partial: Partial<LiveAudioRendition>) => {
 		const next = [...stableAudios];
@@ -185,21 +162,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 		}
 		next[index] = { ...current, ...partial };
 		patchLadder({ audios: next });
-	};
-
-	const selectBundledAudio = (index: number, key: string) => {
-		// Selecting a bundled track defaults to one delivery. The separate
-		// checkbox remains available for an explicit standalone copy.
-		patchLadder({
-			videos: stableVideos.map((video, i) =>
-				i === index
-					? { ...video, muxedAudioKeys: key ? [key] : undefined }
-					: video,
-			),
-			audios: stableAudios.map((audio, i) =>
-				key && aKeys[i] === key ? { ...audio, ownContainer: false } : audio,
-			),
-		});
 	};
 
 	return (
@@ -394,28 +356,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 										</SelectNative>
 									</Field>
 								</div>
-								<Field
-									label={t("wizard.container")}
-									htmlFor={`lw-v-${index}-container`}
-									tooltip={`${t("ui.tsHlsOnlyH264Only")} ${t("wizard.cmafCompatibility")}`}
-								>
-									<SelectNative
-										id={`lw-v-${index}-container`}
-										className="w-24"
-										value={video.container ?? "FMP4"}
-										onChange={(e) =>
-											patchVideo(index, {
-												container: e.target.value as "FMP4" | "CMAF" | "TS",
-											})
-										}
-									>
-										<option value="FMP4">fMP4</option>
-										{video.codec === "H264" ? (
-											<option value="CMAF">CMAF</option>
-										) : null}
-										<option value="TS">{t("ui.ts")}</option>
-									</SelectNative>
-								</Field>
 								<FieldRowAction>
 									<button
 										type="button"
@@ -434,14 +374,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</button>
 								</FieldRowAction>
 							</div>
-							{video.container === "CMAF" ? (
-								<OptionsGrid
-									idBase={`lw-v-${index}-cmaf`}
-									value={video.cmaf ?? {}}
-									fields={CMAF_CHUNK_FIELDS}
-									onChange={(cmaf) => patchVideo(index, { cmaf })}
-								/>
-							) : null}
 							<div className="max-w-md">
 								<HlsVideoUriField
 									id={`lw-v-${index}-hls-video-uri`}
@@ -454,45 +386,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									}
 								/>
 							</div>
-							{/*
-							 * Which track rides inside THIS rung  — TS only,
-							 * because `additionalStreamKeys` is on the TS schema; single,
-							 * because a manifest references the container and cannot pick
-							 * between tracks inside it. Its own row under the rung (row
-							 * #326, owner): inline it widened the flex row and reflowed
-							 * width/height/bitrate/preset/container whenever TS was chosen.
-							 */}
-							{(video.container ?? "FMP4") === "TS" &&
-							audioChoices.length > 0 ? (
-								<div className="max-w-md">
-									<Field
-										label={t("wizard.muxedAudio")}
-										htmlFor={`lw-v-${index}-muxaudio`}
-										tooltip={
-											selectedFor(video)
-												? t("wizardX.muxedAudioCarrying", {
-														key: selectedFor(video) ?? "",
-													})
-												: t("wizard.muxedAudioHint")
-										}
-									>
-										<SelectNative
-											id={`lw-v-${index}-muxaudio`}
-											value={selectedFor(video) ?? ""}
-											onChange={(e) =>
-												selectBundledAudio(index, e.target.value)
-											}
-										>
-											<option value="">{t("wizard.muxedAudioNone")}</option>
-											{audioChoices.map((choice) => (
-												<option key={choice.key} value={choice.key}>
-													{choice.key} · {choice.label}
-												</option>
-											))}
-										</SelectNative>
-									</Field>
-								</div>
-							) : null}
 							{video.codec === "H264" ? (
 								<H264AdvancedEditor
 									allowCrf={false}
@@ -501,14 +394,11 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									value={video.h264}
 									onChange={(h264) => patchVideo(index, { h264 })}
 								>
-									<LiveRenditionFields
+									<LiveInputFields
 										idBase={`lw-v-${index}`}
 										state={state}
 										input={video.input}
-										muxing={video.muxing}
-										container={video.container ?? "FMP4"}
 										onInputChange={(input) => patchVideo(index, { input })}
-										onMuxingChange={(muxing) => patchVideo(index, { muxing })}
 									/>
 								</H264AdvancedEditor>
 							) : (
@@ -520,14 +410,11 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									visionMetadataKeys={[]}
 									onChange={(h265) => patchVideo(index, { h265 })}
 								>
-									<LiveRenditionFields
+									<LiveInputFields
 										idBase={`lw-v-${index}`}
 										state={state}
 										input={video.input}
-										muxing={video.muxing}
-										container={video.container ?? "FMP4"}
 										onInputChange={(input) => patchVideo(index, { input })}
-										onMuxingChange={(muxing) => patchVideo(index, { muxing })}
 									/>
 								</H265AdvancedEditor>
 							)}
@@ -675,68 +562,6 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									}
 								/>
 							) : null}
-							<Field
-								label={t("wizard.container")}
-								htmlFor={`lw-a-${index}-container`}
-								tooltip={`${t("ui.tsHlsOnlyAacOnly")} ${t("wizard.cmafCompatibility")}`}
-							>
-								<SelectNative
-									id={`lw-a-${index}-container`}
-									className="w-24"
-									value={audio.container ?? "FMP4"}
-									onChange={(e) =>
-										patchAudio(index, {
-											container: e.target.value as "FMP4" | "CMAF" | "TS",
-										})
-									}
-								>
-									<option value="FMP4">fMP4</option>
-									{audio.codec === "AAC" ? (
-										<option value="CMAF">CMAF</option>
-									) : null}
-									<option value="TS">{t("ui.ts")}</option>
-								</SelectNative>
-							</Field>
-							{/*
-							 * Does this track ALSO ship standalone?
-							 *
-							 * WHICH rungs carry it is stated on the video rows, not
-							 * here — a flag on the audio row can only broadcast one
-							 * track to every rung, and a channel may well want
-							 * v540←a128, v720←a64 and a48 standalone.
-							 */}
-							{/*  (owner): the explanation lives in the ⓘ mark — it
-							    changes with the checkbox, and as an always-on hint it
-							    reflowed the row on every toggle. */}
-							<Field
-								label={t("wizard.ownContainer")}
-								htmlFor={`lw-a-${index}-own`}
-								tooltip={
-									audio.ownContainer === false
-										? carriedAudioKeys.has(aKeys[index] ?? "")
-											? t("wizard.ownContainerOffHint")
-											: t("wizard.ownContainerOffUncarriedHint")
-										: t("wizard.ownContainerOnHint")
-								}
-							>
-								<label
-									htmlFor={`lw-a-${index}-own`}
-									className="flex items-center gap-2 text-xs text-zinc-300"
-								>
-									<input
-										id={`lw-a-${index}-own`}
-										type="checkbox"
-										className="h-3.5 w-3.5 accent-emerald-600"
-										checked={audio.ownContainer !== false}
-										onChange={(e) =>
-											patchAudio(index, {
-												ownContainer: e.target.checked ? undefined : false,
-											})
-										}
-									/>
-									{t("wizard.ownContainerLabel")}
-								</label>
-							</Field>
 							<FieldRowAction>
 								<button
 									type="button"
@@ -754,31 +579,14 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									{t("ui.remove")}
 								</button>
 							</FieldRowAction>
-							{audio.container === "CMAF" ? (
-								<div className="basis-full">
-									<OptionsGrid
-										idBase={`lw-a-${index}-cmaf`}
-										value={audio.cmaf ?? {}}
-										fields={CMAF_CHUNK_FIELDS}
-										onChange={(cmaf) => patchAudio(index, { cmaf })}
-									/>
-								</div>
-							) : null}
 							<div className="w-full">
 								<Collapsible summary={t("wizard.advanced")}>
-									<LiveRenditionFields
+									<LiveInputFields
 										idBase={`lw-a-${index}`}
 										state={state}
 										input={audio.input}
-										muxing={audio.muxing}
-										container={audio.container ?? "FMP4"}
 										audio
-										ownsContainer={
-											audio.ownContainer !== false ||
-											!carriedAudioKeys.has(aKeys[index] ?? "")
-										}
 										onInputChange={(input) => patchAudio(index, { input })}
-										onMuxingChange={(muxing) => patchAudio(index, { muxing })}
 									/>
 								</Collapsible>
 							</div>

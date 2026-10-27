@@ -527,6 +527,9 @@ function readMuxing(
 			muxing.dolbyVisionTrackSampleEntryName =
 				dolby as WizardMuxing["dolbyVisionTrackSampleEntryName"];
 		}
+	} else if (kind === "WEBM" && mux.progressive === true) {
+		muxing.progressive = true;
+		muxing.filename = asString(mux.filename) ?? "output.webm";
 	} else if (kind === "TEXT") {
 		muxing.filename = asString(mux.filename);
 	} else {
@@ -588,6 +591,10 @@ function hlsBag(
 	defaultVersion: "HLS_V4" | "HLS_V6",
 ): WizardHlsOptions {
 	const bag: WizardHlsOptions = {};
+	if (m.detailed !== undefined)
+		bag.detailed = m.detailed as WizardHlsOptions["detailed"];
+	if (m.generationMode !== undefined)
+		bag.generationMode = m.generationMode as WizardHlsOptions["generationMode"];
 	bag.acl = readDestinationAcl(m);
 	const masterVersion = asString(m.masterVersion);
 	if (primary && masterVersion === undefined) bag.omitMasterVersion = true;
@@ -677,6 +684,14 @@ function dashBag(
 	primary: boolean,
 ): WizardDashOptions {
 	const bag: WizardDashOptions = {};
+	if (m.detailed !== undefined)
+		bag.detailed = m.detailed as WizardDashOptions["detailed"];
+	if (m.generationMode !== undefined)
+		bag.generationMode =
+			m.generationMode as WizardDashOptions["generationMode"];
+	if (m.defaultPeriods !== undefined)
+		bag.defaultPeriods =
+			m.defaultPeriods as WizardDashOptions["defaultPeriods"];
 	bag.acl = readDestinationAcl(m);
 	// Primary DASH defaults audioLanguage to "ja" in buildPlan; extra DASH
 	// defaults to the schema "en".
@@ -697,7 +712,7 @@ function dashBag(
 	}
 	if (asString(m.profile) === "ON_DEMAND") {
 		bag.onDemand = true;
-	}
+	} else if (asString(m.profile) === "LIVE") bag.onDemand = false;
 	const videoMuxingKind = asString(m.videoMuxingKind);
 	if (videoMuxingKind !== undefined) {
 		bag.videoMuxingKind =

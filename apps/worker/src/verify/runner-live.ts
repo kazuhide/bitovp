@@ -77,6 +77,10 @@ import {
 } from "./live-evidence-assembly";
 import { sampleLiveStorageObjects } from "./live-storage-sample";
 import {
+	collectHlsReferenceChecks,
+	dashExternalSubtitleChecks,
+} from "./manifest-reference-checks";
+import {
 	classifySendFailure,
 	type IntentHandle,
 	type IntentTerminalInput,
@@ -685,7 +689,7 @@ export function firstVariantUri(master: string): string | undefined {
  * player would reject fails here too. A read or parse failure is RECORDED, never swallowed — that
  * mistake has cost this round four separate misdiagnoses.
  */
-async function collectManifestFiles(
+export async function collectManifestFiles(
 	deps: LiveRunnerDeps,
 	expected: ExpectedLiveArtefacts,
 ): Promise<
@@ -695,6 +699,7 @@ async function collectManifestFiles(
 		key: string;
 		bytes?: number;
 		entries?: number;
+		referenceChecks?: Check[];
 		error?: string;
 	}[]
 > {
@@ -706,6 +711,7 @@ async function collectManifestFiles(
 		/** SHA-256 of the master's bytes — the origin leg's master identity (EV-02). */
 		sha256?: string;
 		entries?: number;
+		referenceChecks?: Check[];
 		/** DASH: the codecs of each VIDEO AdaptationSet the parser found . */
 		videoCodecSets?: string[][];
 		error?: string;
@@ -726,10 +732,17 @@ async function collectManifestFiles(
 			const text = await deps.readText(m.outputKey, key);
 			let entries: number | undefined;
 			let videoCodecSets: string[][] | undefined;
+			let referenceChecks: Check[] | undefined;
 			if (m.kind === "DASH") {
 				const { parseDashText } = await import("./adapters");
 				const parsed = await parseDashText(text);
 				entries = parsed.representations.length;
+				if (m.dashExternalSubtitles?.length)
+					referenceChecks = dashExternalSubtitleChecks(
+						`live:manifest:${m.manifestKey}`,
+						m.dashExternalSubtitles,
+						parsed,
+					);
 				videoCodecSets = parsed.adaptationSets
 					?.filter((set) => set.kind === "video")
 					.map((set) => set.codecs);
@@ -737,6 +750,17 @@ async function collectManifestFiles(
 				const { parseHlsText } = await import("./adapters");
 				const parsed = await parseHlsText(text);
 				entries = parsed.variants.length + parsed.media.length;
+				if (m.hlsAdditionalMedia?.length || m.hlsAudioGroups)
+					referenceChecks = await collectHlsReferenceChecks(
+						{
+							readText: deps.readText,
+							parseHls: parseHlsText,
+							listAll: deps.listAll,
+						},
+						`live:manifest:${m.manifestKey}`,
+						m,
+						parsed,
+					);
 			}
 			out.push({
 				manifestKey: m.manifestKey,
@@ -745,6 +769,7 @@ async function collectManifestFiles(
 				bytes: Buffer.byteLength(text),
 				sha256: sha256Hex(text),
 				...(entries !== undefined ? { entries } : {}),
+				...(referenceChecks !== undefined ? { referenceChecks } : {}),
 				...(videoCodecSets !== undefined ? { videoCodecSets } : {}),
 			});
 		} catch (err) {
@@ -831,15 +856,31 @@ export async function collectEdgeClosures(
 							expectedChildCount: manifest.mediaPlaylists.length,
 							expectedChildIds: manifest.mediaPlaylists,
 							requireInitChildIds: manifest.mediaPlaylists.filter(
-								(_id, index) =>
-									selected[index]?.initSegment !== undefined ||
-									selected[index]?.initSegmentNameTemplate !== undefined,
+								(id, index) => {
+									const media = manifest.hlsAdditionalMedia?.find(
+										(entry) => entry.uri === id,
+									);
+									const muxing = media?.muxingKey
+										? expected.muxings.find(
+												(entry) =>
+													entry.muxingKey === media.muxingKey &&
+													(media.drmKey
+														? entry.drmKey === media.drmKey
+														: entry.drmKind === manifest.drmKind),
+											)
+										: selected[index];
+									return (
+										muxing?.initSegment !== undefined ||
+										muxing?.initSegmentNameTemplate !== undefined
+									);
+								},
 							),
 						}
 					: {
 							...freshness,
 							currentRunPrefix,
-							expectedChildCount: selected.length,
+							expectedChildCount:
+								selected.length + (manifest.dashExternalSubtitles?.length ?? 0),
 						};
 			// MSL4 delivery is not a byte-for-byte exposure of the submitted
 			// destination directory: Akamai publishes the master (and HLS child

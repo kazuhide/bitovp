@@ -72,7 +72,12 @@ export type PerTitleActualDeliveryMuxing = {
 export type PerTitleActualPopulations =
 	| {
 			status: "complete";
-			results: Array<{ streamId: string; templateRendition?: string }>;
+			results: Array<{
+				streamId: string;
+				templateRendition?: string;
+				/** The captured provider codec, never inferred from the attributed template. */
+				codecType?: string;
+			}>;
 			/** Exactly one score unit per RESULT, with zero or more mirror candidates. */
 			qc: PerTitleActualQcUnit[];
 			/** Provider muxings, each retaining all of its clear and DRM output legs. */
@@ -159,7 +164,10 @@ export function perTitleActualPopulations(
 		}
 	}
 
-	const results: Array<{ streamId: string; templateRendition?: string }> = [];
+	const results: Extract<
+		PerTitleActualPopulations,
+		{ status: "complete" }
+	>["results"] = [];
 	const qc: PerTitleActualQcUnit[] = [];
 	const deliveryMuxings: PerTitleActualDeliveryMuxing[] = [];
 	for (const stream of snapshot.streams) {
@@ -169,7 +177,12 @@ export function perTitleActualPopulations(
 				? { templateRendition: stream.templateRendition }
 				: {}),
 		};
-		results.push(resultIdentity);
+		results.push({
+			...resultIdentity,
+			...(stream.codecType !== undefined
+				? { codecType: stream.codecType }
+				: {}),
+		});
 
 		const qcMuxings = stream.muxings.filter(
 			(muxing) =>

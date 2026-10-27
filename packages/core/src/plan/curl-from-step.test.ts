@@ -207,7 +207,17 @@ describe("curlForStep — endpoint mapping", () => {
 					encodingId: "enc-4",
 					muxingId: "mux-5",
 				},
-				request: { type: "TEMPLATE", segmentPath: "v/360", refs: {} },
+				request: {
+					type: "TEMPLATE",
+					segmentPath: "v/360",
+					refs: {
+						manifestId: "man-1",
+						periodId: "per-2",
+						adaptationSetId: "as-3",
+						encodingId: "enc-4",
+						muxingId: "mux-5",
+					},
+				},
 			}),
 		);
 		expect(result.ok).toBe(true);
@@ -215,6 +225,32 @@ describe("curlForStep — endpoint mapping", () => {
 		expect(result.command).toContain(
 			"/encoding/manifests/dash/man-1/periods/per-2/adaptationsets/as-3/representations/fmp4",
 		);
+	});
+
+	it("does not invent body references from unresolved manifest snapshots", () => {
+		for (const kind of [
+			"CREATE_DASH_REPRESENTATION_FMP4",
+			"CREATE_DASH_REPRESENTATION_SPRITE",
+			"CREATE_HLS_VIDEO_MEDIA",
+			"CREATE_HLS_CUSTOM_TAG",
+		] as const) {
+			expect(
+				curlForStep(
+					step({
+						kind,
+						refs: {
+							manifestId: "manifest:planned",
+							periodId: "planned-period",
+							adaptationSetId: "planned-set",
+							encodingId: "encoding",
+							streamId: "stream:planned",
+							muxingId: "muxing:planned",
+						},
+						request: { type: "TEMPLATE", positionMode: "KEYFRAME", refs: {} },
+					}),
+				).ok,
+			).toBe(false);
+		}
 	});
 
 	it("maps START_ENCODING (no --data when body is just refs)", () => {
@@ -424,18 +460,29 @@ describe("every operation kind is classified", () => {
 			manifestId: "man",
 			streamId: "str",
 			streamInfoId: "sinf",
+			mediaId: "media",
+			outputId: "output",
 			muxingId: "mux",
 			periodId: "per",
 			adaptationSetId: "ada",
 			representationId: "rep",
 			drmId: "drm",
+			spriteId: "sprite",
 		};
 		return {
 			step: kind,
 			kind: kind as StepLogEntry["kind"],
 			payload: { muxingKind: "FMP4" },
 			refs,
-			request: { type: "SEGMENT_BASE", filePath: "video.mp4", refs },
+			request: {
+				type: "SEGMENT_BASE",
+				filePath: "video.mp4",
+				...(kind === "CREATE_HLS_VTT_MEDIA" ||
+				kind === "CREATE_DASH_REPRESENTATION_VTT"
+					? { vttUrl: "https://cdn.example.test/sub.vtt" }
+					: {}),
+				refs,
+			},
 			status: "DONE",
 		};
 	};

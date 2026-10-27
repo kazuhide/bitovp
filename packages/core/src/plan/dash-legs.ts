@@ -7,7 +7,7 @@
  * agreeing after the next change to either. The codec family is still decided by
  * the caller — this answers only "is this the leg the manifest declared".
  */
-type Leg = { kind: string; manifestType?: string };
+type Leg = { kind: string; manifestType?: string; progressive?: boolean };
 
 /** ON_DEMAND lists DASH_ON_DEMAND-typed MP4s; segmented profiles list the pinned leg. */
 function onDemandLeg(muxing: Leg): boolean {
@@ -19,6 +19,7 @@ export function dashVideoLegSelected(
 	manifest: { videoMuxingKind?: string },
 	onDemand: boolean,
 ): boolean {
+	if (muxing.progressive) return false;
 	if (onDemand) {
 		return onDemandLeg(muxing);
 	}
@@ -39,6 +40,7 @@ export function dashAudioLegSelected(
 	manifest: { audioMuxingKind?: string },
 	onDemand: boolean,
 ): boolean {
+	if (muxing.progressive) return false;
 	if (onDemand) {
 		return onDemandLeg(muxing);
 	}

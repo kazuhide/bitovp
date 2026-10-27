@@ -64,6 +64,11 @@ export type LiveEvidenceInputs = {
 		bytes?: number;
 		sha256?: string;
 		entries?: number;
+		referenceChecks?: readonly {
+			id: string;
+			verdict: string;
+			detail: string;
+		}[];
 		error?: string;
 	}[];
 	/** Credential-safe bindings derived from the exact rewritten MSL outputs. */
@@ -309,11 +314,26 @@ function originLeg(
 		(f) => f.manifestKey === manifest.manifestKey,
 	);
 	const last = inputs.samples[inputs.samples.length - 1];
-	const selected = manifestMuxings(inputs, manifest.manifestKey);
 	const muxings = selectExpectedLiveManifestMuxings(
 		inputs.expected,
 		manifest,
 	).map((m) => ({ ...m, outputKey: manifest.outputKey }));
+	for (const media of manifest.hlsAdditionalMedia ?? []) {
+		if (media.type !== "VIDEO" || !media.uri) continue;
+		const source = inputs.expected.muxings.find(
+			(muxing) =>
+				muxing.muxingKey === media.muxingKey &&
+				(media.drmKey
+					? muxing.drmKey === media.drmKey
+					: muxing.drmKind === manifest.drmKind),
+		);
+		if (source)
+			muxings.push({
+				...source,
+				muxingKey: media.uri,
+				outputKey: manifest.outputKey,
+			});
+	}
 	const children: LiveEvidenceChild[] = muxings.map((m) => {
 		const media = last ? mediaUnder(last, m) : [];
 		const candidates = liveStorageObjects(last?.objects ?? [], m).init;
@@ -321,6 +341,27 @@ function originLeg(
 			candidates.length === 1 && (candidates[0]?.size ?? 0) > 0
 				? candidates[0]
 				: undefined;
+		const additional =
+			manifest.hlsAdditionalMedia?.findIndex(
+				(media) => media.type === "VIDEO" && media.uri === m.muxingKey,
+			) ?? -1;
+		const checks =
+			additional >= 0
+				? file?.referenceChecks?.filter((check) =>
+						check.id.startsWith(
+							`live:manifest:${manifest.manifestKey}:additional-media:${additional}:`,
+						),
+					)
+				: undefined;
+		const bound =
+			additional < 0 ||
+			(checks?.some(
+				(check) => check.id.endsWith(":binding") && check.verdict === "PASS",
+			) === true &&
+				checks.some(
+					(check) => check.id.endsWith(":objects") && check.verdict === "PASS",
+				) &&
+				!checks.some((check) => check.verdict === "FAIL"));
 		return {
 			id: m.muxingKey,
 			requiresInit:
@@ -330,24 +371,55 @@ function originLeg(
 				: {}),
 			listed: media.length,
 			media: media.slice(-MAX_ORIGIN_MEDIA),
-			missing: [],
+			missing: bound
+				? []
+				: [
+						"The additional VIDEO child's actual references were not verified against its configured writer",
+					],
 		};
 	});
 	const probes = inputs.samples.map((s) => originProbe(s, muxings));
+	const externalIds =
+		manifest.kind === "HLS"
+			? (manifest.hlsAdditionalMedia ?? [])
+					.filter((media) => media.vttUrl !== undefined)
+					.map((media) => media.uri ?? "external-subtitle")
+			: (manifest.dashExternalSubtitles ?? []).map(
+					(_subtitle, index) => `external-subtitle-${index}`,
+				);
+	for (const [index, id] of externalIds.entries())
+		children.push({
+			id,
+			externalContent: "UNVERIFIED",
+			requiresInit: false,
+			listed: 1,
+			media: [],
+			missing: file?.referenceChecks?.some(
+				(check) =>
+					check.id.endsWith(`:external-subtitle:${index}:reference`) &&
+					check.verdict === "PASS",
+			)
+				? []
+				: ["Configured external subtitle reference was not verified"],
+		});
 	const storageRetained =
 		file?.error === undefined &&
 		(file?.bytes ?? 0) > 0 &&
-		children.length === selected.length &&
+		children.length === muxings.length + externalIds.length &&
+		!(
+			file?.referenceChecks?.some((check) => check.verdict === "FAIL") ?? false
+		) &&
 		children.every(
 			(child) =>
-				child.media.some((media) => media.bytes > 0) &&
+				(child.externalContent === "UNVERIFIED" ||
+					child.media.some((media) => media.bytes > 0)) &&
 				(!child.requiresInit || (child.init?.bytes ?? 0) > 0),
 		);
 	return sealLiveEvidenceLeg({
 		...common(inputs, {
-			requiredProviderStreamKeys: selected.map(
-				({ muxing }) => muxing.streamKey,
-			),
+			requiredProviderStreamKeys: [
+				...new Set(muxings.map((muxing) => muxing.streamKey)),
+			],
 			requiredProviderOutputKeys: [manifest.outputKey],
 			storageRetained,
 		}),
@@ -358,8 +430,11 @@ function originLeg(
 		role: "ORIGIN",
 		output: { prefix: inputs.outputPrefix },
 		topology: {
-			expectedChildCount: selected.length,
-			expectedChildIds: muxings.map((muxing) => muxing.muxingKey),
+			expectedChildCount: muxings.length + externalIds.length,
+			expectedChildIds: [
+				...muxings.map((muxing) => muxing.muxingKey),
+				...externalIds,
+			],
 		},
 		...(file && file.error === undefined && file.bytes !== undefined
 			? {
@@ -403,6 +478,7 @@ function edgeLeg(
 	const probes = closures.map(closureProbe);
 	const children: LiveEvidenceChild[] = (last?.children ?? []).map((c) => ({
 		id: c.id,
+		...(c.externalContent ? { externalContent: c.externalContent } : {}),
 		requiresInit: c.requiresInit,
 		url: c.url,
 		...(c.bytes !== undefined ? { bytes: c.bytes } : {}),
@@ -443,12 +519,17 @@ function edgeLeg(
 	const selected = manifestMuxings(inputs, manifest.manifestKey);
 	const expectedChildIds =
 		manifest.kind === "HLS" ? manifest.mediaPlaylists : undefined;
+	const expectedChildCount =
+		manifest.kind === "HLS"
+			? manifest.mediaPlaylists.length
+			: selected.length + (manifest.dashExternalSubtitles?.length ?? 0);
 	const storageRetained =
 		(last?.master?.bytes ?? 0) > 0 &&
-		children.length === selected.length &&
+		children.length === expectedChildCount &&
 		children.every(
 			(child) =>
-				child.media.some((media) => media.bytes > 0) &&
+				(child.externalContent === "UNVERIFIED" ||
+					child.media.some((media) => media.bytes > 0)) &&
 				(!child.requiresInit || (child.init?.bytes ?? 0) > 0),
 		);
 	return sealLiveEvidenceLeg({
@@ -479,7 +560,7 @@ function edgeLeg(
 				}
 			: {}),
 		topology: {
-			expectedChildCount: selected.length,
+			expectedChildCount,
 			...(expectedChildIds ? { expectedChildIds } : {}),
 		},
 		output: {

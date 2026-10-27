@@ -38,6 +38,16 @@ export function liveManifestPathIssues(plan: LiveChannelPlan): PlanIssue[] {
 		const path = `liveManifests[${index}].destination`;
 		reserve(manifest.destination, manifest.manifestName, owner, path);
 		if (manifest.kind === "HLS") {
+			for (const [mediaIndex, media] of (
+				manifest.detailed?.additionalMedia ?? []
+			).entries())
+				if (media.type !== "CLOSED_CAPTIONS")
+					reserve(
+						manifest.destination,
+						media.uri,
+						`${owner} additional media ${mediaIndex}`,
+						`liveManifests[${index}].detailed.additionalMedia[${mediaIndex}].uri`,
+					);
 			for (const { muxing, rendition } of selectLiveManifestMuxings(
 				plan,
 				manifest,

@@ -1,6 +1,8 @@
 "use client";
 
+import { liveChannelPlanSchema, liveManifestSegmentLists } from "@bitovp/core";
 import type { ReactNode } from "react";
+import { z } from "zod";
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -13,8 +15,9 @@ import type {
 	LivePdtSettingsState,
 	LiveWizardState,
 } from "./build-live-plan";
-import { collapseGroup } from "./build-live-plan";
+import { buildLiveChannelPlan, collapseGroup } from "./build-live-plan";
 import { DvrGauge, type DvrLeg } from "./dvr-gauge";
+import { LiveManifestDetailEditor } from "./live-manifest-detail-editor";
 
 type ManifestsSectionProps = {
 	state: LiveWizardState;
@@ -24,42 +27,23 @@ type ManifestsSectionProps = {
 	outputSettings?: Partial<Record<"HLS" | "DASH", ReactNode>>;
 };
 
-/**
- * Muxing legs a manifest would enumerate, mirroring core's
- * selectLiveManifestMuxings: HLS takes FMP4+TS (pinnable per family),
- * DASH takes FMP4/CMAF. Drives the C8 gauge so it counts exactly what the
- * validator will count.
- */
+const dvrSourceSchema = z.object({
+	renditions: liveChannelPlanSchema.shape.renditions,
+	muxings: liveChannelPlanSchema.shape.muxings,
+});
+/** Use the same segment-list identities as plan validation and channel details. */
 export function manifestLegs(
 	state: LiveWizardState,
 	kind: "HLS" | "DASH",
 ): DvrLeg[] {
-	const videoPin = kind === "HLS" ? state.manifests.hls.videoMuxingKind : "";
-	const audioPin = kind === "HLS" ? state.manifests.hls.audioMuxingKind : "";
-	const legs: DvrLeg[] = [];
-	for (const video of state.videos) {
-		const container = video.container ?? "FMP4";
-		if (kind === "HLS" && container === "CMAF") continue;
-		if (kind === "DASH" && container !== "FMP4" && container !== "CMAF") {
-			continue;
-		}
-		if (kind === "HLS" && videoPin !== "" && container !== videoPin) {
-			continue;
-		}
-		legs.push({ segmentLengthSec: state.segmentLength });
-	}
-	for (const audio of state.audios) {
-		const container = audio.container ?? "FMP4";
-		if (kind === "HLS" && container === "CMAF") continue;
-		if (kind === "DASH" && container !== "FMP4" && container !== "CMAF") {
-			continue;
-		}
-		if (kind === "HLS" && audioPin !== "" && container !== audioPin) {
-			continue;
-		}
-		legs.push({ segmentLengthSec: state.segmentLength });
-	}
-	return legs;
+	const plan = buildLiveChannelPlan(state);
+	const source = dvrSourceSchema.safeParse(plan);
+	const manifest = liveChannelPlanSchema.shape.liveManifests.element.safeParse(
+		plan.liveManifests.find((row) => row.kind === kind),
+	);
+	return source.success && manifest.success
+		? liveManifestSegmentLists(source.data, manifest.data)
+		: [];
 }
 
 function numberOrUndefined(raw: string): number | undefined {
@@ -437,6 +421,13 @@ export function LiveManifestsSection({
 								) : null}
 							</div>
 						</div>
+						<LiveManifestDetailEditor
+							kind="HLS"
+							idBase={`${idPrefix}-hls-detail`}
+							state={state}
+							value={hls}
+							onChange={(next) => patchHls(next)}
+						/>
 					</div>
 				) : null}
 			</ManifestCard>
@@ -630,6 +621,13 @@ export function LiveManifestsSection({
 								</SelectNative>
 							</Field>
 						</div>
+						<LiveManifestDetailEditor
+							kind="DASH"
+							idBase={`${idPrefix}-dash-detail`}
+							state={state}
+							value={dash}
+							onChange={(next) => patchDash(next)}
+						/>
 					</div>
 				) : null}
 			</ManifestCard>

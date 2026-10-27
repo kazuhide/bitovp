@@ -89,6 +89,8 @@ function providerMuxingTypes(expected: ExpectedMuxing): string[] {
 			return ["TS"];
 		case "WEBM_SEGMENTED":
 			return ["WEBM"];
+		case "WEBM_PROGRESSIVE":
+			return ["PROGRESSIVE_WEBM"];
 		case "TEXT_SINGLE":
 		case "TEXT_SEGMENTED":
 			return ["WEBVTT", "TEXT"];

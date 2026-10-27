@@ -426,6 +426,8 @@ The Safari identity check establishes known-test-key decryption and AV1 base-vid
 
 A manifest lists the video, audio, and subtitles available for playback and the locations of their files. Configure HLS, DASH, and additional formats such as SMOOTH as needed. Creating a container and including it in a manifest are separate settings.
 
+See [Manifest options](MANIFESTS.md) for optional HLS/DASH attributes, media groups, ranges, custom tags and Default API generation.
+
 For HLS, check audio group IDs, languages, media URIs, and variant names. If you create multiple master playlists, give their child playlists unique paths too. Changing only the master filename does not prevent child files from being overwritten.
 
 For a fixed video rendition, **Video playlist URI** in manifest placement sets the child playlist filename, such as `main-720p.m3u8`. Live has the same field in each video card. Leave it blank to keep the derived name. Use a flat `.m3u8` filename starting with a letter or number, with letters, numbers, dots, underscores or hyphens; URLs, subdirectories, queries and fragments are unavailable. This sets [StreamInfo.uri](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/models/StreamInfo.ts), without changing segment filenames or timing.
@@ -711,9 +713,9 @@ Live encoding continuously processes incoming video and audio and writes output 
 |---|---|
 | Basics | Name, Bitmovin account, region and encoder version |
 | Sources | Protocol, connection direction, redundancy, authentication and encryption |
-| Ladder | Video and audio renditions, codecs and per-rendition containers |
+| Ladder | Video and audio renditions, codecs and source track selection |
 | Output | Storage or delivery service and mirrors |
-| Packaging | Shared segment length, encryption and MP4 archive |
+| Packaging | Containers, bundled audio, media files, segment length, encryption and MP4 archive |
 | Encoding | Automatic restart and stop, monitoring conditions, timeouts and caching |
 | Manifests | HLS, DASH, DVR, publication delay, time and ad information |
 | Schedule | Planned input feed, program start and stop times, and a pre-program slate |
@@ -746,11 +748,11 @@ The Live form supports H.264 and H.265 video, and AAC, Dolby Digital and Dolby D
 
 For H.264, “Default (VOD_HIGH_QUALITY)” and “None (use encoding mode)” are separate choices. None omits `presetConfiguration` from the API request. The H.265 default also leaves this parameter unspecified. Saved values outside the available choices remain visible for validation; select another preset if needed.
 
-Configure the audio bundled with video, independent audio containers and segment length. Match TS, fMP4, CMAF and other packaging choices to the codec and manifest compatibility conditions. Segment length is in seconds, bitrate in bps and audio sample rate in Hz.
+In **Packaging**, choose each track's container, the audio bundled with video, independent audio containers and segment length. Match TS, fMP4 and CMAF to the codec and manifest compatibility conditions. Segment length is in seconds, bitrate in bps and audio sample rate in Hz.
 
-Each rendition's "Advanced" section includes its input track position and input path. Track positions start at zero; blank keeps video position `0` or audio position `1`. Leave the path blank to use the input protocol's default.
+In **Ladder**, each rendition's "Advanced" section includes its input track position and input path. Track positions start at zero; blank keeps video position `0` or audio position `1`. Leave the path blank to use the input protocol's default.
 
-For storage outputs, the same section provides media filenames and a media output subdirectory. This subdirectory replaces the complete generated media folder; it is not appended to the folder in "Output". Blank keeps automatic paths, `/` selects the output root, and each container needs a separate folder. Storage mirrors use the same path.
+For storage outputs, open each track's "Advanced" section in **Packaging** to set media filenames and a media output subdirectory. This subdirectory replaces the complete generated media folder; it is not appended to the folder in "Output". Blank keeps automatic paths, `/` selects the output root, and each container needs a separate folder. Storage mirrors use the same path.
 
 Choose either a segment filename pattern such as `seg_%number%.m4s`, or a naming template with random tokens. A custom init filename is available for fMP4. Audio needs its own container to use separate filenames or paths.
 

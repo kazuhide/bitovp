@@ -19,7 +19,8 @@ region. Review the selected account and any saved or copied region settings.
    encoder input type.
 3. In **Ladder**, configure video/audio renditions and their codec settings.
 4. In **Output**, choose storage or a delivery service, paths, and optional mirrors.
-5. In **Packaging**, set the shared segment length, optional encryption, and MP4 archive.
+5. In **Packaging**, choose each track's container, bundled audio, file settings,
+   shared segment length, optional encryption, and MP4 archive.
 6. In **Encoding**, review automatic restart/stop controls and optional features.
 7. In **Manifests**, configure HLS/DASH, DVR, and publication settings.
 8. In **Schedule**, configure planned actions. A schedule does not postpone provisioning.
@@ -29,14 +30,22 @@ New channels normally target Live HD where eligible. Settings outside that shape
 are identified as Custom Live before start. Account eligibility and provider
 acceptance still apply.
 
-Each rendition's **Advanced** section lets you select its input track position
+Each rendition's **Ladder → Advanced** section lets you select its input track position
 (zero-based; blank keeps video `0` or audio `1`) and protocol input path.
-For storage outputs, it also exposes the media output subdirectory, a segment
+In **Packaging**, each track's **Advanced** section exposes the media output
+subdirectory for storage outputs, a segment
 filename pattern or naming template, and the fMP4 init filename. A custom
 subdirectory replaces the complete generated media folder rather than extending
 the Output folder. Blank keeps automatic paths; `/` selects the output root.
-Use a separate folder for each container. Audio needs its own container for
-separate media files. Storage mirrors follow the same path.
+Use separate folders or nonoverlapping filenames for independent containers.
+Audio needs its own container for separate media files.
+
+Outputs pointing to the same physical bucket share its files, even when their
+saved names differ. Mirrors receive the same relative paths. The app checks
+these locations together to prevent files from overwriting one another.
+
+`%number%` expands in segment naming patterns. Init and archive filenames keep
+that text literally; random naming uses the dedicated template fields.
 
 Turning off **Restart on encoder error** sends an explicit disabled setting.
 An untouched control leaves an omitted setting unspecified. Import and duplicate

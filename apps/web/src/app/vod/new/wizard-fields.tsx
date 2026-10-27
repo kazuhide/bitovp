@@ -19,6 +19,7 @@ export function Collapsible({
 	summary,
 	help,
 	children,
+	deferContent = false,
 }: {
 	summary: string;
 	/**
@@ -31,9 +32,17 @@ export function Collapsible({
 	 */
 	help?: string;
 	children: ReactNode;
+	/** Mount large optional editors on first open, then retain their state. */
+	deferContent?: boolean;
 }) {
+	const [activated, setActivated] = useState(false);
 	return (
-		<details className="rounded-md border border-zinc-800 bg-zinc-900/40">
+		<details
+			className="rounded-md border border-zinc-800 bg-zinc-900/40"
+			onToggle={(event) => {
+				if (deferContent && event.currentTarget.open) setActivated(true);
+			}}
+		>
 			<summary className="cursor-pointer select-none px-3 py-2 font-medium text-xs text-zinc-300 hover:text-zinc-100">
 				{summary}
 				{help ? (
@@ -42,7 +51,9 @@ export function Collapsible({
 					</span>
 				) : null}
 			</summary>
-			<div className="space-y-3 border-zinc-800 border-t p-3">{children}</div>
+			{!deferContent || activated ? (
+				<div className="space-y-3 border-zinc-800 border-t p-3">{children}</div>
+			) : null}
 		</details>
 	);
 }

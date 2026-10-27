@@ -4,6 +4,8 @@ import {
 } from "./codec-detail-controls";
 import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
+import { manifestCurlSnapshot } from "./manifest-curl";
+import { externalVttUrlSchema } from "./manifest-options";
 import type { StepLogEntry } from "./steplog";
 
 /**
@@ -338,6 +340,47 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 			"/encoding/encodings/:encodingId/muxings/:muxingKind/:muxingId/drm/fairplay",
 	},
 	// HLS manifest tree
+	CREATE_DASH_PERIOD_XML: {
+		method: "POST",
+		template:
+			"/encoding/manifests/dash/:manifestId/periods/:periodId/custom-xml-elements",
+	},
+	CREATE_DASH_ADAPTATION_SET_IMAGE: {
+		method: "POST",
+		template:
+			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/image",
+	},
+	CREATE_DASH_REPRESENTATION_PROGRESSIVE_WEBM: {
+		method: "POST",
+		template:
+			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/progressive-webm",
+	},
+	CREATE_DASH_REPRESENTATION_VTT: {
+		method: "POST",
+		template:
+			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/vtt",
+	},
+	CREATE_DASH_REPRESENTATION_SPRITE: {
+		method: "POST",
+		template:
+			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/sprite",
+	},
+	CREATE_HLS_VIDEO_MEDIA: {
+		method: "POST",
+		template: "/encoding/manifests/hls/:manifestId/media/video",
+	},
+	CREATE_HLS_CLOSED_CAPTIONS_MEDIA: {
+		method: "POST",
+		template: "/encoding/manifests/hls/:manifestId/media/closed-captions",
+	},
+	CREATE_HLS_VTT_MEDIA: {
+		method: "POST",
+		template: "/encoding/manifests/hls/:manifestId/media/vtt",
+	},
+	CREATE_HLS_CUSTOM_TAG: {
+		method: "POST",
+		template: "/encoding/manifests/hls/:manifestId/media/:mediaId/custom-tags",
+	},
 	CREATE_MANIFEST_HLS: { method: "POST", template: "/encoding/manifests/hls" },
 	CREATE_HLS_AUDIO_MEDIA: {
 		method: "POST",
@@ -552,7 +595,9 @@ export type CurlUnavailable =
 	/** The request needs vault fields that are intentionally absent from saved logs. */
 	| { code: "VAULT_FIELDS_OMITTED"; kind: string }
 	/** The endpoint exists but the step lacks a ref the URL template needs. */
-	| { code: "UNRESOLVED_PATH_PARAMS"; kind: string };
+	| { code: "UNRESOLVED_PATH_PARAMS"; kind: string }
+	/** An older or unvalidated VTT snapshot contains a URL that cannot be exported safely. */
+	| { code: "UNSAFE_EXTERNAL_VTT_URL"; kind: string };
 
 export type CurlResult =
 	| { ok: true; command: string }
@@ -575,6 +620,61 @@ export function curlForStep(
 	}
 	let endpoint = ENDPOINTS[entry.kind];
 	if (
+		entry.kind === "CREATE_DASH_CONTENT_PROTECTION" &&
+		entry.payload.representationKind !== undefined &&
+		!["FMP4", "WEBM", "CMAF", "FMP4_DRM", "ADAPTATION_SET"].includes(
+			String(entry.payload.representationKind),
+		)
+	)
+		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+	if (
+		(entry.kind === "CREATE_MANIFEST_HLS" ||
+			entry.kind === "CREATE_MANIFEST_DASH") &&
+		entry.payload.generationMode === "DEFAULT"
+	)
+		endpoint = {
+			method: "POST",
+			template: `/encoding/manifests/${entry.kind === "CREATE_MANIFEST_HLS" ? "hls" : "dash"}/default`,
+		};
+	if (
+		entry.kind === "CREATE_HLS_CUSTOM_TAG" &&
+		entry.payload.target === "STREAM"
+	)
+		endpoint = {
+			method: "POST",
+			template:
+				"/encoding/manifests/hls/:manifestId/streams/:streamInfoId/custom-tags",
+		};
+	if (
+		(entry.kind === "CREATE_DASH_REPRESENTATION_FMP4" ||
+			entry.kind === "CREATE_DASH_REPRESENTATION_MP4") &&
+		entry.refs.drmId
+	)
+		endpoint = {
+			method: "POST",
+			template: `/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/${entry.kind === "CREATE_DASH_REPRESENTATION_FMP4" ? "fmp4" : "mp4"}/drm`,
+		};
+	if (entry.kind === "CREATE_DASH_CONTENT_PROTECTION") {
+		const kind = entry.payload.representationKind;
+		if (kind === "WEBM")
+			endpoint = {
+				method: "POST",
+				template:
+					"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/webm/:representationId/contentprotection",
+			};
+		else if (kind === "ADAPTATION_SET")
+			endpoint = {
+				method: "POST",
+				template:
+					"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/contentprotection",
+			};
+		else if (kind === "CMAF" || kind === "FMP4_DRM")
+			endpoint = {
+				method: "POST",
+				template: `/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/${kind === "CMAF" ? "cmaf" : "fmp4/drm"}/:representationId/contentprotection`,
+			};
+	}
+	if (
 		entry.kind === "CREATE_CODEC_H265" &&
 		entry.payload.internalHevcV2 === true
 	)
@@ -596,6 +696,13 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	const manifestSnapshot = manifestCurlSnapshot(entry);
+	if (manifestSnapshot === false)
+		return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+	if (manifestSnapshot) {
+		request = manifestSnapshot.request;
+		entry = { ...entry, refs: manifestSnapshot.refs };
+	}
 	if (
 		["CREATE_CODEC_AAC", "CREATE_CODEC_AC3", "CREATE_CODEC_EAC3"].includes(
 			entry.kind,
@@ -637,6 +744,16 @@ export function curlForStep(
 	}
 
 	if (
+		(entry.kind === "CREATE_HLS_VTT_MEDIA" ||
+			entry.kind === "CREATE_DASH_REPRESENTATION_VTT") &&
+		!externalVttUrlSchema.safeParse(
+			request !== null && typeof request === "object" && "vttUrl" in request
+				? request.vttUrl
+				: undefined,
+		).success
+	)
+		return { ok: false, code: "UNSAFE_EXTERNAL_VTT_URL", kind: entry.kind };
+	if (
 		entry.kind === "CREATE_CODEC_AV1" &&
 		request !== null &&
 		typeof request === "object" &&
@@ -656,46 +773,9 @@ export function curlForStep(
 		}
 	}
 	if (
-		entry.kind === "CREATE_HLS_AUDIO_MEDIA" ||
-		entry.kind === "CREATE_HLS_STREAM_INFO" ||
-		entry.kind === "CREATE_HLS_SUBTITLES_MEDIA"
-	) {
-		const snapshot =
-			request !== null && typeof request === "object" && !Array.isArray(request)
-				? (request as Record<string, unknown>)
-				: {};
-		const refs =
-			snapshot.refs !== null &&
-			typeof snapshot.refs === "object" &&
-			!Array.isArray(snapshot.refs)
-				? (snapshot.refs as Record<string, unknown>)
-				: {};
-		const encrypted = "drmId" in entry.refs || Object.hasOwn(refs, "drmId");
-		const resolved: Record<string, string> = {};
-		for (const key of [
-			"manifestId",
-			"encodingId",
-			"streamId",
-			"muxingId",
-			...(encrypted ? ["drmId"] : []),
-		]) {
-			const value = refs[key];
-			if (typeof value !== "string" || value.length === 0)
-				return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
-			resolved[key] = value;
-		}
-		entry = { ...entry, refs: resolved };
-		request = {
-			...snapshot,
-			encodingId: resolved.encodingId,
-			streamId: resolved.streamId,
-			muxingId: resolved.muxingId,
-			...(encrypted ? { drmId: resolved.drmId } : {}),
-		};
-	}
-	if (
-		entry.kind === "CREATE_DASH_REPRESENTATION_MP4" ||
-		entry.kind === "CREATE_DASH_CONTENT_PROTECTION"
+		!manifestSnapshot &&
+		(entry.kind === "CREATE_DASH_REPRESENTATION_MP4" ||
+			entry.kind === "CREATE_DASH_CONTENT_PROTECTION")
 	) {
 		// These variants assemble their SDK body from resolved request refs;
 		// entry.refs still names the compiler's producing steps.

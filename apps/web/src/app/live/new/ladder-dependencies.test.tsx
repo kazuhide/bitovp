@@ -4,7 +4,6 @@ import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { audioKeys, videoKeys } from "@/app/vod/new/build-plan";
 import { renderLocalized } from "@/test/render";
-import { LiveArchiveSection } from "./archive-section";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
@@ -12,6 +11,7 @@ import {
 } from "./build-live-plan";
 import { LiveLadderSection } from "./ladder-section";
 import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
+import { LivePackagingSection } from "./packaging-section";
 
 function required<T>(value: T | null | undefined): T {
 	if (value == null) throw new Error("Missing test fixture");
@@ -25,7 +25,7 @@ function Harness({ initial }: { initial: LiveWizardState }) {
 	return (
 		<>
 			<LiveLadderSection state={state} onPatch={patch} />
-			<LiveArchiveSection state={state} onPatch={patch} credentials={[]} />
+			<LivePackagingSection state={state} onPatch={patch} credentials={[]} />
 			<output data-testid="state">{JSON.stringify(state)}</output>
 		</>
 	);

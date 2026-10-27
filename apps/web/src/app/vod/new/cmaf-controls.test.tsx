@@ -1,7 +1,7 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_LIVE_WIZARD_STATE } from "@/app/live/new/build-live-plan";
-import { LiveLadderSection } from "@/app/live/new/ladder-section";
+import { LiveMuxingsSection } from "@/app/live/new/muxings-section";
 import { renderWithQuery } from "@/test/render";
 import { DEFAULT_WIZARD_STATE } from "./build-plan";
 import { blankDrmRow } from "./drm-row-editor";
@@ -41,7 +41,7 @@ describe("CMAF container authoring", () => {
 		expect(screen.queryByRole("button", { name: "Add FairPlay" })).toBeNull();
 		expect(screen.queryByText("+ SPEKE")).toBeNull();
 	});
-	it("selects CMAF and edits chunk frames in the existing Live ladder", () => {
+	it("selects CMAF and edits chunk frames in Live packaging", () => {
 		const onPatch = vi.fn();
 		const state = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
 		state.audios = [];
@@ -49,7 +49,7 @@ describe("CMAF container authoring", () => {
 			...video,
 			container: "CMAF",
 		}));
-		renderWithQuery(<LiveLadderSection state={state} onPatch={onPatch} />);
+		renderWithQuery(<LiveMuxingsSection state={state} onPatch={onPatch} />);
 		expect(screen.getByRole("option", { name: "CMAF" })).toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("Frames per CMAF chunk"), {
 			target: { value: "8" },
@@ -70,7 +70,7 @@ describe("CMAF container authoring", () => {
 			const state = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
 			state.audios = [];
 			state.videos = state.videos.map((video) => ({ ...video, codec: "H265" }));
-			renderWithQuery(<LiveLadderSection state={state} onPatch={vi.fn()} />);
+			renderWithQuery(<LiveMuxingsSection state={state} onPatch={vi.fn()} />);
 		}
 		expect(screen.queryByRole("option", { name: "CMAF" })).toBeNull();
 	});

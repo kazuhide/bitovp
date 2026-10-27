@@ -88,6 +88,71 @@ describe("DvrPanel (ledger #149 batch 2d)", () => {
 		expect(screen.queryByTestId("dvr-gauge-bar")).toBeNull();
 		expect(apiFetch).not.toHaveBeenCalled();
 	});
+	it("counts an additional video playlist in the detail-page DVR limit", () => {
+		const plan = structuredClone(PLAN);
+		const video = plan.muxings.find((muxing) =>
+			plan.renditions.some(
+				(rendition) =>
+					rendition.key === muxing.streamKey && rendition.codec === "H264",
+			),
+		);
+		const audio = plan.muxings.find((muxing) =>
+			plan.renditions.some(
+				(rendition) =>
+					rendition.key === muxing.streamKey && rendition.codec === "AAC",
+			),
+		);
+		const hls = plan.liveManifests.find((manifest) => manifest.kind === "HLS");
+		if (!video || video.kind === "MP4" || !audio || hls?.kind !== "HLS")
+			throw new Error("DVR fixture missing");
+		plan.muxings = [video, audio];
+		plan.renditions = plan.renditions.filter((rendition) =>
+			[video.streamKey, audio.streamKey].includes(rendition.key),
+		);
+		plan.liveManifests = [hls];
+		hls.timeshift = 18001 * video.segmentLength;
+		hls.detailed = {
+			additionalMedia: [
+				{
+					type: "VIDEO",
+					name: "Alternate",
+					groupId: "alternate",
+					muxingKey: video.key,
+					uri: "alternate.m3u8",
+				},
+				{
+					type: "VTT",
+					name: "Subtitles",
+					groupId: "subtitles",
+					uri: "subtitles.m3u8",
+					vttUrl: "https://example.test/sub.vtt",
+				},
+				{
+					type: "CLOSED_CAPTIONS",
+					name: "Captions",
+					groupId: "captions",
+					muxingKey: video.key,
+					instreamId: "CC1",
+				},
+			],
+		};
+		renderWithQuery(
+			<DvrPanel
+				channelId="channel"
+				status="STOPPED"
+				plan={plan}
+				stepEntries={[]}
+			/>,
+			"en",
+		);
+		fireEvent.click(screen.getByRole("button", { name: /^HLS.*timeshift/ }));
+		expect(screen.getByTestId("dvr-gauge-bar")).toHaveAttribute(
+			"data-level",
+			"over",
+		);
+		expect(screen.getByText(/54003 of ~54000/)).toBeInTheDocument();
+		expect(apiFetch).not.toHaveBeenCalled();
+	});
 	it("renders one gauge per live manifest from the real default plan", () => {
 		renderWithQuery(
 			<DvrPanel

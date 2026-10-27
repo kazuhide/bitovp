@@ -161,6 +161,30 @@ function completeLeg(): LiveEvidenceLegInput {
 	};
 }
 
+it("keeps configured external WebVTT content explicitly unverified despite valid local delivery", () => {
+	const leg = completeLeg();
+	leg.topology.expectedChildCount += 1;
+	leg.children.push({
+		id: "subs.m3u8",
+		externalContent: "UNVERIFIED",
+		url: redactUrl(`${BASE}subs.m3u8`, sha256),
+		bytes: 200,
+		sha256: sha256("subtitles"),
+		requiresInit: false,
+		listed: 1,
+		media: [],
+		missing: [],
+	});
+	const result = liveEvidenceCompleteness(leg);
+	expect(result.complete).toBe(false);
+	expect(result.missing).toContain(
+		"children.subs.m3u8.content: external WebVTT bytes are UNVERIFIED",
+	);
+	expect(result.missing).not.toContain(
+		"children.subs.m3u8.media: no nonzero media segment witnessed",
+	);
+});
+
 describe("liveEvidenceCompleteness — one rule for what a live PASS is a pass OF", () => {
 	it("a leg carrying every element is COMPLETE", () => {
 		expect(liveEvidenceCompleteness(completeLeg())).toEqual({

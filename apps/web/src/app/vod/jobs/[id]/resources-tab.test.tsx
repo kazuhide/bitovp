@@ -71,6 +71,36 @@ describe("ResourcesTab — raw snapshots in place", () => {
 				: "Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
 		);
 	});
+	it.each([
+		"en",
+		"ja",
+	] as const)("%s: does not offer cURL for an older signed VTT URL", (locale) => {
+		const entry: StepLogEntry = {
+			step: "external-subtitle",
+			kind: "CREATE_HLS_VTT_MEDIA",
+			status: "DONE",
+			payload: {},
+			refs: { manifestId: "manifest" },
+			request: {
+				vttUrl: "https://cdn.example.test/sub.vtt?token=SYNTHETIC_URL_SECRET",
+				name: "English",
+				groupId: "subtitles",
+				uri: "subtitles.m3u8",
+				refs: { manifestId: "manifest-id" },
+			},
+		};
+		renderLocalized(<ResourcesTab entries={[entry]} />, locale);
+		expect(
+			screen.getByTitle(
+				locale === "en"
+					? "Use a public URL without credentials, query strings (?) or fragments (#). Signed URLs are not supported."
+					: "認証不要の公開URLのみ（署名・?・#は不可）",
+			),
+		).toHaveTextContent(
+			locale === "en" ? "cURL unavailable" : "cURL は利用できません",
+		);
+		expect(screen.queryByRole("button", { name: /cURL/ })).toBeNull();
+	});
 	it("opens the persisted request/response, each body under ITS label", async () => {
 		renderLocalized(<ResourcesTab entries={ENTRIES} />);
 		await userEvent.click(

@@ -858,6 +858,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	async function sdkFor(
 		row: LiveChannelRow,
 		monitoringSignal?: AbortSignal,
+		manifestStamp?: CreateStamp,
 	): Promise<SdkOps> {
 		const accountId =
 			row.bitmovinAccountId ??
@@ -873,6 +874,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			tenantOrgId: account.tenantOrgId,
 			bitmovinAccountId: accountId,
 			...(monitoringSignal ? { monitoringSignal } : {}),
+			...(manifestStamp ? { stamp: manifestStamp } : {}),
 		});
 	}
 
@@ -3389,7 +3391,15 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					manifests: liveToVodManifestsOf(families),
 				};
 			};
-			const sdk = await sdkFor(row);
+			let manifestStep: string | undefined;
+			let manifestRecovery = false;
+			let manifestCreateAllowed = false;
+			const sdk = await sdkFor(row, undefined, {
+				jobId: liveChannelId,
+				currentStep: () => manifestStep,
+				adoptWindow: () => manifestRecovery,
+				allowCreate: () => manifestCreateAllowed,
+			});
 			const poll = {
 				intervalMs: deps.pollIntervalMs,
 				timeoutMs: deps.pollTimeoutMs,
@@ -3402,20 +3412,32 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				identity: LiveToVodProviderIdentity,
 				allowCreate: boolean,
 			): Promise<string> => {
-				const create = identity.manifestName.endsWith(".m3u8")
+				const isHls = identity.manifestName.endsWith(".m3u8");
+				const create = isHls
 					? sdk.createDefaultHlsManifest
 					: sdk.createDefaultDashManifest;
-				return create({
-					encodingId: identity.encodingId,
-					manifestName: identity.manifestName,
-					name: `${String(row.name ?? liveChannelId)} VOD ${identity.manifestName.endsWith(".m3u8") ? "HLS" : "DASH"}`,
-					destination: {
-						outputId: identity.outputId,
-						outputPath: identity.outputPath,
-					},
-					strictIdentity: true,
-					allowCreate,
-				});
+				manifestStep = `live-to-vod:${liveChannelRunId}:${identity.attemptId}:${isHls ? "hls" : "dash"}`;
+				manifestCreateAllowed = allowCreate;
+				// An unresolved intent from this attempt may reconcile, never POST again.
+				// A different durable attempt can establish absence before claiming new intent.
+				manifestRecovery = !allowCreate && identity.attemptId === attemptId;
+				try {
+					return await create({
+						encodingId: identity.encodingId,
+						manifestName: identity.manifestName,
+						name: `${String(row.name ?? liveChannelId)} VOD ${identity.manifestName.endsWith(".m3u8") ? "HLS" : "DASH"}`,
+						destination: {
+							outputId: identity.outputId,
+							outputPath: identity.outputPath,
+						},
+						strictIdentity: true,
+						allowCreate,
+					});
+				} finally {
+					manifestStep = undefined;
+					manifestRecovery = false;
+					manifestCreateAllowed = false;
+				}
 			};
 
 			try {

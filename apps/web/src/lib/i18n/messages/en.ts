@@ -44,6 +44,24 @@ export const en = {
 			"Optional, up to three distinct concrete regions or AUTO on the same cloud provider. Order is preserved. Cloud Connect is not supported.",
 		clear: "Unencrypted",
 	},
+	manifestDetail: {
+		defaultHlsConflict:
+			"Default HLS cannot use the saved per-rendition playlist names or media groups. Remove those settings, keep manual generation, or retain a separate manual HLS manifest that uses them.",
+		defaultHlsSelection:
+			"Default HLS uses the first rendition's encoding and generates playlist names and media groups. Shared naming settings apply only to manual HLS manifests.",
+		publicVttUrl:
+			"Use a public URL without credentials, query strings (?) or fragments (#). Signed URLs are not supported.",
+		templateUnavailable:
+			"Advanced manifest settings use Plan JSON or execution in the app. Encoding-template YAML export is unavailable.",
+		progressiveWebm: "Single WebM file",
+		title: "Additional manifest options",
+		generation: "Manifest generation",
+		manual: "Use the configured tracks",
+		default: "Default API (after encoding)",
+		add: "Add",
+		remove: "Remove",
+		unset: "Not specified",
+	},
 	liveOutputs: {
 		destination: "Output destination",
 		access: "Access permissions",
@@ -5594,7 +5612,7 @@ export const en = {
 		emptyRedundantRtmpInput: 'Empty = "Redundant RTMP Input"',
 		emptySrtInput: 'Empty = "SRT Input"',
 		dvrBudgetTooltip:
-			"Live DVR/timeshift manifests list every still-available segment; Bitmovin holds ~54,000 elements total. Each rendition adds (timeshift ÷ segment length) segments, so a longer window, shorter segments, or more renditions raise the count. Keep the window under ~3h (10,800s) — larger manifests slow updates. This gauge never clamps your value; it only warns past ~80% of budget.",
+			"Live DVR/timeshift manifests list every still-available segment; Bitmovin holds ~54,000 elements total. Each separate playlist or segmented DASH representation adds (timeshift ÷ segment length) segments. A longer window, shorter segments, or more segment lists raise the count. Keep the window under ~3h (10,800s) — larger manifests slow updates. This gauge never clamps your value; it only warns past ~80% of budget.",
 		liveEdgeOffsetTooltip:
 			"How far behind the newest segment players start. Recommended ~10–12s (about 2–3 segment durations — Bitmovin's reference samples use 10–12). Larger = more latency but more buffer headroom against ingest/CDN jitter; smaller = lower latency but higher rebuffer risk near the live edge.",
 		hlsLiveEdgeOffsetTooltip:
@@ -5778,11 +5796,11 @@ export const en = {
 		dvrLegName: "leg {n}",
 		dvrLegSegments: "{count} segments",
 		dvrMathMixed:
-			"Σ ceil({timeshift}s / segmentLength) over {renditions} renditions = {total} of ~{budget} elements",
+			"Σ ceil({timeshift}s / segmentLength) over {renditions} segment lists = {total} of ~{budget} elements",
 		dvrMathUniform:
-			"ceil({timeshift}s / {segment}s) = {segments} segments × {renditions} renditions = {total} of ~{budget} elements",
+			"ceil({timeshift}s / {segment}s) = {segments} segments × {renditions} segment lists = {total} of ~{budget} elements",
 		dvrMathUniformOne:
-			"ceil({timeshift}s / {segment}s) = {segments} segments × {renditions} rendition = {total} of ~{budget} elements",
+			"ceil({timeshift}s / {segment}s) = {segments} segments × {renditions} segment list = {total} of ~{budget} elements",
 		hlsPlaylistMarkers: "HLS playlist markers",
 		ingestPoint: "Ingest point",
 		intervalRequiredFor: "interval is required for {mode}",

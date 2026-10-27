@@ -8,8 +8,9 @@
  * expected renditions: a same-height two-rung ladder delivered as ONE variant
  * passed both `:present` checks, and `2 expected / 1 observed` was green.
  *
- * This is a maximum-cardinality, minimum-cost assignment over a bipartite
- * graph whose edges are the caller's `compatible` pairs, with a deterministic
+ * This is a maximum-cardinality assignment that covers required nodes before
+ * minimizing cost over a bipartite graph of the caller's `compatible` pairs.
+ * The assignment has a deterministic
  * tie-break: both sides are canonically sorted before the assignment runs, so
  * the result is a function of the KEYS and never of input order. Exact
  * duplicates on the observed side (identical canonical key) are reported and
@@ -61,6 +62,8 @@ export type OneToOneInput<E, O> = {
 	compatible: (e: E, o: O) => boolean;
 	/** Finite, ≥ 0; consulted only for compatible pairs. */
 	cost: (e: E, o: O) => number;
+	/** Cover these nodes before optional candidates when observations are scarce. */
+	isRequired?: (e: E) => boolean;
 };
 
 export type OneToOneResult<E, O> = {
@@ -78,7 +81,11 @@ export function matchOneToOne<E, O>(
 	input: OneToOneInput<E, O>,
 ): OneToOneResult<E, O> {
 	const expected = [...input.expected]
-		.map((e) => ({ e, key: input.expectedKey(e) }))
+		.map((e) => ({
+			e,
+			key: input.expectedKey(e),
+			required: input.isRequired?.(e) === true,
+		}))
 		.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 	for (let i = 1; i < expected.length; i += 1) {
 		if (expected[i]?.key === expected[i - 1]?.key) {
@@ -113,7 +120,11 @@ export function matchOneToOne<E, O>(
 	const k = n + m;
 	const maxScaledPairCost = MAX_ASSIGNMENT_COST * COST_SCALE;
 	const unmatched = (Math.min(n, m) + 1) * maxScaledPairCost + 1;
-	const incompatible = 2 * unmatched + maxScaledPairCost + 1;
+	// One required-node miss costs more than every finite pair cost combined.
+	// Augmenting a matching preserves already-covered expected nodes, so this
+	// preference retains maximum cardinality before selecting the closest rows.
+	const requiredPenalty = expected.some((row) => row.required) ? unmatched : 0;
+	const incompatible = 2 * unmatched + requiredPenalty + maxScaledPairCost + 1;
 	if (!Number.isSafeInteger(incompatible)) {
 		throw new Error(
 			`matchOneToOne: ${n} expected + ${m} observed nodes exceed the exact assignment-cost range`,
@@ -137,7 +148,9 @@ export function matchOneToOne<E, O>(
 						: incompatible,
 				);
 			} else if (i < n || j < m) {
-				row.push(unmatched);
+				row.push(
+					unmatched + (i < n && expected[i]?.required ? requiredPenalty : 0),
+				);
 			} else {
 				row.push(0);
 			}

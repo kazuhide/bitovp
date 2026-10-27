@@ -13,6 +13,7 @@ import {
 	hlsSubtitleGroups,
 	hlsVariantUri,
 } from "./hls-media-defaults";
+import { applyManifestDetails } from "./manifest-detail-compiler";
 import { filterParameters } from "./media-filters";
 import { hasMuxedInAudio, muxingStreamKeys } from "./muxing-streams";
 import {
@@ -123,6 +124,15 @@ export type OperationKind =
 	| "CREATE_NEXGUARD_FILE_MARKER"
 	| "CREATE_THUMBNAIL"
 	| "CREATE_SPRITE"
+	| "CREATE_DASH_PERIOD_XML"
+	| "CREATE_DASH_ADAPTATION_SET_IMAGE"
+	| "CREATE_DASH_REPRESENTATION_PROGRESSIVE_WEBM"
+	| "CREATE_DASH_REPRESENTATION_VTT"
+	| "CREATE_DASH_REPRESENTATION_SPRITE"
+	| "CREATE_HLS_VIDEO_MEDIA"
+	| "CREATE_HLS_CLOSED_CAPTIONS_MEDIA"
+	| "CREATE_HLS_VTT_MEDIA"
+	| "CREATE_HLS_CUSTOM_TAG"
 	| "CREATE_MANIFEST_HLS"
 	| "CREATE_HLS_AUDIO_MEDIA"
 	| "CREATE_HLS_STREAM_INFO"
@@ -1795,11 +1805,17 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 				} else if (muxing.kind === "WEBM") {
 					ops.push({
 						step: `muxing:${muxing.key}`,
-						kind: "CREATE_MUXING_WEBM",
+						kind: muxing.progressive
+							? "CREATE_MUXING_PROGRESSIVE_WEBM"
+							: "CREATE_MUXING_WEBM",
 						payload: {
-							segmentLength: muxing.segmentLength,
-							segmentNaming: muxing.segmentNaming,
-							initSegmentName: muxing.initSegmentName,
+							...(muxing.progressive
+								? { filename: muxing.filename ?? "output.webm" }
+								: {
+										segmentLength: muxing.segmentLength,
+										segmentNaming: muxing.segmentNaming,
+										initSegmentName: muxing.initSegmentName,
+									}),
 							...destinationFields,
 							name: muxing.name ?? muxingName("WEBM", primary),
 						},
@@ -2031,11 +2047,16 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 	// on a qc.only plan; this keeps the compiler correct even without it.
 	const effectiveManifests = plan.qc?.only ? [] : plan.manifests;
 	const manifestOps = effectiveManifests.flatMap((manifest) =>
-		manifest.kind === "HLS"
-			? compileHlsManifest(plan, manifest, renditionByKey, encStepFor)
-			: manifest.kind === "DASH"
-				? compileDashManifest(plan, manifest, renditionByKey, encStepFor)
-				: compileSmoothManifest(plan, manifest, renditionByKey, encStepFor),
+		applyManifestDetails(
+			plan,
+			manifest,
+			manifest.kind === "HLS"
+				? compileHlsManifest(plan, manifest, renditionByKey, encStepFor)
+				: manifest.kind === "DASH"
+					? compileDashManifest(plan, manifest, renditionByKey, encStepFor)
+					: compileSmoothManifest(plan, manifest, renditionByKey, encStepFor),
+			encStepFor,
+		),
 	);
 	const jit = plan.generation.timing === "JUST_IN_TIME";
 	if (jit) {

@@ -808,14 +808,13 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 			"lw-msl-format",
 		) as HTMLSelectElement;
 
-		// step names: "3. Ladder" is the
-		// ladder, "4. Output" the output credential.
-		const ladderStep = (
+		// Container choices are shown in Packaging; credentials remain in Output.
+		const packagingStep = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Ladder$/,
+				name: /^\d+\. Packaging$/,
 			})
 		)[0];
-		if (!ladderStep) throw new Error("no encodes step");
+		if (!packagingStep) throw new Error("no packaging step");
 		const outputStep = (
 			await screen.findAllByRole("button", { name: /^\d+\. Output$/ })
 		)[0];
@@ -824,11 +823,11 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 		// HLS → TS segments.
 		await userEvent.selectOptions(format, "HLS");
 		await waitFor(() => expect(format.value).toBe("HLS"));
-		await userEvent.click(ladderStep);
+		await userEvent.click(packagingStep);
 		const underHls = containers();
 		expect(
 			underHls.length,
-			"no container selects on the ladder step",
+			"no container selects on the packaging step",
 		).toBeGreaterThan(0);
 		expect(
 			underHls.every((c) => c === "TS"),
@@ -842,7 +841,7 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 			document.getElementById("lw-msl-format") as HTMLSelectElement,
 			"DASH",
 		);
-		await userEvent.click(ladderStep);
+		await userEvent.click(packagingStep);
 		const underDash = containers();
 		expect(underDash.length).toBe(underHls.length);
 		expect(
@@ -900,17 +899,17 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 			expect(fmt instanceof HTMLSelectElement && fmt.value).toBe("HLS");
 		});
 		// ...and the ladder must ALREADY agree, with no dropdown touch: HLS ⇒ TS.
-		const ladderStep = (
+		const packagingStep = (
 			await screen.findAllByRole("button", {
-				name: /^\d+\. Ladder$/,
+				name: /^\d+\. Packaging$/,
 			})
 		)[0];
-		if (!ladderStep) throw new Error("no encodes step");
-		await userEvent.click(ladderStep);
+		if (!packagingStep) throw new Error("no packaging step");
+		await userEvent.click(packagingStep);
 		const seen = containers();
 		expect(
 			seen.length,
-			"no container selects on the ladder step",
+			"no container selects on the packaging step",
 		).toBeGreaterThan(0);
 		expect(
 			seen.every((c) => c === "TS"),
@@ -928,7 +927,7 @@ describe("live wizard — MSL delivery format (restored 2026-08-21)", () => {
 			document.getElementById("lw-msl-format") as HTMLSelectElement,
 			"DASH",
 		);
-		await userEvent.click(ladderStep);
+		await userEvent.click(packagingStep);
 		const underDash = containers();
 		expect(underDash.length).toBe(seen.length);
 		expect(

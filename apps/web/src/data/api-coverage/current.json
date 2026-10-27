@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-10-27T06:02:31.108Z",
-		"sourceCommit": "0ba19475568e66cb6fd76ac36354e4316eeb9dfd",
-		"sourceFingerprint": "37598900ae338f01c415ba6fa4ab69eb404192990ce0768c087b8e99a172329b",
+		"generatedAt": "2026-10-27T07:30:48.735Z",
+		"sourceCommit": "fe68d0ec0a30d31e1d2e04f99d5f81a13a39e9bc",
+		"sourceFingerprint": "f8d2ea549fe07882b907aa859044c0dd750b3fa27cb5291e908554f5f1cbb6b7",
 		"sdkVersion": "1.285.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "ca6c9cf0b84701c18888291145575997495d2201f2d8615f92660ddcf978b5ea",
@@ -12,10 +12,10 @@
 	},
 	"summary": {
 		"totalOperations": 1089,
-		"sourceConfirmed": 268,
-		"unconfirmed": 821,
+		"sourceConfirmed": 277,
+		"unconfirmed": 812,
 		"createTotal": 217,
-		"createSourceConfirmed": 120
+		"createSourceConfirmed": 127
 	},
 	"families": [
 		{
@@ -63,8 +63,8 @@
 		{
 			"family": "manifests",
 			"total": 169,
-			"sourceConfirmed": 35,
-			"unconfirmed": 134
+			"sourceConfirmed": 44,
+			"unconfirmed": 125
 		},
 		{
 			"family": "outputs",
@@ -8743,7 +8743,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 405
+					"line": 504
 				}
 			]
 		},
@@ -8757,7 +8757,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 825
+					"line": 969
 				}
 			]
 		},
@@ -8788,12 +8788,12 @@
 			"status": "source-confirmed",
 			"evidence": [
 				{
-					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 169
+					"file": "apps/worker/src/orchestrator/ops/default-dash-manifest.ts",
+					"line": 34
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 373
+					"line": 472
 				}
 			]
 		},
@@ -8807,7 +8807,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 804
+					"line": 948
 				}
 			]
 		},
@@ -8821,7 +8821,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 818
+					"line": 962
 				}
 			]
 		},
@@ -8840,8 +8840,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.manifests.dash.customdata.get",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/default-dash-manifest.ts",
+					"line": 35
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/default",
@@ -8852,8 +8857,8 @@
 			"status": "source-confirmed",
 			"evidence": [
 				{
-					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 211
+					"file": "apps/worker/src/orchestrator/ops/default-dash-manifest.ts",
+					"line": 37
 				}
 			]
 		},
@@ -8867,7 +8872,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 425
+					"line": 528
 				}
 			]
 		},
@@ -8917,7 +8922,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 453
+					"line": 556
 				}
 			]
 		},
@@ -8954,8 +8959,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.contentprotection.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 787
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/contentprotection/{contentprotection_id}",
@@ -8990,8 +9000,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.image.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 225
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/image/{adaptationset_id}",
@@ -9039,7 +9054,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 505
+					"line": 608
 				}
 			]
 		},
@@ -9080,7 +9095,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 528
+					"line": 637
 				}
 			]
 		},
@@ -9157,7 +9172,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 557
+					"line": 667
 				}
 			]
 		},
@@ -9194,13 +9209,8 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.fmp4.contentprotection.create",
 			"family": "manifests",
-			"status": "source-confirmed",
-			"evidence": [
-				{
-					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 662
-				}
-			]
+			"status": "unconfirmed",
+			"evidence": []
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/{representation_id}/contentprotection/{contentprotection_id}",
@@ -9311,7 +9321,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 486
+					"line": 589
 				}
 			]
 		},
@@ -9352,7 +9362,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 631
+					"line": 757
 				}
 			]
 		},
@@ -9393,7 +9403,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 615
+					"line": 740
 				}
 			]
 		},
@@ -9430,8 +9440,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.progressiveWebm.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 238
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/progressive-webm/{representation_id}",
@@ -9466,8 +9481,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.sprite.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 268
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/sprite/{representation_id}",
@@ -9511,8 +9531,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.vtt.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 253
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/vtt/{representation_id}",
@@ -9551,7 +9576,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 586
+					"line": 705
 				}
 			]
 		},
@@ -9588,13 +9613,8 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.webm.contentprotection.create",
 			"family": "manifests",
-			"status": "source-confirmed",
-			"evidence": [
-				{
-					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 655
-				}
-			]
+			"status": "unconfirmed",
+			"evidence": []
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/webm/{representation_id}/contentprotection/{contentprotection_id}",
@@ -9633,7 +9653,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 470
+					"line": 573
 				}
 			]
 		},
@@ -9683,7 +9703,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 439
+					"line": 542
 				}
 			]
 		},
@@ -9720,8 +9740,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.dash.periods.customXmlElements.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 212
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/custom-xml-elements/{custom_xml_element_id}",
@@ -9760,7 +9785,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 295
+					"line": 393
 				}
 			]
 		},
@@ -9774,7 +9799,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 786
+					"line": 930
 				}
 			]
 		},
@@ -9805,12 +9830,12 @@
 			"status": "source-confirmed",
 			"evidence": [
 				{
-					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 108
+					"file": "apps/worker/src/orchestrator/ops/default-hls-manifest.ts",
+					"line": 18
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 263
+					"line": 361
 				}
 			]
 		},
@@ -9824,7 +9849,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 760
+					"line": 904
 				}
 			]
 		},
@@ -9838,7 +9863,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 774
+					"line": 918
 				}
 			]
 		},
@@ -9857,8 +9882,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.manifests.hls.customdata.get",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/default-hls-manifest.ts",
+					"line": 19
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/hls/default",
@@ -9869,8 +9899,8 @@
 			"status": "source-confirmed",
 			"evidence": [
 				{
-					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 147
+					"file": "apps/worker/src/orchestrator/ops/default-hls-manifest.ts",
+					"line": 20
 				}
 			]
 		},
@@ -9884,7 +9914,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 323
+					"line": 422
 				}
 			]
 		},
@@ -9921,8 +9951,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.hls.media.closedCaptions.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 163
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/hls/{manifest_id}/media/closed-captions/{media_id}",
@@ -9997,7 +10032,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 349
+					"line": 448
 				}
 			]
 		},
@@ -10043,8 +10078,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.hls.media.video.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 151
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/hls/{manifest_id}/media/video/{media_id}",
@@ -10079,8 +10119,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.manifests.hls.media.vtt.create",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+					"line": 176
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/hls/{manifest_id}/media/vtt/{media_id}",
@@ -10119,7 +10164,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 336
+					"line": 435
 				}
 			]
 		},
@@ -10196,7 +10241,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 362
+					"line": 461
 				}
 			]
 		},
@@ -10237,7 +10282,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 715
+					"line": 859
 				}
 			]
 		},
@@ -10278,7 +10323,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 681
+					"line": 825
 				}
 			]
 		},
@@ -10292,7 +10337,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 843
+					"line": 987
 				}
 			]
 		},
@@ -10306,7 +10351,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 857
+					"line": 1001
 				}
 			]
 		},
@@ -10329,7 +10374,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 747
+					"line": 891
 				}
 			]
 		},
@@ -10388,7 +10433,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 734
+					"line": 878
 				}
 			]
 		},
@@ -11446,8 +11491,8 @@
 			"expandedOperations": 226,
 			"unexpandedOperations": 3,
 			"totalFields": 2561,
-			"sourceAssigned": 306,
-			"unconfirmed": 2255
+			"sourceAssigned": 267,
+			"unconfirmed": 2294
 		},
 		"operations": [
 			{
@@ -34883,14 +34928,8 @@
 							"file": "models/DashManifest.d.ts",
 							"line": 23
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 407,
-								"callLine": 405
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minBufferTime",
@@ -34919,14 +34958,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 408,
-								"callLine": 405
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "namespaces",
@@ -34945,14 +34978,8 @@
 							"file": "models/Manifest.d.ts",
 							"line": 20
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 410,
-								"callLine": 405
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "profile",
@@ -34961,14 +34988,8 @@
 							"file": "models/DashManifest.d.ts",
 							"line": 17
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 409,
-								"callLine": 405
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "status",
@@ -35021,8 +35042,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 807,
-								"callLine": 804
+								"line": 951,
+								"callLine": 948
 							}
 						]
 					}
@@ -35083,14 +35104,8 @@
 							"file": "models/DashManifestDefault.d.ts",
 							"line": 14
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 213,
-								"callLine": 211
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "id",
@@ -35119,14 +35134,8 @@
 							"file": "models/DashManifest.d.ts",
 							"line": 23
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 214,
-								"callLine": 211
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minBufferTime",
@@ -35155,14 +35164,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 215,
-								"callLine": 211
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "namespaces",
@@ -35181,14 +35184,8 @@
 							"file": "models/Manifest.d.ts",
 							"line": 20
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 216,
-								"callLine": 211
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "periods",
@@ -35247,14 +35244,8 @@
 							"file": "models/DashManifestDefault.d.ts",
 							"line": 20
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 217,
-								"callLine": 211
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -35343,14 +35334,8 @@
 							"file": "models/AdaptationSet.d.ts",
 							"line": 43
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 458,
-								"callLine": 453
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "lang",
@@ -35359,14 +35344,8 @@
 							"file": "models/AudioAdaptationSet.d.ts",
 							"line": 19
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 457,
-								"callLine": 453
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "roles",
@@ -35525,14 +35504,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 515,
-								"callLine": 505
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "endKeyframeId",
@@ -35581,14 +35554,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 18
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 516,
-								"callLine": 505
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "segmentPath",
@@ -35597,14 +35564,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 24
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 517,
-								"callLine": 505
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "startKeyframeId",
@@ -35633,14 +35594,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 13
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 510,
-								"callLine": 505
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -35669,14 +35624,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 543,
-								"callLine": 528
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "endKeyframeId",
@@ -35715,14 +35664,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 18
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 538,
-								"callLine": 528
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "muxingId",
@@ -35731,14 +35674,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 18
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 544,
-								"callLine": 528
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "segmentPath",
@@ -35747,14 +35684,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 24
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 545,
-								"callLine": 528
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "startKeyframeId",
@@ -35783,14 +35714,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 13
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 533,
-								"callLine": 528
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -35879,14 +35804,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 572,
-								"callLine": 557
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "endKeyframeId",
@@ -35925,14 +35844,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 18
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 567,
-								"callLine": 557
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "muxingId",
@@ -35941,14 +35854,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 18
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 573,
-								"callLine": 557
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "segmentPath",
@@ -35957,14 +35864,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 24
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 574,
-								"callLine": 557
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "startKeyframeId",
@@ -35993,14 +35894,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 13
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 562,
-								"callLine": 557
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -36299,8 +36194,14 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 24
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+								"line": 762,
+								"callLine": 757
+							}
+						]
 					},
 					{
 						"name": "encodingId",
@@ -36313,8 +36214,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 642,
-								"callLine": 631
+								"line": 769,
+								"callLine": 757
 							}
 						]
 					},
@@ -36329,8 +36230,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 641,
-								"callLine": 631
+								"line": 768,
+								"callLine": 757
 							}
 						]
 					},
@@ -36355,8 +36256,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 643,
-								"callLine": 631
+								"line": 770,
+								"callLine": 757
 							}
 						]
 					},
@@ -36371,8 +36272,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 636,
-								"callLine": 631
+								"line": 763,
+								"callLine": 757
 							}
 						]
 					}
@@ -36393,8 +36294,14 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 24
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+								"line": 745,
+								"callLine": 740
+							}
+						]
 					},
 					{
 						"name": "drmId",
@@ -36407,8 +36314,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 628,
-								"callLine": 615
+								"line": 754,
+								"callLine": 740
 							}
 						]
 					},
@@ -36423,8 +36330,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 626,
-								"callLine": 615
+								"line": 752,
+								"callLine": 740
 							}
 						]
 					},
@@ -36439,8 +36346,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 625,
-								"callLine": 615
+								"line": 751,
+								"callLine": 740
 							}
 						]
 					},
@@ -36465,8 +36372,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 627,
-								"callLine": 615
+								"line": 753,
+								"callLine": 740
 							}
 						]
 					},
@@ -36481,8 +36388,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 620,
-								"callLine": 615
+								"line": 746,
+								"callLine": 740
 							}
 						]
 					}
@@ -36663,14 +36570,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 596,
-								"callLine": 586
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "endKeyframeId",
@@ -36719,14 +36620,8 @@
 							"file": "models/DashMuxingRepresentation.d.ts",
 							"line": 18
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 597,
-								"callLine": 586
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "segmentPath",
@@ -36735,14 +36630,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 24
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 598,
-								"callLine": 586
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "startKeyframeId",
@@ -36771,14 +36660,8 @@
 							"file": "models/DashSegmentedRepresentation.d.ts",
 							"line": 13
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 591,
-								"callLine": 586
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -36887,14 +36770,8 @@
 							"file": "models/AdaptationSet.d.ts",
 							"line": 43
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 475,
-								"callLine": 470
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "lang",
@@ -36903,14 +36780,8 @@
 							"file": "models/SubtitleAdaptationSet.d.ts",
 							"line": 19
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 474,
-								"callLine": 470
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "roles",
@@ -36969,14 +36840,8 @@
 							"file": "models/AdaptationSet.d.ts",
 							"line": 43
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 442,
-								"callLine": 439
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "roles",
@@ -37005,8 +36870,14 @@
 							"file": "models/CustomXmlElement.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+								"line": 215,
+								"callLine": 212
+							}
+						]
 					},
 					{
 						"name": "id",
@@ -37075,14 +36946,8 @@
 							"file": "models/HlsManifest.d.ts",
 							"line": 27
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 299,
-								"callLine": 295
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "hlsMediaPlaylistVersion",
@@ -37091,14 +36956,8 @@
 							"file": "models/HlsManifest.d.ts",
 							"line": 21
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 304,
-								"callLine": 295
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "id",
@@ -37117,14 +36976,8 @@
 							"file": "models/HlsManifest.d.ts",
 							"line": 15
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 297,
-								"callLine": 295
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "modifiedAt",
@@ -37143,14 +36996,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 298,
-								"callLine": 295
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "outputs",
@@ -37159,14 +37006,8 @@
 							"file": "models/Manifest.d.ts",
 							"line": 20
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 309,
-								"callLine": 295
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "status",
@@ -37219,8 +37060,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 763,
-								"callLine": 760
+								"line": 907,
+								"callLine": 904
 							}
 						]
 					}
@@ -37281,14 +37122,8 @@
 							"file": "models/HlsManifestDefault.d.ts",
 							"line": 13
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 149,
-								"callLine": 147
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "hlsMasterPlaylistVersion",
@@ -37327,14 +37162,8 @@
 							"file": "models/HlsManifest.d.ts",
 							"line": 15
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 150,
-								"callLine": 147
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "modifiedAt",
@@ -37353,14 +37182,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 151,
-								"callLine": 147
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "outputs",
@@ -37369,14 +37192,8 @@
 							"file": "models/Manifest.d.ts",
 							"line": 20
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 152,
-								"callLine": 147
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "status",
@@ -37415,14 +37232,8 @@
 							"file": "models/HlsManifestDefault.d.ts",
 							"line": 19
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 153,
-								"callLine": 147
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -38765,8 +38576,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 365,
-								"callLine": 362
+								"line": 464,
+								"callLine": 461
 							}
 						]
 					},
@@ -38821,8 +38632,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 718,
-								"callLine": 715
+								"line": 862,
+								"callLine": 859
 							}
 						]
 					},
@@ -38887,8 +38698,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 719,
-								"callLine": 715
+								"line": 863,
+								"callLine": 859
 							}
 						]
 					},
@@ -38903,8 +38714,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 720,
-								"callLine": 715
+								"line": 864,
+								"callLine": 859
 							}
 						]
 					},
@@ -38919,8 +38730,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 717,
-								"callLine": 715
+								"line": 861,
+								"callLine": 859
 							}
 						]
 					},
@@ -38965,8 +38776,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 846,
-								"callLine": 843
+								"line": 990,
+								"callLine": 987
 							}
 						]
 					}

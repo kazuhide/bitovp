@@ -7164,6 +7164,138 @@ describe("live-to-VOD", () => {
 		};
 	}
 
+	it.each([
+		"HLS",
+		"DASH",
+	] as const)("passes durable manifest-only ownership through the installed SDK for %s recording finalization", async (family) => {
+		const t = stoppedChannel();
+		const resources: Record<string, unknown>[] = [];
+		const posts: { path: string; body: Record<string, unknown> }[] = [];
+		t.deps.makeSdk = (options) => createBitmovinSdkOps(options, async () => {});
+		const response = (result: unknown, status = 200) =>
+			new Response(JSON.stringify({ data: { result } }), {
+				status,
+				headers: { "content-type": "application/json" },
+			});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				const path = new URL(url).pathname,
+					method = init.method ?? "GET";
+				if (
+					method === "GET" &&
+					path === `/v1/encoding/manifests/${family.toLowerCase()}`
+				)
+					return response({ items: resources });
+				if (method === "POST" && path.endsWith("/default")) {
+					const body = JSON.parse(String(init.body));
+					posts.push({ path, body });
+					const resource = { ...body, id: "created-recording" };
+					resources.push(resource);
+					return response(resource);
+				}
+				if (method === "POST" && path.endsWith("/start")) {
+					posts.push({ path, body: JSON.parse(String(init.body)) });
+					return response({});
+				}
+				if (method === "GET" && path.endsWith("/status"))
+					return response({ status: "FINISHED" });
+				throw new Error(`Unexpected recording SDK call ${method} ${path}`);
+			}),
+		);
+		try {
+			await t.actions.liveToVod(CHANNEL_ID, { manifests: [family] });
+			expect((t.row.liveToVod as LiveToVodRecord).status).toBe("FINISHED");
+			const created = posts.find((post) => post.path.endsWith("/default"));
+			expect(created?.body.customData).toMatchObject({
+				bitovp: {
+					job: CHANNEL_ID,
+					step: expect.stringContaining(`live-to-vod:${LIVE_TO_VOD_RUN_ID}:`),
+					manifestRequestSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
+			});
+			expect(
+				(created?.body.customData as { bitovp?: { step?: string } })?.bitovp
+					?.step,
+			).toContain(`:${family.toLowerCase()}`);
+			expect(posts.find((post) => post.path.endsWith("/start"))?.body).toEqual({
+				manifestGenerator: "LEGACY",
+			});
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it.each([
+		true,
+		false,
+	])("reconciles a lost installed-SDK create without another POST (provider accepted: %s)", async (accepted) => {
+		const t = stoppedChannel();
+		let resource: Record<string, unknown> | undefined,
+			creates = 0,
+			lookupUnavailable = false;
+		t.deps.makeSdk = (options) => createBitmovinSdkOps(options, async () => {});
+		const response = (result: unknown, status = 200) =>
+			new Response(JSON.stringify({ data: { result } }), {
+				status,
+				headers: { "content-type": "application/json" },
+			});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				const path = new URL(url).pathname,
+					method = init.method ?? "GET";
+				if (method === "GET" && path === "/v1/encoding/manifests/hls")
+					return lookupUnavailable
+						? response({}, 503)
+						: response({ items: resource ? [resource] : [] });
+				if (method === "GET" && path.endsWith("/customData"))
+					return response({ customData: resource?.customData });
+				if (method === "POST" && path.endsWith("/default")) {
+					creates++;
+					if (accepted)
+						resource = {
+							...JSON.parse(String(init.body)),
+							id: "accepted-recording",
+						};
+					lookupUnavailable = true;
+					return response({}, 500);
+				}
+				if (method === "POST" && path.endsWith("/start")) return response({});
+				if (method === "GET" && path.endsWith("/status"))
+					return response({ status: "FINISHED" });
+				throw new Error(
+					`Unexpected recording recovery SDK call ${method} ${path}`,
+				);
+			}),
+		);
+		try {
+			await expect(
+				t.actions.liveToVod(CHANNEL_ID, { manifests: ["HLS"] }),
+			).rejects.toThrow();
+			expect(creates).toBe(1);
+			expect(
+				(t.row.liveToVod as LiveToVodRecord).families?.find(
+					(entry) => entry.type === "HLS",
+				),
+			).toMatchObject({
+				status: "ERROR",
+				createIntent: { status: "LOOKUP_UNKNOWN" },
+			});
+			lookupUnavailable = false;
+			if (accepted) {
+				await t.actions.liveToVod(CHANNEL_ID, { manifests: ["HLS"] });
+				expect((t.row.liveToVod as LiveToVodRecord).status).toBe("FINISHED");
+			} else
+				await expect(
+					t.actions.liveToVod(CHANNEL_ID, { manifests: ["HLS"] }),
+				).rejects.toThrow(/window|unresolved|identity/i);
+			expect(creates).toBe(1);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	function cleanupSnapshots(
 		t: ReturnType<typeof stoppedChannel>,
 		family: "HLS" | "DASH",

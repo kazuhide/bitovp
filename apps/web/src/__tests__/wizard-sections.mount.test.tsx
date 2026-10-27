@@ -2,6 +2,7 @@ import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_LIVE_WIZARD_STATE } from "@/app/live/new/build-live-plan";
 import { LiveLadderSection } from "@/app/live/new/ladder-section";
+import { LiveMuxingsSection } from "@/app/live/new/muxings-section";
 import { DEFAULT_WIZARD_STATE } from "@/app/vod/new/build-plan";
 import { MuxingsSection } from "@/app/vod/new/muxings-section";
 import { SpritesSection } from "@/app/vod/new/sprites-section";
@@ -31,13 +32,10 @@ import { renderLocalized } from "@/test/render";
 const noop = vi.fn();
 
 describe("wizard sections mount on their own default state", () => {
-	it("LiveLadderSection renders a codec and a container per rendition", () => {
+	it("LiveLadderSection renders a codec per rendition", () => {
 		renderLocalized(
 			<LiveLadderSection state={DEFAULT_LIVE_WIZARD_STATE} onPatch={noop} />,
 		);
-		// The live ladder's whole job: video rungs with a codec and a segment
-		// container. `withMslStreamFormat` rewrites exactly these, so a section
-		// that stopped rendering them would take the MSL format fix with it.
 		const selects = [...document.querySelectorAll("select")];
 		expect(
 			selects.some((s) =>
@@ -45,11 +43,18 @@ describe("wizard sections mount on their own default state", () => {
 			),
 			"no codec select on the live ladder",
 		).toBe(true);
+	});
+
+	it("LiveMuxingsSection renders a container per rendition", () => {
+		renderLocalized(
+			<LiveMuxingsSection state={DEFAULT_LIVE_WIZARD_STATE} onPatch={noop} />,
+		);
+		const selects = [...document.querySelectorAll("select")];
 		expect(
 			selects.some((s) =>
 				[...s.options].some((o) => /^(TS|FMP4)$/.test(o.value)),
 			),
-			"no segment-container select on the live ladder",
+			"no segment-container select in Live packaging",
 		).toBe(true);
 	});
 

@@ -97,8 +97,16 @@ describe("perTitleActualPopulations", () => {
 		expect(actual.status).toBe("complete");
 		if (actual.status !== "complete") return;
 		expect(actual.results).toEqual([
-			{ streamId: "stream-a", templateRendition: "template-a" },
-			{ streamId: "stream-b", templateRendition: "template-b" },
+			{
+				streamId: "stream-a",
+				templateRendition: "template-a",
+				codecType: "H264",
+			},
+			{
+				streamId: "stream-b",
+				templateRendition: "template-b",
+				codecType: "H264",
+			},
 		]);
 		expect(
 			actual.qc.map(({ streamId, variant, mirrors }) => ({
@@ -280,7 +288,9 @@ describe("perTitleActualPopulations", () => {
 
 		expect(actual.status).toBe("complete");
 		if (actual.status !== "complete") return;
-		expect(actual.results).toEqual([{ streamId: "unattributed" }]);
+		expect(actual.results).toEqual([
+			{ streamId: "unattributed", codecType: "H264" },
+		]);
 		expect(actual.qc[0]).toMatchObject({ streamId: "unattributed" });
 		expect(actual.deliveryMuxings[0]).toMatchObject({
 			streamId: "unattributed",

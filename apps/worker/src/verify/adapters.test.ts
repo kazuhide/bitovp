@@ -151,6 +151,34 @@ describe("parseDashText — the real mpd-parser, plus addressing from the docume
 		);
 		expect(parsed.representations[0]?.addressing).toBe("BASE");
 	});
+	it("keeps repeated SegmentBase IDs bound to each period's file", async () => {
+		const period = (file: string, index: number) =>
+			`<Period start="PT${index * 6}S" duration="PT6S"><AdaptationSet contentType="video" mimeType="video/mp4"><Representation id="video" bandwidth="2000000" height="720"><BaseURL>${file}</BaseURL><SegmentBase indexRange="100-200"><Initialization range="0-99"/></SegmentBase></Representation></AdaptationSet></Period>`;
+		const parsed = await parseDashText(
+			`<MPD type="static" mediaPresentationDuration="PT12S">${period("first.mp4", 0)}${period("second.mp4", 1)}</MPD>`,
+		);
+		expect(
+			parsed.playlists?.map((entry) => ({
+				id: entry.id,
+				periodIndex: entry.periodIndex,
+				baseUrl: entry.baseUrl,
+				segmentUris: entry.segmentUris,
+			})),
+		).toEqual([
+			{
+				id: "video",
+				periodIndex: 0,
+				baseUrl: "first.mp4",
+				segmentUris: ["first.mp4"],
+			},
+			{
+				id: "video",
+				periodIndex: 1,
+				baseUrl: "second.mp4",
+				segmentUris: ["second.mp4"],
+			},
+		]);
+	});
 
 	it("rejects a document with no representations — mpd-parser is stricter than m3u8-parser", async () => {
 		// The asymmetry is worth pinning, because it is why the engine needs a CONTENT

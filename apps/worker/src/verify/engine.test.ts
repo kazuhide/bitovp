@@ -1362,6 +1362,37 @@ function topoWorld(): World {
 	return w;
 }
 
+describe("native AC3 and EAC3 media verification", () => {
+	it.each([
+		["AC3", "ac3", "ac-3"],
+		["EAC3", "eac3", "ec-3"],
+	] as const)("qualifies %s manifests and ffprobe facts and rejects a mismatched probe", async (codec, probeCodec, manifestCodec) => {
+		const expected = compileExpectedArtefacts(
+			encodingPlanSchema.parse({
+				...BASE_PLAN,
+				renditions: BASE_PLAN.renditions.map((rendition) =>
+					rendition.codec === "AAC" ? { ...rendition, codec } : rendition,
+				),
+			}),
+		);
+		const world = topoWorld();
+		audioProbe(world).audioCodec = probeCodec;
+		for (const name of ["out/stream.mpd", "out/stream.m3u8"])
+			world.texts[name] = textOf(world, name).replaceAll(
+				"mp4a.40.2",
+				manifestCodec,
+			);
+		const report = await verifyArtefacts(expected, depsFor(world));
+		expect(verdictOf(report, "rendition:a128:audio-codec")).toBe("PASS");
+		expect(report.checks.filter((check) => check.verdict === "FAIL")).toEqual(
+			[],
+		);
+		audioProbe(world).audioCodec = "aac";
+		const mismatched = await verifyArtefacts(expected, depsFor(world));
+		expect(verdictOf(mismatched, "rendition:a128:audio-codec")).toBe("FAIL");
+	});
+});
+
 const verdictOf = (
 	report: { checks: readonly { id: string; verdict: string }[] },
 	id: string,

@@ -217,6 +217,58 @@ const DASH = {
 	destination: { outputKey: "origin", path: "out/" },
 };
 
+describe("native audio-only manifest codec bindings", () => {
+	it.each([
+		["AC3", "ac-3", "ec-3"],
+		["AC3", "mp4a.a5", "ec-3"],
+		["EAC3", "ec-3", "ac-3"],
+		["EAC3", "mp4a.a6", "ac-3"],
+	] as const)("binds %s in HLS and DASH and rejects the other audio family", async (codec, wireCodec, otherCodec) => {
+		const expected = compileExpectedArtefacts(
+			planWith({
+				renditions: [{ ...audio("native", 192000), codec }],
+				muxings: [fmp4("native", "audio/native")],
+				manifests: [HLS(), DASH],
+			}),
+		);
+		for (const observedCodec of [wireCodec, otherCodec]) {
+			const dash = manifestOf(expected, "DASH");
+			const dashReport = new ReportBuilder();
+			bindDashTopology(
+				dashReport,
+				"manifest:dash",
+				dash.topology,
+				await parseDashText(MPD(audioSet("native", 192000, observedCodec))),
+				dash.ctx,
+			);
+			expect(fails(dashReport).length === 0).toBe(observedCodec === wireCodec);
+			const hls = manifestOf(expected, "HLS");
+			const entry = hls.topology.audio[0];
+			if (!entry?.uri) throw new Error("Missing native HLS audio entry");
+			const hlsReport = new ReportBuilder();
+			bindHlsTopology(
+				hlsReport,
+				"manifest:hls",
+				hls.topology,
+				await parseHlsText(
+					master(
+						[{ uri: entry.uri, bw: 210000, codecs: observedCodec }],
+						[
+							{
+								group: entry.groupId ?? "audio",
+								name: entry.name ?? "",
+								uri: entry.uri,
+							},
+						],
+					),
+				),
+				hls.ctx,
+			);
+			expect(fails(hlsReport).length === 0).toBe(observedCodec === wireCodec);
+		}
+	});
+});
+
 // ===========================================================================
 // VF-02 — the per-title family set (HIGH-3)
 // ===========================================================================

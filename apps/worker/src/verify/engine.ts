@@ -1286,8 +1286,10 @@ function rfcCodecPrefixes(codec: string): string[] {
 		case "AAC":
 			return ["mp4a"]; // AAC-LC / HE / HEv2 all mp4a.40.*
 		case "DD":
+		case "AC3":
 			return ["ac-3", "mp4a.a5"];
 		case "DDPLUS":
+		case "EAC3":
 		case "DOLBY_ATMOS":
 			return ["ec-3", "mp4a.a6"]; // Atmos rides E-AC-3 (JOC)
 		default:
@@ -1316,8 +1318,10 @@ function ffprobeAudioCodecsOf(codec: string): string[] | undefined {
 		case "AAC":
 			return ["aac"];
 		case "DD":
+		case "AC3":
 			return ["ac3"];
 		case "DDPLUS":
+		case "EAC3":
 			return ["eac3"];
 		case "DOLBY_ATMOS":
 			return ["eac3", "truehd"];
@@ -2043,7 +2047,14 @@ export function bindHlsTopology(
 		nodes.length === 0 &&
 		mediaUris.has(o.uri) &&
 		(o.codecs === undefined ||
-			codecTokens(o.codecs).every((t) => isAudioToken(t)));
+			codecTokens(o.codecs).every(
+				(token) =>
+					isAudioToken(token) &&
+					topology.audio.some(
+						(audio) =>
+							audio.uri === o.uri && rfcCodecMatches(token, audio.codec),
+					),
+			));
 	const unexpected = variants.unmatchedObserved.filter(
 		(o) => !perTitleCandidate(o) && !implicitAudioRow(o),
 	);

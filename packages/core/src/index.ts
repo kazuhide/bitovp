@@ -260,6 +260,10 @@ export {
 	type FeederTarget,
 	STATIC_INGEST_URL,
 } from "./live/feeder-target";
+export {
+	createFilenameMatcher,
+	type FilenameMembership,
+} from "./live/filename-language";
 export type {
 	HeartbeatSampleRef,
 	HeartbeatStateChange,

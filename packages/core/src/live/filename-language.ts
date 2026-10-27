@@ -7,7 +7,12 @@ const ALPHANUMERIC = `${DIGITS}ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 
 /** A bounded automaton for literals, numeric indices and random template tokens. */
 function filenameLanguage(
-	parts: readonly { value: string; literal: boolean; template: boolean }[],
+	parts: readonly {
+		value: string;
+		literal: boolean;
+		template: boolean;
+		policy?: boolean;
+	}[],
 ): FilenameLanguage | undefined {
 	const states: FilenameState[] = [{ transitions: [] }];
 	let current = 0;
@@ -20,14 +25,15 @@ function filenameLanguage(
 		current = next;
 		return true;
 	};
-	for (const { value: pattern, literal, template } of parts) {
+	for (const { value: pattern, literal, template, policy } of parts) {
 		for (let at = 0; at < pattern.length; ) {
-			const numeric = literal ? null : /^%([a-zA-Z]+)%/.exec(pattern.slice(at));
+			const numeric =
+				literal || policy === false
+					? null
+					: /^%([a-zA-Z]+)%/.exec(pattern.slice(at));
 			if (numeric) {
 				// Unknown provider tokens may expand to any non-directory filename text.
-				const characters = ["number", "time"].includes(numeric[1] ?? "")
-					? DIGITS
-					: null;
+				const characters = numeric[1] === "number" ? DIGITS : null;
 				if (!append(characters, true)) return undefined;
 				at += numeric[0].length;
 				continue;
@@ -54,6 +60,46 @@ function filenameLanguage(
 		}
 	}
 	return { states, end: current };
+}
+
+export type FilenameMembership = "MATCH" | "NO_MATCH" | "UNVERIFIED";
+
+/** Runtime evidence requires MATCH; unlike collision admission, unknown is not proof. */
+export function createFilenameMatcher(
+	pattern: string,
+	options: { policyTokens: boolean; randomTokens: boolean },
+): (filename: string) => FilenameMembership {
+	const language = filenameLanguage([
+		{
+			value: pattern,
+			literal: !options.policyTokens && !options.randomTokens,
+			template: options.randomTokens,
+			policy: options.policyTokens,
+		},
+	]);
+	return (filename) => {
+		if (!language) return "UNVERIFIED";
+		let active = new Set([0]);
+		let steps = 0;
+		for (let at = 0; at < filename.length; at++) {
+			const next = new Set<number>();
+			const character = filename.charAt(at);
+			for (const state of active) {
+				for (const transition of language.states[state]?.transitions ?? []) {
+					if (++steps > 50_000) return "UNVERIFIED";
+					if (
+						transition.characters === null
+							? character !== "/"
+							: transition.characters.includes(character)
+					)
+						next.add(transition.to);
+				}
+			}
+			if (next.size === 0) return "NO_MATCH";
+			active = next;
+		}
+		return active.has(language.end) ? "MATCH" : "NO_MATCH";
+	};
 }
 
 export function filenameLanguagesOverlap(

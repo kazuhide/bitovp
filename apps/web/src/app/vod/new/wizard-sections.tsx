@@ -2554,6 +2554,37 @@ export function EncodingOptionsSection({
 									patchStart({ aiSceneAnalysis: { ...ai, schedule } })
 								}
 							/>
+							<div className="space-y-1.5">
+								<label
+									htmlFor="wz-ai-tobacco"
+									className="flex items-center gap-2 text-xs text-zinc-300"
+								>
+									<input
+										id="wz-ai-tobacco"
+										type="checkbox"
+										className="h-3.5 w-3.5 accent-emerald-600"
+										aria-describedby="wz-ai-advisories-help"
+										checked={
+											ai.regulatoryAdvisories?.topics.includes("TOBACCO") ??
+											false
+										}
+										onChange={(event) =>
+											patchStart({
+												aiSceneAnalysis: {
+													...ai,
+													regulatoryAdvisories: event.target.checked
+														? { topics: ["TOBACCO"] }
+														: undefined,
+												},
+											})
+										}
+									/>
+									{t("wizard.aisaTobacco")}
+								</label>
+								<p id="wz-ai-advisories-help" className="text-xs text-zinc-500">
+									{t("wizard.aisaAdvisoriesHelp")}
+								</p>
+							</div>
 							<Field
 								label={t("wizard.outputLanguageCodes")}
 								htmlFor="wz-ai-langs"

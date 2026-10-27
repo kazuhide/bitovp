@@ -615,6 +615,8 @@ See Chapter 11 for VMAF, PSNR, execution profiles, budgets, and interpreting res
 
 AI Scene Analysis supports scene analysis and placement of ad breaks. Analysis output always includes English. Add `ja` for Japanese, or leave additional languages blank for English only. Configure the asset description file, languages, automatic insertion at scene boundaries, and cue points at specified times. Positions, maximum allowed offsets, and durations are in seconds, and accept zero and fractional values. Even a zero allowed offset does not guarantee identical cut frames across codecs. View completed analysis in the Content Library.
 
+To screen for tobacco, select **Detect tobacco (TOBACCO)** in the same section. Bitmovin must enable regulatory advisories for your organization before use. Findings are reported per shot in the asset description file. This option does not add advisory text to the video.
+
 For Cloud Connect, specify the infrastructure ID together with its region. The overall job region changes to `EXTERNAL`. If you need a dedicated pool or label-based reporting, check those settings against the configuration prepared by your administrator.
 
 ## 6. Managing VOD jobs

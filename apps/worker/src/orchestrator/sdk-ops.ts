@@ -282,6 +282,7 @@ export type AiSceneAnalysisParams = {
 		allSceneBoundaries?: { isEnabled?: boolean; insertCueTags?: boolean };
 	};
 	outputLanguageCodes?: string[];
+	regulatoryAdvisories?: { topics: "TOBACCO"[] };
 };
 
 // --- Live (P3-PR2 channel lifecycle) ---------------------------------------

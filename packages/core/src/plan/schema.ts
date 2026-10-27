@@ -1820,6 +1820,9 @@ export const encodingPlanSchema = z.strictObject({
 			 * — recorded there since P2 and unenforced here until the
 			 * 2026-08-22 use-case census caught the gap). */
 			outputLanguageCodes: z.array(z.string().min(1)).max(3).optional(),
+			regulatoryAdvisories: z
+				.strictObject({ topics: z.array(z.literal("TOBACCO")).min(1).max(1) })
+				.optional(),
 		})
 		.optional(),
 	/**

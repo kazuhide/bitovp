@@ -4061,6 +4061,9 @@ export const en = {
 			"Automatic ad placement (allSceneBoundaries)",
 		aisaSchedule: "Scheduled cue points",
 		aisaDefaultLanguage: "English is the default analysis language.",
+		aisaTobacco: "Detect tobacco (TOBACCO)",
+		aisaAdvisoriesHelp:
+			"Requires this feature to be enabled for your organization. Findings are saved in the asset description; no text is added to the video.",
 		aisaAdditionalLanguagesHelp:
 			"Add up to three language codes separated by commas, for example ja, de. English does not need to be added.",
 		aisaPosition: "Position (seconds)",

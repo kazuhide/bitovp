@@ -374,6 +374,20 @@ async function runLocale(locale, copy) {
 	await page.getByRole("button", { name: copy.summary, exact: true }).click();
 	await page.getByRole("button", { name: copy.manual, exact: true }).click();
 	await page.locator("#wz-out-path").fill("my-demo-vod");
+	await step(copy.encoding);
+	const analysis = page.locator("#wz-ai-enable");
+	await analysis.locator("xpath=ancestor::details[1]/summary").click();
+	await analysis.check();
+	const advisory = page.locator("#wz-ai-tobacco");
+	assert.equal(await advisory.isChecked(), false);
+	await advisory.check();
+	assert.equal(await advisory.isChecked(), true);
+	assert.match(
+		await page.locator("#wz-ai-advisories-help").innerText(),
+		locale === "en" ? /enabled for your organization/ : /組織でこの機能が有効/,
+	);
+	await analysis.uncheck();
+	assert.equal(await advisory.count(), 0);
 	await step(copy.review);
 	await page.getByRole("button", { name: copy.createVod, exact: true }).click();
 	await page

@@ -307,6 +307,9 @@ const vod = fields(
 						),
 						schedule: rows(fields("", "position maxDeviation duration")),
 						outputLanguageCodes: strings,
+						regulatoryAdvisories: group(
+							fields("", "", "", { topics: strings }),
+						),
 					}),
 				),
 			}),

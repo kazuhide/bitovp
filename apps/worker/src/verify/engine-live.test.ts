@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
 	compileExpectedLiveArtefacts,
 	liveChannelPlanSchema,
+	validateLiveChannel,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { HEARTBEAT_SWEEP_INTERVAL_MS } from "../heartbeat-cadence";
@@ -371,6 +372,215 @@ describe("live engine — every check is observed failing", () => {
 });
 
 describe("live:segment-naming — the cheapest of the unread expectations", () => {
+	function sharedWriters(kind: "FMP4" | "CMAF" = "FMP4", otherWriters = false) {
+		const plan = liveChannelPlanSchema.parse(
+			JSON.parse(
+				readFileSync(join(FIXTURES, "live-rtmp-simple.plan.json"), "utf8"),
+			),
+		);
+		const video = plan.muxings[0];
+		const audio = plan.muxings[3];
+		if (video?.kind !== "FMP4" || audio?.kind !== "FMP4" || !video.destination)
+			throw new Error("Missing shared-writer fixtures");
+		const destination = { ...video.destination };
+		plan.muxings = [video, audio].map((m, i) => ({
+			...m,
+			kind,
+			destination: { ...destination },
+			segmentNaming: `writer_${i}_%number%.m4s`,
+			initSegmentName: i === 0 ? "init_%number%.mp4" : "init_1.mp4",
+			...(kind === "CMAF" && i === 0
+				? {
+						segmentNamingTemplate: "writer_0_{rand_chars:8}_%number%.m4s",
+						initSegmentNameTemplate: "init_{rand_chars:8}_%number%.mp4",
+					}
+				: {}),
+		}));
+		plan.renditions = plan.renditions.filter(
+			(r) => r.key === video.streamKey || r.key === audio.streamKey,
+		);
+		if (kind === "CMAF")
+			plan.liveManifests = plan.liveManifests.filter((m) => m.kind === "DASH");
+		if (otherWriters) {
+			for (const manifest of plan.liveManifests)
+				manifest.destination = { ...destination };
+			plan.muxings.push({
+				key: "archive",
+				kind: "MP4",
+				streamKey: video.streamKey,
+				filename: "archive_%number%_{rand_chars:8}.mp4",
+				destination: { ...destination },
+			});
+		}
+		expect(
+			validateLiveChannel(plan).filter((i) => i.level === "error"),
+		).toEqual([]);
+		const expected = compileExpectedLiveArtefacts(plan);
+		const deps = healthy();
+		const literalFiles = otherWriters
+			? [
+					...expected.manifests.flatMap((m) =>
+						[...m.files, ...m.mediaPlaylists].map((filename) => ({
+							outputKey: m.outputKey,
+							key: `${m.dir.prefix}${filename}`,
+							size: 900,
+						})),
+					),
+					...(expected.archives ?? []).map((a) => ({
+						outputKey: a.outputKey,
+						key: `${a.dir.prefix}${a.filename}`,
+						size: 500_000,
+					})),
+				]
+			: [];
+		for (const [index, sample] of deps.samples.entries()) {
+			sample.objects = expected.muxings.flatMap((m) => [
+				{
+					outputKey: m.outputKey,
+					key: `${m.dir.prefix}${(m.initSegmentNameTemplate || m.initSegment || "").replace("{rand_chars:8}", "Ab12Cd34")}`,
+					size: 900,
+				},
+				...Array.from({ length: index + 2 }, (_, n) => ({
+					outputKey: m.outputKey,
+					key: `${m.dir.prefix}${m.segmentNaming.replace("{rand_chars:8}", "Ab12Cd34").replace(/%number%/g, String(n + 1))}`,
+					size: 500_000,
+				})),
+			]);
+			sample.objects.push(...literalFiles);
+		}
+		return { expected, deps };
+	}
+
+	it("recognizes literal manifest and archive writers without promoting their evidence", async () => {
+		const { expected, deps } = sharedWriters("FMP4", true);
+		const report = await verifyLiveChannel(expected, deps);
+		expect(report.checks.filter((c) => c.verdict === "FAIL")).toEqual([]);
+		expect(
+			report.checks.find((c) => c.id === "live:segment-naming")?.verdict,
+		).toBe("PASS");
+		expect(
+			report.checks.find((c) => c.id === "live:archive:archive:origin")
+				?.verdict,
+		).toBe("SKIP");
+	});
+
+	it("does not expand a literal archive filename to admit an unknown file", async () => {
+		const { expected, deps } = sharedWriters("FMP4", true);
+		const first = expected.muxings[0];
+		if (!first) throw new Error("Missing writer");
+		for (const sample of deps.samples)
+			sample.objects?.push({
+				outputKey: first.outputKey,
+				key: `${first.dir.prefix}archive_1_Ab12Cd34.mp4`,
+				size: 500_000,
+			});
+		const report = await verifyLiveChannel(expected, deps);
+		expect(
+			report.checks.find((c) => c.id === "live:segment-naming")?.verdict,
+		).toBe("FAIL");
+	});
+
+	it.each([
+		"FMP4",
+		"CMAF",
+	] as const)("accepts admitted %s sibling writers sharing an output and prefix", async (kind) => {
+		const { expected, deps } = sharedWriters(kind);
+		const report = await verifyLiveChannel(expected, deps);
+		expect(report.checks.filter((c) => c.verdict === "FAIL")).toEqual([]);
+		expect(
+			report.checks.find((c) => c.id === "live:segment-naming")?.verdict,
+		).toBe("PASS");
+		expect(report.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+			"PASS",
+		);
+	});
+
+	it.each([
+		"unknown.m4s",
+		"nested/unknown.m4s",
+	])("rejects %s in a shared writer namespace", async (name) => {
+		const { expected, deps } = sharedWriters();
+		const first = expected.muxings[0];
+		if (!first) throw new Error("Missing writer");
+		for (const sample of deps.samples)
+			sample.objects?.push({
+				outputKey: first.outputKey,
+				key: `${first.dir.prefix}${name}`,
+				size: 500_000,
+			});
+		const report = await verifyLiveChannel(expected, deps);
+		const naming = report.checks.find((c) => c.id === "live:segment-naming");
+		expect(naming?.verdict).toBe("FAIL");
+		expect(naming?.detail).toContain(name);
+		expect(report.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+			"PASS",
+		);
+	});
+
+	it("does not borrow a sibling language from another output identity", async () => {
+		const { expected, deps } = sharedWriters();
+		const first = expected.muxings[0];
+		const second = expected.muxings[1];
+		if (!first || !second) throw new Error("Missing writers");
+		second.outputKey = "other";
+		for (const sample of deps.samples) {
+			for (const object of sample.objects ?? [])
+				if (
+					object.key.endsWith("init_1.mp4") ||
+					object.key.includes("writer_1_")
+				)
+					object.outputKey = "other";
+			sample.objects?.push({
+				outputKey: first.outputKey,
+				key: `${first.dir.prefix}writer_1_1.m4s`,
+				size: 500_000,
+			});
+		}
+		const report = await verifyLiveChannel(expected, deps);
+		expect(
+			report.checks.find((c) => c.id === "live:segment-naming")?.verdict,
+		).toBe("FAIL");
+		expect(report.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+			"PASS",
+		);
+	});
+
+	it("keeps a missing shared-prefix writer's own ladder requirement", async () => {
+		const { expected, deps } = sharedWriters();
+		for (const sample of deps.samples)
+			sample.objects = sample.objects?.filter(
+				(o) => !o.key.endsWith("init_1.mp4") && !o.key.includes("writer_1_"),
+			);
+		const report = await verifyLiveChannel(expected, deps);
+		expect(report.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+			"FAIL",
+		);
+		expect(
+			report.checks.find((c) => c.id === "live:segment-naming")?.verdict,
+		).toBe("PASS");
+	});
+
+	it("does not accept exhausted sibling membership as a declared filename", async () => {
+		const { expected, deps } = sharedWriters();
+		const first = expected.muxings[0];
+		if (!first) throw new Error("Missing writer");
+		first.segmentNaming = `${"%number%".repeat(300)}.m4s`;
+		for (const sample of deps.samples) {
+			sample.objects = sample.objects?.filter(
+				(o) => !o.key.includes("writer_0_"),
+			);
+			sample.objects?.push({
+				outputKey: first.outputKey,
+				key: `${first.dir.prefix}${"1".repeat(700)}.m4s`,
+				size: 500_000,
+			});
+		}
+		const report = await verifyLiveChannel(expected, deps);
+		expect(
+			report.checks.find((c) => c.id === "live:segment-naming")?.verdict,
+		).toBe("FAIL");
+	});
+
 	it("recognizes CMAF expanded init and segment templates without treating init as unexpected media", async () => {
 		const expected = load("live-rtmp-simple");
 		for (const m of expected.muxings) {

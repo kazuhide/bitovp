@@ -644,10 +644,13 @@ function verifyLadderShape(
 	// Every declared muxing must have written SOMETHING under its own prefix, with the
 	// segment name the plan gave it. A rendition that never started leaves an empty prefix
 	// while its siblings fill, which a union count hides completely.
+	const bindings = expected.muxings.map((muxing) => ({
+		muxing,
+		files: liveStorageObjects(objects, muxing),
+	}));
 	const silent: string[] = [];
-	for (const muxing of expected.muxings) {
-		const mine = liveStorageObjects(objects, muxing);
-		if (mine.media.length === 0 && mine.init.length === 0) {
+	for (const { muxing, files } of bindings) {
+		if (files.media.length === 0 && files.init.length === 0) {
 			silent.push(`${muxing.muxingKey} (${muxing.container})`);
 		}
 	}
@@ -670,27 +673,44 @@ function verifyLadderShape(
 	 * Extra files are the finding, not missing ones: a rung still starting has no segments
 	 * yet and `live:ladder` above owns that.
 	 */
+	// Admission permits disjoint writers to share a destination. A proven match
+	// belongs to that namespace, but never satisfies a sibling's own ladder check.
+	const declared = new Set(
+		bindings.flatMap(({ files }) => [...files.init, ...files.media]),
+	);
+	// Other declared files may share the folder, but their presence proves no media.
+	// Archive and manifest filenames are literals, including any token-looking text.
+	const literalFiles = new Set([
+		...expected.manifests.flatMap((manifest) =>
+			[...manifest.files, ...manifest.mediaPlaylists].map((filename) =>
+				JSON.stringify([
+					manifest.outputKey,
+					`${manifest.dir.prefix}${filename}`,
+				]),
+			),
+		),
+		...(expected.archives ?? []).flatMap((archive) =>
+			[archive.outputKey, ...archive.mirrorOutputKeys].map((outputKey) =>
+				JSON.stringify([outputKey, `${archive.dir.prefix}${archive.filename}`]),
+			),
+		),
+	]);
 	const unexpected: string[] = [];
-	for (const muxing of expected.muxings) {
-		const mine = liveStorageObjects(objects, muxing);
-		const initKeys = new Set(mine.init.map((o) => o.key));
-		const mediaKeys = new Set(mine.media.map((o) => o.key));
-		for (const o of objects) {
-			if (
-				o.outputKey !== muxing.outputKey ||
-				!o.key.startsWith(muxing.dir.prefix)
-			) {
-				continue;
-			}
-			const base = o.key.slice(muxing.dir.prefix.length);
-			// Only this prefix's own level, and never the init segment.
-			if (base.includes("/") || initKeys.has(o.key)) {
-				continue;
-			}
-			if (!mediaKeys.has(o.key)) {
-				unexpected.push(`${muxing.muxingKey}/${base}`);
-			}
-		}
+	for (const object of objects) {
+		if (
+			declared.has(object) ||
+			literalFiles.has(JSON.stringify([object.outputKey, object.key]))
+		)
+			continue;
+		const owner = expected.muxings.find(
+			(muxing) =>
+				object.outputKey === muxing.outputKey &&
+				object.key.startsWith(muxing.dir.prefix),
+		);
+		if (owner)
+			unexpected.push(
+				`${owner.muxingKey}/${object.key.slice(owner.dir.prefix.length)}`,
+			);
 	}
 	report.assert(
 		"live:segment-naming",

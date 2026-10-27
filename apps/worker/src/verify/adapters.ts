@@ -10,7 +10,7 @@
 
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { ObjectStorageBrowser } from "@bitovp/storage";
@@ -806,14 +806,30 @@ export function makeEngineDeps(config: AdapterConfig): EngineDeps {
 				.slice(-180)}`,
 		);
 		const out = createWriteStream(dest);
-		for (const part of parts) {
-			await pipeline(createReadStream(part), out, { end: false });
+		try {
+			// One pipeline owns the sink; reusing it across pipelines retains listeners.
+			await pipeline(async function* ({
+				signal,
+			}: {
+				signal?: AbortSignal;
+			} = {}) {
+				for (const part of parts) {
+					// Downstream failure also cancels the current read before the next opens.
+					signal?.throwIfAborted();
+					yield* createReadStream(part, { signal });
+				}
+			}, out);
+		} catch (error) {
+			try {
+				await rm(dest, { force: true });
+			} catch (cleanupError) {
+				throw new AggregateError(
+					[error, cleanupError],
+					"Could not concatenate verification media or remove its partial output",
+				);
+			}
+			throw error;
 		}
-		out.end();
-		await new Promise<void>((done, fail) => {
-			out.on("finish", () => done());
-			out.on("error", fail);
-		});
 		downloads.set(cacheKey, dest);
 		return dest;
 	};

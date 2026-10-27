@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-10-27T02:51:37.809Z",
-		"sourceCommit": "6656b8189cbb50d7d1432353d52435378e7d9231",
-		"sourceFingerprint": "b49fca2c1e8e8f46377ccc949c3db7d4a8041bc5d5a2a082a9800faf95c517ab",
+		"generatedAt": "2026-10-27T03:32:57.533Z",
+		"sourceCommit": "4428b7d49b7ab00192338c0205ef821b5d5e6a91",
+		"sourceFingerprint": "2be22720e0c4c5428d5a000af6d27ef78d63e3524d8818781bab1b984e6e52fa",
 		"sdkVersion": "1.285.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "ca6c9cf0b84701c18888291145575997495d2201f2d8615f92660ddcf978b5ea",
@@ -12,17 +12,17 @@
 	},
 	"summary": {
 		"totalOperations": 1089,
-		"sourceConfirmed": 266,
-		"unconfirmed": 823,
+		"sourceConfirmed": 268,
+		"unconfirmed": 821,
 		"createTotal": 217,
-		"createSourceConfirmed": 118
+		"createSourceConfirmed": 120
 	},
 	"families": [
 		{
 			"family": "configurations",
 			"total": 141,
-			"sourceConfirmed": 18,
-			"unconfirmed": 123
+			"sourceConfirmed": 20,
+			"unconfirmed": 121
 		},
 		{
 			"family": "encodings",
@@ -120,7 +120,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 428
+					"line": 448
 				}
 			]
 		},
@@ -166,8 +166,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.ac3.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/configs.ts",
+					"line": 470
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/ac3/{configuration_id}",
@@ -215,7 +220,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 449
+					"line": 512
 				}
 			]
 		},
@@ -265,7 +270,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 501
+					"line": 564
 				}
 			]
 		},
@@ -315,7 +320,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 480
+					"line": 543
 				}
 			]
 		},
@@ -496,8 +501,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.eac3.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/configs.ts",
+					"line": 491
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/eac3/{configuration_id}",
@@ -725,7 +735,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 522
+					"line": 585
 				}
 			]
 		},
@@ -946,7 +956,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 540
+					"line": 603
 				}
 			]
 		},
@@ -996,7 +1006,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 561
+					"line": 624
 				}
 			]
 		},
@@ -1046,7 +1056,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 570
+					"line": 633
 				}
 			]
 		},
@@ -1060,7 +1070,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 388
+					"line": 407
 				}
 			]
 		},
@@ -1083,7 +1093,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 587
+					"line": 650
 				}
 			]
 		},
@@ -1160,7 +1170,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 102
+					"line": 110
 				}
 			]
 		},
@@ -1183,7 +1193,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 573
+					"line": 636
 				}
 			]
 		},
@@ -1215,7 +1225,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 262
+					"line": 279
 				}
 			]
 		},
@@ -1238,7 +1248,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 581
+					"line": 644
 				}
 			]
 		},
@@ -1270,7 +1280,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 251
+					"line": 268
 				}
 			]
 		},
@@ -1293,7 +1303,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 577
+					"line": 640
 				}
 			]
 		},
@@ -1406,7 +1416,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 353
+					"line": 371
 				}
 			]
 		},
@@ -1429,7 +1439,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 584
+					"line": 647
 				}
 			]
 		},
@@ -11436,8 +11446,8 @@
 			"expandedOperations": 226,
 			"unexpandedOperations": 3,
 			"totalFields": 2561,
-			"sourceAssigned": 417,
-			"unconfirmed": 2144
+			"sourceAssigned": 306,
+			"unconfirmed": 2255
 		},
 		"operations": [
 			{
@@ -11459,8 +11469,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 431,
-								"callLine": 428
+								"line": 452,
+								"callLine": 448
 							}
 						]
 					},
@@ -11475,8 +11485,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 433,
-								"callLine": 428
+								"line": 454,
+								"callLine": 448
 							}
 						]
 					},
@@ -11507,8 +11517,14 @@
 							"file": "models/AacAudioConfiguration.d.ts",
 							"line": 26
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 450,
+								"callLine": 448
+							}
+						]
 					},
 					{
 						"name": "description",
@@ -11551,8 +11567,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 430,
-								"callLine": 428
+								"line": 451,
+								"callLine": 448
 							}
 						]
 					},
@@ -11567,8 +11583,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 432,
-								"callLine": 428
+								"line": 453,
+								"callLine": 448
 							}
 						]
 					}
@@ -11589,8 +11605,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 473,
+								"callLine": 470
+							}
+						]
 					},
 					{
 						"name": "channelLayout",
@@ -11599,8 +11621,14 @@
 							"file": "models/Ac3AudioConfiguration.d.ts",
 							"line": 20
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 476,
+								"callLine": 470
+							}
+						]
 					},
 					{
 						"name": "createdAt",
@@ -11629,8 +11657,14 @@
 							"file": "models/Ac3AudioConfiguration.d.ts",
 							"line": 26
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 475,
+								"callLine": 470
+							}
+						]
 					},
 					{
 						"name": "description",
@@ -11669,8 +11703,14 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 472,
+								"callLine": 470
+							}
+						]
 					},
 					{
 						"name": "rate",
@@ -11679,8 +11719,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 18
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 474,
+								"callLine": 470
+							}
+						]
 					}
 				]
 			},
@@ -11703,8 +11749,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 452,
-								"callLine": 449
+								"line": 515,
+								"callLine": 512
 							}
 						]
 					},
@@ -11759,8 +11805,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 454,
-								"callLine": 449
+								"line": 517,
+								"callLine": 512
 							}
 						]
 					},
@@ -11785,8 +11831,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 451,
-								"callLine": 449
+								"line": 514,
+								"callLine": 512
 							}
 						]
 					},
@@ -11811,8 +11857,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 453,
-								"callLine": 449
+								"line": 516,
+								"callLine": 512
 							}
 						]
 					}
@@ -11837,8 +11883,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 504,
-								"callLine": 501
+								"line": 567,
+								"callLine": 564
 							}
 						]
 					},
@@ -11863,8 +11909,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 506,
-								"callLine": 501
+								"line": 569,
+								"callLine": 564
 							}
 						]
 					},
@@ -11959,8 +12005,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 503,
-								"callLine": 501
+								"line": 566,
+								"callLine": 564
 							}
 						]
 					},
@@ -11985,8 +12031,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 505,
-								"callLine": 501
+								"line": 568,
+								"callLine": 564
 							}
 						]
 					}
@@ -12011,8 +12057,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 483,
-								"callLine": 480
+								"line": 546,
+								"callLine": 543
 							}
 						]
 					},
@@ -12037,8 +12083,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 485,
-								"callLine": 480
+								"line": 548,
+								"callLine": 543
 							}
 						]
 					},
@@ -12133,8 +12179,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 482,
-								"callLine": 480
+								"line": 545,
+								"callLine": 543
 							}
 						]
 					},
@@ -12159,8 +12205,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 484,
-								"callLine": 480
+								"line": 547,
+								"callLine": 543
 							}
 						]
 					}
@@ -12481,8 +12527,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 494,
+								"callLine": 491
+							}
+						]
 					},
 					{
 						"name": "channelLayout",
@@ -12491,8 +12543,14 @@
 							"file": "models/Eac3AudioConfiguration.d.ts",
 							"line": 20
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 497,
+								"callLine": 491
+							}
+						]
 					},
 					{
 						"name": "createdAt",
@@ -12521,8 +12579,14 @@
 							"file": "models/Eac3AudioConfiguration.d.ts",
 							"line": 26
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 496,
+								"callLine": 491
+							}
+						]
 					},
 					{
 						"name": "description",
@@ -12561,8 +12625,14 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 493,
+								"callLine": 491
+							}
+						]
 					},
 					{
 						"name": "rate",
@@ -12571,8 +12641,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 18
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 495,
+								"callLine": 491
+							}
+						]
 					}
 				]
 			},
@@ -13535,8 +13611,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 542,
-								"callLine": 540
+								"line": 605,
+								"callLine": 603
 							}
 						]
 					}
@@ -13641,8 +13717,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 562,
-								"callLine": 561
+								"line": 625,
+								"callLine": 624
 							}
 						]
 					},
@@ -13673,14 +13749,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 29
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 401,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "bitrate",
@@ -13689,14 +13759,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 28
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 394,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "colorConfig",
@@ -13705,14 +13769,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 45
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 415,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "createdAt",
@@ -13761,14 +13819,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 41
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 407,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "encodingMode",
@@ -13777,14 +13829,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 69
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 390,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "height",
@@ -13793,14 +13839,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 22
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 393,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "id",
@@ -13819,14 +13859,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 47
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 412,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxContentLightLevel",
@@ -13835,14 +13869,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 53
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 413,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxLevel",
@@ -13851,14 +13879,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 35
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 406,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxPictureAverageLightLevel",
@@ -13867,14 +13889,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 59
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 414,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "modifiedAt",
@@ -13893,14 +13909,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 391,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "pixelFormat",
@@ -13919,14 +13929,8 @@
 							"file": "models/Av1VideoConfiguration.d.ts",
 							"line": 23
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 396,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rate",
@@ -13935,14 +13939,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 34
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 395,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "sampleAspectRatioDenominator",
@@ -13971,14 +13969,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 16
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 392,
-								"callLine": 388
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -14257,14 +14249,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 237
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 140,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "adaptiveQuantizationStrength",
@@ -14273,14 +14259,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 243
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 145,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "adaptiveSpatialTransform",
@@ -14289,14 +14269,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 255
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 156,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "autoLevelSetup",
@@ -14325,14 +14299,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 60
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 154,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "bitrate",
@@ -14341,14 +14309,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 28
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 118,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "bPyramid",
@@ -14367,14 +14329,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 113
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 113,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "cabac",
@@ -14383,14 +14339,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 95
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 155,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "cea608708SubtitleConfig",
@@ -14409,14 +14359,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 45
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 162,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "createdAt",
@@ -14435,14 +14379,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 48
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 110,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "customData",
@@ -14491,14 +14429,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 63
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 109,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "dynamicRangeFormat",
@@ -14517,14 +14449,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 69
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 114,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "fastSkipDetectionPFrames",
@@ -14543,14 +14469,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 22
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 117,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "id",
@@ -14579,14 +14499,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 149
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 120,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "macroblockTreeRatecontrol",
@@ -14605,14 +14519,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 101
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 112,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxGop",
@@ -14621,14 +14529,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 125
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 105,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxKeyframeInterval",
@@ -14637,14 +14539,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 143
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 128,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minBitrate",
@@ -14653,14 +14549,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 107
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 111,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minGop",
@@ -14669,14 +14559,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 119
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 104,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minKeyframeInterval",
@@ -14685,14 +14569,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 137
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 127,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "mixedReferences",
@@ -14721,14 +14599,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 159
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 134,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "mvPredictionMode",
@@ -14737,14 +14609,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 83
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 146,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "mvSearchRangeMax",
@@ -14753,14 +14619,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 89
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 131,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "nalHrd",
@@ -14779,14 +14639,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 115,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "openGop",
@@ -14795,14 +14649,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 131
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 106,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "partitions",
@@ -14831,14 +14679,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 36
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 121,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "profile",
@@ -14847,14 +14689,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 54
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 126,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "psyRateDistortionOptimization",
@@ -14863,14 +14699,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 291
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 151,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "psyTrellis",
@@ -14879,14 +14709,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 297
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 152,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "qpMax",
@@ -14925,14 +14749,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 34
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 119,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rcLookahead",
@@ -14941,14 +14759,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 165
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 132,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "refFrames",
@@ -14957,14 +14769,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 66
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 153,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "sampleAspectRatioDenominator",
@@ -14973,14 +14779,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 57
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 108,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "sampleAspectRatioNumerator",
@@ -14989,14 +14789,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 51
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 107,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "sceneCutThreshold",
@@ -15005,14 +14799,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 201
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 139,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "slices",
@@ -15021,14 +14809,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 189
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 129,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "subMe",
@@ -15037,14 +14819,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 171
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 133,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "trellis",
@@ -15053,14 +14829,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 177
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 130,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "weightedPredictionBFrames",
@@ -15079,14 +14849,8 @@
 							"file": "models/H264VideoConfiguration.d.ts",
 							"line": 273
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 157,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "width",
@@ -15095,14 +14859,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 16
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 116,
-								"callLine": 102
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -15121,14 +14879,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 227
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 310,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "adaptiveQuantizationMotion",
@@ -15147,14 +14899,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 509
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 315,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "allowedRADLBeforeIDR",
@@ -15223,14 +14969,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 64
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 265,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "bitrate",
@@ -15239,14 +14979,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 28
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 282,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "blurComplexity",
@@ -15275,14 +15009,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 94
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 332,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "cea608708SubtitleConfig",
@@ -15311,14 +15039,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 45
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 325,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "constrainedIntraPrediction",
@@ -15357,14 +15079,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 53
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 276,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "customData",
@@ -15403,14 +15119,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 63
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 275,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "dynamicRangeFormat",
@@ -15419,14 +15129,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 47
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 333,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "dynamicRateDistortionStrength",
@@ -15475,14 +15179,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 69
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 278,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "evaluationOfIntraModesInBSlices",
@@ -15541,14 +15239,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 215
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 321,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "height",
@@ -15557,14 +15249,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 22
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 281,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "id",
@@ -15593,14 +15279,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 129
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 284,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "levelHighTier",
@@ -15609,14 +15289,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 383
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 338,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "limitModes",
@@ -15685,14 +15359,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 197
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 322,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxBitrate",
@@ -15701,14 +15369,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 82
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 331,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxContentLightLevel",
@@ -15717,14 +15379,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 203
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 323,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxCTUSize",
@@ -15733,14 +15389,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 146
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 290,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxGop",
@@ -15749,14 +15399,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 106
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 271,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maximumTransformUnitSize",
@@ -15775,14 +15419,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 124
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 287,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxMerge",
@@ -15801,14 +15439,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 209
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 324,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minBitrate",
@@ -15817,14 +15449,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 88
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 277,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minCodingUnitSize",
@@ -15843,14 +15469,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 100
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 270,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "minKeyframeInterval",
@@ -15859,14 +15479,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 118
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 286,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "modifiedAt",
@@ -15885,14 +15499,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 161
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 291,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "motionSearchRange",
@@ -15901,14 +15509,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 173
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 309,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "name",
@@ -15917,14 +15519,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 279,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "noiseReductionInter",
@@ -15953,14 +15549,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 112
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 272,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "pbRatio",
@@ -15979,14 +15569,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 40
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 285,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "presetConfiguration",
@@ -15995,14 +15579,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 41
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 326,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "profile",
@@ -16011,14 +15589,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 58
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 280,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "psyRateDistortionOptimization",
@@ -16027,14 +15599,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 245
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 316,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "psyRateDistortionOptimizedQuantization",
@@ -16043,14 +15609,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 251
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 317,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "qp",
@@ -16059,14 +15619,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 76
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 267,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "qpMax",
@@ -16075,14 +15629,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 359
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 268,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "qpMin",
@@ -16091,14 +15639,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 353
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 319,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "qpOffsetChromaCb",
@@ -16157,14 +15699,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 34
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 283,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rateDistortionLevelForModeDecision",
@@ -16203,14 +15739,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 135
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 288,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rectangularMotionPartitionsAnalysis",
@@ -16239,14 +15769,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 70
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 266,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "refineRateDistortionCost",
@@ -16265,14 +15789,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 57
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 274,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "sampleAspectRatioNumerator",
@@ -16281,14 +15799,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 51
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 273,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "sao",
@@ -16297,14 +15809,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 191
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 320,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "saoNonDeblock",
@@ -16333,14 +15839,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 221
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 308,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "signHide",
@@ -16389,14 +15889,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 527
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 269,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "strongIntraSmoothing",
@@ -16415,14 +15909,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 167
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 289,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "temporalMotionVectorPredictors",
@@ -16451,14 +15939,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 156
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 301,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "tuIntraDepth",
@@ -16467,14 +15949,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 151
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 296,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "videoFormat",
@@ -16503,14 +15979,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 185
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 307,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "weightPredictionOnPSlice",
@@ -16519,14 +15989,8 @@
 							"file": "models/H265VideoConfiguration.d.ts",
 							"line": 179
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 306,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "width",
@@ -16535,14 +15999,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 16
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 264,
-								"callLine": 262
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},
@@ -17261,14 +16719,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 197
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 369,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "arnrMaxFrames",
@@ -17277,14 +16729,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 203
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 371,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "arnrStrength",
@@ -17293,14 +16739,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 209
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 372,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "arnrType",
@@ -17309,14 +16749,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 214
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 370,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "autoLevelSetup",
@@ -17355,14 +16789,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 28
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 359,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "clientBufferSize",
@@ -17391,14 +16819,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 45
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 373,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "cpuUsed",
@@ -17407,14 +16829,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 127
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 361,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "createdAt",
@@ -17483,14 +16899,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 69
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 355,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "errorResiliencyEnabled",
@@ -17519,14 +16929,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 22
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 358,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "id",
@@ -17555,14 +16959,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 186
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 368,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "maxGop",
@@ -17631,14 +17029,8 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 356,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "noiseSensitivity",
@@ -17677,14 +17069,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 85
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 364,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "qpMin",
@@ -17693,14 +17079,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 79
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 363,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "quality",
@@ -17709,14 +17089,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 180
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 367,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rate",
@@ -17725,14 +17099,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 34
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 360,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rateOvershootPct",
@@ -17741,14 +17109,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 97
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 366,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rateUndershootPct",
@@ -17757,14 +17119,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 91
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 365,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "rowMultiThreadingEnabled",
@@ -17833,14 +17189,8 @@
 							"file": "models/Vp9VideoConfiguration.d.ts",
 							"line": 55
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 362,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					},
 					{
 						"name": "tileRows",
@@ -17859,14 +17209,8 @@
 							"file": "models/VideoConfiguration.d.ts",
 							"line": 16
 						},
-						"status": "source-assigned",
-						"evidence": [
-							{
-								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 357,
-								"callLine": 353
-							}
-						]
+						"status": "unconfirmed",
+						"evidence": []
 					}
 				]
 			},

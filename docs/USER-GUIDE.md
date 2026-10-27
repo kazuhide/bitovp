@@ -20,6 +20,7 @@ or [Japanese](https://kazuhide.github.io/bitovp/ja/guide/). Editable sources:
 | Connect accounts and storage | [Getting started](./user-guide/GETTING-STARTED.md) | `/settings`, `/storage` |
 | Encode a file | [VOD](./user-guide/VOD.md) | `/vod/new`, `/vod/jobs` |
 | Broadcast and monitor a live stream | [Live](./user-guide/LIVE.md) | `/live/new`, `/live`, `/live/feeders` |
+| Configure HLS and DASH playback descriptions | [Manifest options](./user-guide/MANIFESTS.md) | VOD and Live manifest settings |
 | Review usage and video quality | [Quality and monitoring](./user-guide/QUALITY-AND-MONITORING.md) | `/`, `/qc` |
 | Manage content, presets, and settings | [Library and administration](./user-guide/LIBRARY-AND-ADMIN.md) | `/library`, `/presets`, `/settings` |
 | Investigate failures | [Troubleshooting](./user-guide/TROUBLESHOOTING.md) | Job, channel, and report details |

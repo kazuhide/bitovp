@@ -7164,6 +7164,138 @@ describe("live-to-VOD", () => {
 		};
 	}
 
+	it.each([
+		"HLS",
+		"DASH",
+	] as const)("passes durable manifest-only ownership through the installed SDK for %s recording finalization", async (family) => {
+		const t = stoppedChannel();
+		const resources: Record<string, unknown>[] = [];
+		const posts: { path: string; body: Record<string, unknown> }[] = [];
+		t.deps.makeSdk = (options) => createBitmovinSdkOps(options, async () => {});
+		const response = (result: unknown, status = 200) =>
+			new Response(JSON.stringify({ data: { result } }), {
+				status,
+				headers: { "content-type": "application/json" },
+			});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				const path = new URL(url).pathname,
+					method = init.method ?? "GET";
+				if (
+					method === "GET" &&
+					path === `/v1/encoding/manifests/${family.toLowerCase()}`
+				)
+					return response({ items: resources });
+				if (method === "POST" && path.endsWith("/default")) {
+					const body = JSON.parse(String(init.body));
+					posts.push({ path, body });
+					const resource = { ...body, id: "created-recording" };
+					resources.push(resource);
+					return response(resource);
+				}
+				if (method === "POST" && path.endsWith("/start")) {
+					posts.push({ path, body: JSON.parse(String(init.body)) });
+					return response({});
+				}
+				if (method === "GET" && path.endsWith("/status"))
+					return response({ status: "FINISHED" });
+				throw new Error(`Unexpected recording SDK call ${method} ${path}`);
+			}),
+		);
+		try {
+			await t.actions.liveToVod(CHANNEL_ID, { manifests: [family] });
+			expect((t.row.liveToVod as LiveToVodRecord).status).toBe("FINISHED");
+			const created = posts.find((post) => post.path.endsWith("/default"));
+			expect(created?.body.customData).toMatchObject({
+				bitovp: {
+					job: CHANNEL_ID,
+					step: expect.stringContaining(`live-to-vod:${LIVE_TO_VOD_RUN_ID}:`),
+					manifestRequestSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
+			});
+			expect(
+				(created?.body.customData as { bitovp?: { step?: string } })?.bitovp
+					?.step,
+			).toContain(`:${family.toLowerCase()}`);
+			expect(posts.find((post) => post.path.endsWith("/start"))?.body).toEqual({
+				manifestGenerator: "LEGACY",
+			});
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it.each([
+		true,
+		false,
+	])("reconciles a lost installed-SDK create without another POST (provider accepted: %s)", async (accepted) => {
+		const t = stoppedChannel();
+		let resource: Record<string, unknown> | undefined,
+			creates = 0,
+			lookupUnavailable = false;
+		t.deps.makeSdk = (options) => createBitmovinSdkOps(options, async () => {});
+		const response = (result: unknown, status = 200) =>
+			new Response(JSON.stringify({ data: { result } }), {
+				status,
+				headers: { "content-type": "application/json" },
+			});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				const path = new URL(url).pathname,
+					method = init.method ?? "GET";
+				if (method === "GET" && path === "/v1/encoding/manifests/hls")
+					return lookupUnavailable
+						? response({}, 503)
+						: response({ items: resource ? [resource] : [] });
+				if (method === "GET" && path.endsWith("/customData"))
+					return response({ customData: resource?.customData });
+				if (method === "POST" && path.endsWith("/default")) {
+					creates++;
+					if (accepted)
+						resource = {
+							...JSON.parse(String(init.body)),
+							id: "accepted-recording",
+						};
+					lookupUnavailable = true;
+					return response({}, 500);
+				}
+				if (method === "POST" && path.endsWith("/start")) return response({});
+				if (method === "GET" && path.endsWith("/status"))
+					return response({ status: "FINISHED" });
+				throw new Error(
+					`Unexpected recording recovery SDK call ${method} ${path}`,
+				);
+			}),
+		);
+		try {
+			await expect(
+				t.actions.liveToVod(CHANNEL_ID, { manifests: ["HLS"] }),
+			).rejects.toThrow();
+			expect(creates).toBe(1);
+			expect(
+				(t.row.liveToVod as LiveToVodRecord).families?.find(
+					(entry) => entry.type === "HLS",
+				),
+			).toMatchObject({
+				status: "ERROR",
+				createIntent: { status: "LOOKUP_UNKNOWN" },
+			});
+			lookupUnavailable = false;
+			if (accepted) {
+				await t.actions.liveToVod(CHANNEL_ID, { manifests: ["HLS"] });
+				expect((t.row.liveToVod as LiveToVodRecord).status).toBe("FINISHED");
+			} else
+				await expect(
+					t.actions.liveToVod(CHANNEL_ID, { manifests: ["HLS"] }),
+				).rejects.toThrow(/window|unresolved|identity/i);
+			expect(creates).toBe(1);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	function cleanupSnapshots(
 		t: ReturnType<typeof stoppedChannel>,
 		family: "HLS" | "DASH",
@@ -10254,6 +10386,234 @@ function cancelCurrentRun(h: ReturnType<typeof setup>) {
 	run.cancelRequested = true;
 }
 
+describe("Live fallback admission for queued work", () => {
+	function restarting() {
+		const h = setup({
+			status: "PROVISIONING",
+			bitmovinEncodingId: "bm-live-enc",
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "RUNNING",
+			bitmovinEncodingId: "bm-live-enc",
+			heartbeatPollEpoch: 0,
+			providerStatus: null,
+			providerStatusObservedAt: null,
+			providerUnknownSince: null,
+			providerTerminalAt: null,
+		});
+		return h;
+	}
+
+	function legacyFallback(
+		h: ReturnType<typeof setup>,
+		location: "plan" | "payload" | "both" = "both",
+	) {
+		const plan = liveChannelPlanSchema.parse(h.row.plan);
+		if (location !== "payload") plan.bitmovin.fallbackCloudRegions = ["AUTO"];
+		h.row.plan = plan;
+		const entries = h.row.stepLog as StepLogEntry[];
+		const encoding = entries.find((entry) => entry.kind === "CREATE_ENCODING");
+		if (!encoding) throw new Error("Missing CREATE fixture");
+		if (location !== "plan") encoding.payload.fallbackCloudRegions = ["AUTO"];
+		return { plan, entries, encoding };
+	}
+
+	for (const phase of ["new", "resume"] as const) {
+		it.each([
+			"plan",
+			"payload",
+			"both",
+		] as const)(`rejects ${phase} queued provisioning with unsupported %s fallback values before SDK construction`, async (location) => {
+			const h = setup();
+			const { entries, encoding } = legacyFallback(h, location);
+			if (phase === "resume") {
+				for (const entry of entries) {
+					if (entry.kind === "START_LIVE_ENCODING") break;
+					entry.status = "DONE";
+					entry.resourceId = `existing-${entry.step}`;
+				}
+				encoding.resourceId = "bm-live-enc";
+				h.row.bitmovinEncodingId = "bm-live-enc";
+			}
+			const makeSdk = vi.fn(() => h.sdk);
+			h.deps.makeSdk = makeSdk;
+			await expect(h.process({ liveChannelId: CHANNEL_ID })).rejects.toThrow(
+				/Live Encoding does not support fallback regions/,
+			);
+			expect(makeSdk).not.toHaveBeenCalled();
+			expect(h.deps.revealBitmovinAccount).not.toHaveBeenCalled();
+			expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+			expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+			expect(h.row.status).toBe("ERROR");
+			expect(encoding.payload.fallbackCloudRegions).toEqual(
+				location === "plan" ? undefined : ["AUTO"],
+			);
+		});
+	}
+
+	it("uses the corrected plan and fresh log from the lease-winning read rather than a stale queued snapshot", async () => {
+		const h = setup();
+		const stale = structuredClone(h.row);
+		const stalePlan = liveChannelPlanSchema.parse(stale.plan);
+		stalePlan.bitmovin.fallbackCloudRegions = ["AUTO"];
+		stale.plan = stalePlan;
+		const staleEncoding = (stale.stepLog as StepLogEntry[]).find(
+			(entry) => entry.kind === "CREATE_ENCODING",
+		);
+		if (!staleEncoding) throw new Error("Missing CREATE fixture");
+		staleEncoding.payload.fallbackCloudRegions = ["AUTO"];
+		const read = h.liveChannel.findUnique.getMockImplementation();
+		if (!read) throw new Error("Missing reader fixture");
+		let reads = 0;
+		h.liveChannel.findUnique.mockImplementation(async (args) =>
+			++reads === 1 ? stale : read(args),
+		);
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID }),
+		).resolves.toMatchObject({ status: "RUNNING" });
+		expect(h.sdk.createEncoding).toHaveBeenCalledOnce();
+		expect(h.sdk.startLiveEncoding).toHaveBeenCalledOnce();
+		expect(
+			liveChannelPlanSchema.parse(h.row.plan).bitmovin.fallbackCloudRegions,
+		).toBeUndefined();
+	});
+
+	it("refuses a directly queued restart while the current plan still contains fallbacks", async () => {
+		const h = restarting();
+		legacyFallback(h);
+		const makeSdk = vi.fn(() => h.sdk);
+		h.deps.makeSdk = makeSdk;
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
+		).rejects.toThrow(/Live Encoding does not support fallback regions/);
+		expect(makeSdk).not.toHaveBeenCalled();
+		expect(h.sdk.restartLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it("allows an explicit restart after clearing the current plan without replaying historical CREATE payloads", async () => {
+		const h = restarting();
+		legacyFallback(h, "payload");
+		for (const entry of h.row.stepLog as StepLogEntry[]) entry.status = "DONE";
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
+		).resolves.toMatchObject({ status: "RUNNING" });
+		expect(h.sdk.restartLiveEncoding).toHaveBeenCalledOnce();
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it("cancels unsupported queued work before any provider attempt without requiring credentials", async () => {
+		const h = setup({ status: "STOPPING" });
+		legacyFallback(h);
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "STOPPING",
+			cancelRequested: true,
+		});
+		const makeSdk = vi.fn(() => h.sdk);
+		h.deps.makeSdk = makeSdk;
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			}),
+		).resolves.toMatchObject({ status: "STOPPED" });
+		expect(makeSdk).not.toHaveBeenCalled();
+		expect(h.deps.revealBitmovinAccount).not.toHaveBeenCalled();
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it("still performs provider STOP and confirms cleanup for an unsupported plan whose start was already attempted", async () => {
+		const h = setup({
+			status: "STOPPING",
+			bitmovinEncodingId: "bm-live-enc",
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		const { entries, encoding } = legacyFallback(h);
+		encoding.status = "DONE";
+		encoding.resourceId = "bm-live-enc";
+		const start = entries.find((entry) => entry.kind === "START_LIVE_ENCODING");
+		if (!start) throw new Error("Missing START fixture");
+		start.startedAt = "2026-06-11T23:59:00.000Z";
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "STOPPING",
+			cancelRequested: true,
+			bitmovinEncodingId: "bm-live-enc",
+		});
+		let stopped = false;
+		h.sdk.getEncodingStatus = vi.fn(async () => ({
+			status: stopped ? "FINISHED" : "RUNNING",
+		}));
+		h.sdk.stopLiveEncoding = vi.fn(async () => {
+			stopped = true;
+		});
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			}),
+		).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+			"bm-live-enc",
+		);
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.row.encoderStoppedConfirmedFor).toBe("bm-live-enc");
+	});
+
+	it("keeps direct queued STOP available for a running channel with unsupported stored fallbacks", async () => {
+		const h = setup(
+			{
+				status: "RUNNING",
+				bitmovinEncodingId: "bm-live-enc",
+				bitmovinAccountId: ACCOUNT_ID,
+			},
+			{ getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })) },
+		);
+		legacyFallback(h);
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.stopLiveEncoding).toHaveBeenCalledWith("bm-live-enc");
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it("does not turn an unsupported cancellation-only setup into new work if cancellation ceases to be current", async () => {
+		const h = setup({ status: "STOPPING" });
+		const { encoding } = legacyFallback(h);
+		encoding.startedAt = "2026-06-11T23:59:00.000Z";
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "STOPPING",
+			cancelRequested: true,
+		});
+		h.deps.revealBitmovinAccount = vi.fn(async () => {
+			const run = h.runRows[0];
+			if (!run) throw new Error("Missing run fixture");
+			run.cancelRequested = false;
+			return { apiKey: "synthetic-only", tenantOrgId: null };
+		});
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			}),
+		).rejects.toThrow(/Live Encoding does not support fallback regions/);
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.row.status).toBe("ERROR");
+	});
+});
+
 describe("confirmed encoding cancellation", () => {
 	function confirmedCancellation() {
 		const h = setup({
@@ -11036,9 +11396,13 @@ describe("reviewed startup cancellation race fences", () => {
 		expect(h.runRows[1]?.status).toBe("PROVISIONING");
 		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
 	});
-	it("restores the verification active CREATE for adopt-only cancellation after restart", async () => {
+	it.each([
+		false,
+		true,
+	])("restores the verification active CREATE for adopt-only cancellation after restart (legacy fallbacks: %s)", async (fallbacks) => {
 		let callbackResult: string | undefined;
 		const create = vi.fn();
+		const start = vi.fn(async () => {});
 		const h = setup(
 			{
 				status: "STOPPING",
@@ -11048,6 +11412,7 @@ describe("reviewed startup cancellation race fences", () => {
 			{},
 			(args) =>
 				fakeSdk({
+					startLiveEncoding: start,
 					createEncoding: create.mockImplementation(async () => {
 						expect(args.stamp?.allowCreate?.()).toBe(false);
 						callbackResult = await args.stamp?.onEncodingCreated?.(
@@ -11062,6 +11427,12 @@ describe("reviewed startup cancellation race fences", () => {
 		const entries = h.row.stepLog as StepLogEntry[];
 		const encoding = entries.find((entry) => entry.kind === "CREATE_ENCODING");
 		if (!encoding) throw new Error("Missing CREATE fixture");
+		if (fallbacks) {
+			const plan = liveChannelPlanSchema.parse(h.row.plan);
+			plan.bitmovin.fallbackCloudRegions = ["AUTO"];
+			h.row.plan = plan;
+			encoding.payload.fallbackCloudRegions = ["AUTO"];
+		}
 		encoding.status = "RUNNING";
 		encoding.startedAt = "2026-06-11T23:59:00.000Z";
 		h.runRows.push({
@@ -11079,6 +11450,7 @@ describe("reviewed startup cancellation race fences", () => {
 		expect(callbackResult).toBe("PERSISTED");
 		expect(h.row.bitmovinEncodingId).toBe("adopted-verified-original");
 		expect(create).toHaveBeenCalledTimes(1);
+		expect(start).not.toHaveBeenCalled();
 		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
 	});
 });

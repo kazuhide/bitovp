@@ -29,6 +29,61 @@ const bound = (r: ReturnType<typeof run>) =>
 	r.pairs.map((p) => `${p.expected.key}->${p.observed.id}`).sort();
 
 describe("matchOneToOne — the binding is one-to-one", () => {
+	it("covers required nodes before a closer optional candidate", () => {
+		const result = matchOneToOne({
+			expected: [
+				{ key: "mandatory", required: true },
+				{ key: "optional", required: false },
+			],
+			observed: ["only-row"],
+			expectedKey: (row) => row.key,
+			observedKey: (row) => row,
+			compatible: () => true,
+			cost: (row) => (row.required ? 1_000 : 0),
+			isRequired: (row) => row.required,
+		});
+		expect(result.pairs.map((pair) => pair.expected.key)).toEqual([
+			"mandatory",
+		]);
+		expect(result.unmatchedExpected.map((row) => row.key)).toEqual([
+			"optional",
+		]);
+	});
+	it("keeps maximum cardinality when required coverage needs a more expensive edge", () => {
+		const result = matchOneToOne({
+			expected: [
+				{ key: "mandatory", required: true },
+				{ key: "optional", required: false },
+			],
+			observed: ["shared", "mandatory-only"],
+			expectedKey: (row) => row.key,
+			observedKey: (row) => row,
+			compatible: (row, observed) => row.required || observed === "shared",
+			cost: (_row, observed) => (observed === "shared" ? 0 : 1_000),
+			isRequired: (row) => row.required,
+		});
+		expect(
+			result.pairs.map((pair) => `${pair.expected.key}:${pair.observed}`),
+		).toEqual(["mandatory:mandatory-only", "optional:shared"]);
+	});
+	it("never makes an incompatible required node a match", () => {
+		const result = matchOneToOne({
+			expected: [
+				{ key: "mandatory", required: true },
+				{ key: "optional", required: false },
+			],
+			observed: ["optional-only"],
+			expectedKey: (row) => row.key,
+			observedKey: (row) => row,
+			compatible: (row) => !row.required,
+			cost: () => 0,
+			isRequired: (row) => row.required,
+		});
+		expect(result.pairs.map((pair) => pair.expected.key)).toEqual(["optional"]);
+		expect(result.unmatchedExpected.map((row) => row.key)).toEqual([
+			"mandatory",
+		]);
+	});
 	it("2 expected / 1 observed at one height: one binds, one is MISSING — never both green", () => {
 		const r = run(
 			[

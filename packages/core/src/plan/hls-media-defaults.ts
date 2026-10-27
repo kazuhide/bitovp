@@ -258,6 +258,7 @@ export function hlsChildEntries(
 	plan: EncodingPlan,
 	manifest: {
 		key: string;
+		generationMode?: "MANUAL" | "DEFAULT";
 		audioGroupId: string;
 		audioMediaUri?: string;
 		variantsPerAudioGroup?: boolean;
@@ -266,6 +267,7 @@ export function hlsChildEntries(
 		audioMuxingKind?: HlsLegKind;
 	},
 ): HlsChildEntry[] {
+	if (manifest.generationMode === "DEFAULT") return [];
 	const out: HlsChildEntry[] = [];
 	const defaults = hlsAudioMediaDefaults(plan, manifest);
 	const groups = manifest.variantsPerAudioGroup
@@ -406,7 +408,20 @@ export function hlsChildFiles(
 	plan: EncodingPlan,
 	manifest: Parameters<typeof hlsChildEntries>[1],
 ): string[] {
-	return [...new Set(hlsChildEntries(plan, manifest).map((e) => e.uri))];
+	if (manifest.generationMode === "DEFAULT") return [];
+	const configured = plan.manifests.find((m) => m.key === manifest.key);
+	const additional =
+		configured?.kind === "HLS"
+			? (configured.detailed?.additionalMedia?.flatMap((media) =>
+					media.type === "CLOSED_CAPTIONS" ? [] : [media.uri],
+				) ?? [])
+			: [];
+	return [
+		...new Set([
+			...hlsChildEntries(plan, manifest).map((e) => e.uri),
+			...additional,
+		]),
+	];
 }
 
 /** Generated I-frame filename by selected muxing (#325). I-frame playlists
@@ -454,7 +469,7 @@ export function hlsIframeUris(
 	return new Map(
 		dedupeVideoChildUris(
 			[...writers.values()],
-			[...entries.map((e) => e.uri), ...reserved],
+			[...hlsChildFiles(plan, manifest), ...reserved],
 		).map((entry) => [entry.muxingKey, entry.uri]),
 	);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import type { LiveChannelPlan, StepLogEntry } from "@bitovp/core";
-import { selectLiveManifestMuxings } from "@bitovp/core";
+import { liveManifestSegmentLists } from "@bitovp/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { actionFailureMessage } from "@/app/live/live-shared";
@@ -16,7 +16,7 @@ import { useT } from "@/lib/i18n/context";
 
 /**
  * DVR panel: per-manifest timeshift with the C8 calculation on demand (same per-leg math
- * as validateLiveChannel via selectLiveManifestMuxings) plus the
+ * as validateLiveChannel via liveManifestSegmentLists) plus the
  * reset-timeshift action form (residualPeriodInSeconds / offsetInSeconds /
  * manifest selection). Manifest ids come from the DONE step-log entries —
  * absent selection means "all manifests" (SDK semantics).
@@ -83,9 +83,7 @@ export function DvrPanel({
 							<DvrGauge
 								label={label}
 								timeshiftSec={manifest.timeshift}
-								legs={selectLiveManifestMuxings(plan, manifest).map(
-									({ muxing }) => ({ segmentLengthSec: muxing.segmentLength }),
-								)}
+								legs={liveManifestSegmentLists(plan, manifest)}
 							/>
 						</DetailPopover>
 					);

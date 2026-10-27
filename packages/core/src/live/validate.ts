@@ -12,13 +12,18 @@ import {
 	liveHlsEntryUris,
 	selectLiveManifestMuxings,
 } from "./compiler";
-import { LIVE_MANIFEST_ELEMENT_BUDGET, manifestElementEstimate } from "./dvr";
+import { LIVE_MANIFEST_ELEMENT_BUDGET } from "./dvr";
 import {
 	isLiveAacChannelLayout,
 	resolveLiveEncodingOption,
 } from "./encoding-option";
 import { checkLiveHlsVideoUris } from "./hls-video-uri-validation";
+import { liveManifestDetailIssues } from "./manifest-details";
 import { liveManifestPathIssues } from "./manifest-paths";
+import {
+	liveManifestElementEstimate,
+	liveManifestSegmentLists,
+} from "./manifest-segment-lists";
 import {
 	liveDrmIssues,
 	liveFallbackRegionIssues,
@@ -162,6 +167,7 @@ export function validateLiveChannel(
 ): PlanIssue[] {
 	const issues: PlanIssue[] = [
 		...liveManifestPathIssues(plan),
+		...liveManifestDetailIssues(plan),
 		...liveDrmIssues(plan, options),
 		...liveFallbackRegionIssues(plan),
 		...checkLiveHlsVideoUris(plan),
@@ -824,38 +830,27 @@ export function validateLiveChannel(
 				path: `liveManifests[${index}].destination.path`,
 			});
 		}
-		// C8 — element budget per manifest: Σ over enumerated muxing legs of
-		// ceil(timeshift / segmentLength). NEVER clamped: the issue carries
-		// the math, the author (or the UI gauge) decides.
-		const timeshift = manifest.timeshift;
-		if (timeshift !== undefined && selected.length > 0) {
-			const totalElements = selected.reduce(
-				(sum, { muxing }) =>
-					sum +
-					manifestElementEstimate({
-						timeshiftSec: timeshift,
-						segmentLengthSec: muxing.segmentLength,
-						renditionCount: 1,
-					}).totalElements,
-				0,
-			);
-			const utilization = totalElements / LIVE_MANIFEST_ELEMENT_BUDGET;
-			if (utilization > 1) {
+		// Each distinct playlist/representation reserves its own full DVR sequence.
+		const budget = liveManifestElementEstimate(plan, manifest);
+		if (budget) {
+			const count = liveManifestSegmentLists(plan, manifest).length;
+			const math = `Σ ceil(${manifest.timeshift}s timeshift / segmentLength) over ${count} segment lists`;
+			if (budget.level === "over")
 				issues.push({
 					code: "C8",
 					level: "error",
-					message: `liveManifest "${manifest.key}" needs ~${totalElements} manifest elements (Σ ceil(${timeshift}s timeshift / segmentLength) over ${selected.length} renditions) — over the ~${LIVE_MANIFEST_ELEMENT_BUDGET} budget. Shorten the timeshift, lengthen segments, or trim the ladder`,
+					message: `liveManifest "${manifest.key}" needs ~${budget.totalElements} manifest elements (${math}) — over the ~${LIVE_MANIFEST_ELEMENT_BUDGET} budget. Shorten the timeshift, lengthen segments, or reduce segment lists`,
 					path: `liveManifests[${index}].timeshift`,
 				});
-			} else if (utilization > 0.8) {
+			else if (budget.level === "warning")
 				issues.push({
 					code: "C8",
 					level: "warning",
-					message: `liveManifest "${manifest.key}" needs ~${totalElements} manifest elements (Σ ceil(${timeshift}s timeshift / segmentLength) over ${selected.length} renditions) — ${Math.round(utilization * 100)}% of the ~${LIVE_MANIFEST_ELEMENT_BUDGET} budget`,
+					message: `liveManifest "${manifest.key}" needs ~${budget.totalElements} manifest elements (${math}) — ${Math.round(budget.utilization * 100)}% of the ~${LIVE_MANIFEST_ELEMENT_BUDGET} budget`,
 					path: `liveManifests[${index}].timeshift`,
 				});
-			}
 		}
+
 		if (someTimeshift && manifest.timeshift === undefined) {
 			issues.push({
 				code: "LIVE_TIMESHIFT_INCONSISTENT",

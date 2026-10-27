@@ -13,37 +13,26 @@ import {
 } from "./build-live-plan";
 import { liveStorageOptionsAvailable } from "./live-rendition-options";
 
-/** Shared optional fields live inside the existing rendition disclosures. */
-export function LiveRenditionFields({
+/** Source selection stays with the rendition's codec settings. */
+export function LiveInputFields({
 	idBase,
 	state,
 	input,
-	muxing,
-	container,
 	audio = false,
-	ownsContainer = true,
 	onInputChange,
-	onMuxingChange,
 }: {
 	idBase: string;
 	state: LiveWizardState;
 	input?: LiveInputSelection;
-	muxing?: LiveMuxingOptions;
-	container: "FMP4" | "CMAF" | "TS";
 	audio?: boolean;
-	ownsContainer?: boolean;
 	onInputChange: (input: LiveInputSelection | undefined) => void;
-	onMuxingChange: (muxing: LiveMuxingOptions | undefined) => void;
 }) {
 	const { t } = useT();
-	const storage = liveStorageOptionsAvailable(state);
 	const patchInput = (patch: Partial<LiveInputSelection>) => {
 		// Editing a shared imported selection detaches only this rendition.
 		const { key: _key, ...values } = input ?? {};
 		onInputChange(collapseGroup({ ...values, ...patch }));
 	};
-	const patchMuxing = (patch: Partial<LiveMuxingOptions>) =>
-		onMuxingChange(collapseGroup({ ...muxing, ...patch }));
 	return (
 		<div className="space-y-3">
 			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -84,6 +73,32 @@ export function LiveRenditionFields({
 					/>
 				</Field>
 			</div>
+		</div>
+	);
+}
+
+/** Output paths and file naming are edited in the Packaging step. */
+export function LiveMuxingFields({
+	idBase,
+	state,
+	muxing,
+	container,
+	ownsContainer = true,
+	onMuxingChange,
+}: {
+	idBase: string;
+	state: LiveWizardState;
+	muxing?: LiveMuxingOptions;
+	container: "FMP4" | "CMAF" | "TS";
+	ownsContainer?: boolean;
+	onMuxingChange: (muxing: LiveMuxingOptions | undefined) => void;
+}) {
+	const { t } = useT();
+	const storage = liveStorageOptionsAvailable(state);
+	const patchMuxing = (patch: Partial<LiveMuxingOptions>) =>
+		onMuxingChange(collapseGroup({ ...muxing, ...patch }));
+	return (
+		<div className="space-y-3">
 			{storage && ownsContainer ? (
 				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<Field

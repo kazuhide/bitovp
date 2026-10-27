@@ -48,10 +48,22 @@ import type {
 	PerTitleActualQcUnit,
 	PerTitleActualVideoFamilies,
 } from "@bitovp/core";
+import { createFilenameMatcher } from "@bitovp/core";
 import {
 	expandRandomFilenameTokens,
 	initSegmentCandidates,
 } from "../bitmovin/filename-template";
+import {
+	bindHlsVideoReferences,
+	checkHlsReferenceObjects,
+	type HlsVideoReferences,
+	referencedObjectKey,
+	storageObjectUrl,
+} from "./hls-video-reference-binding";
+import {
+	collectHlsReferenceChecks,
+	selectedHlsAudioGroups,
+} from "./manifest-reference-checks";
 import {
 	MAX_NORMALIZED_BITRATE_COST,
 	matchOneToOne,
@@ -62,6 +74,11 @@ import {
 	bindPerTitleDelivery,
 	type PerTitleDeliveryBinding,
 } from "./per-title-delivery";
+import { perTitleMediaExpectation } from "./per-title-media";
+import {
+	scopedPerTitleResults,
+	scopedPerTitleVideoFamilies,
+} from "./per-title-selection";
 import { MAX_SUBTITLE_XML_BYTES, validateSubtitleXml } from "./subtitle-xml";
 
 export type Verdict = "PASS" | "WARN" | "FAIL" | "SKIP";
@@ -204,7 +221,14 @@ export type ParsedHls = {
 	 * (`:media-names-unique`), because `m3u8-parser` keys media BY name and so
 	 * collapses a duplicate — a defect this binding must not be the sole reader of.
 	 */
-	media: { type: string; groupId?: string; name?: string; uri?: string }[];
+	media: {
+		type: string;
+		groupId?: string;
+		name?: string;
+		uri?: string;
+		language?: string;
+		instreamId?: string;
+	}[];
 	version?: number;
 	/**
 	 * Segment count, for a MEDIA playlist. Present so "the parser accepted it" can be
@@ -220,12 +244,24 @@ export type ParsedHls = {
 	 */
 	segmentUris?: string[];
 	mapUri?: string;
+	/** Per-segment addressing, retaining every initialization change and byte range. */
+	mediaSegments?: {
+		uri: string;
+		byteRange?: { offset?: number; length?: number };
+		map?: { uri: string; byteRange?: { offset?: number; length?: number } };
+	}[];
 };
 
 export type ParsedDash = {
 	representations: {
+		periodIndex?: number;
+		/** Concrete image references expanded by the DASH parser, including inherited templates. */
+		imageUris?: string[];
+		baseUrl?: string;
+		language?: string;
 		id?: string;
 		height?: number;
+		width?: number;
 		bandwidth?: number;
 		/**
 		 * The RFC 6381 codec string this representation (or its AdaptationSet)
@@ -242,7 +278,7 @@ export type ParsedDash = {
 		 * an audio-only MPD with four expected video entries used to pass a
 		 * count-of-everything check as long as the TOTAL happened to be right.
 		 */
-		kind: "video" | "audio" | "text" | "unknown";
+		kind: "video" | "audio" | "text" | "image" | "unknown";
 	}[];
 	periods: number;
 	durationSec?: number;
@@ -253,6 +289,10 @@ export type ParsedDash = {
 	playlists?: {
 		kind: "video" | "audio" | "unknown";
 		id?: string;
+		baseUrl?: string;
+		periodIndex?: number;
+		/** A parser playlist may aggregate the same file across several periods. */
+		periodIndices?: number[];
 		codecs?: string;
 		mapUri?: string;
 		segmentUris: string[];
@@ -263,7 +303,8 @@ export type ParsedDash = {
 	 * one set) and no count-based check could see.
 	 */
 	adaptationSets?: {
-		kind: "video" | "audio" | "text" | "unknown";
+		periodIndex?: number;
+		kind: "video" | "audio" | "text" | "image" | "unknown";
 		codecs: string[];
 	}[];
 };
@@ -576,11 +617,18 @@ async function verifyMuxing(
 	// ---- the container family decides which files must be there ---------------
 	const single =
 		muxing.container === "TEXT_SINGLE" ||
+		muxing.container === "WEBM_PROGRESSIVE" ||
 		muxing.container === "MP4_PROGRESSIVE" ||
 		muxing.container === "MP4_FRAGMENTED";
 	if (single) {
 		const name = muxing.filename;
-		const hit = name ? keys.find((k) => k.endsWith(name)) : undefined;
+		const hit = name
+			? keys.find((k) =>
+					muxing.container === "WEBM_PROGRESSIVE"
+						? dirs.some((dir) => k === `${dir.prefix}${name}`)
+						: k.endsWith(name),
+				)
+			: undefined;
 		if (
 			!report.assert(
 				`${id}:file`,
@@ -590,6 +638,22 @@ async function verifyMuxing(
 			)
 		) {
 			return;
+		}
+		if (muxing.container === "WEBM_PROGRESSIVE") {
+			const object = listedKeys.find((entry) => entry.key === hit);
+			if (object?.size === undefined)
+				report.skip(
+					`${id}:file-bytes`,
+					"muxing",
+					"Object size unavailable for the progressive WebM file",
+				);
+			else
+				report.assert(
+					`${id}:file-bytes`,
+					"muxing",
+					object.size > 0,
+					"Progressive WebM file must contain bytes",
+				);
 		}
 		if (muxing.container === "TEXT_SINGLE") {
 			const listed = listedKeys.find((x) => x.key === hit);
@@ -629,7 +693,7 @@ async function verifyMuxing(
 			}
 			return;
 		}
-		// A progressive or fragmented MP4 is self-contained: one key, no init to prepend.
+		// A progressive WebM or MP4 is self-contained: one key, no init to prepend.
 		await verifyMediaProperties(
 			report,
 			deps,
@@ -1390,6 +1454,14 @@ async function verifyMediaProperties(
 	}
 
 	if (muxing.video) {
+		if (muxing.video.width !== undefined && !muxing.perTitle) {
+			report.assert(
+				`${id}:width`,
+				"rendition",
+				probe.width === muxing.video.width,
+				`width ${muxing.video.width} — ${probe.width ?? "none"}`,
+			);
+		}
 		const wantHeight = muxing.video.height;
 		if (wantHeight === null || muxing.perTitle) {
 			// Per-title heights are algorithmic (C1/C4): assert presence and sanity,
@@ -1760,6 +1832,7 @@ function attributeRankCost(
  * What the engine knows about a manifest beyond its topology (row 284).
  */
 export type TopologyContext = {
+	hlsAudioGroups?: ExpectedManifest["hlsAudioGroups"];
 	/** The manifest's video ladder is encoder-chosen (`ExpectedManifest.perTitle`). */
 	perTitle: boolean;
 	/** The per-title RESULT population's families, when the caller captured them. */
@@ -1825,6 +1898,18 @@ function verifyPerTitleVideoFamilies(
 			? ` (+ unrecognised ${manifest.unrecognised.join(", ")})`
 			: ""
 	}`;
+	if (
+		(manifest.unrecognised.length > 0 ||
+			[...manifest.families].some((family) => !declared.includes(family))) &&
+		(actual?.status !== "complete" || manifest.rowsWithCodecs < manifest.rows)
+	) {
+		report.fail(
+			cid,
+			"manifest",
+			`The manifest declares a video codec outside the selected templates; ${seen}`,
+		);
+		return;
+	}
 	if (actual === undefined) {
 		report.skip(
 			cid,
@@ -1865,6 +1950,731 @@ function verifyPerTitleVideoFamilies(
 	);
 }
 
+/** Provider-chosen playlist names are observed identities, bound to declared media writers. */
+async function bindDefaultHlsTopology(
+	report: ReportBuilder,
+	id: string,
+	manifest: ExpectedManifest,
+	parsed: ParsedHls,
+	deps: EngineDeps,
+	muxings: readonly ExpectedMuxing[],
+): Promise<void> {
+	const selection = manifest.hlsDefault;
+	if (!selection) return;
+	const root = new URL("https://manifest-storage.invalid/");
+	const children = new Map<string, ParsedHls | undefined>();
+	const childKeys = new Map<string, string>();
+	const child = async (uri: string): Promise<ParsedHls | undefined> => {
+		if (!children.has(uri)) {
+			try {
+				const key = referencedObjectKey(
+					uri,
+					storageObjectUrl(
+						root,
+						`${manifest.dir.prefix}${manifest.files[0] ?? "stream.m3u8"}`,
+					),
+					root,
+				);
+				if (key === undefined)
+					throw new Error("The generated child has no local storage identity");
+				childKeys.set(uri, key);
+				children.set(
+					uri,
+					await deps.parseHls(await deps.readText(manifest.outputKey, key)),
+				);
+			} catch {
+				children.set(uri, undefined);
+			}
+		}
+		return children.get(uri);
+	};
+	type Track = (typeof selection.tracks)[number];
+	type Writer = Track["resources"][number] & {
+		actualWriterId?: string;
+		resultStreamId?: string;
+	};
+	type WriterBinding = Check & {
+		writerIdentity?: string;
+		muxingKey?: string;
+		resultStreamId?: string;
+	};
+	const writerListings = new Map<string, Promise<ObjectEntry[]>>();
+	const writerObjects = (resource: Writer) => {
+		const key = JSON.stringify([manifest.outputKey, resource.directory]);
+		let listing = writerListings.get(key);
+		if (!listing) {
+			listing = deps
+				.listAll(manifest.outputKey, resource.directory)
+				.then((objects) =>
+					objects.filter(
+						(object) => deps.foreignKeyFilter?.(object.key, object) !== true,
+					),
+				);
+			writerListings.set(key, listing);
+		}
+		return listing;
+	};
+	const resources = (track: Track): Writer[] => {
+		if (!track.perTitle) return track.resources;
+		const population = deps.perTitlePopulations;
+		const outputId = deps.providerOutputIds?.[manifest.outputKey];
+		if (population?.status !== "complete" || !outputId) return [];
+		return population.deliveryMuxings
+			.filter(
+				(muxing) =>
+					muxing.templateRendition === track.renditionKey &&
+					population.results.some(
+						(result) =>
+							result.streamId === muxing.streamId &&
+							result.templateRendition === track.renditionKey,
+					),
+			)
+			.flatMap((muxing) =>
+				muxing.legs
+					.filter((leg) => leg.outputId === outputId)
+					.flatMap((leg) =>
+						track.resources
+							.filter(
+								(resource) =>
+									resource.container === muxing.muxingType.toUpperCase() &&
+									(resource.drmKey
+										? leg.drmId !== undefined
+										: leg.drmId === undefined),
+							)
+							.map((resource) => ({
+								...resource,
+								directory: leg.resolvedPath,
+								actualWriterId: `${muxing.streamId}:${muxing.muxingId}:${leg.drmId ?? "clear"}:${leg.outputId}`,
+								resultStreamId: muxing.streamId,
+								...(muxing.filename ? { filename: muxing.filename } : {}),
+							})),
+					),
+			);
+	};
+	const binding = async (
+		track: Track,
+		uri: string,
+		candidate?: Writer,
+	): Promise<WriterBinding> => {
+		const playlist = await child(uri);
+		if (!playlist)
+			return {
+				id: "",
+				area: "manifest" as const,
+				verdict: "FAIL" as const,
+				detail:
+					"The provider-selected child playlist could not be read and parsed",
+			};
+		const candidates = candidate ? [candidate] : resources(track);
+		if (track.perTitle && !candidates.length)
+			return {
+				id: "",
+				area: "manifest" as const,
+				verdict: "SKIP" as const,
+				detail:
+					"UNVERIFIED — selected Per-Title writer identities need attributed RESULT output legs and provider output IDs",
+			};
+		const checks = await Promise.all(
+			candidates.map(async (resource) => {
+				const bound = bindHlsVideoReferences("", { resource }, playlist, {
+					outputKey: manifest.outputKey,
+					playlist: storageObjectUrl(root, childKeys.get(uri) ?? ""),
+					storageRoot: root,
+				});
+				let check = bound.check;
+				if (check.verdict === "PASS") {
+					try {
+						check = checkHlsReferenceObjects(
+							"",
+							bound.objects,
+							await writerObjects(resource),
+						);
+					} catch {
+						check = {
+							id: "",
+							area: "manifest",
+							verdict: "FAIL",
+							detail:
+								"The selected HLS writer's complete object listing could not be read",
+						};
+					}
+				}
+				return {
+					...check,
+					writerIdentity:
+						resource.actualWriterId ??
+						JSON.stringify([
+							resource.muxingKey,
+							resource.drmKey,
+							resource.outputKey,
+							resource.directory,
+						]),
+					muxingKey: resource.muxingKey,
+					resultStreamId: resource.resultStreamId,
+				};
+			}),
+		);
+		const passed = checks.filter((check) => check.verdict === "PASS");
+		if (new Set(passed.map((check) => check.writerIdentity)).size > 1)
+			return {
+				id: "",
+				area: "manifest",
+				verdict: "SKIP",
+				detail:
+					"UNVERIFIED — child references match multiple selected writer identities",
+			};
+		return (
+			passed[0] ??
+			checks.find((check) => check.verdict === "SKIP") ?? {
+				id: "",
+				area: "manifest",
+				verdict: "FAIL",
+				detail:
+					"The generated child does not reference a media writer selected by this encoding",
+			}
+		);
+	};
+	const unique = <T extends { uri: string }>(rows: T[]) => [
+		...new Map(rows.map((row) => [row.uri, row])).values(),
+	];
+	const hasVideoCodec = (codecs: string | undefined) =>
+		codecTokens(codecs).some((token) => videoFamilyOf(token) !== undefined);
+	const videoRows = unique(
+		parsed.variants.filter(
+			(row) =>
+				row.resolution !== undefined ||
+				hasVideoCodec(row.codecs) ||
+				(row.codecs === undefined &&
+					selection.tracks.some((track) => track.kind === "video")),
+		),
+	);
+	const audioRows = unique([
+		...parsed.media.flatMap((row) =>
+			row.type === "AUDIO" && row.uri ? [{ ...row, uri: row.uri }] : [],
+		),
+		...parsed.variants.filter(
+			(row) =>
+				row.resolution === undefined &&
+				row.codecs !== undefined &&
+				codecTokens(row.codecs).every(isAudioToken),
+		),
+	]);
+	const textRows = unique(
+		parsed.media.flatMap((row) =>
+			row.type === "SUBTITLES" && row.uri ? [{ ...row, uri: row.uri }] : [],
+		),
+	);
+	const actual = scopedPerTitleVideoFamilies(
+		deps.perTitlePopulations,
+		selection.perTitleSelection,
+	);
+	const selectedResults = scopedPerTitleResults(
+		deps.perTitlePopulations,
+		selection.perTitleSelection,
+	);
+	const population = deps.perTitlePopulations;
+	const capturedVideoMaximum =
+		selectedResults.status === "complete" && population?.status === "complete"
+			? selection.tracks
+					.filter((track) => track.kind === "video")
+					.reduce(
+						(total, track) =>
+							total +
+							track.resources.length *
+								(track.perTitle
+									? population.results.filter(
+											(result) =>
+												result.templateRendition === track.renditionKey,
+										).length
+									: 1),
+						0,
+					)
+			: undefined;
+	for (const [kind, rows] of [
+		["audio", audioRows],
+		["text", textRows],
+	] as const) {
+		const bound = selection.counts[kind];
+		const minimum = bound.min;
+		const maximum = bound.max;
+		report.assert(
+			`${id}:default-${kind}-count`,
+			"manifest",
+			rows.length >= minimum &&
+				(maximum === undefined || rows.length <= maximum),
+			`${kind} playlists from encoding ${selection.encodingKey}: expected ${minimum}${maximum === minimum ? "" : `–${maximum ?? "encoder-selected"}`}, observed ${rows.length}`,
+		);
+	}
+	const variantIdentities = parsed.variants.map((row) =>
+		JSON.stringify([
+			row.uri,
+			row.audio,
+			row.resolution,
+			row.codecs,
+			row.bandwidth,
+		]),
+	);
+	report.assert(
+		`${id}:default-variants-duplicate`,
+		"manifest",
+		new Set(variantIdentities).size === variantIdentities.length,
+		"A Default HLS master must not repeat an identical variant row",
+	);
+	for (const [index, reason] of selection.unverified.entries())
+		report.skip(
+			`${id}:default-selection:${index}`,
+			"manifest",
+			`UNVERIFIED — ${reason}`,
+		);
+	const checkVideoAttributes = (track: Track, cid: string, uri: string) => {
+		for (const [index, row] of parsed.variants
+			.filter((row) => row.uri === uri)
+			.entries()) {
+			const vid = `${cid}:row:${index}`;
+			if (!track.perTitle && track.height !== undefined) {
+				if (row.resolution === undefined)
+					report.skip(
+						`${vid}:resolution`,
+						"manifest",
+						"The generated variant declares no resolution",
+					);
+				else
+					report.assert(
+						`${vid}:resolution`,
+						"manifest",
+						resolutionHeight(row.resolution) === track.height,
+						`Video height ${track.height} — ${row.resolution}`,
+					);
+			}
+			if (!track.perTitle && track.width !== undefined) {
+				if (row.resolution === undefined)
+					report.skip(
+						`${vid}:width`,
+						"manifest",
+						"The generated variant declares no resolution",
+					);
+				else
+					report.assert(
+						`${vid}:width`,
+						"manifest",
+						Number(row.resolution.split("x")[0]) === track.width,
+						`Video width ${track.width} — ${row.resolution}`,
+					);
+			}
+			if (row.codecs === undefined)
+				report.skip(
+					`${vid}:codec`,
+					"manifest",
+					"The generated variant declares no codecs",
+				);
+			else
+				report.assert(
+					`${vid}:codec`,
+					"manifest",
+					codecTokens(row.codecs).some((token) =>
+						rfcCodecMatches(token, track.codec),
+					),
+					`Video codec ${track.codec} — ${row.codecs}`,
+				);
+			if (!track.perTitle && track.bitrate !== undefined) {
+				if (row.bandwidth === undefined)
+					report.skip(
+						`${vid}:bandwidth`,
+						"manifest",
+						"The generated variant declares no bandwidth",
+					);
+				else {
+					const ratio = row.bandwidth / track.bitrate;
+					report.assert(
+						`${vid}:bandwidth`,
+						"manifest",
+						ratio >= HLS_BANDWIDTH_LOW && ratio <= HLS_BANDWIDTH_HIGH,
+						`Variant bandwidth ${row.bandwidth} must match the declared video target ${track.bitrate} plus audio and overhead`,
+					);
+				}
+			}
+		}
+	};
+	const boundWriters = new Map<
+		string,
+		{ source: WriterBinding; track: Track }
+	>();
+	const matchTracks = async (
+		kind: "video" | "audio",
+		rows: { uri: string; language?: string }[],
+	) => {
+		const tracks = selection.tracks.filter(
+			(track) => track.kind === kind && !track.perTitle,
+		);
+		const nodes = tracks.flatMap((track) =>
+			track.resources.map((resource, index) => ({
+				key: `${track.renditionKey}:${index}`,
+				track,
+				resource,
+			})),
+		);
+		const checks = new Map<string, WriterBinding>();
+		for (const node of nodes)
+			for (const row of rows)
+				checks.set(
+					`${node.key}\u0000${row.uri}`,
+					await binding(node.track, row.uri, node.resource),
+				);
+		const matched = matchOneToOne({
+			expected: nodes,
+			observed: rows,
+			expectedKey: (node) => node.key,
+			observedKey: (row) => row.uri,
+			compatible: (node, row) => {
+				const check = checks.get(`${node.key}\u0000${row.uri}`);
+				return check !== undefined && check.verdict !== "FAIL";
+			},
+			cost: () => 0,
+		});
+		for (const track of tracks)
+			report.assert(
+				`${id}:default-${kind}:${track.renditionKey}:0:present`,
+				"manifest",
+				matched.pairs.some(
+					(pair) => pair.expected.track.renditionKey === track.renditionKey,
+				),
+				`Selected encoding track ${track.renditionKey} must be referenced by a generated ${kind} playlist`,
+			);
+		for (const node of nodes) {
+			const pair = matched.pairs.find(
+				(entry) => entry.expected.key === node.key,
+			);
+			const cid = `${id}:default-${kind}:${node.key}`;
+			if (!pair) continue;
+			const source = checks.get(`${node.key}\u0000${pair.observed.uri}`);
+			if (source) {
+				boundWriters.set(`${kind}:${pair.observed.uri}`, {
+					source,
+					track: node.track,
+				});
+				report.add(
+					`${cid}:writer`,
+					"manifest",
+					source.verdict,
+					source.detail.replaceAll("VIDEO", kind),
+				);
+			}
+			if (kind === "audio" && node.track.language !== undefined)
+				report.assert(
+					`${cid}:language`,
+					"manifest",
+					pair.observed.language === node.track.language,
+					`Audio language ${node.track.language} — ${pair.observed.language ?? "absent"}`,
+				);
+			if (kind === "video")
+				checkVideoAttributes(node.track, cid, pair.observed.uri);
+		}
+		return matched.unmatchedObserved;
+	};
+	const remainingVideo = await matchTracks("video", videoRows);
+	const remainingAudio = await matchTracks("audio", audioRows);
+	const perTitleTracks = selection.tracks.filter(
+		(track) => track.perTitle && track.kind === "video",
+	);
+	if (
+		population?.status === "complete" &&
+		population.results.every((result) => result.templateRendition !== undefined)
+	)
+		for (const track of perTitleTracks.filter(
+			(track) => track.mode !== "PER_TITLE_TEMPLATE",
+		))
+			report.assert(
+				`${id}:default-video-required:${track.renditionKey}`,
+				"manifest",
+				population.results.some(
+					(result) => result.templateRendition === track.renditionKey,
+				),
+				`Fixed Per-Title template ${track.renditionKey} must produce a captured RESULT`,
+			);
+	for (const [index, row] of remainingVideo.entries()) {
+		const checks = await Promise.all(
+			selection.tracks
+				.filter((track) => track.kind === "video")
+				.map(async (track) => ({
+					track,
+					source: await binding(track, row.uri),
+				})),
+		);
+		const matched =
+			checks.find(({ source }) => source.verdict === "PASS") ??
+			checks.find(({ source }) => source.verdict === "SKIP");
+		if (matched) {
+			boundWriters.set(`video:${row.uri}`, matched);
+			report.add(
+				`${id}:default-video-result:${index}:writer`,
+				"manifest",
+				matched.source.verdict,
+				matched.source.detail,
+			);
+			if (!matched.track.perTitle || matched.source.verdict === "PASS")
+				checkVideoAttributes(
+					matched.track,
+					`${id}:default-video-alias:${index}`,
+					row.uri,
+				);
+		} else
+			report.fail(
+				`${id}:default-video-result:${index}:writer`,
+				"manifest",
+				"A generated video playlist belongs to no selected fixed or Per-Title media writer",
+			);
+	}
+	const writers = videoRows.map(
+		(row) => boundWriters.get(`video:${row.uri}`)?.source,
+	);
+	const minimum =
+		selectedResults.status === "complete"
+			? selection.tracks.filter(
+					(track) => track.kind === "video" && !track.perTitle,
+				).length + selectedResults.results.length
+			: selection.counts.video.min;
+	const maximum = capturedVideoMaximum ?? selection.counts.video.max;
+	if (
+		writers.every(
+			(writer) =>
+				writer?.verdict === "PASS" && writer.writerIdentity !== undefined,
+		)
+	) {
+		const count = new Set(writers.map((writer) => writer?.writerIdentity)).size;
+		report.assert(
+			`${id}:default-video-count`,
+			"manifest",
+			count >= minimum && (maximum === undefined || count <= maximum),
+			`Selected video writers from encoding ${selection.encodingKey}: expected ${minimum}${maximum === minimum ? "" : `–${maximum ?? "encoder-selected"}`}, observed ${count}`,
+		);
+	} else if (videoRows.length < selection.counts.video.min)
+		report.fail(
+			`${id}:default-video-count`,
+			"manifest",
+			"The generated master omits selected video tracks",
+		);
+	else
+		report.skip(
+			`${id}:default-video-count`,
+			"manifest",
+			"UNVERIFIED — video writer identities are incomplete or ambiguous, so variant aliases cannot establish a rung count",
+		);
+	if (selectedResults.status === "complete") {
+		const covered = new Set(
+			writers.flatMap((writer) =>
+				writer?.verdict === "PASS" && writer.resultStreamId
+					? [writer.resultStreamId]
+					: [],
+			),
+		);
+		for (const result of selectedResults.results) {
+			const cid = `${id}:default-video-result:${result.streamId}:present`;
+			if (
+				!covered.has(result.streamId) &&
+				writers.some((writer) => writer?.verdict === "SKIP")
+			)
+				report.skip(
+					cid,
+					"manifest",
+					`UNVERIFIED — generated video writer provenance cannot establish whether RESULT ${result.streamId} is present`,
+				);
+			else
+				report.assert(
+					cid,
+					"manifest",
+					covered.has(result.streamId),
+					`Selected RESULT ${result.streamId} must have a generated video playlist; alternative containers cannot replace another RESULT`,
+				);
+		}
+	}
+	const associations = new Set<string>();
+	let duplicateAssociation = false,
+		unverifiedAssociation = false;
+	for (const [index, row] of parsed.variants
+		.filter((variant) => videoRows.some((video) => video.uri === variant.uri))
+		.entries()) {
+		const writer = boundWriters.get(`video:${row.uri}`)?.source;
+		let audioIdentity: string | undefined = "self-contained";
+		let audioCodecs: string[] = [];
+		if (row.audio !== undefined) {
+			const media = parsed.media.filter(
+				(entry) => entry.type === "AUDIO" && entry.groupId === row.audio,
+			);
+			const audio = media.map((entry) =>
+				entry.uri ? boundWriters.get(`audio:${entry.uri}`) : undefined,
+			);
+			audioIdentity =
+				media.length &&
+				audio.every(
+					(bound) =>
+						bound?.source.verdict === "PASS" &&
+						bound.source.writerIdentity !== undefined,
+				)
+					? [...new Set(audio.map((bound) => bound?.source.writerIdentity))]
+							.sort()
+							.join("|")
+					: undefined;
+			if (audioIdentity !== undefined)
+				audioCodecs = audio.flatMap((bound) =>
+					bound ? [bound.track.codec] : [],
+				);
+		} else if (writer?.verdict === "PASS" && writer.muxingKey !== undefined) {
+			const muxing = muxings.find((row) => row.muxingKey === writer.muxingKey);
+			if (muxing?.audio) audioCodecs = [muxing.audio.codec];
+			else if (selection.tracks.some((track) => track.kind === "audio"))
+				report.fail(
+					`${id}:default-video-audio:${index}`,
+					"manifest",
+					"The selected video writer carries no audio and its variant references no selected audio group",
+				);
+		}
+		if (audioCodecs.length) {
+			if (row.codecs === undefined)
+				report.skip(
+					`${id}:default-video-audio:${index}:codecs`,
+					"manifest",
+					"UNVERIFIED — the generated variant declares no audio codecs",
+				);
+			else
+				report.assert(
+					`${id}:default-video-audio:${index}:codecs`,
+					"manifest",
+					audioCodecs.every((codec) =>
+						codecTokens(row.codecs).some((token) =>
+							rfcCodecMatches(token, codec),
+						),
+					),
+					`The variant audio codecs must match its selected audio writers (${[...new Set(audioCodecs)].join(", ")}) — ${row.codecs}`,
+				);
+		}
+		if (
+			writer?.verdict !== "PASS" ||
+			writer.writerIdentity === undefined ||
+			audioIdentity === undefined
+		) {
+			unverifiedAssociation = true;
+			continue;
+		}
+		const identity = `${writer.writerIdentity}\u0000${audioIdentity}`;
+		if (associations.has(identity)) duplicateAssociation = true;
+		associations.add(identity);
+	}
+	if (duplicateAssociation)
+		report.fail(
+			`${id}:default-video-associations`,
+			"manifest",
+			"A selected video writer and audio-writer association is repeated under multiple variant aliases",
+		);
+	else if (unverifiedAssociation)
+		report.skip(
+			`${id}:default-video-associations`,
+			"manifest",
+			"UNVERIFIED — video or audio-group writer provenance cannot prove distinct variant associations",
+		);
+	else
+		report.pass(
+			`${id}:default-video-associations`,
+			"manifest",
+			"Every video writer and trusted audio-writer association is distinct; separate audio choices remain valid",
+		);
+	report.assert(
+		`${id}:default-audio-unexpected`,
+		"manifest",
+		remainingAudio.length === 0,
+		"Every generated audio playlist must bind to a selected audio writer",
+	);
+	if (perTitleTracks.length)
+		verifyPerTitleVideoFamilies(
+			report,
+			id,
+			[...new Set(perTitleTracks.map((track) => track.codec))],
+			manifestVideoFamilies(
+				remainingVideo
+					.filter((row) => boundWriters.get(`video:${row.uri}`)?.track.perTitle)
+					.map((row) => ({
+						codecs: parsed.variants.find((variant) => variant.uri === row.uri)
+							?.codecs,
+					})),
+			),
+			actual,
+		);
+	const textTracks = selection.tracks.filter((track) => track.kind === "text");
+	const textBindings = new Map<string, Check["verdict"]>();
+	for (const track of textTracks)
+		for (const row of textRows) {
+			const playlist = await child(row.uri);
+			const playlistUrl = storageObjectUrl(root, childKeys.get(row.uri) ?? "");
+			let verdict: Check["verdict"] = "FAIL";
+			if (playlist?.segmentUris?.length && !playlist.mapUri)
+				for (const resource of track.textResources ?? []) {
+					if (!resource.outputKeys.includes(manifest.outputKey)) continue;
+					const match = createFilenameMatcher(resource.filename, {
+						policyTokens: true,
+						randomTokens: false,
+					});
+					const observed = playlist.segmentUris.map((reference) => {
+						const key = referencedObjectKey(reference, playlistUrl, root);
+						return key?.startsWith(resource.directory)
+							? match(key.slice(resource.directory.length))
+							: "NO_MATCH";
+					});
+					if (observed.every((result) => result === "MATCH")) {
+						verdict = "PASS";
+						break;
+					}
+					if (!observed.includes("NO_MATCH")) verdict = "SKIP";
+				}
+			textBindings.set(`${track.renditionKey}\u0000${row.uri}`, verdict);
+		}
+	const text = matchOneToOne({
+		expected: textTracks,
+		observed: textRows,
+		expectedKey: (track) => track.renditionKey,
+		observedKey: (row) => row.uri,
+		compatible: (track, row) => {
+			const verdict = textBindings.get(`${track.renditionKey}\u0000${row.uri}`);
+			return verdict !== undefined && verdict !== "FAIL";
+		},
+		cost: () => 0,
+	});
+	for (const track of textTracks) {
+		const pair = text.pairs.find(
+			(row) => row.expected.renditionKey === track.renditionKey,
+		);
+		const cid = `${id}:default-text:${track.renditionKey}`;
+		if (
+			!report.assert(
+				`${cid}:present`,
+				"manifest",
+				pair !== undefined,
+				`Selected subtitle track ${track.renditionKey} must reference its configured writer`,
+			) ||
+			!pair
+		)
+			continue;
+		report.add(
+			`${cid}:writer`,
+			"manifest",
+			textBindings.get(`${track.renditionKey}\u0000${pair.observed.uri}`) ??
+				"FAIL",
+			"Generated subtitle references belong to the selected subtitle writer",
+		);
+		if (track.language !== undefined)
+			report.assert(
+				`${cid}:language`,
+				"manifest",
+				pair.observed.language === track.language,
+				`Subtitle language ${track.language} — ${pair.observed.language ?? "absent"}`,
+			);
+	}
+	report.assert(
+		`${id}:default-text-unexpected`,
+		"manifest",
+		text.unmatchedObserved.length === 0,
+		"Every generated subtitle playlist must bind to a selected subtitle writer",
+	);
+}
+
 /**
  * Bind each HLS master row to its planned node, one-to-one.
  * An EXT-X-STREAM-INF row's
@@ -1887,7 +2697,10 @@ export function bindHlsTopology(
 	ctx: TopologyContext,
 ): void {
 	// ---- EXT-X-STREAM-INF rows ------------------------------------------------
-	const nodes = topology.hlsVariants ?? [];
+	const selection = ctx.hlsAudioGroups
+		? selectedHlsAudioGroups(ctx.hlsAudioGroups, parsed)
+		: undefined;
+	const nodes = selection?.dropStream ? [] : (topology.hlsVariants ?? []);
 	const rows = parsed.variants.map((v, index) => ({ ...v, index }));
 	type Row = (typeof rows)[number];
 	const rowLabel = (o: Row) =>
@@ -1907,7 +2720,12 @@ export function bindHlsTopology(
 				o.bandwidth ?? "",
 			].join("\u0000"),
 		compatible: (e, o) =>
-			o.uri === e.uri && (o.audio ?? undefined) === (e.audioGroup ?? undefined),
+			o.uri === e.uri &&
+			(selection
+				? selection.groups.length
+					? o.audio !== undefined && selection.groups.includes(o.audio)
+					: o.audio === undefined
+				: (o.audio ?? undefined) === (e.audioGroup ?? undefined)),
 		cost: (e, o) =>
 			normalizedBitrateCost(e.bitrate, o.bandwidth) +
 			attributeRankCost([
@@ -1931,7 +2749,14 @@ export function bindHlsTopology(
 	for (const want of nodes) {
 		const cid = `${id}:variant:${want.key}`;
 		const pair = boundVariant.get(want.key);
-		const identity = `URI ${want.uri} and ${want.audioGroup !== undefined ? `AUDIO=${JSON.stringify(want.audioGroup)}` : "no AUDIO attribute (self-contained)"}`;
+		const audioIdentity = selection
+			? selection.groups.length
+				? `AUDIO=${JSON.stringify(selection.groups[0])} selected by configured priority`
+				: "no AUDIO attribute after audio-group dropping"
+			: want.audioGroup !== undefined
+				? `AUDIO=${JSON.stringify(want.audioGroup)}`
+				: "no AUDIO attribute (self-contained)";
+		const identity = `URI ${want.uri} and ${audioIdentity}`;
 		const present = report.assert(
 			`${cid}:present`,
 			"manifest",
@@ -2205,7 +3030,11 @@ export function bindDashTopology(
 					? videoFamilies
 					: set.kind === "audio"
 						? audioFamilies
-						: [];
+						: set.kind === "text"
+							? (topology.textCodecs ?? [])
+							: set.kind === "image"
+								? (topology.imageCodecs ?? [])
+								: [];
 			// Two bindings in one pass: every codec belongs to a plan family for
 			// this set's kind (membership — a video set carrying an audio codec, or
 			// a codec no rendition planned), AND the set draws from ONE family
@@ -2213,7 +3042,11 @@ export function bindDashTopology(
 			// alone misses when the plan legitimately has both).
 			const seenFamilies = new Set<string>();
 			for (const c of set.codecs) {
-				const fam = families.find((f) => rfcCodecMatches(c, f));
+				const fam = families.find((f) =>
+					set.kind === "text" || set.kind === "image"
+						? c.toLowerCase().startsWith(f.toLowerCase())
+						: rfcCodecMatches(c, f),
+				);
 				if (fam === undefined) {
 					offenders.push(`${set.kind} set carries ${c} (no plan family)`);
 				} else {
@@ -2242,7 +3075,9 @@ export function bindDashTopology(
 		kind: "video" | "audio";
 		codec: string;
 		height?: number;
+		width?: number;
 		bitrate?: number;
+		optional?: true;
 	};
 	const nodes: Node[] = [
 		...topology.video.map<Node>((v) => ({
@@ -2251,7 +3086,9 @@ export function bindDashTopology(
 			kind: "video",
 			codec: v.codec,
 			height: v.height,
+			width: v.width,
 			bitrate: v.bitrate,
+			...(v.optional ? { optional: true } : {}),
 		})),
 		...topology.audio.map<Node>((a) => ({
 			key: a.renditionKey,
@@ -2259,6 +3096,7 @@ export function bindDashTopology(
 			kind: "audio",
 			codec: a.codec,
 			...(a.bitrate !== undefined ? { bitrate: a.bitrate } : {}),
+			...(a.optional ? { optional: true } : {}),
 		})),
 	];
 	const reps = parsed.representations
@@ -2271,6 +3109,7 @@ export function bindDashTopology(
 		codecTokens(r.codecs).some((t) => rfcCodecMatches(t, codec));
 	const matched = matchOneToOne({
 		expected: nodes,
+		isRequired: (node) => !node.optional,
 		observed: reps,
 		expectedKey: (n) => n.key,
 		// Representation id + canonical attributes. A representation the parser
@@ -2292,8 +3131,9 @@ export function bindDashTopology(
 					].join(" "),
 		compatible: (n, r) =>
 			n.kind === r.kind &&
+			(n.width === undefined || r.width === undefined || n.width === r.width) &&
 			(n.kind === "video"
-				? r.height === n.height
+				? n.height === undefined || r.height === n.height
 				: r.codecs === undefined || namesFamily(r, n.codec)),
 		cost: (n, r) =>
 			(n.bitrate === undefined
@@ -2314,21 +3154,32 @@ export function bindDashTopology(
 		const pair = bound.get(want.key);
 		const identity =
 			want.kind === "video"
-				? `video representation at ${want.height}p`
+				? want.height === undefined
+					? `video representation in family ${want.codec}`
+					: `video representation at ${want.height}p`
 				: `audio representation in family ${want.codec}`;
-		const present = report.assert(
-			`${cid}:present`,
-			"manifest",
-			pair !== undefined,
-			pair
-				? `${identity} bound to rendition ${want.renditionKey} — ${repLabel(pair.observed)} (cost ${pair.cost.toFixed(3)})`
-				: `no ${identity} left for rendition ${want.renditionKey} — ${want.kind} representations seen: ${
-						reps
-							.filter((r) => r.kind === want.kind)
-							.map(repLabel)
-							.join(", ") || "none"
-					}`,
-		);
+		let present = false;
+		if (want.optional && pair === undefined) {
+			report.skip(
+				`${cid}:present`,
+				"manifest",
+				"This rendition is optional because Default selection depends on unavailable metadata",
+			);
+		} else {
+			present = report.assert(
+				`${cid}:present`,
+				"manifest",
+				pair !== undefined,
+				pair
+					? `${identity} bound to rendition ${want.renditionKey} — ${repLabel(pair.observed)} (cost ${pair.cost.toFixed(3)})`
+					: `no ${identity} left for rendition ${want.renditionKey} — ${want.kind} representations seen: ${
+							reps
+								.filter((r) => r.kind === want.kind)
+								.map(repLabel)
+								.join(", ") || "none"
+						}`,
+			);
+		}
 		if (!present || pair === undefined) {
 			if (want.kind === "video") {
 				report.skip(
@@ -2346,6 +3197,27 @@ export function bindDashTopology(
 		}
 		const rep = pair.observed;
 		if (want.kind === "video") {
+			if (want.height === undefined)
+				report.skip(
+					`${cid}:height`,
+					"manifest",
+					"Video resolution is derived from the input; known codec and bitrate constraints remain checked",
+				);
+			if (want.width !== undefined) {
+				if (rep.width === undefined)
+					report.skip(
+						`${cid}:width`,
+						"manifest",
+						"The parser exposed no video width; its configured width remains UNVERIFIED",
+					);
+				else
+					report.assert(
+						`${cid}:width`,
+						"manifest",
+						rep.width === want.width,
+						`Configured video width is ${want.width}px`,
+					);
+			}
 			if (rep.codecs === undefined) {
 				report.skip(
 					`${cid}:codec`,
@@ -2433,10 +3305,46 @@ export function bindDashTopology(
 	}
 }
 
+async function listDeclaredManifestMedia(
+	deps: EngineDeps,
+	expected: ExpectedArtefacts,
+	manifest: ExpectedManifest,
+): Promise<Map<string, number | undefined>> {
+	const mirrored = expected.deliveryMirrorOutputKeys?.includes(
+		manifest.outputKey,
+	);
+	const declared = new Set([
+		manifest.dir.prefix,
+		...expected.muxings
+			.filter((row) => row.outputKey === manifest.outputKey || mirrored)
+			.map((row) => row.dir.prefix),
+		...expected.drm.flatMap((row) =>
+			row.dir && (row.outputKey === manifest.outputKey || mirrored)
+				? [row.dir.prefix]
+				: [],
+		),
+		// These references come from the validated plan, never from parsed MPD text.
+		...(manifest.dashProgressiveFiles ?? [])
+			.filter((file) => !/^https?:/i.test(file))
+			.map((file) => resolveReferencedKey(manifest.dir.prefix, file)),
+	]);
+	const candidates = [...declared];
+	const prefixes = candidates.filter(
+		(prefix) =>
+			!candidates.some((other) => other !== prefix && prefix.startsWith(other)),
+	);
+	const listing = new Map<string, number | undefined>();
+	for (const prefix of prefixes)
+		for (const object of await deps.listAll(manifest.outputKey, prefix))
+			listing.set(object.key, object.size);
+	return listing;
+}
+
 async function verifyManifest(
 	report: ReportBuilder,
 	deps: EngineDeps,
 	manifest: ExpectedManifest,
+	expected: ExpectedArtefacts,
 ): Promise<void> {
 	const base = `manifest:${manifest.manifestKey}`;
 	for (const file of manifest.files) {
@@ -2567,12 +3475,13 @@ async function verifyManifest(
 				// Counted from the LINES, not the parser: the parser collapses.
 				// Per-title too (review-325 I2): audio is never per-title, so the
 				// audio-media count is exact on every master.
-				report.assert(
-					`${id}:audio-media-count`,
-					"manifest",
-					audioMedia.length === manifest.audioEntries,
-					`${manifest.audioEntries} audio media entr${manifest.audioEntries === 1 ? "y" : "ies"} — ${audioMedia.length} (counted from EXT-X-MEDIA lines)`,
-				);
+				if (!manifest.hlsDefault)
+					report.assert(
+						`${id}:audio-media-count`,
+						"manifest",
+						audioMedia.length === manifest.audioEntries,
+						`${manifest.audioEntries} audio media entr${manifest.audioEntries === 1 ? "y" : "ies"} — ${audioMedia.length} (counted from EXT-X-MEDIA lines)`,
+					);
 			}
 			// An audio-only master (3 fixtures: `audio-only-aac-fmp4-hls-dash` and the two
 			// Atmos ones) has `videoEntries: 0` and carries its renditions as
@@ -2581,7 +3490,9 @@ async function verifyManifest(
 			// branch the parser took, one of `:variants` and `:endlist` was guaranteed to
 			// fire on a healthy file.
 			const audioOnly = manifest.videoEntries === 0;
-			if (audioOnly) {
+			if (manifest.hlsDefault) {
+				// Provider-selected identities are bound after the ordinary child byte/decoding checks.
+			} else if (audioOnly) {
 				report.assert(
 					`${id}:variants`,
 					"manifest",
@@ -2625,11 +3536,15 @@ async function verifyManifest(
 					);
 				}
 			} else {
+				const selection = manifest.hlsAudioGroups
+					? selectedHlsAudioGroups(manifest.hlsAudioGroups, parsed)
+					: undefined;
+				const videoEntries = selection?.dropStream ? 0 : manifest.videoEntries;
 				report.assert(
 					`${id}:variants`,
 					"manifest",
-					parsed.variants.length === manifest.videoEntries,
-					`${manifest.videoEntries} video variant(s) — ${parsed.variants.length}`,
+					parsed.variants.length === videoEntries,
+					`${videoEntries} video variant(s) — ${parsed.variants.length}`,
 				);
 			}
 			if (manifest.hlsMasterVersion) {
@@ -2648,6 +3563,9 @@ async function verifyManifest(
 			// having video variants — otherwise an audio-only master is mistaken for a
 			// media playlist and required to carry an ENDLIST it never has.
 			const isMaster = parsed.variants.length > 0 || parsed.media.length > 0;
+			report.checks.push(
+				...(await collectHlsReferenceChecks(deps, id, manifest, parsed)),
+			);
 			if (!isMaster) {
 				report.assert(
 					`${id}:endlist`,
@@ -2669,14 +3587,11 @@ async function verifyManifest(
 			// from the PARSED master at verify time, so the ladder's size is
 			// never needed in advance — only the exact-count checks are.
 			if (isMaster) {
-				// One listing per manifest for the closure below .
-				const listing = new Map<string, number | undefined>();
-				for (const o of await deps.listAll(
-					manifest.outputKey,
-					manifest.dir.prefix,
-				)) {
-					listing.set(o.key, o.size);
-				}
+				const listing = await listDeclaredManifestMedia(
+					deps,
+					expected,
+					manifest,
+				);
 				const uris = [
 					...parsed.variants.map((v) => v.uri),
 					...parsed.media.flatMap((m) => (m.uri ? [m.uri] : [])),
@@ -2688,8 +3603,21 @@ async function verifyManifest(
 					`the master references ${uris.length} child playlist(s)`,
 				);
 				for (const uri of uris) {
-					const childKey = `${manifest.dir.prefix}${uri}`;
 					const cid = `${id}:child:${uri.replace(/\W+/g, "-")}`;
+					const storageRoot = new URL("https://objects.invalid/");
+					const childKey = referencedObjectKey(
+						uri,
+						storageObjectUrl(storageRoot, key),
+						storageRoot,
+					);
+					if (childKey === undefined) {
+						report.fail(
+							cid,
+							"manifest",
+							"The child playlist URI is malformed or outside the manifest storage root",
+						);
+						continue;
+					}
 					let child: string;
 					try {
 						child = await deps.readText(manifest.outputKey, childKey);
@@ -2716,7 +3644,27 @@ async function verifyManifest(
 					);
 					// Closure of THIS child's references .
 					const childParsed = await deps.parseHls(child).catch(() => undefined);
-					if (childParsed?.segmentUris === undefined) {
+					if (
+						manifest.hlsAdditionalMedia?.some(
+							(media) => media.uri === uri && media.vttUrl !== undefined,
+						)
+					) {
+						report.skip(
+							`${cid}:media-closure`,
+							"manifest",
+							"External WebVTT references are checked separately; remote bytes were not fetched",
+						);
+						report.skip(
+							`${cid}:media-decodes`,
+							"manifest",
+							"External WebVTT bytes were not fetched",
+						);
+					} else if (childParsed?.segmentUris === undefined) {
+						report.skip(
+							`${cid}:reference-bytes`,
+							"manifest",
+							"The parser exposed no media references, so their byte ranges cannot be checked",
+						);
 						report.skip(
 							`${cid}:media-closure`,
 							"manifest",
@@ -2728,28 +3676,92 @@ async function verifyManifest(
 							"nothing to assemble — no segment URIs were exposed",
 						);
 					} else {
-						const childDir = childKey.slice(0, childKey.lastIndexOf("/") + 1);
 						const relative = (u: string) => !/^https?:/.test(u);
-						await verifyMediaClosure(
-							report,
-							deps,
-							manifest.outputKey,
-							listing,
-							cid,
-							{
-								...(childParsed.mapUri && relative(childParsed.mapUri)
-									? {
-											mapKey: resolveReferencedKey(
-												childDir,
-												childParsed.mapUri,
-											),
-										}
-									: {}),
-								segmentKeys: childParsed.segmentUris
-									.filter(relative)
-									.map((u) => resolveReferencedKey(childDir, u)),
-							},
+						const playlistUrl = storageObjectUrl(storageRoot, childKey);
+						const parsedReferences = childParsed.mediaSegments?.flatMap(
+							(segment) => [
+								...(segment.map ? [{ ...segment.map, init: true }] : []),
+								{ ...segment, init: false },
+							],
+						) ?? [
+							...(childParsed.mapUri
+								? [{ uri: childParsed.mapUri, init: true }]
+								: []),
+							...childParsed.segmentUris.map((uri) => ({ uri, init: false })),
+						];
+						const objects: HlsVideoReferences["objects"] = [];
+						let unresolved = false;
+						for (const reference of parsedReferences) {
+							const key = referencedObjectKey(
+								reference.uri,
+								playlistUrl,
+								storageRoot,
+							);
+							if (key === undefined) unresolved = true;
+							else
+								objects.push({
+									key,
+									reference: reference.uri,
+									init: reference.init,
+									...("byteRange" in reference && reference.byteRange
+										? { range: reference.byteRange }
+										: {}),
+								});
+						}
+						const byteCheck = unresolved
+							? {
+									id: `${cid}:reference-bytes`,
+									area: "manifest" as const,
+									verdict: "FAIL" as const,
+									detail:
+										"A child media URI is malformed or outside the manifest storage root",
+								}
+							: checkHlsReferenceObjects(
+									`${cid}:reference-bytes`,
+									objects,
+									[...listing].map(([key, size]) => ({
+										key,
+										...(size !== undefined ? { size } : {}),
+									})),
+								);
+						report.checks.push(byteCheck);
+						const hasMap =
+							childParsed.mapUri !== undefined && relative(childParsed.mapUri);
+						const references = [
+							...(hasMap && childParsed.mapUri ? [childParsed.mapUri] : []),
+							...childParsed.segmentUris.filter(relative),
+						];
+						const keys = references.map((reference) =>
+							referencedObjectKey(reference, playlistUrl, storageRoot),
 						);
+						if (keys.some((object) => object === undefined)) {
+							report.fail(
+								`${cid}:media-closure`,
+								"manifest",
+								"A child media URI is malformed or outside the manifest storage root",
+							);
+							report.skip(
+								`${cid}:media-decodes`,
+								"manifest",
+								"Unresolved media references cannot be assembled",
+							);
+						} else {
+							const resolved = keys.filter(
+								(object): object is string => object !== undefined,
+							);
+							const mapKey = hasMap ? resolved.shift() : undefined;
+							await verifyMediaClosure(
+								report,
+								deps,
+								manifest.outputKey,
+								listing,
+								cid,
+								{
+									...(mapKey ? { mapKey } : {}),
+									segmentKeys: resolved,
+								},
+							);
+						}
 					}
 					const isVideoChild = parsed.variants.some((v) => v.uri === uri);
 					if (
@@ -2790,9 +3802,21 @@ async function verifyManifest(
 			// the file parsed AS a master: if it did not, its variants/media are
 			// empty and each planned rendition's `:present` FAILs — the right verdict
 			// for a manifest that never enumerated them.
-			if (manifest.manifestRenditions) {
+			if (manifest.hlsDefault) {
+				await bindDefaultHlsTopology(
+					report,
+					id,
+					manifest,
+					parsed,
+					deps,
+					expected.muxings,
+				);
+			} else if (manifest.manifestRenditions) {
 				bindHlsTopology(report, id, manifest.manifestRenditions, parsed, {
 					perTitle: manifest.perTitle,
+					...(manifest.hlsAudioGroups
+						? { hlsAudioGroups: manifest.hlsAudioGroups }
+						: {}),
 					...(deps.perTitleActual
 						? { perTitleActual: deps.perTitleActual }
 						: {}),
@@ -2827,7 +3851,9 @@ async function verifyManifest(
 			 * ladders; a total-only check can be satisfied by the wrong mix, and
 			 * "4 video + 0 audio" passes "expected 4" as readily as "2 + 2".
 			 */
-			{
+			if (manifest.dashPeriods) {
+				verifyDefaultDashPeriods(report, id, manifest, parsed, deps);
+			} else {
 				const videoReps = parsed.representations.filter(
 					(r) => r.kind === "video",
 				).length;
@@ -2865,6 +3891,14 @@ async function verifyManifest(
 					textReps === (manifest.textEntries ?? 0),
 					`${manifest.textEntries ?? 0} text representation(s) — ${textReps}`,
 				);
+				if (manifest.imageEntries !== undefined)
+					report.assert(
+						`${id}:image-representations`,
+						"manifest",
+						parsed.representations.filter((row) => row.kind === "image")
+							.length === manifest.imageEntries,
+						`${manifest.imageEntries} image representation(s)`,
+					);
 				if (unknownReps > 0) {
 					report.warn(
 						`${id}:unclassified-representations`,
@@ -2873,22 +3907,28 @@ async function verifyManifest(
 					);
 				}
 			}
+			await verifyDashFileReferences(report, deps, id, manifest, parsed, key);
 			// Closure of every resolved playlist's references : the
 			// parser expands the template/timeline/list into the objects a player
 			// requests; without that expansion nothing can be checked, and the
 			// report says so rather than passing.
 			if (parsed.playlists && parsed.playlists.length > 0) {
-				const listing = new Map<string, number | undefined>();
-				for (const o of await deps.listAll(
-					manifest.outputKey,
-					manifest.dir.prefix,
-				)) {
-					listing.set(o.key, o.size);
-				}
+				const listing = await listDeclaredManifestMedia(
+					deps,
+					expected,
+					manifest,
+				);
 				const mpdDir = key.slice(0, key.lastIndexOf("/") + 1);
 				const relative = (u: string) => !/^https?:/.test(u);
+				const playlistIds = parsed.playlists.map((playlist, index) =>
+					(playlist.id ?? `${playlist.kind}-${index}`).replace(/\W+/g, "-"),
+				);
+				const counts = new Map<string, number>();
+				for (const value of playlistIds)
+					counts.set(value, (counts.get(value) ?? 0) + 1);
 				for (const [index, playlist] of parsed.playlists.entries()) {
-					const pid = `${id}:playlist:${(playlist.id ?? `${playlist.kind}-${index}`).replace(/\W+/g, "-")}`;
+					const name = playlistIds[index] as string;
+					const pid = `${id}:playlist:${name}${(counts.get(name) ?? 0) > 1 ? `:period-${playlist.periodIndex ?? playlist.periodIndices?.join("-") ?? "unknown"}:entry-${index}` : ""}`;
 					await verifyMediaClosure(
 						report,
 						deps,
@@ -2913,13 +3953,22 @@ async function verifyManifest(
 				);
 			}
 			const textEntries = manifest.textEntries ?? 0;
+			const imageEntries = manifest.imageEntries ?? 0;
 			const wantTotal =
-				manifest.videoEntries + manifest.audioEntries + textEntries;
-			if (manifest.perTitle) {
+				manifest.videoEntries +
+				manifest.audioEntries +
+				textEntries +
+				imageEntries;
+			if (manifest.dashPeriods) {
+				// Default counts and topology are checked against each declared period above.
+			} else if (manifest.perTitle) {
 				// Floor FAILS, ceiling WARNS — see the HLS branch above and
 				// `verifyPerTitleRungs`. A real MPD enumerated 5 representations against a
 				// ceiling of 3 and was right.
-				const floor = Math.max(1, manifest.audioEntries + textEntries + 1);
+				const floor = Math.max(
+					1,
+					manifest.audioEntries + textEntries + imageEntries + 1,
+				);
 				if (parsed.representations.length > wantTotal) {
 					report.warn(
 						`${id}:representations-above-templates`,
@@ -2950,6 +3999,17 @@ async function verifyManifest(
 						// IMSC references a complete TTML file through BaseURL;
 						// segmented subtitles still obey the manifest's addressing mode.
 						!(r.kind === "text" && r.addressing === "BASE") &&
+						r.kind !== "image" &&
+						!(
+							r.addressing === "BASE" &&
+							r.baseUrl &&
+							manifest.dashProgressiveFiles?.includes(
+								resolveReferencedKey(
+									key.slice(0, key.lastIndexOf("/") + 1),
+									r.baseUrl,
+								),
+							)
+						) &&
 						r.addressing !== want &&
 						r.addressing !== "UNKNOWN",
 				);
@@ -2961,20 +4021,21 @@ async function verifyManifest(
 				);
 			}
 			if (manifest.dashOnDemand) {
-				const base = parsed.representations.filter(
-					(r) => r.addressing === "BASE",
+				const media = parsed.representations.filter(
+					(row) => row.kind !== "image",
 				);
+				const base = media.filter((r) => r.addressing === "BASE");
 				report.assert(
 					`${id}:ondemand`,
 					"manifest",
-					base.length === parsed.representations.length,
-					`ON_DEMAND means SegmentBase for every representation — ${base.length}/${parsed.representations.length}`,
+					base.length === media.length,
+					`ON_DEMAND means SegmentBase for every media representation — ${base.length}/${media.length}`,
 				);
 			}
 			// Bind codec↔AdaptationSet and each video representation to the plan
 			// (row 272). Always run when the plan declares a topology, so a missing
 			// representation FAILs rather than vanishing.
-			if (manifest.manifestRenditions) {
+			if (manifest.manifestRenditions && !manifest.dashPeriods) {
 				bindDashTopology(report, id, manifest.manifestRenditions, parsed, {
 					perTitle: manifest.perTitle,
 					...(deps.perTitleActual
@@ -3011,6 +4072,366 @@ async function verifyManifest(
 					: `${want} QualityLevel element(s) — ${levels}`,
 			);
 		}
+	}
+}
+
+/** A generated representation must reference its captured RESULT, not an alias of another rung. */
+function verifyDefaultDashPerTitleCoverage(
+	report: ReportBuilder,
+	id: string,
+	manifest: ExpectedManifest,
+	parsed: ParsedDash,
+	periodIndex: number,
+	deps: EngineDeps,
+	selected: ReturnType<typeof scopedPerTitleResults>,
+): void {
+	if (selected.status !== "complete") return;
+	const population = deps.perTitlePopulations;
+	const outputId = deps.providerOutputIds?.[manifest.outputKey];
+	const covered = new Set<string>();
+	let unresolved = !outputId || !parsed.playlists?.length;
+	if (population?.status === "complete" && outputId) {
+		const root = new URL("https://manifest-storage.invalid/");
+		const mpdUrl = storageObjectUrl(
+			root,
+			`${manifest.dir.prefix}${manifest.files[0] ?? "stream.mpd"}`,
+		);
+		for (const playlist of parsed.playlists ?? []) {
+			if (playlist.kind !== "video") continue;
+			const periods =
+				playlist.periodIndices ??
+				(playlist.periodIndex === undefined ? [] : [playlist.periodIndex]);
+			if (parsed.periods > 1 && !periods.length) {
+				unresolved = true;
+				continue;
+			}
+			if (periods.length && !periods.includes(periodIndex)) continue;
+			const refs = [
+				...(playlist.mapUri ? [playlist.mapUri] : []),
+				...playlist.segmentUris,
+			];
+			const keys = refs.map((uri) => referencedObjectKey(uri, mpdUrl, root));
+			if (
+				!playlist.segmentUris.length ||
+				keys.some((key) => key === undefined)
+			) {
+				unresolved = true;
+				continue;
+			}
+			const matches = selected.results.filter((result) =>
+				population.deliveryMuxings.some(
+					(muxing) =>
+						muxing.streamId === result.streamId &&
+						muxing.templateRendition === result.templateRendition &&
+						(manifest.dashOnDemand
+							? ["MP4", "PROGRESSIVE_WEBM"]
+							: ["FMP4", "CMAF", "WEBM"]
+						).includes(muxing.muxingType.toUpperCase()) &&
+						muxing.legs.some((leg) => {
+							if (leg.outputId !== outputId || leg.streamId !== result.streamId)
+								return false;
+							const directory = leg.resolvedPath.replace(/^\/+|\/+$/g, "");
+							return (
+								directory.length > 0 &&
+								keys.every((key) => key?.startsWith(`${directory}/`))
+							);
+						}),
+				),
+			);
+			if (matches.length === 1 && matches[0]) covered.add(matches[0].streamId);
+			else if (matches.length > 1 || periods.length > 1) unresolved = true;
+		}
+	}
+	for (const result of selected.results) {
+		const cid = `${id}:pertitle-result:${result.streamId}:present`;
+		if (!covered.has(result.streamId) && unresolved)
+			report.skip(
+				cid,
+				"manifest",
+				`UNVERIFIED — resolved period/media identities cannot establish whether RESULT ${result.streamId} is present`,
+			);
+		else
+			report.assert(
+				cid,
+				"manifest",
+				covered.has(result.streamId),
+				`Selected RESULT ${result.streamId} must be referenced in this period; alternative representations cannot replace another RESULT`,
+			);
+	}
+}
+
+function verifyDefaultDashPeriods(
+	report: ReportBuilder,
+	id: string,
+	manifest: ExpectedManifest,
+	parsed: ParsedDash,
+	deps: EngineDeps,
+): void {
+	const periods = manifest.dashPeriods ?? [];
+	report.assert(
+		`${id}:period-count`,
+		"manifest",
+		parsed.periods === periods.length,
+		`${periods.length} configured period(s) — ${parsed.periods}`,
+	);
+	const identified =
+		parsed.periods === 1 ||
+		parsed.representations.every((row) => row.periodIndex !== undefined);
+	for (const [index, period] of periods.entries()) {
+		const pid = `${id}:period:${index}`;
+		if (!identified) {
+			report.skip(
+				`${pid}:selection-metadata`,
+				"manifest",
+				"The parser did not expose period identity; per-period selection cannot be verified",
+			);
+			continue;
+		}
+		const representations = parsed.representations.filter(
+			(row) => (row.periodIndex ?? 0) === index,
+		);
+		const selected = scopedPerTitleResults(
+			deps.perTitlePopulations,
+			period.perTitleSelection,
+		);
+		const population = deps.perTitlePopulations;
+		if (
+			population?.status === "complete" &&
+			population.results.every(
+				(result) => result.templateRendition !== undefined,
+			)
+		)
+			for (const template of (period.perTitleSelection ?? []).filter(
+				(row) => !row.optional && !row.conditional,
+			))
+				report.assert(
+					`${pid}:pertitle-required:${template.renditionKey}`,
+					"manifest",
+					population.results.some(
+						(result) => result.templateRendition === template.renditionKey,
+					),
+					`Selected fixed Per-Title template ${template.renditionKey} must produce a captured RESULT`,
+				);
+		for (const kind of ["video", "audio", "text"] as const) {
+			const seen = representations.filter((row) => row.kind === kind).length;
+			const { min: configuredMinimum, max } = period.counts[kind];
+			const min =
+				kind === "video" && selected.status === "complete"
+					? Math.max(
+							configuredMinimum,
+							selected.results.length +
+								period.topology.video.filter((row) => !row.optional).length,
+						)
+					: configuredMinimum;
+			report.assert(
+				`${pid}:${kind}-representations`,
+				"manifest",
+				seen >= min && (max === undefined || seen <= max),
+				`${kind} representation count in [${min}, ${max ?? "runtime-defined"}] — ${seen}`,
+			);
+		}
+		verifyDefaultDashPerTitleCoverage(
+			report,
+			pid,
+			manifest,
+			parsed,
+			index,
+			deps,
+			selected,
+		);
+		report.assert(
+			`${pid}:representation-kinds`,
+			"manifest",
+			representations.every(
+				(row) => row.kind !== "unknown" && row.kind !== "image",
+			),
+			"Every Default representation belongs to a selected video, audio or subtitle family",
+		);
+		if (period.unverified.length)
+			report.skip(
+				`${pid}:selection-metadata`,
+				"manifest",
+				`Default selection is partially unverified: ${period.unverified.join("; ")}`,
+			);
+		bindDashTopology(
+			report,
+			pid,
+			period.topology,
+			{
+				...parsed,
+				representations,
+				adaptationSets: parsed.adaptationSets?.filter(
+					(row) => (row.periodIndex ?? 0) === index,
+				),
+			},
+			{
+				perTitle: period.perTitle,
+				...(period.perTitle
+					? {
+							perTitleActual: scopedPerTitleVideoFamilies(
+								deps.perTitlePopulations,
+								period.perTitleSelection,
+							),
+						}
+					: {}),
+			},
+		);
+	}
+	if (!identified) {
+		for (const kind of ["video", "audio", "text"] as const) {
+			const seen = parsed.representations.filter(
+				(row) => row.kind === kind,
+			).length;
+			const min = periods.reduce(
+				(sum, period) => sum + period.counts[kind].min,
+				0,
+			);
+			const max = periods.some(
+				(period) => period.counts[kind].max === undefined,
+			)
+				? undefined
+				: periods.reduce(
+						(sum, period) => sum + (period.counts[kind].max ?? 0),
+						0,
+					);
+			report.assert(
+				`${id}:${kind}-representations`,
+				"manifest",
+				seen >= min && (max === undefined || seen <= max),
+				`Combined ${kind} count in [${min}, ${max ?? "runtime-defined"}] — ${seen}; period assignment remains unverified`,
+			);
+		}
+	}
+}
+
+async function verifyDashFileReferences(
+	report: ReportBuilder,
+	deps: EngineDeps,
+	id: string,
+	manifest: ExpectedManifest,
+	parsed: ParsedDash,
+	key: string,
+): Promise<void> {
+	const available = [...parsed.representations];
+	for (const [index, subtitle] of (
+		manifest.dashExternalSubtitles ?? []
+	).entries()) {
+		const sid = `${id}:external-subtitle:${index}`;
+		const match = available.findIndex(
+			(row) =>
+				row.kind === "text" &&
+				row.baseUrl === subtitle.url &&
+				(row.language === undefined || row.language === subtitle.language),
+		);
+		const representation =
+			match >= 0 ? available.splice(match, 1)[0] : undefined;
+		report.assert(
+			`${sid}:reference`,
+			"manifest",
+			representation !== undefined,
+			"External subtitle representation must reference its configured URL and language",
+		);
+		if (representation?.language === undefined)
+			report.skip(
+				`${sid}:language`,
+				"manifest",
+				"The parser exposed no language for the configured external subtitle",
+			);
+		else
+			report.assert(
+				`${sid}:language`,
+				"manifest",
+				representation.language === subtitle.language,
+				`External subtitle language is ${subtitle.language}`,
+			);
+		report.skip(
+			`${sid}:content`,
+			"manifest",
+			"External subtitle bytes were not fetched; URL binding does not prove remote availability or WebVTT validity",
+		);
+	}
+	const directory = key.slice(0, key.lastIndexOf("/") + 1);
+	for (const [index, file] of (manifest.dashProgressiveFiles ?? []).entries()) {
+		const match = available.findIndex(
+			(row) =>
+				row.addressing === "BASE" &&
+				row.baseUrl !== undefined &&
+				resolveReferencedKey(directory, row.baseUrl) === file,
+		);
+		report.assert(
+			`${id}:progressive-file:${index}`,
+			"manifest",
+			match >= 0,
+			"Progressive representation must reference its configured complete media file",
+		);
+		if (match >= 0) available.splice(match, 1);
+	}
+	for (const [index, sprite] of (manifest.dashSprites ?? []).entries()) {
+		const sid = `${id}:sprite:${index}`;
+		const pattern = patternToRegExp(`${sprite.dir.pattern}${sprite.filename}`);
+		const references = (row: ParsedDash["representations"][number]) =>
+			row.imageUris?.length ? row.imageUris : row.baseUrl ? [row.baseUrl] : [];
+		const match = available.findIndex(
+			(row) =>
+				row.kind === "image" &&
+				references(row).length > 0 &&
+				references(row).every(
+					(uri) =>
+						!/^[a-z][a-z\d+.-]*:/i.test(uri) &&
+						pattern.test(resolveReferencedKey(directory, uri)),
+				),
+		);
+		const image = match >= 0 ? available.splice(match, 1)[0] : undefined;
+		if (
+			!image &&
+			available.some(
+				(row) => row.kind === "image" && references(row).length === 0,
+			)
+		) {
+			report.skip(
+				`${sid}:reference`,
+				"manifest",
+				"The image representation was observed, but its generated image references were not exposed by the parser",
+			);
+			continue;
+		}
+		report.assert(
+			`${sid}:reference`,
+			"manifest",
+			image !== undefined,
+			"Sprite representation must reference the configured image path and filename",
+		);
+		if (!image) continue;
+		const keys = [
+			...new Set(
+				references(image).map((uri) => resolveReferencedKey(directory, uri)),
+			),
+		];
+		const listing = new Map(
+			(await deps.listAll(sprite.outputKey, sprite.dir.prefix)).map((row) => [
+				row.key,
+				row,
+			]),
+		);
+		report.assert(
+			`${sid}:file`,
+			"manifest",
+			keys.every((key) => listing.has(key)),
+			`Every sprite image referenced by the MPD must exist in its declared output (${keys.length} referenced)`,
+		);
+		if (keys.some((key) => listing.get(key)?.size === undefined))
+			report.skip(
+				`${sid}:bytes`,
+				"manifest",
+				"The storage listing exposed no size for one or more referenced sprite images",
+			);
+		else
+			report.assert(
+				`${sid}:bytes`,
+				"manifest",
+				keys.every((key) => (listing.get(key)?.size ?? 0) > 0),
+				"Every referenced sprite image must contain bytes",
+			);
 	}
 }
 
@@ -3138,24 +4559,6 @@ function sameStringSet(
 	return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-function exactPerTitleMuxing(binding: PerTitleDeliveryBinding): ExpectedMuxing {
-	const identity = `pertitle-delivery:${binding.id}`;
-	return {
-		...binding.expectedMuxing,
-		muxingKey: identity,
-		renditionKey: identity,
-		outputKey: binding.outputKey,
-		dir: {
-			pattern: binding.actual.resolvedPath,
-			prefix: binding.actual.resolvedPath,
-			templated: false,
-		},
-		perTitle: false,
-		perTitleMode: undefined,
-		viaDrmKeys: binding.expectedDrm ? [`${identity}:drm`] : undefined,
-	};
-}
-
 /** Verify each captured provider delivery leg once, at its resolved path. */
 async function verifyPerTitleDeliveryPopulation(
 	report: ReportBuilder,
@@ -3273,7 +4676,10 @@ async function verifyPerTitleDeliveryPopulation(
 			"muxing",
 			`provider material leg ${row.actual.outputId}:${row.actual.resolvedPath} is bound once to ${row.expectedMuxing.muxingKey}`,
 		);
-		const muxing = exactPerTitleMuxing(row);
+		const { muxing, checks } = perTitleMediaExpectation(row);
+		for (const check of checks) {
+			report.add(check.id, "rendition", check.verdict, check.detail);
+		}
 		try {
 			await verifyMuxing(report, deps, expected, muxing);
 		} catch (error) {
@@ -3598,7 +5004,7 @@ export async function verifyArtefacts(
 		await verifyMuxing(report, deps, expected, muxing);
 	}
 	for (const manifest of expected.manifests) {
-		await verifyManifest(report, deps, manifest);
+		await verifyManifest(report, deps, manifest, expected);
 	}
 	for (const drm of expected.drm) {
 		if (

@@ -6,11 +6,12 @@ type RecordedEntry = Omit<AuditEntry, "actor"> & { actor?: string | null };
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Adopt-or-create for manifest ROOTS : a create whose response was
+ * Adopt-or-create for manual manifest roots: a create whose response was
  * lost re-POSTs on resume, and until this PR only HLS looked before leaping —
  * a resumed DASH/Smooth manifest step orphaned the first manifest (the #163
  * review's asymmetry). Identity is name + (outputId, outputPath); a FAILED
- * lookup must create rather than fail the step.
+ * lookup must create rather than fail the step. Default manifests require a
+ * complete stamped request identity; their installed-SDK tests cover recovery.
  *
  * HLS was NEVER untested — `retrying-fetch.test.ts` has carried a 7-test
  * reconciliation suite (including "adopts after a lost response — the exact
@@ -82,8 +83,8 @@ beforeEach(() => {
 	api.smoothCreate.mockResolvedValue({ id: "smooth-new" });
 });
 
-describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
-	it("strict live-to-VOD lookup fails closed when listing is unavailable", async () => {
+describe("unstamped DEFAULT calls never adopt unproven resources", () => {
+	it("strict lookup without ownership fails before attempting a provider list", async () => {
 		const { ops } = setup();
 		api.hlsList.mockRejectedValue(new Error("manifest list unavailable"));
 		await expect(
@@ -94,11 +95,12 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 				destination: DEST,
 				strictIdentity: true,
 			}),
-		).rejects.toThrow(/manifest list unavailable/);
+		).rejects.toThrow(/ownership|identity/);
+		expect(api.hlsList).not.toHaveBeenCalled();
 		expect(api.hlsDefaultCreate).not.toHaveBeenCalled();
 	});
 
-	it("strict live-to-VOD lookup rejects duplicate identity matches", async () => {
+	it("duplicate names and outputs cannot supply an unstamped ownership identity", async () => {
 		const { ops } = setup();
 		api.hlsList.mockResolvedValue({
 			items: [
@@ -114,11 +116,12 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 				destination: DEST,
 				strictIdentity: true,
 			}),
-		).rejects.toThrow(/ambiguous.*2 matches/i);
+		).rejects.toThrow(/ownership|identity/);
+		expect(api.hlsList).not.toHaveBeenCalled();
 		expect(api.hlsDefaultCreate).not.toHaveBeenCalled();
 	});
 
-	it("a delivery that does not own the durable intent may adopt but never POST", async () => {
+	it("reconciliation-only delivery cannot adopt an unstamped resource or POST", async () => {
 		const { ops } = setup();
 		await expect(
 			ops.createDefaultHlsManifest({
@@ -129,7 +132,7 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 				strictIdentity: true,
 				allowCreate: false,
 			}),
-		).rejects.toThrow(/does not own its create intent/);
+		).rejects.toThrow(/ownership|identity/);
 		expect(api.hlsDefaultCreate).not.toHaveBeenCalled();
 
 		api.hlsList.mockResolvedValue({
@@ -146,11 +149,11 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 				strictIdentity: true,
 				allowCreate: false,
 			}),
-		).resolves.toBe("hls-existing");
+		).rejects.toThrow(/ownership|identity/);
 		expect(api.hlsDefaultCreate).not.toHaveBeenCalled();
 	});
 
-	it("HLS: adopts when encodingId + name + destination match, without POSTing", async () => {
+	it("HLS: an unstamped direct call creates fresh despite an identical encoding, name and destination", async () => {
 		const { ops, audits } = setup();
 		api.hlsList.mockResolvedValue({
 			items: [{ id: "hlsd-old", manifestName: "stream.m3u8", outputs: [DEST] }],
@@ -161,21 +164,10 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 			name: "vod hls",
 			destination: DEST,
 		});
-		expect(created).toBe("hlsd-old");
-		expect(api.hlsDefaultCreate).not.toHaveBeenCalled();
-		// THE S6 pin: the list is scoped server-side to THIS encoding. Without
-		// this filter, the second recording of a channel (same per-CHANNEL
-		// output, same default name) would adopt the FIRST recording's
-		// manifest — the exact wrong artefact S6 forbids.
-		expect(api.hlsList).toHaveBeenCalledWith(
-			expect.objectContaining({ encodingId: "enc-live-2" }),
-		);
-		const adoptRow = audits.find(
-			(entry) =>
-				(entry.request as { phase?: string })?.phase === "pre" &&
-				(entry.request as { encodingId?: string })?.encodingId === "enc-live-2",
-		);
-		expect(adoptRow, JSON.stringify(audits)).toBeDefined();
+		expect(created).toBe("hls-default-new");
+		expect(api.hlsDefaultCreate).toHaveBeenCalledTimes(1);
+		expect(api.hlsList).not.toHaveBeenCalled();
+		expect(audits.some((entry) => entry.method === "GET")).toBe(false);
 	});
 
 	it("HLS: a re-run to a DIFFERENT path creates fresh — destination narrows within the encoding", async () => {
@@ -199,21 +191,23 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 		expect(api.hlsDefaultCreate).toHaveBeenCalledTimes(1);
 	});
 
-	it("HLS: create rejects, the manifest exists → adopted (the OBSERVED real failure)", async () => {
+	it("HLS: an unstamped failed create cannot adopt an unproven response-lost resource", async () => {
 		const { ops } = setup();
 		api.hlsDefaultCreate.mockRejectedValue(new Error("Premature close"));
-		api.hlsList.mockResolvedValueOnce({ items: [] }).mockResolvedValue({
+		api.hlsList.mockResolvedValue({
 			items: [
 				{ id: "hlsd-lost", manifestName: "stream.m3u8", outputs: [DEST] },
 			],
 		});
-		const created = await ops.createDefaultHlsManifest({
-			encodingId: "enc-live-2",
-			manifestName: "stream.m3u8",
-			name: "vod hls",
-			destination: DEST,
-		});
-		expect(created).toBe("hlsd-lost");
+		await expect(
+			ops.createDefaultHlsManifest({
+				encodingId: "enc-live-2",
+				manifestName: "stream.m3u8",
+				name: "vod hls",
+				destination: DEST,
+			}),
+		).rejects.toThrow("Premature close");
+		expect(api.hlsList).not.toHaveBeenCalled();
 	});
 
 	it("DASH: a re-run to a DIFFERENT path creates fresh — the matcher is a separate lambda and must be pinned separately", async () => {
@@ -240,7 +234,7 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 		expect(api.dashDefaultCreate).toHaveBeenCalledTimes(1);
 	});
 
-	it("DASH: adopts by encodingId + name + destination, filter pinned", async () => {
+	it("DASH: an unstamped call does not adopt an unproven existing resource", async () => {
 		const { ops } = setup();
 		api.dashList.mockResolvedValue({
 			items: [{ id: "dashd-old", manifestName: "stream.mpd", outputs: [DEST] }],
@@ -251,11 +245,9 @@ describe("DEFAULT manifests adopt by ENCODING ID — the S6 rule", () => {
 			name: "vod dash",
 			destination: DEST,
 		});
-		expect(created).toBe("dashd-old");
-		expect(api.dashDefaultCreate).not.toHaveBeenCalled();
-		expect(api.dashList).toHaveBeenCalledWith(
-			expect.objectContaining({ encodingId: "enc-live-2" }),
-		);
+		expect(created).toBe("dash-default-new");
+		expect(api.dashDefaultCreate).toHaveBeenCalledTimes(1);
+		expect(api.dashList).not.toHaveBeenCalled();
 	});
 });
 

@@ -43,6 +43,16 @@ import {
 	redactUrl,
 	resolveEdgeReference,
 } from "@bitovp/core";
+import {
+	bindHlsVideoReferences,
+	type HlsVideoReferences,
+} from "./hls-video-reference-binding";
+import {
+	dashExternalSubtitleChecks,
+	externalVttReferenceChecks,
+	hlsAudioGroupChecks,
+	hlsMediaReferenceChecks,
+} from "./manifest-reference-checks";
 
 /** One object the closure fetched on the edge, with its bytes and digest. */
 export type LiveEdgeServed = {
@@ -53,6 +63,8 @@ export type LiveEdgeServed = {
 	/** True for an init segment (EXT-X-MAP / DASH initialization) — witnessed,
 	 *  but not media: a child needs a NON-init segment to count as delivering. */
 	init: boolean;
+	/** The exact playlist range proven to fit this complete fetched object. */
+	byteRange?: { offset: number; length: number };
 	/**
 	 * The RAW reference as the playlist / MPD wrote it (WP-C6b). `new URL`
 	 * percent-encodes `{`, `}` and spaces in a path before the GET — the form
@@ -71,6 +83,8 @@ export type LiveEdgeServed = {
 /** One child playlist (HLS) or representation (DASH) the closure walked. */
 export type LiveEdgeClosureChild = {
 	id: string;
+	/** Only explicitly configured remote WebVTT may omit a local media-byte witness. */
+	externalContent?: "UNVERIFIED";
 	requiresInit: boolean;
 	url: RedactedUrl;
 	bytes?: number;
@@ -144,15 +158,17 @@ export type LiveEdgeClosure = {
 export function closureProbe(closure: LiveEdgeClosure): LiveEvidenceProbe {
 	return {
 		at: new Date(closure.at ?? 0).toISOString(),
-		children: (closure.children ?? []).map((child) => ({
-			id: child.id,
-			...(child.mediaSequence !== undefined
-				? { mediaSequence: child.mediaSequence }
-				: {}),
-			served: child.served
-				.filter((s) => !s.init)
-				.map((s) => displayRedactedUrl(s.url)),
-		})),
+		children: (closure.children ?? [])
+			.filter((child) => child.externalContent === undefined)
+			.map((child) => ({
+				id: child.id,
+				...(child.mediaSequence !== undefined
+					? { mediaSequence: child.mediaSequence }
+					: {}),
+				served: child.served
+					.filter((s) => !s.init)
+					.map((s) => displayRedactedUrl(s.url)),
+			})),
 		...(closure.error !== undefined ? { error: closure.error } : {}),
 	};
 }
@@ -164,6 +180,8 @@ export type EdgeRead = {
 	bytes: number;
 	text: string;
 	body?: Uint8Array;
+	/** True only after the entire response body was read, never a capped prefix. */
+	bodyComplete?: boolean;
 	/** Readers must use manual redirect mode; this is a second fail-closed rail. */
 	redirected?: boolean;
 	/** Final response URL, when the HTTP client exposes it. */
@@ -303,6 +321,7 @@ async function walkChild(
 		initRef?: string;
 		requiresInit: boolean;
 		mediaRefs: readonly string[];
+		resources?: HlsVideoReferences["objects"];
 	},
 	rejected: string[],
 ): Promise<LiveEdgeClosureChild> {
@@ -311,45 +330,107 @@ async function walkChild(
 	// The raw reference rides beside its resolved URL: `new URL` has already
 	// percent-encoded `{`/`}`/spaces in the path (RFC 3986 — the form the edge
 	// answers), and the evidence keeps what the manifest actually said.
+	type Reference = Pick<
+		HlsVideoReferences["objects"][number],
+		"reference" | "init" | "range"
+	>;
 	const resolveAll = (
-		refs: readonly string[],
-	): { url: URL; reference: string }[] => {
-		const out: { url: URL; reference: string }[] = [];
+		refs: readonly Reference[],
+	): (Reference & { url: URL })[] => {
+		const out: (Reference & { url: URL })[] = [];
 		for (const ref of refs) {
-			const resolved = resolveEdgeReference(ref, child.url, policy);
-			if (resolved.ok) {
-				out.push({ url: resolved.url, reference: ref });
-			} else {
+			const resolved = resolveEdgeReference(ref.reference, child.url, policy);
+			if (resolved.ok) out.push({ ...ref, url: resolved.url });
+			else {
 				rejected.push(`${child.id}: ${resolved.detail}`);
 				missing.push(
-					`${safeReferenceLabel(ref, child.url)} (${resolved.reason})`,
+					`${safeReferenceLabel(ref.reference, child.url)} (${resolved.reason})`,
 				);
 			}
 		}
 		return out;
 	};
-	const initTarget =
-		child.initRef !== undefined ? resolveAll([child.initRef])[0] : undefined;
-	if (child.requiresInit && child.initRef === undefined) {
-		missing.push(`${child.id} (required init reference is absent)`);
-	}
-	const mediaTargets = resolveAll(child.mediaRefs);
-	if (child.mediaRefs.length === 0) {
-		missing.push(`${child.id} (lists no media segment)`);
-	}
-	const toFetch = [
-		...(initTarget ? [{ ...initTarget, init: true }] : []),
-		...spread(mediaTargets, MAX_EDGE_MEDIA_PER_CHILD).map((target) => ({
-			...target,
-			init: false,
-		})),
+	const references: Reference[] = child.resources ?? [
+		...(child.initRef !== undefined
+			? [{ reference: child.initRef, init: true }]
+			: []),
+		...child.mediaRefs.map((reference) => ({ reference, init: false })),
 	];
+	const initReferences = [
+		...new Map(
+			references
+				.filter((ref) => ref.init)
+				.map((ref) => [
+					JSON.stringify([ref.reference, ref.range?.offset, ref.range?.length]),
+					ref,
+				]),
+		).values(),
+	];
+	if (child.requiresInit && initReferences.length === 0)
+		missing.push(`${child.id} (required init reference is absent)`);
+	const initTargets = resolveAll(initReferences);
+	const mediaTargets = resolveAll(references.filter((ref) => !ref.init));
+	if (mediaTargets.length === 0)
+		missing.push(`${child.id} (lists no media segment)`);
+	const initObjects = [
+		...new Map(initTargets.map((target) => [target.url.href, target])).values(),
+	];
+	if (initObjects.length > MAX_EDGE_MEDIA_PER_CHILD)
+		missing.push(
+			`${child.id} (initialization objects exceed the bounded delivery check)`,
+		);
+	const toFetch = [
+		...initObjects.slice(0, MAX_EDGE_MEDIA_PER_CHILD),
+		...spread(mediaTargets, MAX_EDGE_MEDIA_PER_CHILD),
+	];
+	const fetchedObjects = new Map<string, Fetched>();
+	const checkedRanges = new Set<Reference>();
+	const rangeIssue = (
+		ref: Reference,
+		fetched: Fetched | undefined,
+	): string | undefined => {
+		if (!ref.range) return undefined;
+		const { offset, length } = ref.range;
+		if (
+			!fetched?.ok ||
+			fetched.read.status !== 200 ||
+			fetched.read.bodyComplete !== true ||
+			!Number.isSafeInteger(fetched.read.bytes) ||
+			fetched.read.bytes <= 0 ||
+			(fetched.read.body !== undefined &&
+				fetched.read.body.byteLength !== fetched.read.bytes)
+		)
+			return "byte range is UNVERIFIED without complete, consistent response bytes";
+		if (
+			offset === undefined ||
+			length === undefined ||
+			!Number.isSafeInteger(offset) ||
+			offset < 0 ||
+			!Number.isSafeInteger(length) ||
+			length <= 0 ||
+			!Number.isSafeInteger(offset + length) ||
+			offset + length > fetched.read.bytes
+		)
+			return "byte range exceeds the complete response bytes";
+		return undefined;
+	};
 	let mediaServed = 0;
-	for (const { url, reference, init } of toFetch) {
+	for (const target of toFetch) {
+		const { url, reference, init } = target;
 		const key = url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
-		const fetched = await fetchObject(readEdge, url);
+		let fetched = fetchedObjects.get(url.href);
+		if (!fetched) {
+			fetched = await fetchObject(readEdge, url);
+			fetchedObjects.set(url.href, fetched);
+		}
+		checkedRanges.add(target);
 		if (!fetched.ok) {
 			missing.push(`${key} (${fetched.detail})`);
+			continue;
+		}
+		const issue = rangeIssue(target, fetched);
+		if (issue) {
+			missing.push(`${key} (${issue})`);
 			continue;
 		}
 		const lastModified = isoLastModified(fetched.read.lastModified);
@@ -360,11 +441,30 @@ async function walkChild(
 			sha256: fetched.sha256,
 			init,
 			reference,
+			...(target.range?.offset !== undefined &&
+			target.range.length !== undefined
+				? {
+						byteRange: {
+							offset: target.range.offset,
+							length: target.range.length,
+						},
+					}
+				: {}),
 			...(lastModified !== undefined ? { lastModified } : {}),
 		});
 		if (!init) {
 			mediaServed += 1;
 		}
+	}
+	// Ranges outside the sampled references still need actual byte bounds. A
+	// shared fetched object can prove them; an unread object remains unverified.
+	for (const target of [...initTargets, ...mediaTargets]) {
+		if (!target.range || checkedRanges.has(target)) continue;
+		const issue = rangeIssue(target, fetchedObjects.get(target.url.href));
+		if (issue)
+			missing.push(
+				`${safeReferenceLabel(target.reference, child.url)} (${issue})`,
+			);
 	}
 	if (mediaTargets.length > 0 && mediaServed === 0) {
 		missing.push(`${child.id} (no media segment served with bytes)`);
@@ -527,8 +627,47 @@ export async function observeEdgeLeg(
 	};
 	const rejected: string[] = [];
 	const children: LiveEdgeClosureChild[] = [];
+	const referenceMissing: string[] = [];
 
 	if (manifest.kind === "DASH") {
+		if (manifest.dashExternalSubtitles?.length) {
+			const { parseDashText } = await import("./adapters");
+			const observed = await parseDashText(master.read.text).catch(
+				() => undefined,
+			);
+			const checks = observed
+				? dashExternalSubtitleChecks(
+						"external",
+						manifest.dashExternalSubtitles,
+						observed,
+					)
+				: [];
+			for (const [index] of manifest.dashExternalSubtitles.entries()) {
+				const valid = checks.some(
+					(check) =>
+						check.id === `external:external-subtitle:${index}:reference` &&
+						check.verdict === "PASS",
+				);
+				children.push({
+					id: `external-subtitle-${index}`,
+					url: redact(masterUrl),
+					requiresInit: false,
+					externalContent: "UNVERIFIED",
+					listed: valid ? 1 : 0,
+					served: [],
+					missing: valid
+						? []
+						: ["configured external subtitle URL or language was absent"],
+				});
+			}
+			if (
+				observed?.representations.filter((row) => row.kind === "text")
+					.length !== manifest.dashExternalSubtitles.length
+			)
+				referenceMissing.push(
+					"DASH external subtitle count differs from the configured tracks",
+				);
+		}
 		let parsed: import("mpd-parser").MpdManifest;
 		try {
 			const mod = await import("mpd-parser");
@@ -613,6 +752,29 @@ export async function observeEdgeLeg(
 			...parsedMaster.variants.map((v) => v.uri),
 			...parsedMaster.media.flatMap((m) => (m.uri ? [m.uri] : [])),
 		].filter((u) => u !== "");
+		referenceMissing.push(
+			...hlsMediaReferenceChecks(
+				"master",
+				manifest.hlsAdditionalMedia ?? [],
+				parsedMaster,
+			)
+				.filter((check) => check.verdict === "FAIL")
+				.map((check) => check.detail),
+		);
+		if (manifest.hlsAudioGroups)
+			referenceMissing.push(
+				...hlsAudioGroupChecks("master", manifest.hlsAudioGroups, parsedMaster)
+					.filter((check) => check.verdict === "FAIL")
+					.map((check) => check.detail),
+			);
+		if (
+			manifest.entryCount !== undefined &&
+			parsedMaster.variants.length + parsedMaster.media.length !==
+				manifest.entryCount
+		)
+			referenceMissing.push(
+				"HLS master entry count differs from the configured tracks",
+			);
 		if (childRefs.length === 0) {
 			return {
 				...leg,
@@ -697,6 +859,56 @@ export async function observeEdgeLeg(
 				continue;
 			}
 			const mediaSequence = mediaSequenceOf(child.read.text);
+			let videoResources: HlsVideoReferences["objects"] | undefined;
+			const video = manifest.hlsAdditionalMedia?.find(
+				(media) => media.type === "VIDEO" && media.uri === id,
+			);
+			if (video) {
+				const binding = bindHlsVideoReferences(
+					"video-binding",
+					video,
+					parsedChild,
+					{ outputKey, playlist: childUrl, storageRoot: policy.base },
+				);
+				videoResources = binding.objects;
+				if (binding.check.verdict !== "PASS") {
+					children.push({
+						id,
+						url: redact(childUrl),
+						requiresInit: video.requiresInit ?? false,
+						bytes: child.read.bytes,
+						sha256: child.sha256,
+						listed: parsedChild.segmentUris?.length ?? 0,
+						served: [],
+						missing: [binding.check.detail],
+					});
+					continue;
+				}
+			}
+			const external = manifest.hlsAdditionalMedia?.find(
+				(media) => media.uri === id && media.vttUrl !== undefined,
+			);
+			if (external?.vttUrl) {
+				const checks = externalVttReferenceChecks(
+					"subtitle",
+					external.vttUrl,
+					parsedChild,
+				);
+				children.push({
+					id,
+					url: redact(childUrl),
+					requiresInit: false,
+					bytes: child.read.bytes,
+					sha256: child.sha256,
+					externalContent: "UNVERIFIED",
+					listed: parsedChild.segmentUris?.length ?? 0,
+					served: [],
+					missing: checks
+						.filter((check) => check.verdict === "FAIL")
+						.map((check) => check.detail),
+				});
+				continue;
+			}
 			children.push(
 				await walkChild(
 					readEdge,
@@ -710,6 +922,7 @@ export async function observeEdgeLeg(
 						...(parsedChild.mapUri ? { initRef: parsedChild.mapUri } : {}),
 						requiresInit: required.requireInitChildIds?.includes(id) ?? false,
 						mediaRefs: parsedChild.segmentUris ?? [],
+						...(videoResources ? { resources: videoResources } : {}),
 					},
 					rejected,
 				),
@@ -717,9 +930,10 @@ export async function observeEdgeLeg(
 		}
 	}
 
-	const missing = children.flatMap((c) =>
-		c.missing.map((m) => `${c.id}: ${m}`),
-	);
+	const missing = [
+		...referenceMissing,
+		...children.flatMap((c) => c.missing.map((m) => `${c.id}: ${m}`)),
+	];
 	const segmentCount = children.reduce(
 		(n, c) => n + c.served.filter((s) => !s.init).length,
 		0,
@@ -734,9 +948,14 @@ export async function observeEdgeLeg(
 		(required.expectedChildCount < 0 ||
 			children.length === required.expectedChildCount) &&
 		topologyMissing.length === 0 &&
+		referenceMissing.length === 0 &&
 		rejected.length === 0 &&
 		children.every(
-			(c) => c.missing.length === 0 && c.served.some((s) => !s.init),
+			(c) =>
+				c.missing.length === 0 &&
+				(c.externalContent === "UNVERIFIED"
+					? c.listed > 0
+					: c.served.some((s) => !s.init)),
 		);
 	return {
 		...leg,

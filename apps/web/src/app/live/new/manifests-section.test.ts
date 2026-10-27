@@ -145,4 +145,50 @@ describe("manifestLegs ↔ selectLiveManifestMuxings parity (C8 gauge counts the
 			}
 		});
 	}
+	it("includes additional VIDEO lists and excludes external VTT and captions in the authoring gauge", () => {
+		const state = parityState({
+			videos: [video(720, 3000000)],
+			audios: [audio(128000)],
+		});
+		const muxing = buildLiveChannelPlan(state).muxings[0];
+		if (!muxing) throw new Error("video missing");
+		state.manifests.hls.detailed = {
+			additionalMedia: [
+				{
+					type: "VIDEO",
+					name: "Alternate",
+					groupId: "alternate",
+					muxingKey: muxing.key,
+					uri: "alternate.m3u8",
+				},
+				{
+					type: "VTT",
+					name: "Subtitles",
+					groupId: "subtitles",
+					uri: "subtitles.m3u8",
+					vttUrl: "https://example.test/sub.vtt",
+				},
+				{
+					type: "CLOSED_CAPTIONS",
+					name: "Captions",
+					groupId: "captions",
+					muxingKey: muxing.key,
+					instreamId: "CC1",
+				},
+			],
+		};
+		expect(
+			manifestLegs(state, "HLS").map((leg) => leg.segmentLengthSec),
+		).toEqual([state.segmentLength, state.segmentLength, state.segmentLength]);
+		expect(manifestLegs(state, "DASH")).toHaveLength(2);
+	});
+	it("can estimate the authored segment lists before output credentials are configured", () => {
+		const state = parityState({
+			videos: [video(720, 3000000)],
+			audios: [audio(128000)],
+		});
+		state.output.credentialId = "";
+		state.output.bucket = "";
+		expect(manifestLegs(state, "HLS")).toHaveLength(2);
+	});
 });

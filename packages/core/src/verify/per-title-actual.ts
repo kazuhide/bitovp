@@ -20,6 +20,7 @@
 import {
 	PER_TITLE_ATTRIBUTION_VERSION,
 	PER_TITLE_SCHEMA_VERSION,
+	type PerTitleResultStream,
 	type PerTitleResultsView,
 } from "../plan/per-title-results";
 import {
@@ -41,6 +42,14 @@ export type PerTitleActualVideoFamilies =
 	  }
 	| { status: "incomplete"; reason: string }
 	| { status: "absent"; reason: string };
+
+/** Positive, finite facts captured from a provider RESULT, never template hints. */
+export type PerTitleActualVideo = {
+	width?: number;
+	height?: number;
+	bitrate?: number;
+	fps?: number;
+};
 
 export type PerTitleActualOutputLeg = PerTitleProviderResult & {
 	templateRendition?: string;
@@ -72,7 +81,14 @@ export type PerTitleActualDeliveryMuxing = {
 export type PerTitleActualPopulations =
 	| {
 			status: "complete";
-			results: Array<{ streamId: string; templateRendition?: string }>;
+			results: Array<{
+				streamId: string;
+				templateRendition?: string;
+				/** The captured provider codec, never inferred from the attributed template. */
+				codecType?: string;
+				/** Actual codec parameters, with applied dimensions taking precedence. */
+				video?: PerTitleActualVideo;
+			}>;
 			/** Exactly one score unit per RESULT, with zero or more mirror candidates. */
 			qc: PerTitleActualQcUnit[];
 			/** Provider muxings, each retaining all of its clear and DRM output legs. */
@@ -83,6 +99,32 @@ export type PerTitleActualPopulations =
 
 function normalizeDir(path: string): string {
 	return path.endsWith("/") ? path : `${path}/`;
+}
+
+function positiveFinite(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value > 0
+		? value
+		: undefined;
+}
+
+function actualVideo(
+	stream: PerTitleResultStream,
+): PerTitleActualVideo | undefined {
+	const video: PerTitleActualVideo = {};
+	const values = {
+		width:
+			positiveFinite(stream.appliedSettings?.width) ??
+			positiveFinite(stream.params.width),
+		height:
+			positiveFinite(stream.appliedSettings?.height) ??
+			positiveFinite(stream.params.height),
+		bitrate: positiveFinite(stream.params.bitrate),
+		fps: positiveFinite(stream.params.rate),
+	};
+	for (const field of ["width", "height", "bitrate", "fps"] as const) {
+		if (values[field] !== undefined) video[field] = values[field];
+	}
+	return Object.keys(video).length > 0 ? video : undefined;
 }
 
 /**
@@ -159,7 +201,10 @@ export function perTitleActualPopulations(
 		}
 	}
 
-	const results: Array<{ streamId: string; templateRendition?: string }> = [];
+	const results: Extract<
+		PerTitleActualPopulations,
+		{ status: "complete" }
+	>["results"] = [];
 	const qc: PerTitleActualQcUnit[] = [];
 	const deliveryMuxings: PerTitleActualDeliveryMuxing[] = [];
 	for (const stream of snapshot.streams) {
@@ -169,7 +214,14 @@ export function perTitleActualPopulations(
 				? { templateRendition: stream.templateRendition }
 				: {}),
 		};
-		results.push(resultIdentity);
+		const video = actualVideo(stream);
+		results.push({
+			...resultIdentity,
+			...(stream.codecType !== undefined
+				? { codecType: stream.codecType }
+				: {}),
+			...(video ? { video } : {}),
+		});
 
 		const qcMuxings = stream.muxings.filter(
 			(muxing) =>

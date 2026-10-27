@@ -11,6 +11,8 @@ import {
 import { checkCodecDetailControls } from "./codec-detail-controls";
 import { qcMirrorMuxingKind, renditionOutputBase } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { defaultHlsPathConflicts } from "./default-manifest-paths";
+import { defaultManifestSelection } from "./default-manifest-selection";
 import {
 	checkSecretEgressHosts,
 	type EgressSite,
@@ -31,6 +33,7 @@ import {
 	inputStreamLeaves,
 } from "./input-stream-graph";
 import { checkInternalHevcV2Plan } from "./internal-hevc-v2";
+import { validateManifestDetails } from "./manifest-detail-validation";
 import { filterFamily } from "./media-filters";
 import { hasMuxedInAudio, muxingStreamKeys } from "./muxing-streams";
 import { isPerTitleRendition } from "./per-title-results";
@@ -247,6 +250,7 @@ export function validatePlan(
 	checkUniqueKeys(plan.sprites, "sprites", issues);
 	checkUniqueKeys(plan.keyframes, "keyframes", issues);
 	checkUniqueKeys(plan.manifests, "manifests", issues);
+	issues.push(...validateManifestDetails(plan));
 
 	const inputKeys = new Set(plan.inputs.map((i) => i.key));
 	const outputKeys = new Set(plan.outputs.map((o) => o.key));
@@ -1461,7 +1465,7 @@ export function validatePlan(
 	 * can only ever name one playlist.
 	 */
 	for (const [index, manifest] of plan.manifests.entries()) {
-		if (manifest.kind !== "HLS") {
+		if (manifest.kind !== "HLS" || manifest.generationMode === "DEFAULT") {
 			continue;
 		}
 		const derived = hlsAudioMediaDefaults(plan, manifest);
@@ -1548,7 +1552,10 @@ export function validatePlan(
 		if (manifest.kind !== "HLS") {
 			continue;
 		}
-		if (hlsSubtitleGroups(plan).length > 1) {
+		if (
+			manifest.generationMode !== "DEFAULT" &&
+			hlsSubtitleGroups(plan).length > 1
+		) {
 			issues.push({
 				code: "PLAN_HLS_SUBTITLE_GROUP_AMBIGUOUS",
 				level: "error",
@@ -1718,10 +1725,19 @@ export function validatePlan(
 	).length;
 	for (const [mIndex, manifest] of plan.manifests.entries()) {
 		if (manifest.kind === "HLS") {
-			const hasVideo = plan.renditions.some((r) =>
+			const hlsRenditions =
+				manifest.generationMode === "DEFAULT"
+					? defaultManifestSelection(plan).renditions
+					: plan.renditions;
+			const hlsKeys = new Set(hlsRenditions.map((row) => row.key));
+			const hlsMuxings =
+				manifest.generationMode === "DEFAULT"
+					? plan.muxings.filter((row) => hlsKeys.has(row.streamKey))
+					: plan.muxings;
+			const hasVideo = hlsRenditions.some((r) =>
 				VIDEO_CODECS_FOR_MODE.has(r.codec),
 			);
-			const hasSelectedVideo = plan.muxings.some((muxing) => {
+			const hasSelectedVideo = hlsMuxings.some((muxing) => {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				return (
 					rendition !== undefined &&
@@ -1737,7 +1753,7 @@ export function validatePlan(
 					message: `HLS manifest "${manifest.key}" selects no supported video muxing despite video renditions — add an fMP4, TS or MP4 video leg matching videoMuxingKind`,
 					path: `manifests[${mIndex}].videoMuxingKind`,
 				});
-			const unsupportedCmaf = plan.muxings.some((muxing) => {
+			const unsupportedCmaf = hlsMuxings.some((muxing) => {
 				if (muxing.kind !== "CMAF") return false;
 				const rendition = renditionByKey.get(muxing.streamKey);
 				if (!rendition) return false;
@@ -1747,7 +1763,7 @@ export function validatePlan(
 				// An explicit compatible pin excludes CMAF; an unpinned rung needs its own HLS leg.
 				return (
 					pin === undefined &&
-					!plan.muxings.some(
+					!hlsMuxings.some(
 						(leg) =>
 							leg.streamKey === muxing.streamKey &&
 							["FMP4", "MP4", "TS"].includes(leg.kind),
@@ -1783,7 +1799,7 @@ export function validatePlan(
 				// is a DESIGNED shape, which is what `videoMuxingKind` is for.
 				// An error-level rail refusing a legal plan is worse than the
 				// hole it closes.
-				const muxedVariant = plan.muxings.find(
+				const muxedVariant = hlsMuxings.find(
 					(m) =>
 						(manifest.videoMuxingKind === undefined ||
 							m.kind === manifest.videoMuxingKind) &&
@@ -1821,7 +1837,7 @@ export function validatePlan(
 			// Does THIS manifest emit any EXT-X-MEDIA audio entry? Mirrors the
 			// compiler's own selection: an audio rendition's muxing, filtered by
 			// `audioMuxingKind` when the manifest pins one.
-			for (const [mxIndex, muxing] of plan.muxings.entries()) {
+			for (const [mxIndex, muxing] of hlsMuxings.entries()) {
 				const r = renditionByKey.get(muxing.streamKey);
 				if (
 					r?.codec === "OPUS" &&
@@ -1835,7 +1851,7 @@ export function validatePlan(
 						path: `muxings[${mxIndex}]`,
 					});
 			}
-			const hlsAudioMediaCount = plan.muxings.filter((m) => {
+			const hlsAudioMediaCount = hlsMuxings.filter((m) => {
 				if (
 					manifest.audioMuxingKind !== undefined &&
 					m.kind !== manifest.audioMuxingKind
@@ -1845,7 +1861,7 @@ export function validatePlan(
 				const primary = renditionByKey.get(m.streamKey);
 				return primary !== undefined && AUDIO_CODECS.has(primary.codec);
 			}).length;
-			const selectedVideo = plan.muxings.filter((m) => {
+			const selectedVideo = hlsMuxings.filter((m) => {
 				if (
 					manifest.videoMuxingKind !== undefined &&
 					m.kind !== manifest.videoMuxingKind
@@ -1887,7 +1903,7 @@ export function validatePlan(
 				});
 			}
 			if (manifest.variantsPerAudioGroup) {
-				for (const [rIndex, r] of plan.renditions.entries()) {
+				for (const [rIndex, r] of hlsRenditions.entries()) {
 					const videoCodec =
 						r.codec === "H264" ||
 						r.codec === "H265" ||
@@ -2247,11 +2263,28 @@ export function validatePlan(
 				path: `manifests[${index}].destination.outputKey`,
 			});
 		}
-		// A DASH manifest must end up with at least one representation.
-		// Mirror the compiler's selection exactly: static entries are
-		// kind-filtered per manifest leg and skip per-title renditions;
-		// per-title video renditions expand at run time regardless.
-		if (manifest.kind === "DASH") {
+		if (manifest.kind === "HLS" && manifest.generationMode === "DEFAULT") {
+			const conflicts = defaultHlsPathConflicts(plan, manifest.destination);
+			for (const level of ["error", "warning"] as const) {
+				const conflict = conflicts.find((row) => row.level === level);
+				if (!conflict) continue;
+				issues.push({
+					code:
+						level === "error"
+							? "PLAN_DEFAULT_HLS_OUTPUT_PATH"
+							: "PLAN_DEFAULT_HLS_OUTPUT_PATH_UNVERIFIED",
+					level,
+					message:
+						level === "error"
+							? `Default HLS manifest "${manifest.key}" must use the same directory as, or a parent of, every selected media output on its output resource. ${conflict.owner} writes to "${conflict.destination.path}" outside "${manifest.destination.path || "/"}". Choose a common parent directory or manual manifest generation for parent-relative media paths`
+							: `Default HLS manifest "${manifest.key}" has an unverified output hierarchy for ${conflict.owner}: a physical storage alias or dynamic path does not prove the provider's output selection. Use a common parent directory or verify this output mapping before encoding`,
+					path: `manifests[${index}].destination.path`,
+				});
+			}
+		}
+		// Default generation selects its own tracks on the provider. Manual
+		// representation leg checks apply only to the explicit resource tree.
+		if (manifest.kind === "DASH" && manifest.generationMode !== "DEFAULT") {
 			const videoCodecs = new Set(["H264", "H265", "VP9", "AV1"]);
 			const onDemand = manifest.profile === "ON_DEMAND";
 			const hasPerTitleVideo = plan.renditions.some(
@@ -2261,43 +2294,44 @@ export function validatePlan(
 					typeof r.mode === "string" &&
 					r.mode.startsWith("PER_TITLE"),
 			);
-			const hasStatic = plan.muxings.some((muxing) => {
-				const target = renditionByKey.get(muxing.streamKey);
-				if (!target) {
+			const hasAdditional =
+				(manifest.detailed?.additionalRepresentations?.length ?? 0) > 0;
+			const additionalMuxings = new Set(
+				manifest.detailed?.additionalRepresentations?.flatMap((rep) =>
+					rep.type === "PROGRESSIVE_WEBM" ? [rep.muxingKey] : [],
+				) ?? [],
+			);
+			const hasStatic =
+				hasAdditional ||
+				plan.muxings.some((muxing) => {
+					const target = renditionByKey.get(muxing.streamKey);
+					if (!target) {
+						return false;
+					}
+					const perTitle =
+						videoCodecs.has(target.codec) &&
+						"mode" in target &&
+						typeof target.mode === "string" &&
+						target.mode.startsWith("PER_TITLE");
+					if (perTitle) {
+						return false;
+					}
+					if (
+						(target.codec === "IMSC" && muxing.kind === "TEXT") ||
+						(target.codec === "WEBVTT" && muxing.kind === "CHUNKED_TEXT")
+					)
+						return true;
+					// The compiler's own leg predicates (dash-legs.ts): ON_DEMAND
+					// selects DASH_ON_DEMAND-typed MP4 muxings for both families;
+					// segmented profiles select the pinned legs.
+					if (AUDIO_CODECS.has(target.codec)) {
+						return dashAudioLegSelected(muxing, manifest, onDemand);
+					}
+					if (videoCodecs.has(target.codec)) {
+						return dashVideoLegSelected(muxing, manifest, onDemand);
+					}
 					return false;
-				}
-				const perTitle =
-					videoCodecs.has(target.codec) &&
-					"mode" in target &&
-					typeof target.mode === "string" &&
-					target.mode.startsWith("PER_TITLE");
-				if (perTitle) {
-					return false;
-				}
-				if (
-					(target.codec === "IMSC" && muxing.kind === "TEXT") ||
-					(target.codec === "WEBVTT" && muxing.kind === "CHUNKED_TEXT")
-				)
-					return true;
-				// The compiler's own leg predicates (dash-legs.ts): ON_DEMAND
-				// selects DASH_ON_DEMAND-typed MP4 muxings for both families;
-				// segmented profiles select the pinned legs.
-				if (
-					target.codec === "AAC" ||
-					target.codec === "OPUS" ||
-					target.codec === "DOLBY_ATMOS" ||
-					target.codec === "AC3" ||
-					target.codec === "EAC3" ||
-					target.codec === "DDPLUS" ||
-					target.codec === "DD"
-				) {
-					return dashAudioLegSelected(muxing, manifest, onDemand);
-				}
-				if (videoCodecs.has(target.codec)) {
-					return dashVideoLegSelected(muxing, manifest, onDemand);
-				}
-				return false;
-			});
+				});
 			/*
 			 * VIDEO routed in but NONE selected — the audio-only MPD.
 			 * The zero-TOTAL rule below could not
@@ -2328,7 +2362,9 @@ export function validatePlan(
 				hasPerTitleVideo ||
 				routedVideo.some((r) =>
 					plan.muxings.some(
-						(m) => m.streamKey === r.key && videoLegSelected(m),
+						(m) =>
+							m.streamKey === r.key &&
+							(videoLegSelected(m) || additionalMuxings.has(m.key)),
 					),
 				);
 			if (routedVideo.length > 0 && !videoSelected) {
@@ -2359,7 +2395,8 @@ export function validatePlan(
 					plan.muxings.some(
 						(m) =>
 							m.streamKey === r.key &&
-							dashAudioLegSelected(m, manifest, onDemand),
+							(dashAudioLegSelected(m, manifest, onDemand) ||
+								additionalMuxings.has(m.key)),
 					),
 			);
 			if (audio.length > 0 && !audioSelected) {

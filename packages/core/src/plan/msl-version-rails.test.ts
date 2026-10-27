@@ -4,30 +4,7 @@ import {
 	checkAkamaiMslConstraints,
 } from "./akamai-msl-constraint";
 
-/**
- * Rails 1 and 6 —  PR 1.
- *
- * Both mirror upstream validation rules that are categorical
- * (encoding-resource-service #2374 / encoder-service #3383): MSL5 requires an
- * HLS or CMAF stream format, and MSL5 outputs are rejected on non-live
- * encodings. A violating plan is refused at Bitmovin either way, so refusing it
- * at submit costs nothing and names the field in English instead of arriving as
- * a 400 partway through provisioning. That is why they are `error` where the
- * encoder-version rail is a `warning`: that one is keyed to an EXTERNAL state
- * this repo cannot observe, these two are not.
- *
- * WHAT THESE ARMS ARE REALLY FOR. The rules themselves are two lines and would
- * be adequately covered by two positive tests. The thing worth testing is that
- * the rails **derive** from `AKAMAI_MSL_VERSION_BEHAVIOR` rather than restating
- * it — because the anchor had ZERO runtime consumers until this PR, and a
- * Record nothing executes is decoration sitting beside the `if`s that actually
- * decide. It drifts silently, precisely because nothing runs it.
- *
- * So the load-bearing arm is the last one: it plants a WRONG VALUE in the
- * Record and asserts a rail's BEHAVIOUR changes. If that arm can be made to
- * pass with the Record ignored, the derivation is a claim rather than a fact.
- * ("If I revert the wiring, what goes red?")
- */
+/** Verify format and encoding-kind checks use the shared version rules. */
 
 type Output = {
 	key: string;

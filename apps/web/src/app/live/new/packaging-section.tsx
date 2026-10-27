@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/context";
 import { LiveArchiveSection } from "./archive-section";
 import type { LiveWizardState } from "./build-live-plan";
 import { LiveEncryptionSection } from "./encryption-section";
+import { LiveMuxingsSection } from "./muxings-section";
 
 export function LivePackagingSection({
 	state,
@@ -35,6 +36,7 @@ export function LivePackagingSection({
 					}
 				/>
 			</Field>
+			<LiveMuxingsSection state={state} onPatch={onPatch} />
 			<LiveEncryptionSection
 				state={state}
 				credentials={credentials}

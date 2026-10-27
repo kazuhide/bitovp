@@ -426,6 +426,8 @@ The Safari identity check establishes known-test-key decryption and AV1 base-vid
 
 A manifest lists the video, audio, and subtitles available for playback and the locations of their files. Configure HLS, DASH, and additional formats such as SMOOTH as needed. Creating a container and including it in a manifest are separate settings.
 
+See [Manifest options](MANIFESTS.md) for optional HLS/DASH attributes, media groups, ranges, custom tags and Default API generation.
+
 For HLS, check audio group IDs, languages, media URIs, and variant names. If you create multiple master playlists, give their child playlists unique paths too. Changing only the master filename does not prevent child files from being overwritten.
 
 For a fixed video rendition, **Video playlist URI** in manifest placement sets the child playlist filename, such as `main-720p.m3u8`. Live has the same field in each video card. Leave it blank to keep the derived name. Use a flat `.m3u8` filename starting with a letter or number, with letters, numbers, dots, underscores or hyphens; URLs, subdirectories, queries and fragments are unavailable. This sets [StreamInfo.uri](https://github.com/bitmovin/bitmovin-api-sdk-javascript/blob/v1.285.0/src/models/StreamInfo.ts), without changing segment filenames or timing.
@@ -711,9 +713,9 @@ Live encoding continuously processes incoming video and audio and writes output 
 |---|---|
 | Basics | Name, Bitmovin account, region and encoder version |
 | Sources | Protocol, connection direction, redundancy, authentication and encryption |
-| Ladder | Video and audio renditions, codecs and per-rendition containers |
+| Ladder | Video and audio renditions, codecs and source track selection |
 | Output | Storage or delivery service and mirrors |
-| Packaging | Shared segment length, encryption and MP4 archive |
+| Packaging | Containers, bundled audio, media files, segment length, encryption and MP4 archive |
 | Encoding | Automatic restart and stop, monitoring conditions, timeouts and caching |
 | Manifests | HLS, DASH, DVR, publication delay, time and ad information |
 | Schedule | Planned input feed, program start and stop times, and a pre-program slate |
@@ -746,11 +748,11 @@ The Live form supports H.264 and H.265 video, and AAC, Dolby Digital and Dolby D
 
 For H.264, “Default (VOD_HIGH_QUALITY)” and “None (use encoding mode)” are separate choices. None omits `presetConfiguration` from the API request. The H.265 default also leaves this parameter unspecified. Saved values outside the available choices remain visible for validation; select another preset if needed.
 
-Configure the audio bundled with video, independent audio containers and segment length. Match TS, fMP4, CMAF and other packaging choices to the codec and manifest compatibility conditions. Segment length is in seconds, bitrate in bps and audio sample rate in Hz.
+In **Packaging**, choose each track's container, the audio bundled with video, independent audio containers and segment length. Match TS, fMP4 and CMAF to the codec and manifest compatibility conditions. Segment length is in seconds, bitrate in bps and audio sample rate in Hz.
 
-Each rendition's "Advanced" section includes its input track position and input path. Track positions start at zero; blank keeps video position `0` or audio position `1`. Leave the path blank to use the input protocol's default.
+In **Ladder**, each rendition's "Advanced" section includes its input track position and input path. Track positions start at zero; blank keeps video position `0` or audio position `1`. Leave the path blank to use the input protocol's default.
 
-For storage outputs, the same section provides media filenames and a media output subdirectory. This subdirectory replaces the complete generated media folder; it is not appended to the folder in "Output". Blank keeps automatic paths, `/` selects the output root, and each container needs a separate folder. Storage mirrors use the same path.
+For storage outputs, open each track's "Advanced" section in **Packaging** to set media filenames and a media output subdirectory. This subdirectory replaces the complete generated media folder; it is not appended to the folder in "Output". Blank keeps automatic paths, `/` selects the output root, and each container needs a separate folder. Storage mirrors use the same path.
 
 Choose either a segment filename pattern such as `seg_%number%.m4s`, or a naming template with random tokens. A custom init filename is available for fMP4. Audio needs its own container to use separate filenames or paths.
 
@@ -764,7 +766,7 @@ In **Packaging → Encryption**, choose CENC, FairPlay or SPEKE for fMP4, or Fai
 
 Clear output is replaced by encrypted output unless you also request an unencrypted copy. Give those copies separate folders. HLS CENC intended for FairPlay needs CBC and FairPlay IV/URI metadata. Playback still requires the appropriate license configuration and player support. CMAF and the progressive MP4 archive do not use these encryption controls. Browser drafts omit URLs, including FairPlay URIs; re-enter them after restoring a draft.
 
-**Basics → Fallback cloud regions** accepts up to three distinct concrete regions or `AUTO` on the primary cloud provider, in order. These are alternatives when the preferred region is unavailable; Cloud Connect is excluded.
+The API client library (SDK) exposes `fallbackCloudRegions` on its shared encoding model, but the Live Encoding API rejects nonempty fallback lists at startup. Leave this setting unset for Live. VOD fallback regions remain available. If an imported plan or restored draft contains saved regions, **Basics** shows the list and **Clear fallback regions**. Clear them before creating the channel.
 
 ### HLS, DASH, and latency
 
@@ -1509,6 +1511,19 @@ This example checks media conversion, segmentation, decoding, and the evaluation
 
 Audio boundaries and alignment are explained in Chapter 11. Big Buck Bunny is from the [Blender Foundation](https://peach.blender.org/about/) and is licensed under Creative Commons Attribution 3.0. Media credit: © copyright 2008, Blender Foundation / www.bigbuckbunny.org.
 
+### Provider-encoded samples: October 27, 2026
+
+Ten-second Big Buck Bunny inputs were encoded through Bitmovin with JavaScript API SDK 1.285.0 and 2-second segments. All initialization files and segments listed in each DASH manifest were downloaded from public S3 URLs, assembled without changing their bytes, and decoded to the end locally with FFmpeg. All 4 video tracks and 7 audio tracks completed decoding with `-xerror` enabled. FFmpeg 8.1.3 in the worker container also read each public DASH manifest directly and decoded 240 video frames and all audio streams to the end. The original job checks retain their HLS version warnings and one skipped VP9 bitrate check.
+
+| Video codec | Decoded frames | Video duration (seconds) | Target bitrate (kbps) | Measured video bitrate (kbps) |
+|---|---:|---:|---:|---:|
+| H.264 | 240 | 10.000 | 800.0 | 813.1 |
+| HEVC | 240 | 10.000 | 800.0 | 800.7 |
+| VP9 | 240 | 9.999 | 800.0 | 799.6 |
+| AV1 | 240 | 10.000 | 800.0 | 477.6 |
+
+Target bitrate is the encoder setting. Measured video bitrate is the encoded video packet data divided by its presentation time, excluding container overhead; 1 kbps means 1,000 bits per second. In the local assembled-track check, the 7 audio tracks (AAC, AC3 and EAC3) each decoded to 479,232 samples at 48 kHz, or 9.984 seconds. See [audio boundaries in Chapter 11](./USER-GUIDE.en.md#frame-boundaries-and-alignment) for interpreting audio duration. These checks cover complete-track FFmpeg decoding. Browser/device compatibility and DRM license delivery require separate checks, as do audio/video synchronization, cutoff-frequency response and quality improvement.
+
 ### Provider-encoded samples: October 20, 2026
 
 Ten-second Big Buck Bunny inputs were encoded through Bitmovin using the JavaScript API SDK 1.284.0. The following measurements describe those outputs separately from the local example above.
@@ -1522,7 +1537,7 @@ Ten-second Big Buck Bunny inputs were encoded through Bitmovin using the JavaScr
 
 Chrome playback reached the end with 240 decoded video frames for HLS using hls.js 1.6.16 and for both DASH presentations using Shaka Player 5.2.8. It used unchanged downloaded files served locally. For the H.264/HEVC sample, direct FFmpeg reading of the DASH manifest was not qualified; the unchanged files passed concatenated-track decoding and browser playback.
 
-These scores describe one reference/output pair and measurement method. They do not establish a quality target for other content or audio/video synchronization. These checks do not qualify AV1 output.
+These scores describe one reference/output pair and measurement method. They do not establish a quality target for other content or audio/video synchronization. The October 20 checks did not qualify AV1 output.
 
 ### Glossary
 

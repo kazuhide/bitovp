@@ -10,6 +10,7 @@
 			"renditionKey": "v180",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -34,6 +35,7 @@
 			"renditionKey": "v360-300",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -58,6 +60,7 @@
 			"renditionKey": "v360-600",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -82,6 +85,7 @@
 			"renditionKey": "v540",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -106,6 +110,7 @@
 			"renditionKey": "v720",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -130,6 +135,7 @@
 			"renditionKey": "v900",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",
@@ -154,6 +160,7 @@
 			"renditionKey": "v1080",
 			"container": "MP4_FRAGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "",
 			"dir": {
 				"pattern": "",

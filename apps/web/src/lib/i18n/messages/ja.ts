@@ -17,11 +17,27 @@ export const ja = {
 			"暗号化しない出力も作成する（保存先のフォルダを分けてください）",
 		copyToAll: "暗号化設定を対応するすべてのトラックにコピー",
 		orphan: "削除されたトラックを参照する暗号化設定があります。",
-		fallbackRegions: "代替クラウドリージョン",
-		fallbackRegion: "代替リージョン",
-		fallbackHelp:
-			"同じクラウドの具体的なリージョン、またはAUTOを最大3件指定できます。指定順を保持します。Cloud Connectでは使用できません。",
+		fallbackUnsupported:
+			"Live Encodingでは代替リージョンを指定できません。チャンネルを作成するには、保存されている代替リージョンを解除してください。",
+		clearFallbackRegions: "代替リージョンを解除",
 		clear: "暗号化なし",
+	},
+	manifestDetail: {
+		defaultHlsConflict:
+			"Default HLSでは各レンディションに保存したプレイリスト名や音声グループを指定できません。該当する設定を削除するか、手動生成を使ってください。別の手動生成HLSで使う設定は残せます。",
+		defaultHlsSelection:
+			"Default HLSは先頭レンディションのエンコードを対象に、プレイリスト名や音声グループを生成します。出力先は映像・音声の保存先と同じフォルダーか、その親にしてください。../ で親のメディアを参照する場合は手動生成を使ってください。",
+		publicVttUrl: "認証不要の公開URLのみ（署名・?・#は不可）",
+		templateUnavailable:
+			"マニフェストの詳細設定は、プランJSONかアプリから実行してください。Encoding TemplateのYAMLには書き出せません。",
+		progressiveWebm: "単一のWebMファイル",
+		title: "マニフェストの詳細設定",
+		generation: "生成方法",
+		manual: "設定したトラックから生成",
+		default: "Default API（エンコード完了後）",
+		add: "追加",
+		remove: "削除",
+		unset: "未指定",
 	},
 	liveOutputs: {
 		destination: "\u51fa\u529b\u5148",
@@ -5566,7 +5582,7 @@ export const ja = {
 		emptyRedundantRtmpInput: '空欄 = "Redundant RTMP Input"',
 		emptySrtInput: '空欄 = "SRT Input"',
 		dvrBudgetTooltip:
-			"Live DVR/タイムシフトのマニフェストには、まだ取得できる全セグメントが記載されます。Bitmovin が保持できる要素数は合計約54,000です。各レンディションに（timeshift ÷ セグメント長）個のセグメントが加わるため、ウィンドウが長い、セグメントが短い、レンディションが多いほど要素数が増えます。大きなマニフェストは更新に時間がかかるため、ウィンドウは約3時間（10,800秒）以内を推奨します。このゲージは上限の約80%を超えると警告しますが、入力値を自動で切り詰めることはありません。",
+			"Live DVR/タイムシフトのマニフェストには、まだ取得できる全セグメントが記載されます。Bitmovin が保持できる要素数は合計約54,000です。独立したプレイリストやセグメント化されたDASH表現ごとに（timeshift ÷ セグメント長）個のセグメントが加わります。ウィンドウが長い、セグメントが短い、セグメント一覧が多いほど要素数が増えます。大きなマニフェストは更新に時間がかかるため、ウィンドウは約3時間（10,800秒）以内を推奨します。このゲージは上限の約80%を超えると警告しますが、入力値を自動で切り詰めることはありません。",
 		liveEdgeOffsetTooltip:
 			"プレイヤーが最新セグメントからどれだけ後ろで再生を始めるか。推奨は ~10–12 秒(セグメント約 2–3 個分 — Bitmovin のリファレンスサンプルは 10–12 を使用)。大きいほど遅延は増えるが ingest/CDN ジッタへのバッファ余裕が増し、小さいほど低遅延だがライブエッジ付近でのリバッファリスクが上がります。",
 		hlsLiveEdgeOffsetTooltip:
@@ -5754,11 +5770,11 @@ export const ja = {
 		dvrLegName: "コンテナ出力 {n}",
 		dvrLegSegments: "{count} セグメント",
 		dvrMathMixed:
-			"Σ ceil({timeshift}s / segmentLength) を {renditions} レンディション分 = {total} / 約 {budget} 要素",
+			"Σ ceil({timeshift}s / segmentLength) を {renditions} 個のセグメント一覧で合計 = {total} / 約 {budget} 要素",
 		dvrMathUniform:
-			"ceil({timeshift}s / {segment}s) = {segments} セグメント × {renditions} レンディション = {total} / 約 {budget} 要素",
+			"ceil({timeshift}s / {segment}s) = {segments} セグメント × {renditions} 個の一覧 = {total} / 約 {budget} 要素",
 		dvrMathUniformOne:
-			"ceil({timeshift}s / {segment}s) = {segments} セグメント × {renditions} レンディション = {total} / 約 {budget} 要素",
+			"ceil({timeshift}s / {segment}s) = {segments} セグメント × {renditions} 個の一覧 = {total} / 約 {budget} 要素",
 		hlsPlaylistMarkers: "HLS プレイリストマーカー",
 		ingestPoint: "Ingest ポイント",
 		intervalRequiredFor: "{mode} では間隔が必須です",

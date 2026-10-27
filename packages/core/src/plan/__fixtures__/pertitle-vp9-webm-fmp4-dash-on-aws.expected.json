@@ -10,6 +10,7 @@
 			"renditionKey": "v180",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -33,6 +34,7 @@
 			"renditionKey": "v360-210",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -56,6 +58,7 @@
 			"renditionKey": "v360-420",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -79,6 +82,7 @@
 			"renditionKey": "v540",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -102,6 +106,7 @@
 			"renditionKey": "v720",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -125,6 +130,7 @@
 			"renditionKey": "v900",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -148,6 +154,7 @@
 			"renditionKey": "v1080",
 			"container": "WEBM_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-vp9-aac-webm-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",

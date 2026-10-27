@@ -31,6 +31,11 @@ import {
 	hlsChildFiles,
 } from "../plan/hls-media-defaults";
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
+import { outputFilePath } from "../plan/output-files";
+import {
+	isPerTitleRendition,
+	type TemplateStreamRef,
+} from "../plan/per-title-results";
 import type {
 	EncodingPlan,
 	PlanManifest,
@@ -39,6 +44,13 @@ import type {
 } from "../plan/schema";
 import { AUDIO_CODECS } from "../plan/schema";
 import { enumerateQcTargets } from "../vmaf/targets";
+import { defaultDashPeriods } from "./default-dash";
+import { type DefaultHlsSelection, defaultHlsSelection } from "./default-hls";
+import {
+	type ExpectedHlsAdditionalMedia,
+	type ExpectedHlsAudioGroups,
+	expectedHlsAdditionalMedia,
+} from "./manifest-tracks";
 
 /**
  * A path with the runtime placeholders still in it.
@@ -60,6 +72,7 @@ export type ContainerKind =
 	| "FMP4_SEGMENTED"
 	| "TS_SEGMENTED"
 	| "WEBM_SEGMENTED"
+	| "WEBM_PROGRESSIVE"
 	| "TEXT_SINGLE"
 	| "TEXT_SEGMENTED"
 	| "MP4_PROGRESSIVE"
@@ -85,7 +98,7 @@ export type ExpectedMuxing = {
 	segmentNamingIsTemplate?: true;
 	/** Segment length in seconds — the engine turns this into a count. */
 	segmentLengthSec?: number;
-	/** Single-file name, for the MP4 families. */
+	/** Single-file name, for progressive WebM and the MP4 families. */
 	filename?: string;
 	/** ACL the plan asked for, when it said. */
 	acl?: "PUBLIC_READ" | "PRIVATE";
@@ -94,12 +107,13 @@ export type ExpectedMuxing = {
 	 * row's outputs instead. The engine must resolve those before listing.
 	 */
 	viaDrmKeys?: string[];
-	/** Video geometry/codec the artefact must carry; absent for audio/text. */
+	/** Configured video fields; flexible Per-title geometry is a hint until RESULT binding. */
 	video?: {
+		width?: number;
 		height: number | null;
 		codec: PlanRendition["codec"];
 		profile?: string;
-		/** Target bitrate in bps; null for per-title (algorithm decides). */
+		/** Target bitrate or template hint in bps; null when the encoder chooses it. */
 		bitrate: number | null;
 		fps?: number;
 	};
@@ -110,12 +124,12 @@ export type ExpectedMuxing = {
 		channelLayout?: string;
 	};
 	text?: { language?: string };
-	/** True when the rendition is per-title, so bitrate/height are algorithmic. */
+	/** True when a provider RESULT population must resolve this template. */
 	perTitle: boolean;
 	/**
 	 * Which per-title mode, because the expected RUNG COUNT differs.
 	 *
-	 * A `FIXED` muxing pins resolution and bitrate; its guaranteed rung contributes
+	 * A `FIXED` muxing uses fixed resolution and a bitrate range; its guaranteed rung contributes
 	 * to the verifier's lower bound. `TEMPLATE` includes fixed-resolution templates,
 	 * whose resolution is pinned but resulting rung count is not asserted here. The
 	 * engine could previously only assert "at least one rung", so a 7-rung ladder that
@@ -123,6 +137,8 @@ export type ExpectedMuxing = {
 	 * reading as fully green. With the mode it can assert a lower bound.
 	 */
 	perTitleMode?: "TEMPLATE" | "FIXED";
+	/** Raw stream mode: geometry constraints are independent of rung-count mode. */
+	perTitleStreamMode?: TemplateStreamRef["mode"];
 };
 
 /**
@@ -183,12 +199,16 @@ export type ManifestRenditionTopology = {
 	/** Fixed-ladder video renditions — geometry/bitrate binding targets only. */
 	video: {
 		renditionKey: string;
-		height: number;
-		bitrate: number;
+		/** A Default condition needs metadata not available in the saved plan. */
+		optional?: true;
+		height?: number;
+		width?: number;
+		bitrate?: number;
 		codec: PlanRendition["codec"];
 	}[];
 	audio: {
 		renditionKey: string;
+		optional?: true;
 		/** HLS EXT-X-MEDIA GROUP-ID / NAME the master carries; absent for DASH. */
 		groupId?: string;
 		name?: string;
@@ -205,6 +225,9 @@ export type ManifestRenditionTopology = {
 	 * from a manifest.
 	 */
 	declaredVideoCodecFamilies: PlanRendition["codec"][];
+	/** RFC codec prefixes allowed on explicitly configured subtitle/image tracks. */
+	textCodecs?: string[];
+	imageCodecs?: string[];
 	/**
 	 * HLS only: the EXT-X-STREAM-INF rows the master must carry, one expected
 	 * node per compiler op. Absent for DASH, whose nodes are `video` + `audio`.
@@ -224,6 +247,21 @@ export type ExpectedManifest = {
 	videoEntries: number;
 	audioEntries: number;
 	textEntries: number;
+	imageEntries?: number;
+	dashExternalSubtitles?: { url: string; language: string }[];
+	dashProgressiveFiles?: string[];
+	dashSprites?: {
+		spriteKey: string;
+		outputKey: string;
+		dir: PathPattern;
+		filename: string;
+	}[];
+	hlsAdditionalMedia?: ExpectedHlsAdditionalMedia[];
+	hlsAudioGroups?: ExpectedHlsAudioGroups;
+	/** Default HLS binds media writers, not application-generated playlist names. */
+	hlsDefault?: DefaultHlsSelection;
+	/** Default API selections are evaluated per period, with explicit uncertainty. */
+	dashPeriods?: ExpectedDashPeriod[];
 	/** HLS only: `EXT-X-VERSION` values the plan pinned, when it pinned them. */
 	hlsMasterVersion?: string;
 	hlsMediaVersion?: string;
@@ -265,6 +303,19 @@ export type ExpectedManifest = {
 	 * Smooth. The video list omits per-title rungs (encoder-chosen — C1).
 	 */
 	manifestRenditions?: ManifestRenditionTopology;
+};
+
+export type ExpectedDashPeriod = {
+	counts: Record<"video" | "audio" | "text", { min: number; max?: number }>;
+	topology: ManifestRenditionTopology;
+	perTitle: boolean;
+	/** Template identities selected by this period's encoding keys and conditions. */
+	perTitleSelection?: {
+		renditionKey: string;
+		conditional?: true;
+		optional?: true;
+	}[];
+	unverified: string[];
 };
 
 /**
@@ -511,7 +562,7 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 		case "TS":
 			return "TS_SEGMENTED";
 		case "WEBM":
-			return "WEBM_SEGMENTED";
+			return muxing.progressive ? "WEBM_PROGRESSIVE" : "WEBM_SEGMENTED";
 		case "TEXT":
 			return "TEXT_SINGLE";
 		case "CHUNKED_TEXT":
@@ -612,6 +663,9 @@ export function compileExpectedArtefacts(
 			renditionKey: rendition?.key ?? muxing.streamKey,
 			container: containerOf(muxing),
 			...(perTitle ? { perTitleMode: perTitleModeOf(rendition) } : {}),
+			...(rendition && isPerTitleRendition(rendition)
+				? { perTitleStreamMode: rendition.mode }
+				: {}),
 			outputKey: dest?.outputKey ?? "",
 			// withTrailingSlash: a slash-less directory made dir.prefix match
 			// SIBLING directories too (out/thumbs vs out/thumbsXL) — false PASS
@@ -623,7 +677,8 @@ export function compileExpectedArtefacts(
 			...(viaDrm && viaDrm.length > 0 ? { viaDrmKeys: viaDrm } : {}),
 		};
 
-		if ("segmentNaming" in muxing) {
+		const progressiveWebm = muxing.kind === "WEBM" && muxing.progressive;
+		if ("segmentNaming" in muxing && !progressiveWebm) {
 			const template =
 				"segmentNamingTemplate" in muxing
 					? muxing.segmentNamingTemplate
@@ -635,10 +690,12 @@ export function compileExpectedArtefacts(
 		if (muxing.kind === "CMAF") expected.muxingKind = "CMAF";
 		if (muxing.kind === "CMAF" && muxing.initSegmentNameTemplate) {
 			expected.initSegmentNameTemplate = muxing.initSegmentNameTemplate;
-		} else if ("initSegmentName" in muxing) {
+		} else if ("initSegmentName" in muxing && !progressiveWebm) {
 			expected.initSegment = muxing.initSegmentName;
 		}
-		if ("filename" in muxing) {
+		if (progressiveWebm) {
+			expected.filename = muxing.filename ?? "output.webm";
+		} else if ("filename" in muxing) {
 			expected.filename = muxing.filename;
 		}
 
@@ -675,6 +732,7 @@ export function compileExpectedArtefacts(
 			) {
 				const v = packaged as Extract<PlanRendition, { codec: "H264" }>;
 				expected.video = {
+					...(v.width !== undefined ? { width: v.width } : {}),
 					height: v.height ?? null,
 					codec: packagedCodec,
 					bitrate: v.bitrate ?? null,
@@ -770,6 +828,7 @@ export function compileExpectedArtefacts(
 			const listedMuxings = (kind: string | undefined, keys: Set<string>) =>
 				muxings.filter(
 					(m) =>
+						m.container !== "WEBM_PROGRESSIVE" &&
 						keys.has(m.renditionKey) &&
 						(manifest.kind !== "HLS" || m.muxingKind !== "CMAF") &&
 						(kind === undefined ||
@@ -910,7 +969,10 @@ export function compileExpectedArtefacts(
 							codec: m.video.codec,
 							height: m.video.height,
 							bitrate: m.video.bitrate,
-							...(audioGroup !== undefined ? { audioGroup } : {}),
+							...(audioGroup !== undefined &&
+							!hlsManifest.detailed?.streams?.audioGroups
+								? { audioGroup }
+								: {}),
 							uri: entry.uri,
 						});
 					} else if (
@@ -935,8 +997,12 @@ export function compileExpectedArtefacts(
 							codec: m.audio.codec,
 							bitrate: m.audio.bitrate,
 							// The same derivation as the compiler's audio-variant op.
-							audioGroup:
-								rendition?.hlsMedia?.groupId ?? hlsManifest.audioGroupId,
+							...(!hlsManifest.detailed?.streams?.audioGroups
+								? {
+										audioGroup:
+											rendition?.hlsMedia?.groupId ?? hlsManifest.audioGroupId,
+									}
+								: {}),
 							uri,
 						});
 					}
@@ -968,6 +1034,28 @@ export function compileExpectedArtefacts(
 			);
 
 			if (manifest.kind === "HLS") {
+				if (manifest.generationMode === "DEFAULT") {
+					const selection = defaultHlsSelection(plan);
+					return {
+						manifestKey: manifest.key,
+						kind: "HLS",
+						outputKey: manifest.destination.outputKey,
+						dir,
+						files: [manifest.manifestName],
+						videoEntries: selection.counts.video.min,
+						audioEntries: selection.counts.audio.min,
+						textEntries: selection.counts.text.min,
+						postEncoding,
+						perTitle: selection.perTitleSelection.length > 0,
+						hlsDefault: selection,
+						...(manifest.masterVersion
+							? { hlsMasterVersion: manifest.masterVersion }
+							: {}),
+						...(manifest.mediaVersion
+							? { hlsMediaVersion: manifest.mediaVersion }
+							: {}),
+					};
+				}
 				const hlsVideoMuxes = listedMuxings(
 					manifest.videoMuxingKind,
 					videoKeys,
@@ -1025,6 +1113,18 @@ export function compileExpectedArtefacts(
 						? { hlsMediaVersion: manifest.mediaVersion }
 						: {}),
 					hlsChildFiles: hlsChildFiles(plan, manifest),
+					...(manifest.detailed?.streams?.audioGroups
+						? { hlsAudioGroups: manifest.detailed.streams.audioGroups }
+						: {}),
+					...(manifest.detailed?.additionalMedia?.length
+						? {
+								hlsAdditionalMedia: expectedHlsAdditionalMedia(
+									manifest.detailed.additionalMedia,
+									plan,
+									manifest.drmKind,
+								),
+							}
+						: {}),
 					// DERIVED from the containers this manifest enumerates when the
 					// plan does not pin a leg: `?? "FMP4"` called the muxed-TS
 					// fixture fMP4 and would have demanded an EXT-X-MAP it must not
@@ -1051,7 +1151,7 @@ export function compileExpectedArtefacts(
 				};
 			}
 			if (manifest.kind === "DASH") {
-				return {
+				const configured: ExpectedManifest = {
 					manifestKey: manifest.key,
 					kind: "DASH",
 					outputKey: manifest.destination.outputKey,
@@ -1095,6 +1195,104 @@ export function compileExpectedArtefacts(
 					),
 					...(manifest.drmKind ? { drmKind: manifest.drmKind } : {}),
 				};
+				if (manifest.generationMode === "DEFAULT") {
+					const periods = defaultDashPeriods(plan, manifest);
+					configured.dashPeriods = periods;
+					configured.videoEntries = periods.reduce(
+						(sum, period) => sum + period.counts.video.min,
+						0,
+					);
+					configured.audioEntries = periods.reduce(
+						(sum, period) => sum + period.counts.audio.min,
+						0,
+					);
+					configured.textEntries = periods.reduce(
+						(sum, period) => sum + period.counts.text.min,
+						0,
+					);
+					delete configured.dashRepresentationType;
+					delete configured.manifestRenditions;
+					return configured;
+				}
+				const additional = manifest.detailed?.additionalRepresentations ?? [];
+				if (additional.length) {
+					const progressive = additional.flatMap((representation, index) =>
+						representation.type === "PROGRESSIVE_WEBM"
+							? muxings
+									.filter(
+										(muxing) => muxing.muxingKey === representation.muxingKey,
+									)
+									.map((muxing) => ({
+										...muxing,
+										renditionKey: `${muxing.renditionKey}:progressive-${index}`,
+									}))
+							: [],
+					);
+					const addedTopology = topologyFor(
+						progressive.filter((muxing) => muxing.video),
+						progressive.filter((muxing) => muxing.audio),
+						undefined,
+					);
+					const topology = configured.manifestRenditions;
+					if (topology) {
+						topology.video.push(...addedTopology.video);
+						topology.audio.push(...addedTopology.audio);
+						topology.declaredVideoCodecFamilies = [
+							...new Set([
+								...topology.declaredVideoCodecFamilies,
+								...addedTopology.declaredVideoCodecFamilies,
+							]),
+						].sort();
+						topology.textCodecs = ["wvtt", "stpp"];
+						topology.imageCodecs = ["jpeg", "png"];
+					}
+					configured.videoEntries += progressive.filter(
+						(muxing) => muxing.video,
+					).length;
+					configured.audioEntries += progressive.filter(
+						(muxing) => muxing.audio,
+					).length;
+					configured.dashProgressiveFiles = progressive.map((muxing) =>
+						outputFilePath(
+							muxing.dir.pattern,
+							muxing.filename ?? "output.webm",
+						),
+					);
+					configured.dashExternalSubtitles = additional.flatMap(
+						(representation) =>
+							representation.type === "VTT"
+								? [
+										{
+											url: representation.vttUrl,
+											language: representation.lang,
+										},
+									]
+								: [],
+					);
+					configured.textEntries += configured.dashExternalSubtitles.length;
+					configured.imageEntries = additional.filter(
+						(representation) => representation.type === "SPRITE",
+					).length;
+					configured.dashSprites = additional.flatMap((representation) => {
+						if (representation.type !== "SPRITE") return [];
+						const sprite = plan.sprites.find(
+							(row) => row.key === representation.spriteKey,
+						);
+						return sprite
+							? [
+									{
+										spriteKey: sprite.key,
+										outputKey: sprite.destination.outputKey,
+										dir: pathPattern(
+											withTrailingSlash(sprite.destination.path),
+										),
+										filename: sprite.filename,
+									},
+								]
+							: [];
+					});
+				}
+				return configured;
 			}
 			return {
 				manifestKey: manifest.key,

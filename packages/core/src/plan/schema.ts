@@ -12,6 +12,12 @@ import { codecEnumSchema } from "./codec-enums";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
+	dashAdaptationOptionsSchema,
+	dashDetailedOptionsSchema,
+	defaultDashPeriodSchema,
+	hlsDetailedOptionsSchema,
+} from "./manifest-options";
+import {
 	audioVolumeFilterSchema,
 	cropFilterSchema,
 	denoiseHqdn3dFilterSchema,
@@ -1172,6 +1178,8 @@ export const tsMuxingSchema = z.strictObject({
 export const webmMuxingSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("WEBM"),
+	progressive: z.boolean().optional(),
+	filename: z.string().min(1).optional(),
 	streamKey: refKey,
 	segmentLength: z.number().positive().default(6),
 	segmentNaming: z.string().default("seg_%number%.chk"),
@@ -1392,6 +1400,8 @@ export const hlsVersionSchema = z.enum([
 export const hlsManifestPlanSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("HLS"),
+	detailed: hlsDetailedOptionsSchema.optional(),
+	generationMode: z.enum(["MANUAL", "DEFAULT"]).optional(),
 	manifestName: z.string().default("stream.m3u8"),
 	name: z.string().default("HLS Manifest"),
 	destination: destinationSchema,
@@ -1443,6 +1453,9 @@ export const hlsManifestPlanSchema = z.strictObject({
 export const dashManifestPlanSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("DASH"),
+	detailed: dashDetailedOptionsSchema.optional(),
+	generationMode: z.enum(["MANUAL", "DEFAULT"]).optional(),
+	defaultPeriods: z.array(defaultDashPeriodSchema).min(1).max(64).optional(),
 	manifestName: z.string().default("stream.mpd"),
 	name: z.string().default("DASH Manifest"),
 	destination: destinationSchema,
@@ -1451,7 +1464,7 @@ export const dashManifestPlanSchema = z.strictObject({
 	 * ranges) fed by DASH_ON_DEMAND MP4 muxings. Absent = segmented (LIVE
 	 * profile arrives with P3).
 	 */
-	profile: z.enum(["ON_DEMAND"]).optional(),
+	profile: z.enum(["ON_DEMAND", "LIVE"]).optional(),
 	audioLanguage: z.string().default("en"),
 	/** Per-manifest: the dash-segment-timeline sample builds one of each. */
 	representationType: z.enum(["TEMPLATE", "TIMELINE"]).default("TEMPLATE"),
@@ -1468,6 +1481,7 @@ export const dashManifestPlanSchema = z.strictObject({
 		.array(
 			z.strictObject({
 				key: refKey,
+				...dashAdaptationOptionsSchema.shape,
 				type: z.enum(["VIDEO", "AUDIO"]),
 				lang: z.string().optional(),
 				label: z.string().optional(),

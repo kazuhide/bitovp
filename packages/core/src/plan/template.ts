@@ -2243,8 +2243,31 @@ function commentSafe(text: string): string {
 /** A template must not silently omit selected DRM from an executable plan. */
 export function encodingTemplateExportUnavailableReason(
 	plan: EncodingPlan,
-): "SPEKE" | "DASH_ON_DEMAND_MP4_DRM" | undefined {
+): "SPEKE" | "DASH_ON_DEMAND_MP4_DRM" | "MANIFEST_DETAILS" | undefined {
 	if (plan.drm.some((drm) => drm.kind === "SPEKE")) return "SPEKE";
+	if (
+		plan.muxings.some(
+			(muxing) => muxing.kind === "WEBM" && muxing.progressive,
+		) ||
+		plan.manifests.some(
+			(manifest) =>
+				manifest.kind !== "SMOOTH" &&
+				(manifest.generationMode === "DEFAULT" ||
+					(manifest.detailed &&
+						Object.values(manifest.detailed).some(
+							(value) => value !== undefined,
+						)) ||
+					(manifest.kind === "DASH" &&
+						manifest.adaptationSets?.some(
+							(set) =>
+								set.labels ||
+								set.roles ||
+								set.accessibilities ||
+								set.customAttributes,
+						))),
+		)
+	)
+		return "MANIFEST_DETAILS";
 	for (const manifest of plan.manifests) {
 		if (
 			manifest.kind !== "DASH" ||
@@ -2289,6 +2312,10 @@ export function encodingTemplateExportUnavailableReason(
 
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
+	if (unavailable === "MANIFEST_DETAILS")
+		throw new Error(
+			"Advanced manifest settings and progressive WebM require Plan JSON or execution in the app; encoding-template YAML export is unavailable.",
+		);
 	if (unavailable === "SPEKE")
 		throw new Error(
 			"SPEKE uses a write-only key provider credential. Export the bitovp plan JSON to preserve its vault reference; encoding-template export is unavailable.",

@@ -1,3 +1,15 @@
+import {
+	dashAdaptationOptionsSchema,
+	dashAdditionalRepresentationSchema,
+	dashDetailedOptionsSchema,
+	defaultDashPeriodSchema,
+	hlsAdditionalMediaSchema,
+	hlsDetailedOptionsSchema,
+	hlsMediaAttributesSchema,
+	hlsStreamOptionsSchema,
+	liveDashDetailedOptionsSchema,
+	liveHlsDetailedOptionsSchema,
+} from "@bitovp/core";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -122,7 +134,7 @@ const codec = fields(
 const muxing = fields(
 	"acl kind key name path autoPath segmentNaming segmentNamingTemplate initSegmentName initSegmentNameTemplate filename manifestType dolbyVisionTrackSampleEntryName",
 	"segmentLength framesPerCmafChunk fragmentDuration",
-	"ownContainer autoOwnContainer",
+	"ownContainer autoOwnContainer progressive",
 	{ muxedAudioKeys: strings },
 );
 const extras = fields(
@@ -175,16 +187,139 @@ const common = {
 	videos: rows(rendition),
 	audios: rows(rendition),
 };
+const mediaDetails = group(
+	fields(
+		"assocLanguage",
+		"startSegmentNumber endSegmentNumber",
+		"isDefault autoselect forced",
+		{ characteristics: strings },
+	).pipe(hlsMediaAttributesSchema),
+);
+const adaptationDetails = group(
+	fields("", "", "", {
+		roles: strings,
+		labels: rows(fields("value lang")),
+		accessibilities: rows(fields("schemeIdUri value")),
+		customAttributes: rows(fields("key value")),
+	}).pipe(dashAdaptationOptionsSchema),
+);
+const safeRows = (schema: z.ZodType) =>
+	z
+		.array(group(schema))
+		.max(64)
+		.transform((values) => {
+			const valid = values.filter((value) => value !== undefined);
+			return valid.length ? valid : undefined;
+		})
+		.optional()
+		.catch(undefined);
+const safeMediaRows = safeRows(
+	fields(
+		"type name groupId language assocLanguage muxingKey uri drmKey instreamId",
+		"startSegmentNumber endSegmentNumber",
+		"isDefault autoselect forced",
+		{ characteristics: strings },
+	).pipe(
+		z.union([
+			hlsAdditionalMediaSchema.options[0].omit({ customTags: true }),
+			hlsAdditionalMediaSchema.options[1].omit({ customTags: true }),
+		]),
+	),
+);
+const safeRepresentationRows = safeRows(
+	fields("type muxingKey dependencyMuxingKey spriteKey", "", "", {
+		roles: strings,
+		labels: rows(fields("value lang")),
+		accessibilities: rows(fields("schemeIdUri value")),
+		customAttributes: rows(fields("key value")),
+	}).pipe(
+		z.union([
+			dashAdditionalRepresentationSchema.options[0],
+			dashAdditionalRepresentationSchema.options[2],
+		]),
+	),
+);
+const hlsDetails = group(
+	fields("channelsAttributeForAudio targetDurationRoundingMode", "", "", {
+		audioMedia: mediaDetails,
+		subtitleMedia: mediaDetails,
+		additionalMedia: safeMediaRows,
+		streams: group(
+			fields(
+				"video",
+				"startSegmentNumber endSegmentNumber",
+				"forceFrameRateAttribute forceVideoRangeAttribute",
+				{
+					audioGroups: group(
+						fields("droppingMode", "", "", {
+							groups: rows(fields("name", "priority")),
+						}),
+					),
+				},
+			).pipe(hlsStreamOptionsSchema),
+		),
+	})
+		.pipe(hlsDetailedOptionsSchema)
+		.transform((value) =>
+			Object.values(value).some((entry) => entry !== undefined)
+				? value
+				: undefined,
+		),
+);
+const dashDetails = group(
+	fields(
+		"dashEditionCompatibility iso8601TimestampFormat",
+		"minBufferTime",
+		"",
+		{
+			period: group(fields("", "start duration")),
+			additionalRepresentations: safeRepresentationRows,
+			videoAdaptationSet: adaptationDetails,
+			audioAdaptationSet: adaptationDetails,
+			subtitleAdaptationSet: adaptationDetails,
+			representations: rows(
+				fields(
+					"muxingKey mode startKeyframeKey endKeyframeKey dependencyMuxingKey contentProtection",
+					"startSegmentNumber endSegmentNumber",
+					"drmRepresentation",
+				),
+			),
+		},
+	)
+		.pipe(dashDetailedOptionsSchema)
+		.transform((value) =>
+			Object.values(value).some((entry) => entry !== undefined)
+				? value
+				: undefined,
+		),
+);
 const hlsOptions = fields(
-	"acl masterVersion mediaVersion audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind audioMediaUri perTitleVariantUri drmKind jitPlacement",
+	"acl masterVersion mediaVersion audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind audioMediaUri perTitleVariantUri drmKind jitPlacement generationMode",
 	"",
 	"omitMasterVersion omitMediaVersion variantsPerAudioGroup iframePlaylists audioVariantStreams",
+	{ detailed: hlsDetails },
 );
 const dashOptions = fields(
-	"acl audioLanguage representationType videoMuxingKind audioMuxingKind drmKind jitPlacement",
+	"acl audioLanguage representationType videoMuxingKind audioMuxingKind drmKind jitPlacement generationMode",
 	"",
 	"onDemand",
-	{ adaptationSets: rows(fields("key type lang label")) },
+	{
+		adaptationSets: rows(
+			fields("key type lang label", "", "", {
+				roles: strings,
+				labels: rows(fields("value lang")),
+				accessibilities: rows(fields("schemeIdUri value")),
+				customAttributes: rows(fields("key value")),
+			}),
+		),
+		detailed: dashDetails,
+		defaultPeriods: group(
+			z
+				.array(defaultDashPeriodSchema)
+				.max(64)
+				.refine((value) => !/\w+:\/\/|[?#]/u.test(JSON.stringify(value))),
+		),
+	},
 );
 const padding = group(fields("unit", "duration"));
 const vod = fields(
@@ -324,11 +459,12 @@ const liveManifestDestination = group(
 	fields("outputKey path acl").required({ outputKey: true, path: true }),
 );
 const liveHlsManifest = fields(
-	"key name manifestName audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind drmKind",
+	"key name manifestName audioGroupId audioLanguage closedCaptions videoMuxingKind audioMuxingKind drmKind masterVersion mediaVersion",
 	"timeshift liveEdgeOffset",
 	"enabled insertProgramDateTime insertProgramDateTimeExplicit",
 	{
 		destination: liveManifestDestination,
+		detailed: group(hlsDetails.pipe(liveHlsDetailedOptionsSchema.optional())),
 		programDateTimeSettings: group(
 			fields("source", "", "", {
 				placement: group(fields("mode", "interval")),
@@ -340,7 +476,10 @@ const liveDashManifest = fields(
 	"key name manifestName audioLanguage representationType availabilityStartTimeMode drmKind",
 	"timeshift liveEdgeOffset suggestedPresentationDelay minimumUpdatePeriod",
 	"enabled",
-	{ destination: liveManifestDestination },
+	{
+		destination: liveManifestDestination,
+		detailed: group(dashDetails.pipe(liveDashDetailedOptionsSchema.optional())),
+	},
 );
 // DRM keys remain vault references; URLs still use the URL-excluding text schema.
 const liveDrmDestination = z

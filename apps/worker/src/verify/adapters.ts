@@ -10,7 +10,7 @@
 
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { ObjectStorageBrowser } from "@bitovp/storage";
@@ -338,6 +338,10 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
 					groupId,
 					...(name ? { name } : {}),
 					...(entry.uri ? { uri: entry.uri } : {}),
+					...(entry.language !== undefined ? { language: entry.language } : {}),
+					...(entry.instreamId !== undefined
+						? { instreamId: entry.instreamId }
+						: {}),
 				});
 			}
 		}
@@ -372,9 +376,30 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
 					segmentUris: (m.segments ?? []).flatMap((seg) =>
 						seg.uri ? [seg.uri] : [],
 					),
-					// First segment's map only: RFC 8216 lets EXT-X-MAP change after a
-					// discontinuity, and no VOD playlist this app emits carries more
-					// than one (review-343 L2) — a second init would go unchecked.
+					mediaSegments: (m.segments ?? []).flatMap((segment) =>
+						segment.uri
+							? [
+									{
+										uri: segment.uri,
+										...(segment.byterange
+											? { byteRange: { ...segment.byterange } }
+											: {}),
+										...(segment.map?.uri
+											? {
+													map: {
+														uri: segment.map.uri,
+														...(segment.map.byterange
+															? { byteRange: { ...segment.map.byterange } }
+															: {}),
+													},
+												}
+											: {}),
+									},
+								]
+							: [],
+					),
+					// Preserve the first init for existing consumers; mediaSegments retains
+					// every EXT-X-MAP change for the additional VIDEO writer binding.
 					...(m.segments?.[0]?.map?.uri
 						? { mapUri: m.segments[0].map.uri }
 						: {}),
@@ -395,8 +420,15 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
 export async function parseDashText(text: string): Promise<ParsedDash> {
 	const mod = await import("mpd-parser");
 	const parsed = mod.parse(text);
+	const periodStarts = [...text.matchAll(/<Period\b/g)].map(
+		(match) => match.index ?? 0,
+	);
+	const periodAt = (index: number) =>
+		Math.max(0, periodStarts.filter((start) => start <= index).length - 1);
 
-	const reps = [...text.matchAll(/<Representation\b[^>]*>/g)].map((m) => {
+	const reps: ParsedDash["representations"] = [
+		...text.matchAll(/<Representation\b[^>]*>/g),
+	].map((m) => {
 		const attrs = m[0];
 		const at = (m.index as number) + attrs.length;
 		// Look inside this Representation only: stop at its closing tag, or at the
@@ -433,6 +465,7 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 							? "LIST"
 							: "UNKNOWN";
 		const height = /height="(\d+)"/.exec(attrs);
+		const width = /width="(\d+)"/.exec(attrs);
 		const bandwidth = /bandwidth="(\d+)"/.exec(attrs);
 		const id = /id="([^"]+)"/.exec(attrs);
 		// The codec string binds the representation to its plan rendition (row
@@ -448,30 +481,68 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 		// before this representation can contain earlier Representation tags; using
 		// the whole prefix made a codec-less row inherit its sibling's codec.
 		const contentType =
-			/contentType="(video|audio|text)"/.exec(setOpen) ??
-			/contentType="(video|audio|text)"/.exec(attrs);
+			/contentType="(video|audio|text|image)"/.exec(setOpen) ??
+			/contentType="(video|audio|text|image)"/.exec(attrs);
 		const mime =
-			/mimeType="(video|audio|text)\//.exec(setOpen) ??
-			/mimeType="(video|audio|text)\//.exec(attrs);
+			/mimeType="(video|audio|text|image)\//.exec(setOpen) ??
+			/mimeType="(video|audio|text|image)\//.exec(attrs);
 		const kind: ParsedDash["representations"][number]["kind"] = contentType
-			? (contentType[1] as "video" | "audio" | "text")
+			? (contentType[1] as "video" | "audio" | "text" | "image")
 			: mime
-				? (mime[1] as "video" | "audio" | "text")
+				? (mime[1] as "video" | "audio" | "text" | "image")
 				: height || /width="\d+"/.test(attrs) || /width="\d+"/.test(setOpen)
 					? "video"
 					: /audioSamplingRate="/.test(attrs) ||
 							/audioSamplingRate="/.test(setOpen)
 						? "audio"
 						: "unknown";
+		const baseUrl = /<BaseURL\b[^>]*>([^<]*)<\/BaseURL>/.exec(body)?.[1];
+		const language =
+			/lang="([^"]*)"/.exec(attrs)?.[1] ?? /lang="([^"]*)"/.exec(setOpen)?.[1];
 		return {
 			addressing,
 			kind,
+			...(periodStarts.length > 1
+				? { periodIndex: periodAt(m.index ?? 0) }
+				: {}),
+			...(baseUrl !== undefined
+				? { baseUrl: decodeXmlText(baseUrl.trim()) }
+				: {}),
+			...(language !== undefined ? { language: decodeXmlText(language) } : {}),
 			...(id ? { id: id[1] as string } : {}),
 			...(height ? { height: Number(height[1]) } : {}),
+			...(width ? { width: Number(width[1]) } : {}),
 			...(bandwidth ? { bandwidth: Number(bandwidth[1]) } : {}),
 			...(codecs ? { codecs: codecs[1] as string } : {}),
 		};
 	});
+	if (reps.some((representation) => representation.kind === "image")) {
+		// The player-oriented conversion omits image tracks. Its lower-level
+		// public parser still resolves their inherited templates and timelines.
+		const images = mod.toPlaylists(
+			mod
+				.inheritAttributes(mod.stringToMpdXml(text))
+				.representationInfo.filter(
+					(info) =>
+						info.attributes.contentType === "image" ||
+						info.attributes.mimeType?.startsWith("image/"),
+				),
+		);
+		for (const representation of reps.filter((row) => row.kind === "image")) {
+			const index = images.findIndex(
+				(playlist) =>
+					playlist.attributes?.id === decodeXmlText(representation.id ?? ""),
+			);
+			const playlist = index >= 0 ? images.splice(index, 1)[0] : undefined;
+			const uris =
+				playlist?.segments?.flatMap((segment) =>
+					segment.resolvedUri || segment.uri
+						? [segment.resolvedUri ?? (segment.uri as string)]
+						: [],
+				) ?? [];
+			if (uris.length) representation.imageUris = [...new Set(uris)];
+		}
+	}
 
 	if ((parsed.playlists ?? []).length === 0 && reps.length === 0) {
 		throw new Error("mpd-parser found no playlists in this document");
@@ -483,17 +554,51 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 	// a base URL when the document declares one, so the relative form is kept.
 	const segmentsOf = (p: import("mpd-parser").MpdPlaylist) =>
 		(p.segments ?? []).flatMap((seg) => (seg.uri ? [seg.uri] : []));
+	const canonicalUrl = (value: string) => {
+		try {
+			return new URL(value, "https://dash.invalid/").href;
+		} catch {
+			return undefined;
+		}
+	};
 	const playlistOf = (
 		p: import("mpd-parser").MpdPlaylist,
 		kind: "video" | "audio",
-	): NonNullable<ParsedDash["playlists"]>[number] => ({
-		kind,
-		...(p.attributes?.NAME ? { id: p.attributes.NAME } : {}),
-		...(p.attributes?.CODECS ? { codecs: p.attributes.CODECS } : {}),
-		// First segment's init only — same single-init assumption as the HLS map above.
-		...(p.segments?.[0]?.map?.uri ? { mapUri: p.segments[0].map.uri } : {}),
-		segmentUris: segmentsOf(p),
-	});
+	): NonNullable<ParsedDash["playlists"]>[number] => {
+		const resolved = p.resolvedUri ? canonicalUrl(p.resolvedUri) : undefined;
+		const baseMatches =
+			resolved !== undefined
+				? reps.filter(
+						(representation) =>
+							representation.addressing === "BASE" &&
+							representation.kind === kind &&
+							representation.id === p.attributes?.NAME &&
+							representation.baseUrl !== undefined &&
+							canonicalUrl(representation.baseUrl) === resolved,
+					)
+				: [];
+		const periods = [
+			...new Set(
+				baseMatches.flatMap((row) =>
+					row.periodIndex === undefined ? [] : [row.periodIndex],
+				),
+			),
+		];
+		return {
+			kind,
+			...(p.attributes?.NAME ? { id: p.attributes.NAME } : {}),
+			...(p.attributes?.CODECS ? { codecs: p.attributes.CODECS } : {}),
+			...(baseMatches[0]?.baseUrl ? { baseUrl: baseMatches[0].baseUrl } : {}),
+			...(periods.length === 1
+				? { periodIndex: periods[0] }
+				: periods.length > 1
+					? { periodIndices: periods }
+					: {}),
+			// First segment's init only — same single-init assumption as the HLS map above.
+			...(p.segments?.[0]?.map?.uri ? { mapUri: p.segments[0].map.uri } : {}),
+			segmentUris: segmentsOf(p),
+		};
+	};
 	const playlists = [
 		...(parsed.playlists ?? []).map((p) => playlistOf(p, "video")),
 		...Object.values(parsed.mediaGroups?.AUDIO ?? {}).flatMap((group) =>
@@ -502,6 +607,42 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 			),
 		),
 	];
+	// SegmentBase and progressive WebM identify a complete media file even when
+	// mpd-parser needs an external index before it can enumerate byte ranges.
+	for (const representation of reps) {
+		if (
+			representation.addressing !== "BASE" ||
+			!representation.baseUrl ||
+			!["video", "audio"].includes(representation.kind)
+		)
+			continue;
+		const resolved = canonicalUrl(representation.baseUrl);
+		const playlist =
+			resolved === undefined
+				? undefined
+				: playlists.find(
+						(entry) =>
+							entry.id === representation.id &&
+							entry.kind === representation.kind &&
+							entry.baseUrl !== undefined &&
+							canonicalUrl(entry.baseUrl) === resolved &&
+							(representation.periodIndex === undefined ||
+								entry.periodIndex === representation.periodIndex ||
+								entry.periodIndices?.includes(representation.periodIndex)),
+					);
+		if (playlist && playlist.segmentUris.length === 0)
+			playlist.segmentUris = [representation.baseUrl];
+		else if (!playlist)
+			playlists.push({
+				kind: representation.kind === "audio" ? "audio" : "video",
+				id: representation.id,
+				baseUrl: representation.baseUrl,
+				...(representation.periodIndex === undefined
+					? {}
+					: { periodIndex: representation.periodIndex }),
+				segmentUris: [representation.baseUrl],
+			});
+	}
 	// AdaptationSet structure : the codecs each set carries, from
 	// the set's own attribute or its representations'. Paid case F put H264 and
 	// H265 into ONE set; a representation count cannot see that.
@@ -511,12 +652,12 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 		const attrs = m[1] ?? "";
 		const body = m[2] ?? "";
 		const kindMatch =
-			/contentType="(video|audio|text)"/.exec(attrs) ??
-			/mimeType="(video|audio|text)\//.exec(attrs) ??
-			/mimeType="(video|audio|text)\//.exec(body);
+			/contentType="(video|audio|text|image)"/.exec(attrs) ??
+			/mimeType="(video|audio|text|image)\//.exec(attrs) ??
+			/mimeType="(video|audio|text|image)\//.exec(body);
 		const kind: NonNullable<ParsedDash["adaptationSets"]>[number]["kind"] =
 			kindMatch
-				? (kindMatch[1] as "video" | "audio" | "text")
+				? (kindMatch[1] as "video" | "audio" | "text" | "image")
 				: /height="\d+"/.test(attrs + body)
 					? "video"
 					: /audioSamplingRate="/.test(attrs + body)
@@ -526,7 +667,13 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 		for (const c of [...(attrs + body).matchAll(/codecs="([^"]+)"/g)]) {
 			codecs.add(c[1] as string);
 		}
-		return { kind, codecs: [...codecs].sort() };
+		return {
+			kind,
+			codecs: [...codecs].sort(),
+			...(periodStarts.length > 1
+				? { periodIndex: periodAt(m.index ?? 0) }
+				: {}),
+		};
 	});
 	return {
 		representations: reps,
@@ -535,6 +682,28 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 		...(playlists.length > 0 ? { playlists } : {}),
 		...(adaptationSets.length > 0 ? { adaptationSets } : {}),
 	};
+}
+
+function decodeXmlText(value: string): string {
+	const named: Record<string, string> = {
+		amp: "&",
+		quot: '"',
+		apos: "'",
+		lt: "<",
+		gt: ">",
+	};
+	return value.replace(
+		/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt);/gi,
+		(original, entity: string) => {
+			if (!entity.startsWith("#")) return named[entity] ?? original;
+			const codePoint = entity.startsWith("#x")
+				? Number.parseInt(entity.slice(2), 16)
+				: Number(entity.slice(1));
+			return codePoint >= 0 && codePoint <= 0x10ffff
+				? String.fromCodePoint(codePoint)
+				: original;
+		},
+	);
 }
 
 export type AdapterConfig = {
@@ -637,14 +806,30 @@ export function makeEngineDeps(config: AdapterConfig): EngineDeps {
 				.slice(-180)}`,
 		);
 		const out = createWriteStream(dest);
-		for (const part of parts) {
-			await pipeline(createReadStream(part), out, { end: false });
+		try {
+			// One pipeline owns the sink; reusing it across pipelines retains listeners.
+			await pipeline(async function* ({
+				signal,
+			}: {
+				signal?: AbortSignal;
+			} = {}) {
+				for (const part of parts) {
+					// Downstream failure also cancels the current read before the next opens.
+					signal?.throwIfAborted();
+					yield* createReadStream(part, { signal });
+				}
+			}, out);
+		} catch (error) {
+			try {
+				await rm(dest, { force: true });
+			} catch (cleanupError) {
+				throw new AggregateError(
+					[error, cleanupError],
+					"Could not concatenate verification media or remove its partial output",
+				);
+			}
+			throw error;
 		}
-		out.end();
-		await new Promise<void>((done, fail) => {
-			out.on("finish", () => done());
-			out.on("error", fail);
-		});
 		downloads.set(cacheKey, dest);
 		return dest;
 	};

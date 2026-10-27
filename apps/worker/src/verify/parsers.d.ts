@@ -24,13 +24,17 @@ declare module "m3u8-parser" {
 		/** `{ AUDIO: { groupId: { name: { uri } } }, SUBTITLES: {…} }` */
 		mediaGroups?: Record<
 			string,
-			Record<string, Record<string, { uri?: string; language?: string }>>
+			Record<
+				string,
+				Record<string, { uri?: string; language?: string; instreamId?: string }>
+			>
 		>;
 		segments?: {
 			uri?: string;
 			duration?: number;
+			byterange?: { offset?: number; length?: number };
 			/** EXT-X-MAP for fMP4 media playlists. */
-			map?: { uri?: string };
+			map?: { uri?: string; byterange?: { offset?: number; length?: number } };
 		}[];
 		version?: number;
 		targetDuration?: number;
@@ -47,7 +51,9 @@ declare module "m3u8-parser" {
 declare module "mpd-parser" {
 	export type MpdPlaylist = {
 		uri?: string;
+		resolvedUri?: string;
 		attributes?: {
+			id?: string;
 			BANDWIDTH?: number;
 			NAME?: string;
 			CODECS?: string;
@@ -71,4 +77,14 @@ declare module "mpd-parser" {
 	};
 
 	export function parse(manifestString: string, options?: unknown): MpdManifest;
+	export function stringToMpdXml(manifestString: string): unknown;
+	export type MpdRepresentationInfo = {
+		attributes: { contentType?: string; mimeType?: string };
+	};
+	export function inheritAttributes(manifest: unknown): {
+		representationInfo: MpdRepresentationInfo[];
+	};
+	export function toPlaylists(
+		representations: MpdRepresentationInfo[],
+	): MpdPlaylist[];
 }

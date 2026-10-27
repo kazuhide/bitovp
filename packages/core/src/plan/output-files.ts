@@ -94,7 +94,9 @@ export function outputFileNamesAtDestination(
 /** Dynamic segment names are provider-resolved; reserve only known files. */
 function staticNames(muxing: PlanMuxing): string[] {
 	const names: string[] = [];
-	if ("filename" in muxing) names.push(muxing.filename);
+	if (muxing.kind === "WEBM" && muxing.progressive)
+		return [muxing.filename ?? "output.webm"];
+	if ("filename" in muxing && muxing.filename) names.push(muxing.filename);
 	const literal = (value: string) => {
 		if (!/[%{}]/.test(value)) names.push(value);
 	};

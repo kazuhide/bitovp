@@ -5,6 +5,7 @@ import type {
 	PerTitleActualDeliveryMuxing,
 	PerTitleActualOutputLeg,
 	PerTitleActualPopulations,
+	PerTitleActualVideo,
 } from "@bitovp/core";
 import { matchOneToOne } from "./one-to-one";
 
@@ -36,6 +37,8 @@ export type PerTitleDeliveryBinding = {
 	expectedMuxing: ExpectedMuxing;
 	expectedDrm?: ExpectedDrm;
 	actual: PerTitleActualOutputLeg;
+	/** Captured RESULT parameters; absent on older or incomplete codec readbacks. */
+	actualVideo?: PerTitleActualVideo;
 	/** Symbolic plan output key resolved from the provider output id. */
 	outputKey: string;
 };
@@ -89,6 +92,8 @@ function providerMuxingTypes(expected: ExpectedMuxing): string[] {
 			return ["TS"];
 		case "WEBM_SEGMENTED":
 			return ["WEBM"];
+		case "WEBM_PROGRESSIVE":
+			return ["PROGRESSIVE_WEBM"];
 		case "TEXT_SINGLE":
 		case "TEXT_SEGMENTED":
 			return ["WEBVTT", "TEXT"];
@@ -501,6 +506,7 @@ export function bindPerTitleDelivery(
 						? { expectedDrm: legPair.expected.expectedDrm }
 						: {}),
 					actual: legPair.observed,
+					...(result.video ? { actualVideo: result.video } : {}),
 					outputKey: legPair.expected.outputKey,
 				});
 			}

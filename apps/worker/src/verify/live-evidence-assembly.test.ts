@@ -273,6 +273,141 @@ function inputs(
 	};
 }
 
+it("carries external subtitle uncertainty through origin and edge evidence without changing AV progression", () => {
+	const source = inputs();
+	const configuredPlan = structuredClone(plan);
+	const hls = configuredPlan.liveManifests.find(
+		(manifest) => manifest.kind === "HLS",
+	);
+	if (hls?.kind !== "HLS") throw new Error("missing HLS");
+	hls.detailed = {
+		additionalMedia: [
+			{
+				type: "VTT",
+				groupId: "subs",
+				name: "Japanese",
+				language: "ja",
+				uri: "subs.m3u8",
+				vttUrl: "https://media.example.test/subs.vtt",
+			},
+		],
+	};
+	source.plan = configuredPlan;
+	source.expected = compileExpectedLiveArtefacts(configuredPlan);
+	source.manifestFiles = source.manifestFiles.map((file) =>
+		file.kind === "HLS"
+			? {
+					...file,
+					referenceChecks: [
+						{
+							id: "live:manifest:hls:external-subtitle:0:reference",
+							verdict: "PASS",
+							detail: "Exact URL/language and local child were bound",
+						},
+					],
+				}
+			: file,
+	);
+	for (const sample of source.samples) {
+		const closure = sample.edge?.find((edge) => edge.manifestKey === "hls");
+		closure?.children?.push({
+			id: "subs.m3u8",
+			externalContent: "UNVERIFIED",
+			url: redactUrl(`${EDGE}subs.m3u8`, sha),
+			bytes: 200,
+			sha256: sha("subtitles"),
+			requiresInit: false,
+			listed: 1,
+			served: [],
+			missing: [],
+		});
+	}
+	const legs = assembleLiveEvidence(source).filter(
+		(leg) => leg.manifestKey === "hls",
+	);
+	expect(legs).toHaveLength(2);
+	for (const leg of legs) {
+		expect(
+			leg.children.find((child) => child.id === "subs.m3u8")?.externalContent,
+		).toBe("UNVERIFIED");
+		expect(leg.complete).toBe(false);
+		expect(leg.missing).toContain(
+			"children.subs.m3u8.content: external WebVTT bytes are UNVERIFIED",
+		);
+		expect(leg.missing.some((reason) => reason.startsWith("topology:"))).toBe(
+			false,
+		);
+		expect(leg.progression.observed).toBe(true);
+	}
+});
+
+it("requires actual additional VIDEO reference binding even when its configured writer is growing", () => {
+	const source = inputs();
+	const configuredPlan = structuredClone(plan);
+	const hls = configuredPlan.liveManifests.find(
+		(manifest) => manifest.kind === "HLS",
+	);
+	const muxing = configuredPlan.muxings[0];
+	if (hls?.kind !== "HLS" || !muxing) throw new Error("missing HLS video");
+	hls.detailed = {
+		additionalMedia: [
+			{
+				type: "VIDEO",
+				muxingKey: muxing.key,
+				groupId: "angles",
+				name: "Alternate",
+				uri: "angle.m3u8",
+			},
+		],
+	};
+	source.plan = configuredPlan;
+	source.expected = compileExpectedLiveArtefacts(configuredPlan);
+	for (const verdict of ["PASS", "FAIL", "SKIP", undefined] as const) {
+		source.manifestFiles = source.manifestFiles.map((file) =>
+			file.kind === "HLS"
+				? {
+						...file,
+						referenceChecks: verdict
+							? [
+									{
+										id: "live:manifest:hls:additional-media:0:playlist:binding",
+										verdict,
+										detail: "Observed VIDEO writer binding",
+									},
+									{
+										id: "live:manifest:hls:additional-media:0:playlist:objects",
+										verdict: "PASS",
+										detail: "Configured writer objects exist",
+									},
+									{
+										id: "live:manifest:hls:additional-media:0:playlist:selected-segments",
+										verdict: "SKIP",
+										detail: "Provider index metadata was not collected",
+									},
+								]
+							: [],
+					}
+				: file,
+		);
+		const origin = assembleLiveEvidence(source).find(
+			(leg) => leg.outputLeg === "hls@origin",
+		);
+		expect(
+			origin?.children.find((child) => child.id === "angle.m3u8")?.media.length,
+		).toBeGreaterThan(0);
+		expect(origin?.complete).toBe(verdict === "PASS");
+		expect(
+			origin?.children.find((child) => child.id === "angle.m3u8")?.missing,
+		).toEqual(
+			verdict === "PASS"
+				? []
+				: [
+						"The additional VIDEO child's actual references were not verified against its configured writer",
+					],
+		);
+	}
+});
+
 describe("assembleLiveEvidence", () => {
 	it.each([
 		false,

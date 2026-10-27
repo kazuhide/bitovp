@@ -49,6 +49,12 @@ import {
 } from "./build-plan";
 import { AudioCutoffEditor } from "./codec-detail-editor";
 import { editFilter } from "./filter-editing";
+import {
+	AdaptationDetailEditor,
+	defaultHlsConflicts,
+	ManifestAdvancedEditor,
+	manifestResources,
+} from "./manifest-detail-editor";
 import { MediaFilterEditor } from "./media-filter-editor";
 import { PerTitleSimulatorLauncher } from "./per-title-simulator-launcher";
 import {
@@ -1306,7 +1312,7 @@ const DASH_OPTION_FIELDS: OptionFieldSpec[] = [
 	},
 ];
 
-function DashAdaptationSetsEditor({
+export function DashAdaptationSetsEditor({
 	idBase,
 	value,
 	onChange,
@@ -1384,6 +1390,29 @@ function DashAdaptationSetsEditor({
 							}}
 						/>
 					</Field>
+					<Collapsible summary={t("manifestDetail.title")}>
+						<AdaptationDetailEditor
+							idBase={`${idBase}-as-${index}-detail`}
+							value={set}
+							onChange={(attrs) =>
+								onChange({
+									...value,
+									adaptationSets: sets.map((item, i) =>
+										i === index
+											? { key: set.key, type: set.type, ...attrs }
+											: item,
+									),
+								})
+							}
+							resources={{
+								muxings: [],
+								keyframes: [],
+								encodings: [],
+								drm: [],
+								sprites: [],
+							}}
+						/>
+					</Collapsible>
 					<FieldRowAction>
 						<RowRemoveButton
 							label={t("wizardX.removeAdaptationSetN", { n: index + 1 })}
@@ -1646,10 +1675,22 @@ function JitPlacementField({
 export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 	const { t } = useT();
 	const manifests = state.manifests;
+	const detailResources = manifestResources(state);
 	const extra = manifests.extra ?? [];
 	const hasManifests = manifests.hls || manifests.dash || extra.length > 0;
 	const patchManifests = (partial: Partial<WizardState["manifests"]>) =>
-		onPatch({ manifests: { ...manifests, ...partial } });
+		onPatch({
+			manifests: { ...manifests, ...partial },
+			...(partial.hlsOptions?.generationMode === "DEFAULT" ||
+			partial.dashOptions?.generationMode === "DEFAULT" ||
+			partial.extra?.some((m) =>
+				m.kind === "HLS"
+					? m.hls?.generationMode === "DEFAULT"
+					: m.kind === "DASH" && m.dash?.generationMode === "DEFAULT",
+			)
+				? { timing: "POST_ENCODING" as const }
+				: {}),
+		});
 	const patchExtra = (index: number, next: WizardExtraManifest) => {
 		const list = [...extra];
 		list[index] = next;
@@ -1772,12 +1813,28 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 							<OptionsGrid
 								idBase="wz-hlsopt"
 								value={manifests.hlsOptions ?? {}}
-								fields={HLS_OPTION_FIELDS}
+								fields={
+									manifests.hlsOptions?.generationMode === "DEFAULT"
+										? HLS_OPTION_FIELDS.filter(
+												(field) =>
+													field.key === "masterVersion" ||
+													field.key === "mediaVersion",
+											)
+										: HLS_OPTION_FIELDS
+								}
 								onChange={(hlsOptions: WizardHlsOptions) =>
 									patchManifests({ hlsOptions })
 								}
 							/>
 						</Collapsible>
+						<ManifestAdvancedEditor
+							kind="HLS"
+							defaultHlsConflicts={defaultHlsConflicts(state, "hls")}
+							idBase="wz-hls-detail"
+							value={manifests.hlsOptions ?? {}}
+							onChange={(hlsOptions) => patchManifests({ hlsOptions })}
+							resources={detailResources}
+						/>
 					</>
 				) : null}
 				{manifests.dash ? (
@@ -1800,17 +1857,32 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 							<OptionsGrid
 								idBase="wz-dashopt"
 								value={manifests.dashOptions ?? {}}
-								fields={DASH_OPTION_FIELDS}
+								fields={
+									manifests.dashOptions?.generationMode === "DEFAULT"
+										? DASH_OPTION_FIELDS.filter(
+												(field) => field.key === "onDemand",
+											)
+										: DASH_OPTION_FIELDS
+								}
 								onChange={(dashOptions: WizardDashOptions) =>
 									patchManifests({ dashOptions })
 								}
 							/>
-							<DashAdaptationSetsEditor
-								idBase="wz-dashopt"
-								value={manifests.dashOptions ?? {}}
-								onChange={(dashOptions) => patchManifests({ dashOptions })}
-							/>
+							{manifests.dashOptions?.generationMode === "DEFAULT" ? null : (
+								<DashAdaptationSetsEditor
+									idBase="wz-dashopt"
+									value={manifests.dashOptions ?? {}}
+									onChange={(dashOptions) => patchManifests({ dashOptions })}
+								/>
+							)}
 						</Collapsible>
+						<ManifestAdvancedEditor
+							kind="DASH"
+							idBase="wz-dash-detail"
+							value={manifests.dashOptions ?? {}}
+							onChange={(dashOptions) => patchManifests({ dashOptions })}
+							resources={detailResources}
+						/>
 					</>
 				) : null}
 			</div>
@@ -1998,7 +2070,15 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 											<OptionsGrid
 												idBase={`wz-xm-${index}-hls`}
 												value={manifest.hls ?? {}}
-												fields={HLS_OPTION_FIELDS}
+												fields={
+													manifest.hls?.generationMode === "DEFAULT"
+														? HLS_OPTION_FIELDS.filter(
+																(field) =>
+																	field.key === "masterVersion" ||
+																	field.key === "mediaVersion",
+															)
+														: HLS_OPTION_FIELDS
+												}
 												onChange={(hls: WizardHlsOptions) =>
 													patchExtra(index, { ...manifest, hls })
 												}
@@ -2009,19 +2089,52 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 											<OptionsGrid
 												idBase={`wz-xm-${index}-dash`}
 												value={manifest.dash ?? {}}
-												fields={DASH_OPTION_FIELDS}
+												fields={
+													manifest.dash?.generationMode === "DEFAULT"
+														? DASH_OPTION_FIELDS.filter(
+																(field) => field.key === "onDemand",
+															)
+														: DASH_OPTION_FIELDS
+												}
 												onChange={(dash: WizardDashOptions) =>
 													patchExtra(index, { ...manifest, dash })
 												}
 											/>
-											<DashAdaptationSetsEditor
-												idBase={`wz-xm-${index}-dash`}
-												value={manifest.dash ?? {}}
-												onChange={(dash) =>
-													patchExtra(index, { ...manifest, dash })
-												}
-											/>
+											{manifest.dash?.generationMode === "DEFAULT" ? null : (
+												<DashAdaptationSetsEditor
+													idBase={`wz-xm-${index}-dash`}
+													value={manifest.dash ?? {}}
+													onChange={(dash) =>
+														patchExtra(index, { ...manifest, dash })
+													}
+												/>
+											)}
 										</Collapsible>
+									)}
+									{manifest.kind === "HLS" ? (
+										<ManifestAdvancedEditor
+											kind="HLS"
+											defaultHlsConflicts={defaultHlsConflicts(
+												state,
+												manifest.key,
+											)}
+											idBase={`wz-extra-${index}-detail`}
+											value={manifest.hls ?? {}}
+											onChange={(hls) =>
+												patchExtra(index, { ...manifest, hls })
+											}
+											resources={detailResources}
+										/>
+									) : (
+										<ManifestAdvancedEditor
+											kind="DASH"
+											idBase={`wz-extra-${index}-detail`}
+											value={manifest.dash ?? {}}
+											onChange={(dash) =>
+												patchExtra(index, { ...manifest, dash })
+											}
+											resources={detailResources}
+										/>
 									)}
 								</>
 							)}

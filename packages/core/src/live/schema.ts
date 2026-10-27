@@ -3,6 +3,7 @@ import {
 	cmafMuxingSchema,
 	destinationSchema,
 	fmp4MuxingSchema,
+	hlsVersionSchema,
 	mp4MuxingSchema,
 	planDrmSchema,
 	planOutputSchema,
@@ -10,6 +11,10 @@ import {
 	secretEgressUrlSchema,
 	tsMuxingSchema,
 } from "../plan/schema";
+import {
+	liveDashDetailedOptionsSchema,
+	liveHlsDetailedOptionsSchema,
+} from "./manifest-detail-schema";
 
 /**
  * LiveChannelPlan v1 — the zod-validated JSON every live channel flows
@@ -296,6 +301,9 @@ export type LiveMuxing = z.infer<typeof liveMuxingSchema>;
 export const liveHlsManifestPlanSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("HLS"),
+	detailed: liveHlsDetailedOptionsSchema.optional(),
+	masterVersion: hlsVersionSchema.optional(),
+	mediaVersion: hlsVersionSchema.optional(),
 	manifestName: z.string().default("stream.m3u8"),
 	name: z.string().default("Live HLS Manifest"),
 	destination: destinationSchema,
@@ -347,6 +355,7 @@ export const liveHlsManifestPlanSchema = z.strictObject({
 export const liveDashManifestPlanSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("DASH"),
+	detailed: liveDashDetailedOptionsSchema.optional(),
 	manifestName: z.string().default("stream.mpd"),
 	name: z.string().default("Live DASH Manifest"),
 	destination: destinationSchema,

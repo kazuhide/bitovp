@@ -5,7 +5,15 @@
  * reads all 84) and dispatches here; this switch narrows the same way the
  * monolithic one did. The default is unreachable by construction.
  */
-import type { CompiledOperation } from "@bitovp/core";
+import {
+	type CompiledOperation,
+	dashAdaptationOptionsSchema,
+	dashGlobalOptionsSchema,
+	hlsGlobalOptionsSchema,
+	hlsMediaAttributesSchema,
+	hlsStreamOptionsSchema,
+	type ManifestCondition,
+} from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { ExecStepContext } from "./exec-shared";
 import {
@@ -30,18 +38,140 @@ export async function executeManifestStep(
 	const { ctx, request, startedDuringCrashWindow } = ec;
 	const p = op.payload;
 	switch (op.kind) {
+		case "CREATE_DASH_PERIOD_XML": {
+			const resourceId = await ctx.sdk.createDashPeriodXml(
+				refId(op, ctx, "manifestId"),
+				refId(op, ctx, "periodId"),
+				str(p.data),
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_DASH_ADAPTATION_SET_IMAGE": {
+			const resourceId = await ctx.sdk.createDashImageAdaptationSet(
+				refId(op, ctx, "manifestId"),
+				refId(op, ctx, "periodId"),
+				dashAdaptationOptionsSchema.parse(
+					pick(p, Object.keys(dashAdaptationOptionsSchema.shape)),
+				),
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_DASH_REPRESENTATION_PROGRESSIVE_WEBM": {
+			const resourceId = await ctx.sdk.createDashProgressiveWebmRepresentation(
+				refId(op, ctx, "manifestId"),
+				refId(op, ctx, "periodId"),
+				refId(op, ctx, "adaptationSetId"),
+				{
+					encodingId: refId(op, ctx, "encodingId"),
+					muxingId: refId(op, ctx, "muxingId"),
+					filePath: str(p.filePath),
+					dependencyId: optRefId(op, ctx, "dependencyId"),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_DASH_REPRESENTATION_VTT": {
+			const resourceId = await ctx.sdk.createDashVttRepresentation(
+				refId(op, ctx, "manifestId"),
+				refId(op, ctx, "periodId"),
+				refId(op, ctx, "adaptationSetId"),
+				{ vttUrl: str(p.vttUrl) },
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_DASH_REPRESENTATION_SPRITE": {
+			const resourceId = await ctx.sdk.createDashSpriteRepresentation(
+				refId(op, ctx, "manifestId"),
+				refId(op, ctx, "periodId"),
+				refId(op, ctx, "adaptationSetId"),
+				{
+					encodingId: refId(op, ctx, "encodingId"),
+					streamId: refId(op, ctx, "streamId"),
+					spriteId: refId(op, ctx, "spriteId"),
+					segmentPath: str(p.segmentPath),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_HLS_VIDEO_MEDIA":
+		case "CREATE_HLS_CLOSED_CAPTIONS_MEDIA":
+		case "CREATE_HLS_VTT_MEDIA": {
+			const base = {
+				...hlsMediaAttributesSchema.parse(
+					pick(p, Object.keys(hlsMediaAttributesSchema.shape)),
+				),
+				name: str(p.name),
+				groupId: str(p.groupId),
+				language: optStr(p.language),
+			};
+			const manifestId = refId(op, ctx, "manifestId");
+			let resourceId: string;
+			if (op.kind === "CREATE_HLS_VTT_MEDIA")
+				resourceId = await ctx.sdk.createHlsVttMedia(manifestId, {
+					...base,
+					uri: str(p.uri),
+					vttUrl: str(p.vttUrl),
+				});
+			else {
+				const segment = {
+					...base,
+					encodingId: refId(op, ctx, "encodingId"),
+					muxingId: refId(op, ctx, "muxingId"),
+					streamId: refId(op, ctx, "streamId"),
+					drmId: optRefId(op, ctx, "drmId"),
+					segmentPath: str(p.segmentPath),
+				};
+				resourceId =
+					op.kind === "CREATE_HLS_VIDEO_MEDIA"
+						? await ctx.sdk.createHlsVideoMedia(manifestId, {
+								...segment,
+								uri: str(p.uri),
+							})
+						: await ctx.sdk.createHlsClosedCaptionsMedia(manifestId, {
+								...segment,
+								instreamId: str(p.instreamId),
+							});
+			}
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_HLS_CUSTOM_TAG": {
+			const target = p.target === "STREAM" ? "STREAM" : "MEDIA";
+			const resourceId = await ctx.sdk.createHlsCustomTag(
+				refId(op, ctx, "manifestId"),
+				refId(op, ctx, target === "MEDIA" ? "mediaId" : "streamInfoId"),
+				target,
+				{
+					positionMode: str(p.positionMode) as "TIME" | "SEGMENT" | "KEYFRAME",
+					data: str(p.data),
+					time: optNum(p.time),
+					segment: optNum(p.segment),
+					keyframeId: optRefId(op, ctx, "keyframeId"),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
 		case "CREATE_MANIFEST_HLS": {
 			const destination = destinationOf(op, ctx);
 			if (!destination) {
 				throw new Error(`step "${op.step}" needs an output destination`);
 			}
-			const resourceId = await ctx.sdk.createHlsManifest({
+			const params = {
+				...hlsGlobalOptionsSchema.parse(
+					pick(p, Object.keys(hlsGlobalOptionsSchema.shape)),
+				),
 				manifestName: str(p.manifestName),
 				name: str(p.name),
 				masterVersion: optStr(p.hlsMasterPlaylistVersion),
 				mediaVersion: optStr(p.hlsMediaPlaylistVersion),
 				destination,
-			});
+			};
+			const resourceId =
+				p.generationMode === "DEFAULT"
+					? await ctx.sdk.createDefaultHlsManifest({
+							...params,
+							encodingId: refId(op, ctx, "encodingId"),
+						})
+					: await ctx.sdk.createHlsManifest(params);
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
@@ -49,6 +179,9 @@ export async function executeManifestStep(
 			const resourceId = await ctx.sdk.createHlsAudioMedia(
 				refId(op, ctx, "manifestId"),
 				{
+					...hlsMediaAttributesSchema.parse(
+						pick(p, Object.keys(hlsMediaAttributesSchema.shape)),
+					),
 					name: str(p.name),
 					groupId: str(p.groupId),
 					language: str(p.language),
@@ -69,6 +202,9 @@ export async function executeManifestStep(
 			const resourceId = await ctx.sdk.createHlsStreamInfo(
 				refId(op, ctx, "manifestId"),
 				{
+					...hlsStreamOptionsSchema.parse(
+						pick(p, Object.keys(hlsStreamOptionsSchema.shape)),
+					),
 					// `optStr`, NOT `str`: the
 					// compiler OMITS `audio` on a self-contained muxed-TS variant (C33 —
 					// there is no EXT-X-MEDIA group to point at), and `str(undefined)`
@@ -94,6 +230,9 @@ export async function executeManifestStep(
 			const resourceId = await ctx.sdk.createHlsSubtitlesMedia(
 				refId(op, ctx, "manifestId"),
 				{
+					...hlsMediaAttributesSchema.parse(
+						pick(p, Object.keys(hlsMediaAttributesSchema.shape)),
+					),
 					name: str(p.name),
 					groupId: str(p.groupId),
 					language: str(p.language),
@@ -102,6 +241,7 @@ export async function executeManifestStep(
 					encodingId: refId(op, ctx, "encodingId"),
 					streamId: refId(op, ctx, "streamId"),
 					muxingId: refId(op, ctx, "muxingId"),
+					drmId: optRefId(op, ctx, "drmId"),
 				},
 			);
 			return { resourceId, request, response: { id: resourceId } };
@@ -151,20 +291,46 @@ export async function executeManifestStep(
 					}
 					uri = uri.replaceAll("{codecBitrate}", String(bitrate));
 				}
-				streamInfoIds.push(
-					await ctx.sdk.createHlsStreamInfo(manifestId, {
-						// Same rule as the static variant above (HIGH-8).
-						audio: optStr(p.audio),
-						subtitles: optStr(p.subtitles),
-						closedCaptions: str(p.closedCaptions),
-						segmentPath: stripBasePath(row.basePath, stripBase),
-						uri,
-						encodingId,
-						streamId: row.muxing.streamId,
-						muxingId: row.muxing.id,
-						drmId: row.drmId,
-					}),
-				);
+				const streamInfoId = await ctx.sdk.createHlsStreamInfo(manifestId, {
+					...hlsStreamOptionsSchema.parse(
+						pick(p, Object.keys(hlsStreamOptionsSchema.shape)),
+					),
+					// Same rule as the static variant above (HIGH-8).
+					audio: optStr(p.audio),
+					subtitles: optStr(p.subtitles),
+					closedCaptions: str(p.closedCaptions),
+					segmentPath: stripBasePath(row.basePath, stripBase),
+					uri,
+					encodingId,
+					streamId: row.muxing.streamId,
+					muxingId: row.muxing.id,
+					drmId: row.drmId,
+				});
+				streamInfoIds.push(streamInfoId);
+				if (Array.isArray(p.customTags))
+					for (const [index, raw] of p.customTags.entries()) {
+						const tag = raw as {
+							positionMode: "TIME" | "SEGMENT" | "KEYFRAME";
+							data: string;
+							time?: number;
+							segment?: number;
+						};
+						await ctx.sdk.createHlsCustomTag(
+							manifestId,
+							streamInfoId,
+							"STREAM",
+							{
+								positionMode: tag.positionMode,
+								data: tag.data,
+								time: tag.time,
+								segment: tag.segment,
+								keyframeId:
+									tag.positionMode === "KEYFRAME"
+										? optRefId(op, ctx, `customTagKeyframeId:${index}`)
+										: undefined,
+							},
+						);
+					}
 			}
 			return {
 				request,
@@ -177,12 +343,37 @@ export async function executeManifestStep(
 			if (!destination) {
 				throw new Error(`step "${op.step}" needs an output destination`);
 			}
-			const resourceId = await ctx.sdk.createDashManifest({
+			const params = {
+				...dashGlobalOptionsSchema.parse(
+					pick(p, Object.keys(dashGlobalOptionsSchema.shape)),
+				),
 				manifestName: str(p.manifestName),
 				name: str(p.name),
 				profile: optStr(p.profile),
 				destination,
-			});
+			};
+			const periods = Array.isArray(p.periods)
+				? p.periods.map((period, index) => ({
+						encodingIds: (
+							op.refs[`periodEncodingIds:${index}`] as string[]
+						).map((step) => {
+							const result = ctx.ids.get(step);
+							if (!result) throw new Error(`Missing encoding ${step}`);
+							return result;
+						}),
+						adaptationSets: (period as { adaptationSets?: ManifestCondition[] })
+							.adaptationSets,
+					}))
+				: undefined;
+			const resourceId =
+				p.generationMode === "DEFAULT"
+					? await ctx.sdk.createDefaultDashManifest({
+							...params,
+							encodingId: periods ? undefined : refId(op, ctx, "encodingId"),
+							periods,
+							version: "V2",
+						})
+					: await ctx.sdk.createDashManifest(params);
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
@@ -190,6 +381,7 @@ export async function executeManifestStep(
 			const resourceId = await ctx.sdk.createDashPeriod(
 				refId(op, ctx, "manifestId"),
 				optNum(p.start),
+				optNum(p.duration),
 			);
 			return { resourceId, request, response: { id: resourceId } };
 		}
@@ -199,8 +391,10 @@ export async function executeManifestStep(
 				refId(op, ctx, "manifestId"),
 				refId(op, ctx, "periodId"),
 				{
+					...dashAdaptationOptionsSchema.parse(
+						pick(p, Object.keys(dashAdaptationOptionsSchema.shape)),
+					),
 					lang: str(p.lang),
-					labels: p.labels as { value: string }[] | undefined,
 				},
 			);
 			return { resourceId, request, response: { id: resourceId } };
@@ -220,7 +414,9 @@ export async function executeManifestStep(
 				refId(op, ctx, "periodId"),
 				refId(op, ctx, "adaptationSetId"),
 				{
+					...representationRange(op, ctx),
 					type: str(p.type),
+					mode: optStr(p.mode),
 					segmentPath: str(p.segmentPath),
 					encodingId: refId(op, ctx, "encodingId"),
 					muxingId: refId(op, ctx, "muxingId"),
@@ -232,7 +428,9 @@ export async function executeManifestStep(
 			const resourceId = await ctx.sdk.createDashVideoAdaptationSet(
 				refId(op, ctx, "manifestId"),
 				refId(op, ctx, "periodId"),
-				{ labels: p.labels as { value: string }[] | undefined },
+				dashAdaptationOptionsSchema.parse(
+					pick(p, Object.keys(dashAdaptationOptionsSchema.shape)),
+				),
 			);
 			return { resourceId, request, response: { id: resourceId } };
 		}
@@ -242,8 +440,10 @@ export async function executeManifestStep(
 				refId(op, ctx, "manifestId"),
 				refId(op, ctx, "periodId"),
 				{
+					...dashAdaptationOptionsSchema.parse(
+						pick(p, Object.keys(dashAdaptationOptionsSchema.shape)),
+					),
 					lang: optStr(p.lang),
-					labels: p.labels as { value: string }[] | undefined,
 				},
 			);
 			return { resourceId, request, response: { id: resourceId } };
@@ -255,6 +455,7 @@ export async function executeManifestStep(
 				refId(op, ctx, "periodId"),
 				refId(op, ctx, "adaptationSetId"),
 				{
+					...representationRange(op, ctx),
 					type: str(p.type),
 					mode: optStr(p.mode),
 					segmentPath: str(p.segmentPath),
@@ -271,7 +472,9 @@ export async function executeManifestStep(
 				refId(op, ctx, "periodId"),
 				refId(op, ctx, "adaptationSetId"),
 				{
+					...representationRange(op, ctx),
 					type: str(p.type),
+					drmId: optRefId(op, ctx, "drmId"),
 					mode: optStr(p.mode),
 					segmentPath: str(p.segmentPath),
 					encodingId: refId(op, ctx, "encodingId"),
@@ -290,7 +493,9 @@ export async function executeManifestStep(
 				refId(op, ctx, "periodId"),
 				refId(op, ctx, "adaptationSetId"),
 				{
+					...representationRange(op, ctx),
 					type: str(p.type),
+					mode: optStr(p.mode),
 					segmentPath: str(p.segmentPath),
 					encodingId: refId(op, ctx, "encodingId"),
 					muxingId: refId(op, ctx, "muxingId"),
@@ -305,6 +510,7 @@ export async function executeManifestStep(
 				refId(op, ctx, "periodId"),
 				refId(op, ctx, "adaptationSetId"),
 				{
+					...representationRange(op, ctx),
 					type: str(p.type),
 					filePath: str(p.filePath),
 					encodingId: refId(op, ctx, "encodingId"),
@@ -324,11 +530,16 @@ export async function executeManifestStep(
 					manifestId: refId(op, ctx, "manifestId"),
 					periodId: refId(op, ctx, "periodId"),
 					adaptationSetId: refId(op, ctx, "adaptationSetId"),
-					representationId: refId(op, ctx, "representationId"),
-					representationKind:
-						optStr(p.representationKind) === "WEBM" ? "WEBM" : "FMP4",
+					representationId: optRefId(op, ctx, "representationId"),
+					representationKind: (optStr(p.representationKind) ?? "FMP4") as
+						| "WEBM"
+						| "FMP4"
+						| "CMAF"
+						| "FMP4_DRM"
+						| "ADAPTATION_SET",
 				},
 				{
+					dependencyId: optRefId(op, ctx, "dependencyId"),
 					drmId: refId(op, ctx, "drmId"),
 					encodingId: refId(op, ctx, "encodingId"),
 					muxingId: refId(op, ctx, "muxingId"),
@@ -570,4 +781,22 @@ export async function executeManifestStep(
 				`executeManifestStep: unhandled kind ${String(op.kind)} — the executor dispatch and this switch have diverged`,
 			);
 	}
+}
+
+function pick(p: Record<string, unknown>, keys: string[]) {
+	return Object.fromEntries(
+		keys.filter((key) => p[key] !== undefined).map((key) => [key, p[key]]),
+	);
+}
+function representationRange(
+	op: CompiledOperation,
+	ctx: ExecStepContext["ctx"],
+) {
+	return {
+		startSegmentNumber: optNum(op.payload.startSegmentNumber),
+		endSegmentNumber: optNum(op.payload.endSegmentNumber),
+		startKeyframeId: optRefId(op, ctx, "startKeyframeId"),
+		endKeyframeId: optRefId(op, ctx, "endKeyframeId"),
+		dependencyId: optRefId(op, ctx, "dependencyId"),
+	};
 }

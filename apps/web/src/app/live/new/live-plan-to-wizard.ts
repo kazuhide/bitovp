@@ -486,6 +486,9 @@ function readHlsManifest(
 ): LiveHlsManifestState {
 	return {
 		enabled: true,
+		...(m.detailed ? { detailed: m.detailed } : {}),
+		...(m.masterVersion ? { masterVersion: m.masterVersion } : {}),
+		...(m.mediaVersion ? { mediaVersion: m.mediaVersion } : {}),
 		key: m.key,
 		name: m.name,
 		destination: plansDeepEqual(m.destination, defaultDestination)
@@ -514,6 +517,7 @@ function readDashManifest(
 ): LiveDashManifestState {
 	return {
 		enabled: true,
+		...(m.detailed ? { detailed: m.detailed } : {}),
 		key: m.key,
 		name: m.name,
 		destination: plansDeepEqual(m.destination, defaultDestination)

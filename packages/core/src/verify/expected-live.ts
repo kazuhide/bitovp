@@ -32,14 +32,20 @@ import {
 	liveHlsEntryUris,
 	selectLiveManifestMuxings,
 } from "../live/compiler";
+import { LIVE_MANIFEST_ELEMENT_BUDGET } from "../live/dvr";
 import {
-	LIVE_MANIFEST_ELEMENT_BUDGET,
-	manifestElementEstimate,
-} from "../live/dvr";
+	liveManifestElementEstimate,
+	liveManifestSegmentLists,
+} from "../live/manifest-segment-lists";
 import { liveOutputFilenames } from "../live/protection";
 import type { LiveChannelPlan } from "../live/schema";
 import { outputFileKeys, outputStorageKeys } from "../plan/output-files";
 import { type PathPattern, pathPattern, withTrailingSlash } from "./expected";
+import {
+	type ExpectedHlsAdditionalMedia,
+	type ExpectedHlsAudioGroups,
+	expectedHlsAdditionalMedia,
+} from "./manifest-tracks";
 
 /** A live ingest, and whether our own feeder can drive it. */
 export type ExpectedLiveIngest = {
@@ -137,6 +143,11 @@ export type ExpectedLiveManifest = {
 	 * names cannot drift from what the encoder is told to write.
 	 */
 	mediaPlaylists: string[];
+	/** Includes explicit rendition-group entries; captions without a URI are not children. */
+	entryCount?: number;
+	hlsAdditionalMedia?: ExpectedHlsAdditionalMedia[];
+	hlsAudioGroups?: ExpectedHlsAudioGroups;
+	dashExternalSubtitles?: { url: string; language: string }[];
 	/**
 	 * DASH only : the distinct VIDEO codecs this manifest lists,
 	 * in plan order. One AdaptationSet per codec is the contract (C34); the
@@ -462,27 +473,46 @@ export function compileExpectedLiveArtefacts(
 			 * renditions. It now counts legs like the rest.
 			 */
 			const selected = selectLiveManifestMuxings(plan, manifest);
+			const additionalMedia =
+				manifest.kind === "HLS"
+					? expectedHlsAdditionalMedia(
+							manifest.detailed?.additionalMedia ?? [],
+							plan,
+							manifest.drmKind,
+						)
+					: [];
+			const externalSubtitles =
+				manifest.kind === "DASH"
+					? (manifest.detailed?.additionalRepresentations ?? []).map(
+							(representation) => ({
+								url: representation.vttUrl,
+								language: representation.lang,
+							}),
+						)
+					: [];
 			const entryUris = liveHlsEntryUris(plan);
 			const mediaPlaylists =
 				manifest.kind === "HLS"
-					? selected.map(
-							({ rendition }) =>
-								entryUris.get(rendition.key) ?? liveHlsEntryUri(rendition),
-						)
+					? [
+							...selected.map(
+								({ rendition }) =>
+									entryUris.get(rendition.key) ?? liveHlsEntryUri(rendition),
+							),
+							...additionalMedia.flatMap((media) =>
+								media.uri ? [media.uri] : [],
+							),
+						]
 					: [];
-			// Live ladders are uniform in practice, but if a manifest ever mixed
-			// cadences the LONGEST segment gives the FEWEST elements, so using it
-			// would understate the budget — take the shortest and say so.
+			const segmentLists = liveManifestSegmentLists(plan, manifest);
+			const elementBudget = liveManifestElementEstimate(plan, manifest);
 			const legLengths = [
-				...new Set(selected.map(({ muxing: m }) => m.segmentLength)),
+				...new Set(segmentLists.map((list) => list.segmentLengthSec)),
 			];
-			const segmentLengthSec =
-				legLengths.length > 0 ? Math.min(...legLengths) : 0;
-			if (legLengths.length > 1) {
+			if (legLengths.length > 1)
 				notes.push(
-					`liveManifest ${manifest.key} enumerates legs with more than one segment length (${legLengths.join(", ")}s); the C8 element estimate uses the shortest (${segmentLengthSec}s) because that yields the MOST elements and a budget check must not understate`,
+					`liveManifest ${manifest.key} has segment lists with different lengths (${legLengths.join(", ")}s); the DVR budget sums each list at its own cadence`,
 				);
-			}
+
 			const videoCodecs = [
 				...new Set(
 					selected
@@ -499,21 +529,26 @@ export function compileExpectedLiveArtefacts(
 				dir: pathPattern(withTrailingSlash(manifest.destination.path)),
 				files: [manifest.manifestName],
 				mediaPlaylists,
+				...(manifest.kind === "HLS" && manifest.detailed?.streams?.audioGroups
+					? { hlsAudioGroups: manifest.detailed.streams.audioGroups }
+					: {}),
+				...(additionalMedia.length
+					? {
+							hlsAdditionalMedia: additionalMedia,
+							entryCount: selected.length + additionalMedia.length,
+						}
+					: {}),
+				...(externalSubtitles.length
+					? {
+							dashExternalSubtitles: externalSubtitles,
+							entryCount: selected.length + externalSubtitles.length,
+						}
+					: {}),
 				...(manifest.kind === "DASH" && videoCodecs.length > 0
 					? { videoCodecs }
 					: {}),
 				...(timeshiftSec !== undefined ? { timeshiftSec } : {}),
-				...(timeshiftSec !== undefined && selected.length > 0
-					? {
-							elementBudget: manifestElementEstimate({
-								timeshiftSec,
-								segmentLengthSec,
-								// The legs this manifest lists, matching the Σ in
-								// `live/validate.ts` — NOT plan.renditions.length.
-								renditionCount: selected.length,
-							}),
-						}
-					: {}),
+				...(elementBudget ? { elementBudget } : {}),
 			};
 		},
 	);

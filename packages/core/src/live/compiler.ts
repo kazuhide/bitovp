@@ -9,7 +9,12 @@ import {
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import type { PlanRendition } from "../plan/schema";
 import { resolveLiveEncodingOption } from "./encoding-option";
-import { liveManifestDrm, liveMediaDestination } from "./protection";
+import { compileLiveManifestDetails } from "./manifest-details";
+import {
+	liveFallbackRegionIssues,
+	liveManifestDrm,
+	liveMediaDestination,
+} from "./protection";
 import type { LiveChannelPlan, LiveManifestPlan, LiveMuxing } from "./schema";
 
 /**
@@ -134,7 +139,7 @@ function isLiveRendition(rendition: PlanRendition): rendition is LiveRendition {
  * family; CMAF is rejected by validation); DASH takes FMP4 and CMAF — TS segments cannot join an MPD.
  */
 export function selectLiveManifestMuxings(
-	plan: LiveChannelPlan,
+	plan: Pick<LiveChannelPlan, "renditions" | "muxings">,
 	manifest: LiveManifestPlan,
 ): {
 	muxing: Exclude<LiveMuxing, { kind: "MP4" }>;
@@ -678,6 +683,8 @@ function codecKind(
 }
 
 export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
+	const fallbackIssue = liveFallbackRegionIssues(plan)[0];
+	if (fallbackIssue) throw new Error(fallbackIssue.message);
 	const versionError = checkMslEncoderVersion(
 		plan.outputs,
 		plan.bitmovin.encoderVersion,
@@ -821,9 +828,6 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 		payload: {
 			name: plan.name,
 			cloudRegion: plan.bitmovin.cloudRegion,
-			...(plan.bitmovin.fallbackCloudRegions?.length
-				? { fallbackCloudRegions: plan.bitmovin.fallbackCloudRegions }
-				: {}),
 			encoderVersion: plan.bitmovin.encoderVersion,
 			...(plan.bitmovin.staticIpId
 				? { staticIpId: plan.bitmovin.staticIpId }
@@ -1030,9 +1034,13 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 	}
 	for (const manifest of plan.liveManifests) {
 		ops.push(
-			...(manifest.kind === "HLS"
-				? compileLiveHlsManifest(plan, manifest)
-				: compileLiveDashManifest(plan, manifest)),
+			...compileLiveManifestDetails(
+				plan,
+				manifest,
+				manifest.kind === "HLS"
+					? compileLiveHlsManifest(plan, manifest)
+					: compileLiveDashManifest(plan, manifest),
+			),
 		);
 	}
 
@@ -1195,6 +1203,12 @@ function compileLiveHlsManifest(
 			kind: "CREATE_MANIFEST_HLS",
 			payload: {
 				manifestName: manifest.manifestName,
+				...(manifest.masterVersion
+					? { hlsMasterPlaylistVersion: manifest.masterVersion }
+					: {}),
+				...(manifest.mediaVersion
+					? { hlsMediaPlaylistVersion: manifest.mediaVersion }
+					: {}),
 				name: manifest.name,
 				...manifestOutputPaths(plan, manifest),
 				...(manifest.destination.acl ? { acl: manifest.destination.acl } : {}),

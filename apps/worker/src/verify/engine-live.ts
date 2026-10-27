@@ -32,6 +32,7 @@ import {
 	liveEvidenceProgression,
 	type MediaFreshness,
 	mediaFreshness,
+	selectExpectedLiveManifestMuxings,
 } from "@bitovp/core";
 import { HEARTBEAT_SWEEP_INTERVAL_MS } from "../heartbeat-cadence";
 import { closureProbe, type LiveEdgeClosure } from "./edge-resolver";
@@ -157,6 +158,7 @@ export type LiveEngineDeps = {
 		bytes?: number;
 		/** Video+audio representations a real parser found, when it could parse. */
 		entries?: number;
+		referenceChecks?: Check[];
 		/** DASH: the codecs of each VIDEO AdaptationSet the parser found . */
 		videoCodecSets?: string[][];
 		error?: string;
@@ -320,6 +322,44 @@ export async function verifyLiveChannel(
 		const found = deps.manifestFiles?.find(
 			(f) => f.manifestKey === m.manifestKey,
 		);
+		if (found?.referenceChecks) report.checks.push(...found.referenceChecks);
+		else {
+			for (const [index, media] of (m.hlsAdditionalMedia ?? []).entries()) {
+				report.skip(
+					`${id}:additional-media:${index}:reference`,
+					"manifest",
+					"The configured HLS media identity was not observed",
+				);
+				if (media.type === "VIDEO" && media.uri)
+					report.skip(
+						`${id}:additional-media:${index}:playlist`,
+						"manifest",
+						"The configured video media playlist was not observed",
+					);
+			}
+			if (m.hlsAudioGroups)
+				report.skip(
+					`${id}:audio-group-selection`,
+					"manifest",
+					"The configured audio-group priority selection was not observed",
+				);
+			const count =
+				m.dashExternalSubtitles?.length ??
+				m.hlsAdditionalMedia?.filter((media) => media.vttUrl).length ??
+				0;
+			for (let index = 0; index < count; index++) {
+				report.skip(
+					`${id}:external-subtitle:${index}:reference`,
+					"manifest",
+					"The configured external subtitle reference was not observed",
+				);
+				report.skip(
+					`${id}:external-subtitle:${index}:content`,
+					"manifest",
+					"External subtitle bytes were not fetched",
+				);
+			}
+		}
 		/**
 		 * The per-codec set checks are a function of the PLAN :
 		 * a DASH manifest expecting video carries `codec-sets`, and one expecting
@@ -390,19 +430,15 @@ export async function verifyLiveChannel(
 		 * the plan's total, which is knowable here because live ladders are not per-title.
 		 */
 		if (found.entries !== undefined) {
-			/**
-			 * The bound comes from the MUXINGS, one per rendition leg.
-			 *
-			 * `ExpectedLiveManifest` carries `mediaPlaylists` (exact for HLS, empty for DASH) but
-			 * no rendition total, and live ladders are not per-title — so the muxing count is the
-			 * number of legs the channel produces and bounds both families the same way.
-			 */
-			const total = expected.muxings.length;
+			// Count this manifest's selected muxings and explicit additional
+			// tracks. Caption entries count in a master but own no child playlist.
+			const total =
+				m.entryCount ?? selectExpectedLiveManifestMuxings(expected, m).length;
 			report.assert(
 				`${id}:entries`,
 				"manifest",
 				found.entries >= 1 && found.entries <= total,
-				`${m.kind} manifest must enumerate between 1 and ${total} rendition(s) (the channel has ${total} muxing leg(s)) — a real parser found ${found.entries}`,
+				`${m.kind} manifest must enumerate between 1 and ${total} configured entries — a real parser found ${found.entries}`,
 			);
 		} else {
 			report.skip(
@@ -814,6 +850,16 @@ function verifyMirrorDelivery(
 				continue;
 			}
 			const id = `${target.role === "MIRROR" ? "live:mirror" : "live:edge"}:${manifest.manifestKey}:${target.outputKey}`;
+			const externalText =
+				(manifest.dashExternalSubtitles?.length ?? 0) +
+				(manifest.hlsAdditionalMedia?.filter((media) => media.vttUrl).length ??
+					0);
+			if (externalText > 0)
+				report.skip(
+					`${id}:external-subtitle-content`,
+					"manifest",
+					"Configured external WebVTT references are bound separately; remote content remains UNVERIFIED",
+				);
 			const label =
 				target.role === "MIRROR"
 					? `MSL mirror "${target.outputKey}"`
@@ -969,11 +1015,18 @@ function verifyMirrorDelivery(
 				"manifest",
 				`${label} ${manifest.kind}: ${(verdicts[verdicts.length - 1] as MediaFreshness).detail}`,
 			);
-			report.pass(
-				id,
-				"manifest",
-				`${summary}; every served object is this airing's`,
-			);
+			if (externalText > 0)
+				report.warn(
+					id,
+					"manifest",
+					`${summary}; local AV delivery is verified, but external subtitle content remains UNVERIFIED`,
+				);
+			else
+				report.pass(
+					id,
+					"manifest",
+					`${summary}; every served object is this airing's`,
+				);
 		}
 	}
 }

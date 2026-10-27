@@ -332,7 +332,7 @@ export class ManifestCreateNotAuthorizedError extends Error {
 }
 
 /**
- * Billing-safe variant used by live-to-VOD. It reads every bounded page,
+ * Billing-safe scan used by owned default manifests. It reads every bounded page,
  * rejects duplicate matches, and treats a full scan horizon as unknown.
  * Either ambiguity must block CREATE; picking the first match is not
  * reconciliation.
@@ -395,16 +395,12 @@ export async function findUniqueManifestByOutput<M extends { id?: string }>(
  * default live-to-VOD manifests: the second recording would adopt the first
  * recording's manifest.
  *
- * The default families therefore use BOTH halves, and an earlier revision of
- * this comment  prescribed only one — "key on encodingId,
- * never on name+output". That is insufficient, and reads as safe: the
- * live-to-VOD encodingId is `row.bitmovinEncodingId`, which is stable across
- * a channel's life because `restartLiveEncoding` reuses the encoding, so one
- * channel can record twice under a SINGLE id. encodingId alone therefore
- * reintroduces exactly the collision it was prescribed to prevent. The
- * shipped lookups filter the LIST by encodingId server-side and then narrow
- * within it by manifestName + (outputId, outputPath), which is why a
- * deliberate re-run to a different path still creates fresh.
+ * Default manifests filter LIST by encodingId and narrow candidates by name
+ * and destination, then require their job-step ownership marker and complete
+ * effective request hash. Live-to-VOD includes its durable run and attempt in
+ * that step identity. A failed or ambiguous lookup and an unresolved crash
+ * window block CREATE; an unstamped direct caller can create fresh but cannot
+ * prove ownership of a previous resource.
  *
  * The adopt branches audit as GETs (C7): an adopted manifest previously left
  * ZERO audit rows — console.warn was the only trace (review of PR #164, I4).

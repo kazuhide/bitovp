@@ -10,6 +10,7 @@
 			"renditionKey": "pt-video",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/item-001/video/{height}_{bitrate}_{uuid}/",

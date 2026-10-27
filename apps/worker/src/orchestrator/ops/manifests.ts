@@ -4,13 +4,22 @@
  * inside the monolithic literal; facade-freeze.test.ts pins the union.
  */
 import {
+	AdaptationSetRole,
 	AudioAdaptationSet,
 	AudioMediaInfo,
+	ChannelsAttributeForAudio,
+	ClosedCaptionsMediaInfo,
+	ConditionOperator,
 	ContentProtection,
+	CustomTag,
+	CustomXmlElement,
 	DashChunkedTextRepresentation,
 	DashCmafRepresentation,
+	DashEditionCompatibility,
+	DashFmp4DrmRepresentation,
 	DashFmp4Representation,
 	DashImscRepresentation,
+	DashISO8601TimestampFormat,
 	DashManifest,
 	DashManifestDefault,
 	DashManifestDefaultVersion,
@@ -18,33 +27,56 @@ import {
 	DashMp4Representation,
 	DashOnDemandRepresentationType,
 	DashProfile,
+	DashProgressiveWebmRepresentation,
 	DashRepresentationType,
 	DashRepresentationTypeMode,
+	DashVttRepresentation,
 	DashWebmRepresentation,
+	DefaultManifestAndCondition,
+	DefaultManifestAttributeCondition,
+	DefaultManifestOrCondition,
 	HlsManifest,
 	HlsManifestDefault,
 	HlsManifestDefaultVersion,
+	HlsTargetDurationRoundingMode,
 	HlsVersion,
 	IFramePlaylist,
+	ImageAdaptationSet,
 	ManifestGenerator,
 	Period,
+	PositionMode,
 	SmoothManifestContentProtection,
 	SmoothStreamingManifest,
 	SmoothStreamingRepresentation,
+	SpriteRepresentation,
 	StartManifestRequest,
 	StreamInfo,
 	SubtitleAdaptationSet,
 	SubtitlesMediaInfo,
+	VariantStreamDroppingMode,
 	VideoAdaptationSet,
+	VideoMediaInfo,
+	VttMediaInfo,
 } from "@bitmovin/api-sdk";
+import type {
+	DashAdaptationOptions,
+	DashGlobalOptions,
+	HlsGlobalOptions,
+	HlsStreamOptions,
+	ManifestCondition,
+} from "@bitovp/core";
+import {
+	EXTERNAL_VTT_URL_REQUIREMENT,
+	externalVttUrlSchema,
+} from "@bitovp/core";
 import type { SdkOps } from "../sdk-ops";
 import type { OpsContext } from "./context";
+import { createOwnedDefaultDashManifest } from "./default-dash-manifest";
+import { createOwnedDefaultHlsManifest } from "./default-hls-manifest";
 import {
 	adoptOrCreateManifest,
 	findManifestByOutput,
-	findUniqueManifestByOutput,
 	isBitmovinError,
-	labels,
 	optEnum,
 	outputs,
 	sdkEnumValue,
@@ -55,6 +87,15 @@ export function createManifestOps(
 	ctx: OpsContext,
 ): Pick<
 	SdkOps,
+	| "createHlsVideoMedia"
+	| "createHlsClosedCaptionsMedia"
+	| "createHlsVttMedia"
+	| "createHlsCustomTag"
+	| "createDashPeriodXml"
+	| "createDashImageAdaptationSet"
+	| "createDashProgressiveWebmRepresentation"
+	| "createDashVttRepresentation"
+	| "createDashSpriteRepresentation"
 	| "createDefaultHlsManifest"
 	| "createDefaultDashManifest"
 	| "createHlsManifest"
@@ -101,129 +142,186 @@ export function createManifestOps(
 		 * adopt-before-create unconditionally — the manifest discipline, not
 		 * the crash-window one.
 		 */
-		createDefaultHlsManifest: (p) => {
-			const lookup = () =>
-				(p.strictIdentity ? findUniqueManifestByOutput : findManifestByOutput)(
-					(q) =>
-						api.encoding.manifests.hls.list({ ...q, encodingId: p.encodingId }),
-					(m: HlsManifest) =>
-						m.manifestName === p.manifestName &&
-						(m.outputs ?? []).some(
-							(o: { outputId?: string; outputPath?: string }) =>
-								o.outputId === p.destination.outputId &&
-								o.outputPath === p.destination.outputPath,
-						),
-					"default HLS",
-				);
-			return adoptOrCreateManifest({
-				label: "default HLS",
-				lookup,
-				strictLookup: p.strictIdentity,
-				allowCreate: p.allowCreate,
-				auditAdopt: (adoptedId, phase) =>
-					record({
-						method: "GET",
-						path: "/encoding/manifests/hls",
-						statusCode: 200,
-						durationMs: 0,
-						bitmovinAccountId: options.bitmovinAccountId,
-						request: {
-							adopted: p.manifestName,
-							phase,
-							encodingId: p.encodingId,
-						},
-						response: { id: adoptedId },
-					}),
-				create: () =>
-					audited(
-						"POST",
-						"/encoding/manifests/hls/default",
-						{
-							encodingId: p.encodingId,
-							manifestName: p.manifestName,
-							outputPath: p.destination.outputPath,
-						},
-						() =>
-							api.encoding.manifests.hls.default.create(
-								new HlsManifestDefault({
-									encodingId: p.encodingId,
-									manifestName: p.manifestName,
-									name: p.name,
-									outputs: outputs(p.destination),
-									version: optEnum(
-										HlsManifestDefaultVersion,
-										p.version,
-										"HlsManifestDefaultVersion",
-									),
-								}),
+		createHlsVideoMedia: (manifestId, p) =>
+			audited(
+				"POST",
+				`/encoding/manifests/hls/${manifestId}/media/video`,
+				p,
+				() =>
+					api.encoding.manifests.hls.media.video.create(
+						manifestId,
+						new VideoMediaInfo(p),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createHlsClosedCaptionsMedia: (manifestId, p) =>
+			audited(
+				"POST",
+				`/encoding/manifests/hls/${manifestId}/media/closed-captions`,
+				p,
+				() =>
+					api.encoding.manifests.hls.media.closedCaptions.create(
+						manifestId,
+						new ClosedCaptionsMediaInfo(p),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createHlsVttMedia: async (manifestId, p) => {
+			const request = publicVttRequest(p);
+			return audited(
+				"POST",
+				`/encoding/manifests/hls/${manifestId}/media/vtt`,
+				request,
+				() =>
+					api.encoding.manifests.hls.media.vtt.create(
+						manifestId,
+						new VttMediaInfo(request),
+					),
+				(r) => ({ id: r.id }),
+			).then(id);
+		},
+		createHlsCustomTag: (manifestId, parentId, target, p) =>
+			audited(
+				"POST",
+				`/encoding/manifests/hls/${manifestId}/${target === "MEDIA" ? "media" : "streams"}/${parentId}/custom-tags`,
+				p,
+				() =>
+					(target === "MEDIA"
+						? api.encoding.manifests.hls.media.customTags
+						: api.encoding.manifests.hls.streams.customTags
+					).create(
+						manifestId,
+						parentId,
+						new CustomTag({
+							...p,
+							positionMode: sdkEnumValue(
+								PositionMode,
+								p.positionMode,
+								"PositionMode",
 							),
-						(r) => ({ id: r.id }),
-					).then(id),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createDashPeriodXml: (manifestId, periodId, data) =>
+			audited(
+				"POST",
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/custom-xml-elements`,
+				{ data },
+				() =>
+					api.encoding.manifests.dash.periods.customXmlElements.create(
+						manifestId,
+						periodId,
+						new CustomXmlElement({ data }),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createDashImageAdaptationSet: (manifestId, periodId, p) =>
+			audited(
+				"POST",
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/image`,
+				p,
+				() =>
+					api.encoding.manifests.dash.periods.adaptationsets.image.create(
+						manifestId,
+						periodId,
+						new ImageAdaptationSet(adaptationOptions(p)),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createDashProgressiveWebmRepresentation: (manifestId, periodId, setId, p) =>
+			audited(
+				"POST",
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${setId}/representations/progressive-webm`,
+				p,
+				() =>
+					api.encoding.manifests.dash.periods.adaptationsets.representations.progressiveWebm.create(
+						manifestId,
+						periodId,
+						setId,
+						new DashProgressiveWebmRepresentation(p),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createDashVttRepresentation: async (manifestId, periodId, setId, p) => {
+			const request = publicVttRequest(p);
+			return audited(
+				"POST",
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${setId}/representations/vtt`,
+				request,
+				() =>
+					api.encoding.manifests.dash.periods.adaptationsets.representations.vtt.create(
+						manifestId,
+						periodId,
+						setId,
+						new DashVttRepresentation(request),
+					),
+				(r) => ({ id: r.id }),
+			).then(id);
+		},
+		createDashSpriteRepresentation: (manifestId, periodId, setId, p) =>
+			audited(
+				"POST",
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${setId}/representations/sprite`,
+				p,
+				() =>
+					api.encoding.manifests.dash.periods.adaptationsets.representations.sprite.create(
+						manifestId,
+						periodId,
+						setId,
+						new SpriteRepresentation(p),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createDefaultHlsManifest: async (p) => {
+			const request = new HlsManifestDefault({
+				...hlsGlobals(p),
+				hlsMasterPlaylistVersion: optEnum(
+					HlsVersion,
+					p.masterVersion,
+					"HlsVersion",
+				),
+				hlsMediaPlaylistVersion: optEnum(
+					HlsVersion,
+					p.mediaVersion,
+					"HlsVersion",
+				),
+				encodingId: p.encodingId,
+				manifestName: p.manifestName,
+				name: p.name,
+				outputs: outputs(p.destination),
+				version: optEnum(
+					HlsManifestDefaultVersion,
+					p.version,
+					"HlsManifestDefaultVersion",
+				),
 			});
+			return createOwnedDefaultHlsManifest(ctx, p, request);
 		},
 
-		createDefaultDashManifest: (p) => {
-			const lookup = () =>
-				(p.strictIdentity ? findUniqueManifestByOutput : findManifestByOutput)(
-					(q) =>
-						api.encoding.manifests.dash.list({
-							...q,
-							encodingId: p.encodingId,
-						}),
-					(m: DashManifest) =>
-						m.manifestName === p.manifestName &&
-						(m.outputs ?? []).some(
-							(o: { outputId?: string; outputPath?: string }) =>
-								o.outputId === p.destination.outputId &&
-								o.outputPath === p.destination.outputPath,
-						),
-					"default DASH",
+		createDefaultDashManifest: async (p) => {
+			if (p.periods === undefined && !p.encodingId)
+				throw new Error(
+					"Default DASH requires an encodingId or an explicit period list",
 				);
-			return adoptOrCreateManifest({
-				label: "default DASH",
-				lookup,
-				strictLookup: p.strictIdentity,
-				allowCreate: p.allowCreate,
-				auditAdopt: (adoptedId, phase) =>
-					record({
-						method: "GET",
-						path: "/encoding/manifests/dash",
-						statusCode: 200,
-						durationMs: 0,
-						bitmovinAccountId: options.bitmovinAccountId,
-						request: {
-							adopted: p.manifestName,
-							phase,
-							encodingId: p.encodingId,
-						},
-						response: { id: adoptedId },
-					}),
-				create: () =>
-					audited(
-						"POST",
-						"/encoding/manifests/dash/default",
-						{
-							encodingId: p.encodingId,
-							manifestName: p.manifestName,
-							outputPath: p.destination.outputPath,
-						},
-						() =>
-							api.encoding.manifests.dash.default.create(
-								new DashManifestDefault({
-									encodingId: p.encodingId,
-									manifestName: p.manifestName,
-									name: p.name,
-									outputs: outputs(p.destination),
-									version: optEnum(
-										DashManifestDefaultVersion,
-										p.version,
-										"DashManifestDefaultVersion",
-									),
-								}),
-							),
-						(r) => ({ id: r.id }),
-					).then(id),
+			const request = new DashManifestDefault({
+				...dashGlobals(p),
+				profile: optEnum(DashProfile, p.profile, "DashProfile"),
+				periods: p.periods?.map((period) => ({
+					encodingIds: period.encodingIds,
+					adaptationSets: period.adaptationSets?.map(sdkCondition),
+				})),
+				encodingId: p.encodingId,
+				manifestName: p.manifestName,
+				name: p.name,
+				outputs: outputs(p.destination),
+				version: optEnum(
+					DashManifestDefaultVersion,
+					p.version,
+					"DashManifestDefaultVersion",
+				),
 			});
+			return createOwnedDefaultDashManifest(ctx, p, request);
 		},
 
 		/**
@@ -294,6 +392,7 @@ export function createManifestOps(
 						() =>
 							api.encoding.manifests.hls.create(
 								new HlsManifest({
+									...hlsGlobals(p),
 									manifestName: p.manifestName,
 									name: p.name,
 									hlsMasterPlaylistVersion: optEnum(
@@ -335,7 +434,7 @@ export function createManifestOps(
 				() =>
 					api.encoding.manifests.hls.streams.create(
 						manifestId,
-						new StreamInfo(p),
+						new StreamInfo({ ...p, ...streamOptions(p) }),
 					),
 				(r) => ({ id: r.id }),
 			).then(id),
@@ -404,6 +503,7 @@ export function createManifestOps(
 						() =>
 							api.encoding.manifests.dash.create(
 								new DashManifest({
+									...dashGlobals(p),
 									manifestName: p.manifestName,
 									name: p.name,
 									profile: optEnum(DashProfile, p.profile, "DashProfile"),
@@ -415,8 +515,11 @@ export function createManifestOps(
 			});
 		},
 
-		createDashPeriod: (manifestId, start) => {
-			const payload = start === undefined ? {} : { start };
+		createDashPeriod: (manifestId, start, duration) => {
+			const payload = {
+				...(start === undefined ? {} : { start }),
+				...(duration === undefined ? {} : { duration }),
+			};
 			return audited(
 				"POST",
 				`/encoding/manifests/dash/${manifestId}/periods`,
@@ -439,7 +542,7 @@ export function createManifestOps(
 					api.encoding.manifests.dash.periods.adaptationsets.video.create(
 						manifestId,
 						periodId,
-						new VideoAdaptationSet({ labels: labels(p?.labels) }),
+						new VideoAdaptationSet(adaptationOptions(p)),
 					),
 				(r) => ({ id: r.id }),
 			).then(id),
@@ -454,8 +557,8 @@ export function createManifestOps(
 						manifestId,
 						periodId,
 						new AudioAdaptationSet({
+							...adaptationOptions(p),
 							lang: p.lang,
-							labels: labels(p.labels),
 						}),
 					),
 				(r) => ({ id: r.id }),
@@ -471,8 +574,8 @@ export function createManifestOps(
 						manifestId,
 						periodId,
 						new SubtitleAdaptationSet({
+							...adaptationOptions(p),
 							lang: p.lang,
-							labels: labels(p.labels),
 						}),
 					),
 				(r) => ({ id: r.id }),
@@ -507,6 +610,12 @@ export function createManifestOps(
 						periodId,
 						adaptationSetId,
 						new DashChunkedTextRepresentation({
+							...p,
+							mode: optEnum(
+								DashRepresentationTypeMode,
+								p.mode,
+								"DashRepresentationTypeMode",
+							),
 							type: sdkEnumValue(
 								DashRepresentationType,
 								p.type,
@@ -530,15 +639,16 @@ export function createManifestOps(
 						periodId,
 						adaptationSetId,
 						new DashCmafRepresentation({
-							type: sdkEnumValue(
-								DashRepresentationType,
-								p.type,
-								"DashRepresentationType",
-							),
+							...p,
 							mode: optEnum(
 								DashRepresentationTypeMode,
 								p.mode,
 								"DashRepresentationTypeMode",
+							),
+							type: sdkEnumValue(
+								DashRepresentationType,
+								p.type,
+								"DashRepresentationType",
 							),
 							encodingId: p.encodingId,
 							muxingId: p.muxingId,
@@ -551,23 +661,32 @@ export function createManifestOps(
 		createDashFmp4Representation: (manifestId, periodId, adaptationSetId, p) =>
 			audited(
 				"POST",
-				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${adaptationSetId}/representations/fmp4`,
+				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${adaptationSetId}/representations/fmp4${p.drmId ? "/drm" : ""}`,
 				{ segmentPath: p.segmentPath, type: p.type },
 				() =>
-					api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.create(
+					(p.drmId
+						? api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.create.bind(
+								api.encoding.manifests.dash.periods.adaptationsets
+									.representations.fmp4.drm,
+							)
+						: api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.create.bind(
+								api.encoding.manifests.dash.periods.adaptationsets
+									.representations.fmp4,
+							))(
 						manifestId,
 						periodId,
 						adaptationSetId,
-						new DashFmp4Representation({
-							type: sdkEnumValue(
-								DashRepresentationType,
-								p.type,
-								"DashRepresentationType",
-							),
+						new (p.drmId ? DashFmp4DrmRepresentation : DashFmp4Representation)({
+							...p,
 							mode: optEnum(
 								DashRepresentationTypeMode,
 								p.mode,
 								"DashRepresentationTypeMode",
+							),
+							type: sdkEnumValue(
+								DashRepresentationType,
+								p.type,
+								"DashRepresentationType",
 							),
 							encodingId: p.encodingId,
 							muxingId: p.muxingId,
@@ -588,6 +707,12 @@ export function createManifestOps(
 						periodId,
 						adaptationSetId,
 						new DashWebmRepresentation({
+							...p,
+							mode: optEnum(
+								DashRepresentationTypeMode,
+								p.mode,
+								"DashRepresentationTypeMode",
+							),
 							type: sdkEnumValue(
 								DashRepresentationType,
 								p.type,
@@ -617,6 +742,7 @@ export function createManifestOps(
 								periodId,
 								adaptationSetId,
 								new DashMp4DrmRepresentation({
+									dependencyId: p.dependencyId,
 									type: sdkEnumValue(
 										DashOnDemandRepresentationType,
 										p.type,
@@ -633,6 +759,7 @@ export function createManifestOps(
 								periodId,
 								adaptationSetId,
 								new DashMp4Representation({
+									dependencyId: p.dependencyId,
 									type: sdkEnumValue(
 										DashOnDemandRepresentationType,
 										p.type,
@@ -648,27 +775,44 @@ export function createManifestOps(
 		},
 
 		createDashContentProtection: (path, p) => {
-			const reps =
-				api.encoding.manifests.dash.periods.adaptationsets.representations;
-			const create = () =>
-				path.representationKind === "WEBM"
-					? reps.webm.contentprotection.create(
-							path.manifestId,
-							path.periodId,
-							path.adaptationSetId,
-							path.representationId,
-							new ContentProtection(p),
-						)
-					: reps.fmp4.contentprotection.create(
-							path.manifestId,
-							path.periodId,
-							path.adaptationSetId,
-							path.representationId,
-							new ContentProtection(p),
-						);
+			const sets = api.encoding.manifests.dash.periods.adaptationsets;
+			const reps = sets.representations;
+			const args = [
+				path.manifestId,
+				path.periodId,
+				path.adaptationSetId,
+			] as const;
+			const create = () => {
+				if (path.representationKind === "ADAPTATION_SET")
+					return sets.contentprotection.create(
+						...args,
+						new ContentProtection(p),
+					);
+				if (!path.representationId)
+					throw new Error(
+						"Representation content protection needs a representation",
+					);
+				const child =
+					path.representationKind === "WEBM"
+						? reps.webm.contentprotection
+						: path.representationKind === "CMAF"
+							? reps.cmaf.contentprotection
+							: path.representationKind === "FMP4_DRM"
+								? reps.fmp4.drm.contentprotection
+								: reps.fmp4.contentprotection;
+				return child.create(
+					...args,
+					path.representationId,
+					new ContentProtection(p),
+				);
+			};
+			const segment =
+				path.representationKind === "FMP4_DRM"
+					? "fmp4/drm"
+					: path.representationKind.toLowerCase();
 			return audited(
 				"POST",
-				`/encoding/manifests/dash/${path.manifestId}/periods/${path.periodId}/adaptationsets/${path.adaptationSetId}/representations/${path.representationKind.toLowerCase()}/${path.representationId}/contentprotection`,
+				`/encoding/manifests/dash/${path.manifestId}/periods/${path.periodId}/adaptationsets/${path.adaptationSetId}/${path.representationKind === "ADAPTATION_SET" ? "" : `representations/${segment}/${path.representationId}/`}contentprotection`,
 				p,
 				create,
 				(r) => ({ id: r.id }),
@@ -856,4 +1000,90 @@ export function createManifestOps(
 		getSmoothManifestStatus: (manifestId) =>
 			api.encoding.manifests.smooth.status(manifestId).then(taskResult),
 	};
+}
+
+/** Validate before any provider call or audit, including callers that bypass plan parsing. */
+function publicVttRequest<T extends { vttUrl: string }>(p: T): T {
+	const url = externalVttUrlSchema.safeParse(p.vttUrl);
+	if (!url.success) throw new Error(EXTERNAL_VTT_URL_REQUIREMENT);
+	// Capture the validated value before an asynchronous caller can change its object.
+	return { ...p, vttUrl: url.data };
+}
+
+function hlsGlobals(p: HlsGlobalOptions) {
+	return {
+		channelsAttributeForAudio: optEnum(
+			ChannelsAttributeForAudio,
+			p.channelsAttributeForAudio,
+			"ChannelsAttributeForAudio",
+		),
+		targetDurationRoundingMode: optEnum(
+			HlsTargetDurationRoundingMode,
+			p.targetDurationRoundingMode,
+			"HlsTargetDurationRoundingMode",
+		),
+	};
+}
+function dashGlobals(p: DashGlobalOptions) {
+	return {
+		dashEditionCompatibility: optEnum(
+			DashEditionCompatibility,
+			p.dashEditionCompatibility,
+			"DashEditionCompatibility",
+		),
+		iso8601TimestampFormat: optEnum(
+			DashISO8601TimestampFormat,
+			p.iso8601TimestampFormat,
+			"DashISO8601TimestampFormat",
+		),
+		minBufferTime: p.minBufferTime,
+		namespaces: p.namespaces,
+		utcTimings: p.utcTimings,
+	};
+}
+function adaptationOptions(p?: DashAdaptationOptions) {
+	return {
+		labels: p?.labels,
+		accessibilities: p?.accessibilities,
+		customAttributes: p?.customAttributes,
+		roles: p?.roles?.map((r) =>
+			sdkEnumValue(AdaptationSetRole, r, "AdaptationSetRole"),
+		),
+	};
+}
+function streamOptions(p: HlsStreamOptions) {
+	return {
+		...p,
+		audioGroups: p.audioGroups
+			? {
+					...p.audioGroups,
+					droppingMode: sdkEnumValue(
+						VariantStreamDroppingMode,
+						p.audioGroups.droppingMode,
+						"VariantStreamDroppingMode",
+					),
+				}
+			: undefined,
+	};
+}
+function sdkCondition(
+	c: ManifestCondition,
+):
+	| DefaultManifestAttributeCondition
+	| DefaultManifestAndCondition
+	| DefaultManifestOrCondition {
+	if (c.type === "CONDITION")
+		return new DefaultManifestAttributeCondition({
+			attribute: c.attribute,
+			value: c.value,
+			operator: sdkEnumValue(
+				ConditionOperator,
+				c.operator,
+				"ConditionOperator",
+			),
+		});
+	const conditions = c.conditions.map(sdkCondition);
+	return c.type === "AND"
+		? new DefaultManifestAndCondition({ conditions })
+		: new DefaultManifestOrCondition({ conditions });
 }

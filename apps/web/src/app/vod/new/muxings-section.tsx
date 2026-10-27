@@ -154,7 +154,10 @@ const CHUNKED_TEXT_FIELDS: OptionFieldSpec[] = [
 	},
 ];
 
-function fieldsFor(kind: WizardMuxingKind): OptionFieldSpec[] {
+function fieldsFor(
+	kind: WizardMuxingKind,
+	progressive = false,
+): OptionFieldSpec[] {
 	switch (kind) {
 		case "CMAF":
 			return [...FMP4_FIELDS, ...CMAF_CHUNK_FIELDS];
@@ -167,7 +170,22 @@ function fieldsFor(kind: WizardMuxingKind): OptionFieldSpec[] {
 		case "TS":
 			return TS_FIELDS;
 		case "WEBM":
-			return WEBM_FIELDS;
+			return [
+				{
+					key: "progressive",
+					labelKey: "manifestDetail.progressiveWebm",
+					control: "bool",
+				},
+				...(progressive
+					? [
+							{
+								key: "filename",
+								labelKey: "wizard.filename",
+								control: "text",
+							} as OptionFieldSpec,
+						]
+					: WEBM_FIELDS),
+			];
 		case "CHUNKED_TEXT":
 			return CHUNKED_TEXT_FIELDS;
 		default:
@@ -364,7 +382,7 @@ function MuxingEditor({
 				<OptionsGrid
 					idBase={idBase}
 					value={muxing}
-					fields={fieldsFor(kind)}
+					fields={fieldsFor(kind, muxing.progressive)}
 					onChange={onChange}
 				/>
 			)}

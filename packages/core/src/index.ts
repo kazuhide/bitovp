@@ -323,6 +323,12 @@ export {
 	liveToVodReasonCodeSchema,
 	normalizeLiveToVodRecord,
 } from "./live/live-to-vod-record";
+export * from "./live/manifest-detail-schema";
+export type { LiveManifestSegmentList } from "./live/manifest-segment-lists";
+export {
+	liveManifestElementEstimate,
+	liveManifestSegmentLists,
+} from "./live/manifest-segment-lists";
 export {
 	type AudioAttributes,
 	canonicalPixelFormat,
@@ -408,6 +414,10 @@ export {
 	slateSourceSchema,
 	sourceIdentitySchema,
 } from "./live/program-schedule";
+export {
+	LIVE_FALLBACK_REGIONS_UNSUPPORTED,
+	liveFallbackRegionIssues,
+} from "./live/protection";
 export type {
 	PersistedProviderState,
 	ProviderEffectIdentity,
@@ -641,6 +651,7 @@ export {
 	canCurlStep,
 	curlForStep,
 } from "./plan/curl-from-step";
+export * from "./plan/default-manifest-selection";
 export {
 	checkDeliverySpec,
 	DELIVERY_PRESET_FORMAT_VERSION,
@@ -723,6 +734,7 @@ export {
 	JIT_START_REF_KEYS,
 	ridesJitManifests,
 } from "./plan/jit-downgrade";
+export * from "./plan/manifest-options";
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
 export { outputStorageKeys } from "./plan/output-files";
@@ -1231,6 +1243,7 @@ export type {
 	PerTitleActualOutputLeg,
 	PerTitleActualPopulations,
 	PerTitleActualQcUnit,
+	PerTitleActualVideo,
 	PerTitleActualVideoFamilies,
 } from "./verify/per-title-actual";
 export {

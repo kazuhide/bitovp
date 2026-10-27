@@ -1,4 +1,3 @@
-import { BITMOVIN_CLOUD_REGIONS } from "../bitmovin/schemas";
 import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS, type PlanDrm } from "../plan/schema";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
@@ -36,35 +35,21 @@ export function liveMediaDestination(
 				plan.drm?.find((d) => d.muxingKey === muxing.key)?.destination);
 }
 
-/** SDK restriction: a concrete region (or AUTO), on one provider, at most three. */
+/** The shared SDK field is accepted for VOD, but the Live API rejects it at start. */
+export const LIVE_FALLBACK_REGIONS_UNSUPPORTED =
+	"Live Encoding does not support fallback regions. Clear fallbackCloudRegions before creating or starting the channel.";
+
 export function liveFallbackRegionIssues(plan: LiveChannelPlan): PlanIssue[] {
-	const issues: PlanIssue[] = [];
-	const regions = plan.bitmovin.fallbackCloudRegions ?? [];
-	const provider = plan.bitmovin.cloudRegion.split("_")[0];
-	const families = new Set(
-		regions.filter((r) => r !== "AUTO").map((r) => r.split("_")[0]),
-	);
-	const valid = new Set<string>(BITMOVIN_CLOUD_REGIONS);
-	const concrete = (r: string) =>
-		r === "AUTO" || (valid.has(r) && /^(AWS|GOOGLE|AZURE|AKAMAI|OCI)_/.test(r));
-	if (
-		regions.length > 3 ||
-		new Set(regions).size !== regions.length ||
-		regions.some((r) => !concrete(r)) ||
-		families.size > 1 ||
-		(provider !== "AUTO" && [...families].some((f) => f !== provider)) ||
-		(regions.length &&
-			(plan.bitmovin.infrastructure ||
-				plan.bitmovin.cloudRegion === "EXTERNAL"))
-	)
-		issues.push({
-			code: "LIVE_FALLBACK_REGIONS",
-			level: "error",
-			path: "bitmovin.fallbackCloudRegions",
-			message:
-				"Choose up to three distinct concrete regions or AUTO on the primary cloud provider. Cloud Connect does not support managed fallback regions.",
-		});
-	return issues;
+	return plan.bitmovin.fallbackCloudRegions?.length
+		? [
+				{
+					code: "LIVE_FALLBACK_REGIONS",
+					level: "error",
+					path: "bitmovin.fallbackCloudRegions",
+					message: LIVE_FALLBACK_REGIONS_UNSUPPORTED,
+				},
+			]
+		: [];
 }
 
 /** Token expansion follows the API field, not the characters found in its value. */

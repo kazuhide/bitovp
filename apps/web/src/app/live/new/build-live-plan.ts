@@ -1,4 +1,8 @@
-import type { LiveChannelPlanInput } from "@bitovp/core";
+import type {
+	LiveChannelPlanInput,
+	LiveDashDetailedOptions,
+	LiveHlsDetailedOptions,
+} from "@bitovp/core";
 import {
 	akamaiMsl5InitSegmentName,
 	akamaiMslSegmentNaming,
@@ -213,6 +217,9 @@ type LiveManifestIdentity = {
 };
 
 export type LiveHlsManifestState = LiveManifestIdentity & {
+	detailed?: LiveHlsDetailedOptions;
+	masterVersion?: LiveHlsManifestInput["masterVersion"];
+	mediaVersion?: LiveHlsManifestInput["mediaVersion"];
 	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	enabled: boolean;
 	manifestName: string;
@@ -237,6 +244,7 @@ export type LiveHlsManifestState = LiveManifestIdentity & {
 };
 
 export type LiveDashManifestState = LiveManifestIdentity & {
+	detailed?: LiveDashDetailedOptions;
 	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	enabled: boolean;
 	manifestName: string;
@@ -1374,6 +1382,9 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 				prune({
 					key: hls.key ?? "hls",
 					kind: "HLS" as const,
+					detailed: hls.detailed,
+					masterVersion: hls.masterVersion,
+					mediaVersion: hls.mediaVersion,
 					name: hls.name,
 					manifestName: str(hls.manifestName),
 					destination: hls.destination ?? destination,
@@ -1405,6 +1416,7 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 				prune({
 					key: dash.key ?? "dash",
 					kind: "DASH" as const,
+					detailed: dash.detailed,
 					name: dash.name,
 					manifestName: str(dash.manifestName),
 					destination: dash.destination ?? destination,

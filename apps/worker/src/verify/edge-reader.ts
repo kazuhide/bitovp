@@ -28,6 +28,7 @@ export function edgeReaderFor(fetchImpl: EdgeReaderFetch = fetch) {
 		return {
 			status: res.status,
 			bytes: body.byteLength,
+			bodyComplete: true,
 			text: Buffer.from(body).toString("utf8"),
 			body,
 			redirected: res.redirected,

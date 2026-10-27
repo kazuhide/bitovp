@@ -519,6 +519,8 @@ export function mediaFreshness(
 /** One child playlist (HLS) or representation (DASH), with the media it served. */
 export type LiveEvidenceChild = {
 	id: string;
+	/** A configured remote WebVTT reference was bound; remote bytes were not fetched. */
+	externalContent?: "UNVERIFIED";
 	url?: RedactedUrl;
 	bytes?: number;
 	sha256?: string;
@@ -982,6 +984,7 @@ export function liveEvidenceCompleteness(leg: LiveEvidenceLegInput): {
 					);
 				}
 			} else if (
+				child.externalContent === undefined &&
 				!edgeUrlUsesCurrentRun(child.url, leg.msl.eventRoot, runPrefix)
 			) {
 				missing.push(
@@ -1015,6 +1018,12 @@ export function liveEvidenceCompleteness(leg: LiveEvidenceLegInput): {
 			missing.push(
 				`children.${child.id}.missing: ${child.missing.length} referenced object(s) not served (first ${child.missing[0]})`,
 			);
+		}
+		if (child.externalContent === "UNVERIFIED") {
+			missing.push(
+				`children.${child.id}.content: external WebVTT bytes are UNVERIFIED`,
+			);
+			continue;
 		}
 		const witnessed = child.media.filter((m) => m.bytes > 0);
 		if (witnessed.length === 0) {

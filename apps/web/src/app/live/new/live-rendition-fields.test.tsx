@@ -7,6 +7,7 @@ import {
 	type LiveWizardState,
 } from "./build-live-plan";
 import { LiveLadderSection } from "./ladder-section";
+import { LivePackagingSection } from "./packaging-section";
 
 function Harness({
 	initial = structuredClone(DEFAULT_LIVE_WIZARD_STATE),
@@ -18,6 +19,11 @@ function Harness({
 		<>
 			<LiveLadderSection
 				state={state}
+				onPatch={(patch) => setState((current) => ({ ...current, ...patch }))}
+			/>
+			<LivePackagingSection
+				state={state}
+				credentials={[]}
 				onPatch={(patch) => setState((current) => ({ ...current, ...patch }))}
 			/>
 			<output data-testid="state">{JSON.stringify(state)}</output>

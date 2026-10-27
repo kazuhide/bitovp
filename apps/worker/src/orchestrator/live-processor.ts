@@ -109,6 +109,7 @@ import {
 } from "../scheduler/schedule-outcome";
 import type { SlatePreparer } from "../slate/prepare";
 import { executeStep, type ResolvedCredential } from "./executor";
+import { liveFallbackAdmissionError } from "./live-fallback-admission";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import { CancelRequested, LiveEncodingCanceled } from "./ops/exec-shared";
 import {
@@ -858,6 +859,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	async function sdkFor(
 		row: LiveChannelRow,
 		monitoringSignal?: AbortSignal,
+		manifestStamp?: CreateStamp,
 	): Promise<SdkOps> {
 		const accountId =
 			row.bitmovinAccountId ??
@@ -873,6 +875,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			tenantOrgId: account.tenantOrgId,
 			bitmovinAccountId: accountId,
 			...(monitoringSignal ? { monitoringSignal } : {}),
+			...(manifestStamp ? { stamp: manifestStamp } : {}),
 		});
 	}
 
@@ -1360,6 +1363,10 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			effect?: LiveEffectFence,
 		): Promise<void> {
 			const row = await loadChannel(liveChannelId);
+			const fallbackError = liveFallbackAdmissionError(
+				liveChannelPlanSchema.parse(row.plan),
+			);
+			if (fallbackError) throw new ChannelStateError(fallbackError);
 			const encodingId = encodingIdOf(row);
 			let resetSdk: SdkOps | undefined;
 			const restartEffectIsCurrent = async (): Promise<boolean> => {
@@ -3389,7 +3396,15 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					manifests: liveToVodManifestsOf(families),
 				};
 			};
-			const sdk = await sdkFor(row);
+			let manifestStep: string | undefined;
+			let manifestRecovery = false;
+			let manifestCreateAllowed = false;
+			const sdk = await sdkFor(row, undefined, {
+				jobId: liveChannelId,
+				currentStep: () => manifestStep,
+				adoptWindow: () => manifestRecovery,
+				allowCreate: () => manifestCreateAllowed,
+			});
 			const poll = {
 				intervalMs: deps.pollIntervalMs,
 				timeoutMs: deps.pollTimeoutMs,
@@ -3402,20 +3417,32 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				identity: LiveToVodProviderIdentity,
 				allowCreate: boolean,
 			): Promise<string> => {
-				const create = identity.manifestName.endsWith(".m3u8")
+				const isHls = identity.manifestName.endsWith(".m3u8");
+				const create = isHls
 					? sdk.createDefaultHlsManifest
 					: sdk.createDefaultDashManifest;
-				return create({
-					encodingId: identity.encodingId,
-					manifestName: identity.manifestName,
-					name: `${String(row.name ?? liveChannelId)} VOD ${identity.manifestName.endsWith(".m3u8") ? "HLS" : "DASH"}`,
-					destination: {
-						outputId: identity.outputId,
-						outputPath: identity.outputPath,
-					},
-					strictIdentity: true,
-					allowCreate,
-				});
+				manifestStep = `live-to-vod:${liveChannelRunId}:${identity.attemptId}:${isHls ? "hls" : "dash"}`;
+				manifestCreateAllowed = allowCreate;
+				// An unresolved intent from this attempt may reconcile, never POST again.
+				// A different durable attempt can establish absence before claiming new intent.
+				manifestRecovery = !allowCreate && identity.attemptId === attemptId;
+				try {
+					return await create({
+						encodingId: identity.encodingId,
+						manifestName: identity.manifestName,
+						name: `${String(row.name ?? liveChannelId)} VOD ${identity.manifestName.endsWith(".m3u8") ? "HLS" : "DASH"}`,
+						destination: {
+							outputId: identity.outputId,
+							outputPath: identity.outputPath,
+						},
+						strictIdentity: true,
+						allowCreate,
+					});
+				} finally {
+					manifestStep = undefined;
+					manifestRecovery = false;
+					manifestCreateAllowed = false;
+				}
 			};
 
 			try {
@@ -5008,10 +5035,13 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let cancelRecovery = false;
 		let activeEntry: StepLogEntry | undefined;
 		let isVerificationRun = false;
+		let fallbackError: string | undefined;
 		try {
 			const plan = liveChannelPlanSchema.parse(row.plan);
 			entries = stepLogSchema.parse(row.stepLog);
 			resetOwner.entries = entries;
+			fallbackError = liveFallbackAdmissionError(plan, entries);
+			if (fallbackError && !cancelling) throw new Error(fallbackError);
 			const verification = verificationCreateIdentity(
 				row.verificationKey,
 				row.verificationRequestSha256,
@@ -5549,6 +5579,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				await persist(entries);
 
 				try {
+					// A cancellation-only setup cannot become new provisioning work.
+					if (fallbackError) throw new Error(fallbackError);
 					activeEntry = entry;
 					stampStep = entry.attempt
 						? `${entry.step}#${entry.attempt}`

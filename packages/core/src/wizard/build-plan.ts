@@ -10,6 +10,11 @@ import {
 	type VP9DetailControls,
 } from "../plan/codec-detail-controls";
 import { hlsLegSelected, hlsVersionForLegs } from "../plan/hls-legs";
+import type {
+	DashAdaptationOptions,
+	DashDetailedOptions,
+	HlsDetailedOptions,
+} from "../plan/manifest-options";
 import type { QcGate } from "../plan/qc-gate";
 import {
 	type AV1_DYNAMIC_RANGE_FORMATS,
@@ -472,6 +477,7 @@ export type WizardMuxingKind =
 
 /** Per-rendition muxing leg (Muxings step). Absent = P1 fMP4 defaults. */
 export type WizardMuxing = {
+	progressive?: boolean;
 	/** Explicit imported destination ACL; null preserves omission. */
 	acl?: "PUBLIC_READ" | "PRIVATE" | null;
 	kind?: WizardMuxingKind;
@@ -691,6 +697,8 @@ export type WizardHlsVersion =
 export type WizardJitPlacement = "VOD" | "PREVIEW" | "VOD_AND_PREVIEW";
 
 export type WizardHlsOptions = {
+	detailed?: HlsDetailedOptions;
+	generationMode?: "MANUAL" | "DEFAULT";
 	acl?: "PUBLIC_READ" | "PRIVATE" | null;
 	omitMasterVersion?: boolean;
 	omitMediaVersion?: boolean;
@@ -710,7 +718,7 @@ export type WizardHlsOptions = {
 	jitPlacement?: WizardJitPlacement;
 };
 
-export type WizardDashAdaptationSet = {
+export type WizardDashAdaptationSet = DashAdaptationOptions & {
 	key: string;
 	type: "VIDEO" | "AUDIO";
 	lang?: string;
@@ -718,6 +726,12 @@ export type WizardDashAdaptationSet = {
 };
 
 export type WizardDashOptions = {
+	detailed?: DashDetailedOptions;
+	generationMode?: "MANUAL" | "DEFAULT";
+	defaultPeriods?: {
+		encodingKeys: string[];
+		adaptationSets?: import("../plan/manifest-options").ManifestCondition[];
+	}[];
 	acl?: "PUBLIC_READ" | "PRIVATE" | null;
 	audioLanguage?: string;
 	representationType?: "TEMPLATE" | "TIMELINE";
@@ -2112,6 +2126,8 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			return prune({
 				key: muxKey,
 				kind: "WEBM" as const,
+				progressive: m.progressive,
+				filename: m.progressive ? m.filename || "output.webm" : undefined,
 				streamKey: key,
 				segmentLength: m.segmentLength,
 				segmentNaming: str(m.segmentNaming),
@@ -2251,6 +2267,8 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	): ManifestInput => {
 		const o = options ?? {};
 		return prune({
+			detailed: o.detailed,
+			generationMode: o.generationMode,
 			key,
 			kind: "HLS" as const,
 			// Primary keeps the P1 literal emission; extra rows stay minimal
@@ -2297,23 +2315,37 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	): ManifestInput => {
 		const o = options ?? {};
 		return prune({
+			detailed: o.detailed,
+			generationMode: o.generationMode,
 			key,
 			kind: "DASH" as const,
+			defaultPeriods: o.defaultPeriods,
 			manifestName: primary ? "stream.mpd" : str(manifestName),
 			name: primary ? "DASH Manifest" : str(name),
 			destination: destination(base, o.acl),
 			// "ja" is the pinned P1 emission (the sftp fixtures carry it).
-			audioLanguage: primary ? (o.audioLanguage ?? "ja") : str(o.audioLanguage),
+			audioLanguage:
+				o.generationMode === "DEFAULT"
+					? undefined
+					: primary
+						? (o.audioLanguage ?? "ja")
+						: str(o.audioLanguage),
 			representationType: primary
 				? (o.representationType ?? ("TEMPLATE" as const))
 				: o.representationType,
-			profile: o.onDemand ? ("ON_DEMAND" as const) : undefined,
+			profile:
+				o.onDemand === true
+					? ("ON_DEMAND" as const)
+					: o.onDemand === false
+						? ("LIVE" as const)
+						: undefined,
 			videoMuxingKind: o.videoMuxingKind,
 			audioMuxingKind: o.audioMuxingKind,
 			drmKind: o.drmKind,
 			adaptationSets: o.adaptationSets?.length
 				? o.adaptationSets.map((set) =>
 						prune({
+							...set,
 							key: set.key,
 							type: set.type,
 							lang: str(set.lang),

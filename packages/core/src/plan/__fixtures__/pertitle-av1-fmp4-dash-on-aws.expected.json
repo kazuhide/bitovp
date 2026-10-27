@@ -10,6 +10,7 @@
 			"renditionKey": "v360",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "TEMPLATE",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",
@@ -33,6 +34,7 @@
 			"renditionKey": "v720",
 			"container": "FMP4_SEGMENTED",
 			"perTitleMode": "FIXED",
+			"perTitleStreamMode": "PER_TITLE_TEMPLATE_FIXED_RESOLUTION_AND_BITRATE",
 			"outputKey": "origin",
 			"dir": {
 				"pattern": "output/per-title-av1-aac-fmp4-dash-aws/video/{height}p_{bitrate}_{uuid}/",

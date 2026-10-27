@@ -307,6 +307,9 @@ const vod = fields(
 						),
 						schedule: rows(fields("", "position maxDeviation duration")),
 						outputLanguageCodes: strings,
+						regulatoryAdvisories: group(
+							z.object({ topics: z.tuple([z.literal("TOBACCO")]) }),
+						),
 					}),
 				),
 			}),

@@ -1110,6 +1110,11 @@ function readAiScene(
 			out.outputLanguageCodes = codes;
 		}
 	}
+	if (isRecord(ai.regulatoryAdvisories)) {
+		out.regulatoryAdvisories = ai.regulatoryAdvisories as NonNullable<
+			WizardStartOptions["aiSceneAnalysis"]
+		>["regulatoryAdvisories"];
+	}
 	return out;
 }
 

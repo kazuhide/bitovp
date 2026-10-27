@@ -806,6 +806,7 @@ export type WizardStartOptions = {
 		allSceneBoundaries?: { isEnabled: boolean; insertCueTags: boolean };
 		schedule?: { position: number; maxDeviation: number; duration?: number }[];
 		outputLanguageCodes?: string[];
+		regulatoryAdvisories?: { topics: "TOBACCO"[] };
 	};
 };
 
@@ -2679,6 +2680,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 						outputLanguageCodes: ai.outputLanguageCodes?.length
 							? ai.outputLanguageCodes
 							: undefined,
+						regulatoryAdvisories: ai.regulatoryAdvisories,
 					}),
 				}
 			: {}),

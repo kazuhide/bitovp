@@ -2122,6 +2122,12 @@ function buildTemplate(plan: EncodingPlan): Tree {
 																	plan.aiSceneAnalysis.automaticAdPlacement,
 															}
 														: {}),
+													...(plan.aiSceneAnalysis.regulatoryAdvisories
+														? {
+																regulatoryAdvisories:
+																	plan.aiSceneAnalysis.regulatoryAdvisories,
+															}
+														: {}),
 													...(plan.aiSceneAnalysis.outputLanguageCodes
 														? {
 																outputLanguageCodes: {

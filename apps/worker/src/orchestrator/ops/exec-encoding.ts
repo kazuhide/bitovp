@@ -145,6 +145,9 @@ export async function executeEncodingStep(
 								Parameters<SdkOps["startEncoding"]>[1]["aiSceneAnalysis"]
 							>["automaticAdPlacement"];
 							outputLanguageCodes?: { outputLanguageCodes?: string[] };
+							regulatoryAdvisories?: NonNullable<
+								Parameters<SdkOps["startEncoding"]>[1]["aiSceneAnalysis"]
+							>["regulatoryAdvisories"];
 						};
 				  }
 				| undefined;
@@ -170,6 +173,7 @@ export async function executeEncodingStep(
 					automaticAdPlacement: ai.features?.automaticAdPlacement,
 					outputLanguageCodes:
 						ai.features?.outputLanguageCodes?.outputLanguageCodes,
+					regulatoryAdvisories: ai.features?.regulatoryAdvisories,
 				};
 			}
 			const already = await startedDuringCrashWindow(() =>

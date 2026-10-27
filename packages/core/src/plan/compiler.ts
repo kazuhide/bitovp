@@ -2053,6 +2053,12 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 										plan.aiSceneAnalysis.automaticAdPlacement,
 								}
 							: {}),
+						...(plan.aiSceneAnalysis.regulatoryAdvisories
+							? {
+									regulatoryAdvisories:
+										plan.aiSceneAnalysis.regulatoryAdvisories,
+								}
+							: {}),
 						...(plan.aiSceneAnalysis.outputLanguageCodes
 							? {
 									outputLanguageCodes: {

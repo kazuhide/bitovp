@@ -10,6 +10,7 @@ import {
 	AiSceneAnalysisAutomaticAdPlacement,
 	AiSceneAnalysisFeatures,
 	AiSceneAnalysisOutputLanguageCodes,
+	AiSceneAnalysisRegulatoryAdvisories,
 	AllSceneBoundaries,
 	AudioVideoSyncMode,
 	AutomaticAdPlacementPosition,
@@ -23,6 +24,7 @@ import {
 	NexGuardFileMarker,
 	NexGuardWatermarkingStrength,
 	NexGuardWatermarkingType,
+	RegulatoryAdvisoryTopic,
 	Scheduling,
 	StartEncodingRequest,
 	Tweaks,
@@ -539,6 +541,15 @@ export function createEncodingLifecycleOps(
 																					.allSceneBoundaries,
 																			)
 																		: undefined,
+																})
+															: undefined,
+														regulatoryAdvisories: p.aiSceneAnalysis
+															.regulatoryAdvisories
+															? new AiSceneAnalysisRegulatoryAdvisories({
+																	topics:
+																		p.aiSceneAnalysis.regulatoryAdvisories.topics.map(
+																			(topic) => RegulatoryAdvisoryTopic[topic],
+																		),
 																})
 															: undefined,
 														outputLanguageCodes: p.aiSceneAnalysis

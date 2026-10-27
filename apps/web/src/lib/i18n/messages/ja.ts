@@ -4008,6 +4008,9 @@ export const ja = {
 			"広告位置の自動挿入 (allSceneBoundaries)",
 		aisaSchedule: "広告キューポイントの時刻指定",
 		aisaDefaultLanguage: "英語の解析結果は標準で含まれます。",
+		aisaTobacco: "たばこを検出（TOBACCO）",
+		aisaAdvisoriesHelp:
+			"組織でこの機能が有効になっている必要があります。検出結果は解析ファイルに記録され、映像への注意文の挿入は行いません。",
 		aisaAdditionalLanguagesHelp:
 			"英語以外に必要な言語を、ja、de のような言語コードで最大 3 つ指定します。複数ある場合はカンマで区切ってください。",
 		aisaPosition: "位置（秒）",

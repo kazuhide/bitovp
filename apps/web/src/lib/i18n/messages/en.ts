@@ -4997,6 +4997,8 @@ export const en = {
 		ctrIv8Bytes: "CTR → IV_8_BYTES",
 		curlUnavailable: "cURL unavailable",
 		curlNoEndpoint: "No single Bitmovin endpoint maps to {kind}",
+		curlVaultFieldsOmitted:
+			"Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
 		curlUnresolvedPathParams:
 			"Could not resolve all URL path parameters for {kind}",
 		curlNoStepEntry: "The step entry is unavailable",

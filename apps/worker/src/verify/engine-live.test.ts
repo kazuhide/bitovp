@@ -1617,3 +1617,60 @@ it("rejects a missing encrypted ladder when only a different output contains the
 		"PASS",
 	);
 });
+
+it("does not let a nested encrypted output stand in for a missing clear ladder", async () => {
+	const expected = load("live-rtmp-simple");
+	expected.muxings.push(
+		...expected.muxings.map((m) => ({
+			...m,
+			dir: { ...m.dir, prefix: `${m.dir.prefix}encrypted/` },
+			drmKey: `${m.muxingKey}-enc`,
+			drmKind: "FAIRPLAY" as const,
+		})),
+	);
+	const deps = healthy();
+	for (const s of deps.samples)
+		s.objects = s.objects?.map((o) => ({
+			...o,
+			key: o.key.replace(/([^/]+)$/, "encrypted/$1"),
+		}));
+	const missing = await verifyLiveChannel(expected, deps);
+	expect(missing.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+		"FAIL",
+	);
+	for (const s of deps.samples)
+		s.objects?.push(
+			...s.objects.map((o) => ({
+				...o,
+				key: o.key.replace("/encrypted/", "/"),
+			})),
+		);
+	const complete = await verifyLiveChannel(expected, deps);
+	expect(complete.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+		"PASS",
+	);
+});
+
+it.each([
+	"not-init.mp4",
+	"encrypted/init.mp4",
+	"encrypted/segment_1.m4s",
+])("does not admit %s as a writer's own filename", async (name) => {
+	const expected = load("live-rtmp-simple");
+	const first = expected.muxings[0];
+	if (!first) throw new Error("Missing muxing fixture");
+	const deps = healthy();
+	for (const s of deps.samples)
+		s.objects = [
+			...(s.objects ?? []).filter((o) => !o.key.startsWith(first.dir.prefix)),
+			{
+				outputKey: first.outputKey,
+				key: `${first.dir.prefix}${name}`,
+				size: 900,
+			},
+		];
+	const report = await verifyLiveChannel(expected, deps);
+	expect(report.checks.find((c) => c.id === "live:ladder")?.verdict).toBe(
+		"FAIL",
+	);
+});

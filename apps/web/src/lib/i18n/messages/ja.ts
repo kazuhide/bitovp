@@ -4960,6 +4960,8 @@ export const ja = {
 		curlUnavailable: "cURL は利用できません",
 		curlNoEndpoint:
 			"{kind} に対応する Bitmovin の単一エンドポイントがありません",
+		curlVaultFieldsOmitted:
+			"暗号化の作成には保存済みの鍵が必要です。履歴には鍵を含めていないため、cURL は利用できません。",
 		curlUnresolvedPathParams:
 			"{kind} の URL パスパラメータをすべて解決できませんでした",
 		curlNoStepEntry: "ステップの記録がありません",

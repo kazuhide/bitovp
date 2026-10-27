@@ -33,10 +33,6 @@ import {
 	type MediaFreshness,
 	mediaFreshness,
 } from "@bitovp/core";
-import {
-	expandRandomFilenameTokens,
-	initSegmentCandidates,
-} from "../bitmovin/filename-template";
 import { HEARTBEAT_SWEEP_INTERVAL_MS } from "../heartbeat-cadence";
 import { closureProbe, type LiveEdgeClosure } from "./edge-resolver";
 import {
@@ -45,6 +41,7 @@ import {
 	ReportBuilder,
 	type VerificationReport,
 } from "./engine";
+import { liveStorageObjects } from "./live-storage-objects";
 
 // The closure types live with the resolver that builds them; re-exported so
 // the engine stays the import site the runner and the tests already use.
@@ -649,30 +646,8 @@ function verifyLadderShape(
 	// while its siblings fill, which a union count hides completely.
 	const silent: string[] = [];
 	for (const muxing of expected.muxings) {
-		const rx = patternToRegExp(
-			muxing.segmentNaming,
-			muxing.segmentNamingIsTemplate === true,
-		);
-		const initKeys = new Set(
-			initSegmentCandidates(
-				objects
-					.filter(
-						(o) =>
-							o.outputKey === muxing.outputKey &&
-							o.key.startsWith(muxing.dir.prefix),
-					)
-					.map((o) => o.key),
-				muxing.initSegment,
-				muxing.initSegmentNameTemplate,
-			),
-		);
-		const mine = objects.filter(
-			(o) =>
-				o.outputKey === muxing.outputKey &&
-				o.key.startsWith(muxing.dir.prefix) &&
-				(rx.test(o.key.split("/").pop() ?? "") || initKeys.has(o.key)),
-		);
-		if (mine.length === 0) {
+		const mine = liveStorageObjects(objects, muxing);
+		if (mine.media.length === 0 && mine.init.length === 0) {
 			silent.push(`${muxing.muxingKey} (${muxing.container})`);
 		}
 	}
@@ -697,23 +672,9 @@ function verifyLadderShape(
 	 */
 	const unexpected: string[] = [];
 	for (const muxing of expected.muxings) {
-		const rx = patternToRegExp(
-			muxing.segmentNaming,
-			muxing.segmentNamingIsTemplate === true,
-		);
-		const initKeys = new Set(
-			initSegmentCandidates(
-				objects
-					.filter(
-						(o) =>
-							o.outputKey === muxing.outputKey &&
-							o.key.startsWith(muxing.dir.prefix),
-					)
-					.map((o) => o.key),
-				muxing.initSegment,
-				muxing.initSegmentNameTemplate,
-			),
-		);
+		const mine = liveStorageObjects(objects, muxing);
+		const initKeys = new Set(mine.init.map((o) => o.key));
+		const mediaKeys = new Set(mine.media.map((o) => o.key));
 		for (const o of objects) {
 			if (
 				o.outputKey !== muxing.outputKey ||
@@ -726,7 +687,7 @@ function verifyLadderShape(
 			if (base.includes("/") || initKeys.has(o.key)) {
 				continue;
 			}
-			if (!rx.test(base)) {
+			if (!mediaKeys.has(o.key)) {
 				unexpected.push(`${muxing.muxingKey}/${base}`);
 			}
 		}
@@ -739,15 +700,6 @@ function verifyLadderShape(
 			? `every segment matches the naming template its muxing declared`
 			: `these objects match no declared segment name, so a manifest referencing the template would point at files the origin never wrote: ${unexpected.slice(0, 3).join(", ")}`,
 	);
-}
-
-/** `%number%`-style pattern → a matcher, same rule the VOD engine uses. */
-function patternToRegExp(pattern: string, namingTemplate: boolean): RegExp {
-	const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const random = namingTemplate
-		? expandRandomFilenameTokens(escaped, Number.MAX_SAFE_INTEGER, true)
-		: escaped;
-	return new RegExp(`^${random.replace(/%[a-zA-Z]+%/g, "[^/]+")}$`);
 }
 
 /**

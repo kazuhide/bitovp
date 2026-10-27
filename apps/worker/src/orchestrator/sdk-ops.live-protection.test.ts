@@ -160,8 +160,11 @@ for (const kind of ["CENC", "FAIRPLAY", "SPEKE"] as const)
 					status: "DONE",
 					request: result.request,
 				});
-				expect(curl.ok).toBe(true);
-				if (curl.ok) expect(curl.command).not.toContain(key);
+				expect(curl).toEqual({
+					ok: false,
+					code: "VAULT_FIELDS_OMITTED",
+					kind: op.kind,
+				});
 			}
 		}
 		expect(JSON.stringify(snapshots)).not.toContain(key);

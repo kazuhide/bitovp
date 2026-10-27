@@ -180,20 +180,20 @@ describe("curlForStep — endpoint mapping", () => {
 		);
 	});
 
-	it("splices the lowercase muxingKind path segment for DRM (CENC on fmp4)", () => {
+	it.each([
+		"CREATE_DRM_CENC",
+		"CREATE_DRM_FAIRPLAY",
+		"CREATE_DRM_SPEKE",
+	] as const)("does not offer an incomplete vault-backed %s request", (kind) => {
 		const result = curlForStep(
 			step({
-				kind: "CREATE_DRM_CENC",
+				kind,
 				refs: { encodingId: "enc-1", muxingId: "mux-2" },
 				payload: { muxingKind: "FMP4" },
 				request: { muxingKind: "FMP4", kid: "abc", refs: {} },
 			}),
 		);
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		expect(result.command).toContain(
-			"/encoding/encodings/enc-1/muxings/fmp4/mux-2/drm/cenc",
-		);
+		expect(result).toEqual({ ok: false, code: "VAULT_FIELDS_OMITTED", kind });
 	});
 
 	it("maps a deep DASH representation with three path params", () => {
@@ -371,6 +371,12 @@ describe("every operation kind is classified", () => {
 	 * therefore be either curl-able or listed below WITH a reason.
 	 */
 	const NO_CURL_BY_DESIGN: Record<string, string> = {
+		CREATE_DRM_CENC:
+			"the content key is kept in the vault, outside the saved request",
+		CREATE_DRM_FAIRPLAY:
+			"the content key is kept in the vault, outside the saved request",
+		CREATE_DRM_SPEKE:
+			"key-provider settings are kept in the vault, outside the saved request",
 		AWAIT_ENCODING: "status read, not a reproducible mutation",
 		AWAIT_MANIFEST_HLS: "status read",
 		AWAIT_MANIFEST_DASH: "status read",

@@ -549,6 +549,8 @@ function curlBody(
 export type CurlUnavailable =
 	/** No single Bitmovin endpoint maps to this step kind (reads, list-resolves, fan-outs). */
 	| { code: "NO_ENDPOINT"; kind: string }
+	/** The request needs vault fields that are intentionally absent from saved logs. */
+	| { code: "VAULT_FIELDS_OMITTED"; kind: string }
 	/** The endpoint exists but the step lacks a ref the URL template needs. */
 	| { code: "UNRESOLVED_PATH_PARAMS"; kind: string };
 
@@ -564,6 +566,13 @@ export function curlForStep(
 	entry: StepLogEntry,
 	options: CurlOptions = {},
 ): CurlResult {
+	if (
+		entry.kind === "CREATE_DRM_CENC" ||
+		entry.kind === "CREATE_DRM_FAIRPLAY" ||
+		entry.kind === "CREATE_DRM_SPEKE"
+	) {
+		return { ok: false, code: "VAULT_FIELDS_OMITTED", kind: entry.kind };
+	}
 	let endpoint = ENDPOINTS[entry.kind];
 	if (
 		entry.kind === "CREATE_CODEC_H265" &&

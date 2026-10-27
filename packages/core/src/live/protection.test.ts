@@ -219,3 +219,67 @@ it("rejects encrypted TS writers from different muxings sharing a physical path 
 		true,
 	);
 });
+
+describe("Live output filename expansion collisions", () => {
+	it.each([
+		["seg_%number%.ts", "seg_1%number%.ts", false, true],
+		["nested/seg_%number%.ts", "nested/seg_1%number%.ts", false, true],
+		["seg_%number%.ts", "seg_11.ts", false, true],
+		["video_%number%.ts", "audio_%number%.ts", false, false],
+		["seg_%number%_video.ts", "seg_%number%_audio.ts", false, false],
+		["seg_%number%.ts", "seg_a%number%.ts", false, false],
+		["seg-{rand_chars:8}-%number%.ts", "seg-Ab12Cd34-%number%.ts", true, true],
+		[
+			"seg-{rand_chars}-%number%.ts",
+			`seg-${"A".repeat(32)}-%number%.ts`,
+			true,
+			true,
+		],
+		[
+			"seg-{rand_chars:8}-%number%.ts",
+			"seg-Ab12Cd34-%number%.ts",
+			false,
+			false,
+		],
+	] as const)("checks expanded %s against %s", (left, right, template, collision) => {
+		const p = encrypted("FAIRPLAY", "TS");
+		const a = required(p.muxings[0]);
+		const b = required(p.muxings[1]);
+		if (a.kind !== "TS" || b.kind !== "TS")
+			throw new Error("Missing TS fixture");
+		a.segmentNaming = left;
+		if (template) a.segmentNamingTemplate = left;
+		b.segmentNaming = right;
+		required(p.drm?.[1]).destination = { ...required(p.drm?.[0]).destination };
+		expect(errors(p).some((i) => i.code === "LIVE_DRM_OUTPUT_COLLISION")).toBe(
+			collision,
+		);
+	});
+	it.each([
+		"alias",
+		"mirror",
+	] as const)("detects overlapping expansions through an output %s", (route) => {
+		const p = encrypted("FAIRPLAY", "TS");
+		const a = required(p.muxings[0]);
+		const b = required(p.muxings[1]);
+		if (a.kind !== "TS" || b.kind !== "TS")
+			throw new Error("Missing TS fixture");
+		a.segmentNaming = "seg_%number%.ts";
+		b.segmentNaming = "seg_1%number%.ts";
+		const output = required(p.outputs[0]);
+		if (output.kind !== "S3") throw new Error("Missing S3 fixture");
+		p.outputs.push({
+			...output,
+			key: "other",
+			...(route === "mirror" ? { bucket: "other-live-bucket" } : {}),
+		});
+		required(p.drm?.[1]).destination = {
+			...required(p.drm?.[0]).destination,
+			outputKey: "other",
+		};
+		if (route === "mirror") p.deliveryMirrors = [{ outputKey: "origin" }];
+		expect(errors(p).some((i) => i.code === "LIVE_DRM_OUTPUT_COLLISION")).toBe(
+			true,
+		);
+	});
+});

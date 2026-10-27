@@ -57,6 +57,10 @@ credential; the content key is never part of a channel plan. **Copy encryption
 settings to all compatible tracks** shares the public metadata and credential
 reference while retaining each track's own folder.
 
+DRM creation requests cannot be copied as cURL from the resource history because
+the saved requests omit vault keys and key-server credentials. Configure and
+run encryption through the application.
+
 Select the matching encryption kind in each HLS or DASH manifest. Its media
 references then use the encrypted destination; DASH also receives encryption
 metadata. HLS CENC intended for FairPlay playback requires CBC and the FairPlay

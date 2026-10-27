@@ -1511,6 +1511,19 @@ This example checks media conversion, segmentation, decoding, and the evaluation
 
 Audio boundaries and alignment are explained in Chapter 11. Big Buck Bunny is from the [Blender Foundation](https://peach.blender.org/about/) and is licensed under Creative Commons Attribution 3.0. Media credit: © copyright 2008, Blender Foundation / www.bigbuckbunny.org.
 
+### Provider-encoded samples: October 27, 2026
+
+Ten-second Big Buck Bunny inputs were encoded through Bitmovin with JavaScript API SDK 1.285.0 and 2-second segments. All initialization files and segments listed in each DASH manifest were downloaded from public S3 URLs, assembled without changing their bytes, and decoded to the end locally with FFmpeg. All 4 video tracks and 7 audio tracks completed decoding with `-xerror` enabled. The original job checks retain their HLS version warnings and one skipped VP9 bitrate check.
+
+| Video codec | Decoded frames | Video duration (seconds) | Target bitrate (kbps) | Measured video bitrate (kbps) |
+|---|---:|---:|---:|---:|
+| H.264 | 240 | 10.000 | 800.0 | 813.1 |
+| HEVC | 240 | 10.000 | 800.0 | 800.7 |
+| VP9 | 240 | 9.999 | 800.0 | 799.6 |
+| AV1 | 240 | 10.000 | 800.0 | 477.6 |
+
+Target bitrate is the encoder setting. Measured video bitrate is the encoded video packet data divided by its presentation time, excluding container overhead; 1 kbps means 1,000 bits per second. The 7 audio tracks (AAC, AC3 and EAC3) each decoded to 479,232 samples at 48 kHz, or 9.984 seconds. See [audio boundaries in Chapter 11](./USER-GUIDE.en.md#frame-boundaries-and-alignment) for interpreting audio duration. These checks cover complete-track local decoding. Direct DASH-player playback, browser/device compatibility and DRM license delivery require separate checks, as do audio/video synchronization, cutoff-frequency response and quality improvement.
+
 ### Provider-encoded samples: October 20, 2026
 
 Ten-second Big Buck Bunny inputs were encoded through Bitmovin using the JavaScript API SDK 1.284.0. The following measurements describe those outputs separately from the local example above.
@@ -1524,7 +1537,7 @@ Ten-second Big Buck Bunny inputs were encoded through Bitmovin using the JavaScr
 
 Chrome playback reached the end with 240 decoded video frames for HLS using hls.js 1.6.16 and for both DASH presentations using Shaka Player 5.2.8. It used unchanged downloaded files served locally. For the H.264/HEVC sample, direct FFmpeg reading of the DASH manifest was not qualified; the unchanged files passed concatenated-track decoding and browser playback.
 
-These scores describe one reference/output pair and measurement method. They do not establish a quality target for other content or audio/video synchronization. These checks do not qualify AV1 output.
+These scores describe one reference/output pair and measurement method. They do not establish a quality target for other content or audio/video synchronization. The October 20 checks did not qualify AV1 output.
 
 ### Glossary
 

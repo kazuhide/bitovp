@@ -17,6 +17,9 @@
 			"streamKey": "v1080",
 			"container": "FMP4_SEGMENTED",
 			"outputKey": "origin",
+			"namingOnlyOutputKeys": [
+				"mirror-1"
+			],
 			"dir": {
 				"pattern": "output/live-akamai-msl-storage/video/1080p/",
 				"prefix": "output/live-akamai-msl-storage/video/1080p/",
@@ -31,6 +34,9 @@
 			"streamKey": "v720",
 			"container": "FMP4_SEGMENTED",
 			"outputKey": "origin",
+			"namingOnlyOutputKeys": [
+				"mirror-1"
+			],
 			"dir": {
 				"pattern": "output/live-akamai-msl-storage/video/720p/",
 				"prefix": "output/live-akamai-msl-storage/video/720p/",
@@ -45,6 +51,9 @@
 			"streamKey": "v360",
 			"container": "FMP4_SEGMENTED",
 			"outputKey": "origin",
+			"namingOnlyOutputKeys": [
+				"mirror-1"
+			],
 			"dir": {
 				"pattern": "output/live-akamai-msl-storage/video/360p/",
 				"prefix": "output/live-akamai-msl-storage/video/360p/",
@@ -59,6 +68,9 @@
 			"streamKey": "a128",
 			"container": "FMP4_SEGMENTED",
 			"outputKey": "origin",
+			"namingOnlyOutputKeys": [
+				"mirror-1"
+			],
 			"dir": {
 				"pattern": "output/live-akamai-msl-storage/audio/128000/",
 				"prefix": "output/live-akamai-msl-storage/audio/128000/",
@@ -67,6 +79,48 @@
 			"segmentNaming": "seg-{rand_chars:8}-%number%.m4s",
 			"segmentLengthSec": 6,
 			"initSegment": "init.mp4"
+		}
+	],
+	"namingOnlyFiles": [
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/stream.m3u8"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/video_4500000.m3u8"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/video_3000000.m3u8"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/video_800000.m3u8"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/audio_128000.m3u8"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/stream.mpd"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/video/1080p/init.mp4"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/video/720p/init.mp4"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/video/360p/init.mp4"
+		},
+		{
+			"outputKey": "mirror-1",
+			"key": "output/live-akamai-msl-storage/audio/128000/init.mp4"
 		}
 	],
 	"manifests": [

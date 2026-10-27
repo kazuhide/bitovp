@@ -678,9 +678,20 @@ function verifyLadderShape(
 	const declared = new Set(
 		bindings.flatMap(({ files }) => [...files.init, ...files.media]),
 	);
+	// These routes describe where a writer also emits files. They classify names
+	// only; primary ladder, movement, byte and evidence checks keep their own route.
+	for (const muxing of expected.muxings)
+		for (const outputKey of muxing.namingOnlyOutputKeys ?? []) {
+			const files = liveStorageObjects(objects, { ...muxing, outputKey });
+			for (const object of [...files.init, ...files.media])
+				declared.add(object);
+		}
 	// Other declared files may share the folder, but their presence proves no media.
 	// Archive and manifest filenames are literals, including any token-looking text.
 	const literalFiles = new Set([
+		...(expected.namingOnlyFiles ?? []).map((file) =>
+			JSON.stringify([file.outputKey, file.key]),
+		),
 		...expected.manifests.flatMap((manifest) =>
 			[...manifest.files, ...manifest.mediaPlaylists].map((filename) =>
 				JSON.stringify([

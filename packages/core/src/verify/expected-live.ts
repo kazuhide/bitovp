@@ -36,7 +36,9 @@ import {
 	LIVE_MANIFEST_ELEMENT_BUDGET,
 	manifestElementEstimate,
 } from "../live/dvr";
+import { liveOutputFilenames } from "../live/protection";
 import type { LiveChannelPlan } from "../live/schema";
+import { outputFileKeys, outputStorageKeys } from "../plan/output-files";
 import { type PathPattern, pathPattern, withTrailingSlash } from "./expected";
 
 /** A live ingest, and whether our own feeder can drive it. */
@@ -98,6 +100,8 @@ export type ExpectedLiveMuxing = {
 	streamKey: string;
 	container: "FMP4_SEGMENTED" | "TS_SEGMENTED";
 	outputKey: string;
+	/** Additional physical aliases and emitted mirrors, for naming checks only. */
+	namingOnlyOutputKeys?: string[];
 	dir: PathPattern;
 	segmentNaming: string;
 	/** Random tokens expand only when the source used segmentNamingTemplate. */
@@ -190,6 +194,8 @@ export type ExpectedLiveArtefacts = {
 	planName: string;
 	ingest: ExpectedLiveIngest;
 	muxings: ExpectedLiveMuxing[];
+	/** Literal files visible through aliases/mirrors; never media or completion proof. */
+	namingOnlyFiles?: { outputKey: string; key: string }[];
 	/** Separate post-stop obligations; never satisfied by live segment checks. */
 	archives?: {
 		muxingKey: string;
@@ -353,6 +359,26 @@ export function compileExpectedLiveArtefacts(
 ): ExpectedLiveArtefacts {
 	const notes: string[] = [];
 	const renditionCount = plan.renditions.length;
+	// A candidate's own identity must exclude mirrors: a common mirror does not
+	// make unrelated primary buckets or accounts aliases of one another.
+	const aliasesByStorage = new Map<string, string[]>();
+	for (const output of plan.outputs)
+		for (const storage of outputStorageKeys(
+			{ outputs: plan.outputs },
+			output.key,
+		))
+			aliasesByStorage.set(storage, [
+				...(aliasesByStorage.get(storage) ?? []),
+				output.key,
+			]);
+	const additionalOutputKeys = (primary: string) =>
+		[
+			...new Set(
+				[...outputStorageKeys(plan, primary)].flatMap(
+					(storage) => aliasesByStorage.get(storage) ?? [],
+				),
+			),
+		].filter((key) => key !== primary);
 
 	const archiveMuxings = plan.muxings.filter((muxing) => muxing.kind === "MP4");
 	for (const archive of archiveMuxings)
@@ -374,6 +400,9 @@ export function compileExpectedLiveArtefacts(
 			];
 			return (destinations.length ? destinations : [undefined]).map((leg) => {
 				const dest = leg?.destination;
+				const namingOnlyOutputKeys = dest
+					? additionalOutputKeys(dest.outputKey)
+					: [];
 				// A live muxing without a destination cannot be located, so it is a note rather
 				// than a guess — the engine turns it into a named SKIP.
 				if (dest === undefined) {
@@ -390,6 +419,7 @@ export function compileExpectedLiveArtefacts(
 					container: muxing.kind === "TS" ? "TS_SEGMENTED" : "FMP4_SEGMENTED",
 					...(muxing.kind === "CMAF" ? { muxingKind: "CMAF" as const } : {}),
 					outputKey: dest?.outputKey ?? "",
+					...(namingOnlyOutputKeys.length ? { namingOnlyOutputKeys } : {}),
 					dir: pathPattern(withTrailingSlash(dest?.path ?? "")),
 					segmentNaming: muxing.segmentNamingTemplate || muxing.segmentNaming,
 					...(muxing.segmentNamingTemplate
@@ -488,6 +518,40 @@ export function compileExpectedLiveArtefacts(
 		},
 	);
 
+	const namingOnlyFiles = new Map<string, { outputKey: string; key: string }>();
+	const allowLiteralAliases = (
+		destination: { outputKey: string; path: string },
+		filename: string,
+	) => {
+		for (const token of outputFileKeys(plan, { destination, filename })) {
+			const address = JSON.parse(token) as { storage: string; path: string };
+			for (const outputKey of aliasesByStorage.get(address.storage) ?? []) {
+				if (outputKey === destination.outputKey) continue;
+				const file = { outputKey, key: address.path };
+				namingOnlyFiles.set(JSON.stringify(file), file);
+			}
+		}
+	};
+	for (const [index, source] of plan.liveManifests.entries()) {
+		const manifest = manifests[index];
+		if (!manifest) throw new Error("Missing compiled Live manifest");
+		for (const filename of [...manifest.files, ...manifest.mediaPlaylists])
+			allowLiteralAliases(source.destination, filename);
+	}
+	for (const muxing of plan.muxings) {
+		const destinations = [
+			muxing.destination,
+			...(plan.drm ?? [])
+				.filter((drm) => drm.muxingKey === muxing.key)
+				.map((drm) => drm.destination),
+		];
+		for (const file of liveOutputFilenames(muxing)) {
+			if (file.policyTokens || file.randomTokens) continue;
+			for (const destination of destinations)
+				if (destination) allowLiteralAliases(destination, file.pattern);
+		}
+	}
+
 	const ingest = ingestOf(plan);
 	if (!ingest.feedable) {
 		notes.push(
@@ -551,6 +615,9 @@ export function compileExpectedLiveArtefacts(
 		planName: plan.name,
 		ingest,
 		muxings,
+		...(namingOnlyFiles.size
+			? { namingOnlyFiles: [...namingOnlyFiles.values()] }
+			: {}),
 		...(archiveMuxings.length > 0
 			? {
 					archives: archiveMuxings.map((muxing) => ({

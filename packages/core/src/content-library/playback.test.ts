@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../plan/__fixtures__/ai-scene-analysis-passthrough-test.plan.json";
+import { compilePlan } from "../plan/compiler";
 import { encodingPlanSchema } from "../plan/schema";
 import { manifestPlaybackLinks } from "../playback/manifest-links";
+import { enumerateQcTargets } from "../vmaf/targets";
 import { libraryPlaybackLinkSchema } from "./contracts";
 import { libraryFileOutputs, libraryPlaybackLinks } from "./playback";
 
@@ -130,6 +132,145 @@ describe("libraryPlaybackLinks", () => {
 		const video = input.renditions[0];
 		if (!video || !("mode" in video)) throw new Error("Fixture video missing");
 		video.mode = "PER_TITLE_TEMPLATE";
+		expect(libraryPlaybackLinks(input, credentials)).toEqual([]);
+	});
+});
+
+function qcOnlyPlan() {
+	return encodingPlanSchema.parse({
+		...fixture,
+		aiSceneAnalysis: undefined,
+		qc: { vmaf: true, only: true },
+		muxings: [
+			{
+				key: "segmented",
+				kind: "FMP4",
+				streamKey: "v180",
+				segmentLength: 2,
+				initSegmentName: "init.mp4",
+				destination: destination(plan()),
+			},
+		],
+	});
+}
+
+describe("QC-only Library MP4 output", () => {
+	it("retains the exact compiler-emitted QC MP4 with its own stable key and private coordinates", () => {
+		const input = qcOnlyPlan();
+		destination(input).acl = "PRIVATE";
+		const op = compilePlan(input).find((op) => op.step === "qc-muxing:v180");
+		expect(op?.kind).toBe("CREATE_MUXING_MP4");
+		const path = `${String(op?.payload.outputPath)}${String(op?.payload.filename)}`;
+		expect(libraryFileOutputs(input)).toEqual([
+			{
+				key: "qc-mp4:v180",
+				kind: "MP4",
+				credentialId: credential.id,
+				bucket: "sample-output-bucket",
+				path,
+			},
+		]);
+		expect(libraryPlaybackLinks(input, credentials)).toEqual([
+			expect.objectContaining({
+				key: "qc-mp4:v180",
+				kind: "MP4",
+				path,
+				url: null,
+				reason: { code: "NOT_PUBLIC" },
+			}),
+		]);
+	});
+	it("retains a concat QC output without inventing a VMAF reference", () => {
+		const input = qcOnlyPlan();
+		input.trimmingStreams = [
+			{
+				key: "piece",
+				kind: "TIME_BASED",
+				sourceKey: "video",
+				offset: 2,
+				duration: 2,
+			},
+		];
+		input.concatenationStreams = [
+			{
+				key: "clip",
+				sources: [{ sourceKey: "piece", position: 0, isMain: true }],
+			},
+		];
+		const video = input.renditions[0];
+		if (!video) throw new Error("Fixture video missing");
+		video.ingestKey = "clip";
+		expect(enumerateQcTargets(input)).toEqual([]);
+		const op = compilePlan(input).find((op) => op.step === "qc-muxing:v180");
+		expect(libraryFileOutputs(input)[0]?.path).toBe(
+			`${String(op?.payload.outputPath)}${String(op?.payload.filename)}`,
+		);
+	});
+	it("does not advertise normal MP4 or manifests that a QC-only job never creates", () => {
+		const input = encodingPlanSchema.parse({
+			...fixture,
+			aiSceneAnalysis: undefined,
+			qc: { vmaf: true, only: true },
+			manifests: [
+				{
+					key: "hls",
+					kind: "HLS",
+					name: "HLS",
+					manifestName: "master.m3u8",
+					destination: destination(plan()),
+				},
+			],
+		});
+		expect(
+			compilePlan(input).some(
+				(op) =>
+					op.step === "muxing:v180" || op.kind.startsWith("CREATE_MANIFEST_"),
+			),
+		).toBe(false);
+		expect(
+			libraryPlaybackLinks(input, credentials).map((link) => link.key),
+		).toEqual(["qc-mp4:v180"]);
+		input.qc = { vmaf: false, only: true, model: "vmaf_v0.6.1" };
+		expect(libraryPlaybackLinks(input, credentials)).toEqual([]);
+		expect(libraryFileOutputs(input)).toEqual([]);
+	});
+	it("omits WebM, unresolved paths, and per-title templates instead of labeling them MP4", () => {
+		const webm = qcOnlyPlan();
+		webm.renditions = [
+			{
+				key: "v180",
+				codec: "VP9",
+				mode: "STANDARD",
+				ingestKey: "video",
+				width: 640,
+				height: 360,
+				bitrate: 350000,
+				rate: 24,
+			},
+		];
+		expect(
+			compilePlan(webm).find((op) => op.step === "qc-muxing:v180")?.kind,
+		).toBe("CREATE_MUXING_PROGRESSIVE_WEBM");
+		expect(libraryFileOutputs(webm)).toEqual([]);
+		expect(libraryPlaybackLinks(webm, credentials)).toEqual([]);
+		const unresolved = qcOnlyPlan();
+		destination(unresolved).path += "/{uuid}";
+		expect(libraryFileOutputs(unresolved)).toEqual([]);
+		const perTitle = qcOnlyPlan();
+		const video = perTitle.renditions[0];
+		if (!video || !("mode" in video)) throw new Error("Fixture video missing");
+		video.mode = "PER_TITLE_TEMPLATE";
+		expect(libraryFileOutputs(perTitle)).toEqual([]);
+	});
+	it("keeps ordinary delivery playback unchanged instead of exposing its clear QC mirrors", () => {
+		const input = encodingPlanSchema.parse({
+			...fixture,
+			qc: { vmaf: true, only: false },
+		});
+		expect(
+			libraryPlaybackLinks(input, credentials).map((link) => link.key),
+		).toEqual(["mp4:v180"]);
+		input.drm = [{ muxingKey: "v180" }] as typeof input.drm;
 		expect(libraryPlaybackLinks(input, credentials)).toEqual([]);
 	});
 });

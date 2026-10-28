@@ -161,15 +161,33 @@ export async function requestLibrarySource(
 		};
 		if (existing) {
 			const snapshot = librarySnapshotSchema.parse(existing.snapshot);
-			const fileOutputs =
-				snapshot.planHash === planHash && !snapshot.fileOutputs
-					? libraryFileOutputs(plan)
-					: undefined;
+			const expectedFiles =
+				snapshot.planHash === planHash ? libraryFileOutputs(plan) : [];
+			const storedFiles = snapshot.fileOutputs ?? [];
+			const storedKeys = new Set(storedFiles.map((file) => file.key));
+			const missingFiles = expectedFiles
+				.filter((file) => !storedKeys.has(file.key))
+				.slice(0, 100 - storedFiles.length);
+			const fileOutputs = missingFiles.length
+				? [...storedFiles, ...missingFiles]
+				: undefined;
+			const sameFileIdentity = (key: string) => {
+				const stored = storedFiles.find((file) => file.key === key);
+				if (!stored) return true;
+				const expected = expectedFiles.find((file) => file.key === key);
+				return (
+					expected !== undefined &&
+					stored.credentialId === expected.credentialId &&
+					stored.bucket === expected.bucket &&
+					stored.path === expected.path
+				);
+			};
 			const missingMp4 =
 				snapshot.planHash === planHash &&
 				libraryPlaybackLinks(plan, []).some(
 					(link) =>
 						link.kind === "MP4" &&
+						sameFileIdentity(link.key) &&
 						!snapshot.playbackLinks.some((stored) => stored.key === link.key),
 				);
 			const upgradeAnalysis = analysisOutput && !snapshot.analysisOutput;
@@ -189,6 +207,7 @@ export async function requestLibrarySource(
 					? (await playbackLinks()).filter(
 							(link) =>
 								link.kind === "MP4" &&
+								sameFileIdentity(link.key) &&
 								!snapshot.playbackLinks.some(
 									(stored) => stored.key === link.key,
 								),

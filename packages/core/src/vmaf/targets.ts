@@ -1,4 +1,8 @@
-import { qcMirrorFilename, qcOutputPath } from "../plan/compiler";
+import {
+	qcMirrorFilename,
+	qcOutputPath,
+	renditionOutputBase,
+} from "../plan/compiler";
 import type { EncodingPlan, PlanRendition } from "../plan/schema";
 
 /**
@@ -67,33 +71,27 @@ export type QcTarget = {
 	distorted: QcDistorted;
 };
 
-/**
- * Resolves a video rendition's mirror output base, mirroring the compiler:
- * prefer the first muxing that carries its own destination; for a
- * fully-DRM'd rendition (muxing has no destination) fall back to the
- * encrypting DRM's output. Returns undefined when neither exists — the
- * compiler then emits NO mirror, so there is nothing to score.
- */
-function resolveMirrorBase(
-	plan: EncodingPlan,
-	renditionKey: string,
-): { outputKey: string; path: string } | undefined {
-	const renditionMuxings = plan.muxings.filter(
-		(m) => m.streamKey === renditionKey,
-	);
-	for (const m of renditionMuxings) {
-		if (m.destination) {
-			return { outputKey: m.destination.outputKey, path: m.destination.path };
-		}
-		const drm = plan.drm.find((d) => d.muxingKey === m.key);
-		if (drm) {
-			return {
-				outputKey: drm.destination.outputKey,
-				path: drm.destination.path,
-			};
-		}
+/** Compiler-owned output coordinates do not require a comparison reference. */
+export type QcMirrorOutput = {
+	rendition: Extract<PlanRendition, { codec: "H264" | "H265" | "VP9" | "AV1" }>;
+	destination: NonNullable<ReturnType<typeof renditionOutputBase>>;
+	path: string;
+};
+
+export function enumerateQcMirrors(plan: EncodingPlan): QcMirrorOutput[] {
+	if (!(plan.qc?.vmaf || plan.qc?.psnr)) return [];
+	const mirrors: QcMirrorOutput[] = [];
+	for (const rendition of plan.renditions) {
+		if (!isVideoCodec(rendition)) continue;
+		const destination = renditionOutputBase(plan, rendition.key);
+		if (!destination) continue;
+		mirrors.push({
+			rendition,
+			destination,
+			path: `${qcOutputPath(destination.path)}${qcMirrorFilename(rendition.key, rendition.codec)}`,
+		});
 	}
-	return undefined;
+	return mirrors;
 }
 
 /**
@@ -120,8 +118,8 @@ function resolveReference(
  * mirror emission; PSNR rides the same libvmaf pass and needs the same
  * distorted mirror). Each entry pairs the compiler-emitted `qc/<key>.mp4`
  * distorted mirror with the rendition's reference source; renditions whose
- * mirror base or reference source cannot be resolved are skipped (the compiler
- * emitted no mirror for them, so there is no distorted file to download).
+ * mirror base or reference source cannot be resolved are skipped. A mirror can
+ * exist for a transformed input without a safely resolvable comparison source.
  */
 /**
  * Every VIDEO rendition key of a plan — the gate's EXPECTED measurement
@@ -143,18 +141,8 @@ export function gateExpectedRenditionKeys(plan: EncodingPlan): string[] {
 }
 
 export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
-	if (!(plan.qc?.vmaf || plan.qc?.psnr)) {
-		return [];
-	}
 	const targets: QcTarget[] = [];
-	for (const rendition of plan.renditions) {
-		if (!isVideoCodec(rendition)) {
-			continue;
-		}
-		const base = resolveMirrorBase(plan, rendition.key);
-		if (!base) {
-			continue;
-		}
+	for (const { rendition, destination, path } of enumerateQcMirrors(plan)) {
 		const reference = resolveReference(plan, rendition);
 		if (!reference) {
 			continue;
@@ -167,10 +155,8 @@ export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
 			...(rendition.streamName ? { streamName: rendition.streamName } : {}),
 			reference,
 			distorted: {
-				outputKey: base.outputKey,
-				// Compiler: outputPath = qcOutputPath(base.path); filename =
-				// qcMirrorFilename. The full object path is their join.
-				path: `${qcOutputPath(base.path)}${qcMirrorFilename(rendition.key, rendition.codec)}`,
+				outputKey: destination.outputKey,
+				path,
 			},
 		});
 	}

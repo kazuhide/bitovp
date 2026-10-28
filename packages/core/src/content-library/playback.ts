@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { joinFilePath } from "../plan/compiler";
+import { qcMirrorMuxingKind } from "../plan/qc-mirror";
 import type { EncodingPlan } from "../plan/schema";
 import {
 	manifestPlaybackLinks,
@@ -10,6 +11,7 @@ import {
 	publicObjectUrl,
 } from "../playback/public-url";
 import { vmafSourceFor } from "../vmaf/streamable-io";
+import { enumerateQcMirrors } from "../vmaf/targets";
 import type {
 	libraryFileOutputSchema,
 	libraryPlaybackLinkSchema,
@@ -20,9 +22,10 @@ export function libraryPlaybackLinks(
 	plan: EncodingPlan,
 	credentials: readonly ({ id: string } & PublicUrlCredential)[],
 ): z.infer<typeof libraryPlaybackLinkSchema>[] {
-	const links: z.infer<typeof libraryPlaybackLinkSchema>[] =
-		manifestPlaybackLinks(plan, credentials);
-	for (const { muxing, path, output, destination } of mp4Outputs(plan)) {
+	const links: z.infer<typeof libraryPlaybackLinkSchema>[] = plan.qc?.only
+		? []
+		: manifestPlaybackLinks(plan, credentials);
+	for (const { key, label, path, output, destination } of mp4Outputs(plan)) {
 		const derived = publicObjectUrl({
 			credential:
 				output && "credentialId" in output
@@ -33,9 +36,9 @@ export function libraryPlaybackLinks(
 			acl: destination.acl,
 		});
 		links.push({
-			key: `mp4:${muxing.key}`,
+			key,
 			kind: "MP4",
-			label: muxing.name ?? muxing.filename,
+			label,
 			path,
 			...derived,
 		});
@@ -48,12 +51,12 @@ export function libraryFileOutputs(
 	plan: EncodingPlan,
 ): z.infer<typeof libraryFileOutputSchema>[] {
 	const files: z.infer<typeof libraryFileOutputSchema>[] = [];
-	for (const { muxing, path, output } of mp4Outputs(plan)) {
+	for (const { key, path, output } of mp4Outputs(plan)) {
 		if (!output) continue;
 		const source = vmafSourceFor(output);
 		if (!source.streamable) continue;
 		files.push({
-			key: `mp4:${muxing.key}`,
+			key,
 			kind: "MP4",
 			credentialId: source.credentialId,
 			bucket: source.bucket,
@@ -65,6 +68,28 @@ export function libraryFileOutputs(
 }
 
 function* mp4Outputs(plan: EncodingPlan) {
+	if (plan.qc?.only) {
+		for (const { rendition, destination, path } of enumerateQcMirrors(plan)) {
+			if (
+				rendition.mode !== "STANDARD" ||
+				qcMirrorMuxingKind(rendition.codec) !== "MP4" ||
+				/[{}]/.test(path)
+			)
+				continue;
+			const output = plan.outputs.find(
+				(item) => item.key === destination.outputKey,
+			);
+			yield {
+				key: `qc-mp4:${rendition.key}`,
+				label: `${rendition.name ?? rendition.streamName ?? rendition.key} MP4`,
+				path,
+				output,
+				destination,
+			};
+		}
+		return;
+	}
+
 	for (const muxing of plan.muxings) {
 		if (
 			muxing.kind !== "MP4" ||
@@ -92,6 +117,12 @@ function* mp4Outputs(plan: EncodingPlan) {
 		const output = plan.outputs.find(
 			(item) => item.key === muxing.destination?.outputKey,
 		);
-		yield { muxing, path, output, destination: muxing.destination };
+		yield {
+			key: `mp4:${muxing.key}`,
+			label: muxing.name ?? muxing.filename,
+			path,
+			output,
+			destination: muxing.destination,
+		};
 	}
 }

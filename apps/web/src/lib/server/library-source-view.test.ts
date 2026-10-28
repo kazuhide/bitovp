@@ -110,20 +110,32 @@ describe("Library source detail retained-raw projection", () => {
 	it("includes default English on legacy sources without inventing its analysis or import success", async () => {
 		const { db, row } = database(raw, stored, { locales: ["ja"] });
 		row.locale = "ja";
-		const view = await sourceView(db, "source-1");
+		const view = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
 		expect(view.locales).toEqual(["ja", "en"]);
 		expect(view.analyses.map((analysis) => analysis.locale)).toEqual(["ja"]);
 		expect(view.state).toBe("ERROR");
 	});
 	it("returns retained default English on a legacy source even if its locale list omitted it", async () => {
 		const { db } = database(raw, stored, { locales: ["ja"] });
-		const view = await sourceView(db, "source-1");
+		const view = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
 		expect(view.locales).toEqual(["ja", "en"]);
 		expect(view.analyses.map((analysis) => analysis.locale)).toEqual(["en"]);
 	});
 	it("keeps non-AISA sources free of invented English analysis", async () => {
 		const { db } = database(raw, stored, { locales: [] });
-		const view = await sourceView(db, "source-1");
+		const view = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
 		expect(view.locales).toEqual([]);
 		expect(view.analyses).toEqual([]);
 		expect(view.state).toBe("READY");
@@ -131,7 +143,11 @@ describe("Library source detail retained-raw projection", () => {
 	it("recovers scene context and sanitized provider fields without changing history", async () => {
 		const { db, row } = database(raw);
 		const before = JSON.stringify(row);
-		const view = await sourceView(db, "source-1");
+		const view = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
 		expect(view.analyses[0]?.document.scenes[0]?.content).toMatchObject({
 			dynamics: { tension: "High", pacing: "Fast" },
 			settings: [
@@ -168,7 +184,11 @@ describe("Library source detail retained-raw projection", () => {
 			token: "private-secret",
 		};
 		const { db } = database(retainedRaw, fallback);
-		const view = await sourceView(db, "source-1");
+		const view = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
 		expect(view.analyses[0]?.document).toEqual({
 			...stored,
 			omittedSubjectCount: 3,
@@ -182,7 +202,9 @@ describe("Library source detail retained-raw projection", () => {
 	});
 	it("refuses an invalid stored fallback instead of returning unvalidated metadata", async () => {
 		const { db } = database(null, { duration: -1, token: "private-secret" });
-		await expect(sourceView(db, "source-1")).rejects.toThrow();
+		await expect(
+			sourceView(db, "source-1", "00000000-0000-4000-8000-000000000001"),
+		).rejects.toThrow();
 	});
 });
 
@@ -192,7 +214,11 @@ it("retains literal provider field names through read-time redaction without cha
 	);
 	const { db, row } = database({ ...raw, extras });
 	const before = JSON.stringify(row);
-	const view = await sourceView(db, "source-1");
+	const view = await sourceView(
+		db,
+		"source-1",
+		"00000000-0000-4000-8000-000000000001",
+	);
 	const analysis = view.analyses[0]?.providerAnalysis;
 	expect(analysis?.source).toBe("PROVIDER");
 	expect(JSON.stringify(analysis?.data)).toContain(
@@ -212,7 +238,11 @@ it("keeps valid stored analysis when secret masking expands provider display bey
 		MAX_SCENE_ANALYSIS_BYTES,
 	);
 	const { db, row } = database(large);
-	const view = await sourceView(db, "source-1");
+	const view = await sourceView(
+		db,
+		"source-1",
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(view.analyses[0]?.providerAnalysis?.source).toBe("NORMALIZED");
 	expect(view.analyses[0]?.document).toEqual(stored);
 	expect(

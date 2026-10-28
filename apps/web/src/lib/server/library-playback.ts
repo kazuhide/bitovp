@@ -8,6 +8,7 @@ import {
 	libraryPlaybackLinks,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
 
 type PlaybackLinks = LibrarySourceView["snapshot"]["playbackLinks"];
 type FileSource = {
@@ -75,6 +76,7 @@ export async function libraryFileOutputsForSource(
 export async function enrichLibraryPlayback(
 	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
 	sources: readonly PlaybackSource[],
+	organizationId: string,
 	/** A batched catalog supplies eligibility from its complete matched snapshot. */
 	projectionEligible = needsLibraryPlaybackProjection,
 ): Promise<PlaybackLinks[]> {
@@ -134,7 +136,10 @@ export async function enrichLibraryPlayback(
 			const { reason: _unneeded, ...available } = link;
 			return {
 				...available,
-				url: `/api/library/sources/${source.sourceId}/media?key=${encodeURIComponent(link.key)}`,
+				url: bindPassiveRequestUrl(
+					`/api/library/sources/${source.sourceId}/media?key=${encodeURIComponent(link.key)}`,
+					organizationId,
+				),
 				via: "library",
 			};
 		});

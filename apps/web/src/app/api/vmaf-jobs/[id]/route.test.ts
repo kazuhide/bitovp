@@ -32,6 +32,7 @@ let qcVmafEnabled = true;
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: { organizationId: "00000000-0000-4000-8000-000000000001" },
 		prisma: {
 			// : the flag gate reads through the same context. The
 			// harness default is ON so every pre-existing case keeps testing
@@ -180,7 +181,7 @@ describe("GET /api/vmaf-jobs/[id]", () => {
 		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body.results[0].preview).toEqual({
-			url: `/api/vmaf-jobs/${JOB_ID}/preview?resultId=${resultId}`,
+			url: `/api/vmaf-jobs/${JOB_ID}/preview?resultId=${resultId}&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
 		});
 		expect(JSON.stringify(body)).not.toMatch(
 			/private-identity|sample-output-bucket|credentialId|provenance/,

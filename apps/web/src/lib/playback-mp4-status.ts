@@ -1,14 +1,11 @@
+import { isLibraryMediaUrl } from "./passive-request";
+
 /** Probe only our authenticated Library route, with one byte and no storage locators. */
 export async function libraryMp4PlaybackError(
 	url: string,
 	signal: AbortSignal,
 ): Promise<"missing" | "storage-access-denied" | null> {
-	if (
-		!/^\/api\/library\/sources\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\/media\?key=[A-Za-z0-9_.!~*'()%:-]+$/i.test(
-			url,
-		)
-	)
-		return null;
+	if (!isLibraryMediaUrl(url)) return null;
 	try {
 		const response = await fetch(url, {
 			headers: { Range: "bytes=0-0" },

@@ -2,6 +2,7 @@ import type { QcGate, QcVerdict } from "@bitovp/core";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery as renderL } from "@/test/render";
 
 vi.mock("@/lib/auth/use-role-access", () => import("@/test/owner-role-access"));
@@ -52,14 +53,16 @@ const failingVerdict: QcVerdict = {
 
 function renderPanel(props: Partial<Parameters<typeof QcGatePanel>[0]> = {}) {
 	return renderL(
-		<QcGatePanel
-			gate={gate()}
-			verdict={null}
-			status="FINISHED"
-			jobId={JOB_ID}
-			vmafJobId={VMAF_ID}
-			{...props}
-		/>,
+		<DocumentOrganizationContext.Provider value="00000000-0000-4000-8000-000000000001">
+			<QcGatePanel
+				gate={gate()}
+				verdict={null}
+				status="FINISHED"
+				jobId={JOB_ID}
+				vmafJobId={VMAF_ID}
+				{...props}
+			/>
+		</DocumentOrganizationContext.Provider>,
 		// ja on purpose: the assertions read the JAPANESE catalogue, so an
 		// untranslated string in this panel fails here rather than surviving
 		// until a ja render sweep (the #35 lesson).
@@ -130,7 +133,7 @@ describe("QcGatePanel", () => {
 		] as const) {
 			expect(screen.getByRole("link", { name })).toHaveAttribute(
 				"href",
-				`/api/encoding-jobs/${JOB_ID}/qc-report?format=${format}`,
+				`/api/encoding-jobs/${JOB_ID}/qc-report?format=${format}&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
 			);
 		}
 		unmount();
@@ -193,4 +196,21 @@ describe("QcGatePanel", () => {
 		renderPanel({ gate: gate({ onFail: "MARK_ONLY" }) });
 		expect(screen.getByText("不合格でも記録のみ(配信は継続)")).toBeTruthy();
 	});
+});
+
+it("does not render unbound download URLs without the server document organization", () => {
+	renderL(
+		<QcGatePanel
+			gate={gate()}
+			verdict={null}
+			status="FINISHED"
+			jobId={JOB_ID}
+			vmafJobId={null}
+		/>,
+		"ja",
+	);
+	for (const label of ["JSON", "CSV", "HTML"]) {
+		const text = screen.getByText(new RegExp(`\\(${label}\\)`));
+		expect(text.closest("a")).not.toHaveAttribute("href");
+	}
 });

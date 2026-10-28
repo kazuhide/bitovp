@@ -97,3 +97,40 @@ describe("GET report-scoped QC media (small, mocked DB/storage)", () => {
 		expect(servePreview).not.toHaveBeenCalled();
 	});
 });
+
+it("retains result scoping and Range headers for an organization-bound native preview", async () => {
+	const row = {
+		mode: "VOD",
+		params: {},
+		encodingJob: null,
+		results: [{ id: resultId, renditionRef: {}, provenance: null }],
+	};
+	findUnique.mockResolvedValue(row);
+	resolvePreview.mockReturnValue({
+		credentialId: id,
+		bucket: "private",
+		key: "measured/video.mp4",
+	});
+	servePreview.mockResolvedValue(new Response(null, { status: 206 }));
+	const req = new Request(
+		`http://localhost${path}?resultId=${resultId}&expectedOrganizationId=${id}`,
+		{ headers: { Range: "bytes=0-15" } },
+	);
+	expect((await GET(req, { params: Promise.resolve({ id }) })).status).toBe(
+		206,
+	);
+	expect(findUnique).toHaveBeenCalledWith(
+		expect.objectContaining({ where: { id } }),
+	);
+	expect(servePreview.mock.calls[0]?.[1]).toBe(req);
+	expect(servePreview.mock.calls[0]?.[1].headers.get("Range")).toBe(
+		"bytes=0-15",
+	);
+});
+it.each([
+	`expectedOrganizationId=invalid`,
+	`expectedOrganizationId=${id}&expectedOrganizationId=${id}`,
+])("rejects malformed preview organization markers before reading results: %s", async (query) => {
+	expect((await call(`resultId=${resultId}&${query}`)).status).toBe(400);
+	expect(findUnique).not.toHaveBeenCalled();
+});

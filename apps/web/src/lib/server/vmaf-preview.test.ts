@@ -64,8 +64,15 @@ beforeEach(() => vi.clearAllMocks());
 describe("VMAF preview resolution (small, no I/O)", () => {
 	it("projects only a report-scoped URL, never storage identity", () => {
 		const f = fixture();
-		expect(previewDescriptor(reportId, f, f.result)).toEqual({
-			url: `/api/vmaf-jobs/${reportId}/preview?resultId=${resultId}`,
+		expect(
+			previewDescriptor(
+				reportId,
+				f,
+				f.result,
+				"00000000-0000-4000-8000-000000000001",
+			),
+		).toEqual({
+			url: `/api/vmaf-jobs/${reportId}/preview?resultId=${resultId}&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
 		});
 		expect(resolveVmafPreview(f, f.result)).toMatchObject({
 			credentialId: f.encodingJob.plan.outputs[0]?.credentialId,

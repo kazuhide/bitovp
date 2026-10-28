@@ -1,11 +1,23 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+	createContext,
+	type ReactNode,
+	useContext,
+	useEffect,
+	useState,
+} from "react";
 import {
 	installTenantFetch,
 	ORGANIZATION_CHANGE_KEY,
 } from "@/lib/tenant-fetch";
+
+export const DocumentOrganizationContext = createContext<string | undefined>(
+	undefined,
+);
+export const useDocumentOrganization = () =>
+	useContext(DocumentOrganizationContext);
 
 export function Providers({
 	children,
@@ -31,6 +43,8 @@ export function Providers({
 			}),
 	);
 	return (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		<DocumentOrganizationContext.Provider value={organizationId}>
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		</DocumentOrganizationContext.Provider>
 	);
 }

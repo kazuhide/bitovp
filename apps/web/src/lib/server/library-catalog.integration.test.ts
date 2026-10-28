@@ -152,7 +152,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				data: { id, name: "Catalog test", slug: id },
 			});
 			organizations.push(id);
-			return createTenantPrismaClient(runtime, id);
+			return { db: createTenantPrismaClient(runtime, id), organizationId: id };
 		}
 		async function seed(
 			db: AppPrismaClient,
@@ -267,7 +267,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			false,
 			true,
 		])("keeps shared legacy plan enrichment across batches with the trigger first: %s", async (triggerFirst) => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const job = await publicMp4Job(db);
 			const capturedIndex = triggerFirst ? 260 : 0;
 			const triggerIndex = triggerFirst ? 0 : 260;
@@ -281,7 +281,11 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				}),
 			});
 			for (const playback of ["all", "playback", "metadata"] as const) {
-				const result = await listContents(db, listQuery.parse({ playback }));
+				const result = await listContents(
+					db,
+					listQuery.parse({ playback }),
+					documentOrganizationId,
+				);
 				expect(result.counts).toEqual({ all: 270, playback: 2, metadata: 268 });
 				if (playback === "playback") {
 					expect(result.total).toBe(2);
@@ -316,7 +320,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			"archived",
 			"foreign",
 		] as const)("does not share legacy projection eligibility from an ineligible %s peer", async (control) => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const job = await publicMp4Job(db);
 			const { ids } = await seed(db, 1, {
 				jobId: () => job.id,
@@ -331,7 +335,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				data: { title: "Captured only" },
 			});
 			if (control !== "alone") {
-				const peerDb = control === "foreign" ? await tenant() : db;
+				const peerDb = control === "foreign" ? (await tenant()).db : db;
 				// Tenant reference constraints forbid a foreign source from naming this job.
 				const peerJob =
 					control === "foreign"
@@ -354,6 +358,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			const result = await listContents(
 				db,
 				listQuery.parse({ q: control === "query" ? "Captured only" : "" }),
+				documentOrganizationId,
 			);
 			expect(result.counts).toEqual({
 				all: control === "hash" ? 2 : 1,
@@ -370,7 +375,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		});
 
 		it("uses one classification scan when captured snapshots need no retained plans", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const { ids } = await seed(db, 501);
 			for (const playback of ["all", "playback", "metadata"] as const) {
 				const selected = ids.filter((_, index) =>
@@ -388,6 +393,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 						queries++;
 					}),
 					listQuery.parse({ playback, offset }),
+					documentOrganizationId,
 				);
 				expect(result.counts).toEqual({
 					all: 501,
@@ -406,7 +412,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		});
 
 		it("discards provisional counts and pages when the last batch activates shared legacy projection", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const job = await publicMp4Job(db);
 			const { ids } = await seed(db, 501, {
 				jobId: (index) => (index === 0 || index === 500 ? job.id : null),
@@ -429,6 +435,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					const result = await listContents(
 						instrument(db, observed),
 						listQuery.parse({ playback, offset }),
+						documentOrganizationId,
 					);
 					expect(result.counts).toEqual({
 						all: 501,
@@ -451,10 +458,10 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		});
 
 		it("allows accumulated round-trip latency above five seconds while bounding each classification batch", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			await seed(db, 2000);
 			const query = listQuery.parse({ offset: 25 });
-			const expected = await listContents(db, query);
+			const expected = await listContents(db, query, documentOrganizationId);
 			const observed = { bytes: 0, fullRows: 0, maxBatch: 0, batches: 0 };
 			let delayedQueries = 0;
 			const started = performance.now();
@@ -464,6 +471,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					await new Promise((resolve) => setTimeout(resolve, 600));
 				}),
 				query,
+				documentOrganizationId,
 			);
 			expect(actual).toEqual(expected);
 			expect(delayedQueries).toBeGreaterThanOrEqual(9);
@@ -473,7 +481,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		}, 25000);
 
 		it("bounds scene predicates to scanned windows and advances past empty matching windows", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const { ids, sources } = await seed(db, 501);
 			const organizationId = (await db.content.findFirstOrThrow())
 				.organizationId;
@@ -532,6 +540,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					},
 				),
 				listQuery.parse({ q: "WindowSceneMarker" }),
+				documentOrganizationId,
 			);
 			expect(result.total).toBe(501);
 			expect(result.items.map((item) => item.id)).toEqual(ids.slice(0, 25));
@@ -545,6 +554,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			const tail = await listContents(
 				db,
 				listQuery.parse({ q: "TailWindowMarker" }),
+				documentOrganizationId,
 			);
 			expect(tail.total).toBe(1);
 			expect(tail.items.map((item) => item.id)).toEqual([ids[500]]);
@@ -553,7 +563,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		it.each([
 			100, 10000,
 		])("bounds bodies and classification batches for %i matching items without changing pages or counts", async (size) => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const { ids } = await seed(db, size, { heavy: true });
 			// Keep seed statistics outside the measured application operation.
 			await admin.$executeRawUnsafe(
@@ -576,6 +586,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					const result = await listContents(
 						instrument(db, observed),
 						listQuery.parse({ playback, offset }),
+						documentOrganizationId,
 					);
 					expect(result.counts).toEqual({
 						all: size,
@@ -599,7 +610,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		}, 90000);
 
 		it("keeps legacy plan identity, private MP4, raw-link fallback and unsupported-link classification before paging", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const plan = encodingPlanSchema.parse(
 				JSON.parse(
 					readFileSync(
@@ -675,6 +686,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			const result = await listContents(
 				db,
 				listQuery.parse({ playback: "playback" }),
+				documentOrganizationId,
 			);
 			expect(result.counts).toEqual({ all: 37, playback: 5, metadata: 32 });
 			expect(result.total).toBe(5);
@@ -693,7 +705,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		});
 
 		it("searches literal metadata and only the current revision's latest selected-locale analysis, including archived counts", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const { ids, sources } = await seed(db, 1);
 			const oldSource = sources[0] as string;
 			const current = await db.librarySource.create({
@@ -757,9 +769,21 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				"OtherLocale",
 				"not-present",
 			])
-				expect((await listContents(db, listQuery.parse({ q }))).total).toBe(0);
+				expect(
+					(
+						await listContents(
+							db,
+							listQuery.parse({ q }),
+							documentOrganizationId,
+						)
+					).total,
+				).toBe(0);
 			for (const q of ["CurrentScene_%\\", "Tag_%\\"]) {
-				const result = await listContents(db, listQuery.parse({ q }));
+				const result = await listContents(
+					db,
+					listQuery.parse({ q }),
+					documentOrganizationId,
+				);
 				expect(result.total).toBe(1);
 				expect(result.items[0]?.catalogMetadata).toEqual({
 					formats: ["HLS"],
@@ -773,46 +797,64 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				data: { archived: true },
 			});
 			expect(
-				(await listContents(db, listQuery.parse({ q: "Tag_%\\" }))).total,
+				(
+					await listContents(
+						db,
+						listQuery.parse({ q: "Tag_%\\" }),
+						documentOrganizationId,
+					)
+				).total,
 			).toBe(0);
 			expect(
 				(
 					await listContents(
 						db,
 						listQuery.parse({ q: "Tag_%\\", archived: "true" }),
+						documentOrganizationId,
 					)
 				).counts,
 			).toEqual({ all: 1, playback: 1, metadata: 0 });
 		});
 
 		it("keeps counts, body lookup and playback links under the caller's tenant RLS", async () => {
-			const own = await tenant();
-			const foreign = await tenant();
+			const { db: own, organizationId: documentOrganizationId } =
+				await tenant();
+			const { db: foreign } = await tenant();
 			await seed(own, 2);
 			const { ids } = await seed(foreign, 3);
 			await foreign.content.update({
 				where: { id: ids[0] },
 				data: { title: "Foreign-only marker" },
 			});
-			const result = await listContents(own, listQuery.parse({}));
+			const result = await listContents(
+				own,
+				listQuery.parse({}),
+				documentOrganizationId,
+			);
 			expect(result.counts).toEqual({ all: 2, playback: 2, metadata: 0 });
 			expect(result.items.some((item) => ids.includes(item.id))).toBe(false);
 			expect(
-				(await listContents(own, listQuery.parse({ q: "Foreign-only marker" })))
-					.total,
+				(
+					await listContents(
+						own,
+						listQuery.parse({ q: "Foreign-only marker" }),
+						documentOrganizationId,
+					)
+				).total,
 			).toBe(0);
 			expect(
 				(
 					await listContents(
 						foreign,
 						listQuery.parse({ q: "Foreign-only marker" }),
+						documentOrganizationId,
 					)
 				).total,
 			).toBe(1);
 		});
 
 		it("uses one read snapshot when a concurrent edit would move an unseen row above the keyset cursor", async () => {
-			const db = await tenant();
+			const { db, organizationId: documentOrganizationId } = await tenant();
 			const { ids } = await seed(db, 501);
 			let edited = false;
 			const observed = { bytes: 0, fullRows: 0, maxBatch: 0, batches: 0 };
@@ -828,6 +870,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					edited = true;
 				}),
 				listQuery.parse({ offset: 275 }),
+				documentOrganizationId,
 			);
 			expect(edited).toBe(true);
 			expect(result.total).toBe(501);
@@ -836,7 +879,11 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				result.items.some((item) => item.title === "Moved during scan"),
 			).toBe(false);
 			expect(observed.batches).toBe(3);
-			const next = await listContents(db, listQuery.parse({}));
+			const next = await listContents(
+				db,
+				listQuery.parse({}),
+				documentOrganizationId,
+			);
 			expect(next.items[0]?.title).toBe("Moved during scan");
 			expect(next.items[0]?.id).toBe(ids[280]);
 		});

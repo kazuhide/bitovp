@@ -17,6 +17,7 @@ import {
 import { type AppPrismaClient, LibrarySourceError } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requestOrganizationId } from "@/lib/passive-request";
 import { getServerContext } from "./context";
 import { jsonError, routeError, validationError } from "./http";
 import { enrichLibraryPlayback } from "./library-playback";
@@ -74,6 +75,7 @@ export function contentView(row: {
 export async function sourceView(
 	prisma: AppPrismaClient,
 	id: string,
+	organizationId: string,
 ): Promise<LibrarySourceView> {
 	const source = await prisma.librarySource.findUnique({ where: { id } });
 	if (!source) throw new LibrarySourceError(404, "Source not found");
@@ -110,15 +112,19 @@ export async function sourceView(
 		fileOutputs,
 		...snapshot
 	} = librarySnapshotSchema.parse(source.snapshot);
-	const [playbackLinks] = await enrichLibraryPlayback(prisma, [
-		{
-			sourceId: source.id,
-			jobId: source.jobId,
-			planHash: snapshot.planHash,
-			fileOutputs,
-			playbackLinks: snapshot.playbackLinks,
-		},
-	]);
+	const [playbackLinks] = await enrichLibraryPlayback(
+		prisma,
+		[
+			{
+				sourceId: source.id,
+				jobId: source.jobId,
+				planHash: snapshot.planHash,
+				fileOutputs,
+				playbackLinks: snapshot.playbackLinks,
+			},
+		],
+		organizationId,
+	);
 	return {
 		id: source.id,
 		jobId: source.jobId,
@@ -182,7 +188,8 @@ export const contentSelect = {
 export { catalogPreview, listContents, listQuery } from "./library-catalog";
 
 export async function readContent(id: string) {
-	const prisma = (await getServerContext()).prisma;
+	const ctx = await getServerContext();
+	const { prisma } = ctx;
 	const row = await prisma.content.findUnique({
 		where: { id },
 		select: contentSelect,
@@ -194,7 +201,11 @@ export async function readContent(id: string) {
 	if (!revision) throw new Error("Content revision missing");
 	return NextResponse.json({
 		...contentView(row),
-		source: await sourceView(prisma, revision.sourceId),
+		source: await sourceView(
+			prisma,
+			revision.sourceId,
+			requestOrganizationId(ctx),
+		),
 	});
 }
 

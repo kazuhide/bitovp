@@ -218,3 +218,41 @@ it("does not start a canceled request", async () => {
 	expect(response.status).toBe(408);
 	expect(findUnique).not.toHaveBeenCalled();
 });
+
+it.each([
+	"GET",
+	"HEAD",
+])("accepts only the organization marker beside the exact recorded key for native %s", async (method) => {
+	const req = new Request(
+		`http://localhost${path}?key=mp4%3Avideo&expectedOrganizationId=${id}`,
+		{
+			method,
+			headers: {
+				Range: "bytes=0-15",
+				"sec-fetch-site": "same-origin",
+				"sec-fetch-dest": "video",
+			},
+		},
+	);
+	await GET(req, { params: Promise.resolve({ id }) });
+	expect(serve).toHaveBeenCalledOnce();
+	expect(serve.mock.calls[0]?.[1]).toBe(req);
+	expect(serve.mock.calls[0]?.[1].headers.get("Range")).toBe("bytes=0-15");
+	expect(serve.mock.calls[0]?.[2]).toMatchObject({
+		key: file.path,
+		contentType: "video/mp4",
+		expect: { size: 10000000, etag: "v1" },
+	});
+	expect(headObject).toHaveBeenCalledWith({
+		bucket: file.bucket,
+		key: file.path,
+	});
+});
+it.each([
+	`expectedOrganizationId=invalid`,
+	`expectedOrganizationId=${id}&expectedOrganizationId=${id}`,
+])("rejects malformed passive organization markers before storage: %s", async (query) => {
+	expect((await call(`key=mp4%3Avideo&${query}`)).status).toBe(400);
+	expect(findUnique).not.toHaveBeenCalled();
+	expect(browser).not.toHaveBeenCalled();
+});

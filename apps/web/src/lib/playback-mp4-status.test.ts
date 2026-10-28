@@ -73,3 +73,18 @@ it("requires an explicit upstream storage access denial code, not an app auth fa
 		).toBe(status === 502 ? "storage-access-denied" : null);
 	}
 });
+
+it("probes a bound native media URL without widening its local-route boundary", async () => {
+	const url =
+		"/api/library/sources/00000000-0000-4000-8000-000000000001/media?key=qc-webm%3Avideo&expectedOrganizationId=00000000-0000-4000-8000-000000000002";
+	const fetch = vi
+		.spyOn(globalThis, "fetch")
+		.mockResolvedValue(new Response("x", { status: 206 }));
+	const signal = new AbortController().signal;
+	expect(await libraryMp4PlaybackError(url, signal)).toBeNull();
+	expect(fetch).toHaveBeenCalledWith(url, {
+		headers: { Range: "bytes=0-0" },
+		cache: "no-store",
+		signal,
+	});
+});

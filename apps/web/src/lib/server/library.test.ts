@@ -81,7 +81,13 @@ describe("library writes", () => {
 			contentRevision: { findMany: async () => [] },
 		};
 		expect(
-			(await sourceView(db as unknown as AppPrismaClient, sourceId)).snapshot,
+			(
+				await sourceView(
+					db as unknown as AppPrismaClient,
+					sourceId,
+					"00000000-0000-4000-8000-000000000001",
+				)
+			).snapshot,
 		).not.toHaveProperty("analysisOutput");
 	});
 	it("returns only authored guidance, never unexpected provider/DB error prose", async () => {

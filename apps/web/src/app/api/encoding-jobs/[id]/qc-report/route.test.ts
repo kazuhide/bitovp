@@ -805,3 +805,32 @@ describe("GET /api/encoding-jobs/[id]/qc-report", () => {
 		expect(csv).toContain("MEASUREMENT,false");
 	});
 });
+
+it.each([
+	"json",
+	"csv",
+	"html",
+])("accepts the native organization marker without changing the %s report", async (format) => {
+	const [req, params] = request(format);
+	const url = new URL(req.url);
+	url.searchParams.set(
+		"expectedOrganizationId",
+		"00000000-0000-4000-8000-000000000001",
+	);
+	expect((await GET(new Request(url), params)).status).toBe(200);
+});
+it.each([
+	"invalid",
+	"00000000-0000-4000-8000-000000000001&expectedOrganizationId=00000000-0000-4000-8000-000000000001",
+])("refuses malformed report organization markers before reading the job: %s", async (value) => {
+	const [req, params] = request("json");
+	expect(
+		(
+			await GET(
+				new Request(`${req.url}&expectedOrganizationId=${value}`),
+				params,
+			)
+		).status,
+	).toBe(400);
+	expect(findUnique).not.toHaveBeenCalled();
+});

@@ -1,5 +1,6 @@
 import { contentRegisterSchema } from "@bitovp/core";
 import { NextResponse } from "next/server";
+import { requestOrganizationId } from "@/lib/passive-request";
 import { actorFrom, writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import { readJson } from "@/lib/server/http";
@@ -11,14 +12,16 @@ import {
 } from "@/lib/server/library";
 
 export async function GET(req: Request) {
-	return libraryRoute(async () =>
-		NextResponse.json(
+	return libraryRoute(async () => {
+		const ctx = await getServerContext();
+		return NextResponse.json(
 			await listContents(
-				(await getServerContext()).prisma,
+				ctx.prisma,
 				listQuery.parse(Object.fromEntries(new URL(req.url).searchParams)),
+				requestOrganizationId(ctx),
 			),
-		),
-	);
+		);
+	});
 }
 export async function POST(req: Request) {
 	return libraryRoute(async () => {

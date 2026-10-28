@@ -1,3 +1,7 @@
+import {
+	EXPECTED_ORGANIZATION_QUERY,
+	passiveOrganizationBinding,
+} from "@/lib/passive-request";
 import { getServerContext } from "@/lib/server/context";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError } from "@/lib/server/http";
@@ -25,8 +29,11 @@ export async function GET(
 	const invalid = invalidIdResponse(id) ?? invalidIdResponse(resultId);
 	if (invalid) return finish(invalid);
 	if (
-		[...query.keys()].some((key) => key !== "resultId") ||
-		query.getAll("resultId").length !== 1
+		[...query.keys()].some(
+			(key) => key !== "resultId" && key !== EXPECTED_ORGANIZATION_QUERY,
+		) ||
+		query.getAll("resultId").length !== 1 ||
+		passiveOrganizationBinding(new URL(req.url), req.method).kind === "invalid"
 	)
 		return finish(jsonError(400, "Invalid preview query"));
 	try {

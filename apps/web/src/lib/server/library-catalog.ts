@@ -12,6 +12,7 @@ import {
 	type LibraryPlaybackFilter,
 	MAX_LIBRARY_OFFSET,
 } from "@/lib/library-catalog";
+import { isLibraryMediaUrl } from "@/lib/passive-request";
 import {
 	enrichLibraryPlayback,
 	needsLibraryPlaybackProjection,
@@ -41,13 +42,7 @@ const catalogLinksSchema = z
 
 function playableCatalogLink(item: z.infer<typeof catalogLinksSchema>[number]) {
 	if (!item.url || item.reason || item.kind === "SMOOTH") return false;
-	if (
-		isLibraryFileKind(item.kind) &&
-		/^\/api\/library\/sources\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\/media\?key=[A-Za-z0-9_.!~*'()%:-]+$/i.test(
-			item.url,
-		)
-	)
-		return true;
+	if (isLibraryFileKind(item.kind) && isLibraryMediaUrl(item.url)) return true;
 	try {
 		const url = new URL(item.url);
 		return (
@@ -144,6 +139,7 @@ export async function listContents(
 	query: Omit<z.infer<typeof listQuery>, "playback"> & {
 		playback?: LibraryPlaybackFilter;
 	},
+	organizationId: string,
 ): Promise<LibraryCatalog> {
 	const pattern = `%${query.q.replace(/[\\%_]/g, "\\$&")}%`;
 	return prisma.$transaction(
@@ -201,12 +197,13 @@ export async function listContents(
 				batch: CatalogCandidate[],
 				sources: ReturnType<typeof playbackSources>,
 				projectionEligible: NonNullable<
-					Parameters<typeof enrichLibraryPlayback>[2]
+					Parameters<typeof enrichLibraryPlayback>[3]
 				>,
 			) {
 				const playback = await enrichLibraryPlayback(
 					tx,
 					sources,
+					organizationId,
 					projectionEligible,
 				);
 				for (const [index, item] of batch.entries()) {

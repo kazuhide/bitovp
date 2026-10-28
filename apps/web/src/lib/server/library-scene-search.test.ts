@@ -77,7 +77,11 @@ it("bounds query inputs and avoids querying for an empty term", async () => {
 		expect(sceneSearchQuery.safeParse(query).success).toBe(false);
 	const { db, prisma } = database([row]);
 	expect(
-		await searchLibraryScenes(prisma, sceneSearchQuery.parse({ q: " \t " })),
+		await searchLibraryScenes(
+			prisma,
+			sceneSearchQuery.parse({ q: " \t " }),
+			"00000000-0000-4000-8000-000000000001",
+		),
 	).toEqual({ items: [], total: 0 });
 	expect(db.$queryRaw).not.toHaveBeenCalled();
 	expect(enrichLibraryPlayback).not.toHaveBeenCalled();
@@ -98,6 +102,7 @@ it("returns only pinned scene context and keeps thumbnails inside a late matchin
 	const result = await searchLibraryScenes(
 		prisma,
 		sceneSearchQuery.parse({ q: "fox", offset: 25 }),
+		"00000000-0000-4000-8000-000000000001",
 	);
 	expect(result.total).toBe(26);
 	expect(result.items[0]).toEqual({
@@ -138,6 +143,7 @@ it("deduplicates selected-page source enrichment and drops malformed scene coord
 	const result = await searchLibraryScenes(
 		prisma,
 		sceneSearchQuery.parse({ q: "fox" }),
+		"00000000-0000-4000-8000-000000000001",
 	);
 	expect(result.items).toHaveLength(2);
 	expect(vi.mocked(enrichLibraryPlayback).mock.calls[0]?.[1]).toHaveLength(1);
@@ -147,6 +153,7 @@ it("calculates scores from unique query terms even in recent order", async () =>
 	const result = await searchLibraryScenes(
 		prisma,
 		sceneSearchQuery.parse({ q: "fox FOX kelp", match: "any", sort: "recent" }),
+		"00000000-0000-4000-8000-000000000001",
 	);
 	expect(result.items[0]?.relevance).toEqual({
 		score: 50,
@@ -159,6 +166,7 @@ it("keeps metadata-only scene discoveries without claiming playback", async () =
 	const result = await searchLibraryScenes(
 		prisma,
 		sceneSearchQuery.parse({ q: "fox" }),
+		"00000000-0000-4000-8000-000000000001",
 	);
 	expect(result.items[0]?.sceneId).toBe(sceneId);
 	expect(result.items[0]?.catalogPreview).toBeUndefined();

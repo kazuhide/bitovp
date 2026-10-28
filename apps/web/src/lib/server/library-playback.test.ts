@@ -60,7 +60,7 @@ const fileOutputs = [
 		path: "output/video.mp4",
 	},
 ];
-const mediaUrl = `/api/library/sources/${sourceId}/media?key=mp4%3Amp4`;
+const mediaUrl = `/api/library/sources/${sourceId}/media?key=mp4%3Amp4&expectedOrganizationId=00000000-0000-4000-8000-000000000001`;
 function database(jobs = [{ id: "job-1", plan }]) {
 	const db = {
 		$transaction: vi.fn(async function <T>(
@@ -118,7 +118,11 @@ function catalogQueries(items: Record<string, unknown>[]) {
 }
 it("adds legacy MP4 links in batches while preserving stored manifests and narrowing credential reads", async () => {
 	const { db, prisma } = database();
-	const result = await enrichLibraryPlayback(prisma, [source, source]);
+	const result = await enrichLibraryPlayback(
+		prisma,
+		[source, source],
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(result[0]).toEqual([
 		stored,
 		expect.objectContaining({
@@ -143,17 +147,29 @@ it("adds legacy MP4 links in batches while preserving stored manifests and narro
 it("does not invent outputs for a deleted job or changed plan", async () => {
 	const { db, prisma } = database();
 	expect(
-		await enrichLibraryPlayback(prisma, [{ ...source, jobId: null }]),
+		await enrichLibraryPlayback(
+			prisma,
+			[{ ...source, jobId: null }],
+			"00000000-0000-4000-8000-000000000001",
+		),
 	).toEqual([[stored]]);
 	expect(db.encodingJob.findMany).not.toHaveBeenCalled();
 	expect(
-		await enrichLibraryPlayback(prisma, [{ ...source, planHash: "changed" }]),
+		await enrichLibraryPlayback(
+			prisma,
+			[{ ...source, planHash: "changed" }],
+			"00000000-0000-4000-8000-000000000001",
+		),
 	).toEqual([[stored]]);
 	expect(db.credential.findMany).not.toHaveBeenCalled();
 	const missing = database([]);
-	expect(await enrichLibraryPlayback(missing.prisma, [source])).toEqual([
-		[stored],
-	]);
+	expect(
+		await enrichLibraryPlayback(
+			missing.prisma,
+			[source],
+			"00000000-0000-4000-8000-000000000001",
+		),
+	).toEqual([[stored]]);
 });
 it("keeps already captured MP4 URLs and does not read live job data", async () => {
 	const { db, prisma } = database();
@@ -165,7 +181,11 @@ it("keeps already captured MP4 URLs and does not read live job data", async () =
 		},
 	];
 	expect(
-		await enrichLibraryPlayback(prisma, [{ ...source, playbackLinks }]),
+		await enrichLibraryPlayback(
+			prisma,
+			[{ ...source, playbackLinks }],
+			"00000000-0000-4000-8000-000000000001",
+		),
 	).toEqual([playbackLinks]);
 	expect(db.encodingJob.findMany).not.toHaveBeenCalled();
 	expect(db.credential.findMany).not.toHaveBeenCalled();
@@ -199,7 +219,11 @@ it("projects legacy MP4 on source detail without modifying the retained snapshot
 		},
 		contentRevision: { findMany: vi.fn(async () => []) },
 	} as unknown as AppPrismaClient;
-	const view = await sourceView(prisma, sourceId);
+	const view = await sourceView(
+		prisma,
+		sourceId,
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(view.snapshot.playbackLinks).toEqual([
 		expect.objectContaining({ kind: "MP4" }),
 	]);
@@ -227,11 +251,15 @@ it("projects legacy MP4 catalog previews in one batch and strips internal projec
 		...db,
 		$queryRaw: catalogQueries([item, { ...item, id: "content-2" }]),
 	} as unknown as AppPrismaClient;
-	const result = await listContents(prisma, {
-		q: "",
-		archived: "false",
-		offset: 0,
-	});
+	const result = await listContents(
+		prisma,
+		{
+			q: "",
+			archived: "false",
+			offset: 0,
+		},
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(result.items.map((entry) => entry.catalogPreview?.kind)).toEqual([
 		"MP4",
 		"MP4",
@@ -270,9 +298,13 @@ it.each([
 		],
 	};
 	expect(await libraryFileOutputsForSource(prisma, input)).toEqual(files);
-	const [links] = await enrichLibraryPlayback(prisma, [input]);
+	const [links] = await enrichLibraryPlayback(
+		prisma,
+		[input],
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(links?.[0]).toMatchObject({
-		url: `/api/library/sources/${sourceId}/media?key=${encodeURIComponent(files[0]?.key ?? "")}`,
+		url: `/api/library/sources/${sourceId}/media?key=${encodeURIComponent(files[0]?.key ?? "")}&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
 		kind,
 	});
 	expect(links?.[0]).not.toHaveProperty("reason");
@@ -325,11 +357,15 @@ it("projects a legacy concat QC WebM without direct-ingest or normal-MP4 assumpt
 		planHash: createHash("sha256").update(JSON.stringify(qc)).digest("hex"),
 		playbackLinks: [],
 	};
-	const [links] = await enrichLibraryPlayback(prisma, [input]);
+	const [links] = await enrichLibraryPlayback(
+		prisma,
+		[input],
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(links?.[0]).toMatchObject({
 		kind: "WEBM",
 		key: "qc-webm:v360",
-		url: `/api/library/sources/${sourceId}/media?key=qc-webm%3Av360`,
+		url: `/api/library/sources/${sourceId}/media?key=qc-webm%3Av360&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
 	});
 	expect(db.credential.findMany).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -359,12 +395,16 @@ it("classifies legacy private MP4 beyond the first page with one batched plan an
 		...db,
 		$queryRaw: catalogQueries(items),
 	} as unknown as AppPrismaClient;
-	const result = await listContents(prisma, {
-		q: "",
-		archived: "false",
-		offset: 0,
-		playback: "playback",
-	});
+	const result = await listContents(
+		prisma,
+		{
+			q: "",
+			archived: "false",
+			offset: 0,
+			playback: "playback",
+		},
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(result.counts).toEqual({ all: 30, playback: 2, metadata: 28 });
 	expect(result.total).toBe(2);
 	expect(result.items.map((item) => item.id)).toEqual([
@@ -430,10 +470,46 @@ it("does not expose private file coordinates in source detail after job deletion
 		},
 		contentRevision: { findMany: vi.fn(async () => []) },
 	} as unknown as AppPrismaClient;
-	const view = await sourceView(prisma, sourceId);
+	const view = await sourceView(
+		prisma,
+		sourceId,
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(view.snapshot.playbackLinks[0]?.url).toBe(mediaUrl);
 	expect(view.snapshot).not.toHaveProperty("fileOutputs");
 	expect(JSON.stringify(view)).not.toContain("sample-output-bucket");
 	expect(JSON.stringify(view)).not.toContain(fileOutputs[0]?.credentialId);
 	expect(db.encodingJob.findMany).not.toHaveBeenCalled();
+});
+
+it("binds returned native URLs to each authenticated organization without rewriting stored metadata", async () => {
+	const { prisma } = database([]);
+	const input = {
+		...source,
+		jobId: null,
+		fileOutputs,
+		playbackLinks: [
+			{
+				...stored,
+				key: fileOutputs[0]?.key ?? "",
+				kind: "MP4" as const,
+				url: null,
+			},
+		],
+	};
+	const original = structuredClone(input);
+	for (const organizationId of [
+		"00000000-0000-4000-8000-000000000001",
+		"00000000-0000-4000-8000-000000000002",
+	]) {
+		const [links] = await enrichLibraryPlayback(
+			prisma,
+			[input],
+			organizationId,
+		);
+		const url = new URL(links?.[0]?.url ?? "", "http://localhost:3100");
+		expect(url.searchParams.get("expectedOrganizationId")).toBe(organizationId);
+		expect(url.searchParams.get("key")).toBe(fileOutputs[0]?.key);
+	}
+	expect(input).toEqual(original);
 });

@@ -1,3 +1,4 @@
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import "server-only";
 import {
 	encodingPlanSchema,
@@ -131,11 +132,17 @@ export function previewDescriptor(
 	id: string,
 	job: PreviewJob,
 	result: PreviewResult,
+	organizationId: string,
 ): NonNullable<VmafResultDetail["preview"]> {
 	const target = resolveVmafPreview(job, result);
 	return "unavailableReason" in target
 		? target
-		: { url: `/api/vmaf-jobs/${id}/preview?resultId=${result.id}` };
+		: {
+				url: bindPassiveRequestUrl(
+					`/api/vmaf-jobs/${id}/preview?resultId=${result.id}`,
+					organizationId,
+				),
+			};
 }
 
 export { serveObjectPreview as serveVmafPreview } from "./object-preview";

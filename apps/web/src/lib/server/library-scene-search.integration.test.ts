@@ -227,7 +227,7 @@ describe.runIf(Boolean(configFile))(
 		});
 
 		const search = (q: string, options = {}) =>
-			searchLibraryScenes(a, sceneSearchQuery.parse({ q, ...options }));
+			searchLibraryScenes(a, sceneSearchQuery.parse({ q, ...options }), orgA);
 		it("does not repeat scene JSON text extraction for coverage, weight and matched rows", async () => {
 			let statement: TemplateStringsArray | undefined;
 			let parameters: unknown[] = [];
@@ -241,6 +241,7 @@ describe.runIf(Boolean(configFile))(
 			await searchLibraryScenes(
 				capture,
 				sceneSearchQuery.parse({ q: "fox kelp", match: "any" }),
+				orgA,
 			);
 			const parts = [...(statement as unknown as string[])];
 			parts[0] = `EXPLAIN (FORMAT JSON) ${parts[0]}`;
@@ -336,8 +337,13 @@ describe.runIf(Boolean(configFile))(
 				total: 0,
 			});
 			expect(
-				(await searchLibraryScenes(b, sceneSearchQuery.parse({ q: "fox" })))
-					.total,
+				(
+					await searchLibraryScenes(
+						b,
+						sceneSearchQuery.parse({ q: "fox" }),
+						orgB,
+					)
+				).total,
 			).toBe(1);
 			expect(await search("archive-only")).toEqual({ items: [], total: 0 });
 			expect(
@@ -351,6 +357,7 @@ describe.runIf(Boolean(configFile))(
 				await searchLibraryScenes(
 					runtime,
 					sceneSearchQuery.parse({ q: "fox" }),
+					orgA,
 				),
 			).toEqual({ items: [], total: 0 });
 		});

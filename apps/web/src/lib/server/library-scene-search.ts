@@ -92,6 +92,7 @@ const projection = z
 export async function searchLibraryScenes(
 	prisma: AppPrismaClient,
 	query: z.infer<typeof sceneSearchQuery>,
+	organizationId: string,
 ): Promise<LibrarySceneResults> {
 	const terms = sceneSearchTerms(query.q);
 	if (!terms.length) return { items: [], total: 0 };
@@ -189,7 +190,7 @@ export async function searchLibraryScenes(
 		).values(),
 	];
 	const playback = sources.length
-		? await enrichLibraryPlayback(prisma, sources)
+		? await enrichLibraryPlayback(prisma, sources, organizationId)
 		: [];
 	const links = new Map(
 		sources.map((source, index) => [

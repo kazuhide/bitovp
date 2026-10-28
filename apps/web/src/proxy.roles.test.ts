@@ -692,3 +692,194 @@ describe("#255 — password-mode SESSIONS are untouched", () => {
 		expect(res.headers.get("x-middleware-request-x-bitovp-role")).toBe("ADMIN");
 	});
 });
+
+const MEDIA_ORG = "00000000-0000-4000-8000-000000000001";
+const OTHER_MEDIA_ORG = "00000000-0000-4000-8000-000000000002";
+const MEDIA_RESOURCE = "00000000-0000-4000-8000-000000000003";
+const PASSIVE_ROUTES = [
+	`/api/library/sources/${MEDIA_RESOURCE}/media?key=qc-mp4%3Avideo`,
+	`/api/vmaf-jobs/${MEDIA_RESOURCE}/preview?resultId=${MEDIA_RESOURCE}`,
+	`/api/encoding-jobs/${MEDIA_RESOURCE}/qc-report?format=html`,
+] as const;
+function nativeRequest(
+	path: string,
+	method = "GET",
+	extra: Record<string, string> = {},
+) {
+	return request(path, method, {
+		cookie: cookieFor(SUB),
+		"sec-fetch-site": "same-origin",
+		"sec-fetch-mode": "no-cors",
+		"sec-fetch-dest": "video",
+		range: "bytes=0-15",
+		...extra,
+	});
+}
+
+describe("organization-bound native media and report requests", () => {
+	it("reproduces the native video refusal when its URL has no organization binding", async () => {
+		const res = await proxy(nativeRequest(PASSIVE_ROUTES[0]));
+		expect(res.status).toBe(409);
+		expect(await res.json()).toEqual({
+			error: "Organization changed \u2014 reload before continuing",
+		});
+	});
+	it.each(
+		PASSIVE_ROUTES,
+	)("allows a native GET and HEAD only for the current organization: %s", async (path) => {
+		resolveUserById.mockResolvedValue(user({ role: "VIEWER" }));
+		for (const method of ["GET", "HEAD"]) {
+			const res = await proxy(
+				nativeRequest(`${path}&expectedOrganizationId=${MEDIA_ORG}`, method),
+			);
+			expect(res.status).toBe(200);
+			expect(
+				res.headers.get("x-middleware-request-x-bitovp-expected-org"),
+			).toBe(MEDIA_ORG);
+			expect(
+				res.headers.get("x-middleware-request-x-bitovp-organization"),
+			).toBe(MEDIA_ORG);
+			expect(res.headers.get("x-middleware-request-range")).toBe("bytes=0-15");
+			expect(res.headers.get("x-middleware-request-x-bitovp-role")).toBe(
+				"VIEWER",
+			);
+		}
+	});
+	it.each([
+		OTHER_MEDIA_ORG,
+		"",
+		"not-an-organization",
+		`${MEDIA_ORG}&expectedOrganizationId=${MEDIA_ORG}`,
+	])("rejects invalid, stale, or duplicate query binding: %s", async (binding) => {
+		const res = await proxy(
+			nativeRequest(`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${binding}`),
+		);
+		expect(res.status).toBe(409);
+	});
+	it("rejects a stale document URL after the session switches organizations", async () => {
+		const token = signSession(
+			issueSession({
+				mode: "users",
+				now: Date.now(),
+				idleMs: 720 * 60_000,
+				maxMs: 168 * 3_600_000,
+				sub: SUB,
+				sessionGeneration: 0,
+				organizationId: OTHER_MEDIA_ORG,
+			}),
+			SECRET,
+		);
+		const res = await proxy(
+			nativeRequest(
+				`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${MEDIA_ORG}`,
+				"GET",
+				{ cookie: `${SESSION_COOKIE}=${token}` },
+			),
+		);
+		expect(res.status).toBe(409);
+	});
+	it.each([
+		{ query: MEDIA_ORG, header: OTHER_MEDIA_ORG },
+		{ query: OTHER_MEDIA_ORG, header: MEDIA_ORG },
+	])("refuses conflicting header and query expectations (%s)", async ({
+		query,
+		header,
+	}) => {
+		const res = await proxy(
+			nativeRequest(
+				`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${query}`,
+				"GET",
+				{ "x-bitovp-expected-org": header },
+			),
+		);
+		expect(res.status).toBe(409);
+	});
+	it("overwrites forged internal organization and role headers after validating the binding", async () => {
+		resolveUserById.mockResolvedValue(user({ role: "VIEWER" }));
+		const res = await proxy(
+			nativeRequest(
+				`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${MEDIA_ORG}`,
+				"GET",
+				{ "x-bitovp-organization": OTHER_MEDIA_ORG, "x-bitovp-role": "ADMIN" },
+			),
+		);
+		expect(res.status).toBe(200);
+		expect(res.headers.get("x-middleware-request-x-bitovp-organization")).toBe(
+			MEDIA_ORG,
+		);
+		expect(res.headers.get("x-middleware-request-x-bitovp-role")).toBe(
+			"VIEWER",
+		);
+	});
+	it.each([
+		[`/api/credentials?expectedOrganizationId=${MEDIA_ORG}`, "GET"],
+		[
+			`/api/library/sources/${MEDIA_RESOURCE}/media/extra?expectedOrganizationId=${MEDIA_ORG}`,
+			"GET",
+		],
+		[
+			`/api/library/sources/not-a-uuid/media?expectedOrganizationId=${MEDIA_ORG}`,
+			"GET",
+		],
+		[
+			`/api/library/sources/${MEDIA_RESOURCE}/MEDIA?expectedOrganizationId=${MEDIA_ORG}`,
+			"GET",
+		],
+		[`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${MEDIA_ORG}`, "POST"],
+	])("does not use query binding for other routes or mutations: %s %s", async (path, method) => {
+		const res = await proxy(nativeRequest(path, method));
+		expect(res.status).toBe(409);
+	});
+	const crossOriginHeaders: Record<string, string>[] = [
+		{ "sec-fetch-site": "cross-site" },
+		{ "sec-fetch-site": "same-site", origin: "http://localhost:3200" },
+		{ origin: "https://foreign.example.test" },
+		{ host: "foreign.example.test" },
+	];
+	it.each(
+		crossOriginHeaders,
+	)("keeps cross-site, Origin and Host refusal with a valid query (%s)", async (headers) => {
+		const res = await proxy(
+			nativeRequest(
+				`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${MEDIA_ORG}`,
+				"GET",
+				headers,
+			),
+		);
+		expect(res.status).toBe(403);
+	});
+	it("still requires a valid session", async () => {
+		const res = await proxy(
+			nativeRequest(
+				`${PASSIVE_ROUTES[0]}&expectedOrganizationId=${MEDIA_ORG}`,
+				"GET",
+				{ cookie: "" },
+			),
+		);
+		expect(res.status).toBe(401);
+	});
+});
+
+it("retains header-bound fetch and token clients on passive routes", async () => {
+	const fetched = await proxy(
+		nativeRequest(PASSIVE_ROUTES[0], "GET", {
+			"x-bitovp-expected-org": MEDIA_ORG,
+		}),
+	);
+	expect(fetched.status).toBe(200);
+	verifyApiTokenRequest.mockResolvedValue({
+		ok: true,
+		tokenId: TOKEN_ID,
+		role: "VIEWER",
+	});
+	const token = await proxy(
+		nativeRequest(PASSIVE_ROUTES[0], "GET", {
+			authorization: `Bearer ${TOKEN}`,
+			cookie: "",
+		}),
+	);
+	expect(token.status).toBe(200);
+	expect(token.headers.get("x-middleware-request-x-bitovp-role")).toBe(
+		"VIEWER",
+	);
+});

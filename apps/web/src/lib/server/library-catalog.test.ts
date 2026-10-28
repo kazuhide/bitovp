@@ -148,6 +148,7 @@ it("filters before pagination and counts every search/archive-scoped asset", asy
 			q: "Nature_%",
 			archived: "true",
 		}),
+		"00000000-0000-4000-8000-000000000001",
 	);
 	expect(result.counts).toEqual({ all: 60, playback: 32, metadata: 28 });
 	expect(result.total).toBe(32);
@@ -216,7 +217,11 @@ it.each([
 		analysisOnly,
 		unsupported,
 	]);
-	const result = await listContents(prisma, listQuery.parse({}));
+	const result = await listContents(
+		prisma,
+		listQuery.parse({}),
+		"00000000-0000-4000-8000-000000000001",
+	);
 	expect(result.counts).toEqual({ all: 3, playback: 1, metadata: 2 });
 	expect(result.items[0]?.catalogMetadata?.formats).toEqual([kind]);
 	expect(result.items[0]?.catalogPreview?.url).toContain(
@@ -238,7 +243,11 @@ it("validates filter values and returns an empty filtered page with global count
 	);
 	const { prisma } = catalogDatabase([asset(0, true)]);
 	expect(
-		await listContents(prisma, listQuery.parse({ playback: "metadata" })),
+		await listContents(
+			prisma,
+			listQuery.parse({ playback: "metadata" }),
+			"00000000-0000-4000-8000-000000000001",
+		),
 	).toMatchObject({
 		total: 0,
 		items: [],

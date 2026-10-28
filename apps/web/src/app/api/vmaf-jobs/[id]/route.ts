@@ -7,6 +7,7 @@ import type {
 	VmafJobDetail,
 	VmafResultDetail,
 } from "@/app/qc/vmaf-shared";
+import { requestOrganizationId } from "@/lib/passive-request";
 import { getServerContext } from "@/lib/server/context";
 import { deleteVmafJobLocally } from "@/lib/server/delete-jobs";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
@@ -144,7 +145,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				pooled: pooled as PooledMetrics,
 				frames: series.frames,
 				frameCount: series.frameCount,
-				preview: previewDescriptor(id, job, r),
+				preview: previewDescriptor(id, job, r, requestOrganizationId(ctx)),
 				...(live ? { live } : {}),
 			});
 		}

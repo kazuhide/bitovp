@@ -1,5 +1,9 @@
 import { libraryFileContentType, librarySnapshotSchema } from "@bitovp/core";
 import { describeStorageError, type ObjectIdentity } from "@bitovp/storage";
+import {
+	EXPECTED_ORGANIZATION_QUERY,
+	passiveOrganizationBinding,
+} from "@/lib/passive-request";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError } from "@/lib/server/http";
 import { libraryFileOutputsForSource } from "@/lib/server/library-playback";
@@ -27,7 +31,11 @@ export async function GET(
 		!key ||
 		key.length > 160 ||
 		query.getAll("key").length !== 1 ||
-		[...query.keys()].some((k) => k !== "key")
+		passiveOrganizationBinding(new URL(req.url), req.method).kind ===
+			"invalid" ||
+		[...query.keys()].some(
+			(k) => k !== "key" && k !== EXPECTED_ORGANIZATION_QUERY,
+		)
 	)
 		return finish(jsonError(400, "Invalid media query"));
 	if (req.signal.aborted)

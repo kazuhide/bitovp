@@ -4,6 +4,7 @@ import type { QcGate, QcVerdict } from "@bitovp/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
+import { useDocumentOrganization } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -11,6 +12,7 @@ import { RoleAccess } from "@/lib/auth/use-role-access";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 import type { JobStatus } from "@/lib/job-status";
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
 
 /**
  * QC gate panel : the gate's rules beside
@@ -37,6 +39,14 @@ export function QcGatePanel(props: {
 	overriddenAt?: string | null;
 }) {
 	const { t } = useT();
+	const organizationId = useDocumentOrganization();
+	const reportUrl = (format: string) =>
+		organizationId
+			? bindPassiveRequestUrl(
+					`/api/encoding-jobs/${props.jobId}/qc-report?format=${format}`,
+					organizationId,
+				)
+			: undefined;
 	const { gate, verdict, status, jobId, vmafJobId } = props;
 	const measurementStatus = props.measurementStatus ?? null;
 	const overriddenAt = props.overriddenAt ?? null;
@@ -237,19 +247,19 @@ export function QcGatePanel(props: {
 				    for print-to-PDF. Plain anchors — these are downloads, not
 				    navigations, and the html one opens its own tab. */}
 				<a
-					href={`/api/encoding-jobs/${jobId}/qc-report?format=json`}
+					href={reportUrl("json")}
 					className="text-zinc-400 hover:text-zinc-200"
 				>
 					{t("jobDetail.qcGateExportJson")}
 				</a>
 				<a
-					href={`/api/encoding-jobs/${jobId}/qc-report?format=csv`}
+					href={reportUrl("csv")}
 					className="text-zinc-400 hover:text-zinc-200"
 				>
 					{t("jobDetail.qcGateExportCsv")}
 				</a>
 				<a
-					href={`/api/encoding-jobs/${jobId}/qc-report?format=html`}
+					href={reportUrl("html")}
 					target="_blank"
 					rel="noreferrer"
 					className="text-zinc-400 hover:text-zinc-200"

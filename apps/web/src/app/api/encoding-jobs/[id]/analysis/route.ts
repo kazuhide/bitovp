@@ -2,6 +2,7 @@ import { encodingPlanSchema } from "@bitovp/core";
 import { requestLibrarySource } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import type { JobAnalysisResponse } from "@/lib/job-analysis";
+import { requestOrganizationId } from "@/lib/passive-request";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError } from "@/lib/server/http";
@@ -14,7 +15,8 @@ export async function GET(_req: Request, { params }: Params) {
 	const invalid = invalidIdResponse(id);
 	if (invalid) return invalid;
 	return libraryRoute(async () => {
-		const { prisma } = await getServerContext();
+		const ctx = await getServerContext();
+		const { prisma } = ctx;
 		const job = await prisma.encodingJob.findUnique({
 			where: { id },
 			select: {
@@ -33,7 +35,9 @@ export async function GET(_req: Request, { params }: Params) {
 		return NextResponse.json({
 			enabled: !!(plan.success && plan.data.aiSceneAnalysis),
 			captureSuppressed: job.libraryCaptureSuppressed,
-			source: source ? await sourceView(prisma, source.id) : null,
+			source: source
+				? await sourceView(prisma, source.id, requestOrganizationId(ctx))
+				: null,
 		} satisfies JobAnalysisResponse);
 	});
 }

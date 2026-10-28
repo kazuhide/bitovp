@@ -17,7 +17,10 @@ const call = (params = "") =>
 beforeEach(() => {
 	vi.clearAllMocks();
 	query.mockResolvedValue([{ items: [], total: 0 }]);
-	context.mockResolvedValue({ prisma: { $queryRaw: query } });
+	context.mockResolvedValue({
+		prisma: { $queryRaw: query },
+		tenant: { organizationId: "00000000-0000-4000-8000-000000000001" },
+	});
 });
 
 it("remains a guarded VIEWER read", () => {

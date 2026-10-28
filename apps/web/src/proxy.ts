@@ -37,6 +37,7 @@ import {
 	resolveUserByIdFresh as resolveUserById,
 } from "@/lib/auth/users";
 import { viewAsMayRead } from "@/lib/auth/view-as";
+import { passiveOrganizationBinding } from "@/lib/passive-request";
 import { recordAccessNonAdmin } from "@/lib/server/access-audit";
 
 /**
@@ -307,6 +308,13 @@ function forward(
 	])
 		headers.delete(name);
 	if (context) {
+		const binding = passiveOrganizationBinding(req.nextUrl, req.method);
+		if (
+			binding.kind === "bound" &&
+			binding.organizationId === context.organizationId &&
+			!headers.has(EXPECTED_ORGANIZATION_HEADER)
+		)
+			headers.set(EXPECTED_ORGANIZATION_HEADER, binding.organizationId);
 		headers.set(ORGANIZATION_HEADER, context.organizationId);
 		if (context.effectiveUserId)
 			headers.set(EFFECTIVE_USER_HEADER, context.effectiveUserId);
@@ -401,9 +409,16 @@ function tenantRequestRefusal(
 		const browser =
 			req.headers.get("sec-fetch-site") !== null &&
 			bearerToken(req.headers.get("authorization")) === null;
+		const binding = passiveOrganizationBinding(req.nextUrl, req.method);
+		const expectedHeader = req.headers.get(EXPECTED_ORGANIZATION_HEADER);
 		if (
-			browser &&
-			req.headers.get(EXPECTED_ORGANIZATION_HEADER) !== context.organizationId
+			binding.kind === "invalid" ||
+			(binding.kind === "bound" &&
+				binding.organizationId !== context.organizationId) ||
+			(browser &&
+				(expectedHeader ??
+					(binding.kind === "bound" ? binding.organizationId : null)) !==
+					context.organizationId)
 		)
 			return NextResponse.json(
 				{ error: "Organization changed — reload before continuing" },

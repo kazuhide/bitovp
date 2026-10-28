@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { comparisonContext } from "@/app/qc/vmaf-context";
 import { renditionLabel } from "@/app/qc/vmaf-shared";
+import { passiveOrganizationBinding } from "@/lib/passive-request";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
 
@@ -98,6 +99,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 		return invalid;
 	}
 	const url = new URL(req.url);
+	if (passiveOrganizationBinding(url, req.method).kind === "invalid")
+		return jsonError(400, "Invalid report query");
 	const parsed = querySchema.safeParse({
 		format: url.searchParams.get("format") ?? undefined,
 	});

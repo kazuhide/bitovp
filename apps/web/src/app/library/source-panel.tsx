@@ -1,5 +1,9 @@
 "use client";
-import type { LibrarySourceView, PlayerClientConfig } from "@bitovp/core";
+import {
+	isLibraryFileKind,
+	type LibrarySourceView,
+	type PlayerClientConfig,
+} from "@bitovp/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -61,7 +65,9 @@ export function SourcePanel({
 	const playable = source.snapshot.playbackLinks.filter(
 		(link) =>
 			link.url &&
-			(link.kind === "HLS" || link.kind === "DASH" || link.kind === "MP4"),
+			(link.kind === "HLS" ||
+				link.kind === "DASH" ||
+				isLibraryFileKind(link.kind)),
 	);
 	const hasPrivateOutput = source.snapshot.playbackLinks.some(
 		(item) =>
@@ -185,8 +191,8 @@ export function SourcePanel({
 								<PlaybackSurface
 									url={link.url}
 									kind={
-										link.kind === "MP4"
-											? "MP4"
+										isLibraryFileKind(link.kind)
+											? link.kind
 											: link.kind === "DASH"
 												? "DASH"
 												: "HLS"

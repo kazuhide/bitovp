@@ -1,4 +1,4 @@
-import type { ContentView } from "@bitovp/core";
+import type { ContentView, LibraryFileKind } from "@bitovp/core";
 
 export const MAX_LIBRARY_OFFSET = 100000;
 
@@ -6,7 +6,7 @@ export const MAX_LIBRARY_OFFSET = 100000;
 export type LibraryPlaybackFilter = "all" | "playback" | "metadata";
 export type LibraryCatalogItem = ContentView & {
 	catalogMetadata: {
-		formats: ("HLS" | "DASH" | "MP4")[];
+		formats: ("HLS" | "DASH" | LibraryFileKind)[];
 		duration?: number;
 		sceneCount?: number;
 	};

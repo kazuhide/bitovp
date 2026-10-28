@@ -137,19 +137,20 @@ it.each([
 	expect(document.querySelector("video")).toBeNull();
 });
 
-it("uses direct MP4 for thumbnails and releases it on cancellation", async () => {
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("uses direct %s for thumbnails and releases it on cancellation", async (kind) => {
 	nativeVideo();
 	const abort = new AbortController();
-	const pending = captureThumbnail(
-		{ kind: "MP4", url: "https://media.test/video.mp4", time: 2 },
-		abort.signal,
-	);
-	expect(document.querySelector("video")).toHaveAttribute(
-		"src",
-		"https://media.test/video.mp4",
-	);
-	abort.abort();
-	await expect(pending).resolves.toBeNull();
+	const url = `https://media.test/video.${kind.toLowerCase()}`;
+	const pending = captureThumbnail({ kind, url, time: 2 }, abort.signal);
+	try {
+		expect(document.querySelector("video")).toHaveAttribute("src", url);
+	} finally {
+		abort.abort();
+		await expect(pending).resolves.toBeNull();
+	}
 	expect(document.querySelector("video")).toBeNull();
 });
 
@@ -180,7 +181,16 @@ function observeThumbnail() {
 		);
 }
 
-it("marks a failed MP4 preview as missing only after one authenticated range probe", async () => {
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("marks a failed %s preview as missing only after one authenticated range probe", async (kind) => {
+	const file = {
+		...libraryMp4,
+		kind,
+		url: libraryMp4.url.replace("mp4%3A", `${kind.toLowerCase()}%3A`),
+	};
+	const format = kind === "WEBM" ? "WebM" : "MP4";
 	const intersect = observeThumbnail();
 	let resolveFrame: (frame: string | null) => void = () => {};
 	const load = vi.spyOn(thumbnailLoader, "requestThumbnail").mockImplementation(
@@ -198,20 +208,20 @@ it("marks a failed MP4 preview as missing only after one authenticated range pro
 			),
 		);
 	const view = renderLocalized(
-		createElement(CatalogThumbnail, { source: libraryMp4, fallback: "MP4" }),
+		createElement(CatalogThumbnail, { source: file, fallback: format }),
 	);
 	intersect();
 	intersect();
 	expect(load).toHaveBeenCalledTimes(1);
 	expect(fetch).not.toHaveBeenCalled();
 	await act(async () => resolveFrame(null));
-	expect(screen.getByText("MP4 file missing")).toBeVisible();
+	expect(screen.getByText(`${format} file missing`)).toBeVisible();
 	expect(view.container.firstChild).toHaveAttribute(
 		"title",
-		"MP4 file is missing from storage.",
+		`${format} file is missing from storage.`,
 	);
 	expect(fetch).toHaveBeenCalledTimes(1);
-	expect(fetch).toHaveBeenCalledWith(libraryMp4.url, {
+	expect(fetch).toHaveBeenCalledWith(file.url, {
 		headers: { Range: "bytes=0-0" },
 		cache: "no-store",
 		signal: load.mock.calls[0]?.[1],
@@ -221,6 +231,7 @@ it("marks a failed MP4 preview as missing only after one authenticated range pro
 it.each([
 	"HLS",
 	"MP4",
+	"WEBM",
 ] as const)("shows unavailable %s previews without claiming playback is impossible", async (kind) => {
 	const intersect = observeThumbnail();
 	vi.spyOn(thumbnailLoader, "requestThumbnail").mockResolvedValue(null);
@@ -244,8 +255,10 @@ it.each([
 		screen.getByRole("img", { name: "Preview unavailable" }),
 	).toBeInTheDocument();
 	expect(view.container.querySelector(".lucide-triangle-alert")).not.toBeNull();
-	expect(screen.queryByText("MP4 file missing")).not.toBeInTheDocument();
-	expect(fetch).toHaveBeenCalledTimes(kind === "MP4" ? 1 : 0);
+	expect(
+		screen.queryByText(`${kind === "WEBM" ? "WebM" : "MP4"} file missing`),
+	).not.toBeInTheDocument();
+	expect(fetch).toHaveBeenCalledTimes(kind === "HLS" ? 0 : 1);
 });
 
 it("does not probe successful frames or metadata-only cards", async () => {
@@ -267,9 +280,17 @@ it("does not probe successful frames or metadata-only cards", async () => {
 });
 
 it.each([
-	"source change",
-	"unmount",
-])("aborts a pending missing-file probe on %s and ignores its stale result", async (change) => {
+	["MP4", "source change"],
+	["MP4", "unmount"],
+	["WEBM", "source change"],
+	["WEBM", "unmount"],
+] as const)("aborts a pending %s missing-file probe on %s and ignores its stale result", async (kind, change) => {
+	const file = {
+		...libraryMp4,
+		kind,
+		url: libraryMp4.url.replace("mp4%3A", `${kind.toLowerCase()}%3A`),
+	};
+	const format = kind === "WEBM" ? "WebM" : "MP4";
 	const intersect = observeThumbnail();
 	vi.spyOn(thumbnailLoader, "requestThumbnail").mockResolvedValue(null);
 	let resolveProbe: (response: Response) => void = () => {};
@@ -280,7 +301,7 @@ it.each([
 			}),
 	);
 	const view = renderLocalized(
-		createElement(CatalogThumbnail, { source: libraryMp4, fallback: "MP4" }),
+		createElement(CatalogThumbnail, { source: file, fallback: format }),
 	);
 	await act(async () => intersect());
 	expect(fetch).toHaveBeenCalledTimes(1);
@@ -289,8 +310,8 @@ it.each([
 	else
 		view.rerender(
 			createElement(CatalogThumbnail, {
-				source: { ...libraryMp4, time: 8 },
-				fallback: "MP4",
+				source: { ...file, time: 8 },
+				fallback: format,
 			}),
 		);
 	expect(signal?.aborted).toBe(true);
@@ -302,7 +323,9 @@ it.each([
 			),
 		),
 	);
-	expect(screen.queryByText("MP4 file missing")).not.toBeInTheDocument();
+	expect(
+		screen.queryByText(`${kind === "WEBM" ? "WebM" : "MP4"} file missing`),
+	).not.toBeInTheDocument();
 	if (change === "source change")
 		expect(screen.getByText("Loading thumbnail…")).toBeInTheDocument();
 });

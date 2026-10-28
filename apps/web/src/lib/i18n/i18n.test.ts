@@ -122,7 +122,8 @@ describe("catalogue parity", () => {
 		// Imported catalogue: qc.mixedReferenceCanvases adds one long value.
 		pinWithDriftAid(long.length, 1449, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		pinWithDriftAid(short.size, 2807, "short");
+		// WebM missing-file labels add two distinct short Japanese values.
+		pinWithDriftAid(short.size, 2809, "short");
 	});
 
 	/**

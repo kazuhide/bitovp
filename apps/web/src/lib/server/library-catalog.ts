@@ -1,5 +1,9 @@
 import "server-only";
-import { type ContentView, librarySnapshotSchema } from "@bitovp/core";
+import {
+	type ContentView,
+	isLibraryFileKind,
+	librarySnapshotSchema,
+} from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { z } from "zod";
 import {
@@ -28,7 +32,7 @@ const catalogSummary = z.object({
 const catalogLinksSchema = z
 	.array(
 		z.object({
-			kind: z.enum(["HLS", "DASH", "SMOOTH", "MP4"]),
+			kind: librarySnapshotSchema.shape.playbackLinks.element.shape.kind,
 			url: z.string().nullable(),
 			reason: z.unknown().optional(),
 		}),
@@ -38,7 +42,7 @@ const catalogLinksSchema = z
 function playableCatalogLink(item: z.infer<typeof catalogLinksSchema>[number]) {
 	if (!item.url || item.reason || item.kind === "SMOOTH") return false;
 	if (
-		item.kind === "MP4" &&
+		isLibraryFileKind(item.kind) &&
 		/^\/api\/library\/sources\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\/media\?key=[A-Za-z0-9_.!~*'()%:-]+$/i.test(
 			item.url,
 		)
@@ -77,7 +81,7 @@ export function catalogPreview(
 	const link = parsed.success
 		? [...parsed.data]
 				.sort((a, b) => {
-					const rank = { HLS: 0, DASH: 1, MP4: 2, SMOOTH: 3 };
+					const rank = { HLS: 0, DASH: 1, MP4: 2, WEBM: 3, SMOOTH: 4 };
 					return rank[a.kind] - rank[b.kind];
 				})
 				.find(playableCatalogLink)

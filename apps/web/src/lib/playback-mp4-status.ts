@@ -45,3 +45,6 @@ export async function libraryMp4IsMissing(
 ): Promise<boolean> {
 	return (await libraryMp4PlaybackError(url, signal)) === "missing";
 }
+
+export const libraryFilePlaybackError = libraryMp4PlaybackError;
+export const libraryFileIsMissing = libraryMp4IsMissing;

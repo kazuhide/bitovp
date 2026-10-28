@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
 	encodingPlanSchema,
+	isLibraryFileKind,
 	libraryFileOutputs,
 	libraryPlaybackLinks,
 	librarySnapshotSchema,
@@ -177,16 +178,17 @@ export async function requestLibrarySource(
 				const expected = expectedFiles.find((file) => file.key === key);
 				return (
 					expected !== undefined &&
+					stored.kind === expected.kind &&
 					stored.credentialId === expected.credentialId &&
 					stored.bucket === expected.bucket &&
 					stored.path === expected.path
 				);
 			};
-			const missingMp4 =
+			const missingFileLink =
 				snapshot.planHash === planHash &&
 				libraryPlaybackLinks(plan, []).some(
 					(link) =>
-						link.kind === "MP4" &&
+						isLibraryFileKind(link.kind) &&
 						sameFileIdentity(link.key) &&
 						!snapshot.playbackLinks.some((stored) => stored.key === link.key),
 				);
@@ -199,14 +201,14 @@ export async function requestLibrarySource(
 			if (
 				(upgradeAnalysis ||
 					upgradeLocales ||
-					missingMp4 ||
+					missingFileLink ||
 					fileOutputs?.length) &&
 				existing.state !== "RUNNING"
 			) {
-				const additions = missingMp4
+				const additions = missingFileLink
 					? (await playbackLinks()).filter(
 							(link) =>
-								link.kind === "MP4" &&
+								isLibraryFileKind(link.kind) &&
 								sameFileIdentity(link.key) &&
 								!snapshot.playbackLinks.some(
 									(stored) => stored.key === link.key,

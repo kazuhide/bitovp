@@ -527,6 +527,7 @@ export const ja = {
 		sceneLanguagesRetry: "言語を再読み込み",
 		thumbnailLoading: "サムネイルを読み込み中…",
 		thumbnailFileMissing: "MP4ファイルなし",
+		thumbnailWebmFileMissing: "WebMファイルなし",
 		updating: "更新中…",
 		sceneLinkChanged:
 			"このシーンへのリンクは現在の保存内容と一致しません。シーンを選び直してください。",
@@ -1299,6 +1300,7 @@ export const ja = {
 		previewTitle: "再生プレビュー",
 		retry: "再生を再試行",
 		mp4FileMissing: "保存先にMP4ファイルがありません。",
+		webmFileMissing: "保存先にWebMファイルがありません。",
 		accessDenied:
 			"出力へのアクセスが拒否されました（401/403）。非公開出力の場合は、再生URLの認証と読み取り権限を確認してください。",
 		storageAccessDenied:

@@ -1,4 +1,4 @@
-import { librarySnapshotSchema } from "@bitovp/core";
+import { libraryFileContentType, librarySnapshotSchema } from "@bitovp/core";
 import { describeStorageError, type ObjectIdentity } from "@bitovp/storage";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError } from "@/lib/server/http";
@@ -82,7 +82,7 @@ export async function GET(
 				key: target.path,
 				size: identity.size,
 				expect: identity,
-				contentType: "video/mp4",
+				contentType: libraryFileContentType(target.kind),
 			}),
 		);
 	} catch (error) {

@@ -244,29 +244,100 @@ it("projects legacy MP4 catalog previews in one batch and strips internal projec
 	expect(result.items[0]).not.toHaveProperty("playbackLinks");
 	expect(JSON.stringify(result)).not.toContain("never-expose");
 });
-it("retains exact stored file locators after job deletion and projects private media without credentials", async () => {
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("retains exact stored %s locators after job deletion and projects private media without credentials", async (kind) => {
 	const { db, prisma } = database();
+	const files = fileOutputs.map((file) => ({
+		...file,
+		kind,
+		key: `${kind.toLowerCase()}:mp4`,
+		path: `output/video.${kind.toLowerCase()}`,
+	}));
 	const input = {
 		...source,
 		jobId: null,
-		fileOutputs,
+		fileOutputs: files,
 		playbackLinks: [
 			{
 				...stored,
-				key: "mp4:mp4",
-				kind: "MP4" as const,
+				key: files[0]?.key ?? "",
+				kind,
 				url: null,
 				reason: { code: "NOT_PUBLIC" },
 			},
 		],
 	};
-	expect(await libraryFileOutputsForSource(prisma, input)).toEqual(fileOutputs);
+	expect(await libraryFileOutputsForSource(prisma, input)).toEqual(files);
 	const [links] = await enrichLibraryPlayback(prisma, [input]);
-	expect(links?.[0]).toMatchObject({ url: mediaUrl, kind: "MP4" });
+	expect(links?.[0]).toMatchObject({
+		url: `/api/library/sources/${sourceId}/media?key=${encodeURIComponent(files[0]?.key ?? "")}`,
+		kind,
+	});
 	expect(links?.[0]).not.toHaveProperty("reason");
 	expect(db.encodingJob.findMany).not.toHaveBeenCalled();
 	expect(db.credential.findMany).not.toHaveBeenCalled();
 });
+it("projects a legacy concat QC WebM without direct-ingest or normal-MP4 assumptions", async () => {
+	const qc = encodingPlanSchema.parse({
+		...plan,
+		qc: { vmaf: true, only: true },
+		renditions: [
+			{
+				key: "v360",
+				codec: "VP9",
+				mode: "STANDARD",
+				ingestKey: "clip",
+				width: 640,
+				height: 360,
+				bitrate: 350000,
+				rate: 24,
+			},
+		],
+		trimmingStreams: [
+			{
+				key: "piece",
+				kind: "TIME_BASED",
+				sourceKey: "video",
+				offset: 0,
+				duration: 2,
+			},
+		],
+		concatenationStreams: [
+			{
+				key: "clip",
+				sources: [{ sourceKey: "piece", position: 0, isMain: true }],
+			},
+		],
+		muxings: [
+			{
+				key: "segmented",
+				kind: "WEBM",
+				streamKey: "v360",
+				destination: { outputKey: "origin", path: "output/", acl: "PRIVATE" },
+			},
+		],
+	});
+	const { db, prisma } = database([{ id: "job-1", plan: qc }]);
+	const input = {
+		...source,
+		planHash: createHash("sha256").update(JSON.stringify(qc)).digest("hex"),
+		playbackLinks: [],
+	};
+	const [links] = await enrichLibraryPlayback(prisma, [input]);
+	expect(links?.[0]).toMatchObject({
+		kind: "WEBM",
+		key: "qc-webm:v360",
+		url: `/api/library/sources/${sourceId}/media?key=qc-webm%3Av360`,
+	});
+	expect(db.credential.findMany).toHaveBeenCalledWith(
+		expect.objectContaining({
+			where: { id: { in: [qc.outputs[0]?.credentialId] } },
+		}),
+	);
+});
+
 it("classifies legacy private MP4 beyond the first page with one batched plan and credential read", async () => {
 	const { db } = database();
 	const items = Array.from({ length: 30 }, (_, index) => ({

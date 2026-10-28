@@ -109,6 +109,54 @@ it("serves only the recorded file after source-job deletion, without leaking loc
 		contentType: "video/mp4",
 	});
 });
+it("serves stored WebM with its validated MIME while retaining range and identity checks", async () => {
+	const webm = {
+		...file,
+		key: "qc-webm:video",
+		kind: "WEBM",
+		path: "retained/extensionless-object",
+	};
+	findUnique.mockResolvedValue({
+		jobId: null,
+		snapshot: {
+			schemaVersion: 1,
+			kind: "VOD_JOB",
+			name: "Asset",
+			identity: "UNVERIFIED",
+			planHash: "hash",
+			inputs: [],
+			playbackLinks: [],
+			qcVerdict: null,
+			qcOverriddenAt: null,
+			fileOutputs: [webm],
+		},
+	});
+	outputs.mockResolvedValue([webm]);
+	serve.mockImplementation(
+		async (_ctx, _req, target) =>
+			new Response("video", {
+				status: 206,
+				headers: { "Content-Type": target.contentType },
+			}),
+	);
+	const response = await call("key=qc-webm%3Avideo");
+	expect(response.status).toBe(206);
+	expect(response.headers.get("Content-Type")).toBe("video/webm");
+	expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+	expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+	expect(headObject).toHaveBeenCalledWith({
+		bucket: webm.bucket,
+		key: webm.path,
+	});
+	expect(serve.mock.calls[0]?.[1].headers.get("Range")).toBe("bytes=0-1023");
+	expect(serve.mock.calls[0]?.[2]).toMatchObject({
+		key: webm.path,
+		expect: { size: 10000000, etag: "v1" },
+		contentType: "video/webm",
+	});
+	expect(dispose).toHaveBeenCalledOnce();
+});
+
 it.each([
 	{ size: 0, etag: "x" },
 	{ size: 1 },

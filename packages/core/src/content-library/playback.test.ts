@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../plan/__fixtures__/ai-scene-analysis-passthrough-test.plan.json";
-import { compilePlan } from "../plan/compiler";
+import { compilePlan, joinFilePath } from "../plan/compiler";
 import { encodingPlanSchema } from "../plan/schema";
 import { manifestPlaybackLinks } from "../playback/manifest-links";
 import { enumerateQcTargets } from "../vmaf/targets";
-import { libraryPlaybackLinkSchema } from "./contracts";
+import {
+	libraryFileOutputSchema,
+	libraryPlaybackLinkSchema,
+} from "./contracts";
 import { libraryFileOutputs, libraryPlaybackLinks } from "./playback";
 
 const credential = {
@@ -234,7 +237,7 @@ describe("QC-only Library MP4 output", () => {
 		expect(libraryPlaybackLinks(input, credentials)).toEqual([]);
 		expect(libraryFileOutputs(input)).toEqual([]);
 	});
-	it("omits WebM, unresolved paths, and per-title templates instead of labeling them MP4", () => {
+	it("retains actual QC WebM with a distinct kind and key", () => {
 		const webm = qcOnlyPlan();
 		webm.renditions = [
 			{
@@ -248,11 +251,38 @@ describe("QC-only Library MP4 output", () => {
 				rate: 24,
 			},
 		];
+		destination(webm).acl = "PRIVATE";
+		const op = compilePlan(webm).find((op) => op.step === "qc-muxing:v180");
+		expect(op?.kind).toBe("CREATE_MUXING_PROGRESSIVE_WEBM");
+		const path = `${String(op?.payload.outputPath)}${String(op?.payload.filename)}`;
+		expect(libraryFileOutputs(webm)).toEqual([
+			{
+				key: "qc-webm:v180",
+				kind: "WEBM",
+				credentialId: credential.id,
+				bucket: "sample-output-bucket",
+				path,
+			},
+		]);
+		expect(libraryPlaybackLinks(webm, credentials)).toEqual([
+			expect.objectContaining({
+				key: "qc-webm:v180",
+				kind: "WEBM",
+				path,
+				url: null,
+				reason: { code: "NOT_PUBLIC" },
+			}),
+		]);
 		expect(
-			compilePlan(webm).find((op) => op.step === "qc-muxing:v180")?.kind,
-		).toBe("CREATE_MUXING_PROGRESSIVE_WEBM");
-		expect(libraryFileOutputs(webm)).toEqual([]);
-		expect(libraryPlaybackLinks(webm, credentials)).toEqual([]);
+			libraryFileOutputSchema.safeParse(libraryFileOutputs(webm)[0]).success,
+		).toBe(true);
+		expect(
+			libraryPlaybackLinkSchema.safeParse(
+				libraryPlaybackLinks(webm, credentials)[0],
+			).success,
+		).toBe(true);
+	});
+	it("omits unresolved paths and per-title templates", () => {
 		const unresolved = qcOnlyPlan();
 		destination(unresolved).path += "/{uuid}";
 		expect(libraryFileOutputs(unresolved)).toEqual([]);
@@ -271,6 +301,97 @@ describe("QC-only Library MP4 output", () => {
 			libraryPlaybackLinks(input, credentials).map((link) => link.key),
 		).toEqual(["mp4:v180"]);
 		input.drm = [{ muxingKey: "v180" }] as typeof input.drm;
+		expect(libraryPlaybackLinks(input, credentials)).toEqual([]);
+	});
+});
+
+describe("progressive WebM Library output", () => {
+	function webmPlan(filename?: string) {
+		return encodingPlanSchema.parse({
+			...fixture,
+			aiSceneAnalysis: undefined,
+			qc: undefined,
+			renditions: [
+				{
+					key: "v180",
+					codec: "VP9",
+					mode: "STANDARD",
+					ingestKey: "video",
+					width: 640,
+					height: 360,
+					bitrate: 350000,
+					rate: 24,
+				},
+			],
+			muxings: [
+				{
+					key: "webm",
+					kind: "WEBM",
+					progressive: true,
+					...(filename ? { filename } : {}),
+					streamKey: "v180",
+					destination: destination(plan()),
+				},
+			],
+		});
+	}
+	it.each([
+		"video.webm",
+		undefined,
+	])("matches the compiler's progressive filename, including its default: %s", (filename) => {
+		const input = webmPlan(filename);
+		const op = compilePlan(input).find((op) => op.step === "muxing:webm");
+		expect(op?.kind).toBe("CREATE_MUXING_PROGRESSIVE_WEBM");
+		expect(libraryFileOutputs(input)).toEqual([
+			{
+				key: "webm:webm",
+				kind: "WEBM",
+				credentialId: credential.id,
+				bucket: "sample-output-bucket",
+				path: joinFilePath(
+					String(op?.payload.outputPath),
+					String(op?.payload.filename),
+				),
+			},
+		]);
+	});
+	it("omits segmented, encrypted, per-title and unresolved WebM outputs", () => {
+		const segmented = webmPlan("video.webm");
+		const muxing = segmented.muxings[0];
+		if (muxing?.kind !== "WEBM") throw new Error("Fixture WebM missing");
+		muxing.progressive = false;
+		expect(libraryFileOutputs(segmented)).toEqual([]);
+		const encrypted = webmPlan("video.webm");
+		encrypted.drm = [{ muxingKey: "webm" }] as typeof encrypted.drm;
+		expect(libraryFileOutputs(encrypted)).toEqual([]);
+		const perTitle = webmPlan("video.webm");
+		const rendition = perTitle.renditions[0];
+		if (!rendition || !("mode" in rendition))
+			throw new Error("Fixture video missing");
+		rendition.mode = "PER_TITLE_TEMPLATE";
+		expect(libraryFileOutputs(perTitle)).toEqual([]);
+		expect(libraryFileOutputs(webmPlan("{uuid}.webm"))).toEqual([]);
+	});
+	it.each([
+		"H264",
+		"VP9",
+	])("does not advertise a QC file attached to encrypted delivery: %s", (codec) => {
+		const input = qcOnlyPlan();
+		if (codec === "VP9")
+			input.renditions = [
+				{
+					key: "v180",
+					codec: "VP9",
+					mode: "STANDARD",
+					ingestKey: "video",
+					width: 640,
+					height: 360,
+					bitrate: 350000,
+					rate: 24,
+				},
+			];
+		input.drm = [{ muxingKey: "segmented" }] as typeof input.drm;
+		expect(libraryFileOutputs(input)).toEqual([]);
 		expect(libraryPlaybackLinks(input, credentials)).toEqual([]);
 	});
 });

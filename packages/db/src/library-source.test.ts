@@ -176,6 +176,77 @@ describe("requestLibrarySource", () => {
 		expect(tx.librarySource.update).not.toHaveBeenCalled();
 	});
 
+	it("fills empty WebM snapshot links and coordinates once without relabeling them MP4", async () => {
+		const raw = qcOnlyPlan();
+		const plan = {
+			...raw,
+			renditions: [
+				{
+					key: "v180",
+					codec: "VP9",
+					mode: "STANDARD",
+					ingestKey: "video",
+					width: 640,
+					height: 360,
+					bitrate: 350000,
+					rate: 24,
+				},
+			],
+		};
+		const { job, tx, prisma } = setup({ plan });
+		const source = await requestLibrarySource(prisma, job.id);
+		const snapshot = source.snapshot as Record<string, unknown>;
+		snapshot.fileOutputs = [];
+		snapshot.playbackLinks = [];
+		const upgraded = await requestLibrarySource(prisma, job.id);
+		expect(upgraded.snapshot).toMatchObject({
+			fileOutputs: [
+				expect.objectContaining({
+					key: "qc-webm:v180",
+					kind: "WEBM",
+					path: expect.stringContaining("/qc/v180.webm"),
+				}),
+			],
+			playbackLinks: [
+				expect.objectContaining({ key: "qc-webm:v180", kind: "WEBM" }),
+			],
+		});
+		await requestLibrarySource(prisma, job.id);
+		expect(tx.librarySource.update).toHaveBeenCalledOnce();
+		expect(tx.contentRevision.create).toHaveBeenCalledOnce();
+	});
+	it("does not reinterpret the stored container kind for a matching file key and path", async () => {
+		const raw = qcOnlyPlan();
+		const plan = {
+			...raw,
+			renditions: [
+				{
+					key: "v180",
+					codec: "VP9",
+					mode: "STANDARD",
+					ingestKey: "video",
+					width: 640,
+					height: 360,
+					bitrate: 350000,
+					rate: 24,
+				},
+			],
+		};
+		const { job, tx, prisma } = setup({ plan });
+		const source = await requestLibrarySource(prisma, job.id);
+		const snapshot = source.snapshot as Record<string, unknown>;
+		const files = snapshot.fileOutputs as Record<string, unknown>[];
+		const historical = { ...files[0], kind: "MP4" };
+		snapshot.fileOutputs = [historical];
+		snapshot.playbackLinks = [];
+		const retained = await requestLibrarySource(prisma, job.id);
+		expect(retained.snapshot).toMatchObject({
+			fileOutputs: [historical],
+			playbackLinks: [],
+		});
+		expect(tx.librarySource.update).not.toHaveBeenCalled();
+	});
+
 	it("upgrades file coordinates once even when the MP4 link is already captured", async () => {
 		const { job, tx, prisma } = setup();
 		const source = await requestLibrarySource(prisma, job.id);

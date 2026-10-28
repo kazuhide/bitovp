@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import {
 	encodingPlanSchema,
+	isLibraryFileKind,
 	type LibrarySourceView,
 	libraryFileOutputs,
 	libraryPlaybackLinks,
@@ -21,7 +22,9 @@ type PlaybackSource = FileSource & {
 
 export const needsLibraryPlaybackProjection = (source: PlaybackSource) =>
 	source.fileOutputs === undefined &&
-	!source.playbackLinks.some((link) => link.kind === "MP4" && link.url);
+	!source.playbackLinks.some(
+		(link) => isLibraryFileKind(link.kind) && link.url,
+	);
 
 async function matchingPlans(
 	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
@@ -78,15 +81,21 @@ export async function enrichLibraryPlayback(
 	const plans = await matchingPlans(prisma, sources.filter(projectionEligible));
 	const credentialIds = [
 		...new Set(
-			[...plans.values()].flatMap(({ plan }) =>
-				plan.muxings.flatMap((muxing) => {
-					if (muxing.kind !== "MP4" || !muxing.destination) return [];
+			[...plans.values()].flatMap(({ plan }) => [
+				...plan.muxings.flatMap((muxing) => {
+					if (
+						(muxing.kind !== "MP4" &&
+							!(muxing.kind === "WEBM" && muxing.progressive === true)) ||
+						!muxing.destination
+					)
+						return [];
 					const output = plan.outputs.find(
 						(item) => item.key === muxing.destination?.outputKey,
 					);
 					return output ? [output.credentialId] : [];
 				}),
-			),
+				...libraryFileOutputs(plan).map((file) => file.credentialId),
+			]),
 		),
 	];
 	const credentials = credentialIds.length
@@ -109,13 +118,18 @@ export async function enrichLibraryPlayback(
 							...credential,
 							config: (credential.config ?? {}) as Record<string, unknown>,
 						})),
-					).filter((link) => link.kind === "MP4" && !keys.has(link.key))
+					).filter(
+						(link) => isLibraryFileKind(link.kind) && !keys.has(link.key),
+					)
 				: []),
 		];
 		const files =
 			source.fileOutputs ?? (samePlan ? libraryFileOutputs(samePlan) : []);
 		return links.map((link) => {
-			if (link.kind !== "MP4" || !files.some((file) => file.key === link.key))
+			if (
+				!isLibraryFileKind(link.kind) ||
+				!files.some((file) => file.key === link.key)
+			)
 				return link;
 			const { reason: _unneeded, ...available } = link;
 			return {

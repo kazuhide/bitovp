@@ -1,9 +1,10 @@
 "use client";
+import { isLibraryFileKind } from "@bitovp/core";
 import { Film, LoaderCircle, TriangleAlert } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n/context";
-import { libraryMp4IsMissing } from "@/lib/playback-mp4-status";
+import { libraryFileIsMissing } from "@/lib/playback-mp4-status";
 import {
 	requestThumbnail,
 	type ThumbnailSource,
@@ -61,8 +62,8 @@ export function CatalogThumbnail({
 						.then(async (image) => {
 							if (request.signal.aborted) return;
 							setResult({ identity, frame: image, unavailable: !image });
-							if (!image && kind === "MP4") {
-								const missing = await libraryMp4IsMissing(url, request.signal);
+							if (!image && isLibraryFileKind(kind)) {
+								const missing = await libraryFileIsMissing(url, request.signal);
 								if (request.signal.aborted) return;
 								setResult({
 									identity,
@@ -86,11 +87,21 @@ export function CatalogThumbnail({
 	const label = pending
 		? t("library.thumbnailLoading")
 		: missing
-			? t("library.thumbnailFileMissing")
+			? t(
+					kind === "WEBM"
+						? "library.thumbnailWebmFileMissing"
+						: "library.thumbnailFileMissing",
+				)
 			: unavailable
 				? t("library.previewUnavailable")
 				: fallback;
-	const description = missing ? t("playback.mp4FileMissing") : label;
+	const description = missing
+		? t(
+				kind === "WEBM"
+					? "playback.webmFileMissing"
+					: "playback.mp4FileMissing",
+			)
+		: label;
 	return (
 		<div
 			ref={ref}

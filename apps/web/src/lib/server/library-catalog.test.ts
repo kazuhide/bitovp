@@ -34,28 +34,30 @@ it("falls back without analysis and refuses credentialed or non-HTTP URLs", () =
 	).toBeUndefined();
 	expect(catalogPreview([{ kind: "HLS", url: null }], null)).toBeUndefined();
 });
-it("supports MP4 while preserving manifest preference and refusing unavailable links", () => {
-	const mp4 = { kind: "MP4", url: "https://media.test/video.mp4" };
-	expect(catalogPreview([mp4], null)).toEqual({ ...mp4, time: 5 });
-	expect(catalogPreview([mp4, links[0]], null)?.kind).toBe("DASH");
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("supports %s while preserving manifest preference and refusing unavailable links", (kind) => {
+	const file = { kind, url: `https://media.test/video.${kind.toLowerCase()}` };
+	expect(catalogPreview([file], null)).toEqual({ ...file, time: 5 });
+	expect(catalogPreview([file, links[0]], null)?.kind).toBe("DASH");
 	expect(
-		catalogPreview([{ ...mp4, reason: { code: "INSECURE_HTTP" } }], null),
+		catalogPreview([{ ...file, reason: { code: "INSECURE_HTTP" } }], null),
 	).toBeUndefined();
 });
-it("allows only the local library media endpoint as a relative MP4 source", () => {
-	const url =
-		"/api/library/sources/a1111111-1111-4111-8111-111111111111/media?key=mp4%3Avideo";
-	expect(catalogPreview([{ kind: "MP4", url }], null)?.url).toBe(url);
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("allows only the local library media endpoint as a relative %s source", (kind) => {
+	const url = `/api/library/sources/a1111111-1111-4111-8111-111111111111/media?key=${kind.toLowerCase()}%3Avideo`;
+	expect(catalogPreview([{ kind, url }], null)?.url).toBe(url);
 	for (const invalid of [
-		"//other.example/video.mp4",
+		"//other.example/video.webm",
 		"/api/credentials",
 		`${url}&url=https://other.example`,
-		"/video.mp4",
-	]) {
-		expect(
-			catalogPreview([{ kind: "MP4", url: invalid }], null),
-		).toBeUndefined();
-	}
+		"/video.webm",
+	])
+		expect(catalogPreview([{ kind, url: invalid }], null)).toBeUndefined();
 });
 
 function catalogDatabase(items: Record<string, unknown>[]) {
@@ -165,25 +167,28 @@ it("filters before pagination and counts every search/archive-scoped asset", asy
 	expect(values).toContain(true);
 	expect(values).toContain("%Nature\\_\\%%");
 });
-it("includes private MP4 without a thumbnail, retains analysis-only data and strips private locators", async () => {
-	const privateMp4 = {
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("includes private %s without a thumbnail, retains analysis-only data and strips private locators", async (kind) => {
+	const privateFile = {
 		...asset(0),
 		fileOutputs: [
 			{
-				key: "mp4:video",
-				kind: "MP4",
+				key: `${kind.toLowerCase()}:video`,
+				kind,
 				credentialId: "00000000-0000-4000-8000-000000000002",
 				bucket: "private-bucket",
-				path: "output/video.mp4",
+				path: `output/video.${kind.toLowerCase()}`,
 			},
 		],
 		playbackLinks: [
 			{
-				key: "mp4:video",
-				kind: "MP4",
-				label: "MP4",
+				key: `${kind.toLowerCase()}:video`,
+				kind,
+				label: kind,
 				url: null,
-				path: "output/video.mp4",
+				path: `output/video.${kind.toLowerCase()}`,
 				via: "derived",
 				reason: { code: "NOT_PUBLIC" },
 			},
@@ -207,13 +212,13 @@ it("includes private MP4 without a thumbnail, retains analysis-only data and str
 		],
 	};
 	const { db, prisma } = catalogDatabase([
-		privateMp4,
+		privateFile,
 		analysisOnly,
 		unsupported,
 	]);
 	const result = await listContents(prisma, listQuery.parse({}));
 	expect(result.counts).toEqual({ all: 3, playback: 1, metadata: 2 });
-	expect(result.items[0]?.catalogMetadata?.formats).toEqual(["MP4"]);
+	expect(result.items[0]?.catalogMetadata?.formats).toEqual([kind]);
 	expect(result.items[0]?.catalogPreview?.url).toContain(
 		"/api/library/sources/",
 	);

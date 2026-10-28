@@ -845,28 +845,33 @@ it("warns about excluded provider observations without hiding valid scene data",
 	);
 });
 
-it("offers progressive MP4 in the existing Library playback selector", () => {
+it.each([
+	"MP4",
+	"WEBM",
+] as const)("offers progressive %s in the existing Library playback selector", (kind) => {
 	const source = {
 		...playableSource,
 		snapshot: {
 			...playableSource.snapshot,
 			playbackLinks: [
 				{
-					key: "mp4:v360",
-					kind: "MP4" as const,
-					label: "MP4 360p",
-					url: "https://example.test/video.mp4",
-					path: "video.mp4",
+					key: `${kind.toLowerCase()}:v360`,
+					kind,
+					label: `${kind} 360p`,
+					url: `https://example.test/video.${kind.toLowerCase()}`,
+					path: `video.${kind.toLowerCase()}`,
 					via: "derived",
 				},
 			],
 		},
 	};
 	renderWithQuery(<SourcePanel source={source} />);
-	expect(screen.getByRole("option", { name: "MP4 360p" })).toBeInTheDocument();
+	expect(
+		screen.getByRole("option", { name: `${kind} 360p` }),
+	).toBeInTheDocument();
 	expect(playback.mock.calls.at(-1)?.[0]).toMatchObject({
-		kind: "MP4",
-		url: "https://example.test/video.mp4",
+		kind,
+		url: `https://example.test/video.${kind.toLowerCase()}`,
 	});
 });
 

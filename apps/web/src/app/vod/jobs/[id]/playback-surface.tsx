@@ -1,6 +1,12 @@
 "use client";
 
-import type { PlayerClientConfig, SceneAnalysisDocument } from "@bitovp/core";
+import {
+	isLibraryFileKind,
+	type LibraryFileKind,
+	libraryFileContentType,
+	type PlayerClientConfig,
+	type SceneAnalysisDocument,
+} from "@bitovp/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -9,7 +15,7 @@ import {
 	type PlaybackCorsResult,
 	playbackCorsMessage,
 } from "@/lib/playback-cors-message";
-import { libraryMp4PlaybackError } from "@/lib/playback-mp4-status";
+import { libraryFilePlaybackError } from "@/lib/playback-mp4-status";
 import { SubjectOverlay } from "./subject-overlay";
 
 /**
@@ -53,7 +59,7 @@ function isBitmovinMediaAccessDenied(value: unknown): boolean {
 
 export type PlaybackSurfaceProps = {
 	url: string | null;
-	kind: "HLS" | "DASH" | "MP4" | null;
+	kind: "HLS" | "DASH" | LibraryFileKind | null;
 	/**
 	 *  (design §4.2): the NARROW config object — never the
 	 * settings row. Absent = the open-source default, which is also what
@@ -283,13 +289,13 @@ function PlaybackAttempt({
 	const manifestKey = diagnose?.manifestKey;
 	const diagnoseNow = useCallback(() => {
 		if (asked.current) return;
-		if (kind === "MP4") {
+		if (isLibraryFileKind(kind)) {
 			if (!url) return;
 			asked.current = true;
 			const epoch = diagnosisEpoch.current;
 			const controller = new AbortController();
 			mp4Probe.current = controller;
-			void libraryMp4PlaybackError(url, controller.signal).then((error) => {
+			void libraryFilePlaybackError(url, controller.signal).then((error) => {
 				if (
 					error &&
 					!controller.signal.aborted &&
@@ -298,7 +304,9 @@ function PlaybackAttempt({
 					setPlaybackError(
 						t(
 							error === "missing"
-								? "playback.mp4FileMissing"
+								? kind === "WEBM"
+									? "playback.webmFileMissing"
+									: "playback.mp4FileMissing"
 								: "playback.storageAccessDenied",
 						),
 					);
@@ -428,8 +436,8 @@ function PlaybackAttempt({
 			let loaded = false;
 			try {
 				await instance.load(
-					kind === "MP4"
-						? { progressive: [{ url, type: "video/mp4" }] }
+					isLibraryFileKind(kind)
+						? { progressive: [{ url, type: libraryFileContentType(kind) }] }
 						: kind === "HLS"
 							? { hls: url }
 							: { dash: url },
@@ -543,7 +551,7 @@ function PlaybackAttempt({
 		 */
 		const onNativeError = () => {
 			setPlaybackError(
-				kind === "MP4"
+				isLibraryFileKind(kind)
 					? t("ui.playerFailedToLoad")
 					: t("uiX.hlsPlaybackFailed", {
 							type: `media error ${video.error?.code ?? "?"}`,
@@ -553,7 +561,7 @@ function PlaybackAttempt({
 		};
 
 		(async () => {
-			if (kind === "MP4") {
+			if (isLibraryFileKind(kind)) {
 				video.addEventListener("error", onNativeError);
 				video.src = url;
 				sourceAttached = true;
@@ -982,7 +990,7 @@ function PlaybackAttempt({
 	]);
 
 	const diagnosis =
-		cors && cors !== "failed" && kind !== "MP4"
+		cors && cors !== "failed" && !isLibraryFileKind(kind)
 			? playbackCorsMessage(cors, {
 					kind,
 					provider: useBitmovin ? "bitmovin" : "open-source",

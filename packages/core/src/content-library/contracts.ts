@@ -1,9 +1,20 @@
 import { z } from "zod";
 import type { SceneAnalysisDocument } from "./analysis";
 
+export const libraryFileKindSchema = z.enum(["MP4", "WEBM"]);
+export type LibraryFileKind = z.infer<typeof libraryFileKindSchema>;
+export function isLibraryFileKind(kind: unknown): kind is LibraryFileKind {
+	return kind === "MP4" || kind === "WEBM";
+}
+export function libraryFileContentType(
+	kind: LibraryFileKind,
+): "video/mp4" | "video/webm" {
+	return kind === "WEBM" ? "video/webm" : "video/mp4";
+}
+
 export const libraryPlaybackLinkSchema = z.object({
 	key: z.string(),
-	kind: z.enum(["HLS", "DASH", "SMOOTH", "MP4"]),
+	kind: z.enum(["HLS", "DASH", "SMOOTH", "MP4", "WEBM"]),
 	label: z.string(),
 	url: z.string().nullable(),
 	path: z.string(),
@@ -12,7 +23,7 @@ export const libraryPlaybackLinkSchema = z.object({
 });
 export const libraryFileOutputSchema = z.object({
 	key: z.string(),
-	kind: z.literal("MP4"),
+	kind: libraryFileKindSchema,
 	credentialId: z.string().uuid(),
 	bucket: z.string().min(1),
 	path: z.string().min(1),
@@ -103,7 +114,7 @@ export type ContentView = {
 	archived: boolean;
 	updatedAt: string;
 	catalogPreview?: {
-		kind: "HLS" | "DASH" | "MP4";
+		kind: "HLS" | "DASH" | LibraryFileKind;
 		url: string;
 		time: number;
 		duration?: number;

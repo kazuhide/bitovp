@@ -1,4 +1,4 @@
-import type { ContentView } from "@bitovp/core";
+import { type ContentView, isLibraryFileKind } from "@bitovp/core";
 
 export type ThumbnailSource = NonNullable<ContentView["catalogPreview"]> & {
 	cacheKey?: string;
@@ -155,7 +155,7 @@ export const captureThumbnail: Loader = (source, signal) =>
 		signal.addEventListener("abort", fail, { once: true });
 		document.body.appendChild(video);
 		void (async () => {
-			if (source.kind === "MP4") {
+			if (isLibraryFileKind(source.kind)) {
 				video.src = source.url;
 				return;
 			}

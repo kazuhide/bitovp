@@ -2238,16 +2238,19 @@ describe("PlaybackSurface — the Bitmovin Player branch (ledger #59)", () => {
 	});
 });
 
-describe("PlaybackSurface progressive MP4", () => {
-	it("loads a native MP4, applies scene seeking and releases the source", async () => {
+describe("PlaybackSurface progressive files", () => {
+	it.each([
+		"MP4",
+		"WEBM",
+	] as const)("loads a native %s, applies scene seeking and releases the source", async (kind) => {
 		const load = vi
 			.spyOn(HTMLMediaElement.prototype, "load")
 			.mockImplementation(() => {});
-		const url = "https://media.test/video.mp4";
+		const url = `https://media.test/video.${kind.toLowerCase()}`;
 		const view = renderL(
 			<PlaybackSurface
 				url={url}
-				kind="MP4"
+				kind={kind}
 				seekRequest={{ seconds: 4, requestId: 1 }}
 			/>,
 		);
@@ -2268,11 +2271,19 @@ describe("PlaybackSurface progressive MP4", () => {
 		expect(load).toHaveBeenCalled();
 		load.mockRestore();
 	});
-	it("reports MP4 media failure without calling it HLS and allows retry", async () => {
+	it.each([
+		"MP4",
+		"WEBM",
+	] as const)("reports %s media failure without calling it HLS and allows retry", async (kind) => {
 		const load = vi
 			.spyOn(HTMLMediaElement.prototype, "load")
 			.mockImplementation(() => {});
-		renderL(<PlaybackSurface url="https://media.test/broken.mp4" kind="MP4" />);
+		renderL(
+			<PlaybackSurface
+				url={`https://media.test/broken.${kind.toLowerCase()}`}
+				kind={kind}
+			/>,
+		);
 		const old = document.querySelector("video") as HTMLVideoElement;
 		await waitFor(() => expect(old).toHaveAttribute("src"));
 		fireEvent.error(old);
@@ -2283,27 +2294,40 @@ describe("PlaybackSurface progressive MP4", () => {
 		expect(apiFetch).not.toHaveBeenCalled();
 		load.mockRestore();
 	});
-	it("uses a progressive MP4 source with Bitmovin Player", async () => {
+	it.each([
+		"MP4",
+		"WEBM",
+	] as const)("uses a progressive %s source with Bitmovin Player", async (kind) => {
 		bitmovinCalls.length = 0;
 		renderL(
 			<PlaybackSurface
-				url="https://media.test/video.mp4"
-				kind="MP4"
+				url={`https://media.test/video.${kind.toLowerCase()}`}
+				kind={kind}
 				player={{ provider: "bitmovin", playerLicenseKey: "pk" }}
 			/>,
 		);
 		await waitFor(() =>
 			expect(bitmovinCalls[0]?.loaded).toEqual({
 				progressive: [
-					{ url: "https://media.test/video.mp4", type: "video/mp4" },
+					{
+						url: `https://media.test/video.${kind.toLowerCase()}`,
+						type: `video/${kind.toLowerCase()}`,
+					},
 				],
 			}),
 		);
 	});
-	it.each([
-		"error callback",
-		"load rejection",
-	])("ignores a canceled Bitmovin MP4 %s after switching sources during load", async (failure) => {
+	it.each(
+		(["MP4", "WEBM"] as const).flatMap((kind) =>
+			["error callback", "load rejection"].map((failure) => ({
+				kind,
+				failure,
+			})),
+		),
+	)("ignores a canceled Bitmovin $kind $failure after switching sources during load", async ({
+		kind,
+		failure,
+	}) => {
 		bitmovinCalls.length = 0;
 		bitmovinError = null;
 		playerDestroyed = 0;
@@ -2321,15 +2345,15 @@ describe("PlaybackSurface progressive MP4", () => {
 				),
 			);
 		try {
-			const oldUrl = `/api/library/sources/${JOB}/media?key=mp4%3Aold`;
-			const newUrl = `/api/library/sources/${JOB}/media?key=mp4%3Anew`;
+			const oldUrl = `/api/library/sources/${JOB}/media?key=${kind.toLowerCase()}%3Aold`;
+			const newUrl = `/api/library/sources/${JOB}/media?key=${kind.toLowerCase()}%3Anew`;
 			const player = { provider: "bitmovin" as const, playerLicenseKey: "pk" };
 			const view = renderL(
-				<PlaybackSurface url={oldUrl} kind="MP4" player={player} />,
+				<PlaybackSurface url={oldUrl} kind={kind} player={player} />,
 			);
 			await waitFor(() =>
 				expect(bitmovinCalls[0]?.loaded).toEqual({
-					progressive: [{ url: oldUrl, type: "video/mp4" }],
+					progressive: [{ url: oldUrl, type: `video/${kind.toLowerCase()}` }],
 				}),
 			);
 			const oldError = bitmovinError as
@@ -2337,11 +2361,11 @@ describe("PlaybackSurface progressive MP4", () => {
 				| null;
 			loadGate = null;
 			view.rerender(
-				<PlaybackSurface url={newUrl} kind="MP4" player={player} />,
+				<PlaybackSurface url={newUrl} kind={kind} player={player} />,
 			);
 			await waitFor(() =>
 				expect(bitmovinCalls[1]?.loaded).toEqual({
-					progressive: [{ url: newUrl, type: "video/mp4" }],
+					progressive: [{ url: newUrl, type: `video/${kind.toLowerCase()}` }],
 				}),
 			);
 			await act(async () => {
@@ -2358,7 +2382,10 @@ describe("PlaybackSurface progressive MP4", () => {
 			fetch.mockRestore();
 		}
 	});
-	it("identifies a missing Library MP4 without blaming the codec", async () => {
+	it.each([
+		"MP4",
+		"WEBM",
+	] as const)("identifies a missing Library %s without blaming the codec", async (kind) => {
 		const fetch = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValue(
@@ -2367,12 +2394,14 @@ describe("PlaybackSurface progressive MP4", () => {
 					{ status: 404 },
 				),
 			);
-		const url = `/api/library/sources/${JOB}/media?key=mp4%3Avideo`;
-		renderL(<PlaybackSurface url={url} kind="MP4" />);
+		const url = `/api/library/sources/${JOB}/media?key=${kind.toLowerCase()}%3Avideo`;
+		renderL(<PlaybackSurface url={url} kind={kind} />);
 		const video = document.querySelector("video") as HTMLVideoElement;
 		await waitFor(() => expect(video).toHaveAttribute("src", url));
 		fireEvent.error(video);
-		await screen.findByText("MP4 file is missing from storage.");
+		await screen.findByText(
+			`${kind === "WEBM" ? "WebM" : "MP4"} file is missing from storage.`,
+		);
 		expect(fetch).toHaveBeenCalledWith(
 			url,
 			expect.objectContaining({ headers: { Range: "bytes=0-0" } }),

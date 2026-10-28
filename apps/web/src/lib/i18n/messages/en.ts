@@ -549,6 +549,7 @@ export const en = {
 		sceneLanguagesRetry: "Retry languages",
 		thumbnailLoading: "Loading thumbnail…",
 		thumbnailFileMissing: "MP4 file missing",
+		thumbnailWebmFileMissing: "WebM file missing",
 		updating: "Updating…",
 		sceneLinkChanged:
 			"This scene link no longer matches the saved content. Select a scene again.",
@@ -1338,6 +1339,7 @@ export const en = {
 		previewTitle: "Playback preview",
 		retry: "Retry playback",
 		mp4FileMissing: "MP4 file is missing from storage.",
+		webmFileMissing: "WebM file is missing from storage.",
 		accessDenied:
 			"Access to the output was denied (401/403). For private outputs, check playback URL authentication and read permissions.",
 		storageAccessDenied:

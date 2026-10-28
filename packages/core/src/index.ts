@@ -36,6 +36,9 @@ export {
 	contentEditSchema,
 	contentRegisterSchema,
 	contentUpdateSchema,
+	isLibraryFileKind,
+	type LibraryFileKind,
+	libraryFileContentType,
 	librarySnapshotSchema,
 } from "./content-library/contracts";
 export { sceneAnalysisLocales } from "./content-library/languages";

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { joinFilePath } from "../plan/compiler";
+import { qcMirrorMuxingKind } from "../plan/qc-mirror";
 import type { EncodingPlan } from "../plan/schema";
 import {
 	manifestPlaybackLinks,
@@ -10,19 +11,29 @@ import {
 	publicObjectUrl,
 } from "../playback/public-url";
 import { vmafSourceFor } from "../vmaf/streamable-io";
+import { enumerateQcMirrors } from "../vmaf/targets";
 import type {
+	LibraryFileKind,
 	libraryFileOutputSchema,
 	libraryPlaybackLinkSchema,
 } from "./contracts";
 
-/** Library snapshots retain public MP4 alternatives alongside their manifests. */
+/** Library snapshots retain progressive file alternatives alongside their manifests. */
 export function libraryPlaybackLinks(
 	plan: EncodingPlan,
 	credentials: readonly ({ id: string } & PublicUrlCredential)[],
 ): z.infer<typeof libraryPlaybackLinkSchema>[] {
-	const links: z.infer<typeof libraryPlaybackLinkSchema>[] =
-		manifestPlaybackLinks(plan, credentials);
-	for (const { muxing, path, output, destination } of mp4Outputs(plan)) {
+	const links: z.infer<typeof libraryPlaybackLinkSchema>[] = plan.qc?.only
+		? []
+		: manifestPlaybackLinks(plan, credentials);
+	for (const {
+		key,
+		kind,
+		label,
+		path,
+		output,
+		destination,
+	} of progressiveOutputs(plan)) {
 		const derived = publicObjectUrl({
 			credential:
 				output && "credentialId" in output
@@ -33,9 +44,9 @@ export function libraryPlaybackLinks(
 			acl: destination.acl,
 		});
 		links.push({
-			key: `mp4:${muxing.key}`,
-			kind: "MP4",
-			label: muxing.name ?? muxing.filename,
+			key,
+			kind,
+			label,
 			path,
 			...derived,
 		});
@@ -48,13 +59,13 @@ export function libraryFileOutputs(
 	plan: EncodingPlan,
 ): z.infer<typeof libraryFileOutputSchema>[] {
 	const files: z.infer<typeof libraryFileOutputSchema>[] = [];
-	for (const { muxing, path, output } of mp4Outputs(plan)) {
+	for (const { key, kind, path, output } of progressiveOutputs(plan)) {
 		if (!output) continue;
 		const source = vmafSourceFor(output);
 		if (!source.streamable) continue;
 		files.push({
-			key: `mp4:${muxing.key}`,
-			kind: "MP4",
+			key,
+			kind,
 			credentialId: source.credentialId,
 			bucket: source.bucket,
 			path,
@@ -64,16 +75,52 @@ export function libraryFileOutputs(
 	return files;
 }
 
-function* mp4Outputs(plan: EncodingPlan) {
+function* progressiveOutputs(plan: EncodingPlan) {
+	if (plan.qc?.only) {
+		for (const { rendition, destination, path } of enumerateQcMirrors(plan)) {
+			if (
+				rendition.mode !== "STANDARD" ||
+				plan.muxings.some(
+					(muxing) =>
+						muxing.streamKey === rendition.key &&
+						plan.drm.some((drm) => drm.muxingKey === muxing.key),
+				) ||
+				/[{}]/.test(path)
+			)
+				continue;
+			const output = plan.outputs.find(
+				(item) => item.key === destination.outputKey,
+			);
+			const kind: LibraryFileKind = qcMirrorMuxingKind(rendition.codec);
+			yield {
+				key: `qc-${kind.toLowerCase()}:${rendition.key}`,
+				kind,
+				label: `${rendition.name ?? rendition.streamName ?? rendition.key} ${kind}`,
+				path,
+				output,
+				destination,
+			};
+		}
+		return;
+	}
+
 	for (const muxing of plan.muxings) {
 		if (
-			muxing.kind !== "MP4" ||
+			(muxing.kind !== "MP4" &&
+				!(muxing.kind === "WEBM" && muxing.progressive === true)) ||
 			!muxing.destination ||
-			!/\.mp4$/i.test(muxing.filename) ||
 			plan.drm.some((drm) => drm.muxingKey === muxing.key)
 		)
 			continue;
-		const streams = [muxing.streamKey, ...(muxing.additionalStreamKeys ?? [])];
+		const kind: LibraryFileKind = muxing.kind === "WEBM" ? "WEBM" : "MP4";
+		const filename = muxing.filename ?? "output.webm";
+		if (!(kind === "WEBM" ? /\.webm$/i : /\.mp4$/i).test(filename)) continue;
+		const streams = [
+			muxing.streamKey,
+			...("additionalStreamKeys" in muxing
+				? (muxing.additionalStreamKeys ?? [])
+				: []),
+		];
 		const video = plan.renditions.filter(
 			(rendition) =>
 				streams.includes(rendition.key) &&
@@ -86,12 +133,19 @@ function* mp4Outputs(plan: EncodingPlan) {
 			)
 		)
 			continue;
-		const path = joinFilePath(muxing.destination.path, muxing.filename);
+		const path = joinFilePath(muxing.destination.path, filename);
 		// Per-title template coordinates are not actual objects until resolved.
 		if (/[{}]/.test(path)) continue;
 		const output = plan.outputs.find(
 			(item) => item.key === muxing.destination?.outputKey,
 		);
-		yield { muxing, path, output, destination: muxing.destination };
+		yield {
+			key: `${kind.toLowerCase()}:${muxing.key}`,
+			kind,
+			label: muxing.name ?? filename,
+			path,
+			output,
+			destination: muxing.destination,
+		};
 	}
 }

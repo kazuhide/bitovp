@@ -1754,6 +1754,10 @@ export const en = {
 		computeAttention: "Operator attention required",
 		executionTarget: "Run on",
 		executionLocal: "Local",
+		scoreProcessor: "VMAF processing",
+		experimentalGpuScoring: "GPU (VMAFx, experimental)",
+		decodeProcessors: "Decode — reference: {reference}; encoded: {distorted}",
+		cpuDecodeFallback: "CPU decoding used:",
 		executionBudget: "Budget (USD)",
 		executionBudgetInvalid:
 			"Enter a budget greater than 0 and no more than USD 100,000.",

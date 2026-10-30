@@ -1,11 +1,12 @@
 import "server-only";
+import { localVmafExecutionOf } from "@bitovp/core";
 import { type RenditionRef, renditionLabel } from "@/app/qc/vmaf-shared";
 import { iterateFrames } from "./vmaf-frames";
 
 type ExportJob = {
 	id: string;
 	model: string;
-	results: { id: string; renditionRef: unknown }[];
+	results: { id: string; renditionRef: unknown; provenance?: unknown }[];
 };
 type ReadBlob = (id: string, signal: AbortSignal) => Promise<Uint8Array | null>;
 
@@ -35,8 +36,10 @@ async function* fragments(
 		const ref = result.renditionRef as RenditionRef;
 		const label = renditionLabel(ref, index);
 		const csvLabel = format === "csv" ? csvCell(label) : "";
-		if (format === "json")
-			yield `${index ? ",\n" : "\n"}${indent({ id: result.id, label, renditionRef: ref }, 4).slice(0, -6)},\n      "frames": [`;
+		if (format === "json") {
+			const localExecution = localVmafExecutionOf(result.provenance);
+			yield `${index ? ",\n" : "\n"}${indent({ id: result.id, label, renditionRef: ref, ...(localExecution ? { localExecution } : {}) }, 4).slice(0, -6)},\n      "frames": [`;
+		}
 		let first = true;
 		if (blob)
 			for await (const frame of iterateFrames(blob, signal)) {

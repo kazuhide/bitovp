@@ -2,6 +2,38 @@ import { describe, expect, it } from "vitest";
 import { loadEnv } from "./env";
 
 describe("loadEnv", () => {
+	it("leaves GPU decoding opt-in and validates its device", () => {
+		expect(loadEnv({}).VMAF_DECODE_BACKEND).toBe("cpu");
+		expect(loadEnv({}).VMAF_SCORING_BACKEND).toBe("cpu");
+		expect(loadEnv({}).VMAF_GPU_DEVICE).toBe(0);
+		expect(loadEnv({}).VMAF_FFMPEG_PATH).toBeUndefined();
+		expect(
+			loadEnv({
+				VMAF_DECODE_BACKEND: "auto",
+				VMAF_GPU_DEVICE: "1",
+				VMAF_FFMPEG_PATH: "/opt/vmaf-gpu/ffmpeg",
+			}),
+		).toMatchObject({ VMAF_DECODE_BACKEND: "auto", VMAF_GPU_DEVICE: 1 });
+		for (const value of ["-1", "1.5", "NaN", "Infinity"])
+			expect(() => loadEnv({ VMAF_GPU_DEVICE: value })).toThrow(
+				/VMAF_GPU_DEVICE/,
+			);
+		expect(() => loadEnv({ VMAF_DECODE_BACKEND: "nvenc" })).toThrow(
+			/VMAF_DECODE_BACKEND/,
+		);
+	});
+	it("requires a separate binary and explicit models for experimental CUDA scoring", () => {
+		expect(() => loadEnv({ VMAF_SCORING_BACKEND: "vmafx-cuda" })).toThrow(
+			/requires explicit/,
+		);
+		expect(
+			loadEnv({
+				VMAF_SCORING_BACKEND: "vmafx-cuda",
+				VMAF_FFMPEG_PATH: "/opt/vmafx/ffmpeg",
+				VMAF_MODEL_DIR: "/opt/vmaf/model",
+			}).VMAF_SCORING_BACKEND,
+		).toBe("vmafx-cuda");
+	});
 	it("accepts only the unrestricted deployment and rejects retired or unknown values", () => {
 		for (const value of [undefined, "", "UNRESTRICTED"]) {
 			expect(loadEnv({ DEPLOYMENT_PROFILE: value }).DEPLOYMENT_PROFILE).toBe(

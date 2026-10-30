@@ -1,5 +1,5 @@
 import type { PooledMetrics } from "@bitovp/core";
-import { vmafExecutionSchema } from "@bitovp/core";
+import { localVmafExecutionOf, vmafExecutionSchema } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import type {
 	LiveReportMetadata,
@@ -139,6 +139,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				live?: LiveReportMetadata;
 			};
 			const { live, ...pooled } = pooledRaw;
+			const localExecution = localVmafExecutionOf(r.provenance);
 			results.push({
 				id: r.id,
 				renditionRef: r.renditionRef as RenditionRef,
@@ -146,6 +147,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				frames: series.frames,
 				frameCount: series.frameCount,
 				preview: previewDescriptor(id, job, r, requestOrganizationId(ctx)),
+				...(localExecution ? { localExecution } : {}),
 				...(live ? { live } : {}),
 			});
 		}

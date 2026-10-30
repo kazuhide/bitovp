@@ -6,6 +6,14 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## Unreleased
 
+### Added
+
+- Experimental local VOD GPU decoding and an opt-in external VMAFx CUDA path
+  for VMAF v1.0, with input qualification, model and execution verification,
+  and separate decode/scoring metadata in reports and JSON exports. CPU
+  remains the default; numerical parity and performance on target GPUs are
+  still awaiting qualification. See [setup and limits](./docs/user-guide/GPU-QUALITY.md).
+
 ## [1.0.0-rc.1] - 2026-10-30
 
 First release candidate. This is a preview for installation and workflow

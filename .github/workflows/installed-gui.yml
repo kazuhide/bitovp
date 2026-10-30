@@ -45,6 +45,8 @@ jobs:
           corepack install
       - run: pnpm install --frozen-lockfile
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+      - run: pnpm test:release-gates
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: pnpm --filter @bitovp/db build
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: node --test scripts/installed-gui-smoke.test.mjs scripts/nonpaid-submit-proof.test.mjs scripts/database-restore-proof.test.mjs

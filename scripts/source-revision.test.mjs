@@ -32,10 +32,8 @@ function fixture(run) {
 			join(root, "scripts/source-revision.mjs"),
 			join(directory, "scripts/source-revision.mjs"),
 		);
-		copyFileSync(
-			join(root, "SOURCE_REVISION"),
-			join(directory, "SOURCE_REVISION"),
-		);
+		// Each fixture needs its own substitution, even when run from a release.
+		writeFileSync(join(directory, "SOURCE_REVISION"), "$Format:%H$\n");
 		copyFileSync(
 			join(root, ".gitattributes"),
 			join(directory, ".gitattributes"),

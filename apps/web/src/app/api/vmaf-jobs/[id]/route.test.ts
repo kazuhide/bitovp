@@ -81,6 +81,84 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it.each([
+		"cpu",
+		"cuda",
+	] as const)("projects safe per-result %s scoring provenance", async (backend) => {
+		const localExecution = {
+			version: 1,
+			requestedDecode: "auto",
+			device: 0,
+			decode: {
+				reference: { backend: "cuda" },
+				distorted: { backend: "cpu", reason: "CUDA_UNSUPPORTED_CODEC" },
+			},
+			scoring:
+				backend === "cpu"
+					? { backend, implementation: "libvmaf", model: "vmaf_v1.0.16_3d0h" }
+					: {
+							backend,
+							implementation: "vmafx",
+							model: "vmaf_v1.0.16_3d0h",
+							modelSha256: "a".repeat(64),
+							bitDepth: 10,
+							distortedOriginal: { width: 1280, height: 720, bitdepth: 8 },
+							features: ["adm_cuda"],
+						},
+			attempts: 1,
+		};
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			params: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "result-id",
+					renditionRef: {},
+					pooled: computePooled(frames([95])),
+					framesGzip: null,
+					provenance: {
+						reference: { path: "/private/input.mp4" },
+						stderr: "private diagnostic",
+						localExecution,
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.results[0].localExecution).toEqual(localExecution);
+		expect(JSON.stringify(body)).not.toMatch(/private|stderr|provenance/);
+	});
+
+	it.each([
+		undefined,
+		null,
+		{ version: 2 },
+		{ version: 1, stderr: "/private/input.mp4" },
+	])("omits unknown or invalid local execution metadata: %j", async (localExecution) => {
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			params: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "result-id",
+					renditionRef: {},
+					pooled: computePooled(frames([95])),
+					framesGzip: null,
+					provenance: { localExecution },
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		const body = await response.json();
+		expect(body.results[0]).not.toHaveProperty("localExecution");
+	});
+
 	it("projects safe cloud task status without private configuration or provider errors", async () => {
 		const now = new Date("2026-09-24T00:00:00Z");
 		const execution = {

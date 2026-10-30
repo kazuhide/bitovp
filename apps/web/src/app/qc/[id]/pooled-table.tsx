@@ -11,6 +11,7 @@ import {
 	sortedRenditions,
 	type VmafResultDetail,
 } from "../vmaf-shared";
+import { LocalExecutionSummary } from "./local-execution-summary";
 
 /** A column header with an optional InfoHint. */
 function Th({
@@ -172,6 +173,7 @@ export function PooledTable({ results }: { results: VmafResultDetail[] }) {
 													)}
 												</span>
 											</span>
+											<LocalExecutionSummary execution={r.localExecution} />
 										</td>
 										<ScoreTd value={p.mean} />
 										<ScoreTd value={p.harmonicMean} />

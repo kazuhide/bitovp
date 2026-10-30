@@ -213,6 +213,8 @@ function setup(
 		probeExit?: number;
 		probeJson?: string;
 		localResources?: LocalVmafResources;
+		decodePolicy?: VmafProcessorDeps["decodePolicy"];
+		scoringBackend?: VmafProcessorDeps["scoringBackend"];
 		download?: VmafDownload;
 		concurrency?: number;
 		cloudScore?: VmafProcessorDeps["cloudScore"];
@@ -383,6 +385,8 @@ function setup(
 			throw new Error("spawn not used by the vmaf runner");
 		}),
 		run: vi.fn(async (_bin: string, argv: string[]) => {
+			if (argv.includes("-progress"))
+				return { code: 0, stdout: "frame=3\nprogress=end\n", stderr: "" };
 			// ffprobe call: -show_streams present, no filter_complex.
 			if (argv.includes("-show_streams")) {
 				if (opts.probeJson)
@@ -461,6 +465,8 @@ function setup(
 
 	const emitted: Row[] = [];
 	const deps: VmafProcessorDeps = {
+		decodePolicy: opts.decodePolicy,
+		scoringBackend: opts.scoringBackend,
 		prisma,
 		resolveCredential,
 		runner,
@@ -514,6 +520,95 @@ afterEach(() => {
 });
 
 describe("createVmafProcessor", () => {
+	it("persists actual NVDEC and CPU scoring facts under a separate experimental generation", async () => {
+		const t = setup({
+			decodePolicy: { backend: "auto", device: 0 },
+			probeJson: JSON.stringify({
+				streams: [
+					{
+						codec_type: "video",
+						codec_name: "h264",
+						pix_fmt: "yuv420p",
+						width: 1920,
+						height: 1080,
+						r_frame_rate: "30/1",
+					},
+				],
+			}),
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.job.scoringVersion).toBe(8);
+		expect(
+			t.filterComplexArgs.every(
+				(graph) => graph.includes("hwdownload") && graph.includes("libvmaf="),
+			),
+		).toBe(true);
+		for (const result of t.results)
+			expect(result.provenance).toMatchObject({
+				localExecution: {
+					requestedDecode: "auto",
+					decode: {
+						reference: { backend: "cuda" },
+						distorted: { backend: "cuda" },
+					},
+					scoring: { backend: "cpu", implementation: "libvmaf" },
+				},
+			});
+	});
+
+	it("keeps experimental hardware measurements out of automatic delivery gates", async () => {
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: true,
+			gate: {
+				rules: [{ metric: "VMAF_MEAN", scope: "PER_RENDITION", gte: 80 }],
+				onFail: "BLOCK_MANIFESTS",
+			},
+		};
+		const t = setup({ plan, decodePolicy: { backend: "auto", device: 0 } });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("cannot evaluate delivery gates");
+		expect(t.results).toHaveLength(0);
+		expect(t.runner.run).not.toHaveBeenCalled();
+	});
+
+	it("leaves cloud scoring untouched by local hardware settings", async () => {
+		const cloudScore = vi.fn(async (request) => {
+			await writeFile(request.options.logPath, vmafJson([96]));
+		});
+		const t = setup({
+			decodePolicy: { backend: "cuda", device: 0 },
+			scoringBackend: "vmafx-cuda",
+			cloudScore,
+			job: {
+				params: {
+					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+				},
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(cloudScore).toHaveBeenCalledTimes(2);
+		expect(
+			cloudScore.mock.calls.every(
+				([request]) => !request.options.decode && !request.options.scoring,
+			),
+		).toBe(true);
+		expect(
+			t.results.every((result) => !(result.provenance as Row).localExecution),
+		).toBe(true);
+	});
+
+	it.each([
+		7, 8,
+	])("refuses to relabel an experimental retry as ordinary CPU scoring: generation %s", async (scoringVersion) => {
+		const t = setup({ job: { scoringVersion } });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("configuration changed");
+		expect(t.results).toHaveLength(0);
+		expect(t.runner.run).not.toHaveBeenCalled();
+	});
 	it("limits abort escalation to ordinary local scoring commands", async () => {
 		const t = setup();
 		await t.processor.process({ vmafJobId: VMAF_JOB_ID });

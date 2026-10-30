@@ -1319,11 +1319,17 @@ export {
 	DEFAULT_LINEAR_RADIUS,
 } from "./vmaf/align-linear";
 export * from "./vmaf/cloud";
-export type { VmafCommandOptions, VmafReferenceGeometry } from "./vmaf/command";
+export type {
+	VmafCommandOptions,
+	VmafCudaDecode,
+	VmafReferenceGeometry,
+} from "./vmaf/command";
 export {
 	buildVmafCommand,
 	frameIndexDisplayGeometry,
 	sampleAspectRatioFromProbe,
+	VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+	VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
 	VMAF_FRAME_INDEX_CROP_POLICY,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
@@ -1333,6 +1339,11 @@ export type {
 	LiveSegmentKind,
 } from "./vmaf/live-targets";
 export { enumerateLiveCaptureTargets } from "./vmaf/live-targets";
+export {
+	type LocalVmafExecution,
+	localVmafExecutionOf,
+	localVmafExecutionSchema,
+} from "./vmaf/local-execution";
 export type {
 	ContainerLoopProbe,
 	LoopHole,

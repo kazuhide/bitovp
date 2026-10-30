@@ -1717,6 +1717,10 @@ export const ja = {
 		computeAttention: "管理者による確認が必要",
 		executionTarget: "実行先",
 		executionLocal: "ローカル",
+		scoreProcessor: "VMAFの計算",
+		experimentalGpuScoring: "GPU（VMAFx、試験機能）",
+		decodeProcessors: "デコード — 元映像: {reference}、比較映像: {distorted}",
+		cpuDecodeFallback: "CPUでデコードした理由:",
 		executionBudget: "予算 (USD)",
 		executionBudgetInvalid:
 			"0 より大きく、100,000 USD 以下の予算を入力してください。",

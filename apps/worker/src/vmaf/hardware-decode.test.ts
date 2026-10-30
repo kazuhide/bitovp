@@ -198,6 +198,25 @@ describe("hardware decode qualification", () => {
 	});
 
 	it.each([
+		"Hardware is lacking required capabilities",
+		"Video width 7680 not within range from 48 to 4096",
+		"Video height 4320 not within range from 16 to 4096",
+		"Video macroblock count 129600 exceeds maximum of 65536",
+	])("uses CPU when NVDEC reports unsupported hardware capabilities: %s", async (stderr) => {
+		const { run, options } = setup();
+		run.mockResolvedValue({ code: 1, stdout: "", stderr });
+		expect(await selectHardwareDecode(options)).toEqual({
+			reason: "CUDA_NVDEC_CAPABILITY_UNSUPPORTED",
+		});
+		await expect(
+			selectHardwareDecode({
+				...options,
+				policy: { backend: "cuda", device: 0 },
+			}),
+		).rejects.toThrow("CUDA_NVDEC_CAPABILITY_UNSUPPORTED");
+	});
+
+	it.each([
 		"Invalid data found when processing input",
 		"corrupt decoded frame",
 		"Unknown encoder: libvmaf",
@@ -282,6 +301,13 @@ describe("hardware decode qualification", () => {
 });
 
 describe("CUDA failure classification", () => {
+	it("does not retry a missing model even when a CUDA failure is also reported", () => {
+		expect(
+			hardwareDecodeFailureReason(
+				"Cannot load libcuda.so.1\ncould not load libvmaf model with version vmaf_v1.0.16_3d0h",
+			),
+		).toBeUndefined();
+	});
 	it.each([
 		["Cannot load libcuda.so.1", "CUDA_DRIVER_UNAVAILABLE"],
 		["Could not dynamically load CUDA", "CUDA_DRIVER_UNAVAILABLE"],

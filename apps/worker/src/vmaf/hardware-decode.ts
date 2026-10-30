@@ -1,4 +1,5 @@
 import type { ProcessRunner } from "../feeder/supervisor";
+import { isUnresolvableModel } from "./model-error";
 
 export type DecodePolicy = {
 	backend: "cpu" | "auto" | "cuda";
@@ -73,11 +74,19 @@ export function hardwareDecodeFailureReason(
 	stderr: string,
 ): string | undefined {
 	if (
+		isUnresolvableModel(stderr) ||
 		/invalid data found when processing input|\bcorrupt(?:ed|ion)?\b|invalid (?:nal|obu|frame marker)|error splitting the input into nal|moov atom not found|error during demuxing/i.test(
 			stderr,
 		)
 	)
 		return undefined;
+	// FFmpeg's NVDEC capability check returns EINVAL, not a CUDA_ERROR token.
+	if (
+		/hardware is lacking required capabilities|video (?:width|height) \d+ not within range from \d+ to \d+|video macroblock count \d+ exceeds maximum of \d+/i.test(
+			stderr,
+		)
+	)
+		return "CUDA_NVDEC_CAPABILITY_UNSUPPORTED";
 	if (
 		/cannot (?:load|dlopen) libcuda\b|could not dynamically load cuda|CUDA_ERROR_(?:INSUFFICIENT_DRIVER|SYSTEM_DRIVER_MISMATCH|SYSTEM_NOT_READY)/i.test(
 			stderr,

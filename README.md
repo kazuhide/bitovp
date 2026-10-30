@@ -52,6 +52,15 @@ The UI supports English and Japanese. See [supported features and technical
 limits](./docs/BITMOVIN-API-COVERAGE.md) for restrictions that affect your plans.
 Availability also depends on your Bitmovin account and encoder version.
 
+## Releases and planned improvements
+
+**[v1.0.0-rc.1](https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1)**
+is the first release candidate for installation and workflow testing before
+v1.0.0. Download a source archive from the release and follow the installation
+guide; the application is built locally.
+See the [changelog](./CHANGELOG.md) for changes and the [roadmap](./ROADMAP.md)
+for planned improvements.
+
 ## Installation requirements
 
 Use Docker and **Docker Compose 2.30.0** or newer. Initial database setup also

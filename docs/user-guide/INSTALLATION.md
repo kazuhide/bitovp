@@ -14,8 +14,8 @@ The details below also cover alternative ports and authentication modes.
 
 - Docker Engine or Docker Desktop, running.
 - Docker Compose 2.30.0 or newer.
-- Node.js 24 LTS with current security patches, pnpm 11, and Git for initial
-  database setup.
+- Node.js 24 LTS with current security patches and pnpm 11 for initial setup.
+- Git if you choose to clone the source instead of downloading a release.
 - A current browser and outbound HTTPS access to image registries and providers.
 - Available ports: 3100 for the web application, 5432 for PostgreSQL, and 6379
   for Redis. If these are in use, follow the separate-port and sign-in guidance
@@ -31,6 +31,10 @@ If an existing `.env` explicitly sets the old `WEB_MEMORY_LIMIT=512m`, update it
 to `1g` before recreating Web; the new default does not replace explicit values.
 
 ## 2. Get the application
+
+Download and extract a source archive from [Releases](https://github.com/kazuhide/bitovp/releases).
+Open a terminal in the extracted directory and start at `corepack enable` below.
+Alternatively, clone the repository with the first two commands.
 
 ```bash
 git clone https://github.com/kazuhide/bitovp.git
@@ -148,14 +152,16 @@ instead of initializing new credentials.
 ## 5. Start the application
 
 ```bash
-export GIT_COMMIT=$(git rev-parse HEAD)
-docker compose config --quiet
-docker compose build --pull --no-cache migrate worker web
+GIT_COMMIT=$(node scripts/source-revision.mjs) &&
+export GIT_COMMIT &&
+docker compose config --quiet &&
+docker compose build --pull --no-cache migrate worker web &&
 docker compose up -d --no-build
 ```
 
+The revision command supports both Git checkouts and official source archives.
 The migration service runs before the application. Do not continue if the
-configuration check, build, or migration fails.
+revision lookup, configuration check, build, or migration fails.
 
 For automatic signed webhook and Live heartbeat delivery, optionally enable a
 public receiver using these values before startup:

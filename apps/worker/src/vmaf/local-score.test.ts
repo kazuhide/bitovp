@@ -95,6 +95,124 @@ describe("local VMAF execution", () => {
 		expect(argv.join(" ")).toContain("feature=name=psnr");
 	});
 
+	describe.each([
+		{
+			name: "container crop",
+			reason: "CUDA_CONTAINER_CROP_REQUIRES_CPU",
+			sideData: {
+				side_data_type: "Frame Cropping",
+				crop_top: 9,
+				crop_bottom: 9,
+				crop_left: 16,
+				crop_right: 16,
+			},
+		},
+		{
+			name: "display matrix",
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+			sideData: {
+				side_data_type: "Display Matrix",
+				rotation: 180,
+				displaymatrix: [
+					"",
+					"00000000:       -65536           0           0",
+					"00000001:            0      -65536           0",
+					"00000002:            0           0  1073741824",
+					"",
+				].join("\n"),
+			},
+		},
+	])("$name input selection", ({ reason, sideData }) => {
+		const metadata = JSON.parse(PROBE);
+		metadata.streams[0].side_data_list = [sideData];
+		const transformedProbe = JSON.stringify(metadata);
+
+		it.each([
+			"reference",
+			"distorted",
+		] as const)("keeps only the transformed %s leg on CPU using the existing probes", async (leg) => {
+			const h = harness();
+			const other = leg === "reference" ? "distorted" : "reference";
+			const result = await runLocalVmafScore(
+				{ ...h.deps, decodePolicy: { backend: "auto", device: 0 } },
+				OPTIONS,
+				{
+					referenceProbe: leg === "reference" ? transformedProbe : PROBE,
+					distortedProbe: leg === "distorted" ? transformedProbe : PROBE,
+				},
+			);
+			expect(result.execution).toMatchObject({
+				requestedDecode: "auto",
+				decode: {
+					[leg]: { backend: "cpu", reason },
+					[other]: { backend: "cuda" },
+				},
+				scoring: { backend: "cpu", implementation: "libvmaf" },
+				attempts: 1,
+			});
+			expect(h.run).toHaveBeenCalledTimes(2);
+			expect(
+				h.run.mock.calls.some(([, argv]) => argv.includes("-show_streams")),
+			).toBe(false);
+			const qualification = h.run.mock.calls[0]?.[1] ?? [];
+			expect(qualification).toContain("-progress");
+			expect(qualification).toContain(
+				other === "reference" ? OPTIONS.referencePath : OPTIONS.distortedPath,
+			);
+			expect(qualification).not.toContain(
+				leg === "reference" ? OPTIONS.referencePath : OPTIONS.distortedPath,
+			);
+			const argv = h.run.mock.calls.at(-1)?.[1] ?? [];
+			expect(argv).toEqual(
+				buildVmafCommand({
+					...OPTIONS,
+					decode: { [other]: { device: 0, downloadFormat: "nv12" } },
+				}),
+			);
+			const inputFlags = [
+				"-hwaccel",
+				"cuda",
+				"-hwaccel_device",
+				"0",
+				"-hwaccel_output_format",
+				"cuda",
+			];
+			const secondInput = argv.indexOf("-i", argv.indexOf("-i") + 1);
+			expect(argv.slice(0, secondInput + 2)).toEqual([
+				"-hide_banner",
+				"-nostdin",
+				...(other === "distorted" ? inputFlags : []),
+				"-i",
+				OPTIONS.distortedPath,
+				...(other === "reference" ? inputFlags : []),
+				"-i",
+				OPTIONS.referencePath,
+			]);
+		});
+
+		it.each([
+			"reference",
+			"distorted",
+		] as const)("rejects strict CUDA before scoring a transformed %s leg", async (leg) => {
+			const score = vi.fn(async () => ok);
+			const h = harness(score);
+			await expect(
+				runLocalVmafScore(
+					{ ...h.deps, decodePolicy: { backend: "cuda", device: 0 } },
+					OPTIONS,
+					{
+						referenceProbe: leg === "reference" ? transformedProbe : PROBE,
+						distortedProbe: leg === "distorted" ? transformedProbe : PROBE,
+					},
+				),
+			).rejects.toThrow(reason);
+			expect(score).not.toHaveBeenCalled();
+			expect(
+				h.run.mock.calls.every(([, argv]) => argv.includes("-progress")),
+			).toBe(true);
+		});
+	});
+
 	it("waits for GPU close and removes its partial log before one CPU retry", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "bitovp-decode-retry-"));
 		const logPath = join(dir, "scores.json");

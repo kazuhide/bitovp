@@ -24,6 +24,73 @@ const formats = new Map<string, { depth: number; format: "nv12" | "p010le" }>([
 const error = (code: string) =>
 	new Error(`CUDA decode qualification failed (${code}).`);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Check every fixed-point coefficient: zero rotation can still hide a mirror. */
+function identityDisplayMatrix(value: unknown): boolean {
+	if (typeof value !== "string") return false;
+	const rows = value.trim().split(/\r?\n/);
+	const identity = [
+		[65536, 0, 0],
+		[0, 65536, 0],
+		[0, 0, 1073741824],
+	];
+	if (rows.length !== identity.length) return false;
+	return rows.every((row, index) => {
+		const fields = /^[\da-f]+:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*$/i.exec(
+			row.trim(),
+		);
+		return (
+			fields !== null &&
+			identity[index]?.every(
+				(expected, column) => Number(fields[column + 1]) === expected,
+			) === true
+		);
+	});
+}
+
+function presentationTransformReason(
+	video: Record<string, unknown>,
+): string | undefined {
+	const sideData = video.side_data_list;
+	if (sideData !== undefined && !Array.isArray(sideData))
+		return "CUDA_INVALID_PROBE";
+	// Software decoding applies these presentation transforms; NVDEC can leave
+	// the coded pixels unchanged. A successful CUDA probe cannot prove parity.
+	for (const item of sideData ?? []) {
+		if (!isRecord(item)) return "CUDA_INVALID_PROBE";
+		if (item.side_data_type === "Frame Cropping") {
+			if (
+				!["crop_top", "crop_bottom", "crop_left", "crop_right"].every(
+					(key) => item[key] === 0,
+				)
+			)
+				return "CUDA_CONTAINER_CROP_REQUIRES_CPU";
+		} else if (item.side_data_type === "Display Matrix") {
+			if (
+				!identityDisplayMatrix(item.displaymatrix) ||
+				(item.rotation !== undefined && item.rotation !== 0)
+			)
+				return "CUDA_DISPLAY_MATRIX_REQUIRES_CPU";
+		}
+	}
+	const tags = video.tags;
+	if (isRecord(tags) && Object.hasOwn(tags, "rotate")) {
+		const value = tags.rotate;
+		const angle =
+			typeof value === "number"
+				? value
+				: typeof value === "string" && value.trim()
+					? Number(value)
+					: Number.NaN;
+		if (!Number.isFinite(angle) || angle % 360 !== 0)
+			return "CUDA_DISPLAY_MATRIX_REQUIRES_CPU";
+	}
+	return undefined;
+}
+
 function inputFormat(
 	probe: string,
 ): { format: "nv12" | "p010le" } | { reason: string } {
@@ -66,6 +133,8 @@ function inputFormat(
 	}
 	if (video.codec_name === "h264" && pixel.depth !== 8)
 		return { reason: "CUDA_UNSUPPORTED_H264_DEPTH" };
+	const reason = presentationTransformReason(video);
+	if (reason) return { reason };
 	return { format: pixel.format };
 }
 

@@ -35,6 +35,22 @@ const setup = () => {
 	};
 };
 
+const identityDisplayMatrix = [
+	"",
+	"00000000:        65536           0           0",
+	"00000001:            0       65536           0",
+	"00000002:            0           0  1073741824",
+	"",
+].join("\n");
+
+const containerCrop = {
+	side_data_type: "Frame Cropping",
+	crop_top: 9,
+	crop_bottom: 9,
+	crop_left: 16,
+	crop_right: 16,
+};
+
 afterEach(() => vi.useRealTimers());
 
 describe("hardware decode qualification", () => {
@@ -100,6 +116,248 @@ describe("hardware decode qualification", () => {
 			abortKillAfterMs: 250,
 			signal: expect.any(AbortSignal),
 		});
+	});
+
+	it.each([
+		{
+			label: "container clean aperture",
+			video: { side_data_list: [containerCrop] },
+			reason: "CUDA_CONTAINER_CROP_REQUIRES_CPU",
+		},
+		{
+			label: "90-degree display rotation",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 90,
+						displaymatrix:
+							"\n00000000:            0       65536           0\n00000001:       -65536           0           0\n00000002:            0           0  1073741824\n",
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "180-degree display rotation",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 180,
+						displaymatrix:
+							"\n00000000:       -65536           0           0\n00000001:            0      -65536           0\n00000002:            0           0  1073741824\n",
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "zero-rotation mirror matrix",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 0,
+						displaymatrix: identityDisplayMatrix.replace(
+							"       65536           0\n00000002",
+							"      -65536           0\n00000002",
+						),
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "missing display matrix despite zero rotation",
+			video: {
+				side_data_list: [{ side_data_type: "Display Matrix", rotation: 0 }],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "malformed display matrix",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 0,
+						displaymatrix: "not a matrix",
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "truncated display matrix",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 0,
+						displaymatrix: identityDisplayMatrix.split("00000002:")[0],
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "almost-unit display matrix",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 0,
+						displaymatrix: identityDisplayMatrix.replace("65536", "65535"),
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "unit matrix with conflicting rotation",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 90,
+						displaymatrix: identityDisplayMatrix,
+					},
+				],
+			},
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+		{
+			label: "legacy rotation tag",
+			video: { tags: { rotate: "90" } },
+			reason: "CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
+		},
+	])("keeps $label on CPU before launching a CUDA process", async ({
+		video,
+		reason,
+	}) => {
+		const { run, options } = setup();
+		expect(
+			await selectHardwareDecode({ ...options, probe: probe(video) }),
+		).toEqual({ reason });
+		expect(run).not.toHaveBeenCalled();
+		await expect(
+			selectHardwareDecode({
+				...options,
+				policy: { backend: "cuda", device: 2 },
+				probe: probe(video),
+			}),
+		).rejects.toThrow(reason);
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			label: "all-zero container crop",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Frame Cropping",
+						crop_top: 0,
+						crop_bottom: 0,
+						crop_left: 0,
+						crop_right: 0,
+					},
+				],
+			},
+		},
+		{
+			label: "exact unit display matrix with zero rotation",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 0,
+						displaymatrix: identityDisplayMatrix,
+					},
+				],
+			},
+		},
+		{
+			label: "unrelated HDR side data",
+			video: {
+				side_data_list: [
+					{
+						side_data_type: "Mastering display metadata",
+						red_x: "34000/50000",
+					},
+					{
+						side_data_type: "Content light level metadata",
+						max_content: 1000,
+						max_average: 400,
+					},
+				],
+			},
+		},
+	])("still qualifies CUDA for $label", async ({ video }) => {
+		const { run, options } = setup();
+		expect(
+			await selectHardwareDecode({ ...options, probe: probe(video) }),
+		).toEqual({ cuda: { device: 2, downloadFormat: "nv12" } });
+		expect(run).toHaveBeenCalledOnce();
+	});
+
+	it("ignores presentation metadata on audio and later video streams", async () => {
+		const { run, options } = setup();
+		const value = JSON.stringify({
+			streams: [
+				{
+					codec_type: "audio",
+					codec_name: "aac",
+					side_data_list: [containerCrop],
+				},
+				{ codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p" },
+				{
+					codec_type: "video",
+					codec_name: "h264",
+					pix_fmt: "yuv420p",
+					side_data_list: [containerCrop],
+				},
+			],
+		});
+		expect(await selectHardwareDecode({ ...options, probe: value })).toEqual({
+			cuda: { device: 2, downloadFormat: "nv12" },
+		});
+		expect(run).toHaveBeenCalledOnce();
+	});
+
+	it("keeps the first cropped video on CPU despite a later plain video", async () => {
+		const { run, options } = setup();
+		const value = JSON.stringify({
+			streams: [
+				{
+					codec_type: "video",
+					codec_name: "h264",
+					pix_fmt: "yuv420p",
+					side_data_list: [containerCrop],
+				},
+				{ codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p" },
+			],
+		});
+		expect(await selectHardwareDecode({ ...options, probe: value })).toEqual({
+			reason: "CUDA_CONTAINER_CROP_REQUIRES_CPU",
+		});
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("keeps CPU policy a no-op even with presentation transforms", async () => {
+		const { run, options } = setup();
+		expect(
+			await selectHardwareDecode({
+				...options,
+				policy: { backend: "cpu", device: 0 },
+				probe: probe({
+					side_data_list: [containerCrop],
+					tags: { rotate: "90" },
+				}),
+			}),
+		).toEqual({});
+		expect(run).not.toHaveBeenCalled();
 	});
 
 	it.each([

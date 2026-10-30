@@ -48,6 +48,7 @@
 			"scripts/site-smoke.mjs",
 			"scripts/guide-smoke.mjs",
 			"scripts/check-site*.mjs",
+			"scripts/source-revision*.mjs",
 			"*.json",
 			"!**/node_modules",
 			"!**/.claude",

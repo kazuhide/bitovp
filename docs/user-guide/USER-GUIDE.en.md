@@ -10,11 +10,13 @@ If an administrator has already installed bitovp, obtain the application URL and
 
 The following steps describe a new Docker installation on macOS or Linux. For an existing installation, read [Upgrades, backups, and shutdown](https://kazuhide.github.io/bitovp/guide/appendix/#upgrades-backups-and-shutdown) before changing its database.
 
-Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Git, Node.js 24 LTS with current security patches, and pnpm 11. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
+Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Node.js 24 LTS with current security patches and pnpm 11. Git is needed if you clone the source instead of downloading a release. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
 
 Compose 2.30.0 or later is required because `env_file.format: raw` preserves the `$` characters in password hashes. The Web container's default memory limit is 1 GiB. If an older `.env` still contains `WEB_MEMORY_LIMIT=512m`, changing the default does not update that value. Change it to `1g` if needed.
 
 #### Getting the app
+
+Download and extract a source archive from [Releases](https://github.com/kazuhide/bitovp/releases). Open a terminal in that directory and start at `corepack enable` below. Alternatively, use the first two commands to clone the repository.
 
 ```sh
 git clone https://github.com/kazuhide/bitovp.git
@@ -65,13 +67,14 @@ Administrative connection information is saved in `.env.migrate`, and the restri
 #### Startup and first sign-in
 
 ```sh
-export GIT_COMMIT=$(git rev-parse HEAD)
-docker compose config --quiet
-docker compose build --pull --no-cache migrate worker web
+GIT_COMMIT=$(node scripts/source-revision.mjs) &&
+export GIT_COMMIT &&
+docker compose config --quiet &&
+docker compose build --pull --no-cache migrate worker web &&
 docker compose up -d --no-build
 ```
 
-If configuration validation, the build, or migration fails, fix the cause before continuing.
+The revision command works in both Git checkouts and official source archives. If revision lookup, configuration validation, the build, or migration fails, fix the cause before continuing.
 
 ```sh
 curl --connect-timeout 2 --max-time 5 -fsS \

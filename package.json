@@ -1,6 +1,6 @@
 {
 	"name": "bitovp",
-	"version": "0.1.0",
+	"version": "1.0.0-rc.1",
 	"private": true,
 	"packageManager": "pnpm@11.28.8+sha512.f6988a32046b9a3f78d7d7ee0747926bbe905ff9dff73bf19abb87bd7d1906a2ac90d93f73be32b5f9e14c2899569bcb0c9c5ec8a19e083f5d71bbab6dd9e0b8",
 	"engines": {
@@ -12,7 +12,7 @@
 		"test": "turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner",
 		"test:repo-contracts": "pnpm --filter @bitovp/web exec vitest run src/__tests__/api-usage-doc.test.ts src/__tests__/constraint-range.test.ts src/__tests__/documentation-guides.test.ts src/__tests__/screen-names.test.ts src/__tests__/onboarding-contract.test.ts src/__tests__/docker-context.test.ts && pnpm --filter @bitovp/core exec vitest run src/plan/fixture-registry.test.ts && pnpm test:api-coverage",
 		"test:api-coverage": "node --test scripts/api-coverage*.test.mjs && node scripts/api-coverage-current.mjs --check",
-		"test:release-gates": "node --test scripts/release-gates.test.mjs",
+		"test:release-gates": "node --test scripts/release-gates.test.mjs scripts/source-revision.test.mjs",
 		"test:installed-gui": "node scripts/installed-gui-smoke.mjs",
 		"test:site": "node scripts/site-smoke.mjs",
 		"test:postgres-runner": "node --test scripts/postgres-integration.test.mjs",

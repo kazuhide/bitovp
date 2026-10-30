@@ -93,7 +93,28 @@ describe("security maintenance images", () => {
 			workflow.match(/mktemp -d "\$RUNNER_TEMP\/corepack-bitovp\.XXXXXX"/g)
 				?.length,
 		).toBe(installs);
-		expect(workflow.match(/>> "\$GITHUB_ENV"/g)?.length).toBe(installs);
+		expect(
+			workflow.match(
+				/printf 'COREPACK_HOME=%s\\n' "\$COREPACK_HOME" >> "\$GITHUB_ENV"/g,
+			)?.length,
+		).toBe(installs);
+	});
+
+	it("exports the source archive directory separately from the package-manager cache", () => {
+		const workflow = readFileSync(
+			join(root, ".github/workflows/installed-gui.yml"),
+			"utf8",
+		);
+		expect(workflow).toContain('git archive HEAD | tar -x -C "$archive_dir"');
+		expect(workflow).toContain('test ! -e "$archive_dir/.git"');
+		expect(
+			workflow.match(
+				/printf 'BITOVP_ARCHIVE_DIR=%s\\n' "\$archive_dir" >> "\$GITHUB_ENV"/g,
+			)?.length,
+		).toBe(1);
+		expect(workflow).toMatch(
+			/working-directory: \$\{\{ env\.BITOVP_ARCHIVE_DIR \}\}/,
+		);
 	});
 });
 

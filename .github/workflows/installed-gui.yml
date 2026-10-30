@@ -25,11 +25,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Prepare the distributed source archive without Git metadata
+        run: |
+          archive_dir=$(mktemp -d "$RUNNER_TEMP/bitovp-source.XXXXXX")
+          git archive HEAD | tar -x -C "$archive_dir"
+          test ! -e "$archive_dir/.git"
+          printf 'BITOVP_ARCHIVE_DIR=%s\n' "$archive_dir" >> "$GITHUB_ENV"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           check-latest: true
       - name: Install the pinned package manager
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
         run: |
           COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
           export COREPACK_HOME
@@ -37,11 +44,20 @@ jobs:
           corepack enable
           corepack install
       - run: pnpm install --frozen-lockfile
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+      - run: pnpm test:release-gates
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: pnpm --filter @bitovp/db build
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: node --test scripts/installed-gui-smoke.test.mjs scripts/nonpaid-submit-proof.test.mjs scripts/database-restore-proof.test.mjs
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: pnpm --filter @bitovp/web exec tsc --project ../../tests/browser/tsconfig.json
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: pnpm exec playwright install --with-deps --only-shell chromium
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: node scripts/installed-gui-smoke.mjs --state-file "$RUNNER_TEMP/bitovp-gui-state.json"
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - name: Remove only this job's owned test resources
-        if: always()
+        if: always() && env.BITOVP_ARCHIVE_DIR != ''
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
         run: node scripts/installed-gui-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-gui-state.json"

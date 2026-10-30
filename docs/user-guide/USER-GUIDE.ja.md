@@ -10,11 +10,13 @@ bitovp のインストールから、初回管理者の作成、Bitmovin とス�
 
 以下はmacOS または Linux に Docker で新しく導入する場合の手順です。導入済みの環境を更新する場合は、データベースを変更する前に[第18章の更新・バックアップ](https://kazuhide.github.io/bitovp/ja/guide/appendix/#upgrades-backups-and-shutdown)を確認してください。
 
-Docker Engine または Docker Desktop と、Docker Compose 2.30.0 以降を用意します。初期設定には Git、セキュリティ修正を適用した Node.js 24 LTS、pnpm 11 も使います。既定のポートは、Web が3100、PostgreSQL が5432、Redis が6379です。
+Docker Engine または Docker Desktop と、Docker Compose 2.30.0 以降を用意します。初期設定には、セキュリティ修正を適用した Node.js 24 LTS と pnpm 11 も使います。ソースをダウンロードせず clone する場合は Git も必要です。既定のポートは、Web が3100、PostgreSQL が5432、Redis が6379です。
 
 Compose 2.30.0 以降が必要なのは、パスワードハッシュ内の `$` をそのまま読み込む `env_file.format: raw` を使っているためです。Web コンテナーのメモリ上限は既定で1 GiBです。以前の `.env` に `WEB_MEMORY_LIMIT=512m` が残っている場合は、既定値の更新だけでは変わりません。必要に応じて `1g` に変更します。
 
 #### アプリの取得
+
+[Releases](https://github.com/kazuhide/bitovp/releases)からソースアーカイブをダウンロードして展開します。展開したディレクトリでターミナルを開き、以下の `corepack enable` から実行してください。Git で取得する場合は、最初の2行から実行します。
 
 ```sh
 git clone https://github.com/kazuhide/bitovp.git
@@ -65,13 +67,14 @@ pnpm --filter @bitovp/db db:runtime:prepare
 #### 起動と初回ログイン
 
 ```sh
-export GIT_COMMIT=$(git rev-parse HEAD)
-docker compose config --quiet
-docker compose build --pull --no-cache migrate worker web
+GIT_COMMIT=$(node scripts/source-revision.mjs) &&
+export GIT_COMMIT &&
+docker compose config --quiet &&
+docker compose build --pull --no-cache migrate worker web &&
 docker compose up -d --no-build
 ```
 
-設定確認、ビルド、マイグレーションのいずれかが失敗した場合は、原因を解消してから進めます。
+リビジョンを取得するコマンドは、Git で取得したソースと公式ソースアーカイブのどちらでも使えます。リビジョンの取得、設定確認、ビルド、マイグレーションのいずれかが失敗した場合は、原因を解消してから進めます。
 
 ```sh
 curl --connect-timeout 2 --max-time 5 -fsS \

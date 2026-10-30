@@ -31,6 +31,7 @@ import {
 	assertSubmissionIsolation,
 	restoreFailureSummary,
 } from "./nonpaid-submit-proof.mjs";
+import { sourceRevision } from "./source-revision.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
@@ -1080,7 +1081,7 @@ export async function runFixture({
 	notify = console.log,
 } = {}) {
 	validateExecutionMode(env, runtimeOnly);
-	const clean = childEnvironment(env);
+	childEnvironment(env);
 	if (statePath)
 		assert(
 			isAbsolute(statePath) &&
@@ -1113,9 +1114,7 @@ export async function runFixture({
 			flag: "wx",
 		});
 		stateWritten = true;
-		const revision = await execute("git", ["rev-parse", "HEAD"], {
-			env: clean,
-		});
+		const revision = sourceRevision(ROOT);
 		const primary = await install(state, {
 			env,
 			execute,

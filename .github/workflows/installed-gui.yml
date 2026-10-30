@@ -31,7 +31,7 @@ jobs:
           git archive HEAD | tar -x -C "$archive_dir"
           test ! -e "$archive_dir/.git"
           printf 'BITOVP_ARCHIVE_DIR=%s\n' "$archive_dir" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           check-latest: true

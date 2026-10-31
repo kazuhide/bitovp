@@ -105,42 +105,51 @@ workspace, and explicit host/device copy counters. Shared-memory buffer copies
 do not necessarily represent PCI Express traffic. GPU utilization alone does
 not establish a speed improvement.
 
-## Measured example
+## Measured examples
 
-On a Ryzen AI 9 HX 370 with a Radeon 890M and an RTX 5060 Ti, the official
-CPU scorer was faster than either GPU path for the tested inputs. NVIDIA
-hardware decoding reduced CPU time and host memory substantially.
+The following standalone results compare the implementation before GPU kernel
+optimization (`668ee7c`) with the optimized implementation (`c4d4af8`). They use
+an AMD Ryzen AI 9 HX 370, Radeon 890M, and NVIDIA RTX 5060 Ti.
 
-The following results use the same 30-second, 1920 × 1080 Big Buck Bunny
-input pair, all 720 frames, the `vmaf_v1.0.16_3d0h` model, and a common
-10-bit comparison format. Times are medians of three runs. Host memory is
-the largest process peak across those runs.
+Each input pair contains 30 seconds of 1920 × 1080 H.264 video: 720 frames for
+Big Buck Bunny and 750 for Valkaama. A high-quality H.264 reference and a
+4 Mbps H.264 encode were prepared from each source. These are performance
+fixtures, not lossless reference masters for judging absolute picture quality.
+Both implementations use the same files, the `vmaf_v1.0.16_3d0h` model, a common
+10-bit comparison format, and two decoder threads per input. Values are medians
+of three complete runs, in seconds.
 
-| Processing path | CPU scoring threads | Elapsed time | CPU time | Peak host memory |
-| --- | ---: | ---: | ---: | ---: |
-| Official CPU scorer | 4 | 6.35 s | 28.22 s | 561 MiB |
-| Official CPU scorer | 8 | 6.19 s | 27.56 s | 917 MiB |
-| CUDA, software decoding | 1 | 11.43 s | 12.55 s | 223 MiB |
-| CUDA, NVDEC decoding | 1 | 8.12 s | 1.45 s | 220 MiB |
-| AMD Vulkan, software decoding | 1 | 29.38 s | 14.95 s | 237 MiB |
+| Content | Implementation | CPU scoring threads | CPU | NVDEC + CUDA | AMD Vulkan |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Big Buck Bunny | Before optimization | 4 | 6.46 | 8.72 | 29.24 |
+| Big Buck Bunny | Optimized | 4 | 6.47 | 5.94 | 20.50 |
+| Valkaama | Before optimization | 8 | 9.61 | 9.04 | 28.64 |
+| Valkaama | Optimized | 4 | 9.90 | 6.04 | 20.26 |
 
-CPU time sums the time used by all process threads; it can exceed elapsed
-time. The NVIDIA paths allocated approximately 127 MiB of tracked GPU
-workspace and the AMD path approximately 71 MiB. These counters exclude
-driver allocations and decoder surfaces. Host memory excludes discrete GPU
-memory; these columns cannot be treated as total machine memory use.
+CPU scoring threads were selected from four- and eight-thread trials for each
+content and implementation; the candidates were close enough that the selected
+count changed for Valkaama. GPU runs use one host scoring thread. The Vulkan
+path uses software decoding; the NVIDIA path keeps decoded pictures on the GPU.
 
-A separate 3840 × 2160 test pair with 128 frames and the
-`vmaf_v1.0.16_3d0h_2160` model took 4.12 s on the CPU with four scoring
-threads, 6.11 s with NVDEC/CUDA, and 24.08 s with AMD Vulkan. That short
-repeated test clip is a separate workload, not a 4K version of the movie.
-Increasing CPU scoring threads to 24 did not improve either longer test
-and increased memory use.
+The optimization distributes integer row reductions across more GPU threads
+and keeps small matrix intermediates in shared memory, the GPU's on-chip working
+storage. Per-pixel arithmetic, row rounding, models, and parity tolerances are
+preserved. The NVIDIA path became faster than the CPU in these examples. The
+AMD GPU also improved, but remained slower than the CPU. GPU residency alone
+does not ensure a speed advantage: small dependent stages and synchronization
+can still limit useful parallel work. Measure the files and models used in your
+own workload before choosing a backend.
 
-These are standalone scorer measurements, including process startup,
-decoding, result serialization, and shutdown. All GPU feature values,
-frame scores, and pooled scores were checked against the CPU result
-after timing. The worker's mandatory CPU verification adds work and is
-not included in these GPU times. The resident NVDEC/CUDA path remains a
-standalone option. These results support choosing CPU scoring for latency
-on this machine; they do not establish a general GPU speed advantage.
+Times include process startup, input hashing, decoding, result serialization,
+and shutdown. All GPU feature values, frame scores, and pooled scores were
+checked against separate CPU results after timing. The worker's input
+preparation and mandatory CPU verification are not included in these GPU times.
+The resident NVDEC/CUDA path remains standalone-only, so these figures do not
+represent current GUI job throughput.
+
+The NVIDIA path used about 127 MiB of tracked GPU workspace and the AMD path
+about 71 MiB. These counters exclude driver allocations and decoder surfaces.
+Host process memory, discrete GPU memory, and shared APU memory are different
+measurements and must not be added together without accounting for shared pages.
+The AMD hardware qualification here covers the Radeon 890M APU; AMD discrete
+GPUs require separate qualification.

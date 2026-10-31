@@ -122,8 +122,8 @@ describe("catalogue parity", () => {
 		// GPU execution metadata adds one long decoder description.
 		pinWithDriftAid(long.length, 1450, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// GPU execution metadata adds three distinct short Japanese labels.
-		pinWithDriftAid(short.size, 2812, "short");
+		// GPU execution metadata adds four distinct short Japanese labels.
+		pinWithDriftAid(short.size, 2813, "short");
 	});
 
 	/**

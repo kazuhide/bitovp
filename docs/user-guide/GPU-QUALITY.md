@@ -104,3 +104,43 @@ against the CPU result. It records wall time, CPU time, process memory, GPU
 workspace, and explicit host/device copy counters. Shared-memory buffer copies
 do not necessarily represent PCI Express traffic. GPU utilization alone does
 not establish a speed improvement.
+
+## Measured example
+
+On a Ryzen AI 9 HX 370 with a Radeon 890M and an RTX 5060 Ti, the official
+CPU scorer was faster than either GPU path for the tested inputs. NVIDIA
+hardware decoding reduced CPU time and host memory substantially.
+
+The following results use the same 30-second, 1920 × 1080 Big Buck Bunny
+input pair, all 720 frames, the `vmaf_v1.0.16_3d0h` model, and a common
+10-bit comparison format. Times are medians of three runs. Host memory is
+the largest process peak across those runs.
+
+| Processing path | CPU scoring threads | Elapsed time | CPU time | Peak host memory |
+| --- | ---: | ---: | ---: | ---: |
+| Official CPU scorer | 4 | 6.35 s | 28.22 s | 561 MiB |
+| Official CPU scorer | 8 | 6.19 s | 27.56 s | 917 MiB |
+| CUDA, software decoding | 1 | 11.43 s | 12.55 s | 223 MiB |
+| CUDA, NVDEC decoding | 1 | 8.12 s | 1.45 s | 220 MiB |
+| AMD Vulkan, software decoding | 1 | 29.38 s | 14.95 s | 237 MiB |
+
+CPU time sums the time used by all process threads; it can exceed elapsed
+time. The NVIDIA paths allocated approximately 127 MiB of tracked GPU
+workspace and the AMD path approximately 71 MiB. These counters exclude
+driver allocations and decoder surfaces. Host memory excludes discrete GPU
+memory; these columns cannot be treated as total machine memory use.
+
+A separate 3840 × 2160 test pair with 128 frames and the
+`vmaf_v1.0.16_3d0h_2160` model took 4.12 s on the CPU with four scoring
+threads, 6.11 s with NVDEC/CUDA, and 24.08 s with AMD Vulkan. That short
+repeated test clip is a separate workload, not a 4K version of the movie.
+Increasing CPU scoring threads to 24 did not improve either longer test
+and increased memory use.
+
+These are standalone scorer measurements, including process startup,
+decoding, result serialization, and shutdown. All GPU feature values,
+frame scores, and pooled scores were checked against the CPU result
+after timing. The worker's mandatory CPU verification adds work and is
+not included in these GPU times. The resident NVDEC/CUDA path remains a
+standalone option. These results support choosing CPU scoring for latency
+on this machine; they do not establish a general GPU speed advantage.

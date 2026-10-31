@@ -22,17 +22,39 @@ describe("loadEnv", () => {
 			/VMAF_DECODE_BACKEND/,
 		);
 	});
-	it("requires a separate binary and explicit models for experimental CUDA scoring", () => {
+	it("rejects retired VMAFx configuration with a migration message", () => {
 		expect(() => loadEnv({ VMAF_SCORING_BACKEND: "vmafx-cuda" })).toThrow(
-			/requires explicit/,
+			/retired.*cuda.*vulkan/i,
 		);
+	});
+	it.each([
+		"cuda",
+		"vulkan",
+	])("requires an owned native runner for %s scoring", (backend) => {
+		expect(() => loadEnv({ VMAF_SCORING_BACKEND: backend })).toThrow(
+			/VMAF_NATIVE_PATH/,
+		);
+		expect(() =>
+			loadEnv({
+				VMAF_SCORING_BACKEND: backend,
+				VMAF_NATIVE_PATH: "/opt/bitovp-vmaf",
+			}),
+		).toThrow(/VMAF_MODEL_DIR/);
 		expect(
 			loadEnv({
-				VMAF_SCORING_BACKEND: "vmafx-cuda",
-				VMAF_FFMPEG_PATH: "/opt/vmafx/ffmpeg",
+				VMAF_SCORING_BACKEND: backend,
+				VMAF_NATIVE_PATH: "/opt/bitovp-vmaf",
 				VMAF_MODEL_DIR: "/opt/vmaf/model",
 			}).VMAF_SCORING_BACKEND,
-		).toBe("vmafx-cuda");
+		).toBe(backend);
+		expect(() =>
+			loadEnv({
+				VMAF_SCORING_BACKEND: backend,
+				VMAF_NATIVE_PATH: "/opt/bitovp-vmaf",
+				VMAF_MODEL_DIR: "/opt/vmaf/model",
+				VMAF_DECODE_BACKEND: "cuda",
+			}),
+		).toThrow(/CPU decoding/);
 	});
 	it("accepts only the unrestricted deployment and rejects retired or unknown values", () => {
 		for (const value of [undefined, "", "UNRESTRICTED"]) {

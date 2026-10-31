@@ -111,101 +111,20 @@ describe("NVDEC input handling", () => {
 	});
 });
 
-describe("experimental VMAFx CUDA scoring", () => {
-	const options = {
-		...BASE,
-		model: "vmaf_v1.0.16_3d0h",
-		modelPath: "/models/vmaf_v1.0.16_3d0h.json",
-		distortedOriginal: { width: 1280, height: 720, bitdepth: 8 },
-		psnr: true,
-		threads: 2,
-		subsample: 1,
-	};
-	it("keeps CPU preprocessing and selects the requested model with full CUDA provenance", () => {
-		const cpu = filterComplexOf(buildVmafCommand(options));
-		const gpu = buildVmafCommand({
-			...options,
-			scoring: { backend: "vmafx-cuda", device: 0 },
-		});
-		const graph = filterComplexOf(gpu);
-		expect(
-			graph
-				.slice(0, graph.indexOf("[dist][ref]"))
-				.replaceAll("format=yuv420p10le,", ""),
-		).toBe(cpu.slice(0, cpu.indexOf("[dist][ref]")));
-		expect(graph.match(/format=yuv420p10le/g)).toHaveLength(2);
-		expect(graph).toContain("[dist][ref]vmafx=");
-		expect(graph).toContain(
-			"backend=cuda:device=0:import=auto:gpumask=0:provenance=log+report:score_fmt=%.17g",
-		);
-		expect(graph).toContain(
-			"model='path=/models/vmaf_v1.0.16_3d0h.json\\:name=vmaf\\:cambi.enc_width=1280\\:cambi.enc_height=720\\:cambi.enc_bitdepth=8'",
-		);
-		expect(graph).toContain("feature=psnr:");
-		expect(graph).toContain("n_threads=2:n_subsample=1");
-		expect(graph).toContain("eof_action=repeat:shortest=0:repeatlast=1");
-		expect(gpu).not.toContain("-hwaccel");
-	});
-	it("requires an explicit model file and rejects unsupported features before executing", () => {
-		expect(() =>
-			buildVmafCommand({
-				...BASE,
-				scoring: { backend: "vmafx-cuda", device: 0 },
-			}),
-		).toThrow("VMAFX_REQUIRES_V1_MODEL_FILE");
-		expect(() =>
-			buildVmafCommand({
-				...options,
-				features: ["float_ssim"],
-				scoring: { backend: "vmafx-cuda", device: 0 },
-			}),
-		).toThrow("VMAFX_UNQUALIFIED_FEATURE");
-		expect(() =>
-			buildVmafCommand({
-				...options,
-				subsample: 2,
-				scoring: { backend: "vmafx-cuda", device: 0 },
-			}),
-		).toThrow("VMAFX_REQUIRES_ALL_FRAMES");
-		expect(() =>
-			buildVmafCommand({
-				...options,
-				distortedOriginal: undefined,
-				scoring: { backend: "vmafx-cuda", device: 0 },
-			}),
-		).toThrow("VMAFX_REQUIRES_ORIGINAL_DISTORTED_GEOMETRY");
-	});
-	it("keeps the cloud-only generation outside experimental CUDA scoring", () => {
-		expect(() =>
-			buildVmafCommand({
-				...options,
-				measurementMethod: "FRAME_INDEX_BT709_10BIT",
-				scoring: { backend: "vmafx-cuda", device: 0 },
-			}),
-		).toThrow("GPU_SCORING_NOT_QUALIFIED_FOR_FRAME_INDEX_METHOD");
-	});
+describe("native scoring stays outside FFmpeg command construction", () => {
 	it.each([
-		"3d0h",
-		"3d0h_2160",
-		"5d0h",
-		"1d5h_2160",
-		"hfr_3d0h",
-		"hfr_3d0h_2160",
-		"hfr_5d0h",
-		"hfr_1d5h_2160",
-	])("preserves the exact selected v1 model: %s", (suffix) => {
-		const model = `vmaf_v1.0.16_${suffix}`;
-		const graph = filterComplexOf(
-			buildVmafCommand({
-				...options,
-				model,
-				modelPath: `/models/${model}.json`,
-				scoring: { backend: "vmafx-cuda", device: 0 },
-			}),
-		);
-		expect(graph).toContain(
-			`model='path=/models/${model}.json\\:name=vmaf\\:cambi.enc_width=1280`,
-		);
+		"cuda",
+		"vulkan",
+	] as const)("refuses to turn %s scoring into a CPU command", (backend) => {
+		expect(() =>
+			buildVmafCommand({ ...BASE, scoring: { backend, device: 0 } }),
+		).toThrow("NATIVE_SCORING_REQUIRES_NATIVE_RUNNER");
+	});
+	it("rejects the retired backend with an explicit migration error", () => {
+		const legacy = { ...BASE, scoring: { backend: "vmafx-cuda", device: 0 } };
+		expect(() =>
+			buildVmafCommand(legacy as Parameters<typeof buildVmafCommand>[0]),
+		).toThrow(/retired.*new measurement/i);
 	});
 });
 

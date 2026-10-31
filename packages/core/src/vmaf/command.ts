@@ -64,10 +64,14 @@ export const VMAF_SCORING_VERSION = 3;
  * while retaining codec conformance cropping. Generation 5 used CLI defaults,
  * so MOV container crops could silently resize the pristine reference. */
 export const VMAF_FRAME_INDEX_SCORING_VERSION = 6;
-/** Experimental local GPU path; never presented as the validated CPU/cloud method. */
+/** Retired VMAFx generation: readable historical results only. */
 export const VMAF_EXPERIMENTAL_GPU_SCORING_VERSION = 7;
-/** NVDEC with legacy CPU scoring; distinct from VMAFx's 10-bit comparison path. */
+/** NVDEC with legacy CPU scoring, retained independently of native GPU scoring. */
 export const VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION = 8;
+/** Owned CUDA extraction with native 10-bit preprocessing and official prediction. */
+export const VMAF_OWNED_CUDA_SCORING_VERSION = 9;
+/** Owned Vulkan extraction has its own qualification and measurement generation. */
+export const VMAF_OWNED_VULKAN_SCORING_VERSION = 10;
 export const VMAF_FRAME_INDEX_CROP_POLICY =
 	"codec-only-ignore-container-aperture-v1";
 
@@ -133,8 +137,8 @@ export type VmafCudaDecode = {
 };
 
 export type VmafCommandOptions = {
-	/** External, opt-in VMAFx binary. Its numerical parity must be qualified separately. */
-	scoring?: { backend: "vmafx-cuda"; device: number };
+	/** Explicit owned native GPU scoring; never constructed as an FFmpeg filter. */
+	scoring?: { backend: "cuda" | "vulkan"; device: number };
 	/** Local input decoding only. Scaling, feature extraction and scoring stay on CPU. */
 	decode?: { distorted?: VmafCudaDecode; reference?: VmafCudaDecode };
 	/** Explicit full-frame report methodology; omitted preserves generation 3. */
@@ -202,6 +206,13 @@ export type VmafCommandOptions = {
  * reference geometry so libvmaf's identical-dimensions requirement holds.
  */
 export function buildVmafCommand(opts: VmafCommandOptions): string[] {
+	if (
+		(opts.scoring as { backend?: string } | undefined)?.backend === "vmafx-cuda"
+	)
+		throw new Error(
+			"VMAFx scoring is retired; select cuda or vulkan and create a new measurement",
+		);
+	if (opts.scoring) throw new Error("NATIVE_SCORING_REQUIRES_NATIVE_RUNNER");
 	for (const input of [opts.decode?.distorted, opts.decode?.reference]) {
 		if (
 			input &&
@@ -211,16 +222,7 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 		)
 			throw new Error("INVALID_CUDA_DECODE_OPTIONS");
 	}
-	if (
-		opts.scoring &&
-		(opts.scoring.backend !== "vmafx-cuda" ||
-			!Number.isSafeInteger(opts.scoring.device) ||
-			opts.scoring.device < 0)
-	)
-		throw new Error("INVALID_CUDA_SCORING_OPTIONS");
 	if (opts.measurementMethod === "FRAME_INDEX_BT709_10BIT") {
-		if (opts.scoring)
-			throw new Error("GPU_SCORING_NOT_QUALIFIED_FOR_FRAME_INDEX_METHOD");
 		if (opts.decode?.distorted || opts.decode?.reference)
 			throw new Error("GPU_DECODE_NOT_QUALIFIED_FOR_FRAME_INDEX_METHOD");
 		const size = opts.scaleToReference;
@@ -322,7 +324,6 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	if (opts.fpsConform !== undefined) {
 		conform.push(`fps=${opts.fpsConform}`);
 	}
-	if (opts.scoring) conform.push("format=yuv420p10le");
 
 	// libvmaf model selector: a custom file (path=) wins over the built-in
 	// version (version=); exactly one is emitted. Both are verified against the
@@ -418,13 +419,12 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	 */
 	const refChain = [
 		...downloadChain(opts.decode?.reference),
-		...(opts.scoring ? ["format=yuv420p10le"] : []),
 		align > 0 ? dropLeading(align) : REBASE_PTS,
 	].join(",");
 	const filterComplex =
 		`[0:v]${distChain}[dist];` +
 		`[1:v]${refChain}[ref];` +
-		`[dist][ref]${opts.scoring ? vmafxFilter(opts, featureNames) : `libvmaf=${libvmafParams}`}[out]`;
+		`[dist][ref]libvmaf=${libvmafParams}[out]`;
 
 	return [
 		"-hide_banner",
@@ -475,44 +475,4 @@ function downloadChain(input: VmafCudaDecode | undefined): string[] {
 				`format=${input.downloadFormat === "nv12" ? "yuv420p" : "yuv420p10le"}`,
 			]
 		: [];
-}
-
-function vmafxFilter(opts: VmafCommandOptions, features: string[]): string {
-	if (
-		!opts.modelPath ||
-		!/^vmaf_v1\.0\.16_(?:hfr_)?(?:3d0h(?:_2160)?|5d0h|1d5h_2160)$/.test(
-			opts.model,
-		)
-	)
-		throw new Error("VMAFX_REQUIRES_V1_MODEL_FILE");
-	if (features.some((feature) => feature !== "psnr"))
-		throw new Error("VMAFX_UNQUALIFIED_FEATURE");
-	if ((opts.subsample ?? 1) !== 1) throw new Error("VMAFX_REQUIRES_ALL_FRAMES");
-	const original = opts.distortedOriginal;
-	if (
-		!original ||
-		![original.width, original.height].every(
-			(n) => Number.isSafeInteger(n) && n > 0,
-		) ||
-		![8, 10, 12, 16].includes(original.bitdepth)
-	)
-		throw new Error("VMAFX_REQUIRES_ORIGINAL_DISTORTED_GEOMETRY");
-	return `vmafx=${[
-		"backend=cuda",
-		`device=${opts.scoring?.device}`,
-		"import=auto",
-		"gpumask=0",
-		"provenance=log+report",
-		"score_fmt=%.17g",
-		`model='path=${opts.modelPath}\\:name=vmaf\\:cambi.enc_width=${original.width}\\:cambi.enc_height=${original.height}\\:cambi.enc_bitdepth=${original.bitdepth}'`,
-		...(features.length ? [`feature=${features.join("|")}`] : []),
-		`log_path=${opts.logPath}`,
-		"log_fmt=json",
-		...(opts.threads !== undefined ? [`n_threads=${opts.threads}`] : []),
-		`n_subsample=${opts.subsample ?? 1}`,
-		// Match the legacy libvmaf framesync defaults, not VMAFx's different defaults.
-		"eof_action=repeat",
-		"shortest=0",
-		"repeatlast=1",
-	].join(":")}`;
 }

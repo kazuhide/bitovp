@@ -1719,6 +1719,7 @@ export const ja = {
 		executionLocal: "ローカル",
 		scoreProcessor: "VMAFの計算",
 		experimentalGpuScoring: "GPU（VMAFx、試験機能）",
+		ownedGpuScoring: "GPU（自前{backend}、試験機能）",
 		decodeProcessors: "デコード — 元映像: {reference}、比較映像: {distorted}",
 		cpuDecodeFallback: "CPUでデコードした理由:",
 		executionBudget: "予算 (USD)",

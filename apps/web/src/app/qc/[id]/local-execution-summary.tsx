@@ -28,9 +28,14 @@ export function LocalExecutionSummary({
 		<div className="mt-1 max-w-xs space-y-1 text-zinc-400">
 			<p>
 				{t("qc.scoreProcessor")}:{" "}
-				{execution.scoring.backend === "cuda"
-					? t("qc.experimentalGpuScoring")
-					: "CPU (libvmaf)"}
+				{execution.scoring.backend === "cpu"
+					? "CPU (libvmaf)"
+					: execution.scoring.implementation === "bitovp-owned"
+						? t("qc.ownedGpuScoring", {
+								backend:
+									execution.scoring.backend === "cuda" ? "CUDA" : "Vulkan",
+							})
+						: t("qc.experimentalGpuScoring")}
 			</p>
 			<p>
 				{t("qc.decodeProcessors", {

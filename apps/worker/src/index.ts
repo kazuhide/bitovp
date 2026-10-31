@@ -1173,6 +1173,7 @@ const vmafProcessor = tenantService(() =>
 			device: env.VMAF_GPU_DEVICE,
 		},
 		scoringBackend: env.VMAF_SCORING_BACKEND,
+		...(env.VMAF_NATIVE_PATH ? { nativePath: env.VMAF_NATIVE_PATH } : {}),
 		now: processorDeps.now,
 		localResources: localVmafResources,
 		...(env.VMAF_THREADS !== undefined ? { threads: env.VMAF_THREADS } : {}),

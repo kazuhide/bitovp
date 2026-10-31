@@ -34,6 +34,58 @@ const gpu = {
 };
 
 describe("public local VMAF execution", () => {
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("retains owned %s execution without reinterpreting the historical receipt", (backend) => {
+		const execution = {
+			...cpu,
+			scoring: {
+				backend,
+				implementation: "bitovp-owned",
+				model: cpu.scoring.model,
+				modelSha256: "a".repeat(64),
+				features: [
+					"cambi",
+					"speed_chroma_uv",
+					"integer_adm3",
+					"integer_motion3",
+					"psnr_y",
+					"psnr_cb",
+					"psnr_cr",
+				],
+				bitDepth: 10,
+				distortedOriginal: { width: 640, height: 360, bitdepth: 8 },
+				officialRevision: "b".repeat(40),
+				sourceSha256: "c".repeat(64),
+				device: {
+					index: 0,
+					name: "device",
+					uuid: "device",
+					vendorId: 0x1002,
+					deviceId: 1,
+					integrated: true,
+				},
+				cpuParity: {
+					checked: true,
+					featureCount: 14,
+					scoreCount: 2,
+					maxFeatureError: 0,
+					maxScoreError: 0,
+				},
+			},
+		};
+		expect(localVmafExecutionSchema.parse(execution)).toEqual(execution);
+		expect(
+			localVmafExecutionSchema.safeParse({
+				...execution,
+				scoring: {
+					...execution.scoring,
+					cpuParity: { ...execution.scoring.cpuParity, checked: false },
+				},
+			}).success,
+		).toBe(false);
+	});
 	it("accepts default CPU execution without inventing a GPU device", () => {
 		const execution = {
 			version: 1,

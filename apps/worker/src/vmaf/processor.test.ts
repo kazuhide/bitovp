@@ -579,7 +579,7 @@ describe("createVmafProcessor", () => {
 		});
 		const t = setup({
 			decodePolicy: { backend: "cuda", device: 0 },
-			scoringBackend: "vmafx-cuda",
+			scoringBackend: "vulkan",
 			cloudScore,
 			job: {
 				params: {
@@ -607,6 +607,33 @@ describe("createVmafProcessor", () => {
 			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
 		).rejects.toThrow("configuration changed");
 		expect(t.results).toHaveLength(0);
+		expect(t.runner.run).not.toHaveBeenCalled();
+	});
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("refuses old generations with implicit LOCAL params under owned %s scoring", async (scoringBackend) => {
+		for (const scoringVersion of [7, 8]) {
+			const t = setup({ scoringBackend, job: { scoringVersion, params: {} } });
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(/create a new measurement/i);
+			expect(t.job.scoringVersion).toBe(scoringVersion);
+			expect(t.results).toHaveLength(0);
+			expect(t.runner.run).not.toHaveBeenCalled();
+		}
+	});
+	it("does not relabel an ordinary retry that already contains measured CPU results", async () => {
+		const t = setup({ scoringBackend: "vulkan", job: { scoringVersion: 3 } });
+		t.results.push({
+			renditionRef: { renditionKey: "v720" },
+			pooled: { mean: 90 },
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(/existing results.*new measurement/i);
+		expect(t.job.scoringVersion).toBe(3);
+		expect(t.results).toHaveLength(1);
 		expect(t.runner.run).not.toHaveBeenCalled();
 	});
 	it("limits abort escalation to ordinary local scoring commands", async () => {

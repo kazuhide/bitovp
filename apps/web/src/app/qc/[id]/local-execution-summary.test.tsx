@@ -17,6 +17,53 @@ const cpu: LocalVmafExecution = {
 };
 
 describe("local execution facts", () => {
+	it("labels owned Vulkan scoring separately from historical VMAFx execution", () => {
+		renderLocalized(
+			<LocalExecutionSummary
+				execution={{
+					...cpu,
+					scoring: {
+						backend: "vulkan",
+						implementation: "bitovp-owned",
+						model: cpu.scoring.model,
+						modelSha256: "a".repeat(64),
+						features: [
+							"cambi",
+							"speed_chroma_uv",
+							"integer_adm3",
+							"integer_motion3",
+							"psnr_y",
+							"psnr_cb",
+							"psnr_cr",
+						],
+						bitDepth: 10,
+						distortedOriginal: { width: 640, height: 360, bitdepth: 8 },
+						officialRevision: "b".repeat(40),
+						sourceSha256: "c".repeat(64),
+						device: {
+							index: 0,
+							name: "AMD fixture",
+							uuid: "device",
+							vendorId: 0x1002,
+							deviceId: 1,
+							integrated: true,
+						},
+						cpuParity: {
+							checked: true,
+							featureCount: 14,
+							scoreCount: 2,
+							maxFeatureError: 0,
+							maxScoreError: 0,
+						},
+					},
+				}}
+			/>,
+		);
+		expect(
+			screen.getByText("VMAF processing: GPU (owned Vulkan, experimental)"),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/VMAFx/)).not.toBeInTheDocument();
+	});
 	it("keeps historical and ordinary CPU rows unchanged", () => {
 		const view = renderLocalized(<LocalExecutionSummary />);
 		expect(view.container).toBeEmptyDOMElement();

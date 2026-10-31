@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import {
 	buildVmafCommand,
 	type LocalVmafExecution,
@@ -11,7 +11,7 @@ import {
 	hardwareDecodeFailureReason,
 	selectHardwareDecode,
 } from "./hardware-decode";
-import { prepareVmafxModel, verifyVmafxReceipt } from "./vmafx-contract";
+import { runNativeVmafScore } from "./native-score";
 
 type InputExecution = { backend: "cpu" | "cuda"; reason?: string };
 
@@ -21,6 +21,7 @@ type LocalScoreDeps = {
 	runner: ProcessRunner;
 	ffmpegPath: string;
 	ffprobePath: string;
+	nativePath?: string;
 	decodePolicy?: DecodePolicy;
 };
 
@@ -38,15 +39,14 @@ export async function runLocalVmafScore(
 	/** Parsed once; the processor reuses it instead of loading a large log twice. */
 	log?: unknown;
 }> {
+	if (options.scoring) return runNativeVmafScore(deps, options, context);
 	const { signal } = context;
 	const policy = deps.decodePolicy ?? { backend: "cpu", device: 0 };
 	const softwareDecodeOptions = { ...options, decode: undefined };
 	const execution: LocalVmafExecution = {
 		version: 1,
 		requestedDecode: policy.backend,
-		...(policy.backend !== "cpu" || options.scoring
-			? { device: options.scoring?.device ?? policy.device }
-			: {}),
+		...(policy.backend !== "cpu" ? { device: policy.device } : {}),
 		decode: { reference: { backend: "cpu" }, distorted: { backend: "cpu" } },
 		scoring: {
 			backend: "cpu",
@@ -65,62 +65,8 @@ export async function runLocalVmafScore(
 	// Validate before launching any input probes. A different scorer is always
 	// explicit, and never falls back to libvmaf or another VMAF model.
 	buildVmafCommand(softwareDecodeOptions);
-	const model = options.scoring ? await prepareVmafxModel(options) : undefined;
-	const expected =
-		model && options.scaleToReference && options.distortedOriginal
-			? {
-					model: options.model,
-					modelSha256: model.modelSha256,
-					width: options.scaleToReference.width,
-					height: options.scaleToReference.height,
-					psnr:
-						options.psnr === true ||
-						options.features?.includes("psnr") === true,
-					distortedOriginal: options.distortedOriginal,
-				}
-			: undefined;
-	if (options.scoring && !expected)
-		throw new Error("VMAFX_REQUIRES_COMPARISON_GEOMETRY");
-	const finish = async (run: { code: number | null; stderr: string }) => {
-		signal?.throwIfAborted();
-		if (run.code !== 0 || !expected) return { run, execution };
-		const log: unknown = JSON.parse(await readFile(options.logPath, "utf8"));
-		signal?.throwIfAborted();
-		execution.scoring = verifyVmafxReceipt(log, expected);
-		return { run, execution, log };
-	};
-	const qualifyScoring = async (scoringOptions: VmafCommandOptions) => {
-		if (!expected) return;
-		const checkLog = `${options.logPath}.gpu-check.json`;
-		const timeout = new AbortController();
-		const timer = setTimeout(() => timeout.abort(), 30_000);
-		timer.unref();
-		try {
-			await rm(checkLog, { force: true });
-			const args = buildVmafCommand({ ...scoringOptions, logPath: checkLog });
-			args.splice(args.length - 3, 0, "-frames:v", "8");
-			const run = await deps.runner.run(deps.ffmpegPath, args, {
-				signal: signal
-					? AbortSignal.any([signal, timeout.signal])
-					: timeout.signal,
-				abortKillAfterMs: 250,
-			});
-			signal?.throwIfAborted();
-			if (timeout.signal.aborted)
-				throw new Error("VMAFX_GPU_QUALIFICATION_TIMEOUT");
-			if (run.code !== 0) throw new Error("VMAFX_GPU_QUALIFICATION_FAILED");
-			verifyVmafxReceipt(
-				JSON.parse(await readFile(checkLog, "utf8")),
-				expected,
-			);
-		} finally {
-			clearTimeout(timer);
-			await rm(checkLog, { force: true });
-		}
-	};
 	if (policy.backend === "cpu") {
-		await qualifyScoring(softwareDecodeOptions);
-		return finish(await score(softwareDecodeOptions));
+		return { run: await score(softwareDecodeOptions), execution };
 	}
 	// This method is separately validated by the cloud worker. Do not silently
 	// give a local hardware attempt the same measurement label.
@@ -167,14 +113,13 @@ export async function runLocalVmafScore(
 		...softwareDecodeOptions,
 		decode: { reference: reference.cuda, distorted: distorted.cuda },
 	};
-	await qualifyScoring(selectedOptions);
 	const run = await score(selectedOptions);
 	signal?.throwIfAborted();
 	const reason =
 		run.code !== 0 && usesCuda
 			? hardwareDecodeFailureReason(run.stderr)
 			: undefined;
-	if (policy.backend !== "auto" || !reason) return finish(run);
+	if (policy.backend !== "auto" || !reason) return { run, execution };
 
 	// The runner resolves only after child close. Discard a partial GPU log
 	// before one CPU retry so an unsuccessful retry cannot reuse stale scores.
@@ -186,5 +131,5 @@ export async function runLocalVmafScore(
 		if (execution.decode[input].backend === "cuda")
 			execution.decode[input] = { backend: "cpu", reason };
 	}
-	return finish(await score(softwareDecodeOptions));
+	return { run: await score(softwareDecodeOptions), execution };
 }

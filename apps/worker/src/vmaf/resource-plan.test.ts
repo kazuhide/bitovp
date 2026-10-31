@@ -43,6 +43,23 @@ function pair(overrides: Partial<ResourcePair> = {}): ResourcePair {
 }
 
 describe("local quality resource planning", () => {
+	it("serializes native pairs and reserves for 10-bit CPU verification even from 8-bit inputs", () => {
+		const ordinary = planLocalResources(
+			resources,
+			pair({ model: "vmaf_v1.0.16_3d0h" }),
+			{ threads: 1 },
+			4,
+		);
+		const native = planLocalResources(
+			resources,
+			pair({ model: "vmaf_v1.0.16_3d0h", scoringBackend: "vulkan" }),
+			{ threads: 1, concurrency: 4 },
+			4,
+		);
+		expect(native.exclusive).toBe(true);
+		expect(native.concurrency).toBe(1);
+		expect(native.estimatedBytes).toBeGreaterThan(ordinary.estimatedBytes);
+	});
 	it("uses constrained capacity rather than logical CPUs and the mirror count", () => {
 		expect(planLocalResources(resources, pair(), {}, 8)).toMatchObject({
 			threads: 4,

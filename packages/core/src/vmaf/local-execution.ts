@@ -21,7 +21,7 @@ export const localVmafExecutionSchema = z
 		decode: z
 			.object({ reference: inputExecution, distorted: inputExecution })
 			.strict(),
-		scoring: z.discriminatedUnion("backend", [
+		scoring: z.union([
 			z
 				.object({
 					backend: z.literal("cpu"),
@@ -31,6 +31,7 @@ export const localVmafExecutionSchema = z
 				.strict(),
 			z
 				.object({
+					// Read-only provenance for generation 7; no executable backend exists.
 					backend: z.literal("cuda"),
 					implementation: z.literal("vmafx"),
 					model: modelName,
@@ -50,6 +51,52 @@ export const localVmafExecutionSchema = z
 						.string()
 						.regex(/^[a-f0-9]{40}$/i)
 						.optional(),
+				})
+				.strict(),
+			z
+				.object({
+					backend: z.enum(["cuda", "vulkan"]),
+					implementation: z.literal("bitovp-owned"),
+					model: modelName,
+					modelSha256: z.string().regex(/^[a-f0-9]{64}$/),
+					features: z
+						.array(z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,511}$/))
+						.min(7)
+						.max(64),
+					bitDepth: z.literal(10),
+					distortedOriginal: z
+						.object({
+							width: z.number().int().positive().safe(),
+							height: z.number().int().positive().safe(),
+							bitdepth: z.union([
+								z.literal(8),
+								z.literal(10),
+								z.literal(12),
+								z.literal(16),
+							]),
+						})
+						.strict(),
+					officialRevision: z.string().regex(/^[a-f0-9]{40}$/),
+					sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+					device: z
+						.object({
+							index: z.number().int().nonnegative().safe(),
+							name: z.string().min(1).max(512),
+							uuid: z.string().min(1).max(128),
+							vendorId: z.number().int().positive().safe(),
+							deviceId: z.number().int().nonnegative().safe(),
+							integrated: z.boolean(),
+						})
+						.strict(),
+					cpuParity: z
+						.object({
+							checked: z.literal(true),
+							featureCount: z.number().int().positive().safe(),
+							scoreCount: z.number().int().positive().safe(),
+							maxFeatureError: z.number().nonnegative(),
+							maxScoreError: z.number().nonnegative().max(1e-4),
+						})
+						.strict(),
 				})
 				.strict(),
 		]),

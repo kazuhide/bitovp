@@ -51,7 +51,7 @@ function identityDisplayMatrix(value: unknown): boolean {
 	});
 }
 
-function presentationTransformReason(
+export function presentationTransformReason(
 	video: Record<string, unknown>,
 ): string | undefined {
 	const sideData = video.side_data_list;

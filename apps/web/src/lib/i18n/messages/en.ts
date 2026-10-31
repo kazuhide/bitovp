@@ -1756,6 +1756,7 @@ export const en = {
 		executionLocal: "Local",
 		scoreProcessor: "VMAF processing",
 		experimentalGpuScoring: "GPU (VMAFx, experimental)",
+		ownedGpuScoring: "GPU (owned {backend}, experimental)",
 		decodeProcessors: "Decode — reference: {reference}; encoded: {distorted}",
 		cpuDecodeFallback: "CPU decoding used:",
 		executionBudget: "Budget (USD)",

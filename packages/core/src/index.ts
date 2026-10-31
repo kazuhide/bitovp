@@ -1332,6 +1332,8 @@ export {
 	VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
 	VMAF_FRAME_INDEX_CROP_POLICY,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
+	VMAF_OWNED_CUDA_SCORING_VERSION,
+	VMAF_OWNED_VULKAN_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
 } from "./vmaf/command";
 export type {
@@ -1361,6 +1363,10 @@ export {
 	timelineFromContainerProbe,
 	timelineFromProfile,
 } from "./vmaf/loop-timeline";
+export {
+	NATIVE_OFFICIAL_REVISION,
+	nativeVmafReceiptSchema,
+} from "./vmaf/native-receipt";
 export {
 	type PerTitleProviderResult,
 	type PerTitleRung,

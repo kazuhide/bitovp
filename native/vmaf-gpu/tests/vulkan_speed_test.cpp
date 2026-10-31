@@ -28,7 +28,9 @@ struct Fixture {
             r16[p].resize(std::size_t(stride) * h); d16[p].resize(std::size_t(stride) * h);
             for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
                 const bool flat = pattern == 1 || (pattern == 2 && p == 1);
-                const unsigned v = flat ? 120 : 16 + (x * 13 + y * 7 + (x * y % 53) + frame * frame * 3 + p * 31) % 215;
+                const unsigned v = flat ? 120 : pattern == 3 ? 16 + (x * 7 + p * 31) % 215
+                    : pattern == 4 ? ((x == 0 || y == 0 || x + 1 == w || y + 1 == h) ? 230 : 16)
+                    : 16 + (x * 13 + y * 7 + (x * y % 53) + frame * frame * 3 + p * 31) % 215;
                 const unsigned d = flat ? 120 : unsigned(std::clamp<int>(int(v) + int((x + y * 3 + p + frame) % 9) - 4, 0, 255));
                 r8[p][y * stride + x] = v; d8[p][y * stride + x] = d;
                 r16[p][y * stride + x] = (v << 2) + (flat ? 0 : (x + frame) % 4);
@@ -67,9 +69,10 @@ std::vector<ModelInput> models(const std::string &directory) {
     return out;
 }
 void run(const std::vector<ModelInput> &inputs, unsigned bpc, unsigned pattern,
-         const char *raw_reference = nullptr, const char *raw_distorted = nullptr, bool unclipped = false) {
+         const char *raw_reference = nullptr, const char *raw_distorted = nullptr, bool unclipped = false,
+         unsigned synthetic_width = 768, unsigned synthetic_height = 768) {
     const bool real = raw_reference != nullptr;
-    const unsigned width = real ? 1920 : 768, height = real ? 1080 : 768, frames = real ? 2 : 6;
+    const unsigned width = real ? 1920 : synthetic_width, height = real ? 1080 : synthetic_height, frames = real ? 2 : 6;
     const ModelOracleConfig config{width, height, bpc, 1, false};
     auto selected_models = inputs;
     if (unclipped) for (auto &model : selected_models) model.feature_overrides["speed_chroma"]["speed_max_val"] = "1000";
@@ -113,7 +116,7 @@ void run(const std::vector<ModelInput> &inputs, unsigned bpc, unsigned pattern,
         }
         replacement.push_back(copy);
     }
-    if (pattern != 1) for (const auto &[name, nondegenerate] : positive)
+    if (pattern == 0 || pattern == 2) for (const auto &[name, nondegenerate] : positive)
         require(nondegenerate, "fixture did not exercise nondegenerate SPEED for " + name);
     require(scores.size() == std::size_t(frames) * speed_names.size(), "missing SPEED series");
     imported.import_scores(replacement);
@@ -138,7 +141,7 @@ void run(const std::vector<ModelInput> &inputs, unsigned bpc, unsigned pattern,
     require(time.uploaded_bytes <= source_bytes + std::uint64_t(frames) * metadata_budget,
         "SPEED must reuse each frame's host-visible chroma buffers across model configurations");
     std::cout << "PASS vulkan_speed bpc=" << bpc << " pattern=" << pattern << " real=" << real << " unclipped=" << unclipped
-              << " frames=" << frames << " max_abs_error=" << oracle_double_to_string(max_error)
+              << " width=" << width << " height=" << height << " frames=" << frames << " max_abs_error=" << oracle_double_to_string(max_error)
               << " max_vmaf_error=" << max_vmaf_error << " max_pool_error=" << max_pool_error
               << " parallel_kernel_ms=" << time.kernel_ms
               << " parallel_wall_ms=" << parallel_wall_ms
@@ -152,8 +155,10 @@ int main(int argc, char **argv) {
         const auto inputs = models(argv[1]);
         if (argc == 5) for (bool unclipped : {false, true}) run(inputs, unsigned(std::stoul(argv[4])), 0, argv[2], argv[3], unclipped);
         else for (unsigned bpc : {8u, 10u}) {
-            for (unsigned pattern : {0u, 1u, 2u}) run(inputs, bpc, pattern);
+            for (unsigned pattern : {0u, 1u, 2u, 3u, 4u}) run(inputs, bpc, pattern);
             run(inputs, bpc, 0, nullptr, nullptr, true);
+            run(inputs, bpc, 0, nullptr, nullptr, true, 1538, 1090);
+            run(inputs, bpc, 3, nullptr, nullptr, true, 1026, 770);
         }
     } catch (const std::exception &error) {
         std::cerr << "FAIL vulkan_speed: " << error.what() << '\n';

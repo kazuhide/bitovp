@@ -13,19 +13,29 @@
 
 using namespace bitovp::gpu;
 namespace {
+enum class Pattern { Textured, Flat, RankDeficient, Edge };
+struct TestCase {
+    unsigned width, height;
+    Pattern pattern;
+    const char *name;
+};
 struct Fixture {
     Picture reference, distorted;
     std::vector<std::uint16_t> a16[3], b16[3];
     std::vector<std::uint8_t> a8[3], b8[3];
-    Fixture(unsigned bpc, unsigned frame, bool flat) {
+    Fixture(unsigned bpc, unsigned frame, const TestCase &test_case) {
         reference.bit_depth = distorted.bit_depth = bpc;
+        const bool flat = test_case.pattern == Pattern::Flat;
         for (unsigned p = 0; p < 3; ++p) {
-            const unsigned w = p ? 384 : 768, h = w, stride = w + 16;
+            const unsigned w = p ? test_case.width / 2 : test_case.width;
+            const unsigned h = p ? test_case.height / 2 : test_case.height, stride = w + 16;
             a16[p].resize(stride * h); b16[p].resize(stride * h);
             a8[p].resize(stride * h); b8[p].resize(stride * h);
             for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
-                const unsigned v = flat ? 120 : 16 +
-                    ((x * 13 + y * 7 + (x * y % 53) + frame * frame * 3 + p * 31) % 215);
+                const unsigned v = flat ? 120
+                    : test_case.pattern == Pattern::RankDeficient ? 16 + (x * 7 + p * 31) % 215
+                    : test_case.pattern == Pattern::Edge ? ((x == 0 || y == 0 || x + 1 == w || y + 1 == h) ? 230 : 16)
+                    : 16 + ((x * 13 + y * 7 + (x * y % 53) + frame * frame * 3 + p * 31) % 215);
                 const unsigned d = flat ? 120 : std::clamp<int>(
                     static_cast<int>(v) + static_cast<int>((x + y * 3 + p + frame) % 9) - 4, 0, 255);
                 a8[p][y * stride + x] = v; b8[p][y * stride + x] = d;
@@ -54,21 +64,29 @@ int main(int argc, char **argv) {
             const std::string name = family + "_" + variant;
             models.push_back({name, std::string(argv[1]) + "/" + family + "/" + name + ".json", {}});
         }
-        for (unsigned bpc : {8u, 10u}) for (bool flat : {false, true}) {
-            ModelOracleConfig config{768, 768, bpc, 1, true};
+        const TestCase cases[] = {
+            {768, 768, Pattern::Textured, "textured"},
+            {768, 768, Pattern::Flat, "flat"},
+            {1026, 770, Pattern::RankDeficient, "rank-deficient"},
+            // Decimation and RHS launches both have partial boundary groups.
+            {1538, 1090, Pattern::Textured, "textured"},
+            {1538, 1090, Pattern::Edge, "edge"},
+        };
+        for (unsigned bpc : {8u, 10u}) for (const auto &test_case : cases) {
+            ModelOracleConfig config{test_case.width, test_case.height, bpc, 1, true};
             ModelOracle cpu(models, config, OracleMode::Cpu);
             ModelOracle imported(models, config, OracleMode::ImportedFeatures);
             auto backend = create_cuda_backend({});
             backend->configure(cpu.feature_plan());
             for (unsigned index = 0; index < 6; ++index) {
-                Fixture fixture(bpc, index, flat);
+                Fixture fixture(bpc, index, test_case);
                 cpu.submit(index, fixture.reference, fixture.distorted);
                 imported.import_scores(backend->extract(index, fixture.reference, fixture.distorted));
             }
             imported.import_scores(backend->flush());
             const auto expected = cpu.finish(6);
             const auto actual = imported.finish(6);
-            if (!flat) {
+            if (test_case.pattern == Pattern::Textured) {
                 bool nonzero_speed = false;
                 for (const auto &score : expected.features)
                     if (score.name.find("speed") != std::string::npos && std::abs(score.value) > 1e-9)
@@ -104,7 +122,8 @@ int main(int argc, char **argv) {
                     "CUDA VMAF pooling exceeds absolute 1e-4: " + model);
             }
             const auto timing = backend->timings();
-            std::cout << "PASS cuda_features eight models bpc=" << bpc << " flat=" << flat
+            std::cout << "PASS cuda_features eight models bpc=" << bpc << " pattern=" << test_case.name
+                      << " width=" << test_case.width << " height=" << test_case.height
                       << " features=" << actual.features.size() << " kernel_ms=" << timing.kernel_ms
                       << " uploaded_bytes=" << timing.uploaded_bytes << " downloaded_bytes="
                       << timing.downloaded_bytes << " allocated_bytes=" << timing.allocated_bytes << '\n';

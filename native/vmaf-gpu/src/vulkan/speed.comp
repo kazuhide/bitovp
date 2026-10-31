@@ -19,9 +19,9 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(set = 0, binding = 0, std430) readonly buffer Reference { uint reference_words[]; };
 layout(set = 0, binding = 1, std430) readonly buffer Distorted { uint distorted_words[]; };
-// QR lanes exchange SSBO results. Both coherent accesses and the execution /
-// memory barriers below are needed for their producer-consumer dependencies.
-layout(set = 0, binding = 2, std430) coherent buffer Workspace { precise float f[]; };
+// Image, covariance and RHS lanes write independent output elements.
+// Cross-dispatch dependencies are provided by the command-buffer barriers.
+layout(set = 0, binding = 2, std430) buffer Workspace { precise float f[]; };
 layout(push_constant) uniform Parameters {
     uint mode, width, height, source_image, destination_image, extra0, extra1, extra2;
 } parameters;
@@ -56,78 +56,6 @@ SpeedDimensions dimensions() {
     d.alloc_width = int(meta(4)); d.alloc_height = max(d.original_height, d.scaled_height);
     return d;
 }
-void block_sync() { memoryBarrierBuffer(); barrier(); }
-void block_copy(int destination, int source, int count) {
-    for (int i = int(gl_LocalInvocationIndex); i < count; i += 256) f[destination + i] = f[source + i];
-    block_sync();
-}
-void block_multiply(int destination, int x, int y, int rows, int inner, int columns) {
-    // One lane owns each output cell. Its ascending-k binary32 accumulation
-    // matches upstream's i,k,j loop; independent cells can run concurrently.
-    for (int cell = int(gl_LocalInvocationIndex); cell < rows * columns; cell += 256) {
-        int row = cell / columns, column = cell % columns;
-        precise float sum = 0.0;
-        for (int k = 0; k < inner; ++k) sum += f[x + row * inner + k] * f[y + k * columns + column];
-        f[destination + cell] = sum;
-    }
-    block_sync();
-}
-shared uint matrix_error;
-shared float matrix_norm;
-void block_solve(int covariance, int independent, int solution, int temporary, int blocks) {
-    const int size = 25, square = 625;
-    int a = temporary, q = a + square, r = q + square;
-    int tmp1 = r + square, tmp2 = tmp1 + square, rectangle = tmp2 + square;
-    int lane = int(gl_LocalInvocationIndex);
-    block_copy(a, covariance, square);
-    block_copy(tmp2, a, square);
-    for (int cell = lane; cell < square; cell += 256) f[q + cell] = cell / size == cell % size ? 1.0 : 0.0;
-    block_sync();
-    for (int k = 0; k < size - 1; ++k) {
-        for (int cell = lane; cell < square; cell += 256) {
-            int i = cell / size, j = cell % size;
-            if (i < k || j < k) f[tmp2 + cell] = i == j ? 1.0 : 0.0;
-        }
-        block_sync();
-        if (lane < size) f[r + lane] = f[tmp2 + lane * size + k];
-        block_sync();
-        if (lane == 0) {
-            precise float norm = vector_norm(r, size);
-            f[r + k] += get_sign(f[a + k * size + k]) * norm;
-            matrix_norm = vector_norm(r, size);
-        }
-        block_sync();
-        if (lane < size) f[r + lane] = cpu_div(f[r + lane], matrix_norm);
-        block_sync();
-        for (int cell = lane; cell < square; cell += 256) {
-            int i = cell / size, j = cell % size;
-            precise float value = -2.0 * f[r + i] * f[r + j];
-            if (i == j) value += 1.0;
-            f[tmp1 + cell] = value;
-        }
-        block_sync();
-        block_multiply(r, tmp1, tmp2, size, size, size);
-        block_copy(tmp2, r, square);
-        block_multiply(r, tmp1, q, size, size, size);
-        block_copy(q, r, square);
-    }
-    block_multiply(r, q, a, size, size, size);
-    // Upstream QR transposes Q and solve_linear_system immediately transposes
-    // it back. Both exact swaps cancel before the independent-term product.
-    block_multiply(rectangle, q, independent, size, size, blocks);
-    for (int i = size - 1; i >= 0; --i) {
-        precise float denominator = f[r + i * size + i];
-        if (lane == 0 && abs(denominator) < EIGENVALUE_EPS) matrix_error = 1u;
-        block_sync();
-        if (matrix_error != 0u) break;
-        for (int j = lane; j < blocks; j += 256) {
-            precise float value = f[rectangle + i * blocks + j];
-            for (int k = i + 1; k < size; ++k) value -= f[solution + k * blocks + j] * f[r + i * size + k];
-            f[solution + i * blocks + j] = cpu_div(value, denominator);
-        }
-        block_sync();
-    }
-}
 void means_stage() {
     int i = int(gl_LocalInvocationIndex);
     if (i < 25) f[int(meta(31)) + i] = compute_mean(dimensions(), int(parameters.source_image), int(meta(4)), i / 5, i % 5);
@@ -143,43 +71,43 @@ void covariance_stage() {
     f[destination + x * 25 + y] = covariance;
     f[destination + y * 25 + x] = covariance;
 }
-void matrix_stage() {
+void solve_stage() {
     SpeedDimensions d = dimensions();
-    int covariance = int(meta(30)), eigenvalues = int(meta(31));
+    int block = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
+    if (block >= d.num_blocks) return;
+    uint output_base = parameters.destination_image;
+    if (meta(35) != 0u) { f[output_base + 25u + uint(block)] = 0.0; return; }
+    const int size = 25, square = 625;
     int independent = int(meta(32)), solution = int(meta(33)), temporary = int(meta(34));
-    int lane = int(gl_LocalInvocationIndex);
-    if (lane == 0) {
-        compute_eigenvalues(covariance, eigenvalues, 25, temporary);
-        matrix_error = is_matrix_regular(d, eigenvalues) ? 0u : 1u;
-    }
-    block_sync();
-    for (int element = lane; element < 25 * d.num_blocks; element += 256) {
-        int i = element / d.num_blocks, block = element % d.num_blocks;
+    int q = temporary + square, r = q + square, rectangle = temporary + 5 * square;
+    for (int i = 0; i < size; ++i) {
         int y = (block / d.num_blocks_horizontal) * 5 + i / 5;
         int x = (block % d.num_blocks_horizontal) * 5 + i % 5;
-        f[independent + element] = f[parameters.source_image + uint(y) * meta(4) + uint(x)];
+        f[independent + i * d.num_blocks + block] = f[parameters.source_image + uint(y) * meta(4) + uint(x)];
     }
-    block_sync();
-    if (matrix_error == 0u) block_solve(covariance, independent, solution, temporary, d.num_blocks);
-    block_sync();
-    if (matrix_error != 0u)
-        for (int i = lane; i < 25 * d.num_blocks; i += 256) f[solution + i] = 0.0;
-    block_sync();
-    for (int element = lane; element < 25 * d.num_blocks; element += 256)
-        f[solution + element] = cpu_div(f[solution + element] * f[independent + element], 25.0);
-    block_sync();
-    uint output_base = parameters.destination_image;
-    for (int block = lane; block < d.num_blocks; block += 256) {
-        precise float value = f[solution + block];
-        for (int i = 1; i < 25; ++i) value += f[solution + i * d.num_blocks + block];
-        f[output_base + 25u + block] = value;
+    // One lane owns a complete RHS column. Its ascending-k dot products,
+    // descending-row substitution and ascending-row variance retain CPU order.
+    // The exact Q transposes in upstream QR and its caller still cancel.
+    for (int i = 0; i < size; ++i) {
+        precise float value = 0.0;
+        for (int k = 0; k < size; ++k) value += f[q + i * size + k] * f[independent + k * d.num_blocks + block];
+        f[rectangle + i * d.num_blocks + block] = value;
     }
-    if (lane < 25) f[output_base + lane] = f[eigenvalues + lane];
-    if (lane == 0) f[output_base + 25u + d.num_blocks] = matrix_error != 0u ? 1.0 : 0.0;
+    for (int i = size - 1; i >= 0; --i) {
+        precise float value = f[rectangle + i * d.num_blocks + block];
+        for (int k = i + 1; k < size; ++k) value -= f[solution + k * d.num_blocks + block] * f[r + i * size + k];
+        f[solution + i * d.num_blocks + block] = cpu_div(value, f[r + i * size + i]);
+    }
+    precise float variance = 0.0;
+    for (int i = 0; i < size; ++i) {
+        precise float value = cpu_div(f[solution + i * d.num_blocks + block] * f[independent + i * d.num_blocks + block], 25.0);
+        variance = i == 0 ? value : variance + value;
+    }
+    f[output_base + 25u + uint(block)] = variance;
 }
 void main() {
     if (parameters.mode == 6u) { means_stage(); return; }
-    if (parameters.mode == 7u) { matrix_stage(); return; }
+    if (parameters.mode == 9u) { solve_stage(); return; }
     if (parameters.mode == 8u) { covariance_stage(); return; }
     uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
     if (x >= parameters.width || y >= parameters.height) return;

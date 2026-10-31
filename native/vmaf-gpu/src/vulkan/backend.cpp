@@ -5,6 +5,7 @@
 #include "vulkan_psnr_spv.hpp"
 #include "vulkan_cambi_spv.hpp"
 #include "vulkan_speed_spv.hpp"
+#include "vulkan_speed_factor_spv.hpp"
 #include "vulkan_adm_spv.hpp"
 #include "vulkan_motion_spv.hpp"
 #include "cambi_parameters.hpp"
@@ -59,6 +60,7 @@ struct Context {
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipeline cambi_pipeline = VK_NULL_HANDLE;
     VkPipeline speed_pipeline = VK_NULL_HANDLE;
+    VkPipeline speed_factor_pipeline = VK_NULL_HANDLE;
     VkPipeline adm_pipeline = VK_NULL_HANDLE;
     VkPipeline motion_pipeline = VK_NULL_HANDLE;
     VkQueryPool queries = VK_NULL_HANDLE;
@@ -90,6 +92,7 @@ struct Context {
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
             if (cambi_pipeline) vkDestroyPipeline(device, cambi_pipeline, nullptr);
             if (speed_pipeline) vkDestroyPipeline(device, speed_pipeline, nullptr);
+            if (speed_factor_pipeline) vkDestroyPipeline(device, speed_factor_pipeline, nullptr);
             if (adm_pipeline) vkDestroyPipeline(device, adm_pipeline, nullptr);
             if (motion_pipeline) vkDestroyPipeline(device, motion_pipeline, nullptr);
             if (pipeline_layout) vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
@@ -187,6 +190,8 @@ public:
             context_.cambi_pipeline = additional_pipeline(bitovp_vulkan_cambi_spv, sizeof(bitovp_vulkan_cambi_spv));
         if (!speed.empty() && !context_.speed_pipeline)
             context_.speed_pipeline = additional_pipeline(bitovp_vulkan_speed_spv, sizeof(bitovp_vulkan_speed_spv));
+        if (!speed.empty() && !context_.speed_factor_pipeline)
+            context_.speed_factor_pipeline = additional_pipeline(bitovp_vulkan_speed_factor_spv, sizeof(bitovp_vulkan_speed_factor_spv));
         if (!adm.empty() && !context_.adm_pipeline)
             context_.adm_pipeline = additional_pipeline(bitovp_vulkan_adm_spv, sizeof(bitovp_vulkan_adm_spv));
         if (!motion.empty() && !context_.motion_pipeline)
@@ -576,6 +581,7 @@ private:
     struct Dispatch {
         std::array<std::uint32_t, 8> parameters;
         unsigned x, y;
+        VkPipeline pipeline = VK_NULL_HANDLE;
     };
     void execute_program(VkPipeline pipeline, const std::vector<Dispatch> &dispatches,
                          const std::array<Buffer *, 3> *resources = nullptr,
@@ -606,6 +612,7 @@ private:
             vkCmdWriteTimestamp(context_.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, context_.queries, 0);
         }
         vkCmdBindPipeline(context_.command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+        VkPipeline current_pipeline = pipeline;
         vkCmdBindDescriptorSets(context_.command, VK_PIPELINE_BIND_POINT_COMPUTE, context_.pipeline_layout, 0, 1, &context_.descriptor, 0, nullptr);
         VkMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -616,6 +623,11 @@ private:
             if (dispatch.x > context_.properties.limits.maxComputeWorkGroupCount[0] ||
                 dispatch.y > context_.properties.limits.maxComputeWorkGroupCount[1])
                 throw std::invalid_argument("Vulkan feature dispatch exceeds device limits");
+            const VkPipeline selected_pipeline = dispatch.pipeline ? dispatch.pipeline : pipeline;
+            if (selected_pipeline != current_pipeline) {
+                vkCmdBindPipeline(context_.command, VK_PIPELINE_BIND_POINT_COMPUTE, selected_pipeline);
+                current_pipeline = selected_pipeline;
+            }
             vkCmdPushConstants(context_.command, context_.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                                sizeof(dispatch.parameters), dispatch.parameters.data());
             if (context_.queries && context_.profile_passes)
@@ -803,8 +815,9 @@ private:
         const auto dispatch = [&](unsigned mode, unsigned width, unsigned height,
                                   unsigned source, unsigned destination, unsigned extra0 = 0, unsigned extra1 = 0) {
             commands.push_back({{mode, width, height, source, destination, extra0, extra1, 0},
-                mode == 8u ? 3u : mode >= 6u ? 1u : (width + 15u) / 16u,
-                mode >= 6u ? 1u : (height + 15u) / 16u});
+                mode == 8u ? 3u : mode == 9u ? (speed.blocks + 255u) / 256u : mode >= 6u ? 1u : (width + 15u) / 16u,
+                mode >= 6u ? 1u : (height + 15u) / 16u,
+                mode == 7u ? context_.speed_factor_pipeline : VK_NULL_HANDLE});
         };
         for (unsigned i = 0; i < 2; ++i) {
             dispatch(0, speed.width, speed.height, 0, speed.frame_a, unsigned(inputs[i]->stride), i);
@@ -820,6 +833,8 @@ private:
             dispatch(6, speed.operating_width, speed.operating_height, speed.downscaled, 0);
             dispatch(8, speed.operating_width, speed.operating_height, speed.downscaled, 0);
             dispatch(7, speed.operating_width, speed.operating_height, speed.downscaled,
+                       i ? speed.distorted_result : speed.reference_result);
+            dispatch(9, speed.operating_width, speed.operating_height, speed.downscaled,
                        i ? speed.distorted_result : speed.reference_result);
         }
         const std::array<Buffer *, 3> resources = {&r, &d, &workspace};

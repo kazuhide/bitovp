@@ -17,8 +17,8 @@
  */
 
 // Adapted from official Netflix/vmaf 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef
-// speed.c scalar matrix/eigen/covariance routines. Float pointers become SSBO
-// element offsets; scratch storage is explicitly supplied by the caller.
+// speed.c scalar matrix/eigen/covariance routines. Float pointers become
+// workspace element offsets; storage is supplied by the including shader.
 #define EIGENVALUE_EPS 1e-6LF
 #define EIGENVALUE_MAX_ITERS 500
 #define EINVAL 22

@@ -27,6 +27,11 @@ layout(push_constant) uniform Parameters {
     uint mode, scale, width, height, source_width, source_height, selector, unused;
 } p;
 
+// Pool one row across 32 lanes. Keeping only the partial sums in shared
+// memory costs 1,536 bytes per workgroup, including the other ADM stages.
+shared uint64_t row_denominators[96];
+shared uint64_t row_numerators[96];
+
 const int low_filter[4] = int[4](15826, 27411, 7345, -4240);
 const int high_filter[4] = int[4](-4240, -7345, 27411, -15826);
 uint config(uint field) { return words[64u + p.scale * 16u + field]; }
@@ -171,12 +176,13 @@ int masking_threshold(uint x, uint y) {
     return sum;
 }
 void pool_row(uint row) {
+    uint lane = gl_LocalInvocationIndex;
     uint left = config(2u), top = config(3u);
     uint right = p.width - left, bottom = p.height - top;
     uint64_t den[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
     uint64_t num[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
-    if (row >= top && row < bottom) {
-        for (uint x = left; x < right; ++x) {
+    if (lane < 32u && row >= top && row < bottom) {
+        for (uint x = left + lane; x < right; x += 32u) {
             int threshold = masking_threshold(x, row);
             for (uint theta = 0u; theta < 3u; ++theta) {
                 if (p.selector == 0u) {
@@ -201,13 +207,29 @@ void pool_row(uint row) {
             }
         }
     }
-    for (uint theta = 0u; theta < 3u; ++theta) {
+    if (lane < 32u) for (uint theta = 0u; theta < 3u; ++theta) {
+        row_denominators[theta * 32u + lane] = den[theta];
+        row_numerators[theta * 32u + lane] = num[theta];
+    }
+    // All 256 lanes participate in every barrier, including cropped rows and
+    // lanes beyond the 32 arithmetic lanes. Integer addition remains exact
+    // modulo 2^64; row rounding happens once after the complete reduction.
+    barrier();
+    for (uint offset = 16u; offset != 0u; offset >>= 1u) {
+        if (lane < offset) for (uint theta = 0u; theta < 3u; ++theta) {
+            row_denominators[theta * 32u + lane] += row_denominators[theta * 32u + lane + offset];
+            row_numerators[theta * 32u + lane] += row_numerators[theta * 32u + lane + offset];
+        }
+        barrier();
+    }
+    if (lane == 0u) for (uint theta = 0u; theta < 3u; ++theta) {
         if (p.selector == 0u) {
             uint shift = config(p.scale == 0u ? 4u : 5u);
-            store64(words[54] + (row * 3u + theta) * 2u, (den[theta] + half_round(shift)) >> shift);
+            store64(words[54] + (row * 3u + theta) * 2u,
+                    (row_denominators[theta * 32u] + half_round(shift)) >> shift);
         }
         store64(words[p.selector == 0u ? 55 : 56] + (row * 3u + theta) * 2u,
-                (num[theta] + half_round(config(8u))) >> config(8u));
+                (row_numerators[theta * 32u] + half_round(config(8u))) >> config(8u));
     }
 }
 void reduce_scale() {
@@ -267,7 +289,7 @@ void main() {
     uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
     if (p.mode == 6u) { if (x == 0u && y == 0u) finish_score(); return; }
     if (p.mode == 5u) { if (x == 0u && y == 0u) reduce_scale(); return; }
-    if (p.mode == 4u) { if (x < p.height && y == 0u) pool_row(x); return; }
+    if (p.mode == 4u) { if (gl_WorkGroupID.x < p.height) pool_row(gl_WorkGroupID.x); return; }
     if (x >= p.width || y >= p.height) return;
     if (p.mode == 0u) vertical(x, y);
     else if (p.mode == 1u) horizontal(x, y);

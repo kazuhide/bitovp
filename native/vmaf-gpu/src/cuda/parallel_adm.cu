@@ -72,7 +72,7 @@ struct AdmParameters {
              bool rows = false, bool single = false) {
         AdmPass pass;
         pass.push = {mode, scale, width, height, source_width, source_height, selector, 0};
-        pass.groups_x = single ? 1 : ((rows ? height : width) + 15) / 16;
+        pass.groups_x = single ? 1 : rows ? height : (width + 15) / 16;
         pass.groups_y = rows || single ? 1 : (height + 15) / 16;
         passes.push_back(pass);
     }
@@ -321,12 +321,13 @@ __device__ int masking_threshold(uint x, uint y) {
     return sum;
 }
 __device__ void pool_row(uint row) {
+    const uint lane = threadIdx.x;
     uint left = config(2u), top = config(3u);
     uint right = p.width - left, bottom = p.height - top;
     uint64_t den[3] = {};
     uint64_t num[3] = {};
     if (row >= top && row < bottom) {
-        for (uint x = left; x < right; ++x) {
+        for (uint x = left + lane; x < right; x += 32u) {
             int threshold = masking_threshold(x, row);
             for (uint theta = 0u; theta < 3u; ++theta) {
                 if (p.selector == 0u) {
@@ -351,6 +352,18 @@ __device__ void pool_row(uint row) {
             }
         }
     }
+    // Unsigned addition is associative modulo 2^64. Reduce the unrounded
+    // pixel contributions first; applying the row shift to partial sums
+    // would change the official fixed-point arithmetic.
+    #pragma unroll
+    for (uint offset = 16u; offset; offset >>= 1u) {
+        #pragma unroll
+        for (uint theta = 0u; theta < 3u; ++theta) {
+            den[theta] += __shfl_down_sync(0xffffffffu, den[theta], offset);
+            num[theta] += __shfl_down_sync(0xffffffffu, num[theta], offset);
+        }
+    }
+    if (lane != 0u) return;
     for (uint theta = 0u; theta < 3u; ++theta) {
         if (p.selector == 0u) {
             uint shift = config(p.scale == 0u ? 4u : 5u);
@@ -421,7 +434,7 @@ __global__ void adm_stage(Stage stage) {
     const auto &p = stage.p;
     if (p.mode == 6) { if (!x && !y) stage.finish_score(); return; }
     if (p.mode == 5) { if (!x && !y) stage.reduce_scale(); return; }
-    if (p.mode == 4) { if (x < p.height && !y) stage.pool_row(x); return; }
+    if (p.mode == 4) { if (blockIdx.x < p.height) stage.pool_row(blockIdx.x); return; }
     if (x >= p.width || y >= p.height) return;
     if (p.mode == 0) stage.vertical(x, y);
     else if (p.mode == 1) stage.horizontal(x, y);
@@ -503,7 +516,7 @@ struct CudaParallelAdm::Impl {
         for (const auto &pass : parameters.passes) {
             Parameters p{}; std::memcpy(&p, pass.push.data(), sizeof(p));
             const bool single = p.mode == 5 || p.mode == 6;
-            const dim3 block = single ? dim3(1) : dim3(16, 16);
+            const dim3 block = single ? dim3(1) : p.mode == 4 ? dim3(32) : dim3(16, 16);
             const dim3 grid = single ? dim3(1) : dim3(pass.groups_x, pass.groups_y);
             adm_stage<<<grid, block, 0, stream>>>({workspace,
                 static_cast<const unsigned char *>(reference.data), static_cast<const unsigned char *>(distorted.data), p});

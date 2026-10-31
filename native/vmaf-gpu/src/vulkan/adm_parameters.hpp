@@ -71,7 +71,7 @@ struct AdmParameters {
              bool rows = false, bool single = false) {
         AdmPass pass;
         pass.push = {mode, scale, width, height, source_width, source_height, selector, 0};
-        pass.groups_x = single ? 1 : ((rows ? height : width) + 15) / 16;
+        pass.groups_x = single ? 1 : rows ? height : (width + 15) / 16;
         pass.groups_y = rows || single ? 1 : (height + 15) / 16;
         passes.push_back(pass);
     }

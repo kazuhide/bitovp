@@ -113,12 +113,10 @@ __device__ void block_multiply(float *f, int destination, int x, int y, int rows
     }
     __syncthreads();
 }
-__device__ void block_solve(Workspace b, int covariance, int independent, int solution, int temporary, int blocks) {
-    auto *f = b.floats();
+__device__ void block_factor(float *f) {
     constexpr int size = 25, square = size * size;
-    const int a = temporary, q = a + square, r = q + square;
-    const int tmp1 = r + square, tmp2 = tmp1 + square, rectangle = tmp2 + square;
-    block_copy(f, a, covariance, square);
+    constexpr int a = 0, q = a + square, r = q + square;
+    constexpr int tmp1 = r + square, tmp2 = tmp1 + square, norm_value = tmp2 + square;
     block_copy(f, tmp2, a, square);
     for (int cell = int(threadIdx.x); cell < square; cell += int(blockDim.x)) f[q + cell] = cell / size == cell % size ? 1.0f : 0.0f;
     __syncthreads();
@@ -134,10 +132,10 @@ __device__ void block_solve(Workspace b, int covariance, int independent, int so
         if (!threadIdx.x) {
             const float norm = m.vector_norm(r, size);
             f[r + k] += m.get_sign(f[a + k * size + k]) * norm;
-            f[36] = m.vector_norm(r, size);
+            f[norm_value] = m.vector_norm(r, size);
         }
         __syncthreads();
-        if (threadIdx.x < size) f[r + threadIdx.x] = __fdiv_rn(f[r + threadIdx.x], f[36]);
+        if (threadIdx.x < size) f[r + threadIdx.x] = __fdiv_rn(f[r + threadIdx.x], f[norm_value]);
         __syncthreads();
         for (int cell = int(threadIdx.x); cell < square; cell += int(blockDim.x)) {
             const int i = cell / size, j = cell % size;
@@ -152,51 +150,72 @@ __device__ void block_solve(Workspace b, int covariance, int independent, int so
         block_copy(f, q, r, square);
     }
     block_multiply(f, r, q, a, size, size, size);
-    // Upstream matrix_qr_decomposition transposes Q and its caller immediately
-    // transposes it back before multiplying B. The two exact swaps cancel.
-    block_multiply(f, rectangle, q, independent, size, size, blocks);
-    for (int i = size - 1; i >= 0; --i) {
-        const float denominator = f[r + i * size + i];
-        if (!threadIdx.x && fabsf(denominator) < 1e-6) b.words[35] = 1;
-        __syncthreads();
-        if (b.words[35]) break;
-        for (int j = int(threadIdx.x); j < blocks; j += int(blockDim.x)) {
-            float value = f[rectangle + i * blocks + j];
-            for (int k = i + 1; k < size; ++k) value -= f[solution + k * blocks + j] * f[r + i * size + k];
-            f[solution + i * blocks + j] = __fdiv_rn(value, denominator);
-        }
-        __syncthreads();
-    }
 }
-__global__ void matrix_kernel(Workspace b, unsigned image, unsigned output) {
-    Math m{b.floats()}; const auto d = b.dimensions();
+__global__ void factor_kernel(Workspace b, unsigned output) {
+    // The covariance, QR factors and eigenvalue workspace fit in 12.5 KiB.
+    // Shared storage changes only where binary32 intermediates are stored;
+    // every scalar eigenvalue and per-cell QR accumulation retains its order.
+    __shared__ float scratch[3126];
+    constexpr int size = 25, square = size * size, q = square, r = q + square;
+    Math m{scratch}; const auto d = b.dimensions();
+    auto *f = b.floats();
     const int covariance = int(b.words[30]), eigenvalues = int(b.words[31]);
-    const int independent = int(b.words[32]), solution = int(b.words[33]), temporary = int(b.words[34]);
+    const int temporary = int(b.words[34]);
+    for (int i = int(threadIdx.x); i < square; i += int(blockDim.x)) scratch[i] = f[covariance + i];
+    __syncthreads();
     if (!threadIdx.x) {
-        m.compute_eigenvalues(covariance, eigenvalues, 25, temporary);
-        b.words[35] = m.is_matrix_regular(d, eigenvalues) ? 0 : 1;
+        m.compute_eigenvalues(0, square, size, square + size);
+        b.words[35] = m.is_matrix_regular(d, square) ? 0 : 1;
     }
     __syncthreads();
-    for (int element = int(threadIdx.x); element < 25 * d.num_blocks; element += int(blockDim.x)) {
-        const int i = element / d.num_blocks, block = element % d.num_blocks;
+    if (threadIdx.x < size) {
+        const float value = scratch[square + threadIdx.x];
+        f[eigenvalues + threadIdx.x] = value;
+        f[output + threadIdx.x] = value;
+    }
+    __syncthreads();
+    if (!b.words[35]) {
+        block_factor(scratch);
+        if (!threadIdx.x) {
+            for (int i = size - 1; i >= 0; --i)
+                if (fabsf(scratch[r + i * size + i]) < 1e-6) { b.words[35] = 1; break; }
+        }
+        for (int i = int(threadIdx.x); i < 2 * square; i += int(blockDim.x)) f[temporary + q + i] = scratch[q + i];
+    }
+    if (!threadIdx.x) f[output + size + d.num_blocks] = b.words[35] ? 1.0f : 0.0f;
+}
+__global__ void solve_kernel(Workspace b, unsigned image, unsigned output) {
+    const auto d = b.dimensions();
+    const int block = int(blockIdx.x * blockDim.x + threadIdx.x);
+    if (block >= d.num_blocks) return;
+    auto *f = b.floats();
+    if (b.words[35]) { f[output + 25 + block] = 0; return; }
+    constexpr int size = 25, square = size * size;
+    const int independent = int(b.words[32]), solution = int(b.words[33]), temporary = int(b.words[34]);
+    const int q = temporary + square, r = q + square, rectangle = temporary + 5 * square;
+    for (int i = 0; i < size; ++i) {
         const int y = (block / d.num_blocks_horizontal) * 5 + i / 5, x = (block % d.num_blocks_horizontal) * 5 + i % 5;
-        m.f[independent + element] = m.f[image + y * b.words[4] + x];
+        f[independent + i * d.num_blocks + block] = f[image + y * b.words[4] + x];
     }
-    __syncthreads();
-    if (!b.words[35]) block_solve(b, covariance, independent, solution, temporary, d.num_blocks);
-    __syncthreads();
-    if (b.words[35]) for (int i = int(threadIdx.x); i < 25 * d.num_blocks; i += int(blockDim.x)) m.f[solution + i] = 0;
-    __syncthreads();
-    for (int element = int(threadIdx.x); element < 25 * d.num_blocks; element += int(blockDim.x))
-        m.f[solution + element] = __fdiv_rn(m.f[solution + element] * m.f[independent + element], 25.0f);
-    __syncthreads();
-    for (int block = int(threadIdx.x); block < d.num_blocks; block += int(blockDim.x)) {
-        float value = m.f[solution + block];
-        for (int i = 1; i < 25; ++i) value += m.f[solution + i * d.num_blocks + block];
-        m.f[output + 25 + block] = value;
+    // Independent RHS columns can run on separate blocks. Ascending-k dot
+    // products and descending-row substitution match the CPU's binary32 sums.
+    // Upstream's two exact Q transposes still cancel before this multiplication.
+    for (int i = 0; i < size; ++i) {
+        float value = 0;
+        for (int k = 0; k < size; ++k) value += f[q + i * size + k] * f[independent + k * d.num_blocks + block];
+        f[rectangle + i * d.num_blocks + block] = value;
     }
-    if (threadIdx.x < 25) m.f[output + threadIdx.x] = m.f[eigenvalues + threadIdx.x];
-    if (!threadIdx.x) m.f[output + 25 + d.num_blocks] = b.words[35] ? 1.0f : 0.0f;
+    for (int i = size - 1; i >= 0; --i) {
+        float value = f[rectangle + i * d.num_blocks + block];
+        for (int k = i + 1; k < size; ++k) value -= f[solution + k * d.num_blocks + block] * f[r + i * size + k];
+        f[solution + i * d.num_blocks + block] = __fdiv_rn(value, f[r + i * size + i]);
+    }
+    float variance = 0;
+    for (int i = 0; i < size; ++i) {
+        const float value = __fdiv_rn(f[solution + i * d.num_blocks + block] * f[independent + i * d.num_blocks + block], 25.0f);
+        variance = i == 0 ? value : variance + value;
+    }
+    f[output + size + block] = variance;
 }
 void check(cudaError_t status, const char *operation) {
     if (status != cudaSuccess) throw std::runtime_error(std::string(operation) + ": " + cudaGetErrorString(status));
@@ -321,7 +340,8 @@ struct CudaParallelSpeed::Impl {
         dispatch(5, p.operating_width, p.operating_height, p.temporary, p.downscaled, p.downscaled);
         means_kernel<<<1, 32, 0, stream>>>(b, p.downscaled); check(cudaGetLastError(), "CUDA SPEED means pass");
         covariance_kernel<<<5, 128, 0, stream>>>(b, p.downscaled); check(cudaGetLastError(), "CUDA SPEED covariance pass");
-        matrix_kernel<<<1, 256, 0, stream>>>(b, p.downscaled, output); check(cudaGetLastError(), "CUDA SPEED matrix pass");
+        factor_kernel<<<1, 256, 0, stream>>>(b, output); check(cudaGetLastError(), "CUDA SPEED factor pass");
+        solve_kernel<<<(p.blocks + 31u) / 32u, 32, 0, stream>>>(b, p.downscaled, output); check(cudaGetLastError(), "CUDA SPEED solve pass");
     }
     std::pair<float, bool> channel(const Plane &r, const Plane &d) {
         check(cudaEventRecord(start, stream), "CUDA SPEED start");

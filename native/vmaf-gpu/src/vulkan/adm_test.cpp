@@ -18,10 +18,11 @@ struct Fixture {
     Picture reference, distorted;
     std::vector<std::uint8_t> a8[3], b8[3];
     std::vector<std::uint16_t> a16[3], b16[3];
-    Fixture(unsigned bpc, unsigned frame, bool flat) {
+    Fixture(unsigned bpc, unsigned frame, bool flat, unsigned width, unsigned height) {
         reference.bit_depth = distorted.bit_depth = bpc;
         for (unsigned plane = 0; plane < 3; ++plane) {
-            const unsigned w = plane ? 384 : 768, h = w, stride = w + 16;
+            const unsigned w = plane ? (width + 1) / 2 : width;
+            const unsigned h = plane ? (height + 1) / 2 : height, stride = w + 16;
             a8[plane].resize(stride * h); b8[plane].resize(stride * h);
             a16[plane].resize(stride * h); b16[plane].resize(stride * h);
             for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
@@ -57,8 +58,9 @@ int main(int argc, char **argv) {
         BackendOptions options;
         options.vendor_id = argc > 3 ? std::stoul(argv[3], nullptr, 0) : 0x1002;
         options.device_index = argc > 2 ? std::stoi(argv[2]) : -1;
+        for (const auto size : {std::array<unsigned, 2>{768, 768}, {1026, 770}, {1538, 1090}})
         for (unsigned bpc : {8u, 10u}) for (bool flat : {false, true}) {
-            ModelOracle oracle(models, {768, 768, bpc, 1, false}, OracleMode::Cpu);
+            ModelOracle oracle(models, {size[0], size[1], bpc, 1, false}, OracleMode::Cpu);
             FeaturePlan plan = oracle.feature_plan();
             plan.extractors.erase(std::remove_if(plan.extractors.begin(), plan.extractors.end(),
                 [](const ExtractorSpec &spec) { return spec.name != "adm"; }), plan.extractors.end());
@@ -74,7 +76,7 @@ int main(int argc, char **argv) {
             auto backend = create_vulkan_backend(options);
             backend->configure(plan);
             {
-                Fixture fixture(bpc, 0, flat);
+                Fixture fixture(bpc, 0, flat, size[0], size[1]);
                 Picture device_picture = fixture.reference;
                 device_picture.memory = PictureMemory::CudaDevice;
                 device_picture.planes[0].data = reinterpret_cast<const void *>(std::uintptr_t(1));
@@ -85,7 +87,7 @@ int main(int argc, char **argv) {
             }
             std::map<std::pair<std::uint64_t, std::string>, double> actual;
             for (unsigned index = 0; index < 6; ++index) {
-                Fixture fixture(bpc, index, flat);
+                Fixture fixture(bpc, index, flat, size[0], size[1]);
                 oracle.submit(index, fixture.reference, fixture.distorted);
                 for (const auto &score : backend->extract(index, fixture.reference, fixture.distorted))
                     if (!actual.emplace(std::make_pair(score.index, score.name), score.value).second)
@@ -110,7 +112,8 @@ int main(int argc, char **argv) {
             if (compared != actual.size() || compared != names.size() * 6)
                 throw std::runtime_error("Vulkan ADM compared an incomplete feature series");
             const auto timing = backend->timings();
-            std::cout << "PASS vulkan_adm eight model options min_val=0 bpc=" << bpc << " flat=" << flat
+            std::cout << "PASS vulkan_adm eight model options min_val=0 " << size[0] << 'x' << size[1]
+                      << " bpc=" << bpc << " flat=" << flat
                       << " maximum_error=" << oracle_double_to_string(maximum_error)
                       << " device=" << backend->device().name << " kernel_ms=" << timing.kernel_ms << '\n';
         }

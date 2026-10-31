@@ -79,6 +79,10 @@ with CUDA scoring: supported NV12/P010 input surfaces remain on the GPU while
 being converted to planar samples. This path requires unchanged dimensions;
 GPU resizing and precision reduction are rejected. With `--verify-cpu`, an
 independent software decode is compared as well.
+The worker passes file paths and settings to a child process, then reads its
+result JSON. Decoded video frames stay inside the native process; they do not
+cross the TypeScript boundary for each frame. The worker currently also runs
+the CPU comparison for every frame, so its total cost includes that verification.
 Measurements made with a previous experimental scorer keep their original
 provenance and require a new measurement to use this implementation.
 
@@ -105,6 +109,10 @@ peak process memory, and GPU workspace/copy counters. Trials run sequentially to
 avoid competition between devices. For a representative comparison, stop other
 CPU/GPU work and use a clip long enough to separate startup from sustained work.
 GPU acceleration is not guaranteed to be faster than the CPU implementation.
+These standalone timings do not include the worker's input preparation or its
+mandatory in-process CPU verification. The benchmark checks GPU results against
+separate CPU runs instead; measure the complete worker path before estimating
+application throughput.
 
 The benchmark requires GNU `time` and collects CPU time and peak resident memory
 after each complete process exits, including JSON generation and cleanup.

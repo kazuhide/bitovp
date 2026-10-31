@@ -1,0 +1,114 @@
+/*
+ * Copyright 2016-2025 Netflix, Inc.
+ * Copyright 2016-2020 Netflix, Inc.
+ * Licensed under the BSD+Patent License (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://opensource.org/licenses/BSDplusPatent
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Adapted from Netflix/vmaf 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef
+// feature/speed.c. Small matrix intermediates stay in workgroup memory.
+#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(set = 0, binding = 2, std430) buffer Workspace { precise float global_values[]; };
+layout(push_constant) uniform Parameters {
+    uint mode, width, height, source_image, destination_image, extra0, extra1, extra2;
+} parameters;
+
+// Only this pipeline reserves the 12.5 KiB shared matrix workspace. Image and
+// covariance dispatches use a separate pipeline without this allocation.
+shared precise float f[3126];
+shared uint matrix_error;
+#include "speed_matrix.glsl"
+
+uint meta(uint index) { return floatBitsToUint(global_values[index]); }
+void block_copy(int destination, int source, int count) {
+    for (int i = int(gl_LocalInvocationIndex); i < count; i += 256) f[destination + i] = f[source + i];
+    barrier();
+}
+void block_multiply(int destination, int x, int y) {
+    // Each output retains the CPU's ascending-k binary32 accumulation.
+    for (int cell = int(gl_LocalInvocationIndex); cell < 625; cell += 256) {
+        int row = cell / 25, column = cell % 25;
+        precise float sum = 0.0;
+        for (int k = 0; k < 25; ++k) sum += f[x + row * 25 + k] * f[y + k * 25 + column];
+        f[destination + cell] = sum;
+    }
+    barrier();
+}
+void factor() {
+    const int size = 25, square = 625;
+    const int a = 0, q = square, r = q + square;
+    const int tmp1 = r + square, tmp2 = tmp1 + square, norm_value = tmp2 + square;
+    int lane = int(gl_LocalInvocationIndex);
+    block_copy(tmp2, a, square);
+    for (int cell = lane; cell < square; cell += 256) f[q + cell] = cell / size == cell % size ? 1.0 : 0.0;
+    barrier();
+    for (int k = 0; k < size - 1; ++k) {
+        for (int cell = lane; cell < square; cell += 256) {
+            int i = cell / size, j = cell % size;
+            if (i < k || j < k) f[tmp2 + cell] = i == j ? 1.0 : 0.0;
+        }
+        barrier();
+        if (lane < size) f[r + lane] = f[tmp2 + lane * size + k];
+        barrier();
+        if (lane == 0) {
+            precise float norm = vector_norm(r, size);
+            f[r + k] += get_sign(f[a + k * size + k]) * norm;
+            f[norm_value] = vector_norm(r, size);
+        }
+        barrier();
+        if (lane < size) f[r + lane] = cpu_div(f[r + lane], f[norm_value]);
+        barrier();
+        for (int cell = lane; cell < square; cell += 256) {
+            int i = cell / size, j = cell % size;
+            precise float value = -2.0 * f[r + i] * f[r + j];
+            if (i == j) value += 1.0;
+            f[tmp1 + cell] = value;
+        }
+        barrier();
+        block_multiply(r, tmp1, tmp2);
+        block_copy(tmp2, r, square);
+        block_multiply(r, tmp1, q);
+        block_copy(q, r, square);
+    }
+    block_multiply(r, q, a);
+}
+void main() {
+    const int size = 25, square = 625, q = square, r = q + square;
+    int lane = int(gl_LocalInvocationIndex);
+    int covariance = int(meta(30)), eigenvalues = int(meta(31)), temporary = int(meta(34));
+    for (int i = lane; i < square; i += 256) f[i] = global_values[covariance + i];
+    barrier();
+    if (lane == 0) {
+        compute_eigenvalues(0, square, size, square + size);
+        matrix_error = 0u;
+        for (int i = 0; i < size; ++i)
+            if (f[square + i] < EIGENVALUE_EPS) { matrix_error = 1u; break; }
+    }
+    barrier();
+    if (lane < size) {
+        precise float value = f[square + lane];
+        global_values[eigenvalues + lane] = value;
+        global_values[parameters.destination_image + uint(lane)] = value;
+    }
+    barrier();
+    if (matrix_error == 0u) {
+        factor();
+        if (lane == 0)
+            for (int i = size - 1; i >= 0; --i)
+                if (abs(f[r + i * size + i]) < EIGENVALUE_EPS) { matrix_error = 1u; break; }
+        for (int i = lane; i < 2 * square; i += 256) global_values[temporary + q + i] = f[q + i];
+    }
+    if (lane == 0) {
+        global_values[35] = uintBitsToFloat(matrix_error);
+        global_values[parameters.destination_image + 25u + (meta(6) / 5u) * (meta(7) / 5u)] = matrix_error != 0u ? 1.0 : 0.0;
+    }
+}

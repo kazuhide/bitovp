@@ -8,11 +8,19 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- Experimental local VOD GPU decoding and an opt-in external VMAFx CUDA path
-  for VMAF v1.0, with input qualification, model and execution verification,
-  and separate decode/scoring metadata in reports and JSON exports. CPU
-  remains the default; numerical parity and performance on target GPUs are
-  still awaiting qualification. See [setup and limits](./docs/user-guide/GPU-QUALITY.md).
+- Experimental local VOD hardware decoding and owned CUDA/Vulkan VMAF v1.0
+  feature extraction, with the official Netflix predictor, full-frame CPU
+  verification, and separate decode/scoring metadata in reports and exports.
+  CPU remains the default. See [setup and limits](./docs/user-guide/GPU-QUALITY.md).
+- A standalone native scorer with resident NVDEC input, hash-verified builds,
+  real hardware qualification tests, and complete-process performance and
+  memory comparisons.
+
+### Changed
+
+- GPU scoring uses the owned native executable. The retired experimental
+  configuration is rejected rather than silently changed. Existing measurement
+  history remains readable; changing scorers requires a new measurement.
 
 ## [1.0.0-rc.1] - 2026-10-30
 

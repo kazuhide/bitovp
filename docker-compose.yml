@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:8.8.3-alpine@sha256:dc95ea2fcf5d5c4253be0f967c28143d0f625846197eed2fd32c748eb99abfca
+    image: redis:8.10.0-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
     mem_limit: ${REDIS_MEMORY_LIMIT:-256m}
     memswap_limit: ${REDIS_MEMORY_LIMIT:-256m}
     command: ["redis-server", "--appendonly", "yes"]
@@ -129,7 +129,7 @@ services:
   ingress:
     mem_limit: ${INGRESS_MEMORY_LIMIT:-128m}
     memswap_limit: ${INGRESS_MEMORY_LIMIT:-128m}
-    image: cloudflare/cloudflared:2026.8.3@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339
+    image: cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
     profiles: ["quick-tunnel"]
     command:
       - tunnel
@@ -150,7 +150,7 @@ services:
   ingress-named:
     mem_limit: ${INGRESS_MEMORY_LIMIT:-128m}
     memswap_limit: ${INGRESS_MEMORY_LIMIT:-128m}
-    image: cloudflare/cloudflared:2026.8.3@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339
+    image: cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
     profiles: ["named-tunnel"]
     command:
       - tunnel

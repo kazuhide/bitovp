@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kazuhide Yamamoto
 #include "adm_row_cases.hpp"
-#include "vulkan_adm_spv.hpp"
+#include "vulkan_adm_row_spv.hpp"
 #include <vulkan/vulkan.h>
 #include <cstring>
 #include <iostream>
@@ -126,7 +126,7 @@ public:
             layout_info.pushConstantRangeCount = 1; layout_info.pPushConstantRanges = &push;
             check(vkCreatePipelineLayout(device, &layout_info, nullptr, &layout), "create test layout");
             VkShaderModuleCreateInfo shader_info{}; shader_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            shader_info.codeSize = sizeof(bitovp_vulkan_adm_spv); shader_info.pCode = bitovp_vulkan_adm_spv;
+            shader_info.codeSize = sizeof(bitovp_vulkan_adm_row_spv); shader_info.pCode = bitovp_vulkan_adm_row_spv;
             VkShaderModule shader = VK_NULL_HANDLE;
             check(vkCreateShaderModule(device, &shader_info, nullptr, &shader), "create actual ADM shader");
             VkComputePipelineCreateInfo pipeline_info{}; pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;

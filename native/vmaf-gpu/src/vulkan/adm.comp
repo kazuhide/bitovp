@@ -19,7 +19,11 @@
 #version 450
 #extension GL_ARB_gpu_shader_fp64 : require
 #extension GL_ARB_gpu_shader_int64 : require
+#ifdef BITOVP_ADM_ROW_PIPELINE
+layout(local_size_x = 32, local_size_y = 1) in;
+#else
 layout(local_size_x = 16, local_size_y = 16) in;
+#endif
 layout(set = 0, binding = 0, std430) readonly buffer Reference { uint reference_words[]; };
 layout(set = 0, binding = 1, std430) readonly buffer Distorted { uint distorted_words[]; };
 layout(set = 0, binding = 2, std430) buffer Workspace { uint words[]; };
@@ -27,10 +31,12 @@ layout(push_constant) uniform Parameters {
     uint mode, scale, width, height, source_width, source_height, selector, unused;
 } p;
 
-// Pool one row across 32 lanes. Keeping only the partial sums in shared
-// memory costs 1,536 bytes per workgroup, including the other ADM stages.
+#ifdef BITOVP_ADM_ROW_PIPELINE
+// Pool one row across 32 lanes. Only the row pipeline reserves the 1,536-byte
+// partial-sum workspace; the other ADM stages use no workgroup memory.
 shared uint64_t row_denominators[96];
 shared uint64_t row_numerators[96];
+#endif
 
 const int low_filter[4] = int[4](15826, 27411, 7345, -4240);
 const int high_filter[4] = int[4](-4240, -7345, 27411, -15826);
@@ -47,10 +53,12 @@ void store_double(uint offset, double value) {
     uvec2 bits = unpackDouble2x32(value); words[offset] = bits.x; words[offset + 1u] = bits.y;
 }
 uint64_t load64(uint offset) { return uint64_t(words[offset]) | (uint64_t(words[offset + 1u]) << 32); }
+#ifdef BITOVP_ADM_ROW_PIPELINE
 void store64(uint offset, uint64_t value) {
     words[offset] = uint(value); words[offset + 1u] = uint(value >> 32);
 }
 uint64_t half_round(uint shift) { return shift == 0u ? uint64_t(0) : uint64_t(1) << (shift - 1u); }
+#endif
 double power2(int exponent) { return ldexp(1.0LF, exponent); }
 uint raw_sample(uint image, uint x, uint y) {
     uint bytes = words[2] == 8u ? 1u : 2u;
@@ -158,6 +166,7 @@ void contrast_sensitivity(uint x, uint y) {
         put(14u + theta, x, y, value); put(17u + theta, x, y, filtered);
     }
 }
+#ifdef BITOVP_ADM_ROW_PIPELINE
 int masking_threshold(uint x, uint y) {
     int sum = 0;
     for (uint theta = 0u; theta < 3u; ++theta)
@@ -211,9 +220,9 @@ void pool_row(uint row) {
         row_denominators[theta * 32u + lane] = den[theta];
         row_numerators[theta * 32u + lane] = num[theta];
     }
-    // All 256 lanes participate in every barrier, including cropped rows and
-    // lanes beyond the 32 arithmetic lanes. Integer addition remains exact
-    // modulo 2^64; row rounding happens once after the complete reduction.
+    // All 32 lanes participate in every barrier, including cropped rows.
+    // Integer addition remains exact modulo 2^64; row rounding happens once
+    // after the complete reduction.
     barrier();
     for (uint offset = 16u; offset != 0u; offset >>= 1u) {
         if (lane < offset) for (uint theta = 0u; theta < 3u; ++theta) {
@@ -232,6 +241,7 @@ void pool_row(uint row) {
                 (row_numerators[theta * 32u] + half_round(config(8u))) >> config(8u));
     }
 }
+#endif
 void reduce_scale() {
     uint64_t den[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
     uint64_t num[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
@@ -286,13 +296,16 @@ void finish_score() {
     store_double(words[58], adm3); store_double(words[58] + 2u, score); store_double(words[58] + 4u, aim);
 }
 void main() {
+#ifdef BITOVP_ADM_ROW_PIPELINE
+    if (gl_WorkGroupID.x < p.height) pool_row(gl_WorkGroupID.x);
+#else
     uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
     if (p.mode == 6u) { if (x == 0u && y == 0u) finish_score(); return; }
     if (p.mode == 5u) { if (x == 0u && y == 0u) reduce_scale(); return; }
-    if (p.mode == 4u) { if (gl_WorkGroupID.x < p.height) pool_row(gl_WorkGroupID.x); return; }
     if (x >= p.width || y >= p.height) return;
     if (p.mode == 0u) vertical(x, y);
     else if (p.mode == 1u) horizontal(x, y);
     else if (p.mode == 2u) decouple(x, y);
     else if (p.mode == 3u) contrast_sensitivity(x, y);
+#endif
 }

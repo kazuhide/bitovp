@@ -7,6 +7,7 @@
 #include "vulkan_speed_spv.hpp"
 #include "vulkan_speed_factor_spv.hpp"
 #include "vulkan_adm_spv.hpp"
+#include "vulkan_adm_row_spv.hpp"
 #include "vulkan_motion_spv.hpp"
 #include "cambi_parameters.hpp"
 #include "speed_parameters.hpp"
@@ -62,6 +63,7 @@ struct Context {
     VkPipeline speed_pipeline = VK_NULL_HANDLE;
     VkPipeline speed_factor_pipeline = VK_NULL_HANDLE;
     VkPipeline adm_pipeline = VK_NULL_HANDLE;
+    VkPipeline adm_row_pipeline = VK_NULL_HANDLE;
     VkPipeline motion_pipeline = VK_NULL_HANDLE;
     VkQueryPool queries = VK_NULL_HANDLE;
     VkPhysicalDeviceProperties properties{};
@@ -94,6 +96,7 @@ struct Context {
             if (speed_pipeline) vkDestroyPipeline(device, speed_pipeline, nullptr);
             if (speed_factor_pipeline) vkDestroyPipeline(device, speed_factor_pipeline, nullptr);
             if (adm_pipeline) vkDestroyPipeline(device, adm_pipeline, nullptr);
+            if (adm_row_pipeline) vkDestroyPipeline(device, adm_row_pipeline, nullptr);
             if (motion_pipeline) vkDestroyPipeline(device, motion_pipeline, nullptr);
             if (pipeline_layout) vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
             if (descriptor_pool) vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
@@ -194,6 +197,8 @@ public:
             context_.speed_factor_pipeline = additional_pipeline(bitovp_vulkan_speed_factor_spv, sizeof(bitovp_vulkan_speed_factor_spv));
         if (!adm.empty() && !context_.adm_pipeline)
             context_.adm_pipeline = additional_pipeline(bitovp_vulkan_adm_spv, sizeof(bitovp_vulkan_adm_spv));
+        if (!adm.empty() && !context_.adm_row_pipeline)
+            context_.adm_row_pipeline = additional_pipeline(bitovp_vulkan_adm_row_spv, sizeof(bitovp_vulkan_adm_row_spv));
         if (!motion.empty() && !context_.motion_pipeline)
             context_.motion_pipeline = additional_pipeline(bitovp_vulkan_motion_spv, sizeof(bitovp_vulkan_motion_spv));
         plan_ = plan;
@@ -711,7 +716,9 @@ private:
         timings_.uploaded_bytes += adm.words.size() * sizeof(std::uint32_t);
         timings_.upload_ms += milliseconds(start);
         std::vector<Dispatch> commands;
-        for (const auto &pass : adm.passes) commands.push_back({pass.push, pass.groups_x, pass.groups_y});
+        for (const auto &pass : adm.passes)
+            commands.push_back({pass.push, pass.groups_x, pass.groups_y,
+                pass.push[0] == 4u ? context_.adm_row_pipeline : VK_NULL_HANDLE});
         const double previous_kernel_ms = timings_.kernel_ms;
         const std::array<Buffer *, 3> resources = {&r, &d, &workspace};
         execute_program(context_.adm_pipeline, commands, &resources);

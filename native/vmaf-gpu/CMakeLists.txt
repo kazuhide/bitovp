@@ -90,12 +90,18 @@ if(BITOVP_VULKAN)
   find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
   set(VULKAN_SPV_HEADERS "")
-  foreach(shader psnr cambi speed speed_factor adm motion)
+  foreach(shader psnr cambi speed speed_factor adm adm_row motion)
     set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/vulkan_${shader}_spv.hpp")
+    set(shader_source "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan/${shader}.comp")
+    set(shader_options "")
+    if(shader STREQUAL "adm_row")
+      set(shader_source "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan/adm.comp")
+      set(shader_options -DBITOVP_ADM_ROW_PIPELINE=1)
+    endif()
     add_custom_command(OUTPUT "${header}"
-      COMMAND "${GLSLANG_VALIDATOR}" -V "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan/${shader}.comp"
+      COMMAND "${GLSLANG_VALIDATOR}" -V "${shader_source}" ${shader_options}
         --vn bitovp_vulkan_${shader}_spv -o "${header}"
-      DEPENDS "src/vulkan/${shader}.comp" "src/vulkan/speed_matrix.glsl" VERBATIM)
+      DEPENDS "${shader_source}" "src/vulkan/speed_matrix.glsl" VERBATIM)
     list(APPEND VULKAN_SPV_HEADERS "${header}")
   endforeach()
   add_library(bitovp_vulkan STATIC src/vulkan/backend.cpp ${VULKAN_SPV_HEADERS})

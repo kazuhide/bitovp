@@ -1,0 +1,225 @@
+/*
+ * Copyright 2016-2025 Netflix, Inc.
+ * Copyright 2016-2020 Netflix, Inc.
+ * Licensed under the BSD+Patent License (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://opensource.org/licenses/BSDplusPatent
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Adapted from Netflix/vmaf 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef
+// feature/speed.c, vif_tools.c and picture_copy.c.
+#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(set = 0, binding = 0, std430) readonly buffer Reference { uint reference_words[]; };
+layout(set = 0, binding = 1, std430) readonly buffer Distorted { uint distorted_words[]; };
+// QR lanes exchange SSBO results. Both coherent accesses and the execution /
+// memory barriers below are needed for their producer-consumer dependencies.
+layout(set = 0, binding = 2, std430) coherent buffer Workspace { precise float f[]; };
+layout(push_constant) uniform Parameters {
+    uint mode, width, height, source_image, destination_image, extra0, extra1, extra2;
+} parameters;
+#include "speed_matrix.glsl"
+
+uint meta(uint index) { return floatBitsToUint(f[index]); }
+int mirror(int value, int size) { return value < 0 ? -value : value >= size ? 2 * size - value - 2 : value; }
+uint raw_sample(uint x, uint y) {
+    uint bytes = meta(5u) == 8u ? 1u : 2u;
+    uint offset = y * parameters.extra0 + x * bytes;
+    uint word = parameters.extra1 == 0u ? reference_words[offset >> 2u] : distorted_words[offset >> 2u];
+    uint value = word >> ((offset & 3u) * 8u);
+    if (bytes == 2u && (offset & 3u) == 3u) {
+        uint next = parameters.extra1 == 0u ? reference_words[(offset >> 2u) + 1u] : distorted_words[(offset >> 2u) + 1u];
+        value |= next << 8u;
+    }
+    return value & (bytes == 1u ? 255u : 65535u);
+}
+SpeedDimensions dimensions() {
+    SpeedDimensions d;
+    d.original_width = int(meta(0)); d.original_height = int(meta(1));
+    d.scaled_width = int(meta(2)); d.scaled_height = int(meta(3));
+    d.operating_width = int(meta(6)); d.operating_height = int(meta(7));
+    d.truncated_width = (d.operating_width / 5) * 5;
+    d.truncated_height = (d.operating_height / 5) * 5;
+    d.block_size = 5; d.elements_in_block = 25;
+    d.num_blocks_horizontal = d.truncated_width / 5;
+    d.num_blocks_vertical = d.truncated_height / 5;
+    d.num_blocks = d.num_blocks_horizontal * d.num_blocks_vertical;
+    d.submatrix_width = d.truncated_width - 4;
+    d.submatrix_height = d.truncated_height - 4;
+    d.alloc_width = int(meta(4)); d.alloc_height = max(d.original_height, d.scaled_height);
+    return d;
+}
+void block_sync() { memoryBarrierBuffer(); barrier(); }
+void block_copy(int destination, int source, int count) {
+    for (int i = int(gl_LocalInvocationIndex); i < count; i += 256) f[destination + i] = f[source + i];
+    block_sync();
+}
+void block_multiply(int destination, int x, int y, int rows, int inner, int columns) {
+    // One lane owns each output cell. Its ascending-k binary32 accumulation
+    // matches upstream's i,k,j loop; independent cells can run concurrently.
+    for (int cell = int(gl_LocalInvocationIndex); cell < rows * columns; cell += 256) {
+        int row = cell / columns, column = cell % columns;
+        precise float sum = 0.0;
+        for (int k = 0; k < inner; ++k) sum += f[x + row * inner + k] * f[y + k * columns + column];
+        f[destination + cell] = sum;
+    }
+    block_sync();
+}
+shared uint matrix_error;
+shared float matrix_norm;
+void block_solve(int covariance, int independent, int solution, int temporary, int blocks) {
+    const int size = 25, square = 625;
+    int a = temporary, q = a + square, r = q + square;
+    int tmp1 = r + square, tmp2 = tmp1 + square, rectangle = tmp2 + square;
+    int lane = int(gl_LocalInvocationIndex);
+    block_copy(a, covariance, square);
+    block_copy(tmp2, a, square);
+    for (int cell = lane; cell < square; cell += 256) f[q + cell] = cell / size == cell % size ? 1.0 : 0.0;
+    block_sync();
+    for (int k = 0; k < size - 1; ++k) {
+        for (int cell = lane; cell < square; cell += 256) {
+            int i = cell / size, j = cell % size;
+            if (i < k || j < k) f[tmp2 + cell] = i == j ? 1.0 : 0.0;
+        }
+        block_sync();
+        if (lane < size) f[r + lane] = f[tmp2 + lane * size + k];
+        block_sync();
+        if (lane == 0) {
+            precise float norm = vector_norm(r, size);
+            f[r + k] += get_sign(f[a + k * size + k]) * norm;
+            matrix_norm = vector_norm(r, size);
+        }
+        block_sync();
+        if (lane < size) f[r + lane] = cpu_div(f[r + lane], matrix_norm);
+        block_sync();
+        for (int cell = lane; cell < square; cell += 256) {
+            int i = cell / size, j = cell % size;
+            precise float value = -2.0 * f[r + i] * f[r + j];
+            if (i == j) value += 1.0;
+            f[tmp1 + cell] = value;
+        }
+        block_sync();
+        block_multiply(r, tmp1, tmp2, size, size, size);
+        block_copy(tmp2, r, square);
+        block_multiply(r, tmp1, q, size, size, size);
+        block_copy(q, r, square);
+    }
+    block_multiply(r, q, a, size, size, size);
+    // Upstream QR transposes Q and solve_linear_system immediately transposes
+    // it back. Both exact swaps cancel before the independent-term product.
+    block_multiply(rectangle, q, independent, size, size, blocks);
+    for (int i = size - 1; i >= 0; --i) {
+        precise float denominator = f[r + i * size + i];
+        if (lane == 0 && abs(denominator) < EIGENVALUE_EPS) matrix_error = 1u;
+        block_sync();
+        if (matrix_error != 0u) break;
+        for (int j = lane; j < blocks; j += 256) {
+            precise float value = f[rectangle + i * blocks + j];
+            for (int k = i + 1; k < size; ++k) value -= f[solution + k * blocks + j] * f[r + i * size + k];
+            f[solution + i * blocks + j] = cpu_div(value, denominator);
+        }
+        block_sync();
+    }
+}
+void means_stage() {
+    int i = int(gl_LocalInvocationIndex);
+    if (i < 25) f[int(meta(31)) + i] = compute_mean(dimensions(), int(parameters.source_image), int(meta(4)), i / 5, i % 5);
+}
+void covariance_stage() {
+    int i = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
+    if (i >= 625) return;
+    int x = i / 25, y = i % 25;
+    if (y > x) return;
+    precise float covariance = compute_covariance(dimensions(), int(parameters.source_image),
+        int(meta(31)), int(meta(4)), x / 5, x % 5, y / 5, y % 5);
+    int destination = int(meta(30));
+    f[destination + x * 25 + y] = covariance;
+    f[destination + y * 25 + x] = covariance;
+}
+void matrix_stage() {
+    SpeedDimensions d = dimensions();
+    int covariance = int(meta(30)), eigenvalues = int(meta(31));
+    int independent = int(meta(32)), solution = int(meta(33)), temporary = int(meta(34));
+    int lane = int(gl_LocalInvocationIndex);
+    if (lane == 0) {
+        compute_eigenvalues(covariance, eigenvalues, 25, temporary);
+        matrix_error = is_matrix_regular(d, eigenvalues) ? 0u : 1u;
+    }
+    block_sync();
+    for (int element = lane; element < 25 * d.num_blocks; element += 256) {
+        int i = element / d.num_blocks, block = element % d.num_blocks;
+        int y = (block / d.num_blocks_horizontal) * 5 + i / 5;
+        int x = (block % d.num_blocks_horizontal) * 5 + i % 5;
+        f[independent + element] = f[parameters.source_image + uint(y) * meta(4) + uint(x)];
+    }
+    block_sync();
+    if (matrix_error == 0u) block_solve(covariance, independent, solution, temporary, d.num_blocks);
+    block_sync();
+    if (matrix_error != 0u)
+        for (int i = lane; i < 25 * d.num_blocks; i += 256) f[solution + i] = 0.0;
+    block_sync();
+    for (int element = lane; element < 25 * d.num_blocks; element += 256)
+        f[solution + element] = cpu_div(f[solution + element] * f[independent + element], 25.0);
+    block_sync();
+    uint output_base = parameters.destination_image;
+    for (int block = lane; block < d.num_blocks; block += 256) {
+        precise float value = f[solution + block];
+        for (int i = 1; i < 25; ++i) value += f[solution + i * d.num_blocks + block];
+        f[output_base + 25u + block] = value;
+    }
+    if (lane < 25) f[output_base + lane] = f[eigenvalues + lane];
+    if (lane == 0) f[output_base + 25u + d.num_blocks] = matrix_error != 0u ? 1.0 : 0.0;
+}
+void main() {
+    if (parameters.mode == 6u) { means_stage(); return; }
+    if (parameters.mode == 7u) { matrix_stage(); return; }
+    if (parameters.mode == 8u) { covariance_stage(); return; }
+    uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
+    if (x >= parameters.width || y >= parameters.height) return;
+    uint stride = meta(4u), pixel = y * stride + x;
+    if (parameters.mode == 0u) {
+        float value = float(raw_sample(x, y));
+        if (meta(5u) == 10u) value /= 4.0;
+        f[parameters.destination_image + pixel] = value - 128.0;
+    } else if (parameters.mode == 1u) {
+        uint x1 = meta(meta(17u) + x), x2 = meta(meta(18u) + x);
+        uint y1 = meta(meta(20u) + y), y2 = meta(meta(21u) + y);
+        float dx = f[meta(19u) + x], dy = f[meta(22u) + y];
+        uint source = parameters.source_image;
+        precise float value = (1.0 - dy) * (1.0 - dx) * f[source + y1 * stride + x1] +
+                             (1.0 - dy) * dx * f[source + y1 * stride + x2] +
+                             dy * (1.0 - dx) * f[source + y2 * stride + x1] +
+                             dy * dx * f[source + y2 * stride + x2];
+        f[parameters.destination_image + pixel] = value;
+    } else if (parameters.mode == 2u || parameters.mode == 4u) {
+        uint filter_base = parameters.mode == 2u ? meta(13u) : meta(15u);
+        int filter_size = int(parameters.mode == 2u ? meta(14u) : meta(16u));
+        int source_height = parameters.mode == 2u ? int(meta(3u)) : int(meta(7u));
+        int center = parameters.mode == 2u ? int(y * 16u) : int(y);
+        precise float value = 0.0;
+        for (int tap = 0; tap < filter_size; ++tap) {
+            int row = mirror(center - filter_size / 2 + tap, source_height);
+            value += f[filter_base + tap] * f[parameters.source_image + uint(row) * stride + x];
+        }
+        f[parameters.destination_image + pixel] = value;
+    } else if (parameters.mode == 3u || parameters.mode == 5u) {
+        uint filter_base = parameters.mode == 3u ? meta(13u) : meta(15u);
+        int filter_size = int(parameters.mode == 3u ? meta(14u) : meta(16u));
+        int source_width = parameters.mode == 3u ? int(meta(2u)) : int(meta(6u));
+        int center = parameters.mode == 3u ? int(x * 16u) : int(x);
+        precise float value = 0.0;
+        for (int tap = 0; tap < filter_size; ++tap) {
+            int column = mirror(center - filter_size / 2 + tap, source_width);
+            value += f[filter_base + tap] * f[parameters.source_image + y * stride + uint(column)];
+        }
+        if (parameters.mode == 5u) value = f[parameters.extra0 + pixel] - value;
+        f[parameters.destination_image + pixel] = value;
+    }
+}

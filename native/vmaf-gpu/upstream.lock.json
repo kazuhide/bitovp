@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/Netflix/vmaf",
+  "revision": "74f930d17de8c58e7c2ce55e2b897b0030ebd8ef",
+  "archive": "https://codeload.github.com/Netflix/vmaf/tar.gz/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef",
+  "sha256": "65dc602f7a2bbb52c9c02a5761a5c5a5daace626a2270b80a8dbc3201e172e8b",
+  "license": "BSD-2-Clause-Patent"
+}

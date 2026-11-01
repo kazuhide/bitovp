@@ -7,7 +7,7 @@ import type { ProcessRunner } from "../feeder/supervisor";
 import { verifiedFileIdentity } from "./file-identity";
 import { nativeSourceFromVersion } from "./native-contract";
 
-async function executablePath(path: string) {
+export async function resolveNativeExecutable(path: string) {
 	if (!path.trim()) throw new Error("NATIVE_EXECUTABLE_UNAVAILABLE");
 	const candidates =
 		isAbsolute(path) || path.includes("/")
@@ -42,7 +42,7 @@ export async function inspectNativeDevice(
 			selection.device > 256)
 	)
 		throw new Error("NATIVE_DEVICE_SELECTION_INVALID");
-	const executable = await executablePath(deps.nativePath);
+	const executable = await resolveNativeExecutable(deps.nativePath);
 	const before = await verifiedFileIdentity(executable);
 	signal?.throwIfAborted();
 	const version = await deps.runner.run(executable, ["--version"], {

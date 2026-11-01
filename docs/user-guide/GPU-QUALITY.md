@@ -86,6 +86,42 @@ This verification adds CPU work. Benchmarking the qualified GPU extractor
 alone and measuring the current worker's end-to-end time answer different
 questions. Compare both before choosing a deployment setting.
 
+## Automatic local scheduling
+
+On Linux, a matching native scorer and supervisor enable automatic resource
+planning. Leave `VMAF_THREADS` and `VMAF_CONCURRENCY` blank. The worker selects
+calculation threads, decoder threads, simultaneous comparisons, and the number
+of GPU frames in flight from the available CPU, RAM, GPU memory and video settings.
+An explicit thread value stays fixed; an explicit concurrency value is an upper
+bound shared across local jobs.
+
+For a new hardware, driver, model and video-format combination, the worker times
+a short sample with the same CPU verification used by complete measurements.
+It chooses a resource-efficient plan within five percent of the fastest measured
+throughput. This is a bounded search of measured candidates. Source length and
+available memory are checked again for each complete comparison.
+
+The first search has a 30-second budget for starting trials; an active trial
+finishes or stops before its resources are released. Subsequent comparisons use
+the saved measurements without repeating that search. The private cache contains
+timing and memory metadata. Temporary video samples are removed after analysis.
+Unknown device memory or an unrecognized driver retains a conservative serial
+plan. Worker logs describe the selected plan and its reason.
+
+When more work is submitted than the selected capacity, excess jobs wait in the
+queue. Comparisons inside admitted jobs also share one resource pool. Input
+preparation waits for a permit before opening or downloading media. Completing
+or cancelling a comparison releases its capacity for the next waiting item.
+Several workers on the same host coordinate execution through their shared
+Redis connection. Memory pressure can reduce overlap while existing calculations
+finish. Cloud jobs retain their separate limit; Live comparisons retain their
+sequential order and CPU scoring.
+
+Keep the matching native executable and supervisor together. Their Linux
+heartbeat and parent-death guards stop owned calculations after worker failure.
+The worker retains the reservation until its child processes close. Installs
+without the native pair retain the existing local execution policy.
+
 ## Inspect hardware and control standalone concurrency
 
 The native scorer can inspect a GPU without opening a video or loading a model:

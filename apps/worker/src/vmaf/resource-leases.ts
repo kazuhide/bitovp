@@ -16,9 +16,13 @@ export type VmafResourceLeaseRequest = {
 	capacity: VmafResourceVector;
 	requested: VmafResourceVector;
 };
+export type VmafResourceHeadroom = { hostBytes: number; gpuBytes?: number };
 export type VmafResourceLeaseContext = {
 	signal: AbortSignal;
 	assertOwned(): Promise<void>;
+	/** Compare all retained reservations with one fresh sample, without renewing.
+	 * External allocations after that sample remain outside this check. */
+	fitsHeadroom(headroom: VmafResourceHeadroom): Promise<boolean>;
 };
 export type ResourceLeaseRedis = {
 	eval(
@@ -61,10 +65,12 @@ local base = table.concat(ARGV, '|', 5, 14)
 local function matches(value)
   return string.sub(value, 1, #base + 1) == base .. '|'
 end
-local expired = redis.call('ZRANGEBYSCORE', KEYS[4], '-inf', now)
-for _, id in ipairs(expired) do
-  redis.call('HDEL', KEYS[3], id)
-  redis.call('ZREM', KEYS[4], id)
+if action ~= 'headroom' then
+  local expired = redis.call('ZRANGEBYSCORE', KEYS[4], '-inf', now)
+  for _, id in ipairs(expired) do
+    redis.call('HDEL', KEYS[3], id)
+    redis.call('ZREM', KEYS[4], id)
+  end
 end
 local function retain_active()
   local latest = redis.call('ZREVRANGE', KEYS[4], 0, 0, 'WITHSCORES')[2]
@@ -98,6 +104,25 @@ if active then
   local values = split(active)
   local until_at = tonumber(values[11])
   if until_at <= now or values[12] ~= run_id then return reply(0, until_at) end
+  if action == 'headroom' then
+    local host_used, gpu_used = 0, 0
+    local entries = redis.call('HGETALL', KEYS[3])
+    for i=1,#entries,2 do
+      local retention = redis.call('ZSCORE', KEYS[4], entries[i])
+      -- Read only: do not remove fully drained records or extend any TTL.
+      -- A missing retention bound remains conservatively reserved.
+      if entries[i] == token or not retention or tonumber(retention) > now then
+        local other = split(entries[i+1])
+        if other[1] == ARGV[5] then host_used = host_used + tonumber(other[8]) end
+        if ARGV[6] ~= '-' and other[2] == ARGV[6] then
+          gpu_used = gpu_used + tonumber(other[9])
+        end
+      end
+    end
+    local fits = host_used <= tonumber(ARGV[15]) and
+      (ARGV[6] == '-' or (ARGV[16] ~= '-' and gpu_used <= tonumber(ARGV[16])))
+    return reply(fits and 1 or 2, until_at)
+  end
   if action ~= 'acquire' or ready then
     if action == 'renew' then
       until_at = now + lease
@@ -210,6 +235,20 @@ function reservation(request: VmafResourceLeaseRequest) {
 		...requested.map(String),
 	];
 }
+function headroomPayload(headroom?: VmafResourceHeadroom) {
+	if (
+		!headroom ||
+		![headroom.hostBytes, headroom.gpuBytes ?? 0].every(
+			(amount) => Number.isSafeInteger(amount) && amount >= 0,
+		)
+	)
+		throw new Error("Invalid quality resource headroom");
+	return [
+		String(headroom.hostBytes),
+		headroom.gpuBytes === undefined ? "-" : String(headroom.gpuBytes),
+	];
+}
+
 function pause(milliseconds: number, signal: AbortSignal) {
 	return new Promise<void>((resolve, reject) => {
 		signal.throwIfAborted();
@@ -300,7 +339,8 @@ export function createVmafResourceLeases(options: {
 				if (!controller.signal.aborted) controller.abort(lost);
 			};
 			const operation = async (
-				action: "acquire" | "check" | "renew" | "release",
+				action: "acquire" | "check" | "renew" | "release" | "headroom",
+				headroom?: VmafResourceHeadroom,
 			) => {
 				let deadline: ReturnType<typeof setTimeout> | undefined;
 				const started = performance.now();
@@ -315,6 +355,7 @@ export function createVmafResourceLeases(options: {
 							String(leaseMs),
 							String(drainMs),
 							...payload,
+							...(action === "headroom" ? headroomPayload(headroom) : []),
 						),
 						new Promise<never>((_, reject) => {
 							deadline = setTimeout(
@@ -326,7 +367,8 @@ export function createVmafResourceLeases(options: {
 					if (
 						!Array.isArray(reply) ||
 						reply.length !== 3 ||
-						![0, 1].includes(reply[0]) ||
+						![0, 1, 2].includes(reply[0]) ||
+						(reply[0] === 2 && action !== "headroom") ||
 						!reply
 							.slice(1)
 							.every(
@@ -339,12 +381,12 @@ export function createVmafResourceLeases(options: {
 					if (![until, now].every(Number.isSafeInteger))
 						throw new Error("Invalid lease time");
 					if (
-						reply[0] === 1 &&
+						reply[0] !== 0 &&
 						action !== "release" &&
 						performance.now() - started >= until - now
 					)
 						throw new VmafResourceLeaseError("LOST");
-					return reply[0] === 1;
+					return reply[0] as 0 | 1 | 2;
 				} catch (error) {
 					throw error instanceof VmafResourceLeaseError
 						? error
@@ -364,19 +406,29 @@ export function createVmafResourceLeases(options: {
 						.finally(renew);
 				}, renewMs);
 			};
-			const assertOwned = async () => {
+			const authority = async (
+				action: "check" | "headroom",
+				headroom?: VmafResourceHeadroom,
+			) => {
 				if (lost) throw lost;
 				controller.signal.throwIfAborted();
+				let status: 0 | 1 | 2;
 				try {
-					if (!(await operation("check")))
-						throw new VmafResourceLeaseError("LOST");
+					status = await operation(action, headroom);
+					if (status === 0) throw new VmafResourceLeaseError("LOST");
 				} catch (error) {
 					lose(error as VmafResourceLeaseError);
 					throw error;
 				}
 				if (lost) throw lost;
 				controller.signal.throwIfAborted();
+				return status === 1;
 			};
+			const assertOwned = async () => {
+				await authority("check");
+			};
+			const fitsHeadroom = (headroom: VmafResourceHeadroom) =>
+				authority("headroom", headroom);
 			const outcome = await settle(async () => {
 				for (;;) {
 					controller.signal.throwIfAborted();
@@ -385,7 +437,11 @@ export function createVmafResourceLeases(options: {
 				}
 				controller.signal.throwIfAborted();
 				renew();
-				const result = await work({ signal: controller.signal, assertOwned });
+				const result = await work({
+					signal: controller.signal,
+					assertOwned,
+					fitsHeadroom,
+				});
 				await assertOwned();
 				return result;
 			});

@@ -83,3 +83,33 @@ describe("resource lease boundary validation", () => {
 		expect(work).not.toHaveBeenCalled();
 	});
 });
+
+it("does not serialize invalid or unbounded headroom into the resource coordinator", async () => {
+	for (const headroom of [
+		{ hostBytes: -1 },
+		{ hostBytes: NaN },
+		{ hostBytes: Infinity },
+		{ hostBytes: 1, gpuBytes: -1 },
+		{ hostBytes: 1, gpuBytes: Number.MAX_SAFE_INTEGER + 1 },
+	]) {
+		const evalRedis = vi.fn(
+			async (_script: string, count: number, ...args: string[]) => {
+				if (args[count] === "headroom")
+					throw new Error("Invalid headroom reached Redis");
+				const now = Date.now();
+				return [1, String(now + 30000), String(now)];
+			},
+		);
+		const leases = createVmafResourceLeases({ redis: { eval: evalRedis } });
+		await expect(
+			leases.run(request(), new AbortController().signal, async (lease) => {
+				await lease.fitsHeadroom(headroom);
+			}),
+		).rejects.toMatchObject({ code: "UNAVAILABLE" });
+		expect(
+			evalRedis.mock.calls.some(
+				([, count, ...args]) => args[count] === "headroom",
+			),
+		).toBe(false);
+	}
+});

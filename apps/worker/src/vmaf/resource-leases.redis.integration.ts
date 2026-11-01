@@ -924,3 +924,166 @@ it("fails closed when the Redis user cannot inspect server identity", async () =
 		await admin.acl("DELUSER", user);
 	}
 });
+
+it("checks combined unmaterialized RAM across two owned reservations without losing ownership on pressure", async () => {
+	const m = await managers(),
+		entered = deferred(),
+		hold = deferred(),
+		request = baseRequest();
+	await m.a.run(request, new AbortController().signal, async (first) => {
+		const second = m.b.run(
+			request,
+			new AbortController().signal,
+			async (other) => {
+				entered.resolve();
+				await hold.promise;
+				expect(
+					await other.fitsHeadroom({ hostBytes: 2048, gpuBytes: 2048 }),
+				).toBe(true);
+			},
+		);
+		try {
+			await entered.promise;
+			expect(
+				await first.fitsHeadroom({ hostBytes: 1024, gpuBytes: 1024 }),
+			).toBe(false);
+			expect(
+				await first.fitsHeadroom({ hostBytes: 2048, gpuBytes: 1024 }),
+			).toBe(false);
+			expect(
+				await first.fitsHeadroom({ hostBytes: 1024, gpuBytes: 2048 }),
+			).toBe(false);
+			expect(
+				await first.fitsHeadroom({ hostBytes: 2048, gpuBytes: 2048 }),
+			).toBe(true);
+			expect(await first.fitsHeadroom({ hostBytes: 0, gpuBytes: 2048 })).toBe(
+				false,
+			);
+			expect(await first.fitsHeadroom({ hostBytes: 2048, gpuBytes: 0 })).toBe(
+				false,
+			);
+			expect(await first.fitsHeadroom({ hostBytes: 2048 })).toBe(false);
+			expect(first.signal.aborted).toBe(false);
+			await first.assertOwned();
+		} finally {
+			hold.resolve();
+			await second;
+		}
+	});
+});
+
+it("keeps host headroom separate while accounting for one physical GPU across host identities", async () => {
+	const m = await managers(),
+		entered = deferred(),
+		otherEntered = deferred(),
+		hold = deferred(),
+		request = baseRequest();
+	await m.a.run(request, new AbortController().signal, async (first) => {
+		const shared = m.b.run(
+			{ ...request, hostKey: "host-b" },
+			new AbortController().signal,
+			async () => {
+				entered.resolve();
+				await hold.promise;
+			},
+		);
+		const foreign = m.b.run(
+			{
+				...request,
+				hostKey: "host-c",
+				deviceKey: "gpu-c",
+				requested: { ...request.requested, hostBytes: 8192, gpuBytes: 8192 },
+			},
+			new AbortController().signal,
+			async () => {
+				otherEntered.resolve();
+				await hold.promise;
+			},
+		);
+		try {
+			await Promise.all([entered.promise, otherEntered.promise]);
+			expect(
+				await first.fitsHeadroom({ hostBytes: 1024, gpuBytes: 2048 }),
+			).toBe(true);
+			expect(
+				await first.fitsHeadroom({ hostBytes: 1024, gpuBytes: 1024 }),
+			).toBe(false);
+			expect(
+				await first.fitsHeadroom({ hostBytes: 1023, gpuBytes: 2048 }),
+			).toBe(false);
+		} finally {
+			hold.resolve();
+			await Promise.all([shared, foreign]);
+		}
+	});
+});
+
+it("treats CPU headroom independently of an optional GPU field", async () => {
+	const m = await managers();
+	await m.a.run(
+		{
+			hostKey: "host-a",
+			capacity: { cpuMilliCores: 2000, hostBytes: 2048 },
+			requested: { cpuMilliCores: 1000, hostBytes: 1024 },
+		},
+		new AbortController().signal,
+		async (lease) => {
+			expect(await lease.fitsHeadroom({ hostBytes: 1024 })).toBe(true);
+			expect(await lease.fitsHeadroom({ hostBytes: 1024, gpuBytes: 0 })).toBe(
+				true,
+			);
+			expect(await lease.fitsHeadroom({ hostBytes: 0 })).toBe(false);
+			await lease.assertOwned();
+		},
+	);
+});
+
+it("makes headroom checks read-only, keeps their expiry, and excludes fully drained records", async () => {
+	const m = await managers({ renewMs: 800, operationTimeoutMs: 100 });
+	await m.a.run(baseRequest(), new AbortController().signal, async (lease) => {
+		const token = (await admin.hkeys(m.active))[0] as string;
+		const row = await admin.hget(m.active, token);
+		expect(row).not.toBeNull();
+		const expiry = await admin.zscore(m.expiry, token),
+			expired = randomUUID();
+		const fields = (row as string).split("|");
+		fields[10] = String((await serverTime()) - 10000);
+		await admin.hset(m.active, expired, fields.join("|"));
+		await admin.zadd(m.expiry, (await serverTime()) - 1, expired);
+		const ttl = await admin.pttl(m.active);
+		expect(await lease.fitsHeadroom({ hostBytes: 1024, gpuBytes: 1024 })).toBe(
+			true,
+		);
+		expect(await admin.hlen(m.active)).toBe(2);
+		expect(await admin.hget(m.active, token)).toBe(row);
+		expect(await admin.zscore(m.expiry, token)).toBe(expiry);
+		expect(await admin.zscore(m.expiry, expired)).not.toBeNull();
+		expect(await admin.pttl(m.active)).toBeLessThanOrEqual(ttl);
+	});
+});
+
+it.each([
+	"removed",
+	"expired",
+	"server-instance",
+] as const)("throws LOST rather than returning headroom pressure when its reservation is %s", async (failure) => {
+	const m = await managers();
+	await expect(
+		m.a.run(baseRequest(), new AbortController().signal, async (lease) => {
+			const token = (await admin.hkeys(m.active))[0] as string;
+			if (failure === "removed") await admin.hdel(m.active, token);
+			else {
+				const row = await admin.hget(m.active, token);
+				const fields = (row as string).split("|");
+				if (failure === "expired")
+					fields[10] = String((await serverTime()) - 1);
+				else fields[11] = "0".repeat(40);
+				await admin.hset(m.active, token, fields.join("|"));
+			}
+			await expect(
+				lease.fitsHeadroom({ hostBytes: 8192, gpuBytes: 8192 }),
+			).rejects.toMatchObject({ code: "LOST" });
+			expect(lease.signal.aborted).toBe(true);
+		}),
+	).rejects.toMatchObject({ code: "LOST" });
+});

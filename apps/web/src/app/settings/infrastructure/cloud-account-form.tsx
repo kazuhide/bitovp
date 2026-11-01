@@ -144,7 +144,7 @@ export function CloudAccountForm({
 	});
 
 	return (
-		<form onSubmit={submit} className="space-y-4" noValidate>
+		<form onSubmit={submit} className="space-y-4" autoComplete="off" noValidate>
 			{formState.errors.root?.message ? (
 				<p role="alert" className="text-red-400 text-xs">
 					{formState.errors.root.message}
@@ -225,7 +225,7 @@ export function CloudAccountForm({
 								<Input
 									id="cc-accessKey"
 									type="password"
-									autoComplete="off"
+									autoComplete="one-time-code"
 									{...register("accessKey")}
 								/>
 							</Field>
@@ -237,7 +237,7 @@ export function CloudAccountForm({
 								<Input
 									id="cc-secretKey"
 									type="password"
-									autoComplete="off"
+									autoComplete="one-time-code"
 									{...register("secretKey")}
 								/>
 							</Field>
@@ -394,7 +394,7 @@ export function CloudAccountForm({
 					<Input
 						id="cc-apiToken"
 						type="password"
-						autoComplete="off"
+						autoComplete="one-time-code"
 						{...register("apiToken")}
 					/>
 				</Field>

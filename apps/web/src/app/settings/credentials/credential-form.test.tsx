@@ -19,6 +19,13 @@ describe("CredentialForm", () => {
 			"type",
 			"password",
 		);
+		expect(screen.getByLabelText("Secret access key")).toHaveAttribute(
+			"autocomplete",
+			"one-time-code",
+		);
+		expect(
+			screen.getByLabelText("Secret access key").closest("form"),
+		).toHaveAttribute("autocomplete", "off");
 
 		await user.selectOptions(
 			screen.getByLabelText("Provider"),
@@ -83,6 +90,7 @@ describe("CredentialForm", () => {
 		// The password half is masked while typing; both halves live in the
 		// write-only secret fieldset (username is vaulted too — PII-ish).
 		expect(password).toHaveAttribute("type", "password");
+		expect(password).toHaveAttribute("autocomplete", "one-time-code");
 		await user.type(password, "pois-secret");
 		await user.click(screen.getByRole("button", { name: "Create credential" }));
 
@@ -531,7 +539,10 @@ describe("CredentialForm", () => {
 
 		expect(screen.queryByLabelText("Secret access key")).toBeNull();
 		await user.click(screen.getByLabelText("Replace secret material"));
-		expect(screen.getByLabelText("Secret access key")).toBeInTheDocument();
+		const input = screen.getByLabelText("Secret access key");
+		expect(input).toHaveValue("");
+		expect(input).toHaveAttribute("type", "password");
+		expect(input).toHaveAttribute("autocomplete", "one-time-code");
 	});
 });
 

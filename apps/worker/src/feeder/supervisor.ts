@@ -200,7 +200,12 @@ export type ProcessRunner = {
 	run(
 		bin: string,
 		argv: string[],
-		options?: { signal?: AbortSignal; abortKillAfterMs?: number },
+		options?: {
+			signal?: AbortSignal;
+			abortKillAfterMs?: number;
+			/** Opt-in guardian protocol: fresh absolute deadlines on private FD 3. */
+			heartbeat?: { intervalMs: number; read(): string };
+		},
 	): Promise<{ code: number | null; stdout: string; stderr: string }>;
 };
 

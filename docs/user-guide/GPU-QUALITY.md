@@ -103,7 +103,9 @@ available memory are checked again for each complete comparison.
 
 The first search has a 30-second budget for starting trials; an active trial
 finishes or stops before its resources are released. Subsequent comparisons use
-the saved measurements without repeating that search. The private cache contains
+the saved measurements. A worker that later has room for a higher concurrency
+limit can make one additional bounded search for that limit. Inputs without
+exact video frame counts keep a conservative serial plan. The private cache contains
 timing and memory metadata. Temporary video samples are removed after analysis.
 Unknown device memory or an unrecognized driver retains a conservative serial
 plan. Worker logs describe the selected plan and its reason.

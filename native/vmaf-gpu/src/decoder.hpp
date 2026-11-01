@@ -4,6 +4,7 @@
 #include "bitovp_gpu.hpp"
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace bitovp::gpu {
 struct VideoInfo {
@@ -13,8 +14,25 @@ struct VideoInfo {
     std::string codec;
 };
 
-// Owns a bounded decode buffer and one conformed planar picture. The view from
-// next() remains valid until the next call on this decoder or its destruction.
+// A CPU picture whose pixels and presentation timestamp survive the decoder's
+// next() call and destruction. Keeping the owner private prevents a dangling
+// view after accidentally releasing only its storage handle.
+class RetainedPicture {
+public:
+    const Picture &picture() const noexcept { return picture_; }
+    double timestamp() const noexcept { return timestamp_; }
+private:
+    friend class Decoder;
+    RetainedPicture(Picture picture, double time, std::shared_ptr<void> storage)
+        : picture_(picture), timestamp_(time), storage_(std::move(storage)) {}
+    Picture picture_;
+    double timestamp_;
+    std::shared_ptr<void> storage_;
+};
+
+// Owns a bounded decode buffer and a conformed planar picture. Borrowed views
+// remain valid until next() or destruction. CPU snapshot users lazily get a
+// second output slot; at most two distinct retained pictures can stay live.
 class Decoder {
 public:
     Decoder(const std::string &path, unsigned width, unsigned height,
@@ -25,6 +43,7 @@ public:
     VideoInfo source_info() const;
     bool next();
     Picture picture() const;
+    RetainedPicture retain_picture() const;
     // Relative presentation time in seconds. Throws if timestamps are absent.
     double timestamp() const;
     double decode_ms() const;

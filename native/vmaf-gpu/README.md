@@ -65,6 +65,12 @@ memory counters. Existing output files are never overwritten. A failed run does
 not publish a partial result. `hostCopiedInputBytes` counts host-buffer copies;
 it does not imply that every byte crossed a PCI Express connection.
 
+Vulkan scoring overlaps software decoding with GPU work. It keeps at most one
+following reference/encoded frame pair ready, using about 12 MiB of extra active
+pixel storage for 1080p, 10-bit comparisons, plus allocation and thread overhead.
+Use process wall time to compare performance: decode, conversion, and extraction
+times can overlap.
+
 ## Use from the bitovp worker
 
 Set `VMAF_NATIVE_PATH` to the built executable, `VMAF_MODEL_DIR` to the installed

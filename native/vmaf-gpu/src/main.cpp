@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kazuhide Yamamoto
 #include "decoder.hpp"
+#include "decoder_pair.hpp"
+#include "prefetch.hpp"
 #include "model_oracle.hpp"
 extern "C" {
 #include <libavutil/mem.h>
@@ -364,26 +366,41 @@ int main(int argc, char **argv) {
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;
         std::uint64_t count = 0;
-        while (!options.max_frames || count < options.max_frames) {
-            const bool has_ref = reference.next(), has_dist = distorted.next();
-            if (has_ref != has_dist) throw std::runtime_error("Comparison inputs have different frame counts");
-            if (!has_ref) break;
-            const double drift = std::abs(reference.timestamp() - distorted.timestamp());
-            if (drift > 0.25 / first.frames_per_second)
-                throw std::runtime_error("Comparison presentation timestamps do not align");
-            const auto ref = reference.picture(), dist = distorted.picture();
+        const auto consume = [&](const Picture &ref, const Picture &dist, double reference_time, double distorted_time) {
+            validate_comparison_timestamps(reference_time, distorted_time, first.frames_per_second);
             const auto feature_start = Clock::now();
             if (backend) oracle.import_scores(backend->extract(count, ref, dist));
             else oracle.submit(count, ref, dist);
             extract_ms += elapsed(feature_start);
             if (cpu_reference) {
                 if (!cpu_reference->next() || !cpu_distorted->next() ||
-                    std::abs(cpu_reference->timestamp() - reference.timestamp()) > 0.25 / first.frames_per_second ||
-                    std::abs(cpu_distorted->timestamp() - distorted.timestamp()) > 0.25 / first.frames_per_second)
+                    std::abs(cpu_reference->timestamp() - reference_time) > 0.25 / first.frames_per_second ||
+                    std::abs(cpu_distorted->timestamp() - distorted_time) > 0.25 / first.frames_per_second)
                     throw std::runtime_error("CPU/NVDEC reference frame coverage differs");
                 baseline->submit(count, cpu_reference->picture(), cpu_distorted->picture());
             } else if (baseline) baseline->submit(count, ref, dist);
             ++count;
+        };
+        if (options.backend == "vulkan" && !resident_decode) {
+            Prefetch<RetainedPair> pictures([&] { return next_retained_pair(reference, distorted); }, options.max_frames);
+            for (;;) {
+                // This lease dies before next() gives the producer another
+                // free slot. The current pair and one following pair suffice.
+                auto pair = pictures.next();
+                if (!pair) break;
+                consume(pair->reference.picture(), pair->distorted.picture(),
+                        pair->reference.timestamp(), pair->distorted.timestamp());
+            }
+            // Decoder timing fields are read only after its sole producer has
+            // stopped. Consumer exceptions also stop and join through RAII.
+            pictures.stop();
+        } else {
+            while (!options.max_frames || count < options.max_frames) {
+                const bool has_ref = reference.next(), has_dist = distorted.next();
+                if (has_ref != has_dist) throw std::runtime_error("Comparison inputs have different frame counts");
+                if (!has_ref) break;
+                consume(reference.picture(), distorted.picture(), reference.timestamp(), distorted.timestamp());
+            }
         }
         if (!count) throw std::runtime_error("Comparison input contains no frames");
         if (cpu_reference && !options.max_frames && (cpu_reference->next() || cpu_distorted->next()))

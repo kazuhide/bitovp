@@ -41,7 +41,8 @@ struct Decoder::Impl {
     AVFormatContext *format = nullptr;
     AVCodecContext *codec = nullptr;
     AVPacket *packet = nullptr;
-    AVFrame *frame = nullptr, *conformed = nullptr;
+    AVFrame *frame = nullptr, *conformed = nullptr, *spare_conformed = nullptr;
+    bool retention_enabled = false;
     SwsContext *scale = nullptr;
     AVBufferRef *hardware = nullptr;
     bool cuda_decode = false;
@@ -153,13 +154,37 @@ struct Decoder::Impl {
         sws_freeContext(scale);
         av_frame_free(&frame);
         av_frame_free(&conformed);
+        av_frame_free(&spare_conformed);
         av_packet_free(&packet);
         avcodec_free_context(&codec);
         avformat_close_input(&format);
         av_buffer_unref(&hardware);
     }
+    void select_cpu_output() {
+        if (av_frame_is_writable(conformed)) return;
+        if (!spare_conformed) {
+            AVFrame *spare = av_frame_alloc();
+            if (!spare) throw std::bad_alloc();
+            spare->format = conformed->format;
+            spare->width = int(width); spare->height = int(height);
+            const int allocated = av_frame_get_buffer(spare, 64);
+            if (allocated < 0) { av_frame_free(&spare); check(allocated, "allocate retained comparison frame"); }
+            spare_conformed = spare;
+        }
+        if (!av_frame_is_writable(spare_conformed))
+            throw std::logic_error("Release a retained comparison picture before decoding another frame");
+        // Reuse an unleased surface instead of av_frame_make_writable copying
+        // the previous picture that sws_scale is about to overwrite completely.
+        std::swap(conformed, spare_conformed);
+    }
     bool next() {
         has_picture = false;
+        if (retention_enabled) {
+            const auto select_start = Clock::now();
+            // Check the two-slot bound before consuming another encoded frame.
+            select_cpu_output();
+            conformed_ms += ms(select_start);
+        }
         av_frame_unref(frame);
         const auto start = Clock::now();
         for (;;) {
@@ -253,6 +278,20 @@ Picture Decoder::picture() const {
         p ? (impl_->width + 1) / 2 : impl_->width,
         p ? (impl_->height + 1) / 2 : impl_->height};
     return out;
+}
+RetainedPicture Decoder::retain_picture() const {
+    if (impl_->cuda_decode)
+        throw std::invalid_argument("Resident CUDA pictures do not support CPU decoder retention");
+    const auto view = picture();
+    const auto time = timestamp();
+    AVFrame *frame = av_frame_clone(impl_->conformed);
+    if (!frame) throw std::bad_alloc();
+    std::shared_ptr<void> storage(frame, [](void *pointer) {
+        auto *owned = static_cast<AVFrame *>(pointer);
+        av_frame_free(&owned);
+    });
+    impl_->retention_enabled = true;
+    return RetainedPicture(view, time, std::move(storage));
 }
 double Decoder::timestamp() const {
     if (!impl_->has_picture) throw std::logic_error("No decoded comparison timestamp");

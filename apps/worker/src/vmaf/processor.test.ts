@@ -12,6 +12,7 @@ import {
 	type PerTitleCapturePort,
 	type ScannedMuxing,
 	type ScannedStream,
+	VMAF_SCORING_VERSION,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +23,7 @@ import {
 	createLocalVmafResources,
 	type LocalVmafResources,
 } from "./local-resources";
+import * as localScoring from "./local-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 
 /**
@@ -213,6 +215,7 @@ function setup(
 		probeExit?: number;
 		probeJson?: string;
 		localResources?: LocalVmafResources;
+		resolveLocalResources?: VmafProcessorDeps["resolveLocalResources"];
 		decodePolicy?: VmafProcessorDeps["decodePolicy"];
 		scoringBackend?: VmafProcessorDeps["scoringBackend"];
 		download?: VmafDownload;
@@ -272,10 +275,14 @@ function setup(
 				};
 
 	const vmafJob = {
-		findUnique: vi.fn(async () => ({
-			...job,
-			encodingJob: encodingJobRow,
-		})),
+		findUnique: vi.fn(
+			async (): Promise<
+				(Row & { encodingJob: typeof encodingJobRow }) | null
+			> => ({
+				...job,
+				encodingJob: encodingJobRow,
+			}),
+		),
 		updateMany: vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
 			const statusOk =
 				where.status === undefined || where.status === job.status;
@@ -490,6 +497,9 @@ function setup(
 			? { resolveModelPath: opts.resolveModelPath }
 			: {}),
 		...(opts.localResources ? { localResources: opts.localResources } : {}),
+		...(opts.resolveLocalResources
+			? { resolveLocalResources: opts.resolveLocalResources }
+			: {}),
 	};
 
 	return {
@@ -3273,4 +3283,286 @@ describe("measurement reset cadence", () => {
 			vi.useRealTimers();
 		}
 	});
+});
+
+function resourceDeferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+const RESOURCE_PROBE_JSON = JSON.stringify({
+	streams: [
+		{
+			codec_type: "video",
+			codec_name: "h264",
+			width: 1920,
+			height: 1080,
+			pix_fmt: "yuv420p",
+			r_frame_rate: "30/1",
+			duration: "10",
+			nb_frames: "300",
+		},
+	],
+});
+function sharedTestResources() {
+	return createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+	});
+}
+it("queues VOD jobs before reference or mirror I/O and shares preparation across jobs", async () => {
+	const resources = sharedTestResources(),
+		holder = resourceDeferred(),
+		entered = resourceDeferred();
+	const blocker = resources.begin(new AbortController().signal);
+	const blocking = blocker.prepared("other-job", async () => {
+		entered.resolve();
+		await holder.promise;
+	});
+	await entered.promise;
+	const a = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	const otherId = "00000000-0000-4000-8000-0000000000a2";
+	const b = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		job: { id: otherId },
+	});
+	const first = a.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		second = b.processor.process({ vmafJobId: otherId });
+	const outcome = Promise.all([first, second]);
+	try {
+		await vi.waitFor(() =>
+			expect(blocker.report().queued > 0 || a.downloaded.length > 0).toBe(true),
+		);
+		expect(a.downloaded).toHaveLength(0);
+		expect(b.downloaded).toHaveLength(0);
+		expect(a.runner.run).not.toHaveBeenCalled();
+		expect(b.runner.run).not.toHaveBeenCalled();
+	} finally {
+		holder.resolve();
+		await blocking;
+	}
+	expect(await outcome).toEqual([
+		expect.objectContaining({ status: "FINISHED", results: 2 }),
+		expect.objectContaining({ status: "FINISHED", results: 2 }),
+	]);
+	expect(
+		a.downloaded.filter((item) => item.key === "src/master.mkv"),
+	).toHaveLength(1);
+	expect(
+		b.downloaded.filter((item) => item.key === "src/master.mkv"),
+	).toHaveLength(1);
+	expect(blocker.report().queued).toBe(0);
+	expect(blocker.report().maxObservedActive).toBeLessThanOrEqual(2);
+});
+
+it("removes a cancelled VOD preparation without downloading and lets the next job proceed", async () => {
+	const resources = sharedTestResources(),
+		holder = resourceDeferred(),
+		entered = resourceDeferred();
+	const blocker = resources.begin(new AbortController().signal);
+	const blocking = blocker.prepared("other-job", async () => {
+		entered.resolve();
+		await holder.promise;
+	});
+	await entered.promise;
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	try {
+		await vi.waitFor(() =>
+			expect(blocker.report().queued > 0 || t.downloaded.length > 0).toBe(true),
+		);
+		expect(t.downloaded).toHaveLength(0);
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		expect(await pending).toMatchObject({ status: "MISSING" });
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(blocker.report().queued).toBe(0);
+	} finally {
+		holder.resolve();
+		await blocking;
+		await pending.catch(() => {});
+	}
+	const next = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	expect(
+		await next.processor.process({ vmafJobId: VMAF_JOB_ID }),
+	).toMatchObject({ status: "FINISHED" });
+});
+
+it("never publishes a VOD result after execution authority is lost", async () => {
+	const authority = vi.fn(async () => {
+		throw new Error("Reservation lost before publication");
+	});
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, signal, work) => work(signal, authority),
+	});
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		resolveLocalResources: async (request) => {
+			expect(request.options.referencePath).toContain("ref-0.mp4");
+			expect(request.options.distortedPath).toContain("dist-");
+			expect(request.referenceProbe).toBe(RESOURCE_PROBE_JSON);
+			return {
+				threads: 1,
+				concurrency: 2,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+				basis: "profile-test",
+			};
+		},
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"Reservation lost before publication",
+	);
+	expect(t.results).toHaveLength(0);
+	expect(authority).toHaveBeenCalled();
+	const observer = resources.begin(new AbortController().signal);
+	expect(observer.report().queued).toBe(0);
+	expect(observer.report().active).toBe(0);
+	expect((await import("node:fs/promises")).readdir(workDir)).resolves.toEqual(
+		[],
+	);
+});
+
+it("passes the selected native device and pipeline depth through the real processor boundary", async () => {
+	const native = vi
+		.spyOn(localScoring, "runLocalVmafScore")
+		.mockImplementation(async (_deps, options, context) => {
+			expect(options.scoring).toEqual({ backend: "vulkan", device: 2 });
+			expect(context?.nativeInflightFrames).toBe(2);
+			return {
+				run: { code: 0, stderr: "" },
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					scoring: {
+						backend: "cpu",
+						implementation: "libvmaf",
+						model: options.model,
+					},
+					attempts: 1,
+				},
+				log: JSON.parse(vmafJson([95])),
+			};
+		});
+	try {
+		const t = setup({
+			localResources: sharedTestResources(),
+			probeJson: RESOURCE_PROBE_JSON,
+			scoringBackend: "vulkan",
+			job: { scoringVersion: VMAF_SCORING_VERSION },
+			resolveLocalResources: async () => ({
+				threads: 1,
+				concurrency: 2,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+				nativeDevice: 2,
+				nativeInflightFrames: 2,
+			}),
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(native).toHaveBeenCalledTimes(2);
+	} finally {
+		native.mockRestore();
+	}
+});
+
+it("uses the execution lease signal for VOD scoring and does not publish an aborted score", async () => {
+	const lease = new AbortController();
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, _signal, work) => work(lease.signal, async () => {}),
+	});
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	const ordinary = vi.mocked(t.runner.run).getMockImplementation();
+	if (!ordinary) throw new Error("Missing runner fixture");
+	vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) => {
+		if (argv.join(" ").includes("libvmaf")) {
+			expect(options?.signal).toBe(lease.signal);
+			lease.abort(new Error("Lease execution lost"));
+			options?.signal?.throwIfAborted();
+		}
+		return ordinary(bin, argv, options);
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"Lease execution lost",
+	);
+	expect(t.results).toHaveLength(0);
+	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
+});
+
+it("cleans a failed reference download before draining queued VOD comparisons and the next job", async () => {
+	const resources = sharedTestResources(),
+		plan = qcPlan();
+	const ingest = plan.ingest as Row[];
+	ingest.push({
+		...ingest[0],
+		key: "second-video",
+		inputPath: "src/second.mkv",
+	});
+	const secondRendition = (plan.renditions as Row[])[1];
+	if (!secondRendition) throw new Error("Missing second fixture rendition");
+	secondRendition.ingestKey = "second-video";
+	const attempted: string[] = [];
+	const bad = setup({
+		plan,
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		download: async (request) => {
+			attempted.push(request.key);
+			await writeFile(request.destPath, "partial input");
+			throw new Error("Source download failed");
+		},
+	});
+	const otherId = "00000000-0000-4000-8000-0000000000a2";
+	const good = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		job: { id: otherId },
+	});
+	const failed = bad.processor.process({ vmafJobId: VMAF_JOB_ID });
+	const rejected = expect(failed).rejects.toThrow("Source download failed");
+	const next = good.processor.process({ vmafJobId: otherId });
+	await rejected;
+	expect(attempted).toEqual(["src/master.mkv"]);
+	expect(await next).toMatchObject({ status: "FINISHED", results: 2 });
+	expect(bad.runner.run).not.toHaveBeenCalled();
+	await expect(
+		(await import("node:fs/promises")).readdir(workDir),
+	).resolves.toEqual([]);
+	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
 });

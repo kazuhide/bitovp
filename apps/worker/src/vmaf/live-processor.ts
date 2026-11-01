@@ -24,6 +24,7 @@ import {
 	type SegmentAlignmentResult,
 	sourceMaskOf,
 	timelineFromProfile,
+	type VmafCommandOptions,
 	vmafJobSchema,
 	vmafSourceFor,
 } from "@bitovp/core";
@@ -55,6 +56,7 @@ import type {
 } from "./local-resources";
 import { probeContainerLoop } from "./loop-probe";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
+import type { ResolveLocalVmafResources } from "./processor";
 import {
 	type LocalResourcePlan,
 	resourceVideoFromProbe,
@@ -151,6 +153,7 @@ const FALLBACK_SEGMENT_COUNT = 20;
 
 export type LiveVmafProcessorDeps = {
 	localResources?: LocalVmafResources;
+	resolveLocalResources?: ResolveLocalVmafResources;
 	/** Product-event emit ; never throws. */
 	emitEvent?: EmitProductEvent;
 	prisma: AppPrismaClient;
@@ -597,12 +600,16 @@ export function createLiveVmafProcessor(deps: LiveVmafProcessorDeps) {
 								runner: {
 									...deps.runner,
 									run: async (bin, argv, options) => {
-										signal.throwIfAborted();
+										const runSignal =
+											options?.signal && options.signal !== signal
+												? AbortSignal.any([signal, options.signal])
+												: signal;
+										runSignal.throwIfAborted();
 										const result = await deps.runner.run(bin, argv, {
 											...options,
-											signal,
+											signal: runSignal,
 										});
-										signal.throwIfAborted();
+										runSignal.throwIfAborted();
 										return result;
 									},
 								},
@@ -1082,17 +1089,16 @@ function createLiveVmafProcessorRun(
 						outputFps: fps,
 					}
 				: undefined;
-			const score = async (allocation?: LocalResourcePlan) => {
-				try {
-					// ── score: libvmaf(distorted, alignedReference) ───────────────────────
-					const modelPath = deps.resolveModelPath?.(args.model);
-					const baseArgv = buildVmafCommand({
-						referencePath: alignedRefPath,
-						distortedPath: DISTORTED_PLACEHOLDER,
-						model: args.model,
-						...(modelPath ? { modelPath } : {}),
-						logPath,
-						/**
+			const modelPath = deps.resolveModelPath?.(args.model);
+			const optionsFor = (
+				allocation?: LocalResourcePlan,
+			): VmafCommandOptions => ({
+				referencePath: alignedRefPath,
+				distortedPath: clip.clipPath,
+				model: args.model,
+				...(modelPath ? { modelPath } : {}),
+				logPath,
+				/**
 				 * CONFORM THE DISTORTED SIDE, exactly as the VOD path does
 
 				 *
@@ -1110,28 +1116,39 @@ function createLiveVmafProcessorRun(
 				 * that is the reference's actual cadence, and it is also the grid the
 				 * alignment offset is counted in.
 				 */
-						scaleToReference: {
-							width: args.referenceGeometry.width,
-							height: args.referenceGeometry.height,
-						},
-						fpsConform: fps,
-						...(allocation
-							? {
-									threads: allocation.threads,
-									decoderThreads: allocation.decoderThreads,
-									filterComplexThreads: allocation.filterComplexThreads,
-								}
-							: deps.threads !== undefined
-								? { threads: deps.threads }
-								: {}),
-						...(deps.subsample !== undefined
-							? { subsample: deps.subsample }
-							: {}),
+				scaleToReference: {
+					width: args.referenceGeometry.width,
+					height: args.referenceGeometry.height,
+				},
+				fpsConform: fps,
+				...(allocation
+					? {
+							threads: allocation.threads,
+							decoderThreads: allocation.decoderThreads,
+							filterComplexThreads: allocation.filterComplexThreads,
+						}
+					: deps.threads !== undefined
+						? { threads: deps.threads }
+						: {}),
+				...(deps.subsample !== undefined ? { subsample: deps.subsample } : {}),
+			});
+			const score = async (
+				allocation?: LocalResourcePlan,
+				runSignal: AbortSignal = signal,
+				assertOwned?: () => Promise<void>,
+			) => {
+				try {
+					const baseArgv = buildVmafCommand({
+						...optionsFor(allocation),
+						distortedPath: DISTORTED_PLACEHOLDER,
 					});
 					const argv = spliceDistortedInput(baseArgv, distortedInput);
 					const run = await deps.runner.run(deps.ffmpegPath, argv, {
+						signal: runSignal,
 						abortKillAfterMs: 250,
 					});
+					runSignal.throwIfAborted();
+					await assertOwned?.();
 					if (run.code !== 0) {
 						// Same actionable guidance as the VOD path for an unresolvable
 						// model (e.g. a VMAF v1 model on a worker without VMAF_MODEL_DIR).
@@ -1245,6 +1262,8 @@ function createLiveVmafProcessorRun(
 					const framesGzip = gzipSync(
 						Buffer.from(JSON.stringify(parsed.frames)),
 					);
+					runSignal.throwIfAborted();
+					await assertOwned?.();
 					await deps.prisma.vmafResult.create({
 						data: {
 							vmafJobId: args.vmafJobId,
@@ -1299,8 +1318,23 @@ function createLiveVmafProcessorRun(
 					await clean();
 				}
 			};
+			const resolver = deps.resolveLocalResources;
 			return args.resourceSession && pair
-				? await args.resourceSession.run(target.renditionKey, pair, 1, score)
+				? await args.resourceSession.run(
+						target.renditionKey,
+						pair,
+						1,
+						score,
+						resolver
+							? () =>
+									resolver({
+										pair,
+										pairCount: 1,
+										options: optionsFor(),
+										signal,
+									})
+							: undefined,
+					)
 				: await score();
 		} finally {
 			await clean();
@@ -1457,325 +1491,339 @@ function createLiveVmafProcessorRun(
 				return await markTerminal(vmafJobId, "FINISHED", 0);
 			}
 
-			await mkdir(jobDir, { recursive: true });
+			const resourceSession = deps.localResources?.begin(signal);
+			// Wait before any reference work and before sealing the shared window.
+			// A queued Live job must not age its capture interval while waiting.
+			const capture = async () => {
+				try {
+					await mkdir(jobDir, { recursive: true });
 
-			// ── the reference: what the encoder actually ingested ─────────────────
-			//  follow-up: a feeder that normalized its source pushes
-			// `<sessionId>.loop.mp4` (feeder/command.ts) and records its profile;
-			// the reference is THAT loop — the spool copy when this process also
-			// runs the feeder, else the same loop rebuilt from the same source
-			// with the profile's pins. A session that pushed before the feeder
-			// normalized (no profile) keeps the raw-source reproduction below.
-			const profileParsed = loopProfileSchema.safeParse(feeder.loopProfile);
-			const profile: LoopProfile | null = profileParsed.success
-				? profileParsed.data
-				: null;
-			const fps = profile?.fps ?? defaultFps;
-			const inheritedWarnings: string[] = [];
-			const sourcePath = join(jobDir, "source.mp4");
-			let sourceProvenance: DownloadProvenance | null = null;
-			let referenceSource: ReferenceSource;
-			let referencePath: string;
-			if (profile) {
-				const loopPath = join(jobDir, "loop.mp4");
-				const spooled = deps.spoolDir
-					? normalizedSpoolPath(deps.spoolDir, feeder.id)
-					: null;
-				let spoolCopied = false;
-				if (spooled && existsSync(spooled)) {
-					try {
-						await copyFile(spooled, loopPath);
-						spoolCopied = true;
-					} catch (err) {
-						// The feeder's own `finally` removes the loop when the session
-						// ends; losing that race is not an error, the rebuild below is.
-						if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-							throw err;
+					// ── the reference: what the encoder actually ingested ─────────────────
+					//  follow-up: a feeder that normalized its source pushes
+					// `<sessionId>.loop.mp4` (feeder/command.ts) and records its profile;
+					// the reference is THAT loop — the spool copy when this process also
+					// runs the feeder, else the same loop rebuilt from the same source
+					// with the profile's pins. A session that pushed before the feeder
+					// normalized (no profile) keeps the raw-source reproduction below.
+					const profileParsed = loopProfileSchema.safeParse(feeder.loopProfile);
+					const profile: LoopProfile | null = profileParsed.success
+						? profileParsed.data
+						: null;
+					const fps = profile?.fps ?? defaultFps;
+					const inheritedWarnings: string[] = [];
+					const sourcePath = join(jobDir, "source.mp4");
+					let sourceProvenance: DownloadProvenance | null = null;
+					let referenceSource: ReferenceSource;
+					let referencePath: string;
+					if (profile) {
+						const loopPath = join(jobDir, "loop.mp4");
+						const spooled = deps.spoolDir
+							? normalizedSpoolPath(deps.spoolDir, feeder.id)
+							: null;
+						let spoolCopied = false;
+						if (spooled && existsSync(spooled)) {
+							try {
+								await copyFile(spooled, loopPath);
+								spoolCopied = true;
+							} catch (err) {
+								// The feeder's own `finally` removes the loop when the session
+								// ends; losing that race is not an error, the rebuild below is.
+								if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+									throw err;
+								}
+							}
+						}
+						if (spoolCopied) {
+							referenceSource = "spool-loop";
+						} else {
+							const sourceCredential = await deps.resolveCredential(
+								feeder.sourceCredentialId,
+							);
+							sourceProvenance = await downloadSourceMp4(
+								sourceCredential,
+								feeder.sourceBucket,
+								feeder.sourceKey,
+								sourcePath,
+							);
+							if (sourceProvenance.sha256 !== profile.sourceSha256) {
+								throw new Error(
+									`the source object's bytes (sha256 ${sourceProvenance.sha256.slice(0, 12)}…) are not the ones the feeder normalized (${profile.sourceSha256.slice(0, 12)}…) — the object changed since the push, so its loop cannot be rebuilt (row #256)`,
+								);
+							}
+							const sourceProbe = await deps.runner.run(
+								deps.ffprobePath,
+								probeArgs(sourcePath),
+							);
+							if (sourceProbe.code !== 0) {
+								throw new Error(
+									`ffprobe of the source failed (code ${sourceProbe.code}): ${stderrTail(sourceProbe.stderr)}`,
+								);
+							}
+							const span = sourceVideoSpan(parseProbeJson(sourceProbe.stdout));
+							const rebuild = await deps.runner.run(
+								deps.ffmpegPath,
+								buildNormalizeCommand({
+									sourcePath,
+									destPath: loopPath,
+									fps: profile.fps,
+									protocol:
+										feeder.protocol === "SRT_CALLER" ? "SRT_CALLER" : "RTMP",
+									...(profile.normalise
+										? { normalise: profile.normalise }
+										: {}),
+									videoStartSec: span.videoStartSec,
+									videoDurationSec: span.videoDurationSec,
+								}),
+							);
+							if (rebuild.code !== 0) {
+								throw new Error(
+									`rebuilding the feeder's normalized loop failed (code ${rebuild.code}): ${stderrTail(rebuild.stderr)}`,
+								);
+							}
+							referenceSource = "renormalized-source";
+						}
+						// The loop's own probe must reproduce the profile the feeder pushed.
+						const loopProbe = await deps.runner.run(
+							deps.ffprobePath,
+							probeArgs(loopPath),
+						);
+						if (loopProbe.code !== 0) {
+							throw new Error(
+								`ffprobe of the reference loop failed (code ${loopProbe.code}): ${stderrTail(loopProbe.stderr)}`,
+							);
+						}
+						const rebuilt = loopProfileFromProbe(
+							parseProbeJson(loopProbe.stdout),
+							profile.fps,
+							profile.sourceSha256,
+							profile.recordedAt,
+						);
+						if (rebuilt.frames !== profile.frames) {
+							throw new Error(
+								`the reference loop has ${rebuilt.frames} frames but the feeder pushed ${profile.frames} (${referenceSource}) — the reference cannot be trusted (row #256)`,
+							);
+						}
+						// The audio end co-determines the copy-loop period (feeder/command.ts):
+						// a rebuild whose AAC framing ends later would stretch every play.
+						if (
+							Math.abs(rebuilt.audioEndSec - profile.audioEndSec) >=
+							1 / profile.fps
+						) {
+							throw new Error(
+								`the reference loop's audio ends at ${rebuilt.audioEndSec.toFixed(4)} s but the feeder's ended at ${profile.audioEndSec.toFixed(4)} s (${referenceSource}) — the copy-loop period would differ (row #256)`,
+							);
+						}
+						referencePath = loopPath;
+					} else {
+						const sourceCredential = await deps.resolveCredential(
+							feeder.sourceCredentialId,
+						);
+						sourceProvenance = await downloadSourceMp4(
+							sourceCredential,
+							feeder.sourceBucket,
+							feeder.sourceKey,
+							sourcePath,
+						);
+						referenceSource = "raw-source";
+						referencePath = sourcePath;
+					}
+					// The geometry every rendition's distorted clip is scaled to — probed
+					// once, here, for the same reason the stats below are extracted once.
+					const referenceGeometry = await probeSourceGeometry(referencePath);
+					// : the reference is the feeder's OWN push. `-stream_loop …
+					// -c copy` repeats the container with whatever transition the
+					// container's timestamps produce (measured: 300.7 frames per loop for
+					// a raw source whose video starts 1 s in — not the video's 270, not
+					// even the container's 300; exactly F for a normalized loop), and the
+					// live encoder sees exactly that. So the push is reproduced here and
+					// decoded the way the encoder decodes it; the ring, the mask and the
+					// reference are all cut from that decode. Exact for copy mode over
+					// SRT (`-c copy -f mpegts`); RTMP's flv mux and the transcode modes
+					// keep the same `-stream_loop` period, and a ±1-frame transition
+					// difference is absorbed by the mask and the per-segment offsets.
+					let probeFrames: number;
+					let videoFrames: number;
+					if (profile) {
+						probeFrames = profile.frames;
+						videoFrames = profile.frames;
+					} else {
+						const probe = await probeContainerLoop({
+							runner: deps.runner,
+							ffprobePath: deps.ffprobePath,
+							path: referencePath,
+						});
+						probeFrames = Math.max(1, Math.round(probe.durationSec * fps));
+						videoFrames = Math.max(0, Math.round(probe.videoDurationSec * fps));
+					}
+					// Enough plays for the ring and the period estimator's window — the
+					// invariant and the cost are on `pushedPlaysFor`.
+					const pushedPlays = pushedPlaysFor(probeFrames, fps);
+					const pushedPath = join(jobDir, "pushed.ts");
+					await pushSourceLoop(referencePath, pushedPlays, pushedPath, {
+						ignoreEditList: profile !== null,
+					});
+					const decodedStats = await extractStats({
+						runner: deps.runner,
+						ffmpegPath: deps.ffmpegPath,
+						path: pushedPath,
+						options: { fps },
+					});
+					// The period the ENCODER sees, read off the decode itself; the probe's
+					// container span (or the feeder profile) is the anchor of the search.
+					const measured = estimatePeriodFrames(
+						statsToSignature(decodedStats, {}),
+						probeFrames,
+						periodSearchRadius(fps),
+					);
+					let periodFrames: number;
+					let timeline: LoopTimeline;
+					if (profile) {
+						// The profile is what the encoder ingested; the decode is the
+						// cross-check. A disagreement means the reproduction differs from
+						// the push and is said, never silently overruled.
+						periodFrames = profile.frames;
+						timeline = timelineFromProfile(profile);
+						if (measured !== null && measured !== profile.frames) {
+							inheritedWarnings.push(
+								`The reproduced push measured a ${measured}-frame period but the feeder's loop profile says ${profile.frames}; the profile was used.`,
+							);
+						}
+					} else {
+						periodFrames = measured ?? probeFrames;
+						const holeFrames = Math.max(0, periodFrames - videoFrames);
+						timeline = {
+							source: "container-probe",
+							fps,
+							frames: periodFrames,
+							loopSeconds: periodFrames / fps,
+							holes:
+								holeFrames > 0 ? [{ fromFrame: 0, toFrame: holeFrames }] : [],
+						};
+					}
+					// Loop 1 has no head (nothing precedes the first frame); the ring is
+					// loop 2 — starting at the first frame after loop 1's video, i.e. at
+					// the hole the encoder fills by repeating the last frame (no hole for
+					// a normalized loop: loop 2 starts exactly one period in).
+					const ringStart = Math.min(videoFrames, periodFrames);
+					if (decodedStats.length < ringStart + periodFrames) {
+						throw new Error(
+							`the pushed reference decoded ${decodedStats.length} frames but the ring needs ${ringStart + periodFrames} (period ${periodFrames}) — the period cannot be trusted (row #256)`,
+						);
+					}
+					const sourceStats = decodedStats.slice(
+						ringStart,
+						ringStart + periodFrames,
+					);
+					const sourceMask = sourceMaskOf(timeline);
+
+					const captureDeps: CaptureDeps = {
+						resolveCredential: deps.resolveCredential,
+						...(deps.makeBrowser ? { makeBrowser: deps.makeBrowser } : {}),
+					};
+
+					// The capture window is SEALED here, ONCE, from a single `deps.now`
+					// reading — before any rendition is captured — and every target is read
+					// over and records THIS window.
+					// Re-deriving it per target from `deps.now` mid-run let the
+					// endpoint drift over a long download/score, so a multi-rendition set was
+					// not compared over the same wall-clock interval / the same scene. This
+					// is the SHARED-WINDOW seal only; the reference loop-boundary alignment
+					// that row 256 records is a separate, untouched concern.
+					const jobWindow = windowFromNow(vmafJobId, deps.now(), windowSeconds);
+
+					// One rendition's failure leaves the OTHERS scored (
+					// review-331 I1): a single throw — a truncated listing, a capture the
+					// storage refused — used to abort every rendition after it and mark
+					// the whole job ERROR with the earlier rows orphaned under it. Each
+					// target is isolated; the job still ends ERROR, naming exactly which
+					// renditions went unscored and why, and the scored rows are kept.
+					const unscored: string[] = [];
+					const sealed: SealedRendition[] = [];
+					for (const target of targets) {
+						try {
+							const window = await scoreTarget({
+								vmafJobId,
+								plan,
+								model: row.model,
+								target,
+								sourceStats,
+								referenceGeometry,
+								sourceProvenance,
+								referenceSource,
+								fps,
+								inheritedWarnings,
+								timeline,
+								sourceMask,
+								pushedPath,
+								ringStart,
+								captureDeps,
+								windowSeconds,
+								captureWindow: jobWindow,
+								jobDir,
+								resourceSession,
+							});
+							sealed.push({ renditionKey: target.renditionKey, window });
+							resultCount += 1;
+							// Sequential targets: absolute counts heal a missed earlier write.
+							await writeProgress(vmafJobId, targets.length, resultCount);
+						} catch (err) {
+							const reason = err instanceof Error ? err.message : String(err);
+							unscored.push(`${target.renditionKey}: ${reason}`);
 						}
 					}
-				}
-				if (spoolCopied) {
-					referenceSource = "spool-loop";
-				} else {
-					const sourceCredential = await deps.resolveCredential(
-						feeder.sourceCredentialId,
-					);
-					sourceProvenance = await downloadSourceMp4(
-						sourceCredential,
-						feeder.sourceBucket,
-						feeder.sourceKey,
-						sourcePath,
-					);
-					if (sourceProvenance.sha256 !== profile.sourceSha256) {
-						throw new Error(
-							`the source object's bytes (sha256 ${sourceProvenance.sha256.slice(0, 12)}…) are not the ones the feeder normalized (${profile.sourceSha256.slice(0, 12)}…) — the object changed since the push, so its loop cannot be rebuilt (row #256)`,
-						);
-					}
-					const sourceProbe = await deps.runner.run(
-						deps.ffprobePath,
-						probeArgs(sourcePath),
-					);
-					if (sourceProbe.code !== 0) {
-						throw new Error(
-							`ffprobe of the source failed (code ${sourceProbe.code}): ${stderrTail(sourceProbe.stderr)}`,
-						);
-					}
-					const span = sourceVideoSpan(parseProbeJson(sourceProbe.stdout));
-					const rebuild = await deps.runner.run(
-						deps.ffmpegPath,
-						buildNormalizeCommand({
-							sourcePath,
-							destPath: loopPath,
-							fps: profile.fps,
-							protocol:
-								feeder.protocol === "SRT_CALLER" ? "SRT_CALLER" : "RTMP",
-							...(profile.normalise ? { normalise: profile.normalise } : {}),
-							videoStartSec: span.videoStartSec,
-							videoDurationSec: span.videoDurationSec,
-						}),
-					);
-					if (rebuild.code !== 0) {
-						throw new Error(
-							`rebuilding the feeder's normalized loop failed (code ${rebuild.code}): ${stderrTail(rebuild.stderr)}`,
-						);
-					}
-					referenceSource = "renormalized-source";
-				}
-				// The loop's own probe must reproduce the profile the feeder pushed.
-				const loopProbe = await deps.runner.run(
-					deps.ffprobePath,
-					probeArgs(loopPath),
-				);
-				if (loopProbe.code !== 0) {
-					throw new Error(
-						`ffprobe of the reference loop failed (code ${loopProbe.code}): ${stderrTail(loopProbe.stderr)}`,
-					);
-				}
-				const rebuilt = loopProfileFromProbe(
-					parseProbeJson(loopProbe.stdout),
-					profile.fps,
-					profile.sourceSha256,
-					profile.recordedAt,
-				);
-				if (rebuilt.frames !== profile.frames) {
-					throw new Error(
-						`the reference loop has ${rebuilt.frames} frames but the feeder pushed ${profile.frames} (${referenceSource}) — the reference cannot be trusted (row #256)`,
-					);
-				}
-				// The audio end co-determines the copy-loop period (feeder/command.ts):
-				// a rebuild whose AAC framing ends later would stretch every play.
-				if (
-					Math.abs(rebuilt.audioEndSec - profile.audioEndSec) >=
-					1 / profile.fps
-				) {
-					throw new Error(
-						`the reference loop's audio ends at ${rebuilt.audioEndSec.toFixed(4)} s but the feeder's ended at ${profile.audioEndSec.toFixed(4)} s (${referenceSource}) — the copy-loop period would differ (row #256)`,
-					);
-				}
-				referencePath = loopPath;
-			} else {
-				const sourceCredential = await deps.resolveCredential(
-					feeder.sourceCredentialId,
-				);
-				sourceProvenance = await downloadSourceMp4(
-					sourceCredential,
-					feeder.sourceBucket,
-					feeder.sourceKey,
-					sourcePath,
-				);
-				referenceSource = "raw-source";
-				referencePath = sourcePath;
-			}
-			// The geometry every rendition's distorted clip is scaled to — probed
-			// once, here, for the same reason the stats below are extracted once.
-			const referenceGeometry = await probeSourceGeometry(referencePath);
-			// : the reference is the feeder's OWN push. `-stream_loop …
-			// -c copy` repeats the container with whatever transition the
-			// container's timestamps produce (measured: 300.7 frames per loop for
-			// a raw source whose video starts 1 s in — not the video's 270, not
-			// even the container's 300; exactly F for a normalized loop), and the
-			// live encoder sees exactly that. So the push is reproduced here and
-			// decoded the way the encoder decodes it; the ring, the mask and the
-			// reference are all cut from that decode. Exact for copy mode over
-			// SRT (`-c copy -f mpegts`); RTMP's flv mux and the transcode modes
-			// keep the same `-stream_loop` period, and a ±1-frame transition
-			// difference is absorbed by the mask and the per-segment offsets.
-			let probeFrames: number;
-			let videoFrames: number;
-			if (profile) {
-				probeFrames = profile.frames;
-				videoFrames = profile.frames;
-			} else {
-				const probe = await probeContainerLoop({
-					runner: deps.runner,
-					ffprobePath: deps.ffprobePath,
-					path: referencePath,
-				});
-				probeFrames = Math.max(1, Math.round(probe.durationSec * fps));
-				videoFrames = Math.max(0, Math.round(probe.videoDurationSec * fps));
-			}
-			// Enough plays for the ring and the period estimator's window — the
-			// invariant and the cost are on `pushedPlaysFor`.
-			const pushedPlays = pushedPlaysFor(probeFrames, fps);
-			const pushedPath = join(jobDir, "pushed.ts");
-			await pushSourceLoop(referencePath, pushedPlays, pushedPath, {
-				ignoreEditList: profile !== null,
-			});
-			const decodedStats = await extractStats({
-				runner: deps.runner,
-				ffmpegPath: deps.ffmpegPath,
-				path: pushedPath,
-				options: { fps },
-			});
-			// The period the ENCODER sees, read off the decode itself; the probe's
-			// container span (or the feeder profile) is the anchor of the search.
-			const measured = estimatePeriodFrames(
-				statsToSignature(decodedStats, {}),
-				probeFrames,
-				periodSearchRadius(fps),
-			);
-			let periodFrames: number;
-			let timeline: LoopTimeline;
-			if (profile) {
-				// The profile is what the encoder ingested; the decode is the
-				// cross-check. A disagreement means the reproduction differs from
-				// the push and is said, never silently overruled.
-				periodFrames = profile.frames;
-				timeline = timelineFromProfile(profile);
-				if (measured !== null && measured !== profile.frames) {
-					inheritedWarnings.push(
-						`The reproduced push measured a ${measured}-frame period but the feeder's loop profile says ${profile.frames}; the profile was used.`,
-					);
-				}
-			} else {
-				periodFrames = measured ?? probeFrames;
-				const holeFrames = Math.max(0, periodFrames - videoFrames);
-				timeline = {
-					source: "container-probe",
-					fps,
-					frames: periodFrames,
-					loopSeconds: periodFrames / fps,
-					holes: holeFrames > 0 ? [{ fromFrame: 0, toFrame: holeFrames }] : [],
-				};
-			}
-			// Loop 1 has no head (nothing precedes the first frame); the ring is
-			// loop 2 — starting at the first frame after loop 1's video, i.e. at
-			// the hole the encoder fills by repeating the last frame (no hole for
-			// a normalized loop: loop 2 starts exactly one period in).
-			const ringStart = Math.min(videoFrames, periodFrames);
-			if (decodedStats.length < ringStart + periodFrames) {
-				throw new Error(
-					`the pushed reference decoded ${decodedStats.length} frames but the ring needs ${ringStart + periodFrames} (period ${periodFrames}) — the period cannot be trusted (row #256)`,
-				);
-			}
-			const sourceStats = decodedStats.slice(
-				ringStart,
-				ringStart + periodFrames,
-			);
-			const sourceMask = sourceMaskOf(timeline);
 
-			const captureDeps: CaptureDeps = {
-				resolveCredential: deps.resolveCredential,
-				...(deps.makeBrowser ? { makeBrowser: deps.makeBrowser } : {}),
+					if (resourceSession) {
+						const report = resourceSession.report();
+						await deps.prisma.vmafJob
+							.update({
+								where: { id: vmafJobId },
+								data: {
+									cores: Math.max(1, Math.floor(report.cpuCapacity)),
+									concurrency: 1,
+									...(report.units.length
+										? {
+												threads: Math.max(
+													...report.units.map((unit) => unit.threads),
+												),
+											}
+										: {}),
+									params: {
+										...(params as unknown as Prisma.InputJsonObject),
+										...(deps.subsample !== undefined && deps.subsample > 1
+											? { subsample: deps.subsample }
+											: {}),
+										localResources: report as unknown as Prisma.InputJsonValue,
+									},
+								},
+							})
+							.catch(() => {});
+					}
+					await rm(sourcePath, { force: true }).catch(() => {});
+					if (unscored.length > 0) {
+						throw new Error(
+							`${unscored.length} of ${targets.length} rendition(s) not scored (${resultCount} scored and kept): ${unscored.join(" | ")}`,
+						);
+					}
+					// FAIL CLOSED on a mixed set:
+					// every scored rendition must carry the job's single window. A
+					// rendition captured over a drifted window is an inconsistency the seal
+					// rejects — the scored rows are kept, but the set is NOT recorded as a
+					// comparable FINISHED set. In correct code this never fires (every target
+					// records `jobWindow`); it is the explicit guard the invariant rests on.
+					const drifted = captureWindowMismatches(sealed, jobWindow);
+					if (drifted.length > 0) {
+						throw new Error(
+							`live VMAF capture-window seal failed: rendition(s) ${drifted.join(", ")} were not captured over the job's single window ${jobWindow.captureWindowId} [${jobWindow.from}, ${jobWindow.to}] — a multi-rendition set over drifting windows is not comparable and is not sealed FINISHED (row #273)`,
+						);
+					}
+					return await markTerminal(vmafJobId, "FINISHED", resultCount);
+				} finally {
+					await rm(jobDir, { recursive: true, force: true }).catch(() => {});
+				}
 			};
-
-			// The capture window is SEALED here, ONCE, from a single `deps.now`
-			// reading — before any rendition is captured — and every target is read
-			// over and records THIS window.
-			// Re-deriving it per target from `deps.now` mid-run let the
-			// endpoint drift over a long download/score, so a multi-rendition set was
-			// not compared over the same wall-clock interval / the same scene. This
-			// is the SHARED-WINDOW seal only; the reference loop-boundary alignment
-			// that row 256 records is a separate, untouched concern.
-			const jobWindow = windowFromNow(vmafJobId, deps.now(), windowSeconds);
-
-			// One rendition's failure leaves the OTHERS scored (
-			// review-331 I1): a single throw — a truncated listing, a capture the
-			// storage refused — used to abort every rendition after it and mark
-			// the whole job ERROR with the earlier rows orphaned under it. Each
-			// target is isolated; the job still ends ERROR, naming exactly which
-			// renditions went unscored and why, and the scored rows are kept.
-			const resourceSession = deps.localResources?.begin(signal);
-			const unscored: string[] = [];
-			const sealed: SealedRendition[] = [];
-			for (const target of targets) {
-				try {
-					const window = await scoreTarget({
-						vmafJobId,
-						plan,
-						model: row.model,
-						target,
-						sourceStats,
-						referenceGeometry,
-						sourceProvenance,
-						referenceSource,
-						fps,
-						inheritedWarnings,
-						timeline,
-						sourceMask,
-						pushedPath,
-						ringStart,
-						captureDeps,
-						windowSeconds,
-						captureWindow: jobWindow,
-						jobDir,
-						resourceSession,
-					});
-					sealed.push({ renditionKey: target.renditionKey, window });
-					resultCount += 1;
-					// Sequential targets: absolute counts heal a missed earlier write.
-					await writeProgress(vmafJobId, targets.length, resultCount);
-				} catch (err) {
-					const reason = err instanceof Error ? err.message : String(err);
-					unscored.push(`${target.renditionKey}: ${reason}`);
-				}
-			}
-
-			if (resourceSession) {
-				const report = resourceSession.report();
-				await deps.prisma.vmafJob
-					.update({
-						where: { id: vmafJobId },
-						data: {
-							cores: Math.max(1, Math.floor(report.cpuCapacity)),
-							concurrency: 1,
-							...(report.units.length
-								? {
-										threads: Math.max(
-											...report.units.map((unit) => unit.threads),
-										),
-									}
-								: {}),
-							params: {
-								...(params as unknown as Prisma.InputJsonObject),
-								...(deps.subsample !== undefined && deps.subsample > 1
-									? { subsample: deps.subsample }
-									: {}),
-								localResources: report as unknown as Prisma.InputJsonValue,
-							},
-						},
-					})
-					.catch(() => {});
-			}
-			await rm(sourcePath, { force: true }).catch(() => {});
-			if (unscored.length > 0) {
-				throw new Error(
-					`${unscored.length} of ${targets.length} rendition(s) not scored (${resultCount} scored and kept): ${unscored.join(" | ")}`,
-				);
-			}
-			// FAIL CLOSED on a mixed set:
-			// every scored rendition must carry the job's single window. A
-			// rendition captured over a drifted window is an inconsistency the seal
-			// rejects — the scored rows are kept, but the set is NOT recorded as a
-			// comparable FINISHED set. In correct code this never fires (every target
-			// records `jobWindow`); it is the explicit guard the invariant rests on.
-			const drifted = captureWindowMismatches(sealed, jobWindow);
-			if (drifted.length > 0) {
-				throw new Error(
-					`live VMAF capture-window seal failed: rendition(s) ${drifted.join(", ")} were not captured over the job's single window ${jobWindow.captureWindowId} [${jobWindow.from}, ${jobWindow.to}] — a multi-rendition set over drifting windows is not comparable and is not sealed FINISHED (row #273)`,
-				);
-			}
-			return await markTerminal(vmafJobId, "FINISHED", resultCount);
+			return resourceSession
+				? await resourceSession.prepared("live-window", capture)
+				: await capture();
 		} catch (err) {
 			if (signal.aborted) throw signal.reason;
 			const message = err instanceof Error ? err.message : "live vmaf failed";

@@ -255,7 +255,7 @@ export function CredentialForm({
 						id={id}
 						type={def.type === "password" ? "password" : (def.type ?? "text")}
 						placeholder={def.placeholder}
-						autoComplete="off"
+						autoComplete={def.type === "password" ? "one-time-code" : "off"}
 						aria-invalid={error ? true : undefined}
 						{...register(name)}
 					/>
@@ -265,7 +265,7 @@ export function CredentialForm({
 	}
 
 	return (
-		<form onSubmit={submit} noValidate>
+		<form onSubmit={submit} autoComplete="off" noValidate>
 			<fieldset disabled={submitting} className="space-y-4">
 				{formState.errors.root?.message ? (
 					<p role="alert" className="text-red-400 text-xs">

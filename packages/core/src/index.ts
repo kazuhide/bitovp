@@ -1364,6 +1364,10 @@ export {
 	timelineFromProfile,
 } from "./vmaf/loop-timeline";
 export {
+	type NativeDeviceInfo,
+	nativeDeviceInfoSchema,
+} from "./vmaf/native-device-info";
+export {
 	NATIVE_OFFICIAL_REVISION,
 	nativeVmafReceiptSchema,
 } from "./vmaf/native-receipt";

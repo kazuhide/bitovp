@@ -40,6 +40,8 @@ export type AutoExecutionRequest = {
 	baseline: { hostBytes: number; gpuBytes: number };
 	/** Binds native source, device/driver, model and all measurement settings. */
 	expectedProfileKey: string;
+	/** An operator override applies to candidate selection and the fallback. */
+	fixedCpuThreads?: number;
 	candidates: readonly AutoExecutionCandidate[];
 };
 
@@ -62,7 +64,7 @@ export type AutoExecutionPlan = {
 	/** A device-wide target; it is never limited by one parent's mirror count. */
 	maxActiveComparisons: number;
 	inflightFrames: 1 | 2 | 4;
-	cpuThreads: 1 | 2 | 4;
+	cpuThreads: number;
 	decoderThreads: 1 | 2;
 	cpuChargePerComparison: number;
 	/** Includes GPU memory conservatively for an integrated/shared-memory GPU. */
@@ -141,8 +143,12 @@ export function selectAutoExecutionPlan(
 	const total = r?.gpuTotalBytes ?? undefined;
 	const gpuBudget = r?.gpuBudgetBytes ?? total;
 	const gpuAvailable = r?.gpuAvailableBytes ?? undefined;
+	const fallbackThreads = request.fixedCpuThreads ?? 1;
 	if (
 		!r ||
+		!Number.isSafeInteger(fallbackThreads) ||
+		fallbackThreads < 1 ||
+		fallbackThreads > 256 ||
 		!Number.isFinite(r.cpuCapacity) ||
 		r.cpuCapacity <= 0 ||
 		!Number.isSafeInteger(Math.ceil(r.cpuCapacity)) ||
@@ -218,8 +224,11 @@ export function selectAutoExecutionPlan(
 		typeof request.expectedProfileKey === "string" &&
 		request.expectedProfileKey.length > 0 &&
 		Array.isArray(request.candidates)
-			? request.candidates.filter((candidate) =>
-					validCandidate(candidate, request.expectedProfileKey),
+			? request.candidates.filter(
+					(candidate) =>
+						validCandidate(candidate, request.expectedProfileKey) &&
+						(request.fixedCpuThreads === undefined ||
+							candidate.cpuThreads === request.fixedCpuThreads),
 				)
 			: [];
 	if (new Set(compatible.map((c) => c.trials[0]?.workFrames)).size > 1) {
@@ -278,7 +287,7 @@ export function selectAutoExecutionPlan(
 		(candidate) =>
 			candidate.concurrency === 1 &&
 			candidate.inflightFrames === 1 &&
-			candidate.cpuThreads === 1 &&
+			candidate.cpuThreads === fallbackThreads &&
 			candidate.decoderThreads === 1,
 	);
 	const fallbackHost = Math.max(
@@ -292,15 +301,19 @@ export function selectAutoExecutionPlan(
 	const fallback: AutoExecutionPlan = {
 		maxActiveComparisons: 1,
 		inflightFrames: 1,
-		cpuThreads: 1,
+		cpuThreads: fallbackThreads,
 		decoderThreads: 1,
-		cpuChargePerComparison: Math.min(r.cpuCapacity, cpuCharge(1, 1)),
+		cpuChargePerComparison: Math.min(
+			r.cpuCapacity,
+			cpuCharge(fallbackThreads, 1),
+		),
 		hostBytesPerComparison: hostCharge(fallbackHost, fallbackGpu, r.integrated),
 		gpuBytesPerComparison: fallbackGpu,
 		gpuShareCredits: AUTO_GPU_SHARE_CAPACITY,
 		source: "conservative",
 	};
-	if (r.cpuCapacity < cpuCharge(1, 1)) reasons.push("cpu-capacity-low");
+	if (r.cpuCapacity < cpuCharge(fallbackThreads, 1))
+		reasons.push("cpu-capacity-low");
 	if (fitsCapacity(fallback) && fitsHeadroom(fallback))
 		return {
 			status: "ready",

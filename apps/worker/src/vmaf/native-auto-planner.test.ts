@@ -228,3 +228,34 @@ it("requires kernel supervision and pinned models before starting any calibratio
 	).rejects.toThrow("NATIVE_AUTO_REQUIRES_PROCESS_SUPERVISOR");
 	expect(h.calibrate).not.toHaveBeenCalled();
 });
+
+it("rejects an overridden serial configuration whose measured footprint cannot fit", async () => {
+	const h = harness();
+	Object.assign(h.resources, {
+		memoryLimitBytes: 1.5 * GiB,
+		reserveBytes: 0,
+		budgetBytes: 1.5 * GiB,
+	});
+	h.calibrate.mockImplementation(async (request) => [
+		{
+			profileKey: request.profileKey,
+			scope: "native-with-cpu-parity",
+			concurrency: 1,
+			inflightFrames: 1,
+			cpuThreads: 2,
+			decoderThreads: 1,
+			hostBytesPerComparison: 2 * GiB,
+			gpuBytesPerComparison: GiB,
+			trials: Array.from({ length: 3 }, () => ({
+				workFrames: 96,
+				wallMs: 1000,
+				cpuVerified: true,
+			})),
+		},
+	]);
+	await expect(
+		createNativeAutoResourcePlanner({ ...h.deps, configured: { threads: 2 } })(
+			h.request,
+		),
+	).rejects.toThrow("requires more memory");
+});

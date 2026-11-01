@@ -55,6 +55,27 @@ function request(
 
 describe("automatic native VMAF execution planning", () => {
 	it.each([
+		2, 4,
+	])("binds fallback bounds to an explicit %s-thread configuration", (threads) => {
+		const input = request({
+			fixedCpuThreads: threads,
+			candidates: [
+				candidate(1, 1000, {
+					cpuThreads: threads as 2 | 4,
+					hostBytesPerComparison: 2 * GiB,
+				}),
+			],
+		});
+		Object.assign(input.resources, {
+			hostBudgetBytes: GiB,
+			hostAvailableBytes: GiB,
+		});
+		expect(selectAutoExecutionPlan(input)).toMatchObject({
+			status: "unavailable",
+			plan: { cpuThreads: threads, hostBytesPerComparison: 2 * GiB },
+		});
+	});
+	it.each([
 		"host",
 		"gpu",
 	] as const)("does not discard a measured serial %s footprint when the cold estimate is smaller", (kind) => {

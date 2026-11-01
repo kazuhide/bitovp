@@ -263,6 +263,7 @@ export function createNativeAutoResourcePlanner(deps: {
 				: [];
 		const fresh = read();
 		const decision = selectAutoExecutionPlan({
+			fixedCpuThreads: deps.configured?.threads,
 			expectedProfileKey: profileKey,
 			baseline,
 			candidates: candidates.filter(
@@ -287,10 +288,7 @@ export function createNativeAutoResourcePlanner(deps: {
 		if (decision.status === "unavailable" || !decision.plan)
 			throw new ResourceUnavailableError("estimate");
 		const selected = decision.plan;
-		const threads =
-			selected.source === "conservative"
-				? (deps.configured?.threads ?? selected.cpuThreads)
-				: selected.cpuThreads;
+		const threads = selected.cpuThreads;
 		deps.onDecision?.({
 			source: selected.source,
 			concurrency: selected.maxActiveComparisons,

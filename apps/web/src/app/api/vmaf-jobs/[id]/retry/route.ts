@@ -136,7 +136,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
 							? autoTriggerKey(encodingJobId)
 							: `${labManualTriggerPrefix(encodingJobId)}${row.model}:retry-${id}`,
 						params: {
-							execution: { backend: "LOCAL" },
+							execution: execution.data,
 							retryOf: id,
 							...(stored.source === "OUTPUT_MP4"
 								? { source: "OUTPUT_MP4" }

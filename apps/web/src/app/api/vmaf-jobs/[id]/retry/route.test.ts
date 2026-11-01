@@ -98,6 +98,26 @@ beforeEach(() => {
 	getJob.mockResolvedValue(null);
 });
 describe("local VMAF-only retry", () => {
+	it.each([
+		"CPU",
+		"AUTO",
+	] as const)("preserves %s intent while creating a fresh measurement", async (localMode) => {
+		const execution = { backend: "LOCAL", localMode };
+		findUnique.mockResolvedValue(
+			row({
+				params: {
+					execution,
+					localSelection: { backend: "cuda", requested: localMode },
+					localScoring: { backend: "cuda" },
+				},
+			}),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.params).toEqual({
+			execution,
+			retryOf: ID,
+		});
+	});
 	it("keeps failed evidence and creates only a local VMAF queue item", async () => {
 		expect((await post()).status).toBe(201);
 		expect(create).toHaveBeenCalledWith(

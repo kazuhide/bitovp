@@ -305,6 +305,34 @@ describe("native calibration template order", () => {
 });
 
 describe("native calibration adapter", () => {
+	it("keeps the strict thirty-second boundary for fractional low cadence", async () => {
+		const h = await setup();
+		const slow = probe({ avg_frame_rate: "7/10", r_frame_rate: "7/10" });
+		const runProcess = required(h.run.getMockImplementation());
+		h.run.mockImplementation(async (binary, args, context) => {
+			const value = await runProcess(binary, args, context);
+			return binary === "ffprobe" ? { ...value, stdout: slow } : value;
+		});
+		const request = {
+			...h.request,
+			workloadMode: "parallel-batch" as const,
+			fixedWorkUnits: 1,
+			referenceProbe: slow,
+			distortedProbe: slow,
+		};
+		await expect(
+			h.adapter.calibrate({ ...request, sampleFrames: 21 }),
+		).rejects.toThrow("NATIVE_CALIBRATION_PROXY_DURATION_INVALID");
+		expect(score).not.toHaveBeenCalled();
+		expect(
+			await h.adapter.calibrate({ ...request, sampleFrames: 20 }),
+		).toHaveLength(2);
+		expect(
+			score.mock.calls.every(
+				([, , context]) => context.calibrationFrames === 20,
+			),
+		).toBe(true);
+	});
 	it("runs one parallel wave with identical frames per child", async () => {
 		const h = await setup();
 		const rows = await h.adapter.calibrate({

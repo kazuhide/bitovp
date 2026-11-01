@@ -160,10 +160,14 @@ export function createNativeAutoResourcePlanner(deps: {
 		// Container duration is sufficient for padded RAM, not proof that a
 		// calibration prefix contains N frames. Both exact counts must be known.
 		const fps = pair.reference.fps;
-		const durationCap =
+		let durationCap =
 			fps !== undefined && Number.isFinite(fps) && fps > 0
 				? Math.floor(fps * 30)
 				: 0;
+		// Match the adapter's strict quotient check: floating multiplication can
+		// round up (0.7 * 30), while the inverse division is just above 30.
+		if (fps !== undefined && durationCap > 0 && durationCap / fps > 30)
+			durationCap--;
 		const sampleFrames =
 			exactFrameCount(pair.reference.frames) &&
 			exactFrameCount(pair.distorted.frames) &&

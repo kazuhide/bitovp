@@ -222,10 +222,15 @@ it("uses exact frame counts rather than rounded container duration for calibrati
 it.each([
 	[1, 30],
 	[2, 60],
+	[7 / 10, 20],
 ] as const)("limits a %s fps proxy to at most thirty seconds", async (fps, expected) => {
 	const h = harness();
 	h.request.pair.reference.fps = fps;
 	h.request.pair.distorted.fps = fps;
+	h.calibrate.mockImplementation(async (request) => {
+		expect(request.sampleFrames / fps).toBeLessThanOrEqual(30);
+		return [];
+	});
 	await createNativeAutoResourcePlanner(h.deps)(h.request);
 	expect(h.calibrate.mock.calls[0]?.[0].sampleFrames).toBe(expected);
 });

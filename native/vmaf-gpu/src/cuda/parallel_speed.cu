@@ -90,9 +90,15 @@ __global__ void means_kernel(Workspace b, unsigned image) {
 }
 __global__ void covariance_kernel(Workspace b, unsigned image, unsigned output) {
     const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= 625) return;
-    const unsigned x = i / 25, y = i % 25;
-    if (y > x) return;
+    if (i >= 325) return;
+    // Pack only the lower triangle into full warps. Each lane retains its
+    // complete ascending-pixel FP64 sum and writes both symmetric cells.
+    unsigned x = 0;
+    for (unsigned step = 16; step; step >>= 1) {
+        const unsigned candidate = x + step;
+        if (candidate < 25 && candidate * (candidate + 1) / 2 <= i) x = candidate;
+    }
+    const unsigned y = i - x * (x + 1) / 2;
     Math m{b.floats()};
     const float value = m.compute_covariance(b.dimensions(), int(image), int(b.words[31]), int(b.words[4]), int(x / 5), int(x % 5), int(y / 5), int(y % 5));
     m.f[output + x * 25 + y] = value;
@@ -160,11 +166,62 @@ __device__ void block_factor(float *f) {
     }
     block_multiply(f, r, q, a, size, size, size);
 }
+__device__ void cooperative_eigenvalues(float *f, float &tau, float &alpha) {
+    constexpr int size = 25, square = size * size;
+    constexpr int a = square + size, d = a + square, sd = d + size;
+    constexpr int v = sd + size, x = v + size;
+    const int lane = int(threadIdx.x);
+    Math m{f};
+    block_copy(f, a, 0, square);
+    for (int column = 0; column < size - 2; ++column) {
+        // Scalar norms/divisions and dependent dot products retain CPU order.
+        // Independent rows and matrix cells share the remaining work.
+        if (!lane) tau = m.compute_householder_transform(a, column, column + 1, size);
+        __syncthreads();
+        if (lane > column && lane < size) f[v + lane] = f[a + lane * size + column];
+        __syncthreads();
+        if (tau != 0.0f) {
+            if (!lane) {
+                f[a + (column + 1) * size + column] = f[v + column + 1];
+                f[v + column + 1] = 1.0f;
+            }
+            __syncthreads();
+            if (lane > column && lane < size) {
+                float sum = 0;
+                for (int j = column + 1; j < size; ++j)
+                    sum += tau * f[a + lane * size + j] * f[v + j];
+                f[x + lane] = sum;
+            }
+            __syncthreads();
+            if (!lane) {
+                const float dot = m.tridiagonal_dot_product(x, v, column + 1, size);
+                alpha = Math::round_float(-0.5 * double(tau) * double(dot));
+            }
+            __syncthreads();
+            if (lane > column && lane < size) f[x + lane] += alpha * f[v + lane];
+            __syncthreads();
+            for (int cell = lane; cell < square; cell += int(blockDim.x)) {
+                const int row = cell / size, col = cell % size;
+                if (row > column && col > column)
+                    f[a + cell] -= f[x + row] * f[v + col] + f[v + row] * f[x + col];
+            }
+        }
+        // Zero-tau iterations also finish before lane zero overwrites tau.
+        __syncthreads();
+    }
+    if (lane < size) f[d + lane] = f[a + lane * size + lane];
+    if (lane < size - 1) f[sd + lane] = f[a + (lane + 1) * size + lane];
+    __syncthreads();
+    if (!lane) m.compute_eigenvalues_tridiagonal(d, sd, square, size);
+}
+
+template <bool Cooperative = true>
 __global__ void factor_kernel(Workspace b) {
     // The covariance, QR factors and eigenvalue workspace fit in 12.5 KiB.
     // Shared storage changes only where binary32 intermediates are stored;
     // every scalar eigenvalue and per-cell QR accumulation retains its order.
     __shared__ float scratch[3126];
+    __shared__ float tau, alpha;
     constexpr int size = 25, square = size * size, q = square, r = q + square;
     Math m{scratch}; const auto d = b.dimensions();
     auto *f = b.floats();
@@ -174,10 +231,10 @@ __global__ void factor_kernel(Workspace b) {
     const unsigned failure = b.words[slot + 6u];
     for (int i = int(threadIdx.x); i < square; i += int(blockDim.x)) scratch[i] = f[covariance + i];
     __syncthreads();
-    if (!threadIdx.x) {
-        m.compute_eigenvalues(0, square, size, square + size);
-        b.words[failure] = m.is_matrix_regular(d, square) ? 0 : 1;
-    }
+    if constexpr (Cooperative) cooperative_eigenvalues(scratch, tau, alpha);
+    else if (!threadIdx.x) m.compute_eigenvalues(0, square, size, square + size);
+    __syncthreads();
+    if (!threadIdx.x) b.words[failure] = m.is_matrix_regular(d, square) ? 0 : 1;
     __syncthreads();
     if (threadIdx.x < size) {
         const float value = scratch[square + threadIdx.x];
@@ -353,7 +410,7 @@ struct CudaParallelSpeed::Impl {
         dispatch(4, p.operating_width, p.operating_height, p.downscaled, p.temporary);
         dispatch(5, p.operating_width, p.operating_height, p.temporary, p.downscaled, p.downscaled);
         means_kernel<<<1, 32, 0, stream>>>(b, p.downscaled); check(cudaGetLastError(), "CUDA SPEED means pass");
-        covariance_kernel<<<5, 128, 0, stream>>>(b, p.downscaled, slot.covariance); check(cudaGetLastError(), "CUDA SPEED covariance pass");
+        covariance_kernel<<<11, 32, 0, stream>>>(b, p.downscaled, slot.covariance); check(cudaGetLastError(), "CUDA SPEED covariance pass");
         // Retain the compact RHS before the next image reuses the large pixel
         // workspace. The matrix solver no longer reads a mutable image buffer.
         independent_kernel<<<(25u * p.blocks + 127u) / 128u, 128, 0, stream>>>(b, p.downscaled, slot.independent);

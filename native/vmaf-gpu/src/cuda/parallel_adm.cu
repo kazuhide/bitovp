@@ -152,8 +152,11 @@ struct AdmParameters {
             }
             set_float(base + 13, std::pow(static_cast<float>(double(cropped_width) * cropped_height * noise), 1.0f / 3.0f));
             for (unsigned image = 0; image < 2; ++image) {
-                add(0, scale, width, output_height, width, height, image);
-                add(1, scale, output_width, output_height, width, height, image);
+                if (!scale) add(7, scale, output_width, output_height, width, height, image);
+                else {
+                    add(0, scale, width, output_height, width, height, image);
+                    add(1, scale, output_width, output_height, width, height, image);
+                }
             }
             add(2, scale, output_width, output_height, width, height, 0);
             for (unsigned aim = 0; aim < 2; ++aim) {
@@ -209,6 +212,20 @@ __device__ uint raw_sample(uint image, uint x, uint y) {
     return words[2] == 8 ? row[x] : uint(row[x * 2]) | (uint(row[x * 2 + 1]) << 8);
 }
 
+__device__ int2 vertical_zero(uint x, uint y) {
+    // Only bits [depth, depth+15] survive the shift and narrow. Unsigned
+    // modulo-2^32 products preserve them even for uint16 code values >1023.
+    uint lo = 0, hi = 0;
+    for (int k = 0; k < 4; ++k) {
+        const int row = reflected(int(2u * y) - 1 + k, int(p.source_height));
+        const uint value = raw_sample(p.selector, x, uint(row));
+        lo += uint(low_filter[k]) * value;
+        hi += uint(high_filter[k]) * value;
+    }
+    const uint rounding = 1u << (words[2] - 1u);
+    return make_int2(narrow16(int((lo - 46342u * rounding + rounding) >> words[2])),
+                     narrow16(int((hi + rounding) >> words[2])));
+}
 __device__ void vertical(uint x, uint y) {
     int64_t lo = int64_t(0), hi = int64_t(0);
     for (int k = 0; k < 4; ++k) {
@@ -287,6 +304,7 @@ __device__ void decouple(uint x, uint y) {
     }
 }
 __device__ void contrast_sensitivity(uint x, uint y) {
+    int center_sum = 0, filtered_sum = 0;
     for (uint theta = 0u; theta < 3u; ++theta) {
         int source = at((p.selector == 0u ? 11u : 8u) + theta, x, y);
         uint factor = config(theta == 2u ? 12u : 11u);
@@ -300,24 +318,23 @@ __device__ void contrast_sensitivity(uint x, uint y) {
             // Original int32 add_bef_shift_flt stores 1u<<31 as negative.
             filtered = int((int64_t(143165577) * abs(value) - int64_t(2147483648ul)) >> 32);
         }
-        put(14u + theta, x, y, value); put(17u + theta, x, y, filtered);
+        // Preserve each orientation's rounding and narrow before adding the
+        // three contributions. Row masking needs these two sums, not six maps.
+        center_sum += p.scale == 0u ? narrow16((8738 * abs(value) + 2048) >> 12) :
+            int((int64_t(286331153) * abs(value) - int64_t(2147483648ul)) >> 32);
+        filtered_sum += filtered;
     }
+    put(14u, x, y, center_sum); put(17u, x, y, filtered_sum);
 }
 __device__ int masking_threshold(uint x, uint y) {
-    int sum = 0;
-    for (uint theta = 0u; theta < 3u; ++theta)
-        for (int dy = -1; dy <= 1; ++dy)
-            for (int dx = -1; dx <= 1; ++dx) {
-                if (dx == 0 && dy == 0) {
-                    int value = at(14u + theta, x, y);
-                    sum += p.scale == 0u ? narrow16((8738 * abs(value) + 2048) >> 12) :
-                        int((int64_t(286331153) * abs(value) - int64_t(2147483648ul)) >> 32);
-                } else {
-                    uint xx = uint(reflected(int(x) + dx, int(p.width)));
-                    uint yy = uint(reflected(int(y) + dy, int(p.height)));
-                    sum += at(17u + theta, xx, yy);
-                }
-            }
+    int sum = at(14u, x, y);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            uint xx = uint(reflected(int(x) + dx, int(p.width)));
+            uint yy = uint(reflected(int(y) + dy, int(p.height)));
+            sum += at(17u, xx, yy);
+        }
     return sum;
 }
 __device__ void pool_row(uint row) {
@@ -428,6 +445,37 @@ __device__ void finish_score() {
 }
 
 };
+__global__ void adm_first_dwt(Stage stage) {
+    __shared__ int2 tile[16 * 34];
+    const auto &p = stage.p;
+    const uint tile_x = blockIdx.x * 16u, tile_y = blockIdx.y * 16u;
+    const uint lane = threadIdx.y * 16u + threadIdx.x;
+    const uint valid_columns = 2u * minimum(16u, p.width - tile_x) + 2u;
+    for (uint index = lane; index < 16u * 34u; index += 256u) {
+        const uint column = index % 34u, row = index / 34u;
+        int2 value = make_int2(0, 0);
+        // Load only the halo columns used by active outputs at partial tiles.
+        if (column < valid_columns && tile_y + row < p.height) {
+            const int source_x = stage.reflected(int(2u * tile_x) - 1 + int(column), int(p.source_width));
+            value = stage.vertical_zero(uint(source_x), tile_y + row);
+        }
+        tile[index] = value;
+    }
+    __syncthreads();
+    const uint x = tile_x + threadIdx.x, y = tile_y + threadIdx.y;
+    if (x >= p.width || y >= p.height) return;
+    // The four signed int16 taps sum to at most 54822*32768, so int32
+    // accumulation plus the final 32768 rounding cannot overflow.
+    int a = 0, v = 0, h = 0, diagonal = 0;
+    for (int k = 0; k < 4; ++k) {
+        const int2 value = tile[threadIdx.y * 34u + 2u * threadIdx.x + uint(k)];
+        a += stage.low_filter[k] * value.x; v += stage.high_filter[k] * value.x;
+        h += stage.low_filter[k] * value.y; diagonal += stage.high_filter[k] * value.y;
+    }
+    const int values[4] = {(a + 32768) >> 16, (v + 32768) >> 16,
+                           (h + 32768) >> 16, (diagonal + 32768) >> 16};
+    for (uint k = 0; k < 4; ++k) stage.put(p.selector * 4u + k, x, y, stage.narrow16(values[k]));
+}
 __global__ void adm_stage(Stage stage) {
     const uint x = blockIdx.x * blockDim.x + threadIdx.x;
     const uint y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -518,8 +566,10 @@ struct CudaParallelAdm::Impl {
             const bool single = p.mode == 5 || p.mode == 6;
             const dim3 block = single ? dim3(1) : p.mode == 4 ? dim3(32) : dim3(16, 16);
             const dim3 grid = single ? dim3(1) : dim3(pass.groups_x, pass.groups_y);
-            adm_stage<<<grid, block, 0, stream>>>({workspace,
-                static_cast<const unsigned char *>(reference.data), static_cast<const unsigned char *>(distorted.data), p});
+            const Stage stage{workspace, static_cast<const unsigned char *>(reference.data),
+                              static_cast<const unsigned char *>(distorted.data), p};
+            if (p.mode == 7) adm_first_dwt<<<grid, block, 0, stream>>>(stage);
+            else adm_stage<<<grid, block, 0, stream>>>(stage);
             check(cudaGetLastError(), "launch parallel ADM mathematical stage");
         }
         check(cudaEventRecord(calculated.value, stream), "end ADM pixel processing");

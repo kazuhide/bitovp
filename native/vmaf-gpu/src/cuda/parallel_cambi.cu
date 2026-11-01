@@ -133,10 +133,13 @@ __global__ void cambi_kernel(Buffers b) {
                     if (!words[p.source_mask + neighbor]) continue;
                     const unsigned v = words[p.source_image + neighbor];
                     if (v == raw) ++p0;
-                    for (unsigned d = 0; d < differences; ++d) {
-                        if (v == raw + d + 1) ++positives[d];
-                        if (int(v) == int(raw) - int(d) - 1) ++negatives[d];
-                    }
+                    // A neighbor contributes to at most one signed delta bin.
+                    // Keep the exact histogram, without testing every bin.
+                    const int delta = int(v) - int(raw);
+                    if (delta > 0 && unsigned(delta) <= differences)
+                        ++positives[unsigned(delta) - 1];
+                    else if (delta < 0 && unsigned(-delta) <= differences)
+                        ++negatives[unsigned(-delta) - 1];
                 }
             }
             const unsigned weights[32] = {1,2,3,4,4,5,5,6,6,6,6,7,7,7,7,8,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9};

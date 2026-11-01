@@ -12,7 +12,15 @@
 
 int main() {
     try {
-        const unsigned count = bitovp::gpu::adm_row_test::cases([](const auto &fixture, unsigned rows) {
+        const unsigned count = bitovp::gpu::adm_row_test::cases([](const auto &original, unsigned rows) {
+            auto fixture = original;
+            // The independent oracle retains all six legacy masking bands.
+            // This fixture has zero bands, whose three rounded center terms
+            // are -1 each at higher scales and zero at scale zero.
+            for (unsigned pixel = 0; pixel < fixture.width * fixture.height; ++pixel) {
+                fixture.words[fixture.words[46] + pixel] = fixture.scale ? std::uint32_t(-3) : 0u;
+                fixture.words[fixture.words[49] + pixel] = 0u;
+            }
             using namespace bitovp::gpu;
             std::uint32_t *workspace = nullptr;
             const auto check_status = [](cudaError_t code) {

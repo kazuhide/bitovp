@@ -443,7 +443,7 @@ function isDerivedName(key: string | undefined, base: string): boolean {
 export function updateVodVideoModePaths(
 	state: WizardState,
 	next: WizardVideoRendition[],
-): Pick<WizardState, "videos"> & Partial<Pick<WizardState, "audios" | "drm">> {
+): Pick<WizardState, "videos"> & Partial<Pick<WizardState, "drm">> {
 	if (state.videos.length !== next.length) return { videos: next };
 	// Clearing one height also changes siblings' inferred same-height keys.
 	// Freeze the whole ladder, including clear/DRM destinations, before that edit.
@@ -460,7 +460,7 @@ export function updateVodVideoModePaths(
 	const keys = videoKeys(prepared);
 	const destinations = outputPaths({
 		...state,
-		...(frozen ? { audios: frozen.audios, drm: frozen.drm } : {}),
+		...(frozen ? { drm: frozen.drm } : {}),
 		videos: prepared,
 	});
 	const allocated = new Set<string>();
@@ -545,7 +545,6 @@ export function updateVodVideoModePaths(
 	});
 	return {
 		videos,
-		...(frozen ? { audios: frozen.audios } : {}),
 		...(drm !== state.drm ? { drm } : {}),
 	};
 }

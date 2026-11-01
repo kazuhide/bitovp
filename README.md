@@ -54,10 +54,10 @@ Availability also depends on your Bitmovin account and encoder version.
 
 ## Releases and planned improvements
 
-**[v1.0.0-rc.1](https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1)**
-is the first release candidate for installation and workflow testing before
-v1.0.0. Download a source archive from the release and follow the installation
-guide; the application is built locally.
+**[v1.0.0](https://github.com/kazuhide/bitovp/releases/tag/v1.0.0)**
+is the first stable release. Download a source archive from the release and
+follow the installation guide; the application is built locally. Release
+assets include source archives and SHA-256 checksums.
 See the [changelog](./CHANGELOG.md) for changes and the [roadmap](./ROADMAP.md)
 for planned improvements.
 

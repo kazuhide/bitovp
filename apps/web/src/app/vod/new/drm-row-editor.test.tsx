@@ -51,6 +51,8 @@ describe("DrmRowEditor — inline key entry (ledger #120)", () => {
 		renderEditor();
 		fireEvent.click(await screen.findByText("Enter key directly…"));
 		const input = screen.getByLabelText("Content key (32 hex chars)");
+		expect(input).toHaveAttribute("type", "password");
+		expect(input).toHaveAttribute("autocomplete", "one-time-code");
 		fireEvent.change(input, { target: { value: "not-hex" } });
 		expect(screen.getByText(/exactly 32 hex characters/)).toBeInTheDocument();
 		expect(

@@ -23,6 +23,7 @@ git clone https://github.com/kazuhide/bitovp.git
 cd bitovp
 corepack enable
 pnpm install --frozen-lockfile
+pnpm --filter @bitovp/db build
 cp .env.example .env
 chmod 600 .env
 ```
@@ -114,6 +115,8 @@ docker compose logs web | grep setup-code
 2. アカウント名と Encoding API のキーを入力します。Bitmovin の組織 ID が必要なアカウントでは、その値も指定します。
 3. 保存後に接続をテストします。この操作は Bitmovin へ実際に問い合わせます。
 4. VOD・Live の作成画面で、そのアカウントを選べることを確認します。
+
+「既定のクラウドリージョン」と「エンコーダバージョン」も設定できます。バージョンは STABLE、BETA、固定バージョンから選びます。VOD・Live のウィザードでアカウントを選択すると、この既定値が反映されます。その後はジョブごとに変更できます。下書きの復元や既存プランの読み込みでは、保存された設定を保持します。
 
 接続テストの成功はすべてのリージョン・コーデック・機能を使えることの確認ではありません。実際に利用できる構成はアカウントの利用条件とエンコーダー側の対応によって異なります。
 

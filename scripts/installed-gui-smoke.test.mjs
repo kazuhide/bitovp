@@ -213,6 +213,8 @@ test("failure summaries expose only known case names and safe statuses", () => {
 		`Browser case: ${CASES[5]}; status=passed`,
 		`Browser case: ${CASES[6]}; status=passed`,
 		`Browser case: ${CASES[7]}; status=passed`,
+		`Browser case: ${CASES[8]}; status=passed`,
+		`Browser case: ${CASES[9]}; status=passed`,
 	]);
 	assert(!summary.join("\n").includes("private"));
 });

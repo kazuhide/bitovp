@@ -270,6 +270,11 @@ export function LadderSection({
 		let enteredPerTitle = false;
 		const normalized = next.map((video, index) => {
 			if (!isPerTitle(video.extras)) return video;
+			const clearHeight =
+				video.extras?.mode === "PER_TITLE_TEMPLATE" &&
+				next.length === videos.length &&
+				videos[index] !== undefined &&
+				!isPerTitle(videos[index]?.extras);
 			if (
 				enableDefaults ||
 				!isPerTitle(videos[index]?.extras) ||
@@ -284,7 +289,11 @@ export function LadderSection({
 				perTitle[codec] = { ...perTitle[codec], autoRepresentations: true };
 				enteredPerTitle = true;
 			}
-			return { ...video, bitrate: null };
+			return {
+				...video,
+				bitrate: null,
+				...(clearHeight ? { height: null } : {}),
+			};
 		});
 		const modePaths = updateVodVideoModePaths(
 			{ ...state, ...referencePatch, videos },

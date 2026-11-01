@@ -54,6 +54,42 @@ function request(
 }
 
 describe("automatic native VMAF execution planning", () => {
+	it.each([
+		"host",
+		"gpu",
+	] as const)("does not discard a measured serial %s footprint when the cold estimate is smaller", (kind) => {
+		const input = request({
+			candidates: [
+				candidate(1, 1000, {
+					...(kind === "host"
+						? { hostBytesPerComparison: 2 * GiB }
+						: { gpuBytesPerComparison: 7 * GiB }),
+				}),
+			],
+		});
+		if (kind === "host")
+			Object.assign(input.resources, {
+				hostBudgetBytes: GiB,
+				hostAvailableBytes: GiB,
+			});
+		const result = selectAutoExecutionPlan(input);
+		expect(result.status).toBe("unavailable");
+		expect(
+			kind === "host"
+				? result.plan?.hostBytesPerComparison
+				: result.plan?.gpuBytesPerComparison,
+		).toBe(kind === "host" ? 2 * GiB : 7 * GiB);
+	});
+	it("waits when a measured serial footprint exceeds current free memory", () => {
+		const input = request({
+			candidates: [candidate(1, 1000, { hostBytesPerComparison: 2 * GiB })],
+		});
+		input.resources.hostAvailableBytes = GiB;
+		expect(selectAutoExecutionPlan(input)).toMatchObject({
+			status: "wait",
+			plan: { hostBytesPerComparison: 2 * GiB },
+		});
+	});
 	it("chooses the resource knee instead of multiplying each parent's parallelism", () => {
 		const result = selectAutoExecutionPlan(request());
 		expect(result).toMatchObject({

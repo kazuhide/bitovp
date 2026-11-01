@@ -86,10 +86,10 @@ export function createSharedVmafExecution(deps: {
 			const device = plan.gpu ? devices.get(plan.gpu.deviceKey) : undefined;
 			if (plan.gpu && !device)
 				throw new Error("VMAF_RESOURCE_DEVICE_UNAVAILABLE");
-			const sample = async () => {
-				signal.throwIfAborted();
+			const sample = async (activeSignal = signal) => {
+				activeSignal.throwIfAborted();
 				const host = read();
-				const gpu = device ? await device.read(signal) : undefined;
+				const gpu = device ? await device.read(activeSignal) : undefined;
 				const total = gpu?.totalBytes;
 				if (
 					gpu &&
@@ -180,7 +180,7 @@ export function createSharedVmafExecution(deps: {
 					},
 					signal,
 					async (context) => {
-						const headroom = await sample();
+						const headroom = await sample(context.signal);
 						if (!fits(headroom)) return retry;
 						if (
 							!exclusive &&

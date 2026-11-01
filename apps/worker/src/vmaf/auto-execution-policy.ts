@@ -272,18 +272,31 @@ export function selectAutoExecutionPlan(
 			reasons: ["calibrated-resource-knee", ...reasons],
 		};
 
+	// A cold estimate cannot overrule a completed measurement of these exact
+	// serial settings, even when that measurement was filtered by capacity.
+	const measuredSerial = compatible.filter(
+		(candidate) =>
+			candidate.concurrency === 1 &&
+			candidate.inflightFrames === 1 &&
+			candidate.cpuThreads === 1 &&
+			candidate.decoderThreads === 1,
+	);
+	const fallbackHost = Math.max(
+		baseline.hostBytes,
+		...measuredSerial.map((candidate) => candidate.hostBytesPerComparison),
+	);
+	const fallbackGpu = Math.max(
+		baseline.gpuBytes,
+		...measuredSerial.map((candidate) => candidate.gpuBytesPerComparison),
+	);
 	const fallback: AutoExecutionPlan = {
 		maxActiveComparisons: 1,
 		inflightFrames: 1,
 		cpuThreads: 1,
 		decoderThreads: 1,
 		cpuChargePerComparison: Math.min(r.cpuCapacity, cpuCharge(1, 1)),
-		hostBytesPerComparison: hostCharge(
-			baseline.hostBytes,
-			baseline.gpuBytes,
-			r.integrated,
-		),
-		gpuBytesPerComparison: baseline.gpuBytes,
+		hostBytesPerComparison: hostCharge(fallbackHost, fallbackGpu, r.integrated),
+		gpuBytesPerComparison: fallbackGpu,
 		gpuShareCredits: AUTO_GPU_SHARE_CAPACITY,
 		source: "conservative",
 	};

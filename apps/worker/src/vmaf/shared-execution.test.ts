@@ -168,3 +168,52 @@ it("queued work aborts without starting when physical headroom is exhausted", as
 	expect(h.requests).toHaveLength(0);
 	expect(work).not.toHaveBeenCalled();
 });
+
+it("cancels an in-progress device probe with the acquired lease signal", async () => {
+	const h = harness(),
+		caller = new AbortController();
+	const read = vi.fn(async (signal: AbortSignal) => {
+		if (read.mock.calls.length === 1)
+			return { totalBytes: 8000 * MiB, availableBytes: 6000 * MiB };
+		return await new Promise<{ totalBytes: number; availableBytes: number }>(
+			(_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason), {
+					once: true,
+				});
+			},
+		);
+	});
+	h.execution.registerDevice({ deviceKey: "b".repeat(64), read });
+	const work = vi.fn(async () => 1);
+	const pending = h.execution.run(
+		{
+			...h.plan,
+			gpu: {
+				deviceKey: "b".repeat(64),
+				bytes: 1000 * MiB,
+				computeCredits: VMAF_GPU_COMPUTE_CREDITS / 2,
+			},
+		},
+		caller.signal,
+		work,
+	);
+	try {
+		await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+		h.controller.abort(new Error("lease lost during device query"));
+		await expect(
+			Promise.race([
+				pending,
+				new Promise((_, reject) =>
+					setTimeout(
+						() => reject(new Error("device query ignored lease loss")),
+						100,
+					),
+				),
+			]),
+		).rejects.toThrow("lease lost during device query");
+		expect(work).not.toHaveBeenCalled();
+	} finally {
+		caller.abort();
+		await pending.catch(() => {});
+	}
+});

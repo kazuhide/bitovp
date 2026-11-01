@@ -237,7 +237,9 @@ export function createNativeAutoResourcePlanner(deps: {
 			},
 		};
 		const candidates =
-			total !== null && info.device.memoryAvailableBytes !== null
+			inspected.cacheable &&
+			total !== null &&
+			info.device.memoryAvailableBytes !== null
 				? await deps.calibrate({
 						profileKey,
 						cacheable: inspected.cacheable,

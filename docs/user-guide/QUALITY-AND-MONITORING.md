@@ -250,8 +250,8 @@ CDN reachability or browser playback.
 
 ## Local and cloud execution
 
-**Local CPU** is the default for new GUI measurements. Choose **Local (automatic
-GPU selection)** to use a supported GPU on the worker when available, with the
+**Local CPU** is the default for new GUI measurements. Choose
+**Local (GPU if available)** to use a supported GPU on the worker when available, with the
 same-model CPU path otherwise. The report records the actual method and the
 reason for CPU selection. See [GPU setup and limits](./GPU-QUALITY.md#choose-local-processing).
 

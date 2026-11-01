@@ -15,12 +15,12 @@ cannot decide delivery gates.
 
 ## Choose local processing
 
-The VOD quality settings and VMAF Lab offer **Local CPU** and **Local (automatic
-GPU selection)** alongside configured cloud profiles.
+The VOD quality settings and VMAF Lab offer **Local CPU** and
+**Local (GPU if available)** alongside configured cloud profiles.
 
 - **Local CPU** uses CPU decoding and scoring, even if the worker's environment
   requests a GPU. This is the default for new measurements created in the GUI.
-- **Local (automatic GPU selection)** checks the worker's hardware and matching
+- **Local (GPU if available)** checks the worker's hardware and matching
   native installation. For a supported VMAF v1.0 model, it tries NVIDIA CUDA,
   then AMD Vulkan. If no supported GPU or native runtime is available, or the
   model is unsupported, it uses the same model on the CPU.

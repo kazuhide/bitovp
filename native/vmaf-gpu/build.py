@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.request
 
@@ -166,6 +167,11 @@ def main():
                "cudaArchitectures": options.cuda_architectures if options.cuda else None,
                "tools": {tool: subprocess.check_output([tool, "--version"], text=True).splitlines()[0]
                          for tool in tools if tool != "glslangValidator"}}
+    supervisor = prefix / "bin/bitovp-vmaf-supervisor"
+    if sys.platform.startswith("linux"):
+        if not supervisor.is_file():
+            raise RuntimeError("The native supervisor companion was not installed")
+        receipt["supervisorBinarySha256"] = sha256(supervisor)
     (prefix / "share/bitovp-vmaf/build.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print("Built", prefix / "bin/bitovp-vmaf")
 

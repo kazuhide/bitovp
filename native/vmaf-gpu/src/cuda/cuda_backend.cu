@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Kazuhide Yamamoto
 // CUDA runtime contracts: https://docs.nvidia.com/cuda/archive/13.0.1/cuda-runtime-api/
 #include "bitovp_gpu.hpp"
+#include "../driver_identity.hpp"
+#include "../pci_bus_id.hpp"
 #include <cuda_runtime.h>
 #include "motion.cuh"
 #include "parallel_cambi.hpp"
@@ -49,14 +51,21 @@ double elapsed(const Event &from, const Event &to) {
     return milliseconds;
 }
 
-template <typename Sample>
+template <typename Sample, bool Pitched>
 __global__ void squared_errors(const Sample *reference, const Sample *distorted,
-                               std::size_t samples, unsigned long long *sum) {
+                               std::size_t reference_stride, std::size_t distorted_stride,
+                               unsigned width, std::size_t samples, unsigned long long *sum) {
     __shared__ unsigned long long partial[256];
     unsigned long long local = 0;
     for (std::size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < samples;
          i += static_cast<std::size_t>(blockDim.x) * gridDim.x) {
-        const long long difference = static_cast<long long>(reference[i]) - distorted[i];
+        std::size_t a = i, b = i;
+        if constexpr (Pitched) {
+            const std::size_t row = i / width, column = i % width;
+            a = row * reference_stride + column;
+            b = row * distorted_stride + column;
+        }
+        const long long difference = static_cast<long long>(reference[a]) - distorted[b];
         local += static_cast<unsigned long long>(difference * difference);
     }
     partial[threadIdx.x] = local;
@@ -66,6 +75,22 @@ __global__ void squared_errors(const Sample *reference, const Sample *distorted,
         __syncthreads();
     }
     if (threadIdx.x == 0) atomicAdd(sum, partial[0]);
+}
+
+template <typename Sample>
+void launch_squared_errors(const Plane &reference, const Plane &distorted,
+                           unsigned long long *sum, cudaStream_t stream) {
+    const std::size_t samples = static_cast<std::size_t>(reference.width) * reference.height;
+    const unsigned blocks = static_cast<unsigned>(std::min<std::size_t>((samples + 255) / 256, 4096));
+    const auto a = static_cast<const Sample *>(reference.data);
+    const auto b = static_cast<const Sample *>(distorted.data);
+    const auto a_stride = reference.stride / sizeof(Sample), b_stride = distorted.stride / sizeof(Sample);
+    if (a_stride == reference.width && b_stride == reference.width)
+        squared_errors<Sample, false><<<blocks, 256, 0, stream>>>(
+            a, b, a_stride, b_stride, reference.width, samples, sum);
+    else
+        squared_errors<Sample, true><<<blocks, 256, 0, stream>>>(
+            a, b, a_stride, b_stride, reference.width, samples, sum);
 }
 
 struct Allocation {
@@ -149,9 +174,24 @@ public:
         info_.name = properties.name;
         info_.vendor_id = 0x10de;
         info_.integrated = properties.integrated != 0;
+        std::array<char, 32> pci{};
+        checked(cudaDeviceGetPCIBusId(pci.data(), int(pci.size()), device_index_), "cudaDeviceGetPCIBusId");
+        if (pci.back() == '\0') info_.pci_bus_id = normalize_pci_bus_id(pci.data());
         std::size_t free_bytes = 0, total_bytes = 0;
         checked(cudaMemGetInfo(&free_bytes, &total_bytes), "cudaMemGetInfo");
+        if (!total_bytes || free_bytes > total_bytes)
+            throw std::runtime_error("CUDA returned invalid device memory information");
         info_.memory_budget = free_bytes;
+        info_.memory_total_bytes = total_bytes;
+        info_.memory_available_bytes = free_bytes;
+        info_.memory_available_source = "cuda-mem-get-info";
+        int driver_api = 0;
+        checked(cudaDriverGetVersion(&driver_api), "cudaDriverGetVersion");
+        const auto driver = nvidia_driver_identity();
+        info_.driver_version_known = !driver.version.empty();
+        info_.driver_version_source = driver.version.empty() ? "cuda-api-only" : driver.source;
+        info_.driver_version = (driver.version.empty() ? "unknown" : driver.version) +
+            ";cuda-api=" + std::to_string(driver_api);
         std::ostringstream uuid;
         uuid << std::hex << std::setfill('0');
         for (unsigned i = 0; i < sizeof(properties.uuid.bytes); ++i)
@@ -199,31 +239,16 @@ private:
         DeviceScope scope(device_index_);
         FailureDrain failure{stream_};
         const unsigned bytes = reference.bit_depth > 8 ? 2 : 1;
-        for (unsigned plane = 0; plane < 3; ++plane) {
-            const auto &view = reference.planes[plane];
-            const std::size_t size = static_cast<std::size_t>(view.width) * view.height * bytes;
-            reserve(reference_[plane], size);
-            reserve(distorted_[plane], size);
-        }
+        // Device planes stay borrowed until this synchronous call completes.
+        const Picture reference_device = upload_inputs ? resident_view(reference, reference_) : reference;
+        const Picture distorted_device = upload_inputs ? resident_view(distorted, distorted_) : distorted;
         Event start, uploaded, computed, downloaded;
         checked(cudaEventRecord(start.event, stream_), "cudaEventRecord start");
-        for (unsigned plane = 0; plane < 3; ++plane) {
-            const auto &a = reference.planes[plane];
-            const auto &b = distorted.planes[plane];
-            if (!upload_inputs || !a.width || !a.height) continue;
-            const std::size_t row_bytes = static_cast<std::size_t>(a.width) * bytes;
-            checked(cudaMemcpy2DAsync(reference_[plane].pointer, row_bytes,
-                a.data, a.stride, row_bytes, a.height,
-                reference.memory == PictureMemory::Host ? cudaMemcpyHostToDevice : cudaMemcpyDeviceToDevice, stream_),
-                "cudaMemcpy2DAsync reference");
-            checked(cudaMemcpy2DAsync(distorted_[plane].pointer, row_bytes,
-                b.data, b.stride, row_bytes, b.height,
-                distorted.memory == PictureMemory::Host ? cudaMemcpyHostToDevice : cudaMemcpyDeviceToDevice, stream_),
-                "cudaMemcpy2DAsync distorted");
-            timing_.uploaded_bytes += row_bytes * a.height *
-                (unsigned(reference.memory == PictureMemory::Host) + unsigned(distorted.memory == PictureMemory::Host));
-            timing_.device_copied_bytes += row_bytes * a.height *
-                (unsigned(reference.memory == PictureMemory::CudaDevice) + unsigned(distorted.memory == PictureMemory::CudaDevice));
+        if (upload_inputs) {
+            wait_for_picture(reference);
+            wait_for_picture(distorted);
+            upload_host_picture(reference, reference_device);
+            upload_host_picture(distorted, distorted_device);
         }
         checked(cudaEventRecord(uploaded.event, stream_), "cudaEventRecord uploaded");
         checked(cudaMemsetAsync(sums_.pointer, 0, sizeof(unsigned long long) * 3, stream_),
@@ -235,17 +260,12 @@ private:
             const std::size_t samples = static_cast<std::size_t>(a.width) * a.height;
             result.sample_count[plane] = samples;
             if (!samples) continue;
-            const unsigned blocks = static_cast<unsigned>(std::min<std::size_t>((samples + 255) / 256, 4096));
             if (bytes == 1)
-                squared_errors<<<blocks, 256, 0, stream_>>>(
-                    static_cast<const std::uint8_t *>(reference_[plane].pointer),
-                    static_cast<const std::uint8_t *>(distorted_[plane].pointer),
-                    samples, device_sums + plane);
+                launch_squared_errors<std::uint8_t>(reference_device.planes[plane], distorted_device.planes[plane],
+                                                   device_sums + plane, stream_);
             else
-                squared_errors<<<blocks, 256, 0, stream_>>>(
-                    static_cast<const std::uint16_t *>(reference_[plane].pointer),
-                    static_cast<const std::uint16_t *>(distorted_[plane].pointer),
-                    samples, device_sums + plane);
+                launch_squared_errors<std::uint16_t>(reference_device.planes[plane], distorted_device.planes[plane],
+                                                    device_sums + plane, stream_);
             checked(cudaGetLastError(), "CUDA squared_errors launch");
         }
         checked(cudaEventRecord(computed.event, stream_), "cudaEventRecord computed");
@@ -365,39 +385,17 @@ public:
         const std::size_t bytes = plan_.bit_depth > 8 ? 2 : 1;
         const std::size_t row_bytes = static_cast<std::size_t>(plan_.width) * bytes;
         const std::size_t frame_bytes = row_bytes * plan_.height;
-        Picture reference_device, distorted_device;
-        reference_device.memory = distorted_device.memory = PictureMemory::CudaDevice;
-        reference_device.device_index = distorted_device.device_index = device_index_;
-        reference_device.bit_depth = distorted_device.bit_depth = reference.bit_depth;
-        for (unsigned p = 0; p < 3; ++p) {
-            const auto &view = reference.planes[p];
-            const std::size_t size = static_cast<std::size_t>(view.width) * view.height * bytes;
-            reserve(reference_[p], size); reserve(distorted_[p], size);
-            reference_device.planes[p] = {reference_[p].pointer, view.width * bytes, view.width, view.height};
-            distorted_device.planes[p] = {distorted_[p].pointer, view.width * bytes, view.width, view.height};
-        }
+        const Picture reference_device = resident_view(reference, reference_);
+        const Picture distorted_device = resident_view(distorted, distorted_);
         Event start, uploaded;
         checked(cudaEventRecord(start.event, stream_), "cudaEventRecord feature upload");
-        std::uint64_t uploaded_bytes = 0;
-        for (unsigned p = 0; p < 3; ++p) {
-            const auto &a = reference.planes[p], &b = distorted.planes[p];
-            if (!a.width || !a.height) continue;
-            const std::size_t active_row = a.width * bytes;
-            checked(cudaMemcpy2DAsync(reference_[p].pointer, active_row, a.data, a.stride,
-                active_row, a.height, reference.memory == PictureMemory::Host ? cudaMemcpyHostToDevice : cudaMemcpyDeviceToDevice,
-                stream_), "CUDA feature reference upload");
-            checked(cudaMemcpy2DAsync(distorted_[p].pointer, active_row, b.data, b.stride,
-                active_row, b.height, distorted.memory == PictureMemory::Host ? cudaMemcpyHostToDevice : cudaMemcpyDeviceToDevice,
-                stream_), "CUDA feature distorted upload");
-            uploaded_bytes += active_row * a.height *
-                (unsigned(reference.memory == PictureMemory::Host) + unsigned(distorted.memory == PictureMemory::Host));
-            timing_.device_copied_bytes += active_row * a.height *
-                (unsigned(reference.memory == PictureMemory::CudaDevice) + unsigned(distorted.memory == PictureMemory::CudaDevice));
-        }
+        wait_for_picture(reference);
+        wait_for_picture(distorted);
+        upload_host_picture(reference, reference_device);
+        upload_host_picture(distorted, distorted_device);
         checked(cudaEventRecord(uploaded.event, stream_), "cudaEventRecord feature uploaded");
         checked(cudaEventSynchronize(uploaded.event), "CUDA feature upload completion");
         timing_.upload_ms += elapsed(start, uploaded);
-        timing_.uploaded_bytes += uploaded_bytes;
         std::vector<FeatureScore> output;
         for (auto &cambi : parallel_cambi_)
             output.push_back(cambi->extract(index, distorted_device.planes[0]));
@@ -411,7 +409,7 @@ public:
         }
         if (!psnr_specs_.empty()) {
             // Reuse the same resident planes as ADM, CAMBI, SPEED and motion.
-            const auto sums = calculate_psnr(reference, distorted, false);
+            const auto sums = calculate_psnr(reference_device, distorted_device, false);
             static const char *names[] = {"psnr_y", "psnr_cb", "psnr_cr"};
             static const char *mse_names[] = {"mse_y", "mse_cb", "mse_cr"};
             for (const auto &spec : psnr_specs_) {
@@ -436,7 +434,7 @@ public:
             const unsigned stride = state.five_frame ? 2 : 1;
             double sad = 0;
             if (!state.force_zero && index >= stride) {
-                const auto sum = motion_sad(history_[(index - stride) % 2].pointer);
+                const auto sum = motion_sad(history_[(index - stride) % 2].pointer, reference_device.planes[0]);
                 sad = std::min(static_cast<double>(sum) / 256.0 /
                     (static_cast<std::size_t>(plan_.width) * plan_.height) * state.fps_weight,
                     state.maximum);
@@ -455,8 +453,9 @@ public:
             if (index > stride) emit_motion(state, index - 1, true, output);
         }
         if (!motions_.empty()) {
-            checked(cudaMemcpyAsync(history_[index % 2].pointer, reference_[0].pointer,
-                frame_bytes, cudaMemcpyDeviceToDevice, stream_), "CUDA retain motion history");
+            checked(cudaMemcpy2DAsync(history_[index % 2].pointer, row_bytes,
+                reference_device.planes[0].data, reference_device.planes[0].stride,
+                row_bytes, plan_.height, cudaMemcpyDeviceToDevice, stream_), "CUDA retain motion history");
             timing_.device_copied_bytes += frame_bytes;
         }
         checked(cudaStreamSynchronize(stream_), "CUDA motion history completion");
@@ -506,7 +505,7 @@ private:
         emit(state.spec, output, "VMAF_integer_feature_motion3_score", motion3, index);
     }
 
-    std::uint64_t motion_sad(const void *previous) {
+    std::uint64_t motion_sad(const void *previous, const Plane &current) {
         Event start, computed, downloaded;
         checked(cudaEventRecord(start.event, stream_), "CUDA motion kernel start");
         const std::size_t count = static_cast<std::size_t>(plan_.width) * plan_.height;
@@ -517,12 +516,12 @@ private:
         if (plan_.bit_depth == 8)
             motion_cuda::vertical<<<blocks, 256, 0, stream_>>>(
                 static_cast<const std::uint8_t *>(previous),
-                static_cast<const std::uint8_t *>(reference_[0].pointer),
+                static_cast<const std::uint8_t *>(current.data), current.stride,
                 vertical, plan_.width, plan_.height, plan_.bit_depth);
         else
             motion_cuda::vertical<<<blocks, 256, 0, stream_>>>(
                 static_cast<const std::uint16_t *>(previous),
-                static_cast<const std::uint16_t *>(reference_[0].pointer),
+                static_cast<const std::uint16_t *>(current.data), current.stride / 2,
                 vertical, plan_.width, plan_.height, plan_.bit_depth);
         checked(cudaGetLastError(), "CUDA motion vertical launch");
         motion_cuda::horizontal_sad<<<blocks, 256, 0, stream_>>>(
@@ -541,8 +540,16 @@ private:
         return result;
     }
 
+    void wait_for_picture(const Picture &picture) {
+        if (picture.cuda_ready_event)
+            checked(cudaStreamWaitEvent(stream_, static_cast<cudaEvent_t>(picture.cuda_ready_event), 0),
+                    "CUDA wait for picture producer");
+    }
+
     void validate_pair(const Picture &a, const Picture &b) const {
         for (const auto *picture : {&a, &b}) {
+            if (picture->memory != PictureMemory::CudaDevice && picture->cuda_ready_event)
+                throw std::invalid_argument("CUDA readiness events require device pictures");
             if ((picture->memory != PictureMemory::Host && picture->memory != PictureMemory::CudaDevice) ||
                 (picture->memory == PictureMemory::CudaDevice && picture->device_index != device_index_))
                 throw std::invalid_argument("CUDA picture memory domain or device does not match the backend");
@@ -564,10 +571,42 @@ private:
             if (!x.data || !y.data || x.stride < row_bytes || y.stride < row_bytes ||
                 x.stride % bytes || y.stride % bytes)
                 throw std::invalid_argument("CUDA input plane data or stride is invalid");
+            if ((a.memory == PictureMemory::CudaDevice && reinterpret_cast<std::uintptr_t>(x.data) % bytes) ||
+                (b.memory == PictureMemory::CudaDevice && reinterpret_cast<std::uintptr_t>(y.data) % bytes))
+                throw std::invalid_argument("CUDA resident input sample alignment is invalid");
             const std::uint64_t maximum = (std::uint64_t{1} << a.bit_depth) - 1;
             if (static_cast<std::uint64_t>(x.width) * x.height >
                 std::numeric_limits<std::uint64_t>::max() / (maximum * maximum))
                 throw std::invalid_argument("CUDA input exceeds the uint64 squared-error range");
+        }
+    }
+
+    Picture resident_view(const Picture &input, std::array<Allocation, 3> &storage) {
+        if (input.memory == PictureMemory::CudaDevice) return input;
+        Picture result = input;
+        result.memory = PictureMemory::CudaDevice;
+        result.device_index = device_index_;
+        const unsigned bytes = input.bit_depth > 8 ? 2 : 1;
+        for (unsigned p = 0; p < 3; ++p) {
+            const auto &plane = input.planes[p];
+            const std::size_t row_bytes = static_cast<std::size_t>(plane.width) * bytes;
+            reserve(storage[p], row_bytes * plane.height);
+            result.planes[p] = {storage[p].pointer, row_bytes, plane.width, plane.height};
+        }
+        return result;
+    }
+
+    void upload_host_picture(const Picture &source, const Picture &destination) {
+        if (source.memory != PictureMemory::Host) return;
+        const unsigned bytes = source.bit_depth > 8 ? 2 : 1;
+        for (unsigned p = 0; p < 3; ++p) {
+            const auto &plane = source.planes[p];
+            if (!plane.width || !plane.height) continue;
+            const std::size_t row_bytes = static_cast<std::size_t>(plane.width) * bytes;
+            checked(cudaMemcpy2DAsync(const_cast<void *>(destination.planes[p].data),
+                destination.planes[p].stride, plane.data, plane.stride,
+                row_bytes, plane.height, cudaMemcpyHostToDevice, stream_), "CUDA host picture upload");
+            timing_.uploaded_bytes += row_bytes * plane.height;
         }
     }
 

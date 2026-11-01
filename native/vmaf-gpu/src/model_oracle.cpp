@@ -135,8 +135,8 @@ struct ModelOracle::Impl {
         if (terminal) throw std::logic_error("model oracle is already finished or failed");
     }
     void validate_picture(const Picture &picture) const {
-        if (picture.memory != PictureMemory::Host)
-            throw std::invalid_argument("official CPU extraction requires host pictures");
+        if (picture.memory != PictureMemory::Host || picture.cuda_ready_event)
+            throw std::invalid_argument("official CPU extraction requires ready host pictures");
         if (picture.bit_depth != config.bit_depth)
             throw std::invalid_argument("picture bit depth differs from the feature plan");
         const std::size_t bytes = config.bit_depth > 8 ? 2 : 1;

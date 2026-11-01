@@ -141,6 +141,18 @@ int main() {
         catch (const std::exception &) { rejected = true; }
         require(rejected, "Vulkan host backend must reject CUDA pointers before dereferencing them");
 
+        auto invalid_event = feature_images.reference;
+        invalid_event.cuda_ready_event = reinterpret_cast<void *>(1);
+        rejected = false;
+        try { backend->psnr(invalid_event, invalid_event); }
+        catch (const std::invalid_argument &) { rejected = true; }
+        require(rejected, "Vulkan host backend silently accepted a CUDA readiness event");
+        backend->configure({63, 35, 10, {psnr}});
+        rejected = false;
+        try { backend->extract(0, invalid_event, invalid_event); }
+        catch (const std::invalid_argument &) { rejected = true; }
+        require(rejected, "Vulkan feature extraction silently accepted a CUDA readiness event");
+
         const auto times = backend->timings();
         require(times.allocated_bytes > 0, "receipt must count Vulkan allocations");
         require(times.uploaded_bytes > 0, "receipt must count copied input bytes");

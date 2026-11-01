@@ -3,6 +3,10 @@
 #include "decoder.hpp"
 #include "decoder_pair.hpp"
 #include "prefetch.hpp"
+#include "frame_pipeline.hpp"
+#include "cli_options.hpp"
+#include "device_protocol.hpp"
+#include "supervisor.hpp"
 #include "model_oracle.hpp"
 extern "C" {
 #include <libavutil/mem.h>
@@ -19,7 +23,6 @@ extern "C" {
 #include <iostream>
 #include <locale>
 #include <map>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -31,22 +34,15 @@ extern "C" {
 #endif
 
 using namespace bitovp::gpu;
+using bitovp::gpu::cli::Options;
+using bitovp::gpu::cli::parse;
 namespace {
 using Clock = std::chrono::steady_clock;
 double elapsed(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
-std::string quoted(const std::string &s) {
-    std::ostringstream out;
-    out << '"';
-    for (const unsigned char c : s) {
-        if (c == '"' || c == '\\') out << '\\' << c;
-        else if (c < 0x20) out << "\\u" << std::hex << std::setw(4) << std::setfill('0') << unsigned(c);
-        else out << c;
-    }
-    out << '"';
-    return out.str();
-}
+using bitovp::gpu::protocol::quoted;
+
 std::string file_hash(const std::string &path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file for SHA-256");
@@ -63,77 +59,23 @@ std::string file_hash(const std::string &path) {
     for (auto b : digest) out << std::hex << std::setw(2) << std::setfill('0') << unsigned(b);
     return out.str();
 }
-unsigned integer(const std::string &value, const std::string &key, unsigned maximum) {
-    if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos)
-        throw std::invalid_argument(key + " requires an unsigned integer");
-    std::size_t used = 0;
-    const auto result = std::stoull(value, &used);
-    if (used != value.size() || result > maximum) throw std::invalid_argument(key + " exceeds its supported limit");
-    return unsigned(result);
-}
-struct Options {
-    std::string reference, distorted, output, backend = "cpu", decode = "cpu";
-    std::vector<ModelInput> models;
-    unsigned width = 0, height = 0, bits = 8, threads = 1, decode_threads = 1, max_frames = 0;
-    BackendOptions device;
-    bool verify = false;
-};
-Options parse(int argc, char **argv) {
-    Options out;
-    std::set<std::string> used, model_ids;
-    for (int i = 1; i < argc; ++i) {
-        const std::string key = argv[i];
-        if (key == "--profile") {
-            if (out.device.profile) throw std::invalid_argument("Duplicate --profile");
-            out.device.profile = true;
-            continue;
-        }
-        if (key == "--verify-cpu") {
-            if (out.verify) throw std::invalid_argument("Duplicate --verify-cpu");
-            out.verify = true;
-            continue;
-        }
-        if (i + 1 >= argc) throw std::invalid_argument("Missing value for " + key);
-        const std::string value = argv[++i];
-        if (key != "--model" && !used.insert(key).second) throw std::invalid_argument("Duplicate option " + key);
-        if (key == "--reference") out.reference = value;
-        else if (key == "--distorted") out.distorted = value;
-        else if (key == "--output") out.output = value;
-        else if (key == "--backend") out.backend = value;
-        else if (key == "--decode") out.decode = value;
-        else if (key == "--width") out.width = integer(value, key, 16384);
-        else if (key == "--height") out.height = integer(value, key, 16384);
-        else if (key == "--bit-depth") out.bits = integer(value, key, 10);
-        else if (key == "--threads") out.threads = integer(value, key, 256);
-        else if (key == "--decode-threads") out.decode_threads = integer(value, key, 256);
-        else if (key == "--max-frames") out.max_frames = integer(value, key, 10000000);
-        else if (key == "--device") out.device.device_index = int(integer(value, key, 256));
-        else if (key == "--vendor") {
-            if (value == "amd") out.device.vendor_id = 0x1002;
-            else if (value == "nvidia") out.device.vendor_id = 0x10de;
-            else throw std::invalid_argument("--vendor must be amd or nvidia");
-        } else if (key == "--model") {
-            const auto eq = value.find('=');
-            if (eq == std::string::npos || eq == 0 || eq + 1 == value.size())
-                throw std::invalid_argument("--model requires id=path");
-            const auto id = value.substr(0, eq);
-            if (!model_ids.insert(id).second) throw std::invalid_argument("Duplicate model id");
-            out.models.push_back({id, value.substr(eq + 1), {}});
-        } else throw std::invalid_argument("Unknown option " + key);
+
+std::unique_ptr<FeatureBackend> make_backend(const Options &options) {
+    if (options.backend == "cuda") {
+#ifdef BITOVP_HAVE_CUDA
+        return create_cuda_backend(options.device);
+#else
+        throw std::runtime_error("This binary was built without CUDA");
+#endif
     }
-    if (out.reference.empty() || out.distorted.empty() || out.output.empty() || out.models.empty())
-        throw std::invalid_argument("Required: --reference path --distorted path --model id=path --output path");
-    if (out.backend != "cpu" && out.backend != "cuda" && out.backend != "vulkan")
-        throw std::invalid_argument("--backend must be cpu, cuda, or vulkan");
-    if (out.decode != "cpu" && out.decode != "cuda") throw std::invalid_argument("--decode must be cpu or cuda");
-    if (out.decode == "cuda" && out.backend != "cuda")
-        throw std::invalid_argument("Resident CUDA decoding requires CUDA feature extraction");
-    if ((out.width == 0) != (out.height == 0)) throw std::invalid_argument("Set width and height together");
-    if (out.bits != 8 && out.bits != 10) throw std::invalid_argument("--bit-depth must be 8 or 10");
-    if (out.backend == "cpu" && (out.verify || out.device.device_index >= 0 || out.device.vendor_id))
-        throw std::invalid_argument("GPU options cannot be used with CPU scoring");
-    if (std::filesystem::exists(out.output)) throw std::invalid_argument("Output already exists");
-    return out;
+    if (options.backend == "vulkan") {
+#ifdef BITOVP_HAVE_VULKAN
+        return create_vulkan_backend(options.device);
+#else
+        throw std::runtime_error("This binary was built without Vulkan");
+#endif
+    }
+    return {};
 }
 struct Parity {
     double max_feature_error = 0, max_score_error = 0;
@@ -197,6 +139,7 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
         << ",\"width\":" << plan.width << ",\"height\":" << plan.height
         << ",\"bitDepth\":" << plan.bit_depth << ",\"cpuThreads\":" << o.threads
         << ",\"decodeThreads\":" << o.decode_threads
+        << ",\"inflightFrames\":" << o.inflight_frames
         << ",\"requestedDeviceIndex\":" << o.device.device_index
         << ",\"referenceSha256\":" << quoted(reference_hash) << ",\"distortedSha256\":" << quoted(distorted_hash)
         << ",\"distortedOriginal\":{\"width\":" << dist.source_info().width
@@ -307,12 +250,41 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
 
 int main(int argc, char **argv) {
     try {
+        if (argc >= 2 && std::string(argv[1]) == "--supervise")
+            return supervisor::forward(argc, argv, BITOVP_NATIVE_SOURCE_SHA256);
         if (argc == 2 && std::string(argv[1]) == "--version") {
             std::cout << "bitovp-vmaf 0.1 owned CUDA/Vulkan; official=" << oracle_source_revision
                       << "; source=" << BITOVP_NATIVE_SOURCE_SHA256 << '\n';
             return 0;
         }
         const auto options = parse(argc, argv);
+        if (options.device_info) {
+            const auto backend = make_backend(options);
+            std::optional<std::string> binary_hash;
+            try {
+#if defined(__linux__)
+                binary_hash = file_hash("/proc/self/exe");
+#else
+                binary_hash = file_hash(std::filesystem::canonical(argv[0]).string());
+#endif
+            } catch (const std::runtime_error &) {
+                // Resource identity is still useful, but this executable must
+                // not reuse calibration results without a verified binary hash.
+            }
+            ProcessSupervisorInfo supervision;
+#if defined(__linux__)
+            const auto companion = supervisor::companion_path();
+            if (supervisor::companion_matches(companion, BITOVP_NATIVE_SOURCE_SHA256)) {
+                try {
+                    supervision.binary_sha256 = file_hash(companion);
+                    supervision.available = true;
+                } catch (const std::runtime_error &) {}
+            }
+#endif
+            std::cout << protocol::device_info(backend->device(), BITOVP_NATIVE_SOURCE_SHA256,
+                                               oracle_source_revision, binary_hash, supervision) << '\n';
+            return 0;
+        }
         // Hashes are measured separately: warm file-cache reads are not scoring.
         const auto reference_hash = file_hash(options.reference);
         const auto distorted_hash = file_hash(options.distorted);
@@ -347,21 +319,15 @@ int main(int argc, char **argv) {
             cpu_reference = std::make_unique<Decoder>(options.reference, width, height, options.bits, options.decode_threads);
             cpu_distorted = std::make_unique<Decoder>(options.distorted, width, height, options.bits, options.decode_threads);
         }
+        const auto create_backend = [&options] { return make_backend(options); };
         std::unique_ptr<FeatureBackend> backend;
-        if (options.backend == "cuda") {
+        if (options.inflight_frames > 1) {
+            PictureStager stager = stage_host_picture;
 #ifdef BITOVP_HAVE_CUDA
-            backend = create_cuda_backend(options.device);
-#else
-            throw std::runtime_error("This binary was built without CUDA");
+            if (resident_decode) stager = stage_cuda_picture;
 #endif
-        }
-        if (options.backend == "vulkan") {
-#ifdef BITOVP_HAVE_VULKAN
-            backend = create_vulkan_backend(options.device);
-#else
-            throw std::runtime_error("This binary was built without Vulkan");
-#endif
-        }
+            backend = std::make_unique<FramePipeline>(create_backend, options.inflight_frames, std::move(stager));
+        } else backend = create_backend();
         if (backend) backend->configure(oracle.feature_plan());
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;

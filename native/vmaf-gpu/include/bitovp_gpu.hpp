@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,10 @@ struct Picture {
     int device_index = -1;
     unsigned bit_depth = 0;
     std::array<Plane, 3> planes{};
+    // Optional recorded CUDA event for CudaDevice planes; null means ready.
+    // The event and source planes remain borrowed until the synchronous input
+    // call returns. Host pictures must not carry a CUDA readiness event.
+    void *cuda_ready_event = nullptr;
 };
 
 struct PsnrSums {
@@ -64,7 +69,23 @@ struct DeviceInfo {
     unsigned vendor_id = 0;
     unsigned device_id = 0;
     bool integrated = false;
+    // Legacy diagnostic: CUDA free bytes; Vulkan's selected heap size.
     std::uint64_t memory_budget = 0;
+    std::optional<std::string> pci_bus_id;
+    std::string driver_version;
+    std::string driver_version_source = "unavailable";
+    bool driver_version_known = false;
+    // CUDA's device total, or the Vulkan scorer's selected storage heap total.
+    std::optional<std::uint64_t> memory_total_bytes;
+    // Current allocation headroom, never a reservation. Unknown stays null.
+    std::optional<std::uint64_t> memory_available_bytes;
+    std::string memory_available_source = "unavailable";
+    std::optional<unsigned> memory_heap_index;
+};
+
+struct ProcessSupervisorInfo {
+    bool available = false;
+    std::optional<std::string> binary_sha256;
 };
 
 struct BackendOptions {

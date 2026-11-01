@@ -242,6 +242,9 @@ void boundaries(const ModelInput &model) {
     wrong.memory = PictureMemory::CudaDevice;
     rejects([&] { cpu.submit(0, wrong, dist.picture); }, "device picture accepted by CPU oracle");
     wrong = ref.picture;
+    wrong.cuda_ready_event = reinterpret_cast<void *>(1);
+    rejects([&] { cpu.submit(0, wrong, dist.picture); }, "CUDA readiness event accepted on CPU host picture");
+    wrong = ref.picture;
     wrong.planes[1].stride = 0;
     rejects([&] { cpu.submit(0, wrong, dist.picture); }, "invalid chroma stride accepted");
     cpu.submit(0, ref.picture, dist.picture);

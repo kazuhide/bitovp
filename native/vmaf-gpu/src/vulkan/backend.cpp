@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kazuhide Yamamoto
 #include "bitovp_gpu.hpp"
+#include "../device_memory.hpp"
+#include "../pci_bus_id.hpp"
 #include <vulkan/vulkan.h>
 #include "vulkan_psnr_spv.hpp"
 #include "vulkan_cambi_spv.hpp"
@@ -88,6 +90,7 @@ struct Context {
     bool float64 = false;
     bool int64 = false;
     bool profile_passes = false;
+    bool memory_budget_supported = false;
     DeviceInfo info;
 
     void release(Buffer &buffer) {
@@ -148,7 +151,9 @@ public:
 
     DeviceInfo device() const override {
         std::lock_guard<std::mutex> lock(mutex_);
-        return context_.info;
+        auto info = context_.info;
+        refresh_memory_info(info);
+        return info;
     }
     BackendTimings timings() const override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -411,8 +416,31 @@ private:
         info.vendor_id = context_.properties.vendorID;
         info.device_id = context_.properties.deviceID;
         info.integrated = context_.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+        std::uint32_t extension_count = 0;
+        check(vkEnumerateDeviceExtensionProperties(context_.physical, nullptr, &extension_count, nullptr),
+              "vkEnumerateDeviceExtensionProperties");
+        std::vector<VkExtensionProperties> extensions(extension_count);
+        check(vkEnumerateDeviceExtensionProperties(context_.physical, nullptr, &extension_count, extensions.data()),
+              "vkEnumerateDeviceExtensionProperties");
+        const auto supports_extension = [&extensions](const char *name) {
+            return std::any_of(extensions.begin(), extensions.end(), [name](const auto &item) {
+                return std::strcmp(item.extensionName, name) == 0;
+            });
+        };
+        context_.memory_budget_supported = supports_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+        const bool driver_properties_supported = context_.properties.apiVersion >= VK_API_VERSION_1_2 ||
+            supports_extension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
+        const bool pci_properties_supported = supports_extension(VK_EXT_PCI_BUS_INFO_EXTENSION_NAME);
+        VkPhysicalDevicePCIBusInfoPropertiesEXT pci{};
+        pci.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT;
+        VkPhysicalDeviceDriverProperties driver{};
+        driver.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
         VkPhysicalDeviceIDProperties id{};
         id.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+        if (driver_properties_supported) {
+            id.pNext = &driver;
+            if (pci_properties_supported) driver.pNext = &pci;
+        } else if (pci_properties_supported) id.pNext = &pci;
         VkPhysicalDeviceProperties2 properties{};
         properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
         properties.pNext = &id;
@@ -421,6 +449,17 @@ private:
         for (unsigned char byte : id.deviceUUID)
             uuid << std::hex << std::setfill('0') << std::setw(2) << unsigned(byte);
         info.uuid = uuid.str();
+        if (pci_properties_supported) {
+            info.pci_bus_id = pci_bus_id(pci.pciDomain, pci.pciBus, pci.pciDevice, pci.pciFunction);
+        }
+        info.driver_version = std::to_string(context_.properties.driverVersion);
+        info.driver_version_known = context_.properties.driverVersion != 0;
+        info.driver_version_source = "vulkan-raw-driver-version";
+        if (driver_properties_supported) {
+            info.driver_version += std::string(";") + driver.driverName + ";" + driver.driverInfo;
+            info.driver_version_known = info.driver_version_known || driver.driverInfo[0] != '\0';
+            info.driver_version_source = "vulkan-driver-properties";
+        }
         vkGetPhysicalDeviceMemoryProperties(context_.physical, &context_.memory_properties);
 
         std::uint32_t queue_count = 0;
@@ -455,10 +494,67 @@ private:
         context_.float64 = available.shaderFloat64 != VK_FALSE;
         context_.int64 = available.shaderInt64 != VK_FALSE;
         device.pEnabledFeatures = &enabled;
+        std::vector<const char *> enabled_extensions;
+        if (context_.memory_budget_supported) enabled_extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+        if (pci_properties_supported) enabled_extensions.push_back(VK_EXT_PCI_BUS_INFO_EXTENSION_NAME);
+        if (context_.properties.apiVersion < VK_API_VERSION_1_2 &&
+            supports_extension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME))
+            enabled_extensions.push_back(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
+        device.enabledExtensionCount = std::uint32_t(enabled_extensions.size());
+        device.ppEnabledExtensionNames = enabled_extensions.data();
         device.queueCreateInfoCount = 1;
         device.pQueueCreateInfos = &queue;
         check(vkCreateDevice(context_.physical, &device, nullptr, &context_.device), "vkCreateDevice");
         vkGetDeviceQueue(context_.device, context_.queue_family, 0, &context_.queue);
+        // A temporary unbound storage buffer identifies the heap used by the
+        // scorer without allocating frame memory or dispatching any GPU work.
+        VkBufferCreateInfo probe{};
+        probe.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        probe.size = sizeof(std::uint64_t);
+        probe.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        probe.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        check(vkCreateBuffer(context_.device, &probe, nullptr, &buffer), "vkCreateBuffer(memory probe)");
+        VkMemoryRequirements requirements{};
+        vkGetBufferMemoryRequirements(context_.device, buffer, &requirements);
+        vkDestroyBuffer(context_.device, buffer, nullptr);
+        const auto memory_type = select_memory_type(requirements.memoryTypeBits);
+        info.memory_heap_index = context_.memory_properties.memoryTypes[memory_type].heapIndex;
+        info.memory_budget = context_.memory_properties.memoryHeaps[*info.memory_heap_index].size;
+        refresh_memory_info(info);
+    }
+
+    int select_memory_type(std::uint32_t compatible_types) const {
+        int selected = -1, best = -1;
+        for (unsigned i = 0; i < context_.memory_properties.memoryTypeCount; ++i) {
+            const auto flags = context_.memory_properties.memoryTypes[i].propertyFlags;
+            if (!(compatible_types & (1u << i)) || !(flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) continue;
+            const int score = ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) ? 1 : 0) +
+                ((flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ? 2 : 0) +
+                ((options_.prefer_shared_memory && (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) ? 4 : 0);
+            if (score > best) { best = score; selected = int(i); }
+        }
+        if (selected < 0) throw std::runtime_error("Vulkan storage buffers have no host-visible memory type");
+        return selected;
+    }
+
+    void refresh_memory_info(DeviceInfo &info) const {
+        info.memory_available_bytes.reset();
+        info.memory_available_source = "unavailable";
+        if (!info.memory_heap_index) return;
+        const auto heap = *info.memory_heap_index;
+        info.memory_total_bytes = context_.memory_properties.memoryHeaps[heap].size;
+        if (!context_.memory_budget_supported) return;
+        VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
+        budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+        VkPhysicalDeviceMemoryProperties2 memory{};
+        memory.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+        memory.pNext = &budget;
+        vkGetPhysicalDeviceMemoryProperties2(context_.physical, &memory);
+        if (heap >= memory.memoryProperties.memoryHeapCount) return;
+        info.memory_available_bytes = vulkan_available_bytes(*info.memory_total_bytes,
+            budget.heapBudget[heap], budget.heapUsage[heap]);
+        if (info.memory_available_bytes) info.memory_available_source = "vulkan-process-budget-hint";
     }
 
     void create_pipeline() {
@@ -547,16 +643,7 @@ private:
         check(vkCreateBuffer(context_.device, &create, nullptr, &buffer.buffer), "vkCreateBuffer");
         VkMemoryRequirements requirements{};
         vkGetBufferMemoryRequirements(context_.device, buffer.buffer, &requirements);
-        int selected = -1, best = -1;
-        for (unsigned i = 0; i < context_.memory_properties.memoryTypeCount; ++i) {
-            const auto flags = context_.memory_properties.memoryTypes[i].propertyFlags;
-            if (!(requirements.memoryTypeBits & (1u << i)) || !(flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) continue;
-            const int score = ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) ? 1 : 0) +
-                ((flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ? 2 : 0) +
-                ((options_.prefer_shared_memory && (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) ? 4 : 0);
-            if (score > best) { best = score; selected = int(i); }
-        }
-        if (selected < 0) throw std::runtime_error("Vulkan storage buffers have no host-visible memory type");
+        const int selected = select_memory_type(requirements.memoryTypeBits);
         const auto &type = context_.memory_properties.memoryTypes[selected];
         buffer.coherent = (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
         VkMemoryAllocateInfo allocation{};
@@ -569,6 +656,7 @@ private:
         check(vkMapMemory(context_.device, buffer.memory, 0, VK_WHOLE_SIZE, 0, &buffer.mapped), "vkMapMemory");
         buffer.capacity = bytes;
         context_.info.memory_budget = context_.memory_properties.memoryHeaps[type.heapIndex].size;
+        context_.info.memory_heap_index = type.heapIndex;
         std::uint64_t live = 0;
         for (const auto &item : context_.buffers) live += item.allocation_size;
         timings_.allocated_bytes = std::max(timings_.allocated_bytes, live);
@@ -966,8 +1054,9 @@ private:
     }
 
     static void validate_pair(const Picture &reference, const Picture &distorted) {
-        if (reference.memory != PictureMemory::Host || distorted.memory != PictureMemory::Host)
-            throw std::invalid_argument("Vulkan host-input backend cannot read CUDA device pictures");
+        if (reference.memory != PictureMemory::Host || distorted.memory != PictureMemory::Host ||
+            reference.cuda_ready_event || distorted.cuda_ready_event)
+            throw std::invalid_argument("Vulkan host-input backend requires ready host pictures");
         if ((reference.bit_depth != 8 && reference.bit_depth != 10) || reference.bit_depth != distorted.bit_depth)
             throw std::invalid_argument("Vulkan PSNR currently requires matching 8-bit or 10-bit pictures");
         const unsigned bytes = reference.bit_depth == 8 ? 1 : 2;

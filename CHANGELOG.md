@@ -25,6 +25,8 @@ is built locally using the installation guide.
 
 ### Fixed
 
+- Fresh-source installation and upgrade instructions generate the database client
+  before running host-side database setup commands.
 - Switching a Standard video row to flexible Per-Title clears its height while
   retaining sibling rendition references, output destinations and audio settings.
 - Scene overlays in VOD previews and the content library use matching theme

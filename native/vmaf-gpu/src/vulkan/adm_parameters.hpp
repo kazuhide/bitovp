@@ -80,7 +80,7 @@ struct AdmParameters {
     }
 
     AdmParameters(const ExtractorSpec &extractor, const FeaturePlan &plan,
-                  bool compact_csf = false) : spec(extractor) {
+                  bool compact_csf = false, bool scalar_totals = false) : spec(extractor) {
         if ((plan.bit_depth != 8 && plan.bit_depth != 10) || plan.width < 64 || plan.height < 64 ||
             plan.width > 7680 || plan.height > 7680)
             throw std::invalid_argument("Vulkan ADM requires supported 8/10-bit geometry");
@@ -135,6 +135,7 @@ struct AdmParameters {
         for (unsigned slot = 54; slot <= 56; ++slot) words[slot] = allocate(((plan.height + 1) / 2) * 3 * 2);
         words[57] = allocate(4 * 3);
         result_offset = words[58] = allocate(6); // ADM3, ADM2, AIM doubles.
+        if (scalar_totals) words[59] = allocate(4 * 9 * 2); // Exact uint64 totals per scale.
         unsigned width = plan.width, height = plan.height;
         for (unsigned scale = 0; scale < 4; ++scale) {
             const unsigned output_width = (width + 1) / 2, output_height = (height + 1) / 2;

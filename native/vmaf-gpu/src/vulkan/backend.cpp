@@ -18,6 +18,7 @@
 #include "cambi_parameters.hpp"
 #include "speed_parameters.hpp"
 #include "adm_parameters.hpp"
+#include "adm_finalize.hpp"
 #include "motion_parameters.hpp"
 
 #include <algorithm>
@@ -191,7 +192,7 @@ public:
             else if (spec.name == "adm") {
                 if (!context_.int64)
                     throw std::runtime_error("Vulkan ADM requires shaderInt64 on the selected GPU");
-                adm.emplace_back(spec, plan, true);
+                adm.emplace_back(spec, plan, true, true);
             } else if (spec.name == "psnr") {
                 if (vulkan_detail::boolean(spec, "enable_apsnr"))
                     throw std::invalid_argument("Vulkan feature-series API does not expose aggregate APSNR");
@@ -758,6 +759,7 @@ private:
         std::vector<Dispatch> commands;
         for (const auto &pass : adm.passes) {
             auto parameters = pass.push;
+            if (parameters[0] == 6u) continue; // Host scalar finalization after all four scales.
             if (parameters[1] == 0u && parameters[0] == 1u) continue;
             if (parameters[1] == 0u && parameters[0] == 0u) {
                 parameters[2] = (parameters[4] + 1u) / 2u;
@@ -774,11 +776,14 @@ private:
         execute_program(context_.adm_pipeline, commands, &resources, "adm");
         start = Clock::now();
         host_cache(workspace, false);
-        std::array<double, 3> result{};
         const auto *words = static_cast<const std::uint32_t *>(workspace.mapped);
-        std::memcpy(result.data(), words + adm.result_offset, sizeof(result));
-        timings_.downloaded_bytes += sizeof(result);
+        vulkan_detail::AdmTotals totals{};
+        std::memcpy(totals.data(), words + adm.words[59], sizeof(totals));
+        timings_.downloaded_bytes += sizeof(totals);
         timings_.download_ms += milliseconds(start);
+        start = Clock::now();
+        const auto result = vulkan_detail::finalize_adm(adm, totals).scores;
+        timings_.cpu_postprocess_ms += milliseconds(start);
         return result;
     }
 

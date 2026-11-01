@@ -63,11 +63,9 @@ void store_double(uint offset, double value) {
     uvec2 bits = unpackDouble2x32(value); words[offset] = bits.x; words[offset + 1u] = bits.y;
 }
 uint64_t load64(uint offset) { return uint64_t(words[offset]) | (uint64_t(words[offset + 1u]) << 32); }
-#if defined(BITOVP_ADM_ROW_PIPELINE) || defined(BITOVP_ADM_REDUCE_PIPELINE) || defined(BITOVP_ADM_REDUCE_TEST_OUTPUT)
 void store64(uint offset, uint64_t value) {
     words[offset] = uint(value); words[offset + 1u] = uint(value >> 32);
 }
-#endif
 #ifdef BITOVP_ADM_ROW_PIPELINE
 uint64_t half_round(uint shift) { return shift == 0u ? uint64_t(0) : uint64_t(1) << (shift - 1u); }
 #endif
@@ -345,6 +343,17 @@ void reduce_scale() {
     }
     return;
 #endif
+    if (words[59] != 0u) {
+        // Retain the exact integer totals for host libm normalization. GLSL
+        // pow() is implementation-dependent and can amplify into model error.
+        uint offset = words[59] + p.scale * 18u;
+        for (uint theta = 0u; theta < 3u; ++theta) {
+            store64(offset + theta * 2u, den[theta]);
+            store64(offset + (3u + theta) * 2u, num[theta]);
+            store64(offset + (6u + theta) * 2u, aim[theta]);
+        }
+        return;
+    }
     precise float d[3], n[3], a[3];
     for (uint theta = 0u; theta < 3u; ++theta) {
         precise double factor = double(uintBitsToFloat(config(theta == 2u ? 10u : 9u)));

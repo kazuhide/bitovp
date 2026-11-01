@@ -1097,7 +1097,14 @@ export const DEFAULT_WIZARD_STATE: WizardState = {
 	},
 	additionalOutputs: [],
 	videos: [{ height: 360, bitrate: 300_000 }],
-	audios: [{ bitrate: 64_000, rate: 44_100 }],
+	audios: [
+		{
+			codec: "AAC",
+			bitrate: 128_000,
+			rate: 48_000,
+			channelLayout: "CL_STEREO",
+		},
+	],
 	audioGuard: false,
 	manifests: { hls: true, dash: false },
 	timing: "JUST_IN_TIME",

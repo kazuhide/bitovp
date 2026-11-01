@@ -269,9 +269,9 @@ describe("rendition Add reuses complete settings", () => {
 				bitrate: 128_000,
 				rate: 48_000,
 			});
-			expect(
-				onPatch.mock.lastCall?.[0].audios[2].channelLayout,
-			).toBeUndefined();
+			expect(onPatch.mock.lastCall?.[0].audios[2].channelLayout).toBe(
+				kind === "VOD" ? "CL_STEREO" : undefined,
+			);
 		});
 		it(`${kind} adds defaults when there is no rendition to copy`, () => {
 			const onPatch = vi.fn();

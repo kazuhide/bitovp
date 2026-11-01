@@ -413,8 +413,10 @@ export function addVodAudio(
 ): Pick<WizardState, "videos" | "audios" | "drm"> {
 	const context = prepareLadder(state);
 	const source = context.audios[sourceIndex ?? -1] ?? {
+		codec: "AAC" as const,
 		bitrate: 128_000,
 		rate: 48_000,
+		channelLayout: "CL_STEREO",
 	};
 	return {
 		videos: context.videos,

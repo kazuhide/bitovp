@@ -117,7 +117,9 @@ or cancelling a comparison releases its capacity for the next waiting item.
 Several workers on the same host coordinate execution through their shared
 Redis connection. Memory pressure can reduce overlap while existing calculations
 finish. Cloud jobs retain their separate limit; Live comparisons retain their
-sequential order and CPU scoring.
+sequential order and CPU scoring. A Live capture reserves the host's shared
+CPU and memory capacity through preparation, scoring and cleanup. Other local
+measurements wait for that reservation to finish.
 
 Keep the matching native executable and supervisor together. Their Linux
 heartbeat and parent-death guards stop owned calculations after worker failure.

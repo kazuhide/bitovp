@@ -234,6 +234,7 @@ describe("native calibration search budget", () => {
 		});
 		owner.abort(new Error("owner cancelled"));
 		await aborted.promise;
+		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(searchSignal?.aborted).toBe(true);
 		expect(rejected).toBe(false);
 		expect(followerRun).not.toHaveBeenCalled();
@@ -415,6 +416,7 @@ describe("native calibration search budget", () => {
 		finish.resolve();
 		await expect(first).rejects.toBe(failure);
 		await expect(second).rejects.toBe(failure);
+		expect(run.mock.calls.filter(([ms]) => ms > 0)).toHaveLength(1);
 		const retry = vi.fn<Run>(async (ms: number) =>
 			candidates(999, ms > 0 ? [1, 2] : [1]),
 		);

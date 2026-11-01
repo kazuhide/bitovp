@@ -318,7 +318,7 @@ describe("budgeted native VMAF calibration", () => {
 		controller.abort(new Error("cancelled"));
 		await abortObserved.promise;
 		try {
-			await Promise.resolve();
+			await new Promise<void>((resolve) => setImmediate(resolve));
 			expect(settled).toBe(false);
 			expect(h.events).toEqual(["acquired"]);
 		} finally {

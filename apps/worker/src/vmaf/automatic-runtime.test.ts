@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	chmod,
 	mkdtemp,
@@ -9,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { NativeDeviceInfo } from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import {
@@ -207,4 +209,255 @@ it("rejects a switched configured alias while its original native pair remains i
 		"VMAF_SUPERVISOR_BUILD_CHANGED",
 	);
 	expect(f.run).toHaveBeenCalledTimes(2);
+});
+
+function gpuInfo(backend: "cuda" | "vulkan"): NativeDeviceInfo {
+	return {
+		schemaVersion: 1,
+		sourceSha256: "a".repeat(64),
+		binarySha256: createHash("sha256").update("native").digest("hex"),
+		officialSourceRevision: NATIVE_OFFICIAL_REVISION,
+		backend,
+		device: {
+			index: backend === "cuda" ? 2 : 3,
+			name: "Example GPU",
+			uuid: `${backend}-gpu`,
+			vendorId: backend === "cuda" ? 0x10de : 0x1002,
+			deviceId: 1,
+			integrated: backend === "vulkan",
+			memoryBudgetBytes: 8 * 1024 ** 3,
+			memoryTotalBytes: 16 * 1024 ** 3,
+			memoryAvailableBytes: 8 * 1024 ** 3,
+			driverVersion: "driver1",
+			driverVersionKnown: true,
+			driverVersionSource: "fixture",
+			memoryAvailableSource: "fixture",
+			pciBusId: "0000:01:00.0",
+		},
+		capabilities: {
+			inflightFrames: [1, 2, 4],
+			cpuParity: true,
+			processSupervisor: true,
+			supervisorBinarySha256: createHash("sha256")
+				.update("guardian")
+				.digest("hex"),
+		},
+	};
+}
+async function gpuFixture(available: readonly ("cuda" | "vulkan")[]) {
+	const f = await fixture();
+	f.run.mockImplementation(async (_program, wrapped) => {
+		const args =
+			wrapped[0] === "--supervise"
+				? wrapped.slice(wrapped.indexOf("--") + 2)
+				: wrapped;
+		if (args[0] === "--version")
+			return {
+				code: 0,
+				stderr: "",
+				stdout: `bitovp-vmaf 0.1 owned CUDA/Vulkan; official=${NATIVE_OFFICIAL_REVISION}; source=${"a".repeat(64)}\n`,
+			};
+		if (args[0] === "--identity")
+			return {
+				code: 0,
+				stderr: "",
+				stdout: `bitovp-vmaf-supervisor-v1-clock=boottime-source=${"a".repeat(64)}\n`,
+			};
+		const backend = args[args.indexOf("--backend") + 1] as "cuda" | "vulkan";
+		return available.includes(backend)
+			? { code: 0, stderr: "", stdout: JSON.stringify(gpuInfo(backend)) }
+			: { code: 1, stderr: "unavailable", stdout: "" };
+	});
+	return f;
+}
+it.each([
+	[["cuda", "vulkan"], "cuda", 2, ["cuda"]],
+	[["vulkan"], "vulkan", 3, ["cuda", "vulkan"]],
+] as const)("selects the first eligible device without media or resource reservations (%s)", async (available, backend, device, inspected) => {
+	const f = await gpuFixture(available);
+	const runtime = await createAvailableAutomaticVmafRuntime(f.deps);
+	const selected = await runtime?.selectLocalNative({
+		signal: new AbortController().signal,
+	});
+	expect(selected).toEqual({
+		backend,
+		device,
+		identity: {
+			sourceSha256: "a".repeat(64),
+			binarySha256: gpuInfo(backend).binarySha256,
+			supervisorBinarySha256:
+				gpuInfo(backend).capabilities.supervisorBinarySha256,
+			deviceUuid: `${backend}-gpu`,
+		},
+	});
+	expect(
+		f.run.mock.calls
+			.filter(([, args]) => args.includes("--device-info"))
+			.map(([, args]) => args[args.indexOf("--backend") + 1]),
+	).toEqual(inspected);
+	expect(f.evalRedis).not.toHaveBeenCalled();
+	expect((await readdir(f.directory)).sort()).toEqual([
+		"bitovp-vmaf",
+		"bitovp-vmaf-supervisor",
+	]);
+});
+it("returns CPU only after both device queries explicitly report unavailable", async () => {
+	const f = await gpuFixture([]);
+	const runtime = await createAvailableAutomaticVmafRuntime(f.deps);
+	expect(
+		await runtime?.selectLocalNative({ signal: new AbortController().signal }),
+	).toEqual({ backend: "cpu", reason: "GPU_NOT_AVAILABLE" });
+	expect(
+		f.run.mock.calls.filter(([, args]) => args.includes("--device-info")),
+	).toHaveLength(2);
+});
+it("does not switch away from an unavailable pinned device", async () => {
+	const f = await gpuFixture(["vulkan"]);
+	const runtime = await createAvailableAutomaticVmafRuntime(f.deps);
+	await expect(
+		runtime?.selectLocalNative({
+			signal: new AbortController().signal,
+			pinned: {
+				backend: "cuda",
+				device: 2,
+				identity: {
+					sourceSha256: "a".repeat(64),
+					binarySha256: "b".repeat(64),
+					supervisorBinarySha256: "c".repeat(64),
+					deviceUuid: "cuda-gpu",
+				},
+			},
+		}),
+	).rejects.toThrow("NATIVE_DEVICE_INFO_UNAVAILABLE");
+	const calls = f.run.mock.calls.filter(([, args]) =>
+		args.includes("--device-info"),
+	);
+	expect(calls).toHaveLength(1);
+	expect(calls[0]?.[1]).toEqual(
+		expect.arrayContaining(["--backend", "cuda", "--device", "2"]),
+	);
+});
+it("fails closed on malformed device metadata instead of trying another backend", async () => {
+	const f = await gpuFixture(["cuda", "vulkan"]);
+	const runtime = await createAvailableAutomaticVmafRuntime(f.deps);
+	f.run.mockResolvedValue({ code: 0, stderr: "", stdout: "invalid" });
+	await expect(
+		runtime?.selectLocalNative({ signal: new AbortController().signal }),
+	).rejects.toThrow("NATIVE_BINARY_REVISION_MISMATCH");
+	expect(f.run).toHaveBeenCalledTimes(3);
+});
+it("does not query devices when selection has been cancelled", async () => {
+	const f = await gpuFixture(["cuda"]);
+	const runtime = await createAvailableAutomaticVmafRuntime(f.deps);
+	const controller = new AbortController();
+	controller.abort(new Error("cancelled"));
+	await expect(
+		runtime?.selectLocalNative({ signal: controller.signal }),
+	).rejects.toThrow("cancelled");
+	expect(f.run).toHaveBeenCalledTimes(2);
+});
+it("exposes invalid configured pairs to explicit AUTO while preserving legacy optional activation", async () => {
+	const f = await fixture();
+	const onInvalid = vi.fn();
+	f.run.mockResolvedValue({ code: 0, stderr: "", stdout: "invalid version" });
+	expect(
+		await createAvailableAutomaticVmafRuntime({ ...f.deps, onInvalid }),
+	).toBeUndefined();
+	expect(onInvalid).toHaveBeenCalledWith(
+		expect.objectContaining({ message: "NATIVE_BINARY_REVISION_MISMATCH" }),
+	);
+});
+it("does not mark a missing native pair as invalid configuration", async () => {
+	const f = await fixture();
+	const onInvalid = vi.fn();
+	await rm(f.companion);
+	expect(
+		await createAvailableAutomaticVmafRuntime({ ...f.deps, onInvalid }),
+	).toBeUndefined();
+	expect(onInvalid).not.toHaveBeenCalled();
+});
+
+it.each([
+	["JSON", "not-json", "NATIVE_DEVICE_INFO_INVALID_JSON"],
+	[
+		"protocol",
+		JSON.stringify({ schemaVersion: 1 }),
+		"NATIVE_DEVICE_INFO_PROTOCOL_MISMATCH",
+	],
+	[
+		"source",
+		JSON.stringify({ ...gpuInfo("cuda"), sourceSha256: "f".repeat(64) }),
+		"NATIVE_DEVICE_INFO_BUILD_MISMATCH",
+	],
+	[
+		"supervisor",
+		JSON.stringify({
+			...gpuInfo("cuda"),
+			capabilities: {
+				...gpuInfo("cuda").capabilities,
+				supervisorBinarySha256: "f".repeat(64),
+			},
+		}),
+		"NATIVE_DEVICE_INFO_BUILD_MISMATCH",
+	],
+])("never hides invalid device %s with another GPU or CPU", async (_name, stdout, code) => {
+	const f = await gpuFixture(["cuda", "vulkan"]);
+	const runtime = await createAvailableAutomaticVmafRuntime(f.deps);
+	const ordinary = f.run.getMockImplementation();
+	if (!ordinary) throw new Error("Missing runner fixture");
+	f.run.mockImplementation(async (program, args, options) =>
+		args.includes("--device-info")
+			? { code: 0, stderr: "", stdout }
+			: ordinary(program, args, options),
+	);
+	await expect(
+		runtime?.selectLocalNative({ signal: new AbortController().signal }),
+	).rejects.toThrow(code);
+	expect(
+		f.run.mock.calls.filter(([, args]) => args.includes("--device-info")),
+	).toHaveLength(1);
+});
+it("fails closed if the configured alias switches during an unavailable device query", async () => {
+	const f = await gpuFixture([]);
+	const alias = join(f.directory, "alias"),
+		replacement = join(f.directory, "replacement");
+	await symlink(f.nativePath, alias);
+	await writeFile(replacement, "replacement");
+	await chmod(replacement, 0o700);
+	const runtime = await createAvailableAutomaticVmafRuntime({
+		...f.deps,
+		nativePath: alias,
+	});
+	const ordinary = f.run.getMockImplementation();
+	if (!ordinary) throw new Error("Missing runner fixture");
+	f.run.mockImplementation(async (program, args, options) => {
+		if (args.includes("--device-info")) {
+			await rm(alias);
+			await symlink(replacement, alias);
+		}
+		return ordinary(program, args, options);
+	});
+	await expect(
+		runtime?.selectLocalNative({ signal: new AbortController().signal }),
+	).rejects.toThrow("VMAF_SUPERVISOR_BUILD_CHANGED");
+	expect(
+		f.run.mock.calls.filter(([, args]) => args.includes("--device-info")),
+	).toHaveLength(1);
+});
+
+it("retains a missing file during preflight as an integrity failure after the pair was present", async () => {
+	const f = await fixture(),
+		onInvalid = vi.fn();
+	const ordinary = f.run.getMockImplementation();
+	if (!ordinary) throw new Error("Missing runner fixture");
+	f.run.mockImplementation(async (program, args, options) => {
+		if (args[0] === "--version") await rm(f.companion);
+		return ordinary(program, args, options);
+	});
+	expect(
+		await createAvailableAutomaticVmafRuntime({ ...f.deps, onInvalid }),
+	).toBeUndefined();
+	expect(onInvalid).toHaveBeenCalledWith(
+		expect.objectContaining({ code: "ENOENT" }),
+	);
 });

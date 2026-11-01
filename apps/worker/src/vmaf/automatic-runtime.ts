@@ -1,6 +1,11 @@
-import { join, resolve } from "node:path";
+import { access } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import type { ProcessRunner } from "../feeder/supervisor";
-import { resolveNativeExecutable } from "./native-auto-device";
+import type { SelectLocalNative } from "./local-selection";
+import {
+	inspectNativeDevice,
+	resolveNativeExecutable,
+} from "./native-auto-device";
 import { createNativeAutoResourcePlanner } from "./native-auto-planner";
 import {
 	createNativeCalibrationAdapter,
@@ -28,6 +33,8 @@ type AutomaticVmafRuntimeDependencies = {
 	configured?: LocalResourceOptions;
 	device?: number;
 	onDiagnostic?: (message: string) => void;
+	/** Invalid configured pairs cannot become a silent AUTO CPU fallback. */
+	onInvalid?: (error: Error) => void;
 };
 type PreparedRunner = Awaited<ReturnType<typeof createSupervisedVmafRunner>>;
 
@@ -44,12 +51,27 @@ export async function createAvailableAutomaticVmafRuntime(
 	deps: AutomaticVmafRuntimeDependencies,
 ) {
 	let prepared: PreparedRunner;
+	let pairPresent = false;
 	try {
+		const executable = await resolveNativeExecutable(deps.nativePath);
+		await access(join(dirname(executable), "bitovp-vmaf-supervisor"));
+		pairPresent = true;
 		prepared = await createSupervisedVmafRunner(
 			{ runner: deps.runner, nativePath: deps.nativePath },
 			AbortSignal.timeout(10_000),
 		);
-	} catch {
+	} catch (error) {
+		const unavailable =
+			!pairPresent &&
+			error instanceof Error &&
+			(error.message === "NATIVE_EXECUTABLE_UNAVAILABLE" ||
+				("code" in error && error.code === "ENOENT"));
+		if (!unavailable)
+			deps.onInvalid?.(
+				error instanceof Error
+					? error
+					: new Error("VMAF_AUTO_RUNTIME_INVALID", { cause: error }),
+			);
 		deps.onDiagnostic?.(
 			"Automatic VMAF resource control is unavailable; legacy execution retained.",
 		);
@@ -98,6 +120,59 @@ function createRuntime(
 				options,
 			);
 		},
+	};
+	const selectLocalNative: SelectLocalNative = async ({ signal, pinned }) => {
+		signal.throwIfAborted();
+		const ready = await initialize();
+		signal.throwIfAborted();
+		const assertAlias = async () => {
+			if ((await resolveNativeExecutable(deps.nativePath)) !== ready.executable)
+				throw new Error("VMAF_SUPERVISOR_BUILD_CHANGED");
+		};
+		await assertAlias();
+		const backends = pinned ? [pinned.backend] : (["cuda", "vulkan"] as const);
+		for (const backend of backends) {
+			try {
+				const inspected = await inspectNativeDevice(
+					{ runner, nativePath: deps.nativePath },
+					{ backend, ...(pinned ? { device: pinned.device } : {}) },
+					signal,
+				);
+				await assertAlias();
+				signal.throwIfAborted();
+				const { info } = inspected;
+				if (
+					info.sourceSha256 !== ready.sourceSha256 ||
+					(info.binarySha256 !== null &&
+						info.binarySha256 !== ready.binarySha256) ||
+					!info.capabilities.processSupervisor ||
+					!info.capabilities.cpuParity ||
+					info.capabilities.supervisorBinarySha256 !==
+						ready.supervisorBinarySha256
+				)
+					throw new Error("NATIVE_DEVICE_INFO_BUILD_MISMATCH");
+				return {
+					backend,
+					device: info.device.index,
+					identity: {
+						sourceSha256: ready.sourceSha256,
+						binarySha256: ready.binarySha256,
+						supervisorBinarySha256: ready.supervisorBinarySha256,
+						deviceUuid: info.device.uuid,
+					},
+				};
+			} catch (error) {
+				signal.throwIfAborted();
+				await assertAlias();
+				if (
+					pinned ||
+					!(error instanceof Error) ||
+					error.message !== "NATIVE_DEVICE_INFO_UNAVAILABLE"
+				)
+					throw error;
+			}
+		}
+		return { backend: "cpu", reason: "GPU_NOT_AVAILABLE" };
 	};
 	const work = resolve(deps.workDirectory);
 	const calibration = createNativeCalibrationAdapter({
@@ -156,5 +231,10 @@ function createRuntime(
 				`Native resource plan: ${decision.source}, ${decision.concurrency} comparison(s), ${decision.inflightFrames} frame(s) in flight; ${decision.reasons.join(", ")}`,
 			),
 	});
-	return { runner, resolveLocalResources, execute: shared.run.bind(shared) };
+	return {
+		runner,
+		selectLocalNative,
+		resolveLocalResources,
+		execute: shared.run.bind(shared),
+	};
 }

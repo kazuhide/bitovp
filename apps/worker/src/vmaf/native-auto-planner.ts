@@ -42,6 +42,8 @@ export type NativeAutoCalibrationRequest = {
 	): Promise<T>;
 };
 type Shared = ReturnType<typeof createSharedVmafExecution>;
+const exactFrameCount = (value: number | undefined): value is number =>
+	typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
 /** Profiles advise execution resources only. The complete requested inputs,
  * model and CPU parity remain unchanged when the queued comparison starts. */
@@ -148,34 +150,53 @@ export function createNativeAutoResourcePlanner(deps: {
 			!pair.reference.bitDepth ||
 			!pair.distorted.bitDepth ||
 			!pair.reference.codec ||
-			!pair.distorted.codec ||
-			!pair.reference.fps
+			!pair.distorted.codec
 		)
 			throw new ResourceUnavailableError("metadata");
 		const model = await (deps.prepareModel ?? prepareNativeModel)(
 			request.options,
 			signal,
 		);
-		const sampleFrames = Math.min(64, base.frameCount);
-		const profileKey = nativeAutoProfileKey(info, {
-			calibrationMode: "parallel-batch",
-			sampleFrames,
-			fixedCpuThreads: deps.configured?.threads,
-			model: request.options.model,
-			modelSha256: model.modelSha256,
-			...size,
-			referenceWidth: pair.reference.width,
-			referenceHeight: pair.reference.height,
-			distortedWidth: pair.distorted.width,
-			distortedHeight: pair.distorted.height,
-			referenceBitDepth: pair.reference.bitDepth,
-			distortedBitDepth: pair.distorted.bitDepth,
-			referenceCodec: pair.reference.codec,
-			distortedCodec: pair.distorted.codec,
-			fps: pair.reference.fps,
-			cpuCapacity: current.cpuCapacity,
-			hostCapacityBytes: hostBudget,
-		});
+		// Container duration is sufficient for padded RAM, not proof that a
+		// calibration prefix contains N frames. Both exact counts must be known.
+		const fps = pair.reference.fps;
+		const durationCap =
+			fps !== undefined && Number.isFinite(fps) && fps > 0
+				? Math.floor(fps * 30)
+				: 0;
+		const sampleFrames =
+			exactFrameCount(pair.reference.frames) &&
+			exactFrameCount(pair.distorted.frames) &&
+			exactFrameCount(durationCap)
+				? Math.min(
+						64,
+						pair.reference.frames,
+						pair.distorted.frames,
+						durationCap,
+					)
+				: undefined;
+		const profileKey =
+			sampleFrames !== undefined && fps !== undefined
+				? nativeAutoProfileKey(info, {
+						calibrationMode: "parallel-batch",
+						sampleFrames,
+						fixedCpuThreads: deps.configured?.threads,
+						model: request.options.model,
+						modelSha256: model.modelSha256,
+						...size,
+						referenceWidth: pair.reference.width,
+						referenceHeight: pair.reference.height,
+						distortedWidth: pair.distorted.width,
+						distortedHeight: pair.distorted.height,
+						referenceBitDepth: pair.reference.bitDepth,
+						distortedBitDepth: pair.distorted.bitDepth,
+						referenceCodec: pair.reference.codec,
+						distortedCodec: pair.distorted.codec,
+						fps,
+						cpuCapacity: current.cpuCapacity,
+						hostCapacityBytes: hostBudget,
+					})
+				: undefined;
 		const pixels = Math.max(
 			pair.reference.width * pair.reference.height,
 			pair.distorted.width * pair.distorted.height,
@@ -243,6 +264,8 @@ export function createNativeAutoResourcePlanner(deps: {
 			},
 		};
 		const candidates =
+			profileKey !== undefined &&
+			sampleFrames !== undefined &&
 			inspected.cacheable &&
 			total !== null &&
 			info.device.memoryAvailableBytes !== null
@@ -272,7 +295,7 @@ export function createNativeAutoResourcePlanner(deps: {
 		const fresh = read();
 		const decision = selectAutoExecutionPlan({
 			fixedCpuThreads: deps.configured?.threads,
-			expectedProfileKey: profileKey,
+			expectedProfileKey: profileKey ?? "0".repeat(64),
 			baseline,
 			candidates: candidates.filter(
 				(c) =>
@@ -319,7 +342,7 @@ export function createNativeAutoResourcePlanner(deps: {
 			exclusive: selected.source === "conservative",
 			basis: selected.source,
 			reasons: decision.reasons,
-			profileKey,
+			...(profileKey === undefined ? {} : { profileKey }),
 			gpu: {
 				deviceKey,
 				bytes: selected.gpuBytesPerComparison,

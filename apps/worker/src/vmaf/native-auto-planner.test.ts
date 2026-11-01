@@ -208,6 +208,73 @@ it("binds actual sample length and manual threads into cache identity", async ()
 		manual?.profileKey,
 	);
 });
+it("uses exact frame counts rather than rounded container duration for calibration", async () => {
+	const h = harness();
+	for (const video of [h.request.pair.reference, h.request.pair.distorted])
+		Object.assign(video, { frames: 60, fps: 30, durationSeconds: 2.05 });
+	const plan = await createNativeAutoResourcePlanner(h.deps)(h.request);
+	expect(plan.frameCount).toBe(62);
+	expect(h.calibrate.mock.calls[0]?.[0]).toMatchObject({
+		sampleFrames: 60,
+		fullFrameCount: 62,
+	});
+});
+it.each([
+	[1, 30],
+	[2, 60],
+] as const)("limits a %s fps proxy to at most thirty seconds", async (fps, expected) => {
+	const h = harness();
+	h.request.pair.reference.fps = fps;
+	h.request.pair.distorted.fps = fps;
+	await createNativeAutoResourcePlanner(h.deps)(h.request);
+	expect(h.calibrate.mock.calls[0]?.[0].sampleFrames).toBe(expected);
+});
+it("uses the shorter exact input when both inputs report counts", async () => {
+	const h = harness();
+	h.request.pair.reference.frames = 60;
+	h.request.pair.distorted.frames = 45;
+	await createNativeAutoResourcePlanner(h.deps)(h.request);
+	expect(h.calibrate.mock.calls[0]?.[0].sampleFrames).toBe(45);
+});
+it.each([
+	undefined,
+	0,
+	1.5,
+	Number.NaN,
+	Number.POSITIVE_INFINITY,
+	-1,
+	Number.MAX_SAFE_INTEGER + 1,
+])("skips all calibration/cache access without an exact frame count: %s", async (frames) => {
+	for (const side of ["reference", "distorted"] as const) {
+		const h = harness();
+		for (const video of [h.request.pair.reference, h.request.pair.distorted])
+			video.durationSeconds = 30;
+		h.request.pair[side].frames = frames;
+		const plan = await createNativeAutoResourcePlanner(h.deps)(h.request);
+		expect(h.calibrate).not.toHaveBeenCalled();
+		expect(plan).toMatchObject({
+			basis: "conservative",
+			concurrency: 1,
+			nativeInflightFrames: 1,
+		});
+		expect(plan).not.toHaveProperty("profileKey");
+	}
+});
+it.each([
+	1 / 60,
+	0,
+	Number.NaN,
+	Number.POSITIVE_INFINITY,
+	undefined,
+])("skips calibration when cadence cannot provide one frame in a thirty-second proxy: %s", async (fps) => {
+	const h = harness();
+	h.request.pair.reference.fps = fps;
+	h.request.pair.distorted.fps = fps;
+	const plan = await createNativeAutoResourcePlanner(h.deps)(h.request);
+	expect(h.calibrate).not.toHaveBeenCalled();
+	expect(plan.basis).toBe("conservative");
+	expect(plan).not.toHaveProperty("profileKey");
+});
 it("preserves advanced thread overrides and uses serial planning when GPU headroom is unknown", async () => {
 	const h = harness();
 	h.info.device.memoryAvailableBytes = null;

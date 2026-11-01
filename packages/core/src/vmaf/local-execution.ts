@@ -16,6 +16,13 @@ const inputExecution = z
 export const localVmafExecutionSchema = z
 	.object({
 		version: z.literal(1),
+		selection: z
+			.object({
+				requested: z.enum(["CPU", "AUTO"]),
+				reason: reasonCode.optional(),
+			})
+			.strict()
+			.optional(),
 		requestedDecode: z.enum(["cpu", "auto", "cuda"]),
 		device: z.number().int().nonnegative().safe().optional(),
 		decode: z

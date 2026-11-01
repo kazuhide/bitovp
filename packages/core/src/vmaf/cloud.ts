@@ -156,7 +156,13 @@ export const vmafCloudProfilesSchema = z
 		"Duplicate compute profile ID",
 	);
 export const vmafExecutionSchema = z.discriminatedUnion("backend", [
-	z.object({ backend: z.literal("LOCAL") }).strict(),
+	z
+		.object({
+			backend: z.literal("LOCAL"),
+			// Omission preserves historical worker-configured local execution.
+			localMode: z.enum(["CPU", "AUTO"]).optional(),
+		})
+		.strict(),
 	z
 		.object({
 			backend: z.literal("CLOUD"),

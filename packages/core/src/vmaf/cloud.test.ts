@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { parseVmafCloudProfiles, vmafExecutionSchema } from "./cloud";
 
 describe("VMAF execution selection", () => {
+	it.each([
+		"CPU",
+		"AUTO",
+	] as const)("accepts explicit local %s processing", (localMode) => {
+		const execution = { backend: "LOCAL", localMode };
+		expect(vmafExecutionSchema.parse(execution)).toEqual(execution);
+	});
+	it.each([
+		{ backend: "LOCAL", localMode: "CUDA" },
+		{ backend: "LOCAL", localMode: "AUTO", device: 0 },
+		{ backend: "LOCAL", localMode: "AUTO", nativePath: "/untrusted" },
+		{ backend: "CLOUD", profileId: "gcp", budgetUsd: 1, localMode: "AUTO" },
+	])("rejects invalid or misplaced local processing options", (execution) => {
+		expect(vmafExecutionSchema.safeParse(execution).success).toBe(false);
+	});
 	it("defaults to no available paid backends and allows explicit local", () => {
 		expect(parseVmafCloudProfiles(undefined)).toEqual([]);
 		expect(vmafExecutionSchema.parse({ backend: "LOCAL" })).toEqual({

@@ -33,6 +33,8 @@ describe("VOD automatic VMAF execution", () => {
 	it.each([
 		cloud,
 		{ backend: "LOCAL" } as const,
+		{ backend: "LOCAL", localMode: "CPU" } as const,
+		{ backend: "LOCAL", localMode: "AUTO" } as const,
 	])("round-trips $backend execution through the wizard", (execution) => {
 		const plan = encodingPlanSchema.parse({
 			...fixture,

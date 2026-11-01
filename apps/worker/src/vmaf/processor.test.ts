@@ -215,6 +215,7 @@ function setup(
 		probeExit?: number;
 		probeJson?: string;
 		localResources?: LocalVmafResources;
+		localRunner?: ProcessRunner;
 		resolveLocalResources?: VmafProcessorDeps["resolveLocalResources"];
 		decodePolicy?: VmafProcessorDeps["decodePolicy"];
 		scoringBackend?: VmafProcessorDeps["scoringBackend"];
@@ -477,6 +478,7 @@ function setup(
 		prisma,
 		resolveCredential,
 		runner,
+		...(opts.localRunner ? { localRunner: opts.localRunner } : {}),
 		ffmpegPath: "ffmpeg",
 		ffprobePath: "ffprobe",
 		workDir,
@@ -3445,9 +3447,16 @@ it("never publishes a VOD result after execution authority is lost", async () =>
 });
 
 it("passes the selected native device and pipeline depth through the real processor boundary", async () => {
+	const localRunner: ProcessRunner = {
+		spawn: vi.fn(() => {
+			throw new Error("Unexpected spawn");
+		}),
+		run: vi.fn(),
+	};
 	const native = vi
 		.spyOn(localScoring, "runLocalVmafScore")
 		.mockImplementation(async (_deps, options, context) => {
+			expect(_deps.runner).toBe(localRunner);
 			expect(options.scoring).toEqual({ backend: "vulkan", device: 2 });
 			expect(context?.nativeInflightFrames).toBe(2);
 			return {
@@ -3472,6 +3481,7 @@ it("passes the selected native device and pipeline depth through the real proces
 	try {
 		const t = setup({
 			localResources: sharedTestResources(),
+			localRunner,
 			probeJson: RESOURCE_PROBE_JSON,
 			scoringBackend: "vulkan",
 			job: { scoringVersion: VMAF_SCORING_VERSION },
@@ -3485,6 +3495,9 @@ it("passes the selected native device and pipeline depth through the real proces
 				nativeInflightFrames: 2,
 			}),
 		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing raw runner fixture");
+		vi.mocked(localRunner.run).mockImplementation(raw);
 		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
 			{ status: "FINISHED", results: 2 },
 		);
@@ -3565,4 +3578,111 @@ it("cleans a failed reference download before draining queued VOD comparisons an
 		(await import("node:fs/promises")).readdir(workDir),
 	).resolves.toEqual([]);
 	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
+});
+
+function runnerBoundaryPlan() {
+	const plan = qcPlan();
+	plan.renditions = [
+		{
+			key: "vpt",
+			ingestKey: "video",
+			codec: "H264",
+			mode: "PER_TITLE_TEMPLATE",
+			height: null,
+			bitrate: null,
+		},
+	];
+	plan.muxings = [
+		{
+			key: "mpt",
+			kind: "MP4",
+			streamKey: "vpt",
+			filename: "vpt.mp4",
+			destination: { outputKey: "origin", path: "out/video/pt" },
+		},
+	];
+	return plan;
+}
+it.each([
+	false,
+	true,
+])("routes local reference, target probes and scoring through localRunner (resource policy=%s)", async (withResources) => {
+	const localRunner: ProcessRunner = {
+		spawn: vi.fn(() => {
+			throw new Error("Unexpected spawn");
+		}),
+		run: vi.fn(),
+	};
+	const t = setup({
+		plan: runnerBoundaryPlan(),
+		localRunner,
+		...(withResources
+			? {
+					localResources: sharedTestResources(),
+					probeJson: RESOURCE_PROBE_JSON,
+				}
+			: {}),
+	});
+	const raw = vi.mocked(t.runner.run).getMockImplementation();
+	if (!raw) throw new Error("Missing raw runner fixture");
+	vi.mocked(localRunner.run).mockImplementation(raw);
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "FINISHED",
+		results: 1,
+	});
+	expect(t.runner.run).not.toHaveBeenCalled();
+	const calls = vi.mocked(localRunner.run).mock.calls;
+	expect(
+		calls.filter(([, argv]) => argv.includes("-show_streams")),
+	).toHaveLength(2);
+	expect(
+		calls.filter(([, argv]) => argv.join(" ").includes("libvmaf")),
+	).toHaveLength(1);
+});
+
+it("keeps every cloud preparation probe on the raw runner without accessing the supervised local path", async () => {
+	const localRunner: ProcessRunner = {
+		spawn: vi.fn(() => {
+			throw new Error("Cloud accessed local supervisor");
+		}),
+		run: vi.fn(async () => {
+			throw new Error("Cloud accessed local supervisor");
+		}),
+	};
+	const cloudScore: NonNullable<VmafProcessorDeps["cloudScore"]> = async (
+		request,
+	) => {
+		await writeFile(request.options.logPath, vmafJson([95]));
+	};
+	const t = setup({
+		plan: runnerBoundaryPlan(),
+		localRunner,
+		cloudScore,
+		scoringBackend: "vulkan",
+		decodePolicy: { backend: "cuda", device: 0 },
+		job: {
+			params: {
+				execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+			},
+		},
+		localResources: {
+			begin: () => {
+				throw new Error("Cloud entered local resource manager");
+			},
+		},
+		resolveLocalResources: async () => {
+			throw new Error("Cloud entered native calibration");
+		},
+	});
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "FINISHED",
+		results: 1,
+	});
+	expect(localRunner.run).not.toHaveBeenCalled();
+	expect(localRunner.spawn).not.toHaveBeenCalled();
+	expect(
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-show_streams")),
+	).toHaveLength(2);
 });

@@ -158,6 +158,8 @@ export type VmafProcessorDeps = {
 	prisma: AppPrismaClient;
 	resolveCredential(credentialId: string): Promise<ResolvedCredential>;
 	runner: ProcessRunner;
+	/** Local probes/scoring can use a supervisor; cloud work keeps the raw runner. */
+	localRunner?: ProcessRunner;
 	ffmpegPath: string;
 	ffprobePath: string;
 	/** Working directory root; a per-job subdir is created under it. */
@@ -357,9 +359,10 @@ function renditionRef(
  * ladder simply omits the point — it must never fail the VMAF run.
  */
 async function probeDistortedMetrics(
-	deps: VmafProcessorDeps,
+	deps: Pick<VmafProcessorDeps, "ffprobePath">,
 	path: string,
 	signal: AbortSignal,
+	runner: ProcessRunner,
 	probeOutput?: string,
 ): Promise<{ height?: number; bitrate?: number }> {
 	const toInt = (v: string | undefined): number | undefined => {
@@ -373,7 +376,7 @@ async function probeDistortedMetrics(
 		const probe =
 			probeOutput !== undefined
 				? { code: 0, stdout: probeOutput }
-				: await deps.runner.run(
+				: await runner.run(
 						deps.ffprobePath,
 						[
 							"-v",
@@ -726,6 +729,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		referenceResource?: ResourceVideo,
 		referenceProbe?: string,
 	): Promise<void> {
+		const runner =
+			execution.backend === "LOCAL"
+				? (deps.localRunner ?? deps.runner)
+				: deps.runner;
 		const { slot, distortedPath, logPath } = scoreFiles(
 			jobDir,
 			target,
@@ -746,7 +753,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					deps.decodePolicy.backend !== "cpu") ||
 					deps.scoringBackend === "cuda" ||
 					deps.scoringBackend === "vulkan"))
-				? await deps.runner.run(
+				? await runner.run(
 						deps.ffprobePath,
 						[
 							"-v",
@@ -771,6 +778,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						deps,
 						distortedPath,
 						signal,
+						runner,
 						resourceProbe?.stdout,
 					)
 				: undefined;
@@ -788,7 +796,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		) {
 			const probe =
 				resourceProbe ??
-				(await deps.runner.run(
+				(await runner.run(
 					deps.ffprobePath,
 					["-v", "error", "-show_streams", "-of", "json", distortedPath],
 					{ signal },
@@ -949,12 +957,16 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					});
 					run = { code: 0, stderr: "" };
 				} else {
-					const result = await runLocalVmafScore(deps, scoringOptions, {
-						signal: runSignal,
-						nativeInflightFrames: allocation?.nativeInflightFrames,
-						referenceProbe,
-						distortedProbe: resourceProbe?.stdout,
-					});
+					const result = await runLocalVmafScore(
+						{ ...deps, runner },
+						scoringOptions,
+						{
+							signal: runSignal,
+							nativeInflightFrames: allocation?.nativeInflightFrames,
+							referenceProbe,
+							distortedProbe: resourceProbe?.stdout,
+						},
+					);
 					run = result.run;
 					localExecution = result.execution;
 					localLog = result.log;
@@ -1190,6 +1202,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				paramsAcc.execution ?? { backend: "LOCAL" },
 			);
 			isCloud = execution.backend === "CLOUD";
+			const runner = isCloud ? deps.runner : (deps.localRunner ?? deps.runner);
 			const executionProfile =
 				execution.backend === "CLOUD"
 					? paramsAcc.executionProfile
@@ -1371,7 +1384,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						destPath: referencePath,
 						label: `reference source for rendition ${target.renditionKey} (input "${target.reference.inputKey}")`,
 					});
-					const probe = await deps.runner.run(
+					const probe = await runner.run(
 						deps.ffprobePath,
 						[
 							"-v",

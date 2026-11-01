@@ -18,6 +18,21 @@ import {
 } from "./native-contract";
 import { resourceVideoFromProbe } from "./resource-plan";
 
+export type NativeScoreContext = {
+	signal?: AbortSignal;
+	referenceProbe?: string;
+	distortedProbe?: string;
+	/** Internal scheduling controls; never alter a completed measurement's frame set. */
+	nativeInflightFrames?: 1 | 2 | 4;
+	/** Calibration-only prefix, written only to the caller's disposable directory. */
+	calibrationFrames?: number;
+};
+export type NativeResourceSnapshot = {
+	maxRssBytes: number;
+	gpuOwnedBytes: number;
+	scope: "before-result-serialization";
+};
+
 function probeInput(text: string) {
 	let parsed: { streams?: Record<string, unknown>[] };
 	try {
@@ -77,15 +92,22 @@ export async function runNativeVmafScore(
 		decodePolicy?: DecodePolicy;
 	},
 	options: VmafCommandOptions,
-	context: {
-		signal?: AbortSignal;
-		referenceProbe?: string;
-		distortedProbe?: string;
-	},
+	context: NativeScoreContext,
 ) {
 	const { signal } = context,
 		scoring = options.scoring;
 	signal?.throwIfAborted();
+	const frameLimit = context.calibrationFrames;
+	if (
+		frameLimit !== undefined &&
+		(!Number.isSafeInteger(frameLimit) || frameLimit < 1 || frameLimit > 256)
+	)
+		throw new Error("NATIVE_CALIBRATION_FRAME_LIMIT_INVALID");
+	if (
+		context.nativeInflightFrames !== undefined &&
+		![1, 2, 4].includes(context.nativeInflightFrames)
+	)
+		throw new Error("NATIVE_PIPELINE_DEPTH_INVALID");
 	if ((scoring as { backend?: string } | undefined)?.backend === "vmafx-cuda")
 		throw new Error(
 			"VMAFx scoring is retired; select cuda or vulkan and create a new measurement",
@@ -147,11 +169,19 @@ export async function runNativeVmafScore(
 	if (reference.width !== size.width || reference.height !== size.height)
 		throw new Error("NATIVE_UNSUPPORTED_REFERENCE_GEOMETRY");
 	if (
+		frameLimit === undefined &&
 		reference.frames !== undefined &&
 		distorted.frames !== undefined &&
 		reference.frames !== distorted.frames
 	)
 		throw new Error("NATIVE_UNSUPPORTED_FRAME_COUNT_MISMATCH");
+	if (
+		frameLimit !== undefined &&
+		[reference.frames, distorted.frames].some(
+			(n) => n !== undefined && n < frameLimit,
+		)
+	)
+		throw new Error("NATIVE_CALIBRATION_INPUT_TOO_SHORT");
 	const original = options.distortedOriginal;
 	if (
 		!original ||
@@ -199,6 +229,10 @@ export async function runNativeVmafScore(
 			"--decode-threads",
 			String(options.decoderThreads ?? 1),
 			"--verify-cpu",
+			...(context.nativeInflightFrames === undefined
+				? []
+				: ["--inflight-frames", String(context.nativeInflightFrames)]),
+			...(frameLimit === undefined ? [] : ["--max-frames", String(frameLimit)]),
 		];
 		signal?.throwIfAborted();
 		const run = await deps.runner.run(deps.nativePath, args, {
@@ -208,23 +242,46 @@ export async function runNativeVmafScore(
 		signal?.throwIfAborted();
 		if (run.code !== 0)
 			throw new Error(`NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`);
-		const verified = verifyNativeReceipt(
-			JSON.parse(await readFile(receiptPath, "utf8")),
-			{
-				model: options.model,
-				modelSha256: model.modelSha256,
-				backend: scoring.backend,
-				device: scoring.device,
-				sourceSha256,
-				...size,
-				distortedOriginal: original,
-				referenceSha256,
-				distortedSha256,
-				frameCount: reference.frames ?? distorted.frames,
-				psnr:
-					options.psnr === true || options.features?.includes("psnr") === true,
-			},
-		);
+		const raw: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
+		const verified = verifyNativeReceipt(raw, {
+			model: options.model,
+			modelSha256: model.modelSha256,
+			backend: scoring.backend,
+			device: scoring.device,
+			sourceSha256,
+			...size,
+			distortedOriginal: original,
+			referenceSha256,
+			distortedSha256,
+			frameCount: frameLimit ?? reference.frames ?? distorted.frames,
+			psnr:
+				options.psnr === true || options.features?.includes("psnr") === true,
+		});
+		const metadata = raw as Record<string, unknown>;
+		if (
+			context.nativeInflightFrames !== undefined &&
+			metadata.inflightFrames !== context.nativeInflightFrames
+		)
+			throw new Error("NATIVE_PIPELINE_DEPTH_MISMATCH");
+		let resourceSnapshot: NativeResourceSnapshot | undefined;
+		if (frameLimit !== undefined) {
+			const memory = metadata.memory as Record<string, unknown> | undefined;
+			if (
+				metadata.resourceSnapshotScope !== "before-result-serialization" ||
+				metadata.cpuThreads !== (options.threads ?? 1) ||
+				metadata.decodeThreads !== (options.decoderThreads ?? 1) ||
+				!memory ||
+				![memory.maxRssBytes, memory.gpuAllocatedBytes].every(
+					(n) => typeof n === "number" && Number.isSafeInteger(n) && n > 0,
+				)
+			)
+				throw new Error("NATIVE_RESOURCE_SNAPSHOT_INVALID");
+			resourceSnapshot = {
+				maxRssBytes: memory.maxRssBytes as number,
+				gpuOwnedBytes: memory.gpuAllocatedBytes as number,
+				scope: "before-result-serialization",
+			};
+		}
 		signal?.throwIfAborted();
 		const execution = localVmafExecutionSchema.parse({
 			version: 1,
@@ -236,7 +293,12 @@ export async function runNativeVmafScore(
 		});
 		await writeFile(options.logPath, JSON.stringify(verified.log));
 		signal?.throwIfAborted();
-		return { run, execution, log: verified.log };
+		return {
+			run,
+			execution,
+			log: verified.log,
+			...(resourceSnapshot ? { resourceSnapshot } : {}),
+		};
 	} finally {
 		await rm(receiptPath, { force: true });
 		signal?.throwIfAborted();

@@ -292,19 +292,7 @@ export function LadderSection({
 			return {
 				...video,
 				bitrate: null,
-				...(clearHeight
-					? {
-							height: null,
-							// Keep references stable when removing a height-derived key.
-							extras: {
-								...video.extras,
-								key: video.extras?.key ?? vKeys[index],
-							},
-							...(video.extras?.key === undefined
-								? { autoKey: vKeys[index] }
-								: {}),
-						}
-					: {}),
+				...(clearHeight ? { height: null } : {}),
 			};
 		});
 		const modePaths = updateVodVideoModePaths(

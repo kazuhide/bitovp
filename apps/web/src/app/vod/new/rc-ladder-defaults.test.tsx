@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import {
 	buildPlan,
+	DEFAULT_WIZARD_QC,
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
 } from "./build-plan";
@@ -31,6 +32,59 @@ function plan() {
 }
 
 describe("VOD Per-Title initial height", () => {
+	it.each([
+		false,
+		true,
+	])("preserves duplicate-height sibling identities, references and output paths (encrypted: %s)", (encrypted) => {
+		const initial = structuredClone(DEFAULT_WIZARD_STATE);
+		initial.videos = [
+			{ height: 720, bitrate: 1_000_000 },
+			{ height: 720, bitrate: 2_000_000 },
+		];
+		initial.thumbnails = [
+			{ key: "thumb", streamKey: "v720_2000k", height: 90, positions: [0] },
+		];
+		initial.qc = {
+			...DEFAULT_WIZARD_QC,
+			vmaf: true,
+			gate: {
+				onFail: "BLOCK_MANIFESTS",
+				rules: [
+					{
+						metric: "VMAF_MEAN",
+						gte: 80,
+						scope: "PER_RENDITION",
+						renditions: ["v720_1000k", "v720_2000k"],
+					},
+				],
+			},
+		};
+		if (encrypted)
+			initial.drm = [
+				{
+					kind: "CENC",
+					muxingKey: "v720_2000k",
+					credentialId: "vault",
+					kid: "kid",
+				},
+			];
+		const before = buildPlan(initial);
+		renderWithQuery(<Harness initial={initial} />);
+		fireEvent.change(screen.getAllByLabelText("Stream mode")[0] as Element, {
+			target: { value: "PER_TITLE_TEMPLATE" },
+		});
+		const after = plan();
+		expect(
+			after.renditions.slice(0, 2).map((row: { key: string }) => row.key),
+		).toEqual(["v720_1000k", "v720_2000k"]);
+		expect(after.thumbnails).toEqual(before.thumbnails);
+		expect(after.qc.gate).toEqual(before.qc?.gate);
+		expect(after.muxings[1]).toEqual(before.muxings[1]);
+		expect(after.drm).toEqual(before.drm);
+		expect(screen.getByLabelText("Video 1 height")).toHaveValue(null);
+		expect(screen.getByLabelText("Video 2 height")).toHaveValue(720);
+	});
+
 	it.each([
 		"ladder",
 		"rendition",

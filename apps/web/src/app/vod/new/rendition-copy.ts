@@ -124,8 +124,11 @@ function outputPaths(state: WizardState): OutputPath[] {
 	return paths;
 }
 
-/** Freeze identities AND derived destinations before adding an identical rung. */
-function prepareLadder(state: WizardState) {
+/** Freeze identities AND derived destinations before changing inferred keys. */
+function prepareLadder(
+	state: WizardState,
+	nextVideos: WizardVideoRendition[] = state.videos,
+) {
 	const vKeys = videoKeys(state.videos);
 	const aKeys = audioKeys(state.audios);
 	const derivedPaths = derivedOutputPaths(state);
@@ -202,10 +205,14 @@ function prepareLadder(state: WizardState) {
 				: {}),
 		};
 	};
-	const videos = state.videos.map((video, index) => {
+	const videos = nextVideos.map((video, index) => {
 		const key = vKeys[index] ?? `v${index + 1}`;
 		return {
-			...freeze(video, key, videoMuxingRelPath(video, key)),
+			...freeze(
+				video,
+				key,
+				videoMuxingRelPath(state.videos[index] ?? video, key),
+			),
 			autoKey:
 				video.extras?.key === undefined || video.autoKey === video.extras.key
 					? key
@@ -436,14 +443,29 @@ function isDerivedName(key: string | undefined, base: string): boolean {
 export function updateVodVideoModePaths(
 	state: WizardState,
 	next: WizardVideoRendition[],
-): Pick<WizardState, "videos"> & Partial<Pick<WizardState, "drm">> {
+): Pick<WizardState, "videos"> & Partial<Pick<WizardState, "audios" | "drm">> {
 	if (state.videos.length !== next.length) return { videos: next };
+	// Clearing one height also changes siblings' inferred same-height keys.
+	// Freeze the whole ladder, including clear/DRM destinations, before that edit.
+	const frozen = next.some(
+		(video, index) =>
+			video.height === null &&
+			video.extras?.mode === "PER_TITLE_TEMPLATE" &&
+			!state.videos[index]?.extras?.mode?.startsWith("PER_TITLE"),
+	)
+		? prepareLadder(state, next)
+		: undefined;
+	const prepared = frozen?.videos ?? next;
 	const oldKeys = videoKeys(state.videos);
-	const keys = videoKeys(next);
-	const destinations = outputPaths({ ...state, videos: next });
+	const keys = videoKeys(prepared);
+	const destinations = outputPaths({
+		...state,
+		...(frozen ? { audios: frozen.audios, drm: frozen.drm } : {}),
+		videos: prepared,
+	});
 	const allocated = new Set<string>();
-	let drm = state.drm;
-	const videos = next.map((video, index) => {
+	let drm = frozen?.drm ?? state.drm;
+	const videos = prepared.map((video, index) => {
 		const current = state.videos[index];
 		if (!current) return video;
 		const wasPerTitle = current.extras?.mode?.startsWith("PER_TITLE") ?? false;
@@ -521,7 +543,11 @@ export function updateVodVideoModePaths(
 				: {}),
 		};
 	});
-	return { videos, ...(drm !== state.drm ? { drm } : {}) };
+	return {
+		videos,
+		...(frozen ? { audios: frozen.audios } : {}),
+		...(drm !== state.drm ? { drm } : {}),
+	};
 }
 
 /** Rename an editor-owned height key and its references in one wizard patch. */

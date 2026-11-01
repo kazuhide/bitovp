@@ -17,6 +17,7 @@ import {
 	createAutomaticVmafRuntime,
 	createAvailableAutomaticVmafRuntime,
 } from "./automatic-runtime";
+import { resolveLocalSelection } from "./local-selection";
 import { NATIVE_OFFICIAL_REVISION } from "./native-contract";
 
 vi.mock("./supervised-runner", async (importOriginal) => {
@@ -460,4 +461,67 @@ it("retains a missing file during preflight as an integrity failure after the pa
 	expect(onInvalid).toHaveBeenCalledWith(
 		expect.objectContaining({ code: "ENOENT" }),
 	);
+});
+
+it.each([
+	"non-executable",
+	"directory",
+	"non-directory-component",
+] as const)("does not silently select CPU for an invalid configured native path: %s", async (kind) => {
+	const f = await fixture();
+	let nativePath = f.nativePath;
+	if (kind === "non-executable") await chmod(nativePath, 0o600);
+	else if (kind === "directory") nativePath = f.directory;
+	else nativePath = join(f.nativePath, "child");
+	let nativeFailure: Error | undefined;
+	const runtime = await createAvailableAutomaticVmafRuntime({
+		...f.deps,
+		nativePath,
+		onInvalid: (error) => {
+			nativeFailure = error;
+		},
+	});
+	expect(runtime).toBeUndefined();
+	expect(nativeFailure?.message).toBe("NATIVE_EXECUTABLE_INVALID");
+	expect(f.run).not.toHaveBeenCalled();
+	expect(f.evalRedis).not.toHaveBeenCalled();
+	const request = {
+		execution: { backend: "LOCAL" as const, localMode: "AUTO" as const },
+		model: "vmaf_v1.0.16_3d0h",
+		gate: false,
+		signal: new AbortController().signal,
+	};
+	await expect(
+		resolveLocalSelection({ nativeFailure }, request),
+	).rejects.toThrow("NATIVE_EXECUTABLE_INVALID");
+	expect(
+		await resolveLocalSelection(
+			{ nativeFailure },
+			{ ...request, execution: { backend: "LOCAL", localMode: "CPU" } },
+		),
+	).toMatchObject({ requested: "CPU", backend: "cpu" });
+});
+it("still permits AUTO CPU fallback for a genuinely missing configured native executable", async () => {
+	const f = await fixture(),
+		onInvalid = vi.fn();
+	const runtime = await createAvailableAutomaticVmafRuntime({
+		...f.deps,
+		nativePath: join(f.directory, "missing"),
+		onInvalid,
+	});
+	expect(runtime).toBeUndefined();
+	expect(onInvalid).not.toHaveBeenCalled();
+	expect(
+		await resolveLocalSelection(
+			{},
+			{
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				model: "vmaf_v1.0.16_3d0h",
+				gate: false,
+				signal: new AbortController().signal,
+			},
+		),
+	).toMatchObject({ backend: "cpu", reason: "GPU_RUNTIME_UNAVAILABLE" });
+	expect(f.run).not.toHaveBeenCalled();
+	expect(f.evalRedis).not.toHaveBeenCalled();
 });

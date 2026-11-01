@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdtemp,
+	realpath,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import { NATIVE_OFFICIAL_REVISION, type NativeDeviceInfo } from "@bitovp/core";
@@ -10,6 +17,7 @@ import {
 	type NativeAutoWorkload,
 	nativeAutoProfileKey,
 	nativePhysicalDeviceKey,
+	resolveNativeExecutable,
 } from "./native-auto-device";
 
 const directories: string[] = [];
@@ -280,4 +288,49 @@ it("joins API identities by host and PCI, and uses UUID when PCI is unavailable"
 		nativePhysicalDeviceKey(report, "b".repeat(64)),
 	);
 	expect(() => nativePhysicalDeviceKey(report, "unscoped")).toThrow();
+});
+
+it.each([
+	"non-executable",
+	"directory",
+	"non-directory-component",
+	"dangling-symlink",
+] as const)("distinguishes an existing invalid native path from absence: %s", async (kind) => {
+	const h = await harness();
+	let path = h.executable;
+	if (kind === "non-executable") await chmod(path, 0o600);
+	else if (kind === "directory") path = h.directory;
+	else if (kind === "non-directory-component")
+		path = join(h.executable, "child");
+	else {
+		path = join(h.directory, "dangling");
+		await symlink(join(h.directory, "missing-target"), path);
+	}
+	await expect(resolveNativeExecutable(path)).rejects.toThrow(
+		"NATIVE_EXECUTABLE_INVALID",
+	);
+	await expect(
+		inspectNativeDevice({ ...h.deps, nativePath: path }, selection),
+	).rejects.toThrow("NATIVE_EXECUTABLE_INVALID");
+	expect(h.run).not.toHaveBeenCalled();
+});
+it("retains genuine native-path absence as expected unavailability", async () => {
+	const h = await harness();
+	await expect(
+		resolveNativeExecutable(join(h.directory, "missing")),
+	).rejects.toThrow("NATIVE_EXECUTABLE_UNAVAILABLE");
+	expect(h.run).not.toHaveBeenCalled();
+});
+
+it("preserves PATH search when a later candidate is executable", async () => {
+	const h = await harness();
+	const earlier = await mkdtemp(join(tmpdir(), "bitovp-unusable-path-"));
+	directories.push(earlier);
+	const denied = join(earlier, basename(h.executable));
+	await writeFile(denied, "non-executable candidate");
+	await chmod(denied, 0o600);
+	vi.stubEnv("PATH", `${earlier}${delimiter}${h.directory}`);
+	expect(await resolveNativeExecutable(basename(h.executable))).toBe(
+		await realpath(h.executable),
+	);
 });

@@ -153,3 +153,35 @@ Host process memory, discrete GPU memory, and shared APU memory are different
 measurements and must not be added together without accounting for shared pages.
 The AMD hardware qualification here covers the Radeon 890M APU; AMD discrete
 GPUs require separate qualification.
+
+### Batched extractor comparison
+
+A later comparison starts from `db35fc2`, which already includes the dedicated
+Vulkan row pipeline. SpEED now batches the independent matrices for both color
+planes and both pictures before collecting their small statistics on the CPU.
+CAMBI sums its mask in two integer passes, using the existing mask buffers.
+The image scratch buffers are reused; no full-frame copy is added.
+
+The same 30-second fixtures, hardware, model, 10-bit comparison format, and two
+decoder threads are used here. Each value is the median of three alternating
+before/after pairs, following one warmup per build and content. All pairs were
+faster and the observed before/after ranges did not overlap. Times are seconds.
+The final native source fingerprint starts with `6620732d61c7`.
+
+| Content | GPU path | Before | After | Time reduction |
+| --- | --- | ---: | ---: | ---: |
+| Big Buck Bunny | NVDEC + CUDA | 5.89 | 4.17 | 29.2% |
+| Big Buck Bunny | AMD Vulkan | 19.63 | 14.52 | 26.0% |
+| Valkaama | NVDEC + CUDA | 6.05 | 4.56 | 24.7% |
+| Valkaama | AMD Vulkan | 19.43 | 15.15 | 22.0% |
+
+The extra tracked NVIDIA workspace was 110,900 bytes for this model; the AMD
+workspace peak stayed unchanged. Separate component trials found about a 4%
+CUDA CAMBI improvement for Big Buck Bunny, while Valkaama's process time stayed
+within measurement noise. An attempt to enqueue multiple model configurations
+before CPU aggregation also stayed within noise and was not retained.
+
+Every timed result passed full CPU feature, frame-score, and pooled-score
+checks. Integer masks were also checked exactly in 350 cases per GPU backend.
+These are standalone timings with the scope described above; current GUI jobs
+also perform input preparation and additional CPU verification.

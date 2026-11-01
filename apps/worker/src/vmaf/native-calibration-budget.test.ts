@@ -43,6 +43,34 @@ function deferred<T>() {
 }
 
 describe("native calibration search budget", () => {
+	it("revisits a higher cap after this process completed a smaller parallel search", async () => {
+		const budget = createNativeCalibrationBudget();
+		let cached = false;
+		const run = vi.fn<Run>(async (ms) => {
+			if (ms > 0) cached = true;
+			return cached ? candidates() : [];
+		});
+		for (const maxConcurrency of [2, 6, 6])
+			await budget.calibrate({
+				profileKey: key,
+				maxConcurrency,
+				signal: signal(),
+				run,
+			});
+		expect(run.mock.calls.map(([ms]) => ms)).toEqual([0, 30000, 0, 30000, 0]);
+	});
+	it("keeps a pre-existing adequate cache read-only when a fresh worker sees higher capacity", async () => {
+		const budget = createNativeCalibrationBudget();
+		const run = vi.fn<Run>(async () => candidates());
+		for (const maxConcurrency of [2, 6, 6])
+			await budget.calibrate({
+				profileKey: key,
+				maxConcurrency,
+				signal: signal(),
+				run,
+			});
+		expect(run.mock.calls.map(([ms]) => ms)).toEqual([0, 0, 0]);
+	});
 	it("spends another budget only for a newly eligible higher concurrency cap", async () => {
 		const budget = createNativeCalibrationBudget();
 		let cached = false;

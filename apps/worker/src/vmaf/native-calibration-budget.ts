@@ -165,7 +165,8 @@ export function createNativeCalibrationBudget(
 					// not return stale candidates or spend a second search budget.
 					if (selected.generation !== beforeRead || selected.flight) continue;
 					if (
-						adequate(cached, request.profileKey, request.maxConcurrency) ||
+						(selected.searchedMaxConcurrency === 0 &&
+							adequate(cached, request.profileKey, request.maxConcurrency)) ||
 						selected.searchedMaxConcurrency >= request.maxConcurrency
 					)
 						return cached;

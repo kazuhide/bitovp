@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLocalVmafResources } from "./local-resources";
+import { createResourceAdmission } from "./resource-admission";
+import {
+	VMAF_GPU_COMPUTE_CREDITS,
+	type VmafResourceLeaseRequest,
+} from "./resource-leases";
 import type { LocalResourcePlan, ResourcePair } from "./resource-plan";
+import { createSharedVmafExecution } from "./shared-execution";
 
 const GiB = 1024 ** 3;
 const pair: ResourcePair = {
@@ -24,6 +30,180 @@ const pair: ResourcePair = {
 	},
 	model: "vmaf_v0.6.1",
 };
+
+it("reserves the whole shared host for Live preparation and borrows CPU authority without nested admission", async () => {
+	const requests: VmafResourceLeaseRequest[] = [];
+	const cpu = createResourceAdmission({
+		capacityBytes: 8000,
+		availableBytes: () => 8000,
+	});
+	const memory = createResourceAdmission({
+		capacityBytes: 8 * GiB,
+		availableBytes: () => 8 * GiB,
+	});
+	const readResources = () => ({
+		cpuCapacity: 8,
+		memoryLimitBytes: 8 * GiB,
+		budgetBytes: 8 * GiB,
+		reserveBytes: 0,
+	});
+	const shared = createSharedVmafExecution({
+		hostKey: async () => "a".repeat(64),
+		readResources,
+		leases: {
+			async run(request, signal, work) {
+				requests.push(request);
+				return cpu.run(request.requested.cpuMilliCores, signal, () =>
+					memory.run(request.requested.hostBytes, signal, () =>
+						work({
+							signal,
+							assertOwned: async () => signal.throwIfAborted(),
+							fitsHeadroom: async () => true,
+						}),
+					),
+				);
+			},
+		},
+	});
+	shared.registerDevice({
+		deviceKey: "b".repeat(64),
+		read: async () => ({ totalBytes: 8 * GiB, availableBytes: 8 * GiB }),
+	});
+	const resources = createLocalVmafResources({
+		readResources,
+		execute: (plan, signal, work) => shared.run(plan, signal, work),
+	});
+	const other = resources.begin(new AbortController().signal),
+		live = resources.begin(new AbortController().signal);
+	const entered = deferred(),
+		hold = deferred(),
+		prepEntered = deferred(),
+		prepHold = deferred();
+	const gpu = other.run(
+		"gpu",
+		{ ...pair, scoringBackend: "cuda" },
+		1,
+		async () => {
+			entered.resolve();
+			await hold.promise;
+		},
+		async () => ({
+			threads: 1,
+			decoderThreads: 1,
+			cpuChargePerComparison: 4,
+			concurrency: 2,
+			estimatedBytes: 512 * 1024 ** 2,
+			exclusive: false,
+			manualFallback: false,
+			gpu: {
+				deviceKey: "b".repeat(64),
+				bytes: GiB,
+				computeCredits: VMAF_GPU_COMPUTE_CREDITS / 2,
+			},
+		}),
+	);
+	await entered.promise;
+	if (!live.exclusivePrepared) throw new Error("Missing exclusive preparation");
+	const resolver = vi.fn(async () => {
+		throw new Error("Nested resolver must not run");
+	});
+	const prep = live.exclusivePrepared(
+		"live",
+		async (scoped, runSignal, assertOwned) => {
+			prepEntered.resolve();
+			expect(scoped.preparationScope).toBe("exclusive-cpu");
+			await assertOwned();
+			await scoped.run("live-cpu", pair, 1, async (plan) => {
+				expect(plan.concurrency).toBe(1);
+			});
+			await expect(
+				scoped.run(
+					"gpu",
+					{ ...pair, scoringBackend: "cuda" },
+					1,
+					async () => {},
+				),
+			).rejects.toThrow("CPU-only");
+			await expect(
+				scoped.run("resolver", pair, 1, async () => {}, resolver),
+			).rejects.toThrow("resolver");
+			expect(resolver).not.toHaveBeenCalled();
+			runSignal.throwIfAborted();
+			await prepHold.promise;
+		},
+	);
+	await vi.waitFor(() => expect(requests).toHaveLength(2));
+	expect(requests[1]?.requested).toMatchObject({
+		cpuMilliCores: 8000,
+		hostBytes: 8 * GiB,
+	});
+	expect(live.report().active).toBe(1); // Only the GPU comparison has entered.
+	hold.resolve();
+	await gpu;
+	await prepEntered.promise;
+	expect(requests).toHaveLength(2);
+	expect(live.report().maxObservedActive).toBe(1);
+	const next = other.run(
+		"after-live",
+		pair,
+		1,
+		async () => {},
+		async () => ({
+			threads: 1,
+			concurrency: 1,
+			estimatedBytes: GiB,
+			exclusive: false,
+			manualFallback: false,
+		}),
+	);
+	await vi.waitFor(() => expect(requests).toHaveLength(3));
+	expect(live.report().active).toBe(1);
+	prepHold.resolve();
+	await Promise.all([prep, next]);
+	expect(live.report()).toMatchObject({ active: 0, queued: 0 });
+});
+
+it("checks scoring headroom inside an exclusive Live scope and inherits lease loss", async () => {
+	let available = 4 * GiB;
+	const lease = new AbortController();
+	const authority = vi.fn(async () => lease.signal.throwIfAborted());
+	let executionCalls = 0;
+	const execute = async <T>(
+		_plan: LocalResourcePlan,
+		_signal: AbortSignal,
+		work: (signal: AbortSignal, assert: () => Promise<void>) => Promise<T>,
+	) => {
+		executionCalls++;
+		return work(lease.signal, authority);
+	};
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			memoryLimitBytes: 4 * GiB,
+			budgetBytes: available,
+			reserveBytes: 0,
+		}),
+		execute,
+	});
+	const session = resources.begin(new AbortController().signal);
+	if (!session.exclusivePrepared)
+		throw new Error("Missing exclusive preparation");
+	await session
+		.exclusivePrepared("live", async (scoped) => {
+			available = 1;
+			await expect(
+				scoped.run("too-large", pair, 1, async () => {}),
+			).rejects.toThrow("waiting for memory");
+			available = 4 * GiB;
+			lease.abort(new Error("Lease lost"));
+			await expect(
+				scoped.run("revoked", pair, 1, async () => {}),
+			).rejects.toThrow("Lease lost");
+		})
+		.catch((error) => expect(String(error)).toContain("Lease lost"));
+	expect(executionCalls).toBe(1);
+	expect(session.report()).toMatchObject({ active: 0, queued: 0 });
+});
 
 describe("shared local VMAF resource service", () => {
 	it("connects the selected plan to atomic launch and records actual units", async () => {

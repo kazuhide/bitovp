@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { finished } from "node:stream/promises";
 import { gzipSync } from "node:zlib";
 import {
 	type AlignmentResult,
@@ -560,62 +561,104 @@ export function createLiveVmafProcessor(deps: LiveVmafProcessorDeps) {
 								select: { id: true },
 							}),
 						),
-					async (signal) => {
-						const originalBrowser =
-							deps.makeBrowser ?? defaultCaptureBrowserFactory;
-						const makeBrowser: CaptureDeps["makeBrowser"] = (credential) => {
-							const original = originalBrowser(credential);
-							const browser = Object.assign(
-								Object.create(Object.getPrototypeOf(original)),
-								original,
-							) as ReturnType<typeof originalBrowser>;
-							const getObject = browser.getObject?.bind(browser);
-							if (getObject)
-								browser.getObject = async (args) => {
-									signal.throwIfAborted();
-									const stream = await getObject(args);
-									const abort = () =>
-										(stream as { destroy?(error?: Error): void }).destroy?.(
-											new ResetRowDeleted(),
-										);
-									if (signal.aborted) {
-										(stream as { destroy?(): void }).destroy?.();
+					async (rowSignal) => {
+						const resourceSession = deps.localResources?.begin(rowSignal);
+						const runWithResources = async (
+							scopedSession?: LocalVmafResourceSession,
+							signal: AbortSignal = rowSignal,
+							assertOwned?: () => Promise<void>,
+						) => {
+							const originalBrowser =
+								deps.makeBrowser ?? defaultCaptureBrowserFactory;
+							const makeBrowser: CaptureDeps["makeBrowser"] = (credential) => {
+								const original = originalBrowser(credential);
+								const browser = Object.assign(
+									Object.create(Object.getPrototypeOf(original)),
+									original,
+								) as ReturnType<typeof originalBrowser>;
+								const getObject = browser.getObject?.bind(browser);
+								if (getObject)
+									browser.getObject = async (args) => {
 										signal.throwIfAborted();
-									}
-									signal.addEventListener("abort", abort, { once: true });
-									stream.once("close", () =>
-										signal.removeEventListener("abort", abort),
-									);
-									stream.once("end", () =>
-										signal.removeEventListener("abort", abort),
-									);
-									return stream;
-								};
-							return browser;
-						};
-						return createLiveVmafProcessorRun(
-							{
-								...deps,
-								makeBrowser,
-								runner: {
-									...deps.runner,
-									run: async (bin, argv, options) => {
-										const runSignal =
-											options?.signal && options.signal !== signal
-												? AbortSignal.any([signal, options.signal])
-												: signal;
-										runSignal.throwIfAborted();
-										const result = await deps.runner.run(bin, argv, {
-											...options,
-											signal: runSignal,
-										});
-										runSignal.throwIfAborted();
-										return result;
+										await assertOwned?.();
+										const stream = await getObject(args);
+										const discard = async () => {
+											const closed = finished(stream, { cleanup: true }).catch(
+												() => {},
+											);
+											(stream as { destroy?(): void }).destroy?.();
+											await closed;
+										};
+										try {
+											signal.throwIfAborted();
+											await assertOwned?.();
+										} catch (error) {
+											await discard();
+											throw error;
+										}
+										const abort = () =>
+											(stream as { destroy?(error?: Error): void }).destroy?.(
+												signal.reason instanceof Error
+													? signal.reason
+													: new ResetRowDeleted(),
+											);
+										if (signal.aborted) {
+											await discard();
+											signal.throwIfAborted();
+										}
+										signal.addEventListener("abort", abort, { once: true });
+										stream.once("close", () =>
+											signal.removeEventListener("abort", abort),
+										);
+										stream.once("end", () =>
+											signal.removeEventListener("abort", abort),
+										);
+										return stream;
+									};
+								return browser;
+							};
+							return createLiveVmafProcessorRun(
+								{
+									...deps,
+									makeBrowser,
+									...(scopedSession
+										? { localResources: { begin: () => scopedSession } }
+										: {}),
+									runner: {
+										...deps.runner,
+										run: async (bin, argv, options) => {
+											const runSignal =
+												options?.signal && options.signal !== signal
+													? AbortSignal.any([signal, options.signal])
+													: signal;
+											runSignal.throwIfAborted();
+											await assertOwned?.();
+											const result = await deps.runner.run(bin, argv, {
+												...options,
+												...(assertOwned
+													? {
+															abortKillAfterMs:
+																options?.abortKillAfterMs ?? 250,
+														}
+													: {}),
+												signal: runSignal,
+											});
+											runSignal.throwIfAborted();
+											await assertOwned?.();
+											return result;
+										},
 									},
 								},
-							},
-							signal,
-						).process(jobData);
+								signal,
+								assertOwned,
+							).process(jobData);
+						};
+						return resourceSession?.exclusivePrepared
+							? await resourceSession.exclusivePrepared(
+									"live-window",
+									runWithResources,
+								)
+							: await runWithResources();
 					},
 					100,
 				);
@@ -636,6 +679,7 @@ export function createLiveVmafProcessor(deps: LiveVmafProcessorDeps) {
 function createLiveVmafProcessorRun(
 	deps: LiveVmafProcessorDeps,
 	signal: AbortSignal,
+	preparationAuthority?: () => Promise<void>,
 ) {
 	const defaultFps = deps.signatureFps ?? SIGNATURE_FPS;
 	const makeBrowser = deps.makeBrowser ?? defaultCaptureBrowserFactory;
@@ -668,6 +712,10 @@ function createLiveVmafProcessorRun(
 		resultCount: number,
 		error?: string,
 	): Promise<LiveVmafResult> {
+		if (status === "FINISHED") {
+			signal.throwIfAborted();
+			await preparationAuthority?.();
+		}
 		await deps.prisma.vmafJob.update({
 			where: { id: vmafJobId },
 			data: {
@@ -1318,7 +1366,10 @@ function createLiveVmafProcessorRun(
 					await clean();
 				}
 			};
-			const resolver = deps.resolveLocalResources;
+			const resolver =
+				args.resourceSession?.preparationScope === "exclusive-cpu"
+					? undefined
+					: deps.resolveLocalResources;
 			return args.resourceSession && pair
 				? await args.resourceSession.run(
 						target.renditionKey,

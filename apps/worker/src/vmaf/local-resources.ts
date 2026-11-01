@@ -27,6 +27,16 @@ export type LocalResourceReport = {
 	maxObservedQueued: number;
 };
 export type LocalVmafResourceSession = {
+	/** CPU-only work borrowing a whole-host Live preparation reservation. */
+	preparationScope?: "exclusive-cpu";
+	exclusivePrepared?<T>(
+		key: string,
+		work: (
+			session: LocalVmafResourceSession,
+			signal: AbortSignal,
+			assertOwned: () => Promise<void>,
+		) => Promise<T>,
+	): Promise<T>;
 	plan(pair: ResourcePair, pairCount: number): LocalResourcePlan;
 	/** Lightweight descriptors may wait without preparing inputs or starting children. */
 	descriptorConcurrency(pairCount: number): number;
@@ -184,7 +194,7 @@ export function createLocalVmafResources(
 			refresh();
 			let sessionSnapshot = snapshot as LocalResources;
 			const units: LocalResourceUnit[] = [];
-			return {
+			const session: LocalVmafResourceSession = {
 				plan: (pair, count) =>
 					planLocalResources(snapshot as LocalResources, pair, options, count),
 				descriptorConcurrency: (count) =>
@@ -204,6 +214,121 @@ export function createLocalVmafResources(
 						signal.throwIfAborted();
 						return await work();
 					} finally {
+						busy--;
+						release?.();
+					}
+				},
+				async exclusivePrepared(_key, work) {
+					signal.throwIfAborted();
+					busy++;
+					let release: (() => void) | undefined,
+						waiting = false;
+					try {
+						release = await prepare(signal);
+						signal.throwIfAborted();
+						pendingRuns++;
+						waiting = true;
+						observeQueue();
+						const budget = sessionSnapshot.budgetBytes;
+						// This is only a minimum headroom floor, not an estimate of
+						// unknown preparation RAM. The ledger owns the whole host.
+						const plan: LocalResourcePlan = {
+							threads: options.threads ?? 1,
+							decoderThreads: 1,
+							concurrency: 1,
+							estimatedBytes: budget === undefined ? 0 : 320 * 1024 ** 2,
+							exclusive: true,
+							manualFallback: budget === undefined,
+							cpuChargePerComparison: sessionSnapshot.cpuCapacity,
+						};
+						const launch = async (
+							leaseSignal: AbortSignal,
+							assertOwned?: () => Promise<void>,
+						) => {
+							const runSignal =
+								leaseSignal === signal
+									? signal
+									: AbortSignal.any([signal, leaseSignal]);
+							const check = async () => {
+								runSignal.throwIfAborted();
+								await assertOwned?.();
+								runSignal.throwIfAborted();
+							};
+							await check();
+							pendingRuns--;
+							waiting = false;
+							active++;
+							maxObservedActive = Math.max(maxObservedActive, active);
+							const cpuPlan = (pair: ResourcePair) => {
+								if (pair.scoringBackend)
+									throw new Error("Exclusive Live preparation is CPU-only");
+								return {
+									...planLocalResources(sessionSnapshot, pair, options, 1),
+									concurrency: 1,
+									exclusive: true,
+								};
+							};
+							const scoped: LocalVmafResourceSession = {
+								...session,
+								preparationScope: "exclusive-cpu",
+								exclusivePrepared: undefined,
+								plan: cpuPlan,
+								descriptorConcurrency: () => 1,
+								prepared: async (_key, child) => {
+									await check();
+									const value = await child();
+									await check();
+									return value;
+								},
+								run: async (key, pair, _count, child, resolvePlan) => {
+									await check();
+									if (resolvePlan)
+										throw new Error(
+											"A resource resolver cannot acquire a nested Live preparation lease",
+										);
+									const selected = cpuPlan(pair);
+									const available = read().budgetBytes;
+									if (
+										!selected.manualFallback &&
+										(available === undefined ||
+											!Number.isFinite(available) ||
+											selected.estimatedBytes > available)
+									)
+										throw new ResourceUnavailableError("headroom");
+									units.push(
+										copyUnit({
+											key,
+											...selected,
+											...(budget === undefined
+												? {}
+												: { reservationBytes: budget }),
+										}),
+									);
+									const value = await child(selected, runSignal, check);
+									await check();
+									return value;
+								},
+							};
+							try {
+								const value = await work(scoped, runSignal, check);
+								await check();
+								return value;
+							} finally {
+								active--;
+							}
+						};
+						if (options.execute)
+							return await options.execute(plan, signal, launch);
+						if (admission)
+							return await admission.run(
+								plan.estimatedBytes,
+								signal,
+								() => launch(signal),
+								true,
+							);
+						return await launch(signal);
+					} finally {
+						if (waiting) pendingRuns--;
 						busy--;
 						release?.();
 					}
@@ -307,6 +432,7 @@ export function createLocalVmafResources(
 					maxObservedQueued,
 				}),
 			};
+			return session;
 		},
 	};
 }

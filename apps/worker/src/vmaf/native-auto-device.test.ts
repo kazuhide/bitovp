@@ -122,6 +122,18 @@ it("resolves PATH executables with spaces and keeps arguments separate", async (
 	]);
 });
 
+it("selects the matching vendor automatically unless an API device index was specified", async () => {
+	const h = await harness();
+	h.report.device.index = 2;
+	expect(
+		(await inspectNativeDevice(h.deps, { backend: "cuda" })).info.device.index,
+	).toBe(2);
+	expect(h.run.mock.calls[1]?.[1]).not.toContain("--device");
+	await expect(inspectNativeDevice(h.deps, selection)).rejects.toThrow(
+		"NATIVE_DEVICE_INFO_SELECTION_MISMATCH",
+	);
+});
+
 it("rejects a different build, device, source or changed executable", async () => {
 	for (const patch of [
 		{ sourceSha256: "b".repeat(64) },

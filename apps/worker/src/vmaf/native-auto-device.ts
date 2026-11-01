@@ -31,14 +31,15 @@ async function executablePath(path: string) {
 /** Identity is verified on each inspection; changing headroom is never cached. */
 export async function inspectNativeDevice(
 	deps: { runner: ProcessRunner; nativePath: string },
-	selection: { backend: "cuda" | "vulkan"; device: number },
+	selection: { backend: "cuda" | "vulkan"; device?: number },
 	signal?: AbortSignal,
 ): Promise<{ executable: string; info: NativeDeviceInfo; cacheable: boolean }> {
 	signal?.throwIfAborted();
 	if (
-		!Number.isSafeInteger(selection.device) ||
-		selection.device < 0 ||
-		selection.device > 256
+		selection.device !== undefined &&
+		(!Number.isSafeInteger(selection.device) ||
+			selection.device < 0 ||
+			selection.device > 256)
 	)
 		throw new Error("NATIVE_DEVICE_SELECTION_INVALID");
 	const executable = await executablePath(deps.nativePath);
@@ -57,8 +58,9 @@ export async function inspectNativeDevice(
 			"--device-info",
 			"--backend",
 			selection.backend,
-			"--device",
-			String(selection.device),
+			...(selection.device === undefined
+				? []
+				: ["--device", String(selection.device)]),
 			"--vendor",
 			selection.backend === "cuda" ? "nvidia" : "amd",
 		],
@@ -85,7 +87,8 @@ export async function inspectNativeDevice(
 		throw new Error("NATIVE_DEVICE_INFO_BUILD_MISMATCH");
 	if (
 		info.backend !== selection.backend ||
-		info.device.index !== selection.device ||
+		(selection.device !== undefined &&
+			info.device.index !== selection.device) ||
 		info.device.vendorId !== (selection.backend === "cuda" ? 0x10de : 0x1002)
 	)
 		throw new Error("NATIVE_DEVICE_INFO_SELECTION_MISMATCH");

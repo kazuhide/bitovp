@@ -95,24 +95,27 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 			raw = {},
 			redis = {};
 		const create = vi.fn(async (_deps: unknown) => runtime);
-		const loaded = await loadAsync(["automaticVmafRuntime"], {
-			process: { platform, env: { VMAF_GPU_DEVICE: rawDevice } },
-			env: {
-				VMAF_NATIVE_PATH: nativePath,
-				VMAF_FFMPEG_PATH: "/vmaf-ffmpeg",
-				FFMPEG_PATH: "/ffmpeg",
-				FFPROBE_PATH: "/ffprobe",
-				VMAF_THREADS: 3,
-				VMAF_CONCURRENCY: 2,
-				VMAF_GPU_DEVICE: rawDevice?.trim() ? Number(rawDevice) : 0,
+		const loaded = await loadAsync(
+			["automaticVmafSelectionState", "automaticVmafRuntime"],
+			{
+				process: { platform, env: { VMAF_GPU_DEVICE: rawDevice } },
+				env: {
+					VMAF_NATIVE_PATH: nativePath,
+					VMAF_FFMPEG_PATH: "/vmaf-ffmpeg",
+					FFMPEG_PATH: "/ffmpeg",
+					FFPROBE_PATH: "/ffprobe",
+					VMAF_THREADS: 3,
+					VMAF_CONCURRENCY: 2,
+					VMAF_GPU_DEVICE: rawDevice?.trim() ? Number(rawDevice) : 0,
+				},
+				vmafWorkDir: "/scratch",
+				vmafRunner: raw,
+				wakePublisher: redis,
+				join,
+				createAvailableAutomaticVmafRuntime: create,
+				console: { warn: vi.fn() },
 			},
-			vmafWorkDir: "/scratch",
-			vmafRunner: raw,
-			wakePublisher: redis,
-			join,
-			createAvailableAutomaticVmafRuntime: create,
-			console: { warn: vi.fn() },
-		});
+		);
 		if (platform !== "linux" || !nativePath) {
 			expect(create).not.toHaveBeenCalled();
 			expect(loaded.automaticVmafRuntime).toBeUndefined();
@@ -145,21 +148,28 @@ it("retains the legacy gate when optional compatibility preflight is unavailable
 		return undefined;
 	});
 	const gate = vi.fn(createLocalExecutionGate);
-	const pending = loadAsync(["automaticVmafRuntime", "localVmafExecution"], {
-		process: { platform: "linux", env: {} },
-		env: {
-			VMAF_NATIVE_PATH: "/native",
-			FFMPEG_PATH: "/ffmpeg",
-			FFPROBE_PATH: "/ffprobe",
+	const pending = loadAsync(
+		[
+			"automaticVmafSelectionState",
+			"automaticVmafRuntime",
+			"localVmafExecution",
+		],
+		{
+			process: { platform: "linux", env: {} },
+			env: {
+				VMAF_NATIVE_PATH: "/native",
+				FFMPEG_PATH: "/ffmpeg",
+				FFPROBE_PATH: "/ffprobe",
+			},
+			vmafWorkDir: "/scratch",
+			vmafRunner: {},
+			wakePublisher: {},
+			join,
+			createAvailableAutomaticVmafRuntime: create,
+			createLocalExecutionGate: gate,
+			console: { warn: vi.fn() },
 		},
-		vmafWorkDir: "/scratch",
-		vmafRunner: {},
-		wakePublisher: {},
-		join,
-		createAvailableAutomaticVmafRuntime: create,
-		createLocalExecutionGate: gate,
-		console: { warn: vi.fn() },
-	});
+	);
 	expect(create).toHaveBeenCalledOnce();
 	expect(gate).not.toHaveBeenCalled();
 	hold.release();
@@ -176,11 +186,13 @@ it.each([
 	const raw = {},
 		supervised = {},
 		resolver = vi.fn(),
+		selectLocalNative = vi.fn(),
 		execute = vi.fn();
 	const automaticVmafRuntime = available
 		? {
 				runner: supervised,
 				resolveLocalResources: resolver,
+				selectLocalNative,
 				execute,
 			}
 		: undefined;
@@ -198,6 +210,7 @@ it.each([
 		],
 		{
 			automaticVmafRuntime,
+			automaticVmafSelectionState: {},
 			createLocalVmafResources: createResources,
 			tenantService: (factory: () => unknown) => factory(),
 			createVmafProcessor: vod,
@@ -249,6 +262,10 @@ it.each([
 		expect(vod.mock.calls[0]?.[0]).toMatchObject({ localRunner: supervised });
 	else expect(vod.mock.calls[0]?.[0]).not.toHaveProperty("localRunner");
 	expect(inspect.mock.calls[0]?.[0]).toMatchObject({ runner: raw });
+	if (available)
+		expect(vod.mock.calls[0]?.[0]).toMatchObject({ selectLocalNative });
+	else expect(vod.mock.calls[0]?.[0]).not.toHaveProperty("selectLocalNative");
+	expect(live.mock.calls[0]?.[0]).not.toHaveProperty("selectLocalNative");
 });
 
 it("expands default physical slots without expanding the cloud cap and preserves explicit overrides", () => {
@@ -415,4 +432,32 @@ it.each([
 		await Promise.all(work);
 	}
 	expect(live).toHaveBeenCalledOnce();
+});
+
+it("retains invalid native preflight separately for AUTO selection", async () => {
+	const error = new Error("VMAF_SUPERVISOR_IDENTITY_MISMATCH");
+	const loaded = await loadAsync(
+		["automaticVmafSelectionState", "automaticVmafRuntime"],
+		{
+			process: { platform: "linux", env: {} },
+			env: {
+				VMAF_NATIVE_PATH: "/native",
+				FFMPEG_PATH: "/ffmpeg",
+				FFPROBE_PATH: "/ffprobe",
+			},
+			vmafWorkDir: "/scratch",
+			vmafRunner: {},
+			wakePublisher: {},
+			join,
+			createAvailableAutomaticVmafRuntime: async (deps: {
+				onInvalid(error: Error): void;
+			}) => {
+				deps.onInvalid(error);
+				return undefined;
+			},
+			console: { warn: vi.fn() },
+		},
+	);
+	expect(loaded.automaticVmafRuntime).toBeUndefined();
+	expect(loaded.automaticVmafSelectionState).toEqual({ failure: error });
 });

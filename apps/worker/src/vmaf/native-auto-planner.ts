@@ -5,6 +5,7 @@ import {
 	type AutoExecutionCandidate,
 	selectAutoExecutionPlan,
 } from "./auto-execution-policy";
+import type { NativeLocalSelection } from "./local-selection";
 import {
 	inspectNativeDevice,
 	nativeAutoProfileKey,
@@ -77,6 +78,8 @@ export function createNativeAutoResourcePlanner(deps: {
 		signal: AbortSignal;
 		referenceProbe?: string;
 		distortedProbe?: string;
+		selectedNativeDevice?: number;
+		selectedNativeIdentity?: NativeLocalSelection["identity"];
 	}): Promise<LocalResourcePlan> => {
 		const { signal, pair } = request;
 		signal.throwIfAborted();
@@ -106,9 +109,10 @@ export function createNativeAutoResourcePlanner(deps: {
 		}
 		if (!hostBudget || !base.frameCount)
 			throw new ResourceUnavailableError("unknown");
+		const device = request.selectedNativeDevice ?? deps.device;
 		const selection = {
 			backend: request.options.scoring.backend,
-			...(deps.device === undefined ? {} : { device: deps.device }),
+			...(device === undefined ? {} : { device }),
 		};
 		const inspected = await inspect(
 			{ runner: deps.runner, nativePath: deps.nativePath },
@@ -116,6 +120,17 @@ export function createNativeAutoResourcePlanner(deps: {
 			signal,
 		);
 		const info = inspected.info;
+		const pinned = request.selectedNativeIdentity;
+		if (
+			pinned &&
+			(info.sourceSha256 !== pinned.sourceSha256 ||
+				(info.binarySha256 !== null &&
+					info.binarySha256 !== pinned.binarySha256) ||
+				info.capabilities.supervisorBinarySha256 !==
+					pinned.supervisorBinarySha256 ||
+				info.device.uuid !== pinned.deviceUuid)
+		)
+			throw new Error("NATIVE_AUTO_SELECTED_IDENTITY_CHANGED");
 		if (!info.capabilities.processSupervisor)
 			throw new Error("NATIVE_AUTO_REQUIRES_PROCESS_SUPERVISOR");
 		const hostKey = await deps.hostKey();

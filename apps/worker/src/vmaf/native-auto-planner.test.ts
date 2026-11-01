@@ -369,3 +369,49 @@ it("rejects an overridden serial configuration whose measured footprint cannot f
 		),
 	).rejects.toThrow("requires more memory");
 });
+
+it("uses the pinned per-job device before the legacy environment index", async () => {
+	const h = harness();
+	await createNativeAutoResourcePlanner({ ...h.deps, device: 7 })({
+		...h.request,
+		selectedNativeDevice: 2,
+		selectedNativeIdentity: {
+			sourceSha256: h.info.sourceSha256,
+			binarySha256: h.info.binarySha256 as string,
+			supervisorBinarySha256: h.info.capabilities
+				.supervisorBinarySha256 as string,
+			deviceUuid: h.info.device.uuid,
+		},
+	});
+	expect(h.inspect.mock.calls[0]?.[1]).toEqual({ backend: "cuda", device: 2 });
+});
+it("retains the legacy device index when there is no per-job selection", async () => {
+	const h = harness();
+	await createNativeAutoResourcePlanner({ ...h.deps, device: 7 })(h.request);
+	expect(h.inspect.mock.calls[0]?.[1]).toEqual({ backend: "cuda", device: 7 });
+});
+it.each([
+	"sourceSha256",
+	"binarySha256",
+	"supervisorBinarySha256",
+	"deviceUuid",
+] as const)("rejects changed pinned %s before calibration or shared registration", async (field) => {
+	const h = harness();
+	const identity = {
+		sourceSha256: h.info.sourceSha256,
+		binarySha256: h.info.binarySha256 as string,
+		supervisorBinarySha256: h.info.capabilities
+			.supervisorBinarySha256 as string,
+		deviceUuid: h.info.device.uuid,
+	};
+	identity[field] = field === "deviceUuid" ? "other-gpu" : "f".repeat(64);
+	await expect(
+		createNativeAutoResourcePlanner(h.deps)({
+			...h.request,
+			selectedNativeDevice: 2,
+			selectedNativeIdentity: identity,
+		}),
+	).rejects.toThrow("NATIVE_AUTO_SELECTED_IDENTITY_CHANGED");
+	expect(h.calibrate).not.toHaveBeenCalled();
+	expect(h.register).not.toHaveBeenCalled();
+});

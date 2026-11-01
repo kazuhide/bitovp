@@ -43,6 +43,62 @@ function deferred<T>() {
 }
 
 describe("native calibration search budget", () => {
+	it("spends another budget only for a newly eligible higher concurrency cap", async () => {
+		const budget = createNativeCalibrationBudget();
+		let cached = false;
+		const run = vi.fn<Run>(async (ms) => {
+			if (ms > 0) cached = true;
+			return cached ? candidates(100, [1]) : [];
+		});
+		for (const maxConcurrency of [1, 4, 4, 2, 1, 4])
+			await budget.calibrate({
+				profileKey: key,
+				maxConcurrency,
+				signal: signal(),
+				run,
+			});
+		expect(run.mock.calls.map(([ms]) => ms)).toEqual([
+			0, 30000, 0, 30000, 0, 0, 0, 0,
+		]);
+	});
+	it("lets a higher-cap follower search with its own callback after a serial origin settles", async () => {
+		const budget = createNativeCalibrationBudget();
+		const entered = deferred<void>(),
+			finish = deferred<void>();
+		let cached = false;
+		const originSignal = signal(),
+			followerSignal = signal();
+		const origin = vi.fn<Run>(async (ms) => {
+			if (ms > 0) {
+				entered.resolve();
+				await finish.promise;
+				cached = true;
+			}
+			return cached ? candidates(100, [1]) : [];
+		});
+		const first = budget.calibrate({
+			profileKey: key,
+			maxConcurrency: 1,
+			signal: originSignal,
+			run: origin,
+		});
+		await entered.promise;
+		const own = vi.fn<Run>(async (ms) =>
+			candidates(999, ms > 0 ? [1, 4] : [1]),
+		);
+		const second = budget.calibrate({
+			profileKey: key,
+			maxConcurrency: 4,
+			signal: followerSignal,
+			run: own,
+		});
+		expect(own).not.toHaveBeenCalled();
+		finish.resolve();
+		expect((await first)[0]?.hostBytesPerComparison).toBe(100);
+		expect((await second)[0]?.hostBytesPerComparison).toBe(999);
+		expect(own.mock.calls.map(([ms]) => ms)).toEqual([0, 30000]);
+		expect(own.mock.calls[1]?.[1]).toBe(followerSignal);
+	});
 	it("recognizes a completed parallel cache despite different aggregate work", async () => {
 		const budget = createNativeCalibrationBudget();
 		const rows = candidates().map((row) => ({

@@ -251,6 +251,18 @@ it("binds the actual per-comparison sample and calibration mode into profile ide
 		).toThrow("NATIVE_AUTO_PROFILE_SETTINGS_INVALID");
 });
 
+it("binds an exact manual compute-thread override independently from automatic search", () => {
+	const report = info("binary");
+	const keys = [undefined, 2, 4, 8].map((fixedCpuThreads) =>
+		nativeAutoProfileKey(report, { ...workload, fixedCpuThreads }),
+	);
+	expect(new Set(keys).size).toBe(4);
+	for (const fixedCpuThreads of [0, 257, 1.5, NaN])
+		expect(() =>
+			nativeAutoProfileKey(report, { ...workload, fixedCpuThreads }),
+		).toThrow("NATIVE_AUTO_PROFILE_SETTINGS_INVALID");
+});
+
 it("joins API identities by host and PCI, and uses UUID when PCI is unavailable", () => {
 	const host = "a".repeat(64),
 		report = info("binary");

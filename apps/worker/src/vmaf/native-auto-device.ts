@@ -118,6 +118,7 @@ export type NativeAutoWorkload = {
 	hostCapacityBytes: number;
 	calibrationMode?: AutoExecutionWorkloadMode;
 	sampleFrames?: number;
+	fixedCpuThreads?: number;
 };
 
 /** A profile is performance advice for these settings, never a parity waiver. */
@@ -141,6 +142,10 @@ export function nativeAutoProfileKey(
 		!Number.isSafeInteger(sampleFrames) ||
 		sampleFrames < 1 ||
 		sampleFrames > 256 ||
+		(work.fixedCpuThreads !== undefined &&
+			(!Number.isSafeInteger(work.fixedCpuThreads) ||
+				work.fixedCpuThreads < 1 ||
+				work.fixedCpuThreads > 256)) ||
 		!sha.test(work.modelSha256) ||
 		!work.model ||
 		dimensions.some((n) => !Number.isSafeInteger(n) || n <= 0 || n > 16384) ||
@@ -162,6 +167,7 @@ export function nativeAutoProfileKey(
 				"bitovp-native-auto-v2",
 				mode,
 				sampleFrames,
+				work.fixedCpuThreads ?? null,
 				info.sourceSha256,
 				info.binarySha256,
 				info.capabilities.supervisorBinarySha256 ?? null,

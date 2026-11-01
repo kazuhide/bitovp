@@ -16,7 +16,7 @@ type Flight = {
 type State = {
 	active: number;
 	generation: number;
-	searched: boolean;
+	searchedMaxConcurrency: number;
 	flight?: Flight;
 	lastFailure?: { generation: number; error: unknown };
 };
@@ -76,8 +76,8 @@ function waitFor<T>(promise: Promise<T>, signal: AbortSignal) {
 	});
 }
 
-/** One successful search per profile/process. Followers always convert cached
- * raw observations themselves: their full-result RAM may differ by duration. */
+/** Repeat a successful search only when a higher concurrency ceiling becomes
+ * eligible. Followers convert raw cache data for their own full-result RAM. */
 export function createNativeCalibrationBudget(
 	options: { searchBudgetMs?: number } = {},
 ) {
@@ -89,7 +89,7 @@ export function createNativeCalibrationBudget(
 		if (
 			!state.active &&
 			!state.flight &&
-			!state.searched &&
+			!state.searchedMaxConcurrency &&
 			states.get(key) === state
 		)
 			states.delete(key);
@@ -105,8 +105,11 @@ export function createNativeCalibrationBudget(
 			.then(() => request.run(searchBudgetMs, request.signal))
 			.then((rows) => {
 				request.signal.throwIfAborted();
-				// Incomplete but settled searches also consume this process's budget.
-				state.searched = true;
+				// Incomplete but settled searches also consume this ceiling's budget.
+				state.searchedMaxConcurrency = Math.max(
+					state.searchedMaxConcurrency,
+					request.maxConcurrency,
+				);
 				return rows;
 			})
 			.catch((error) => {
@@ -133,7 +136,7 @@ export function createNativeCalibrationBudget(
 				// Bound bookkeeping without evicting a profile and accidentally
 				// spending its search budget again. Additional profiles use cache only.
 				if (states.size >= 4096) return request.run(0, request.signal);
-				state = { active: 0, generation: 0, searched: false };
+				state = { active: 0, generation: 0, searchedMaxConcurrency: 0 };
 				states.set(request.profileKey, state);
 			}
 			const selected = state;
@@ -163,7 +166,7 @@ export function createNativeCalibrationBudget(
 					if (selected.generation !== beforeRead || selected.flight) continue;
 					if (
 						adequate(cached, request.profileKey, request.maxConcurrency) ||
-						selected.searched
+						selected.searchedMaxConcurrency >= request.maxConcurrency
 					)
 						return cached;
 					// The owner awaits run itself, including cancellation drain, before

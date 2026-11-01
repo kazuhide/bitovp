@@ -6,6 +6,40 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## Unreleased
 
+## [1.0.0] - 2026-11-01
+
+First stable release, retaining the release candidate's feature baseline.
+Distributions contain source archives and SHA-256 checksums; the application
+is built locally using the installation guide.
+
+### Added
+
+- Editable default cloud region and encoder version for each Bitmovin account.
+  VOD and Live wizards apply them when the account is selected, while retaining
+  later manual edits and saved draft or imported-plan settings.
+
+### Changed
+
+- New VOD audio defaults to AAC, 128 kbps, 48 kHz and stereo. Existing audio
+  configurations are retained.
+
+### Fixed
+
+- Fresh-source installation and upgrade instructions generate the database client
+  before running host-side database setup commands.
+- Switching a Standard video row to flexible Per-Title clears its height while
+  retaining sibling rendition references, output destinations and audio settings.
+- Scene overlays in VOD previews and the content library use matching theme
+  foreground and background colours, including light themes.
+- Integration secret inputs consistently request that browsers avoid saving or
+  autofilling credentials, while keeping native password masking. Browsers and
+  extensions may override these hints.
+
+The database schema is unchanged from v1.0.0-rc.1. Back up configuration,
+encryption keys, database and media before upgrading an existing installation.
+Feature availability remains dependent on the Bitmovin account, encoder and
+configured services; this release does not certify every provider configuration.
+
 ## [1.0.0-rc.1] - 2026-10-30
 
 First release candidate. This is a preview for installation and workflow
@@ -54,4 +88,5 @@ instructions.
 Planned work belongs in the [roadmap](./ROADMAP.md); it is added to this
 changelog when delivered.
 
+[1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1

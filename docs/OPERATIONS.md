@@ -14,8 +14,10 @@ automatically and do not require those manual repairs.
    Verify a restore in an isolated database before relying on the backup.
 3. Stop admission of new work and stop the old web/worker services together.
 4. Keep administrative database credentials in `.env.migrate` and restricted
-   runtime URLs in `.env`. For an existing installation that still has a single
-   administrative URL, use `pnpm --filter @bitovp/db db:runtime:import-admin`
+   runtime URLs in `.env`. From freshly extracted source, run
+   `pnpm install --frozen-lockfile` and `pnpm --filter @bitovp/db build` before
+   these host-side database commands. For an existing installation that still has
+   a single administrative URL, use `pnpm --filter @bitovp/db db:runtime:import-admin`
    before `db:runtime:prepare`; preserve encryption and authentication values.
 5. Pull the chosen PostgreSQL/Redis image pins, build the chosen commit with fresh
    base and package layers, apply migrations, and replace web and worker together.

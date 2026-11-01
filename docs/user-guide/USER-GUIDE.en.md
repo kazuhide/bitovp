@@ -23,6 +23,7 @@ git clone https://github.com/kazuhide/bitovp.git
 cd bitovp
 corepack enable
 pnpm install --frozen-lockfile
+pnpm --filter @bitovp/db build
 cp .env.example .env
 chmod 600 .env
 ```

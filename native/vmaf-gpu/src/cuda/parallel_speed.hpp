@@ -6,12 +6,13 @@
 
 namespace bitovp::gpu {
 // Borrows the caller's current CUDA device and stream. Input 4:2:0 pictures
-// remain owned by the caller and must be resident on that device. extract()
-// waits for its own work before returning; no pixels are processed on the CPU.
+// remain owned by the caller and must be resident on that device. enqueue()
+// borrows their storage until collect() returns. extract() waits for its own
+// work before returning; no pixels are processed on the CPU.
 // The CPU evaluates final logarithms from 25 eigenvalues + N block variances
 // per image; their transfer and CPU time are included in timings().
-// Two bounded pinned-host statistics buffers contain 2*(26+N)*sizeof(float)
-// bytes per instance; pixel buffers remain in device memory.
+// Bounded pinned-host statistics contain 4*(26+N)*sizeof(float) bytes per
+// instance; pixel buffers remain in device memory. One pending frame is allowed.
 // Calls must be serialized. The device/context and stream outlive this object.
 class CudaParallelSpeed {
 public:
@@ -21,6 +22,8 @@ public:
     CudaParallelSpeed &operator=(const CudaParallelSpeed &) = delete;
     std::vector<FeatureScore> extract(std::uint64_t, const Picture &reference_device,
                                       const Picture &distorted_device);
+    void enqueue(std::uint64_t, const Picture &reference_device, const Picture &distorted_device);
+    std::vector<FeatureScore> collect();
     BackendTimings timings() const;
 private:
     struct Impl;

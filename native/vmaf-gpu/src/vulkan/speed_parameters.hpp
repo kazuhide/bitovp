@@ -19,12 +19,18 @@
 #include <array>
 
 namespace bitovp::gpu::vulkan_detail {
+struct SpeedMatrixSlot {
+    unsigned covariance, eigenvalues, independent, solution, temporary, result, failure;
+};
 struct SpeedParameters {
     ExtractorSpec spec;
     std::vector<std::uint32_t> words;
     std::size_t word_count = 0;
     unsigned width, height, scaled_width, scaled_height, operating_width, operating_height;
     unsigned stride, blocks, frame_a, frame_b, temporary, downscaled, reference_result, distorted_result;
+    // U reference/distorted, followed by V reference/distorted. Only small
+    // matrix statistics are retained; the full image workspace is shared.
+    std::array<SpeedMatrixSlot, 4> matrices;
     float sigma, floor;
     double maximum;
     unsigned weight_mode;
@@ -114,10 +120,21 @@ struct SpeedParameters {
         const auto frame_size = std::size_t(stride) * std::max(height, scaled_height);
         frame_a = allocate(frame_size); frame_b = allocate(frame_size);
         temporary = allocate(frame_size); downscaled = allocate(frame_size);
-        words[30] = allocate(625); words[31] = allocate(25);
-        words[32] = allocate(25u * blocks); words[33] = allocate(25u * blocks);
-        words[34] = allocate(3125u + 25u * blocks);
-        reference_result = allocate(26u + blocks); distorted_result = allocate(26u + blocks);
+        for (unsigned i = 0; i < matrices.size(); ++i) {
+            auto &slot = matrices[i];
+            slot = {allocate(625), allocate(25), allocate(25u * blocks),
+                allocate(25u * blocks), allocate(3125u + 25u * blocks),
+                allocate(26u + blocks), allocate(1)};
+            const unsigned offsets[]{slot.covariance, slot.eigenvalues, slot.independent,
+                slot.solution, slot.temporary, slot.result, slot.failure};
+            std::copy(std::begin(offsets), std::end(offsets), words.begin() + 36u + i * 7u);
+        }
+        // Mean preparation uses slot zero's eigenvalue scratch only until all
+        // four images have been preprocessed. The batched factors then own it.
+        words[30] = matrices[0].covariance; words[31] = matrices[0].eigenvalues;
+        words[32] = matrices[0].independent; words[33] = matrices[0].solution;
+        words[34] = matrices[0].temporary;
+        reference_result = matrices[0].result; distorted_result = matrices[1].result;
     }
 
     struct Statistics {

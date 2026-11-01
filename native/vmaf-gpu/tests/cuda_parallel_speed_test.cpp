@@ -36,9 +36,12 @@ struct Fixture {
                     : pattern == 4 ? ((x == 0 || y == 0 || x + 1 == w || y + 1 == h) ? 230 : 16)
                     : 16 + (x * 13 + y * 7 + (x * y % 53) + frame * frame * 3 + p * 31) % 215;
                 const unsigned d = flat ? 120 : unsigned(std::clamp<int>(int(v) + int((x + y * 3 + p + frame) % 9) - 4, 0, 255));
-                r8[p][y * stride + x] = v; d8[p][y * stride + x] = d;
-                r16[p][y * stride + x] = (v << 2) + (flat ? 0 : (x + frame) % 4);
-                d16[p][y * stride + x] = (d << 2) + (flat ? 0 : (y + p) % 4);
+                const bool reference_only_flat = pattern == 5 && p == 1;
+                const bool distorted_only_flat = pattern == 6 && p == 2;
+                r8[p][y * stride + x] = reference_only_flat ? 120 : v;
+                d8[p][y * stride + x] = distorted_only_flat ? 120 : d;
+                r16[p][y * stride + x] = reference_only_flat ? 480 : (v << 2) + (flat ? 0 : (x + frame) % 4);
+                d16[p][y * stride + x] = distorted_only_flat ? 480 : (d << 2) + (flat ? 0 : (y + p) % 4);
             }
             reference.planes[p] = {bpc == 8 ? static_cast<const void *>(r8[p].data()) : r16[p].data(), stride * (bpc == 8 ? 1u : 2u), w, h};
             distorted.planes[p] = {bpc == 8 ? static_cast<const void *>(d8[p].data()) : d16[p].data(), stride * (bpc == 8 ? 1u : 2u), w, h};
@@ -118,7 +121,11 @@ void run(const std::vector<ModelInput> &inputs, cudaStream_t stream, unsigned bp
         Resident r(fixture.reference, stream), d(fixture.distorted, stream);
         check(cudaStreamSynchronize(stream));
         const auto start = std::chrono::steady_clock::now();
-        for (auto &extractor : parallel) for (const auto &score : extractor->extract(frame, r.picture, d.picture))
+        if (frame % 2 == 0) {
+            for (auto &extractor : parallel) extractor->enqueue(frame, r.picture, d.picture);
+            for (auto &extractor : parallel) for (const auto &score : extractor->collect())
+                require(scores.emplace(std::make_pair(score.index, score.name), score.value).second, "duplicate SPEED feature");
+        } else for (auto &extractor : parallel) for (const auto &score : extractor->extract(frame, r.picture, d.picture))
             require(scores.emplace(std::make_pair(score.index, score.name), score.value).second, "duplicate SPEED feature");
         parallel_wall_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         const auto scalar_start = std::chrono::steady_clock::now();
@@ -143,6 +150,44 @@ void run(const std::vector<ModelInput> &inputs, cudaStream_t stream, unsigned bp
             rejected = false;
             try { parallel.front()->extract(999, invalid, d.picture); } catch (const std::invalid_argument &) { rejected = true; }
             require(rejected, "parallel SPEED accepted a truncated chroma stride");
+            rejected = false;
+            try { parallel.front()->collect(); } catch (const std::logic_error &) { rejected = true; }
+            require(rejected, "parallel SPEED collected without a pending frame");
+            parallel.front()->enqueue(999, r.picture, d.picture);
+            rejected = false;
+            try { parallel.front()->enqueue(998, r.picture, d.picture); } catch (const std::logic_error &) { rejected = true; }
+            require(rejected, "parallel SPEED overwrote a pending frame");
+            rejected = false;
+            try { parallel.front()->extract(998, r.picture, d.picture); } catch (const std::logic_error &) { rejected = true; }
+            require(rejected, "parallel SPEED synchronous wrapper overwrote a pending frame");
+            int device_count = 0, original_device = -1;
+            check(cudaGetDeviceCount(&device_count)); check(cudaGetDevice(&original_device));
+            if (device_count > 1) {
+                check(cudaSetDevice((original_device + 1) % device_count));
+                rejected = false;
+                try { parallel.front()->collect(); } catch (const std::invalid_argument &) { rejected = true; }
+                check(cudaSetDevice(original_device));
+                require(rejected, "parallel SPEED collected on the wrong current device");
+            }
+            for (const auto &score : parallel.front()->collect()) {
+                require(score.index == 999, "parallel SPEED lost the pending frame index");
+                require(score.value == scores.at({frame, score.name}), "parallel SPEED pending frame changed after rejected reuse");
+            }
+            rejected = false;
+            try { parallel.front()->collect(); } catch (const std::logic_error &) { rejected = true; }
+            require(rejected, "parallel SPEED collected the same frame twice");
+            // Destruction must drain the stream before pinned statistics and
+            // device workspaces are released, even without explicit collect().
+            auto abandoned = std::make_unique<CudaParallelSpeed>(speed_plan.extractors.front(), cpu.feature_plan(), stream);
+            abandoned->enqueue(1000, r.picture, d.picture);
+            if (device_count > 1) check(cudaSetDevice((original_device + 1) % device_count));
+            abandoned.reset();
+            if (device_count > 1) {
+                int restored_device = -1; check(cudaGetDevice(&restored_device));
+                require(restored_device == (original_device + 1) % device_count, "parallel SPEED destructor did not restore the caller's CUDA device");
+                check(cudaSetDevice(original_device));
+            }
+            require(cudaStreamQuery(stream) == cudaSuccess, "parallel SPEED destructor left pending GPU work");
         }
     }
     const auto expected = cpu.finish(frames);
@@ -204,7 +249,7 @@ int main(int argc, char **argv) {
         const auto inputs = models(argv[1]);
         if (argc == 5) for (bool unclipped : {false, true}) run(inputs, stream, unsigned(std::stoul(argv[4])), 0, argv[2], argv[3], unclipped);
         else for (unsigned bpc : {8u, 10u}) {
-            for (unsigned pattern : {0u, 1u, 2u, 3u, 4u}) run(inputs, stream, bpc, pattern);
+            for (unsigned pattern : {0u, 1u, 2u, 3u, 4u, 5u, 6u}) run(inputs, stream, bpc, pattern);
             run(inputs, stream, bpc, 0, nullptr, nullptr, true);
             // Both the decimation and RHS launch have partial boundary groups.
             run(inputs, stream, bpc, 0, nullptr, nullptr, true, 1538, 1090);

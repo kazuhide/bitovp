@@ -288,8 +288,8 @@ public:
             for (unsigned p = 1; p < 3; ++p)
                 if (reference.planes[p].width != speed.width || reference.planes[p].height != speed.height)
                     throw std::invalid_argument("Vulkan SPEED plan currently requires YUV420 chroma geometry");
-            const auto u = speed_channel(speed, reference.planes[1], distorted.planes[1]);
-            const auto v = speed_channel(speed, reference.planes[2], distorted.planes[2]);
+            const auto channels = speed_channels(speed, reference, distorted);
+            const auto &u = channels[0], &v = channels[1];
             auto start = Clock::now();
             const float uv = u.second && !v.second ? v.first : v.second && !u.second ? u.first :
                 float((u.first + v.first) / 2.0);
@@ -806,11 +806,8 @@ private:
         return result;
     }
 
-    std::pair<float, bool> speed_channel(vulkan_detail::SpeedParameters &speed,
-                                          const Plane &reference, const Plane &distorted) {
-        const Plane *inputs[2] = {&reference, &distorted};
-        auto &r = source_buffer(reference, plan_.bit_depth, 0);
-        auto &d = source_buffer(distorted, plan_.bit_depth, 1);
+    std::array<std::pair<float, bool>, 2> speed_channels(vulkan_detail::SpeedParameters &speed,
+                                                        const Picture &reference, const Picture &distorted) {
         reserve(context_.buffers[2], speed.word_count * sizeof(std::uint32_t));
         auto start = Clock::now();
         auto &workspace = context_.buffers[2];
@@ -818,44 +815,62 @@ private:
         host_cache(workspace, true);
         timings_.uploaded_bytes += speed.words.size() * sizeof(std::uint32_t);
         timings_.upload_ms += milliseconds(start);
-        std::vector<Dispatch> commands;
-        const auto dispatch = [&](unsigned mode, unsigned width, unsigned height,
-                                  unsigned source, unsigned destination, unsigned extra0 = 0, unsigned extra1 = 0) {
-            commands.push_back({{mode, width, height, source, destination, extra0, extra1, 0},
-                mode == 8u ? 3u : mode == 9u ? (speed.blocks + 255u) / 256u : mode >= 6u ? 1u : (width + 15u) / 16u,
-                mode >= 6u ? 1u : (height + 15u) / 16u,
-                mode == 7u ? context_.speed_factor_pipeline : VK_NULL_HANDLE});
-        };
-        for (unsigned i = 0; i < 2; ++i) {
-            dispatch(0, speed.width, speed.height, 0, speed.frame_a, unsigned(inputs[i]->stride), i);
-            unsigned input = speed.frame_a;
-            if (speed.resize) {
-                dispatch(1, speed.scaled_width, speed.scaled_height, speed.frame_a, speed.frame_b);
-                input = speed.frame_b;
+        // Retain four small covariance/RHS workspaces, while reusing the large
+        // image scratch. Each channel completes before its input descriptors
+        // change. The second submission factors all four independent matrices.
+        for (unsigned channel = 0; channel < 2; ++channel) {
+            const Plane *inputs[2] = {&reference.planes[channel + 1u], &distorted.planes[channel + 1u]};
+            auto &r = source_buffer(*inputs[0], plan_.bit_depth, 0);
+            auto &d = source_buffer(*inputs[1], plan_.bit_depth, 1);
+            std::vector<Dispatch> commands;
+            const auto dispatch = [&](unsigned mode, unsigned width, unsigned height,
+                                      unsigned source, unsigned destination, unsigned extra0 = 0,
+                                      unsigned extra1 = 0, unsigned slot = 0) {
+                const unsigned groups_x = mode == 7u ? 4u : mode == 8u ? 3u :
+                    mode == 9u || mode == 10u ? (speed.blocks + 255u) / 256u :
+                    mode >= 6u ? 1u : (width + 15u) / 16u;
+                const unsigned groups_y = mode == 9u ? 4u : mode >= 6u ? 1u : (height + 15u) / 16u;
+                commands.push_back({{mode, width, height, source, destination, extra0, extra1, slot},
+                    groups_x, groups_y, mode == 7u ? context_.speed_factor_pipeline : VK_NULL_HANDLE});
+            };
+            for (unsigned i = 0; i < 2; ++i) {
+                const unsigned slot = channel * 2u + i;
+                dispatch(0, speed.width, speed.height, 0, speed.frame_a, unsigned(inputs[i]->stride), i);
+                unsigned input = speed.frame_a;
+                if (speed.resize) {
+                    dispatch(1, speed.scaled_width, speed.scaled_height, speed.frame_a, speed.frame_b);
+                    input = speed.frame_b;
+                }
+                dispatch(2, speed.scaled_width, speed.operating_height, input, speed.temporary);
+                dispatch(3, speed.operating_width, speed.operating_height, speed.temporary, speed.downscaled);
+                dispatch(4, speed.operating_width, speed.operating_height, speed.downscaled, speed.temporary);
+                dispatch(5, speed.operating_width, speed.operating_height, speed.temporary, speed.downscaled, speed.downscaled);
+                dispatch(6, speed.operating_width, speed.operating_height, speed.downscaled, 0);
+                dispatch(8, speed.operating_width, speed.operating_height, speed.downscaled, 0, 0, 0, slot);
+                dispatch(10, speed.operating_width, speed.operating_height, speed.downscaled, 0, 0, 0, slot);
             }
-            dispatch(2, speed.scaled_width, speed.operating_height, input, speed.temporary);
-            dispatch(3, speed.operating_width, speed.operating_height, speed.temporary, speed.downscaled);
-            dispatch(4, speed.operating_width, speed.operating_height, speed.downscaled, speed.temporary);
-            dispatch(5, speed.operating_width, speed.operating_height, speed.temporary, speed.downscaled, speed.downscaled);
-            dispatch(6, speed.operating_width, speed.operating_height, speed.downscaled, 0);
-            dispatch(8, speed.operating_width, speed.operating_height, speed.downscaled, 0);
-            dispatch(7, speed.operating_width, speed.operating_height, speed.downscaled,
-                       i ? speed.distorted_result : speed.reference_result);
-            dispatch(9, speed.operating_width, speed.operating_height, speed.downscaled,
-                       i ? speed.distorted_result : speed.reference_result);
+            if (channel == 1u) {
+                dispatch(7, speed.operating_width, speed.operating_height, 0, 0);
+                dispatch(9, speed.operating_width, speed.operating_height, 0, 0);
+            }
+            const std::array<Buffer *, 3> resources = {&r, &d, &workspace};
+            execute_program(context_.speed_pipeline, commands, &resources, "speed_chroma");
         }
-        const std::array<Buffer *, 3> resources = {&r, &d, &workspace};
-        execute_program(context_.speed_pipeline, commands, &resources, "speed_chroma");
         start = Clock::now();
         host_cache(workspace, false);
-        std::vector<float> reference_values(26u + speed.blocks), distorted_values(26u + speed.blocks);
+        const unsigned count = 26u + speed.blocks;
+        std::array<std::vector<float>, 4> values;
         const auto *words = static_cast<const std::uint32_t *>(workspace.mapped);
-        std::memcpy(reference_values.data(), words + speed.reference_result, reference_values.size() * sizeof(float));
-        std::memcpy(distorted_values.data(), words + speed.distorted_result, distorted_values.size() * sizeof(float));
-        timings_.downloaded_bytes += (reference_values.size() + distorted_values.size()) * sizeof(float);
+        for (unsigned i = 0; i < values.size(); ++i) {
+            values[i].resize(count);
+            std::memcpy(values[i].data(), words + speed.matrices[i].result, count * sizeof(float));
+        }
+        timings_.downloaded_bytes += values.size() * count * sizeof(float);
         timings_.download_ms += milliseconds(start);
         start = Clock::now();
-        const auto result = speed.channel_score(reference_values.data(), distorted_values.data());
+        const std::array<std::pair<float, bool>, 2> result = {
+            speed.channel_score(values[0].data(), values[1].data()),
+            speed.channel_score(values[2].data(), values[3].data())};
         timings_.cpu_postprocess_ms += milliseconds(start);
         return result;
     }

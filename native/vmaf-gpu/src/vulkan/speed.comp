@@ -28,6 +28,7 @@ layout(push_constant) uniform Parameters {
 #include "speed_matrix.glsl"
 
 uint meta(uint index) { return floatBitsToUint(f[index]); }
+uint matrix_offset(uint slot, uint field) { return meta(36u + slot * 7u + field); }
 int mirror(int value, int size) { return value < 0 ? -value : value >= size ? 2 * size - value - 2 : value; }
 uint raw_sample(uint x, uint y) {
     uint bytes = meta(5u) == 8u ? 1u : 2u;
@@ -67,24 +68,32 @@ void covariance_stage() {
     if (y > x) return;
     precise float covariance = compute_covariance(dimensions(), int(parameters.source_image),
         int(meta(31)), int(meta(4)), x / 5, x % 5, y / 5, y % 5);
-    int destination = int(meta(30));
+    int destination = int(matrix_offset(parameters.extra2, 0u));
     f[destination + x * 25 + y] = covariance;
     f[destination + y * 25 + x] = covariance;
+}
+void independent_stage() {
+    SpeedDimensions d = dimensions();
+    int block = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
+    if (block >= d.num_blocks) return;
+    int independent = int(matrix_offset(parameters.extra2, 2u));
+    for (int i = 0; i < 25; ++i) {
+        int y = (block / d.num_blocks_horizontal) * 5 + i / 5;
+        int x = (block % d.num_blocks_horizontal) * 5 + i % 5;
+        f[independent + i * d.num_blocks + block] = f[parameters.source_image + uint(y) * meta(4) + uint(x)];
+    }
 }
 void solve_stage() {
     SpeedDimensions d = dimensions();
     int block = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
     if (block >= d.num_blocks) return;
-    uint output_base = parameters.destination_image;
-    if (meta(35) != 0u) { f[output_base + 25u + uint(block)] = 0.0; return; }
+    uint slot = gl_WorkGroupID.y;
+    uint output_base = matrix_offset(slot, 5u);
+    if (meta(matrix_offset(slot, 6u)) != 0u) { f[output_base + 25u + uint(block)] = 0.0; return; }
     const int size = 25, square = 625;
-    int independent = int(meta(32)), solution = int(meta(33)), temporary = int(meta(34));
+    int independent = int(matrix_offset(slot, 2u)), solution = int(matrix_offset(slot, 3u));
+    int temporary = int(matrix_offset(slot, 4u));
     int q = temporary + square, r = q + square, rectangle = temporary + 5 * square;
-    for (int i = 0; i < size; ++i) {
-        int y = (block / d.num_blocks_horizontal) * 5 + i / 5;
-        int x = (block % d.num_blocks_horizontal) * 5 + i % 5;
-        f[independent + i * d.num_blocks + block] = f[parameters.source_image + uint(y) * meta(4) + uint(x)];
-    }
     // One lane owns a complete RHS column. Its ascending-k dot products,
     // descending-row substitution and ascending-row variance retain CPU order.
     // The exact Q transposes in upstream QR and its caller still cancel.
@@ -107,6 +116,7 @@ void solve_stage() {
 }
 void main() {
     if (parameters.mode == 6u) { means_stage(); return; }
+    if (parameters.mode == 10u) { independent_stage(); return; }
     if (parameters.mode == 9u) { solve_stage(); return; }
     if (parameters.mode == 8u) { covariance_stage(); return; }
     uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;

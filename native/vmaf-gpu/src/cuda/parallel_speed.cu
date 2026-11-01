@@ -88,15 +88,24 @@ __global__ void means_kernel(Workspace b, unsigned image) {
     Math m{b.floats()};
     m.f[b.words[31] + i] = m.compute_mean(b.dimensions(), int(image), int(b.words[4]), int(i / 5), int(i % 5));
 }
-__global__ void covariance_kernel(Workspace b, unsigned image) {
+__global__ void covariance_kernel(Workspace b, unsigned image, unsigned output) {
     const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= 625) return;
     const unsigned x = i / 25, y = i % 25;
     if (y > x) return;
     Math m{b.floats()};
     const float value = m.compute_covariance(b.dimensions(), int(image), int(b.words[31]), int(b.words[4]), int(x / 5), int(x % 5), int(y / 5), int(y % 5));
-    m.f[b.words[30] + x * 25 + y] = value;
-    m.f[b.words[30] + y * 25 + x] = value;
+    m.f[output + x * 25 + y] = value;
+    m.f[output + y * 25 + x] = value;
+}
+__global__ void independent_kernel(Workspace b, unsigned image, unsigned output) {
+    const auto d = b.dimensions();
+    const unsigned cell = blockIdx.x * blockDim.x + threadIdx.x;
+    if (cell >= 25u * unsigned(d.num_blocks)) return;
+    const unsigned i = cell / unsigned(d.num_blocks), block = cell % unsigned(d.num_blocks);
+    const unsigned y = (block / unsigned(d.num_blocks_horizontal)) * 5u + i / 5u;
+    const unsigned x = (block % unsigned(d.num_blocks_horizontal)) * 5u + i % 5u;
+    b.floats()[output + cell] = b.floats()[image + y * b.words[4] + x];
 }
 __device__ void block_copy(float *f, int destination, int source, int count) {
     for (int i = int(threadIdx.x); i < count; i += int(blockDim.x)) f[destination + i] = f[source + i];
@@ -151,7 +160,7 @@ __device__ void block_factor(float *f) {
     }
     block_multiply(f, r, q, a, size, size, size);
 }
-__global__ void factor_kernel(Workspace b, unsigned output) {
+__global__ void factor_kernel(Workspace b) {
     // The covariance, QR factors and eigenvalue workspace fit in 12.5 KiB.
     // Shared storage changes only where binary32 intermediates are stored;
     // every scalar eigenvalue and per-cell QR accumulation retains its order.
@@ -159,13 +168,15 @@ __global__ void factor_kernel(Workspace b, unsigned output) {
     constexpr int size = 25, square = size * size, q = square, r = q + square;
     Math m{scratch}; const auto d = b.dimensions();
     auto *f = b.floats();
-    const int covariance = int(b.words[30]), eigenvalues = int(b.words[31]);
-    const int temporary = int(b.words[34]);
+    const unsigned slot = 36u + blockIdx.x * 7u;
+    const int covariance = int(b.words[slot]), eigenvalues = int(b.words[slot + 1u]);
+    const int temporary = int(b.words[slot + 4u]), output = int(b.words[slot + 5u]);
+    const unsigned failure = b.words[slot + 6u];
     for (int i = int(threadIdx.x); i < square; i += int(blockDim.x)) scratch[i] = f[covariance + i];
     __syncthreads();
     if (!threadIdx.x) {
         m.compute_eigenvalues(0, square, size, square + size);
-        b.words[35] = m.is_matrix_regular(d, square) ? 0 : 1;
+        b.words[failure] = m.is_matrix_regular(d, square) ? 0 : 1;
     }
     __syncthreads();
     if (threadIdx.x < size) {
@@ -174,29 +185,27 @@ __global__ void factor_kernel(Workspace b, unsigned output) {
         f[output + threadIdx.x] = value;
     }
     __syncthreads();
-    if (!b.words[35]) {
+    if (!b.words[failure]) {
         block_factor(scratch);
         if (!threadIdx.x) {
             for (int i = size - 1; i >= 0; --i)
-                if (fabsf(scratch[r + i * size + i]) < 1e-6) { b.words[35] = 1; break; }
+                if (fabsf(scratch[r + i * size + i]) < 1e-6) { b.words[failure] = 1; break; }
         }
         for (int i = int(threadIdx.x); i < 2 * square; i += int(blockDim.x)) f[temporary + q + i] = scratch[q + i];
     }
-    if (!threadIdx.x) f[output + size + d.num_blocks] = b.words[35] ? 1.0f : 0.0f;
+    if (!threadIdx.x) f[output + size + d.num_blocks] = b.words[failure] ? 1.0f : 0.0f;
 }
-__global__ void solve_kernel(Workspace b, unsigned image, unsigned output) {
+__global__ void solve_kernel(Workspace b) {
     const auto d = b.dimensions();
     const int block = int(blockIdx.x * blockDim.x + threadIdx.x);
     if (block >= d.num_blocks) return;
     auto *f = b.floats();
-    if (b.words[35]) { f[output + 25 + block] = 0; return; }
+    const unsigned slot = 36u + blockIdx.y * 7u;
+    const int output = int(b.words[slot + 5u]);
+    if (b.words[b.words[slot + 6u]]) { f[output + 25 + block] = 0; return; }
     constexpr int size = 25, square = size * size;
-    const int independent = int(b.words[32]), solution = int(b.words[33]), temporary = int(b.words[34]);
+    const int independent = int(b.words[slot + 2u]), solution = int(b.words[slot + 3u]), temporary = int(b.words[slot + 4u]);
     const int q = temporary + square, r = q + square, rectangle = temporary + 5 * square;
-    for (int i = 0; i < size; ++i) {
-        const int y = (block / d.num_blocks_horizontal) * 5 + i / 5, x = (block % d.num_blocks_horizontal) * 5 + i % 5;
-        f[independent + i * d.num_blocks + block] = f[image + y * b.words[4] + x];
-    }
     // Independent RHS columns can run on separate blocks. Ascending-k dot
     // products and descending-row substitution match the CPU's binary32 sums.
     // Upstream's two exact Q transposes still cancel before this multiplication.
@@ -266,10 +275,11 @@ struct CudaParallelSpeed::Impl {
     int device = -1;
     unsigned *words = nullptr;
     cudaEvent_t start = nullptr, computed = nullptr, downloaded = nullptr;
-    float *reference_values = nullptr, *distorted_values = nullptr;
+    float *statistics_values = nullptr;
     std::size_t result_count = 0;
     BackendTimings timing;
-    bool failed = false;
+    std::uint64_t pending_index = 0;
+    bool failed = false, pending = false;
     Impl(const ExtractorSpec &spec, const FeaturePlan &p, cudaStream_t s) : parameters(validated_parameters(spec, p)), plan(p), stream(s) {
         try {
             check(cudaGetDevice(&device), "CUDA SPEED current device");
@@ -287,19 +297,19 @@ struct CudaParallelSpeed::Impl {
             result_count = 26 + parameters.blocks;
             // Pinned statistics make the D2H copies truly asynchronous. The
             // blocking event, rather than pageable-copy staging, waits for GPU
-            // completion; these tiny buffers are reused for U and V.
-            check(cudaMallocHost(&reference_values, result_count * sizeof(float)), "CUDA SPEED pinned reference statistics");
-            check(cudaMallocHost(&distorted_values, result_count * sizeof(float)), "CUDA SPEED pinned distorted statistics");
+            // completion. Four small results allow U/V math and later model
+            // configurations to run before the CPU evaluates logarithms.
+            check(cudaMallocHost(&statistics_values, 4u * result_count * sizeof(float)), "CUDA SPEED pinned statistics");
         } catch (...) { cudaStreamSynchronize(stream); cleanup(); throw; }
     }
     void cleanup() noexcept {
         int previous = -1;
         const bool known = cudaGetDevice(&previous) == cudaSuccess;
         if (known && device >= 0 && previous != device) cudaSetDevice(device);
+        if (pending) cudaStreamSynchronize(stream);
         cudaFree(words); words = nullptr;
-        if (reference_values) cudaFreeHost(reference_values);
-        if (distorted_values) cudaFreeHost(distorted_values);
-        reference_values = distorted_values = nullptr;
+        if (statistics_values) cudaFreeHost(statistics_values);
+        statistics_values = nullptr;
         if (start) cudaEventDestroy(start);
         if (computed) cudaEventDestroy(computed);
         if (downloaded) cudaEventDestroy(downloaded);
@@ -307,6 +317,10 @@ struct CudaParallelSpeed::Impl {
         if (known && device >= 0 && previous != device) cudaSetDevice(previous);
     }
     ~Impl() { cleanup(); }
+    void validate_device() const {
+        int current = -1; check(cudaGetDevice(&current), "CUDA SPEED current device");
+        if (current != device) throw std::invalid_argument("CUDA SPEED current device changed");
+    }
     void validate(const Picture &p) const {
         if (p.memory != PictureMemory::CudaDevice || p.device_index != device || p.bit_depth != plan.bit_depth)
             throw std::invalid_argument("CUDA SPEED inputs must belong to the configured CUDA device and bit depth");
@@ -324,7 +338,7 @@ struct CudaParallelSpeed::Impl {
                 throw std::invalid_argument("CUDA SPEED input is not resident device memory on the configured device");
         }
     }
-    void image(const Plane &input, unsigned output) {
+    void image(const Plane &input, const vulkan_detail::SpeedMatrixSlot &slot) {
         const auto &p = parameters;
         const Workspace b{words, static_cast<const unsigned char *>(input.data), input.stride};
         const auto dispatch = [&](unsigned mode, unsigned width, unsigned height, unsigned source, unsigned destination, unsigned extra = 0) {
@@ -339,27 +353,50 @@ struct CudaParallelSpeed::Impl {
         dispatch(4, p.operating_width, p.operating_height, p.downscaled, p.temporary);
         dispatch(5, p.operating_width, p.operating_height, p.temporary, p.downscaled, p.downscaled);
         means_kernel<<<1, 32, 0, stream>>>(b, p.downscaled); check(cudaGetLastError(), "CUDA SPEED means pass");
-        covariance_kernel<<<5, 128, 0, stream>>>(b, p.downscaled); check(cudaGetLastError(), "CUDA SPEED covariance pass");
-        factor_kernel<<<1, 256, 0, stream>>>(b, output); check(cudaGetLastError(), "CUDA SPEED factor pass");
-        solve_kernel<<<(p.blocks + 31u) / 32u, 32, 0, stream>>>(b, p.downscaled, output); check(cudaGetLastError(), "CUDA SPEED solve pass");
+        covariance_kernel<<<5, 128, 0, stream>>>(b, p.downscaled, slot.covariance); check(cudaGetLastError(), "CUDA SPEED covariance pass");
+        // Retain the compact RHS before the next image reuses the large pixel
+        // workspace. The matrix solver no longer reads a mutable image buffer.
+        independent_kernel<<<(25u * p.blocks + 127u) / 128u, 128, 0, stream>>>(b, p.downscaled, slot.independent);
+        check(cudaGetLastError(), "CUDA SPEED independent pass");
     }
-    std::pair<float, bool> channel(const Plane &r, const Plane &d) {
+    void enqueue(std::uint64_t index, const Picture &r, const Picture &d) {
+        pending = true;
+        pending_index = index;
         check(cudaEventRecord(start, stream), "CUDA SPEED start");
-        image(r, parameters.reference_result); image(d, parameters.distorted_result);
+        image(r.planes[1], parameters.matrices[0]); image(d.planes[1], parameters.matrices[1]);
+        image(r.planes[2], parameters.matrices[2]); image(d.planes[2], parameters.matrices[3]);
+        const Workspace b{words, nullptr, 0};
+        factor_kernel<<<4, 256, 0, stream>>>(b); check(cudaGetLastError(), "CUDA SPEED batched factor pass");
+        solve_kernel<<<dim3((parameters.blocks + 31u) / 32u, 4), 32, 0, stream>>>(b);
+        check(cudaGetLastError(), "CUDA SPEED batched solve pass");
         check(cudaEventRecord(computed, stream), "CUDA SPEED computed");
         const auto bytes = result_count * sizeof(float);
-        check(cudaMemcpyAsync(reference_values, words + parameters.reference_result, bytes, cudaMemcpyDeviceToHost, stream), "CUDA SPEED reference statistics readback");
-        check(cudaMemcpyAsync(distorted_values, words + parameters.distorted_result, bytes, cudaMemcpyDeviceToHost, stream), "CUDA SPEED distorted statistics readback");
+        for (unsigned i = 0; i < parameters.matrices.size(); ++i)
+            check(cudaMemcpyAsync(statistics_values + i * result_count, words + parameters.matrices[i].result,
+                bytes, cudaMemcpyDeviceToHost, stream), "CUDA SPEED statistics readback");
         check(cudaEventRecord(downloaded, stream), "CUDA SPEED downloaded");
+    }
+    std::vector<FeatureScore> collect() {
         check(cudaEventSynchronize(downloaded), "CUDA SPEED completion");
         float kernel_ms = 0, download_ms = 0;
         check(cudaEventElapsedTime(&kernel_ms, start, computed), "CUDA SPEED kernel timing");
         check(cudaEventElapsedTime(&download_ms, computed, downloaded), "CUDA SPEED download timing");
         timing.kernel_ms += kernel_ms; timing.extractor_kernel_ms["speed_chroma"] += kernel_ms;
-        timing.download_ms += download_ms; timing.downloaded_bytes += bytes * 2;
+        timing.download_ms += download_ms; timing.downloaded_bytes += 4u * result_count * sizeof(float);
         const auto begin = Clock::now();
-        const auto result = parameters.channel_score(reference_values, distorted_values);
+        const auto u = parameters.channel_score(statistics_values, statistics_values + result_count);
+        const auto v = parameters.channel_score(statistics_values + 2u * result_count, statistics_values + 3u * result_count);
+        const float uv = u.second && !v.second ? v.first : v.second && !u.second ? u.first : float((u.first + v.first) / 2.0);
+        const std::map<std::string, double> values{{"Speed_chroma_feature_speed_chroma_u_score", u.first}, {"Speed_chroma_feature_speed_chroma_v_score", v.first}, {"Speed_chroma_feature_speed_chroma_uv_score", uv}};
+        std::vector<FeatureScore> result;
+        for (const auto &[base, canonical] : parameters.spec.canonical_names) {
+            if (std::find(parameters.spec.provided_features.begin(), parameters.spec.provided_features.end(), canonical) == parameters.spec.provided_features.end()) continue;
+            const auto value = values.at(base);
+            if (!std::isfinite(value)) throw std::runtime_error("CUDA SPEED produced a non-finite feature");
+            result.push_back({pending_index, canonical, std::min(value, parameters.maximum)});
+        }
         timing.cpu_postprocess_ms += elapsed(begin);
+        pending = false;
         return result;
     }
 };
@@ -367,22 +404,28 @@ CudaParallelSpeed::CudaParallelSpeed(const ExtractorSpec &spec, const FeaturePla
 CudaParallelSpeed::~CudaParallelSpeed() = default;
 BackendTimings CudaParallelSpeed::timings() const { return impl_->timing; }
 std::vector<FeatureScore> CudaParallelSpeed::extract(std::uint64_t index, const Picture &r, const Picture &d) {
+    enqueue(index, r, d);
+    return collect();
+}
+void CudaParallelSpeed::enqueue(std::uint64_t index, const Picture &r, const Picture &d) {
     if (impl_->failed) throw std::logic_error("CUDA SPEED failed; create a new instance before reuse");
-    int current = -1; check(cudaGetDevice(&current), "CUDA SPEED current device");
-    if (current != impl_->device) throw std::invalid_argument("CUDA SPEED current device changed");
+    if (impl_->pending) throw std::logic_error("CUDA SPEED already has a pending frame");
+    impl_->validate_device();
     impl_->validate(r); impl_->validate(d);
     try {
-        const auto u = impl_->channel(r.planes[1], d.planes[1]), v = impl_->channel(r.planes[2], d.planes[2]);
-        const float uv = u.second && !v.second ? v.first : v.second && !u.second ? u.first : float((u.first + v.first) / 2.0);
-        const std::map<std::string, double> values{{"Speed_chroma_feature_speed_chroma_u_score", u.first}, {"Speed_chroma_feature_speed_chroma_v_score", v.first}, {"Speed_chroma_feature_speed_chroma_uv_score", uv}};
-        std::vector<FeatureScore> result;
-        for (const auto &[base, canonical] : impl_->parameters.spec.canonical_names) {
-            if (std::find(impl_->parameters.spec.provided_features.begin(), impl_->parameters.spec.provided_features.end(), canonical) == impl_->parameters.spec.provided_features.end()) continue;
-            const auto value = values.at(base);
-            if (!std::isfinite(value)) throw std::runtime_error("CUDA SPEED produced a non-finite feature");
-            result.push_back({index, canonical, std::min(value, impl_->parameters.maximum)});
-        }
-        return result;
-    } catch (...) { impl_->failed = true; cudaStreamSynchronize(impl_->stream); throw; }
+        impl_->enqueue(index, r, d);
+    } catch (...) {
+        impl_->failed = true; cudaStreamSynchronize(impl_->stream); impl_->pending = false; throw;
+    }
+}
+std::vector<FeatureScore> CudaParallelSpeed::collect() {
+    if (impl_->failed) throw std::logic_error("CUDA SPEED failed; create a new instance before reuse");
+    if (!impl_->pending) throw std::logic_error("CUDA SPEED has no pending frame");
+    impl_->validate_device();
+    try {
+        return impl_->collect();
+    } catch (...) {
+        impl_->failed = true; cudaStreamSynchronize(impl_->stream); impl_->pending = false; throw;
+    }
 }
 } // namespace bitovp::gpu

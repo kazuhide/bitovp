@@ -29,6 +29,7 @@ shared uint matrix_error;
 #include "speed_matrix.glsl"
 
 uint meta(uint index) { return floatBitsToUint(global_values[index]); }
+uint matrix_offset(uint slot, uint field) { return meta(36u + slot * 7u + field); }
 void block_copy(int destination, int source, int count) {
     for (int i = int(gl_LocalInvocationIndex); i < count; i += 256) f[destination + i] = f[source + i];
     barrier();
@@ -84,7 +85,10 @@ void factor() {
 void main() {
     const int size = 25, square = 625, q = square, r = q + square;
     int lane = int(gl_LocalInvocationIndex);
-    int covariance = int(meta(30)), eigenvalues = int(meta(31)), temporary = int(meta(34));
+    uint slot = gl_WorkGroupID.x;
+    int covariance = int(matrix_offset(slot, 0u)), eigenvalues = int(matrix_offset(slot, 1u));
+    int temporary = int(matrix_offset(slot, 4u));
+    uint output_base = matrix_offset(slot, 5u);
     for (int i = lane; i < square; i += 256) f[i] = global_values[covariance + i];
     barrier();
     if (lane == 0) {
@@ -97,7 +101,7 @@ void main() {
     if (lane < size) {
         precise float value = f[square + lane];
         global_values[eigenvalues + lane] = value;
-        global_values[parameters.destination_image + uint(lane)] = value;
+        global_values[output_base + uint(lane)] = value;
     }
     barrier();
     if (matrix_error == 0u) {
@@ -108,7 +112,7 @@ void main() {
         for (int i = lane; i < 2 * square; i += 256) global_values[temporary + q + i] = f[q + i];
     }
     if (lane == 0) {
-        global_values[35] = uintBitsToFloat(matrix_error);
-        global_values[parameters.destination_image + 25u + (meta(6) / 5u) * (meta(7) / 5u)] = matrix_error != 0u ? 1.0 : 0.0;
+        global_values[matrix_offset(slot, 6u)] = uintBitsToFloat(matrix_error);
+        global_values[output_base + 25u + (meta(6) / 5u) * (meta(7) / 5u)] = matrix_error != 0u ? 1.0 : 0.0;
     }
 }

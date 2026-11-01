@@ -751,16 +751,18 @@ private:
         const auto dispatch = [&](unsigned mode, unsigned extra = 0, unsigned destination = 0) {
             const auto groups = (std::uint64_t(width) * height + 255u) / 256u;
             const bool flat = mode == 7u || mode == 9u;
+            const bool pooled = mode >= 6u && mode <= 10u;
             const unsigned groups_x = flat ? unsigned(std::min<std::uint64_t>(groups,
                 context_.properties.limits.maxComputeWorkGroupCount[0])) :
-                mode >= 6u ? 1u : (width + 15u) / 16u;
+                pooled ? 1u : (width + 15u) / 16u;
             const unsigned groups_y = flat ? unsigned((groups + groups_x - 1u) / groups_x) :
-                mode >= 6u ? 1u : (height + 15u) / 16u;
+                pooled ? 1u : (height + 15u) / 16u;
             commands.push_back({{mode, width, height, image, destination ? destination : other_image,
                 mask, other_mask, extra}, groups_x, groups_y});
         };
         dispatch(0, 0, image);
         if (cambi.words[6] < 10u) { dispatch(1); std::swap(image, other_image); }
+        dispatch(11);
         std::swap(mask, other_mask);
         dispatch(2);
         std::swap(mask, other_mask);

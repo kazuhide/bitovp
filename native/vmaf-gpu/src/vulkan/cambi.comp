@@ -147,11 +147,17 @@ void main() {
             else value >>= 1u;
         } else if (x + 1u < parameters.width) value = (value + image(x + 1u, y)) >> 1u;
         words[parameters.destination_image + pixel] = value;
+    } else if (parameters.mode == 11u) {
+        // Exact clipped horizontal derivative counts; the second pass sums
+        // them vertically into the original mask without another image buffer.
+        uint count = 0u;
+        for (int xx = max(0, int(x) - 3); xx <= min(int(parameters.width) - 1, int(x) + 3); ++xx)
+            if (derivative(uint(xx), y)) ++count;
+        words[parameters.destination_mask + pixel] = count;
     } else if (parameters.mode == 2u) {
         uint count = 0u;
         for (int yy = max(0, int(y) - 3); yy <= min(int(parameters.height) - 1, int(y) + 3); ++yy)
-            for (int xx = max(0, int(x) - 3); xx <= min(int(parameters.width) - 1, int(x) + 3); ++xx)
-                if (derivative(uint(xx), uint(yy))) ++count;
+            count += words[parameters.source_mask + uint(yy) * parameters.width + x];
         words[parameters.destination_mask + pixel] = count > words[10] ? 1u : 0u;
     } else if (parameters.mode == 3u) {
         uint source = (y * 2u) * parameters.extra + x * 2u;

@@ -101,11 +101,17 @@ __global__ void cambi_kernel(Buffers b) {
             else value >>= 1;
         } else if (x + 1 < p.width) value = (value + image(b, x + 1, y)) >> 1;
         words[p.destination_image + pixel] = value;
+    } else if (p.mode == 11) {
+        // Preserve the clipped 7x7 neighborhood with two integer sums. The
+        // horizontal counts use the otherwise idle second mask buffer.
+        unsigned count = 0;
+        for (int xx = max(0, int(x) - 3); xx <= min(int(p.width) - 1, int(x) + 3); ++xx)
+            if (derivative(b, unsigned(xx), y)) ++count;
+        words[p.destination_mask + pixel] = count;
     } else if (p.mode == 2) {
         unsigned count = 0;
         for (int yy = max(0, int(y) - 3); yy <= min(int(p.height) - 1, int(y) + 3); ++yy)
-            for (int xx = max(0, int(x) - 3); xx <= min(int(p.width) - 1, int(x) + 3); ++xx)
-                if (derivative(b, unsigned(xx), unsigned(yy))) ++count;
+            count += words[p.source_mask + unsigned(yy) * p.width + x];
         words[p.destination_mask + pixel] = count > words[10] ? 1 : 0;
     } else if (p.mode == 3) {
         const unsigned offset = (y * 2) * p.extra + x * 2;
@@ -261,6 +267,7 @@ struct CudaParallelCambi::Impl {
         };
         dispatch(0, 0, image);
         if (parameters.words[6] < 10) { dispatch(1); std::swap(image, other_image); }
+        dispatch(11);
         std::swap(mask, other_mask);
         dispatch(2);
         std::swap(mask, other_mask);

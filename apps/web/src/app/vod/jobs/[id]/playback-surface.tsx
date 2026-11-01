@@ -1102,7 +1102,7 @@ function PlaybackAttempt({
 				)}
 				{activeScene ? (
 					<div
-						className="pointer-events-none absolute inset-x-2 top-2 rounded bg-black/80 px-2 py-1 text-white text-xs"
+						className="pointer-events-none absolute inset-x-2 top-2 rounded bg-zinc-950/95 px-2 py-1 text-xs text-zinc-100"
 						data-testid="scene-overlay"
 					>
 						<p className="line-clamp-1 break-words font-medium">

@@ -440,14 +440,29 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 		signal: AbortSignal,
 	) {
 		flight.waiters++;
-		return cancellable(flight.promise, signal, () => {
+		let left = false;
+		const leave = () => {
+			if (left) return false;
+			left = true;
 			flight.waiters--;
-			if (!flight.waiters && !flight.done)
+			const abandoned = !flight.waiters && !flight.done;
+			if (abandoned)
 				flight.controller.abort(
 					signal.reason ??
 						new DOMException("No calibration waiters remain", "AbortError"),
 				);
-		});
+			return abandoned;
+		};
+		return cancellable(flight.promise, signal)
+			.catch(async (error) => {
+				// The last caller may delete its media as soon as this rejects.
+				// Keep its lifetime until all processes and the lease have drained.
+				if (leave()) await flight.promise.catch(() => undefined);
+				throw error;
+			})
+			.finally(() => {
+				leave();
+			});
 	}
 	async function obtain(
 		key: string,

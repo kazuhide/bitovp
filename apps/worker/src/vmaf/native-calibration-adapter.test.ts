@@ -555,28 +555,102 @@ describe("native calibration adapter", () => {
 		expect(h.isExclusive()).toBe(false);
 		expect(await readdir(h.workDirectory)).toEqual([]);
 	});
-	it("uses flight ownership so cancelling one waiter cannot kill another", async () => {
+	it("drains the media owner before rejection and lets another job use its own input pair", async () => {
 		const h = await setup();
-		const first = new AbortController();
-		let start!: () => void;
-		const started = new Promise<void>((resolve) => {
-			start = resolve;
+		const secondOptions = {
+			...h.options,
+			referencePath: join(h.directory, "second-reference.mov"),
+			distortedPath: join(h.directory, "second-distorted.mp4"),
+		};
+		await writeFile(secondOptions.referencePath, "second reference");
+		await writeFile(secondOptions.distortedPath, "second distorted");
+		const controller = new AbortController();
+		let enter = () => {};
+		const entered = new Promise<void>((resolve) => {
+			enter = resolve;
 		});
-		score.mockImplementation(async (_deps, _options, context) => {
-			start();
-			await pause(4);
-			required(context.signal).throwIfAborted();
-			return result(required(context.calibrationFrames));
+		let drain = () => {};
+		const draining = new Promise<void>((resolve) => {
+			drain = resolve;
 		});
-		const one = h.adapter.calibrate({ ...h.request, signal: first.signal });
-		const two = h.adapter.calibrate(h.request);
-		await started;
-		first.abort(new Error("first cancelled"));
-		await expect(one).rejects.toThrow("first cancelled");
-		expect(await two).toHaveLength(2);
-		expect(h.run.mock.calls.filter(([bin]) => bin === "ffmpeg")).toHaveLength(
-			2,
-		);
+		let running = false,
+			originalPresentDuringDrain = false,
+			rejectedWhileRunning = false,
+			rejected = false;
+		h.run.mockImplementation(async (binary, args, context) => {
+			if (binary !== "ffmpeg") return { code: 0, stdout: probe(), stderr: "" };
+			const source = required(args[args.indexOf("-i") + 1]);
+			if (source === h.options.referencePath) {
+				running = true;
+				enter();
+				try {
+					await draining;
+					originalPresentDuringDrain =
+						(await readFile(source, "utf8")) === "original reference";
+					required(context?.signal).throwIfAborted();
+				} finally {
+					running = false;
+				}
+			}
+			await writeFile(required(args.at(-1)), await readFile(source));
+			return { code: 0, stdout: "", stderr: "" };
+		});
+		let tail = Promise.resolve();
+		const exclusive: NativeCalibrationRequest["withExclusiveCalibration"] =
+			async (work, signal) => {
+				const prior = tail;
+				let release = () => {};
+				tail = new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				await prior;
+				try {
+					return await h.request.withExclusiveCalibration(work, signal);
+				} finally {
+					release();
+				}
+			};
+		const first = h.adapter
+			.calibrate({
+				...h.request,
+				signal: controller.signal,
+				withExclusiveCalibration: exclusive,
+			})
+			.catch(async (error) => {
+				rejected = true;
+				rejectedWhileRunning = running;
+				await Promise.all([
+					rm(h.options.referencePath),
+					rm(h.options.distortedPath),
+				]);
+				throw error;
+			});
+		const rejection = expect(first).rejects.toThrow("owner cancelled");
+		await entered;
+		const second = h.adapter.calibrate({
+			...h.request,
+			options: secondOptions,
+			withExclusiveCalibration: exclusive,
+		});
+		controller.abort(new Error("owner cancelled"));
+		await pause(5);
+		const rejectedBeforeDrain = rejected;
+		drain();
+		await rejection;
+		const remaining = await second;
+		expect(rejectedBeforeDrain).toBe(false);
+		expect(rejectedWhileRunning).toBe(false);
+		expect(originalPresentDuringDrain).toBe(true);
+		expect(remaining).toHaveLength(2);
+		const sources = h.run.mock.calls
+			.filter(([binary]) => binary === "ffmpeg")
+			.map(([, args]) => args[args.indexOf("-i") + 1]);
+		expect(sources).toEqual([
+			h.options.referencePath,
+			secondOptions.referencePath,
+			secondOptions.distortedPath,
+		]);
+		expect(await readdir(h.workDirectory)).toEqual([]);
 	});
 	it("propagates lease loss and waits for native cleanup", async () => {
 		const h = await setup();

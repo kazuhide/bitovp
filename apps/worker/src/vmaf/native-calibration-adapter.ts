@@ -266,118 +266,123 @@ export function createNativeCalibrationAdapter(deps: {
 			distortedProbe: distorted.probe,
 		};
 	}
-	const engine = createNativeAutoCalibration({
-		cacheDirectory: deps.cacheDirectory,
-		onDiagnostic: deps.onDiagnostic,
-		async withExclusiveCalibration(work, internalSignal) {
-			const scope = local.getStore();
-			if (!scope) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
-			return scope.request.withExclusiveCalibration(async (leaseSignal) => {
-				const session: Session = {
-					request: scope.request,
-					signal: AbortSignal.any([internalSignal, leaseSignal]),
-					ordinal: 0,
-				};
-				return local.run({ ...scope, session }, async () => {
-					try {
-						return await work(session.signal);
-					} finally {
-						await session.proxies?.catch(() => undefined);
-						if (session.directory)
-							await rm(session.directory, { recursive: true, force: true });
-					}
-				});
-			}, internalSignal);
-		},
-		async runTrial(template, context): Promise<NativeCalibrationTrial> {
-			const session = local.getStore()?.session;
-			if (!session) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
-			const failed = new AbortController();
-			const signal = AbortSignal.any([
-				context.signal,
-				session.signal,
-				failed.signal,
-			]);
-			signal.throwIfAborted();
-			session.proxies ??= prepare(session, context.sampleFrames, signal);
-			const proxies = await session.proxies;
-			const directory = session.directory;
-			if (!directory) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
-			signal.throwIfAborted();
-			const results: { rss: number; gpu: number }[] = [];
-			let next = 0;
-			let error: unknown;
-			const started = performance.now();
-			const workers = Array.from(
-				{ length: Math.min(template.concurrency, context.fixedWorkUnits) },
-				async () => {
-					while (!signal.aborted) {
-						if (next++ >= context.fixedWorkUnits) return;
-						const logPath = join(directory, `trial-${++session.ordinal}.json`);
+	// Share metadata across calls, never an in-flight job's original media.
+	const createEngine = () =>
+		createNativeAutoCalibration({
+			cacheDirectory: deps.cacheDirectory,
+			onDiagnostic: deps.onDiagnostic,
+			async withExclusiveCalibration(work, internalSignal) {
+				const scope = local.getStore();
+				if (!scope) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
+				return scope.request.withExclusiveCalibration(async (leaseSignal) => {
+					const session: Session = {
+						request: scope.request,
+						signal: AbortSignal.any([internalSignal, leaseSignal]),
+						ordinal: 0,
+					};
+					return local.run({ ...scope, session }, async () => {
 						try {
-							const scored = await runNativeVmafScore(
-								deps,
-								{
-									...session.request.options,
-									referencePath: proxies.referencePath,
-									distortedPath: proxies.distortedPath,
-									logPath,
-									threads: template.cpuThreads,
-									decoderThreads: template.decoderThreads,
-								},
-								{
-									signal,
-									referenceProbe: proxies.referenceProbe,
-									distortedProbe: proxies.distortedProbe,
-									nativeInflightFrames: template.inflightFrames,
-									calibrationFrames: context.sampleFrames,
-								},
-							);
-							signal.throwIfAborted();
-							const scoring = scored.execution.scoring,
-								memory = scored.resourceSnapshot;
-							if (
-								scoring.implementation !== "bitovp-owned" ||
-								scoring.cpuParity.checked !== true ||
-								scoring.cpuParity.scoreCount !== context.sampleFrames ||
-								scored.log.frames.length !== context.sampleFrames ||
-								!memory ||
-								memory.scope !== "before-result-serialization" ||
-								![memory.maxRssBytes, memory.gpuOwnedBytes].every(
-									(n) => Number.isSafeInteger(n) && n > 0,
-								)
-							)
-								throw new Error("NATIVE_CALIBRATION_RESULT_INVALID");
-							results.push({
-								rss: memory.maxRssBytes,
-								gpu: memory.gpuOwnedBytes,
-							});
-						} catch (caught) {
-							error ??= caught;
-							failed.abort(caught);
-							throw caught;
+							return await work(session.signal);
+						} finally {
+							await session.proxies?.catch(() => undefined);
+							if (session.directory)
+								await rm(session.directory, { recursive: true, force: true });
 						}
-					}
-				},
-			);
-			// A failed child aborts its siblings, but the lease and files remain until
-			// every native process has reaped its descendants and settled.
-			await Promise.allSettled(workers);
-			if (error !== undefined) throw error;
-			signal.throwIfAborted();
-			if (results.length !== context.fixedWorkUnits)
-				throw new Error("NATIVE_CALIBRATION_RESULT_INVALID");
-			return {
-				scope: "native-with-cpu-parity",
-				cpuVerified: true,
-				workFrames: context.sampleFrames * context.fixedWorkUnits,
-				wallMs: performance.now() - started,
-				maxRssBytesPerComparison: Math.max(...results.map((r) => r.rss)),
-				gpuOwnedBytesPerComparison: Math.max(...results.map((r) => r.gpu)),
-				resourceSnapshotScope: "before-result-serialization",
-			};
-		},
-	});
+					});
+				}, internalSignal);
+			},
+			async runTrial(template, context): Promise<NativeCalibrationTrial> {
+				const session = local.getStore()?.session;
+				if (!session) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
+				const failed = new AbortController();
+				const signal = AbortSignal.any([
+					context.signal,
+					session.signal,
+					failed.signal,
+				]);
+				signal.throwIfAborted();
+				session.proxies ??= prepare(session, context.sampleFrames, signal);
+				const proxies = await session.proxies;
+				const directory = session.directory;
+				if (!directory) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
+				signal.throwIfAborted();
+				const results: { rss: number; gpu: number }[] = [];
+				let next = 0;
+				let error: unknown;
+				const started = performance.now();
+				const workers = Array.from(
+					{ length: Math.min(template.concurrency, context.fixedWorkUnits) },
+					async () => {
+						while (!signal.aborted) {
+							if (next++ >= context.fixedWorkUnits) return;
+							const logPath = join(
+								directory,
+								`trial-${++session.ordinal}.json`,
+							);
+							try {
+								const scored = await runNativeVmafScore(
+									deps,
+									{
+										...session.request.options,
+										referencePath: proxies.referencePath,
+										distortedPath: proxies.distortedPath,
+										logPath,
+										threads: template.cpuThreads,
+										decoderThreads: template.decoderThreads,
+									},
+									{
+										signal,
+										referenceProbe: proxies.referenceProbe,
+										distortedProbe: proxies.distortedProbe,
+										nativeInflightFrames: template.inflightFrames,
+										calibrationFrames: context.sampleFrames,
+									},
+								);
+								signal.throwIfAborted();
+								const scoring = scored.execution.scoring,
+									memory = scored.resourceSnapshot;
+								if (
+									scoring.implementation !== "bitovp-owned" ||
+									scoring.cpuParity.checked !== true ||
+									scoring.cpuParity.scoreCount !== context.sampleFrames ||
+									scored.log.frames.length !== context.sampleFrames ||
+									!memory ||
+									memory.scope !== "before-result-serialization" ||
+									![memory.maxRssBytes, memory.gpuOwnedBytes].every(
+										(n) => Number.isSafeInteger(n) && n > 0,
+									)
+								)
+									throw new Error("NATIVE_CALIBRATION_RESULT_INVALID");
+								results.push({
+									rss: memory.maxRssBytes,
+									gpu: memory.gpuOwnedBytes,
+								});
+							} catch (caught) {
+								error ??= caught;
+								failed.abort(caught);
+								throw caught;
+							}
+						}
+					},
+				);
+				// A failed child aborts its siblings, but the lease and files remain until
+				// every native process has reaped its descendants and settled.
+				await Promise.allSettled(workers);
+				if (error !== undefined) throw error;
+				signal.throwIfAborted();
+				if (results.length !== context.fixedWorkUnits)
+					throw new Error("NATIVE_CALIBRATION_RESULT_INVALID");
+				return {
+					scope: "native-with-cpu-parity",
+					cpuVerified: true,
+					workFrames: context.sampleFrames * context.fixedWorkUnits,
+					wallMs: performance.now() - started,
+					maxRssBytesPerComparison: Math.max(...results.map((r) => r.rss)),
+					gpuOwnedBytesPerComparison: Math.max(...results.map((r) => r.gpu)),
+					resourceSnapshotScope: "before-result-serialization",
+				};
+			},
+		});
 	return {
 		async calibrate(
 			input: NativeCalibrationRequest,
@@ -412,14 +417,18 @@ export function createNativeCalibrationAdapter(deps: {
 				throw new Error("NATIVE_CALIBRATION_INPUT_PATH_INVALID");
 			if (!request.templates.length) return [];
 			return local.run({ request }, async () => {
-				const raw = await engine.obtain(request.profileKey, request.templates, {
-					signal: request.signal,
-					sampleFrames,
-					fixedWorkUnits,
-					budgetMs: request.budgetMs ?? 15000,
-					trialTimeoutMs: request.trialTimeoutMs,
-					cacheable: request.cacheable,
-				});
+				const raw = await createEngine().obtain(
+					request.profileKey,
+					request.templates,
+					{
+						signal: request.signal,
+						sampleFrames,
+						fixedWorkUnits,
+						budgetMs: request.budgetMs ?? 15000,
+						trialTimeoutMs: request.trialTimeoutMs,
+						cacheable: request.cacheable,
+					},
+				);
 				return toPolicyCandidates(
 					raw,
 					request.fullFrameCount,

@@ -308,13 +308,24 @@ describe("budgeted native VMAF calibration", () => {
 			[serial],
 			context({ signal: controller.signal }),
 		);
+		let settled = false;
+		const rejected = pending.catch((error) => {
+			settled = true;
+			throw error;
+		});
+		const rejectedCheck = expect(rejected).rejects.toThrow("cancelled");
 		await entered.promise;
 		controller.abort(new Error("cancelled"));
-		await expect(pending).rejects.toThrow("cancelled");
 		await abortObserved.promise;
-		expect(h.events).toEqual(["acquired"]);
-		draining.resolve();
-		await vi.waitFor(() => expect(h.events).toEqual(["acquired", "released"]));
+		try {
+			await Promise.resolve();
+			expect(settled).toBe(false);
+			expect(h.events).toEqual(["acquired"]);
+		} finally {
+			draining.resolve();
+			await rejectedCheck;
+		}
+		expect(h.events).toEqual(["acquired", "released"]);
 		expect(
 			(await readdir(h.cacheDirectory)).filter((n) => n.endsWith(".json")),
 		).toEqual([]);
@@ -347,11 +358,15 @@ describe("budgeted native VMAF calibration", () => {
 		);
 		await entered.promise;
 		controller.abort(new Error("abandon flight"));
-		await expect(cancelled).rejects.toThrow("abandon flight");
+		const rejectedCheck = expect(cancelled).rejects.toThrow("abandon flight");
+		await vi.waitFor(() =>
+			expect(h.execute.mock.calls[0]?.[1].signal.aborted).toBe(true),
+		);
 		const next = h.engine.obtain(key, [serial], context());
 		await Promise.resolve();
 		expect(calls).toBe(1);
 		drain.resolve();
+		await rejectedCheck;
 		expect((await next).candidatesRaw[0]?.trials).toHaveLength(3);
 		expect(calls).toBe(4);
 		expect(h.events).toEqual(["acquired", "released", "acquired", "released"]);

@@ -545,6 +545,23 @@ export function VodWizard({
 			return next;
 		});
 
+	// Apply only on an explicit selection; drafts and imported plans keep their values.
+	function selectAccount(accountId: string) {
+		const account = accounts.data?.find((item) => item.id === accountId);
+		patch({
+			accountId,
+			...(account
+				? {
+						cloudRegion:
+							account.defaults?.cloudRegion ?? DEFAULT_WIZARD_STATE.cloudRegion,
+						encoderVersion:
+							account.defaults?.encoderVersion ??
+							DEFAULT_WIZARD_STATE.encoderVersion,
+					}
+				: {}),
+		});
+	}
+
 	// VMAF-only encode (qc.only) skips all delivery outputs: the Muxings /
 	// Thumbnails / Sprites step and the Manifests step are disabled (the storage
 	// output picker stays enabled — the qc mirrors write there). The toggle lives
@@ -928,7 +945,7 @@ export function VodWizard({
 								<SelectNative
 									id="wz-import-account"
 									value={state.accountId}
-									onChange={(e) => patch({ accountId: e.target.value })}
+									onChange={(e) => selectAccount(e.target.value)}
 								>
 									<option value="">{t("wizard.selectAccount")}</option>
 									{(accounts.data ?? []).map((account) => (
@@ -1052,7 +1069,7 @@ export function VodWizard({
 								<SelectNative
 									id="wz-account"
 									value={state.accountId}
-									onChange={(e) => patch({ accountId: e.target.value })}
+									onChange={(e) => selectAccount(e.target.value)}
 								>
 									<option value="">{t("wizard.selectAccount")}</option>
 									{(accounts.data ?? []).map((account) => (
@@ -1070,6 +1087,13 @@ export function VodWizard({
 										value={state.cloudRegion}
 										onChange={(e) => patch({ cloudRegion: e.target.value })}
 									>
+										{!BITMOVIN_CLOUD_REGIONS.some(
+											(region) => region === state.cloudRegion,
+										) ? (
+											<option value={state.cloudRegion}>
+												{state.cloudRegion}
+											</option>
+										) : null}
 										{BITMOVIN_CLOUD_REGIONS.map((region) => (
 											<option key={region} value={region}>
 												{region}

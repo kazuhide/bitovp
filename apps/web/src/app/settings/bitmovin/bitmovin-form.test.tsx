@@ -192,8 +192,10 @@ describe("BitmovinForm region choices", () => {
 				onSubmit={onSubmit}
 			/>,
 		);
-		expect(screen.queryByLabelText("Default cloud region")).toBeNull();
-		expect(screen.queryByLabelText("Encoder version")).toBeNull();
+		expect(screen.getByLabelText("Default cloud region")).toHaveValue(
+			"AWS_EU_WEST_1",
+		);
+		expect(screen.getByLabelText("Encoder version")).toHaveValue("STABLE");
 		const fallbacks = screen.getAllByLabelText(/Fallback regions.*[12]$/);
 		expect(fallbacks).toHaveLength(2);
 		fireEvent.change(fallbacks[0] as HTMLElement, {
@@ -228,7 +230,9 @@ describe("BitmovinForm region choices", () => {
 				onSubmit={onSubmit}
 			/>,
 		);
-		expect(screen.queryByLabelText("Default cloud region")).toBeNull();
+		expect(screen.getByLabelText("Default cloud region")).toHaveValue(
+			"FUTURE_REGION",
+		);
 		expect(screen.getAllByLabelText(/Fallback regions.*[12]$/)[0]).toHaveValue(
 			"FUTURE_FALLBACK",
 		);
@@ -259,8 +263,13 @@ it("preserves a pinned version and region while renaming an account", async () =
 			onSubmit={onSubmit}
 		/>,
 	);
-	expect(screen.queryByLabelText("Encoder version")).toBeNull();
-	expect(screen.queryByLabelText("Default cloud region")).toBeNull();
+	expect(screen.getByLabelText("Encoder version")).toHaveValue("PINNED");
+	expect(screen.getByLabelText("Pinned encoder version")).toHaveValue(
+		"2.325.0",
+	);
+	expect(screen.getByLabelText("Default cloud region")).toHaveValue(
+		"FUTURE_REGION",
+	);
 	fireEvent.change(screen.getByLabelText("Label"), {
 		target: { value: "renamed" },
 	});
@@ -272,10 +281,10 @@ it("preserves a pinned version and region while renaming an account", async () =
 	});
 });
 
-it("creates an account without choosing job-specific defaults", async () => {
+it("creates an account with the displayed encoding defaults", async () => {
 	wrap(<BitmovinForm submitting={false} onSubmit={onSubmit} />);
-	expect(screen.queryByLabelText("Encoder version")).toBeNull();
-	expect(screen.queryByLabelText("Default cloud region")).toBeNull();
+	expect(screen.getByLabelText("Encoder version")).toHaveValue("STABLE");
+	expect(screen.getByLabelText("Default cloud region")).toHaveValue("AUTO");
 	fireEvent.change(screen.getByLabelText("Label"), {
 		target: { value: "new" },
 	});
@@ -286,4 +295,39 @@ it("creates an account without choosing job-specific defaults", async () => {
 	await waitFor(() => expect(onSubmit).toHaveBeenCalled());
 	expect(onSubmit.mock.calls[0]?.[0].defaults.encoderVersion).toBe("STABLE");
 	expect(onSubmit.mock.calls[0]?.[0].defaults.cloudRegion).toBe("AUTO");
+});
+
+it("saves edited encoding defaults while preserving other account settings", async () => {
+	wrap(
+		<BitmovinForm account={ACCOUNT} submitting={false} onSubmit={onSubmit} />,
+	);
+	fireEvent.change(screen.getByLabelText("Default cloud region"), {
+		target: { value: "AWS_AP_NORTHEAST_1" },
+	});
+	fireEvent.change(screen.getByLabelText("Encoder version"), {
+		target: { value: "PINNED" },
+	});
+	fireEvent.change(screen.getByLabelText("Pinned encoder version"), {
+		target: { value: "2.291.0" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+	await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+	expect(onSubmit.mock.calls[0]?.[0].defaults).toMatchObject({
+		cloudRegion: "AWS_AP_NORTHEAST_1",
+		encoderVersion: "2.291.0",
+		rateCard: ACCOUNT.defaults.rateCard,
+	});
+	expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("apiKey");
+});
+
+it("rejects an empty pinned encoder version visibly", async () => {
+	wrap(
+		<BitmovinForm account={ACCOUNT} submitting={false} onSubmit={onSubmit} />,
+	);
+	fireEvent.change(screen.getByLabelText("Encoder version"), {
+		target: { value: "PINNED" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+	await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
+	expect(onSubmit).not.toHaveBeenCalled();
 });

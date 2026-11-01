@@ -108,7 +108,11 @@ describe("automatic native VMAF execution planning", () => {
 				cpuVerified: true,
 			})),
 		});
-		const forged = { ...control, concurrency: 4 };
+		const forged = {
+			...control,
+			concurrency: 4,
+			trials: control.trials.map((trial) => ({ ...trial, wallMs: 10 })),
+		};
 		expect(
 			selectAutoExecutionPlan(request({ candidates: [control, forged] })).plan
 				?.maxActiveComparisons,

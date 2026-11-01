@@ -83,6 +83,7 @@ function setup(
 		options: {
 			sampleFrames: number;
 			fixedWorkUnits: number;
+			workloadMode?: NativeCalibrationContext["workloadMode"];
 			signal: AbortSignal;
 		},
 	) => Promise<NativeCalibrationTrial>,
@@ -149,6 +150,178 @@ const memoryOptions = {
 };
 
 describe("budgeted native VMAF calibration", () => {
+	it("binds parallel profiles to equal per-comparison frames and one wave", async () => {
+		const h = setup(async (template, options) =>
+			trial({ ...options, fixedWorkUnits: template.concurrency }),
+		);
+		const raw = await h.engine.obtain(
+			key,
+			[serial, parallel],
+			context({
+				workloadMode: "parallel-batch",
+				sampleFrames: 64,
+				fixedWorkUnits: 1,
+			}),
+		);
+		expect(raw).toMatchObject({
+			version: 2,
+			workloadMode: "parallel-batch",
+			sampleFrames: 64,
+			fixedWorkUnits: 1,
+		});
+		expect(
+			raw.candidatesRaw.map((c) => c.trials.map((t) => t.workFrames)),
+		).toEqual([
+			[64, 64, 64],
+			[128, 128, 128],
+		]);
+		const rows = toPolicyCandidates(raw, 240, memoryOptions);
+		expect(
+			rows.every(
+				(row) =>
+					row.workload.mode === "parallel-batch" &&
+					row.workload.sampleFrames === 64,
+			),
+		).toBe(true);
+		const longer = toPolicyCandidates(raw, 10000, memoryOptions);
+		expect(longer[0]?.hostBytesPerComparison).toBeGreaterThan(
+			rows[0]?.hostBytesPerComparison ?? 0,
+		);
+	});
+	it("keeps fixed and parallel calibration caches isolated", async () => {
+		const h = setup(async (template, options) =>
+			trial({
+				...options,
+				fixedWorkUnits:
+					options.workloadMode === "parallel-batch"
+						? template.concurrency
+						: options.fixedWorkUnits,
+			}),
+		);
+		await h.engine.obtain(key, [serial], context());
+		await h.engine.obtain(
+			key,
+			[serial],
+			context({ workloadMode: "parallel-batch", fixedWorkUnits: 1 }),
+		);
+		expect(h.execute).toHaveBeenCalledTimes(6);
+		expect(await readdir(h.cacheDirectory)).toEqual(
+			expect.arrayContaining([
+				`${key}-fixed-batch-12-4.json`,
+				`${key}-parallel-batch-12-1.json`,
+			]),
+		);
+	});
+	it("requires the canonical parallel unit count and rejects a false child total", async () => {
+		const h = setup();
+		await expect(
+			h.engine.obtain(
+				key,
+				[serial],
+				context({ workloadMode: "parallel-batch", fixedWorkUnits: 2 }),
+			),
+		).rejects.toThrow("NATIVE_CALIBRATION_OPTIONS_INVALID");
+		await expect(
+			h.engine.obtain(
+				key,
+				[serial, parallel],
+				context({
+					workloadMode: "parallel-batch",
+					sampleFrames: 64,
+					fixedWorkUnits: 1,
+				}),
+			),
+		).rejects.toThrow("NATIVE_CALIBRATION_TRIAL_INVALID");
+		expect(
+			(await readdir(h.cacheDirectory)).filter((name) =>
+				name.endsWith(".json"),
+			),
+		).toEqual([]);
+	});
+	it("reserves confirmation time for a screened parallel finalist", async () => {
+		let clock = 0;
+		const control = { ...serial, cpuThreads: 2 as const };
+		const shapes = [
+			control,
+			{ ...parallel, cpuThreads: 2 as const },
+			{ ...serial, concurrency: 3, cpuThreads: 4 as const },
+			{ ...serial, concurrency: 4, cpuThreads: 2 as const },
+			{ ...serial, cpuThreads: 4 as const },
+			{ ...serial, concurrency: 6 },
+		];
+		const calls: string[] = [];
+		const engine = createNativeAutoCalibration({
+			cacheDirectory: join(directory, "staged"),
+			now: () => clock,
+			withExclusiveCalibration: async (work, signal) => work(signal),
+			runTrial: async (template, options) => {
+				const id = `${template.concurrency}/${template.cpuThreads}`;
+				calls.push(id);
+				const wallMs =
+					(
+						{
+							"1/2": 100,
+							"2/2": 120,
+							"3/4": 140,
+							"4/2": 200,
+							"1/4": 80,
+							"6/1": 300,
+						} as Record<string, number>
+					)[id] ?? 100;
+				clock += wallMs;
+				return trial(
+					{ ...options, fixedWorkUnits: template.concurrency },
+					{ wallMs },
+				);
+			},
+		});
+		const raw = await engine.obtain(
+			key,
+			shapes,
+			context({
+				workloadMode: "parallel-batch",
+				sampleFrames: 64,
+				fixedWorkUnits: 1,
+				budgetMs: 1000,
+			}),
+		);
+		expect(calls.slice(0, 3)).toEqual(["1/2", "1/2", "1/2"]);
+		expect(calls).toContain("3/4");
+		expect(
+			raw.candidatesRaw.find((c) => c.concurrency === 3 && c.cpuThreads === 4)
+				?.trials,
+		).toHaveLength(3);
+		expect(raw.candidatesRaw.some((c) => c.trials.length < 3)).toBe(true);
+		const cached = await engine.obtain(
+			key,
+			shapes,
+			context({
+				workloadMode: "parallel-batch",
+				sampleFrames: 64,
+				fixedWorkUnits: 1,
+				budgetMs: 0,
+			}),
+		);
+		expect(cached.candidatesRaw.every((c) => c.trials.length === 3)).toBe(true);
+	});
+	it("does not qualify an unfinished parallel serial control", async () => {
+		const h = setup(async (template, options) =>
+			trial({ ...options, fixedWorkUnits: template.concurrency }),
+		);
+		const raw = await h.engine.obtain(
+			key,
+			[serial, parallel],
+			context({
+				workloadMode: "parallel-batch",
+				sampleFrames: 64,
+				fixedWorkUnits: 1,
+				budgetMs: 15,
+			}),
+		);
+		expect(raw.candidatesRaw[0]?.trials).toHaveLength(2);
+		expect(toPolicyCandidates(raw, 240, memoryOptions)).toEqual([]);
+		expect(await readdir(h.cacheDirectory)).toEqual([]);
+	});
 	it("reads cached observations without a resource lease while real work holds it", async () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
@@ -210,7 +383,7 @@ describe("budgeted native VMAF calibration", () => {
 	])("does not repair or lease an invalid cache-only read: %s", async (failure) => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		if (failure === "corrupt-json") await writeFile(path, "{");
 		if (failure === "foreign-key") {
 			const raw = JSON.parse(await readFile(path, "utf8"));
@@ -260,8 +433,9 @@ describe("budgeted native VMAF calibration", () => {
 			1, 1, 1, 2, 2, 2,
 		]);
 		expect(profile).toMatchObject({
-			version: 1,
+			version: 2,
 			profileKey: key,
+			workloadMode: "fixed-batch",
 			sampleFrames: 12,
 			fixedWorkUnits: 4,
 		});
@@ -562,7 +736,7 @@ describe("budgeted native VMAF calibration", () => {
 	it("stores only private atomic metadata and preserves an old reader", async () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		const old = await open(path, "r");
 		try {
 			await h.engine.obtain(key, [serial, parallel], context());
@@ -577,13 +751,15 @@ describe("budgeted native VMAF calibration", () => {
 		}
 		expect((await stat(h.cacheDirectory)).mode & 0o777).toBe(0o700);
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
-		expect(await readdir(h.cacheDirectory)).toEqual([`${key}-12-4.json`]);
+		expect(await readdir(h.cacheDirectory)).toEqual([
+			`${key}-fixed-batch-12-4.json`,
+		]);
 	});
 
 	it("does not read or write persistent state without permission to cache", async () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		const before = createHash("sha256")
 			.update(await readFile(path))
 			.digest("hex");
@@ -612,7 +788,13 @@ describe("budgeted native VMAF calibration", () => {
 
 	it.each([
 		(profile: Record<string, unknown>) => {
-			profile.version = 2;
+			profile.version = 1;
+		},
+		(profile: Record<string, unknown>) => {
+			profile.workloadMode = "parallel-batch";
+		},
+		(profile: Record<string, unknown>) => {
+			profile.version = 3;
 		},
 		(profile: Record<string, unknown>) => {
 			profile.profileKey = otherKey;
@@ -629,7 +811,7 @@ describe("budgeted native VMAF calibration", () => {
 	])("rejects corrupted or foreign cache metadata %s", async (change) => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		const raw = JSON.parse(await readFile(path, "utf8"));
 		change(raw);
 		await writeFile(path, JSON.stringify(raw));
@@ -642,7 +824,7 @@ describe("budgeted native VMAF calibration", () => {
 	it("rejects cached incomplete or unverified trials", async () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		const raw = JSON.parse(await readFile(path, "utf8"));
 		raw.candidatesRaw[0].trials[0].cpuVerified = false;
 		await writeFile(path, JSON.stringify(raw));
@@ -658,21 +840,21 @@ describe("budgeted native VMAF calibration", () => {
 	it("rejects oversized metadata before parsing it", async () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		const valid = await readFile(path, "utf8");
 		await writeFile(path, valid + " ".repeat(256 * 1024));
 		await h.engine.obtain(key, [serial], context());
 		expect(h.execute).toHaveBeenCalledTimes(6);
 		expect(h.diagnostics).toContain("cache-invalid");
 		expect(
-			(await stat(join(h.cacheDirectory, `${key}-12-4.json`))).size,
+			(await stat(join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`))).size,
 		).toBeLessThan(256 * 1024);
 	});
 
 	it("replaces a public cache file with a private verified file", async () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		await chmod(path, 0o644);
 		await h.engine.obtain(key, [serial], context());
 		expect(h.execute).toHaveBeenCalledTimes(6);
@@ -683,7 +865,7 @@ describe("budgeted native VMAF calibration", () => {
 		const h = setup();
 		await h.engine.obtain(key, [serial], context());
 		const target = join(directory, "foreign.json");
-		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		const path = join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`);
 		const valid = await readFile(path, "utf8");
 		await writeFile(target, valid, { mode: 0o600 });
 		await rm(path);
@@ -707,12 +889,14 @@ describe("budgeted native VMAF calibration", () => {
 		let count = 0;
 		const h = setup(async (_t, options) => {
 			if (++count === 3)
-				await mkdir(join(h.cacheDirectory, `${key}-12-4.json`));
+				await mkdir(join(h.cacheDirectory, `${key}-fixed-batch-12-4.json`));
 			return trial(options);
 		});
 		const profile = await h.engine.obtain(key, [serial], context());
 		expect(profile.candidatesRaw[0]?.trials).toHaveLength(3);
-		expect(await readdir(h.cacheDirectory)).toEqual([`${key}-12-4.json`]);
+		expect(await readdir(h.cacheDirectory)).toEqual([
+			`${key}-fixed-batch-12-4.json`,
+		]);
 		expect(h.diagnostics).toContain("cache-write-unavailable");
 	});
 

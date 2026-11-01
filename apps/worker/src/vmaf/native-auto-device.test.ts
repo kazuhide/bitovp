@@ -227,6 +227,30 @@ it("binds profiles to scoring settings and build identities, but not live free m
 		).toThrow();
 });
 
+it("binds the actual per-comparison sample and calibration mode into profile identity", () => {
+	const report = info("binary");
+	const full = nativeAutoProfileKey(report, {
+		...workload,
+		calibrationMode: "parallel-batch",
+		sampleFrames: 64,
+	});
+	const short = nativeAutoProfileKey(report, {
+		...workload,
+		calibrationMode: "parallel-batch",
+		sampleFrames: 16,
+	});
+	const fixed = nativeAutoProfileKey(report, {
+		...workload,
+		calibrationMode: "fixed-batch",
+		sampleFrames: 64,
+	});
+	expect(new Set([full, short, fixed]).size).toBe(3);
+	for (const sampleFrames of [0, 257, NaN, 1.5])
+		expect(() =>
+			nativeAutoProfileKey(report, { ...workload, sampleFrames }),
+		).toThrow("NATIVE_AUTO_PROFILE_SETTINGS_INVALID");
+});
+
 it("joins API identities by host and PCI, and uses UUID when PCI is unavailable", () => {
 	const host = "a".repeat(64),
 		report = info("binary");

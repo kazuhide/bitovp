@@ -209,6 +209,28 @@ async function setup() {
 }
 
 describe("native calibration template order", () => {
+	it("interleaves compute threads and parallel shapes before the remaining grid", () => {
+		const rows = nativeCalibrationTemplates({
+			cpuCapacity: 24,
+			maxConcurrency: 6,
+			supportedInflightFrames: [1, 2, 4],
+			workloadMode: "parallel-batch",
+		});
+		expect(
+			rows
+				.slice(0, 8)
+				.map((t) => [t.concurrency, t.cpuThreads, t.decoderThreads]),
+		).toEqual([
+			[1, 2, 1],
+			[2, 2, 1],
+			[3, 4, 1],
+			[4, 2, 1],
+			[1, 4, 1],
+			[6, 1, 1],
+			[1, 1, 1],
+			[3, 2, 2],
+		]);
+	});
 	it("covers useful non-power-of-two concurrency with bounded CPU cost", () => {
 		const templates = nativeCalibrationTemplates({
 			cpuCapacity: 24,
@@ -283,6 +305,50 @@ describe("native calibration template order", () => {
 });
 
 describe("native calibration adapter", () => {
+	it("runs one parallel wave with identical frames per child", async () => {
+		const h = await setup();
+		const rows = await h.adapter.calibrate({
+			...h.request,
+			workloadMode: "parallel-batch",
+			fixedWorkUnits: 1,
+			sampleFrames: 64,
+		});
+		expect(rows.map((row) => row.trials.map((t) => t.workFrames))).toEqual([
+			[64, 64, 64],
+			[192, 192, 192],
+		]);
+		expect(score).toHaveBeenCalledTimes(12);
+		expect(
+			score.mock.calls.every(
+				([, , context]) => context.calibrationFrames === 64,
+			),
+		).toBe(true);
+	});
+	it("uses the actual short-input sample in parallel workload metadata", async () => {
+		const h = await setup();
+		const rows = await h.adapter.calibrate({
+			...h.request,
+			workloadMode: "parallel-batch",
+			fixedWorkUnits: undefined,
+			sampleFrames: undefined,
+			fullFrameCount: 2,
+		});
+		expect(rows.every((row) => row.workload?.sampleFrames === 2)).toBe(true);
+		expect(
+			score.mock.calls.every(
+				([, , context]) => context.calibrationFrames === 2,
+			),
+		).toBe(true);
+		await expect(
+			h.adapter.calibrate({
+				...h.request,
+				workloadMode: "parallel-batch",
+				fixedWorkUnits: 1,
+				sampleFrames: 64,
+				fullFrameCount: 2,
+			}),
+		).rejects.toThrow("NATIVE_CALIBRATION_OPTIONS_INVALID");
+	});
 	it("copies each input once under its lease and measures identical verified fixed work", async () => {
 		const h = await setup();
 		const candidates = await h.adapter.calibrate(h.request);
@@ -519,7 +585,10 @@ describe("native calibration adapter", () => {
 		expect(score).not.toHaveBeenCalled();
 		expect(await readdir(h.workDirectory)).toEqual([]);
 	});
-	it("keeps work directories private and drains failed siblings before releasing the lease", async () => {
+	it.each([
+		"fixed-batch",
+		"parallel-batch",
+	] as const)("keeps work directories private and drains failed siblings before releasing the lease (%s)", async (workloadMode) => {
 		const h = await setup();
 		let active = 0,
 			failed = false,
@@ -548,9 +617,14 @@ describe("native calibration adapter", () => {
 				active--;
 			}
 		});
-		await expect(h.adapter.calibrate(h.request)).rejects.toThrow(
-			"parity mismatch",
-		);
+		await expect(
+			h.adapter.calibrate({
+				...h.request,
+				workloadMode,
+				fixedWorkUnits:
+					workloadMode === "parallel-batch" ? 1 : h.request.fixedWorkUnits,
+			}),
+		).rejects.toThrow("parity mismatch");
 		expect(drained).toBe(true);
 		expect(active).toBe(0);
 		expect(h.isExclusive()).toBe(false);

@@ -3,7 +3,10 @@ import { chmod, lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { VmafCommandOptions } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
-import type { AutoExecutionCandidate } from "./auto-execution-policy";
+import type {
+	AutoExecutionCandidate,
+	AutoExecutionWorkloadMode,
+} from "./auto-execution-policy";
 import { parseFrameRate } from "./geometry";
 import {
 	createNativeAutoCalibration,
@@ -25,6 +28,7 @@ export type NativeCalibrationRequest = {
 	signal: AbortSignal;
 	fullFrameCount: number;
 	templates: readonly NativeCalibrationTemplate[];
+	workloadMode?: AutoExecutionWorkloadMode;
 	/** Stable fixed work, even when current memory headroom reduces tested C. */
 	fixedWorkUnits?: number;
 	sampleFrames?: number;
@@ -37,14 +41,15 @@ export type NativeCalibrationRequest = {
 	): Promise<T>;
 };
 
-/** Search priority: highest supported depth at C1/2/3/4/6/boundary, T2,
- * lower-depth controls, decoder controls, then the remaining bounded grid.
+/** Parallel search interleaves compute-thread and concurrency shapes first.
+ * Fixed search retains its C1/2/3/4/6/boundary, depth and decoder controls.
  * This is a budgeted measured search, not a claim of a global optimum. */
 export function nativeCalibrationTemplates(input: {
 	cpuCapacity: number;
 	maxConcurrency: number;
 	supportedInflightFrames: readonly (1 | 2 | 4)[];
 	manualThreads?: number;
+	workloadMode?: AutoExecutionWorkloadMode;
 }): NativeCalibrationTemplate[] {
 	if (
 		!Number.isFinite(input.cpuCapacity) ||
@@ -54,7 +59,9 @@ export function nativeCalibrationTemplates(input: {
 		!input.supportedInflightFrames.length ||
 		input.supportedInflightFrames.some((d) => ![1, 2, 4].includes(d)) ||
 		(input.manualThreads !== undefined &&
-			![1, 2, 4].includes(input.manualThreads))
+			![1, 2, 4].includes(input.manualThreads)) ||
+		(input.workloadMode !== undefined &&
+			!["fixed-batch", "parallel-batch"].includes(input.workloadMode))
 	)
 		return [];
 	const depths = [...new Set(input.supportedInflightFrames)].sort(
@@ -85,6 +92,7 @@ export function nativeCalibrationTemplates(input: {
 		);
 		if (
 			templates.length === 32 ||
+			concurrency > limit ||
 			seen.has(key) ||
 			concurrency * (cpuThreads + 2 * decoderThreads + 1) > input.cpuCapacity
 		)
@@ -92,12 +100,31 @@ export function nativeCalibrationTemplates(input: {
 		seen.add(key);
 		templates.push({ concurrency, cpuThreads, decoderThreads, inflightFrames });
 	};
-	for (const c of priorities) add(c, firstThreads, 1, primary);
-	if (input.manualThreads === undefined)
-		for (const c of priorities) add(c, 2, 1, primary);
-	for (const depth of depths.slice(1))
-		for (const c of priorities) add(c, firstThreads, 1, depth);
-	for (const c of priorities) add(c, firstThreads, 2, primary);
+	if (input.workloadMode === "parallel-batch") {
+		if (input.manualThreads !== undefined) {
+			for (const c of priorities) add(c, firstThreads, 1, primary);
+			add(3, firstThreads, 2, primary);
+		} else {
+			for (const [count, threads, decoder] of [
+				[1, 2, 1],
+				[2, 2, 1],
+				[3, 4, 1],
+				[4, 2, 1],
+				[1, 4, 1],
+				[6, 1, 1],
+				[1, 1, 1],
+				[3, 2, 2],
+			] as const)
+				add(count, threads, decoder, primary);
+		}
+	} else {
+		for (const c of priorities) add(c, firstThreads, 1, primary);
+		if (input.manualThreads === undefined)
+			for (const c of priorities) add(c, 2, 1, primary);
+		for (const depth of depths.slice(1))
+			for (const c of priorities) add(c, firstThreads, 1, depth);
+		for (const c of priorities) add(c, firstThreads, 2, primary);
+	}
 	for (let c = 1; c <= limit; c++)
 		for (const threads of input.manualThreads === undefined
 			? ([1, 2, 4] as const)
@@ -307,14 +334,18 @@ export function createNativeCalibrationAdapter(deps: {
 				if (!directory) throw new Error("NATIVE_CALIBRATION_SCOPE_MISSING");
 				signal.throwIfAborted();
 				const results: { rss: number; gpu: number }[] = [];
+				const workUnits =
+					context.workloadMode === "parallel-batch"
+						? template.concurrency
+						: context.fixedWorkUnits;
 				let next = 0;
 				let error: unknown;
 				const started = performance.now();
 				const workers = Array.from(
-					{ length: Math.min(template.concurrency, context.fixedWorkUnits) },
+					{ length: Math.min(template.concurrency, workUnits) },
 					async () => {
 						while (!signal.aborted) {
-							if (next++ >= context.fixedWorkUnits) return;
+							if (next++ >= workUnits) return;
 							const logPath = join(
 								directory,
 								`trial-${++session.ordinal}.json`,
@@ -370,12 +401,12 @@ export function createNativeCalibrationAdapter(deps: {
 				await Promise.allSettled(workers);
 				if (error !== undefined) throw error;
 				signal.throwIfAborted();
-				if (results.length !== context.fixedWorkUnits)
+				if (results.length !== workUnits)
 					throw new Error("NATIVE_CALIBRATION_RESULT_INVALID");
 				return {
 					scope: "native-with-cpu-parity",
 					cpuVerified: true,
-					workFrames: context.sampleFrames * context.fixedWorkUnits,
+					workFrames: context.sampleFrames * workUnits,
 					wallMs: performance.now() - started,
 					maxRssBytesPerComparison: Math.max(...results.map((r) => r.rss)),
 					gpuOwnedBytesPerComparison: Math.max(...results.map((r) => r.gpu)),
@@ -394,15 +425,25 @@ export function createNativeCalibrationAdapter(deps: {
 				templates: input.templates.map((t) => ({ ...t })),
 				memoryPadding: { ...input.memoryPadding },
 			};
+			const workloadMode = request.workloadMode ?? "fixed-batch";
 			const sampleFrames =
-				request.sampleFrames ?? Math.min(16, request.fullFrameCount);
+				request.sampleFrames ??
+				Math.min(
+					workloadMode === "parallel-batch" ? 64 : 16,
+					request.fullFrameCount,
+				);
 			const fixedWorkUnits =
 				request.fixedWorkUnits ??
-				Math.max(1, ...request.templates.map((t) => t.concurrency));
+				(workloadMode === "parallel-batch"
+					? 1
+					: Math.max(1, ...request.templates.map((t) => t.concurrency)));
+			if (sampleFrames > request.fullFrameCount)
+				throw new Error("NATIVE_CALIBRATION_OPTIONS_INVALID");
 			toPolicyCandidates(
 				{
-					version: 1,
+					version: 2,
 					profileKey: request.profileKey,
+					workloadMode,
 					sampleFrames,
 					fixedWorkUnits,
 					candidatesRaw: [],
@@ -422,6 +463,7 @@ export function createNativeCalibrationAdapter(deps: {
 					request.templates,
 					{
 						signal: request.signal,
+						workloadMode,
 						sampleFrames,
 						fixedWorkUnits,
 						budgetMs: request.budgetMs ?? 15000,

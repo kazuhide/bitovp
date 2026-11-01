@@ -43,6 +43,87 @@ function deferred<T>() {
 }
 
 describe("native calibration search budget", () => {
+	it("recognizes a completed parallel cache despite different aggregate work", async () => {
+		const budget = createNativeCalibrationBudget();
+		const rows = candidates().map((row) => ({
+			...row,
+			workload: { mode: "parallel-batch" as const, sampleFrames: 64 },
+			trials: row.trials.map((t) => ({
+				...t,
+				workFrames: 64 * row.concurrency,
+			})),
+		}));
+		const run = vi.fn<Run>(async () => rows);
+		expect(
+			await budget.calibrate({
+				profileKey: key,
+				maxConcurrency: 6,
+				signal: signal(),
+				run,
+			}),
+		).toBe(rows);
+		expect(run.mock.calls.map(([ms]) => ms)).toEqual([0]);
+	});
+	it.each([
+		"mode",
+		"sample",
+		"legacy",
+		"fixed-sample",
+	])("does not reuse mixed calibration workload metadata: %s", async (kind) => {
+		const budget = createNativeCalibrationBudget();
+		const rows = candidates().map((row) => ({
+			...row,
+			workload: { mode: "parallel-batch" as const, sampleFrames: 64 },
+			trials: row.trials.map((t) => ({
+				...t,
+				workFrames: 64 * row.concurrency,
+			})),
+		}));
+		const first = required(rows[0]),
+			second = required(rows[1]);
+		const mixed: AutoExecutionCandidate[] =
+			kind === "fixed-sample"
+				? [
+						{
+							...first,
+							workload: {
+								mode: "fixed-batch",
+								sampleFrames: 16,
+								fixedWorkUnits: 4,
+							},
+						},
+						{
+							...second,
+							workload: {
+								mode: "fixed-batch",
+								sampleFrames: 32,
+								fixedWorkUnits: 2,
+							},
+							trials: first.trials,
+						},
+					]
+				: [
+						first,
+						{
+							...second,
+							workload:
+								kind === "mode"
+									? { mode: "fixed-batch", sampleFrames: 16, fixedWorkUnits: 4 }
+									: kind === "sample"
+										? { mode: "parallel-batch", sampleFrames: 32 }
+										: undefined,
+							trials: first.trials,
+						},
+					];
+		const run = vi.fn<Run>(async (ms) => (ms > 0 ? rows : mixed));
+		await budget.calibrate({
+			profileKey: key,
+			maxConcurrency: 6,
+			signal: signal(),
+			run,
+		});
+		expect(run.mock.calls.map(([ms]) => ms)).toEqual([0, 30000]);
+	});
 	it("checks cache first and reuses completed serial plus concurrent measurements", async () => {
 		const budget = createNativeCalibrationBudget();
 		const run = vi.fn<Run>(async () => candidates());

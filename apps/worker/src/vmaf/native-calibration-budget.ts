@@ -1,4 +1,7 @@
-import type { AutoExecutionCandidate } from "./auto-execution-policy";
+import {
+	type AutoExecutionCandidate,
+	autoExecutionWorkloadKey,
+} from "./auto-execution-policy";
 
 type Request = {
 	profileKey: string;
@@ -45,18 +48,12 @@ function adequate(rows: AutoExecutionCandidate[], key: string, max: number) {
 			)
 		);
 	});
+	const protocols = new Set(measured.map(autoExecutionWorkloadKey));
+	if (protocols.size !== 1 || protocols.has(undefined)) return false;
 	const serial = measured.filter((candidate) => candidate.concurrency === 1);
 	return (
 		serial.length > 0 &&
-		(max === 1 ||
-			measured.some(
-				(candidate) =>
-					candidate.concurrency > 1 &&
-					serial.some(
-						(control) =>
-							control.trials[0]?.workFrames === candidate.trials[0]?.workFrames,
-					),
-			))
+		(max === 1 || measured.some((candidate) => candidate.concurrency > 1))
 	);
 }
 

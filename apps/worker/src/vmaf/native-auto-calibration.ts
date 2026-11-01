@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import type { AutoExecutionCandidate } from "./auto-execution-policy";
+import type {
+	AutoExecutionCandidate,
+	AutoExecutionWorkloadMode,
+} from "./auto-execution-policy";
 
 const CACHE_BYTES = 256 * 1024;
 const MAX_CANDIDATES = 32;
@@ -22,8 +25,9 @@ export type NativeCalibrationTrial = {
 	warmup?: false;
 };
 export type NativeCalibrationProfile = {
-	version: 1;
+	version: 2;
 	profileKey: string;
+	workloadMode: AutoExecutionWorkloadMode;
 	sampleFrames: number;
 	fixedWorkUnits: number;
 	candidatesRaw: readonly (NativeCalibrationTemplate & {
@@ -32,6 +36,7 @@ export type NativeCalibrationProfile = {
 };
 export type NativeCalibrationContext = {
 	signal: AbortSignal;
+	workloadMode?: AutoExecutionWorkloadMode;
 	sampleFrames: number;
 	fixedWorkUnits: number;
 	budgetMs: number;
@@ -40,7 +45,7 @@ export type NativeCalibrationContext = {
 };
 type TrialContext = Pick<
 	NativeCalibrationContext,
-	"signal" | "sampleFrames" | "fixedWorkUnits"
+	"signal" | "sampleFrames" | "fixedWorkUnits" | "workloadMode"
 >;
 type Diagnostic =
 	| "cache-invalid"
@@ -133,21 +138,26 @@ function validProfile(
 	key: string,
 	frames: number,
 	units: number,
+	mode: AutoExecutionWorkloadMode,
 	partial = false,
 ): v is NativeCalibrationProfile {
 	if (
 		!record(v, [
 			"version",
 			"profileKey",
+			"workloadMode",
 			"sampleFrames",
 			"fixedWorkUnits",
 			"candidatesRaw",
 		]) ||
-		v.version !== 1 ||
+		v.version !== 2 ||
 		v.profileKey !== key ||
+		v.workloadMode !== mode ||
+		!["fixed-batch", "parallel-batch"].includes(mode) ||
 		!SHA256.test(key) ||
 		!integer(frames, 1, 256) ||
 		!integer(units, 1, 32) ||
+		(mode === "parallel-batch" && units !== 1) ||
 		v.sampleFrames !== frames ||
 		v.fixedWorkUnits !== units ||
 		!Array.isArray(v.candidatesRaw) ||
@@ -158,12 +168,17 @@ function validProfile(
 	return v.candidatesRaw.every((candidate) => {
 		if (
 			!validTemplate(candidate, true) ||
-			candidate.concurrency > units ||
+			(mode === "fixed-batch" && candidate.concurrency > units) ||
 			seen.has(templateId(candidate)) ||
 			!record(candidate, [...templateKeys, "trials"]) ||
 			!Array.isArray(candidate.trials) ||
 			!integer(candidate.trials.length, partial ? 1 : 3, 3) ||
-			!candidate.trials.every((t: unknown) => validTrial(t, frames * units))
+			!candidate.trials.every((t: unknown) =>
+				validTrial(
+					t,
+					frames * (mode === "parallel-batch" ? candidate.concurrency : units),
+				),
+			)
 		)
 			return false;
 		seen.add(templateId(candidate));
@@ -222,7 +237,7 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 	const pathFor = (key: string, c: NativeCalibrationContext) =>
 		join(
 			deps.cacheDirectory,
-			`${key}-${c.sampleFrames}-${c.fixedWorkUnits}.json`,
+			`${key}-${c.workloadMode ?? "fixed-batch"}-${c.sampleFrames}-${c.fixedWorkUnits}.json`,
 		);
 	async function privateDirectory(readOnly = false) {
 		if (!readOnly)
@@ -269,7 +284,15 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 			if (length > CACHE_BYTES)
 				throw new Error("Cache metadata limit exceeded");
 			const value: unknown = JSON.parse(bytes.toString("utf8", 0, length));
-			if (!validProfile(value, key, c.sampleFrames, c.fixedWorkUnits))
+			if (
+				!validProfile(
+					value,
+					key,
+					c.sampleFrames,
+					c.fixedWorkUnits,
+					c.workloadMode ?? "fixed-batch",
+				)
+			)
 				throw new Error("Invalid calibration cache");
 			c.signal.throwIfAborted();
 			return value;
@@ -345,11 +368,20 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 		try {
 			const observed = await deps.runTrial(template, {
 				signal,
+				workloadMode: c.workloadMode,
 				sampleFrames: c.sampleFrames,
 				fixedWorkUnits: c.fixedWorkUnits,
 			});
 			c.signal.throwIfAborted();
-			if (!validTrial(observed, c.sampleFrames * c.fixedWorkUnits))
+			if (
+				!validTrial(
+					observed,
+					c.sampleFrames *
+						(c.workloadMode === "parallel-batch"
+							? template.concurrency
+							: c.fixedWorkUnits),
+				)
+			)
 				throw new Error("NATIVE_CALIBRATION_TRIAL_INVALID");
 			if (timeout.signal.aborted) {
 				diagnostic("trial-timeout");
@@ -383,6 +415,112 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 					candidate.trials.length === 3,
 			),
 		);
+	/** Screen a bounded one-wave shortlist, then confirm before exploring more.
+	 * Raw timings remain end-to-end samples, never full-video forecasts. */
+	async function parallelSearch(
+		templates: NativeCalibrationTemplate[],
+		c: NativeCalibrationContext,
+		candidates: (NativeCalibrationTemplate & {
+			trials: NativeCalibrationTrial[];
+		})[],
+		deadline: number,
+	) {
+		const serial = templates
+			.filter((t) => t.concurrency === 1)
+			.sort(
+				(a, b) =>
+					a.decoderThreads - 1 - (b.decoderThreads - 1) ||
+					[2, 1, 4].indexOf(a.cpuThreads) - [2, 1, 4].indexOf(b.cpuThreads) ||
+					b.inflightFrames - a.inflightFrames,
+			);
+		const control = serial[0];
+		if (!control) return;
+		const shortlist = [
+			control,
+			...templates
+				.filter((t) => templateId(t) !== templateId(control))
+				.slice(0, 7),
+		];
+		const row = (t: NativeCalibrationTemplate) =>
+			candidates.find((candidate) => templateId(candidate) === templateId(t));
+		const typical = (t: NativeCalibrationTemplate) => {
+			const walls = (row(t)?.trials.map((trial) => trial.wallMs) ?? []).sort(
+				(a, b) => a - b,
+			);
+			return walls[Math.floor(walls.length / 2)] ?? 0;
+		};
+		const rate = (t: NativeCalibrationTemplate) =>
+			(c.sampleFrames * t.concurrency) / typical(t);
+		// Only new trial starts are bounded. After one screening trial, reserve
+		// one trial plus 10%/10ms headroom so both confirmations can start; the
+		// third may finish after the deadline. These are scheduling estimates.
+		const confirmationReserve = (t: NativeCalibrationTemplate) =>
+			Math.max(0, 2 - (row(t)?.trials.length ?? 0)) * typical(t) * 1.1 + 10;
+		const collect = async (t: NativeCalibrationTemplate) => {
+			c.signal.throwIfAborted();
+			if (clock() >= deadline) {
+				diagnostic("budget-exhausted");
+				return false;
+			}
+			let target = row(t);
+			if (!target && candidates.length >= MAX_CANDIDATES) {
+				diagnostic("candidate-limit");
+				return false;
+			}
+			const observed = await measure(t, c);
+			if (!observed) return false;
+			if (!target) {
+				target = { ...t, trials: [] };
+				candidates.push(target);
+			}
+			target.trials.push(observed);
+			return true;
+		};
+		const complete = async (t: NativeCalibrationTemplate) => {
+			while ((row(t)?.trials.length ?? 0) < 3)
+				if (!(await collect(t))) return false;
+			return true;
+		};
+		if (!(await complete(control))) return;
+		const strongestParallel = () =>
+			shortlist
+				.filter((t) => t.concurrency > 1 && (row(t)?.trials.length ?? 0) > 0)
+				.sort(
+					(a, b) =>
+						rate(b) - rate(a) || shortlist.indexOf(a) - shortlist.indexOf(b),
+				)[0];
+		for (const t of shortlist.slice(1)) {
+			if ((row(t)?.trials.length ?? 0) > 0) continue;
+			const finalist = strongestParallel();
+			if (finalist && (row(finalist)?.trials.length ?? 0) < 3) {
+				const nextEstimate = Math.max(...shortlist.map(typical)) * 1.25;
+				if (deadline - clock() <= confirmationReserve(finalist) + nextEstimate)
+					break;
+			}
+			if (!(await collect(t))) return;
+		}
+		const finalist = strongestParallel();
+		if (finalist && !(await complete(finalist))) return;
+		const ranked = shortlist
+			.filter(
+				(t) =>
+					(row(t)?.trials.length ?? 0) > 0 && (row(t)?.trials.length ?? 0) < 3,
+			)
+			.sort(
+				(a, b) =>
+					rate(b) - rate(a) || shortlist.indexOf(a) - shortlist.indexOf(b),
+			);
+		// Confirm the strongest alternative serial shape before another parallel
+		// finalist, so higher compute-thread counts can earn complete evidence.
+		const bestSerial = ranked.find((t) => t.concurrency === 1);
+		const remaining = bestSerial
+			? [bestSerial, ...ranked.filter((t) => t !== bestSerial)]
+			: ranked;
+		for (const t of remaining) {
+			if (deadline - clock() <= confirmationReserve(t)) break;
+			if (!(await complete(t))) return;
+		}
+	}
 	async function calibrate(
 		key: string,
 		templates: NativeCalibrationTemplate[],
@@ -394,8 +532,9 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 		if (context.budgetMs === 0)
 			return frozen(
 				cached ?? {
-					version: 1,
+					version: 2,
 					profileKey: key,
+					workloadMode: context.workloadMode ?? "fixed-batch",
 					sampleFrames: context.sampleFrames,
 					fixedWorkUnits: context.fixedWorkUnits,
 					candidatesRaw: [],
@@ -409,41 +548,49 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 			};
 			c.signal.throwIfAborted();
 			const profile: NativeCalibrationProfile = (await readCache(key, c)) ?? {
-				version: 1,
+				version: 2,
 				profileKey: key,
+				workloadMode: c.workloadMode ?? "fixed-batch",
 				sampleFrames: c.sampleFrames,
 				fixedWorkUnits: c.fixedWorkUnits,
 				candidatesRaw: [],
 			};
-			const candidates = [...profile.candidatesRaw];
+			const candidates = profile.candidatesRaw.map((candidate) => ({
+				...candidate,
+				trials: [...candidate.trials],
+			}));
 			const deadline = clock() + c.budgetMs;
-			outer: for (const template of templates) {
-				if (
-					candidates.some(
-						(candidate) => templateId(candidate) === templateId(template),
+			if (c.workloadMode === "parallel-batch")
+				await parallelSearch(templates, c, candidates, deadline);
+			else {
+				outer: for (const template of templates) {
+					if (
+						candidates.some(
+							(candidate) => templateId(candidate) === templateId(template),
+						)
 					)
-				)
-					continue;
-				if (candidates.length >= MAX_CANDIDATES) {
-					diagnostic("candidate-limit");
-					break;
-				}
-				const trials: NativeCalibrationTrial[] = [];
-				for (let repeat = 0; repeat < 3; repeat++) {
-					c.signal.throwIfAborted();
-					if (clock() >= deadline) {
-						diagnostic("budget-exhausted");
-						if (trials.length) candidates.push({ ...template, trials });
-						break outer;
+						continue;
+					if (candidates.length >= MAX_CANDIDATES) {
+						diagnostic("candidate-limit");
+						break;
 					}
-					const observed = await measure(template, c);
-					if (!observed) {
-						if (trials.length) candidates.push({ ...template, trials });
-						break outer;
+					const trials: NativeCalibrationTrial[] = [];
+					for (let repeat = 0; repeat < 3; repeat++) {
+						c.signal.throwIfAborted();
+						if (clock() >= deadline) {
+							diagnostic("budget-exhausted");
+							if (trials.length) candidates.push({ ...template, trials });
+							break outer;
+						}
+						const observed = await measure(template, c);
+						if (!observed) {
+							if (trials.length) candidates.push({ ...template, trials });
+							break outer;
+						}
+						trials.push(observed);
 					}
-					trials.push(observed);
+					candidates.push({ ...template, trials });
 				}
-				candidates.push({ ...template, trials });
 			}
 			const result = { ...profile, candidatesRaw: candidates };
 			c.signal.throwIfAborted();
@@ -489,8 +636,12 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 		context.signal.throwIfAborted();
 		if (
 			!SHA256.test(key) ||
+			(context.workloadMode !== undefined &&
+				!["fixed-batch", "parallel-batch"].includes(context.workloadMode)) ||
 			!integer(context.sampleFrames, 1, 256) ||
 			!integer(context.fixedWorkUnits, 1, 32) ||
+			(context.workloadMode === "parallel-batch" &&
+				context.fixedWorkUnits !== 1) ||
 			!Number.isFinite(context.budgetMs) ||
 			context.budgetMs < 0 ||
 			context.budgetMs > 60000 ||
@@ -499,18 +650,25 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 				typeof context.cacheable !== "boolean") ||
 			input.length > MAX_CANDIDATES ||
 			input.some(
-				(t) => !validTemplate(t) || t.concurrency > context.fixedWorkUnits,
+				(t) =>
+					!validTemplate(t) ||
+					(context.workloadMode !== "parallel-batch" &&
+						t.concurrency > context.fixedWorkUnits),
 			) ||
 			new Set(input.map(templateId)).size !== input.length ||
 			(input.length > 0 && !input.some((t) => t.concurrency === 1))
 		)
 			throw new Error("NATIVE_CALIBRATION_OPTIONS_INVALID");
-		const selectedContext = { ...context };
+		const selectedContext = {
+			...context,
+			workloadMode: context.workloadMode ?? "fixed-batch",
+		};
 		const templates = input.map((t) => Object.freeze({ ...t }));
 		const serial = templates.findIndex((t) => t.concurrency === 1);
 		if (serial > 0) templates.unshift(...templates.splice(serial, 1));
 		const flightKey = JSON.stringify([
 			key,
+			selectedContext.workloadMode,
 			context.sampleFrames,
 			context.fixedWorkUnits,
 			context.cacheable === true,
@@ -572,6 +730,7 @@ export function toPolicyCandidates(
 			profile.profileKey,
 			profile.sampleFrames,
 			profile.fixedWorkUnits,
+			profile.workloadMode,
 			true,
 		) ||
 		!integer(fullFrameCount, 1) ||
@@ -601,6 +760,17 @@ export function toPolicyCandidates(
 				throw new Error("NATIVE_CALIBRATION_MEMORY_ESTIMATE_INVALID");
 			return {
 				...candidate,
+				workload:
+					profile.workloadMode === "parallel-batch"
+						? {
+								mode: "parallel-batch" as const,
+								sampleFrames: profile.sampleFrames,
+							}
+						: {
+								mode: "fixed-batch" as const,
+								sampleFrames: profile.sampleFrames,
+								fixedWorkUnits: profile.fixedWorkUnits,
+							},
 				profileKey: profile.profileKey,
 				scope: "native-with-cpu-parity" as const,
 				hostBytesPerComparison: host,

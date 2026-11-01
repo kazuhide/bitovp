@@ -1,5 +1,9 @@
 /** LCM(1..32): every supported pool size receives an exact integer share. */
 export const AUTO_GPU_SHARE_CAPACITY = 144_403_552_893_600;
+export type AutoExecutionWorkloadMode = "fixed-batch" | "parallel-batch";
+export type AutoExecutionWorkload =
+	| { mode: "fixed-batch"; sampleFrames: number; fixedWorkUnits: number }
+	| { mode: "parallel-batch"; sampleFrames: number };
 
 export type AutoExecutionResources = {
 	cpuCapacity: number;
@@ -22,6 +26,8 @@ export type AutoExecutionCandidate = {
 	inflightFrames: 1 | 2 | 4;
 	cpuThreads: 1 | 2 | 4;
 	decoderThreads: 1 | 2;
+	/** Absent only on legacy fixed-total-work observations. */
+	workload?: AutoExecutionWorkload;
 	/** Non-GPU host memory, including the caller's full-result storage estimate. */
 	hostBytesPerComparison: number;
 	/** Workspace and opaque driver/decoder allowances supplied by the caller. */
@@ -85,6 +91,39 @@ const positiveBytes = (n: unknown): n is number =>
 	typeof n === "number" && Number.isSafeInteger(n) && n > 0;
 const nonnegativeBytes = (n: unknown): n is number =>
 	typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+
+/** Only the same measurement protocol and per-comparison sample are comparable. */
+export function autoExecutionWorkloadKey(candidate: AutoExecutionCandidate) {
+	const work = candidate.trials?.[0]?.workFrames;
+	if (!positiveBytes(work)) return undefined;
+	const spec = candidate.workload;
+	if (spec === undefined) return `legacy-fixed:${work}`;
+	if (
+		!spec ||
+		typeof spec !== "object" ||
+		Array.isArray(spec) ||
+		!positiveBytes(spec.sampleFrames) ||
+		spec.sampleFrames > 256
+	)
+		return undefined;
+	if (
+		spec.mode === "parallel-batch" &&
+		Object.keys(spec).every((key) => ["mode", "sampleFrames"].includes(key)) &&
+		work === spec.sampleFrames * candidate.concurrency
+	)
+		return `parallel-batch:${spec.sampleFrames}`;
+	if (
+		spec.mode === "fixed-batch" &&
+		positiveBytes(spec.fixedWorkUnits) &&
+		spec.fixedWorkUnits <= 32 &&
+		Object.keys(spec).every((key) =>
+			["mode", "sampleFrames", "fixedWorkUnits"].includes(key),
+		) &&
+		work === spec.sampleFrames * spec.fixedWorkUnits
+	)
+		return `fixed-batch:${spec.sampleFrames}:${spec.fixedWorkUnits}`;
+	return undefined;
+}
 const cpuCharge = (threads: number, decoderThreads: number) =>
 	threads + 2 * decoderThreads + 1;
 const hostCharge = (host: number, gpu: number, integrated: boolean) =>
@@ -130,7 +169,8 @@ function validCandidate(candidate: AutoExecutionCandidate, key: string) {
 		Number.isFinite(
 			(candidate.trials[0]?.workFrames ?? 0) /
 				median(candidate.trials.map((trial) => trial.wallMs)),
-		)
+		) &&
+		autoExecutionWorkloadKey(candidate) !== undefined
 	);
 }
 
@@ -231,7 +271,7 @@ export function selectAutoExecutionPlan(
 							candidate.cpuThreads === request.fixedCpuThreads),
 				)
 			: [];
-	if (new Set(compatible.map((c) => c.trials[0]?.workFrames)).size > 1) {
+	if (new Set(compatible.map(autoExecutionWorkloadKey)).size > 1) {
 		reasons.push("incomparable-profile-work");
 		compatible = [];
 	}

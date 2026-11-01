@@ -54,6 +54,66 @@ function request(
 }
 
 describe("automatic native VMAF execution planning", () => {
+	it("compares one-wave parallel throughput using equal frames per comparison", () => {
+		const rows = [candidate(1, 1000), candidate(2, 1200)].map((row) => ({
+			...row,
+			workload: { mode: "parallel-batch" as const, sampleFrames: 64 },
+			trials: row.trials.map((t) => ({
+				...t,
+				workFrames: 64 * row.concurrency,
+			})),
+		}));
+		expect(
+			selectAutoExecutionPlan(request({ candidates: rows })),
+		).toMatchObject({
+			status: "ready",
+			plan: { maxActiveComparisons: 2, source: "calibrated" },
+		});
+	});
+	it.each([
+		"mode",
+		"sample",
+		"legacy",
+	])("rejects incomparable calibration workload identity: %s", (kind) => {
+		const first = candidate(1, 1000, {
+			workload: { mode: "parallel-batch", sampleFrames: 64 },
+			trials: Array.from({ length: 3 }, () => ({
+				workFrames: 64,
+				wallMs: 1000,
+				cpuVerified: true,
+			})),
+		});
+		const other =
+			kind === "legacy"
+				? candidate(2, 800, { trials: first.trials })
+				: candidate(2, 800, {
+						workload:
+							kind === "mode"
+								? { mode: "fixed-batch", sampleFrames: 16, fixedWorkUnits: 4 }
+								: { mode: "parallel-batch", sampleFrames: 32 },
+						trials: first.trials,
+					});
+		const result = selectAutoExecutionPlan(
+			request({ candidates: [first, other] }),
+		);
+		expect(result.plan?.source).toBe("conservative");
+		expect(result.reasons).toContain("incomparable-profile-work");
+	});
+	it("does not accept aggregate frames that contradict parallel child count", () => {
+		const control = candidate(1, 1000, {
+			workload: { mode: "parallel-batch", sampleFrames: 64 },
+			trials: Array.from({ length: 3 }, () => ({
+				workFrames: 64,
+				wallMs: 1000,
+				cpuVerified: true,
+			})),
+		});
+		const forged = { ...control, concurrency: 4 };
+		expect(
+			selectAutoExecutionPlan(request({ candidates: [control, forged] })).plan
+				?.maxActiveComparisons,
+		).toBe(1);
+	});
 	it.each([
 		2, 4,
 	])("binds fallback bounds to an explicit %s-thread configuration", (threads) => {

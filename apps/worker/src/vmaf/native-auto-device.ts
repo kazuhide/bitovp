@@ -4,6 +4,7 @@ import { access, realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, resolve } from "node:path";
 import { type NativeDeviceInfo, nativeDeviceInfoSchema } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
+import type { AutoExecutionWorkloadMode } from "./auto-execution-policy";
 import { verifiedFileIdentity } from "./file-identity";
 import { nativeSourceFromVersion } from "./native-contract";
 
@@ -115,6 +116,8 @@ export type NativeAutoWorkload = {
 	fps: number;
 	cpuCapacity: number;
 	hostCapacityBytes: number;
+	calibrationMode?: AutoExecutionWorkloadMode;
+	sampleFrames?: number;
 };
 
 /** A profile is performance advice for these settings, never a parity waiver. */
@@ -123,6 +126,8 @@ export function nativeAutoProfileKey(
 	work: NativeAutoWorkload,
 ): string {
 	const sha = /^[a-f0-9]{64}$/;
+	const mode = work.calibrationMode ?? "fixed-batch";
+	const sampleFrames = work.sampleFrames ?? 16;
 	const dimensions = [
 		work.width,
 		work.height,
@@ -132,6 +137,10 @@ export function nativeAutoProfileKey(
 		work.distortedHeight,
 	];
 	if (
+		!["fixed-batch", "parallel-batch"].includes(mode) ||
+		!Number.isSafeInteger(sampleFrames) ||
+		sampleFrames < 1 ||
+		sampleFrames > 256 ||
 		!sha.test(work.modelSha256) ||
 		!work.model ||
 		dimensions.some((n) => !Number.isSafeInteger(n) || n <= 0 || n > 16384) ||
@@ -150,7 +159,9 @@ export function nativeAutoProfileKey(
 	return createHash("sha256")
 		.update(
 			JSON.stringify([
-				"bitovp-native-auto-v1",
+				"bitovp-native-auto-v2",
+				mode,
+				sampleFrames,
 				info.sourceSha256,
 				info.binarySha256,
 				info.capabilities.supervisorBinarySha256 ?? null,

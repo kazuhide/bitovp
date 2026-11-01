@@ -31,7 +31,9 @@ export type NativeAutoCalibrationRequest = {
 	fullFrameCount: number;
 	cpuCapacity: number;
 	maximumConcurrency: number;
-	fixedWorkUnits: number;
+	workloadMode: "parallel-batch";
+	fixedWorkUnits: 1;
+	sampleFrames: number;
 	supportedInflightFrames: readonly (1 | 2 | 4)[];
 	manualThreads?: number;
 	withExclusiveCalibration<T>(
@@ -154,7 +156,11 @@ export function createNativeAutoResourcePlanner(deps: {
 			request.options,
 			signal,
 		);
+		const sampleFrames = Math.min(64, base.frameCount);
 		const profileKey = nativeAutoProfileKey(info, {
+			calibrationMode: "parallel-batch",
+			sampleFrames,
+			fixedCpuThreads: deps.configured?.threads,
 			model: request.options.model,
 			modelSha256: model.modelSha256,
 			...size,
@@ -184,7 +190,7 @@ export function createNativeAutoResourcePlanner(deps: {
 		const reserve =
 			total === null ? 0 : Math.max(512 * 1024 ** 2, Math.ceil(total * 0.1));
 		const gpuBudget = total === null ? undefined : Math.max(0, total - reserve);
-		const fixedWorkUnits = Math.max(
+		const concurrencyCapacity = Math.max(
 			1,
 			Math.min(
 				32,
@@ -201,7 +207,7 @@ export function createNativeAutoResourcePlanner(deps: {
 		const maximumConcurrency = Math.max(
 			1,
 			Math.min(
-				fixedWorkUnits,
+				concurrencyCapacity,
 				Math.floor(
 					(current.budgetBytes ?? 0) /
 						(baseline.hostBytes +
@@ -250,7 +256,9 @@ export function createNativeAutoResourcePlanner(deps: {
 						fullFrameCount: base.frameCount,
 						cpuCapacity: current.cpuCapacity,
 						maximumConcurrency,
-						fixedWorkUnits,
+						workloadMode: "parallel-batch",
+						fixedWorkUnits: 1,
+						sampleFrames,
 						supportedInflightFrames: info.capabilities.inflightFrames,
 						...(deps.configured?.threads === undefined
 							? {}

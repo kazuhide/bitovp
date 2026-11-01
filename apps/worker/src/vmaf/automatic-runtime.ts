@@ -93,6 +93,7 @@ export function createAutomaticVmafRuntime(deps: {
 						referenceProbe,
 						distortedProbe,
 						templates: nativeCalibrationTemplates({
+							workloadMode: request.workloadMode,
 							cpuCapacity: request.cpuCapacity,
 							maxConcurrency: request.maximumConcurrency,
 							supportedInflightFrames: request.supportedInflightFrames,
@@ -100,7 +101,7 @@ export function createAutomaticVmafRuntime(deps: {
 						}),
 						budgetMs,
 						trialTimeoutMs: 15_000,
-						sampleFrames: Math.min(16, request.fullFrameCount),
+						sampleFrames: request.sampleFrames,
 						memoryPadding: {
 							hostMarginFactor: 1.5,
 							hostPerFrameBytes: 4096,

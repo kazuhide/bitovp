@@ -115,8 +115,9 @@ function harness() {
 		decoderThreads: 1,
 		hostBytesPerComparison: GiB,
 		gpuBytesPerComparison: GiB,
+		workload: { mode: "parallel-batch", sampleFrames: request.sampleFrames },
 		trials: Array.from({ length: 3 }, () => ({
-			workFrames: 96,
+			workFrames: request.sampleFrames * count,
 			wallMs: count === 1 ? 2000 : 1000,
 			cpuVerified: true,
 		})),
@@ -169,6 +170,43 @@ it("chooses one shared measured pool independently of a parent's mirror count", 
 	expect(h.request.options).toEqual(before);
 	expect(h.calibrate.mock.calls[0]?.[0].options.scoring?.device).toBe(2);
 	expect(h.calibrate.mock.calls[0]?.[0].fullFrameCount).toBe(720);
+	expect(h.calibrate.mock.calls[0]?.[0]).toMatchObject({
+		workloadMode: "parallel-batch",
+		fixedWorkUnits: 1,
+		sampleFrames: 64,
+	});
+});
+
+it("binds actual sample length and manual threads into cache identity", async () => {
+	const h = harness();
+	await createNativeAutoResourcePlanner(h.deps)(h.request);
+	const first = h.calibrate.mock.calls.at(-1)?.[0];
+	const shortRequest = {
+		...h.request,
+		pair: {
+			...h.request.pair,
+			reference: { ...h.request.pair.reference, frames: 32 },
+			distorted: { ...h.request.pair.distorted, frames: 32 },
+		},
+	};
+	await createNativeAutoResourcePlanner(h.deps)(shortRequest);
+	const short = h.calibrate.mock.calls.at(-1)?.[0];
+	expect(short?.sampleFrames).toBe(32);
+	expect(short?.profileKey).not.toBe(first?.profileKey);
+	await createNativeAutoResourcePlanner({
+		...h.deps,
+		configured: { threads: 2 },
+	})(h.request);
+	const manual = h.calibrate.mock.calls.at(-1)?.[0];
+	expect(manual?.manualThreads).toBe(2);
+	expect(manual?.profileKey).not.toBe(first?.profileKey);
+	await createNativeAutoResourcePlanner({
+		...h.deps,
+		configured: { threads: 4 },
+	})(h.request);
+	expect(h.calibrate.mock.calls.at(-1)?.[0].profileKey).not.toBe(
+		manual?.profileKey,
+	);
 });
 it("preserves advanced thread overrides and uses serial planning when GPU headroom is unknown", async () => {
 	const h = harness();

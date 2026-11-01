@@ -23,6 +23,7 @@ vi.mock("./native-score", () => ({ runNativeVmafScore: vi.fn() }));
 const score = vi.mocked(runNativeVmafScore);
 const directories: string[] = [];
 afterEach(async () => {
+	vi.useRealTimers();
 	vi.resetAllMocks();
 	await Promise.all(
 		directories
@@ -708,28 +709,87 @@ describe("native calibration adapter", () => {
 		expect(await readdir(h.workDirectory)).toEqual([]);
 		expect(h.isExclusive()).toBe(false);
 	});
-	it("does not qualify a timed-out comparison after its process settles", async () => {
+	it.each([
+		"native",
+		"proxy",
+	] as const)("does not qualify a timed-out comparison after its process settles (%s)", async (stage) => {
 		const h = await setup();
+		let enter = () => {},
+			abortObserved = () => {},
+			release = () => {};
+		const entered = new Promise<void>((resolve) => {
+			enter = resolve;
+		});
+		const aborted = new Promise<void>((resolve) => {
+			abortObserved = resolve;
+		});
+		const draining = new Promise<void>((resolve) => {
+			release = resolve;
+		});
 		let drained = false;
-		score.mockImplementation(async (_deps, _options, context) => {
+		const drainChild = async (signal: AbortSignal): Promise<never> => {
+			enter();
 			await new Promise<void>((resolve) =>
-				required(context.signal).addEventListener("abort", () => resolve(), {
-					once: true,
-				}),
+				signal.addEventListener(
+					"abort",
+					() => {
+						abortObserved();
+						resolve();
+					},
+					{
+						once: true,
+					},
+				),
 			);
-			await pause(5);
+			await draining;
 			drained = true;
-			required(context.signal).throwIfAborted();
+			signal.throwIfAborted();
 			throw new Error("unreachable");
-		});
-		const candidates = await h.adapter.calibrate({
-			...h.request,
-			trialTimeoutMs: 10,
-		});
-		expect(candidates).toEqual([]);
-		expect(drained).toBe(true);
-		expect(await readdir(h.cacheDirectory)).toEqual([]);
-		expect(await readdir(h.workDirectory)).toEqual([]);
+		};
+		score.mockImplementation(async (_deps, _options, context) =>
+			drainChild(required(context.signal)),
+		);
+		if (stage === "proxy") {
+			const runProcess = required(h.run.getMockImplementation());
+			h.run.mockImplementation(async (binary, args, context) =>
+				binary === "ffmpeg"
+					? drainChild(required(context?.signal))
+					: runProcess(binary, args, context),
+			);
+		}
+		// Filesystem preparation is real, but only the native-process timeout
+		// advances here; a busy machine cannot expire it before native entry.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		let settled = false;
+		const pending = h.adapter
+			.calibrate({
+				...h.request,
+				trialTimeoutMs: 10,
+			})
+			.finally(() => {
+				settled = true;
+			});
+		try {
+			await entered;
+			expect(score).toHaveBeenCalledTimes(stage === "native" ? 1 : 0);
+			await vi.advanceTimersByTimeAsync(10);
+			await aborted;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(settled).toBe(false);
+			expect(drained).toBe(false);
+			expect(h.isExclusive()).toBe(true);
+			release();
+			expect(await pending).toEqual([]);
+			expect(drained).toBe(true);
+			expect(h.isExclusive()).toBe(false);
+			expect(await readdir(h.cacheDirectory)).toEqual([]);
+			expect(await readdir(h.workDirectory)).toEqual([]);
+		} finally {
+			h.lease.abort(new DOMException("Test cleanup", "AbortError"));
+			release();
+			await pending.catch(() => undefined);
+			vi.useRealTimers();
+		}
 	});
 	it.each([
 		"cpu-proof",

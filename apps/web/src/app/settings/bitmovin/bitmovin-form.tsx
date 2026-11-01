@@ -1,7 +1,9 @@
 "use client";
 
 import {
+	BITMOVIN_CLOUD_REGIONS,
 	createBitmovinAccountSchema,
+	ENCODER_VERSION_PRESETS,
 	rateCardSchema,
 	updateBitmovinAccountSchema,
 } from "@bitovp/core";
@@ -11,7 +13,7 @@ import { PrewarmedPoolPicker } from "@/components/prewarmed-pool-picker";
 import { RegionSelect } from "@/components/region-select";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import { zodIssueMessage } from "@/lib/i18n/zod-issue-message";
 import type { BitmovinAccountDto } from "./types";
@@ -20,6 +22,8 @@ type FormValues = {
 	label: string;
 	apiKey: string;
 	tenantOrgId: string;
+	cloudRegion: string;
+	encoderVersion: string;
 	fallbackRegionsCsv: string;
 	schedulingPriority: string;
 	prewarmedPoolIdsCsv: string;
@@ -54,6 +58,8 @@ export function BitmovinForm({
 				label: account?.label ?? "",
 				apiKey: "",
 				tenantOrgId: account?.tenantOrgId ?? "",
+				cloudRegion: defaults.cloudRegion ?? "AUTO",
+				encoderVersion: defaults.encoderVersion ?? "STABLE",
 				fallbackRegionsCsv: Array.isArray(defaults.fallbackRegions)
 					? defaults.fallbackRegions.join(", ")
 					: "",
@@ -78,6 +84,11 @@ export function BitmovinForm({
 		});
 	const replaceApiKey = watch("replaceApiKey");
 	const showApiKey = !isEdit || replaceApiKey;
+	const cloudRegion = watch("cloudRegion");
+	const encoderVersion = watch("encoderVersion");
+	const pinnedVersion = !ENCODER_VERSION_PRESETS.some(
+		(version) => version === encoderVersion,
+	);
 	const fallbackRegions = csvToList(watch("fallbackRegionsCsv"));
 	const setFallbackRegions = (regions: string[]) =>
 		setValue("fallbackRegionsCsv", regions.join(", "), { shouldDirty: true });
@@ -110,12 +121,8 @@ export function BitmovinForm({
 			rateCard = parsedCard.data;
 		}
 		const accountDefaults = {
-			...(defaults.encoderVersion !== undefined
-				? { encoderVersion: defaults.encoderVersion }
-				: {}),
-			...(defaults.cloudRegion !== undefined
-				? { cloudRegion: defaults.cloudRegion }
-				: {}),
+			encoderVersion: values.encoderVersion,
+			cloudRegion: values.cloudRegion,
 			fallbackRegions: csvToList(values.fallbackRegionsCsv),
 			...(values.schedulingPriority !== ""
 				? { schedulingPriority: Number(values.schedulingPriority) }
@@ -145,11 +152,15 @@ export function BitmovinForm({
 			for (const issue of parsed.error.issues) {
 				const path = issue.path.join(".");
 				const field =
-					path === "defaults.schedulingPriority"
-						? "schedulingPriority"
-						: path === "defaults.fallbackRegions"
-							? "fallbackRegionsCsv"
-							: (path as keyof FormValues);
+					path === "defaults.encoderVersion"
+						? "encoderVersion"
+						: path === "defaults.cloudRegion"
+							? "cloudRegion"
+							: path === "defaults.schedulingPriority"
+								? "schedulingPriority"
+								: path === "defaults.fallbackRegions"
+									? "fallbackRegionsCsv"
+									: (path as keyof FormValues);
 				setError(field as keyof FormValues, {
 					message: zodIssueMessage(issue, t),
 				});
@@ -160,7 +171,7 @@ export function BitmovinForm({
 	});
 
 	return (
-		<form onSubmit={submit} noValidate>
+		<form onSubmit={submit} noValidate autoComplete="off">
 			<fieldset disabled={submitting} className="space-y-4">
 				<Field
 					label={t("settingsForms.label")}
@@ -216,6 +227,66 @@ export function BitmovinForm({
 				>
 					<Input id="bm-org" {...register("tenantOrgId")} />
 				</Field>
+
+				<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<Field
+						label={t("settings.defaultCloudRegion")}
+						htmlFor="bm-region"
+						error={formState.errors.cloudRegion?.message}
+					>
+						<SelectNative id="bm-region" {...register("cloudRegion")}>
+							{!BITMOVIN_CLOUD_REGIONS.some(
+								(region) => region === cloudRegion,
+							) ? (
+								<option value={cloudRegion}>{cloudRegion}</option>
+							) : null}
+							{BITMOVIN_CLOUD_REGIONS.map((region) => (
+								<option key={region} value={region}>
+									{region}
+								</option>
+							))}
+						</SelectNative>
+					</Field>
+					<Field
+						label={t("settings.encoderVersion")}
+						htmlFor="bm-version"
+						error={formState.errors.encoderVersion?.message}
+						help={t("settingsForms.stableBetaOrAPinnedVersion")}
+					>
+						<input type="hidden" {...register("encoderVersion")} />
+						<div className="flex gap-2">
+							<SelectNative
+								id="bm-version"
+								value={pinnedVersion ? "PINNED" : encoderVersion}
+								onChange={(event) =>
+									setValue(
+										"encoderVersion",
+										event.target.value === "PINNED" ? "" : event.target.value,
+										{ shouldDirty: true },
+									)
+								}
+							>
+								{ENCODER_VERSION_PRESETS.map((version) => (
+									<option key={version} value={version}>
+										{version}
+									</option>
+								))}
+								<option value="PINNED">{t("wizard.pinnedVersion")}</option>
+							</SelectNative>
+							{pinnedVersion ? (
+								<Input
+									aria-label={t("wizard.pinnedEncoderVersion")}
+									value={encoderVersion}
+									onChange={(event) =>
+										setValue("encoderVersion", event.target.value, {
+											shouldDirty: true,
+										})
+									}
+								/>
+							) : null}
+						</div>
+					</Field>
+				</div>
 
 				<Field
 					label={t("settingsForms.fallbackRegionsCommaSeparated")}

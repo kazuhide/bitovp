@@ -40,11 +40,7 @@ function declaration(name: string) {
 		throw new Error(`Expected one bootstrap declaration for ${name}`);
 	return matches[0]?.getText(source) ?? "";
 }
-function load(
-	names: string[],
-	scope: Record<string, unknown>,
-): Record<string, unknown> {
-	const code = `${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};`;
+function evaluate(code: string, scope: Record<string, unknown>) {
 	const javascript = ts.transpileModule(code, {
 		compilerOptions: {
 			target: ts.ScriptTarget.ES2022,
@@ -56,6 +52,24 @@ function load(
 		Object.keys(scope),
 	)(...Object.values(scope));
 }
+function load(
+	names: string[],
+	scope: Record<string, unknown>,
+): Record<string, unknown> {
+	return evaluate(
+		`${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};`,
+		scope,
+	);
+}
+async function loadAsync(
+	names: string[],
+	scope: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+	return evaluate(
+		`return (async () => {${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};})();`,
+		scope,
+	);
+}
 function barrier() {
 	let release!: () => void;
 	const wait = new Promise<void>((resolve) => {
@@ -64,7 +78,7 @@ function barrier() {
 	return { wait, release };
 }
 
-it("enables the lazy runtime only on native Linux and preserves an omitted GPU index", () => {
+it("awaits compatibility on native Linux and preserves an omitted GPU index", async () => {
 	for (const [platform, nativePath, rawDevice] of [
 		["linux", "/native", undefined],
 		["linux", "/native", " "],
@@ -80,8 +94,8 @@ it("enables the lazy runtime only on native Linux and preserves an omitted GPU i
 			},
 			raw = {},
 			redis = {};
-		const create = vi.fn((_deps: unknown) => runtime);
-		const loaded = load(["automaticVmafRuntime"], {
+		const create = vi.fn(async (_deps: unknown) => runtime);
+		const loaded = await loadAsync(["automaticVmafRuntime"], {
 			process: { platform, env: { VMAF_GPU_DEVICE: rawDevice } },
 			env: {
 				VMAF_NATIVE_PATH: nativePath,
@@ -96,7 +110,7 @@ it("enables the lazy runtime only on native Linux and preserves an omitted GPU i
 			vmafRunner: raw,
 			wakePublisher: redis,
 			join,
-			createAutomaticVmafRuntime: create,
+			createAvailableAutomaticVmafRuntime: create,
 			console: { warn: vi.fn() },
 		});
 		if (platform !== "linux" || !nativePath) {
@@ -124,16 +138,52 @@ it("enables the lazy runtime only on native Linux and preserves an omitted GPU i
 	}
 });
 
-it("keeps raw VOD/cloud preparation separate from supervised VOD and Live execution", () => {
+it("retains the legacy gate when optional compatibility preflight is unavailable", async () => {
+	const hold = barrier();
+	const create = vi.fn(async () => {
+		await hold.wait;
+		return undefined;
+	});
+	const gate = vi.fn(createLocalExecutionGate);
+	const pending = loadAsync(["automaticVmafRuntime", "localVmafExecution"], {
+		process: { platform: "linux", env: {} },
+		env: {
+			VMAF_NATIVE_PATH: "/native",
+			FFMPEG_PATH: "/ffmpeg",
+			FFPROBE_PATH: "/ffprobe",
+		},
+		vmafWorkDir: "/scratch",
+		vmafRunner: {},
+		wakePublisher: {},
+		join,
+		createAvailableAutomaticVmafRuntime: create,
+		createLocalExecutionGate: gate,
+		console: { warn: vi.fn() },
+	});
+	expect(create).toHaveBeenCalledOnce();
+	expect(gate).not.toHaveBeenCalled();
+	hold.release();
+	const loaded = await pending;
+	expect(loaded.automaticVmafRuntime).toBeUndefined();
+	expect(gate).toHaveBeenCalledOnce();
+	expect(loaded.localVmafExecution).toBe(gate.mock.results[0]?.value);
+});
+
+it.each([
+	true,
+	false,
+])("keeps VOD/cloud and Live on the selected execution path (automatic=%s)", (available) => {
 	const raw = {},
 		supervised = {},
 		resolver = vi.fn(),
 		execute = vi.fn();
-	const automaticVmafRuntime = {
-		runner: supervised,
-		resolveLocalResources: resolver,
-		execute,
-	};
+	const automaticVmafRuntime = available
+		? {
+				runner: supervised,
+				resolveLocalResources: resolver,
+				execute,
+			}
+		: undefined;
 	const resource = {},
 		createResources = vi.fn((_deps: unknown) => resource),
 		vod = vi.fn((_deps: unknown) => ({})),
@@ -176,18 +226,28 @@ it("keeps raw VOD/cloud preparation separate from supervised VOD and Live execut
 			join,
 		},
 	);
-	expect(createResources.mock.calls[0]?.[0]).toMatchObject({ execute });
+	expect(createResources.mock.calls[0]?.[0]).toMatchObject({
+		execute: available ? execute : undefined,
+	});
 	expect(vod.mock.calls[0]?.[0]).toMatchObject({
 		runner: raw,
-		localRunner: supervised,
-		resolveLocalResources: resolver,
 		localResources: resource,
+		// An unavailable optional companion never changes the requested scorer.
+		scoringBackend: "cuda",
+		nativePath: "/native",
 	});
 	expect(live.mock.calls[0]?.[0]).toMatchObject({
-		runner: supervised,
-		resolveLocalResources: resolver,
+		runner: available ? supervised : raw,
 		localResources: resource,
 	});
+	for (const args of [vod.mock.calls[0]?.[0], live.mock.calls[0]?.[0]]) {
+		if (available)
+			expect(args).toMatchObject({ resolveLocalResources: resolver });
+		else expect(args).not.toHaveProperty("resolveLocalResources");
+	}
+	if (available)
+		expect(vod.mock.calls[0]?.[0]).toMatchObject({ localRunner: supervised });
+	else expect(vod.mock.calls[0]?.[0]).not.toHaveProperty("localRunner");
 	expect(inspect.mock.calls[0]?.[0]).toMatchObject({ runner: raw });
 });
 

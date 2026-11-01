@@ -151,7 +151,7 @@ import {
 	USAGE_SWEEP_FIRST_DELAY_MS,
 	USAGE_SWEEP_INTERVAL_MS,
 } from "./usage/statistics-sweep";
-import { createAutomaticVmafRuntime } from "./vmaf/automatic-runtime";
+import { createAvailableAutomaticVmafRuntime } from "./vmaf/automatic-runtime";
 import { createVmafCloudController } from "./vmaf/cloud/controller";
 import { createCloudRuntimeAuth } from "./vmaf/cloud/runtime-auth";
 import {
@@ -1099,10 +1099,10 @@ runTenantTick(() => feederTakeoverSweep());
 // defaults under the OS tmpdir.
 const vmafWorkDir = env.VMAF_WORKDIR ?? join(tmpdir(), "bitovp-vmaf");
 const vmafRunner = createNodeProcessRunner();
-// Construction is local and lazy: no native process starts for cloud-only work.
+// Read-only pair validation precedes replacing the legacy local execution path.
 const automaticVmafRuntime =
 	process.platform === "linux" && env.VMAF_NATIVE_PATH
-		? createAutomaticVmafRuntime({
+		? await createAvailableAutomaticVmafRuntime({
 				runner: vmafRunner,
 				redis: wakePublisher,
 				nativePath: env.VMAF_NATIVE_PATH,

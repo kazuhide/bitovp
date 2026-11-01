@@ -8,6 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
+import { projectWizardDraft } from "@/lib/wizard-draft";
 import { renderWithQuery } from "@/test/render";
 
 const apiFetch = vi.fn();
@@ -18,8 +19,8 @@ vi.mock("@/lib/api", async (orig) => ({
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
-// Replace only the browser storage offer; restore still goes through the wizard's
-// real merge, editing, buildPlan, preview and submit paths.
+// Replace the browser storage offer, while retaining its real safe projection,
+// merge, editing, buildPlan, preview and submit paths.
 let initialDraft: unknown;
 vi.mock("@/lib/wizard-draft-hook", async () => {
 	const { useState } = await import("react");
@@ -33,7 +34,10 @@ vi.mock("@/lib/wizard-draft-hook", async () => {
 			return {
 				available,
 				restore: () => {
-					onRestore({ value: initialDraft, step: 5 });
+					onRestore({
+						value: projectWizardDraft("vod", initialDraft),
+						step: 5,
+					});
 					setAvailable(false);
 				},
 				discard: vi.fn(),

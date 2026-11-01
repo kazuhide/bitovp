@@ -381,7 +381,7 @@ int main(int argc, char **argv) {
             } else if (baseline) baseline->submit(count, ref, dist);
             ++count;
         };
-        if (options.backend == "vulkan" && !resident_decode) {
+        if ((options.backend == "vulkan" || options.backend == "cuda") && !resident_decode) {
             Prefetch<RetainedPair> pictures([&] { return next_retained_pair(reference, distorted); }, options.max_frames);
             for (;;) {
                 // This lease dies before next() gives the producer another

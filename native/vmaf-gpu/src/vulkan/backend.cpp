@@ -4,10 +4,16 @@
 #include <vulkan/vulkan.h>
 #include "vulkan_psnr_spv.hpp"
 #include "vulkan_cambi_spv.hpp"
+#include "vulkan_cambi_score_spv.hpp"
+#include "vulkan_cambi_score_tile_spv.hpp"
+#include <map>
 #include "vulkan_speed_spv.hpp"
 #include "vulkan_speed_factor_spv.hpp"
 #include "vulkan_adm_spv.hpp"
 #include "vulkan_adm_row_spv.hpp"
+#include "vulkan_speed_covariance_spv.hpp"
+#include "vulkan_adm_reduce_spv.hpp"
+#include "vulkan_adm_dwt_spv.hpp"
 #include "vulkan_motion_spv.hpp"
 #include "cambi_parameters.hpp"
 #include "speed_parameters.hpp"
@@ -42,9 +48,10 @@ struct Buffer {
     VkDeviceSize capacity = 0;
     bool coherent = false;
 };
-struct ResetFlag {
-    bool &flag;
-    ~ResetFlag() { flag = false; }
+struct ResetFrameCache {
+    bool &active;
+    Buffer *&reference_history;
+    ~ResetFrameCache() { active = false; reference_history = nullptr; }
 };
 struct Context {
     VkInstance instance = VK_NULL_HANDLE;
@@ -60,11 +67,15 @@ struct Context {
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipeline cambi_pipeline = VK_NULL_HANDLE;
+    std::map<std::pair<unsigned, unsigned>, VkPipeline> cambi_score_pipelines;
     VkPipeline speed_pipeline = VK_NULL_HANDLE;
     VkPipeline speed_factor_pipeline = VK_NULL_HANDLE;
     VkPipeline adm_pipeline = VK_NULL_HANDLE;
     VkPipeline adm_row_pipeline = VK_NULL_HANDLE;
     VkPipeline motion_pipeline = VK_NULL_HANDLE;
+    VkPipeline speed_covariance_pipeline = VK_NULL_HANDLE;
+    VkPipeline adm_reduce_pipeline = VK_NULL_HANDLE;
+    VkPipeline adm_dwt_pipeline = VK_NULL_HANDLE;
     VkQueryPool queries = VK_NULL_HANDLE;
     VkPhysicalDeviceProperties properties{};
     VkPhysicalDeviceMemoryProperties memory_properties{};
@@ -93,10 +104,15 @@ struct Context {
             if (queries) vkDestroyQueryPool(device, queries, nullptr);
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
             if (cambi_pipeline) vkDestroyPipeline(device, cambi_pipeline, nullptr);
+            for (const auto &entry : cambi_score_pipelines)
+                if (entry.second) vkDestroyPipeline(device, entry.second, nullptr);
             if (speed_pipeline) vkDestroyPipeline(device, speed_pipeline, nullptr);
             if (speed_factor_pipeline) vkDestroyPipeline(device, speed_factor_pipeline, nullptr);
             if (adm_pipeline) vkDestroyPipeline(device, adm_pipeline, nullptr);
             if (adm_row_pipeline) vkDestroyPipeline(device, adm_row_pipeline, nullptr);
+            if (speed_covariance_pipeline) vkDestroyPipeline(device, speed_covariance_pipeline, nullptr);
+            if (adm_reduce_pipeline) vkDestroyPipeline(device, adm_reduce_pipeline, nullptr);
+            if (adm_dwt_pipeline) vkDestroyPipeline(device, adm_dwt_pipeline, nullptr);
             if (motion_pipeline) vkDestroyPipeline(device, motion_pipeline, nullptr);
             if (pipeline_layout) vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
             if (descriptor_pool) vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
@@ -170,12 +186,12 @@ public:
                 throw std::runtime_error("Vulkan ADM/CAMBI/SPEED requires shaderFloat64 on the selected GPU");
             if (spec.name != "motion" && spec.name != "psnr" && context_.properties.limits.maxComputeWorkGroupSize[1] < 16)
                 throw std::runtime_error("Vulkan image features require a 16 by 16 compute workgroup");
-            if (spec.name == "cambi") cambi.emplace_back(spec, plan);
+            if (spec.name == "cambi") cambi.emplace_back(spec, plan, true);
             else if (spec.name == "speed_chroma") speed.emplace_back(spec, plan);
             else if (spec.name == "adm") {
                 if (!context_.int64)
                     throw std::runtime_error("Vulkan ADM requires shaderInt64 on the selected GPU");
-                adm.emplace_back(spec, plan);
+                adm.emplace_back(spec, plan, true);
             } else if (spec.name == "psnr") {
                 if (vulkan_detail::boolean(spec, "enable_apsnr"))
                     throw std::invalid_argument("Vulkan feature-series API does not expose aggregate APSNR");
@@ -191,6 +207,7 @@ public:
         }
         if (!cambi.empty() && !context_.cambi_pipeline)
             context_.cambi_pipeline = additional_pipeline(bitovp_vulkan_cambi_spv, sizeof(bitovp_vulkan_cambi_spv));
+        for (const auto &parameters : cambi) (void)cambi_score_pipeline(parameters);
         if (!speed.empty() && !context_.speed_pipeline)
             context_.speed_pipeline = additional_pipeline(bitovp_vulkan_speed_spv, sizeof(bitovp_vulkan_speed_spv));
         if (!speed.empty() && !context_.speed_factor_pipeline)
@@ -199,6 +216,12 @@ public:
             context_.adm_pipeline = additional_pipeline(bitovp_vulkan_adm_spv, sizeof(bitovp_vulkan_adm_spv));
         if (!adm.empty() && !context_.adm_row_pipeline)
             context_.adm_row_pipeline = additional_pipeline(bitovp_vulkan_adm_row_spv, sizeof(bitovp_vulkan_adm_row_spv));
+        if (!speed.empty() && !context_.speed_covariance_pipeline)
+            context_.speed_covariance_pipeline = additional_pipeline(bitovp_vulkan_speed_covariance_spv, sizeof(bitovp_vulkan_speed_covariance_spv));
+        if (!adm.empty() && !context_.adm_reduce_pipeline)
+            context_.adm_reduce_pipeline = additional_pipeline(bitovp_vulkan_adm_reduce_spv, sizeof(bitovp_vulkan_adm_reduce_spv));
+        if (!adm.empty() && !context_.adm_dwt_pipeline)
+            context_.adm_dwt_pipeline = additional_pipeline(bitovp_vulkan_adm_dwt_spv, sizeof(bitovp_vulkan_adm_dwt_spv));
         if (!motion.empty() && !context_.motion_pipeline)
             context_.motion_pipeline = additional_pipeline(bitovp_vulkan_motion_spv, sizeof(bitovp_vulkan_motion_spv));
         plan_ = plan;
@@ -229,8 +252,17 @@ public:
             frame_sources_[p * 2u + 1u] = &distorted.planes[p];
         }
         frame_uploaded_ = {};
+        frame_reference_history_ = nullptr;
+        for (const auto &state : motion_)
+            if (!state.force_zero) {
+                // The current ring slot is also this frame's immutable
+                // reference-Y cache. It replaces the duplicate host upload;
+                // the preceding frame's submissions have already completed.
+                frame_reference_history_ = &context_.motion_history[index % context_.motion_history.size()];
+                break;
+            }
         frame_cache_active_ = true;
-        ResetFlag reset_cache{frame_cache_active_};
+        ResetFrameCache reset_cache{frame_cache_active_, frame_reference_history_};
         std::vector<FeatureScore> scores;
         if (!psnr_.empty()) {
             PsnrSums sums;
@@ -308,20 +340,10 @@ public:
         }
         if (!motion_.empty()) {
             const auto &plane = reference.planes[0];
-            bool needs_history = false;
-            for (const auto &state : motion_) needs_history |= !state.force_zero;
-            if (needs_history) {
-                auto &current = context_.motion_history[index % context_.motion_history.size()];
-                reserve(current, (VkDeviceSize(plane.stride) * plane.height + 7u) & ~VkDeviceSize(3u));
-                auto start = Clock::now();
-                const unsigned bytes = plan_.bit_depth == 8 ? 1 : 2;
-                for (unsigned y = 0; y < plane.height; ++y)
-                    std::memcpy(static_cast<std::uint8_t *>(current.mapped) + y * plane.stride,
-                                static_cast<const std::uint8_t *>(plane.data) + y * plane.stride,
-                                std::size_t(plane.width) * bytes);
-                host_cache(current, true);
-                timings_.uploaded_bytes += std::uint64_t(plane.width) * plane.height * bytes;
-                timings_.upload_ms += milliseconds(start);
+            if (frame_reference_history_) {
+                // Earlier PSNR/ADM work may already have uploaded reference Y.
+                // Motion-only plans reach the same cache here for the first time.
+                source_buffer(plane, plan_.bit_depth, 0);
                 history_strides_[index % history_strides_.size()] = unsigned(plane.stride);
             }
             std::array<std::uint64_t, 3> sums{};
@@ -562,7 +584,23 @@ private:
               flush ? "vkFlushMappedMemoryRanges" : "vkInvalidateMappedMemoryRanges");
     }
 
-    VkPipeline additional_pipeline(const std::uint32_t *code, std::size_t bytes) {
+    VkPipeline cambi_score_pipeline(const vulkan_detail::CambiParameters &parameters) {
+        const auto window = parameters.window;
+        const auto edge = 16u + window - 1u;
+        const bool tiled = edge * edge * sizeof(std::uint32_t) <= context_.properties.limits.maxComputeSharedMemorySize;
+        const unsigned values[2] = {parameters.words[8], tiled ? window : 0u};
+        auto &pipeline = context_.cambi_score_pipelines[{values[0], values[1]}];
+        if (!pipeline) {
+            const VkSpecializationMapEntry entries[2] = {{0, 0, sizeof(unsigned)}, {1, sizeof(unsigned), sizeof(unsigned)}};
+            const VkSpecializationInfo specialization{tiled ? 2u : 1u, entries, sizeof(values), values};
+            pipeline = additional_pipeline(tiled ? bitovp_vulkan_cambi_score_tile_spv : bitovp_vulkan_cambi_score_spv,
+                tiled ? sizeof(bitovp_vulkan_cambi_score_tile_spv) : sizeof(bitovp_vulkan_cambi_score_spv), &specialization);
+        }
+        return pipeline;
+    }
+
+    VkPipeline additional_pipeline(const std::uint32_t *code, std::size_t bytes,
+                                   const VkSpecializationInfo *specialization = nullptr) {
         VkShaderModuleCreateInfo shader{};
         shader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         shader.codeSize = bytes;
@@ -575,6 +613,7 @@ private:
         info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         info.stage.module = module;
         info.stage.pName = "main";
+        info.stage.pSpecializationInfo = specialization;
         info.layout = context_.pipeline_layout;
         VkPipeline pipeline = VK_NULL_HANDLE;
         const auto result = vkCreateComputePipelines(context_.device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
@@ -680,7 +719,8 @@ private:
         if (frame_cache_active_)
             for (unsigned i = 0; i < frame_sources_.size(); ++i)
                 if (frame_sources_[i] == &source) {
-                    selected = &context_.frame_planes[i];
+                    selected = i == 0u && frame_reference_history_ ? frame_reference_history_ :
+                        &context_.frame_planes[i];
                     uploaded = &frame_uploaded_[i];
                     if (*uploaded) return *selected;
                     break;
@@ -716,13 +756,22 @@ private:
         timings_.uploaded_bytes += adm.words.size() * sizeof(std::uint32_t);
         timings_.upload_ms += milliseconds(start);
         std::vector<Dispatch> commands;
-        for (const auto &pass : adm.passes)
-            commands.push_back({pass.push, pass.groups_x, pass.groups_y,
-                pass.push[0] == 4u ? context_.adm_row_pipeline : VK_NULL_HANDLE});
-        const double previous_kernel_ms = timings_.kernel_ms;
+        for (const auto &pass : adm.passes) {
+            auto parameters = pass.push;
+            if (parameters[1] == 0u && parameters[0] == 1u) continue;
+            if (parameters[1] == 0u && parameters[0] == 0u) {
+                parameters[2] = (parameters[4] + 1u) / 2u;
+                parameters[3] = (parameters[5] + 1u) / 2u;
+                commands.push_back({parameters, (parameters[2] + 15u) / 16u,
+                    (parameters[3] + 15u) / 16u, context_.adm_dwt_pipeline});
+            } else {
+                commands.push_back({parameters, pass.groups_x, pass.groups_y,
+                    parameters[0] == 4u ? context_.adm_row_pipeline :
+                    parameters[0] == 5u ? context_.adm_reduce_pipeline : VK_NULL_HANDLE});
+            }
+        }
         const std::array<Buffer *, 3> resources = {&r, &d, &workspace};
-        execute_program(context_.adm_pipeline, commands, &resources);
-        timings_.extractor_kernel_ms["adm"] += timings_.kernel_ms - previous_kernel_ms;
+        execute_program(context_.adm_pipeline, commands, &resources, "adm");
         start = Clock::now();
         host_cache(workspace, false);
         std::array<double, 3> result{};
@@ -758,7 +807,8 @@ private:
             const unsigned groups_y = flat ? unsigned((groups + groups_x - 1u) / groups_x) :
                 pooled ? 1u : (height + 15u) / 16u;
             commands.push_back({{mode, width, height, image, destination ? destination : other_image,
-                mask, other_mask, extra}, groups_x, groups_y});
+                mask, other_mask, extra}, groups_x, groups_y,
+                mode == 5u ? cambi_score_pipeline(cambi) : VK_NULL_HANDLE});
         };
         dispatch(0, 0, image);
         if (cambi.words[6] < 10u) { dispatch(1); std::swap(image, other_image); }
@@ -781,7 +831,7 @@ private:
             const auto topk = unsigned(std::clamp(cambi.topk * double(count), 1.0, double(count)));
             dispatch(6, topk);
             if (topk != count)
-                for (int shift = 28; shift >= 0; shift -= 4) {
+                for (int shift = 24; shift >= 0; shift -= 8) {
                     dispatch(7, unsigned(shift));
                     dispatch(8, unsigned(shift));
                 }
@@ -828,12 +878,13 @@ private:
             const auto dispatch = [&](unsigned mode, unsigned width, unsigned height,
                                       unsigned source, unsigned destination, unsigned extra0 = 0,
                                       unsigned extra1 = 0, unsigned slot = 0) {
-                const unsigned groups_x = mode == 7u ? 4u : mode == 8u ? 3u :
+                const unsigned groups_x = mode == 7u ? 4u : mode == 8u ? 11u :
                     mode == 9u || mode == 10u ? (speed.blocks + 255u) / 256u :
                     mode >= 6u ? 1u : (width + 15u) / 16u;
                 const unsigned groups_y = mode == 9u ? 4u : mode >= 6u ? 1u : (height + 15u) / 16u;
                 commands.push_back({{mode, width, height, source, destination, extra0, extra1, slot},
-                    groups_x, groups_y, mode == 7u ? context_.speed_factor_pipeline : VK_NULL_HANDLE});
+                    groups_x, groups_y, mode == 7u ? context_.speed_factor_pipeline :
+                        mode == 8u ? context_.speed_covariance_pipeline : VK_NULL_HANDLE});
             };
             for (unsigned i = 0; i < 2; ++i) {
                 const unsigned slot = channel * 2u + i;
@@ -1018,6 +1069,7 @@ private:
     std::array<const Plane *, 6> frame_sources_{};
     std::array<bool, 6> frame_uploaded_{};
     bool frame_cache_active_ = false;
+    Buffer *frame_reference_history_ = nullptr;
     std::array<unsigned, 3> history_strides_{};
     std::uint64_t next_index_ = 0;
     bool configured_ = false, finished_ = false, failed_ = false;

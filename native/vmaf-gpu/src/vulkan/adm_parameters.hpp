@@ -47,6 +47,9 @@ struct AdmParameters {
     std::size_t word_count = 0;
     std::vector<AdmPass> passes;
     std::uint32_t result_offset = 0;
+    // Header word zero is never an allocated map; compact CSF uses it as an
+    // invalid sentinel for orientation-map slots that no valid pass accesses.
+    static constexpr std::uint32_t unused_csf_map_offset = 0;
 
     static unsigned ceil_log2(unsigned value) {
         unsigned result = 0;
@@ -76,7 +79,8 @@ struct AdmParameters {
         passes.push_back(pass);
     }
 
-    AdmParameters(const ExtractorSpec &extractor, const FeaturePlan &plan) : spec(extractor) {
+    AdmParameters(const ExtractorSpec &extractor, const FeaturePlan &plan,
+                  bool compact_csf = false) : spec(extractor) {
         if ((plan.bit_depth != 8 && plan.bit_depth != 10) || plan.width < 64 || plan.height < 64 ||
             plan.width > 7680 || plan.height > 7680)
             throw std::invalid_argument("Vulkan ADM requires supported 8/10-bit geometry");
@@ -123,7 +127,10 @@ struct AdmParameters {
         set_float(24, static_cast<float>(std::cos(radians) * std::cos(radians)));
         const std::size_t map_count = std::size_t((plan.width + 1) / 2) * ((plan.height + 1) / 2);
         const std::size_t temporary_count = std::size_t(plan.width) * ((plan.height + 1) / 2);
-        for (unsigned map = 0; map < 20; ++map) words[32 + map] = allocate(map_count);
+        for (unsigned map = 0; map < 20; ++map) {
+            const bool unused = map == 15 || map == 16 || map == 18 || map == 19;
+            words[32 + map] = compact_csf && unused ? unused_csf_map_offset : allocate(map_count);
+        }
         words[52] = allocate(temporary_count); words[53] = allocate(temporary_count);
         for (unsigned slot = 54; slot <= 56; ++slot) words[slot] = allocate(((plan.height + 1) / 2) * 3 * 2);
         words[57] = allocate(4 * 3);

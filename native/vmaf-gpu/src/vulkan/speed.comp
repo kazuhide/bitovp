@@ -16,7 +16,11 @@
 #version 450
 #extension GL_ARB_gpu_shader_fp64 : require
 #extension GL_GOOGLE_include_directive : require
+#ifdef BITOVP_SPEED_COVARIANCE_PIPELINE
+layout(local_size_x = 32, local_size_y = 1) in;
+#else
 layout(local_size_x = 16, local_size_y = 16) in;
+#endif
 layout(set = 0, binding = 0, std430) readonly buffer Reference { uint reference_words[]; };
 layout(set = 0, binding = 1, std430) readonly buffer Distorted { uint distorted_words[]; };
 // Image, covariance and RHS lanes write independent output elements.
@@ -62,10 +66,24 @@ void means_stage() {
     if (i < 25) f[int(meta(31)) + i] = compute_mean(dimensions(), int(parameters.source_image), int(meta(4)), i / 5, i % 5);
 }
 void covariance_stage() {
+#ifdef BITOVP_SPEED_COVARIANCE_PIPELINE
+    uint index = gl_WorkGroupID.x * 32u + gl_LocalInvocationIndex;
+    if (index >= 325u) return;
+    // Pack the 25x25 symmetric matrix's lower triangle into eleven workgroups.
+    // Integer prefix search avoids a floating-point square-root boundary;
+    // each lane still retains its complete ascending-pixel FP64 dot product.
+    uint row = 0u;
+    for (uint step = 16u; step != 0u; step >>= 1u) {
+        uint candidate = row + step;
+        if (candidate < 25u && candidate * (candidate + 1u) / 2u <= index) row = candidate;
+    }
+    int x = int(row), y = int(index - row * (row + 1u) / 2u);
+#else
     int i = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
     if (i >= 625) return;
     int x = i / 25, y = i % 25;
     if (y > x) return;
+#endif
     precise float covariance = compute_covariance(dimensions(), int(parameters.source_image),
         int(meta(31)), int(meta(4)), x / 5, x % 5, y / 5, y % 5);
     int destination = int(matrix_offset(parameters.extra2, 0u));
@@ -115,6 +133,9 @@ void solve_stage() {
     f[output_base + 25u + uint(block)] = variance;
 }
 void main() {
+#ifdef BITOVP_SPEED_COVARIANCE_PIPELINE
+    if (parameters.mode == 8u) covariance_stage();
+#else
     if (parameters.mode == 6u) { means_stage(); return; }
     if (parameters.mode == 10u) { independent_stage(); return; }
     if (parameters.mode == 9u) { solve_stage(); return; }
@@ -160,4 +181,5 @@ void main() {
         if (parameters.mode == 5u) value = f[parameters.extra0 + pixel] - value;
         f[parameters.destination_image + pixel] = value;
     }
+#endif
 }

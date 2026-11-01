@@ -44,6 +44,59 @@ void block_multiply(int destination, int x, int y) {
     }
     barrier();
 }
+#ifndef BITOVP_SPEED_SCALAR_EIGEN
+shared precise float eigen_tau;
+shared precise float eigen_alpha;
+void cooperative_eigenvalues() {
+    const int size = 25, square = 625;
+    const int a = square + size, d = a + square, sd = d + size;
+    const int v = sd + size, x = v + size;
+    int lane = int(gl_LocalInvocationIndex);
+    block_copy(a, 0, square);
+    for (int column = 0; column < size - 2; ++column) {
+        // Norms, Householder divisions and dependent scalar dot products keep
+        // their original order. Only independent rows and cells are shared.
+        if (lane == 0) eigen_tau = compute_householder_transform(a, column, column + 1, size);
+        barrier();
+        if (lane > column && lane < size) f[v + lane] = f[a + lane * size + column];
+        barrier();
+        if (eigen_tau != 0.0) {
+            if (lane == 0) {
+                f[a + (column + 1) * size + column] = f[v + column + 1];
+                f[v + column + 1] = 1.0;
+            }
+            barrier();
+            if (lane > column && lane < size) {
+                precise float sum = 0.0;
+                for (int j = column + 1; j < size; ++j)
+                    sum += eigen_tau * f[a + lane * size + j] * f[v + j];
+                f[x + lane] = sum;
+            }
+            barrier();
+            if (lane == 0) {
+                precise float dot = tridiagonal_dot_product(x, v, column + 1, size);
+                eigen_alpha = round_float(-0.5LF * double(eigen_tau) * double(dot));
+            }
+            barrier();
+            if (lane > column && lane < size) f[x + lane] += eigen_alpha * f[v + lane];
+            barrier();
+            for (int cell = lane; cell < square; cell += 256) {
+                int row = cell / size, col = cell % size;
+                if (row > column && col > column)
+                    f[a + cell] -= f[x + row] * f[v + col] + f[v + row] * f[x + col];
+            }
+        }
+        // This is unconditional: a zero-tau iteration must finish reading
+        // eigen_tau in every warp before lane zero overwrites it next time.
+        barrier();
+    }
+    if (lane < size) f[d + lane] = f[a + lane * size + lane];
+    if (lane < size - 1) f[sd + lane] = f[a + (lane + 1) * size + lane];
+    barrier();
+    if (lane == 0) compute_eigenvalues_tridiagonal(d, sd, square, size);
+}
+#endif
+
 void factor() {
     const int size = 25, square = 625;
     const int a = 0, q = square, r = q + square;
@@ -91,8 +144,12 @@ void main() {
     uint output_base = matrix_offset(slot, 5u);
     for (int i = lane; i < square; i += 256) f[i] = global_values[covariance + i];
     barrier();
+#ifdef BITOVP_SPEED_SCALAR_EIGEN
+    if (lane == 0) compute_eigenvalues(0, square, size, square + size);
+#else
+    cooperative_eigenvalues();
+#endif
     if (lane == 0) {
-        compute_eigenvalues(0, square, size, square + size);
         matrix_error = 0u;
         for (int i = 0; i < size; ++i)
             if (f[square + i] < EIGENVALUE_EPS) { matrix_error = 1u; break; }

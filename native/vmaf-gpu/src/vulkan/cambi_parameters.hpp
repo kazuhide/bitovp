@@ -92,7 +92,8 @@ struct CambiParameters {
     bool high_resolution = false;
     std::uint32_t image_a = 0, image_b = 0, mask_a = 0, mask_b = 0, scores = 0;
 
-    CambiParameters(const ExtractorSpec &extractor, const FeaturePlan &plan) : spec(extractor) {
+    CambiParameters(const ExtractorSpec &extractor, const FeaturePlan &plan,
+                    bool vulkan_pooling = false) : spec(extractor) {
         if (boolean(spec, "full_ref"))
             throw std::invalid_argument("Vulkan CAMBI full_ref is not part of the qualified eight-model plan");
         const auto heatmap = text_option(spec, "heatmaps_path", "");
@@ -164,6 +165,12 @@ struct CambiParameters {
         words[24] = add_map(plan.height, height);
         scores = words[25] = words.size();
         words.resize(words.size() + 10, 0);
+        if (vulkan_pooling) {
+            // Vulkan uses four eight-bit radix digits. CUDA's CUB sorter
+            // retains its existing workspace and immutable upload layout.
+            words[28] = words.size();
+            words.resize(words.size() + 256, 0);
+        }
         word_count = words.size();
         const auto image = [&] {
             const auto offset = std::uint32_t(word_count);
@@ -174,7 +181,8 @@ struct CambiParameters {
         mask_a = words[18] = image(); mask_b = words[19] = image();
         words[20] = image();
         // Each 256-pixel workgroup writes a double sum and an integer count.
-        // The radix histogram and selection state occupy reserved words 32..50.
+        // Vulkan's radix histogram has its own small allocation; the selected
+        // prefix, mask and rank occupy reserved words 48..50.
         words[26] = std::uint32_t(word_count);
         words[27] = unsigned((pixels + 255u) / 256u);
         word_count += std::size_t(words[27]) * 3u;

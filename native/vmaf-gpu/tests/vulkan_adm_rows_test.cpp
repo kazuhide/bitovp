@@ -155,7 +155,16 @@ public:
     Harness(const Harness &) = delete;
     Harness &operator=(const Harness &) = delete;
 
-    void run(const bitovp::gpu::adm_row_test::Fixture &fixture, unsigned rows) {
+    void run(const bitovp::gpu::adm_row_test::Fixture &original, unsigned rows) {
+        auto fixture = original;
+        // The independent row oracle retains the original six masking bands.
+        // Pack their contributions for the Vulkan shader's compact two-map
+        // layout. These fixtures contain zero bands: each higher-scale center
+        // contributes floor(-2^31 / 2^32) == -1 in each orientation.
+        for (unsigned pixel = 0; pixel < fixture.width * fixture.height; ++pixel) {
+            fixture.words[fixture.words[46] + pixel] = fixture.scale ? std::uint32_t(-3) : 0u;
+            fixture.words[fixture.words[49] + pixel] = 0u;
+        }
         const auto bytes = fixture.words.size() * sizeof(std::uint32_t);
         reserve(bytes);
         std::memcpy(mapped, fixture.words.data(), bytes);

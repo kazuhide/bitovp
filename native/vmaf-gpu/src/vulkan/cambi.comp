@@ -45,47 +45,159 @@ bool derivative(uint x, uint y) {
     return (x + 1u == parameters.width || value == image(x + 1u, y)) &&
            (y + 1u == parameters.height || value == image(x, y + 1u));
 }
+#ifdef BITOVP_CAMBI_SCORE_PIPELINE
+// Specialize only the contrast range used by this extractor configuration.
+// A dedicated score pipeline has no radix/pooling shared-memory allocation.
+layout(constant_id = 0) const uint score_contrasts = 32u;
+#else
+const uint score_contrasts = 32u;
+#endif
+#ifdef BITOVP_CAMBI_TILE_PIPELINE
+// Only the configured window is allocated. A 17-pixel window needs 4 KiB;
+// the largest qualified 65-pixel window needs 25 KiB, including its halo.
+layout(constant_id = 1) const uint score_window = 65u;
+const uint tile_pitch = 16u + score_window - 1u;
+shared uint score_tile[tile_pitch * tile_pitch];
+void load_score_tile() {
+    int radius = int(score_window >> 1u);
+    ivec2 origin = ivec2(gl_WorkGroupID.xy * 16u) - ivec2(radius);
+    for (uint index = gl_LocalInvocationIndex; index < tile_pitch * tile_pitch; index += 256u) {
+        ivec2 location = origin + ivec2(int(index % tile_pitch), int(index / tile_pitch));
+        uint packed = 0u;
+        if (location.x >= 0 && location.y >= 0 &&
+            location.x < int(parameters.width) && location.y < int(parameters.height)) {
+            uint source = uint(location.y) * parameters.width + uint(location.x);
+            // CAMBI input is normalized to ten bits. Bit 16 records the
+            // nonzero mask, leaving all sixteen sample bits intact.
+            packed = words[parameters.source_image + source] |
+                (words[parameters.source_mask + source] != 0u ? 65536u : 0u);
+        }
+        score_tile[index] = packed;
+    }
+    // Even lanes outside the output image take part in the halo load and
+    // reach this barrier before any output-lane bounds check can return.
+    barrier();
+}
+#endif
+void calculate_score(uint x, uint y, uint pixel) {
+    precise float result = 0.0;
+    if (words[parameters.source_mask + pixel] != 0u) {
+        uint raw = image(x, y);
+#ifdef BITOVP_CAMBI_SCORE_PIPELINE
+        const uint differences = score_contrasts;
+#else
+        uint differences = words[8];
+#endif
+        uint value = raw + differences;
+        // Visibility depends on the center and contrast, not its window.
+        // An invisible center cannot contribute even with nonzero counts.
+        bool visible = false;
+        for (uint d = 0u; d < differences; ++d)
+            visible = visible || (value <= words[words[21] + d] && value + d + 1u > words[9]);
+        if (!visible) {
+            words[words[20] + pixel] = floatBitsToUint(result);
+            return;
+        }
+        uint p0 = 0u;
+        uint positives[score_contrasts], negatives[score_contrasts];
+        for (uint d = 0u; d < differences; ++d) { positives[d] = 0u; negatives[d] = 0u; }
+#ifdef BITOVP_CAMBI_TILE_PIPELINE
+        int radius = int(score_window >> 1u);
+        ivec2 tile_origin = ivec2(gl_WorkGroupID.xy * 16u) - ivec2(radius);
+#else
+        int radius = int(words[7] >> 1u);
+#endif
+        for (int yy = max(0, int(y) - radius); yy <= min(int(parameters.height) - 1, int(y) + radius); ++yy) {
+            for (int xx = max(0, int(x) - radius); xx <= min(int(parameters.width) - 1, int(x) + radius); ++xx) {
+#ifdef BITOVP_CAMBI_TILE_PIPELINE
+                uint packed = score_tile[uint(yy - tile_origin.y) * tile_pitch + uint(xx - tile_origin.x)];
+                if ((packed & 65536u) == 0u) continue;
+                uint v = packed & 65535u;
+#else
+                uint neighbor = uint(yy) * parameters.width + uint(xx);
+                if (words[parameters.source_mask + neighbor] == 0u) continue;
+                uint v = words[parameters.source_image + neighbor];
+#endif
+                // Each neighbor belongs to at most one contrast bin.
+                // The image is normalized to ten bits, so signed
+                // subtraction has no overflow or unsigned wraparound.
+                int difference = int(v) - int(raw);
+                if (difference == 0) ++p0;
+                else if (difference > 0 && difference <= int(differences)) ++positives[uint(difference) - 1u];
+                else if (difference < 0 && -difference <= int(differences)) ++negatives[uint(-difference) - 1u];
+            }
+        }
+        const uint weights[32] = uint[32](1,2,3,4,4,5,5,6,6,6,6,7,7,7,7,8,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9);
+        for (uint d = 0u; d < differences; ++d) {
+            if (value <= words[words[21] + d] && value + d + 1u > words[9]) {
+                uint p1 = max(positives[d], negatives[d]);
+                precise float value_c = float(weights[d] * p0 * p1) *
+                    uintBitsToFloat(words[words[22] + p1 + p0]);
+                if (value_c > result) result = value_c;
+            }
+        }
+    }
+    words[words[20] + pixel] = floatBitsToUint(result);
+}
+
+#ifndef BITOVP_CAMBI_SCORE_PIPELINE
 // CAMBI c-values are finite nonnegative binary32 numbers, so their unsigned
-// bit patterns have the same order. Eight four-bit radix steps find the exact
+// bit patterns have the same order. Four eight-bit radix steps find the exact
 // kth-largest threshold without rearranging or copying the image workspace.
-shared uint histogram[16];
+shared uint histogram[256];
+shared uint pool_rank;
 shared double partial_sum[256];
 shared uint partial_count[256];
 void pool_initialize() {
-    if (gl_LocalInvocationIndex != 0u) return;
-    for (uint i = 0u; i < 16u; ++i) words[32u + i] = 0u;
-    words[48] = 0u; // selected key prefix
-    words[49] = 0u; // selected bits mask
-    words[50] = parameters.extra; // remaining rank (one-based)
+    uint lane = gl_LocalInvocationIndex;
+    words[words[28] + lane] = 0u;
+    if (lane == 0u) {
+        words[48] = 0u; // selected key prefix
+        words[49] = 0u; // selected bits mask
+        words[50] = parameters.extra; // remaining rank (one-based)
+    }
 }
 void pool_histogram() {
     uint lane = gl_LocalInvocationIndex;
-    if (lane < 16u) histogram[lane] = 0u;
+    histogram[lane] = 0u;
     barrier();
     uint group = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
     uint pixel = group * 256u + lane;
     if (pixel < parameters.width * parameters.height) {
         uint key = words[words[20] + pixel];
         if ((key & words[49]) == words[48])
-            atomicAdd(histogram[(key >> parameters.extra) & 15u], 1u);
+            atomicAdd(histogram[(key >> parameters.extra) & 255u], 1u);
     }
     barrier();
-    if (lane < 16u) atomicAdd(words[32u + lane], histogram[lane]);
+    // Most digits use only a few bins; empty bins need no global atomic.
+    if (histogram[lane] != 0u) atomicAdd(words[words[28] + lane], histogram[lane]);
 }
 void pool_select() {
-    if (gl_LocalInvocationIndex != 0u) return;
-    uint rank = words[50];
-    for (int bin = 15; bin >= 0; --bin) {
-        uint count = words[32u + uint(bin)];
-        if (rank > count) rank -= count;
-        else {
-            words[48] |= uint(bin) << parameters.extra;
-            words[49] |= 15u << parameters.extra;
-            words[50] = rank;
-            break;
-        }
+    uint lane = gl_LocalInvocationIndex;
+    // Only lane zero reads the storage-buffer rank. Its shared broadcast
+    // finishes before any selected lane can update the storage-buffer state.
+    if (lane == 0u) pool_rank = words[50];
+    histogram[lane] = words[words[28] + lane];
+    barrier();
+    uint rank = pool_rank;
+    // Inclusive suffix counts, from larger radix digits toward smaller ones.
+    // Each step captures all previous values before any lane overwrites one.
+    for (uint step = 1u; step < 256u; step <<= 1u) {
+        uint add = lane + step < 256u ? histogram[lane + step] : 0u;
+        barrier();
+        histogram[lane] += add;
+        barrier();
     }
-    for (uint i = 0u; i < 16u; ++i) words[32u + i] = 0u;
+    uint inclusive = histogram[lane];
+    uint above = lane == 255u ? 0u : histogram[lane + 1u];
+    // Zero-count bins cannot select themselves. Exactly one nonempty bin
+    // owns this one-based rank, including ties in the retained threshold.
+    if (rank > above && rank <= inclusive) {
+        words[48] |= lane << parameters.extra;
+        words[49] |= 255u << parameters.extra;
+        words[50] = rank - above;
+    }
+    words[words[28] + lane] = 0u;
 }
 void pool_partials() {
     uint lane = gl_LocalInvocationIndex;
@@ -111,22 +223,44 @@ void pool_partials() {
     }
 }
 void pool_finish() {
-    if (gl_LocalInvocationIndex != 0u) return;
+    uint lane = gl_LocalInvocationIndex;
     precise double sum = 0.0;
     uint count = 0u, groups = (parameters.width * parameters.height + 255u) / 256u;
-    for (uint group = 0u; group < groups; ++group) {
+    for (uint group = lane; group < groups; group += 256u) {
         uint source = words[26] + group * 3u;
         sum += packDouble2x32(uvec2(words[source], words[source + 1u]));
         count += words[source + 2u];
     }
+    partial_sum[lane] = sum;
+    partial_count[lane] = count;
+    barrier();
+    for (uint offset = 128u; offset != 0u; offset >>= 1u) {
+        if (lane < offset) {
+            partial_sum[lane] += partial_sum[lane + offset];
+            partial_count[lane] += partial_count[lane + offset];
+        }
+        barrier();
+    }
+    if (lane != 0u) return;
     // Exactly K samples are retained, including threshold ties. Different sum
     // grouping is qualified against the unchanged official numerical bar.
+    sum = partial_sum[0];
+    count = partial_count[0];
     sum += double(parameters.extra - count) * double(uintBitsToFloat(words[48]));
     uvec2 result = unpackDouble2x32(sum / double(parameters.extra));
     words[parameters.destination_image] = result.x;
     words[parameters.destination_image + 1u] = result.y;
 }
+#endif
 void main() {
+#ifdef BITOVP_CAMBI_SCORE_PIPELINE
+#ifdef BITOVP_CAMBI_TILE_PIPELINE
+    load_score_tile();
+#endif
+    uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
+    if (parameters.mode == 5u && x < parameters.width && y < parameters.height)
+        calculate_score(x, y, y * parameters.width + x);
+#else
     if (parameters.mode == 6u) { pool_initialize(); return; }
     if (parameters.mode == 7u) { pool_histogram(); return; }
     if (parameters.mode == 8u) { pool_select(); return; }
@@ -167,35 +301,7 @@ void main() {
         words[parameters.destination_image + pixel] = y == 0u || y + 1u == parameters.height ? image(x, y) :
             mode3(horizontal(x, y - 1u), horizontal(x, y), horizontal(x, y + 1u));
     } else if (parameters.mode == 5u) {
-        precise float result = 0.0;
-        if (words[parameters.source_mask + pixel] != 0u) {
-            uint raw = image(x, y), differences = words[8], value = raw + differences;
-            uint p0 = 0u;
-            uint positives[32], negatives[32];
-            for (uint d = 0u; d < differences; ++d) { positives[d] = 0u; negatives[d] = 0u; }
-            int radius = int(words[7] >> 1u);
-            for (int yy = max(0, int(y) - radius); yy <= min(int(parameters.height) - 1, int(y) + radius); ++yy) {
-                for (int xx = max(0, int(x) - radius); xx <= min(int(parameters.width) - 1, int(x) + radius); ++xx) {
-                    uint neighbor = uint(yy) * parameters.width + uint(xx);
-                    if (words[parameters.source_mask + neighbor] == 0u) continue;
-                    uint v = words[parameters.source_image + neighbor];
-                    if (v == raw) ++p0;
-                    for (uint d = 0u; d < differences; ++d) {
-                        if (v == raw + d + 1u) ++positives[d];
-                        if (int(v) == int(raw) - int(d) - 1) ++negatives[d];
-                    }
-                }
-            }
-            const uint weights[32] = uint[32](1,2,3,4,4,5,5,6,6,6,6,7,7,7,7,8,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9);
-            for (uint d = 0u; d < differences; ++d) {
-                if (value <= words[words[21] + d] && value + d + 1u > words[9]) {
-                    uint p1 = max(positives[d], negatives[d]);
-                    precise float value_c = float(weights[d] * p0 * p1) *
-                        uintBitsToFloat(words[words[22] + p1 + p0]);
-                    if (value_c > result) result = value_c;
-                }
-            }
-        }
-        words[words[20] + pixel] = floatBitsToUint(result);
+        calculate_score(x, y, pixel);
     }
+#endif
 }

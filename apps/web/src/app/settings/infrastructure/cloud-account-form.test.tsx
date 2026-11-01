@@ -24,7 +24,7 @@ describe("CloudAccountForm integration secrets", () => {
 		for (const [label, value] of [
 			["Access key", "aws-access"],
 			["Secret key", "aws-secret"],
-		]) {
+		] as const) {
 			const input = screen.getByLabelText(label);
 			expect(input).toHaveValue("");
 			expect(input).toHaveAttribute("type", "password");

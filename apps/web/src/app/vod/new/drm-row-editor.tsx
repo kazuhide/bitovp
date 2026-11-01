@@ -379,7 +379,7 @@ function InlineKeyEntry({
 					<Input
 						id={`${idBase}-inline-key`}
 						type="password"
-						autoComplete="off"
+						autoComplete="one-time-code"
 						spellCheck={false}
 						value={key}
 						onChange={(e) => setKey(e.target.value.trim())}

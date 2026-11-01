@@ -945,7 +945,7 @@ export function VodWizard({
 								<SelectNative
 									id="wz-import-account"
 									value={state.accountId}
-									onChange={(e) => selectAccount(e.target.value)}
+									onChange={(e) => patch({ accountId: e.target.value })}
 								>
 									<option value="">{t("wizard.selectAccount")}</option>
 									{(accounts.data ?? []).map((account) => (

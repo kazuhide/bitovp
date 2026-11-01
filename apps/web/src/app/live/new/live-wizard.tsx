@@ -592,7 +592,7 @@ export function LiveWizard({
 								<SelectNative
 									id="lw-import-account"
 									value={state.accountId}
-									onChange={(e) => selectAccount(e.target.value)}
+									onChange={(e) => patch({ accountId: e.target.value })}
 								>
 									<option value="">{t("ui.selectAccount")}</option>
 									{state.accountId &&

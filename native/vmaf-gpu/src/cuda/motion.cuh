@@ -30,7 +30,7 @@ __device__ int mirror(int index, int size) {
 
 template <typename Sample>
 __global__ void vertical(const Sample *previous, const Sample *current,
-                         std::int32_t *filtered, unsigned width, unsigned height,
+                         std::size_t current_stride, std::int32_t *filtered, unsigned width, unsigned height,
                          unsigned bpc) {
     const std::size_t samples = static_cast<std::size_t>(width) * height;
     for (std::size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < samples;
@@ -38,10 +38,9 @@ __global__ void vertical(const Sample *previous, const Sample *current,
         const unsigned y = i / width, x = i % width;
         std::int64_t sum = 0;
         for (int k = 0; k < 5; ++k) {
-            const std::size_t p = static_cast<std::size_t>(
-                mirror(static_cast<int>(y) - 2 + k, height)) * width + x;
+            const std::size_t row = static_cast<std::size_t>(mirror(static_cast<int>(y) - 2 + k, height));
             sum += static_cast<std::int64_t>(filter[k]) *
-                (static_cast<int>(previous[p]) - current[p]);
+                (static_cast<int>(previous[row * width + x]) - current[row * current_stride + x]);
         }
         filtered[i] = static_cast<std::int32_t>((sum + (1 << (bpc - 1))) >> bpc);
     }

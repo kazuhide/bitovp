@@ -86,6 +86,42 @@ This verification adds CPU work. Benchmarking the qualified GPU extractor
 alone and measuring the current worker's end-to-end time answer different
 questions. Compare both before choosing a deployment setting.
 
+## Inspect hardware and control standalone concurrency
+
+The native scorer can inspect a GPU without opening a video or loading a model:
+
+```sh
+/opt/bitovp-vmaf/bin/bitovp-vmaf --device-info --backend cuda
+/opt/bitovp-vmaf/bin/bitovp-vmaf --device-info --backend vulkan --vendor amd
+```
+
+The JSON identifies the selected GPU, driver, native build, and supported frame
+concurrency. It reports total memory separately from currently available memory.
+A missing available-memory value is `null`; it is not permission to queue
+unlimited work. Vulkan's value, when available, is a process-budget hint rather
+than a measurement of all free device memory. An integrated GPU also consumes
+shared host RAM. These values describe the moment of the query and do not
+reserve resources.
+
+For standalone GPU measurements, `--inflight-frames` accepts `1`, `2`, or `4`.
+The default is `1`. A value of `2` or `4` keeps several frame slots ready so that
+GPU work can overlap. It preserves frame order and temporal feature checks,
+but requires more memory for active pictures and feature buffers. A larger
+value does not guarantee better performance. Compare complete-process time and
+memory on the same files before increasing it, especially when other
+measurements share the GPU. CPU scoring accepts only `1`.
+
+The Linux build installs `bitovp-vmaf-supervisor` beside the scorer. Keep the
+matching pair together when copying or updating an installation. The
+`--device-info` result reports whether the matching companion is available and
+includes its binary hash. The scorer's internal `--supervise` mode lets a VMAF
+runner bind a direct native or FFmpeg process to its owner and a continuously
+renewed deadline. If the owner exits, stops renewing, or loses the heartbeat
+channel, the supervised calculation stops. The deadline includes host suspend.
+This requires Linux kernel timer support; failure prevents the calculation from
+starting. NVIDIA Multi-Process Service (MPS) is bypassed only for the supervised
+command. Ordinary standalone commands keep their existing behavior.
+
 ## Read and compare results
 
 The quality report separates decoding from VMAF calculation and labels GPU

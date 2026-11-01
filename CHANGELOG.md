@@ -15,6 +15,9 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - A standalone native scorer with resident NVDEC input, hash-verified builds,
   real hardware qualification tests, and complete-process performance and
   memory comparisons.
+- Optional native GPU frame concurrency, a read-only hardware and memory query,
+  and a matching Linux process supervisor for VMAF runners that must stop work
+  when their owner or heartbeat disappears.
 
 ### Changed
 

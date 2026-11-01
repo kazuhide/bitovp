@@ -55,6 +55,26 @@ Use `--backend vulkan --vendor amd` for an AMD GPU. `--device` selects a device
 index within the chosen API; CUDA and Vulkan indices can refer to different
 physical devices. The result records the actual device name, index, and UUID.
 
+Inspect the selected GPU without opening a video or loading a model:
+
+```sh
+"$VMAF_PREFIX/bin/bitovp-vmaf" --device-info --backend cuda
+"$VMAF_PREFIX/bin/bitovp-vmaf" --device-info --backend vulkan --vendor amd
+```
+
+The JSON identifies the GPU UUID, driver, source, and executable. It also reports
+supported frame concurrency and separates `memoryTotalBytes` from
+`memoryAvailableBytes`. The latter is a snapshot, not a memory reservation.
+Vulkan reports a process-budget hint for the scorer's storage heap only when
+`VK_EXT_memory_budget` is available. This is the process budget minus estimated
+process use, not whole-device free memory. Otherwise the available value is `null`.
+The nullable `pciBusId` uses the same canonical form across CUDA and Vulkan.
+An integrated GPU also shares the host's RAM limit. `driverVersionKnown: false`
+means that the driver build could not be identified for calibration reuse.
+A `null` executable hash also prevents calibration reuse.
+The older `memoryBudgetBytes` diagnostic has backend-specific semantics and
+must not be interpreted as available memory.
+
 Repeat `--model id=path` to compute multiple models in the same pass. The eight
 supported standard/high-frame-rate models are installed under
 `share/bitovp-vmaf/model`. HDR models are outside this experimental scope.
@@ -70,6 +90,14 @@ following reference/encoded frame pair ready, using about 12 MiB of extra active
 pixel storage for 1080p, 10-bit comparisons, plus allocation and thread overhead.
 Use process wall time to compare performance: decode, conversion, and extraction
 times can overlap.
+
+On Linux, the build also installs `bitovp-vmaf-supervisor` beside the scorer.
+Its source and protocol must match the scorer. The device query reports
+`processSupervisor` and the companion's hash. VMAF workers can use the internal
+`--supervise` command mode to tie a direct native or FFmpeg subprocess to its
+owner and an absolute boot-time heartbeat deadline that includes host suspend. This mode disables MPS only
+in that subprocess's environment. Regular scoring commands retain their original
+behavior. The supervisor is not a sandbox for arbitrary process trees.
 
 ## Use from the bitovp worker
 

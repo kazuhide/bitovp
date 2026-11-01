@@ -224,18 +224,23 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 			deps.cacheDirectory,
 			`${key}-${c.sampleFrames}-${c.fixedWorkUnits}.json`,
 		);
-	async function privateDirectory() {
-		await mkdir(deps.cacheDirectory, { recursive: true, mode: 0o700 });
+	async function privateDirectory(readOnly = false) {
+		if (!readOnly)
+			await mkdir(deps.cacheDirectory, { recursive: true, mode: 0o700 });
 		const s = await lstat(deps.cacheDirectory);
-		if (!s.isDirectory() || (process.getuid && s.uid !== process.getuid()))
+		if (
+			!s.isDirectory() ||
+			(process.getuid && s.uid !== process.getuid()) ||
+			(readOnly && (s.mode & 0o077) !== 0)
+		)
 			throw new Error("Cache directory is not privately owned");
-		await chmod(deps.cacheDirectory, 0o700);
+		if (!readOnly) await chmod(deps.cacheDirectory, 0o700);
 	}
 	async function readCache(key: string, c: NativeCalibrationContext) {
 		if (!c.cacheable) return undefined;
 		let file: Awaited<ReturnType<typeof open>> | undefined;
 		try {
-			await privateDirectory();
+			await privateDirectory(c.budgetMs === 0);
 			c.signal.throwIfAborted();
 			file = await open(
 				pathFor(key, c),
@@ -384,6 +389,18 @@ export function createNativeAutoCalibration(deps: Dependencies) {
 		context: NativeCalibrationContext,
 	) {
 		const cached = await readCache(key, context);
+		context.signal.throwIfAborted();
+		// Atomic metadata reads neither consume hardware nor fill missing trials.
+		if (context.budgetMs === 0)
+			return frozen(
+				cached ?? {
+					version: 1,
+					profileKey: key,
+					sampleFrames: context.sampleFrames,
+					fixedWorkUnits: context.fixedWorkUnits,
+					candidatesRaw: [],
+				},
+			);
 		if (cached && covers(cached, templates)) return frozen(cached);
 		return deps.withExclusiveCalibration(async (leaseSignal) => {
 			const c = {

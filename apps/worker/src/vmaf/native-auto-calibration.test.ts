@@ -133,6 +133,7 @@ function setup(
 	});
 	return {
 		engine,
+		exclusive,
 		execute,
 		exclusiveCount: () => exclusiveCount,
 		events,
@@ -148,6 +149,110 @@ const memoryOptions = {
 };
 
 describe("budgeted native VMAF calibration", () => {
+	it("reads cached observations without a resource lease while real work holds it", async () => {
+		const h = setup();
+		await h.engine.obtain(key, [serial], context());
+		const entered = deferred<void>(),
+			release = deferred<void>();
+		const held = h.exclusive(async () => {
+			entered.resolve();
+			await release.promise;
+		}, new AbortController().signal);
+		await entered.promise;
+		const forbiddenLease = vi.fn(async () => {
+			throw new Error("Metadata-only read requested a hardware permit");
+		});
+		const forbiddenTrial = vi.fn(async () => {
+			throw new Error("Metadata-only read launched native work");
+		});
+		const reader = createNativeAutoCalibration({
+			cacheDirectory: h.cacheDirectory,
+			runTrial: forbiddenTrial,
+			withExclusiveCalibration: forbiddenLease,
+		});
+		try {
+			const profile = await reader.obtain(
+				key,
+				[serial, parallel],
+				context({ budgetMs: 0 }),
+			);
+			expect(profile.candidatesRaw).toHaveLength(1);
+			expect(Object.isFrozen(profile)).toBe(true);
+			expect(Object.isFrozen(profile.candidatesRaw[0]?.trials)).toBe(true);
+			expect(forbiddenLease).not.toHaveBeenCalled();
+			expect(forbiddenTrial).not.toHaveBeenCalled();
+		} finally {
+			release.resolve();
+			await held;
+		}
+	});
+	it("returns an empty cache-only profile without creating files or taking a lease", async () => {
+		const h = setup();
+		const profile = await h.engine.obtain(
+			key,
+			[serial, parallel],
+			context({ budgetMs: 0 }),
+		);
+		expect(profile.candidatesRaw).toEqual([]);
+		expect(Object.isFrozen(profile)).toBe(true);
+		expect(h.exclusiveCount()).toBe(0);
+		expect(h.execute).not.toHaveBeenCalled();
+		await expect(stat(h.cacheDirectory)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+	it.each([
+		"corrupt-json",
+		"foreign-key",
+		"public-file",
+		"public-directory",
+		"oversized",
+	])("does not repair or lease an invalid cache-only read: %s", async (failure) => {
+		const h = setup();
+		await h.engine.obtain(key, [serial], context());
+		const path = join(h.cacheDirectory, `${key}-12-4.json`);
+		if (failure === "corrupt-json") await writeFile(path, "{");
+		if (failure === "foreign-key") {
+			const raw = JSON.parse(await readFile(path, "utf8"));
+			raw.profileKey = otherKey;
+			await writeFile(path, JSON.stringify(raw));
+		}
+		if (failure === "public-file") await chmod(path, 0o644);
+		if (failure === "public-directory") await chmod(h.cacheDirectory, 0o755);
+		if (failure === "oversized")
+			await writeFile(path, " ".repeat(256 * 1024 + 1));
+		const before = await readFile(path),
+			fileMode = (await stat(path)).mode,
+			directoryMode = (await stat(h.cacheDirectory)).mode;
+		const profile = await h.engine.obtain(
+			key,
+			[serial, parallel],
+			context({ budgetMs: 0 }),
+		);
+		expect(profile.candidatesRaw).toEqual([]);
+		expect(h.exclusiveCount()).toBe(1);
+		expect(h.execute).toHaveBeenCalledTimes(3);
+		expect(await readFile(path)).toEqual(before);
+		expect((await stat(path)).mode).toBe(fileMode);
+		expect((await stat(h.cacheDirectory)).mode).toBe(directoryMode);
+		expect(
+			(await readdir(h.cacheDirectory)).filter((name) => name.endsWith(".tmp")),
+		).toEqual([]);
+	});
+	it("preserves cancellation on a cache-only read without requesting a resource lease", async () => {
+		const h = setup();
+		await h.engine.obtain(key, [serial], context());
+		const controller = new AbortController();
+		const pending = h.engine.obtain(
+			key,
+			[serial, parallel],
+			context({ budgetMs: 0, signal: controller.signal }),
+		);
+		controller.abort(new Error("cancel metadata read"));
+		await expect(pending).rejects.toThrow("cancel metadata read");
+		expect(h.exclusiveCount()).toBe(1);
+		expect(h.execute).toHaveBeenCalledTimes(3);
+	});
 	it("measures a serial control first and keeps raw verified observations", async () => {
 		const h = setup();
 		const profile = await h.engine.obtain(key, [parallel, serial], context());

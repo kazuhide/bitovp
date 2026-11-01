@@ -21,6 +21,9 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Automatic native VMAF resource planning and shared local admission. Excess
   jobs wait in the queue; short CPU-verified trials select comparison and frame
   concurrency, with reusable private resource measurements.
+- Local CPU and automatic GPU choices in VOD quality settings and VMAF Lab,
+  with per-measurement selection, same-model CPU fallback, and actual processing
+  details in reports. Delivery-gate decisions continue to use the CPU.
 
 ### Changed
 

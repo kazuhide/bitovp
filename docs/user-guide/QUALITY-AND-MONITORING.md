@@ -250,7 +250,12 @@ CDN reachability or browser playback.
 
 ## Local and cloud execution
 
-Local execution is the default. The worker automatically selects calculation
+**Local CPU** is the default for new GUI measurements. Choose **Local (automatic
+GPU selection)** to use a supported GPU on the worker when available, with the
+same-model CPU path otherwise. The report records the actual method and the
+reason for CPU selection. See [GPU setup and limits](./GPU-QUALITY.md#choose-local-processing).
+
+The worker automatically selects calculation
 threads and simultaneous VOD comparisons to fit its CPU and available memory.
 A large reference still requires decoding at that reference's dimensions even
 when the output is small. More calculation threads can also increase memory

@@ -203,3 +203,86 @@ it("blocks a CLOUD plan loaded into the wizard when its profile becomes unavaila
 		apiFetch.mock.calls.some(([, options]) => options?.method === "POST"),
 	).toBe(false);
 });
+
+function submittedQcExecution() {
+	const call = apiFetch.mock.calls.find(
+		([url, options]) =>
+			url === "/api/encoding-jobs" && options?.method === "POST",
+	);
+	return call ? JSON.parse(call[1].body).plan.qc.execution : undefined;
+}
+it("seeds explicit local CPU when enabling VMAF in a new QC block", async () => {
+	initialDraft = { ...(initialDraft as WizardState), qc: undefined };
+	await mount();
+	await userEvent.click(screen.getByText("Quality control (VMAF)"));
+	await userEvent.click(screen.getByLabelText("Run VMAF QC after encoding"));
+	expect(screen.getByLabelText("Run on")).toHaveValue("");
+	expect(
+		screen.queryByRole("option", { name: "Local (worker settings)" }),
+	).not.toBeInTheDocument();
+	const submit = await review();
+	await waitFor(() => expect(submit).toBeEnabled());
+	await userEvent.click(submit);
+	await waitFor(() =>
+		expect(submittedQcExecution()).toEqual({
+			backend: "LOCAL",
+			localMode: "CPU",
+		}),
+	);
+});
+it.each([
+	"CPU",
+	"AUTO",
+] as const)("preserves explicit %s processing through restore, plan import and submission", async (localMode) => {
+	initialDraft = {
+		...(initialDraft as WizardState),
+		qc: {
+			...DEFAULT_WIZARD_QC,
+			vmaf: true,
+			execution: { backend: "LOCAL", localMode },
+		},
+	};
+	await mount();
+	expect(screen.getByLabelText("Run on")).toHaveValue(
+		localMode === "AUTO" ? ":auto" : "",
+	);
+	await userEvent.click(
+		screen.getByRole("button", { name: /Import plan JSON/ }),
+	);
+	fireEvent.change(screen.getByRole("textbox", { name: /Import plan JSON/ }), {
+		target: { value: JSON.stringify(buildPlan(initialDraft as WizardState)) },
+	});
+	await userEvent.click(
+		screen.getByRole("button", { name: /Validate.*load/i }),
+	);
+	const submit = await review();
+	await waitFor(() => expect(submit).toBeEnabled());
+	await userEvent.click(submit);
+	await waitFor(() =>
+		expect(submittedQcExecution()).toEqual({
+			backend: "LOCAL",
+			localMode,
+		}),
+	);
+});
+it.each([
+	undefined,
+	{ backend: "LOCAL" } as const,
+])("does not rewrite historical execution %j while restoring a plan", async (execution) => {
+	initialDraft = {
+		...(initialDraft as WizardState),
+		qc: { ...DEFAULT_WIZARD_QC, vmaf: true, execution },
+	};
+	await mount();
+	expect(screen.getByLabelText("Run on")).toHaveValue(":legacy");
+	const submit = await review();
+	await waitFor(() => expect(submit).toBeEnabled());
+	await userEvent.click(submit);
+	await waitFor(() =>
+		expect(apiFetch).toHaveBeenCalledWith(
+			"/api/encoding-jobs",
+			expect.objectContaining({ method: "POST" }),
+		),
+	);
+	expect(submittedQcExecution()).toEqual(execution);
+});

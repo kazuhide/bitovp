@@ -2792,7 +2792,13 @@ export function EncodingOptionsSection({
 									// can't run without the libvmaf pass anyway).
 									patchQc(
 										e.target.checked
-											? { vmaf: true }
+											? {
+													vmaf: true,
+													execution: qc.execution ?? {
+														backend: "LOCAL",
+														localMode: "CPU",
+													},
+												}
 											: { vmaf: false, psnr: false },
 									)
 								}
@@ -2807,6 +2813,7 @@ export function EncodingOptionsSection({
 					{qc.vmaf ? (
 						<>
 							<VmafExecutionSettings
+								gateActive={Boolean(qc.gate?.rules.length)}
 								execution={qc.execution}
 								onChange={(execution) => patchQc({ execution })}
 							/>

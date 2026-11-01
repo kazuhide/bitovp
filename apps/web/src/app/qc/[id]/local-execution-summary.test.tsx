@@ -17,13 +17,17 @@ const cpu: LocalVmafExecution = {
 };
 
 describe("local execution facts", () => {
-	it("labels owned Vulkan scoring separately from historical VMAFx execution", () => {
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("labels owned %s scoring separately from historical VMAFx execution", (backend) => {
 		renderLocalized(
 			<LocalExecutionSummary
 				execution={{
 					...cpu,
+					selection: { requested: "AUTO" },
 					scoring: {
-						backend: "vulkan",
+						backend,
 						implementation: "bitovp-owned",
 						model: cpu.scoring.model,
 						modelSha256: "a".repeat(64),
@@ -60,7 +64,12 @@ describe("local execution facts", () => {
 			/>,
 		);
 		expect(
-			screen.getByText("VMAF processing: GPU (owned Vulkan, experimental)"),
+			screen.getByText(
+				`VMAF processing: GPU (owned ${backend === "cuda" ? "CUDA" : "Vulkan"}, experimental)`,
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("Requested processing: Local (GPU if available)"),
 		).toBeInTheDocument();
 		expect(screen.queryByText(/VMAFx/)).not.toBeInTheDocument();
 	});
@@ -117,4 +126,70 @@ describe("local execution facts", () => {
 			screen.getByText("デコード — 元映像: CPU、比較映像: CPU"),
 		).toBeInTheDocument();
 	});
+});
+
+it("shows an explicit CPU request and actual processor without inventing a fallback", () => {
+	renderLocalized(
+		<LocalExecutionSummary
+			execution={{ ...cpu, selection: { requested: "CPU" } }}
+		/>,
+	);
+	expect(
+		screen.getByText("Requested processing: Local CPU"),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText("VMAF processing: CPU (libvmaf)"),
+	).toBeInTheDocument();
+	expect(screen.queryByText(/CPU decoding used:/)).not.toBeInTheDocument();
+	expect(screen.queryByText(/Processing selection:/)).not.toBeInTheDocument();
+});
+it.each([
+	["GPU_NOT_AVAILABLE", "No eligible GPU is available."],
+	["GPU_RUNTIME_UNAVAILABLE", "The GPU runtime is unavailable."],
+	["GPU_MODEL_UNSUPPORTED", "This VMAF model uses CPU processing."],
+	[
+		"GPU_GATE_CPU_ONLY",
+		"The current GPU validation gate requires CPU processing.",
+	],
+])("explains automatic CPU selection %s independently of decode fallback", (reason, message) => {
+	renderLocalized(
+		<LocalExecutionSummary
+			execution={{
+				...cpu,
+				selection: { requested: "AUTO", reason },
+				decode: {
+					reference: { backend: "cpu", reason: "CUDA_UNSUPPORTED_CODEC" },
+					distorted: { backend: "cpu" },
+				},
+			}}
+		/>,
+	);
+	expect(
+		screen.getByText("Requested processing: Local (GPU if available)"),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText(`Processing selection: ${message}`),
+	).toBeInTheDocument();
+	expect(screen.getByText("CUDA_UNSUPPORTED_CODEC")).toBeInTheDocument();
+	expect(
+		screen.getByText("CUDA_UNSUPPORTED_CODEC").parentElement,
+	).not.toHaveTextContent(reason);
+});
+it("keeps unknown safe selection codes visible without interpreting them", () => {
+	renderLocalized(
+		<LocalExecutionSummary
+			execution={{
+				...cpu,
+				selection: { requested: "AUTO", reason: "FUTURE_GPU_REASON" },
+			}}
+		/>,
+		"ja",
+	);
+	expect(
+		screen.getByText("指定した処理方法: ローカル（GPUを自動選択）"),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText("処理方法の選択理由: FUTURE_GPU_REASON"),
+	).toBeInTheDocument();
+	expect(screen.queryByText(/CPUでデコードした理由/)).not.toBeInTheDocument();
 });

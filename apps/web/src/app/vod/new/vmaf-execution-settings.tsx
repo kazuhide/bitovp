@@ -51,15 +51,27 @@ export function useVmafExecutionValidation(
 export function VmafExecutionSettings({
 	execution,
 	onChange,
+	gateActive = false,
 }: {
 	execution?: VmafExecution;
 	onChange: (execution: VmafExecution) => void;
+	gateActive?: boolean;
 }) {
 	const { t } = useT();
 	const { profiles, missingProfile, invalidBudget } =
 		useVmafExecutionValidation(execution, true);
 	const cloud = execution?.backend === "CLOUD" ? execution : undefined;
 	const profileId = cloud?.profileId ?? "";
+	const local = execution?.backend === "LOCAL" ? execution : undefined;
+	const legacyLocal = !cloud && local?.localMode === undefined;
+	// Colons cannot occur in cloud profile IDs.
+	const target = cloud
+		? profileId
+		: legacyLocal
+			? ":legacy"
+			: local?.localMode === "AUTO"
+				? ":auto"
+				: "";
 	const [budgetInput, setBudgetInput] = useState<{
 		profileId: string;
 		budget: number;
@@ -80,21 +92,34 @@ export function VmafExecutionSettings({
 				<Field label={t("qc.executionTarget")} htmlFor="wz-qc-execution">
 					<SelectNative
 						id="wz-qc-execution"
-						value={profileId}
+						value={target}
+						aria-describedby={
+							target === ":auto" ? "wz-qc-execution-hint" : undefined
+						}
 						onChange={(event) => {
 							setBudgetInput(null);
 							onChange(
-								event.target.value === ""
-									? { backend: "LOCAL" }
-									: {
-											backend: "CLOUD",
-											profileId: event.target.value,
-											budgetUsd: 0,
-										},
+								event.target.value === "" || event.target.value === ":auto"
+									? {
+											backend: "LOCAL",
+											localMode:
+												event.target.value === ":auto" ? "AUTO" : "CPU",
+										}
+									: event.target.value === ":legacy"
+										? { backend: "LOCAL" }
+										: {
+												backend: "CLOUD",
+												profileId: event.target.value,
+												budgetUsd: 0,
+											},
 							);
 						}}
 					>
-						<option value="">{t("qc.executionLocal")}</option>
+						<option value="">{t("qc.executionLocalCpu")}</option>
+						<option value=":auto">{t("qc.executionLocalAuto")}</option>
+						{legacyLocal ? (
+							<option value=":legacy">{t("qc.executionLocalLegacy")}</option>
+						) : null}
 						{missingProfile ? (
 							<option value={profileId} disabled>
 								{profiles.isPending ? profileId : t("qc.measureProfileMissing")}
@@ -131,6 +156,15 @@ export function VmafExecutionSettings({
 					</Field>
 				) : null}
 			</div>
+			{target === ":auto" ? (
+				<p id="wz-qc-execution-hint" className="text-xs text-zinc-500">
+					{t(
+						gateActive
+							? "qc.executionLocalGateCpuHint"
+							: "qc.executionLocalAutoHint",
+					)}
+				</p>
+			) : null}
 			{profiles.isPending ? (
 				<p className="text-xs text-zinc-500">{t("common.loading")}</p>
 			) : profiles.isError ? (

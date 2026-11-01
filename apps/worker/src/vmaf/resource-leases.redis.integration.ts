@@ -13,9 +13,8 @@ import {
 	type VmafResourceLeaseRequest,
 } from "./resource-leases";
 
-let directory: string | undefined, socket: string | undefined;
-let server: ChildProcess | undefined,
-	serverLog = "";
+let socket: string | undefined;
+let ownedServer: Awaited<ReturnType<typeof privateRedis>> | undefined;
 let admin: Redis;
 const connections: Redis[] = [];
 const serverUrl = process.env.VMAF_RESOURCE_LEASE_TEST_REDIS_URL;
@@ -38,52 +37,76 @@ async function until(check: () => Promise<boolean> | boolean, timeout = 5000) {
 		await sleep(10);
 	}
 }
-async function client() {
-	const options = {
-		lazyConnect: true,
-		enableOfflineQueue: false,
-		maxRetriesPerRequest: 1,
-		retryStrategy: () => null,
-	};
-	const redis = serverUrl
-		? new Redis(serverUrl, options)
-		: new Redis({ ...options, path: socket });
+const redisOptions = {
+	lazyConnect: true,
+	enableOfflineQueue: false,
+	maxRetriesPerRequest: 1,
+	retryStrategy: () => null,
+};
+async function connectRedis(target: string | { path: string }) {
+	const redis =
+		typeof target === "string"
+			? new Redis(target, redisOptions)
+			: new Redis({ ...redisOptions, ...target });
 	redis.on("error", () => {});
-	await redis.connect();
-	connections.push(redis);
-	return redis;
+	try {
+		await redis.connect();
+		connections.push(redis);
+		return redis;
+	} catch (error) {
+		redis.disconnect();
+		throw error;
+	}
+}
+async function client() {
+	return connectRedis(serverUrl ?? { path: socket as string });
 }
 async function serverTime() {
 	const [seconds, microseconds] = await admin.time();
 	return Number(seconds) * 1000 + Math.floor(Number(microseconds) / 1000);
 }
-async function cleanup() {
-	for (const connection of connections) connection.disconnect();
-	if (server && server.exitCode === null && server.signalCode === null) {
-		server.kill("SIGTERM");
-		await Promise.race([
-			new Promise<void>((r) => server?.once("exit", () => r())),
-			sleep(2000),
-		]);
-		if (server.exitCode === null && server.signalCode === null)
-			server.kill("SIGKILL");
-	}
-	if (directory) await rm(directory, { recursive: true, force: true });
+function serverIdentity(info: string) {
+	const runId = info.match(/(?:^|\r?\n)run_id:([a-f0-9]{40})(?:\r?\n|$)/)?.[1];
+	const uptime = Number(
+		info.match(/(?:^|\r?\n)uptime_in_seconds:(\d+)(?:\r?\n|$)/)?.[1],
+	);
+	if (!runId || !Number.isSafeInteger(uptime))
+		throw new Error("Private Redis did not report its server identity");
+	return { runId, uptime };
 }
-beforeAll(async () => {
-	try {
-		if (!serverUrl) {
-			// A short private pathname also fits the macOS UNIX socket limit.
-			directory = await mkdtemp("/tmp/bitovp-redis-");
-			await chmod(directory, 0o700);
-			socket = join(directory, "redis.sock");
-			server = spawn(
+async function warm(redis: Redis, seconds: number) {
+	await until(
+		async () => serverIdentity(await redis.info("server")).uptime >= seconds,
+	);
+}
+async function privateRedis() {
+	// A short private pathname also fits the macOS UNIX socket limit.
+	const directory = await mkdtemp("/tmp/bitovp-redis-");
+	await chmod(directory, 0o700);
+	const path = join(directory, "redis.sock");
+	let child: ChildProcess | undefined;
+	async function stop() {
+		if (!child || child.exitCode !== null || child.signalCode !== null) return;
+		const stopped = new Promise<void>((resolve) =>
+			child?.once("exit", () => resolve()),
+		);
+		child.kill("SIGTERM");
+		await Promise.race([stopped, sleep(2000)]);
+		if (child.exitCode === null && child.signalCode === null) {
+			child.kill("SIGKILL");
+			await stopped;
+		}
+	}
+	return {
+		path,
+		async start() {
+			child = spawn(
 				process.env.VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER ?? "redis-server",
 				[
 					"--port",
 					"0",
 					"--unixsocket",
-					socket,
+					path,
 					"--unixsocketperm",
 					"700",
 					"--save",
@@ -101,29 +124,52 @@ beforeAll(async () => {
 				],
 				{ stdio: ["ignore", "pipe", "pipe"] },
 			);
-			let failure: Error | undefined;
-			server.on("error", (error) => {
+			let failure: Error | undefined,
+				log = "";
+			child.on("error", (error) => {
 				failure = error;
 			});
-			const log = (chunk: Buffer) => {
-				serverLog = (serverLog + chunk.toString()).slice(-32000);
+			const record = (chunk: Buffer) => {
+				log = (log + chunk.toString()).slice(-32000);
 			};
-			server.stdout?.on("data", log);
-			server.stderr?.on("data", log);
+			child.stdout?.on("data", record);
+			child.stderr?.on("data", record);
+			let ready: Redis | undefined;
 			await until(async () => {
 				if (failure) throw failure;
-				if (server?.exitCode !== null)
-					throw new Error(`Private Redis exited: ${serverLog}`);
+				if (child?.exitCode !== null)
+					throw new Error(`Private Redis exited: ${log}`);
 				try {
-					const c = await client();
-					await c.ping();
-					admin = c;
+					ready = await connectRedis({ path });
+					await ready.ping();
 					return true;
 				} catch {
 					return false;
 				}
 			});
-		} else admin = await client();
+			return ready as Redis;
+		},
+		stop,
+		async cleanup() {
+			await stop();
+			await rm(directory, { recursive: true, force: true });
+		},
+	};
+}
+async function cleanup() {
+	for (const connection of connections) connection.disconnect();
+	await ownedServer?.cleanup();
+}
+beforeAll(async () => {
+	try {
+		if (serverUrl) admin = await client();
+		else {
+			ownedServer = await privateRedis();
+			socket = ownedServer.path;
+			admin = await ownedServer.start();
+		}
+		// Include one whole second for the server uptime counter granularity.
+		await warm(admin, 3);
 	} catch (error) {
 		await cleanup();
 		throw error;
@@ -705,5 +751,176 @@ it("cleans up a genuinely crashed waiting owner and lets the next live ticket ru
 		hold.resolve();
 		await holder;
 		if (child) await killOwner(child);
+	}
+});
+
+it("allows INFO server inside the atomic Redis script", async () => {
+	const info = await admin.eval("return redis.call('INFO', 'server')", 0);
+	expect(serverIdentity(String(info)).uptime).toBeGreaterThanOrEqual(3);
+});
+
+it("retains a cold-start ticket until the full startup drain fence has elapsed", async () => {
+	const owned = await privateRedis();
+	let redis: Redis | undefined;
+	const cancel = new AbortController();
+	let completion: Promise<unknown> | undefined;
+	try {
+		redis = await owned.start();
+		const namespace = `vmaf-lease-test-${randomUUID()}`;
+		const waiting = `${namespace}:{vmaf-resources}:host:host-a:waiting`;
+		let startedAt: number | undefined;
+		completion = createVmafResourceLeases({
+			redis,
+			namespace,
+			leaseMs: 700,
+			renewMs: 100,
+			drainMarginMs: 100,
+			pollMs: 10,
+			operationTimeoutMs: 100,
+		}).run(baseRequest(), cancel.signal, async () => {
+			startedAt = serverIdentity(await (redis as Redis).info("server")).uptime;
+		});
+		// Attach rejection handling before the cleanup cancellation can occur.
+		completion.catch(() => {});
+		await until(
+			async () =>
+				startedAt !== undefined || (await (redis as Redis).hlen(waiting)) === 1,
+		);
+		expect(startedAt).toBeUndefined();
+		const tickets = await redis.hkeys(waiting);
+		expect(tickets).toHaveLength(1);
+		await sleep(50);
+		expect(startedAt).toBeUndefined();
+		expect(await redis.hkeys(waiting)).toEqual(tickets);
+		await completion;
+		expect(startedAt).toBeGreaterThanOrEqual(2);
+	} finally {
+		cancel.abort(new Error("Private Redis test cleanup"));
+		await completion?.catch(() => {});
+		redis?.disconnect();
+		await owned.cleanup();
+	}
+});
+
+it("fences an actual Redis restart and refuses an RDB-restored owner from the previous server", async () => {
+	const owned = await privateRedis(),
+		resume = deferred();
+	let redis: Redis | undefined, previous: Promise<unknown> | undefined;
+	let next: Promise<unknown> | undefined;
+	const cancel = new AbortController();
+	try {
+		redis = await owned.start();
+		await warm(redis, 3);
+		const before = serverIdentity(await redis.info("server"));
+		const namespace = `vmaf-lease-test-${randomUUID()}`;
+		const prefix = `${namespace}:{vmaf-resources}`;
+		const entered = deferred();
+		let check: [string, number, ...string[]] | undefined;
+		let published = false;
+		const broker = createVmafResourceLeases({
+			redis: {
+				eval: async (script, count, ...args) => {
+					if (args[count] === "check") check = [script, count, ...args];
+					return (redis as Redis).eval(script, count, ...args);
+				},
+			},
+			namespace,
+			leaseMs: 1500,
+			renewMs: 800,
+			drainMarginMs: 100,
+			pollMs: 10,
+			operationTimeoutMs: 100,
+		});
+		previous = broker.run(
+			baseRequest(),
+			new AbortController().signal,
+			async ({ assertOwned }) => {
+				await assertOwned();
+				entered.resolve();
+				await resume.promise;
+				await assertOwned();
+				published = true;
+			},
+		);
+		const outcome = previous.then(
+			() => null,
+			(error: unknown) => error,
+		);
+		await entered.promise;
+		expect(await redis.hlen(`${prefix}:active`)).toBe(1);
+		await redis.save();
+		await owned.stop();
+		redis.disconnect();
+		redis = await owned.start();
+		const after = serverIdentity(await redis.info("server"));
+		expect(after.runId).not.toBe(before.runId);
+		expect(await redis.hlen(`${prefix}:active`)).toBe(1);
+		// Exercise the same atomic check against restored data and the new server,
+		// rather than merely observing an old disconnected client's error.
+		expect(check).toBeDefined();
+		const reply = await redis.eval(...(check as [string, number, ...string[]]));
+		expect((reply as unknown[])[0]).toBe(0);
+		resume.resolve();
+		expect(await outcome).toMatchObject({ code: "LOST" });
+		expect(published).toBe(false);
+		let startedAt: number | undefined;
+		next = broker.run(baseRequest(), cancel.signal, async () => {
+			startedAt = serverIdentity(await (redis as Redis).info("server")).uptime;
+		});
+		next.catch(() => {});
+		const waiting = `${prefix}:host:host-a:waiting`;
+		await until(
+			async () =>
+				startedAt !== undefined || (await (redis as Redis).hlen(waiting)) === 1,
+		);
+		expect(startedAt).toBeUndefined();
+		expect(await redis.hlen(waiting)).toBe(1);
+		await next;
+		expect(startedAt).toBeGreaterThanOrEqual(3);
+	} finally {
+		resume.resolve();
+		cancel.abort(new Error("Private Redis test cleanup"));
+		await previous?.catch(() => {});
+		await next?.catch(() => {});
+		redis?.disconnect();
+		await owned.cleanup();
+	}
+});
+
+it("fails closed when the Redis user cannot inspect server identity", async () => {
+	const user = `vmaf-test-${randomUUID()}`,
+		password = randomUUID();
+	let restricted: Redis | undefined;
+	try {
+		await admin.acl(
+			"SETUSER",
+			user,
+			"on",
+			`>${password}`,
+			"~*",
+			"+@all",
+			"-info",
+		);
+		restricted = serverUrl
+			? new Redis(serverUrl, { ...redisOptions, username: user, password })
+			: new Redis({ ...redisOptions, path: socket, username: user, password });
+		restricted.on("error", () => {});
+		await restricted.connect();
+		const namespace = `vmaf-lease-test-${randomUUID()}`;
+		let started = false;
+		await expect(
+			createVmafResourceLeases({ redis: restricted, namespace }).run(
+				baseRequest(),
+				new AbortController().signal,
+				async () => {
+					started = true;
+				},
+			),
+		).rejects.toMatchObject({ code: "UNAVAILABLE" });
+		expect(started).toBe(false);
+		expect(await admin.hlen(`${namespace}:{vmaf-resources}:active`)).toBe(0);
+	} finally {
+		restricted?.disconnect();
+		await admin.acl("DELUSER", user);
 	}
 });

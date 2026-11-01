@@ -54,7 +54,7 @@ local function reply(status, expiry) return {status, decimal(expiry), decimal(no
 local function split(value)
   local fields = {}
   for field in string.gmatch(value, '[^|]+') do fields[#fields+1] = field end
-  if #fields ~= 11 then error('Malformed quality resource reservation') end
+  if #fields ~= 12 then error('Malformed quality resource reservation') end
   return fields
 end
 local base = table.concat(ARGV, '|', 5, 14)
@@ -83,17 +83,34 @@ if action == 'release' then
   redis.call('ZREM', KEYS[4], token)
   return reply(active and 1 or 0, 0)
 end
+-- Inspect the server atomically with the grant. ACL denial is an error,
+-- never permission to proceed without a shared coordinator.
+local info = redis.call('INFO', 'server')
+local run_id = string.match(info, 'run_id:([0-9a-f]+)')
+local uptime = tonumber(string.match(info, 'uptime_in_seconds:(%d+)'))
+if not run_id or #run_id ~= 40 or not uptime then
+  error('Quality resource server identity unavailable')
+end
+-- Uptime has whole-second granularity; add one full second so rounding
+-- cannot open the restart fence before the lease and drain window elapsed.
+local ready = uptime > math.ceil((lease + margin) / 1000)
 if active then
   local values = split(active)
   local until_at = tonumber(values[11])
-  if until_at <= now then return reply(0, until_at) end
-  if action == 'renew' then
-    until_at = now + lease
-    redis.call('HSET', KEYS[3], token, base .. '|' .. decimal(until_at))
-    redis.call('ZADD', KEYS[4], until_at + margin, token)
-    retain_active()
+  if until_at <= now or values[12] ~= run_id then return reply(0, until_at) end
+  if action ~= 'acquire' or ready then
+    if action == 'renew' then
+      until_at = now + lease
+      redis.call('HSET', KEYS[3], token, base .. '|' .. decimal(until_at) .. '|' .. run_id)
+      redis.call('ZADD', KEYS[4], until_at + margin, token)
+      retain_active()
+    end
+    if action == 'acquire' then
+      redis.call('ZREM', KEYS[1], token)
+      redis.call('HDEL', KEYS[2], token)
+    end
+    return reply(1, until_at)
   end
-  return reply(1, until_at)
 end
 if action ~= 'acquire' then return reply(0, 0) end
 
@@ -120,7 +137,7 @@ end
 redis.call('PEXPIRE', KEYS[1], latest_wait - now + 60000)
 redis.call('PEXPIRE', KEYS[2], latest_wait - now + 60000)
 redis.call('PEXPIRE', KEYS[5], 86400000)
-if redis.call('ZRANGE', KEYS[1], 0, 0)[1] ~= token then return reply(0, now + lease) end
+if not ready or redis.call('ZRANGE', KEYS[1], 0, 0)[1] ~= token then return reply(0, now + lease) end
 
 local cap, need, used = {}, {}, {0,0,0,0}
 for i=1,4 do cap[i] = tonumber(ARGV[6+i]); need[i] = tonumber(ARGV[10+i]) end
@@ -144,7 +161,7 @@ for i=1,4 do
   if need[i] > cap[i] - used[i] then return reply(0, now + lease) end
 end
 local until_at = now + lease
-redis.call('HSET', KEYS[3], token, base .. '|' .. decimal(until_at))
+redis.call('HSET', KEYS[3], token, base .. '|' .. decimal(until_at) .. '|' .. run_id)
 redis.call('ZADD', KEYS[4], until_at + margin, token)
 redis.call('ZREM', KEYS[1], token)
 redis.call('HDEL', KEYS[2], token)

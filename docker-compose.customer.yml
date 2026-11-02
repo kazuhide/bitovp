@@ -31,7 +31,7 @@ services:
     logging: *logging
 
   redis:
-    image: redis:8.8.3-alpine@sha256:dc95ea2fcf5d5c4253be0f967c28143d0f625846197eed2fd32c748eb99abfca
+    image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
     mem_limit: 256m
     memswap_limit: 256m
     command: [redis-server, --appendonly, "yes"]

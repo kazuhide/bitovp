@@ -55,7 +55,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				results: {
 					orderBy: { createdAt: "asc" },
 					...(resultId ? { where: { id: resultId } } : {}),
-					select: { id: true, renditionRef: true },
+					select: { id: true, renditionRef: true, provenance: true },
 				},
 			},
 		});

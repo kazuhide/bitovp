@@ -1,4 +1,5 @@
 import type {
+	LocalVmafExecution,
 	PooledMetrics,
 	VmafCloudProfile,
 	VmafExecution,
@@ -169,6 +170,8 @@ export type LiveReportMetadata = {
 /** One rendition's report payload (detail route). */
 export type VmafResultDetail = {
 	id: string;
+	/** Validated local decode/scoring implementation; absent on historical reports. */
+	localExecution?: LocalVmafExecution;
 	/** Version-pinned QC mirror; absent on older API payloads. */
 	preview?:
 		| { url: string }

@@ -20,6 +20,8 @@ assuming the usage dashboard is an incident monitor.
 
 ## Measure quality
 
+For opt-in local GPU work, see [experimental GPU quality measurement](./GPU-QUALITY.md).
+
 VMAF (Video Multi-Method Assessment Fusion) compares decoded output frames with
 a reference video. This application calculates it with ffmpeg/libvmaf; it is
 not a Bitmovin Encoding API metric.

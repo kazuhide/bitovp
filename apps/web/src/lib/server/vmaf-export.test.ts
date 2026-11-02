@@ -3,6 +3,59 @@ import { describe, expect, it, vi } from "vitest";
 import { vmafExportStream } from "./vmaf-export";
 
 describe("streamed VMAF export bytes", () => {
+	it("includes only validated local execution provenance in JSON", async () => {
+		const localExecution = {
+			version: 1,
+			requestedDecode: "auto",
+			device: 0,
+			decode: {
+				reference: { backend: "cuda" },
+				distorted: { backend: "cuda" },
+			},
+			scoring: {
+				backend: "cpu",
+				implementation: "libvmaf",
+				model: "vmaf_v1.0.16_3d0h",
+			},
+			attempts: 1,
+		};
+		const text = await new Response(
+			vmafExportStream(
+				{
+					id: "job",
+					model: "model",
+					results: [
+						{
+							id: "valid",
+							renditionRef: {},
+							provenance: {
+								localExecution,
+								reference: { path: "/private/source.mp4" },
+							},
+						},
+						{
+							id: "invalid",
+							renditionRef: {},
+							provenance: {
+								localExecution: {
+									...localExecution,
+									stderr: "private diagnostic",
+								},
+							},
+						},
+					],
+				},
+				"json",
+				async () => null,
+				new AbortController().signal,
+			),
+		).text();
+		const data = JSON.parse(text);
+		expect(data.renditions[0].localExecution).toEqual(localExecution);
+		expect(data.renditions[1]).not.toHaveProperty("localExecution");
+		expect(text).not.toMatch(/private|stderr|provenance/);
+	});
+
 	it.each([
 		{ frames: [] },
 		{ frames: [{ frameNum: -0, vmaf: 91.12345678901235, psnr: 42.5 }] },

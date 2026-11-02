@@ -23,6 +23,111 @@ function filterComplexOf(argv: string[]): string {
 	return argv[i + 1] as string;
 }
 
+describe("NVDEC input handling", () => {
+	it("preserves the complete CPU command when no input uses CUDA", () => {
+		expect(buildVmafCommand({ ...BASE, decode: {} })).toEqual(
+			buildVmafCommand(BASE),
+		);
+	});
+
+	it("qualifies each input independently and downloads all planes before CPU processing", () => {
+		const cpu = buildVmafCommand({ ...BASE, psnr: true, alignFrames: 2 });
+		const gpu = buildVmafCommand({
+			...BASE,
+			psnr: true,
+			alignFrames: 2,
+			decode: { reference: { device: 1, downloadFormat: "p010le" } },
+		});
+		const first = gpu.indexOf("-i");
+		const second = gpu.indexOf("-i", first + 1);
+		expect(gpu.slice(0, first)).not.toContain("-hwaccel");
+		expect(gpu.slice(first + 2, second)).toEqual([
+			"-hwaccel",
+			"cuda",
+			"-hwaccel_device",
+			"1",
+			"-hwaccel_output_format",
+			"cuda",
+		]);
+		expect(filterComplexOf(gpu)).toBe(
+			filterComplexOf(cpu).replace(
+				"[1:v]",
+				"[1:v]hwdownload,format=p010le,format=yuv420p10le,",
+			),
+		);
+		expect(filterComplexOf(gpu)).toContain("[dist][ref]libvmaf=");
+		expect(filterComplexOf(gpu)).not.toContain("libvmaf_cuda");
+	});
+
+	it("keeps v1, scaling, frame timing and PSNR unchanged after the download", () => {
+		const options = {
+			...BASE,
+			model: "vmaf_v1.0.16_3d0h",
+			modelPath: "/models/vmaf_v1.0.16_3d0h.json",
+			psnr: true,
+			alignFrames: -3,
+			decoderThreads: 2,
+			filterComplexThreads: 1,
+		};
+		const cpu = buildVmafCommand(options);
+		const gpu = buildVmafCommand({
+			...options,
+			decode: {
+				distorted: { device: 0, downloadFormat: "nv12" },
+				reference: { device: 0, downloadFormat: "p010le" },
+			},
+		});
+		expect(filterComplexOf(gpu)).toBe(
+			filterComplexOf(cpu)
+				.replace("[0:v]", "[0:v]hwdownload,format=nv12,format=yuv420p,")
+				.replace("[1:v]", "[1:v]hwdownload,format=p010le,format=yuv420p10le,"),
+		);
+		expect(gpu.filter((arg) => arg === "-hwaccel")).toHaveLength(2);
+		expect(gpu.filter((arg) => arg === "-threads")).toHaveLength(2);
+	});
+
+	it.each([
+		-1,
+		0.5,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+	])("rejects an invalid device ordinal: %s", (device) => {
+		expect(() =>
+			buildVmafCommand({
+				...BASE,
+				decode: { distorted: { device, downloadFormat: "nv12" } },
+			}),
+		).toThrow("INVALID_CUDA_DECODE_OPTIONS");
+	});
+
+	it("keeps hardware decoding outside the validated cloud-only measurement method", () => {
+		expect(() =>
+			buildVmafCommand({
+				...BASE,
+				measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				decode: { reference: { device: 0, downloadFormat: "nv12" } },
+			}),
+		).toThrow("GPU_DECODE_NOT_QUALIFIED_FOR_FRAME_INDEX_METHOD");
+	});
+});
+
+describe("native scoring stays outside FFmpeg command construction", () => {
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("refuses to turn %s scoring into a CPU command", (backend) => {
+		expect(() =>
+			buildVmafCommand({ ...BASE, scoring: { backend, device: 0 } }),
+		).toThrow("NATIVE_SCORING_REQUIRES_NATIVE_RUNNER");
+	});
+	it("rejects the retired backend with an explicit migration error", () => {
+		const legacy = { ...BASE, scoring: { backend: "vmafx-cuda", device: 0 } };
+		expect(() =>
+			buildVmafCommand(legacy as Parameters<typeof buildVmafCommand>[0]),
+		).toThrow(/retired.*new measurement/i);
+	});
+});
+
 describe("buildVmafCommand", () => {
 	it("orders inputs distorted-first, reference-second", () => {
 		const argv = buildVmafCommand(BASE);

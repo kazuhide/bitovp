@@ -22,6 +22,7 @@ export type ResourcePair = {
 	model: string;
 	psnr?: boolean;
 	measurementMethod?: string;
+	scoringBackend?: "cuda" | "vulkan";
 	outputFps?: number;
 };
 export type LocalResourceOptions = { concurrency?: number; threads?: number };
@@ -139,7 +140,9 @@ export function planLocalResources(
 			throw new ResourceUnavailableError("unknown");
 		return {
 			threads: options.threads,
-			concurrency: Math.min(units, options.concurrency),
+			concurrency: pair.scoringBackend
+				? 1
+				: Math.min(units, options.concurrency),
 			estimatedBytes: 0,
 			exclusive: false,
 			manualFallback: true,
@@ -160,11 +163,12 @@ export function planLocalResources(
 		pair.model === "vmaf_v0.6.1" &&
 		!pair.psnr &&
 		!pair.measurementMethod &&
+		!pair.scoringBackend &&
 		pixels <= UHD;
 	const depth = Math.max(
 		pair.reference.bitDepth ?? 16,
 		pair.distorted.bitDepth ?? 16,
-		pair.measurementMethod ? 10 : 8,
+		pair.measurementMethod || pair.scoringBackend ? 10 : 8,
 	);
 	const chroma = Math.max(
 		pair.reference.chromaFactor ?? 2,
@@ -205,7 +209,9 @@ export function planLocalResources(
 			);
 	return {
 		threads,
-		concurrency: Math.min(units, options.concurrency ?? automaticConcurrency),
+		concurrency: pair.scoringBackend
+			? 1
+			: Math.min(units, options.concurrency ?? automaticConcurrency),
 		estimatedBytes,
 		frameCount,
 		exclusive,

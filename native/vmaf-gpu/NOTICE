@@ -1,0 +1,22 @@
+The owned GPU feature extractors adapt algorithms from Netflix libvmaf.
+Upstream: https://github.com/Netflix/vmaf
+Revision: 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef
+Copyright (c) 2020 Netflix, Inc. and the copyright holders named in each file.
+License: BSD-2-Clause-Patent; see licenses/Netflix-vmaf.txt.
+
+The official CPU library also contains LIBSVM by Chih-Chung Chang and Chih-Jen
+Lin. Its separate terms are reproduced in licenses/LIBSVM.txt.
+
+The optional CUDA build uses the CUDA Toolkit's CUB radix-sort headers.
+The notices of the tested CUDA 13.0 headers are in licenses/NVIDIA-CUB.txt;
+the actual toolkit's terms also apply when building with another version.
+
+Adapted source files retain their upstream copyright notices and license.
+The CUDA source manifest identifies the original files and their SHA-256 hashes.
+The owned integration code is covered by the repository's MIT license.
+
+The executable links the official CPU libvmaf for model prediction and pooling,
+and uses FFmpeg libraries for decoding and pixel conversion. Their licenses and
+the licenses of enabled components still apply to any binary distribution.
+NVIDIA CUDA and the Vulkan SDK/runtime are external build/runtime dependencies;
+their vendor terms apply independently. This source tree does not bundle them.

@@ -6,6 +6,25 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## Unreleased
 
+### Added
+
+- Experimental local VOD hardware decoding and owned CUDA/Vulkan VMAF v1.0
+  feature extraction, with the official Netflix predictor, full-frame CPU
+  verification, and separate decode/scoring metadata in reports and exports.
+  CPU remains the default. See [setup and limits](./docs/user-guide/GPU-QUALITY.md).
+- A standalone native scorer with resident NVDEC input, hash-verified builds,
+  real hardware qualification tests, and complete-process performance and
+  memory comparisons.
+- Optional native GPU frame concurrency, a read-only hardware and memory query,
+  and a matching Linux process supervisor for VMAF runners that must stop work
+  when their owner or heartbeat disappears.
+
+### Changed
+
+- GPU scoring uses the owned native executable. The retired experimental
+  configuration is rejected rather than silently changed. Existing measurement
+  history remains readable; changing scorers requires a new measurement.
+
 ## [1.0.0] - 2026-11-01
 
 First stable release, retaining the release candidate's feature baseline.

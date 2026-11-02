@@ -1719,7 +1719,7 @@ export const ja = {
 		executionLocal: "ローカル",
 		executionLocalCpu: "ローカルCPU",
 		executionLocalAuto: "ローカル（GPUを自動選択）",
-		executionLocalLegacy: "ローカル（ワーカー設定）",
+		executionLocalLegacy: "ローカル（従来の設定）",
 		executionLocalAutoHint:
 			"利用できるGPUがあれば使用し、それ以外は同じVMAFモデルでCPU計算します。",
 		executionLocalGateCpuHint: "合否判定を行う測定はCPUで実行します。",

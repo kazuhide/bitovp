@@ -196,7 +196,7 @@ it.each([
 	await screen.findByRole("option", { name: "GCP test · asia-northeast1" });
 	expect(screen.getByLabelText("Run on")).toHaveValue(":legacy");
 	expect(
-		screen.getByRole("option", { name: "Local (worker settings)" }),
+		screen.getByRole("option", { name: "Local (previous settings)" }),
 	).toBeInTheDocument();
 	expect(screen.getByTestId("execution").textContent).toBe(
 		JSON.stringify(initial) ?? "",

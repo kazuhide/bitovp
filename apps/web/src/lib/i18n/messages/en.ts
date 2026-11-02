@@ -1756,7 +1756,7 @@ export const en = {
 		executionLocal: "Local",
 		executionLocalCpu: "Local CPU",
 		executionLocalAuto: "Local (GPU if available)",
-		executionLocalLegacy: "Local (worker settings)",
+		executionLocalLegacy: "Local (previous settings)",
 		executionLocalAutoHint:
 			"Uses an eligible GPU when available; otherwise uses CPU with the same VMAF model.",
 		executionLocalGateCpuHint: "Measurements with a quality gate run on CPU.",

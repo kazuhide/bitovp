@@ -30,6 +30,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Updated pinned CI actions and Docker runtime/service images. Routine dependency
   updates stay in small reviewable groups; runtime major upgrades require a
   separate migration, while security updates remain enabled.
+- Refreshed the PostgreSQL 17.11 image digest in both deployment configurations
+  and the isolated database validation runner, keeping their images consistent.
 - GPU scoring uses the owned native executable. The retired experimental
   configuration is rejected rather than silently changed. Existing measurement
   history remains readable; changing scorers requires a new measurement.

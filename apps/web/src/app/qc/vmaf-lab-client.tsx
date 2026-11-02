@@ -478,6 +478,7 @@ function MeasureExistingSection() {
 	const [encodingJobId, setEncodingJobId] = useState("");
 	const [model, setModel] = useState<string>(DEFAULT_VMAF_MODEL);
 	const [profileId, setProfileId] = useState("");
+	const [localMode, setLocalMode] = useState<"CPU" | "AUTO">("CPU");
 	const [budgetUsd, setBudgetUsd] = useState("");
 	const [source, setSource] = useState<"" | "QC_MIRROR" | "OUTPUT_MP4">("");
 	const [psnr, setPsnr] = useState<"" | "true" | "false">("");
@@ -534,7 +535,7 @@ function MeasureExistingSection() {
 						: {}),
 					execution:
 						profileId === ""
-							? { backend: "LOCAL" }
+							? { backend: "LOCAL", localMode }
 							: { backend: "CLOUD", profileId, budgetUsd: cloudBudget },
 				}),
 			}),
@@ -644,15 +645,26 @@ function MeasureExistingSection() {
 						>
 							<SelectNative
 								id="lab-measure-execution"
-								value={profileId}
+								value={profileId || (localMode === "AUTO" ? ":auto" : "")}
+								aria-describedby={
+									profileId === "" && localMode === "AUTO"
+										? "lab-measure-execution-hint"
+										: undefined
+								}
 								disabled={measure.isPending}
 								onChange={(e) => {
-									setProfileId(e.target.value);
-									if (e.target.value === "") setMeasurementMethod("");
+									const target = e.target.value;
+									const local = target === "" || target === ":auto";
+									setProfileId(local ? "" : target);
+									if (local) {
+										setLocalMode(target === ":auto" ? "AUTO" : "CPU");
+										setMeasurementMethod("");
+									}
 									setBudgetUsd("");
 								}}
 							>
-								<option value="">{t("qc.executionLocal")}</option>
+								<option value="">{t("qc.executionLocalCpu")}</option>
+								<option value=":auto">{t("qc.executionLocalAuto")}</option>
 								{missingProfile ? (
 									<option value={profileId} disabled>
 										{t("qc.measureProfileMissing")}
@@ -665,6 +677,14 @@ function MeasureExistingSection() {
 								))}
 							</SelectNative>
 						</Field>
+						{profileId === "" && localMode === "AUTO" ? (
+							<p
+								id="lab-measure-execution-hint"
+								className="mt-1 text-xs text-zinc-500"
+							>
+								{t("qc.executionLocalAutoHint")}
+							</p>
+						) : null}
 						{missingProfile ? (
 							<p role="alert" className="mt-1 text-xs text-amber-400">
 								{t("qc.measureProfileMissing")}

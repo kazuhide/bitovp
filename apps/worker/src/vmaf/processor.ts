@@ -62,6 +62,12 @@ import type {
 	LocalVmafResources,
 } from "./local-resources";
 import { type LocalVmafExecution, runLocalVmafScore } from "./local-score";
+import {
+	type LocalSelection,
+	type NativeLocalSelection,
+	resolveLocalSelection,
+	type SelectLocalNative,
+} from "./local-selection";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
 import {
 	defaultKeyLister,
@@ -70,6 +76,7 @@ import {
 } from "./resolve-distorted";
 import {
 	type LocalResourcePlan,
+	type ResourcePair,
 	type ResourceVideo,
 	resourceVideoFromProbe,
 } from "./resource-plan";
@@ -131,11 +138,25 @@ export function qcContinuationJobId(
 	return `${encodingJobId}-resume-post-qc-${vmafJobId}`;
 }
 
+export type ResolveLocalVmafResources = (request: {
+	pair: ResourcePair;
+	pairCount: number;
+	options: VmafCommandOptions;
+	signal: AbortSignal;
+	referenceProbe?: string;
+	distortedProbe?: string;
+	selectedNativeDevice?: number;
+	selectedNativeIdentity?: NativeLocalSelection["identity"];
+}) => Promise<LocalResourcePlan>;
+
 export type VmafProcessorDeps = {
 	decodePolicy?: DecodePolicy;
 	scoringBackend?: "cpu" | "cuda" | "vulkan";
 	nativePath?: string;
 	localResources?: LocalVmafResources;
+	resolveLocalResources?: ResolveLocalVmafResources;
+	selectLocalNative?: SelectLocalNative;
+	nativeSelectionFailure?: Error;
 	cloudScore?: (request: CloudScoreRequest) => Promise<void>;
 	resolveCloudProfile?: (profileId: string) => Promise<VmafCloudProfile>;
 	/** Product-event emit ; never throws. */
@@ -147,6 +168,8 @@ export type VmafProcessorDeps = {
 	prisma: AppPrismaClient;
 	resolveCredential(credentialId: string): Promise<ResolvedCredential>;
 	runner: ProcessRunner;
+	/** Local probes/scoring can use a supervisor; cloud work keeps the raw runner. */
+	localRunner?: ProcessRunner;
 	ffmpegPath: string;
 	ffprobePath: string;
 	/** Working directory root; a per-job subdir is created under it. */
@@ -346,9 +369,10 @@ function renditionRef(
  * ladder simply omits the point — it must never fail the VMAF run.
  */
 async function probeDistortedMetrics(
-	deps: VmafProcessorDeps,
+	deps: Pick<VmafProcessorDeps, "ffprobePath">,
 	path: string,
 	signal: AbortSignal,
+	runner: ProcessRunner,
 	probeOutput?: string,
 ): Promise<{ height?: number; bitrate?: number }> {
 	const toInt = (v: string | undefined): number | undefined => {
@@ -362,7 +386,7 @@ async function probeDistortedMetrics(
 		const probe =
 			probeOutput !== undefined
 				? { code: 0, stdout: probeOutput }
-				: await deps.runner.run(
+				: await runner.run(
 						deps.ffprobePath,
 						[
 							"-v",
@@ -660,8 +684,35 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		}
 	}
 
+	function scoreFiles(
+		jobDir: string,
+		target: QcTarget,
+		variant: string | undefined,
+	) {
+		const slot = (variant ?? "std").replace(/[^A-Za-z0-9._-]/g, "_");
+		const ext = target.distorted.path.endsWith(".webm") ? "webm" : "mp4";
+		return {
+			slot,
+			distortedPath: join(jobDir, `dist-${target.renditionKey}-${slot}.${ext}`),
+			logPath: join(jobDir, `vmaf-${target.renditionKey}-${slot}.json`),
+		};
+	}
+	async function cleanScoreFiles(
+		jobDir: string,
+		target: QcTarget,
+		variant: string | undefined,
+	) {
+		const { distortedPath, logPath } = scoreFiles(jobDir, target, variant);
+		await Promise.all(
+			[distortedPath, logPath].map((path) =>
+				rm(path, { force: true }).catch(() => {}),
+			),
+		);
+	}
+
 	/** Scores ONE rendition; throws on ffmpeg failure (caller fails the job). */
 	async function scoreTarget(
+		deps: VmafProcessorDeps,
 		vmafJobId: string,
 		model: string,
 		// When true, enable libvmaf's psnr feature in the same pass and persist
@@ -688,18 +739,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		resourceSession?: LocalVmafResourceSession,
 		referenceResource?: ResourceVideo,
 		referenceProbe?: string,
+		selection?: LocalSelection,
 	): Promise<void> {
-		const slot = (variant ?? "std").replace(/[^A-Za-z0-9._-]/g, "_");
-		// The local extension follows the mirror's: a VP9 mirror is a WebM
-		// . ffmpeg probes content before trusting a suffix, so
-		// this is honesty rather than necessity — but a `.webm` written as
-		// `.mp4` on disk is the kind of thing a later reader trusts.
-		const ext = target.distorted.path.endsWith(".webm") ? "webm" : "mp4";
-		const distortedPath = join(
+		const runner =
+			execution.backend === "LOCAL"
+				? (deps.localRunner ?? deps.runner)
+				: deps.runner;
+		const { slot, distortedPath, logPath } = scoreFiles(
 			jobDir,
-			`dist-${target.renditionKey}-${slot}.${ext}`,
+			target,
+			variant,
 		);
-		const logPath = join(jobDir, `vmaf-${target.renditionKey}-${slot}.json`);
 		const distortedProvenance = await download({
 			signal,
 			credential: out.credential,
@@ -715,7 +765,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					deps.decodePolicy.backend !== "cpu") ||
 					deps.scoringBackend === "cuda" ||
 					deps.scoringBackend === "vulkan"))
-				? await deps.runner.run(
+				? await runner.run(
 						deps.ffprobePath,
 						[
 							"-v",
@@ -740,6 +790,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						deps,
 						distortedPath,
 						signal,
+						runner,
 						resourceProbe?.stdout,
 					)
 				: undefined;
@@ -757,7 +808,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		) {
 			const probe =
 				resourceProbe ??
-				(await deps.runner.run(
+				(await runner.run(
 					deps.ffprobePath,
 					["-v", "error", "-show_streams", "-of", "json", distortedPath],
 					{ signal },
@@ -792,77 +843,92 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				};
 			}
 		}
-		const score = async (allocation?: LocalResourcePlan) => {
+		const optionsFor = (
+			allocation?: LocalResourcePlan,
+		): VmafCommandOptions => ({
+			...(execution.backend === "LOCAL" &&
+			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
+				? {
+						scoring: {
+							backend: deps.scoringBackend as "cuda" | "vulkan",
+							device:
+								allocation?.nativeDevice ?? deps.decodePolicy?.device ?? 0,
+						},
+					}
+				: {}),
+			referencePath,
+			distortedPath,
+			model,
+			...(measurementMethod
+				? {
+						measurementMethod,
+						referenceFrameRate: geometry.frameRate,
+						distortedOriginal,
+						...(geometry.referenceGeometry
+							? { referenceGeometry: geometry.referenceGeometry }
+							: {}),
+					}
+				: {}),
+			...(distortedOriginal ? { distortedOriginal } : {}),
+			...(modelPath ? { modelPath } : {}),
+			logPath,
+			// Conform the distorted side to the reference (libvmaf needs an
+			// exact W×H + fps match). The mirror is already at the rendition
+			// resolution; scaling up to the source is the standard VMAF setup.
+			scaleToReference: { width: geometry.width, height: geometry.height },
+			...(!measurementMethod &&
+			!(
+				execution.backend === "LOCAL" &&
+				deps.scoringBackend &&
+				deps.scoringBackend !== "cpu"
+			) &&
+			geometry.fps !== undefined
+				? { fpsConform: geometry.fps }
+				: {}),
+			...(allocation
+				? {
+						threads: allocation.threads,
+						...(!measurementMethod
+							? {
+									decoderThreads: allocation.decoderThreads,
+									...(deps.scoringBackend &&
+									deps.scoringBackend !== "cpu" &&
+									execution.backend === "LOCAL"
+										? {}
+										: {
+												filterComplexThreads: allocation.filterComplexThreads,
+											}),
+								}
+							: {}),
+					}
+				: deps.threads !== undefined
+					? { threads: deps.threads }
+					: {}),
+			// Cloud receipts require every frame, regardless of local performance tuning.
+			...(execution.backend === "CLOUD"
+				? { subsample: 1 }
+				: deps.subsample !== undefined
+					? { subsample: deps.subsample }
+					: {}),
+			// PSNR rides the same libvmaf invocation (no extra pass / no
+			// Bitmovin QC API); off ⇒ the argv is byte-identical to VMAF-only.
+			...(wantPsnr ? { psnr: true } : {}),
+		});
+		const score = async (
+			allocation?: LocalResourcePlan,
+			runSignal: AbortSignal = signal,
+			assertOwned?: () => Promise<void>,
+		) => {
 			try {
-				const scoringOptions: VmafCommandOptions = {
-					...(execution.backend === "LOCAL" &&
-					(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
-						? {
-								scoring: {
-									backend: deps.scoringBackend as "cuda" | "vulkan",
-									device: deps.decodePolicy?.device ?? 0,
-								},
-							}
-						: {}),
-					referencePath,
-					distortedPath,
-					model,
-					...(measurementMethod
-						? {
-								measurementMethod,
-								referenceFrameRate: geometry.frameRate,
-								distortedOriginal,
-								...(geometry.referenceGeometry
-									? { referenceGeometry: geometry.referenceGeometry }
-									: {}),
-							}
-						: {}),
-					...(distortedOriginal ? { distortedOriginal } : {}),
-					...(modelPath ? { modelPath } : {}),
-					logPath,
-					// Conform the distorted side to the reference (libvmaf needs an
-					// exact W×H + fps match). The mirror is already at the rendition
-					// resolution; scaling up to the source is the standard VMAF setup.
-					scaleToReference: { width: geometry.width, height: geometry.height },
-					...(!measurementMethod &&
-					!(
-						execution.backend === "LOCAL" &&
-						deps.scoringBackend &&
-						deps.scoringBackend !== "cpu"
-					) &&
-					geometry.fps !== undefined
-						? { fpsConform: geometry.fps }
-						: {}),
-					...(allocation
-						? {
-								threads: allocation.threads,
-								...(!measurementMethod
-									? {
-											decoderThreads: allocation.decoderThreads,
-											...(deps.scoringBackend &&
-											deps.scoringBackend !== "cpu" &&
-											execution.backend === "LOCAL"
-												? {}
-												: {
-														filterComplexThreads:
-															allocation.filterComplexThreads,
-													}),
-										}
-									: {}),
-							}
-						: deps.threads !== undefined
-							? { threads: deps.threads }
-							: {}),
-					// Cloud receipts require every frame, regardless of local performance tuning.
-					...(execution.backend === "CLOUD"
-						? { subsample: 1 }
-						: deps.subsample !== undefined
-							? { subsample: deps.subsample }
-							: {}),
-					// PSNR rides the same libvmaf invocation (no extra pass / no
-					// Bitmovin QC API); off ⇒ the argv is byte-identical to VMAF-only.
-					...(wantPsnr ? { psnr: true } : {}),
-				};
+				if (
+					selection &&
+					selection.backend !== "cpu" &&
+					(!allocation?.gpu ||
+						allocation.nativeDevice !== selection.device ||
+						!assertOwned)
+				)
+					throw new Error("VMAF_LOCAL_GPU_ADMISSION_REQUIRED");
+				const scoringOptions = optionsFor(allocation);
 				let run: { code: number | null; stderr: string };
 				let localExecution: LocalVmafExecution | undefined;
 				let localLog: unknown;
@@ -907,20 +973,54 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						profile: executionProfile,
 						budgetUsd: execution.budgetUsd,
 						options: scoringOptions,
-						signal,
+						signal: runSignal,
 					});
 					run = { code: 0, stderr: "" };
 				} else {
-					const result = await runLocalVmafScore(deps, scoringOptions, {
-						signal,
-						referenceProbe,
-						distortedProbe: resourceProbe?.stdout,
-					});
+					const result = await runLocalVmafScore(
+						{ ...deps, runner },
+						scoringOptions,
+						{
+							signal: runSignal,
+							nativeInflightFrames: allocation?.nativeInflightFrames,
+							referenceProbe,
+							distortedProbe: resourceProbe?.stdout,
+						},
+					);
 					run = result.run;
-					localExecution = result.execution;
+					if (
+						selection &&
+						(result.execution.scoring.backend !== selection.backend ||
+							result.execution.scoring.model !== selection.model)
+					)
+						throw new Error("VMAF_LOCAL_SELECTION_RESULT_MISMATCH");
+					if (selection && selection.backend !== "cpu") {
+						const actual = result.execution.scoring;
+						if (
+							actual.implementation !== "bitovp-owned" ||
+							actual.sourceSha256 !== selection.identity.sourceSha256 ||
+							actual.device.index !== selection.device ||
+							actual.device.uuid !== selection.identity.deviceUuid
+						)
+							throw new Error("VMAF_LOCAL_SELECTION_RESULT_MISMATCH");
+					}
+					localExecution = {
+						...result.execution,
+						...(selection
+							? {
+									selection: {
+										requested: selection.requested,
+										...("reason" in selection
+											? { reason: selection.reason }
+											: {}),
+									},
+								}
+							: {}),
+					};
 					localLog = result.log;
 				}
-				signal?.throwIfAborted();
+				runSignal.throwIfAborted();
+				await assertOwned?.();
 				if (run.code !== 0) {
 					// libvmaf rejects an unresolvable model with a cryptic tail
 					// ("Invalid argument") — surface the real cause + the fix instead.
@@ -956,7 +1056,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				// Per-frame array gzipped into framesGzip (now [{frameNum,vmaf,psnr?}]);
 				// frames column stays null.
 				const framesGzip = gzipSync(Buffer.from(JSON.stringify(parsed.frames)));
-				signal?.throwIfAborted();
+				runSignal.throwIfAborted();
+				await assertOwned?.();
 				await deps.prisma.vmafResult.create({
 					data: {
 						vmafJobId,
@@ -983,25 +1084,42 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			}
 		};
 		if (resourceSession && referenceResource && resourceProbe) {
+			const pair: ResourcePair = {
+				reference: referenceResource,
+				distorted: resourceVideoFromProbe(resourceProbe.stdout),
+				model,
+				psnr: wantPsnr,
+				...(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan"
+					? { scoringBackend: deps.scoringBackend }
+					: {}),
+				measurementMethod,
+				outputFps: geometry.fps,
+			};
+			const resolver = deps.resolveLocalResources;
 			await resourceSession.run(
 				`${target.renditionKey}/${slot}`,
-				{
-					reference: referenceResource,
-					distorted: resourceVideoFromProbe(resourceProbe.stdout),
-					model,
-					psnr: wantPsnr,
-					...(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan"
-						? { scoringBackend: deps.scoringBackend }
-						: {}),
-					measurementMethod,
-					outputFps: geometry.fps,
-				},
+				pair,
 				pairCount,
 				score,
+				resolver
+					? () =>
+							resolver({
+								pair,
+								pairCount,
+								options: optionsFor(),
+								signal,
+								referenceProbe,
+								distortedProbe: resourceProbe.stdout,
+								...(selection && selection.backend !== "cpu"
+									? {
+											selectedNativeDevice: selection.device,
+											selectedNativeIdentity: selection.identity,
+										}
+									: {}),
+							})
+					: undefined,
 			);
-		} else {
-			await score();
-		}
+		} else await score();
 	}
 
 	async function run(
@@ -1176,21 +1294,79 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					: undefined;
 			if (measurementMethod && execution.backend !== "CLOUD")
 				throw new Error("Frame-index measurement requires cloud validation");
+			const selection =
+				(execution.backend === "LOCAL" && execution.localMode !== undefined) ||
+				paramsAcc.localSelection !== undefined
+					? await resolveLocalSelection(
+							{
+								selectNative: deps.selectLocalNative,
+								nativeFailure: deps.nativeSelectionFailure,
+							},
+							{
+								execution,
+								model: row.model,
+								gate: Boolean(gateCtx),
+								stored: paramsAcc.localSelection,
+								signal,
+							},
+						)
+					: undefined;
+			// Effective settings belong to this run; shared resources stay shared.
+			const jobDeps: VmafProcessorDeps = selection
+				? {
+						...deps,
+						scoringBackend: selection.backend,
+						decodePolicy: {
+							backend: "cpu",
+							device: selection.backend === "cpu" ? 0 : selection.device,
+						},
+					}
+				: deps;
+			const runner = isCloud
+				? deps.runner
+				: (jobDeps.localRunner ?? jobDeps.runner);
 			const gpuGeneration = localScoringGeneration({
 				scoringVersion: row.scoringVersion,
 				isCloud,
-				scoringBackend: deps.scoringBackend,
-				decodeBackend: deps.decodePolicy?.backend,
+				scoringBackend: jobDeps.scoringBackend,
+				decodeBackend: jobDeps.decodePolicy?.backend,
 				storedScoring: paramsAcc.localScoring,
 			});
+			if (
+				paramsAcc.localSelection !== undefined &&
+				gpuGeneration &&
+				row.scoringVersion !== gpuGeneration
+			)
+				throw new Error("VMAF_LOCAL_SELECTION_GENERATION_CHANGED");
+			if (selection && paramsAcc.localSelection === undefined) {
+				const existing = await deps.prisma.vmafResult.findMany({
+					where: { vmafJobId },
+					select: { id: true },
+					take: 1,
+				});
+				if (existing.length)
+					throw new Error(
+						"This job has existing results without a pinned selection; create a new measurement",
+					);
+			}
+			if (
+				selection &&
+				selection.backend !== "cpu" &&
+				(!deps.nativePath ||
+					!deps.localRunner ||
+					!deps.localResources ||
+					!deps.resolveLocalResources)
+			)
+				throw new Error("VMAF_LOCAL_GPU_RUNTIME_REQUIRED");
 			if (!isCloud && gpuGeneration) {
 				if (gateCtx)
 					throw new Error(
 						"Experimental GPU measurements cannot evaluate delivery gates; create a manual measurement",
 					);
 				const native =
-					deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan";
-				if (native && row.scoringVersion !== gpuGeneration) {
+					jobDeps.scoringBackend === "cuda" ||
+					jobDeps.scoringBackend === "vulkan";
+				if (native && row.scoringVersion !== gpuGeneration && !selection) {
 					const existing = await deps.prisma.vmafResult.findMany({
 						where: { vmafJobId },
 						select: { id: true },
@@ -1201,21 +1377,31 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							"This job has existing results from a different scorer; create a new measurement",
 						);
 				}
-				await deps.prisma.vmafJob.updateMany({
+				const pinned = await deps.prisma.vmafJob.updateMany({
 					where: { id: vmafJobId, status: "RUNNING" },
 					data: {
 						scoringVersion: gpuGeneration,
 						...(native
 							? {
 									params: mergeParams({
+										...(selection ? { localSelection: selection } : {}),
 										localScoring: ownedScoringSnapshot(
-											deps.scoringBackend as "cuda" | "vulkan",
+											jobDeps.scoringBackend as "cuda" | "vulkan",
 										),
 									}),
 								}
 							: {}),
 					},
 				});
+				if (selection && pinned.count !== 1)
+					throw new Error("VMAF_LOCAL_SELECTION_NOT_PERSISTED");
+			} else if (selection) {
+				const pinned = await deps.prisma.vmafJob.updateMany({
+					where: { id: vmafJobId, status: "RUNNING" },
+					data: { params: mergeParams({ localSelection: selection }) },
+				});
+				if (pinned.count !== 1)
+					throw new Error("VMAF_LOCAL_SELECTION_NOT_PERSISTED");
 			}
 			if (
 				measurementMethod &&
@@ -1278,27 +1464,14 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				);
 			}
 
+			const resourceSession = !isCloud
+				? deps.localResources?.begin(signal)
+				: undefined;
 			await mkdir(jobDir, { recursive: true });
 
 			// Reference download + probe, ONCE per unique source (every rendition
 			// of a single-input ladder shares it). Keyed by inputKey+inputPath.
-			const refCache = new Map<
-				string,
-				{
-					path: string;
-					geometry: Geometry & {
-						frameRate?: string;
-						referenceGeometry?: VmafReferenceGeometry;
-					};
-					resourceVideo?: ResourceVideo;
-					probe: string;
-					provenance: DownloadProvenance;
-					credential: ResolvedCredential;
-				}
-			>();
-			const referenceFor = async (
-				target: QcTarget,
-			): Promise<{
+			type Reference = {
 				path: string;
 				geometry: Geometry & {
 					frameRate?: string;
@@ -1308,136 +1481,140 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				probe: string;
 				provenance: DownloadProvenance;
 				credential: ResolvedCredential;
-			}> => {
+			};
+			const refCache = new Map<string, Promise<Reference>>();
+			const referenceFor = (target: QcTarget): Promise<Reference> => {
 				const cacheKey = `${target.reference.inputKey}\0${target.reference.inputPath}`;
 				const cached = refCache.get(cacheKey);
 				if (cached) {
 					return cached;
 				}
-				const src = await resolveInputSource(
-					deps,
-					plan,
-					target.reference.inputKey,
-				);
-				const referencePath = join(jobDir, `ref-${refCache.size}.mp4`);
-				const referenceProvenance = await download({
-					signal,
-					credential: src.credential,
-					bucket: src.bucket,
-					key: target.reference.inputPath,
-					destPath: referencePath,
-					label: `reference source for rendition ${target.renditionKey} (input "${target.reference.inputKey}")`,
-				});
-				const probe = await deps.runner.run(
-					deps.ffprobePath,
-					[
-						"-v",
-						"error",
-						"-print_format",
-						"json",
-						"-show_streams",
-						...(!isCloud && deps.localResources ? ["-show_format"] : []),
-						referencePath,
-					],
-					{ signal },
-				);
-				if (probe.code !== 0) {
-					throw new Error(
-						`ffprobe failed on the reference source (code ${probe.code}): ${stderrTail(probe.stderr)}`,
+				const refIndex = refCache.size;
+				const referencePath = join(jobDir, `ref-${refIndex}.mp4`);
+				const pending = (async () => {
+					const src = await resolveInputSource(
+						deps,
+						plan,
+						target.reference.inputKey,
 					);
-				}
-				const videoStream = JSON.parse(probe.stdout).streams?.find(
-					(stream: { codec_type?: string }) => stream.codec_type === "video",
-				);
-				const codedGeometry = geometryFromProbe(probe.stdout);
-				const sar = measurementMethod
-					? sampleAspectRatioFromProbe(videoStream?.sample_aspect_ratio)
-					: undefined;
-				// Square pixels need no display claim. Preserve the request accepted
-				// by existing digest-pinned generation-6 cloud workers.
-				const referenceGeometry =
-					sar && sar !== "1:1"
-						? {
-								width: codedGeometry.width,
-								height: codedGeometry.height,
-								sampleAspectRatio: sar,
-							}
+					const referenceProvenance = await download({
+						signal,
+						credential: src.credential,
+						bucket: src.bucket,
+						key: target.reference.inputPath,
+						destPath: referencePath,
+						label: `reference source for rendition ${target.renditionKey} (input "${target.reference.inputKey}")`,
+					});
+					const probe = await runner.run(
+						deps.ffprobePath,
+						[
+							"-v",
+							"error",
+							"-print_format",
+							"json",
+							"-show_streams",
+							...(!isCloud && deps.localResources ? ["-show_format"] : []),
+							referencePath,
+						],
+						{ signal },
+					);
+					if (probe.code !== 0) {
+						throw new Error(
+							`ffprobe failed on the reference source (code ${probe.code}): ${stderrTail(probe.stderr)}`,
+						);
+					}
+					const videoStream = JSON.parse(probe.stdout).streams?.find(
+						(stream: { codec_type?: string }) => stream.codec_type === "video",
+					);
+					const codedGeometry = geometryFromProbe(probe.stdout);
+					const sar = measurementMethod
+						? sampleAspectRatioFromProbe(videoStream?.sample_aspect_ratio)
 						: undefined;
-				const geometry = {
-					...codedGeometry,
-					...(referenceGeometry
-						? {
-								...frameIndexDisplayGeometry(referenceGeometry),
-								referenceGeometry,
-							}
-						: {}),
-					...(measurementMethod
-						? {
-								frameRate:
-									videoStream?.r_frame_rate || videoStream?.avg_frame_rate,
-							}
-						: {}),
-				};
-				const entry = {
-					path: referencePath,
-					probe: probe.stdout,
-					geometry,
-					...(!isCloud && deps.localResources
-						? { resourceVideo: resourceVideoFromProbe(probe.stdout) }
-						: {}),
-					provenance: referenceProvenance,
-					credential: src.credential,
-				};
-				refCache.set(cacheKey, entry);
-				// Persist the reference's geometry so the report can state the terms of
-				// its own comparison. A VMAF number without the upscale factor beside it
-				// is what turned a healthy pipeline into an hours-long investigation:
-				// 300 kbps at 360p against a 1080p source scores ~15, correctly. Written
-				// into the existing `params` JSON rather than a new column — the probe
-				// already happens here, so this costs nothing.
-				//
-				// Only the FIRST distinct reference writes (the `set` above precedes this
-				// guard), which is why the accumulator is sufficient on the per-title and
-				// multi-target paths where `referenceFor` runs repeatedly: this write can
-				// only ADD to what the run has already recorded, and a second reference
-				// never reaches it. Were the guard ever relaxed, merging still keeps the
-				// stride — the failure mode would be a later geometry overwriting an
-				// earlier one, which is a different question from this one.
-				if (refCache.size === 1) {
-					await deps.prisma.vmafJob
-						.update({
-							where: { id: vmafJobId },
-							data: {
-								params: mergeParams({
-									reference: {
-										width: geometry.width,
-										height: geometry.height,
-										...(measurementMethod
-											? {
-													codedWidth: codedGeometry.width,
-													codedHeight: codedGeometry.height,
-													...(sar ? { sampleAspectRatio: sar } : {}),
-													sampleAspectRatioPolicy: sar
-														? "reported"
-														: "legacy-square-pixel",
-												}
-											: {}),
-										...(geometry.fps !== undefined
-											? { fps: geometry.fps }
-											: {}),
-									},
-								}),
-							},
-						})
-						// Never fail a scoring run over report metadata.
-						.catch((err: unknown) => {
-							console.error(
-								"[worker:vmaf] could not record reference geometry:",
-								err,
-							);
-						});
-				}
-				return entry;
+					// Square pixels need no display claim. Preserve the request accepted
+					// by existing digest-pinned generation-6 cloud workers.
+					const referenceGeometry =
+						sar && sar !== "1:1"
+							? {
+									width: codedGeometry.width,
+									height: codedGeometry.height,
+									sampleAspectRatio: sar,
+								}
+							: undefined;
+					const geometry = {
+						...codedGeometry,
+						...(referenceGeometry
+							? {
+									...frameIndexDisplayGeometry(referenceGeometry),
+									referenceGeometry,
+								}
+							: {}),
+						...(measurementMethod
+							? {
+									frameRate:
+										videoStream?.r_frame_rate || videoStream?.avg_frame_rate,
+								}
+							: {}),
+					};
+					const entry = {
+						path: referencePath,
+						probe: probe.stdout,
+						geometry,
+						...(!isCloud && deps.localResources
+							? { resourceVideo: resourceVideoFromProbe(probe.stdout) }
+							: {}),
+						provenance: referenceProvenance,
+						credential: src.credential,
+					};
+					// Persist the reference's geometry so the report can state the terms of
+					// its own comparison. A VMAF number without the upscale factor beside it
+					// is what turned a healthy pipeline into an hours-long investigation:
+					// 300 kbps at 360p against a 1080p source scores ~15, correctly. Written
+					// into the existing `params` JSON rather than a new column — the probe
+					// already happens here, so this costs nothing.
+					//
+					// The index is assigned before I/O. Only the first distinct reference
+					// writes geometry, even when several references are loading at once.
+					if (refIndex === 0) {
+						await deps.prisma.vmafJob
+							.update({
+								where: { id: vmafJobId },
+								data: {
+									params: mergeParams({
+										reference: {
+											width: geometry.width,
+											height: geometry.height,
+											...(measurementMethod
+												? {
+														codedWidth: codedGeometry.width,
+														codedHeight: codedGeometry.height,
+														...(sar ? { sampleAspectRatio: sar } : {}),
+														sampleAspectRatioPolicy: sar
+															? "reported"
+															: "legacy-square-pixel",
+													}
+												: {}),
+											...(geometry.fps !== undefined
+												? { fps: geometry.fps }
+												: {}),
+										},
+									}),
+								},
+							})
+							// Never fail a scoring run over report metadata.
+							.catch((err: unknown) => {
+								console.error(
+									"[worker:vmaf] could not record reference geometry:",
+									err,
+								);
+							});
+					}
+					return entry;
+				})().catch(async (error) => {
+					await rm(referencePath, { force: true }).catch(() => {});
+					throw error;
+				});
+				refCache.set(cacheKey, pending);
+				return pending;
 			};
 
 			// A manual Lab choice overrides the saved plan; omission inherits it.
@@ -1687,39 +1864,6 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					});
 			}
 
-			// Pre-fetch each unique reference source SEQUENTIALLY (download once;
-			// referenceFor caches by inputKey+inputPath), so the concurrent pool
-			// below only reads the cache — no double-download or filename race.
-			for (const target of targets) {
-				await referenceFor(target);
-			}
-
-			const resourceSession = !isCloud
-				? deps.localResources?.begin(signal)
-				: undefined;
-			const initialPlans = resourceSession
-				? [...refCache.values()].map((ref) => {
-						if (!ref.resourceVideo)
-							throw new Error(
-								"Quality measurement input metadata is unavailable",
-							);
-						return resourceSession.plan(
-							{
-								reference: ref.resourceVideo,
-								distorted: ref.resourceVideo,
-								model: row.model,
-								psnr: wantPsnr,
-								...(deps.scoringBackend === "cuda" ||
-								deps.scoringBackend === "vulkan"
-									? { scoringBackend: deps.scoringBackend }
-									: {}),
-								measurementMethod,
-								outputFps: ref.geometry.fps,
-							},
-							work.length,
-						);
-					})
-				: [];
 			// Now the unit count is known (incl. per-title rungs): record the
 			// progress baseline + execution profile for the report. Best-effort —
 			// a failed progress write must NEVER fail the run.
@@ -1740,10 +1884,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					? deps.subsample
 					: undefined;
 			// Each cloud pair owns a separate resource; local scoring keeps its CPU limit.
+			const descriptorConcurrency = isCloud
+				? work.length
+				: resourceSession
+					? resourceSession.descriptorConcurrency(work.length)
+					: concurrency;
 			const jobConcurrency = isCloud
 				? work.length
-				: initialPlans.length > 0
-					? Math.max(...initialPlans.map((plan) => plan.concurrency))
+				: resourceSession
+					? (deps.localResources?.jobCapacity?.() ?? 1)
 					: concurrency;
 			await writeProgress(vmafJobId, {
 				totalUnits: work.length,
@@ -1757,9 +1906,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 											1,
 											Math.floor(resourceSession.report().cpuCapacity),
 										),
-										threads: Math.max(
-											...initialPlans.map((plan) => plan.threads),
-										),
+										threads: deps.threads ?? null,
 									}
 								: {
 										...(deps.cores !== undefined ? { cores: deps.cores } : {}),
@@ -1792,51 +1939,72 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				while (next < work.length && firstError === undefined) {
 					const item = work[next] as WorkItem;
 					next += 1;
-					try {
-						const reference = await referenceFor(item.target);
-						await scoreTarget(
-							vmafJobId,
-							row.model,
-							wantPsnr,
-							item.target,
-							reference.path,
-							reference.geometry,
-							reference.provenance,
-							jobDir,
-							item.out,
-							item.key,
-							item.variant,
-							item.providerResult,
-							signal,
-							execution,
-							work.length,
-							executionProfile,
-							measurementMethod,
-							reference.credential,
-							resourceSession,
-							reference.resourceVideo,
-							reference.probe,
-						);
-						resultCount += 1;
-						// Atomic increment — multiple pool workers bump concurrently, so
-						// a read-modify-write would lose updates. Best-effort: a failed
-						// progress write must not fail the run (results already persisted).
-						await writeProgress(vmafJobId, { doneUnits: { increment: 1 } });
-					} catch (err) {
-						if (firstError === undefined) {
-							firstError = err;
+					const processItem = async () => {
+						if (firstError !== undefined) return;
+						try {
+							const reference = await referenceFor(item.target);
+							await scoreTarget(
+								jobDeps,
+								vmafJobId,
+								row.model,
+								wantPsnr,
+								item.target,
+								reference.path,
+								reference.geometry,
+								reference.provenance,
+								jobDir,
+								item.out,
+								item.key,
+								item.variant,
+								item.providerResult,
+								signal,
+								execution,
+								work.length,
+								executionProfile,
+								measurementMethod,
+								reference.credential,
+								resourceSession,
+								reference.resourceVideo,
+								reference.probe,
+								selection,
+							);
+							resultCount += 1;
+							// Atomic increment — multiple pool workers bump concurrently, so
+							// a read-modify-write would lose updates. Best-effort: a failed
+							// progress write must not fail the run (results already persisted).
+							await writeProgress(vmafJobId, { doneUnits: { increment: 1 } });
+						} catch (error) {
+							firstError ??= error;
+							throw error;
+						} finally {
+							await cleanScoreFiles(jobDir, item.target, item.variant);
 						}
+					};
+					try {
+						if (resourceSession)
+							await resourceSession.prepared(
+								`${item.target.renditionKey}/${item.variant ?? "std"}`,
+								processItem,
+							);
+						else await processItem();
+					} catch (error) {
+						firstError ??= error;
 					}
 				}
 			};
 			await Promise.all(
-				Array.from({ length: Math.min(jobConcurrency, work.length) }, () =>
-					poolWorker(),
+				Array.from(
+					{ length: Math.min(descriptorConcurrency, work.length) },
+					() => poolWorker(),
 				),
 			);
 			if (resourceSession) {
 				const report = resourceSession.report();
 				await writeProgress(vmafJobId, {
+					concurrency: Math.min(
+						work.length,
+						Math.max(1, report.maxObservedActive),
+					),
 					params: mergeParams({
 						localResources: report as unknown as Prisma.InputJsonValue,
 					}),

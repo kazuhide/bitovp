@@ -81,12 +81,17 @@ describe("EncodingOptionsSection — Quality control (VMAF)", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("enabling VMAF patches qc:{vmaf:true} (default model, psnr off)", () => {
+	it("enabling VMAF defaults to local CPU with the default model and PSNR off", () => {
 		const onPatch = vi.fn();
 		render(<EncodingOptionsSection state={baseState} onPatch={onPatch} />);
 		fireEvent.click(screen.getByLabelText("Run VMAF QC after encoding"));
 		expect(onPatch).toHaveBeenCalledWith({
-			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false },
+			qc: {
+				vmaf: true,
+				model: DEFAULT_VMAF_MODEL,
+				psnr: false,
+				execution: { backend: "LOCAL", localMode: "CPU" },
+			},
 		});
 	});
 

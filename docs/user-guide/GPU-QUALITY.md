@@ -10,8 +10,39 @@ Local VOD measurements have two separate GPU options:
 | Owned CUDA or Vulkan scorer | VMAF v1.0 image features and PSNR | Decode and common pixel conversion, official model prediction, small final statistics, and numerical verification |
 
 Both are optional. CPU processing remains the default. Cloud jobs and Live
-measurements keep their existing execution paths. GPU experiments require a
-manual measurement of a completed encoding and cannot decide delivery gates.
+measurements keep their existing execution paths. Experimental GPU scoring
+cannot decide delivery gates.
+
+## Choose local processing
+
+The VOD quality settings and VMAF Lab offer **Local CPU** and
+**Local (GPU if available)** alongside configured cloud profiles.
+
+- **Local CPU** uses CPU decoding and scoring, even if the worker's environment
+  requests a GPU. This is the default for new measurements created in the GUI.
+- **Local (GPU if available)** checks the worker's hardware and matching
+  native installation. For a supported VMAF v1.0 model, it tries NVIDIA CUDA,
+  then AMD Vulkan. If no supported GPU or native runtime is available, or the
+  model is unsupported, it uses the same model on the CPU.
+
+The GPU belongs to the machine running the worker, not the browser. Automatic
+selection requires the matching native scorer and supervisor on Linux; selecting
+it does not install drivers or native tools. Configure `VMAF_NATIVE_PATH` and
+`VMAF_MODEL_DIR` as described below. The worker chooses concurrency automatically;
+additional comparisons wait for capacity.
+
+A measurement that decides a delivery gate uses CPU scoring, including when
+automatic GPU selection was requested. Live comparisons also stay on the CPU.
+Input validation errors, invalid native builds and failed CPU numerical checks
+remain errors; they are not hidden by a CPU retry. GPU scoring still requires
+the supported settings described below.
+
+Reports show the requested choice, actual decoding and scoring methods, and
+the reason for a CPU selection. The selected backend, native build and device
+are pinned for a measurement so that resuming it cannot mix implementations.
+Creating a new measurement with **Remeasure** retains the requested choice and
+selects again. Historical plans without an explicit choice show **Local (worker
+settings)** and retain their original environment-based behavior until changed.
 
 ## Hardware decoding with CPU scoring
 
@@ -20,7 +51,8 @@ GPU's video decoder; it is separate from the processors used for VMAF arithmetic
 The worker needs access to both CUDA and NVIDIA's video-decoding libraries.
 See NVIDIA's [FFmpeg setup guide](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/ffmpeg-with-nvidia-gpu/index.html).
 
-Set these values in the worker's environment, then restart the worker:
+For the historical **Local (worker settings)** option, set these values in the
+worker's environment, then restart the worker:
 
 ```dotenv
 VMAF_SCORING_BACKEND=cpu
@@ -54,7 +86,7 @@ official Netflix libvmaf predictor. It does not require an external FFmpeg fork
 or a VMAF filter patch. Build instructions are in the
 [native scorer guide](../../native/vmaf-gpu/README.md).
 
-Example worker settings for NVIDIA:
+Example worker settings for a Linux native installation:
 
 ```dotenv
 VMAF_SCORING_BACKEND=cuda
@@ -64,9 +96,12 @@ VMAF_NATIVE_PATH=/opt/bitovp-vmaf/bin/bitovp-vmaf
 VMAF_MODEL_DIR=/opt/bitovp-vmaf/share/bitovp-vmaf/model
 ```
 
-For an AMD GPU, use `VMAF_SCORING_BACKEND=vulkan`. The selected Vulkan device
-must be an AMD hardware GPU. CUDA and Vulkan device indices are separate;
-the measurement records the actual device name, index, and UUID.
+Explicit GUI choices override `VMAF_SCORING_BACKEND`, `VMAF_DECODE_BACKEND` and
+`VMAF_GPU_DEVICE`. These three variables continue to control historical plans
+without a local processing choice. For those plans, use
+`VMAF_SCORING_BACKEND=vulkan` for an AMD GPU. The selected Vulkan device must be
+an AMD hardware GPU. CUDA and Vulkan device indices are separate; the measurement
+records the actual device name, index, and UUID.
 
 The initial worker integration accepts ordinary SDR, square-pixel VOD inputs
 with matching cadence and aligned content. It supports the eight bundled
@@ -80,11 +115,51 @@ Each GPU worker run also computes the official CPU reference. Every required
 feature and every frame score must pass the numerical checks before a result
 is accepted. Missing or duplicated values, different model/input hashes, an
 unexpected source build, or a different device fail the measurement. GPU
-scoring never silently selects CPU scoring or another model.
+scoring never retries a failed GPU calculation with CPU scoring or another model.
 
 This verification adds CPU work. Benchmarking the qualified GPU extractor
 alone and measuring the current worker's end-to-end time answer different
 questions. Compare both before choosing a deployment setting.
+
+## Automatic local scheduling
+
+On Linux, a matching native scorer and supervisor enable automatic resource
+planning. Leave `VMAF_THREADS` and `VMAF_CONCURRENCY` blank. The worker selects
+calculation threads, decoder threads, simultaneous comparisons, and the number
+of GPU frames in flight from the available CPU, RAM, GPU memory and video settings.
+An explicit thread value stays fixed; an explicit concurrency value is an upper
+bound shared across local jobs.
+
+For a new hardware, driver, model and video-format combination, the worker times
+a short sample with the same CPU verification used by complete measurements.
+It chooses a resource-efficient plan within five percent of the fastest measured
+throughput. This is a bounded search of measured candidates. Source length and
+available memory are checked again for each complete comparison.
+
+The first search has a 30-second budget for starting trials; an active trial
+finishes or stops before its resources are released. Subsequent comparisons use
+the saved measurements. A worker that later has room for a higher concurrency
+limit can make one additional bounded search for that limit. Inputs without
+exact video frame counts keep a conservative serial plan. The private cache contains
+timing and memory metadata. Temporary video samples are removed after analysis.
+Unknown device memory or an unrecognized driver retains a conservative serial
+plan. Worker logs describe the selected plan and its reason.
+
+When more work is submitted than the selected capacity, excess jobs wait in the
+queue. Comparisons inside admitted jobs also share one resource pool. Input
+preparation waits for a permit before opening or downloading media. Completing
+or cancelling a comparison releases its capacity for the next waiting item.
+Several workers on the same host coordinate execution through their shared
+Redis connection. Memory pressure can reduce overlap while existing calculations
+finish. Cloud jobs retain their separate limit; Live comparisons retain their
+sequential order and CPU scoring. A Live capture reserves the host's shared
+CPU and memory capacity through preparation, scoring and cleanup. Other local
+measurements wait for that reservation to finish.
+
+Keep the matching native executable and supervisor together. Their Linux
+heartbeat and parent-death guards stop owned calculations after worker failure.
+The worker retains the reservation until its child processes close. Installs
+without the native pair retain the existing local execution policy.
 
 ## Inspect hardware and control standalone concurrency
 

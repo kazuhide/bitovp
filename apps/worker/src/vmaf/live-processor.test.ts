@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +29,8 @@ import {
 	createLocalVmafResources,
 	type LocalVmafResources,
 } from "./local-resources";
+import { createResourceAdmission } from "./resource-admission";
+import type { LocalResourcePlan } from "./resource-plan";
 import type { FrameStats } from "./signatures";
 
 /**
@@ -126,6 +134,7 @@ function setup(
 	opts: {
 		job?: Row;
 		localResources?: LocalVmafResources;
+		resolveLocalResources?: LiveVmafProcessorDeps["resolveLocalResources"];
 		channel?: Row | null;
 		feeder?: Row | null;
 		plan?: Record<string, unknown> | null;
@@ -423,6 +432,9 @@ function setup(
 	const deps: LiveVmafProcessorDeps = {
 		prisma,
 		...(opts.localResources ? { localResources: opts.localResources } : {}),
+		...(opts.resolveLocalResources
+			? { resolveLocalResources: opts.resolveLocalResources }
+			: {}),
 		resolveCredential,
 		runner,
 		ffmpegPath: "ffmpeg",
@@ -1779,4 +1791,354 @@ it("live reset cadence detects deletion within one hundred milliseconds", async 
 		await pending.catch(() => {});
 		vi.useRealTimers();
 	}
+});
+
+function preparationDeferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+it("waits for shared host capacity before Live storage, FFmpeg and capture-window I/O", async () => {
+	const cpu = createResourceAdmission({
+		capacityBytes: 4,
+		availableBytes: () => 4,
+	});
+	const entered = preparationDeferred(),
+		release = preparationDeferred();
+	const holder = cpu.run(1, new AbortController().signal, async () => {
+		entered.resolve();
+		await release.promise;
+	});
+	await entered.promise;
+	const execute = async <T>(
+		plan: LocalResourcePlan,
+		signal: AbortSignal,
+		work: (signal: AbortSignal, assert: () => Promise<void>) => Promise<T>,
+	) =>
+		cpu.run(plan.exclusive ? 4 : 1, signal, () =>
+			work(signal, async () => signal.throwIfAborted()),
+		);
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute,
+	});
+	const resolver = vi.fn(async () => {
+		throw new Error("Borrowed Live work must not acquire a second lease");
+	});
+	const t = setup({
+		localResources: resources,
+		resolveLocalResources: resolver,
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	try {
+		await vi.waitFor(() =>
+			expect(
+				resources.begin(new AbortController().signal).report().queued,
+			).toBeGreaterThan(0),
+		);
+		expect(t.browser.getObject).not.toHaveBeenCalled();
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.nowFn).not.toHaveBeenCalled();
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		expect(await pending).toMatchObject({ status: "MISSING" });
+		expect(resolver).not.toHaveBeenCalled();
+	} finally {
+		release.resolve();
+		await holder;
+		await pending.catch(() => {});
+	}
+});
+
+it("holds the exclusive Live lease until aborted preparation children and files have drained", async () => {
+	const lease = new AbortController();
+	const entered = preparationDeferred(),
+		aborted = preparationDeferred(),
+		release = preparationDeferred();
+	const events: string[] = [];
+	let jobDir = "";
+	const execute = async <T>(
+		_plan: LocalResourcePlan,
+		_signal: AbortSignal,
+		work: (signal: AbortSignal, assert: () => Promise<void>) => Promise<T>,
+	) => {
+		events.push("lease");
+		try {
+			return await work(lease.signal, async () =>
+				lease.signal.throwIfAborted(),
+			);
+		} finally {
+			expect(existsSync(jobDir)).toBe(false);
+			events.push("released");
+		}
+	};
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute,
+	});
+	const t = setup({ localResources: resources });
+	jobDir = join(workDir, VMAF_JOB_ID);
+	const original = vi.mocked(t.runner.run).getMockImplementation();
+	if (!original) throw new Error("Missing runner");
+	vi.mocked(t.runner.run).mockImplementation(async (bin, args, options) => {
+		if (args.join(" ").includes("signalstats")) {
+			expect(options?.abortKillAfterMs).toBe(250);
+			events.push("prep");
+			entered.resolve();
+			await new Promise<void>((resolve) =>
+				options?.signal?.addEventListener(
+					"abort",
+					() => {
+						events.push("abort");
+						aborted.resolve();
+						resolve();
+					},
+					{ once: true },
+				),
+			);
+			await release.promise;
+			events.push("drained");
+			return { code: null, stdout: "", stderr: "" };
+		}
+		return original(bin, args, options);
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	const rejected = expect(pending).rejects.toThrow("preparation lease lost");
+	try {
+		await entered.promise;
+		lease.abort(new Error("preparation lease lost"));
+		await aborted.promise;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(events).not.toContain("released");
+	} finally {
+		release.resolve();
+		await rejected;
+	}
+	expect(events.indexOf("drained")).toBeLessThan(events.indexOf("released"));
+	expect(t.results).toEqual([]);
+	expect(resources.begin(new AbortController().signal).report()).toMatchObject({
+		active: 0,
+		queued: 0,
+	});
+});
+
+it.each([
+	"active",
+	"headers",
+] as const)("closes an aborted Live download (%s) before returning its shared lease", async (stage) => {
+	const lease = new AbortController();
+	const entered = preparationDeferred(),
+		destroyed = preparationDeferred(),
+		headers = preparationDeferred(),
+		release = preparationDeferred();
+	const events: string[] = [];
+	const execute = async <T>(
+		_plan: LocalResourcePlan,
+		_signal: AbortSignal,
+		work: (signal: AbortSignal, assert: () => Promise<void>) => Promise<T>,
+	) => {
+		try {
+			return await work(lease.signal, async () =>
+				lease.signal.throwIfAborted(),
+			);
+		} finally {
+			events.push("released");
+		}
+	};
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute,
+	});
+	const t = setup({ localResources: resources });
+	const getObject = t.browser.getObject;
+	if (!getObject) throw new Error("Missing storage fixture");
+	vi.mocked(getObject).mockImplementationOnce(async () => {
+		const stream = new Readable({
+			read() {
+				entered.resolve();
+			},
+			destroy(error, done) {
+				events.push("destroy");
+				destroyed.resolve();
+				release.promise.then(() => {
+					events.push("closed");
+					done(error);
+				});
+			},
+		});
+		if (stage === "headers") {
+			entered.resolve();
+			await headers.promise;
+		}
+		return stream;
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	const rejected = expect(pending).rejects.toThrow("download lease lost");
+	try {
+		await entered.promise;
+		lease.abort(new Error("download lease lost"));
+		headers.resolve();
+		await destroyed.promise;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(events).not.toContain("released");
+		expect(t.runner.run).not.toHaveBeenCalled();
+	} finally {
+		headers.resolve();
+		release.resolve();
+		await rejected;
+	}
+	expect(events.indexOf("closed")).toBeLessThan(events.indexOf("released"));
+	expect(t.results).toEqual([]);
+});
+it("waits before Live reference I/O and seals the capture window only after preparation admission", async () => {
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+	});
+	const holder = preparationDeferred(),
+		entered = preparationDeferred(),
+		blocker = resources.begin(new AbortController().signal);
+	const blocking = blocker.prepared("other-job", async () => {
+		entered.resolve();
+		await holder.promise;
+	});
+	await entered.promise;
+	const t = setup({ localResources: resources });
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	try {
+		await vi.waitFor(() =>
+			expect(
+				blocker.report().queued > 0 ||
+					(vi.mocked(t.browser.getObject)?.mock.calls.length ?? 0) > 0,
+			).toBe(true),
+		);
+		expect(t.browser.getObject).not.toHaveBeenCalled();
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.nowFn).not.toHaveBeenCalled();
+		t.nowFn.mockReturnValue("2026-06-18T12:00:30.000Z");
+	} finally {
+		holder.resolve();
+		await blocking;
+	}
+	expect(await pending).toMatchObject({ status: "FINISHED" });
+	expect(
+		(t.results[0]?.pooled as { live: { captureWindow: CaptureWindow } }).live
+			.captureWindow.to,
+	).toBe("2026-06-18T12:00:30.000Z");
+	expect(t.nowFn).toHaveBeenCalledTimes(1);
+	expect(blocker.report().queued).toBe(0);
+});
+
+it("cancels queued Live preparation without starting storage or FFmpeg", async () => {
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+	});
+	const holder = preparationDeferred(),
+		entered = preparationDeferred(),
+		blocker = resources.begin(new AbortController().signal);
+	const blocking = blocker.prepared("other-job", async () => {
+		entered.resolve();
+		await holder.promise;
+	});
+	await entered.promise;
+	const t = setup({ localResources: resources });
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	try {
+		await vi.waitFor(() =>
+			expect(
+				blocker.report().queued > 0 ||
+					(vi.mocked(t.browser.getObject)?.mock.calls.length ?? 0) > 0,
+			).toBe(true),
+		);
+		expect(t.browser.getObject).not.toHaveBeenCalled();
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		expect(await pending).toMatchObject({ status: "MISSING" });
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(blocker.report().queued).toBe(0);
+	} finally {
+		holder.resolve();
+		await blocking;
+		await pending.catch(() => {});
+	}
+});
+
+it("rejects Live result publication when execution authority is lost", async () => {
+	const authority = vi.fn(async () => {
+		throw new Error("Reservation lost before publication");
+	});
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, signal, work) => work(signal, authority),
+	});
+	const t = setup({
+		localResources: resources,
+		resolveLocalResources: async (request) => {
+			expect(request.options.scoring).toBeUndefined();
+			return {
+				threads: 1,
+				concurrency: 1,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+			};
+		},
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"Reservation lost before publication",
+	);
+	expect(t.results).toHaveLength(0);
+	expect(authority).toHaveBeenCalled();
+	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
+});
+
+it("preserves a distinct execution lease signal through the Live row-liveness wrapper", async () => {
+	const lease = new AbortController();
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 4,
+			budgetBytes: 4 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, _signal, work) => work(lease.signal, async () => {}),
+	});
+	const t = setup({ localResources: resources });
+	const ordinary = vi.mocked(t.runner.run).getMockImplementation();
+	if (!ordinary) throw new Error("Missing runner fixture");
+	vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) => {
+		if (argv.join(" ").includes("libvmaf")) {
+			lease.abort(new Error("Lease execution lost"));
+			expect(options?.signal?.aborted).toBe(true);
+			options?.signal?.throwIfAborted();
+		}
+		return ordinary(bin, argv, options);
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"Lease execution lost",
+	);
+	expect(t.results).toHaveLength(0);
+	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
 });

@@ -209,6 +209,43 @@ describe("createNodeProcessRunner().run", () => {
 		expect(result).toEqual({ code: 3, stdout: "out", stderr: "err" });
 	});
 
+	it("sends fresh heartbeat records on FD 3 without mixing them into output", async () => {
+		let sequence = 0;
+		const result = await createNodeProcessRunner().run(
+			process.execPath,
+			[
+				"-e",
+				"const fs=require('node:fs'); let text=''; const timer=setTimeout(()=>process.exit(41),1500); fs.createReadStream(null,{fd:3}).on('data',chunk=>{text+=chunk; const records=text.trim().split('\\n'); if(records.length>=3){ clearTimeout(timer); process.stdout.write(JSON.stringify(records.slice(0,3))); process.exit(0); }});",
+			],
+			{ heartbeat: { intervalMs: 20, read: () => `${++sequence}\n` } },
+		);
+		expect(result.code).toBe(0);
+		expect(JSON.parse(result.stdout)).toEqual(["1", "2", "3"]);
+		expect(result.stderr).toBe("");
+	});
+
+	it("kills and drains an owned child when a heartbeat can no longer be produced", async () => {
+		let sequence = 0;
+		const result = await createNodeProcessRunner().run(
+			process.execPath,
+			[
+				"-e",
+				"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);setTimeout(()=>process.exit(42),2000)",
+			],
+			{
+				heartbeat: {
+					intervalMs: 20,
+					read: () => {
+						if (++sequence === 2) throw new Error("fixture clock unavailable");
+						return "1\n";
+					},
+				},
+			},
+		);
+		expect(result.code).toBeNull();
+		expect(result.stderr).toContain("process heartbeat failed");
+	});
+
 	it("an aborted signal ends a long-running child promptly with code null", async () => {
 		const runner = createNodeProcessRunner();
 		const aborter = new AbortController();

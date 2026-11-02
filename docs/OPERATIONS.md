@@ -130,7 +130,8 @@ starting each comparison.
 
 `VMAF_THREADS` fixes the number of libvmaf calculation threads per comparison.
 `VMAF_CONCURRENCY` caps simultaneous VOD comparisons; memory checks can reduce
-that overlap. Set either value independently to keep the other automatic. Live
+that overlap. The shared native execution policy applies this bound across
+local jobs. Set either value independently to keep the other automatic. Live
 comparisons keep their existing sequential order. Restart the worker after
 changing these settings. Both bundled Compose configurations preserve explicit
 values in the deployment's environment file.
@@ -151,8 +152,12 @@ selection stops; explicitly setting both values permits the legacy manual path
 and reports that automatic memory protection is unavailable.
 
 During a local job, the worker checks for deletion every 100 milliseconds, up
-to ten database lookups per second. One local job runs per worker, with several
-comparisons allowed inside it; queued jobs add no such checks. Cloud jobs retain
+to ten database lookups per second per admitted job. With the matching Linux
+native scorer and supervisor installed, local jobs share automatically selected
+resource limits and excess parents remain queued. Other installations retain
+one local job per worker, with several comparisons allowed inside it. Queued
+parents add no deletion checks. See [GPU quality measurement](./user-guide/GPU-QUALITY.md#automatic-local-scheduling)
+for calibration, queueing and native installation behavior. Cloud jobs retain
 their one-second check interval. For ordinary local scoring, reset first asks
 FFmpeg to stop; if it has not exited after 250 milliseconds, the worker force
 stops that process and discards partial scores. Cancellation holds reserved

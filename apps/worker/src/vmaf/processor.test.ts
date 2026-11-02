@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import {
 	capturePerTitleResults,
+	type LocalVmafExecution,
+	NATIVE_OFFICIAL_REVISION,
 	PER_TITLE_ATTRIBUTION_VERSION,
 	PER_TITLE_CAPTURE_STEP,
 	PER_TITLE_RESULT_MODE,
@@ -12,6 +14,7 @@ import {
 	type PerTitleCapturePort,
 	type ScannedMuxing,
 	type ScannedStream,
+	VMAF_SCORING_VERSION,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +25,7 @@ import {
 	createLocalVmafResources,
 	type LocalVmafResources,
 } from "./local-resources";
+import * as localScoring from "./local-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 
 /**
@@ -213,8 +217,13 @@ function setup(
 		probeExit?: number;
 		probeJson?: string;
 		localResources?: LocalVmafResources;
+		localRunner?: ProcessRunner;
+		resolveLocalResources?: VmafProcessorDeps["resolveLocalResources"];
+		selectLocalNative?: VmafProcessorDeps["selectLocalNative"];
+		nativeSelectionFailure?: VmafProcessorDeps["nativeSelectionFailure"];
 		decodePolicy?: VmafProcessorDeps["decodePolicy"];
 		scoringBackend?: VmafProcessorDeps["scoringBackend"];
+		nativePath?: string;
 		download?: VmafDownload;
 		concurrency?: number;
 		cloudScore?: VmafProcessorDeps["cloudScore"];
@@ -272,10 +281,14 @@ function setup(
 				};
 
 	const vmafJob = {
-		findUnique: vi.fn(async () => ({
-			...job,
-			encodingJob: encodingJobRow,
-		})),
+		findUnique: vi.fn(
+			async (): Promise<
+				(Row & { encodingJob: typeof encodingJobRow }) | null
+			> => ({
+				...job,
+				encodingJob: encodingJobRow,
+			}),
+		),
 		updateMany: vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
 			const statusOk =
 				where.status === undefined || where.status === job.status;
@@ -466,10 +479,14 @@ function setup(
 	const emitted: Row[] = [];
 	const deps: VmafProcessorDeps = {
 		decodePolicy: opts.decodePolicy,
+		nativePath: opts.nativePath,
+		selectLocalNative: opts.selectLocalNative,
+		nativeSelectionFailure: opts.nativeSelectionFailure,
 		scoringBackend: opts.scoringBackend,
 		prisma,
 		resolveCredential,
 		runner,
+		...(opts.localRunner ? { localRunner: opts.localRunner } : {}),
 		ffmpegPath: "ffmpeg",
 		ffprobePath: "ffprobe",
 		workDir,
@@ -490,10 +507,14 @@ function setup(
 			? { resolveModelPath: opts.resolveModelPath }
 			: {}),
 		...(opts.localResources ? { localResources: opts.localResources } : {}),
+		...(opts.resolveLocalResources
+			? { resolveLocalResources: opts.resolveLocalResources }
+			: {}),
 	};
 
 	return {
 		processor: createVmafProcessor(deps),
+		deps,
 		job,
 		results,
 		runner,
@@ -3273,4 +3294,980 @@ describe("measurement reset cadence", () => {
 			vi.useRealTimers();
 		}
 	});
+});
+
+function resourceDeferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+const RESOURCE_PROBE_JSON = JSON.stringify({
+	streams: [
+		{
+			codec_type: "video",
+			codec_name: "h264",
+			width: 1920,
+			height: 1080,
+			pix_fmt: "yuv420p",
+			r_frame_rate: "30/1",
+			duration: "10",
+			nb_frames: "300",
+		},
+	],
+});
+function sharedTestResources() {
+	return createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+	});
+}
+it("queues VOD jobs before reference or mirror I/O and shares preparation across jobs", async () => {
+	const resources = sharedTestResources(),
+		holder = resourceDeferred(),
+		entered = resourceDeferred();
+	const blocker = resources.begin(new AbortController().signal);
+	const blocking = blocker.prepared("other-job", async () => {
+		entered.resolve();
+		await holder.promise;
+	});
+	await entered.promise;
+	const a = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	const otherId = "00000000-0000-4000-8000-0000000000a2";
+	const b = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		job: { id: otherId },
+	});
+	const first = a.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		second = b.processor.process({ vmafJobId: otherId });
+	const outcome = Promise.all([first, second]);
+	try {
+		await vi.waitFor(() =>
+			expect(blocker.report().queued > 0 || a.downloaded.length > 0).toBe(true),
+		);
+		expect(a.downloaded).toHaveLength(0);
+		expect(b.downloaded).toHaveLength(0);
+		expect(a.runner.run).not.toHaveBeenCalled();
+		expect(b.runner.run).not.toHaveBeenCalled();
+	} finally {
+		holder.resolve();
+		await blocking;
+	}
+	expect(await outcome).toEqual([
+		expect.objectContaining({ status: "FINISHED", results: 2 }),
+		expect.objectContaining({ status: "FINISHED", results: 2 }),
+	]);
+	expect(
+		a.downloaded.filter((item) => item.key === "src/master.mkv"),
+	).toHaveLength(1);
+	expect(
+		b.downloaded.filter((item) => item.key === "src/master.mkv"),
+	).toHaveLength(1);
+	expect(blocker.report().queued).toBe(0);
+	expect(blocker.report().maxObservedActive).toBeLessThanOrEqual(2);
+});
+
+it("removes a cancelled VOD preparation without downloading and lets the next job proceed", async () => {
+	const resources = sharedTestResources(),
+		holder = resourceDeferred(),
+		entered = resourceDeferred();
+	const blocker = resources.begin(new AbortController().signal);
+	const blocking = blocker.prepared("other-job", async () => {
+		entered.resolve();
+		await holder.promise;
+	});
+	await entered.promise;
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	try {
+		await vi.waitFor(() =>
+			expect(blocker.report().queued > 0 || t.downloaded.length > 0).toBe(true),
+		);
+		expect(t.downloaded).toHaveLength(0);
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		expect(await pending).toMatchObject({ status: "MISSING" });
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(blocker.report().queued).toBe(0);
+	} finally {
+		holder.resolve();
+		await blocking;
+		await pending.catch(() => {});
+	}
+	const next = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	expect(
+		await next.processor.process({ vmafJobId: VMAF_JOB_ID }),
+	).toMatchObject({ status: "FINISHED" });
+});
+
+it("never publishes a VOD result after execution authority is lost", async () => {
+	const authority = vi.fn(async () => {
+		throw new Error("Reservation lost before publication");
+	});
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, signal, work) => work(signal, authority),
+	});
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		resolveLocalResources: async (request) => {
+			expect(request.options.referencePath).toContain("ref-0.mp4");
+			expect(request.options.distortedPath).toContain("dist-");
+			expect(request.referenceProbe).toBe(RESOURCE_PROBE_JSON);
+			return {
+				threads: 1,
+				concurrency: 2,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+				basis: "profile-test",
+			};
+		},
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"Reservation lost before publication",
+	);
+	expect(t.results).toHaveLength(0);
+	expect(authority).toHaveBeenCalled();
+	const observer = resources.begin(new AbortController().signal);
+	expect(observer.report().queued).toBe(0);
+	expect(observer.report().active).toBe(0);
+	expect((await import("node:fs/promises")).readdir(workDir)).resolves.toEqual(
+		[],
+	);
+});
+
+it("passes the selected native device and pipeline depth through the real processor boundary", async () => {
+	const localRunner: ProcessRunner = {
+		spawn: vi.fn(() => {
+			throw new Error("Unexpected spawn");
+		}),
+		run: vi.fn(),
+	};
+	const native = vi
+		.spyOn(localScoring, "runLocalVmafScore")
+		.mockImplementation(async (_deps, options, context) => {
+			expect(_deps.runner).toBe(localRunner);
+			expect(options.scoring).toEqual({ backend: "vulkan", device: 2 });
+			expect(context?.nativeInflightFrames).toBe(2);
+			return {
+				run: { code: 0, stderr: "" },
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					scoring: {
+						backend: "cpu",
+						implementation: "libvmaf",
+						model: options.model,
+					},
+					attempts: 1,
+				},
+				log: JSON.parse(vmafJson([95])),
+			};
+		});
+	try {
+		const t = setup({
+			localResources: sharedTestResources(),
+			localRunner,
+			probeJson: RESOURCE_PROBE_JSON,
+			scoringBackend: "vulkan",
+			job: { scoringVersion: VMAF_SCORING_VERSION },
+			resolveLocalResources: async () => ({
+				threads: 1,
+				concurrency: 2,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+				nativeDevice: 2,
+				nativeInflightFrames: 2,
+			}),
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing raw runner fixture");
+		vi.mocked(localRunner.run).mockImplementation(raw);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(native).toHaveBeenCalledTimes(2);
+	} finally {
+		native.mockRestore();
+	}
+});
+
+it("uses the execution lease signal for VOD scoring and does not publish an aborted score", async () => {
+	const lease = new AbortController();
+	const resources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, _signal, work) => work(lease.signal, async () => {}),
+	});
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+	});
+	const ordinary = vi.mocked(t.runner.run).getMockImplementation();
+	if (!ordinary) throw new Error("Missing runner fixture");
+	vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) => {
+		if (argv.join(" ").includes("libvmaf")) {
+			expect(options?.signal).toBe(lease.signal);
+			lease.abort(new Error("Lease execution lost"));
+			options?.signal?.throwIfAborted();
+		}
+		return ordinary(bin, argv, options);
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"Lease execution lost",
+	);
+	expect(t.results).toHaveLength(0);
+	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
+});
+
+it("cleans a failed reference download before draining queued VOD comparisons and the next job", async () => {
+	// Keep later descriptors queued while the first real file write is pending.
+	// Another job must not expand this cleanup test's preparation fan-out.
+	const resources = createLocalVmafResources({
+			concurrency: 1,
+			readResources: () => ({
+				cpuCapacity: 8,
+				budgetBytes: 8 * 1024 ** 3,
+				reserveBytes: 0,
+			}),
+		}),
+		plan = qcPlan();
+	const ingest = plan.ingest as Row[];
+	ingest.push({
+		...ingest[0],
+		key: "second-video",
+		inputPath: "src/second.mkv",
+	});
+	const secondRendition = (plan.renditions as Row[])[1];
+	if (!secondRendition) throw new Error("Missing second fixture rendition");
+	secondRendition.ingestKey = "second-video";
+	const attempted: string[] = [];
+	const bad = setup({
+		plan,
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		download: async (request) => {
+			attempted.push(request.key);
+			await writeFile(request.destPath, "partial input");
+			throw new Error("Source download failed");
+		},
+	});
+	const otherId = "00000000-0000-4000-8000-0000000000a2";
+	const good = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		job: { id: otherId },
+	});
+	const failed = bad.processor.process({ vmafJobId: VMAF_JOB_ID });
+	const rejected = expect(failed).rejects.toThrow("Source download failed");
+	const next = good.processor.process({ vmafJobId: otherId });
+	await rejected;
+	expect(attempted).toEqual(["src/master.mkv"]);
+	expect(await next).toMatchObject({ status: "FINISHED", results: 2 });
+	expect(bad.runner.run).not.toHaveBeenCalled();
+	await expect(
+		(await import("node:fs/promises")).readdir(workDir),
+	).resolves.toEqual([]);
+	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
+});
+
+function runnerBoundaryPlan() {
+	const plan = qcPlan();
+	plan.renditions = [
+		{
+			key: "vpt",
+			ingestKey: "video",
+			codec: "H264",
+			mode: "PER_TITLE_TEMPLATE",
+			height: null,
+			bitrate: null,
+		},
+	];
+	plan.muxings = [
+		{
+			key: "mpt",
+			kind: "MP4",
+			streamKey: "vpt",
+			filename: "vpt.mp4",
+			destination: { outputKey: "origin", path: "out/video/pt" },
+		},
+	];
+	return plan;
+}
+it.each([
+	false,
+	true,
+])("routes local reference, target probes and scoring through localRunner (resource policy=%s)", async (withResources) => {
+	const localRunner: ProcessRunner = {
+		spawn: vi.fn(() => {
+			throw new Error("Unexpected spawn");
+		}),
+		run: vi.fn(),
+	};
+	const t = setup({
+		plan: runnerBoundaryPlan(),
+		localRunner,
+		...(withResources
+			? {
+					localResources: sharedTestResources(),
+					probeJson: RESOURCE_PROBE_JSON,
+				}
+			: {}),
+	});
+	const raw = vi.mocked(t.runner.run).getMockImplementation();
+	if (!raw) throw new Error("Missing raw runner fixture");
+	vi.mocked(localRunner.run).mockImplementation(raw);
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "FINISHED",
+		results: 1,
+	});
+	expect(t.runner.run).not.toHaveBeenCalled();
+	const calls = vi.mocked(localRunner.run).mock.calls;
+	expect(
+		calls.filter(([, argv]) => argv.includes("-show_streams")),
+	).toHaveLength(2);
+	expect(
+		calls.filter(([, argv]) => argv.join(" ").includes("libvmaf")),
+	).toHaveLength(1);
+});
+
+it("keeps every cloud preparation probe on the raw runner without accessing the supervised local path", async () => {
+	const localRunner: ProcessRunner = {
+		spawn: vi.fn(() => {
+			throw new Error("Cloud accessed local supervisor");
+		}),
+		run: vi.fn(async () => {
+			throw new Error("Cloud accessed local supervisor");
+		}),
+	};
+	const cloudScore: NonNullable<VmafProcessorDeps["cloudScore"]> = async (
+		request,
+	) => {
+		await writeFile(request.options.logPath, vmafJson([95]));
+	};
+	const t = setup({
+		plan: runnerBoundaryPlan(),
+		localRunner,
+		cloudScore,
+		scoringBackend: "vulkan",
+		decodePolicy: { backend: "cuda", device: 0 },
+		job: {
+			params: {
+				execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+			},
+		},
+		localResources: {
+			begin: () => {
+				throw new Error("Cloud entered local resource manager");
+			},
+		},
+		resolveLocalResources: async () => {
+			throw new Error("Cloud entered native calibration");
+		},
+	});
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "FINISHED",
+		results: 1,
+	});
+	expect(localRunner.run).not.toHaveBeenCalled();
+	expect(localRunner.spawn).not.toHaveBeenCalled();
+	expect(
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-show_streams")),
+	).toHaveLength(2);
+});
+
+describe("per-job local execution", () => {
+	const model = "vmaf_v1.0.16_3d0h";
+	const chosen = {
+		backend: "cuda" as const,
+		device: 2,
+		identity: {
+			sourceSha256: "a".repeat(64),
+			binarySha256: "b".repeat(64),
+			supervisorBinarySha256: "c".repeat(64),
+			deviceUuid: "GPU-fixture",
+		},
+	};
+	it("forces CPU scoring and decoding while retaining a valid supervised runner", async () => {
+		const selectLocalNative = vi.fn(async () => chosen);
+		const localRunner: ProcessRunner = { spawn: vi.fn(), run: vi.fn() };
+		const t = setup({
+			scoringBackend: "vulkan",
+			decodePolicy: { backend: "cuda", device: 9 },
+			localRunner,
+			selectLocalNative,
+			nativeSelectionFailure: new Error("invalid optional pair"),
+			job: {
+				scoringVersion: VMAF_SCORING_VERSION,
+				params: { execution: { backend: "LOCAL", localMode: "CPU" } },
+			},
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing runner fixture");
+		vi.mocked(localRunner.run).mockImplementation(raw);
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(selectLocalNative).not.toHaveBeenCalled();
+		expect(localRunner.run).toHaveBeenCalled();
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
+		expect(
+			t.filterComplexArgs.every(
+				(graph) => graph.includes("libvmaf=") && !graph.includes("hwdownload"),
+			),
+		).toBe(true);
+		expect((t.job.params as Row).localSelection).toEqual({
+			version: 1,
+			requested: "CPU",
+			model: "vmaf_v0.6.1",
+			backend: "cpu",
+		});
+		expect(t.results).toHaveLength(2);
+		for (const result of t.results)
+			expect(result.provenance).toMatchObject({
+				localExecution: {
+					selection: { requested: "CPU" },
+					requestedDecode: "cpu",
+					scoring: { backend: "cpu", model: "vmaf_v0.6.1" },
+				},
+			});
+	});
+	it.each([
+		["runtime", model, undefined, "GPU_RUNTIME_UNAVAILABLE"],
+		[
+			"model",
+			"vmaf_v0.6.1",
+			vi.fn(async () => chosen),
+			"GPU_MODEL_UNSUPPORTED",
+		],
+		[
+			"devices",
+			model,
+			vi.fn(async () => ({
+				backend: "cpu" as const,
+				reason: "GPU_NOT_AVAILABLE" as const,
+			})),
+			"GPU_NOT_AVAILABLE",
+		],
+	] as const)("records AUTO CPU reason when %s is unavailable without changing the model", async (_name, requestedModel, selectLocalNative, reason) => {
+		const t = setup({
+			scoringBackend: "cuda",
+			decodePolicy: { backend: "auto", device: 4 },
+			selectLocalNative,
+			job: {
+				model: requestedModel,
+				scoringVersion: VMAF_SCORING_VERSION,
+				params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect((t.job.params as Row).localSelection).toMatchObject({
+			requested: "AUTO",
+			model: requestedModel,
+			backend: "cpu",
+			reason,
+		});
+		for (const result of t.results)
+			expect(result.provenance).toMatchObject({
+				localExecution: {
+					selection: { requested: "AUTO", reason },
+					requestedDecode: "cpu",
+					scoring: { backend: "cpu", model: requestedModel },
+				},
+			});
+		if (reason === "GPU_MODEL_UNSUPPORTED")
+			expect(selectLocalNative).not.toHaveBeenCalled();
+	});
+	it("uses CPU for an AUTO delivery gate without querying GPU availability", async () => {
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: true,
+			gate: {
+				rules: [{ metric: "VMAF_MEAN", scope: "PER_RENDITION", gte: 80 }],
+				onFail: "BLOCK_MANIFESTS",
+			},
+		};
+		const selectLocalNative = vi.fn(async () => chosen);
+		const t = setup({
+			plan,
+			selectLocalNative,
+			scoringBackend: "cuda",
+			decodePolicy: { backend: "auto", device: 0 },
+			job: {
+				model,
+				scoringVersion: VMAF_SCORING_VERSION,
+				params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(selectLocalNative).not.toHaveBeenCalled();
+		expect((t.job.params as Row).localSelection).toMatchObject({
+			backend: "cpu",
+			reason: "GPU_GATE_CPU_ONLY",
+		});
+		expect(t.results).toHaveLength(2);
+	});
+	it("keeps AUTO CPU fallback pinned when the row is requeued and a GPU appears", async () => {
+		const selectLocalNative = vi.fn(async () => chosen);
+		const stored = {
+			version: 1,
+			requested: "AUTO",
+			model,
+			backend: "cpu",
+			reason: "GPU_NOT_AVAILABLE",
+		};
+		const t = setup({
+			selectLocalNative,
+			scoringBackend: "cuda",
+			decodePolicy: { backend: "auto", device: 0 },
+			job: {
+				model,
+				scoringVersion: VMAF_SCORING_VERSION,
+				params: {
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					localSelection: stored,
+				},
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(selectLocalNative).not.toHaveBeenCalled();
+		expect((t.job.params as Row).localSelection).toEqual(stored);
+	});
+	it("does not pin a new AUTO native method over partial results", async () => {
+		const t = setup({
+			selectLocalNative: async () => chosen,
+			job: {
+				model,
+				scoringVersion: VMAF_SCORING_VERSION,
+				params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+			},
+		});
+		t.results.push({
+			renditionRef: { renditionKey: "v360" },
+			pooled: { mean: 90 },
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(/existing results.*new measurement/i);
+		expect((t.job.params as Row).localSelection).toBeUndefined();
+		expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
+		expect(t.runner.run).not.toHaveBeenCalled();
+	});
+	it("does not hide invalid runtime selection or retry on CPU", async () => {
+		const t = setup({
+			selectLocalNative: async () => {
+				throw new Error("NATIVE_DEVICE_INFO_BUILD_MISMATCH");
+			},
+			job: {
+				model,
+				scoringVersion: VMAF_SCORING_VERSION,
+				params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("NATIVE_DEVICE_INFO_BUILD_MISMATCH");
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.results).toHaveLength(0);
+	});
+});
+
+it("keeps interleaved CPU and AUTO jobs isolated through selection, admission and publication", async () => {
+	const model = "vmaf_v1.0.16_3d0h";
+	const chosen = {
+		backend: "cuda" as const,
+		device: 2,
+		identity: {
+			sourceSha256: "a".repeat(64),
+			binarySha256: "b".repeat(64),
+			supervisorBinarySha256: "c".repeat(64),
+			deviceUuid: "GPU-fixture",
+		},
+	};
+	const entered = resourceDeferred(),
+		release = resourceDeferred();
+	const selectLocalNative = vi.fn(async () => {
+		entered.resolve();
+		await release.promise;
+		return chosen;
+	});
+	const assertOwned = vi.fn(async () => {});
+	const localResources = createLocalVmafResources({
+		readResources: () => ({
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		}),
+		execute: async (_plan, signal, work) => work(signal, assertOwned),
+	});
+	const localRunner: ProcessRunner = { spawn: vi.fn(), run: vi.fn() };
+	const resolveLocalResources = vi.fn<
+		NonNullable<VmafProcessorDeps["resolveLocalResources"]>
+	>(async (request) => {
+		if (request.options.scoring) {
+			expect(request.selectedNativeDevice).toBe(2);
+			expect(request.selectedNativeIdentity).toEqual(chosen.identity);
+		}
+		return {
+			threads: 1,
+			concurrency: 2,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			...(request.options.scoring
+				? {
+						nativeDevice: 2,
+						nativeInflightFrames: 1 as const,
+						gpu: { deviceKey: "e".repeat(64), bytes: 1024, computeCredits: 1 },
+					}
+				: {}),
+		};
+	});
+	const t = setup({
+		localResources,
+		localRunner,
+		resolveLocalResources,
+		selectLocalNative,
+		nativePath: "/native",
+		probeJson: RESOURCE_PROBE_JSON,
+		scoringBackend: "vulkan",
+		decodePolicy: { backend: "cuda", device: 9 },
+		job: {
+			model,
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: { execution: { backend: "LOCAL", localMode: "CPU" } },
+		},
+	});
+	const otherId = "00000000-0000-4000-8000-0000000000a2";
+	const encodingJob = (await t.vmafJob.findUnique())?.encodingJob;
+	const other: Row = {
+		...t.job,
+		id: otherId,
+		params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+	};
+	const jobs = new Map([
+		[VMAF_JOB_ID, t.job],
+		[otherId, other],
+	]);
+	t.vmafJob.findUnique.mockImplementation(async (args?: unknown) => {
+		const id = (args as { where: { id: string } }).where.id;
+		const job = jobs.get(id);
+		return job ? { ...job, encodingJob: encodingJob ?? null } : null;
+	});
+	t.vmafJob.updateMany.mockImplementation(async ({ where, data }) => {
+		const job = jobs.get(String(where.id));
+		if (!job || (where.status && where.status !== job.status))
+			return { count: 0 };
+		Object.assign(job, data);
+		return { count: 1 };
+	});
+	t.vmafJob.update.mockImplementation(async ({ where, data }) => {
+		const job = jobs.get(String(where.id));
+		if (!job) throw new Error("Missing fixture row");
+		for (const [key, value] of Object.entries(data)) {
+			job[key] =
+				value && typeof value === "object" && "increment" in value
+					? Number(job[key] ?? 0) + Number(value.increment)
+					: value;
+		}
+		return { ...job };
+	});
+	t.vmafResult.findMany.mockImplementation(async (args?: unknown) =>
+		t.results
+			.filter(
+				(result) =>
+					result.vmafJobId ===
+					(args as { where: { vmafJobId: string } }).where.vmafJobId,
+			)
+			.map((result) => ({
+				renditionRef: result.renditionRef,
+				pooled: result.pooled,
+			})),
+	);
+	const raw = vi.mocked(t.runner.run).getMockImplementation();
+	if (!raw) throw new Error("Missing runner fixture");
+	vi.mocked(localRunner.run).mockImplementation(raw);
+	const ordinaryScore = localScoring.runLocalVmafScore;
+	const score = vi
+		.spyOn(localScoring, "runLocalVmafScore")
+		.mockImplementation(async (deps, options, context) => {
+			expect(deps.decodePolicy).toMatchObject({ backend: "cpu" });
+			if (!options.scoring) return ordinaryScore(deps, options, context);
+			expect(options.scoring).toEqual({ backend: "cuda", device: 2 });
+			expect(deps.runner).toBe(localRunner);
+			const execution: LocalVmafExecution = {
+				version: 1,
+				requestedDecode: "cpu",
+				decode: {
+					reference: { backend: "cpu" },
+					distorted: { backend: "cpu" },
+				},
+				attempts: 1,
+				scoring: {
+					backend: "cuda",
+					implementation: "bitovp-owned",
+					model,
+					modelSha256: "f".repeat(64),
+					features: ["a", "b", "c", "d", "e", "f", "g"],
+					bitDepth: 10,
+					distortedOriginal: { width: 1920, height: 1080, bitdepth: 8 },
+					officialRevision: NATIVE_OFFICIAL_REVISION,
+					sourceSha256: chosen.identity.sourceSha256,
+					device: {
+						index: 2,
+						name: "Fixture GPU",
+						uuid: chosen.identity.deviceUuid,
+						vendorId: 0x10de,
+						deviceId: 1,
+						integrated: false,
+					},
+					cpuParity: {
+						checked: true,
+						featureCount: 7,
+						scoreCount: 1,
+						maxFeatureError: 0,
+						maxScoreError: 0,
+					},
+				},
+			};
+			return {
+				run: { code: 0, stderr: "" },
+				execution,
+				log: JSON.parse(vmafJson([95])),
+			};
+		});
+	try {
+		const gpu = t.processor.process({ vmafJobId: otherId });
+		await entered.promise;
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		release.resolve();
+		expect(await gpu).toMatchObject({ status: "FINISHED", results: 2 });
+		expect(t.deps.scoringBackend).toBe("vulkan");
+		expect(t.deps.decodePolicy).toEqual({ backend: "cuda", device: 9 });
+		expect((t.job.params as Row).localSelection).toMatchObject({
+			requested: "CPU",
+			backend: "cpu",
+		});
+		expect((other.params as Row).localSelection).toEqual({
+			version: 1,
+			requested: "AUTO",
+			model,
+			...chosen,
+		});
+		for (const result of t.results)
+			expect(result.provenance).toMatchObject({
+				localExecution: {
+					selection: {
+						requested: result.vmafJobId === VMAF_JOB_ID ? "CPU" : "AUTO",
+					},
+					scoring: {
+						backend: result.vmafJobId === VMAF_JOB_ID ? "cpu" : "cuda",
+					},
+				},
+			});
+		expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
+		expect(other.scoringVersion).not.toBe(VMAF_SCORING_VERSION);
+		expect(assertOwned).toHaveBeenCalled();
+	} finally {
+		release.resolve();
+		score.mockRestore();
+	}
+});
+
+function autoNativeFailureHarness(admitGpu = true) {
+	const chosen = {
+		backend: "cuda" as const,
+		device: 2,
+		identity: {
+			sourceSha256: "a".repeat(64),
+			binarySha256: "b".repeat(64),
+			supervisorBinarySha256: "c".repeat(64),
+			deviceUuid: "GPU-fixture",
+		},
+	};
+	const localRunner: ProcessRunner = { spawn: vi.fn(), run: vi.fn() };
+	const t = setup({
+		nativePath: "/native",
+		localRunner,
+		probeJson: RESOURCE_PROBE_JSON,
+		selectLocalNative: vi.fn(async () => chosen),
+		localResources: createLocalVmafResources({
+			readResources: () => ({
+				cpuCapacity: 8,
+				budgetBytes: 8 * 1024 ** 3,
+				reserveBytes: 0,
+			}),
+			execute: async (_plan, signal, work) => work(signal, async () => {}),
+		}),
+		resolveLocalResources: async () => ({
+			threads: 1,
+			concurrency: 1,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			...(admitGpu
+				? {
+						nativeDevice: 2,
+						gpu: { deviceKey: "e".repeat(64), bytes: 1024, computeCredits: 1 },
+					}
+				: {}),
+		}),
+		job: {
+			model: "vmaf_v1.0.16_3d0h",
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+		},
+	});
+	const raw = vi.mocked(t.runner.run).getMockImplementation();
+	if (!raw) throw new Error("Missing runner fixture");
+	vi.mocked(localRunner.run).mockImplementation(raw);
+	return t;
+}
+it.each([
+	"NATIVE_RECEIPT_CPU_PARITY_MISMATCH",
+	"NATIVE_MODEL_SHA256_MISMATCH",
+	"NATIVE_INPUT_FRAME_COUNT_MISMATCH",
+])("never retries AUTO scoring on CPU after %s", async (code) => {
+	const t = autoNativeFailureHarness();
+	const score = vi
+		.spyOn(localScoring, "runLocalVmafScore")
+		.mockRejectedValue(new Error(code));
+	try {
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(code);
+		expect(score).toHaveBeenCalled();
+		expect(
+			score.mock.calls.every(
+				([, options]) => options.scoring?.backend === "cuda",
+			),
+		).toBe(true);
+		expect(t.results).toHaveLength(0);
+		expect((t.job.params as Row).localSelection).toMatchObject({
+			requested: "AUTO",
+			backend: "cuda",
+			device: 2,
+		});
+	} finally {
+		score.mockRestore();
+	}
+});
+it("refuses AUTO GPU execution without an owned GPU admission", async () => {
+	const t = autoNativeFailureHarness(false);
+	const score = vi.spyOn(localScoring, "runLocalVmafScore");
+	try {
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("VMAF_LOCAL_GPU_ADMISSION_REQUIRED");
+		expect(score).not.toHaveBeenCalled();
+		expect(t.results).toHaveLength(0);
+	} finally {
+		score.mockRestore();
+	}
+});
+it("does not score when its CPU selection cannot be persisted", async () => {
+	const t = setup({
+		job: {
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: { execution: { backend: "LOCAL", localMode: "CPU" } },
+		},
+	});
+	const update = t.vmafJob.updateMany.getMockImplementation();
+	if (!update) throw new Error("Missing update fixture");
+	t.vmafJob.updateMany.mockImplementation(async (args) => {
+		if ((args.data.params as Row | undefined)?.localSelection)
+			return { count: 0 };
+		return update(args);
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"VMAF_LOCAL_SELECTION_NOT_PERSISTED",
+	);
+	expect(t.runner.run).not.toHaveBeenCalled();
+	expect(t.results).toHaveLength(0);
+});
+it("keeps CLOUD completely outside local selection even with a fatal configured native pair", async () => {
+	const selectLocalNative = vi.fn(async () => {
+		throw new Error("Cloud inspected GPU");
+	});
+	const t = setup({
+		selectLocalNative,
+		nativeSelectionFailure: new Error("invalid configured native pair"),
+		cloudScore: async (request) => {
+			await writeFile(request.options.logPath, vmafJson([95]));
+		},
+		job: {
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: {
+				execution: { backend: "CLOUD", profileId: "cloud", budgetUsd: 10 },
+			},
+		},
+	});
+	await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	expect(selectLocalNative).not.toHaveBeenCalled();
+	expect((t.job.params as Row).localSelection).toBeUndefined();
+});
+
+it("rejects a pinned native selection with an inconsistent CPU generation before changing partial results", async () => {
+	const native = {
+		backend: "cuda" as const,
+		device: 2,
+		identity: {
+			sourceSha256: "a".repeat(64),
+			binarySha256: "b".repeat(64),
+			supervisorBinarySha256: "c".repeat(64),
+			deviceUuid: "GPU-fixture",
+		},
+	};
+	const model = "vmaf_v1.0.16_3d0h";
+	const t = setup({
+		selectLocalNative: async () => native,
+		job: {
+			model,
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: {
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				localSelection: { version: 1, requested: "AUTO", model, ...native },
+			},
+		},
+	});
+	t.results.push({
+		renditionRef: { renditionKey: "v360" },
+		pooled: { mean: 90 },
+	});
+	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
+		"VMAF_LOCAL_SELECTION_GENERATION_CHANGED",
+	);
+	expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
+	expect(t.results).toHaveLength(1);
+	expect(t.runner.run).not.toHaveBeenCalled();
 });

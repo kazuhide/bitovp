@@ -120,6 +120,56 @@ async function setup() {
 }
 
 describe("owned native local scoring", () => {
+	it("keeps internal calibration bounded and verifies its frame count and pipeline depth", async () => {
+		const h = await setup();
+		Object.assign(h.receipt, {
+			inflightFrames: 4,
+			cpuThreads: 2,
+			decodeThreads: 2,
+			resourceSnapshotScope: "before-result-serialization",
+			memory: { maxRssBytes: 64_000_000, gpuAllocatedBytes: 32_000_000 },
+		});
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			nativeInflightFrames: 4,
+			calibrationFrames: 2,
+		});
+		const args = h.run.mock.calls[1]?.[1];
+		expect(args).toEqual(
+			expect.arrayContaining([
+				"--inflight-frames",
+				"4",
+				"--max-frames",
+				"2",
+				"--verify-cpu",
+			]),
+		);
+		expect(result.resourceSnapshot).toEqual({
+			maxRssBytes: 64_000_000,
+			gpuOwnedBytes: 32_000_000,
+			scope: "before-result-serialization",
+		});
+		Object.assign(h.receipt, { inflightFrames: 1 });
+		await expect(
+			runLocalVmafScore(h.deps, h.options, {
+				...h.context,
+				nativeInflightFrames: 4,
+				calibrationFrames: 2,
+			}),
+		).rejects.toThrow("NATIVE_PIPELINE_DEPTH_MISMATCH");
+	});
+	it("rejects invalid internal sampling controls before launching a process", async () => {
+		const h = await setup();
+		for (const calibrationFrames of [0, 257, 1.5]) {
+			await expect(
+				runLocalVmafScore(h.deps, h.options, {
+					...h.context,
+					calibrationFrames,
+				}),
+			).rejects.toThrow("NATIVE_CALIBRATION_FRAME_LIMIT_INVALID");
+		}
+		expect(h.run).not.toHaveBeenCalled();
+	});
 	it("rejects cancellation observed during final receipt cleanup", async () => {
 		const h = await setup();
 		const controller = new AbortController();

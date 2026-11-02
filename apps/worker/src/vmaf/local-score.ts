@@ -11,7 +11,11 @@ import {
 	hardwareDecodeFailureReason,
 	selectHardwareDecode,
 } from "./hardware-decode";
-import { runNativeVmafScore } from "./native-score";
+import {
+	type NativeResourceSnapshot,
+	type NativeScoreContext,
+	runNativeVmafScore,
+} from "./native-score";
 
 type InputExecution = { backend: "cpu" | "cuda"; reason?: string };
 
@@ -28,18 +32,20 @@ type LocalScoreDeps = {
 export async function runLocalVmafScore(
 	deps: LocalScoreDeps,
 	options: VmafCommandOptions,
-	context: {
-		signal?: AbortSignal;
-		referenceProbe?: string;
-		distortedProbe?: string;
-	} = {},
+	context: NativeScoreContext = {},
 ): Promise<{
 	run: { code: number | null; stderr: string };
 	execution: LocalVmafExecution;
 	/** Parsed once; the processor reuses it instead of loading a large log twice. */
 	log?: unknown;
+	resourceSnapshot?: NativeResourceSnapshot;
 }> {
 	if (options.scoring) return runNativeVmafScore(deps, options, context);
+	if (
+		context.calibrationFrames !== undefined ||
+		context.nativeInflightFrames !== undefined
+	)
+		throw new Error("NATIVE_INTERNAL_CONTROLS_REQUIRE_NATIVE_SCORING");
 	const { signal } = context;
 	const policy = deps.decodePolicy ?? { backend: "cpu", device: 0 };
 	const softwareDecodeOptions = { ...options, decode: undefined };

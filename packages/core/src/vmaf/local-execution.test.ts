@@ -34,6 +34,19 @@ const gpu = {
 };
 
 describe("public local VMAF execution", () => {
+	it("retains explicit local selection and safe CPU fallback reasons", () => {
+		const execution = {
+			...cpu,
+			selection: { requested: "AUTO", reason: "GPU_NOT_AVAILABLE" },
+		};
+		expect(localVmafExecutionSchema.parse(execution)).toEqual(execution);
+		expect(
+			localVmafExecutionSchema.safeParse({
+				...execution,
+				selection: { requested: "AUTO", reason: "driver at /private/path" },
+			}).success,
+		).toBe(false);
+	});
 	it.each([
 		"cuda",
 		"vulkan",

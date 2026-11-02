@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import type { Writable } from "node:stream";
 import type { ReadProcessCommand } from "./orphan-pid";
 import type {
 	FeederProcess,
@@ -67,6 +68,24 @@ export function createNodeProcessRunner(): ProcessRunner {
 		run(bin, argv, options) {
 			return new Promise((resolve) => {
 				const abortKillAfterMs = options?.abortKillAfterMs;
+				const heartbeat = options?.heartbeat;
+				if (
+					heartbeat &&
+					(!Number.isSafeInteger(heartbeat.intervalMs) ||
+						heartbeat.intervalMs <= 0 ||
+						heartbeat.intervalMs > 2 ** 31 - 1)
+				)
+					throw new RangeError(
+						"heartbeat interval must be a positive timer-safe integer",
+					);
+				const readHeartbeat = () => {
+					const message = heartbeat?.read();
+					if (!message || !/^\d{1,20}\n$/.test(message))
+						throw new Error("Invalid process heartbeat record");
+					return message;
+				};
+				// Read before spawn: unavailable clocks never launch unsupervised work.
+				const initialHeartbeat = heartbeat ? readHeartbeat() : undefined;
 				if (
 					abortKillAfterMs !== undefined &&
 					(!Number.isInteger(abortKillAfterMs) ||
@@ -81,7 +100,9 @@ export function createNodeProcessRunner(): ProcessRunner {
 				// necessarily exits. Keep ownership until close so memory admission
 				// cannot start a replacement while that child is still shutting down.
 				const child = spawn(bin, argv, {
-					stdio: ["ignore", "pipe", "pipe"],
+					stdio: heartbeat
+						? ["ignore", "pipe", "pipe", "pipe"]
+						: ["ignore", "pipe", "pipe"],
 					shell: false,
 					...(options?.signal ? { signal: options.signal } : {}),
 				});
@@ -92,6 +113,16 @@ export function createNodeProcessRunner(): ProcessRunner {
 				let exited = false;
 				let killScheduled = false;
 				let killTimer: ReturnType<typeof setTimeout> | undefined;
+				let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+				let heartbeatFailed = false;
+				const heartbeatPipe = heartbeat
+					? (child.stdio[3] as Writable | null)
+					: null;
+				const stopHeartbeat = () => {
+					if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
+					heartbeatTimer = undefined;
+					heartbeatPipe?.destroy();
+				};
 				const clearKillTimer = () => {
 					if (killTimer !== undefined) clearTimeout(killTimer);
 					killTimer = undefined;
@@ -99,6 +130,7 @@ export function createNodeProcessRunner(): ProcessRunner {
 				const onExit = () => {
 					exited = true;
 					clearKillTimer();
+					stopHeartbeat();
 				};
 				const settle = (result: {
 					code: number | null;
@@ -108,6 +140,7 @@ export function createNodeProcessRunner(): ProcessRunner {
 					if (!settled) {
 						settled = true;
 						clearKillTimer();
+						stopHeartbeat();
 						child.removeListener("exit", onExit);
 						child.removeListener("error", onError);
 						child.removeListener("close", onClose);
@@ -162,7 +195,11 @@ export function createNodeProcessRunner(): ProcessRunner {
 					settle({ code: null, stdout, stderr: `${stderr}${err.message}` });
 				};
 				const onClose = (code: number | null) =>
-					settle({ code: aborted ? null : code, stdout, stderr });
+					settle({
+						code: aborted || heartbeatFailed ? null : code,
+						stdout,
+						stderr,
+					});
 				child.stdout?.on("data", (chunk: Buffer) => {
 					stdout += chunk.toString("utf8");
 				});
@@ -172,6 +209,27 @@ export function createNodeProcessRunner(): ProcessRunner {
 				child.on("error", onError);
 				child.once("exit", onExit);
 				child.once("close", onClose);
+				if (heartbeat && heartbeatPipe && initialHeartbeat) {
+					// A guardian may close its pipe while returning the child's exit
+					// status. Do not turn that normal close into a late hard kill.
+					heartbeatPipe.on("error", stopHeartbeat);
+					heartbeatPipe.write(initialHeartbeat);
+					heartbeatTimer = setInterval(() => {
+						if (exited || settled) return;
+						try {
+							heartbeatPipe.write(readHeartbeat());
+						} catch {
+							heartbeatFailed = true;
+							stderr += "process heartbeat failed";
+							stopHeartbeat();
+							try {
+								child.kill("SIGKILL");
+							} catch {
+								/* Close retains ownership. */
+							}
+						}
+					}, heartbeat.intervalMs);
+				}
 			});
 		},
 	};

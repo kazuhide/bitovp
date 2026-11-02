@@ -160,6 +160,8 @@ describe("createVmafTrigger", () => {
 	it.each([
 		undefined,
 		{ backend: "LOCAL" } as const,
+		{ backend: "LOCAL", localMode: "CPU" } as const,
+		{ backend: "LOCAL", localMode: "AUTO" } as const,
 	])("keeps default/local automatic measurement local (%s)", async (execution) => {
 		const t = setup({ profileError: new Error("should not read profiles") });
 		await t.trigger({
@@ -172,7 +174,7 @@ describe("createVmafTrigger", () => {
 		});
 		expect(t.created[0]).toMatchObject({
 			status: "PENDING",
-			params: { execution: { backend: "LOCAL" } },
+			params: { execution: execution ?? { backend: "LOCAL" } },
 		});
 		expect(t.prisma.vmafExecutionProfile.findMany).not.toHaveBeenCalled();
 		expect(t.added).toHaveLength(1);

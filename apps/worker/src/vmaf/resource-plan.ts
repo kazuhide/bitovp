@@ -35,6 +35,13 @@ export type LocalResourcePlan = {
 	manualFallback: boolean;
 	decoderThreads?: number;
 	filterComplexThreads?: number;
+	nativeInflightFrames?: 1 | 2 | 4;
+	nativeDevice?: number;
+	cpuChargePerComparison?: number;
+	gpu?: { deviceKey: string; bytes: number; computeCredits: number };
+	basis?: string;
+	reasons?: string[];
+	profileKey?: string;
 };
 
 const positive = (raw: unknown) => {

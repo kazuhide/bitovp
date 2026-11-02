@@ -14,13 +14,10 @@ updates:
           - version-update:semver-patch
           - version-update:semver-minor
     groups:
-      npm-version-patch-minor:
+      # SDK packages share types; unrelated updates stay in separate PRs.
+      aws-sdk-patch-minor:
         applies-to: version-updates
-        patterns: ["*"]
-        update-types: [minor, patch]
-      npm-security-patch-minor:
-        applies-to: security-updates
-        patterns: ["*"]
+        patterns: ["@aws-sdk/*", "@smithy/*"]
         update-types: [minor, patch]
 
   - package-ecosystem: github-actions
@@ -38,6 +35,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # Routine major upgrades need a migration; security updates remain eligible.
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
     groups:
       runtime-patch-minor:
         patterns: ["*"]
@@ -48,6 +51,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # Routine major upgrades need a migration; security updates remain eligible.
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
     groups:
       services-patch-minor:
         patterns: ["*"]

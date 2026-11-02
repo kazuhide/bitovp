@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { access, realpath, stat } from "node:fs/promises";
+import { access, lstat, realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, resolve } from "node:path";
 import { type NativeDeviceInfo, nativeDeviceInfoSchema } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
@@ -17,15 +17,27 @@ export async function resolveNativeExecutable(path: string) {
 					.split(delimiter)
 					.filter(Boolean)
 					.map((directory) => resolve(directory, path));
+	let invalid: Error | undefined;
 	for (const candidate of candidates) {
+		let present = false;
 		try {
-			if (!(await stat(candidate)).isFile()) continue;
+			const entry = await lstat(candidate);
+			present = true;
+			if (!(entry.isSymbolicLink() ? await stat(candidate) : entry).isFile())
+				throw new Error("NATIVE_EXECUTABLE_NOT_REGULAR_FILE");
 			await access(candidate, constants.X_OK);
 			return await realpath(candidate);
-		} catch {
-			// A later PATH entry may provide the selected executable.
+		} catch (error) {
+			// Preserve normal PATH search, but do not relabel an existing broken
+			// executable or invalid path component as optional runtime absence.
+			if (
+				present ||
+				!(error instanceof Error && "code" in error && error.code === "ENOENT")
+			)
+				invalid ??= new Error("NATIVE_EXECUTABLE_INVALID", { cause: error });
 		}
 	}
+	if (invalid) throw invalid;
 	throw new Error("NATIVE_EXECUTABLE_UNAVAILABLE");
 }
 

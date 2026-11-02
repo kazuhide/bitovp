@@ -10,9 +10,25 @@ export function LocalExecutionSummary({
 	const { t } = useT();
 	if (
 		!execution ||
-		(execution.requestedDecode === "cpu" && execution.scoring.backend === "cpu")
+		(!execution.selection &&
+			execution.requestedDecode === "cpu" &&
+			execution.scoring.backend === "cpu")
 	)
 		return null;
+	const selectionReason = (() => {
+		switch (execution.selection?.reason) {
+			case "GPU_NOT_AVAILABLE":
+				return t("qc.gpuNotAvailable");
+			case "GPU_RUNTIME_UNAVAILABLE":
+				return t("qc.gpuRuntimeUnavailable");
+			case "GPU_MODEL_UNSUPPORTED":
+				return t("qc.gpuModelUnsupported");
+			case "GPU_GATE_CPU_ONLY":
+				return t("qc.gpuGateCpuOnly");
+			default:
+				return execution.selection?.reason;
+		}
+	})();
 	const decoder = (backend: "cpu" | "cuda") =>
 		backend === "cuda" ? "GPU (NVDEC)" : "CPU";
 	const fallback = [
@@ -26,6 +42,21 @@ export function LocalExecutionSummary({
 	].join(", ");
 	return (
 		<div className="mt-1 max-w-xs space-y-1 text-zinc-400">
+			{execution.selection ? (
+				<p>
+					{t("qc.executionSelection")}:{" "}
+					{t(
+						execution.selection.requested === "AUTO"
+							? "qc.executionLocalAuto"
+							: "qc.executionLocalCpu",
+					)}
+				</p>
+			) : null}
+			{selectionReason ? (
+				<p className="break-words">
+					{t("qc.executionSelectionReason")}: {selectionReason}
+				</p>
+			) : null}
 			<p>
 				{t("qc.scoreProcessor")}:{" "}
 				{execution.scoring.backend === "cpu"

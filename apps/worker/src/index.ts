@@ -1099,6 +1099,7 @@ runTenantTick(() => feederTakeoverSweep());
 // defaults under the OS tmpdir.
 const vmafWorkDir = env.VMAF_WORKDIR ?? join(tmpdir(), "bitovp-vmaf");
 const vmafRunner = createNodeProcessRunner();
+const automaticVmafSelectionState: { failure?: Error } = {};
 // Read-only pair validation precedes replacing the legacy local execution path.
 const automaticVmafRuntime =
 	process.platform === "linux" && env.VMAF_NATIVE_PATH
@@ -1117,6 +1118,9 @@ const automaticVmafRuntime =
 					? { device: env.VMAF_GPU_DEVICE }
 					: {}),
 				onDiagnostic: (message) => console.warn(`[worker:vmaf] ${message}`),
+				onInvalid: (failure) => {
+					automaticVmafSelectionState.failure = failure;
+				},
 			})
 		: undefined;
 // Local resource decisions are made after probing each pair, using the CPU
@@ -1193,8 +1197,10 @@ const vmafProcessor = tenantService(() =>
 			? {
 					localRunner: automaticVmafRuntime.runner,
 					resolveLocalResources: automaticVmafRuntime.resolveLocalResources,
+					selectLocalNative: automaticVmafRuntime.selectLocalNative,
 				}
 			: {}),
+		nativeSelectionFailure: automaticVmafSelectionState.failure,
 		ffmpegPath: env.VMAF_FFMPEG_PATH ?? env.FFMPEG_PATH,
 		ffprobePath: env.FFPROBE_PATH,
 		workDir: join(vmafWorkDir, requireOrganizationId()),

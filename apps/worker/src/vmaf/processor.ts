@@ -62,6 +62,12 @@ import type {
 	LocalVmafResources,
 } from "./local-resources";
 import { type LocalVmafExecution, runLocalVmafScore } from "./local-score";
+import {
+	type LocalSelection,
+	type NativeLocalSelection,
+	resolveLocalSelection,
+	type SelectLocalNative,
+} from "./local-selection";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
 import {
 	defaultKeyLister,
@@ -139,6 +145,8 @@ export type ResolveLocalVmafResources = (request: {
 	signal: AbortSignal;
 	referenceProbe?: string;
 	distortedProbe?: string;
+	selectedNativeDevice?: number;
+	selectedNativeIdentity?: NativeLocalSelection["identity"];
 }) => Promise<LocalResourcePlan>;
 
 export type VmafProcessorDeps = {
@@ -147,6 +155,8 @@ export type VmafProcessorDeps = {
 	nativePath?: string;
 	localResources?: LocalVmafResources;
 	resolveLocalResources?: ResolveLocalVmafResources;
+	selectLocalNative?: SelectLocalNative;
+	nativeSelectionFailure?: Error;
 	cloudScore?: (request: CloudScoreRequest) => Promise<void>;
 	resolveCloudProfile?: (profileId: string) => Promise<VmafCloudProfile>;
 	/** Product-event emit ; never throws. */
@@ -702,6 +712,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 
 	/** Scores ONE rendition; throws on ffmpeg failure (caller fails the job). */
 	async function scoreTarget(
+		deps: VmafProcessorDeps,
 		vmafJobId: string,
 		model: string,
 		// When true, enable libvmaf's psnr feature in the same pass and persist
@@ -728,6 +739,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		resourceSession?: LocalVmafResourceSession,
 		referenceResource?: ResourceVideo,
 		referenceProbe?: string,
+		selection?: LocalSelection,
 	): Promise<void> {
 		const runner =
 			execution.backend === "LOCAL"
@@ -908,6 +920,14 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			assertOwned?: () => Promise<void>,
 		) => {
 			try {
+				if (
+					selection &&
+					selection.backend !== "cpu" &&
+					(!allocation?.gpu ||
+						allocation.nativeDevice !== selection.device ||
+						!assertOwned)
+				)
+					throw new Error("VMAF_LOCAL_GPU_ADMISSION_REQUIRED");
 				const scoringOptions = optionsFor(allocation);
 				let run: { code: number | null; stderr: string };
 				let localExecution: LocalVmafExecution | undefined;
@@ -968,7 +988,35 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						},
 					);
 					run = result.run;
-					localExecution = result.execution;
+					if (
+						selection &&
+						(result.execution.scoring.backend !== selection.backend ||
+							result.execution.scoring.model !== selection.model)
+					)
+						throw new Error("VMAF_LOCAL_SELECTION_RESULT_MISMATCH");
+					if (selection && selection.backend !== "cpu") {
+						const actual = result.execution.scoring;
+						if (
+							actual.implementation !== "bitovp-owned" ||
+							actual.sourceSha256 !== selection.identity.sourceSha256 ||
+							actual.device.index !== selection.device ||
+							actual.device.uuid !== selection.identity.deviceUuid
+						)
+							throw new Error("VMAF_LOCAL_SELECTION_RESULT_MISMATCH");
+					}
+					localExecution = {
+						...result.execution,
+						...(selection
+							? {
+									selection: {
+										requested: selection.requested,
+										...("reason" in selection
+											? { reason: selection.reason }
+											: {}),
+									},
+								}
+							: {}),
+					};
 					localLog = result.log;
 				}
 				runSignal.throwIfAborted();
@@ -1062,6 +1110,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								signal,
 								referenceProbe,
 								distortedProbe: resourceProbe.stdout,
+								...(selection && selection.backend !== "cpu"
+									? {
+											selectedNativeDevice: selection.device,
+											selectedNativeIdentity: selection.identity,
+										}
+									: {}),
 							})
 					: undefined,
 			);
@@ -1202,7 +1256,6 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				paramsAcc.execution ?? { backend: "LOCAL" },
 			);
 			isCloud = execution.backend === "CLOUD";
-			const runner = isCloud ? deps.runner : (deps.localRunner ?? deps.runner);
 			const executionProfile =
 				execution.backend === "CLOUD"
 					? paramsAcc.executionProfile
@@ -1241,21 +1294,79 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					: undefined;
 			if (measurementMethod && execution.backend !== "CLOUD")
 				throw new Error("Frame-index measurement requires cloud validation");
+			const selection =
+				(execution.backend === "LOCAL" && execution.localMode !== undefined) ||
+				paramsAcc.localSelection !== undefined
+					? await resolveLocalSelection(
+							{
+								selectNative: deps.selectLocalNative,
+								nativeFailure: deps.nativeSelectionFailure,
+							},
+							{
+								execution,
+								model: row.model,
+								gate: Boolean(gateCtx),
+								stored: paramsAcc.localSelection,
+								signal,
+							},
+						)
+					: undefined;
+			// Effective settings belong to this run; shared resources stay shared.
+			const jobDeps: VmafProcessorDeps = selection
+				? {
+						...deps,
+						scoringBackend: selection.backend,
+						decodePolicy: {
+							backend: "cpu",
+							device: selection.backend === "cpu" ? 0 : selection.device,
+						},
+					}
+				: deps;
+			const runner = isCloud
+				? deps.runner
+				: (jobDeps.localRunner ?? jobDeps.runner);
 			const gpuGeneration = localScoringGeneration({
 				scoringVersion: row.scoringVersion,
 				isCloud,
-				scoringBackend: deps.scoringBackend,
-				decodeBackend: deps.decodePolicy?.backend,
+				scoringBackend: jobDeps.scoringBackend,
+				decodeBackend: jobDeps.decodePolicy?.backend,
 				storedScoring: paramsAcc.localScoring,
 			});
+			if (
+				paramsAcc.localSelection !== undefined &&
+				gpuGeneration &&
+				row.scoringVersion !== gpuGeneration
+			)
+				throw new Error("VMAF_LOCAL_SELECTION_GENERATION_CHANGED");
+			if (selection && paramsAcc.localSelection === undefined) {
+				const existing = await deps.prisma.vmafResult.findMany({
+					where: { vmafJobId },
+					select: { id: true },
+					take: 1,
+				});
+				if (existing.length)
+					throw new Error(
+						"This job has existing results without a pinned selection; create a new measurement",
+					);
+			}
+			if (
+				selection &&
+				selection.backend !== "cpu" &&
+				(!deps.nativePath ||
+					!deps.localRunner ||
+					!deps.localResources ||
+					!deps.resolveLocalResources)
+			)
+				throw new Error("VMAF_LOCAL_GPU_RUNTIME_REQUIRED");
 			if (!isCloud && gpuGeneration) {
 				if (gateCtx)
 					throw new Error(
 						"Experimental GPU measurements cannot evaluate delivery gates; create a manual measurement",
 					);
 				const native =
-					deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan";
-				if (native && row.scoringVersion !== gpuGeneration) {
+					jobDeps.scoringBackend === "cuda" ||
+					jobDeps.scoringBackend === "vulkan";
+				if (native && row.scoringVersion !== gpuGeneration && !selection) {
 					const existing = await deps.prisma.vmafResult.findMany({
 						where: { vmafJobId },
 						select: { id: true },
@@ -1266,21 +1377,31 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							"This job has existing results from a different scorer; create a new measurement",
 						);
 				}
-				await deps.prisma.vmafJob.updateMany({
+				const pinned = await deps.prisma.vmafJob.updateMany({
 					where: { id: vmafJobId, status: "RUNNING" },
 					data: {
 						scoringVersion: gpuGeneration,
 						...(native
 							? {
 									params: mergeParams({
+										...(selection ? { localSelection: selection } : {}),
 										localScoring: ownedScoringSnapshot(
-											deps.scoringBackend as "cuda" | "vulkan",
+											jobDeps.scoringBackend as "cuda" | "vulkan",
 										),
 									}),
 								}
 							: {}),
 					},
 				});
+				if (selection && pinned.count !== 1)
+					throw new Error("VMAF_LOCAL_SELECTION_NOT_PERSISTED");
+			} else if (selection) {
+				const pinned = await deps.prisma.vmafJob.updateMany({
+					where: { id: vmafJobId, status: "RUNNING" },
+					data: { params: mergeParams({ localSelection: selection }) },
+				});
+				if (pinned.count !== 1)
+					throw new Error("VMAF_LOCAL_SELECTION_NOT_PERSISTED");
 			}
 			if (
 				measurementMethod &&
@@ -1823,6 +1944,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						try {
 							const reference = await referenceFor(item.target);
 							await scoreTarget(
+								jobDeps,
 								vmafJobId,
 								row.model,
 								wantPsnr,
@@ -1844,6 +1966,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								resourceSession,
 								reference.resourceVideo,
 								reference.probe,
+								selection,
 							);
 							resultCount += 1;
 							// Atomic increment — multiple pool workers bump concurrently, so

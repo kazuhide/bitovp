@@ -407,11 +407,43 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 		{ backend: "CLOUD", profileId: "approved", budgetUsd: -1 },
 		{ backend: "CLOUD", profileId: "approved", budgetUsd: "10" },
 		{ backend: "LOCAL", profileId: "approved", budgetUsd: 10 },
+		{ backend: "LOCAL", localMode: "CUDA" },
+		{ backend: "LOCAL", localMode: "AUTO", nativePath: "/private/native" },
+		{
+			backend: "CLOUD",
+			profileId: "approved",
+			budgetUsd: 10,
+			localMode: "AUTO",
+		},
 	])("rejects invalid execution before any job read: %j", async (execution) => {
 		expect((await post({ encodingJobId: JOB, execution })).status).toBe(400);
 		expect(jobFindUnique).not.toHaveBeenCalled();
 		expect(vmafCreate).not.toHaveBeenCalled();
 		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it.each([
+		"CPU",
+		"AUTO",
+	] as const)("persists the requested local %s mode and model", async (localMode) => {
+		jobFindUnique.mockResolvedValueOnce({
+			id: JOB,
+			status: "FINISHED",
+			plan: qcPlan,
+		});
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "vmaf-new" });
+		const execution = { backend: "LOCAL", localMode };
+		const response = await post({
+			encodingJobId: JOB,
+			execution,
+			model: "vmaf_v1.0.16_3d0h",
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+			model: "vmaf_v1.0.16_3d0h",
+			params: { execution },
+		});
+		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 
 	it("rejects an unconfigured cloud profile before creating a job", async () => {

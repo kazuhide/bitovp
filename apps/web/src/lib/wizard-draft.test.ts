@@ -227,6 +227,8 @@ it.each([
 	{ backend: "CLOUD", profileId: "gcp-qc", budgetUsd: 12 },
 	{ backend: "CLOUD", profileId: "gcp-qc", budgetUsd: 0 },
 	{ backend: "LOCAL" },
+	{ backend: "LOCAL", localMode: "CPU" },
+	{ backend: "LOCAL", localMode: "AUTO" },
 ])("preserves VOD VMAF execution and excludes provider secrets in drafts", (execution) => {
 	const state = {
 		...DEFAULT_WIZARD_STATE,
@@ -242,6 +244,7 @@ it.each([
 	if (!draft) throw new Error("Missing saved draft");
 	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, draft.value, "vod");
 	expect(restored.qc).toHaveProperty("execution", execution);
+	expect(buildPlan(restored).qc?.execution).toEqual(execution);
 	expect(JSON.stringify(draft.value)).not.toContain("do-not-save");
 	const cleared = mergeWizardDraft(
 		restored,

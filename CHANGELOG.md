@@ -6,6 +6,13 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## Unreleased
 
+## [1.1.0] - 2026-11-04
+
+Local VMAF processing now offers CPU and automatic GPU selection with shared
+resource management. CPU remains the default and is used for delivery gates.
+GPU acceleration is optional and experimental; supported hardware and native
+runner setup are described in the [GPU quality guide](./docs/user-guide/GPU-QUALITY.md).
+
 ### Added
 
 - Experimental local VOD hardware decoding and owned CUDA/Vulkan VMAF v1.0
@@ -118,5 +125,6 @@ instructions.
 Planned work belongs in the [roadmap](./ROADMAP.md); it is added to this
 changelog when delivered.
 
+[1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1

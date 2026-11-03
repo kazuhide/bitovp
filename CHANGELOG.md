@@ -125,5 +125,6 @@ instructions.
 Planned work belongs in the [roadmap](./ROADMAP.md); it is added to this
 changelog when delivered.
 
+[1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1

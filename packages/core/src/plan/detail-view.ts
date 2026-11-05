@@ -761,7 +761,11 @@ export function storageSummaries(plan: EncodingPlan): StorageSummaries {
 	 * invented a directory. Shared with the compiler via `renditionOutputBase`, so
 	 * the two cannot drift again.
 	 */
-	if (plan.qc?.vmaf === true || plan.qc?.psnr === true) {
+	if (
+		plan.qc?.vmaf === true ||
+		plan.qc?.psnr === true ||
+		plan.qc?.banding === true
+	) {
 		for (const rendition of plan.renditions) {
 			if (!VIDEO_CODECS.has(rendition.codec)) {
 				continue; // the compiler mirrors video only

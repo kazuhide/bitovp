@@ -449,7 +449,7 @@ export function VodWizard({
 		? evaluation.ok
 			? evaluation.plan.qc?.execution
 			: undefined
-		: state.qc?.vmaf || state.qc?.psnr
+		: state.qc?.vmaf || state.qc?.psnr || state.qc?.banding
 			? state.qc.execution
 			: undefined;
 	const qcExecutionValidation = useVmafExecutionValidation(
@@ -566,7 +566,9 @@ export function VodWizard({
 	// Thumbnails / Sprites step and the Manifests step are disabled (the storage
 	// output picker stays enabled — the qc mirrors write there). The toggle lives
 	// in the Encoding-options step's Quality control (VMAF) section.
-	const qcOnly = Boolean(state.qc?.only && (state.qc.vmaf || state.qc.psnr));
+	const qcOnly = Boolean(
+		state.qc?.only && (state.qc.vmaf || state.qc.psnr || state.qc.banding),
+	);
 
 	// The location the picker should open at, so an already-chosen credential is
 	// never re-asked (it opens straight at the bucket instead).

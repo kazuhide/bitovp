@@ -1,10 +1,15 @@
 import type {
+	BandingPooled,
 	LocalVmafExecution,
 	PooledMetrics,
 	VmafCloudProfile,
 	VmafExecution,
 } from "@bitovp/core";
-import type { ChartFrame } from "@/lib/server/vmaf-frames";
+import type {
+	PublicBandingAssessment,
+	PublicBandingExecution,
+} from "@/lib/server/banding-public";
+import type { BandingChartFrame, ChartFrame } from "@/lib/server/vmaf-frames";
 
 export type VmafComputeProfileSummary = Pick<
 	VmafCloudProfile,
@@ -72,7 +77,11 @@ export type VmafJobListItem = {
 	/** The linked encoding job's name (plan.name, e.g. "bbb-pte-crf-17"); null for LIVE jobs. */
 	encodingName: string | null;
 	mode: VmafMode;
-	model: string;
+	model: string | null;
+	kind?: "BANDING";
+	detector?: "CAMBI";
+	banding?: boolean;
+	renditionBanding?: { label: string; mean: number; max: number }[];
 	/**
 	 * Scoring generation (see `VMAF_SCORING_VERSION`). 1 ⇒ scored before the
 	 * 2026-08-11 PTS fix and NOT comparable with a 2: on one real encode the same
@@ -168,7 +177,14 @@ export type LiveReportMetadata = {
 };
 
 /** One rendition's report payload (detail route). */
-export type VmafResultDetail = {
+export type BandingResultData = {
+	bandingFrames?: BandingChartFrame[];
+	bandingFrameCount?: number;
+	bandingExecution?: PublicBandingExecution;
+	bandingAssessment?: PublicBandingAssessment;
+};
+
+export type VmafResultDetail = BandingResultData & {
 	id: string;
 	/** Validated local decode/scoring implementation; absent on historical reports. */
 	localExecution?: LocalVmafExecution;
@@ -183,7 +199,7 @@ export type VmafResultDetail = {
 					| "UNSUPPORTED_SOURCE";
 		  };
 	renditionRef: RenditionRef;
-	pooled: PooledMetrics;
+	pooled: PooledMetrics & { banding?: BandingPooled };
 	/** Downsampled per-frame series (≤ DOWNSAMPLE_CAP); worst frame pinned + flagged. */
 	frames: ChartFrame[];
 	/** Original frame count before downsampling (so the UI can disclose it). */
@@ -228,6 +244,8 @@ export type VmafComputeTaskSummary = {
 };
 
 export type VmafJobDetail = {
+	kind?: "VMAF";
+	banding?: boolean;
 	computeTasks?: VmafComputeTaskSummary[];
 	/** Public execution request only; absent on older API payloads. */
 	execution?: VmafExecution | null;
@@ -286,6 +304,25 @@ export type VmafJobDetail = {
 	reference: { width?: number; height?: number; fps?: number } | null;
 	results: VmafResultDetail[];
 };
+
+/** A model-free detector report cannot masquerade as VMAF with zero-filled scores. */
+export type BandingResultDetail = BandingResultData & {
+	id: string;
+	renditionRef: RenditionRef;
+	pooled: { banding: BandingPooled };
+};
+export type BandingJobDetail = Omit<
+	VmafJobDetail,
+	"kind" | "model" | "results" | "reference" | "subsample"
+> & {
+	kind: "BANDING";
+	detector: "CAMBI";
+	model: null;
+	reference: null;
+	subsample: null;
+	results: BandingResultDetail[];
+};
+export type QcJobDetail = VmafJobDetail | BandingJobDetail;
 
 /* Human rendition label with height and bitrate, falling back to stream identity or index. Browser callers can supply a localized fallback; API and CSV data retain stable English labels. */
 export function renditionLabel(

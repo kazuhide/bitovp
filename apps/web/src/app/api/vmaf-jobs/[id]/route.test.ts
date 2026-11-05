@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+	assessBandingFrames,
+	computeBandingPooled,
 	computePooled,
 	encodingPlanSchema,
 	enumerateQcTargets,
@@ -81,6 +83,100 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it("returns full-frame CAMBI evidence with no VMAF model, pooled scores or fabricated frames", async () => {
+		const banding = Array.from({ length: 1502 }, (_, frameNum) => ({
+			frameNum,
+			timestampSeconds: frameNum * 0.04,
+			durationSeconds: 0.04,
+			cambi: frameNum === 1000 ? 12 : 1,
+			computedCambi: frameNum === 1000 ? 12.001 : 1,
+		}));
+		const pooled = computeBandingPooled(banding);
+		const assessment = {
+			...assessBandingFrames(banding, { warningThreshold: 5 }),
+			warningThreshold: 5,
+		};
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			model: "CAMBI",
+			mode: "VOD",
+			params: {
+				kind: "BANDING",
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				reference: { width: 1920, height: 1080 },
+			},
+			scoringVersion: 11,
+			status: "FINISHED",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "banding-result",
+					renditionRef: { label: "360p" },
+					pooled: { banding: pooled, bandingAssessment: assessment },
+					framesGzip: gzipSync(
+						JSON.stringify({ kind: "QC_FRAMES", version: 1, banding }),
+					),
+					provenance: {
+						privatePath: "/private/source.mp4",
+						bandingExecution: {
+							version: 1,
+							metric: "CAMBI_NR",
+							backend: "cuda",
+							implementation: "bitovp-owned",
+							decisionSource: "CPU_REFERENCE",
+							coverage: {
+								complete: true,
+								frameCount: banding.length,
+								durationSeconds: pooled.durationSeconds,
+							},
+							receipt: { privatePath: "/private/receipt.json" },
+						},
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body).toMatchObject({
+			kind: "BANDING",
+			model: null,
+			detector: "CAMBI",
+			reference: null,
+		});
+		expect(body.results[0].pooled).toEqual({ banding: pooled });
+		expect(body.results[0]).not.toHaveProperty("frames");
+		expect(body.results[0].bandingFrames.length).toBeLessThanOrEqual(1500);
+		expect(body.results[0].bandingAssessment).toEqual(assessment);
+		expect(body.results[0].bandingFrameCount).toBe(1502);
+		expect(JSON.stringify(body)).not.toMatch(/private|receipt/);
+	});
+
+	it("does not reinterpret a historical model string as a Banding discriminator", async () => {
+		const original = frames([95]);
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			model: "CAMBI",
+			params: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "legacy",
+					renditionRef: {},
+					pooled: computePooled(original),
+					framesGzip: gz(original),
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		const body = await response.json();
+		expect(body.model).toBe("CAMBI");
+		expect(body).not.toHaveProperty("kind");
+		expect(body.results[0].frames).toEqual([{ ...original[0], worst: true }]);
+		expect(body.results[0]).not.toHaveProperty("bandingFrames");
+	});
 	it.each([
 		"cpu",
 		"cuda",

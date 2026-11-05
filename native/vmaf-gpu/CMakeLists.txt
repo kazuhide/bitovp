@@ -43,7 +43,7 @@ target_include_directories(bitovp_decode PUBLIC include src)
 target_link_libraries(bitovp_decode PUBLIC PkgConfig::AV)
 target_compile_options(bitovp_decode PRIVATE -Wall -Wextra -Werror)
 
-add_executable(bitovp-vmaf src/main.cpp)
+add_executable(bitovp-vmaf src/main.cpp src/banding.cpp)
 target_link_libraries(bitovp-vmaf PRIVATE bitovp_oracle bitovp_decode)
 target_compile_options(bitovp-vmaf PRIVATE -Wall -Wextra -Werror)
 
@@ -155,7 +155,17 @@ endif()
 
 if(BITOVP_TESTS)
   enable_testing()
+  add_executable(banding_cli_test tests/banding_cli_test.cpp)
+  target_include_directories(banding_cli_test PRIVATE include src)
+  target_compile_options(banding_cli_test PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME native_banding_cli COMMAND banding_cli_test)
+  add_executable(cambi_oracle_test tests/cambi_oracle_test.cpp)
+  target_link_libraries(cambi_oracle_test PRIVATE bitovp_oracle)
+  target_compile_options(cambi_oracle_test PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME standalone_cambi_oracle COMMAND cambi_oracle_test)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME native_banding_runner COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/banding_runner_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>")
   add_test(NAME official_source_integrity COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/source_test.py")
   add_executable(supervisor_contract_test tests/supervisor_contract_test.cpp)
@@ -220,6 +230,9 @@ if(BITOVP_TESTS)
       --binary "$<TARGET_FILE:bitovp-vmaf>" --models "${VMAF_MODEL_DIR}")
   endif()
   if(BITOVP_CUDA)
+    add_test(NAME cuda_banding_runner COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/banding_runner_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
+      --backend cuda --vendor nvidia)
     add_test(NAME cuda_device_info COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/device_probe_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
       --backend cuda --vendor nvidia)
@@ -326,6 +339,9 @@ if(BITOVP_TESTS)
     endif()
   endif()
   if(BITOVP_VULKAN)
+    add_test(NAME vulkan_banding_runner COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/banding_runner_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
+      --backend vulkan)
     add_test(NAME vulkan_device_info COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/device_probe_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
       --backend vulkan)

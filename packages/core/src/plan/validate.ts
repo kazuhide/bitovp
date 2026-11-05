@@ -1,5 +1,6 @@
 import { vmafSourceFor } from "../vmaf/streamable-io";
 import {
+	enumerateBandingQcTargets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
 } from "../vmaf/targets";
@@ -210,7 +211,7 @@ export function validatePlan(
 				message: "Live Media Ingest is available for Live channels only",
 			});
 
-	if (plan.qc && options.availableVmafModels) {
+	if ((plan.qc?.vmaf || plan.qc?.psnr) && options.availableVmafModels) {
 		const model = plan.qc.model;
 		if (!options.availableVmafModels.includes(model)) {
 			issues.push({
@@ -2647,7 +2648,7 @@ export function validatePlan(
 			// here rather than inside the checker because it needs the whole
 			// plan; the checker stays structural so live can share it.
 			qcMirrors:
-				plan.qc?.vmaf || plan.qc?.psnr
+				plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding
 					? plan.renditions.flatMap((r) => {
 							if (!["H264", "H265", "VP9", "AV1"].includes(r.codec)) {
 								return [];
@@ -2830,7 +2831,16 @@ export function validatePlan(
 		});
 	}
 
-	if (plan.qc?.vmaf || plan.qc?.psnr) {
+	if (plan.qc?.banding && plan.qc.execution?.backend === "CLOUD") {
+		issues.push({
+			code: "PLAN_QC_BANDING_CLOUD",
+			level: "error",
+			path: "qc.execution",
+			message:
+				"Banding detection requires local CPU or AUTO execution; Cloud banding is not supported",
+		});
+	}
+	if (plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding) {
 		/**
 		 * SEVERITY tracks the actual harm (review finding 3).
 		 *
@@ -2850,38 +2860,43 @@ export function validatePlan(
 			? "The encode would run and bill, then the gate would have no number to judge and the delivery would be marked failed"
 			: "The encode would run and bill, and only the measurement would fail";
 		const seen = new Set<string>();
+		const sources: ["reference" | "QC mirror", string, string][] = [];
 		for (const target of enumerateQcTargets(plan)) {
-			for (const [role, key, path] of [
+			sources.push(
 				["reference", target.reference.inputKey, "qc.reference"],
 				[
 					"QC mirror",
 					target.distorted.outputKey,
 					plan.qc.vmaf ? "qc.vmaf" : "qc.psnr",
 				],
-			] as const) {
-				const io =
-					role === "reference"
-						? plan.inputs.find((i) => i.key === key)
-						: plan.outputs.find((o) => o.key === key);
-				if (!io || seen.has(`${role}:${key}`)) {
-					continue;
-				}
-				const source = vmafSourceFor(io);
-				if (source.streamable) {
-					continue;
-				}
-				seen.add(`${role}:${key}`);
-				issues.push({
-					code: "PLAN_QC_IO_NOT_READABLE",
-					level,
-					message: `quality control is enabled, but its ${role} "${key}" cannot be read back for scoring: ${source.reason}. ${cost} — disable qc.vmaf/qc.psnr or point this side at a browsable object store.`,
-					path,
-				});
+			);
+		}
+		for (const target of enumerateBandingQcTargets(plan)) {
+			sources.push(["QC mirror", target.distorted.outputKey, "qc.banding"]);
+		}
+		for (const [role, key, path] of sources) {
+			const io =
+				role === "reference"
+					? plan.inputs.find((i) => i.key === key)
+					: plan.outputs.find((o) => o.key === key);
+			if (!io || seen.has(`${role}:${key}`)) {
+				continue;
 			}
+			const source = vmafSourceFor(io);
+			if (source.streamable) {
+				continue;
+			}
+			seen.add(`${role}:${key}`);
+			issues.push({
+				code: "PLAN_QC_IO_NOT_READABLE",
+				level,
+				message: `quality control is enabled, but its ${role} "${key}" cannot be read back for scoring: ${source.reason}. ${cost} — disable the corresponding QC metric or point this side at a browsable object store.`,
+				path,
+			});
 		}
 	}
 
-	// VMAF-only encode (qc.only): the encode produces ONLY the per-video QC
+	// QC-only encode (qc.only): the encode produces ONLY the per-video QC
 	// mirror MP4s — no delivery muxings, manifests, audio, thumbnails, sprites,
 	// DRM, or keyframes. Reject a plan that asks for those alongside qc.only
 	// (the compiler drops them, so they would be a silent surprise) and a plan
@@ -2890,12 +2905,12 @@ export function validatePlan(
 	// the 56 goldens (no qc) are unaffected.
 	if (plan.qc?.only) {
 		const qcVideoCodecs = new Set(["H264", "H265", "VP9", "AV1"]);
-		if (!plan.qc.vmaf && !plan.qc.psnr) {
+		if (!plan.qc.vmaf && !plan.qc.psnr && !plan.qc.banding) {
 			issues.push({
 				code: "PLAN_QC_ONLY_NO_METRIC",
 				level: "error",
 				message:
-					"VMAF-only encode (qc.only) produces nothing unless qc.vmaf or qc.psnr is true",
+					"QC-only encode (qc.only) produces nothing unless qc.vmaf, qc.psnr or qc.banding is true",
 				path: "qc",
 			});
 		}
@@ -2904,7 +2919,7 @@ export function validatePlan(
 				code: "PLAN_QC_ONLY_NO_VIDEO",
 				level: "error",
 				message:
-					"VMAF-only encode (qc.only) needs at least one video rendition to mirror",
+					"QC-only encode (qc.only) needs at least one video rendition to mirror",
 				path: "renditions",
 			});
 		}
@@ -2922,7 +2937,7 @@ export function validatePlan(
 				code: "PLAN_QC_ONLY_NO_MIRROR",
 				level: "error",
 				message:
-					"VMAF-only encode (qc.only) produces no QC mirror: a video rendition needs a muxing with a destination",
+					"QC-only encode (qc.only) produces no QC mirror: a video rendition needs a muxing with a destination",
 				path: "muxings",
 			});
 		}
@@ -2933,7 +2948,7 @@ export function validatePlan(
 				code: "PLAN_QC_ONLY_FORBIDDEN_RESOURCE",
 				level: "error",
 				message:
-					"VMAF-only encodes score video only; remove non-video (audio/subtitle) renditions or disable qc.only",
+					"QC-only encodes score video only; remove non-video (audio/subtitle) renditions or disable qc.only",
 				path: "renditions",
 			});
 		}
@@ -2944,7 +2959,7 @@ export function validatePlan(
 				code: "PLAN_QC_ONLY_FORBIDDEN_RESOURCE",
 				level: "error",
 				message:
-					"VMAF-only encodes produce no AI scene analysis output; remove it or disable qc.only",
+					"QC-only encodes produce no AI scene analysis output; remove it or disable qc.only",
 				path: "aiSceneAnalysis",
 			});
 		}
@@ -2962,7 +2977,7 @@ export function validatePlan(
 				issues.push({
 					code: "PLAN_QC_ONLY_FORBIDDEN_RESOURCE",
 					level: "error",
-					message: `VMAF-only encodes produce no ${label}; remove them or disable qc.only`,
+					message: `QC-only encodes produce no ${label}; remove them or disable qc.only`,
 					path: label,
 				});
 			}
@@ -2974,7 +2989,10 @@ export function validatePlan(
 	// state the MARK_ONLY normalization instead of silently switching.
 	if (plan.qc?.gate) {
 		const gate = plan.qc.gate;
-		if (!plan.qc.vmaf) {
+		if (
+			gate.rules.some((rule) => rule.metric !== "CAMBI_MAX") &&
+			!plan.qc.vmaf
+		) {
 			issues.push({
 				code: "PLAN_QC_GATE_WITHOUT_VMAF",
 				level: "error",
@@ -2987,7 +3005,9 @@ export function validatePlan(
 		// lie of the C29 nothing-to-block class, so it WARNS with the honest
 		// residual meaning rather than erroring (measurement-presence gating
 		// is a legitimate, if unusual, intent).
-		if (gate.rules.some((rule) => rule.gte === 0)) {
+		if (
+			gate.rules.some((rule) => rule.metric !== "CAMBI_MAX" && rule.gte === 0)
+		) {
 			issues.push({
 				code: "PLAN_QC_GATE_GTE_ZERO",
 				level: "warning",
@@ -3029,6 +3049,18 @@ export function validatePlan(
 				path: "qc.gate.rules",
 			});
 		}
+		if (
+			gate.rules.some((rule) => rule.metric === "CAMBI_MAX") &&
+			!plan.qc.banding
+		) {
+			issues.push({
+				code: "PLAN_QC_GATE_BANDING_OFF",
+				level: "error",
+				path: "qc.gate.rules",
+				message:
+					"a CAMBI_MAX rule needs qc.banding: true; otherwise no banding score would be measured",
+			});
+		}
 		// Rules naming renditions must name renditions the PLAN has — a rule
 		// over a typo would fail as UNMEASURED at runtime; say it at save.
 		const renditionKeys = new Set(plan.renditions.map((r) => r.key));
@@ -3050,7 +3082,7 @@ export function validatePlan(
 					code: "PLAN_QC_GATE_BLOCK_JIT",
 					level: "error",
 					message:
-						"onFail: BLOCK_MANIFESTS needs generation.timing POST_ENCODING — JIT manifests exist before VMAF can run, so blocking them is unsatisfiable (C29; composes with C1)",
+						"onFail: BLOCK_MANIFESTS needs generation.timing POST_ENCODING — JIT manifests exist before quality measurement can run, so blocking them is unsatisfiable (C29; composes with C1)",
 					path: "qc.gate.onFail",
 				});
 			}

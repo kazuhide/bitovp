@@ -99,6 +99,53 @@ owner and an absolute boot-time heartbeat deadline that includes host suspend. T
 in that subprocess's environment. Regular scoring commands retain their original
 behavior. The supervisor is not a sandbox for arbitrary process trees.
 
+## Check banding on one video
+
+The additive `--metric cambi` mode extracts no-reference CAMBI without a reference
+video or a VMAF model. It preserves original encoded dimensions and 8/10-bit
+precision and analyzes every decoded frame through EOF.
+
+```sh
+"$VMAF_PREFIX/bin/bitovp-vmaf" --capabilities
+"$VMAF_PREFIX/bin/bitovp-vmaf" --metric cambi \
+  --distorted encoded.mp4 --backend cuda --verify-cpu \
+  --threads 4 --decode-threads 2 --output banding.json
+"$VMAF_PREFIX/bin/bitovp-vmaf" --metric cambi \
+  --distorted encoded.mp4 --backend vulkan --vendor amd --verify-cpu \
+  --threads 4 --decode-threads 2 --output banding-amd.json
+```
+
+Use `--backend cpu` without `--verify-cpu` for the official standalone CPU
+oracle. The production worker's CPU route uses FFmpeg's feature-only libvmaf
+filter; it does not require installing this optional native executable.
+
+This mode uses official extractor defaults, including `cambi_max_val=1000`,
+rather than a prediction model's clipped CAMBI feature. Higher CAMBI scores mean
+more banding; the often cited observed score 24 is not a schema maximum.
+Every GPU frame is checked against an independent official CPU context using
+the unchanged bound `1e-6 + 1e-7 * abs(cpu)`. The receipt retains actual GPU
+values and CPU reference values; quality decisions use the CPU reference.
+
+Only SDR, square-pixel inputs with one video stream are supported. Pixel formats
+must be limited-range (or range-unspecified) `yuv420p` or `yuv420p10le`; RGB,
+full-range and implicit format conversion are rejected. Dimensions
+must be even, each between 144 and 7680, with at least one dimension >=216.
+Presentation transforms, source precision changes and corrupt frames fail.
+Only software decoding and one in-flight frame are supported in this mode.
+Reference/model, resize, forced bit-depth and partial-frame options are rejected.
+
+Frame times come from relative presentation timestamps and positive decoded
+frame durations, including the last frame. VFR durations and gaps are retained;
+no average frame rate is used to invent coverage. Missing/duplicate/backward or
+overlapping timing fails instead of publishing a partial result.
+
+The separate `CAMBI_NR` receipt records complete frame coverage, raw and CPU
+scores, resolved options, input/build/device identities, CPU parity, timing and
+resource counters. The existing VMAF receipt and version/device-info protocols
+are unchanged. `--capabilities` reports compiled modes/backends without claiming
+an available GPU. See [the standalone receipt contract](BANDING.md) for exact
+keys and failure behavior. Existing output files are never replaced.
+
 ## Use from the bitovp worker
 
 Set `VMAF_NATIVE_PATH` to the built executable, `VMAF_MODEL_DIR` to the installed

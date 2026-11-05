@@ -2,16 +2,18 @@
 
 [Back to quality and monitoring](./QUALITY-AND-MONITORING.md)
 
-Local VOD measurements have two separate GPU options:
+Local VOD measurements have separate GPU options:
 
 | Option | GPU work | CPU work |
 | --- | --- | --- |
 | NVIDIA hardware decoding with the existing scorer | Decode supported compressed inputs | Scaling and official libvmaf scoring |
 | Owned CUDA or Vulkan scorer | VMAF v1.0 image features and PSNR | Decode and common pixel conversion, official model prediction, small final statistics, and numerical verification |
+| Owned no-reference CAMBI scorer | Banding feature extraction | Decode, official CPU reference extraction, numerical verification and threshold decisions |
 
-Both are optional. CPU processing remains the default. Cloud jobs and Live
+GPU options are optional. CPU processing remains the default. Cloud jobs and Live
 measurements keep their existing execution paths. Experimental GPU scoring
-cannot decide delivery gates.
+cannot decide VMAF delivery gates. CPU-verified CAMBI supports its own banding
+bounds; see [banding quality measurement](./BANDING-QUALITY.md) for setup and limits.
 
 ## Choose local processing
 
@@ -31,7 +33,7 @@ it does not install drivers or native tools. Configure `VMAF_NATIVE_PATH` and
 `VMAF_MODEL_DIR` as described below. The worker chooses concurrency automatically;
 additional comparisons wait for capacity.
 
-A measurement that decides a delivery gate uses CPU scoring, including when
+A VMAF measurement that decides a delivery gate uses CPU scoring, including when
 automatic GPU selection was requested. Live comparisons also stay on the CPU.
 Input validation errors, invalid native builds and failed CPU numerical checks
 remain errors; they are not hidden by a CPU retry. GPU scoring still requires

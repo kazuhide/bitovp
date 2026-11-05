@@ -1143,9 +1143,9 @@ function readAiScene(
 /**
  * Reads `plan.qc` back into the wizard QC toggle. Absent ⇒ undefined (the
  * section renders the default-off state). A present block always has `vmaf`
- * (buildPlan emits `vmaf:true` whenever it emits qc); `model` defaults to the
+ * (false for banding-only measurement); `model` defaults to the
  * schema default when omitted, `psnr` to false — symmetric with buildPlan's
- * prune so a qc plan round-trips byte-for-byte. `only` (VMAF-only encode)
+ * prune so a qc plan round-trips byte-for-byte. `only` (QC-only encode)
  * defaults to false — symmetric with buildPlan, which emits it only when set.
  */
 function readQc(raw: Record<string, unknown>): WizardQc | undefined {
@@ -1163,6 +1163,9 @@ function readQc(raw: Record<string, unknown>): WizardQc | undefined {
 		vmaf: asBool(qc.vmaf) ?? false,
 		model: asString(qc.model) ?? DEFAULT_VMAF_MODEL,
 		psnr: asBool(qc.psnr) ?? false,
+		...(asBool(qc.banding) !== undefined
+			? { banding: asBool(qc.banding) }
+			: {}),
 		only: asBool(qc.only) ?? false,
 		...(gate.success ? { gate: gate.data } : {}),
 		...(execution.success ? { execution: execution.data } : {}),
@@ -2000,7 +2003,7 @@ export function planToWizardState(raw: Record<string, unknown>): WizardState {
 			);
 		});
 
-	// Read before the literal: `hlsDefaultVersion` needs it (a VMAF-only plan
+	// Read before the literal: `hlsDefaultVersion` needs it (a QC-only plan
 	// emits no standalone audio containers, so they cannot imply a version).
 	const qcState = readQc(raw);
 	const state: WizardState = {

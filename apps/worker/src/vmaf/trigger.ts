@@ -4,6 +4,7 @@ import {
 	VMAF_SCORING_VERSION,
 	type VmafCloudProfile,
 } from "@bitovp/core";
+import { BANDING_JOB_SCORING_VERSION } from "@bitovp/core/banding";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { autoTriggerKey, listVmafCloudProfiles } from "@bitovp/db";
 import { qcVmafEnabled } from "../settings/feature-flags";
@@ -77,7 +78,7 @@ export function createVmafTrigger(deps: VmafTriggerDeps) {
 		// Gate in lockstep with the compiler/enumerateQcTargets QC-mirror gate:
 		// PSNR rides the same libvmaf pass, so a psnr-only plan must enqueue too
 		// (the runner computes VMAF unconditionally and adds PSNR when asked).
-		if (!(args.plan.qc?.vmaf || args.plan.qc?.psnr)) {
+		if (!(args.plan.qc?.vmaf || args.plan.qc?.psnr || args.plan.qc?.banding)) {
 			return; // plan requested neither VMAF nor PSNR — nothing to do
 		}
 		// : read the flag AT FIRE TIME, not at worker start — the
@@ -128,6 +129,10 @@ export function createVmafTrigger(deps: VmafTriggerDeps) {
 		// Existing reports own their execution snapshot; only NEW reports resolve
 		// current tenant profiles. Profile changes never mutate a queued retry.
 		const execution = args.plan.qc.execution ?? { backend: "LOCAL" as const };
+		const banding = args.plan.qc.banding === true;
+		const bandingOnly = banding && !(args.plan.qc.vmaf || args.plan.qc.psnr);
+		if (banding && execution.backend === "CLOUD")
+			throw new Error("BANDING_CLOUD_UNSUPPORTED");
 		let executionProfile: VmafCloudProfile | undefined;
 		let profileError: string | undefined;
 		if (execution.backend === "CLOUD") {
@@ -151,19 +156,23 @@ export function createVmafTrigger(deps: VmafTriggerDeps) {
 				data: {
 					encodingJobId: args.encodingJobId,
 					mode: "VOD",
-					model: args.plan.qc.model,
+					model: bandingOnly ? "CAMBI" : args.plan.qc.model,
 					// Explicit, not the column default: the default is 1 so the
 					// migration labels historical rows correctly, which means a new
 					// row that relied on it would claim to be pre-fix.
-					scoringVersion: args.plan.qc.measurementMethod
-						? VMAF_FRAME_INDEX_SCORING_VERSION
-						: VMAF_SCORING_VERSION,
+					scoringVersion: bandingOnly
+						? BANDING_JOB_SCORING_VERSION
+						: args.plan.qc.measurementMethod
+							? VMAF_FRAME_INDEX_SCORING_VERSION
+							: VMAF_SCORING_VERSION,
 					status: profileError ? "ERROR" : "PENDING",
 					...(profileError
 						? { error: profileError, finishedAt: new Date() }
 						: {}),
 					params: {
 						execution,
+						...(banding ? { banding: true } : {}),
+						...(bandingOnly ? { kind: "BANDING" } : {}),
 						...(args.plan.qc.measurementMethod
 							? {
 									source: "QC_MIRROR",

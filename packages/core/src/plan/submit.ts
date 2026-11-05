@@ -260,7 +260,10 @@ export async function submitEncodingJob(
 	// refusal exists to prevent.
 	if (
 		deps.qcVmafEnabled &&
-		(rawPlan.qc?.vmaf || rawPlan.qc?.psnr || rawPlan.qc?.gate) &&
+		(rawPlan.qc?.vmaf ||
+			rawPlan.qc?.psnr ||
+			rawPlan.qc?.banding ||
+			rawPlan.qc?.gate) &&
 		!(await deps.qcVmafEnabled())
 	) {
 		return {

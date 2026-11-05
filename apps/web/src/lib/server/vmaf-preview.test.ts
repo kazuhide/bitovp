@@ -62,6 +62,67 @@ function fixture() {
 const ctx = {} as Parameters<typeof serveVmafPreview>[0];
 beforeEach(() => vi.clearAllMocks());
 describe("VMAF preview resolution (small, no I/O)", () => {
+	it("previews manual VMAF follow-ups of a Banding-only QC-only encoding", () => {
+		const f = fixture();
+		f.encodingJob.plan = encodingPlanSchema.parse({
+			...f.encodingJob.plan,
+			qc: { vmaf: false, banding: true, only: true },
+		});
+		const before = JSON.stringify(f.encodingJob.plan);
+		expect(resolveVmafPreview(f, f.result)).toMatchObject({
+			key: f.result.provenance.distorted.key,
+			size: 10,
+			expect: { etag: '"sealed"' },
+		});
+		expect(JSON.stringify(f.encodingJob.plan)).toBe(before);
+	});
+	it("previews a pinned Per-Title mirror from a Banding-only original plan", () => {
+		const f = fixture();
+		const destination = f.encodingJob.plan.muxings[0]?.destination;
+		if (!destination) throw new Error("Missing fixture destination");
+		destination.path = "runs/run-1/{height}_{bitrate}_{uuid}";
+		const target = enumerateQcTargets(f.encodingJob.plan)[0];
+		if (!target) throw new Error("Missing fixture target");
+		const key = target.distorted.path.replace(
+			"{height}_{bitrate}_{uuid}",
+			"720_1000000_rung",
+		);
+		f.encodingJob.plan = encodingPlanSchema.parse({
+			...f.encodingJob.plan,
+			qc: { vmaf: false, banding: true, only: true },
+			renditions: f.encodingJob.plan.renditions.map((rendition) =>
+				rendition.key === "v360"
+					? {
+							...rendition,
+							mode: "PER_TITLE_TEMPLATE",
+							height: null,
+							bitrate: null,
+						}
+					: rendition,
+			),
+		});
+		const result = {
+			...f.result,
+			renditionRef: {
+				renditionKey: "v360",
+				perTitleVariant: "720_1000000_rung",
+			},
+			provenance: { distorted: { ...f.result.provenance.distorted, key } },
+		};
+		const before = JSON.stringify(f.encodingJob.plan);
+		expect(resolveVmafPreview(f, result)).toMatchObject({
+			key,
+			size: 10,
+			expect: { etag: '"sealed"' },
+		});
+		expect(
+			resolveVmafPreview(f, {
+				...result,
+				renditionRef: { renditionKey: "v360", perTitleVariant: "other" },
+			}),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+		expect(JSON.stringify(f.encodingJob.plan)).toBe(before);
+	});
 	it("projects only a report-scoped URL, never storage identity", () => {
 		const f = fixture();
 		expect(

@@ -200,3 +200,80 @@ export async function resolveLocalSelection(
 	if (!parsed) throw new Error("VMAF_LOCAL_SELECTION_INVALID");
 	return { version: 1, requested, model, ...parsed };
 }
+
+/** CAMBI owns its own pinned selection. Its official CPU oracle judges gates;
+ * the VMAF gate/model restrictions above remain unchanged. */
+export async function resolveBandingSelection(
+	deps: {
+		selectNative?: SelectLocalNative;
+		nativeFailure?: Error;
+		available?: (
+			selected: NativeLocalSelection,
+			signal: AbortSignal,
+		) => Promise<boolean>;
+	},
+	request: { execution: VmafExecution; stored?: unknown; signal: AbortSignal },
+): Promise<LocalSelection> {
+	const { execution, signal } = request;
+	signal.throwIfAborted();
+	if (execution.backend !== "LOCAL")
+		throw new Error("BANDING_CLOUD_UNSUPPORTED");
+	const requested = execution.localMode ?? "CPU";
+	const base = { version: 1 as const, model: "CAMBI", requested };
+	const stored =
+		request.stored === undefined ? undefined : parseStored(request.stored);
+	if (stored && (stored.model !== "CAMBI" || stored.requested !== requested))
+		throw new Error("BANDING_LOCAL_SELECTION_CHANGED");
+	if (
+		stored?.backend === "cpu" &&
+		"reason" in stored &&
+		!["GPU_NOT_AVAILABLE", "GPU_RUNTIME_UNAVAILABLE"].includes(stored.reason)
+	)
+		throw new Error("BANDING_LOCAL_SELECTION_INVALID");
+	if (stored?.backend === "cpu") return stored;
+	if (requested === "CPU") return { ...base, requested, backend: "cpu" };
+	if (deps.nativeFailure) throw deps.nativeFailure;
+	const fallback = (): LocalSelection => ({
+		...base,
+		requested: "AUTO",
+		backend: "cpu",
+		reason: "GPU_RUNTIME_UNAVAILABLE",
+	});
+	if (!deps.selectNative || !deps.available) {
+		if (stored) throw new Error("BANDING_LOCAL_SELECTION_UNAVAILABLE");
+		return fallback();
+	}
+	const pinned = stored
+		? {
+				backend: stored.backend,
+				device: stored.device,
+				identity: stored.identity,
+			}
+		: undefined;
+	const selected = await deps.selectNative({
+		signal,
+		...(pinned ? { pinned } : {}),
+	});
+	signal.throwIfAborted();
+	if (selected.backend === "cpu") {
+		if (stored) throw new Error("BANDING_LOCAL_SELECTION_UNAVAILABLE");
+		if (selected.reason !== "GPU_NOT_AVAILABLE")
+			throw new Error("BANDING_LOCAL_SELECTION_INVALID");
+		return {
+			...base,
+			requested: "AUTO",
+			backend: "cpu",
+			reason: selected.reason,
+		};
+	}
+	const parsed = native(selected);
+	if (!parsed) throw new Error("BANDING_LOCAL_SELECTION_INVALID");
+	if (pinned && JSON.stringify(parsed) !== JSON.stringify(pinned))
+		throw new Error("BANDING_LOCAL_SELECTION_CHANGED");
+	if (!(await deps.available(parsed, signal))) {
+		if (stored) throw new Error("BANDING_LOCAL_SELECTION_UNAVAILABLE");
+		return fallback();
+	}
+	signal.throwIfAborted();
+	return { ...base, requested: "AUTO", ...parsed };
+}

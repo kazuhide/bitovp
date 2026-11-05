@@ -1988,7 +1988,10 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 			// `qcMirrorFilename` are the one definition . Absent qc
 			// ⇒ this block never runs, so every non-QC plan compiles
 			// byte-identically (the 56 goldens are safe).
-			if ((plan.qc?.vmaf || plan.qc?.psnr) && isVideoCodec(rendition)) {
+			if (
+				(plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding) &&
+				isVideoCodec(rendition)
+			) {
 				// Resolve the rendition's output base: prefer a muxing that
 				// carries its own destination; for fully-DRM'd renditions the
 				// muxing has none, so fall back to the encrypting DRM's output.

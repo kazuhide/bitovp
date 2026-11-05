@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type BandingPooled, bandingPooledSchema } from "../banding/types";
 import type { PooledMetrics } from "../vmaf/pooled";
 
 /**
@@ -13,17 +14,18 @@ import type { PooledMetrics } from "../vmaf/pooled";
  * continuation) are PR2 by the design's own split.
  */
 
-export const QC_GATE_METRICS = [
+const LOWER_BOUND_METRICS = [
 	"VMAF_MEAN",
 	"VMAF_HARMONIC_MEAN",
 	"VMAF_P1_LOW",
 	"VMAF_MIN",
 	"PSNR_MEAN",
 ] as const;
+export const QC_GATE_METRICS = [...LOWER_BOUND_METRICS, "CAMBI_MAX"] as const;
 export type QcGateMetric = (typeof QC_GATE_METRICS)[number];
 
-export const qcGateRuleSchema = z.strictObject({
-	metric: z.enum(QC_GATE_METRICS),
+const lowerBoundRuleSchema = z.strictObject({
+	metric: z.enum(LOWER_BOUND_METRICS),
 	/**
 	 * PER_RENDITION = every targeted rendition (and per-title rung) must
 	 * clear the bar individually. OVERALL = the MEAN of the targeted values
@@ -53,6 +55,19 @@ export const qcGateRuleSchema = z.strictObject({
 		.optional(),
 });
 
+const bandingRuleSchema = z.strictObject({
+	metric: z.literal("CAMBI_MAX"),
+	scope: z.literal("PER_RENDITION"),
+	lte: z.number().finite().nonnegative(),
+	severity: z.enum(["WARN", "FAIL"]).optional(),
+	renditions: lowerBoundRuleSchema.shape.renditions,
+});
+
+export const qcGateRuleSchema = z.discriminatedUnion("metric", [
+	lowerBoundRuleSchema,
+	bandingRuleSchema,
+]);
+
 export const qcGateSchema = z.strictObject({
 	rules: z.array(qcGateRuleSchema).min(1),
 	onFail: z.enum(["MARK_ONLY", "BLOCK_MANIFESTS"]),
@@ -71,7 +86,8 @@ export type RenditionPooled = {
 	 * them to the bar. Absent for standard renditions.
 	 */
 	variant?: string;
-	pooled: PooledMetrics;
+	pooled?: PooledMetrics;
+	banding?: BandingPooled;
 };
 
 export type QcRuleResult = {
@@ -98,7 +114,17 @@ export type QcVerdict = {
 	ruleResults: QcRuleResult[];
 };
 
-function metricOf(pooled: PooledMetrics, metric: QcGateMetric): number | null {
+export function qcRuleSeverity(rule: QcGateRule): "WARN" | "FAIL" {
+	return rule.metric === "CAMBI_MAX" ? (rule.severity ?? "FAIL") : "FAIL";
+}
+
+function metricOf(entry: RenditionPooled, metric: QcGateMetric): number | null {
+	if (metric === "CAMBI_MAX") {
+		const parsed = bandingPooledSchema.safeParse(entry.banding);
+		return parsed.success ? parsed.data.max : null;
+	}
+	const pooled = entry.pooled;
+	if (!pooled) return null;
 	// `?? null` throughout (review-86b N-1): PooledMetrics arrives from a
 	// Prisma Json column that is cast, never parsed — a row missing a field
 	// yields undefined, which fails closed but serializes as an ABSENT key
@@ -182,12 +208,16 @@ export function evaluateQcGate(
 			}
 			return [
 				...measured.map((entry) => {
-					const value = metricOf(entry.pooled, rule.metric);
+					const value = metricOf(entry, rule.metric);
 					return {
 						rendition,
 						...(entry.variant !== undefined ? { variant: entry.variant } : {}),
 						value,
-						pass: value !== null && value >= rule.gte,
+						pass:
+							value !== null &&
+							(rule.metric === "CAMBI_MAX"
+								? value <= rule.lte
+								: value >= rule.gte),
 					};
 				}),
 				...holes,
@@ -212,7 +242,13 @@ export function evaluateQcGate(
 		return { rule, pass, actuals };
 	});
 	return {
-		pass: ruleResults.every((entry) => entry.pass),
+		pass: ruleResults.every(
+			(entry) =>
+				entry.pass ||
+				(qcRuleSeverity(entry.rule) === "WARN" &&
+					entry.actuals.length > 0 &&
+					entry.actuals.every((actual) => actual.value !== null)),
+		),
 		ruleResults,
 	};
 }

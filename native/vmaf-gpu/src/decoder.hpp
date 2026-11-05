@@ -35,6 +35,8 @@ private:
 // second output slot; at most two distinct retained pictures can stay live.
 class Decoder {
 public:
+    // bit_depth=0 preserves supported original precision and validates the
+    // standalone CAMBI input scope; existing explicit-depth decoding is unchanged.
     Decoder(const std::string &path, unsigned width, unsigned height,
             unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0);
     ~Decoder();
@@ -46,6 +48,8 @@ public:
     RetainedPicture retain_picture() const;
     // Relative presentation time in seconds. Throws if timestamps are absent.
     double timestamp() const;
+    // Actual decoded-frame duration in seconds. No frame-rate estimate is used.
+    double duration() const;
     double decode_ms() const;
     double conform_ms() const;
 private:

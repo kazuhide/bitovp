@@ -32,6 +32,7 @@ import {
 	planHasPerTitle,
 	stepLogSchema,
 } from "@bitovp/core";
+import { bandingPooledSchema } from "@bitovp/core/banding";
 import type { AppPrismaClient } from "@bitovp/db";
 import {
 	autoTriggerKey,
@@ -695,16 +696,34 @@ export function addQcMeasurementChecks(
 	if (vmaf.results.length > 0) {
 		const finite = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 		const bad = vmaf.results.flatMap((row, i) => {
-			const pooled = row.pooled as Partial<PooledMetrics> | null;
+			const pooled = row.pooled as
+				| (Partial<PooledMetrics> & { banding?: unknown })
+				| null;
 			const ref = row.renditionRef as { renditionKey?: unknown } | null;
 			const label =
 				typeof ref?.renditionKey === "string" ? ref.renditionKey : `#${i}`;
 			const faults: string[] = [];
-			if (!finite(pooled?.mean)) {
+			if ((qc.vmaf || qc.psnr) && !finite(pooled?.mean)) {
 				faults.push("no finite VMAF mean");
 			}
 			if (qc.psnr && !finite(pooled?.psnr?.mean)) {
 				faults.push("no finite PSNR mean");
+			}
+			if (qc.banding) {
+				const summary = bandingPooledSchema.safeParse(pooled?.banding);
+				const execution = (
+					row.provenance as {
+						bandingExecution?: {
+							coverage?: { complete?: unknown; frameCount?: unknown };
+						};
+					} | null
+				)?.bandingExecution;
+				if (
+					!summary.success ||
+					execution?.coverage?.complete !== true ||
+					execution.coverage.frameCount !== summary.data.frameCount
+				)
+					faults.push("no complete finite CAMBI measurement");
 			}
 			return faults.length ? [`${label}: ${faults.join(", ")}`] : [];
 		});
@@ -714,13 +733,19 @@ export function addQcMeasurementChecks(
 			verdict: bad.length === 0 ? "PASS" : "FAIL",
 			detail:
 				bad.length === 0
-					? `every result carries a finite VMAF mean${qc.psnr ? " and PSNR mean" : ""}`
+					? `every result carries complete finite requested scores (${[
+							qc.vmaf || qc.psnr ? "VMAF" : undefined,
+							qc.psnr ? "PSNR" : undefined,
+							qc.banding ? "CAMBI" : undefined,
+						]
+							.filter(Boolean)
+							.join(", ")})`
 					: bad.join("; "),
 		});
 	}
 
 	// ---- model: only when the plan pinned one ------------------------------------
-	if (qc.model !== undefined) {
+	if ((qc.vmaf || qc.psnr) && qc.model !== undefined) {
 		appendCheck(report, {
 			id: "qc:model",
 			area: "qc",

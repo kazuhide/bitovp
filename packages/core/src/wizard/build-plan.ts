@@ -845,7 +845,7 @@ export type WizardStartOptions = {
 /**
  * Quality-control (VMAF + optional PSNR) toggle — the wizard mirror of
  * planQcSchema. Always present in state (the section's controls bind to it);
- * buildPlan emits a `plan.qc` block ONLY when `vmaf || psnr` and PRUNES it
+ * buildPlan emits a `plan.qc` block ONLY when `vmaf || psnr || banding` and PRUNES it
  * entirely otherwise, so default-off state keeps the 56 goldens byte-identical
  * (none carry `qc`). `model` defaults to the schema default so an enabled-then-
  * default plan stays minimal. Like Per-Title/AISA, "off" leaves no plan key.
@@ -856,12 +856,14 @@ export type WizardQc = {
 	measurementMethod?: "FRAME_INDEX_BT709_10BIT";
 	/** Run the libvmaf VMAF pass after the encode FINISHES (adds qc/ MP4 mirrors). */
 	vmaf: boolean;
+	/** Measure no-reference CAMBI banding on each encoded rendition. */
+	banding?: boolean;
 	/** libvmaf model name (schema default `DEFAULT_VMAF_MODEL`). */
 	model: string;
 	/** Also compute PSNR (psnr_y) in the SAME libvmaf pass. */
 	psnr: boolean;
 	/**
-	 * VMAF-only encode: produce ONLY the per-video qc mirror MP4s — no delivery
+	 * QC-only encode: produce ONLY the per-video qc mirror MP4s — no delivery
 	 * muxings/manifests/audio/thumbnails/sprites/DRM/keyframes (planQcSchema.only).
 	 * When on, buildPlan clears those plan collections so the plan passes
 	 * validation, and the wizard disables the now-irrelevant delivery controls.
@@ -1117,12 +1119,14 @@ export const DEFAULT_WIZARD_STATE: WizardState = {
  * extras.key overrides win (Dolby multi-ladder fixtures name their own).
  */
 /**
- * VMAF-only encode: no manifests, no thumbnails, no DRM — and no standalone
+ * QC-only encode: no manifests, no thumbnails, no DRM — and no standalone
  * audio containers either. Hoisted so `wizardAudioLegs` and `buildPlan` cannot
  * disagree about which state means "qc only".
  */
 function isQcOnly(state: Pick<WizardState, "qc">): boolean {
-	return Boolean(state.qc?.only && (state.qc.vmaf || state.qc.psnr));
+	return Boolean(
+		state.qc?.only && (state.qc.vmaf || state.qc.psnr || state.qc.banding),
+	);
 }
 
 /** Audio keys a video container leg carries  — TS/MP4 only. */
@@ -1160,7 +1164,7 @@ export function wizardAudioLegs(
 	state: Pick<WizardState, "videos" | "audios" | "qc">,
 ): WizardAudioLeg[] {
 	if (isQcOnly(state)) {
-		// VMAF-only keeps ONLY video muxings (each carries its qc mirror's
+		// QC-only keeps ONLY video muxings (each carries its qc mirror's
 		// destination); audio muxings are dropped with their renditions.
 		return [];
 	}
@@ -1500,7 +1504,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const sKeys = subtitleKeys(subtitles);
 	const drmRows = state.drm ?? [];
 	const sources = state.sources ?? {};
-	// VMAF-only encode: when on, the plan must carry NO manifests/thumbnails/
+	// QC-only encode: when on, the plan must carry NO manifests/thumbnails/
 	// sprites/drm/keyframes (validate rejects them and the compiler drops them).
 	// The user still picks the storage output + the per-rendition muxings stay —
 	// they carry each qc mirror's destination. qcOnly is only meaningful when a
@@ -2615,7 +2619,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			...state.videos.map((video, index) =>
 				videoRendition(video, vKeys[index] ?? `v${video.height}`),
 			),
-			// VMAF-only scores video only — audio/subtitle renditions are dropped
+			// QC-only scores video only — audio/subtitle renditions are dropped
 			// (validate forbids them under qc.only; the compiler skips them).
 			...(qcOnly
 				? []
@@ -2652,7 +2656,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			// A leg the operator asked to ride inside the video emits NO container
 			// of its own — the stream is already listed on the video's. Emitting
 			// both would encode the audio twice and give the master playlist a
-			// group nothing points at. VMAF-only keeps ONLY video muxings (each
+			// group nothing points at. QC-only keeps ONLY video muxings (each
 			// carries its qc mirror's destination); both rules live in
 			// `wizardAudioLegs`, which the default HLS version reads too.
 			...audioLegs.map(({ key, leg, primary }) =>
@@ -2730,7 +2734,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					),
 				}
 			: {}),
-		// VMAF-only encodes carry no manifests (validate rejects them); the
+		// QC-only encodes carry no manifests (validate rejects them); the
 		// compiler would drop them anyway. Otherwise emit the built list.
 		manifests: qcOnly ? [] : manifests,
 		...(perTitle && Object.keys(perTitle).length > 0 ? { perTitle } : {}),
@@ -2776,7 +2780,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		// QC (VMAF + optional PSNR) is emitted ONLY when on; default-off prunes
 		// the whole key so the 56 goldens (none carry `qc`) stay byte-identical
 		// (mirrors how Per-Title/AISA emit nothing when their toggles are off).
-		...(state.qc && (state.qc.vmaf || state.qc.psnr)
+		...(state.qc && (state.qc.vmaf || state.qc.psnr || state.qc.banding)
 			? {
 					// PSNR rides the SAME libvmaf pass (planQcSchema): a psnr-on
 					// plan always runs VMAF too, so normalize psnr-without-vmaf to
@@ -2794,7 +2798,8 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 								? undefined
 								: state.qc.model,
 						psnr: state.qc.psnr ? true : undefined,
-						// VMAF-only: emit `only: true` (and the spreads above cleared
+						banding: state.qc.banding ? true : undefined,
+						// QC-only: emit `only: true` (and the spreads above cleared
 						// manifests/thumbnails/sprites/drm/keyframes). Absent otherwise.
 						only: qcOnly ? true : undefined,
 						// QC gate : VERBATIM — the editor produces the

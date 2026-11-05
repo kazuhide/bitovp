@@ -141,6 +141,113 @@ beforeEach(() => {
 });
 
 describe("GET /api/encoding-jobs/[id]/qc-report", () => {
+	it.each([
+		"json",
+		"csv",
+		"html",
+	])("exports model-free CAMBI and warning upper bounds in %s evidence", async (format) => {
+		const rule = {
+			metric: "CAMBI_MAX",
+			scope: "PER_RENDITION",
+			lte: 5,
+			severity: "WARN",
+		};
+		const gate = { onFail: "MARK_ONLY", rules: [rule] };
+		const verdict = {
+			pass: true,
+			ruleResults: [
+				{
+					rule,
+					pass: false,
+					actuals: [{ rendition: "v360", value: 7, pass: false }],
+				},
+			],
+		};
+		const banding = {
+			mean: 4,
+			min: 1,
+			max: 7,
+			frameCount: 2,
+			durationSeconds: 0.08,
+		};
+		const bandingAssessment = {
+			severity: "WARN",
+			warningThreshold: 5,
+			affectedSeconds: 0.04,
+			warningSeconds: 0.04,
+			failureSeconds: 0,
+			ranges: [
+				{
+					startSeconds: 0.04,
+					endSeconds: 0.08,
+					startFrame: 1,
+					endFrame: 1,
+					peak: 7,
+					severity: "WARN",
+				},
+			],
+		};
+		findUnique.mockResolvedValue(
+			jobRow({
+				qcVerdict: verdict,
+				plan: { qc: { vmaf: false, banding: true, gate } },
+			}),
+		);
+		vmafFindFirst.mockResolvedValue(
+			vmafRow({
+				model: "CAMBI",
+				scoringVersion: 11,
+				params: { kind: "BANDING" },
+				gateVerdict: verdict,
+				results: [
+					{
+						renditionRef: { renditionKey: "v360", height: 360 },
+						pooled: { banding, bandingAssessment },
+						provenance: {
+							bandingExecution: {
+								version: 1,
+								metric: "CAMBI_NR",
+								backend: "cpu",
+								implementation: "libvmaf",
+								decisionSource: "CPU_REFERENCE",
+								coverage: {
+									complete: true,
+									frameCount: 2,
+									durationSeconds: 0.08,
+								},
+								receipt: "/private/receipt",
+							},
+						},
+					},
+				],
+			}),
+		);
+		const response = await GET(...request(format));
+		expect(response.status).toBe(200);
+		const text = await response.text();
+		expect(text).not.toMatch(/private|receipt/);
+		if (format === "json") {
+			const body = JSON.parse(text);
+			expect(body.measurement).toMatchObject({
+				model: null,
+				kind: "BANDING",
+				detector: "CAMBI",
+			});
+			expect(body.renditions[0].banding).toEqual(banding);
+			expect(body.renditions[0].bandingAssessment).toEqual(bandingAssessment);
+		} else if (format === "csv") {
+			expect(text).toContain("operator,severity");
+			expect(text).toContain(
+				"1,CAMBI_MAX,PER_RENDITION,5,v360,,7,false,lte,WARN",
+			);
+			expect(text).toContain("v360,4,1,7,2,0.08,WARN,5,");
+		} else {
+			expect(text).toContain("PASS WITH WARNINGS");
+			expect(text).toContain("≤ 5 (WARN)");
+			expect(text).toContain("<dt>Detector</dt><dd>CAMBI</dd>");
+			expect(text).not.toContain("<dt>VMAF model</dt>");
+		}
+	});
 	it("looks the auto-run up WITHOUT a Json-null sentinel filter, and a null verdict falls back to the newest measurement (ledger #254)", async () => {
 		// The old lookup filtered `gateVerdict: { not: DB_NULL }`; on the
 		// live-to-VOD route the same shape matched nothing in the deployed

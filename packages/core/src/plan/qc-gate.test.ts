@@ -102,7 +102,9 @@ describe("evaluateQcGate", () => {
 				}),
 			},
 		];
-		const metricValue = (metric: QcGate["rules"][number]["metric"]) =>
+		const metricValue = (
+			metric: Exclude<QcGate["rules"][number]["metric"], "CAMBI_MAX">,
+		) =>
 			evaluateQcGate(
 				gate({ rules: [{ metric, scope: "OVERALL", gte: 1 }] }),
 				rows,

@@ -148,6 +148,29 @@ int bitovp_oracle_describe_psnr(
                      callbacks, cookie);
 }
 
+int bitovp_oracle_describe_feature(const char *extractor_name,
+    const struct BitovpOracleKeyValue *options, size_t option_count,
+    const struct BitovpOracleDescriptionCallbacks *callbacks, void *cookie)
+{
+    if (!extractor_name || (!options && option_count) || !callbacks ||
+        !callbacks->begin || !callbacks->option || !callbacks->feature || !callbacks->end)
+        return -EINVAL;
+    VmafFeatureExtractor *extractor = vmaf_get_feature_extractor_by_name(extractor_name);
+    if (!extractor) return -EINVAL;
+    VmafDictionary *dictionary = NULL;
+    int err = 0;
+    for (size_t i = 0; i < option_count; ++i) {
+        err = validate_value(find_option(extractor, options[i].key), options[i].value);
+        if (err) goto done;
+        err = vmaf_dictionary_set(&dictionary, options[i].key, options[i].value, 0);
+        if (err) goto done;
+    }
+    err = describe(extractor, dictionary, NULL, callbacks, cookie);
+done:
+    vmaf_dictionary_free(&dictionary);
+    return err;
+}
+
 int bitovp_oracle_override_model(VmafModel *model, const char *extractor_name,
     const struct BitovpOracleKeyValue *options, size_t option_count)
 {

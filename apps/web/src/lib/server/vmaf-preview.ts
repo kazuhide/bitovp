@@ -2,7 +2,7 @@ import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import "server-only";
 import {
 	encodingPlanSchema,
-	enumerateQcTargets,
+	enumerateExistingQcMirrorTargets,
 	vmafSourceFor,
 } from "@bitovp/core";
 import { z } from "zod";
@@ -75,7 +75,7 @@ export function resolveVmafPreview(
 		})
 		.safeParse(result.renditionRef);
 	if (!plan.success || !ref.success) return unavailable("UNSUPPORTED_SOURCE");
-	const target = enumerateQcTargets(plan.data).find(
+	const target = enumerateExistingQcMirrorTargets(plan.data).find(
 		(t) => t.renditionKey === ref.data.renditionKey,
 	);
 	const output = plan.data.outputs.find(

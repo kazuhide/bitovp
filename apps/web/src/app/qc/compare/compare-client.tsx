@@ -17,6 +17,7 @@ import {
 	mixesReferenceCanvases,
 	mixesScoringGenerations,
 	mixesSubsampling,
+	type QcJobDetail,
 	renditionLabel,
 	scoringGenerations,
 	seriesColor,
@@ -88,33 +89,37 @@ export function CompareClient() {
 	// Only fan out once there are enough ids to actually compare — below the
 	// minimum we render the guard, so fetching would be wasted work.
 	const enabled = jobIds.length >= MIN_JOBS;
-	const { loadedJobs, failedIds, loading, fetching } = useQueries({
-		queries: jobIds.map((id) => ({
-			queryKey: ["vmaf-job", id],
-			queryFn: () => apiFetch<VmafJobDetail>(`/api/vmaf-jobs/${id}`),
-			staleTime: 30_000,
-			enabled,
-		})),
-		combine: (results) => {
-			const jobs: VmafJobDetail[] = [];
-			const failed: string[] = [];
-			results.forEach((q, i) => {
-				const id = jobIds[i] as string;
-				if (q.data) {
-					jobs.push(q.data);
-				}
-				if (q.isError) {
-					failed.push(id);
-				}
-			});
-			return {
-				loadedJobs: jobs,
-				failedIds: failed,
-				loading: results.some((q) => q.isLoading),
-				fetching: results.some((q) => q.isFetching),
-			};
-		},
-	});
+	const { loadedJobs, failedIds, incompatibleIds, loading, fetching } =
+		useQueries({
+			queries: jobIds.map((id) => ({
+				queryKey: ["vmaf-job", id],
+				queryFn: () => apiFetch<QcJobDetail>(`/api/vmaf-jobs/${id}`),
+				staleTime: 30_000,
+				enabled,
+			})),
+			combine: (results) => {
+				const jobs: VmafJobDetail[] = [];
+				const failed: string[] = [];
+				const incompatible: string[] = [];
+				results.forEach((q, i) => {
+					const id = jobIds[i] as string;
+					if (q.data?.kind === "BANDING") incompatible.push(id);
+					else if (q.data) {
+						jobs.push(q.data);
+					}
+					if (q.isError) {
+						failed.push(id);
+					}
+				});
+				return {
+					loadedJobs: jobs,
+					failedIds: failed,
+					incompatibleIds: incompatible,
+					loading: results.some((q) => q.isLoading),
+					fetching: results.some((q) => q.isFetching),
+				};
+			},
+		});
 
 	// Flatten (job × rendition) → series with a stable key + distinct colour.
 	// Colour index runs across the whole flattened list so no two series share a
@@ -243,6 +248,9 @@ export function CompareClient() {
 		return (
 			<GuardMessage>
 				{t("prose.noReportsLoaded")}
+				{incompatibleIds.length ? (
+					<p role="alert">{t("banding.compareUnsupported")}</p>
+				) : null}
 				<Button
 					size="sm"
 					variant="secondary"
@@ -284,6 +292,11 @@ export function CompareClient() {
 	return (
 		<section>
 			<CompareHeader jobCount={loadedJobs.length} seriesCount={series.length} />
+			{incompatibleIds.length ? (
+				<p role="alert" className="mt-3 text-xs text-amber-400">
+					{t("banding.compareUnsupported")}
+				</p>
+			) : null}
 			<VmafScoreLegend className="mt-3" />
 			{mixesReferenceCanvases(loadedJobs) ? (
 				<p role="alert" className="mt-3 text-amber-400 text-xs">

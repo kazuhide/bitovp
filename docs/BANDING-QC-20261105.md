@@ -2,7 +2,7 @@
 
 ## Objective and scope
 
-Implement the roadmap's banding detection for automatic VOD quality control,
+Implement banding detection for automatic VOD quality control,
 QC-only encodes and manual quality measurements. Report CAMBI scores and affected
 time ranges, with configurable warning and failure thresholds. CPU and the owned
 CUDA/Vulkan backends must perform real CAMBI computation. This work does not cut
@@ -100,7 +100,7 @@ Resource/profile identities include the metric and CAMBI options.
    Native and worker owners agree exact receipt keys before integration.
 3. Integrate real CPU and CUDA/Vulkan measurements, compatibility, cancellation
    and failure paths; verify the rendered UI and exports.
-4. Refresh user/API/GPU documentation, Unreleased changelog and roadmap state;
+4. Refresh user/API/GPU documentation and the Unreleased changelog;
    regenerate API census evidence if the source fingerprint changes.
 5. PR, two independent frozen-head reviews, all required CI, then squash merge.
 

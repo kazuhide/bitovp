@@ -52,7 +52,7 @@ The UI supports English and Japanese. See [supported features and technical
 limits](./docs/BITMOVIN-API-COVERAGE.md) for restrictions that affect your plans.
 Availability also depends on your Bitmovin account and encoder version.
 
-## Releases and planned improvements
+## Releases
 
 **[v1.1.0](https://github.com/kazuhide/bitovp/releases/tag/v1.1.0)**
 is the latest stable release. It adds local VMAF CPU/GPU selection and resource
@@ -61,8 +61,7 @@ experimental. See the [GPU quality guide](./docs/user-guide/GPU-QUALITY.md)
 for setup and limits. Download a source archive from the release and
 follow the installation guide; the application is built locally. Release
 assets include source archives and SHA-256 checksums.
-See the [changelog](./CHANGELOG.md) for changes and the [roadmap](./ROADMAP.md)
-for planned improvements.
+See the [changelog](./CHANGELOG.md) for released and unreleased changes.
 
 ## Installation requirements
 

@@ -23,8 +23,6 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Refreshed the pinned FFmpeg 8.1.3 worker build to include the CAMBI fixes for
   small encode dimensions and 10-bit input strides.
-- The roadmap separates the next intended release from unassigned work and
-  distinguishes merged implementation from a published release.
 
 ## [1.1.0] - 2026-11-04
 
@@ -142,8 +140,8 @@ version. After v1.0.0, compatible fixes use patch versions, compatible features
 use minor versions, and breaking changes use major versions with migration
 instructions.
 
-Planned work belongs in the [roadmap](./ROADMAP.md); it is added to this
-changelog when delivered.
+Record implemented changes under **Unreleased** until their tagged release is
+published.
 
 [1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0

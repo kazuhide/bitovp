@@ -18,9 +18,26 @@ type BandingInput = {
 	frames?: number;
 };
 
-/** Mirrors shared CUDA/Vulkan CambiParameters with the official standalone
- * defaults (window_size=65, cambi_high_res_speedup=0). CPU has no GPU LUT. */
-export function assertBandingGpuGeometry(input: {
+/** libvmaf builds report release/describe names or a Git revision. Preserve the
+ * exact upstream identity; a revision must never be relabelled as a release. */
+export function parseBandingLibvmafVersion(value: unknown): string {
+	if (typeof value !== "string" || value.length === 0)
+		throw new Error("BANDING_CPU_VERSION_MISSING");
+	const release =
+		/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
+	const revision = /^[a-fA-F0-9]{7,40}(?:-dirty)?$/;
+	if (
+		value.length > 128 ||
+		value.trim() !== value ||
+		(!release.test(value) && !revision.test(value))
+	)
+		throw new Error("BANDING_CPU_VERSION_INVALID");
+	return value;
+}
+
+/** Official CPU CAMBI and the owned CUDA/Vulkan implementation share this LUT
+ * bound with standalone defaults (window_size=65, high_res_speedup=0). */
+export function assertBandingGeometry(input: {
 	width: number;
 	height: number;
 }): void {
@@ -29,12 +46,12 @@ export function assertBandingGpuGeometry(input: {
 			(value) => Number.isSafeInteger(value) && value > 0 && value <= 7680,
 		)
 	)
-		throw new Error("BANDING_GPU_GEOMETRY_INVALID");
+		throw new Error("BANDING_GEOMETRY_INVALID");
 	const window =
 		(Math.floor((65 * (input.width + input.height)) / 375) >>> 4) | 1;
 	if (window * window >= 4226)
 		throw new Error(
-			`BANDING_GPU_GEOMETRY_UNSUPPORTED: ${input.width}x${input.height} requires CAMBI window ${window}, exceeding the GPU lookup table; select Local CPU to measure this input.`,
+			`BANDING_GEOMETRY_UNSUPPORTED: ${input.width}x${input.height} requires CAMBI window ${window}, exceeding the default extractor lookup table. Use a supported-size encoded input with width + height <= 6092 pixels.`,
 		);
 }
 
@@ -61,6 +78,7 @@ export function bandingInputFromProbe(text: string) {
 		(input.width < 216 && input.height < 216)
 	)
 		throw new Error("BANDING_INPUT_FORMAT_UNSUPPORTED");
+	assertBandingGeometry(input);
 	const sar = sampleAspectRatioFromProbe(video.sample_aspect_ratio);
 	if (
 		(sar !== undefined && sar !== "1:1") ||
@@ -302,12 +320,7 @@ export async function runCpuBandingScore(
 		if (run.code !== 0)
 			throw new Error(`BANDING_CPU_SCORING_FAILED (${run.code})`);
 		const log: unknown = JSON.parse(await readFile(logPath, "utf8"));
-		const version = object(log)?.version;
-		if (
-			typeof version !== "string" ||
-			!/^\d+\.\d+\.\d+(?:[-+._a-zA-Z0-9]*)$/.test(version)
-		)
-			throw new Error("BANDING_CPU_VERSION_MISSING");
+		const version = parseBandingLibvmafVersion(object(log)?.version);
 		const featureName = `cambi_encbd_${original.bitDepth}_ench_${original.height}_encw_${original.width}`;
 		return {
 			frames: parseCpuBandingLog(log, timing, featureName),

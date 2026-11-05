@@ -169,6 +169,12 @@ export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
 
 export function enumerateBandingQcTargets(plan: EncodingPlan): BandingTarget[] {
 	if (!plan.qc?.banding) return [];
+	return bandingMirrorTargets(plan);
+}
+
+/** Existing QC mirrors are usable by a new no-reference measurement regardless
+ * of which metric originally caused the compiler to emit those mirrors. */
+function bandingMirrorTargets(plan: EncodingPlan): BandingTarget[] {
 	return enumerateQcMirrors(plan).map(({ rendition, destination, path }) => ({
 		renditionKey: rendition.key,
 		codec: rendition.codec,
@@ -217,7 +223,7 @@ export function enumerateBandingTargets(
 ): BandingTarget[] {
 	return source === "EXISTING_MP4"
 		? enumerateExistingBandingMp4Targets(plan)
-		: enumerateBandingQcTargets(plan);
+		: bandingMirrorTargets(plan);
 }
 
 /** Existing clear fixed-ladder MP4s can be measured without a QC mirror.

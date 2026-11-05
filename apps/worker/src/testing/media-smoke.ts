@@ -10,7 +10,10 @@ import {
 	computeBandingPooled,
 } from "@bitovp/core/banding";
 import { createNodeProcessRunner } from "../feeder/process-runner";
-import { runCpuBandingScore } from "../vmaf/banding-score";
+import {
+	parseBandingLibvmafVersion,
+	runCpuBandingScore,
+} from "../vmaf/banding-score";
 
 type Execute = (binary: string, args: string[]) => Promise<string>;
 const exec = promisify(execFile);
@@ -205,9 +208,9 @@ export function validateBandingMeasurement(
 		240,
 		"Every encoded frame needs a CAMBI score",
 	);
-	assert(
-		/^\d+\.\d+\.\d+(?:[-+._a-zA-Z0-9]*)$/.test(measured.libvmafVersion),
-		"The official CPU extractor version is required",
+	assert.equal(
+		parseBandingLibvmafVersion(measured.libvmafVersion),
+		measured.libvmafVersion,
 	);
 	assert.equal(measured.featureName, "cambi_encbd_8_ench_180_encw_320");
 	for (const frame of measured.frames) {

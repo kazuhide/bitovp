@@ -211,6 +211,7 @@ function setup(
 		plan?: Record<string, unknown> | null;
 		frameScores?: number[];
 		bandingScores?: number[];
+		bandingVersion?: string;
 		/** When set, the canned libvmaf JSON also carries metrics.psnr_y. */
 		psnrScores?: number[];
 		ffmpegExit?: number;
@@ -479,7 +480,7 @@ function setup(
 					logPath,
 					argv[fcIdx + 1]?.includes("model=:")
 						? JSON.stringify({
-								version: "3.2.0",
+								version: opts.bandingVersion ?? "3.2.0",
 								frames: (opts.bandingScores ?? []).map((cambi, frameNum) => ({
 									frameNum,
 									metrics: { cambi_encbd_8_ench_360_encw_640: cambi },
@@ -4290,6 +4291,75 @@ it("keeps CLOUD completely outside local selection even with a fatal configured 
 });
 
 describe("banding measurement integration", () => {
+	it.each(
+		["LOCAL", "CLOUD"].flatMap((backend) =>
+			[undefined, false].map((banding) => ({ backend, banding })),
+		),
+	)("honors a manual VMAF job's banding intent (%s)", async ({
+		backend,
+		banding,
+	}) => {
+		const plan = qcPlan();
+		plan.qc = { vmaf: true, banding: true, model: "vmaf_v0.6.1" };
+		const execution =
+			backend === "CLOUD"
+				? { backend: "CLOUD", profileId: "cloud", budgetUsd: 10 }
+				: { backend: "LOCAL", localMode: "CPU" };
+		const cloudScore = vi.fn(async (request) => {
+			await writeFile(request.options.logPath, vmafJson([95]));
+		});
+		const t = setup({
+			plan,
+			bandingScores: [6, 12],
+			cloudScore,
+			job: {
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}1`,
+				params: { execution, ...(banding !== undefined ? { banding } : {}) },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.results).toHaveLength(2);
+		expect(
+			t.results.every((result) => !("banding" in (result.pooled as Row))),
+		).toBe(true);
+		expect((t.job.params as Row).bandingSelection).toBeUndefined();
+		expect(t.filterComplexArgs.some((graph) => graph.includes("model=:"))).toBe(
+			false,
+		);
+		if (backend === "CLOUD") expect(cloudScore).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([
+		"VMAF",
+		"PSNR",
+	])("measures banding from existing %s QC-only mirrors without adding it to the source plan", async (metric) => {
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: metric === "VMAF",
+			psnr: metric === "PSNR",
+			model: "vmaf_v0.6.1",
+			only: true,
+		};
+		const t = setup({
+			plan,
+			bandingScores: [2, 7],
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}1`,
+				params: { kind: "BANDING", banding: true, source: "QC_MIRROR" },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.results).toHaveLength(2);
+		expect(
+			t.downloaded.every(
+				(item) => item.bucket === "out-bucket" && item.key.includes("/qc/"),
+			),
+		).toBe(true);
+		expect(t.encodingJobWrites).toHaveLength(0);
+	});
+
 	it("measures an existing manual MP4 without any enabled source QC or reference", async () => {
 		const plan = qcPlan();
 		delete plan.qc;
@@ -4408,6 +4478,7 @@ describe("banding measurement integration", () => {
 		const t = setup({
 			plan,
 			bandingScores: [0, 6, 12],
+			bandingVersion: "86da14d",
 			subsample: 4,
 			resolveModelPath,
 			job: {
@@ -4438,7 +4509,7 @@ describe("banding measurement integration", () => {
 		expect(stored.provenance).toMatchObject({
 			bandingExecution: {
 				backend: "cpu",
-				libvmafVersion: "3.2.0",
+				libvmafVersion: "86da14d",
 				decisionSource: "CPU_REFERENCE",
 			},
 		});

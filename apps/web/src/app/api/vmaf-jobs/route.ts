@@ -345,11 +345,10 @@ export async function POST(req: Request) {
 									: VMAF_SCORING_VERSION,
 							status: "PENDING",
 							params: {
-								...(bandingOnly
-									? { kind: "BANDING" }
-									: banding
-										? { banding: true }
-										: {}),
+								...(bandingOnly ? { kind: "BANDING" } : {}),
+								// Manual intent overrides the historical encoding plan,
+								// including an explicit/default VMAF-only choice.
+								banding,
 								execution,
 								source,
 								...(parsed.data.psnr !== undefined

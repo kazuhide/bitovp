@@ -136,6 +136,28 @@ describe("local VMAF-only retry", () => {
 			psnr: true,
 		});
 	});
+	it("preserves an explicit Banding-off choice over a combined parent on retry", async () => {
+		findUnique.mockResolvedValue(
+			row({
+				params: {
+					banding: false,
+					psnr: true,
+					execution: { backend: "LOCAL", localMode: "CPU" },
+				},
+				encodingJob: {
+					...row().encodingJob,
+					plan: { ...plan, qc: { ...plan.qc, banding: true } },
+				},
+			}),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.params).toMatchObject({
+			banding: false,
+			psnr: true,
+			execution: { backend: "LOCAL", localMode: "CPU" },
+			retryOf: ID,
+		});
+	});
 	it.each([
 		"CPU",
 		"AUTO",

@@ -1,42 +1,67 @@
 import { describe, expect, it } from "vitest";
 import {
-	assertBandingGpuGeometry,
 	bandingInputFromProbe,
 	buildCpuBandingCommand,
+	parseBandingLibvmafVersion,
 	parseBandingTiming,
 	parseCpuBandingLog,
 } from "./banding-score";
 
 describe("standalone CPU CAMBI", () => {
-	it("keeps 8K available to CPU but rejects the GPU default-window LUT boundary", () => {
-		const input = bandingInputFromProbe(
+	it.each([
+		"3.2.0",
+		"v3.2.0",
+		"v3.2.0-17-g86da14d",
+		"86da14d",
+		"86da14d-dirty",
+		"a".repeat(40),
+	])("preserves the official extractor's version identity %s", (value) => {
+		expect(parseBandingLibvmafVersion(value)).toBe(value);
+	});
+	it.each(
+		[
+			undefined,
+			null,
+			0,
+			"",
+			"unknown",
+			" 86da14d",
+			"86da14d\n",
+			"a".repeat(41),
+			"3.2",
+			"86da14d;echo",
+		].map((value) => ({ value })),
+	)("rejects missing or malformed extractor identities %s", ({ value }) => {
+		expect(() => parseBandingLibvmafVersion(value)).toThrow(
+			"BANDING_CPU_VERSION",
+		);
+	});
+
+	it("rejects default window sizes that the official CPU and GPU extractors cannot initialize", () => {
+		const probe = (width: number, height: number) =>
 			JSON.stringify({
 				streams: [
 					{
 						codec_type: "video",
 						codec_name: "hevc",
-						width: 7680,
-						height: 4320,
+						width,
+						height,
 						pix_fmt: "yuv420p10le",
 						r_frame_rate: "24/1",
 						sample_aspect_ratio: "1:1",
 					},
 				],
-			}),
-		);
-		expect(input).toMatchObject({ width: 7680, height: 4320, bitDepth: 10 });
-		expect(() =>
-			assertBandingGpuGeometry({ width: 3840, height: 2160 }),
-		).not.toThrow();
-		expect(() =>
-			assertBandingGpuGeometry({ width: 3840, height: 2252 }),
-		).not.toThrow();
-		expect(() =>
-			assertBandingGpuGeometry({ width: 3840, height: 2254 }),
-		).toThrow("select Local CPU");
-		expect(() => assertBandingGpuGeometry(input)).toThrow(
-			"BANDING_GPU_GEOMETRY_UNSUPPORTED",
-		);
+			});
+		expect(() => bandingInputFromProbe(probe(3840, 2160))).not.toThrow();
+		expect(() => bandingInputFromProbe(probe(3840, 2252))).not.toThrow();
+		for (const [width, height] of [
+			[3840, 2254],
+			[4096, 2160],
+			[7680, 4320],
+		])
+			expect(() =>
+				bandingInputFromProbe(probe(width ?? 0, height ?? 0)),
+			).toThrow("BANDING_GEOMETRY_UNSUPPORTED");
 	});
 
 	it("uses one encoded input with the official extractor and no VMAF model", () => {
@@ -104,6 +129,11 @@ describe("standalone CPU CAMBI", () => {
 		);
 		expect(() =>
 			parseCpuBandingLog({ frames: log.frames.slice(1) }, timing),
+		).toThrow("BANDING_FRAME_COVERAGE");
+		// Official extractor initialization errors can leave an empty JSON log
+		// even when FFmpeg exits zero. Coverage must still fail closed.
+		expect(() =>
+			parseCpuBandingLog({ version: "3.2.0", frames: [] }, timing),
 		).toThrow("BANDING_FRAME_COVERAGE");
 		expect(() =>
 			parseCpuBandingLog(

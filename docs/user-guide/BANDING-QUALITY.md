@@ -26,10 +26,11 @@ and neither may exceed 7,680. Unsupported precision, HDR, display transforms or
 ambiguous frame timing fail explicitly. The measurement preserves encoded
 dimensions and precision; it does not resize to a VMAF reference.
 
-The current GPU detector also requires width plus height to be at most 6,092
-pixels. UHD 4K (3,840 × 2,160) fits; DCI 4K (4,096 × 2,160) and 8K require
-**Local CPU**. When a GPU is selected, an unsupported size is reported before
-scoring with instructions to select CPU; it is not resized or silently retried.
+With the official default extractor options, both CPU and GPU also require width
+plus height to be at most 6,092 pixels. UHD 4K (3,840 × 2,160) fits; DCI 4K
+(4,096 × 2,160) and 8K are outside this initial scope. Unsupported sizes are
+reported before scoring; the application does not resize them or change the
+detector options to make them fit.
 
 ## Interpret scores and affected intervals
 
@@ -56,9 +57,12 @@ An unconfigured threshold is not a quality pass.
 
 ## CPU and GPU setup
 
-CPU measurement uses FFmpeg with the libvmaf CAMBI feature enabled. The existing
-worker image includes libvmaf; an external FFmpeg build must support features-only
-CAMBI extraction. Banding-only processing does not load a VMAF model.
+CPU measurement uses FFmpeg with the libvmaf CAMBI feature enabled. This worker
+image pins an updated FFmpeg 8.1.3 build with the CAMBI fixes for 144-pixel encode
+dimensions and 10-bit input strides. External FFmpeg builds need libvmaf 3.2.0
+or a compatible revision with those fixes, and features-only CAMBI extraction.
+The reported library identity can be a release or a Git revision; it is retained
+as reported. Banding-only processing does not load a VMAF model.
 
 Optional GPU processing uses the matching owned native scorer and supervisor
 from this source revision. Follow the [native build instructions](../../native/vmaf-gpu/README.md)

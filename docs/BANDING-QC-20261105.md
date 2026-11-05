@@ -37,10 +37,10 @@ must be rejected explicitly rather than silently omitting banding.
   a threshold cannot flip the CPU/GPU verdict. This does not claim that every
   GPU-assisted job is faster end to end.
 - Preserve the existing CPU-only VMAF delivery-gate policy.
-- GPU input preflight preserves the owned CAMBI effective-window limit, including
-  its default-option geometry boundary (even dimensions with width + height at
-  most 6,092). Larger valid CPU inputs require an explicit Local CPU request;
-  reject them before GPU admission/scoring with that actionable instruction.
+- Input preflight preserves the official and owned CAMBI effective-window limit,
+  including its default-option geometry boundary (even dimensions with width +
+  height at most 6,092). This applies to CPU and GPU: larger inputs are rejected
+  before scoring without resizing or changing the default detector options.
 
 ## Shared contracts
 

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ProcessRunner } from "../feeder/supervisor";
 import { officialCambiOptions } from "./banding-native";
-import { assertBandingGpuGeometry } from "./banding-score";
+import { assertBandingGeometry } from "./banding-score";
 import type { NativeLocalSelection } from "./local-selection";
 import {
 	inspectNativeDevice,
@@ -54,7 +54,7 @@ export function createBandingResourcePlanner(deps: {
 	return async (request) => {
 		const { signal, selected, video, basePlan } = request;
 		signal.throwIfAborted();
-		if (selected) assertBandingGpuGeometry(video);
+		assertBandingGeometry(video);
 		const current = (deps.readResources ?? readLocalResources)();
 		const budgetBytes =
 			current.memoryLimitBytes === undefined

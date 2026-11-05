@@ -56,10 +56,7 @@ import {
 	bandingResourcePair,
 	type ResolveBandingResources,
 } from "./banding-resources";
-import {
-	assertBandingGpuGeometry,
-	bandingInputFromProbe,
-} from "./banding-score";
+import { bandingInputFromProbe } from "./banding-score";
 import type { CloudScoreRequest } from "./cloud/controller";
 import { signGcsVmafInput } from "./cloud/remote-input";
 import {
@@ -778,7 +775,6 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		signal.throwIfAborted();
 		if (probe.code !== 0) throw new Error("BANDING_INPUT_PROBE_FAILED");
 		const video = bandingInputFromProbe(probe.stdout);
-		if (banding.selection.backend !== "cpu") assertBandingGpuGeometry(video);
 		const probed =
 			target.height === null || target.bitrate === null
 				? await probeDistortedMetrics(
@@ -944,8 +940,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				: undefined;
 		if (resourceProbe && resourceProbe.code !== 0)
 			throw new Error("Cannot probe quality measurement input");
-		if (banding && banding.selection.backend !== "cpu" && resourceProbe)
-			assertBandingGpuGeometry(bandingInputFromProbe(resourceProbe.stdout));
+		if (banding && resourceProbe) bandingInputFromProbe(resourceProbe.stdout);
 		// Per-title rungs carry no plan height/bitrate — probe the downloaded
 		// mirror so the quality ladder can place them. Standard renditions keep
 		// their plan values, so skip the extra probe there.
@@ -1514,11 +1509,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			}
 			const plan = encodingPlanSchema.parse(row.encodingJob.plan);
 			const bandingOnly = paramsAcc.kind === "BANDING";
-			const wantBanding =
-				bandingOnly ||
-				(typeof paramsAcc.banding === "boolean"
-					? paramsAcc.banding
-					: plan.qc?.banding === true);
+			// A measurement owns its requested metrics. Parent-plan defaults must
+			// not add CAMBI to a historical/manual VMAF-only job or its retry.
+			const wantBanding = bandingOnly || paramsAcc.banding === true;
 			if (
 				bandingOnly &&
 				(row.model !== "CAMBI" ||

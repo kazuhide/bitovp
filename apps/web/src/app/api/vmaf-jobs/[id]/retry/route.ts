@@ -12,7 +12,7 @@ import {
 	type Prisma,
 } from "@bitovp/db";
 import { NextResponse } from "next/server";
-import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
+import { isBandingOnly } from "@/lib/qc-kind";
 import { getServerContext } from "@/lib/server/context";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
@@ -141,11 +141,10 @@ export async function POST(_req: Request, { params }: RouteParams) {
 							? autoTriggerKey(encodingJobId)
 							: `${labManualTriggerPrefix(encodingJobId)}${row.model}:retry-${id}`,
 						params: {
-							...(bandingOnly
-								? { kind: "BANDING" }
-								: hasBanding(stored)
-									? { banding: true }
-									: {}),
+							...(bandingOnly ? { kind: "BANDING" } : {}),
+							...(typeof stored.banding === "boolean"
+								? { banding: stored.banding }
+								: {}),
 							execution: execution.data,
 							retryOf: id,
 							...(stored.source === "OUTPUT_MP4" ||

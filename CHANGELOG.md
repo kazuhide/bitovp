@@ -13,13 +13,16 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   when warning or failure bounds are configured. CAMBI maximum rules support
   the existing quality-gate policy; a warning breach remains visible without
   failing delivery, while missing measurements fail closed.
-- CPU and optional owned CUDA/Vulkan CAMBI extraction with complete-frame CPU
-  verification, separate execution metadata, and full-frame JSON/CSV exports.
+- CPU and optional owned CUDA/Vulkan CAMBI extraction, separate execution metadata,
+  and full-frame JSON/CSV exports. GPU runs verify every frame against the official
+  CPU extractor.
   Banding-only measurements do not require a reference video or VMAF model.
   See [banding setup and limits](./docs/user-guide/BANDING-QUALITY.md).
 
 ### Changed
 
+- Refreshed the pinned FFmpeg 8.1.3 worker build to include the CAMBI fixes for
+  small encode dimensions and 10-bit input strides.
 - The roadmap separates the next intended release from unassigned work and
   distinguishes merged implementation from a published release.
 

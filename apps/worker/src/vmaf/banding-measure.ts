@@ -9,7 +9,7 @@ import {
 import type { ProcessRunner } from "../feeder/supervisor";
 import { officialCambiOptions, runNativeBandingScore } from "./banding-native";
 import {
-	assertBandingGpuGeometry,
+	assertBandingGeometry,
 	bandingInputFromProbe,
 	runCpuBandingScore,
 } from "./banding-score";
@@ -75,7 +75,7 @@ export async function measureBanding(
 		} & Record<string, unknown>;
 	};
 	if (selection.backend !== "cpu") {
-		assertBandingGpuGeometry(input);
+		assertBandingGeometry(input);
 		if (
 			!deps.nativePath ||
 			!assertOwned ||

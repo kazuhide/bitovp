@@ -297,6 +297,7 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 			scoringVersion: 11,
 			params: {
 				kind: "BANDING",
+				banding: true,
 				source: "OUTPUT_MP4",
 				execution: { backend: "LOCAL", localMode: "AUTO" },
 			},
@@ -306,6 +307,108 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 			detector: "CAMBI",
 			model: null,
 		});
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ label: "historical VMAF", qc: { vmaf: true }, perTitle: false },
+		{
+			label: "historical PSNR",
+			qc: { vmaf: false, psnr: true },
+			perTitle: false,
+		},
+		{
+			label: "historical QC-only",
+			qc: { vmaf: true, only: true },
+			perTitle: false,
+		},
+		{ label: "historical Per-Title", qc: { vmaf: true }, perTitle: true },
+	])("measures CAMBI from a $label mirror without changing the original plan", async ({
+		qc,
+		perTitle,
+	}) => {
+		const plan = {
+			...qcPlan,
+			qc,
+			// QC-only retains the base coordinates used for its QC mirrors;
+			// the compiler omits delivery output creation when qc.only is set.
+			...(perTitle
+				? {
+						renditions: [
+							{
+								...qcPlan.renditions[0],
+								mode: "PER_TITLE_TEMPLATE",
+								height: null,
+								bitrate: null,
+							},
+						],
+						muxings: [
+							{
+								...qcPlan.muxings[0],
+								destination: {
+									outputKey: "out",
+									path: "x/{height}_{bitrate}_{uuid}",
+								},
+							},
+						],
+					}
+				: {}),
+		};
+		const before = JSON.stringify(plan);
+		jobFindUnique.mockResolvedValueOnce({ id: JOB, status: "FINISHED", plan });
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "report" });
+		const response = await post({
+			encodingJobId: JOB,
+			kind: "BANDING",
+			source: "QC_MIRROR",
+			execution: { backend: "LOCAL", localMode: "CPU" },
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+			model: "CAMBI",
+			scoringVersion: 11,
+			params: { kind: "BANDING", source: "QC_MIRROR" },
+		});
+		expect(JSON.stringify(plan)).toBe(before);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ backend: "LOCAL", explicitOff: false },
+		{ backend: "LOCAL", explicitOff: true },
+		{ backend: "CLOUD", explicitOff: false },
+		{ backend: "CLOUD", explicitOff: true },
+	] as const)("persists VMAF-only intent over a combined parent ($backend, explicit off=$explicitOff)", async ({
+		backend,
+		explicitOff,
+	}) => {
+		const plan = { ...qcPlan, qc: { vmaf: true, psnr: true, banding: true } };
+		const before = JSON.stringify(plan);
+		vi.stubEnv("VMAF_COMPUTE_PROFILES", JSON.stringify([cloudProfile]));
+		jobFindUnique.mockResolvedValueOnce({ id: JOB, status: "FINISHED", plan });
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "report" });
+		const execution =
+			backend === "CLOUD"
+				? { backend, profileId: cloudProfile.id, budgetUsd: 10 }
+				: { backend, localMode: "CPU" };
+		const response = await post({
+			encodingJobId: JOB,
+			model: "vmaf_v0.6.1",
+			execution,
+			...(explicitOff ? { banding: false } : {}),
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data.params).toMatchObject({
+			banding: false,
+			execution,
+			source: "QC_MIRROR",
+		});
+		expect(vmafCreate.mock.calls[0]?.[0].data.params).not.toHaveProperty(
+			"kind",
+		);
+		expect(JSON.stringify(plan)).toBe(before);
 		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 
@@ -593,6 +696,7 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 		};
 		expect((await post({ encodingJobId: JOB, execution })).status).toBe(201);
 		expect(vmafCreate.mock.calls[0]?.[0]?.data.params).toEqual({
+			banding: false,
 			execution,
 			executionProfile: cloudProfile,
 			source: "QC_MIRROR",

@@ -74,6 +74,9 @@ describe("offline media validation", () => {
 		};
 		expect(() => validateBandingMeasurement(measured)).not.toThrow();
 		expect(() =>
+			validateBandingMeasurement({ ...measured, libvmafVersion: "86da14d" }),
+		).not.toThrow();
+		expect(() =>
 			validateBandingMeasurement({
 				...measured,
 				frames: measured.frames.slice(1),

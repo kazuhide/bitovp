@@ -140,7 +140,14 @@ describe("banding resource admission", () => {
 				...request,
 				video: { ...request.video, width: 7680, height: 4320 },
 			}),
-		).rejects.toThrow("select Local CPU");
+		).rejects.toThrow("BANDING_GEOMETRY_UNSUPPORTED");
+		await expect(
+			planner({
+				...request,
+				selected: undefined,
+				video: { ...request.video, width: 7680, height: 4320 },
+			}),
+		).rejects.toThrow("BANDING_GEOMETRY_UNSUPPORTED");
 		expect(readResources).not.toHaveBeenCalled();
 		expect(inspect).not.toHaveBeenCalled();
 		info.binarySha256 = "f".repeat(64);

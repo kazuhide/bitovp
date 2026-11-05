@@ -7,7 +7,7 @@ import {
 import { z } from "zod";
 import type { ProcessRunner } from "../feeder/supervisor";
 import {
-	assertBandingGpuGeometry,
+	assertBandingGeometry,
 	type BandingTiming,
 	type MeasuredBandingFrame,
 	probeBandingTiming,
@@ -185,7 +185,7 @@ export function verifyBandingReceipt(
 	raw: unknown,
 	expected: BandingNativeExpected,
 ) {
-	assertBandingGpuGeometry(expected);
+	assertBandingGeometry(expected);
 	const parsed = receiptSchema.safeParse(raw);
 	if (!parsed.success) throw new Error("BANDING_RECEIPT_SCHEMA");
 	const report = parsed.data,
@@ -304,7 +304,7 @@ export async function runNativeBandingScore(
 	signal: AbortSignal,
 ) {
 	try {
-		assertBandingGpuGeometry(expected);
+		assertBandingGeometry(expected);
 		const timing = await probeBandingTiming(deps, input, signal, expected);
 		if ((await hashNativeFile(input, signal)) !== expected.inputSha256)
 			throw new Error("BANDING_INPUT_CHANGED");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileExpectedArtefacts } from "../verify/expected";
 import {
 	enumerateBandingQcTargets,
+	enumerateBandingTargets,
 	enumerateExistingBandingMp4Targets,
 	enumerateQcTargets,
 } from "../vmaf/targets";
@@ -58,6 +59,28 @@ function plan(qc: Record<string, unknown> = { vmaf: false, banding: true }) {
 }
 
 describe("no-reference banding plan rails and targets", () => {
+	it.each([
+		{ vmaf: true },
+		{ vmaf: false, psnr: true },
+		{ vmaf: true, only: true },
+	])("reuses existing %j QC mirrors for a manual Banding request", (qc) => {
+		const original = plan(qc);
+		expect(enumerateBandingTargets(original)).toMatchObject([
+			{
+				renditionKey: "v",
+				distorted: { outputKey: "out", path: "video/qc/v.mp4" },
+			},
+		]);
+		expect(enumerateBandingTargets(original)[0]).not.toHaveProperty(
+			"reference",
+		);
+		expect(enumerateBandingQcTargets(original)).toEqual([]);
+		expect(original.qc).not.toHaveProperty("banding");
+	});
+
+	it("does not invent existing mirrors for a plan that never requested QC", () => {
+		expect(enumerateBandingTargets(plan({ vmaf: false }))).toEqual([]);
+	});
 	it("verifies banding-only mirrors and measurement without asserting a VMAF model", () => {
 		const parsed = plan({ vmaf: false, banding: true, only: true });
 		const expected = compileExpectedArtefacts(parsed);

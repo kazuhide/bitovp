@@ -1407,9 +1407,11 @@ export {
 	enumerateBandingTargets,
 	enumerateExistingBandingMp4Targets,
 	enumerateExistingMp4Targets,
+	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
 	gateExpectedRenditionKeys,
+	sameQcTargetPopulation,
 } from "./vmaf/targets";
 export type { HeartbeatRegistrationConfig } from "./webhooks/heartbeat-registration";
 export {

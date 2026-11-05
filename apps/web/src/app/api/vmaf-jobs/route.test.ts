@@ -273,6 +273,293 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 		qc: { vmaf: true },
 	};
 
+	describe("manual comparison over existing metric-independent QC mirrors", () => {
+		beforeEach(() => {
+			jobFindUnique.mockReset();
+			vmafCount.mockReset().mockResolvedValue(0);
+			vmafCreate.mockReset().mockResolvedValue({ id: "report" });
+		});
+		afterEach(() => {
+			jobFindUnique.mockReset();
+			vmafCount.mockReset();
+			vmafCreate.mockReset();
+		});
+		function bandingParent(shape: string) {
+			return {
+				...qcPlan,
+				qc: { vmaf: false, banding: true, only: shape === "qc-only" },
+				...(shape === "per-title"
+					? {
+							renditions: [
+								{
+									...qcPlan.renditions[0],
+									mode: "PER_TITLE_TEMPLATE",
+									height: null,
+									bitrate: null,
+								},
+							],
+							muxings: [
+								{
+									...qcPlan.muxings[0],
+									destination: {
+										outputKey: "out",
+										path: "x/{height}_{bitrate}_{uuid}",
+									},
+								},
+							],
+						}
+					: {}),
+			};
+		}
+		it.each(
+			["standard", "qc-only", "per-title"].flatMap((shape) => [
+				{ shape, banding: false, cloud: false },
+				{ shape, banding: false, cloud: true },
+				{ shape, banding: true, cloud: false },
+				{ shape, banding: true, cloud: true },
+			]),
+		)("remeasures a $shape Banding-only parent (combined=$banding, cloud=$cloud)", async ({
+			shape,
+			banding,
+			cloud,
+		}) => {
+			const plan = bandingParent(shape);
+			const before = JSON.stringify(plan);
+			vi.stubEnv("VMAF_COMPUTE_PROFILES", JSON.stringify([cloudProfile]));
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			const execution = cloud
+				? { backend: "CLOUD", profileId: cloudProfile.id, budgetUsd: 10 }
+				: { backend: "LOCAL", localMode: "CPU" };
+			const response = await post({
+				encodingJobId: JOB,
+				model: "vmaf_v0.6.1",
+				banding,
+				execution,
+			});
+			if (banding && cloud) {
+				expect(response.status).toBe(400);
+				expect(jobFindUnique).not.toHaveBeenCalled();
+				expect(vmafCreate).not.toHaveBeenCalled();
+				expect(queueAdd).not.toHaveBeenCalled();
+			} else {
+				expect(response.status).toBe(201);
+				expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+					model: "vmaf_v0.6.1",
+					scoringVersion: VMAF_SCORING_VERSION,
+					params: { source: "QC_MIRROR", banding, execution },
+				});
+				expect(queueAdd).toHaveBeenCalledOnce();
+			}
+			expect(JSON.stringify(plan)).toBe(before);
+		});
+		it.each([
+			"qc-only",
+			"per-title",
+		])("accepts full-frame cloud validation of a %s Banding-only parent", async (shape) => {
+			const plan = bandingParent(shape);
+			const before = JSON.stringify(plan);
+			vi.stubEnv("VMAF_COMPUTE_PROFILES", JSON.stringify([cloudProfile]));
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			const response = await post({
+				encodingJobId: JOB,
+				source: "QC_MIRROR",
+				model: "vmaf_v0.6.1",
+				measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				execution: {
+					backend: "CLOUD",
+					profileId: cloudProfile.id,
+					budgetUsd: 10,
+				},
+			});
+			expect(response.status).toBe(201);
+			expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+				scoringVersion: 6,
+				params: {
+					source: "QC_MIRROR",
+					banding: false,
+					measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				},
+			});
+			expect(JSON.stringify(plan)).toBe(before);
+		});
+		it.each([
+			{ label: "missing reference", changes: { ingest: [] } },
+			{
+				label: "unreadable reference",
+				changes: {
+					inputs: [{ key: "in", kind: "HTTPS", host: "source.example.com" }],
+				},
+			},
+			{
+				label: "unreadable encoded output",
+				changes: {
+					outputs: [
+						{
+							key: "out",
+							kind: "SFTP",
+							credentialId: "00000000-0000-4000-8000-000000000002",
+						},
+					],
+				},
+			},
+		])("rejects $label before creating any VMAF measurement", async ({
+			label,
+			changes,
+		}) => {
+			const plan = { ...qcPlan, ...changes };
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			const response = await post({
+				encodingJobId: JOB,
+				source: "QC_MIRROR",
+				model: "vmaf_v0.6.1",
+			});
+			expect(response.status).toBe(409);
+			expect((await response.json()).error).toMatch(
+				label === "missing reference" ? /no usable QC mirror/ : /readable/,
+			);
+			expect(vmafCreate).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		});
+		it("rejects a combined measurement when only part of its output population has references", async () => {
+			const plan = {
+				...qcPlan,
+				qc: { vmaf: true, banding: true },
+				renditions: [
+					...qcPlan.renditions,
+					{ ...qcPlan.renditions[0], key: "unreferenced", ingestKey: "trim" },
+				],
+				trimmingStreams: [
+					{ key: "trim", kind: "TIME_BASED", sourceKey: "video", offset: 1 },
+				],
+				muxings: [
+					...qcPlan.muxings,
+					{
+						...qcPlan.muxings[0],
+						key: "unreferenced",
+						streamKey: "unreferenced",
+						destination: { outputKey: "out", path: "x/unreferenced" },
+					},
+				],
+			};
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			const response = await post({
+				encodingJobId: JOB,
+				source: "QC_MIRROR",
+				model: "vmaf_v0.6.1",
+				banding: true,
+			});
+			expect(response.status).toBe(409);
+			expect((await response.json()).error).toMatch(
+				/same.*population|reference/,
+			);
+			expect(vmafCreate).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		});
+		it("does not require a readable reference for Banding-only measurement", async () => {
+			const plan = {
+				...bandingParent("qc-only"),
+				inputs: [{ key: "in", kind: "HTTPS", host: "source.example.com" }],
+			};
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			expect((await post({ encodingJobId: JOB, kind: "BANDING" })).status).toBe(
+				201,
+			);
+			expect(queueAdd).toHaveBeenCalledOnce();
+		});
+		it("defaults to VMAF-only over a Banding-only parent's existing mirror", async () => {
+			jobFindUnique.mockResolvedValue({
+				id: JOB,
+				status: "FINISHED",
+				plan: bandingParent("qc-only"),
+			});
+			expect(
+				(await post({ encodingJobId: JOB, model: "vmaf_v0.6.1" })).status,
+			).toBe(201);
+			expect(vmafCreate.mock.calls[0]?.[0].data.params).toMatchObject({
+				source: "QC_MIRROR",
+				banding: false,
+			});
+		});
+		it("rejects unreadable members of a mixed reference population rather than dropping them", async () => {
+			const plan = {
+				...qcPlan,
+				inputs: [
+					...qcPlan.inputs,
+					{ key: "unreadable", kind: "HTTPS", host: "source.example.com" },
+				],
+				ingest: [
+					...qcPlan.ingest,
+					{ ...qcPlan.ingest[0], key: "other", inputKey: "unreadable" },
+				],
+				renditions: [
+					...qcPlan.renditions,
+					{ ...qcPlan.renditions[0], key: "other", ingestKey: "other" },
+				],
+				muxings: [
+					...qcPlan.muxings,
+					{
+						...qcPlan.muxings[0],
+						key: "other",
+						streamKey: "other",
+						destination: { outputKey: "out", path: "x/other" },
+					},
+				],
+			};
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			const response = await post({
+				encodingJobId: JOB,
+				source: "QC_MIRROR",
+				model: "vmaf_v0.6.1",
+			});
+			expect(response.status).toBe(409);
+			expect((await response.json()).error).toMatch(/readable.*reference/);
+			expect(vmafCreate).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		});
+		it("still rejects transformed Banding-only mirrors for full-source frame-index validation", async () => {
+			vi.stubEnv("VMAF_COMPUTE_PROFILES", JSON.stringify([cloudProfile]));
+			const plan = {
+				...bandingParent("qc-only"),
+				trimmingStreams: [
+					{ key: "trim", kind: "TIME_BASED", sourceKey: "video", offset: 1 },
+				],
+			};
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			const response = await post({
+				encodingJobId: JOB,
+				source: "QC_MIRROR",
+				model: "vmaf_v0.6.1",
+				measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				execution: {
+					backend: "CLOUD",
+					profileId: cloudProfile.id,
+					budgetUsd: 10,
+				},
+			});
+			expect(response.status).toBe(409);
+			expect(vmafCreate).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		});
+		it("requires readable encoded output even for Banding-only measurement", async () => {
+			const plan = {
+				...bandingParent("qc-only"),
+				outputs: [
+					{
+						key: "out",
+						kind: "SFTP",
+						credentialId: "00000000-0000-4000-8000-000000000002",
+					},
+				],
+			};
+			jobFindUnique.mockResolvedValue({ id: JOB, status: "FINISHED", plan });
+			expect((await post({ encodingJobId: JOB, kind: "BANDING" })).status).toBe(
+				409,
+			);
+			expect(vmafCreate).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		});
+	});
+
 	it("creates target-only CAMBI measurement without a reference or model", async () => {
 		const plan = {
 			...qcPlan,

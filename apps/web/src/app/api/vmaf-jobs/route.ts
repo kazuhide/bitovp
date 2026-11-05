@@ -6,12 +6,15 @@ import {
 	encodingPlanSchema,
 	enumerateBandingTargets,
 	enumerateExistingMp4Targets,
+	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
+	sameQcTargetPopulation,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
 	type VmafCloudProfile,
 	vmafExecutionSchema,
 	vmafModelNameSchema,
+	vmafSourceFor,
 } from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import {
@@ -279,21 +282,22 @@ export async function POST(req: Request) {
 		}
 		const source =
 			parsed.data.source ??
-			(plan.data.qc?.vmaf ||
-			plan.data.qc?.psnr ||
-			(bandingOnly && plan.data.qc?.banding)
+			(plan.data.qc?.vmaf || plan.data.qc?.psnr || plan.data.qc?.banding
 				? "QC_MIRROR"
 				: "OUTPUT_MP4");
-		if (
-			bandingOnly
-				? enumerateBandingTargets(
-						plan.data,
-						source === "OUTPUT_MP4" ? "EXISTING_MP4" : source,
-					).length === 0
-				: source === "OUTPUT_MP4"
-					? enumerateExistingMp4Targets(plan.data).length === 0
-					: !(plan.data.qc?.vmaf || plan.data.qc?.psnr)
-		) {
+		const comparisonTargets = bandingOnly
+			? []
+			: source === "OUTPUT_MP4"
+				? enumerateExistingMp4Targets(plan.data)
+				: enumerateExistingQcMirrorTargets(plan.data);
+		const bandingTargets = banding
+			? enumerateBandingTargets(
+					plan.data,
+					source === "OUTPUT_MP4" ? "EXISTING_MP4" : source,
+				)
+			: [];
+		const selectedTargets = bandingOnly ? bandingTargets : comparisonTargets;
+		if (selectedTargets.length === 0) {
 			return jsonError(
 				409,
 				bandingOnly
@@ -301,6 +305,33 @@ export async function POST(req: Request) {
 					: "This job has no usable QC mirror or complete clear fixed-ladder MP4 outputs with a direct full-length source",
 			);
 		}
+		if (
+			selectedTargets.some((target) => {
+				const output = plan.data.outputs.find(
+					(item) => item.key === target.distorted.outputKey,
+				);
+				return !output || !vmafSourceFor(output).streamable;
+			}) ||
+			comparisonTargets.some((target) => {
+				const input = plan.data.inputs.find(
+					(item) => item.key === target.reference.inputKey,
+				);
+				return !input || !vmafSourceFor(input).streamable;
+			})
+		)
+			return jsonError(
+				409,
+				"This measurement requires readable encoded outputs and, for VMAF, readable comparison references",
+			);
+		if (
+			banding &&
+			!bandingOnly &&
+			!sameQcTargetPopulation(comparisonTargets, bandingTargets)
+		)
+			return jsonError(
+				409,
+				"Combined measurement requires the same complete output population for VMAF and Banding; comparison references are missing for one or more targets",
+			);
 		if (
 			parsed.data.measurementMethod &&
 			source === "QC_MIRROR" &&

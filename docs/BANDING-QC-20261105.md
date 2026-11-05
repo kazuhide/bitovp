@@ -49,6 +49,11 @@ must be rejected explicitly rather than silently omitting banding.
 explicit validation error. Banding-only uses `{vmaf:false, banding:true}` and
 skips VMAF model/reference preflight. QC mirrors/readability/QC-only rails activate
 when any requested metric is enabled, and require only the inputs actually used.
+Manual jobs snapshot their requested metrics and never inherit an omitted metric
+from the original encoding plan. Existing QC mirrors can be reused across metrics
+when the requested reference and storage requirements are met; automatic metric
+opt-in remains unchanged. A combined request cannot lose Banding targets through
+VMAF reference filtering: reject an unsupported population before scoring.
 
 Extend the existing gate rule as a discriminated union:
 

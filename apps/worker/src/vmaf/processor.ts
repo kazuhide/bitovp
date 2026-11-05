@@ -9,6 +9,7 @@ import {
 	encodingPlanSchema,
 	enumerateBandingTargets,
 	enumerateExistingMp4Targets,
+	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
 	evaluateQcGate,
@@ -25,6 +26,7 @@ import {
 	type QcTarget,
 	type RenditionPooled,
 	redactSecrets,
+	sameQcTargetPopulation,
 	sampleAspectRatioFromProbe,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	type VmafCloudProfile,
@@ -1732,16 +1734,37 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				throw new Error(
 					"Frame-index measurements require a manual FINISHED encoding",
 				);
-			const targets = bandingOnly
+			const bandingTargets = wantBanding
 				? enumerateBandingTargets(
 						plan,
 						useOutputMp4 ? "EXISTING_MP4" : "QC_MIRROR",
 					)
+				: [];
+			const manualMeasurement =
+				row.triggerKey?.startsWith(
+					labManualTriggerPrefix(row.encodingJobId ?? ""),
+				) === true;
+			const targets = bandingOnly
+				? bandingTargets
 				: useOutputMp4
 					? enumerateExistingMp4Targets(plan)
 					: measurementMethod
 						? enumerateFrameIndexQcTargets(plan)
-						: enumerateQcTargets(plan);
+						: manualMeasurement || wantBanding
+							? enumerateExistingQcMirrorTargets(plan)
+							: enumerateQcTargets(plan);
+			if (
+				wantBanding &&
+				!bandingOnly &&
+				!sameQcTargetPopulation(targets, bandingTargets)
+			)
+				throw new Error(
+					"COMBINED_QC_TARGET_POPULATION_MISMATCH: VMAF and banding require the same nonempty set of encoded outputs with a resolvable comparison reference for every output. Use Banding-only for transformed inputs without a comparison reference.",
+				);
+			if (wantBanding && targets.length === 0)
+				throw new Error(
+					"BANDING_TARGETS_UNAVAILABLE: No eligible encoded outputs for banding measurement",
+				);
 			if (measurementMethod && targets.length === 0)
 				throw new Error(
 					"Frame-index measurement requires complete mirrors with a direct full-length source",

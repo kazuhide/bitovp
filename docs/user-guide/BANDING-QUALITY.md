@@ -16,6 +16,11 @@ lab, select an eligible completed VOD job to measure its existing clear MP4
 outputs or QC mirrors. Banding-only measurements need readable encoded outputs;
 they do not need a readable source video or a VMAF model file.
 
+Existing QC mirrors can be measured later with another metric. VMAF requires a
+readable reference video for the selected outputs. Combined measurements reject
+outputs whose references cannot be resolved, rather than omitting their banding
+results; use banding-only measurement for those outputs.
+
 Choose **Local CPU** or **Local (GPU if available)**. Banding is local VOD only:
 cloud execution and Live capture are not supported. Requesting cloud banding
 fails validation, including when VMAF is requested alongside it.

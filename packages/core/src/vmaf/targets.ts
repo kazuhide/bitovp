@@ -74,6 +74,27 @@ export type QcTarget = {
 /** CAMBI observes the encoded asset; it never needs a source comparison. */
 export type BandingTarget = Omit<QcTarget, "reference">;
 
+/** Require the same complete, nonempty set of encoded assets across metrics. */
+export function sameQcTargetPopulation(
+	left: readonly Pick<QcTarget, "renditionKey" | "distorted">[],
+	right: readonly Pick<QcTarget, "renditionKey" | "distorted">[],
+): boolean {
+	if (left.length === 0 || left.length !== right.length) return false;
+	const identity = (target: Pick<QcTarget, "renditionKey" | "distorted">) =>
+		JSON.stringify([
+			target.renditionKey,
+			target.distorted.outputKey,
+			target.distorted.path,
+		]);
+	const expected = new Set(left.map(identity));
+	const actual = new Set(right.map(identity));
+	return (
+		expected.size === left.length &&
+		actual.size === right.length &&
+		right.every((target) => expected.has(identity(target)))
+	);
+}
+
 /** Compiler-owned output coordinates do not require a comparison reference. */
 export type QcMirrorOutput = {
 	rendition: Extract<PlanRendition, { codec: "H264" | "H265" | "VP9" | "AV1" }>;
@@ -145,6 +166,14 @@ export function gateExpectedRenditionKeys(plan: EncodingPlan): string[] {
 
 export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
 	if (!(plan.qc?.vmaf || plan.qc?.psnr)) return [];
+	return enumerateExistingQcMirrorTargets(plan);
+}
+
+/** A manual comparison can reuse a mirror produced for any original QC metric.
+ * Reference resolution stays mandatory; no automatic metric is enabled here. */
+export function enumerateExistingQcMirrorTargets(
+	plan: EncodingPlan,
+): QcTarget[] {
 	const targets: QcTarget[] = [];
 	for (const { rendition, destination, path } of enumerateQcMirrors(plan)) {
 		const reference = resolveReference(plan, rendition);
@@ -296,6 +325,6 @@ export function enumerateFrameIndexQcTargets(plan: EncodingPlan): QcTarget[] {
 		)
 			return [];
 	}
-	const targets = enumerateQcTargets(plan);
+	const targets = enumerateExistingQcMirrorTargets(plan);
 	return targets.length === videos.length ? targets : [];
 }

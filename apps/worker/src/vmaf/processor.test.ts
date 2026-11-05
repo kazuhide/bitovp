@@ -4291,6 +4291,139 @@ it("keeps CLOUD completely outside local selection even with a fatal configured 
 });
 
 describe("banding measurement integration", () => {
+	it.each([
+		false,
+		true,
+	])("measures requested VMAF from older banding-only QC mirrors (combined=%s)", async (combined) => {
+		const plan = qcPlan();
+		plan.qc = { vmaf: false, banding: true, only: true };
+		const t = setup({
+			plan,
+			bandingScores: [2, 7],
+			job: {
+				model: "vmaf_v0.6.1",
+				scoringVersion: VMAF_SCORING_VERSION,
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}1`,
+				params: {
+					source: "QC_MIRROR",
+					execution: { backend: "LOCAL", localMode: "CPU" },
+					...(combined ? { banding: true } : {}),
+				},
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.results).toHaveLength(2);
+		for (const result of t.results) {
+			expect(result.pooled).toMatchObject({ mean: 95 });
+			expect("banding" in (result.pooled as Row)).toBe(combined);
+		}
+		expect(t.encodingJobWrites).toHaveLength(0);
+	});
+
+	const transformedPlan = (
+		kind: "trim" | "concat",
+		scope: "all" | "partial",
+	) => {
+		const plan = qcPlan();
+		if (kind === "trim")
+			plan.trimmingStreams = [
+				{
+					key: "transformed",
+					kind: "TIME_BASED",
+					sourceKey: "video",
+					offset: 1,
+				},
+			];
+		else
+			plan.concatenationStreams = [
+				{
+					key: "transformed",
+					sources: [
+						{ sourceKey: "video", position: 0, isMain: true },
+						{ sourceKey: "video", position: 1 },
+					],
+				},
+			];
+		for (const rendition of plan.renditions as Row[])
+			if (
+				rendition.codec === "H264" &&
+				(scope === "all" || rendition.key === "v360")
+			)
+				rendition.ingestKey = "transformed";
+		return plan;
+	};
+	const transformations = (["trim", "concat"] as const).flatMap((kind) =>
+		(["all", "partial"] as const).map((scope) => ({ kind, scope })),
+	);
+
+	it.each(
+		transformations,
+	)("rejects combined QC before heavy work when comparison references shrink its population (%s)", async ({
+		kind,
+		scope,
+	}) => {
+		const plan = transformedPlan(kind, scope);
+		plan.qc = { vmaf: true, banding: true, model: "vmaf_v0.6.1" };
+		const t = setup({
+			plan,
+			bandingScores: [2, 7],
+			job: { params: { banding: true } },
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("COMBINED_QC_TARGET_POPULATION_MISMATCH");
+		expect(t.job.status).toBe("ERROR");
+		expect(t.results).toHaveLength(0);
+		expect(t.downloaded).toHaveLength(0);
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.resolveCredential).not.toHaveBeenCalled();
+	});
+
+	it.each(
+		transformations,
+	)("measures the same transformed output population in banding-only mode (%s)", async ({
+		kind,
+		scope,
+	}) => {
+		const plan = transformedPlan(kind, scope);
+		plan.qc = { vmaf: false, banding: true };
+		const t = setup({
+			plan,
+			bandingScores: [2, 7],
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				params: { kind: "BANDING", banding: true },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.results).toHaveLength(2);
+		expect(t.downloaded.every((item) => item.bucket === "out-bucket")).toBe(
+			true,
+		);
+	});
+
+	it("does not finish a banding request that has no eligible outputs", async () => {
+		const plan = qcPlan();
+		delete plan.qc;
+		const t = setup({
+			plan,
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}1`,
+				params: { kind: "BANDING", banding: true },
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("BANDING_TARGETS_UNAVAILABLE");
+		expect(t.job.status).toBe("ERROR");
+		expect(t.results).toHaveLength(0);
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.downloaded).toHaveLength(0);
+	});
+
 	it.each(
 		["LOCAL", "CLOUD"].flatMap((backend) =>
 			[undefined, false].map((banding) => ({ backend, banding })),

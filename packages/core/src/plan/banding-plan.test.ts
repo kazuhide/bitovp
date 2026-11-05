@@ -4,7 +4,10 @@ import {
 	enumerateBandingQcTargets,
 	enumerateBandingTargets,
 	enumerateExistingBandingMp4Targets,
+	enumerateExistingQcMirrorTargets,
+	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
+	sameQcTargetPopulation,
 } from "../vmaf/targets";
 import { buildPlan } from "../wizard/build-plan";
 import { planToWizardState } from "../wizard/plan-to-wizard";
@@ -59,6 +62,58 @@ function plan(qc: Record<string, unknown> = { vmaf: false, banding: true }) {
 }
 
 describe("no-reference banding plan rails and targets", () => {
+	it("reuses banding-generated mirrors for a later reference-based request without enabling automatic VMAF", () => {
+		const original = plan();
+		const existing = enumerateExistingQcMirrorTargets(original);
+		expect(existing).toMatchObject([
+			{
+				renditionKey: "v",
+				reference: { inputKey: "in", inputPath: "source.mp4" },
+				distorted: { outputKey: "out", path: "video/qc/v.mp4" },
+			},
+		]);
+		expect(enumerateQcTargets(original)).toEqual([]);
+		expect(enumerateFrameIndexQcTargets(original)).toEqual(existing);
+		expect(original.qc?.vmaf).toBe(false);
+	});
+
+	it("keeps missing references and transformed frame-index sources ineligible", () => {
+		const original = plan();
+		const rendition = original.renditions[0];
+		if (!rendition) throw new Error("fixture");
+		rendition.ingestKey = "transformed";
+		expect(enumerateExistingQcMirrorTargets(original)).toEqual([]);
+		expect(enumerateFrameIndexQcTargets(original)).toEqual([]);
+		expect(enumerateBandingTargets(original)).toHaveLength(1);
+		expect(enumerateExistingQcMirrorTargets(plan({ vmaf: false }))).toEqual([]);
+	});
+
+	it("requires a complete nonempty population of the same rendition output assets", () => {
+		const first = enumerateBandingTargets(plan())[0];
+		if (!first) throw new Error("fixture");
+		const second = {
+			...first,
+			renditionKey: "v2",
+			distorted: { ...first.distorted, path: "video/qc/v2.mp4" },
+		};
+		expect(sameQcTargetPopulation([first, second], [second, first])).toBe(true);
+		for (const incomplete of [
+			[],
+			[first],
+			[first, first],
+			[
+				first,
+				{ ...second, distorted: { ...second.distorted, path: "other.mp4" } },
+			],
+			[
+				first,
+				{ ...second, distorted: { ...second.distorted, outputKey: "other" } },
+			],
+		]) {
+			expect(sameQcTargetPopulation([first, second], incomplete)).toBe(false);
+		}
+		expect(sameQcTargetPopulation([], [])).toBe(false);
+	});
 	it.each([
 		{ vmaf: true },
 		{ vmaf: false, psnr: true },

@@ -35,6 +35,12 @@ void check(int result, const char *operation) {
     av_strerror(result, text, sizeof(text));
     throw std::runtime_error(std::string(operation) + ": " + text);
 }
+bool unsupported_banding_color(AVColorTransferCharacteristic transfer,
+                              AVColorPrimaries primaries, AVColorSpace space) {
+    return transfer == AVCOL_TRC_SMPTE2084 || transfer == AVCOL_TRC_ARIB_STD_B67 ||
+           transfer == AVCOL_TRC_SMPTE428 || primaries == AVCOL_PRI_BT2020 ||
+           space == AVCOL_SPC_BT2020_NCL || space == AVCOL_SPC_BT2020_CL;
+}
 }
 
 struct Decoder::Impl {
@@ -46,6 +52,7 @@ struct Decoder::Impl {
     SwsContext *scale = nullptr;
     AVBufferRef *hardware = nullptr;
     bool cuda_decode = false;
+    bool standalone_input = false;
     int device_index = 0;
     Picture resident;
 #ifdef BITOVP_HAVE_CUDA
@@ -59,8 +66,8 @@ struct Decoder::Impl {
     double decoded_ms = 0, conformed_ms = 0;
 
     Impl(const std::string &path, unsigned w, unsigned h, unsigned b, unsigned threads, bool cuda, int device)
-        : cuda_decode(cuda), device_index(device), width(w), height(h), bits(b) {
-        if (b != 8 && b != 10) throw std::invalid_argument("Decode bit depth must be 8 or 10");
+        : cuda_decode(cuda), standalone_input(b == 0), device_index(device), width(w), height(h), bits(b) {
+        if (b != 0 && b != 8 && b != 10) throw std::invalid_argument("Decode bit depth must be 8 or 10");
         if (threads > 256) throw std::invalid_argument("Decode thread count exceeds 256");
         try {
             check(avformat_open_input(&format, path.c_str(), nullptr, nullptr), "open video");
@@ -69,6 +76,35 @@ struct Decoder::Impl {
             stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
             check(stream, "find video stream");
             auto *video = format->streams[stream];
+            if (standalone_input) {
+                unsigned videos = 0;
+                for (unsigned i = 0; i < format->nb_streams; ++i)
+                    videos += format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
+                if (videos != 1)
+                    throw std::invalid_argument("Standalone CAMBI requires exactly one video stream");
+                const auto sar = av_guess_sample_aspect_ratio(format, video, nullptr);
+                if (sar.num > 0 && sar.den > 0 && sar.num != sar.den)
+                    throw std::invalid_argument("Standalone CAMBI requires square-pixel input");
+                const auto *parameters = video->codecpar;
+                if (unsupported_banding_color(parameters->color_trc, parameters->color_primaries,
+                                              parameters->color_space))
+                    throw std::invalid_argument("Standalone CAMBI supports SDR input only");
+                if ((parameters->format != AV_PIX_FMT_YUV420P &&
+                     parameters->format != AV_PIX_FMT_YUV420P10LE) ||
+                    parameters->color_range == AVCOL_RANGE_JPEG)
+                    throw std::invalid_argument("Standalone CAMBI requires limited-range planar 4:2:0 input");
+                if (const auto *rotation = av_dict_get(video->metadata, "rotate", nullptr, 0);
+                    rotation && std::string(rotation->value) != "0")
+                    throw std::invalid_argument("Standalone CAMBI presentation transforms are unsupported");
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 102)
+                if (av_packet_side_data_get(parameters->coded_side_data, parameters->nb_coded_side_data,
+                                            AV_PKT_DATA_DISPLAYMATRIX))
+#else
+                std::size_t matrix_size = 0;
+                if (av_stream_get_side_data(video, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size))
+#endif
+                    throw std::invalid_argument("Standalone CAMBI presentation transforms are unsupported");
+            }
             if (cuda_decode) {
 #ifdef BITOVP_HAVE_CUDA
                 const auto supports_cuda = [](const AVCodec *candidate) {
@@ -105,6 +141,13 @@ struct Decoder::Impl {
                 info.bit_depth = unsigned(video->codecpar->bits_per_raw_sample);
             if (!info.bit_depth || info.bit_depth > 16)
                 throw std::runtime_error("Cannot determine original encoded bit depth");
+            // Zero is reserved for the standalone metric path: preserve the
+            // encoded precision instead of silently quantizing it to a default.
+            if (!bits) {
+                if (info.bit_depth != 8 && info.bit_depth != 10)
+                    throw std::invalid_argument("Standalone CAMBI supports original 8/10-bit input only");
+                bits = info.bit_depth;
+            }
             info.frames_per_second = av_q2d(av_guess_frame_rate(format, video, nullptr));
             info.codec = decoder->name;
             if (!width) width = info.width;
@@ -222,6 +265,14 @@ struct Decoder::Impl {
         if (frame->width != int(info.width) || frame->height != int(info.height) || !descriptor ||
             unsigned(descriptor->comp[0].depth) != info.bit_depth)
             throw std::runtime_error("Mid-stream video format changes are not supported");
+        if (standalone_input && (unsupported_banding_color(frame->color_trc, frame->color_primaries,
+                frame->colorspace) || frame->crop_top || frame->crop_bottom || frame->crop_left ||
+                frame->crop_right || av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX) ||
+                (actual_format != AV_PIX_FMT_YUV420P && actual_format != AV_PIX_FMT_YUV420P10LE) ||
+                frame->color_range == AVCOL_RANGE_JPEG ||
+                (frame->sample_aspect_ratio.num > 0 && frame->sample_aspect_ratio.den > 0 &&
+                 frame->sample_aspect_ratio.num != frame->sample_aspect_ratio.den)))
+            throw std::runtime_error("Standalone CAMBI decoded presentation or color is unsupported");
         current_pts = frame->best_effort_timestamp;
         if (current_pts == AV_NOPTS_VALUE)
             throw std::runtime_error("Comparison input has no presentation timestamps");
@@ -297,6 +348,19 @@ double Decoder::timestamp() const {
     if (!impl_->has_picture) throw std::logic_error("No decoded comparison timestamp");
     return double(impl_->current_pts - impl_->first_pts) *
         av_q2d(impl_->format->streams[impl_->stream]->time_base);
+}
+double Decoder::duration() const {
+    if (!impl_->has_picture) throw std::logic_error("No decoded frame duration");
+#if LIBAVUTIL_VERSION_MAJOR >= 58
+    const auto duration = impl_->frame->duration;
+#else
+    const auto duration = impl_->frame->pkt_duration;
+#endif
+    const double seconds = double(duration) *
+        av_q2d(impl_->format->streams[impl_->stream]->time_base);
+    if (!std::isfinite(seconds) || !(seconds > 0))
+        throw std::runtime_error("Standalone CAMBI requires a positive actual frame duration");
+    return seconds;
 }
 double Decoder::decode_ms() const { return impl_->decoded_ms; }
 double Decoder::conform_ms() const { return impl_->conformed_ms; }

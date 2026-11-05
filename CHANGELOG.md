@@ -6,6 +6,23 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## Unreleased
 
+### Added
+
+- Local VOD banding detection using no-reference CAMBI, independently or alongside
+  VMAF. Reports include scores, presentation-time graphs and affected intervals
+  when warning or failure bounds are configured. CAMBI maximum rules support
+  the existing quality-gate policy; a warning breach remains visible without
+  failing delivery, while missing measurements fail closed.
+- CPU and optional owned CUDA/Vulkan CAMBI extraction with complete-frame CPU
+  verification, separate execution metadata, and full-frame JSON/CSV exports.
+  Banding-only measurements do not require a reference video or VMAF model.
+  See [banding setup and limits](./docs/user-guide/BANDING-QUALITY.md).
+
+### Changed
+
+- The roadmap separates the next intended release from unassigned work and
+  distinguishes merged implementation from a published release.
+
 ## [1.1.0] - 2026-11-04
 
 Local VMAF processing now offers CPU and automatic GPU selection with shared

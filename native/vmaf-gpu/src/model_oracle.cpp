@@ -165,7 +165,7 @@ struct ModelOracle::Impl {
 };
 
 ModelOracle::ModelOracle(std::vector<ModelInput> inputs, ModelOracleConfig config,
-                         OracleMode mode)
+                         OracleMode mode, std::vector<FeatureInput> features)
     : impl_(std::make_unique<Impl>(config, mode)) {
     if (mode != OracleMode::Cpu && mode != OracleMode::ImportedFeatures)
         throw std::invalid_argument("unknown model oracle mode");
@@ -177,7 +177,8 @@ ModelOracle::ModelOracle(std::vector<ModelInput> inputs, ModelOracleConfig confi
     const std::size_t aligned = (static_cast<std::size_t>(config.width) + 63) & ~std::size_t(63);
     if (aligned > std::numeric_limits<std::size_t>::max() / config.height / 4)
         throw std::invalid_argument("picture allocation size overflows");
-    if (inputs.empty()) throw std::invalid_argument("at least one official model is required");
+    if (inputs.empty() && features.empty())
+        throw std::invalid_argument("at least one official model or explicit feature is required");
     std::set<std::string> ids;
     PlanBuilder builder;
     builder.plan.width = config.width;
@@ -212,6 +213,18 @@ ModelOracle::ModelOracle(std::vector<ModelInput> inputs, ModelOracleConfig confi
                                                dictionary.size()), "override official extractor " + extractor);
         }
         builder.checked(bitovp_oracle_describe_model(model, &PlanBuilder::callbacks, &builder));
+    }
+    for (const auto &feature : features) {
+        validate_text(feature.name, "feature name");
+        std::vector<BitovpOracleKeyValue> dictionary;
+        for (const auto &[key, value] : feature.options) {
+            validate_text(key, "option name");
+            if (value.find('\0') != std::string::npos)
+                throw std::invalid_argument("option value contains NUL");
+            dictionary.push_back({key.c_str(), value.c_str()});
+        }
+        builder.checked(bitovp_oracle_describe_feature(feature.name.c_str(), dictionary.data(),
+            dictionary.size(), &PlanBuilder::callbacks, &builder));
     }
     if (config.include_psnr)
         builder.checked(bitovp_oracle_describe_psnr(&PlanBuilder::callbacks, &builder));
@@ -256,6 +269,21 @@ ModelOracle::ModelOracle(std::vector<ModelInput> inputs, ModelOracleConfig confi
             check(vmaf_use_features_from_model(context, model), "register official CPU model " + id);
         if (config.include_psnr)
             check(vmaf_use_feature(context, "psnr", nullptr), "register official CPU PSNR");
+        for (const auto &feature : features) {
+            VmafFeatureDictionary *dictionary = nullptr;
+            try {
+                for (const auto &[key, value] : feature.options)
+                    check(vmaf_feature_dictionary_set(&dictionary, key.c_str(), value.c_str()),
+                          "set official feature option " + key);
+            } catch (...) {
+                vmaf_feature_dictionary_free(&dictionary);
+                throw;
+            }
+            // The extractor and option values were validated by the pinned
+            // adapter before the public API takes ownership of its dictionary.
+            check(vmaf_use_feature(context, feature.name.c_str(), dictionary),
+                  "register official CPU feature " + feature.name);
+        }
     }
 }
 

@@ -69,15 +69,22 @@ const finished = (results: Row["results"]): Row => ({
 
 const expectedFor = (
 	keys: string[],
-	options: { perTitle?: string[]; model?: string; psnr?: boolean } = {},
+	options: {
+		perTitle?: string[];
+		model?: string;
+		psnr?: boolean;
+		vmaf?: boolean;
+		banding?: boolean;
+	} = {},
 ): Pick<ExpectedArtefacts, "qc" | "muxings"> => ({
 	muxings: keys.map((key) => ({
 		renditionKey: key,
 		perTitle: options.perTitle?.includes(key) ?? false,
 	})) as never,
 	qc: {
-		vmaf: true,
+		vmaf: options.vmaf ?? true,
 		psnr: options.psnr ?? false,
+		...(options.banding ? { banding: true } : {}),
 		...(options.model ? { model: options.model } : {}),
 		mirrorRenditionKeys: keys,
 		mirrorDirSuffix: "qc/",
@@ -105,6 +112,71 @@ const verdictOf = (report: VerificationReport, id: string) =>
 	report.checks.find((c) => c.id === id)?.verdict;
 
 describe("addQcMeasurementChecks — the healthy control", () => {
+	it("accepts complete standalone banding without requiring VMAF scores or a model", () => {
+		const report = run({
+			expected: expectedFor(["v720"], {
+				vmaf: false,
+				banding: true,
+				model: "unused-model",
+			}),
+			gate: undefined,
+			job: finishedJob,
+			vmaf: {
+				...finished([
+					{
+						renditionRef: { renditionKey: "v720" },
+						pooled: {
+							banding: {
+								mean: 5,
+								min: 0,
+								max: 12,
+								frameCount: 3,
+								durationSeconds: 0.12,
+							},
+						},
+						provenance: {
+							bandingExecution: { coverage: { complete: true, frameCount: 3 } },
+						},
+					},
+				]),
+				model: "CAMBI",
+			},
+		});
+		expect(verdictOf(report, "qc:scores")).toBe("PASS");
+		expect(verdictOf(report, "qc:model")).toBeUndefined();
+	});
+
+	it("rejects an incomplete banding result even when its summary is finite", () => {
+		const report = run({
+			expected: expectedFor(["v720"], { vmaf: false, banding: true }),
+			gate: undefined,
+			job: finishedJob,
+			vmaf: {
+				...finished([
+					{
+						renditionRef: { renditionKey: "v720" },
+						pooled: {
+							banding: {
+								mean: 5,
+								min: 0,
+								max: 12,
+								frameCount: 3,
+								durationSeconds: 0.12,
+							},
+						},
+						provenance: {
+							bandingExecution: {
+								coverage: { complete: false, frameCount: 2 },
+							},
+						},
+					},
+				]),
+				model: "CAMBI",
+			},
+		});
+		expect(verdictOf(report, "qc:scores")).toBe("FAIL");
+	});
+
 	it("PASSes measurement, results and scores for an exact population", () => {
 		const report = run({
 			expected: expectedFor(["v720", "v360"]),
@@ -657,7 +729,9 @@ describe("the wiring, pinned by shape", () => {
 			runner.indexOf("const terminal = await awaitTerminal(config, jobId);"),
 			runner.indexOf("const verified = await verifyJob({"),
 		);
-		expect(scenario).toContain("if (plan.qc?.vmaf || plan.qc?.psnr)");
+		expect(scenario).toContain(
+			"if (plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding)",
+		);
 		expect(scenario).toContain("await awaitVmafTerminal(config, jobId)");
 	});
 });

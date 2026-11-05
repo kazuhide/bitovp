@@ -1,6 +1,7 @@
 import { access } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { ProcessRunner } from "../feeder/supervisor";
+import { createBandingResourcePlanner } from "./banding-resources";
 import type { SelectLocalNative } from "./local-selection";
 import {
 	inspectNativeDevice,
@@ -235,6 +236,13 @@ function createRuntime(
 		runner,
 		selectLocalNative,
 		resolveLocalResources,
+		resolveBandingResources: createBandingResourcePlanner({
+			runner,
+			nativePath: deps.nativePath,
+			shared,
+			hostKey,
+			configured: deps.configured,
+		}),
 		execute: shared.run.bind(shared),
 	};
 }

@@ -27,6 +27,55 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	banding: {
+		title: "Banding detection",
+		toggle: "Run banding detection after encoding",
+		hint: "CAMBI detects visible contouring in the encoded video. It needs no reference video or VMAF model. Higher scores indicate more banding.",
+		metric: "Measurement",
+		only: "Banding only (CAMBI)",
+		combined: "VMAF + banding",
+		cloudUnsupported:
+			"Banding requires local CPU or local AUTO. Select a local execution target to continue.",
+		autoHint:
+			"AUTO tries NVIDIA CUDA or AMD Vulkan when available, then local CPU. Every GPU frame is checked against official CPU CAMBI; verdicts use the CPU reference scores.",
+		threshold: "Maximum CAMBI (≤)",
+		severity: "Severity",
+		warn: "Warning",
+		fail: "Failure",
+		gateHint:
+			"A CAMBI limit is a per-rendition upper bound. Start with a warning and review examples under your viewing conditions; 5 is a suggested starting point, not a universal visibility threshold.",
+		qcOnly: "QC only (skip delivery outputs)",
+		report: "Banding report",
+		noThreshold: "No thresholds configured — scores only",
+		assessmentMissing: "Full-frame assessment is unavailable",
+		mean: "Mean CAMBI",
+		max: "Peak CAMBI",
+		min: "Minimum CAMBI",
+		frames: "Frames measured",
+		duration: "Measured duration",
+		seconds: "{value} s",
+		plot: "CAMBI by presentation time",
+		plotHint:
+			"Peak-preserving chart samples. Affected intervals below use every measured frame; interval ends are exclusive.",
+		time: "Presentation time (s)",
+		ranges: "Affected intervals",
+		start: "Start (s)",
+		end: "End (s, exclusive)",
+		noRanges: "No frames exceed the configured limits.",
+		affected: "Affected duration: {value} s",
+		bounds: "Configured limits",
+		cpu: "Actual execution: CPU · official libvmaf CAMBI",
+		cuda: "Actual execution: NVIDIA CUDA",
+		vulkan: "Actual execution: AMD Vulkan",
+		decision: "Decision source: official CPU reference · full-frame coverage",
+		unknownExecution: "Execution provenance is unavailable",
+		autoNoGpu: "AUTO used CPU because no supported GPU was available.",
+		autoNoRuntime: "AUTO used CPU because the GPU runtime was unavailable.",
+		running: "Measuring banding… {done} / {total} renditions",
+		unavailable: "Banding evidence is unavailable for this result.",
+		compareUnsupported:
+			"VMAF comparison requires reports containing VMAF scores.",
+	},
 	liveProtection: {
 		add: "Add",
 		remove: "Remove",

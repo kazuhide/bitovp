@@ -15,10 +15,12 @@ import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 import { CloudProgress } from "../cloud-progress";
 import {
+	type QcJobDetail,
 	shortJobId,
 	VMAF_STATUS_TONE,
 	type VmafJobDetail,
 } from "../vmaf-shared";
+import { BandingPanels, BandingReport } from "./banding-panel";
 import { ExportButtons } from "./export-buttons";
 import { FrameComparison } from "./frame-comparison";
 import { LadderScatter } from "./ladder-scatter";
@@ -39,7 +41,7 @@ export function VmafReport({ id }: { id: string }) {
 	const router = useRouter();
 	const report = useQuery({
 		queryKey: ["vmaf-job", id],
-		queryFn: () => apiFetch<VmafJobDetail>(`/api/vmaf-jobs/${id}`),
+		queryFn: () => apiFetch<QcJobDetail>(`/api/vmaf-jobs/${id}`),
 		refetchInterval: (query) => {
 			const status = query.state.data?.status;
 			return status === "PENDING" ||
@@ -109,6 +111,32 @@ export function VmafReport({ id }: { id: string }) {
 	}
 
 	const job = report.data;
+	const deleteAction = (
+		<RoleAccess control="qc.report.delete">
+			<DeleteResourceButton
+				resourceLabel={t(
+					job.kind === "BANDING" ? "banding.report" : "qc.reportTitle",
+				)}
+				disabled={job.status === "PENDING" || job.status === "RUNNING"}
+				disabledReason={t("ui.waitForTheReportToFinishBefore")}
+				confirmTitle={t("qc.deleteTitle")}
+				confirmDescription={t("qc.deleteConfirmOne")}
+				pending={remove.isPending}
+				error={
+					remove.isError
+						? remove.error instanceof ApiError
+							? remove.error.message
+							: t("qc.deleteFailed")
+						: null
+				}
+				onConfirm={() => remove.mutate()}
+			/>
+		</RoleAccess>
+	);
+	if (job.kind === "BANDING")
+		return (
+			<BandingReport job={job} loadError={loadError} actions={deleteAction} />
+		);
 	const hasResults = job.results.length > 0;
 	const maxFrameCount = job.results.reduce(
 		(m, r) => Math.max(m, r.frameCount),
@@ -222,26 +250,7 @@ export function VmafReport({ id }: { id: string }) {
 						</Dialog>
 					</RoleAccess>
 				) : null}
-				<div className="ml-auto">
-					<RoleAccess control="qc.report.delete">
-						<DeleteResourceButton
-							resourceLabel={t("qc.reportTitle")}
-							disabled={job.status === "PENDING" || job.status === "RUNNING"}
-							disabledReason={t("ui.waitForTheReportToFinishBefore")}
-							confirmTitle={t("qc.deleteTitle")}
-							confirmDescription={t("qc.deleteConfirmOne")}
-							pending={remove.isPending}
-							error={
-								remove.isError
-									? remove.error instanceof ApiError
-										? remove.error.message
-										: t("qc.deleteFailed")
-									: null
-							}
-							onConfirm={() => remove.mutate()}
-						/>
-					</RoleAccess>
-				</div>
+				<div className="ml-auto">{deleteAction}</div>
 			</header>
 			{job.execution ? (
 				<p className="mt-1 text-xs text-zinc-500">
@@ -345,6 +354,9 @@ export function VmafReport({ id }: { id: string }) {
 				</div>
 			) : null}
 
+			{job.banding && hasResults ? (
+				<BandingPanels results={job.results} />
+			) : null}
 			{hasResults ? (
 				<>
 					{/* Above the numbers, deliberately: a correct score with no context is

@@ -90,7 +90,9 @@ export function VmafLabClient() {
 	// Only FINISHED reports carry frame results to overlay.
 	const comparableIds = useMemo(() => {
 		const finished = new Set(
-			items.filter((j) => j.status === "FINISHED").map((j) => j.id),
+			items
+				.filter((j) => j.status === "FINISHED" && j.kind !== "BANDING")
+				.map((j) => j.id),
 		);
 		return selectedIds.filter((id) => finished.has(id));
 	}, [items, selectedIds]);
@@ -335,7 +337,9 @@ export function VmafLabClient() {
 												{job.encodingName ?? shortJobId(job.id)}
 											</Link>
 											<span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-500">
-												<span className="font-mono">{job.model}</span>
+												<span className="font-mono">
+													{job.detector ?? job.model}
+												</span>
 												<span aria-hidden="true">·</span>
 												<span>{formatDateTime(job.createdAt)}</span>
 											</span>
@@ -366,7 +370,7 @@ export function VmafLabClient() {
 											{job.mode}
 										</td>
 										<td className="px-3 py-2 font-mono text-xs text-zinc-400">
-											{job.model}
+											{job.detector ?? job.model}
 										</td>
 										<td className="px-3 py-2">
 											<Badge tone={VMAF_STATUS_TONE[job.status]}>
@@ -380,6 +384,18 @@ export function VmafLabClient() {
 											) : null}
 										</td>
 										<td className="px-3 py-2">
+											{job.renditionBanding?.length ? (
+												<div className="mb-1 space-y-1">
+													{job.renditionBanding.map((r) => (
+														<div
+															key={r.label}
+															className="text-xs text-zinc-300"
+														>
+															{r.label}: {t("banding.max")} {r.max.toFixed(2)}
+														</div>
+													))}
+												</div>
+											) : null}
 											{job.renditionMeans.length > 0 ? (
 												<div className="flex flex-wrap gap-x-3 gap-y-0.5">
 													{job.renditionMeans.map((r) => (
@@ -477,6 +493,9 @@ function MeasureExistingSection() {
 	const [open, setOpen] = useState(false);
 	const [encodingJobId, setEncodingJobId] = useState("");
 	const [model, setModel] = useState<string>(DEFAULT_VMAF_MODEL);
+	const [metric, setMetric] = useState<"VMAF" | "BANDING" | "COMBINED">("VMAF");
+	const banding = metric !== "VMAF";
+	const bandingOnly = metric === "BANDING";
 	const [profileId, setProfileId] = useState("");
 	const [localMode, setLocalMode] = useState<"CPU" | "AUTO">("CPU");
 	const [budgetUsd, setBudgetUsd] = useState("");
@@ -485,7 +504,8 @@ function MeasureExistingSection() {
 	const [measurementMethod, setMeasurementMethod] = useState<
 		"" | "FRAME_INDEX_BT709_10BIT"
 	>("");
-	const frameIndexAvailable = profileId !== "" && source === "OUTPUT_MP4";
+	const frameIndexAvailable =
+		!banding && profileId !== "" && source === "OUTPUT_MP4";
 	const profiles = useQuery({
 		queryKey: ["vmaf-compute-profiles"],
 		queryFn: () =>
@@ -503,6 +523,7 @@ function MeasureExistingSection() {
 			!Number.isFinite(cloudBudget) ||
 			cloudBudget <= 0 ||
 			cloudBudget > 100000);
+	const invalidBandingCloud = banding && profileId !== "";
 	const finished = useInfiniteQuery({
 		queryKey: ["encoding-jobs", "finished-for-lab"],
 		queryFn: ({ pageParam }) =>
@@ -527,9 +548,14 @@ function MeasureExistingSection() {
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
 					encodingJobId,
-					model,
+					...(bandingOnly
+						? { kind: "BANDING" }
+						: {
+								model,
+								...(banding ? { banding: true } : {}),
+								...(psnr !== "" ? { psnr: psnr === "true" } : {}),
+							}),
 					...(source ? { source } : {}),
-					...(psnr !== "" ? { psnr: psnr === "true" } : {}),
 					...(frameIndexAvailable && measurementMethod
 						? { measurementMethod }
 						: {}),
@@ -622,22 +648,44 @@ function MeasureExistingSection() {
 							</Button>
 						) : null}
 					</div>
-					<div className="w-56">
-						<Field label={t("qc.measureModel")} htmlFor="lab-measure-model">
+					<div className="w-full sm:w-56">
+						<Field label={t("banding.metric")} htmlFor="lab-measure-metric">
 							<SelectNative
-								id="lab-measure-model"
-								value={model}
+								id="lab-measure-metric"
+								value={metric}
 								disabled={measure.isPending}
-								onChange={(e) => setModel(e.target.value)}
+								onChange={(e) => {
+									setMetric(e.target.value as typeof metric);
+									measure.reset();
+								}}
 							>
-								{VMAF_MODELS.map((m) => (
-									<option key={m} value={m}>
-										{m}
-									</option>
-								))}
+								<option value="VMAF">VMAF</option>
+								<option value="BANDING">{t("banding.only")}</option>
+								<option value="COMBINED">{t("banding.combined")}</option>
 							</SelectNative>
 						</Field>
+						{banding ? (
+							<p className="mt-1 text-xs text-zinc-500">{t("banding.hint")}</p>
+						) : null}
 					</div>
+					{!bandingOnly ? (
+						<div className="w-56">
+							<Field label={t("qc.measureModel")} htmlFor="lab-measure-model">
+								<SelectNative
+									id="lab-measure-model"
+									value={model}
+									disabled={measure.isPending}
+									onChange={(e) => setModel(e.target.value)}
+								>
+									{VMAF_MODELS.map((m) => (
+										<option key={m} value={m}>
+											{m}
+										</option>
+									))}
+								</SelectNative>
+							</Field>
+						</div>
+					) : null}
 					<div className="w-full sm:w-64">
 						<Field
 							label={t("qc.executionTarget")}
@@ -671,7 +719,7 @@ function MeasureExistingSection() {
 									</option>
 								) : null}
 								{(profiles.data?.items ?? []).map((p) => (
-									<option key={p.id} value={p.id}>
+									<option key={p.id} value={p.id} disabled={banding}>
 										{p.label} · {p.region}
 									</option>
 								))}
@@ -682,7 +730,7 @@ function MeasureExistingSection() {
 								id="lab-measure-execution-hint"
 								className="mt-1 text-xs text-zinc-500"
 							>
-								{t("qc.executionLocalAutoHint")}
+								{t(banding ? "banding.autoHint" : "qc.executionLocalAutoHint")}
 							</p>
 						) : null}
 						{missingProfile ? (
@@ -712,6 +760,11 @@ function MeasureExistingSection() {
 							</p>
 						) : null}
 					</div>
+					{invalidBandingCloud ? (
+						<p role="alert" className="w-full text-sm text-red-400">
+							{t("banding.cloudUnsupported")}
+						</p>
+					) : null}
 					{profileId !== "" ? (
 						<div className="w-full sm:w-44">
 							<Field
@@ -740,7 +793,8 @@ function MeasureExistingSection() {
 								!selectedJobExists ||
 								finished.isError ||
 								measure.isPending ||
-								invalidCloud
+								invalidCloud ||
+								invalidBandingCloud
 							}
 							onClick={() => measure.mutate()}
 						>
@@ -774,18 +828,20 @@ function MeasureExistingSection() {
 									<option value="OUTPUT_MP4">{t("qc.measureSourceMp4")}</option>
 								</SelectNative>
 							</Field>
-							<Field label={t("qc.measurePsnr")} htmlFor="lab-measure-psnr">
-								<SelectNative
-									id="lab-measure-psnr"
-									value={psnr}
-									disabled={measure.isPending}
-									onChange={(e) => setPsnr(e.target.value as typeof psnr)}
-								>
-									<option value="">{t("qc.measurePsnrInherit")}</option>
-									<option value="true">{t("qc.measurePsnrOn")}</option>
-									<option value="false">{t("qc.measurePsnrOff")}</option>
-								</SelectNative>
-							</Field>
+							{!bandingOnly ? (
+								<Field label={t("qc.measurePsnr")} htmlFor="lab-measure-psnr">
+									<SelectNative
+										id="lab-measure-psnr"
+										value={psnr}
+										disabled={measure.isPending}
+										onChange={(e) => setPsnr(e.target.value as typeof psnr)}
+									>
+										<option value="">{t("qc.measurePsnrInherit")}</option>
+										<option value="true">{t("qc.measurePsnrOn")}</option>
+										<option value="false">{t("qc.measurePsnrOff")}</option>
+									</SelectNative>
+								</Field>
+							) : null}
 							{frameIndexAvailable ? (
 								<Field
 									label={t("qc.measureMethod")}
@@ -809,9 +865,11 @@ function MeasureExistingSection() {
 								</Field>
 							) : null}
 						</div>
-						<p className="mt-2 text-xs text-zinc-500">
-							{t("qc.measureMethodHint")}
-						</p>
+						{!bandingOnly ? (
+							<p className="mt-2 text-xs text-zinc-500">
+								{t("qc.measureMethodHint")}
+							</p>
+						) : null}
 					</details>
 					{encodingJobId === "" &&
 					!finished.isPending &&

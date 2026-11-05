@@ -3,6 +3,66 @@ import { describe, expect, it, vi } from "vitest";
 import { vmafExportStream } from "./vmaf-export";
 
 describe("streamed VMAF export bytes", () => {
+	it("exports model-free CAMBI as a separate metric without a VMAF value", async () => {
+		const banding = [
+			{
+				frameNum: 0,
+				timestampSeconds: 0.1,
+				durationSeconds: 0.04,
+				cambi: 7,
+				computedCambi: 7.01,
+				cpuReferenceCambi: 7.00000001,
+			},
+		];
+		const job = {
+			id: "banding",
+			model: "CAMBI",
+			params: { kind: "BANDING" },
+			results: [{ id: "a", renditionRef: { label: "360p" } }],
+		};
+		const read = async () =>
+			gzipSync(JSON.stringify({ kind: "QC_FRAMES", version: 1, banding }));
+		const json = await new Response(
+			vmafExportStream(job, "json", read, new AbortController().signal),
+		).json();
+		expect(json).toMatchObject({
+			kind: "BANDING",
+			detector: "CAMBI",
+			model: null,
+			renditions: [{ bandingFrames: banding }],
+		});
+		expect(json.renditions[0]).not.toHaveProperty("frames");
+		const csv = await new Response(
+			vmafExportStream(job, "csv", read, new AbortController().signal),
+		).text();
+		expect(csv).toBe(
+			"rendition,frameNum,vmaf,psnr,timestampSeconds,durationSeconds,cambi,computedCambi,cpu_reference_cambi,metric\n360p,0,,,0.1,0.04,7,7.01,7.00000001,CAMBI",
+		);
+	});
+
+	it("preserves full VMAF and CAMBI series in combined exports", async () => {
+		const vmaf = [{ frameNum: 0, vmaf: 95 }];
+		const banding = [
+			{ frameNum: 0, timestampSeconds: 0, durationSeconds: 0.04, cambi: 7 },
+		];
+		const job = {
+			id: "combined",
+			model: "vmaf_v0.6.1",
+			params: { banding: true },
+			results: [{ id: "a", renditionRef: {} }],
+		};
+		const read = async () =>
+			gzipSync(
+				JSON.stringify({ kind: "QC_FRAMES", version: 1, vmaf, banding }),
+			);
+		const json = await new Response(
+			vmafExportStream(job, "json", read, new AbortController().signal),
+		).json();
+		expect(json.renditions[0]).toMatchObject({
+			frames: vmaf,
+			bandingFrames: banding,
+		});
+	});
 	it("includes only validated local execution provenance in JSON", async () => {
 		const localExecution = {
 			version: 1,

@@ -1,8 +1,15 @@
 import "server-only";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
-import type { VmafFrame } from "@bitovp/core";
+import {
+	type BandingFrame,
+	bandingFrameSchema,
+	qcFramesEnvelopeSchema,
+	type VmafFrame,
+} from "@bitovp/core";
+import Assembler from "stream-json/assembler.js";
+import { parser, type Token } from "stream-json/parser.js";
 import { streamArray } from "stream-json/streamers/stream-array.js";
 
 /**
@@ -22,6 +29,122 @@ export async function* iterateFrames(
 	blob: Uint8Array,
 	signal?: AbortSignal,
 ): AsyncGenerator<VmafFrame> {
+	for await (const value of iterateMetricFrames(blob, "vmaf", signal))
+		yield value as VmafFrame;
+}
+
+export async function* iterateBandingFrames(
+	blob: Uint8Array,
+	signal?: AbortSignal,
+): AsyncGenerator<BandingFrame> {
+	let previous: BandingFrame | undefined;
+	let frameIndex = 0;
+	for await (const value of iterateMetricFrames(blob, "banding", signal)) {
+		const frame = value as BandingFrame;
+		if (
+			frame.frameNum !== frameIndex++ ||
+			(previous &&
+				(frame.timestampSeconds <= previous.timestampSeconds ||
+					frame.timestampSeconds + 1e-7 <
+						previous.timestampSeconds + previous.durationSeconds))
+		)
+			throw new Error("Banding frame coverage is incomplete or unordered");
+		previous = frame;
+		yield frame;
+	}
+}
+
+/** Select one metric without buffering either series. The envelope is checked
+ * through its closing token, so key ordering cannot bypass version validation. */
+function metricTokens(metric: "vmaf" | "banding"): Transform {
+	let depth = 0;
+	let root: "legacy" | "envelope" | undefined;
+	let key: string | undefined;
+	let selected = false;
+	let emitted = false;
+	const keys = new Set<string>();
+	let kind = false;
+	let version = false;
+	let frameAssembler: Assembler | undefined;
+	const vmafFrameSchema = qcFramesEnvelopeSchema.shape.vmaf.unwrap().element;
+	const invalid = () => new Error("Invalid persisted QC frames envelope");
+	return new Transform({
+		objectMode: true,
+		transform(token: Token, _encoding, callback) {
+			try {
+				if (depth === 0) {
+					if (root) throw invalid();
+					if (token.name === "startArray") root = "legacy";
+					else if (token.name === "startObject") root = "envelope";
+					else throw invalid();
+				} else if (root === "envelope" && depth === 1) {
+					if (token.name === "keyValue") {
+						key = token.value;
+						if (
+							!["kind", "version", "vmaf", "banding"].includes(key) ||
+							keys.has(key)
+						)
+							throw invalid();
+						keys.add(key);
+					} else if (token.name === "endObject") {
+						if (!kind || !version || !keys.has("banding")) throw invalid();
+					} else if (key === "kind") {
+						if (token.name !== "stringValue" || token.value !== "QC_FRAMES")
+							throw invalid();
+						kind = true;
+					} else if (key === "version") {
+						if (token.name !== "numberValue" || Number(token.value) !== 1)
+							throw invalid();
+						version = true;
+					} else if (key === "vmaf" || key === "banding") {
+						if (token.name !== "startArray") throw invalid();
+						selected = key === metric;
+					} else throw invalid();
+				}
+				if (root === "envelope" && depth === 2 && token.name !== "endArray") {
+					if (token.name !== "startObject") throw invalid();
+					frameAssembler = new Assembler();
+				}
+				if (frameAssembler) {
+					frameAssembler.consume(token);
+					if (frameAssembler.done) {
+						(key === "banding" ? bandingFrameSchema : vmafFrameSchema).parse(
+							frameAssembler.current,
+						);
+						frameAssembler = undefined;
+					}
+				}
+				if ((root === "legacy" && metric === "vmaf") || selected) {
+					this.push(token);
+					emitted = true;
+				}
+				if (token.name === "startArray" || token.name === "startObject")
+					depth++;
+				else if (token.name === "endArray" || token.name === "endObject") {
+					depth--;
+					if (root === "envelope" && depth === 1) selected = false;
+				}
+				callback();
+			} catch (err) {
+				callback(err as Error);
+			}
+		},
+		flush(callback) {
+			if (!root || depth !== 0) return callback(invalid());
+			if (!emitted) {
+				this.push({ name: "startArray" });
+				this.push({ name: "endArray" });
+			}
+			callback();
+		},
+	});
+}
+
+async function* iterateMetricFrames(
+	blob: Uint8Array,
+	metric: "vmaf" | "banding",
+	signal?: AbortSignal,
+): AsyncGenerator<unknown> {
 	signal?.throwIfAborted();
 	const controller = new AbortController();
 	const combined = signal
@@ -34,24 +157,76 @@ export async function* iterateFrames(
 		streamNumbers: false,
 		decodeStrings: false,
 	};
-	const frames = streamArray.withParserAsStream(options);
-	const gunzip = createGunzip({ chunkSize: 65_536 });
-	gunzip.setEncoding("utf8");
-	const completed = pipeline(Readable.from([blob]), gunzip, frames, {
-		signal: combined,
-	});
+	const frames = streamArray.asStream();
+	const decode =
+		blob[0] === 0x1f && blob[1] === 0x8b
+			? createGunzip({ chunkSize: 65_536 })
+			: new Transform({
+					transform(chunk, _encoding, callback) {
+						callback(null, chunk);
+					},
+				});
+	decode.setEncoding("utf8");
+	const completed = pipeline(
+		Readable.from([blob]),
+		decode,
+		parser.asStream(options),
+		metricTokens(metric),
+		frames,
+		{
+			signal: combined,
+		},
+	);
 	// Iteration observes the original error; attach a handler before the first pull.
 	void completed.catch(() => {});
 	try {
 		for await (const item of frames) {
 			combined.throwIfAborted();
-			yield item.value as VmafFrame;
+			yield item.value;
 		}
 		await completed;
 	} finally {
 		controller.abort();
 		await completed.catch(() => {});
 	}
+}
+
+export type BandingChartFrame = BandingFrame & { worst?: true };
+
+/** CAMBI is worse when higher; retain every bucket's peak at its original PTS. */
+export async function downsampleBandingFrameBlob(
+	blob: Uint8Array,
+	cap: number = DOWNSAMPLE_CAP,
+	signal?: AbortSignal,
+): Promise<{ frames: BandingChartFrame[]; frameCount: number }> {
+	if (!Number.isInteger(cap) || cap < 1)
+		throw new Error("Banding downsample cap must be >= 1");
+	let frameCount = 0;
+	for await (const _frame of iterateBandingFrames(blob, signal)) frameCount++;
+	const bucketCount = Math.min(frameCount, cap);
+	const selected: BandingFrame[] = [];
+	let index = 0;
+	let bucket = -1;
+	let worst: BandingFrame | undefined;
+	for await (const frame of iterateBandingFrames(blob, signal)) {
+		const next = Math.min(
+			bucketCount - 1,
+			Math.floor((index * bucketCount) / frameCount),
+		);
+		if (next !== bucket) {
+			selected.push(frame);
+			bucket = next;
+		} else if (frame.cambi > (selected.at(-1) as BandingFrame).cambi)
+			selected[selected.length - 1] = frame;
+		if (!worst || frame.cambi > worst.cambi) worst = frame;
+		index++;
+	}
+	return {
+		frames: selected.map((frame) =>
+			frame === worst ? { ...frame, worst: true } : frame,
+		),
+		frameCount,
+	};
 }
 
 /** Two passes preserve the original bucket boundaries without storing the full series. */

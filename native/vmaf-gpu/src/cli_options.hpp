@@ -19,6 +19,7 @@ inline unsigned integer(const std::string &value, const std::string &key, unsign
 }
 struct Options {
     std::string reference, distorted, output, backend = "cpu", decode = "cpu";
+    std::string metric;
     std::vector<ModelInput> models;
     unsigned width = 0, height = 0, bits = 8, threads = 1, decode_threads = 1, max_frames = 0;
     unsigned inflight_frames = 1;
@@ -49,6 +50,7 @@ inline Options parse(int argc, char **argv) {
         const std::string value = argv[++i];
         if (key != "--model" && !used.insert(key).second) throw std::invalid_argument("Duplicate option " + key);
         if (key == "--reference") out.reference = value;
+        else if (key == "--metric") out.metric = value;
         else if (key == "--distorted") out.distorted = value;
         else if (key == "--output") out.output = value;
         else if (key == "--backend") out.backend = value;
@@ -86,7 +88,19 @@ inline Options parse(int argc, char **argv) {
             throw std::invalid_argument("Scoring options are not valid with --device-info");
         return out;
     }
-    if (out.reference.empty() || out.distorted.empty() || out.output.empty() || out.models.empty())
+    if (used.count("--metric") && out.metric != "cambi")
+        throw std::invalid_argument("--metric must be cambi");
+    if (out.metric == "cambi") {
+        if (out.distorted.empty() || out.output.empty())
+            throw std::invalid_argument("Required: --metric cambi --distorted path --output path");
+        for (const auto &key : {"--reference", "--model", "--width", "--height", "--bit-depth", "--max-frames"})
+            if (used.count(key) || (std::string(key) == "--model" && !out.models.empty()))
+                throw std::invalid_argument(std::string("Option is not valid with --metric cambi: ") + key);
+        if (out.decode != "cpu" || out.inflight_frames != 1)
+            throw std::invalid_argument("CAMBI requires --decode cpu and --inflight-frames 1");
+        if (out.backend != "cpu" && !out.verify)
+            throw std::invalid_argument("CAMBI GPU scoring requires --verify-cpu");
+    } else if (out.reference.empty() || out.distorted.empty() || out.output.empty() || out.models.empty())
         throw std::invalid_argument("Required: --reference path --distorted path --model id=path --output path");
     if (out.backend != "cpu" && out.backend != "cuda" && out.backend != "vulkan")
         throw std::invalid_argument("--backend must be cpu, cuda, or vulkan");

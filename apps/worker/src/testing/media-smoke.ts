@@ -5,6 +5,12 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { buildVmafCommand, parseVmafJson } from "@bitovp/core";
+import {
+	canonicalBandingScore,
+	computeBandingPooled,
+} from "@bitovp/core/banding";
+import { createNodeProcessRunner } from "../feeder/process-runner";
+import { runCpuBandingScore } from "../vmaf/banding-score";
 
 type Execute = (binary: string, args: string[]) => Promise<string>;
 const exec = promisify(execFile);
@@ -189,6 +195,39 @@ export function validateVmafReports(
 		"The degraded control must score substantially worse",
 	);
 	return means;
+}
+
+export function validateBandingMeasurement(
+	measured: Awaited<ReturnType<typeof runCpuBandingScore>>,
+) {
+	assert.equal(
+		measured.frames.length,
+		240,
+		"Every encoded frame needs a CAMBI score",
+	);
+	assert(
+		/^\d+\.\d+\.\d+(?:[-+._a-zA-Z0-9]*)$/.test(measured.libvmafVersion),
+		"The official CPU extractor version is required",
+	);
+	assert.equal(measured.featureName, "cambi_encbd_8_ench_180_encw_320");
+	for (const frame of measured.frames) {
+		assert(
+			!("vmaf" in frame),
+			"Standalone banding cannot fabricate VMAF values",
+		);
+		assert.equal(frame.cambi, canonicalBandingScore(frame.cambi));
+	}
+	const pooled = computeBandingPooled(measured.frames);
+	assert(
+		Math.abs(pooled.durationSeconds - 10) < 1e-7,
+		"All ten seconds must be measured",
+	);
+	assert.equal(measured.frames[0]?.timestampSeconds, 0);
+	const last = measured.frames.at(-1);
+	assert(
+		last && Math.abs(last.timestampSeconds + last.durationSeconds - 10) < 1e-7,
+	);
+	return pooled;
 }
 
 export async function decodePresentation(path: string, run = execute) {
@@ -421,6 +460,20 @@ export async function runMediaCheck() {
 		logs.push(JSON.parse(await readFile(`${name}.json`, "utf8")));
 	}
 	const means = validateVmafReports(logs[0], logs[1], logs[2]);
+	const bandingLog = resolve("banding.json");
+	const banding = await runCpuBandingScore(
+		{
+			runner: createNodeProcessRunner(),
+			ffmpegPath: "/usr/local/bin/ffmpeg",
+			ffprobePath: "/usr/local/bin/ffprobe",
+		},
+		resolve("bbb-10s.mp4"),
+		bandingLog,
+		AbortSignal.timeout(60_000),
+		1,
+	);
+	validateBandingMeasurement(banding);
+	await assert.rejects(readFile(bandingLog), { code: "ENOENT" });
 	return {
 		version: 1,
 		videoFrames: 240,

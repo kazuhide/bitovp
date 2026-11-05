@@ -2,10 +2,12 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+	type BandingTarget,
 	computePooled,
 	computePsnrPooled,
 	type EncodingPlan,
 	encodingPlanSchema,
+	enumerateBandingTargets,
 	enumerateExistingMp4Targets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
@@ -35,6 +37,10 @@ import {
 	vmafSourceFor,
 } from "@bitovp/core";
 import {
+	BANDING_JOB_SCORING_VERSION,
+	bandingPooledSchema,
+} from "@bitovp/core/banding";
+import {
 	type AppPrismaClient,
 	autoTriggerKey,
 	labManualTriggerPrefix,
@@ -44,6 +50,16 @@ import type { ProcessRunner } from "../feeder/supervisor";
 import type { EmitProductEvent } from "../notify/emitter";
 import type { ResolvedCredential } from "../orchestrator/executor";
 import { ResetRowDeleted, whileRowExists } from "../reset/row-liveness";
+import { type BandingRun, measureBanding } from "./banding-measure";
+import { bandingNativeAvailable } from "./banding-native";
+import {
+	bandingResourcePair,
+	type ResolveBandingResources,
+} from "./banding-resources";
+import {
+	assertBandingGpuGeometry,
+	bandingInputFromProbe,
+} from "./banding-score";
 import type { CloudScoreRequest } from "./cloud/controller";
 import { signGcsVmafInput } from "./cloud/remote-input";
 import {
@@ -65,6 +81,7 @@ import { type LocalVmafExecution, runLocalVmafScore } from "./local-score";
 import {
 	type LocalSelection,
 	type NativeLocalSelection,
+	resolveBandingSelection,
 	resolveLocalSelection,
 	type SelectLocalNative,
 } from "./local-selection";
@@ -155,6 +172,7 @@ export type VmafProcessorDeps = {
 	nativePath?: string;
 	localResources?: LocalVmafResources;
 	resolveLocalResources?: ResolveLocalVmafResources;
+	resolveBandingResources?: ResolveBandingResources;
 	selectLocalNative?: SelectLocalNative;
 	nativeSelectionFailure?: Error;
 	cloudScore?: (request: CloudScoreRequest) => Promise<void>;
@@ -343,7 +361,7 @@ function stderrTail(stderr: string): string {
 
 /** renditionRef stored on the VmafResult row (identity for the report). */
 function renditionRef(
-	target: QcTarget,
+	target: BandingTarget,
 	variant: string | undefined,
 	probed?: { height?: number; bitrate?: number },
 ): Record<string, unknown> {
@@ -554,12 +572,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						renditionKey?: string;
 						perTitleVariant?: string;
 					};
+					const pooled = result.pooled as Record<string, unknown>;
+					const banding = bandingPooledSchema.safeParse(pooled?.banding);
 					return {
 						rendition: ref.renditionKey ?? "unknown",
 						...(ref.perTitleVariant !== undefined
 							? { variant: ref.perTitleVariant }
 							: {}),
-						pooled: result.pooled as RenditionPooled["pooled"],
+						...(typeof pooled?.mean === "number"
+							? { pooled: result.pooled as RenditionPooled["pooled"] }
+							: {}),
+						...(banding.success ? { banding: banding.data } : {}),
 					};
 				},
 			);
@@ -686,7 +709,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 
 	function scoreFiles(
 		jobDir: string,
-		target: QcTarget,
+		target: BandingTarget,
 		variant: string | undefined,
 	) {
 		const slot = (variant ?? "std").replace(/[^A-Za-z0-9._-]/g, "_");
@@ -699,7 +722,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 	}
 	async function cleanScoreFiles(
 		jobDir: string,
-		target: QcTarget,
+		target: BandingTarget,
 		variant: string | undefined,
 	) {
 		const { distortedPath, logPath } = scoreFiles(jobDir, target, variant);
@@ -711,6 +734,144 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 	}
 
 	/** Scores ONE rendition; throws on ffmpeg failure (caller fails the job). */
+	async function scoreBandingTarget(
+		deps: VmafProcessorDeps,
+		vmafJobId: string,
+		target: BandingTarget,
+		jobDir: string,
+		out: { credential: ResolvedCredential; bucket: string },
+		distortedKey: string,
+		variant: string | undefined,
+		providerResult: PerTitleProviderResult | undefined,
+		signal: AbortSignal,
+		pairCount: number,
+		banding: BandingRun,
+		resourceSession?: LocalVmafResourceSession,
+	): Promise<void> {
+		const runner = deps.localRunner ?? deps.runner;
+		const { slot, distortedPath, logPath } = scoreFiles(
+			jobDir,
+			target,
+			variant,
+		);
+		const distorted = await download({
+			signal,
+			credential: out.credential,
+			bucket: out.bucket,
+			key: distortedKey,
+			destPath: distortedPath,
+			label: `banding target ${target.renditionKey}`,
+		});
+		const probe = await runner.run(
+			deps.ffprobePath,
+			[
+				"-v",
+				"error",
+				"-show_streams",
+				"-show_format",
+				"-of",
+				"json",
+				distortedPath,
+			],
+			{ signal, abortKillAfterMs: 250 },
+		);
+		signal.throwIfAborted();
+		if (probe.code !== 0) throw new Error("BANDING_INPUT_PROBE_FAILED");
+		const video = bandingInputFromProbe(probe.stdout);
+		if (banding.selection.backend !== "cpu") assertBandingGpuGeometry(video);
+		const probed =
+			target.height === null || target.bitrate === null
+				? await probeDistortedMetrics(
+						deps,
+						distortedPath,
+						signal,
+						runner,
+						probe.stdout,
+					)
+				: undefined;
+		const score = async (
+			allocation?: LocalResourcePlan,
+			runSignal = signal,
+			assertOwned?: () => Promise<void>,
+		) => {
+			try {
+				const measured = await measureBanding(
+					{ ...deps, runner },
+					{
+						input: distortedPath,
+						logPath,
+						inputSha256: distorted.sha256,
+						probe: probe.stdout,
+						run: banding,
+						rendition: target.renditionKey,
+						signal: runSignal,
+						allocation,
+						assertOwned,
+					},
+				);
+				const framesGzip = gzipSync(
+					Buffer.from(
+						JSON.stringify({
+							kind: "QC_FRAMES",
+							version: 1,
+							banding: measured.frames,
+						}),
+					),
+				);
+				runSignal.throwIfAborted();
+				await assertOwned?.();
+				await deps.prisma.vmafResult.create({
+					data: {
+						vmafJobId,
+						renditionRef: renditionRef(
+							target,
+							variant,
+							probed,
+						) as Prisma.InputJsonValue,
+						pooled: {
+							banding: measured.pooled,
+							bandingAssessment: measured.assessment,
+						} as unknown as Prisma.InputJsonValue,
+						framesGzip,
+						provenance: {
+							distorted,
+							bandingExecution: measured.execution,
+							...(providerResult !== undefined ? { providerResult } : {}),
+						} as unknown as Prisma.InputJsonValue,
+					},
+				});
+			} finally {
+				await cleanScoreFiles(jobDir, target, variant);
+			}
+		};
+		if (resourceSession) {
+			const resolver = deps.resolveBandingResources;
+			const selected =
+				banding.selection.backend === "cpu" ? undefined : banding.selection;
+			if (selected && !resolver)
+				throw new Error("BANDING_GPU_ADMISSION_REQUIRED");
+			await resourceSession.run(
+				`${target.renditionKey}/${slot}`,
+				bandingResourcePair(video),
+				pairCount,
+				score,
+				resolver
+					? () =>
+							resolver({
+								video,
+								pairCount,
+								signal,
+								selected,
+							})
+					: undefined,
+			);
+		} else {
+			if (banding.selection.backend !== "cpu")
+				throw new Error("BANDING_GPU_ADMISSION_REQUIRED");
+			await score();
+		}
+	}
+
 	async function scoreTarget(
 		deps: VmafProcessorDeps,
 		vmafJobId: string,
@@ -740,6 +901,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		referenceResource?: ResourceVideo,
 		referenceProbe?: string,
 		selection?: LocalSelection,
+		banding?: BandingRun,
 	): Promise<void> {
 		const runner =
 			execution.backend === "LOCAL"
@@ -759,6 +921,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			label: `distorted qc mirror for rendition ${target.renditionKey}${variant ? ` rung ${variant}` : ""} (output "${target.distorted.outputKey}")`,
 		});
 		const resourceProbe =
+			banding ||
 			resourceSession ||
 			(execution.backend === "LOCAL" &&
 				((deps.decodePolicy?.backend !== undefined &&
@@ -781,6 +944,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				: undefined;
 		if (resourceProbe && resourceProbe.code !== 0)
 			throw new Error("Cannot probe quality measurement input");
+		if (banding && banding.selection.backend !== "cpu" && resourceProbe)
+			assertBandingGpuGeometry(bandingInputFromProbe(resourceProbe.stdout));
 		// Per-title rungs carry no plan height/bitrate — probe the downloaded
 		// mirror so the quality ladder can place them. Standard renditions keep
 		// their plan values, so skip the extra probe there.
@@ -982,7 +1147,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						scoringOptions,
 						{
 							signal: runSignal,
-							nativeInflightFrames: allocation?.nativeInflightFrames,
+							nativeInflightFrames: scoringOptions.scoring
+								? allocation?.nativeInflightFrames
+								: undefined,
 							referenceProbe,
 							distortedProbe: resourceProbe?.stdout,
 						},
@@ -1053,9 +1220,39 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						pooled.psnr = psnrPooled;
 					}
 				}
+				const measuredBanding =
+					banding && resourceProbe
+						? await measureBanding(
+								{ ...deps, runner },
+								{
+									input: distortedPath,
+									logPath: `${logPath}.cambi.json`,
+									inputSha256: distortedProvenance.sha256,
+									probe: resourceProbe.stdout,
+									run: banding,
+									rendition: target.renditionKey,
+									signal: runSignal,
+									allocation,
+									assertOwned,
+								},
+							)
+						: undefined;
 				// Per-frame array gzipped into framesGzip (now [{frameNum,vmaf,psnr?}]);
 				// frames column stays null.
-				const framesGzip = gzipSync(Buffer.from(JSON.stringify(parsed.frames)));
+				const framesGzip = gzipSync(
+					Buffer.from(
+						JSON.stringify(
+							measuredBanding
+								? {
+										kind: "QC_FRAMES",
+										version: 1,
+										vmaf: parsed.frames,
+										banding: measuredBanding.frames,
+									}
+								: parsed.frames,
+						),
+					),
+				);
 				runSignal.throwIfAborted();
 				await assertOwned?.();
 				await deps.prisma.vmafResult.create({
@@ -1066,7 +1263,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							variant,
 							probed,
 						) as Prisma.InputJsonValue,
-						pooled: pooled as unknown as Prisma.InputJsonValue,
+						pooled: {
+							...pooled,
+							...(measuredBanding
+								? {
+										banding: measuredBanding.pooled,
+										bandingAssessment: measuredBanding.assessment,
+									}
+								: {}),
+						} as unknown as Prisma.InputJsonValue,
 						framesGzip,
 						//  slice 2: WHICH bytes this row compared — both
 						// sides' version identity (demanded at read) and digest.
@@ -1075,6 +1280,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							distorted: distortedProvenance,
 							...(providerResult !== undefined ? { providerResult } : {}),
 							...(localExecution ? { localExecution } : {}),
+							...(measuredBanding
+								? { bandingExecution: measuredBanding.execution }
+								: {}),
 						} as unknown as Prisma.InputJsonValue,
 					},
 				});
@@ -1101,22 +1309,51 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				pair,
 				pairCount,
 				score,
-				resolver
-					? () =>
-							resolver({
-								pair,
+				resolver || banding
+					? async () => {
+							const base = resolver
+								? await resolver({
+										pair,
+										pairCount,
+										options: optionsFor(),
+										signal,
+										referenceProbe,
+										distortedProbe: resourceProbe.stdout,
+										...(selection && selection.backend !== "cpu"
+											? {
+													selectedNativeDevice: selection.device,
+													selectedNativeIdentity: selection.identity,
+												}
+											: {}),
+									})
+								: resourceSession.plan(pair, pairCount);
+							if (!banding) return base;
+							const video = bandingInputFromProbe(resourceProbe.stdout);
+							const selected =
+								banding.selection.backend === "cpu"
+									? undefined
+									: banding.selection;
+							if (deps.resolveBandingResources)
+								return deps.resolveBandingResources({
+									video,
+									pairCount,
+									signal,
+									selected,
+									basePlan: base,
+								});
+							if (selected) throw new Error("BANDING_GPU_ADMISSION_REQUIRED");
+							const detector = resourceSession.plan(
+								bandingResourcePair(video),
 								pairCount,
-								options: optionsFor(),
-								signal,
-								referenceProbe,
-								distortedProbe: resourceProbe.stdout,
-								...(selection && selection.backend !== "cpu"
-									? {
-											selectedNativeDevice: selection.device,
-											selectedNativeIdentity: selection.identity,
-										}
-									: {}),
-							})
+							);
+							return {
+								...base,
+								...detector,
+								estimatedBytes: base.estimatedBytes + detector.estimatedBytes,
+								threads: Math.min(base.threads, detector.threads),
+								...(base.gpu ? { nativeInflightFrames: 1 as const } : {}),
+							};
+						}
 					: undefined,
 			);
 		} else await score();
@@ -1276,6 +1513,67 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				);
 			}
 			const plan = encodingPlanSchema.parse(row.encodingJob.plan);
+			const bandingOnly = paramsAcc.kind === "BANDING";
+			const wantBanding =
+				bandingOnly ||
+				(typeof paramsAcc.banding === "boolean"
+					? paramsAcc.banding
+					: plan.qc?.banding === true);
+			if (
+				bandingOnly &&
+				(row.model !== "CAMBI" ||
+					row.scoringVersion !== BANDING_JOB_SCORING_VERSION ||
+					paramsAcc.psnr === true ||
+					paramsAcc.localSelection !== undefined)
+			)
+				throw new Error("BANDING_JOB_CONTRACT_INVALID");
+			if (wantBanding && execution.backend !== "LOCAL")
+				throw new Error("BANDING_CLOUD_UNSUPPORTED");
+			const nativeBanding =
+				deps.nativePath && deps.localRunner
+					? { runner: deps.localRunner, nativePath: deps.nativePath }
+					: undefined;
+			const bandingSelection = wantBanding
+				? await resolveBandingSelection(
+						{
+							selectNative: deps.selectLocalNative,
+							nativeFailure: deps.nativeSelectionFailure,
+							...(nativeBanding
+								? {
+										available: (
+											selected: NativeLocalSelection,
+											activeSignal: AbortSignal,
+										) =>
+											bandingNativeAvailable(
+												nativeBanding,
+												selected,
+												activeSignal,
+											),
+									}
+								: {}),
+						},
+						{ execution, stored: paramsAcc.bandingSelection, signal },
+					)
+				: undefined;
+			if (bandingSelection) {
+				if (
+					bandingSelection.backend !== "cpu" &&
+					(!deps.nativePath ||
+						!deps.localRunner ||
+						!deps.localResources ||
+						!deps.resolveBandingResources)
+				)
+					throw new Error("BANDING_GPU_RUNTIME_REQUIRED");
+				const pinned = await deps.prisma.vmafJob.updateMany({
+					where: { id: vmafJobId, status: "RUNNING" },
+					data: { params: mergeParams({ bandingSelection }) },
+				});
+				if (pinned.count !== 1)
+					throw new Error("BANDING_LOCAL_SELECTION_NOT_PERSISTED");
+			}
+			const banding: BandingRun | undefined = bandingSelection
+				? { selection: bandingSelection, gate: plan.qc?.gate }
+				: undefined;
 			const useOutputMp4 = paramsAcc.source === "OUTPUT_MP4";
 			if (
 				useOutputMp4 &&
@@ -1295,8 +1593,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			if (measurementMethod && execution.backend !== "CLOUD")
 				throw new Error("Frame-index measurement requires cloud validation");
 			const selection =
-				(execution.backend === "LOCAL" && execution.localMode !== undefined) ||
-				paramsAcc.localSelection !== undefined
+				!bandingOnly &&
+				((execution.backend === "LOCAL" && execution.localMode !== undefined) ||
+					paramsAcc.localSelection !== undefined)
 					? await resolveLocalSelection(
 							{
 								selectNative: deps.selectLocalNative,
@@ -1325,13 +1624,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const runner = isCloud
 				? deps.runner
 				: (jobDeps.localRunner ?? jobDeps.runner);
-			const gpuGeneration = localScoringGeneration({
-				scoringVersion: row.scoringVersion,
-				isCloud,
-				scoringBackend: jobDeps.scoringBackend,
-				decodeBackend: jobDeps.decodePolicy?.backend,
-				storedScoring: paramsAcc.localScoring,
-			});
+			const gpuGeneration = bandingOnly
+				? undefined
+				: localScoringGeneration({
+						scoringVersion: row.scoringVersion,
+						isCloud,
+						scoringBackend: jobDeps.scoringBackend,
+						decodeBackend: jobDeps.decodePolicy?.backend,
+						storedScoring: paramsAcc.localScoring,
+					});
 			if (
 				paramsAcc.localSelection !== undefined &&
 				gpuGeneration &&
@@ -1438,11 +1739,16 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				throw new Error(
 					"Frame-index measurements require a manual FINISHED encoding",
 				);
-			const targets = useOutputMp4
-				? enumerateExistingMp4Targets(plan)
-				: measurementMethod
-					? enumerateFrameIndexQcTargets(plan)
-					: enumerateQcTargets(plan);
+			const targets = bandingOnly
+				? enumerateBandingTargets(
+						plan,
+						useOutputMp4 ? "EXISTING_MP4" : "QC_MIRROR",
+					)
+				: useOutputMp4
+					? enumerateExistingMp4Targets(plan)
+					: measurementMethod
+						? enumerateFrameIndexQcTargets(plan)
+						: enumerateQcTargets(plan);
 			if (measurementMethod && targets.length === 0)
 				throw new Error(
 					"Frame-index measurement requires complete mirrors with a direct full-length source",
@@ -1467,7 +1773,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const resourceSession = !isCloud
 				? deps.localResources?.begin(signal)
 				: undefined;
-			await mkdir(jobDir, { recursive: true });
+			await mkdir(jobDir, { recursive: true, mode: 0o700 });
 
 			// Reference download + probe, ONCE per unique source (every rendition
 			// of a single-input ladder shares it). Keyed by inputKey+inputPath.
@@ -1644,7 +1950,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// per-title placeholder resolution lists the bucket here — then score the
 			// flat list with bounded concurrency below.
 			type WorkItem = {
-				target: QcTarget;
+				target: BandingTarget | QcTarget;
 				out: { credential: ResolvedCredential; bucket: string };
 				key: string;
 				variant: string | undefined;
@@ -1942,32 +2248,53 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					const processItem = async () => {
 						if (firstError !== undefined) return;
 						try {
-							const reference = await referenceFor(item.target);
-							await scoreTarget(
-								jobDeps,
-								vmafJobId,
-								row.model,
-								wantPsnr,
-								item.target,
-								reference.path,
-								reference.geometry,
-								reference.provenance,
-								jobDir,
-								item.out,
-								item.key,
-								item.variant,
-								item.providerResult,
-								signal,
-								execution,
-								work.length,
-								executionProfile,
-								measurementMethod,
-								reference.credential,
-								resourceSession,
-								reference.resourceVideo,
-								reference.probe,
-								selection,
-							);
+							if (bandingOnly) {
+								if (!banding) throw new Error("BANDING_JOB_CONTRACT_INVALID");
+								await scoreBandingTarget(
+									jobDeps,
+									vmafJobId,
+									item.target,
+									jobDir,
+									item.out,
+									item.key,
+									item.variant,
+									item.providerResult,
+									signal,
+									work.length,
+									banding,
+									resourceSession,
+								);
+							} else {
+								if (!("reference" in item.target))
+									throw new Error("VMAF_REFERENCE_REQUIRED");
+								const reference = await referenceFor(item.target);
+								await scoreTarget(
+									jobDeps,
+									vmafJobId,
+									row.model,
+									wantPsnr,
+									item.target,
+									reference.path,
+									reference.geometry,
+									reference.provenance,
+									jobDir,
+									item.out,
+									item.key,
+									item.variant,
+									item.providerResult,
+									signal,
+									execution,
+									work.length,
+									executionProfile,
+									measurementMethod,
+									reference.credential,
+									resourceSession,
+									reference.resourceVideo,
+									reference.probe,
+									selection,
+									banding,
+								);
+							}
 							resultCount += 1;
 							// Atomic increment — multiple pool workers bump concurrently, so
 							// a read-modify-write would lose updates. Best-effort: a failed

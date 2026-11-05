@@ -1,4 +1,5 @@
 export { hashApiTokenSecret } from "./auth/api-token-hash";
+export * from "./banding";
 export {
 	expandRandomFilenameTokens,
 	initSegmentCandidates,
@@ -849,6 +850,7 @@ export {
 	evaluateQcGate,
 	QC_GATE_METRICS,
 	qcGateSchema,
+	qcRuleSeverity,
 } from "./plan/qc-gate";
 export type {
 	ResourceGroup,
@@ -1395,11 +1397,15 @@ export {
 export * from "./vmaf/profiles";
 export * from "./vmaf/streamable-io";
 export type {
+	BandingTarget,
 	QcDistorted,
 	QcReference,
 	QcTarget,
 } from "./vmaf/targets";
 export {
+	enumerateBandingQcTargets,
+	enumerateBandingTargets,
+	enumerateExistingBandingMp4Targets,
 	enumerateExistingMp4Targets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,

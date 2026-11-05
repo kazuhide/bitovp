@@ -17,6 +17,8 @@ export type ResourceVideo = {
 	frames?: number;
 };
 export type ResourcePair = {
+	/** Single-input CAMBI uses the same video in both scheduling slots only. */
+	metric?: "CAMBI_NR";
 	reference: ResourceVideo;
 	distorted: ResourceVideo;
 	model: string;
@@ -142,6 +144,41 @@ export function planLocalResources(
 		if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0))
 			throw new ResourceUnavailableError("estimate");
 	const units = Math.max(1, pairCount);
+	if (pair.metric === "CAMBI_NR") {
+		if (resources.budgetBytes === undefined)
+			throw new ResourceUnavailableError("unknown");
+		const frameCount = estimatedFrames(pair);
+		const threads = options.threads ?? 1;
+		const pixels = pair.distorted.width * pair.distorted.height;
+		// Single-input CAMBI + its official oracle, complete timing/score arrays
+		// and serialization. This is deliberately independent of VMAF profiles.
+		const estimatedBytes =
+			Math.ceil(
+				(pixels * 256 +
+					512 * MiB +
+					frameCount * 4096 +
+					(threads - 1) * 128 * MiB) /
+					(64 * MiB),
+			) *
+			64 *
+			MiB;
+		if (
+			!Number.isSafeInteger(estimatedBytes) ||
+			estimatedBytes <= 0 ||
+			estimatedBytes > resources.budgetBytes
+		)
+			throw new ResourceUnavailableError("estimate");
+		return {
+			threads,
+			decoderThreads: 1,
+			concurrency: 1,
+			estimatedBytes,
+			frameCount,
+			exclusive: true,
+			manualFallback: false,
+			basis: "CAMBI_NR_FULL_FRAMES_V1",
+		};
+	}
 	if (resources.budgetBytes === undefined) {
 		if (options.threads === undefined || options.concurrency === undefined)
 			throw new ResourceUnavailableError("unknown");

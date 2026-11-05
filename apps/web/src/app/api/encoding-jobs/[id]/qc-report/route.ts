@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import type { QcGate, QcVerdict } from "@bitovp/core";
+import {
+	type BandingPooled,
+	type QcGate,
+	type QcVerdict,
+	qcRuleSeverity,
+} from "@bitovp/core";
 import type { Prisma, VmafTriggerKind } from "@bitovp/db";
 import { autoTriggerKey, vmafTriggerKind } from "@bitovp/db";
 import { NextResponse } from "next/server";
@@ -7,6 +12,14 @@ import { z } from "zod";
 import { comparisonContext } from "@/app/qc/vmaf-context";
 import { renditionLabel } from "@/app/qc/vmaf-shared";
 import { passiveOrganizationBinding } from "@/lib/passive-request";
+import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
+import {
+	bandingAssessmentOf,
+	bandingExecutionOf,
+	bandingPooledOf,
+	type PublicBandingAssessment,
+	type PublicBandingExecution,
+} from "@/lib/server/banding-public";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
 
@@ -67,6 +80,9 @@ type StoredRenditionRef = {
 };
 
 type ReportRendition = {
+	banding?: BandingPooled;
+	bandingAssessment?: PublicBandingAssessment;
+	bandingExecution?: PublicBandingExecution;
 	rendition: string;
 	label: string;
 	variant: string | null;
@@ -179,7 +195,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 			gateVerdict: true,
 			results: {
 				orderBy: { createdAt: "asc" },
-				select: { renditionRef: true, pooled: true },
+				select: { renditionRef: true, pooled: true, provenance: true },
 			},
 			// `satisfies`, not `as const` and not a bare object: the first
 			// widens the nested select and Prisma's inference then loses
@@ -257,11 +273,15 @@ export async function GET(req: Request, { params }: RouteParams) {
 			return jsonError(404, "This job has no QC data");
 		}
 
-		const reference = (
-			(vmaf?.params ?? {}) as {
-				reference?: { width?: number; height?: number };
-			}
-		).reference;
+		const bandingOnly = isBandingOnly(vmaf?.params);
+		const bandingEnabled = hasBanding(vmaf?.params);
+		const reference = bandingOnly
+			? undefined
+			: (
+					(vmaf?.params ?? {}) as {
+						reference?: { width?: number; height?: number };
+					}
+				).reference;
 		const renditions: ReportRendition[] = (vmaf?.results ?? []).map(
 			(result, index) => {
 				const ref = result.renditionRef as StoredRenditionRef;
@@ -271,6 +291,13 @@ export async function GET(req: Request, { params }: RouteParams) {
 					referenceHeight: reference?.height ?? undefined,
 				});
 				return {
+					...(bandingEnabled
+						? {
+								banding: bandingPooledOf(result.pooled),
+								bandingAssessment: bandingAssessmentOf(result.pooled),
+								bandingExecution: bandingExecutionOf(result.provenance),
+							}
+						: {}),
 					rendition: ref.renditionKey ?? ref.label ?? `rendition-${index + 1}`,
 					// Null-stripped: the stored ref spells unknown as null, the
 					// label helper's type as absence.
@@ -347,7 +374,12 @@ export async function GET(req: Request, { params }: RouteParams) {
 			measurement: vmaf
 				? {
 						vmafJobId: vmaf.id,
-						model: vmaf.model,
+						model: bandingOnly ? null : vmaf.model,
+						...(bandingOnly
+							? { kind: "BANDING" as const, detector: "CAMBI" as const }
+							: bandingEnabled
+								? { banding: true }
+								: {}),
 						scoringVersion: vmaf.scoringVersion,
 						status: vmaf.status,
 						error: vmaf.error,
@@ -403,7 +435,12 @@ export async function GET(req: Request, { params }: RouteParams) {
 				);
 			}
 			lines.push("");
-			lines.push("rule,metric,scope,threshold,target,variant,actual,pass");
+			const hasCambiRules = report.verdict?.ruleResults.some(
+				(entry) => entry.rule.metric === "CAMBI_MAX",
+			);
+			lines.push(
+				`rule,metric,scope,threshold,target,variant,actual,pass${hasCambiRules ? ",operator,severity" : ""}`,
+			);
 			// `report.verdict`, NOT the bare `verdict` (review of this PR).
 			// The bare one is the gate run's only; `report.verdict` is
 			// `verdict ?? mirroredVerdict`, which is what JSON and HTML print.
@@ -419,14 +456,69 @@ export async function GET(req: Request, { params }: RouteParams) {
 							ruleIndex + 1,
 							csvCell(ruleResult.rule.metric),
 							csvCell(ruleResult.rule.scope),
-							ruleResult.rule.gte,
+							ruleResult.rule.metric === "CAMBI_MAX"
+								? ruleResult.rule.lte
+								: ruleResult.rule.gte,
 							csvCell(actual.rendition),
 							csvCell(actual.variant ?? ""),
 							actual.value ?? "unmeasured",
 							actual.pass,
+							...(hasCambiRules
+								? [
+										ruleResult.rule.metric === "CAMBI_MAX" ? "lte" : "gte",
+										qcRuleSeverity(ruleResult.rule),
+									]
+								: []),
 						].join(","),
 					);
 				}
+			}
+			if (bandingEnabled) {
+				lines.push(
+					"",
+					"rendition,cambiMean,cambiMin,cambiMax,frameCount,durationSeconds,assessment,warningThreshold,failureThreshold,backend,decisionSource",
+				);
+				for (const r of renditions) {
+					const configured =
+						r.bandingAssessment?.warningThreshold !== undefined ||
+						r.bandingAssessment?.failureThreshold !== undefined;
+					lines.push(
+						[
+							csvCell(r.rendition),
+							r.banding?.mean ?? "",
+							r.banding?.min ?? "",
+							r.banding?.max ?? "",
+							r.banding?.frameCount ?? "",
+							r.banding?.durationSeconds ?? "",
+							r.bandingAssessment
+								? configured
+									? r.bandingAssessment.severity
+									: "UNCONFIGURED"
+								: "UNAVAILABLE",
+							r.bandingAssessment?.warningThreshold ?? "",
+							r.bandingAssessment?.failureThreshold ?? "",
+							r.bandingExecution?.backend ?? "",
+							r.bandingExecution?.decisionSource ?? "",
+						].join(","),
+					);
+				}
+				lines.push(
+					"",
+					"rendition,startSeconds,endSecondsExclusive,startFrame,endFrame,peakCambi,severity",
+				);
+				for (const r of renditions)
+					for (const range of r.bandingAssessment?.ranges ?? [])
+						lines.push(
+							[
+								csvCell(r.rendition),
+								range.startSeconds,
+								range.endSeconds,
+								range.startFrame,
+								range.endFrame,
+								range.peak,
+								range.severity,
+							].join(","),
+						);
 			}
 			// review-203 I1: the CSV is a filing artifact like the HTML — a
 			// forced delivery must be stated in EVERY format, and this one was
@@ -502,7 +594,10 @@ type Report = {
 	encoderVersion: string;
 	measurement: {
 		vmafJobId: string;
-		model: string;
+		model: string | null;
+		kind?: "BANDING";
+		detector?: "CAMBI";
+		banding?: boolean;
 		scoringVersion: number;
 		status: string;
 		error: string | null;
@@ -575,7 +670,11 @@ function verdictBadge(report: Report): { text: string; cls: string } {
 	}
 	if (report.verdict) {
 		return report.verdict.pass
-			? { text: "PASS", cls: "pass" }
+			? report.verdict.ruleResults.some(
+					(entry) => !entry.pass && qcRuleSeverity(entry.rule) === "WARN",
+				)
+				? { text: "PASS WITH WARNINGS", cls: "pending" }
+				: { text: "PASS", cls: "pass" }
 			: { text: "FAIL", cls: "fail" };
 	}
 	if (report.measurement?.status === "ERROR") {
@@ -621,10 +720,10 @@ function reportHtml(report: Report): string {
 <td class="num">${ruleIndex + 1}</td>
 <td>${esc(ruleResult.rule.metric)}</td>
 <td>${esc(ruleResult.rule.scope)}</td>
-<td class="num">≥ ${num(ruleResult.rule.gte) ?? esc(String(ruleResult.rule.gte))}</td>
+<td class="num">${ruleResult.rule.metric === "CAMBI_MAX" ? `≤ ${ruleResult.rule.lte} (${qcRuleSeverity(ruleResult.rule)})` : `≥ ${num(ruleResult.rule.gte) ?? esc(String(ruleResult.rule.gte))}`}</td>
 <td>${esc(actual.rendition)}${actual.variant ? ` <span class="muted">(${esc(actual.variant)})</span>` : ""}</td>
 <td class="num">${num(actual.value) ?? "unmeasured"}</td>
-<td class="${actual.pass ? "pass" : "fail"}">${actual.pass ? "pass" : "FAIL"}</td>
+<td class="${actual.pass ? "pass" : "fail"}">${actual.pass ? "pass" : qcRuleSeverity(ruleResult.rule) === "WARN" && typeof actual.value === "number" ? "WARN" : "FAIL"}</td>
 </tr>`,
 			),
 		)
@@ -688,12 +787,14 @@ ${
 ${
 	report.measurement
 		? `<dl>
-<dt>VMAF model</dt><dd>${esc(report.measurement.model)}</dd>
+<dt>${report.measurement.kind === "BANDING" ? "Detector" : "VMAF model"}</dt><dd>${esc(report.measurement.detector ?? report.measurement.model ?? "unknown")}</dd>
 <dt>Scoring generation</dt><dd>${report.measurement.scoringVersion}</dd>
 <dt>Reference</dt><dd>${
-				num(reference?.width) && num(reference?.height)
-					? `${num(reference?.width)}×${num(reference?.height)}`
-					: "unknown"
+				report.measurement.kind === "BANDING"
+					? "not required (no-reference CAMBI)"
+					: num(reference?.width) && num(reference?.height)
+						? `${num(reference?.width)}×${num(reference?.height)}`
+						: "unknown"
 			}</dd>
 <dt>Run profile</dt><dd>${report.measurement.cores ?? "?"} cores · ${report.measurement.threads ?? "?"} threads · concurrency ${report.measurement.concurrency ?? "?"}</dd>
 ${report.measurement.error ? `<dt>Measurement error</dt><dd class="fail">${esc(report.measurement.error)}</dd>` : ""}
@@ -702,7 +803,7 @@ ${report.measurement.error ? `<dt>Measurement error</dt><dd class="fail">${esc(r
 }
 <h2>Per-rendition pooled metrics</h2>
 ${
-	report.renditions.length > 0
+	report.renditions.length > 0 && report.measurement?.kind !== "BANDING"
 		? `<table>
 <thead><tr><th>Rendition</th><th class="num">Height</th><th class="num">kbps</th><th class="num">Upscale</th><th class="num">VMAF mean</th><th class="num">Harmonic</th><th class="num">1% low</th><th class="num">Min</th><th class="num">PSNR</th></tr></thead>
 <tbody>
@@ -710,7 +811,17 @@ ${rows}
 </tbody>
 </table>
 <p class="muted">Upscale = reference height ÷ rendition height. A heavily upscaled rung scores low by construction — read its numbers beside that factor, not alone.</p>`
-		: '<p class="muted">No pooled results were persisted.</p>'
+		: report.measurement?.kind === "BANDING"
+			? '<p class="muted">CAMBI pooled measurements are reported below.</p>'
+			: '<p class="muted">No pooled results were persisted.</p>'
+}
+${
+	report.renditions.some((r) => r.banding)
+		? `<h2>Banding (CAMBI, no-reference)</h2>
+<p class="muted">Higher CAMBI indicates more banding. Decisions use official CPU-reference scores from all frames. Time interval ends below are exclusive.</p>
+<table><thead><tr><th>Rendition</th><th>Mean CAMBI</th><th>Peak CAMBI</th><th>Frames</th><th>Duration (s)</th><th>Assessment</th><th>Actual execution</th></tr></thead><tbody>${report.renditions.map((r) => (r.banding ? `<tr><td>${esc(r.rendition)}</td><td>${r.banding.mean}</td><td>${r.banding.max}</td><td>${r.banding.frameCount}</td><td>${r.banding.durationSeconds}</td><td>${r.bandingAssessment ? (r.bandingAssessment.warningThreshold !== undefined || r.bandingAssessment.failureThreshold !== undefined ? r.bandingAssessment.severity : "UNCONFIGURED (scores only)") : "UNAVAILABLE"}</td><td>${r.bandingExecution ? esc(`${r.bandingExecution.backend} · ${r.bandingExecution.implementation}`) : "unknown"}</td></tr>` : "")).join("")}</tbody></table>
+<table><thead><tr><th>Rendition</th><th>Start (s)</th><th>End (s, exclusive)</th><th>Peak CAMBI</th><th>Severity</th></tr></thead><tbody>${report.renditions.flatMap((r) => (r.bandingAssessment?.ranges ?? []).map((range) => `<tr><td>${esc(r.rendition)}</td><td>${range.startSeconds}</td><td>${range.endSeconds}</td><td>${range.peak}</td><td>${range.severity}</td></tr>`)).join("")}</tbody></table>`
+		: ""
 }
 <h2>Gate outcome</h2>
 ${

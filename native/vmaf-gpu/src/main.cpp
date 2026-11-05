@@ -8,6 +8,7 @@
 #include "device_protocol.hpp"
 #include "supervisor.hpp"
 #include "model_oracle.hpp"
+#include "banding.hpp"
 extern "C" {
 #include <libavutil/mem.h>
 #include <libavutil/sha.h>
@@ -257,6 +258,17 @@ int main(int argc, char **argv) {
                       << "; source=" << BITOVP_NATIVE_SOURCE_SHA256 << '\n';
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--capabilities") {
+            std::vector<std::string> backends{"cpu"};
+#ifdef BITOVP_HAVE_CUDA
+            backends.push_back("cuda");
+#endif
+#ifdef BITOVP_HAVE_VULKAN
+            backends.push_back("vulkan");
+#endif
+            std::cout << banding_capabilities(BITOVP_NATIVE_SOURCE_SHA256, argv[0], backends) << '\n';
+            return 0;
+        }
         const auto options = parse(argc, argv);
         if (options.device_info) {
             const auto backend = make_backend(options);
@@ -285,6 +297,9 @@ int main(int argc, char **argv) {
                                                oracle_source_revision, binary_hash, supervision) << '\n';
             return 0;
         }
+        if (options.metric == "cambi")
+            return run_banding(options, [&] { return make_backend(options); },
+                               BITOVP_NATIVE_SOURCE_SHA256, argv[0]);
         // Hashes are measured separately: warm file-cache reads are not scoring.
         const auto reference_hash = file_hash(options.reference);
         const auto distorted_hash = file_hash(options.distorted);

@@ -71,6 +71,55 @@ function renderPanel(props: Partial<Parameters<typeof QcGatePanel>[0]> = {}) {
 }
 
 describe("QcGatePanel", () => {
+	it("shows CAMBI upper bounds and warnings without presenting a delivery-allowed warning as failure", () => {
+		const rule = {
+			metric: "CAMBI_MAX",
+			scope: "PER_RENDITION",
+			lte: 5,
+			severity: "WARN",
+		} as const;
+		renderPanel({
+			gate: gate({ rules: [rule] }),
+			verdict: {
+				pass: true,
+				ruleResults: [
+					{
+						rule,
+						pass: false,
+						actuals: [{ rendition: "v360", value: 7, pass: false }],
+					},
+				],
+			},
+		});
+		expect(screen.getByText("≤ 5")).toBeInTheDocument();
+		expect(screen.getAllByText("警告")).toHaveLength(2);
+		expect(screen.queryByText("不合格")).not.toBeInTheDocument();
+		expect(screen.queryByText("合格")).not.toBeInTheDocument();
+	});
+
+	it("keeps unmeasured CAMBI warning targets failed closed", () => {
+		const rule = {
+			metric: "CAMBI_MAX",
+			scope: "PER_RENDITION",
+			lte: 5,
+			severity: "WARN",
+		} as const;
+		renderPanel({
+			gate: gate({ rules: [rule] }),
+			verdict: {
+				pass: false,
+				ruleResults: [
+					{
+						rule,
+						pass: false,
+						actuals: [{ rendition: "v360", value: null, pass: false }],
+					},
+				],
+			},
+		});
+		expect(screen.getAllByText("不合格")).toHaveLength(2);
+		expect(screen.getByText("未測定")).toBeInTheDocument();
+	});
 	it("renders one row PER ACTUAL — rungs and unmeasured targets included", () => {
 		renderPanel({ verdict: failingVerdict, status: "QC_FAILED" });
 		const rows = screen.getAllByRole("row").slice(1); // minus header

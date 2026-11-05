@@ -23,6 +23,13 @@ struct ModelInput {
     std::map<std::string, std::map<std::string, std::string>> feature_overrides;
 };
 
+// Explicit features are independent of prediction models. Options not supplied
+// here retain their pinned official defaults.
+struct FeatureInput {
+    std::string name;
+    std::map<std::string, std::string> options;
+};
+
 struct ModelOracleConfig {
     unsigned width = 0;
     unsigned height = 0;
@@ -54,7 +61,7 @@ struct OracleResult {
 class ModelOracle {
 public:
     ModelOracle(std::vector<ModelInput> models, ModelOracleConfig config,
-                OracleMode mode);
+                OracleMode mode, std::vector<FeatureInput> features = {});
     ~ModelOracle();
     ModelOracle(const ModelOracle &) = delete;
     ModelOracle &operator=(const ModelOracle &) = delete;

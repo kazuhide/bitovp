@@ -1,3 +1,4 @@
+import { VMAF_SCORING_VERSION } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cloudProfile } from "@/test/vmaf-cloud-profile";
 
@@ -271,6 +272,85 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 		generation: { timing: "JUST_IN_TIME" },
 		qc: { vmaf: true },
 	};
+
+	it("creates target-only CAMBI measurement without a reference or model", async () => {
+		const plan = {
+			...qcPlan,
+			qc: undefined,
+			trimmingStreams: [
+				{ key: "trim", kind: "TIME_BASED", sourceKey: "video", offset: 1 },
+			],
+			renditions: [{ ...qcPlan.renditions[0], ingestKey: "trim" }],
+			muxings: [{ ...qcPlan.muxings[0], kind: "MP4", filename: "video.mp4" }],
+		};
+		jobFindUnique.mockResolvedValueOnce({ id: JOB, status: "FINISHED", plan });
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "report" });
+		const response = await post({
+			encodingJobId: JOB,
+			kind: "BANDING",
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+			model: "CAMBI",
+			scoringVersion: 11,
+			params: {
+				kind: "BANDING",
+				source: "OUTPUT_MP4",
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+			},
+		});
+		expect(await response.json()).toMatchObject({
+			kind: "BANDING",
+			detector: "CAMBI",
+			model: null,
+		});
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ model: "CAMBI" },
+		{ model: "../private-model" },
+		{ kind: "BANDING", model: "vmaf_v0.6.1" },
+		{ kind: "BANDING", psnr: true },
+		{ kind: "BANDING", measurementMethod: "FRAME_INDEX_BT709_10BIT" },
+		{
+			kind: "BANDING",
+			execution: { backend: "CLOUD", profileId: "cloud", budgetUsd: 10 },
+		},
+		{
+			banding: true,
+			execution: { backend: "CLOUD", profileId: "cloud", budgetUsd: 10 },
+		},
+	])("explicitly rejects incompatible Banding request before creating anything: %j", async (options) => {
+		const response = await post({ encodingJobId: JOB, ...options });
+		expect(response.status).toBe(400);
+		expect(jobFindUnique).not.toHaveBeenCalled();
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("keeps the VMAF model and generation for one combined measurement", async () => {
+		jobFindUnique.mockResolvedValueOnce({
+			id: JOB,
+			status: "FINISHED",
+			plan: qcPlan,
+		});
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "report" });
+		const response = await post({
+			encodingJobId: JOB,
+			banding: true,
+			model: "vmaf_v0.6.1",
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+			model: "vmaf_v0.6.1",
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: { banding: true },
+		});
+	});
 
 	it("measures existing MP4 outputs without changing a mirror-less encoding plan", async () => {
 		const plan = {

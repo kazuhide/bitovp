@@ -1,6 +1,7 @@
 "use client";
 
 import type { QcGate, QcVerdict } from "@bitovp/core";
+import { qcRuleSeverity } from "@bitovp/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
@@ -50,6 +51,9 @@ export function QcGatePanel(props: {
 	const { gate, verdict, status, jobId, vmafJobId } = props;
 	const measurementStatus = props.measurementStatus ?? null;
 	const overriddenAt = props.overriddenAt ?? null;
+	const hasWarnings = verdict?.ruleResults.some(
+		(result) => !result.pass && qcRuleSeverity(result.rule) === "WARN",
+	);
 	const queryClient = useQueryClient();
 	// Two-click confirm (the review-187 pattern): forcing delivery past a
 	// failing gate is exactly the kind of click that must not happen by
@@ -71,8 +75,14 @@ export function QcGatePanel(props: {
 					{t("jobDetail.qcGateTitle")}
 				</h2>
 				{verdict ? (
-					<Badge tone={verdict.pass ? "ok" : "error"}>
-						{verdict.pass ? t("jobs.qcPass") : t("jobs.qcFail")}
+					<Badge
+						tone={verdict.pass ? (hasWarnings ? "neutral" : "ok") : "error"}
+					>
+						{verdict.pass
+							? hasWarnings
+								? t("banding.warn")
+								: t("jobs.qcPass")
+							: t("jobs.qcFail")}
 					</Badge>
 				) : measurementStatus === "ERROR" || status === "QC_FAILED" ? (
 					// No verdict + a dead measurement = the measurement itself
@@ -182,12 +192,19 @@ export function QcGatePanel(props: {
 										>
 											<td className="px-3 py-2 text-zinc-300">
 												{ruleResult.rule.metric}
+												{ruleResult.rule.metric === "CAMBI_MAX" ? (
+													<span className="ml-1 text-xs text-zinc-500">
+														{qcRuleSeverity(ruleResult.rule)}
+													</span>
+												) : null}
 											</td>
 											<td className="px-3 py-2 text-xs text-zinc-400">
 												{ruleResult.rule.scope}
 											</td>
 											<td className="px-3 py-2 tabular-nums text-zinc-300">
-												≥ {ruleResult.rule.gte}
+												{ruleResult.rule.metric === "CAMBI_MAX"
+													? `≤ ${ruleResult.rule.lte}`
+													: `≥ ${ruleResult.rule.gte}`}
 											</td>
 											<td className="px-3 py-2 text-zinc-300">
 												{actual.rendition}
@@ -206,8 +223,22 @@ export function QcGatePanel(props: {
 													: t("jobDetail.qcGateUnmeasured")}
 											</td>
 											<td className="px-3 py-2">
-												<Badge tone={actual.pass ? "ok" : "error"}>
-													{actual.pass ? t("jobs.qcPass") : t("jobs.qcFail")}
+												<Badge
+													tone={
+														actual.pass
+															? "ok"
+															: qcRuleSeverity(ruleResult.rule) === "WARN" &&
+																	typeof actual.value === "number"
+																? "neutral"
+																: "error"
+													}
+												>
+													{actual.pass
+														? t("jobs.qcPass")
+														: qcRuleSeverity(ruleResult.rule) === "WARN" &&
+																typeof actual.value === "number"
+															? t("banding.warn")
+															: t("jobs.qcFail")}
 												</Badge>
 											</td>
 										</tr>
@@ -215,12 +246,21 @@ export function QcGatePanel(props: {
 								)
 							: gate.rules.map((rule, index) => (
 									<tr key={`${rule.metric}-${index}`}>
-										<td className="px-3 py-2 text-zinc-300">{rule.metric}</td>
+										<td className="px-3 py-2 text-zinc-300">
+											{rule.metric}
+											{rule.metric === "CAMBI_MAX" ? (
+												<span className="ml-1 text-xs text-zinc-500">
+													{qcRuleSeverity(rule)}
+												</span>
+											) : null}
+										</td>
 										<td className="px-3 py-2 text-xs text-zinc-400">
 											{rule.scope}
 										</td>
 										<td className="px-3 py-2 tabular-nums text-zinc-300">
-											≥ {rule.gte}
+											{rule.metric === "CAMBI_MAX"
+												? `≤ ${rule.lte}`
+												: `≥ ${rule.gte}`}
 										</td>
 										<td className="px-3 py-2 text-xs text-zinc-500">
 											{rule.renditions?.join(", ") ??

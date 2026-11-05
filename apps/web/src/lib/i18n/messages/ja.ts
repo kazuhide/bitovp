@@ -5,6 +5,55 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	banding: {
+		title: "バンディング検出",
+		toggle: "エンコード後にバンディングを検出",
+		hint: "CAMBI でエンコード映像の階調の縞を検出します。参照映像や VMAF モデルは不要です。スコアが高いほどバンディングが強いことを示します。",
+		metric: "測定内容",
+		only: "バンディングのみ（CAMBI）",
+		combined: "VMAF + バンディング",
+		cloudUnsupported:
+			"バンディングにはローカル CPU またはローカル AUTO が必要です。実行先をローカルに変更してください。",
+		autoHint:
+			"AUTO は利用可能な NVIDIA CUDA または AMD Vulkan を試し、利用できなければローカル CPU を使用します。GPU の全フレームを公式 CPU CAMBI と照合し、判定には CPU 参照値を使います。",
+		threshold: "CAMBI 上限（≤）",
+		severity: "重要度",
+		warn: "警告",
+		fail: "失敗",
+		gateHint:
+			"CAMBI は各レンディションの上限値で判定します。まず警告として設定し、実際の視聴条件で映像を確認してください。5 は検討の開始値であり、どの映像にも共通する可視性の境界ではありません。",
+		qcOnly: "QC のみ（配信出力を省略）",
+		report: "バンディングレポート",
+		noThreshold: "しきい値未設定 — スコアのみ",
+		assessmentMissing: "全フレームの判定情報を取得できません",
+		mean: "CAMBI 平均",
+		max: "CAMBI ピーク",
+		min: "CAMBI 最小",
+		frames: "測定フレーム数",
+		duration: "測定時間",
+		seconds: "{value} 秒",
+		plot: "表示時刻ごとの CAMBI",
+		plotHint:
+			"チャートはピークを保持して間引いています。該当区間は全測定フレームから求め、終了時刻は区間に含みません。",
+		time: "表示時刻（秒）",
+		ranges: "しきい値を超えた区間",
+		start: "開始（秒）",
+		end: "終了（秒・含まない）",
+		noRanges: "設定した上限を超えるフレームはありません。",
+		affected: "該当時間: {value} 秒",
+		bounds: "設定した上限",
+		cpu: "実際の実行方式: CPU · 公式 libvmaf CAMBI",
+		cuda: "実際の実行方式: NVIDIA CUDA",
+		vulkan: "実際の実行方式: AMD Vulkan",
+		decision: "判定値: 公式 CPU 参照値 · 全フレームを測定",
+		unknownExecution: "実行方式の記録を取得できません",
+		autoNoGpu: "対応する GPU がないため、AUTO は CPU を使用しました。",
+		autoNoRuntime:
+			"GPU の実行環境を利用できないため、AUTO は CPU を使用しました。",
+		running: "バンディングを測定中… {done} / {total} レンディション",
+		unavailable: "この結果にはバンディングの測定情報がありません。",
+		compareUnsupported: "VMAF 比較には VMAF スコアを含むレポートが必要です。",
+	},
 	liveProtection: {
 		add: "追加",
 		remove: "削除",

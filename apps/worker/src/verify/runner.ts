@@ -4934,7 +4934,7 @@ async function runVerificationRecorded(
 					elapsedMs: Date.now() - startedScenario,
 				};
 			}
-			if (plan.qc?.vmaf || plan.qc?.psnr) {
+			if (plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding) {
 				// : the measurement is part of the scenario. Wait for it so
 				// verifyJob's qc:* checks read a terminal row, not a race.
 				const vmaf = await awaitVmafTerminal(config, jobId);

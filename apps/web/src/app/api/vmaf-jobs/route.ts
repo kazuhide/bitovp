@@ -1,12 +1,17 @@
 import type { PooledMetrics } from "@bitovp/core";
 import {
+	BANDING_DETECTOR_ID,
+	BANDING_JOB_SCORING_VERSION,
+	bandingPooledSchema,
 	encodingPlanSchema,
+	enumerateBandingTargets,
 	enumerateExistingMp4Targets,
 	enumerateFrameIndexQcTargets,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
 	type VmafCloudProfile,
 	vmafExecutionSchema,
+	vmafModelNameSchema,
 } from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import {
@@ -22,6 +27,7 @@ import {
 	renditionLabel,
 	type VmafJobListItem,
 } from "@/app/qc/vmaf-shared";
+import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
 import { getServerContext } from "@/lib/server/context";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { jsonError, routeError, validationError } from "@/lib/server/http";
@@ -133,15 +139,39 @@ export async function GET(req: Request) {
 			encodingJobId: job.encodingJobId,
 			encodingName: job.encodingJob?.name ?? null,
 			mode: job.mode,
-			model: job.model,
+			model: isBandingOnly(job.params) ? null : job.model,
+			...(isBandingOnly(job.params)
+				? { kind: "BANDING" as const, detector: BANDING_DETECTOR_ID }
+				: {}),
+			...(hasBanding(job.params)
+				? {
+						banding: true,
+						renditionBanding: job.results.flatMap((r, i) => {
+							const pooled = bandingPooledSchema.safeParse(
+								(r.pooled as { banding?: unknown } | null)?.banding,
+							);
+							return pooled.success
+								? [
+										{
+											label: renditionLabel(r.renditionRef as RenditionRef, i),
+											mean: pooled.data.mean,
+											max: pooled.data.max,
+										},
+									]
+								: [];
+						}),
+					}
+				: {}),
 			scoringVersion: job.scoringVersion,
 			status: job.status,
 			error: job.error,
 			createdAt: job.createdAt.toISOString(),
-			renditionMeans: job.results.map((r, i) => ({
-				label: renditionLabel(r.renditionRef as RenditionRef, i),
-				mean: (r.pooled as PooledMetrics).mean,
-			})),
+			renditionMeans: isBandingOnly(job.params)
+				? []
+				: job.results.map((r, i) => ({
+						label: renditionLabel(r.renditionRef as RenditionRef, i),
+						mean: (r.pooled as PooledMetrics).mean,
+					})),
 		}));
 		return NextResponse.json({
 			items,
@@ -158,7 +188,9 @@ export async function GET(req: Request) {
  */
 const measureExistingSchema = z.object({
 	encodingJobId: z.uuid(),
-	model: z.string().min(1).optional(),
+	kind: z.literal("BANDING").optional(),
+	banding: z.boolean().optional(),
+	model: vmafModelNameSchema.optional(),
 	execution: vmafExecutionSchema.optional(),
 	source: z.enum(["QC_MIRROR", "OUTPUT_MP4"]).optional(),
 	psnr: z.boolean().optional(),
@@ -182,7 +214,29 @@ export async function POST(req: Request) {
 			return validationError(parsed.error);
 		}
 		const { encodingJobId } = parsed.data;
+		const bandingOnly = parsed.data.kind === "BANDING";
+		const banding = bandingOnly || parsed.data.banding === true;
+		if (!bandingOnly && parsed.data.model === BANDING_DETECTOR_ID)
+			return jsonError(
+				400,
+				"CAMBI is a detector, not a VMAF model; use kind BANDING for model-free measurement",
+			);
 		const execution = parsed.data.execution ?? { backend: "LOCAL" as const };
+		if (banding && execution.backend === "CLOUD")
+			return jsonError(
+				400,
+				"Banding measurement requires local CPU or local AUTO execution; cloud Banding is not supported",
+			);
+		if (
+			bandingOnly &&
+			(parsed.data.model !== undefined ||
+				parsed.data.psnr !== undefined ||
+				parsed.data.measurementMethod !== undefined)
+		)
+			return jsonError(
+				400,
+				"Banding-only measurement uses the CAMBI detector and does not accept a VMAF model, PSNR or a reference-based measurement method",
+			);
 		if (parsed.data.measurementMethod && execution.backend !== "CLOUD")
 			return jsonError(
 				400,
@@ -225,15 +279,26 @@ export async function POST(req: Request) {
 		}
 		const source =
 			parsed.data.source ??
-			(plan.data.qc?.vmaf || plan.data.qc?.psnr ? "QC_MIRROR" : "OUTPUT_MP4");
+			(plan.data.qc?.vmaf ||
+			plan.data.qc?.psnr ||
+			(bandingOnly && plan.data.qc?.banding)
+				? "QC_MIRROR"
+				: "OUTPUT_MP4");
 		if (
-			source === "OUTPUT_MP4"
-				? enumerateExistingMp4Targets(plan.data).length === 0
-				: !(plan.data.qc?.vmaf || plan.data.qc?.psnr)
+			bandingOnly
+				? enumerateBandingTargets(
+						plan.data,
+						source === "OUTPUT_MP4" ? "EXISTING_MP4" : source,
+					).length === 0
+				: source === "OUTPUT_MP4"
+					? enumerateExistingMp4Targets(plan.data).length === 0
+					: !(plan.data.qc?.vmaf || plan.data.qc?.psnr)
 		) {
 			return jsonError(
 				409,
-				"This job has no usable QC mirror or complete clear fixed-ladder MP4 outputs with a direct full-length source",
+				bandingOnly
+					? "This job has no usable clear QC mirror or fixed-ladder MP4 target for Banding measurement"
+					: "This job has no usable QC mirror or complete clear fixed-ladder MP4 outputs with a direct full-length source",
 			);
 		}
 		if (
@@ -245,7 +310,9 @@ export async function POST(req: Request) {
 				409,
 				"Frame-index measurement requires complete QC mirrors with a direct full-length source",
 			);
-		const model = parsed.data.model ?? plan.data.qc?.model ?? "vmaf_v0.6.1";
+		const model = bandingOnly
+			? BANDING_DETECTOR_ID
+			: (parsed.data.model ?? plan.data.qc?.model ?? "vmaf_v0.6.1");
 		let created: { id: string };
 		try {
 			created = await ctx.prisma.$transaction(
@@ -271,11 +338,18 @@ export async function POST(req: Request) {
 							encodingJobId,
 							mode: "VOD",
 							model,
-							scoringVersion: parsed.data.measurementMethod
-								? VMAF_FRAME_INDEX_SCORING_VERSION
-								: VMAF_SCORING_VERSION,
+							scoringVersion: bandingOnly
+								? BANDING_JOB_SCORING_VERSION
+								: parsed.data.measurementMethod
+									? VMAF_FRAME_INDEX_SCORING_VERSION
+									: VMAF_SCORING_VERSION,
 							status: "PENDING",
 							params: {
+								...(bandingOnly
+									? { kind: "BANDING" }
+									: banding
+										? { banding: true }
+										: {}),
 								execution,
 								source,
 								...(parsed.data.psnr !== undefined
@@ -341,7 +415,17 @@ export async function POST(req: Request) {
 			throw enqueueErr;
 		}
 		return NextResponse.json(
-			{ id: created.id, mode: "VOD", status: "PENDING", model },
+			{
+				id: created.id,
+				mode: "VOD",
+				status: "PENDING",
+				model: bandingOnly ? null : model,
+				...(bandingOnly
+					? { kind: "BANDING", detector: BANDING_DETECTOR_ID }
+					: banding
+						? { banding: true }
+						: {}),
+			},
 			{ status: 201 },
 		);
 	} catch (err) {

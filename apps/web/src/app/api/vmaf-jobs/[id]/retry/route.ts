@@ -1,4 +1,5 @@
 import {
+	BANDING_JOB_SCORING_VERSION,
 	encodingPlanSchema,
 	stepLogSchema,
 	VMAF_SCORING_VERSION,
@@ -11,6 +12,7 @@ import {
 	type Prisma,
 } from "@bitovp/db";
 import { NextResponse } from "next/server";
+import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
 import { getServerContext } from "@/lib/server/context";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
@@ -57,6 +59,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
 						"Only failed VOD measurements can be retried",
 					);
 				const stored = (row.params ?? {}) as Record<string, unknown>;
+				const bandingOnly = isBandingOnly(stored);
 				const execution = vmafExecutionSchema.safeParse(
 					stored.execution ?? { backend: "LOCAL" },
 				);
@@ -130,18 +133,26 @@ export async function POST(_req: Request, { params }: RouteParams) {
 						encodingJobId,
 						mode: "VOD",
 						model: row.model,
-						scoringVersion: VMAF_SCORING_VERSION,
+						scoringVersion: bandingOnly
+							? BANDING_JOB_SCORING_VERSION
+							: VMAF_SCORING_VERSION,
 						status: "PENDING",
 						triggerKey: automatic
 							? autoTriggerKey(encodingJobId)
 							: `${labManualTriggerPrefix(encodingJobId)}${row.model}:retry-${id}`,
 						params: {
+							...(bandingOnly
+								? { kind: "BANDING" }
+								: hasBanding(stored)
+									? { banding: true }
+									: {}),
 							execution: execution.data,
 							retryOf: id,
-							...(stored.source === "OUTPUT_MP4"
-								? { source: "OUTPUT_MP4" }
+							...(stored.source === "OUTPUT_MP4" ||
+							stored.source === "QC_MIRROR"
+								? { source: stored.source }
 								: {}),
-							...(typeof stored.psnr === "boolean"
+							...(!bandingOnly && typeof stored.psnr === "boolean"
 								? { psnr: stored.psnr }
 								: {}),
 						} as Prisma.InputJsonValue,

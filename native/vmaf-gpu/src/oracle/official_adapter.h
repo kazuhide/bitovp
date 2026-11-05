@@ -37,6 +37,9 @@ int bitovp_oracle_describe_model(VmafModel *model,
     const struct BitovpOracleDescriptionCallbacks *callbacks, void *cookie);
 int bitovp_oracle_describe_psnr(
     const struct BitovpOracleDescriptionCallbacks *callbacks, void *cookie);
+int bitovp_oracle_describe_feature(const char *extractor,
+    const struct BitovpOracleKeyValue *options, size_t option_count,
+    const struct BitovpOracleDescriptionCallbacks *callbacks, void *cookie);
 /* Rejects unknown extractor/option keys rather than the official overload's
  * otherwise silent no-op. Values still pass through the official option parser. */
 int bitovp_oracle_override_model(VmafModel *model, const char *extractor,

@@ -1197,6 +1197,7 @@ const vmafProcessor = tenantService(() =>
 			? {
 					localRunner: automaticVmafRuntime.runner,
 					resolveLocalResources: automaticVmafRuntime.resolveLocalResources,
+					resolveBandingResources: automaticVmafRuntime.resolveBandingResources,
 					selectLocalNative: automaticVmafRuntime.selectLocalNative,
 				}
 			: {}),

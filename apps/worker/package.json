@@ -30,7 +30,8 @@
 		"ioredis": "^5.4.1",
 		"m3u8-parser": "^7.2.0",
 		"mpd-parser": "^1.4.0",
-		"tsx": "4.22.5"
+		"tsx": "4.22.5",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

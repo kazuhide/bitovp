@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,7 @@ import {
 	VMAF_SCORING_VERSION,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
+import { labManualTriggerPrefix } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
@@ -198,8 +199,8 @@ const PROBE_JSON = JSON.stringify({
 /** Pulls log_path=<file> out of the libvmaf filter_complex argv. */
 function logPathFromArgv(argv: string[]): string | undefined {
 	const fc = argv[argv.indexOf("-filter_complex") + 1] ?? "";
-	const m = fc.match(/log_path=([^:]+)/);
-	return m?.[1];
+	const m = fc.match(/log_path=(?:'([^']+)'|([^:]+))/);
+	return m?.[1] ?? m?.[2];
 }
 
 type Row = Record<string, unknown>;
@@ -209,6 +210,7 @@ function setup(
 		job?: Row;
 		plan?: Record<string, unknown> | null;
 		frameScores?: number[];
+		bandingScores?: number[];
 		/** When set, the canned libvmaf JSON also carries metrics.psnr_y. */
 		psnrScores?: number[];
 		ffmpegExit?: number;
@@ -398,10 +400,49 @@ function setup(
 			throw new Error("spawn not used by the vmaf runner");
 		}),
 		run: vi.fn(async (_bin: string, argv: string[]) => {
+			if (argv.includes("-show_frames"))
+				return {
+					code: 0,
+					stderr: "",
+					stdout: JSON.stringify({
+						streams: [{ time_base: "1/1000" }],
+						frames: (opts.bandingScores ?? frameScores).map((_, index) => ({
+							best_effort_timestamp: index * 40,
+							duration: 40,
+							width: 640,
+							height: 360,
+							pix_fmt: "yuv420p",
+						})),
+					}),
+				};
 			if (argv.includes("-progress"))
 				return { code: 0, stdout: "frame=3\nprogress=end\n", stderr: "" };
 			// ffprobe call: -show_streams present, no filter_complex.
 			if (argv.includes("-show_streams")) {
+				if (opts.bandingScores)
+					return {
+						code: 0,
+						stderr: "",
+						stdout: JSON.stringify({
+							streams: [
+								{
+									codec_type: "video",
+									width: 640,
+									height: 360,
+									pix_fmt: "yuv420p",
+									codec_name: "h264",
+									r_frame_rate: "25/1",
+									sample_aspect_ratio: "1:1",
+									nb_frames: String(opts.bandingScores.length),
+									duration: String(opts.bandingScores.length / 25),
+								},
+							],
+							format: {
+								bit_rate: "500000",
+								duration: String(opts.bandingScores.length / 25),
+							},
+						}),
+					};
 				if (opts.probeJson)
 					return {
 						code: opts.probeExit ?? 0,
@@ -434,7 +475,18 @@ function setup(
 			}
 			const logPath = logPathFromArgv(argv);
 			if (logPath && (opts.ffmpegExit ?? 0) === 0) {
-				await writeFile(logPath, vmafJson(frameScores, opts.psnrScores));
+				await writeFile(
+					logPath,
+					argv[fcIdx + 1]?.includes("model=:")
+						? JSON.stringify({
+								version: "3.2.0",
+								frames: (opts.bandingScores ?? []).map((cambi, frameNum) => ({
+									frameNum,
+									metrics: { cambi_encbd_8_ench_360_encw_640: cambi },
+								})),
+							})
+						: vmafJson(frameScores, opts.psnrScores),
+				);
 			}
 			return {
 				code: opts.ffmpegExit ?? 0,
@@ -4235,6 +4287,234 @@ it("keeps CLOUD completely outside local selection even with a fatal configured 
 	await t.processor.process({ vmafJobId: VMAF_JOB_ID });
 	expect(selectLocalNative).not.toHaveBeenCalled();
 	expect((t.job.params as Row).localSelection).toBeUndefined();
+});
+
+describe("banding measurement integration", () => {
+	it("measures an existing manual MP4 without any enabled source QC or reference", async () => {
+		const plan = qcPlan();
+		delete plan.qc;
+		const t = setup({
+			plan,
+			bandingScores: [2, 7],
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}1`,
+				params: { kind: "BANDING", banding: true, source: "OUTPUT_MP4" },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.results).toHaveLength(2);
+		expect(
+			t.downloaded.every(
+				(item) => item.bucket === "out-bucket" && !item.key.includes("/qc/"),
+			),
+		).toBe(true);
+		expect(t.encodingJobWrites).toHaveLength(0);
+	});
+
+	it("keeps full timing decode, persistence and private cleanup within one composite lease", async () => {
+		let active = false;
+		let owned = 0;
+		const plans: unknown[] = [];
+		const localResources = createLocalVmafResources({
+			readResources: () => ({
+				cpuCapacity: 8,
+				reserveBytes: 0,
+				budgetBytes: 8 * 1024 ** 3,
+			}),
+			execute: async (plan, signal, work) => {
+				plans.push(plan);
+				active = true;
+				try {
+					return await work(signal, async () => {
+						expect(active).toBe(true);
+						owned++;
+					});
+				} finally {
+					expect(
+						readdirSync(join(workDir, VMAF_JOB_ID)).some((name) =>
+							name.endsWith(".json"),
+						),
+					).toBe(false);
+					active = false;
+				}
+			},
+		});
+		const plan = qcPlan();
+		plan.qc = { vmaf: true, banding: true, model: "vmaf_v0.6.1" };
+		const t = setup({
+			plan,
+			bandingScores: [0, 6],
+			localResources,
+			job: { params: { banding: true } },
+		});
+		t.deps.localRunner = {
+			...t.runner,
+			run: async (bin, args, options) => {
+				if (args.includes("-show_frames")) expect(active).toBe(true);
+				return t.runner.run(bin, args, options);
+			},
+		};
+		t.vmafResult.create.mockImplementation(async ({ data }: { data: Row }) => {
+			expect(active).toBe(true);
+			expect(owned).toBeGreaterThan(0);
+			t.results.push(data);
+			return { id: `r${t.results.length}`, ...data };
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(plans).toHaveLength(2);
+		expect(t.results).toHaveLength(2);
+	});
+
+	it("does not publish a banding result after losing resource ownership", async () => {
+		let checks = 0;
+		const localResources = createLocalVmafResources({
+			readResources: () => ({
+				cpuCapacity: 8,
+				reserveBytes: 0,
+				budgetBytes: 8 * 1024 ** 3,
+			}),
+			execute: async (_plan, signal, work) =>
+				work(signal, async () => {
+					if (++checks > 1) throw new Error("LEASE_LOST");
+				}),
+		});
+		const plan = qcPlan();
+		plan.qc = { vmaf: false, banding: true };
+		const t = setup({
+			plan,
+			bandingScores: [0, 6],
+			localResources,
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				params: { kind: "BANDING", banding: true },
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("LEASE_LOST");
+		expect(t.results).toHaveLength(0);
+		expect(t.job.status).toBe("ERROR");
+	});
+
+	it("scores every encoded frame without reading a reference or resolving a VMAF model", async () => {
+		const plan = qcPlan();
+		plan.qc = { vmaf: false, banding: true };
+		const resolveModelPath = vi.fn(() => {
+			throw new Error("no model allowed");
+		});
+		const t = setup({
+			plan,
+			bandingScores: [0, 6, 12],
+			subsample: 4,
+			resolveModelPath,
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				params: { kind: "BANDING", banding: true },
+			},
+		});
+		const result = await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(result.status).toBe("FINISHED");
+		expect(t.results).toHaveLength(2);
+		expect(t.downloaded.every((item) => item.bucket === "out-bucket")).toBe(
+			true,
+		);
+		expect(resolveModelPath).not.toHaveBeenCalled();
+		const stored = t.results[0];
+		if (!stored) throw new Error("banding result was not persisted");
+		expect(stored.pooled).toMatchObject({
+			banding: { min: 0, max: 12, mean: 6, frameCount: 3 },
+		});
+		expect(stored.pooled).not.toHaveProperty("mean");
+		const frames = JSON.parse(
+			gunzipSync(stored.framesGzip as Uint8Array).toString(),
+		);
+		expect(frames).toMatchObject({ kind: "QC_FRAMES", version: 1 });
+		expect(frames.vmaf).toBeUndefined();
+		expect(frames.banding).toHaveLength(3);
+		expect(stored.provenance).toMatchObject({
+			bandingExecution: {
+				backend: "cpu",
+				libvmafVersion: "3.2.0",
+				decisionSource: "CPU_REFERENCE",
+			},
+		});
+		expect(stored.provenance).not.toHaveProperty("reference");
+	});
+
+	it("stores combined VMAF and banding in one result per rendition and preserves the VMAF generation", async () => {
+		const plan = qcPlan();
+		plan.qc = { vmaf: true, banding: true, model: "vmaf_v0.6.1" };
+		const t = setup({
+			plan,
+			bandingScores: [0, 6, 12],
+			job: { scoringVersion: VMAF_SCORING_VERSION, params: { banding: true } },
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.results).toHaveLength(2);
+		expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
+		const stored = t.results[0];
+		if (!stored) throw new Error("combined QC result was not persisted");
+		expect(stored.pooled).toMatchObject({ mean: 95, banding: { max: 12 } });
+		const frames = JSON.parse(
+			gunzipSync(stored.framesGzip as Uint8Array).toString(),
+		);
+		expect(frames.vmaf).toHaveLength(5);
+		expect(frames.banding).toHaveLength(3);
+		expect(
+			t.downloaded.filter((item) => item.bucket === "src-bucket"),
+		).toHaveLength(1);
+	});
+
+	it("persists warning ranges and lets a warning-only delivery gate pass", async () => {
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: false,
+			banding: true,
+			gate: {
+				rules: [
+					{
+						metric: "CAMBI_MAX",
+						scope: "PER_RENDITION",
+						lte: 5,
+						severity: "WARN",
+					},
+				],
+				onFail: "BLOCK_MANIFESTS",
+			},
+		};
+		const t = setup({
+			plan,
+			bandingScores: [5, 6, 12],
+			job: {
+				model: "CAMBI",
+				scoringVersion: 11,
+				params: { kind: "BANDING", banding: true },
+			},
+		});
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.job.gateVerdict).toMatchObject({ pass: true });
+		expect(t.results[0]?.pooled).toMatchObject({
+			bandingAssessment: {
+				severity: "WARN",
+				warningThreshold: 5,
+				ranges: [
+					{
+						startFrame: 1,
+						endFrame: 2,
+						startSeconds: 0.04,
+						endSeconds: 0.12,
+						peak: 12,
+						severity: "WARN",
+					},
+				],
+			},
+		});
+		expect(t.queueAdds).toHaveLength(1);
+	});
 });
 
 it("rejects a pinned native selection with an inconsistent CPU generation before changing partial results", async () => {

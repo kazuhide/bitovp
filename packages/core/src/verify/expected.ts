@@ -43,7 +43,7 @@ import type {
 	PlanRendition,
 } from "../plan/schema";
 import { AUDIO_CODECS } from "../plan/schema";
-import { enumerateQcTargets } from "../vmaf/targets";
+import { enumerateBandingQcTargets, enumerateQcTargets } from "../vmaf/targets";
 import { defaultDashPeriods } from "./default-dash";
 import { type DefaultHlsSelection, defaultHlsSelection } from "./default-hls";
 import {
@@ -406,6 +406,7 @@ export type ExpectedSprites = {
 export type ExpectedQc = {
 	vmaf: boolean;
 	psnr: boolean;
+	banding?: boolean;
 	model?: string;
 	/** One QC mirror per VIDEO rendition; audio has nothing to score. */
 	mirrorRenditionKeys: string[];
@@ -1419,7 +1420,9 @@ export function compileExpectedArtefacts(
 	 * structurally never produces. One population, one derivation (it also
 	 * retires this file's third copy of the mirror-base rule).
 	 */
-	const qcMirrors = enumerateQcTargets(plan).map((target) => {
+	const qcMirrors = (
+		qcPlan?.banding ? enumerateBandingQcTargets(plan) : enumerateQcTargets(plan)
+	).map((target) => {
 		const slash = target.distorted.path.lastIndexOf("/");
 		return {
 			renditionKey: target.renditionKey,
@@ -1439,11 +1442,14 @@ export function compileExpectedArtefacts(
 		outputKeys.add(mirror.outputKey);
 	}
 	const qc: ExpectedQc | undefined =
-		qcPlan && (qcPlan.vmaf || qcPlan.psnr)
+		qcPlan && (qcPlan.vmaf || qcPlan.psnr || qcPlan.banding)
 			? {
 					vmaf: qcPlan.vmaf === true,
 					psnr: qcPlan.psnr === true,
-					...(qcPlan.model ? { model: qcPlan.model } : {}),
+					...(qcPlan.banding ? { banding: true } : {}),
+					...((qcPlan.vmaf || qcPlan.psnr) && qcPlan.model
+						? { model: qcPlan.model }
+						: {}),
 					mirrorRenditionKeys: videoRenditions.map((r) => r.key),
 					mirrorDirSuffix: "qc/",
 					mirrors: qcMirrors,

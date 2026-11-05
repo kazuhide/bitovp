@@ -94,7 +94,8 @@ function outputPaths(state: WizardState): OutputPath[] {
 			addLeg(key, leg, index);
 	});
 	for (const { key, leg } of wizardAudioLegs(state)) addLeg(key, leg);
-	const qcOnly = state.qc?.only && (state.qc.vmaf || state.qc.psnr);
+	const qcOnly =
+		state.qc?.only && (state.qc.vmaf || state.qc.psnr || state.qc.banding);
 	if (qcOnly) return paths;
 	const sKeys = subtitleKeys(state.subtitles ?? []);
 	state.subtitles?.forEach((subtitle, index) => {

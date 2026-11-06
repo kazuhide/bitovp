@@ -1077,7 +1077,7 @@ export const DEFAULT_WIZARD_STATE: WizardState = {
 	name: "",
 	accountId: "",
 	cloudRegion: "AUTO",
-	encoderVersion: "2.291.0",
+	encoderVersion: "2.292.0",
 	inputFiles: [
 		{
 			key: "main",

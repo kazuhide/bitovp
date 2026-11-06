@@ -4165,8 +4165,8 @@ export const en = {
 			"AUTO and ON require Encoder 2.291.0 or later. Select a supported encoder version or leave detail preservation OFF.",
 		av1DetailPreservationVersionUnresolved:
 			"AUTO and ON require Encoder 2.291.0 or later. This version alias has not been resolved; pin a supported numeric version to confirm compatibility.",
-		encoderVersion2291Help:
-			"Encoder 2.291.0 is a Beta release. Select STABLE to use the current stable release.",
+		encoderVersion2292Help:
+			"Encoder 2.292.0 is a Beta release. Select STABLE to use the current stable release.",
 		av1DetailPreservationOff: "OFF — Standard encoding",
 		av1DetailPreservationAuto: "AUTO — Apply by resolution",
 		av1DetailPreservationOn: "ON — Apply to all renditions",

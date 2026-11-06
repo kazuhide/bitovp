@@ -275,7 +275,7 @@ Figure 4-1. VOD ladder and detailed codec settings in the demo. The screen uses 
 
 ### Basic settings and input files
 
-Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.291.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
+Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.292.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
 
 In "Sources", specify the input file's credentials, bucket, and path. For supported destinations, use "Browse storage…" to select from a list. Enter paths directly for destinations that do not support browsing. For HTTPS inputs, provide a URL from which the source can be retrieved.
 

@@ -1,12 +1,12 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-05T13:58:10.616Z",
-		"sourceCommit": "e4b9078ed03e062395a09850299550f6fbeed988",
-		"sourceFingerprint": "d0f16f14054c0c89152d796e1889545959db628fbef65ebf22a568a9f67d81e2",
-		"sdkVersion": "1.286.0",
+		"generatedAt": "2026-11-06T01:12:27.466Z",
+		"sourceCommit": "7c8134a6000f15f7cd9f907037887442a04d20a0",
+		"sourceFingerprint": "aa1ca21a1b843d18364cccd31d936a3e61ffae043492afb23b7f16e04974d65f",
+		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
-		"sdkFingerprint": "1fa4b700777546b38554d1c67dcdd0ef0c4d57b41aecc3293278163ef9b6ac32",
+		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
 		"method": "typescript-resolved-sdk-signatures-v1",
 		"scope": "encoding"
 	},

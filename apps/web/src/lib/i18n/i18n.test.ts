@@ -119,11 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Banding's translated explanations are included; measured with this instrument.
-		pinWithDriftAid(long.length, 1462, "long");
+		// First-use dashboard explanations included; measured with this instrument.
+		pinWithDriftAid(long.length, 1469, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Banding labels share existing short translations where appropriate.
-		pinWithDriftAid(short.size, 2853, "short");
+		// Repeated setup labels share existing translations where appropriate.
+		pinWithDriftAid(short.size, 2868, "short");
 	});
 
 	/**

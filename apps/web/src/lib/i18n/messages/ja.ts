@@ -1260,6 +1260,39 @@ export const ja = {
 		backToDashboard: "ダッシュボードに戻る",
 	},
 	dashboard: {
+		accountUnavailable: "アカウントを取得できません",
+		setupEyebrow: "はじめに",
+		setupHeading: "最初のエンコードを始めましょう",
+		setupIntro:
+			"アカウントと出力先を登録したら、VOD または Live を作成できます。次に行う操作を強調して表示しています。",
+		setupAccount: "Bitmovin アカウントを登録",
+		setupAccountDescription:
+			"Bitmovin API キーを登録し、既定のリージョンとエンコーダーバージョンを選びます。",
+		setupOutput: "出力先を登録",
+		setupOutputDescription:
+			"エンコードした映像やマニフェストの保存先となるストレージの認証情報を登録します。VOD の入力には認証情報なしで公開 HTTPS 動画も使えます。",
+		setupEncode: "VOD ジョブまたは Live チャンネルを作成",
+		setupEncodeDescription:
+			"既存の動画ファイルを変換するなら VOD、入力ストリームを受けて配信するなら Live を選びます。ウィザードで入力・ラダー・配信設定を進められます。",
+		setupAddAccount: "Bitmovin アカウントを登録",
+		setupAddOutput: "出力先を登録",
+		setupManageOutputs: "出力先を管理",
+		setupCreateVod: "VOD ジョブを作成",
+		setupCreateLive: "Live チャンネルを作成",
+		setupRegistered: "登録済み",
+		setupNext: "次のステップ",
+		setupAskAdministrator: "管理者に登録を依頼してください。",
+		setupAskOperator:
+			"オペレーターまたは管理者に、最初のジョブやチャンネルの作成を依頼してください。",
+		setupPrepareFirst: "アカウントと出力先を登録すると、作成に進めます。",
+		setupLiveOnly:
+			"現在の出力先は Live に対応しています。VOD を作成するには VOD に対応した出力先を登録してください。",
+		setupUsageNote:
+			"アカウント登録後は、このアプリ以外で実行したエンコードも含めた使用量をここで確認できます。",
+		setupLoading: "ワークスペースの状態を確認しています…",
+		setupLoadFailed: "初期設定の状況を確認できませんでした。",
+		setupPermissionsLoading: "操作権限を確認しています…",
+		setupPermissionsFailed: "操作権限を確認できませんでした。",
 		allPanelsHidden: "すべてのダッシュボードパネルが非表示になっています。",
 
 		heading: "ダッシュボード",

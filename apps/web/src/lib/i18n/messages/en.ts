@@ -1299,6 +1299,40 @@ export const en = {
 		backToDashboard: "Back to the dashboard",
 	},
 	dashboard: {
+		accountUnavailable: "Account unavailable",
+		setupEyebrow: "Getting started",
+		setupHeading: "Create your first encoding",
+		setupIntro:
+			"Register your account and an output destination, then choose VOD or Live. Your next step is highlighted below.",
+		setupAccount: "Register a Bitmovin account",
+		setupAccountDescription:
+			"Add your Bitmovin API key and choose the default region and encoder version.",
+		setupOutput: "Register an output destination",
+		setupOutputDescription:
+			"Add storage credentials for encoded video and manifests. A public HTTPS video can be used as a VOD input without input credentials.",
+		setupEncode: "Create a VOD job or Live channel",
+		setupEncodeDescription:
+			"VOD encodes an existing video file. Live receives an incoming stream. The wizard guides you through input, ladder, and delivery settings.",
+		setupAddAccount: "Add Bitmovin account",
+		setupAddOutput: "Register output destination",
+		setupManageOutputs: "Manage output destinations",
+		setupCreateVod: "Create VOD job",
+		setupCreateLive: "Create Live channel",
+		setupRegistered: "Registered",
+		setupNext: "Next step",
+		setupAskAdministrator: "Ask an administrator to register this.",
+		setupAskOperator:
+			"Ask an operator or administrator to create the first job or channel.",
+		setupPrepareFirst:
+			"Register an account and an output destination to continue.",
+		setupLiveOnly:
+			"This destination supports Live. Register a VOD output destination to create a VOD job.",
+		setupUsageNote:
+			"Once an account is registered, you can view its usage here, including encodings run outside this application.",
+		setupLoading: "Checking your workspace…",
+		setupLoadFailed: "Could not check your setup progress.",
+		setupPermissionsLoading: "Checking your permissions…",
+		setupPermissionsFailed: "Could not check your permissions.",
 		allPanelsHidden: "All dashboard panels are hidden.",
 
 		heading: "Dashboard",

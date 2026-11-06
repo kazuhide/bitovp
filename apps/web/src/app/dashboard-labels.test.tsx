@@ -11,6 +11,9 @@ vi.mock("@/lib/api", async (original) => ({
 	...(await original<object>()),
 	apiFetch: (url: string, init?: RequestInit) => apiFetch(url, init),
 }));
+vi.mock("./dashboard-getting-started", () => ({
+	DashboardGettingStarted: () => null,
+}));
 vi.mock("./dashboard-usage", () => ({
 	DashboardUsage: () => <div>Account totals</div>,
 }));

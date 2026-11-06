@@ -21,6 +21,9 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Updated the Bitmovin REST API SDK to 1.287.0 and the new VOD wizard default to
+  Encoder 2.292.0 (Beta). Saved account defaults, drafts and imported plans retain
+  their selected encoder versions.
 - Refreshed the pinned FFmpeg 8.1.3 worker build to include the CAMBI fixes for
   small encode dimensions and 10-bit input strides.
 

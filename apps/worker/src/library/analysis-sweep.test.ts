@@ -236,11 +236,30 @@ describe("durable analysis import", () => {
 		locale,
 		suffix,
 	}) => {
+		const responseRaw = {
+			...raw,
+			credits: { copyright: "Example copyright" },
+			scenes: [
+				{
+					startInSeconds: 0,
+					endInSeconds: 2.5,
+					shots: [
+						{
+							startInSeconds: 0,
+							endInSeconds: 2.5,
+							mainSubjects: [
+								{ classification: "person", box2d: [100, 200, 900, 800] },
+							],
+						},
+					],
+				},
+			],
+		};
 		const fetchMock = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValue(
 				new Response(
-					JSON.stringify({ status: "SUCCESS", data: { result: raw } }),
+					JSON.stringify({ status: "SUCCESS", data: { result: responseRaw } }),
 					{ status: 200 },
 				),
 			);
@@ -251,7 +270,7 @@ describe("durable analysis import", () => {
 					tenantOrgId: null,
 				}),
 			})("account");
-			expect(await provider.get("encoding", locale)).toEqual(raw);
+			expect(await provider.get("encoding", locale)).toEqual(responseRaw);
 			expect(fetchMock.mock.calls[0]?.[0]).toBe(
 				`https://api.bitmovin.com/v1/ai-scene-analysis/analyses/by-encoding-id/encoding/details${suffix}`,
 			);

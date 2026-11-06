@@ -4112,8 +4112,8 @@ export const ja = {
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。対応するバージョンを指定するか、細部の保持を OFF にしてください。",
 		av1DetailPreservationVersionUnresolved:
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。別名が指すバージョンは未確認のため、対応する数値バージョンを指定してください。",
-		encoderVersion2291Help:
-			"Encoder 2.291.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
+		encoderVersion2292Help:
+			"Encoder 2.292.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
 		av1DetailPreservationOff: "OFF — 通常のエンコード",
 		av1DetailPreservationAuto: "AUTO — 解像度に応じて適用",
 		av1DetailPreservationOn: "ON — 全レンディションに適用",

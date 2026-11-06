@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** SDK 1.286.0 enum names and wire values; safe to share with browser code. */
+/** SDK 1.287.0 enum names and wire values; safe to share with browser code. */
 export const CODEC_ENUM_VALUES = {
 	Ac3ChannelLayout: {
 		NONE: "NONE",

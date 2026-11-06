@@ -8,9 +8,9 @@ import type { WebBuildInfo } from "@/lib/server/build-info";
 export function BuildInfoPanel({ version, commit }: WebBuildInfo) {
 	const { t } = useT();
 	return (
-		<section className="mt-8 border-t border-zinc-800 pt-5">
-			<div className="flex items-center gap-2">
-				<h2 className="font-medium text-sm text-zinc-300">
+		<section className="mt-5 text-right">
+			<div className="flex items-center justify-end gap-2">
+				<h2 className="font-medium text-xs text-zinc-400">
 					{t("settingsBuild.title")}
 				</h2>
 				<InfoHint
@@ -18,7 +18,7 @@ export function BuildInfoPanel({ version, commit }: WebBuildInfo) {
 					text={t("settingsBuild.scope")}
 				/>
 			</div>
-			<dl className="mt-3 grid gap-x-6 gap-y-2 text-xs sm:grid-cols-[auto_1fr]">
+			<dl className="mt-2 grid grid-cols-[auto_minmax(0,auto)] justify-end gap-x-3 gap-y-1 text-xs">
 				<dt className="text-zinc-500">{t("settingsBuild.version")}</dt>
 				<dd className="text-zinc-300">{version}</dd>
 				<dt className="text-zinc-500">{t("settingsBuild.commit")}</dt>

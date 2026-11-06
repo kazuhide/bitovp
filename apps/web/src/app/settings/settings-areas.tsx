@@ -217,7 +217,7 @@ function PanelHeading({
 	return (
 		<h2
 			id={id}
-			className="flex items-center gap-3 border-zinc-800 border-b px-2 pb-2 font-semibold text-lg text-zinc-100"
+			className="flex items-center gap-3 border-zinc-800 border-b px-2 pb-2 font-semibold text-base text-zinc-100"
 		>
 			<Icon
 				aria-hidden

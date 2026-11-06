@@ -1,3 +1,4 @@
+import { focusManager, onlineManager } from "@tanstack/react-query";
 import {
 	act,
 	fireEvent,
@@ -315,6 +316,107 @@ describe("First-encoding dashboard guidance", () => {
 				screen.queryByRole("region", { name: "Create your first encoding" }),
 			).toBeNull(),
 		);
+	});
+
+	it.each([
+		"vod",
+		"live",
+	])("does not present cached empty setup when %s history revalidation is paused offline", async (kind) => {
+		const rendered = renderWithQuery(<DashboardHome />);
+		try {
+			await guide();
+			rendered.client.setQueryDefaults(["encoding-jobs"], {
+				staleTime: 15_000,
+			});
+			rendered.client.setQueryDefaults(["live-channels"], {
+				staleTime: 15_000,
+			});
+			rendered.rerender(null);
+			await act(async () => {
+				onlineManager.setOnline(false);
+			});
+			if (kind === "vod") vodItems = [{ id: "created-while-away" }];
+			else liveItems = [{ id: "created-while-away" }];
+			rendered.rerender(<DashboardHome />);
+			const key = kind === "vod" ? "encoding-jobs" : "live-channels";
+			await waitFor(() =>
+				expect(
+					rendered.client.getQueryState([key, "getting-started"])?.fetchStatus,
+				).toBe("paused"),
+			);
+			expect(
+				screen.queryByRole("region", { name: "Create your first encoding" }),
+			).toBeNull();
+			expect(screen.getByText("Checking your workspace…")).toBeVisible();
+			await act(async () => {
+				onlineManager.setOnline(true);
+			});
+			await waitFor(() =>
+				expect(
+					rendered.client.getQueryState([key, "getting-started"])?.fetchStatus,
+				).toBe("idle"),
+			);
+			await waitFor(() =>
+				expect(screen.queryByText("Checking your workspace…")).toBeNull(),
+			);
+			expect(
+				screen.queryByRole("region", { name: "Create your first encoding" }),
+			).toBeNull();
+		} finally {
+			rendered.unmount();
+			onlineManager.setOnline(true);
+		}
+	});
+
+	it.each([
+		"focus",
+		"reconnect",
+	])("revalidates fresh empty history on %s without a page remount", async (event) => {
+		const rendered = renderWithQuery(<DashboardHome />);
+		try {
+			await guide();
+			rendered.client.setQueryDefaults(["encoding-jobs"], {
+				staleTime: 15_000,
+			});
+			rendered.client.setQueryDefaults(["live-channels"], {
+				staleTime: 15_000,
+			});
+			rendered.rerender(<DashboardHome />);
+			await act(async () => {
+				if (event === "focus") focusManager.setFocused(false);
+				else onlineManager.setOnline(false);
+			});
+			if (event === "focus") vodItems = [{ id: "created-in-another-tab" }];
+			else liveItems = [{ id: "created-while-disconnected" }];
+			await act(async () => {
+				if (event === "focus") focusManager.setFocused(true);
+				else onlineManager.setOnline(true);
+			});
+			await waitFor(() =>
+				expect(
+					apiFetch.mock.calls.filter(
+						([url]) => url === "/api/encoding-jobs?limit=1",
+					),
+				).toHaveLength(2),
+			);
+			await waitFor(() =>
+				expect(
+					apiFetch.mock.calls.filter(
+						([url]) => url === "/api/live-channels?limit=1",
+					),
+				).toHaveLength(2),
+			);
+			await waitFor(() =>
+				expect(screen.queryByText("Checking your workspace…")).toBeNull(),
+			);
+			expect(
+				screen.queryByRole("region", { name: "Create your first encoding" }),
+			).toBeNull();
+		} finally {
+			rendered.unmount();
+			onlineManager.setOnline(true);
+			focusManager.setFocused(undefined);
+		}
 	});
 
 	it.each([

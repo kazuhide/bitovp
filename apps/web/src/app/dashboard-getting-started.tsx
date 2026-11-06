@@ -33,12 +33,16 @@ export function DashboardGettingStarted({
 	const jobs = useQuery({
 		queryKey: ["encoding-jobs", "getting-started"],
 		refetchOnMount: "always",
+		refetchOnWindowFocus: "always",
+		refetchOnReconnect: "always",
 		queryFn: ({ signal }) =>
 			apiFetch<WorkPage>("/api/encoding-jobs?limit=1", { signal }),
 	});
 	const channels = useQuery({
 		queryKey: ["live-channels", "getting-started"],
 		refetchOnMount: "always",
+		refetchOnWindowFocus: "always",
+		refetchOnReconnect: "always",
 		queryFn: ({ signal }) =>
 			apiFetch<WorkPage>("/api/live-channels?limit=1", { signal }),
 	});
@@ -77,8 +81,8 @@ export function DashboardGettingStarted({
 	// A creation wizard may have just created the first job without invalidating
 	// this cache. Reconfirm empty history before presenting the initial steps.
 	if (
-		jobs.isFetching ||
-		channels.isFetching ||
+		jobs.fetchStatus !== "idle" ||
+		channels.fetchStatus !== "idle" ||
 		queries.some((query) => !query.isSuccess)
 	) {
 		return (

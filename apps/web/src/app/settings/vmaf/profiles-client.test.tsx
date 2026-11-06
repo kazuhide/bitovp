@@ -105,6 +105,30 @@ it("does not grant settings to an operator", () => {
 	expect(apiFetch).not.toHaveBeenCalled();
 	expect(screen.queryByRole("heading")).not.toBeInTheDocument();
 });
+it("embeds the profile and credential sections without another page title and retains the execution help", async () => {
+	renderWithQuery(<VmafProfilesClient embedded />);
+	expect(
+		await screen.findByRole("heading", {
+			level: 2,
+			name: "Execution profiles",
+		}),
+	).toBeInTheDocument();
+	expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+	expect(
+		screen.getByRole("heading", {
+			level: 2,
+			name: "Cloud compute credentials",
+		}),
+	).toBeInTheDocument();
+	await userEvent.click(
+		screen.getByRole("button", {
+			name: "VMAF compute profiles — more information",
+		}),
+	);
+	expect(
+		screen.getByText(/Saving does not start cloud resources/),
+	).toBeInTheDocument();
+});
 it("shows the same compact settings in Japanese", async () => {
 	renderWithQuery(<VmafProfilesClient />, "ja");
 	expect(

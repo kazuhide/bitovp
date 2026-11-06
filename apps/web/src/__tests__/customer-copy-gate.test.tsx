@@ -464,7 +464,7 @@ describe("customer copy gate — render arm", () => {
 				apiFetch.mockResolvedValue(CUSTOMER);
 				const viewer = renderWithQuery(<SettingsAreas />, locale);
 				await screen.findByText(m.settings.storageCredentials);
-				expect(screen.queryByText(m.settingsX.groupAccess)).toBeNull();
+				expect(screen.getByText(m.settingsCatalog.access)).toBeInTheDocument();
 				expectClean(locale);
 				viewer.unmount();
 
@@ -475,7 +475,7 @@ describe("customer copy gate — render arm", () => {
 					loginKind: "password-form",
 				});
 				renderWithQuery(<SettingsAreas />, locale);
-				await screen.findByText(m.settingsX.groupAccess);
+				await screen.findByText(m.settingsCatalog.access);
 				expect(screen.queryByText(m.settingsX.groupDiagnostics)).toBeNull();
 				expect(document.querySelector('a[href="/verification"]')).toBeNull();
 				expectClean(locale);

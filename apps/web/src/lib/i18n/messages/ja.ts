@@ -1267,7 +1267,7 @@ export const ja = {
 			"アカウントと出力先を登録したら、VOD または Live を作成できます。次に行う操作を強調して表示しています。",
 		setupAccount: "Bitmovin アカウントを登録",
 		setupAccountDescription:
-			"Bitmovin API キーを登録し、既定のリージョンとエンコーダーバージョンを選びます。",
+			"Bitmovin API キーを登録し、既定のリージョンとエンコーダバージョンを選びます。",
 		setupOutput: "出力先を登録",
 		setupOutputDescription:
 			"エンコードした映像やマニフェストの保存先となるストレージの認証情報を登録します。VOD の入力には認証情報なしで公開 HTTPS 動画も使えます。",

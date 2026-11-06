@@ -288,6 +288,36 @@ describe("First-encoding dashboard guidance", () => {
 	});
 
 	it.each([
+		"vod",
+		"live",
+	])("rechecks fresh empty history when returning immediately after creating the first %s", async (kind) => {
+		const rendered = renderWithQuery(<DashboardHome />);
+		await guide();
+		// Match the production freshness window; neither creation wizard
+		// invalidates the dashboard's bounded existence queries.
+		rendered.client.setQueryDefaults(["encoding-jobs"], { staleTime: 15_000 });
+		rendered.client.setQueryDefaults(["live-channels"], { staleTime: 15_000 });
+		rendered.rerender(null);
+		if (kind === "vod") vodItems = [{ id: "just-created-job" }];
+		else liveItems = [{ id: "just-created-channel" }];
+		rendered.rerender(<DashboardHome />);
+		const url =
+			kind === "vod"
+				? "/api/encoding-jobs?limit=1"
+				: "/api/live-channels?limit=1";
+		await waitFor(() =>
+			expect(
+				apiFetch.mock.calls.filter(([request]) => request === url),
+			).toHaveLength(2),
+		);
+		await waitFor(() =>
+			expect(
+				screen.queryByRole("region", { name: "Create your first encoding" }),
+			).toBeNull(),
+		);
+	});
+
+	it.each([
 		"/api/encoding-jobs?limit=1",
 		"/api/live-channels?limit=1",
 		"/api/credentials",

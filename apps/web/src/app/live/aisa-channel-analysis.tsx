@@ -31,6 +31,7 @@ type Props = {
 	encodingId: string;
 	status?: string;
 	initialSnapshot?: unknown;
+	embedded?: boolean;
 };
 
 type SnapshotView = {
@@ -73,6 +74,7 @@ function RunAnalysis({
 	encodingId,
 	status,
 	initialSnapshot,
+	embedded = false,
 }: Props) {
 	const { t, locale } = useT();
 	const mayTranslate = useMutationAccess("live.aisa.translate");
@@ -202,13 +204,19 @@ function RunAnalysis({
 	]);
 	return (
 		<section
-			id="sec-analysis"
-			className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 sm:p-6"
+			id={embedded ? undefined : "sec-analysis"}
+			className={
+				embedded
+					? "space-y-4"
+					: "space-y-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 sm:p-6"
+			}
 		>
 			<div className="flex flex-wrap items-center justify-between gap-3">
-				<div className="min-w-0">
-					<p className="text-sm text-zinc-400">{t("aisaLive.title")}</p>
-					<CopyableId value={analysisId} label={t("aisaLive.analysisId")} />
+				<div className="min-w-0 space-y-1">
+					<p className="text-sm text-zinc-400">
+						{t("aisaLive.resultDescription")}
+					</p>
+					<p className="text-xs text-zinc-500">{t("aisaLive.poweredBy")}</p>
 				</div>
 				<fieldset
 					className="flex flex-wrap gap-2"
@@ -235,18 +243,6 @@ function RunAnalysis({
 			{language === "ja" && snapshot?.keyMoments.length ? (
 				<div className="space-y-2 text-xs text-zinc-500">
 					<p>{t("aisaLive.translationDerived")}</p>
-					{translations.data?.translations.some(
-						(entry) => entry.origin === "LOCAL_MODEL",
-					) ? (
-						<p>
-							{t("aisaLive.translationModel", {
-								model:
-									translations.data.translations.find(
-										(entry) => entry.origin === "LOCAL_MODEL",
-									)?.model ?? "",
-							})}
-						</p>
-					) : null}
 					{translate.isPending ? (
 						<p role="status">{t("aisaLive.translating")}</p>
 					) : null}
@@ -276,6 +272,7 @@ function RunAnalysis({
 				</div>
 			) : null}
 			<AisaLiveResults
+				embedded={embedded}
 				accountId={accountId}
 				analysisId={analysisId}
 				encodingId={encodingId}
@@ -286,6 +283,28 @@ function RunAnalysis({
 				failed={resource.isError || results.isError}
 				translations={translations.data}
 				language={language}
+				technicalDetails={
+					<div className="space-y-2">
+						<div className="flex min-w-0 flex-wrap items-center gap-2">
+							<span>{t("aisaLive.analysisId")}</span>
+							<CopyableId value={analysisId} label={t("aisaLive.analysisId")} />
+						</div>
+						{language === "ja" &&
+						snapshot?.keyMoments.length &&
+						translations.data?.translations.some(
+							(entry) => entry.origin === "LOCAL_MODEL",
+						) ? (
+							<p>
+								{t("aisaLive.translationModel", {
+									model:
+										translations.data.translations.find(
+											(entry) => entry.origin === "LOCAL_MODEL",
+										)?.model ?? "",
+								})}
+							</p>
+						) : null}
+					</div>
+				}
 			/>
 		</section>
 	);

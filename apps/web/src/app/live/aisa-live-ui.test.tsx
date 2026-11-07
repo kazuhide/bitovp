@@ -140,7 +140,7 @@ describe("AISA Live Preview UI", () => {
 			<AisaLiveDetail accountId={accountId} analysisId={analysisId} />,
 		);
 		expect(
-			await screen.findByText("Waiting for analysis results."),
+			await screen.findByText("Waiting for key moments."),
 		).toBeInTheDocument();
 		expect(
 			screen.getByText(/soccer.*tennis.*American football/i),
@@ -234,7 +234,7 @@ describe("AISA Live Preview UI", () => {
 			<AisaLiveDetail accountId={accountId} analysisId={analysisId} />,
 		);
 		expect(
-			await screen.findByText(/No key moments in this snapshot/),
+			await screen.findByText(/No key moments in this result/),
 		).toBeInTheDocument();
 		expect(
 			screen.queryByText(/Results could not be refreshed/),

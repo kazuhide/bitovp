@@ -6,32 +6,39 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	aisaLive: {
-		selectedRunUnavailable:
-			"指定した AISA の実行はこのチャンネルで確認できません。",
+		selectedRunUnavailable: "指定した実行はこのチャンネルで確認できません。",
 		channelId: "チャンネル ID",
 		viewRunResults: "実行 #{n} の解析結果を表示",
-		enableInLive: "AISA Live（プレビュー）を有効にする",
-		managedPreset: "AISA 管理プリセット",
+		featureGroupTitle: "追加機能",
+		featureDescription:
+			"この配信の見どころを自動検出し、チャンネル詳細に表示します。",
+		featureBadge: "キーモーメント解析あり",
+		poweredBy: "AISA Live による解析",
+		analysisDetails: "解析の詳細",
+		featureWaiting: "配信を開始するとキーモーメントを検出します。",
+		resultDescription: "検出した場面を録画から再生できます。",
+		enableInLive: "キーモーメントを自動検出する",
+		managedPreset: "プレビューの配信構成",
 		managedGraphHelp:
-			"ラダー、パッケージング、マニフェストは AISA が構成します。プレビューを無効にすると通常の設定に戻ります。",
-		acceptManagedGraph: "このチャンネルに AISA 管理プリセットを使う",
+			"このプレビューでは専用のラダー、パッケージング、マニフェストを使用します。カスタムラダーや DRM は利用できません。無効にすると通常の設定に戻ります。",
+		acceptManagedGraph: "このプレビュー対応の配信構成を使用する",
 		managedGraphRequired:
-			"カスタムのエンコード構成を置き換えるには管理プリセットの使用を選択してください。",
+			"カスタムのエンコード構成を置き換えるには、プレビュー対応の配信構成の使用を選択してください。",
 		unsupportedSettings:
-			"設定済みの高度なエンコード設定、DRM、ミラー、アーカイブ、広告設定はプレビューで利用できません。続けるには明示的に解除してください。",
+			"カスタムラダー、高度なエンコード設定、DRM、ミラー、アーカイブ、広告設定はプレビューで利用できません。続けるには明示的に解除してください。",
 		clearUnsupportedSettings: "プレビュー非対応の設定を解除",
 		previewUnavailable:
-			"このサーバーでは AISA Live のプレビューが無効です。通常の Live Encoding を使うにはここで無効にしてください。",
+			"このサーバーではキーモーメント検出のプレビューが無効です。通常の配信を作成するには、この追加機能を無効にしてください。",
 		supportedInputs: "プレビューで使える入力は RTMP と配信中の HLS です。",
 		managedSchedule:
-			"AISA Live のプレビューは予約に対応していません。続けるには既存の予約を明示的に解除してください。",
+			"このプレビューは予約配信に対応していません。続けるには既存の予約を明示的に解除してください。",
 		clearSchedule: "予約を解除",
 		componentVersionsHint:
 			"任意のサービスコンポーネントバージョンは解析の開始時に適用されます。",
 		managedStartHint:
-			"AISA サービスを通してチャンネルを作成・開始します。通常の稼働保護設定は利用できません。",
+			"プレビュー対応の配信構成を使用します。通常の稼働保護設定は利用できません。",
 		rtmpInputHint:
-			"空欄なら AISA が RTMP 入力を作成します。既存の入力 ID を指定すると参照入力として使います。",
+			"空欄なら RTMP 入力を自動作成します。既存の入力 ID を指定すると参照入力として使います。",
 		previewPlay: "この場面を再生",
 		previewPause: "一時停止",
 		previewReplay: "この場面をもう一度再生",
@@ -54,19 +61,19 @@ export const ja = {
 		translationUnavailable:
 			"このサーバーにはローカル翻訳モデルが設定されていません。",
 		translate: "未翻訳の説明を翻訳",
-		importedRun: "取り込み済みの終了した実行",
+		importedRun: "取り込み済みの終了した配信",
 		importedReadOnly:
-			"終了した実行を検証し、ライブ履歴に追加しました。配信側の設定は閲覧のみです。",
+			"終了した配信の履歴です。配信設定の変更や再開始はできません。",
 		managedActionsHint:
-			"AISA Live のプレビューでは、新しい実行の開始・停止・起動のキャンセルに対応しています。",
+			"この配信構成では、再起動、タイムシフトのリセット、広告挿入などの高度な操作は利用できません。",
 		title: "AISA Live（プレビュー）",
 		newAnalysis: "AISA 解析を作成",
 		list: "AISA 解析一覧",
 		normalLive: "通常の Live Encoding",
 		sports:
-			"現在の Preview の key moments 対象は、サッカー（football）・テニス・アメリカンフットボールです。対象種目でも必ず検出されるとは限りません。",
+			"キーモーメント検出のプレビューは、サッカー（football）・テニス・アメリカンフットボールが対象です。対象種目でも必ず検出されるとは限りません。",
 		managed:
-			"AISA が専用の Live Encoding と録画を管理します。通常の Live のラダー・DRM・ESAM 設定は引き継ぎません。",
+			"このプレビューでは、専用の Live Encoding と録画を使用します。カスタムラダー・DRM・ESAM 設定は引き継げません。",
 		account: "Bitmovin アカウント",
 		loadingAccounts: "Bitmovin アカウントを読み込んでいます…",
 		noAccounts: "解析を作成する前に Bitmovin アカウントを追加してください。",
@@ -117,14 +124,14 @@ export const ja = {
 			"結果が不明な操作を繰り返す前に、解析の状態を更新してください。",
 		checkState: "次の操作の前に解析の状態を確認",
 		ingest: "配信の接続情報",
-		ingestWaiting: "解析が RUNNING になると接続情報を取得できます。",
-		ingestHint: "RUNNING や接続先の表示だけでは、映像の受信は確認できません。",
+		ingestWaiting: "配信が開始すると接続情報を取得できます。",
+		ingestHint: "接続先の表示だけでは、映像の受信は確認できません。",
 		keyMoments: "キーモーメント",
-		pending: "解析結果を待っています。",
+		pending: "キーモーメントを待っています。",
 		terminalNoResults: "利用できる解析結果はありません。",
 		invalidResult: "最新の結果を採用できませんでした。",
 		empty:
-			"この snapshot に key moments はありません。現在の Preview はサッカー・テニス・アメリカンフットボールが対象で、すべてのイベントが検出されるわけではありません。",
+			"この結果にキーモーメントはありません。現在のプレビューはサッカー・テニス・アメリカンフットボールが対象で、すべてのイベントが検出されるわけではありません。",
 		final: "最終結果",
 		evolving: "結果は今後変わる可能性があります",
 		awaitingFinal: "最終結果を待っています。",
@@ -2418,6 +2425,8 @@ export const ja = {
 		providerUnknownNever: "なし",
 		providerTerminalHint:
 			"Bitmovin から {status} が報告されました（{at}）。エンコーダは解放済みで再起動できません。開始すると、新しいエンコーダと入力エンドポイントで次の配信を準備します。",
+		inputUnobserved: "入力状態を未確認",
+		inputUnobservedHint: "この配信の入力接続状態は取得できていません。",
 		s2: "② インスタンス起動中",
 		s2Hint:
 			"Bitmovin がエンコーダインスタンスを起動中です。起動時間はリージョンや構成で異なります。過去の実測は設定の「ライブ」で確認できます。まだ入力は受信できません。",

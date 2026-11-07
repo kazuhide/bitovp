@@ -739,11 +739,6 @@ export function LiveWizard({
 				>
 					{step === 0 ? (
 						<>
-							<AisaSettingsSection
-								state={state}
-								onPatch={patch}
-								enabled={aisaPreviewEnabled}
-							/>
 							<Field label={t("ui.channelName")} htmlFor="lw-name">
 								<Input
 									id="lw-name"
@@ -861,6 +856,11 @@ export function LiveWizard({
 									</div>
 								</Field>
 							</div>
+							<AisaSettingsSection
+								state={state}
+								onPatch={patch}
+								enabled={aisaPreviewEnabled}
+							/>
 						</>
 					) : null}
 

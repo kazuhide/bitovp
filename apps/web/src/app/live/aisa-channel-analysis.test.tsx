@@ -97,6 +97,57 @@ beforeEach(() => {
 });
 
 describe("AISA results in a normal channel", () => {
+	it("embeds under the channel heading with one collapsed analysis disclosure", async () => {
+		const user = userEvent.setup();
+		const rendered = renderWithQuery(
+			<section id="sec-analysis">
+				<h3>Key moments</h3>
+				<AisaChannelAnalysisPanel
+					accountId={accountId}
+					analysisId={analysisId}
+					encodingId={encodingId}
+					embedded
+				/>
+			</section>,
+		);
+		await screen.findByText(original);
+		expect(rendered.container.querySelectorAll("#sec-analysis")).toHaveLength(
+			1,
+		);
+		expect(
+			screen.getAllByRole("heading", { name: "Key moments" }),
+		).toHaveLength(1);
+		expect(screen.queryByText("AISA Live Preview")).not.toBeInTheDocument();
+		expect(
+			screen.getByText("Play detected moments from the recording."),
+		).toBeVisible();
+		expect(screen.getByText("Powered by AISA Live")).toBeVisible();
+		expect(screen.getByText("Final result")).toBeVisible();
+		const panel = rendered.container.querySelector("#sec-analysis > section");
+		expect(panel).not.toHaveClass("border", "p-4", "sm:p-6");
+		const disclosure = rendered.container.querySelector("details");
+		expect(rendered.container.querySelectorAll("details")).toHaveLength(1);
+		expect(disclosure).not.toHaveAttribute("open");
+		expect(screen.getByText(analysisId).closest("details")).toBe(disclosure);
+		expect(screen.getByText("Snapshot 1").closest("details")).toBe(disclosure);
+		expect(screen.getByText("Analyzed: 0–20 s").closest("details")).toBe(
+			disclosure,
+		);
+		await user.click(screen.getByRole("button", { name: "Japanese" }));
+		await screen.findByText(japanese);
+		expect(
+			screen.getByText("Local model: installed-local-model").closest("details"),
+		).toBe(disclosure);
+		expect(
+			screen.getByText(/Japanese descriptions are local translations/),
+		).toBeVisible();
+		await user.click(
+			screen.getByText("Analysis details", { selector: "summary" }),
+		);
+		expect(disclosure).toHaveAttribute("open");
+		expect(screen.getByText(analysisId)).toBeVisible();
+	});
+
 	it("switches a source-matched local translation and passes the actual moment range to playback", async () => {
 		const user = userEvent.setup();
 		renderWithQuery(
@@ -107,6 +158,8 @@ describe("AISA results in a normal channel", () => {
 			/>,
 		);
 		await screen.findByText(original);
+		expect(document.getElementById("sec-analysis")).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Key moments" })).toBeVisible();
 		await user.click(screen.getByRole("button", { name: "Japanese" }));
 		expect(await screen.findByText(japanese)).toHaveAttribute("lang", "ja");
 		expect(
@@ -304,7 +357,7 @@ it("withdraws removed sources and refuses their reuse through the controlled cha
 			},
 		),
 	);
-	await screen.findByText(/No key moments in this snapshot/);
+	await screen.findByText(/No key moments in this result/);
 	expect(screen.queryByText(original)).not.toBeInTheDocument();
 	act(() =>
 		rendered.client.setQueryData(
@@ -327,6 +380,7 @@ it("withdraws removed sources and refuses their reuse through the controlled cha
 });
 
 it("keeps English available and does not retry automatically after local inference fails", async () => {
+	const user = userEvent.setup();
 	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
 		if (url.includes("/translations")) {
 			if (init?.method === "POST") throw new Error("local model unavailable");
@@ -341,6 +395,7 @@ it("keeps English available and does not retry automatically after local inferen
 			accountId={accountId}
 			analysisId={analysisId}
 			encodingId={encodingId}
+			embedded
 		/>,
 		"ja",
 	);
@@ -349,4 +404,18 @@ it("keeps English available and does not retry automatically after local inferen
 	expect(
 		apiFetch.mock.calls.filter(([, init]) => init?.method === "POST"),
 	).toHaveLength(1);
+	const failure = screen.getByText(
+		"翻訳を完了できませんでした。原文は確認できます。",
+	);
+	expect(failure).toBeVisible();
+	expect(failure.closest("details")).toBeNull();
+	const retry = screen.getByRole("button", { name: "未翻訳の説明を翻訳" });
+	expect(retry).toBeVisible();
+	expect(retry.closest("details")).toBeNull();
+	await user.click(retry);
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.filter(([, init]) => init?.method === "POST"),
+		).toHaveLength(2),
+	);
 });

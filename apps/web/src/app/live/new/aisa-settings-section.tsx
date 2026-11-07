@@ -15,7 +15,11 @@ type Props = {
 	onPatch: (partial: Partial<LiveWizardState>) => void;
 };
 
-export function AisaManagedGraphNotice({ state, onPatch }: Props) {
+export function AisaManagedGraphNotice({
+	state,
+	onPatch,
+	showConsent = false,
+}: Props & { showConsent?: boolean }) {
 	const { t } = useT();
 	return (
 		<section className="space-y-3 rounded-md border border-zinc-700 bg-zinc-900/40 p-4">
@@ -23,23 +27,25 @@ export function AisaManagedGraphNotice({ state, onPatch }: Props) {
 				{t("aisaLive.managedPreset")}
 			</h2>
 			<p className="text-sm text-zinc-400">{t("aisaLive.managedGraphHelp")}</p>
-			<label className="flex items-start gap-2 text-sm text-zinc-200">
-				<input
-					type="checkbox"
-					className="mt-0.5 h-4 w-4 accent-emerald-600"
-					checked={state.aisaLive?.useManagedGraph ?? false}
-					onChange={(event) =>
-						onPatch({
-							aisaLive: {
-								...EMPTY_AISA_LIVE_SETTINGS,
-								...state.aisaLive,
-								useManagedGraph: event.target.checked,
-							},
-						})
-					}
-				/>
-				{t("aisaLive.acceptManagedGraph")}
-			</label>
+			{showConsent ? (
+				<label className="flex items-start gap-2 text-sm text-zinc-200">
+					<input
+						type="checkbox"
+						className="mt-0.5 h-4 w-4 accent-emerald-600"
+						checked={state.aisaLive?.useManagedGraph ?? false}
+						onChange={(event) =>
+							onPatch({
+								aisaLive: {
+									...EMPTY_AISA_LIVE_SETTINGS,
+									...state.aisaLive,
+									useManagedGraph: event.target.checked,
+								},
+							})
+						}
+					/>
+					{t("aisaLive.acceptManagedGraph")}
+				</label>
+			) : null}
 		</section>
 	);
 }
@@ -52,7 +58,16 @@ export function AisaSettingsSection({
 	const { t } = useT();
 	if (!enabled && !state.aisaLive?.enabled) return null;
 	return (
-		<div className="space-y-3">
+		<section
+			aria-labelledby="lw-additional-features"
+			className="space-y-3 border-zinc-800 border-t pt-5"
+		>
+			<h2
+				id="lw-additional-features"
+				className="font-medium text-sm text-zinc-100"
+			>
+				{t("aisaLive.featureGroupTitle")}
+			</h2>
 			<label className="flex items-center gap-2 text-sm text-zinc-200">
 				<input
 					type="checkbox"
@@ -65,6 +80,9 @@ export function AisaSettingsSection({
 				/>
 				{t("aisaLive.enableInLive")}
 			</label>
+			<p className="text-sm text-zinc-400">
+				{t("aisaLive.featureDescription")}
+			</p>
 			{state.aisaLive?.enabled ? (
 				<>
 					{!enabled ? (
@@ -73,7 +91,7 @@ export function AisaSettingsSection({
 						</p>
 					) : null}
 					<p className="text-sm text-zinc-400">{t("aisaLive.sports")}</p>
-					<AisaManagedGraphNotice state={state} onPatch={onPatch} />
+					<AisaManagedGraphNotice state={state} onPatch={onPatch} showConsent />
 					{hasAisaUnsupportedSettings(state) ? (
 						<div className="space-y-2">
 							<p role="alert" className="text-sm text-amber-400">
@@ -90,6 +108,6 @@ export function AisaSettingsSection({
 					) : null}
 				</>
 			) : null}
-		</div>
+		</section>
 	);
 }

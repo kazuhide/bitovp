@@ -84,7 +84,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 		error: null,
 		lastHeartbeat: null,
 		lastHeartbeatAt: null,
-		stepLog: [],
+		stepLog: [] as unknown[],
 		liveToVod: null,
 		originObservation: null,
 		createdAt: now,
@@ -98,7 +98,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 		plan: imported ? { kind: "AISA_IMPORTED" } : plan,
 		bitmovinEncodingId: encodingId,
 		bitmovinAccountId: accountId,
-		stepLog: [],
+		stepLog: [] as unknown[],
 		streamKey: "TennisMatch",
 		encoderIp: null,
 		programStartAt: null,
@@ -117,7 +117,10 @@ beforeEach(() => {
 	seen.snapshots.mockClear();
 	replaceRoute.mockClear();
 });
-function respond(row: ReturnType<typeof fixture>) {
+function respond(
+	row: ReturnType<typeof fixture>,
+	role: "OPERATOR" | "VIEWER" = "OPERATOR",
+) {
 	apiFetch.mockImplementation(async (url: string) => {
 		if (url === `/api/live-channels/${ID}`) return row;
 		if (url === `/api/live-channels/${ID}/runs`)
@@ -140,7 +143,7 @@ function respond(row: ReturnType<typeof fixture>) {
 				mode: "users",
 				configured: true,
 				authenticated: true,
-				role: "OPERATOR",
+				role,
 				effectiveUserId: "operator",
 				organizationId: "org",
 				isImpersonating: false,
@@ -159,7 +162,7 @@ it("shows an imported completed run in the normal detail route with read-only hi
 		"href",
 		"/live",
 	);
-	expect(screen.getByText(/Provider settings are read-only/)).toBeVisible();
+	expect(screen.getByText(/Its settings cannot be changed/)).toBeVisible();
 	expect(screen.getByTestId("aisa-analysis")).toHaveTextContent(
 		`${analysisId}:${encodingId}`,
 	);
@@ -190,9 +193,7 @@ it("offers managed lifecycle controls without standard graph-only mutation panel
 	).toBeVisible();
 	expect(screen.queryByRole("button", { name: /Restart/ })).toBeNull();
 	expect(
-		screen.getByText(
-			/supports starting a new run, stopping, and cancelling startup/,
-		),
+		screen.getByRole("button", { name: "Actions — more information" }),
 	).toBeVisible();
 	expect(screen.getByTestId("aisa-analysis")).toHaveTextContent(
 		`${analysisId}:${encodingId}`,
@@ -281,9 +282,60 @@ it("refuses a selected run belonging to another channel without falling back to 
 	);
 	expect(
 		await screen.findByText(
-			"The requested AISA run is unavailable in this channel.",
+			"The requested run is unavailable in this channel.",
 		),
 	).toBeVisible();
 	expect(screen.queryByTestId("aisa-analysis")).toBeNull();
 	expect(seen.bindings).toEqual([]);
+});
+
+it("shows key moments as a section of the ordinary channel console without fake monitoring", async () => {
+	respond(fixture(false));
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await screen.findByRole("heading", { name: "Court 1" });
+	expect(
+		screen.getByRole("figure", { name: "Encoder lifecycle" }),
+	).toBeVisible();
+	expect(
+		screen.getByRole("heading", { name: "Channel state", level: 2 }),
+	).toBeVisible();
+	expect(
+		screen.getByRole("heading", { name: "Key moments", level: 3 }),
+	).toBeVisible();
+	expect(document.querySelectorAll("#sec-analysis")).toHaveLength(1);
+	expect(screen.queryByText("AISA Live Preview")).toBeNull();
+	expect(screen.queryByText("③ Waiting for input")).toBeNull();
+	expect(
+		apiFetch.mock.calls.filter(([url]) =>
+			/\/(alerts|schedules|feeders)$/.test(url),
+		),
+	).toEqual([]);
+});
+
+it("keeps operator ingest and cached step payloads out of a viewer console", async () => {
+	const row = fixture(false);
+	row.currentRun.stepLog = [
+		{
+			step: "private-ingest-payload",
+			kind: "CREATE_ENCODING",
+			status: "DONE",
+			payload: {},
+			request: { streamKey: "private-stream-key" },
+		},
+	];
+	respond(row, "VIEWER");
+	const rendered = renderWithQuery(<ChannelDetail id={ID} />);
+	await screen.findByTestId("aisa-analysis");
+	await waitFor(() =>
+		expect(rendered.client.getQueryData(["auth", "session"])).toMatchObject({
+			role: "VIEWER",
+		}),
+	);
+	expect(document.getElementById("sec-steps")).toBeNull();
+	expect(document.getElementById("sec-ingest")).toBeNull();
+	expect(document.body).not.toHaveTextContent("private-ingest-payload");
+	expect(document.body).not.toHaveTextContent("private-stream-key");
+	expect(apiFetch.mock.calls.some(([url]) => url.includes("/ingest?"))).toBe(
+		false,
+	);
 });

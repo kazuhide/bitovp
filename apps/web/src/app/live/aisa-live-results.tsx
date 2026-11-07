@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type {
 	AisaResultSnapshot,
 	AisaResultsResponse,
@@ -31,6 +31,8 @@ export function AisaLiveResults({
 	acceptedSnapshot,
 	rejectedUpdate = false,
 	language = "original",
+	embedded = false,
+	technicalDetails,
 }: {
 	accountId: string;
 	analysisId: string;
@@ -44,6 +46,9 @@ export function AisaLiveResults({
 	acceptedSnapshot?: AisaResultSnapshot | null;
 	rejectedUpdate?: boolean;
 	language?: "ja" | "original";
+	embedded?: boolean;
+	/** Metadata supplied by the channel panel shares the result diagnostics fold. */
+	technicalDetails?: ReactNode;
 }) {
 	return (
 		<Results
@@ -59,6 +64,8 @@ export function AisaLiveResults({
 			acceptedSnapshot={acceptedSnapshot}
 			rejectedUpdate={rejectedUpdate}
 			language={language}
+			embedded={embedded}
+			technicalDetails={technicalDetails}
 		/>
 	);
 }
@@ -75,6 +82,8 @@ function Results({
 	acceptedSnapshot,
 	rejectedUpdate,
 	language,
+	embedded,
+	technicalDetails,
 }: Parameters<typeof AisaLiveResults>[0]) {
 	const { t } = useT();
 	const [{ accepted, rejected }, setView] = useState<{
@@ -113,18 +122,33 @@ function Results({
 	const observations = new Map(
 		snapshot?.observations.map((observation) => [observation.id, observation]),
 	);
+	const diagnostics = snapshot ? (
+		<div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500">
+			<span>{t("aisaLive.sequence", { sequence: snapshot.sequence })}</span>
+			<span>
+				{t("aisaLive.coverage", {
+					start: seconds(snapshot.analyzedStartTimeSeconds),
+					end: seconds(snapshot.analyzedEndTimeSeconds),
+				})}
+			</span>
+		</div>
+	) : null;
 	return (
 		<section className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<h2 className="font-semibold text-lg text-zinc-100">
-					{t("aisaLive.keyMoments")}
-				</h2>
-				{snapshot ? (
-					<p className="text-sm text-zinc-400">
-						{t(snapshot.isFinal ? "aisaLive.final" : "aisaLive.evolving")}
-					</p>
-				) : null}
-			</div>
+			{!embedded || snapshot ? (
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					{!embedded ? (
+						<h2 className="font-semibold text-lg text-zinc-100">
+							{t("aisaLive.keyMoments")}
+						</h2>
+					) : null}
+					{snapshot ? (
+						<p className="text-sm text-zinc-400">
+							{t(snapshot.isFinal ? "aisaLive.final" : "aisaLive.evolving")}
+						</p>
+					) : null}
+				</div>
+			) : null}
 			{failed ? (
 				<p role="alert" className="text-sm text-red-300">
 					{t("aisaLive.pollFailed")}
@@ -140,6 +164,19 @@ function Results({
 					{t("aisaLive.awaitingFinal")}
 				</p>
 			) : null}
+			{technicalDetails || (embedded && snapshot) ? (
+				<details className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-500">
+					<summary className="cursor-pointer rounded text-zinc-400 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+						{t("aisaLive.analysisDetails")}
+					</summary>
+					<div className="mt-3 space-y-2">
+						{technicalDetails}
+						{diagnostics}
+					</div>
+				</details>
+			) : (
+				diagnostics
+			)}
 			{!snapshot ? (
 				<p role="status" className="text-sm text-zinc-400">
 					{t(
@@ -150,17 +187,6 @@ function Results({
 				</p>
 			) : (
 				<>
-					<div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500">
-						<span>
-							{t("aisaLive.sequence", { sequence: snapshot.sequence })}
-						</span>
-						<span>
-							{t("aisaLive.coverage", {
-								start: seconds(snapshot.analyzedStartTimeSeconds),
-								end: seconds(snapshot.analyzedEndTimeSeconds),
-							})}
-						</span>
-					</div>
 					{moments.length === 0 ? (
 						<p
 							role="status"

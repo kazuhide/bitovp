@@ -12,11 +12,13 @@ export function AisaLiveIngest({
 	analysisId,
 	encodingId,
 	running,
+	embedded = false,
 }: {
 	accountId: string;
 	analysisId: string;
 	encodingId?: string;
 	running: boolean;
+	embedded?: boolean;
 }) {
 	const { t } = useT();
 	const allowed = useMutationAccess("live.aisa.ingest");
@@ -39,8 +41,16 @@ export function AisaLiveIngest({
 	const rtmp = running ? ingest.data?.rtmpIngest : undefined;
 	const srt = running ? ingest.data?.srtIngest : undefined;
 	return (
-		<section className="space-y-3 rounded-md border border-zinc-800 p-4">
-			<h2 className="font-medium text-zinc-200">{t("aisaLive.ingest")}</h2>
+		<section
+			className={
+				embedded
+					? "space-y-3"
+					: "space-y-3 rounded-md border border-zinc-800 p-4"
+			}
+		>
+			{!embedded ? (
+				<h2 className="font-medium text-zinc-200">{t("aisaLive.ingest")}</h2>
+			) : null}
 			{ingest.isError ? (
 				<p role="alert" className="text-sm text-red-300">
 					{t("aisaLive.requestFailed")}

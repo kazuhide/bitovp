@@ -28,32 +28,39 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	aisaLive: {
-		selectedRunUnavailable:
-			"The requested AISA run is unavailable in this channel.",
+		selectedRunUnavailable: "The requested run is unavailable in this channel.",
 		channelId: "Channel ID",
 		viewRunResults: "View results for run #{n}",
-		enableInLive: "Enable AISA Live Preview",
-		managedPreset: "AISA managed preset",
+		featureGroupTitle: "Additional features",
+		featureDescription:
+			"Automatically detect highlights in this stream and show them in the channel details.",
+		featureBadge: "Key moments enabled",
+		poweredBy: "Powered by AISA Live",
+		analysisDetails: "Analysis details",
+		featureWaiting: "Key moments will be detected once the stream starts.",
+		resultDescription: "Play detected moments from the recording.",
+		enableInLive: "Detect key moments automatically",
+		managedPreset: "Preview delivery configuration",
 		managedGraphHelp:
-			"AISA provisions the encoding ladder, packaging, and manifests. Your standard graph stays available when Preview is disabled.",
-		acceptManagedGraph: "Use the AISA managed preset for this channel",
+			"This Preview uses a predefined encoding ladder, packaging, and manifests. Custom ladders and DRM are unavailable. Disable it to return to your standard settings.",
+		acceptManagedGraph: "Use this Preview delivery configuration",
 		managedGraphRequired:
-			"Accept the managed preset before replacing your custom encoding graph.",
+			"Select the Preview delivery configuration before replacing your custom encoding settings.",
 		unsupportedSettings:
-			"Preview does not support the configured advanced encoding, DRM, mirror, archive, or ad settings. Clear them explicitly to continue.",
+			"Preview does not support custom ladders, advanced encoding, DRM, mirror, archive, or ad settings. Clear them explicitly to continue.",
 		clearUnsupportedSettings: "Clear unsupported Preview settings",
 		previewUnavailable:
-			"AISA Live Preview is disabled on this server. Disable it here to use standard Live Encoding.",
+			"Key moment detection Preview is disabled on this server. Turn off this feature to create a standard live stream.",
 		supportedInputs: "Preview supports RTMP or live HLS input.",
 		managedSchedule:
-			"Scheduling is unavailable for AISA Live Preview. Disable the existing schedule explicitly to continue.",
+			"Scheduling is unavailable with this Preview. Explicitly disable the existing schedule to continue.",
 		clearSchedule: "Disable schedule",
 		componentVersionsHint:
 			"Optional service component versions are applied when the analysis starts.",
 		managedStartHint:
-			"The channel is created and started through the AISA service. Standard run-safety settings are unavailable.",
+			"This Preview uses its own delivery configuration. Standard run-safety settings are unavailable.",
 		rtmpInputHint:
-			"Leave empty for AISA to create an RTMP input. An existing Input ID is used as a reference.",
+			"Leave blank to create an RTMP input automatically. Enter an existing Input ID to use a reference input.",
 		previewPlay: "Play this moment",
 		previewPause: "Pause",
 		previewReplay: "Replay this moment",
@@ -78,19 +85,19 @@ export const en = {
 		translationUnavailable:
 			"The local translation model is not configured on this server.",
 		translate: "Translate missing descriptions",
-		importedRun: "Imported completed run",
+		importedRun: "Imported completed stream",
 		importedReadOnly:
-			"This completed run was verified and added to the live history. Provider settings are read-only.",
+			"This is a completed stream in the channel history. Its settings cannot be changed and it cannot be started again.",
 		managedActionsHint:
-			"AISA Live Preview supports starting a new run, stopping, and cancelling startup.",
+			"Restart, timeshift reset, ad insertion, and other advanced controls are unavailable with this delivery configuration.",
 		title: "AISA Live Preview",
 		newAnalysis: "New AISA analysis",
 		list: "AISA analyses",
 		normalLive: "Standard Live Encoding",
 		sports:
-			"This Preview supports key moments for soccer (football), tennis, and American football. Detection is not guaranteed, including for supported sports.",
+			"Key moment detection Preview supports soccer (football), tennis, and American football. Detection is not guaranteed, including for supported sports.",
 		managed:
-			"AISA creates and manages its own Live Encoding and recording. Standard Live ladder, DRM, and ESAM settings are not inherited.",
+			"This Preview uses a dedicated Live Encoding and recording. Custom ladders, DRM, and ESAM settings cannot be carried over.",
 		account: "Bitmovin account",
 		loadingAccounts: "Loading Bitmovin accounts…",
 		noAccounts: "Add a Bitmovin account before creating an analysis.",
@@ -142,15 +149,15 @@ export const en = {
 		checkState: "Check analysis state before another operation",
 		ingest: "Ingest connection",
 		ingestWaiting:
-			"Connection details become available when the analysis is RUNNING.",
+			"Connection details become available when the stream starts.",
 		ingestHint:
-			"RUNNING and an available endpoint do not confirm that media has been received.",
+			"An available endpoint does not confirm that media is being received.",
 		keyMoments: "Key moments",
-		pending: "Waiting for analysis results.",
+		pending: "Waiting for key moments.",
 		terminalNoResults: "No analysis results are available.",
 		invalidResult: "The latest result could not be accepted.",
 		empty:
-			"No key moments in this snapshot. The current Preview supports soccer, tennis, and American football; not every event is detected.",
+			"No key moments in this result. This Preview supports soccer, tennis, and American football; not every event is detected.",
 		final: "Final result",
 		evolving: "Results may still change",
 		awaitingFinal: "Waiting for the final result.",
@@ -2462,6 +2469,9 @@ export const en = {
 		providerUnknownNever: "never",
 		providerTerminalHint:
 			"Bitmovin reported this run's encoding {status} at {at} — the encoder is gone and cannot be restarted. Start the channel for a fresh run (new encoder, new ingest coordinates).",
+		inputUnobserved: "Input status unconfirmed",
+		inputUnobservedHint:
+			"Input connection status is not available for this run.",
 		s2: "② Instance booting",
 		s2Hint:
 			"Bitmovin is provisioning the encoder instance. Startup time varies by region and configuration. View past measurements under Live in Settings. Input cannot be received yet.",

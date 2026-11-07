@@ -67,7 +67,9 @@ function input(id: string) {
 
 it("keeps the standard wizard when Preview is disabled", () => {
 	renderWithQuery(<LiveWizard />);
-	expect(screen.queryByLabelText("Enable AISA Live Preview")).toBeNull();
+	expect(
+		screen.queryByLabelText("Detect key moments automatically"),
+	).toBeNull();
 	expect(steps()).toHaveLength(9);
 });
 
@@ -76,21 +78,27 @@ it("uses the same nine steps and preserves the custom normal graph across Previe
 	await showStep(2);
 	fireEvent.change(input("lw-v-0-height"), { target: { value: "1080" } });
 	await showStep(0);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	expect(
 		screen.getByText(/soccer \(football\), tennis, and American football/),
 	).toBeVisible();
-	expect(screen.getByText(/Accept the managed preset/)).toBeVisible();
+	expect(
+		screen.getByText(/Select the Preview delivery configuration/),
+	).toBeVisible();
 	await userEvent.click(
-		screen.getByLabelText("Use the AISA managed preset for this channel"),
+		screen.getByLabelText("Use this Preview delivery configuration"),
 	);
 	await showStep(2);
 	expect(
-		screen.getByRole("heading", { name: "AISA managed preset" }),
+		screen.getByRole("heading", { name: "Preview delivery configuration" }),
 	).toBeVisible();
 	expect(document.getElementById("lw-v-0-height")).toBeNull();
 	await showStep(0);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	await showStep(2);
 	expect(input("lw-v-0-height")).toHaveValue(1080);
 	expect(steps()).toHaveLength(9);
@@ -122,19 +130,27 @@ it("retains configured safety settings until the explicit clear action", async (
 		target: { value: "60" },
 	});
 	await showStep(0);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	expect(
-		screen.getByText(/Preview does not support the configured advanced/),
+		screen.getByText(/Preview does not support custom ladders/),
 	).toBeVisible();
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	await showStep(5);
 	expect(input("lw-ar-segmentsWrittenTimeout")).toHaveValue(60);
 	await showStep(0);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	await userEvent.click(
 		screen.getByRole("button", { name: "Clear unsupported Preview settings" }),
 	);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	await showStep(5);
 	expect(input("lw-ar-segmentsWrittenTimeout")).toHaveValue(null);
 });
@@ -147,9 +163,11 @@ it("creates through the normal Live endpoint with only the accepted managed plan
 		await screen.findByLabelText("Bitmovin account"),
 		"00000000-0000-4000-8000-000000000011",
 	);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
 	await userEvent.click(
-		screen.getByLabelText("Use the AISA managed preset for this channel"),
+		screen.getByLabelText("Detect key moments automatically"),
+	);
+	await userEvent.click(
+		screen.getByLabelText("Use this Preview delivery configuration"),
 	);
 	await showStep(1);
 	await userEvent.selectOptions(screen.getByLabelText("Input kind"), "RTMP");
@@ -215,9 +233,13 @@ it("keeps an imported Preview plan explicit and blocked when the server flag is 
 		target: { value: JSON.stringify(buildLiveChannelPlan(source)) },
 	});
 	await userEvent.click(screen.getByRole("button", { name: "Load plan" }));
-	expect(screen.getByLabelText("Enable AISA Live Preview")).toBeChecked();
 	expect(
-		screen.getAllByText(/AISA Live Preview is disabled on this server/)[0],
+		screen.getByLabelText("Detect key moments automatically"),
+	).toBeChecked();
+	expect(
+		screen.getAllByText(
+			/Key moment detection Preview is disabled on this server/,
+		)[0],
 	).toBeVisible();
 	await showStep(8);
 	expect(
@@ -235,16 +257,44 @@ it("requires explicitly disabling an existing schedule for Preview", async () =>
 		screen.getByLabelText("Set the planned input feed, program and stop times"),
 	);
 	await showStep(0);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	await showStep(7);
 	await userEvent.click(
 		screen.getByRole("button", { name: "Disable schedule" }),
 	);
 	expect(screen.queryByRole("button", { name: "Disable schedule" })).toBeNull();
 	await showStep(0);
-	await userEvent.click(screen.getByLabelText("Enable AISA Live Preview"));
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
 	await showStep(7);
 	expect(
 		screen.getByLabelText("Set the planned input feed, program and stop times"),
 	).not.toBeChecked();
+});
+
+it("places key moments after normal basics and requests configuration consent only once", async () => {
+	renderWithQuery(<LiveWizard aisaPreviewEnabled />);
+	const group = screen.getByRole("heading", { name: "Additional features" });
+	expect(
+		input("lw-name").compareDocumentPosition(group) &
+			Node.DOCUMENT_POSITION_FOLLOWING,
+	).toBeTruthy();
+	await userEvent.click(
+		screen.getByLabelText("Detect key moments automatically"),
+	);
+	await userEvent.click(
+		screen.getByLabelText("Use this Preview delivery configuration"),
+	);
+	for (const step of [2, 4, 6]) {
+		await showStep(step);
+		expect(
+			screen.getByRole("heading", { name: "Preview delivery configuration" }),
+		).toBeVisible();
+		expect(
+			screen.queryByLabelText("Use this Preview delivery configuration"),
+		).toBeNull();
+	}
 });

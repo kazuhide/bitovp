@@ -11,7 +11,7 @@ export type LifecycleStage = 1 | 2 | 3 | 4 | 7;
 
 export function lifecycleStage(
 	status: LiveChannelStatus,
-	ingestConnected: boolean,
+	ingestConnected: boolean | null,
 ): LifecycleStage {
 	if (status === "CREATED" || status === "ERROR") {
 		return 1;
@@ -61,7 +61,8 @@ export function LifecycleStrip({
 	provider,
 }: {
 	status: LiveChannelStatus;
-	ingestConnected: boolean;
+	/** null means this run has no input connection observation. */
+	ingestConnected: boolean | null;
 	/**
 	 * review-228 I3: an ERROR channel can still have an encoder up on
 	 * Bitmovin (canStop exists for exactly that) — the ① hint must not
@@ -82,11 +83,13 @@ export function LifecycleStrip({
 	const { t } = useT();
 	const active = lifecycleStage(status, ingestConnected);
 	const activeDef = STAGE_DEFS.find((s) => s.n === active);
+	const inputUnobserved = status === "RUNNING" && ingestConnected === null;
 	const providerUnknown = provider?.unknown === true;
 	// A terminal legacy row is historical, not waiting for a future poll.
 	const providerUnobserved =
 		provider?.unobserved === true && (status !== "STOPPED" || hasError);
 	const providerUnconfirmed = providerUnknown || providerUnobserved;
+	const activeUnconfirmed = providerUnconfirmed || inputUnobserved;
 	const providerTerminal = provider?.terminal === true;
 	// review-2 on #268: a STOPPED channel whose stop never CONFIRMED is more
 	// exactly the population this hint describes than an ERROR one is — the
@@ -125,7 +128,9 @@ export function LifecycleStrip({
 					})
 				: errorWithEncoder
 					? t("lifecycle.s1ErrorHint")
-					: t(activeDef?.hintKey ?? "lifecycle.s1Hint");
+					: inputUnobserved
+						? t("lifecycle.inputUnobservedHint")
+						: t(activeDef?.hintKey ?? "lifecycle.s1Hint");
 	return (
 		<figure
 			aria-label={t("lifecycle.aria")}
@@ -159,7 +164,7 @@ export function LifecycleStrip({
 							<span
 								className={
 									state === "active"
-										? providerUnconfirmed
+										? activeUnconfirmed
 											? "rounded bg-amber-950 px-2 py-0.5 font-medium text-amber-300 ring-1 ring-amber-700"
 											: "rounded bg-sky-950 px-2 py-0.5 font-medium text-sky-300 ring-1 ring-sky-700"
 										: state === "past"
@@ -167,7 +172,11 @@ export function LifecycleStrip({
 											: "rounded px-2 py-0.5 text-zinc-600"
 								}
 							>
-								{t(stage.labelKey)}
+								{t(
+									inputUnobserved && stage.n === 3
+										? "lifecycle.inputUnobserved"
+										: stage.labelKey,
+								)}
 							</span>
 						</li>
 					);
@@ -175,9 +184,7 @@ export function LifecycleStrip({
 			</ol>
 			<figcaption
 				className={
-					providerUnconfirmed
-						? "text-xs text-amber-300"
-						: "text-xs text-zinc-400"
+					activeUnconfirmed ? "text-xs text-amber-300" : "text-xs text-zinc-400"
 				}
 			>
 				{/* STAGE_DEFS covers the mapper's whole range, so activeDef is

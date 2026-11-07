@@ -682,7 +682,8 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 		);
 		if (imported)
 			omittedSections.push("sec-actions", "sec-ingest", "sec-danger");
-		if (!aisaOperatorAllowed) omittedSections.push("sec-ingest", "sec-steps");
+		if (!aisaOperatorAllowed)
+			omittedSections.push("sec-ingest", "sec-steps", "sec-danger");
 	}
 	if (!qcVmafEnabled) {
 		omittedSections.push("sec-vmaf");
@@ -1590,13 +1591,15 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 									>
 										{t(layer.titleKey)}
 									</h2>
-									{layer.helpKey ? (
+									{!aisaRow && layer.helpKey ? (
 										<SectionHelp
 											title={t(layer.titleKey)}
 											help={t(layer.helpKey)}
 										/>
 									) : null}
-									<p className="text-xs text-zinc-500">{t(layer.leadKey)}</p>
+									{!aisaRow || layer.id === "layer-danger" ? (
+										<p className="text-xs text-zinc-500">{t(layer.leadKey)}</p>
+									) : null}
 								</div>
 								{layer.sections.map((sectionId) => (
 									<Fragment key={sectionId}>{nodes[sectionId]}</Fragment>

@@ -304,6 +304,14 @@ it("shows key moments as a section of the ordinary channel console without fake 
 	).toBeVisible();
 	expect(document.querySelectorAll("#sec-analysis")).toHaveLength(1);
 	expect(screen.queryByText("AISA Live Preview")).toBeNull();
+	expect(
+		screen.queryByText("Alerts, manifests and slate reservations"),
+	).toBeNull();
+	expect(
+		screen.queryByText(
+			"Raw telemetry, past runs, and the settings you change once.",
+		),
+	).toBeNull();
 	expect(screen.queryByText("③ Waiting for input")).toBeNull();
 	expect(
 		apiFetch.mock.calls.filter(([url]) =>
@@ -332,6 +340,10 @@ it("keeps operator ingest and cached step payloads out of a viewer console", asy
 		}),
 	);
 	expect(document.getElementById("sec-steps")).toBeNull();
+	expect(screen.queryByRole("heading", { name: "Danger zone" })).toBeNull();
+	expect(
+		screen.queryByRole("link", { name: "Delete this channel" }),
+	).toBeNull();
 	expect(document.getElementById("sec-ingest")).toBeNull();
 	expect(document.body).not.toHaveTextContent("private-ingest-payload");
 	expect(document.body).not.toHaveTextContent("private-stream-key");

@@ -883,6 +883,11 @@ export async function POST(req: Request, { params }: RouteParams) {
 							await tx.liveChannelRun.update({
 								where: { id: latest.id },
 								data: {
+									// Setup may fail before the worker first mirrors its log.
+									// Preserve this AISA attempt and its dispatch evidence now.
+									...(aisaManaged
+										? { stepLog: entries as unknown as Prisma.InputJsonValue }
+										: {}),
 									status: "PROVISIONING",
 									error: null,
 									endedAt: null,
@@ -915,6 +920,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 									...(compiled ? { id: runForCompile.runId } : {}),
 									liveChannelId: id,
 									seq: runForCompile.seq,
+									// Record the claimed canonical log before SDK setup can fail.
+									stepLog: entries as unknown as Prisma.InputJsonValue,
 									status: "PROVISIONING",
 									outputPrefix: compiled ? compiled.outputPrefix : "",
 								},

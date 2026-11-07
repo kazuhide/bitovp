@@ -1,4 +1,8 @@
-import { type AisaLiveResultSnapshot, aisaResultSchema } from "@bitovp/core";
+import {
+	type AisaFinalizationProof,
+	type AisaLiveResultSnapshot,
+	aisaResultSchema,
+} from "@bitovp/core";
 import {
 	type AisaLiveClient,
 	type AisaLiveCreateRequest,
@@ -29,6 +33,7 @@ export type AisaLiveAnalysis = z.infer<typeof analysisSchema>;
 export type AisaLiveObservation = {
 	analysis: AisaLiveAnalysis;
 	snapshot?: AisaLiveResultSnapshot;
+	finalization?: AisaFinalizationProof;
 };
 
 /** These callbacks run inside the existing provision lease and run-generation fence. */
@@ -46,9 +51,14 @@ export type AisaLiveControl = {
 	sleep?(ms: number): Promise<void>;
 };
 
-class AisaLiveIdentityError extends Error {
+export class AisaLiveIdentityError extends Error {
 	constructor() {
 		super("AISA_LIVE_IDENTITY_MISMATCH");
+	}
+}
+export class AisaLiveFinalizationPendingError extends Error {
+	constructor() {
+		super("AISA_LIVE_FINALIZATION_PENDING");
 	}
 }
 
@@ -68,8 +78,6 @@ export function createAisaLiveOps(
 	const { options, audited } = ctx;
 	let client: AisaLiveClient | undefined;
 	const load = (versions?: AisaLiveVersions) => {
-		if (!aisaLivePreviewEnabled())
-			throw new Error("AISA_LIVE_PREVIEW_DISABLED");
 		if (versions)
 			return createAisaLiveClient({
 				apiKey: options.apiKey,
@@ -96,6 +104,13 @@ export function createAisaLiveOps(
 	};
 	const get = async (id: string) => {
 		const analysis = safeAnalysis(await load().get(id), id);
+		const expectedAnalysis = options.aisaLive?.analysisId();
+		const expectedEncoding = options.aisaLive?.encodingId?.();
+		if (
+			(expectedAnalysis && analysis.analysisId !== expectedAnalysis) ||
+			(expectedEncoding && analysis.encodingId !== expectedEncoding)
+		)
+			throw new AisaLiveIdentityError();
 		await options.aisaLive?.onObservation?.({ analysis });
 		return analysis;
 	};
@@ -142,19 +157,51 @@ export function createAisaLiveOps(
 				parsed.data.analysisId !== analysis.analysisId ||
 				parsed.data.encodingId !== analysis.encodingId
 			)
-				throw new Error("AISA_LIVE_RESULT_IDENTITY_MISMATCH");
+				throw new AisaLiveIdentityError();
 			await options.aisaLive?.onObservation?.({
 				analysis,
 				snapshot: parsed.data,
+				...(["FINISHED", "ERROR", "CANCELED", "TRANSFER_ERROR"].includes(
+					analysis.status,
+				)
+					? {
+							finalization: {
+								analysisId: analysis.analysisId,
+								encodingId: analysis.encodingId,
+								status: analysis.status as AisaFinalizationProof["status"],
+								result: parsed.data.isFinal
+									? ("FINAL" as const)
+									: ("AVAILABLE_PARTIAL" as const),
+								observedAt: new Date().toISOString(),
+							},
+						}
+					: {}),
 			});
-			return parsed.data.isFinal;
+			return (
+				parsed.data.isFinal ||
+				["ERROR", "CANCELED", "TRANSFER_ERROR"].includes(analysis.status)
+			);
 		} catch (error) {
 			if (
 				error instanceof AisaLiveError &&
 				error.httpStatusCode === 404 &&
 				error.code === "LIVE_ANALYSIS_RESULT_NOT_AVAILABLE"
-			)
+			) {
+				if (["ERROR", "CANCELED", "TRANSFER_ERROR"].includes(analysis.status)) {
+					await options.aisaLive?.onObservation?.({
+						analysis,
+						finalization: {
+							analysisId: analysis.analysisId,
+							encodingId: analysis.encodingId,
+							status: analysis.status as AisaFinalizationProof["status"],
+							result: "UNAVAILABLE_TERMINAL_FAILURE",
+							observedAt: new Date().toISOString(),
+						},
+					});
+					return true;
+				}
 				return false;
+			}
 			throw error;
 		}
 	};
@@ -163,8 +210,7 @@ export function createAisaLiveOps(
 		encodingId: string,
 	): Promise<void> => {
 		let analysis = await get(id);
-		if (analysis.encodingId !== encodingId)
-			throw new Error("AISA_LIVE_IDENTITY_MISMATCH");
+		if (analysis.encodingId !== encodingId) throw new AisaLiveIdentityError();
 		if (
 			!["FINISHED", "CANCELED", "ERROR", "TRANSFER_ERROR"].includes(
 				analysis.status,
@@ -182,22 +228,28 @@ export function createAisaLiveOps(
 		const deadline = Date.now() + 24_000;
 		for (let attempt = 0; attempt < 12 && Date.now() < deadline; attempt++) {
 			analysis = await get(id);
-			if (analysis.encodingId !== encodingId)
-				throw new Error("AISA_LIVE_IDENTITY_MISMATCH");
+			if (analysis.encodingId !== encodingId) throw new AisaLiveIdentityError();
 			if (analysis.status === "FINISHED" && (await observeFinal(analysis)))
 				return;
-			if (["CANCELED", "ERROR", "TRANSFER_ERROR"].includes(analysis.status))
+			if (
+				["CANCELED", "ERROR", "TRANSFER_ERROR"].includes(analysis.status) &&
+				(await observeFinal(analysis))
+			)
 				return;
 			await (
 				options.aisaLive?.sleep ??
 				((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
 			)(2_000);
 		}
-		throw new Error("AISA_LIVE_FINALIZATION_PENDING");
+		throw new AisaLiveFinalizationPendingError();
 	};
 	return {
 		createAisaLiveAnalysis: async (request: AisaLiveCreateRequest) => {
 			const control = options.aisaLive;
+			// A cleanup may reconcile an already-dispatched CREATE by exact run
+			// name after Preview is disabled; allowCreate=false still forbids POST.
+			if (!aisaLivePreviewEnabled() && control?.allowCreate?.() !== false)
+				throw new Error("AISA_LIVE_PREVIEW_DISABLED");
 			if (
 				!control?.beforeCreate ||
 				!control.creationMayExist ||
@@ -240,6 +292,8 @@ export function createAisaLiveOps(
 			encodingId: string,
 			versions?: AisaLiveVersions,
 		) => {
+			if (!aisaLivePreviewEnabled())
+				throw new Error("AISA_LIVE_PREVIEW_DISABLED");
 			const analysis = await get(id);
 			if (analysis.encodingId !== encodingId)
 				throw new Error("AISA_LIVE_IDENTITY_MISMATCH");
@@ -286,6 +340,7 @@ export function createAisaLiveOps(
 			} catch (error) {
 				if (
 					error instanceof AisaLiveIdentityError ||
+					!(error instanceof AisaLiveError) ||
 					options.aisaLive?.encodingId?.() !== encodingId
 				)
 					throw error;
@@ -297,6 +352,7 @@ export function createAisaLiveOps(
 				try {
 					await stopAnalysis(analysisId, encodingId);
 				} catch (error) {
+					if (error instanceof AisaLiveIdentityError) throw error;
 					finalizationError = error;
 				}
 			}
@@ -307,7 +363,7 @@ export function createAisaLiveOps(
 				await check(false);
 				await liveOps.stopLiveEncoding(encodingId);
 			}
-			if (finalizationError) throw new Error("AISA_LIVE_FINALIZATION_PENDING");
+			if (finalizationError) throw new AisaLiveFinalizationPendingError();
 		},
 		restartLiveEncoding: async (encodingId: string) => {
 			if (options.aisaLive?.analysisId())

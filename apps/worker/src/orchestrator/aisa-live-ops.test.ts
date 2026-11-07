@@ -1,4 +1,5 @@
 import type { AisaLiveClient } from "@bitovp/core/aisa-live-client";
+import { AisaLiveError } from "@bitovp/core/aisa-live-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBitmovinSdkOps, type SdkOpsOptions } from "./sdk-ops";
 
@@ -79,6 +80,7 @@ function fixture() {
 	const ops = createBitmovinSdkOps(options, async () => {});
 	return {
 		ops,
+		options,
 		client,
 		beforeCreate,
 		beforeStart,
@@ -96,6 +98,114 @@ function fixture() {
 }
 
 describe("managed AISA worker boundary", () => {
+	it("keeps bound cleanup available after Preview is disabled, while refusing Create and Start", async () => {
+		const f = fixture();
+		f.bind();
+		f.setProvider({ analysisId, encodingId, status: "RUNNING" });
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: "SUCCESS",
+							data: { result: { status: "FINISHED" } },
+						}),
+					),
+			),
+		);
+		await f.ops.stopLiveEncoding(encodingId);
+		expect(f.client.stop).toHaveBeenCalledOnce();
+		await expect(f.ops.createAisaLiveAnalysis(request)).rejects.toThrow(
+			"AISA_LIVE_PREVIEW_DISABLED",
+		);
+		await expect(
+			f.ops.startAisaLiveAnalysis(analysisId, encodingId),
+		).rejects.toThrow("AISA_LIVE_PREVIEW_DISABLED");
+	});
+	it("can adopt a response-lost owned Analysis for cleanup with Preview off, without creating a resource", async () => {
+		const f = fixture();
+		if (!f.options.aisaLive) throw new Error("Missing fixture control");
+		f.options.aisaLive.allowCreate = () => false;
+		f.markDispatched();
+		f.setProvider({
+			analysisId,
+			encodingId,
+			status: "CREATED",
+			name: `${request.name} [bitovp-run:${runId}]`,
+		});
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		expect(await f.ops.createAisaLiveAnalysis(request)).toBe(analysisId);
+		expect(f.client.create).not.toHaveBeenCalled();
+	});
+
+	it("never converts an onObservation identity rejection into an Encoder stop", async () => {
+		const f = fixture();
+		f.bind();
+		f.setProvider({ analysisId, encodingId: runId, status: "RUNNING" });
+		if (!f.options.aisaLive) throw new Error("Missing fixture control");
+		f.options.aisaLive.onObservation = async () => {
+			throw new Error("AISA Live run identity mismatch");
+		};
+		const fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						status: "SUCCESS",
+						data: { result: { status: "RUNNING" } },
+					}),
+				),
+		);
+		vi.stubGlobal("fetch", fetch);
+		await expect(f.ops.stopLiveEncoding(encodingId)).rejects.toThrow(
+			/IDENTITY_MISMATCH|identity mismatch/,
+		);
+		expect(fetch).not.toHaveBeenCalled();
+		expect(f.client.stop).not.toHaveBeenCalled();
+	});
+	it("records unavailable results separately when a failed Analysis and its Encoder are terminal", async () => {
+		const f = fixture();
+		f.bind();
+		f.setProvider({ analysisId, encodingId, status: "ERROR" });
+		vi.mocked(f.client.latest).mockRejectedValue(
+			new AisaLiveError(404, "LIVE_ANALYSIS_RESULT_NOT_AVAILABLE"),
+		);
+		const observations: unknown[] = [];
+		if (!f.options.aisaLive) throw new Error("Missing fixture control");
+		f.options.aisaLive.onObservation = async (value) => {
+			observations.push(value);
+		};
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: "SUCCESS",
+							data: { result: { status: "ERROR" } },
+						}),
+					),
+			),
+		);
+		await f.ops.stopLiveEncoding(encodingId);
+		expect(observations).toContainEqual(
+			expect.objectContaining({
+				finalization: expect.objectContaining({
+					analysisId,
+					encodingId,
+					status: "ERROR",
+					result: "UNAVAILABLE_TERMINAL_FAILURE",
+				}),
+			}),
+		);
+		expect(
+			observations.every(
+				(value) => !(value as { snapshot?: unknown }).snapshot,
+			),
+		).toBe(true);
+		expect(f.client.stop).not.toHaveBeenCalled();
+	});
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.unstubAllEnvs();
@@ -262,7 +372,7 @@ describe("managed AISA worker boundary", () => {
 	it("bounds a provider read failure with Encoder stop using the exact durable run binding", async () => {
 		const f = fixture();
 		f.bind();
-		vi.mocked(f.client.get).mockRejectedValue(new Error("network failure"));
+		vi.mocked(f.client.get).mockRejectedValue(new AisaLiveError(502));
 		const paths: string[] = [];
 		vi.stubGlobal(
 			"fetch",

@@ -11,6 +11,7 @@ const vmafFindFirst = vi.fn();
 const vmafCount = vi.fn();
 const auditCreate = vi.fn();
 const heartbeatEvents = vi.fn().mockResolvedValue([]);
+const latestRun = vi.fn().mockResolvedValue(null);
 
 // Interactive $transaction: invoke the callback with a tx exposing the model
 // methods the route uses. `vmafJob.count` is the in-transaction race re-assert
@@ -31,6 +32,7 @@ vi.mock("@/lib/server/context", () => ({
 			webhookEvent: { findMany: heartbeatEvents },
 			appSetting: { findUnique: vi.fn().mockResolvedValue(null) },
 			liveChannel: { findUnique, update, deleteMany: channelDeleteMany },
+			liveChannelRun: { findFirst: latestRun },
 			credential: { findMany: credentialFindMany },
 			vmafJob: {
 				deleteMany: vmafDeleteMany,
@@ -518,6 +520,25 @@ describe("DELETE /api/live-channels/[id] — the live VMAF guard", () => {
 });
 
 describe("DELETE /api/live-channels/[id]", () => {
+	it("retains a managed run whose Encoding ended before Analysis finalization was confirmed", async () => {
+		findUnique.mockResolvedValueOnce({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			bitmovinAccountId: "account",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+		});
+		latestRun.mockResolvedValueOnce({
+			aisaAnalysisId: "analysis-1",
+			bitmovinEncodingId: "encoding-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "FINISHED",
+		});
+		const response = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(response.status).toBe(409);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
 	it("400s a non-uuid id before touching the DB", async () => {
 		const res = await DELETE(delReq(), ctx("nope"));
 		expect(res.status).toBe(400);

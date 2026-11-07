@@ -28,6 +28,8 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	aisaLive: {
+		selectedRunUnavailable:
+			"The requested AISA run is unavailable in this channel.",
 		channelId: "Channel ID",
 		viewRunResults: "View results for run #{n}",
 		enableInLive: "Enable AISA Live Preview",

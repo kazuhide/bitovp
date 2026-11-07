@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AisaResultsResponse } from "@/lib/aisa-live/contracts";
+import type {
+	AisaResultSnapshot,
+	AisaResultsResponse,
+} from "@/lib/aisa-live/contracts";
 import {
 	type AisaSnapshotState,
 	applyAisaSnapshot,
@@ -25,6 +28,8 @@ export function AisaLiveResults({
 	failed,
 	onFinal,
 	translations,
+	acceptedSnapshot,
+	rejectedUpdate = false,
 	language = "original",
 }: {
 	accountId: string;
@@ -35,6 +40,9 @@ export function AisaLiveResults({
 	failed: boolean;
 	onFinal?: (isFinal: boolean) => void;
 	translations?: AisaTranslationsResponse;
+	/** Explicit null selects controlled mode before the first accepted result. */
+	acceptedSnapshot?: AisaResultSnapshot | null;
+	rejectedUpdate?: boolean;
 	language?: "ja" | "original";
 }) {
 	return (
@@ -48,6 +56,8 @@ export function AisaLiveResults({
 			failed={failed}
 			onFinal={onFinal}
 			translations={translations}
+			acceptedSnapshot={acceptedSnapshot}
+			rejectedUpdate={rejectedUpdate}
 			language={language}
 		/>
 	);
@@ -62,6 +72,8 @@ function Results({
 	failed,
 	onFinal,
 	translations,
+	acceptedSnapshot,
+	rejectedUpdate,
 	language,
 }: Parameters<typeof AisaLiveResults>[0]) {
 	const { t } = useT();
@@ -69,8 +81,9 @@ function Results({
 		accepted: AisaSnapshotState | null;
 		rejected: boolean;
 	}>({ accepted: null, rejected: false });
+	const controlled = acceptedSnapshot !== undefined;
 	useEffect(() => {
-		if (result?.availability !== "available") return;
+		if (controlled || result?.availability !== "available") return;
 		setView((previous) => {
 			try {
 				if (
@@ -86,8 +99,9 @@ function Results({
 				return { ...previous, rejected: true };
 			}
 		});
-	}, [result, analysisId, encodingId]);
-	const snapshot = accepted?.snapshot;
+	}, [result, analysisId, encodingId, controlled]);
+	const snapshot = controlled ? acceptedSnapshot : accepted?.snapshot;
+	const invalidUpdate = controlled ? rejectedUpdate : rejected;
 	useEffect(() => {
 		onFinal?.(Boolean(snapshot?.isFinal));
 	}, [snapshot?.isFinal, onFinal]);
@@ -116,7 +130,7 @@ function Results({
 					{t("aisaLive.pollFailed")}
 				</p>
 			) : null}
-			{rejected ? (
+			{invalidUpdate ? (
 				<p role="alert" className="text-sm text-amber-300">
 					{t(snapshot ? "aisaLive.retained" : "aisaLive.invalidResult")}
 				</p>

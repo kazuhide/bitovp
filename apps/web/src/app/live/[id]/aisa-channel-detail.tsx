@@ -6,6 +6,7 @@ import {
 	stepLogSchema,
 } from "@bitovp/core";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { AisaChannelAnalysisPanel } from "@/app/live/aisa-channel-analysis";
 import { AisaLiveIngest } from "@/app/live/aisa-live-ingest";
@@ -15,6 +16,7 @@ import { CopyableId } from "@/components/copyable-id";
 import { StepTimeline } from "@/components/step-timeline";
 import { Badge } from "@/components/ui/badge";
 import { useT } from "@/lib/i18n/context";
+import type { AisaSelectedRun } from "./aisa-run-selection";
 import { DeepLinkFocus } from "./focus-handoff";
 import { LiveAnnouncer } from "./live-announcer";
 import { type AisaRunSelection, RunsPanel } from "./runs-panel";
@@ -24,15 +26,40 @@ export function AisaChannelDetail({
 	row,
 	lifecycleActions,
 	nowMs,
+	initialAisaRun,
 }: {
 	row: LiveChannelDetailRow;
 	lifecycleActions: ReactNode;
 	nowMs: number;
+	initialAisaRun?: AisaSelectedRun;
 }) {
 	const { t } = useT();
-	const [selected, setSelected] = useState<AisaRunSelection | null>(null);
+	const router = useRouter();
+	const [selected, setSelected] = useState<AisaSelectedRun | null>(
+		initialAisaRun ?? null,
+	);
 	const current = row.currentRun;
-	const binding = selected ?? current;
+	const selectedUnavailable = Boolean(
+		initialAisaRun && initialAisaRun.liveChannelId !== row.id,
+	);
+	const selection =
+		selected?.id === initialAisaRun?.id ? initialAisaRun : selected;
+	const binding = selectedUnavailable
+		? null
+		: selection?.id === current?.id
+			? current
+			: (selection ?? current);
+	const selectRun = (run: AisaRunSelection) => {
+		setSelected({
+			...(run.id === initialAisaRun?.id ? initialAisaRun : {}),
+			...run,
+			liveChannelId: row.id,
+		});
+		router.replace(
+			`/live/${row.id}?runId=${encodeURIComponent(run.id)}#sec-analysis`,
+			{ scroll: false },
+		);
+	};
 	const imported = row.origin === "AISA_IMPORTED";
 	const entries = stepLogSchema.safeParse(current?.stepLog ?? row.stepLog);
 	const status = current
@@ -110,17 +137,27 @@ export function AisaChannelDetail({
 						/>
 					</div>
 				) : null}
-				{row.bitmovinAccountId && analysisId && encodingId ? (
+				{selectedUnavailable ? (
+					<p role="alert" className="text-sm text-amber-400">
+						{t("aisaLive.selectedRunUnavailable")}
+					</p>
+				) : row.bitmovinAccountId && analysisId && encodingId ? (
 					<div className="space-y-2">
-						<p className="text-sm text-zinc-400">
-							{t("runs.seq", { n: binding?.seq ?? 0 })}
-						</p>
+						<div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+							<p>{t("runs.seq", { n: binding?.seq ?? 0 })}</p>
+							{binding?.id !== current?.id ? (
+								<CopyableId
+									value={encodingId}
+									label={t("aisaLive.encodingId")}
+								/>
+							) : null}
+						</div>
 						<AisaChannelAnalysisPanel
 							accountId={row.bitmovinAccountId}
 							analysisId={analysisId}
 							encodingId={encodingId}
 							status={binding?.aisaStatus ?? undefined}
-							initialSnapshot={selected ? undefined : current?.aisaSnapshot}
+							initialSnapshot={binding?.aisaSnapshot}
 						/>
 					</div>
 				) : (
@@ -137,8 +174,8 @@ export function AisaChannelDetail({
 						channelId={row.id}
 						currentRunId={current?.id}
 						currentRunStatus={current?.status}
-						selectedAisaRunId={selected?.id ?? current?.id}
-						onSelectAisaRun={setSelected}
+						selectedAisaRunId={binding?.id}
+						onSelectAisaRun={selectRun}
 					/>
 				</section>
 				<section

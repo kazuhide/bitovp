@@ -1,4 +1,5 @@
 import {
+	aisaLiveFinalization,
 	effectiveLivePlanForRun,
 	isAisaManagedLivePlan,
 	liveRunWindow,
@@ -24,6 +25,12 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
+import {
+	AISA_CHANNEL_RESPONSE_HEADERS,
+	aisaChannelViewerProjection,
+	aisaPublisherConnectionAllowed,
+	isAisaLiveChannelView,
+} from "@/lib/server/live-channel-aisa-view";
 import { readHeartbeatReception } from "@/lib/server/live-heartbeat-reception";
 import {
 	liveToVodFamiliesForRole,
@@ -114,6 +121,13 @@ export async function GET(req: Request, { params }: RouteParams) {
 			runs?: unknown[];
 		};
 		const currentRun = row.runs[0] ?? null;
+		const aisaChannel = isAisaLiveChannelView(channel, currentRun);
+		if (aisaChannel && !aisaPublisherConnectionAllowed(ctx.tenant)) {
+			return NextResponse.json(
+				aisaChannelViewerProjection(channel, currentRun),
+				{ headers: AISA_CHANNEL_RESPONSE_HEADERS },
+			);
+		}
 		// Password mode has one owner session and no role header. Users/token
 		// modes must prove ADMIN through the proxy-resolved role. The proxy
 		// overwrites ACTOR_HEADER and deletes/overwrites ROLE_HEADER on every
@@ -163,22 +177,25 @@ export async function GET(req: Request, { params }: RouteParams) {
 		);
 		// Derived here, not in the browser, for the same reason as the VOD route:
 		// the credential's config never needs to cross .
-		return NextResponse.json({
-			...channel,
-			liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
-			liveToVodFamilies,
-			currentRun: currentRunView,
-			heartbeatReception,
-			technicalDetailsAllowed,
-			playbackLinks: planForLinks
-				? await playbackLinksForLivePlan(ctx, planForLinks)
-				: [],
-			// review-260 127-A5 (folded into #126): heartbeat freshness must
-			// not compare a WORKER-stamped `at` against the BROWSER clock — a
-			// viewer 90 seconds ahead reads a healthy channel as disconnected. The client
-			// anchors its ticking now to THIS server stamp instead.
-			serverNow: new Date().toISOString(),
-		});
+		return NextResponse.json(
+			{
+				...channel,
+				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
+				liveToVodFamilies,
+				currentRun: currentRunView,
+				heartbeatReception,
+				technicalDetailsAllowed,
+				playbackLinks: planForLinks
+					? await playbackLinksForLivePlan(ctx, planForLinks)
+					: [],
+				// review-260 127-A5 (folded into #126): heartbeat freshness must
+				// not compare a WORKER-stamped `at` against the BROWSER clock — a
+				// viewer 90 seconds ahead reads a healthy channel as disconnected. The client
+				// anchors its ticking now to THIS server stamp instead.
+				serverNow: new Date().toISOString(),
+			},
+			aisaChannel ? { headers: AISA_CHANNEL_RESPONSE_HEADERS } : undefined,
+		);
 	} catch (err) {
 		return routeError(err);
 	}
@@ -224,10 +241,22 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		const ctx = await getServerContext();
 		const row = await ctx.prisma.liveChannel.findUnique({
 			where: { id },
-			select: { id: true, status: true, bitmovinAccountId: true },
+			select: { id: true, status: true, bitmovinAccountId: true, plan: true },
 		});
 		if (!row) {
 			return jsonError(404, "Not found");
+		}
+		if (isAisaManagedLivePlan(row.plan)) {
+			const run = await ctx.prisma.liveChannelRun.findFirst({
+				where: { liveChannelId: id },
+				orderBy: { seq: "desc" },
+			});
+			if (run?.aisaAnalysisId && aisaLiveFinalization(run) === "PENDING")
+				return jsonError(
+					409,
+					"Analysis finalization must be confirmed before deleting this channel",
+					{ code: "AISA_FINALIZATION_PENDING" },
+				);
 		}
 		if (
 			row.status === "PROVISIONING" ||

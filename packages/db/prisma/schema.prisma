@@ -653,6 +653,7 @@ model LiveChannelRun {
   aisaStatus                    String?
   /// Last validated cumulative snapshot; null does not mean a zero-moment result.
   aisaSnapshot                  Json?
+  aisaFinalization              Json?
   aisaObservedAt                DateTime?
   /// Row #313: exact encoding id confirmed terminal or CREATED (never started),
   /// or verified absent by reset-only account/provenance checks and locked CAS.

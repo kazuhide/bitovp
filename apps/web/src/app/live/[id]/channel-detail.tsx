@@ -43,6 +43,7 @@ import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
 import type { LiveScheduleDto } from "@/lib/live-runtime/schemas";
 import { AisaChannelDetail } from "./aisa-channel-detail";
+import type { AisaSelectedRun } from "./aisa-run-selection";
 import { AlertPanel, type ChannelAlertEvent } from "./alert-panel";
 import { LiveArchivePanel } from "./archive-panel";
 import { AutoShutdownPanel } from "./auto-shutdown-panel";
@@ -114,9 +115,11 @@ const SWEEP_GRACE_MS = (DEFAULT_SCHEDULE_START_GRACE_MINUTES * 60 + 30) * 1000;
 export function ChannelDetail({
 	id,
 	player,
+	initialAisaRun,
 }: {
 	id: string;
 	player?: PlayerClientConfig;
+	initialAisaRun?: AisaSelectedRun;
 }) {
 	const { t } = useT();
 	const qcVmafEnabled = useQcVmafEnabled();
@@ -329,8 +332,9 @@ export function ChannelDetail({
 	if (aisaRow)
 		return (
 			<AisaChannelDetail
-				key={id}
+				key={`${id}:${initialAisaRun?.id ?? "latest"}`}
 				row={row}
+				initialAisaRun={initialAisaRun}
 				lifecycleActions={lifecycleActions}
 				nowMs={
 					clockAnchor

@@ -25,6 +25,8 @@ tags: [aisa, live, preview]
 - 新しい API は既存の proxy、tenant/expected-org 認証、監査方式を使う。signed HLS URL、stream key、API key、raw SDK error はログや監査に残さない。
 - 通常の作成・開始・停止の操作と永続 lifecycle を利用する。内部では create 後の実 ID を記録してから start する。副作用を自動再試行せず、応答不明なら実リソースを再取得して照合する。Analysis の stop/finalize を経ずに通常 Encoding だけを停止しない。
 - Encoding と Analysis の終了、final snapshot の有無を別々に表示する。RUNNING はメディア受信や key moments 検出の証拠としない。
+- 解析の終了待ちは実行単位の `aisaFinalization` に記録して再確認する。`aisaSnapshot` は provider の結果だけを保持し、内部の失敗証明を混ぜない。両 provider が終了しても失敗した実行は ERROR と理由を保持する。新規 Preview の無効化後も、既存の同一 run の停止・回収は可能にする。
+- 通常のチャンネル詳細 API も AISA の接続情報の権限を守る。VIEWER の返却値は allowlist の metadata・run binding・検証済み snapshot に限定し、plan/compiled payload/接続情報/未検証の raw container は返さない。
 
 ## 機能と API
 
@@ -72,7 +74,7 @@ tags: [aisa, live, preview]
 | GET/HEAD `/api/live/analyses/[analysisId]/recording` と `/recording/media` | tenant/account/analysis/encoding に束縛した認証付き HLS 読み取り |
 | GET/POST `/api/live/analyses/[analysisId]/translations` | 保存済み日本語訳の閲覧 / OPERATOR によるローカル翻訳。原文は保持 |
 
-旧 `/live/analyses` は通常履歴へ、関連付け済みの旧解析詳細リンクは同じチャンネル詳細へ移動する。旧 Analysis actions API から関連付け済み run を変更することは拒否し、共通 lifecycle の操作を使用する。取り込み済みの終了 run は読み取り専用とする。
+旧 `/live/analyses` は通常履歴へ、関連付け済みの旧解析詳細リンクは `?runId=<exact run ID>` を保持して同じチャンネル詳細へ移動する。通常ページで所属 channel と AISA binding を検証し、不明・別 channel の run は 404 とする。再放送後も古いリンクを最新 run へ置き換えない。旧 Analysis actions API から関連付け済み run を変更することは拒否し、共通 lifecycle の操作を使用する。取り込み済みの終了 run は読み取り専用とする。
 
 作成の `analysis` は `name`、`input`（RTMP streamKey、HLS url、既存 Input の REFERENCE inputId と任意 streamKey）、任意 `cloudRegion`/`encoderVersion`、`recording.outputs`、`outputs`。Output は既存 Encoding Output の `outputId` と `outputPath` を指定し、inline credential resource は受け付けない。HLS は ongoing playlist と PDT mapping が必要。`encoderVersion` の空欄は省略、ES/AICA override は Start 時の header として分ける。
 
@@ -83,6 +85,8 @@ tags: [aisa, live, preview]
 `AisaResultSnapshot` は pinned SDK の累積結果と同じ公開 field を持つ。省略の observations/keyMoments/sourceGaps は空配列へ正規化する。
 
 `apps/web/src/lib/aisa-live/snapshots.ts` の `applyAisaSnapshot(previous, snapshot)` は新旧 snapshot を比較し、採用可能な snapshot を返す。古い/同一 sequence は前回値を保持し、identity、media origin、coverage、finality、観測の不変性と moment revision の違反は拒否する。withdrawal の ID 再利用を見落とさないため必要な履歴は reducer state に保持する（具体型は実装で定義）。UI は不正な更新や poll 失敗時も最後の正しい結果を保持する。
+
+表示と polling、翻訳対象の基準は親コンポーネントが受理した同じ snapshot とする。再入場時に fresh な古い query cache があっても、既知の DB final result を隠さない。DB snapshot の更新も同じ reducer を通し、拒否した更新の警告は維持する。
 
 SDK adapter は `apps/web/src/lib/server/aisa-live-sdk.ts`。`aisaLivePreviewEnabled()` と `aisaLiveClientForAccount(ctx, accountId, versions?)` を公開し、account 不在は null、それ以外は `list/create/get/start/stop/latest` を備えるクライアントを返す。methods の返値は unknown とし、route 境界で schema parse する。SDK error を public-safe な専用 error に変換し、raw error を caller に渡さない。結果未生成は専用 code `LIVE_ANALYSIS_RESULT_NOT_AVAILABLE` だけを pending とする。
 

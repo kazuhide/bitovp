@@ -33,6 +33,30 @@ type Props = {
 	initialSnapshot?: unknown;
 };
 
+type SnapshotView = {
+	accepted: AisaSnapshotState | null;
+	rejected: boolean;
+};
+
+function acceptSnapshot(
+	previous: SnapshotView,
+	next: unknown,
+	analysisId: string,
+	encodingId: string,
+): SnapshotView {
+	try {
+		const parsed = aisaResultSchema.parse(next);
+		if (parsed.analysisId !== analysisId || parsed.encodingId !== encodingId)
+			throw new Error("Unexpected analysis identity");
+		const accepted = applyAisaSnapshot(previous.accepted, parsed);
+		return accepted === previous.accepted && !previous.rejected
+			? previous
+			: { accepted, rejected: false };
+	} catch {
+		return previous.rejected ? previous : { ...previous, rejected: true };
+	}
+}
+
 /** Run identity is the component boundary; a re-air cannot retain earlier results. */
 export function AisaChannelAnalysisPanel(props: Props) {
 	return (
@@ -56,14 +80,20 @@ function RunAnalysis({
 	const [language, setLanguage] = useState<"ja" | "original">(
 		locale === "ja" ? "ja" : "original",
 	);
-	const [accepted, setAccepted] = useState<AisaSnapshotState | null>(() => {
-		const parsed = aisaResultSchema.safeParse(initialSnapshot);
-		return parsed.success &&
-			parsed.data.analysisId === analysisId &&
-			parsed.data.encodingId === encodingId
-			? applyAisaSnapshot(null, parsed.data)
-			: null;
+	const [view, setView] = useState<SnapshotView>(() => {
+		const empty = { accepted: null, rejected: false };
+		return initialSnapshot == null
+			? empty
+			: acceptSnapshot(empty, initialSnapshot, analysisId, encodingId);
 	});
+	const accepted = view.accepted;
+	// A worker may persist the final result while this run stays mounted.
+	useEffect(() => {
+		if (initialSnapshot == null) return;
+		setView((previous) =>
+			acceptSnapshot(previous, initialSnapshot, analysisId, encodingId),
+		);
+	}, [initialSnapshot, analysisId, encodingId]);
 	const attempted = useRef(new Set<string>());
 	const base = `/api/live/analyses/${encodeURIComponent(analysisId)}`;
 	const query = `bitmovinAccountId=${encodeURIComponent(accountId)}`;
@@ -89,20 +119,10 @@ function RunAnalysis({
 	});
 	useEffect(() => {
 		if (results.data?.availability !== "available") return;
-		const parsed = aisaResultSchema.safeParse(results.data.snapshot);
-		if (
-			!parsed.success ||
-			parsed.data.analysisId !== analysisId ||
-			parsed.data.encodingId !== encodingId
-		)
-			return;
-		setAccepted((previous) => {
-			try {
-				return applyAisaSnapshot(previous, parsed.data);
-			} catch {
-				return previous;
-			}
-		});
+		const next = results.data.snapshot;
+		setView((previous) =>
+			acceptSnapshot(previous, next, analysisId, encodingId),
+		);
 	}, [results.data, analysisId, encodingId]);
 	const snapshot = accepted?.snapshot;
 	const translationKey = [
@@ -260,10 +280,9 @@ function RunAnalysis({
 				analysisId={analysisId}
 				encodingId={encodingId}
 				status={resource.data?.status ?? status}
-				result={
-					results.data ??
-					(snapshot ? { availability: "available", snapshot } : undefined)
-				}
+				result={results.data}
+				acceptedSnapshot={snapshot ?? null}
+				rejectedUpdate={view.rejected}
 				failed={resource.isError || results.isError}
 				translations={translations.data}
 				language={language}

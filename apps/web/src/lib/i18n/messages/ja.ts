@@ -6,6 +6,8 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	aisaLive: {
+		selectedRunUnavailable:
+			"指定した AISA の実行はこのチャンネルで確認できません。",
 		channelId: "チャンネル ID",
 		viewRunResults: "実行 #{n} の解析結果を表示",
 		enableInLive: "AISA Live（プレビュー）を有効にする",

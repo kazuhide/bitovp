@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+	aisaLiveFinalization,
 	compileLiveRunStepLog,
 	deriveProviderLifecycle,
 	isAisaManagedLivePlan,
@@ -246,6 +247,7 @@ async function inspectManualStopClaim(
 	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
 	liveChannelId: string,
 	plan: EffectPlan,
+	allowAisaRecovery = false,
 ): Promise<ManualStopClaimInspection> {
 	const claim = await prisma.liveEffectClaim.findUnique({
 		where: {
@@ -287,8 +289,10 @@ async function inspectManualStopClaim(
 		case "DISPATCHING":
 			return { kind: "OPEN", state: claim.state };
 		case "ACKED":
+			if (allowAisaRecovery) return { kind: "FAILED" };
 			return { kind: "ACKED" };
 		case "AMBIGUOUS":
+			if (allowAisaRecovery) return { kind: "FAILED" };
 			return {
 				kind: "REFUSED",
 				reason:
@@ -357,10 +361,16 @@ async function admitManualStop(
 	plan: EffectPlan,
 	admissionFenceVersion: number,
 	mode: "ENQUEUE_OR_REPLAY" | "REPLAY_ONLY",
+	allowAisaRecovery = false,
 ): Promise<ManualStopAdmission> {
 	const queue = getLiveChannelQueue();
 	const jobId = `manual-stop-${liveChannelId}-${plan.runId}`;
-	const claim = await inspectManualStopClaim(prisma, liveChannelId, plan);
+	const claim = await inspectManualStopClaim(
+		prisma,
+		liveChannelId,
+		plan,
+		allowAisaRecovery,
+	);
 	if (claim.kind === "REFUSED") {
 		return claim;
 	}
@@ -383,6 +393,7 @@ async function admitManualStop(
 				prisma,
 				liveChannelId,
 				plan,
+				allowAisaRecovery,
 			);
 			if (replayClaim.kind === "REFUSED") {
 				return replayClaim;
@@ -412,7 +423,7 @@ async function admitManualStop(
 				reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 			};
 		}
-		if (mode === "REPLAY_ONLY") {
+		if (mode === "REPLAY_ONLY" && !allowAisaRecovery) {
 			return {
 				kind: "REFUSED",
 				reason: "the matching handoff is no longer in progress",
@@ -426,7 +437,7 @@ async function admitManualStop(
 			kind: "REFUSED",
 			reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 		};
-	} else if (mode === "REPLAY_ONLY") {
+	} else if (mode === "REPLAY_ONLY" && !allowAisaRecovery) {
 		return {
 			kind: "REFUSED",
 			reason: "no matching in-progress handoff exists",
@@ -464,7 +475,12 @@ async function admitManualStop(
 		liveChannelId,
 		plan,
 	);
-	const winnerClaim = await inspectManualStopClaim(prisma, liveChannelId, plan);
+	const winnerClaim = await inspectManualStopClaim(
+		prisma,
+		liveChannelId,
+		plan,
+		allowAisaRecovery,
+	);
 	if (winnerClaim.kind === "REFUSED") {
 		return winnerClaim;
 	}
@@ -528,6 +544,7 @@ class ActionRefused extends Error {
 		this.name = "ActionRefused";
 	}
 }
+class AisaFinalizationPending extends Error {}
 
 /**
  * Channel lifecycle actions, routed to the live-channel worker via the
@@ -703,6 +720,11 @@ export async function POST(req: Request, { params }: RouteParams) {
 								seq: true,
 								status: true,
 								cancelRequested: true,
+								aisaAnalysisId: true,
+								aisaStatus: true,
+								aisaSnapshot: true,
+								aisaFinalization: true,
+								bitmovinEncodingId: true,
 								...PROVIDER_LIFECYCLE_SELECT,
 							},
 						});
@@ -736,6 +758,13 @@ export async function POST(req: Request, { params }: RouteParams) {
 							row.status === "STOPPED" ||
 							latest?.status === "STOPPED" ||
 							(latest?.status === "ERROR" && latestProviderTerminal);
+						if (
+							isReair &&
+							aisaManaged &&
+							(!latest ||
+								["UNBOUND", "PENDING"].includes(aisaLiveFinalization(latest)))
+						)
+							throw new AisaFinalizationPending();
 						// Resume REVIVES the latest run — same airing, same
 						// encoding, same row (#108 PR3); the revive-vs-create
 						// decision below and the corpse compile both key on it.
@@ -887,6 +916,12 @@ export async function POST(req: Request, { params }: RouteParams) {
 						}
 					});
 				} catch (err) {
+					if (err instanceof AisaFinalizationPending)
+						return jsonError(
+							409,
+							"Analysis finalization must be confirmed before a fresh run",
+							{ code: "AISA_FINALIZATION_PENDING" },
+						);
 					if (err instanceof MslEncoderVersionError) {
 						return jsonError(400, "Live channel plan validation failed", {
 							issues: [err.issue],
@@ -1029,10 +1064,24 @@ export async function POST(req: Request, { params }: RouteParams) {
 						"LIVE_ACTION_NO_ENCODING",
 					);
 				}
+				const latestAisaRun = aisaManaged
+					? await ctx.prisma.liveChannelRun.findFirst({
+							where: { liveChannelId: id },
+							orderBy: { seq: "desc" },
+						})
+					: null;
+				const allowAisaRecovery = Boolean(
+					latestAisaRun?.aisaAnalysisId &&
+						latestAisaRun.bitmovinEncodingId === row.bitmovinEncodingId &&
+						(aisaLiveFinalization(latestAisaRun) === "PENDING" ||
+							(["STOPPED", "ERROR"].includes(row.status) &&
+								aisaLiveFinalization(latestAisaRun) === "FAILED")),
+				);
 				const retryingUnconfirmedStop =
-					row.status === "STOPPED" &&
-					row.error !== null &&
-					row.error !== undefined;
+					allowAisaRecovery ||
+					(row.status === "STOPPED" &&
+						row.error !== null &&
+						row.error !== undefined);
 				if (row.status === "STOPPING") {
 					const replayPlan = await effectPlan(
 						ctx.prisma,
@@ -1059,6 +1108,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						replayPlan,
 						row.liveEffectFenceVersion ?? 0,
 						"REPLAY_ONLY",
+						allowAisaRecovery,
 					);
 					if (admission.kind === "REFUSED") {
 						return codedError(
@@ -1120,6 +1170,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					stopPlan,
 					admissionFenceVersion,
 					"ENQUEUE_OR_REPLAY",
+					allowAisaRecovery,
 				);
 				if (admission.kind === "REFUSED") {
 					return codedError(

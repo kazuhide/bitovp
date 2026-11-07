@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import {
@@ -8,6 +8,11 @@ import {
 import { ChannelDetail } from "./channel-detail";
 
 const apiFetch = vi.fn();
+const replaceRoute = vi.fn();
+const seen = vi.hoisted(() => ({
+	bindings: [] as string[],
+	snapshots: vi.fn(),
+}));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
 	apiFetch: (...args: unknown[]) => apiFetch(...args),
@@ -16,17 +21,23 @@ vi.mock("../aisa-channel-analysis", () => ({
 	AisaChannelAnalysisPanel: ({
 		analysisId,
 		encodingId,
+		initialSnapshot,
 	}: {
 		analysisId: string;
 		encodingId: string;
-	}) => (
-		<div data-testid="aisa-analysis">
-			{analysisId}:{encodingId}
-		</div>
-	),
+		initialSnapshot?: unknown;
+	}) => {
+		seen.bindings.push(`${analysisId}:${encodingId}`);
+		seen.snapshots(initialSnapshot);
+		return (
+			<div data-testid="aisa-analysis">
+				{analysisId}:{encodingId}
+			</div>
+		);
+	},
 }));
 vi.mock("next/navigation", () => ({
-	useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+	useRouter: () => ({ push: vi.fn(), replace: replaceRoute }),
 }));
 const ID = "00000000-0000-4000-8000-000000000021";
 const accountId = "00000000-0000-4000-8000-000000000022";
@@ -102,6 +113,9 @@ function fixture(imported: boolean, status = "RUNNING") {
 
 beforeEach(() => {
 	apiFetch.mockReset();
+	seen.bindings = [];
+	seen.snapshots.mockClear();
+	replaceRoute.mockClear();
 });
 function respond(row: ReturnType<typeof fixture>) {
 	apiFetch.mockImplementation(async (url: string) => {
@@ -188,4 +202,88 @@ it("offers managed lifecycle controls without standard graph-only mutation panel
 	expect(
 		screen.queryByRole("heading", { name: "Slate reservations" }),
 	).toBeNull();
+});
+
+const selectedRun = {
+	id: "older",
+	liveChannelId: ID,
+	seq: 1,
+	aisaAnalysisId: oldAnalysis,
+	bitmovinEncodingId: oldEncoding,
+	aisaStatus: "FINISHED",
+	aisaSnapshot: { sequence: 5, isFinal: true },
+};
+
+it("starts an existing deep link on its exact historical Analysis without showing the latest run first", async () => {
+	respond(fixture(false));
+	renderWithQuery(<ChannelDetail id={ID} initialAisaRun={selectedRun} />);
+	expect(await screen.findByTestId("aisa-analysis")).toHaveTextContent(
+		`${oldAnalysis}:${oldEncoding}`,
+	);
+	expect(
+		seen.bindings.every(
+			(binding) => binding === `${oldAnalysis}:${oldEncoding}`,
+		),
+	).toBe(true);
+	expect(seen.snapshots).toHaveBeenCalledWith(selectedRun.aisaSnapshot);
+	const history = await screen.findByRole("button", {
+		name: "View results for run #2",
+	});
+	fireEvent.click(history);
+	expect(replaceRoute).toHaveBeenCalledWith(
+		`/live/${ID}?runId=current#sec-analysis`,
+		{ scroll: false },
+	);
+	await waitFor(() =>
+		expect(screen.getByTestId("aisa-analysis")).toHaveTextContent(
+			`${analysisId}:${encodingId}`,
+		),
+	);
+});
+
+it("keeps a historical selection when the same channel starts a newer airing", async () => {
+	const row = fixture(false);
+	respond(row);
+	const rendered = renderWithQuery(
+		<ChannelDetail id={ID} initialAisaRun={selectedRun} />,
+	);
+	await screen.findByTestId("aisa-analysis");
+	const newer = {
+		...row,
+		currentRun: {
+			...row.currentRun,
+			id: "newer",
+			seq: 3,
+			bitmovinEncodingId: "00000000-0000-4000-8000-000000000031",
+			aisaAnalysisId: "00000000-0000-4000-8000-000000000032",
+		},
+	};
+	act(() => rendered.client.setQueryData(["live-channel", ID], newer));
+	await waitFor(() =>
+		expect(screen.getByTestId("aisa-analysis")).toHaveTextContent(
+			`${oldAnalysis}:${oldEncoding}`,
+		),
+	);
+	expect(
+		seen.bindings.every(
+			(binding) => binding === `${oldAnalysis}:${oldEncoding}`,
+		),
+	).toBe(true);
+});
+
+it("refuses a selected run belonging to another channel without falling back to its current Analysis", async () => {
+	respond(fixture(false));
+	renderWithQuery(
+		<ChannelDetail
+			id={ID}
+			initialAisaRun={{ ...selectedRun, liveChannelId: accountId }}
+		/>,
+	);
+	expect(
+		await screen.findByText(
+			"The requested AISA run is unavailable in this channel.",
+		),
+	).toBeVisible();
+	expect(screen.queryByTestId("aisa-analysis")).toBeNull();
+	expect(seen.bindings).toEqual([]);
 });

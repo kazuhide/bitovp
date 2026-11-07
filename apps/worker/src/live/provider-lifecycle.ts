@@ -1,4 +1,5 @@
 import {
+	aisaLiveFinalization,
 	classifyProviderLifecycle,
 	deriveProviderLifecycle,
 	FEEDER_ACTIVE_STATUSES,
@@ -55,6 +56,10 @@ import { tryLockCurrentPollChannel } from "./poll-channel-lock";
  */
 
 export type RunLifecycleRow = {
+	aisaAnalysisId?: string | null;
+	aisaStatus?: string | null;
+	aisaSnapshot?: unknown;
+	aisaFinalization?: unknown;
 	id: string;
 	seq: number;
 	status: string;
@@ -139,6 +144,10 @@ const TERMINAL_RECONCILABLE_CHANNEL_STATUSES = [
 ] as const;
 
 const RUN_SELECT = {
+	aisaAnalysisId: true,
+	aisaStatus: true,
+	aisaSnapshot: true,
+	aisaFinalization: true,
 	id: true,
 	seq: true,
 	status: true,
@@ -186,6 +195,10 @@ export function createProviderLifecycleReconciler(deps: {
 			return null;
 		}
 		return {
+			aisaAnalysisId: run.aisaAnalysisId ?? null,
+			aisaStatus: run.aisaStatus ?? null,
+			aisaSnapshot: run.aisaSnapshot,
+			aisaFinalization: run.aisaFinalization,
 			id: run.id,
 			seq: run.seq ?? 0,
 			status: run.status ?? "CREATED",
@@ -506,8 +519,33 @@ export function createProviderLifecycleReconciler(deps: {
 		nonblockingPoll?: boolean;
 		signal?: AbortSignal;
 	}): Promise<{ runLanded: boolean; channelLanded: boolean }> {
-		const finishedNormally = isFinishedAiring(args.status, args.run);
-		const error = terminalError(args.status, args.run, args.message);
+		const aisa = aisaLiveFinalization({
+			...args.run,
+			providerStatus: args.status,
+		});
+		if (aisa === "PENDING") {
+			await deps.prisma.liveChannelRun.updateMany({
+				where: {
+					...(args.fenceWhere ?? {
+						id: args.run.id,
+						bitmovinEncodingId: args.encodingId,
+					}),
+				},
+				data: {
+					providerStatus: args.status,
+					providerStatusObservedAt: args.observedAt,
+				},
+			});
+			return { runLanded: false, channelLanded: false };
+		}
+		const finishedNormally =
+			aisa === "UNBOUND" && isFinishedAiring(args.status, args.run);
+		const error =
+			aisa === "COMPLETE"
+				? null
+				: aisa === "FAILED"
+					? "AISA_LIVE_TERMINAL_FAILURE"
+					: terminalError(args.status, args.run, args.message);
 		const status = error === null ? "STOPPED" : "ERROR";
 		let runLanded = !args.persistRun;
 		let channelLanded = false;

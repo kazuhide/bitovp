@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { classifyProviderStatusWord, feederOccupancyWhere } from "@bitovp/core";
+import {
+	aisaLiveFinalization,
+	classifyProviderStatusWord,
+	feederOccupancyWhere,
+} from "@bitovp/core";
 import type { AppPrismaClient } from "./client";
 
 export const LIVE_EFFECT_OPEN_STATES = [
@@ -37,6 +41,8 @@ export type LiveEffectBeginInput = {
 	/** Stop is the cost-safety override: it invalidates an older open effect. */
 	supersedeOpen?: boolean;
 	allowedChannelStatuses?: readonly string[];
+	/** Reconcile only the same bound managed Analysis after a failed/expired drain. */
+	resumeAisaFinalization?: boolean;
 };
 
 export type LiveEffectClaimHandle = {
@@ -152,7 +158,43 @@ export async function beginLiveEffect(
 				reason: "the request id is already bound to a different payload",
 			};
 		}
-		const retryingFailed = existing?.state === "FAILED" ? existing : null;
+		let retryingFailed = existing?.state === "FAILED" ? existing : null;
+		if (
+			existing &&
+			input.resumeAisaFinalization &&
+			input.action === "STOP" &&
+			(existing.state === "AMBIGUOUS" ||
+				existing.state === "ACKED" ||
+				(existing.state === "DISPATCHING" &&
+					existing.expiresAt.getTime() <= input.now.getTime()))
+		) {
+			const run = await tx.liveChannelRun.findFirst({
+				where: { liveChannelId: input.liveChannelId },
+				orderBy: { seq: "desc" },
+				select: {
+					id: true,
+					status: true,
+					error: true,
+					bitmovinEncodingId: true,
+					aisaAnalysisId: true,
+					aisaStatus: true,
+					aisaSnapshot: true,
+					aisaFinalization: true,
+					providerStatus: true,
+				},
+			});
+			if (
+				run?.id === input.liveChannelRunId &&
+				run.bitmovinEncodingId === input.providerEncodingId &&
+				run.aisaAnalysisId &&
+				(existing.state !== "ACKED" ||
+					aisaLiveFinalization(run) === "PENDING" ||
+					(aisaLiveFinalization(run) === "FAILED" &&
+						(run.status !== "ERROR" ||
+							run.error !== "AISA_LIVE_TERMINAL_FAILURE")))
+			)
+				retryingFailed = existing;
+		}
 		if (
 			existing &&
 			!retryingFailed &&
@@ -418,6 +460,10 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						providerStatus: true,
 						providerStatusObservedAt: true,
 						providerTerminalAt: true,
+						aisaAnalysisId: true,
+						aisaStatus: true,
+						aisaSnapshot: true,
+						aisaFinalization: true,
 					},
 				}),
 				tx.feederSession.findFirst({
@@ -440,9 +486,18 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					},
 				}),
 			]);
+			const aisa = run ? aisaLiveFinalization(run) : "UNBOUND";
+			if (aisa === "PENDING")
+				return {
+					kind: "BLOCKED",
+					reason: "the exact Analysis finalization is not yet confirmed",
+				};
+			const confirmedStatus = aisa === "FAILED" ? "ERROR" : "STOPPED";
+			const confirmedError =
+				aisa === "FAILED" ? "AISA_LIVE_TERMINAL_FAILURE" : null;
 			if (
-				channel?.status !== "STOPPED" ||
-				channel.error !== null ||
+				channel?.status !== confirmedStatus ||
+				channel.error !== confirmedError ||
 				channel.bitmovinEncodingId !== input.providerEncodingId
 			) {
 				return {
@@ -452,8 +507,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			}
 			if (
 				run?.id !== input.liveChannelRunId ||
-				run.status !== "STOPPED" ||
-				run.error !== null ||
+				run.status !== confirmedStatus ||
+				run.error !== confirmedError ||
 				run.bitmovinEncodingId !== input.providerEncodingId ||
 				!run.providerStatusObservedAt ||
 				!run.providerTerminalAt ||
@@ -493,8 +548,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			const locked = await tx.liveChannel.updateMany({
 				where: {
 					id: input.liveChannelId,
-					status: "STOPPED",
-					error: null,
+					status: confirmedStatus,
+					error: confirmedError,
 					bitmovinEncodingId: input.providerEncodingId,
 					liveEffectFenceVersion: stopGeneration,
 					effectClaims: {
@@ -531,8 +586,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					// channel row is already write-locked above against re-air admission.
 					liveChannel: {
 						is: {
-							status: "STOPPED",
-							error: null,
+							status: confirmedStatus,
+							error: confirmedError,
 							bitmovinEncodingId: input.providerEncodingId,
 							liveEffectFenceVersion: stopGeneration + 1,
 						},
@@ -541,7 +596,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "ACKED",
 					acknowledgedAt: input.at,
-					failure: null,
+					failure: confirmedError,
 				},
 			});
 			if (acknowledged.count !== 1) {

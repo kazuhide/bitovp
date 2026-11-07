@@ -18,6 +18,10 @@ function setup() {
 		bitmovinEncodingId: "encoding-1",
 	};
 	const run = {
+		aisaAnalysisId: null as string | null,
+		aisaStatus: null as string | null,
+		aisaSnapshot: null as unknown,
+		aisaFinalization: null as unknown,
 		id: "00000000-0000-4000-8000-0000000000aa",
 		status: "STOPPED",
 		error: null as string | null,
@@ -233,6 +237,56 @@ const input = {
 };
 
 describe("resolveLiveEffectsAfterConfirmedStop", () => {
+	it("cannot acknowledge an Encoder-only stop while its Analysis finalization is unproven", async () => {
+		const f = setup();
+		f.run.aisaAnalysisId = "analysis-1";
+		f.run.aisaStatus = "RUNNING";
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, input),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(f.claims[1]?.state).toBe("DISPATCHING");
+	});
+	it("closes confirmed terminal failure while preserving ERROR and separate no-result proof", async () => {
+		const f = setup();
+		const analysisId = "a0000000-0000-4000-8000-000000000001";
+		const encodingId = "a0000000-0000-4000-8000-000000000002";
+		Object.assign(f.channel, {
+			status: "ERROR",
+			error: "AISA_LIVE_TERMINAL_FAILURE",
+			bitmovinEncodingId: encodingId,
+		});
+		Object.assign(f.run, {
+			status: "ERROR",
+			error: "AISA_LIVE_TERMINAL_FAILURE",
+			bitmovinEncodingId: encodingId,
+			providerStatus: "ERROR",
+			aisaAnalysisId: analysisId,
+			aisaStatus: "ERROR",
+			aisaFinalization: {
+				analysisId,
+				encodingId,
+				status: "ERROR",
+				result: "UNAVAILABLE_TERMINAL_FAILURE",
+				observedAt: "2026-09-01T00:00:00Z",
+			},
+		});
+		for (const claim of f.claims) claim.providerEncodingId = encodingId;
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, {
+				...input,
+				providerEncodingId: encodingId,
+			}),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.channel).toMatchObject({
+			status: "ERROR",
+			error: "AISA_LIVE_TERMINAL_FAILURE",
+		});
+		expect(f.claims[1]).toMatchObject({
+			state: "ACKED",
+			failure: "AISA_LIVE_TERMINAL_FAILURE",
+		});
+		expect(f.run.aisaSnapshot).toBeNull();
+	});
 	it("closes an older AMBIGUOUS claim only after the exact run is provider-terminal and every feeder is gone", async () => {
 		const fake = setup();
 		fake.setFeederOccupiesRun(true);

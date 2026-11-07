@@ -55,6 +55,40 @@ test("checker follows aliases, excludes comments and lookalike local methods, an
 	}
 });
 
+test("source evidence has stable file and line order when input files are reversed", () => {
+	const dir = mkdtempSync(join(tmpdir(), "coverage-order-"));
+	try {
+		const sdk = join(dir, "sdk");
+		mkdirSync(join(sdk, "encoding/items"), { recursive: true });
+		writeFileSync(join(sdk, "encoding/items/ItemsApi.d.ts"), "export default class ItemsApi { get(id: string): Promise<void>; }");
+		const first = join(dir, "a.ts");
+		const last = join(dir, "z.ts");
+		writeFileSync(first, `import Items from './sdk/encoding/items/ItemsApi';
+declare const items: Items;
+items.get('first');
+items.get('second');
+`);
+		writeFileSync(last, `import Items from './sdk/encoding/items/ItemsApi';
+declare const items: Items;
+items.get('last');
+`);
+		const rows = enumerateOperations("encoding/items/ItemsApi.js", "class ItemsApi { get() { return this.restClient.get('/encoding/items/{id}'); } }");
+		const expected = [[rows[0].identity, [
+			{ file: "a.ts", line: 3 },
+			{ file: "a.ts", line: 4 },
+			{ file: "z.ts", line: 3 },
+		]]];
+		for (const files of [[first, last], [last, first]]) {
+			const originalOrder = [...files];
+			const evidence = collectEvidence({ root: dir, sdkRoot: sdk, files, operations: rows, options: {} });
+			assert.deepEqual([...evidence], expected);
+			assert.deepEqual(files, originalOrder);
+		}
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("ambiguous union calls do not promote an arbitrary SDK declaration or matching method tail", () => {
 	const dir = mkdtempSync(join(tmpdir(), "coverage-union-"));
 	try {

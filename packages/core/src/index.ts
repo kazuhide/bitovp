@@ -209,6 +209,12 @@ export {
 	validateAisaManagedLivePlan,
 } from "./live/aisa";
 export {
+	type AisaFinalizationProof,
+	type AisaFinalizationRun,
+	aisaFinalizationProofSchema,
+	aisaLiveFinalization,
+} from "./live/aisa-finalization";
+export {
 	type AisaLiveResultSnapshot,
 	aisaResultSchema,
 } from "./live/aisa-result";

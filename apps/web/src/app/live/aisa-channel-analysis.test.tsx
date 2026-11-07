@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
@@ -180,4 +180,173 @@ describe("AISA results in a normal channel", () => {
 			observationIds: ["obs-one"],
 		});
 	});
+});
+
+const laterSnapshot = {
+	...snapshot,
+	sequence: 2,
+	producedAt: "2026-11-07T00:00:01Z",
+	observations: [
+		...snapshot.observations,
+		{
+			id: "obs-two",
+			text: "The final point ends the match.",
+			startTimeSeconds: 10,
+			endTimeSeconds: 12,
+		},
+	],
+	keyMoments: [
+		...snapshot.keyMoments,
+		{
+			...snapshot.keyMoments[0],
+			id: "moment-two",
+			lastUpdatedSequence: 2,
+			startInSeconds: 10,
+			endInSeconds: 12,
+			anchorInSeconds: 11,
+			observations: ["obs-two"],
+		},
+	],
+};
+
+function renderCachedPanel(initialSnapshot: unknown, cached: unknown) {
+	const rendered = renderWithQuery(<div />);
+	rendered.client.setDefaultOptions({
+		queries: { retry: false, staleTime: 15_000, refetchOnWindowFocus: false },
+	});
+	rendered.client.setQueryData(
+		["aisa-live-results", accountId, analysisId, encodingId],
+		cached,
+	);
+	rendered.rerender(
+		<AisaChannelAnalysisPanel
+			accountId={accountId}
+			analysisId={analysisId}
+			encodingId={encodingId}
+			initialSnapshot={initialSnapshot}
+		/>,
+	);
+	return rendered;
+}
+
+it.each([
+	"older",
+	"pending",
+] as const)("keeps the known DB final result ahead of fresh %s query cache on re-entry", async (kind) => {
+	const cached =
+		kind === "pending"
+			? { availability: "pending" }
+			: {
+					availability: "available",
+					snapshot: { ...snapshot, isFinal: false },
+				};
+	renderCachedPanel(laterSnapshot, cached);
+	expect(
+		await screen.findByText("The final point ends the match."),
+	).toBeInTheDocument();
+	expect(screen.getByText("Final result")).toBeInTheDocument();
+	expect(screen.getByText("Snapshot 2")).toBeInTheDocument();
+	expect(apiFetch.mock.calls.some(([url]) => url.includes("/results?"))).toBe(
+		false,
+	);
+});
+
+it("adopts a newer valid DB snapshot prop while retaining the same mounted run", async () => {
+	const rendered = renderCachedPanel(
+		{ ...snapshot, isFinal: false },
+		{ availability: "available", snapshot: { ...snapshot, isFinal: false } },
+	);
+	await screen.findByText(original);
+	rendered.rerender(
+		<AisaChannelAnalysisPanel
+			accountId={accountId}
+			analysisId={analysisId}
+			encodingId={encodingId}
+			initialSnapshot={laterSnapshot}
+		/>,
+	);
+	expect(
+		await screen.findByText("The final point ends the match."),
+	).toBeInTheDocument();
+	expect(screen.getByText("Final result")).toBeInTheDocument();
+});
+
+it("retains the accepted source and warns when a cached same-sequence update changes it", async () => {
+	const invalid = {
+		...snapshot,
+		observations: [
+			{ ...snapshot.observations[0], text: "A mutated cached observation." },
+		],
+	};
+	renderCachedPanel(snapshot, { availability: "available", snapshot: invalid });
+	expect(await screen.findByText(original)).toBeInTheDocument();
+	expect(
+		await screen.findByText(/last valid result is shown/),
+	).toBeInTheDocument();
+	expect(
+		screen.queryByText("A mutated cached observation."),
+	).not.toBeInTheDocument();
+});
+
+it("withdraws removed sources and refuses their reuse through the controlled channel view", async () => {
+	const first = { ...snapshot, isFinal: false };
+	const rendered = renderCachedPanel(first, {
+		availability: "available",
+		snapshot: first,
+	});
+	await screen.findByText(original);
+	act(() =>
+		rendered.client.setQueryData(
+			["aisa-live-results", accountId, analysisId, encodingId],
+			{
+				availability: "available",
+				snapshot: { ...first, sequence: 2, observations: [], keyMoments: [] },
+			},
+		),
+	);
+	await screen.findByText(/No key moments in this snapshot/);
+	expect(screen.queryByText(original)).not.toBeInTheDocument();
+	act(() =>
+		rendered.client.setQueryData(
+			["aisa-live-results", accountId, analysisId, encodingId],
+			{
+				availability: "available",
+				snapshot: {
+					...first,
+					sequence: 3,
+					keyMoments: first.keyMoments.map((moment) => ({
+						...moment,
+						lastUpdatedSequence: 3,
+					})),
+				},
+			},
+		),
+	);
+	await screen.findByText(/last valid result is shown/);
+	expect(screen.queryByText(original)).not.toBeInTheDocument();
+});
+
+it("keeps English available and does not retry automatically after local inference fails", async () => {
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+		if (url.includes("/translations")) {
+			if (init?.method === "POST") throw new Error("local model unavailable");
+			return response([]);
+		}
+		if (url.includes("/results?"))
+			return { availability: "available", snapshot };
+		return { analysisId, encodingId, status: "FINISHED" };
+	});
+	renderWithQuery(
+		<AisaChannelAnalysisPanel
+			accountId={accountId}
+			analysisId={analysisId}
+			encodingId={encodingId}
+		/>,
+		"ja",
+	);
+	await screen.findByText("翻訳を完了できませんでした。原文は確認できます。");
+	expect(screen.getByText(original)).toHaveAttribute("lang", "en");
+	expect(
+		apiFetch.mock.calls.filter(([, init]) => init?.method === "POST"),
+	).toHaveLength(1);
 });

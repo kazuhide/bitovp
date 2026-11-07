@@ -71,6 +71,7 @@ function fakePrisma() {
 	const run = {
 		id: "run-1",
 		bitmovinEncodingId: "encoding-1",
+		aisaAnalysisId: null as string | null,
 	};
 	const claims: Claim[] = [];
 	let loseNextChannelCas = false;
@@ -208,6 +209,36 @@ const INPUT: LiveEffectBeginInput = {
 };
 
 describe("durable live effect claims", () => {
+	it("reclaims only an exact bound AISA STOP after pending finalization, never an active duplicate", async () => {
+		const fake = fakePrisma();
+		fake.run.aisaAnalysisId = "analysis-1";
+		const input: LiveEffectBeginInput = {
+			...INPUT,
+			action: "STOP",
+			idempotencyKey: "manual:stop:channel-1:run-1",
+			scheduleId: undefined,
+			targetId: undefined,
+			supersedeOpen: true,
+			resumeAisaFinalization: true,
+		};
+		const first = await beginLiveEffect(fake.prisma, input);
+		expect(first.kind).toBe("EXECUTE");
+		await expect(beginLiveEffect(fake.prisma, input)).resolves.toMatchObject({
+			kind: "BLOCKED",
+			state: "DISPATCHING",
+		});
+		const claim = fake.claims[0];
+		if (!claim) throw new Error("Missing fixture claim");
+		claim.state = "AMBIGUOUS";
+		fake.channel.status = "ERROR";
+		const resumed = await beginLiveEffect(fake.prisma, input);
+		expect(resumed.kind).toBe("EXECUTE");
+		expect(fake.claims).toHaveLength(1);
+		if (first.kind === "EXECUTE" && resumed.kind === "EXECUTE") {
+			expect(resumed.claim.token).not.toBe(first.claim.token);
+			expect(resumed.claim.generation).toBe(first.claim.generation + 1);
+		}
+	});
 	it("commits DISPATCHING intent under the exact run before an effect may execute", async () => {
 		const fake = fakePrisma();
 		const result = await beginLiveEffect(fake.prisma, INPUT);

@@ -10,6 +10,11 @@ const runFindFirst = vi.fn(
 		seq: number;
 		status: string;
 		cancelRequested?: boolean;
+		bitmovinEncodingId?: string | null;
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+		aisaFinalization?: unknown;
 		/** : the provider-lifecycle columns the route now reads. */
 		providerStatus?: string | null;
 		providerStatusObservedAt?: Date | null;
@@ -248,6 +253,80 @@ function channel(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AISA lifecycle admission", () => {
+	it("requeues same-run Analysis readback from an Encoder-only clean STOPPED row", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPED",
+				error: null,
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "FINISHED",
+			providerStatusObservedAt: new Date(),
+			providerTerminalAt: new Date(),
+		});
+		effectClaimFindUnique.mockResolvedValue(manualStopClaim("ACKED"));
+		retainQueuedJob(
+			`manual-stop-${CHANNEL_ID}-${RUN_ID}`,
+			manualStopJobData(),
+			"completed",
+			manualStopSuccess(),
+		);
+		const response = await postAction({ action: "stop" });
+		expect(response.status).toBe(202);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+	it("blocks re-air until the independently terminal Analysis result is accounted for", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const ordinary = reairPlan();
+		const plan = {
+			...ordinary,
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: CHANNEL_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		};
+		findUnique.mockResolvedValue(
+			channel({ status: "STOPPED", error: null, plan }),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "FINISHED",
+			providerStatusObservedAt: new Date(),
+			providerTerminalAt: new Date(),
+		});
+		const response = await postAction({ action: "start" });
+		expect(response.status).toBe(409);
+		expect((await response.json()).details.code).toBe(
+			"AISA_FINALIZATION_PENDING",
+		);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it.each([
 		"start",
 		"stop",

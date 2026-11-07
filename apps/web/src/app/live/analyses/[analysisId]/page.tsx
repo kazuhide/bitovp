@@ -25,7 +25,8 @@ export default async function AisaAnalysisPage({
 	const ctx = await getServerContext();
 	const run = await ctx.prisma.liveChannelRun.findFirst({
 		where: { aisaAnalysisId: analysisId, liveChannel: { bitmovinAccountId } },
-		select: { liveChannelId: true },
+		select: { id: true, liveChannelId: true },
 	});
-	redirect(run ? `/live/${run.liveChannelId}` : "/live");
+	if (!run) notFound();
+	redirect(`/live/${run.liveChannelId}?runId=${run.id}`);
 }

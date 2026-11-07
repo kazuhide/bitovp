@@ -1,12 +1,13 @@
 "use client";
 
+import type { CredentialSummaryWire } from "@bitovp/core";
 import { audioKeys, videoKeys } from "@/app/vod/new/build-plan";
 import { CMAF_CHUNK_FIELDS } from "@/app/vod/new/cmaf-fields";
 import {
 	audioCopyLabel,
 	videoCopyLabel,
 } from "@/app/vod/new/rendition-add-controls";
-import { Collapsible, OptionsGrid } from "@/app/vod/new/wizard-fields";
+import { OptionsGrid } from "@/app/vod/new/wizard-fields";
 import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
@@ -15,14 +16,21 @@ import type {
 	LiveVideoRendition,
 	LiveWizardState,
 } from "./build-live-plan";
+import {
+	createLiveEncryptionModel,
+	LiveEncryptionOrphans,
+	LiveMuxingEncryption,
+} from "./encryption-section";
 import { LiveMuxingFields } from "./live-rendition-fields";
 
 /** Container and file settings share the existing rendition state. */
 export function LiveMuxingsSection({
 	state,
+	credentials = [],
 	onPatch,
 }: {
 	state: LiveWizardState;
+	credentials?: CredentialSummaryWire[];
 	onPatch: (partial: Partial<LiveWizardState>) => void;
 }) {
 	const { t } = useT();
@@ -43,6 +51,7 @@ export function LiveMuxingsSection({
 	);
 	const patchPackaging = (partial: Partial<LiveWizardState>) =>
 		onPatch({ videos: stableVideos, audios: stableAudios, ...partial });
+	const encryption = createLiveEncryptionModel(state, patchPackaging);
 	const patchVideo = (index: number, partial: Partial<LiveVideoRendition>) => {
 		const next = [...stableVideos];
 		const current = next[index];
@@ -97,57 +106,53 @@ export function LiveMuxingsSection({
 	};
 
 	return (
-		<div className="space-y-6">
+		<div className="space-y-3">
 			<section className="space-y-3" aria-labelledby="lw-video-muxings">
-				<h2 id="lw-video-muxings" className="font-medium text-sm text-zinc-200">
+				<h2 id="lw-video-muxings" className="sr-only">
 					{t("wizard.videoRenditions")}
 				</h2>
 				{state.videos.map((video, index) => (
-					<div
+					<section
 						key={vKeys[index]}
+						aria-labelledby={`lw-v-${index}-muxing-name`}
 						className="space-y-3 rounded-md border border-zinc-800 p-3"
 					>
 						<div className="flex flex-wrap items-center gap-2">
-							<span className="font-mono text-xs text-zinc-300">
+							<h3
+								id={`lw-v-${index}-muxing-name`}
+								className="font-normal font-mono text-xs text-zinc-300"
+							>
 								{vKeys[index]}
-							</span>
+							</h3>
 							<span className="text-xs text-zinc-500">
 								{videoCopyLabel(video, index)}
 							</span>
 						</div>
 
-						<Field
-							label={t("wizard.container")}
-							htmlFor={`lw-v-${index}-container`}
-							tooltip={`${t("ui.tsHlsOnlyH264Only")} ${t("wizard.cmafCompatibility")}`}
-						>
-							<SelectNative
-								id={`lw-v-${index}-container`}
-								className="w-24"
-								value={video.container ?? "FMP4"}
-								onChange={(e) =>
-									patchVideo(index, {
-										container: e.target.value as "FMP4" | "CMAF" | "TS",
-									})
-								}
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+							<Field
+								label={t("wizard.container")}
+								htmlFor={`lw-v-${index}-container`}
+								tooltip={`${t("ui.tsHlsOnlyH264Only")} ${t("wizard.cmafCompatibility")}`}
 							>
-								<option value="FMP4">fMP4</option>
-								{video.codec === "H264" ? (
-									<option value="CMAF">CMAF</option>
-								) : null}
-								<option value="TS">{t("ui.ts")}</option>
-							</SelectNative>
-						</Field>
-						{video.container === "CMAF" ? (
-							<OptionsGrid
-								idBase={`lw-v-${index}-cmaf`}
-								value={video.cmaf ?? {}}
-								fields={CMAF_CHUNK_FIELDS}
-								onChange={(cmaf) => patchVideo(index, { cmaf })}
-							/>
-						) : null}
-						{(video.container ?? "FMP4") === "TS" && audioChoices.length > 0 ? (
-							<div className="max-w-md">
+								<SelectNative
+									id={`lw-v-${index}-container`}
+									value={video.container ?? "FMP4"}
+									onChange={(e) =>
+										patchVideo(index, {
+											container: e.target.value as "FMP4" | "CMAF" | "TS",
+										})
+									}
+								>
+									<option value="FMP4">fMP4</option>
+									{video.codec === "H264" ? (
+										<option value="CMAF">CMAF</option>
+									) : null}
+									<option value="TS">{t("ui.ts")}</option>
+								</SelectNative>
+							</Field>
+							{(video.container ?? "FMP4") === "TS" &&
+							audioChoices.length > 0 ? (
 								<Field
 									label={t("wizard.muxedAudio")}
 									htmlFor={`lw-v-${index}-muxaudio`}
@@ -172,38 +177,53 @@ export function LiveMuxingsSection({
 										))}
 									</SelectNative>
 								</Field>
-							</div>
-						) : null}
-						<Collapsible summary={t("wizard.advanced")}>
-							<LiveMuxingFields
-								idBase={`lw-v-${index}`}
-								state={state}
-								muxing={video.muxing}
-								container={video.container ?? "FMP4"}
-								onMuxingChange={(muxing) => patchVideo(index, { muxing })}
+							) : null}
+						</div>
+						{video.container === "CMAF" ? (
+							<OptionsGrid
+								idBase={`lw-v-${index}-cmaf`}
+								value={video.cmaf ?? {}}
+								fields={CMAF_CHUNK_FIELDS}
+								onChange={(cmaf) => patchVideo(index, { cmaf })}
 							/>
-						</Collapsible>
-					</div>
+						) : null}
+						<LiveMuxingFields
+							idBase={`lw-v-${index}`}
+							state={state}
+							muxing={video.muxing}
+							container={video.container ?? "FMP4"}
+							onMuxingChange={(muxing) => patchVideo(index, { muxing })}
+						/>
+						<LiveMuxingEncryption
+							model={encryption}
+							muxingKey={vKeys[index] ?? `video${index + 1}`}
+							credentials={credentials}
+						/>
+					</section>
 				))}
 			</section>
 			<section className="space-y-3" aria-labelledby="lw-audio-muxings">
-				<h2 id="lw-audio-muxings" className="font-medium text-sm text-zinc-200">
+				<h2 id="lw-audio-muxings" className="sr-only">
 					{t("wizard.audioRenditions")}
 				</h2>
 				{state.audios.map((audio, index) => (
-					<div
+					<section
 						key={aKeys[index]}
+						aria-labelledby={`lw-a-${index}-muxing-name`}
 						className="space-y-3 rounded-md border border-zinc-800 p-3"
 					>
 						<div className="flex flex-wrap items-center gap-2">
-							<span className="font-mono text-xs text-zinc-300">
+							<h3
+								id={`lw-a-${index}-muxing-name`}
+								className="font-normal font-mono text-xs text-zinc-300"
+							>
 								{aKeys[index]}
-							</span>
+							</h3>
 							<span className="text-xs text-zinc-500">
 								{audioCopyLabel(audio, index)}
 							</span>
 						</div>
-						<div className="flex flex-wrap items-start gap-3">
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 							<Field
 								label={t("wizard.container")}
 								htmlFor={`lw-a-${index}-container`}
@@ -211,7 +231,6 @@ export function LiveMuxingsSection({
 							>
 								<SelectNative
 									id={`lw-a-${index}-container`}
-									className="w-24"
 									value={audio.container ?? "FMP4"}
 									onChange={(e) =>
 										patchAudio(index, {
@@ -239,7 +258,7 @@ export function LiveMuxingsSection({
 							>
 								<label
 									htmlFor={`lw-a-${index}-own`}
-									className="flex items-center gap-2 text-xs text-zinc-300"
+									className="flex h-9 items-center gap-2 text-xs text-zinc-300"
 								>
 									<input
 										id={`lw-a-${index}-own`}
@@ -267,22 +286,26 @@ export function LiveMuxingsSection({
 								/>
 							</div>
 						) : null}
-						<Collapsible summary={t("wizard.advanced")}>
-							<LiveMuxingFields
-								idBase={`lw-a-${index}`}
-								state={state}
-								muxing={audio.muxing}
-								container={audio.container ?? "FMP4"}
-								ownsContainer={
-									audio.ownContainer !== false ||
-									!carriedAudioKeys.has(aKeys[index] ?? "")
-								}
-								onMuxingChange={(muxing) => patchAudio(index, { muxing })}
-							/>
-						</Collapsible>
-					</div>
+						<LiveMuxingFields
+							idBase={`lw-a-${index}`}
+							state={state}
+							muxing={audio.muxing}
+							container={audio.container ?? "FMP4"}
+							ownsContainer={
+								audio.ownContainer !== false ||
+								!carriedAudioKeys.has(aKeys[index] ?? "")
+							}
+							onMuxingChange={(muxing) => patchAudio(index, { muxing })}
+						/>
+						<LiveMuxingEncryption
+							model={encryption}
+							muxingKey={aKeys[index] ?? `audio${index + 1}`}
+							credentials={credentials}
+						/>
+					</section>
 				))}
 			</section>
+			<LiveEncryptionOrphans model={encryption} />
 		</div>
 	);
 }

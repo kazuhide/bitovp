@@ -4,6 +4,7 @@ import type { CredentialSummaryWire } from "@bitovp/core";
 import { DrmRowEditor } from "@/app/vod/new/drm-row-editor";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import { buildLiveChannelPlan, type LiveWizardState } from "./build-live-plan";
@@ -14,16 +15,10 @@ import {
 } from "./drm-model";
 import { liveOutputEntries, liveOutputOptionLabel } from "./live-output-model";
 
-export function LiveEncryptionSection({
-	state,
-	credentials,
-	onPatch,
-}: {
-	state: LiveWizardState;
-	credentials: CredentialSummaryWire[];
-	onPatch: (patch: Partial<LiveWizardState>) => void;
-}) {
-	const { t } = useT();
+export function createLiveEncryptionModel(
+	state: LiveWizardState,
+	onPatch: (patch: Partial<LiveWizardState>) => void,
+) {
 	const clear = buildLiveChannelPlan({ ...state, drm: undefined });
 	const rows = state.drm ?? [];
 	const outputs = liveOutputEntries(state);
@@ -108,182 +103,199 @@ export function LiveEncryptionSection({
 		}
 		onPatch({ drm: next });
 	};
+	const setWriteClear = (muxingKey: string, enabled: boolean) =>
+		onPatch({
+			unencryptedMuxingKeys: enabled
+				? [...(state.unencryptedMuxingKeys ?? []), muxingKey]
+				: state.unencryptedMuxingKeys?.filter((key) => key !== muxingKey),
+		});
+	return {
+		clear,
+		rows,
+		outputs,
+		update,
+		add,
+		remove,
+		copyToOthers,
+		writeClearKeys: state.unencryptedMuxingKeys ?? [],
+		setWriteClear,
+	};
+}
+
+export type LiveEncryptionModel = ReturnType<typeof createLiveEncryptionModel>;
+
+export function LiveMuxingEncryption({
+	model,
+	muxingKey,
+	credentials,
+}: {
+	model: LiveEncryptionModel;
+	muxingKey: string;
+	credentials: CredentialSummaryWire[];
+}) {
+	const { t } = useT();
+	const muxing = model.clear.muxings.find(
+		(entry) => entry.key === muxingKey && entry.kind !== "MP4",
+	);
+	if (!muxing) return null;
+	const entries = model.rows.flatMap((row, index) =>
+		row.muxingKey === muxing.key ? [{ row, index }] : [],
+	);
+	const kinds =
+		muxing.kind === "FMP4"
+			? (["CENC", "FAIRPLAY", "SPEKE"] as const)
+			: muxing.kind === "TS"
+				? (["FAIRPLAY"] as const)
+				: [];
+	const summary = t("wizardX.encryptionDrmCount", { count: entries.length });
 	return (
 		<details
-			className="rounded-md border border-zinc-800 p-4"
-			open={rows.length ? true : undefined}
+			className="rounded-md border border-zinc-800 bg-zinc-900/40"
+			open={entries.length ? true : undefined}
 		>
-			<summary className="cursor-pointer text-sm font-medium">
-				{t("liveProtection.encryption")}
+			<summary className="cursor-pointer select-none px-3 py-2 font-medium text-xs text-zinc-300 hover:text-zinc-100">
+				{summary}
+				<span className="ml-1.5 inline-flex">
+					<HelpOverlay labelFor={summary}>
+						{t("liveProtection.encryptionHelp")}
+					</HelpOverlay>
+				</span>
 			</summary>
-			<p className="mt-2 text-xs text-zinc-400">
-				{t("liveProtection.encryptionHelp")}
-			</p>
-			<div className="mt-4 space-y-5">
-				{clear.muxings
-					.filter((m) => m.kind !== "MP4")
-					.map((muxing) => {
-						const rendition = clear.renditions.find(
-							(r) => r.key === muxing.streamKey,
-						);
-						const entries = rows.flatMap((row, index) =>
-							row.muxingKey === muxing.key ? [{ row, index }] : [],
-						);
-						return (
-							<section
-								key={muxing.key}
-								className="space-y-3 rounded-md border border-zinc-800 p-3"
-							>
-								<h3 className="text-sm">
-									{rendition?.codec}{" "}
-									{rendition && "height" in rendition
-										? `${rendition.height ?? ""}p / ${(rendition.bitrate ?? 0) / 1000} kbps`
-										: rendition && "bitrate" in rendition
-											? `${(rendition.bitrate ?? 0) / 1000} kbps`
-											: ""}{" "}
-									· {muxing.kind}
-								</h3>
-								<div className="flex flex-wrap gap-2">
-									{(muxing.kind === "FMP4"
-										? (["CENC", "FAIRPLAY", "SPEKE"] as const)
-										: muxing.kind === "TS"
-											? (["FAIRPLAY"] as const)
-											: []
-									).map((kind) => (
-										<Button
-											key={kind}
-											type="button"
-											size="sm"
-											variant="secondary"
-											disabled={entries.some(({ row }) => row.kind === kind)}
-											onClick={() => add(muxing.key, kind)}
-										>
-											{t("liveProtection.add")} {kind}
-										</Button>
-									))}
-									{muxing.kind === "CMAF" ? (
-										<p className="text-xs text-zinc-400">
-											{t("liveProtection.cmafHelp")}
-										</p>
-									) : null}
-								</div>
-								{entries.length ? (
-									<label className="flex items-center gap-2 text-xs">
-										<input
-											type="checkbox"
-											checked={
-												state.unencryptedMuxingKeys?.includes(muxing.key) ??
-												false
-											}
-											onChange={(e) =>
-												onPatch({
-													unencryptedMuxingKeys: e.target.checked
-														? [
-																...(state.unencryptedMuxingKeys ?? []),
-																muxing.key,
-															]
-														: state.unencryptedMuxingKeys?.filter(
-																(key) => key !== muxing.key,
-															),
-												})
-											}
-										/>
-										{t("liveProtection.writeClear")}
-									</label>
-								) : null}
-								{entries.map(({ row, index }) => (
-									<div key={row.key} className="space-y-3">
-										<DrmRowEditor
-											idBase={`lw-drm-${index}`}
-											row={liveDrmEditorRow(row)}
-											drmCredentials={credentials}
-											showDestination={false}
-											showResourceKey={false}
-											onChange={(next) =>
-												update(index, updateLiveDrmMetadata(row, next))
-											}
-											onRemove={() => remove(index)}
-										/>
-										<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-											<Field
-												label={t("liveOutputs.destination")}
-												htmlFor={`lw-drm-${index}-destination`}
-											>
-												<SelectNative
-													id={`lw-drm-${index}-destination`}
-													value={row.destination.outputKey}
-													onChange={(e) =>
-														update(index, {
-															...row,
-															destination: {
-																...row.destination,
-																outputKey: e.target.value,
-															},
-														})
-													}
-												>
-													{!outputs.some(
-														(o) => o.key === row.destination.outputKey,
-													) ? (
-														<option value={row.destination.outputKey} disabled>
-															{row.destination.outputKey}
-														</option>
-													) : null}
-													{outputs.map((o) => (
-														<option key={o.key} value={o.key}>
-															{liveOutputOptionLabel(o, o.key)}
-														</option>
-													))}
-												</SelectNative>
-											</Field>
-											<Field
-												label={t("liveOutputs.path")}
-												htmlFor={`lw-drm-${index}-path`}
-											>
-												<Input
-													id={`lw-drm-${index}-path`}
-													value={row.destination.path}
-													onChange={(e) =>
-														update(index, {
-															...row,
-															destination: {
-																...row.destination,
-																path: e.target.value,
-															},
-														})
-													}
-												/>
-											</Field>
-										</div>
-										<Button
-											type="button"
-											size="sm"
-											variant="secondary"
-											onClick={() => copyToOthers(row)}
-										>
-											{t("liveProtection.copyToAll")}
-										</Button>
-									</div>
-								))}
-							</section>
-						);
-					})}
-				{rows
-					.filter((d) => !clear.muxings.some((m) => m.key === d.muxingKey))
-					.map((d) => (
-						<div key={d.key} role="alert" className="text-sm text-red-400">
-							{t("liveProtection.orphan")}{" "}
-							<Button
-								type="button"
-								size="sm"
-								variant="secondary"
-								onClick={() => remove(rows.indexOf(d))}
-							>
-								{t("liveProtection.remove")}
-							</Button>
-						</div>
+			<div className="space-y-3 border-zinc-800 border-t p-3">
+				<div className="flex flex-wrap gap-2">
+					{kinds.map((kind) => (
+						<Button
+							key={kind}
+							type="button"
+							size="sm"
+							variant="secondary"
+							disabled={entries.some(({ row }) => row.kind === kind)}
+							onClick={() => model.add(muxing.key, kind)}
+						>
+							{t("liveProtection.add")} {kind}
+						</Button>
 					))}
+					{muxing.kind === "CMAF" ? (
+						<p className="text-xs text-zinc-400">
+							{t("liveProtection.cmafHelp")}
+						</p>
+					) : null}
+				</div>
+				{entries.length ? (
+					<label className="flex items-center gap-2 text-xs">
+						<input
+							type="checkbox"
+							checked={model.writeClearKeys.includes(muxing.key)}
+							onChange={(e) =>
+								model.setWriteClear(muxing.key, e.target.checked)
+							}
+						/>
+						{t("liveProtection.writeClear")}
+					</label>
+				) : null}
+				{entries.map(({ row, index }) => (
+					<div key={row.key} className="space-y-3">
+						<DrmRowEditor
+							idBase={`lw-drm-${index}`}
+							row={liveDrmEditorRow(row)}
+							drmCredentials={credentials}
+							showDestination={false}
+							showResourceKey={false}
+							onChange={(next) =>
+								model.update(index, updateLiveDrmMetadata(row, next))
+							}
+							onRemove={() => model.remove(index)}
+						/>
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+							<Field
+								label={t("liveOutputs.destination")}
+								htmlFor={`lw-drm-${index}-destination`}
+							>
+								<SelectNative
+									id={`lw-drm-${index}-destination`}
+									value={row.destination.outputKey}
+									onChange={(e) =>
+										model.update(index, {
+											...row,
+											destination: {
+												...row.destination,
+												outputKey: e.target.value,
+											},
+										})
+									}
+								>
+									{!model.outputs.some(
+										(output) => output.key === row.destination.outputKey,
+									) ? (
+										<option value={row.destination.outputKey} disabled>
+											{row.destination.outputKey}
+										</option>
+									) : null}
+									{model.outputs.map((output) => (
+										<option key={output.key} value={output.key}>
+											{liveOutputOptionLabel(output, output.key)}
+										</option>
+									))}
+								</SelectNative>
+							</Field>
+							<Field
+								label={t("liveOutputs.path")}
+								htmlFor={`lw-drm-${index}-path`}
+							>
+								<Input
+									id={`lw-drm-${index}-path`}
+									value={row.destination.path}
+									onChange={(e) =>
+										model.update(index, {
+											...row,
+											destination: { ...row.destination, path: e.target.value },
+										})
+									}
+								/>
+							</Field>
+						</div>
+						<Button
+							type="button"
+							size="sm"
+							variant="secondary"
+							onClick={() => model.copyToOthers(row)}
+						>
+							{t("liveProtection.copyToAll")}
+						</Button>
+					</div>
+				))}
 			</div>
 		</details>
+	);
+}
+
+export function LiveEncryptionOrphans({
+	model,
+}: {
+	model: LiveEncryptionModel;
+}) {
+	const { t } = useT();
+	const orphans = model.rows.flatMap((row, index) =>
+		model.clear.muxings.some((muxing) => muxing.key === row.muxingKey)
+			? []
+			: [{ row, index }],
+	);
+	if (!orphans.length) return null;
+	return (
+		<div className="space-y-3">
+			{orphans.map(({ row, index }) => (
+				<div key={row.key} role="alert" className="text-sm text-red-400">
+					{t("liveProtection.orphan")}{" "}
+					<Button
+						type="button"
+						size="sm"
+						variant="secondary"
+						onClick={() => model.remove(index)}
+					>
+						{t("liveProtection.remove")}
+					</Button>
+				</div>
+			))}
+		</div>
 	);
 }

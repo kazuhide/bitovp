@@ -1,9 +1,9 @@
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { mergeWizardDraft, projectWizardDraft } from "@/lib/wizard-draft";
-import { renderLocalized } from "@/test/render";
+import { renderLocalized, renderWithQuery } from "@/test/render";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
@@ -55,6 +55,76 @@ function fixture(): LiveWizardState {
 }
 
 describe("Live muxing settings in Packaging", () => {
+	it("edits naming and output paths directly in each output card with one shared segment length", () => {
+		renderLocalized(<Harness initial={fixture()} />);
+		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		const video = screen.getByRole("region", { name: "v720" });
+		for (const id of [
+			"lw-v-0-container",
+			"lw-v-0-media-segmentNamingTemplate",
+			"lw-v-0-media-segmentNaming",
+			"lw-v-0-media-initSegmentName",
+			"lw-v-0-media-path",
+		]) {
+			expect(field(id)).toBeVisible();
+			expect(video).toContainElement(field(id));
+		}
+		fireEvent.change(field("lw-v-0-media-segmentNamingTemplate"), {
+			target: { value: "video_{rand_chars:8}_%number%.m4s" },
+		});
+		expect(field("lw-v-0-media-segmentNaming")).toBeDisabled();
+		fireEvent.change(field("lw-v-0-media-path"), {
+			target: { value: "media/primary" },
+		});
+		fireEvent.change(field("lw-seglen"), { target: { value: "4" } });
+		const plan = buildLiveChannelPlan(current());
+		expect(plan.muxings.find((muxing) => muxing.key === "v720")).toMatchObject({
+			destination: { path: "media/primary" },
+			segmentNamingTemplate: "video_{rand_chars:8}_%number%.m4s",
+		});
+		expect(
+			plan.muxings.every(
+				(muxing) => "segmentLength" in muxing && muxing.segmentLength === 4,
+			),
+		).toBe(true);
+	});
+
+	it("keeps per-output DRM actions connected to primary and additional manifests", () => {
+		const initial = fixture();
+		initial.manifests.additionalHls = [{ ...initial.manifests.hls }];
+		initial.manifests.additionalDash = [{ ...initial.manifests.dash }];
+		renderWithQuery(<Harness initial={initial} />);
+		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		const video = screen.getByRole("region", { name: "v720" });
+		const disclosure = within(video).getByText("Encryption / DRM (0)");
+		fireEvent.click(disclosure);
+		fireEvent.click(within(video).getByRole("button", { name: "Add CENC" }));
+		expect(current().drm).toHaveLength(1);
+		expect(current().drm?.[0]?.muxingKey).toBe("v720");
+		const manifests = () => [
+			current().manifests.hls,
+			current().manifests.dash,
+			...(current().manifests.additionalHls ?? []),
+			...(current().manifests.additionalDash ?? []),
+		];
+		expect(manifests().map((manifest) => manifest.drmKind)).toEqual([
+			"CENC",
+			"CENC",
+			"CENC",
+			"CENC",
+		]);
+		fireEvent.click(
+			within(video).getByRole("button", { name: "Remove encryption" }),
+		);
+		expect(current().drm).toBeUndefined();
+		expect(manifests().map((manifest) => manifest.drmKind)).toEqual([
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		]);
+	});
+
 	it.each([
 		"en",
 		"ja",

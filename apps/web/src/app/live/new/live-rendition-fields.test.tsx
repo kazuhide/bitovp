@@ -45,15 +45,14 @@ describe("Live rendition optional fields", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("keeps optional controls inside collapsed details in %s", (locale) => {
+	] as const)("keeps source options collapsed and packaging fields directly visible in %s", (locale) => {
 		renderLocalized(<Harness />, locale);
 		for (const prefix of ["lw-v-0", "lw-a-0"]) {
 			const input = field(`${prefix}-input-position`);
 			expect(input.closest("details")).not.toHaveAttribute("open");
 			expect(input).toHaveValue(null);
-			expect(
-				field(`${prefix}-media-path`).closest("details"),
-			).not.toHaveAttribute("open");
+			expect(field(`${prefix}-media-path`)).toBeVisible();
+			expect(field(`${prefix}-media-segmentNamingTemplate`)).toBeVisible();
 		}
 		expect(current().videos[0]?.input).toBeUndefined();
 		expect(current().audios[0]?.muxing).toBeUndefined();

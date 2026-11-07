@@ -2,7 +2,7 @@
 
 import type { BandingPooled } from "@bitovp/core";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
 	CartesianGrid,
 	ReferenceLine,
@@ -14,8 +14,10 @@ import {
 	YAxis,
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
+import type { PublicBandingAssessment } from "@/lib/server/banding-public";
 import {
 	type BandingJobDetail,
 	type BandingResultData,
@@ -24,6 +26,7 @@ import {
 	shortJobId,
 	VMAF_STATUS_TONE,
 } from "../vmaf-shared";
+import { BandingIntervalPlayer } from "./banding-interval-player";
 import { ExportButtons } from "./export-buttons";
 
 type Result = BandingResultData & {
@@ -36,6 +39,12 @@ const fixed = (value: number) => value.toFixed(3).replace(/\.?0+$/, "");
 /** Independent CAMBI panel: VMAF frame indices and source FPS never enter its timeline. */
 export function BandingPanels({ results }: { results: Result[] }) {
 	const { t } = useT();
+	const [selection, setSelection] = useState<{
+		resultId: string;
+		range: PublicBandingAssessment["ranges"][number];
+		nonce: number;
+		opener: HTMLButtonElement;
+	} | null>(null);
 	return (
 		<div className="mt-6 space-y-6">
 			<h2 className="font-medium text-sm text-zinc-200">
@@ -57,6 +66,10 @@ export function BandingPanels({ results }: { results: Result[] }) {
 					assessment?.failureThreshold !== undefined;
 				const execution = result.bandingExecution;
 				const frames = result.bandingFrames ?? [];
+				const previewUrl =
+					result.bandingPreview && "url" in result.bandingPreview
+						? result.bandingPreview.url
+						: undefined;
 				return (
 					<section
 						key={result.id}
@@ -212,6 +225,18 @@ export function BandingPanels({ results }: { results: Result[] }) {
 						{configured && assessment ? (
 							<div className="mt-5">
 								<h4 className="text-sm text-zinc-300">{t("banding.ranges")}</h4>
+								{selection?.resultId === result.id && previewUrl ? (
+									<BandingIntervalPlayer
+										key={`${selection.nonce}:${previewUrl}`}
+										url={previewUrl}
+										label={label}
+										range={selection.range}
+										onClose={() => {
+											selection.opener.focus();
+											setSelection(null);
+										}}
+									/>
+								) : null}
 								<p className="mt-1 text-xs text-zinc-400">
 									{t("banding.affected", {
 										value: fixed(assessment.affectedSeconds),
@@ -227,6 +252,7 @@ export function BandingPanels({ results }: { results: Result[] }) {
 														t("banding.end"),
 														t("banding.max"),
 														t("banding.severity"),
+														t("banding.previewColumn"),
 													].map((column) => (
 														<th
 															key={column}
@@ -252,6 +278,27 @@ export function BandingPanels({ results }: { results: Result[] }) {
 														</td>
 														<td className="px-3 py-2">{fixed(range.peak)}</td>
 														<td className="px-3 py-2">{range.severity}</td>
+														<td className="px-3 py-2">
+															<Button
+																size="sm"
+																variant="secondary"
+																disabled={!previewUrl}
+																onClick={(event) => {
+																	const opener = event.currentTarget;
+																	setSelection((previous) => ({
+																		resultId: result.id,
+																		range,
+																		nonce: (previous?.nonce ?? 0) + 1,
+																		opener,
+																	}));
+																}}
+															>
+																{t("banding.previewInterval", {
+																	start: fixed(range.startSeconds),
+																	end: fixed(range.endSeconds),
+																})}
+															</Button>
+														</td>
 													</tr>
 												))}
 											</tbody>
@@ -262,6 +309,11 @@ export function BandingPanels({ results }: { results: Result[] }) {
 										{t("banding.noRanges")}
 									</p>
 								)}
+								{assessment.ranges.length > 0 && !previewUrl ? (
+									<p className="mt-2 text-xs text-zinc-400">
+										{t("banding.previewUnavailable")}
+									</p>
+								) : null}
 							</div>
 						) : null}
 					</section>

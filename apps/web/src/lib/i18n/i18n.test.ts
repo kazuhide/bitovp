@@ -119,12 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Settings category captions included; measured with this instrument.
-		pinWithDriftAid(long.length, 1471, "long");
+		// Includes the measured CAMBI interval-preview messages.
+		pinWithDriftAid(long.length, 1475, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Repeated settings labels share existing translations where appropriate.
-		// Includes the shared Live segment-length hint, measured by this instrument.
-		pinWithDriftAid(short.size, 2893, "short");
+		// Includes the Live segment-length hint and interval-preview labels; measured together.
+		pinWithDriftAid(short.size, 2902, "short");
 	});
 
 	/**

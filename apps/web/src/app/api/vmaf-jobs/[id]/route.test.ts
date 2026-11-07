@@ -83,6 +83,81 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it.each([
+		true,
+		false,
+	])("projects a time-based pinned CAMBI preview without reference FPS (bandingOnly=%s)", async (bandingOnly) => {
+		const plan = encodingPlanSchema.parse({
+			...JSON.parse(
+				readFileSync(
+					resolve(
+						process.cwd(),
+						"../../packages/core/src/plan/__fixtures__/fixed-bitrate-hls-on-aws.plan.json",
+					),
+					"utf8",
+				),
+			),
+			qc: { vmaf: false, banding: true, only: true },
+		});
+		const target = enumerateQcTargets(
+			encodingPlanSchema.parse({ ...plan, qc: { vmaf: true } }),
+		)[0];
+		if (!target) throw new Error("Missing fixture target");
+		const banding = [
+			{ frameNum: 0, timestampSeconds: 0, durationSeconds: 0.08, cambi: 9 },
+		];
+		const resultId = "00000000-0000-4000-8000-0000000000b1";
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			mode: "VOD",
+			model: bandingOnly ? "CAMBI" : "vmaf_v0.6.1",
+			params: bandingOnly ? { kind: "BANDING" } : { banding: true },
+			encodingJob: { name: "Measured", plan },
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: resultId,
+					renditionRef: { renditionKey: target.renditionKey },
+					pooled: {
+						...(!bandingOnly ? computePooled(frames([95])) : {}),
+						banding: computeBandingPooled(banding),
+					},
+					framesGzip: gzipSync(
+						JSON.stringify({
+							kind: "QC_FRAMES",
+							version: 1,
+							banding,
+							...(!bandingOnly ? { vmaf: frames([95]) } : {}),
+						}),
+					),
+					provenance: {
+						distorted: {
+							bucket: "sample-output-bucket",
+							key: target.distorted.path,
+							pinned: true,
+							bytes: 10,
+							identity: { size: 10, etag: "private-version" },
+						},
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.results[0].bandingPreview).toEqual({
+			url: `/api/vmaf-jobs/${JOB_ID}/preview?resultId=${resultId}&metric=banding&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
+		});
+		expect(JSON.stringify(body)).not.toMatch(
+			/private-version|sample-output-bucket|credentialId|provenance/,
+		);
+		if (bandingOnly) expect(body.results[0]).not.toHaveProperty("preview");
+		else
+			expect(body.results[0].preview).toEqual({
+				unavailableReason: "MISSING_FPS",
+			});
+	});
 	it("returns full-frame CAMBI evidence with no VMAF model, pooled scores or fabricated frames", async () => {
 		const banding = Array.from({ length: 1502 }, (_, frameNum) => ({
 			frameNum,

@@ -178,26 +178,30 @@ export type LiveReportMetadata = {
 
 /** One rendition's report payload (detail route). */
 export type BandingResultData = {
+	bandingPreview?: MeasuredMediaPreview;
 	bandingFrames?: BandingChartFrame[];
 	bandingFrameCount?: number;
 	bandingExecution?: PublicBandingExecution;
 	bandingAssessment?: PublicBandingAssessment;
 };
 
+/** A private, organization-bound URL or a public-safe reason; never object identity. */
+export type MeasuredMediaPreview =
+	| { url: string }
+	| {
+			unavailableReason:
+				| "LIVE_CAPTURE_NOT_RETAINED"
+				| "MISSING_PROVENANCE"
+				| "MISSING_FPS"
+				| "UNSUPPORTED_SOURCE";
+	  };
+
 export type VmafResultDetail = BandingResultData & {
 	id: string;
 	/** Validated local decode/scoring implementation; absent on historical reports. */
 	localExecution?: LocalVmafExecution;
 	/** Version-pinned QC mirror; absent on older API payloads. */
-	preview?:
-		| { url: string }
-		| {
-				unavailableReason:
-					| "LIVE_CAPTURE_NOT_RETAINED"
-					| "MISSING_PROVENANCE"
-					| "MISSING_FPS"
-					| "UNSUPPORTED_SOURCE";
-		  };
+	preview?: MeasuredMediaPreview;
 	renditionRef: RenditionRef;
 	pooled: PooledMetrics & { banding?: BandingPooled };
 	/** Downsampled per-frame series (≤ DOWNSAMPLE_CAP); worst frame pinned + flagged. */

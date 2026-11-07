@@ -8,6 +8,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Affected CAMBI intervals can open the measured rendition for bounded playback
+  and replay, including banding-only reports without a VMAF reference or FPS.
+  Preview reads retain the measured object's version and organization binding.
+
 - Local VOD banding detection using no-reference CAMBI, independently or alongside
   VMAF. Reports include scores, presentation-time graphs and affected intervals
   when warning or failure bounds are configured. CAMBI maximum rules support

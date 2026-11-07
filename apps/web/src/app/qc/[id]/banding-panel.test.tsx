@@ -1,5 +1,5 @@
-import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import type { BandingResultDetail } from "../vmaf-shared";
 import { BandingPanels } from "./banding-panel";
@@ -56,6 +56,55 @@ const result: BandingResultDetail = {
 };
 
 describe("Banding report", () => {
+	beforeEach(() => {
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+		vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+	});
+	it("opens only the selected rendition and releases it when switching or closing", () => {
+		renderWithQuery(
+			<BandingPanels
+				results={[
+					{ ...result, bandingPreview: { url: "/first.mp4" } },
+					{
+						...result,
+						id: "second",
+						renditionRef: { label: "720p" },
+						bandingPreview: { url: "/second.mp4" },
+					},
+				]}
+			/>,
+		);
+		const buttons = screen.getAllByRole("button", {
+			name: "Play 40.04–40.16 s",
+		});
+		fireEvent.click(buttons[0] as HTMLElement);
+		const first = screen.getByLabelText("360p");
+		expect(document.querySelectorAll("video")).toHaveLength(1);
+		fireEvent.click(buttons[1] as HTMLElement);
+		expect(screen.getByLabelText("720p")).toBeInTheDocument();
+		expect(document.querySelectorAll("video")).toHaveLength(1);
+		expect(first).not.toHaveAttribute("src");
+		fireEvent.click(
+			screen.getByRole("button", { name: "Close interval preview" }),
+		);
+		expect(document.querySelectorAll("video")).toHaveLength(0);
+		expect(buttons[1]).toHaveFocus();
+	});
+	it("keeps scores and intervals when the pinned measured video is unavailable", () => {
+		renderWithQuery(<BandingPanels results={[result]} />);
+		expect(
+			screen.getByRole("button", { name: "Play 40.04–40.16 s" }),
+		).toBeDisabled();
+		expect(
+			screen.getByText(/version-pinned measured video is unavailable/),
+		).toBeInTheDocument();
+		expect(screen.getByRole("table")).toHaveTextContent("40.04");
+		expect(screen.getByText("1,502")).toBeInTheDocument();
+	});
 	it("shows actual GPU execution separately from CPU-reference decisions and full-frame intervals", () => {
 		renderWithQuery(<BandingPanels results={[result]} />);
 		expect(

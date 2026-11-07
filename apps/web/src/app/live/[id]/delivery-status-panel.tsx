@@ -168,8 +168,8 @@ export function DeliveryStatusPanel({
 	heartbeatReception?: HeartbeatReception;
 	openAlerts: ChannelAlertEvent[] | "unknown";
 	alertHistory: ChannelAlertEvent[];
-	playableCount: number;
-	manifestCount: number;
+	playableCount: number | "unknown";
+	manifestCount: number | "unknown";
 	region: string | null;
 	encoderIp: string | null;
 	channelStatus: LiveChannelStatus;
@@ -333,8 +333,18 @@ export function DeliveryStatusPanel({
 			],
 		],
 		output: [
-			[t("status.playable"), String(playableCount)],
-			[t("jobDetail.manifests"), String(manifestCount)],
+			[
+				t("status.playable"),
+				playableCount === "unknown"
+					? t("status.unknown")
+					: String(playableCount),
+			],
+			[
+				t("jobDetail.manifests"),
+				manifestCount === "unknown"
+					? t("status.unknown")
+					: String(manifestCount),
+			],
 			[
 				t("live.health.edgeDelayMax"),
 				origin.maxEdgeDelaySeconds === null

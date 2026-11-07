@@ -111,6 +111,39 @@ beforeEach(() => {
 });
 
 describe("SchedulePanel", () => {
+	it("keeps stop and slate scheduling available when this delivery configuration excludes scheduled start", async () => {
+		mockRoutes();
+		renderWithQuery(
+			<SchedulePanel
+				channelId={CHANNEL_ID}
+				status="RUNNING"
+				bitmovinAccountId={ACCOUNT_ID}
+				allowedActions={["STOP", "SLATE_IN"]}
+			/>,
+		);
+		await screen.findByText("ARMED");
+		await openArm();
+		const action = screen.getByLabelText("Action");
+		expect(within(action).queryByRole("option", { name: /START/ })).toBeNull();
+		expect(
+			within(action)
+				.getAllByRole("option")
+				.map((option) => (option as HTMLOptionElement).value),
+		).toEqual(["STOP", "SLATE_IN"]);
+		expect(action).toHaveValue("STOP");
+		await userEvent.type(screen.getByLabelText("Run at"), "2099-01-01T09:00");
+		await userEvent.click(screen.getByRole("button", { name: "Arm schedule" }));
+		await waitFor(() => {
+			const call = apiFetch.mock.calls.find(
+				([, init]) => (init as RequestInit | undefined)?.method === "POST",
+			);
+			expect(JSON.parse((call?.[1] as RequestInit).body as string).action).toBe(
+				"STOP",
+			);
+		});
+		expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+	});
+
 	it("tells the operator an ARMED slate is waiting on ingest — RUNNING channel, no connected input (ledger #95)", async () => {
 		apiFetch.mockImplementation(async (path: string) => {
 			if (path.endsWith("/schedules")) {

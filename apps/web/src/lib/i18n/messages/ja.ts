@@ -6,6 +6,7 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	aisaLive: {
+		momentsSummary: "{count}件",
 		manifestsUnavailable:
 			"この配信のマニフェスト情報を取得できていません。録画を取得できる場合は「キーモーメント」から再生できます。",
 		unavailableTimeshift:

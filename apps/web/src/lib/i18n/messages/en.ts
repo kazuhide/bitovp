@@ -28,6 +28,7 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	aisaLive: {
+		momentsSummary: "{count} moments",
 		manifestsUnavailable:
 			"Manifest links have not been resolved for this stream. When a recording is available, view it from Key moments.",
 		unavailableTimeshift:

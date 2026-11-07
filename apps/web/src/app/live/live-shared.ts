@@ -248,6 +248,10 @@ export type LiveChannelDetailRow = LiveChannelListItem & {
 	 * Optional so a response cached from before the field existed still renders.
 	 */
 	playbackLinks?: ManifestPlaybackLink[];
+	/** Unresolved or withheld links are unknown, not an observed zero. */
+	playbackLinksAvailability?: "available" | "unavailable";
+	/** Set only by the server's bounded public telemetry projection. */
+	monitoringSafeForViewer?: boolean;
 	/** Runtime cap  — the schedule panel edits it via PATCH. */
 	maxRunMinutes?: number | null;
 	/**

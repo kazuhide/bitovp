@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { renderWithQuery } from "@/test/render";
+import { renderWithQuery as renderWithQueryBase } from "@/test/render";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
@@ -46,6 +47,20 @@ const analysisId = "00000000-0000-4000-8000-000000000024";
 const oldEncoding = "00000000-0000-4000-8000-000000000025";
 const oldAnalysis = "00000000-0000-4000-8000-000000000026";
 const now = "2026-11-07T00:00:00.000Z";
+
+function renderWithQuery(node: ReactNode, cachedSession?: unknown) {
+	const rendered = renderWithQueryBase(<div />);
+	// Production's 15s freshness prevents newly mounted RoleAccess readers
+	// from repeatedly refetching and remounting fresh-session-gated sections.
+	// ChannelDetail still forces a fresh session request on every mount.
+	rendered.client.setDefaultOptions({
+		queries: { retry: false, staleTime: 15_000 },
+	});
+	if (cachedSession)
+		rendered.client.setQueryData(["auth", "session"], cachedSession);
+	rendered.rerender(node);
+	return rendered;
+}
 
 function fixture(imported: boolean, status = "RUNNING") {
 	const plan = buildLiveChannelPlan({
@@ -112,6 +127,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 }
 
 beforeEach(() => {
+	window.history.replaceState(null, "", "/");
 	apiFetch.mockReset();
 	seen.bindings = [];
 	seen.snapshots.mockClear();
@@ -148,8 +164,17 @@ function respond(
 				organizationId: "org",
 				isImpersonating: false,
 			};
+		if (/\/runs\/[^/]+\/health$/.test(url))
+			return {
+				points: [],
+				lanes: {},
+				run: row.currentRun,
+				truncated: false,
+				outputObservable: true,
+			};
 		if (url.includes("/alerts")) return { open: [], history: [] };
 		if (url.includes("/feeder")) return { items: [] };
+		if (url.includes("/heartbeats")) return { items: [], truncated: false };
 		return [];
 	});
 }
@@ -169,8 +194,10 @@ it("shows an imported completed run in the normal detail route with read-only hi
 	expect(
 		screen.queryByRole("button", { name: /Start a new broadcast/ }),
 	).toBeNull();
-	expect(screen.queryByRole("link", { name: /Copy settings/ })).toBeNull();
-	expect(screen.queryByRole("heading", { name: "Timeshift" })).toBeNull();
+	expect(screen.queryByRole("button", { name: /Copy settings/ })).toBeNull();
+	expect(
+		screen.getByRole("heading", { name: "DVR / timeshift" }),
+	).toBeVisible();
 	expect(
 		await screen.findByRole("button", { name: "View results for run #1" }),
 	).toBeVisible();
@@ -184,7 +211,7 @@ it("shows an imported completed run in the normal detail route with read-only hi
 	);
 });
 
-it("offers managed lifecycle controls without standard graph-only mutation panels", async () => {
+it("keeps managed lifecycle controls and read-only operational sections", async () => {
 	respond(fixture(false));
 	renderWithQuery(<ChannelDetail id={ID} />);
 	await screen.findByRole("heading", { name: "Court 1" });
@@ -195,14 +222,17 @@ it("offers managed lifecycle controls without standard graph-only mutation panel
 	expect(
 		screen.getByRole("button", { name: "Actions — more information" }),
 	).toBeVisible();
+	expect(screen.getByRole("button", { name: /Copy settings/ })).toBeVisible();
 	expect(screen.getByTestId("aisa-analysis")).toHaveTextContent(
 		`${analysisId}:${encodingId}`,
 	);
-	expect(screen.queryByRole("heading", { name: "Timeshift" })).toBeNull();
-	expect(screen.queryByRole("heading", { name: "Live to VOD" })).toBeNull();
 	expect(
-		screen.queryByRole("heading", { name: "Slate reservations" }),
-	).toBeNull();
+		screen.getByRole("heading", { name: "DVR / timeshift" }),
+	).toBeVisible();
+	expect(screen.getByRole("heading", { name: "Live-to-VOD" })).toBeVisible();
+	expect(
+		screen.getByRole("heading", { name: "Slate reservations" }),
+	).toBeVisible();
 });
 
 const selectedRun = {
@@ -289,8 +319,11 @@ it("refuses a selected run belonging to another channel without falling back to 
 	expect(seen.bindings).toEqual([]);
 });
 
-it("shows key moments as a section of the ordinary channel console without fake monitoring", async () => {
-	respond(fixture(false));
+it.each([
+	false,
+	true,
+])("keeps ordinary monitoring with supplementary key moments (imported=%s)", async (imported) => {
+	respond(fixture(imported, imported ? "STOPPED" : "RUNNING"));
 	renderWithQuery(<ChannelDetail id={ID} />);
 	await screen.findByRole("heading", { name: "Court 1" });
 	expect(
@@ -304,20 +337,266 @@ it("shows key moments as a section of the ordinary channel console without fake 
 	).toBeVisible();
 	expect(document.querySelectorAll("#sec-analysis")).toHaveLength(1);
 	expect(screen.queryByText("AISA Live Preview")).toBeNull();
+	expect(screen.getByRole("region", { name: "Channel status" })).toBeVisible();
+	expect(screen.getByRole("region", { name: "Next action" })).toBeVisible();
 	expect(
-		screen.queryByText("Alerts, manifests and slate reservations"),
-	).toBeNull();
+		screen.getByRole("heading", { name: "Delivery status" }),
+	).toBeVisible();
+	for (const section of [
+		"sec-alerts",
+		"sec-manifests",
+		"sec-heartbeat",
+		"sec-origin",
+		"sec-heartbeat-log",
+		"sec-alert-rules",
+		"sec-schedule",
+		"sec-feeders",
+		"sec-ladder",
+		"sec-runtime-cap",
+	]) {
+		expect(document.getElementById(section), section).toBeInTheDocument();
+	}
 	expect(
-		screen.queryByText(
+		screen.getByText("Alerts, manifests and slate reservations"),
+	).toBeVisible();
+	expect(
+		screen.getByText(
 			"Raw telemetry, past runs, and the settings you change once.",
 		),
-	).toBeNull();
-	expect(screen.queryByText("③ Waiting for input")).toBeNull();
+	).toBeVisible();
+	if (!imported) expect(screen.queryByText("③ Waiting for input")).toBeNull();
+	expect(screen.getByTestId("aisa-analysis")).not.toBeVisible();
+	await waitFor(() => {
+		for (const url of [
+			`/api/live-channels/${ID}/alerts`,
+			`/api/live-channels/${ID}/schedules`,
+			`/api/feeder-sessions?liveChannelId=${ID}`,
+		])
+			expect(apiFetch.mock.calls.some(([requested]) => requested === url)).toBe(
+				true,
+			);
+	});
 	expect(
-		apiFetch.mock.calls.filter(([url]) =>
-			/\/(alerts|schedules|feeders)$/.test(url),
+		apiFetch.mock.calls.some(
+			([, init]) => init?.method && init.method !== "GET",
 		),
-	).toEqual([]);
+	).toBe(false);
+});
+
+it("keeps current-run monitoring when a historical analysis is selected", async () => {
+	respond(fixture(false));
+	renderWithQuery(<ChannelDetail id={ID} initialAisaRun={selectedRun} />);
+	await screen.findByTestId("aisa-analysis");
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(
+				([url]) => url === `/api/live-channels/${ID}/runs/current/health`,
+			),
+		).toBe(true),
+	);
+	expect(
+		apiFetch.mock.calls.some(
+			([url]) => url === `/api/live-channels/${ID}/runs/older/health`,
+		),
+	).toBe(false);
+	expect(screen.getByTestId("aisa-analysis")).toHaveTextContent(
+		`${oldAnalysis}:${oldEncoding}`,
+	);
+});
+
+it("reports failed monitoring reads as unavailable rather than healthy zero", async () => {
+	respond(fixture(false));
+	const normalResponse = apiFetch.getMockImplementation();
+	apiFetch.mockImplementation(async (url: string) => {
+		if (
+			url.endsWith("/alerts") ||
+			url.endsWith("/schedules") ||
+			url.includes("/feeder-sessions?")
+		)
+			throw new Error("Synthetic monitoring failure");
+		return normalResponse?.(url);
+	});
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await screen.findByRole("region", { name: "Channel status" });
+	expect(
+		document.querySelector('[data-status-cell="alerts"]'),
+	).toHaveTextContent("unknown");
+	expect(
+		document.querySelector('[data-status-cell="feeders"]'),
+	).toHaveTextContent("unknown");
+	expect(
+		document.querySelector('[data-status-cell="next-event"]'),
+	).toHaveTextContent("could not be read");
+});
+
+it("withholds cached operator telemetry and raw logs while a fresh session is pending, then permits safe viewer monitoring", async () => {
+	const row = fixture(false);
+	const privateHeartbeat = {
+		at: now,
+		raw: {
+			ingest: {
+				status: "CONNECTED",
+				streams: [
+					{ streamId: "video", mediaType: "VIDEO", codec: "private-codec" },
+				],
+			},
+			events: [
+				{
+					details: { eventType: "WARNING", message: "private-heartbeat-event" },
+				},
+			],
+		},
+	};
+	Object.assign(row, {
+		encoderIp: "private-encoder",
+		lastHeartbeat: privateHeartbeat,
+	});
+	Object.assign(row.currentRun, {
+		encoderIp: "private-encoder",
+		lastHeartbeat: privateHeartbeat,
+	});
+	respond(row);
+	const normalResponse = apiFetch.getMockImplementation();
+	let resolveSession: (value: unknown) => void = () => {};
+	const session = new Promise((resolve) => {
+		resolveSession = resolve;
+	});
+	apiFetch.mockImplementation((url: string) =>
+		url === "/api/auth/session" ? session : normalResponse?.(url),
+	);
+	const cachedOperator = {
+		mode: "users",
+		configured: true,
+		authenticated: true,
+		role: "OPERATOR",
+		organizationId: "org",
+		effectiveUserId: "operator",
+		isImpersonating: false,
+	};
+	const rendered = renderWithQuery(<ChannelDetail id={ID} />, cachedOperator);
+	await screen.findByRole("heading", { name: "Court 1" });
+	for (const value of [
+		"private-codec",
+		"private-heartbeat-event",
+		"private-encoder",
+		"TennisMatch",
+	])
+		expect(document.body).not.toHaveTextContent(value);
+	expect(
+		apiFetch.mock.calls.some(([url]) =>
+			/\/runs\/[^/]+\/heartbeats(?:\?|$)/.test(url),
+		),
+	).toBe(false);
+	expect(document.getElementById("sec-heartbeat-log")).toHaveTextContent(
+		/operator/i,
+	);
+
+	await act(async () => resolveSession({ ...cachedOperator, role: "VIEWER" }));
+	await waitFor(() =>
+		expect(rendered.client.getQueryData(["auth", "session"])).toMatchObject({
+			role: "VIEWER",
+		}),
+	);
+	const publicRow = {
+		...row,
+		monitoringSafeForViewer: true,
+		lastHeartbeat: null,
+		currentRun: {
+			...row.currentRun,
+			lastHeartbeat: {
+				at: new Date().toISOString(),
+				raw: { ingest: { status: "CONNECTED", healthy: true, streams: [] } },
+			},
+		},
+	};
+	act(() => rendered.client.setQueryData(["live-channel", ID], publicRow));
+	await waitFor(() =>
+		expect(document.getElementById("sec-heartbeat")).toHaveTextContent(
+			"CONNECTED",
+		),
+	);
+	for (const value of [
+		"private-codec",
+		"private-heartbeat-event",
+		"private-encoder",
+		"TennisMatch",
+	])
+		expect(document.body).not.toHaveTextContent(value);
+	expect(
+		apiFetch.mock.calls.some(([url]) =>
+			/\/runs\/[^/]+\/heartbeats(?:\?|$)/.test(url),
+		),
+	).toBe(false);
+});
+
+it("opens the supplementary results for an explicit deep link", async () => {
+	window.history.replaceState(null, "", `#sec-analysis`);
+	respond(fixture(false));
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await waitFor(() =>
+		expect(screen.getByTestId("aisa-analysis")).toBeVisible(),
+	);
+	window.history.replaceState(null, "", "/");
+});
+
+it("shows unresolved AISA playback availability without a zero manifest count", async () => {
+	const row = fixture(false);
+	Object.assign(row, { playbackLinksAvailability: "unavailable" });
+	respond(row);
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await screen.findByRole("region", { name: "Channel status" });
+	expect(
+		document.querySelector('[data-status-cell="playable"]'),
+	).toHaveTextContent("unknown");
+	expect(document.getElementById("sec-manifests")).toHaveTextContent(
+		"could not be read",
+	);
+});
+
+it.each([
+	[analysisId, encodingId, "2 moments"],
+	[oldAnalysis, encodingId, "Waiting for key moments."],
+	[analysisId, oldEncoding, "Waiting for key moments."],
+])("summarizes only a valid snapshot bound to this analysis and encoding (%s, %s)", async (snapshotAnalysis, snapshotEncoding, expected) => {
+	const row = fixture(false);
+	Object.assign(row.currentRun, {
+		aisaSnapshot: {
+			analysisId: snapshotAnalysis,
+			encodingId: snapshotEncoding,
+			sequence: 1,
+			producedAt: now,
+			mediaTimeOriginUnixMs: Date.parse(now),
+			isFinal: true,
+			analyzedStartTimeSeconds: 0,
+			analyzedEndTimeSeconds: 20,
+			metadata: { version: "synthetic", disclaimer: "Synthetic fixture" },
+			observations: [
+				{
+					id: "obs-one",
+					text: "A goal",
+					startTimeSeconds: 0,
+					endTimeSeconds: 10,
+				},
+			],
+			keyMoments: ["one", "two"].map((id) => ({
+				id,
+				lastUpdatedSequence: 1,
+				importanceLevel: 1,
+				startInSeconds: 2,
+				endInSeconds: 8,
+				anchorInSeconds: 4,
+				observations: ["obs-one"],
+				categories: ["soccer"],
+			})),
+		},
+	});
+	respond(row);
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await screen.findByRole("heading", { name: "Court 1" });
+	expect(document.querySelector("#sec-analysis > summary")).toHaveTextContent(
+		expected,
+	);
+	expect(screen.getByTestId("aisa-analysis")).not.toBeVisible();
 });
 
 it("keeps operator ingest and cached step payloads out of a viewer console", async () => {

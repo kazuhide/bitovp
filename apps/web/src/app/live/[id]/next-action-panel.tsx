@@ -5,6 +5,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import type { LiveJumpEvent } from "./section-focus";
+import type { LiveSectionId } from "./section-layout";
 
 /**
  * , layer 1: the ONE thing to do next, at the top of the page.
@@ -118,8 +119,12 @@ const TONE = {
 export function NextActionPanel({
 	action,
 	onJump,
+	readOnly = false,
+	inputUnconfirmed = false,
 }: {
 	action: LiveNextAction;
+	readOnly?: boolean;
+	inputUnconfirmed?: boolean;
 	/**
 	 * called with the click event and the target section id when the
 	 * CTA is taken, so the page can hand focus to that section's heading
@@ -133,21 +138,41 @@ export function NextActionPanel({
 	 * one it does, and it needs the EVENT because on that same-fragment path it
 	 * must cancel the default action (review-366 I1).
 	 */
-	onJump?: (event: LiveJumpEvent, section: LiveNextAction["section"]) => void;
+	onJump?: (event: LiveJumpEvent, section: LiveSectionId) => void;
 }) {
 	const { t } = useT();
 	const copy = COPY[action.code];
-	const tone = TONE[action.tone];
+	const tone =
+		TONE[readOnly ? "idle" : inputUnconfirmed ? "wait" : action.tone];
+	const target = readOnly
+		? "sec-runs"
+		: inputUnconfirmed
+			? "sec-heartbeat"
+			: action.section;
 	return (
 		<section
 			aria-label={t("nextAction.regionLabel")}
-			data-next-action={action.code}
+			data-next-action={
+				readOnly
+					? "READ_ONLY"
+					: inputUnconfirmed
+						? "INPUT_UNCONFIRMED"
+						: action.code
+			}
 			className={`rounded-md border px-4 py-3 ${tone.box}`}
 		>
 			<div className="flex items-center gap-2">
 				<span aria-hidden className={`h-2 w-2 rounded-full ${tone.dot}`} />
-				<h2 className={`font-medium text-sm ${tone.title}`}>{t(copy.title)}</h2>
-				{action.code === "START_NEW_RUN" ? (
+				<h2 className={`font-medium text-sm ${tone.title}`}>
+					{t(
+						readOnly
+							? "tenant.readOnly"
+							: inputUnconfirmed
+								? "lifecycle.inputUnobserved"
+								: copy.title,
+					)}
+				</h2>
+				{!readOnly && action.code === "START_NEW_RUN" ? (
 					<HelpOverlay labelFor={t(copy.title)}>{t(copy.body)}</HelpOverlay>
 				) : null}
 				{/* An in-page anchor, not a button (review-260 126-A5 rewording):
@@ -156,20 +181,34 @@ export function NextActionPanel({
 				 * the openByDefault mechanics open the pointed one; otherwise the
 			    operator clicks the summary. */}
 				<a
-					href={`#${action.section}`}
+					href={`#${target}`}
 					// The handler decides whether to cancel: on a CHANGED fragment
 					// the browser's own navigation is what scrolls and writes the
 					// hash, and `hashchange` then restores focus; on a same-fragment
 					// click it must cancel, or Blink's default action clears the
 					// focus just set (review-366 I1).
-					onClick={(event) => onJump?.(event, action.section)}
+					onClick={(event) => onJump?.(event, target)}
 					className="ml-auto shrink-0 whitespace-nowrap rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
 				>
-					{t(copy.cta)}
+					{t(
+						readOnly
+							? "runs.heading"
+							: inputUnconfirmed
+								? "live.health.ingestDetails"
+								: copy.cta,
+					)}
 				</a>
 			</div>
-			{action.code !== "START_NEW_RUN" ? (
-				<p className="mt-1 text-sm text-zinc-400">{t(copy.body)}</p>
+			{readOnly || action.code !== "START_NEW_RUN" ? (
+				<p className="mt-1 text-sm text-zinc-400">
+					{t(
+						readOnly
+							? "aisaLive.importedReadOnly"
+							: inputUnconfirmed
+								? "lifecycle.inputUnobservedHint"
+								: copy.body,
+					)}
+				</p>
 			) : null}
 		</section>
 	);

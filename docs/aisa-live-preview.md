@@ -14,9 +14,19 @@ tags: [aisa, live, preview]
 
 作成ウィザードは通常の9ステップを維持する。有効化は開始時の設定として「6. エンコーディング」の「追加機能 → キーモーメントを自動検出する」に配置する。対応スポーツと現在の実装が使う配信構成を開き、構成への同意はここで一度だけ取得する。録画と解析結果の出力を設定するボタンから「4. 出力」へ戻り、既存 Output ID・録画保存先・解析結果保存先を指定できる。ラダー・パッケージング・マニフェスト設定は対応構成の説明とし、同意チェックを繰り返さない。オフに戻した場合は既存の通常配信設定を保持する。
 
-チャンネル詳細は通常と同じヘッダー、配信状態、開始・停止、配信履歴、セクションのナビゲーションを使う。解析が有効な場合だけ「キーモーメント」セクションを追加し、検出した場面・サムネイル・区間再生・日本語切り替えを配置する。AISA Live は解析機能の提供元として補助的に表記する。Analysis ID・モデル・sequence 等の技術情報は折りたたむ。専用の詳細画面には分岐しない。
+チャンネル詳細は以前の通常 Live の配置・階層・操作を維持する。ヘッダー、配信状態、開始・停止、配信履歴、セクションのナビゲーションを組み替えない。解析が有効な場合だけ既存の見出し行と同じ形で「キーモーメント」を追加する。初期状態は折りたたみ、同じ Analysis/Encoding に属する有効な保存済み結果があれば検出件数を要約に表示する。開くと検出した場面・サムネイル・区間再生・日本語切り替えを確認できる。既存の結果リンクや履歴選択からは対象を開く。AISA Live は解析機能の提供元として補助的に表記し、専用の大きな説明領域は設けない。Analysis ID・モデル・sequence 等の技術情報は折りたたむ。専用の詳細画面には分岐しない。
 
-Preview の capability にない通常 Live の監視・予約・graph 変更パネルは mount しない。取得していない監視値を正常・0件として表示しない。終了結果の取り込みは読み取り専用とする。選択した過去 run は解析と録画だけに適用し、配信の停止等は常に現在の run を対象とする。`?runId=...#sec-analysis`、VIEWER 投影、ingest とログの権限境界を維持する。320 / 768 / 1024 / 1440px の画面、通常配信との分岐、初回未検出・履歴選択を検証する。
+主目的は通常 Live の配信状況を詳しく確認することとする。AISA の有効化を理由に、配信状態・入力/出力診断・heartbeat と履歴・アラート・既存の運用セクションを外さない。これらを通常の順序で表示し、キーモーメントは補助的な1セクションとして追加する。標準操作の可否は、その操作に必要な実行状態・リソース・設定を個別に確認する。現在の実装経路で未対応の操作はセクション内で理由を説明し、通常 Live 全体を省略する条件にしない。取得していない監視値を正常・0件として表示しない。
+
+終了結果の取り込みは読み取り専用とする。選択した過去 run は解析と録画だけに適用し、配信の停止等は常に現在の run を対象とする。`?runId=...#sec-analysis`、VIEWER 投影、ingest とログの権限境界を維持する。VIEWER にも安全な入力/出力の監視値を返し、接続情報・未検証の raw telemetry は返さない。320 / 768 / 1024 / 1440px の画面、通常配信との分岐、初回未検出・履歴選択を検証する。
+
+### 監視画面の復元の受け入れ条件（2026-11-08）
+
+- AISA 有効時も通常の配信状態・次の操作・入力/エンコーダー/出力診断・アラート・heartbeat 履歴へ移動できる。
+- 監視と運用のセクションは共通の階層とナビゲーションを維持し、AISA の結果が未検出・取得失敗でも監視を利用できる。
+- 現在の実行の監視と操作は、過去の解析結果を選択しても切り替わらない。
+- VIEWER の監視 DTO は許可した数値・状態・時刻だけを投影し、stream key・encoder IP・入力 URL・raw 診断を混ぜない。OPERATOR の既存ログと接続情報の権限は維持する。
+- 標準 Live の回帰テスト、AISA 有効時の監視テスト、権限テスト、型検査、build、実ブラウザ確認を行う。保存済みの実 heartbeat と解析結果を優先し、画面修正のための新しい課金配信は起動しない。
 
 dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnalysisLive` が存在する。値は boolean ではなく `AiSceneAnalysisLive` の `{ analysisId, outputs }` で、両フィールドは SDK のコメント上 required。serializer と `encoding.encodings.live.start` はこの設定を `/encoding/encodings/{id}/live/start` の body へ送る。通常の Encoding 開始に AISA を設定する SDK 契約があることと、現在のデモ・bitovp が使う経路を区別する。
 
@@ -82,12 +92,28 @@ dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnaly
 | GET `/api/live/analyses/[analysisId]/ingest?bitmovinAccountId=...` | OPERATOR 向け RTMP/SRT 接続情報 |
 | GET `/api/live/analyses/[analysisId]/results?bitmovinAccountId=...` | `{availability: available, snapshot}` または `{availability: pending}` |
 | POST `/api/live-channels` | 通常と同じ作成。明示した `start.aiSceneAnalysisLive` の場合は専用 lifecycle を永続化して enqueue |
-| POST `/api/live-channels/[id]/actions` | AISA の場合は新しい実行の開始・停止・起動キャンセル。その他の標準 graph 変更は拒否 |
+| POST `/api/live-channels/[id]/actions` | AISA の場合は新しい実行の開始・停止・起動キャンセル。開始時の graph に依存する他の操作は個別に未対応と表示 |
 | POST `/api/live-channels/import-analysis` | `{bitmovinAccountId, analysisId}`。独立した最終状態検証後に既存 run を共通履歴へ取り込む。provider write なし |
 | GET/HEAD `/api/live/analyses/[analysisId]/recording` と `/recording/media` | tenant/account/analysis/encoding に束縛した認証付き HLS 読み取り |
 | GET/POST `/api/live/analyses/[analysisId]/translations` | 保存済み日本語訳の閲覧 / OPERATOR によるローカル翻訳。原文は保持 |
 
 旧 `/live/analyses` は通常履歴へ、関連付け済みの旧解析詳細リンクは `?runId=<exact run ID>` を保持して同じチャンネル詳細へ移動する。通常ページで所属 channel と AISA binding を検証し、不明・別 channel の run は 404 とする。再放送後も古いリンクを最新 run へ置き換えない。旧 Analysis actions API から関連付け済み run を変更することは拒否し、共通 lifecycle の操作を使用する。取り込み済みの終了 run は読み取り専用とする。
+
+### 通常 Live の監視・運用との共存
+
+AISA 有効の管理対象 run も、既存 worker の Encoding heartbeat poll・実行単位の履歴保存・アラート評価を使う。監視画面はこの保存値を読み、Poll と署名検証済み Push を既存の鮮度判定で選択する。VIEWER 向けには既存の heartbeat receipt allowlist を再利用し、時刻・状態・数値だけを返す。既知 run がある場合は別の配信の channel mirror へフォールバックしない。通常のマニフェスト URL を解決できない場合は件数を「不明」とし、取得済みの録画・区間再生は「キーモーメント」内に置く。
+
+| 操作 | 現在の AISA 管理対象 run |
+|---|---|
+| 入力・出力・エンコーダー監視、heartbeat 履歴、アラート、配信履歴 | 通常と同じ位置で表示。未取得・鮮度切れを正常と表示しない |
+| アラート操作・ルール、擬似ライブ feeder | 既存の権限・現在 run・publisher 占有制御を使用 |
+| 互換 MPEG-TS の登録・手動挿入・挿入停止・予約解除 | 現在の Encoding に対する通常 API を使用。検査・CONNECTED の鮮度・run と effect fence を維持 |
+| 停止とスレート挿入の予約・ローカル予約取消 | 現在 run と fence に束縛した通常の予約経路を使用。停止は Analysis の終了処理を通す |
+| 開始予約 | 現在の scheduler に Analysis finalization の確認がないため未対応。解析終了後の通常の手動開始を案内 |
+| クリップ自動変換 | 既存変換 job が run に束縛されないため、AISA run では queue 前に拒否。互換素材の直接登録を利用 |
+| timeshift リセット・自動停止変更・時間上限変更・SCTE-35・ESAM・Live to VOD・VMAF | セクションと説明を残し、現在の統合で未対応の操作を無効化。SDK 全体の制限とは表現しない |
+
+診断 API の元の account は、通常 Encoding の作成・開始 audit に加えて、専用 Analysis 作成の成功 audit に記録された同じ Analysis ID と Encoding ID の組からも確定できる。現在のチャンネル設定や caller 指定の account では代用しない。欠落・競合した provenance では診断を実行しない。
 
 作成の `analysis` は `name`、`input`（RTMP streamKey、HLS url、既存 Input の REFERENCE inputId と任意 streamKey）、任意 `cloudRegion`/`encoderVersion`、`recording.outputs`、`outputs`。Output は既存 Encoding Output の `outputId` と `outputPath` を指定し、inline credential resource は受け付けない。HLS は ongoing playlist と PDT mapping が必要。`encoderVersion` の空欄は省略、ES/AICA override は Start 時の header として分ける。
 

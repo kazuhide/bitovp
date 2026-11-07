@@ -365,7 +365,7 @@ export async function beginLiveEffect(
 			};
 		}
 
-		if (open && input.supersedeOpen) {
+		if (open && input.supersedeOpen && open.id !== retryingFailed?.id) {
 			await tx.liveEffectClaim.updateMany({
 				where: {
 					id: open.id,
@@ -383,7 +383,16 @@ export async function beginLiveEffect(
 		const token = randomUUID();
 		const created = retryingFailed
 			? await tx.liveEffectClaim.update({
-					where: { id: retryingFailed.id },
+					// The claim may have been reclaimed after our first read but before
+					// this manual STOP adopted the current channel generation. Only the
+					// exact observed owner/state may be replaced. A lost CAS throws and
+					// rolls back the channel advance and any supersession above.
+					where: {
+						id: retryingFailed.id,
+						token: retryingFailed.token,
+						state: retryingFailed.state,
+						generation: retryingFailed.generation,
+					},
 					data: {
 						generation,
 						state: "CLAIMED",

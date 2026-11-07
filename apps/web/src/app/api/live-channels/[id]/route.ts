@@ -1,5 +1,7 @@
 import {
+	aisaCreateNotDispatched,
 	aisaLiveFinalization,
+	aisaLiveNeverStarted,
 	effectiveLivePlanForRun,
 	isAisaManagedLivePlan,
 	liveRunWindow,
@@ -203,6 +205,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 
 /** Sentinel: the atomic terminal-guard matched 0 rows → roll back, return 409. */
 class ChannelNotDeletable extends Error {}
+class AisaFinalizationNotConfirmed extends Error {}
 
 /**
  * Delete a non-running live channel and ITS local dependents — LOCAL records
@@ -214,7 +217,7 @@ class ChannelNotDeletable extends Error {}
  * first) so a live encoding the worker is still managing never loses its row.
  *
  * The terminal check is enforced ATOMICALLY inside the transaction (a
- * status-guarded deleteMany whose count is asserted), mirroring the
+ * channel-first row lock and a status-guarded deleteMany), mirroring the
  * atomic-claim convention of the /actions route. The up-front findUnique only
  * serves the clean common-case 404/409 responses and reads bitmovinAccountId
  * for the audit — it does NOT gate the delete, so a channel that leaves a
@@ -222,7 +225,9 @@ class ChannelNotDeletable extends Error {}
  * CREATED|ERROR→PROVISIONING and enqueuing concurrently) is NOT deleted out
  * from under the worker (which would otherwise provision a deleted channel and
  * hit a missing-parent FK on the heartbeat write); the guarded deleteMany
- * affects 0 rows and the whole tx rolls back, surfacing a 409.
+ * affects 0 rows and the whole tx rolls back, surfacing a 409. Managed AISA
+ * finalization is re-read under channel/run locks before any dependents are
+ * deleted; an earlier run proof cannot release current provider ownership.
  *
  * Cascade: FeederSession and LiveHeartbeat are FK onDelete:Cascade → automatic.
  * LIVE VmafJobs are linked to a channel only by `params.liveChannelId` (a JSON
@@ -241,22 +246,18 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		const ctx = await getServerContext();
 		const row = await ctx.prisma.liveChannel.findUnique({
 			where: { id },
-			select: { id: true, status: true, bitmovinAccountId: true, plan: true },
+			select: {
+				id: true,
+				status: true,
+				bitmovinAccountId: true,
+				plan: true,
+				bitmovinEncodingId: true,
+				stepLog: true,
+				encoderStoppedConfirmedFor: true,
+			},
 		});
 		if (!row) {
 			return jsonError(404, "Not found");
-		}
-		if (isAisaManagedLivePlan(row.plan)) {
-			const run = await ctx.prisma.liveChannelRun.findFirst({
-				where: { liveChannelId: id },
-				orderBy: { seq: "desc" },
-			});
-			if (run?.aisaAnalysisId && aisaLiveFinalization(run) === "PENDING")
-				return jsonError(
-					409,
-					"Analysis finalization must be confirmed before deleting this channel",
-					{ code: "AISA_FINALIZATION_PENDING" },
-				);
 		}
 		if (
 			row.status === "PROVISIONING" ||
@@ -298,6 +299,60 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			);
 		}
 		const deletedVmafJobs = await ctx.prisma.$transaction(async (tx) => {
+			// Match Start/provision lock order. The outer read cannot authorize
+			// deletion of a later run or an Analysis created before Encoding binding.
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${id}::uuid FOR UPDATE`;
+			const current = await tx.liveChannel.findUnique({
+				where: { id },
+				select: {
+					status: true,
+					plan: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					encoderStoppedConfirmedFor: true,
+				},
+			});
+			if (
+				!current ||
+				["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status)
+			)
+				throw new ChannelNotDeletable();
+			if (isAisaManagedLivePlan(current.plan)) {
+				await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${id}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE`;
+				const run = await tx.liveChannelRun.findFirst({
+					where: { liveChannelId: id },
+					orderBy: { seq: "desc" },
+				});
+				// POST can fail to enqueue before the worker creates its first run.
+				// A locked empty run query plus an untouched canonical log is proof
+				// of no provider work; absence of a run alone is never sufficient.
+				const noRunNoCreate =
+					run === null &&
+					["CREATED", "ERROR"].includes(current.status) &&
+					!current.bitmovinEncodingId &&
+					aisaCreateNotDispatched(current.stepLog);
+				const noCreateError =
+					run?.status === "ERROR" &&
+					current.status === "ERROR" &&
+					!run.cancelRequested &&
+					!run.aisaAnalysisId &&
+					!run.bitmovinEncodingId &&
+					!current.bitmovinEncodingId &&
+					aisaCreateNotDispatched(run.stepLog) &&
+					aisaCreateNotDispatched(current.stepLog);
+				const finalized =
+					run &&
+					run.bitmovinEncodingId === current.bitmovinEncodingId &&
+					["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run));
+				if (
+					!noRunNoCreate &&
+					(!run ||
+						(!noCreateError &&
+							!finalized &&
+							!aisaLiveNeverStarted(run, current)))
+				)
+					throw new AisaFinalizationNotConfirmed();
+			}
 			// Re-assert inside the tx: one that entered PENDING since the read above
 			// must not be deleted out from under the scorer.
 			const stillScoring = await tx.vmafJob.count({
@@ -340,6 +395,13 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		);
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
+		if (err instanceof AisaFinalizationNotConfirmed) {
+			return jsonError(
+				409,
+				"Analysis finalization must be confirmed before deleting this channel",
+				{ code: "AISA_FINALIZATION_PENDING" },
+			);
+		}
 		if (err instanceof ChannelNotDeletable) {
 			return jsonError(
 				409,

@@ -48,7 +48,12 @@ type ClaimCreateArgs = {
 };
 
 type ClaimUpdateArgs = {
-	where: { id: string };
+	where: {
+		id: string;
+		token?: string;
+		state?: Claim["state"];
+		generation?: number;
+	};
 	data: Record<string, unknown>;
 };
 
@@ -100,10 +105,12 @@ function fakePrisma() {
 		},
 		liveEffectClaim: {
 			findUnique: vi.fn(
-				async ({ where }: { where: { idempotencyKey: string } }) =>
-					claims.find(
+				async ({ where }: { where: { idempotencyKey: string } }) => {
+					const row = claims.find(
 						(claim) => claim.idempotencyKey === where.idempotencyKey,
-					) ?? null,
+					);
+					return row ? { ...row } : null;
+				},
 			),
 			findFirst: vi.fn(
 				async ({
@@ -113,12 +120,14 @@ function fakePrisma() {
 						liveChannelId: string;
 						state: { in: Claim["state"][] };
 					};
-				}) =>
-					claims.find(
+				}) => {
+					const row = claims.find(
 						(claim) =>
 							claim.liveChannelId === where.liveChannelId &&
 							where.state.in.includes(claim.state),
-					) ?? null,
+					);
+					return row ? { ...row } : null;
+				},
 			),
 			create: vi.fn(async ({ data }: ClaimCreateArgs) => {
 				const row: Claim = {
@@ -132,7 +141,14 @@ function fakePrisma() {
 				return { ...row };
 			}),
 			update: vi.fn(async ({ where, data }: ClaimUpdateArgs) => {
-				const hit = claims.find((claim) => claim.id === where.id);
+				const hit = claims.find(
+					(claim) =>
+						claim.id === where.id &&
+						(where.token === undefined || claim.token === where.token) &&
+						(where.state === undefined || claim.state === where.state) &&
+						(where.generation === undefined ||
+							claim.generation === where.generation),
+				);
 				if (!hit) throw new Error("claim not found");
 				const mutable = hit as unknown as Record<string, unknown>;
 				for (const [key, value] of Object.entries(data)) {
@@ -186,6 +202,7 @@ function fakePrisma() {
 		channel,
 		run,
 		claims,
+		claimLookup: tx.liveEffectClaim.findUnique,
 		loseNextChannelCas: () => {
 			loseNextChannelCas = true;
 		},
@@ -209,6 +226,53 @@ const INPUT: LiveEffectBeginInput = {
 };
 
 describe("durable live effect claims", () => {
+	it.each([
+		"AMBIGUOUS",
+		"ACKED",
+		"DISPATCHING",
+		"FAILED",
+	] as const)("rolls back a stale %s reclaim without replacing the current STOP owner", async (state) => {
+		const fake = fakePrisma();
+		fake.run.aisaAnalysisId = "analysis-1";
+		const input: LiveEffectBeginInput = {
+			...INPUT,
+			action: "STOP",
+			idempotencyKey: "manual:stop:channel-1:run-1",
+			scheduleId: undefined,
+			targetId: undefined,
+			supersedeOpen: true,
+			resumeAisaFinalization: true,
+		};
+		expect((await beginLiveEffect(fake.prisma, input)).kind).toBe("EXECUTE");
+		const oldClaim = fake.claims[0];
+		if (!oldClaim) throw new Error("Missing fixture claim");
+		oldClaim.state = state;
+		if (state === "DISPATCHING")
+			oldClaim.expiresAt = new Date(NOW.getTime() - 1);
+		// A read this receipt before B's transaction committed. Keep a copy:
+		// Prisma returns a snapshot, never an alias of the mutable database row.
+		const staleReceipt = { ...oldClaim };
+		const current = await beginLiveEffect(fake.prisma, {
+			...input,
+			ownerId: "worker-B",
+		});
+		expect(current.kind).toBe("EXECUTE");
+		const committed = { ...fake.claims[0] };
+		const channelBefore = { ...fake.channel };
+		fake.claimLookup.mockResolvedValueOnce(staleReceipt);
+
+		await expect(
+			beginLiveEffect(fake.prisma, { ...input, ownerId: "stale-worker-A" }),
+		).rejects.toThrow();
+
+		expect(fake.claims).toEqual([committed]);
+		expect(fake.channel).toEqual(channelBefore);
+		expect(fake.claims[0]).toMatchObject({
+			state: "DISPATCHING",
+			ownerId: "worker-B",
+			attempt: 2,
+		});
+	});
 	it("reclaims only an exact bound AISA STOP after pending finalization, never an active duplicate", async () => {
 		const fake = fakePrisma();
 		fake.run.aisaAnalysisId = "analysis-1";

@@ -26,6 +26,9 @@ tags: [aisa, live, preview]
 - 通常の作成・開始・停止の操作と永続 lifecycle を利用する。内部では create 後の実 ID を記録してから start する。副作用を自動再試行せず、応答不明なら実リソースを再取得して照合する。Analysis の stop/finalize を経ずに通常 Encoding だけを停止しない。
 - Encoding と Analysis の終了、final snapshot の有無を別々に表示する。RUNNING はメディア受信や key moments 検出の証拠としない。
 - 解析の終了待ちは実行単位の `aisaFinalization` に記録して再確認する。`aisaSnapshot` は provider の結果だけを保持し、内部の失敗証明を混ぜない。両 provider が終了しても失敗した実行は ERROR と理由を保持する。新規 Preview の無効化後も、既存の同一 run の停止・回収は可能にする。
+- 開始前のキャンセルは、CREATE 未送信の記録、または同じ run の Analysis と Encoding が両方 CREATED で START 未送信の独立した確認を、別の `NEVER_STARTED` 証明として保存する。証明と実行・ステップ記録が一致するときだけ再開始や削除を許可する。送信結果が不明な場合は許可しない。キャンセル要求の解除は、チャンネルと実行の終端状態・証明と同じ fenced transaction で確定する。
+- 作成前に失敗したリソースなしの ERROR は、存在するチャンネル・実行のログが CREATE 未送信を証明する場合に削除できる。実行がまだない場合も、最新の実行が存在しないこと、チャンネルに provider ID と CREATE 送信の記録がないことを確認する。削除トランザクションではチャンネル、最新の実行の順でロック・再読し、その時点の状態と証明を確認してから依存データを削除する。古い実行の停止確認で、新しく開始された実行を削除しない。
+- 停止の再試行は、読み取った claim の token・state・generation が同じ場合だけ所有者を更新する。競合で所有者が変わった場合は transaction を戻し、新しい所有者の処理とチャンネルの世代を保持する。
 - 通常のチャンネル詳細 API も AISA の接続情報の権限を守る。VIEWER の返却値は allowlist の metadata・run binding・検証済み snapshot に限定し、plan/compiled payload/接続情報/未検証の raw container は返さない。
 
 ## 機能と API

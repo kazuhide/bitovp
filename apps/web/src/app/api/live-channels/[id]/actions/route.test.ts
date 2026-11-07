@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { liveChannelJobSchema, liveChannelPlanSchema } from "@bitovp/core";
+import {
+	compileAisaManagedLiveChannel,
+	initStepLog,
+	liveChannelJobSchema,
+	liveChannelPlanSchema,
+} from "@bitovp/core";
 import { DB_NULL } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +20,8 @@ const runFindFirst = vi.fn(
 		aisaStatus?: string | null;
 		aisaSnapshot?: unknown;
 		aisaFinalization?: unknown;
+		stepLog?: unknown;
+		encoderStoppedConfirmedFor?: string | null;
 		/** : the provider-lifecycle columns the route now reads. */
 		providerStatus?: string | null;
 		providerStatusObservedAt?: Date | null;
@@ -253,6 +260,105 @@ function channel(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AISA lifecycle admission", () => {
+	it.each([
+		"CREATE_NOT_DISPATCHED",
+		"BOUND_CREATED_NOT_STARTED",
+		"ambiguous",
+	])("allows a fresh run only after proved never-started cancellation: %s", async (basis) => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const analysisId = "00000000-0000-4000-8000-0000000000aa";
+		const encodingId = "00000000-0000-4000-8000-0000000000ee";
+		const plan = liveChannelPlanSchema.parse({
+			planVersion: 1,
+			name: "Canceled AISA",
+			bitmovin: { accountId: CHANNEL_ID, cloudRegion: "GOOGLE_EUROPE_WEST_1" },
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: CHANNEL_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		});
+		const stepLog = initStepLog(compileAisaManagedLiveChannel(plan));
+		const bound = basis === "BOUND_CREATED_NOT_STARTED";
+		if (bound)
+			for (const entry of stepLog) {
+				if (
+					entry.kind === "CREATE_AISA_LIVE_ANALYSIS" ||
+					entry.kind === "RESOLVE_AISA_LIVE_ENCODING"
+				) {
+					entry.status = "DONE";
+					entry.resourceId =
+						entry.kind === "CREATE_AISA_LIVE_ANALYSIS"
+							? analysisId
+							: encodingId;
+				}
+			}
+		if (basis === "ambiguous")
+			for (const entry of stepLog)
+				if (entry.kind === "CREATE_AISA_LIVE_ANALYSIS")
+					entry.response = { aisaCreateDispatched: true };
+		const proof = {
+			kind: "NEVER_STARTED",
+			basis: bound ? basis : "CREATE_NOT_DISPATCHED",
+			runId: RUN_ID,
+			observedAt: "2026-11-07T00:00:00Z",
+			...(bound
+				? {
+						analysisId,
+						encodingId,
+						analysisStatus: "CREATED",
+						encodingStatus: "CREATED",
+					}
+				: {}),
+		};
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPED",
+				error: null,
+				plan,
+				stepLog,
+				bitmovinEncodingId: bound ? encodingId : null,
+				encoderStoppedConfirmedFor: bound ? encodingId : null,
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			cancelRequested: false,
+			bitmovinEncodingId: bound ? encodingId : null,
+			aisaAnalysisId: bound ? analysisId : null,
+			aisaStatus: bound ? "CREATED" : null,
+			providerStatus: bound ? "CREATED" : null,
+			encoderStoppedConfirmedFor: bound ? encodingId : null,
+			stepLog,
+			aisaFinalization: proof,
+		});
+		const response = await postAction({ action: "start" });
+		expect(response.status).toBe(basis === "ambiguous" ? 409 : 200);
+		if (basis === "ambiguous") expect(queueAdd).not.toHaveBeenCalled();
+		else {
+			expect(runCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						seq: 2,
+						id: expect.not.stringMatching(`^${RUN_ID}$`),
+					}),
+				}),
+			);
+			expect(runUpdate).not.toHaveBeenCalled();
+		}
+	});
 	it("requeues same-run Analysis readback from an Encoder-only clean STOPPED row", async () => {
 		findUnique.mockResolvedValue(
 			channel({

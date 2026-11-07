@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { initStepLog } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
@@ -12,6 +13,9 @@ const vmafCount = vi.fn();
 const auditCreate = vi.fn();
 const heartbeatEvents = vi.fn().mockResolvedValue([]);
 const latestRun = vi.fn().mockResolvedValue(null);
+const lockedChannel = vi.fn();
+const lockedRun = vi.fn();
+const lockRows = vi.fn();
 
 // Interactive $transaction: invoke the callback with a tx exposing the model
 // methods the route uses. `vmafJob.count` is the in-transaction race re-assert
@@ -21,7 +25,9 @@ const latestRun = vi.fn().mockResolvedValue(null);
 // answered 409 for the same row.
 const tx = {
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
-	liveChannel: { deleteMany: channelDeleteMany },
+	liveChannel: { findUnique: lockedChannel, deleteMany: channelDeleteMany },
+	liveChannelRun: { findFirst: lockedRun },
+	$queryRaw: lockRows,
 };
 const $transaction = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
 
@@ -60,6 +66,12 @@ function delReq() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	latestRun.mockReset().mockResolvedValue(null);
+	lockedChannel
+		.mockReset()
+		.mockImplementation(() => findUnique.mock.results.at(-1)?.value);
+	lockedRun.mockReset().mockImplementation((args) => latestRun(args));
+	lockRows.mockResolvedValue([]);
 	// Ordering is cosmetic here, and my earlier comment claiming otherwise was
 	// wrong: `vi.clearAllMocks` calls `mockClear`, which resets calls but KEEPS
 	// implementations, and this project sets no `clearMocks`/`mockReset` in its
@@ -520,6 +532,336 @@ describe("DELETE /api/live-channels/[id] — the live VMAF guard", () => {
 });
 
 describe("DELETE /api/live-channels/[id]", () => {
+	const managedPlan = { start: { aiSceneAnalysisLive: {} } };
+	const analysisId = "a0000000-0000-4000-8000-000000000002";
+	const runId = "a0000000-0000-4000-8000-000000000001";
+	function unattemptedLog() {
+		return initStepLog([
+			{
+				step: "analysis",
+				kind: "CREATE_AISA_LIVE_ANALYSIS",
+				payload: {},
+				refs: {},
+			},
+			{
+				step: "encoding",
+				kind: "RESOLVE_AISA_LIVE_ENCODING",
+				payload: {},
+				refs: { analysisId: "analysis" },
+			},
+			{
+				step: "start",
+				kind: "START_AISA_LIVE_ANALYSIS",
+				payload: {},
+				refs: { analysisId: "analysis", encodingId: "encoding" },
+			},
+			{
+				step: "await:running",
+				kind: "AWAIT_LIVE_RUNNING",
+				payload: {},
+				refs: { analysisId: "analysis", encodingId: "encoding" },
+			},
+		]);
+	}
+	function uncreatedError() {
+		const stepLog = unattemptedLog();
+		return {
+			channel: {
+				id: CHANNEL_ID,
+				status: "ERROR",
+				plan: managedPlan,
+				bitmovinAccountId: "account",
+				bitmovinEncodingId: null,
+				stepLog,
+				liveEffectFenceVersion: 0,
+			},
+			run: {
+				id: runId,
+				seq: 1,
+				status: "ERROR",
+				cancelRequested: false,
+				aisaAnalysisId: null as string | null,
+				bitmovinEncodingId: null as string | null,
+				stepLog: structuredClone(stepLog),
+			},
+		};
+	}
+	it.each([
+		"fresh-run",
+		"initial-analysis-before-resolve",
+	])("does not use an outer safe observation to delete pending AISA ownership: %s", async (race) => {
+		const before = uncreatedError();
+		const oldProof = {
+			kind: "NEVER_STARTED",
+			basis: "CREATE_NOT_DISPATCHED",
+			runId,
+			observedAt: "2026-11-07T00:00:00Z",
+		};
+		findUnique.mockResolvedValueOnce({
+			...before.channel,
+			status: race === "fresh-run" ? "STOPPED" : "CREATED",
+		});
+		latestRun.mockResolvedValueOnce(
+			race === "fresh-run"
+				? { ...before.run, status: "STOPPED", aisaFinalization: oldProof }
+				: null,
+		);
+		let currentChannel = before.channel;
+		let currentRun = before.run;
+		lockedChannel.mockImplementation(async () => currentChannel);
+		lockedRun.mockImplementation(async () => currentRun);
+		let resume!: () => void;
+		let observed!: () => void;
+		const paused = new Promise<void>((resolve) => {
+			observed = resolve;
+		});
+		const released = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		vmafFindFirst.mockImplementationOnce(async () => {
+			observed();
+			await released;
+			return null;
+		});
+		const request = DELETE(delReq(), ctx(CHANNEL_ID));
+		await paused;
+		const dispatched = unattemptedLog();
+		const create = dispatched[0];
+		if (!create) throw new Error("missing CREATE fixture");
+		create.status = "DONE";
+		create.resourceId = analysisId;
+		create.response = { aisaCreateDispatched: true };
+		currentChannel = {
+			...before.channel,
+			stepLog: dispatched,
+			liveEffectFenceVersion: race === "fresh-run" ? 1 : 0,
+		};
+		currentRun = {
+			...before.run,
+			id: race === "fresh-run" ? "a0000000-0000-4000-8000-000000000004" : runId,
+			seq: race === "fresh-run" ? 2 : 1,
+			aisaAnalysisId: analysisId,
+			stepLog: dispatched,
+		};
+		resume();
+		const response = await request;
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "AISA_FINALIZATION_PENDING" },
+		});
+		expect(vmafDeleteMany).not.toHaveBeenCalled();
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+		expect(auditCreate).not.toHaveBeenCalled();
+	});
+	it("deletes a zero-resource managed ERROR only after confirming both current logs contain no CREATE dispatch", async () => {
+		const { channel, run } = uncreatedError();
+		const preflight = run.stepLog[0];
+		if (!preflight) throw new Error("missing CREATE fixture");
+		preflight.status = "FAILED";
+		preflight.startedAt = "2026-11-07T00:00:00Z";
+		findUnique.mockResolvedValueOnce(channel);
+		latestRun.mockResolvedValueOnce(run);
+		const response = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(response.status).toBe(200);
+		expect(channelDeleteMany).toHaveBeenCalledTimes(1);
+		expect(update).not.toHaveBeenCalled();
+		const queries = lockRows.mock.calls.map(([strings]) => strings.join("?"));
+		expect(queries[0]).toMatch(/LiveChannel.*FOR UPDATE/);
+		expect(queries[1]).toMatch(/LiveChannelRun.*FOR UPDATE/);
+		expect(lockRows.mock.invocationCallOrder[1]).toBeLessThan(
+			lockedRun.mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(lockedRun.mock.invocationCallOrder[0]).toBeLessThan(
+			vmafDeleteMany.mock.invocationCallOrder[0] ?? 0,
+		);
+	});
+	it.each([
+		"ERROR",
+		"CREATED",
+	])("deletes a channel-only POST %s with no run and no provider CREATE dispatch", async (status) => {
+		// POST commits the channel before enqueueing. Queue failure marks ERROR;
+		// no worker reached ensureCurrentRun, so there is no run/proof to consult.
+		const { channel } = uncreatedError();
+		findUnique.mockResolvedValueOnce({
+			...channel,
+			status,
+			error:
+				status === "ERROR" ? "Enqueue failed — start the channel again" : null,
+		});
+		lockedRun.mockResolvedValueOnce(null);
+		const response = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(response.status).toBe(200);
+		expect(lockedRun).toHaveBeenCalledWith({
+			where: { liveChannelId: CHANNEL_ID },
+			orderBy: { seq: "desc" },
+		});
+		expect(channelDeleteMany).toHaveBeenCalledTimes(1);
+		expect(update).not.toHaveBeenCalled();
+	});
+	it.each([
+		"CREATE-dispatch",
+		"encoding-id",
+		"partial-log",
+		"unknown-log",
+	])("retains channel-only ERROR with unsafe or unknown ownership: %s", async (unsafe) => {
+		const { channel } = uncreatedError();
+		const create = channel.stepLog[0];
+		if (!create) throw new Error("missing CREATE fixture");
+		if (unsafe === "CREATE-dispatch")
+			create.response = { aisaCreateDispatched: true };
+		if (unsafe === "partial-log") channel.stepLog.pop();
+		findUnique.mockResolvedValueOnce({
+			...channel,
+			...(unsafe === "encoding-id" ? { bitmovinEncodingId: analysisId } : {}),
+			...(unsafe === "unknown-log" ? { stepLog: "invalid" } : {}),
+		});
+		lockedRun.mockResolvedValueOnce(null);
+		const response = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(response.status).toBe(409);
+		expect(vmafDeleteMany).not.toHaveBeenCalled();
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it.each([
+		"channel-dispatch",
+		"run-dispatch",
+		"channel-start-dispatch",
+		"run-start-dispatch",
+		"cancel-pending",
+		"channel-encoding-identity-gap",
+		"channel-partial-log",
+		"run-partial-log",
+		"analysis-identity-gap",
+		"encoding-identity-mismatch",
+		"missing-run",
+	])("retains an unproved managed ERROR: %s", async (unsafe) => {
+		const { channel, run } = uncreatedError();
+		const channelCreate = channel.stepLog[0];
+		const runCreate = run.stepLog[0];
+		if (!channelCreate || !runCreate) throw new Error("missing CREATE fixture");
+		if (unsafe === "missing-run")
+			channelCreate.response = { aisaCreateDispatched: true };
+		if (unsafe === "channel-dispatch")
+			channelCreate.response = { aisaCreateDispatched: true };
+		if (unsafe === "run-dispatch")
+			runCreate.response = { aisaCreateDispatched: true };
+		const channelStart = channel.stepLog[2];
+		const runStart = run.stepLog[2];
+		if (!channelStart || !runStart) throw new Error("missing START fixture");
+		if (unsafe === "channel-start-dispatch")
+			channelStart.response = { aisaStartDispatched: true };
+		if (unsafe === "run-start-dispatch")
+			runStart.response = { aisaStartDispatched: true };
+		if (unsafe === "cancel-pending") run.cancelRequested = true;
+		if (unsafe === "channel-partial-log") channel.stepLog.pop();
+		if (unsafe === "run-partial-log") run.stepLog.pop();
+		findUnique.mockResolvedValueOnce({
+			...channel,
+			...(unsafe === "channel-encoding-identity-gap"
+				? { bitmovinEncodingId: "a0000000-0000-4000-8000-000000000003" }
+				: {}),
+		});
+		latestRun.mockResolvedValueOnce({
+			...run,
+			...(unsafe === "analysis-identity-gap"
+				? { aisaAnalysisId: analysisId }
+				: {}),
+			...(unsafe === "encoding-identity-mismatch"
+				? { bitmovinEncodingId: "a0000000-0000-4000-8000-000000000003" }
+				: {}),
+		});
+		if (unsafe === "missing-run") lockedRun.mockResolvedValueOnce(null);
+		const response = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(response.status).toBe(409);
+		expect(vmafDeleteMany).not.toHaveBeenCalled();
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it.each([
+		"CREATE_NOT_DISPATCHED",
+		"BOUND_CREATED_NOT_STARTED",
+		"ambiguous",
+	])("requires the exact never-started cancellation proof for deletion: %s", async (basis) => {
+		const runId = "a0000000-0000-4000-8000-000000000001";
+		const analysisId = "a0000000-0000-4000-8000-000000000002";
+		const encodingId = "a0000000-0000-4000-8000-000000000003";
+		const stepLog = initStepLog([
+			{
+				step: "analysis",
+				kind: "CREATE_AISA_LIVE_ANALYSIS",
+				payload: {},
+				refs: {},
+			},
+			{
+				step: "encoding",
+				kind: "RESOLVE_AISA_LIVE_ENCODING",
+				payload: {},
+				refs: { analysisId: "analysis" },
+			},
+			{
+				step: "start",
+				kind: "START_AISA_LIVE_ANALYSIS",
+				payload: {},
+				refs: { analysisId: "analysis", encodingId: "encoding" },
+			},
+			{
+				step: "await:running",
+				kind: "AWAIT_LIVE_RUNNING",
+				payload: {},
+				refs: { analysisId: "analysis", encodingId: "encoding" },
+			},
+		]);
+		const bound = basis === "BOUND_CREATED_NOT_STARTED";
+		for (const entry of stepLog) {
+			if (
+				bound &&
+				["CREATE_AISA_LIVE_ANALYSIS", "RESOLVE_AISA_LIVE_ENCODING"].includes(
+					entry.kind,
+				)
+			) {
+				entry.status = "DONE";
+				entry.resourceId =
+					entry.kind === "CREATE_AISA_LIVE_ANALYSIS" ? analysisId : encodingId;
+			}
+			if (basis === "ambiguous" && entry.kind === "CREATE_AISA_LIVE_ANALYSIS")
+				entry.response = { aisaCreateDispatched: true };
+		}
+		findUnique.mockResolvedValueOnce({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			bitmovinAccountId: "account",
+			plan: { start: { aiSceneAnalysisLive: {} } },
+			stepLog,
+			bitmovinEncodingId: bound ? encodingId : null,
+			encoderStoppedConfirmedFor: bound ? encodingId : null,
+		});
+		latestRun.mockResolvedValueOnce({
+			id: runId,
+			stepLog,
+			aisaAnalysisId: bound ? analysisId : null,
+			bitmovinEncodingId: bound ? encodingId : null,
+			aisaStatus: bound ? "CREATED" : null,
+			providerStatus: bound ? "CREATED" : null,
+			encoderStoppedConfirmedFor: bound ? encodingId : null,
+			aisaFinalization: {
+				kind: "NEVER_STARTED",
+				basis: bound ? basis : "CREATE_NOT_DISPATCHED",
+				runId,
+				observedAt: "2026-11-07T00:00:00Z",
+				...(bound
+					? {
+							analysisId,
+							encodingId,
+							analysisStatus: "CREATED",
+							encodingStatus: "CREATED",
+						}
+					: {}),
+			},
+		});
+		const response = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(response.status).toBe(basis === "ambiguous" ? 409 : 200);
+		expect(channelDeleteMany).toHaveBeenCalledTimes(
+			basis === "ambiguous" ? 0 : 1,
+		);
+	});
 	it("retains a managed run whose Encoding ended before Analysis finalization was confirmed", async () => {
 		findUnique.mockResolvedValueOnce({
 			id: CHANNEL_ID,

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
 	aisaLiveFinalization,
+	aisaLiveNeverStarted,
 	compileLiveRunStepLog,
 	deriveProviderLifecycle,
 	isAisaManagedLivePlan,
@@ -725,6 +726,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 								aisaSnapshot: true,
 								aisaFinalization: true,
 								bitmovinEncodingId: true,
+								stepLog: true,
+								encoderStoppedConfirmedFor: true,
 								...PROVIDER_LIFECYCLE_SELECT,
 							},
 						});
@@ -762,7 +765,10 @@ export async function POST(req: Request, { params }: RouteParams) {
 							isReair &&
 							aisaManaged &&
 							(!latest ||
-								["UNBOUND", "PENDING"].includes(aisaLiveFinalization(latest)))
+								(["UNBOUND", "PENDING"].includes(
+									aisaLiveFinalization(latest),
+								) &&
+									!aisaLiveNeverStarted(latest, row)))
 						)
 							throw new AisaFinalizationPending();
 						// Resume REVIVES the latest run — same airing, same

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	aisaLiveNeverStarted,
 	compileAisaManagedLiveChannel,
 	compileLiveChannel,
 	compileLiveRunStepLog,
@@ -10910,6 +10911,124 @@ describe("confirmed encoding cancellation", () => {
 });
 
 describe("cooperative startup cancellation", () => {
+	it.each([
+		"untouched",
+		"created",
+		"create-preflight",
+		"start-preflight",
+		"commit-interrupted",
+		"start-dispatched",
+	])("preserves safe AISA cancellation recovery for %s", async (phase) => {
+		const analysisId = "00000000-0000-4000-8000-0000000000aa";
+		const encodingId = "00000000-0000-4000-8000-0000000000ee";
+		const plan = liveChannelPlanSchema.parse({
+			planVersion: 1,
+			name: "Canceled AISA",
+			bitmovin: { accountId: ACCOUNT_ID, cloudRegion: "GOOGLE_EUROPE_WEST_1" },
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: ACCOUNT_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		});
+		const entries = initStepLog(compileAisaManagedLiveChannel(plan));
+		const created =
+			phase === "created" ||
+			phase === "start-preflight" ||
+			phase === "start-dispatched";
+		for (const entry of entries) {
+			if (
+				phase === "create-preflight" &&
+				entry.kind === "CREATE_AISA_LIVE_ANALYSIS"
+			) {
+				entry.status = "RUNNING";
+				entry.startedAt = "2026-06-12T00:00:00Z";
+			}
+			if (
+				created &&
+				["CREATE_AISA_LIVE_ANALYSIS", "RESOLVE_AISA_LIVE_ENCODING"].includes(
+					entry.kind,
+				)
+			) {
+				entry.status = "DONE";
+				entry.resourceId =
+					entry.kind === "CREATE_AISA_LIVE_ANALYSIS" ? analysisId : encodingId;
+			}
+			if (
+				(phase === "start-dispatched" || phase === "start-preflight") &&
+				entry.kind === "START_AISA_LIVE_ANALYSIS"
+			) {
+				entry.status = "RUNNING";
+				entry.startedAt = "2026-06-12T00:00:00Z";
+				if (phase === "start-dispatched")
+					entry.response = { aisaStartDispatched: true };
+			}
+		}
+		const h = setup({
+			plan,
+			stepLog: entries,
+			status: "PROVISIONING",
+			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinEncodingId: created ? encodingId : null,
+		});
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "PROVISIONING",
+			cancelRequested: true,
+			bitmovinEncodingId: created ? encodingId : null,
+			aisaAnalysisId: created ? analysisId : null,
+			stepLog: entries,
+		});
+		h.sdk.getAisaLiveAnalysis = vi.fn(async () => ({
+			analysisId,
+			encodingId,
+			status: "CREATED" as const,
+		}));
+		h.sdk.getEncodingStatus = vi.fn(async () => ({ status: "CREATED" }));
+		if (phase === "commit-interrupted") {
+			const original = h.liveChannelRun.updateMany.getMockImplementation();
+			let interrupted = false;
+			h.liveChannelRun.updateMany.mockImplementation(async (args) => {
+				if (!interrupted && args.data.cancelRequested === false) {
+					interrupted = true;
+					throw new Error("terminal transaction interrupted");
+				}
+				if (!original) throw new Error("Missing fixture update");
+				return original(args);
+			});
+		}
+		const outcome = await h.process({
+			liveChannelId: CHANNEL_ID,
+			action: "provision",
+			params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+		});
+		const safe = [
+			"untouched",
+			"created",
+			"create-preflight",
+			"start-preflight",
+		].includes(phase);
+		expect(outcome.status).toBe(safe ? "STOPPED" : "STOPPING");
+		expect(requiredFixtureRun(h).cancelRequested).toBe(!safe);
+		if (safe) {
+			expect(aisaLiveNeverStarted(requiredFixtureRun(h), h.row)).toBe(true);
+			expect(requiredFixtureRun(h).aisaSnapshot).toBeUndefined();
+			expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		} else expect(requiredFixtureRun(h).aisaFinalization).toBeUndefined();
+		expect(h.sdk.startAisaLiveAnalysis).not.toHaveBeenCalled();
+		expect(h.sdk.createAisaLiveAnalysis).not.toHaveBeenCalled();
+	});
 	it.each([
 		...(["RUNNING", "FINISHED", "ERROR", "CANCELED"] as const).map(
 			(providerStatus) => ({

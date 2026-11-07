@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+	type AisaNeverStartedProof,
+	aisaCreateNotDispatched,
 	aisaLiveFinalization,
+	aisaLiveNeverStarted,
+	aisaStartNotDispatched,
 	classifyProviderLifecycle,
 	deriveFeederRtmpTarget,
 	deriveLiveToVodStatus,
@@ -5072,6 +5076,115 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				throw new ProvisionLeaseLostError(liveChannelId);
 			}
 		};
+		/** Terminal cancellation and removal of its durable wake flag are one fact. */
+		const commitAisaCancellation = async (
+			entries: StepLogEntry[],
+			runId: string,
+			outcome: {
+				status: "STOPPED" | "ERROR";
+				error: string | null;
+				encodingId?: string;
+			},
+			proof?: AisaNeverStartedProof,
+		) =>
+			withFenceWrite(async () => {
+				const token = heldAt;
+				if (!token) throw new ProvisionLeaseLostError(liveChannelId);
+				await deps.prisma.$transaction(async (tx) => {
+					await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+					const channel = await tx.liveChannel.findUnique({
+						where: { id: liveChannelId },
+					});
+					const run = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+					});
+					if (
+						!channel ||
+						channel.provisionClaimedAt?.getTime() !== token.getTime() ||
+						channel.liveEffectFenceVersion !== row.liveEffectFenceVersion ||
+						run?.id !== runId ||
+						!run.cancelRequested
+					)
+						throw new ProvisionLeaseLostError(liveChannelId);
+					const createdProof =
+						proof?.basis === "BOUND_CREATED_NOT_STARTED" ? proof : undefined;
+					const prospective = {
+						...run,
+						stepLog: entries,
+						...(proof ? { aisaFinalization: proof } : {}),
+						...(createdProof
+							? { providerStatus: "CREATED", aisaStatus: "CREATED" }
+							: {}),
+						...(outcome.encodingId
+							? { encoderStoppedConfirmedFor: outcome.encodingId }
+							: {}),
+					};
+					if (
+						proof
+							? !aisaLiveNeverStarted(prospective, {
+									...channel,
+									...(outcome.encodingId
+										? { encoderStoppedConfirmedFor: outcome.encodingId }
+										: {}),
+								})
+							: !["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run))
+					)
+						throw new AisaLiveFinalizationPendingError();
+					const channelWrite = await tx.liveChannel.updateMany({
+						where: {
+							id: liveChannelId,
+							provisionClaimedAt: token,
+							liveEffectFenceVersion: row.liveEffectFenceVersion,
+							bitmovinEncodingId: channel.bitmovinEncodingId,
+						},
+						data: {
+							status: outcome.status,
+							error: outcome.error,
+							stepLog: entries as unknown as Prisma.InputJsonValue,
+							provisionClaimedAt: null,
+							...(outcome.encodingId
+								? { encoderStoppedConfirmedFor: outcome.encodingId }
+								: {}),
+						},
+					});
+					if (channelWrite.count !== 1)
+						throw new ProvisionLeaseLostError(liveChannelId);
+					const runWrite = await tx.liveChannelRun.updateMany({
+						where: {
+							id: runId,
+							liveChannelId,
+							cancelRequested: true,
+							bitmovinEncodingId: run.bitmovinEncodingId,
+							aisaAnalysisId: run.aisaAnalysisId,
+						},
+						data: {
+							status: outcome.status,
+							error: outcome.error,
+							cancelRequested: false,
+							endedAt: run.endedAt ?? new Date(deps.now()),
+							stepLog: entries as unknown as Prisma.InputJsonValue,
+							...(proof
+								? { aisaFinalization: proof as Prisma.InputJsonValue }
+								: {}),
+							...(createdProof
+								? {
+										providerStatus: "CREATED",
+										providerStatusObservedAt: new Date(createdProof.observedAt),
+										aisaStatus: "CREATED",
+										aisaObservedAt: new Date(createdProof.observedAt),
+									}
+								: {}),
+							...(outcome.encodingId
+								? { encoderStoppedConfirmedFor: outcome.encodingId }
+								: {}),
+						},
+					});
+					if (runWrite.count !== 1)
+						throw new ProvisionLeaseLostError(liveChannelId);
+				});
+				fence.setHeld(null);
+			});
 		/**
 		 * Renew across a long SDK call . The poll seam renews
 		 * between polls; a create/start call that outlives the window had
@@ -5154,10 +5267,38 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						feederSessionId: feeder.id,
 						action: "stop",
 					});
-				await persist(untouched, {
-					status: feeders.length ? "STOPPING" : "STOPPED",
-					error: null,
-				});
+				if (
+					!feeders.length &&
+					isAisaManagedLivePlan(row.plan) &&
+					!current.aisaAnalysisId &&
+					!current.bitmovinEncodingId &&
+					aisaCreateNotDispatched(untouched)
+				) {
+					try {
+						await commitAisaCancellation(
+							untouched,
+							current.id,
+							{ status: "STOPPED", error: null },
+							{
+								kind: "NEVER_STARTED",
+								basis: "CREATE_NOT_DISPATCHED",
+								runId: current.id,
+								observedAt: deps.now(),
+							},
+						);
+					} catch (error) {
+						if (error instanceof ProvisionLeaseLostError) throw error;
+						await persist(untouched, {
+							status: "STOPPING",
+							error: "Cancellation terminal commit is pending",
+						});
+						return "STOPPING";
+					}
+				} else
+					await persist(untouched, {
+						status: feeders.length ? "STOPPING" : "STOPPED",
+						error: null,
+					});
 				if (feeders.length) return "STOPPING";
 				await emitChannel("CHANNEL_STOPPED", liveChannelId);
 				return { status: "STOPPED", canceledRunId: pendingRun.id };
@@ -5755,12 +5896,33 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						channel.provisionClaimedAt?.getTime() === heldAt.getTime() &&
 						channel.liveEffectFenceVersion === row.liveEffectFenceVersion;
 				}
-				const drainStartedAnalysis = Boolean(
+				let neverStartedProof: AisaNeverStartedProof | undefined;
+				if (
 					aisaCreate?.resourceId &&
-						entries.some(
-							(entry) =>
-								entry.kind === "START_AISA_LIVE_ANALYSIS" && entry.startedAt,
-						),
+					encodingId &&
+					aisaStartNotDispatched(entries, aisaCreate.resourceId, encodingId)
+				) {
+					const analysis = await sdk.getAisaLiveAnalysis(aisaCreate.resourceId);
+					const task = await sdk.getEncodingStatus(encodingId);
+					if (
+						analysis.analysisId !== aisaCreate.resourceId ||
+						analysis.encodingId !== encodingId
+					)
+						throw new AisaLiveIdentityError();
+					if (analysis.status === "CREATED" && task.status === "CREATED")
+						neverStartedProof = {
+							kind: "NEVER_STARTED",
+							basis: "BOUND_CREATED_NOT_STARTED",
+							runId: currentRunId,
+							analysisId: analysis.analysisId,
+							encodingId,
+							analysisStatus: "CREATED",
+							encodingStatus: "CREATED",
+							observedAt: deps.now(),
+						};
+				}
+				const drainStartedAnalysis = Boolean(
+					aisaCreate?.resourceId && !neverStartedProof,
 				);
 				if (encodingId && drainStartedAnalysis) {
 					if (!(await renewLease()) || !(await shouldCancel()))
@@ -5778,9 +5940,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							e.startedAt,
 					);
 					if (
-						drainStartedAnalysis ||
-						(!(task.status === "CREATED" && !startAttempted) &&
-							!STOP_TERMINAL_STATUSES.includes(task.status))
+						!neverStartedProof &&
+						(drainStartedAnalysis ||
+							(!(task.status === "CREATED" && !startAttempted) &&
+								!STOP_TERMINAL_STATUSES.includes(task.status)))
 					) {
 						if (!(await renewLease()) || !(await shouldCancel()))
 							throw new ProvisionLeaseLostError(liveChannelId);
@@ -5824,17 +5987,24 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					if (proof === "PENDING" || proof === "UNBOUND")
 						throw new AisaLiveFinalizationPendingError();
 					aisaFailure = proof === "FAILED";
-					if (aisaFailure)
-						await deps.prisma.liveChannelRun.updateMany({
-							where: { id: currentRunId },
-							data: { cancelRequested: false },
-						});
 				}
-				await persist(entries, {
-					status: aisaFailure ? "ERROR" : "STOPPED",
-					error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
-					...(encodingId ? { encoderStoppedConfirmedFor: encodingId } : {}),
-				});
+				if (isAisaManagedLivePlan(row.plan))
+					await commitAisaCancellation(
+						entries,
+						currentRunId,
+						{
+							status: aisaFailure ? "ERROR" : "STOPPED",
+							error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+							...(encodingId ? { encodingId } : {}),
+						},
+						neverStartedProof,
+					);
+				else
+					await persist(entries, {
+						status: aisaFailure ? "ERROR" : "STOPPED",
+						error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+						...(encodingId ? { encoderStoppedConfirmedFor: encodingId } : {}),
+					});
 				await emitChannel(
 					aisaFailure ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
 					liveChannelId,

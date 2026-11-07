@@ -68,7 +68,7 @@ describe("CAMBI interval playback", () => {
 		await act(async () => fireEvent.canPlay(video));
 		expect(play).toHaveBeenCalledOnce();
 		expect(
-			screen.getByRole("button", { name: "Pause", exact: true }),
+			screen.getByRole("button", { name: "Pause" }),
 		).toBeInTheDocument();
 		expect(screen.queryByText(/both|comparison/i)).not.toBeInTheDocument();
 		video.currentTime = 1.9;

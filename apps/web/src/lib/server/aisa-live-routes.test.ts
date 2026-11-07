@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
 	accountClient: vi.fn(),
 	context: vi.fn(),
 	audit: vi.fn(),
+	boundRun: vi.fn(),
 	client: {
 		list: vi.fn(),
 		create: vi.fn(),
@@ -78,7 +79,11 @@ const post = (body: unknown) =>
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.enabled.mockReturnValue(true);
-	mocks.context.mockResolvedValue({ bitmovinAccounts: {} });
+	mocks.boundRun.mockResolvedValue(null);
+	mocks.context.mockResolvedValue({
+		bitmovinAccounts: {},
+		prisma: { liveChannelRun: { findFirst: mocks.boundRun } },
+	});
 	mocks.accountClient.mockResolvedValue(mocks.client);
 	mocks.client.get.mockResolvedValue(resource);
 	mocks.client.create.mockResolvedValue(resource);
@@ -89,6 +94,29 @@ beforeEach(() => {
 });
 
 describe("AISA Live Preview routes", () => {
+	it("prevents legacy actions from bypassing the persisted channel lifecycle", async () => {
+		mocks.boundRun.mockResolvedValue({ id: "bound-run" });
+		const response = await aisaAction(
+			post({ bitmovinAccountId: accountId, action: "stop" }),
+			analysisId,
+		);
+		expect(response.status).toBe(409);
+		expect(mocks.client.get).not.toHaveBeenCalled();
+		expect(mocks.client.stop).not.toHaveBeenCalled();
+	});
+	it("does not reveal publisher coordinates for a different run encoding", async () => {
+		mocks.client.get.mockResolvedValue({
+			...resource,
+			status: "RUNNING",
+			rtmpIngest: { encoderIp: "192.0.2.3", streamKey: "synthetickey" },
+		});
+		const response = await aisaIngest(
+			get("", "&encodingId=dddddddd-dddd-4ddd-addd-dddddddddddd"),
+			analysisId,
+		);
+		expect(response.status).toBe(409);
+		expect(JSON.stringify(await response.json())).not.toContain("synthetickey");
+	});
 	it("hides every endpoint before account resolution when disabled", async () => {
 		mocks.enabled.mockReturnValue(false);
 		const responses = await Promise.all([

@@ -19,6 +19,7 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
+import { rejectAisaGraphMutation } from "@/lib/server/live-channel-mutation-guard";
 import { getLiveChannelQueue } from "@/lib/server/queue";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -207,11 +208,15 @@ export async function POST(req: Request, { params }: RouteParams) {
 			where: { id },
 			select: {
 				status: true,
+				origin: true,
+				plan: true,
 				bitmovinEncodingId: true,
 				liveEffectFenceVersion: true,
 			},
 		});
 		if (!channel) return jsonError(404, "Not found");
+		const refusal = rejectAisaGraphMutation(channel);
+		if (refusal) return refusal;
 		const run = await prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: id },
 			orderBy: { seq: "desc" },

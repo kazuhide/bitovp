@@ -201,9 +201,7 @@ describe("every live-run compile parses its plan first", () => {
 		const body = src.slice(
 			src.indexOf("export function compileLiveRunStepLog"),
 		);
-		const seq1 = body.indexOf(
-			"return { entries: initStepLog(compileLiveChannel(plan))",
-		);
+		const seq1 = body.indexOf("return { entries: initStepLog(compile(plan))");
 		expect(
 			seq1,
 			"the seq:1 return moved — re-derive this file's premise",

@@ -62,6 +62,7 @@ export function ChannelLifecycleActions({
 	runId,
 	generation = 0,
 	cancelRequested = false,
+	managedAisa = false,
 }: {
 	channelId: string;
 	status: LiveChannelStatus;
@@ -70,6 +71,7 @@ export function ChannelLifecycleActions({
 	runId?: string;
 	generation?: number;
 	cancelRequested?: boolean;
+	managedAisa?: boolean;
 }) {
 	const { t } = useT();
 	const queryClient = useQueryClient();
@@ -275,13 +277,16 @@ export function ChannelLifecycleActions({
 	 * stopped channel is Start new run, with a fresh encoding.
 	 */
 	const canRestart =
+		!managedAisa &&
 		!cancellationPending &&
 		hasEncoding &&
 		(status === "RUNNING" || status === "ERROR");
 
 	return (
 		<div className="space-y-2">
-			{canStart && plan ? <CustomLiveNotice plan={plan} compact /> : null}
+			{canStart && plan && !managedAisa ? (
+				<CustomLiveNotice plan={plan} compact />
+			) : null}
 			<div className="flex flex-wrap items-center gap-2">
 				{canStart ? (
 					<Button
@@ -350,6 +355,7 @@ export function ChannelLifecycleActions({
 			) : null}
 			{notice ? <p className="text-emerald-400 text-sm">{notice}</p> : null}
 			{status === "RUNNING" &&
+			!managedAisa &&
 			runId &&
 			plan?.liveInput.kind === "REDUNDANT_RTMP" &&
 			plan.liveInput.ingestPoints &&

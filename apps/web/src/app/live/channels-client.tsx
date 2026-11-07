@@ -312,6 +312,11 @@ export function ChannelsClient() {
 										>
 											{channel.name}
 										</Link>
+										{channel.origin === "AISA_IMPORTED" ? (
+											<p className="mt-0.5 text-xs text-zinc-500">
+												{t("aisaLive.importedRun")}
+											</p>
+										) : null}
 										{/* Demoted from its own column : identity, not a
 										 * monitoring value — one click from the clipboard,
 										    and no longer competing with Health for width. */}

@@ -213,6 +213,16 @@ export function aisaAction(req: Request, id: string) {
 				: undefined;
 		const scoped = await scope(bitmovinAccountId, versions);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
+		const managedRun = await scoped.ctx.prisma.liveChannelRun.findFirst({
+			where: { aisaAnalysisId: id, liveChannel: { bitmovinAccountId } },
+			select: { id: true },
+		});
+		if (managedRun)
+			return jsonError(
+				409,
+				"Use the channel's live controls for this analysis",
+				{ code: "AISA_CHANNEL_CONTROLS_REQUIRED" },
+			);
 		const current = analysis(await scoped.client.get(id), id);
 		const allowed =
 			action === "start"
@@ -277,12 +287,22 @@ export function aisaIngest(req: Request, id: string) {
 	return handle(async () => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
-		const parsed = accountQuery.safeParse(query(req));
+		const parsed = accountQuery
+			.extend({ encodingId: z.uuid().optional() })
+			.safeParse(query(req));
 		if (!parsed.success) return validationError(parsed.error);
 		const scoped = await scope(parsed.data.bitmovinAccountId);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		const raw = await scoped.client.get(id);
 		const current = analysis(raw, id);
+		if (
+			parsed.data.encodingId &&
+			current.encodingId !== parsed.data.encodingId
+		) {
+			return jsonError(409, "The analysis does not match this run", {
+				code: "AISA_LIVE_IDENTITY_MISMATCH",
+			});
+		}
 		if (current.status !== "RUNNING") return json({});
 		const ingest = aisaIngestSchema.safeParse(raw);
 		if (!ingest.success) throw new AisaLiveError(502);

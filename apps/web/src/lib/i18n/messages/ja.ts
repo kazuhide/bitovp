@@ -6,6 +6,57 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	aisaLive: {
+		channelId: "チャンネル ID",
+		viewRunResults: "実行 #{n} の解析結果を表示",
+		enableInLive: "AISA Live（プレビュー）を有効にする",
+		managedPreset: "AISA 管理プリセット",
+		managedGraphHelp:
+			"ラダー、パッケージング、マニフェストは AISA が構成します。プレビューを無効にすると通常の設定に戻ります。",
+		acceptManagedGraph: "このチャンネルに AISA 管理プリセットを使う",
+		managedGraphRequired:
+			"カスタムのエンコード構成を置き換えるには管理プリセットの使用を選択してください。",
+		unsupportedSettings:
+			"設定済みの高度なエンコード設定、DRM、ミラー、アーカイブ、広告設定はプレビューで利用できません。続けるには明示的に解除してください。",
+		clearUnsupportedSettings: "プレビュー非対応の設定を解除",
+		previewUnavailable:
+			"このサーバーでは AISA Live のプレビューが無効です。通常の Live Encoding を使うにはここで無効にしてください。",
+		supportedInputs: "プレビューで使える入力は RTMP と配信中の HLS です。",
+		managedSchedule:
+			"AISA Live のプレビューは予約に対応していません。続けるには既存の予約を明示的に解除してください。",
+		clearSchedule: "予約を解除",
+		componentVersionsHint:
+			"任意のサービスコンポーネントバージョンは解析の開始時に適用されます。",
+		managedStartHint:
+			"AISA サービスを通してチャンネルを作成・開始します。通常の稼働保護設定は利用できません。",
+		rtmpInputHint:
+			"空欄なら AISA が RTMP 入力を作成します。既存の入力 ID を指定すると参照入力として使います。",
+		previewPlay: "この場面を再生",
+		previewPause: "一時停止",
+		previewReplay: "この場面をもう一度再生",
+		previewLoading: "動画を読み込み中…",
+		previewUnavailableMedia: "この場面は録画の視聴可能範囲に含まれていません。",
+		previewFailed: "録画を読み込めませんでした。",
+		previewSeek: "この場面の再生位置",
+		previewMute: "ミュート",
+		previewUnmute: "ミュートを解除",
+		previewThumbnail: "キーモーメントの映像",
+		resultLanguage: "説明文の言語",
+		japanese: "日本語",
+		original: "原文（英語）",
+		translationDerived:
+			"日本語の説明はローカルで翻訳しています。Bitmovin の原文は保持しています。",
+		translationModel: "ローカルモデル: {model}",
+		translationPending: "未翻訳のため原文を表示しています。",
+		translating: "ローカルモデルで翻訳中…",
+		translationFailed: "翻訳を完了できませんでした。原文は確認できます。",
+		translationUnavailable:
+			"このサーバーにはローカル翻訳モデルが設定されていません。",
+		translate: "未翻訳の説明を翻訳",
+		importedRun: "取り込み済みの終了した実行",
+		importedReadOnly:
+			"終了した実行を検証し、ライブ履歴に追加しました。配信側の設定は閲覧のみです。",
+		managedActionsHint:
+			"AISA Live のプレビューでは、新しい実行の開始・停止・起動のキャンセルに対応しています。",
 		title: "AISA Live（プレビュー）",
 		newAnalysis: "AISA 解析を作成",
 		list: "AISA 解析一覧",

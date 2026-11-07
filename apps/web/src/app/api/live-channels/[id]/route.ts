@@ -1,5 +1,6 @@
 import {
 	effectiveLivePlanForRun,
+	isAisaManagedLivePlan,
 	liveRunWindow,
 	liveToVodFamilySupport,
 	programEndBeyondRunWindow,
@@ -63,6 +64,10 @@ export async function GET(req: Request, { params }: RouteParams) {
 						status: true,
 						cancelRequested: true,
 						bitmovinEncodingId: true,
+						aisaAnalysisId: true,
+						aisaStatus: true,
+						aisaSnapshot: true,
+						aisaObservedAt: true,
 						encoderIp: true,
 						streamKey: true,
 						outputPrefix: true,
@@ -362,6 +367,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			// would cut short.
 			select: {
 				id: true,
+				origin: true,
+				plan: true,
 				bitmovinAccountId: true,
 				programEndAt: true,
 				runningSince: true,
@@ -370,6 +377,16 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		});
 		if (!existing) {
 			return jsonError(404, "Not found");
+		}
+		if (
+			existing.origin === "AISA_IMPORTED" ||
+			isAisaManagedLivePlan(existing.plan)
+		) {
+			return jsonError(
+				409,
+				"Runtime-cap updates are unavailable for AISA Live Preview",
+				{ code: "AISA_ACTION_UNSUPPORTED" },
+			);
 		}
 		/**
 		 *  — a runtime cap shorter than the scheduled program.

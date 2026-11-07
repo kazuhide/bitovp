@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	compileAisaManagedLiveChannel,
 	compileLiveChannel,
 	compileLiveRunStepLog,
 	FEEDER_MAX_ACTIVE_SESSIONS,
@@ -1222,6 +1223,44 @@ describe("run-bound redundant RTMP ingest update", () => {
 });
 
 describe("live channel provisioning", () => {
+	it("provisions managed AISA through the normal run lease without creating an ordinary Encoding graph", async () => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		plan.outputs = [];
+		plan.ingest = [];
+		plan.renditions = [];
+		plan.muxings = [];
+		plan.liveManifests = [];
+		delete plan.start.autoRestart;
+		delete plan.start.autoShutdown;
+		plan.start.aiSceneAnalysisLive = {
+			preset: "AISA_PREVIEW_MANAGED",
+			outputId: ACCOUNT_ID,
+			recordingPath: "recording",
+			analysisPath: "analysis",
+		};
+		const analysisId = "00000000-0000-4000-8000-0000000000aa";
+		const h = setup(
+			{ plan, stepLog: initStepLog(compileAisaManagedLiveChannel(plan)) },
+			{
+				createAisaLiveAnalysis: vi.fn(async () => analysisId),
+				getAisaLiveAnalysis: vi.fn(async () => ({
+					analysisId,
+					encodingId: "bm-live-enc",
+					status: "RUNNING" as const,
+				})),
+			},
+		);
+		await h.process({ liveChannelId: CHANNEL_ID, action: "provision" });
+		expect(h.row.status).toBe("RUNNING");
+		expect(h.row.bitmovinEncodingId).toBe("bm-live-enc");
+		expect(h.runRows[0]?.aisaAnalysisId).toBe(analysisId);
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startAisaLiveAnalysis).toHaveBeenCalledOnce();
+		await h.process({ liveChannelId: CHANNEL_ID, action: "provision" });
+		expect(h.sdk.createAisaLiveAnalysis).toHaveBeenCalledOnce();
+	});
 	it("two concurrent provisions build ONE encoding tree, not two", async () => {
 		/**
 		 * AKR-E57-003, RUNTIME-VERIFIED against the real API before this fix:
@@ -10766,6 +10805,113 @@ describe("confirmed encoding cancellation", () => {
 });
 
 describe("cooperative startup cancellation", () => {
+	it.each([
+		...(["RUNNING", "FINISHED", "ERROR", "CANCELED"] as const).map(
+			(providerStatus) => ({
+				providerStatus,
+				confirmed: false,
+				pending: false,
+			}),
+		),
+		...(["FINISHED", "ERROR", "CANCELED"] as const).map((providerStatus) => ({
+			providerStatus,
+			confirmed: true,
+			pending: false,
+		})),
+		{ providerStatus: "FINISHED", confirmed: false, pending: true },
+	])("drains a started Analysis independently of Encoder $providerStatus (confirmed=$confirmed, pending=$pending) during managed cancellation", async ({
+		providerStatus,
+		confirmed,
+		pending,
+	}) => {
+		const analysisId = "00000000-0000-4000-8000-0000000000aa";
+		const plan = liveChannelPlanSchema.parse({
+			planVersion: 1,
+			name: "Managed cancellation",
+			bitmovin: { accountId: ACCOUNT_ID, cloudRegion: "GOOGLE_EUROPE_WEST_1" },
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: ACCOUNT_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		});
+		const entries = initStepLog(compileAisaManagedLiveChannel(plan));
+		for (const entry of entries) {
+			if (
+				entry.kind === "CREATE_AISA_LIVE_ANALYSIS" ||
+				entry.kind === "RESOLVE_AISA_LIVE_ENCODING"
+			) {
+				entry.status = "DONE";
+				entry.resourceId =
+					entry.kind === "CREATE_AISA_LIVE_ANALYSIS"
+						? analysisId
+						: "bm-live-enc";
+			}
+			if (entry.kind === "START_AISA_LIVE_ANALYSIS") {
+				entry.status = "RUNNING";
+				entry.startedAt = "2026-06-12T00:00:00.000Z";
+				entry.response = { aisaStartDispatched: true };
+			}
+		}
+		const h = setup({
+			plan,
+			stepLog: entries,
+			status: "PROVISIONING",
+			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinEncodingId: "bm-live-enc",
+		});
+		if (confirmed) h.row.encoderStoppedConfirmedFor = "bm-live-enc";
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "PROVISIONING",
+			cancelRequested: true,
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: analysisId,
+			...(confirmed ? { encoderStoppedConfirmedFor: "bm-live-enc" } : {}),
+		});
+		let drained = false;
+		h.sdk.getEncodingStatus = vi.fn(async () => ({
+			status: drained ? "FINISHED" : providerStatus,
+		}));
+		const stop = vi.fn(async () => {
+			if (pending) throw new Error("AISA_LIVE_FINALIZATION_PENDING");
+			drained = true;
+		});
+		// Exercise the same admission callback as the real AISA facade. A
+		// plain stop fake would hide cancellation rejecting its own cleanup.
+		h.deps.makeSdk = (args) => ({
+			...h.sdk,
+			stopLiveEncoding: async () => {
+				await args.startControl?.check(false);
+				await stop();
+			},
+		});
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			}),
+		).resolves.toMatchObject({ status: pending ? "STOPPING" : "STOPPED" });
+		expect(stop).toHaveBeenCalledOnce();
+		if (pending) {
+			expect(h.row.error).toContain("AISA_LIVE_FINALIZATION_PENDING");
+			expect(h.runRows[0]?.endedAt).toBeUndefined();
+		} else expect(h.row).toMatchObject({ status: "STOPPED", error: null });
+		expect(h.sdk.startAisaLiveAnalysis).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		"cancel",
 		"lease",

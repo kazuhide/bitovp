@@ -3,6 +3,10 @@ import { type AisaResultSnapshot, aisaResultSchema } from "./contracts";
 type Observation = AisaResultSnapshot["observations"][number];
 type KeyMoment = AisaResultSnapshot["keyMoments"][number];
 
+// JSONB/Prisma can round the final binary floating-point digit. Compare media
+// seconds at microsecond precision while retaining the provider's original values.
+const comparableSeconds = (value: number) => Number(value.toFixed(6));
+
 export type AisaSnapshotState = {
 	readonly snapshot: AisaResultSnapshot;
 	readonly knownObservations: ReadonlyMap<string, string>;
@@ -13,13 +17,17 @@ export type AisaSnapshotState = {
 };
 
 const observationContent = (item: Observation) =>
-	JSON.stringify([item.text, item.startTimeSeconds, item.endTimeSeconds]);
+	JSON.stringify([
+		item.text,
+		comparableSeconds(item.startTimeSeconds),
+		comparableSeconds(item.endTimeSeconds),
+	]);
 const momentContent = (item: KeyMoment) =>
 	JSON.stringify([
 		item.importanceLevel,
-		item.startInSeconds,
-		item.endInSeconds,
-		item.anchorInSeconds,
+		comparableSeconds(item.startInSeconds),
+		comparableSeconds(item.endInSeconds),
+		comparableSeconds(item.anchorInSeconds),
 		[...item.observations].sort(),
 		[...item.categories].sort(),
 	]);
@@ -33,8 +41,8 @@ function snapshotContent(snapshot: AisaResultSnapshot): string {
 		snapshot.producedAt,
 		snapshot.mediaTimeOriginUnixMs,
 		snapshot.isFinal,
-		snapshot.analyzedStartTimeSeconds,
-		snapshot.analyzedEndTimeSeconds,
+		comparableSeconds(snapshot.analyzedStartTimeSeconds),
+		comparableSeconds(snapshot.analyzedEndTimeSeconds),
 		snapshot.metadata.version,
 		snapshot.metadata.disclaimer,
 		snapshot.observations
@@ -52,8 +60,8 @@ function snapshotContent(snapshot: AisaResultSnapshot): string {
 		snapshot.sourceGaps
 			.map((item) =>
 				JSON.stringify([
-					item.startTimeSeconds,
-					item.endTimeSeconds,
+					comparableSeconds(item.startTimeSeconds),
+					comparableSeconds(item.endTimeSeconds),
 					item.reason,
 				]),
 			)
@@ -84,8 +92,10 @@ export function applyAisaSnapshot(
 		}
 		if (old.isFinal) throw new Error("A result followed finality");
 		if (
-			snapshot.analyzedStartTimeSeconds !== old.analyzedStartTimeSeconds ||
-			snapshot.analyzedEndTimeSeconds < old.analyzedEndTimeSeconds
+			comparableSeconds(snapshot.analyzedStartTimeSeconds) !==
+				comparableSeconds(old.analyzedStartTimeSeconds) ||
+			comparableSeconds(snapshot.analyzedEndTimeSeconds) <
+				comparableSeconds(old.analyzedEndTimeSeconds)
 		)
 			throw new Error("Analyzed coverage regressed");
 	}

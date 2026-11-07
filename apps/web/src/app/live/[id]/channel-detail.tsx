@@ -7,6 +7,7 @@ import {
 	deriveLiveChannelStatus,
 	deriveProviderLifecycle,
 	ingestConnectedTriState,
+	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	liveChannelPlanSchema,
 	liveNextAction,
@@ -41,6 +42,7 @@ import { localizedCustomerError } from "@/lib/customer-error";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
 import type { LiveScheduleDto } from "@/lib/live-runtime/schemas";
+import { AisaChannelDetail } from "./aisa-channel-detail";
 import { AlertPanel, type ChannelAlertEvent } from "./alert-panel";
 import { LiveArchivePanel } from "./archive-panel";
 import { AutoShutdownPanel } from "./auto-shutdown-panel";
@@ -167,6 +169,9 @@ export function ChannelDetail({
 		enabled: channel.data?.technicalDetailsAllowed === true,
 		refetchOnMount: "always",
 	});
+	const aisaRow =
+		channel.data?.origin === "AISA_IMPORTED" ||
+		isAisaManagedLivePlan(channel.data?.plan);
 	const serverNow = channel.data?.serverNow;
 	useEffect(() => {
 		if (serverNow) {
@@ -180,6 +185,7 @@ export function ChannelDetail({
 	// Alerts : ONE query feeds the banner, the history section
 	// AND the heartbeat chart's reference dots.
 	const alerts = useQuery({
+		enabled: channel.isSuccess && !aisaRow,
 		queryKey: ["live-channel-alerts", id],
 		queryFn: () =>
 			apiFetch<{ open: ChannelAlertEvent[]; history: ChannelAlertEvent[] }>(
@@ -193,12 +199,14 @@ export function ChannelDetail({
 	// one request to both consumers; a different key here would silently double
 	// the polling.
 	const schedules = useQuery({
+		enabled: channel.isSuccess && !aisaRow,
 		queryKey: ["live-schedules", id],
 		refetchInterval: 15_000,
 		queryFn: () =>
 			apiFetch<LiveScheduleDto[]>(`/api/live-channels/${id}/schedules`),
 	});
 	const feeders = useQuery({
+		enabled: channel.isSuccess && !aisaRow,
 		queryKey: ["feeder-sessions", id],
 		// Mirror FeederPanel's own condition: observers each keep their own
 		// timer and the UNION wins, so an unconditional interval here would
@@ -238,7 +246,10 @@ export function ChannelDetail({
 	 * refetch and during every 15s background poll. Monotonic is exactly what
 	 * a one-shot "have we heard anything yet" gate needs.
 	 */
-	if (channel.isLoading || !alerts.isFetched || !schedules.isFetched) {
+	if (
+		channel.isLoading ||
+		(channel.data && !aisaRow && (!alerts.isFetched || !schedules.isFetched))
+	) {
 		return (
 			<div
 				role="status"
@@ -301,6 +312,35 @@ export function ChannelDetail({
 			? deriveLiveChannelStatus(null)
 			: row.status;
 	const plan = liveChannelPlanSchema.safeParse(row.plan);
+	const lifecycleActions = (
+		<RoleAccess control="live.channel.lifecycle">
+			<ChannelLifecycleActions
+				channelId={id}
+				status={row.status}
+				hasEncoding={row.bitmovinEncodingId !== null}
+				plan={plan.success ? plan.data : undefined}
+				runId={run?.id}
+				generation={row.liveEffectFenceVersion}
+				cancelRequested={run?.cancelRequested}
+				managedAisa={aisaRow}
+			/>
+		</RoleAccess>
+	);
+	if (aisaRow)
+		return (
+			<AisaChannelDetail
+				key={id}
+				row={row}
+				lifecycleActions={lifecycleActions}
+				nowMs={
+					clockAnchor
+						? Date.parse(clockAnchor.serverNow) +
+							nowMs -
+							clockAnchor.receivedAtMs
+						: nowMs
+				}
+			/>
+		);
 	const entries = stepLogSchema.safeParse(effectiveStepLog);
 	/**
 	 * Live playback is offered only while the channel RUNS: a stopped channel's
@@ -1229,17 +1269,7 @@ export function ChannelDetail({
 						tabIndex={-1}
 						className="ml-auto scroll-mt-6 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
 					>
-						<RoleAccess control="live.channel.lifecycle">
-							<ChannelLifecycleActions
-								channelId={id}
-								status={row.status}
-								hasEncoding={row.bitmovinEncodingId !== null}
-								plan={plan.success ? plan.data : undefined}
-								runId={run?.id}
-								generation={row.liveEffectFenceVersion}
-								cancelRequested={run?.cancelRequested}
-							/>
-						</RoleAccess>
+						{lifecycleActions}
 					</section>
 				</header>
 

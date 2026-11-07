@@ -3,6 +3,11 @@
 // enforce a global omit on ciphertext columns) and reach secrets only
 // through the stores.
 export type * from "../generated/client";
+export type {
+	AisaLiveImportOutcome,
+	VerifiedFinalAisaImport,
+} from "./aisa-live";
+export { AisaLiveImportConflict, persistFinalAisaImport } from "./aisa-live";
 export type { AuditEntry } from "./audit";
 export { writeAuditLog } from "./audit";
 export type {

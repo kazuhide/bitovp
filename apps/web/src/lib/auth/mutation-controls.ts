@@ -27,6 +27,11 @@ export type MutationControlContract = {
  * so deleting a gate or adding a new write call cannot leave this table green.
  */
 export const MUTATION_CONTROLS = {
+	"live.aisa.translate": {
+		minRole: "OPERATOR",
+		source: "app/live/aisa-channel-analysis.tsx",
+		bindings: 1,
+	},
 	"live.aisa.new": {
 		minRole: "OPERATOR",
 		source: "app/live/aisa-live-shared.tsx",
@@ -418,6 +423,10 @@ export type MutationSourceContract = {
  * is hidden (for example CaptureVmafPanel -> live.channel.vmaf).
  */
 export const MUTATION_SOURCE_CENSUS = {
+	"app/live/aisa-channel-analysis.tsx": {
+		writeCalls: 1,
+		controls: ["live.aisa.translate"],
+	},
 	"app/live/aisa-live-create.tsx": {
 		writeCalls: 1,
 		controls: ["live.aisa.create"],
@@ -690,6 +699,12 @@ export type MutationWriteFamily = {
  * never used as surrogate evidence for a write.
  */
 export const MUTATION_WRITE_FAMILIES = {
+	"app/live/aisa-channel-analysis.tsx": [
+		{
+			write: "POST /api/live/analyses/x/translations",
+			controls: ["live.aisa.translate"],
+		},
+	],
 	"app/live/aisa-live-create.tsx": [
 		{ write: "POST /api/live/analyses", controls: ["live.aisa.create"] },
 	],

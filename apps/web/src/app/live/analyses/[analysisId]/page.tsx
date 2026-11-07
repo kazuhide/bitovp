@@ -1,8 +1,8 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { localizedTitle } from "@/lib/i18n/metadata";
 import { aisaLivePreviewEnabled } from "@/lib/server/aisa-live-sdk";
-import { AisaLiveDetail } from "../../aisa-live-detail";
+import { getServerContext } from "@/lib/server/context";
 
 export const generateMetadata = localizedTitle("aisaLive.title");
 
@@ -22,7 +22,10 @@ export default async function AisaAnalysisPage({
 		!z.uuid().safeParse(bitmovinAccountId).success
 	)
 		notFound();
-	return (
-		<AisaLiveDetail accountId={bitmovinAccountId} analysisId={analysisId} />
-	);
+	const ctx = await getServerContext();
+	const run = await ctx.prisma.liveChannelRun.findFirst({
+		where: { aisaAnalysisId: analysisId, liveChannel: { bitmovinAccountId } },
+		select: { liveChannelId: true },
+	});
+	redirect(run ? `/live/${run.liveChannelId}` : "/live");
 }

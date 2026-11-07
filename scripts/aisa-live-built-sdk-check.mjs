@@ -41,7 +41,7 @@ for (const path of chunkPaths) {
 const contextFactories = factories.filter(({ source }) =>
 	source.includes("bitmovinAccounts:") && source.includes(".isImpersonating"));
 const routeFactories = factories.filter(({ source }) =>
-	source.includes("AISA_LIVE_SDK_VERSION_MISMATCH") && source.includes(".client.list("));
+	source.includes(".client.list("));
 assert.equal(contextFactories.length, 1, "Find exactly one compiled server context");
 assert.equal(routeFactories.length, 1, "Find exactly one compiled AISA route module");
 

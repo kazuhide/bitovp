@@ -33,6 +33,10 @@ export type RunMirrorData = {
 	runningSince?: Date;
 	liveToVod?: Prisma.InputJsonValue;
 	bitmovinEncodingId?: string;
+	aisaAnalysisId?: string;
+	aisaStatus?: string;
+	aisaObservedAt?: Date;
+	aisaSnapshot?: Prisma.InputJsonValue;
 	/** rev431: null clears the run's stop/CREATED confirmation (a (re)start). */
 	encoderStoppedConfirmedFor?: null;
 };
@@ -162,6 +166,18 @@ export function createRunMirror(
 				data: {
 					...(data.status !== undefined ? { status: data.status } : {}),
 					...(data.error !== undefined ? { error: data.error } : {}),
+					...(data.aisaAnalysisId !== undefined
+						? { aisaAnalysisId: data.aisaAnalysisId }
+						: {}),
+					...(data.aisaStatus !== undefined
+						? { aisaStatus: data.aisaStatus }
+						: {}),
+					...(data.aisaObservedAt !== undefined
+						? { aisaObservedAt: data.aisaObservedAt }
+						: {}),
+					...(data.aisaSnapshot !== undefined
+						? { aisaSnapshot: data.aisaSnapshot }
+						: {}),
 					// Preserve the normal activity clock after moving JSON replacement
 					// to its atomic SQL seam. Heartbeat and end clocks stay separate.
 					...(data.stepLog !== undefined ? { updatedAt: new Date() } : {}),

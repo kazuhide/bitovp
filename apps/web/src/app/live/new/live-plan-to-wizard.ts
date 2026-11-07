@@ -52,6 +52,29 @@ const isAudioRendition = (r: Rendition): r is AudioRendition =>
 
 export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const D = DEFAULT_LIVE_WIZARD_STATE;
+	const aisa = plan.start.aiSceneAnalysisLive;
+	if (aisa)
+		return {
+			...structuredClone(D),
+			name: plan.name,
+			accountId: plan.bitmovin?.accountId ?? "",
+			cloudRegion: plan.bitmovin?.cloudRegion ?? D.cloudRegion,
+			encoderVersion: plan.bitmovin?.encoderVersion ?? D.encoderVersion,
+			...inputState(plan.liveInput, D),
+			start: {
+				...structuredClone(D.start),
+				streamKey: plan.start.streamKey ?? "",
+			},
+			aisaLive: {
+				enabled: true,
+				useManagedGraph: true,
+				outputId: aisa.outputId,
+				recordingPath: aisa.recordingPath,
+				analysisPath: aisa.analysisPath,
+				esVersion: aisa.esVersion ?? "",
+				aicaVersion: aisa.aicaVersion ?? "",
+			},
+		};
 	const muxingByKey = new Map(plan.muxings.map((m) => [m.key, m]));
 	const mediaDestination = (m: Plan["muxings"][number] | undefined) =>
 		m

@@ -33,6 +33,45 @@ beforeEach(() => {
 });
 
 describe("resolveLiveEncoding", () => {
+	it("explicitly guards AISA mutations before resolving provider credentials while keeping reads", async () => {
+		for (const channel of [
+			{ origin: "AISA_IMPORTED", plan: null },
+			{
+				origin: "MANAGED",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			},
+		]) {
+			findUnique.mockResolvedValue({
+				...channel,
+				status: "RUNNING",
+				bitmovinEncodingId: "bm-enc",
+				bitmovinAccountId: ACCOUNT_A,
+			});
+			bitmovinClientForAccount.mockClear();
+			const mutation = await resolveLiveEncoding({
+				ctx,
+				channelId: CHANNEL_ID,
+				bitmovinAccountId: ACCOUNT_A,
+				requireRunning: true,
+				rejectAisaManaged: true,
+				subject: "Neutral operation label",
+			});
+			expect(mutation.ok).toBe(false);
+			if (mutation.ok) throw new Error("expected refusal");
+			expect(mutation.response.status).toBe(409);
+			expect(bitmovinClientForAccount).not.toHaveBeenCalled();
+			const read = await resolveLiveEncoding({
+				ctx,
+				channelId: CHANNEL_ID,
+				bitmovinAccountId: ACCOUNT_A,
+				requireRunning: false,
+				subject: "Registering insertable content",
+			});
+			expect(read.ok).toBe(true);
+		}
+	});
 	it("resolves a RUNNING channel whose account matches", async () => {
 		findUnique.mockResolvedValue({
 			status: "RUNNING",

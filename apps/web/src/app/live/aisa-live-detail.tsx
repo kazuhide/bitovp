@@ -143,6 +143,7 @@ function AnalysisDetail({
 					<AisaLiveIngest
 						accountId={accountId}
 						analysisId={analysisId}
+						encodingId={analysis.encodingId}
 						running={analysis.status === "RUNNING" && !resource.isError}
 					/>
 					<AisaLiveResults

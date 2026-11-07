@@ -90,6 +90,7 @@ export function isActiveChannelStatus(status: LiveChannelStatus): boolean {
 /** Lean list projection — never plan/stepLog/lastHeartbeat/streamKey. */
 export type LiveChannelListItem = {
 	id: string;
+	origin?: "MANAGED" | "AISA_IMPORTED";
 	name: string;
 	status: LiveChannelStatus;
 	error: string | null;
@@ -260,6 +261,10 @@ export type LiveChannelDetailRow = LiveChannelListItem & {
 		seq: number;
 		status: LiveChannelStatus;
 		bitmovinEncodingId: string | null;
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+		aisaObservedAt?: string | null;
 		encoderIp: string | null;
 		streamKey: string | null;
 		outputPrefix: string;

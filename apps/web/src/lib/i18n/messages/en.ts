@@ -28,6 +28,59 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	aisaLive: {
+		channelId: "Channel ID",
+		viewRunResults: "View results for run #{n}",
+		enableInLive: "Enable AISA Live Preview",
+		managedPreset: "AISA managed preset",
+		managedGraphHelp:
+			"AISA provisions the encoding ladder, packaging, and manifests. Your standard graph stays available when Preview is disabled.",
+		acceptManagedGraph: "Use the AISA managed preset for this channel",
+		managedGraphRequired:
+			"Accept the managed preset before replacing your custom encoding graph.",
+		unsupportedSettings:
+			"Preview does not support the configured advanced encoding, DRM, mirror, archive, or ad settings. Clear them explicitly to continue.",
+		clearUnsupportedSettings: "Clear unsupported Preview settings",
+		previewUnavailable:
+			"AISA Live Preview is disabled on this server. Disable it here to use standard Live Encoding.",
+		supportedInputs: "Preview supports RTMP or live HLS input.",
+		managedSchedule:
+			"Scheduling is unavailable for AISA Live Preview. Disable the existing schedule explicitly to continue.",
+		clearSchedule: "Disable schedule",
+		componentVersionsHint:
+			"Optional service component versions are applied when the analysis starts.",
+		managedStartHint:
+			"The channel is created and started through the AISA service. Standard run-safety settings are unavailable.",
+		rtmpInputHint:
+			"Leave empty for AISA to create an RTMP input. An existing Input ID is used as a reference.",
+		previewPlay: "Play this moment",
+		previewPause: "Pause",
+		previewReplay: "Replay this moment",
+		previewLoading: "Loading moment…",
+		previewUnavailableMedia: "This moment is outside the available recording.",
+		previewFailed: "The recording could not be loaded.",
+		previewSeek: "Position within this moment",
+		previewMute: "Mute",
+		previewUnmute: "Unmute",
+		previewThumbnail: "Frame from this key moment",
+		resultLanguage: "Description language",
+		japanese: "Japanese",
+		original: "Original (English)",
+		translationDerived:
+			"Japanese descriptions are local translations. The original Bitmovin result is preserved.",
+		translationModel: "Local model: {model}",
+		translationPending:
+			"Translation is not available yet; the original is shown.",
+		translating: "Translating with the local model…",
+		translationFailed:
+			"Translation could not be completed. The original is available.",
+		translationUnavailable:
+			"The local translation model is not configured on this server.",
+		translate: "Translate missing descriptions",
+		importedRun: "Imported completed run",
+		importedReadOnly:
+			"This completed run was verified and added to the live history. Provider settings are read-only.",
+		managedActionsHint:
+			"AISA Live Preview supports starting a new run, stopping, and cancelling startup.",
 		title: "AISA Live Preview",
 		newAnalysis: "New AISA analysis",
 		list: "AISA analyses",

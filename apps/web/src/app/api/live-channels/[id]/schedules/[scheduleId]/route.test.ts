@@ -7,10 +7,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const updateMany = vi.fn();
 const findFirst = vi.fn();
+const findChannel = vi.fn();
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
-		prisma: { liveSchedule: { updateMany, findFirst } },
+		prisma: {
+			liveChannel: { findUnique: findChannel },
+			liveSchedule: { updateMany, findFirst },
+		},
 	}),
 }));
 
@@ -26,6 +30,7 @@ const req = () => new Request("http://test", { method: "DELETE" });
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	findChannel.mockResolvedValue({ origin: "MANAGED", plan: {} });
 });
 
 describe("DELETE /schedules/[scheduleId]", () => {

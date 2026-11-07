@@ -6,6 +6,7 @@ import { customerErrorDetails } from "@/lib/customer-error";
 import { bitmovinClientForAccount } from "./bitmovin";
 import type { ServerContext } from "./context";
 import { jsonError } from "./http";
+import { rejectAisaGraphMutation } from "./live-channel-mutation-guard";
 
 /**
  * Resolves a managed live channel into the Bitmovin encoding its RUNTIME
@@ -25,6 +26,8 @@ export async function resolveLiveEncoding(options: {
 	channelId: string;
 	bitmovinAccountId: string;
 	requireRunning: boolean;
+	/** Explicit mutation guard; inspection reads keep their existing availability. */
+	rejectAisaManaged?: boolean;
 	/* Content insertion requires connected ingest: an accepted request during ingest waiting can render nothing. Keep this opt-in because ESAM and SCTE signaling follow the encoder rather than the output media timeline. */
 	requireIngestConnected?: boolean;
 	/** Verb used in the 409 message, e.g. "ESAM media points". */
@@ -38,6 +41,7 @@ export async function resolveLiveEncoding(options: {
 	const channel = await ctx.prisma.liveChannel.findUnique({
 		where: { id: channelId },
 		select: {
+			...(options.rejectAisaManaged ? { origin: true, plan: true } : {}),
 			status: true,
 			bitmovinEncodingId: true,
 			bitmovinAccountId: true,
@@ -83,6 +87,10 @@ export async function resolveLiveEncoding(options: {
 				customerErrorDetails("LIVE_RUNTIME_ACCOUNT_MISMATCH"),
 			),
 		};
+	}
+	if (options.rejectAisaManaged) {
+		const refusal = rejectAisaGraphMutation(channel);
+		if (refusal) return { ok: false, response: refusal };
 	}
 	if (requireRunning && channel.status !== "RUNNING") {
 		return {

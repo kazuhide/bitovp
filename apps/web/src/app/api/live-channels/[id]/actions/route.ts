@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
 	compileLiveRunStepLog,
 	deriveProviderLifecycle,
+	isAisaManagedLivePlan,
 	isLiveRunStatus,
 	type LiveEffectAction,
 	type LiveEffectIntent,
@@ -28,6 +29,7 @@ import {
 	type CustomerErrorCode,
 	customerErrorDetails,
 } from "@/lib/customer-error";
+import { aisaLivePreviewEnabled } from "@/lib/server/aisa-live-sdk";
 import { getServerContext } from "@/lib/server/context";
 import {
 	invalidIdResponse,
@@ -632,6 +634,25 @@ export async function POST(req: Request, { params }: RouteParams) {
 		const row = await ctx.prisma.liveChannel.findUnique({ where: { id } });
 		if (!row) {
 			return jsonError(404, "Not found");
+		}
+		if (row.origin === "AISA_IMPORTED") {
+			return jsonError(409, "Imported AISA runs are read-only", {
+				code: "AISA_IMPORTED_READ_ONLY",
+			});
+		}
+		const aisaManaged = isAisaManagedLivePlan(row.plan);
+		if (aisaManaged && action.action === "start" && !aisaLivePreviewEnabled()) {
+			return jsonError(404, "Not found");
+		}
+		if (
+			aisaManaged &&
+			!["start", "stop", "cancel-start"].includes(action.action)
+		) {
+			return jsonError(
+				409,
+				"This action is unavailable for AISA Live Preview",
+				{ code: "AISA_ACTION_UNSUPPORTED" },
+			);
 		}
 		if (action.action === "start" || action.action === "restart") {
 			const parsedPlan = liveChannelPlanSchema.safeParse(row.plan);

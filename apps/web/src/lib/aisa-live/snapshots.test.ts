@@ -34,6 +34,73 @@ const resultFixture = () => ({
 });
 
 describe("AISA Live cumulative snapshots", () => {
+	it("accepts a JSONB round trip of fractional media seconds without changing provider values", () => {
+		const fixture = resultFixture();
+		const provider = {
+			...fixture,
+			analyzedEndTimeSeconds: 136.66666666666666,
+			observations: [
+				{
+					...fixture.observations[0],
+					startTimeSeconds: 113.76666666666667,
+					endTimeSeconds: 136.66666666666666,
+				},
+			],
+			keyMoments: [
+				{
+					...fixture.keyMoments[0],
+					startInSeconds: 113.76666666666667,
+					endInSeconds: 136.66666666666666,
+					anchorInSeconds: 124.73333333333333,
+				},
+			],
+			sourceGaps: [
+				{
+					startTimeSeconds: 100.03333333333333,
+					endTimeSeconds: 101.06666666666666,
+					reason: "GAP",
+				},
+			],
+		};
+		const persisted = {
+			...provider,
+			analyzedEndTimeSeconds: 136.6666666666667,
+			observations: [
+				{
+					...provider.observations[0],
+					startTimeSeconds: 113.7666666666667,
+					endTimeSeconds: 136.6666666666667,
+				},
+			],
+			keyMoments: [
+				{
+					...provider.keyMoments[0],
+					startInSeconds: 113.7666666666667,
+					endInSeconds: 136.6666666666667,
+					anchorInSeconds: 124.7333333333333,
+				},
+			],
+			sourceGaps: [
+				{
+					startTimeSeconds: 100.0333333333333,
+					endTimeSeconds: 101.0666666666667,
+					reason: "GAP",
+				},
+			],
+		};
+		const state = applyAisaSnapshot(null, persisted);
+		expect(applyAisaSnapshot(state, provider)).toBe(state);
+		const updated = applyAisaSnapshot(state, { ...provider, sequence: 2 });
+		expect(updated.snapshot.keyMoments[0]?.endInSeconds).toBe(
+			136.66666666666666,
+		);
+		expect(() =>
+			applyAisaSnapshot(state, {
+				...provider,
+				keyMoments: [{ ...provider.keyMoments[0], anchorInSeconds: 124.735 }],
+			}),
+		).toThrow(/immutable/);
+	});
 	it.each([
 		3, 5,
 	])("rejects a newly seen ID with revision %s already absent from a complete snapshot", (revision) => {

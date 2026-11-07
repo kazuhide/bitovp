@@ -10,10 +10,12 @@ import { useT } from "@/lib/i18n/context";
 export function AisaLiveIngest({
 	accountId,
 	analysisId,
+	encodingId,
 	running,
 }: {
 	accountId: string;
 	analysisId: string;
+	encodingId?: string;
 	running: boolean;
 }) {
 	const { t } = useT();
@@ -23,10 +25,10 @@ export function AisaLiveIngest({
 		encodeURIComponent(analysisId),
 	);
 	const ingest = useQuery({
-		queryKey: ["aisa-live-ingest", accountId, analysisId, allowed],
+		queryKey: ["aisa-live-ingest", accountId, analysisId, encodingId, allowed],
 		queryFn: () =>
 			apiFetch<AisaIngest>(
-				`${path}?bitmovinAccountId=${encodeURIComponent(accountId)}`,
+				`${path}?bitmovinAccountId=${encodeURIComponent(accountId)}${encodingId ? `&encodingId=${encodeURIComponent(encodingId)}` : ""}`,
 			),
 		enabled: allowed && running,
 		gcTime: 0,

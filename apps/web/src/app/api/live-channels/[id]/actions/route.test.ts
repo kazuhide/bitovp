@@ -247,6 +247,54 @@ function channel(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+describe("AISA lifecycle admission", () => {
+	it.each([
+		"start",
+		"stop",
+		"restart",
+		"cancel-start",
+	])("refuses %s on an imported completed run before mutation", async (action) => {
+		findUnique.mockResolvedValue(
+			channel({ origin: "AISA_IMPORTED", status: "STOPPED" }),
+		);
+		const res = await postAction({
+			action,
+			...(action === "cancel-start" ? { generation: 0 } : {}),
+		});
+		expect(res.status).toBe(409);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses a managed start when Preview is disabled before claiming a run", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPED",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		const res = await postAction({ action: "start" });
+		expect(res.status).toBe(404);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses in-place restart on a managed analysis before claiming a provider effect", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		const res = await postAction({ action: "restart" });
+		expect(res.status).toBe(409);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+});
+
 function manualStopJobData(
 	effectOverrides: Record<string, unknown> = {},
 	jobOverrides: Record<string, unknown> = {},

@@ -5,6 +5,147 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	aisaLive: {
+		selectedRunUnavailable: "指定した実行はこのチャンネルで確認できません。",
+		channelId: "チャンネル ID",
+		viewRunResults: "実行 #{n} の解析結果を表示",
+		featureGroupTitle: "追加機能",
+		featureDescription:
+			"この配信の見どころを自動検出し、チャンネル詳細に表示します。",
+		featureBadge: "キーモーメント解析あり",
+		poweredBy: "AISA Live による解析",
+		analysisDetails: "解析の詳細",
+		featureWaiting: "配信を開始するとキーモーメントを検出します。",
+		resultDescription: "検出した場面を録画から再生できます。",
+		enableInLive: "キーモーメントを自動検出する",
+		managedPreset: "プレビューの配信構成",
+		managedGraphHelp:
+			"このプレビューでは専用のラダー、パッケージング、マニフェストを使用します。カスタムラダーや DRM は利用できません。無効にすると通常の設定に戻ります。",
+		acceptManagedGraph: "このプレビュー対応の配信構成を使用する",
+		managedGraphRequired:
+			"カスタムのエンコード構成を置き換えるには、プレビュー対応の配信構成の使用を選択してください。",
+		unsupportedSettings:
+			"カスタムラダー、高度なエンコード設定、DRM、ミラー、アーカイブ、広告設定はプレビューで利用できません。続けるには明示的に解除してください。",
+		clearUnsupportedSettings: "プレビュー非対応の設定を解除",
+		previewUnavailable:
+			"このサーバーではキーモーメント検出のプレビューが無効です。通常の配信を作成するには、この追加機能を無効にしてください。",
+		supportedInputs: "プレビューで使える入力は RTMP と配信中の HLS です。",
+		managedSchedule:
+			"このプレビューは予約配信に対応していません。続けるには既存の予約を明示的に解除してください。",
+		clearSchedule: "予約を解除",
+		componentVersionsHint:
+			"任意のサービスコンポーネントバージョンは解析の開始時に適用されます。",
+		managedStartHint:
+			"プレビュー対応の配信構成を使用します。通常の稼働保護設定は利用できません。",
+		rtmpInputHint:
+			"空欄なら RTMP 入力を自動作成します。既存の入力 ID を指定すると参照入力として使います。",
+		previewPlay: "この場面を再生",
+		previewPause: "一時停止",
+		previewReplay: "この場面をもう一度再生",
+		previewLoading: "動画を読み込み中…",
+		previewUnavailableMedia: "この場面は録画の視聴可能範囲に含まれていません。",
+		previewFailed: "録画を読み込めませんでした。",
+		previewSeek: "この場面の再生位置",
+		previewMute: "ミュート",
+		previewUnmute: "ミュートを解除",
+		previewThumbnail: "キーモーメントの映像",
+		resultLanguage: "説明文の言語",
+		japanese: "日本語",
+		original: "原文（英語）",
+		translationDerived:
+			"日本語の説明はローカルで翻訳しています。Bitmovin の原文は保持しています。",
+		translationModel: "ローカルモデル: {model}",
+		translationPending: "未翻訳のため原文を表示しています。",
+		translating: "ローカルモデルで翻訳中…",
+		translationFailed: "翻訳を完了できませんでした。原文は確認できます。",
+		translationUnavailable:
+			"このサーバーにはローカル翻訳モデルが設定されていません。",
+		translate: "未翻訳の説明を翻訳",
+		importedRun: "取り込み済みの終了した配信",
+		importedReadOnly:
+			"終了した配信の履歴です。配信設定の変更や再開始はできません。",
+		managedActionsHint:
+			"この配信構成では、再起動、タイムシフトのリセット、広告挿入などの高度な操作は利用できません。",
+		title: "AISA Live（プレビュー）",
+		newAnalysis: "AISA 解析を作成",
+		list: "AISA 解析一覧",
+		normalLive: "通常の Live Encoding",
+		sports:
+			"キーモーメント検出のプレビューは、サッカー（football）・テニス・アメリカンフットボールが対象です。対象種目でも必ず検出されるとは限りません。",
+		managed:
+			"このプレビューでは、専用の Live Encoding と録画を使用します。カスタムラダー・DRM・ESAM 設定は引き継げません。",
+		account: "Bitmovin アカウント",
+		loadingAccounts: "Bitmovin アカウントを読み込んでいます…",
+		noAccounts: "解析を作成する前に Bitmovin アカウントを追加してください。",
+		addAccount: "Bitmovin アカウントの管理",
+		name: "解析名",
+		input: "入力",
+		rtmp: "RTMP ストリーム",
+		hls: "配信中の HLS",
+		reference: "既存の RTMP / SRT / HLS 入力",
+		streamKey: "ストリームキー",
+		streamKeyHint: "半角英字 3〜20 文字。RTMP 入力では必須です。",
+		hlsUrl: "配信中の HLS URL",
+		hlsHint:
+			"EXT-X-PROGRAM-DATE-TIME を持つ配信中の Live / EVENT プレイリストを指定してください。終了済み・VOD プレイリストは対象外です。",
+		inputId: "Encoding の入力 ID",
+		outputId: "Encoding の出力 ID",
+		outputHint:
+			"この Bitmovin アカウントの既存 Output を指定します。録画と解析結果は別のパスに保存します。",
+		recordingPath: "録画の保存パス",
+		analysisPath: "解析結果の保存パス",
+		advanced: "詳細設定",
+		region: "クラウドリージョン",
+		encoderVersion: "エンコーダバージョン",
+		defaultHint: "空欄ではサービスの既定値を使います。",
+		create: "解析を作成",
+		creating: "作成しています…",
+		createHint:
+			"作成時にリソースを準備します。解析の開始は詳細画面で別途操作します。",
+		invalidForm: "アカウント・入力・出力の設定を確認してください。",
+		requestFailed: "リクエストを完了できませんでした。",
+		createUncertain:
+			"結果が不明な場合は、もう一度作成する前に解析一覧を更新してください。",
+		loading: "解析を読み込んでいます…",
+		refresh: "更新",
+		noAnalyses: "このアカウントに AISA Live の解析はありません。",
+		previous: "前へ",
+		next: "次へ",
+		analysisId: "解析 ID",
+		encodingId: "エンコード ID",
+		lifecycle: "解析の状態",
+		start: "解析を開始",
+		stop: "解析を停止",
+		working: "リクエストを送信しています…",
+		versions: "開始時のコンポーネント指定",
+		esVersion: "Encoding Resource Service バージョン",
+		aicaVersion: "AICA バージョン",
+		actionUncertain:
+			"結果が不明な操作を繰り返す前に、解析の状態を更新してください。",
+		checkState: "次の操作の前に解析の状態を確認",
+		ingest: "配信の接続情報",
+		ingestWaiting: "配信が開始すると接続情報を取得できます。",
+		ingestHint: "接続先の表示だけでは、映像の受信は確認できません。",
+		keyMoments: "キーモーメント",
+		pending: "キーモーメントを待っています。",
+		terminalNoResults: "利用できる解析結果はありません。",
+		invalidResult: "最新の結果を採用できませんでした。",
+		empty:
+			"この結果にキーモーメントはありません。現在のプレビューはサッカー・テニス・アメリカンフットボールが対象で、すべてのイベントが検出されるわけではありません。",
+		final: "最終結果",
+		evolving: "結果は今後変わる可能性があります",
+		awaitingFinal: "最終結果を待っています。",
+		retained:
+			"最新の更新を採用できませんでした。最後の有効な結果を表示しています。",
+		pollFailed:
+			"結果を更新できませんでした。取得済みの有効な結果がある場合は保持しています。",
+		sequence: "結果の更新番号 {sequence}",
+		coverage: "解析済み: {start}〜{end} 秒",
+		importance: "重要度 {level}",
+		range: "{start}〜{end} 秒 · ピーク {anchor} 秒",
+		readOnly:
+			"閲覧のみ可能です。解析の作成・開始・停止はオペレーターが操作できます。",
+	},
 	banding: {
 		title: "バンディング検出",
 		toggle: "エンコード後にバンディングを検出",
@@ -2284,6 +2425,8 @@ export const ja = {
 		providerUnknownNever: "なし",
 		providerTerminalHint:
 			"Bitmovin から {status} が報告されました（{at}）。エンコーダは解放済みで再起動できません。開始すると、新しいエンコーダと入力エンドポイントで次の配信を準備します。",
+		inputUnobserved: "入力状態を未確認",
+		inputUnobservedHint: "この配信の入力接続状態は取得できていません。",
 		s2: "② インスタンス起動中",
 		s2Hint:
 			"Bitmovin がエンコーダインスタンスを起動中です。起動時間はリージョンや構成で異なります。過去の実測は設定の「ライブ」で確認できます。まだ入力は受信できません。",

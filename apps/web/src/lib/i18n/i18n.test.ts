@@ -120,10 +120,11 @@ describe("catalogue parity", () => {
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
 		// Settings category captions included; measured with this instrument.
-		pinWithDriftAid(long.length, 1471, "long");
+		// Key moment feature labels, Preview configuration and unobserved-input copy included; measured from the catalogue.
+		pinWithDriftAid(long.length, 1501, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Repeated settings labels share existing translations where appropriate.
-		pinWithDriftAid(short.size, 2892, "short");
+		pinWithDriftAid(short.size, 2967, "short");
 	});
 
 	/**

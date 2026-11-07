@@ -7,6 +7,7 @@ import {
 	deriveLiveChannelStatus,
 	deriveProviderLifecycle,
 	ingestConnectedTriState,
+	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	liveChannelPlanSchema,
 	liveNextAction,
@@ -14,7 +15,10 @@ import {
 } from "@bitovp/core";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { AisaChannelAnalysisPanel } from "@/app/live/aisa-channel-analysis";
+import { AisaLiveIngest } from "@/app/live/aisa-live-ingest";
 import {
 	type FeederSessionListItem,
 	isActiveFeederStatus,
@@ -33,14 +37,17 @@ import { CopyButton } from "@/components/copy-button";
 import { ManifestList } from "@/components/manifest-list";
 import { SaveAsTemplateButton } from "@/components/save-as-template";
 import { StepTimeline } from "@/components/step-timeline";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { canAccess, roleViewFromSession } from "@/lib/auth/audience";
 import type { SessionDto } from "@/lib/auth/dto";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { localizedCustomerError } from "@/lib/customer-error";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
 import type { LiveScheduleDto } from "@/lib/live-runtime/schemas";
+import type { AisaSelectedRun } from "./aisa-run-selection";
 import { AlertPanel, type ChannelAlertEvent } from "./alert-panel";
 import { LiveArchivePanel } from "./archive-panel";
 import { AutoShutdownPanel } from "./auto-shutdown-panel";
@@ -69,7 +76,7 @@ import { LiveAnnouncer, StatusAnnouncer } from "./live-announcer";
 import { deliveryDiagnosis, selectLiveTelemetry } from "./live-telemetry";
 import { LiveToVodPanel } from "./live-to-vod-panel";
 import { NextActionPanel } from "./next-action-panel";
-import { RunsPanel } from "./runs-panel";
+import { type AisaRunSelection, RunsPanel } from "./runs-panel";
 import { RuntimeCapPanel } from "./runtime-cap-panel";
 import { SCHEDULE_ACTION_LABEL_KEYS } from "./schedule-labels";
 import { SchedulePanel } from "./schedule-panel";
@@ -109,14 +116,26 @@ import { StatusStrip } from "./status-strip";
  */
 const SWEEP_GRACE_MS = (DEFAULT_SCHEDULE_START_GRACE_MINUTES * 60 + 30) * 1000;
 
-export function ChannelDetail({
-	id,
-	player,
-}: {
+type ChannelDetailProps = {
 	id: string;
 	player?: PlayerClientConfig;
-}) {
+	initialAisaRun?: AisaSelectedRun;
+};
+
+export function ChannelDetail(props: ChannelDetailProps) {
+	return (
+		<ChannelConsole
+			key={`${props.id}:${props.initialAisaRun?.id ?? "latest"}`}
+			{...props}
+		/>
+	);
+}
+
+function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	const { t } = useT();
+	const router = useRouter();
+	const [selectedAisaRun, setSelectedAisaRun] =
+		useState<AisaSelectedRun | null>(initialAisaRun ?? null);
 	const qcVmafEnabled = useQcVmafEnabled();
 	// review-260 127-A7: freshness is a function of time, but nothing
 	// re-rendered when only TIME passed — a dead sweep left byte-identical
@@ -161,10 +180,13 @@ export function ChannelDetail({
 	// paint its bounded diagnostics until the shared session query has freshly
 	// and successfully resolved the current principal. PR381 replaces this
 	// direct query with the canonical useSession/useRoleAccess hook on rebase.
+	const aisaRow =
+		channel.data?.origin === "AISA_IMPORTED" ||
+		isAisaManagedLivePlan(channel.data?.plan);
 	const technicalSession = useQuery({
 		queryKey: ["auth", "session"],
 		queryFn: () => apiFetch<SessionDto>("/api/auth/session"),
-		enabled: channel.data?.technicalDetailsAllowed === true,
+		enabled: channel.data?.technicalDetailsAllowed === true || aisaRow,
 		refetchOnMount: "always",
 	});
 	const serverNow = channel.data?.serverNow;
@@ -180,6 +202,7 @@ export function ChannelDetail({
 	// Alerts : ONE query feeds the banner, the history section
 	// AND the heartbeat chart's reference dots.
 	const alerts = useQuery({
+		enabled: channel.isSuccess && !aisaRow,
 		queryKey: ["live-channel-alerts", id],
 		queryFn: () =>
 			apiFetch<{ open: ChannelAlertEvent[]; history: ChannelAlertEvent[] }>(
@@ -193,12 +216,14 @@ export function ChannelDetail({
 	// one request to both consumers; a different key here would silently double
 	// the polling.
 	const schedules = useQuery({
+		enabled: channel.isSuccess && !aisaRow,
 		queryKey: ["live-schedules", id],
 		refetchInterval: 15_000,
 		queryFn: () =>
 			apiFetch<LiveScheduleDto[]>(`/api/live-channels/${id}/schedules`),
 	});
 	const feeders = useQuery({
+		enabled: channel.isSuccess && !aisaRow,
 		queryKey: ["feeder-sessions", id],
 		// Mirror FeederPanel's own condition: observers each keep their own
 		// timer and the UNION wins, so an unconditional interval here would
@@ -238,7 +263,10 @@ export function ChannelDetail({
 	 * refetch and during every 15s background poll. Monotonic is exactly what
 	 * a one-shot "have we heard anything yet" gate needs.
 	 */
-	if (channel.isLoading || !alerts.isFetched || !schedules.isFetched) {
+	if (
+		channel.isLoading ||
+		(channel.data && !aisaRow && (!alerts.isFetched || !schedules.isFetched))
+	) {
 		return (
 			<div
 				role="status"
@@ -270,6 +298,17 @@ export function ChannelDetail({
 	}
 
 	const row = channel.data;
+	const imported = row.origin === "AISA_IMPORTED";
+	// Cached operator DTOs must not expose ingest/log payloads while a fresh
+	// session is unresolved or has changed to VIEWER / impersonation.
+	const aisaOperatorAllowed =
+		technicalSession.status === "success" &&
+		technicalSession.fetchStatus === "idle" &&
+		!technicalSession.isRefetchError &&
+		canAccess(
+			{ audience: "customer", minRole: "OPERATOR" },
+			roleViewFromSession(technicalSession.data),
+		);
 	const sessionAllowsTechnicalDetails =
 		technicalSession.status === "success" &&
 		technicalSession.fetchStatus === "idle" &&
@@ -282,6 +321,29 @@ export function ChannelDetail({
 		row.technicalDetailsAllowed === true && sessionAllowsTechnicalDetails;
 	//  PR2b: run-first, dual-written channel columns as fallback.
 	const run = row.currentRun ?? null;
+	const selectedUnavailable = Boolean(
+		initialAisaRun && initialAisaRun.liveChannelId !== row.id,
+	);
+	const selection =
+		selectedAisaRun?.id === initialAisaRun?.id
+			? initialAisaRun
+			: selectedAisaRun;
+	const analysisRun = selectedUnavailable
+		? null
+		: selection?.id === run?.id
+			? run
+			: (selection ?? run);
+	const selectAisaRun = (selected: AisaRunSelection) => {
+		setSelectedAisaRun({
+			...(selected.id === initialAisaRun?.id ? initialAisaRun : {}),
+			...selected,
+			liveChannelId: row.id,
+		});
+		router.replace(
+			`/live/${row.id}?runId=${encodeURIComponent(selected.id)}#sec-analysis`,
+			{ scroll: false },
+		);
+	};
 	const effectiveHeartbeat = run?.lastHeartbeat ?? row.lastHeartbeat;
 	const effectiveStreamKey = run?.streamKey ?? row.streamKey;
 	const effectiveEncoderIp = run?.encoderIp ?? row.encoderIp;
@@ -301,7 +363,23 @@ export function ChannelDetail({
 			? deriveLiveChannelStatus(null)
 			: row.status;
 	const plan = liveChannelPlanSchema.safeParse(row.plan);
-	const entries = stepLogSchema.safeParse(effectiveStepLog);
+	const lifecycleActions = !imported ? (
+		<RoleAccess control="live.channel.lifecycle">
+			<ChannelLifecycleActions
+				channelId={id}
+				status={row.status}
+				hasEncoding={row.bitmovinEncodingId !== null}
+				plan={plan.success ? plan.data : undefined}
+				runId={run?.id}
+				generation={row.liveEffectFenceVersion}
+				cancelRequested={run?.cancelRequested}
+				managedAisa={aisaRow}
+			/>
+		</RoleAccess>
+	) : null;
+	const entries = stepLogSchema.safeParse(
+		aisaRow && !aisaOperatorAllowed ? [] : effectiveStepLog,
+	);
 	/**
 	 * Live playback is offered only while the channel RUNS: a stopped channel's
 	 * manifest still exists but nothing appends to it, so a player would stall
@@ -482,6 +560,7 @@ export function ChannelDetail({
 	);
 	const hasFailedStep = stepEntries.some((entry) => entry.status === "FAILED");
 	const sectionOpen = (section: LiveSectionId) =>
+		(aisaRow && (section === "sec-analysis" || section === "sec-runs")) ||
 		PHASE_DEFAULT_OPEN[phase].includes(section) ||
 		nextAction.section === section ||
 		(section === "sec-alerts" && criticalOpenAlert) ||
@@ -510,7 +589,22 @@ export function ChannelDetail({
 	];
 
 	/** The ingest coordinates themselves — framed twice, rendered once. */
-	const ingestBody = plan.success ? (
+	const ingestBody = aisaRow ? (
+		!imported &&
+		aisaOperatorAllowed &&
+		row.bitmovinAccountId &&
+		run?.aisaAnalysisId ? (
+			<AisaLiveIngest
+				accountId={row.bitmovinAccountId}
+				analysisId={run.aisaAnalysisId}
+				encodingId={run.bitmovinEncodingId ?? undefined}
+				running={run.status === "RUNNING"}
+				embedded
+			/>
+		) : (
+			<p className="text-sm text-zinc-500">{t("aisaLive.ingestWaiting")}</p>
+		)
+	) : plan.success ? (
 		<ul className="space-y-2">
 			{ingestCoordinates(plan.data, effectiveStreamKey, effectiveEncoderIp).map(
 				(coordinate, index) => {
@@ -571,6 +665,26 @@ export function ChannelDetail({
 	 * the last-broadcast lead needs a run to summarise.
 	 */
 	const omittedSections: LiveSectionId[] = [];
+	if (aisaRow) {
+		const supported: LiveSectionId[] = [
+			"sec-actions",
+			"sec-ingest",
+			"sec-last-run",
+			"sec-analysis",
+			"sec-runs",
+			"sec-steps",
+			"sec-danger",
+		];
+		omittedSections.push(
+			...(Object.keys(LIVE_SECTION_TITLE_KEYS) as LiveSectionId[]).filter(
+				(section) => !supported.includes(section),
+			),
+		);
+		if (imported)
+			omittedSections.push("sec-actions", "sec-ingest", "sec-danger");
+		if (!aisaOperatorAllowed)
+			omittedSections.push("sec-ingest", "sec-steps", "sec-danger");
+	}
 	if (!qcVmafEnabled) {
 		omittedSections.push("sec-vmaf");
 	}
@@ -601,6 +715,38 @@ export function ChannelDetail({
 		"sec-last-run": null,
 
 		// Operations
+		"sec-analysis": aisaRow ? (
+			<SectionCard
+				id="sec-analysis"
+				level={3}
+				title={t("aisaLive.keyMoments")}
+				defaultOpen={sectionOpen("sec-analysis")}
+				summary={
+					analysisRun ? t("runs.seq", { n: analysisRun.seq }) : undefined
+				}
+			>
+				{selectedUnavailable ? (
+					<p role="alert" className="text-sm text-amber-400">
+						{t("aisaLive.selectedRunUnavailable")}
+					</p>
+				) : row.bitmovinAccountId &&
+					analysisRun?.aisaAnalysisId &&
+					analysisRun.bitmovinEncodingId ? (
+					<AisaChannelAnalysisPanel
+						accountId={row.bitmovinAccountId}
+						analysisId={analysisRun.aisaAnalysisId}
+						encodingId={analysisRun.bitmovinEncodingId}
+						status={analysisRun.aisaStatus ?? undefined}
+						initialSnapshot={analysisRun.aisaSnapshot}
+						embedded
+					/>
+				) : (
+					<p role="status" className="text-sm text-zinc-400">
+						{t(run ? "aisaLive.pending" : "aisaLive.featureWaiting")}
+					</p>
+				)}
+			</SectionCard>
+		) : null,
 		"sec-alerts": (
 			<SectionCard
 				key="sec-alerts"
@@ -1054,6 +1200,8 @@ export function ChannelDetail({
 					channelId={id}
 					currentRunId={run?.id ?? null}
 					currentRunStatus={run?.status}
+					selectedAisaRunId={aisaRow ? analysisRun?.id : undefined}
+					onSelectAisaRun={aisaRow ? selectAisaRun : undefined}
 				/>
 			</SectionCard>
 		),
@@ -1175,7 +1323,9 @@ export function ChannelDetail({
 		),
 	};
 
-	const bodyLayers = liveBodyLayers(phase, omittedSections);
+	const bodyLayers = liveBodyLayers(phase, omittedSections, {
+		keyMoments: aisaRow,
+	});
 
 	return (
 		<LiveAnnouncer>
@@ -1184,22 +1334,34 @@ export function ChannelDetail({
 			    sit rather than a condition they re-derive. */}
 			<DeepLinkFocus />
 			<RevealFocus revealed={escalated} />
-			<StatusAnnouncer
-				signal={{
-					// review-366 S2: RUNNING and only RUNNING. `channelActive` also
-					// holds for PROVISIONING and STOPPING, so both samples stayed
-					// "active" across RUNNING → STOPPING and the announcer narrated
-					// the very transition its own rule exists to stay quiet for —
-					// a Stop disconnects the ingest by definition.
-					onAir: displayStatus === "RUNNING" && providerLifecycle === "RUNNING",
-					ingestConnected: displayIngestConnected,
-					heartbeatFresh: displayTelemetry.current,
-					openAlerts,
-				}}
-			/>
+			{!aisaRow ? (
+				<StatusAnnouncer
+					signal={{
+						// review-366 S2: RUNNING and only RUNNING. `channelActive` also
+						// holds for PROVISIONING and STOPPING, so both samples stayed
+						// "active" across RUNNING → STOPPING and the announcer narrated
+						// the very transition its own rule exists to stay quiet for —
+						// a Stop disconnects the ingest by definition.
+						onAir:
+							displayStatus === "RUNNING" && providerLifecycle === "RUNNING",
+						ingestConnected: displayIngestConnected,
+						heartbeatFresh: displayTelemetry.current,
+						openAlerts,
+					}}
+				/>
+			) : null}
 			<section className="space-y-4">
+				<Link
+					href="/live"
+					className="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-emerald-400"
+				>
+					<span aria-hidden="true">←</span>
+					{t("live.title")}
+				</Link>
 				<header className="flex flex-wrap items-center gap-3">
-					<h1 className="font-semibold text-xl text-zinc-50">{row.name}</h1>
+					<h1 className="min-w-0 break-words font-semibold text-xl text-zinc-50">
+						{row.name}
+					</h1>
 					<LiveStatusBadge
 						status={displayStatus}
 						providerLifecycle={providerLifecycle}
@@ -1209,7 +1371,11 @@ export function ChannelDetail({
 							{plan.data.bitmovin.cloudRegion} · {plan.data.liveInput.kind}
 						</span>
 					) : null}
-					<DuplicateChannelButton channelId={id} />
+					{aisaRow ? (
+						<Badge>{t("aisaLive.featureBadge")}</Badge>
+					) : (
+						<DuplicateChannelButton channelId={id} />
+					)}
 					{/*
 					 * the lifecycle controls, MOVED here — not copied. They
 					 * used to share a button row with Duplicate and Delete inside the
@@ -1219,29 +1385,32 @@ export function ChannelDetail({
 					 * section on the page. Copy settings is a separate header action. `sec-actions`
 					 * keeps its id because core's `liveNextAction` points at it.
 					 */}
-					<section
-						id="sec-actions"
-						aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
-						// : the ONE jump target with no heading of its own, and
-						// the busiest — five of the twelve next-action codes point here.
-						// `focusLiveSection` falls back to the region itself, and that
-						// fallback is a silent no-op without this tabindex.
-						tabIndex={-1}
-						className="ml-auto scroll-mt-6 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
-					>
-						<RoleAccess control="live.channel.lifecycle">
-							<ChannelLifecycleActions
-								channelId={id}
-								status={row.status}
-								hasEncoding={row.bitmovinEncodingId !== null}
-								plan={plan.success ? plan.data : undefined}
-								runId={run?.id}
-								generation={row.liveEffectFenceVersion}
-								cancelRequested={run?.cancelRequested}
-							/>
-						</RoleAccess>
-					</section>
+					{!imported ? (
+						<section
+							id="sec-actions"
+							aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
+							// : the ONE jump target with no heading of its own, and
+							// the busiest — five of the twelve next-action codes point here.
+							// `focusLiveSection` falls back to the region itself, and that
+							// fallback is a silent no-op without this tabindex.
+							tabIndex={-1}
+							className="ml-auto flex scroll-mt-6 flex-wrap items-center gap-2 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
+						>
+							{lifecycleActions}
+							{aisaRow ? (
+								<SectionHelp
+									title={t("live.actions")}
+									help={t("aisaLive.managedActionsHint")}
+								/>
+							) : null}
+						</section>
+					) : null}
 				</header>
+				{imported ? (
+					<p className="text-sm text-zinc-400">
+						{t("aisaLive.importedReadOnly")}
+					</p>
+				) : null}
 
 				{/* : WHERE in the encoder lifecycle the channel is. */}
 				<LifecycleStrip
@@ -1250,7 +1419,7 @@ export function ChannelDetail({
 					// the derived word for never-ran, which the strip's stages
 					// spell CREATED.
 					status={displayStatus === "IDLE" ? "CREATED" : displayStatus}
-					ingestConnected={displayIngestConnected}
+					ingestConnected={aisaRow ? null : displayIngestConnected}
 					hasEncoding={row.bitmovinEncodingId !== null}
 					hasError={Boolean(row.error)}
 					// : the provider's own view — amber while it cannot be
@@ -1268,52 +1437,57 @@ export function ChannelDetail({
 				{/*  layer 1: the one thing to do next. : taking
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
-				<NextActionPanel action={nextAction} onJump={jumpToLiveSection} />
+				{!aisaRow ? (
+					<NextActionPanel action={nextAction} onJump={jumpToLiveSection} />
+				) : null}
 
 				{/* Layer 2: the monitoring line. */}
-				<StatusStrip
-					openAlerts={openAlerts}
-					playableCount={playable.length}
-					feederCount={runningFeeders}
-					// : the next armed row, as a countdown, in the header —
-					// a healthy RUNNING channel's next action is ON_AIR, so nothing
-					// above the fold used to say a STOP was four minutes away.
-					nextEvent={
-						schedulesUnavailable
-							? "unknown"
-							: nextArmed
-								? {
-										label: t(SCHEDULE_ACTION_LABEL_KEYS[nextArmed.action]),
-										fireAt: nextArmed.fireAt,
-										slateDurationSeconds:
-											nextArmed.slateDurationSeconds ?? null,
-									}
-								: null
-					}
-					runStartedAt={run?.runningSince ?? null}
-					// Review of #360: the END stamp too, so a finished run's cell is
-					// the frozen `endedAt − runningSince` measurement instead of a
-					// figure that keeps growing for as long as the channel stays
-					// stopped. The strip gates on `active`; this is what it needs to
-					// have something true to say once that gate closes.
-					runEndedAt={run?.endedAt ?? null}
-					maxRunMinutes={row.maxRunMinutes ?? null}
-					programmeHref="#layer-programme"
-					// review-366 I2: this cell hands focus over like every other
-					// jump on the page. Three docblocks already SAID it did while
-					// it was a bare `href` with no handler at all.
-					onJump={jumpToLiveSection}
-					active={phase === "onair"}
-					// review-260 126-A1: the ANCHORED clock — the gate and the age
-					// line must read the same now, or a slow viewer clock renders
-					// A stale relative timestamp can appear beside a green Connected label. The
-					// strip's skewed branch thereby returns to meaning review-234
-					// N4's original: a sample stamped in the future by the WORKER.
-					nowMs={anchoredNowMs}
-				/>
+				{!aisaRow ? (
+					<StatusStrip
+						openAlerts={openAlerts}
+						playableCount={playable.length}
+						feederCount={runningFeeders}
+						// : the next armed row, as a countdown, in the header —
+						// a healthy RUNNING channel's next action is ON_AIR, so nothing
+						// above the fold used to say a STOP was four minutes away.
+						nextEvent={
+							schedulesUnavailable
+								? "unknown"
+								: nextArmed
+									? {
+											label: t(SCHEDULE_ACTION_LABEL_KEYS[nextArmed.action]),
+											fireAt: nextArmed.fireAt,
+											slateDurationSeconds:
+												nextArmed.slateDurationSeconds ?? null,
+										}
+									: null
+						}
+						runStartedAt={run?.runningSince ?? null}
+						// Review of #360: the END stamp too, so a finished run's cell is
+						// the frozen `endedAt − runningSince` measurement instead of a
+						// figure that keeps growing for as long as the channel stays
+						// stopped. The strip gates on `active`; this is what it needs to
+						// have something true to say once that gate closes.
+						runEndedAt={run?.endedAt ?? null}
+						maxRunMinutes={row.maxRunMinutes ?? null}
+						programmeHref="#layer-programme"
+						// review-366 I2: this cell hands focus over like every other
+						// jump on the page. Three docblocks already SAID it did while
+						// it was a bare `href` with no handler at all.
+						onJump={jumpToLiveSection}
+						active={phase === "onair"}
+						// review-260 126-A1: the ANCHORED clock — the gate and the age
+						// line must read the same now, or a slow viewer clock renders
+						// A stale relative timestamp can appear beside a green Connected label. The
+						// strip's skewed branch thereby returns to meaning review-234
+						// N4's original: a sample stamped in the future by the WORKER.
+						nowMs={anchoredNowMs}
+					/>
+				) : null}
 
 				{/* The contextual lead follows the phase: preparation and provisioning expose ingest coordinates and progress; StatusStrip leads while running; finished broadcasts lead with the last result. */}
-				{phase === "prepare" || phase === "starting" ? (
+				{(phase === "prepare" || phase === "starting") &&
+				!omittedSections.includes("sec-ingest") ? (
 					<div className="space-y-2" data-phase-lead={phase}>
 						{phase === "starting" ? (
 							<p className="text-xs text-zinc-400">
@@ -1345,7 +1519,7 @@ export function ChannelDetail({
 						</p>
 					</FlatSection>
 				) : null}
-				{phase !== "prepare" ? (
+				{phase !== "prepare" && !aisaRow ? (
 					<DeliveryStatusPanel
 						channelId={id}
 						run={run}
@@ -1417,13 +1591,15 @@ export function ChannelDetail({
 									>
 										{t(layer.titleKey)}
 									</h2>
-									{layer.helpKey ? (
+									{!aisaRow && layer.helpKey ? (
 										<SectionHelp
 											title={t(layer.titleKey)}
 											help={t(layer.helpKey)}
 										/>
 									) : null}
-									<p className="text-xs text-zinc-500">{t(layer.leadKey)}</p>
+									{!aisaRow || layer.id === "layer-danger" ? (
+										<p className="text-xs text-zinc-500">{t(layer.leadKey)}</p>
+									) : null}
 								</div>
 								{layer.sections.map((sectionId) => (
 									<Fragment key={sectionId}>{nodes[sectionId]}</Fragment>

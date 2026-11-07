@@ -6,6 +6,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./banding": "./src/banding/index.ts",
+		"./aisa-live-client": "./src/aisa-live-client.ts",
 		"./presets": "./src/plan/sample-presets.ts",
 		"./wizard": "./src/wizard/index.ts",
 		"./testing": "./src/testing/index.ts"

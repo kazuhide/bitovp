@@ -1,9 +1,11 @@
 import {
+	compileAisaManagedLiveChannel,
 	compileLiveChannel,
 	deriveFeederRtmpTarget,
 	deriveProgramSchedule,
 	FEEDER_SUPPORTED_PROVIDERS,
 	initStepLog,
+	isAisaManagedLivePlan,
 	isFeederSupportedProvider,
 	isSlateSupportedProvider,
 	liveChannelPlanSchema,
@@ -29,6 +31,7 @@ import {
 import type { Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { aisaLivePreviewEnabled } from "@/lib/server/aisa-live-sdk";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext, type ServerContext } from "@/lib/server/context";
 import {
@@ -130,6 +133,7 @@ const bodySchema = z
  */
 const LIST_SELECT = {
 	id: true,
+	origin: true,
 	name: true,
 	status: true,
 	error: true,
@@ -577,6 +581,14 @@ export async function POST(req: Request) {
 		return validationError(parsedPlan.error);
 	}
 	const plan = parsedPlan.data;
+	const aisaManaged = isAisaManagedLivePlan(plan);
+	if (aisaManaged && !aisaLivePreviewEnabled())
+		return jsonError(404, "Not found");
+	if (aisaManaged && body.data.schedule) {
+		return jsonError(400, "AISA Live Preview does not support scheduling", {
+			code: "AISA_SCHEDULE_UNSUPPORTED",
+		});
+	}
 	const issues = validateLiveChannel(
 		plan,
 		await submitterValidationOptions(
@@ -775,7 +787,11 @@ export async function POST(req: Request) {
 				});
 			}
 		}
-		const stepLog = initStepLog(compileLiveChannel(plan));
+		const stepLog = initStepLog(
+			aisaManaged
+				? compileAisaManagedLiveChannel(plan)
+				: compileLiveChannel(plan),
+		);
 		// One transaction: a channel with half its schedule rows would fire a
 		// START with no STOP — worse than either failing whole.
 		const created = await ctx.prisma.$transaction(async (tx) => {

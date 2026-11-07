@@ -529,6 +529,13 @@ const live = fields(
 	"scte35AdMarkers",
 	{
 		...common,
+		aisaLive: group(
+			fields(
+				"outputId recordingPath analysisPath esVersion aicaVersion",
+				"",
+				"enabled useManagedGraph",
+			),
+		),
 		fallbackCloudRegions: strings,
 		drm: rows(liveDrm),
 		unencryptedMuxingKeys: strings,

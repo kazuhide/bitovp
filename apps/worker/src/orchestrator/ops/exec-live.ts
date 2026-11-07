@@ -11,6 +11,7 @@ import {
 	type CompiledOperation,
 	isRuntimeRecordKind,
 } from "@bitovp/core";
+import type { AisaLiveCreateRequest } from "@bitovp/core/aisa-live-client";
 import type { StepResult } from "../executor";
 import type {
 	LiveDashStartOptions,
@@ -52,6 +53,35 @@ export async function executeLiveStep(
 		throw new Error(`${op.kind} is a runtime record, not an executable step`);
 	}
 	switch (op.kind) {
+		case "CREATE_AISA_LIVE_ANALYSIS": {
+			const resourceId = await ctx.sdk.createAisaLiveAnalysis(
+				p.request as AisaLiveCreateRequest,
+			);
+			return {
+				resourceId,
+				request: { name: (p.request as AisaLiveCreateRequest).name },
+				response: { analysisId: resourceId },
+			};
+		}
+		case "RESOLVE_AISA_LIVE_ENCODING": {
+			const analysis = await ctx.sdk.getAisaLiveAnalysis(
+				refId(op, ctx, "analysisId"),
+			);
+			return { resourceId: analysis.encodingId, request, response: analysis };
+		}
+		case "START_AISA_LIVE_ANALYSIS": {
+			await ctx.sdk.startAisaLiveAnalysis(
+				refId(op, ctx, "analysisId"),
+				refId(op, ctx, "encodingId"),
+				{
+					...(optStr(p.esVersion) ? { esVersion: optStr(p.esVersion) } : {}),
+					...(optStr(p.aicaVersion)
+						? { aicaVersion: optStr(p.aicaVersion) }
+						: {}),
+				},
+			);
+			return { request, response: { started: true } };
+		}
 		case "CREATE_INPUT_HLS_LIVE": {
 			const resourceId = await ctx.sdk.createHlsLiveInput({
 				name: str(p.name),
@@ -195,10 +225,28 @@ export async function executeLiveStep(
 
 		case "AWAIT_LIVE_RUNNING": {
 			const encodingId = refId(op, ctx, "encodingId");
+			const analysisId = op.refs.analysisId
+				? refId(op, ctx, "analysisId")
+				: undefined;
 			const task = await awaitLiveRunning(
 				op,
 				ctx,
-				() => ctx.sdk.getEncodingStatus(encodingId),
+				async () => {
+					const encoding = await ctx.sdk.getEncodingStatus(encodingId);
+					if (!analysisId) return encoding;
+					const analysis = await ctx.sdk.getAisaLiveAnalysis(analysisId);
+					if (analysis.encodingId !== encodingId)
+						throw new Error("AISA_LIVE_IDENTITY_MISMATCH");
+					if (
+						["ERROR", "TRANSFER_ERROR", "CANCELED", "FINISHED"].includes(
+							analysis.status,
+						)
+					)
+						throw new Error("AISA_LIVE_ANALYSIS_ENDED_BEFORE_RUNNING");
+					return encoding.status === "RUNNING" && analysis.status !== "RUNNING"
+						? { status: "QUEUED" }
+						: encoding;
+				},
 				encodingId,
 			);
 			return { request, response: task };

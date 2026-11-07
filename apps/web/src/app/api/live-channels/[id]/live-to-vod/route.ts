@@ -23,6 +23,7 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
+import { rejectAisaGraphMutation } from "@/lib/server/live-channel-mutation-guard";
 import { getLiveChannelQueue } from "@/lib/server/queue";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -171,6 +172,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 			where: { id },
 			select: {
 				id: true,
+				origin: true,
+				plan: true,
 				status: true,
 				bitmovinEncodingId: true,
 				liveToVod: true,
@@ -181,6 +184,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
+		const refusal = rejectAisaGraphMutation(row);
+		if (refusal) return refusal;
 		if (row.status !== "STOPPED") {
 			return liveToVodRequestError(
 				409,

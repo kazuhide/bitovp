@@ -1,0 +1,282 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import type { AisaResultSnapshot } from "@/lib/aisa-live/contracts";
+import {
+	type AisaPlaybackRange,
+	type BoundedPlaybackState,
+	createBoundedMomentPlayback,
+	resolveMomentPlaybackRange,
+} from "@/lib/aisa-live/playback";
+import { useSession } from "@/lib/auth/use-session";
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
+import { requestAisaThumbnail } from "./aisa-live-player-thumbnail";
+
+export type AisaMomentPlayerLabels = {
+	play: string;
+	pause: string;
+	replay: string;
+	loading: string;
+	unavailable: string;
+	failed: string;
+	seek: string;
+	mute: string;
+	unmute: string;
+	thumbnailAlt: string;
+};
+type Props = {
+	accountId: string;
+	analysisId: string;
+	encodingId: string;
+	mediaTimeOriginUnixMs: number;
+	moment: AisaResultSnapshot["keyMoments"][number];
+	labels: AisaMomentPlayerLabels;
+};
+type Controller = ReturnType<typeof createBoundedMomentPlayback>;
+const initial: BoundedPlaybackState = {
+	ready: false,
+	playing: false,
+	ended: false,
+	elapsed: 0,
+	duration: 0,
+};
+let activeStop: (() => void) | undefined;
+
+export function AisaMomentPreview(props: Props) {
+	const session = useSession();
+	const current = session.status === "success" ? session.data : undefined;
+	const organizationId =
+		current?.configured && current.authenticated
+			? current.organizationId ||
+				(current.mode === "password" || current.mode === "none"
+					? "00000000-0000-4000-8000-000000000001"
+					: "")
+			: "";
+	const url = organizationId
+		? bindPassiveRequestUrl(
+				`/api/live/analyses/${props.analysisId}/recording?bitmovinAccountId=${props.accountId}&encodingId=${props.encodingId}`,
+				organizationId,
+			)
+		: "";
+	const identity = JSON.stringify([
+		url,
+		props.mediaTimeOriginUnixMs,
+		props.moment.id,
+		props.moment.lastUpdatedSequence,
+		props.moment.startInSeconds,
+		props.moment.endInSeconds,
+		props.moment.anchorInSeconds,
+	]);
+	return (
+		<MomentPreview key={identity} {...props} url={url} identity={identity} />
+	);
+}
+
+function MomentPreview({
+	url,
+	identity,
+	mediaTimeOriginUnixMs,
+	moment,
+	labels,
+}: Props & { url: string; identity: string }) {
+	const video = useRef<HTMLVideoElement | null>(null);
+	const controller = useRef<Controller | null>(null);
+	const hls = useRef<import("hls.js").default | null>(null);
+	const canceled = useRef(false);
+	const [poster, setPoster] = useState<string | null>(null);
+	const [playback, setPlayback] = useState(initial);
+	const [phase, setPhase] = useState<
+		"idle" | "loading" | "unavailable" | "failed"
+	>("idle");
+	const [muted, setMuted] = useState(true);
+	const { startInSeconds, endInSeconds, anchorInSeconds } = moment;
+	const cleanup = useCallback(() => {
+		canceled.current = true;
+		controller.current?.destroy();
+		controller.current = null;
+		hls.current?.destroy();
+		hls.current = null;
+		video.current?.removeAttribute("src");
+		video.current?.load();
+	}, []);
+	const stop = useCallback(() => {
+		cleanup();
+		setPlayback(initial);
+		setPhase("idle");
+	}, [cleanup]);
+	useEffect(
+		() => () => {
+			cleanup();
+			if (activeStop === stop) activeStop = undefined;
+		},
+		[cleanup, stop],
+	);
+	useEffect(() => {
+		if (!url) return;
+		const abort = new AbortController();
+		void requestAisaThumbnail(
+			{
+				kind: "HLS",
+				url,
+				time: anchorInSeconds,
+				cacheKey: identity,
+				origin: mediaTimeOriginUnixMs,
+				moment: { startInSeconds, endInSeconds, anchorInSeconds },
+			},
+			abort.signal,
+		).then((frame) => {
+			if (!abort.signal.aborted) setPoster(frame);
+		});
+		return () => abort.abort();
+	}, [
+		url,
+		identity,
+		mediaTimeOriginUnixMs,
+		startInSeconds,
+		endInSeconds,
+		anchorInSeconds,
+	]);
+	const toggle = async () => {
+		if (!url || phase === "loading") return;
+		if (controller.current) {
+			if (playback.playing) controller.current.pause();
+			else controller.current.play();
+			return;
+		}
+		activeStop?.();
+		activeStop = stop;
+		canceled.current = false;
+		setPhase("loading");
+		try {
+			const { default: Hls } = await import("hls.js");
+			if (canceled.current || !video.current) return;
+			if (!Hls.isSupported()) {
+				setPhase("unavailable");
+				return;
+			}
+			const element = video.current;
+			let range: AisaPlaybackRange | null = null;
+			controller.current = createBoundedMomentPlayback(
+				element,
+				() => range,
+				(state) => {
+					if (!canceled.current) {
+						setPlayback(state);
+						if (state.ready) setPhase("idle");
+					}
+				},
+			);
+			const instance = new Hls({
+				autoStartLoad: false,
+				startLevel: 0,
+				maxBufferLength: 5,
+				maxMaxBufferLength: 10,
+				enableWorker: false,
+			});
+			hls.current = instance;
+			instance.on(Hls.Events.MANIFEST_PARSED, () => instance.startLoad(0));
+			instance.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+				const before = range;
+				range = resolveMomentPlaybackRange(
+					moment,
+					mediaTimeOriginUnixMs,
+					data.details.fragments,
+				);
+				if (!range) setPhase("unavailable");
+				else if (!before) instance.startLoad(range.start);
+				controller.current?.sync();
+			});
+			instance.on(Hls.Events.ERROR, (_event, data) => {
+				if (data.fatal && !canceled.current) {
+					cleanup();
+					setPhase("failed");
+				}
+			});
+			instance.attachMedia(element);
+			instance.loadSource(url);
+			controller.current.play();
+		} catch {
+			cleanup();
+			setPhase("failed");
+		}
+	};
+	const action = playback.playing
+		? labels.pause
+		: playback.ended
+			? labels.replay
+			: labels.play;
+	return (
+		<div className="space-y-2" data-aisa-moment-media={moment.id}>
+			<button
+				type="button"
+				aria-label={`${action}: ${labels.thumbnailAlt}`}
+				onClick={() => void toggle()}
+				disabled={!url || phase === "loading"}
+				className="relative block aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black focus-visible:outline-2 focus-visible:outline-emerald-500"
+			>
+				<video
+					ref={video}
+					poster={poster ?? undefined}
+					muted={muted}
+					playsInline
+					preload="none"
+					aria-label={labels.thumbnailAlt}
+					className="h-full w-full object-contain"
+				/>
+				{!playback.playing ? (
+					<span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20 text-sm text-white">
+						{phase === "loading" ? labels.loading : action}
+					</span>
+				) : null}
+			</button>
+			<div className="flex flex-wrap items-center gap-2">
+				<Button
+					variant="secondary"
+					size="sm"
+					disabled={!url || phase === "loading"}
+					onClick={() => void toggle()}
+				>
+					{action}
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => setMuted((value) => !value)}
+				>
+					{muted ? labels.unmute : labels.mute}
+				</Button>
+				<span className="font-mono text-xs text-zinc-400">
+					{playback.elapsed.toFixed(1)} /{" "}
+					{(
+						playback.duration || moment.endInSeconds - moment.startInSeconds
+					).toFixed(1)}{" "}
+					s
+				</span>
+			</div>
+			<input
+				type="range"
+				aria-label={labels.seek}
+				min={0}
+				max={playback.duration || moment.endInSeconds - moment.startInSeconds}
+				step={0.01}
+				value={playback.elapsed}
+				disabled={!playback.ready}
+				onChange={(event) =>
+					controller.current?.seek(event.target.valueAsNumber)
+				}
+				className="w-full accent-emerald-500"
+			/>
+			{phase === "unavailable" || !url ? (
+				<p role="status" className="text-xs text-zinc-400">
+					{labels.unavailable}
+				</p>
+			) : null}
+			{phase === "failed" ? (
+				<p role="alert" className="text-xs text-red-300">
+					{labels.failed}
+				</p>
+			) : null}
+		</div>
+	);
+}

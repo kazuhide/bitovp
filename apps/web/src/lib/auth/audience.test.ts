@@ -85,6 +85,18 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/live/analyses",
+		floor: "VIEWER",
+		api: "/api/live/analyses",
+		method: "GET",
+	},
+	{
+		page: "/live/analyses/[analysisId]",
+		floor: "VIEWER",
+		api: "/api/live/analyses/analysis-1",
+		method: "GET",
+	},
+	{
 		page: "/live/feeders/[id]",
 		floor: "VIEWER",
 		api: "/api/feeder-sessions/session-1",
@@ -254,6 +266,18 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 
 /** Higher-floor panels/actions embedded in otherwise readable pages. */
 const MIXED_SURFACES: readonly SurfaceContract[] = [
+	{
+		page: "/live/analyses/[analysisId]",
+		floor: "OPERATOR",
+		api: "/api/live/analyses/analysis-1/ingest",
+		method: "GET",
+	},
+	{
+		page: "/live/analyses/[analysisId]",
+		floor: "OPERATOR",
+		api: "/api/live/analyses/analysis-1/actions",
+		method: "POST",
+	},
 	{
 		page: "/live",
 		floor: "OPERATOR",

@@ -94,6 +94,30 @@ beforeEach(() => {
 });
 
 describe("reconcile — identity guards", () => {
+	it("records Encoder termination without completing an AISA run whose Analysis is still draining", async () => {
+		const h = harness();
+		const pending = run({
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			aisaSnapshot: null,
+		});
+		await h.reconciler.reconcile({
+			channel: { id: CHANNEL },
+			run: pending,
+			encodingId: "enc-1",
+			sdk: fakeSdk({
+				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+			}),
+		});
+		expect(
+			h.runUpdateMany.mock.calls.every(
+				([args]) =>
+					(args as { data: { status?: string } }).data.status !== "STOPPED",
+			),
+		).toBe(true);
+		expect(h.channelUpdateMany).not.toHaveBeenCalled();
+		expect(h.emitChannel).not.toHaveBeenCalled();
+	});
 	it.each([
 		"RUNNING",
 		"FINISHED",

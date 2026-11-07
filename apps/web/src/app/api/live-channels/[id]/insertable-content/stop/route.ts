@@ -44,6 +44,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
+			rejectAisaManaged: true,
 			subject: "Stopping inserted content",
 		});
 		if (!resolved.ok) {

@@ -3,6 +3,7 @@ import {
 	type AuditEntry,
 	writeAuditLog,
 } from "@bitovp/db";
+import type { AisaLiveControl } from "./aisa-live-ops";
 import type { InternalHevcV2 } from "./internal-hevc-v2";
 import type { AuditRecorder } from "./sdk-ops";
 import { createBitmovinSdkOps, type SdkOps } from "./sdk-ops";
@@ -38,6 +39,7 @@ export function makeWorkerSdk(prisma: AppPrismaClient) {
 		monitoringSignal?: AbortSignal;
 		startControl?: StartRetryControl;
 		internalHevcV2?: InternalHevcV2;
+		aisaLive?: AisaLiveControl;
 	}): SdkOps =>
 		createBitmovinSdkOps(args, (entry) =>
 			writeAuditLog(prisma, withWorkerActor(entry)),

@@ -40,7 +40,7 @@ export function enumerateOperations(file, source) {
 }
 
 export function collectEvidence({ root, sdkRoot, files, operations, options, onProgram, onCall }) {
-	const selected = files.filter((file) => !excluded(file));
+	const selected = files.filter((file) => !excluded(file)).sort();
 	const program = ts.createProgram(selected, { ...options, noEmit: true, incremental: false });
 	const checker = program.getTypeChecker();
 	onProgram?.(program);

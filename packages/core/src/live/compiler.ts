@@ -8,6 +8,7 @@ import {
 } from "../plan/msl-encoder-version";
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import type { PlanRendition } from "../plan/schema";
+import { isAisaManagedLivePlan } from "./aisa";
 import { resolveLiveEncodingOption } from "./encoding-option";
 import { compileLiveManifestDetails } from "./manifest-details";
 import {
@@ -683,6 +684,10 @@ function codecKind(
 }
 
 export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
+	if (isAisaManagedLivePlan(plan))
+		throw new Error(
+			"This plan requires the dedicated AISA Live managed execution path",
+		);
 	const fallbackIssue = liveFallbackRegionIssues(plan)[0];
 	if (fallbackIssue) throw new Error(fallbackIssue.message);
 	const versionError = checkMslEncoderVersion(

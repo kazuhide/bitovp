@@ -436,6 +436,12 @@ describe("every operation kind is classified", () => {
 		SLATE_UNCONFIRMED:
 			"runtime record; describes a status read, not a mutation",
 		CREATE_INPUT_RTMP: "resolved by list — Bitmovin has no POST for it",
+		CREATE_AISA_LIVE_ANALYSIS:
+			"managed preview creation requires a durable run identity; its secret-free step request intentionally omits the provider input and destinations",
+		RESOLVE_AISA_LIVE_ENCODING:
+			"read-only Analysis lookup — resolves its managed Encoding id",
+		START_AISA_LIVE_ANALYSIS:
+			"managed preview start requires paired Analysis and Encoding identity plus a durable dispatch marker; a standalone curl cannot preserve that contract",
 		CAPTURE_PER_TITLE_RESULTS:
 			"read-only capture — a streams list, then one codec-config GET per rung",
 		CREATE_DASH_PER_TITLE_REPRESENTATIONS: "expansion op — many calls, not one",

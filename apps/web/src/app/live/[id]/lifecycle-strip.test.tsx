@@ -16,6 +16,7 @@ describe("lifecycleStage", () => {
 		["PROVISIONING", false, 2],
 		["RUNNING", false, 3],
 		["RUNNING", true, 4],
+		["RUNNING", null, 3],
 		["STOPPING", true, 7],
 		["STOPPED", false, 7],
 	] as const)("%s + connected=%s ⇒ stage %i", (status, connected, stage) => {
@@ -24,6 +25,93 @@ describe("lifecycleStage", () => {
 });
 
 describe("LifecycleStrip", () => {
+	it.each([
+		false,
+		true,
+	])("keeps missing input evidence separate from provider evidence (confirmed=%s)", (confirmed) => {
+		const { container } = renderWithQuery(
+			<LifecycleStrip
+				status="RUNNING"
+				ingestConnected={null}
+				hasEncoding={true}
+				provider={
+					confirmed
+						? {
+								unknown: false,
+								terminal: false,
+								observedAt: "2026-11-07T00:00:00Z",
+								unknownSince: null,
+								status: "RUNNING",
+							}
+						: undefined
+				}
+			/>,
+		);
+		const active = container.querySelector('[data-state="active"]');
+		expect(active).toHaveAttribute("data-stage", "3");
+		expect(active).toHaveTextContent("Input status unconfirmed");
+		expect(active).not.toHaveTextContent(
+			/waiting for input|input connected|encoding.*delivering/i,
+		);
+		expect(active?.querySelector("span + span")?.className).toContain("amber");
+		expect(container.querySelector("figure")).not.toHaveAttribute(
+			"data-provider",
+		);
+		expect(screen.queryByText(/Bitmovin status unconfirmed/)).toBeNull();
+		fireEvent.click(screen.getByRole("button"));
+		expect(
+			screen.getByText(
+				"Input connection status is not available for this run.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText(/nothing is broadcast yet|delivering normally/i),
+		).toBeNull();
+	});
+	it.each([
+		"unknown",
+		"unobserved",
+		"terminal",
+	])("retains provider %s hint precedence over absent input evidence", (state) => {
+		const { container } = renderWithQuery(
+			<LifecycleStrip
+				status={state === "terminal" ? "ERROR" : "RUNNING"}
+				ingestConnected={null}
+				hasEncoding={true}
+				provider={{
+					unknown: state === "unknown",
+					unobserved: state === "unobserved",
+					terminal: state === "terminal",
+					observedAt: "2026-11-07T00:00:00Z",
+					unknownSince: null,
+					status: state === "terminal" ? "FINISHED" : "RUNNING",
+				}}
+			/>,
+		);
+		expect(container.querySelector("figure")).toHaveAttribute(
+			"data-provider",
+			state,
+		);
+		fireEvent.click(screen.getByRole("button"));
+		expect(
+			screen.queryByText(
+				"Input connection status is not available for this run.",
+			),
+		).toBeNull();
+		if (state === "terminal") {
+			expect(
+				screen.getByText(/reported this run's encoding FINISHED/),
+			).toBeInTheDocument();
+			expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
+		} else if (state === "unobserved")
+			expect(
+				screen.getByText(/Waiting for the first Bitmovin encoder status check/),
+			).toBeInTheDocument();
+		else
+			expect(
+				screen.getByText(/Provider status cannot be confirmed/),
+			).toBeInTheDocument();
+	});
 	it("highlights the ACTIVE stage and speaks its hint — RUNNING without input is ③, not broadcasting", () => {
 		const { container } = renderWithQuery(
 			<LifecycleStrip

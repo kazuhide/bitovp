@@ -7,6 +7,7 @@ import { muxingStreamKeys } from "../plan/muxing-streams";
 import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS } from "../plan/schema";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
+import { isAisaManagedLivePlan, validateAisaManagedLivePlan } from "./aisa";
 import {
 	liveHlsEntryUri,
 	liveHlsEntryUris,
@@ -165,6 +166,7 @@ export function validateLiveChannel(
 	plan: LiveChannelPlan,
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
+	if (isAisaManagedLivePlan(plan)) return validateAisaManagedLivePlan(plan);
 	const issues: PlanIssue[] = [
 		...liveManifestPathIssues(plan),
 		...liveManifestDetailIssues(plan),

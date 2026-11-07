@@ -29,6 +29,7 @@ export type LiveSectionId =
 	// Operations
 	| "sec-alerts"
 	| "sec-manifests"
+	| "sec-analysis"
 	| "sec-origin"
 	| "sec-slate"
 	// The emergency "stop what is playing" lever, apart from the
@@ -81,6 +82,7 @@ export const LIVE_SECTION_TITLE_KEYS: Record<LiveSectionId, MessageKey> = {
 	"sec-last-run": "live.lastRun",
 	"sec-alerts": "alerts.title",
 	"sec-manifests": "jobDetail.manifests",
+	"sec-analysis": "aisaLive.keyMoments",
 	"sec-origin": "origin.title",
 	"sec-slate": "live.slateNow",
 	"sec-insertion-stop": "contentInsertion.stopTitle",
@@ -167,7 +169,7 @@ export const LIVE_LAYERS: readonly {
 		titleKey: "liveLayer.operations",
 		leadKey: "liveLayer.operationsLead",
 		helpKey: "liveLayer.operationsHelp",
-		sections: ["sec-alerts", "sec-manifests", "sec-slate"],
+		sections: ["sec-alerts", "sec-manifests", "sec-analysis", "sec-slate"],
 	},
 	{
 		id: "layer-programme",
@@ -296,6 +298,7 @@ export const PHASE_DEFAULT_OPEN: Record<LivePhase, readonly LiveSectionId[]> = {
 export function liveBodyLayers(
 	phase: LivePhase,
 	omit: readonly LiveSectionId[] = [],
+	options: { keyMoments?: boolean } = {},
 ): {
 	id: LiveLayerId;
 	titleKey: MessageKey;
@@ -304,6 +307,7 @@ export function liveBodyLayers(
 	sections: LiveSectionId[];
 }[] {
 	const dropped = new Set<LiveSectionId>([...LEAD_SECTIONS[phase], ...omit]);
+	if (options.keyMoments !== true) dropped.add("sec-analysis");
 	return LIVE_LAYERS.map((layer) => ({
 		id: layer.id,
 		titleKey: layer.titleKey,
@@ -320,6 +324,7 @@ export function liveBodyLayers(
 export function liveSectionOrder(
 	phase: LivePhase,
 	omit: readonly LiveSectionId[] = [],
+	options: { keyMoments?: boolean } = {},
 ): LiveSectionId[] {
 	const dropped = new Set(omit);
 	const lead = LEAD_SECTIONS[phase].filter((id) => !dropped.has(id));
@@ -329,6 +334,6 @@ export function liveSectionOrder(
 		...(phase === "prepare"
 			? []
 			: PANEL_SECTIONS.filter((id) => !dropped.has(id))),
-		...liveBodyLayers(phase, omit).flatMap((layer) => layer.sections),
+		...liveBodyLayers(phase, omit, options).flatMap((layer) => layer.sections),
 	];
 }

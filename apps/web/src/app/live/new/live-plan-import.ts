@@ -1,5 +1,7 @@
 import {
+	compileAisaManagedLiveChannel,
 	compileLiveChannel,
+	isAisaManagedLivePlan,
 	liveChannelPlanSchema,
 	validateLiveChannel,
 } from "@bitovp/core";
@@ -72,7 +74,9 @@ export function parseImportedLivePlan(
 	const issues = validateLiveChannel(parsed.data);
 	const ops = issues.some((i) => i.level === "error")
 		? []
-		: compileLiveChannel(parsed.data);
+		: isAisaManagedLivePlan(parsed.data)
+			? compileAisaManagedLiveChannel(parsed.data)
+			: compileLiveChannel(parsed.data);
 	return {
 		ok: true,
 		imported: {

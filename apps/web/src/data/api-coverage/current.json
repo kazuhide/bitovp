@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-06T21:33:04.761Z",
-		"sourceCommit": "0434a67da70046a6a6c37ecd250eb6c391e35eae",
-		"sourceFingerprint": "c455c1784d96aec517f927a330ce256df968ce28edec12309909ec7d65667a1f",
+		"generatedAt": "2026-11-07T15:08:03.077Z",
+		"sourceCommit": "a9d4447a896c532fb399d448d72cedc2417c63bc",
+		"sourceFingerprint": "c5ffc1aae6ee15e9c9073778f672ea4d50114f6e82d51185524846ab066b9541",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
@@ -1502,6 +1502,10 @@
 					"line": 71
 				},
 				{
+					"file": "apps/web/src/lib/server/aisa-live-import.ts",
+					"line": 80
+				},
+				{
 					"file": "apps/worker/src/reset/provider.ts",
 					"line": 44
 				},
@@ -1604,6 +1608,10 @@
 			"family": "encodings",
 			"status": "source-confirmed",
 			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/aisa-live-import.ts",
+					"line": 81
+				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
 					"line": 569
@@ -2426,7 +2434,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/esam-media-point/route.ts",
-					"line": 85
+					"line": 86
 				}
 			]
 		},
@@ -2496,7 +2504,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/route.ts",
-					"line": 343
+					"line": 344
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -2518,7 +2526,7 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/schedules/route.ts",
-					"line": 348
+					"line": 353
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -2536,7 +2544,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/schedule/route.ts",
-					"line": 243
+					"line": 254
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -2554,7 +2562,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/schedule/[scheduledId]/route.ts",
-					"line": 66
+					"line": 67
 				}
 			]
 		},
@@ -2586,7 +2594,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/stop/route.ts",
-					"line": 60
+					"line": 61
 				}
 			]
 		},

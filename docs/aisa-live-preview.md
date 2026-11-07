@@ -64,11 +64,10 @@ SDK adapter は `apps/web/src/lib/server/aisa-live-sdk.ts`。`aisaLivePreviewEna
 
 ## ローカルでの起動
 
-管理者の認証済み npm 設定を使い、dev SDK を bitovp 本体とは別の場所へインストールする。例えば次のように専用 prefix を指定する。private registry の認証はデモと同じ `JFROG_NPM_TOKEN` の環境変数参照を持つ npm 設定で行い、token 値をコマンドやリポジトリへ保存しない。
+管理者の認証済み npm 設定を使い、dev SDK を bitovp 本体とは別の場所へインストールする。`@bitmovin-internal:registry=https://bitmovin.jfrog.io/artifactory/api/npm/npm-local/` を scope 設定に使い、公開の依存パッケージは通常の registry から取得する。private registry の認証は `JFROG_NPM_TOKEN` の環境変数参照を持つ npm 設定で行い、token 値をコマンドやリポジトリへ保存しない。例えば次のように専用 prefix を指定する。
 
 ```sh
 npm install --prefix /path/to/aisa-preview --ignore-scripts \
-  --registry=https://bitmovin.jfrog.io/artifactory/api/npm/npm-local/ \
   @bitmovin-internal/api-sdk@1.288.0-develop.02b690c6
 ```
 

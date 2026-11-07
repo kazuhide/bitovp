@@ -112,6 +112,15 @@ export function applyAisaSnapshot(
 	for (const item of snapshot.keyMoments) {
 		const content = momentContent(item);
 		const known = knownKeyMoments.get(item.id);
+		// A complete prior snapshot also proves that an unseen older revision
+		// was absent. Skipped polls cannot make that withdrawn identity valid.
+		if (
+			!known &&
+			previous &&
+			item.lastUpdatedSequence <= previous.snapshot.sequence
+		) {
+			throw new Error("A key moment revision predates its first appearance");
+		}
 		if (
 			known &&
 			(!activeMoments.has(item.id) ||

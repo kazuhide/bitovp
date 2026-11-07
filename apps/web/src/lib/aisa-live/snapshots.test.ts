@@ -34,6 +34,58 @@ const resultFixture = () => ({
 });
 
 describe("AISA Live cumulative snapshots", () => {
+	it.each([
+		3, 5,
+	])("rejects a newly seen ID with revision %s already absent from a complete snapshot", (revision) => {
+		const fixture = resultFixture();
+		const moment = fixture.keyMoments[0];
+		if (!moment) throw new Error("Missing synthetic moment");
+		const previous = applyAisaSnapshot(null, {
+			...fixture,
+			sequence: 5,
+			keyMoments: [],
+		});
+		expect(() =>
+			applyAisaSnapshot(previous, {
+				...fixture,
+				sequence: 7,
+				isFinal: true,
+				keyMoments: [
+					{ ...moment, id: "previously-unseen", lastUpdatedSequence: revision },
+				],
+			}),
+		).toThrow(/revision/);
+		expect(previous.snapshot.sequence).toBe(5);
+		expect(previous.snapshot.keyMoments).toEqual([]);
+	});
+
+	it("accepts a new ID from an unobserved newer sequence and historical revisions on first load", () => {
+		const fixture = resultFixture();
+		const moment = fixture.keyMoments[0];
+		if (!moment) throw new Error("Missing synthetic moment");
+		const historical = applyAisaSnapshot(null, {
+			...fixture,
+			sequence: 5,
+			keyMoments: [{ ...moment, lastUpdatedSequence: 3 }],
+		});
+		expect(historical.snapshot.keyMoments).toHaveLength(1);
+		const previous = applyAisaSnapshot(null, {
+			...fixture,
+			sequence: 5,
+			keyMoments: [],
+		});
+		const next = applyAisaSnapshot(previous, {
+			...fixture,
+			sequence: 7,
+			isFinal: true,
+			keyMoments: [{ ...moment, id: "newer-moment", lastUpdatedSequence: 6 }],
+		});
+		expect(
+			next.snapshot.keyMoments.find((item) => item.id === "newer-moment")
+				?.lastUpdatedSequence,
+		).toBe(6);
+	});
+
 	it("withdraws omitted collections rather than keeping stale moments", () => {
 		const previous = applyAisaSnapshot(null, resultFixture());
 		const {

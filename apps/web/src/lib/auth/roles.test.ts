@@ -485,7 +485,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// OPERATOR POST handlers. Both populations were measured from disk.
 		// Historical imports replace the old insights GET with GET + POST.
 		// Local simulator presets add one ADMIN GET route and handler.
-		expect(guarded.length).toBe(152);
-		expect(methods.length).toBe(217);
+		// AISA Preview adds five guarded routes and six handlers.
+		expect(guarded.length).toBe(157);
+		expect(methods.length).toBe(223);
 	});
 });

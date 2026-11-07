@@ -5,6 +5,87 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	aisaLive: {
+		title: "AISA Live（プレビュー）",
+		newAnalysis: "AISA 解析を作成",
+		list: "AISA 解析一覧",
+		normalLive: "通常の Live Encoding",
+		sports:
+			"現在の Preview の key moments 対象は、サッカー（football）・テニス・アメリカンフットボールです。対象種目でも必ず検出されるとは限りません。",
+		managed:
+			"AISA が専用の Live Encoding と録画を管理します。通常の Live のラダー・DRM・ESAM 設定は引き継ぎません。",
+		account: "Bitmovin アカウント",
+		loadingAccounts: "Bitmovin アカウントを読み込んでいます…",
+		noAccounts: "解析を作成する前に Bitmovin アカウントを追加してください。",
+		addAccount: "Bitmovin アカウントの管理",
+		name: "解析名",
+		input: "入力",
+		rtmp: "RTMP ストリーム",
+		hls: "配信中の HLS",
+		reference: "既存の RTMP / SRT / HLS 入力",
+		streamKey: "ストリームキー",
+		streamKeyHint: "半角英字 3〜20 文字。RTMP 入力では必須です。",
+		hlsUrl: "配信中の HLS URL",
+		hlsHint:
+			"EXT-X-PROGRAM-DATE-TIME を持つ配信中の Live / EVENT プレイリストを指定してください。終了済み・VOD プレイリストは対象外です。",
+		inputId: "Encoding の入力 ID",
+		outputId: "Encoding の出力 ID",
+		outputHint:
+			"この Bitmovin アカウントの既存 Output を指定します。録画と解析結果は別のパスに保存します。",
+		recordingPath: "録画の保存パス",
+		analysisPath: "解析結果の保存パス",
+		advanced: "詳細設定",
+		region: "クラウドリージョン",
+		encoderVersion: "エンコーダバージョン",
+		defaultHint: "空欄ではサービスの既定値を使います。",
+		create: "解析を作成",
+		creating: "作成しています…",
+		createHint:
+			"作成時にリソースを準備します。解析の開始は詳細画面で別途操作します。",
+		invalidForm: "アカウント・入力・出力の設定を確認してください。",
+		requestFailed: "リクエストを完了できませんでした。",
+		createUncertain:
+			"結果が不明な場合は、もう一度作成する前に解析一覧を更新してください。",
+		loading: "解析を読み込んでいます…",
+		refresh: "更新",
+		noAnalyses: "このアカウントに AISA Live の解析はありません。",
+		previous: "前へ",
+		next: "次へ",
+		analysisId: "解析 ID",
+		encodingId: "エンコード ID",
+		lifecycle: "解析の状態",
+		start: "解析を開始",
+		stop: "解析を停止",
+		working: "リクエストを送信しています…",
+		versions: "開始時のコンポーネント指定",
+		esVersion: "Encoding Resource Service バージョン",
+		aicaVersion: "AICA バージョン",
+		actionUncertain:
+			"結果が不明な操作を繰り返す前に、解析の状態を更新してください。",
+		checkState: "次の操作の前に解析の状態を確認",
+		ingest: "配信の接続情報",
+		ingestWaiting: "解析が RUNNING になると接続情報を取得できます。",
+		ingestHint: "RUNNING や接続先の表示だけでは、映像の受信は確認できません。",
+		keyMoments: "キーモーメント",
+		pending: "解析結果を待っています。",
+		terminalNoResults: "利用できる解析結果はありません。",
+		invalidResult: "最新の結果を採用できませんでした。",
+		empty:
+			"この snapshot に key moments はありません。現在の Preview はサッカー・テニス・アメリカンフットボールが対象で、すべてのイベントが検出されるわけではありません。",
+		final: "最終結果",
+		evolving: "結果は今後変わる可能性があります",
+		awaitingFinal: "最終結果を待っています。",
+		retained:
+			"最新の更新を採用できませんでした。最後の有効な結果を表示しています。",
+		pollFailed:
+			"結果を更新できませんでした。取得済みの有効な結果がある場合は保持しています。",
+		sequence: "結果の更新番号 {sequence}",
+		coverage: "解析済み: {start}〜{end} 秒",
+		importance: "重要度 {level}",
+		range: "{start}〜{end} 秒 · ピーク {anchor} 秒",
+		readOnly:
+			"閲覧のみ可能です。解析の作成・開始・停止はオペレーターが操作できます。",
+	},
 	banding: {
 		title: "バンディング検出",
 		toggle: "エンコード後にバンディングを検出",

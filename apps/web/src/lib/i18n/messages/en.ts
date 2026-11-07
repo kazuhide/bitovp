@@ -27,6 +27,88 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	aisaLive: {
+		title: "AISA Live Preview",
+		newAnalysis: "New AISA analysis",
+		list: "AISA analyses",
+		normalLive: "Standard Live Encoding",
+		sports:
+			"This Preview supports key moments for soccer (football), tennis, and American football. Detection is not guaranteed, including for supported sports.",
+		managed:
+			"AISA creates and manages its own Live Encoding and recording. Standard Live ladder, DRM, and ESAM settings are not inherited.",
+		account: "Bitmovin account",
+		loadingAccounts: "Loading Bitmovin accounts…",
+		noAccounts: "Add a Bitmovin account before creating an analysis.",
+		addAccount: "Manage Bitmovin accounts",
+		name: "Analysis name",
+		input: "Input",
+		rtmp: "RTMP stream",
+		hls: "Live HLS URL",
+		reference: "Existing RTMP / SRT / HLS Input",
+		streamKey: "Stream key",
+		streamKeyHint: "3–20 ASCII letters. Required for RTMP inputs.",
+		hlsUrl: "Live HLS URL",
+		hlsHint:
+			"Use an ongoing live or EVENT playlist with EXT-X-PROGRAM-DATE-TIME. An ended or VOD playlist is not supported.",
+		inputId: "Encoding Input ID",
+		outputId: "Encoding Output ID",
+		outputHint:
+			"Use an existing Output from this Bitmovin account. Recording and analysis files are written to separate paths.",
+		recordingPath: "Recording path",
+		analysisPath: "Analysis results path",
+		advanced: "Advanced settings",
+		region: "Cloud region",
+		encoderVersion: "Encoder release",
+		defaultHint: "Leave blank to use the service default.",
+		create: "Create analysis",
+		creating: "Creating…",
+		createHint:
+			"Creation provisions resources. Start the analysis separately from its detail page.",
+		invalidForm: "Check the account, input, and output settings.",
+		requestFailed: "The request could not be completed.",
+		createUncertain:
+			"If the outcome is uncertain, refresh the analysis list before creating another analysis.",
+		loading: "Loading analysis…",
+		refresh: "Refresh",
+		noAnalyses: "No AISA Live analyses in this account.",
+		previous: "Previous",
+		next: "Next",
+		analysisId: "Analysis ID",
+		encodingId: "Encoding ID",
+		lifecycle: "Analysis lifecycle",
+		start: "Start analysis",
+		stop: "Stop analysis",
+		working: "Sending request…",
+		versions: "Start component overrides",
+		esVersion: "Encoding Resource Service version",
+		aicaVersion: "AICA version",
+		actionUncertain:
+			"Refresh the analysis state before repeating an operation whose outcome is uncertain.",
+		checkState: "Check analysis state before another operation",
+		ingest: "Ingest connection",
+		ingestWaiting:
+			"Connection details become available when the analysis is RUNNING.",
+		ingestHint:
+			"RUNNING and an available endpoint do not confirm that media has been received.",
+		keyMoments: "Key moments",
+		pending: "Waiting for analysis results.",
+		terminalNoResults: "No analysis results are available.",
+		invalidResult: "The latest result could not be accepted.",
+		empty:
+			"No key moments in this snapshot. The current Preview supports soccer, tennis, and American football; not every event is detected.",
+		final: "Final result",
+		evolving: "Results may still change",
+		awaitingFinal: "Waiting for the final result.",
+		retained:
+			"The latest update could not be accepted. The last valid result is shown.",
+		pollFailed:
+			"Results could not be refreshed. Any last valid result is kept below.",
+		sequence: "Snapshot {sequence}",
+		coverage: "Analyzed: {start}–{end} s",
+		importance: "Importance {level}",
+		range: "{start}–{end} s · peak {anchor} s",
+		readOnly: "Viewing only. An operator can create, start, and stop analyses.",
+	},
 	banding: {
 		title: "Banding detection",
 		toggle: "Run banding detection after encoding",

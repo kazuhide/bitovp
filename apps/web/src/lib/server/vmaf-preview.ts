@@ -2,6 +2,7 @@ import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import "server-only";
 import {
 	encodingPlanSchema,
+	enumerateBandingTargets,
 	enumerateExistingQcMirrorTargets,
 	vmafSourceFor,
 } from "@bitovp/core";
@@ -57,12 +58,12 @@ const unavailable = (
 function resolvePreview(
 	job: PreviewJob,
 	result: PreviewResult,
-	requireFps: boolean,
+	metric: "VMAF" | "BANDING",
 ): Target | Unavailable {
 	if (job.mode === "LIVE") return unavailable("LIVE_CAPTURE_NOT_RETAINED");
 	if (job.mode !== "VOD") return unavailable("UNSUPPORTED_SOURCE");
 	if (
-		requireFps &&
+		metric === "VMAF" &&
 		!z
 			.object({ reference: z.object({ fps: z.number().finite().positive() }) })
 			.safeParse(job.params).success
@@ -78,9 +79,21 @@ function resolvePreview(
 		})
 		.safeParse(result.renditionRef);
 	if (!plan.success || !ref.success) return unavailable("UNSUPPORTED_SOURCE");
-	const target = enumerateExistingQcMirrorTargets(plan.data).find(
-		(t) => t.renditionKey === ref.data.renditionKey,
-	);
+	const persistedSource = z
+		.object({ source: z.enum(["QC_MIRROR", "OUTPUT_MP4"]).optional() })
+		.safeParse(job.params);
+	if (metric === "BANDING" && !persistedSource.success)
+		return unavailable("UNSUPPORTED_SOURCE");
+	const primaryBandingMp4 =
+		metric === "BANDING" && persistedSource.data?.source === "OUTPUT_MP4";
+	const targets =
+		metric === "BANDING"
+			? enumerateBandingTargets(
+					plan.data,
+					primaryBandingMp4 ? "EXISTING_MP4" : "QC_MIRROR",
+				)
+			: enumerateExistingQcMirrorTargets(plan.data);
+	const target = targets.find((t) => t.renditionKey === ref.data.renditionKey);
 	const output = plan.data.outputs.find(
 		(o) => o.key === target?.distorted.outputKey,
 	);
@@ -115,11 +128,12 @@ function resolvePreview(
 			: ref.data.perTitleVariant !== undefined)
 	)
 		return unavailable("UNSUPPORTED_SOURCE");
-	const contentType = actual.key.endsWith(".mp4")
-		? "video/mp4"
-		: actual.key.endsWith(".webm")
-			? "video/webm"
-			: null;
+	const contentType =
+		primaryBandingMp4 || actual.key.endsWith(".mp4")
+			? "video/mp4"
+			: actual.key.endsWith(".webm")
+				? "video/webm"
+				: null;
 	if (!contentType) return unavailable("UNSUPPORTED_SOURCE");
 	return {
 		credentialId: source.credentialId,
@@ -132,13 +146,13 @@ function resolvePreview(
 }
 
 export function resolveVmafPreview(job: PreviewJob, result: PreviewResult) {
-	return resolvePreview(job, result, true);
+	return resolvePreview(job, result, "VMAF");
 }
 
 /** CAMBI intervals use decoded presentation times, independently of a VMAF reference. */
 export function resolveBandingPreview(job: PreviewJob, result: PreviewResult) {
 	return hasBanding(job.params)
-		? resolvePreview(job, result, false)
+		? resolvePreview(job, result, "BANDING")
 		: unavailable("UNSUPPORTED_SOURCE");
 }
 

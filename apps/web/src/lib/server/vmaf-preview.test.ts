@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import {
 	encodingPlanSchema,
+	enumerateBandingTargets,
 	enumerateQcTargets,
 	perTitleRungsFromSnapshot,
 } from "@bitovp/core";
@@ -64,6 +65,185 @@ function fixture() {
 const ctx = {} as Parameters<typeof serveVmafPreview>[0];
 beforeEach(() => vi.clearAllMocks());
 describe("VMAF preview resolution (small, no I/O)", () => {
+	it.each([
+		["trimming-time-based.plan.json", "v720"],
+		["concatenation-two-sources.plan.json", "v720"],
+		["dolby-dv-hdr10-sdr-3ladder-profile5-single-input.plan.json", "sdr-v1080"],
+	])("resolves reference-free CAMBI mirrors for %s", (filename, renditionKey) => {
+		const f = fixture();
+		const plan = encodingPlanSchema.parse({
+			...JSON.parse(
+				readFileSync(
+					resolve(
+						process.cwd(),
+						"../../packages/core/src/plan/__fixtures__",
+						filename,
+					),
+					"utf8",
+				),
+			),
+			qc: { vmaf: false, banding: true },
+		});
+		const target = enumerateBandingTargets(plan).find(
+			(t) => t.renditionKey === renditionKey,
+		);
+		if (!target) throw new Error("Missing reference-free fixture target");
+		const result = {
+			...f.result,
+			renditionRef: { renditionKey },
+			provenance: {
+				distorted: {
+					...f.result.provenance.distorted,
+					key: target.distorted.path,
+				},
+			},
+		};
+		const job = {
+			mode: "VOD",
+			params: { kind: "BANDING", source: "QC_MIRROR" },
+			encodingJob: { plan },
+		};
+		expect(resolveBandingPreview(job, result)).toHaveProperty(
+			"key",
+			target.distorted.path,
+		);
+		expect(
+			resolveVmafPreview(
+				{ ...job, params: { ...job.params, reference: { fps: 24 } } },
+				result,
+			),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+		expect(
+			resolveBandingPreview(job, {
+				...result,
+				provenance: {
+					distorted: {
+						...result.provenance.distorted,
+						key: "unrelated/private.mp4",
+					},
+				},
+			}),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+	});
+	it.each([
+		"trimmed.mp4",
+		"trimmed.media",
+	])("binds target-only output %s to its MP4 container, not a QC mirror", (filename) => {
+		const f = fixture();
+		const raw = JSON.parse(
+			readFileSync(
+				resolve(
+					process.cwd(),
+					"../../packages/core/src/plan/__fixtures__/trimming-time-based.plan.json",
+				),
+				"utf8",
+			),
+		);
+		const plan = encodingPlanSchema.parse({
+			...raw,
+			qc: undefined,
+			muxings: [
+				{
+					key: raw.muxings[0].key,
+					streamKey: raw.muxings[0].streamKey,
+					destination: raw.muxings[0].destination,
+					kind: "MP4",
+					filename,
+				},
+			],
+		});
+		const target = enumerateBandingTargets(plan, "EXISTING_MP4")[0];
+		if (!target) throw new Error("Missing primary MP4 target");
+		const result = {
+			...f.result,
+			renditionRef: { renditionKey: target.renditionKey },
+			provenance: {
+				distorted: {
+					...f.result.provenance.distorted,
+					key: target.distorted.path,
+				},
+			},
+		};
+		const job = {
+			mode: "VOD",
+			params: { kind: "BANDING", source: "OUTPUT_MP4" },
+			encodingJob: { plan },
+		};
+		expect(resolveBandingPreview(job, result)).toHaveProperty(
+			"key",
+			target.distorted.path,
+		);
+		expect(resolveBandingPreview(job, result)).toHaveProperty(
+			"contentType",
+			"video/mp4",
+		);
+		const mirrorPlan = encodingPlanSchema.parse({
+			...plan,
+			qc: { vmaf: false, banding: true },
+		});
+		const mirror = enumerateBandingTargets(mirrorPlan)[0];
+		if (!mirror) throw new Error("Missing fixture QC mirror");
+		expect(
+			resolveBandingPreview(
+				{ ...job, encodingJob: { plan: mirrorPlan } },
+				{
+					...result,
+					provenance: {
+						distorted: {
+							...result.provenance.distorted,
+							key: mirror.distorted.path,
+						},
+					},
+				},
+			),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+		const original = plan.muxings[0];
+		if (!original) throw new Error("Missing fixture muxing");
+		const ambiguous = encodingPlanSchema.parse({
+			...plan,
+			muxings: [
+				...plan.muxings,
+				{ ...original, key: "other-primary", filename: "other.mp4" },
+			],
+		});
+		expect(
+			resolveBandingPreview(
+				{ ...job, encodingJob: { plan: ambiguous } },
+				result,
+			),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+		expect(
+			resolveBandingPreview(
+				{ ...job, params: { ...job.params, source: "QC_MIRROR" } },
+				result,
+			),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+		expect(
+			resolveBandingPreview(job, {
+				...result,
+				provenance: {
+					distorted: { ...result.provenance.distorted, bucket: "other-bucket" },
+				},
+			}),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+		expect(
+			resolveBandingPreview(job, {
+				...result,
+				provenance: {
+					distorted: { ...result.provenance.distorted, pinned: false },
+				},
+			}),
+		).toEqual({ unavailableReason: "MISSING_PROVENANCE" });
+	});
+	it("rejects an unknown persisted banding source instead of choosing an output", () => {
+		const f = fixture();
+		expect(
+			resolveBandingPreview(
+				{ ...f, params: { kind: "BANDING", source: "OTHER" } },
+				f.result,
+			),
+		).toEqual({ unavailableReason: "UNSUPPORTED_SOURCE" });
+	});
 	it("uses presentation time for banding-only previews without a reference or FPS", () => {
 		const f = fixture();
 		const job = { ...f, params: { kind: "BANDING" } };

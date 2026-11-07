@@ -22,6 +22,8 @@ CAMBIの影響区間から、測定した対象renditionの映像を確認でき
 
 既存のVMAFフレーム比較は変更しない。BandingResultDataにbanding専用の安全なpreview descriptorを加え、既存preview endpointへmetric=bandingを明示する。共通の測定対象解決処理を再利用し、VMAF側のFPS条件は維持する。外部URLの任意proxy、credentialsの公開、provider write、DB schema変更、新しい依存は追加しない。
 
+bandingの対象は保存済みparams.sourceに従い、ワーカーと同じenumerateBandingTargetsで列挙する。QC_MIRRORは参照解決を要求せず、OUTPUT_MP4は一意な暗号化されていないMP4出力を使う。ソースがない過去の自動測定はQC_MIRRORとして扱い、未知のソースは拒否する。主出力のMIMEはcanonicalなMP4構成から決め、filenameの拡張子に依存しない。出力、完全path、保存版とbyte数の照合は維持する。
+
 UIは現在のButton・色・間隔・i18nを使い、区間表の操作はbuttonとしてキーボードから使えるようにする。320/768/1024/1440pxで操作と説明が読めることを確認する。
 
 ## 構成と実装順

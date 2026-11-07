@@ -27,7 +27,10 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { resolveLiveEncoding } from "@/lib/server/live-channel-encoding";
-import { rejectAisaGraphMutation } from "@/lib/server/live-channel-mutation-guard";
+import {
+	rejectAisaGraphMutation,
+	rejectImportedAisaMutation,
+} from "@/lib/server/live-channel-mutation-guard";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -194,7 +197,10 @@ export async function POST(req: Request, { params }: RouteParams) {
 		if (!channel) {
 			return jsonError(404, "Not found");
 		}
-		const refusal = rejectAisaGraphMutation(channel);
+		const refusal =
+			body.action === "STOP" || body.action === "SLATE_IN"
+				? rejectImportedAisaMutation(channel)
+				: rejectAisaGraphMutation(channel);
 		if (refusal) return refusal;
 		// #160 PR3 — arm-time auto-lead: fireAt = airAt − (P90 + margin) from
 		// the channel's resolved region profile, ONCE, here (never in the
@@ -340,7 +346,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 				// Content survives on a non-running encoding; only firing needs
 				// RUNNING (the worker action guards that at fire time).
 				requireRunning: false,
-				rejectAisaManaged: true,
+				mutation: "encoding",
 				subject: "Scheduling a slate",
 			});
 			if (!resolved.ok) {

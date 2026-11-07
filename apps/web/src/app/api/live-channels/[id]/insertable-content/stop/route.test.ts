@@ -65,6 +65,25 @@ beforeEach(() => {
 });
 
 describe("POST /api/live-channels/[id]/insertable-content/stop", () => {
+	it("keeps the stop-insertion operation available on an AISA-enabled live encoding", async () => {
+		findUnique.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+			status: "RUNNING",
+			bitmovinEncodingId: ENCODING_ID,
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		stopCreate.mockResolvedValueOnce(new Response(null, { status: 204 }));
+		const response = await POST(
+			postRequest({ bitmovinAccountId: ACCOUNT_ID }),
+			params,
+		);
+		expect(response.status).toBe(200);
+		expect(stopCreate).toHaveBeenCalledWith(ENCODING_ID);
+		expect(scheduleDelete).not.toHaveBeenCalled();
+	});
 	it("treats the SDK's raw 2xx Response as success (no id to snapshot)", async () => {
 		stopCreate.mockResolvedValueOnce(new Response(null, { status: 204 }));
 		const res = await POST(

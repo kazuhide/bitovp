@@ -69,4 +69,52 @@ describe("DELETE /schedules/[scheduleId]", () => {
 		const res = await DELETE(req(), ctx());
 		expect(res.status).toBe(404);
 	});
+
+	it("cancels a managed AISA schedule with the same channel and ARMED claim", async () => {
+		findChannel.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+		});
+		updateMany.mockResolvedValue({ count: 1 });
+		const res = await DELETE(req(), ctx());
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ id: SCHEDULE_ID, status: "CANCELED" });
+		expect(updateMany).toHaveBeenCalledWith({
+			where: {
+				id: SCHEDULE_ID,
+				liveChannelId: CHANNEL_ID,
+				status: "ARMED",
+			},
+			data: { status: "CANCELED" },
+		});
+	});
+
+	it("does not cancel a managed AISA schedule already claimed by the sweep", async () => {
+		findChannel.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+		});
+		updateMany.mockResolvedValue({ count: 0 });
+		findFirst.mockResolvedValue({ status: "FIRED" });
+		const res = await DELETE(req(), ctx());
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "SCHEDULE_NOT_CANCELLABLE", status: "FIRED" },
+		});
+	});
+
+	it("refuses imported schedule cancellation before touching its row", async () => {
+		findChannel.mockResolvedValue({ origin: "AISA_IMPORTED", plan: null });
+		const res = await DELETE(req(), ctx());
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "AISA_IMPORTED_READ_ONLY" },
+		});
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(findFirst).not.toHaveBeenCalled();
+	});
 });

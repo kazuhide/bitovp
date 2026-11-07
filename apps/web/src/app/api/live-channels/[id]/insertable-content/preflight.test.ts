@@ -274,6 +274,84 @@ afterEach(() => {
 });
 
 describe("POST /api/live-channels/[id]/insertable-content — the C36 preflight", () => {
+	it.each([
+		true,
+		false,
+	])("keeps AISA conversion work out of an unbound later airing (ingest known: %s)", async (ingestKnown) => {
+		channelFindUnique.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+			status: "RUNNING",
+			bitmovinEncodingId: ENCODING_ID,
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		if (!ingestKnown)
+			runFindFirst.mockResolvedValue({
+				ingestMedia: null,
+				lastHeartbeat: null,
+			});
+		inspectionFindFirst.mockResolvedValue(
+			inspection("FINISHED", MISMATCHED_PROBE),
+		);
+		const response = await post({
+			bitmovinAccountId: ACCOUNT_ID,
+			content: { source: SOURCE },
+		});
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "AISA_CONTENT_REQUIRES_COMPATIBLE_CLIP" },
+		});
+		expect(normalizationCreate).not.toHaveBeenCalled();
+		expect(normalizeQueueAdd).not.toHaveBeenCalled();
+		expect(contentCreate).not.toHaveBeenCalled();
+	});
+	it("registers a compatible TS clip directly on the AISA encoding after the same inspection", async () => {
+		channelFindUnique.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+			status: "RUNNING",
+			bitmovinEncodingId: ENCODING_ID,
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		inspectionFindFirst.mockResolvedValue(
+			inspection("FINISHED", MATCHING_TS_PROBE),
+		);
+		const response = await post({
+			bitmovinAccountId: ACCOUNT_ID,
+			content: { source: SOURCE },
+		});
+		expect(response.status).toBe(201);
+		expect(contentCreate).toHaveBeenCalledWith(ENCODING_ID, expect.anything());
+		expect(normalizeQueueAdd).not.toHaveBeenCalled();
+	});
+	it("inspects a compatible AISA clip through the preflight endpoint without registering it", async () => {
+		channelFindUnique.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+			status: "RUNNING",
+			bitmovinEncodingId: ENCODING_ID,
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		inspectionFindFirst.mockResolvedValue(
+			inspection("FINISHED", MATCHING_TS_PROBE),
+		);
+		const response = await post(
+			{ bitmovinAccountId: ACCOUNT_ID, source: SOURCE },
+			PREFLIGHT,
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			preparation: { action: "REGISTER_AS_IS" },
+		});
+		expect(contentCreate).not.toHaveBeenCalled();
+		expect(normalizeQueueAdd).not.toHaveBeenCalled();
+	});
 	it("row #330: the measured 2026-09-02 MKV is no longer refused — it is queued for conversion (202) before any input or content exists", async () => {
 		inspectionFindFirst.mockResolvedValue(
 			inspection("FINISHED", MISMATCHED_PROBE),

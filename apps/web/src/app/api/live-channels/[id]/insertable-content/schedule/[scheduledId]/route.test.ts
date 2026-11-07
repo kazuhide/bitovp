@@ -66,6 +66,29 @@ beforeEach(() => {
 });
 
 describe("DELETE .../insertable-content/schedule/[scheduledId]", () => {
+	it("cancels a reservation on the AISA encoding without stopping the live insertion", async () => {
+		findUnique.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+			status: "RUNNING",
+			bitmovinEncodingId: ENCODING_ID,
+			bitmovinAccountId: ACCOUNT_ID,
+		});
+		scheduleDelete.mockResolvedValueOnce({ id: SCHEDULED_ID });
+		const response = await DELETE(
+			deleteRequest(`bitmovinAccountId=${ACCOUNT_ID}&contentId=${CONTENT_ID}`),
+			params,
+		);
+		expect(response.status).toBe(200);
+		expect(scheduleDelete).toHaveBeenCalledWith(
+			ENCODING_ID,
+			CONTENT_ID,
+			SCHEDULED_ID,
+		);
+		expect(stopCreate).not.toHaveBeenCalled();
+	});
 	it("400s without contentId — the SDK addresses the entry under its content", async () => {
 		const res = await DELETE(
 			deleteRequest(`bitmovinAccountId=${ACCOUNT_ID}`),

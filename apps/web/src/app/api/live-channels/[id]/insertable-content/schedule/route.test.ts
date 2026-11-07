@@ -140,6 +140,49 @@ beforeEach(() => {
 });
 
 describe("POST /api/live-channels/[id]/insertable-content/schedule", () => {
+	it.each([
+		true,
+		false,
+	])("retains the connected-input and run-fence rails on AISA insertions (fresh: %s)", async (fresh) => {
+		findUnique.mockResolvedValue({
+			origin: "MANAGED",
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+			},
+			status: "RUNNING",
+			bitmovinEncodingId: ENCODING_ID,
+			bitmovinAccountId: ACCOUNT_ID,
+			lastHeartbeat: {
+				at: new Date(Date.now() - (fresh ? 0 : 600_000)).toISOString(),
+				raw: { ingest: { status: "CONNECTED", healthy: true } },
+			},
+			liveEffectFenceVersion: 0,
+		});
+		scheduleCreate.mockResolvedValue({
+			id: "sched-aisa",
+			contentId: CONTENT_ID,
+			status: "SCHEDULED",
+		});
+		const response = await POST(
+			postRequest({
+				bitmovinAccountId: ACCOUNT_ID,
+				schedule: { contentId: CONTENT_ID },
+			}),
+			params,
+		);
+		expect(response.status).toBe(fresh ? 201 : 409);
+		if (fresh) {
+			expect(beginLiveEffect).toHaveBeenCalled();
+			expect(assertLiveEffectCurrent).toHaveBeenCalled();
+			expect(scheduleCreate).toHaveBeenCalledWith(
+				ENCODING_ID,
+				CONTENT_ID,
+				expect.anything(),
+			);
+		} else {
+			expect(scheduleCreate).not.toHaveBeenCalled();
+		}
+	});
 	it("409s a manual insert while the ingest is NOT connected — accepted-and-renders-nothing was the #95 incident through this door (review-228 I6)", async () => {
 		findUnique.mockResolvedValueOnce({
 			status: "RUNNING",

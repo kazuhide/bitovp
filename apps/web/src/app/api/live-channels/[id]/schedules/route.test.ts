@@ -1046,3 +1046,164 @@ describe("POST /schedules — arm-time generation bind (row #241)", () => {
 		});
 	});
 });
+
+describe("POST /schedules — AISA encoding operations", () => {
+	const RUN_ID = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+	const NEXT_RUN_ID = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb";
+	const managedPlan = {
+		start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+	};
+	const slateBody = {
+		action: "SLATE_IN",
+		fireAt: FUTURE,
+		bitmovinAccountId: ACCOUNT_ID,
+		insertableContentId: CONTENT_ID,
+		slateDurationSeconds: 30,
+	};
+	const currentRun = {
+		id: RUN_ID,
+		status: "RUNNING",
+		bitmovinEncodingId: "enc-aisa",
+		stepLog: [],
+	};
+	function channel() {
+		return {
+			id: CHANNEL_ID,
+			origin: "MANAGED",
+			status: "RUNNING",
+			plan: managedPlan,
+			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinEncodingId: "enc-aisa",
+			maxRunMinutes: null,
+			runningSince: new Date(),
+			createdAt: new Date(),
+		};
+	}
+
+	beforeEach(() => {
+		channelFindUnique.mockResolvedValue(channel());
+		runFindFirst.mockResolvedValue(currentRun);
+		resolveLiveEncoding.mockResolvedValue({
+			ok: true,
+			encodingId: "enc-aisa",
+			aisaManaged: true,
+			api: {
+				encoding: {
+					encodings: { live: { insertableContent: { list: contentList } } },
+				},
+			},
+		});
+		contentList.mockResolvedValue({
+			items: [{ id: CONTENT_ID, status: "READY" }],
+		});
+	});
+
+	it("arms a managed STOP for the exact current run without contacting the provider", async () => {
+		const res = await POST(post({ action: "STOP", fireAt: FUTURE }), ctx());
+		expect(res.status).toBe(201);
+		expect(scheduleCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				liveChannelId: CHANNEL_ID,
+				liveChannelRunId: RUN_ID,
+				action: "STOP",
+			}),
+		});
+		const armed = scheduleCreate.mock.calls[0]?.[0]?.data;
+		expect(isStaleGeneration(armed.liveChannelRunId, NEXT_RUN_ID)).toBe(true);
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+		expect(contentList).not.toHaveBeenCalled();
+	});
+
+	it("arms a managed slate through the encoding resolver and retains its run binding", async () => {
+		const res = await POST(post(slateBody), ctx());
+		expect(res.status).toBe(201);
+		expect(resolveLiveEncoding).toHaveBeenCalledWith(
+			expect.objectContaining({
+				channelId: CHANNEL_ID,
+				bitmovinAccountId: ACCOUNT_ID,
+				requireRunning: false,
+				mutation: "encoding",
+			}),
+		);
+		expect(contentList).toHaveBeenCalledWith("enc-aisa", expect.any(Object));
+		expect(scheduleCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				liveChannelRunId: RUN_ID,
+				action: "SLATE_IN",
+				insertableContentId: CONTENT_ID,
+				slateDurationSeconds: 30,
+			}),
+		});
+	});
+
+	it("still refuses a managed START before any run, provider, or schedule effect", async () => {
+		const res = await POST(post({ action: "START", fireAt: FUTURE }), ctx());
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "AISA_ACTION_UNSUPPORTED" },
+		});
+		expect(runFindFirst).not.toHaveBeenCalled();
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+		expect(contentList).not.toHaveBeenCalled();
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("keeps the READY prerequisite for managed slate content", async () => {
+		contentList.mockResolvedValue({
+			items: [{ id: CONTENT_ID, status: "DOWNLOADING" }],
+		});
+		const res = await POST(post(slateBody), ctx());
+		expect(res.status).toBe(422);
+		expect(await res.json()).toMatchObject({
+			details: { code: "SCHEDULE_CONTENT_NOT_READY", status: "DOWNLOADING" },
+		});
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("refuses a managed slate when its run changes during provider validation", async () => {
+		contentList.mockImplementationOnce(async () => {
+			runFindFirst.mockResolvedValue({ ...currentRun, id: NEXT_RUN_ID });
+			return { items: [{ id: CONTENT_ID, status: "READY" }] };
+		});
+		const res = await POST(post(slateBody), ctx());
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			error: expect.stringContaining("current live run changed"),
+		});
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("keeps the runtime-cap boundary for a managed STOP", async () => {
+		channelFindUnique.mockResolvedValue({ ...channel(), maxRunMinutes: 1 });
+		const res = await POST(post({ action: "STOP", fireAt: FUTURE }), ctx());
+		expect(res.status).toBe(422);
+		expect(await res.json()).toMatchObject({
+			details: { code: "SCHEDULE_OUTSIDE_RUN_WINDOW" },
+		});
+		expect(scheduleCreate).not.toHaveBeenCalled();
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"START",
+		"STOP",
+		"SLATE_IN",
+	])("keeps imported %s read-only before provider or schedule effects", async (action) => {
+		channelFindUnique.mockResolvedValue({
+			...channel(),
+			origin: "AISA_IMPORTED",
+		});
+		const res = await POST(
+			post(action === "SLATE_IN" ? slateBody : { action, fireAt: FUTURE }),
+			ctx(),
+		);
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "AISA_IMPORTED_READ_ONLY" },
+		});
+		expect(runFindFirst).not.toHaveBeenCalled();
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+		expect(contentList).not.toHaveBeenCalled();
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+});

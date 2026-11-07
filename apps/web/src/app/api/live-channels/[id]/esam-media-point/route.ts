@@ -66,7 +66,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
-			rejectAisaManaged: true,
+			mutation: "graph",
 			subject: "ESAM media points",
 		});
 		if (!resolved.ok) {

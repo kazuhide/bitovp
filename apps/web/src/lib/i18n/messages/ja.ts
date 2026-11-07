@@ -6,6 +6,26 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	aisaLive: {
+		manifestsUnavailable:
+			"この配信のマニフェスト情報を取得できていません。録画を取得できる場合は「キーモーメント」から再生できます。",
+		unavailableTimeshift:
+			"この解析を有効にした構成では、タイムシフトのリセットは未対応です。入力・出力の監視は引き続き利用できます。",
+		unavailableAutoShutdown:
+			"この構成では、自動停止設定の変更は未対応です。「チャンネルを停止」で配信と解析を一緒に終了してください。",
+		unavailableRuntimeCap:
+			"この構成では、実行時間の上限変更は未対応です。「チャンネルを停止」で配信と解析を一緒に終了してください。",
+		unavailableCue:
+			"この構成では、SCTE-35キューの挿入は未対応です。コンテンツ挿入は別途利用できます。",
+		unavailableEsam:
+			"この配信にはESAMシグナリングが設定されていません。コンテンツ挿入は別途利用できます。",
+		unavailableVmaf:
+			"この構成では、VMAFキャプチャは未対応です。heartbeatの監視値と配信履歴は引き続き確認できます。",
+		unavailableLiveToVod:
+			"この構成では、Live to VOD変換は未対応です。録画は「キーモーメント」から確認できます。",
+		compatibleClipRequired:
+			"現在の入力と形式が一致するMPEG-TSクリップを選択してください。この構成では、クリップの自動変換は未対応です。",
+		scheduledStartUnavailable:
+			"この構成では、開始の予約は未対応です。解析の終了後に「新しい配信を開始」を使ってください。停止とスレート挿入は予約できます。",
 		selectedRunUnavailable: "指定した実行はこのチャンネルで確認できません。",
 		channelId: "チャンネル ID",
 		viewRunResults: "実行 #{n} の解析結果を表示",

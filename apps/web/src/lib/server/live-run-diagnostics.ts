@@ -65,6 +65,7 @@ async function handleDiagnostics(
 				status: true,
 				endedAt: true,
 				bitmovinEncodingId: true,
+				aisaAnalysisId: true,
 			},
 		});
 		if (!run) return jsonError(404, "Live run not found");
@@ -82,6 +83,7 @@ async function handleDiagnostics(
 				"Final heartbeat is only available after the run has ended",
 			);
 		const encodingId = run.bitmovinEncodingId;
+		const aisaAnalysis = z.uuid().safeParse(run.aisaAnalysisId);
 		// Include CREATE evidence for runs that failed before live/start. The
 		// response id, not a channel pointer or client account, binds that row.
 		const provenance = await ctx.prisma.auditLog.findMany({
@@ -95,6 +97,25 @@ async function handleDiagnostics(
 						path: "/encoding/encodings",
 						response: { path: ["id"], equals: encodingId },
 					},
+					// Dedicated AISA Create returns both immutable identities.
+					// Neither the channel's current account nor Analysis alone can
+					// establish credentials for a historical Encoding.
+					...(aisaAnalysis.success
+						? [
+								{
+									path: "/ai-scene-analysis/live-analyses",
+									AND: [
+										{
+											response: {
+												path: ["analysisId"],
+												equals: aisaAnalysis.data,
+											},
+										},
+										{ response: { path: ["encodingId"], equals: encodingId } },
+									],
+								},
+							]
+						: []),
 				],
 			},
 			select: { bitmovinAccountId: true },

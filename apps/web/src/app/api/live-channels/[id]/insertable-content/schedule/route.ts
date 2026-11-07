@@ -26,7 +26,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { resolveLiveEncoding } from "@/lib/server/live-channel-encoding";
-import { rejectAisaGraphMutation } from "@/lib/server/live-channel-mutation-guard";
+import { rejectImportedAisaMutation } from "@/lib/server/live-channel-mutation-guard";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -141,7 +141,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 				);
 			}
 			if (replayChannel) {
-				const refusal = rejectAisaGraphMutation(replayChannel);
+				const refusal = rejectImportedAisaMutation(replayChannel);
 				if (refusal) return refusal;
 			}
 			if (existing.state === "ACKED") {
@@ -160,7 +160,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
-			rejectAisaManaged: true,
+			mutation: "encoding",
 			// review-228 I6: the #95 fix gated the SCHEDULED slate path on a
 			// proven-connected ingest; this manual path could still insert at
 			// Ingest waiting: a 200 response does not prove content rendered; the incident through

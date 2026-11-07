@@ -1,12 +1,15 @@
 import "server-only";
 import type BitmovinApi from "@bitmovin/api-sdk";
-import { ingestConnectedFresh } from "@bitovp/core";
+import { ingestConnectedFresh, isAisaManagedLivePlan } from "@bitovp/core";
 import type { NextResponse } from "next/server";
 import { customerErrorDetails } from "@/lib/customer-error";
 import { bitmovinClientForAccount } from "./bitmovin";
 import type { ServerContext } from "./context";
 import { jsonError } from "./http";
-import { rejectAisaGraphMutation } from "./live-channel-mutation-guard";
+import {
+	rejectAisaGraphMutation,
+	rejectImportedAisaMutation,
+} from "./live-channel-mutation-guard";
 
 /**
  * Resolves a managed live channel into the Bitmovin encoding its RUNTIME
@@ -26,14 +29,14 @@ export async function resolveLiveEncoding(options: {
 	channelId: string;
 	bitmovinAccountId: string;
 	requireRunning: boolean;
-	/** Explicit mutation guard; inspection reads keep their existing availability. */
-	rejectAisaManaged?: boolean;
+	/** Encoding-only mutations keep AISA available; authored-graph operations do not. */
+	mutation?: "encoding" | "graph";
 	/* Content insertion requires connected ingest: an accepted request during ingest waiting can render nothing. Keep this opt-in because ESAM and SCTE signaling follow the encoder rather than the output media timeline. */
 	requireIngestConnected?: boolean;
 	/** Verb used in the 409 message, e.g. "ESAM media points". */
 	subject: string;
 }): Promise<
-	| { ok: true; api: BitmovinApi; encodingId: string }
+	| { ok: true; api: BitmovinApi; encodingId: string; aisaManaged: boolean }
 	| { ok: false; response: NextResponse }
 > {
 	const { ctx, channelId, bitmovinAccountId, requireRunning, subject } =
@@ -41,7 +44,7 @@ export async function resolveLiveEncoding(options: {
 	const channel = await ctx.prisma.liveChannel.findUnique({
 		where: { id: channelId },
 		select: {
-			...(options.rejectAisaManaged ? { origin: true, plan: true } : {}),
+			...(options.mutation ? { origin: true, plan: true } : {}),
 			status: true,
 			bitmovinEncodingId: true,
 			bitmovinAccountId: true,
@@ -88,8 +91,11 @@ export async function resolveLiveEncoding(options: {
 			),
 		};
 	}
-	if (options.rejectAisaManaged) {
-		const refusal = rejectAisaGraphMutation(channel);
+	if (options.mutation) {
+		const refusal =
+			options.mutation === "graph"
+				? rejectAisaGraphMutation(channel)
+				: rejectImportedAisaMutation(channel);
 		if (refusal) return { ok: false, response: refusal };
 	}
 	if (requireRunning && channel.status !== "RUNNING") {
@@ -146,5 +152,10 @@ export async function resolveLiveEncoding(options: {
 			),
 		};
 	}
-	return { ok: true, api, encodingId: channel.bitmovinEncodingId };
+	return {
+		ok: true,
+		api,
+		encodingId: channel.bitmovinEncodingId,
+		aisaManaged: isAisaManagedLivePlan(channel.plan),
+	};
 }

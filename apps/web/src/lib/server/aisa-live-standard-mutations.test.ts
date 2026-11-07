@@ -147,7 +147,17 @@ describe.each([
 	},
 ])("$label standard graph mutation guard", (channel) => {
 	it.each(
-		cases,
+		cases.filter(
+			(operation) =>
+				channel.origin === "AISA_IMPORTED" ||
+				[
+					"automatic stop",
+					"VMAF capture",
+					"ESAM media point",
+					"live-to-VOD",
+					"schedule arm",
+				].includes(operation.name),
+		),
 	)("refuses $name after the tenant row read and before provider/queue effects", async (operation) => {
 		mocks.channel.mockResolvedValue({
 			...channel,

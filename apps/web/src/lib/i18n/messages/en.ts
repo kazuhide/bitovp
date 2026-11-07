@@ -28,6 +28,26 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	aisaLive: {
+		manifestsUnavailable:
+			"Manifest links have not been resolved for this stream. When a recording is available, view it from Key moments.",
+		unavailableTimeshift:
+			"Timeshift reset is not implemented for this analysis-enabled configuration. Input and output monitoring remain available.",
+		unavailableAutoShutdown:
+			"Changing automatic shutdown is not implemented for this configuration. Use Stop channel to finish the broadcast and its analysis together.",
+		unavailableRuntimeCap:
+			"Changing the runtime cap is not implemented for this configuration. Use Stop channel to finish the broadcast and its analysis together.",
+		unavailableCue:
+			"SCTE-35 cue insertion is not implemented for this configuration. Content insertion remains available separately.",
+		unavailableEsam:
+			"ESAM signaling is not configured for this broadcast. Content insertion remains available separately.",
+		unavailableVmaf:
+			"VMAF capture is not implemented for this configuration. Heartbeat metrics and broadcast history remain available.",
+		unavailableLiveToVod:
+			"Live to VOD conversion is not implemented for this configuration. The recording can be viewed from Key moments.",
+		compatibleClipRequired:
+			"Choose an MPEG-TS clip that matches the current input. Automatic clip conversion is not implemented for this configuration.",
+		scheduledStartUnavailable:
+			"Scheduled start is not implemented for this configuration. After the analysis has finished, use Start a new broadcast. Stop and slate insertion can be scheduled.",
 		selectedRunUnavailable: "The requested run is unavailable in this channel.",
 		channelId: "Channel ID",
 		viewRunResults: "View results for run #{n}",

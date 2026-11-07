@@ -50,7 +50,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
-			rejectAisaManaged: true,
+			mutation: "encoding",
 			subject: "De-scheduling insertable content",
 		});
 		if (!resolved.ok) {

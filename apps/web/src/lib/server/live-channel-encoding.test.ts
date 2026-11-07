@@ -33,6 +33,36 @@ beforeEach(() => {
 });
 
 describe("resolveLiveEncoding", () => {
+	it("allows encoding-only operations on managed AISA while retaining imported history read-only", async () => {
+		for (const origin of ["MANAGED", "AISA_IMPORTED"]) {
+			findUnique.mockResolvedValue({
+				origin,
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+				status: "RUNNING",
+				bitmovinEncodingId: "bm-enc",
+				bitmovinAccountId: ACCOUNT_A,
+			});
+			bitmovinClientForAccount.mockClear();
+			const result = await resolveLiveEncoding({
+				ctx,
+				channelId: CHANNEL_ID,
+				bitmovinAccountId: ACCOUNT_A,
+				requireRunning: true,
+				mutation: "encoding",
+				subject: "Stopping inserted content",
+			});
+			expect(result.ok).toBe(origin === "MANAGED");
+			if (origin === "AISA_IMPORTED") {
+				expect(bitmovinClientForAccount).not.toHaveBeenCalled();
+				if (result.ok) throw new Error("expected imported history refusal");
+				expect(await result.response.json()).toMatchObject({
+					details: { code: "AISA_IMPORTED_READ_ONLY" },
+				});
+			}
+		}
+	});
 	it("explicitly guards AISA mutations before resolving provider credentials while keeping reads", async () => {
 		for (const channel of [
 			{ origin: "AISA_IMPORTED", plan: null },
@@ -55,7 +85,7 @@ describe("resolveLiveEncoding", () => {
 				channelId: CHANNEL_ID,
 				bitmovinAccountId: ACCOUNT_A,
 				requireRunning: true,
-				rejectAisaManaged: true,
+				mutation: "graph",
 				subject: "Neutral operation label",
 			});
 			expect(mutation.ok).toBe(false);

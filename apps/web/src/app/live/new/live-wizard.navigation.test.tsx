@@ -98,13 +98,19 @@ it.each([
 	).toBeNull();
 
 	await showStep(4);
-	const segmentLength = input("lw-seglen");
-	expect(
-		screen.getByLabelText(
-			locale === "ja" ? "セグメント長 (秒)" : "Segment length (s)",
-		),
-	).toBe(segmentLength);
-	fireEvent.change(segmentLength, { target: { value: "6" } });
+	const videoSegmentLength = input("lw-v-0-media-segmentLength");
+	const audioSegmentLength = input("lw-a-0-media-segmentLength");
+	expect(screen.getAllByLabelText(shared.segmentLengthS)).toEqual([
+		videoSegmentLength,
+		audioSegmentLength,
+	]);
+	expect(videoSegmentLength).toBeVisible();
+	expect(audioSegmentLength).toBeVisible();
+	expect(document.getElementById("lw-seglen")).toBeNull();
+	fireEvent.change(videoSegmentLength, { target: { value: "4" } });
+	expect(audioSegmentLength).toHaveValue(4);
+	fireEvent.change(audioSegmentLength, { target: { value: "8" } });
+	expect(videoSegmentLength).toHaveValue(8);
 	expect(document.getElementById("lw-hls-mname")).toBeNull();
 	expect(document.getElementById("lw-archive-enabled")).toBeVisible();
 
@@ -113,7 +119,8 @@ it.each([
 		target: { value: "custom.m3u8" },
 	});
 	fireEvent.change(input("lw-hls-timeshift"), { target: { value: "120" } });
-	expect(document.getElementById("lw-seglen")).toBeNull();
+	expect(document.getElementById("lw-v-0-media-segmentLength")).toBeNull();
+	expect(document.getElementById("lw-a-0-media-segmentLength")).toBeNull();
 
 	await showStep(3);
 	fireEvent.change(input("lw-out-base"), { target: { value: "delivery" } });
@@ -129,7 +136,8 @@ it.each([
 	expect(document.getElementById("lw-ar-segmentsWrittenTimeout")).toBeVisible();
 
 	await showStep(4);
-	expect(input("lw-seglen")).toHaveValue(6);
+	expect(input("lw-v-0-media-segmentLength")).toHaveValue(8);
+	expect(input("lw-a-0-media-segmentLength")).toHaveValue(8);
 	await showStep(6);
 	expect(input("lw-hls-mname")).toHaveValue("custom.m3u8");
 	expect(input("lw-hls-timeshift")).toHaveValue(120);

@@ -122,8 +122,8 @@ describe("catalogue parity", () => {
 		// Includes the measured CAMBI interval-preview messages.
 		pinWithDriftAid(long.length, 1475, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Measured from the catalog, including the new interval-preview labels.
-		pinWithDriftAid(short.size, 2901, "short");
+		// Includes the Live segment-length hint and interval-preview labels; measured together.
+		pinWithDriftAid(short.size, 2902, "short");
 	});
 
 	/**

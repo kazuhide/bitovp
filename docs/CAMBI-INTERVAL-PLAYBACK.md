@@ -50,3 +50,5 @@ UIは現在のButton・色・間隔・i18nを使い、区間表の操作はbutto
 [HTMLのmedia timeline](https://html.spec.whatwg.org/multipage/media.html#media-timeline)では、currentTimeは媒体の時間軸上の位置であり、原点が常にゼロとは限らない。[Video Frame Callback仕様](https://wicg.github.io/video-rvfc/)のmediaTimeはその時間軸上の提示フレームのPTSである。CAMBIは最初のdecoded video PTSから相対秒数を保存するため、プレイヤーはsource設定前にcallbackを登録し、初回の提示フレームでmediaTimeを確認してから区間へseekする。初回を取り逃がした場合、10秒以内に確認できない場合、未対応ブラウザでは原点を推測しない。
 
 この対応付けは同じobject/versionの最初のvideo presentationを前提とする。callbackはUIのmain threadと同じ速度で完了する保証がなく、区間末尾のpauseやseekはブラウザの精度に従う。実動画による検証範囲を別途記録する。
+
+ブラウザが最初に返すdurationは、ファイル末尾を読む際に増える場合がある。最初のdurationだけで区間末尾を拒否せず、seek後の実位置とduration更新を確認する。仮の長さでseekが短く制限された場合は、更新後に開始位置へのseekを再試行する。10秒以内に開始位置を確認できない場合や、区間末尾より前に実EOFへ到達した場合は再生不能として示し、区間の再生完了とは扱わない。

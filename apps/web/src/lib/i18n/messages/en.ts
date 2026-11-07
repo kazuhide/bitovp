@@ -1178,6 +1178,7 @@ export const en = {
 			"After stopping, download and check the file and audio/video duration. Private requests PRIVATE; verify that bucket policies or other settings do not grant public access. The destination default may be public. This is not a live playback URL. Delivery checks alone do not verify the archive or whole plan.",
 	},
 	liveRendition: {
+		sharedSegmentLengthHint: "Changes apply to all outputs.",
 		inputPosition: "Input track position",
 		inputPositionHint:
 			"Zero-based source track index. Leave unset for video 0 or audio 1.",

@@ -1,6 +1,10 @@
 import "server-only";
 import { isAisaManagedLivePlan } from "@bitovp/core";
 import { aisaResultSchema } from "@/lib/aisa-live/contracts";
+import {
+	projectSafeHeartbeat,
+	projectSafeHeartbeatReception,
+} from "./safe-heartbeat-projection";
 
 function record(value: unknown): Record<string, unknown> | null {
 	return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -93,9 +97,24 @@ const runFields = [
 	"providerTerminalAt",
 ] as const;
 
-function publicRun(value: unknown) {
+function runCreatedAt(value: unknown): Date | undefined {
+	const created =
+		value instanceof Date
+			? value
+			: typeof value === "string"
+				? new Date(value)
+				: undefined;
+	return created && Number.isFinite(created.getTime()) ? created : undefined;
+}
+
+function publicRun(value: unknown, now: Date) {
 	const run = record(value);
 	if (!run) return null;
+	const createdAt = runCreatedAt(run.createdAt);
+	const monitoringBound =
+		typeof run.id === "string" &&
+		typeof run.bitmovinEncodingId === "string" &&
+		createdAt !== undefined;
 	const parsed = aisaResultSchema.safeParse(run.aisaSnapshot);
 	const snapshot =
 		parsed.success &&
@@ -109,7 +128,9 @@ function publicRun(value: unknown) {
 		streamKey: null,
 		encoderIp: null,
 		stepLog: [],
-		lastHeartbeat: null,
+		lastHeartbeat: monitoringBound
+			? projectSafeHeartbeat(run.lastHeartbeat, now, createdAt)
+			: null,
 		liveToVod: null,
 		originObservation: null,
 		error: run.error ? "AISA operation failed" : null,
@@ -121,9 +142,19 @@ function publicRun(value: unknown) {
  * Build the response from an allowlist: plans, compiled payloads, raw telemetry,
  * diagnostics and future fields can all contain ingest coordinates under aliases.
  */
-export function aisaChannelViewerProjection(channel: unknown, run: unknown) {
+export function aisaChannelViewerProjection(
+	channel: unknown,
+	run: unknown,
+	options: { heartbeatReception?: unknown; observedNow?: Date } = {},
+) {
 	const row = record(channel) ?? {};
-	const currentRun = publicRun(run);
+	const now = options.observedNow ?? new Date();
+	const currentRun = publicRun(run, now);
+	const runId = typeof currentRun?.id === "string" ? currentRun.id : null;
+	const createdAt = runCreatedAt(record(run)?.createdAt);
+	const monitoringBound =
+		createdAt !== undefined &&
+		typeof currentRun?.bitmovinEncodingId === "string";
 	return {
 		...fields(row, channelFields),
 		// Retain only the marker used by the common Live detail to select its view.
@@ -133,14 +164,23 @@ export function aisaChannelViewerProjection(channel: unknown, run: unknown) {
 		streamKey: null,
 		encoderIp: null,
 		stepLog: [],
-		lastHeartbeat: null,
+		// The run is authoritative: an absent sample cannot fall through to a
+		// previous airing's channel mirror.
+		lastHeartbeat: currentRun?.lastHeartbeat ?? null,
 		liveToVod: null,
 		liveToVodFamilies: null,
 		playbackLinks: [],
+		playbackLinksAvailability: "unavailable" as const,
 		error: row.error ? "AISA operation failed" : null,
 		currentRun,
-		heartbeatReception: { state: "unavailable", runId: currentRun?.id ?? null },
+		heartbeatReception: projectSafeHeartbeatReception(
+			monitoringBound ? options.heartbeatReception : undefined,
+			runId,
+			now,
+			createdAt,
+		),
 		technicalDetailsAllowed: false,
-		serverNow: new Date().toISOString(),
+		monitoringSafeForViewer: true as const,
+		serverNow: now.toISOString(),
 	};
 }

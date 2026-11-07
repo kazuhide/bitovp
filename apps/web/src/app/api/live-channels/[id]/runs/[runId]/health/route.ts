@@ -1,6 +1,7 @@
 import {
 	deriveRunHealth,
 	deriveRunTimeline,
+	isAisaManagedLivePlan,
 	RUN_HEALTH_SPAN_GAP_MS,
 	type RunHealth,
 	type RunTimeline,
@@ -10,6 +11,7 @@ import { NextResponse } from "next/server";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
 import { pushHeartbeatRow } from "@/lib/server/live-heartbeat-reception";
+import { hasObservedHlsOutput } from "@/lib/server/safe-heartbeat-projection";
 
 type RouteParams = { params: Promise<{ id: string; runId: string }> };
 
@@ -145,7 +147,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		const plan = channelRow?.plan as {
 			liveManifests?: { kind?: string }[];
 		} | null;
-		const outputObservable = (plan?.liveManifests ?? []).some(
+		const plannedHls = (plan?.liveManifests ?? []).some(
 			(m) => m.kind === "HLS",
 		);
 		const newestFirst = await ctx.prisma.liveHeartbeat.findMany({
@@ -196,6 +198,10 @@ export async function GET(_req: Request, { params }: RouteParams) {
 					return [parsed];
 				})
 			: [];
+		const outputObservable =
+			plannedHls ||
+			(isAisaManagedLivePlan(plan) &&
+				[...rows, ...pushRows].some((row) => hasObservedHlsOutput(row.raw)));
 		// ONE gap feeds BOTH derivations (review-294 delta note: the required
 		// param closes omission drift but not divergence — a route passing
 		// 600s here against 90s lanes kept 17/17 tests green. One binding,

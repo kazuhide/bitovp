@@ -124,9 +124,18 @@ export async function GET(req: Request, { params }: RouteParams) {
 		};
 		const currentRun = row.runs[0] ?? null;
 		const aisaChannel = isAisaLiveChannelView(channel, currentRun);
+		const heartbeatReception = await readHeartbeatReception(
+			ctx.prisma,
+			currentRun,
+			new Date(),
+		);
+		const observedNow = new Date();
 		if (aisaChannel && !aisaPublisherConnectionAllowed(ctx.tenant)) {
 			return NextResponse.json(
-				aisaChannelViewerProjection(channel, currentRun),
+				aisaChannelViewerProjection(channel, currentRun, {
+					heartbeatReception,
+					observedNow,
+				}),
 				{ headers: AISA_CHANNEL_RESPONSE_HEADERS },
 			);
 		}
@@ -171,12 +180,6 @@ export async function GET(req: Request, { params }: RouteParams) {
 					technicalDetailsAllowed,
 				)
 			: null;
-		const observedNow = new Date();
-		const heartbeatReception = await readHeartbeatReception(
-			ctx.prisma,
-			currentRun,
-			observedNow,
-		);
 		// Derived here, not in the browser, for the same reason as the VOD route:
 		// the credential's config never needs to cross .
 		return NextResponse.json(
@@ -190,6 +193,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				playbackLinks: planForLinks
 					? await playbackLinksForLivePlan(ctx, planForLinks)
 					: [],
+				...(aisaChannel ? { playbackLinksAvailability: "unavailable" } : {}),
 				// review-260 127-A5 (folded into #126): heartbeat freshness must
 				// not compare a WORKER-stamped `at` against the BROWSER clock — a
 				// viewer 90 seconds ahead reads a healthy channel as disconnected. The client

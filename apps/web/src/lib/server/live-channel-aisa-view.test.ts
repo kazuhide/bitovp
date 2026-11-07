@@ -23,6 +23,142 @@ const snapshot = {
 };
 
 describe("AISA viewer projection boundary", () => {
+	it("preserves current-run monitoring through an allowlist while removing connection aliases", () => {
+		const at = "2026-11-07T00:00:05.000Z";
+		const raw = {
+			timestamp: at,
+			ingest: {
+				status: "CONNECTED",
+				healthy: true,
+				droppedPacketsVideo: 4,
+				streams: [
+					{
+						mediaType: "VIDEO",
+						rate: 30,
+						incomingBitrate: 900,
+						url: "private",
+					},
+				],
+				streamKey: "private",
+			},
+			output: {
+				manifests: {
+					hls: [
+						{
+							url: "private",
+							manifestUpdates: [{ manifestUpdateWallClockTime: at }],
+						},
+					],
+				},
+			},
+			message: "private",
+		};
+		const poll = {
+			at,
+			raw,
+			deltas: { droppedPacketsVideo: 1, secret: "private" },
+		};
+		const run = {
+			id: "run",
+			bitmovinEncodingId: encodingId,
+			createdAt: new Date("2026-11-07T00:00:00Z"),
+			lastHeartbeat: poll,
+		};
+		const body = aisaChannelViewerProjection(
+			{
+				id: "channel",
+				lastHeartbeat: { at, raw: { ingest: { status: "DISCONNECTED" } } },
+			},
+			run,
+			{
+				observedNow: new Date("2026-11-07T00:00:10Z"),
+				heartbeatReception: {
+					state: "available",
+					runId: "run",
+					configuredIntervalS: 2,
+					latest: { receivedAt: at, sampledAt: at, raw },
+					previousReceivedAt: null,
+				},
+			},
+		);
+		expect(body.lastHeartbeat).toEqual(body.currentRun?.lastHeartbeat);
+		expect(body.lastHeartbeat).toMatchObject({
+			at,
+			raw: {
+				ingest: { status: "CONNECTED", healthy: true, streams: [{ rate: 30 }] },
+			},
+			deltas: { droppedPacketsVideo: 1 },
+		});
+		expect(body.heartbeatReception).toMatchObject({
+			state: "available",
+			runId: "run",
+			latest: { sampledAt: at, raw: { ingest: { status: "CONNECTED" } } },
+		});
+		expect(body.serverNow).toBe("2026-11-07T00:00:10.000Z");
+		expect(body.monitoringSafeForViewer).toBe(true);
+		expect(JSON.stringify(body)).not.toContain("private");
+		expect(raw.ingest.streamKey).toBe("private");
+	});
+
+	it.each([
+		"encoding",
+		"birth",
+	])("withholds monitoring when the persisted run %s binding is absent", (missing) => {
+		const at = "2026-11-07T00:00:05.000Z";
+		const raw = { timestamp: at, ingest: { status: "CONNECTED" } };
+		const body = aisaChannelViewerProjection(
+			{},
+			{
+				id: "run",
+				bitmovinEncodingId: missing === "encoding" ? null : encodingId,
+				createdAt:
+					missing === "birth" ? undefined : new Date("2026-11-07T00:00:00Z"),
+				lastHeartbeat: { at, raw },
+			},
+			{
+				heartbeatReception: {
+					state: "available",
+					runId: "run",
+					latest: { sampledAt: at, receivedAt: at, raw },
+				},
+			},
+		);
+		expect(body.currentRun?.lastHeartbeat).toBeNull();
+		expect(body.heartbeatReception).toEqual({
+			state: "unavailable",
+			runId: "run",
+		});
+	});
+
+	it("does not fall back to a previous airing's channel mirror or a foreign Push run", () => {
+		const body = aisaChannelViewerProjection(
+			{
+				lastHeartbeat: {
+					at: "2026-11-07T00:00:05Z",
+					raw: { ingest: { status: "CONNECTED" } },
+				},
+			},
+			{
+				id: "current",
+				createdAt: new Date("2026-11-07T00:00:00Z"),
+				lastHeartbeat: { at: "bad", raw: { ingest: { healthy: "bad" } } },
+			},
+			{
+				heartbeatReception: {
+					state: "available",
+					runId: "previous",
+					latest: { raw: { ingest: { healthy: true } } },
+				},
+			},
+		);
+		expect(body.lastHeartbeat).toBeNull();
+		expect(body.currentRun?.lastHeartbeat).toBeNull();
+		expect(body.heartbeatReception).toEqual({
+			state: "unavailable",
+			runId: "current",
+		});
+	});
+
 	it("keeps imported and run-bound channels protected without requiring a parseable managed plan", () => {
 		expect(
 			isAisaLiveChannelView({ origin: "AISA_IMPORTED", plan: null }, null),

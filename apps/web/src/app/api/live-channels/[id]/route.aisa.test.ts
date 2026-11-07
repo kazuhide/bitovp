@@ -80,7 +80,7 @@ function managedRow() {
 		],
 		streamKey: secret,
 		encoderIp: secret,
-		lastHeartbeat: { raw: { unexpectedConnection: secret } },
+		lastHeartbeat: { raw: { unexpectedConnection: secret } } as unknown,
 		liveToVod: { unknownPublisherInfo: secret },
 		error: secret,
 		futurePublisherResponse: { url: secret },
@@ -102,7 +102,7 @@ function managedRow() {
 				streamKey: secret,
 				encoderIp: secret,
 				stepLog: [{ payload: { compiledStartRequest: secret } }],
-				lastHeartbeat: { raw: { unexpectedConnection: secret } },
+				lastHeartbeat: { raw: { unexpectedConnection: secret } } as unknown,
 				liveToVod: { unknownPublisherInfo: secret },
 				originObservation: { url: secret },
 				error: secret,
@@ -132,6 +132,71 @@ beforeEach(() => {
 });
 
 describe("AISA publisher connection projection", () => {
+	it("returns safe current-run Poll and verified Push telemetry to VIEWER without revealing publisher aliases", async () => {
+		const row = managedRow();
+		const at = "2026-11-07T00:00:06.000Z";
+		const raw = {
+			timestamp: at,
+			ingest: {
+				status: "CONNECTED",
+				healthy: true,
+				streams: [{ rate: 30, incomingBitrate: 1000, encoderIp: secret }],
+				streamKey: secret,
+			},
+			output: {
+				manifests: {
+					hls: [
+						{
+							url: secret,
+							manifestUpdates: [{ manifestUpdateWallClockTime: at }],
+						},
+					],
+				},
+			},
+			message: secret,
+		};
+		row.runs[0].lastHeartbeat = {
+			at,
+			raw,
+			deltas: { droppedPacketsVideo: 1, credential: secret },
+		};
+		mocks.findUnique.mockResolvedValue(row);
+		mocks.heartbeatEvents.mockResolvedValue([
+			{
+				receivedAt: new Date(at),
+				raw: {
+					eventType: "LIVE_ENCODING_HEARTBEAT",
+					webhookId: accountId,
+					encoding: { id: encodingId },
+					value: raw,
+				},
+			},
+		]);
+		const started = Date.now();
+		const response = await GET(request(), params());
+		const body = await response.json();
+		expect(response.status).toBe(200);
+		expect(body.lastHeartbeat).toEqual(body.currentRun.lastHeartbeat);
+		expect(body.lastHeartbeat).toMatchObject({
+			at,
+			raw: {
+				ingest: { status: "CONNECTED", healthy: true, streams: [{ rate: 30 }] },
+			},
+			deltas: { droppedPacketsVideo: 1 },
+		});
+		expect(body.heartbeatReception).toMatchObject({
+			state: "available",
+			runId: "run-1",
+			latest: { sampledAt: at, raw: { ingest: { status: "CONNECTED" } } },
+		});
+		expect(Date.parse(body.serverNow)).toBeGreaterThanOrEqual(started);
+		expect(Date.parse(body.serverNow)).toBeLessThanOrEqual(Date.now());
+		expect(body.playbackLinksAvailability).toBe("unavailable");
+		expect(body.monitoringSafeForViewer).toBe(true);
+		expect(JSON.stringify(body)).not.toContain(secret);
+		expect(response.headers.get("Cache-Control")).toContain("no-store");
+	});
+
 	it("strips every publisher connection container while preserving viewer Analysis reads", async () => {
 		const response = await GET(request(), params());
 		expect(response.status).toBe(200);
@@ -159,12 +224,13 @@ describe("AISA publisher connection projection", () => {
 		});
 		expect(body.bitmovinAccountId).toBe(accountId);
 		expect(body.technicalDetailsAllowed).toBe(false);
-		expect(body.heartbeatReception).toEqual({
-			state: "unavailable",
+		expect(body.heartbeatReception).toMatchObject({
+			state: "available",
 			runId: "run-1",
+			latest: null,
 		});
 		expect(response.headers.get("Cache-Control")).toContain("no-store");
-		expect(mocks.heartbeatEvents).not.toHaveBeenCalled();
+		expect(mocks.heartbeatEvents).toHaveBeenCalledTimes(1);
 		expect(mocks.credentialFindMany).not.toHaveBeenCalled();
 	});
 
@@ -212,6 +278,8 @@ describe("AISA publisher connection projection", () => {
 		expect(body.streamKey).toBe(secret);
 		expect(body.currentRun.encoderIp).toBe(secret);
 		expect(body.currentRun.stepLog).toEqual(managedRow().runs[0].stepLog);
+		expect(body.playbackLinksAvailability).toBe("unavailable");
+		expect(body.monitoringSafeForViewer).toBeUndefined();
 		expect(response.headers.get("Cache-Control")).toContain("no-store");
 	});
 
@@ -241,5 +309,6 @@ describe("AISA publisher connection projection", () => {
 		expect(body.plan.start.streamKey).toBe(secret);
 		expect(body.streamKey).toBe(secret);
 		expect(body.currentRun.encoderIp).toBe(secret);
+		expect(body.playbackLinksAvailability).toBeUndefined();
 	});
 });

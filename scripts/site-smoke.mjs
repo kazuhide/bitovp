@@ -413,7 +413,11 @@ async function runLocale(locale, copy) {
 	await page.locator("#lw-v-0-height").fill("720");
 	await page.locator("#lw-v-0-bitrate").fill("1500000");
 	await step(copy.packaging);
-	await page.locator("#lw-seglen").fill("2");
+	await page.locator("#lw-v-0-media-segmentLength").fill("2");
+	assert.equal(
+		await page.locator("#lw-a-0-media-segmentLength").inputValue(),
+		"2",
+	);
 	await step(copy.output);
 	await page.locator("#lw-out-cred").selectOption(credentialId);
 	await closePicker();

@@ -117,9 +117,10 @@ export function DrmRowEditor({
 				htmlFor={`${idBase}-cred`}
 				help={t("wizard.drmCencCredentialTheKeyItselfNever")}
 			>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<SelectNative
 						id={`${idBase}-cred`}
+						className="basis-full"
 						value={row.credentialId}
 						onChange={(e) => onChange({ ...row, credentialId: e.target.value })}
 					>
@@ -139,6 +140,7 @@ export function DrmRowEditor({
 								type="button"
 								variant="secondary"
 								size="sm"
+								className="h-auto min-h-8 max-w-full whitespace-normal py-1"
 								aria-expanded={inlineOpen}
 								onClick={() => setInlineOpen((v) => !v)}
 							>
@@ -453,9 +455,10 @@ function SpekeRowEditor({
 				htmlFor={`${idBase}-cred`}
 				tooltip={t("fields.spekeVaultHelp")}
 			>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<SelectNative
 						id={`${idBase}-cred`}
+						className="basis-full"
 						value={row.credentialId}
 						onChange={(e) => onChange({ ...row, credentialId: e.target.value })}
 					>

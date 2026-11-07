@@ -123,7 +123,8 @@ describe("catalogue parity", () => {
 		pinWithDriftAid(long.length, 1471, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Repeated settings labels share existing translations where appropriate.
-		pinWithDriftAid(short.size, 2892, "short");
+		// Includes the shared Live segment-length hint, measured by this instrument.
+		pinWithDriftAid(short.size, 2893, "short");
 	});
 
 	/**

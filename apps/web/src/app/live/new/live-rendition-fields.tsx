@@ -84,6 +84,7 @@ export function LiveMuxingFields({
 	muxing,
 	container,
 	ownsContainer = true,
+	onSegmentLengthChange,
 	onMuxingChange,
 }: {
 	idBase: string;
@@ -91,82 +92,96 @@ export function LiveMuxingFields({
 	muxing?: LiveMuxingOptions;
 	container: "FMP4" | "CMAF" | "TS";
 	ownsContainer?: boolean;
+	onSegmentLengthChange: (segmentLength: number) => void;
 	onMuxingChange: (muxing: LiveMuxingOptions | undefined) => void;
 }) {
 	const { t } = useT();
 	const storage = liveStorageOptionsAvailable(state);
 	const patchMuxing = (patch: Partial<LiveMuxingOptions>) =>
 		onMuxingChange(collapseGroup({ ...muxing, ...patch }));
+	const namingField = (key: "segmentNamingTemplate" | "segmentNaming") => (
+		<Field
+			label={t(
+				key === "segmentNaming"
+					? "liveRendition.segmentNaming"
+					: "liveRendition.segmentTemplate",
+			)}
+			htmlFor={`${idBase}-media-${key}`}
+			help={t(
+				key === "segmentNaming"
+					? "liveRendition.segmentNamingHint"
+					: "liveRendition.segmentTemplateHint",
+			)}
+		>
+			<Input
+				id={`${idBase}-media-${key}`}
+				value={muxing?.[key] ?? ""}
+				disabled={
+					key === "segmentNaming"
+						? muxing?.segmentNamingTemplate !== undefined
+						: muxing?.segmentNaming !== undefined
+				}
+				placeholder={`seg_${key === "segmentNamingTemplate" ? "{rand_chars:8}_" : ""}%number%.${container === "TS" ? "ts" : "m4s"}`}
+				onChange={(event) =>
+					patchMuxing({ [key]: event.target.value || undefined })
+				}
+			/>
+		</Field>
+	);
 	return (
 		<div className="space-y-3">
-			{storage && ownsContainer ? (
-				<>
-					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-						{(["segmentNamingTemplate", "segmentNaming"] as const).map(
-							(key) => (
-								<Field
-									key={key}
-									label={t(
-										key === "segmentNaming"
-											? "liveRendition.segmentNaming"
-											: "liveRendition.segmentTemplate",
-									)}
-									htmlFor={`${idBase}-media-${key}`}
-									help={t(
-										key === "segmentNaming"
-											? "liveRendition.segmentNamingHint"
-											: "liveRendition.segmentTemplateHint",
-									)}
-								>
-									<Input
-										id={`${idBase}-media-${key}`}
-										value={muxing?.[key] ?? ""}
-										disabled={
-											key === "segmentNaming"
-												? muxing?.segmentNamingTemplate !== undefined
-												: muxing?.segmentNaming !== undefined
-										}
-										placeholder={`seg_${key === "segmentNamingTemplate" ? "{rand_chars:8}_" : ""}%number%.${container === "TS" ? "ts" : "m4s"}`}
-										onChange={(event) =>
-											patchMuxing({ [key]: event.target.value || undefined })
-										}
-									/>
-								</Field>
-							),
-						)}
-						{container === "FMP4" ? (
-							<Field
-								label={t("liveRendition.initName")}
-								htmlFor={`${idBase}-media-initSegmentName`}
-							>
-								<Input
-									id={`${idBase}-media-initSegmentName`}
-									placeholder="init.mp4"
-									value={muxing?.initSegmentName ?? ""}
-									onChange={(event) =>
-										patchMuxing({
-											initSegmentName: event.target.value || undefined,
-										})
-									}
-								/>
-							</Field>
-						) : null}
-					</div>
+			{ownsContainer ? (
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					{storage ? namingField("segmentNamingTemplate") : null}
 					<Field
-						label={t("liveRendition.outputPath")}
-						htmlFor={`${idBase}-media-path`}
-						help={t("liveRendition.outputPathHint")}
+						label={t("wizard.segmentLengthS")}
+						htmlFor={`${idBase}-media-segmentLength`}
+						hint={t("liveRendition.sharedSegmentLengthHint")}
 					>
 						<Input
-							id={`${idBase}-media-path`}
-							value={muxing?.path ?? ""}
-							placeholder={t("wizard.default")}
+							id={`${idBase}-media-segmentLength`}
+							type="number"
+							value={state.segmentLength}
 							onChange={(event) =>
-								patchMuxing({ path: event.target.value || undefined })
+								onSegmentLengthChange(Math.max(0, Number(event.target.value)))
 							}
 						/>
 					</Field>
-				</>
+					{storage ? namingField("segmentNaming") : null}
+					{storage && container === "FMP4" ? (
+						<Field
+							label={t("liveRendition.initName")}
+							htmlFor={`${idBase}-media-initSegmentName`}
+						>
+							<Input
+								id={`${idBase}-media-initSegmentName`}
+								placeholder="init.mp4"
+								value={muxing?.initSegmentName ?? ""}
+								onChange={(event) =>
+									patchMuxing({
+										initSegmentName: event.target.value || undefined,
+									})
+								}
+							/>
+						</Field>
+					) : null}
+				</div>
+			) : null}
+			{storage && ownsContainer ? (
+				<Field
+					label={t("liveRendition.outputPath")}
+					htmlFor={`${idBase}-media-path`}
+					help={t("liveRendition.outputPathHint")}
+				>
+					<Input
+						id={`${idBase}-media-path`}
+						value={muxing?.path ?? ""}
+						placeholder={t("wizard.default")}
+						onChange={(event) =>
+							patchMuxing({ path: event.target.value || undefined })
+						}
+					/>
+				</Field>
 			) : (
 				<p className="text-xs text-zinc-500">
 					{t(

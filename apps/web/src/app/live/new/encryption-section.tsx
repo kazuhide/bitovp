@@ -258,6 +258,7 @@ export function LiveMuxingEncryption({
 							type="button"
 							size="sm"
 							variant="secondary"
+							className="h-auto min-h-8 max-w-full whitespace-normal py-1 text-left"
 							onClick={() => model.copyToOthers(row)}
 						>
 							{t("liveProtection.copyToAll")}

@@ -192,6 +192,9 @@ export function LiveMuxingsSection({
 							state={state}
 							muxing={video.muxing}
 							container={video.container ?? "FMP4"}
+							onSegmentLengthChange={(segmentLength) =>
+								patchPackaging({ segmentLength })
+							}
 							onMuxingChange={(muxing) => patchVideo(index, { muxing })}
 						/>
 						<LiveMuxingEncryption
@@ -291,6 +294,9 @@ export function LiveMuxingsSection({
 							state={state}
 							muxing={audio.muxing}
 							container={audio.container ?? "FMP4"}
+							onSegmentLengthChange={(segmentLength) =>
+								patchPackaging({ segmentLength })
+							}
 							ownsContainer={
 								audio.ownContainer !== false ||
 								!carriedAudioKeys.has(aKeys[index] ?? "")

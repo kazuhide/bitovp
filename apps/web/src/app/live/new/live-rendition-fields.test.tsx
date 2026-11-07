@@ -126,6 +126,11 @@ describe("Live rendition optional fields", () => {
 		initial.output.kind = "AKAMAI_MSL";
 		renderLocalized(<Harness initial={initial} />);
 		expect(document.getElementById("lw-v-0-media-path")).toBeNull();
+		fireEvent.change(field("lw-a-0-media-segmentLength"), {
+			target: { value: "4" },
+		});
+		expect(field("lw-v-0-media-segmentLength")).toHaveValue(4);
+		expect(current().segmentLength).toBe(4);
 		expect(field("lw-v-0-input-position")).not.toBeDisabled();
 	});
 });

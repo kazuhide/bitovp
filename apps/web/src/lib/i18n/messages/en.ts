@@ -67,6 +67,11 @@ export const en = {
 		previewTitle: "Banding interval preview · {label}",
 		previewClose: "Close interval preview",
 		previewReplay: "Replay interval",
+		previewPlay: "Play",
+		previewPause: "Pause",
+		previewLoading: "Loading measured video…",
+		previewFailed:
+			"Playback failed. The measured video may be missing, replaced, or unsupported by this browser.",
 		previewEnded: "Interval finished",
 		previewUnavailable:
 			"The version-pinned measured video is unavailable. Scores and intervals remain available.",

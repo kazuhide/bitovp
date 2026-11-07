@@ -45,6 +45,11 @@ export const ja = {
 		previewTitle: "バンディング区間のプレビュー · {label}",
 		previewClose: "区間プレビューを閉じる",
 		previewReplay: "区間を最初から再生",
+		previewPlay: "再生",
+		previewPause: "一時停止",
+		previewLoading: "測定対象の動画を読み込み中…",
+		previewFailed:
+			"動画を再生できません。削除・上書き、またはブラウザーが対応していない形式の可能性があります。",
 		previewEnded: "区間の再生が終了しました",
 		previewUnavailable:
 			"測定した版の動画を再生できません。スコアと区間は引き続き確認できます。",

@@ -1065,6 +1065,10 @@ To compare reports, select reports with results in the lab and open “Compare s
 
 In a single report, “Open comparison preview” lets you select up to 2 VOD QC videos whose retained versions can be identified, and seek to a scored frame's time. Browser seeking or decoding may display a neighboring frame. This is unavailable for older reports or Live captures that were not retained. It does not show the current live stream as a substitute for previously measured frames.
 
+### Banding interval inspection
+
+CAMBI reports can open the measured rendition from an affected-interval row. Select **Play … s** to play that interval, stop at its exclusive end and replay it. Selecting another interval replaces the active video. Banding-only reports need no VMAF reference or average frame rate. The retained MP4/WebM must match the measured object version and remain readable. Missing media or unavailable browser presentation timing keeps playback unavailable while preserving scores and intervals. Seeking can show an adjacent frame and does not change scores or delivery gates. See the [banding guide](BANDING-QUALITY.md) for setup and limits.
+
 ### Frame boundaries and alignment
 
 Video and audio are not divided into units of the same duration. For AAC, 1 frame normally contains 1,024 samples, or about 21.33 milliseconds at 48 kHz. A 2-second interval corresponds to 93.75 audio frames, so a whole number of audio frames cannot fit exactly into every 2-second video interval. Encoder priming (startup delay), end padding and timestamps also affect the starting position and duration. Container trim information can exclude priming and padding from playback. See [Apple’s explanation of AAC track timing](https://developer.apple.com/documentation/quicktime-file-format/using_track_structures_to_represent_encode_delay_explictly).

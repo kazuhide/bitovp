@@ -67,6 +67,10 @@ describe("CAMBI interval playback", () => {
 		expect(video.currentTime).toBe(1.625);
 		await act(async () => fireEvent.canPlay(video));
 		expect(play).toHaveBeenCalledOnce();
+		expect(
+			screen.getByRole("button", { name: "Pause", exact: true }),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/both|comparison/i)).not.toBeInTheDocument();
 		video.currentTime = 1.9;
 		fireEvent.timeUpdate(video);
 		expect(pause).toHaveBeenCalled();
@@ -159,12 +163,70 @@ describe("CAMBI interval playback", () => {
 		);
 		expect(screen.getByRole("alert")).toHaveTextContent("could not establish");
 	});
-	it("refuses a video whose end does not cover the full selected interval", () => {
+	it("fails if real EOF arrives before the selected interval end", async () => {
 		vi.spyOn(HTMLMediaElement.prototype, "duration", "get").mockReturnValue(
 			1.8,
 		);
 		renderPlayer();
 		firstFrame();
+		const video = screen.getByLabelText("360p") as HTMLVideoElement;
+		await act(async () => fireEvent.canPlay(video));
+		video.currentTime = 1.8;
+		fireEvent.ended(video);
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"complete selected interval",
+		);
+		expect(screen.queryByText("Interval finished")).not.toBeInTheDocument();
+	});
+	it("accepts provisional duration that grows while the browser reads the media tail", async () => {
+		const duration = vi
+			.spyOn(HTMLMediaElement.prototype, "duration", "get")
+			.mockReturnValue(1.7);
+		renderPlayer();
+		firstFrame();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		const video = screen.getByLabelText("360p") as HTMLVideoElement;
+		duration.mockReturnValue(2);
+		await act(async () => fireEvent.seeked(video));
+		expect(play).toHaveBeenCalledOnce();
+		video.currentTime = 1.9;
+		fireEvent.timeUpdate(video);
+		expect(screen.getByText("Interval finished")).toBeInTheDocument();
+	});
+	it("does not play a seek that lands later in the requested interval", () => {
+		renderPlayer();
+		firstFrame();
+		const video = screen.getByLabelText("360p") as HTMLVideoElement;
+		video.currentTime = 1.7;
+		fireEvent.seeked(video);
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"complete selected interval",
+		);
+		expect(play).not.toHaveBeenCalled();
+	});
+	it("retries a seek clamped by provisional metadata after duration grows", async () => {
+		const duration = vi
+			.spyOn(HTMLMediaElement.prototype, "duration", "get")
+			.mockReturnValue(1.6);
+		renderPlayer();
+		firstFrame();
+		const video = screen.getByLabelText("360p") as HTMLVideoElement;
+		video.currentTime = 1.6;
+		fireEvent.seeked(video);
+		expect(play).not.toHaveBeenCalled();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		duration.mockReturnValue(2);
+		fireEvent.durationChange(video);
+		expect(video.currentTime).toBe(1.625);
+		await act(async () => fireEvent.seeked(video));
+		expect(play).toHaveBeenCalledOnce();
+	});
+	it("times out a stuck seek and ignores a late canplay event", () => {
+		vi.useFakeTimers();
+		renderPlayer();
+		firstFrame();
+		act(() => vi.advanceTimersByTime(10_000));
+		fireEvent.canPlay(screen.getByLabelText("360p"));
 		expect(screen.getByRole("alert")).toHaveTextContent(
 			"complete selected interval",
 		);

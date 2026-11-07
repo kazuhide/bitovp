@@ -31,14 +31,17 @@ function useIntervalVideo(url: string, range: Interval) {
 		let start = 0;
 		let end = 0;
 		let pendingPlay = true;
+		let pendingStart = true;
 		let animation = 0;
 		let frameCallback = 0;
+		let seekTimeout = 0;
 		const timeout = window.setTimeout(() => fail("timing"), 10_000);
 		function pause(next: Status = "paused") {
 			operation += 1;
 			pendingPlay = false;
 			video?.pause();
 			cancelAnimationFrame(animation);
+			window.clearTimeout(seekTimeout);
 			if (!disposed) setStatus(next);
 		}
 		function fail(reason: Failure) {
@@ -48,7 +51,7 @@ function useIntervalVideo(url: string, range: Interval) {
 			if (!disposed) setFailure(reason);
 		}
 		function bound() {
-			if (origin === undefined || disposed || failed) return;
+			if (origin === undefined || disposed || failed || pendingPlay) return;
 			if (video.currentTime >= end) {
 				pause("ended");
 				// The end is exclusive. Browser seeking is approximate, not frame-exact.
@@ -75,14 +78,26 @@ function useIntervalVideo(url: string, range: Interval) {
 				video.readyState < 2
 			)
 				return;
-			if (video.currentTime < start - 0.000001 || video.currentTime >= end)
+			if (video.currentTime < start - 0.000001) {
+				// Metadata duration can grow when the browser reads the tail of an MP4.
+				// Retry a clamped initial seek only after the requested start is seekable.
+				if (video.duration < start) return;
+				video.currentTime = start;
 				return;
+			}
+			if (video.currentTime >= end) return fail("range");
+			if (pendingStart && Math.abs(video.currentTime - start) > 0.000001)
+				return fail("range");
+			pendingStart = false;
 			pendingPlay = false;
 			const token = ++operation;
+			window.clearTimeout(seekTimeout);
+			seekTimeout = window.setTimeout(() => fail("media"), 10_000);
 			try {
 				await video.play();
 				if (disposed) video.pause();
 				else if (token === operation) {
+					window.clearTimeout(seekTimeout);
 					setStatus("playing");
 					cancelAnimationFrame(animation);
 					animation = requestAnimationFrame(watch);
@@ -95,6 +110,9 @@ function useIntervalVideo(url: string, range: Interval) {
 			if (origin === undefined || disposed || failed) return;
 			pause();
 			pendingPlay = true;
+			pendingStart = true;
+			setStatus("loading");
+			seekTimeout = window.setTimeout(() => fail("range"), 10_000);
 			const alreadyThere = Math.abs(video.currentTime - start) < 0.000001;
 			video.currentTime = start;
 			if (alreadyThere) void maybePlay();
@@ -116,6 +134,7 @@ function useIntervalVideo(url: string, range: Interval) {
 		const listeners = {
 			canplay: ready,
 			seeked: ready,
+			durationchange: ready,
 			seeking: bound,
 			timeupdate: bound,
 			playing,
@@ -158,7 +177,7 @@ function useIntervalVideo(url: string, range: Interval) {
 					range.startSeconds < 0 ||
 					end <= start ||
 					!Number.isFinite(video.duration) ||
-					end > video.duration + 0.000001
+					video.duration <= 0
 				)
 					return fail("range");
 				window.clearTimeout(timeout);
@@ -171,6 +190,7 @@ function useIntervalVideo(url: string, range: Interval) {
 			disposed = true;
 			operation += 1;
 			window.clearTimeout(timeout);
+			window.clearTimeout(seekTimeout);
 			cancelAnimationFrame(animation);
 			if (frameCallback) video.cancelVideoFrameCallback?.(frameCallback);
 			for (const [name, listener] of Object.entries(listeners))
@@ -234,7 +254,11 @@ export function BandingIntervalPlayer({
 							: actions.current?.play()
 					}
 				>
-					{t(status === "playing" ? "qc.previewPause" : "qc.previewPlay")}
+					{t(
+						status === "playing"
+							? "banding.previewPause"
+							: "banding.previewPlay",
+					)}
 				</Button>
 				<Button
 					size="sm"
@@ -247,7 +271,7 @@ export function BandingIntervalPlayer({
 			</div>
 			{status === "loading" ? (
 				<p role="status" className="text-sm text-zinc-400">
-					{t("qc.previewLoading")}
+					{t("banding.previewLoading")}
 				</p>
 			) : null}
 			{status === "ended" ? (
@@ -262,7 +286,7 @@ export function BandingIntervalPlayer({
 							? "banding.previewTimingUnavailable"
 							: failure === "range"
 								? "banding.previewRangeUnavailable"
-								: "qc.previewFailed",
+								: "banding.previewFailed",
 					)}
 				</p>
 			) : null}

@@ -6,6 +6,7 @@ import { getServerContext } from "@/lib/server/context";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError } from "@/lib/server/http";
 import {
+	resolveBandingPreview,
 	resolveVmafPreview,
 	serveVmafPreview,
 } from "@/lib/server/vmaf-preview";
@@ -30,9 +31,14 @@ export async function GET(
 	if (invalid) return finish(invalid);
 	if (
 		[...query.keys()].some(
-			(key) => key !== "resultId" && key !== EXPECTED_ORGANIZATION_QUERY,
+			(key) =>
+				key !== "resultId" &&
+				key !== "metric" &&
+				key !== EXPECTED_ORGANIZATION_QUERY,
 		) ||
 		query.getAll("resultId").length !== 1 ||
+		query.getAll("metric").length > 1 ||
+		(query.has("metric") && query.get("metric") !== "banding") ||
 		passiveOrganizationBinding(new URL(req.url), req.method).kind === "invalid"
 	)
 		return finish(jsonError(400, "Invalid preview query"));
@@ -52,7 +58,10 @@ export async function GET(
 		});
 		const result = job?.results[0];
 		if (!job || !result) return finish(jsonError(404, "Not found"));
-		const target = resolveVmafPreview(job, result);
+		const target =
+			query.get("metric") === "banding"
+				? resolveBandingPreview(job, result)
+				: resolveVmafPreview(job, result);
 		if ("unavailableReason" in target)
 			return finish(
 				jsonError(409, "Measured media preview unavailable", {

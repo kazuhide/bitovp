@@ -62,6 +62,25 @@ export const en = {
 		start: "Start (s)",
 		end: "End (s, exclusive)",
 		noRanges: "No frames exceed the configured limits.",
+		previewColumn: "Inspect",
+		previewInterval: "Play {start}–{end} s",
+		previewTitle: "Banding interval preview · {label}",
+		previewClose: "Close interval preview",
+		previewReplay: "Replay interval",
+		previewPlay: "Play",
+		previewPause: "Pause",
+		previewLoading: "Loading measured video…",
+		previewFailed:
+			"Playback failed. The measured video may be missing, replaced, or unsupported by this browser.",
+		previewEnded: "Interval finished",
+		previewUnavailable:
+			"The version-pinned measured video is unavailable. Scores and intervals remain available.",
+		previewTimingUnavailable:
+			"The browser could not establish the video presentation time. Reopen the preview in a browser that supports video frame callbacks.",
+		previewRangeUnavailable:
+			"The video does not cover the complete selected interval.",
+		previewCaveat:
+			"Time-based visual inspection. Seeking can show an adjacent frame; playback does not change the measured scores.",
 		affected: "Affected duration: {value} s",
 		bounds: "Configured limits",
 		cpu: "Actual execution: CPU · official libvmaf CAMBI",

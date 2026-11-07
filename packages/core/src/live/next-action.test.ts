@@ -104,6 +104,28 @@ describe("liveNextAction — the page's first layer (ledger #103)", () => {
 		});
 	});
 
+	it("unresolved playable links ask for output evidence without asserting zero or on-air", () => {
+		expect(at({ playableCount: "unknown" })).toEqual({
+			code: "OUTPUT_UNKNOWN",
+			tone: "wait",
+			section: "sec-origin",
+		});
+	});
+
+	it("unresolved output preserves the existing provider, input, alert and off-air priorities", () => {
+		for (const [over, expected] of [
+			[{ providerUnknown: true }, "PROVIDER_UNKNOWN"],
+			[{ ingestConnected: false }, "CONNECT_INPUT"],
+			[{ openAlerts: "unknown" }, "ALERTS_UNKNOWN"],
+			[{ openAlerts: 1 }, "REVIEW_ALERTS"],
+			[{ status: "STOPPED" }, "START_NEW_RUN"],
+			[{ status: "PROVISIONING" }, "WAIT_FOR_BOOT"],
+			[{ status: "STOPPING" }, "WAIT_FOR_STOP"],
+		] as const) {
+			expect(at({ playableCount: "unknown", ...over }).code).toBe(expected);
+		}
+	});
+
 	it("an alert list that could not be READ is never ON_AIR", () => {
 		// The production shape: a RUNNING channel whose alerts query failed.
 		// The web layer passed `alerts.data?.open.length ?? 0`, which made

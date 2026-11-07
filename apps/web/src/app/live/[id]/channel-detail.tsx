@@ -342,7 +342,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	const technicalDetailsAllowed =
 		row.technicalDetailsAllowed === true &&
 		sessionAllowsTechnicalDetails &&
-		(!aisaRow || sessionFreshForConsole);
+		(!aisaRow || aisaOperatorAllowed);
 	//  PR2b: run-first, dual-written channel columns as fallback.
 	const run = row.currentRun ?? null;
 	const selectedUnavailable = Boolean(
@@ -426,11 +426,12 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	 * manifest still exists but nothing appends to it, so a player would stall
 	 * at the last segment and report an error that is not one.
 	 */
-	const visiblePlaybackLinks =
+	const linksUnavailable =
 		row.playbackLinksAvailability === "unavailable" ||
-		(aisaRow && !aisaOperatorAllowed)
-			? []
-			: (row.playbackLinks ?? []);
+		(aisaRow && !aisaOperatorAllowed);
+	const visiblePlaybackLinks = linksUnavailable
+		? []
+		: (row.playbackLinks ?? []);
 	const playable = playableLinks({
 		links: visiblePlaybackLinks,
 		status: row.status === "RUNNING" ? "RUNNING" : "",
@@ -598,7 +599,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 		status: displayStatus,
 		ingestConnected: displayIngestConnected,
 		hasEncoding: row.bitmovinEncodingId !== null,
-		playableCount: playable.length,
+		playableCount: linksUnavailable ? "unknown" : playable.length,
 		armedStartCount,
 		overdueArmedCount,
 		openAlerts,
@@ -748,9 +749,6 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	if (!run) {
 		omittedSections.push("sec-last-run");
 	}
-	const linksUnavailable =
-		row.playbackLinksAvailability === "unavailable" ||
-		(aisaRow && !aisaOperatorAllowed);
 	const playableCount = linksUnavailable ? "unknown" : playable.length;
 	const manifestCount = linksUnavailable
 		? "unknown"
@@ -1696,6 +1694,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 						mode={phase === "finished" ? "finished" : "live"}
 						phase={phase}
 						lastHeartbeat={displayPoll}
+						warningEvidenceAvailable={!aisaRow || aisaOperatorAllowed}
 						heartbeatReception={heartbeatReception}
 						openAlerts={
 							alerts.isPending || alerts.isError

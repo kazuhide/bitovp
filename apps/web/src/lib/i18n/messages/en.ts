@@ -1189,6 +1189,10 @@ export const en = {
 			"This alert has already been resolved. Refresh the page to see its latest state.",
 	},
 	nextAction: {
+		outputUnknownTitle: "Check output delivery",
+		outputUnknownBody:
+			"Playback link availability is unknown. Use the delivery monitor to check whether output is advancing.",
+		goOutput: "Check output",
 		regionLabel: "Next action",
 		startEncoderTitle: "Start the channel",
 		startEncoderBody:

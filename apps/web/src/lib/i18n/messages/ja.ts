@@ -1161,6 +1161,10 @@ export const ja = {
 			"このアラートはすでに解決済みです。画面を更新して最新の状態を確認してください。",
 	},
 	nextAction: {
+		outputUnknownTitle: "出力の配信状況を確認",
+		outputUnknownBody:
+			"再生リンクは未確認です。配信状況の監視で、出力の更新を確認してください。",
+		goOutput: "出力を確認",
 		regionLabel: "次にやること",
 		startEncoderTitle: "チャンネルを開始する",
 		startEncoderBody:

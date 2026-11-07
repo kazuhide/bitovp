@@ -539,6 +539,77 @@ it("opens the supplementary results for an explicit deep link", async () => {
 	window.history.replaceState(null, "", "/");
 });
 
+it.each([
+	true,
+	false,
+])("protects cached technical diagnostics when the fresh ADMIN session is impersonating (%s)", async (isImpersonating) => {
+	const row = fixture(false);
+	Object.assign(row, { technicalDetailsAllowed: true });
+	respond(row);
+	const normalResponse = apiFetch.getMockImplementation();
+	let resolveSession: (value: unknown) => void = () => {};
+	const session = new Promise((resolve) => {
+		resolveSession = resolve;
+	});
+	apiFetch.mockImplementation((url: string) => {
+		if (url === "/api/auth/session") return session;
+		if (url.endsWith("/normalizations")) return new Promise(() => {});
+		return normalResponse?.(url);
+	});
+	const cachedAdmin = {
+		mode: "users",
+		configured: true,
+		authenticated: true,
+		role: "ADMIN",
+		organizationId: "org",
+		effectiveUserId: "admin",
+		isImpersonating: false,
+	};
+	const rendered = renderWithQuery(<ChannelDetail id={ID} />, cachedAdmin);
+	await screen.findByRole("heading", { name: "Court 1" });
+	act(() =>
+		rendered.client.setQueryData(["live-slate-normalizations", ID], {
+			items: [
+				{
+					id: "failed",
+					name: "Cached failed clip",
+					bucket: "fixture",
+					sourceKey: "clip.ts",
+					status: "ERROR",
+					error: "private-normalization-error",
+				},
+				{
+					id: "pending",
+					name: "Cached pending clip",
+					bucket: "fixture",
+					sourceKey: "clip.ts",
+					status: "QUEUED",
+					note: "private-normalization-note",
+				},
+			],
+		}),
+	);
+	await screen.findByText("Cached failed clip");
+	expect(document.body).not.toHaveTextContent("private-normalization-error");
+	await act(async () => resolveSession({ ...cachedAdmin, isImpersonating }));
+	await waitFor(() =>
+		expect(rendered.client.getQueryData(["auth", "session"])).toMatchObject({
+			role: "ADMIN",
+			isImpersonating,
+		}),
+	);
+	await waitFor(() => {
+		for (const text of [
+			"private-normalization-error",
+			"private-normalization-note",
+		]) {
+			if (isImpersonating) expect(document.body).not.toHaveTextContent(text);
+			else expect(document.body).toHaveTextContent(text);
+		}
+	});
+	expect(document.body).toHaveTextContent("Cached failed clip");
+});
+
 it("shows unresolved AISA playback availability without a zero manifest count", async () => {
 	const row = fixture(false);
 	Object.assign(row, { playbackLinksAvailability: "unavailable" });
@@ -551,6 +622,68 @@ it("shows unresolved AISA playback availability without a zero manifest count", 
 	expect(document.getElementById("sec-manifests")).toHaveTextContent(
 		"could not be read",
 	);
+});
+
+it.each([
+	"OPERATOR",
+	"VIEWER",
+] as const)("does not infer output waiting or no warnings from withheld AISA fields (%s)", async (role) => {
+	const row = fixture(false);
+	const at = new Date().toISOString();
+	const heartbeat = {
+		at,
+		raw: {
+			ingest: { status: "CONNECTED", healthy: true },
+			output: {
+				manifests: {
+					hls: [{ manifestUpdates: [{ manifestUpdateWallClockTime: at }] }],
+				},
+			},
+			...(role === "OPERATOR"
+				? {
+						events: [
+							{
+								time: at,
+								details: {
+									eventType: "WARNING",
+									message: "operator-warning-evidence",
+								},
+							},
+						],
+					}
+				: {}),
+		},
+	};
+	Object.assign(row, {
+		playbackLinksAvailability: "unavailable",
+		monitoringSafeForViewer: role === "VIEWER",
+		serverNow: at,
+		lastHeartbeat: heartbeat,
+	});
+	Object.assign(row.currentRun, {
+		lastHeartbeat: heartbeat,
+		providerStatus: "RUNNING",
+		providerStatusObservedAt: at,
+	});
+	respond(row, role);
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await waitFor(() =>
+		expect(
+			document.querySelector('[data-next-action="OUTPUT_UNKNOWN"]'),
+		).toBeInTheDocument(),
+	);
+	expect(
+		document.querySelector('[data-next-action="OUTPUT_UNKNOWN"] a'),
+	).toHaveAttribute("href", "#sec-origin");
+	expect(
+		document.querySelector('[data-next-action="WAIT_FOR_OUTPUT"]'),
+	).toBeNull();
+	const encoder = document.querySelector('[data-lane="encoder"]');
+	if (role === "VIEWER") expect(encoder).not.toHaveTextContent("No warnings");
+	else
+		await waitFor(() =>
+			expect(encoder).toHaveTextContent("operator-warning-evidence"),
+		);
 });
 
 it.each([

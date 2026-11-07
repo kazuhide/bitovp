@@ -50,6 +50,11 @@ const COPY: Record<
 		body: "nextAction.outputBody",
 		cta: "nextAction.goManifests",
 	},
+	OUTPUT_UNKNOWN: {
+		title: "nextAction.outputUnknownTitle",
+		body: "nextAction.outputUnknownBody",
+		cta: "nextAction.goOutput",
+	},
 	REVIEW_ALERTS: {
 		title: "nextAction.alertsTitle",
 		body: "nextAction.alertsBody",

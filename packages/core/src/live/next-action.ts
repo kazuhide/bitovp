@@ -39,6 +39,8 @@ export type LiveNextActionCode =
 	| "CONNECT_INPUT"
 	/** Input flowing but no playable manifest yet — output is still forming. */
 	| "WAIT_FOR_OUTPUT"
+	/** Playback links are unavailable; inspect output evidence without inferring zero. */
+	| "OUTPUT_UNKNOWN"
 	/** Everything is live; the open alert is the thing to look at. */
 	| "REVIEW_ALERTS"
 	/**
@@ -82,6 +84,7 @@ export type LiveNextAction = {
 		| "sec-schedule"
 		| "sec-alerts"
 		| "sec-manifests"
+		| "sec-origin"
 		| "sec-steps";
 };
 
@@ -92,8 +95,8 @@ export type LiveNextActionInput = {
 	 * 127-A10 retired the raw-predicate wording here). */
 	ingestConnected: boolean;
 	hasEncoding: boolean;
-	/** Manifest links the player can actually play right now. */
-	playableCount: number;
+	/** Manifest links the player can play, or no verified count when links are unavailable. */
+	playableCount: number | "unknown";
 	/**
 	 * ARMED rows that would BRING THE CHANNEL UP (START, and the feeder/slate
 	 * actions that imply one). Only these justify "the schedule will act".
@@ -193,6 +196,9 @@ export function liveNextAction(input: LiveNextActionInput): LiveNextAction {
 		}
 		if (openAlerts > 0) {
 			return { code: "REVIEW_ALERTS", tone: "act", section: "sec-alerts" };
+		}
+		if (playableCount === "unknown") {
+			return { code: "OUTPUT_UNKNOWN", tone: "wait", section: "sec-origin" };
 		}
 		if (playableCount === 0) {
 			return {

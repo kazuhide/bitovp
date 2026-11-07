@@ -26,6 +26,8 @@ tags: [aisa, live, preview]
 - 監視と運用のセクションは共通の階層とナビゲーションを維持し、AISA の結果が未検出・取得失敗でも監視を利用できる。
 - 現在の実行の監視と操作は、過去の解析結果を選択しても切り替わらない。
 - VIEWER の監視 DTO は許可した数値・状態・時刻だけを投影し、stream key・encoder IP・入力 URL・raw 診断を混ぜない。OPERATOR の既存ログと接続情報の権限は維持する。
+- 再生リンクの未解決は0件と区別して次の操作にも伝える。配信が進行中でも「最初のセグメント待ち」と誤案内せず、既存の出力監視へ誘導する。警告イベントを省略した VIEWER の監視値は「警告なし」と断定しない。
+- キャッシュされた ADMIN の診断を表示する際も、現在のセッションが非 impersonation の OPERATOR 以上であることを確認する。閲覧代理中に対象の会員 role が ADMIN でも、raw 診断の表示を許可しない。
 - 標準 Live の回帰テスト、AISA 有効時の監視テスト、権限テスト、型検査、build、実ブラウザ確認を行う。保存済みの実 heartbeat と解析結果を優先し、画面修正のための新しい課金配信は起動しない。
 
 dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnalysisLive` が存在する。値は boolean ではなく `AiSceneAnalysisLive` の `{ analysisId, outputs }` で、両フィールドは SDK のコメント上 required。serializer と `encoding.encodings.live.start` はこの設定を `/encoding/encodings/{id}/live/start` の body へ送る。通常の Encoding 開始に AISA を設定する SDK 契約があることと、現在のデモ・bitovp が使う経路を区別する。

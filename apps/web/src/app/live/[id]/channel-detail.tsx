@@ -1694,7 +1694,10 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 						mode={phase === "finished" ? "finished" : "live"}
 						phase={phase}
 						lastHeartbeat={displayPoll}
-						warningEvidenceAvailable={!aisaRow || aisaOperatorAllowed}
+						warningEvidenceAvailable={
+							!aisaRow ||
+							(aisaOperatorAllowed && row.monitoringSafeForViewer !== true)
+						}
 						heartbeatReception={heartbeatReception}
 						openAlerts={
 							alerts.isPending || alerts.isError

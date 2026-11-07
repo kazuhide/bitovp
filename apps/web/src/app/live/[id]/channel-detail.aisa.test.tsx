@@ -625,9 +625,13 @@ it("shows unresolved AISA playback availability without a zero manifest count", 
 });
 
 it.each([
-	"OPERATOR",
-	"VIEWER",
-] as const)("does not infer output waiting or no warnings from withheld AISA fields (%s)", async (role) => {
+	{ role: "OPERATOR" as const, publicPayload: false },
+	{ role: "VIEWER" as const, publicPayload: true },
+	{ role: "OPERATOR" as const, publicPayload: true },
+])("does not infer output waiting or no warnings from withheld AISA fields ($role, public=$publicPayload)", async ({
+	role,
+	publicPayload,
+}) => {
 	const row = fixture(false);
 	const at = new Date().toISOString();
 	const heartbeat = {
@@ -639,7 +643,7 @@ it.each([
 					hls: [{ manifestUpdates: [{ manifestUpdateWallClockTime: at }] }],
 				},
 			},
-			...(role === "OPERATOR"
+			...(!publicPayload
 				? {
 						events: [
 							{
@@ -656,7 +660,7 @@ it.each([
 	};
 	Object.assign(row, {
 		playbackLinksAvailability: "unavailable",
-		monitoringSafeForViewer: role === "VIEWER",
+		monitoringSafeForViewer: publicPayload,
 		serverNow: at,
 		lastHeartbeat: heartbeat,
 	});
@@ -679,7 +683,7 @@ it.each([
 		document.querySelector('[data-next-action="WAIT_FOR_OUTPUT"]'),
 	).toBeNull();
 	const encoder = document.querySelector('[data-lane="encoder"]');
-	if (role === "VIEWER") expect(encoder).not.toHaveTextContent("No warnings");
+	if (publicPayload) expect(encoder).not.toHaveTextContent("No warnings");
 	else
 		await waitFor(() =>
 			expect(encoder).toHaveTextContent("operator-warning-evidence"),

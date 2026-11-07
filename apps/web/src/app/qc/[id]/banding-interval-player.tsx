@@ -150,7 +150,11 @@ function useIntervalVideo(url: string, range: Interval) {
 				if (video.currentTime >= end || video.currentTime < start)
 					seekAndPlay();
 				else {
+					if (disposed || failed || origin === undefined) return;
 					pendingPlay = true;
+					setStatus("loading");
+					window.clearTimeout(seekTimeout);
+					seekTimeout = window.setTimeout(() => fail("media"), 10_000);
 					void maybePlay();
 				}
 			},

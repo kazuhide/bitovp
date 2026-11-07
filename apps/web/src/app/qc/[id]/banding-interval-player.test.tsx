@@ -58,7 +58,83 @@ function firstFrame(time = 0.5, index = 0) {
 	);
 }
 
+async function pausedPlayer() {
+	const view = renderPlayer();
+	firstFrame();
+	const video = screen.getByLabelText("360p") as HTMLVideoElement;
+	await act(async () => fireEvent.canPlay(video));
+	fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+	return { view, video };
+}
+
 describe("CAMBI interval playback", () => {
+	it.each([
+		"seeking",
+		"buffering",
+	] as const)("bounds a paused player's %s resume and refuses late readiness", async (waiting) => {
+		vi.useFakeTimers();
+		const { video } = await pausedPlayer();
+		const seeking = vi
+			.spyOn(HTMLMediaElement.prototype, "seeking", "get")
+			.mockReturnValue(waiting === "seeking");
+		const readiness = vi
+			.spyOn(HTMLMediaElement.prototype, "readyState", "get")
+			.mockReturnValue(waiting === "buffering" ? 1 : 4);
+		fireEvent.click(screen.getByRole("button", { name: "Play" }));
+		act(() => vi.advanceTimersByTime(9_999));
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		act(() => vi.advanceTimersByTime(1));
+		expect(screen.getByRole("alert")).toHaveTextContent("Playback failed");
+		seeking.mockReturnValue(false);
+		readiness.mockReturnValue(4);
+		await act(async () => {
+			fireEvent.seeked(video);
+			fireEvent.canPlay(video);
+		});
+		expect(play).toHaveBeenCalledOnce();
+	});
+	it.each([
+		"seeking",
+		"buffering",
+	] as const)("resumes from %s when readiness returns before the deadline", async (waiting) => {
+		vi.useFakeTimers();
+		const { video } = await pausedPlayer();
+		const seeking = vi
+			.spyOn(HTMLMediaElement.prototype, "seeking", "get")
+			.mockReturnValue(waiting === "seeking");
+		const readiness = vi
+			.spyOn(HTMLMediaElement.prototype, "readyState", "get")
+			.mockReturnValue(waiting === "buffering" ? 1 : 4);
+		fireEvent.click(screen.getByRole("button", { name: "Play" }));
+		expect(screen.getByRole("status")).toHaveTextContent(
+			"Loading measured video",
+		);
+		act(() => vi.advanceTimersByTime(9_000));
+		seeking.mockReturnValue(false);
+		readiness.mockReturnValue(4);
+		await act(async () => fireEvent.canPlay(video));
+		expect(play).toHaveBeenCalledTimes(2);
+		expect(screen.getByRole("button", { name: "Pause" })).toBeEnabled();
+		act(() => vi.advanceTimersByTime(2_000));
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	});
+	it("cancels a waiting resume on close and ignores its late readiness", async () => {
+		vi.useFakeTimers();
+		const { view, video } = await pausedPlayer();
+		vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(
+			1,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Play" }));
+		expect(screen.getByRole("status")).toHaveTextContent(
+			"Loading measured video",
+		);
+		view.unmount();
+		pause.mockClear();
+		act(() => vi.advanceTimersByTime(10_000));
+		fireEvent.canPlay(video);
+		expect(pause).not.toHaveBeenCalled();
+		expect(play).toHaveBeenCalledOnce();
+	});
 	it("maps noninteger PTS intervals from the first video presentation before any playback", async () => {
 		renderPlayer();
 		const video = screen.getByLabelText("360p") as HTMLVideoElement;

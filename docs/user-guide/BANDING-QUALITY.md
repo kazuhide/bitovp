@@ -60,6 +60,28 @@ gaps are not counted as detected banding. Variable frame rates use actual decode
 timestamps and frame durations, rather than an assumed average frame rate.
 An unconfigured threshold is not a quality pass.
 
+### Inspect an affected interval
+
+Select **Play … s** in an affected-interval row to open the measured rendition at
+that interval. Playback stops at its exclusive end. Use **Replay interval** to
+repeat it, or select another row to replace the active video. Closing the preview
+stops playback and returns keyboard focus to the selected row. Only one interval
+preview runs at a time, including when switching renditions.
+
+This works for banding-only and combined reports without a VMAF reference or a
+reference frame rate. It uses the saved presentation-time interval and the
+browser's first video presentation time, preserving variable frame timing and
+measurement gaps. Browser seeking can display an adjacent frame; this is visual
+inspection rather than proof of exact frame identity, and it does not change
+scores or gate decisions.
+
+Playback requires the retained MP4/WebM QC output with the same pinned object
+version and readable storage credentials. It uses the report's authenticated,
+organization-bound media URL. Unsupported media, changed/deleted objects, missing
+provenance or a browser that cannot establish video presentation time remain
+unavailable. Scores, graphs and intervals remain readable. No new clip or cloud
+encoding is created.
+
 ## CPU and GPU setup
 
 CPU measurement uses FFmpeg with the libvmaf CAMBI feature enabled. This worker

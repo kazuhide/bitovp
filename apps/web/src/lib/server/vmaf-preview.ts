@@ -7,6 +7,7 @@ import {
 } from "@bitovp/core";
 import { z } from "zod";
 import type { VmafResultDetail } from "@/app/qc/vmaf-shared";
+import { hasBanding } from "@/lib/qc-kind";
 
 type PreviewJob = {
 	mode: string;
@@ -53,13 +54,15 @@ const unavailable = (
 ): Unavailable => ({ unavailableReason });
 
 /** Bind a recorded measurement to the compiler-selected output, never any other output. */
-export function resolveVmafPreview(
+function resolvePreview(
 	job: PreviewJob,
 	result: PreviewResult,
+	requireFps: boolean,
 ): Target | Unavailable {
 	if (job.mode === "LIVE") return unavailable("LIVE_CAPTURE_NOT_RETAINED");
 	if (job.mode !== "VOD") return unavailable("UNSUPPORTED_SOURCE");
 	if (
+		requireFps &&
 		!z
 			.object({ reference: z.object({ fps: z.number().finite().positive() }) })
 			.safeParse(job.params).success
@@ -128,6 +131,17 @@ export function resolveVmafPreview(
 	};
 }
 
+export function resolveVmafPreview(job: PreviewJob, result: PreviewResult) {
+	return resolvePreview(job, result, true);
+}
+
+/** CAMBI intervals use decoded presentation times, independently of a VMAF reference. */
+export function resolveBandingPreview(job: PreviewJob, result: PreviewResult) {
+	return hasBanding(job.params)
+		? resolvePreview(job, result, false)
+		: unavailable("UNSUPPORTED_SOURCE");
+}
+
 export function previewDescriptor(
 	id: string,
 	job: PreviewJob,
@@ -140,6 +154,23 @@ export function previewDescriptor(
 		: {
 				url: bindPassiveRequestUrl(
 					`/api/vmaf-jobs/${id}/preview?resultId=${result.id}`,
+					organizationId,
+				),
+			};
+}
+
+export function bandingPreviewDescriptor(
+	id: string,
+	job: PreviewJob,
+	result: PreviewResult,
+	organizationId: string,
+): NonNullable<VmafResultDetail["bandingPreview"]> {
+	const target = resolveBandingPreview(job, result);
+	return "unavailableReason" in target
+		? target
+		: {
+				url: bindPassiveRequestUrl(
+					`/api/vmaf-jobs/${id}/preview?resultId=${result.id}&metric=banding`,
 					organizationId,
 				),
 			};

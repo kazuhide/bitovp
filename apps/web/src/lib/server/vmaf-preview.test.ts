@@ -18,7 +18,9 @@ vi.mock("./storage", () => ({
 }));
 
 import {
+	bandingPreviewDescriptor,
 	previewDescriptor,
+	resolveBandingPreview,
 	resolveVmafPreview,
 	serveVmafPreview,
 } from "./vmaf-preview";
@@ -62,6 +64,37 @@ function fixture() {
 const ctx = {} as Parameters<typeof serveVmafPreview>[0];
 beforeEach(() => vi.clearAllMocks());
 describe("VMAF preview resolution (small, no I/O)", () => {
+	it("uses presentation time for banding-only previews without a reference or FPS", () => {
+		const f = fixture();
+		const job = { ...f, params: { kind: "BANDING" } };
+		expect(resolveBandingPreview(job, f.result)).toMatchObject({
+			key: f.result.provenance.distorted.key,
+			expect: { etag: '"sealed"' },
+		});
+		expect(bandingPreviewDescriptor(reportId, job, f.result, reportId)).toEqual(
+			{
+				url: `/api/vmaf-jobs/${reportId}/preview?resultId=${resultId}&metric=banding&expectedOrganizationId=${reportId}`,
+			},
+		);
+		expect(resolveVmafPreview(job, f.result)).toEqual({
+			unavailableReason: "MISSING_FPS",
+		});
+	});
+	it("only offers time-based previews for reports that requested banding", () => {
+		const f = fixture();
+		expect(resolveBandingPreview(f, f.result)).toEqual({
+			unavailableReason: "UNSUPPORTED_SOURCE",
+		});
+		expect(
+			resolveBandingPreview({ ...f, params: { banding: true } }, f.result),
+		).toHaveProperty("key");
+		expect(
+			resolveBandingPreview(
+				{ ...f, params: { kind: "BANDING" } },
+				{ ...f.result, provenance: null },
+			),
+		).toEqual({ unavailableReason: "MISSING_PROVENANCE" });
+	});
 	it("previews manual VMAF follow-ups of a Banding-only QC-only encoding", () => {
 		const f = fixture();
 		f.encodingJob.plan = encodingPlanSchema.parse({

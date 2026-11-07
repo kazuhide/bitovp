@@ -39,10 +39,11 @@ export const en = {
 		analysisDetails: "Analysis details",
 		featureWaiting: "Key moments will be detected once the stream starts.",
 		resultDescription: "Play detected moments from the recording.",
+		configureOutput: "Configure recording and analysis outputs (step 4)",
 		enableInLive: "Detect key moments automatically",
 		managedPreset: "Preview delivery configuration",
 		managedGraphHelp:
-			"This Preview uses a predefined encoding ladder, packaging, and manifests. Custom ladders and DRM are unavailable. Disable it to return to your standard settings.",
+			"This integration currently uses a predefined encoding ladder, packaging, and manifests. Custom ladders and DRM are unavailable. Disable it to return to your standard settings.",
 		acceptManagedGraph: "Use this Preview delivery configuration",
 		managedGraphRequired:
 			"Select the Preview delivery configuration before replacing your custom encoding settings.",

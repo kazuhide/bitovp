@@ -65,8 +65,9 @@ function input(id: string) {
 	return node;
 }
 
-it("keeps the standard wizard when Preview is disabled", () => {
+it("keeps the standard wizard when Preview is disabled", async () => {
 	renderWithQuery(<LiveWizard />);
+	await showStep(5);
 	expect(
 		screen.queryByLabelText("Detect key moments automatically"),
 	).toBeNull();
@@ -77,7 +78,7 @@ it("uses the same nine steps and preserves the custom normal graph across Previe
 	renderWithQuery(<LiveWizard aisaPreviewEnabled />);
 	await showStep(2);
 	fireEvent.change(input("lw-v-0-height"), { target: { value: "1080" } });
-	await showStep(0);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -95,7 +96,7 @@ it("uses the same nine steps and preserves the custom normal graph across Previe
 		screen.getByRole("heading", { name: "Preview delivery configuration" }),
 	).toBeVisible();
 	expect(document.getElementById("lw-v-0-height")).toBeNull();
-	await showStep(0);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -129,7 +130,7 @@ it("retains configured safety settings until the explicit clear action", async (
 	fireEvent.change(input("lw-ar-segmentsWrittenTimeout"), {
 		target: { value: "60" },
 	});
-	await showStep(0);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -141,7 +142,7 @@ it("retains configured safety settings until the explicit clear action", async (
 	);
 	await showStep(5);
 	expect(input("lw-ar-segmentsWrittenTimeout")).toHaveValue(60);
-	await showStep(0);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -163,6 +164,7 @@ it("creates through the normal Live endpoint with only the accepted managed plan
 		await screen.findByLabelText("Bitmovin account"),
 		"00000000-0000-4000-8000-000000000011",
 	);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -233,6 +235,7 @@ it("keeps an imported Preview plan explicit and blocked when the server flag is 
 		target: { value: JSON.stringify(buildLiveChannelPlan(source)) },
 	});
 	await userEvent.click(screen.getByRole("button", { name: "Load plan" }));
+	await showStep(5);
 	expect(
 		screen.getByLabelText("Detect key moments automatically"),
 	).toBeChecked();
@@ -256,7 +259,7 @@ it("requires explicitly disabling an existing schedule for Preview", async () =>
 	await userEvent.click(
 		screen.getByLabelText("Set the planned input feed, program and stop times"),
 	);
-	await showStep(0);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -265,7 +268,7 @@ it("requires explicitly disabling an existing schedule for Preview", async () =>
 		screen.getByRole("button", { name: "Disable schedule" }),
 	);
 	expect(screen.queryByRole("button", { name: "Disable schedule" })).toBeNull();
-	await showStep(0);
+	await showStep(5);
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
@@ -275,19 +278,46 @@ it("requires explicitly disabling an existing schedule for Preview", async () =>
 	).not.toBeChecked();
 });
 
-it("places key moments after normal basics and requests configuration consent only once", async () => {
+it("places key moment start options in Encoding and links to its output settings", async () => {
 	renderWithQuery(<LiveWizard aisaPreviewEnabled />);
-	const group = screen.getByRole("heading", { name: "Additional features" });
+	expect(input("lw-name")).toBeVisible();
 	expect(
-		input("lw-name").compareDocumentPosition(group) &
-			Node.DOCUMENT_POSITION_FOLLOWING,
-	).toBeTruthy();
+		screen.queryByLabelText("Detect key moments automatically"),
+	).toBeNull();
+	await showStep(5);
+	expect(
+		screen.getByRole("heading", { name: "Additional features" }),
+	).toBeVisible();
+	expect(
+		screen.getByLabelText("Detect key moments automatically"),
+	).not.toBeChecked();
+	expect(
+		screen.queryByRole("button", {
+			name: "Configure recording and analysis outputs (step 4)",
+		}),
+	).toBeNull();
 	await userEvent.click(
 		screen.getByLabelText("Detect key moments automatically"),
 	);
 	await userEvent.click(
 		screen.getByLabelText("Use this Preview delivery configuration"),
 	);
+	await userEvent.click(
+		screen.getByRole("button", {
+			name: "Configure recording and analysis outputs (step 4)",
+		}),
+	);
+	expect(screen.getByLabelText("Encoding Output ID")).toBeVisible();
+	fireEvent.change(input("lw-aisa-outputId"), {
+		target: { value: "00000000-0000-4000-8000-000000000012" },
+	});
+	await showStep(5);
+	expect(
+		screen.getByLabelText("Detect key moments automatically"),
+	).toBeChecked();
+	expect(
+		screen.getByLabelText("Use this Preview delivery configuration"),
+	).toBeChecked();
 	for (const step of [2, 4, 6]) {
 		await showStep(step);
 		expect(
@@ -297,4 +327,9 @@ it("places key moments after normal basics and requests configuration consent on
 			screen.queryByLabelText("Use this Preview delivery configuration"),
 		).toBeNull();
 	}
+	await showStep(3);
+	expect(input("lw-aisa-outputId")).toHaveValue(
+		"00000000-0000-4000-8000-000000000012",
+	);
+	expect(steps()).toHaveLength(9);
 });

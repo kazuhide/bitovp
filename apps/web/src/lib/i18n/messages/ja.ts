@@ -17,10 +17,11 @@ export const ja = {
 		analysisDetails: "解析の詳細",
 		featureWaiting: "配信を開始するとキーモーメントを検出します。",
 		resultDescription: "検出した場面を録画から再生できます。",
+		configureOutput: "録画・解析結果の保存先を設定（4. 出力）",
 		enableInLive: "キーモーメントを自動検出する",
 		managedPreset: "プレビューの配信構成",
 		managedGraphHelp:
-			"このプレビューでは専用のラダー、パッケージング、マニフェストを使用します。カスタムラダーや DRM は利用できません。無効にすると通常の設定に戻ります。",
+			"現在の実装では専用のラダー、パッケージング、マニフェストを使用します。カスタムラダーや DRM は利用できません。無効にすると通常の設定に戻ります。",
 		acceptManagedGraph: "このプレビュー対応の配信構成を使用する",
 		managedGraphRequired:
 			"カスタムのエンコード構成を置き換えるには、プレビュー対応の配信構成の使用を選択してください。",

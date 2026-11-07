@@ -856,11 +856,6 @@ export function LiveWizard({
 									</div>
 								</Field>
 							</div>
-							<AisaSettingsSection
-								state={state}
-								onPatch={patch}
-								enabled={aisaPreviewEnabled}
-							/>
 						</>
 					) : null}
 
@@ -1148,6 +1143,14 @@ export function LiveWizard({
 						<LiveManifestListSection state={state} onPatch={patch} />
 					) : null}
 
+					{step === 5 ? (
+						<AisaSettingsSection
+							state={state}
+							onPatch={patch}
+							enabled={aisaPreviewEnabled}
+							onConfigureOutput={() => setStep(3)}
+						/>
+					) : null}
 					{step === 5 && aisaEnabled ? (
 						<AisaStartSection state={state} onPatch={patch} />
 					) : null}

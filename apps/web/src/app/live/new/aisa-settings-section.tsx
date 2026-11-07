@@ -54,7 +54,8 @@ export function AisaSettingsSection({
 	state,
 	onPatch,
 	enabled,
-}: Props & { enabled: boolean }) {
+	onConfigureOutput,
+}: Props & { enabled: boolean; onConfigureOutput: () => void }) {
 	const { t } = useT();
 	if (!enabled && !state.aisaLive?.enabled) return null;
 	return (
@@ -92,6 +93,9 @@ export function AisaSettingsSection({
 					) : null}
 					<p className="text-sm text-zinc-400">{t("aisaLive.sports")}</p>
 					<AisaManagedGraphNotice state={state} onPatch={onPatch} showConsent />
+					<Button variant="secondary" size="sm" onClick={onConfigureOutput}>
+						{t("aisaLive.configureOutput")}
+					</Button>
 					{hasAisaUnsupportedSettings(state) ? (
 						<div className="space-y-2">
 							<p role="alert" className="text-sm text-amber-400">

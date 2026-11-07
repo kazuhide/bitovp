@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SESSION_QUERY_KEY } from "@/lib/auth/use-session";
 import { renderWithQuery as wrap } from "@/test/render";
@@ -26,10 +26,11 @@ function session(over: Record<string, unknown>) {
 }
 
 const ADMIN_AREA_HREFS = [
-	"/settings/vmaf",
 	"/settings/tokens",
 	"/settings/users",
 	"/settings/reset",
+	"/settings/organizations",
+	"/settings/access-audit",
 ] as const;
 
 const COVERAGE_HREF = "/settings/api-coverage";
@@ -185,10 +186,10 @@ describe("SettingsAreas — audience sections (row #278)", () => {
 		expect(screen.queryByRole("link", { name: /Verification/ })).toBeNull();
 	});
 
-	it("groups the access tasks under 認証とアクセス and never renders the roadmap card", async () => {
+	it("groups the access tasks under 組織・アクセス and never renders the roadmap card", async () => {
 		session({ mode: "password" });
 		wrap(<SettingsAreas />, "ja");
-		expect(await screen.findByText("認証とアクセス")).toBeInTheDocument();
+		expect(await screen.findByText("組織・アクセス")).toBeInTheDocument();
 		expect(
 			await screen.findByRole("link", { name: /API トークン/ }),
 		).toHaveAttribute("href", "/settings/tokens");
@@ -203,5 +204,111 @@ describe("SettingsAreas — audience sections (row #278)", () => {
 		expect(
 			screen.queryByText(/最新ソース集計.*過去のパラメータ調査は別欄/),
 		).not.toBeInTheDocument();
+	});
+});
+
+describe("SettingsAreas — category panels", () => {
+	it("groups each destination once with a concise purpose and keeps personal controls first", async () => {
+		session({ mode: "users", role: "ADMIN" });
+		wrap(<SettingsAreas />, "ja");
+		await screen.findByText("ユーザー");
+		const groups: [string, string[]][] = [
+			[
+				"接続・エンコード",
+				[
+					"/settings/bitmovin",
+					"/settings/credentials",
+					"/settings/infrastructure",
+					"/settings/live",
+				],
+			],
+			["再生・品質", ["/settings/player", "/settings/features"]],
+			[
+				"自動化・連携",
+				[
+					"/settings/watch-folders",
+					"/settings/notifications",
+					"/settings/webhooks",
+				],
+			],
+			[
+				"組織・アクセス",
+				[
+					"/settings/organizations",
+					"/settings/branding",
+					"/settings/users",
+					"/settings/tokens",
+					"/settings/access-audit",
+				],
+			],
+			["詳細・診断", ["/settings/api-coverage"]],
+		];
+		for (const [name, hrefs] of groups) {
+			const panel = screen.getByRole("region", { name });
+			const links = within(panel).getAllByRole("link");
+			expect(links.map((link) => link.getAttribute("href"))).toEqual(hrefs);
+			for (const link of links) {
+				expect(link.querySelector("h3")).toBeInTheDocument();
+				if (link.getAttribute("href") !== COVERAGE_HREF) {
+					expect(link.querySelector("p")?.textContent?.trim()).toBeTruthy();
+				}
+			}
+		}
+		const preferences = screen.getByRole("region", { name: "自分の表示設定" });
+		expect(within(preferences).getAllByRole("combobox")).toHaveLength(2);
+		expect(screen.getAllByRole("heading", { level: 2 })[0]).toHaveTextContent(
+			"自分の表示設定",
+		);
+		expect(new Set(areaHrefs()).size).toBe(areaHrefs().length);
+		expect(areaHrefs()).not.toContain("/settings/vmaf");
+		expect(
+			screen
+				.getByRole("link", { name: /データのリセット/ })
+				.closest("section[aria-labelledby] "),
+		).toBeNull();
+	});
+
+	it.each([
+		"VIEWER",
+		"OPERATOR",
+	])("keeps readable QC and organization appearance accessible for %s", async (role) => {
+		session({ mode: "users", role });
+		const { client } = wrap(<SettingsAreas />);
+		await waitFor(() =>
+			expect(client.getQueryState([...SESSION_QUERY_KEY])?.status).toBe(
+				"success",
+			),
+		);
+		expect(
+			within(
+				screen.getByRole("region", { name: "Playback and quality" }),
+			).getByRole("link", { name: /Quality control/ }),
+		).toHaveAttribute("href", "/settings/features");
+		const access = screen.getByRole("region", {
+			name: "Organization and access",
+		});
+		expect(
+			within(access)
+				.getAllByRole("link")
+				.map((a) => a.getAttribute("href")),
+		).toEqual(["/settings/branding"]);
+	});
+
+	it("hides users-mode tasks for a single owner while retaining organization appearance and tokens", async () => {
+		session({ mode: "password" });
+		const { client } = wrap(<SettingsAreas />);
+		await waitFor(() =>
+			expect(client.getQueryState([...SESSION_QUERY_KEY])?.status).toBe(
+				"success",
+			),
+		);
+		const access = screen.getByRole("region", {
+			name: "Organization and access",
+		});
+		expect(
+			within(access)
+				.getAllByRole("link")
+				.map((a) => a.getAttribute("href")),
+		).toEqual(["/settings/branding", "/settings/tokens"]);
 	});
 });

@@ -15,6 +15,9 @@ const backfillProps = vi.fn();
 vi.mock("@/lib/api", () => ({
 	apiFetch: (...args: unknown[]) => apiFetch(...args),
 }));
+vi.mock("./dashboard-getting-started", () => ({
+	DashboardGettingStarted: () => null,
+}));
 vi.mock("./dashboard-usage", () => ({
 	DashboardUsage: (props: unknown) => {
 		usageProps(props);
@@ -197,9 +200,9 @@ describe("Account-scoped dashboard", () => {
 		expect(apiFetch).toHaveBeenCalledTimes(1);
 		expect(screen.queryByTestId("usage")).toBeNull();
 	});
-	it("uses accurate statistics labels in the panel picker", () => {
+	it("uses accurate statistics labels in the panel picker", async () => {
 		renderWithQuery(<DashboardHome />);
-		fireEvent.click(screen.getByRole("button", { name: /Panels/ }));
+		fireEvent.click(await screen.findByRole("button", { name: /Panels/ }));
 		expect(screen.getAllByRole("checkbox")).toHaveLength(4);
 		expect(
 			screen.getByRole("checkbox", { name: "Encoded data per day (GiB)" }),

@@ -15,6 +15,7 @@ import { Input, SelectNative } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import { DashboardBackfill } from "./dashboard-backfill";
+import { DashboardGettingStarted } from "./dashboard-getting-started";
 import { DashboardInsights } from "./dashboard-insights";
 import { DashboardLabelFilter } from "./dashboard-label-filter";
 import { DashboardLabelUsage } from "./dashboard-label-usage";
@@ -116,7 +117,13 @@ export function DashboardHome() {
 					>
 						{!accounts.data?.length ? (
 							<option value="">
-								{t(accounts.isPending ? "common.loading" : "usage.noAccounts")}
+								{t(
+									accounts.isPending
+										? "common.loading"
+										: accounts.isError
+											? "dashboard.accountUnavailable"
+											: "usage.noAccounts",
+								)}
 							</option>
 						) : null}
 						{accounts.data?.map((account) => (
@@ -149,13 +156,13 @@ export function DashboardHome() {
 				</div>
 				<div className="flex flex-wrap items-center justify-end gap-2">
 					<PageContext>{accountControl}</PageContext>
-					<DashboardPanelPicker
-						key={accountId}
-						hiddenPanels={hiddenPanels}
-						onTogglePanel={togglePanel}
-						onShowAllPanels={showAllPanels}
-					>
-						{accountId ? (
+					{accountId ? (
+						<DashboardPanelPicker
+							key={accountId}
+							hiddenPanels={hiddenPanels}
+							onTogglePanel={togglePanel}
+							onShowAllPanels={showAllPanels}
+						>
 							<DashboardLabelFilter
 								accountId={accountId}
 								label={label}
@@ -164,102 +171,108 @@ export function DashboardHome() {
 									setSelectedLabel(value ? { accountId, value } : null)
 								}
 							/>
-						) : null}
-					</DashboardPanelPicker>
-				</div>
-			</div>
-			<div className="clear-both mt-2 space-y-2">
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-					<div className="min-w-0">
-						<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-							<div>
-								<div className="flex flex-wrap gap-1">
-									{USAGE_PERIOD_DAYS.map((period) => (
-										<Button
-											key={period}
-											size="sm"
-											variant={days === period ? "secondary" : "ghost"}
-											aria-pressed={days === period}
-											onClick={() => {
-												const next = presetRange(period);
-												setDays(period);
-												setRange(next);
-												setDraftRange(next);
-											}}
-										>
-											{t(`usage.period${period}`)}
-										</Button>
-									))}
-								</div>
-							</div>
-							<form
-								className="flex min-w-0 flex-wrap items-center gap-1.5"
-								onSubmit={(event) => {
-									event.preventDefault();
-									if (!canApplyRange) return;
-									setDays(null);
-									setRange(draftRange);
-								}}
-							>
-								<div>
-									<label className="sr-only" htmlFor={`${controlId}-from`}>
-										{t("usage.fromDate")}
-									</label>
-									<Input
-										id={`${controlId}-from`}
-										className="h-8 w-36 text-xs"
-										type="date"
-										required
-										min="2013-01-01"
-										max={draftRange.to || today}
-										value={draftRange.from}
-										onChange={(event) =>
-											setDraftRange({ ...draftRange, from: event.target.value })
-										}
-									/>
-								</div>
-								<span aria-hidden="true" className="text-xs text-zinc-500">
-									–
-								</span>
-								<div>
-									<label className="sr-only" htmlFor={`${controlId}-to`}>
-										{t("usage.toDate")}
-									</label>
-									<Input
-										id={`${controlId}-to`}
-										className="h-8 w-36 text-xs"
-										type="date"
-										required
-										min={draftRange.from || "2013-01-01"}
-										max={today}
-										value={draftRange.to}
-										onChange={(event) =>
-											setDraftRange({ ...draftRange, to: event.target.value })
-										}
-									/>
-								</div>
-								<div>
-									<Button
-										type="submit"
-										size="sm"
-										variant="secondary"
-										disabled={!canApplyRange}
-									>
-										{t("usage.applyRange")}
-									</Button>
-								</div>
-							</form>
-						</div>
-					</div>
-					{accountId && !label ? (
-						<DashboardBackfill
-							key={accountId}
-							automatic={preferencesLoaded && anyVisible}
-							accountId={accountId}
-							{...range}
-						/>
+						</DashboardPanelPicker>
 					) : null}
 				</div>
+			</div>
+			<DashboardGettingStarted accounts={accounts} />
+			<div className="clear-both mt-2 space-y-2">
+				{accountId ? (
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+						<div className="min-w-0">
+							<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+								<div>
+									<div className="flex flex-wrap gap-1">
+										{USAGE_PERIOD_DAYS.map((period) => (
+											<Button
+												key={period}
+												size="sm"
+												variant={days === period ? "secondary" : "ghost"}
+												aria-pressed={days === period}
+												onClick={() => {
+													const next = presetRange(period);
+													setDays(period);
+													setRange(next);
+													setDraftRange(next);
+												}}
+											>
+												{t(`usage.period${period}`)}
+											</Button>
+										))}
+									</div>
+								</div>
+								<form
+									className="flex min-w-0 flex-wrap items-center gap-1.5"
+									onSubmit={(event) => {
+										event.preventDefault();
+										if (!canApplyRange) return;
+										setDays(null);
+										setRange(draftRange);
+									}}
+								>
+									<div>
+										<label className="sr-only" htmlFor={`${controlId}-from`}>
+											{t("usage.fromDate")}
+										</label>
+										<Input
+											id={`${controlId}-from`}
+											className="h-8 w-36 text-xs"
+											type="date"
+											required
+											min="2013-01-01"
+											max={draftRange.to || today}
+											value={draftRange.from}
+											onChange={(event) =>
+												setDraftRange({
+													...draftRange,
+													from: event.target.value,
+												})
+											}
+										/>
+									</div>
+									<span aria-hidden="true" className="text-xs text-zinc-500">
+										–
+									</span>
+									<div>
+										<label className="sr-only" htmlFor={`${controlId}-to`}>
+											{t("usage.toDate")}
+										</label>
+										<Input
+											id={`${controlId}-to`}
+											className="h-8 w-36 text-xs"
+											type="date"
+											required
+											min={draftRange.from || "2013-01-01"}
+											max={today}
+											value={draftRange.to}
+											onChange={(event) =>
+												setDraftRange({ ...draftRange, to: event.target.value })
+											}
+										/>
+									</div>
+									<div>
+										<Button
+											type="submit"
+											size="sm"
+											variant="secondary"
+											disabled={!canApplyRange}
+										>
+											{t("usage.applyRange")}
+										</Button>
+									</div>
+								</form>
+							</div>
+						</div>
+						{accountId && !label ? (
+							<DashboardBackfill
+								key={accountId}
+								automatic={preferencesLoaded && anyVisible}
+								accountId={accountId}
+								{...range}
+							/>
+						) : null}
+					</div>
+				) : null}
 				{accounts.error ? (
 					<p role="alert" className="text-red-400 text-xs">
 						{t("usage.loadFailed")}: {accounts.error.message}
@@ -287,13 +300,15 @@ export function DashboardHome() {
 						</Button>
 					</div>
 				) : null}
-				<div className="flex flex-wrap items-center justify-between gap-2">
-					<p className="text-xs text-zinc-400">
-						{t("usage.selectedRange", { from: range.from, to: range.to })}
-					</p>
-				</div>
+				{accountId ? (
+					<div className="flex flex-wrap items-center justify-between gap-2">
+						<p className="text-xs text-zinc-400">
+							{t("usage.selectedRange", { from: range.from, to: range.to })}
+						</p>
+					</div>
+				) : null}
 			</div>
-			{!anyVisible ? (
+			{accountId && !anyVisible ? (
 				<p role="status" className="mt-6 text-sm text-zinc-400">
 					{t("dashboard.allPanelsHidden")}{" "}
 					<Button size="sm" variant="ghost" onClick={showAllPanels}>

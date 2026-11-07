@@ -21,6 +21,9 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Grouped settings into purpose-based panels with concise descriptions, keeping
+  personal display preferences at the top. Quality control now brings its
+  enablement and administrator-only execution profiles into one settings page.
 - Updated the Bitmovin REST API SDK to 1.287.0 and the new VOD wizard default to
   Encoder 2.292.0 (Beta). Saved account defaults, drafts and imported plans retain
   their selected encoder versions.

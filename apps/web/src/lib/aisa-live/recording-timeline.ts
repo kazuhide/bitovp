@@ -84,6 +84,7 @@ export function parseAisaRecordingMediaPlaylist(
 	const fragments: AisaMediaFragment[] = [];
 	let start = 0;
 	let nextPdt: number | null = null;
+	let previousEndPdt: number | null = null;
 	let explicitPdt = false;
 	let durationText: string | null = null;
 	let gap = false;
@@ -129,9 +130,12 @@ export function parseAisaRecordingMediaPlaylist(
 			const duration = Number(durationText);
 			const end = start + duration;
 			const endPdt: number = nextPdt + duration * 1000;
+			// Retain the prior end across discontinuities. Date.parse truncates PDT
+			// to milliseconds, which may trail a fractional EXTINF boundary by <1ms.
 			if (
 				!Number.isFinite(end) ||
-				!Number.isFinite(new Date(endPdt).getTime())
+				!Number.isFinite(new Date(endPdt).getTime()) ||
+				(previousEndPdt !== null && nextPdt < previousEndPdt - 1)
 			) {
 				throw unavailable();
 			}
@@ -144,6 +148,7 @@ export function parseAisaRecordingMediaPlaylist(
 			});
 			start = end;
 			nextPdt = endPdt;
+			previousEndPdt = endPdt;
 			explicitPdt = false;
 			durationText = null;
 			gap = false;

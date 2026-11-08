@@ -114,6 +114,40 @@ describe("recording media timeline parsing", () => {
 	});
 
 	it.each([
+		"2026-11-07T23:59:59Z",
+		"2026-11-08T00:00:03Z",
+	])("rejects backward or overlapping explicit PDT without discontinuity: %s", (pdt) => {
+		expect(() =>
+			parseAisaRecordingMediaPlaylist(
+				playlist(
+					`#EXT-X-PROGRAM-DATE-TIME:2026-11-08T00:00:00Z\n${segment}#EXT-X-PROGRAM-DATE-TIME:${pdt}\n${segment}#EXT-X-ENDLIST`,
+				),
+			),
+		).toThrow("Recording timeline unavailable");
+	});
+
+	it("preserves monotonic explicit PDT and fractional durations at millisecond clock precision", () => {
+		const fractionalSegment = "#EXTINF:4.5005,\nsegment.m4s\n";
+		const result = parseAisaRecordingMediaPlaylist(
+			playlist(
+				`#EXT-X-PROGRAM-DATE-TIME:2026-11-08T00:00:00Z\n${fractionalSegment}#EXT-X-PROGRAM-DATE-TIME:2026-11-08T00:00:04.500Z\n${fractionalSegment}#EXT-X-PROGRAM-DATE-TIME:2026-11-08T00:00:09.001Z\n${fractionalSegment}#EXT-X-ENDLIST`,
+			),
+		);
+		expect(result.fragments).toMatchObject([
+			{ start: 0, duration: 4.5005, programDateTime: origin },
+			{ start: 4.5005, duration: 4.5005, programDateTime: origin + 4500 },
+			{ start: 9.001, duration: 4.5005, programDateTime: origin + 9001 },
+		]);
+		const range = resolveMomentPlaybackRange(
+			{ startInSeconds: 2, endInSeconds: 7, anchorInSeconds: 4 },
+			origin,
+			result.fragments,
+		);
+		expect(range).toMatchObject({ start: 2, anchor: 4 });
+		expect(range?.end).toBeCloseTo(7.0005, 6);
+	});
+
+	it.each([
 		"not HLS",
 		playlist(""),
 		playlist(segment),
@@ -178,6 +212,29 @@ describe("recording media timeline parsing", () => {
 });
 
 describe("scoped, read-only recording reads", () => {
+	it.each([
+		["without discontinuity", ""],
+		["across discontinuity", "#EXT-X-DISCONTINUITY\n"],
+	])("keeps a [2,7] moment unknown for overlapping PDT %s", async (_label, discontinuity) => {
+		fetchMock.mockResolvedValue(
+			response(
+				playlist(
+					`#EXT-X-PROGRAM-DATE-TIME:2026-11-08T00:00:00Z\n${segment}${discontinuity}#EXT-X-PROGRAM-DATE-TIME:2026-11-08T00:00:03Z\n${segment}#EXT-X-ENDLIST`,
+				),
+			),
+		);
+		await expect(
+			readAisaRecordingTimeline(source, new AbortController().signal).then(
+				(timeline) =>
+					resolveMomentPlaybackRange(
+						{ startInSeconds: 2, endInSeconds: 7, anchorInSeconds: 4 },
+						origin,
+						timeline.fragments,
+					),
+			),
+		).rejects.toThrow("Recording timeline unavailable");
+	});
+
 	it("uses GET with cancellation, same-origin credentials, no cache and no redirects", async () => {
 		fetchMock.mockResolvedValue(response(valid));
 		const result = await readAisaRecordingTimeline(

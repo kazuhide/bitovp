@@ -1,12 +1,13 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 
-const { apiFetch, navigate, access } = vi.hoisted(() => ({
+const { apiFetch, navigate, access, readRecording } = vi.hoisted(() => ({
 	apiFetch: vi.fn(),
 	navigate: vi.fn(),
 	access: { allowed: true },
+	readRecording: vi.fn(),
 }));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
@@ -17,6 +18,26 @@ vi.mock("@/lib/auth/use-role-access", () => ({
 	useMutationAccess: () => access.allowed,
 	RoleAccess: ({ children }: { children: React.ReactNode }) =>
 		access.allowed ? children : null,
+}));
+vi.mock("@/lib/auth/use-session", () => ({
+	useSession: () => ({
+		status: "success",
+		data: {
+			configured: true,
+			authenticated: true,
+			mode: "users",
+			organizationId: "00000000-0000-4000-8000-000000000001",
+		},
+	}),
+}));
+vi.mock("@/lib/aisa-live/recording-timeline", () => ({
+	readAisaRecordingTimeline: readRecording,
+}));
+vi.mock("./aisa-live-player-thumbnail", () => ({
+	requestAisaThumbnail: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("./aisa-live-player", () => ({
+	AisaMomentPreview: () => <div data-testid="moment-preview" />,
 }));
 
 import { AisaLiveCreate } from "./aisa-live-create";
@@ -82,8 +103,40 @@ function respond() {
 	});
 }
 
+function selectedMoment() {
+	const region = document.querySelector<HTMLElement>(
+		'[data-aisa-selected-moment="moment-one"]',
+	);
+	if (!region) throw new Error("Selected moment moment-one is absent");
+	return within(region);
+}
+async function selectMoment() {
+	const marker = await waitFor(() => {
+		const node = document.querySelector<HTMLButtonElement>(
+			'button[data-aisa-timeline-moment="moment-one"]',
+		);
+		if (!node) throw new Error("Moment marker moment-one is absent");
+		expect(node).toHaveAttribute("data-playable", "true");
+		return node;
+	});
+	await userEvent.setup().click(marker);
+	expect(marker).toHaveAttribute("aria-pressed", "true");
+	expect(screen.getAllByTestId("moment-preview")).toHaveLength(1);
+	return selectedMoment();
+}
+
 beforeEach(() => {
 	access.allowed = true;
+	readRecording.mockReset().mockResolvedValue({
+		endList: true,
+		fragments: [
+			{
+				start: 0,
+				duration: 20,
+				programDateTime: snapshot.mediaTimeOriginUnixMs,
+			},
+		],
+	});
 	respond();
 });
 afterEach(() => {
@@ -159,14 +212,17 @@ describe("AISA Live Preview UI", () => {
 		renderWithQuery(
 			<AisaLiveDetail accountId={accountId} analysisId={analysisId} />,
 		);
+		await selectMoment();
 		expect(
-			await screen.findByText("A player wins the point."),
+			await selectedMoment().findByText("A player wins the point."),
 		).toBeInTheDocument();
-		expect(screen.getByText("future/new-sport")).toBeInTheDocument();
+		expect(selectedMoment().getByText("future/new-sport")).toBeInTheDocument();
 		result = { ...snapshot, sequence: 2, encodingId: outputId };
 		await user.click(screen.getByRole("button", { name: "Refresh" }));
 		expect(await screen.findByText(/last valid result/i)).toBeInTheDocument();
-		expect(screen.getByText("A player wins the point.")).toBeInTheDocument();
+		expect(
+			selectedMoment().getByText("A player wins the point."),
+		).toBeInTheDocument();
 	});
 
 	it("separates a terminal lifecycle state from a missing final snapshot", async () => {
@@ -208,7 +264,8 @@ describe("AISA Live Preview UI", () => {
 		renderWithQuery(
 			<AisaLiveDetail accountId={accountId} analysisId={analysisId} />,
 		);
-		await screen.findByText("A player wins the point.");
+		await selectMoment();
+		await selectedMoment().findByText("A player wins the point.");
 		result = { ...snapshot, sequence: 2, encodingId: outputId, isFinal: true };
 		await user.click(screen.getByRole("button", { name: "Refresh" }));
 		await screen.findByText(/last valid result/i);
@@ -275,13 +332,16 @@ describe("AISA Live Preview UI", () => {
 		const rendered = renderWithQuery(
 			<AisaLiveDetail accountId={accountId} analysisId={analysisId} />,
 		);
-		await screen.findByText("A player wins the point.");
+		await selectMoment();
+		await selectedMoment().findByText("A player wins the point.");
 		rendered.rerender(
 			<AisaLiveDetail accountId={accountId} analysisId={outputId} />,
 		);
 		expect(
 			screen.queryByText("A player wins the point."),
 		).not.toBeInTheDocument();
+		expect(document.querySelector("[data-aisa-selected-moment]")).toBeNull();
+		expect(screen.queryByTestId("moment-preview")).not.toBeInTheDocument();
 		await screen.findByText("The request could not be completed.");
 	});
 
@@ -298,11 +358,14 @@ describe("AISA Live Preview UI", () => {
 		renderWithQuery(
 			<AisaLiveDetail accountId={accountId} analysisId={analysisId} />,
 		);
-		await screen.findByText("A player wins the point.");
+		await selectMoment();
+		await selectedMoment().findByText("A player wins the point.");
 		current = { ...resource, encodingId: outputId };
 		await user.click(screen.getByRole("button", { name: "Refresh" }));
 		await screen.findByText("The request could not be completed.");
-		expect(screen.getByText("A player wins the point.")).toBeInTheDocument();
+		expect(
+			selectedMoment().getByText("A player wins the point."),
+		).toBeInTheDocument();
 		expect(screen.getByText(encodingId)).toBeInTheDocument();
 		expect(screen.queryByText(outputId)).not.toBeInTheDocument();
 	});

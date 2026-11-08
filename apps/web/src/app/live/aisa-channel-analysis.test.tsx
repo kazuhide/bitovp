@@ -1,12 +1,13 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 
-const { apiFetch, access, preview } = vi.hoisted(() => ({
+const { apiFetch, access, preview, readRecording } = vi.hoisted(() => ({
 	apiFetch: vi.fn(),
 	access: { allowed: true },
 	preview: vi.fn(),
+	readRecording: vi.fn(),
 }));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
@@ -14,6 +15,23 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 vi.mock("@/lib/auth/use-role-access", () => ({
 	useMutationAccess: () => access.allowed,
+}));
+vi.mock("@/lib/auth/use-session", () => ({
+	useSession: () => ({
+		status: "success",
+		data: {
+			configured: true,
+			authenticated: true,
+			mode: "users",
+			organizationId: "00000000-0000-4000-8000-000000000001",
+		},
+	}),
+}));
+vi.mock("@/lib/aisa-live/recording-timeline", () => ({
+	readAisaRecordingTimeline: readRecording,
+}));
+vi.mock("./aisa-live-player-thumbnail", () => ({
+	requestAisaThumbnail: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("./aisa-live-player", () => ({
 	AisaMomentPreview: (props: unknown) => {
@@ -89,9 +107,40 @@ function respond(entries: unknown[] = [translated]) {
 		return { analysisId, encodingId, status: "FINISHED" };
 	});
 }
+function selectedMoment(id = "moment-one") {
+	const region = document.querySelector<HTMLElement>(
+		`[data-aisa-selected-moment="${id}"]`,
+	);
+	if (!region) throw new Error(`Selected moment ${id} is absent`);
+	return within(region);
+}
+async function selectMoment(id = "moment-one") {
+	const marker = await waitFor(() => {
+		const node = document.querySelector<HTMLButtonElement>(
+			`button[data-aisa-timeline-moment="${id}"]`,
+		);
+		if (!node) throw new Error(`Moment marker ${id} is absent`);
+		expect(node).toHaveAttribute("data-playable", "true");
+		return node;
+	});
+	await userEvent.setup().click(marker);
+	expect(marker).toHaveAttribute("aria-pressed", "true");
+	expect(screen.getAllByTestId("moment-preview")).toHaveLength(1);
+	return selectedMoment(id);
+}
 beforeEach(() => {
 	apiFetch.mockReset();
 	preview.mockClear();
+	readRecording.mockReset().mockResolvedValue({
+		endList: true,
+		fragments: [
+			{
+				start: 0,
+				duration: 20,
+				programDateTime: snapshot.mediaTimeOriginUnixMs,
+			},
+		],
+	});
 	access.allowed = true;
 	respond();
 });
@@ -110,7 +159,8 @@ describe("AISA results in a normal channel", () => {
 				/>
 			</section>,
 		);
-		await screen.findByText(original);
+		await selectMoment();
+		await selectedMoment().findByText(original);
 		expect(rendered.container.querySelectorAll("#sec-analysis")).toHaveLength(
 			1,
 		);
@@ -135,7 +185,7 @@ describe("AISA results in a normal channel", () => {
 			disclosure,
 		);
 		await user.click(screen.getByRole("button", { name: "Japanese" }));
-		await screen.findByText(japanese);
+		await selectedMoment().findByText(japanese);
 		expect(
 			screen.getByText("Local model: installed-local-model").closest("details"),
 		).toBe(disclosure);
@@ -158,11 +208,15 @@ describe("AISA results in a normal channel", () => {
 				encodingId={encodingId}
 			/>,
 		);
-		await screen.findByText(original);
+		await selectMoment();
+		await selectedMoment().findByText(original);
 		expect(document.getElementById("sec-analysis")).toBeInTheDocument();
 		expect(screen.getByRole("heading", { name: "Key moments" })).toBeVisible();
 		await user.click(screen.getByRole("button", { name: "Japanese" }));
-		expect(await screen.findByText(japanese)).toHaveAttribute("lang", "ja");
+		expect(await selectedMoment().findByText(japanese)).toHaveAttribute(
+			"lang",
+			"ja",
+		);
 		expect(
 			screen.getByText("Local model: installed-local-model"),
 		).toBeInTheDocument();
@@ -182,7 +236,7 @@ describe("AISA results in a normal channel", () => {
 		await user.click(
 			screen.getByRole("button", { name: "Original (English)" }),
 		);
-		expect(screen.getByText(original)).toHaveAttribute("lang", "en");
+		expect(selectedMoment().getByText(original)).toHaveAttribute("lang", "en");
 		expect(
 			apiFetch.mock.calls.filter(([, init]) => init?.method === "POST"),
 		).toHaveLength(0);
@@ -198,8 +252,9 @@ describe("AISA results in a normal channel", () => {
 			/>,
 			"ja",
 		);
-		expect(await screen.findByText(original)).toBeInTheDocument();
-		await screen.findByText("未翻訳のため原文を表示しています。");
+		await selectMoment();
+		expect(await selectedMoment().findByText(original)).toBeInTheDocument();
+		await selectedMoment().findByText("未翻訳のため原文を表示しています。");
 		expect(screen.queryByText(japanese)).not.toBeInTheDocument();
 		expect(
 			screen.queryByRole("button", { name: "未翻訳の説明を翻訳" }),
@@ -218,7 +273,8 @@ describe("AISA results in a normal channel", () => {
 			/>,
 			"ja",
 		);
-		await screen.findByText(japanese);
+		await selectMoment();
+		await selectedMoment().findByText(japanese);
 		await waitFor(() =>
 			expect(
 				apiFetch.mock.calls.filter(([, init]) => init?.method === "POST"),
@@ -295,8 +351,11 @@ it.each([
 					snapshot: { ...snapshot, isFinal: false },
 				};
 	renderCachedPanel(laterSnapshot, cached);
+	await selectMoment("moment-two");
 	expect(
-		await screen.findByText("The final point ends the match."),
+		await selectedMoment("moment-two").findByText(
+			"The final point ends the match.",
+		),
 	).toBeInTheDocument();
 	expect(screen.getByText("Final result")).toBeInTheDocument();
 	expect(screen.getByText("Snapshot 2")).toBeInTheDocument();
@@ -310,7 +369,8 @@ it("adopts a newer valid DB snapshot prop while retaining the same mounted run",
 		{ ...snapshot, isFinal: false },
 		{ availability: "available", snapshot: { ...snapshot, isFinal: false } },
 	);
-	await screen.findByText(original);
+	await selectMoment();
+	await selectedMoment().findByText(original);
 	rendered.rerender(
 		<AisaChannelAnalysisPanel
 			accountId={accountId}
@@ -319,10 +379,23 @@ it("adopts a newer valid DB snapshot prop while retaining the same mounted run",
 			initialSnapshot={laterSnapshot}
 		/>,
 	);
+	await selectMoment("moment-two");
 	expect(
-		await screen.findByText("The final point ends the match."),
+		await selectedMoment("moment-two").findByText(
+			"The final point ends the match.",
+		),
 	).toBeInTheDocument();
 	expect(screen.getByText("Final result")).toBeInTheDocument();
+	expect(preview).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			moment: expect.objectContaining({
+				id: "moment-two",
+				startInSeconds: 10,
+				endInSeconds: 12,
+				anchorInSeconds: 11,
+			}),
+		}),
+	);
 });
 
 it("retains the accepted source and warns when a cached same-sequence update changes it", async () => {
@@ -333,7 +406,8 @@ it("retains the accepted source and warns when a cached same-sequence update cha
 		],
 	};
 	renderCachedPanel(snapshot, { availability: "available", snapshot: invalid });
-	expect(await screen.findByText(original)).toBeInTheDocument();
+	await selectMoment();
+	expect(await selectedMoment().findByText(original)).toBeInTheDocument();
 	expect(
 		await screen.findByText(/last valid result is shown/),
 	).toBeInTheDocument();
@@ -348,7 +422,8 @@ it("withdraws removed sources and refuses their reuse through the controlled cha
 		availability: "available",
 		snapshot: first,
 	});
-	await screen.findByText(original);
+	await selectMoment();
+	await selectedMoment().findByText(original);
 	act(() =>
 		rendered.client.setQueryData(
 			["aisa-live-results", accountId, analysisId, encodingId],
@@ -360,6 +435,9 @@ it("withdraws removed sources and refuses their reuse through the controlled cha
 	);
 	await screen.findByText(/No key moments in this result/);
 	expect(screen.queryByText(original)).not.toBeInTheDocument();
+	expect(document.querySelector("[data-aisa-selected-moment]")).toBeNull();
+	expect(document.querySelector("[data-aisa-timeline-moment]")).toBeNull();
+	expect(screen.queryByTestId("moment-preview")).not.toBeInTheDocument();
 	act(() =>
 		rendered.client.setQueryData(
 			["aisa-live-results", accountId, analysisId, encodingId],
@@ -378,6 +456,8 @@ it("withdraws removed sources and refuses their reuse through the controlled cha
 	);
 	await screen.findByText(/last valid result is shown/);
 	expect(screen.queryByText(original)).not.toBeInTheDocument();
+	expect(document.querySelector("[data-aisa-selected-moment]")).toBeNull();
+	expect(screen.queryByTestId("moment-preview")).not.toBeInTheDocument();
 });
 
 it("keeps English available and does not retry automatically after local inference fails", async () => {
@@ -400,8 +480,9 @@ it("keeps English available and does not retry automatically after local inferen
 		/>,
 		"ja",
 	);
+	await selectMoment();
 	await screen.findByText("翻訳を完了できませんでした。原文は確認できます。");
-	expect(screen.getByText(original)).toHaveAttribute("lang", "en");
+	expect(selectedMoment().getByText(original)).toHaveAttribute("lang", "en");
 	expect(
 		apiFetch.mock.calls.filter(([, init]) => init?.method === "POST"),
 	).toHaveLength(1);

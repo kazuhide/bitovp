@@ -242,10 +242,7 @@ describe("SettingsAreas — category panels", () => {
 					"/settings/access-audit",
 				],
 			],
-			[
-				"詳細・診断",
-				["/settings/clip-editing", "/settings/api-coverage"],
-			],
+			["詳細・診断", ["/settings/clip-editing", "/settings/api-coverage"]],
 		];
 		for (const [name, hrefs] of groups) {
 			const panel = screen.getByRole("region", { name });

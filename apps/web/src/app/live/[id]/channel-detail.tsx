@@ -328,13 +328,13 @@ function ChannelConsole({
 
 	const row = channel.data;
 	const imported = row.origin === "AISA_IMPORTED";
-	// Cached owner DTOs must not expose private payloads while a fresh session
-	// is unresolved or belongs to any other principal, including another ADMIN.
+	// Validate cached owner DTOs during this mount before exposing private data.
+	// A pending background recheck keeps that verified identity; a failed read
+	// or a returned different principal masks it immediately.
 	const sessionFreshForConsole =
 		(queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0) >
 			initialSessionUpdateCount &&
 		technicalSession.status === "success" &&
-		technicalSession.fetchStatus === "idle" &&
 		!technicalSession.isRefetchError;
 	const showAisaFeature =
 		aisaRow &&

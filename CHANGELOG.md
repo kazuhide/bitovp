@@ -4,7 +4,7 @@ Notable changes are recorded here for people installing and using bitovp.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.2.0] - 2026-11-09
 
 ### Added
 
@@ -178,6 +178,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.2.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1

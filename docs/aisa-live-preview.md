@@ -16,6 +16,8 @@ server設定 `BITOVP_AISA_LIVE_PREVIEW=true` と `BITOVP_AISA_LIVE_PREVIEW_USER_
 
 作成wizard・旧リンク・SSR/RSC、専用APIの全read/write、録画と子media、翻訳・import、通常channelのAISA作成/操作、AISA保存preset、AISA監査ログを同じserver policyで保護する。AISA対象の対応済みruntime挿入・停止と予約の登録/解除にも本人確認を適用する。通常Liveの状態・Heartbeat等は従来の権限で表示するが、非本人向けchannel/run DTOにはAnalysis ID・snapshot・接続情報を含めない。画面の表示にはserverの許可と現在の本人セッションの一致も必要とし、以前のADMINのcacheだけでは許可しない。
 
+画面をmountした後に本人セッションの確認が成功するまでは、cached owner DTOも表示しない。一度確認した本人の通常のbackground再確認中は、同じ確認済みidentityの選択・playerを維持する。別ユーザー・未認証・確認失敗が確定した時点でprivate表示を外し、再生を停止する。各APIはこの画面状態に依存せず、毎回server側で本人を確認する。
+
 ## 通常 Live の追加機能としての表示
 
 作成ウィザードは通常の9ステップを維持する。有効化は開始時の設定として「6. エンコーディング」の「追加機能 → キーモーメントを自動検出する」に配置する。対応スポーツと現在の実装が使う配信構成を開き、構成への同意はここで一度だけ取得する。録画と解析結果の出力を設定するボタンから「4. 出力」へ戻り、既存 Output ID・録画保存先・解析結果保存先を指定できる。ラダー・パッケージング・マニフェスト設定は対応構成の説明とし、同意チェックを繰り返さない。オフに戻した場合は既存の通常配信設定を保持する。

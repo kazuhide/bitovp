@@ -25,12 +25,14 @@ import {
 	checkLiveCaptureReadiness,
 	LIVE_CAPTURE_READ_TIMEOUT_MS,
 } from "@/lib/server/live-capture-readiness";
+import { rejectAisaGraphMutation } from "@/lib/server/live-channel-mutation-guard";
 import { getVmafQueue } from "@/lib/server/queue";
 import { browserForCredentialId } from "@/lib/server/storage";
 
 type RouteParams = { params: Promise<{ id: string }> };
 const channelSelect = {
 	id: true,
+	origin: true,
 	status: true,
 	plan: true,
 	bitmovinEncodingId: true,
@@ -96,6 +98,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 		if (!channel) {
 			return jsonError(404, "Not found");
 		}
+		const refusal = rejectAisaGraphMutation(channel);
+		if (refusal) return refusal;
 		if (channel.status !== "RUNNING") {
 			return jsonError(
 				409,

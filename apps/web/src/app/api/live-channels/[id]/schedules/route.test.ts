@@ -1,5 +1,5 @@
 import { isStaleGeneration } from "@bitovp/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  *  PR2 — arm/list routes. The validation table is the point:
@@ -19,9 +19,11 @@ const resolveLiveEncoding = vi.fn();
 const sampleFindMany = vi.fn();
 /** rev367 S-2: the staged-session join for switch rows. */
 const sessionFindMany = vi.fn();
+let tenant: unknown;
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant,
 		prisma: {
 			liveChannel: { findUnique: channelFindUnique },
 			liveChannelRun: { findFirst: runFindFirst },
@@ -41,6 +43,22 @@ import { GET, POST } from "./route";
 const CHANNEL_ID = "00000000-0000-4000-8000-0000000000c1";
 const ACCOUNT_ID = "00000000-0000-4000-8000-0000000000a1";
 const CONTENT_ID = "00000000-0000-4000-8000-0000000000d1";
+const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+const owner = {
+	actorUserId: OWNER_ID,
+	effectiveUserId: OWNER_ID,
+	actor: `user:${OWNER_ID}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
+const otherAdmin = {
+	...owner,
+	actorUserId: OTHER_ID,
+	effectiveUserId: OTHER_ID,
+	actor: `user:${OTHER_ID}`,
+};
 
 const ctx = (id = CHANNEL_ID) => ({ params: Promise.resolve({ id }) });
 
@@ -56,6 +74,9 @@ const PAST = new Date(Date.now() - 60_000).toISOString();
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", "");
+	tenant = { ...otherAdmin, role: "OPERATOR", actorRole: "OPERATOR" };
 	channelFindUnique.mockResolvedValue({ id: CHANNEL_ID });
 	// : no run by default — a channel that has never aired, which is
 	// the state every pre-existing arm case in this file assumes.
@@ -75,6 +96,7 @@ beforeEach(() => {
 		},
 	});
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /schedules", () => {
 	it("404s an unknown channel", async () => {
@@ -1044,5 +1066,195 @@ describe("POST /schedules — arm-time generation bind (row #241)", () => {
 		expect(scheduleCreate.mock.calls[0]?.[0]?.data).toMatchObject({
 			liveChannelRunId: null,
 		});
+	});
+});
+
+describe("POST /schedules — AISA encoding operations", () => {
+	const RUN_ID = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+	const NEXT_RUN_ID = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb";
+	const managedPlan = {
+		start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+	};
+	const slateBody = {
+		action: "SLATE_IN",
+		fireAt: FUTURE,
+		bitmovinAccountId: ACCOUNT_ID,
+		insertableContentId: CONTENT_ID,
+		slateDurationSeconds: 30,
+	};
+	const currentRun = {
+		id: RUN_ID,
+		status: "RUNNING",
+		bitmovinEncodingId: "enc-aisa",
+		stepLog: [],
+	};
+	function channel() {
+		return {
+			id: CHANNEL_ID,
+			origin: "MANAGED",
+			status: "RUNNING",
+			plan: managedPlan,
+			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinEncodingId: "enc-aisa",
+			maxRunMinutes: null,
+			runningSince: new Date(),
+			createdAt: new Date(),
+		};
+	}
+
+	beforeEach(() => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", OWNER_ID);
+		tenant = owner;
+		channelFindUnique.mockResolvedValue(channel());
+		runFindFirst.mockResolvedValue(currentRun);
+		resolveLiveEncoding.mockResolvedValue({
+			ok: true,
+			encodingId: "enc-aisa",
+			aisaManaged: true,
+			api: {
+				encoding: {
+					encodings: { live: { insertableContent: { list: contentList } } },
+				},
+			},
+		});
+		contentList.mockResolvedValue({
+			items: [{ id: CONTENT_ID, status: "READY" }],
+		});
+	});
+
+	it.each([
+		["other ADMIN", otherAdmin, "true"],
+		[
+			"other OPERATOR",
+			{ ...otherAdmin, role: "OPERATOR", actorRole: "OPERATOR" },
+			"true",
+		],
+		["flag off", owner, "false"],
+		["token actor", { ...owner, actor: "token:synthetic" }, "true"],
+		["impersonation", { ...owner, isImpersonating: true }, "true"],
+		["missing principal", undefined, "true"],
+	])("denies managed STOP and SLATE_IN for %s before run, provider, or write work", async (_label, principal, flag) => {
+		tenant = principal;
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", flag);
+		for (const body of [{ action: "STOP", fireAt: FUTURE }, slateBody]) {
+			const res = await POST(post(body), ctx());
+			expect(res.status).toBe(404);
+			expect(await res.json()).toEqual({ error: "Not found" });
+			expect(runFindFirst).not.toHaveBeenCalled();
+			expect(sampleFindMany).not.toHaveBeenCalled();
+			expect(resolveLiveEncoding).not.toHaveBeenCalled();
+			expect(contentList).not.toHaveBeenCalled();
+			expect(scheduleCreate).not.toHaveBeenCalled();
+		}
+	});
+
+	it("arms a managed STOP for the exact current run without contacting the provider", async () => {
+		const res = await POST(post({ action: "STOP", fireAt: FUTURE }), ctx());
+		expect(res.status).toBe(201);
+		expect(scheduleCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				liveChannelId: CHANNEL_ID,
+				liveChannelRunId: RUN_ID,
+				action: "STOP",
+			}),
+		});
+		const armed = scheduleCreate.mock.calls[0]?.[0]?.data;
+		expect(isStaleGeneration(armed.liveChannelRunId, NEXT_RUN_ID)).toBe(true);
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+		expect(contentList).not.toHaveBeenCalled();
+	});
+
+	it("arms a managed slate through the encoding resolver and retains its run binding", async () => {
+		const res = await POST(post(slateBody), ctx());
+		expect(res.status).toBe(201);
+		expect(resolveLiveEncoding).toHaveBeenCalledWith(
+			expect.objectContaining({
+				channelId: CHANNEL_ID,
+				bitmovinAccountId: ACCOUNT_ID,
+				requireRunning: false,
+				mutation: "encoding",
+			}),
+		);
+		expect(contentList).toHaveBeenCalledWith("enc-aisa", expect.any(Object));
+		expect(scheduleCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				liveChannelRunId: RUN_ID,
+				action: "SLATE_IN",
+				insertableContentId: CONTENT_ID,
+				slateDurationSeconds: 30,
+			}),
+		});
+	});
+
+	it("still refuses a managed START before any run, provider, or schedule effect", async () => {
+		const res = await POST(post({ action: "START", fireAt: FUTURE }), ctx());
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "AISA_ACTION_UNSUPPORTED" },
+		});
+		expect(runFindFirst).not.toHaveBeenCalled();
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+		expect(contentList).not.toHaveBeenCalled();
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("keeps the READY prerequisite for managed slate content", async () => {
+		contentList.mockResolvedValue({
+			items: [{ id: CONTENT_ID, status: "DOWNLOADING" }],
+		});
+		const res = await POST(post(slateBody), ctx());
+		expect(res.status).toBe(422);
+		expect(await res.json()).toMatchObject({
+			details: { code: "SCHEDULE_CONTENT_NOT_READY", status: "DOWNLOADING" },
+		});
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("refuses a managed slate when its run changes during provider validation", async () => {
+		contentList.mockImplementationOnce(async () => {
+			runFindFirst.mockResolvedValue({ ...currentRun, id: NEXT_RUN_ID });
+			return { items: [{ id: CONTENT_ID, status: "READY" }] };
+		});
+		const res = await POST(post(slateBody), ctx());
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			error: expect.stringContaining("current live run changed"),
+		});
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
+
+	it("keeps the runtime-cap boundary for a managed STOP", async () => {
+		channelFindUnique.mockResolvedValue({ ...channel(), maxRunMinutes: 1 });
+		const res = await POST(post({ action: "STOP", fireAt: FUTURE }), ctx());
+		expect(res.status).toBe(422);
+		expect(await res.json()).toMatchObject({
+			details: { code: "SCHEDULE_OUTSIDE_RUN_WINDOW" },
+		});
+		expect(scheduleCreate).not.toHaveBeenCalled();
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"START",
+		"STOP",
+		"SLATE_IN",
+	])("keeps imported %s read-only before provider or schedule effects", async (action) => {
+		channelFindUnique.mockResolvedValue({
+			...channel(),
+			origin: "AISA_IMPORTED",
+		});
+		const res = await POST(
+			post(action === "SLATE_IN" ? slateBody : { action, fireAt: FUTURE }),
+			ctx(),
+		);
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "AISA_IMPORTED_READ_ONLY" },
+		});
+		expect(runFindFirst).not.toHaveBeenCalled();
+		expect(resolveLiveEncoding).not.toHaveBeenCalled();
+		expect(contentList).not.toHaveBeenCalled();
+		expect(scheduleCreate).not.toHaveBeenCalled();
 	});
 });

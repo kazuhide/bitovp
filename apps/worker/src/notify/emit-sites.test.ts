@@ -49,7 +49,11 @@ const EXPECTATIONS: Expectation[] = [
 		// ERROR persist, finalize-RUNNING persist, finalize-catch ERROR.
 		file: "orchestrator/live-processor.ts",
 		writes:
-			/(data:\s*\{[^}]*status:\s*"(ERROR|STOPPED|RUNNING)"|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"))/gs,
+			/(data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
+		// AISA completion keeps these same two terminal sites and emits. Stop's
+		// settledStatus and cancellation's explicit ERROR/STOPPED branch preserve
+		// terminal failure rather than reporting success. Count both spellings;
+		// the expected 11 writes and 11 emits remain unchanged.
 		// : the provision's persist is fenced on the lease token and
 		// carries the channel id in its closure — `persist(entries, {...})`,
 		// no longer `persist(liveChannelId, entries, {...})`. Same eight
@@ -86,7 +90,10 @@ const EXPECTATIONS: Expectation[] = [
 		// persist. Neither path emits after a lost persist fence. Count both
 		// the literal STOPPED persist and the explicit untouched ternary,
 		// which the earlier ERROR/RUNNING-only persist pattern could not see.
-		writeCount: 11,
+		// 11 -> 13 writes: managed startup cancellation now commits its channel
+		// and run terminal rows explicitly in ONE fenced transaction with the
+		// cancelRequested clear. Both paths retain their existing post-commit emit.
+		writeCount: 13,
 		emitCount: 11,
 	},
 	{

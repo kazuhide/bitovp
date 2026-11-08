@@ -34,6 +34,7 @@ export function SectionCard({
 	title,
 	summary,
 	help,
+	restriction,
 	tone = "neutral",
 	defaultOpen = false,
 	level = 2,
@@ -46,6 +47,8 @@ export function SectionCard({
 	summary?: ReactNode;
 	/* Keep technical terms in secondary help, with an operator-readable title and summary. */
 	help?: string;
+	/** An unavailable operation keeps its usual closed heading and explains why inside. */
+	restriction?: string;
 	/** Colours the summary only — the title stays legible in every state. */
 	tone?: "neutral" | "ok" | "warn" | "error";
 	defaultOpen?: boolean;
@@ -111,7 +114,16 @@ export function SectionCard({
 					</span>
 				) : null}
 			</summary>
-			<div className="border-zinc-800 border-t px-3 py-3">{children}</div>
+			<div className="border-zinc-800 border-t px-3 py-3">
+				{restriction ? (
+					<fieldset disabled className="min-w-0 space-y-2">
+						<p className="text-xs text-zinc-400">{restriction}</p>
+						{children}
+					</fieldset>
+				) : (
+					children
+				)}
+			</div>
 		</details>
 	);
 }

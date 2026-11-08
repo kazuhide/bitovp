@@ -93,6 +93,7 @@ export const CUSTOMER_ERROR_CODES = [
 	"CONTENT_REQUEST_BLOCKED",
 	"CONTENT_INSERT_NOT_ACTIVE",
 	"CONTENT_RESERVATION_NOT_CANCELLABLE",
+	"AISA_CONTENT_REQUIRES_COMPATIBLE_CLIP",
 	"SLATE_INCOMPATIBLE",
 	"SLATE_UNSUPPORTED_IMAGE",
 	"SLATE_UNINSPECTED",
@@ -398,6 +399,8 @@ export function localizedCustomerError(
 			return t("customerError.contentInsertNotActive");
 		case "CONTENT_RESERVATION_NOT_CANCELLABLE":
 			return t("customerError.contentReservationNotCancellable");
+		case "AISA_CONTENT_REQUIRES_COMPATIBLE_CLIP":
+			return t("aisaLive.compatibleClipRequired");
 		case "SLATE_INCOMPATIBLE":
 			return t("customerError.slateIncompatible");
 		case "SLATE_UNSUPPORTED_IMAGE":

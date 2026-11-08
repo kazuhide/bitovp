@@ -153,6 +153,7 @@ export function DeliveryStatusPanel({
 	channelStatus,
 	providerStatus,
 	providerObservedAt,
+	warningEvidenceAvailable = true,
 	nowMs,
 	detailsOpen,
 	detailsHelp,
@@ -168,13 +169,15 @@ export function DeliveryStatusPanel({
 	heartbeatReception?: HeartbeatReception;
 	openAlerts: ChannelAlertEvent[] | "unknown";
 	alertHistory: ChannelAlertEvent[];
-	playableCount: number;
-	manifestCount: number;
+	playableCount: number | "unknown";
+	manifestCount: number | "unknown";
 	region: string | null;
 	encoderIp: string | null;
 	channelStatus: LiveChannelStatus;
 	providerStatus: string | null;
 	providerObservedAt: string | null;
+	/** Public telemetry may omit events; absence then cannot establish no warnings. */
+	warningEvidenceAvailable?: boolean;
 	nowMs: number;
 	detailsOpen: (id: LiveSectionId) => boolean;
 	detailsHelp: (id: LiveSectionId) => string | undefined;
@@ -258,7 +261,7 @@ export function DeliveryStatusPanel({
 	const counts = openAlerts === "unknown" ? null : openAlertsByLane(openAlerts);
 	const origin = summarizeOrigin(run?.originObservation);
 	const stream = videoStream(heartbeat);
-	const warning = latestWarning(heartbeat);
+	const warning = warningEvidenceAvailable ? latestWarning(heartbeat) : null;
 	const seen = (stamp: string | null) => {
 		const value = lastSeen(stamp, nowMs, mode === "live");
 		switch (value.kind) {
@@ -329,12 +332,26 @@ export function DeliveryStatusPanel({
 			[
 				t("live.health.latestWarning"),
 				warning?.text ??
-					t(heartbeat ? "live.health.noWarning" : "status.unknown"),
+					t(
+						warningEvidenceAvailable && heartbeat
+							? "live.health.noWarning"
+							: "status.unknown",
+					),
 			],
 		],
 		output: [
-			[t("status.playable"), String(playableCount)],
-			[t("jobDetail.manifests"), String(manifestCount)],
+			[
+				t("status.playable"),
+				playableCount === "unknown"
+					? t("status.unknown")
+					: String(playableCount),
+			],
+			[
+				t("jobDetail.manifests"),
+				manifestCount === "unknown"
+					? t("status.unknown")
+					: String(manifestCount),
+			],
 			[
 				t("live.health.edgeDelayMax"),
 				origin.maxEdgeDelaySeconds === null
@@ -425,6 +442,7 @@ export function DeliveryStatusPanel({
 								<HeartbeatPanel
 									lastHeartbeat={telemetry.sample}
 									nowMs={nowMs}
+									warningEvidenceAvailable={warningEvidenceAvailable}
 								/>
 								<h5 className="mt-4 font-medium text-xs text-zinc-300">
 									{t("live.history")}

@@ -75,6 +75,12 @@ const WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;
  */
 export const ROUTE_RULES: readonly RouteRule[] = [
 	{
+		prefix: "/api/live/analyses/[analysisId]/ingest",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "AISA Live publisher endpoints include the stream key",
+	},
+	{
 		prefix: "/api/per-title-simulator/encodings/import",
 		methods: ["POST"],
 		minRole: "ADMIN",

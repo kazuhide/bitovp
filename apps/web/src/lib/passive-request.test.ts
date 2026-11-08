@@ -12,6 +12,22 @@ const OTHER = "00000000-0000-4000-8000-000000000002";
 const PATH = "/api/library/sources/00000000-0000-4000-8000-000000000003/media";
 const URL_PATH = `${PATH}?key=qc-mp4%3Avideo`;
 describe("passive request bindings", () => {
+	it.each([
+		"",
+		"/media",
+	])("binds AISA recording%s reads to the document organization", (suffix) => {
+		const path = `/api/live/analyses/00000000-0000-4000-8000-000000000003/recording${suffix}`;
+		const value = bindPassiveRequestUrl(
+			`${path}?bitmovinAccountId=${ORG}&encodingId=${OTHER}`,
+			ORG,
+		);
+		expect(passiveRequestPath(path, "GET")).toBe(true);
+		expect(passiveRequestPath(path, "HEAD")).toBe(true);
+		expect(passiveRequestPath(`${path}/extra`, "GET")).toBe(false);
+		expect(
+			passiveOrganizationBinding(new URL(value, "http://localhost"), "GET"),
+		).toEqual({ kind: "bound", organizationId: ORG });
+	});
 	it("adds a non-secret organization assertion and retains exact object-key identity", () => {
 		const value = bindPassiveRequestUrl(URL_PATH, ORG);
 		expect(value).toBe(`${URL_PATH}&expectedOrganizationId=${ORG}`);

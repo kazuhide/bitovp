@@ -15,6 +15,9 @@ type RunRow = {
 	seq: number;
 	status: LiveChannelStatus;
 	bitmovinEncodingId: string | null;
+	aisaAnalysisId?: string | null;
+	aisaStatus?: string | null;
+	aisaObservedAt?: string | null;
 	outputPrefix: string;
 	runningSince: string | null;
 	endedAt: string | null;
@@ -26,6 +29,11 @@ type RunRow = {
 	createdAt: string;
 };
 
+export type AisaRunSelection = RunRow & {
+	bitmovinEncodingId: string;
+	aisaAnalysisId: string;
+};
+
 /**
  * The channel's run history : the visibility a
  * 1:1 model never had — today's step log used to be OVERWRITTEN by the next
@@ -35,10 +43,14 @@ export function RunsPanel({
 	channelId,
 	currentRunId,
 	currentRunStatus,
+	selectedAisaRunId,
+	onSelectAisaRun,
 }: {
 	channelId: string;
 	currentRunId?: string | null;
 	currentRunStatus?: LiveChannelStatus;
+	selectedAisaRunId?: string;
+	onSelectAisaRun?: (run: AisaRunSelection) => void;
 }) {
 	const { t } = useT();
 	const runs = useQuery({
@@ -109,6 +121,24 @@ export function RunsPanel({
 						<p className="break-all font-mono text-xs text-zinc-500">
 							{run.outputPrefix}
 						</p>
+					) : null}
+					{onSelectAisaRun && run.aisaAnalysisId && run.bitmovinEncodingId ? (
+						<div>
+							<Button
+								variant="secondary"
+								size="sm"
+								aria-pressed={selectedAisaRunId === run.id}
+								onClick={() =>
+									onSelectAisaRun({
+										...run,
+										aisaAnalysisId: run.aisaAnalysisId as string,
+										bitmovinEncodingId: run.bitmovinEncodingId as string,
+									})
+								}
+							>
+								{t("aisaLive.viewRunResults", { n: run.seq })}
+							</Button>
+						</div>
 					) : null}
 					{run.error ? (
 						<p className="text-rose-400 text-xs">{t("live.recordedFailure")}</p>

@@ -5,8 +5,9 @@ import {
 	CREDENTIAL_PROVIDER_LABELS,
 	type CredentialProviderId,
 	type CredentialSummaryWire,
+	isAisaManagedLivePlan,
 } from "@bitovp/core";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -28,6 +29,7 @@ import { Input, SelectNative, Textarea } from "@/components/ui/input";
 import { NewCredentialLink } from "@/components/ui/new-credential-link";
 import { WizardDraftOffer } from "@/components/wizard-draft-offer";
 import { apiFetch } from "@/lib/api";
+import type { SessionDto } from "@/lib/auth/dto";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
@@ -41,6 +43,13 @@ import {
 } from "@/lib/output-path";
 import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import { AisaOutputSection } from "./aisa-output-section";
+import { setAisaLiveEnabled } from "./aisa-settings-model";
+import {
+	AisaManagedGraphNotice,
+	AisaSettingsSection,
+} from "./aisa-settings-section";
+import { AisaStartSection } from "./aisa-start-section";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
@@ -101,19 +110,55 @@ function wizardSubmitError(t: Translator, error: unknown): string {
 export function LiveWizard({
 	duplicateFrom,
 	submitLabel,
+	aisaPreviewEnabled: configuredAisa = false,
+	aisaFeatureUserId,
+	initialAisaEnabled = false,
 }: {
 	duplicateFrom?: string;
 	submitLabel?: string;
+	aisaPreviewEnabled?: boolean;
+	aisaFeatureUserId?: string;
+	initialAisaEnabled?: boolean;
 } = {}) {
 	const { t } = useT();
 	const router = useRouter();
+	const queryClient = useQueryClient();
+	const [initialSessionUpdateCount] = useState(
+		() => queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0,
+	);
+	const featureSession = useQuery({
+		queryKey: ["auth", "session"],
+		queryFn: () =>
+			apiFetch<SessionDto>("/api/auth/session", { cache: "no-store" }),
+		enabled: configuredAisa && Boolean(aisaFeatureUserId),
+		staleTime: 0,
+		refetchOnMount: "always",
+	});
+	const session = featureSession.data;
+	const aisaPreviewEnabled =
+		configuredAisa &&
+		Boolean(aisaFeatureUserId) &&
+		(queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0) >
+			initialSessionUpdateCount &&
+		featureSession.status === "success" &&
+		featureSession.fetchStatus === "idle" &&
+		!featureSession.isRefetchError &&
+		session?.mode === "users" &&
+		session.authenticated === true &&
+		session.role === "ADMIN" &&
+		session.isImpersonating === false &&
+		session.actorUserId === aisaFeatureUserId &&
+		session.effectiveUserId === aisaFeatureUserId;
 	const [step, setStep] = useState(0);
 	const [scheduleDraft, setScheduleDraft] =
 		useState<ScheduleDraft>(EMPTY_SCHEDULE_DRAFT);
-	const [state, setState] = useState<LiveWizardState>(
-		DEFAULT_LIVE_WIZARD_STATE,
-	);
-	const draftBase = useRef(DEFAULT_LIVE_WIZARD_STATE);
+	const [state, setState] = useState<LiveWizardState>(() => {
+		const initial = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+		return initialAisaEnabled && configuredAisa && aisaFeatureUserId
+			? setAisaLiveEnabled({ ...initial, inputKind: "RTMP" }, true)
+			: initial;
+	});
+	const draftBase = useRef(state);
 	const [appliedDraftContext, setAppliedDraftContext] = useState<string | null>(
 		null,
 	);
@@ -174,9 +219,20 @@ export function LiveWizard({
 		if (duplicate.data === undefined || duplicate.fetchStatus !== "idle") {
 			return;
 		}
+		if (
+			configuredAisa &&
+			aisaFeatureUserId &&
+			(featureSession.status === "pending" ||
+				featureSession.fetchStatus !== "idle")
+		)
+			return;
 		// Mark applied first so a parse failure can't loop the effect.
 		setAppliedDuplicate(duplicateFrom);
 		setDuplicateError(null);
+		if (!aisaPreviewEnabled && isAisaManagedLivePlan(duplicate.data.plan)) {
+			setDuplicateError(t("aisaLive.previewUnavailable"));
+			return;
+		}
 		/**
 		 * GATED, not just parsed .
 		 *
@@ -221,6 +277,11 @@ export function LiveWizard({
 		duplicate.isError,
 		duplicateFrom,
 		appliedDuplicate,
+		aisaPreviewEnabled,
+		configuredAisa,
+		aisaFeatureUserId,
+		featureSession.status,
+		featureSession.fetchStatus,
 	]);
 	const allCredentials = credentials.data ?? [];
 	const validationOptions = {
@@ -228,9 +289,25 @@ export function LiveWizard({
 			(credentials.data ?? []).map((c) => [c.id, c.provider]),
 		),
 	};
-	const evaluation = imported
+	const rawEvaluation = imported
 		? evaluateLivePlanDocument(imported.raw, t, validationOptions)
 		: evaluateLiveWizardState(state, t, allCredentials, validationOptions);
+	const aisaRequested = imported
+		? rawEvaluation.ok && isAisaManagedLivePlan(rawEvaluation.plan)
+		: state.aisaLive?.enabled === true;
+	const aisaEnabled = aisaPreviewEnabled && aisaRequested;
+	const aisaBlocked =
+		aisaRequested && (!aisaPreviewEnabled || scheduleDraft.enabled);
+	const evaluation = aisaBlocked
+		? {
+				ok: false as const,
+				zodMessage: t(
+					!aisaPreviewEnabled
+						? "aisaLive.previewUnavailable"
+						: "aisaLive.managedSchedule",
+				),
+			}
+		: rawEvaluation;
 	const planAccount = imported ? importedAccountId(imported) : undefined;
 
 	/**
@@ -270,6 +347,7 @@ export function LiveWizard({
 				saved.value,
 				"live",
 			);
+			if (!aisaPreviewEnabled && restored.aisaLive?.enabled) return;
 			setState(restored);
 			setScheduleDraft(schedule);
 			setStep(saved.step);
@@ -281,6 +359,10 @@ export function LiveWizard({
 	);
 	const submit = useMutation({
 		mutationFn: () => {
+			if (aisaBlocked)
+				throw new LocalizedWizardError(
+					evaluation.ok ? t("ui.blocked") : evaluation.zodMessage,
+				);
 			const current = imported
 				? evaluateLivePlanDocument(imported.raw, t, validationOptions)
 				: evaluateLiveWizardState(state, t, allCredentials, validationOptions);
@@ -551,6 +633,14 @@ export function LiveWizard({
 									return;
 								}
 								setImportError(null);
+								if (
+									!aisaPreviewEnabled &&
+									result.imported.evaluation.ok &&
+									isAisaManagedLivePlan(result.imported.evaluation.plan)
+								) {
+									setImportError(t("aisaLive.previewUnavailable"));
+									return;
+								}
 								const editable = tryImportLiveChannelIntoWizard(
 									result.imported.raw,
 								);
@@ -619,9 +709,9 @@ export function LiveWizard({
 						) : null}
 						<div className="flex gap-2">
 							{submitButton(t("ui.createChannelImportedPlan"))}
-							{evaluation.ok &&
-							!evaluation.issues.some((issue) => issue.level === "error") ? (
-								<RoleAccess control="live.new.template">
+							<RoleAccess control="live.new.template">
+								{evaluation.ok &&
+								!evaluation.issues.some((issue) => issue.level === "error") ? (
 									<SaveAsTemplateButton
 										kind="LIVE_PLAN"
 										plan={
@@ -635,8 +725,8 @@ export function LiveWizard({
 												: ""
 										}
 									/>
-								</RoleAccess>
-							) : null}
+								) : null}
+							</RoleAccess>
 							<Button
 								variant="secondary"
 								onClick={() => {
@@ -770,13 +860,19 @@ export function LiveWizard({
 											</option>
 										) : null}
 										{BITMOVIN_CLOUD_REGIONS.map((region) => (
-											<option key={region} value={region}>
+											<option
+												key={region}
+												value={region}
+												disabled={aisaEnabled && region === "EXTERNAL"}
+											>
 												{region}
 											</option>
 										))}
 									</SelectNative>
 								</Field>
-								<LiveFallbackRegions state={state} onPatch={patch} />
+								{!aisaEnabled ? (
+									<LiveFallbackRegions state={state} onPatch={patch} />
+								) : null}
 								<Field
 									label={t("wizard.encoderVersion")}
 									htmlFor="lw-version"
@@ -827,11 +923,17 @@ export function LiveWizard({
 						/>
 					) : null}
 
-					{step === 2 ? (
+					{step === 2 && !aisaEnabled ? (
 						<LiveLadderSection state={state} onPatch={patch} />
 					) : null}
 
-					{step === 3 ? (
+					{step === 3 && aisaEnabled ? (
+						<AisaOutputSection state={state} onPatch={patch} />
+					) : null}
+					{aisaEnabled && [2, 4, 6].includes(step) ? (
+						<AisaManagedGraphNotice state={state} onPatch={patch} />
+					) : null}
+					{step === 3 && !aisaEnabled ? (
 						<>
 							<Field
 								label={t("wizard.credential")}
@@ -1079,25 +1181,36 @@ export function LiveWizard({
 						</>
 					) : null}
 
-					{step === 3 ? (
+					{step === 3 && !aisaEnabled ? (
 						<LiveMirrorListSection
 							state={state}
 							credentials={allCredentials}
 							onPatch={patch}
 						/>
 					) : null}
-					{step === 4 ? (
+					{step === 4 && !aisaEnabled ? (
 						<LivePackagingSection
 							state={state}
 							credentials={allCredentials}
 							onPatch={patch}
 						/>
 					) : null}
-					{step === 6 ? (
+					{step === 6 && !aisaEnabled ? (
 						<LiveManifestListSection state={state} onPatch={patch} />
 					) : null}
 
-					{step === 5 ? (
+					{step === 5 && aisaPreviewEnabled ? (
+						<AisaSettingsSection
+							state={state}
+							onPatch={patch}
+							enabled={aisaPreviewEnabled}
+							onConfigureOutput={() => setStep(3)}
+						/>
+					) : null}
+					{step === 5 && aisaEnabled ? (
+						<AisaStartSection state={state} onPatch={patch} />
+					) : null}
+					{step === 5 && !aisaEnabled ? (
 						<>
 							<h2 className="font-medium text-sm">
 								{t("liveWizard.stepRunSafety")}
@@ -1114,7 +1227,27 @@ export function LiveWizard({
 						</>
 					) : null}
 
-					{step === 7 ? (
+					{step === 7 && aisaEnabled ? (
+						<div className="space-y-3">
+							<p className="text-sm text-zinc-400">
+								{t("aisaLive.managedSchedule")}
+							</p>
+							{scheduleDraft.enabled ? (
+								<Button
+									variant="secondary"
+									onClick={() =>
+										setScheduleDraft((previous) => ({
+											...previous,
+											enabled: false,
+										}))
+									}
+								>
+									{t("aisaLive.clearSchedule")}
+								</Button>
+							) : null}
+						</div>
+					) : null}
+					{step === 7 && !aisaEnabled ? (
 						<ScheduleSection
 							draft={scheduleDraft}
 							onPatch={(partial) =>
@@ -1164,16 +1297,18 @@ export function LiveWizard({
 							) : null}
 							<div className="flex flex-wrap items-center gap-2">
 								{submitButton(t("ui.createLiveChannel"))}
-								{evaluation.ok &&
-								!evaluation.issues.some((issue) => issue.level === "error") ? (
-									<RoleAccess control="live.new.template">
+								<RoleAccess control="live.new.template">
+									{evaluation.ok &&
+									!evaluation.issues.some(
+										(issue) => issue.level === "error",
+									) ? (
 										<SaveAsTemplateButton
 											kind="LIVE_PLAN"
 											plan={buildLiveChannelPlan(state)}
 											defaultName={state.name}
 										/>
-									</RoleAccess>
-								) : null}
+									) : null}
+								</RoleAccess>
 							</div>
 						</div>
 					) : null}

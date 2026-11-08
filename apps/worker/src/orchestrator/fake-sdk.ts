@@ -21,6 +21,14 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createdAt: string | null;
 	}[] = [];
 	return {
+		createAisaLiveAnalysis: vi.fn(nextId),
+		getAisaLiveAnalysis: vi.fn(async (analysisId) => ({
+			analysisId,
+			encodingId: "bm-encoding",
+			status: "RUNNING" as const,
+		})),
+		startAisaLiveAnalysis: vi.fn(async () => {}),
+		stopAisaLiveAnalysis: vi.fn(async () => {}),
 		createS3Input: vi.fn(nextId),
 		createAzureInput: vi.fn(nextId),
 		createHttpsInput: vi.fn(nextId),

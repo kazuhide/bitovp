@@ -26,6 +26,9 @@ export const OPERATION_KINDS = [
 	"CREATE_OUTPUT_AKAMAI_MSL",
 	"CREATE_OUTPUT_AKAMAI_NETSTORAGE",
 	"CREATE_ENCODING",
+	"CREATE_AISA_LIVE_ANALYSIS",
+	"RESOLVE_AISA_LIVE_ENCODING",
+	"START_AISA_LIVE_ANALYSIS",
 	"CREATE_INGEST_INPUT_STREAM",
 	"CREATE_FILE_INPUT_STREAM",
 	"CREATE_DOLBY_ATMOS_INPUT_STREAM",
@@ -260,6 +263,9 @@ const OPERATION_KIND_EXECUTION = {
 	CREATE_OUTPUT_AKAMAI_MSL: "executable",
 	CREATE_OUTPUT_AKAMAI_NETSTORAGE: "executable",
 	CREATE_ENCODING: "executable",
+	CREATE_AISA_LIVE_ANALYSIS: "executable",
+	RESOLVE_AISA_LIVE_ENCODING: "executable",
+	START_AISA_LIVE_ANALYSIS: "executable",
 	CREATE_INGEST_INPUT_STREAM: "executable",
 	CREATE_FILE_INPUT_STREAM: "executable",
 	CREATE_DOLBY_ATMOS_INPUT_STREAM: "executable",
@@ -499,7 +505,11 @@ export function soleEncodingStepId(stepLog: unknown): string | null {
 		if (!entry || typeof entry !== "object") {
 			continue;
 		}
-		if (entry.kind === "CREATE_ENCODING" && typeof entry.step === "string") {
+		if (
+			(entry.kind === "CREATE_ENCODING" ||
+				entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+			typeof entry.step === "string"
+		) {
 			created.add(entry.step);
 		}
 		if (entry.kind === "AWAIT_ENCODING" || entry.kind === "START_ENCODING") {

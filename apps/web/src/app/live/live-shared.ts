@@ -90,6 +90,7 @@ export function isActiveChannelStatus(status: LiveChannelStatus): boolean {
 /** Lean list projection — never plan/stepLog/lastHeartbeat/streamKey. */
 export type LiveChannelListItem = {
 	id: string;
+	origin?: "MANAGED" | "AISA_IMPORTED";
 	name: string;
 	status: LiveChannelStatus;
 	error: string | null;
@@ -222,6 +223,8 @@ export type HeartbeatReception =
 
 /** Full detail row (GET /api/live-channels/[id]). */
 export type LiveChannelDetailRow = LiveChannelListItem & {
+	/** Server-authorized AISA capability; absent is denied. */
+	aisaFeatureAllowed?: boolean;
 	liveEffectFenceVersion?: number;
 	/** Absent on older responses; absence never proves no Push was received. */
 	heartbeatReception?: HeartbeatReception;
@@ -247,6 +250,10 @@ export type LiveChannelDetailRow = LiveChannelListItem & {
 	 * Optional so a response cached from before the field existed still renders.
 	 */
 	playbackLinks?: ManifestPlaybackLink[];
+	/** Unresolved or withheld links are unknown, not an observed zero. */
+	playbackLinksAvailability?: "available" | "unavailable";
+	/** Set only by the server's bounded public telemetry projection. */
+	monitoringSafeForViewer?: boolean;
 	/** Runtime cap  — the schedule panel edits it via PATCH. */
 	maxRunMinutes?: number | null;
 	/**
@@ -260,6 +267,10 @@ export type LiveChannelDetailRow = LiveChannelListItem & {
 		seq: number;
 		status: LiveChannelStatus;
 		bitmovinEncodingId: string | null;
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+		aisaObservedAt?: string | null;
 		encoderIp: string | null;
 		streamKey: string | null;
 		outputPrefix: string;

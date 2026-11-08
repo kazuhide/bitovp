@@ -87,6 +87,31 @@ beforeEach(() => {
 });
 
 describe("run-bound provider diagnostics", () => {
+	it("reads an AISA run through the original account proven by its exact Analysis and Encoding pair", async () => {
+		mocks.run.mockResolvedValue({
+			id: RUN,
+			status: "RUNNING",
+			endedAt: null,
+			bitmovinEncodingId: ENCODING,
+			aisaAnalysisId: INPUT,
+		});
+		mocks.provenance.mockImplementation(async ({ where }) => {
+			const matched = where.OR.some(
+				(clause: Record<string, unknown>) =>
+					clause.path === "/ai-scene-analysis/live-analyses" &&
+					JSON.stringify(clause.AND) ===
+						JSON.stringify([
+							{ response: { path: ["analysisId"], equals: INPUT } },
+							{ response: { path: ["encodingId"], equals: ENCODING } },
+						]),
+			);
+			return matched ? [{ bitmovinAccountId: ACCOUNT }] : [];
+		});
+		const response = await GET(request(), context());
+		expect(response.status).toBe(200);
+		expect(mocks.summary).toHaveBeenCalledWith(ENCODING);
+		expect(mocks.account).toHaveBeenCalledWith(expect.anything(), ACCOUNT);
+	});
 	it("reports HD start provider errors without falling back to regular start or blank data", async () => {
 		mocks.hdStart.mockRejectedValue(
 			Object.assign(new Error("secret-key"), { httpStatusCode: 404 }),

@@ -386,7 +386,7 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 
 	function exportedMethods(file: string): string[] {
 		const src = readFileSync(file, "utf8");
-		return ["GET", "POST", "PUT", "PATCH", "DELETE"].filter((method) =>
+		return ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].filter((method) =>
 			new RegExp(
 				`export (async )?(function ${method}\\b|const ${method}\\s*=)`,
 			).test(src),
@@ -485,7 +485,10 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// OPERATOR POST handlers. Both populations were measured from disk.
 		// Historical imports replace the old insights GET with GET + POST.
 		// Local simulator presets add one ADMIN GET route and handler.
-		expect(guarded.length).toBe(152);
-		expect(methods.length).toBe(217);
+		// AISA recording, translations and verified import add four route files.
+		// Include explicit HEAD exports for both authenticated media routes.
+		// Measured using the same on-disk exporter: 161 files / 230 handlers.
+		expect(guarded.length).toBe(161);
+		expect(methods.length).toBe(230);
 	});
 });

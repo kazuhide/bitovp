@@ -1,5 +1,9 @@
 import {
+	aisaCreateNotDispatched,
+	aisaLiveFinalization,
+	aisaLiveNeverStarted,
 	effectiveLivePlanForRun,
+	isAisaManagedLivePlan,
 	liveRunWindow,
 	liveToVodFamilySupport,
 	programEndBeyondRunWindow,
@@ -10,6 +14,7 @@ import { z } from "zod";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
 import { ROLE_HEADER } from "@/lib/auth/roles";
 import { customerErrorDetails } from "@/lib/customer-error";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import {
@@ -23,6 +28,12 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
+import {
+	AISA_CHANNEL_RESPONSE_HEADERS,
+	aisaChannelViewerProjection,
+	aisaPublisherConnectionAllowed,
+	isAisaLiveChannelView,
+} from "@/lib/server/live-channel-aisa-view";
 import { readHeartbeatReception } from "@/lib/server/live-heartbeat-reception";
 import {
 	liveToVodFamiliesForRole,
@@ -63,6 +74,10 @@ export async function GET(req: Request, { params }: RouteParams) {
 						status: true,
 						cancelRequested: true,
 						bitmovinEncodingId: true,
+						aisaAnalysisId: true,
+						aisaStatus: true,
+						aisaSnapshot: true,
+						aisaObservedAt: true,
 						encoderIp: true,
 						streamKey: true,
 						outputPrefix: true,
@@ -109,6 +124,22 @@ export async function GET(req: Request, { params }: RouteParams) {
 			runs?: unknown[];
 		};
 		const currentRun = row.runs[0] ?? null;
+		const aisaChannel = isAisaLiveChannelView(channel, currentRun);
+		const heartbeatReception = await readHeartbeatReception(
+			ctx.prisma,
+			currentRun,
+			new Date(),
+		);
+		const observedNow = new Date();
+		if (aisaChannel && !aisaPublisherConnectionAllowed(ctx.tenant)) {
+			return NextResponse.json(
+				aisaChannelViewerProjection(channel, currentRun, {
+					heartbeatReception,
+					observedNow,
+				}),
+				{ headers: AISA_CHANNEL_RESPONSE_HEADERS },
+			);
+		}
 		// Password mode has one owner session and no role header. Users/token
 		// modes must prove ADMIN through the proxy-resolved role. The proxy
 		// overwrites ACTOR_HEADER and deletes/overwrites ROLE_HEADER on every
@@ -150,30 +181,33 @@ export async function GET(req: Request, { params }: RouteParams) {
 					technicalDetailsAllowed,
 				)
 			: null;
-		const observedNow = new Date();
-		const heartbeatReception = await readHeartbeatReception(
-			ctx.prisma,
-			currentRun,
-			observedNow,
-		);
 		// Derived here, not in the browser, for the same reason as the VOD route:
 		// the credential's config never needs to cross .
-		return NextResponse.json({
-			...channel,
-			liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
-			liveToVodFamilies,
-			currentRun: currentRunView,
-			heartbeatReception,
-			technicalDetailsAllowed,
-			playbackLinks: planForLinks
-				? await playbackLinksForLivePlan(ctx, planForLinks)
-				: [],
-			// review-260 127-A5 (folded into #126): heartbeat freshness must
-			// not compare a WORKER-stamped `at` against the BROWSER clock — a
-			// viewer 90 seconds ahead reads a healthy channel as disconnected. The client
-			// anchors its ticking now to THIS server stamp instead.
-			serverNow: new Date().toISOString(),
-		});
+		return NextResponse.json(
+			{
+				...channel,
+				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
+				liveToVodFamilies,
+				currentRun: currentRunView,
+				heartbeatReception,
+				technicalDetailsAllowed,
+				playbackLinks: planForLinks
+					? await playbackLinksForLivePlan(ctx, planForLinks)
+					: [],
+				...(aisaChannel
+					? {
+							playbackLinksAvailability: "unavailable",
+							aisaFeatureAllowed: true,
+						}
+					: {}),
+				// review-260 127-A5 (folded into #126): heartbeat freshness must
+				// not compare a WORKER-stamped `at` against the BROWSER clock — a
+				// viewer 90 seconds ahead reads a healthy channel as disconnected. The client
+				// anchors its ticking now to THIS server stamp instead.
+				serverNow: new Date().toISOString(),
+			},
+			aisaChannel ? { headers: AISA_CHANNEL_RESPONSE_HEADERS } : undefined,
+		);
 	} catch (err) {
 		return routeError(err);
 	}
@@ -181,6 +215,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 
 /** Sentinel: the atomic terminal-guard matched 0 rows → roll back, return 409. */
 class ChannelNotDeletable extends Error {}
+class AisaFinalizationNotConfirmed extends Error {}
 
 /**
  * Delete a non-running live channel and ITS local dependents — LOCAL records
@@ -192,7 +227,7 @@ class ChannelNotDeletable extends Error {}
  * first) so a live encoding the worker is still managing never loses its row.
  *
  * The terminal check is enforced ATOMICALLY inside the transaction (a
- * status-guarded deleteMany whose count is asserted), mirroring the
+ * channel-first row lock and a status-guarded deleteMany), mirroring the
  * atomic-claim convention of the /actions route. The up-front findUnique only
  * serves the clean common-case 404/409 responses and reads bitmovinAccountId
  * for the audit — it does NOT gate the delete, so a channel that leaves a
@@ -200,7 +235,9 @@ class ChannelNotDeletable extends Error {}
  * CREATED|ERROR→PROVISIONING and enqueuing concurrently) is NOT deleted out
  * from under the worker (which would otherwise provision a deleted channel and
  * hit a missing-parent FK on the heartbeat write); the guarded deleteMany
- * affects 0 rows and the whole tx rolls back, surfacing a 409.
+ * affects 0 rows and the whole tx rolls back, surfacing a 409. Managed AISA
+ * finalization is re-read under channel/run locks before any dependents are
+ * deleted; an earlier run proof cannot release current provider ownership.
  *
  * Cascade: FeederSession and LiveHeartbeat are FK onDelete:Cascade → automatic.
  * LIVE VmafJobs are linked to a channel only by `params.liveChannelId` (a JSON
@@ -219,11 +256,22 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		const ctx = await getServerContext();
 		const row = await ctx.prisma.liveChannel.findUnique({
 			where: { id },
-			select: { id: true, status: true, bitmovinAccountId: true },
+			select: {
+				id: true,
+				status: true,
+				origin: true,
+				bitmovinAccountId: true,
+				plan: true,
+				bitmovinEncodingId: true,
+				stepLog: true,
+				encoderStoppedConfirmedFor: true,
+			},
 		});
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
+		if (isAisaLiveChannelView(row, null) && !aisaLiveAccessAllowed(ctx.tenant))
+			return jsonError(404, "Not found");
 		if (
 			row.status === "PROVISIONING" ||
 			row.status === "RUNNING" ||
@@ -264,6 +312,60 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			);
 		}
 		const deletedVmafJobs = await ctx.prisma.$transaction(async (tx) => {
+			// Match Start/provision lock order. The outer read cannot authorize
+			// deletion of a later run or an Analysis created before Encoding binding.
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${id}::uuid FOR UPDATE`;
+			const current = await tx.liveChannel.findUnique({
+				where: { id },
+				select: {
+					status: true,
+					plan: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					encoderStoppedConfirmedFor: true,
+				},
+			});
+			if (
+				!current ||
+				["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status)
+			)
+				throw new ChannelNotDeletable();
+			if (isAisaManagedLivePlan(current.plan)) {
+				await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${id}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE`;
+				const run = await tx.liveChannelRun.findFirst({
+					where: { liveChannelId: id },
+					orderBy: { seq: "desc" },
+				});
+				// POST can fail to enqueue before the worker creates its first run.
+				// A locked empty run query plus an untouched canonical log is proof
+				// of no provider work; absence of a run alone is never sufficient.
+				const noRunNoCreate =
+					run === null &&
+					["CREATED", "ERROR"].includes(current.status) &&
+					!current.bitmovinEncodingId &&
+					aisaCreateNotDispatched(current.stepLog);
+				const noCreateError =
+					run?.status === "ERROR" &&
+					current.status === "ERROR" &&
+					!run.cancelRequested &&
+					!run.aisaAnalysisId &&
+					!run.bitmovinEncodingId &&
+					!current.bitmovinEncodingId &&
+					aisaCreateNotDispatched(run.stepLog) &&
+					aisaCreateNotDispatched(current.stepLog);
+				const finalized =
+					run &&
+					run.bitmovinEncodingId === current.bitmovinEncodingId &&
+					["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run));
+				if (
+					!noRunNoCreate &&
+					(!run ||
+						(!noCreateError &&
+							!finalized &&
+							!aisaLiveNeverStarted(run, current)))
+				)
+					throw new AisaFinalizationNotConfirmed();
+			}
 			// Re-assert inside the tx: one that entered PENDING since the read above
 			// must not be deleted out from under the scorer.
 			const stillScoring = await tx.vmafJob.count({
@@ -306,6 +408,13 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		);
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
+		if (err instanceof AisaFinalizationNotConfirmed) {
+			return jsonError(
+				409,
+				"Analysis finalization must be confirmed before deleting this channel",
+				{ code: "AISA_FINALIZATION_PENDING" },
+			);
+		}
 		if (err instanceof ChannelNotDeletable) {
 			return jsonError(
 				409,
@@ -362,6 +471,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			// would cut short.
 			select: {
 				id: true,
+				origin: true,
+				plan: true,
 				bitmovinAccountId: true,
 				programEndAt: true,
 				runningSince: true,
@@ -370,6 +481,18 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		});
 		if (!existing) {
 			return jsonError(404, "Not found");
+		}
+		if (
+			existing.origin === "AISA_IMPORTED" ||
+			isAisaManagedLivePlan(existing.plan)
+		) {
+			if (!aisaLiveAccessAllowed(ctx.tenant))
+				return jsonError(404, "Not found");
+			return jsonError(
+				409,
+				"Runtime-cap updates are unavailable for AISA Live Preview",
+				{ code: "AISA_ACTION_UNSUPPORTED" },
+			);
 		}
 		/**
 		 *  — a runtime cap shorter than the scheduled program.

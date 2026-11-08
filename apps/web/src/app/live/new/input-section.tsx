@@ -128,22 +128,41 @@ export function InputSection({
 					}
 				>
 					{INPUT_KINDS.map((kind) => (
-						<option key={kind.value} value={kind.value}>
+						<option
+							key={kind.value}
+							value={kind.value}
+							disabled={
+								state.aisaLive?.enabled &&
+								kind.value !== "RTMP" &&
+								kind.value !== "HLS"
+							}
+						>
 							{t(kind.labelKey)}
 						</option>
 					))}
 				</SelectNative>
 			</Field>
+			{state.aisaLive?.enabled ? (
+				<p className="text-sm text-zinc-400">{t("aisaLive.supportedInputs")}</p>
+			) : null}
 
 			{state.inputKind === "RTMP" ? (
 				<div className="space-y-3">
 					<p className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-400">
-						{t("ui.usesTheAccountSDefaultRtmpInput")}
+						{t(
+							state.aisaLive?.enabled
+								? "aisaLive.streamKeyHint"
+								: "ui.usesTheAccountSDefaultRtmpInput",
+						)}
 					</p>
 					<Field
 						label={t("ui.rtmpInputId")}
 						htmlFor="lw-rtmp-input-id"
-						help={t("ui.optionalEmptyTheAccountDefaultResolveBy")}
+						help={t(
+							state.aisaLive?.enabled
+								? "aisaLive.rtmpInputHint"
+								: "ui.optionalEmptyTheAccountDefaultResolveBy",
+						)}
 					>
 						<Input
 							id="lw-rtmp-input-id"
@@ -920,6 +939,7 @@ export function InputSection({
 						>
 							<SelectNative
 								id="lw-hls-markers"
+								disabled={state.aisaLive?.enabled}
 								value={state.hlsIn.adMarkersSource}
 								onChange={(e) =>
 									onPatch({
@@ -947,6 +967,9 @@ export function InputSection({
 							}
 						/>
 					</Field>
+					{state.aisaLive?.enabled ? (
+						<p className="text-sm text-zinc-400">{t("aisaLive.hlsHint")}</p>
+					) : null}
 				</div>
 			) : null}
 		</div>

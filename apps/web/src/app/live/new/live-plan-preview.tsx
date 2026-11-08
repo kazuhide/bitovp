@@ -3,7 +3,9 @@
 import {
 	type CompiledOperation,
 	type CredentialSummaryWire,
+	compileAisaManagedLiveChannel,
 	compileLiveChannel,
+	isAisaManagedLivePlan,
 	type LiveChannelPlan,
 	liveChannelPlanSchema,
 	type PlanIssue,
@@ -18,6 +20,7 @@ import { codecControlIssueMessage } from "@/lib/i18n/codec-control";
 import type { Translator } from "@/lib/i18n/context";
 import { useT } from "@/lib/i18n/context";
 import { zodIssueMessage } from "@/lib/i18n/zod-issue-message";
+import { aisaWizardProblem } from "./aisa-settings-model";
 import type { LiveWizardState } from "./build-live-plan";
 import { buildLiveChannelPlan } from "./build-live-plan";
 import { liveRenditionOptionsProblem } from "./live-rendition-options";
@@ -39,6 +42,26 @@ export function evaluateLiveWizardState(
 	credentials?: Pick<CredentialSummaryWire, "id" | "provider">[],
 	options: PlanValidationOptions = {},
 ): LivePlanEvaluation {
+	const aisaProblem = aisaWizardProblem(state);
+	if (aisaProblem)
+		return {
+			ok: false,
+			zodMessage: translate ? translate(aisaProblem) : aisaProblem,
+		};
+	if (state.aisaLive?.enabled) {
+		try {
+			return evaluateLivePlanDocument(
+				buildLiveChannelPlan(state),
+				translate,
+				options,
+			);
+		} catch (error) {
+			return {
+				ok: false,
+				zodMessage: error instanceof Error ? error.message : String(error),
+			};
+		}
+	}
 	const mirrorProblem = liveMirrorProblem(state, credentials);
 	if (mirrorProblem)
 		return {
@@ -87,7 +110,9 @@ export function evaluateLivePlanDocument(
 	const issues = validateLiveChannel(parsed.data, options);
 	const ops = issues.some((i) => i.level === "error")
 		? []
-		: compileLiveChannel(parsed.data);
+		: isAisaManagedLivePlan(parsed.data)
+			? compileAisaManagedLiveChannel(parsed.data)
+			: compileLiveChannel(parsed.data);
 	return { ok: true, plan: parsed.data, issues, ops };
 }
 
@@ -114,7 +139,9 @@ export function LivePlanPreview({
 
 	return (
 		<aside className="flex min-h-0 flex-col gap-3">
-			{evaluation.ok ? <CustomLiveNotice plan={evaluation.plan} /> : null}
+			{evaluation.ok && !isAisaManagedLivePlan(evaluation.plan) ? (
+				<CustomLiveNotice plan={evaluation.plan} />
+			) : null}
 			<div className="flex items-center gap-2">
 				<h2 className="font-medium text-sm text-zinc-200">
 					{t("wizard.planPreview")}

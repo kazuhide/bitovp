@@ -1,5 +1,6 @@
 import { mapDestinations } from "../plan/destinations";
 import { initStepLog, type StepLogEntry } from "../plan/steplog";
+import { compileAisaManagedLiveChannel, isAisaManagedLivePlan } from "./aisa";
 import { compileLiveChannel } from "./compiler";
 import { type LiveChannelPlan, liveChannelPlanSchema } from "./schema";
 
@@ -142,6 +143,32 @@ export function rebaseLivePlanForRun(
 	plan: LiveChannelPlan,
 	run: { seq: number; runId: string },
 ): LiveRunRebase {
+	if (isAisaManagedLivePlan(plan)) {
+		const setting = plan.start.aiSceneAnalysisLive;
+		if (!setting) throw new Error("AISA managed setting is required");
+		const base = commonBaseSegments([
+			setting.recordingPath,
+			setting.analysisPath,
+		]);
+		const segment = liveRunSegment(run.seq, run.runId);
+		const outputPrefix = [...base, segment].join("/");
+		const path = (value: string) =>
+			[outputPrefix, ...segmentsOf(value).slice(base.length)].join("/");
+		return {
+			plan: liveChannelPlanSchema.parse({
+				...plan,
+				start: {
+					...plan.start,
+					aiSceneAnalysisLive: {
+						...setting,
+						recordingPath: path(setting.recordingPath),
+						analysisPath: path(setting.analysisPath),
+					},
+				},
+			}),
+			outputPrefix,
+		};
+	}
 	const pinned = pinnedMslManifestDestinations(plan);
 	const isPinned = (dest: { outputKey: string; path: string }) =>
 		pinned.has(destinationKey(dest));
@@ -239,14 +266,17 @@ export function compileLiveRunStepLog(
 	plan: LiveChannelPlan,
 	run: { seq: number; runId: string },
 ): { entries: StepLogEntry[]; outputPrefix: string } {
+	const compile = isAisaManagedLivePlan(plan)
+		? compileAisaManagedLiveChannel
+		: compileLiveChannel;
 	if (run.seq >= 2) {
 		const rebased = rebaseLivePlanForRun(plan, run);
 		return {
-			entries: initStepLog(compileLiveChannel(rebased.plan)),
+			entries: initStepLog(compile(rebased.plan)),
 			outputPrefix: rebased.outputPrefix,
 		};
 	}
-	return { entries: initStepLog(compileLiveChannel(plan)), outputPrefix: "" };
+	return { entries: initStepLog(compile(plan)), outputPrefix: "" };
 }
 
 /**

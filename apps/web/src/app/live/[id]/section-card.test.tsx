@@ -22,6 +22,49 @@ import { LIVE_LAYERS, LIVE_SECTION_HELP_KEYS } from "./section-layout";
  * below is written to FAIL against the naive version (verified by reverting).
  */
 describe("SectionCard (ledger #103)", () => {
+	it("keeps a restriction inside the closed card and disables only its body controls", async () => {
+		const view = renderWithQuery(
+			<SectionCard
+				id="restricted"
+				title="Existing section"
+				summary="existing summary"
+				restriction="Unavailable for this configuration"
+			>
+				<button type="button">Existing operation</button>
+			</SectionCard>,
+		);
+		expect(
+			screen.getByRole("heading", { name: "Existing section" }),
+		).toBeVisible();
+		expect(screen.getByText("existing summary")).toBeVisible();
+		expect(
+			screen.getByText("Unavailable for this configuration"),
+		).not.toBeVisible();
+		await userEvent.click(
+			screen.getByRole("heading", { name: "Existing section" }),
+		);
+		expect(
+			screen.getByText("Unavailable for this configuration"),
+		).toBeVisible();
+		expect(
+			screen.getByRole("button", { name: "Existing operation" }),
+		).toBeDisabled();
+		view.rerender(
+			<SectionCard
+				id="restricted"
+				title="Existing section"
+				summary="existing summary"
+			>
+				<button type="button">Existing operation</button>
+			</SectionCard>,
+		);
+		expect(screen.queryByText("Unavailable for this configuration")).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Existing operation" }),
+		).toBeEnabled();
+		expect(document.querySelector("fieldset")).toBeNull();
+	});
+
 	it("reports actual native open state for bounded child polling, including programmatic open", async () => {
 		const changed = vi.fn();
 		const view = renderWithQuery(

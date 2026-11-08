@@ -18,6 +18,10 @@ import {
 	videoKeys,
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
+import {
+	type AisaLiveWizardSettings,
+	aisaWizardProblem,
+} from "./aisa-settings-model";
 import { inResourceOrder, liveMirrorEntries } from "./live-output-model";
 import { applyLiveMuxingOptions } from "./live-rendition-options";
 
@@ -293,6 +297,8 @@ export type LiveStartState = {
 };
 
 export type LiveWizardState = {
+	/** Managed Preview settings coexist with the normal graph until explicitly selected. */
+	aisaLive?: AisaLiveWizardSettings;
 	name: string;
 	accountId: string;
 	cloudRegion: string;
@@ -1448,6 +1454,37 @@ function buildManifests(state: LiveWizardState): LiveManifestInput[] {
 export function buildLiveChannelPlan(
 	state: LiveWizardState,
 ): LiveChannelPlanInput {
+	if (state.aisaLive?.enabled) {
+		const problem = aisaWizardProblem(state);
+		if (problem) throw new Error(problem);
+		const settings = state.aisaLive;
+		return prune({
+			planVersion: 1 as const,
+			name: state.name,
+			bitmovin: prune({
+				accountId: str(state.accountId),
+				cloudRegion: str(state.cloudRegion),
+				encoderVersion: str(state.encoderVersion),
+			}),
+			liveInput: buildLiveInput(state),
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: prune({
+				streamKey: state.start.streamKey,
+				aiSceneAnalysisLive: prune({
+					preset: "AISA_PREVIEW_MANAGED" as const,
+					outputId: settings.outputId,
+					recordingPath: settings.recordingPath,
+					analysisPath: settings.analysisPath,
+					esVersion: str(settings.esVersion),
+					aicaVersion: str(settings.aicaVersion),
+				}),
+			}),
+		});
+	}
 	const base = liveBasePath(state);
 	const vKeys = videoKeys(state.videos);
 	const aKeys = audioKeys(state.audios);

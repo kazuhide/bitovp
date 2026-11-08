@@ -51,6 +51,102 @@ const fixture = () => ({
 	],
 });
 
+function fixtureWithBox(box2d: unknown) {
+	const source = fixture();
+	const scene = source.scenes[0];
+	const shot = scene?.shots[0];
+	const subject = shot?.mainSubjects[0];
+	if (!scene || !shot || !subject) throw new Error("Missing subject fixture");
+	return {
+		...source,
+		scenes: [
+			{
+				...scene,
+				shots: [{ ...shot, mainSubjects: [{ ...subject, box2d }] }],
+			},
+		],
+	};
+}
+
+describe("subject box2d normalization", () => {
+	it("preserves the provider's y/x ordering, centers and stored round trip", () => {
+		const source = fixtureWithBox([200, 100, 800, 700]);
+		const before = JSON.stringify(source);
+		const normalized = normalizeSceneAnalysis(source);
+		expect(normalized.scenes[0]?.shots[0]?.mainSubjects[0]).toMatchObject({
+			box2d: [200, 100, 800, 700],
+			centerX: 80,
+			centerY: 25,
+		});
+		expect(sceneAnalysisDocumentSchema.parse(normalized)).toEqual(normalized);
+		expect(JSON.stringify(source)).toBe(before);
+	});
+	it.each(
+		[
+			[0, 0, 1000, 1000],
+			[999, 999, 1000, 1000],
+			[0, 999, 1, 1000],
+		].map((box2d) => ({ box2d })),
+	)("accepts integer boundary box $box2d", ({ box2d }) => {
+		expect(
+			normalizeSceneAnalysis(fixtureWithBox(box2d)).scenes[0]?.shots[0]
+				?.mainSubjects[0],
+		).toHaveProperty("box2d", box2d);
+	});
+	it.each(
+		[undefined, null, []].map((box2d) => ({ box2d })),
+	)("keeps legacy centers without inventing a box for %j", ({ box2d }) => {
+		const normalized = normalizeSceneAnalysis(fixtureWithBox(box2d));
+		const subject = normalized.scenes[0]?.shots[0]?.mainSubjects[0];
+		expect(subject).toMatchObject({ centerX: 80, centerY: 25 });
+		expect(subject?.box2d).toBeUndefined();
+		expect(sceneAnalysisDocumentSchema.parse(normalized)).toEqual(normalized);
+	});
+	it.each(
+		[
+			[0],
+			[0, 0, 1000],
+			[0, 0, 1000, 1000, 1000],
+			[-1, 0, 1000, 1000],
+			[0, 0, 1001, 1000],
+			[0, -1, 1000, 1000],
+			[0, 0, 1000, 1001],
+			[0, 0.5, 1000, 1000],
+			[0, 0, Number.NaN, 1000],
+			[0, 0, 1000, Number.POSITIVE_INFINITY],
+			[800, 100, 200, 700],
+			[200, 700, 800, 100],
+			[200, 100, 200, 700],
+			[200, 100, 800, 100],
+			[0, "0", 1000, 1000],
+			[null, 0, 1000, 1000],
+			"[0,0,1000,1000]",
+			{ ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+		].map((box2d) => ({ box2d })),
+	)("rejects malformed nonempty raw and stored box %#", ({ box2d }) => {
+		expect(() => normalizeSceneAnalysis(fixtureWithBox(box2d))).toThrow();
+		const normalized = normalizeSceneAnalysis(fixture());
+		const subject = normalized.scenes[0]?.shots[0]?.mainSubjects[0];
+		if (!subject) throw new Error("Missing subject fixture");
+		expect(() =>
+			sceneAnalysisDocumentSchema.parse({
+				...normalized,
+				scenes: [
+					{
+						...normalized.scenes[0],
+						shots: [
+							{
+								...normalized.scenes[0]?.shots[0],
+								mainSubjects: [{ ...subject, box2d }],
+							},
+						],
+					},
+				],
+			}),
+		).toThrow();
+	});
+});
+
 describe("normalizeSceneAnalysis", () => {
 	it("preserves bounded content credits independently of scene characters", () => {
 		const source = {

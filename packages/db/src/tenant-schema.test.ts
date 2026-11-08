@@ -39,9 +39,9 @@ describe("schema-derived organization enforcement coverage", () => {
 		expect(TENANT_MODEL_RELATIONS).toEqual(relations);
 	});
 	it("classifies every model and forces RLS, immutable ownership and no ambient default for every tenant table", () => {
-		expect(models.length).toBe(50);
+		expect(models.length).toBe(62);
 		const tenant = models.filter((model) => !global.has(model[1] ?? ""));
-		expect(tenant.length).toBe(45);
+		expect(tenant.length).toBe(57);
 		for (const model of tenant) {
 			const name = model[1];
 			expect(model[2], name).toMatch(
@@ -71,15 +71,25 @@ describe("schema-derived organization enforcement coverage", () => {
 		let references = 0;
 		for (const model of models) {
 			for (const relation of (model[2] ?? "").matchAll(
-				/^\s+\w+\s+(\w+)\??\s+@relation\([^\n]*fields: \[(\w+)\], references: \[id\]/gm,
+				/^\s+\w+\s+(\w+)\??\s+@relation\([^\n]*fields: \[([^\]]+)\], references: \[([^\]]+)\]/gm,
 			)) {
 				if (!tenantNames.has(relation[1])) continue;
 				references++;
+				const fields =
+					relation[2]?.split(",").map((field) => field.trim()) ?? [];
+				const parents =
+					relation[3]?.split(",").map((field) => field.trim()) ?? [];
+				const foreignField = fields.length === 1 ? fields[0] : fields[1];
+				expect(fields.length === 1 ? parents : [fields[0], ...parents]).toEqual(
+					fields.length === 1
+						? ["id"]
+						: ["organizationId", "organizationId", "id"],
+				);
 				expect(sql).toContain(
-					`FOREIGN KEY ("organizationId","${relation[2]}") REFERENCES "${relation[1]}"("organizationId","id") ON DELETE NO ACTION ON UPDATE NO ACTION DEFERRABLE INITIALLY DEFERRED`,
+					`FOREIGN KEY ("organizationId","${foreignField}") REFERENCES "${relation[1]}"("organizationId","id") ON DELETE NO ACTION ON UPDATE NO ACTION DEFERRABLE INITIALLY DEFERRED`,
 				);
 			}
 		}
-		expect(references).toBe(40);
+		expect(references).toBe(72);
 	});
 });

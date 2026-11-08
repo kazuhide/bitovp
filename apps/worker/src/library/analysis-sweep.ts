@@ -6,77 +6,107 @@ import {
 	redactSecrets,
 	sceneAnalysisLocales,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	listCapturedOriginalInputs,
+	type Prisma,
+} from "@bitovp/db";
 import { UnsupportedBrowseError } from "@bitovp/storage";
 import { BitmovinApi } from "../bitmovin/sdk-ctor";
+import {
+	type AuthoritativeProviderAnalysis,
+	reconcileCapturedBindings,
+	recordAuthoritativeAnalysisCapture,
+} from "./captured-bindings";
 import type { createStoredAnalysisReader } from "./stored-analysis";
 
 export const ANALYSIS_SWEEP_INTERVAL_MS = 10_000;
 export const ANALYSIS_LEASE_MS = 120_000;
 export const ANALYSIS_MAX_ATTEMPTS = 5;
-type Provider = { get(encodingId: string, locale: string): Promise<unknown> };
+type Provider = {
+	get(encodingId: string, locale: string): Promise<unknown>;
+	getCaptured?(
+		encodingId: string,
+		locale: string,
+	): Promise<AuthoritativeProviderAnalysis>;
+};
 
 export function createAnalysisProvider(deps: {
 	revealBitmovinAccount(
 		id: string,
 	): Promise<{ apiKey: string; tenantOrgId: string | null }>;
 }) {
-	return async (id: string): Promise<Provider> => {
+	return async (id: string) => {
 		const account = await deps.revealBitmovinAccount(id);
-		let rawResult: unknown;
-		const api = new BitmovinApi({
-			apiKey: account.apiKey,
-			...(account.tenantOrgId ? { tenantOrgId: account.tenantOrgId } : {}),
-			fetch: async (url: string, init?: RequestInit) => {
-				const response = await fetch(url, {
-					...init,
-					signal: AbortSignal.timeout(25_000),
-				});
-				// Bound bytes before the SDK JSON parser allocates a provider payload.
-				const reader = response.body?.getReader();
-				if (!reader) return response;
-				const chunks: Uint8Array[] = [];
-				let size = 0;
-				try {
-					while (true) {
-						const { done, value } = await reader.read();
-						if (done) break;
-						size += value.byteLength;
-						if (size > MAX_SCENE_ANALYSIS_BYTES)
-							throw new Error("Analysis response exceeds 8 MiB");
-						chunks.push(value);
+		const getCaptured = async (
+			encodingId: string,
+			locale: string,
+		): Promise<AuthoritativeProviderAnalysis> => {
+			let rawResult: unknown;
+			let providerResponseSha256: string | undefined;
+			const api = new BitmovinApi({
+				apiKey: account.apiKey,
+				...(account.tenantOrgId ? { tenantOrgId: account.tenantOrgId } : {}),
+				fetch: async (url: string, init?: RequestInit) => {
+					const response = await fetch(url, {
+						...init,
+						signal: AbortSignal.timeout(25_000),
+					});
+					// Bound bytes before the SDK JSON parser allocates a provider payload.
+					const reader = response.body?.getReader();
+					if (!reader) return response;
+					const chunks: Uint8Array[] = [];
+					let size = 0;
+					try {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							size += value.byteLength;
+							if (size > MAX_SCENE_ANALYSIS_BYTES)
+								throw new Error("Analysis response exceeds 8 MiB");
+							chunks.push(value);
+						}
+					} finally {
+						await reader.cancel();
 					}
-				} finally {
-					await reader.cancel();
-				}
-				const body = Buffer.concat(chunks);
-				if (response.ok) {
-					const envelope = JSON.parse(body.toString("utf8"));
-					rawResult = envelope?.data?.result;
-				}
-				return new Response(body, {
-					status: response.status,
-					statusText: response.statusText,
-					headers: response.headers,
-				});
-			},
-		});
+					const body = Buffer.concat(chunks);
+					if (response.ok) {
+						const envelope = JSON.parse(body.toString("utf8"));
+						rawResult = envelope?.data?.result;
+						providerResponseSha256 = createHash("sha256")
+							.update(body)
+							.digest("hex");
+					}
+					return new Response(body, {
+						status: response.status,
+						statusText: response.statusText,
+						headers: response.headers,
+					});
+				},
+			});
+			// Let the SDK validate status/envelope, retaining fields its model mapper drops.
+			if (locale === "en") {
+				await api.aiSceneAnalysis.analyses.byEncodingId.details.get(encodingId);
+			} else {
+				await api.aiSceneAnalysis.analyses.byEncodingId.details.language.get(
+					encodingId,
+					locale,
+				);
+			}
+			if (!providerResponseSha256 || rawResult === undefined)
+				throw new Error("ANALYSIS_CAPTURE_UNVERIFIED");
+			return {
+				accountId: id,
+				encodingId,
+				locale,
+				providerResponseSha256,
+				raw: rawResult,
+			};
+		};
 		return {
-			get: async (encodingId, locale) => {
-				// Let the SDK validate status/envelope, retaining fields its model mapper drops.
-				rawResult = undefined;
-				if (locale === "en") {
-					await api.aiSceneAnalysis.analyses.byEncodingId.details.get(
-						encodingId,
-					);
-				} else {
-					await api.aiSceneAnalysis.analyses.byEncodingId.details.language.get(
-						encodingId,
-						locale,
-					);
-				}
-				return rawResult;
-			},
+			get: async (encodingId: string, locale: string) =>
+				(await getCaptured(encodingId, locale)).raw,
+			getCaptured,
 		};
 	};
 }
@@ -86,6 +116,8 @@ export function createAnalysisSweep(deps: {
 	prisma: AppPrismaClient;
 	providerFor(accountId: string): Promise<Provider>;
 	readOutput?: ReturnType<typeof createStoredAnalysisReader>;
+	/** Server-configured future input captures only; never enabled by HTTP metadata. */
+	captureBindings?: boolean;
 	now?: () => Date;
 	uuid?: () => string;
 }) {
@@ -93,6 +125,7 @@ export function createAnalysisSweep(deps: {
 	return async () => {
 		const current = now();
 		const eligible = {
+			sourceKind: "VOD_JOB" as const,
 			attempts: { lt: ANALYSIS_MAX_ATTEMPTS },
 			OR: [
 				{ state: { in: ["PENDING", "ERROR"] }, availableAt: { lte: current } },
@@ -102,6 +135,7 @@ export function createAnalysisSweep(deps: {
 		// A crash during the final attempt must still reach a visible terminal error.
 		await deps.prisma.librarySource.updateMany({
 			where: {
+				sourceKind: "VOD_JOB",
 				state: "RUNNING",
 				attempts: { gte: ANALYSIS_MAX_ATTEMPTS },
 				leaseUntil: { lte: current },
@@ -119,6 +153,7 @@ export function createAnalysisSweep(deps: {
 			take: 5,
 			select: {
 				id: true,
+				organizationId: true,
 				encodingId: true,
 				accountId: true,
 				locales: true,
@@ -160,6 +195,16 @@ export function createAnalysisSweep(deps: {
 				const output = librarySnapshotSchema.safeParse(row.snapshot);
 				const locator = output.success ? output.data.analysisOutput : undefined;
 				let provider: Provider | undefined;
+				const capturedInputs = deps.captureBindings
+					? await listCapturedOriginalInputs({
+							prisma: deps.prisma,
+							organizationId: row.organizationId,
+							sourceId: row.id,
+						})
+					: [];
+				if (capturedInputs.length > 1)
+					throw new Error("ANALYSIS_CAPTURE_UNVERIFIED");
+				const captureRequired = capturedInputs.length === 1;
 				const read = async (locale: string) => {
 					if (locator && deps.readOutput) {
 						try {
@@ -168,11 +213,13 @@ export function createAnalysisSweep(deps: {
 							if (!(error instanceof UnsupportedBrowseError)) throw error;
 						}
 					}
+					if (!row.accountId || !row.encodingId)
+						throw new Error("VOD provenance missing");
 					provider ??= await deps.providerFor(row.accountId);
 					return provider.get(row.encodingId, locale);
 				};
 				for (const locale of locales) {
-					if (completed.has(locale)) continue;
+					if (completed.has(locale) && !captureRequired) continue;
 					try {
 						const renewed = await deps.prisma.librarySource.updateMany({
 							where: fence(),
@@ -181,7 +228,21 @@ export function createAnalysisSweep(deps: {
 							},
 						});
 						if (!renewed.count) break;
-						const raw = redactSecrets(await read(locale));
+						let capturedResponse: AuthoritativeProviderAnalysis | undefined;
+						if (captureRequired) {
+							if (!row.accountId || !row.encodingId)
+								throw new Error("VOD provenance missing");
+							provider ??= await deps.providerFor(row.accountId);
+							if (!provider.getCaptured)
+								throw new Error("ANALYSIS_CAPTURE_UNVERIFIED");
+							capturedResponse = await provider.getCaptured(
+								row.encodingId,
+								locale,
+							);
+						}
+						const raw = redactSecrets(
+							capturedResponse ? capturedResponse.raw : await read(locale),
+						);
 						const document = normalizeSceneAnalysis(raw);
 						const rawHash = createHash("sha256")
 							.update(JSON.stringify(raw))
@@ -192,6 +253,16 @@ export function createAnalysisSweep(deps: {
 								data: { error: null },
 							});
 							if (!owned.count) return;
+							if (capturedResponse) {
+								await recordAuthoritativeAnalysisCapture({
+									tx,
+									organizationId: row.organizationId,
+									sourceId: row.id,
+									response: capturedResponse,
+								});
+								completed.add(locale);
+								return;
+							}
 							await tx.sceneAnalysisRevision.upsert({
 								where: {
 									sourceId_locale_rawHash: {
@@ -218,6 +289,12 @@ export function createAnalysisSweep(deps: {
 						failed = true;
 					}
 				}
+				if (captureRequired)
+					await reconcileCapturedBindings({
+						prisma: deps.prisma,
+						organizationId: row.organizationId,
+						sourceId: row.id,
+					});
 				failed ||=
 					locales.length === 0 ||
 					locales.some((locale) => !completed.has(locale));

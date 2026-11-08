@@ -1,6 +1,6 @@
 {
 	"name": "@bitovp/core",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"private": true,
 	"type": "module",
 	"exports": {
@@ -9,7 +9,10 @@
 		"./aisa-live-client": "./src/aisa-live-client.ts",
 		"./presets": "./src/plan/sample-presets.ts",
 		"./wizard": "./src/wizard/index.ts",
-		"./testing": "./src/testing/index.ts"
+		"./testing": "./src/testing/index.ts",
+		"./local-semantic-diagnostic-probe": "./src/local-semantic-diagnostic-probe.ts",
+		"./local-caption-config": "./src/content-editing/local-caption-config-node.ts",
+		"./local-story-flow-server": "./src/local-story-flow-server.ts"
 	},
 	"scripts": {
 		"test": "vitest run",

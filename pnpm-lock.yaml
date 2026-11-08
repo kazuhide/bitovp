@@ -160,6 +160,9 @@ importers:
       hls.js:
         specifier: 1.6.19
         version: 1.6.19
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
       lucide-react:
         specifier: ^0.574.0
         version: 0.574.0(react@19.2.9)

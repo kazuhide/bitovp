@@ -172,6 +172,9 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			return jsonError(
 				outcome.code === "NOT_FOUND" ? 404 : 409,
 				outcome.message,
+				outcome.code === "JOB_LIBRARY_EVIDENCE_REFERENCES"
+					? { code: outcome.code, protectedCount: outcome.protectedCount }
+					: undefined,
 			);
 		}
 		return NextResponse.json({ id, deleted: true });

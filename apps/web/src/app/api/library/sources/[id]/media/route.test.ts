@@ -3,6 +3,7 @@ import { classifyPath } from "@/lib/auth/gate";
 import { evaluateRole } from "@/lib/auth/roles";
 
 const findUnique = vi.fn(),
+	findArtifact = vi.fn(),
 	outputs = vi.fn(),
 	headObject = vi.fn(),
 	getObject = vi.fn(),
@@ -10,7 +11,13 @@ const findUnique = vi.fn(),
 	serve = vi.fn(),
 	browser = vi.fn();
 vi.mock("@/lib/server/context", () => ({
-	getServerContext: () => ({ prisma: { librarySource: { findUnique } } }),
+	getServerContext: () => ({
+		tenant: { organizationId: id },
+		prisma: {
+			librarySource: { findUnique },
+			renderArtifact: { findFirst: findArtifact },
+		},
+	}),
 }));
 vi.mock("@/lib/server/library-playback", () => ({
 	libraryFileOutputsForSource: (...a: unknown[]) => outputs(...a),
@@ -42,6 +49,7 @@ const file = {
 };
 beforeEach(() => {
 	vi.clearAllMocks();
+	findArtifact.mockReset();
 	findUnique.mockResolvedValue({
 		jobId: null,
 		snapshot: {
@@ -66,6 +74,113 @@ beforeEach(() => {
 			headers: { "Content-Type": "video/mp4" },
 		}),
 	);
+});
+
+const artifactId = "00000000-0000-4000-8000-000000000002";
+const runId = "00000000-0000-4000-8000-000000000003";
+const derivedFile = { ...file, key: `render-${artifactId}` };
+function derivedFixture() {
+	findUnique.mockResolvedValue({
+		organizationId: id,
+		sourceKind: "DERIVED_RENDER",
+		renderArtifactId: artifactId,
+		jobId: null,
+		snapshot: {
+			schemaVersion: 2,
+			kind: "DERIVED_RENDER",
+			name: "Clip",
+			identity: "VERIFIED",
+			planHash: "a".repeat(64),
+			inputs: [],
+			playbackLinks: [],
+			fileOutputs: [derivedFile],
+			renderRunId: runId,
+			renderArtifactId: artifactId,
+			qcVerdict: null,
+		},
+	});
+	outputs.mockResolvedValue([derivedFile]);
+	findArtifact.mockResolvedValue({
+		id: artifactId,
+		organizationId: id,
+		runId,
+		size: 10_000_000n,
+		storage: {
+			credentialId: file.credentialId,
+			bucket: file.bucket,
+			key: file.path,
+			size: 10_000_000,
+			expect: { etag: '"fixed-export"', versionId: "export-v1" },
+		},
+		run: { id: runId, state: "SUCCEEDED", profile: { kind: "EXPORT" } },
+	});
+}
+it("serves a derivative with its saved export version without refreshing its identity", async () => {
+	derivedFixture();
+	const response = await call(`key=${derivedFile.key}`);
+	expect(response.status).toBe(206);
+	expect(findArtifact).toHaveBeenCalledWith(
+		expect.objectContaining({ where: { id: artifactId, organizationId: id } }),
+	);
+	expect(headObject).not.toHaveBeenCalled();
+	expect(browser).not.toHaveBeenCalled();
+	expect(serve.mock.calls[0]?.[2]).toEqual({
+		credentialId: file.credentialId,
+		bucket: file.bucket,
+		key: file.path,
+		size: 10_000_000,
+		expect: {
+			size: 10_000_000,
+			etag: '"fixed-export"',
+			versionId: "export-v1",
+		},
+		contentType: "video/mp4",
+	});
+});
+it.each([
+	"artifact-missing",
+	"artifact-id",
+	"snapshot-id",
+	"tenant",
+	"run",
+	"preview",
+	"credential",
+	"bucket",
+	"path",
+	"key",
+	"size",
+	"expect",
+	"null-version",
+	"unknown-storage",
+])("refuses inconsistent derivative evidence before any storage I/O: %s", async (change) => {
+	derivedFixture();
+	const source = structuredClone(await findUnique());
+	const artifact = structuredClone(await findArtifact());
+	findUnique.mockClear();
+	findArtifact.mockClear();
+	if (change === "artifact-missing") findArtifact.mockResolvedValue(null);
+	else if (change === "artifact-id") source.renderArtifactId = runId;
+	else if (change === "snapshot-id") source.snapshot.renderArtifactId = runId;
+	else if (change === "tenant") artifact.organizationId = runId;
+	else if (change === "run") artifact.run.state = "FAILED";
+	else if (change === "preview") artifact.run.profile.kind = "PREVIEW";
+	else if (change === "credential") artifact.storage.credentialId = runId;
+	else if (change === "bucket") artifact.storage.bucket = "other";
+	else if (change === "path") artifact.storage.key = "other.mp4";
+	else if (change === "key") source.snapshot.fileOutputs[0].key = "other-key";
+	else if (change === "size") artifact.storage.size = 42;
+	else if (change === "expect") artifact.storage.expect = {};
+	else if (change === "null-version")
+		artifact.storage.expect = { versionId: "null" };
+	else if (change === "unknown-storage")
+		artifact.storage.url = "https://private.example";
+	findUnique.mockResolvedValue(source);
+	if (change !== "artifact-missing") findArtifact.mockResolvedValue(artifact);
+	const response = await call(`key=${derivedFile.key}`);
+	expect(response.status).toBe(409);
+	expect(headObject).not.toHaveBeenCalled();
+	expect(browser).not.toHaveBeenCalled();
+	expect(serve).not.toHaveBeenCalled();
 });
 it("uses the protected VIEWER boundary", () => {
 	expect(classifyPath(path)).toBe("api-guarded");

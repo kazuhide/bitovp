@@ -485,10 +485,16 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// OPERATOR POST handlers. Both populations were measured from disk.
 		// Historical imports replace the old insights GET with GET + POST.
 		// Local simulator presets add one ADMIN GET route and handler.
-		// AISA recording, translations and verified import add four route files.
-		// Include explicit HEAD exports for both authenticated media routes.
-		// Measured using the same on-disk exporter: 161 files / 230 handlers.
-		expect(guarded.length).toBe(161);
-		expect(methods.length).toBe(230);
+		// Clip editing adds fourteen guarded files and fifteen handlers,
+		// including a separate artifact download route; measured from disk.
+		// Automatic portrait generation adds one OPERATOR POST endpoint.
+		// Current-draft clip thumbnails add one tenant-bound VIEWER GET route.
+		expect(
+			evaluateRole("VIEWER", "/api/library/edits/x/thumbnail-frame", "GET")
+				.allowed,
+		).toBe(true);
+		// Measured from the combined clip and AISA Live route exporters.
+		expect(guarded.length).toBe(188);
+		expect(methods.length).toBe(263);
 	});
 });

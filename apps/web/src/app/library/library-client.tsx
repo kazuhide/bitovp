@@ -35,8 +35,10 @@ type Result = { scope: string; offset: number } & (
 
 export function LibraryClient({
 	initialQuery = readLibraryBrowseState({}),
+	clipEditingAvailable = false,
 }: {
 	initialQuery?: LibraryBrowseState;
+	clipEditingAvailable?: boolean;
 }) {
 	const { t } = useT();
 	const [state, setState] = useState(initialQuery);
@@ -81,8 +83,10 @@ export function LibraryClient({
 		archived: String(archived),
 		offset: String(offset),
 	});
-	if (mode === "content") search.set("playback", playback);
-	else {
+	if (mode === "content") {
+		search.set("playback", playback);
+		search.set("scope", "originals");
+	} else {
 		search.set("match", match);
 		search.set("sort", sort);
 		if (locale) search.set("locale", locale);
@@ -90,9 +94,10 @@ export function LibraryClient({
 	const scope = `${mode}:${search}`;
 	const emptySceneQuery = mode === "scenes" && q.trim() === "";
 	const query = useQuery({
+		refetchOnMount: "always",
 		queryKey:
 			mode === "content"
-				? ["library", mode, debouncedQ, archived, playback, offset]
+				? ["library", mode, "originals", debouncedQ, archived, playback, offset]
 				: ["library", mode, debouncedQ, archived, match, sort, locale, offset],
 		enabled: q === debouncedQ && !emptySceneQuery,
 		queryFn: async ({ signal }): Promise<Result> =>
@@ -176,6 +181,11 @@ export function LibraryClient({
 				</TabsList>
 			</div>
 			<TabsContent value={mode} className="mt-0 space-y-4">
+				{!clipEditingAvailable && (
+					<p className="text-sm text-zinc-400">
+						{t("clipDiagnostics.unavailable")}
+					</p>
+				)}
 				<div className="flex flex-wrap items-center gap-3">
 					<Input
 						className="max-w-md"
@@ -316,6 +326,7 @@ export function LibraryClient({
 									<LibraryCatalogResults
 										items={result.data.items}
 										view={view}
+										clipEditingAvailable={clipEditingAvailable}
 									/>
 								) : (
 									<LibrarySceneResults items={result.data.items} />

@@ -11,7 +11,11 @@ import {
 	resetPostResponseSchema,
 	resetPreviewResponseSchema,
 } from "@/lib/reset-customer-contract";
-import { RESET_CATEGORIES, RESET_GLOBAL_MODELS } from "@/lib/reset-selection";
+import {
+	RESET_CATEGORIES,
+	RESET_GLOBAL_MODELS,
+	RESET_PROTECTED_EDITING_MODELS,
+} from "@/lib/reset-selection";
 import { AisaSnapshotRequired } from "@/lib/server/delete-jobs";
 import {
 	ENCODER_POINTER_RECORD_LIMIT,
@@ -113,7 +117,9 @@ function model(name: string) {
 			deleted.push(name);
 			return { count: 1 };
 		}),
-		count: vi.fn(async () => 1),
+		count: vi.fn(async () =>
+			RESET_PROTECTED_EDITING_MODELS.some((model) => model === name) ? 0 : 1,
+		),
 		findMany: vi.fn(async () => []),
 		// review-2 C1: watch rules are DISARMED, not deleted, so the harness
 		// has to model an update as well as a delete.
@@ -145,6 +151,7 @@ const MODELS = [
 	"encodingJob",
 ];
 const PRESERVES = [
+	...RESET_PROTECTED_EDITING_MODELS,
 	"createRequest",
 	// Internal ownership ledgers must survive reset until external cleanup completes.
 	"resetCleanupTask",
@@ -467,11 +474,33 @@ beforeEach(() => {
 		m.deleteMany?.mockClear?.();
 		m.count?.mockClear?.();
 	}
+	for (const name of RESET_PROTECTED_EDITING_MODELS) {
+		(
+			prisma[name] as { count: ReturnType<typeof vi.fn> }
+		).count.mockResolvedValue(0);
+	}
 	wireFindMany();
 	wirePointerCounts();
 });
 
 describe("POST /api/admin/reset (ledger #130)", () => {
+	it("retains referenced Library data and returns a concrete editing conflict before side effects", async () => {
+		(
+			prisma.editProject as { count: ReturnType<typeof vi.fn> }
+		).count.mockResolvedValue(2);
+		const res = await POST(
+			postRequest({ confirm: "RESET", categories: ["contentLibrary"] }),
+		);
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "RESET_LIBRARY_EDITING_REFERENCES", protectedCount: 2 },
+		});
+		expect(deleted).toEqual([]);
+		expect(updated).toEqual([]);
+		expect(auditCreate).not.toHaveBeenCalled();
+		expect(getJobs).not.toHaveBeenCalled();
+		expect(obliterate).not.toHaveBeenCalled();
+	});
 	it.each([
 		"users",
 		"setupCodes",
@@ -701,6 +730,27 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 });
 
 describe("GET /api/admin/reset (the preview)", () => {
+	it("reports protected editing records in the Library count without leaking model names", async () => {
+		(
+			prisma.editProject as { count: ReturnType<typeof vi.fn> }
+		).count.mockResolvedValue(2);
+		const res = await GET(
+			new Request("http://test/api/admin/reset?categories=contentLibrary", {
+				headers: { [ACTOR_HEADER]: "session" },
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.deleteCounts).toContainEqual({
+			category: "contentLibrary",
+			count: 6,
+			protectedCount: 2,
+		});
+		expect(JSON.stringify(body)).not.toMatch(
+			/EditProject|RenderRun|ContentDerivation|libraryMediaVersion/,
+		);
+		expect(deleted).toEqual([]);
+	});
 	it("allows an empty preview selection and counts every choice without the unrelated AISA guard", async () => {
 		finishedAisaJobs = [
 			{

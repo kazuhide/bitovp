@@ -25,6 +25,7 @@ const findCapturedSource = vi.fn();
 // Interactive $transaction: invoke the callback with a tx exposing the same
 // model methods the route uses (vmafJob.count/deleteMany, encodingJob.deleteMany).
 const tx = {
+	libraryEvidenceReceipt: { count: vi.fn(async () => 0) },
 	$queryRaw: lockJob,
 	librarySource: { findUnique: findCapturedSource },
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
@@ -35,6 +36,7 @@ const $transaction = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		prisma: {
+			libraryEvidenceReceipt: { count: vi.fn(async () => 0) },
 			encodingJob: { findUnique, deleteMany: jobDeleteMany, update: jobUpdate },
 			credential: { findMany: credentialFindMany },
 			vmafJob: {

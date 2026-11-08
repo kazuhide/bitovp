@@ -87,6 +87,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm typecheck
+      - name: Test caption alignment without loading models
+        run: python3 -B apps/worker/scripts/test-caption-forced-align.py
+      - name: Test local semantic gateway without models
+        run: python3 -B -m unittest discover -s tools/local-semantic-gateway -p 'test_*.py' -v
+      - name: Test clip evaluation tools with synthetic inputs
+        run: python3 -B -m unittest discover -s tools/clip-quality -p 'test_*.py' -v
       - run: pnpm test:api-coverage
       - run: pnpm test:release-gates
       - run: pnpm --filter @bitovp/worker smoke

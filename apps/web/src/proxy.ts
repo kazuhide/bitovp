@@ -3,6 +3,11 @@ import { ACTOR_HEADER, bearerToken } from "@/lib/auth/api-token-gate";
 import { loadAuthConfig } from "@/lib/auth/config";
 import { classifyPath, loginPath, type PathClass } from "@/lib/auth/gate";
 import { ingressHostname } from "@/lib/auth/ingress-allowlist";
+import {
+	authorizeInputCaptureRequest,
+	inputCaptureReadId,
+	inputCaptureUnauthorized,
+} from "@/lib/auth/input-capture-gate";
 import { resolveProvider } from "@/lib/auth/provider";
 import { publicContextError } from "@/lib/auth/public-context-error";
 import {
@@ -689,6 +694,13 @@ async function authGate(
 }
 
 export async function proxy(req: NextRequest) {
+	// The provider cannot hold a user session. Only this exact, independently
+	// signed GET/HEAD capability crosses the ingress boundary; its hostname
+	// never joins the UI/API origin allowlist. The handler authenticates again.
+	if (inputCaptureReadId(req.nextUrl.pathname, req.method)) {
+		if (!authorizeInputCaptureRequest(req)) return inputCaptureUnauthorized();
+		return forward(req, "anonymous");
+	}
 	// No header pre-strip here: reassigning a local NextRequest never
 	// reaches the route (review-189 C1 measured it) — the forgery rail is
 	// forward's positive override on EVERY continuing path in authGate.

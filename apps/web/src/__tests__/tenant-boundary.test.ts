@@ -53,7 +53,9 @@ describe("production tenant capability boundaries", () => {
 		]);
 	});
 	it("ordinary routes cannot construct a context from a caller-supplied organization", () => {
+		// Signed input delivery verifies its independent HMAC before selecting a tenant.
 		expect(importers("contextForOrganization")).toEqual([
+			"lib/server/input-capture-gateway.ts",
 			"lib/server/webhook-receiver.ts",
 		]);
 	});

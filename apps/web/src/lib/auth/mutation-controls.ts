@@ -79,6 +79,21 @@ export const MUTATION_CONTROLS = {
 		source: "app/library/source-panel.tsx",
 		bindings: 1,
 	},
+	"library.edits.prepare": {
+		minRole: "OPERATOR",
+		source: "app/library/[id]/edits/editing-library.tsx",
+		bindings: 1,
+	},
+	"library.edits.edit": {
+		minRole: "OPERATOR",
+		source: "app/library/edits/[id]/editor-client.tsx",
+		bindings: 1,
+	},
+	"library.edits.result": {
+		minRole: "OPERATOR",
+		source: "app/library/edits/[id]/result/portrait-result.tsx",
+		bindings: 1,
+	},
 	"live.channels.create": {
 		minRole: "OPERATOR",
 		source: "app/live/channels-client.tsx",
@@ -311,6 +326,11 @@ export const MUTATION_CONTROLS = {
 		source: "app/settings/features/features-client.tsx",
 		bindings: 1,
 	},
+	"settings.clip-editing-diagnose": {
+		minRole: "ADMIN",
+		source: "app/settings/clip-editing/clip-editing-client.tsx",
+		bindings: 1,
+	},
 	"settings.branding": {
 		minRole: "ADMIN",
 		source: "app/settings/branding/branding-client.tsx",
@@ -423,6 +443,34 @@ export type MutationSourceContract = {
  * is hidden (for example CaptureVmafPanel -> live.channel.vmaf).
  */
 export const MUTATION_SOURCE_CENSUS = {
+	"app/library/[id]/edits/prepare-generation-controls.tsx": {
+		writeCalls: 2,
+		controls: ["library.edits.prepare", "library.edits.edit"],
+	},
+	"app/library/edits/[id]/composition-workbench.tsx": {
+		writeCalls: 5,
+		controls: ["library.edits.edit"],
+	},
+	"app/library/edits/[id]/composition-transcription-controls.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
+	},
+	"app/library/edits/[id]/editor-router.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
+	},
+	"app/library/[id]/edits/generation-controls.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
+	},
+	"app/library/[id]/edits/association-review.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
+	},
+	"app/library/generations/[id]/generation-progress.tsx": {
+		writeCalls: 2,
+		controls: ["library.edits.edit"],
+	},
 	"app/live/aisa-channel-analysis.tsx": {
 		writeCalls: 1,
 		controls: ["live.aisa.translate"],
@@ -450,6 +498,28 @@ export const MUTATION_SOURCE_CENSUS = {
 	"app/library/source-panel.tsx": {
 		writeCalls: 1,
 		controls: ["library.source.retry"],
+	},
+	"app/library/[id]/edits/editing-library.tsx": {
+		writeCalls: 2,
+		controls: ["library.edits.prepare"],
+	},
+	"app/library/[id]/edits/auto-portrait-form.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.prepare"],
+		delegatedExports: [
+			{ name: "AutoPortraitForm", controls: ["library.edits.prepare"] },
+		],
+	},
+	"app/library/edits/[id]/result/portrait-result-actions.tsx": {
+		writeCalls: 2,
+		controls: ["library.edits.result"],
+		delegatedExports: [
+			{ name: "PortraitResultActions", controls: ["library.edits.result"] },
+		],
+	},
+	"app/library/edits/[id]/editor-client.tsx": {
+		writeCalls: 5,
+		controls: ["library.edits.edit"],
 	},
 	"app/live/[id]/alert-panel.tsx": {
 		writeCalls: 2,
@@ -570,6 +640,10 @@ export const MUTATION_SOURCE_CENSUS = {
 	"app/settings/features/features-client.tsx": {
 		writeCalls: 1,
 		controls: ["settings.features"],
+	},
+	"app/settings/clip-editing/clip-editing-client.tsx": {
+		writeCalls: 1,
+		controls: ["settings.clip-editing-diagnose"],
 	},
 	"app/settings/infrastructure/cloud-connect-panel.tsx": {
 		writeCalls: 2,
@@ -699,6 +773,72 @@ export type MutationWriteFamily = {
  * never used as surrogate evidence for a write.
  */
 export const MUTATION_WRITE_FAMILIES = {
+	"app/library/[id]/edits/prepare-generation-controls.tsx": [
+		{
+			write: "POST /api/library/media-tasks",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/sources/x/media-versions",
+			controls: ["library.edits.prepare", "library.edits.edit"],
+		},
+	],
+	"app/library/edits/[id]/composition-workbench.tsx": [
+		{
+			write: "PUT /api/library/edits/x/draft",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/edits/x/revisions",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/edits/x/renders",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/edits/x/images",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/renders/x/cancel",
+			controls: ["library.edits.edit"],
+		},
+	],
+	"app/library/edits/[id]/composition-transcription-controls.tsx": [
+		{
+			write: "POST /api/library/media-tasks",
+			controls: ["library.edits.edit"],
+		},
+	],
+	"app/library/edits/[id]/editor-router.tsx": [
+		{
+			write: "PUT /api/library/edits/x/draft",
+			controls: ["library.edits.edit"],
+		},
+	],
+	"app/library/[id]/edits/generation-controls.tsx": [
+		{
+			write: "POST /api/library/media-tasks",
+			controls: ["library.edits.edit"],
+		},
+	],
+	"app/library/[id]/edits/association-review.tsx": [
+		{
+			write: "POST /api/library/analysis-associations",
+			controls: ["library.edits.edit"],
+		},
+	],
+	"app/library/generations/[id]/generation-progress.tsx": [
+		{
+			write: "POST /api/library/media-tasks/x/cancel",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/media-tasks/x/retry",
+			controls: ["library.edits.edit"],
+		},
+	],
 	"app/live/aisa-channel-analysis.tsx": [
 		{
 			write: "POST /api/live/analyses/x/translations",
@@ -733,6 +873,51 @@ export const MUTATION_WRITE_FAMILIES = {
 		{
 			write: "POST /api/library/sources/x/retry",
 			controls: ["library.source.retry"],
+		},
+	],
+	"app/library/[id]/edits/editing-library.tsx": [
+		{
+			write: "POST /api/library/sources/x/media-versions",
+			controls: ["library.edits.prepare"],
+		},
+		{ write: "POST /api/library/edits", controls: ["library.edits.prepare"] },
+	],
+	"app/library/[id]/edits/auto-portrait-form.tsx": [
+		{
+			write: "POST /api/library/portrait-generations",
+			controls: ["library.edits.prepare"],
+		},
+	],
+	"app/library/edits/[id]/result/portrait-result-actions.tsx": [
+		{
+			write: "POST /api/library/edits/x/renders",
+			controls: ["library.edits.result"],
+		},
+		{
+			write: "POST /api/library/renders/x/cancel",
+			controls: ["library.edits.result"],
+		},
+	],
+	"app/library/edits/[id]/editor-client.tsx": [
+		{
+			write: "PUT /api/library/edits/x/draft",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/edits/x/revisions",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/edits/x/renders",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/edits/x/suggestions",
+			controls: ["library.edits.edit"],
+		},
+		{
+			write: "POST /api/library/renders/x/cancel",
+			controls: ["library.edits.edit"],
 		},
 	],
 	"app/live/[id]/alert-panel.tsx": [
@@ -901,6 +1086,12 @@ export const MUTATION_WRITE_FAMILIES = {
 	],
 	"app/settings/features/features-client.tsx": [
 		{ write: "PATCH /api/settings/features", controls: ["settings.features"] },
+	],
+	"app/settings/clip-editing/clip-editing-client.tsx": [
+		{
+			write: "POST /api/settings/clip-editing",
+			controls: ["settings.clip-editing-diagnose"],
+		},
 	],
 	"app/settings/infrastructure/cloud-connect-panel.tsx": [
 		{

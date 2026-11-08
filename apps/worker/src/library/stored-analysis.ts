@@ -5,7 +5,8 @@ import {
 	UnsupportedBrowseError,
 } from "@bitovp/storage";
 
-type Locator = NonNullable<LibrarySourceView["snapshot"]["analysisOutput"]>;
+type VodSnapshot = Extract<LibrarySourceView["snapshot"], { kind: "VOD_JOB" }>;
+type Locator = NonNullable<VodSnapshot["analysisOutput"]>;
 export function createStoredAnalysisReader(
 	browserFor: (credentialId: string) => Promise<ObjectStorageBrowser>,
 ) {

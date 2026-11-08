@@ -62,7 +62,13 @@ export async function POST(req: Request) {
 				if (outcome.ok) {
 					deleted.push(id);
 				} else {
-					skipped.push({ id, reason: outcome.message });
+					skipped.push({
+						id,
+						reason: outcome.message,
+						...(outcome.code === "JOB_LIBRARY_EVIDENCE_REFERENCES"
+							? { code: outcome.code, protectedCount: outcome.protectedCount }
+							: {}),
+					});
 				}
 			} catch (deleteErr) {
 				// UNEXPECTED (not-found / still-active / lost-race all come back as

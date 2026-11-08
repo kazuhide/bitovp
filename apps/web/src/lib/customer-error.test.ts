@@ -16,6 +16,24 @@ const tFor = (locale: "en" | "ja"): Translator => {
 
 describe("structured customer errors", () => {
 	it.each([
+		"ja",
+		"en",
+	] as const)("explains retained Library source jobs in %s without provider details", (locale) => {
+		const visible = localizedCustomerError(
+			tFor(locale),
+			new ApiError(409, "private source locator", {
+				code: "JOB_LIBRARY_EVIDENCE_REFERENCES",
+				protectedCount: 2,
+			}),
+			"common.requestFailed",
+		);
+		expect(visible).toBe(
+			locale === "ja"
+				? "Libraryの素材の証跡が参照しているため、このジョブは削除できません。"
+				: "This job is retained by Library source evidence and cannot be deleted.",
+		);
+	});
+	it.each([
 		"en",
 		"ja",
 	] as const)("explains capture-specific sequence naming without exposing the raw error in %s", (locale) => {
@@ -156,6 +174,12 @@ describe("structured customer errors", () => {
 			code: "RESET_STATE_CHANGED",
 			en: /status changed.*review.*try again/i,
 			ja: /状態が変わり.*確認.*再実行/,
+		},
+		{
+			code: "RESET_LIBRARY_EDITING_REFERENCES",
+			details: { protectedCount: 3 },
+			en: /3.*editing.*Content Library.*selection/i,
+			ja: /3.*編集.*コンテンツライブラリ.*選択/,
 		},
 		{
 			code: "SCHEDULE_NOT_CANCELLABLE",

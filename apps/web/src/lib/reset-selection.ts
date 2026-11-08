@@ -14,10 +14,27 @@ export const RESET_INTERNAL_MODELS = [
 	"vmafComputeTask",
 ] as const;
 
+/** Editing references form retained revision/derivative chains; this release never deletes them by reset. */
+export const RESET_PROTECTED_EDITING_MODELS = [
+	"libraryAnalysisBinding",
+	"editProjectResource",
+	"libraryEvidenceReceipt",
+	"libraryFlowEvidencePin",
+	"libraryMediaTask",
+	"libraryImageAsset",
+	"libraryMediaVersion",
+	"editProject",
+	"editRevision",
+	"renderRun",
+	"renderArtifact",
+	"contentDerivation",
+] as const;
+
 export const RESET_CATALOG = [
 	{
 		category: "contentLibrary",
 		models: [
+			...RESET_PROTECTED_EDITING_MODELS,
 			"contentRevision",
 			"content",
 			"sceneAnalysisRevision",

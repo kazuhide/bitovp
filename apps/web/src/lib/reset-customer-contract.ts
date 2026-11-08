@@ -252,6 +252,8 @@ export const resetPreviewResponseSchema = z
 				.object({
 					category: resetDeleteCategorySchema,
 					count: z.number().int().nonnegative(),
+					/** Editing history is counted but cannot be deleted by this release. */
+					protectedCount: z.number().int().positive().optional(),
 				})
 				.strict(),
 		),

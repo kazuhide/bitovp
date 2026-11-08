@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import type { LibrarySceneSelection } from "@/lib/library-scenes";
+import { ContentClipPanel } from "../content-clip-panel";
 import { SourcePanel } from "../source-panel";
 import { sourcePollingInterval } from "../source-polling";
 
@@ -13,6 +14,7 @@ type ContentDetailProps = {
 	id: string;
 	player?: PlayerClientConfig;
 	initialScene?: LibrarySceneSelection;
+	clipEditingAvailable?: boolean;
 };
 
 export function ContentDetailClient(props: ContentDetailProps) {
@@ -24,7 +26,12 @@ export function ContentDetailClient(props: ContentDetailProps) {
 	);
 }
 
-function ContentDetailView({ id, player, initialScene }: ContentDetailProps) {
+function ContentDetailView({
+	id,
+	player,
+	initialScene,
+	clipEditingAvailable = false,
+}: ContentDetailProps) {
 	const { t } = useT();
 	const query = useQuery({
 		queryKey: ["library", id, initialScene ?? null],
@@ -87,6 +94,30 @@ function ContentDetailView({ id, player, initialScene }: ContentDetailProps) {
 			)}
 			{query.data && (
 				<>
+					{query.data.parent && (
+						<p className="min-w-0 break-words text-sm text-zinc-400">
+							{t("editing.originalContent")}:{" "}
+							<Link
+								href={`/library/${query.data.parent.contentId}`}
+								className="rounded text-emerald-400 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-emerald-500"
+							>
+								{query.data.parent.title}
+							</Link>
+							{
+								<>
+									{" · "}
+									<Link
+										href={`/library/edits/${query.data.parent.projectId}`}
+										className="rounded text-emerald-400 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-emerald-500"
+									>
+										{t(
+											clipEditingAvailable ? "editing.open" : "editing.renders",
+										)}
+									</Link>
+								</>
+							}
+						</p>
+					)}
 					<header className="flex flex-wrap items-start justify-between gap-3">
 						<div className="min-w-0 flex-1 space-y-2">
 							<h1 className="break-words font-semibold text-2xl">
@@ -108,6 +139,19 @@ function ContentDetailView({ id, player, initialScene }: ContentDetailProps) {
 								</p>
 							)}
 						</div>
+						{!query.data.parent || !clipEditingAvailable ? (
+							<ContentClipPanel
+								contentId={id}
+								clipEditingAvailable={clipEditingAvailable}
+							/>
+						) : (
+							<Link
+								href={`/library/${id}/edits`}
+								className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
+							>
+								{t("editing.open")}
+							</Link>
+						)}
 					</header>
 					{freshSelectionRead &&
 						initialScene &&

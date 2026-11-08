@@ -54,9 +54,11 @@ function exceptions() {
 				"Each exception must name one tracked file",
 			);
 			const path = matched[0];
-			const line = readFileSync(join(root, path), "utf8")
-				.split("\n")
-				.find((candidate) => new RegExp(linePattern).test(candidate));
+			// A formatted property may place its exact value on the next line.
+			// Retain the complete anchored match, including its property name.
+			const line = readFileSync(join(root, path), "utf8").match(
+				new RegExp(linePattern, "m"),
+			)?.[0];
 			assert.ok(line, `Exception must still describe a known fixture: ${path}`);
 			return { path, line };
 		});
@@ -217,10 +219,13 @@ for (const placement of ["next line", "same line", "changed value"]) {
 							? `${line} ${added}`
 							: line.replace(/(["'])([^"']+)(["'])/, `"${secret}"`);
 				const preceding = files.get(path) ?? "";
+				const secretOffset = content.indexOf(secret);
+				assert.ok(secretOffset >= 0, "Canary must occur in the fixture");
 				expected.push({
 					path,
 					line:
-						preceding.split("\n").length + (placement === "next line" ? 1 : 0),
+						preceding.split("\n").length +
+						content.slice(0, secretOffset).split("\n").length - 1,
 				});
 				files.set(path, `${preceding}${content}\n`);
 			}
@@ -231,7 +236,10 @@ for (const placement of ["next line", "same line", "changed value"]) {
 					result.rows.some(
 						(row) =>
 							row.File.replaceAll("\\", "/").endsWith(path) &&
-							row.StartLine === line,
+							// A multiline key/value match starts at the key and must
+							// contain the exact line where the canary was inserted.
+							row.StartLine <= line &&
+							row.EndLine >= line,
 					),
 					`Missing detection: ${path}:${line}`,
 				);

@@ -1,6 +1,6 @@
 {
 	"name": "bitovp",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"private": true,
 	"packageManager": "pnpm@11.28.8+sha512.f6988a32046b9a3f78d7d7ee0747926bbe905ff9dff73bf19abb87bd7d1906a2ac90d93f73be32b5f9e14c2899569bcb0c9c5ec8a19e083f5d71bbab6dd9e0b8",
 	"engines": {
@@ -8,8 +8,10 @@
 	},
 	"scripts": {
 		"dev": "turbo run dev",
+		"preview:editing": "node scripts/editing-preview.mjs",
 		"build": "turbo run build",
-		"test": "turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner",
+		"test": "turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner && pnpm test:editing-preview",
+		"test:editing-preview": "node --test scripts/editing-preview.test.mjs scripts/editing-fonts.test.mjs",
 		"test:repo-contracts": "pnpm --filter @bitovp/web exec vitest run src/__tests__/api-usage-doc.test.ts src/__tests__/constraint-range.test.ts src/__tests__/documentation-guides.test.ts src/__tests__/screen-names.test.ts src/__tests__/onboarding-contract.test.ts src/__tests__/docker-context.test.ts && pnpm --filter @bitovp/core exec vitest run src/plan/fixture-registry.test.ts && pnpm test:api-coverage",
 		"test:api-coverage": "node --test scripts/api-coverage*.test.mjs && node scripts/api-coverage-current.mjs --check",
 		"test:release-gates": "node --test scripts/release-gates.test.mjs scripts/source-revision.test.mjs",
@@ -18,6 +20,7 @@
 		"test:postgres-runner": "node --test scripts/postgres-integration.test.mjs",
 		"test:postgres": "node scripts/postgres-integration.mjs",
 		"test:media": "node scripts/media-smoke.mjs",
+		"test:editing-media": "pnpm --filter @bitovp/worker exec tsx --test src/library-editing/normalization.media.ts src/library-editing/normalization-untagged-color.media.ts src/library-editing/render-movie-clock.media.ts",
 		"test:media-runner": "node --test scripts/media-smoke.test.mjs",
 		"release:gates": "node scripts/release-gates.mjs",
 		"typecheck": "turbo run typecheck",

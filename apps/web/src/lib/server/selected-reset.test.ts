@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	RESET_CATALOG,
 	RESET_CATEGORIES,
+	RESET_PROTECTED_EDITING_MODELS,
 	requiredResetCategories,
 } from "@/lib/reset-selection";
 import { collectEncoderPointers, ENCODER_POINTER_RECORD_LIMIT } from "./reset";
@@ -15,6 +16,15 @@ import {
 } from "./selected-reset";
 
 const state = vi.hoisted(() => ({ active: false }));
+const editingModels = [
+	"libraryAnalysisBinding",
+	"libraryMediaVersion",
+	"editProject",
+	"editRevision",
+	"renderRun",
+	"renderArtifact",
+	"contentDerivation",
+] as const;
 vi.mock("./reset", async (original) => ({
 	...(await original<typeof import("./reset")>()),
 	findActiveWork: async () => ({
@@ -30,24 +40,27 @@ vi.mock("./reset", async (original) => ({
 function fixture() {
 	const events: string[] = [];
 	const tables = Object.fromEntries(
-		[...new Set(RESET_CATALOG.flatMap((entry) => [...entry.models]))].map(
-			(model) => [
-				model,
-				{
-					count: vi.fn(async () => 0),
-					findMany: vi.fn(async (_args?: unknown): Promise<unknown[]> => []),
-					findUnique: vi.fn(async () => null),
-					deleteMany: vi.fn(async (_args?: unknown) => {
-						events.push(`delete:${model}`);
-						return { count: 1 };
-					}),
-					updateMany: vi.fn(async (_args?: unknown) => {
-						events.push(`update:${model}`);
-						return { count: 1 };
-					}),
-				},
-			],
-		),
+		[
+			...new Set([
+				...RESET_CATALOG.flatMap((entry) => [...entry.models]),
+				...editingModels,
+			]),
+		].map((model) => [
+			model,
+			{
+				count: vi.fn(async () => 0),
+				findMany: vi.fn(async (_args?: unknown): Promise<unknown[]> => []),
+				findUnique: vi.fn(async () => null),
+				deleteMany: vi.fn(async (_args?: unknown) => {
+					events.push(`delete:${model}`);
+					return { count: 1 };
+				}),
+				updateMany: vi.fn(async (_args?: unknown) => {
+					events.push(`update:${model}`);
+					return { count: 1 };
+				}),
+			},
+		]),
 	);
 	const prisma = {
 		...tables,
@@ -86,6 +99,58 @@ beforeEach(() => {
 });
 
 describe("selected reset", () => {
+	it.each(
+		editingModels,
+	)("protects %s before any deletion or cleanup handoff", async (model) => {
+		const f = fixture();
+		f.tables[model]?.count.mockResolvedValue(2);
+		await expect(
+			deleteSelectedData(f.client, ["contentLibrary"]),
+		).rejects.toMatchObject({
+			code: "RESET_LIBRARY_EDITING_REFERENCES",
+			protectedCount: 2,
+		});
+		expect(
+			f.events.filter(
+				(event) => event.startsWith("delete:") || event.startsWith("update:"),
+			),
+		).toEqual([]);
+		expect(f.receipt).not.toHaveBeenCalled();
+	});
+	it("includes retained editing records in the preview without calling them deleted", async () => {
+		const f = fixture();
+		f.tables.libraryMediaVersion?.count.mockResolvedValue(2);
+		f.tables.editProject?.count.mockResolvedValue(3);
+		f.tables.libraryAnalysisBinding?.count.mockResolvedValue(4);
+		expect(
+			(await countResetCategories(f.client)).find(
+				(row) => row.category === "contentLibrary",
+			),
+		).toEqual({ category: "contentLibrary", count: 9, protectedCount: 9 });
+	});
+	it.each([
+		{ code: "P2003" },
+		{ code: "P2010", meta: { code: "23503" } },
+	])("reports raced editing FK ownership with the same refusal %j", async (error) => {
+		const f = fixture();
+		f.transaction.mockRejectedValueOnce(error);
+		f.tables.editProject?.count.mockResolvedValue(1);
+		await expect(
+			deleteSelectedData(f.client, ["contentLibrary"]),
+		).rejects.toMatchObject({
+			code: "RESET_LIBRARY_EDITING_REFERENCES",
+			protectedCount: 1,
+		});
+		expect(f.receipt).not.toHaveBeenCalled();
+	});
+	it("does not conflate an unrelated foreign-key failure with editing references", async () => {
+		const f = fixture();
+		const error = { code: "P2003" };
+		f.transaction.mockRejectedValueOnce(error);
+		await expect(deleteSelectedData(f.client, ["auditHistory"])).rejects.toBe(
+			error,
+		);
+	});
 	it("protects retained verification-key, canonical-key and direct provider references when adoption never recorded localId", async () => {
 		const f = fixture();
 		const cipher = new AesGcmCipher(randomBytes(32));
@@ -344,6 +409,7 @@ describe("selected reset", () => {
 				entry.models
 					.filter(
 						(model) =>
+							!new Set<string>(RESET_PROTECTED_EDITING_MODELS).has(model) &&
 							model !== "vmafComputeCredential" &&
 							model !== "vmafExecutionProfile",
 					)

@@ -125,11 +125,34 @@ export function createIoOps(
 			audited(
 				"POST",
 				"/encoding/inputs/https",
-				p,
+				{ name: p.name, host: p.host, ...(p.port ? { port: p.port } : {}) },
 				() =>
-					api.encoding.inputs.https.create(
-						new HttpsInput({ name: p.name, host: p.host }),
-					),
+					api.encoding.inputs.https
+						.create(
+							new HttpsInput({
+								name: p.name,
+								host: p.host,
+								...(p.port ? { port: p.port } : {}),
+								...(p.username !== undefined
+									? { username: p.username, password: p.password }
+									: {}),
+							}),
+						)
+						.catch((error: unknown) => {
+							// The provider can echo Basic credentials in shortMessage.
+							// Sanitize before audited() records any provider prose.
+							if (p.username === undefined && p.password === undefined)
+								throw error;
+							const message = "HTTPS input creation failed";
+							if (isBitmovinError(error))
+								throw Object.assign(new Error(message), {
+									httpStatusCode: error.httpStatusCode,
+									errorCode: error.errorCode,
+									requestId: error.requestId,
+									shortMessage: message,
+								});
+							throw new Error(message);
+						}),
 				(r) => ({ id: r.id }),
 			).then(id),
 

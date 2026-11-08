@@ -1,6 +1,39 @@
 # syntax=docker/dockerfile:1
 # Worker image with FFmpeg, streaming protocols, and VMAF models.
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS whisper-build
+RUN apt-get update && apt-get install -y --no-install-recommends cmake g++ make patch python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+ADD --checksum=sha256:645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4 https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037 /tmp/whisper.tar.gz
+COPY apps/worker/native/whisper-cli-quality.patch /tmp/whisper-cli-quality.patch
+COPY apps/worker/scripts/test-whisper-cli-quality.py /tmp/test-whisper-cli-quality.py
+RUN mkdir /source && tar xzf /tmp/whisper.tar.gz -C /source --strip-components=1 \
+    && patch --directory=/source -p1 --fuzz=0 < /tmp/whisper-cli-quality.patch \
+    && python3 /tmp/test-whisper-cli-quality.py /source/examples/cli/cli.cpp \
+    && cmake -S /source -B /source/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_IS_DEV=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_METAL=OFF -DGGML_BLAS=OFF -DGGML_OPENMP=OFF -DWHISPER_COREML=OFF \
+    && cmake --build /source/build --target whisper-cli -j2 \
+    && test "$(/source/build/bin/whisper-cli --version)" = "whisper.cpp version: 1.9.5"
+
+# Isolated CPU-only caption alignment dependencies; no model execution at build time.
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS caption-alignment-runtime
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-dev build-essential cmake pkg-config libsndfile1 sox ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/bitovp-caption-alignment \
+    && case "$TARGETARCH" in \
+      amd64) TORCH_WHEEL="https://download-r2.pytorch.org/whl/cpu/torch-2.10.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl#sha256=b7cb1ec66cefb90fd7b676eac72cfda3b8d4e4d0cacd7a531963bc2e0a9710ab" ;; \
+      arm64) TORCH_WHEEL="https://download-r2.pytorch.org/whl/cpu/torch-2.10.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl#sha256=1cfcb9b1558c6e52dffd0d4effce83b13c5ae5d97338164c372048c21f9cfccb" ;; \
+      *) exit 1 ;; esac \
+    && /opt/bitovp-caption-alignment/bin/pip install --no-cache-dir "$TORCH_WHEEL" \
+    && /opt/bitovp-caption-alignment/bin/pip install --no-cache-dir "https://files.pythonhosted.org/packages/01/12/d3027a7e4dc2eea0b12a4bf8414a7109f055004e1771666e01d8859d3ca0/qwen_asr-0.0.6-py3-none-any.whl#sha256=b9c55a38413298f3a990a4475467399daec6e8f4172363053fc42e2166c2dfd3" "transformers==4.57.6" "accelerate==1.12.0" "nagisa==0.2.11" \
+    && /opt/bitovp-caption-alignment/bin/python -c "import importlib.metadata as m; assert m.version('torch') == '2.10.0+cpu'; assert m.version('qwen-asr') == '0.0.6'; assert m.version('transformers') == '4.57.6'"
+
 FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+COPY --from=whisper-build /source/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper-build /source/LICENSE /usr/local/share/licenses/whisper.cpp/LICENSE
+ADD --chmod=0644 --checksum=sha256:68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5 https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf /usr/local/share/fonts/bitovp/NotoSansCJKjp-Regular.otf
+ADD --chmod=0644 --checksum=sha256:6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2 https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/LICENSE /usr/local/share/fonts/bitovp/OFL.txt
+ADD --chmod=0644 --checksum=sha256:de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551 https://raw.githubusercontent.com/google/fonts/b979dba422e445492b0eb9951ac52ee0b4d648c3/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf /usr/local/share/fonts/bitovp/NotoEmoji-wght.ttf
+ADD --chmod=0644 --checksum=sha256:500bb1ccf43df7bbb522112f9133a52b16e1c35e809632f5d8609b179152de5b https://raw.githubusercontent.com/google/fonts/b979dba422e445492b0eb9951ac52ee0b4d648c3/ofl/notoemoji/OFL.txt /usr/local/share/licenses/noto-emoji/OFL.txt
+ENV EDITING_FONT_PATH=/usr/local/share/fonts/bitovp/NotoSansCJKjp-Regular.otf
+RUN chmod 0755 /usr/local/share/fonts /usr/local/share/fonts/bitovp
 
 # Pin release names and verify bytes because upstream rotates build assets.
 ARG FFMPEG_BUILD="autobuild-2026-11-05-12-48"
@@ -18,6 +51,9 @@ RUN apt-get update \
 		ca-certificates \
 		curl \
 		xz-utils \
+		libstdc++6 \
+		fontconfig \
+	&& fc-cache -f /usr/local/share/fonts/bitovp \
 	&& if [ -z "$FFMPEG_URL" ]; then \
 		case "$TARGETARCH" in \
 			amd64) FF_ARCH=linux64; FF_SHA="$FFMPEG_SHA256_AMD64" ;; \
@@ -85,6 +121,11 @@ RUN apt-get update \
 		-lavfi "[0:v][1:v]libvmaf=model=path=$VMAF_MODEL_DIR/vmaf_v1.0.16_3d0h.json" \
 		-f null - 2>&1 | grep -q 'VMAF score' \
 	&& apt-get purge -y --auto-remove curl \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY --from=caption-alignment-runtime /opt/bitovp-caption-alignment /opt/bitovp-caption-alignment
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends python3 libsndfile1 sox libgomp1 \
 	&& rm -rf /var/lib/apt/lists/*
 
 ENV COREPACK_HOME=/corepack

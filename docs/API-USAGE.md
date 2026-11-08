@@ -49,8 +49,8 @@ tests):
 - A database outage during verification is a
   `503 {"error":"Token verification is unavailable (database)"}` — your
   credential is fine; retry.
-- **Pagination is the EXCEPTION.** Exactly nine collection routes
-  paginate — `access-events`, `audit-logs`, `encoding-jobs`, `feeder-sessions` (name-only `liveChannel: {name}`), `live-channels`,
+- **Pagination is the EXCEPTION.** Exactly nine collection routes use cursor
+  pagination — `access-events`, `audit-logs`, `encoding-jobs`, `feeder-sessions` (name-only `liveChannel: {name}`), `live-channels`,
   `live-channels/[id]/runs/[runId]/heartbeats` (the per-run heartbeat log, ≤ 500
   rows a page, `from`/`to`/`cursor`), `live-channels/[id]/runs/[runId]/heartbeat-receipts` (Push, default100/max200), `vmaf-jobs`, `webhook-events` (heartbeat pushes are left out unless `includeHeartbeats=1`) — and they are the ones that
   return an envelope with `nextCursor`. Other collections return a bare array
@@ -58,10 +58,13 @@ tests):
   `storage-presets`, `live-channels/<id>/schedules`) or an ad-hoc object
   (`users` → `{users}`, `live-channels/<id>/runs` → `{runs}`,
   `live-channels/<id>/alerts` → `{open, history}`). These are examples, not
-  exhaustive sets. Non-paginated collections have neither `items` nor `nextCursor`,
+  exhaustive sets. Clip projects separately use offset pagination:
+  `GET /api/library/edits?contentId=<uuid>&offset=0` returns
+  `{items,offset,total}`, at most25 per page. Stop when `offset + items.length >= total`.
+  Non-paginated collections have neither `items` nor `nextCursor`,
   and some are unbounded. **Read each route before looping**: neither pagination
   nor arrays are universal.
-- **On the nine that do paginate, a missing `nextCursor` is the ONLY end-of-list
+- **On the nine that do paginate by cursor, a missing `nextCursor` is the ONLY end-of-list
   signal; a short page does NOT mean the end** (C6). Loop until it is absent.
 - **400 is a SHAPE failure; 422 is a SEMANTIC one.** This is the intended
   distinction for new routes: malformed bodies carry zod issues; valid but
@@ -93,6 +96,7 @@ tests):
   role, in any mode, without ADMIN (`SELF_REVOCATION_EXCEPTION` in
   `apps/web/src/lib/auth/roles.ts`). Revocation is checked on the next request.
 
+- `/api/settings/clip-editing` — GET/POST (ADMIN): GET reports local clip configuration without connectivity checks. POST `{}` requests a bounded metadata-only diagnosis through the editing service and returns independent configuration/service/model states. It does not load models or run inference. Responses are `no-store` and omit connection secrets.
 - `/api/settings/api-coverage` — GET (VIEWER): bundled current source census,
   installed/surveyed SDK and mismatch flag, current top-level SDK body-model
   properties with conservative direct property-key evidence, plus a separately
@@ -117,7 +121,7 @@ tests):
   Adjusted values can be saved as a requirements file. Importing never creates
   or starts an encoding.
 
-- `/api/admin/reset` (organization ADMIN session, no tokens): GET `?categories=<comma list>` previews selected counts. POST `{confirm:"RESET",categories:[...]}` force-deletes selected organization data and returns `deletedCounts`. Empty/duplicate/unknown/incomplete dependencies fail validation. Global users, memberships, organizations and setup identity are excluded; reset does not reopen setup. Active work and unresolved cleanup do not block selected deletion; organization-owned encrypted receipts retain cleanup ownership.
+- `/api/admin/reset` (organization ADMIN session, no tokens): GET `?categories=<comma list>` previews selected counts. POST `{confirm:"RESET",categories:[...]}` force-deletes selected organization data and returns `deletedCounts`. Empty/duplicate/unknown/incomplete dependencies fail validation. Global users, memberships, organizations and setup identity are excluded; reset does not reopen setup. Active work and unresolved cleanup do not block selected deletion; organization-owned encrypted receipts retain cleanup ownership. Library editing records are protected: dependent category selection returns409 `RESET_LIBRARY_EDITING_REFERENCES` before deletion. The preview reports their count; this release does not delete an editing graph through Reset.
 - `/api/admin/reset/reconcile`: POST ADMIN, audited, no tokens. Stamps terminal,
   never-started or absent pointers. Absence: status/entity404+1001, authenticated
   list, account unchanged since row/parent creation, locked account/pointer CAS.
@@ -225,6 +229,206 @@ Library search/options: [HTTP contract](user-guide/LIBRARY-AND-ADMIN.md#content-
 Label paging/exact/cache: [contract](user-guide/QUALITY-AND-MONITORING.md).
 
 Library: [catalogue/scene endpoints, query limits and DTOs](user-guide/LIBRARY-AND-ADMIN.md#content-library-and-storage). Reads VIEWER, writes OPERATOR.
+
+### Library clip editing
+
+Reads require VIEWER; writes (including suggestions) require OPERATOR. UUIDs and
+strict JSON bodies are validated; mutation bodies are limited to512KiB. Source
+storage locations remain private; clients choose a server-listed `fileKey`.
+
+| Route | Contract |
+|---|---|
+| `GET /api/library/sources/<id>/editing-eligibility` | `{sourceId,files:[{key,label}],mediaVersions,analyses}` |
+| `POST /api/library/sources/<id>/media-versions` | `{fileKey,output:{credentialId,bucket,prefix}}` →202 media version; pins the selected object's identity |
+| `GET /api/library/media-versions/<id>` | Preparation state, safe error, time map, dimensions and authenticated media URL |
+| `POST /api/library/edits` | `{contentId,mediaVersionId,title,variant:LANDSCAPE|PORTRAIT,analysisRevisionId?}` →201 project; requires READY material |
+| `GET /api/library/edits?contentId=<id>&offset=0` | `{items,offset,total}`, page size25 |
+| `GET /api/library/edits/<id>` | Draft, `draftRevision`, current immutable revision, `currentRevisionMatchesDraft`, pinned analysis and recent runs |
+| `PUT /api/library/edits/<id>/draft` | `{expectedRevision,document}` →200 project; stale revision409 `EDIT_CONFLICT` |
+| `POST /api/library/edits/<id>/revisions` | `{expectedRevision,confirmSuggestions:boolean}` →201 project; unconfirmed AISA framing cannot render |
+| `POST /api/library/edits/<id>/suggestions` | `{query,sceneIds?,targetDurationFrames?}` → candidates; leaves the draft unchanged |
+| `POST /api/library/edits/<id>/renders` | `{revisionId,kind:PREVIEW|EXPORT,requestKey:<uuid>}` →202 run; replay the same key/body after an uncertain response; a changed body with the same key returns409 |
+| `GET /api/library/renders/<id>` | State and artifact URL; active exports also expose `artifact.derivedContentId` |
+| `POST /api/library/renders/<id>/cancel` | →202; queued work cancels immediately, running work remains cancellation-requested until its process stops |
+
+### Composition and production tasks
+
+`document.schemaVersion:2` adds up to 8 pinned media sources, 4 video layers,
+8 audio tracks, 128 animated crop points, 32 text/PNG overlays, 300 caption cues
+and 2,000 timed words. Output remains 30fps and at most 180 seconds,
+with 20 video clips. Presets produce editable fields. V1 documents and render
+hashes retain their original contract. Additional source/image references are
+retained for historical revisions even after removal from the draft.
+
+Optional `presentation:{version:"portrait-layout-v1",videoFit?:AUTO|FILL|FIT,
+captionPlacement:OVERLAY|BANDS,fallbackFraming?:"AISA_STATIC_V1",
+centerCropConfirmed?:boolean}` controls the main video and caption area.
+FILL retains a portrait crop; FIT shows the whole source. AUTO retains measured
+or manual crops and puts the whole source over a blurred background elsewhere.
+BANDS reserves the top/bottom 18% independently of caption presence. Custom
+layouts, picture-in-picture and upper video tracks retain their own geometry.
+Missing fields do not migrate existing documents or alter their render hashes.
+
+With `fallbackFraming:"AISA_STATIC_V1"`, new drafts may have an optional
+`clips[].fallbackCrop:{x,y,w,h}`. This fixed, normalized crop applies only to
+untracked FIT intervals in the main FILL video. It leaves raw framing intervals
+and measured crop keyframes intact; it does not constitute a measured track.
+Candidate selection changes this rectangle through the normal draft/revision
+flow. Generating requires review of unconfirmed framing.
+
+`audioTracks[].ducking.source:"CAPTIONS"` derives gain intervals from the current
+caption cues at compile time, with at most 64 captions. Store `intervals:[]` for
+that mode. Omitting `source` preserves explicit fixed `intervals` (up to 64),
+including existing saved documents. Compilation does not mutate the input JSON;
+the browser and FFmpeg consume the same compiled automation.
+
+| Route | Contract |
+|---|---|
+| `GET /api/library/editing-media` | Up to100 READY tenant media versions with safe URLs and composition facts |
+| `GET /api/library/analysis-associations?mediaVersionId=<id>&analysisRevisionId=<id>` | Fixed media, normalized scene analysis and association kind |
+| `POST /api/library/analysis-associations` | Same tuple, UUID `requestKey`, `confirmation:{time:true,geometry:true,content:true}`; records server-owned `EDITOR_ATTESTED` evidence |
+| `POST /api/library/media-tasks` | `{kind:TRANSCRIBE|TRACK|GENERATE,mediaVersionId,analysisRevisionId?,requestKey,parameters}` →202 `{taskId,state,cached}` |
+| `GET /api/library/media-tasks?mediaVersionId=<id>&offset=0` | `{tasks,hasMore}`,25 rows per page |
+| `GET /api/library/media-tasks/<id>` | State, phase, progress, bounded result and safe error |
+| `POST /api/library/media-tasks/<id>/cancel` | Cancels pending work or requests running cancellation |
+| `POST /api/library/media-tasks/<id>/retry` | `{requestKey:<uuid>}` creates a new child task; terminal history is preserved |
+| `POST /api/library/edits/<id>/images` | `{pngBase64}`;8-bit nonanimated RGB/RGBA/grayscale PNG ≤8MiB and2048²; strips ancillary metadata, stores pinned identity |
+| `GET/HEAD /api/library/image-assets/<id>/media` | Bound organization assertion, authenticated immutable PNG bytes |
+| `GET /api/library/editing-font` | Managed Japanese font shared with the renderer; private cache |
+
+GENERATE parameters are `{contentId,targetDurationFrames,renderMode?:DRAFT|EXPORT,
+draftPolicyVersion?:"duration-review-v2",presentation?,policy:AUTO|COHESION|DURATION|LOCAL_STORY,
+storyMode?:AUTO|FLOW|THEME,
+query?,templateId?,variants:1|2|3,captions:OFF|AUTO,tracking:boolean,language:auto|ja|en,
+transcriptionTaskId?,trackingTaskId?}`.
+Defaults and exact bounds are in the core `mediaTaskCreateSchema`. The historical
+default remains COHESION. AUTO requires explicit DRAFT and is the new-project UI
+default when the local semantic service is not configured: bounded English/Japanese metadata cues rank events and preserve whole-shot
+context without a required query. This is a deterministic metadata heuristic,
+not learned scene understanding. Only COHESION accepts a nonempty query; DURATION
+prioritizes length. Every selected shot remains in source order. AUTO stores
+versioned `semanticEvidence` as immutable creation provenance; it is rebuilt after
+speech refinement and does not describe subsequent manual edits. Missing useful
+cues falls back to cohesion; exhausted optional ranking falls back to a validated
+window. Prepared AUTO uses `aisa-prepared-content-highlight-v4` with the existing
+v3 frame clock and immutable normalization receipt. Missing or unreliable
+ASR/tracking produces explicit warnings
+and FIT/segment-only evidence, never invented word times or motion. An explicit
+DRAFT intent creates editable projects and immutable revisions without render
+runs or derivative reservations. Only explicit editor generation encodes them.
+An EXPORT task atomically queues projects and EXPORT runs; inspect the render
+state before claiming an MP4 is ready. `presentation` and the draft duration
+policy require explicit DRAFT intent. Generation presentation omits
+`centerCropConfirmed`, includes the framing policy in request/cache/result
+identity, and cannot preconfirm a proposal.
+
+LOCAL_STORY requires explicit DRAFT and a configured authenticated local semantic
+Gateway; otherwise intake returns `LOCAL_STORY_ENGINE_UNAVAILABLE`. Configured
+new-project forms default to this policy with `storyMode:AUTO`; FLOW follows the
+observed narrative and THEME groups related observations. Only LOCAL_STORY accepts
+storyMode. The server pins a distinct LOCAL_OLLAMA model/runtime/schema/config
+identity in the task envelope. It does not reactivate the withdrawn STORY/Codex
+provider. There is no client-supplied model, endpoint, schema or shell command.
+
+LOCAL_STORY prepares a full-source transcript when available, including when
+captions are OFF, and analyzes all eligible shots in coverage-preserving chunks.
+Immutable transcript/ledger/blueprint receipts bind source, clock, analysis and
+model identities. The planner uses real shot or observed utterance spans, retains
+source order and required beats, and rejects an infeasible duration rather than
+inventing cuts. Local story evidence is separate from AUTO heuristic provenance.
+These DRAFT tasks create no render runs; export remains a separate editor action.
+Existing tracking and preserve-source framing are reused; this policy does not
+add visual object recognition or establish semantic accuracy. An externally
+supplied transcriptionTaskId is rejected for LOCAL_STORY.
+
+New caption-enabled non-LOCAL_STORY GENERATE tasks pin the speech-selection policy version in
+their server-owned envelope. They transcribe a bounded context around the anchor,
+refine whole-shot selection against observed speech spans, and then derive captions
+and tracking from that final selection. The immutable result records the context,
+boundary decisions, model identity and transcript fingerprint. Known unsafe ends
+are rejected; missing ASR or unknown physical source edges are explicitly labeled
+fallbacks. Internal context limits are not treated as source edges. An unsupported
+unfinished legacy policy fails with `SPEECH_SELECTION_POLICY_CHANGED`; completed
+history and same-key receipts remain readable. `NO_SPEECH_SAFE_WINDOW` asks for a
+different desired length rather than silently cutting known speech.
+
+AUTO DRAFT proposals share one 200,000-expansion budget across initial ranking
+and speech refinement. If additional speech search reaches that limit, the
+validated initial timeline is retained with observed speech evidence and
+`SPEECH_SEARCH_LIMIT_REVIEW_REQUIRED`; it is not described as speech-safe.
+The worker does not reset the budget or start an export. Other policy failures
+remain unchanged.
+
+The prepare-and-generate UI composes the existing preparation and task endpoints;
+it does not add preparation idempotency or cancellation to the API. It polls only
+the returned material ID, pauses for unverified associations, and uses the same
+GENERATE key/body to recover an uncertain task response.
+
+Completed TRANSCRIBE/TRACK prerequisites must match the immutable source, analysis,
+time map, language, model, algorithm and tracking frame clock, and must cover the
+selected window. Invalid, unverified or incomplete prerequisites are refused.
+New tracking uses `cfr30-frame-clock-v1`; unfinished legacy tracking tasks fail
+before cache adoption, while completed legacy history remains readable. Distinct
+GENERATE request keys always create fresh projects rather than returning mutable
+projects from an earlier request. Same-key idempotent replay is preserved.
+
+Future trusted input capture is disabled unless both
+`BITOVP_CAPTURE_INPUT_BASE_URL` (HTTPS origin) and
+`BITOVP_CAPTURE_INPUT_SECRET` (at least32characters) are configured.
+`GET/HEAD /api/encoding-input-captures/<id>/content` authenticates its own
+receipt-bound expiring Basic HMAC capability; it does not accept UI cookies
+as capability proof. The provider input uses a pinned object version or
+generation. Only single-input, zero-start, transform-free ingest is admitted.
+Authoritative account/encoding/locale-bound analysis retrieval plus verified
+normalization receipts can produce `CAPTURED_INPUT`. Legacy snapshots never
+acquire that provenance retroactively. Capture credentials are not logged.
+
+`GET /api/library/media-versions/<id>/media` and
+`GET /api/library/artifacts/<id>/media` use the saved object identity and size,
+private/no-store responses and bounded Range reads. Native media URLs carry
+`expectedOrganizationId`; a different active organization is refused. Library
+playback and re-editing of derived sources use the artifact's saved identity too.
+
+`GET /api/library/artifacts/<id>/download` streams the complete MP4 as an
+attachment, using bounded reads of the same saved object version. Use the
+artifact's organization-bound `downloadUrl` for files larger than4MiB. If the
+object changes or a transfer becomes incomplete, the download fails; it does not
+concatenate bytes from a new version. Preview range limits stay unchanged.
+
+Preparation supports MP4/MOV H.264 or 8bit HEVC, yuv420p, BT.709 SDR,
+progressive fixed 24/25/29.97/30fps, square pixels, no rotation and zero-based
+video/audio timestamps; optional audio is mono/stereo AAC at 44.1/48kHz.
+The video stream must declare its duration
+and integer frame count; fragmented MP4 with unknown frame count is unsupported.
+Decoded frames must match those declarations, and decoding errors or truncated
+media are refused before READY. Supported frame rates are mapped to 30fps;
+fully tagged compatible 30fps bytes are preserved. Otherwise supported 8bit
+inputs with all three color description fields unrecorded use the explicit
+`BT709_8BIT_LIMITED_ASSUMED` source profile and always take the `NORMALIZE` path.
+This records an editing default, not proof of the original color interpretation;
+`IDENTITY_COPY` is invalid for that profile. Explicit HDR, contradictory color
+metadata, full range, VFR and other unsupported inputs are rejected.
+Source download is limited to 4GiB and 60 minutes. Edits contain at
+most 20 clips and 180 seconds; V1 retains its 128 framing-segment limit.
+Preview and master use the same immutable recipe. Master canvases include
+1920×1080, 1080×1920, 1080×1080 and 1080×1350 MP4. Only successful EXPORT runs publish to a stable derived Library
+entry; previews do not. Original content and analysis are preserved. AISA center
+points support per-shot proposals with explicit timeline/orientation review;
+continuous tracking uses additional frame measurements through production tasks.
+Manual framing changes set `manualOverride:true` so repeated suggestions preserve
+an explicitly chosen fit as well as crop. Save and confirmation responses describe
+the document committed by that CAS; a later editor's save is never substituted.
+Both input and output storage credentials remain protected by tenant-scoped
+references while an editing material uses them. Pending artifact adoption and
+Library registration retry after a30-second wait, without occupying the next
+eligible render's turn. The pending artifact identity survives those retries.
+
+The `bitovp-editing` path segment, including case variants, is reserved for managed
+editing output. Watch-folder scans and submission retries exclude that namespace
+independently of credential aliases and rule creation time. Re-encoding such an
+output requires an explicit manual submission.
+
+### Submit an encoding job
 
 Send `{"plan": <EncodingPlan>}`; a bare plan returns 400.
 [Native HEVCv2 contract](user-guide/VOD.md#advanced-video-audio-and-subtitles): account-gated MCTF/perceptual controls, strict fields/ranges; ordinary H265 rejects them. Unset/OFF/zero remain distinct.

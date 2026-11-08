@@ -114,6 +114,11 @@ const ACCESS: readonly Area[] = [
 
 const DIAGNOSTICS: readonly Area[] = [
 	{
+		titleKey: "clipDiagnostics.title",
+		href: "/settings/clip-editing",
+		captionKey: "clipDiagnostics.caption",
+	},
+	{
 		titleKey: "settingsX.apiCoverage",
 		href: "/settings/api-coverage",
 	},

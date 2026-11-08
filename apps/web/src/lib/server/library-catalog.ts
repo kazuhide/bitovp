@@ -23,6 +23,7 @@ export const listQuery = z.object({
 	offset: z.coerce.number().int().min(0).max(MAX_LIBRARY_OFFSET).default(0),
 	archived: z.enum(["true", "false"]).default("false"),
 	playback: z.enum(["all", "playback", "metadata"]).default("all"),
+	scope: z.enum(["all", "originals"]).default("all"),
 });
 
 const catalogSummary = z.object({
@@ -136,8 +137,9 @@ function playbackSources(batch: readonly CatalogCandidate[]) {
 /** Slim classification retains only page metadata and distinct eligible plan keys. */
 export async function listContents(
 	prisma: AppPrismaClient,
-	query: Omit<z.infer<typeof listQuery>, "playback"> & {
+	query: Omit<z.infer<typeof listQuery>, "playback" | "scope"> & {
 		playback?: LibraryPlaybackFilter;
+		scope?: "all" | "originals";
 	},
 	organizationId: string,
 ): Promise<LibraryCatalog> {
@@ -162,6 +164,14 @@ export async function listContents(
         WITH scanned AS MATERIALIZED (
           SELECT c.id, c."updatedAt", c.revision, c.title, c.description, c.tags, c.locale
           FROM "Content" c WHERE c.archived = ${query.archived === "true"}
+          AND (${query.scope !== "originals"} OR (
+            NOT EXISTS (SELECT 1 FROM "ContentDerivation" d
+              WHERE d."derivedContentId" = c.id AND d."organizationId" = c."organizationId")
+            AND NOT EXISTS (SELECT 1 FROM "ContentRevision" r JOIN "LibrarySource" s
+              ON s.id = r."sourceId" AND s."organizationId" = r."organizationId"
+              WHERE r."contentId" = c.id AND r.revision = c.revision
+              AND r."organizationId" = c."organizationId" AND s."sourceKind" = 'DERIVED_RENDER')
+          ))
           AND (${cursor === undefined} OR (c."updatedAt", c.id) < (${cursor?.updatedAt ?? new Date(0)}, ${cursor?.id ?? "00000000-0000-0000-0000-000000000000"}::uuid))
           ORDER BY c."updatedAt" DESC, c.id DESC LIMIT ${batchSize}
         ), matching AS (
@@ -264,10 +274,17 @@ export async function listContents(
 			if (!selected.size) return { counts, total, items: [] };
 			const ids = [...selected.keys()];
 			const rows = await tx.$queryRaw<
-				{ items: (ContentView & { analysisSummary: unknown })[] }[]
+				{
+					items: (ContentView & {
+						analysisSummary: unknown;
+						clipProjectCount: number;
+					})[];
+				}[]
 			>`
       WITH page AS (
-        SELECT c.id, c.title, c.description, c.tags, c.locale, c.revision, c.archived, c."updatedAt", a.summary AS "analysisSummary"
+        SELECT c.id, c.title, c.description, c.tags, c.locale, c.revision, c.archived, c."updatedAt", a.summary AS "analysisSummary",
+          (SELECT count(*)::int FROM "EditProject" p WHERE p."contentId" = c.id
+            AND p."organizationId" = c."organizationId") AS "clipProjectCount"
         FROM "Content" c LEFT JOIN "ContentRevision" r ON r."contentId" = c.id AND r.revision = c.revision
         LEFT JOIN LATERAL (
           SELECT jsonb_build_object('duration', document->'duration', 'sceneCount', jsonb_array_length(document->'scenes'), 'start', document->'scenes'->0->'startInSeconds', 'end', document->'scenes'->0->'endInSeconds') AS summary

@@ -9,6 +9,13 @@ import {
 import { isActiveJobStatus, JOB_STATUSES, type JobStatus } from "../job-status";
 import { writeAuditLog } from "./audit";
 import type { ServerContext } from "./context";
+import {
+	assertNoJobEvidenceReferences,
+	countJobEvidenceReferences,
+	isForeignKeyViolation,
+	type JOB_LIBRARY_EVIDENCE_REFERENCES,
+	JobLibraryEvidenceRequired,
+} from "./job-evidence-retention";
 
 /**
  * The single LOCAL-delete implementation for VOD jobs and VMAF reports, shared
@@ -76,7 +83,13 @@ export async function assertAisaSnapshotCaptured(
 
 export type LocalDeleteOutcome =
 	| { ok: true; deletedVmafJobs: number }
-	| { ok: false; code: "NOT_FOUND" | "ACTIVE" | "RACED"; message: string };
+	| { ok: false; code: "NOT_FOUND" | "ACTIVE" | "RACED"; message: string }
+	| {
+			ok: false;
+			code: typeof JOB_LIBRARY_EVIDENCE_REFERENCES;
+			message: string;
+			protectedCount: number;
+	  };
 
 /** Statuses the orchestrator owns — never deletable (cancel them first). */
 /**
@@ -155,6 +168,16 @@ export async function deleteEncodingJobLocally(
 			message: `Job is still ${row.status} — cancel it before deleting`,
 		};
 	}
+	const protectedCount = await countJobEvidenceReferences(ctx.prisma, [id]);
+	if (protectedCount > 0) {
+		const retained = new JobLibraryEvidenceRequired(protectedCount);
+		return {
+			ok: false,
+			code: retained.code,
+			message: retained.message,
+			protectedCount,
+		};
+	}
 	// Clean ACTIVE outcome for the ordinary case; the transaction re-asserts it
 	// atomically below, so this read is not what gates the delete.
 	const scoring = await ctx.prisma.vmafJob.findFirst({
@@ -176,6 +199,7 @@ export async function deleteEncodingJobLocally(
 		deletedVmafJobs = await ctx.prisma.$transaction(async (tx) => {
 			// Same row lock as requestLibrarySource: capture and delete cannot cross.
 			await tx.$queryRaw`SELECT id FROM "EncodingJob" WHERE id = ${id}::uuid FOR UPDATE`;
+			await assertNoJobEvidenceReferences(tx, [id]);
 			await assertAisaSnapshotCaptured(tx, [id]);
 			// Re-assert inside the tx: a report that entered PENDING between the
 			// read above and here must not be deleted out from under the scorer.
@@ -205,6 +229,22 @@ export async function deleteEncodingJobLocally(
 			return vmafJobs.count;
 		});
 	} catch (err) {
+		// A deferred FK can discover a receipt committed outside this transaction's
+		// snapshot. The transaction is rolled back before this tenant-scoped reread.
+		let retained = err instanceof JobLibraryEvidenceRequired ? err : undefined;
+		if (!retained && isForeignKeyViolation(err)) {
+			const protectedCount = await countJobEvidenceReferences(ctx.prisma, [id]);
+			if (protectedCount > 0)
+				retained = new JobLibraryEvidenceRequired(protectedCount);
+		}
+		if (retained) {
+			return {
+				ok: false,
+				code: retained.code,
+				message: retained.message,
+				protectedCount: retained.protectedCount,
+			};
+		}
 		if (err instanceof AisaSnapshotRequired) {
 			return { ok: false, code: "ACTIVE", message: err.message };
 		}

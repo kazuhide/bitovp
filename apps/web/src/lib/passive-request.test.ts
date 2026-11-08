@@ -12,6 +12,51 @@ const OTHER = "00000000-0000-4000-8000-000000000002";
 const PATH = "/api/library/sources/00000000-0000-4000-8000-000000000003/media";
 const URL_PATH = `${PATH}?key=qc-mp4%3Avideo`;
 describe("passive request bindings", () => {
+	it("binds native artifact downloads without expanding other download routes", () => {
+		const path = `/api/library/artifacts/${ORG}/download`;
+		expect(bindPassiveRequestUrl(path, ORG)).toBe(
+			`${path}?expectedOrganizationId=${ORG}`,
+		);
+		expect(
+			passiveOrganizationBinding(
+				new URL(`${path}?expectedOrganizationId=${ORG}`, "http://localhost"),
+				"GET",
+			),
+		).toEqual({ kind: "bound", organizationId: ORG });
+		expect(
+			passiveOrganizationBinding(
+				new URL(
+					`${path}?expectedOrganizationId=${ORG}&expectedOrganizationId=${OTHER}`,
+					"http://localhost",
+				),
+				"GET",
+			),
+		).toEqual({ kind: "invalid" });
+		expect(passiveRequestPath(path, "POST")).toBe(false);
+		expect(
+			passiveRequestPath(`/api/library/media-versions/${ORG}/download`, "GET"),
+		).toBe(false);
+		expect(passiveRequestPath(`${path}/extra`, "GET")).toBe(false);
+	});
+	it.each([
+		"media-versions",
+		"artifacts",
+	])("binds fixed editing %s reads to the document organization", (kind) => {
+		const path = `/api/library/${kind}/${ORG}/media`;
+		expect(bindPassiveRequestUrl(path, ORG)).toBe(
+			`${path}?expectedOrganizationId=${ORG}`,
+		);
+		expect(
+			passiveOrganizationBinding(
+				new URL(
+					`${path}?expectedOrganizationId=${ORG}&expectedOrganizationId=${OTHER}`,
+					"http://localhost",
+				),
+				"GET",
+			),
+		).toEqual({ kind: "invalid" });
+		expect(passiveRequestPath(path, "POST")).toBe(false);
+	});
 	it.each([
 		"",
 		"/media",

@@ -29,6 +29,86 @@ longer applicable.
 Run migrations with the private administrative environment; web and worker use
 restricted runtime roles. Preserve [organization isolation](./OPERATIONS.md#upgrades).
 
+## Enable Library editing and derived sources
+
+`20261101000000_library_editing` adds six tenant-scoped editing tables and the
+`LibrarySource.sourceKind` discriminator. Existing sources become `VOD_JOB` and
+retain their job provenance. Derived renders have artifact provenance; their
+`originalJobId`, `encodingId` and `accountId` remain null.
+
+Stop all old web/worker processes and other source readers before deploying
+writers that create `DERIVED_RENDER`. Apply the migration, replace every reader
+and analysis sweeper with a source-kind-aware version, then reopen admission.
+Do not mix an old analysis worker with derived-source writes. The migration is
+additive for existing VOD data, but an old image cannot interpret derived rows.
+
+Verify the six tables' forced organization RLS, tenant-bound foreign keys, source
+kind check and immutable edit/artifact guards from the migration. Confirm that
+existing VOD sources still have their original IDs. Test a synthetic clip through
+material preparation, saved revision, preview, export and Library playback before
+admitting real editing work. Reset deliberately blocks dependent categories while
+editing records exist. For rollback after derived writes, preserve all output
+identities and restore a verified pre-upgrade snapshot with matching old images;
+do not relabel a derived row as a VOD job.
+
+`20261101010000_render_artifact_recovery` separately records the pending artifact
+attempt token, so changing a render lease does not lose a completed output that
+has not yet been adopted. It backfills UUID lease tokens on existing VALIDATING
+runs. Replace workers before reopening editing admission; recovery of a sealed
+output remains possible after the render-attempt budget is exhausted.
+
+`20261101020000_media_output_credential` makes the editing material's output
+credential a required, tenant-bound RESTRICT reference. It backfills from the
+saved output locator and verifies prepared/output credential agreement. An
+unresolvable or inconsistent historical locator aborts the migration; preserve
+and investigate it rather than guessing the input credential or deleting data.
+READY evidence is unlocked only inside the table-locked migration transaction
+while this additional reference is backfilled, then its immutable trigger is
+restored. Deploy the API that writes the new required field with this migration.
+
+`20261101030000_analysis_binding` adds `LibraryAnalysisBinding` as a separate,
+append-only proof for one organization/media-version/analysis-revision tuple.
+Apply it before deploying binding writers. It does not backfill or UPDATE READY
+media, immutable analysis, existing projects or artifacts. Keep the READY-media
+immutable guard enabled. Same-organization composite foreign keys protect both
+parents; the verifier separately checks their source identity and proof contents.
+
+Use the migration wrapper so runtime-role/default grants are prepared before
+and refreshed after deployment. Verify forced organization RLS, the unique tuple
+index, both deferred tenant foreign keys, and rejection of every UPDATE,
+including an identical proof or other no-op UPDATE. DELETE remains available
+for explicit, child-first maintenance; neither parent cascades binding rows.
+Selected reset counts and retains bindings with the protected editing chain and
+continues to refuse Library/credential deletion while those records exist.
+
+For an application rollback, retain the additive table and all proof rows. Stop
+binding-dependent automatic generation until compatible readers are restored;
+do not copy the proof into READY `probe` or drop proof history to run an old
+image. A destructive database rollback requires the verified snapshot and its
+matching image set described above.
+
+`20261102000000_content_production` adds tenant-scoped
+`LibraryEvidenceReceipt`, `LibraryMediaTask`, `LibraryImageAsset` and
+`EditProjectResource`. It also links editor-confirmed analysis associations to
+their immutable receipt. Apply it through the migration wrapper before replacing
+all web and worker images together. Old images cannot execute these tasks or read
+composition documents. Do not mix old workers with the new task queues.
+
+This migration does not rewrite existing analysis, prepared sources, edit
+documents, revisions or MP4 artifacts, and does not attest historical AISA JSON.
+Check forced RLS, tenant-bound foreign keys, immutable receipts/assets/task
+intent, terminal task protection and project resource references. Exercise source
+preparation, generation, caption/tracking tasks and a composition export in an
+isolated database before reopening admission.
+
+Job deletion and job-history reset retain jobs referenced by input or analysis
+receipts. The application reports `JOB_LIBRARY_EVIDENCE_REFERENCES` instead of
+discarding those records; bulk deletion skips retained jobs and processes other
+eligible items. Library and credential reset also retain the full editing chain.
+For rollback, preserve the additive tables and all files, close production-task
+admission and restore compatible images. Never remove evidence to make an older
+image accept the database.
+
 ## Preserve verification resume links
 
 Before `20260830130000_verification_seal_authority`, run this while every writer

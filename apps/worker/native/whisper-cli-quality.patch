@@ -1,0 +1,58 @@
+--- a/examples/cli/cli.cpp
++++ b/examples/cli/cli.cpp
+@@ -733,7 +733,21 @@
+             value_b("translate", params.translate, true);
+         end_obj(false);
+         start_obj("result");
+-            value_s("language", whisper_lang_str(whisper_full_lang_id(ctx)), true);
++            const bool empty_vad = params.vad && whisper_full_n_segments(ctx) == 0;
++            const char * detected = empty_vad ? nullptr : whisper_lang_str(whisper_full_lang_id(ctx));
++            value_s("language", detected ? detected : (params.language == "auto" ? "und" : params.language.c_str()), true);
++        end_obj(false);
++        start_obj("bitovp_quality");
++            value_s("version", "bitovp-mapped-quality-v1", false);
++            value_b("vad", params.vad, false);
++            start_arr("speech_intervals");
++            const int nv = params.vad ? whisper_full_n_vad_segments(ctx) : 0;
++            for (int i = 0; i < nv; ++i) {
++                start_obj(nullptr);
++                times_o(whisper_full_get_vad_segment_t0(ctx, i), whisper_full_get_vad_segment_t1(ctx, i), true);
++                end_obj(i == nv - 1);
++            }
++            end_arr(true);
+         end_obj(false);
+         start_arr("transcription");
+ 
+@@ -746,6 +760,7 @@
+ 
+                 start_obj(nullptr);
+                     times_o(t0, t1, false);
++                    value_f("no_speech_probability", whisper_full_get_segment_no_speech_prob(ctx, i), false);
+                     value_s("text", text, !params.diarize && !params.tinydiarize && !full);
+ 
+                     if (full) {
+@@ -762,14 +777,22 @@
+                             whisper_token_data data;
+                             int64_t            t1;
+                         };
++                        const auto mapped_token = [&](int j) {
++                            auto tok = whisper_full_get_token_data(ctx, i, j);
++                            if (params.vad && tok.t0 >= 0 && tok.t1 >= 0) {
++                                tok.t0 = whisper_full_get_token_t0(ctx, i, j);
++                                tok.t1 = whisper_full_get_token_t1(ctx, i, j);
++                            }
++                            return tok;
++                        };
+                         std::vector<merged_token> merged;
+                         merged.reserve(n);
+                         for (int j = 0; j < n; ) {
+-                            auto tok = whisper_full_get_token_data(ctx, i, j);
++                            auto tok = mapped_token(j);
+                             merged_token m{ whisper_token_to_str(ctx, tok.id), tok, tok.t1 };
+                             ++j;
+                             while (j < n && utf8_trailing_bytes_needed(m.text) > 0) {
+-                                auto tok_next = whisper_full_get_token_data(ctx, i, j);
++                                auto tok_next = mapped_token(j);
+                                 m.text += whisper_token_to_str(ctx, tok_next.id);
+                                 if (tok_next.t1 > -1) {
+                                     m.t1 = tok_next.t1;

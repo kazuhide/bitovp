@@ -121,6 +121,11 @@ export function ResetClient() {
 	};
 
 	const data = preview.data;
+	const protectedEditingCount =
+		data?.deleteCounts.find((item) => item.category === "contentLibrary")
+			?.protectedCount ?? 0;
+	const editingSelectionBlocked =
+		protectedEditingCount > 0 && categories.includes("contentLibrary");
 	const providerResourceText = (row: ResetProviderResource) => {
 		const status =
 			row.resourceType === "vodJob"
@@ -222,6 +227,13 @@ export function ResetClient() {
 						<p className="mt-3 text-xs text-zinc-400">
 							{t("settingsX.resetSelectionKept")}
 						</p>
+						{editingSelectionBlocked ? (
+							<p role="alert" className="mt-3 text-amber-300 text-xs">
+								{t("settingsX.resetEditingDataProtected", {
+									count: protectedEditingCount,
+								})}
+							</p>
+						) : null}
 						{categories.includes("auditHistory") ? (
 							<p className="mt-1 text-xs text-zinc-400">
 								{t("settingsX.resetAuditReceiptNote")}
@@ -263,6 +275,7 @@ export function ResetClient() {
 									reset.isPending ||
 									categories.length === 0 ||
 									preview.isFetching ||
+									editingSelectionBlocked ||
 									(reset.isSuccess && reset.data.reportStatus === "unconfirmed")
 								}
 								onClick={() => reset.mutate()}

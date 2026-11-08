@@ -1,4 +1,5 @@
 import { type ContentView, isLibraryFileKind } from "@bitovp/core";
+import { withThumbnailDecoder } from "./thumbnail-decoder-slots";
 
 export type ThumbnailSource = NonNullable<ContentView["catalogPreview"]> & {
 	cacheKey?: string;
@@ -66,7 +67,7 @@ export function createThumbnailQueue(load: Loader) {
 	};
 }
 
-export const captureThumbnail: Loader = (source, signal) =>
+const captureThumbnailVideo: Loader = (source, signal) =>
 	new Promise((resolve) => {
 		if (signal.aborted) {
 			resolve(null);
@@ -209,5 +210,8 @@ export const captureThumbnail: Loader = (source, signal) =>
 			}
 		})().catch(fail);
 	});
+
+export const captureThumbnail: Loader = (source, signal) =>
+	withThumbnailDecoder(signal, () => captureThumbnailVideo(source, signal));
 
 export const requestThumbnail = createThumbnailQueue(captureThumbnail);

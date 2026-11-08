@@ -1,6 +1,6 @@
 {
 	"name": "@bitovp/web",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"private": true,
 	"scripts": {
 		"auth:create-token": "tsx scripts/create-token.ts",
@@ -26,6 +26,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"hls.js": "1.6.19",
+		"ioredis": "^5.10.1",
 		"lucide-react": "^0.574.0",
 		"next": "16.4.3",
 		"postcss": "^8.5.31",

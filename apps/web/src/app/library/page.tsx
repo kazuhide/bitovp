@@ -1,4 +1,5 @@
 import { localizedTitle } from "@/lib/i18n/metadata";
+import { isClipEditingAvailable } from "@/lib/server/library-editing-feature";
 import { LibraryClient } from "./library-client";
 import { readLibraryBrowseState } from "./library-view-preference";
 
@@ -9,6 +10,9 @@ export default async function LibraryPage({
 	searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
 	return (
-		<LibraryClient initialQuery={readLibraryBrowseState(await searchParams)} />
+		<LibraryClient
+			initialQuery={readLibraryBrowseState(await searchParams)}
+			clipEditingAvailable={await isClipEditingAvailable()}
+		/>
 	);
 }

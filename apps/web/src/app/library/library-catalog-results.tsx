@@ -14,6 +14,7 @@ export function LibraryCatalogResults({
 }: {
 	items: LibraryCatalogItem[];
 	view: LibraryView;
+	clipEditingAvailable?: boolean;
 }) {
 	const { t } = useT();
 	const playback = items.filter(
@@ -96,6 +97,13 @@ export function LibraryCatalogResults({
 									<span>{t("library.noPlaybackMetadata")}</span>
 								)}
 								{item.locale !== "und" && <span>{item.locale}</span>}
+								{(item.clipProjectCount ?? 0) > 0 && (
+									<span>
+										{t("editing.clipDraftCount", {
+											count: item.clipProjectCount ?? 0,
+										})}
+									</span>
+								)}
 								{item.catalogMetadata.sceneCount !== undefined && (
 									<span>
 										{t("library.sceneCount", {

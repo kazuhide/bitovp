@@ -26,6 +26,7 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
+import { JobLibraryEvidenceRequired } from "@/lib/server/job-evidence-retention";
 import {
 	getFeederQueue,
 	getLiveChannelQueue,
@@ -49,6 +50,7 @@ import {
 	countResetCategories,
 	deleteSelectedData,
 	SelectedResetBlocked,
+	SelectedResetLibraryEditingBlocked,
 	type SelectedResetOutcome,
 } from "@/lib/server/selected-reset";
 
@@ -401,6 +403,15 @@ export async function POST(req: Request) {
 			if (err instanceof SelectedResetBlocked) {
 				return jsonError(400, "Reset selection is missing required categories");
 			}
+			if (err instanceof SelectedResetLibraryEditingBlocked) {
+				return jsonError(
+					409,
+					"Content Library reset is blocked by protected editing media and history.",
+					customerErrorDetails("RESET_LIBRARY_EDITING_REFERENCES", {
+						protectedCount: err.protectedCount,
+					}),
+				);
+			}
 			throw err;
 		}
 
@@ -603,6 +614,12 @@ export async function POST(req: Request) {
 		}
 		return NextResponse.json(customerReport.data);
 	} catch (err) {
+		if (err instanceof JobLibraryEvidenceRequired) {
+			return jsonError(409, err.message, {
+				code: err.code,
+				protectedCount: err.protectedCount,
+			});
+		}
 		if (err instanceof AisaSnapshotRequired) {
 			return jsonError(
 				409,

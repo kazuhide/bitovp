@@ -1,0 +1,16 @@
+# Added only after the selected public Plamo manifest passes local preflight.
+services:
+  worker:
+    volumes:
+      - type: bind
+        source: ${EDITING_PREVIEW_DIRECTORY:?required}/local-caption-manifest.json
+        target: /run/bitovp-local-semantic/local-caption-manifest.json
+        read_only: true
+        bind: { create_host_path: false }
+  web:
+    volumes:
+      - type: bind
+        source: ${EDITING_PREVIEW_DIRECTORY:?required}/local-caption-manifest.json
+        target: /run/bitovp-local-semantic/local-caption-manifest.json
+        read_only: true
+        bind: { create_host_path: false }

@@ -2,7 +2,11 @@ import type { SubmitOutcome } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { projectSelected } from "@bitovp/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createWatchSweep, type WatchListedObject } from "./sweep";
+import {
+	claimStableWatchObjects,
+	createWatchSweep,
+	type WatchListedObject,
+} from "./sweep";
 
 /**
  *  PR2 (design §8): the state machine over a STATEFUL store —
@@ -370,6 +374,93 @@ const MP4 = (key: string, size = 100): WatchListedObject => ({
 
 beforeEach(() => {
 	vi.clearAllMocks();
+});
+
+describe("reserved editing outputs never enter automatic encoding", () => {
+	it.each([
+		CRED_ID,
+		"99999999-9999-4999-8999-999999999999",
+	])("ignores already existing managed outputs when a later rule uses credential %s", async (credentialId) => {
+		const store = makeStore([makeRule({ credentialId, prefix: "exports/" })]);
+		const { sweep, submitPlan, listPage } = makeSweep(store, {
+			pages: [
+				{
+					objects: [
+						MP4("exports/bitovp-editing/media/fixed.mp4"),
+						MP4("exports/bitovp-editing/artifacts/render.mp4"),
+						MP4("exports/BITOVP-EDITING/render.mp4"),
+					],
+				},
+			],
+		});
+		await sweep();
+		const rule = store.rules[0];
+		if (!rule) throw new Error("Missing fixture rule");
+		rule.lastSweepAt = new Date("2026-08-13T11:00:00Z");
+		const result = await sweep();
+		expect(result).toMatchObject({ seen: 0, submitted: 0, errors: 0 });
+		expect(store.objects).toEqual([]);
+		expect(submitPlan).not.toHaveBeenCalled();
+		expect(listPage).toHaveBeenCalledWith(
+			{ credentialId, bucket: "hot", prefix: "exports/" },
+			undefined,
+		);
+	});
+	it.each([
+		"in/bitovp-editing-old/video.mp4",
+		"in/not-bitovp-editing/video.mp4",
+		"in/bitovp-editing.mp4",
+	])("still submits a distinct input at the segment boundary: %s", async (objectKey) => {
+		const store = makeStore([makeRule()]);
+		const { sweep, submitPlan } = makeSweep(store, {
+			pages: [{ objects: [MP4(objectKey)] }],
+		});
+		await sweep();
+		const rule = store.rules[0];
+		if (!rule) throw new Error("Missing fixture rule");
+		rule.lastSweepAt = new Date("2026-08-13T11:00:00Z");
+		await sweep();
+		expect(submitPlan).toHaveBeenCalledOnce();
+		expect(store.objects[0]).toMatchObject({ objectKey, state: "SUBMITTED" });
+	});
+	it.each([
+		"old-observation",
+		"old-observation#rearm-1",
+	])("skips a pre-policy stable observation or re-arm without a listing: %s", async (contentId) => {
+		const row = stableRow({
+			objectKey: "in/bitovp-editing/render.mp4",
+			contentId,
+		});
+		const store = makeStore([makeRule()], [row]);
+		const { sweep, submitPlan } = makeSweep(store);
+		expect(await sweep()).toMatchObject({ submitted: 0, errors: 0 });
+		expect(row).toMatchObject({ state: "SKIPPED", encodingJobId: null });
+		expect(row.error).toContain("reserved");
+		expect(submitPlan).not.toHaveBeenCalled();
+	});
+	it("does not reserve a legacy managed object at the transaction admission gate", async () => {
+		const row = stableRow({ objectKey: "in/bitovp-editing/render.mp4" });
+		const store = makeStore([makeRule()], [row]);
+		expect(
+			await claimStableWatchObjects(
+				store.prisma as unknown as AppPrismaClient,
+				RULE_ID,
+			),
+		).toEqual([]);
+		expect(row).toMatchObject({ state: "SKIPPED", encodingJobId: null });
+	});
+	it("rechecks a reservation before submit even if a legacy claim returns a managed key", async () => {
+		const row = stableRow({ objectKey: "in/bitovp-editing/render.mp4" });
+		const store = makeStore([makeRule()], [row]);
+		store.prisma.$transaction.mockImplementationOnce(async () => {
+			row.state = "SUBMITTED";
+			return [{ id: row.id, objectKey: row.objectKey }];
+		});
+		const { sweep, submitPlan } = makeSweep(store);
+		expect(await sweep()).toMatchObject({ submitted: 0, errors: 0 });
+		expect(row).toMatchObject({ state: "SKIPPED", encodingJobId: null });
+		expect(submitPlan).not.toHaveBeenCalled();
+	});
 });
 
 describe("state machine", () => {

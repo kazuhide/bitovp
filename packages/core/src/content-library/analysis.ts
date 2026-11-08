@@ -20,6 +20,21 @@ const keywords = list(z.string().max(512));
 const optional = <T extends z.ZodType>(schema: T) =>
 	schema.nullish().transform((v) => v ?? undefined);
 
+const boxCoordinate = z.number().finite().int().min(0).max(1000);
+/** Provider order is [ymin, xmin, ymax, xmax], independently normalized per axis. */
+export const subjectBox2dSchema = z
+	.tuple([boxCoordinate, boxCoordinate, boxCoordinate, boxCoordinate])
+	.refine(([ymin, xmin, ymax, xmax]) => ymin < ymax && xmin < xmax, {
+		message: "Subject box2d must have increasing bounds and positive area",
+	});
+const optionalSubjectBox2d = z.preprocess(
+	(value) =>
+		value === null || (Array.isArray(value) && value.length === 0)
+			? undefined
+			: value,
+	subjectBox2dSchema.optional(),
+);
+
 const subject = z.object({
 	classification: z.string().min(1).max(512),
 	description: z.string().max(16_000),
@@ -27,6 +42,7 @@ const subject = z.object({
 	appearanceTimeInSeconds: seconds,
 	centerX: z.number().finite().min(0).max(100),
 	centerY: z.number().finite().min(0).max(100),
+	box2d: optionalSubjectBox2d,
 });
 const shotFields = z.object({
 	startInSeconds: seconds,

@@ -31,16 +31,30 @@ export async function executeMediaStep(
 	const p = op.payload;
 	switch (op.kind) {
 		case "CREATE_INGEST_INPUT_STREAM": {
-			const resourceId = await ctx.sdk.createIngestInputStream(
-				refId(op, ctx, "encodingId"),
-				{
-					inputId: refId(op, ctx, "inputId"),
-					inputPath: str(p.inputPath),
-					selectionMode: str(p.selectionMode),
-					position: num(p.position, 0),
+			const encodingId = refId(op, ctx, "encodingId");
+			const captured = await ctx.captureIngestInput?.({
+				operation: op,
+				encodingId,
+			});
+			const resourceId = await ctx.sdk.createIngestInputStream(encodingId, {
+				inputId: captured?.inputId ?? refId(op, ctx, "inputId"),
+				inputPath: captured?.inputPath ?? str(p.inputPath),
+				selectionMode: str(p.selectionMode),
+				position: num(p.position, 0),
+			});
+			return {
+				resourceId,
+				request,
+				response: {
+					id: resourceId,
+					...(captured
+						? {
+								inputReceiptId: captured.inputReceiptId,
+								providerInputId: captured.inputId,
+							}
+						: {}),
 				},
-			);
-			return { resourceId, request, response: { id: resourceId } };
+			};
 		}
 
 		case "CREATE_BURN_IN_SRT": {

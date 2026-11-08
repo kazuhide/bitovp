@@ -5,6 +5,7 @@ export const MAX_LIBRARY_OFFSET = 100000;
 /** Stored supported playback metadata; this does not assert remote availability. */
 export type LibraryPlaybackFilter = "all" | "playback" | "metadata";
 export type LibraryCatalogItem = ContentView & {
+	clipProjectCount?: number;
 	catalogMetadata: {
 		formats: ("HLS" | "DASH" | LibraryFileKind)[];
 		duration?: number;

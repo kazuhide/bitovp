@@ -30,6 +30,15 @@ export type ExecutorContext = {
 	/** step id → created Bitmovin resource id */
 	ids: Map<string, string>;
 	resolveCredential(credentialId: string): Promise<ResolvedCredential>;
+	/** Enabled only for authoritative, version-pinned AISA input capture. */
+	captureIngestInput?(input: {
+		operation: CompiledOperation;
+		encodingId: string;
+	}): Promise<{
+		inputId: string;
+		inputPath: string;
+		inputReceiptId: string;
+	} | null>;
 	poll: {
 		intervalMs: number;
 		timeoutMs: number;

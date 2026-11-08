@@ -20,6 +20,7 @@ export {
 	testConnectionResultSchema,
 	updateBitmovinAccountSchema,
 } from "./bitmovin/schemas";
+export * from "./content-editing/index";
 export type { SceneAnalysisDocument } from "./content-library/analysis";
 export {
 	MAX_SCENE_ANALYSIS_BYTES,
@@ -37,16 +38,32 @@ export {
 	contentEditSchema,
 	contentRegisterSchema,
 	contentUpdateSchema,
+	derivedLibrarySnapshotSchema,
 	isLibraryFileKind,
 	type LibraryFileKind,
 	libraryFileContentType,
 	librarySnapshotSchema,
+	librarySourceSnapshotSchema,
 } from "./content-library/contracts";
+export {
+	isManagedEditingObjectKey,
+	MANAGED_EDITING_OUTPUT_SEGMENT,
+} from "./content-library/editing-namespace";
+export {
+	type EditingMediaStorage,
+	type EditingObject,
+	editingMediaStorageSchema,
+	editingObjectSchema,
+	editingOutputSchema,
+	editingRenderProfileSchema,
+} from "./content-library/editing-storage";
 export { sceneAnalysisLocales } from "./content-library/languages";
 export {
 	libraryFileOutputs,
 	libraryPlaybackLinks,
 } from "./content-library/playback";
+export * from "./content-production/index";
+export { preparedShotFraming } from "./content-production/prepared-framing";
 export type { BucketAddressing } from "./credentials/addressing";
 export {
 	akamaiRegionFromHost,

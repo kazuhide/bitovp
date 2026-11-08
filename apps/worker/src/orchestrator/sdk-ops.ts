@@ -545,7 +545,13 @@ export type SdkOps = {
 		accountName: string;
 		accountKey: string;
 	}): Promise<string>;
-	createHttpsInput(p: { name: string; host: string }): Promise<string>;
+	createHttpsInput(p: {
+		name: string;
+		host: string;
+		port?: number;
+		username?: string;
+		password?: string;
+	}): Promise<string>;
 	/**
 	 * S3-compatible input (Akamai/OCI/GenericS3, C10). host/port/ssl come from
 	 * the resolved credential; `signatureVersion` carries the S3SignatureVersion

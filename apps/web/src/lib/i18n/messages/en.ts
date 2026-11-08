@@ -27,6 +27,312 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	clipDiagnostics: {
+		unavailable:
+			"Clip creation is unavailable because a usable GPU-backed local model has not been verified.",
+		title: "Clip editing",
+		caption: "Check the local model and editing service.",
+		diagnose: "Check connection",
+		checking: "Checking…",
+		configuration: "Configuration",
+		worker: "Editing service",
+		gateway: "Local model",
+		details: "Diagnosis details and recovery",
+		scope:
+			"Checks configuration, service initialization, model identity and GPU capability. It does not load a model or run inference.",
+		counts: "Ready: {ready}; initialization failed: {failed}",
+		checkedAt: "Checked: {time}",
+		failed: "Could not complete the diagnosis. Try again.",
+		workerRecovery:
+			"Check the editing service log and deployment settings, then restart the service. Status expires after 45 seconds without a heartbeat.",
+		gatewayRecovery:
+			"Check the dedicated runtime, installed model and gateway version. For quarantine, follow the operator procedure to confirm runtime termination before clearing it.",
+		configurationRecovery:
+			"Configure the local gateway, token, trusted CA and GPU profile on the server, then restart web and service.",
+		metadataOnly:
+			"Model and GPU capability metadata are verified. Actual model placement and inference success require a real job.",
+		states: {
+			DISABLED: "Off",
+			INVALID: "Configuration incomplete",
+			CONFIGURED: "Configured",
+			NOT_CHECKED: "Not checked",
+			MISSING: "No recent service status",
+			READY: "Ready",
+			MIXED: "Some services are unavailable",
+			INITIALIZATION_FAILED: "Initialization failed",
+			REGISTRY_UNAVAILABLE: "Service status unavailable",
+			REGISTRY_LIMIT: "Service status exceeds the diagnostic limit",
+			GATEWAY_STOPPING: "Gateway stopping",
+			RUNTIME_QUARANTINED: "Runtime quarantined",
+			RUNTIME_UNAVAILABLE: "Runtime unavailable",
+			RUNTIME_VERSION_MISMATCH: "Runtime version mismatch",
+			MODEL_MISMATCH: "Required model missing or different",
+			MODEL_NOT_INSTALLED: "Selected translation model is not installed",
+			GPU_UNVERIFIED: "A usable GPU could not be verified",
+			CONNECTION_FAILED: "Gateway unreachable",
+			AUTH_FAILED: "Authentication failed",
+			TLS_FAILED: "Certificate could not be verified",
+			INVALID_RESPONSE: "Unexpected diagnostic response",
+			GATEWAY_VERSION_MISMATCH: "Gateway version mismatch",
+			WORKER_UNAVAILABLE: "Service unavailable for the model check",
+			DIAGNOSTIC_TIMEOUT: "Service diagnosis timed out",
+		},
+	},
+	editing: {
+		autoPortrait: {
+			noWindow:
+				"No whole-shot sequence fits this length. Increase the length or choose ranges in the editor.",
+			selectionLimit:
+				"This analysis exceeds the automatic selection limit. Choose ranges in the editor.",
+			provenanceLocked:
+				"The original generation record cannot be changed. Refresh before editing ranges or framing.",
+			fixtureMetadata:
+				"This output uses manually authored test metadata. It does not demonstrate real AISA analysis accuracy.",
+			earlierRevision:
+				"This output belongs to an earlier edit. Generate the MP4 again to include the current edit.",
+			title: "Generate portrait video",
+			help: "Choose a video, its AISA metadata, and a desired length to generate a portrait MP4.",
+			media: "Source video",
+			analysis: "AISA metadata",
+			analysisHelp:
+				"Choose an analysis linked to this content. Its match to the video is checked when generation starts.",
+			duration: "Desired length (seconds)",
+			durationHelp:
+				"Use 1–180 seconds in whole 30 fps frames. The result stays within this length at shot boundaries.",
+			durationInvalid: "Enter 1–180 seconds in whole 30 fps frames.",
+			presetSeconds: "{seconds} s",
+			generate: "Generate portrait video",
+			generating: "Starting generation…",
+			noReadyMedia:
+				"No ready video is available. Prepare editing material first.",
+			noAnalyses:
+				"No AISA analysis is linked to this content. Add an analysis before generating.",
+			limitations:
+				"Generation uses fixed framing for each shot, with fit as a fallback. Captions and continuous tracking are not included.",
+			resultTitle: "Portrait video result",
+			resultHelp:
+				"Play and download the finished video. Open the editor to adjust its ranges and framing.",
+			waiting: "Waiting for an export.",
+			manualResult: "This project has no recorded automatic-generation length.",
+			retry: "Retry MP4 generation",
+			download: "Download MP4",
+			edit: "Edit video",
+			requestedDuration: "Requested {seconds} s",
+			actualDuration: "Output {seconds} s",
+			unknownRetry:
+				"The request result could not be confirmed. Retry with the same input to check the same request.",
+			missingArtifact:
+				"The export completed, but the video is unavailable. Refresh to try again.",
+			videoError:
+				"The video could not be played. Download it or refresh to try again.",
+		},
+		generatedInspect: "View generated preview",
+		rangeToEdit: "Range to edit",
+		liveTitle: "Live edit preview",
+		liveHelp:
+			"Inspect your current edit. Space plays or pauses; arrow keys step one frame; Home and End move to the first or last frame.",
+		livePlay: "Play edit",
+		livePause: "Pause edit",
+		livePreviousFrame: "Previous frame",
+		liveNextFrame: "Next frame",
+		liveStart: "Go to first frame",
+		liveEnd: "Go to last frame",
+		liveLoop: "Loop playback",
+		liveSpeed: "Playback speed",
+		liveMute: "Mute preview",
+		liveUnmute: "Enable preview audio",
+		liveClipMuted: "This range is muted.",
+		liveLoading: "Loading editing media…",
+		liveBuffering: "Waiting for video…",
+		liveUnavailable: "Prepare editing material to preview the edit.",
+		liveError: "Playback failed. Retry the preview.",
+		liveRetry: "Retry playback",
+		livePosition: "{time} / {duration} · frame {frame}",
+		liveBlocked: "Finish or cancel the current edit before playback.",
+		sourceInspect: "Inspect source and AISA framing",
+		sourceHelp:
+			"The source shows the inspected frame and crop guide. The live preview shows the edited output.",
+		selectedRange: "Editing range {number}",
+		cursorRange: "Playhead in range {number}",
+		splitAtCursor: "Split at playhead",
+		removeSelected: "Remove selected range",
+		moveSelectedEarlier: "Move selected range earlier",
+		moveSelectedLater: "Move selected range later",
+		selectionHelp:
+			"Select a range to edit its edges. Split uses the playhead; move and remove use the selected range.",
+		generatedPreviewStale:
+			"This generated preview belongs to an earlier edit. Save a confirmed revision and generate again to update it.",
+		errors: {
+			sourceChanged:
+				"The source changed. Prepare a new material version before continuing.",
+			sourceLarge:
+				"The source file is too large to prepare for editing. Choose a smaller file.",
+			timeout:
+				"Processing exceeded the time limit. Try again with a shorter range.",
+			mediaNotReady: "Wait for the editing material to be ready.",
+			mediaUnverified: "Prepare a verified material version before continuing.",
+			sourceMissing:
+				"The source file is no longer available. Choose another file.",
+			sourceDenied:
+				"The source cannot be read with the current storage access.",
+			sourceRead:
+				"The source could not be read. Check storage access and retry.",
+			outputUnsupported:
+				"This storage connection cannot write output files. Choose another output folder.",
+			watchedInput: "Choose an output folder outside the watched input prefix.",
+			variant:
+				"Create a separate project to change between landscape and portrait.",
+			unconfirmed:
+				"Review and confirm the suggested framing before generating a file.",
+			subjectProtectionLimit:
+				"This edit needs too many framing segments to preserve its current view. Reduce the number of clips or framing changes before saving.",
+			requestKey:
+				"This request could not be replayed. Refresh generation history before trying again.",
+			mapping: "The source time mapping does not match this material version.",
+		},
+		title: "Clip editing",
+		open: "Edit clips",
+		projects: "Editing projects",
+		clipDrafts: "Clip drafts",
+		clips: "Clips",
+		clipDraftCount: "{count} clip drafts",
+		createAnotherClip: "Create another clip",
+		noClipDrafts: "No clip drafts yet.",
+		clipDraftsLoadFailed: "Clip drafts could not be loaded.",
+		clipDraftPages: "Clip draft pages",
+		draftOnly: "Draft",
+		earlierExport: "Earlier version",
+		watchExport: "Watch export",
+		downloadClip: "Download MP4",
+		originalContent: "Original content",
+		prepare: "Prepare editing material",
+		prepareHelp:
+			"Choose an existing output and a separate output folder. The original stays unchanged.",
+		support:
+			"Preparation supports SDR H.264 / 8-bit HEVC MP4 or MOV, square pixels, no rotation, and constant 24 / 25 / 29.97 / 30 fps. It produces 30 fps editing media. HDR and variable frame rates are unsupported.",
+		file: "Source file",
+		output: "Output folder",
+		chooseOutput: "Choose output folder",
+		noFiles:
+			"No supported file reference is available. Add an H.264 MP4 output first.",
+		mediaVersions: "Editing materials",
+		noMedia: "Prepare an editing material to create a project.",
+		projectTitle: "Project title",
+		variant: "Format",
+		portrait: "Portrait 9:16",
+		landscape: "Landscape 16:9",
+		analysis: "Scene analysis (optional)",
+		noAnalysis: "Manual editing without analysis",
+		create: "Create project",
+		noProjects: "No editing projects yet.",
+		backContent: "Back to content",
+		backProjects: "Back to editing projects",
+		loading: "Loading editing data…",
+		refresh: "Refresh",
+		failed: "The operation failed. Try again.",
+		readOnly:
+			"You can browse this project. Editing and generation require Operator access.",
+		source: "Source material",
+		preview: "Output preview",
+		previewHelp:
+			"Save a confirmed revision, then generate a preview. Preview and export use the same rendering recipe.",
+		noSource: "The editing material is not ready for playback.",
+		saveDraft: "Save draft",
+		saveRevision: "Save confirmed revision",
+		saved: "Draft saved",
+		unsaved: "Unsaved changes",
+		reload: "Reload saved version",
+		conflict:
+			"This project was saved by another editor. Your changes are still here. Reload the saved version or keep a copy before retrying.",
+		add: "Add range",
+		range: "Range {number}",
+		in: "In (seconds)",
+		out: "Out (seconds)",
+		applyRange: "Apply range",
+		resetRange: "Reset range",
+		splitAt: "Split after frame",
+		split: "Split range",
+		guide:
+			"The crop guide shows the framing at the inspection position. The generated preview shows the complete edit.",
+		undo: "Undo",
+		redo: "Redo",
+		rangeHelp:
+			"Changing the numeric bounds resets this range to fit. Boundaries snap down to 30 fps. Apply the range before saving.",
+		rangeInvalid: "Use a positive range within the source duration.",
+		rangePending: "Apply or discard the changed range before saving.",
+		moveUp: "Move range up",
+		moveDown: "Move range down",
+		remove: "Remove range",
+		audio: "Audio",
+		sourceAudio: "Original audio",
+		mute: "Mute",
+		framing: "Framing",
+		segment: "Framing segment",
+		fit: "Fit with padding",
+		crop: "Fixed crop",
+		centerX: "Horizontal center (%)",
+		centerY: "Vertical center (%)",
+		cropZoom: "Crop zoom",
+		cropZoomHelp: "Adjust the position and size of this framing segment.",
+		shotProposal: "Suggest framing for unadjusted ranges",
+		coordinateConfirm:
+			"I checked that the analysis uses this material’s timeline and displayed orientation.",
+		proposalNotice:
+			"Your manual and confirmed framing is preserved. Subject centers and available boxes suggest a fixed view for each shot, including its size. This is not continuous tracking. Review every shot against the video.",
+		confirmProposals:
+			"I reviewed the suggested ranges and framing against the source.",
+		timeline: "Output timeline",
+		timelineCursor: "Output {time} · frame {frame}",
+		timelineZoom: "Timeline zoom",
+		timelineTrack: "Video ranges",
+		timelineSelect: "Select range {number}",
+		timelineTrimIn: "Trim start of range {number}",
+		timelineTrimOut: "Trim end of range {number}",
+		timelineSeek: "Timeline position (frames)",
+		timelineHelp:
+			"Select a position to inspect the edit. Drag the selected range’s edges to trim. Arrow keys move an edge by 1 frame, Shift by 10; Home/End move to the limit. Escape cancels a drag. Timecode is minutes:seconds:frames at 30 fps. Existing framing is preserved; newly exposed source uses fit.",
+		timelineTrimError:
+			"This trim cannot be applied. Check the source bounds and framing segment limit.",
+		duration: "{seconds} seconds · {frames} frames",
+		maximum: "Up to 20 ranges and 180 seconds per edit.",
+		invalidDocument:
+			"Check the ranges, framing, and output length before saving.",
+		framingLimit:
+			"The edit can contain up to {limit} framing segments. Reduce the segments before trying again. Your draft has been kept.",
+		candidates: "Scene candidates",
+		query: "Find a scene",
+		find: "Find candidates",
+		candidateHelp:
+			"Candidates reuse scene descriptions. They are suggestions to review, not guaranteed highlights.",
+		emptyCandidates:
+			"No candidates for this query. Choose a scene or set a range manually.",
+		addCandidate: "Add candidate",
+		budget:
+			"This candidate exceeds the remaining output length. Set a shorter range manually.",
+		analysisUnverified: "The analysis-to-material match needs review.",
+		previewAction: "Generate preview",
+		export: "Export MP4",
+		renders: "Generation history",
+		noRenders: "No generated files yet.",
+		revisionNeeded: "Save a confirmed revision to generate a file.",
+		cancel: "Request cancellation",
+		derived: "Open derived content",
+		processing: "Processing",
+		states: {
+			PENDING: "Waiting",
+			QUEUED: "Queued",
+			PREPARING: "Preparing material",
+			READY: "Ready",
+			RUNNING: "Processing",
+			RENDERING: "Rendering",
+			VALIDATING: "Checking output",
+			SUCCEEDED: "Generated",
+			ERROR: "Failed",
+			FAILED: "Failed",
+			CANCEL_REQUESTED: "Cancellation requested",
+			CANCELED: "Canceled",
+		},
+	},
 	aisaLive: {
 		timelineLabel: "Key moment timeline",
 		timelineMomentLabel: "{time} · Importance {level} · {state}",
@@ -1079,6 +1385,10 @@ export const en = {
 			"The system status changed before the data reset could start. Review the current status and try again.",
 		resetAisaSnapshotRequired:
 			"Some completed AI Scene Analysis jobs are waiting for automatic Content Library capture. Open the job to check progress, then return here. Reset remains blocked until capture finishes. Captured library data is kept when job history is reset.",
+		resetLibraryEditingReferences:
+			"{count} editing media and history records are protected. Content Library and its related credentials cannot be reset while these records exist. Clear Content Library from the selection to reset other data.",
+		jobLibraryEvidenceReferences:
+			"This job is retained by Library source evidence and cannot be deleted.",
 		liveNotStartable:
 			"The channel is {status}. It can be started from CREATED, ERROR or STOPPED. Refresh the page and check its current state.",
 		liveRunAlreadyActive:
@@ -3795,6 +4105,8 @@ export const en = {
 			"This resets only the current organization. User accounts, memberships, other organizations, and platform settings are kept.",
 		resetSelectionKept:
 			"Unchecked categories are kept, along with stored media and environment files (.env). Information needed to stop delivery is retained temporarily until cleanup finishes.",
+		resetEditingDataProtected:
+			"{count} editing media and history records are protected. Content Library and its related credentials cannot be reset while these records exist. Clear Content Library from the selection to reset other data.",
 		resetDependenciesAdded: "Related categories also selected: {categories}.",
 		resetDependenciesRemoved:
 			"Dependent categories also unchecked: {categories}.",

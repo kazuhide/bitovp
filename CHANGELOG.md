@@ -4,9 +4,20 @@ Notable changes are recorded here for people installing and using bitovp.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.2.0] - 2026-11-09
 
 ### Added
+
+- Editable clips under each Library content, with source/output/AISA loading,
+  desired duration and editing approach, Local LLM story proposals, source/result
+  previews and a visual timeline. A proposal remains editable before explicit MP4 export.
+- Multiple projects per content, clip thumbnails, saved revisions, framing
+  keyframes, captions, titles, audio controls and optional local Japanese translation.
+- Source-time forced alignment for measured caption timing, shared preview/export
+  wrapping and highlighting, bounded speech-boundary selection, and safe whole-frame
+  presentation when subject evidence does not support cropping.
+- Pinned local speech models and preparation of supported SDR inputs, with
+  immutable source/analysis/normalization evidence and exact-input reuse.
 
 - Affected CAMBI intervals can open the measured rendition for bounded playback
   and replay, including banding-only reports without a VMAF reference or FPS.
@@ -25,6 +36,12 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Clip creation and inference require a configured, verified GPU-backed Local LLM.
+  Existing source playback, editing history and completed exports remain accessible.
+- Library editing adds database migrations. Back up the database, configuration
+  and media, stop older readers/workers, migrate, then restart the updated services.
+  See [database upgrade guidance](./docs/DATABASE-UPGRADES.md).
+
 - Grouped settings into purpose-based panels with concise descriptions, keeping
   personal display preferences at the top. Quality control now brings its
   enablement and administrator-only execution profiles into one settings page.
@@ -33,6 +50,14 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   their selected encoder versions.
 - Refreshed the pinned FFmpeg 8.1.3 worker build to include the CAMBI fixes for
   small encode dimensions and 10-bit input strides.
+
+### Fixed
+
+- Captions use measured source-time word boundaries instead of spreading scene
+  text across a shot. Short verified interjections and bounded local realignment
+  retain their evidence; unavailable timing does not become invented word timing.
+- Japanese line wrapping and portrait result-player sizing are shared consistently
+  between the timeline preview and rendered MP4.
 
 ## [1.1.0] - 2026-11-04
 
@@ -153,6 +178,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.2.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1

@@ -88,6 +88,7 @@ function MomentPreview({
 	const video = useRef<HTMLVideoElement | null>(null);
 	const controller = useRef<Controller | null>(null);
 	const hls = useRef<import("hls.js").default | null>(null);
+	const hlsModule = useRef<Promise<typeof import("hls.js")> | null>(null);
 	const canceled = useRef(false);
 	const starting = useRef(false);
 	const attempt = useRef(0);
@@ -118,6 +119,8 @@ function MomentPreview({
 	useEffect(
 		() => () => {
 			cleanup();
+			// Effect replay must be able to restart the request canceled by teardown.
+			handledPlayRequest.current = undefined;
 			if (activeStop === stop) activeStop = undefined;
 		},
 		[cleanup, stop],
@@ -162,7 +165,8 @@ function MomentPreview({
 			const currentAttempt = ++attempt.current;
 			setPhase("loading");
 			try {
-				const { default: Hls } = await import("hls.js");
+				hlsModule.current ??= import("hls.js");
+				const { default: Hls } = await hlsModule.current;
 				if (
 					canceled.current ||
 					currentAttempt !== attempt.current ||
@@ -216,6 +220,7 @@ function MomentPreview({
 				controller.current.play();
 			} catch {
 				if (currentAttempt === attempt.current) {
+					hlsModule.current = null;
 					cleanup();
 					setPhase("failed");
 				}

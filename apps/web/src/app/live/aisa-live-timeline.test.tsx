@@ -130,7 +130,10 @@ beforeEach(() => {
 		fragments: [{ start: 0, duration: 30, programDateTime: origin + 50000 }],
 	});
 });
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 describe("key moment timeline", () => {
 	it("rejects a snapshot from another encoding before reading the recording", () => {
@@ -234,6 +237,80 @@ describe("key moment timeline", () => {
 				screen.getByRole("region", { name: "Selected key moment" }),
 			).getByText("Goal in the recording"),
 		).toBeVisible();
+	});
+
+	it("recovers a failed final recording read without autoplaying the earlier unknown selection", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		mocks.read.mockRejectedValueOnce(new Error("Synthetic temporary failure"));
+		const user = userEvent.setup();
+		renderWithQuery(<AisaMomentTimeline {...props} />);
+		await screen.findByText("Recording range unavailable");
+		await user.click(marker("goal"));
+		expect(screen.queryByTestId("selected-player")).toBeNull();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(10_000);
+		});
+		expect(mocks.read).toHaveBeenCalledTimes(2);
+		await waitFor(() =>
+			expect(marker("goal")).toHaveAttribute("data-playable", "true"),
+		);
+		expect(screen.getByTestId("selected-player")).not.toHaveAttribute(
+			"data-play-request",
+		);
+		await user.click(marker("goal"));
+		expect(screen.getByTestId("selected-player")).toHaveAttribute(
+			"data-play-request",
+		);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(30_000);
+		});
+		expect(mocks.read).toHaveBeenCalledTimes(2);
+	});
+
+	it("refreshes an unfinished recording after the analysis is final and stops at ENDLIST", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		mocks.read.mockResolvedValueOnce({
+			endList: false,
+			fragments: [{ start: 0, duration: 10, programDateTime: origin + 50000 }],
+		});
+		renderWithQuery(<AisaMomentTimeline {...props} />);
+		await waitFor(() =>
+			expect(marker("goal")).toHaveAttribute("data-playable", "false"),
+		);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(10_000);
+		});
+		expect(mocks.read).toHaveBeenCalledTimes(2);
+		await waitFor(() =>
+			expect(marker("goal")).toHaveAttribute("data-playable", "true"),
+		);
+		expect(screen.queryByTestId("selected-player")).toBeNull();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(30_000);
+		});
+		expect(mocks.read).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps refreshing an ended recording until the analysis snapshot is also final", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		const rendered = renderWithQuery(
+			<AisaMomentTimeline
+				{...props}
+				snapshot={{ ...snapshot, isFinal: false }}
+			/>,
+		);
+		await waitFor(() =>
+			expect(marker("goal")).toHaveAttribute("data-playable", "true"),
+		);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(10_000);
+		});
+		expect(mocks.read).toHaveBeenCalledTimes(2);
+		rendered.rerender(<AisaMomentTimeline {...props} />);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(30_000);
+		});
+		expect(mocks.read).toHaveBeenCalledTimes(2);
 	});
 
 	it("clears the selected recording when the organization binding changes", async () => {

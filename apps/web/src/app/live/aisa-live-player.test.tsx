@@ -2,12 +2,17 @@ import {
 	act,
 	cleanup,
 	fireEvent,
+	render,
 	screen,
 	waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "@/lib/i18n/context";
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import { renderLocalized } from "@/test/render";
+import { momentPlaybackIdentity } from "./aisa-recording-scope";
 
 const mocks = vi.hoisted(() => ({
 	thumbnail: vi.fn(),
@@ -102,6 +107,86 @@ afterEach(() => {
 });
 
 describe("moment recording preview", () => {
+	it("plays the first request through StrictMode effect replay and preserves playback for the same token", async () => {
+		const url = bindPassiveRequestUrl(
+			`/api/live/analyses/${props.analysisId}/recording?bitmovinAccountId=${props.accountId}&encodingId=${props.encodingId}`,
+			"00000000-0000-4000-8000-000000000001",
+		);
+		const playRequest = {
+			identity: momentPlaybackIdentity(
+				url,
+				props.mediaTimeOriginUnixMs,
+				props.moment,
+			),
+			token: 1,
+		};
+		const rendered = render(
+			<StrictMode>
+				<LocaleProvider locale="en">
+					<AisaMomentPreview {...props} playRequest={playRequest} />
+				</LocaleProvider>
+			</StrictMode>,
+		);
+		const video = rendered.container.querySelector("video");
+		if (!video) throw new Error("Video unavailable");
+		let paused = true;
+		Object.defineProperties(video, {
+			readyState: { value: 2 },
+			paused: { get: () => paused },
+		});
+		vi.spyOn(video, "pause").mockImplementation(() => {
+			paused = true;
+		});
+		const play = vi.spyOn(video, "play").mockImplementation(async () => {
+			paused = false;
+		});
+		expect(mocks.thumbnail).toHaveBeenCalledTimes(2);
+		expect(mocks.thumbnail.mock.calls[0]?.[1].aborted).toBe(true);
+		expect(mocks.thumbnail.mock.calls[1]?.[1].aborted).toBe(false);
+		await waitFor(() => expect(mocks.instances).toHaveLength(1));
+		const instance = mocks.instances[0] as FakeInstance;
+		expect(instance.loadSource).toHaveBeenCalledExactlyOnceWith(url);
+		expect(instance.destroy).not.toHaveBeenCalled();
+		act(() =>
+			instance.emit("level", {
+				details: {
+					fragments: [
+						{
+							start: 0,
+							duration: 10,
+							programDateTime: props.mediaTimeOriginUnixMs + 10000,
+						},
+					],
+				},
+			}),
+		);
+		expect(play).toHaveBeenCalledOnce();
+		expect(video.currentTime).toBe(2);
+		expect(screen.getByRole("button", { name: "Pause moment" })).toBeEnabled();
+		act(() => {
+			video.currentTime = 4;
+			video.dispatchEvent(new Event("timeupdate"));
+		});
+		rendered.rerender(
+			<StrictMode>
+				<LocaleProvider locale="en">
+					<AisaMomentPreview
+						{...props}
+						moment={{ ...props.moment }}
+						playRequest={{ ...playRequest }}
+					/>
+				</LocaleProvider>
+			</StrictMode>,
+		);
+		expect(video.currentTime).toBe(4);
+		expect(play).toHaveBeenCalledOnce();
+		expect(mocks.instances).toHaveLength(1);
+		expect(instance.loadSource).toHaveBeenCalledOnce();
+		expect(instance.destroy).not.toHaveBeenCalled();
+		rendered.unmount();
+		expect(instance.destroy).toHaveBeenCalledOnce();
+	});
+
 	it("accepts a matching timeline play request and rejects a request from another recording", async () => {
 		const rendered = renderLocalized(
 			<AisaMomentPreview
@@ -130,6 +215,48 @@ describe("moment recording preview", () => {
 		await waitFor(() => expect(mocks.thumbnail).toHaveBeenCalledTimes(2));
 		expect(mocks.instances).toHaveLength(1);
 		expect((mocks.instances[0] as FakeInstance).destroy).toHaveBeenCalledOnce();
+	});
+
+	it("does not replay a handled request after another moment stops its controller", async () => {
+		const first = renderLocalized(<AisaMomentPreview {...props} />);
+		await waitFor(() => expect(mocks.thumbnail).toHaveBeenCalledOnce());
+		const source = mocks.thumbnail.mock.calls[0]?.[0];
+		const playRequest = { identity: source.cacheKey as string, token: 1 };
+		first.rerender(<AisaMomentPreview {...props} playRequest={playRequest} />);
+		await waitFor(() => expect(mocks.instances).toHaveLength(1));
+		const firstInstance = mocks.instances[0] as FakeInstance;
+		const otherMoment = { ...props.moment, id: "moment-b" };
+		const second = renderLocalized(
+			<AisaMomentPreview
+				{...props}
+				moment={otherMoment}
+				playRequest={{
+					identity: momentPlaybackIdentity(
+						source.url,
+						props.mediaTimeOriginUnixMs,
+						otherMoment,
+					),
+					token: 1,
+				}}
+			/>,
+		);
+		await waitFor(() => expect(mocks.instances).toHaveLength(2));
+		const secondInstance = mocks.instances[1] as FakeInstance;
+		expect(firstInstance.destroy).toHaveBeenCalledOnce();
+		await act(async () => {
+			first.rerender(
+				<AisaMomentPreview
+					{...props}
+					moment={{ ...props.moment }}
+					playRequest={{ ...playRequest }}
+				/>,
+			);
+		});
+		expect(mocks.instances).toHaveLength(2);
+		expect(secondInstance.destroy).not.toHaveBeenCalled();
+		first.unmount();
+		second.unmount();
+		expect(secondInstance.destroy).toHaveBeenCalledOnce();
 	});
 
 	it("requests the anchor thumbnail through an organization-bound local URL", async () => {

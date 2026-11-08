@@ -73,7 +73,12 @@ function Timeline({
 		queryKey: ["aisa-recording-timeline", url],
 		enabled: Boolean(url),
 		queryFn: ({ signal }) => readAisaRecordingTimeline(url, signal),
-		refetchInterval: snapshot.isFinal ? false : 10000,
+		refetchInterval: (query) =>
+			snapshot.isFinal &&
+			query.state.status === "success" &&
+			query.state.data?.endList
+				? false
+				: 10000,
 		staleTime: 5000,
 		retry: false,
 	});

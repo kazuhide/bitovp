@@ -9,9 +9,12 @@ import {
 	createBoundedMomentPlayback,
 	resolveMomentPlaybackRange,
 } from "@/lib/aisa-live/playback";
-import { useSession } from "@/lib/auth/use-session";
-import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import { requestAisaThumbnail } from "./aisa-live-player-thumbnail";
+import {
+	type AisaMomentPlayRequest,
+	momentPlaybackIdentity,
+	useAisaRecordingUrl,
+} from "./aisa-recording-scope";
 
 export type AisaMomentPlayerLabels = {
 	play: string;
@@ -32,6 +35,7 @@ type Props = {
 	mediaTimeOriginUnixMs: number;
 	moment: AisaResultSnapshot["keyMoments"][number];
 	labels: AisaMomentPlayerLabels;
+	playRequest?: AisaMomentPlayRequest;
 };
 type Controller = ReturnType<typeof createBoundedMomentPlayback>;
 const initial: BoundedPlaybackState = {
@@ -44,32 +48,28 @@ const initial: BoundedPlaybackState = {
 let activeStop: (() => void) | undefined;
 
 export function AisaMomentPreview(props: Props) {
-	const session = useSession();
-	const current = session.status === "success" ? session.data : undefined;
-	const organizationId =
-		current?.configured && current.authenticated
-			? current.organizationId ||
-				(current.mode === "password" || current.mode === "none"
-					? "00000000-0000-4000-8000-000000000001"
-					: "")
-			: "";
-	const url = organizationId
-		? bindPassiveRequestUrl(
-				`/api/live/analyses/${props.analysisId}/recording?bitmovinAccountId=${props.accountId}&encodingId=${props.encodingId}`,
-				organizationId,
-			)
-		: "";
-	const identity = JSON.stringify([
+	const url = useAisaRecordingUrl(
+		props.accountId,
+		props.analysisId,
+		props.encodingId,
+	);
+	const identity = momentPlaybackIdentity(
 		url,
 		props.mediaTimeOriginUnixMs,
-		props.moment.id,
-		props.moment.lastUpdatedSequence,
-		props.moment.startInSeconds,
-		props.moment.endInSeconds,
-		props.moment.anchorInSeconds,
-	]);
+		props.moment,
+	);
 	return (
-		<MomentPreview key={identity} {...props} url={url} identity={identity} />
+		<MomentPreview
+			key={identity}
+			{...props}
+			url={url}
+			identity={identity}
+			playRequest={
+				props.playRequest?.identity === identity
+					? props.playRequest.token
+					: undefined
+			}
+		/>
 	);
 }
 
@@ -79,11 +79,19 @@ function MomentPreview({
 	mediaTimeOriginUnixMs,
 	moment,
 	labels,
-}: Props & { url: string; identity: string }) {
+	playRequest,
+}: Omit<Props, "playRequest"> & {
+	url: string;
+	identity: string;
+	playRequest?: number;
+}) {
 	const video = useRef<HTMLVideoElement | null>(null);
 	const controller = useRef<Controller | null>(null);
 	const hls = useRef<import("hls.js").default | null>(null);
 	const canceled = useRef(false);
+	const starting = useRef(false);
+	const attempt = useRef(0);
+	const handledPlayRequest = useRef<number | undefined>(undefined);
 	const [poster, setPoster] = useState<string | null>(null);
 	const [playback, setPlayback] = useState(initial);
 	const [phase, setPhase] = useState<
@@ -93,6 +101,8 @@ function MomentPreview({
 	const { startInSeconds, endInSeconds, anchorInSeconds } = moment;
 	const cleanup = useCallback(() => {
 		canceled.current = true;
+		starting.current = false;
+		attempt.current++;
 		controller.current?.destroy();
 		controller.current = null;
 		hls.current?.destroy();
@@ -137,69 +147,94 @@ function MomentPreview({
 		endInSeconds,
 		anchorInSeconds,
 	]);
-	const toggle = async () => {
-		if (!url || phase === "loading") return;
-		if (controller.current) {
-			if (playback.playing) controller.current.pause();
-			else controller.current.play();
-			return;
-		}
-		activeStop?.();
-		activeStop = stop;
-		canceled.current = false;
-		setPhase("loading");
-		try {
-			const { default: Hls } = await import("hls.js");
-			if (canceled.current || !video.current) return;
-			if (!Hls.isSupported()) {
-				setPhase("unavailable");
+	const startPlayback = useCallback(
+		async (restart = false) => {
+			if (!url || starting.current) return;
+			if (controller.current) {
+				if (restart) controller.current.seek(0);
+				controller.current.play();
 				return;
 			}
-			const element = video.current;
-			let range: AisaPlaybackRange | null = null;
-			controller.current = createBoundedMomentPlayback(
-				element,
-				() => range,
-				(state) => {
-					if (!canceled.current) {
-						setPlayback(state);
-						if (state.ready) setPhase("idle");
-					}
-				},
-			);
-			const instance = new Hls({
-				autoStartLoad: false,
-				startLevel: 0,
-				maxBufferLength: 5,
-				maxMaxBufferLength: 10,
-				enableWorker: false,
-			});
-			hls.current = instance;
-			instance.on(Hls.Events.MANIFEST_PARSED, () => instance.startLoad(0));
-			instance.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
-				const before = range;
-				range = resolveMomentPlaybackRange(
-					moment,
-					mediaTimeOriginUnixMs,
-					data.details.fragments,
+			activeStop?.();
+			activeStop = stop;
+			canceled.current = false;
+			starting.current = true;
+			const currentAttempt = ++attempt.current;
+			setPhase("loading");
+			try {
+				const { default: Hls } = await import("hls.js");
+				if (
+					canceled.current ||
+					currentAttempt !== attempt.current ||
+					!video.current
+				)
+					return;
+				if (!Hls.isSupported()) {
+					setPhase("unavailable");
+					return;
+				}
+				const element = video.current;
+				let range: AisaPlaybackRange | null = null;
+				controller.current = createBoundedMomentPlayback(
+					element,
+					() => range,
+					(state) => {
+						if (!canceled.current) {
+							setPlayback(state);
+							if (state.ready) setPhase("idle");
+						}
+					},
 				);
-				if (!range) setPhase("unavailable");
-				else if (!before) instance.startLoad(range.start);
-				controller.current?.sync();
-			});
-			instance.on(Hls.Events.ERROR, (_event, data) => {
-				if (data.fatal && !canceled.current) {
+				const instance = new Hls({
+					autoStartLoad: false,
+					startLevel: 0,
+					maxBufferLength: 5,
+					maxMaxBufferLength: 10,
+					enableWorker: false,
+				});
+				hls.current = instance;
+				instance.on(Hls.Events.MANIFEST_PARSED, () => instance.startLoad(0));
+				instance.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+					const before = range;
+					range = resolveMomentPlaybackRange(
+						moment,
+						mediaTimeOriginUnixMs,
+						data.details.fragments,
+					);
+					if (!range) setPhase("unavailable");
+					else if (!before) instance.startLoad(range.start);
+					controller.current?.sync();
+				});
+				instance.on(Hls.Events.ERROR, (_event, data) => {
+					if (data.fatal && !canceled.current) {
+						cleanup();
+						setPhase("failed");
+					}
+				});
+				instance.attachMedia(element);
+				instance.loadSource(url);
+				controller.current.play();
+			} catch {
+				if (currentAttempt === attempt.current) {
 					cleanup();
 					setPhase("failed");
 				}
-			});
-			instance.attachMedia(element);
-			instance.loadSource(url);
-			controller.current.play();
-		} catch {
-			cleanup();
-			setPhase("failed");
-		}
+			} finally {
+				if (currentAttempt === attempt.current) starting.current = false;
+			}
+		},
+		[url, stop, moment, mediaTimeOriginUnixMs, cleanup],
+	);
+	useEffect(() => {
+		if (playRequest === undefined || handledPlayRequest.current === playRequest)
+			return;
+		handledPlayRequest.current = playRequest;
+		void startPlayback(true);
+	}, [playRequest, startPlayback]);
+	const toggle = () => {
+		if (!url || phase === "loading") return;
+		if (controller.current && playback.playing) controller.current.pause();
+		else void startPlayback();
 	};
 	const action = playback.playing
 		? labels.pause

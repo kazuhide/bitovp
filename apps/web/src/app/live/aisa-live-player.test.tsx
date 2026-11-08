@@ -91,6 +91,7 @@ type FakeInstance = {
 
 beforeEach(() => {
 	mocks.instances.length = 0;
+	mocks.thumbnail.mockReset();
 	mocks.thumbnail.mockResolvedValue("data:image/jpeg;base64,synthetic");
 	vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
 	vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
@@ -101,6 +102,36 @@ afterEach(() => {
 });
 
 describe("moment recording preview", () => {
+	it("accepts a matching timeline play request and rejects a request from another recording", async () => {
+		const rendered = renderLocalized(
+			<AisaMomentPreview
+				{...props}
+				playRequest={{ identity: "other-recording", token: 1 }}
+			/>,
+		);
+		await waitFor(() => expect(mocks.thumbnail).toHaveBeenCalledOnce());
+		expect(mocks.instances).toHaveLength(0);
+		const identity = mocks.thumbnail.mock.calls[0]?.[0].cacheKey as string;
+		rendered.rerender(
+			<AisaMomentPreview {...props} playRequest={{ identity, token: 2 }} />,
+		);
+		await waitFor(() => expect(mocks.instances).toHaveLength(1));
+		rendered.rerender(
+			<AisaMomentPreview {...props} playRequest={{ identity, token: 2 }} />,
+		);
+		expect(mocks.instances).toHaveLength(1);
+		rendered.rerender(
+			<AisaMomentPreview
+				{...props}
+				analysisId="dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+				playRequest={{ identity, token: 2 }}
+			/>,
+		);
+		await waitFor(() => expect(mocks.thumbnail).toHaveBeenCalledTimes(2));
+		expect(mocks.instances).toHaveLength(1);
+		expect((mocks.instances[0] as FakeInstance).destroy).toHaveBeenCalledOnce();
+	});
+
 	it("requests the anchor thumbnail through an organization-bound local URL", async () => {
 		renderLocalized(<AisaMomentPreview {...props} />);
 		await waitFor(() => expect(mocks.thumbnail).toHaveBeenCalledOnce());

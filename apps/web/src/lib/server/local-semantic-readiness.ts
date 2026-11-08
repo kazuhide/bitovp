@@ -34,6 +34,7 @@ type DiagnosticConfig = LocalSemanticConfiguration & {
 /** Read only recent worker-owned GPU checks. A page request never probes the LAN. */
 export async function readWorkerClipAvailability(
 	config: DiagnosticConfig,
+	organizationId: string,
 ): Promise<boolean> {
 	const redis = new Redis(loadEnv().REDIS_URL, {
 		lazyConnect: true,
@@ -73,6 +74,7 @@ export async function readWorkerClipAvailability(
 			hash,
 			config.profile,
 			Date.now(),
+			organizationId,
 		);
 	} catch {
 		return false;

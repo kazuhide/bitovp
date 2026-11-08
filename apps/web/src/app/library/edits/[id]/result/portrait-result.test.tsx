@@ -125,6 +125,9 @@ it("keeps existing results and owned cancellation while GPU render admission is 
 	expect(
 		screen.queryByRole("link", { name: "Edit video" }),
 	).not.toBeInTheDocument();
+	expect(
+		screen.getByRole("link", { name: "Generation history" }),
+	).toHaveAttribute("href", `/library/edits/${editingIds.project}`);
 });
 
 it("does not present an old successful artifact after the newest export fails", async () => {

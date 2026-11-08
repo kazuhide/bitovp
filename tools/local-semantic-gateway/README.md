@@ -24,7 +24,7 @@ BitOVP workerが固定のローカルLLMへ非同期jobを送るための、Pyth
 readinessの成功HTTP応答は常に200で、次の固定キーだけを返します。未認証は401、未登録profile・query付きpathなどは404です。
 
 ```text
-version: "bitovp-semantic-readiness-v1"
+version: "bitovp-semantic-readiness-v2"
 profile: "amd" | "nvidia"
 scope: "METADATA_ONLY"
 ready: codeが"READY"の場合だけtrue
@@ -187,3 +187,7 @@ loader の探索 directory とbinary/libraryの親directoryは、子directoryを
 共通 inference.lock 内で既設 Qwen が unloaded/専用 unit が inactive なことを確認してから起動します。最初の unit InvocationID/MainPID/startTicks を固定し、同じ起動identityの検証済み `/usr/bin/env` launcher から binary への移行だけを最大5秒待ちます。二度の観測の間にexecが完了した場合は、同じownerの期待binary/argvを再検証して期限内のloopに戻ります。不明な executable や argv を待機理由にしません。起動済み binary/profile と owned PID の GPU 割当を確認し、終了・取消・HTTP失敗のいずれも cgroup 空、捕捉済み旧 PID 終了を確認してから lock を解放し terminal 成功/取消にします。既にinactive/failed、MainPID0、元InvocationIDまたは解除済みの空ID、旧PID終了・cgroup空を証明できた場合はstopを呼びません。MainPID0でもforeign InvocationIDやactivating、未捕捉ownerを解放済みと扱わず、停止もせずcleanup:falseと永続global quarantineに進めます。捕捉済み startTicks を再観測で上書きせず、外部restartやPID再利用で起動identityが変わった場合も新プロセスをownedへ昇格させません。HTTP 接続の終了だけでは解放と扱いません。既存 Qwen 用 offline release CLI の証明を PLaMo job に流用することは拒否します。PLaMo の隔離解除を必要とする実運用は、専用 unit を対象にした独立監査済み operator 手順の追加が必要です。
 
 この追加は未配置環境でも fail closed となる adapter/protocol/recipe/fixture の実装です。ライセンス用途確認前の PLaMo 重み取得・実 service 配置・native 翻訳精度/速度の試験は行っていません。固定 [llama.cpp server source](https://github.com/ggml-org/llama.cpp/blob/10d4846a572aebf21c0482d140b00e74c0f1ad20/tools/server/README.md) の raw completion/stop/timing と CLI を基にしています。
+
+### 組織に束縛したclip受付
+
+認証付き `GET /readiness/nvidia` と `GET /readiness/amd` は `bitovp-semantic-readiness-v2` を返し、固定tokenが許可する `organizationId` を常に含めます。READYには従来のGPU能力proofも必要です。Workerの `local-clip-availability-v2` はREADY時に `authorizedOrganizationId` を持ち、各task/renderのorganizationIdと比較して新規claimを許可します。Webも認証済みrequest contextのorganizationIdだけを比較し、envや要求bodyから組織の権限を推測しません。旧v1・組織根拠なし・別組織のREADYは受付不可です。GatewayのPOSTに対する403 TENANT_FORBIDDENは維持します。既存artifact/historyと所有cancelはこの新規受付gateから独立して利用できます。

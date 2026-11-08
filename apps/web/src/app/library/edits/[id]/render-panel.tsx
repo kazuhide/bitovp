@@ -34,6 +34,7 @@ export function RenderPanel({
 	onGenerate,
 	onCancel,
 	previewOutdated = false,
+	showGeneration = true,
 }: {
 	project: Pick<EditingProjectView, "renders" | "currentRevisionId">;
 	disabled: boolean;
@@ -41,6 +42,7 @@ export function RenderPanel({
 	onGenerate: (kind: "PREVIEW" | "EXPORT") => void;
 	onCancel: (id: string) => void;
 	previewOutdated?: boolean;
+	showGeneration?: boolean;
 }) {
 	const { t } = useT();
 	const preview = project.renders.find(
@@ -83,22 +85,24 @@ export function RenderPanel({
 			) : (
 				<p className="text-sm text-zinc-400">{t("editing.previewHelp")}</p>
 			)}
-			<div className="flex flex-wrap gap-2">
-				<Button
-					disabled={generationDisabled || active("PREVIEW")}
-					onClick={() => onGenerate("PREVIEW")}
-				>
-					{t("editing.previewAction")}
-				</Button>
-				<Button
-					variant="secondary"
-					disabled={generationDisabled || active("EXPORT")}
-					onClick={() => onGenerate("EXPORT")}
-				>
-					{t("editing.export")}
-				</Button>
-			</div>
-			{!project.currentRevisionId && (
+			{showGeneration && (
+				<div className="flex flex-wrap gap-2">
+					<Button
+						disabled={generationDisabled || active("PREVIEW")}
+						onClick={() => onGenerate("PREVIEW")}
+					>
+						{t("editing.previewAction")}
+					</Button>
+					<Button
+						variant="secondary"
+						disabled={generationDisabled || active("EXPORT")}
+						onClick={() => onGenerate("EXPORT")}
+					>
+						{t("editing.export")}
+					</Button>
+				</div>
+			)}
+			{showGeneration && !project.currentRevisionId && (
 				<p className="text-xs text-zinc-400">{t("editing.revisionNeeded")}</p>
 			)}
 			<h3 className="border-zinc-800 border-t pt-4 font-medium text-sm">

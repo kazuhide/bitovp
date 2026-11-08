@@ -2,6 +2,7 @@ import {
 	LOCAL_CLIP_AVAILABILITY_TTL_MS,
 	type LocalClipAvailability,
 	type LocalSemanticConfiguration,
+	localClipAvailabilitySchema,
 	readLocalSemanticConfiguration,
 } from "@bitovp/core";
 import type { LocalCaptionTranslationSelection } from "@bitovp/core/local-caption-config";
@@ -18,7 +19,7 @@ export function createClipEditingRuntimeGate(
 ) {
 	const now = options.now ?? Date.now;
 	let latest: LocalClipAvailability = {
-		version: "local-clip-availability-v1",
+		version: "local-clip-availability-v2",
 		checkedAt: 0,
 		code: "UNAVAILABLE",
 	};
@@ -46,6 +47,7 @@ export function createClipEditingRuntimeGate(
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			let ready = false;
 			let gpuCheckedAt = checkedAt;
+			let authorizedOrganizationId: string | undefined;
 			try {
 				const result = await Promise.race([
 					(options.probe ?? probeLocalClipGateway)(
@@ -61,21 +63,32 @@ export function createClipEditingRuntimeGate(
 				]);
 				ready =
 					result?.code === "READY" &&
+					typeof result.authorizedOrganizationId === "string" &&
 					typeof result.gpuObservedAt === "number" &&
 					result.gpuObservedAt >= now() - LOCAL_CLIP_AVAILABILITY_TTL_MS &&
 					result.gpuObservedAt <= now() + 5_000;
-				if (ready && result?.gpuObservedAt !== undefined)
+				if (ready && result?.gpuObservedAt !== undefined) {
 					gpuCheckedAt = Math.min(checkedAt, result.gpuObservedAt);
+					authorizedOrganizationId = result.authorizedOrganizationId;
+				}
 			} catch {
 				/* Unverified failures remain unavailable, without operator details. */
 			} finally {
 				if (timer) clearTimeout(timer);
 			}
-			latest = {
-				version: "local-clip-availability-v1",
+			const checked = localClipAvailabilitySchema.safeParse({
+				version: "local-clip-availability-v2",
 				checkedAt: gpuCheckedAt,
 				code: ready && !stopped ? "READY" : "UNAVAILABLE",
-			};
+				authorizedOrganizationId,
+			});
+			latest = checked.success
+				? checked.data
+				: {
+						version: "local-clip-availability-v2",
+						checkedAt: gpuCheckedAt,
+						code: "UNAVAILABLE",
+					};
 		})().finally(() => {
 			pending = undefined;
 		});
@@ -83,9 +96,13 @@ export function createClipEditingRuntimeGate(
 	};
 	return {
 		observation,
-		canClaim: async () => {
+		canClaim: async (organizationId: string) => {
 			await refresh();
-			return observation().code === "READY";
+			const current = observation();
+			return (
+				current.code === "READY" &&
+				current.authorizedOrganizationId === organizationId
+			);
 		},
 		start: () => {
 			if (!interval && !stopped) {

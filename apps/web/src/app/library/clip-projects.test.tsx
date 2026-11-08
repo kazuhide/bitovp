@@ -38,7 +38,7 @@ it("allows an explicit stored-results view without editor or creation admission"
 	renderWithQuery(<ClipProjects contentId="source" readOnly />);
 	expect(
 		await screen.findByRole("link", { name: "Alternative saved" }),
-	).toHaveAttribute("href", "/library/edits/saved/result");
+	).toHaveAttribute("href", "/library/edits/saved");
 	expect(
 		screen.queryByRole("link", { name: "Create another clip" }),
 	).not.toBeInTheDocument();

@@ -748,7 +748,7 @@ const editingRuntimeHeartbeat = startLocalSemanticHeartbeat({
 	initialized: Boolean(editingSweepLoop),
 	clipAvailability: () =>
 		editingGpuGate?.observation() ?? {
-			version: "local-clip-availability-v1",
+			version: "local-clip-availability-v2",
 			checkedAt: 0,
 			code: "UNAVAILABLE",
 		},

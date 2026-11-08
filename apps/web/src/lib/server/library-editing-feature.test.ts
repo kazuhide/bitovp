@@ -12,8 +12,14 @@ const readiness = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("./local-semantic-readiness", () => ({
 	readWorkerClipAvailability: readiness.read,
 }));
-beforeEach(() => readiness.read.mockReset().mockResolvedValue(true));
+beforeEach(() => {
+	readiness.read.mockReset().mockResolvedValue(true);
+	requestContext.mockReset().mockResolvedValue({ tenant: { organizationId } });
+});
 
+const organizationId = "22222222-2222-4222-8222-222222222222";
+const requestContext = vi.hoisted(() => vi.fn());
+vi.mock("./context", () => ({ getServerContext: requestContext }));
 const valid = {
 	BITOVP_LOCAL_SEMANTIC_ENABLED: "1",
 	BITOVP_LOCAL_SEMANTIC_GATEWAY_URL: "https://fixture.invalid:11437",
@@ -24,6 +30,22 @@ const valid = {
 };
 afterEach(() => vi.unstubAllEnvs());
 describe("server-only clip editing availability", () => {
+	it("uses only the authenticated request organization for the Gateway token's scoped readiness", async () => {
+		readiness.read.mockImplementation(
+			async (_config, authorizedOrganization) =>
+				authorizedOrganization === organizationId,
+		);
+		expect(await isClipEditingAvailable(valid)).toBe(true);
+		expect(readiness.read.mock.calls[0]?.[1]).toBe(organizationId);
+		requestContext.mockResolvedValueOnce({
+			tenant: { organizationId: "33333333-3333-4333-8333-333333333333" },
+		});
+		expect(await isClipEditingAvailable(valid)).toBe(false);
+		requestContext.mockRejectedValueOnce(new Error("unauthenticated"));
+		readiness.read.mockClear();
+		expect(await isClipEditingAvailable(valid)).toBe(false);
+		expect(readiness.read).not.toHaveBeenCalled();
+	});
 	it("rejects configured but unreachable, CPU-only or unknown GPU evidence", async () => {
 		readiness.read.mockResolvedValue(false);
 		expect(await isClipEditingAvailable(valid)).toBe(false);

@@ -523,7 +523,7 @@ class Gateway:
             if method == 'GET' and readiness:
                 profile = readiness[1]
                 code, gpu = self.availability(profile)
-                return 200, {'version': 'bitovp-semantic-readiness-v1', 'profile': profile,
+                return 200, {'version': 'bitovp-semantic-readiness-v2', 'profile': profile, 'organizationId': self.organization,
                              'scope': 'METADATA_ONLY', 'ready': code == 'READY', 'code': code,
                              **({'gpu': gpu} if code == 'READY' else {})}
             plamo_ready = re.fullmatch(r'/readiness/plamo/(amd|nvidia)/([a-f0-9]{64})', path)

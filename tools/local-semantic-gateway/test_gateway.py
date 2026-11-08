@@ -636,7 +636,7 @@ class GatewayTests(unittest.TestCase):
             with patch.object(self.gateway.runtime, 'gpu_capability', return_value=gpu), patch.object(self.gateway.runtime, 'request', side_effect=[
                     {'version': RUNTIME_VERSION}, {'models': [{'name': MODEL, 'digest': MODEL_DIGEST}]}]) as runtime_request:
                 self.assertEqual(self.call('GET', '/readiness/' + profile), (200, {
-                    'version': 'bitovp-semantic-readiness-v1', 'profile': profile,
+                    'version': 'bitovp-semantic-readiness-v2', 'profile': profile, 'organizationId': ORG,
                     'scope': 'METADATA_ONLY', 'ready': True, 'code': 'READY', 'gpu': gpu}))
                 self.assertEqual(runtime_request.call_args_list, [
                     unittest.mock.call(profile, '/api/version'), unittest.mock.call(profile, '/api/tags')])
@@ -670,7 +670,7 @@ class GatewayTests(unittest.TestCase):
         for responses, code in cases:
             with self.subTest(code=code), patch.object(self.gateway.runtime, 'request', side_effect=responses):
                 self.assertEqual(self.call('GET', '/readiness/nvidia'), (200, {
-                    'version': 'bitovp-semantic-readiness-v1', 'profile': 'nvidia',
+                    'version': 'bitovp-semantic-readiness-v2', 'profile': 'nvidia', 'organizationId': ORG,
                     'scope': 'METADATA_ONLY', 'ready': False, 'code': code}))
 
     def test_readiness_stopping_or_any_quarantine_skips_all_runtime_requests(self):

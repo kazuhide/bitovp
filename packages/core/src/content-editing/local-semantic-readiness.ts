@@ -3,11 +3,17 @@ import type { LocalSemanticConfiguration } from "./local-semantic-config";
 
 export const LOCAL_SEMANTIC_HEARTBEAT_TTL_MS = 45_000;
 export const LOCAL_CLIP_AVAILABILITY_TTL_MS = 15_000;
-export const localClipAvailabilitySchema = z.strictObject({
-	version: z.literal("local-clip-availability-v1"),
-	checkedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-	code: z.enum(["READY", "UNAVAILABLE"]),
-});
+export const localClipAvailabilitySchema = z
+	.strictObject({
+		version: z.literal("local-clip-availability-v2"),
+		checkedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+		code: z.enum(["READY", "UNAVAILABLE"]),
+		authorizedOrganizationId: z.uuid().optional(),
+	})
+	.refine(
+		(row) => row.code !== "READY" || row.authorizedOrganizationId !== undefined,
+		"READY requires an authorized organization",
+	);
 export type LocalClipAvailability = z.infer<typeof localClipAvailabilitySchema>;
 export const localSemanticWorkerHeartbeatSchema = z.strictObject({
 	version: z.literal("local-semantic-worker-v1"),
@@ -95,8 +101,10 @@ export function summarizeClipEditingAvailability(
 	connectionHash: string,
 	profile: "amd" | "nvidia",
 	now: number,
+	organizationId: string,
 ): boolean {
-	if (rows.length > 100) return false;
+	if (rows.length > 100 || !z.uuid().safeParse(organizationId).success)
+		return false;
 	return rows.some((value) => {
 		const result = localSemanticWorkerHeartbeatSchema.safeParse(value);
 		if (!result.success) return false;
@@ -109,6 +117,7 @@ export function summarizeClipEditingAvailability(
 			row.observedAt >= now - LOCAL_SEMANTIC_HEARTBEAT_TTL_MS &&
 			row.observedAt <= now + 5_000 &&
 			check?.code === "READY" &&
+			check.authorizedOrganizationId === organizationId &&
 			check.checkedAt >= now - LOCAL_CLIP_AVAILABILITY_TTL_MS &&
 			check.checkedAt <= now + 5_000
 		);
@@ -125,7 +134,8 @@ export const localSemanticGpuCapabilitySchema = z.strictObject({
 
 export const localSemanticGatewayReadinessSchema = z
 	.strictObject({
-		version: z.literal("bitovp-semantic-readiness-v1"),
+		version: z.literal("bitovp-semantic-readiness-v2"),
+		organizationId: z.uuid(),
 		profile: z.enum(["amd", "nvidia"]),
 		scope: z.literal("METADATA_ONLY"),
 		ready: z.boolean(),

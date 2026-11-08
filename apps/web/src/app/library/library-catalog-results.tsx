@@ -11,7 +11,6 @@ import { type LibraryView, libraryTimeLabel } from "./library-view-preference";
 export function LibraryCatalogResults({
 	items,
 	view,
-	clipEditingAvailable = false,
 }: {
 	items: LibraryCatalogItem[];
 	view: LibraryView;
@@ -98,7 +97,7 @@ export function LibraryCatalogResults({
 									<span>{t("library.noPlaybackMetadata")}</span>
 								)}
 								{item.locale !== "und" && <span>{item.locale}</span>}
-								{clipEditingAvailable && (item.clipProjectCount ?? 0) > 0 && (
+								{(item.clipProjectCount ?? 0) > 0 && (
 									<span>
 										{t("editing.clipDraftCount", {
 											count: item.clipProjectCount ?? 0,

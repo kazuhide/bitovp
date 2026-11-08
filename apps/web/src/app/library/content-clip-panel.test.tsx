@@ -1,9 +1,11 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
-import { renderLocalized } from "@/test/render";
+import { renderLocalized, renderWithQuery } from "@/test/render";
 import { ContentClipPanel } from "./content-clip-panel";
 
+const metadata = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api", () => ({ apiFetch: metadata }));
 const list = vi.fn(({ contentId }: { contentId: string }) => (
 	<section aria-label="Clip list">{contentId}</section>
 ));
@@ -11,6 +13,7 @@ vi.mock("./clip-projects", () => ({
 	ClipProjects: (props: { contentId: string }) => list(props),
 }));
 beforeEach(() => {
+	metadata.mockReset().mockResolvedValue({ items: [], total: 0, offset: 0 });
 	list.mockClear();
 	window.history.replaceState(null, "", "/library/source?scene=selected");
 });
@@ -51,7 +54,7 @@ it.each([
 	false,
 ])("does not expose or mount clip editing from a deep hash when availability is %s", (clipEditingAvailable) => {
 	window.history.replaceState(null, "", "/library/source#clip-drafts");
-	renderLocalized(
+	renderWithQuery(
 		<ContentClipPanel
 			contentId="source"
 			clipEditingAvailable={clipEditingAvailable}
@@ -60,4 +63,23 @@ it.each([
 	expect(screen.queryByRole("button", { name: "Clips" })).toBeNull();
 	expect(screen.queryByRole("dialog")).toBeNull();
 	expect(list).not.toHaveBeenCalled();
+});
+
+it("offers stored clips as a read-only overlay when GPU admission is unavailable", async () => {
+	metadata.mockResolvedValue({ items: [], total: 2, offset: 0 });
+	renderWithQuery(
+		<ContentClipPanel contentId="source" clipEditingAvailable={false} />,
+	);
+	const trigger = await screen.findByRole("button", { name: "Clips" });
+	expect(list).not.toHaveBeenCalled();
+	await userEvent.click(trigger);
+	expect(list.mock.calls.at(-1)?.[0]).toMatchObject({
+		contentId: "source",
+		clipEditingAvailable: false,
+		readOnly: true,
+		showCreate: false,
+	});
+	expect(metadata.mock.calls[0]?.[0]).toContain(
+		"/api/library/edits?contentId=source",
+	);
 });

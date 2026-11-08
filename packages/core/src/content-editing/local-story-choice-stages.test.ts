@@ -125,7 +125,8 @@ describe("separate choice stage and capability", () => {
 				path === "/health"
 					? health(stages)
 					: {
-							version: "bitovp-semantic-readiness-v1",
+							version: "bitovp-semantic-readiness-v2",
+							organizationId: "22222222-2222-4222-8222-222222222222",
 							profile: "nvidia",
 							scope: "METADATA_ONLY",
 							ready: true,

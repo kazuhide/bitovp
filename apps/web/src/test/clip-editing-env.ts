@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, vi } from "vitest";
-import * as readiness from "@/lib/server/local-semantic-readiness";
+import * as availability from "@/lib/server/library-editing-feature";
 
 /** Opt in only suites that exercise an enabled editing environment. No I/O. */
 export function enableClipEditingForTests() {
@@ -7,10 +7,10 @@ export function enableClipEditingForTests() {
 	beforeEach(() => {
 		// These route suites test their own authorization/data boundaries. GPU
 		// admission has dedicated fail-closed tests with real registry fixtures.
-		const availability = vi
-			.spyOn(readiness, "readWorkerClipAvailability")
+		const fixture = vi
+			.spyOn(availability, "isClipEditingAvailable")
 			.mockResolvedValue(true);
-		restoreAvailability = () => availability.mockRestore();
+		restoreAvailability = () => fixture.mockRestore();
 		const settings = {
 			ENABLED: "1",
 			GATEWAY_URL: "https://127.0.0.1:11437",

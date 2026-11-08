@@ -76,7 +76,7 @@ it("requests original contents before paging and leaves generated clips under th
 it.each([
 	{ clipEditingAvailable: undefined, view: "grid" },
 	{ clipEditingAvailable: false, view: "list" },
-])("keeps original browsing and AISA metadata without clip counts ($view)", async ({
+])("keeps original browsing, AISA metadata and existing clip counts ($view)", async ({
 	clipEditingAvailable,
 	view,
 }) => {
@@ -89,7 +89,7 @@ it.each([
 	).toHaveAttribute("href", "/library/content");
 	expect(screen.getByText("HLS")).toBeVisible();
 	expect(screen.getByText("3 scenes")).toBeVisible();
-	expect(screen.queryByText("2 clip drafts")).toBeNull();
+	expect(screen.getByText("2 clip drafts")).toBeVisible();
 	expect(
 		apiFetch.mock.calls.every(
 			([url]) =>

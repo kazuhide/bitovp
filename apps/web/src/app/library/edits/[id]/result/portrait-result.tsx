@@ -134,6 +134,14 @@ function PortraitResultView({
 				videoAttempt={videoAttempt}
 				allowEditing={clipEditingAvailable}
 			/>
+			{!clipEditingAvailable && (
+				<Link
+					href={`/library/edits/${id}`}
+					className="text-emerald-400 underline"
+				>
+					{t("editing.renders")}
+				</Link>
+			)}
 			<div className="space-y-3 border-zinc-800 border-t pt-4">
 				{canMutate && (
 					<PortraitResultActions

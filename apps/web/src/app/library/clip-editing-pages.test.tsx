@@ -24,6 +24,7 @@ vi.mock("./[id]/edits/editing-library", () => ({
 	EditingLibraryClient: () => null,
 }));
 vi.mock("./edits/[id]/editor-router", () => ({ EditorRouter: () => null }));
+vi.mock("./edits/[id]/editor-client", () => ({ EditorClient: () => null }));
 vi.mock("./generations/[id]/generation-progress", () => ({
 	GenerationProgress: () => null,
 }));
@@ -33,6 +34,8 @@ vi.mock("./edits/[id]/result/portrait-result", () => ({
 
 import EditingLibraryPage from "./[id]/edits/page";
 import ContentDetailPage from "./[id]/page";
+import { EditorClient } from "./edits/[id]/editor-client";
+import { EditorRouter } from "./edits/[id]/editor-router";
 import EditingPage from "./edits/[id]/page";
 import PortraitResultPage from "./edits/[id]/result/page";
 import GenerationPage from "./generations/[id]/page";
@@ -61,19 +64,19 @@ it("passes only request-time availability to original browse and detail pages", 
 	expect(state.player).toHaveBeenCalledTimes(3);
 });
 
-it.each([
-	["editor", EditingPage],
-] as const)("rejects the direct %s page before mounting editing UI when local editing is unavailable", async (_name, page) => {
-	await expect(
-		page({ params: Promise.resolve({ id: "project" }) }),
-	).rejects.toThrow("CLIP_EDITING_NOT_FOUND");
-	state.available = true;
-	const enabled = await page({ params: Promise.resolve({ id: "project" }) });
-	expect(enabled.props.id ?? enabled.props.contentId).toBe("project");
-	state.available = false;
-	await expect(
-		page({ params: Promise.resolve({ id: "project" }) }),
-	).rejects.toThrow("CLIP_EDITING_NOT_FOUND");
+it("keeps the editor URL as read-only history when GPU availability is lost", async () => {
+	for (const available of [false, true, false]) {
+		state.available = available;
+		const view = await EditingPage({
+			params: Promise.resolve({ id: "project" }),
+		});
+		expect(view.props.id).toBe("project");
+		if (available) expect(view.type).toBe(EditorRouter);
+		else {
+			expect(view.type).toBe(EditorClient);
+			expect(view.props.historyOnly).toBe(true);
+		}
+	}
 });
 
 it.each([

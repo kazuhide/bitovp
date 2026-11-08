@@ -60,7 +60,7 @@ type Dependencies = {
 	signal?: AbortSignal;
 	ffmpegPath?: string;
 	ffprobePath?: string;
-	canClaim: () => Promise<boolean>;
+	canClaim: (organizationId: string) => Promise<boolean>;
 };
 type LeaseStatus = "OK" | "CANCELED" | "LEASE_LOST";
 
@@ -626,6 +626,23 @@ async function renderRun(
 					if (!exhausted.count) throw new MediaOperationError("LEASE_LOST");
 					return;
 				}
+				if ((await deps.canClaim?.(previous.organizationId)) !== true) {
+					await guard.checkpoint();
+					const deferred = await deps.prisma.renderRun.updateMany({
+						where: fence(),
+						data: {
+							state: "VALIDATING",
+							error: "CLIP_EDITING_UNAVAILABLE",
+							leaseToken: null,
+							leaseUntil: new Date(now().getTime() - 1),
+							availableAt: new Date(
+								now().getTime() + EDITING_RECOVERY_RETRY_MS,
+							),
+						},
+					});
+					if (!deferred.count) throw new MediaOperationError("LEASE_LOST");
+					return;
+				}
 				const resumed = await deps.prisma.renderRun.updateMany({
 					where: { ...fence(), attempts: { lt: EDITING_MAX_ATTEMPTS } },
 					data: { attempts: { increment: 1 }, pendingArtifactToken: null },
@@ -924,7 +941,7 @@ export function createLibraryEditingSweep(deps: Dependencies) {
 			});
 			for (const row of rows) {
 				if (deps.signal?.aborted) break;
-				if ((await deps.canClaim?.()) !== true) break;
+				if ((await deps.canClaim?.(row.organizationId)) !== true) break;
 				const leaseToken = randomUUID();
 				const claimed = await deps.prisma.libraryMediaVersion.updateMany({
 					where: { id: row.id, ...eligible },
@@ -989,7 +1006,11 @@ export function createLibraryEditingSweep(deps: Dependencies) {
 					row.pendingArtifactToken ??
 					(row.state === "VALIDATING" ? row.leaseToken : null);
 				// Recover an already-owned durable artifact even while new work is disabled.
-				if (!pendingArtifactToken && (await deps.canClaim?.()) !== true) break;
+				if (
+					!pendingArtifactToken &&
+					(await deps.canClaim?.(row.organizationId)) !== true
+				)
+					break;
 				const leaseToken = randomUUID();
 				const claimed = await deps.prisma.renderRun.updateMany({
 					where: { id: row.id, ...renderEligible },

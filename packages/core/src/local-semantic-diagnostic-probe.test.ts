@@ -8,6 +8,7 @@ import { localSemanticStageRegistry } from "./content-editing/local-semantic-sta
 import { localSemanticCombinedStageRegistry } from "./content-editing/local-story-flow-stages";
 import * as probe from "./local-semantic-diagnostic-probe";
 
+const organizationId = "22222222-2222-4222-8222-222222222222";
 const config = {
 	url: "https://fixture.invalid/",
 	token: "a".repeat(48),
@@ -32,7 +33,8 @@ const health = (stages = rows(true)) => ({
 	stages,
 });
 const readiness = {
-	version: "bitovp-semantic-readiness-v1",
+	version: "bitovp-semantic-readiness-v2",
+	organizationId,
 	profile: "nvidia",
 	scope: "METADATA_ONLY",
 	ready: true,
@@ -51,6 +53,27 @@ const reader = (value = health()) =>
 	);
 
 describe("FLOW exact six-stage metadata probe", () => {
+	it("attests the token-authorized organization only from authenticated readiness metadata", async () => {
+		await expect(
+			probe.probeLocalClipGateway(config, reader()),
+		).resolves.toMatchObject({
+			code: "READY",
+			gpuObservedAt: readiness.gpu.observedAt,
+			authorizedOrganizationId: organizationId,
+		});
+		const oldRead = vi.fn(async (_config: unknown, path: string) =>
+			path === "/health"
+				? health()
+				: {
+						...readiness,
+						version: "bitovp-semantic-readiness-v1",
+						organizationId: undefined,
+					},
+		);
+		await expect(
+			probe.probeLocalClipGateway(config, oldRead),
+		).resolves.toMatchObject({ code: "INVALID_RESPONSE" });
+	});
 	it.each([
 		undefined,
 		{

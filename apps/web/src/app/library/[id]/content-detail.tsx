@@ -103,17 +103,19 @@ function ContentDetailView({
 							>
 								{query.data.parent.title}
 							</Link>
-							{clipEditingAvailable && (
+							{
 								<>
 									{" · "}
 									<Link
 										href={`/library/edits/${query.data.parent.projectId}`}
 										className="rounded text-emerald-400 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-emerald-500"
 									>
-										{t("editing.open")}
+										{t(
+											clipEditingAvailable ? "editing.open" : "editing.renders",
+										)}
 									</Link>
 								</>
-							)}
+							}
 						</p>
 					)}
 					<header className="flex flex-wrap items-start justify-between gap-3">
@@ -137,17 +139,19 @@ function ContentDetailView({
 								</p>
 							)}
 						</div>
-						{clipEditingAvailable &&
-							(!query.data.parent ? (
-								<ContentClipPanel contentId={id} clipEditingAvailable />
-							) : (
-								<Link
-									href={`/library/${id}/edits`}
-									className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
-								>
-									{t("editing.open")}
-								</Link>
-							))}
+						{!query.data.parent || !clipEditingAvailable ? (
+							<ContentClipPanel
+								contentId={id}
+								clipEditingAvailable={clipEditingAvailable}
+							/>
+						) : (
+							<Link
+								href={`/library/${id}/edits`}
+								className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
+							>
+								{t("editing.open")}
+							</Link>
+						)}
 					</header>
 					{freshSelectionRead &&
 						initialScene &&

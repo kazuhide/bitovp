@@ -108,11 +108,7 @@ function AvailableClipProjects({
 					)}
 					<ul className="divide-y divide-zinc-800">
 						{query.data.items.map((project) => (
-							<ClipProjectRow
-								key={project.id}
-								project={project}
-								canEdit={canEdit}
-							/>
+							<ClipProjectRow key={project.id} project={project} />
 						))}
 					</ul>
 					{(query.data.total > 25 || offset > 0) && (
@@ -152,13 +148,7 @@ function AvailableClipProjects({
 	);
 }
 
-function ClipProjectRow({
-	project,
-	canEdit,
-}: {
-	project: EditingProjectSummary;
-	canEdit: boolean;
-}) {
+function ClipProjectRow({ project }: { project: EditingProjectSummary }) {
 	const { t } = useT();
 	const titleId = useId();
 	const seconds =
@@ -168,7 +158,7 @@ function ClipProjectRow({
 	return (
 		<li className="min-w-0 py-1">
 			<Link
-				href={`/library/edits/${project.id}${canEdit ? "" : "/result"}`}
+				href={`/library/edits/${project.id}`}
 				aria-labelledby={titleId}
 				className="flex min-w-0 items-center gap-3 rounded p-3 hover:bg-zinc-900/50 focus-visible:outline-2 focus-visible:outline-emerald-500"
 			>

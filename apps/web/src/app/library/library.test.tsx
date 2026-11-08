@@ -10,6 +10,7 @@ import { en } from "@/lib/i18n/messages/en";
 import { renderLocalized, renderWithQuery } from "@/test/render";
 
 const apiFetch = vi.fn();
+const clipSummary = vi.fn();
 const playback = vi.fn((_props: unknown) => <div>Player</div>);
 const clipProjects = vi.fn(({ contentId }: { contentId: string }) => (
 	<section aria-label="Clip drafts" data-content={contentId} />
@@ -17,7 +18,10 @@ const clipProjects = vi.fn(({ contentId }: { contentId: string }) => (
 let canMutate = true;
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<object>()),
-	apiFetch: (...args: unknown[]) => apiFetch(...args),
+	apiFetch: (...args: unknown[]) =>
+		typeof args[0] === "string" && args[0].startsWith("/api/library/edits?")
+			? clipSummary(...args)
+			: apiFetch(...args),
 }));
 vi.mock("@/lib/auth/use-role-access", () => ({
 	useMutationAccess: () => canMutate,
@@ -37,6 +41,7 @@ import { SourceSnapshot } from "./source-snapshot";
 
 beforeEach(() => {
 	apiFetch.mockReset();
+	clipSummary.mockReset().mockResolvedValue({ items: [], total: 0, offset: 0 });
 	playback.mockClear();
 	clipProjects.mockClear();
 	window.history.replaceState(null, "", "/library/content");
@@ -622,6 +627,33 @@ it("retries a failed detail read without a mutation", async () => {
 	]);
 });
 
+it("reaches existing read-only history from original content without unmounting playback", async () => {
+	apiFetch.mockResolvedValue(pinnedContent);
+	clipSummary.mockResolvedValue({ items: [], total: 1, offset: 0 });
+	renderWithQuery(
+		<ContentDetailClient id="content" clipEditingAvailable={false} />,
+	);
+	const trigger = await screen.findByRole("button", { name: "Clips" });
+	const player = screen.getByText("Player");
+	expect(clipProjects).not.toHaveBeenCalled();
+	fireEvent.click(trigger);
+	expect(screen.getByRole("dialog", { name: "Clip drafts" })).toBeVisible();
+	expect(clipProjects.mock.calls.at(-1)?.[0]).toMatchObject({
+		contentId: "content",
+		readOnly: true,
+		clipEditingAvailable: false,
+		showCreate: false,
+	});
+	expect(screen.getByText("Player")).toBe(player);
+	expect(
+		apiFetch.mock.calls.every(
+			([, init]) => !init?.method || init.method === "GET",
+		),
+	).toBe(true);
+	expect(clipSummary.mock.calls[0]?.[0]).toContain(
+		"/api/library/edits?contentId=content",
+	);
+});
 it("keeps clip drafts out of the original analysis layout until requested", async () => {
 	apiFetch.mockResolvedValue(pinnedContent);
 	renderWithQuery(<ContentDetailClient id="content" clipEditingAvailable />);
@@ -666,7 +698,7 @@ it.each([
 it.each([
 	undefined,
 	false,
-])("retains a derived clip's original and playback without editor links when availability is %s", async (clipEditingAvailable) => {
+])("retains a derived clip's original, playback and read-only history when availability is %s", async (clipEditingAvailable) => {
 	apiFetch.mockResolvedValue({
 		...pinnedContent,
 		parent: {
@@ -686,6 +718,9 @@ it.each([
 	).toHaveAttribute("href", "/library/original");
 	expect(playback).toHaveBeenCalled();
 	expect(screen.queryByRole("link", { name: "Edit clips" })).toBeNull();
+	expect(
+		screen.getByRole("link", { name: "Generation history" }),
+	).toHaveAttribute("href", "/library/edits/project");
 	expect(clipProjects).not.toHaveBeenCalled();
 	expect(
 		apiFetch.mock.calls.every(([url]) => url === "/api/library/content"),

@@ -343,8 +343,10 @@ function setup(
 
 describe("durable editing media preparation", () => {
 	it("leaves queued media untouched when verified GPU capability is unavailable", async () => {
-		const f = setup({}, undefined, async () => false);
+		const canClaim = vi.fn().mockResolvedValue(false);
+		const f = setup({}, undefined, canClaim);
 		await f.tick();
+		expect(canClaim).toHaveBeenCalledWith(id(100));
 		expect(f.media.state).toBe("PENDING");
 		expect(mocks.download).not.toHaveBeenCalled();
 		expect(mocks.normalize).not.toHaveBeenCalled();
@@ -1003,6 +1005,39 @@ describe("durable editing rendering", () => {
 		});
 		expect(mocks.download).not.toHaveBeenCalled();
 		expect(mocks.render).not.toHaveBeenCalled();
+	});
+	it("does not reserve or render a missing pending artifact until that tenant has GPU admission", async () => {
+		const canClaim = vi.fn().mockResolvedValue(false);
+		const f = renderSetup(undefined, canClaim);
+		const artifactToken = id(50);
+		Object.assign(f.getRun() ?? {}, {
+			organizationId: id(100),
+			state: "VALIDATING",
+			attempts: 2,
+			leaseToken: id(51),
+			leaseUntil: new Date(instant.getTime() - 1),
+			pendingArtifactToken: artifactToken,
+		});
+		await f.tick();
+		expect(canClaim).toHaveBeenCalledWith(id(100));
+		expect(f.getRun()).toMatchObject({
+			state: "VALIDATING",
+			attempts: 2,
+			pendingArtifactToken: artifactToken,
+			leaseToken: null,
+			error: "CLIP_EDITING_UNAVAILABLE",
+		});
+		expect(mocks.render).not.toHaveBeenCalled();
+		expect(f.browser.putObject).not.toHaveBeenCalled();
+		canClaim.mockResolvedValue(true);
+		f.advance(EDITING_RECOVERY_RETRY_MS);
+		await f.tick();
+		expect(f.getRun()).toMatchObject({
+			state: "SUCCEEDED",
+			attempts: 3,
+			pendingArtifactToken: null,
+		});
+		expect(mocks.render).toHaveBeenCalledOnce();
 	});
 	it("reserves one remaining render attempt only after the old artifact is confirmed missing", async () => {
 		const f = renderSetup();

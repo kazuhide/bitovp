@@ -253,14 +253,33 @@ function setup(
 	};
 }
 describe("durable production worker fences", () => {
+	it("passes the task organization to admission and never executes under another tenant's witness", async () => {
+		let authorizedOrganizationId: string = randomUUID();
+		const canClaim = vi.fn(
+			async (organizationId: string) =>
+				organizationId === authorizedOrganizationId,
+		);
+		const f = setup("TRANSCRIBE", { canClaim });
+		await f.sweep();
+		expect(canClaim).toHaveBeenCalledWith(f.row.organizationId);
+		expect(f.row).toMatchObject({ state: "PENDING", attempts: 0 });
+		expect(execute).not.toHaveBeenCalled();
+		authorizedOrganizationId = String(f.row.organizationId);
+		await f.sweep();
+		expect(execute).toHaveBeenCalledOnce();
+		expect(f.row.state).toBe("SUCCEEDED");
+	});
 	it("does not claim clip tasks without GPU availability but retains owned cancellation", async () => {
-		const f = setup("TRANSCRIBE", { canClaim: async () => false });
+		const canClaim = vi.fn().mockResolvedValue(false);
+		const f = setup("TRANSCRIBE", { canClaim });
 		await f.sweep();
 		expect(f.row).toMatchObject({ state: "PENDING", attempts: 0 });
+		expect(canClaim).toHaveBeenCalledWith(f.row.organizationId);
 		expect(execute).not.toHaveBeenCalled();
 		f.row.cancelRequestedAt = new Date();
 		await f.sweep();
 		expect(f.row.state).toBe("CANCELED");
+		expect(canClaim).toHaveBeenCalledTimes(1);
 		expect(execute).not.toHaveBeenCalled();
 	});
 	it("runs one actual execution and commits result against the owning lease", async () => {

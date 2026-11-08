@@ -15,12 +15,14 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
 import type {
+	AnyEditingProjectView,
 	EditingProjectView,
 	EditingRenderView,
 } from "@/lib/library-editing";
 import { reflowClips } from "../edit-model";
 import { editingErrorMessage } from "../editing-errors";
 import { EditorWorkbench } from "./editor-workbench";
+import { RenderPanel } from "./render-panel";
 
 export type LegacyEditingSession = {
 	draft: EditDocument | null;
@@ -32,10 +34,12 @@ export function EditorClient({
 	id,
 	onUnsavedChange,
 	projectOverride,
+	historyOnly = false,
 }: {
 	id: string;
 	onUnsavedChange?: (unsafe: boolean, session: LegacyEditingSession) => void;
 	projectOverride?: EditingProjectView;
+	historyOnly?: boolean;
 }) {
 	return (
 		<EditorView
@@ -43,6 +47,7 @@ export function EditorClient({
 			id={id}
 			onUnsavedChange={onUnsavedChange}
 			projectOverride={projectOverride}
+			historyOnly={historyOnly}
 		/>
 	);
 }
@@ -51,10 +56,12 @@ function EditorView({
 	id,
 	onUnsavedChange,
 	projectOverride,
+	historyOnly = false,
 }: {
 	id: string;
 	onUnsavedChange?: (unsafe: boolean, session: LegacyEditingSession) => void;
 	projectOverride?: EditingProjectView;
+	historyOnly?: boolean;
 }) {
 	const { t } = useT();
 	const canMutate = useMutationAccess("library.edits.edit");
@@ -63,7 +70,7 @@ function EditorView({
 	const query = useQuery({
 		queryKey,
 		queryFn: ({ signal }) =>
-			apiFetch<EditingProjectView>(`/api/library/edits/${id}`, { signal }),
+			apiFetch<AnyEditingProjectView>(`/api/library/edits/${id}`, { signal }),
 		refetchInterval: 3000,
 	});
 	const [draft, setDraft] = useState<EditDocument | null>(null);
@@ -164,6 +171,16 @@ function EditorView({
 			setBusy(false);
 		}
 	}
+	const cancelRun = canMutate
+		? (renderId: string) =>
+				void run(async () => {
+					await apiFetch(`/api/library/renders/${renderId}/cancel`, {
+						method: "POST",
+						body: "{}",
+					});
+					await query.refetch();
+				})
+		: () => {};
 	async function persistDraft() {
 		if (!draft || !valid || pending)
 			throw new Error(t("editing.invalidDocument"));
@@ -297,7 +314,53 @@ function EditorView({
 				</Button>
 			</div>
 		);
-	if (!project || !draft) return <p role="status">{t("editing.loading")}</p>;
+	if (historyOnly) {
+		if (!project) return <p role="status">{t("editing.loading")}</p>;
+		return (
+			<div className="mx-auto max-w-screen-2xl space-y-4">
+				<Link
+					href={`/library/${project.contentId}/edits`}
+					className="text-emerald-400 text-sm underline"
+				>
+					{t("editing.backProjects")}
+				</Link>
+				<h1 className="font-semibold text-2xl">{project.title}</h1>
+				<p role="status" className="text-sm text-zinc-400">
+					{t("editing.readOnly")}
+				</p>
+				{error && (
+					<p role="alert" className="text-amber-300">
+						{error}
+					</p>
+				)}
+				{canMutate ? (
+					<RenderPanel
+						project={project}
+						disabled={!canMutate || busy}
+						generationDisabled
+						showGeneration={false}
+						onGenerate={() => {}}
+						onCancel={cancelRun}
+					/>
+				) : (
+					<RenderPanel
+						project={project}
+						disabled
+						generationDisabled
+						showGeneration={false}
+						onGenerate={() => {}}
+						onCancel={() => {}}
+					/>
+				)}
+			</div>
+		);
+	}
+	const legacyProject =
+		project?.draft.schemaVersion === 1
+			? { ...project, draft: project.draft }
+			: null;
+	if (!project || !draft || !legacyProject)
+		return <p role="status">{t("editing.loading")}</p>;
 	return (
 		<div className="mx-auto max-w-screen-2xl space-y-4">
 			{query.error && !onUnsavedChange && (
@@ -359,7 +422,7 @@ function EditorView({
 			)}
 			{canMutate ? (
 				<EditorWorkbench
-					project={project}
+					project={legacyProject}
 					document={draft}
 					disabled={blocked}
 					rangePending={numericRangePending}
@@ -368,15 +431,7 @@ function EditorView({
 					onCandidates={candidates}
 					onAddCandidate={addCandidate}
 					onGenerate={(kind) => void run(() => generate(kind))}
-					onCancel={(renderId) =>
-						void run(async () => {
-							await apiFetch(`/api/library/renders/${renderId}/cancel`, {
-								method: "POST",
-								body: "{}",
-							});
-							await query.refetch();
-						})
-					}
+					onCancel={cancelRun}
 					generationDisabled={
 						blocked ||
 						dirty ||
@@ -389,7 +444,7 @@ function EditorView({
 				/>
 			) : (
 				<EditorWorkbench
-					project={project}
+					project={legacyProject}
 					document={draft}
 					disabled
 					rangePending={numericRangePending}

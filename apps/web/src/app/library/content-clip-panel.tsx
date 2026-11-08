@@ -1,10 +1,13 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Film } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import type { EditingProjectPage } from "@/lib/library-editing";
 import { ClipProjects } from "./clip-projects";
 
 /** Clip browsing is an auxiliary overlay; the original player stays mounted. */
@@ -16,11 +19,38 @@ export function ContentClipPanel({
 	clipEditingAvailable?: boolean;
 }) {
 	return clipEditingAvailable ? (
-		<AvailableContentClipPanel contentId={contentId} />
+		<AvailableContentClipPanel contentId={contentId} canEdit />
+	) : (
+		<StoredContentClipPanel contentId={contentId} />
+	);
+}
+
+function StoredContentClipPanel({ contentId }: { contentId: string }) {
+	const query = useQuery({
+		queryKey: ["library-edit-projects", contentId, 0],
+		queryFn: ({ signal }) =>
+			apiFetch<EditingProjectPage>(
+				`/api/library/edits?${new URLSearchParams({ contentId, offset: "0" })}`,
+				{ signal },
+			),
+		refetchOnMount: "always",
+	});
+	const count = query.data?.total;
+	return !query.isError &&
+		typeof count === "number" &&
+		Number.isSafeInteger(count) &&
+		count > 0 ? (
+		<AvailableContentClipPanel contentId={contentId} canEdit={false} />
 	) : null;
 }
 
-function AvailableContentClipPanel({ contentId }: { contentId: string }) {
+function AvailableContentClipPanel({
+	contentId,
+	canEdit,
+}: {
+	contentId: string;
+	canEdit: boolean;
+}) {
 	const { t } = useT();
 	const [open, setOpen] = useState(false);
 	const triggerId = useId();
@@ -66,7 +96,9 @@ function AvailableContentClipPanel({ contentId }: { contentId: string }) {
 					<ClipProjects
 						contentId={contentId}
 						showHeading={false}
-						clipEditingAvailable
+						clipEditingAvailable={canEdit}
+						readOnly={!canEdit}
+						showCreate={canEdit}
 					/>
 				)}
 			</Dialog>

@@ -146,17 +146,19 @@ export async function probeLocalClipGateway(
 	captionSelection?: LocalCaptionTranslationSelection,
 ) {
 	let gpuObservedAt: number | undefined;
+	let authorizedOrganizationId: string | undefined;
 	const diagnostic = await probeGateway(
 		config,
 		readMetadata,
 		signal,
 		captionSelection,
 		false,
-		(observedAt) => {
+		(observedAt, organizationId) => {
 			gpuObservedAt = observedAt;
+			authorizedOrganizationId = organizationId;
 		},
 	);
-	return { ...diagnostic, gpuObservedAt };
+	return { ...diagnostic, gpuObservedAt, authorizedOrganizationId };
 }
 
 export async function probeLocalStoryFlowGateway(
@@ -183,7 +185,7 @@ async function probeGateway(
 	signal: AbortSignal | undefined,
 	captionSelection: LocalCaptionTranslationSelection | undefined,
 	flow: boolean | "CHOICE",
-	observeGpu?: (observedAt: number) => void,
+	observeGpu?: (observedAt: number, organizationId: string) => void,
 ): Promise<GatewayResult> {
 	const scope = "METADATA_ONLY" as const;
 	const deadline = AbortSignal.any([
@@ -232,7 +234,8 @@ async function probeGateway(
 				gpu.observedAt > Date.now() + 5_000)
 		)
 			return { code: "GPU_UNVERIFIED", scope };
-		if (readiness.data.ready && gpu) observeGpu?.(gpu.observedAt);
+		if (readiness.data.ready && gpu)
+			observeGpu?.(gpu.observedAt, readiness.data.organizationId);
 		if (readiness.data.ready && captionSelection?.provider === "PLAMO") {
 			if (captionSelection.identity.profile !== config.profile)
 				return { code: "MODEL_MISMATCH", scope };

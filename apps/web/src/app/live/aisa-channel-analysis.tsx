@@ -181,6 +181,15 @@ function RunAnalysis({
 		.slice(0, AISA_TRANSLATION_MAX_ITEMS)
 		.map((item) => item.id);
 	const signature = JSON.stringify(missing.map((item) => [item.id, item.text]));
+	const hasTranslationNotice =
+		translate.isPending ||
+		translate.isError ||
+		translations.isError ||
+		Boolean(
+			missingIds.length &&
+				translations.data &&
+				(!translations.data.automatic.available || mayTranslate),
+		);
 	useEffect(() => {
 		if (
 			language !== "ja" ||
@@ -211,13 +220,7 @@ function RunAnalysis({
 					: "space-y-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 sm:p-6"
 			}
 		>
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<div className="min-w-0 space-y-1">
-					<p className="text-sm text-zinc-400">
-						{t("aisaLive.resultDescription")}
-					</p>
-					<p className="text-xs text-zinc-500">{t("aisaLive.poweredBy")}</p>
-				</div>
+			<div className="flex flex-wrap items-center justify-end gap-3">
 				<fieldset
 					className="flex flex-wrap gap-2"
 					aria-label={t("aisaLive.resultLanguage")}
@@ -240,9 +243,10 @@ function RunAnalysis({
 					</Button>
 				</fieldset>
 			</div>
-			{language === "ja" && snapshot?.keyMoments.length ? (
+			{language === "ja" &&
+			snapshot?.keyMoments.length &&
+			hasTranslationNotice ? (
 				<div className="space-y-2 text-xs text-zinc-500">
-					<p>{t("aisaLive.translationDerived")}</p>
 					{translate.isPending ? (
 						<p role="status">{t("aisaLive.translating")}</p>
 					) : null}

@@ -119,9 +119,10 @@ describe("AISA results in a normal channel", () => {
 		).toHaveLength(1);
 		expect(screen.queryByText("AISA Live Preview")).not.toBeInTheDocument();
 		expect(
-			screen.getByText("Play detected moments from the recording."),
-		).toBeVisible();
-		expect(screen.getByText("Powered by AISA Live")).toBeVisible();
+			screen.queryByText("Play detected moments from the recording."),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText("Powered by AISA Live")).not.toBeInTheDocument();
+		expect(screen.queryByText("Synthetic fixture")).not.toBeInTheDocument();
 		expect(screen.getByText("Final result")).toBeVisible();
 		const panel = rendered.container.querySelector("#sec-analysis > section");
 		expect(panel).not.toHaveClass("border", "p-4", "sm:p-6");
@@ -139,8 +140,8 @@ describe("AISA results in a normal channel", () => {
 			screen.getByText("Local model: installed-local-model").closest("details"),
 		).toBe(disclosure);
 		expect(
-			screen.getByText(/Japanese descriptions are local translations/),
-		).toBeVisible();
+			screen.queryByText(/Japanese descriptions are local translations/),
+		).not.toBeInTheDocument();
 		await user.click(
 			screen.getByText("Analysis details", { selector: "summary" }),
 		);

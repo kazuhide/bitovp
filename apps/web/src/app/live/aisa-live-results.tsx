@@ -185,104 +185,97 @@ function Results({
 							: "aisaLive.pending",
 					)}
 				</p>
+			) : moments.length === 0 ? (
+				<p
+					role="status"
+					className="rounded-md border border-zinc-800 p-4 text-sm text-zinc-400"
+				>
+					{t("aisaLive.empty")}
+				</p>
 			) : (
-				<>
-					{moments.length === 0 ? (
-						<p
-							role="status"
-							className="rounded-md border border-zinc-800 p-4 text-sm text-zinc-400"
+				<ol className="space-y-3">
+					{moments.map((moment) => (
+						<li
+							key={moment.id}
+							className="grid gap-4 rounded-md border border-zinc-800 bg-zinc-900/30 p-4 md:grid-cols-[minmax(14rem,20rem)_minmax(0,1fr)]"
 						>
-							{t("aisaLive.empty")}
-						</p>
-					) : (
-						<ol className="space-y-3">
-							{moments.map((moment) => (
-								<li
-									key={moment.id}
-									className="grid gap-4 rounded-md border border-zinc-800 bg-zinc-900/30 p-4 md:grid-cols-[minmax(14rem,20rem)_minmax(0,1fr)]"
-								>
-									<AisaMomentPreview
-										accountId={accountId}
-										analysisId={analysisId}
-										encodingId={encodingId}
-										mediaTimeOriginUnixMs={snapshot.mediaTimeOriginUnixMs}
-										moment={moment}
-										labels={{
-											play: t("aisaLive.previewPlay"),
-											pause: t("aisaLive.previewPause"),
-											replay: t("aisaLive.previewReplay"),
-											loading: t("aisaLive.previewLoading"),
-											unavailable: t("aisaLive.previewUnavailableMedia"),
-											failed: t("aisaLive.previewFailed"),
-											seek: t("aisaLive.previewSeek"),
-											mute: t("aisaLive.previewMute"),
-											unmute: t("aisaLive.previewUnmute"),
-											thumbnailAlt: t("aisaLive.previewThumbnail"),
-										}}
-									/>
-									<div className="min-w-0 space-y-3">
-										<div className="flex flex-wrap justify-between gap-2 text-sm">
-											<p className="text-zinc-200">
-												{t("aisaLive.range", {
-													start: seconds(moment.startInSeconds),
-													end: seconds(moment.endInSeconds),
-													anchor: seconds(moment.anchorInSeconds),
-												})}
-											</p>
-											<span className="text-emerald-400">
-												{t("aisaLive.importance", {
-													level: moment.importanceLevel,
-												})}
-											</span>
-										</div>
-										{moment.categories?.length ? (
-											<div className="flex flex-wrap gap-2">
-												{moment.categories.map((category) => (
-													<span
-														key={category}
-														className="break-all rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400"
-													>
-														{category}
-													</span>
-												))}
-											</div>
-										) : null}
-										{moment.observations.map((id) => {
-											const observation = observations.get(id);
-											if (!observation) return null;
-											const translated =
-												language === "ja"
-													? translationForObservation(translations, {
-															analysisId,
-															encodingId,
-															...observation,
-														})
-													: undefined;
-											return (
-												<div key={id}>
-													<p
-														className="break-words text-sm text-zinc-300"
-														lang={translated ? "ja" : "en"}
-													>
-														{translated?.text ?? observation.text}
-													</p>
-													{language === "ja" && !translated ? (
-														<p className="mt-1 text-xs text-zinc-500">
-															{t("aisaLive.translationPending")}
-														</p>
-													) : null}
-												</div>
-											);
+							<AisaMomentPreview
+								accountId={accountId}
+								analysisId={analysisId}
+								encodingId={encodingId}
+								mediaTimeOriginUnixMs={snapshot.mediaTimeOriginUnixMs}
+								moment={moment}
+								labels={{
+									play: t("aisaLive.previewPlay"),
+									pause: t("aisaLive.previewPause"),
+									replay: t("aisaLive.previewReplay"),
+									loading: t("aisaLive.previewLoading"),
+									unavailable: t("aisaLive.previewUnavailableMedia"),
+									failed: t("aisaLive.previewFailed"),
+									seek: t("aisaLive.previewSeek"),
+									mute: t("aisaLive.previewMute"),
+									unmute: t("aisaLive.previewUnmute"),
+									thumbnailAlt: t("aisaLive.previewThumbnail"),
+								}}
+							/>
+							<div className="min-w-0 space-y-3">
+								<div className="flex flex-wrap justify-between gap-2 text-sm">
+									<p className="text-zinc-200">
+										{t("aisaLive.range", {
+											start: seconds(moment.startInSeconds),
+											end: seconds(moment.endInSeconds),
+											anchor: seconds(moment.anchorInSeconds),
 										})}
+									</p>
+									<span className="text-emerald-400">
+										{t("aisaLive.importance", {
+											level: moment.importanceLevel,
+										})}
+									</span>
+								</div>
+								{moment.categories?.length ? (
+									<div className="flex flex-wrap gap-2">
+										{moment.categories.map((category) => (
+											<span
+												key={category}
+												className="break-all rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400"
+											>
+												{category}
+											</span>
+										))}
 									</div>
-								</li>
-							))}
-						</ol>
-					)}
-					<p className="text-xs text-zinc-500">
-						{snapshot.metadata.disclaimer}
-					</p>
-				</>
+								) : null}
+								{moment.observations.map((id) => {
+									const observation = observations.get(id);
+									if (!observation) return null;
+									const translated =
+										language === "ja"
+											? translationForObservation(translations, {
+													analysisId,
+													encodingId,
+													...observation,
+												})
+											: undefined;
+									return (
+										<div key={id}>
+											<p
+												className="break-words text-sm text-zinc-300"
+												lang={translated ? "ja" : "en"}
+											>
+												{translated?.text ?? observation.text}
+											</p>
+											{language === "ja" && !translated ? (
+												<p className="mt-1 text-xs text-zinc-500">
+													{t("aisaLive.translationPending")}
+												</p>
+											) : null}
+										</div>
+									);
+								})}
+							</div>
+						</li>
+					))}
+				</ol>
 			)}
 		</section>
 	);

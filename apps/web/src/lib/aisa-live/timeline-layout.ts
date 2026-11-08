@@ -1,4 +1,26 @@
-import type { AisaPlaybackMoment } from "./playback";
+import type { AisaMediaFragment, AisaPlaybackMoment } from "./playback";
+
+export function recordingTimeWindows(
+	fragments: readonly AisaMediaFragment[],
+	origin: number,
+) {
+	const windows: { start: number; end: number }[] = [];
+	for (const fragment of fragments) {
+		if (
+			fragment.gap ||
+			!Number.isFinite(fragment.programDateTime) ||
+			!Number.isFinite(fragment.duration) ||
+			!(fragment.duration > 0)
+		)
+			continue;
+		const start = (Number(fragment.programDateTime) - origin) / 1000;
+		const end = start + fragment.duration;
+		const previous = windows.at(-1);
+		if (previous && Math.abs(previous.end - start) <= 0.001) previous.end = end;
+		else windows.push({ start, end });
+	}
+	return windows;
+}
 
 type Moment = AisaPlaybackMoment & { id: string };
 export type TimelineMarker = {

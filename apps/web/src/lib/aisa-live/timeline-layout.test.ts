@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatMomentTime, layoutMomentTracks } from "./timeline-layout";
+import {
+	formatMomentTime,
+	layoutMomentTracks,
+	recordingTimeWindows,
+} from "./timeline-layout";
 
 const moment = (id: string, start: number, end: number, anchor = start) => ({
 	id,
@@ -9,6 +13,29 @@ const moment = (id: string, start: number, end: number, anchor = start) => ({
 });
 
 describe("moment timeline geometry", () => {
+	it("shows discontinuous recording coverage as separate windows", () => {
+		const origin = 1790000000000;
+		expect(
+			recordingTimeWindows(
+				[
+					{ start: 0, duration: 5, programDateTime: origin + 10000 },
+					{ start: 5, duration: 5, programDateTime: origin + 15000 },
+					{
+						start: 10,
+						duration: 5,
+						programDateTime: origin + 20000,
+						gap: true,
+					},
+					{ start: 15, duration: 5, programDateTime: origin + 25000 },
+				],
+				origin,
+			),
+		).toEqual([
+			{ start: 10, end: 20 },
+			{ start: 25, end: 30 },
+		]);
+	});
+
 	it("keeps exact time positions while separating dense hit areas", () => {
 		const input = [
 			moment("a", 8100, 8110, 8105),

@@ -6,6 +6,14 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	aisaLive: {
+		timelineLabel: "キーモーメントのタイムライン",
+		timelineMomentLabel: "{time} · 重要度 {level} · {state}",
+		timelineSelection: "選択したキーモーメント",
+		timelinePlayable: "再生可能",
+		timelineOutside: "録画範囲外",
+		timelineWindow: "再生可能 {start}〜{end}",
+		timelineRecordingPending: "録画範囲を確認中…",
+		timelineRecordingUnknown: "録画範囲を確認できません",
 		momentsSummary: "{count}件",
 		manifestsUnavailable:
 			"この配信のマニフェスト情報を取得できていません。録画を取得できる場合は「キーモーメント」から再生できます。",

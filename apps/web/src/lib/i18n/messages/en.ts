@@ -28,6 +28,14 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	aisaLive: {
+		timelineLabel: "Key moment timeline",
+		timelineMomentLabel: "{time} · Importance {level} · {state}",
+		timelineSelection: "Selected key moment",
+		timelinePlayable: "Playable",
+		timelineOutside: "Outside recording",
+		timelineWindow: "Playable {start}–{end}",
+		timelineRecordingPending: "Checking recording range…",
+		timelineRecordingUnknown: "Recording range unavailable",
 		momentsSummary: "{count} moments",
 		manifestsUnavailable:
 			"Manifest links have not been resolved for this stream. When a recording is available, view it from Key moments.",

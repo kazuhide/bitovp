@@ -31,7 +31,7 @@ import {
 import type { Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { aisaLivePreviewEnabled } from "@/lib/server/aisa-live-sdk";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext, type ServerContext } from "@/lib/server/context";
 import {
@@ -516,6 +516,16 @@ export async function POST(req: Request) {
 	}
 	let ordinaryIdentity: CreateRequestIdentity | undefined;
 	let ordinaryContext: Awaited<ReturnType<typeof getServerContext>> | undefined;
+	// The AISA gate precedes both replay branches as well as new paid dispatch.
+	if (isAisaManagedLivePlan(body.data.plan)) {
+		try {
+			ordinaryContext = await getServerContext();
+			if (!aisaLiveAccessAllowed(ordinaryContext.tenant))
+				return jsonError(404, "Not found");
+		} catch (err) {
+			return routeError(err);
+		}
+	}
 	try {
 		ordinaryIdentity = createRequestIdentity(req, body.data);
 	} catch (err) {
@@ -582,7 +592,7 @@ export async function POST(req: Request) {
 	}
 	const plan = parsedPlan.data;
 	const aisaManaged = isAisaManagedLivePlan(plan);
-	if (aisaManaged && !aisaLivePreviewEnabled())
+	if (aisaManaged && !aisaLiveAccessAllowed(ordinaryContext?.tenant))
 		return jsonError(404, "Not found");
 	if (aisaManaged && body.data.schedule) {
 		return jsonError(400, "AISA Live Preview does not support scheduling", {

@@ -9,6 +9,7 @@ import { DB_NULL } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const runFindFirst = vi.fn(
 	async (): Promise<{
 		id: string;
@@ -77,6 +78,14 @@ function retainQueuedJob(
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			actor: `user:${aisaOwnerId}`,
+			actorUserId: aisaOwnerId,
+			effectiveUserId: aisaOwnerId,
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+		},
 		// : rail 3b's resolver. These five route tests are the
 		// ones whose route reaches `submitterValidationOptions`, which now
 		// REQUIRES it — the other ~85 context mocks in this app are
@@ -677,6 +686,8 @@ function manualStopClaim(
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
 	channelDeleteMany.mockReset().mockResolvedValue({ count: 1 });
 	vmafFindFirst.mockResolvedValue(null);
 	vmafCount.mockResolvedValue(0);

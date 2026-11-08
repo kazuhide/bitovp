@@ -25,6 +25,16 @@ import {
 	aisaLivePreviewEnabled,
 } from "./aisa-live-sdk";
 
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: ownerId,
+	effectiveUserId: ownerId,
+	actor: `user:${ownerId}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
+
 const analysisId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
 const outputId = "cccccccc-cccc-4ccc-accc-cccccccccccc";
 const createRequest = {
@@ -84,6 +94,7 @@ function context(
 	account: { tenantOrgId?: string } | null = { tenantOrgId: "tenant-org" },
 ) {
 	return {
+		tenant: owner,
 		bitmovinAccounts: {
 			get: vi.fn(async () => account),
 			revealApiKey: vi.fn(async () => "synthetic-secret"),
@@ -92,6 +103,8 @@ function context(
 }
 
 beforeEach(() => {
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	configurations.length = 0;
 	requireModule.mockReset();
 	requireModule.mockImplementation((name: string) =>
@@ -110,6 +123,17 @@ afterEach(() => {
 });
 
 describe("AISA Preview SDK isolation", () => {
+	it("denies access before resolving an account, decrypting a key, or loading a private SDK", async () => {
+		const ctx = { ...context(), tenant: { ...owner, role: "OPERATOR" } };
+		expect(
+			await aisaLiveClientForAccount(ctx as never, "account-a"),
+		).toBeNull();
+		expect(ctx.bitmovinAccounts.get).not.toHaveBeenCalled();
+		expect(ctx.bitmovinAccounts.revealApiKey).not.toHaveBeenCalled();
+		expect(requireModule).not.toHaveBeenCalled();
+		expect(configurations).toHaveLength(0);
+	});
+
 	it("is disabled by default and enables only with the exact server flag", () => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "");
 		expect(aisaLivePreviewEnabled()).toBe(false);

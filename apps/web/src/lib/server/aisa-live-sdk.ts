@@ -4,6 +4,7 @@ import {
 	type AisaLiveVersions,
 	createAisaLiveClient,
 } from "@bitovp/core/aisa-live-client";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import type { ServerContext } from "./context";
 
 export type {
@@ -21,6 +22,7 @@ export async function aisaLiveClientForAccount(
 	accountId: string,
 	versions: AisaLiveVersions = {},
 ): Promise<AisaLiveClient | null> {
+	if (!aisaLiveAccessAllowed(ctx.tenant)) return null;
 	const account = await ctx.bitmovinAccounts.get(accountId);
 	if (!account) return null;
 	return createAisaLiveClient({

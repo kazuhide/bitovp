@@ -48,10 +48,20 @@ assert.equal(routeFactories.length, 1, "Find exactly one compiled AISA route mod
 const accountId = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee";
 const analysisId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
 const encodingId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
+const ownerId = "11111111-1111-4111-8111-111111111111";
 const analysis = { analysisId, encodingId, name: "Synthetic built route", status: "CREATED" };
 const accountReads = [];
 const transportRequests = [];
 const context = {
+	tenant: {
+		organizationId: "22222222-2222-4222-8222-222222222222",
+		actorUserId: ownerId,
+		effectiveUserId: ownerId,
+		actor: `user:${ownerId}`,
+		role: "ADMIN",
+		actorRole: "ADMIN",
+		isImpersonating: false,
+	},
 	bitmovinAccounts: {
 		get: async (id) => {
 			accountReads.push(id);
@@ -75,8 +85,10 @@ contextModule.namespaceObject = injectedContextExports;
 
 const originalFetch = globalThis.fetch;
 const originalFlag = process.env.BITOVP_AISA_LIVE_PREVIEW;
+const originalOwnerId = process.env.BITOVP_AISA_LIVE_PREVIEW_USER_ID;
 const sdkPath = process.env.BITOVP_AISA_LIVE_SDK_PATH;
 process.env.BITOVP_AISA_LIVE_PREVIEW = "true";
+process.env.BITOVP_AISA_LIVE_PREVIEW_USER_ID = ownerId;
 globalThis.fetch = async (url, init) => {
 	const parsed = new URL(String(url));
 	assert.equal(parsed.origin, "https://api.bitmovin.com");
@@ -117,6 +129,14 @@ try {
 	assert.deepEqual(await detailed.json(), analysis);
 	assert.equal(transportRequests.length, 2, "Both compiled handlers must reach the actual SDK transport");
 	assert.equal(accountReads.length, 2);
+	process.env.BITOVP_AISA_LIVE_PREVIEW = "false";
+	assert.equal((await list(request)).status, 404, "A disabled feature must stay hidden");
+	process.env.BITOVP_AISA_LIVE_PREVIEW = "true";
+	context.tenant.effectiveUserId = encodingId;
+	assert.equal((await list(request)).status, 404, "A delegated principal must not use the compiled handler");
+	context.tenant.effectiveUserId = ownerId;
+	assert.equal(accountReads.length, 2, "Denied requests must not read the account");
+	assert.equal(transportRequests.length, 2, "Denied requests must not send requests");
 
 	process.env.BITOVP_AISA_LIVE_SDK_PATH = resolve(repoRoot, ".synthetic-missing-aisa-sdk");
 	const unavailable = await list(request);
@@ -128,6 +148,8 @@ try {
 	globalThis.fetch = originalFetch;
 	if (originalFlag === undefined) delete process.env.BITOVP_AISA_LIVE_PREVIEW;
 	else process.env.BITOVP_AISA_LIVE_PREVIEW = originalFlag;
+	if (originalOwnerId === undefined) delete process.env.BITOVP_AISA_LIVE_PREVIEW_USER_ID;
+	else process.env.BITOVP_AISA_LIVE_PREVIEW_USER_ID = originalOwnerId;
 	if (sdkPath === undefined) delete process.env.BITOVP_AISA_LIVE_SDK_PATH;
 	else process.env.BITOVP_AISA_LIVE_SDK_PATH = sdkPath;
 }

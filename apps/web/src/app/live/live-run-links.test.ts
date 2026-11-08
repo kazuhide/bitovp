@@ -3,13 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	findRun: vi.fn(),
 	enabled: true,
+	accessAllowed: true,
+	tenant: { effectiveUserId: "00000000-0000-4000-8000-000000000099" },
 }));
 vi.mock("@/lib/i18n/metadata", () => ({ localizedTitle: () => () => ({}) }));
 vi.mock("@/lib/server/aisa-live-sdk", () => ({
 	aisaLivePreviewEnabled: () => mocks.enabled,
 }));
+vi.mock("@/lib/server/aisa-live-access", () => ({
+	aisaLiveAccessAllowed: () => mocks.enabled && mocks.accessAllowed,
+}));
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: async () => ({
+		tenant: mocks.tenant,
 		prisma: { liveChannelRun: { findFirst: mocks.findRun } },
 	}),
 }));
@@ -28,6 +34,7 @@ vi.mock("./[id]/channel-detail", () => ({ ChannelDetail: () => null }));
 
 import LiveChannelDetailPage from "./[id]/page";
 import AisaAnalysisPage from "./analyses/[analysisId]/page";
+import AisaAnalysesPage from "./analyses/page";
 
 const channelId = "10000000-0000-4000-8000-000000000001";
 const accountId = "10000000-0000-4000-8000-000000000002";
@@ -59,6 +66,7 @@ const historicalRun = {
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.enabled = true;
+	mocks.accessAllowed = true;
 	mocks.findRun.mockResolvedValue(historicalRun);
 });
 
@@ -95,6 +103,7 @@ describe("exact run identity in existing Live deep links", () => {
 			searchParams: Promise.resolve({ runId }),
 		});
 		expect(page.props.initialAisaRun).toEqual(historicalRun);
+		expect(page.props.aisaFeatureUserId).toBe(mocks.tenant.effectiveUserId);
 		expect(mocks.findRun).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { id: runId, liveChannelId: channelId },
@@ -160,5 +169,31 @@ describe("exact run identity in existing Live deep links", () => {
 			searchParams: Promise.resolve({ runId }),
 		});
 		expect(mismatch.props.initialAisaRun?.aisaSnapshot).toBeNull();
+	});
+	it.each([
+		"other administrator",
+		"operator",
+		"viewer",
+	])("denies historical snapshots and legacy bookmarks before DB access for a %s", async () => {
+		mocks.accessAllowed = false;
+		await expect(
+			LiveChannelDetailPage({
+				params: Promise.resolve({ id: channelId }),
+				searchParams: Promise.resolve({ runId }),
+			}),
+		).rejects.toThrow("NOT_FOUND");
+		await expect(
+			AisaAnalysisPage({
+				params: Promise.resolve({ analysisId }),
+				searchParams: Promise.resolve({ bitmovinAccountId: accountId }),
+			}),
+		).rejects.toThrow("NOT_FOUND");
+		await expect(AisaAnalysesPage()).rejects.toThrow("NOT_FOUND");
+		expect(mocks.findRun).not.toHaveBeenCalled();
+		const page = await LiveChannelDetailPage({
+			params: Promise.resolve({ id: channelId }),
+		});
+		expect(page.props.initialAisaRun).toBeUndefined();
+		expect(page.props.aisaFeatureUserId).toBeUndefined();
 	});
 });

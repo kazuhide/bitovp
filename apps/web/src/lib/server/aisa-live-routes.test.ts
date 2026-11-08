@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	enabled: vi.fn(),
@@ -42,6 +42,15 @@ import {
 import { AisaLiveError } from "./aisa-live-sdk";
 
 const accountId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: ownerId,
+	effectiveUserId: ownerId,
+	actor: `user:${ownerId}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
 const analysisId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
 const encodingId = "cccccccc-cccc-4ccc-accc-cccccccccccc";
 const outputId = "dddddddd-dddd-4ddd-addd-dddddddddddd";
@@ -78,9 +87,12 @@ const post = (body: unknown) =>
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	mocks.enabled.mockReturnValue(true);
 	mocks.boundRun.mockResolvedValue(null);
 	mocks.context.mockResolvedValue({
+		tenant: owner,
 		bitmovinAccounts: {},
 		prisma: { liveChannelRun: { findFirst: mocks.boundRun } },
 	});
@@ -92,8 +104,44 @@ beforeEach(() => {
 	mocks.client.latest.mockResolvedValue(snapshot);
 	mocks.client.list.mockResolvedValue({ items: [resource], totalCount: 1 });
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("AISA Live Preview routes", () => {
+	it.each([
+		undefined,
+		{ ...owner, actor: "token:owned", effectiveUserId: null },
+		{ ...owner, isImpersonating: true },
+	])("denies every dedicated handler before a mocked SDK can bypass access %#", async (tenant) => {
+		mocks.context.mockResolvedValue({ tenant });
+		const responses = await Promise.all([
+			aisaList(get()),
+			aisaCreate(
+				post({
+					bitmovinAccountId: accountId,
+					analysis: {
+						name: "Synthetic",
+						input: { type: "RTMP", streamKey: "synthetickey" },
+						recording: { outputs: [destination] },
+						outputs: [destination],
+					},
+				}),
+			),
+			aisaDetail(get(), analysisId),
+			aisaAction(
+				post({ bitmovinAccountId: accountId, action: "start" }),
+				analysisId,
+			),
+			aisaResults(get(), analysisId),
+			aisaIngest(get(), analysisId),
+		]);
+		for (const response of responses) {
+			expect(response.status).toBe(404);
+			expect(await response.json()).toMatchObject({ error: "Not found" });
+			expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+		}
+		expect(mocks.accountClient).not.toHaveBeenCalled();
+		expect(mocks.audit).not.toHaveBeenCalled();
+	});
 	it("prevents legacy actions from bypassing the persisted channel lifecycle", async () => {
 		mocks.boundRun.mockResolvedValue({ id: "bound-run" });
 		const response = await aisaAction(

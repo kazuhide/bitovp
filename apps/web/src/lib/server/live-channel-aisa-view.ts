@@ -1,6 +1,6 @@
 import "server-only";
 import { isAisaManagedLivePlan } from "@bitovp/core";
-import { aisaResultSchema } from "@/lib/aisa-live/contracts";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import {
 	projectSafeHeartbeat,
 	projectSafeHeartbeatReception,
@@ -28,24 +28,7 @@ export function isAisaLiveChannelView(channel: unknown, run: unknown): boolean {
 
 /** Use freshly authenticated context, never a caller-supplied role or actor header. */
 export function aisaPublisherConnectionAllowed(tenant: unknown): boolean {
-	const principal = record(tenant);
-	if (
-		principal?.isImpersonating !== false ||
-		(principal.role !== "ADMIN" && principal.role !== "OPERATOR") ||
-		typeof principal.actor !== "string"
-	)
-		return false;
-	const actor = principal.actor;
-	// The authenticated legacy owner is ADMIN in password/none mode.
-	if (actor === "session" || actor === "none")
-		return principal.role === "ADMIN";
-	if (actor.startsWith("user:") && actor.length > "user:".length) return true;
-	return (
-		actor.startsWith("token:") &&
-		actor.length > "token:".length &&
-		actor !== "token:unresolved" &&
-		principal.tokenRoleKnown === true
-	);
+	return aisaLiveAccessAllowed(tenant);
 }
 
 export const AISA_CHANNEL_RESPONSE_HEADERS = {
@@ -82,9 +65,6 @@ const runFields = [
 	"status",
 	"cancelRequested",
 	"bitmovinEncodingId",
-	"aisaAnalysisId",
-	"aisaStatus",
-	"aisaObservedAt",
 	"createdAt",
 	"runningSince",
 	"endedAt",
@@ -115,16 +95,12 @@ function publicRun(value: unknown, now: Date) {
 		typeof run.id === "string" &&
 		typeof run.bitmovinEncodingId === "string" &&
 		createdAt !== undefined;
-	const parsed = aisaResultSchema.safeParse(run.aisaSnapshot);
-	const snapshot =
-		parsed.success &&
-		parsed.data.analysisId === run.aisaAnalysisId &&
-		parsed.data.encodingId === run.bitmovinEncodingId
-			? parsed.data
-			: null;
 	return {
 		...fields(run, runFields),
-		aisaSnapshot: snapshot,
+		aisaAnalysisId: null,
+		aisaStatus: null,
+		aisaObservedAt: null,
+		aisaSnapshot: null,
 		streamKey: null,
 		encoderIp: null,
 		stepLog: [],
@@ -138,7 +114,7 @@ function publicRun(value: unknown, now: Date) {
 }
 
 /**
- * AISA results are VIEWER-readable; publisher connection material is OPERATOR-only.
+ * Nonowners keep ordinary Live monitoring, without AISA data or publisher material.
  * Build the response from an allowlist: plans, compiled payloads, raw telemetry,
  * diagnostics and future fields can all contain ingest coordinates under aliases.
  */
@@ -157,6 +133,7 @@ export function aisaChannelViewerProjection(
 		typeof currentRun?.bitmovinEncodingId === "string";
 	return {
 		...fields(row, channelFields),
+		aisaFeatureAllowed: false,
 		// Retain only the marker used by the common Live detail to select its view.
 		plan: {
 			start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },

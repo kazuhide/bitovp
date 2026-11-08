@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { aisaResultSchema } from "@/lib/aisa-live/contracts";
 import { localizedTitle } from "@/lib/i18n/metadata";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import { readPlayerClientConfig } from "@/lib/server/player-config";
 import type { AisaSelectedRun } from "./aisa-run-selection";
@@ -18,15 +19,17 @@ export default async function LiveChannelDetailPage({
 }) {
 	const { id } = await params;
 	const { runId } = (await searchParams) ?? {};
+	const ctx = await getServerContext();
+	const aisaAllowed = aisaLiveAccessAllowed(ctx.tenant);
 	let initialAisaRun: AisaSelectedRun | undefined;
 	if (runId !== undefined) {
 		if (
+			!aisaAllowed ||
 			!z.uuid().safeParse(id).success ||
 			typeof runId !== "string" ||
 			!z.uuid().safeParse(runId).success
 		)
 			notFound();
-		const ctx = await getServerContext();
 		const run = await ctx.prisma.liveChannelRun.findFirst({
 			where: { id: runId, liveChannelId: id },
 			select: {
@@ -65,6 +68,13 @@ export default async function LiveChannelDetailPage({
 	}
 	const player = await readPlayerClientConfig();
 	return (
-		<ChannelDetail id={id} player={player} initialAisaRun={initialAisaRun} />
+		<ChannelDetail
+			id={id}
+			player={player}
+			initialAisaRun={initialAisaRun}
+			aisaFeatureUserId={
+				aisaAllowed ? (ctx.tenant?.effectiveUserId ?? undefined) : undefined
+			}
+		/>
 	);
 }

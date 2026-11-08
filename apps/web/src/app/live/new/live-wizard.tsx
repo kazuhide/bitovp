@@ -7,7 +7,7 @@ import {
 	type CredentialSummaryWire,
 	isAisaManagedLivePlan,
 } from "@bitovp/core";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -29,6 +29,7 @@ import { Input, SelectNative, Textarea } from "@/components/ui/input";
 import { NewCredentialLink } from "@/components/ui/new-credential-link";
 import { WizardDraftOffer } from "@/components/wizard-draft-offer";
 import { apiFetch } from "@/lib/api";
+import type { SessionDto } from "@/lib/auth/dto";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
@@ -109,22 +110,51 @@ function wizardSubmitError(t: Translator, error: unknown): string {
 export function LiveWizard({
 	duplicateFrom,
 	submitLabel,
-	aisaPreviewEnabled = false,
+	aisaPreviewEnabled: configuredAisa = false,
+	aisaFeatureUserId,
 	initialAisaEnabled = false,
 }: {
 	duplicateFrom?: string;
 	submitLabel?: string;
 	aisaPreviewEnabled?: boolean;
+	aisaFeatureUserId?: string;
 	initialAisaEnabled?: boolean;
 } = {}) {
 	const { t } = useT();
 	const router = useRouter();
+	const queryClient = useQueryClient();
+	const [initialSessionUpdateCount] = useState(
+		() => queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0,
+	);
+	const featureSession = useQuery({
+		queryKey: ["auth", "session"],
+		queryFn: () =>
+			apiFetch<SessionDto>("/api/auth/session", { cache: "no-store" }),
+		enabled: configuredAisa && Boolean(aisaFeatureUserId),
+		staleTime: 0,
+		refetchOnMount: "always",
+	});
+	const session = featureSession.data;
+	const aisaPreviewEnabled =
+		configuredAisa &&
+		Boolean(aisaFeatureUserId) &&
+		(queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0) >
+			initialSessionUpdateCount &&
+		featureSession.status === "success" &&
+		featureSession.fetchStatus === "idle" &&
+		!featureSession.isRefetchError &&
+		session?.mode === "users" &&
+		session.authenticated === true &&
+		session.role === "ADMIN" &&
+		session.isImpersonating === false &&
+		session.actorUserId === aisaFeatureUserId &&
+		session.effectiveUserId === aisaFeatureUserId;
 	const [step, setStep] = useState(0);
 	const [scheduleDraft, setScheduleDraft] =
 		useState<ScheduleDraft>(EMPTY_SCHEDULE_DRAFT);
 	const [state, setState] = useState<LiveWizardState>(() => {
 		const initial = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
-		return initialAisaEnabled && aisaPreviewEnabled
+		return initialAisaEnabled && configuredAisa && aisaFeatureUserId
 			? setAisaLiveEnabled({ ...initial, inputKind: "RTMP" }, true)
 			: initial;
 	});
@@ -189,9 +219,20 @@ export function LiveWizard({
 		if (duplicate.data === undefined || duplicate.fetchStatus !== "idle") {
 			return;
 		}
+		if (
+			configuredAisa &&
+			aisaFeatureUserId &&
+			(featureSession.status === "pending" ||
+				featureSession.fetchStatus !== "idle")
+		)
+			return;
 		// Mark applied first so a parse failure can't loop the effect.
 		setAppliedDuplicate(duplicateFrom);
 		setDuplicateError(null);
+		if (!aisaPreviewEnabled && isAisaManagedLivePlan(duplicate.data.plan)) {
+			setDuplicateError(t("aisaLive.previewUnavailable"));
+			return;
+		}
 		/**
 		 * GATED, not just parsed .
 		 *
@@ -236,6 +277,11 @@ export function LiveWizard({
 		duplicate.isError,
 		duplicateFrom,
 		appliedDuplicate,
+		aisaPreviewEnabled,
+		configuredAisa,
+		aisaFeatureUserId,
+		featureSession.status,
+		featureSession.fetchStatus,
 	]);
 	const allCredentials = credentials.data ?? [];
 	const validationOptions = {
@@ -246,11 +292,12 @@ export function LiveWizard({
 	const rawEvaluation = imported
 		? evaluateLivePlanDocument(imported.raw, t, validationOptions)
 		: evaluateLiveWizardState(state, t, allCredentials, validationOptions);
-	const aisaEnabled = imported
+	const aisaRequested = imported
 		? rawEvaluation.ok && isAisaManagedLivePlan(rawEvaluation.plan)
 		: state.aisaLive?.enabled === true;
+	const aisaEnabled = aisaPreviewEnabled && aisaRequested;
 	const aisaBlocked =
-		aisaEnabled && (!aisaPreviewEnabled || scheduleDraft.enabled);
+		aisaRequested && (!aisaPreviewEnabled || scheduleDraft.enabled);
 	const evaluation = aisaBlocked
 		? {
 				ok: false as const,
@@ -300,6 +347,7 @@ export function LiveWizard({
 				saved.value,
 				"live",
 			);
+			if (!aisaPreviewEnabled && restored.aisaLive?.enabled) return;
 			setState(restored);
 			setScheduleDraft(schedule);
 			setStep(saved.step);
@@ -585,6 +633,14 @@ export function LiveWizard({
 									return;
 								}
 								setImportError(null);
+								if (
+									!aisaPreviewEnabled &&
+									result.imported.evaluation.ok &&
+									isAisaManagedLivePlan(result.imported.evaluation.plan)
+								) {
+									setImportError(t("aisaLive.previewUnavailable"));
+									return;
+								}
 								const editable = tryImportLiveChannelIntoWizard(
 									result.imported.raw,
 								);
@@ -653,9 +709,9 @@ export function LiveWizard({
 						) : null}
 						<div className="flex gap-2">
 							{submitButton(t("ui.createChannelImportedPlan"))}
-							{evaluation.ok &&
-							!evaluation.issues.some((issue) => issue.level === "error") ? (
-								<RoleAccess control="live.new.template">
+							<RoleAccess control="live.new.template">
+								{evaluation.ok &&
+								!evaluation.issues.some((issue) => issue.level === "error") ? (
 									<SaveAsTemplateButton
 										kind="LIVE_PLAN"
 										plan={
@@ -669,8 +725,8 @@ export function LiveWizard({
 												: ""
 										}
 									/>
-								</RoleAccess>
-							) : null}
+								) : null}
+							</RoleAccess>
 							<Button
 								variant="secondary"
 								onClick={() => {
@@ -1143,7 +1199,7 @@ export function LiveWizard({
 						<LiveManifestListSection state={state} onPatch={patch} />
 					) : null}
 
-					{step === 5 ? (
+					{step === 5 && aisaPreviewEnabled ? (
 						<AisaSettingsSection
 							state={state}
 							onPatch={patch}
@@ -1241,16 +1297,18 @@ export function LiveWizard({
 							) : null}
 							<div className="flex flex-wrap items-center gap-2">
 								{submitButton(t("ui.createLiveChannel"))}
-								{evaluation.ok &&
-								!evaluation.issues.some((issue) => issue.level === "error") ? (
-									<RoleAccess control="live.new.template">
+								<RoleAccess control="live.new.template">
+									{evaluation.ok &&
+									!evaluation.issues.some(
+										(issue) => issue.level === "error",
+									) ? (
 										<SaveAsTemplateButton
 											kind="LIVE_PLAN"
 											plan={buildLiveChannelPlan(state)}
 											defaultName={state.name}
 										/>
-									</RoleAccess>
-								) : null}
+									) : null}
+								</RoleAccess>
 							</div>
 						</div>
 					) : null}

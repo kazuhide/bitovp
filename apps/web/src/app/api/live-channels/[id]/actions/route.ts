@@ -31,7 +31,7 @@ import {
 	type CustomerErrorCode,
 	customerErrorDetails,
 } from "@/lib/customer-error";
-import { aisaLivePreviewEnabled } from "@/lib/server/aisa-live-sdk";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import {
 	invalidIdResponse,
@@ -645,22 +645,23 @@ export async function POST(req: Request, { params }: RouteParams) {
 	}
 	const action = body.data;
 	try {
-		// Fail fast: every action needs the worker to decrypt the account
-		// API key — with a broken MASTER_KEY the job would just wedge.
-		masterKeyFromEnv();
 		const ctx = await getServerContext();
 		const row = await ctx.prisma.liveChannel.findUnique({ where: { id } });
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
+		const aisaManaged = isAisaManagedLivePlan(row.plan);
+		if (
+			(aisaManaged || row.origin === "AISA_IMPORTED") &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		)
+			return jsonError(404, "Not found");
+		// Validate crypto only after authorization, before any paid dispatch.
+		masterKeyFromEnv();
 		if (row.origin === "AISA_IMPORTED") {
 			return jsonError(409, "Imported AISA runs are read-only", {
 				code: "AISA_IMPORTED_READ_ONLY",
 			});
-		}
-		const aisaManaged = isAisaManagedLivePlan(row.plan);
-		if (aisaManaged && action.action === "start" && !aisaLivePreviewEnabled()) {
-			return jsonError(404, "Not found");
 		}
 		if (
 			aisaManaged &&

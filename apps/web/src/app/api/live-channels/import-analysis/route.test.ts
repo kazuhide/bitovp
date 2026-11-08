@@ -3,7 +3,16 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const deps = vi.hoisted(() => ({
 	importFinal: vi.fn(),
 	audit: vi.fn(),
-	context: { tenant: { role: "OPERATOR", isImpersonating: false } },
+	context: {
+		tenant: {
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+			actorUserId: "11111111-1111-4111-8111-111111111111",
+			effectiveUserId: "11111111-1111-4111-8111-111111111111",
+			actor: "user:11111111-1111-4111-8111-111111111111",
+		},
+	},
 }));
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: async () => deps.context,
@@ -26,9 +35,14 @@ const request = (body: unknown) =>
 	});
 beforeEach(() => {
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv(
+		"BITOVP_AISA_LIVE_PREVIEW_USER_ID",
+		"11111111-1111-4111-8111-111111111111",
+	);
 	deps.importFinal.mockReset();
 	deps.audit.mockReset();
-	deps.context.tenant.role = "OPERATOR";
+	deps.context.tenant.role = "ADMIN";
+	deps.context.tenant.effectiveUserId = deps.context.tenant.actorUserId;
 	deps.importFinal.mockResolvedValue({
 		channelId: "channel",
 		runId: "run",
@@ -36,6 +50,17 @@ beforeEach(() => {
 	});
 });
 afterEach(() => vi.unstubAllEnvs());
+
+it("denies delegated access before a mocked import helper or audit write can bypass access", async () => {
+	deps.context.tenant.effectiveUserId = "22222222-2222-4222-8222-222222222222";
+	const response = await POST(
+		request({ bitmovinAccountId: account, analysisId: analysis }),
+	);
+	expect(response.status).toBe(404);
+	expect(await response.json()).toMatchObject({ error: "Not found" });
+	expect(deps.importFinal).not.toHaveBeenCalled();
+	expect(deps.audit).not.toHaveBeenCalled();
+});
 
 it("returns the persisted normal channel identity for a verified final Analysis", async () => {
 	const response = await POST(
@@ -69,7 +94,7 @@ it("fails closed for VIEWER and disabled preview before provider verification", 
 	expect(
 		(await POST(request({ bitmovinAccountId: account, analysisId: analysis })))
 			.status,
-	).toBe(403);
+	).toBe(404);
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
 	expect(
 		(await POST(request({ bitmovinAccountId: account, analysisId: analysis })))

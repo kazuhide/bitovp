@@ -1,4 +1,5 @@
 import {
+	isAisaManagedLivePlan,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
 	planHasErrors,
@@ -7,8 +8,9 @@ import {
 	watchSelfIntersectionIssues,
 	watchTemplateIssues,
 } from "@bitovp/core";
-import { DB_NULL } from "@bitovp/db";
+import { DB_NULL, type Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import {
 	invalidIdResponse,
@@ -80,7 +82,15 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		if (!preset) {
 			return jsonError(404, "Not found");
 		}
-		return NextResponse.json(preset);
+		if (
+			preset.kind === "LIVE_PLAN" &&
+			isAisaManagedLivePlan(preset.body) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		)
+			return jsonError(404, "Not found");
+		return NextResponse.json(preset, {
+			headers: { "Cache-Control": "private, no-store" },
+		});
 	} catch (err) {
 		return routeError(err);
 	}
@@ -116,12 +126,24 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			return jsonError(404, "Not found");
 		}
 		const isLive = current.kind === "LIVE_PLAN";
+		if (
+			isLive &&
+			isAisaManagedLivePlan(current.body) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		)
+			return jsonError(404, "Not found");
 		const parsed = (
 			isLive ? patchLivePresetSchema : patchPlanPresetSchema
 		).safeParse(rawBody);
 		if (!parsed.success) {
 			return validationError(parsed.error);
 		}
+		if (
+			isLive &&
+			isAisaManagedLivePlan(parsed.data.plan) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		)
+			return jsonError(404, "Not found");
 		if (parsed.data.plan !== undefined) {
 			const gate = isLive
 				? validateLiveChannel(
@@ -250,7 +272,9 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		if (!updated) {
 			return jsonError(404, "Not found");
 		}
-		return NextResponse.json(updated);
+		return NextResponse.json(updated, {
+			headers: { "Cache-Control": "private, no-store" },
+		});
 	} catch (err) {
 		// @@unique([kind, name]) collision on rename → P2002.
 		if ((err as { code?: string }).code === "P2002") {
@@ -268,11 +292,30 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
 	}
 	try {
 		const ctx = await getServerContext();
-		// deleteMany scoped to the plan kind: a 0-count means "no such plan
-		// preset" but stays idempotent (DELETE never 404s here, mirroring the
-		// storage-presets DELETE's fire-and-forget shape).
+		let permittedKinds: Prisma.PresetWhereInput = {
+			kind: { in: ["FULL_PLAN", "LIVE_PLAN"] },
+		};
+		if (!aisaLiveAccessAllowed(ctx.tenant)) {
+			const current = await ctx.prisma.preset.findFirst({
+				where: { id, kind: "LIVE_PLAN" },
+				select: { body: true },
+			});
+			if (current && isAisaManagedLivePlan(current.body))
+				return jsonError(404, "Not found");
+			const ordinaryKinds: Prisma.PresetWhereInput[] = [{ kind: "FULL_PLAN" }];
+			// Bind nonowner deletion to the inspected Live body. A concurrent
+			// conversion into AISA must not pass the earlier authorization.
+			if (current && current.body !== null)
+				ordinaryKinds.push({
+					kind: "LIVE_PLAN",
+					body: { equals: current.body },
+				});
+			permittedKinds = { OR: ordinaryKinds };
+		}
+		// Ordinary preset deletion stays idempotent when the authorized row
+		// disappeared or changed after the read.
 		await ctx.prisma.preset.deleteMany({
-			where: { id, kind: { in: ["FULL_PLAN", "LIVE_PLAN"] } },
+			where: { id, ...permittedKinds },
 		});
 		return new NextResponse(null, { status: 204 });
 	} catch (err) {

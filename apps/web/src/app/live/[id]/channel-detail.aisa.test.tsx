@@ -6,7 +6,12 @@ import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
 } from "../new/build-live-plan";
-import { ChannelDetail } from "./channel-detail";
+import { ChannelDetail as ChannelDetailBase } from "./channel-detail";
+
+const ownerId = "00000000-0000-4000-8000-000000000099";
+function ChannelDetail(props: Parameters<typeof ChannelDetailBase>[0]) {
+	return <ChannelDetailBase aisaFeatureUserId={ownerId} {...props} />;
+}
 
 const apiFetch = vi.fn();
 const replaceRoute = vi.fn();
@@ -106,6 +111,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 	};
 	return {
 		id: ID,
+		aisaFeatureAllowed: true,
 		origin: imported ? "AISA_IMPORTED" : "MANAGED",
 		name: "Court 1",
 		status,
@@ -135,7 +141,7 @@ beforeEach(() => {
 });
 function respond(
 	row: ReturnType<typeof fixture>,
-	role: "OPERATOR" | "VIEWER" = "OPERATOR",
+	role: "ADMIN" | "OPERATOR" | "VIEWER" = "ADMIN",
 ) {
 	apiFetch.mockImplementation(async (url: string) => {
 		if (url === `/api/live-channels/${ID}`) return row;
@@ -160,7 +166,8 @@ function respond(
 				configured: true,
 				authenticated: true,
 				role,
-				effectiveUserId: "operator",
+				effectiveUserId: ownerId,
+				actorUserId: ownerId,
 				organizationId: "org",
 				isImpersonating: false,
 			};
@@ -749,12 +756,14 @@ it("keeps operator ingest and cached step payloads out of a viewer console", asy
 	];
 	respond(row, "VIEWER");
 	const rendered = renderWithQuery(<ChannelDetail id={ID} />);
-	await screen.findByTestId("aisa-analysis");
+	await screen.findByRole("heading", { name: "Court 1" });
 	await waitFor(() =>
 		expect(rendered.client.getQueryData(["auth", "session"])).toMatchObject({
 			role: "VIEWER",
 		}),
 	);
+	expect(document.getElementById("sec-analysis")).toBeNull();
+	expect(seen.bindings).toEqual([]);
 	expect(document.getElementById("sec-steps")).toBeNull();
 	expect(screen.queryByRole("heading", { name: "Danger zone" })).toBeNull();
 	expect(
@@ -766,4 +775,141 @@ it("keeps operator ingest and cached step payloads out of a viewer console", asy
 	expect(apiFetch.mock.calls.some(([url]) => url.includes("/ingest?"))).toBe(
 		false,
 	);
+});
+
+it.each([
+	{
+		label: "denied server DTO",
+		feature: false,
+		binding: ownerId,
+		role: "ADMIN",
+		userId: ownerId,
+		actorId: ownerId,
+	},
+	{
+		label: "missing SSR binding with forged owner DTO",
+		feature: true,
+		binding: undefined,
+		role: "ADMIN",
+		userId: ownerId,
+		actorId: ownerId,
+	},
+	{
+		label: "other administrator",
+		feature: true,
+		binding: ownerId,
+		role: "ADMIN",
+		userId: "other-admin",
+		actorId: "other-admin",
+	},
+	{
+		label: "operator",
+		feature: true,
+		binding: ownerId,
+		role: "OPERATOR",
+		userId: ownerId,
+		actorId: ownerId,
+	},
+	{
+		label: "viewer",
+		feature: true,
+		binding: ownerId,
+		role: "VIEWER",
+		userId: ownerId,
+		actorId: ownerId,
+	},
+	{
+		label: "missing actor identity",
+		feature: true,
+		binding: ownerId,
+		role: "ADMIN",
+		userId: ownerId,
+		actorId: undefined,
+	},
+])("hides all AISA entry points for $label while keeping ordinary Live monitoring", async ({
+	feature,
+	binding,
+	role,
+	userId,
+	actorId,
+}) => {
+	const row = fixture(false);
+	row.aisaFeatureAllowed = feature;
+	respond(row);
+	const respondNormally = apiFetch.getMockImplementation();
+	apiFetch.mockImplementation((url: string) =>
+		url === "/api/auth/session"
+			? Promise.resolve({
+					mode: "users",
+					configured: true,
+					authenticated: true,
+					role,
+					effectiveUserId: userId,
+					actorUserId: actorId,
+					organizationId: "org",
+					isImpersonating: false,
+				})
+			: respondNormally?.(url),
+	);
+	const rendered = renderWithQuery(
+		<ChannelDetail
+			id={ID}
+			aisaFeatureUserId={binding}
+			initialAisaRun={selectedRun}
+		/>,
+	);
+	await screen.findByRole("heading", { name: "Court 1" });
+	await waitFor(() =>
+		expect(rendered.client.getQueryData(["auth", "session"])).toMatchObject({
+			role,
+		}),
+	);
+	expect(document.getElementById("sec-analysis")).toBeNull();
+	expect(document.querySelector('a[href="#sec-analysis"]')).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: /View results for run/ }),
+	).toBeNull();
+	expect(screen.queryByRole("button", { name: "Stop channel" })).toBeNull();
+	expect(screen.queryByRole("button", { name: /Copy settings/ })).toBeNull();
+	expect(seen.bindings).toEqual([]);
+	expect(seen.snapshots).not.toHaveBeenCalled();
+	expect(
+		apiFetch.mock.calls.some(([url]) => /\/api\/live\/analyses\//.test(url)),
+	).toBe(false);
+	expect(document.getElementById("sec-heartbeat")).not.toBeNull();
+});
+
+it("does not trust cached owner results after the fresh session request fails", async () => {
+	respond(fixture(false));
+	const normally = apiFetch.getMockImplementation();
+	apiFetch.mockImplementation((url: string) =>
+		url === "/api/auth/session"
+			? Promise.reject(new Error("Session unavailable"))
+			: normally?.(url),
+	);
+	const rendered = renderWithQuery(
+		<ChannelDetail id={ID} initialAisaRun={selectedRun} />,
+		{
+			mode: "users",
+			configured: true,
+			authenticated: true,
+			role: "ADMIN",
+			actorUserId: ownerId,
+			effectiveUserId: ownerId,
+			organizationId: "org",
+			isImpersonating: false,
+		},
+	);
+	await screen.findByRole("heading", { name: "Court 1" });
+	await waitFor(() =>
+		expect(rendered.client.getQueryState(["auth", "session"])?.status).toBe(
+			"error",
+		),
+	);
+	expect(document.getElementById("sec-analysis")).toBeNull();
+	expect(seen.bindings).toEqual([]);
+	expect(seen.snapshots).not.toHaveBeenCalled();
+	expect(
+		apiFetch.mock.calls.some(([url]) => /\/api\/live\/analyses\//.test(url)),
+	).toBe(false);
 });

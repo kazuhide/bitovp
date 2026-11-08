@@ -1,6 +1,7 @@
 import { AisaLiveImportConflict } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import {
 	AisaImportVerificationError,
 	importFinalAisaAnalysis,
@@ -26,12 +27,7 @@ export async function POST(req: Request) {
 	const started = Date.now();
 	try {
 		const ctx = await getServerContext();
-		if (
-			!ctx.tenant ||
-			!["ADMIN", "OPERATOR"].includes(ctx.tenant.role) ||
-			ctx.tenant.isImpersonating
-		)
-			return jsonError(403, "An operator is required");
+		if (!aisaLiveAccessAllowed(ctx.tenant)) return jsonError(404, "Not found");
 		const parsed = bodySchema.safeParse(await readJson(req));
 		if (!parsed.success) return validationError(parsed.error);
 		const result = await importFinalAisaAnalysis(ctx, parsed.data, req);

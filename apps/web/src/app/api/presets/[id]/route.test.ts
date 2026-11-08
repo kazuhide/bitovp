@@ -76,7 +76,23 @@ describe("DELETE /api/presets/[id]", () => {
 		const res = await DELETE(new Request("http://test"), withId(ID));
 		expect(res.status).toBe(204);
 		expect(deleteMany).toHaveBeenCalledWith({
-			where: { id: ID, kind: { in: ["FULL_PLAN", "LIVE_PLAN"] } },
+			where: { id: ID, OR: [{ kind: "FULL_PLAN" }] },
+		});
+	});
+	it("keeps normal Live preset deletion available and binds it to the inspected body", async () => {
+		const body = { planVersion: 1, name: "ordinary Live", start: {} };
+		findFirst.mockResolvedValueOnce({ body });
+		deleteMany.mockResolvedValueOnce({ count: 1 });
+		const res = await DELETE(new Request("http://test"), withId(ID));
+		expect(res.status).toBe(204);
+		expect(deleteMany).toHaveBeenCalledWith({
+			where: {
+				id: ID,
+				OR: [
+					{ kind: "FULL_PLAN" },
+					{ kind: "LIVE_PLAN", body: { equals: body } },
+				],
+			},
 		});
 	});
 

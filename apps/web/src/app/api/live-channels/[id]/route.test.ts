@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { initStepLog } from "@bitovp/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const update = vi.fn();
 const credentialFindMany = vi.fn();
 const channelDeleteMany = vi.fn();
@@ -33,6 +34,14 @@ const $transaction = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			actor: `user:${aisaOwnerId}`,
+			actorUserId: aisaOwnerId,
+			effectiveUserId: aisaOwnerId,
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+		},
 		prisma: {
 			webhookRegistration: { findFirst: vi.fn().mockResolvedValue(null) },
 			webhookEvent: { findMany: heartbeatEvents },
@@ -66,6 +75,8 @@ function delReq() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
 	latestRun.mockReset().mockResolvedValue(null);
 	lockedChannel
 		.mockReset()
@@ -87,6 +98,8 @@ beforeEach(() => {
 	auditCreate.mockResolvedValue({});
 	credentialFindMany.mockResolvedValue([]);
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /api/live-channels/[id]", () => {
 	it("adds run-bound Push reception without rewriting the poll observation", async () => {

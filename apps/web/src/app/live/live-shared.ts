@@ -223,6 +223,8 @@ export type HeartbeatReception =
 
 /** Full detail row (GET /api/live-channels/[id]). */
 export type LiveChannelDetailRow = LiveChannelListItem & {
+	/** Server-authorized AISA capability; absent is denied. */
+	aisaFeatureAllowed?: boolean;
 	liveEffectFenceVersion?: number;
 	/** Absent on older responses; absence never proves no Push was received. */
 	heartbeatReception?: HeartbeatReception;

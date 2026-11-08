@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
+import { isAisaAuditPath } from "@/lib/server/aisa-live-audit-view";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
 
@@ -28,6 +30,8 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
+		if (isAisaAuditPath(row.path) && !aisaLiveAccessAllowed(ctx.tenant))
+			return jsonError(404, "Not found");
 		return NextResponse.json(
 			row.actor === "worker:webhook-registrar"
 				? {
@@ -38,6 +42,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 						response: row.response === null ? null : "[withheld]",
 					}
 				: row,
+			{ headers: { "Cache-Control": "private, no-store" } },
 		);
 	} catch (err) {
 		return routeError(err);

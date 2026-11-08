@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
+import {
+	AISA_AUDIT_PATH_PREFIXES,
+	isAisaAuditPath,
+} from "@/lib/server/aisa-live-audit-view";
 import { getServerContext } from "@/lib/server/context";
 import { routeError, validationError } from "@/lib/server/http";
 
@@ -30,7 +35,19 @@ export async function GET(req: Request) {
 	const { limit, cursor } = parsed.data;
 	try {
 		const ctx = await getServerContext();
+		const aisaAllowed = aisaLiveAccessAllowed(ctx.tenant);
 		const rows = await ctx.prisma.auditLog.findMany({
+			...(!aisaAllowed
+				? {
+						where: {
+							NOT: {
+								OR: AISA_AUDIT_PATH_PREFIXES.map((prefix) => ({
+									path: { startsWith: prefix },
+								})),
+							},
+						},
+					}
+				: {}),
 			orderBy: [{ at: "desc" }, { id: "desc" }],
 			take: limit + 1,
 			...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -48,7 +65,10 @@ export async function GET(req: Request) {
 		});
 		// Older registrar errors contain stringified receiver credentials that
 		// the generic at-rest object redactor could not remove.
-		const items = rows.slice(0, limit).map((row) =>
+		const visibleRows = aisaAllowed
+			? rows
+			: rows.filter((row) => !isAisaAuditPath(row.path));
+		const items = visibleRows.slice(0, limit).map((row) =>
 			row.actor === "worker:webhook-registrar"
 				? {
 						...row,
@@ -57,10 +77,14 @@ export async function GET(req: Request) {
 					}
 				: row,
 		);
-		return NextResponse.json({
-			items,
-			nextCursor: rows.length > limit ? items[items.length - 1]?.id : undefined,
-		});
+		return NextResponse.json(
+			{
+				items,
+				nextCursor:
+					visibleRows.length > limit ? items[items.length - 1]?.id : undefined,
+			},
+			{ headers: { "Cache-Control": "private, no-store" } },
+		);
 	} catch (err) {
 		return routeError(err);
 	}

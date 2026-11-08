@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Principal = {
 	actor: string;
 	role: string;
 	isImpersonating: boolean;
 	tokenRoleKnown?: boolean;
+	actorUserId?: string;
+	effectiveUserId?: string;
+	actorRole?: string;
 };
 const mocks = vi.hoisted(() => ({
 	findUnique: vi.fn(),
@@ -28,6 +31,7 @@ vi.mock("@/lib/server/context", () => ({
 import { GET } from "./route";
 
 const channelId = "00000000-0000-4000-8000-0000000000c0";
+const ownerId = "00000000-0000-4000-8000-0000000000a2";
 const accountId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
 const analysisId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
 const encodingId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -121,6 +125,8 @@ const params = () => ({ params: Promise.resolve({ id: channelId }) });
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	mocks.tenant = {
 		actor: "user:viewer",
 		role: "VIEWER",
@@ -130,6 +136,8 @@ beforeEach(() => {
 	mocks.credentialFindMany.mockResolvedValue([]);
 	mocks.heartbeatEvents.mockResolvedValue([]);
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("AISA publisher connection projection", () => {
 	it("returns safe current-run Poll and verified Push telemetry to VIEWER without revealing publisher aliases", async () => {
@@ -197,7 +205,7 @@ describe("AISA publisher connection projection", () => {
 		expect(response.headers.get("Cache-Control")).toContain("no-store");
 	});
 
-	it("strips every publisher connection container while preserving viewer Analysis reads", async () => {
+	it("strips publisher material and AISA data while retaining normal viewer monitoring", async () => {
 		const response = await GET(request(), params());
 		expect(response.status).toBe(200);
 		const body = await response.json();
@@ -210,13 +218,14 @@ describe("AISA publisher connection projection", () => {
 		expect(body.encoderIp).toBeNull();
 		expect(body.stepLog).toEqual([]);
 		expect(body.lastHeartbeat).toBeNull();
-		expect(body.currentRun.aisaSnapshot).toEqual(snapshot);
+		expect(body.currentRun.aisaSnapshot).toBeNull();
+		expect(body.aisaFeatureAllowed).toBe(false);
 		expect(body.currentRun).toMatchObject({
 			id: "run-1",
 			seq: 1,
-			aisaAnalysisId: analysisId,
+			aisaAnalysisId: null,
 			bitmovinEncodingId: encodingId,
-			aisaStatus: "RUNNING",
+			aisaStatus: null,
 			streamKey: null,
 			encoderIp: null,
 			stepLog: [],
@@ -256,7 +265,7 @@ describe("AISA publisher connection projection", () => {
 		mocks.tenant = principal;
 		const body = await (await GET(request(), params())).json();
 		expect(JSON.stringify(body)).not.toContain(secret);
-		expect(body.currentRun.aisaAnalysisId).toBe(analysisId);
+		expect(body.currentRun.aisaAnalysisId).toBeNull();
 	});
 
 	it.each([
@@ -270,24 +279,44 @@ describe("AISA publisher connection projection", () => {
 		},
 		{ actor: "session", role: "ADMIN", isImpersonating: false },
 		{ actor: "none", role: "ADMIN", isImpersonating: false },
-	])("preserves the existing trusted publisher response %#", async (principal) => {
+	])("withholds AISA and publisher data from every nonowner principal %#", async (principal) => {
 		mocks.tenant = principal;
 		const response = await GET(request(), params());
 		const body = await response.json();
-		expect(body.plan.start.streamKey).toBe(secret);
-		expect(body.streamKey).toBe(secret);
-		expect(body.currentRun.encoderIp).toBe(secret);
-		expect(body.currentRun.stepLog).toEqual(managedRow().runs[0].stepLog);
+		expect(JSON.stringify(body)).not.toContain(secret);
+		expect(body.currentRun.aisaAnalysisId).toBeNull();
+		expect(body.currentRun.aisaSnapshot).toBeNull();
+		expect(body.aisaFeatureAllowed).toBe(false);
 		expect(body.playbackLinksAvailability).toBe("unavailable");
-		expect(body.monitoringSafeForViewer).toBeUndefined();
+		expect(body.monitoringSafeForViewer).toBe(true);
 		expect(response.headers.get("Cache-Control")).toContain("no-store");
+	});
+	it("returns AISA and publisher data only to the configured human ADMIN", async () => {
+		mocks.tenant = {
+			actor: `user:${ownerId}`,
+			actorUserId: ownerId,
+			effectiveUserId: ownerId,
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+		};
+		const response = await GET(request(), params());
+		const body = await response.json();
+		expect(response.status).toBe(200);
+		expect(body.aisaFeatureAllowed).toBe(true);
+		expect(body.plan.start.streamKey).toBe(secret);
+		expect(body.currentRun.aisaAnalysisId).toBe(analysisId);
+		expect(body.currentRun.aisaSnapshot.observations).toEqual(
+			snapshot.observations,
+		);
+		expect(body.monitoringSafeForViewer).toBeUndefined();
 	});
 
 	it.each([
 		"AISA_IMPORTED",
 		"run-binding",
 		"malformed-setting",
-	])("projects AISA identity even when the normal plan marker is absent: %s", async (kind) => {
+	])("protects AISA data even when the normal plan marker is absent: %s", async (kind) => {
 		const row = managedRow();
 		if (kind === "AISA_IMPORTED") row.origin = "AISA_IMPORTED";
 		if (kind === "run-binding") row.plan.start.aiSceneAnalysisLive = undefined;
@@ -295,7 +324,7 @@ describe("AISA publisher connection projection", () => {
 		mocks.findUnique.mockResolvedValue(row);
 		const body = await (await GET(request(), params())).json();
 		expect(JSON.stringify(body)).not.toContain(secret);
-		expect(body.currentRun.aisaAnalysisId).toBe(analysisId);
+		expect(body.currentRun.aisaAnalysisId).toBeNull();
 	});
 
 	it("leaves ordinary live channel response behavior unchanged for VIEWER", async () => {

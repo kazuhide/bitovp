@@ -10,6 +10,7 @@ import {
 	aisaResultSchema,
 } from "@/lib/aisa-live/contracts";
 import { listQuerySchema } from "@/lib/infrastructure/schemas";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import {
 	AisaLiveError,
 	aisaLiveClientForAccount,
@@ -38,12 +39,18 @@ function json(value: unknown, status = 200) {
 }
 
 /** Every response is private, including errors and credential-bearing ingest reads. */
-async function handle(run: () => Promise<Response>): Promise<Response> {
+async function handle(
+	run: (ctx: ServerContext) => Promise<Response>,
+): Promise<Response> {
 	let response: Response;
 	try {
-		response = aisaLivePreviewEnabled()
-			? await run()
-			: jsonError(404, "Not found");
+		if (!aisaLivePreviewEnabled()) response = jsonError(404, "Not found");
+		else {
+			const ctx = await getServerContext();
+			response = aisaLiveAccessAllowed(ctx.tenant)
+				? await run(ctx)
+				: jsonError(404, "Not found");
+		}
 	} catch (error) {
 		if (error instanceof AisaLiveError) {
 			const status = [404, 409, 422, 503].includes(error.httpStatusCode)
@@ -65,10 +72,10 @@ async function handle(run: () => Promise<Response>): Promise<Response> {
 }
 
 async function scope(
+	ctx: ServerContext,
 	accountId: string,
 	versions?: { esVersion?: string; aicaVersion?: string },
 ) {
-	const ctx = await getServerContext();
 	const client = await aisaLiveClientForAccount(ctx, accountId, versions);
 	return client ? { ctx, client } : null;
 }
@@ -145,10 +152,10 @@ async function mutate(options: {
 }
 
 export function aisaList(req: Request) {
-	return handle(async () => {
+	return handle(async (ctx) => {
 		const parsed = listQuerySchema.safeParse(query(req));
 		if (!parsed.success) return validationError(parsed.error);
-		const scoped = await scope(parsed.data.bitmovinAccountId);
+		const scoped = await scope(ctx, parsed.data.bitmovinAccountId);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		const page = pageSchema.safeParse(
 			await scoped.client.list({
@@ -162,11 +169,11 @@ export function aisaList(req: Request) {
 }
 
 export function aisaCreate(req: Request) {
-	return handle(async () => {
+	return handle(async (ctx) => {
 		const parsed = aisaCreateBodySchema.safeParse(await readJson(req));
 		if (!parsed.success) return validationError(parsed.error);
 		const { bitmovinAccountId, analysis: config } = parsed.data;
-		const scoped = await scope(bitmovinAccountId);
+		const scoped = await scope(ctx, bitmovinAccountId);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		return mutate({
 			req,
@@ -186,19 +193,19 @@ export function aisaCreate(req: Request) {
 }
 
 export function aisaDetail(req: Request, id: string) {
-	return handle(async () => {
+	return handle(async (ctx) => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
 		const parsed = accountQuery.safeParse(query(req));
 		if (!parsed.success) return validationError(parsed.error);
-		const scoped = await scope(parsed.data.bitmovinAccountId);
+		const scoped = await scope(ctx, parsed.data.bitmovinAccountId);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		return json(analysis(await scoped.client.get(id), id));
 	});
 }
 
 export function aisaAction(req: Request, id: string) {
-	return handle(async () => {
+	return handle(async (ctx) => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
 		const parsed = aisaActionBodySchema.safeParse(await readJson(req));
@@ -211,7 +218,7 @@ export function aisaAction(req: Request, id: string) {
 						...(aicaVersion ? { aicaVersion } : {}),
 					}
 				: undefined;
-		const scoped = await scope(bitmovinAccountId, versions);
+		const scoped = await scope(ctx, bitmovinAccountId, versions);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		const managedRun = await scoped.ctx.prisma.liveChannelRun.findFirst({
 			where: { aisaAnalysisId: id, liveChannel: { bitmovinAccountId } },
@@ -250,12 +257,12 @@ export function aisaAction(req: Request, id: string) {
 }
 
 export function aisaResults(req: Request, id: string) {
-	return handle(async () => {
+	return handle(async (ctx) => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
 		const parsed = accountQuery.safeParse(query(req));
 		if (!parsed.success) return validationError(parsed.error);
-		const scoped = await scope(parsed.data.bitmovinAccountId);
+		const scoped = await scope(ctx, parsed.data.bitmovinAccountId);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		const current = analysis(await scoped.client.get(id), id);
 		let raw: unknown;
@@ -284,14 +291,14 @@ export function aisaResults(req: Request, id: string) {
 
 /** The proxy gives this GET an OPERATOR floor; ordinary detail/results stay VIEWER-readable. */
 export function aisaIngest(req: Request, id: string) {
-	return handle(async () => {
+	return handle(async (ctx) => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
 		const parsed = accountQuery
 			.extend({ encodingId: z.uuid().optional() })
 			.safeParse(query(req));
 		if (!parsed.success) return validationError(parsed.error);
-		const scoped = await scope(parsed.data.bitmovinAccountId);
+		const scoped = await scope(ctx, parsed.data.bitmovinAccountId);
 		if (!scoped) return jsonError(404, "Bitmovin account not found");
 		const raw = await scoped.client.get(id);
 		const current = analysis(raw, id);

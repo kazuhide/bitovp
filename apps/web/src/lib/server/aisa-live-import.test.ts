@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	get: vi.fn(),
@@ -25,6 +25,17 @@ vi.mock("@bitovp/db", async (original) => ({
 
 import { importFinalAisaAnalysis } from "./aisa-live-import";
 
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: ownerId,
+	effectiveUserId: ownerId,
+	actor: `user:${ownerId}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
+
+const context = () => ({ prisma: {}, tenant: owner });
 const analysisId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
 const encodingId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
 const bitmovinAccountId = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee";
@@ -44,6 +55,8 @@ const snapshot = {
 };
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	mocks.get.mockResolvedValue({
 		analysisId,
 		encodingId,
@@ -66,13 +79,29 @@ beforeEach(() => {
 		imported: true,
 	});
 });
+afterEach(() => vi.unstubAllEnvs());
+
+it("denies a direct import call without the exact administrator before provider verification", async () => {
+	await expect(
+		importFinalAisaAnalysis({ prisma: {} } as never, {
+			bitmovinAccountId,
+			analysisId,
+		}),
+	).rejects.toMatchObject({ httpStatusCode: 404 });
+	expect(mocks.get).not.toHaveBeenCalled();
+	expect(mocks.latest).not.toHaveBeenCalled();
+	expect(mocks.encoding).not.toHaveBeenCalled();
+	expect(mocks.status).not.toHaveBeenCalled();
+	expect(mocks.persist).not.toHaveBeenCalled();
+});
+
 it("independently verifies Analysis, exact Encoding terminal status and final snapshot before importing zero moments", async () => {
 	const req = new Request("http://test/api/import", {
 		headers: { "x-bitovp-actor": "user:fixture" },
 	});
 	await expect(
 		importFinalAisaAnalysis(
-			{ prisma: {} } as never,
+			context() as never,
 			{ bitmovinAccountId, analysisId },
 			req,
 		),
@@ -97,7 +126,7 @@ it.each([
 ])("does not import an Analysis in %s", async (status) => {
 	mocks.get.mockResolvedValue({ analysisId, encodingId, status });
 	await expect(
-		importFinalAisaAnalysis({ prisma: {} } as never, {
+		importFinalAisaAnalysis(context() as never, {
 			bitmovinAccountId,
 			analysisId,
 		}),
@@ -107,7 +136,7 @@ it.each([
 it("does not equate an Analysis final result with a finished backing Encoding", async () => {
 	mocks.status.mockResolvedValue({ status: "RUNNING" });
 	await expect(
-		importFinalAisaAnalysis({ prisma: {} } as never, {
+		importFinalAisaAnalysis(context() as never, {
 			bitmovinAccountId,
 			analysisId,
 		}),
@@ -120,7 +149,7 @@ it.each([
 ])("rejects a nonfinal or foreign result", async (value) => {
 	mocks.latest.mockResolvedValue(value);
 	await expect(
-		importFinalAisaAnalysis({ prisma: {} } as never, {
+		importFinalAisaAnalysis(context() as never, {
 			bitmovinAccountId,
 			analysisId,
 		}),

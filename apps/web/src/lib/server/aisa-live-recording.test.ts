@@ -23,6 +23,16 @@ import {
 	validateAisaRecordingUrl,
 } from "./aisa-live-recording";
 
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: ownerId,
+	effectiveUserId: ownerId,
+	actor: `user:${ownerId}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
+
 const org = "00000000-0000-4000-8000-000000000001";
 const otherOrg = "00000000-0000-4000-8000-000000000002";
 const accountId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
@@ -39,6 +49,8 @@ const request = (suffix = "", query = "", init?: RequestInit) =>
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	mocks.enabled.mockReturnValue(true);
 	mocks.accountClient.mockResolvedValue({ get: mocks.get });
 	mocks.get.mockResolvedValue({ analysisId, encodingId, status: "FINISHED" });
@@ -48,7 +60,7 @@ beforeEach(() => {
 	});
 	mocks.reveal.mockResolvedValue("test-only-api-key");
 	mocks.context.mockResolvedValue({
-		tenant: { organizationId: org },
+		tenant: { ...owner, organizationId: org },
 		bitmovinAccounts: { get: mocks.accountGet, revealApiKey: mocks.reveal },
 		cipher: new AesGcmCipher(Buffer.alloc(32, 9)),
 	});
@@ -63,6 +75,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 	vi.restoreAllMocks();
 });
 
@@ -138,7 +151,7 @@ describe("AISA recording proxy", () => {
 			).status,
 		).toBe(400);
 		mocks.context.mockResolvedValueOnce({
-			tenant: { organizationId: otherOrg },
+			tenant: { ...owner, organizationId: otherOrg },
 		});
 		expect((await serveAisaRecording(request(), analysisId)).status).toBe(409);
 		expect(mocks.fetch).toHaveBeenCalledTimes(before);
@@ -281,6 +294,41 @@ describe("finalized AISA recording playlist reuse", () => {
 	beforeEach(() => {
 		mocks.fetch.mockReset();
 		vi.spyOn(Date, "now").mockReturnValue(now);
+	});
+
+	it("denies a different administrator on warm playlist hits and previously issued media URLs", async () => {
+		const id = fixture();
+		const first = await serveAisaRecording(scopedRequest(id), id);
+		const text = await first.text();
+		const mediaPath = text.split("\n").find((line) => line.startsWith("/api/"));
+		expect(mediaPath).toBeTruthy();
+		mocks.context.mockResolvedValue({
+			tenant: {
+				...owner,
+				actorUserId: otherOrg,
+				effectiveUserId: otherOrg,
+				actor: `user:${otherOrg}`,
+				organizationId: org,
+			},
+		});
+		vi.clearAllMocks();
+		for (const method of ["GET", "HEAD"]) {
+			expect(
+				(await serveAisaRecording(scopedRequest(id, { method }), id)).status,
+			).toBe(404);
+			expect(
+				(
+					await serveAisaRecordingMedia(
+						new Request(`http://test${mediaPath}`, { method }),
+						id,
+					)
+				).status,
+			).toBe(404);
+		}
+		expect(mocks.accountClient).not.toHaveBeenCalled();
+		expect(mocks.accountGet).not.toHaveBeenCalled();
+		expect(mocks.reveal).not.toHaveBeenCalled();
+		expect(mocks.fetch).not.toHaveBeenCalled();
 	});
 
 	it("reuses a final media playlist after fresh identity and account checks on every GET and HEAD", async () => {
@@ -601,7 +649,7 @@ describe("finalized AISA recording playlist reuse", () => {
 		const id = fixture();
 		const cipher = new AesGcmCipher(Buffer.alloc(32, 9));
 		mocks.context.mockResolvedValue({
-			tenant: { organizationId: org },
+			tenant: { ...owner, organizationId: org },
 			bitmovinAccounts: { get: mocks.accountGet, revealApiKey: mocks.reveal },
 			cipher,
 		});
@@ -672,7 +720,7 @@ describe("finalized AISA recording playlist reuse", () => {
 		];
 		for (const scope of scopes) {
 			mocks.context.mockResolvedValue({
-				tenant: { organizationId: scope.organization },
+				tenant: { ...owner, organizationId: scope.organization },
 				bitmovinAccounts: { get: mocks.accountGet, revealApiKey: mocks.reveal },
 				cipher: new AesGcmCipher(Buffer.alloc(32, 9)),
 			});

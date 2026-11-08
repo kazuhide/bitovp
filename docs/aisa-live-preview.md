@@ -8,7 +8,13 @@ tags: [aisa, live, preview]
 
 # AISA Live Preview
 
-通常の Live 作成画面 `/live/new` の設定に AISA 解析の有効化を追加する。作成、一覧 `/live`、チャンネル詳細 `/live/[id]`、実行履歴を共通にし、AISA 専用の作成フローや上部の3つの切り替えリンクは設けない。解析がある実行には key moments、日本語訳、サムネイルと区間再生を表示する。
+通常の Live 作成画面 `/live/new` の設定に AISA 解析の有効化を追加する。作成、一覧 `/live`、チャンネル詳細 `/live/[id]`、実行履歴を共通にし、AISA 専用の作成フローや上部の3つの切り替えリンクは設けない。解析がある実行には、利用を許可した本人だけに key moments、日本語訳、サムネイルと区間再生を表示する。
+
+## 単一管理者への限定
+
+server設定 `BITOVP_AISA_LIVE_PREVIEW=true` と `BITOVP_AISA_LIVE_PREVIEW_USER_ID=<本人のUUID>` を両方満たす場合だけ公開する。現在のusers認証で毎回解決した本人セッションのactor/effective user IDが設定値と一致し、ADMIN membershipがあり、impersonation中ではないことを確認する。他のADMIN、OPERATOR、VIEWER、API token、legacy password/noneは許可しない。設定不在・不正は全員拒否する。SDKを使うworkerの永続run処理とHTTPユーザーの許可判定は分ける。
+
+作成wizard・旧リンク・SSR/RSC、専用APIの全read/write、録画と子media、翻訳・import、通常channelのAISA作成/操作、AISA保存preset、AISA監査ログを同じserver policyで保護する。通常Liveの状態・Heartbeat等は従来の権限で表示するが、非本人向けchannel/run DTOにはAnalysis ID・snapshot・接続情報を含めない。画面の表示にはserverの許可と現在の本人セッションの一致も必要とし、以前のADMINのcacheだけでは許可しない。
 
 ## 通常 Live の追加機能としての表示
 
@@ -25,7 +31,7 @@ tags: [aisa, live, preview]
 - AISA 有効時も通常の配信状態・次の操作・入力/エンコーダー/出力診断・アラート・heartbeat 履歴へ移動できる。
 - 監視と運用のセクションは共通の階層とナビゲーションを維持し、AISA の結果が未検出・取得失敗でも監視を利用できる。
 - 現在の実行の監視と操作は、過去の解析結果を選択しても切り替わらない。
-- VIEWER の監視 DTO は許可した数値・状態・時刻だけを投影し、stream key・encoder IP・入力 URL・raw 診断を混ぜない。OPERATOR の既存ログと接続情報の権限は維持する。
+- 非本人の監視 DTO は許可した数値・状態・時刻だけを投影し、Analysis ID・結果・stream key・encoder IP・入力 URL・raw 診断を混ぜない。通常Liveの既存ログと接続情報の権限は維持する。
 - 再生リンクの未解決は0件と区別して次の操作にも伝える。配信が進行中でも「最初のセグメント待ち」と誤案内せず、既存の出力監視へ誘導する。警告イベントを省略した VIEWER の監視値は「警告なし」と断定しない。
 - キャッシュされた ADMIN の診断を表示する際も、現在のセッションが非 impersonation の OPERATOR 以上であることを確認する。閲覧代理中に対象の会員 role が ADMIN でも、raw 診断の表示を許可しない。
 - 標準 Live の回帰テスト、AISA 有効時の監視テスト、権限テスト、型検査、build、実ブラウザ確認を行う。保存済みの実 heartbeat と解析結果を優先し、画面修正のための新しい課金配信は起動しない。
@@ -42,16 +48,16 @@ dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnaly
 - Preview は `@bitmovin-internal/api-sdk@1.288.0-develop.02b690c6` の専用クライアントを使う。private registry 依存を通常 install に追加せず、管理者が別途インストールしたパッケージを server の `BITOVP_AISA_LIVE_SDK_PATH` で指定する。未指定時は通常の Node 解決を試す。版の不一致または未インストールは明示的な 503 とする。
 - `BITOVP_AISA_LIVE_PREVIEW=true` のときだけ UI/API を公開する。既定は無効。API 側でも gate を評価する。
 - AICA の organization-scoped Analysis resource と provider の Encoding 状態を読み、bitovp の LiveChannel/LiveChannelRun に実行単位の Analysis identity・最終状態・最後の有効 snapshot を関連付ける。再放送で結果を混ぜない。API key は server の account store からだけ取得する。
-- GET は VIEWER、create/start/stop は OPERATOR 以上。stream key を含む ingest は専用 GET endpoint を OPERATOR 以上に限定する。list/detail/results は ingest と任意の upstream field を返さない。
+- AISA専用のGET/create/start/stop/ingestはすべて設定された本人ADMINに限定する。list/detail/resultsはingestと任意のupstream fieldを返さない。
 - 録画と解析の両 Output に `PRIVATE` ACL を明示する。ACL 非対応 Output や bucket policy の設定まで非公開を保証するものではない。
 - 新しい API は既存の proxy、tenant/expected-org 認証、監査方式を使う。signed HLS URL、stream key、API key、raw SDK error はログや監査に残さない。
 - 通常の作成・開始・停止の操作と永続 lifecycle を利用する。内部では create 後の実 ID を記録してから start する。副作用を自動再試行せず、応答不明なら実リソースを再取得して照合する。Analysis の stop/finalize を経ずに通常 Encoding だけを停止しない。
 - Encoding と Analysis の終了、final snapshot の有無を別々に表示する。RUNNING はメディア受信や key moments 検出の証拠としない。
-- 解析の終了待ちは実行単位の `aisaFinalization` に記録して再確認する。`aisaSnapshot` は provider の結果だけを保持し、内部の失敗証明を混ぜない。両 provider が終了しても失敗した実行は ERROR と理由を保持する。新規 Preview の無効化後も、既存の同一 run の停止・回収は可能にする。
+- 解析の終了待ちは実行単位の `aisaFinalization` に記録して再確認する。`aisaSnapshot` は provider の結果だけを保持し、内部の失敗証明を混ぜない。両 provider が終了しても失敗した実行は ERROR と理由を保持する。workerの同一runの停止・回収と、本人限定のHTTP操作の許可は別の境界として扱う。
 - 開始前のキャンセルは、CREATE 未送信の記録、または同じ run の Analysis と Encoding が両方 CREATED で START 未送信の独立した確認を、別の `NEVER_STARTED` 証明として保存する。証明と実行・ステップ記録が一致するときだけ再開始や削除を許可する。送信結果が不明な場合は許可しない。キャンセル要求の解除は、チャンネルと実行の終端状態・証明と同じ fenced transaction で確定する。
 - 作成前に失敗したリソースなしの ERROR は、存在するチャンネル・実行のログが CREATE 未送信を証明する場合に削除できる。実行がまだない場合も、最新の実行が存在しないこと、チャンネルに provider ID と CREATE 送信の記録がないことを確認する。削除トランザクションではチャンネル、最新の実行の順でロック・再読し、その時点の状態と証明を確認してから依存データを削除する。古い実行の停止確認で、新しく開始された実行を削除しない。
 - 停止の再試行は、読み取った claim の token・state・generation が同じ場合だけ所有者を更新する。競合で所有者が変わった場合は transaction を戻し、新しい所有者の処理とチャンネルの世代を保持する。
-- 通常のチャンネル詳細 API も AISA の接続情報の権限を守る。VIEWER の返却値は allowlist の metadata・run binding・検証済み snapshot に限定し、plan/compiled payload/接続情報/未検証の raw container は返さない。
+- 通常のチャンネル詳細APIも同じ本人限定policyを使う。非本人にはallowlistの通常監視値と最小の管理対象markerだけを返し、Analysis identity/snapshot、plan本文、compiled payload、接続情報、未検証のraw containerは返さない。
 
 ## 機能と API
 
@@ -93,13 +99,13 @@ dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnaly
 | POST `/api/live/analyses` | `{bitmovinAccountId, analysis}` を検証して作成 |
 | GET `/api/live/analyses/[analysisId]?bitmovinAccountId=...` | ingest を含まない詳細 |
 | POST `/api/live/analyses/[analysisId]/actions` | `{bitmovinAccountId, action: start/stop, esVersion?, aicaVersion?}`。override は start のみ |
-| GET `/api/live/analyses/[analysisId]/ingest?bitmovinAccountId=...` | OPERATOR 向け RTMP/SRT 接続情報 |
+| GET `/api/live/analyses/[analysisId]/ingest?bitmovinAccountId=...` | 本人ADMIN向けRTMP/SRT接続情報 |
 | GET `/api/live/analyses/[analysisId]/results?bitmovinAccountId=...` | `{availability: available, snapshot}` または `{availability: pending}` |
 | POST `/api/live-channels` | 通常と同じ作成。明示した `start.aiSceneAnalysisLive` の場合は専用 lifecycle を永続化して enqueue |
 | POST `/api/live-channels/[id]/actions` | AISA の場合は新しい実行の開始・停止・起動キャンセル。開始時の graph に依存する他の操作は個別に未対応と表示 |
 | POST `/api/live-channels/import-analysis` | `{bitmovinAccountId, analysisId}`。独立した最終状態検証後に既存 run を共通履歴へ取り込む。provider write なし |
 | GET/HEAD `/api/live/analyses/[analysisId]/recording` と `/recording/media` | tenant/account/analysis/encoding に束縛した認証付き HLS 読み取り |
-| GET/POST `/api/live/analyses/[analysisId]/translations` | 保存済み日本語訳の閲覧 / OPERATOR によるローカル翻訳。原文は保持 |
+| GET/POST `/api/live/analyses/[analysisId]/translations` | 本人ADMINによる保存訳の閲覧/ローカル翻訳。原文は保持 |
 
 旧 `/live/analyses` は通常履歴へ、関連付け済みの旧解析詳細リンクは `?runId=<exact run ID>` を保持して同じチャンネル詳細へ移動する。通常ページで所属 channel と AISA binding を検証し、不明・別 channel の run は 404 とする。再放送後も古いリンクを最新 run へ置き換えない。旧 Analysis actions API から関連付け済み run を変更することは拒否し、共通 lifecycle の操作を使用する。取り込み済みの終了 run は読み取り専用とする。
 
@@ -148,7 +154,7 @@ SDK adapter は `apps/web/src/lib/server/aisa-live-sdk.ts`。`aisaLivePreviewEna
 - `rtk proxy pnpm --filter @bitovp/web build`。
 - `rtk proxy pnpm exec biome check --error-on-warnings <変更ファイル>`。
 
-デモリポジトリは read-only。既存の有料3ランと実録画を使って履歴・区間再生を確認する。新規作成の lifecycle 検証が必要な場合だけ、既に承認された短時間の課金試験の範囲で実行し、Analysis と Encoding の終了を独立に照合する。ローカル検証結果を検出精度の証明にしない。ブランチで実装・レビュー・PR を更新し、main への公開判断は残す。
+デモリポジトリはread-only。既存の終了済み有料試行と実録画を使って履歴・区間再生を確認し、追加の課金Liveや再送出はしない。ローカル検証結果を検出精度の証明にしない。利用者の指示により、最終treeのレビューとCI成功後にmainへ統合する。リリースノート・changelogは追加しない。
 
 ## ローカルでの起動
 
@@ -163,6 +169,7 @@ bitovp の server 環境（または repo root のローカル `.env`）で指�
 
 ```dotenv
 BITOVP_AISA_LIVE_PREVIEW=true
+BITOVP_AISA_LIVE_PREVIEW_USER_ID=<本人のusersアカウントUUID>
 BITOVP_AISA_LIVE_SDK_PATH=/path/to/aisa-preview/node_modules/@bitmovin-internal/api-sdk
 ```
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	enabled: vi.fn(),
@@ -37,6 +37,16 @@ import {
 	aisaTranslationsGet,
 	aisaTranslationsPost,
 } from "./aisa-live-translations";
+
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: ownerId,
+	effectiveUserId: ownerId,
+	actor: `user:${ownerId}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
 
 const accountId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
 const analysisId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
@@ -90,6 +100,8 @@ let rows: Map<string, unknown>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	rows = new Map();
 	const prisma = {
 		appSetting: {
@@ -115,7 +127,10 @@ beforeEach(() => {
 			action(prisma),
 	};
 	mocks.enabled.mockReturnValue(true);
-	mocks.context.mockResolvedValue({ prisma, tenant: { organizationId } });
+	mocks.context.mockResolvedValue({
+		prisma,
+		tenant: { ...owner, organizationId },
+	});
 	mocks.accountClient.mockResolvedValue({
 		get: mocks.get,
 		latest: mocks.latest,
@@ -132,7 +147,29 @@ beforeEach(() => {
 	]);
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("AISA translation persistence and routes", () => {
+	it("denies unproven access before provider reads, stored translations, or model work", async () => {
+		mocks.context.mockResolvedValue({
+			tenant: { ...owner, effectiveUserId: undefined },
+		});
+		for (const response of await Promise.all([
+			aisaTranslationsGet(request(), analysisId),
+			aisaTranslationsPost(request(manual), analysisId),
+			aisaTranslationsPost(request(automatic), analysisId),
+		])) {
+			expect(response.status).toBe(404);
+			expect(await response.json()).toMatchObject({ error: "Not found" });
+			expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+		}
+		expect(mocks.accountClient).not.toHaveBeenCalled();
+		expect(mocks.config).not.toHaveBeenCalled();
+		expect(mocks.probe).not.toHaveBeenCalled();
+		expect(mocks.translate).not.toHaveBeenCalled();
+		expect(rows.size).toBe(0);
+	});
+
 	it("hides disabled endpoints and rejects unknown accounts before touching stored translations", async () => {
 		mocks.enabled.mockReturnValue(false);
 		expect((await aisaTranslationsGet(request(), analysisId)).status).toBe(404);

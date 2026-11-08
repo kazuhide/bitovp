@@ -18,7 +18,12 @@ import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
 } from "./build-live-plan";
-import { LiveWizard } from "./live-wizard";
+import { LiveWizard as LiveWizardBase } from "./live-wizard";
+
+const ownerId = "00000000-0000-4000-8000-000000000099";
+function LiveWizard(props: NonNullable<Parameters<typeof LiveWizardBase>[0]>) {
+	return <LiveWizardBase aisaFeatureUserId={ownerId} {...props} />;
+}
 
 beforeEach(() => {
 	apiFetch.mockReset();
@@ -29,8 +34,9 @@ beforeEach(() => {
 					mode: "users",
 					configured: true,
 					authenticated: true,
-					role: "OPERATOR",
-					effectiveUserId: "user",
+					role: "ADMIN",
+					effectiveUserId: ownerId,
+					actorUserId: ownerId,
 					organizationId: "org",
 					isImpersonating: false,
 				}
@@ -207,7 +213,7 @@ it("creates through the normal Live endpoint with only the accepted managed plan
 	expect(body.schedule).toBeUndefined();
 });
 
-it("keeps an imported Preview plan explicit and blocked when the server flag is off", async () => {
+it("rejects an imported Preview plan when access is disabled without exposing its controls", async () => {
 	const source = {
 		...structuredClone(DEFAULT_LIVE_WIZARD_STATE),
 		name: "Imported AISA",
@@ -237,8 +243,8 @@ it("keeps an imported Preview plan explicit and blocked when the server flag is 
 	await userEvent.click(screen.getByRole("button", { name: "Load plan" }));
 	await showStep(5);
 	expect(
-		screen.getByLabelText("Detect key moments automatically"),
-	).toBeChecked();
+		screen.queryByLabelText("Detect key moments automatically"),
+	).toBeNull();
 	expect(
 		screen.getAllByText(
 			/Key moment detection Preview is disabled on this server/,
@@ -248,6 +254,114 @@ it("keeps an imported Preview plan explicit and blocked when the server flag is 
 	expect(
 		screen.getByRole("button", { name: "Create live channel" }),
 	).toBeDisabled();
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+});
+
+it.each([
+	{
+		label: "other administrator",
+		role: "ADMIN",
+		userId: "other-admin",
+		actorId: "other-admin",
+		binding: ownerId,
+	},
+	{
+		label: "viewer",
+		role: "VIEWER",
+		userId: ownerId,
+		actorId: ownerId,
+		binding: ownerId,
+	},
+	{
+		label: "missing SSR owner binding",
+		role: "ADMIN",
+		userId: ownerId,
+		actorId: ownerId,
+		binding: undefined,
+	},
+	{
+		label: "missing actor identity",
+		role: "ADMIN",
+		userId: ownerId,
+		actorId: undefined,
+		binding: ownerId,
+	},
+])("hides the Preview option for a $label even if client input claims it is enabled", async ({
+	role,
+	userId,
+	actorId,
+	binding,
+}) => {
+	const normal = apiFetch.getMockImplementation();
+	apiFetch.mockImplementation((url: string) =>
+		url === "/api/auth/session"
+			? Promise.resolve({
+					mode: "users",
+					configured: true,
+					authenticated: true,
+					role,
+					effectiveUserId: userId,
+					actorUserId: actorId,
+					organizationId: "org",
+					isImpersonating: false,
+				})
+			: normal?.(url),
+	);
+	renderWithQuery(
+		<LiveWizard aisaPreviewEnabled aisaFeatureUserId={binding} />,
+	);
+	await showStep(5);
+	expect(
+		screen.queryByLabelText("Detect key moments automatically"),
+	).toBeNull();
+	expect(
+		screen.getByRole("heading", { name: "Automatic restart and stop" }),
+	).toBeVisible();
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+});
+
+it("rejects an unauthorized duplicated AISA plan before applying it or enabling submission", async () => {
+	const duplicateId = "00000000-0000-4000-8000-000000000088";
+	const source = buildLiveChannelPlan({
+		...structuredClone(DEFAULT_LIVE_WIZARD_STATE),
+		name: "Denied source",
+		accountId: "00000000-0000-4000-8000-000000000011",
+		inputKind: "RTMP",
+		start: {
+			...structuredClone(DEFAULT_LIVE_WIZARD_STATE.start),
+			streamKey: "TennisMatch",
+		},
+		aisaLive: {
+			enabled: true,
+			useManagedGraph: true,
+			outputId: "00000000-0000-4000-8000-000000000012",
+			recordingPath: "r",
+			analysisPath: "a",
+			esVersion: "",
+			aicaVersion: "",
+		},
+	});
+	const normal = apiFetch.getMockImplementation();
+	apiFetch.mockImplementation((url: string) =>
+		url === `/api/live-channels/${duplicateId}`
+			? Promise.resolve({ name: "Denied source", plan: source })
+			: normal?.(url),
+	);
+	renderWithQuery(<LiveWizard duplicateFrom={duplicateId} />);
+	expect(await screen.findByRole("alert")).toHaveTextContent(
+		/Preview is disabled/,
+	);
+	expect(document.getElementById("lw-name")).toBeNull();
+	expect(
+		screen.queryByLabelText("Detect key moments automatically"),
+	).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: "Create live channel" }),
+	).toBeNull();
 	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
 		false,
 	);

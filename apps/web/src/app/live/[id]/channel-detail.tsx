@@ -121,6 +121,7 @@ type ChannelDetailProps = {
 	id: string;
 	player?: PlayerClientConfig;
 	initialAisaRun?: AisaSelectedRun;
+	aisaFeatureUserId?: string;
 };
 
 export function ChannelDetail(props: ChannelDetailProps) {
@@ -132,7 +133,12 @@ export function ChannelDetail(props: ChannelDetailProps) {
 	);
 }
 
-function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
+function ChannelConsole({
+	id,
+	player,
+	initialAisaRun,
+	aisaFeatureUserId,
+}: ChannelDetailProps) {
 	const { t } = useT();
 	const router = useRouter();
 	const queryClient = useQueryClient();
@@ -331,6 +337,17 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 			{ audience: "customer", minRole: "OPERATOR" },
 			roleViewFromSession(technicalSession.data),
 		);
+	const showAisaFeature =
+		aisaRow &&
+		row.aisaFeatureAllowed === true &&
+		Boolean(aisaFeatureUserId) &&
+		sessionFreshForConsole &&
+		technicalSession.data?.mode === "users" &&
+		technicalSession.data.authenticated === true &&
+		technicalSession.data.role === "ADMIN" &&
+		technicalSession.data.isImpersonating === false &&
+		technicalSession.data.effectiveUserId === aisaFeatureUserId &&
+		technicalSession.data.actorUserId === aisaFeatureUserId;
 	const sessionAllowsTechnicalDetails =
 		technicalSession.status === "success" &&
 		technicalSession.fetchStatus === "idle" &&
@@ -367,6 +384,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 			? analysisSnapshot.data.keyMoments.length
 			: null;
 	const selectAisaRun = (selected: AisaRunSelection) => {
+		if (!showAisaFeature) return;
 		setSelectedAisaRun({
 			...(selected.id === initialAisaRun?.id ? initialAisaRun : {}),
 			...selected,
@@ -404,20 +422,21 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	const plan = liveChannelPlanSchema.safeParse(
 		aisaRow && !aisaOperatorAllowed ? null : row.plan,
 	);
-	const lifecycleActions = !imported ? (
-		<RoleAccess control="live.channel.lifecycle">
-			<ChannelLifecycleActions
-				channelId={id}
-				status={row.status}
-				hasEncoding={row.bitmovinEncodingId !== null}
-				plan={plan.success ? plan.data : undefined}
-				runId={run?.id}
-				generation={row.liveEffectFenceVersion}
-				cancelRequested={run?.cancelRequested}
-				managedAisa={aisaRow}
-			/>
-		</RoleAccess>
-	) : null;
+	const lifecycleActions =
+		!imported && (!aisaRow || showAisaFeature) ? (
+			<RoleAccess control="live.channel.lifecycle">
+				<ChannelLifecycleActions
+					channelId={id}
+					status={row.status}
+					hasEncoding={row.bitmovinEncodingId !== null}
+					plan={plan.success ? plan.data : undefined}
+					runId={run?.id}
+					generation={row.liveEffectFenceVersion}
+					cancelRequested={run?.cancelRequested}
+					managedAisa={aisaRow}
+				/>
+			</RoleAccess>
+		) : null;
 	const entries = stepLogSchema.safeParse(
 		aisaRow && !aisaOperatorAllowed ? [] : effectiveStepLog,
 	);
@@ -655,6 +674,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	/** The ingest coordinates themselves — framed twice, rendered once. */
 	const ingestBody = aisaRow ? (
 		!imported &&
+		showAisaFeature &&
 		aisaOperatorAllowed &&
 		row.bitmovinAccountId &&
 		run?.aisaAnalysisId ? (
@@ -730,6 +750,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	 */
 	const omittedSections: LiveSectionId[] = [];
 	if (aisaRow) {
+		if (!showAisaFeature) omittedSections.push("sec-ingest", "sec-danger");
 		if (imported)
 			omittedSections.push("sec-actions", "sec-ingest", "sec-danger");
 		if (!aisaOperatorAllowed)
@@ -794,7 +815,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 		const reason = aisaRow ? unsupportedOperation(section) : undefined;
 		return (imported && readOnlySections.has(section)) ||
 			reason ||
-			(aisaRow && !aisaOperatorAllowed && readOnlySections.has(section))
+			(aisaRow && !showAisaFeature && readOnlySections.has(section))
 			? t(imported ? "tenant.readOnly" : (reason ?? "tenant.readOnly"))
 			: undefined;
 	};
@@ -822,7 +843,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 		"sec-last-run": null,
 
 		// Operations
-		"sec-analysis": aisaRow ? (
+		"sec-analysis": showAisaFeature ? (
 			<SectionCard
 				id="sec-analysis"
 				level={3}
@@ -1358,8 +1379,8 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 					channelId={id}
 					currentRunId={run?.id ?? null}
 					currentRunStatus={run?.status}
-					selectedAisaRunId={aisaRow ? analysisRun?.id : undefined}
-					onSelectAisaRun={aisaRow ? selectAisaRun : undefined}
+					selectedAisaRunId={showAisaFeature ? analysisRun?.id : undefined}
+					onSelectAisaRun={showAisaFeature ? selectAisaRun : undefined}
 				/>
 			</SectionCard>
 		),
@@ -1489,7 +1510,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 	};
 
 	const bodyLayers = liveBodyLayers(phase, omittedSections, {
-		keyMoments: aisaRow,
+		keyMoments: showAisaFeature,
 	});
 
 	return (
@@ -1533,8 +1554,10 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 							{plan.data.bitmovin.cloudRegion} · {plan.data.liveInput.kind}
 						</span>
 					) : null}
-					{!imported ? <DuplicateChannelButton channelId={id} /> : null}
-					{aisaRow ? <Badge>{t("aisaLive.featureBadge")}</Badge> : null}
+					{!imported && (!aisaRow || showAisaFeature) ? (
+						<DuplicateChannelButton channelId={id} />
+					) : null}
+					{showAisaFeature ? <Badge>{t("aisaLive.featureBadge")}</Badge> : null}
 					{/*
 					 * the lifecycle controls, MOVED here — not copied. They
 					 * used to share a button row with Duplicate and Delete inside the
@@ -1544,7 +1567,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 					 * section on the page. Copy settings is a separate header action. `sec-actions`
 					 * keeps its id because core's `liveNextAction` points at it.
 					 */}
-					{!imported ? (
+					{!imported && (!aisaRow || showAisaFeature) ? (
 						<section
 							id="sec-actions"
 							aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
@@ -1556,7 +1579,7 @@ function ChannelConsole({ id, player, initialAisaRun }: ChannelDetailProps) {
 							className="ml-auto flex scroll-mt-6 flex-wrap items-center gap-2 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
 						>
 							{lifecycleActions}
-							{aisaRow ? (
+							{showAisaFeature ? (
 								<SectionHelp
 									title={t("live.actions")}
 									help={t("aisaLive.managedActionsHint")}

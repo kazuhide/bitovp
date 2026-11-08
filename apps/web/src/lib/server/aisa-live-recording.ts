@@ -9,6 +9,7 @@ import {
 	passiveOrganizationBinding,
 	requestOrganizationId,
 } from "@/lib/passive-request";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import {
 	aisaLiveClientForAccount,
 	aisaLivePreviewEnabled,
@@ -61,9 +62,11 @@ const fail = (status: number) =>
 	Response.json(
 		{
 			error:
-				status === 403 || status === 410
-					? "Recording link is invalid or expired"
-					: "AISA recording unavailable",
+				status === 404
+					? "Not found"
+					: status === 403 || status === 410
+						? "Recording link is invalid or expired"
+						: "AISA recording unavailable",
 		},
 		{ status, headers },
 	);
@@ -352,6 +355,7 @@ async function scopeFor(
 	req: Request,
 	analysisId: string,
 	media: boolean,
+	ctx: ServerContext,
 ): Promise<{
 	scope: Scope;
 	token: string | null;
@@ -382,7 +386,6 @@ async function scopeFor(
 		throw new RecordingError(400);
 	const binding = passiveOrganizationBinding(url, req.method);
 	if (binding.kind !== "bound") throw new RecordingError(400);
-	const ctx = await getServerContext();
 	const organizationId = requestOrganizationId(ctx);
 	if (binding.organizationId !== organizationId) throw new RecordingError(409);
 	const client = await aisaLiveClientForAccount(ctx, accountId);
@@ -424,12 +427,17 @@ function upstreamStatus(response: Response) {
 	}
 }
 
-async function handle(req: Request, run: () => Promise<Response>) {
+async function handle(
+	req: Request,
+	run: (ctx: ServerContext) => Promise<Response>,
+) {
 	if (!aisaLivePreviewEnabled()) return fail(404);
 	if (req.method !== "GET" && req.method !== "HEAD") return fail(405);
 	if (req.signal.aborted) return fail(408);
 	try {
-		return await run();
+		const ctx = await getServerContext();
+		if (!aisaLiveAccessAllowed(ctx.tenant)) return fail(404);
+		return await run(ctx);
 	} catch (error) {
 		return fail(
 			error instanceof RecordingError
@@ -452,11 +460,12 @@ function playlistResponse(req: Request, text: string) {
 }
 
 export function serveAisaRecording(req: Request, analysisId: string) {
-	return handle(req, async () => {
+	return handle(req, async (ctx) => {
 		const { scope, status, cacheGeneration } = await scopeFor(
 			req,
 			analysisId,
 			false,
+			ctx,
 		);
 		const account = await scope.ctx.bitmovinAccounts.get(scope.accountId);
 		if (!account) throw new RecordingError(404);
@@ -499,8 +508,8 @@ export function serveAisaRecording(req: Request, analysisId: string) {
 }
 
 export function serveAisaRecordingMedia(req: Request, analysisId: string) {
-	return handle(req, async () => {
-		const { scope, token } = await scopeFor(req, analysisId, true);
+	return handle(req, async (ctx) => {
+		const { scope, token } = await scopeFor(req, analysisId, true, ctx);
 		if (!token) throw new RecordingError(403);
 		const claim = await open(scope, token);
 		const url = validateAisaRecordingUrl(claim.url, analysisId);

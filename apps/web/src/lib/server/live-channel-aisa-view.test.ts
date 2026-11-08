@@ -219,7 +219,7 @@ describe("AISA viewer projection boundary", () => {
 		{ ...snapshot, analysisId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa" },
 		{ ...snapshot, encodingId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa" },
 		{ ...snapshot, sequence: -1 },
-	])("retains run identity but withholds a foreign or malformed snapshot %#", (aisaSnapshot) => {
+	])("retains ordinary run identity while withholding Analysis metadata %#", (aisaSnapshot) => {
 		const body = aisaChannelViewerProjection(
 			{ id: "channel" },
 			{
@@ -231,13 +231,13 @@ describe("AISA viewer projection boundary", () => {
 		);
 		expect(body.currentRun).toMatchObject({
 			id: "run",
-			aisaAnalysisId: analysisId,
+			aisaAnalysisId: null,
 			bitmovinEncodingId: encodingId,
 			aisaSnapshot: null,
 		});
 	});
 
-	it("does not mutate persisted records and strips future fields from the public snapshot", () => {
+	it("does not mutate persisted records and withholds the entire private snapshot", () => {
 		const run = {
 			id: "run",
 			aisaAnalysisId: analysisId,
@@ -256,7 +256,8 @@ describe("AISA viewer projection boundary", () => {
 		};
 		const before = JSON.stringify({ channel, run });
 		const body = aisaChannelViewerProjection(channel, run);
-		expect(body.currentRun?.aisaSnapshot).toEqual(snapshot);
+		expect(body.currentRun?.aisaSnapshot).toBeNull();
+		expect(body.currentRun?.aisaAnalysisId).toBeNull();
 		expect(JSON.stringify(body)).not.toContain("private");
 		expect(JSON.stringify({ channel, run })).toBe(before);
 	});

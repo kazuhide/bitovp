@@ -12,6 +12,7 @@ const scheduleCreateMany = vi.fn<
 >(async () => ({ count: 0 }));
 const scheduleFindMany = vi.fn(async () => []);
 const getAccount = vi.fn();
+const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const queueAdd = vi.fn();
 // review-223 F4: the slate credential is checked at CREATION (422), not
 // discovered broken at registration time.
@@ -93,6 +94,14 @@ const prismaMock = {
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			actor: `user:${aisaOwnerId}`,
+			actorUserId: aisaOwnerId,
+			effectiveUserId: aisaOwnerId,
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+		},
 		prisma: prismaMock,
 		bitmovinAccounts: { get: getAccount },
 		// : rail 3b's resolver. These five route tests are the
@@ -180,6 +189,7 @@ function postRequest(body: unknown, actor?: string): Request {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
 	createRequests.clear();
 	queryRaw.mockImplementation(async () => []);
 	update.mockImplementation(async () => ({}));

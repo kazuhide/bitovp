@@ -9,6 +9,7 @@ import {
 	aisaAnalysisSchema,
 	aisaResultSchema,
 } from "@/lib/aisa-live/contracts";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import { aisaLiveClientForAccount } from "./aisa-live-sdk";
 import { actorFrom } from "./audit";
 import { bitmovinClientForAccount } from "./bitmovin";
@@ -50,6 +51,8 @@ export async function importFinalAisaAnalysis(
 	input: { bitmovinAccountId: string; analysisId: string },
 	req?: Request,
 ): Promise<AisaLiveImportOutcome> {
+	if (!aisaLiveAccessAllowed(ctx.tenant))
+		throw new AisaImportVerificationError(404, "AISA_IMPORT_UNAVAILABLE");
 	if (!inputSchema.safeParse(input).success)
 		throw new AisaImportVerificationError(400, "AISA_IMPORT_INVALID_INPUT");
 	let proof: VerifiedFinalAisaImport;

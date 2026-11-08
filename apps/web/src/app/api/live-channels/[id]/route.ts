@@ -14,6 +14,7 @@ import { z } from "zod";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
 import { ROLE_HEADER } from "@/lib/auth/roles";
 import { customerErrorDetails } from "@/lib/customer-error";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import {
@@ -193,7 +194,12 @@ export async function GET(req: Request, { params }: RouteParams) {
 				playbackLinks: planForLinks
 					? await playbackLinksForLivePlan(ctx, planForLinks)
 					: [],
-				...(aisaChannel ? { playbackLinksAvailability: "unavailable" } : {}),
+				...(aisaChannel
+					? {
+							playbackLinksAvailability: "unavailable",
+							aisaFeatureAllowed: true,
+						}
+					: {}),
 				// review-260 127-A5 (folded into #126): heartbeat freshness must
 				// not compare a WORKER-stamped `at` against the BROWSER clock — a
 				// viewer 90 seconds ahead reads a healthy channel as disconnected. The client
@@ -253,6 +259,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			select: {
 				id: true,
 				status: true,
+				origin: true,
 				bitmovinAccountId: true,
 				plan: true,
 				bitmovinEncodingId: true,
@@ -263,6 +270,8 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
+		if (isAisaLiveChannelView(row, null) && !aisaLiveAccessAllowed(ctx.tenant))
+			return jsonError(404, "Not found");
 		if (
 			row.status === "PROVISIONING" ||
 			row.status === "RUNNING" ||
@@ -477,6 +486,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			existing.origin === "AISA_IMPORTED" ||
 			isAisaManagedLivePlan(existing.plan)
 		) {
+			if (!aisaLiveAccessAllowed(ctx.tenant))
+				return jsonError(404, "Not found");
 			return jsonError(
 				409,
 				"Runtime-cap updates are unavailable for AISA Live Preview",

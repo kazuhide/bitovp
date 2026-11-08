@@ -14,6 +14,7 @@ import {
 	aisaTranslationSchema,
 } from "@/lib/aisa-live/translations";
 import { AuthContextError } from "@/lib/auth/tenancy";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import {
 	AisaLiveError,
 	aisaLiveClientForAccount,
@@ -55,12 +56,18 @@ const keyFor = (
 const pending = new Map<string, Promise<void>>();
 let inferenceBusy = false;
 
-async function handle(run: () => Promise<Response>): Promise<Response> {
+async function handle(
+	run: (ctx: ServerContext) => Promise<Response>,
+): Promise<Response> {
 	let response: Response;
 	try {
-		response = aisaLivePreviewEnabled()
-			? await run()
-			: jsonError(404, "Not found");
+		if (!aisaLivePreviewEnabled()) response = jsonError(404, "Not found");
+		else {
+			const ctx = await getServerContext();
+			response = aisaLiveAccessAllowed(ctx.tenant)
+				? await run(ctx)
+				: jsonError(404, "Not found");
+		}
 	} catch (error) {
 		if (error instanceof AuthContextError) response = routeError(error);
 		else if (error instanceof AisaTranslationError)
@@ -80,8 +87,10 @@ async function handle(run: () => Promise<Response>): Promise<Response> {
 	return response;
 }
 
-async function load(accountId: string, id: string) {
-	const ctx = await getServerContext();
+async function load(accountId: string, id: string, context?: ServerContext) {
+	const ctx = context ?? (await getServerContext());
+	if (!aisaLiveAccessAllowed(ctx.tenant))
+		throw new AisaTranslationError("AISA_TRANSLATION_ACCOUNT_UNAVAILABLE", 404);
 	const client = await aisaLiveClientForAccount(ctx, accountId);
 	if (!client)
 		throw new AisaTranslationError("AISA_TRANSLATION_ACCOUNT_UNAVAILABLE", 404);
@@ -233,27 +242,31 @@ function sameSources(
 }
 
 export function aisaTranslationsGet(req: Request, id: string) {
-	return handle(async () => {
+	return handle(async (context) => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
 		const parsed = querySchema.safeParse(
 			Object.fromEntries(new URL(req.url).searchParams),
 		);
 		if (!parsed.success) return validationError(parsed.error);
-		const { ctx, snapshot } = await load(parsed.data.bitmovinAccountId, id);
+		const { ctx, snapshot } = await load(
+			parsed.data.bitmovinAccountId,
+			id,
+			context,
+		);
 		return responseFor(ctx.prisma, parsed.data.bitmovinAccountId, snapshot);
 	});
 }
 
 export function aisaTranslationsPost(req: Request, id: string) {
-	return handle(async () => {
+	return handle(async (context) => {
 		const invalid = invalidIdResponse(id);
 		if (invalid) return invalid;
 		const parsed = aisaTranslationBodySchema.safeParse(await readJson(req));
 		if (!parsed.success) return validationError(parsed.error);
 		const body = parsed.data;
 		const { bitmovinAccountId: accountId } = body;
-		const { ctx, snapshot } = await load(accountId, id);
+		const { ctx, snapshot } = await load(accountId, id, context);
 		if (body.encodingId !== snapshot.encodingId)
 			throw new AisaTranslationError("AISA_TRANSLATION_SOURCE_CHANGED", 409);
 		const sources = new Map(

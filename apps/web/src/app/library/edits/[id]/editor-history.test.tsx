@@ -17,11 +17,9 @@ vi.mock("@/lib/auth/use-role-access", () => ({
 vi.mock("@/lib/i18n/context", () => ({
 	useT: () => ({ t: (key: string) => key }),
 }));
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@/lib/api")>()),
 	apiFetch: state.api,
-	ApiError: class extends Error {
-		status = 500;
-	},
 }));
 vi.mock("./editor-workbench", () => ({
 	EditorWorkbench: () => {

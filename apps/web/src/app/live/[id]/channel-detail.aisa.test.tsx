@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, type MockInstance, vi } from "vitest";
 import { renderWithQuery as renderWithQueryBase } from "@/test/render";
 import {
 	buildLiveChannelPlan,
@@ -19,30 +19,103 @@ const seen = vi.hoisted(() => ({
 	bindings: [] as string[],
 	snapshots: vi.fn(),
 	privateProps: vi.fn(),
+	playerEnabled: false,
+	hlsInstances: [] as unknown[],
 }));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
 	apiFetch: (...args: unknown[]) => apiFetch(...args),
 }));
-vi.mock("../aisa-channel-analysis", () => ({
-	AisaChannelAnalysisPanel: ({
-		analysisId,
-		encodingId,
-		initialSnapshot,
-	}: {
-		analysisId: string;
-		encodingId: string;
-		initialSnapshot?: unknown;
-	}) => {
-		seen.bindings.push(`${analysisId}:${encodingId}`);
-		seen.snapshots(initialSnapshot);
-		return (
-			<div data-testid="aisa-analysis">
-				{analysisId}:{encodingId}
-			</div>
-		);
-	},
+vi.mock("../aisa-live-player-thumbnail", () => ({
+	requestAisaThumbnail: async () => null,
 }));
+vi.mock("hls.js", () => {
+	class FakeHls {
+		static isSupported = () => true;
+		static Events = {
+			MANIFEST_PARSED: "manifest",
+			LEVEL_UPDATED: "level",
+			ERROR: "error",
+		};
+		listeners = new Map<string, (event: string, data: unknown) => void>();
+		attachMedia = vi.fn();
+		loadSource = vi.fn();
+		startLoad = vi.fn();
+		destroy = vi.fn();
+		constructor() {
+			seen.hlsInstances.push(this);
+		}
+		on(event: string, listener: (event: string, data: unknown) => void) {
+			this.listeners.set(event, listener);
+		}
+		emit(event: string, data: unknown) {
+			this.listeners.get(event)?.(event, data);
+		}
+	}
+	return { default: FakeHls };
+});
+vi.mock("../aisa-channel-analysis", async () => {
+	const { useState } = await import("react");
+	const { AisaMomentPreview } = await import("../aisa-live-player");
+	return {
+		AisaChannelAnalysisPanel: ({
+			accountId,
+			analysisId,
+			encodingId,
+			initialSnapshot,
+		}: {
+			accountId: string;
+			analysisId: string;
+			encodingId: string;
+			initialSnapshot?: unknown;
+		}) => {
+			const [selected, setSelected] = useState(false);
+			seen.bindings.push(`${analysisId}:${encodingId}`);
+			seen.snapshots(initialSnapshot);
+			return (
+				<div data-testid="aisa-analysis">
+					{analysisId}:{encodingId}
+					{seen.playerEnabled ? (
+						selected ? (
+							<AisaMomentPreview
+								accountId={accountId}
+								analysisId={analysisId}
+								encodingId={encodingId}
+								mediaTimeOriginUnixMs={1790000000000}
+								moment={{
+									id: "refresh-scene",
+									lastUpdatedSequence: 1,
+									importanceLevel: 1,
+									startInSeconds: 12,
+									endInSeconds: 18,
+									anchorInSeconds: 15,
+									observations: [],
+									categories: [],
+								}}
+								labels={{
+									play: "Play fixture scene",
+									pause: "Pause fixture scene",
+									replay: "Replay fixture scene",
+									loading: "Loading fixture scene",
+									unavailable: "Unavailable fixture scene",
+									failed: "Failed fixture scene",
+									seek: "Seek fixture scene",
+									mute: "Mute fixture",
+									unmute: "Unmute fixture",
+									thumbnailAlt: "Refresh scene",
+								}}
+							/>
+						) : (
+							<button type="button" onClick={() => setSelected(true)}>
+								Select fixture scene
+							</button>
+						)
+					) : null}
+				</div>
+			);
+		},
+	};
+});
 vi.mock("./feeder-panel", async (loadOriginal) => {
 	const actual = await loadOriginal<typeof import("./feeder-panel")>();
 	return {
@@ -217,6 +290,8 @@ beforeEach(() => {
 	seen.bindings = [];
 	seen.snapshots.mockClear();
 	seen.privateProps.mockClear();
+	seen.playerEnabled = false;
+	seen.hlsInstances.length = 0;
 	replaceRoute.mockClear();
 });
 function respond(
@@ -1244,4 +1319,159 @@ it("retains the private operational DTO for the same freshly authenticated owner
 			technicalDetail: "private-owner-vod-detail",
 		},
 	});
+});
+
+it.each([
+	"owner",
+	"other-admin",
+	"operator",
+	"unauthenticated",
+	"error",
+] as const)("keeps the selected real player mounted during owner session revalidation, then handles %s", async (outcome) => {
+	seen.playerEnabled = true;
+	window.history.replaceState(null, "", "#sec-analysis");
+	respond(fixture(false));
+	const normally = apiFetch.getMockImplementation();
+	const ownerSession = {
+		mode: "users",
+		configured: true,
+		authenticated: true,
+		role: "ADMIN",
+		actorUserId: ownerId,
+		effectiveUserId: ownerId,
+		organizationId: "00000000-0000-4000-8000-000000000001",
+		isImpersonating: false,
+	};
+	apiFetch.mockImplementation((url: string) =>
+		url === "/api/auth/session"
+			? Promise.resolve(ownerSession)
+			: normally?.(url),
+	);
+	const load = vi
+		.spyOn(HTMLMediaElement.prototype, "load")
+		.mockImplementation(() => {});
+	const prototypePause = vi
+		.spyOn(HTMLMediaElement.prototype, "pause")
+		.mockImplementation(() => {});
+	const rendered = renderWithQuery(<ChannelDetail id={ID} />);
+	let refresh: Promise<void> | undefined;
+	let resolveRecheck: ((value: unknown) => void) | undefined;
+	let rejectRecheck: ((error: Error) => void) | undefined;
+	let settled = false;
+	let play: MockInstance<() => Promise<void>> | undefined;
+	let pause: MockInstance<() => void> | undefined;
+	try {
+		const analysis = await screen.findByTestId("aisa-analysis");
+		fireEvent.click(
+			screen.getByRole("button", { name: "Select fixture scene" }),
+		);
+		const video = analysis.querySelector("video");
+		if (!(video instanceof HTMLVideoElement))
+			throw new Error("Selected real player unavailable");
+		let paused = true;
+		Object.defineProperties(video, {
+			readyState: { value: 2 },
+			paused: { get: () => paused },
+		});
+		play = vi.spyOn(video, "play").mockImplementation(async () => {
+			paused = false;
+		});
+		pause = vi.spyOn(video, "pause").mockImplementation(() => {
+			paused = true;
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Play fixture scene" }));
+		await waitFor(() => expect(seen.hlsInstances).toHaveLength(1));
+		const instance = seen.hlsInstances[0] as {
+			emit(event: string, data: unknown): void;
+			destroy: ReturnType<typeof vi.fn>;
+		};
+		act(() =>
+			instance.emit("level", {
+				details: {
+					fragments: [
+						{ start: 0, duration: 10, programDateTime: 1790000010000 },
+					],
+				},
+			}),
+		);
+		expect(play).toHaveBeenCalledOnce();
+		expect(paused).toBe(false);
+		act(() => {
+			video.currentTime = 4;
+			fireEvent.timeUpdate(video);
+		});
+		pause.mockClear();
+		const recheck = new Promise((resolve, reject) => {
+			resolveRecheck = resolve;
+			rejectRecheck = reject;
+		});
+		apiFetch.mockImplementation((url: string) =>
+			url === "/api/auth/session" ? recheck : normally?.(url),
+		);
+		act(() => {
+			refresh = rendered.client.refetchQueries({
+				queryKey: ["auth", "session"],
+				exact: true,
+			});
+		});
+		await waitFor(() =>
+			expect(
+				rendered.client.getQueryState(["auth", "session"])?.fetchStatus,
+			).toBe("fetching"),
+		);
+		expect(rendered.client.getQueryState(["auth", "session"])?.status).toBe(
+			"success",
+		);
+		expect(screen.getByTestId("aisa-analysis")).toBe(analysis);
+		expect(analysis.querySelector("video")).toBe(video);
+		expect(video.isConnected).toBe(true);
+		expect(video.currentTime).toBe(4);
+		expect(paused).toBe(false);
+		expect(pause).not.toHaveBeenCalled();
+		expect(instance.destroy).not.toHaveBeenCalled();
+		await act(async () => {
+			settled = true;
+			if (outcome === "error")
+				rejectRecheck?.(new Error("Session revalidation failed"));
+			else if (outcome === "owner") resolveRecheck?.({ ...ownerSession });
+			else if (outcome === "unauthenticated")
+				resolveRecheck?.({ ...ownerSession, authenticated: false });
+			else
+				resolveRecheck?.({
+					...ownerSession,
+					role: outcome === "operator" ? "OPERATOR" : "ADMIN",
+					actorUserId: "00000000-0000-4000-8000-000000000098",
+					effectiveUserId: "00000000-0000-4000-8000-000000000098",
+				});
+			await refresh;
+		});
+		if (outcome === "owner") {
+			expect(screen.getByTestId("aisa-analysis")).toBe(analysis);
+			expect(analysis.querySelector("video")).toBe(video);
+			expect(video.currentTime).toBe(4);
+			expect(paused).toBe(false);
+			expect(pause).not.toHaveBeenCalled();
+			expect(instance.destroy).not.toHaveBeenCalled();
+		} else {
+			// Query notifications and React's effect cleanup settle asynchronously.
+			await waitFor(() => {
+				expect(screen.queryByTestId("aisa-analysis")).toBeNull();
+				expect(video.isConnected).toBe(false);
+				expect(paused).toBe(true);
+				expect(pause).toHaveBeenCalled();
+				expect(instance.destroy).toHaveBeenCalledOnce();
+			});
+		}
+	} finally {
+		await act(async () => {
+			if (!settled) resolveRecheck?.(ownerSession);
+			await refresh;
+		});
+		rendered.unmount();
+		rendered.client.clear();
+		play?.mockRestore();
+		pause?.mockRestore();
+		prototypePause.mockRestore();
+		load.mockRestore();
+	}
 });

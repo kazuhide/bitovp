@@ -289,7 +289,7 @@ export function aisaResults(req: Request, id: string) {
 	});
 }
 
-/** The proxy gives this GET an OPERATOR floor; ordinary detail/results stay VIEWER-readable. */
+/** The proxy retains an OPERATOR floor; the owner policy protects every dedicated read. */
 export function aisaIngest(req: Request, id: string) {
 	return handle(async (ctx) => {
 		const invalid = invalidIdResponse(id);

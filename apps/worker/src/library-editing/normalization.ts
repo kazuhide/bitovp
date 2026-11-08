@@ -14,6 +14,7 @@ import {
 	probeEditingMedia,
 } from "./media";
 import { MediaOperationError, runMediaProcess } from "./process";
+import { MAX_EDITING_SOURCE_BYTES } from "./source-limits";
 
 const fail = (): never => {
 	throw new MediaOperationError("UNSUPPORTED_MEDIA");
@@ -259,7 +260,7 @@ async function digestFile(path: string) {
 	const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
 	try {
 		const stat = await file.stat();
-		if (!stat.isFile() || stat.size < 1 || stat.size > 4 * 1024 ** 3)
+		if (!stat.isFile() || stat.size < 1 || stat.size > MAX_EDITING_SOURCE_BYTES)
 			throw new MediaOperationError("SOURCE_TOO_LARGE");
 		const hash = createHash("sha256");
 		let bytes = 0;
@@ -443,7 +444,7 @@ export async function normalizeEditingMedia(input: {
 					"-movflags",
 					"+faststart",
 					"-fs",
-					String(4 * 1024 ** 3),
+					String(MAX_EDITING_SOURCE_BYTES),
 					"-f",
 					"mp4",
 					input.destinationPath,

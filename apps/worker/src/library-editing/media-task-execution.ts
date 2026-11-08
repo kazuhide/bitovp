@@ -26,6 +26,7 @@ import type { ObjectStorageBrowser } from "@bitovp/storage";
 import { analysisBudget, analysisScratch, boundedInteger } from "./analysis-io";
 import { downloadPinnedEditingMedia } from "./media";
 import { MediaOperationError } from "./process";
+import { MAX_EDITING_SOURCE_BYTES } from "./source-limits";
 import {
 	type TrackingShot,
 	trackingShotFromAnalysis,
@@ -153,7 +154,7 @@ export async function executeMediaTask(input: {
 			bucket: prepared.bucket,
 			key: prepared.key,
 			destinationPath: sourcePath,
-			maxBytes: 512 * 1024 * 1024,
+			maxBytes: MAX_EDITING_SOURCE_BYTES,
 			expectedIdentity: { ...prepared.expect, size: prepared.size },
 			expectedSha256: verified.media.sha256,
 			signal,

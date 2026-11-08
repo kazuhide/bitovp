@@ -7,6 +7,7 @@ import asrModelProfiles from "../../native/asr-model-profiles.json" with {
 	type: "json",
 };
 import { MediaOperationError } from "./process";
+import { MAX_EDITING_SOURCE_BYTES } from "./source-limits";
 
 export const MAX_ANALYSIS_DURATION_US = 180_000_000;
 const MAX_ANALYSIS_FILE_BYTES = 512 * 1024 * 1024;
@@ -78,7 +79,23 @@ export async function verifyAnalysisFile(
 	);
 }
 
-/** Only registered ASR weights may exceed the ordinary source/VAD/tracker bound. */
+/** Full prepared sources share preparation's limit; auxiliary files keep their smaller bound. */
+export async function verifyAnalysisSourceFile(
+	path: string,
+	expected: string,
+	code: string,
+	budget: AnalysisBudget,
+) {
+	return verifyBoundedFile(
+		path,
+		expected,
+		code,
+		budget,
+		MAX_EDITING_SOURCE_BYTES,
+	);
+}
+
+/** Only registered ASR weights may exceed the ordinary auxiliary-file bound. */
 export async function verifyAsrModelFile(
 	path: string,
 	expected: string,

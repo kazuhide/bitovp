@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import {
 	AutoPortraitSelectionError,
+	anyEditingDocumentSchema,
 	buildPreparedShotPartition,
 	editingDocumentSchema,
 	editingMediaStorageSchema,
@@ -75,7 +76,7 @@ export async function createAutomaticPortrait(
 		});
 		if (!row) return null;
 		if (row.archived) throw new EditingRequestError(404, "EDIT_NOT_FOUND");
-		const document = editingDocumentSchema.parse(row.draft);
+		const document = anyEditingDocumentSchema.parse(row.draft);
 		if (document.autoGeneration?.requestHash !== requestHash)
 			throw new EditingRequestError(409, "REQUEST_KEY_REUSED");
 		return { id: row.id, projectId: row.id };

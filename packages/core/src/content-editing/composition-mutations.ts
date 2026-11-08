@@ -10,6 +10,7 @@ import {
 	compositionDocumentSchema,
 } from "./composition-schema";
 import type { EditFraming } from "./schema";
+import { measuredSubtitleTextBounds } from "./subtitle-cues";
 import { originalTimeToCfrFrame } from "./time";
 
 function atSourceFrame(frame: number, source: CompositionSourceFacts) {
@@ -174,17 +175,57 @@ function remapAnchored(
 		const start = Math.max(from, item.fromFrame + shift);
 		const end = Math.min(to, item.toFrame + shift);
 		if (end <= start) return [];
-		const words = item.words?.flatMap((word) => {
-			const a = Math.max(start, word.fromFrame + shift);
-			const b = Math.min(end, word.toFrame + shift);
-			return b > a ? [{ ...word, fromFrame: a, toFrame: b }] : [];
+		if (!item.words?.length) {
+			// An unmeasured sentence cannot be shortened into an observed phrase.
+			if (start !== item.fromFrame + shift || end !== item.toFrame + shift)
+				return [];
+			return [{ ...item, fromFrame: start, toFrame: end }];
+		}
+		const words = item.words.flatMap((word, index) => {
+			const fromFrame = word.fromFrame + shift;
+			const toFrame = word.toFrame + shift;
+			return fromFrame >= start && toFrame <= end
+				? [{ index, word: { ...word, fromFrame, toFrame } }]
+				: [];
 		});
+		const first = words[0];
+		const last = words.at(-1);
+		if (!first || !last) return [];
+		if (words.length !== item.words.length) {
+			const { starts, ends } = measuredSubtitleTextBounds({
+				text: item.text,
+				words: item.words,
+				requireAlignedText: true,
+			});
+			const sourceOffset = starts[first.index] ?? first.word.startChar;
+			const substring = item.text.slice(sourceOffset, ends[last.index]);
+			const offset =
+				sourceOffset + substring.length - substring.trimStart().length;
+			const {
+				translation: _translation,
+				sourceEvidence: _sourceEvidence,
+				...display
+			} = item;
+			return [
+				{
+					...display,
+					text: substring.trim(),
+					fromFrame: first.word.fromFrame,
+					toFrame: last.word.toFrame,
+					words: words.map(({ word }) => ({
+						...word,
+						startChar: word.startChar - offset,
+						endChar: word.endChar - offset,
+					})),
+				},
+			];
+		}
 		return [
 			{
 				...item,
 				fromFrame: start,
 				toFrame: end,
-				words: words?.length ? words : undefined,
+				words: words.map(({ word }) => word),
 			},
 		];
 	});

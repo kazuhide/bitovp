@@ -11,6 +11,7 @@ import {
 	VersionExpectationUnsupportedError,
 } from "@bitovp/storage";
 import { MediaOperationError, runMediaProcess } from "./process";
+import { MAX_EDITING_SOURCE_BYTES } from "./source-limits";
 
 export type EditingMediaFacts = {
 	width: number;
@@ -76,7 +77,7 @@ export async function downloadPinnedEditingMedia(input: {
 	]);
 	const abortError = () =>
 		new MediaOperationError(input.signal?.aborted ? "CANCELED" : "TIMED_OUT");
-	const maxBytes = input.maxBytes ?? 4 * 1024 ** 3;
+	const maxBytes = input.maxBytes ?? MAX_EDITING_SOURCE_BYTES;
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
 		throw new RangeError("Invalid media byte bound");
 	if (!input.browser.getObject || !input.browser.headObject)

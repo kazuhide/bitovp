@@ -10,12 +10,13 @@ import type {
 } from "@bitovp/storage";
 import { assertLocalMediaPath, downloadPinnedEditingMedia } from "./media";
 import { MediaOperationError, runMediaProcess } from "./process";
+import { MAX_EDITING_SOURCE_BYTES } from "./source-limits";
 
 export const HLS_PREPARATION_LIMITS = Object.freeze({
 	playlists: 3,
 	playlistBytes: 1024 * 1024,
 	objects: 4096,
-	totalBytes: 4 * 1024 ** 3,
+	totalBytes: MAX_EDITING_SOURCE_BYTES,
 	durationSeconds: 3600,
 	timeoutMs: 20 * 60 * 1000,
 	witnessBytes: 4 * 1024 * 1024,

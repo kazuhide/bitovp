@@ -62,6 +62,54 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		) {
 			const f = durationReviewFixture(89, versioned, mode),
 				organizationId = f.task.organizationId;
+			// The coarse segment tail crosses the anchor. These authored word
+			// times finish inside it; they are fixture data, not runtime ASR proof.
+			if (!Array.isArray(f.dependency.result.segments))
+				throw new Error("Missing authored transcript segments");
+			Object.assign(f.dependency.result.segments[1], {
+				words: [
+					{
+						text: "measured",
+						startUs: 3_500_000,
+						endUs: 3_533_333,
+						startChar: 0,
+						endChar: 8,
+						confidence: 0.9,
+					},
+					{
+						text: "speech",
+						startUs: 3_533_333,
+						endUs: 3_566_666,
+						startChar: 9,
+						endChar: 15,
+						confidence: 0.9,
+					},
+					{
+						text: "across",
+						startUs: 3_566_666,
+						endUs: 3_600_000,
+						startChar: 16,
+						endChar: 22,
+						confidence: 0.9,
+					},
+					{
+						text: "anchor",
+						startUs: 3_600_000,
+						endUs: 3_633_333,
+						startChar: 23,
+						endChar: 29,
+						confidence: 0.9,
+					},
+					{
+						text: "end",
+						startUs: 3_633_333,
+						endUs: 3_666_666,
+						startChar: 30,
+						endChar: 33,
+						confidence: 0.9,
+					},
+				],
+			});
 			await admin.organization.create({
 				data: {
 					id: organizationId,
@@ -245,6 +293,25 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(document.captions?.map((c) => c.text)).toContain(
 				"measured speech across anchor end",
 			);
+			expect(document.captions?.flatMap((c) => c.words ?? [])).toMatchObject([
+				{ text: "measured", fromFrame: 95, toFrame: 96 },
+				{ text: "speech", fromFrame: 96, toFrame: 97 },
+				{ text: "across", fromFrame: 97, toFrame: 98 },
+				{ text: "anchor", fromFrame: 98, toFrame: 99 },
+				{ text: "end", fromFrame: 99, toFrame: 100 },
+			]);
+			// This unaligned paragraph is also inside the selected source range.
+			expect(document.captions?.map((c) => c.text)).not.toContain(
+				"early measured speech",
+			);
+			expect(result.warnings).toContain("CAPTION_ALIGNMENT_UNAVAILABLE");
+			expect(
+				(
+					await f.db.libraryMediaTask.findUniqueOrThrow({
+						where: { id: f.dependency.id },
+					})
+				).result,
+			).toEqual(f.dependency.result);
 			expect(project.currentRevisionId).not.toBeNull();
 			expect(
 				await f.db.renderRun.count({ where: { projectId: project.id } }),

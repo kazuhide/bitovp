@@ -18,7 +18,7 @@ import {
 	analysisScratch,
 	boundedInteger,
 	MAX_ANALYSIS_DURATION_US,
-	verifyAnalysisFile,
+	verifyAnalysisSourceFile,
 } from "./analysis-io";
 import { MediaOperationError, runMediaProcess } from "./process";
 
@@ -776,7 +776,7 @@ export async function trackShotSubjects(
 	}
 	boundedInteger(totalUs, 1, MAX_ANALYSIS_DURATION_US);
 	const budget = analysisBudget(input.signal, input.timeoutMs ?? 180_000);
-	await verifyAnalysisFile(
+	await verifyAnalysisSourceFile(
 		input.sourcePath,
 		input.mediaSha256,
 		"SOURCE_CHANGED",

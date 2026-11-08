@@ -87,16 +87,12 @@ function readingUnits(text: string) {
 	);
 }
 
-/** Exact source substrings and measured word intervals; no inferred speech. */
-export function measuredSubtitleCues(input: {
+/** Source text bounds keep signs, units and punctuation attached to measured words. */
+export function measuredSubtitleTextBounds(input: {
 	text: string;
 	words: readonly MeasuredWord[];
-	fromFrame: number;
-	toFrame: number;
 	requireAlignedText?: boolean;
-	/** Verified VAD in this run's frame domain; display support, never word timing. */
-	speechIntervals?: readonly { fromFrame: number; toFrame: number }[];
-}): Cue[] {
+}) {
 	const { text, words } = input;
 	const starts = words.map((word, index) => {
 		const gap = text.slice(words[index - 1]?.endChar ?? 0, word.startChar);
@@ -121,6 +117,21 @@ export function measuredSubtitleCues(input: {
 			starts[index + 1] ?? text.length,
 		);
 	});
+	return { starts, ends };
+}
+
+/** Exact source substrings and measured word intervals; no inferred speech. */
+export function measuredSubtitleCues(input: {
+	text: string;
+	words: readonly MeasuredWord[];
+	fromFrame: number;
+	toFrame: number;
+	requireAlignedText?: boolean;
+	/** Verified VAD in this run's frame domain; display support, never word timing. */
+	speechIntervals?: readonly { fromFrame: number; toFrame: number }[];
+}): Cue[] {
+	const { text, words } = input;
+	const { starts, ends } = measuredSubtitleTextBounds(input);
 	const selected = words.flatMap((word, index) => {
 		if (
 			input.requireAlignedText &&

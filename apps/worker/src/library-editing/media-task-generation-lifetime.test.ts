@@ -13,7 +13,14 @@ import {
 	type VerifiedMediaTask,
 } from "./media-task-execution";
 
-function fixture(options: { localStory?: boolean; timeoutMs?: number } = {}) {
+function fixture(
+	options: {
+		localStory?: boolean;
+		timeoutMs?: number;
+		sourceSize?: number;
+		openError?: Error;
+	} = {},
+) {
 	const bytes = Buffer.from("Actual owned-source lifetime regression bytes"),
 		sha256 = createHash("sha256").update(bytes).digest("hex"),
 		organizationId = randomUUID(),
@@ -24,7 +31,7 @@ function fixture(options: { localStory?: boolean; timeoutMs?: number } = {}) {
 		credentialId,
 		bucket: "fixture",
 		key: "source.mp4",
-		size: bytes.length,
+		size: options.sourceSize ?? bytes.length,
 		expect: { etag: "fixed" },
 	};
 	const input = mediaTaskCreateSchema.parse({
@@ -57,9 +64,13 @@ function fixture(options: { localStory?: boolean; timeoutMs?: number } = {}) {
 		},
 	} as unknown as VerifiedMediaTask;
 	const dispose = vi.fn();
+	const read = vi.fn(async () => {
+		if (options.openError) throw options.openError;
+		return Readable.from([bytes]);
+	});
 	const browser = {
-		headObject: async () => ({ size: bytes.length, etag: "fixed" }),
-		getObject: async () => Readable.from([bytes]),
+		headObject: async () => ({ size: object.size, etag: "fixed" }),
+		getObject: read,
 		dispose,
 	} as unknown as ObjectStorageBrowser;
 	const task = {
@@ -74,6 +85,7 @@ function fixture(options: { localStory?: boolean; timeoutMs?: number } = {}) {
 	return {
 		bytes,
 		dispose,
+		read,
 		run: (generate: NonNullable<MediaTaskExecutionDependencies["generate"]>) =>
 			executeMediaTask({
 				task,
@@ -91,6 +103,33 @@ function fixture(options: { localStory?: boolean; timeoutMs?: number } = {}) {
 }
 
 describe("owned source remains valid throughout asynchronous generation", () => {
+	it.each([
+		512 * 1024 ** 2 + 1,
+		4 * 1024 ** 3,
+	])("admits a prepared %i-byte source to the bounded streaming transport", async (sourceSize) => {
+		// Stop at transport admission; no large fixture or model work is needed.
+		const openError = new Error("SYNTHETIC_SOURCE_TRANSPORT_REACHED");
+		const f = fixture({ sourceSize, openError });
+		const generate = vi.fn();
+		await expect(f.run(generate)).rejects.toBe(openError);
+		expect(f.read).toHaveBeenCalledExactlyOnceWith({
+			bucket: "fixture",
+			key: "source.mp4",
+			expect: { etag: "fixed", versionId: undefined, generation: undefined },
+		});
+		expect(generate).not.toHaveBeenCalled();
+		expect(f.dispose).toHaveBeenCalledTimes(1);
+	});
+	it("rejects a prepared source above 4 GiB before opening its transport", async () => {
+		const f = fixture({ sourceSize: 4 * 1024 ** 3 + 1 });
+		const generate = vi.fn();
+		await expect(f.run(generate)).rejects.toMatchObject({
+			code: "SOURCE_TOO_LARGE",
+		});
+		expect(f.read).not.toHaveBeenCalled();
+		expect(generate).not.toHaveBeenCalled();
+		expect(f.dispose).toHaveBeenCalledTimes(1);
+	});
 	it("allows the 90-minute local story task to acquire its source and reach generation", async () => {
 		const f = fixture({ localStory: true, timeoutMs: 90 * 60_000 });
 		let path = "";

@@ -19,6 +19,7 @@ import {
 	MAX_ANALYSIS_DURATION_US,
 	validDigest,
 	verifyAnalysisFile,
+	verifyAnalysisSourceFile,
 	verifyAsrModelFile,
 } from "./analysis-io";
 import { MediaOperationError, runMediaProcess } from "./process";
@@ -198,7 +199,7 @@ export async function transcribeLocalAudio(
 		"MODEL_CHANGED",
 		budget,
 	);
-	await verifyAnalysisFile(
+	await verifyAnalysisSourceFile(
 		input.sourcePath,
 		input.mediaSha256,
 		"SOURCE_CHANGED",

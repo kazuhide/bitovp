@@ -530,6 +530,32 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					where: { id: f.receipt.id },
 				}),
 			).toEqual(f.receipt);
+			const composition = await saveEditingDraft(created.projectId, {
+				expectedRevision: view.draftRevision,
+				document: toCompositionDocument(view.draft),
+			});
+			expect(composition.draft.schemaVersion).toBe(2);
+			expect(await createAutomaticPortrait(f.input, "fixture")).toEqual(
+				created,
+			);
+			await expect(
+				createAutomaticPortrait(
+					{
+						...f.input,
+						targetDurationFrames: f.input.targetDurationFrames + 30,
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({
+				status: 409,
+				code: "REQUEST_KEY_REUSED",
+			});
+			expect(await readEditingProject(created.projectId)).toEqual(composition);
+			expect(
+				await prisma.renderRun.count({
+					where: { projectId: created.projectId },
+				}),
+			).toBe(1);
 		});
 		it("refuses ambiguous normalization witnesses for a fresh intent without changing a completed project", async () => {
 			const f = await preparedClockFixture();

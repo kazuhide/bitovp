@@ -238,7 +238,22 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 						warnings: [],
 						segments: [
 							{ startUs: 0, endUs: 500_000, text: "outside" },
-							{ startUs: 1_500_000, endUs: 2_000_000, text: "inside" },
+							{
+								startUs: 1_500_000,
+								endUs: 2_000_000,
+								text: "inside",
+								// Explicit authored word timing on the original source clock.
+								words: [
+									{
+										text: "inside",
+										startUs: 1_500_000,
+										endUs: 2_000_000,
+										startChar: 0,
+										endChar: 6,
+										confidence: 0.9,
+									},
+								],
+							},
 							{ startUs: 3_500_000, endUs: 4_500_000, text: "crosses end" },
 						],
 					},
@@ -387,6 +402,16 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					fromFrame: 15,
 					toFrame: 30,
 				});
+				expect(document.captions?.[0]?.words).toEqual([
+					{
+						text: "inside",
+						startChar: 0,
+						endChar: 6,
+						confidence: 0.9,
+						fromFrame: 15,
+						toFrame: 30,
+					},
+				]);
 				expect(document.autoGeneration?.requestHash).toBe(
 					hashEditingEvidence({
 						taskRequestHash: f.task.requestHash,

@@ -19,7 +19,7 @@ import manifest from "../../native/caption-alignment-model.json" with {
 import {
 	analysisBudget,
 	analysisScratch,
-	verifyAnalysisFile,
+	verifyAnalysisSourceFile,
 } from "./analysis-io";
 import {
 	applyCaptionAlignmentFocus,
@@ -608,7 +608,7 @@ export async function alignSelectedCaptionSegments(
 			input.pythonPath ?? "/opt/bitovp-caption-alignment/bin/python";
 		if (!isAbsolute(modelPath) || !isAbsolute(pythonPath))
 			fail("CAPTION_ALIGNMENT_INPUT_INVALID");
-		await verifyAnalysisFile(
+		await verifyAnalysisSourceFile(
 			input.sourcePath,
 			input.mediaSha256,
 			"SOURCE_CHANGED",
@@ -1032,7 +1032,7 @@ export async function alignSelectedCaptionSegments(
 			)
 				fail("CAPTION_ALIGNMENT_LIMIT");
 			budget.check();
-			await verifyAnalysisFile(
+			await verifyAnalysisSourceFile(
 				input.sourcePath,
 				input.mediaSha256,
 				"SOURCE_CHANGED",

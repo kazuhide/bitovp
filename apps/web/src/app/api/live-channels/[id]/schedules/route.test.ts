@@ -1,5 +1,5 @@
 import { isStaleGeneration } from "@bitovp/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  *  PR2 — arm/list routes. The validation table is the point:
@@ -19,9 +19,11 @@ const resolveLiveEncoding = vi.fn();
 const sampleFindMany = vi.fn();
 /** rev367 S-2: the staged-session join for switch rows. */
 const sessionFindMany = vi.fn();
+let tenant: unknown;
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant,
 		prisma: {
 			liveChannel: { findUnique: channelFindUnique },
 			liveChannelRun: { findFirst: runFindFirst },
@@ -41,6 +43,22 @@ import { GET, POST } from "./route";
 const CHANNEL_ID = "00000000-0000-4000-8000-0000000000c1";
 const ACCOUNT_ID = "00000000-0000-4000-8000-0000000000a1";
 const CONTENT_ID = "00000000-0000-4000-8000-0000000000d1";
+const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+const owner = {
+	actorUserId: OWNER_ID,
+	effectiveUserId: OWNER_ID,
+	actor: `user:${OWNER_ID}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
+const otherAdmin = {
+	...owner,
+	actorUserId: OTHER_ID,
+	effectiveUserId: OTHER_ID,
+	actor: `user:${OTHER_ID}`,
+};
 
 const ctx = (id = CHANNEL_ID) => ({ params: Promise.resolve({ id }) });
 
@@ -56,6 +74,9 @@ const PAST = new Date(Date.now() - 60_000).toISOString();
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", "");
+	tenant = { ...otherAdmin, role: "OPERATOR", actorRole: "OPERATOR" };
 	channelFindUnique.mockResolvedValue({ id: CHANNEL_ID });
 	// : no run by default — a channel that has never aired, which is
 	// the state every pre-existing arm case in this file assumes.
@@ -75,6 +96,7 @@ beforeEach(() => {
 		},
 	});
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /schedules", () => {
 	it("404s an unknown channel", async () => {
@@ -1081,6 +1103,9 @@ describe("POST /schedules — AISA encoding operations", () => {
 	}
 
 	beforeEach(() => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", OWNER_ID);
+		tenant = owner;
 		channelFindUnique.mockResolvedValue(channel());
 		runFindFirst.mockResolvedValue(currentRun);
 		resolveLiveEncoding.mockResolvedValue({
@@ -1096,6 +1121,32 @@ describe("POST /schedules — AISA encoding operations", () => {
 		contentList.mockResolvedValue({
 			items: [{ id: CONTENT_ID, status: "READY" }],
 		});
+	});
+
+	it.each([
+		["other ADMIN", otherAdmin, "true"],
+		[
+			"other OPERATOR",
+			{ ...otherAdmin, role: "OPERATOR", actorRole: "OPERATOR" },
+			"true",
+		],
+		["flag off", owner, "false"],
+		["token actor", { ...owner, actor: "token:synthetic" }, "true"],
+		["impersonation", { ...owner, isImpersonating: true }, "true"],
+		["missing principal", undefined, "true"],
+	])("denies managed STOP and SLATE_IN for %s before run, provider, or write work", async (_label, principal, flag) => {
+		tenant = principal;
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", flag);
+		for (const body of [{ action: "STOP", fireAt: FUTURE }, slateBody]) {
+			const res = await POST(post(body), ctx());
+			expect(res.status).toBe(404);
+			expect(await res.json()).toEqual({ error: "Not found" });
+			expect(runFindFirst).not.toHaveBeenCalled();
+			expect(sampleFindMany).not.toHaveBeenCalled();
+			expect(resolveLiveEncoding).not.toHaveBeenCalled();
+			expect(contentList).not.toHaveBeenCalled();
+			expect(scheduleCreate).not.toHaveBeenCalled();
+		}
 	});
 
 	it("arms a managed STOP for the exact current run without contacting the provider", async () => {

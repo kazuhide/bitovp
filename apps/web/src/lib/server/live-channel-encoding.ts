@@ -3,6 +3,7 @@ import type BitmovinApi from "@bitmovin/api-sdk";
 import { ingestConnectedFresh, isAisaManagedLivePlan } from "@bitovp/core";
 import type { NextResponse } from "next/server";
 import { customerErrorDetails } from "@/lib/customer-error";
+import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import { bitmovinClientForAccount } from "./bitmovin";
 import type { ServerContext } from "./context";
 import { jsonError } from "./http";
@@ -58,6 +59,13 @@ export async function resolveLiveEncoding(options: {
 		},
 	});
 	if (!channel) {
+		return { ok: false, response: jsonError(404, "Not found") };
+	}
+	if (
+		options.mutation &&
+		isAisaManagedLivePlan(channel.plan) &&
+		!aisaLiveAccessAllowed(ctx.tenant)
+	) {
 		return { ok: false, response: jsonError(404, "Not found") };
 	}
 	// The account is an explicit request parameter (every route in this surface

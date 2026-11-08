@@ -38,6 +38,7 @@ const genericS3Get = vi.fn();
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: owner,
 		bitmovinAccounts: { get: getAccount, revealApiKey },
 		prisma: {
 			liveChannel: { findUnique: channelFindUnique },
@@ -113,6 +114,15 @@ import { POST as PREFLIGHT } from "./preflight/route";
 import { POST } from "./route";
 
 const ACCOUNT_ID = "3f1f0e8e-2c5b-4a4e-9a64-0f6f4d2c9b11";
+const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: OWNER_ID,
+	effectiveUserId: OWNER_ID,
+	actor: `user:${OWNER_ID}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
 const CHANNEL_ID = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a";
 const ENCODING_ID = "11112222-3333-4444-8555-666677778888";
 const INPUT_ID = "aaaabbbb-cccc-4ddd-8eee-ffff00001111";
@@ -216,6 +226,8 @@ const tFor = (locale: "en" | "ja"): Translator => {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", OWNER_ID);
 	vi.stubEnv("MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
 	getAccount.mockResolvedValue({ id: ACCOUNT_ID, tenantOrgId: null });
 	revealApiKey.mockResolvedValue("bm-api-key");

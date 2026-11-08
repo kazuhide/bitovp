@@ -14,7 +14,7 @@ tags: [aisa, live, preview]
 
 server設定 `BITOVP_AISA_LIVE_PREVIEW=true` と `BITOVP_AISA_LIVE_PREVIEW_USER_ID=<本人のUUID>` を両方満たす場合だけ公開する。現在のusers認証で毎回解決した本人セッションのactor/effective user IDが設定値と一致し、ADMIN membershipがあり、impersonation中ではないことを確認する。他のADMIN、OPERATOR、VIEWER、API token、legacy password/noneは許可しない。設定不在・不正は全員拒否する。SDKを使うworkerの永続run処理とHTTPユーザーの許可判定は分ける。
 
-作成wizard・旧リンク・SSR/RSC、専用APIの全read/write、録画と子media、翻訳・import、通常channelのAISA作成/操作、AISA保存preset、AISA監査ログを同じserver policyで保護する。通常Liveの状態・Heartbeat等は従来の権限で表示するが、非本人向けchannel/run DTOにはAnalysis ID・snapshot・接続情報を含めない。画面の表示にはserverの許可と現在の本人セッションの一致も必要とし、以前のADMINのcacheだけでは許可しない。
+作成wizard・旧リンク・SSR/RSC、専用APIの全read/write、録画と子media、翻訳・import、通常channelのAISA作成/操作、AISA保存preset、AISA監査ログを同じserver policyで保護する。AISA対象の対応済みruntime挿入・停止と予約の登録/解除にも本人確認を適用する。通常Liveの状態・Heartbeat等は従来の権限で表示するが、非本人向けchannel/run DTOにはAnalysis ID・snapshot・接続情報を含めない。画面の表示にはserverの許可と現在の本人セッションの一致も必要とし、以前のADMINのcacheだけでは許可しない。
 
 ## 通常 Live の追加機能としての表示
 

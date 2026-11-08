@@ -1,4 +1,5 @@
 import {
+	isAisaManagedLivePlan,
 	isLiveRunStatus,
 	liveChannelPlanSchema,
 	liveRunWindow,
@@ -17,6 +18,7 @@ import {
 	LIST_LIMIT_MAX,
 	liveScheduleArmSchema,
 } from "@/lib/live-runtime/schemas";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { bitmovinProxyError } from "@/lib/server/bitmovin";
 import { getServerContext } from "@/lib/server/context";
 import {
@@ -195,6 +197,12 @@ export async function POST(req: Request, { params }: RouteParams) {
 			},
 		});
 		if (!channel) {
+			return jsonError(404, "Not found");
+		}
+		if (
+			isAisaManagedLivePlan(channel.plan) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		) {
 			return jsonError(404, "Not found");
 		}
 		const refusal =

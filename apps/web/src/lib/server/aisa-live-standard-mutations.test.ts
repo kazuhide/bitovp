@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	channel: vi.fn(),
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: owner,
 		prisma: {
 			liveChannel: { findUnique: mocks.channel },
 			liveChannelRun: { findFirst: mocks.run, findUnique: mocks.run },
@@ -57,6 +58,15 @@ const id = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
 const accountId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
 const itemId = "cccccccc-cccc-4ccc-accc-cccccccccccc";
 const runId = "dddddddd-dddd-4ddd-addd-dddddddddddd";
+const ownerId = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: ownerId,
+	effectiveUserId: ownerId,
+	actor: `user:${ownerId}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
 const context = {
 	params: Promise.resolve({ id, scheduledId: itemId, scheduleId: itemId }),
 };
@@ -125,10 +135,13 @@ const cases = [
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	mocks.provider.mockResolvedValue({ encoding: {} });
 	mocks.claim.mockResolvedValue(null);
 	mocks.scheduleWrite.mockResolvedValue({ count: 1 });
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe.each([
 	{

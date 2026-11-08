@@ -41,7 +41,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { aisaResultSchema } from "@/lib/aisa-live/contracts";
 import { apiFetch } from "@/lib/api";
-import { canAccess, roleViewFromSession } from "@/lib/auth/audience";
 import type { SessionDto } from "@/lib/auth/dto";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { localizedCustomerError } from "@/lib/customer-error";
@@ -203,7 +202,13 @@ function ChannelConsole({
 	// direct query with the canonical useSession/useRoleAccess hook on rebase.
 	const aisaRow =
 		channel.data?.origin === "AISA_IMPORTED" ||
-		isAisaManagedLivePlan(channel.data?.plan);
+		isAisaManagedLivePlan(channel.data?.plan) ||
+		// Match the server's persisted binding check when an old plan is unreadable.
+		[
+			channel.data?.currentRun?.aisaAnalysisId,
+			channel.data?.currentRun?.aisaStatus,
+			channel.data?.currentRun?.aisaSnapshot,
+		].some((value) => value !== null && value !== undefined);
 	const technicalSession = useQuery({
 		queryKey: ["auth", "session"],
 		queryFn: () => apiFetch<SessionDto>("/api/auth/session"),
@@ -323,20 +328,14 @@ function ChannelConsole({
 
 	const row = channel.data;
 	const imported = row.origin === "AISA_IMPORTED";
-	// Cached operator DTOs must not expose ingest/log payloads while a fresh
-	// session is unresolved or has changed to VIEWER / impersonation.
+	// Cached owner DTOs must not expose private payloads while a fresh session
+	// is unresolved or belongs to any other principal, including another ADMIN.
 	const sessionFreshForConsole =
 		(queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0) >
 			initialSessionUpdateCount &&
 		technicalSession.status === "success" &&
 		technicalSession.fetchStatus === "idle" &&
 		!technicalSession.isRefetchError;
-	const aisaOperatorAllowed =
-		sessionFreshForConsole &&
-		canAccess(
-			{ audience: "customer", minRole: "OPERATOR" },
-			roleViewFromSession(technicalSession.data),
-		);
 	const showAisaFeature =
 		aisaRow &&
 		row.aisaFeatureAllowed === true &&
@@ -348,6 +347,7 @@ function ChannelConsole({
 		technicalSession.data.isImpersonating === false &&
 		technicalSession.data.effectiveUserId === aisaFeatureUserId &&
 		technicalSession.data.actorUserId === aisaFeatureUserId;
+	const aisaOperatorAllowed = showAisaFeature;
 	const sessionAllowsTechnicalDetails =
 		technicalSession.status === "success" &&
 		technicalSession.fetchStatus === "idle" &&
@@ -406,7 +406,7 @@ function ChannelConsole({
 		aisaRow && !aisaOperatorAllowed ? null : (run?.encoderIp ?? row.encoderIp);
 	const effectiveStepLog = run?.stepLog ?? row.stepLog;
 	const effectiveLiveToVod = normalizeLiveToVod(
-		run?.liveToVod ?? row.liveToVod,
+		aisaRow && !aisaOperatorAllowed ? null : (run?.liveToVod ?? row.liveToVod),
 	);
 	// The DISPLAY status derives from the run — IDLE for a never-run channel
 	// (the model's own word for it). Absence of a run row means "never ran"
@@ -1278,14 +1278,18 @@ function ChannelConsole({
 					channelId={id}
 					status={row.status}
 					record={effectiveLiveToVod}
-					families={row.liveToVodFamilies ?? null}
+					families={
+						aisaRow && !aisaOperatorAllowed
+							? null
+							: (row.liveToVodFamilies ?? null)
+					}
 					technicalDetailsAllowed={technicalDetailsAllowed}
 					onStarted={() => channel.refetch()}
 				/>
 				<LiveArchivePanel
 					key={run?.id ?? "no-run"}
 					plan={aisaRow && !aisaOperatorAllowed ? null : row.plan}
-					run={run}
+					run={aisaRow && !aisaOperatorAllowed ? null : run}
 				/>
 			</SectionCard>
 		),

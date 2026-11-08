@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getAccount = vi.fn();
 const revealApiKey = vi.fn();
@@ -13,6 +13,7 @@ const scheduledList = vi.fn();
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: owner,
 		bitmovinAccounts: { get: getAccount, revealApiKey },
 		prisma: { liveChannel: { findUnique } },
 	}),
@@ -41,6 +42,15 @@ vi.mock("@bitmovin/api-sdk", () => ({
 import { POST } from "./route";
 
 const ACCOUNT_ID = "3f1f0e8e-2c5b-4a4e-9a64-0f6f4d2c9b11";
+const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: OWNER_ID,
+	effectiveUserId: OWNER_ID,
+	actor: `user:${OWNER_ID}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
 const CHANNEL_ID = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a";
 const ENCODING_ID = "11112222-3333-4444-8555-666677778888";
 
@@ -55,6 +65,8 @@ function postRequest(body: unknown): Request {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", OWNER_ID);
 	getAccount.mockResolvedValue({ id: ACCOUNT_ID, tenantOrgId: null });
 	revealApiKey.mockResolvedValue("bm-api-key");
 	findUnique.mockResolvedValue({
@@ -63,6 +75,7 @@ beforeEach(() => {
 		bitmovinAccountId: ACCOUNT_ID,
 	});
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/live-channels/[id]/insertable-content/stop", () => {
 	it("keeps the stop-insertion operation available on an AISA-enabled live encoding", async () => {

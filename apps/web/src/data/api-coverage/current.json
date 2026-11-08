@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-08T14:14:58.318Z",
-		"sourceCommit": "64392f4e4a10b9d4d455fa83fe24188d540b1694",
-		"sourceFingerprint": "94be0dda46936ba82cdbf4a2be1deedb85ced6deb41122ec184c997ae554c8bc",
+		"generatedAt": "2026-11-08T14:44:16.638Z",
+		"sourceCommit": "c091327a23b81c35b0ed111502d97ea85f3d1165",
+		"sourceFingerprint": "f1c935da3a6b2bcbe67990115d97d3f16fc971ca5b49fc756a65b2cc69359383",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
@@ -2526,7 +2526,7 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/schedules/route.ts",
-					"line": 359
+					"line": 367
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",

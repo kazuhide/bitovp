@@ -272,6 +272,14 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		if (!updated) {
 			return jsonError(404, "Not found");
 		}
+		// Another writer can replace the body after our successful CAS. The
+		// reread is a new response, so authorize the version actually returned.
+		if (
+			updated.kind === "LIVE_PLAN" &&
+			isAisaManagedLivePlan(updated.body) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		)
+			return jsonError(404, "Not found");
 		return NextResponse.json(updated, {
 			headers: { "Cache-Control": "private, no-store" },
 		});

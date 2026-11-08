@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getAccount = vi.fn();
 const revealApiKey = vi.fn();
@@ -21,6 +21,7 @@ const effectExecuteRaw = vi.fn();
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: owner,
 		bitmovinAccounts: { get: getAccount, revealApiKey },
 		prisma: {
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
@@ -73,6 +74,15 @@ vi.mock("@bitmovin/api-sdk", () => {
 import { POST } from "./route";
 
 const ACCOUNT_ID = "3f1f0e8e-2c5b-4a4e-9a64-0f6f4d2c9b11";
+const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const owner = {
+	actorUserId: OWNER_ID,
+	effectiveUserId: OWNER_ID,
+	actor: `user:${OWNER_ID}`,
+	role: "ADMIN",
+	actorRole: "ADMIN",
+	isImpersonating: false,
+};
 const OTHER_ACCOUNT_ID = "4a2a1f9f-3d6c-4b5f-8b75-1a7e5c3d8f22";
 const CHANNEL_ID = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a";
 const ENCODING_ID = "11112222-3333-4444-8555-666677778888";
@@ -94,6 +104,8 @@ function postRequest(body: unknown): Request {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", OWNER_ID);
 	appendEffectStepLog.mockReset();
 	appendEffectStepLog.mockResolvedValue({ runUpdated: 1, channelUpdated: 1 });
 	effectExecuteRaw.mockReset();
@@ -138,6 +150,7 @@ beforeEach(() => {
 	markLiveEffectAmbiguous.mockResolvedValue(true);
 	markLiveEffectFailed.mockResolvedValue(true);
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/live-channels/[id]/insertable-content/schedule", () => {
 	it.each([

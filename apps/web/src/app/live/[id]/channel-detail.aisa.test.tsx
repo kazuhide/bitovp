@@ -18,6 +18,7 @@ const replaceRoute = vi.fn();
 const seen = vi.hoisted(() => ({
 	bindings: [] as string[],
 	snapshots: vi.fn(),
+	privateProps: vi.fn(),
 }));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
@@ -42,6 +43,84 @@ vi.mock("../aisa-channel-analysis", () => ({
 		);
 	},
 }));
+vi.mock("./feeder-panel", async (loadOriginal) => {
+	const actual = await loadOriginal<typeof import("./feeder-panel")>();
+	return {
+		...actual,
+		FeederPanel: (props: Parameters<typeof actual.FeederPanel>[0]) => {
+			seen.privateProps("FeederPanel", props);
+			return <actual.FeederPanel {...props} />;
+		},
+	};
+});
+vi.mock("./delivery-status-panel", async (loadOriginal) => {
+	const actual = await loadOriginal<typeof import("./delivery-status-panel")>();
+	return {
+		...actual,
+		DeliveryStatusPanel: (
+			props: Parameters<typeof actual.DeliveryStatusPanel>[0],
+		) => {
+			seen.privateProps("DeliveryStatusPanel", props);
+			return <actual.DeliveryStatusPanel {...props} />;
+		},
+	};
+});
+vi.mock("./archive-panel", async (loadOriginal) => {
+	const actual = await loadOriginal<typeof import("./archive-panel")>();
+	return {
+		...actual,
+		LiveArchivePanel: (
+			props: Parameters<typeof actual.LiveArchivePanel>[0],
+		) => {
+			seen.privateProps("LiveArchivePanel", props);
+			return <actual.LiveArchivePanel {...props} />;
+		},
+	};
+});
+vi.mock("./live-to-vod-panel", async (loadOriginal) => {
+	const actual = await loadOriginal<typeof import("./live-to-vod-panel")>();
+	return {
+		...actual,
+		LiveToVodPanel: (props: Parameters<typeof actual.LiveToVodPanel>[0]) => {
+			seen.privateProps("LiveToVodPanel", props);
+			return <actual.LiveToVodPanel {...props} />;
+		},
+	};
+});
+vi.mock("./ladder-panel", async (loadOriginal) => {
+	const actual = await loadOriginal<typeof import("./ladder-panel")>();
+	return {
+		...actual,
+		LadderPanel: (props: Parameters<typeof actual.LadderPanel>[0]) => {
+			seen.privateProps("LadderPanel", props);
+			return <actual.LadderPanel {...props} />;
+		},
+	};
+});
+vi.mock("@/components/step-timeline", async (loadOriginal) => {
+	const actual =
+		await loadOriginal<typeof import("@/components/step-timeline")>();
+	return {
+		...actual,
+		StepTimeline: (props: Parameters<typeof actual.StepTimeline>[0]) => {
+			seen.privateProps("StepTimeline", props);
+			return <actual.StepTimeline {...props} />;
+		},
+	};
+});
+vi.mock("@/components/save-as-template", async (loadOriginal) => {
+	const actual =
+		await loadOriginal<typeof import("@/components/save-as-template")>();
+	return {
+		...actual,
+		SaveAsTemplateButton: (
+			props: Parameters<typeof actual.SaveAsTemplateButton>[0],
+		) => {
+			seen.privateProps("SaveAsTemplateButton", props);
+			return <actual.SaveAsTemplateButton {...props} />;
+		},
+	};
+});
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push: vi.fn(), replace: replaceRoute }),
 }));
@@ -137,6 +216,7 @@ beforeEach(() => {
 	apiFetch.mockReset();
 	seen.bindings = [];
 	seen.snapshots.mockClear();
+	seen.privateProps.mockClear();
 	replaceRoute.mockClear();
 });
 function respond(
@@ -569,7 +649,8 @@ it.each([
 		authenticated: true,
 		role: "ADMIN",
 		organizationId: "org",
-		effectiveUserId: "admin",
+		effectiveUserId: ownerId,
+		actorUserId: ownerId,
 		isImpersonating: false,
 	};
 	const rendered = renderWithQuery(<ChannelDetail id={ID} />, cachedAdmin);
@@ -632,7 +713,7 @@ it("shows unresolved AISA playback availability without a zero manifest count", 
 });
 
 it.each([
-	{ role: "OPERATOR" as const, publicPayload: false },
+	{ role: "ADMIN" as const, publicPayload: false },
 	{ role: "VIEWER" as const, publicPayload: true },
 	{ role: "OPERATOR" as const, publicPayload: true },
 ])("does not infer output waiting or no warnings from withheld AISA fields ($role, public=$publicPayload)", async ({
@@ -912,4 +993,255 @@ it("does not trust cached owner results after the fresh session request fails", 
 	expect(
 		apiFetch.mock.calls.some(([url]) => /\/api\/live\/analyses\//.test(url)),
 	).toBe(false);
+});
+
+const privateOwnerMarkers = [
+	"PrivateOwnerStream",
+	"private-owner-encoder",
+	"private-owner-plan",
+	"private-owner-step",
+	"private-owner-codec",
+	"private-owner-heartbeat-event",
+	"private-owner-vod-path",
+	"private-owner-vod-detail",
+	"private-owner-family-detail",
+];
+function cachedPrivateOwnerRow() {
+	const row = fixture(false);
+	const at = new Date().toISOString();
+	const heartbeat = {
+		at,
+		raw: {
+			ingest: {
+				status: "CONNECTED",
+				healthy: true,
+				streams: [
+					{
+						streamId: "video",
+						mediaType: "VIDEO",
+						codec: "private-owner-codec",
+					},
+				],
+			},
+			events: [
+				{
+					details: {
+						eventType: "WARNING",
+						message: "private-owner-heartbeat-event",
+					},
+				},
+			],
+		},
+	};
+	const steps = [
+		{
+			step: "private-owner-step",
+			kind: "CREATE_ENCODING",
+			status: "DONE",
+			payload: {},
+			request: { streamKey: "PrivateOwnerStream" },
+		},
+	];
+	const vod = {
+		status: "ERROR",
+		path: "private-owner-vod-path",
+		technicalDetail: "private-owner-vod-detail",
+		manifests: [],
+	};
+	Object.assign(row.plan, { name: "private-owner-plan" });
+	if ("start" in row.plan) row.plan.start.streamKey = "PrivateOwnerStream";
+	Object.assign(row, {
+		serverNow: at,
+		technicalDetailsAllowed: true,
+		streamKey: "PrivateOwnerStream",
+		encoderIp: "private-owner-encoder",
+		stepLog: steps,
+		lastHeartbeat: heartbeat,
+		liveToVod: vod,
+		liveToVodFamilies: {
+			supported: [],
+			unsupported: [
+				{ family: "HLS", technicalDetail: "private-owner-family-detail" },
+			],
+		},
+	});
+	Object.assign(row.currentRun, {
+		streamKey: "PrivateOwnerStream",
+		encoderIp: "private-owner-encoder",
+		stepLog: steps,
+		lastHeartbeat: heartbeat,
+		liveToVod: vod,
+		providerStatus: "RUNNING",
+		providerStatusObservedAt: at,
+	});
+	return row;
+}
+function latestPrivateProps(name: string) {
+	const call = seen.privateProps.mock.calls
+		.filter(([component]) => component === name)
+		.at(-1);
+	expect(call, `Expected real ${name} to render`).toBeDefined();
+	return call?.[1] as Record<string, unknown>;
+}
+function expectPrivateOwnerDataWithheld() {
+	const allProps = JSON.stringify(seen.privateProps.mock.calls);
+	for (const marker of privateOwnerMarkers) {
+		expect(allProps).not.toContain(marker);
+		expect(document.body).not.toHaveTextContent(marker);
+	}
+	expect(latestPrivateProps("FeederPanel")).toMatchObject({
+		plan: undefined,
+		streamKey: null,
+		encoderIp: null,
+		readOnly: true,
+	});
+	expect(latestPrivateProps("DeliveryStatusPanel")).toMatchObject({
+		lastHeartbeat: null,
+		heartbeatReception: undefined,
+		encoderIp: null,
+		warningEvidenceAvailable: false,
+	});
+	expect(latestPrivateProps("LiveArchivePanel")).toMatchObject({
+		plan: null,
+		run: null,
+	});
+	expect(latestPrivateProps("LiveToVodPanel")).toMatchObject({
+		record: null,
+		families: null,
+		technicalDetailsAllowed: false,
+	});
+	expect(document.getElementById("sec-analysis")).toBeNull();
+	expect(document.getElementById("sec-steps")).toBeNull();
+	expect(document.getElementById("sec-ingest")).toBeNull();
+	expect(document.getElementById("sec-heartbeat")).not.toHaveTextContent(
+		"CONNECTED",
+	);
+}
+
+it.each([
+	{ role: "ADMIN" as const, graph: "managed" },
+	{ role: "OPERATOR" as const, graph: "managed" },
+	{ role: "ADMIN" as const, graph: "unreadable" },
+	{ role: "OPERATOR" as const, graph: "unreadable" },
+])("withholds every private owner DTO prop while pending and after another fresh $role with $graph graph, then resumes safe monitoring", async ({
+	role,
+	graph,
+}) => {
+	const row = cachedPrivateOwnerRow();
+	if (graph === "unreadable")
+		Object.assign(row, { plan: { kind: "legacy-private-plan" } });
+	respond(row);
+	const normally = apiFetch.getMockImplementation();
+	let resolveSession: (value: unknown) => void = () => {};
+	const freshSession = new Promise((resolve) => {
+		resolveSession = resolve;
+	});
+	apiFetch.mockImplementation((url: string) =>
+		url === "/api/auth/session" ? freshSession : normally?.(url),
+	);
+	const cachedOwner = {
+		mode: "users",
+		configured: true,
+		authenticated: true,
+		role: "ADMIN",
+		actorUserId: ownerId,
+		effectiveUserId: ownerId,
+		organizationId: "org",
+		isImpersonating: false,
+	};
+	const rendered = renderWithQuery(<ChannelDetail id={ID} />, cachedOwner);
+	await screen.findByRole("heading", { name: "Court 1" });
+	expectPrivateOwnerDataWithheld();
+	const otherId = "00000000-0000-4000-8000-000000000098";
+	await act(async () =>
+		resolveSession({
+			...cachedOwner,
+			role,
+			actorUserId: otherId,
+			effectiveUserId: otherId,
+		}),
+	);
+	await waitFor(() =>
+		expect(rendered.client.getQueryData(["auth", "session"])).toMatchObject({
+			role,
+			effectiveUserId: otherId,
+		}),
+	);
+	expectPrivateOwnerDataWithheld();
+	expect(
+		apiFetch.mock.calls.some(([url]) =>
+			/\/runs\/[^/]+\/heartbeats(?:\?|$)/.test(url),
+		),
+	).toBe(false);
+	const safeHeartbeat = {
+		at: new Date().toISOString(),
+		raw: { ingest: { status: "CONNECTED", healthy: true, streams: [] } },
+	};
+	const safeRow = {
+		...row,
+		aisaFeatureAllowed: false,
+		technicalDetailsAllowed: false,
+		monitoringSafeForViewer: true,
+		plan: {
+			start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+		},
+		streamKey: null,
+		encoderIp: null,
+		stepLog: [],
+		lastHeartbeat: safeHeartbeat,
+		liveToVod: null,
+		liveToVodFamilies: null,
+		currentRun: {
+			...row.currentRun,
+			aisaAnalysisId: null,
+			aisaStatus: null,
+			aisaSnapshot: null,
+			streamKey: null,
+			encoderIp: null,
+			stepLog: [],
+			lastHeartbeat: safeHeartbeat,
+			liveToVod: null,
+			originObservation: null,
+		},
+	};
+	act(() => rendered.client.setQueryData(["live-channel", ID], safeRow));
+	await waitFor(() =>
+		expect(document.getElementById("sec-heartbeat")).toHaveTextContent(
+			"CONNECTED",
+		),
+	);
+	expect(latestPrivateProps("DeliveryStatusPanel").lastHeartbeat).toEqual(
+		safeHeartbeat,
+	);
+	expect(latestPrivateProps("FeederPanel")).toMatchObject({
+		plan: undefined,
+		streamKey: null,
+		encoderIp: null,
+		readOnly: true,
+	});
+	for (const marker of privateOwnerMarkers)
+		expect(JSON.stringify(seen.privateProps.mock.calls)).not.toContain(marker);
+	expect(seen.bindings).toEqual([]);
+});
+
+it("retains the private operational DTO for the same freshly authenticated owner", async () => {
+	respond(cachedPrivateOwnerRow());
+	renderWithQuery(<ChannelDetail id={ID} />);
+	await screen.findByTestId("aisa-analysis");
+	await waitFor(() =>
+		expect(latestPrivateProps("FeederPanel")).toMatchObject({
+			streamKey: "PrivateOwnerStream",
+			encoderIp: "private-owner-encoder",
+			readOnly: false,
+		}),
+	);
+	expect(latestPrivateProps("LiveArchivePanel").run).toMatchObject({
+		streamKey: "PrivateOwnerStream",
+	});
+	expect(latestPrivateProps("LiveToVodPanel")).toMatchObject({
+		record: {
+			path: "private-owner-vod-path",
+			technicalDetail: "private-owner-vod-detail",
+		},
+	});
 });

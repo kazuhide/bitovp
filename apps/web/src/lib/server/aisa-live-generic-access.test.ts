@@ -254,6 +254,26 @@ describe("single-owner AISA boundaries on ordinary routes", () => {
 		expect(response.status).toBe(404);
 		expect(mocks.update).not.toHaveBeenCalled();
 	});
+	it("reauthorizes the body reread after an ordinary preset PATCH", async () => {
+		mocks.preset
+			.mockResolvedValueOnce({
+				id,
+				kind: "LIVE_PLAN",
+				body: { planVersion: 1, name: "ordinary" },
+			})
+			.mockResolvedValueOnce({ id, kind: "LIVE_PLAN", body: plan });
+		mocks.update.mockResolvedValueOnce({ count: 1 });
+		const response = await patchPreset(
+			request("PATCH", {
+				name: "ordinary edit",
+				expectedUpdatedAt: "2026-11-08T00:00:00Z",
+			}),
+			params(),
+		);
+		expect(mocks.update).toHaveBeenCalledTimes(1);
+		expect(response.status).toBe(404);
+		expect(await response.text()).not.toContain("AISA_PREVIEW_MANAGED");
+	});
 	it("filters AISA preset metadata without returning any plan body", async () => {
 		mocks.presets.mockResolvedValue([
 			{ id, name: "normal", body: {} },

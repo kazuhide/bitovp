@@ -35,8 +35,56 @@ describe("explicit duration-review-v2 DRAFT speech priority", () => {
 		expect(f.runs).toEqual([]);
 	});
 	it("retains the whole-shot 100f anchor when the safe candidate is 89f and keeps all measured evidence, final captions and tracking", async () => {
-		const f = fixture(89, true, "DRAFT", true),
-			before = JSON.stringify(f.dependency.result),
+		const f = fixture(89, true, "DRAFT", true);
+		// The coarse segment tail crosses the anchor. These explicit authored
+		// words finish inside it; they are fixture timing, not ASR/runtime proof.
+		if (!Array.isArray(f.dependency.result.segments))
+			throw new Error("Missing authored transcript segments");
+		Object.assign(f.dependency.result.segments[1], {
+			words: [
+				{
+					text: "measured",
+					startUs: 3_500_000,
+					endUs: 3_533_333,
+					startChar: 0,
+					endChar: 8,
+					confidence: 0.9,
+				},
+				{
+					text: "speech",
+					startUs: 3_533_333,
+					endUs: 3_566_666,
+					startChar: 9,
+					endChar: 15,
+					confidence: 0.9,
+				},
+				{
+					text: "across",
+					startUs: 3_566_666,
+					endUs: 3_600_000,
+					startChar: 16,
+					endChar: 22,
+					confidence: 0.9,
+				},
+				{
+					text: "anchor",
+					startUs: 3_600_000,
+					endUs: 3_633_333,
+					startChar: 23,
+					endChar: 29,
+					confidence: 0.9,
+				},
+				{
+					text: "end",
+					startUs: 3_633_333,
+					endUs: 3_666_666,
+					startChar: 30,
+					endChar: 33,
+					confidence: 0.9,
+				},
+			],
+		});
+		const before = JSON.stringify(f.dependency.result),
 			result = await f.run();
 		expect(result).toMatchObject({
 			renderMode: "DRAFT",
@@ -73,7 +121,48 @@ describe("explicit duration-review-v2 DRAFT speech priority", () => {
 		expect(document.captions?.map((c) => c.text)).toContain(
 			"measured speech across anchor end",
 		);
-		expect(document.captions?.flatMap((c) => c.words ?? [])).toEqual([]);
+		expect(document.captions?.flatMap((c) => c.words ?? [])).toEqual([
+			{
+				text: "measured",
+				startChar: 0,
+				endChar: 8,
+				confidence: 0.9,
+				fromFrame: 95,
+				toFrame: 96,
+			},
+			{
+				text: "speech",
+				startChar: 9,
+				endChar: 15,
+				confidence: 0.9,
+				fromFrame: 96,
+				toFrame: 97,
+			},
+			{
+				text: "across",
+				startChar: 16,
+				endChar: 22,
+				confidence: 0.9,
+				fromFrame: 97,
+				toFrame: 98,
+			},
+			{
+				text: "anchor",
+				startChar: 23,
+				endChar: 29,
+				confidence: 0.9,
+				fromFrame: 98,
+				toFrame: 99,
+			},
+			{
+				text: "end",
+				startChar: 30,
+				endChar: 33,
+				confidence: 0.9,
+				fromFrame: 99,
+				toFrame: 100,
+			},
+		]);
 		expect(tracking.run).toHaveBeenCalledOnce();
 		expect(tracking.run.mock.calls[0]?.[0]).toHaveProperty(
 			"shots.1.endFrame",
@@ -84,6 +173,15 @@ describe("explicit duration-review-v2 DRAFT speech priority", () => {
 		expect(await f.run()).toEqual(result);
 		expect(f.projects).toHaveLength(1);
 		expect(f.revisions).toHaveLength(1);
+	});
+	it("omits unaligned coarse paragraphs without inventing caption words", async () => {
+		const f = fixture(89, true, "DRAFT", true);
+		const result = await f.run();
+		const document = compositionDocumentSchema.parse(f.projects[0]?.draft);
+		expect(document.captions).toEqual([]);
+		expect(document.captions?.flatMap((c) => c.words ?? [])).toEqual([]);
+		expect(result.warnings).toContain("CAPTION_ALIGNMENT_UNAVAILABLE");
+		expect(result.actualFrames).toBe(100);
 	});
 	it.each([
 		"DRAFT",

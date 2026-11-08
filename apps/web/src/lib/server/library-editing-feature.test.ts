@@ -5,8 +5,14 @@ import {
 	LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT,
 	PLAMO_CAPTION_TEMPLATE_HASH,
 } from "@bitovp/core";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isClipEditingAvailable } from "./library-editing-feature";
+
+const readiness = vi.hoisted(() => ({ read: vi.fn() }));
+vi.mock("./local-semantic-readiness", () => ({
+	readWorkerClipAvailability: readiness.read,
+}));
+beforeEach(() => readiness.read.mockReset().mockResolvedValue(true));
 
 const valid = {
 	BITOVP_LOCAL_SEMANTIC_ENABLED: "1",
@@ -18,6 +24,10 @@ const valid = {
 };
 afterEach(() => vi.unstubAllEnvs());
 describe("server-only clip editing availability", () => {
+	it("rejects configured but unreachable, CPU-only or unknown GPU evidence", async () => {
+		readiness.read.mockResolvedValue(false);
+		expect(await isClipEditingAvailable(valid)).toBe(false);
+	});
 	it.each([
 		{ BITOVP_LOCAL_CAPTION_PROVIDER: "PLAMO" },
 		{
@@ -29,10 +39,10 @@ describe("server-only clip editing availability", () => {
 			BITOVP_LOCAL_CAPTION_PROVIDER: "QWEN",
 			BITOVP_LOCAL_CAPTION_MANIFEST_FILE: "/not-installed/fixture.json",
 		},
-	])("fails closed for missing or invalid explicit caption provider metadata %#", (caption) => {
-		expect(isClipEditingAvailable({ ...valid, ...caption })).toBe(false);
+	])("fails closed for missing or invalid explicit caption provider metadata %#", async (caption) => {
+		expect(await isClipEditingAvailable({ ...valid, ...caption })).toBe(false);
 	});
-	it("accepts public installed metadata for the selected profile only, without inferring or health probing", () => {
+	it("accepts public installed metadata for the selected profile only, with worker-verified GPU availability", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "caption-gate-")),
 			file = join(dir, "public.json");
 		try {
@@ -62,15 +72,15 @@ describe("server-only clip editing availability", () => {
 				BITOVP_LOCAL_CAPTION_PROVIDER: "PLAMO",
 				BITOVP_LOCAL_CAPTION_MANIFEST_FILE: file,
 			};
-			expect(isClipEditingAvailable(env)).toBe(true);
+			expect(await isClipEditingAvailable(env)).toBe(true);
 			expect(
-				isClipEditingAvailable({
+				await isClipEditingAvailable({
 					...env,
 					BITOVP_LOCAL_SEMANTIC_PROFILE: "amd",
 				}),
 			).toBe(false);
 			writeFileSync(file, "{}");
-			expect(isClipEditingAvailable(env)).toBe(false);
+			expect(await isClipEditingAvailable(env)).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -80,8 +90,8 @@ describe("server-only clip editing availability", () => {
 		{ BITOVP_LOCAL_SEMANTIC_ENABLED: "1" },
 		{ ...valid, BITOVP_LOCAL_SEMANTIC_ENABLED: "0" },
 		{ ...valid, BITOVP_LOCAL_SEMANTIC_ENABLED: "true" },
-	])("is disabled for absent, partial or non-enabled settings %#", (env) =>
-		expect(isClipEditingAvailable(env)).toBe(false));
+	])("is disabled for absent, partial or non-enabled settings %#", async (env) =>
+		expect(await isClipEditingAvailable(env)).toBe(false));
 	it.each([
 		["BITOVP_LOCAL_SEMANTIC_GATEWAY_URL", "http://fixture.invalid"],
 		[
@@ -92,26 +102,28 @@ describe("server-only clip editing availability", () => {
 		["BITOVP_LOCAL_SEMANTIC_CA_FILE", "relative.pem"],
 		["BITOVP_LOCAL_SEMANTIC_PROFILE", "external-provider"],
 		["BITOVP_LOCAL_SEMANTIC_CONFIG_ID", "invalid-private-identity"],
-	])("fails closed without throwing or logging config for invalid %s", (key, value) => {
-		const log = vi.spyOn(console, "error").mockImplementation(() => {});
-		expect(isClipEditingAvailable({ ...valid, [key]: value })).toBe(false);
+	])("fails closed without throwing or logging config for invalid %s", async (key, value) => {
+		const log = vi.spyOn(console, "error").mockImplementation(async () => {});
+		expect(await isClipEditingAvailable({ ...valid, [key]: value })).toBe(
+			false,
+		);
 		expect(log).not.toHaveBeenCalled();
 		log.mockRestore();
 	});
 	it.each([
 		"amd",
 		"nvidia",
-	])("accepts a validated local %s profile without probing health", (profile) =>
+	])("accepts a validated local %s profile with worker-verified GPU availability", async (profile) =>
 		expect(
-			isClipEditingAvailable({
+			await isClipEditingAvailable({
 				...valid,
 				BITOVP_LOCAL_SEMANTIC_PROFILE: profile,
 			}),
 		).toBe(true));
-	it("uses current process settings each time rather than retaining stale availability", () => {
+	it("uses current process settings each time rather than retaining stale availability", async () => {
 		for (const [key, value] of Object.entries(valid)) vi.stubEnv(key, value);
-		expect(isClipEditingAvailable()).toBe(true);
+		expect(await isClipEditingAvailable()).toBe(true);
 		vi.stubEnv("BITOVP_LOCAL_SEMANTIC_ENABLED", "0");
-		expect(isClipEditingAvailable()).toBe(false);
+		expect(await isClipEditingAvailable()).toBe(false);
 	});
 });

@@ -17,7 +17,7 @@ export default async function ContentDetailPage({
 			id={id}
 			player={await readPlayerClientConfig()}
 			initialScene={readLibrarySceneSelection(await searchParams)}
-			clipEditingAvailable={isClipEditingAvailable()}
+			clipEditingAvailable={await isClipEditingAvailable()}
 		/>
 	);
 }

@@ -30,6 +30,7 @@ export const localSemanticDiagnosticResultSchema = z.strictObject({
 			"INVALID_RESPONSE",
 			"GATEWAY_VERSION_MISMATCH",
 			"MODEL_NOT_INSTALLED",
+			"GPU_UNVERIFIED",
 		]),
 	}),
 });

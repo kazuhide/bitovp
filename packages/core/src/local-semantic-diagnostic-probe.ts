@@ -10,6 +10,7 @@ import {
 	LOCAL_SEMANTIC_RUNTIME_VERSION,
 } from "./content-editing/local-semantic-protocol";
 import {
+	LOCAL_CLIP_AVAILABILITY_TTL_MS,
 	type LocalSemanticReadinessReport,
 	localSemanticGatewayReadinessSchema,
 } from "./content-editing/local-semantic-readiness";
@@ -137,6 +138,27 @@ export async function probeLocalSemanticGateway(
 	return probeGateway(config, readMetadata, signal, captionSelection, false);
 }
 
+/** Preserve the original GPU observation clock; downstream caches cannot renew old proof. */
+export async function probeLocalClipGateway(
+	config: LocalSemanticConfiguration,
+	readMetadata = readLocalSemanticMetadata,
+	signal?: AbortSignal,
+	captionSelection?: LocalCaptionTranslationSelection,
+) {
+	let gpuObservedAt: number | undefined;
+	const diagnostic = await probeGateway(
+		config,
+		readMetadata,
+		signal,
+		captionSelection,
+		false,
+		(observedAt) => {
+			gpuObservedAt = observedAt;
+		},
+	);
+	return { ...diagnostic, gpuObservedAt };
+}
+
 export async function probeLocalStoryFlowGateway(
 	config: LocalSemanticConfiguration,
 	readMetadata = readLocalSemanticMetadata,
@@ -161,6 +183,7 @@ async function probeGateway(
 	signal: AbortSignal | undefined,
 	captionSelection: LocalCaptionTranslationSelection | undefined,
 	flow: boolean | "CHOICE",
+	observeGpu?: (observedAt: number) => void,
 ): Promise<GatewayResult> {
 	const scope = "METADATA_ONLY" as const;
 	const deadline = AbortSignal.any([
@@ -199,6 +222,17 @@ async function probeGateway(
 		);
 		if (!readiness.success || readiness.data.profile !== config.profile)
 			return { code: "INVALID_RESPONSE", scope };
+		const gpu = readiness.data.gpu;
+		if (
+			readiness.data.ready &&
+			(!gpu ||
+				gpu.profile !== config.profile ||
+				gpu.backend !== (config.profile === "nvidia" ? "CUDA" : "ROCm") ||
+				gpu.observedAt < Date.now() - LOCAL_CLIP_AVAILABILITY_TTL_MS ||
+				gpu.observedAt > Date.now() + 5_000)
+		)
+			return { code: "GPU_UNVERIFIED", scope };
+		if (readiness.data.ready && gpu) observeGpu?.(gpu.observedAt);
 		if (readiness.data.ready && captionSelection?.provider === "PLAMO") {
 			if (captionSelection.identity.profile !== config.profile)
 				return { code: "MODEL_MISMATCH", scope };

@@ -63,6 +63,7 @@ describe("speech selection intent is fenced before unfinished work", () => {
 		f.task.requestHash = mediaTaskIntentHash(f.task.parameters.input);
 		f.task.cacheKey = mediaTaskCacheKey(f.task.parameters.input, identity);
 		await createLibraryMediaTaskSweep({
+			canClaim: async () => true,
 			prisma: f.prisma,
 			browserFor,
 			now: () => f.now,
@@ -122,6 +123,7 @@ describe("speech selection intent is fenced before unfinished work", () => {
 			throw new Error("source must remain untouched");
 		});
 		await createLibraryMediaTaskSweep({
+			canClaim: async () => true,
 			prisma: f.prisma,
 			browserFor,
 			now: () => f.now,
@@ -167,6 +169,7 @@ describe("speech selection intent is fenced before unfinished work", () => {
 		});
 		const before = structuredClone(f.task);
 		await createLibraryMediaTaskSweep({
+			canClaim: async () => true,
 			prisma: f.prisma,
 			browserFor,
 			now: () => f.now,

@@ -143,7 +143,11 @@ pnpm --filter @bitovp/worker exec tsx -e 'import {writeFileSync} from "node:fs";
 
 registryを書き換えただけではアプリの新方式は有効になりません。review済みGateway source・5stage registry・アプリ・DBのreceipt kind対応を揃え、metadata probeで5件のschema/prompt/budgetを照合してから、web/workerの公開compose設定で `BITOVP_LOCAL_STORY_CHOICE_ENABLED=1` を指定します。secret env、CA、token、model/profile pinsは変更しません。既設unitへの更新・rollbackは配備時の固定manifestと運用記録に従い、初回provision scriptを再実行しません。
 
-既設Gatewayへの更新時に下の初回導入scriptを再実行しません。運用者がidleと所有unitを確認し、既存directory/unitと公開registryをbackupしてから、`gateway.py`・`plamo_runtime.py`とregistryを同じ検証済みsnapshotから更新し、同じunitを再起動します。token・tenant・証明書・profile設定は維持します。healthで旧二段と新翻訳stageのschema/prompt identityを照合した後、別途実推論を確認します。
+既設Gatewayへの更新時に下の初回導入scriptを再実行しません。運用者がidleと所有unitを確認し、既存directory/unitと公開registryをbackupしてから、`gateway.py`・`gpu_capability.py`・`plamo_runtime.py`とregistryを同じ検証済みsnapshotから更新し、同じunitを再起動します。token・tenant・証明書・profile設定は維持します。healthで旧二段と新翻訳stageのschema/prompt identityを照合した後、別途実推論を確認します。
+
+`/readiness/<profile>` の READY は、固定したruntime版・モデルdigestに加え、`bitovp-runtime-gpu-capability-v1` の新鮮なGPU能力情報を要求します。`gpu_capability.py` は、専用user serviceのMainPID、同一UID・mount/user namespace、専用loopback listener、実行中のbinary、profileのGPU選択条件を照合します。実runtimeとGatewayのUID/GID・補助group・有効capability・LSM contextが異なる場合、runtimeにSeccomp filterがある場合、未知のdevice制限がある場合も能力を確認済みとはしません。DeviceAllowはsystemctlが空値を省略するため、固定unitのD-Bus propertyをbusctlで読み、型付きの空配列 `a(ss) 0` を明示確認します。欠落・不正な型・空でない配列は拒否します。そのruntimeと固定backend libraryのSHAを確認し、同じGPU選択条件でOllama 0.40.14の `gpu-discover` だけを実行します。CUDA/ROCm backendが列挙した実デバイスと正の空きメモリを確認し、CPUのみ・sysfsのみ・未知の状態は `GPU_UNVERIFIED` とします。モデルはロードせず、chat/generate/download/unloadも呼びません。モデルを毎回unloadする待機状態でも能力を確認できます。実推論後のGPU配置と解放確認は引き続き別に必須です。
+
+Workerは4秒以内のmetadata確認をまとめ、5秒間隔で更新します。元のGPU観測時刻を保持し、15秒を超えた成功はWeb受付にもWorkerの新規claimにも使いません。WebはRedisのWorker状態だけを読み、画面からLANを直接probeしません。取得不能時も既存結果の参照、所有タスクのcancel、確定済みartifactの回復は維持します。GPU-discovery子プロセスはGatewayと同じuser unitのメモリ予算に入ります。モデルを使わない管理用preflightで子プロセスの最大RSSが304,412 KiB、親が25,044 KiBだったため、provisionerのGateway予算は有限の `MemoryMax=512M` とします。既設256Mはこの子プロセスの実測だけでも超えます。配備時は所有Gateway unitも512Mへ更新し、そのunit内の実際の認証付きGETで `MemoryPeak`、OOM、再起動数、timeoutを測定してください。管理用shellの成功はGatewayの権限・制限やcgroup内での成功を保証しません。CLIやfixtureの成功だけを実機確認として扱いません。
 
 ```sh
 python3 tools/local-semantic-gateway/provision_gateway.py \
@@ -176,7 +180,7 @@ runtime の公開 `buildRecipeHash` は `installation_recipe_hash(profile,item)`
 
 loader の探索 directory とbinary/libraryの親directoryは、子directoryを持たないflatな専用領域にします。bin/lib/weightsは兄弟に分け、明示したloader rootsにpinned regular artifactだけを置きます。glibc-hwcapsを含む子directory、未列挙ファイル、symlink aliasを入口で拒否し、再帰探索は行いません。全root合計512entryを上限とし、legacy配置も条件を満たさなければmetadata不一致で実行を拒否します。lab外だけでなく既にpinnedの別libraryへhwcaps aliasを向けても、同identityで解決先が変わることを許しません。配置検証は起動時・metadata照合時・nativeへ字幕を渡す前に行います。
 
-`generate_plamo_units.py --directory /absolute/lab/gateway --output /new/empty-directory` は実 artifact 検証後、**inactive unit ファイルを生成するだけ**です。自動 install/enable/start はありません。profile ごとに `bitovp-plamo-caption-nvidia.service`（loopback11438）/`bitovp-plamo-caption-amd.service`（11439）を運用者が配置し確認するまで実行不可です。Gateway の 256M、既設 Qwen の 11435/11436、共有11434の設定・予算は変更しません。専用 unit は別 cgroup、最大80GiBの明示予算・swap0・Restart=no・KillMode=control-group、Gateway に BindsTo します。予算は重みサイズ+2GiB以上を必要としますが、この下限は実 peak や正常完走を保証しません。
+`generate_plamo_units.py --directory /absolute/lab/gateway --output /new/empty-directory` は実 artifact 検証後、**inactive unit ファイルを生成するだけ**です。自動 install/enable/start はありません。profile ごとに `bitovp-plamo-caption-nvidia.service`（loopback11438）/`bitovp-plamo-caption-amd.service`（11439）を運用者が配置し確認するまで実行不可です。PLaMo専用unitの生成はGatewayの512M予算、既設Qwenの11435/11436、共有11434の設定・予算を変更しません。専用 unit は別 cgroup、最大80GiBの明示予算・swap0・Restart=no・KillMode=control-group、Gateway に BindsTo します。予算は重みサイズ+2GiB以上を必要としますが、この下限は実 peak や正常完走を保証しません。
 
 専用 `/v1/plamo-caption-jobs` は fixed PFML3 completion のみ、context8192/output1536/temp0/seed41、UTF8 prompt5632bytes以内です。任意 model/URL/schema/argv/tools を受け付けません。原文・時計をモデルに生成させません。1 cue ごとの native job を集約した検証済み batch を、既存 `LOCAL_CAPTION_TRANSLATION_V1` の別 strict v3 proof として保存します。全 cue の検証後のみ文書へ適用し、途中失敗で一部の字幕を公開しません。現実装は job ごとに起動/停止するため、モデル常駐による高速化は実施していません。
 

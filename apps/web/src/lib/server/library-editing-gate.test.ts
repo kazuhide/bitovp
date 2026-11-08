@@ -5,6 +5,10 @@ const mocks = vi.hoisted(() => ({
 	backend: vi.fn(),
 	context: vi.fn(),
 	audit: vi.fn(),
+	availability: vi.fn(),
+}));
+vi.mock("./local-semantic-readiness", () => ({
+	readWorkerClipAvailability: mocks.availability,
 }));
 vi.mock("./context", () => ({ getServerContext: mocks.context }));
 vi.mock("./audit", () => ({
@@ -121,6 +125,7 @@ function enable() {
 	});
 }
 beforeEach(() => {
+	mocks.availability.mockReset().mockResolvedValue(true);
 	for (const key of keys) vi.stubEnv(`BITOVP_LOCAL_SEMANTIC_${key}`, undefined);
 	mocks.backend.mockReset().mockResolvedValue({ id });
 	mocks.audit.mockReset().mockResolvedValue(undefined);
@@ -131,7 +136,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 type RouteCase = [string, string, (request: Request) => Promise<Response>];
-const disabledRoutes: RouteCase[] = [
+const allRoutes: RouteCase[] = [
 	["edits", "GET", (r) => editsGET(r)],
 	["edits", "POST", (r) => editsPOST(r)],
 	["edits/id", "GET", (r) => projectGET(r, context)],
@@ -158,7 +163,49 @@ const disabledRoutes: RouteCase[] = [
 	["sources/id/media-versions", "POST", (r) => preparePOST(r, context)],
 	["portrait-generations", "POST", (r) => portraitPOST(r)],
 ];
+const readRoutes = allRoutes.filter(
+	([path, method]) =>
+		["GET", "HEAD"].includes(method) && path !== "editing-font",
+);
+const disabledRoutes = allRoutes.filter(
+	([, method]) => !["GET", "HEAD"].includes(method),
+);
 describe("editing APIs require local configuration before action or body processing", () => {
+	it("retains font reads when no GPU is available, reporting only the actual missing font", async () => {
+		vi.stubEnv("EDITING_FONT_PATH", undefined);
+		const response = await fontGET();
+		expect(response.status).toBe(503);
+		expect((await response.json()).error).toBe("EDITING_FONT_UNAVAILABLE");
+		expect(mocks.availability).not.toHaveBeenCalled();
+	});
+	it.each(
+		readRoutes,
+	)("preserves stored %s %s reads while GPU work is unavailable", async (path, method, invoke) => {
+		if (path === "editing-media") mocks.backend.mockResolvedValueOnce([]);
+		const response = await invoke(
+			new Request(`http://localhost/api/library/${path}?contentId=${id}`, {
+				method,
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(mocks.backend).toHaveBeenCalled();
+		expect(mocks.availability).not.toHaveBeenCalled();
+	});
+	it("rejects configured but unverified GPU mutations before parsing or backend work", async () => {
+		enable();
+		mocks.availability.mockResolvedValue(false);
+		for (const [path, method, invoke] of disabledRoutes) {
+			const req = new Request(`http://localhost/api/library/${path}`, {
+				method,
+				...(["POST", "PUT"].includes(method)
+					? { body: "{malformed-not-read" }
+					: {}),
+			});
+			expect((await invoke(req)).status).toBe(503);
+			expect(req.bodyUsed).toBe(false);
+		}
+		expect(mocks.backend).not.toHaveBeenCalled();
+	});
 	it.each(
 		disabledRoutes,
 	)("refuses %s %s with no backend side effects", async (path, method, invoke) => {

@@ -6,8 +6,10 @@ import {
 } from "@/lib/server/library-media-tasks";
 
 export async function GET(req: Request) {
-	return editingRoute(() =>
-		listMediaTasks(Object.fromEntries(new URL(req.url).searchParams)),
+	return editingRoute(
+		() => listMediaTasks(Object.fromEntries(new URL(req.url).searchParams)),
+		200,
+		{ allowUnavailable: "ARTIFACT_READ" },
 	);
 }
 export async function POST(req: Request) {

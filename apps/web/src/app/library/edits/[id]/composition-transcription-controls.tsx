@@ -294,6 +294,13 @@ function TranscriptionSession({
 	const result =
 		authorized && phase === "IDLE" ? results[resultKey] : undefined;
 	const busy = phase === "RUNNING";
+	const actionLabel = busy
+		? c.running
+		: phase === "UNKNOWN"
+			? c.retry
+			: phase === "READ_FAILED"
+				? c.refresh
+				: c.start;
 	const locked = busy || phase === "UNKNOWN" || phase === "READ_FAILED";
 	useEffect(() => {
 		mounted.current = true;
@@ -496,19 +503,19 @@ function TranscriptionSession({
 									<option value="en">{c.en}</option>
 								</select>
 							</label>
-							<Button
-								type="button"
-								disabled={!allowed || busy}
-								onClick={() => void recognize()}
-							>
-								{busy
-									? c.running
-									: phase === "UNKNOWN"
-										? c.retry
-										: phase === "READ_FAILED"
-											? c.refresh
-											: c.start}
-							</Button>
+							{canMutate ? (
+								<Button
+									type="button"
+									disabled={!allowed || busy}
+									onClick={() => void recognize()}
+								>
+									{actionLabel}
+								</Button>
+							) : (
+								<Button type="button" disabled>
+									{actionLabel}
+								</Button>
+							)}
 						</div>
 					</>
 				)}

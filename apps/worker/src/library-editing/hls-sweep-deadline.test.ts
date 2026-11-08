@@ -149,6 +149,7 @@ it("bounds a stalled HLS output upload and never publishes READY after its total
 		normalization,
 	}));
 	const tick = createLibraryEditingSweep({
+		canClaim: async () => true,
 		prisma: prisma as unknown as AppPrismaClient,
 		browserFor: async () => browser,
 		now: () => now,

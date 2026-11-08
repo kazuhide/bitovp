@@ -15,14 +15,14 @@ paths have different purposes; inspect each before starting work.
 
 ### Create highlight and portrait clips
 
-Clip creation and editing require the operator-configured local LLM. Without
-a complete, valid configuration, clip entry points and editing pages are unavailable,
-editing APIs refuse requests, and the worker does not start clip processing. There
-is no automatic metadata-only or external Claude/GPT fallback. Original content,
-AISA inspection and normal encoding remain available. Existing projects and media
-are retained; published artifact reads and cancellation requests remain available.
-Pending clip recovery, cancellation settlement and artifact cleanup resume when
-the local configuration is restored.
+Clip creation and editing require an operator-configured local LLM and fresh
+worker verification that its dedicated runtime can use the selected GPU. A valid
+configuration or installed model alone does not enable clips. Missing, expired or
+unverified evidence disables new clip work in the UI, API and worker. There is no
+automatic metadata-only or external Claude/GPT fallback. Original content, AISA
+inspection and normal encoding remain available. Existing projects, tasks,
+completed exports and media remain readable. Cancellation and recovery of an
+already committed artifact remain available while new clip work is disabled.
 
 The library home shows original contents. Open a content to find its **Clip drafts**:
 one content can have multiple independent editing projects, including alternatives
@@ -56,20 +56,25 @@ or decode errors are refused instead of silently shortening the source. Source
 limits are 4GiB and 60 minutes. VFR, HDR, rotation and unsupported formats require
 preparation outside this editor.
 
-The automatic proposal uses a portrait canvas, AISA metadata-based highlight
-selection, measured tracking and local captions when audio is available. Select
-the content and desired length; naming a subject, genre or key moment is optional.
-The initial ranking uses English/Japanese event descriptions, including nonhuman
-characters, objects and quiet outcomes. It is a metadata heuristic; it does not
-guarantee story understanding or continuous object recognition. A folded selection
-record shows the inferred content type, key elements and selected moments at
-creation time, including fallback information. It remains a creation record after
-manual edits. Additional generation settings add an optional content query with
-cohesion selection, duration selection, measured subject tracking, local
-captions and up to three formats. Requested length is a maximum: selection keeps
-whole shots in source order and does not repeat footage to fill missing time.
-Progress, cancellation and same-request recovery are available while the editing
-proposal is prepared. It opens the same project for review, before MP4 encoding.
+The default proposal uses a portrait canvas and a local story-led edit: the model
+relates subjects and events in AISA and recognized speech, then proposes a connected
+structure within the desired length. Choose automatic, story-flow or thematic
+editing. Naming subjects or key moments is optional.
+Missing context remains uncertain; the proposal does not guarantee story
+understanding or continuous recognition. Safe whole-frame presentation with a
+background preserves subjects when the available evidence does not support a crop.
+Measured tracking and local captions are used when supported by the source.
+Dedicated teaser/summary purposes and spoiler controls remain planned; the current
+story-led mode does not certify that a clip conceals a culprit or climax.
+
+Advanced settings also offer metadata-based automatic highlights, scene continuity
+and closest whole-shot duration. These are explicit selection alternatives, not a
+fallback that bypasses the local LLM availability requirement. A folded creation
+record shows the selected moments and their evidence; it remains a creation record
+after manual edits. Requested length is a maximum: selection preserves source
+order and does not repeat footage to fill missing time. Progress, cancellation and
+same-request recovery are available while the proposal is prepared. It opens the
+same project for review before MP4 encoding.
 
 For an unprepared encoding output, **Create project** resolves its source and
 destination automatically. The flow retains your analysis, duration and advanced settings
@@ -91,10 +96,9 @@ Automatic adoption requires a recorded source association. Captured input
 identity, an editor's explicit time/geometry/content checks and authored demo
 metadata have separate labels. A matching title or duration is insufficient.
 Review an unverified source against its scene descriptions before confirming it.
-The local Docker preview distinguishes authored samples from actual BBB and
-live-action AISA/output data. The validation imports reused existing encodings;
-no additional paid encoding job was submitted.
-see the [Japanese preview guide](../EDITING-PREVIEW.ja.md) for dialogue and model setup.
+The local Docker preview distinguishes authored samples from actual AISA/output
+data. Fixture validation does not establish quality across all content.
+See the [Japanese preview guide](../EDITING-PREVIEW.ja.md) for dialogue and model setup.
 
 The local preview also supports the optional, pinned `large-v3-turbo-q5_0` ASR
 model with `node scripts/editing-preview.mjs asr --model large-v3-turbo-q5_0`.

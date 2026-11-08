@@ -6,10 +6,13 @@ import { editingBody, editingRoute } from "@/lib/server/library-editing-common";
 import { editingMutation } from "@/lib/server/library-editing-routes";
 
 export async function GET(req: Request) {
-	return editingRoute(() =>
-		inspectAnalysisAssociation(
-			Object.fromEntries(new URL(req.url).searchParams),
-		),
+	return editingRoute(
+		() =>
+			inspectAnalysisAssociation(
+				Object.fromEntries(new URL(req.url).searchParams),
+			),
+		200,
+		{ allowUnavailable: "ARTIFACT_READ" },
 	);
 }
 export async function POST(req: Request) {

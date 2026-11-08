@@ -9,7 +9,9 @@ export async function GET(
 	const { id } = await params;
 	const result =
 		invalidIdResponse(id) ??
-		(await editingRoute(() => serveEditingObject(req, id, "MEDIA")));
+		(await editingRoute(() => serveEditingObject(req, id, "MEDIA"), 200, {
+			allowUnavailable: "ARTIFACT_READ",
+		}));
 	result.headers.set("Cache-Control", "private, no-store");
 	result.headers.set("X-Content-Type-Options", "nosniff");
 	return result;

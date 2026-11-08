@@ -31,10 +31,12 @@ export function PortraitResultContent({
 	project,
 	run,
 	videoAttempt,
+	allowEditing = true,
 }: {
 	project: AnyEditingProjectView;
 	run: EditingRenderView | undefined;
 	videoAttempt: number;
+	allowEditing?: boolean;
 }) {
 	const { t, locale } = useT();
 	const c = useCompositionCopy();
@@ -135,12 +137,14 @@ export function PortraitResultContent({
 							{t("editing.autoPortrait.download")}
 						</a>
 					)}
-					<Link
-						href={`/library/edits/${project.id}`}
-						className={`${linkFocus} inline-flex min-h-10 items-center justify-center border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800`}
-					>
-						{t("editing.autoPortrait.edit")}
-					</Link>
+					{allowEditing && (
+						<Link
+							href={`/library/edits/${project.id}`}
+							className={`${linkFocus} inline-flex min-h-10 items-center justify-center border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800`}
+						>
+							{t("editing.autoPortrait.edit")}
+						</Link>
+					)}
 				</div>
 				{artifact?.derivedContentId && (
 					<Link

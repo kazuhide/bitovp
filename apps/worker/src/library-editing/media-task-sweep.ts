@@ -46,6 +46,7 @@ type Dependencies = MediaTaskExecutionDependencies & {
 	concurrency?: number;
 	timeoutMs?: number;
 	localStoryTimeoutMs?: number;
+	canClaim: () => Promise<boolean>;
 };
 type Claimed = { task: LibraryMediaTask; verified: VerifiedMediaTask };
 
@@ -89,6 +90,7 @@ async function claim(
 				});
 				return null;
 			}
+			if ((await deps.canClaim?.()) !== true) return null;
 			const rejectIntent = async (code: string) => {
 				await tx.libraryMediaTask.updateMany({
 					where: fence,

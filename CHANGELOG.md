@@ -9,7 +9,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Added
 
 - Editable clips under each Library content, with source/output/AISA loading,
-  desired duration and creation purpose, Local LLM story proposals, source/result
+  desired duration and editing approach, Local LLM story proposals, source/result
   previews and a visual timeline. A proposal remains editable before explicit MP4 export.
 - Multiple projects per content, clip thumbnails, saved revisions, framing
   keyframes, captions, titles, audio controls and optional local Japanese translation.

@@ -137,6 +137,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		}
 		const sweep = (now = () => new Date()) =>
 			createLibraryMediaTaskSweep({
+				canClaim: async () => true,
 				prisma: a,
 				browserFor: vi.fn(),
 				concurrency: 2,

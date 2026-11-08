@@ -31,10 +31,28 @@ const projectShape = z.object({
 	draft: anyEditingDocumentSchema,
 	renders: z.array(portraitRenderShape),
 });
-export function PortraitResult({ id }: { id: string }) {
-	return <PortraitResultView key={id} id={id} />;
+export function PortraitResult({
+	id,
+	clipEditingAvailable = true,
+}: {
+	id: string;
+	clipEditingAvailable?: boolean;
+}) {
+	return (
+		<PortraitResultView
+			key={id}
+			id={id}
+			clipEditingAvailable={clipEditingAvailable}
+		/>
+	);
 }
-function PortraitResultView({ id }: { id: string }) {
+function PortraitResultView({
+	id,
+	clipEditingAvailable,
+}: {
+	id: string;
+	clipEditingAvailable: boolean;
+}) {
 	const { t } = useT();
 	const c = useCompositionCopy();
 	const canMutate = useMutationAccess("library.edits.result");
@@ -114,11 +132,13 @@ function PortraitResultView({ id }: { id: string }) {
 				project={project}
 				run={latest}
 				videoAttempt={videoAttempt}
+				allowEditing={clipEditingAvailable}
 			/>
 			<div className="space-y-3 border-zinc-800 border-t pt-4">
 				{canMutate && (
 					<PortraitResultActions
 						project={project}
+						allowNewRender={clipEditingAvailable}
 						onRun={acceptRun}
 						disabled={query.isError}
 					/>

@@ -181,6 +181,11 @@ export function LibraryClient({
 				</TabsList>
 			</div>
 			<TabsContent value={mode} className="mt-0 space-y-4">
+				{!clipEditingAvailable && (
+					<p className="text-sm text-zinc-400">
+						{t("clipDiagnostics.unavailable")}
+					</p>
+				)}
 				<div className="flex flex-wrap items-center gap-3">
 					<Input
 						className="max-w-md"

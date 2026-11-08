@@ -4,7 +4,6 @@ import {
 	editingObjectSchema,
 	editingOutputSchema,
 	librarySourceSnapshotSchema,
-	readLocalSemanticConfiguration,
 } from "@bitovp/core";
 import {
 	listCapturedOriginalInputs,
@@ -25,6 +24,7 @@ import {
 } from "./library-editing-candidates";
 import { EditingRequestError, json, mediaView } from "./library-editing-common";
 import { resolveAutomaticEditingContext } from "./library-editing-context";
+import { isClipEditingAvailable } from "./library-editing-feature";
 import { libraryEditingHlsOutputs } from "./library-editing-hls-output";
 import { libraryFileOutputsForSource } from "./library-playback";
 import { serveObjectDownload } from "./object-download";
@@ -167,12 +167,7 @@ export async function editingEligibility(sourceId: string) {
 		chosenAnalysis && !analyses.some((row) => row.id === chosenAnalysis.id)
 			? [...analyses, chosenAnalysis]
 			: analyses;
-	let localStoryAvailable = false;
-	try {
-		localStoryAvailable = !!readLocalSemanticConfiguration(process.env);
-	} catch {
-		// A partial operator configuration does not expose a selectable engine.
-	}
+	const localStoryAvailable = await isClipEditingAvailable();
 	return {
 		sourceId,
 		storyAvailable: false,

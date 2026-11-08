@@ -55,6 +55,7 @@ describe("queued generation does not adopt a mutable project cache", () => {
 			cacheable: false,
 		});
 		await createLibraryMediaTaskSweep({
+			canClaim: async () => true,
 			prisma: f.prisma,
 			browserFor: vi.fn(),
 			now: () => instant,

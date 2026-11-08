@@ -257,6 +257,7 @@ for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
 		} as unknown as AppPrismaClient;
 		try {
 			await createLibraryEditingSweep({
+				canClaim: async () => true,
 				prisma: db,
 				browserFor: async () => browser,
 				now: () => now,

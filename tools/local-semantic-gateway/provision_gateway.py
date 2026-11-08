@@ -22,6 +22,7 @@ if any(':11437 ' in line for line in subprocess.run(['ss','-lntH'],capture_outpu
 os.umask(0o077);folder.mkdir(mode=0o700)
 (folder/'owner.json').write_text(json.dumps({'owner':'bitovp-local-story-integration-20261104','experimental':True}))
 (folder/'gateway.py').write_bytes(base64.b64decode(p['source']))
+(folder/'gpu_capability.py').write_bytes(base64.b64decode(p['gpuCapabilitySource']))
 (folder/'plamo_runtime.py').write_bytes(base64.b64decode(p['plamoRuntimeSource']))
 (folder/'stages.json').write_text(json.dumps(p['registry'],ensure_ascii=False,indent=2))
 token=secrets.token_urlsafe(48)
@@ -29,7 +30,7 @@ token=secrets.token_urlsafe(48)
 subprocess.run(['openssl','req','-x509','-newkey','rsa:3072','-nodes','-keyout',str(folder/'server-key.pem'),'-out',str(folder/'gateway-ca.pem'),'-days','365','-subj','/CN=bitovp-semantic-x1pro','-addext','subjectAltName=IP:192.168.68.62,DNS:x1pro-lan','-addext','basicConstraints=critical,CA:TRUE','-addext','keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign','-addext','extendedKeyUsage=serverAuth'],check=True,capture_output=True)
 client={'BITOVP_LOCAL_SEMANTIC_ENABLED':'1','BITOVP_LOCAL_SEMANTIC_GATEWAY_URL':'https://192.168.68.62:11437','BITOVP_LOCAL_SEMANTIC_GATEWAY_TOKEN':token,'BITOVP_LOCAL_SEMANTIC_CA_FILE':'/run/bitovp-local-semantic/gateway-ca.pem','BITOVP_LOCAL_SEMANTIC_PROFILE':'nvidia','BITOVP_LOCAL_SEMANTIC_CONFIG_ID':str(uuid.uuid4())}
 (folder/'gateway-client.env').write_text(''.join(k+'='+v+'\n' for k,v in client.items()))
-text='\n'.join(['[Unit]','Description=BitOVP experimental local semantic Gateway','After=network-online.target','','[Service]','Type=simple','ExecStart=/usr/bin/python3 '+str(folder/'gateway.py')+' --directory '+str(folder),'WorkingDirectory='+str(folder),'Environment=PYTHONDONTWRITEBYTECODE=1','Environment=PYTHONUNBUFFERED=1','UMask=0077','NoNewPrivileges=true','LimitNOFILE=512','TasksMax=32','MemoryMax=256M','Restart=on-failure','RestartSec=3','TimeoutStopSec=90','KillMode=control-group','','[Install]','WantedBy=default.target',''])
+text='\n'.join(['[Unit]','Description=BitOVP experimental local semantic Gateway','After=network-online.target','','[Service]','Type=simple','ExecStart=/usr/bin/python3 '+str(folder/'gateway.py')+' --directory '+str(folder),'WorkingDirectory='+str(folder),'Environment=PYTHONDONTWRITEBYTECODE=1','Environment=PYTHONUNBUFFERED=1','UMask=0077','NoNewPrivileges=true','LimitNOFILE=512','TasksMax=32','MemoryMax=512M','Restart=on-failure','RestartSec=3','TimeoutStopSec=90','KillMode=control-group','','[Install]','WantedBy=default.target',''])
 unit.write_text(text)
 subprocess.run(['systemctl','--user','daemon-reload'],check=True,capture_output=True)
 subprocess.run(['systemctl','--user','enable','--now','bitovp-semantic-gateway.service'],check=True,capture_output=True)
@@ -66,6 +67,7 @@ def main():
     if any((args.output / name).exists() for name in names):
         raise ValueError('local handoff files already exist; refuse overwrite')
     payload = {'source': base64.b64encode((Path(__file__).parent / 'gateway.py').read_bytes()).decode(),
+               'gpuCapabilitySource': base64.b64encode((Path(__file__).parent / 'gpu_capability.py').read_bytes()).decode(),
                'plamoRuntimeSource': base64.b64encode((Path(__file__).parent / 'plamo_runtime.py').read_bytes()).decode(), 'registry': registry}
     script = REMOTE.replace('PAYLOAD', repr(payload), 1)
     ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=yes', 'x1pro-lan']

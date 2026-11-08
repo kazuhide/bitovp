@@ -279,6 +279,7 @@ function setup() {
 	});
 	mocks.reconcile.mockResolvedValue({ created: 0, preserved: 0 });
 	const tick = createLibraryEditingSweep({
+		canClaim: async () => true,
 		prisma: db as unknown as AppPrismaClient,
 		browserFor,
 		now: () => instant,

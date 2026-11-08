@@ -60,6 +60,7 @@ type Dependencies = {
 	signal?: AbortSignal;
 	ffmpegPath?: string;
 	ffprobePath?: string;
+	canClaim: () => Promise<boolean>;
 };
 type LeaseStatus = "OK" | "CANCELED" | "LEASE_LOST";
 
@@ -923,6 +924,7 @@ export function createLibraryEditingSweep(deps: Dependencies) {
 			});
 			for (const row of rows) {
 				if (deps.signal?.aborted) break;
+				if ((await deps.canClaim?.()) !== true) break;
 				const leaseToken = randomUUID();
 				const claimed = await deps.prisma.libraryMediaVersion.updateMany({
 					where: { id: row.id, ...eligible },
@@ -986,6 +988,8 @@ export function createLibraryEditingSweep(deps: Dependencies) {
 				const pendingArtifactToken =
 					row.pendingArtifactToken ??
 					(row.state === "VALIDATING" ? row.leaseToken : null);
+				// Recover an already-owned durable artifact even while new work is disabled.
+				if (!pendingArtifactToken && (await deps.canClaim?.()) !== true) break;
 				const leaseToken = randomUUID();
 				const claimed = await deps.prisma.renderRun.updateMany({
 					where: { id: row.id, ...renderEligible },

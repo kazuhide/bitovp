@@ -5,7 +5,7 @@ const state = vi.hoisted(() => ({
 	player: vi.fn(async () => ({ provider: "native" })),
 }));
 vi.mock("@/lib/server/library-editing-feature", () => ({
-	isClipEditingAvailable: () => state.available,
+	isClipEditingAvailable: async () => state.available,
 }));
 vi.mock("@/lib/server/player-config", () => ({
 	readPlayerClientConfig: state.player,
@@ -62,10 +62,7 @@ it("passes only request-time availability to original browse and detail pages", 
 });
 
 it.each([
-	["project creation", EditingLibraryPage],
 	["editor", EditingPage],
-	["generation progress", GenerationPage],
-	["editing result", PortraitResultPage],
 ] as const)("rejects the direct %s page before mounting editing UI when local editing is unavailable", async (_name, page) => {
 	await expect(
 		page({ params: Promise.resolve({ id: "project" }) }),
@@ -77,4 +74,14 @@ it.each([
 	await expect(
 		page({ params: Promise.resolve({ id: "project" }) }),
 	).rejects.toThrow("CLIP_EDITING_NOT_FOUND");
+});
+
+it.each([
+	["existing projects", EditingLibraryPage],
+	["generation progress and cancellation", GenerationPage],
+	["existing editing result", PortraitResultPage],
+] as const)("keeps %s visible while disabling new GPU work", async (_name, page) => {
+	const view = await page({ params: Promise.resolve({ id: "project" }) });
+	expect(view.props.id ?? view.props.contentId).toBe("project");
+	expect(view.props.clipEditingAvailable).toBe(false);
 });

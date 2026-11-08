@@ -172,6 +172,7 @@ function setup() {
 		return { created: 1, preserved: 0 };
 	});
 	const tick = createLibraryEditingSweep({
+		canClaim: async () => true,
 		prisma: db as unknown as AppPrismaClient,
 		browserFor: async () => browser,
 		now: () => now,

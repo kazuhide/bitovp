@@ -109,6 +109,24 @@ it("plays only the latest real export and displays fixed output duration with na
 	).toHaveAttribute("href", `/library/${editingIds.content}`);
 });
 
+it("keeps existing results and owned cancellation while GPU render admission is disabled", async () => {
+	const value = project();
+	value.renders = [run("RENDERING")];
+	apiFetch.mockResolvedValue(value);
+	renderWithQuery(
+		<PortraitResult id={editingIds.project} clipEditingAvailable={false} />,
+	);
+	expect(
+		await screen.findByRole("button", { name: "Request cancellation" }),
+	).toBeEnabled();
+	expect(
+		screen.getByRole("button", { name: "Retry MP4 generation" }),
+	).toBeDisabled();
+	expect(
+		screen.queryByRole("link", { name: "Edit video" }),
+	).not.toBeInTheDocument();
+});
+
 it("does not present an old successful artifact after the newest export fails", async () => {
 	const value = project();
 	value.renders = [run("SUCCEEDED", 1), run("FAILED", 2)];

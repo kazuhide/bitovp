@@ -46,7 +46,7 @@ function responses(url: string) {
 it.each([
 	undefined,
 	false,
-])("does not mount project creation or read editing data when availability is %s", (clipEditingAvailable) => {
+])("does not mount project creation but preserves stored project reads when availability is %s", async (clipEditingAvailable) => {
 	apiFetch.mockImplementation(async (url: string) => responses(url));
 	renderWithQuery(
 		<EditingLibraryClient
@@ -55,7 +55,12 @@ it.each([
 		/>,
 	);
 	expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
-	expect(apiFetch).not.toHaveBeenCalled();
+	await screen.findByText("No clip drafts yet.");
+	expect(
+		apiFetch.mock.calls.every(
+			([url, init]) => url.startsWith("/api/library/edits?") && !init?.method,
+		),
+	).toBe(true);
 });
 it("creates a project from a ready fixed material and chosen format", async () => {
 	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>

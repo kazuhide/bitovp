@@ -25,9 +25,11 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 type Row = Record<string, unknown>;
-type DeadlineOptions = Pick<
-	Parameters<typeof createLibraryMediaTaskSweep>[0],
-	"timeoutMs" | "localStoryTimeoutMs"
+type DeadlineOptions = Partial<
+	Pick<
+		Parameters<typeof createLibraryMediaTaskSweep>[0],
+		"timeoutMs" | "localStoryTimeoutMs" | "canClaim"
+	>
 >;
 function setup(
 	mode: "TRANSCRIBE" | "LOCAL_STORY" | "DURATION" = "TRANSCRIBE",
@@ -229,6 +231,7 @@ function setup(
 	execute.mockResolvedValue({ segments: [{ text: "実際の結果" }] });
 	const controller = new AbortController();
 	const sweep = createLibraryMediaTaskSweep({
+		canClaim: async () => true,
 		prisma,
 		browserFor: vi.fn(),
 		now: () => instant,
@@ -250,6 +253,16 @@ function setup(
 	};
 }
 describe("durable production worker fences", () => {
+	it("does not claim clip tasks without GPU availability but retains owned cancellation", async () => {
+		const f = setup("TRANSCRIBE", { canClaim: async () => false });
+		await f.sweep();
+		expect(f.row).toMatchObject({ state: "PENDING", attempts: 0 });
+		expect(execute).not.toHaveBeenCalled();
+		f.row.cancelRequestedAt = new Date();
+		await f.sweep();
+		expect(f.row.state).toBe("CANCELED");
+		expect(execute).not.toHaveBeenCalled();
+	});
 	it("runs one actual execution and commits result against the owning lease", async () => {
 		const f = setup();
 		await f.sweep();

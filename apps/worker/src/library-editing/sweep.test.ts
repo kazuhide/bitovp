@@ -71,6 +71,7 @@ afterEach(() => {
 function setup(
 	mediaOverrides: Record<string, unknown> = {},
 	signal?: AbortSignal,
+	canClaim?: () => Promise<boolean>,
 ) {
 	let current = instant;
 	const media: Record<string, unknown> = {
@@ -317,6 +318,7 @@ function setup(
 		browserFor,
 		now: () => current,
 		signal,
+		canClaim: canClaim ?? (async () => true),
 	});
 	return {
 		media,
@@ -340,6 +342,13 @@ function setup(
 }
 
 describe("durable editing media preparation", () => {
+	it("leaves queued media untouched when verified GPU capability is unavailable", async () => {
+		const f = setup({}, undefined, async () => false);
+		await f.tick();
+		expect(f.media.state).toBe("PENDING");
+		expect(mocks.download).not.toHaveBeenCalled();
+		expect(mocks.normalize).not.toHaveBeenCalled();
+	});
 	it("keeps a source rejected as incomplete out of READY and never uploads prepared bytes", async () => {
 		const f = setup();
 		mocks.probe.mockRejectedValueOnce(
@@ -448,8 +457,8 @@ describe("durable editing media preparation", () => {
 	});
 });
 
-function renderSetup(signal?: AbortSignal) {
-	const f = setup({ state: "READY" }, signal);
+function renderSetup(signal?: AbortSignal, canClaim?: () => Promise<boolean>) {
+	const f = setup({ state: "READY" }, signal, canClaim);
 	const storage = f.media.storage as Record<string, unknown>;
 	storage.prepared = {
 		credentialId: id(4),
@@ -660,6 +669,7 @@ describe("editing sweep tenant fairness", () => {
 		};
 		const sweep = tenantService(() =>
 			createLibraryEditingSweep({
+				canClaim: async () => true,
 				prisma: db as unknown as AppPrismaClient,
 				browserFor: async () => {
 					throw new Error("Empty organizations need no storage");
@@ -930,7 +940,7 @@ describe("durable editing rendering", () => {
 		expect(mocks.render).toHaveBeenCalledOnce();
 	});
 	it("recovers a durable artifact token after a lease claim crashed before validation", async () => {
-		const f = renderSetup();
+		const f = renderSetup(undefined, async () => false);
 		const artifactToken = id(50);
 		const originalKey = `clips/renders/${id(9)}/${artifactToken}/artifact.mp4`;
 		f.stored.add(originalKey);

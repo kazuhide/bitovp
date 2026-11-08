@@ -383,6 +383,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				},
 			);
 			await createLibraryMediaTaskSweep({
+				canClaim: async () => true,
 				prisma: db,
 				browserFor: vi.fn(),
 				generate: handler(),

@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { localizedTitle } from "@/lib/i18n/metadata";
 import { isClipEditingAvailable } from "@/lib/server/library-editing-feature";
 import { EditingLibraryClient } from "./editing-library";
@@ -9,7 +8,11 @@ export default async function EditingLibraryPage({
 }: {
 	params: Promise<{ id: string }>;
 }) {
-	if (!isClipEditingAvailable()) notFound();
 	const { id } = await params;
-	return <EditingLibraryClient contentId={id} clipEditingAvailable />;
+	return (
+		<EditingLibraryClient
+			contentId={id}
+			clipEditingAvailable={await isClipEditingAvailable()}
+		/>
+	);
 }

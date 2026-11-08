@@ -319,7 +319,11 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				browserFor = vi.fn(() => {
 					throw new Error("must not download");
 				});
-			await createLibraryMediaTaskSweep({ prisma: db, browserFor })();
+			await createLibraryMediaTaskSweep({
+				canClaim: async () => true,
+				prisma: db,
+				browserFor,
+			})();
 			const stored = await db.libraryMediaTask.findUniqueOrThrow({
 				where: { id: f.task.id },
 			});
@@ -346,7 +350,11 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(
 				await db.editProject.count({ where: { contentId: f.content.id } }),
 			).toBe(0);
-			await createLibraryMediaTaskSweep({ prisma: db, browserFor })();
+			await createLibraryMediaTaskSweep({
+				canClaim: async () => true,
+				prisma: db,
+				browserFor,
+			})();
 			expect(
 				await db.libraryMediaTask.findUniqueOrThrow({
 					where: { id: f.task.id },

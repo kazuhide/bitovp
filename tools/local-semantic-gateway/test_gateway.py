@@ -90,6 +90,14 @@ class FakeRuntime:
         self.block = False
         self.cleanup_error = False
 
+    def readiness(self, profile):
+        return 'READY'
+
+    def gpu_capability(self, profile):
+        return {'version': 'bitovp-runtime-gpu-capability-v1', 'profile': profile,
+                'method': 'OLLAMA_NATIVE_DISCOVERY', 'backend': 'CUDA' if profile == 'nvidia' else 'ROCm',
+                'observedAt': round(time.time() * 1000)}
+
     def identity(self, profile):
         self.calls.append(('identity', profile))
         if self.invalid_identity:
@@ -130,6 +138,8 @@ class PendingLoadRuntime(FixedRuntime):
         self.release.set()
         self.models = []
         self.chat_error = None
+
+    gpu_capability = FakeRuntime.gpu_capability
 
     def request(self, profile, route, payload=None, control=None):
         self.calls.append((profile, route, payload))
@@ -622,15 +632,28 @@ class GatewayTests(unittest.TestCase):
         self.gateway.runtime = FixedRuntime()
         before_health = self.call('GET', '/health')
         for profile in PORTS:
-            with patch.object(self.gateway.runtime, 'request', side_effect=[
+            gpu = FakeRuntime().gpu_capability(profile)
+            with patch.object(self.gateway.runtime, 'gpu_capability', return_value=gpu), patch.object(self.gateway.runtime, 'request', side_effect=[
                     {'version': RUNTIME_VERSION}, {'models': [{'name': MODEL, 'digest': MODEL_DIGEST}]}]) as runtime_request:
                 self.assertEqual(self.call('GET', '/readiness/' + profile), (200, {
                     'version': 'bitovp-semantic-readiness-v1', 'profile': profile,
-                    'scope': 'METADATA_ONLY', 'ready': True, 'code': 'READY'}))
+                    'scope': 'METADATA_ONLY', 'ready': True, 'code': 'READY', 'gpu': gpu}))
                 self.assertEqual(runtime_request.call_args_list, [
                     unittest.mock.call(profile, '/api/version'), unittest.mock.call(profile, '/api/tags')])
         self.assertEqual(self.call('GET', '/health'), before_health)
         self.assertIsNone(self.gateway.store.next_queued())
+
+    def test_cpu_only_and_unknown_gpu_reject_readiness_and_job_admission_but_keep_reads_and_cancel(self):
+        status, job = self.call('POST', '/v1/semantic-jobs', request())
+        self.assertEqual(status, 202)
+        self.gateway.runtime = FixedRuntime()
+        def metadata(profile, route):
+            return {'version': RUNTIME_VERSION} if route == '/api/version' else {'models': [{'name': MODEL, 'digest': MODEL_DIGEST}]}
+        with patch.object(self.gateway.runtime, 'request', side_effect=metadata), patch.object(self.gateway.runtime, 'gpu_capability', return_value=None):
+            self.assertEqual(self.call('GET', '/readiness/nvidia')[1]['code'], 'GPU_UNVERIFIED')
+            self.assertEqual(self.call('POST', '/v1/semantic-jobs', request())[0], 503)
+            self.assertEqual(self.call('GET', '/v1/semantic-jobs/' + job['id'])[0], 200)
+            self.assertEqual(self.call('POST', '/v1/semantic-jobs/' + job['id'] + '/cancel', {})[0], 200)
 
     def test_readiness_reports_mismatch_and_transport_failures_without_raw_details(self):
         self.gateway.runtime = FixedRuntime()
@@ -907,8 +930,8 @@ class GatewayTests(unittest.TestCase):
                 return {'model': MODEL, 'done': True, 'done_reason': 'unload'}
             raise AssertionError('Unexpected fake API operation')
         self.gateway.runtime = runtime
-        job = self.submit()
-        with patch.object(runtime, 'request', side_effect=backend):
+        with patch.object(runtime, 'request', side_effect=backend), patch.object(runtime, 'gpu_capability', side_effect=FakeRuntime().gpu_capability):
+            job = self.submit()
             self.gateway.run_one()
         result = self.call('GET', '/v1/semantic-jobs/' + job)[1]
         self.assertEqual(result['state'], 'SUCCEEDED')

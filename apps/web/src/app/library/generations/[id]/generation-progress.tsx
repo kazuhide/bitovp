@@ -57,10 +57,28 @@ function phaseSegmentCounts(task: MediaTaskView | undefined) {
 	return { completed, total, copyKey: fields[2] };
 }
 
-export function GenerationProgress({ id }: { id: string }) {
-	return <GenerationProgressView key={id} id={id} />;
+export function GenerationProgress({
+	id,
+	clipEditingAvailable = true,
+}: {
+	id: string;
+	clipEditingAvailable?: boolean;
+}) {
+	return (
+		<GenerationProgressView
+			key={id}
+			id={id}
+			clipEditingAvailable={clipEditingAvailable}
+		/>
+	);
 }
-function GenerationProgressView({ id }: { id: string }) {
+function GenerationProgressView({
+	id,
+	clipEditingAvailable,
+}: {
+	id: string;
+	clipEditingAvailable: boolean;
+}) {
 	const c = useProductionCopy(),
 		router = useRouter(),
 		client = useQueryClient();
@@ -131,6 +149,7 @@ function GenerationProgressView({ id }: { id: string }) {
 		}
 	}
 	async function retry() {
+		if (!clipEditingAvailable) return;
 		if (
 			!canMutate ||
 			submitting.current ||
@@ -179,6 +198,7 @@ function GenerationProgressView({ id }: { id: string }) {
 	const openedProject = useRef<string | null>(null);
 	useEffect(() => {
 		if (
+			!clipEditingAvailable ||
 			!mounted.current ||
 			!result?.success ||
 			result.data.renderMode !== "DRAFT" ||
@@ -188,7 +208,7 @@ function GenerationProgressView({ id }: { id: string }) {
 			return;
 		openedProject.current = result.data.projectId;
 		router.replace(`/library/edits/${result.data.projectId}`);
-	}, [result, router]);
+	}, [result, router, clipEditingAvailable]);
 	const phase =
 		task?.state === "ERROR"
 			? draftMode
@@ -269,12 +289,15 @@ function GenerationProgressView({ id }: { id: string }) {
 								<Link
 									className="inline-flex rounded font-medium text-emerald-400 text-sm underline focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
 									href={
-										draftResult
+										draftResult && clipEditingAvailable
 											? `/library/edits/${projectId}`
 											: `/library/edits/${projectId}/result`
 									}
 								>
-									{draftResult ? c.openEditor : c.result} ·{" "}
+									{draftResult && clipEditingAvailable
+										? c.openEditor
+										: c.result}{" "}
+									·{" "}
 									{result.data.presetIds[index] === "landscape-clean"
 										? c.landscape
 										: result.data.presetIds[index] === "square-clean"
@@ -329,16 +352,19 @@ function GenerationProgressView({ id }: { id: string }) {
 								: c.cancel}
 					</Button>
 				)}
-				{canMutate && task && ["ERROR", "CANCELED"].includes(task.state) && (
-					<Button
-						disabled={!!busy || query.isError}
-						onClick={() => {
-							void retry();
-						}}
-					>
-						{busy === "retry" ? c.retrying : c.retry}
-					</Button>
-				)}
+				{canMutate &&
+					clipEditingAvailable &&
+					task &&
+					["ERROR", "CANCELED"].includes(task.state) && (
+						<Button
+							disabled={!!busy || query.isError}
+							onClick={() => {
+								void retry();
+							}}
+						>
+							{busy === "retry" ? c.retrying : c.retry}
+						</Button>
+					)}
 				<Button
 					variant="ghost"
 					disabled={query.isFetching}

@@ -6,7 +6,9 @@ export async function GET(
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const { id } = await params;
-	const response = await editingRoute(() => serveImageAsset(req, id));
+	const response = await editingRoute(() => serveImageAsset(req, id), 200, {
+		allowUnavailable: "ARTIFACT_READ",
+	});
 	response.headers.set("Cache-Control", "private, no-store");
 	response.headers.set("X-Content-Type-Options", "nosniff");
 	return response;

@@ -88,6 +88,23 @@ it("shows processing phases and cancels against the current task", async () => {
 		expect.objectContaining({ method: "POST" }),
 	);
 });
+
+it("retains running-task cancellation when GPU availability is lost", async () => {
+	mocks.api.mockResolvedValue(task());
+	renderWithQuery(<GenerationProgress id={id} clipEditingAvailable={false} />);
+	expect(
+		await screen.findByRole("button", { name: "Cancel generation" }),
+	).toBeEnabled();
+});
+
+it("does not offer retries while GPU availability is missing", async () => {
+	mocks.api.mockResolvedValue(task("ERROR"));
+	renderWithQuery(<GenerationProgress id={id} clipEditingAvailable={false} />);
+	await screen.findByText("Generation failed");
+	expect(
+		screen.queryByRole("button", { name: "Retry as a new task" }),
+	).not.toBeInTheDocument();
+});
 it("links every generated result without claiming that the MP4 render finished", async () => {
 	mocks.api.mockResolvedValue(task("SUCCEEDED", result()));
 	renderWithQuery(<GenerationProgress id={id} />);

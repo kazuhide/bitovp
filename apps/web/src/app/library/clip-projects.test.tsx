@@ -29,6 +29,21 @@ function project(id: string): EditingProjectSummary {
 
 beforeEach(() => apiFetch.mockReset());
 
+it("allows an explicit stored-results view without editor or creation admission", async () => {
+	apiFetch.mockResolvedValue({
+		items: [project("saved")],
+		total: 1,
+		offset: 0,
+	});
+	renderWithQuery(<ClipProjects contentId="source" readOnly />);
+	expect(
+		await screen.findByRole("link", { name: "Alternative saved" }),
+	).toHaveAttribute("href", "/library/edits/saved/result");
+	expect(
+		screen.queryByRole("link", { name: "Create another clip" }),
+	).not.toBeInTheDocument();
+});
+
 it.each([
 	undefined,
 	false,

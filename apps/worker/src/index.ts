@@ -84,7 +84,10 @@ import {
 	startLocalSemanticDiagnostics,
 	startLocalStoryChoiceDiagnostics,
 } from "./library-editing/runtime-diagnostics";
-import { createConfiguredLibraryEditing } from "./library-editing/runtime-gate";
+import {
+	createClipEditingRuntimeGate,
+	createConfiguredLibraryEditing,
+} from "./library-editing/runtime-gate";
 import {
 	PUBLISH_LOCAL_SEMANTIC_HEARTBEAT,
 	REMOVE_LOCAL_SEMANTIC_HEARTBEAT,
@@ -654,6 +657,7 @@ const editingAsrModel =
 		: undefined;
 let editingCaptionModelHash: string | undefined;
 let editingCaptionSelection: LocalCaptionTranslationSelection | undefined;
+let editingGpuGate: ReturnType<typeof createClipEditingRuntimeGate> | undefined;
 const editingWorkQueue = createEditingWorkQueue();
 const editingSweepLoop = createConfiguredLibraryEditing(
 	process.env,
@@ -663,6 +667,10 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 		);
 		editingCaptionSelection = captionSelection;
 		editingCaptionModelHash = hashEditingEvidence(captionSelection.identity);
+		const gpuGate = createClipEditingRuntimeGate(
+			editingSemanticConfiguration,
+			captionSelection,
+		);
 		const editingLocalStoryEngine = createLocalStoryEngine({
 			prisma,
 			config: editingSemanticConfiguration,
@@ -671,6 +679,7 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 		});
 		const processLibraryProduction = tenantService(() =>
 			createLibraryMediaTaskSweep({
+				canClaim: gpuGate.canClaim,
 				prisma,
 				browserFor: editingBrowserFor,
 				model: editingAsrModel,
@@ -692,6 +701,7 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 		);
 		const processLibraryEditing = tenantService(() =>
 			createLibraryEditingSweep({
+				canClaim: gpuGate.canClaim,
 				prisma,
 				signal: editingShutdownController.signal,
 				browserFor: async (credentialId) => {
@@ -727,6 +737,8 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 					console.error("[library-editing] sweep failed; next tick retries"),
 			),
 		);
+		editingGpuGate = gpuGate;
+		gpuGate.start();
 		return sweepLoop;
 	},
 );
@@ -734,6 +746,12 @@ const editingRuntimeHeartbeat = startLocalSemanticHeartbeat({
 	env: process.env,
 	captionModelHash: editingCaptionModelHash,
 	initialized: Boolean(editingSweepLoop),
+	clipAvailability: () =>
+		editingGpuGate?.observation() ?? {
+			version: "local-clip-availability-v1",
+			checkedAt: 0,
+			code: "UNAVAILABLE",
+		},
 	publish: (keys, row, ttlMs) =>
 		wakePublisher.eval(
 			PUBLISH_LOCAL_SEMANTIC_HEARTBEAT,
@@ -2210,6 +2228,7 @@ const shutdown = createShutdown({
 	stopFeeders: () => {
 		stopping = true;
 		editingShutdownController.abort();
+		void editingGpuGate?.stop();
 		return forEachTenantService(feederProcessor, (instance) =>
 			instance.stopAll(),
 		).flat();

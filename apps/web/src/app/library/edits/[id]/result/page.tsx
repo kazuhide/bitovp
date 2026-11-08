@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { localizedTitle } from "@/lib/i18n/metadata";
 import { isClipEditingAvailable } from "@/lib/server/library-editing-feature";
 import { PortraitResult } from "./portrait-result";
@@ -11,7 +10,11 @@ export default async function PortraitResultPage({
 }: {
 	params: Promise<{ id: string }>;
 }) {
-	if (!isClipEditingAvailable()) notFound();
 	const { id } = await params;
-	return <PortraitResult id={id} />;
+	return (
+		<PortraitResult
+			id={id}
+			clipEditingAvailable={await isClipEditingAvailable()}
+		/>
+	);
 }

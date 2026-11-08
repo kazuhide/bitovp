@@ -6,6 +6,8 @@ const PROVISIONS_AT_CREATE =
 
 export const ja = {
 	clipDiagnostics: {
+		unavailable:
+			"GPU上で利用できるローカルモデルを確認できないため、クリップ作成は利用できません。",
 		title: "クリップ編集",
 		caption: "ローカルモデルと編集サービスの接続状態を確認します。",
 		diagnose: "接続を診断",
@@ -15,7 +17,7 @@ export const ja = {
 		gateway: "ローカルモデル",
 		details: "診断の詳細・復帰方法",
 		scope:
-			"設定、編集サービスの初期化、モデルの登録情報を確認します。モデルのロードや推論は行いません。",
+			"設定、編集サービスの初期化、モデルの識別情報、GPUの利用能力を確認します。モデルのロードや推論は行いません。",
 		counts: "準備済み {ready} 台 ／ 初期化失敗 {failed} 台",
 		checkedAt: "診断時刻：{time}",
 		failed: "診断を完了できませんでした。もう一度お試しください。",
@@ -26,7 +28,7 @@ export const ja = {
 		configurationRecovery:
 			"サーバー側でローカルGateway、token、信頼するCA、GPU profileを設定し、webと編集サービスを再起動してください。",
 		metadataOnly:
-			"モデルの登録情報を確認できました。GPUの空き容量と推論の成功は、実ジョブでの確認が必要です。",
+			"モデルの登録情報とGPUの利用能力を確認できました。実際のモデル配置と推論の成功は、実ジョブでの確認が必要です。",
 		states: {
 			DISABLED: "オフ",
 			INVALID: "設定が不足しています",
@@ -44,6 +46,7 @@ export const ja = {
 			RUNTIME_VERSION_MISMATCH: "runtimeの版が一致しません",
 			MODEL_MISMATCH: "必要なモデルがないか、一致しません",
 			MODEL_NOT_INSTALLED: "選択した翻訳モデルが未導入です",
+			GPU_UNVERIFIED: "利用できるGPUを確認できません",
 			CONNECTION_FAILED: "Gatewayに接続できません",
 			AUTH_FAILED: "認証に失敗しました",
 			TLS_FAILED: "証明書を確認できません",

@@ -6,5 +6,10 @@ export async function GET(
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const { id } = await params;
-	return invalidIdResponse(id) ?? editingRoute(() => readEditingRender(id));
+	return (
+		invalidIdResponse(id) ??
+		editingRoute(() => readEditingRender(id), 200, {
+			allowUnavailable: "ARTIFACT_READ",
+		})
+	);
 }

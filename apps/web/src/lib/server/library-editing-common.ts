@@ -48,7 +48,7 @@ export async function editingRoute(
 		const allowedException =
 			options.allowUnavailable === "ARTIFACT_READ" ||
 			options.allowUnavailable === "CANCEL";
-		if (!allowedException && !isClipEditingAvailable())
+		if (!allowedException && !(await isClipEditingAvailable()))
 			throw new EditingRequestError(503, "CLIP_EDITING_UNAVAILABLE");
 		const result = await action();
 		return result instanceof Response

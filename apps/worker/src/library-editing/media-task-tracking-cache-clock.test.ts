@@ -71,6 +71,7 @@ function fixture(
 }
 async function sweep(f: ReturnType<typeof fixture>) {
 	await createLibraryMediaTaskSweep({
+		canClaim: async () => true,
 		prisma: f.prisma,
 		browserFor: vi.fn(),
 		now: () => f.instant,

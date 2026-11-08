@@ -9,7 +9,7 @@ export default async function EditingPage({
 }: {
 	params: Promise<{ id: string }>;
 }) {
-	if (!isClipEditingAvailable()) notFound();
+	if (!(await isClipEditingAvailable())) notFound();
 	const { id } = await params;
 	return <EditorRouter id={id} />;
 }

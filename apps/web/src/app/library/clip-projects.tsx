@@ -17,24 +17,30 @@ const linkClass =
 
 export function ClipProjects({
 	clipEditingAvailable = false,
+	readOnly = false,
 	...props
 }: {
 	contentId: string;
 	showCreate?: boolean;
 	showHeading?: boolean;
 	clipEditingAvailable?: boolean;
+	readOnly?: boolean;
 }) {
-	return clipEditingAvailable ? <AvailableClipProjects {...props} /> : null;
+	return clipEditingAvailable || readOnly ? (
+		<AvailableClipProjects {...props} canEdit={clipEditingAvailable} />
+	) : null;
 }
 
 function AvailableClipProjects({
 	contentId,
 	showCreate = true,
 	showHeading = true,
+	canEdit,
 }: {
 	contentId: string;
 	showCreate?: boolean;
 	showHeading?: boolean;
+	canEdit: boolean;
 }) {
 	const { t } = useT();
 	const [offset, setOffset] = useState(0);
@@ -68,7 +74,7 @@ function AvailableClipProjects({
 							t("editing.clipDraftCount", { count: query.data.total })}
 					</span>
 				)}
-				{showCreate && (
+				{showCreate && canEdit && (
 					<Link
 						href={`/library/${contentId}/edits`}
 						className={`${linkClass} text-sm`}
@@ -102,7 +108,11 @@ function AvailableClipProjects({
 					)}
 					<ul className="divide-y divide-zinc-800">
 						{query.data.items.map((project) => (
-							<ClipProjectRow key={project.id} project={project} />
+							<ClipProjectRow
+								key={project.id}
+								project={project}
+								canEdit={canEdit}
+							/>
 						))}
 					</ul>
 					{(query.data.total > 25 || offset > 0) && (
@@ -142,7 +152,13 @@ function AvailableClipProjects({
 	);
 }
 
-function ClipProjectRow({ project }: { project: EditingProjectSummary }) {
+function ClipProjectRow({
+	project,
+	canEdit,
+}: {
+	project: EditingProjectSummary;
+	canEdit: boolean;
+}) {
 	const { t } = useT();
 	const titleId = useId();
 	const seconds =
@@ -152,7 +168,7 @@ function ClipProjectRow({ project }: { project: EditingProjectSummary }) {
 	return (
 		<li className="min-w-0 py-1">
 			<Link
-				href={`/library/edits/${project.id}`}
+				href={`/library/edits/${project.id}${canEdit ? "" : "/result"}`}
 				aria-labelledby={titleId}
 				className="flex min-w-0 items-center gap-3 rounded p-3 hover:bg-zinc-900/50 focus-visible:outline-2 focus-visible:outline-emerald-500"
 			>

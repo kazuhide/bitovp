@@ -2,6 +2,13 @@ import { z } from "zod";
 import type { LocalSemanticConfiguration } from "./local-semantic-config";
 
 export const LOCAL_SEMANTIC_HEARTBEAT_TTL_MS = 45_000;
+export const LOCAL_CLIP_AVAILABILITY_TTL_MS = 15_000;
+export const localClipAvailabilitySchema = z.strictObject({
+	version: z.literal("local-clip-availability-v1"),
+	checkedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+	code: z.enum(["READY", "UNAVAILABLE"]),
+});
+export type LocalClipAvailability = z.infer<typeof localClipAvailabilitySchema>;
 export const localSemanticWorkerHeartbeatSchema = z.strictObject({
 	version: z.literal("local-semantic-worker-v1"),
 	connectionHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -9,6 +16,7 @@ export const localSemanticWorkerHeartbeatSchema = z.strictObject({
 	profile: z.enum(["amd", "nvidia"]),
 	state: z.enum(["READY", "INITIALIZATION_FAILED"]),
 	observedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+	clipAvailability: localClipAvailabilitySchema.optional(),
 });
 export type LocalSemanticWorkerHeartbeat = z.infer<
 	typeof localSemanticWorkerHeartbeatSchema
@@ -81,12 +89,47 @@ export function summarizeLocalSemanticWorkers(
 	return { code, readyCount, failedCount } as const;
 }
 
+/** Old initialization heartbeats and expired successes never enable clip work. */
+export function summarizeClipEditingAvailability(
+	rows: readonly unknown[],
+	connectionHash: string,
+	profile: "amd" | "nvidia",
+	now: number,
+): boolean {
+	if (rows.length > 100) return false;
+	return rows.some((value) => {
+		const result = localSemanticWorkerHeartbeatSchema.safeParse(value);
+		if (!result.success) return false;
+		const row = result.data;
+		const check = row.clipAvailability;
+		return (
+			row.connectionHash === connectionHash &&
+			row.profile === profile &&
+			row.state === "READY" &&
+			row.observedAt >= now - LOCAL_SEMANTIC_HEARTBEAT_TTL_MS &&
+			row.observedAt <= now + 5_000 &&
+			check?.code === "READY" &&
+			check.checkedAt >= now - LOCAL_CLIP_AVAILABILITY_TTL_MS &&
+			check.checkedAt <= now + 5_000
+		);
+	});
+}
+
+export const localSemanticGpuCapabilitySchema = z.strictObject({
+	version: z.literal("bitovp-runtime-gpu-capability-v1"),
+	profile: z.enum(["amd", "nvidia"]),
+	method: z.literal("OLLAMA_NATIVE_DISCOVERY"),
+	backend: z.enum(["CUDA", "ROCm"]),
+	observedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+
 export const localSemanticGatewayReadinessSchema = z
 	.strictObject({
 		version: z.literal("bitovp-semantic-readiness-v1"),
 		profile: z.enum(["amd", "nvidia"]),
 		scope: z.literal("METADATA_ONLY"),
 		ready: z.boolean(),
+		gpu: localSemanticGpuCapabilitySchema.optional(),
 		code: z.enum([
 			"READY",
 			"GATEWAY_STOPPING",
@@ -94,6 +137,7 @@ export const localSemanticGatewayReadinessSchema = z
 			"RUNTIME_UNAVAILABLE",
 			"RUNTIME_VERSION_MISMATCH",
 			"MODEL_MISMATCH",
+			"GPU_UNVERIFIED",
 		]),
 	})
 	.refine(

@@ -80,6 +80,24 @@ describe("generation revalidates explicit immutable dependencies", () => {
 	});
 	it("uses a compatible full-window measured transcript without inventing missing speech", async () => {
 		const f = generationDependencyFixture("TRANSCRIBE", 4);
+		// Explicit authored word evidence is required by automatic caption selection.
+		f.dependency.result.segments = [
+			{
+				startUs: 0,
+				endUs: 1_000_000,
+				text: "こんにちは",
+				words: [
+					{
+						text: "こんにちは",
+						startUs: 0,
+						endUs: 1_000_000,
+						startChar: 0,
+						endChar: 5,
+						confidence: 0.9,
+					},
+				],
+			},
+		];
 		const result = await f.run();
 		expect(result.actualFrames).toBe(120);
 		expect(f.projects).toHaveLength(1);

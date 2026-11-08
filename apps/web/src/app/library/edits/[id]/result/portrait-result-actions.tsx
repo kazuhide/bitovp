@@ -21,10 +21,12 @@ export function PortraitResultActions({
 	project,
 	disabled,
 	onRun,
+	allowNewRender = true,
 }: {
 	project: AnyEditingProjectView;
 	disabled: boolean;
 	onRun: (run: EditingRenderView) => void;
+	allowNewRender?: boolean;
 }) {
 	const { t } = useT();
 	const latest = latestPortraitExport(project);
@@ -57,6 +59,7 @@ export function PortraitResultActions({
 		}
 	}, [project.renders]);
 	async function execute(action: "RETRY" | "CANCEL", renderId?: string) {
+		if (action === "RETRY" && !allowNewRender) return;
 		if (disabled || running.current) return;
 		const revisionId = project.currentRevisionId;
 		if (
@@ -149,6 +152,7 @@ export function PortraitResultActions({
 				<Button
 					variant="secondary"
 					disabled={
+						!allowNewRender ||
 						disabled ||
 						busy ||
 						renderIsActive(latest) ||

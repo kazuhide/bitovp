@@ -28,6 +28,8 @@ const PROVISIONS_AT_CREATE =
 
 export const en = {
 	clipDiagnostics: {
+		unavailable:
+			"Clip creation is unavailable because a usable GPU-backed local model has not been verified.",
 		title: "Clip editing",
 		caption: "Check the local model and editing service.",
 		diagnose: "Check connection",
@@ -37,7 +39,7 @@ export const en = {
 		gateway: "Local model",
 		details: "Diagnosis details and recovery",
 		scope:
-			"Checks configuration, service initialization and model metadata. It does not load a model or run inference.",
+			"Checks configuration, service initialization, model identity and GPU capability. It does not load a model or run inference.",
 		counts: "Ready: {ready}; initialization failed: {failed}",
 		checkedAt: "Checked: {time}",
 		failed: "Could not complete the diagnosis. Try again.",
@@ -48,7 +50,7 @@ export const en = {
 		configurationRecovery:
 			"Configure the local gateway, token, trusted CA and GPU profile on the server, then restart web and service.",
 		metadataOnly:
-			"Model metadata is available. Available GPU memory and inference success require a real job.",
+			"Model and GPU capability metadata are verified. Actual model placement and inference success require a real job.",
 		states: {
 			DISABLED: "Off",
 			INVALID: "Configuration incomplete",
@@ -66,6 +68,7 @@ export const en = {
 			RUNTIME_VERSION_MISMATCH: "Runtime version mismatch",
 			MODEL_MISMATCH: "Required model missing or different",
 			MODEL_NOT_INSTALLED: "Selected translation model is not installed",
+			GPU_UNVERIFIED: "A usable GPU could not be verified",
 			CONNECTION_FAILED: "Gateway unreachable",
 			AUTH_FAILED: "Authentication failed",
 			TLS_FAILED: "Certificate could not be verified",

@@ -33,9 +33,17 @@ export function EditingLibraryClient({
 	contentId: string;
 	clipEditingAvailable?: boolean;
 }) {
+	const { t } = useT();
 	return clipEditingAvailable ? (
 		<EditingLibraryView key={contentId} contentId={contentId} />
-	) : null;
+	) : (
+		<div className="space-y-4">
+			<p className="text-sm text-zinc-400">
+				{t("clipDiagnostics.unavailable")}
+			</p>
+			<ClipProjects contentId={contentId} readOnly showCreate={false} />
+		</div>
+	);
 }
 function EditingLibraryView({ contentId }: { contentId: string }) {
 	const { t } = useT();

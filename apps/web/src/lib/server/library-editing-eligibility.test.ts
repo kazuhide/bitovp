@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ServerContext } from "./context";
 
-const state = vi.hoisted(() => ({ context: {} as ServerContext }));
+const state = vi.hoisted(() => ({
+	context: {} as ServerContext,
+	availability: vi.fn(),
+}));
 vi.mock("./context", () => ({ getServerContext: async () => state.context }));
+vi.mock("./local-semantic-readiness", () => ({
+	readWorkerClipAvailability: state.availability,
+}));
 
 import { editingEligibility } from "./library-editing-media";
 
@@ -49,6 +55,7 @@ function fixture() {
 	return { findMany };
 }
 beforeEach(() => {
+	state.availability.mockReset().mockResolvedValue(false);
 	vi.stubEnv("BITOVP_STORY_ENABLED", undefined);
 	vi.stubEnv("BITOVP_STORY_MODEL_ID", undefined);
 	vi.stubEnv("BITOVP_STORY_CONFIG_ID", undefined);
@@ -63,8 +70,12 @@ beforeEach(() => {
 		vi.stubEnv(`BITOVP_LOCAL_SEMANTIC_${name}`, undefined);
 });
 
-it("publishes only a separate local capability for a complete server configuration", async () => {
+it.each([
+	true,
+	false,
+])("publishes local capabilities only with verified worker GPU availability %s", async (available) => {
 	fixture();
+	state.availability.mockResolvedValue(available);
 	const settings = {
 		ENABLED: "1",
 		GATEWAY_URL: "https://192.168.68.62:11437",
@@ -76,8 +87,8 @@ it("publishes only a separate local capability for a complete server configurati
 	for (const [key, value] of Object.entries(settings))
 		vi.stubEnv(`BITOVP_LOCAL_SEMANTIC_${key}`, value);
 	const view = await editingEligibility("33333333-3333-4333-8333-333333333333");
-	expect(view.localStoryAvailable).toBe(true);
-	expect(view.captionTranslationAvailable).toBe(true);
+	expect(view.localStoryAvailable).toBe(available);
+	expect(view.captionTranslationAvailable).toBe(available);
 	expect(view.storyAvailable).toBe(false);
 	expect(JSON.stringify(view)).not.toMatch(
 		/private-example-token|192\.168|gateway-ca|nvidia|dddddddd/,

@@ -419,6 +419,10 @@ export const MUTATION_SOURCE_CENSUS = {
 		writeCalls: 5,
 		controls: ["library.edits.edit"],
 	},
+	"app/library/edits/[id]/composition-transcription-controls.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
+	},
 	"app/library/edits/[id]/editor-router.tsx": {
 		writeCalls: 1,
 		controls: ["library.edits.edit"],
@@ -754,6 +758,12 @@ export const MUTATION_WRITE_FAMILIES = {
 		},
 		{
 			write: "POST /api/library/renders/x/cancel",
+			controls: ["library.edits.edit"],
+		},
+	],
+	"app/library/edits/[id]/composition-transcription-controls.tsx": [
+		{
+			write: "POST /api/library/media-tasks",
 			controls: ["library.edits.edit"],
 		},
 	],

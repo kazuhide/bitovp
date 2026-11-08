@@ -1,16 +1,23 @@
 import "server-only";
-import { readLocalSemanticConfiguration } from "@bitovp/core";
+import {
+	hashEditingEvidence,
+	readLocalSemanticConfiguration,
+} from "@bitovp/core";
 import { readLocalCaptionTranslationSelection } from "@bitovp/core/local-caption-config";
+import { readWorkerClipAvailability } from "./local-semantic-readiness";
 
-/** Configuration capability only. Never probes a model or exposes server settings. */
-export function isClipEditingAvailable(
+/** Configuration alone never enables clips; Web reads fresh worker-verified GPU evidence. */
+export async function isClipEditingAvailable(
 	env: Record<string, string | undefined> = process.env,
-): boolean {
+): Promise<boolean> {
 	try {
 		const config = readLocalSemanticConfiguration(env);
 		if (!config) return false;
-		readLocalCaptionTranslationSelection(config, env);
-		return true;
+		const caption = readLocalCaptionTranslationSelection(config, env);
+		return await readWorkerClipAvailability({
+			...config,
+			captionModelHash: hashEditingEvidence(caption.identity),
+		});
 	} catch {
 		return false;
 	}

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	LOCAL_SEMANTIC_HEARTBEAT_TTL_MS,
 	LOCAL_STORY_FLOW_READINESS_POLICY,
+	type LocalClipAvailability,
 	type LocalSemanticWorkerHeartbeat,
 	type LocalStoryFlowWorkerHeartbeat,
 	localSemanticConnectionHash,
@@ -29,6 +30,7 @@ export async function startLocalSemanticHeartbeat(input: {
 	env: Record<string, string | undefined>;
 	initialized: boolean;
 	captionModelHash?: string;
+	clipAvailability?: () => LocalClipAvailability;
 	instanceId?: string;
 	publish(
 		keys: RegistryKeys,
@@ -61,6 +63,7 @@ export async function startLocalSemanticHeartbeat(input: {
 		...input,
 		keys,
 		instanceId,
+		renewMs: input.clipAvailability ? 5_000 : undefined,
 		makeRow: (): LocalSemanticWorkerHeartbeat => ({
 			version: "local-semantic-worker-v1",
 			connectionHash,
@@ -68,6 +71,9 @@ export async function startLocalSemanticHeartbeat(input: {
 			profile,
 			state: input.initialized ? "READY" : "INITIALIZATION_FAILED",
 			observedAt: Date.now(),
+			...(input.clipAvailability
+				? { clipAvailability: input.clipAvailability() }
+				: {}),
 		}),
 	});
 }
@@ -127,6 +133,7 @@ async function runHeartbeat<Row>(input: {
 	keys: RegistryKeys;
 	instanceId: string;
 	makeRow(): Row;
+	renewMs?: number;
 	publish(keys: RegistryKeys, row: Row, ttlMs: number): Promise<unknown>;
 	remove(keys: RegistryKeys, instanceId: string): Promise<unknown>;
 }) {
@@ -152,7 +159,7 @@ async function runHeartbeat<Row>(input: {
 	await Promise.resolve();
 	const interval = setInterval(
 		publish,
-		LOCAL_STORY_FLOW_READINESS_POLICY.heartbeatRenewMs,
+		input.renewMs ?? LOCAL_STORY_FLOW_READINESS_POLICY.heartbeatRenewMs,
 	);
 	interval.unref();
 	return {

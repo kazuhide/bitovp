@@ -37,6 +37,13 @@ const readiness = {
 	scope: "METADATA_ONLY",
 	ready: true,
 	code: "READY",
+	gpu: {
+		version: "bitovp-runtime-gpu-capability-v1",
+		profile: "nvidia",
+		method: "OLLAMA_NATIVE_DISCOVERY",
+		backend: "CUDA",
+		observedAt: Date.now(),
+	},
 };
 const reader = (value = health()) =>
 	vi.fn(async (_config: unknown, path: string) =>
@@ -44,6 +51,37 @@ const reader = (value = health()) =>
 	);
 
 describe("FLOW exact six-stage metadata probe", () => {
+	it.each([
+		undefined,
+		{
+			version: "bitovp-runtime-gpu-capability-v1",
+			profile: "amd",
+			method: "OLLAMA_NATIVE_DISCOVERY",
+			backend: "ROCm",
+			observedAt: Date.now(),
+		},
+		{
+			version: "bitovp-runtime-gpu-capability-v1",
+			profile: "nvidia",
+			method: "OLLAMA_NATIVE_DISCOVERY",
+			backend: "ROCm",
+			observedAt: Date.now(),
+		},
+		{
+			version: "bitovp-runtime-gpu-capability-v1",
+			profile: "nvidia",
+			method: "OLLAMA_NATIVE_DISCOVERY",
+			backend: "CUDA",
+			observedAt: Date.now() - 15_001,
+		},
+	])("rejects old config-only readiness or unbound GPU metadata %#", async (gpu) => {
+		const read = vi.fn(async (_config: unknown, path: string) =>
+			path === "/health" ? health() : { ...readiness, gpu },
+		);
+		await expect(
+			probe.probeLocalSemanticGateway(config, read),
+		).resolves.toMatchObject({ code: "GPU_UNVERIFIED" });
+	});
 	it("adds a named six-stage probe while keeping legacy four-stage behavior", async () => {
 		const read = reader();
 		await expect(

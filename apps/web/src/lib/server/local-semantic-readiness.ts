@@ -14,6 +14,7 @@ import {
 	localSemanticWorkerRegistryKeys,
 	REQUEST_LOCAL_SEMANTIC_DIAGNOSTIC,
 	readLocalSemanticConfiguration,
+	summarizeClipEditingAvailability,
 	summarizeLocalSemanticWorkers,
 } from "@bitovp/core";
 import { readLocalCaptionTranslationSelection } from "@bitovp/core/local-caption-config";
@@ -29,6 +30,56 @@ type WorkerResult = LocalSemanticReadinessReport["worker"];
 type DiagnosticConfig = LocalSemanticConfiguration & {
 	captionModelHash: string;
 };
+
+/** Read only recent worker-owned GPU checks. A page request never probes the LAN. */
+export async function readWorkerClipAvailability(
+	config: DiagnosticConfig,
+): Promise<boolean> {
+	const redis = new Redis(loadEnv().REDIS_URL, {
+		lazyConnect: true,
+		enableOfflineQueue: false,
+		connectTimeout: 1_000,
+		commandTimeout: 1_000,
+		maxRetriesPerRequest: 0,
+		retryStrategy: () => null,
+	});
+	redis.on("error", () => {});
+	try {
+		const hash = await localSemanticConnectionHash(
+			config,
+			config.captionModelHash,
+		);
+		const keys = localSemanticWorkerRegistryKeys(hash);
+		await redis.connect();
+		const now = Date.now();
+		const ids = await redis.zrangebyscore(
+			keys.times,
+			now - LOCAL_SEMANTIC_HEARTBEAT_TTL_MS,
+			now + 5_000,
+			"LIMIT",
+			0,
+			101,
+		);
+		if (ids.length > 100) return false;
+		const rows = ids.length ? await redis.hmget(keys.records, ...ids) : [];
+		return summarizeClipEditingAvailability(
+			rows.map((row) => {
+				try {
+					return row && row.length <= 2048 ? JSON.parse(row) : null;
+				} catch {
+					return null;
+				}
+			}),
+			hash,
+			config.profile,
+			Date.now(),
+		);
+	} catch {
+		return false;
+	} finally {
+		redis.disconnect();
+	}
+}
 
 /** Web stays on the internal network. Only the configured editing worker contacts the LAN gateway. */
 async function requestWorkerGatewayDiagnostic(

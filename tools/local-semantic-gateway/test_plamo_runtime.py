@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 import uuid
@@ -32,6 +33,12 @@ class SyntheticRuntime:
     def loaded(self, profile):
         self.calls.append(profile)
         return []
+    def readiness(self, profile):
+        return 'READY'
+    def gpu_capability(self, profile):
+        return {'version': 'bitovp-runtime-gpu-capability-v1', 'profile': profile,
+                'method': 'OLLAMA_NATIVE_DISCOVERY', 'backend': 'CUDA' if profile == 'nvidia' else 'ROCm',
+                'observedAt': round(time.time() * 1000)}
 
 class PlamoTests(unittest.TestCase):
     def setUp(self):
@@ -79,6 +86,12 @@ class PlamoTests(unittest.TestCase):
                 'profile': 'nvidia', 'stage': 'LOCAL_PLAMO_CAPTION_JA_V1', 'prompt': 'synthetic PFML3',
                 'inputHash': 'a' * 64, 'promptVersion': 'plamo-pfml3-caption-v1', 'schemaHash': self.identity['schemaHash'],
                 'manifestHash': self.identity['manifestHash']}
+
+    def test_caption_job_admission_requires_verified_gpu_before_model_start(self):
+        self.gateway.runtime.gpu_capability = lambda profile: None
+        status, result = self.gateway.route('POST', '/v1/plamo-caption-jobs', self.headers, self.body())
+        self.assertEqual((status, result), (503, {'error': {'code': 'GPU_UNVERIFIED'}}))
+        self.assertIsNone(self.gateway.store.next_queued())
 
     def unit(self, active='inactive'):
         return {'ActiveState': active, 'MainPID': '99' if active == 'active' else '0',

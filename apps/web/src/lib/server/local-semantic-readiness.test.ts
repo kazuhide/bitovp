@@ -45,6 +45,13 @@ const ready = {
 	scope: "METADATA_ONLY",
 	ready: true,
 	code: "READY",
+	gpu: {
+		version: "bitovp-runtime-gpu-capability-v1",
+		profile: "nvidia",
+		method: "OLLAMA_NATIVE_DISCOVERY",
+		backend: "CUDA",
+		observedAt: Date.now(),
+	},
 };
 
 // Synthetic metadata for protocol validation; no installed model or weights.

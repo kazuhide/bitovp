@@ -12,7 +12,7 @@ export default async function LibraryPage({
 	return (
 		<LibraryClient
 			initialQuery={readLibraryBrowseState(await searchParams)}
-			clipEditingAvailable={isClipEditingAvailable()}
+			clipEditingAvailable={await isClipEditingAvailable()}
 		/>
 	);
 }

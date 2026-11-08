@@ -541,7 +541,8 @@ test("configure and submit Live and inspect heartbeat", async ({
 		await page.locator("#lw-v-0-bitrate").fill("1500000");
 		await page.locator("#lw-v-0-preset").selectOption("LIVE_LOW_LATENCY");
 		await goTo(page, /^5\. Packaging$/);
-		await page.locator("#lw-seglen").fill("2");
+		await page.locator("#lw-v-0-media-segmentLength").fill("2");
+		await expect(page.locator("#lw-a-0-media-segmentLength")).toHaveValue("2");
 		await goTo(page, /^4\. Output$/);
 		await page.locator("#lw-out-cred").selectOption(CREDENTIAL);
 		await closePicker(page);

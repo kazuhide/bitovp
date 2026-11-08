@@ -23,7 +23,10 @@ import {
 	downsampleBandingFrameBlob,
 	downsampleFrameBlob,
 } from "@/lib/server/vmaf-frames";
-import { previewDescriptor } from "@/lib/server/vmaf-preview";
+import {
+	bandingPreviewDescriptor,
+	previewDescriptor,
+} from "@/lib/server/vmaf-preview";
 
 /**
  * `params.subsample`, when a worker recorded it; null otherwise.
@@ -173,6 +176,12 @@ export async function GET(req: Request, { params }: RouteParams) {
 						bandingFrameCount: bandingSeries?.frameCount ?? 0,
 						bandingExecution: bandingExecutionOf(r.provenance),
 						bandingAssessment: bandingAssessmentOf(r.pooled),
+						bandingPreview: bandingPreviewDescriptor(
+							id,
+							job,
+							r,
+							requestOrganizationId(ctx),
+						),
 					}
 				: {};
 			if (bandingOnly) {

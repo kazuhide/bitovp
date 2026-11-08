@@ -1,9 +1,9 @@
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { mergeWizardDraft, projectWizardDraft } from "@/lib/wizard-draft";
-import { renderLocalized } from "@/test/render";
+import { renderLocalized, renderWithQuery } from "@/test/render";
 import {
 	buildLiveChannelPlan,
 	DEFAULT_LIVE_WIZARD_STATE,
@@ -55,6 +55,175 @@ function fixture(): LiveWizardState {
 }
 
 describe("Live muxing settings in Packaging", () => {
+	it("edits naming and output paths directly in each output card with one shared segment length", () => {
+		renderLocalized(<Harness initial={fixture()} />);
+		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		const video = screen.getByRole("region", { name: "v720" });
+		for (const id of [
+			"lw-v-0-container",
+			"lw-v-0-media-segmentNamingTemplate",
+			"lw-v-0-media-segmentLength",
+			"lw-v-0-media-segmentNaming",
+			"lw-v-0-media-initSegmentName",
+			"lw-v-0-media-path",
+		]) {
+			expect(field(id)).toBeVisible();
+			expect(video).toContainElement(field(id));
+		}
+		fireEvent.change(field("lw-v-0-media-segmentNamingTemplate"), {
+			target: { value: "video_{rand_chars:8}_%number%.m4s" },
+		});
+		expect(field("lw-v-0-media-segmentNaming")).toBeDisabled();
+		fireEvent.change(field("lw-v-0-media-path"), {
+			target: { value: "media/primary" },
+		});
+		expect(document.getElementById("lw-seglen")).toBeNull();
+		fireEvent.change(field("lw-v-0-media-segmentLength"), {
+			target: { value: "4" },
+		});
+		expect(field("lw-a-0-media-segmentLength")).toHaveValue(4);
+		const plan = buildLiveChannelPlan(current());
+		expect(plan.muxings.find((muxing) => muxing.key === "v720")).toMatchObject({
+			destination: { path: "media/primary" },
+			segmentNamingTemplate: "video_{rand_chars:8}_%number%.m4s",
+		});
+		expect(
+			plan.muxings.every(
+				(muxing) => "segmentLength" in muxing && muxing.segmentLength === 4,
+			),
+		).toBe(true);
+	});
+
+	it.each([
+		"en",
+		"ja",
+	] as const)("shares segment-length edits across every emitted output card (%s)", (locale) => {
+		const initial = fixture();
+		const firstVideo = initial.videos[0];
+		if (!firstVideo) throw new Error("Missing video fixture");
+		initial.videos.push({
+			...firstVideo,
+			height: 1080,
+			bitrate: 5_000_000,
+			extras: undefined,
+		});
+		renderLocalized(<Harness initial={initial} />, locale);
+		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		const label = locale === "ja" ? "セグメント長 (秒)" : "Segment length (s)";
+		const hint =
+			locale === "ja"
+				? "変更はすべての出力に適用されます。"
+				: "Changes apply to all outputs.";
+		const controls = ["lw-v-0", "lw-v-1", "lw-a-0"].map((id) =>
+			field(`${id}-media-segmentLength`),
+		);
+		expect(screen.getAllByRole("spinbutton", { name: label })).toEqual(
+			controls,
+		);
+		for (const control of controls) {
+			expect(control).toBeVisible();
+			expect(control).toHaveValue(initial.segmentLength);
+		}
+		expect(screen.getAllByText(hint)).toHaveLength(controls.length);
+		for (const notice of screen.getAllByText(hint))
+			expect(notice).toBeVisible();
+		for (const [id, value, expected] of [
+			["lw-v-0", "-2", 0],
+			["lw-v-1", "4", 4],
+			["lw-a-0", "8", 8],
+		] as const) {
+			fireEvent.change(field(`${id}-media-segmentLength`), {
+				target: { value },
+			});
+			for (const control of controls) expect(control).toHaveValue(expected);
+			expect(current().segmentLength).toBe(expected);
+			const muxings = buildLiveChannelPlan(current()).muxings;
+			expect(muxings.map((muxing) => muxing.key)).toEqual([
+				"v720",
+				"v1080",
+				"a128",
+			]);
+			expect(
+				muxings.map((muxing) =>
+					"segmentLength" in muxing ? muxing.segmentLength : undefined,
+				),
+			).toEqual(controls.map(() => expected));
+		}
+	});
+
+	it("hides the nonemitted bundled-audio segment length and restores it with the shared value", () => {
+		const initial = fixture();
+		const video = initial.videos[0];
+		const audio = initial.audios[0];
+		if (!video || !audio) throw new Error("Missing rendition fixture");
+		video.container = "TS";
+		video.muxedAudioKeys = ["a128"];
+		audio.ownContainer = false;
+		renderLocalized(<Harness initial={initial} />);
+		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		expect(field("lw-v-0-media-segmentLength")).toBeVisible();
+		expect(document.getElementById("lw-a-0-media-segmentLength")).toBeNull();
+		fireEvent.change(field("lw-v-0-media-segmentLength"), {
+			target: { value: "3" },
+		});
+		const muxings = buildLiveChannelPlan(current()).muxings;
+		expect(muxings).toHaveLength(1);
+		expect(muxings[0]).toMatchObject({
+			key: "v720",
+			kind: "TS",
+			segmentLength: 3,
+			additionalStreamKeys: ["a128"],
+		});
+		fireEvent.click(field("lw-a-0-own"));
+		expect(field("lw-a-0-media-segmentLength")).toBeVisible();
+		expect(field("lw-a-0-media-segmentLength")).toHaveValue(3);
+		fireEvent.change(field("lw-a-0-media-segmentLength"), {
+			target: { value: "5" },
+		});
+		expect(field("lw-v-0-media-segmentLength")).toHaveValue(5);
+		expect(
+			buildLiveChannelPlan(current()).muxings.map((muxing) =>
+				"segmentLength" in muxing ? muxing.segmentLength : undefined,
+			),
+		).toEqual([5, 5]);
+	});
+
+	it("keeps per-output DRM actions connected to primary and additional manifests", () => {
+		const initial = fixture();
+		initial.manifests.additionalHls = [{ ...initial.manifests.hls }];
+		initial.manifests.additionalDash = [{ ...initial.manifests.dash }];
+		renderWithQuery(<Harness initial={initial} />);
+		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		const video = screen.getByRole("region", { name: "v720" });
+		const disclosure = within(video).getByText("Encryption / DRM (0)");
+		fireEvent.click(disclosure);
+		fireEvent.click(within(video).getByRole("button", { name: "Add CENC" }));
+		expect(current().drm).toHaveLength(1);
+		expect(current().drm?.[0]?.muxingKey).toBe("v720");
+		const manifests = () => [
+			current().manifests.hls,
+			current().manifests.dash,
+			...(current().manifests.additionalHls ?? []),
+			...(current().manifests.additionalDash ?? []),
+		];
+		expect(manifests().map((manifest) => manifest.drmKind)).toEqual([
+			"CENC",
+			"CENC",
+			"CENC",
+			"CENC",
+		]);
+		fireEvent.click(
+			within(video).getByRole("button", { name: "Remove encryption" }),
+		);
+		expect(current().drm).toBeUndefined();
+		expect(manifests().map((manifest) => manifest.drmKind)).toEqual([
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		]);
+	});
+
 	it.each([
 		"en",
 		"ja",
@@ -67,6 +236,8 @@ describe("Live muxing settings in Packaging", () => {
 			"lw-a-0-container",
 			"lw-a-0-own",
 			"lw-v-0-media-path",
+			"lw-v-0-media-segmentLength",
+			"lw-a-0-media-segmentLength",
 		])
 			expect(document.getElementById(id)).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
@@ -75,6 +246,8 @@ describe("Live muxing settings in Packaging", () => {
 			"lw-a-0-container",
 			"lw-a-0-own",
 			"lw-v-0-media-path",
+			"lw-v-0-media-segmentLength",
+			"lw-a-0-media-segmentLength",
 		])
 			expect(field(id)).toBeInTheDocument();
 		expect(document.getElementById("lw-v-0-bitrate")).toBeNull();
@@ -83,6 +256,7 @@ describe("Live muxing settings in Packaging", () => {
 
 	it("preserves imported and restored muxing options across step navigation", () => {
 		const state = fixture();
+		state.segmentLength = 4;
 		const video = state.videos[0];
 		if (!video) throw new Error("Missing video fixture");
 		video.container = "CMAF";
@@ -109,8 +283,12 @@ describe("Live muxing settings in Packaging", () => {
 		expect(field("lw-v-0-media-segmentNamingTemplate")).toHaveValue(
 			video.muxing.segmentNamingTemplate,
 		);
+		expect(field("lw-v-0-media-segmentLength")).toHaveValue(4);
+		expect(field("lw-a-0-media-segmentLength")).toHaveValue(4);
 		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
 		fireEvent.click(screen.getByRole("button", { name: "Change step" }));
+		expect(field("lw-v-0-media-segmentLength")).toHaveValue(4);
+		expect(field("lw-a-0-media-segmentLength")).toHaveValue(4);
 		expect(
 			liveChannelPlanSchema.parse(buildLiveChannelPlan(current())),
 		).toEqual(plan);

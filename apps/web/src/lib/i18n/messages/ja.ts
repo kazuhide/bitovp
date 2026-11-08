@@ -211,6 +211,24 @@ export const ja = {
 		start: "開始（秒）",
 		end: "終了（秒・含まない）",
 		noRanges: "設定した上限を超えるフレームはありません。",
+		previewColumn: "映像確認",
+		previewInterval: "{start}–{end} 秒を再生",
+		previewTitle: "バンディング区間のプレビュー · {label}",
+		previewClose: "区間プレビューを閉じる",
+		previewReplay: "区間を最初から再生",
+		previewPlay: "再生",
+		previewPause: "一時停止",
+		previewLoading: "測定対象の動画を読み込み中…",
+		previewFailed:
+			"動画を再生できません。削除・上書き、またはブラウザーが対応していない形式の可能性があります。",
+		previewEnded: "区間の再生が終了しました",
+		previewUnavailable:
+			"測定した版の動画を再生できません。スコアと区間は引き続き確認できます。",
+		previewTimingUnavailable:
+			"ブラウザで映像の表示時刻を確認できませんでした。動画フレームの通知に対応したブラウザで開き直してください。",
+		previewRangeUnavailable: "選択した区間の全体を動画で確認できません。",
+		previewCaveat:
+			"時刻を使った目視確認です。シークでは隣接フレームが表示される場合があります。再生によって測定スコアは変わりません。",
 		affected: "該当時間: {value} 秒",
 		bounds: "設定した上限",
 		cpu: "実際の実行方式: CPU · 公式 libvmaf CAMBI",
@@ -1305,6 +1323,7 @@ export const ja = {
 			"停止後にファイルを取得・再生し、映像と音声の長さを確認してください。非公開にする場合は PRIVATE を指定し、バケットポリシーなどで公開されていないことも確認します。保存先の既定値を使うと公開される場合があります。ライブ再生の確認だけでは、アーカイブが正しく保存されたかは判断できません。",
 	},
 	liveRendition: {
+		sharedSegmentLengthHint: "変更はすべての出力に適用されます。",
 		inputPosition: "入力トラック位置",
 		inputPositionHint:
 			"0から始まる入力トラック番号です。未指定時は映像0、音声1を使います。",

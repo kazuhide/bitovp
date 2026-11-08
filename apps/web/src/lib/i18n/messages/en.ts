@@ -236,6 +236,25 @@ export const en = {
 		start: "Start (s)",
 		end: "End (s, exclusive)",
 		noRanges: "No frames exceed the configured limits.",
+		previewColumn: "Inspect",
+		previewInterval: "Play {start}–{end} s",
+		previewTitle: "Banding interval preview · {label}",
+		previewClose: "Close interval preview",
+		previewReplay: "Replay interval",
+		previewPlay: "Play",
+		previewPause: "Pause",
+		previewLoading: "Loading measured video…",
+		previewFailed:
+			"Playback failed. The measured video may be missing, replaced, or unsupported by this browser.",
+		previewEnded: "Interval finished",
+		previewUnavailable:
+			"The version-pinned measured video is unavailable. Scores and intervals remain available.",
+		previewTimingUnavailable:
+			"The browser could not establish the video presentation time. Reopen the preview in a browser that supports video frame callbacks.",
+		previewRangeUnavailable:
+			"The video does not cover the complete selected interval.",
+		previewCaveat:
+			"Time-based visual inspection. Seeking can show an adjacent frame; playback does not change the measured scores.",
 		affected: "Affected duration: {value} s",
 		bounds: "Configured limits",
 		cpu: "Actual execution: CPU · official libvmaf CAMBI",
@@ -1337,6 +1356,7 @@ export const en = {
 			"After stopping, download and check the file and audio/video duration. Private requests PRIVATE; verify that bucket policies or other settings do not grant public access. The destination default may be public. This is not a live playback URL. Delivery checks alone do not verify the archive or whole plan.",
 	},
 	liveRendition: {
+		sharedSegmentLengthHint: "Changes apply to all outputs.",
 		inputPosition: "Input track position",
 		inputPositionHint:
 			"Zero-based source track index. Leave unset for video 0 or audio 1.",

@@ -1,4 +1,5 @@
 export { hashApiTokenSecret } from "./auth/api-token-hash";
+export * from "./banding";
 export {
 	expandRandomFilenameTokens,
 	initSegmentCandidates,
@@ -866,6 +867,7 @@ export {
 	evaluateQcGate,
 	QC_GATE_METRICS,
 	qcGateSchema,
+	qcRuleSeverity,
 } from "./plan/qc-gate";
 export type {
 	ResourceGroup,
@@ -1336,13 +1338,21 @@ export {
 	DEFAULT_LINEAR_RADIUS,
 } from "./vmaf/align-linear";
 export * from "./vmaf/cloud";
-export type { VmafCommandOptions, VmafReferenceGeometry } from "./vmaf/command";
+export type {
+	VmafCommandOptions,
+	VmafCudaDecode,
+	VmafReferenceGeometry,
+} from "./vmaf/command";
 export {
 	buildVmafCommand,
 	frameIndexDisplayGeometry,
 	sampleAspectRatioFromProbe,
+	VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+	VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
 	VMAF_FRAME_INDEX_CROP_POLICY,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
+	VMAF_OWNED_CUDA_SCORING_VERSION,
+	VMAF_OWNED_VULKAN_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
 } from "./vmaf/command";
 export type {
@@ -1350,6 +1360,11 @@ export type {
 	LiveSegmentKind,
 } from "./vmaf/live-targets";
 export { enumerateLiveCaptureTargets } from "./vmaf/live-targets";
+export {
+	type LocalVmafExecution,
+	localVmafExecutionOf,
+	localVmafExecutionSchema,
+} from "./vmaf/local-execution";
 export type {
 	ContainerLoopProbe,
 	LoopHole,
@@ -1367,6 +1382,14 @@ export {
 	timelineFromContainerProbe,
 	timelineFromProfile,
 } from "./vmaf/loop-timeline";
+export {
+	type NativeDeviceInfo,
+	nativeDeviceInfoSchema,
+} from "./vmaf/native-device-info";
+export {
+	NATIVE_OFFICIAL_REVISION,
+	nativeVmafReceiptSchema,
+} from "./vmaf/native-receipt";
 export {
 	type PerTitleProviderResult,
 	type PerTitleRung,
@@ -1391,15 +1414,21 @@ export {
 export * from "./vmaf/profiles";
 export * from "./vmaf/streamable-io";
 export type {
+	BandingTarget,
 	QcDistorted,
 	QcReference,
 	QcTarget,
 } from "./vmaf/targets";
 export {
+	enumerateBandingQcTargets,
+	enumerateBandingTargets,
+	enumerateExistingBandingMp4Targets,
 	enumerateExistingMp4Targets,
+	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcTargets,
 	gateExpectedRenditionKeys,
+	sameQcTargetPopulation,
 } from "./vmaf/targets";
 export type { HeartbeatRegistrationConfig } from "./webhooks/heartbeat-registration";
 export {

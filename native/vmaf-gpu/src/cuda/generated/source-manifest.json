@@ -1,0 +1,69 @@
+{
+  "upstream": "Netflix/vmaf",
+  "revision": "74f930d17de8c58e7c2ce55e2b897b0030ebd8ef",
+  "sources": [
+    {
+      "path": "libvmaf/src/feature/integer_adm.c",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/integer_adm.c",
+      "sha256": "7633ef5f4d4a770ba10fd7e6cb872f8131fadf1e67e123cc84d2731fb29be07f"
+    },
+    {
+      "path": "libvmaf/src/feature/integer_adm.h",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/integer_adm.h",
+      "sha256": "e8fb14f45e1ff1d1e7b336b638bed84d3c57e98df49076c754ef4c52e988d34b"
+    },
+    {
+      "path": "libvmaf/src/feature/barten_csf_tools.h",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/barten_csf_tools.h",
+      "sha256": "b59f9aa3fa10e105096d8bd83ec653c5d5ba9495ad84bbe5c52f818a6b24e345"
+    },
+    {
+      "path": "libvmaf/src/feature/cambi.c",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/cambi.c",
+      "sha256": "e371a621302e5ba06f38f33353a45bde17b85b7f6d67273c0a28a669804bb64f"
+    },
+    {
+      "path": "libvmaf/src/feature/luminance_tools.h",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/luminance_tools.h",
+      "sha256": "903033d5698806dc31ee62782ebcc373e0447609e9e6e06d5d2d877584574815"
+    },
+    {
+      "path": "libvmaf/src/feature/luminance_tools.c",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/luminance_tools.c",
+      "sha256": "6a4de8589771c5efcba5575cf0ded67d724ae82227a9d426bef6916d075ef0e6"
+    },
+    {
+      "path": "libvmaf/src/feature/cambi.h",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/cambi.h",
+      "sha256": "c406bf7a5cf5c8d90a45a36cf62d35db0450933aca3dfb91c54370e7114ed2df"
+    },
+    {
+      "path": "libvmaf/src/feature/speed.c",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/speed.c",
+      "sha256": "5acb123d6ea0356453b1faf9ef65a16cf62168ad90b29d8a7e00e32c7d968df2"
+    },
+    {
+      "path": "libvmaf/src/feature/vif_tools.h",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/vif_tools.h",
+      "sha256": "93df689c478fbb13615f3229b2820a294b0b73315558247cbe977d3721143b46"
+    },
+    {
+      "path": "libvmaf/src/feature/vif_tools.c",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/vif_tools.c",
+      "sha256": "403215bb215a2473196cb7ef0849403c40bde0a23c353a33205d9f7b57c42bb7"
+    },
+    {
+      "path": "libvmaf/src/feature/picture_copy.c",
+      "url": "https://github.com/Netflix/vmaf/blob/74f930d17de8c58e7c2ce55e2b897b0030ebd8ef/libvmaf/src/feature/picture_copy.c",
+      "sha256": "aa21f7ad63631aee60945e851560ac0b70ae22402e100c88cfda709ae2e6cd48"
+    }
+  ],
+  "adaptations": [
+    "CUDA device qualifiers",
+    "device-local arena allocation",
+    "no CPU SIMD paths",
+    "no filesystem heatmap output",
+    "host option descriptors with original defaults",
+    "collector emits hashed base feature identifiers for host canonical mapping"
+  ]
+}

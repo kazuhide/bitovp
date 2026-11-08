@@ -187,3 +187,80 @@ condition = "AND"
 regexTarget = "line"
 paths = ['''^apps/web/src/app/api/account/password/route\.test\.ts$''']
 regexes = ['''^\s*const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef"; // gitleaks:allow -- test-only HMAC secret\s*$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyCatalogHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^apps/worker/src/library\-editing/local\-story\-flow\-runtime\-store\.test\.ts$''']
+regexes = ['''^keyCatalogHash:\s*"b089c78ef25806651eced18f73d45a1156c45379d79b3f278397e2356a6ed903"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned nativeKeyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^apps/worker/src/library\-editing/local\-story\-flow\-runtime\-store\.test\.ts$''']
+regexes = ['''^nativeKeyHash:\s*"5993e991d70b6ef83cd129de1854c96e56c19dea400d52903fbee01ff6c5a7b9"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"7d4d3d2aadd46b235063fd9774a5701ec3728265fdceb4d563a800a5e52443da"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"66b6a55e0e26fb4b9bfebc5e3d66c592b8050f98ef7401d386aeb41d34a95b54"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"5a17b336b2118857e84e2ca1ab4d448a7da114bb2ce703395b62721e4a41802c"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"3027d73168d4f9be45e307893a079767b92f707a0f9f0c356992822c547560ea"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"647dedb941438f95e2eacde8f61d5bafca2418567954b87915fe9f8249714ef6"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"7a680d3fb094caeb1aca82dbb4deb36b12ba914812a44ccc1b1d97edf1be5a74"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"ec6f690d44a272e2e25bfd027c3ea98104092e4ea2f2a9153f35c18565c4b381"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned keyHash regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-legacy\-ledger\.test\.ts$''']
+regexes = ['''^keyHash:\s*"7f63b976c1cdfdf59c857aa847dd57c562a38c71d218ad557e91d12d6b099284"$''']
+
+[[rules.allowlists]]
+description = "Non-secret pinned requestKey regression fixture; preserve exact historical value."
+condition = "AND"
+regexTarget = "match"
+paths = ['''^packages/core/src/content\-editing/local\-story\-flow\-native\.test\.ts$''']
+regexes = ['''^requestKey:\s*"8f9613d3-2dff-5fb3-a384-d3f08853431b"$''']

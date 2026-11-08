@@ -64,6 +64,14 @@ export const VMAF_SCORING_VERSION = 3;
  * while retaining codec conformance cropping. Generation 5 used CLI defaults,
  * so MOV container crops could silently resize the pristine reference. */
 export const VMAF_FRAME_INDEX_SCORING_VERSION = 6;
+/** Retired VMAFx generation: readable historical results only. */
+export const VMAF_EXPERIMENTAL_GPU_SCORING_VERSION = 7;
+/** NVDEC with legacy CPU scoring, retained independently of native GPU scoring. */
+export const VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION = 8;
+/** Owned CUDA extraction with native 10-bit preprocessing and official prediction. */
+export const VMAF_OWNED_CUDA_SCORING_VERSION = 9;
+/** Owned Vulkan extraction has its own qualification and measurement generation. */
+export const VMAF_OWNED_VULKAN_SCORING_VERSION = 10;
 export const VMAF_FRAME_INDEX_CROP_POLICY =
 	"codec-only-ignore-container-aperture-v1";
 
@@ -122,7 +130,17 @@ export function frameIndexDisplayGeometry(reference: VmafReferenceGeometry): {
 	return { width, height: reference.height };
 }
 
+/** NVDEC surface format; downloaded without dropping chroma or bit depth. */
+export type VmafCudaDecode = {
+	device: number;
+	downloadFormat: "nv12" | "p010le";
+};
+
 export type VmafCommandOptions = {
+	/** Explicit owned native GPU scoring; never constructed as an FFmpeg filter. */
+	scoring?: { backend: "cuda" | "vulkan"; device: number };
+	/** Local input decoding only. Scaling, feature extraction and scoring stay on CPU. */
+	decode?: { distorted?: VmafCudaDecode; reference?: VmafCudaDecode };
 	/** Explicit full-frame report methodology; omitted preserves generation 3. */
 	measurementMethod?: "FRAME_INDEX_BT709_10BIT";
 	/** Exact reference cadence, e.g. 24000/1001 (never decimal-rounded). */
@@ -188,7 +206,25 @@ export type VmafCommandOptions = {
  * reference geometry so libvmaf's identical-dimensions requirement holds.
  */
 export function buildVmafCommand(opts: VmafCommandOptions): string[] {
+	if (
+		(opts.scoring as { backend?: string } | undefined)?.backend === "vmafx-cuda"
+	)
+		throw new Error(
+			"VMAFx scoring is retired; select cuda or vulkan and create a new measurement",
+		);
+	if (opts.scoring) throw new Error("NATIVE_SCORING_REQUIRES_NATIVE_RUNNER");
+	for (const input of [opts.decode?.distorted, opts.decode?.reference]) {
+		if (
+			input &&
+			(!Number.isSafeInteger(input.device) ||
+				input.device < 0 ||
+				!["nv12", "p010le"].includes(input.downloadFormat))
+		)
+			throw new Error("INVALID_CUDA_DECODE_OPTIONS");
+	}
 	if (opts.measurementMethod === "FRAME_INDEX_BT709_10BIT") {
+		if (opts.decode?.distorted || opts.decode?.reference)
+			throw new Error("GPU_DECODE_NOT_QUALIFIED_FOR_FRAME_INDEX_METHOD");
 		const size = opts.scaleToReference;
 		const original = opts.distortedOriginal;
 		const rate = opts.referenceFrameRate;
@@ -279,7 +315,7 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	// keeps the resampled distorted frame faithful; fps re-times so frame
 	// counts line up with the reference. Both are conditional — an already
 	// matching distorted needs no scale/fps node.
-	const conform: string[] = [];
+	const conform: string[] = downloadChain(opts.decode?.distorted);
 	if (opts.scaleToReference) {
 		conform.push(
 			`scale=${opts.scaleToReference.width}:${opts.scaleToReference.height}:flags=bicubic`,
@@ -381,7 +417,10 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	 * `feature` follow cannot apply here — the point of the change is that the old
 	 * argv produced wrong numbers.
 	 */
-	const refChain = align > 0 ? dropLeading(align) : REBASE_PTS;
+	const refChain = [
+		...downloadChain(opts.decode?.reference),
+		align > 0 ? dropLeading(align) : REBASE_PTS,
+	].join(",");
 	const filterComplex =
 		`[0:v]${distChain}[dist];` +
 		`[1:v]${refChain}[ref];` +
@@ -393,11 +432,13 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 		...(opts.decoderThreads !== undefined
 			? ["-threads", String(opts.decoderThreads)]
 			: []),
+		...cudaInputArgs(opts.decode?.distorted),
 		"-i",
 		opts.distortedPath,
 		...(opts.decoderThreads !== undefined
 			? ["-threads", String(opts.decoderThreads)]
 			: []),
+		...cudaInputArgs(opts.decode?.reference),
 		"-i",
 		opts.referencePath,
 		...(opts.filterComplexThreads !== undefined
@@ -411,4 +452,27 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 		"null",
 		"-",
 	];
+}
+
+function cudaInputArgs(input: VmafCudaDecode | undefined): string[] {
+	return input
+		? [
+				"-hwaccel",
+				"cuda",
+				"-hwaccel_device",
+				String(input.device),
+				"-hwaccel_output_format",
+				"cuda",
+			]
+		: [];
+}
+
+function downloadChain(input: VmafCudaDecode | undefined): string[] {
+	return input
+		? [
+				"hwdownload",
+				`format=${input.downloadFormat}`,
+				`format=${input.downloadFormat === "nv12" ? "yuv420p" : "yuv420p10le"}`,
+			]
+		: [];
 }

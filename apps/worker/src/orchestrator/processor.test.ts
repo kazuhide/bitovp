@@ -1518,6 +1518,21 @@ describe("VMAF model capability — refuse BEFORE any Bitmovin resource (review-
 		})(),
 	});
 
+	it("does not require a VMAF model for standalone banding QC", async () => {
+		const input = qcPlan("vmaf_v1.0.16_3d0h");
+		input.plan.qc = { vmaf: false, banding: true, model: "vmaf_v1.0.16_3d0h" };
+		const { processor, row } = setup(
+			input,
+			{},
+			undefined,
+			undefined,
+			() => false,
+		);
+		const result = await processor({ encodingJobId: JOB_ID });
+		expect(result.status).toBe("FINISHED");
+		expect(row.status).toBe("FINISHED");
+	});
+
 	it("fails the job WITHOUT creating anything when the worker cannot load the model", async () => {
 		const { processor, row, sdk } = setup(
 			qcPlan("vmaf_v1.0.16_3d0h"),

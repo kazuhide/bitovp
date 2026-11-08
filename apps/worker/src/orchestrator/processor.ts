@@ -516,7 +516,10 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 			 * Undefined capability ⇒ no refusal (the same rule as the
 			 * validator: an unknown must not manufacture one).
 			 */
-			if (plan.qc && deps.vmafModelAvailable !== null) {
+			if (
+				(plan.qc?.vmaf || plan.qc?.psnr) &&
+				deps.vmafModelAvailable !== null
+			) {
 				const model = plan.qc.model;
 				if (!deps.vmafModelAvailable(model)) {
 					throw new Error(unresolvableModelMessage(model, undefined));

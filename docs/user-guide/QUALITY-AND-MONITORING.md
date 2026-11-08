@@ -20,6 +20,10 @@ assuming the usage dashboard is an incident monitor.
 
 ## Measure quality
 
+For opt-in local GPU work, see [experimental GPU quality measurement](./GPU-QUALITY.md).
+For reference-free VOD banding scores, intervals and warning/failure bounds, see
+[banding quality measurement](./BANDING-QUALITY.md).
+
 VMAF (Video Multi-Method Assessment Fusion) compares decoded output frames with
 a reference video. This application calculates it with ffmpeg/libvmaf; it is
 not a Bitmovin Encoding API metric.
@@ -248,7 +252,12 @@ CDN reachability or browser playback.
 
 ## Local and cloud execution
 
-Local execution is the default. The worker automatically selects calculation
+**Local CPU** is the default for new GUI measurements. Choose
+**Local (GPU if available)** to use a supported GPU on the worker when available, with the
+same-model CPU path otherwise. The report records the actual method and the
+reason for CPU selection. See [GPU setup and limits](./GPU-QUALITY.md#choose-local-processing).
+
+The worker automatically selects calculation
 threads and simultaneous VOD comparisons to fit its CPU and available memory.
 A large reference still requires decoding at that reference's dimensions even
 when the output is small. More calculation threads can also increase memory

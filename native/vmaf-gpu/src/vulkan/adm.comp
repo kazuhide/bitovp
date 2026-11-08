@@ -1,0 +1,421 @@
+/*
+ * Copyright 2016-2020 Netflix, Inc.
+ * Copyright (c) 2026 Kazuhide Yamamoto
+ * Licensed under the BSD+Patent License (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://opensource.org/licenses/BSDplusPatent
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Adapted mathematical stages from Netflix/vmaf
+// 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef integer_adm.c/.h.
+// Pixel operations run in Vulkan. Scratch maps hold sign-extended int16 values
+// at scale zero and int32 values at subsequent scales. Row sums retain every
+// original rounding point before the final scalar reduction.
+#version 450
+#extension GL_ARB_gpu_shader_fp64 : require
+#extension GL_ARB_gpu_shader_int64 : require
+#if defined(BITOVP_ADM_ROW_PIPELINE) || defined(BITOVP_ADM_REDUCE_PIPELINE)
+layout(local_size_x = 32, local_size_y = 1) in;
+#else
+layout(local_size_x = 16, local_size_y = 16) in;
+#endif
+layout(set = 0, binding = 0, std430) readonly buffer Reference { uint reference_words[]; };
+layout(set = 0, binding = 1, std430) readonly buffer Distorted { uint distorted_words[]; };
+layout(set = 0, binding = 2, std430) buffer Workspace { uint words[]; };
+layout(push_constant) uniform Parameters {
+    uint mode, scale, width, height, source_width, source_height, selector, unused;
+} p;
+
+#ifdef BITOVP_ADM_ROW_PIPELINE
+// Pool one row across 32 lanes. Only the row pipeline reserves the 1,536-byte
+// partial-sum workspace; the other ADM stages use no workgroup memory.
+shared uint64_t row_denominators[96];
+shared uint64_t row_numerators[96];
+#endif
+#ifdef BITOVP_ADM_REDUCE_PIPELINE
+// Dedicated reduction pipeline: nine exact row totals, 32 lanes, 2,304 bytes.
+// The pixel and row pipelines do not reserve this workgroup workspace.
+shared uint64_t scale_partials[288];
+#endif
+#ifdef BITOVP_ADM_DWT_PIPELINE
+// A 16x16 output tile needs 34 reflected source columns. Each entry keeps
+// the exact vertical low/high values before the horizontal rounding point.
+shared ivec2 dwt_tile[16 * 34];
+#endif
+
+const int low_filter[4] = int[4](15826, 27411, 7345, -4240);
+const int high_filter[4] = int[4](-4240, -7345, 27411, -15826);
+uint config(uint field) { return words[64u + p.scale * 16u + field]; }
+uint band(uint map) { return words[32u + map]; }
+int at(uint map, uint x, uint y) { return int(words[band(map) + y * p.width + x]); }
+void put(uint map, uint x, uint y, int value) { words[band(map) + y * p.width + x] = uint(value); }
+int narrow16(int value) { return (value << 16) >> 16; }
+int reflected(int value, int size) {
+    return value < 0 ? -value : value >= size ? 2 * size - value - 1 : value;
+}
+double parameter_double(uint offset) { return packDouble2x32(uvec2(words[offset], words[offset + 1u])); }
+void store_double(uint offset, double value) {
+    uvec2 bits = unpackDouble2x32(value); words[offset] = bits.x; words[offset + 1u] = bits.y;
+}
+uint64_t load64(uint offset) { return uint64_t(words[offset]) | (uint64_t(words[offset + 1u]) << 32); }
+void store64(uint offset, uint64_t value) {
+    words[offset] = uint(value); words[offset + 1u] = uint(value >> 32);
+}
+#ifdef BITOVP_ADM_ROW_PIPELINE
+uint64_t half_round(uint shift) { return shift == 0u ? uint64_t(0) : uint64_t(1) << (shift - 1u); }
+#endif
+double power2(int exponent) { return ldexp(1.0LF, exponent); }
+uint raw_sample(uint image, uint x, uint y) {
+    uint bytes = words[2] == 8u ? 1u : 2u;
+    uint offset = y * words[image == 0u ? 3 : 4] + x * bytes;
+    uint packed = image == 0u ? reference_words[offset >> 2u] : distorted_words[offset >> 2u];
+    uint value = packed >> ((offset & 3u) * 8u);
+    if (bytes == 2u && (offset & 3u) == 3u) {
+        uint next = image == 0u ? reference_words[(offset >> 2u) + 1u] : distorted_words[(offset >> 2u) + 1u];
+        value |= next << 8u;
+    }
+    return value & (bytes == 1u ? 255u : 65535u);
+}
+
+ivec2 vertical_zero(uint x, uint y) {
+    // Only bits [depth, depth + 15] survive the shift and narrow16.
+    // Unsigned modulo-2^32 sums retain those bits even for an out-of-range
+    // uint16 code value; the later scales still require signed int64.
+    uint lo = 0u, hi = 0u;
+    for (int k = 0; k < 4; ++k) {
+        int row = reflected(int(2u * y) - 1 + k, int(p.source_height));
+        uint value = raw_sample(p.selector, x, uint(row));
+        lo += uint(low_filter[k]) * value;
+        hi += uint(high_filter[k]) * value;
+    }
+    uint rounding = 1u << (words[2] - 1u);
+    return ivec2(narrow16(int((lo - 46342u * rounding + rounding) >> words[2])),
+                 narrow16(int((hi + rounding) >> words[2])));
+}
+void vertical(uint x, uint y) {
+    int64_t lo = int64_t(0), hi = int64_t(0);
+    for (int k = 0; k < 4; ++k) {
+        int row = reflected(int(2u * y) - 1 + k, int(p.source_height));
+        int value = p.scale == 0u ? int(raw_sample(p.selector, x, uint(row))) :
+            int(words[band(p.selector * 4u) + uint(row) * p.source_width + x]);
+        lo += int64_t(low_filter[k]) * value;
+        hi += int64_t(high_filter[k]) * value;
+    }
+    int vlo, vhi;
+    if (p.scale == 0u) {
+        int64_t rounding = int64_t(1) << (words[2] - 1u);
+        vlo = narrow16(int((lo - int64_t(46342) * rounding + rounding) >> words[2]));
+        vhi = narrow16(int((hi + rounding) >> words[2]));
+    } else {
+        uint shift = p.scale == 1u ? 0u : 16u;
+        int64_t rounding = p.scale == 1u ? int64_t(0) : int64_t(32768);
+        vlo = int((lo + rounding) >> shift); vhi = int((hi + rounding) >> shift);
+    }
+    words[words[52] + y * p.source_width + x] = uint(vlo);
+    words[words[53] + y * p.source_width + x] = uint(vhi);
+}
+void horizontal(uint x, uint y) {
+    int64_t a = int64_t(0), v = int64_t(0), h = int64_t(0), d = int64_t(0);
+    for (int k = 0; k < 4; ++k) {
+        int column = reflected(int(2u * x) - 1 + k, int(p.source_width));
+        int lo = int(words[words[52] + y * p.source_width + uint(column)]);
+        int hi = int(words[words[53] + y * p.source_width + uint(column)]);
+        a += int64_t(low_filter[k]) * lo; v += int64_t(high_filter[k]) * lo;
+        h += int64_t(low_filter[k]) * hi; d += int64_t(high_filter[k]) * hi;
+    }
+    uint shift = p.scale == 0u || p.scale == 2u ? 16u : 15u;
+    int64_t rounding = shift == 16u ? int64_t(32768) : int64_t(16384);
+    int values[4] = int[4](int((a + rounding) >> shift), int((v + rounding) >> shift),
+        int((h + rounding) >> shift), int((d + rounding) >> shift));
+    for (uint k = 0u; k < 4u; ++k)
+        put(p.selector * 4u + k, x, y, p.scale == 0u ? narrow16(values[k]) : values[k]);
+}
+#ifdef BITOVP_ADM_DWT_PIPELINE
+void fused_zero() {
+    uint tile_x = gl_WorkGroupID.x * 16u, tile_y = gl_WorkGroupID.y * 16u;
+    uint valid_columns = 2u * min(16u, p.width - tile_x) + 2u;
+    for (uint index = gl_LocalInvocationIndex; index < 16u * 34u; index += 256u) {
+        uint column = index % 34u, row = index / 34u;
+        ivec2 value = ivec2(0);
+        // Partial tiles must not reflect unused halo columns far beyond the
+        // image extent. Only columns read by an active output are loaded.
+        if (column < valid_columns && tile_y + row < p.height) {
+            int source_x = reflected(int(2u * tile_x) - 1 + int(column), int(p.source_width));
+            value = vertical_zero(uint(source_x), tile_y + row);
+        }
+        dwt_tile[index] = value;
+    }
+    barrier();
+    uint x = tile_x + gl_LocalInvocationID.x, y = tile_y + gl_LocalInvocationID.y;
+    if (x >= p.width || y >= p.height) return;
+    int a = 0, v = 0, h = 0, d = 0;
+    for (int k = 0; k < 4; ++k) {
+        ivec2 value = dwt_tile[gl_LocalInvocationID.y * 34u + 2u * gl_LocalInvocationID.x + uint(k)];
+        a += low_filter[k] * value.x; v += high_filter[k] * value.x;
+        h += low_filter[k] * value.y; d += high_filter[k] * value.y;
+    }
+    int values[4] = int[4]((a + 32768) >> 16, (v + 32768) >> 16,
+        (h + 32768) >> 16, (d + 32768) >> 16);
+    for (uint k = 0u; k < 4u; ++k) put(p.selector * 4u + k, x, y, narrow16(values[k]));
+}
+#endif
+int64_t gain_ratio(int reference, int distorted) {
+    if (reference == 0) return int64_t(32768);
+    uint magnitude = uint(abs(reference));
+    uint shift = 0u;
+    if (p.scale != 0u && magnitude >= 32768u) {
+        shift = uint(findMSB(magnitude)) - 14u;
+        magnitude = (magnitude + (1u << (shift - 1u))) >> shift;
+    }
+    int64_t reciprocal = int64_t(1073741824u / magnitude);
+    if (reference < 0) reciprocal = -reciprocal;
+    int64_t value = (reciprocal * distorted + (int64_t(1) << (14u + shift))) >> (15u + shift);
+    return clamp(value, int64_t(0), int64_t(32768));
+}
+void decouple(uint x, uint y) {
+    int reference[3] = int[3](at(2u, x, y), at(1u, x, y), at(3u, x, y));
+    int distorted[3] = int[3](at(6u, x, y), at(5u, x, y), at(7u, x, y));
+    int64_t dot_product = int64_t(reference[0]) * distorted[0] + int64_t(reference[1]) * distorted[1];
+    int64_t reference_square = int64_t(reference[0]) * reference[0] + int64_t(reference[1]) * reference[1];
+    int64_t distorted_square = int64_t(distorted[0]) * distorted[0] + int64_t(distorted[1]) * distorted[1];
+    precise double dot_scaled = double(float(dot_product)) / 4096.0LF;
+    precise double reference_scaled = double(float(reference_square)) / 4096.0LF;
+    precise double distorted_scaled = double(float(distorted_square)) / 4096.0LF;
+    precise double angle_limit = double(uintBitsToFloat(words[24])) * reference_scaled * distorted_scaled;
+    bool angle = dot_scaled >= 0.0LF && dot_scaled * dot_scaled >= angle_limit;
+    double enhancement = parameter_double(16u);
+    for (uint theta = 0u; theta < 3u; ++theta) {
+        int64_t ratio = gain_ratio(reference[theta], distorted[theta]);
+        int restored = int((ratio * reference[theta] + int64_t(16384)) >> 15);
+        if (p.scale == 0u) restored = narrow16(restored);
+        if (angle && ratio != int64_t(0) && reference[theta] > 0)
+            restored = int(min(double(restored) * enhancement, double(distorted[theta])));
+        if (angle && ratio != int64_t(0) && reference[theta] < 0)
+            restored = int(max(double(restored) * enhancement, double(distorted[theta])));
+        if (p.scale == 0u) restored = narrow16(restored);
+        int artifact = distorted[theta] - restored;
+        put(8u + theta, x, y, restored);
+        put(11u + theta, x, y, p.scale == 0u ? narrow16(artifact) : artifact);
+    }
+}
+void contrast_sensitivity(uint x, uint y) {
+    int center_sum = 0, filtered_sum = 0;
+    for (uint theta = 0u; theta < 3u; ++theta) {
+        int source = at((p.selector == 0u ? 11u : 8u) + theta, x, y);
+        uint factor = config(theta == 2u ? 12u : 11u);
+        int value, filtered;
+        if (p.scale == 0u) {
+            int product = int(factor) * source;
+            value = narrow16((product + (theta == 2u ? 65535 : 16384)) >> (theta == 2u ? 17 : 15));
+            filtered = narrow16((4369 * abs(value) + 2048) >> 12);
+        } else {
+            value = int((int64_t(factor) * source + int64_t(134217728)) >> 28);
+            // Original int32 add_bef_shift_flt stores 1u<<31 as negative.
+            filtered = int((int64_t(143165577) * abs(value) - int64_t(2147483648ul)) >> 32);
+        }
+        // Preserve each orientation's rounding and narrow before adding the
+        // three contributions. Row masking needs these two sums, not six maps.
+        center_sum += p.scale == 0u ? narrow16((8738 * abs(value) + 2048) >> 12) :
+            int((int64_t(286331153) * abs(value) - int64_t(2147483648ul)) >> 32);
+        filtered_sum += filtered;
+    }
+    put(14u, x, y, center_sum); put(17u, x, y, filtered_sum);
+}
+#ifdef BITOVP_ADM_ROW_PIPELINE
+int masking_threshold(uint x, uint y) {
+    int sum = at(14u, x, y);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            uint xx = uint(reflected(int(x) + dx, int(p.width)));
+            uint yy = uint(reflected(int(y) + dy, int(p.height)));
+            sum += at(17u, xx, yy);
+        }
+    return sum;
+}
+void pool_row(uint row) {
+    uint lane = gl_LocalInvocationIndex;
+    uint left = config(2u), top = config(3u);
+    uint right = p.width - left, bottom = p.height - top;
+    uint64_t den[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
+    uint64_t num[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
+    if (lane < 32u && row >= top && row < bottom) {
+        for (uint x = left + lane; x < right; x += 32u) {
+            int threshold = masking_threshold(x, row);
+            for (uint theta = 0u; theta < 3u; ++theta) {
+                if (p.selector == 0u) {
+                    uint map = theta == 0u ? 2u : theta == 1u ? 1u : 3u;
+                    uint64_t value = uint64_t(abs(at(map, x, row)));
+                    if (p.scale == 0u) den[theta] += value * value * value;
+                    else {
+                        uint square_shift = p.scale == 2u ? 30u : 31u;
+                        uint64_t square = (value * value + (uint64_t(1) << square_shift)) >> square_shift;
+                        den[theta] += (square * value + half_round(config(4u))) >> config(4u);
+                    }
+                }
+                int source = at((p.selector == 0u ? 8u : 11u) + theta, x, row);
+                uint factor = config(theta == 2u ? 12u : 11u);
+                int value = p.scale == 0u ? source * int(factor) :
+                    int((int64_t(source) * int64_t(factor) + int64_t(134217728)) >> 28);
+                value = max(abs(value) - (p.scale == 0u ? threshold << (theta == 2u ? 12 : 10) : threshold), 0);
+                uint square_shift = p.scale == 0u && theta != 2u ? 29u : 30u;
+                int square = int((int64_t(value) * value + (int64_t(1) << (square_shift - 1u))) >> square_shift);
+                uint cube_shift = config(theta == 2u ? 7u : 6u);
+                num[theta] += uint64_t((int64_t(square) * value + int64_t(half_round(cube_shift))) >> cube_shift);
+            }
+        }
+    }
+    if (lane < 32u) for (uint theta = 0u; theta < 3u; ++theta) {
+        row_denominators[theta * 32u + lane] = den[theta];
+        row_numerators[theta * 32u + lane] = num[theta];
+    }
+    // All 32 lanes participate in every barrier, including cropped rows.
+    // Integer addition remains exact modulo 2^64; row rounding happens once
+    // after the complete reduction.
+    barrier();
+    for (uint offset = 16u; offset != 0u; offset >>= 1u) {
+        if (lane < offset) for (uint theta = 0u; theta < 3u; ++theta) {
+            row_denominators[theta * 32u + lane] += row_denominators[theta * 32u + lane + offset];
+            row_numerators[theta * 32u + lane] += row_numerators[theta * 32u + lane + offset];
+        }
+        barrier();
+    }
+    if (lane == 0u) for (uint theta = 0u; theta < 3u; ++theta) {
+        if (p.selector == 0u) {
+            uint shift = config(p.scale == 0u ? 4u : 5u);
+            store64(words[54] + (row * 3u + theta) * 2u,
+                    (row_denominators[theta * 32u] + half_round(shift)) >> shift);
+        }
+        store64(words[p.selector == 0u ? 55 : 56] + (row * 3u + theta) * 2u,
+                (row_numerators[theta * 32u] + half_round(config(8u))) >> config(8u));
+    }
+}
+#endif
+void reduce_scale() {
+    uint64_t den[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
+    uint64_t num[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
+    uint64_t aim[3] = uint64_t[3](uint64_t(0), uint64_t(0), uint64_t(0));
+#ifdef BITOVP_ADM_REDUCE_PIPELINE
+    uint lane = gl_LocalInvocationIndex;
+    for (uint y = lane; y < p.height; y += 32u) for (uint theta = 0u; theta < 3u; ++theta) {
+        uint offset = (y * 3u + theta) * 2u;
+        den[theta] += load64(words[54] + offset);
+        num[theta] += load64(words[55] + offset);
+        aim[theta] += load64(words[56] + offset);
+    }
+    for (uint theta = 0u; theta < 3u; ++theta) {
+        scale_partials[theta * 32u + lane] = den[theta];
+        scale_partials[(3u + theta) * 32u + lane] = num[theta];
+        scale_partials[(6u + theta) * 32u + lane] = aim[theta];
+    }
+    barrier();
+    for (uint offset = 16u; offset != 0u; offset >>= 1u) {
+        if (lane < offset) for (uint total = 0u; total < 9u; ++total)
+            scale_partials[total * 32u + lane] += scale_partials[total * 32u + lane + offset];
+        barrier();
+    }
+    if (lane != 0u) return;
+    for (uint theta = 0u; theta < 3u; ++theta) {
+        den[theta] = scale_partials[theta * 32u];
+        num[theta] = scale_partials[(3u + theta) * 32u];
+        aim[theta] = scale_partials[(6u + theta) * 32u];
+    }
+#else
+    for (uint y = 0u; y < p.height; ++y) for (uint theta = 0u; theta < 3u; ++theta) {
+        uint offset = (y * 3u + theta) * 2u;
+        den[theta] += load64(words[54] + offset);
+        num[theta] += load64(words[55] + offset);
+        aim[theta] += load64(words[56] + offset);
+    }
+#endif
+#ifdef BITOVP_ADM_REDUCE_TEST_OUTPUT
+    // The direct integer-stage test observes the exact totals before the
+    // unchanged float arithmetic, including modulo-2^64 overflow fixtures.
+    for (uint theta = 0u; theta < 3u; ++theta) {
+        store64(words[59] + theta * 2u, den[theta]);
+        store64(words[59] + (3u + theta) * 2u, num[theta]);
+        store64(words[59] + (6u + theta) * 2u, aim[theta]);
+    }
+    return;
+#endif
+    if (words[59] != 0u) {
+        // Retain the exact integer totals for host libm normalization. GLSL
+        // pow() is implementation-dependent and can amplify into model error.
+        uint offset = words[59] + p.scale * 18u;
+        for (uint theta = 0u; theta < 3u; ++theta) {
+            store64(offset + theta * 2u, den[theta]);
+            store64(offset + (3u + theta) * 2u, num[theta]);
+            store64(offset + (6u + theta) * 2u, aim[theta]);
+        }
+        return;
+    }
+    precise float d[3], n[3], a[3];
+    for (uint theta = 0u; theta < 3u; ++theta) {
+        precise double factor = double(uintBitsToFloat(config(theta == 2u ? 10u : 9u)));
+        precise double factor_cubed = factor * factor * factor;
+        int den_exponent = p.scale == 0u ? 18 - int(config(4u)) :
+            (p.scale == 1u ? 32 : p.scale == 2u ? 27 : 23) - int(config(4u)) - int(config(5u));
+        precise float csf = float(double(den[theta]) / power2(den_exponent) * factor_cubed);
+        precise float noise = uintBitsToFloat(config(13u));
+        d[theta] = pow(csf, 1.0f / 3.0f) + noise;
+        int num_exponent = p.scale == 0u ? (theta == 2u ? 57 : 52) -
+            int(config(theta == 2u ? 7u : 6u)) - int(config(8u)) :
+            (p.scale == 1u ? 45 : p.scale == 2u ? 39 : 36) - int(config(6u)) - int(config(8u));
+        precise float nv = p.scale == 0u ? float(double(num[theta]) / power2(num_exponent)) :
+            float(num[theta]) / float(power2(num_exponent));
+        precise float av = p.scale == 0u ? float(double(aim[theta]) / power2(num_exponent)) :
+            float(aim[theta]) / float(power2(num_exponent));
+        n[theta] = pow(nv, 1.0f / 3.0f) + noise;
+        a[theta] = pow(av, 1.0f / 3.0f);
+    }
+    precise float ns = (n[0] + n[1]) + n[2];
+    precise float ds = (d[0] + d[1]) + d[2];
+    precise float ascore = (a[0] + a[1]) + a[2];
+    uint offset = words[57] + p.scale * 3u;
+    words[offset] = floatBitsToUint(ns); words[offset + 1u] = floatBitsToUint(ds);
+    words[offset + 2u] = floatBitsToUint(ascore);
+}
+void finish_score() {
+    precise double numerator = 0.0LF, denominator = 0.0LF, aim_numerator = 0.0LF;
+    for (uint scale = 0u; scale < 4u; ++scale) {
+        uint offset = words[57] + scale * 3u;
+        numerator += double(uintBitsToFloat(words[offset]));
+        denominator += double(uintBitsToFloat(words[offset + 1u]));
+        aim_numerator += double(uintBitsToFloat(words[offset + 2u]));
+    }
+    double limit = parameter_double(22u);
+    if (numerator < limit) numerator = 0.0LF;
+    if (denominator < limit) denominator = 0.0LF;
+    precise double score = denominator == 0.0LF ? 1.0LF : numerator / denominator;
+    precise double aim = denominator == 0.0LF ? 0.0LF : aim_numerator / denominator;
+    precise double weight = parameter_double(18u);
+    precise double adm3 = max(score * weight + (1.0LF - aim) * (1.0LF - weight), parameter_double(20u));
+    store_double(words[58], adm3); store_double(words[58] + 2u, score); store_double(words[58] + 4u, aim);
+}
+void main() {
+#ifdef BITOVP_ADM_DWT_PIPELINE
+    if (p.scale == 0u) fused_zero();
+#elif defined(BITOVP_ADM_MASK_TEST_OUTPUT)
+    uint pixel = gl_GlobalInvocationID.x;
+    if (pixel < p.width * p.height)
+        words[words[59] + pixel] = uint(masking_threshold(pixel % p.width, pixel / p.width));
+#elif defined(BITOVP_ADM_ROW_PIPELINE)
+    if (gl_WorkGroupID.x < p.height) pool_row(gl_WorkGroupID.x);
+#elif defined(BITOVP_ADM_REDUCE_PIPELINE)
+    if (gl_WorkGroupID.x == 0u) reduce_scale();
+#else
+    uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
+    if (p.mode == 6u) { if (x == 0u && y == 0u) finish_score(); return; }
+    if (p.mode == 5u) { if (x == 0u && y == 0u) reduce_scale(); return; }
+    if (x >= p.width || y >= p.height) return;
+    if (p.mode == 0u) vertical(x, y);
+    else if (p.mode == 1u) horizontal(x, y);
+    else if (p.mode == 2u) decouple(x, y);
+    else if (p.mode == 3u) contrast_sensitivity(x, y);
+#endif
+}

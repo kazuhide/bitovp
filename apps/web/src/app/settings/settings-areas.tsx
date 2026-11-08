@@ -1,5 +1,15 @@
 "use client";
 
+import {
+	ChevronRight,
+	Cloud,
+	Layers,
+	Link2,
+	type LucideIcon,
+	Play,
+	UserRound,
+	UsersRound,
+} from "lucide-react";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -9,138 +19,122 @@ import { useRoleView } from "@/lib/auth/use-session";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 
-/** Direct settings areas. Personal preferences live on the landing page;
- * pageAccess remains the authority for each card's role visibility. */
 type Area = {
 	titleKey: MessageKey;
 	href: string;
-	captionKey: MessageKey;
-	/** User management exists only when AUTH_MODE=users. Its ADMIN floor is
-	 * supplied by `pageAccess`, alongside every other restricted child. */
+	captionKey?: MessageKey;
+	/** Single-owner installs have no user membership management. */
 	usersModeOnly?: boolean;
 };
 
-const WORKSPACE: ReadonlyArray<Area> = [
+const CONNECTIONS: readonly Area[] = [
+	{
+		titleKey: "settings.bitmovinAccounts",
+		href: "/settings/bitmovin",
+		captionKey: "settingsCatalog.accountsCaption",
+	},
+	{
+		titleKey: "settings.storageCredentials",
+		href: "/settings/credentials",
+		captionKey: "settingsCatalog.credentialsCaption",
+	},
+	{
+		titleKey: "settingsCatalog.infrastructure",
+		href: "/settings/infrastructure",
+		captionKey: "settingsCatalog.infrastructureCaption",
+	},
+	{
+		titleKey: "settingsCatalog.live",
+		href: "/settings/live",
+		captionKey: "settingsCatalog.liveCaption",
+	},
+];
+
+const PLAYBACK: readonly Area[] = [
+	{
+		titleKey: "settingsX.player",
+		href: "/settings/player",
+		captionKey: "settingsCatalog.playerCaption",
+	},
+	{
+		titleKey: "settingsCatalog.quality",
+		href: "/settings/features",
+		captionKey: "settingsCatalog.qualityCaption",
+	},
+];
+
+const AUTOMATION: readonly Area[] = [
+	{
+		titleKey: "watch.title",
+		href: "/settings/watch-folders",
+		captionKey: "settingsCatalog.watchCaption",
+	},
+	{
+		titleKey: "settingsCatalog.notifications",
+		href: "/settings/notifications",
+		captionKey: "settingsCatalog.notificationsCaption",
+	},
+	{
+		titleKey: "settingsCatalog.events",
+		href: "/settings/webhooks",
+		captionKey: "settingsCatalog.eventsCaption",
+	},
+];
+
+const ACCESS: readonly Area[] = [
+	{
+		titleKey: "settingsCatalog.organizations",
+		href: "/settings/organizations",
+		captionKey: "settingsCatalog.organizationsCaption",
+		usersModeOnly: true,
+	},
+	{
+		titleKey: "settingsCatalog.branding",
+		href: "/settings/branding",
+		captionKey: "settingsCatalog.brandingCaption",
+	},
+	{
+		titleKey: "settingsX.users",
+		href: "/settings/users",
+		captionKey: "settingsCatalog.usersCaption",
+		usersModeOnly: true,
+	},
+	{
+		titleKey: "settingsX.apiTokens",
+		href: "/settings/tokens",
+		captionKey: "settingsCatalog.tokensCaption",
+	},
+	{
+		titleKey: "tenant.accessAudit",
+		href: "/settings/access-audit",
+		captionKey: "settingsCatalog.auditCaption",
+		usersModeOnly: true,
+	},
+];
+
+const DIAGNOSTICS: readonly Area[] = [
 	{
 		titleKey: "clipDiagnostics.title",
 		href: "/settings/clip-editing",
 		captionKey: "clipDiagnostics.caption",
 	},
 	{
-		titleKey: "branding.title",
-		href: "/settings/branding",
-		captionKey: "branding.scope",
-	},
-	{
-		titleKey: "settings.bitmovinAccounts",
-		href: "/settings/bitmovin",
-		captionKey: "settings.apiKeyWriteOnlyOrgId",
-	},
-	{
-		titleKey: "settingsX.features",
-		href: "/settings/features",
-		captionKey: "settingsX.featuresCaption",
-	},
-	{
-		titleKey: "settingsX.player",
-		href: "/settings/player",
-		captionKey: "settingsX.playerCaption",
-	},
-	{
-		titleKey: "settingsX.notifications",
-		href: "/settings/notifications",
-		captionKey: "settings.notificationsCaption",
-	},
-
-	{
-		titleKey: "vmafSettings.title",
-		href: "/settings/vmaf",
-		captionKey: "vmafSettings.intro",
-	},
-	{
-		titleKey: "settings.storageCredentials",
-		href: "/settings/credentials",
-		captionKey: "settings.s3S3RoleGenericS3Akamai",
-	},
-	{
-		titleKey: "settingsX.webhooks",
-		href: "/settings/webhooks",
-		captionKey: "settings.bitmovinNotificationReceiverSignatureVerificatio",
-	},
-	{
-		titleKey: "settingsX.infrastructure",
-		href: "/settings/infrastructure",
-		captionKey: "settings.cloudConnectAwsGceAzureAkamai",
-	},
-	{
-		// "Live", not "Live Channels" — the channel LIST is at /live; this card is the
-		// account-level live resources page (review catch).
-		titleKey: "settingsX.live",
-		href: "/settings/live",
-		captionKey: "settings.reservedStreamKeysCreateDeleteUnassign",
-	},
-	{
-		titleKey: "watch.title",
-		href: "/settings/watch-folders",
-		captionKey: "watch.explainer",
-	},
-	{
 		titleKey: "settingsX.apiCoverage",
 		href: "/settings/api-coverage",
-		captionKey: "settingsX.apiCoverageCaption",
-	},
-];
-
-const ACCESS: ReadonlyArray<Area> = [
-	{
-		titleKey: "tenant.organizations",
-		href: "/settings/organizations",
-		captionKey: "tenant.organizationsCaption",
-		usersModeOnly: true,
-	},
-	{
-		titleKey: "tenant.accessAudit",
-		href: "/settings/access-audit",
-		captionKey: "tenant.accessCaption",
-		usersModeOnly: true,
-	},
-	{
-		titleKey: "settingsX.apiTokens",
-		href: "/settings/tokens",
-		captionKey: "settings.apiTokensCaption",
-	},
-	{
-		titleKey: "settingsX.users",
-		href: "/settings/users",
-		captionKey: "settingsX.usersCaption",
-		usersModeOnly: true,
-	},
-];
-
-// : destructive, so it sits last rather than beside the
-// everyday configuration areas.
-const DANGER: ReadonlyArray<Area> = [
-	{
-		titleKey: "settingsX.reset",
-		href: "/settings/reset",
-		captionKey: "settingsX.resetCaption",
 	},
 ];
 
 export function SettingsAreas() {
 	const { t } = useT();
 	const { view } = useRoleView();
+	// The same floors as direct URLs and navigation; unresolved sessions fail closed.
 	const visible = (area: Area) =>
 		canAccess(pageAccess(area.href), view) &&
-		// review-286 M5: password/none are single-owner and can enter every
-		// role floor, but Users would still dead-end because no user model
-		// exists there. Preserve that availability rule independently.
 		(!area.usersModeOnly || view.kind === "role");
-	const access = ACCESS.filter(visible);
 	return (
 		<section>
 			<div className="flex items-center gap-2">
-				<h1 className="font-semibold text-xl text-zinc-50">
+				<h1 className="font-semibold text-2xl text-zinc-50">
 					{t("nav.settings")}
 				</h1>
 				<InfoHint
@@ -148,48 +142,142 @@ export function SettingsAreas() {
 					text={t("settings.workspaceConfiguration")}
 				/>
 			</div>
-			<div className="mt-6 grid grid-cols-1 gap-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-5 md:grid-cols-2">
-				<LocaleSwitcher select />
-				<ThemeSwitcher />
+			<section
+				aria-labelledby="settings-personal"
+				className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3"
+			>
+				<PanelHeading
+					id="settings-personal"
+					icon={UserRound}
+					titleKey="settingsCatalog.personal"
+				/>
+				<div className="grid grid-cols-1 gap-5 px-2 pt-2 sm:grid-cols-2 sm:gap-8 sm:px-10">
+					<LocaleSwitcher select />
+					<ThemeSwitcher />
+				</div>
+			</section>
+			<div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+				<div className="min-w-0 space-y-6">
+					<Category
+						id="settings-connections"
+						icon={Cloud}
+						titleKey="settingsCatalog.connections"
+						areas={CONNECTIONS.filter(visible)}
+					/>
+					<Category
+						id="settings-automation"
+						icon={Link2}
+						titleKey="settingsCatalog.automation"
+						areas={AUTOMATION.filter(visible)}
+					/>
+				</div>
+				<div className="min-w-0 space-y-6">
+					<Category
+						id="settings-playback"
+						icon={Play}
+						titleKey="settingsCatalog.playback"
+						areas={PLAYBACK.filter(visible)}
+					/>
+					<Category
+						id="settings-access"
+						icon={UsersRound}
+						titleKey="settingsCatalog.access"
+						areas={ACCESS.filter(visible)}
+					/>
+				</div>
 			</div>
-			<Grid areas={WORKSPACE.filter(visible)} />
-			{access.length > 0 ? (
-				<>
-					<h2 className="mt-8 font-medium text-sm text-zinc-300">
-						{t("settingsX.groupAccess")}
-					</h2>
-					<Grid areas={access} />
-				</>
+			<div className="mt-6">
+				<Category
+					id="settings-diagnostics"
+					icon={Layers}
+					titleKey="settingsCatalog.diagnostics"
+					areas={DIAGNOSTICS.filter(visible)}
+				/>
+			</div>
+			{canAccess(pageAccess("/settings/reset"), view) ? (
+				<div className="mt-6 border-t border-zinc-800 pt-3">
+					<Link
+						href="/settings/reset"
+						className="inline-flex min-h-11 items-center gap-2 rounded-md px-1 text-red-400 text-sm transition-colors hover:text-red-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-400"
+					>
+						{t("settingsX.reset")}
+						<ChevronRight aria-hidden className="h-4 w-4" />
+					</Link>
+				</div>
 			) : null}
-			<Grid areas={DANGER.filter(visible)} className="mt-8" />
 		</section>
 	);
 }
 
-function Grid({
-	areas,
-	className = "mt-4",
+function PanelHeading({
+	id,
+	icon: Icon,
+	titleKey,
 }: {
-	areas: ReadonlyArray<Area>;
-	className?: string;
+	id: string;
+	icon: LucideIcon;
+	titleKey: MessageKey;
 }) {
 	const { t } = useT();
 	return (
-		<div className={`${className} grid grid-cols-1 gap-4 md:grid-cols-2`}>
-			{areas.map((area) => (
-				<Link
-					key={area.href}
-					href={area.href}
-					className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5 transition-colors hover:border-zinc-600 hover:bg-zinc-900"
-				>
-					<h2 className="font-medium text-sm text-zinc-100">
-						{t(area.titleKey)}
-					</h2>
-					{area.href === "/settings/reset" ? (
-						<p className="mt-3 text-xs text-zinc-500">{t(area.captionKey)}</p>
-					) : null}
-				</Link>
-			))}
-		</div>
+		<h2
+			id={id}
+			className="flex items-center gap-3 border-zinc-800 border-b px-2 pb-2 font-semibold text-base text-zinc-100"
+		>
+			<Icon
+				aria-hidden
+				className="h-5 w-5 shrink-0 text-emerald-400"
+				strokeWidth={1.5}
+			/>
+			{t(titleKey)}
+		</h2>
+	);
+}
+
+function Category({
+	id,
+	icon,
+	titleKey,
+	areas,
+}: {
+	id: string;
+	icon: LucideIcon;
+	titleKey: MessageKey;
+	areas: readonly Area[];
+}) {
+	const { t } = useT();
+	if (areas.length === 0) return null;
+	return (
+		<section
+			aria-labelledby={id}
+			className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3"
+		>
+			<PanelHeading id={id} icon={icon} titleKey={titleKey} />
+			<ul className="divide-y divide-zinc-800">
+				{areas.map((area) => (
+					<li key={area.href}>
+						<Link
+							href={area.href}
+							className="flex min-h-12 items-center justify-between gap-3 rounded-md px-3 py-1.5 transition-colors hover:bg-zinc-800/60 focus-visible:outline-2 focus-visible:outline-emerald-400 focus-visible:outline-offset-2"
+						>
+							<div className="min-w-0">
+								<h3 className="break-words font-medium text-base text-zinc-100">
+									{t(area.titleKey)}
+								</h3>
+								{area.captionKey ? (
+									<p className="mt-0.5 break-words text-sm text-zinc-400">
+										{t(area.captionKey)}
+									</p>
+								) : null}
+							</div>
+							<ChevronRight
+								aria-hidden
+								className="h-4 w-4 shrink-0 text-zinc-400"
+							/>
+						</Link>
+					</li>
+				))}
+			</ul>
+		</section>
 	);
 }

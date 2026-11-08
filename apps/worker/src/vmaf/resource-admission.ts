@@ -26,6 +26,9 @@ type Waiter = {
 export function createResourceAdmission(options: {
 	capacityBytes: number;
 	availableBytes(): number | undefined;
+	/** Also reserve headroom for children that have not allocated their RAM yet.
+	 * Materialized allocations can be counted twice, intentionally conservatively. */
+	accountUnmaterializedReservations?: boolean;
 	pollMilliseconds?: number;
 	externalStallMilliseconds?: number;
 }) {
@@ -60,7 +63,9 @@ export function createResourceAdmission(options: {
 				reserved + waiter.charge <= options.capacityBytes &&
 				available !== undefined &&
 				Number.isFinite(available) &&
-				waiter.bytes <= available
+				waiter.bytes +
+					(options.accountUnmaterializedReservations ? reserved : 0) <=
+					available
 			) {
 				remove(waiter);
 				reserved += waiter.charge;

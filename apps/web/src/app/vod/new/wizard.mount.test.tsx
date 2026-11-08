@@ -56,7 +56,7 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 					? "固定するエンコーダバージョン"
 					: "Pinned encoder version",
 			),
-		).toHaveValue("2.291.0");
+		).toHaveValue("2.292.0");
 		await userEvent.click(
 			screen.getByRole("button", {
 				name:
@@ -66,7 +66,7 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 			}),
 		);
 		expect(
-			await screen.findByText(/Encoder 2\.291\.0.*Beta/),
+			await screen.findByText(/Encoder 2\.292\.0.*Beta/),
 		).toBeInTheDocument();
 	});
 

@@ -67,6 +67,51 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]/export", () => {
+	it("selects and exports safe local execution metadata without private provenance", async () => {
+		const localExecution = {
+			version: 1,
+			requestedDecode: "auto",
+			device: 0,
+			decode: {
+				reference: { backend: "cuda" },
+				distorted: { backend: "cuda" },
+			},
+			scoring: {
+				backend: "cpu",
+				implementation: "libvmaf",
+				model: "vmaf_v0.6.1",
+			},
+			attempts: 1,
+		};
+		const job = jobWithTwoRenditions();
+		findUnique.mockResolvedValueOnce({
+			...job,
+			results: job.results.map((result) => ({
+				...result,
+				provenance: {
+					localExecution,
+					reference: { path: "/private/source.mp4" },
+				},
+			})),
+		});
+		const response = await GET(
+			new Request(`http://test/api/vmaf-jobs/${JOB_ID}/export`),
+			params(),
+		);
+		expect(findUnique.mock.calls[0]?.[0].select.results.select).toHaveProperty(
+			"provenance",
+			true,
+		);
+		const text = await response.text();
+		const data = JSON.parse(text);
+		expect(
+			data.renditions.map(
+				(result: { localExecution: unknown }) => result.localExecution,
+			),
+		).toEqual([localExecution, localExecution]);
+		expect(text).not.toMatch(/private|provenance/);
+	});
+
 	it("fetches one tenant-scoped blob on demand and stops before later renditions when cancelled", async () => {
 		const job = jobWithTwoRenditions();
 		const firstResult = job.results[0];

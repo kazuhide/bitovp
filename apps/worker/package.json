@@ -1,6 +1,6 @@
 {
 	"name": "@bitovp/worker",
-	"version": "1.0.0-rc.1",
+	"version": "1.1.0",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -13,13 +13,13 @@
 		"verify": "tsx scripts/verify.ts"
 	},
 	"dependencies": {
-		"@aws-sdk/client-batch": "^3.1138.0",
-		"@aws-sdk/client-s3": "^3.1138.0",
-		"@aws-sdk/lib-storage": "^3.1066.0",
-		"@aws-sdk/s3-request-presigner": "^3.1066.0",
+		"@aws-sdk/client-batch": "^3.1161.0",
+		"@aws-sdk/client-s3": "^3.1161.0",
+		"@aws-sdk/lib-storage": "^3.1161.0",
+		"@aws-sdk/s3-request-presigner": "^3.1161.0",
 		"@azure/identity": "^4.13.3",
 		"@azure/storage-blob": "^12.33.0",
-		"@bitmovin/api-sdk": "1.286.0",
+		"@bitmovin/api-sdk": "1.287.0",
 		"@bitovp/core": "workspace:*",
 		"@bitovp/db": "workspace:*",
 		"@bitovp/storage": "workspace:*",
@@ -30,7 +30,8 @@
 		"ioredis": "^5.4.1",
 		"m3u8-parser": "^7.2.0",
 		"mpd-parser": "^1.4.0",
-		"tsx": "4.22.5"
+		"tsx": "4.22.5",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

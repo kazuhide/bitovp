@@ -52,6 +52,8 @@ export const CASES = [
 	"keep independent installation sessions isolated",
 	"persist VOD through the authenticated submission API",
 	"persist Live through the authenticated submission API",
+	"VOD account defaults, ladder defaults and manual overrides",
+	"Live account defaults and manual overrides survive step navigation",
 ];
 const QUEUES = [
 	"usageStatistics",

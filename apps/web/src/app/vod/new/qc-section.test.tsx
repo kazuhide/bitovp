@@ -69,6 +69,123 @@ const baseState: WizardState = {
 };
 
 describe("EncodingOptionsSection — Quality control (VMAF)", () => {
+	it("enables model-free banding on local CPU without creating a delivery rule", () => {
+		const onPatch = vi.fn();
+		render(<EncodingOptionsSection state={baseState} onPatch={onPatch} />);
+		fireEvent.click(
+			screen.getByLabelText("Run banding detection after encoding"),
+		);
+		expect(onPatch.mock.calls.at(-1)?.[0].qc).toMatchObject({
+			vmaf: false,
+			psnr: false,
+			banding: true,
+			execution: { backend: "LOCAL", localMode: "CPU" },
+		});
+		expect(onPatch.mock.calls.at(-1)?.[0].qc).not.toHaveProperty("gate");
+	});
+
+	it("shows execution and score-only gates for Banding without VMAF model or PSNR controls", () => {
+		render(
+			<EncodingOptionsSection
+				state={{
+					...baseState,
+					qc: {
+						vmaf: false,
+						psnr: false,
+						model: "",
+						banding: true,
+						execution: { backend: "LOCAL", localMode: "CPU" },
+					},
+				}}
+				onPatch={vi.fn()}
+			/>,
+		);
+		expect(screen.getByLabelText("Run on")).toBeInTheDocument();
+		expect(screen.queryByLabelText("VMAF model")).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText("Also compute PSNR"),
+		).not.toBeInTheDocument();
+		expect(screen.getByText("Add gate rule")).toBeInTheDocument();
+	});
+
+	it("starts an explicit CAMBI rule with a per-rendition upper bound and WARN severity", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={{
+					...baseState,
+					qc: {
+						vmaf: true,
+						psnr: false,
+						model: DEFAULT_VMAF_MODEL,
+						banding: true,
+						gate: {
+							rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+							onFail: "MARK_ONLY",
+						},
+					},
+				}}
+				onPatch={onPatch}
+			/>,
+		);
+		fireEvent.change(screen.getByLabelText("Metric 1"), {
+			target: { value: "CAMBI_MAX" },
+		});
+		expect(onPatch.mock.calls.at(-1)?.[0].qc.gate.rules[0]).toEqual({
+			metric: "CAMBI_MAX",
+			scope: "PER_RENDITION",
+			lte: 5,
+			severity: "WARN",
+		});
+	});
+
+	it("edits CAMBI failure bounds without a gte and keeps its scope per rendition", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={{
+					...baseState,
+					qc: {
+						vmaf: false,
+						psnr: false,
+						model: "",
+						banding: true,
+						gate: {
+							rules: [
+								{
+									metric: "CAMBI_MAX",
+									scope: "PER_RENDITION",
+									lte: 5,
+									severity: "WARN",
+								},
+							],
+							onFail: "MARK_ONLY",
+						},
+					},
+				}}
+				onPatch={onPatch}
+			/>,
+		);
+		expect(screen.getByLabelText("Scope 1")).toBeDisabled();
+		fireEvent.change(screen.getByLabelText("Severity 1"), {
+			target: { value: "FAIL" },
+		});
+		expect(onPatch.mock.calls.at(-1)?.[0].qc.gate.rules[0]).toEqual({
+			metric: "CAMBI_MAX",
+			scope: "PER_RENDITION",
+			lte: 5,
+			severity: "FAIL",
+		});
+		fireEvent.change(screen.getByLabelText("Maximum CAMBI (≤)"), {
+			target: { value: "10" },
+		});
+		expect(onPatch.mock.calls.at(-1)?.[0].qc.gate.rules[0]).toEqual({
+			metric: "CAMBI_MAX",
+			scope: "PER_RENDITION",
+			lte: 10,
+			severity: "WARN",
+		});
+	});
 	it("renders the VMAF toggle, hiding model + PSNR until it is on", () => {
 		render(<EncodingOptionsSection state={baseState} onPatch={vi.fn()} />);
 		expect(
@@ -81,12 +198,17 @@ describe("EncodingOptionsSection — Quality control (VMAF)", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("enabling VMAF patches qc:{vmaf:true} (default model, psnr off)", () => {
+	it("enabling VMAF defaults to local CPU with the default model and PSNR off", () => {
 		const onPatch = vi.fn();
 		render(<EncodingOptionsSection state={baseState} onPatch={onPatch} />);
 		fireEvent.click(screen.getByLabelText("Run VMAF QC after encoding"));
 		expect(onPatch).toHaveBeenCalledWith({
-			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false },
+			qc: {
+				vmaf: true,
+				model: DEFAULT_VMAF_MODEL,
+				psnr: false,
+				execution: { backend: "LOCAL", localMode: "CPU" },
+			},
 		});
 	});
 

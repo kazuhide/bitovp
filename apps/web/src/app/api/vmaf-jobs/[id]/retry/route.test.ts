@@ -98,6 +98,86 @@ beforeEach(() => {
 	getJob.mockResolvedValue(null);
 });
 describe("local VMAF-only retry", () => {
+	it("retains the Banding discriminator and generation when retrying CAMBI evidence", async () => {
+		findUnique.mockResolvedValue(
+			row({
+				model: "CAMBI",
+				params: {
+					kind: "BANDING",
+					source: "OUTPUT_MP4",
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					bandingSelection: { backend: "cuda" },
+				},
+			}),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			model: "CAMBI",
+			scoringVersion: 11,
+			params: {
+				kind: "BANDING",
+				source: "OUTPUT_MP4",
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				retryOf: ID,
+			},
+		});
+		expect(create.mock.calls[0]?.[0].data.params).not.toHaveProperty(
+			"bandingSelection",
+		);
+	});
+
+	it("keeps optional Banding for combined VMAF retries", async () => {
+		findUnique.mockResolvedValue(
+			row({ params: { banding: true, psnr: true } }),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.params).toMatchObject({
+			banding: true,
+			psnr: true,
+		});
+	});
+	it("preserves an explicit Banding-off choice over a combined parent on retry", async () => {
+		findUnique.mockResolvedValue(
+			row({
+				params: {
+					banding: false,
+					psnr: true,
+					execution: { backend: "LOCAL", localMode: "CPU" },
+				},
+				encodingJob: {
+					...row().encodingJob,
+					plan: { ...plan, qc: { ...plan.qc, banding: true } },
+				},
+			}),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.params).toMatchObject({
+			banding: false,
+			psnr: true,
+			execution: { backend: "LOCAL", localMode: "CPU" },
+			retryOf: ID,
+		});
+	});
+	it.each([
+		"CPU",
+		"AUTO",
+	] as const)("preserves %s intent while creating a fresh measurement", async (localMode) => {
+		const execution = { backend: "LOCAL", localMode };
+		findUnique.mockResolvedValue(
+			row({
+				params: {
+					execution,
+					localSelection: { backend: "cuda", requested: localMode },
+					localScoring: { backend: "cuda" },
+				},
+			}),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.params).toEqual({
+			execution,
+			retryOf: ID,
+		});
+	});
 	it("keeps failed evidence and creates only a local VMAF queue item", async () => {
 		expect((await post()).status).toBe(201);
 		expect(create).toHaveBeenCalledWith(

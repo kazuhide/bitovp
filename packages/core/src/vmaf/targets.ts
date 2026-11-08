@@ -71,6 +71,30 @@ export type QcTarget = {
 	distorted: QcDistorted;
 };
 
+/** CAMBI observes the encoded asset; it never needs a source comparison. */
+export type BandingTarget = Omit<QcTarget, "reference">;
+
+/** Require the same complete, nonempty set of encoded assets across metrics. */
+export function sameQcTargetPopulation(
+	left: readonly Pick<QcTarget, "renditionKey" | "distorted">[],
+	right: readonly Pick<QcTarget, "renditionKey" | "distorted">[],
+): boolean {
+	if (left.length === 0 || left.length !== right.length) return false;
+	const identity = (target: Pick<QcTarget, "renditionKey" | "distorted">) =>
+		JSON.stringify([
+			target.renditionKey,
+			target.distorted.outputKey,
+			target.distorted.path,
+		]);
+	const expected = new Set(left.map(identity));
+	const actual = new Set(right.map(identity));
+	return (
+		expected.size === left.length &&
+		actual.size === right.length &&
+		right.every((target) => expected.has(identity(target)))
+	);
+}
+
 /** Compiler-owned output coordinates do not require a comparison reference. */
 export type QcMirrorOutput = {
 	rendition: Extract<PlanRendition, { codec: "H264" | "H265" | "VP9" | "AV1" }>;
@@ -79,7 +103,7 @@ export type QcMirrorOutput = {
 };
 
 export function enumerateQcMirrors(plan: EncodingPlan): QcMirrorOutput[] {
-	if (!(plan.qc?.vmaf || plan.qc?.psnr)) return [];
+	if (!(plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding)) return [];
 	const mirrors: QcMirrorOutput[] = [];
 	for (const rendition of plan.renditions) {
 		if (!isVideoCodec(rendition)) continue;
@@ -141,6 +165,15 @@ export function gateExpectedRenditionKeys(plan: EncodingPlan): string[] {
 }
 
 export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
+	if (!(plan.qc?.vmaf || plan.qc?.psnr)) return [];
+	return enumerateExistingQcMirrorTargets(plan);
+}
+
+/** A manual comparison can reuse a mirror produced for any original QC metric.
+ * Reference resolution stays mandatory; no automatic metric is enabled here. */
+export function enumerateExistingQcMirrorTargets(
+	plan: EncodingPlan,
+): QcTarget[] {
 	const targets: QcTarget[] = [];
 	for (const { rendition, destination, path } of enumerateQcMirrors(plan)) {
 		const reference = resolveReference(plan, rendition);
@@ -161,6 +194,65 @@ export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
 		});
 	}
 	return targets;
+}
+
+export function enumerateBandingQcTargets(plan: EncodingPlan): BandingTarget[] {
+	if (!plan.qc?.banding) return [];
+	return bandingMirrorTargets(plan);
+}
+
+/** Existing QC mirrors are usable by a new no-reference measurement regardless
+ * of which metric originally caused the compiler to emit those mirrors. */
+function bandingMirrorTargets(plan: EncodingPlan): BandingTarget[] {
+	return enumerateQcMirrors(plan).map(({ rendition, destination, path }) => ({
+		renditionKey: rendition.key,
+		codec: rendition.codec,
+		height: rendition.height,
+		bitrate: rendition.bitrate,
+		...(rendition.streamName ? { streamName: rendition.streamName } : {}),
+		distorted: { outputKey: destination.outputKey, path },
+	}));
+}
+
+/** Manual no-reference QC can reuse unambiguous clear fixed-ladder MP4s. */
+export function enumerateExistingBandingMp4Targets(
+	plan: EncodingPlan,
+): BandingTarget[] {
+	const targets: BandingTarget[] = [];
+	for (const rendition of plan.renditions.filter(isVideoCodec)) {
+		if (rendition.mode !== "STANDARD") return [];
+		const muxings = plan.muxings.filter(
+			(muxing) =>
+				muxing.streamKey === rendition.key &&
+				muxing.kind === "MP4" &&
+				muxing.destination &&
+				!plan.drm.some((drm) => drm.muxingKey === muxing.key),
+		);
+		if (muxings.length !== 1) return [];
+		const muxing = muxings[0];
+		if (muxing?.kind !== "MP4" || !muxing.destination) return [];
+		targets.push({
+			renditionKey: rendition.key,
+			codec: rendition.codec,
+			height: rendition.height,
+			bitrate: rendition.bitrate,
+			...(rendition.streamName ? { streamName: rendition.streamName } : {}),
+			distorted: {
+				outputKey: muxing.destination.outputKey,
+				path: `${muxing.destination.path.replace(/\/$/, "")}/${muxing.filename}`,
+			},
+		});
+	}
+	return targets;
+}
+
+export function enumerateBandingTargets(
+	plan: EncodingPlan,
+	source: "QC_MIRROR" | "EXISTING_MP4" = "QC_MIRROR",
+): BandingTarget[] {
+	return source === "EXISTING_MP4"
+		? enumerateExistingBandingMp4Targets(plan)
+		: bandingMirrorTargets(plan);
 }
 
 /** Existing clear fixed-ladder MP4s can be measured without a QC mirror.
@@ -233,6 +325,6 @@ export function enumerateFrameIndexQcTargets(plan: EncodingPlan): QcTarget[] {
 		)
 			return [];
 	}
-	const targets = enumerateQcTargets(plan);
+	const targets = enumerateExistingQcMirrorTargets(plan);
 	return targets.length === videos.length ? targets : [];
 }

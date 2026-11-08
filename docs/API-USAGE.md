@@ -592,7 +592,21 @@ their meaning; removals or renames are breaking changes.
 
 ### VMAF compute selection
 
-`qc.execution`: Local default or Cloud profile ID + USD budget. Create/re-run/watch
+`qc.execution` and manual `POST /api/vmaf-jobs` use the same execution object:
+
+- `{"backend":"LOCAL","localMode":"CPU"}` forces CPU decoding and scoring.
+- `{"backend":"LOCAL","localMode":"AUTO"}` selects an eligible local GPU,
+  otherwise the same-model CPU path. Reports include the actual method and
+  selection reason. Delivery gates retain CPU scoring.
+- `{"backend":"LOCAL"}` retains the historical worker-environment policy.
+- `{"backend":"CLOUD","profileId":"<id>","budgetUsd":5}` selects a configured
+  cloud profile; `localMode` is not accepted for cloud execution.
+
+No binary path or GPU index is accepted from these requests. Remeasure retains
+the requested local mode and selects a new backend snapshot for the new report.
+See [local GPU setup and limits](user-guide/GPU-QUALITY.md#choose-local-processing).
+
+Create/re-run/watch
 validation: invalid400, unavailable503. `qc.measurementMethod:"FRAME_INDEX_BT709_10BIT"`:
 Cloud generation6. [Eligibility and cancellation](user-guide/QUALITY-AND-MONITORING.md#local-and-cloud-execution).
 ADMIN `/api/settings/vmaf-profiles`, `/api/settings/vmaf-credentials`: [CRUD](user-guide/QUALITY-AND-MONITORING.md#local-and-cloud-execution).

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	decodePresentation,
 	validateAvProbe,
+	validateBandingMeasurement,
 	validateVideoSegments,
 	validateVmafReports,
 } from "./media-smoke";
@@ -60,6 +61,38 @@ function presentation(videoStart = 0, audioStart = 0, count = 470) {
 }
 
 describe("offline media validation", () => {
+	it("requires all finite standalone CAMBI frames, timing, canonical values and extractor identity", () => {
+		const measured = {
+			libvmafVersion: "3.2.0",
+			featureName: "cambi_encbd_8_ench_180_encw_320",
+			frames: Array.from({ length: 240 }, (_, frameNum) => ({
+				frameNum,
+				timestampSeconds: frameNum / 24,
+				durationSeconds: 1 / 24,
+				cambi: 22.307707,
+			})),
+		};
+		expect(() => validateBandingMeasurement(measured)).not.toThrow();
+		expect(() =>
+			validateBandingMeasurement({ ...measured, libvmafVersion: "86da14d" }),
+		).not.toThrow();
+		expect(() =>
+			validateBandingMeasurement({
+				...measured,
+				frames: measured.frames.slice(1),
+			}),
+		).toThrow();
+		expect(() =>
+			validateBandingMeasurement({ ...measured, libvmafVersion: "" }),
+		).toThrow();
+		expect(() =>
+			validateBandingMeasurement({
+				...measured,
+				frames: measured.frames.map((frame) => ({ ...frame, vmaf: 0 })),
+			}),
+		).toThrow();
+	});
+
 	it("accepts continuous AAC timestamps with container reordering and priming offsets", () => {
 		for (const probe of [
 			presentation(0, 0, 469),

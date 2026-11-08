@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kazuhide Yamamoto
+#version 450
+
+// Integer SSE implements the per-plane arithmetic of Netflix libvmaf's
+// integer_psnr.c. PSNR's double-precision logarithm is evaluated by the caller.
+layout(local_size_x = 256) in;
+layout(set = 0, binding = 0, std430) readonly buffer Reference { uint reference_words[]; };
+layout(set = 0, binding = 1, std430) readonly buffer Distorted { uint distorted_words[]; };
+layout(set = 0, binding = 2, std430) buffer Results { uint partial_sse[]; };
+layout(push_constant) uniform Parameters {
+    uint width;
+    uint height;
+    uint reference_stride;
+    uint distorted_stride;
+    uint sample_bytes;
+    uint peak;
+    uint group_count;
+    uint groups_x;
+} parameters;
+
+shared uint errors[256];
+
+uint reference_sample(uint offset) {
+    uint word = offset >> 2;
+    uint shift = (offset & 3u) * 8u;
+    uint value = reference_words[word] >> shift;
+    if (parameters.sample_bytes == 2u && shift == 24u)
+        value |= reference_words[word + 1u] << 8u;
+    return value & (parameters.sample_bytes == 1u ? 255u : 65535u);
+}
+
+uint distorted_sample(uint offset) {
+    uint word = offset >> 2;
+    uint shift = (offset & 3u) * 8u;
+    uint value = distorted_words[word] >> shift;
+    if (parameters.sample_bytes == 2u && shift == 24u)
+        value |= distorted_words[word + 1u] << 8u;
+    return value & (parameters.sample_bytes == 1u ? 255u : 65535u);
+}
+
+void main() {
+    uint group = gl_WorkGroupID.x + gl_WorkGroupID.y * parameters.groups_x;
+    if (group >= parameters.group_count) return;
+    uint local = gl_LocalInvocationIndex;
+    uint pixel = group * 256u + local;
+    uint error = 0u;
+    if (pixel < parameters.width * parameters.height) {
+        uint x = pixel % parameters.width;
+        uint y = pixel / parameters.width;
+        uint a = reference_sample(y * parameters.reference_stride + x * parameters.sample_bytes);
+        uint b = distorted_sample(y * parameters.distorted_stride + x * parameters.sample_bytes);
+        if (a > parameters.peak || b > parameters.peak)
+            atomicOr(partial_sse[parameters.group_count], 1u);
+        else {
+            uint difference = a > b ? a - b : b - a;
+            error = difference * difference;
+        }
+    }
+    errors[local] = error;
+    barrier();
+    for (uint step = 128u; step != 0u; step >>= 1u) {
+        if (local < step) errors[local] += errors[local + step];
+        barrier();
+    }
+    if (local == 0u) partial_sse[group] = errors[0];
+}

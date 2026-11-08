@@ -1616,7 +1616,7 @@ export const planEncodingSchema = z.strictObject({
  * API. When `psnr` is true the runner enables libvmaf's `psnr` feature
  * (`feature=name=psnr`), which adds `psnr_y` per frame + pooled in the same
  * JSON the VMAF run already produces; it needs the distorted MP4 mirror too,
- * so the compiler emits the mirror whenever `vmaf || psnr` (see compiler §4).
+ * so the compiler emits the mirror whenever `vmaf || psnr || banding` (see compiler §4).
  * A psnr-only plan (`{psnr:true}` with `vmaf:false`) still gets VMAF scores —
  * they are free in the same pass — so the runner computes VMAF unconditionally
  * and only ADDS PSNR when asked. `psnr` defaults absent (≡ false).
@@ -1686,6 +1686,8 @@ export const vmafModelNameSchema = z
 
 export const planQcSchema = z.strictObject({
 	vmaf: z.boolean(),
+	/** Independent, no-reference CAMBI measurement. Absent keeps legacy plans. */
+	banding: z.boolean().optional(),
 	/** Automatic VOD measurement execution; absent retains legacy local execution. */
 	execution: vmafExecutionSchema.optional(),
 	/** Opt into cloud full-frame validation and scoring generation 6. */
@@ -1694,7 +1696,7 @@ export const planQcSchema = z.strictObject({
 	/** Add libvmaf's PSNR feature (psnr_y) to the same pass. Absent ≡ false. */
 	psnr: z.boolean().optional(),
 	/**
-	 * VMAF-only encode: when true the encode produces ONLY the per-video-rendition
+	 * QC-only encode: when true the encode produces ONLY the per-video-rendition
 	 * QC mirror MP4s — no delivery muxings (fMP4/TS/WebM), no manifests
 	 * (HLS/DASH/Smooth), no audio renditions, no thumbnails/sprites/DRM/keyframes.
 	 * This makes a VMAF/PSNR measurement cheap/fast and sidesteps manifest-

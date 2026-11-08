@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+	assessBandingFrames,
+	computeBandingPooled,
 	computePooled,
 	encodingPlanSchema,
 	enumerateQcTargets,
@@ -81,6 +83,253 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it.each([
+		true,
+		false,
+	])("projects a time-based pinned CAMBI preview without reference FPS (bandingOnly=%s)", async (bandingOnly) => {
+		const plan = encodingPlanSchema.parse({
+			...JSON.parse(
+				readFileSync(
+					resolve(
+						process.cwd(),
+						"../../packages/core/src/plan/__fixtures__/fixed-bitrate-hls-on-aws.plan.json",
+					),
+					"utf8",
+				),
+			),
+			qc: { vmaf: false, banding: true, only: true },
+		});
+		const target = enumerateQcTargets(
+			encodingPlanSchema.parse({ ...plan, qc: { vmaf: true } }),
+		)[0];
+		if (!target) throw new Error("Missing fixture target");
+		const banding = [
+			{ frameNum: 0, timestampSeconds: 0, durationSeconds: 0.08, cambi: 9 },
+		];
+		const resultId = "00000000-0000-4000-8000-0000000000b1";
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			mode: "VOD",
+			model: bandingOnly ? "CAMBI" : "vmaf_v0.6.1",
+			params: bandingOnly ? { kind: "BANDING" } : { banding: true },
+			encodingJob: { name: "Measured", plan },
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: resultId,
+					renditionRef: { renditionKey: target.renditionKey },
+					pooled: {
+						...(!bandingOnly ? computePooled(frames([95])) : {}),
+						banding: computeBandingPooled(banding),
+					},
+					framesGzip: gzipSync(
+						JSON.stringify({
+							kind: "QC_FRAMES",
+							version: 1,
+							banding,
+							...(!bandingOnly ? { vmaf: frames([95]) } : {}),
+						}),
+					),
+					provenance: {
+						distorted: {
+							bucket: "sample-output-bucket",
+							key: target.distorted.path,
+							pinned: true,
+							bytes: 10,
+							identity: { size: 10, etag: "private-version" },
+						},
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.results[0].bandingPreview).toEqual({
+			url: `/api/vmaf-jobs/${JOB_ID}/preview?resultId=${resultId}&metric=banding&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
+		});
+		expect(JSON.stringify(body)).not.toMatch(
+			/private-version|sample-output-bucket|credentialId|provenance/,
+		);
+		if (bandingOnly) expect(body.results[0]).not.toHaveProperty("preview");
+		else
+			expect(body.results[0].preview).toEqual({
+				unavailableReason: "MISSING_FPS",
+			});
+	});
+	it("returns full-frame CAMBI evidence with no VMAF model, pooled scores or fabricated frames", async () => {
+		const banding = Array.from({ length: 1502 }, (_, frameNum) => ({
+			frameNum,
+			timestampSeconds: frameNum * 0.04,
+			durationSeconds: 0.04,
+			cambi: frameNum === 1000 ? 12 : 1,
+			computedCambi: frameNum === 1000 ? 12.001 : 1,
+		}));
+		const pooled = computeBandingPooled(banding);
+		const assessment = {
+			...assessBandingFrames(banding, { warningThreshold: 5 }),
+			warningThreshold: 5,
+		};
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			model: "CAMBI",
+			mode: "VOD",
+			params: {
+				kind: "BANDING",
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				reference: { width: 1920, height: 1080 },
+			},
+			scoringVersion: 11,
+			status: "FINISHED",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "banding-result",
+					renditionRef: { label: "360p" },
+					pooled: { banding: pooled, bandingAssessment: assessment },
+					framesGzip: gzipSync(
+						JSON.stringify({ kind: "QC_FRAMES", version: 1, banding }),
+					),
+					provenance: {
+						privatePath: "/private/source.mp4",
+						bandingExecution: {
+							version: 1,
+							metric: "CAMBI_NR",
+							backend: "cuda",
+							implementation: "bitovp-owned",
+							decisionSource: "CPU_REFERENCE",
+							coverage: {
+								complete: true,
+								frameCount: banding.length,
+								durationSeconds: pooled.durationSeconds,
+							},
+							receipt: { privatePath: "/private/receipt.json" },
+						},
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body).toMatchObject({
+			kind: "BANDING",
+			model: null,
+			detector: "CAMBI",
+			reference: null,
+		});
+		expect(body.results[0].pooled).toEqual({ banding: pooled });
+		expect(body.results[0]).not.toHaveProperty("frames");
+		expect(body.results[0].bandingFrames.length).toBeLessThanOrEqual(1500);
+		expect(body.results[0].bandingAssessment).toEqual(assessment);
+		expect(body.results[0].bandingFrameCount).toBe(1502);
+		expect(JSON.stringify(body)).not.toMatch(/private|receipt/);
+	});
+
+	it("does not reinterpret a historical model string as a Banding discriminator", async () => {
+		const original = frames([95]);
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			model: "CAMBI",
+			params: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "legacy",
+					renditionRef: {},
+					pooled: computePooled(original),
+					framesGzip: gz(original),
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		const body = await response.json();
+		expect(body.model).toBe("CAMBI");
+		expect(body).not.toHaveProperty("kind");
+		expect(body.results[0].frames).toEqual([{ ...original[0], worst: true }]);
+		expect(body.results[0]).not.toHaveProperty("bandingFrames");
+	});
+	it.each([
+		"cpu",
+		"cuda",
+	] as const)("projects safe per-result %s scoring provenance", async (backend) => {
+		const localExecution = {
+			version: 1,
+			requestedDecode: "auto",
+			device: 0,
+			decode: {
+				reference: { backend: "cuda" },
+				distorted: { backend: "cpu", reason: "CUDA_UNSUPPORTED_CODEC" },
+			},
+			scoring:
+				backend === "cpu"
+					? { backend, implementation: "libvmaf", model: "vmaf_v1.0.16_3d0h" }
+					: {
+							backend,
+							implementation: "vmafx",
+							model: "vmaf_v1.0.16_3d0h",
+							modelSha256: "a".repeat(64),
+							bitDepth: 10,
+							distortedOriginal: { width: 1280, height: 720, bitdepth: 8 },
+							features: ["adm_cuda"],
+						},
+			attempts: 1,
+		};
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			params: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "result-id",
+					renditionRef: {},
+					pooled: computePooled(frames([95])),
+					framesGzip: null,
+					provenance: {
+						reference: { path: "/private/input.mp4" },
+						stderr: "private diagnostic",
+						localExecution,
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.results[0].localExecution).toEqual(localExecution);
+		expect(JSON.stringify(body)).not.toMatch(/private|stderr|provenance/);
+	});
+
+	it.each([
+		undefined,
+		null,
+		{ version: 2 },
+		{ version: 1, stderr: "/private/input.mp4" },
+	])("omits unknown or invalid local execution metadata: %j", async (localExecution) => {
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			params: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "result-id",
+					renditionRef: {},
+					pooled: computePooled(frames([95])),
+					framesGzip: null,
+					provenance: { localExecution },
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		const body = await response.json();
+		expect(body.results[0]).not.toHaveProperty("localExecution");
+	});
+
 	it("projects safe cloud task status without private configuration or provider errors", async () => {
 		const now = new Date("2026-09-24T00:00:00Z");
 		const execution = {

@@ -1,0 +1,74 @@
+/*
+ * Copyright 2016-2026 Netflix, Inc.
+ * Licensed under the BSD+Patent License (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://opensource.org/licenses/BSDplusPatent
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Adapted from Netflix/vmaf 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef:
+// feature/integer_motion.c and integer_motion.h, fused difference pipeline.
+#version 450
+#extension GL_ARB_gpu_shader_int64 : require
+layout(local_size_x = 256) in;
+layout(set = 0, binding = 0, std430) readonly buffer Previous { uint previous_words[]; };
+layout(set = 0, binding = 1, std430) readonly buffer Current { uint current_words[]; };
+layout(set = 0, binding = 2, std430) buffer Workspace { uint words[]; };
+layout(push_constant) uniform Parameters {
+    uint mode, width, height, previous_stride, current_stride, depth, groups_x, group_count;
+} parameters;
+shared uint partial_sad[256];
+const int coefficients[5] = int[5](3571, 16004, 26386, 16004, 3571);
+int mirror(int value, int size) { return value < 0 ? -value : value >= size ? 2 * size - value - 2 : value; }
+uint sample_at(bool previous, uint x, uint y) {
+    uint bytes = parameters.depth == 8u ? 1u : 2u;
+    uint offset = y * (previous ? parameters.previous_stride : parameters.current_stride) + x * bytes;
+    uint word = previous ? previous_words[offset >> 2u] : current_words[offset >> 2u];
+    uint value = word >> ((offset & 3u) * 8u);
+    if (bytes == 2u && (offset & 3u) == 3u) {
+        uint next = previous ? previous_words[(offset >> 2u) + 1u] : current_words[(offset >> 2u) + 1u];
+        value |= next << 8u;
+    }
+    return value & (bytes == 1u ? 255u : 65535u);
+}
+void main() {
+    uint group = gl_WorkGroupID.x + gl_WorkGroupID.y * parameters.groups_x;
+    if (group >= parameters.group_count) return;
+    uint local = gl_LocalInvocationIndex, pixel = group * 256u + local;
+    uint pixels = parameters.width * parameters.height;
+    if (parameters.mode == 0u) {
+        if (pixel >= pixels) return;
+        uint x = pixel % parameters.width, y = pixel / parameters.width;
+        int64_t sum = int64_t(0);
+        for (int tap = 0; tap < 5; ++tap) {
+            uint row = uint(mirror(int(y) - 2 + tap, int(parameters.height)));
+            uint a = sample_at(true, x, row), b = sample_at(false, x, row);
+            if (a > ((1u << parameters.depth) - 1u) || b > ((1u << parameters.depth) - 1u))
+                atomicOr(words[pixels + parameters.group_count], 1u);
+            sum += int64_t(coefficients[tap]) * (int64_t(a) - int64_t(b));
+        }
+        words[pixel] = uint(int((sum + (int64_t(1) << (parameters.depth - 1u))) >> parameters.depth));
+        return;
+    }
+    uint sad = 0u;
+    if (pixel < pixels) {
+        uint x = pixel % parameters.width, y = pixel / parameters.width;
+        int64_t sum = int64_t(0);
+        for (int tap = 0; tap < 5; ++tap) {
+            uint column = uint(mirror(int(x) - 2 + tap, int(parameters.width)));
+            sum += int64_t(coefficients[tap]) * int64_t(int(words[y * parameters.width + column]));
+        }
+        sad = uint(abs(int((sum + int64_t(32768)) >> 16)));
+    }
+    partial_sad[local] = sad;
+    barrier();
+    for (uint step = 128u; step != 0u; step >>= 1u) {
+        if (local < step) partial_sad[local] += partial_sad[local + step];
+        barrier();
+    }
+    if (local == 0u) words[pixels + group] = partial_sad[0];
+}

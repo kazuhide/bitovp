@@ -66,6 +66,16 @@ const envSchema = z.object({
 	 * does not embed, addressed by `model=path=$VMAF_MODEL_DIR/<model>.json`.
 	 */
 	VMAF_MODEL_DIR: z.string().min(1).optional(),
+	/** Experimental local VOD decoding; CPU is unchanged unless explicitly enabled. */
+	VMAF_DECODE_BACKEND: z.enum(["cpu", "auto", "cuda"]).default("cpu"),
+	/** Owned experimental GPU scoring; bundled libvmaf CPU scoring remains the default. */
+	VMAF_SCORING_BACKEND: z.enum(["cpu", "cuda", "vulkan"]).default("cpu"),
+	/** Separate owned native scorer; never used by Live or cloud execution. */
+	VMAF_NATIVE_PATH: z.string().min(1).optional(),
+	/** Device index among GPUs visible to the selected local backend. */
+	VMAF_GPU_DEVICE: z.coerce.number().int().nonnegative().safe().default(0),
+	/** Optional local VOD binary, independent of the Live feeder and cloud image. */
+	VMAF_FFMPEG_PATH: z.string().min(1).optional(),
 	/**
 	 * Local quality settings: CONCURRENCY caps simultaneous mirrors and THREADS
 	 * fixes libvmaf threads per pair. Missing values are selected from the CPU
@@ -119,10 +129,28 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 			([, value]) => value !== undefined && value !== "",
 		),
 	) as NodeJS.ProcessEnv;
+	if (cleaned.VMAF_SCORING_BACKEND === "vmafx-cuda")
+		throw new Error(
+			"VMAF_SCORING_BACKEND=vmafx-cuda is retired; use cuda or vulkan with VMAF_NATIVE_PATH and create a new measurement",
+		);
 	const parsed = envSchema.safeParse(cleaned);
 	if (!parsed.success) {
 		throw new Error(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
 	}
+	if (
+		parsed.data.VMAF_SCORING_BACKEND !== "cpu" &&
+		(!parsed.data.VMAF_NATIVE_PATH || !parsed.data.VMAF_MODEL_DIR)
+	)
+		throw new Error(
+			"GPU scoring requires explicit VMAF_NATIVE_PATH and VMAF_MODEL_DIR",
+		);
+	if (
+		parsed.data.VMAF_SCORING_BACKEND !== "cpu" &&
+		parsed.data.VMAF_DECODE_BACKEND !== "cpu"
+	)
+		throw new Error(
+			"Owned GPU scoring currently requires CPU decoding (VMAF_DECODE_BACKEND=cpu)",
+		);
 	if (parsed.data.NODE_ENV === "production") {
 		const missing = (["DATABASE_URL", "REDIS_URL"] as const).filter(
 			(key) => !cleaned[key],

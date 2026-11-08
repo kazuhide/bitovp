@@ -145,7 +145,7 @@ describe("source resource editing", () => {
 		expect(
 			compilePlan(currentPlan()).find((op) => op.kind === "CREATE_ENCODING")
 				?.payload.encoderVersion,
-		).toBe("2.291.0");
+		).toBe("2.292.0");
 	});
 
 	it("keeps encoder override controls out of ordinary single-encoding sources", () => {

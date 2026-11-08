@@ -108,6 +108,62 @@ function setup(
 }
 
 describe("createVmafTrigger", () => {
+	it("creates a model-free banding job even with VMAF and PSNR disabled", async () => {
+		const t = setup();
+		await t.trigger({
+			encodingJobId: ENCODING_JOB_ID,
+			plan: plan({
+				vmaf: false,
+				banding: true,
+				model: "unavailable-model",
+			} as EncodingPlan["qc"]),
+		});
+		expect(t.created).toHaveLength(1);
+		expect(t.created[0]).toMatchObject({
+			model: "CAMBI",
+			scoringVersion: 11,
+			params: { kind: "BANDING", banding: true },
+		});
+		expect(t.added).toHaveLength(1);
+	});
+
+	it("pins banding on a combined job without replacing the VMAF generation", async () => {
+		const t = setup();
+		await t.trigger({
+			encodingJobId: ENCODING_JOB_ID,
+			plan: plan({
+				vmaf: true,
+				banding: true,
+				model: "vmaf_v0.6.1",
+			} as EncodingPlan["qc"]),
+		});
+		expect(t.created).toHaveLength(1);
+		expect(t.created[0]).toMatchObject({
+			model: "vmaf_v0.6.1",
+			scoringVersion: VMAF_SCORING_VERSION,
+			params: { banding: true },
+		});
+		expect(
+			(t.created[0]?.params as Record<string, unknown>).kind,
+		).toBeUndefined();
+	});
+
+	it("refuses banding on CLOUD rather than silently omitting the detector", async () => {
+		const t = setup({ cloudProfile: CLOUD_PROFILE });
+		await expect(
+			t.trigger({
+				encodingJobId: ENCODING_JOB_ID,
+				plan: plan({
+					vmaf: false,
+					banding: true,
+					model: "CAMBI",
+					execution: CLOUD_EXECUTION,
+				} as EncodingPlan["qc"]),
+			}),
+		).rejects.toThrow("BANDING_CLOUD_UNSUPPORTED");
+		expect(t.added).toHaveLength(0);
+	});
+
 	it("creates exactly one native generation6 cloud QC mirror report", async () => {
 		const t = setup({ cloudProfile: CLOUD_PROFILE });
 		await t.trigger({
@@ -160,6 +216,8 @@ describe("createVmafTrigger", () => {
 	it.each([
 		undefined,
 		{ backend: "LOCAL" } as const,
+		{ backend: "LOCAL", localMode: "CPU" } as const,
+		{ backend: "LOCAL", localMode: "AUTO" } as const,
 	])("keeps default/local automatic measurement local (%s)", async (execution) => {
 		const t = setup({ profileError: new Error("should not read profiles") });
 		await t.trigger({
@@ -172,7 +230,7 @@ describe("createVmafTrigger", () => {
 		});
 		expect(t.created[0]).toMatchObject({
 			status: "PENDING",
-			params: { execution: { backend: "LOCAL" } },
+			params: { execution: execution ?? { backend: "LOCAL" } },
 		});
 		expect(t.prisma.vmafExecutionProfile.findMany).not.toHaveBeenCalled();
 		expect(t.added).toHaveLength(1);

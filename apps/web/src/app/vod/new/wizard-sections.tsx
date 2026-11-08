@@ -5,6 +5,7 @@ import {
 	filterFamily,
 	INTERNAL_HEVC_V2_BCF_VERSION,
 	QC_GATE_METRICS,
+	qcRuleSeverity,
 } from "@bitovp/core";
 import { useEffect, useId } from "react";
 import { InfrastructureIdPicker } from "@/components/infrastructure-pickers";
@@ -270,6 +271,11 @@ export function LadderSection({
 		let enteredPerTitle = false;
 		const normalized = next.map((video, index) => {
 			if (!isPerTitle(video.extras)) return video;
+			const clearHeight =
+				video.extras?.mode === "PER_TITLE_TEMPLATE" &&
+				next.length === videos.length &&
+				videos[index] !== undefined &&
+				!isPerTitle(videos[index]?.extras);
 			if (
 				enableDefaults ||
 				!isPerTitle(videos[index]?.extras) ||
@@ -284,7 +290,11 @@ export function LadderSection({
 				perTitle[codec] = { ...perTitle[codec], autoRepresentations: true };
 				enteredPerTitle = true;
 			}
-			return { ...video, bitrate: null };
+			return {
+				...video,
+				bitrate: null,
+				...(clearHeight ? { height: null } : {}),
+			};
 		});
 		const modePaths = updateVodVideoModePaths(
 			{ ...state, ...referencePatch, videos },
@@ -1736,7 +1746,9 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 	// including the HLS/DASH toggles, the muxing-kind selects and the Add
 	// buttons) and explain why. The toggle itself lives in the Encoding-options
 	// step's Quality control (VMAF) section.
-	const qcOnly = Boolean(state.qc?.only && (state.qc.vmaf || state.qc.psnr));
+	const qcOnly = Boolean(
+		state.qc?.only && (state.qc.vmaf || state.qc.psnr || state.qc.banding),
+	);
 
 	// Start-placement (preview manifests) only exists on the START request —
 	// POST_ENCODING plans have no start-time manifest lists. Keep a carried
@@ -2319,7 +2331,7 @@ export function EncodingOptionsSection({
 	// QC (VMAF) toggle — like AISA, "off" carries no state (buildPlan prunes
 	// the plan.qc key when vmaf+psnr are both off, keeping default plans clean).
 	const qc = state.qc ?? DEFAULT_WIZARD_QC;
-	const qcOn = qc.vmaf || qc.psnr;
+	const qcOn = qc.vmaf || qc.psnr || qc.banding;
 	const qcOnly = Boolean(qcOn && qc.only);
 	const patchQc = (partial: Partial<WizardQc>) =>
 		onPatch({ qc: { ...qc, ...partial } });
@@ -2343,7 +2355,9 @@ export function EncodingOptionsSection({
 	) =>
 		patchGate(
 			gateRules.map((rule, i) =>
-				i === index ? { ...rule, ...partial } : rule,
+				i === index
+					? ({ ...rule, ...partial } as (typeof gateRules)[number])
+					: rule,
 			),
 			gateOnFail,
 		);
@@ -2783,7 +2797,13 @@ export function EncodingOptionsSection({
 									// can't run without the libvmaf pass anyway).
 									patchQc(
 										e.target.checked
-											? { vmaf: true }
+											? {
+													vmaf: true,
+													execution: qc.execution ?? {
+														backend: "LOCAL",
+														localMode: "CPU",
+													},
+												}
 											: { vmaf: false, psnr: false },
 									)
 								}
@@ -2795,50 +2815,81 @@ export function EncodingOptionsSection({
 							text={t("wizard.addsAProgressiveMp4QcMirrorPer")}
 						/>
 					</div>
-					{qc.vmaf ? (
+					<div className="mt-2 space-y-1">
+						<label
+							htmlFor="wz-qc-banding"
+							className="flex items-center gap-2 text-xs text-zinc-300"
+						>
+							<input
+								id="wz-qc-banding"
+								type="checkbox"
+								className="h-3.5 w-3.5 accent-emerald-600"
+								checked={qc.banding ?? false}
+								onChange={(e) =>
+									patchQc({
+										banding: e.target.checked,
+										...(e.target.checked && !qc.execution
+											? { execution: { backend: "LOCAL", localMode: "CPU" } }
+											: {}),
+									})
+								}
+							/>
+							{t("banding.toggle")}
+						</label>
+						<p className="text-xs text-zinc-500">{t("banding.hint")}</p>
+					</div>
+					{qcOn ? (
 						<>
 							<VmafExecutionSettings
+								gateActive={gateRules.some(
+									(rule) => rule.metric !== "CAMBI_MAX",
+								)}
+								banding={qc.banding}
 								execution={qc.execution}
 								onChange={(execution) => patchQc({ execution })}
 							/>
-							<Field
-								label={t("wizard.vmafModel")}
-								htmlFor="wz-qc-model"
-								tooltip={t("uiX.libvmafModelTooltip")}
-							>
-								<SelectNative
-									id="wz-qc-model"
-									value={qc.model}
-									onChange={(e) => patchQc({ model: e.target.value })}
-								>
-									{VMAF_MODELS.map((model) => (
-										<option key={model} value={model}>
-											{model.startsWith("vmaf_v1")
-												? t("wizardX.vmafV1DockerWorker", { model })
-												: model}
-										</option>
-									))}
-								</SelectNative>
-							</Field>
-							<div className="flex items-center gap-1">
-								<label
-									htmlFor="wz-qc-psnr"
-									className="flex items-center gap-2 text-xs text-zinc-300"
-								>
-									<input
-										id="wz-qc-psnr"
-										type="checkbox"
-										className="h-3.5 w-3.5 accent-emerald-600"
-										checked={qc.psnr}
-										onChange={(e) => patchQc({ psnr: e.target.checked })}
-									/>
-									{t("wizard.alsoComputePsnr")}
-								</label>
-								<InfoHint
-									label={t("wizard.alsoComputePsnrMoreInformation")}
-									text={t("wizard.psnrDbRidesTheSameLibvmafPass")}
-								/>
-							</div>
+							{qc.vmaf ? (
+								<>
+									<Field
+										label={t("wizard.vmafModel")}
+										htmlFor="wz-qc-model"
+										tooltip={t("uiX.libvmafModelTooltip")}
+									>
+										<SelectNative
+											id="wz-qc-model"
+											value={qc.model}
+											onChange={(e) => patchQc({ model: e.target.value })}
+										>
+											{VMAF_MODELS.map((model) => (
+												<option key={model} value={model}>
+													{model.startsWith("vmaf_v1")
+														? t("wizardX.vmafV1DockerWorker", { model })
+														: model}
+												</option>
+											))}
+										</SelectNative>
+									</Field>
+									<div className="flex items-center gap-1">
+										<label
+											htmlFor="wz-qc-psnr"
+											className="flex items-center gap-2 text-xs text-zinc-300"
+										>
+											<input
+												id="wz-qc-psnr"
+												type="checkbox"
+												className="h-3.5 w-3.5 accent-emerald-600"
+												checked={qc.psnr}
+												onChange={(e) => patchQc({ psnr: e.target.checked })}
+											/>
+											{t("wizard.alsoComputePsnr")}
+										</label>
+										<InfoHint
+											label={t("wizard.alsoComputePsnrMoreInformation")}
+											text={t("wizard.psnrDbRidesTheSameLibvmafPass")}
+										/>
+									</div>
+								</>
+							) : null}
 							<div className="flex items-center gap-1">
 								<label
 									htmlFor="wz-qc-only"
@@ -2851,7 +2902,11 @@ export function EncodingOptionsSection({
 										checked={qc.only ?? false}
 										onChange={(e) => patchQc({ only: e.target.checked })}
 									/>
-									{t("wizard.vmafOnlySkipDeliveryOutputs")}
+									{t(
+										qc.banding
+											? "banding.qcOnly"
+											: "wizard.vmafOnlySkipDeliveryOutputs",
+									)}
 								</label>
 								<InfoHint
 									label={t("wizard.vmafOnlySkipDeliveryOutputsMoreInformation")}
@@ -2885,12 +2940,34 @@ export function EncodingOptionsSection({
 												aria-label={`${t("jobDetail.qcGateMetric")} ${index + 1}`}
 												className="w-44"
 												value={rule.metric}
-												onChange={(e) =>
-													patchGateRule(index, {
-														metric: e.target
-															.value as (typeof gateRules)[number]["metric"],
-													})
-												}
+												onChange={(e) => {
+													const metric = e.target
+														.value as (typeof gateRules)[number]["metric"];
+													const targets = rule.renditions
+														? { renditions: rule.renditions }
+														: {};
+													const next =
+														metric === "CAMBI_MAX"
+															? {
+																	metric,
+																	scope: "PER_RENDITION" as const,
+																	lte: 5,
+																	severity: "WARN" as const,
+																	...targets,
+																}
+															: rule.metric === "CAMBI_MAX"
+																? {
+																		metric,
+																		scope: "OVERALL" as const,
+																		gte: 80,
+																		...targets,
+																	}
+																: { ...rule, metric };
+													patchGate(
+														gateRules.map((r, i) => (i === index ? next : r)),
+														gateOnFail,
+													);
+												}}
 											>
 												{QC_GATE_METRICS.map((metric) => (
 													<option
@@ -2899,7 +2976,12 @@ export function EncodingOptionsSection({
 														// review-204 N5: a PSNR rule with psnr off is a
 														// C29 error downstream — say so at authoring
 														// time instead of after.
-														disabled={metric === "PSNR_MEAN" && !qc.psnr}
+														disabled={
+															metric === "CAMBI_MAX"
+																? !qc.banding
+																: !qc.vmaf ||
+																	(metric === "PSNR_MEAN" && !qc.psnr)
+														}
 													>
 														{metric === "PSNR_MEAN" && !qc.psnr
 															? t("wizardX.qcGatePsnrOffOption", { metric })
@@ -2911,7 +2993,9 @@ export function EncodingOptionsSection({
 												aria-label={`${t("jobDetail.qcGateScope")} ${index + 1}`}
 												className="w-40"
 												value={rule.scope}
+												disabled={rule.metric === "CAMBI_MAX"}
 												onChange={(e) =>
+													rule.metric !== "CAMBI_MAX" &&
 													patchGateRule(index, {
 														scope: e.target
 															.value as (typeof gateRules)[number]["scope"],
@@ -2925,15 +3009,21 @@ export function EncodingOptionsSection({
 												htmlFor={`wz-qc-gate-gte-${index}`}
 												className="flex items-center gap-1 text-xs text-zinc-400"
 											>
-												{t("jobDetail.qcGateThreshold")}
+												{t(
+													rule.metric === "CAMBI_MAX"
+														? "banding.threshold"
+														: "jobDetail.qcGateThreshold",
+												)}
 												<Input
 													id={`wz-qc-gate-gte-${index}`}
 													type="number"
 													min={0}
-													max={100}
+													max={rule.metric === "CAMBI_MAX" ? undefined : 100}
 													step={0.1}
 													className="w-20"
-													value={rule.gte}
+													value={
+														rule.metric === "CAMBI_MAX" ? rule.lte : rule.gte
+													}
 													onChange={(e) => {
 														// review-204 I2: clearing the box used to snap to
 														// gte 0 — a rule no measured value can fail. Keep
@@ -2944,11 +3034,31 @@ export function EncodingOptionsSection({
 															e.target.value !== "" &&
 															Number.isFinite(parsed)
 														) {
-															patchGateRule(index, { gte: parsed });
+															patchGateRule(
+																index,
+																rule.metric === "CAMBI_MAX"
+																	? { lte: parsed }
+																	: { gte: parsed },
+															);
 														}
 													}}
 												/>
 											</label>
+											{rule.metric === "CAMBI_MAX" ? (
+												<SelectNative
+													aria-label={`${t("banding.severity")} ${index + 1}`}
+													className="w-32"
+													value={qcRuleSeverity(rule)}
+													onChange={(e) =>
+														patchGateRule(index, {
+															severity: e.target.value as "WARN" | "FAIL",
+														})
+													}
+												>
+													<option value="WARN">{t("banding.warn")}</option>
+													<option value="FAIL">{t("banding.fail")}</option>
+												</SelectNative>
+											) : null}
 											<Button
 												variant="ghost"
 												size="sm"
@@ -3032,7 +3142,14 @@ export function EncodingOptionsSection({
 										patchGate(
 											[
 												...gateRules,
-												{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 },
+												qc.vmaf
+													? { metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }
+													: {
+															metric: "CAMBI_MAX",
+															scope: "PER_RENDITION",
+															lte: 5,
+															severity: "WARN",
+														},
 											],
 											gateOnFail,
 										)
@@ -3040,6 +3157,11 @@ export function EncodingOptionsSection({
 								>
 									{t("wizardX.qcGateAddRule")}
 								</Button>
+								{gateRules.some((rule) => rule.metric === "CAMBI_MAX") ? (
+									<p className="text-xs text-zinc-500">
+										{t("banding.gateHint")}
+									</p>
+								) : null}
 								{gateRules.length > 0 ? (
 									<div className="space-y-1">
 										<span className="text-xs text-zinc-400">

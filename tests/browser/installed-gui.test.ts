@@ -211,7 +211,12 @@ async function observeFailedPage(
 		info.annotations.push({ type: "smoke-state", description });
 }
 
-async function open(browser: Browser, signedIn = true, accounts = true) {
+async function open(
+	browser: Browser,
+	signedIn = true,
+	accounts = true,
+	accountDefaults?: { cloudRegion: string; encoderVersion: string },
+) {
 	const context = await browser.newContext({
 		baseURL: fixture.baseURL,
 		storageState: signedIn ? authenticated : undefined,
@@ -229,7 +234,15 @@ async function open(browser: Browser, signedIn = true, accounts = true) {
 		}
 		if (url.pathname === "/api/bitmovin-accounts")
 			return route.fulfill({
-				json: accounts ? [{ id: ACCOUNT, label: "Synthetic account" }] : [],
+				json: accounts
+					? [
+							{
+								id: ACCOUNT,
+								label: "Synthetic account",
+								...(accountDefaults ? { defaults: accountDefaults } : {}),
+							},
+						]
+					: [],
 			});
 		if (url.pathname === "/api/credentials")
 			return route.fulfill({
@@ -528,7 +541,8 @@ test("configure and submit Live and inspect heartbeat", async ({
 		await page.locator("#lw-v-0-bitrate").fill("1500000");
 		await page.locator("#lw-v-0-preset").selectOption("LIVE_LOW_LATENCY");
 		await goTo(page, /^5\. Packaging$/);
-		await page.locator("#lw-seglen").fill("2");
+		await page.locator("#lw-v-0-media-segmentLength").fill("2");
+		await expect(page.locator("#lw-a-0-media-segmentLength")).toHaveValue("2");
 		await goTo(page, /^4\. Output$/);
 		await page.locator("#lw-out-cred").selectOption(CREDENTIAL);
 		await closePicker(page);
@@ -1011,6 +1025,66 @@ test("persist Live through the authenticated submission API", async ({
 			requestPlan,
 			savedPlan: savedChannel.plan,
 		});
+		expect(unexpected).toEqual([]);
+	} finally {
+		await context.close();
+	}
+});
+
+test("VOD account defaults, ladder defaults and manual overrides", async ({
+	browser,
+}) => {
+	const { context, page, unexpected } = await open(browser, true, true, {
+		cloudRegion: "AKAMAI_JP_OSA",
+		encoderVersion: "BETA",
+	});
+	try {
+		await page.goto("/vod/new");
+		await page.locator("#wz-account").selectOption(ACCOUNT);
+		await expect(page.locator("#wz-region")).toHaveValue("AKAMAI_JP_OSA");
+		await expect(page.locator("#wz-version")).toHaveValue("BETA");
+		await page.locator("#wz-region").selectOption("AWS_US_WEST_2");
+		await page.locator("#wz-version").selectOption("STABLE");
+
+		await goTo(page, /^3\. Ladder$/);
+		await expect(page.locator("#wz-a-0-codec")).toHaveValue("AAC");
+		await expect(page.locator("#wz-a-0-bitrate")).toHaveValue("128000");
+		await expect(page.locator("#wz-a-0-rate")).toHaveValue("48000");
+		await expect(page.locator("#wz-a-0-cl")).toHaveValue("CL_STEREO");
+		await page.locator("#wz-v-0-height").fill("360");
+		await page.getByRole("radio", { name: "Per-Title", exact: true }).check();
+		await expect(page.locator("#wz-v-0-height")).toHaveValue("");
+		await page.locator("#wz-v-0-height").fill("720");
+
+		await goTo(page, /^1\. Basics$/);
+		await expect(page.locator("#wz-region")).toHaveValue("AWS_US_WEST_2");
+		await expect(page.locator("#wz-version")).toHaveValue("STABLE");
+		await goTo(page, /^3\. Ladder$/);
+		await expect(page.locator("#wz-v-0-height")).toHaveValue("720");
+		expect(unexpected).toEqual([]);
+	} finally {
+		await context.close();
+	}
+});
+
+test("Live account defaults and manual overrides survive step navigation", async ({
+	browser,
+}) => {
+	const { context, page, unexpected } = await open(browser, true, true, {
+		cloudRegion: "AKAMAI_JP_OSA",
+		encoderVersion: "BETA",
+	});
+	try {
+		await page.goto("/live/new");
+		await page.locator("#lw-account").selectOption(ACCOUNT);
+		await expect(page.locator("#lw-region")).toHaveValue("AKAMAI_JP_OSA");
+		await expect(page.locator("#lw-version")).toHaveValue("BETA");
+		await page.locator("#lw-region").selectOption("AWS_US_WEST_2");
+		await page.locator("#lw-version").selectOption("STABLE");
+		await goTo(page, /^3\. Ladder$/);
+		await goTo(page, /^1\. Basics$/);
+		await expect(page.locator("#lw-region")).toHaveValue("AWS_US_WEST_2");
+		await expect(page.locator("#lw-version")).toHaveValue("STABLE");
 		expect(unexpected).toEqual([]);
 	} finally {
 		await context.close();

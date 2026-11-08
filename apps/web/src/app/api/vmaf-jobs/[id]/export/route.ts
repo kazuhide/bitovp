@@ -52,10 +52,16 @@ export async function GET(req: Request, { params }: RouteParams) {
 			select: {
 				id: true,
 				model: true,
+				params: true,
 				results: {
 					orderBy: { createdAt: "asc" },
 					...(resultId ? { where: { id: resultId } } : {}),
-					select: { id: true, renditionRef: true },
+					select: {
+						id: true,
+						renditionRef: true,
+						provenance: true,
+						pooled: true,
+					},
 				},
 			},
 		});

@@ -61,15 +61,48 @@ describe("security maintenance images", () => {
 		const images = ["docker-compose.yml", "docker-compose.customer.yml"].map(
 			(file) => readFileSync(join(root, file), "utf8"),
 		);
-		for (const image of ["postgres:17.11-alpine", "redis:8.8.3-alpine"]) {
+		for (const [image, pattern, minimumMinor, minimumPatch] of [
+			[
+				"postgres",
+				/^image: postgres:17\.(\d+)-alpine@sha256:[a-f0-9]{64}$/,
+				11,
+				0,
+			],
+			[
+				"redis",
+				/^image: redis:8\.(\d+)\.(\d+)-alpine@sha256:[a-f0-9]{64}$/,
+				10,
+				3,
+			],
+		] as const) {
 			const pinned = images.map((text) =>
 				text
 					.split("\n")
-					.find((line) => line.trim().startsWith(`image: ${image}@`)),
+					.find((line) => line.trim().startsWith(`image: ${image}:`))
+					?.trim(),
 			);
-			expect(pinned[0]?.trim()).toMatch(/@sha256:[a-f0-9]{64}$/);
-			expect(pinned[1]?.trim()).toBe(pinned[0]?.trim());
+			expect(pinned[0]).toMatch(pattern);
+			expect(pinned[1]).toBe(pinned[0]);
+			const version = pinned[0]?.match(pattern);
+			const minor = Number(version?.[1]);
+			const patch = Number(version?.[2] ?? 0);
+			expect(
+				minor > minimumMinor ||
+					(minor === minimumMinor && patch >= minimumPatch),
+			).toBe(true);
 		}
+	});
+
+	it("pins the same cloudflared image for both optional tunnel modes", () => {
+		const images = readFileSync(join(root, "docker-compose.yml"), "utf8")
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.startsWith("image: cloudflare/cloudflared:"));
+		expect(images).toHaveLength(2);
+		expect(images[0]).toMatch(
+			/^image: cloudflare\/cloudflared:\d{4}\.\d+\.\d+@sha256:[a-f0-9]{64}$/,
+		);
+		expect(images[1]).toBe(images[0]);
 	});
 
 	it.each([

@@ -43,13 +43,16 @@ export function FeaturesClient() {
 		<section>
 			<div className="flex items-center gap-2">
 				<h1 className="font-semibold text-xl text-zinc-50">
-					{t("settingsX.features")}
+					{t("settingsCatalog.quality")}
 				</h1>
 				<InfoHint
-					labelFor={t("settingsX.features")}
-					text={t("settingsX.featuresCaption")}
+					labelFor={t("settingsCatalog.quality")}
+					text={t("settingsCatalog.qualityCaption")}
 				/>
 			</div>
+			<h2 className="mt-6 font-medium text-base text-zinc-100">
+				{t("settingsCatalog.enablement")}
+			</h2>
 
 			{flags.isPending ? (
 				<p className="mt-6 text-sm text-zinc-500">{t("common.loading")}</p>

@@ -4,6 +4,7 @@ import { evaluateRole } from "@/lib/auth/roles";
 
 const findUnique = vi.fn();
 const resolvePreview = vi.fn();
+const resolveBanding = vi.fn();
 const servePreview = vi.fn();
 let enabled = true;
 vi.mock("@/lib/server/context", () => ({
@@ -16,6 +17,7 @@ vi.mock("@/lib/server/context", () => ({
 }));
 vi.mock("@/lib/server/vmaf-preview", () => ({
 	resolveVmafPreview: (...args: unknown[]) => resolvePreview(...args),
+	resolveBandingPreview: (...args: unknown[]) => resolveBanding(...args),
 	serveVmafPreview: (...args: unknown[]) => servePreview(...args),
 }));
 
@@ -49,6 +51,8 @@ describe("GET report-scoped QC media (small, mocked DB/storage)", () => {
 		"resultId=nope",
 		`resultId=${resultId}&url=https://evil.example/a`,
 		`resultId=${resultId}&resultId=${resultId}`,
+		`resultId=${resultId}&metric=unknown`,
+		`resultId=${resultId}&metric=banding&metric=banding`,
 	])("rejects invalid or extra query %s", async (query) => {
 		expect((await call(query)).status).toBe(400);
 		expect(findUnique).not.toHaveBeenCalled();
@@ -85,6 +89,23 @@ describe("GET report-scoped QC media (small, mocked DB/storage)", () => {
 			select: { results: { where: { id: resultId } } },
 		});
 		expect(resolvePreview).toHaveBeenCalledWith(row, row.results[0]);
+	});
+	it("uses the time-based resolver only for an explicit banding request", async () => {
+		const row = {
+			mode: "VOD",
+			params: { kind: "BANDING" },
+			results: [{ id: resultId }],
+		};
+		findUnique.mockResolvedValue(row);
+		resolveBanding.mockReturnValue({ key: "private" });
+		servePreview.mockResolvedValue(new Response("media"));
+		const response = await call(
+			`resultId=${resultId}&metric=banding&expectedOrganizationId=${id}`,
+		);
+		expect(response.status).toBe(200);
+		expect(resolveBanding).toHaveBeenCalledWith(row, row.results[0]);
+		expect(resolvePreview).not.toHaveBeenCalled();
+		expect(response.headers.get("Cache-Control")).toContain("no-store");
 	});
 	it("unavailable measurements never create a storage browser", async () => {
 		findUnique.mockResolvedValue({ results: [{ id: resultId }] });

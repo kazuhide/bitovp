@@ -25,6 +25,60 @@ function setup(profiles: unknown[]) {
 		},
 	);
 }
+
+it("submits model-free Banding-only measurement and local AUTO without PSNR", async () => {
+	setup([]);
+	wrap(<VmafLabClient />);
+	const user = userEvent.setup();
+	await user.click(
+		screen.getByRole("button", { name: "Measure an existing job…" }),
+	);
+	await screen.findByRole("option", { name: "Finished film" });
+	await user.selectOptions(
+		screen.getByLabelText("Finished job"),
+		"finished-id",
+	);
+	await user.selectOptions(screen.getByLabelText("Measurement"), "BANDING");
+	await user.selectOptions(screen.getByLabelText("Run on"), ":auto");
+	await user.click(screen.getByRole("button", { name: "Measure" }));
+	await waitFor(() =>
+		expect(apiFetch).toHaveBeenCalledWith(
+			"/api/vmaf-jobs",
+			expect.objectContaining({ method: "POST" }),
+		),
+	);
+	const call = apiFetch.mock.calls.find(
+		([, options]) => options?.method === "POST",
+	);
+	expect(JSON.parse(call?.[1].body)).toEqual({
+		encodingJobId: "finished-id",
+		kind: "BANDING",
+		execution: { backend: "LOCAL", localMode: "AUTO" },
+	});
+});
+
+it("requires an explicit local choice when changing a cloud form to Banding", async () => {
+	setup([{ id: "aws-test", label: "AWS test", region: "us-east-1" }]);
+	wrap(<VmafLabClient />);
+	const user = userEvent.setup();
+	await user.click(
+		screen.getByRole("button", { name: "Measure an existing job…" }),
+	);
+	await screen.findByRole("option", { name: "Finished film" });
+	await user.selectOptions(
+		screen.getByLabelText("Finished job"),
+		"finished-id",
+	);
+	await user.selectOptions(screen.getByLabelText("Run on"), "aws-test");
+	await user.type(screen.getByLabelText("Budget (USD)"), "10");
+	await user.selectOptions(screen.getByLabelText("Measurement"), "COMBINED");
+	expect(screen.getByRole("button", { name: "Measure" })).toBeDisabled();
+	expect(
+		screen.getByText(/Banding requires local CPU or local AUTO/),
+	).toBeInTheDocument();
+	await user.selectOptions(screen.getByLabelText("Run on"), "");
+	expect(screen.getByRole("button", { name: "Measure" })).toBeEnabled();
+});
 it("defaults to local and never invents a cloud budget", async () => {
 	setup([]);
 	wrap(<VmafLabClient />);
@@ -50,7 +104,10 @@ it("defaults to local and never invents a cloud budget", async () => {
 	const call = apiFetch.mock.calls.find(
 		([, options]) => options?.method === "POST",
 	);
-	expect(JSON.parse(call?.[1].body).execution).toEqual({ backend: "LOCAL" });
+	expect(JSON.parse(call?.[1].body).execution).toEqual({
+		backend: "LOCAL",
+		localMode: "CPU",
+	});
 });
 it("requires an explicit budget for cloud and clears it when switching profiles", async () => {
 	setup([{ id: "aws-test", label: "AWS test", region: "us-east-1" }]);
@@ -303,5 +360,58 @@ it.each([
 	await user.click(screen.getByRole("button", { name: "Measure" }));
 	await waitFor(() => expect(submittedMeasurement()).toBeDefined());
 	expect(submittedMeasurement().psnr).toBe(false);
+	expect(submittedMeasurement()).not.toHaveProperty("measurementMethod");
+});
+
+it("submits automatic local processing without requiring a cloud profile or budget", async () => {
+	setup([]);
+	wrap(<VmafLabClient />, "ja");
+	await userEvent.click(
+		screen.getByRole("button", { name: "既存ジョブを計測…" }),
+	);
+	await screen.findByRole("option", { name: "Finished film" });
+	const target = screen.getByLabelText("実行先");
+	expect(
+		screen.getByRole("option", { name: "ローカルCPU" }),
+	).toBeInTheDocument();
+	await userEvent.selectOptions(target, ":auto");
+	expect(target).toHaveValue(":auto");
+	expect(
+		screen.getByText(
+			"利用できるGPUがあれば使用し、それ以外は同じVMAFモデルでCPU計算します。",
+		),
+	).toBeInTheDocument();
+	await userEvent.selectOptions(
+		screen.getByLabelText("完了済みジョブ"),
+		"finished-id",
+	);
+	expect(screen.queryByLabelText("予算 (USD)")).not.toBeInTheDocument();
+	await userEvent.click(screen.getByRole("button", { name: "計測" }));
+	await waitFor(() => expect(submittedMeasurement()).toBeDefined());
+	expect(submittedMeasurement().execution).toEqual({
+		backend: "LOCAL",
+		localMode: "AUTO",
+	});
+});
+it("drops cloud-only frame-index measurement when switching to automatic GPU selection", async () => {
+	const user = await openMeasurementOptions();
+	await user.selectOptions(screen.getByLabelText("Run on"), "aws-test");
+	await user.selectOptions(
+		screen.getByLabelText("Measurement source"),
+		"OUTPUT_MP4",
+	);
+	await user.selectOptions(
+		screen.getByLabelText("Measurement method"),
+		"FRAME_INDEX_BT709_10BIT",
+	);
+	await user.selectOptions(screen.getByLabelText("Run on"), ":auto");
+	expect(screen.queryByLabelText("Measurement method")).not.toBeInTheDocument();
+	expect(screen.queryByLabelText("Budget (USD)")).not.toBeInTheDocument();
+	await user.click(screen.getByRole("button", { name: "Measure" }));
+	await waitFor(() => expect(submittedMeasurement()).toBeDefined());
+	expect(submittedMeasurement().execution).toEqual({
+		backend: "LOCAL",
+		localMode: "AUTO",
+	});
 	expect(submittedMeasurement()).not.toHaveProperty("measurementMethod");
 });

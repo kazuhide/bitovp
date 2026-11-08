@@ -12,7 +12,7 @@ import { ComputeCredentialsPanel, credentialQuery } from "./credential-panel";
 import { ProfileForm } from "./profile-form";
 import { CLOUD_NAMES, type ProfileRow } from "./types";
 
-function ProfileSettings() {
+function ProfileSettings({ embedded }: { embedded: boolean }) {
 	const { t } = useT();
 	const client = useQueryClient();
 	const profiles = useQuery({
@@ -47,21 +47,30 @@ function ProfileSettings() {
 	});
 	return (
 		<section className="space-y-7">
-			<header>
-				<div className="flex items-center gap-2">
-					<h1 className="font-semibold text-xl text-zinc-50">
-						{t("vmafSettings.title")}
-					</h1>
-					<HelpOverlay labelFor={t("vmafSettings.title")}>
-						{t("vmafSettings.intro")}
-					</HelpOverlay>
-				</div>
-			</header>
+			{!embedded && (
+				<header>
+					<div className="flex items-center gap-2">
+						<h1 className="font-semibold text-xl text-zinc-50">
+							{t("vmafSettings.title")}
+						</h1>
+						<HelpOverlay labelFor={t("vmafSettings.title")}>
+							{t("vmafSettings.intro")}
+						</HelpOverlay>
+					</div>
+				</header>
+			)}
 			<section className="space-y-3">
 				<header className="flex flex-wrap items-center justify-between gap-2">
-					<h2 className="font-medium text-base">
-						{t("vmafSettings.profiles")}
-					</h2>
+					<div className="flex items-center gap-2">
+						<h2 className="font-medium text-base">
+							{t("vmafSettings.profiles")}
+						</h2>
+						{embedded && (
+							<HelpOverlay labelFor={t("vmafSettings.title")}>
+								{t("vmafSettings.intro")}
+							</HelpOverlay>
+						)}
+					</div>
 					<Button
 						size="sm"
 						onClick={() => {
@@ -181,7 +190,11 @@ function ProfileSettings() {
 		</section>
 	);
 }
-export function VmafProfilesClient() {
+export function VmafProfilesClient({
+	embedded = false,
+}: {
+	embedded?: boolean;
+}) {
 	const allowed = useRoleAccess("ADMIN");
-	return allowed ? <ProfileSettings /> : null;
+	return allowed ? <ProfileSettings embedded={embedded} /> : null;
 }

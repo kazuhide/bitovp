@@ -119,11 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Runtime measurement includes local diagnostics, coherence and composition-save help.
-		pinWithDriftAid(long.length, 1514, "long");
+		// Runtime measurement of the merged clip and CAMBI catalogs.
+		pinWithDriftAid(long.length, 1540, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes the diagnostic states and selected-model status.
-		pinWithDriftAid(short.size, 2973, "short");
+		// Measured from the merged catalog; duplicate Japanese values count once.
+		pinWithDriftAid(short.size, 3065, "short");
 	});
 
 	/**

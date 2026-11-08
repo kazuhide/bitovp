@@ -1,7 +1,11 @@
 "use client";
 
 import type { DeliverySpec, Deviation } from "@bitovp/core";
-import { exportDeliveryPreset, importDeliveryPreset } from "@bitovp/core";
+import {
+	exportDeliveryPreset,
+	importDeliveryPreset,
+	qcRuleSeverity,
+} from "@bitovp/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -193,10 +197,12 @@ export function DeliveryGallery({ specs }: { specs: DeliverySpec[] }) {
 						    deployment where QC does not exist. */}
 						{qcVmafEnabled && spec.suggestedGate ? (
 							<p className="text-xs text-zinc-500">
-								{t("delivery.suggestedGateLine", {
-									metric: spec.suggestedGate.rules[0]?.metric ?? "",
-									gte: spec.suggestedGate.rules[0]?.gte ?? 0,
-								})}
+								{spec.suggestedGate.rules[0]?.metric === "CAMBI_MAX"
+									? `${t("banding.threshold")} ${spec.suggestedGate.rules[0].lte} · ${qcRuleSeverity(spec.suggestedGate.rules[0])}`
+									: t("delivery.suggestedGateLine", {
+											metric: spec.suggestedGate.rules[0]?.metric ?? "",
+											gte: spec.suggestedGate.rules[0]?.gte ?? 0,
+										})}
 							</p>
 						) : null}
 						<div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">

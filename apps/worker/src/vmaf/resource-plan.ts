@@ -17,11 +17,14 @@ export type ResourceVideo = {
 	frames?: number;
 };
 export type ResourcePair = {
+	/** Single-input CAMBI uses the same video in both scheduling slots only. */
+	metric?: "CAMBI_NR";
 	reference: ResourceVideo;
 	distorted: ResourceVideo;
 	model: string;
 	psnr?: boolean;
 	measurementMethod?: string;
+	scoringBackend?: "cuda" | "vulkan";
 	outputFps?: number;
 };
 export type LocalResourceOptions = { concurrency?: number; threads?: number };
@@ -34,6 +37,13 @@ export type LocalResourcePlan = {
 	manualFallback: boolean;
 	decoderThreads?: number;
 	filterComplexThreads?: number;
+	nativeInflightFrames?: 1 | 2 | 4;
+	nativeDevice?: number;
+	cpuChargePerComparison?: number;
+	gpu?: { deviceKey: string; bytes: number; computeCredits: number };
+	basis?: string;
+	reasons?: string[];
+	profileKey?: string;
 };
 
 const positive = (raw: unknown) => {
@@ -134,12 +144,49 @@ export function planLocalResources(
 		if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0))
 			throw new ResourceUnavailableError("estimate");
 	const units = Math.max(1, pairCount);
+	if (pair.metric === "CAMBI_NR") {
+		if (resources.budgetBytes === undefined)
+			throw new ResourceUnavailableError("unknown");
+		const frameCount = estimatedFrames(pair);
+		const threads = options.threads ?? 1;
+		const pixels = pair.distorted.width * pair.distorted.height;
+		// Single-input CAMBI + its official oracle, complete timing/score arrays
+		// and serialization. This is deliberately independent of VMAF profiles.
+		const estimatedBytes =
+			Math.ceil(
+				(pixels * 256 +
+					512 * MiB +
+					frameCount * 4096 +
+					(threads - 1) * 128 * MiB) /
+					(64 * MiB),
+			) *
+			64 *
+			MiB;
+		if (
+			!Number.isSafeInteger(estimatedBytes) ||
+			estimatedBytes <= 0 ||
+			estimatedBytes > resources.budgetBytes
+		)
+			throw new ResourceUnavailableError("estimate");
+		return {
+			threads,
+			decoderThreads: 1,
+			concurrency: 1,
+			estimatedBytes,
+			frameCount,
+			exclusive: true,
+			manualFallback: false,
+			basis: "CAMBI_NR_FULL_FRAMES_V1",
+		};
+	}
 	if (resources.budgetBytes === undefined) {
 		if (options.threads === undefined || options.concurrency === undefined)
 			throw new ResourceUnavailableError("unknown");
 		return {
 			threads: options.threads,
-			concurrency: Math.min(units, options.concurrency),
+			concurrency: pair.scoringBackend
+				? 1
+				: Math.min(units, options.concurrency),
 			estimatedBytes: 0,
 			exclusive: false,
 			manualFallback: true,
@@ -160,11 +207,12 @@ export function planLocalResources(
 		pair.model === "vmaf_v0.6.1" &&
 		!pair.psnr &&
 		!pair.measurementMethod &&
+		!pair.scoringBackend &&
 		pixels <= UHD;
 	const depth = Math.max(
 		pair.reference.bitDepth ?? 16,
 		pair.distorted.bitDepth ?? 16,
-		pair.measurementMethod ? 10 : 8,
+		pair.measurementMethod || pair.scoringBackend ? 10 : 8,
 	);
 	const chroma = Math.max(
 		pair.reference.chromaFactor ?? 2,
@@ -205,7 +253,9 @@ export function planLocalResources(
 			);
 	return {
 		threads,
-		concurrency: Math.min(units, options.concurrency ?? automaticConcurrency),
+		concurrency: pair.scoringBackend
+			? 1
+			: Math.min(units, options.concurrency ?? automaticConcurrency),
 		estimatedBytes,
 		frameCount,
 		exclusive,

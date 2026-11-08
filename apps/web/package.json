@@ -1,6 +1,6 @@
 {
 	"name": "@bitovp/web",
-	"version": "1.0.0-rc.1",
+	"version": "1.1.0",
 	"private": true,
 	"scripts": {
 		"auth:create-token": "tsx scripts/create-token.ts",
@@ -14,7 +14,7 @@
 		"typecheck": "next typegen && tsc --noEmit"
 	},
 	"dependencies": {
-		"@bitmovin/api-sdk": "1.286.0",
+		"@bitmovin/api-sdk": "1.287.0",
 		"@bitovp/core": "workspace:*",
 		"@bitovp/db": "workspace:*",
 		"@bitovp/storage": "workspace:*",

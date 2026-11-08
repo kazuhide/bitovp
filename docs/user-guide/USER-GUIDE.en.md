@@ -23,6 +23,7 @@ git clone https://github.com/kazuhide/bitovp.git
 cd bitovp
 corepack enable
 pnpm install --frozen-lockfile
+pnpm --filter @bitovp/db build
 cp .env.example .env
 chmod 600 .env
 ```
@@ -114,6 +115,8 @@ ADMIN users register and edit accounts and test their connections.
 2. Enter an account name and Encoding API key. If the account requires a Bitmovin organization ID, enter it too.
 3. Save the account and test the connection. This makes a real request to Bitmovin.
 4. Check that the account is available in the VOD and Live creation screens.
+
+Set the account's **Default cloud region** and **Encoder version** as needed. Choose STABLE, BETA, or a pinned version. Selecting the account in a VOD or Live wizard applies these defaults; you can then change them for that job. Restoring a draft or loading an existing plan preserves its saved settings.
 
 A successful connection test does not establish that every region, codec, or feature is available. Supported configurations depend on the account's entitlements and the encoder's capabilities.
 
@@ -272,7 +275,7 @@ Figure 4-1. VOD ladder and detailed codec settings in the demo. The screen uses 
 
 ### Basic settings and input files
 
-Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.291.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
+Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.292.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
 
 In "Sources", specify the input file's credentials, bucket, and path. For supported destinations, use "Browse storage…" to select from a list. Enter paths directly for destinations that do not support browsing. For HTTPS inputs, provide a URL from which the source can be retrieved.
 
@@ -1061,6 +1064,10 @@ The displayed chart is reduced to at most 1,500 points, retaining the worst fram
 To compare reports, select reports with results in the lab and open “Compare selected”. Up to 6 reports can be overlaid at once. Match the reference, time range, model, scoring generation and sampling stride. Do not interpret higher and lower curves as encoder superiority while mixed-condition warnings or renditions without results remain unresolved.
 
 In a single report, “Open comparison preview” lets you select up to 2 VOD QC videos whose retained versions can be identified, and seek to a scored frame's time. Browser seeking or decoding may display a neighboring frame. This is unavailable for older reports or Live captures that were not retained. It does not show the current live stream as a substitute for previously measured frames.
+
+### Banding interval inspection
+
+CAMBI reports can open the measured rendition from an affected-interval row. Select **Play … s** to play that interval, stop at its exclusive end and replay it. Selecting another interval replaces the active video. Banding-only reports need no VMAF reference or average frame rate. The retained MP4/WebM must match the measured object version and remain readable. Missing media or unavailable browser presentation timing keeps playback unavailable while preserving scores and intervals. Seeking can show an adjacent frame and does not change scores or delivery gates. See the [banding guide](BANDING-QUALITY.md) for setup and limits.
 
 ### Frame boundaries and alignment
 

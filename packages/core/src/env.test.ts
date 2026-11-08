@@ -2,6 +2,60 @@ import { describe, expect, it } from "vitest";
 import { loadEnv } from "./env";
 
 describe("loadEnv", () => {
+	it("leaves GPU decoding opt-in and validates its device", () => {
+		expect(loadEnv({}).VMAF_DECODE_BACKEND).toBe("cpu");
+		expect(loadEnv({}).VMAF_SCORING_BACKEND).toBe("cpu");
+		expect(loadEnv({}).VMAF_GPU_DEVICE).toBe(0);
+		expect(loadEnv({}).VMAF_FFMPEG_PATH).toBeUndefined();
+		expect(
+			loadEnv({
+				VMAF_DECODE_BACKEND: "auto",
+				VMAF_GPU_DEVICE: "1",
+				VMAF_FFMPEG_PATH: "/opt/vmaf-gpu/ffmpeg",
+			}),
+		).toMatchObject({ VMAF_DECODE_BACKEND: "auto", VMAF_GPU_DEVICE: 1 });
+		for (const value of ["-1", "1.5", "NaN", "Infinity"])
+			expect(() => loadEnv({ VMAF_GPU_DEVICE: value })).toThrow(
+				/VMAF_GPU_DEVICE/,
+			);
+		expect(() => loadEnv({ VMAF_DECODE_BACKEND: "nvenc" })).toThrow(
+			/VMAF_DECODE_BACKEND/,
+		);
+	});
+	it("rejects retired VMAFx configuration with a migration message", () => {
+		expect(() => loadEnv({ VMAF_SCORING_BACKEND: "vmafx-cuda" })).toThrow(
+			/retired.*cuda.*vulkan/i,
+		);
+	});
+	it.each([
+		"cuda",
+		"vulkan",
+	])("requires an owned native runner for %s scoring", (backend) => {
+		expect(() => loadEnv({ VMAF_SCORING_BACKEND: backend })).toThrow(
+			/VMAF_NATIVE_PATH/,
+		);
+		expect(() =>
+			loadEnv({
+				VMAF_SCORING_BACKEND: backend,
+				VMAF_NATIVE_PATH: "/opt/bitovp-vmaf",
+			}),
+		).toThrow(/VMAF_MODEL_DIR/);
+		expect(
+			loadEnv({
+				VMAF_SCORING_BACKEND: backend,
+				VMAF_NATIVE_PATH: "/opt/bitovp-vmaf",
+				VMAF_MODEL_DIR: "/opt/vmaf/model",
+			}).VMAF_SCORING_BACKEND,
+		).toBe(backend);
+		expect(() =>
+			loadEnv({
+				VMAF_SCORING_BACKEND: backend,
+				VMAF_NATIVE_PATH: "/opt/bitovp-vmaf",
+				VMAF_MODEL_DIR: "/opt/vmaf/model",
+				VMAF_DECODE_BACKEND: "cuda",
+			}),
+		).toThrow(/CPU decoding/);
+	});
 	it("accepts only the unrestricted deployment and rejects retired or unknown values", () => {
 		for (const value of [undefined, "", "UNRESTRICTED"]) {
 			expect(loadEnv({ DEPLOYMENT_PROFILE: value }).DEPLOYMENT_PROFILE).toBe(

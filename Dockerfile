@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Worker image with FFmpeg, streaming protocols, and VMAF models.
-FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS whisper-build
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS whisper-build
 RUN apt-get update && apt-get install -y --no-install-recommends cmake g++ make patch python3 ca-certificates && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4 https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037 /tmp/whisper.tar.gz
 COPY apps/worker/native/whisper-cli-quality.patch /tmp/whisper-cli-quality.patch
@@ -13,7 +13,7 @@ RUN mkdir /source && tar xzf /tmp/whisper.tar.gz -C /source --strip-components=1
     && test "$(/source/build/bin/whisper-cli --version)" = "whisper.cpp version: 1.9.5"
 
 # Isolated CPU-only caption alignment dependencies; no model execution at build time.
-FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS caption-alignment-runtime
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS caption-alignment-runtime
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-dev build-essential cmake pkg-config libsndfile1 sox ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/bitovp-caption-alignment \
@@ -25,7 +25,7 @@ RUN python3 -m venv /opt/bitovp-caption-alignment \
     && /opt/bitovp-caption-alignment/bin/pip install --no-cache-dir "https://files.pythonhosted.org/packages/01/12/d3027a7e4dc2eea0b12a4bf8414a7109f055004e1771666e01d8859d3ca0/qwen_asr-0.0.6-py3-none-any.whl#sha256=b9c55a38413298f3a990a4475467399daec6e8f4172363053fc42e2166c2dfd3" "transformers==4.57.6" "accelerate==1.12.0" "nagisa==0.2.11" \
     && /opt/bitovp-caption-alignment/bin/python -c "import importlib.metadata as m; assert m.version('torch') == '2.10.0+cpu'; assert m.version('qwen-asr') == '0.0.6'; assert m.version('transformers') == '4.57.6'"
 
-FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
 COPY --from=whisper-build /source/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper-build /source/LICENSE /usr/local/share/licenses/whisper.cpp/LICENSE
 ADD --chmod=0644 --checksum=sha256:68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5 https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf /usr/local/share/fonts/bitovp/NotoSansCJKjp-Regular.otf
@@ -36,10 +36,10 @@ ENV EDITING_FONT_PATH=/usr/local/share/fonts/bitovp/NotoSansCJKjp-Regular.otf
 RUN chmod 0755 /usr/local/share/fonts /usr/local/share/fonts/bitovp
 
 # Pin release names and verify bytes because upstream rotates build assets.
-ARG FFMPEG_BUILD="autobuild-2026-10-24-13-02"
-ARG FFMPEG_VER="n8.1.3-24-g92611900bb"
-ARG FFMPEG_SHA256_AMD64="3c2d43d951c1d7936240ec77dbc274d6214fc64973e9993f63e16f03ac908ff1"
-ARG FFMPEG_SHA256_ARM64="d638add9b6fd0c139db23d73a46ffb2218f087481d63585e703c1b465ed5c43f"
+ARG FFMPEG_BUILD="autobuild-2026-11-05-12-48"
+ARG FFMPEG_VER="n8.1.3-34-ga35157abb9"
+ARG FFMPEG_SHA256_AMD64="1bbd8ff31a24ecbe0714f21e47cc0c4382cc51340c32d5d35fc6fda44e168ab5"
+ARG FFMPEG_SHA256_ARM64="96d237c0c6cb03ccf6b196b4ac4f2357a3a9425f7d4c59e1a85c3c326a3b1a50"
 ARG FFMPEG_URL=""
 ARG FFMPEG_SHA256=""
 ARG TARGETARCH

@@ -309,6 +309,24 @@ export function LiveWizard({
 	const patch = (partial: Partial<LiveWizardState>) =>
 		setState((prev) => ({ ...prev, ...partial }));
 
+	// Apply only on an explicit selection; drafts and imported plans keep their values.
+	function selectAccount(accountId: string) {
+		const account = accounts.data?.find((item) => item.id === accountId);
+		patch({
+			accountId,
+			...(account
+				? {
+						cloudRegion:
+							account.defaults?.cloudRegion ??
+							DEFAULT_LIVE_WIZARD_STATE.cloudRegion,
+						encoderVersion:
+							account.defaults?.encoderVersion ??
+							DEFAULT_LIVE_WIZARD_STATE.encoderVersion,
+					}
+				: {}),
+		});
+	}
+
 	// Live segment outputs: S3 / GenericS3 (Akamai/OCI) / GCS (HMAC + service
 	// account) / Azure / SFTP per the plan output union.
 	const outputSelectable = (provider: string) =>
@@ -718,7 +736,7 @@ export function LiveWizard({
 								<SelectNative
 									id="lw-account"
 									value={state.accountId}
-									onChange={(e) => patch({ accountId: e.target.value })}
+									onChange={(e) => selectAccount(e.target.value)}
 								>
 									<option value="">{t("ui.selectAccount")}</option>
 									{state.accountId &&
@@ -744,6 +762,13 @@ export function LiveWizard({
 										value={state.cloudRegion}
 										onChange={(e) => patch({ cloudRegion: e.target.value })}
 									>
+										{!BITMOVIN_CLOUD_REGIONS.some(
+											(region) => region === state.cloudRegion,
+										) ? (
+											<option value={state.cloudRegion}>
+												{state.cloudRegion}
+											</option>
+										) : null}
 										{BITMOVIN_CLOUD_REGIONS.map((region) => (
 											<option key={region} value={region}>
 												{region}

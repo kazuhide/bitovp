@@ -1,0 +1,42 @@
+name: Native VMAF
+
+on:
+  pull_request:
+    paths:
+      - native/vmaf-gpu/**
+      - .github/workflows/native-vmaf.yml
+  push:
+    branches: [main]
+    paths:
+      - native/vmaf-gpu/**
+      - .github/workflows/native-vmaf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-vmaf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake meson ninja-build nasm pkg-config python3 \
+            ffmpeg libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
+      - name: Build the pinned official oracle and run native tests
+        run: |
+          python3 native/vmaf-gpu/build.py \
+            --work-dir "$RUNNER_TEMP/native-vmaf-build" \
+            --prefix "$RUNNER_TEMP/native-vmaf-install" \
+            --jobs 4 --test
+          "$RUNNER_TEMP/native-vmaf-install/bin/bitovp-vmaf" --version

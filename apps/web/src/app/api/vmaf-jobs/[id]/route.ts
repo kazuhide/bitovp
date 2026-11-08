@@ -1,19 +1,32 @@
 import type { PooledMetrics } from "@bitovp/core";
-import { vmafExecutionSchema } from "@bitovp/core";
+import { localVmafExecutionOf, vmafExecutionSchema } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import type {
+	BandingResultDetail,
 	LiveReportMetadata,
+	QcJobDetail,
 	RenditionRef,
-	VmafJobDetail,
 	VmafResultDetail,
 } from "@/app/qc/vmaf-shared";
 import { requestOrganizationId } from "@/lib/passive-request";
+import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
+import {
+	bandingAssessmentOf,
+	bandingExecutionOf,
+	bandingPooledOf,
+} from "@/lib/server/banding-public";
 import { getServerContext } from "@/lib/server/context";
 import { deleteVmafJobLocally } from "@/lib/server/delete-jobs";
 import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
-import { downsampleFrameBlob } from "@/lib/server/vmaf-frames";
-import { previewDescriptor } from "@/lib/server/vmaf-preview";
+import {
+	downsampleBandingFrameBlob,
+	downsampleFrameBlob,
+} from "@/lib/server/vmaf-frames";
+import {
+	bandingPreviewDescriptor,
+	previewDescriptor,
+} from "@/lib/server/vmaf-preview";
 
 /**
  * `params.subsample`, when a worker recorded it; null otherwise.
@@ -121,7 +134,10 @@ export async function GET(req: Request, { params }: RouteParams) {
 			return jsonError(404, "Not found");
 		}
 
+		const bandingOnly = isBandingOnly(job.params);
+		const bandingEnabled = hasBanding(job.params);
 		const results: VmafResultDetail[] = [];
+		const bandingResults: BandingResultDetail[] = [];
 		for (const r of job.results) {
 			req.signal.throwIfAborted();
 			const stored = await ctx.prisma.vmafResult.findFirst({
@@ -130,22 +146,79 @@ export async function GET(req: Request, { params }: RouteParams) {
 			});
 			req.signal.throwIfAborted();
 			if (!stored) throw new Error("VMAF result is no longer available");
-			const series = stored.framesGzip
-				? await downsampleFrameBlob(stored.framesGzip, undefined, req.signal)
-				: { frames: [], frameCount: 0 };
+			const series =
+				!bandingOnly && stored.framesGzip
+					? await downsampleFrameBlob(stored.framesGzip, undefined, req.signal)
+					: { frames: [], frameCount: 0 };
 			// LIVE results carry the PR6a alignment block in pooled.live; lift it
 			// out so the report can render the live panels (VOD pooled has no live).
+			const bandingSeries =
+				bandingEnabled && stored.framesGzip
+					? await downsampleBandingFrameBlob(
+							stored.framesGzip,
+							undefined,
+							req.signal,
+						)
+					: undefined;
+			const bandingPooled = bandingEnabled
+				? bandingPooledOf(r.pooled)
+				: undefined;
+			if (
+				bandingEnabled &&
+				(!bandingPooled ||
+					!bandingSeries ||
+					bandingPooled.frameCount !== bandingSeries.frameCount)
+			)
+				throw new Error("Banding result has incomplete full-frame evidence");
+			const bandingData = bandingPooled
+				? {
+						bandingFrames: bandingSeries?.frames ?? [],
+						bandingFrameCount: bandingSeries?.frameCount ?? 0,
+						bandingExecution: bandingExecutionOf(r.provenance),
+						bandingAssessment: bandingAssessmentOf(r.pooled),
+						bandingPreview: bandingPreviewDescriptor(
+							id,
+							job,
+							r,
+							requestOrganizationId(ctx),
+						),
+					}
+				: {};
+			if (bandingOnly) {
+				if (!bandingPooled)
+					throw new Error("Banding pooled metrics are missing");
+				bandingResults.push({
+					id: r.id,
+					renditionRef: r.renditionRef as RenditionRef,
+					pooled: { banding: bandingPooled },
+					...bandingData,
+				});
+				continue;
+			}
 			const pooledRaw = r.pooled as PooledMetrics & {
 				live?: LiveReportMetadata;
+				banding?: unknown;
+				bandingAssessment?: unknown;
 			};
-			const { live, ...pooled } = pooledRaw;
+			const {
+				live,
+				banding: _banding,
+				bandingAssessment: _assessment,
+				...pooled
+			} = pooledRaw;
+			const localExecution = localVmafExecutionOf(r.provenance);
 			results.push({
 				id: r.id,
 				renditionRef: r.renditionRef as RenditionRef,
-				pooled: pooled as PooledMetrics,
+				pooled: {
+					...pooled,
+					...(bandingPooled ? { banding: bandingPooled } : {}),
+				},
+				...bandingData,
 				frames: series.frames,
 				frameCount: series.frameCount,
 				preview: previewDescriptor(id, job, r, requestOrganizationId(ctx)),
+				...(localExecution ? { localExecution } : {}),
 				...(live ? { live } : {}),
 			});
 		}
@@ -168,14 +241,13 @@ export async function GET(req: Request, { params }: RouteParams) {
 						}),
 					)
 				: [];
-		const payload: VmafJobDetail = {
+		const common = {
 			execution,
 			computeTasks,
 			id: job.id,
 			encodingJobId: job.encodingJobId,
 			encodingName: job.encodingJob?.name ?? null,
 			mode: job.mode,
-			model: job.model,
 			scoringVersion: job.scoringVersion,
 			subsample: subsampleOf(job.params),
 			status: job.status,
@@ -192,8 +264,24 @@ export async function GET(req: Request, { params }: RouteParams) {
 			// before that existed carry `{}`, and the report says so rather than guessing
 			// an upscale factor.
 			reference: referenceOf(job.params),
-			results,
 		};
+		const payload: QcJobDetail = bandingOnly
+			? {
+					...common,
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					banding: true,
+					reference: null,
+					subsample: null,
+					results: bandingResults,
+				}
+			: {
+					...common,
+					model: job.model,
+					...(bandingEnabled ? { banding: true } : {}),
+					results,
+				};
 		return NextResponse.json(payload);
 	} catch (err) {
 		return routeError(err);

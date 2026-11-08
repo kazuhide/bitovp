@@ -8,67 +8,127 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- An optional pinned `large-v3-turbo-q5_0` speech-recognition model for caption
-  evaluation. Only its registered ASR weights may exceed the ordinary 512MiB
-  analysis-file limit; model digests continue to separate cached results.
-- Automatic highlight ranking for new editing drafts from existing AISA
-  descriptions, characters, objects and event cues. Content and desired length are
-  sufficient; folded creation-time rationale records the selection and bounded
-  fallbacks. Existing policies and source-preserving framing remain compatible.
-- Configured one-shot generation from a Library source, associated AISA metadata,
-  desired length and optional content query. Whole-shot selection creates editable
-  portrait, landscape and square projects. The normal flow creates a draft proposal
-  with immediate timeline preview; exports begin only on explicit Generate.
-  Existing automatic-export requests retain their original behavior. Dedicated
-  tasks support progress, cancellation, retry and exact-input analysis reuse.
-- Encoding-bound output and AISA selection, with prepared-media reuse and bounded
-  VOD HLS materialization. Prepared frame ownership joins verified shared shot
-  boundaries without dropping video frames or audio.
-- A prepare-and-generate flow retains the selected source, analysis and generation
-  settings. Unverified associations pause for review; uncertain generation
-  responses retain same-request recovery. Caption-enabled selection checks
-  observed speech boundaries and records its selection evidence and fallbacks.
-- Composition editing with multiple sources and video layers, measured crop
-  keyframes, crossfades, music gain/fades and caption-linked ducking, timed word
-  highlighting, titles and bounded PNG overlays. Existing single-source versions
-  and exported files remain readable.
-- Local whisper.cpp speech recognition with pinned model verification and a
-  licensed Sintel dialogue fixture. Missing or unverified word timing falls back
-  to sentence captions; lost subject tracking falls back to FIT.
-- Prepared 30fps editing sources from supported fixed 24/25/29.97fps SDR
-  H.264/8bit HEVC MP4/MOV inputs, with explicit frame mapping. Immutable input,
-  analysis and normalization receipts distinguish captured, editor-confirmed
-  and fixture-authored associations. Referenced job history is retained.
+- Editable clips under each Library content, with source/output/AISA loading,
+  desired duration and creation purpose, Local LLM story proposals, source/result
+  previews and a visual timeline. A proposal remains editable before explicit MP4 export.
+- Multiple projects per content, clip thumbnails, saved revisions, framing
+  keyframes, captions, titles, audio controls and optional local Japanese translation.
+- Source-time forced alignment for measured caption timing, shared preview/export
+  wrapping and highlighting, bounded speech-boundary selection, and safe whole-frame
+  presentation when subject evidence does not support cropping.
+- Pinned local speech models and preparation of supported SDR inputs, with
+  immutable source/analysis/normalization evidence and exact-input reuse.
 
-- Shot framing based on available AISA subject boxes, with per-shot crop zoom
-  and position controls. Center-only analysis remains supported.
-- An optional licensed Caminandes 2 animation demo for the local editor preview,
-  with explicit authored metadata, source attribution, and a verified download.
-- A local Docker preview for the Content Library editor, with synthetic MP4
-  footage and authored AISA metadata. The dedicated project preserves edits
-  across restarts and exposes only a localhost Web port.
-- A visual single-track timeline with zoom, source seeking, and frame-based
-  pointer/keyboard trimming. Numeric range controls remain available.
+- Affected CAMBI intervals can open the measured rendition for bounded playback
+  and replay, including banding-only reports without a VMAF reference or FPS.
+  Preview reads retain the measured object's version and organization binding.
 
-- A Content Library clip editor for landscape highlights and portrait videos,
-  with saved ranges, fixed crop/fit, per-range audio, optional AISA scene and shot
-  suggestions, preview and MP4 export. Source and edit versions are preserved;
-  successful exports return to the Library. Inputs follow the documented SDR
-  preparation profile, with20 ranges/180 seconds per edit.
-  Apply the Library editing migration and replace all source readers/workers
-  before enabling derived outputs. Editing records are protected from Reset.
+- Local VOD banding detection using no-reference CAMBI, independently or alongside
+  VMAF. Reports include scores, presentation-time graphs and affected intervals
+  when warning or failure bounds are configured. CAMBI maximum rules support
+  the existing quality-gate policy; a warning breach remains visible without
+  failing delivery, while missing measurements fail closed.
+- CPU and optional owned CUDA/Vulkan CAMBI extraction, separate execution metadata,
+  and full-frame JSON/CSV exports. GPU runs verify every frame against the official
+  CPU extractor.
+  Banding-only measurements do not require a reference video or VMAF model.
+  See [banding setup and limits](./docs/user-guide/BANDING-QUALITY.md).
+
+### Changed
+
+- Clip creation and inference require a configured, verified GPU-backed Local LLM.
+  Existing source playback, editing history and completed exports remain accessible.
+- Library editing adds database migrations. Back up the database, configuration
+  and media, stop older readers/workers, migrate, then restart the updated services.
+  See [database upgrade guidance](./docs/DATABASE-UPGRADES.md).
+
+- Grouped settings into purpose-based panels with concise descriptions, keeping
+  personal display preferences at the top. Quality control now brings its
+  enablement and administrator-only execution profiles into one settings page.
+- Updated the Bitmovin REST API SDK to 1.287.0 and the new VOD wizard default to
+  Encoder 2.292.0 (Beta). Saved account defaults, drafts and imported plans retain
+  their selected encoder versions.
+- Refreshed the pinned FFmpeg 8.1.3 worker build to include the CAMBI fixes for
+  small encode dimensions and 10-bit input strides.
 
 ### Fixed
 
-- Japanese caption wrapping avoids leading small kana, punctuation and closing
-  brackets, and trailing opening brackets in the shared Canvas/MP4 layout.
-  Existing thumbnails use a new cache identity for the changed line breaks.
-- Result players retain the output video's aspect ratio within the viewport
-  height limit, avoiding player-added side bars on portrait exports.
-- Library editing preparation accepts otherwise supported 8bit outputs with
-  unrecorded color metadata, normalizing them with an explicit BT.709 limited
-  assumption retained in the source evidence. Explicit HDR, contradictory color
-  metadata and full-range inputs remain unsupported.
+- Captions use measured source-time word boundaries instead of spreading scene
+  text across a shot. Short verified interjections and bounded local realignment
+  retain their evidence; unavailable timing does not become invented word timing.
+- Japanese line wrapping and portrait result-player sizing are shared consistently
+  between the timeline preview and rendered MP4.
+
+## [1.1.0] - 2026-11-04
+
+Local VMAF processing now offers CPU and automatic GPU selection with shared
+resource management. CPU remains the default and is used for delivery gates.
+GPU acceleration is optional and experimental; supported hardware and native
+runner setup are described in the [GPU quality guide](./docs/user-guide/GPU-QUALITY.md).
+
+### Added
+
+- Experimental local VOD hardware decoding and owned CUDA/Vulkan VMAF v1.0
+  feature extraction, with the official Netflix predictor, full-frame CPU
+  verification, and separate decode/scoring metadata in reports and exports.
+  CPU remains the default. See [setup and limits](./docs/user-guide/GPU-QUALITY.md).
+- A standalone native scorer with resident NVDEC input, hash-verified builds,
+  real hardware qualification tests, and complete-process performance and
+  memory comparisons.
+- Optional native GPU frame concurrency, a read-only hardware and memory query,
+  and a matching Linux process supervisor for VMAF runners that must stop work
+  when their owner or heartbeat disappears.
+- Automatic native VMAF resource planning and shared local admission. Excess
+  jobs wait in the queue; short CPU-verified trials select comparison and frame
+  concurrency, with reusable private resource measurements.
+- Local CPU and automatic GPU choices in VOD quality settings and VMAF Lab,
+  with per-measurement selection, same-model CPU fallback, and actual processing
+  details in reports. Delivery-gate decisions continue to use the CPU.
+
+### Changed
+
+- Updated pinned CI actions and Docker runtime/service images. Routine dependency
+  updates stay in small reviewable groups; runtime major upgrades require a
+  separate migration, while security updates remain enabled.
+- Refreshed the PostgreSQL 17.11 image digest in both deployment configurations
+  and the isolated database validation runner, keeping their images consistent.
+- GPU scoring uses the owned native executable. The retired experimental
+  configuration is rejected rather than silently changed. Existing measurement
+  history remains readable; changing scorers requires a new measurement.
+
+## [1.0.0] - 2026-11-01
+
+First stable release, retaining the release candidate's feature baseline.
+Distributions contain source archives and SHA-256 checksums; the application
+is built locally using the installation guide.
+
+### Added
+
+- Editable default cloud region and encoder version for each Bitmovin account.
+  VOD and Live wizards apply them when the account is selected, while retaining
+  later manual edits and saved draft or imported-plan settings.
+
+### Changed
+
+- New VOD audio defaults to AAC, 128 kbps, 48 kHz and stereo. Existing audio
+  configurations are retained.
+
+### Fixed
+
+- Fresh-source installation and upgrade instructions generate the database client
+  before running host-side database setup commands.
+- Switching a Standard video row to flexible Per-Title clears its height while
+  retaining sibling rendition references, output destinations and audio settings.
+- Scene overlays in VOD previews and the content library use matching theme
+  foreground and background colours, including light themes.
+- Integration secret inputs consistently request that browsers avoid saving or
+  autofilling credentials, while keeping native password masking. Browsers and
+  extensions may override these hints.
+
+The database schema is unchanged from v1.0.0-rc.1. Back up configuration,
+encryption keys, database and media before upgrading an existing installation.
+Feature availability remains dependent on the Bitmovin account, encoder and
+configured services; this release does not certify every provider configuration.
 
 ## [1.0.0-rc.1] - 2026-10-30
 
@@ -115,7 +175,9 @@ version. After v1.0.0, compatible fixes use patch versions, compatible features
 use minor versions, and breaking changes use major versions with migration
 instructions.
 
-Planned work belongs in the [roadmap](./ROADMAP.md); it is added to this
-changelog when delivered.
+Record implemented changes under **Unreleased** until their tagged release is
+published.
 
+[1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
+[1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0-rc.1

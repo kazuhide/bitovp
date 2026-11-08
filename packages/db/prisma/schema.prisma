@@ -1492,6 +1492,8 @@ model VmafJob {
   /// DEFAULT_VMAF_MODEL because nothing takes it (review-234 (a)). A row must
   /// say which model produced its score; silently inheriting one is how a
   /// report gets compared against a different viewing condition.
+  /// Banding-only VOD rows use the reserved internal detector id "CAMBI" with
+  /// params.kind="BANDING"; public views expose detector CAMBI and model null.
   model          String
   /// Which SCORING GENERATION produced this row's numbers.
   ///
@@ -1507,6 +1509,8 @@ model VmafJob {
   /// that refuses to. The column defaults to 1 so every pre-existing row is
   /// labelled correctly by the migration alone; the worker writes the current
   /// generation explicitly.
+  /// 11 identifies no-reference banding-only jobs; combined jobs retain their
+  /// VMAF generation and store the banding metric version in its own metadata.
   scoringVersion Int          @default(1)
   params         Json         @default("{}")
   /// QC gate verdict (ledger #86 PR2): evaluateQcGate over this run's pooled
@@ -1548,9 +1552,11 @@ model VmafResult {
   vmafJob      VmafJob  @relation(fields: [vmafJobId], references: [id], onDelete: Cascade)
   /// Which rendition this result covers ({ streamId, label, bitrate, … }).
   renditionRef Json
-  /// Pooled metrics: mean, harmonic mean, percentiles, 1% low.
+  /// VMAF pooled metrics and/or nested banding summary/assessment. Banding-only
+  /// results carry no synthetic VMAF fields.
   pooled       Json
-  /// Frame-level scores; gzipped blob over ~50k frames (ARCHITECTURE §6).
+  /// Legacy VMAF arrays or versioned QC_FRAMES envelopes with separate VMAF and
+  /// banding arrays; gzipped over ~50k frames (ARCHITECTURE §6).
   frames       Json?
   framesGzip   Bytes?
   /// The bytes this row scored.

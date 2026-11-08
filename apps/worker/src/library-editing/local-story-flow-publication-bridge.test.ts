@@ -114,6 +114,7 @@ function publicationSourceFacts(
 	audio = false,
 	normalized = false,
 	attested = false,
+	backgroundRepeats = 80,
 ) {
 	const org = pubId(1),
 		mediaId = pubId(2),
@@ -156,7 +157,7 @@ function publicationSourceFacts(
 				shots: Array.from({ length: count }, (_, i) => ({
 					startInSeconds: i * 3,
 					endInSeconds: (i + 1) * 3,
-					detailedDescription: `A person holds key ${i}.${" Authored background.".repeat(80)}`,
+					detailedDescription: `A person holds key ${i}.${" Authored background.".repeat(backgroundRepeats)}`,
 				})),
 			},
 		],
@@ -356,8 +357,15 @@ function publicationLegacyFixture(
 	audio = false,
 	normalized = false,
 	attested = false,
+	options: { backgroundRepeats?: number; perShotEvents?: boolean } = {},
 ) {
-	const f = publicationSourceFacts(count, audio, normalized, attested);
+	const f = publicationSourceFacts(
+		count,
+		audio,
+		normalized,
+		attested,
+		options.backgroundRepeats,
+	);
 	function pair(q: PubRequest, value: unknown) {
 		const proof =
 			seal === 1
@@ -447,25 +455,25 @@ function publicationLegacyFixture(
 		});
 		const requestKey = pubId(1000 + index),
 			body = stage.bodyFor(requestKey),
-			ref = chunk.refs[0];
-		if (!ref) throw new Error("Expected source ref");
-		const quote = `A person holds key ${Number(ref.slice(1))}.`;
+			refs = options.perShotEvents ? chunk.refs : chunk.refs.slice(0, 1);
+		if (!refs.length) throw new Error("Expected source ref");
 		const stored = stage.parse({
 			version: "local-semantic-stage-result-v1",
 			requestKey,
 			output: {
 				summary: "The key is held.",
-				events: [
-					{
-						id: "e0",
+				events: refs.map((ref, eventIndex) => {
+					const quote = `A person holds key ${Number(ref.slice(1))}.`;
+					return {
+						id: `e${eventIndex}`,
 						label: quote,
 						role: "ACTION",
 						refs: [ref],
 						quotes: [{ ref, quote }],
 						subjects: ["person", "key"],
 						uncertainty: "",
-					},
-				],
+					};
+				}),
 			},
 			receipt: {
 				version: "bitovp-semantic-receipt-v1",
@@ -721,8 +729,16 @@ type Tx = {
 	sawBridge: boolean;
 	active: boolean;
 };
-function makeLab(count = 128, ageMs = 1000) {
-	const facts = publicationLegacyFixture(count),
+function makeLab(count = 128, ageMs = 1000, compactAdmission = false) {
+	const facts = publicationLegacyFixture(
+			count,
+			"V4",
+			2,
+			false,
+			false,
+			false,
+			compactAdmission ? { backgroundRepeats: 32, perShotEvents: true } : {},
+		),
 		manager = new LockManager();
 	const committed = new Map<Table, Map<string, Row>>(
 		tables.map((t) => [t, new Map()]),
@@ -1458,12 +1474,24 @@ it("keeps an unrelated actual-bridge transport error fixed without adopting its 
 	expect(f.cleanupOnly).not.toHaveBeenCalled();
 });
 async function parallelMerges(sameMerge: boolean, reverse = false) {
-	const f = makeLab(),
+	// Keep the full 128-shot source and all real admission/bridge validators.
+	// Per-shot events create the multi-page tree without inflating every source
+	// description merely to force many legacy ledger chunks before the lock test.
+	const f = makeLab(128, 1000, true),
 		a = await f.context(pubId(reverse ? 90 : 2)),
 		b = await f.context(pubId(reverse ? 2 : 90));
-	const layout = localStoryFlowContextSourceEvidence(
+	const source = localStoryFlowContextSourceEvidence(
 		localStoryFlowSourceArchiveContext(a.archive),
-	).layout.nodes;
+	);
+	expect(source.input.shots).toHaveLength(128);
+	expect(source.manifest.coverage).toMatchObject({
+		totalShots: 128,
+		eligibleShots: 128,
+		processedShots: 128,
+		truncated: false,
+	});
+	expect(source.manifest.corpus.events).toHaveLength(128);
+	const layout = source.layout.nodes;
 	const leafIds = new Set(
 		layout.filter((n) => n.phase === "LEAF").map((n) => n.nodeId),
 	);

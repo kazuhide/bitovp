@@ -83,7 +83,15 @@ export {
 	validateLocalStoryFlowWorkflowIdentity,
 } from "./local-story-flow-stages";
 export * from "./local-story-input";
-export * from "./local-story-planner";
+export type {
+	LocalStorySelectionDescription,
+	LocalStorySelectionResult,
+} from "./local-story-planner";
+export {
+	describeLocalStorySelection,
+	localStoryEventMinimumDurationFrames,
+	selectLocalStoryClips,
+} from "./local-story-planner";
 export * from "./local-story-subjects";
 export * from "./normalization-evidence";
 export * from "./prepared-shot-partition";

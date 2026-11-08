@@ -1,6 +1,5 @@
 import type { AutoPortraitClip } from "./auto-portrait";
 import {
-	type LocalStoryBlueprint,
 	type LocalStoryEvent,
 	type LocalStoryInput,
 	type LocalStorySelection,
@@ -272,104 +271,135 @@ export function localStoryEventMinimumDurationFrames(
 	return minimum;
 }
 
-/** Bounded beam over every mandatory beat, source order, complete utterances and frame budget. */
-export function selectLocalStoryClips(options: {
-	input: LocalStoryInput;
-	ledger: unknown;
-	blueprint: unknown;
-	targetDurationFrames: number;
-}): LocalStorySelectionResult {
-	const { input, targetDurationFrames: target } = options;
+function checkedTarget(target: number) {
 	if (
 		!Number.isSafeInteger(target) ||
 		target < 1 ||
 		target > MAX_EDIT_DURATION_FRAMES
 	)
 		throw new LocalStoryError("LOCAL_STORY_DURATION_INVALID");
+	return target;
+}
+
+/** Fully validate each public selection, including callers outside feasible-choice search. */
+export function selectLocalStoryClips(options: {
+	input: LocalStoryInput;
+	ledger: unknown;
+	blueprint: unknown;
+	targetDurationFrames: number;
+}): LocalStorySelectionResult {
+	checkedTarget(options.targetDurationFrames);
+	return createLocalStoryClipSelector(options)({
+		blueprint: options.blueprint,
+		targetDurationFrames: options.targetDurationFrames,
+	});
+}
+
+/** One synchronous search owns a detached, validated source/corpus. No cross-call cache.
+ * Every candidate still validates its Blueprint; source-grounded event spans depend
+ * only on this private snapshot, so they can be shared across that search's plans.
+ */
+export function createLocalStoryClipSelector(options: {
+	input: LocalStoryInput;
+	ledger: unknown;
+}) {
+	const input = structuredClone(options.input);
 	const corpus = localStoryCorpusSchema.safeParse(options.ledger),
-		ledger = corpus.success
-			? corpus.data
-			: localStoryLedgerSchema.parse(options.ledger);
+		ledger = structuredClone(
+			corpus.success
+				? corpus.data
+				: localStoryLedgerSchema.parse(options.ledger),
+		);
 	validateLocalStoryCorpusEvents(input, ledger.events);
-	const blueprint: LocalStoryBlueprint = validateLocalStoryBlueprint({
-			ledger,
-			blueprint: options.blueprint,
-		}),
-		events = new Map(ledger.events.map((e) => [e.id, e]));
-	// Five beats, four event alternatives and at most two timed variants give
-	// at most 8^5 states. Keep that bounded space so a long prefix cannot evict
-	// a short plan needed by a later mandatory beat.
-	const maxStates = 32_768,
-		maxExpansions = 40_000;
+	const events = new Map(ledger.events.map((e) => [e.id, e]));
 	const candidates = new Map<string, Span[][]>();
-	let beam: State[] = [
-			{ spans: [], selectedEventIds: [], selectedBeatIds: [] },
-		],
-		expansions = 0;
-	for (const beat of blueprint.beats) {
-		const next = new Map<string, State>();
-		for (const state of beam) {
-			if (!beat.requires.every((id) => state.selectedBeatIds.includes(id)))
-				continue;
-			for (const eventId of beat.eventIds) {
-				if (state.selectedEventIds.includes(eventId)) continue;
-				let alternatives = candidates.get(eventId);
-				if (!alternatives) {
-					alternatives = eventCandidates(input, required(events.get(eventId)));
-					candidates.set(eventId, alternatives);
-				}
-				for (const candidate of alternatives) {
-					if (++expansions > maxExpansions)
-						throw new LocalStoryError("LOCAL_STORY_SEARCH_LIMIT");
-					const spans = addForward(state.spans, candidate);
-					if (!spans || count(spans) > target || !clipsFor(input, spans))
-						continue;
-					const value = {
-						spans,
-						selectedEventIds: [...state.selectedEventIds, eventId],
-						selectedBeatIds: [...state.selectedBeatIds, beat.id],
-					};
-					next.set(signature(value), value);
+	return (selection: {
+		blueprint: unknown;
+		targetDurationFrames: number;
+	}): LocalStorySelectionResult => {
+		const target = checkedTarget(selection.targetDurationFrames);
+		const blueprint = validateLocalStoryBlueprint({
+			ledger,
+			blueprint: selection.blueprint,
+		});
+		// Five beats, four event alternatives and at most two timed variants give
+		// at most 8^5 states. Keep that bounded space so a long prefix cannot evict
+		// a short plan needed by a later mandatory beat.
+		const maxStates = 32_768,
+			maxExpansions = 40_000;
+		let beam: State[] = [
+				{ spans: [], selectedEventIds: [], selectedBeatIds: [] },
+			],
+			expansions = 0;
+		for (const beat of blueprint.beats) {
+			const next = new Map<string, State>();
+			for (const state of beam) {
+				if (!beat.requires.every((id) => state.selectedBeatIds.includes(id)))
+					continue;
+				for (const eventId of beat.eventIds) {
+					if (state.selectedEventIds.includes(eventId)) continue;
+					let alternatives = candidates.get(eventId);
+					if (!alternatives) {
+						alternatives = eventCandidates(
+							input,
+							required(events.get(eventId)),
+						);
+						candidates.set(eventId, alternatives);
+					}
+					for (const candidate of alternatives) {
+						if (++expansions > maxExpansions)
+							throw new LocalStoryError("LOCAL_STORY_SEARCH_LIMIT");
+						const spans = addForward(state.spans, candidate);
+						if (!spans || count(spans) > target || !clipsFor(input, spans))
+							continue;
+						const value = {
+							spans,
+							selectedEventIds: [...state.selectedEventIds, eventId],
+							selectedBeatIds: [...state.selectedBeatIds, beat.id],
+						};
+						next.set(signature(value), value);
+					}
 				}
 			}
+			beam = [...next.values()]
+				.sort((a, b) => {
+					// Compare whole plans: preserve complete beats, use the available duration,
+					// then minimize jumps and cuts. No event importance or top-K score exists.
+					return (
+						count(b.spans) - count(a.spans) ||
+						a.spans.length - b.spans.length ||
+						signature(a).localeCompare(signature(b), "en")
+					);
+				})
+				.slice(0, maxStates);
+			if (!beam.length)
+				throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
 		}
-		beam = [...next.values()]
-			.sort((a, b) => {
-				// Compare whole plans: preserve complete beats, use the available duration,
-				// then minimize jumps and cuts. No event importance or top-K score exists.
-				return (
-					count(b.spans) - count(a.spans) ||
-					a.spans.length - b.spans.length ||
-					signature(a).localeCompare(signature(b), "en")
-				);
-			})
-			.slice(0, maxStates);
-		if (!beam.length) throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
-	}
-	const selected = required(beam[0]);
-	return {
-		policyVersion: input.normalizationReceiptHash
-			? "aisa-prepared-local-story-window-v1"
-			: "aisa-local-story-window-v1",
-		requestedDurationFrames: target,
-		actualDurationFrames: count(selected.spans),
-		clips: required(clipsFor(input, selected.spans)),
-		reasonCodes: [
-			"LOCAL_LLM_COMPLETE_BEATS",
-			"SOURCE_PRESENTATION_ORDER",
-			"LOCAL_STORY_VISUAL_GROUNDING_PENDING",
-			...(input.segments.length
-				? ["COMPLETE_UTTERANCE_BOUNDARIES"]
-				: ["TRANSCRIPT_UNAVAILABLE"]),
-			...(count(selected.spans) < target ? ["DURATION_UNDER_TARGET"] : []),
-		],
-		...(input.normalizationReceiptHash
-			? { normalizationReceiptHash: input.normalizationReceiptHash }
-			: {}),
-		localStorySelection: {
-			selectedBeatIds: selected.selectedBeatIds,
-			selectedEventIds: selected.selectedEventIds,
-			reason: "COMPLETE_BEATS",
-		},
+		const selected = required(beam[0]);
+		return {
+			policyVersion: input.normalizationReceiptHash
+				? "aisa-prepared-local-story-window-v1"
+				: "aisa-local-story-window-v1",
+			requestedDurationFrames: target,
+			actualDurationFrames: count(selected.spans),
+			clips: required(clipsFor(input, selected.spans)),
+			reasonCodes: [
+				"LOCAL_LLM_COMPLETE_BEATS",
+				"SOURCE_PRESENTATION_ORDER",
+				"LOCAL_STORY_VISUAL_GROUNDING_PENDING",
+				...(input.segments.length
+					? ["COMPLETE_UTTERANCE_BOUNDARIES"]
+					: ["TRANSCRIPT_UNAVAILABLE"]),
+				...(count(selected.spans) < target ? ["DURATION_UNDER_TARGET"] : []),
+			],
+			...(input.normalizationReceiptHash
+				? { normalizationReceiptHash: input.normalizationReceiptHash }
+				: {}),
+			localStorySelection: {
+				selectedBeatIds: selected.selectedBeatIds,
+				selectedEventIds: selected.selectedEventIds,
+				reason: "COMPLETE_BEATS",
+			},
+		};
 	};
 }

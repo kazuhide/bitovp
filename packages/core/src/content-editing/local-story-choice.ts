@@ -17,6 +17,7 @@ import {
 	validateLocalStoryCorpusEvents,
 } from "./local-story-input";
 import {
+	createLocalStoryClipSelector,
 	type LocalStorySelectionResult,
 	selectLocalStoryClips,
 } from "./local-story-planner";
@@ -114,13 +115,19 @@ export function sliceFeasibleStoryChoices(
 function checkedPlan(
 	options: Pick<BuildOptions, "input" | "ledger" | "targetDurationFrames">,
 	blueprint: LocalStoryBlueprint,
+	select?: ReturnType<typeof createLocalStoryClipSelector>,
 ) {
 	const parsed = validateLocalStoryBlueprint({
 		ledger: options.ledger,
 		blueprint,
 	});
 	if (localStoryBlueprintCoherenceIssues(parsed).length) invalid();
-	const selection = selectLocalStoryClips({ ...options, blueprint: parsed });
+	const selection = select
+		? select({
+				blueprint: parsed,
+				targetDurationFrames: options.targetDurationFrames,
+			})
+		: selectLocalStoryClips({ ...options, blueprint: parsed });
 	if (
 		localStorySelectedPlanIssues({ ...options, blueprint: parsed, selection })
 			.length
@@ -200,6 +207,7 @@ export function buildFeasibleStoryChoices(
 		maxEvaluations = bounded(options.maxEvaluations ?? 20_000, 20_000);
 	const ledger = localStoryCorpusSchema.parse(options.ledger);
 	validateLocalStoryCorpusEvents(options.input, ledger.events);
+	const select = createLocalStoryClipSelector({ input: options.input, ledger });
 	const shots = new Map(options.input.shots.map((s) => [s.ref, s]));
 	const roleById = new Map(ledger.events.map((e) => [e.id, e.role]));
 	const originalOrdinal = new Map(ledger.events.map((e, i) => [e.id, i]));
@@ -266,7 +274,11 @@ export function buildFeasibleStoryChoices(
 					uncertainty: "",
 				};
 				try {
-					const { selection } = checkedPlan({ ...options, ledger }, blueprint);
+					const { selection } = checkedPlan(
+						{ ...options, ledger },
+						blueprint,
+						select,
+					);
 					const names = [
 						...new Set(selected.flatMap((e) => e?.subjects ?? [])),
 					];

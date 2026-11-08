@@ -75,6 +75,8 @@ dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnaly
 
 録画 manifest は固定の Bitmovin endpoint から認証付きで取得する。署名 URL を server 内で隠し、tenant/account/analysis/encoding に束縛した短命の opaque token へ書き換える。子リソースも expected-org を検証する。ユーザー入力の URL proxy、外部 storage への Bitmovin API key 転送、redirect 追従は行わない。
 
+確定した録画の重複取得を減らすため、現在の Analysis が `FINISHED` で、時刻整合性と `ENDLIST` を確認できる media playlist だけを server 内で最大30秒再利用する。認証・現在の組織/account・SDK の Analysis/Encoding 照合は毎回行う。key は組織/account/analysis/encoding の全組合せで、上限は8件・UTF-8合計8MiB。Google署名と実際に発行したproxy tokenの最短期限より5秒早く失効し、同じ暗号化URLを再利用して期限を延ばさない。期限不明、未完了、master、不正な時刻の playlist は対象外とし、ブラウザ向け `private, no-store` は維持する。この短い再利用期間は録画内容の保持であり、現在の録画APIのHTTP healthを示すものではない。
+
 ## 日本語訳
 
 確認した Preview SDK の Live Create/Start/Result には出力言語の指定がない。今回の実結果8件は英語であり、VOD の追加言語 API を Live の対応根拠にしない。

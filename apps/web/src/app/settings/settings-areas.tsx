@@ -22,6 +22,11 @@ type Area = {
 
 const WORKSPACE: ReadonlyArray<Area> = [
 	{
+		titleKey: "clipDiagnostics.title",
+		href: "/settings/clip-editing",
+		captionKey: "clipDiagnostics.caption",
+	},
+	{
 		titleKey: "branding.title",
 		href: "/settings/branding",
 		captionKey: "branding.scope",

@@ -131,6 +131,11 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "Cloud execution profile administration",
 	},
 	{
+		prefix: "/api/settings/clip-editing",
+		minRole: "ADMIN",
+		reason: "Deployment-scoped local model and worker diagnosis",
+	},
+	{
 		prefix: "/api/settings/vmaf-credentials",
 		minRole: "ADMIN",
 		reason: "Cloud credential inventory and writes",

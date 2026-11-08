@@ -45,6 +45,12 @@ const CUSTOMER_SURFACE: PageAccessRule = {
  */
 export const PAGE_ACCESS_RULES: readonly PageAccessRule[] = [
 	{
+		prefix: "/settings/clip-editing",
+		audience: "operator",
+		minRole: "ADMIN",
+		reason: "Deployment-scoped local model diagnostics use an ADMIN API",
+	},
+	{
 		prefix: "/settings/organizations",
 		audience: "operator",
 		minRole: "ADMIN",

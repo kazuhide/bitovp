@@ -6,7 +6,7 @@ import {
 	type contentRegisterSchema,
 	type contentUpdateSchema,
 	type LibrarySourceView,
-	librarySnapshotSchema,
+	librarySourceSnapshotSchema,
 	MAX_SCENE_ANALYSIS_BYTES,
 	normalizeSceneAnalysis,
 	type ProviderAnalysisView,
@@ -20,6 +20,7 @@ import { z } from "zod";
 import { requestOrganizationId } from "@/lib/passive-request";
 import { getServerContext } from "./context";
 import { jsonError, routeError, validationError } from "./http";
+import { contentParent } from "./library-hierarchy";
 import { enrichLibraryPlayback } from "./library-playback";
 
 function analysisDisplayData(value: unknown): AnalysisJsonValue {
@@ -107,11 +108,18 @@ export async function sourceView(
 		take: 100,
 		select: { content: { select: { id: true, title: true, archived: true } } },
 	});
+	const parsedSnapshot = librarySourceSnapshotSchema.parse(source.snapshot);
 	const {
 		analysisOutput: _privateLocator,
 		fileOutputs,
 		...snapshot
-	} = librarySnapshotSchema.parse(source.snapshot);
+	} = {
+		...parsedSnapshot,
+		analysisOutput:
+			parsedSnapshot.kind === "VOD_JOB"
+				? parsedSnapshot.analysisOutput
+				: undefined,
+	};
 	const [playbackLinks] = await enrichLibraryPlayback(
 		prisma,
 		[
@@ -201,6 +209,7 @@ export async function readContent(id: string) {
 	if (!revision) throw new Error("Content revision missing");
 	return NextResponse.json({
 		...contentView(row),
+		parent: await contentParent(prisma, id),
 		source: await sourceView(
 			prisma,
 			revision.sourceId,

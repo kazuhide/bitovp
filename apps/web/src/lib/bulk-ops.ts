@@ -41,7 +41,12 @@ export function dedupeIds(ids: readonly string[]): string[] {
 }
 
 /** One id the batch deliberately did not act on, with the operator-facing why. */
-export type BulkSkip = { id: string; reason: string };
+export type BulkSkip = {
+	id: string;
+	reason: string;
+	code?: "JOB_LIBRARY_EVIDENCE_REFERENCES";
+	protectedCount?: number;
+};
 
 /** POST /api/encoding-jobs/bulk-cancel */
 export type BulkCancelResult = {

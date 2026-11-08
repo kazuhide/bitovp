@@ -5,6 +5,306 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	clipDiagnostics: {
+		title: "クリップ編集",
+		caption: "ローカルモデルと編集サービスの接続状態を確認します。",
+		diagnose: "接続を診断",
+		checking: "診断中…",
+		configuration: "利用設定",
+		worker: "編集サービス",
+		gateway: "ローカルモデル",
+		details: "診断の詳細・復帰方法",
+		scope:
+			"設定、編集サービスの初期化、モデルの登録情報を確認します。モデルのロードや推論は行いません。",
+		counts: "準備済み {ready} 台 ／ 初期化失敗 {failed} 台",
+		checkedAt: "診断時刻：{time}",
+		failed: "診断を完了できませんでした。もう一度お試しください。",
+		workerRecovery:
+			"編集サービスのログと配備設定を確認し、編集サービスを再起動してください。応答が途絶えると45秒後に状態が失効します。",
+		gatewayRecovery:
+			"専用runtime、導入モデル、Gatewayの版を確認してください。隔離中は運用手順に従って対象runtimeの停止を確認し、隔離を解除してください。",
+		configurationRecovery:
+			"サーバー側でローカルGateway、token、信頼するCA、GPU profileを設定し、webと編集サービスを再起動してください。",
+		metadataOnly:
+			"モデルの登録情報を確認できました。GPUの空き容量と推論の成功は、実ジョブでの確認が必要です。",
+		states: {
+			DISABLED: "オフ",
+			INVALID: "設定が不足しています",
+			CONFIGURED: "設定済み",
+			NOT_CHECKED: "未診断",
+			MISSING: "最近の応答がありません",
+			READY: "準備済み",
+			MIXED: "一部の編集サービスが利用できません",
+			INITIALIZATION_FAILED: "初期化に失敗しました",
+			REGISTRY_UNAVAILABLE: "編集サービスの状態を取得できません",
+			REGISTRY_LIMIT: "編集サービスの台数が診断上限を超えています",
+			GATEWAY_STOPPING: "Gatewayを停止中です",
+			RUNTIME_QUARANTINED: "runtimeが隔離されています",
+			RUNTIME_UNAVAILABLE: "runtimeに接続できません",
+			RUNTIME_VERSION_MISMATCH: "runtimeの版が一致しません",
+			MODEL_MISMATCH: "必要なモデルがないか、一致しません",
+			MODEL_NOT_INSTALLED: "選択した翻訳モデルが未導入です",
+			CONNECTION_FAILED: "Gatewayに接続できません",
+			AUTH_FAILED: "認証に失敗しました",
+			TLS_FAILED: "証明書を確認できません",
+			INVALID_RESPONSE: "診断の応答形式が一致しません",
+			GATEWAY_VERSION_MISMATCH: "Gatewayの版が一致しません",
+			WORKER_UNAVAILABLE: "編集サービス不在のためモデルを確認できません",
+			DIAGNOSTIC_TIMEOUT: "編集サービスの診断が時間内に完了しませんでした",
+		},
+	},
+	editing: {
+		autoPortrait: {
+			noWindow:
+				"希望の長さに収まるショットのまとまりがありません。長さを増やすか、編集画面で区間を指定してください。",
+			selectionLimit:
+				"解析の区間数または組み合わせが自動選択の上限を超えています。編集画面で区間を指定してください。",
+			provenanceLocked:
+				"生成時の記録は変更できません。再読み込みしてから区間や構図を編集してください。",
+			fixtureMetadata:
+				"手作りの検証用メタデータを使った出力です。実際のAISA解析の精度を示すものではありません。",
+			earlierRevision:
+				"この出力は以前の編集版です。現在の編集内容を反映するには、MP4を再生成してください。",
+			title: "縦型動画を生成",
+			help: "映像、AISAメタデータ、希望の長さを選ぶと、縦型のMP4を生成します。",
+			media: "元の映像",
+			analysis: "AISAメタデータ",
+			analysisHelp:
+				"このコンテンツに紐づく解析版を選びます。映像との対応は生成時に確認します。",
+			duration: "希望の長さ（秒）",
+			durationHelp:
+				"1〜180秒。30fpsのフレーム単位で指定できます。ショットの区切りに合わせ、希望以内の長さにします。",
+			durationInvalid: "1〜180秒を30fpsのフレーム単位で入力してください。",
+			presetSeconds: "{seconds}秒",
+			generate: "縦型動画を生成",
+			generating: "生成を開始しています…",
+			noReadyMedia:
+				"準備済みの映像がありません。先に編集素材を準備してください。",
+			noAnalyses:
+				"このコンテンツに紐づくAISA解析がありません。解析を追加してから生成してください。",
+			limitations:
+				"ショットごとの固定構図とFITで生成します。字幕・連続追跡は含みません。",
+			resultTitle: "縦型動画の生成結果",
+			resultHelp:
+				"完成した映像を再生し、ダウンロードできます。区間や構図は編集画面で調整できます。",
+			waiting: "書き出しを待っています。",
+			manualResult:
+				"このプロジェクトには自動生成時の希望尺が記録されていません。",
+			retry: "MP4生成を再試行",
+			download: "MP4をダウンロード",
+			edit: "編集する",
+			requestedDuration: "希望 {seconds}秒",
+			actualDuration: "出力 {seconds}秒",
+			unknownRetry:
+				"受付結果を確認できませんでした。同じ入力で再試行すると、同じリクエストを確認します。",
+			missingArtifact:
+				"書き出しは完了しましたが、映像を取得できません。再読み込みしてください。",
+			videoError:
+				"映像を再生できません。ダウンロードするか、再読み込みしてください。",
+		},
+		generatedInspect: "生成済みのプレビューを見る",
+		rangeToEdit: "編集する区間",
+		liveTitle: "編集プレビュー",
+		liveHelp:
+			"編集中の映像を確認できます。Spaceで再生・停止、左右キーで1フレーム移動、Home/Endで先頭・末尾へ移動します。",
+		livePlay: "編集を再生",
+		livePause: "編集を一時停止",
+		livePreviousFrame: "1フレーム戻る",
+		liveNextFrame: "1フレーム進む",
+		liveStart: "先頭へ",
+		liveEnd: "末尾へ",
+		liveLoop: "繰り返し再生",
+		liveSpeed: "再生速度",
+		liveMute: "プレビューを消音",
+		liveUnmute: "プレビューの音声を有効にする",
+		liveClipMuted: "この区間は無音です。",
+		liveLoading: "編集用素材を読み込んでいます…",
+		liveBuffering: "映像の準備を待っています…",
+		liveUnavailable: "編集用素材を準備すると編集内容を再生できます。",
+		liveError: "再生できませんでした。もう一度お試しください。",
+		liveRetry: "再生をやり直す",
+		livePosition: "{time} / {duration}・{frame}フレーム",
+		liveBlocked: "編集中の操作を確定するか取り消してから再生してください。",
+		sourceInspect: "元映像とAISAの構図を確認",
+		sourceHelp:
+			"元映像では確認位置と切り出し枠を確認できます。編集プレビューには区間と構図を反映した映像を表示します。",
+		selectedRange: "編集対象: 区間{number}",
+		cursorRange: "再生位置: 区間{number}",
+		splitAtCursor: "再生位置で分割",
+		removeSelected: "選択区間を削除",
+		moveSelectedEarlier: "選択区間を前へ",
+		moveSelectedLater: "選択区間を後ろへ",
+		selectionHelp:
+			"区間を選ぶと両端を調整できます。分割は再生位置、移動・削除は選択した区間に適用します。",
+		generatedPreviewStale:
+			"この生成済みプレビューには現在の編集が反映されていません。確認済みの版を保存して再生成すると更新されます。",
+		errors: {
+			sourceChanged:
+				"元ファイルが変更されています。新しい編集用素材を準備してください。",
+			sourceLarge:
+				"元ファイルが編集用の上限サイズを超えています。小さいファイルを選んでください。",
+			timeout: "処理時間の上限を超えました。区間を短くして再度お試しください。",
+			mediaNotReady: "編集用素材の準備完了をお待ちください。",
+			mediaUnverified: "素材の版を確認してから続けてください。",
+			sourceMissing:
+				"元ファイルを利用できなくなりました。別のファイルを選んでください。",
+			sourceDenied: "現在のストレージ権限では元ファイルを読み込めません。",
+			sourceRead:
+				"元ファイルを読み込めませんでした。ストレージの接続を確認して再度お試しください。",
+			outputUnsupported:
+				"この接続先には出力を書き込めません。別の出力フォルダーを選んでください。",
+			watchedInput: "監視対象の入力フォルダー以外を出力先に選んでください。",
+			variant:
+				"横型と縦型を切り替える場合は別のプロジェクトを作成してください。",
+			unconfirmed:
+				"ファイルを生成する前に、提案された構図を確認して確定してください。",
+			subjectProtectionLimit:
+				"現在の構図を保つための区間数が上限を超えています。クリップ数や構図の変化を減らしてから保存してください。",
+			requestKey:
+				"この要求を再送できませんでした。生成履歴を更新してから再度お試しください。",
+			mapping: "素材の版と時刻の対応が一致していません。",
+		},
+		title: "クリップ編集",
+		open: "クリップを編集",
+		projects: "編集プロジェクト",
+		clipDrafts: "クリップ案",
+		clips: "クリップ",
+		clipDraftCount: "クリップ案 {count}件",
+		createAnotherClip: "別のクリップを作成",
+		noClipDrafts: "クリップ案はまだありません。",
+		clipDraftsLoadFailed: "クリップ案を読み込めませんでした。",
+		clipDraftPages: "クリップ案のページ",
+		draftOnly: "下書き",
+		earlierExport: "以前の版",
+		watchExport: "生成した動画を見る",
+		downloadClip: "MP4をダウンロード",
+		originalContent: "元コンテンツ",
+		prepare: "編集用素材を準備",
+		prepareHelp:
+			"既存の出力ファイルと、保存先の別フォルダーを選びます。原本は変更しません。",
+		support:
+			"編集用素材は、回転なし・正方画素・SDRのH.264／8bit HEVC MP4・MOVに対応します。固定24／25／29.97／30fpsを30fpsに準備します。HDRや可変fpsは対象外です。",
+		file: "元ファイル",
+		output: "出力フォルダー",
+		chooseOutput: "出力フォルダーを選択",
+		noFiles:
+			"利用できるファイル参照がありません。先にH.264のMP4出力を追加してください。",
+		mediaVersions: "編集用素材",
+		noMedia: "編集用素材を準備してからプロジェクトを作成します。",
+		projectTitle: "プロジェクト名",
+		variant: "形式",
+		portrait: "縦型 9:16",
+		landscape: "横型 16:9",
+		analysis: "シーン解析（任意）",
+		noAnalysis: "解析を使わず手動で編集",
+		create: "プロジェクトを作成",
+		noProjects: "編集プロジェクトはまだありません。",
+		backContent: "作品へ戻る",
+		backProjects: "編集プロジェクトへ戻る",
+		loading: "編集データを読み込んでいます…",
+		refresh: "更新",
+		failed: "操作に失敗しました。再度お試しください。",
+		readOnly:
+			"このプロジェクトを閲覧できます。編集と映像生成にはOperator権限が必要です。",
+		source: "元映像",
+		preview: "出力プレビュー",
+		previewHelp:
+			"確定版を保存してからプレビューを生成します。プレビューと書き出しには同じ処理定義を使います。",
+		noSource: "編集用素材をまだ再生できません。",
+		saveDraft: "下書きを保存",
+		saveRevision: "確認済みの版を保存",
+		saved: "下書きは保存済みです",
+		unsaved: "未保存の変更があります",
+		reload: "保存済みの版を読み直す",
+		conflict:
+			"別の編集者がこのプロジェクトを保存しました。手元の変更は残っています。保存済みの版を読み直すか、変更内容を控えてから再度保存してください。",
+		add: "区間を追加",
+		range: "区間 {number}",
+		in: "開始（秒）",
+		out: "終了（秒）",
+		applyRange: "区間を適用",
+		resetRange: "区間の変更を戻す",
+		splitAt: "分割するフレーム位置",
+		split: "区間を分割",
+		guide:
+			"枠は確認位置の構図のガイドです。編集全体は生成したプレビューで確認できます。",
+		undo: "元に戻す",
+		redo: "やり直す",
+		rangeHelp:
+			"数値入力で区間を変更すると構図を全体表示に戻します。境界は30fps単位に切り下げます。保存前に区間を適用してください。",
+		rangeInvalid: "素材の長さに収まる、長さが正の区間を指定してください。",
+		rangePending: "変更した区間を適用するか元に戻してから保存してください。",
+		moveUp: "区間を上へ移動",
+		moveDown: "区間を下へ移動",
+		remove: "区間を削除",
+		audio: "音声",
+		sourceAudio: "元の音声",
+		mute: "無音",
+		framing: "構図",
+		segment: "構図の区間",
+		fit: "余白を付けて全体表示",
+		crop: "固定位置で切り出し",
+		centerX: "横方向の中心（%）",
+		centerY: "縦方向の中心（%）",
+		cropZoom: "切り出しの拡大率",
+		cropZoomHelp: "この構图区間の位置と大きさを調整します。",
+		shotProposal: "未調整の区間にショット構図を提案",
+		coordinateConfirm:
+			"解析とこの素材の時間軸・表示方向が一致することを確認しました。",
+		proposalNotice:
+			"手動調整・確認済みの構図は保ちます。被写体の囲み座標がある場合は、その位置・大きさからショットごとの固定構図を提案します。連続追跡ではないため、映像で各構図を確認してください。",
+		confirmProposals: "提案された区間と構図を元映像で確認しました。",
+		timeline: "出力タイムライン",
+		timelineCursor: "出力 {time}・{frame}フレーム",
+		timelineZoom: "タイムラインの拡大率",
+		timelineTrack: "映像の区間",
+		timelineSelect: "区間 {number} を選択",
+		timelineTrimIn: "区間 {number} の開始を調整",
+		timelineTrimOut: "区間 {number} の終了を調整",
+		timelineSeek: "タイムラインの位置（フレーム）",
+		timelineHelp:
+			"位置を選ぶと編集プレビューを確認できます。選択区間の両端をドラッグして長さを調整します。矢印キーは1フレーム、Shift併用は10フレーム、Home/Endは調整可能な端へ移動します。Escapeでドラッグを取り消します。時刻は分:秒:フレーム（30fps）です。既存の構図を保持し、伸ばした部分は全体表示にします。",
+		timelineTrimError:
+			"この区間調整を適用できません。素材の範囲と構図区間数の上限を確認してください。",
+		duration: "{seconds}秒・{frames}フレーム",
+		maximum: "1回の編集は20区間・180秒以内です。",
+		invalidDocument: "保存前に区間・構図・出力の長さを確認してください。",
+		framingLimit:
+			"構図の区間は合計 {limit} 個までです。区間を減らしてから操作してください。編集中の内容は保持しています。",
+		candidates: "シーン候補",
+		query: "シーンを探す",
+		find: "候補を検索",
+		candidateHelp:
+			"候補はシーンの説明を再利用した提案です。ハイライトとしての適切さは確認してください。",
+		emptyCandidates:
+			"一致する候補がありません。シーンを選ぶか手動で区間を指定してください。",
+		addCandidate: "候補を追加",
+		budget:
+			"この候補は残りの出力時間を超えています。手動で短い区間を指定してください。",
+		analysisUnverified: "解析と素材の対応を確認してください。",
+		previewAction: "プレビューを生成",
+		export: "MP4を書き出し",
+		renders: "生成履歴",
+		noRenders: "生成済みファイルはまだありません。",
+		revisionNeeded: "ファイルを生成するには確認済みの版を保存してください。",
+		cancel: "取消を要求",
+		derived: "派生映像を開く",
+		processing: "処理中",
+		states: {
+			PENDING: "待機中",
+			QUEUED: "実行待ち",
+			PREPARING: "素材を準備中",
+			READY: "準備済み",
+			RUNNING: "処理中",
+			RENDERING: "映像を生成中",
+			VALIDATING: "出力を確認中",
+			SUCCEEDED: "生成済み",
+			ERROR: "失敗",
+			FAILED: "失敗",
+			CANCEL_REQUESTED: "取消を要求済み",
+			CANCELED: "取消済み",
+		},
+	},
 	liveProtection: {
 		add: "追加",
 		remove: "削除",
@@ -812,6 +1112,10 @@ export const ja = {
 			"データのリセットを開始する前にシステムの状態が変わりました。現在の状態を確認してから再実行してください。",
 		resetAisaSnapshotRequired:
 			"完了済みの AI Scene Analysis ジョブが、コンテンツライブラリへの自動退避を待っています。ジョブで進捗を確認してから、この画面に戻ってください。退避前はリセットできません。退避済みのライブラリデータは、ジョブ履歴をリセットしても保持されます。",
+		jobLibraryEvidenceReferences:
+			"Libraryの素材の証跡が参照しているため、このジョブは削除できません。",
+		resetLibraryEditingReferences:
+			"{count} 件の編集用メディアと履歴を保護しています。これらがある間は、コンテンツライブラリと関連する認証情報をリセットできません。ほかのデータをリセットする場合は、コンテンツライブラリの選択を外してください。",
 		liveNotStartable:
 			"チャンネルの状態は {status} です。CREATED、ERROR、STOPPED のときに開始できます。画面を更新し、現在の状態を確認してください。",
 		liveRunAlreadyActive:
@@ -3412,6 +3716,8 @@ export const ja = {
 			"現在の組織のデータのみをリセットします。ユーザーアカウント、組織への所属、他の組織、プラットフォーム設定は保持されます。",
 		resetSelectionKept:
 			"未選択の種類、保存済みメディア、環境設定ファイル（.env）は保持します。配信の停止に必要な情報は後処理の完了まで一時的に保持します。",
+		resetEditingDataProtected:
+			"{count} 件の編集用メディアと履歴を保護しています。これらがある間は、コンテンツライブラリと関連する認証情報をリセットできません。ほかのデータをリセットする場合は、コンテンツライブラリの選択を外してください。",
 		resetDependenciesAdded: "関連する種類も選択しました：{categories}。",
 		resetDependenciesRemoved: "依存する種類も解除しました：{categories}。",
 		resetDeletedCounts: "削除した件数",

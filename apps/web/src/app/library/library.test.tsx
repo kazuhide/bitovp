@@ -11,6 +11,9 @@ import { renderLocalized, renderWithQuery } from "@/test/render";
 
 const apiFetch = vi.fn();
 const playback = vi.fn((_props: unknown) => <div>Player</div>);
+const clipProjects = vi.fn(({ contentId }: { contentId: string }) => (
+	<section aria-label="Clip drafts" data-content={contentId} />
+));
 let canMutate = true;
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<object>()),
@@ -22,6 +25,9 @@ vi.mock("@/lib/auth/use-role-access", () => ({
 vi.mock("@/app/vod/jobs/[id]/playback-surface", () => ({
 	PlaybackSurface: (props: unknown) => playback(props),
 }));
+vi.mock("./clip-projects", () => ({
+	ClipProjects: (props: { contentId: string }) => clipProjects(props),
+}));
 
 import { ContentDetailClient } from "./[id]/content-detail";
 import { AnalysisView } from "./analysis-view";
@@ -32,6 +38,8 @@ import { SourceSnapshot } from "./source-snapshot";
 beforeEach(() => {
 	apiFetch.mockReset();
 	playback.mockClear();
+	clipProjects.mockClear();
+	window.history.replaceState(null, "", "/library/content");
 	canMutate = true;
 });
 
@@ -612,6 +620,97 @@ it("retries a failed detail read without a mutation", async () => {
 		["/api/library/content"],
 		["/api/library/content"],
 	]);
+});
+
+it("keeps clip drafts out of the original analysis layout until requested", async () => {
+	apiFetch.mockResolvedValue(pinnedContent);
+	renderWithQuery(<ContentDetailClient id="content" clipEditingAvailable />);
+	await screen.findByRole("heading", { name: "Saved content" });
+	expect(clipProjects).not.toHaveBeenCalled();
+	fireEvent.click(screen.getByRole("button", { name: "Clips" }));
+	expect(screen.getByRole("dialog", { name: "Clip drafts" })).toBeVisible();
+	expect(screen.getByRole("region", { name: "Clip drafts" })).toHaveAttribute(
+		"data-content",
+		"content",
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Close" }));
+	expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it.each([
+	undefined,
+	false,
+])("retains original playback and AISA while clip editing is %s", async (clipEditingAvailable) => {
+	window.history.replaceState(null, "", "/library/content#clip-drafts");
+	apiFetch.mockResolvedValue(pinnedContent);
+	renderWithQuery(
+		<ContentDetailClient
+			id="content"
+			clipEditingAvailable={clipEditingAvailable}
+		/>,
+	);
+	await screen.findByRole("heading", { name: "Saved content" });
+	expect(playback).toHaveBeenCalled();
+	expect(screen.getByLabelText("Analysis language")).toBeVisible();
+	expect(playback).toHaveBeenLastCalledWith(
+		expect.objectContaining({ sceneAnalysis: sourceDocument }),
+	);
+	expect(screen.queryByRole("button", { name: "Clips" })).toBeNull();
+	expect(screen.queryByRole("dialog")).toBeNull();
+	expect(clipProjects).not.toHaveBeenCalled();
+	expect(
+		apiFetch.mock.calls.every(([url]) => url === "/api/library/content"),
+	).toBe(true);
+});
+
+it.each([
+	undefined,
+	false,
+])("retains a derived clip's original and playback without editor links when availability is %s", async (clipEditingAvailable) => {
+	apiFetch.mockResolvedValue({
+		...pinnedContent,
+		parent: {
+			contentId: "original",
+			title: "Original film",
+			projectId: "project",
+		},
+	});
+	renderWithQuery(
+		<ContentDetailClient
+			id="content"
+			clipEditingAvailable={clipEditingAvailable}
+		/>,
+	);
+	expect(
+		await screen.findByRole("link", { name: "Original film" }),
+	).toHaveAttribute("href", "/library/original");
+	expect(playback).toHaveBeenCalled();
+	expect(screen.queryByRole("link", { name: "Edit clips" })).toBeNull();
+	expect(clipProjects).not.toHaveBeenCalled();
+	expect(
+		apiFetch.mock.calls.every(([url]) => url === "/api/library/content"),
+	).toBe(true);
+});
+
+it("links a generated clip back to its stable original and editing project", async () => {
+	apiFetch.mockResolvedValue({
+		...pinnedContent,
+		parent: {
+			contentId: "original",
+			title: "Original film",
+			projectId: "project",
+		},
+	});
+	renderWithQuery(<ContentDetailClient id="content" clipEditingAvailable />);
+	expect(
+		await screen.findByRole("link", { name: "Original film" }),
+	).toHaveAttribute("href", "/library/original");
+	expect(
+		screen
+			.getAllByRole("link", { name: "Edit clips" })
+			.some((link) => link.getAttribute("href") === "/library/edits/project"),
+	).toBe(true);
+	expect(clipProjects).not.toHaveBeenCalled();
 });
 
 it("falls back from an unsupported content locale to available analysis", () => {

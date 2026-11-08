@@ -32,6 +32,8 @@ export const CUSTOMER_ERROR_CODES = [
 	"RESET_ACTIVE_WORK",
 	"RESET_STATE_CHANGED",
 	"RESET_AISA_SNAPSHOT_REQUIRED",
+	"RESET_LIBRARY_EDITING_REFERENCES",
+	"JOB_LIBRARY_EVIDENCE_REFERENCES",
 	"LIVE_ACTION_NOT_STARTABLE",
 	"LIVE_ACTION_RUN_ALREADY_ACTIVE",
 	"LIVE_ACTION_NOT_STOPPABLE",
@@ -266,6 +268,12 @@ export function localizedCustomerError(
 			return t("customerError.resetStateChanged");
 		case "RESET_AISA_SNAPSHOT_REQUIRED":
 			return t("customerError.resetAisaSnapshotRequired");
+		case "RESET_LIBRARY_EDITING_REFERENCES":
+			return t("customerError.resetLibraryEditingReferences", {
+				count: safeDetail(details, "protectedCount", t("common.unknown")),
+			});
+		case "JOB_LIBRARY_EVIDENCE_REFERENCES":
+			return t("customerError.jobLibraryEvidenceReferences");
 		case "LIVE_ACTION_NOT_STARTABLE":
 			return t("customerError.liveNotStartable", { status });
 		case "LIVE_ACTION_RUN_ALREADY_ACTIVE":

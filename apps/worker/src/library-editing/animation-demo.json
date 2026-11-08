@@ -1,0 +1,93 @@
+{
+	"schemaVersion": 1,
+	"id": "caminandes2-v1",
+	"source": {
+		"url": "https://video.blender.org/download/web-videos/fb70d459-48d2-4db5-adba-813c84f9200a-1080.mp4",
+		"bytes": 47376339,
+		"sha256": "7c0f22495d7e6d33576068af668aa887e4dfbe38690c8f6b75ae953c9df80aea"
+	},
+	"excerpt": { "sourceStartSeconds": 9, "durationSeconds": 30 },
+	"profile": {
+		"width": 1280,
+		"height": 720,
+		"fps": 30,
+		"frameCount": 900,
+		"audioSampleRate": 48000,
+		"audioCodec": "aac",
+		"colorPrimaries": "bt709",
+		"colorTransfer": "bt709",
+		"colorSpace": "bt709"
+	},
+	"credit": {
+		"title": "Caminandes 2: Gran Dillama",
+		"creator": "Blender Foundation",
+		"license": "CC BY 3.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+		"sourceUrl": "https://video.blender.org/w/x3QKwgFXGZQ7yvCTD2wHJA",
+		"changes": [
+			"原本00:09〜00:39の30秒を抜粋",
+			"24fpsから30fpsへ変換し、1280×720のH.264/AAC48kHzに再エンコード",
+			"デモの編集操作により縦型crop・zoomを適用可能"
+		],
+		"colorAssumption": "公式入力の色三項は未記載。デモ用SDR素材としてBT.709を仮定し、出力に明示設定する。原本の色特性が検証済みとは扱わない。",
+		"notice": "Caminandes 2: Gran Dillama © Blender Foundation. CC BY 3.0. 30-second excerpt, re-encoded for this demo. No endorsement implied."
+	},
+	"metadata": {
+		"provenance": "MANUALLY_ANNOTATED_DEMO",
+		"generatedByAisa": false,
+		"normalizedCutFrames": [0, 164, 281, 569, 741, 831, 900],
+		"timeDomain": "NORMALIZED_EXCERPT_CFR30",
+		"sourceTimeRelation": "原本の公称時刻は9秒+normalizedFrame/30。fps変換で同じ入力frameを繰り返すため、精密な原本frame同定を意味しない。",
+		"note": "実フレームを目視して作ったデモ用annotation。AISAの実行結果・精密な検出・連続追跡ではない。box2dは[ymin,xmin,ymax,xmax]の0〜1000座標で、各shot先頭付近の静的な目安。shot内で主役が動く場合は固定構図から外れることがある。"
+	},
+	"shots": [
+		{
+			"startFrame": 0,
+			"endFrame": 164,
+			"title": "左寄りの小さなラマ・全身",
+			"classification": "Animal",
+			"description": "ラマの可視全身。shot先頭付近を目視した手動box。",
+			"box2d": [306, 98, 756, 239]
+		},
+		{
+			"startFrame": 164,
+			"endFrame": 281,
+			"title": "顔のcloseup",
+			"classification": "Animal",
+			"description": "耳を除く顔を対象にした手動box。可視全身の検出結果ではない。",
+			"box2d": [300, 400, 780, 650]
+		},
+		{
+			"startFrame": 281,
+			"endFrame": 569,
+			"title": "大きな全身・横方向への移動",
+			"classification": "Animal",
+			"description": "shot先頭付近のラマの全身。途中の横移動は追跡していない。",
+			"box2d": [80, 230, 870, 510]
+		},
+		{
+			"startFrame": 569,
+			"endFrame": 741,
+			"title": "左寄りの顔・首",
+			"classification": "Animal",
+			"description": "顔と首の可視部分を目視した手動box。",
+			"box2d": [250, 230, 950, 520]
+		},
+		{
+			"startFrame": 741,
+			"endFrame": 831,
+			"title": "横に広い植物のcutaway",
+			"classification": "Plant",
+			"description": "植物の可視部分の手動box。横幅が広く、縦型cropに収まらない場合はFITの例にする。",
+			"box2d": [300, 240, 980, 720]
+		},
+		{
+			"startFrame": 831,
+			"endFrame": 900,
+			"title": "正面の顔・首",
+			"classification": "Animal",
+			"description": "顔と首の可視部分を目視した手動box。",
+			"box2d": [200, 370, 950, 630]
+		}
+	]
+}

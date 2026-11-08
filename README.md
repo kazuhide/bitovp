@@ -36,6 +36,16 @@ The default local application address is **http://localhost:3100**.
 You configure Bitmovin accounts and storage credentials in the application.
 They are not required to open the application or check its health.
 
+For the Content Library editing branch, `pnpm preview:editing up` starts an
+isolated local Docker environment. It includes synthetic footage, an optional
+licensed animation demo, and a bundled dialogue sample for captions. Authored
+demo metadata is identified separately from real AISA results. Editing loads the
+encoding output and AISA automatically. Choose a length and create a project to
+open an edited timeline with immediate preview. MP4 encoding starts only after
+you review the timeline and choose Generate. Caption-enabled proposals use
+observed speech boundaries and identify uncertain edits for review.
+See the [Japanese branch preview guide](./docs/EDITING-PREVIEW.ja.md).
+
 ## What you can configure
 
 - VOD: fixed and Per-Title ladders, video/audio/subtitles, filters, trimming,

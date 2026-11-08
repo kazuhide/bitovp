@@ -50,6 +50,28 @@ export const librarySnapshotSchema = z.object({
 		})
 		.optional(),
 });
+
+/** A local render is a source in its own right, with no fabricated provider job. */
+export const derivedLibrarySnapshotSchema = z.strictObject({
+	schemaVersion: z.literal(2),
+	kind: z.literal("DERIVED_RENDER"),
+	name: z.string(),
+	/** Hash of the fixed render recipe, used by the shared playback binding. */
+	planHash: z.string().regex(/^[a-f0-9]{64}$/),
+	identity: z.literal("VERIFIED"),
+	inputs: z.array(z.never()).max(0),
+	playbackLinks: z.array(libraryPlaybackLinkSchema),
+	fileOutputs: z.array(libraryFileOutputSchema).max(100).optional(),
+	renderRunId: z.uuid(),
+	renderArtifactId: z.uuid(),
+	qcVerdict: z.unknown(),
+	qcOverriddenAt: z.string().nullable().optional(),
+	qcEvidence: z.array(z.unknown()).max(20).optional(),
+});
+export const librarySourceSnapshotSchema = z.discriminatedUnion("kind", [
+	librarySnapshotSchema,
+	derivedLibrarySnapshotSchema,
+]);
 export const contentEditSchema = z.object({
 	title: z.string().trim().min(1).max(500),
 	description: z.string().max(10000).default(""),
@@ -90,11 +112,11 @@ export type ProviderAnalysisView = {
 export type LibrarySourceView = {
 	id: string;
 	jobId: string | null;
-	originalJobId: string;
+	originalJobId: string | null;
 	state: "PENDING" | "RUNNING" | "READY" | "ERROR";
 	error: string | null;
 	locales: string[];
-	snapshot: z.infer<typeof librarySnapshotSchema>;
+	snapshot: z.infer<typeof librarySourceSnapshotSchema>;
 	analyses: {
 		id: string;
 		locale: string;
@@ -121,4 +143,7 @@ export type ContentView = {
 		sceneCount?: number;
 	};
 };
-export type ContentDetail = ContentView & { source: LibrarySourceView };
+export type ContentDetail = ContentView & {
+	source: LibrarySourceView;
+	parent?: { contentId: string; title: string; projectId: string } | null;
+};

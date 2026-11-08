@@ -1,6 +1,7 @@
 import {
 	type CredentialProviderId,
 	instantiateWatchPlan,
+	isManagedEditingObjectKey,
 	redactSecrets,
 	type SubmitOutcome,
 	watchObjectExtension,
@@ -31,6 +32,8 @@ const BACKOFF_CAP_MS = 15 * 60_000;
  * auto-retry there is a second paid encoding. At-most-once wins.
  */
 const LOST_CLAIM_REAP_MS = 15 * 60_000;
+const RESERVED_EDITING_OUTPUT_REASON =
+	"The bitovp-editing namespace is reserved for Content Library output and is never encoded automatically.";
 
 export type WatchListedObject = {
 	key: string;
@@ -111,6 +114,14 @@ export async function claimStableWatchObjects(
 				select: { id: true, objectKey: true },
 			});
 			for (const object of stable) {
+				if (isManagedEditingObjectKey(object.objectKey)) {
+					// Old observations and explicit re-arms follow the same permanent exclusion.
+					await tx.watchedObject.updateMany({
+						where: { id: object.id, state: "STABLE" },
+						data: { state: "SKIPPED", error: RESERVED_EDITING_OUTPUT_REASON },
+					});
+					continue;
+				}
 				// A re-upload of the same key waits for the earlier reservation.
 				const sameKey = await tx.watchedObject.findFirst({
 					where: { ...active, objectKey: object.objectKey },
@@ -152,6 +163,8 @@ export function createWatchSweep(deps: WatchSweepDeps) {
 				cursor,
 			);
 			for (const object of result.objects) {
+				// Independent of credential identity and of when this rule was registered.
+				if (isManagedEditingObjectKey(object.key)) continue;
 				seen += 1;
 				const contentId = contentIdOf(object);
 				const extension = watchObjectExtension(object.key);
@@ -240,6 +253,14 @@ export function createWatchSweep(deps: WatchSweepDeps) {
 		for (let attempt = 0; attempt < rule.maxConcurrentJobs; attempt++) {
 			const [object] = await claimStableWatchObjects(deps.prisma, rule.id);
 			if (!object) break;
+			if (isManagedEditingObjectKey(object.objectKey)) {
+				// Final admission backstop for a reservation produced before this policy.
+				await deps.prisma.watchedObject.updateMany({
+					where: { id: object.id, state: "SUBMITTED", encodingJobId: null },
+					data: { state: "SKIPPED", error: RESERVED_EDITING_OUTPUT_REASON },
+				});
+				continue;
+			}
 			const instantiated = instantiateWatchPlan({
 				presetBody: rule.presetBody,
 				objectKey: object.objectKey,

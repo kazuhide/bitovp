@@ -5,6 +5,10 @@ import {
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { assertAisaSnapshotCaptured } from "./delete-jobs";
+import {
+	assertNoJobEvidenceReferences,
+	isForeignKeyViolation,
+} from "./job-evidence-retention";
 
 /**
  *  — "reset the data and start over".
@@ -58,6 +62,13 @@ export const RESET_PRESERVES = [
 	"sceneAnalysisRevision",
 	"content",
 	"contentRevision",
+	"libraryMediaVersion",
+	"libraryAnalysisBinding",
+	"editProject",
+	"editRevision",
+	"renderRun",
+	"renderArtifact",
+	"contentDerivation",
 	// WP-G G-2: the per-encoding webhook registrations are the only index of
 	// the hooks this app created at the PROVIDER. Their job/run keys are
 	// ON DELETE SET NULL, so the reset's job/run deletes orphan them, and the
@@ -1145,115 +1156,125 @@ export type ResetOutcome = {
 export async function deleteOperationalData(
 	prisma: AppPrismaClient,
 ): Promise<ResetOutcome> {
-	return prisma.$transaction(
-		async (tx) => {
-			// Lock in stable order, matching capture's job lock; reject before mutations.
-			await tx.$queryRaw`SELECT id FROM "EncodingJob" WHERE status = 'FINISHED' ORDER BY id FOR UPDATE`;
-			await assertAisaSnapshotCaptured(tx);
-			// Match owned Live transitions before deleting any child rows. Lock all
-			// visible channels in a stable order, then recheck admission and stop proof.
-			await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
-			// review-265 130-A1: re-assert INSIDE the transaction. The
-			// pre-check ran seconds earlier, and the watch-folder sweep (a 30s
-			// timer) or any submit door can create and enqueue a job in
-			// between — deleting the only local record of an encoder that is
-			// NOW spending money is precisely what the 409 exists to prevent.
-			// Same shape as delete-jobs.ts's stillScoring guard: assert in the
-			// tx, throw, let the whole thing roll back.
-			const racing = await findActiveWork(tx as unknown as AppPrismaClient);
-			if (!isIdle(racing)) {
-				throw new ResetRaceLost(racing);
-			}
-			// Inside the transaction, before anything is deleted — so the
-			// recorded set IS the set that dies.
-			const encoders = await collectEncoderPointers(
-				tx as unknown as AppPrismaClient,
-			);
-			const counts = {} as ResetCounts;
-			// 130-B1: the scoped half of a KEPT table, deleted explicitly so
-			// the number in the audit row is one this code produced rather than
-			// one Postgres produced silently.
-			//
-			// Written out rather than looped: the WHERE clause is what makes
-			// this scoped, and it is per-edge by nature. RESET_SCOPED_DELETES
-			// is the declaration (the dialog and reset-schema.test.ts read it);
-			// this is the one implementation it declares — including WHERE in
-			// the sequence it runs, which the declaration pins as `before`.
-			const [scopedAlertRules] = RESET_SCOPED_DELETES;
-			const runScopedDeletes = async (beforeModel: string) => {
-				if (scopedAlertRules.before !== beforeModel) {
-					return;
+	await assertNoJobEvidenceReferences(prisma);
+	return prisma
+		.$transaction(
+			async (tx) => {
+				// Lock in stable order, matching capture's job lock; reject before mutations.
+				await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
+				await assertNoJobEvidenceReferences(tx);
+				await assertAisaSnapshotCaptured(tx);
+				// Match owned Live transitions before deleting any child rows. Lock all
+				// visible channels in a stable order, then recheck admission and stop proof.
+				await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
+				// review-265 130-A1: re-assert INSIDE the transaction. The
+				// pre-check ran seconds earlier, and the watch-folder sweep (a 30s
+				// timer) or any submit door can create and enqueue a job in
+				// between — deleting the only local record of an encoder that is
+				// NOW spending money is precisely what the 409 exists to prevent.
+				// Same shape as delete-jobs.ts's stillScoring guard: assert in the
+				// tx, throw, let the whole thing roll back.
+				const racing = await findActiveWork(tx as unknown as AppPrismaClient);
+				if (!isIdle(racing)) {
+					throw new ResetRaceLost(racing);
 				}
-				counts[scopedAlertRules.countKey] = (
-					await tx.alertRule.deleteMany({
-						where: { liveChannelId: { not: null } },
+				// Inside the transaction, before anything is deleted — so the
+				// recorded set IS the set that dies.
+				const encoders = await collectEncoderPointers(
+					tx as unknown as AppPrismaClient,
+				);
+				const counts = {} as ResetCounts;
+				// 130-B1: the scoped half of a KEPT table, deleted explicitly so
+				// the number in the audit row is one this code produced rather than
+				// one Postgres produced silently.
+				//
+				// Written out rather than looped: the WHERE clause is what makes
+				// this scoped, and it is per-edge by nature. RESET_SCOPED_DELETES
+				// is the declaration (the dialog and reset-schema.test.ts read it);
+				// this is the one implementation it declares — including WHERE in
+				// the sequence it runs, which the declaration pins as `before`.
+				const [scopedAlertRules] = RESET_SCOPED_DELETES;
+				const runScopedDeletes = async (beforeModel: string) => {
+					if (scopedAlertRules.before !== beforeModel) {
+						return;
+					}
+					counts[scopedAlertRules.countKey] = (
+						await tx.alertRule.deleteMany({
+							where: { liveChannelId: { not: null } },
+						})
+					).count;
+				};
+				for (const model of RESET_DELETES) {
+					// After this model's own children, before its parent — the
+					// scoped delete is subject to the same ordering rule as the
+					// rest, which is what the real-database run taught.
+					await runScopedDeletes(model);
+					// One deleteMany per model in dependency order rather than
+					// relying on cascade behaviour, which differs per relation in
+					// this schema.
+					const { count } = await (
+						tx[model] as unknown as {
+							deleteMany: (args?: unknown) => Promise<{ count: number }>;
+						}
+					).deleteMany({});
+					counts[model] = count;
+				}
+				// review-2 C1: disarm before returning, INSIDE the same transaction
+				// — the sweep runs every 30 seconds off a setInterval, so a window
+				// between "rows deleted" and "rules disabled" is a window in which
+				// it can start re-submitting.
+				const [watchRules] = RESET_DISARMS;
+				// review-2 N4: ENUMERATE, do not just count. `enabled` is
+				// configuration that was set per rule, and the justification for
+				// disarming rather than deleting is "re-enabling is one click" —
+				// which only holds if the operator knows WHICH rules to click. An
+				// operator who had 4 of 7 rules on deliberately would otherwise see
+				// 7 disabled rules and no way back to their 4.
+				const disarmed = await tx.watchRule.findMany({
+					where: { enabled: true },
+					select: { id: true, name: true },
+				});
+				counts[watchRules.countKey] = (
+					await tx.watchRule.updateMany({
+						where: { enabled: true },
+						// disarmedByResetAt : the stamp that separates
+						// "reset wiped my at-most-once memory" from a fresh rule.
+						// Re-enabling a stamped rule re-detects everything under the
+						// prefix; the PATCH guard makes that explicit.
+						data: {
+							enabled: false,
+							scanCursor: null,
+							disarmedByResetAt: new Date(),
+						},
 					})
 				).count;
-			};
-			for (const model of RESET_DELETES) {
-				// After this model's own children, before its parent — the
-				// scoped delete is subject to the same ordering rule as the
-				// rest, which is what the real-database run taught.
-				await runScopedDeletes(model);
-				// One deleteMany per model in dependency order rather than
-				// relying on cascade behaviour, which differs per relation in
-				// this schema.
-				const { count } = await (
-					tx[model] as unknown as {
-						deleteMany: (args?: unknown) => Promise<{ count: number }>;
-					}
-				).deleteMany({});
-				counts[model] = count;
-			}
-			// review-2 C1: disarm before returning, INSIDE the same transaction
-			// — the sweep runs every 30 seconds off a setInterval, so a window
-			// between "rows deleted" and "rules disabled" is a window in which
-			// it can start re-submitting.
-			const [watchRules] = RESET_DISARMS;
-			// review-2 N4: ENUMERATE, do not just count. `enabled` is
-			// configuration that was set per rule, and the justification for
-			// disarming rather than deleting is "re-enabling is one click" —
-			// which only holds if the operator knows WHICH rules to click. An
-			// operator who had 4 of 7 rules on deliberately would otherwise see
-			// 7 disabled rules and no way back to their 4.
-			const disarmed = await tx.watchRule.findMany({
-				where: { enabled: true },
-				select: { id: true, name: true },
-			});
-			counts[watchRules.countKey] = (
-				await tx.watchRule.updateMany({
-					where: { enabled: true },
-					// disarmedByResetAt : the stamp that separates
-					// "reset wiped my at-most-once memory" from a fresh rule.
-					// Re-enabling a stamped rule re-detects everything under the
-					// prefix; the PATCH guard makes that explicit.
-					data: {
-						enabled: false,
-						scanCursor: null,
-						disarmedByResetAt: new Date(),
-					},
-				})
-			).count;
-			return { counts, disarmed, encoders };
-		},
-		// Prisma's DEFAULT interactive-transaction timeout is 5 SECONDS, and
-		// this deletes fourteen tables including EncodingJob's plan/stepLog/
-		// snapshot JSON — the one deployment where a reset matters most (a
-		// long-lived install with real history) is exactly the one that would
-		// blow through it and roll back with nothing deleted. Two minutes, and
-		// maxWait raised so a busy pool does not fail before it starts.
-		{
-			timeout: 120_000,
-			maxWait: 10_000,
-			// review-2 I3: the in-transaction re-assert takes a fresh snapshot
-			// and no row locks, so under the Postgres default (READ COMMITTED)
-			// a job committed after that SELECT and before encodingJob's
-			// deleteMany — thirteen tables later — is invisible to the guard
-			// and deleted anyway. That is exactly the outcome 130-A1 exists to
-			// prevent, and the guard's comment read as though it were closed.
-			// Serializable makes the database refuse the commit instead; the
-			// route maps P2034 to the same 409.
-			isolationLevel: "Serializable",
-		},
-	);
+				return { counts, disarmed, encoders };
+			},
+			// Prisma's DEFAULT interactive-transaction timeout is 5 SECONDS, and
+			// this deletes fourteen tables including EncodingJob's plan/stepLog/
+			// snapshot JSON — the one deployment where a reset matters most (a
+			// long-lived install with real history) is exactly the one that would
+			// blow through it and roll back with nothing deleted. Two minutes, and
+			// maxWait raised so a busy pool does not fail before it starts.
+			{
+				timeout: 120_000,
+				maxWait: 10_000,
+				// review-2 I3: the in-transaction re-assert takes a fresh snapshot
+				// and no row locks, so under the Postgres default (READ COMMITTED)
+				// a job committed after that SELECT and before encodingJob's
+				// deleteMany — thirteen tables later — is invisible to the guard
+				// and deleted anyway. That is exactly the outcome 130-A1 exists to
+				// prevent, and the guard's comment read as though it were closed.
+				// Serializable makes the database refuse the commit instead; the
+				// route maps P2034 to the same 409.
+				isolationLevel: "Serializable",
+			},
+		)
+		.catch(async (error: unknown) => {
+			// A failed deferred FK rolls back every child deletion. Recheck the current
+			// tenant after rollback before converting only a real receipt dependency.
+			if (isForeignKeyViolation(error))
+				await assertNoJobEvidenceReferences(prisma);
+			throw error;
+		});
 }

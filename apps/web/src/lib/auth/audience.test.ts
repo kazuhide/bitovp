@@ -53,6 +53,12 @@ type SurfaceContract = {
  */
 const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 	{
+		page: "/settings/clip-editing",
+		floor: "ADMIN",
+		api: "/api/settings/clip-editing",
+		method: "GET",
+	},
+	{
 		page: "/settings/organizations",
 		floor: "ADMIN",
 		api: "/api/platform/organizations/org-1/members",
@@ -76,6 +82,30 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		page: "/library/[id]",
 		floor: "VIEWER",
 		api: "/api/library/content-1",
+		method: "GET",
+	},
+	{
+		page: "/library/[id]/edits",
+		floor: "VIEWER",
+		api: "/api/library/sources/source-1/editing-eligibility",
+		method: "GET",
+	},
+	{
+		page: "/library/edits/[id]",
+		floor: "VIEWER",
+		api: "/api/library/edits/edit-1",
+		method: "GET",
+	},
+	{
+		page: "/library/generations/[id]",
+		floor: "VIEWER",
+		api: "/api/library/media-tasks/task-1",
+		method: "GET",
+	},
+	{
+		page: "/library/edits/[id]/result",
+		floor: "VIEWER",
+		api: "/api/library/edits/edit-1",
 		method: "GET",
 	},
 	{

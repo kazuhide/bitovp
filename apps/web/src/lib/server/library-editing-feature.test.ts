@@ -1,0 +1,117 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT,
+	PLAMO_CAPTION_TEMPLATE_HASH,
+} from "@bitovp/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { isClipEditingAvailable } from "./library-editing-feature";
+
+const valid = {
+	BITOVP_LOCAL_SEMANTIC_ENABLED: "1",
+	BITOVP_LOCAL_SEMANTIC_GATEWAY_URL: "https://fixture.invalid:11437",
+	BITOVP_LOCAL_SEMANTIC_GATEWAY_TOKEN: "test-fixture-token-".repeat(3),
+	BITOVP_LOCAL_SEMANTIC_CA_FILE: "/unused/test-ca.pem",
+	BITOVP_LOCAL_SEMANTIC_PROFILE: "nvidia",
+	BITOVP_LOCAL_SEMANTIC_CONFIG_ID: "11111111-1111-4111-8111-111111111111",
+};
+afterEach(() => vi.unstubAllEnvs());
+describe("server-only clip editing availability", () => {
+	it.each([
+		{ BITOVP_LOCAL_CAPTION_PROVIDER: "PLAMO" },
+		{
+			BITOVP_LOCAL_CAPTION_PROVIDER: "PLAMO",
+			BITOVP_LOCAL_CAPTION_MANIFEST_FILE: "/not-installed/fixture.json",
+		},
+		{ BITOVP_LOCAL_CAPTION_PROVIDER: "unknown" },
+		{
+			BITOVP_LOCAL_CAPTION_PROVIDER: "QWEN",
+			BITOVP_LOCAL_CAPTION_MANIFEST_FILE: "/not-installed/fixture.json",
+		},
+	])("fails closed for missing or invalid explicit caption provider metadata %#", (caption) => {
+		expect(isClipEditingAvailable({ ...valid, ...caption })).toBe(false);
+	});
+	it("accepts public installed metadata for the selected profile only, without inferring or health probing", () => {
+		const dir = mkdtempSync(join(tmpdir(), "caption-gate-")),
+			file = join(dir, "public.json");
+		try {
+			writeFileSync(
+				file,
+				JSON.stringify({
+					version: "bitovp-plamo-installed-manifest-v1",
+					configId: valid.BITOVP_LOCAL_SEMANTIC_CONFIG_ID,
+					modelId: "pfnet/plamo-3-translate-31b",
+					sourceRevision: "01eac57bf80ef8114decd998f8f3a803ba795557",
+					weightSha256: "a".repeat(64),
+					weightBytes: 1234,
+					quantization: "Q8_0",
+					promptTemplateHash: PLAMO_CAPTION_TEMPLATE_HASH,
+					contextPolicyFingerprint: LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT,
+					runtimes: {
+						nvidia: {
+							sourceRevision: "a".repeat(40),
+							binarySha256: "b".repeat(64),
+						},
+					},
+				}),
+				{ mode: 0o644 },
+			);
+			const env = {
+				...valid,
+				BITOVP_LOCAL_CAPTION_PROVIDER: "PLAMO",
+				BITOVP_LOCAL_CAPTION_MANIFEST_FILE: file,
+			};
+			expect(isClipEditingAvailable(env)).toBe(true);
+			expect(
+				isClipEditingAvailable({
+					...env,
+					BITOVP_LOCAL_SEMANTIC_PROFILE: "amd",
+				}),
+			).toBe(false);
+			writeFileSync(file, "{}");
+			expect(isClipEditingAvailable(env)).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+	it.each([
+		{},
+		{ BITOVP_LOCAL_SEMANTIC_ENABLED: "1" },
+		{ ...valid, BITOVP_LOCAL_SEMANTIC_ENABLED: "0" },
+		{ ...valid, BITOVP_LOCAL_SEMANTIC_ENABLED: "true" },
+	])("is disabled for absent, partial or non-enabled settings %#", (env) =>
+		expect(isClipEditingAvailable(env)).toBe(false));
+	it.each([
+		["BITOVP_LOCAL_SEMANTIC_GATEWAY_URL", "http://fixture.invalid"],
+		[
+			"BITOVP_LOCAL_SEMANTIC_GATEWAY_URL",
+			"https://user:private@fixture.invalid",
+		],
+		["BITOVP_LOCAL_SEMANTIC_GATEWAY_TOKEN", "invalid-private-value"],
+		["BITOVP_LOCAL_SEMANTIC_CA_FILE", "relative.pem"],
+		["BITOVP_LOCAL_SEMANTIC_PROFILE", "external-provider"],
+		["BITOVP_LOCAL_SEMANTIC_CONFIG_ID", "invalid-private-identity"],
+	])("fails closed without throwing or logging config for invalid %s", (key, value) => {
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		expect(isClipEditingAvailable({ ...valid, [key]: value })).toBe(false);
+		expect(log).not.toHaveBeenCalled();
+		log.mockRestore();
+	});
+	it.each([
+		"amd",
+		"nvidia",
+	])("accepts a validated local %s profile without probing health", (profile) =>
+		expect(
+			isClipEditingAvailable({
+				...valid,
+				BITOVP_LOCAL_SEMANTIC_PROFILE: profile,
+			}),
+		).toBe(true));
+	it("uses current process settings each time rather than retaining stale availability", () => {
+		for (const [key, value] of Object.entries(valid)) vi.stubEnv(key, value);
+		expect(isClipEditingAvailable()).toBe(true);
+		vi.stubEnv("BITOVP_LOCAL_SEMANTIC_ENABLED", "0");
+		expect(isClipEditingAvailable()).toBe(false);
+	});
+});

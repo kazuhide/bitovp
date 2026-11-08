@@ -115,13 +115,14 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 13);
+	// Editing adds DB/API/derivative/reset suites to the required census.
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 29);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		76,
+		195,
 	);
 });
 
@@ -441,9 +442,14 @@ for (const cancellation of [false, true])
 					execute,
 				),
 			);
-			const expectedImage = readFileSync(join(root, "docker-compose.yml"), "utf8")
-				.match(/image: (postgres:\S+)/)?.[1];
-			assert.match(expectedImage, /^postgres:17\.11-alpine@sha256:[a-f0-9]{64}$/);
+			const expectedImage = readFileSync(
+				join(root, "docker-compose.yml"),
+				"utf8",
+			).match(/image: (postgres:\S+)/)?.[1];
+			assert.match(
+				expectedImage,
+				/^postgres:17\.11-alpine@sha256:[a-f0-9]{64}$/,
+			);
 			assert.equal(image, expectedImage);
 			assert.equal(ran, true);
 			assert.equal(removed, true);

@@ -13,6 +13,156 @@ Use `/storage` to browse supported storage credentials, buckets/containers, and
 objects. A successful list does not establish write permission. Input and output
 paths have different purposes; inspect each before starting work.
 
+### Create highlight and portrait clips
+
+Clip creation and editing require the operator-configured local LLM. Without
+a complete, valid configuration, clip entry points and editing pages are unavailable,
+editing APIs refuse requests, and the worker does not start clip processing. There
+is no automatic metadata-only or external Claude/GPT fallback. Original content,
+AISA inspection and normal encoding remain available. Existing projects and media
+are retained; published artifact reads and cancellation requests remain available.
+Pending clip recovery, cancellation settlement and artifact cleanup resume when
+the local configuration is restored.
+
+The library home shows original contents. Open a content to find its **Clip drafts**:
+one content can have multiple independent editing projects, including alternatives
+with the same duration and format. Each draft row shows a small thumbnail,
+its name, duration and format, and links directly to its editor. Generated content links back to its
+original and editing project. **Create another clip** preserves existing drafts.
+
+Open a content detail and choose **Edit clips**. The normal flow loads the output
+and AISA for that encoding, reuses matching prepared material, and lets you choose
+15, 30, 60 or a custom 1–180 seconds. **Create project** opens an edited timeline
+with immediate canvas preview. Review and adjust the proposal, then choose
+**Generate** to save its current version and start the MP4 export. Creating the
+proposal does not queue a render or reserve a derived output.
+
+Manual material and empty-project controls remain under additional tools. An Operator can prepare an
+eligible encoded output as an editing material and select an output folder. The
+worker saves the source identity, hash and timing information; wait for **Ready**
+before creating a landscape or portrait project. Keep generated output outside
+watch-folder inputs. FFmpeg and FFprobe must be available to the worker.
+
+Supported preparation inputs are MP4/MOV with H.264 or 8bit HEVC, BT.709 SDR,
+progressive constant 24/25/29.97/30fps, square pixels, no rotation and zero-based
+timestamps, with optional mono/stereo AAC at 44.1/48kHz. Fully tagged compatible
+30fps sources retain their bytes; other supported frame rates are prepared at
+30fps with a saved frame map. Otherwise supported 8bit inputs whose three color
+description fields are all unrecorded are normalized using a BT.709 limited
+assumption. The source evidence records that assumption; it does not establish
+the original color interpretation. Explicit HDR, contradictory color metadata
+and full range remain unsupported. The video must declare its duration and frame count. Missing frames
+or decode errors are refused instead of silently shortening the source. Source
+limits are 4GiB and 60 minutes. VFR, HDR, rotation and unsupported formats require
+preparation outside this editor.
+
+The automatic proposal uses a portrait canvas, AISA metadata-based highlight
+selection, measured tracking and local captions when audio is available. Select
+the content and desired length; naming a subject, genre or key moment is optional.
+The initial ranking uses English/Japanese event descriptions, including nonhuman
+characters, objects and quiet outcomes. It is a metadata heuristic; it does not
+guarantee story understanding or continuous object recognition. A folded selection
+record shows the inferred content type, key elements and selected moments at
+creation time, including fallback information. It remains a creation record after
+manual edits. Additional generation settings add an optional content query with
+cohesion selection, duration selection, measured subject tracking, local
+captions and up to three formats. Requested length is a maximum: selection keeps
+whole shots in source order and does not repeat footage to fill missing time.
+Progress, cancellation and same-request recovery are available while the editing
+proposal is prepared. It opens the same project for review, before MP4 encoding.
+
+For an unprepared encoding output, **Create project** resolves its source and
+destination automatically. The flow retains your analysis, duration and advanced settings
+while the exact selected material is prepared. An unverified association pauses
+for review and an explicit continue action. An uncertain preparation response
+requires checking the material list; an uncertain generation response offers the
+same request for recovery. Stopping the wait may leave accepted generation running;
+open its task to inspect or cancel it.
+
+With captions enabled, selection uses measured speech spans from surrounding
+audio to avoid starting or ending inside known speech. Captions and tracking use
+the refined selection. Missing evidence or uncertain source edges produce a
+warning and metadata-based fallback. If no safe whole-shot window fits, a draft
+can retain the proposal with a speech-review warning and the observed evidence.
+It does not claim safe dialogue cuts. Existing automatic-export requests still
+refuse known unsafe cuts. Review the timeline for dialogue and story completeness.
+
+Automatic adoption requires a recorded source association. Captured input
+identity, an editor's explicit time/geometry/content checks and authored demo
+metadata have separate labels. A matching title or duration is insufficient.
+Review an unverified source against its scene descriptions before confirming it.
+The local Docker preview distinguishes authored samples from actual BBB and
+live-action AISA/output data. The validation imports reused existing encodings;
+no additional paid encoding job was submitted.
+see the [Japanese preview guide](../EDITING-PREVIEW.ja.md) for dialogue and model setup.
+
+The local preview also supports the optional, pinned `large-v3-turbo-q5_0` ASR
+model with `node scripts/editing-preview.mjs asr --model large-v3-turbo-q5_0`.
+This command provisions the model and updates that preview's Web and worker.
+Wait for active work to finish before switching models. Existing small weights
+and projects remain available, and the new digest separates analysis caches.
+Compare recognition quality, processing time and peak memory on your content;
+model availability alone does not establish accuracy or operation within a
+particular worker's memory limit. ASR runs on the worker, independently of the
+configured local caption-translation GPU.
+
+#### Legacy and manual range editor
+
+The following range controls belong to existing legacy projects and projects
+created with the manual tools. New automatic proposals open the composition
+timeline described below, with an immediate preview.
+
+Choose ranges by entering in/out seconds and pressing **Apply range**. Boundaries
+snap down to30fps; changing a range resets its framing to fit. Reorder ranges,
+mute individual ranges, or select fixed crop and adjust its horizontal/vertical
+center. A project supports20 ranges,180 seconds and128 framing segments. Landscape and portrait use
+separate projects. Undo/redo affects the local draft; **Save draft** persists it.
+If another editor saved first, keep a copy before reloading the saved version.
+
+Scene analysis is optional. Search its scene descriptions or choose a scene to
+propose ranges. Check that the analysis matches the material timeline and displayed
+orientation before proposing shot framing. AISA centers are points; available
+boxes help propose crop size. Continuous motion requires measurements from video
+frames, and lost tracking uses FIT. Review the ranges and framing against the
+source, then explicitly confirm them when saving a revision. Repeated suggestions
+preserve manually chosen fit/crop and confirmed framing. Too many shot segments
+are refused before changing the draft; set fewer ranges or frame them manually.
+
+**Save confirmed revision**, then **Generate preview**. The output preview uses
+the same recipe as **Export MP4**; the source viewer and crop guide help inspect
+the selected segment. Master outputs are1920×1080 or1080×1920. A successful export
+creates or updates one derived Library entry for that project/format, preserving
+the original and existing content metadata. **Open derived content** links to the
+active result. Generated-file links download the complete MP4; source and preview
+players use bounded range reads. A late older export cannot replace a newer requested generation.
+Cancellation may remain requested until the worker confirms its process stopped.
+An unavailable or replaced object requires investigation or a new material version;
+the editor does not silently switch to the new bytes.
+
+#### Composition timeline and immediate preview
+
+New automatic proposals open this timeline directly. Save legacy edits before
+opening **Open composition tools**. Composition projects
+support up to 8 prepared sources, 4 video layers, 8 music tracks and 20 clips within
+180 seconds at 30fps. Add a picture in picture, crop keyframes, opacity, crossfades,
+music gain/fades, captions, titles and PNG images. Images must be non-animated
+8bit RGB/RGBA/grayscale PNG, at most 8MiB and 2048×2048. The canvas presets include
+portrait, landscape and square output.
+
+Word highlighting uses measured timings. Changing caption text clears its word
+times and displays the complete sentence. Caption-linked music ducking follows
+caption edits and supports 64 captions; explicitly saved fixed ducking regions
+remain fixed. The current draft previews immediately. **Generate** saves and pins
+the visible draft before export; pending input or a save conflict stops the action.
+If a newer remote draft appears, **Load saved draft** keeps the current local
+document in Undo. Pending numeric input must be applied before switching tools.
+
+Canvas previews and MP4 exports share caption rows, including basic Japanese
+line-break rules for small kana, punctuation and brackets. Stored caption text,
+timings and word offsets are unchanged. Extremely narrow text boxes retain the
+width-first fallback when a complete character group cannot fit. Existing MP4
+files remain unchanged; generate another export to apply the updated wrapping.
+
 ## Reusable settings
 
 `/presets` collects saved templates, delivery presets, and samples. Loading or
@@ -116,3 +266,15 @@ the selected rows can disappear before remote cleanup finishes. Keep the worker
 and required credentials available and investigate cleanup failures. Clearing
 watch history disables affected watch rules to avoid accidental resubmission.
 Deleting library entries does not automatically recreate them from retained jobs.
+
+Storage connections used as either the input or output of an editing material
+cannot be removed while those references remain. Generated editing files are
+excluded from watch-folder input, including when a rule uses another connection
+to the same storage or is created later. Submit them manually if they need a new
+encoding. Failed output adoption or Library registration waits before retrying
+so other queued work can proceed.
+
+This release protects editing materials, projects, revisions, runs, artifacts and
+derivations from Reset. If the selected categories depend on them, the preview
+shows the protected count and execution is blocked before any deletion. A complete
+editing-graph deletion workflow is not available yet.

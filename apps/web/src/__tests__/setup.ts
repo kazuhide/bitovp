@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { configure } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 // `findBy*` / `waitFor` default to a 1 s budget. That budget measures the
@@ -21,16 +21,18 @@ configure({ asyncUtilTimeout: 10_000 });
  * (the defining count-green/exit-nonzero divergence), intermittently,
  * because it is a scheduling race.
  *
- * Hook order makes this deterministic: afterEach hooks run LIFO, this file
- * registers first, so this hook runs AFTER the test file's own hooks —
- * including RTL's cleanup, which is what schedules the stray timer. One
- * macrotask tick is the timer's own granularity; two covers a re-schedule.
+ * RTL registers auto-cleanup during the import above. With LIFO afterEach
+ * hooks, this hook can otherwise drain BEFORE that cleanup, leaving its
+ * unmount timer alive at realm teardown. Unmount explicitly before draining;
+ * RTL's later auto-cleanup is idempotent. One macrotask tick is the timer's
+ * own granularity; two covers a re-schedule.
  *
  * Skipped under fake timers: a faked setTimeout cannot leak a REAL timer
  * into teardown (the fake clock dies with the test), and awaiting a faked
  * timeout here would hang the hook instead.
  */
 afterEach(async () => {
+	cleanup();
 	window.localStorage.clear();
 	if (vi.isFakeTimers()) {
 		return;

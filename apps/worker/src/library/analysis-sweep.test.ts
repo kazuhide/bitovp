@@ -40,6 +40,7 @@ function setup(
 ) {
 	const row: Record<string, unknown> = {
 		id: "source",
+		sourceKind: "VOD_JOB",
 		encodingId: "encoding",
 		accountId: "account",
 		jobId: null,
@@ -92,6 +93,17 @@ function setup(
 }
 
 describe("durable analysis import", () => {
+	it("never imports provider analysis for a locally rendered source", async () => {
+		const f = setup({
+			sourceKind: "DERIVED_RENDER",
+			accountId: null,
+			encodingId: null,
+		});
+		await f.tick();
+		expect(f.get).not.toHaveBeenCalled();
+		expect(f.providerFor).not.toHaveBeenCalled();
+		expect(f.row.state).toBe("PENDING");
+	});
 	it("automatically reads configured output without requesting the provider analysis API", async () => {
 		const read = vi.fn(async () => raw);
 		const f = setup({ snapshot }, read);

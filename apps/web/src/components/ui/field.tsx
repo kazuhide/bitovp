@@ -63,7 +63,7 @@ export type FieldProps = {
 	tooltip?: string;
 	/** : click-to-open help panel (?) beside the label — the home
 	 * for prose that used to render as an always-on hint. */
-	help?: string;
+	help?: ReactNode;
 	/**
 	 * : a control that belongs ON the input row (e.g. a "browse
 	 * storage" button). Rendered as a same-row sibling of the control, so

@@ -254,3 +254,8 @@ it("validates filter values and returns an empty filtered page with global count
 		counts: { all: 1, playback: 1, metadata: 0 },
 	});
 });
+it("adds an explicit originals scope while keeping omitted scope flat", () => {
+	expect(listQuery.parse({}).scope).toBe("all");
+	expect(listQuery.parse({ scope: "originals" }).scope).toBe("originals");
+	expect(listQuery.safeParse({ scope: "unknown" }).success).toBe(false);
+});

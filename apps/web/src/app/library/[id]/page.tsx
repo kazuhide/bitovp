@@ -1,5 +1,6 @@
 import { localizedTitle } from "@/lib/i18n/metadata";
 import { readLibrarySceneSelection } from "@/lib/library-scenes";
+import { isClipEditingAvailable } from "@/lib/server/library-editing-feature";
 import { readPlayerClientConfig } from "@/lib/server/player-config";
 import { ContentDetailClient } from "./content-detail";
 export const generateMetadata = localizedTitle("library.title");
@@ -16,6 +17,7 @@ export default async function ContentDetailPage({
 			id={id}
 			player={await readPlayerClientConfig()}
 			initialScene={readLibrarySceneSelection(await searchParams)}
+			clipEditingAvailable={isClipEditingAvailable()}
 		/>
 	);
 }

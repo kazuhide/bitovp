@@ -15,13 +15,17 @@ export async function POST(
 		const ctx = await getServerContext();
 		const source = await ctx.prisma.librarySource.findUnique({
 			where: { id },
-			select: { state: true, locales: true },
+			select: { state: true, locales: true, sourceKind: true },
 		});
 		const missingDefaultEnglish =
 			source?.state === "READY" &&
 			source.locales.length > 0 &&
 			!source.locales.includes("en");
-		if (!source || (source.state !== "ERROR" && !missingDefaultEnglish))
+		if (
+			!source ||
+			source.sourceKind === "DERIVED_RENDER" ||
+			(source.state !== "ERROR" && !missingDefaultEnglish)
+		)
 			return jsonError(409, "Only a failed import can be retried");
 		const updated = await ctx.prisma.librarySource.updateMany({
 			where: { id, state: source.state, locales: { equals: source.locales } },

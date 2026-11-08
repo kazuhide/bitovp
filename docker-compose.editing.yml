@@ -1,0 +1,212 @@
+# Local editing preview only. Use scripts/editing-preview.mjs for isolated settings.
+x-worker-image: &worker-image
+  image: ${EDITING_PREVIEW_PROJECT:?required}-worker:local
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  postgres:
+    networks: [default]
+    image: postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/postgres.env
+        required: true
+        format: raw
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 512m
+    memswap_limit: 512m
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    networks: [default]
+    image: redis:8.8.3-alpine@sha256:dc95ea2fcf5d5c4253be0f967c28143d0f625846197eed2fd32c748eb99abfca
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redisdata:/data]
+    mem_limit: 128m
+    memswap_limit: 128m
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  storage:
+    networks: [default]
+    # Official multiarch release; digest was checked against Docker Hub.
+    image: chrislusf/seaweedfs:4.51@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8
+    command: [mini, -dir=/data, -ip=storage, -ip.bind=0.0.0.0, -webdav=false, -admin.ui=false, -s3.port.iceberg=0, -s3.port.lance=0, -volume.max=64, -master.volumeSizeLimitMB=128]
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/storage.env
+        required: true
+        format: raw
+    volumes: [objects:/data]
+    mem_limit: 1g
+    memswap_limit: 1g
+    healthcheck:
+      test: [CMD, curl, --silent, --output, /dev/null, --connect-timeout, "2", "http://127.0.0.1:8333/"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    logging: *logging
+
+  setup:
+    networks: [default]
+    <<: *worker-image
+    command:
+      - sh
+      - -ec
+      - |
+        pnpm --filter @bitovp/db run db:runtime:prepare -- --app-env /tmp/preview-runtime.env --admin-env /tmp/preview-admin.env
+        pnpm --filter @bitovp/db run db:migrate:deploy
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/setup.env
+        required: true
+        format: raw
+    depends_on:
+      postgres: { condition: service_healthy }
+    mem_limit: 768m
+    memswap_limit: 768m
+    restart: "no"
+    logging: *logging
+
+  report-init:
+    networks: [default]
+    <<: *worker-image
+    user: "0:0"
+    command: [chown, "1000:1000", /verify-runs]
+    volumes: [reports:/verify-runs]
+    mem_limit: 64m
+    memswap_limit: 64m
+    restart: "no"
+    logging: *logging
+
+  worker:
+    networks: [default]
+    <<: *worker-image
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args: { GIT_COMMIT: editing-preview-working-tree }
+    init: true
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/runtime.env
+        required: true
+        format: raw
+    environment:
+      FFMPEG_PATH: /usr/local/bin/ffmpeg
+      FFPROBE_PATH: /usr/local/bin/ffprobe
+      VERIFY_RUN_ROOT: /verify-runs
+      WHISPER_MODEL_PATH: /editing-models/${EDITING_PREVIEW_ASR_MODEL_FILE:-ggml-base.bin}
+      WHISPER_VAD_MODEL_PATH: /editing-models/ggml-silero-v6.2.0.bin
+      WHISPER_MODEL_SHA256: ${EDITING_PREVIEW_ASR_MODEL_SHA256:-60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe}
+    volumes:
+      - reports:/verify-runs
+      - ${EDITING_PREVIEW_DIRECTORY:?required}/models:/editing-models:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      storage: { condition: service_healthy }
+      setup: { condition: service_completed_successfully }
+      report-init: { condition: service_completed_successfully }
+    mem_limit: 4g
+    memswap_limit: 4g
+    stop_grace_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    networks: [default]
+    image: ${EDITING_PREVIEW_PROJECT:?required}-web:local
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args: { GIT_COMMIT: editing-preview-working-tree }
+    init: true
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/runtime.env
+        required: true
+        format: raw
+    environment:
+      WHISPER_MODEL_SHA256: ${EDITING_PREVIEW_ASR_MODEL_SHA256:-60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      setup: { condition: service_completed_successfully }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    mem_limit: 1g
+    memswap_limit: 1g
+    restart: unless-stopped
+    logging: *logging
+
+  gateway:
+    image: ${EDITING_PREVIEW_PROJECT:?required}-gateway:local
+    build:
+      context: .
+      dockerfile: Dockerfile.editing-gateway
+    networks: [frontend, default]
+    ports: ["127.0.0.1:${EDITING_PREVIEW_WEB_PORT:-3180}:8080"]
+    depends_on:
+      web: { condition: service_healthy }
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m,mode=1777
+    healthcheck:
+      test: [CMD, wget, --quiet, --output-document=/dev/null, "http://127.0.0.1:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+    memswap_limit: 128m
+    restart: unless-stopped
+    logging: *logging
+
+  seed:
+    networks: [default]
+    <<: *worker-image
+    profiles: [tools]
+    init: true
+    command: [pnpm, --filter, "@bitovp/worker", exec, tsx, scripts/seed-editing-preview.ts]
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/runtime.env
+        required: true
+        format: raw
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/seed.env
+        required: true
+        format: raw
+    environment:
+      FFMPEG_PATH: /usr/local/bin/ffmpeg
+      FFPROBE_PATH: /usr/local/bin/ffprobe
+    mem_limit: 1g
+    memswap_limit: 1g
+    restart: "no"
+    logging: *logging
+
+# Default preview fixtures cannot contact external storage, encoders, or public tunnels.
+networks:
+  default:
+    internal: true
+  frontend: {}
+
+volumes:
+  pgdata:
+  redisdata:
+  objects:
+  reports:

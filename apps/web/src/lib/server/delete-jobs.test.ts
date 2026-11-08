@@ -37,6 +37,7 @@ function ctxFor(opts: {
 }): ServerContext {
 	const { calls } = opts;
 	const tx = {
+		libraryEvidenceReceipt: { count: vi.fn(async () => 0) },
 		$queryRaw: vi.fn(async () => {
 			calls.push("lock");
 			return [];
@@ -74,6 +75,7 @@ function ctxFor(opts: {
 	};
 	return {
 		prisma: {
+			libraryEvidenceReceipt: { count: vi.fn(async () => 0) },
 			encodingJob: {
 				findUnique: vi.fn(async () => ({
 					id: "job-1",

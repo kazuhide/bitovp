@@ -7,15 +7,26 @@ import {
 import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
 import {
 	RESET_CATALOG,
+	RESET_PROTECTED_EDITING_MODELS,
 	type ResetCategory,
 	type ResetTable,
 	requiredResetCategories,
 } from "@/lib/reset-selection";
+import {
+	assertNoJobEvidenceReferences,
+	countJobEvidenceReferences,
+	isForeignKeyViolation,
+} from "./job-evidence-retention";
 import { collectEncoderPointers, type ResetOutcome } from "./reset";
 import { snapshotResetCleanup } from "./reset-cleanup-snapshot";
 
 type ResetClient = AppPrismaClient | AppTransactionClient;
-type Count = { category: ResetCategory; count: number };
+type Count = {
+	category: ResetCategory;
+	count: number;
+	protectedCount?: number;
+};
+const protectedEditingModels = new Set<string>(RESET_PROTECTED_EDITING_MODELS);
 
 function delegate(prisma: ResetClient, model: ResetTable) {
 	return prisma[model] as unknown as {
@@ -31,17 +42,35 @@ export class SelectedResetBlocked extends Error {
 	}
 }
 
+export class SelectedResetLibraryEditingBlocked extends Error {
+	readonly code = "RESET_LIBRARY_EDITING_REFERENCES";
+	constructor(public readonly protectedCount: number) {
+		super(
+			"Library editing history must be retained; reset cannot delete its referenced Library data or credentials",
+		);
+	}
+}
+
+async function countProtectedEditing(prisma: ResetClient): Promise<number> {
+	return (
+		await Promise.all(
+			RESET_PROTECTED_EDITING_MODELS.map((model) =>
+				delegate(prisma, model).count({}),
+			),
+		)
+	).reduce((sum, count) => sum + count, 0);
+}
+
 /** All choices are counted, including choices currently left unchecked. */
 export async function countResetCategories(
 	prisma: ResetClient,
 ): Promise<Count[]> {
 	return Promise.all(
-		RESET_CATALOG.map(async (entry) => ({
-			category: entry.category,
-			count: (
-				await Promise.all(
-					entry.models.map((model) =>
-						delegate(prisma, model).count(
+		RESET_CATALOG.map(async (entry) => {
+			const counts = await Promise.all(
+				entry.models.map((model) =>
+					delegate(prisma, model)
+						.count(
 							model === "vmafComputeCredential"
 								? { where: { disabledAt: null } }
 								: model === "vmafExecutionProfile"
@@ -49,11 +78,22 @@ export async function countResetCategories(
 									: "where" in entry
 										? { where: entry.where }
 										: {},
-						),
-					),
-				)
-			).reduce((sum, count) => sum + count, 0),
-		})),
+						)
+						.then((count) => ({ model, count })),
+				),
+			);
+			const protectedCount =
+				entry.category === "vodJobs"
+					? await countJobEvidenceReferences(prisma)
+					: counts
+							.filter(({ model }) => protectedEditingModels.has(model))
+							.reduce((sum, row) => sum + row.count, 0);
+			return {
+				category: entry.category,
+				count: counts.reduce((sum, row) => sum + row.count, 0),
+				...(protectedCount > 0 ? { protectedCount } : {}),
+			};
+		}),
 	);
 }
 
@@ -81,19 +121,17 @@ export async function deleteSelectedData(
 	) {
 		throw new SelectedResetBlocked();
 	}
+	if (selected.has("vodJobs")) await assertNoJobEvidenceReferences(prisma);
 	for (let attempt = 0; ; attempt++) {
 		try {
 			return await prisma.$transaction(
 				async (tx) => {
-					if (
+					const clearsUsage =
 						selected.has("usageStatistics") ||
 						selected.has("bitmovinAccounts") ||
-						selected.has("applicationSettings")
-					) {
+						selected.has("applicationSettings");
+					if (clearsUsage) {
 						await tx.$queryRaw`SELECT id FROM "BitmovinAccount" ORDER BY id FOR UPDATE`;
-						await tx.appSetting.deleteMany({
-							where: { key: { startsWith: USAGE_BACKFILL_SETTING_PREFIX } },
-						});
 					}
 					// Same lock order as capture: job, then source. A late capture cannot
 					// resurrect erased library data from retained FINISHED history.
@@ -105,6 +143,15 @@ export async function deleteSelectedData(
 					}
 					if (selected.has("contentLibrary")) {
 						await tx.$queryRaw`SELECT id FROM "LibrarySource" ORDER BY id FOR UPDATE`;
+						const protectedCount = await countProtectedEditing(tx);
+						if (protectedCount > 0)
+							throw new SelectedResetLibraryEditingBlocked(protectedCount);
+					}
+					if (selected.has("vodJobs")) await assertNoJobEvidenceReferences(tx);
+					if (clearsUsage) {
+						await tx.appSetting.deleteMany({
+							where: { key: { startsWith: USAGE_BACKFILL_SETTING_PREFIX } },
+						});
 					}
 					if (
 						selected.has("webhookRegistrations") ||
@@ -158,6 +205,8 @@ export async function deleteSelectedData(
 						if (!selected.has(entry.category)) continue;
 						let count = 0;
 						for (const model of entry.models) {
+							// Guarded empty above; these immutable dependency chains are never reset-deleted.
+							if (protectedEditingModels.has(model)) continue;
 							// Erase the selectable credential immediately; immutable material
 							// remains private so task snapshots can still tear down cloud resources.
 							const deleted =
@@ -197,7 +246,18 @@ export async function deleteSelectedData(
 				{ isolationLevel: "Serializable", timeout: 120_000, maxWait: 10_000 },
 			);
 		} catch (error) {
+			if (selected.has("vodJobs") && isForeignKeyViolation(error))
+				await assertNoJobEvidenceReferences(prisma);
 			const conflict = error as { code?: string; meta?: { code?: string } };
+			if (
+				selected.has("contentLibrary") &&
+				(conflict.code === "P2003" ||
+					(conflict.code === "P2010" && conflict.meta?.code === "23503"))
+			) {
+				const protectedCount = await countProtectedEditing(prisma);
+				if (protectedCount > 0)
+					throw new SelectedResetLibraryEditingBlocked(protectedCount);
+			}
 			if (
 				attempt >= 5 ||
 				!(

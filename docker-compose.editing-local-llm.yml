@@ -1,0 +1,31 @@
+# Explicit local-LLM preview only: scripts/editing-preview.mjs up --local-llm.
+# The base default network remains internal; only the worker receives egress.
+services:
+  worker:
+    stop_grace_period: 75s
+    networks: [default, semantic]
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/local-semantic.env
+        required: true
+        format: raw
+    volumes:
+      - type: bind
+        source: ${EDITING_PREVIEW_DIRECTORY:?required}/gateway-ca.pem
+        target: /run/bitovp-local-semantic/gateway-ca.pem
+        read_only: true
+        bind: { create_host_path: false }
+
+  web:
+    env_file:
+      - path: ${EDITING_PREVIEW_DIRECTORY:?required}/local-semantic.env
+        required: true
+        format: raw
+    volumes:
+      - type: bind
+        source: ${EDITING_PREVIEW_DIRECTORY:?required}/gateway-ca.pem
+        target: /run/bitovp-local-semantic/gateway-ca.pem
+        read_only: true
+        bind: { create_host_path: false }
+
+networks:
+  semantic: {}

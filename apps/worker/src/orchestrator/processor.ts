@@ -1,4 +1,5 @@
 import {
+	type CompiledOperation,
 	checkInternalHevcV2Plan,
 	classifyProviderStatusWord,
 	encodingPlanSchema,
@@ -55,6 +56,9 @@ import type { StartRetryControl } from "./start-1004-retry";
  */
 
 export type OrchestratorDeps = {
+	captureIngestInput?: (
+		request: import("../library/input-capture").CaptureIngestRequest,
+	) => Promise<import("../library/input-capture").CapturedIngestInput | null>;
 	journalResetEncoding?: ResetEncodingJournal;
 	acknowledgeResetEntity?: (
 		entityKey: string,
@@ -706,10 +710,30 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 			resetOwner.ownerToken = next.toISOString();
 		}
 
+		const captureIngestInput = deps.captureIngestInput;
 		const ctx = {
 			sdk,
 			ids,
 			resolveCredential: deps.resolveCredential,
+			captureIngestInput: captureIngestInput
+				? (input: { operation: CompiledOperation; encodingId: string }) =>
+						captureIngestInput({
+							...input,
+							organizationId: row.organizationId,
+							jobId: encodingJobId,
+							sdk,
+							checkpoint: async () => {
+								if (!(await renewLease()))
+									throw new AttemptLeaseLostError(encodingJobId);
+								const current = await deps.prisma.encodingJob.findUnique({
+									where: { id: encodingJobId },
+									select: { cancelRequested: true },
+								});
+								if (current?.cancelRequested)
+									throw new CancelRequested(input.operation.step);
+							},
+						})
+				: undefined,
 			poll: {
 				intervalMs: deps.pollIntervalMs,
 				timeoutMs: deps.pollTimeoutMs,

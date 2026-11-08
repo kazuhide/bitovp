@@ -121,6 +121,46 @@ describe("selected reset categories", () => {
 	it.each([
 		"en",
 		"ja",
+	] as const)("explains protected editing data and permits resetting other categories (%s)", async (locale) => {
+		previewResponse = {
+			...preview,
+			deleteCounts: [
+				...preview.deleteCounts,
+				{ category: "contentLibrary", count: 7, protectedCount: 3 },
+			],
+		};
+		const user = userEvent.setup();
+		mount(locale);
+		await user.type(await screen.findByLabelText(/RESET/), "RESET");
+		const action = screen.getByRole("button", {
+			name: locale === "ja" ? "リセットする" : "Reset data",
+		});
+		expect(action).toBeDisabled();
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			locale === "ja"
+				? /3.*編集.*コンテンツライブラリ.*選択/
+				: /3.*editing.*Content Library.*selection/i,
+		);
+		expect(document.body.textContent).not.toMatch(
+			/EditProject|RenderRun|ContentDerivation/,
+		);
+		await user.click(
+			screen.getByRole("checkbox", {
+				name: messagesFor(locale).settingsX.resetDeleteContentLibrary,
+			}),
+		);
+		await user.type(screen.getByLabelText(/RESET/), "RESET");
+		await waitFor(() => expect(action).toBeEnabled());
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(
+			vi
+				.mocked(apiFetch)
+				.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(false);
+	});
+	it.each([
+		"en",
+		"ja",
 	] as const)("explains the new reset receipt only when operation history is selected (%s)", async (locale) => {
 		const user = userEvent.setup();
 		mount(locale);

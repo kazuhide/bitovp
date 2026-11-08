@@ -6,8 +6,11 @@ import {
 	cipherFromEnv,
 	enqueueFeederJob,
 	FEEDER_CONCURRENCY,
+	hashEditingEvidence,
 	INGRESS_RESOLVE_INTERVAL_MS,
 	loadEnv,
+	PUBLISH_LOCAL_SEMANTIC_DIAGNOSTIC,
+	PUBLISH_LOCAL_STORY_CHOICE_DIAGNOSTIC,
 	parseIngressConfig,
 	parseSecretEgressAllowlist,
 	parseStorageEndpointAllowlist,
@@ -20,6 +23,10 @@ import {
 	vmafJobSchema,
 	vmafModelNeedsFile,
 } from "@bitovp/core";
+import {
+	type LocalCaptionTranslationSelection,
+	readLocalCaptionTranslationSelection,
+} from "@bitovp/core/local-caption-config";
 import type { Prisma } from "@bitovp/db";
 import {
 	acknowledgeResetCleanupEntity,
@@ -66,7 +73,25 @@ import {
 	createAnalysisSweep,
 } from "./library/analysis-sweep";
 import { createLibraryCaptureSweep } from "./library/capture-sweep";
+import { createEncodingInputCapture } from "./library/input-capture";
 import { createStoredAnalysisReader } from "./library/stored-analysis";
+import { alignSelectedCaptionSegments } from "./library-editing/caption-forced-alignment";
+import { createConfiguredLocalCaptionTranslator } from "./library-editing/configured-local-caption-translation";
+import { createLibraryGenerationHandler } from "./library-editing/generation";
+import { createLocalStoryEngine } from "./library-editing/local-story-engine";
+import { createLibraryMediaTaskSweep } from "./library-editing/media-task-sweep";
+import {
+	startLocalSemanticDiagnostics,
+	startLocalStoryChoiceDiagnostics,
+} from "./library-editing/runtime-diagnostics";
+import { createConfiguredLibraryEditing } from "./library-editing/runtime-gate";
+import {
+	PUBLISH_LOCAL_SEMANTIC_HEARTBEAT,
+	REMOVE_LOCAL_SEMANTIC_HEARTBEAT,
+	startLocalSemanticHeartbeat,
+} from "./library-editing/runtime-heartbeat";
+import { createEditingWorkQueue } from "./library-editing/runtime-work-queue";
+import { createLibraryEditingSweep } from "./library-editing/sweep";
 import { createShutdown, createSweepLoop } from "./lifecycle";
 import {
 	isFinalManualStopFailure,
@@ -546,6 +571,7 @@ const captureLibrarySources = tenantService(() =>
 const importLibraryAnalysis = tenantService(() =>
 	createAnalysisSweep({
 		prisma,
+		captureBindings: true,
 		readOutput: createStoredAnalysisReader(async (credentialId) => {
 			const credential = await credentials.get(credentialId);
 			if (!credential) throw new Error("Storage credential no longer exists");
@@ -592,6 +618,178 @@ setTenantInterval(
 	() => analysisSweepLoop.run(),
 	ANALYSIS_SWEEP_INTERVAL_MS,
 ).unref();
+
+const editingShutdownController = new AbortController();
+const editingBrowserFor = async (credentialId: string) => {
+	const credential = await credentials.get(credentialId);
+	if (!credential) throw new Error("Editing storage credential unavailable");
+	return createBrowserForCredential(
+		{
+			provider: credential.provider as BrowserCredential["provider"],
+			config: (credential.config ?? {}) as Record<string, unknown>,
+			secret: JSON.parse(await credentials.revealSecret(credentialId)),
+		},
+		{
+			readTimeoutMs: 25_000,
+			endpointAllowlist:
+				process.env.STORAGE_ENDPOINT_ALLOWED_HOSTS === undefined
+					? undefined
+					: parseStorageEndpointAllowlist(
+							process.env.STORAGE_ENDPOINT_ALLOWED_HOSTS,
+						),
+		},
+	);
+};
+const editingAsrModel =
+	process.env.WHISPER_MODEL_PATH &&
+	process.env.WHISPER_MODEL_SHA256 &&
+	existsSync(process.env.WHISPER_MODEL_PATH)
+		? {
+				path: process.env.WHISPER_MODEL_PATH,
+				sha256: process.env.WHISPER_MODEL_SHA256,
+			}
+		: undefined;
+let editingCaptionModelHash: string | undefined;
+let editingCaptionSelection: LocalCaptionTranslationSelection | undefined;
+const editingWorkQueue = createEditingWorkQueue();
+const editingSweepLoop = createConfiguredLibraryEditing(
+	process.env,
+	(editingSemanticConfiguration) => {
+		const captionSelection = readLocalCaptionTranslationSelection(
+			editingSemanticConfiguration,
+		);
+		editingCaptionSelection = captionSelection;
+		editingCaptionModelHash = hashEditingEvidence(captionSelection.identity);
+		const editingLocalStoryEngine = createLocalStoryEngine({
+			prisma,
+			config: editingSemanticConfiguration,
+			model: editingAsrModel,
+			ffmpegPath: env.FFMPEG_PATH,
+		});
+		const processLibraryProduction = tenantService(() =>
+			createLibraryMediaTaskSweep({
+				prisma,
+				browserFor: editingBrowserFor,
+				model: editingAsrModel,
+				generate: createLibraryGenerationHandler({
+					prisma,
+					model: editingAsrModel,
+					ffmpegPath: env.FFMPEG_PATH,
+					localStoryEngine: editingLocalStoryEngine,
+					captionAligner: alignSelectedCaptionSegments,
+					captionTranslator: createConfiguredLocalCaptionTranslator({
+						prisma,
+						config: editingSemanticConfiguration,
+						selection: captionSelection,
+					}),
+				}),
+				signal: editingShutdownController.signal,
+				concurrency: 1,
+			}),
+		);
+		const processLibraryEditing = tenantService(() =>
+			createLibraryEditingSweep({
+				prisma,
+				signal: editingShutdownController.signal,
+				browserFor: async (credentialId) => {
+					const credential = await credentials.get(credentialId);
+					if (!credential)
+						throw new Error("Editing storage credential unavailable");
+					return createBrowserForCredential(
+						{
+							provider: credential.provider as BrowserCredential["provider"],
+							config: (credential.config ?? {}) as Record<string, unknown>,
+							secret: JSON.parse(await credentials.revealSecret(credentialId)),
+						},
+						{
+							readTimeoutMs: 25_000,
+							endpointAllowlist:
+								process.env.STORAGE_ENDPOINT_ALLOWED_HOSTS === undefined
+									? undefined
+									: parseStorageEndpointAllowlist(
+											process.env.STORAGE_ENDPOINT_ALLOWED_HOSTS,
+										),
+						},
+					);
+				},
+			}),
+		);
+		const sweepLoop = tenantService(() =>
+			createSweepLoop(
+				editingWorkQueue.createCycle(async () => {
+					await processLibraryEditing();
+					await processLibraryProduction();
+				}, editingShutdownController.signal),
+				() =>
+					console.error("[library-editing] sweep failed; next tick retries"),
+			),
+		);
+		return sweepLoop;
+	},
+);
+const editingRuntimeHeartbeat = startLocalSemanticHeartbeat({
+	env: process.env,
+	captionModelHash: editingCaptionModelHash,
+	initialized: Boolean(editingSweepLoop),
+	publish: (keys, row, ttlMs) =>
+		wakePublisher.eval(
+			PUBLISH_LOCAL_SEMANTIC_HEARTBEAT,
+			2,
+			keys.times,
+			keys.records,
+			row.instanceId,
+			JSON.stringify(row),
+			row.observedAt,
+			ttlMs,
+		),
+	remove: (keys, instanceId) =>
+		wakePublisher.eval(
+			REMOVE_LOCAL_SEMANTIC_HEARTBEAT,
+			2,
+			keys.times,
+			keys.records,
+			instanceId,
+		),
+}).catch(() => ({ stop: async () => {} }));
+const editingRuntimeDiagnostics = startLocalSemanticDiagnostics({
+	env: process.env,
+	captionModelHash: editingCaptionModelHash,
+	captionSelection: editingCaptionSelection,
+	claim: (keys) => wakePublisher.rpop(keys.requests),
+	publish: (keys, result) =>
+		wakePublisher.eval(
+			PUBLISH_LOCAL_SEMANTIC_DIAGNOSTIC,
+			2,
+			keys.active,
+			`${keys.results}${result.requestId}`,
+			result.requestId,
+			JSON.stringify(result),
+		),
+}).catch(() => ({ stop: async () => {} }));
+const editingChoiceDiagnostics = startLocalStoryChoiceDiagnostics({
+	env: process.env,
+	initialized: Boolean(editingSweepLoop),
+	captionModelHash: editingCaptionModelHash,
+	captionSelection: editingCaptionSelection,
+	claim: (keys) => wakePublisher.rpop(keys.requests),
+	publish: (keys, result) =>
+		wakePublisher.eval(
+			PUBLISH_LOCAL_STORY_CHOICE_DIAGNOSTIC,
+			2,
+			keys.active,
+			`${keys.results}${result.requestId}`,
+			result.requestId,
+			JSON.stringify(result),
+		),
+}).catch(() => ({ stop: async () => {} }));
+if (editingSweepLoop) {
+	runTenantTick(() => editingSweepLoop.run());
+	setTenantInterval(() => editingSweepLoop.run(), 5_000).unref();
+} else if (process.env.BITOVP_LOCAL_SEMANTIC_ENABLED === "1") {
+	console.error(
+		"[library-editing] disabled; local semantic initialization unavailable",
+	);
+}
 
 const ingressMonitor = tenantService(() =>
 	createIngressMonitor({
@@ -723,6 +921,18 @@ const processorDeps: LiveChannelDeps = {
 const orchestrate = tenantService(() =>
 	createOrchestratorProcessor({
 		...processorDeps,
+		captureIngestInput: createEncodingInputCapture({
+			prisma,
+			browserFor: editingBrowserFor,
+			config:
+				process.env.BITOVP_CAPTURE_INPUT_BASE_URL &&
+				process.env.BITOVP_CAPTURE_INPUT_SECRET
+					? {
+							baseUrl: process.env.BITOVP_CAPTURE_INPUT_BASE_URL,
+							secret: process.env.BITOVP_CAPTURE_INPUT_SECRET,
+						}
+					: null,
+		}),
 		onVodFinished: vmafTrigger,
 		// Wrapped, not passed by reference: the capability is declared further
 		// down (it needs the resolved model dir), and this closure resolves the
@@ -1917,6 +2127,7 @@ const shutdown = createShutdown({
 	// resolve to STOPPED and worker.close waits for them.
 	stopFeeders: () => {
 		stopping = true;
+		editingShutdownController.abort();
 		return forEachTenantService(feederProcessor, (instance) =>
 			instance.stopAll(),
 		).flat();
@@ -1925,6 +2136,28 @@ const shutdown = createShutdown({
 	// `queue.add` finishes BEFORE the queue closes — the ordinary stop must
 	// not manufacture the lost handoff the outbox exists to recover from.
 	drains: [
+		{
+			name: "local semantic heartbeat",
+			run: async () => {
+				await Promise.all([
+					editingRuntimeHeartbeat.then((heartbeat) => heartbeat.stop()),
+					editingRuntimeDiagnostics.then((diagnostics) => diagnostics.stop()),
+					editingChoiceDiagnostics.then((diagnostics) => diagnostics.stop()),
+				]);
+			},
+			timeoutMs: 2_000,
+			recovery: "the per-instance readiness record expires automatically",
+		},
+		{
+			name: "library editing",
+			run: () =>
+				editingSweepLoop
+					? drainTenantLoop(editingSweepLoop)
+					: Promise.resolve(),
+			// Allow the independent 30s semantic cancellation receipt to settle.
+			timeoutMs: editingSweepLoop ? 45_000 : undefined,
+			recovery: "fixed editing revisions and leased runs resume after restart",
+		},
 		{
 			name: "live startup cancellation",
 			run: () => drainTenantLoop(startupCancellationLoop),

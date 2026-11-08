@@ -119,11 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Imported catalogue: qc.mixedReferenceCanvases adds one long value.
-		pinWithDriftAid(long.length, 1449, "long");
+		// Runtime measurement includes local diagnostics, coherence and composition-save help.
+		pinWithDriftAid(long.length, 1514, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// WebM missing-file labels add two distinct short Japanese values.
-		pinWithDriftAid(short.size, 2809, "short");
+		// Runtime measurement includes the diagnostic states and selected-model status.
+		pinWithDriftAid(short.size, 2973, "short");
 	});
 
 	/**

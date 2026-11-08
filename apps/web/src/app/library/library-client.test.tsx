@@ -15,6 +15,7 @@ const response: LibraryCatalog = {
 			locale: "ja",
 			tags: ["nature"],
 			revision: 1,
+			clipProjectCount: 2,
 			archived: false,
 			updatedAt: "2026-09-15",
 			catalogMetadata: { formats: ["HLS"], duration: 90, sceneCount: 3 },
@@ -59,6 +60,43 @@ vi.mock("./catalog-thumbnail", () => ({
 }));
 
 import { LibraryClient } from "./library-client";
+
+it("requests original contents before paging and leaves generated clips under their source", async () => {
+	renderWithQuery(<LibraryClient clipEditingAvailable />);
+	await screen.findByRole("link", { name: /A real asset/ });
+	expect(
+		new URL(
+			apiFetch.mock.calls[0]?.[0] ?? "",
+			"http://localhost",
+		).searchParams.get("scope"),
+	).toBe("originals");
+	expect(screen.getByText("2 clip drafts")).toBeVisible();
+});
+
+it.each([
+	{ clipEditingAvailable: undefined, view: "grid" },
+	{ clipEditingAvailable: false, view: "list" },
+])("keeps original browsing and AISA metadata without clip counts ($view)", async ({
+	clipEditingAvailable,
+	view,
+}) => {
+	localStorage.setItem("bitovp.library.view", view);
+	renderWithQuery(
+		<LibraryClient clipEditingAvailable={clipEditingAvailable} />,
+	);
+	expect(
+		await screen.findByRole("link", { name: /A real asset/ }),
+	).toHaveAttribute("href", "/library/content");
+	expect(screen.getByText("HLS")).toBeVisible();
+	expect(screen.getByText("3 scenes")).toBeVisible();
+	expect(screen.queryByText("2 clip drafts")).toBeNull();
+	expect(
+		apiFetch.mock.calls.every(
+			([url]) =>
+				!url.includes("/edits") && !url.includes("editing-eligibility"),
+		),
+	).toBe(true);
+});
 
 it.each([
 	"content",
@@ -191,7 +229,7 @@ it("requests playback filtering on the server and resets pagination while retain
 	);
 	await waitFor(() =>
 		expect(apiFetch).toHaveBeenLastCalledWith(
-			"/api/library?q=Nature&archived=true&offset=0&playback=playback",
+			"/api/library?q=Nature&archived=true&offset=0&playback=playback&scope=originals",
 		),
 	);
 	expect(
@@ -200,7 +238,7 @@ it("requests playback filtering on the server and resets pagination while retain
 	fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
 	await waitFor(() =>
 		expect(apiFetch).toHaveBeenLastCalledWith(
-			"/api/library?q=&archived=false&offset=0&playback=all",
+			"/api/library?q=&archived=false&offset=0&playback=all&scope=originals",
 		),
 	);
 });
@@ -310,7 +348,7 @@ it("searches scenes with immutable selection links and preserves archive/query a
 	await userEvent.click(screen.getByRole("tab", { name: "Content" }));
 	await waitFor(() =>
 		expect(apiFetch).toHaveBeenLastCalledWith(
-			"/api/library?q=forest&archived=true&offset=0&playback=all",
+			"/api/library?q=forest&archived=true&offset=0&playback=all&scope=originals",
 		),
 	);
 	expect(window.location.search).toContain("q=forest");
@@ -403,7 +441,7 @@ it("restores a shared URL browse context and the browser's list preference", asy
 	);
 	await screen.findByRole("link", { name: /A real asset/ });
 	expect(apiFetch).toHaveBeenLastCalledWith(
-		"/api/library?q=Nature&archived=true&offset=25&playback=metadata",
+		"/api/library?q=Nature&archived=true&offset=25&playback=metadata&scope=originals",
 	);
 	expect(screen.getByRole("searchbox")).toHaveValue("Nature");
 	expect(screen.getByRole("checkbox")).toBeChecked();

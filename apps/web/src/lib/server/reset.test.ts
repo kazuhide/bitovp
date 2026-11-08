@@ -36,6 +36,7 @@ function fixture(captured: boolean) {
 		...Object.fromEntries(
 			[
 				...RESET_DELETES,
+				"libraryEvidenceReceipt",
 				"watchRule",
 				"alertRule",
 				"verificationResourceIntent",

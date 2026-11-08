@@ -5,6 +5,7 @@ import {
 	RESET_CATALOG,
 	RESET_GLOBAL_MODELS,
 	RESET_INTERNAL_MODELS,
+	RESET_PROTECTED_EDITING_MODELS,
 	requiredResetCategories,
 } from "./reset-selection";
 
@@ -28,7 +29,8 @@ describe("reset selection", () => {
 		];
 		expect(new Set(classified).size).toBe(classified.length);
 		expect(classified.sort()).toEqual(models.sort());
-		expect(models).toHaveLength(50);
+		expect(models).toHaveLength(62);
+		expect(RESET_PROTECTED_EDITING_MODELS).toContain("libraryFlowEvidencePin");
 		expect(RESET_GLOBAL_MODELS).toEqual([
 			"user",
 			"setupCode",
@@ -38,9 +40,11 @@ describe("reset selection", () => {
 		]);
 		for (const model of [...RESET_GLOBAL_MODELS, ...RESET_INTERNAL_MODELS])
 			expect(customerModels).not.toContain(model);
+		expect(RESET_PROTECTED_EDITING_MODELS[0]).toBe("libraryAnalysisBinding");
 		expect(
 			RESET_CATALOG.find((item) => item.category === "contentLibrary")?.models,
 		).toEqual([
+			...RESET_PROTECTED_EDITING_MODELS,
 			"contentRevision",
 			"content",
 			"sceneAnalysisRevision",

@@ -26,6 +26,7 @@ function session(over: Record<string, unknown>) {
 }
 
 const ADMIN_AREA_HREFS = [
+	"/settings/clip-editing",
 	"/settings/vmaf",
 	"/settings/tokens",
 	"/settings/users",

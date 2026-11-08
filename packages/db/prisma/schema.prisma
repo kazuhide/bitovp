@@ -82,6 +82,9 @@ model Credential {
   notificationChannels NotificationChannel[]
 
   watchRules WatchRule[]
+  libraryMediaVersions LibraryMediaVersion[] @relation("EditingSourceCredential")
+  outputLibraryMediaVersions LibraryMediaVersion[] @relation("EditingOutputCredential")
+  renderOutputRuns RenderRun[] @relation("RenderOutputCredential")
 
   @@index([provider])
 
@@ -333,9 +336,15 @@ model EncodingJob {
 
   @@unique([organizationId, id])
   @@index([organizationId])
+  evidenceReceipts LibraryEvidenceReceipt[]
 }
 
-/// Immutable VOD source snapshot plus a durable, leased analysis-import request.
+enum LibrarySourceKind {
+  VOD_JOB
+  DERIVED_RENDER
+}
+
+/// Immutable source snapshot; only VOD sources carry an analysis-import request.
 /// The optional job link is navigation only; origin IDs and snapshot survive reset.
 model LibrarySource {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
@@ -343,11 +352,14 @@ model LibrarySource {
 
   id             String @id @default(uuid()) @db.Uuid
   sourceKey      String @unique
+  sourceKind     LibrarySourceKind @default(VOD_JOB)
   jobId          String? @db.Uuid
   job            EncodingJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  originalJobId  String @db.Uuid
-  encodingId     String
-  accountId      String @db.Uuid
+  originalJobId  String? @db.Uuid
+  encodingId     String?
+  accountId      String? @db.Uuid
+  renderArtifactId String? @unique @db.Uuid
+  renderArtifact RenderArtifact? @relation("DerivedLibrarySource", fields: [renderArtifactId], references: [id], onDelete: Restrict)
   snapshot       Json
   locales        String[]
   state          String @default("PENDING")
@@ -360,12 +372,14 @@ model LibrarySource {
   updatedAt      DateTime @updatedAt
   analyses       SceneAnalysisRevision[]
   revisions      ContentRevision[]
+  mediaVersions  LibraryMediaVersion[]
   @@index([state, availableAt])
   @@index([jobId])
   @@index([originalJobId])
 
   @@unique([organizationId, id])
   @@index([organizationId])
+  evidenceReceipts LibraryEvidenceReceipt[]
 }
 
 /// Raw and normalized provider output are immutable and shared by job/Library.
@@ -382,11 +396,14 @@ model SceneAnalysisRevision {
   raw             Json
   document        Json
   createdAt       DateTime @default(now())
+  mediaBindings LibraryAnalysisBinding[]
   @@unique([sourceId, locale, rawHash])
   @@index([sourceId, locale, createdAt])
 
   @@unique([organizationId, id])
   @@index([organizationId])
+  evidenceReceipts LibraryEvidenceReceipt[]
+  mediaTasks LibraryMediaTask[]
 }
 
 model Content {
@@ -404,6 +421,8 @@ model Content {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   revisions       ContentRevision[]
+  editProjects    EditProject[]
+  derivation      ContentDerivation? @relation("DerivedContent")
   @@index([archived, updatedAt])
 
   @@unique([organizationId, id])
@@ -429,6 +448,306 @@ model ContentRevision {
   @@unique([contentId, revision])
   @@index([sourceId])
 
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// A private fixed media version, prepared without changing the source object.
+model LibraryMediaVersion {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  sourceId String @db.Uuid
+  source LibrarySource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  credentialId String @db.Uuid
+  credential Credential @relation("EditingSourceCredential", fields: [credentialId], references: [id], onDelete: Restrict)
+  outputCredentialId String @db.Uuid
+  outputCredential Credential @relation("EditingOutputCredential", fields: [outputCredentialId], references: [id], onDelete: Restrict)
+  storage Json
+  state String @default("PENDING")
+  sha256 String?
+  durationUs BigInt?
+  width Int?
+  height Int?
+  fpsNum Int?
+  fpsDen Int?
+  timeMap Json?
+  probe Json?
+  attempts Int @default(0)
+  availableAt DateTime @default(now())
+  leaseToken String?
+  leaseUntil DateTime?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  editProjects EditProject[]
+  analysisBindings LibraryAnalysisBinding[]
+  @@index([state, availableAt])
+  @@index([sourceId])
+  @@index([credentialId])
+  @@index([outputCredentialId])
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  evidenceReceipts LibraryEvidenceReceipt[]
+  mediaTasks LibraryMediaTask[]
+  retainedByProjects EditProjectResource[]
+}
+
+/// Append-only proof for one fixed media/analysis tuple; never mutates READY evidence.
+model LibraryAnalysisBinding {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  mediaVersionId String @db.Uuid
+  mediaVersion LibraryMediaVersion @relation(fields: [organizationId, mediaVersionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryAnalysisBinding_mediaVersionId_tenant_fkey")
+  analysisRevisionId String @db.Uuid
+  analysisRevision SceneAnalysisRevision @relation(fields: [organizationId, analysisRevisionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryAnalysisBinding_analysisRevisionId_tenant_fkey")
+  proof Json
+  createdAt DateTime @default(now())
+  @@unique([organizationId, mediaVersionId, analysisRevisionId], map: "LibraryAnalysisBinding_pair_key")
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  @@index([mediaVersionId])
+  @@index([analysisRevisionId])
+  attestationReceiptId String? @db.Uuid
+  attestationReceipt LibraryEvidenceReceipt? @relation(fields: [organizationId, attestationReceiptId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryAnalysisBinding_attestationReceiptId_tenant_fkey")
+}
+
+/// Mutable work-in-progress; renders can only reference its immutable revisions.
+/// Server-owned capture and explicit operator association receipts; never rewritten.
+model LibraryEvidenceReceipt {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  sourceId String? @db.Uuid
+  source LibrarySource? @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryEvidenceReceipt_sourceId_tenant_fkey")
+  mediaVersionId String? @db.Uuid
+  mediaVersion LibraryMediaVersion? @relation(fields: [organizationId, mediaVersionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryEvidenceReceipt_mediaVersionId_tenant_fkey")
+  analysisRevisionId String? @db.Uuid
+  analysisRevision SceneAnalysisRevision? @relation(fields: [organizationId, analysisRevisionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryEvidenceReceipt_analysisRevisionId_tenant_fkey")
+  kind String
+  jobId String? @db.Uuid
+  job EncodingJob? @relation(fields: [organizationId, jobId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryEvidenceReceipt_jobId_tenant_fkey")
+  encodingId String?
+  proof Json
+  proofHash String @db.Char(64)
+  createdBy String?
+  createdAt DateTime @default(now())
+  attestedBindings LibraryAnalysisBinding[]
+  flowEvidencePins LibraryFlowEvidencePin[]
+  @@unique([organizationId, kind, proofHash])
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  @@index([sourceId, kind])
+  @@index([mediaVersionId])
+  @@index([analysisRevisionId])
+}
+
+/// Persistent cancelable source analysis and production intents with immutable inputs.
+model LibraryMediaTask {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  mediaVersionId String @db.Uuid
+  mediaVersion LibraryMediaVersion @relation(fields: [organizationId, mediaVersionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryMediaTask_mediaVersionId_tenant_fkey")
+  analysisRevisionId String? @db.Uuid
+  analysisRevision SceneAnalysisRevision? @relation(fields: [organizationId, analysisRevisionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryMediaTask_analysisRevisionId_tenant_fkey")
+  parentTaskId String? @db.Uuid
+  parentTask LibraryMediaTask? @relation("LibraryMediaTaskChildren", fields: [organizationId, parentTaskId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryMediaTask_parentTaskId_tenant_fkey")
+  children LibraryMediaTask[] @relation("LibraryMediaTaskChildren")
+  flowEvidencePins LibraryFlowEvidencePin[]
+  kind String
+  requestKey String @db.VarChar(200)
+  requestHash String @db.Char(64)
+  cacheKey String @db.Char(64)
+  parameters Json
+  state String @default("PENDING")
+  phase String @default("QUEUED")
+  progress Json?
+  result Json?
+  attempts Int @default(0)
+  availableAt DateTime @default(now())
+  leaseToken String? @db.Uuid
+  leaseUntil DateTime?
+  cancelRequestedAt DateTime?
+  error String?
+  startedAt DateTime?
+  finishedAt DateTime?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([organizationId, requestKey])
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  @@index([state, availableAt])
+  @@index([organizationId, kind, cacheKey, state])
+  @@index([mediaVersionId])
+  @@index([analysisRevisionId])
+  @@index([parentTaskId])
+}
+
+/// Permanent, tenant-scoped retention for a FLOW task's full immutable evidence.
+model LibraryFlowEvidencePin {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  taskId String @db.Uuid
+  task LibraryMediaTask @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryFlowEvidencePin_taskId_tenant_fkey")
+  receiptId String @db.Uuid
+  receipt LibraryEvidenceReceipt @relation(fields: [organizationId, receiptId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryFlowEvidencePin_receiptId_tenant_fkey")
+  @@id([organizationId, taskId, receiptId])
+  @@index([organizationId, receiptId])
+}
+
+/// Pinned raster image uploaded to one editable project's storage namespace.
+model LibraryImageAsset {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  project EditProject @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "LibraryImageAsset_projectId_tenant_fkey")
+  storage Json
+  sha256 String @db.Char(64)
+  size BigInt
+  width Int
+  height Int
+  createdBy String?
+  createdAt DateTime @default(now())
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  @@index([projectId])
+  retainedByProjects EditProjectResource[]
+}
+
+model EditProject {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  contentId String @db.Uuid
+  content Content @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  mediaVersionId String @db.Uuid
+  mediaVersion LibraryMediaVersion @relation(fields: [mediaVersionId], references: [id], onDelete: Restrict)
+  title String
+  variant String
+  draft Json
+  draftRevision Int @default(1)
+  currentRevisionId String? @unique @db.Uuid
+  currentRevision EditRevision? @relation("CurrentEditRevision", fields: [currentRevisionId], references: [id], onDelete: Restrict)
+  createdBy String?
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions EditRevision[] @relation("ProjectEditRevisions")
+  renderRuns RenderRun[]
+  derivations ContentDerivation[]
+  @@index([contentId])
+  @@index([mediaVersionId])
+  @@index([archived, updatedAt(sort: Desc)])
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  imageAssets LibraryImageAsset[]
+  retainedResources EditProjectResource[]
+}
+
+/// Content is immutable after insertion; parent links preserve manual/AI lineage.
+model EditRevision {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  project EditProject @relation("ProjectEditRevisions", fields: [projectId], references: [id], onDelete: Restrict)
+  revision Int
+  document Json
+  parentRevisionId String? @db.Uuid
+  parentRevision EditRevision? @relation("EditRevisionParent", fields: [parentRevisionId], references: [id], onDelete: Restrict)
+  childRevisions EditRevision[] @relation("EditRevisionParent")
+  currentProject EditProject? @relation("CurrentEditRevision")
+  createdBy String?
+  createdAt DateTime @default(now())
+  renderRuns RenderRun[]
+  @@unique([projectId, revision])
+  @@unique([organizationId, projectId, id])
+  @@index([parentRevisionId])
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Durable intent; lease ownership is checked again when an artifact is adopted.
+model RenderRun {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  revisionId String @db.Uuid
+  revision EditRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  profile Json
+  requestKey String @db.VarChar(200)
+  requestHash String @db.Char(64)
+  generation Int @default(0)
+  state String @default("QUEUED")
+  attempts Int @default(0)
+  availableAt DateTime @default(now())
+  leaseToken String?
+  leaseUntil DateTime?
+  /// Durable uploaded-attempt identity, independent of the current worker lease.
+  pendingArtifactToken String? @db.Uuid
+  cancelRequestedAt DateTime?
+  error String?
+  outputCredentialId String @db.Uuid
+  outputCredential Credential @relation("RenderOutputCredential", fields: [outputCredentialId], references: [id], onDelete: Restrict)
+  outputBucket String
+  outputPrefix String
+  startedAt DateTime?
+  finishedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  artifact RenderArtifact?
+  @@unique([organizationId, projectId, requestKey])
+  @@index([state, availableAt])
+  @@index([revisionId])
+  @@index([outputCredentialId])
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// Immutable output evidence; reviewState records an operator's separate review.
+model RenderArtifact {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  runId String @unique @db.Uuid
+  run RenderRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  storage Json
+  sha256 String @db.Char(64)
+  size BigInt
+  probe Json
+  qc Json?
+  reviewState String @default("UNREVIEWED")
+  createdAt DateTime @default(now())
+  source LibrarySource? @relation("DerivedLibrarySource")
+  activeDerivations ContentDerivation[]
+  @@unique([organizationId, id])
+  @@index([organizationId])
+}
+
+/// A stable derivative target; current adoption is fenced by desiredGeneration.
+model ContentDerivation {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  projectId String @db.Uuid
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  variant String
+  derivedContentId String? @unique @db.Uuid
+  derivedContent Content? @relation("DerivedContent", fields: [derivedContentId], references: [id], onDelete: Restrict)
+  desiredGeneration Int @default(0)
+  activeGeneration Int @default(0)
+  activeArtifactId String? @db.Uuid
+  activeArtifact RenderArtifact? @relation(fields: [activeArtifactId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([organizationId, projectId, variant])
+  @@index([activeArtifactId])
   @@unique([organizationId, id])
   @@index([organizationId])
 }
@@ -2552,6 +2871,13 @@ model Organization {
   sceneAnalysisRevisionRows SceneAnalysisRevision[]
   contentRows Content[]
   contentRevisionRows ContentRevision[]
+  libraryMediaVersionRows LibraryMediaVersion[]
+  libraryAnalysisBindingRows LibraryAnalysisBinding[]
+  editProjectRows EditProject[]
+  editRevisionRows EditRevision[]
+  renderRunRows RenderRun[]
+  renderArtifactRows RenderArtifact[]
+  contentDerivationRows ContentDerivation[]
   manifestJobRows ManifestJob[]
   liveChannelRows LiveChannel[]
   liveChannelRunRows LiveChannelRun[]
@@ -2586,6 +2912,11 @@ model Organization {
   vmafComputeCredentialRows VmafComputeCredential[]
   vmafExecutionProfileRows VmafExecutionProfile[]
   accessEventRows AccessEvent[]
+  libraryEvidenceReceiptRows LibraryEvidenceReceipt[]
+  libraryMediaTaskRows LibraryMediaTask[]
+  libraryFlowEvidencePinRows LibraryFlowEvidencePin[]
+  libraryImageAssetRows LibraryImageAsset[]
+  editProjectResourceRows EditProjectResource[]
 }
 
 model Membership {
@@ -2622,4 +2953,24 @@ model AccessEvent {
   @@unique([organizationId,id])
   @@index([organizationId,createdAt])
   @@index([organizationId])
+}
+
+/// Keep every source/image ever used by a project alive across draft and revision history.
+model EditProjectResource {
+ organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @db.Uuid
+ project EditProject @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EditProjectResource_projectId_tenant_fkey")
+ mediaVersionId String? @db.Uuid
+ mediaVersion LibraryMediaVersion? @relation(fields: [organizationId, mediaVersionId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EditProjectResource_mediaVersionId_tenant_fkey")
+ imageAssetId String? @db.Uuid
+ imageAsset LibraryImageAsset? @relation(fields: [organizationId, imageAssetId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EditProjectResource_imageAssetId_tenant_fkey")
+ createdAt DateTime @default(now())
+ @@unique([organizationId,projectId,mediaVersionId])
+ @@unique([organizationId,projectId,imageAssetId])
+ @@unique([organizationId,id])
+ @@index([organizationId])
+ @@index([mediaVersionId])
+ @@index([imageAssetId])
 }

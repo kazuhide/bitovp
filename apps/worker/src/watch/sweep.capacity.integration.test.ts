@@ -17,7 +17,11 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { claimStableWatchObjects, createWatchSweep } from "./sweep";
+import {
+	claimStableWatchObjects,
+	createWatchSweep,
+	type WatchSweepDeps,
+} from "./sweep";
 
 const runtimeUrl = process.env.BITOVP_MONITORING_TEST_DATABASE_URL;
 const adminUrl = process.env.BITOVP_MONITORING_TEST_ADMIN_URL;
@@ -227,7 +231,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		function sweep(
 			prisma: AppPrismaClient,
 			submit = queuedJob,
-			list = async () => ({ objects: [] }),
+			list: WatchSweepDeps["listPage"] = async () => ({ objects: [] }),
 		) {
 			return createWatchSweep({
 				prisma,
@@ -237,6 +241,59 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				uuid: randomUUID,
 			});
 		}
+
+		it("excludes managed editing output across credential aliases and legacy stable observations", async () => {
+			const reservedKeys = [
+				"in/bitovp-editing/render.mp4",
+				"in/BITOVP-EDITING/fixed.mp4",
+			];
+			const ordinaryKey = "in/bitovp-editing-old/source.mp4";
+			const f = await fixture(2, [...reservedKeys, ordinaryKey]);
+			const alias = await first.credential.create({
+				data: {
+					label: "Synthetic alias",
+					provider: "AWS_S3",
+					encryptedSecret: "synthetic-only",
+				},
+			});
+			await first.watchRule.update({
+				where: { id: f.rule.id },
+				data: { credentialId: alias.id },
+			});
+			const submit = vi.fn(queuedJob);
+			const listed = async () => ({
+				objects: [{ key: "in/bitovp-editing/later-output.mp4", size: 100 }],
+			});
+			await sweep(first, submit, listed)();
+			expect(submit).not.toHaveBeenCalled();
+			const skipped = await first.watchedObject.findMany({
+				where: { watchRuleId: f.rule.id, objectKey: { in: reservedKeys } },
+			});
+			expect(skipped).toHaveLength(2);
+			for (const row of skipped)
+				expect(row).toMatchObject({
+					state: "SKIPPED",
+					encodingJobId: null,
+					error: expect.stringContaining("reserved"),
+				});
+			expect(
+				await first.watchedObject.count({ where: { watchRuleId: f.rule.id } }),
+			).toBe(3);
+			await first.watchRule.update({
+				where: { id: f.rule.id },
+				data: { lastSweepAt: null },
+			});
+			await sweep(first, submit, listed)();
+			expect(submit).toHaveBeenCalledOnce();
+			expect(
+				await first.watchedObject.findFirst({
+					where: { watchRuleId: f.rule.id, objectKey: ordinaryKey },
+				}),
+			).toMatchObject({
+				state: "SUBMITTED",
+				encodingJobId: expect.any(String),
+			});
+		});
 
 		it("keeps the cap while another instance submits outside its transaction", async () => {
 			const f = await fixture();

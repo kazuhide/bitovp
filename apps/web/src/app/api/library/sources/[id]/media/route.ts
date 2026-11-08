@@ -1,4 +1,7 @@
-import { libraryFileContentType, librarySnapshotSchema } from "@bitovp/core";
+import {
+	libraryFileContentType,
+	librarySourceSnapshotSchema,
+} from "@bitovp/core";
 import { describeStorageError, type ObjectIdentity } from "@bitovp/storage";
 import {
 	EXPECTED_ORGANIZATION_QUERY,
@@ -6,6 +9,8 @@ import {
 } from "@/lib/passive-request";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError } from "@/lib/server/http";
+import { fixedDerivedLibraryObject } from "@/lib/server/library-derived-media";
+import { EditingRequestError } from "@/lib/server/library-editing-common";
 import { libraryFileOutputsForSource } from "@/lib/server/library-playback";
 import { serveObjectPreview } from "@/lib/server/object-preview";
 import { browserForCredentialId } from "@/lib/server/storage";
@@ -44,10 +49,37 @@ export async function GET(
 		const ctx = await getServerContext();
 		const source = await ctx.prisma.librarySource.findUnique({
 			where: { id },
-			select: { jobId: true, snapshot: true },
+			select: {
+				jobId: true,
+				snapshot: true,
+				sourceKind: true,
+				renderArtifactId: true,
+				organizationId: true,
+			},
 		});
 		if (!source) return finish(jsonError(404, "Media not found"));
-		const snapshot = librarySnapshotSchema.parse(source.snapshot);
+		const snapshot = librarySourceSnapshotSchema.parse(source.snapshot);
+		if (
+			source.sourceKind === "DERIVED_RENDER" ||
+			snapshot.kind === "DERIVED_RENDER"
+		) {
+			const target = await fixedDerivedLibraryObject(
+				ctx,
+				source,
+				snapshot,
+				key,
+			);
+			return finish(
+				await serveObjectPreview(ctx, req, {
+					credentialId: target.credentialId,
+					bucket: target.bucket,
+					key: target.key,
+					size: target.size,
+					expect: { ...target.expect, size: target.size },
+					contentType: "video/mp4",
+				}),
+			);
+		}
 		const outputs = await libraryFileOutputsForSource(ctx.prisma, {
 			jobId: source.jobId,
 			planHash: snapshot.planHash,
@@ -94,6 +126,12 @@ export async function GET(
 			}),
 		);
 	} catch (error) {
+		if (error instanceof EditingRequestError)
+			return finish(
+				jsonError(error.status, "Media preview unavailable", {
+					code: error.code,
+				}),
+			);
 		const status = describeStorageError(error).status;
 		if (status === 401 || status === 403)
 			return finish(

@@ -29,6 +29,9 @@ const finalizedPlaylists = new Map<
 	{ text: string; bytes: number; expires: number }
 >();
 let cachedPlaylistBytes = 0;
+// One opaque token bounds invalidation state. An unrelated status transition may
+// skip an in-flight fill, but leaves existing entries for other scopes intact.
+let playlistGeneration = Symbol();
 const uuid = z.uuid();
 const claimSchema = z.strictObject({
 	url: z.string().min(1).max(4096),
@@ -159,6 +162,7 @@ function finalPlaylistExpiry(text: string, analysisId: string, now: number) {
 	let endLists = 0;
 	let segments = 0;
 	let pendingSegment = false;
+	const singletonTags = new Set<string>();
 	let expires = now + PLAYLIST_CACHE_LIFETIME_MS;
 	for (const [index, line] of lines.entries()) {
 		if (!line || (index === 0 && line === "#EXTM3U")) continue;
@@ -199,13 +203,21 @@ function finalPlaylistExpiry(text: string, analysisId: string, now: number) {
 				!Number.isFinite(Date.parse(date))
 			)
 				return null;
-		} else if (
-			line.startsWith("#EXT") &&
-			!/^#EXT-X-(?:VERSION:[1-9]\d*|MEDIA-SEQUENCE:\d+|INDEPENDENT-SEGMENTS)$/.test(
-				line,
+		} else if (line.startsWith("#EXT")) {
+			if (
+				!/^#EXT-X-(?:VERSION:[1-9]\d*|MEDIA-SEQUENCE:\d+|INDEPENDENT-SEGMENTS)$/.test(
+					line,
+				)
 			)
-		)
-			return null;
+				return null;
+			const tag = line.split(":")[0] ?? "";
+			if (
+				singletonTags.has(tag) ||
+				(tag === "#EXT-X-MEDIA-SEQUENCE" && (segments || pendingSegment))
+			)
+				return null;
+			singletonTags.add(tag);
+		}
 		for (const match of line.matchAll(/\bURI="([^"]*)"/g))
 			references.push(match[1] ?? "");
 		for (const reference of references) {
@@ -340,7 +352,12 @@ async function scopeFor(
 	req: Request,
 	analysisId: string,
 	media: boolean,
-): Promise<{ scope: Scope; token: string | null; status: string }> {
+): Promise<{
+	scope: Scope;
+	token: string | null;
+	status: string;
+	cacheGeneration: symbol;
+}> {
 	if (!uuid.safeParse(analysisId).success) throw new RecordingError(400);
 	const url = new URL(req.url);
 	const allowed = new Set([
@@ -377,10 +394,16 @@ async function scopeFor(
 		current.data.encodingId !== encodingId
 	)
 		throw new RecordingError(502);
+	const scope = { ctx, organizationId, accountId, analysisId, encodingId };
+	if (current.data.status !== "FINISHED") {
+		removePlaylist(aad(scope));
+		playlistGeneration = Symbol();
+	}
 	return {
-		scope: { ctx, organizationId, accountId, analysisId, encodingId },
+		scope,
 		token: url.searchParams.get("token"),
 		status: current.data.status,
+		cacheGeneration: playlistGeneration,
 	};
 }
 
@@ -430,11 +453,14 @@ function playlistResponse(req: Request, text: string) {
 
 export function serveAisaRecording(req: Request, analysisId: string) {
 	return handle(req, async () => {
-		const { scope, status } = await scopeFor(req, analysisId, false);
+		const { scope, status, cacheGeneration } = await scopeFor(
+			req,
+			analysisId,
+			false,
+		);
 		const account = await scope.ctx.bitmovinAccounts.get(scope.accountId);
 		if (!account) throw new RecordingError(404);
 		const key = aad(scope);
-		if (status !== "FINISHED") removePlaylist(key);
 		const retained = status === "FINISHED" ? cachedPlaylist(key) : undefined;
 		if (retained !== undefined) return playlistResponse(req, retained);
 		const apiKey = await scope.ctx.bitmovinAccounts.revealApiKey(
@@ -461,7 +487,7 @@ export function serveAisaRecording(req: Request, analysisId: string) {
 		const rewritten = await rewrite(source, scope, 0);
 		if (status === "FINISHED") {
 			const expires = finalPlaylistExpiry(source, analysisId, Date.now());
-			if (expires !== null)
+			if (expires !== null && cacheGeneration === playlistGeneration)
 				retainPlaylist(
 					key,
 					rewritten.text,

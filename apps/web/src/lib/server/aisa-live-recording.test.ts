@@ -279,6 +279,7 @@ describe("finalized AISA recording playlist reuse", () => {
 		return id;
 	}
 	beforeEach(() => {
+		mocks.fetch.mockReset();
 		vi.spyOn(Date, "now").mockReturnValue(now);
 	});
 
@@ -412,10 +413,45 @@ describe("finalized AISA recording playlist reuse", () => {
 			(text: string) =>
 				text.replace("#EXT-X-ENDLIST\n", "#EXT-X-ENDLIST-HINT\n"),
 		],
+		[
+			"duplicate VERSION",
+			(text: string) =>
+				text.replace(
+					"#EXT-X-VERSION:7\n",
+					"#EXT-X-VERSION:7\n#EXT-X-VERSION:7\n",
+				),
+		],
+		[
+			"duplicate MEDIA-SEQUENCE",
+			(text: string) =>
+				text.replace(
+					"#EXT-X-VERSION:7\n",
+					"#EXT-X-VERSION:7\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MEDIA-SEQUENCE:0\n",
+				),
+		],
+		[
+			"duplicate INDEPENDENT-SEGMENTS",
+			(text: string) =>
+				text.replace(
+					"#EXT-X-VERSION:7\n",
+					"#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-INDEPENDENT-SEGMENTS\n",
+				),
+		],
+		[
+			"MEDIA-SEQUENCE after segments",
+			(text: string) =>
+				text.replace(
+					"#EXT-X-ENDLIST\n",
+					"#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-ENDLIST\n",
+				),
+		],
 	])("leaves %s playlists uncached", async (_label, change) => {
 		const id = fixture((value) => change(finalPlaylist(value)));
-		await serveAisaRecording(scopedRequest(id), id);
-		await serveAisaRecording(scopedRequest(id), id);
+		expect((await serveAisaRecording(scopedRequest(id), id)).status).toBe(200);
+		mocks.fetch.mockResolvedValueOnce(new Response(finalPlaylist(id)));
+		const corrected = await serveAisaRecording(scopedRequest(id), id);
+		expect(corrected.status).toBe(200);
+		expect(await corrected.text()).toContain("#EXTINF:5,");
 		expect(mocks.fetch).toHaveBeenCalledTimes(2);
 	});
 
@@ -471,6 +507,151 @@ describe("finalized AISA recording playlist reuse", () => {
 			encodingId,
 			status: "FINISHED",
 		});
+		await serveAisaRecording(scopedRequest(id), id);
+		expect(mocks.fetch).toHaveBeenCalledTimes(4);
+	});
+
+	it.each([
+		"RUNNING",
+		"ERROR",
+	])("invalidates a retained playlist when a media request observes %s", async (status) => {
+		const id = fixture();
+		const initial = await serveAisaRecording(scopedRequest(id), id);
+		const mediaPath = (await initial.text())
+			.split("\n")
+			.find((line) =>
+				line.startsWith(`/api/live/analyses/${id}/recording/media?`),
+			);
+		expect(mediaPath).toBeTruthy();
+		mocks.get.mockResolvedValueOnce({ analysisId: id, encodingId, status });
+		mocks.fetch.mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
+		expect(
+			(
+				await serveAisaRecordingMedia(
+					new Request(`http://test${mediaPath}`),
+					id,
+				)
+			).status,
+		).toBe(200);
+		mocks.fetch.mockResolvedValueOnce(
+			new Response(finalPlaylist(id).replace("#EXTINF:5,", "#EXTINF:4,")),
+		);
+		const refreshed = await serveAisaRecording(scopedRequest(id), id);
+		expect(await refreshed.text()).toContain("#EXTINF:4,");
+		await serveAisaRecording(scopedRequest(id), id);
+		expect(mocks.fetch).toHaveBeenCalledTimes(3);
+	});
+
+	it.each([
+		"playlist",
+		"media",
+	])("does not restore an in-flight FINISHED fill after a %s request observes non-FINISHED", async (kind) => {
+		const id = fixture();
+		const initial = await serveAisaRecording(scopedRequest(id), id);
+		const mediaPath = (await initial.text())
+			.split("\n")
+			.find((line) =>
+				line.startsWith(`/api/live/analyses/${id}/recording/media?`),
+			);
+		expect(mediaPath).toBeTruthy();
+		vi.mocked(Date.now).mockReturnValue(now + 30_000);
+		let resolveFetch!: (value: Response) => void;
+		let notifyStarted!: () => void;
+		const pending = new Promise<Response>((resolve) => {
+			resolveFetch = resolve;
+		});
+		const started = new Promise<void>((resolve) => {
+			notifyStarted = resolve;
+		});
+		mocks.fetch.mockImplementationOnce(() => {
+			notifyStarted();
+			return pending;
+		});
+		const inFlight = serveAisaRecording(scopedRequest(id), id);
+		await started;
+		mocks.get.mockResolvedValueOnce({
+			analysisId: id,
+			encodingId,
+			status: "RUNNING",
+		});
+		const updated = finalPlaylist(id).replace("#EXTINF:5,", "#EXTINF:4,");
+		mocks.fetch.mockImplementation(async (url: string) =>
+			String(url).startsWith("https://api.bitmovin.com/")
+				? new Response(updated)
+				: new Response(new Uint8Array([1, 2, 3])),
+		);
+		const nonFinished =
+			kind === "playlist"
+				? await serveAisaRecording(scopedRequest(id), id)
+				: await serveAisaRecordingMedia(
+						new Request(`http://test${mediaPath}`),
+						id,
+					);
+		expect(nonFinished.status).toBe(200);
+		resolveFetch(new Response(finalPlaylist(id)));
+		expect(await (await inFlight).text()).toContain("#EXTINF:5,");
+		const refreshed = await serveAisaRecording(scopedRequest(id), id);
+		expect(await refreshed.text()).toContain("#EXTINF:4,");
+		const calls = mocks.fetch.mock.calls.length;
+		await serveAisaRecording(scopedRequest(id), id);
+		expect(mocks.fetch).toHaveBeenCalledTimes(calls);
+	});
+
+	it("does not retain a fill when a non-FINISHED observation occurs during handle encryption", async () => {
+		const id = fixture();
+		const cipher = new AesGcmCipher(Buffer.alloc(32, 9));
+		mocks.context.mockResolvedValue({
+			tenant: { organizationId: org },
+			bitmovinAccounts: { get: mocks.accountGet, revealApiKey: mocks.reveal },
+			cipher,
+		});
+		const initial = await serveAisaRecording(scopedRequest(id), id);
+		const mediaPath = (await initial.text())
+			.split("\n")
+			.find((line) =>
+				line.startsWith(`/api/live/analyses/${id}/recording/media?`),
+			);
+		expect(mediaPath).toBeTruthy();
+		vi.mocked(Date.now).mockReturnValue(now + 30_000);
+		let resumeEncryption!: () => void;
+		let notifyStarted!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			resumeEncryption = resolve;
+		});
+		const started = new Promise<void>((resolve) => {
+			notifyStarted = resolve;
+		});
+		const encrypt = cipher.encrypt.bind(cipher);
+		vi.spyOn(cipher, "encrypt").mockImplementationOnce(
+			async (value, binding) => {
+				notifyStarted();
+				await pending;
+				return encrypt(value, binding);
+			},
+		);
+		const inFlight = serveAisaRecording(scopedRequest(id), id);
+		await started;
+		mocks.get.mockResolvedValueOnce({
+			analysisId: id,
+			encodingId,
+			status: "RUNNING",
+		});
+		mocks.fetch.mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
+		expect(
+			(
+				await serveAisaRecordingMedia(
+					new Request(`http://test${mediaPath}`),
+					id,
+				)
+			).status,
+		).toBe(200);
+		resumeEncryption();
+		expect((await inFlight).status).toBe(200);
+		mocks.fetch.mockResolvedValueOnce(
+			new Response(finalPlaylist(id).replace("#EXTINF:5,", "#EXTINF:4,")),
+		);
+		const refreshed = await serveAisaRecording(scopedRequest(id), id);
+		expect(await refreshed.text()).toContain("#EXTINF:4,");
 		await serveAisaRecording(scopedRequest(id), id);
 		expect(mocks.fetch).toHaveBeenCalledTimes(4);
 	});

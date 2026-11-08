@@ -13,6 +13,31 @@ const base = {
 };
 
 describe("HeartbeatPanel events section", () => {
+	it("does not interpret omitted or withheld events as an empty healthy event history", () => {
+		const view = renderL(
+			<HeartbeatPanel
+				nowMs={Date.now()}
+				lastHeartbeat={base}
+				warningEvidenceAvailable={false}
+			/>,
+		);
+		expect(screen.getByText("Events")).toBeInTheDocument();
+		expect(screen.getByText("unknown")).toBeInTheDocument();
+		expect(screen.queryByText(/healthy stream reports none/i)).toBeNull();
+		view.rerender(
+			<HeartbeatPanel
+				nowMs={Date.now()}
+				warningEvidenceAvailable={false}
+				lastHeartbeat={{
+					...base,
+					raw: { ...base.raw, events: [{ message: "private-event" }] },
+				}}
+			/>,
+		);
+		expect(screen.queryByText("private-event")).toBeNull();
+		expect(screen.getByText("unknown")).toBeInTheDocument();
+	});
+
 	it("renders nothing-to-report copy (not a hidden section) when a healthy stream has no events", () => {
 		// The bug it fixes: an empty events array used to hide the whole section,
 		// so a healthy stream looked frozen/broken. The header + an explicit line

@@ -12,6 +12,7 @@ const scheduleCreateMany = vi.fn<
 >(async () => ({ count: 0 }));
 const scheduleFindMany = vi.fn(async () => []);
 const getAccount = vi.fn();
+const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const queueAdd = vi.fn();
 // review-223 F4: the slate credential is checked at CREATION (422), not
 // discovered broken at registration time.
@@ -93,6 +94,14 @@ const prismaMock = {
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			actor: `user:${aisaOwnerId}`,
+			actorUserId: aisaOwnerId,
+			effectiveUserId: aisaOwnerId,
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+		},
 		prisma: prismaMock,
 		bitmovinAccounts: { get: getAccount },
 		// : rail 3b's resolver. These five route tests are the
@@ -143,6 +152,33 @@ function withAccount(base: Record<string, unknown> = plan) {
 	};
 }
 
+function managedAisaPlan() {
+	return {
+		planVersion: 1,
+		name: "Integrated AISA channel",
+		bitmovin: {
+			accountId: ACCOUNT_ID,
+			cloudRegion: "GOOGLE_EUROPE_WEST_1",
+			encoderVersion: "STABLE",
+		},
+		liveInput: { key: "main", kind: "RTMP" },
+		outputs: [],
+		ingest: [],
+		renditions: [],
+		muxings: [],
+		liveManifests: [],
+		start: {
+			streamKey: "synthetickey",
+			aiSceneAnalysisLive: {
+				preset: "AISA_PREVIEW_MANAGED",
+				outputId: "cccccccc-cccc-4ccc-accc-cccccccccccc",
+				recordingPath: "channel/recording",
+				analysisPath: "channel/analysis",
+			},
+		},
+	};
+}
+
 function postRequest(body: unknown, actor?: string): Request {
 	return new Request("http://test/api/live-channels", {
 		method: "POST",
@@ -153,6 +189,7 @@ function postRequest(body: unknown, actor?: string): Request {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
 	createRequests.clear();
 	queryRaw.mockImplementation(async () => []);
 	update.mockImplementation(async () => ({}));
@@ -183,6 +220,45 @@ afterEach(() => {
 });
 
 describe("POST /api/live-channels", () => {
+	it("persists the managed analysis lifecycle in the standard creation endpoint", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const candidate = managedAisaPlan();
+		const res = await POST(postRequest({ plan: candidate }));
+		expect(res.status).toBe(201);
+		const data = create.mock.calls[0]?.[0].data;
+		expect(data.plan).toEqual(candidate);
+		expect(data.stepLog.map((step: { kind: string }) => step.kind)).toEqual([
+			"CREATE_AISA_LIVE_ANALYSIS",
+			"RESOLVE_AISA_LIVE_ENCODING",
+			"START_AISA_LIVE_ANALYSIS",
+			"AWAIT_LIVE_RUNNING",
+		]);
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
+	it("rejects managed creation with Preview disabled before writes or queueing", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		const res = await POST(postRequest({ plan: managedAisaPlan() }));
+		expect(res.status).toBe(404);
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("rejects managed scheduling before writes or queueing", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const res = await POST(
+			postRequest({
+				plan: managedAisaPlan(),
+				schedule: {
+					streamUpAt: "2099-11-07T00:00:00Z",
+					programStartAt: "2099-11-07T00:00:00Z",
+					programEndAt: "2099-11-07T01:00:00Z",
+				},
+			}),
+		);
+		expect(res.status).toBe(400);
+		expect((await res.json()).details.code).toBe("AISA_SCHEDULE_UNSUPPORTED");
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it.each([
 		{ regions: undefined },
 		{ regions: [] },

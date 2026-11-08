@@ -1,15 +1,29 @@
 import { createHash } from "node:crypto";
-import { liveChannelJobSchema, liveChannelPlanSchema } from "@bitovp/core";
+import {
+	compileAisaManagedLiveChannel,
+	initStepLog,
+	liveChannelJobSchema,
+	liveChannelPlanSchema,
+} from "@bitovp/core";
 import { DB_NULL } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const runFindFirst = vi.fn(
 	async (): Promise<{
 		id: string;
 		seq: number;
 		status: string;
+		error?: string | null;
 		cancelRequested?: boolean;
+		bitmovinEncodingId?: string | null;
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+		aisaFinalization?: unknown;
+		stepLog?: unknown;
+		encoderStoppedConfirmedFor?: string | null;
 		/** : the provider-lifecycle columns the route now reads. */
 		providerStatus?: string | null;
 		providerStatusObservedAt?: Date | null;
@@ -20,7 +34,15 @@ const runFindFirst = vi.fn(
 const runCreate = vi.fn(async (_args?: { data: Record<string, unknown> }) => ({
 	id: "run-1",
 }));
-const runUpdate = vi.fn(async () => ({}));
+const runUpdate = vi.fn(
+	async (_args?: { data: Record<string, unknown> }) => ({}),
+);
+const channelDeleteMany = vi.fn();
+const vmafFindFirst = vi.fn();
+const vmafCount = vi.fn();
+const vmafDeleteMany = vi.fn();
+const auditCreate = vi.fn();
+const lockRows = vi.fn();
 const update = vi.fn();
 const updateMany = vi.fn();
 const queueAdd = vi.fn();
@@ -56,6 +78,14 @@ function retainQueuedJob(
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			actor: `user:${aisaOwnerId}`,
+			actorUserId: aisaOwnerId,
+			effectiveUserId: aisaOwnerId,
+			role: "ADMIN",
+			actorRole: "ADMIN",
+			isImpersonating: false,
+		},
 		// : rail 3b's resolver. These five route tests are the
 		// ones whose route reaches `submitterValidationOptions`, which now
 		// REQUIRES it — the other ~85 context mocks in this app are
@@ -69,16 +99,34 @@ vi.mock("@/lib/server/context", () => ({
 		// mock hands the SAME delegates to the tx callback so assertions see
 		// every write. Run-row stub: latest lookup + create/update spies.
 		prisma: {
-			liveChannel: { findUnique, update, updateMany },
+			liveChannel: {
+				findUnique,
+				update,
+				updateMany,
+				deleteMany: channelDeleteMany,
+			},
 			liveEffectClaim: { findUnique: effectClaimFindUnique },
 			liveChannelRun: {
 				findFirst: runFindFirst,
 				create: runCreate,
 				update: runUpdate,
 			},
+			vmafJob: {
+				findFirst: vmafFindFirst,
+				count: vmafCount,
+				deleteMany: vmafDeleteMany,
+			},
+			auditLog: { create: auditCreate },
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
 				fn({
-					liveChannel: { findUnique, update, updateMany },
+					$queryRaw: lockRows,
+					vmafJob: { count: vmafCount, deleteMany: vmafDeleteMany },
+					liveChannel: {
+						findUnique,
+						update,
+						updateMany,
+						deleteMany: channelDeleteMany,
+					},
 					liveChannelRun: {
 						findFirst: runFindFirst,
 						create: runCreate,
@@ -93,6 +141,7 @@ vi.mock("@/lib/server/queue", () => ({
 	getLiveChannelQueue: () => ({ add: queueAdd, getJob: queueGetJob }),
 }));
 
+import { DELETE } from "../route";
 import { POST } from "./route";
 
 const CHANNEL_ID = "00000000-0000-4000-8000-0000000000bb";
@@ -247,6 +296,348 @@ function channel(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+describe("AISA lifecycle admission", () => {
+	it.each([
+		"first-start",
+		"reair",
+		"legacy-revive",
+		"dispatched-revive",
+	])("keeps the run log authoritative across Start → SDK setup failure → DELETE: %s", async (phase) => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const plan = liveChannelPlanSchema.parse({
+			planVersion: 1,
+			name: "AISA setup failure",
+			bitmovin: { accountId: CHANNEL_ID, cloudRegion: "GOOGLE_EUROPE_WEST_1" },
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: CHANNEL_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		});
+		const canonical = initStepLog(compileAisaManagedLiveChannel(plan));
+		if (phase === "dispatched-revive") {
+			const create = canonical[0];
+			if (!create) throw new Error("missing CREATE fixture");
+			create.status = "FAILED";
+			create.response = { aisaCreateDispatched: true };
+		}
+		const storedChannel: Record<string, unknown> | null = channel({
+			status:
+				phase === "first-start"
+					? "CREATED"
+					: phase === "reair"
+						? "STOPPED"
+						: "ERROR",
+			error: null,
+			bitmovinEncodingId: null,
+			plan,
+			stepLog: canonical,
+		});
+		let storedRun: Awaited<ReturnType<typeof runFindFirst>> =
+			phase === "first-start"
+				? null
+				: {
+						id: RUN_ID,
+						seq: 1,
+						status: phase === "reair" ? "STOPPED" : "ERROR",
+						cancelRequested: false,
+						aisaAnalysisId: null,
+						bitmovinEncodingId: null,
+						// Legacy route-created runs defaulted to [] until the first persist.
+						stepLog: phase === "reair" ? structuredClone(canonical) : [],
+						...(phase === "reair"
+							? {
+									aisaFinalization: {
+										kind: "NEVER_STARTED",
+										basis: "CREATE_NOT_DISPATCHED",
+										runId: RUN_ID,
+										observedAt: "2026-11-07T00:00:00Z",
+									},
+								}
+							: {}),
+					};
+		findUnique.mockImplementation(async () => storedChannel);
+		runFindFirst.mockImplementation(async () => storedRun);
+		updateMany.mockImplementationOnce(async (args) => {
+			if (!storedChannel) throw new Error("missing channel");
+			Object.assign(storedChannel, args.data);
+			return { count: 1 };
+		});
+		if (phase === "first-start" || phase === "reair")
+			runCreate.mockImplementationOnce(async (args) => {
+				if (!args) throw new Error("missing run create");
+				storedRun = {
+					id: String(args.data.id ?? RUN_ID),
+					seq: Number(args.data.seq),
+					status: "PROVISIONING",
+					cancelRequested: false,
+					aisaAnalysisId: null,
+					bitmovinEncodingId: null,
+					stepLog: args.data.stepLog ?? [],
+				};
+				return { id: storedRun.id };
+			});
+		if (phase === "legacy-revive" || phase === "dispatched-revive")
+			runUpdate.mockImplementationOnce(async (args) => {
+				if (!args || !storedRun) throw new Error("missing run revive");
+				Object.assign(storedRun, args.data);
+				return {};
+			});
+		const started = await postAction({ action: "start" });
+		expect(started.status).toBe(200);
+		if (!storedChannel || !storedRun)
+			throw new Error("Start did not persist ownership");
+		const startedRunLog = structuredClone(storedRun.stepLog);
+		const startedChannelLog = structuredClone(storedChannel.stepLog);
+		// The worker setup catch mirrors only status/error before any persist.
+		// No provider operation has run; DELETE must be decidable from Start.
+		storedChannel.status = "ERROR";
+		storedChannel.error = "SDK unavailable during setup";
+		storedRun.status = "ERROR";
+		storedRun.error = "SDK unavailable during setup";
+		const response = await DELETE(
+			new Request(`http://test/api/live-channels/${CHANNEL_ID}`, {
+				method: "DELETE",
+			}),
+			{ params: Promise.resolve({ id: CHANNEL_ID }) },
+		);
+		expect(response.status).toBe(phase === "dispatched-revive" ? 409 : 200);
+		expect(startedRunLog).toEqual(startedChannelLog);
+		if (phase === "dispatched-revive") {
+			expect(JSON.stringify(startedRunLog)).toContain("aisaCreateDispatched");
+			expect(channelDeleteMany).not.toHaveBeenCalled();
+		} else expect(channelDeleteMany).toHaveBeenCalledTimes(1);
+	});
+	it.each([
+		"CREATE_NOT_DISPATCHED",
+		"BOUND_CREATED_NOT_STARTED",
+		"ambiguous",
+	])("allows a fresh run only after proved never-started cancellation: %s", async (basis) => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const analysisId = "00000000-0000-4000-8000-0000000000aa";
+		const encodingId = "00000000-0000-4000-8000-0000000000ee";
+		const plan = liveChannelPlanSchema.parse({
+			planVersion: 1,
+			name: "Canceled AISA",
+			bitmovin: { accountId: CHANNEL_ID, cloudRegion: "GOOGLE_EUROPE_WEST_1" },
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: CHANNEL_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		});
+		const stepLog = initStepLog(compileAisaManagedLiveChannel(plan));
+		const bound = basis === "BOUND_CREATED_NOT_STARTED";
+		if (bound)
+			for (const entry of stepLog) {
+				if (
+					entry.kind === "CREATE_AISA_LIVE_ANALYSIS" ||
+					entry.kind === "RESOLVE_AISA_LIVE_ENCODING"
+				) {
+					entry.status = "DONE";
+					entry.resourceId =
+						entry.kind === "CREATE_AISA_LIVE_ANALYSIS"
+							? analysisId
+							: encodingId;
+				}
+			}
+		if (basis === "ambiguous")
+			for (const entry of stepLog)
+				if (entry.kind === "CREATE_AISA_LIVE_ANALYSIS")
+					entry.response = { aisaCreateDispatched: true };
+		const proof = {
+			kind: "NEVER_STARTED",
+			basis: bound ? basis : "CREATE_NOT_DISPATCHED",
+			runId: RUN_ID,
+			observedAt: "2026-11-07T00:00:00Z",
+			...(bound
+				? {
+						analysisId,
+						encodingId,
+						analysisStatus: "CREATED",
+						encodingStatus: "CREATED",
+					}
+				: {}),
+		};
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPED",
+				error: null,
+				plan,
+				stepLog,
+				bitmovinEncodingId: bound ? encodingId : null,
+				encoderStoppedConfirmedFor: bound ? encodingId : null,
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			cancelRequested: false,
+			bitmovinEncodingId: bound ? encodingId : null,
+			aisaAnalysisId: bound ? analysisId : null,
+			aisaStatus: bound ? "CREATED" : null,
+			providerStatus: bound ? "CREATED" : null,
+			encoderStoppedConfirmedFor: bound ? encodingId : null,
+			stepLog,
+			aisaFinalization: proof,
+		});
+		const response = await postAction({ action: "start" });
+		expect(response.status).toBe(basis === "ambiguous" ? 409 : 200);
+		if (basis === "ambiguous") expect(queueAdd).not.toHaveBeenCalled();
+		else {
+			expect(runCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						seq: 2,
+						id: expect.not.stringMatching(`^${RUN_ID}$`),
+					}),
+				}),
+			);
+			expect(runUpdate).not.toHaveBeenCalled();
+		}
+	});
+	it("requeues same-run Analysis readback from an Encoder-only clean STOPPED row", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPED",
+				error: null,
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "FINISHED",
+			providerStatusObservedAt: new Date(),
+			providerTerminalAt: new Date(),
+		});
+		effectClaimFindUnique.mockResolvedValue(manualStopClaim("ACKED"));
+		retainQueuedJob(
+			`manual-stop-${CHANNEL_ID}-${RUN_ID}`,
+			manualStopJobData(),
+			"completed",
+			manualStopSuccess(),
+		);
+		const response = await postAction({ action: "stop" });
+		expect(response.status).toBe(202);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+	it("blocks re-air until the independently terminal Analysis result is accounted for", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		const ordinary = reairPlan();
+		const plan = {
+			...ordinary,
+			liveInput: { key: "main", kind: "RTMP" },
+			outputs: [],
+			ingest: [],
+			renditions: [],
+			muxings: [],
+			liveManifests: [],
+			start: {
+				streamKey: "match",
+				aiSceneAnalysisLive: {
+					preset: "AISA_PREVIEW_MANAGED",
+					outputId: CHANNEL_ID,
+					recordingPath: "recording",
+					analysisPath: "analysis",
+				},
+			},
+		};
+		findUnique.mockResolvedValue(
+			channel({ status: "STOPPED", error: null, plan }),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "FINISHED",
+			providerStatusObservedAt: new Date(),
+			providerTerminalAt: new Date(),
+		});
+		const response = await postAction({ action: "start" });
+		expect(response.status).toBe(409);
+		expect((await response.json()).details.code).toBe(
+			"AISA_FINALIZATION_PENDING",
+		);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it.each([
+		"start",
+		"stop",
+		"restart",
+		"cancel-start",
+	])("refuses %s on an imported completed run before mutation", async (action) => {
+		findUnique.mockResolvedValue(
+			channel({ origin: "AISA_IMPORTED", status: "STOPPED" }),
+		);
+		const res = await postAction({
+			action,
+			...(action === "cancel-start" ? { generation: 0 } : {}),
+		});
+		expect(res.status).toBe(409);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses a managed start when Preview is disabled before claiming a run", async () => {
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPED",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		const res = await postAction({ action: "start" });
+		expect(res.status).toBe(404);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses in-place restart on a managed analysis before claiming a provider effect", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		const res = await postAction({ action: "restart" });
+		expect(res.status).toBe(409);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+});
+
 function manualStopJobData(
 	effectOverrides: Record<string, unknown> = {},
 	jobOverrides: Record<string, unknown> = {},
@@ -295,6 +686,14 @@ function manualStopClaim(
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
+	channelDeleteMany.mockReset().mockResolvedValue({ count: 1 });
+	vmafFindFirst.mockResolvedValue(null);
+	vmafCount.mockResolvedValue(0);
+	vmafDeleteMany.mockResolvedValue({ count: 0 });
+	auditCreate.mockResolvedValue({});
+	lockRows.mockResolvedValue([]);
 	queuedJobs.clear();
 	effectClaimFindUnique.mockReset();
 	effectClaimFindUnique.mockResolvedValue(null);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, routeError } from "@/lib/server/http";
 
@@ -30,6 +31,9 @@ export async function GET(_req: Request, { params }: RouteParams) {
 				seq: true,
 				status: true,
 				bitmovinEncodingId: true,
+				aisaAnalysisId: true,
+				aisaStatus: true,
+				aisaObservedAt: true,
 				outputPrefix: true,
 				runningSince: true,
 				endedAt: true,
@@ -41,7 +45,19 @@ export async function GET(_req: Request, { params }: RouteParams) {
 				createdAt: true,
 			},
 		});
-		return NextResponse.json({ runs });
+		return NextResponse.json(
+			{
+				runs: aisaLiveAccessAllowed(ctx.tenant)
+					? runs
+					: runs.map((run) => ({
+							...run,
+							aisaAnalysisId: null,
+							aisaStatus: null,
+							aisaObservedAt: null,
+						})),
+			},
+			{ headers: { "Cache-Control": "private, no-store" } },
+		);
 	} catch (err) {
 		return routeError(err);
 	}

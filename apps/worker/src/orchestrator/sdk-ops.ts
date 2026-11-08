@@ -17,8 +17,17 @@ import type {
 	VP9DetailControls,
 } from "@bitovp/core";
 import { bitmovinCapturePort } from "@bitovp/core";
+import type {
+	AisaLiveCreateRequest,
+	AisaLiveVersions,
+} from "@bitovp/core/aisa-live-client";
 import type { AuditEntry } from "@bitovp/db";
 import { BitmovinApi } from "../bitmovin/sdk-ctor";
+import {
+	type AisaLiveAnalysis,
+	type AisaLiveControl,
+	createAisaLiveOps,
+} from "./aisa-live-ops";
 import {
 	assertInternalHevcV2Access,
 	type InternalHevcV2,
@@ -516,6 +525,14 @@ export type Scte35CueParams = {
 };
 
 export type SdkOps = {
+	createAisaLiveAnalysis(request: AisaLiveCreateRequest): Promise<string>;
+	getAisaLiveAnalysis(analysisId: string): Promise<AisaLiveAnalysis>;
+	startAisaLiveAnalysis(
+		analysisId: string,
+		encodingId: string,
+		versions?: AisaLiveVersions,
+	): Promise<void>;
+	stopAisaLiveAnalysis(analysisId: string, encodingId: string): Promise<void>;
 	createS3Input(p: {
 		name: string;
 		bucketName: string;
@@ -1758,6 +1775,7 @@ import {
 export { BitmovinCallError, sdkEnumValue } from "./ops/shared";
 
 export type SdkOpsOptions = {
+	aisaLive?: AisaLiveControl;
 	/** Ownership and cancellation admission for ordinary VOD/Live START only. */
 	startControl?: StartRetryControl;
 	/** Monitoring GETs share one deadline, including body download. */
@@ -1970,13 +1988,16 @@ export function createBitmovinSdkOps(
 		capturePort,
 	};
 
+	const liveOps = createLiveOps(ctx);
+	const encodingOps = createEncodingLifecycleOps(ctx);
 	return {
 		...createIoOps(ctx),
 		...createConfigOps(ctx),
 		...createMediaOps(ctx),
 		...createDrmOps(ctx),
 		...createManifestOps(ctx),
-		...createEncodingLifecycleOps(ctx),
-		...createLiveOps(ctx),
+		...encodingOps,
+		...liveOps,
+		...createAisaLiveOps(ctx, liveOps, encodingOps),
 	};
 }

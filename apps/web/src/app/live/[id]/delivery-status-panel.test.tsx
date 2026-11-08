@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { messagesFor, translate } from "@/lib/i18n";
 import { renderWithQuery } from "@/test/render";
 import { DeliveryStatusPanel } from "./delivery-status-panel";
 
@@ -197,6 +198,29 @@ function inputMbps() {
 }
 
 describe("DeliveryStatusPanel", () => {
+	it.each([
+		"en",
+		"ja",
+	] as const)("treats projected warning evidence as unknown and retains ordinary defaults in %s", (locale) => {
+		const p = { ...props(), openAlerts: [], detailsOpen: () => true };
+		const view = renderWithQuery(
+			<DeliveryStatusPanel {...p} warningEvidenceAvailable={false} />,
+			locale,
+		);
+		const text = (key: Parameters<typeof translate>[1]) =>
+			translate(messagesFor(locale), key);
+		const warningValue = () =>
+			within(
+				document.querySelector('[data-lane="encoder"]') as HTMLElement,
+			).getByText(text("live.health.latestWarning")).nextElementSibling;
+		expect(warningValue()).toHaveTextContent(text("status.unknown"));
+		expect(view.container).not.toHaveTextContent(text("live.health.noWarning"));
+		expect(view.container).not.toHaveTextContent(text("prose.noConnectEvents"));
+		view.rerender(<DeliveryStatusPanel {...p} />);
+		expect(warningValue()).toHaveTextContent(text("live.health.noWarning"));
+		expect(view.container).toHaveTextContent(text("prose.noConnectEvents"));
+	});
+
 	it("prioritizes signed Push input and quality while preserving independently stalled output", async () => {
 		const input = props();
 		input.lastHeartbeat = {

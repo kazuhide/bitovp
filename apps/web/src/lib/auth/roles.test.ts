@@ -493,7 +493,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 			evaluateRole("VIEWER", "/api/library/edits/x/thumbnail-frame", "GET")
 				.allowed,
 		).toBe(true);
-		expect(guarded.length).toBe(179);
-		expect(methods.length).toBe(250);
+		// Measured from the combined clip and AISA Live route exporters.
+		expect(guarded.length).toBe(188);
+		expect(methods.length).toBe(263);
 	});
 });

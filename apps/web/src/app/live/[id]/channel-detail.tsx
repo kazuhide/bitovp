@@ -7,14 +7,18 @@ import {
 	deriveLiveChannelStatus,
 	deriveProviderLifecycle,
 	ingestConnectedTriState,
+	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	liveChannelPlanSchema,
 	liveNextAction,
 	stepLogSchema,
 } from "@bitovp/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { AisaChannelAnalysisPanel } from "@/app/live/aisa-channel-analysis";
+import { AisaLiveIngest } from "@/app/live/aisa-live-ingest";
 import {
 	type FeederSessionListItem,
 	isActiveFeederStatus,
@@ -33,7 +37,9 @@ import { CopyButton } from "@/components/copy-button";
 import { ManifestList } from "@/components/manifest-list";
 import { SaveAsTemplateButton } from "@/components/save-as-template";
 import { StepTimeline } from "@/components/step-timeline";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { aisaResultSchema } from "@/lib/aisa-live/contracts";
 import { apiFetch } from "@/lib/api";
 import type { SessionDto } from "@/lib/auth/dto";
 import { RoleAccess } from "@/lib/auth/use-role-access";
@@ -41,6 +47,7 @@ import { localizedCustomerError } from "@/lib/customer-error";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
 import type { LiveScheduleDto } from "@/lib/live-runtime/schemas";
+import type { AisaSelectedRun } from "./aisa-run-selection";
 import { AlertPanel, type ChannelAlertEvent } from "./alert-panel";
 import { LiveArchivePanel } from "./archive-panel";
 import { AutoShutdownPanel } from "./auto-shutdown-panel";
@@ -69,7 +76,7 @@ import { LiveAnnouncer, StatusAnnouncer } from "./live-announcer";
 import { deliveryDiagnosis, selectLiveTelemetry } from "./live-telemetry";
 import { LiveToVodPanel } from "./live-to-vod-panel";
 import { NextActionPanel } from "./next-action-panel";
-import { RunsPanel } from "./runs-panel";
+import { type AisaRunSelection, RunsPanel } from "./runs-panel";
 import { RuntimeCapPanel } from "./runtime-cap-panel";
 import { SCHEDULE_ACTION_LABEL_KEYS } from "./schedule-labels";
 import { SchedulePanel } from "./schedule-panel";
@@ -109,14 +116,46 @@ import { StatusStrip } from "./status-strip";
  */
 const SWEEP_GRACE_MS = (DEFAULT_SCHEDULE_START_GRACE_MINUTES * 60 + 30) * 1000;
 
-export function ChannelDetail({
-	id,
-	player,
-}: {
+type ChannelDetailProps = {
 	id: string;
 	player?: PlayerClientConfig;
-}) {
+	initialAisaRun?: AisaSelectedRun;
+	aisaFeatureUserId?: string;
+};
+
+export function ChannelDetail(props: ChannelDetailProps) {
+	return (
+		<ChannelConsole
+			key={`${props.id}:${props.initialAisaRun?.id ?? "latest"}`}
+			{...props}
+		/>
+	);
+}
+
+function ChannelConsole({
+	id,
+	player,
+	initialAisaRun,
+	aisaFeatureUserId,
+}: ChannelDetailProps) {
 	const { t } = useT();
+	const router = useRouter();
+	const queryClient = useQueryClient();
+	const [initialSessionUpdateCount] = useState(
+		() => queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0,
+	);
+	const [selectedAisaRun, setSelectedAisaRun] =
+		useState<AisaSelectedRun | null>(initialAisaRun ?? null);
+	const [analysisDeepLink, setAnalysisDeepLink] = useState(
+		() =>
+			typeof window !== "undefined" && window.location.hash === "#sec-analysis",
+	);
+	useEffect(() => {
+		const update = () =>
+			setAnalysisDeepLink(window.location.hash === "#sec-analysis");
+		window.addEventListener("hashchange", update);
+		return () => window.removeEventListener("hashchange", update);
+	}, []);
 	const qcVmafEnabled = useQcVmafEnabled();
 	// review-260 127-A7: freshness is a function of time, but nothing
 	// re-rendered when only TIME passed — a dead sweep left byte-identical
@@ -161,10 +200,22 @@ export function ChannelDetail({
 	// paint its bounded diagnostics until the shared session query has freshly
 	// and successfully resolved the current principal. PR381 replaces this
 	// direct query with the canonical useSession/useRoleAccess hook on rebase.
+	const aisaRow =
+		channel.data?.origin === "AISA_IMPORTED" ||
+		isAisaManagedLivePlan(channel.data?.plan) ||
+		// Match the server's persisted binding check when an old plan is unreadable.
+		[
+			channel.data?.currentRun?.aisaAnalysisId,
+			channel.data?.currentRun?.aisaStatus,
+			channel.data?.currentRun?.aisaSnapshot,
+		].some((value) => value !== null && value !== undefined);
 	const technicalSession = useQuery({
 		queryKey: ["auth", "session"],
 		queryFn: () => apiFetch<SessionDto>("/api/auth/session"),
-		enabled: channel.data?.technicalDetailsAllowed === true,
+		enabled: channel.data?.technicalDetailsAllowed === true || aisaRow,
+		// The channel may arrive after this observer mounts disabled. A cached
+		// session must then be revalidated even if other readers consider it fresh.
+		...(aisaRow ? { staleTime: 0 } : {}),
 		refetchOnMount: "always",
 	});
 	const serverNow = channel.data?.serverNow;
@@ -180,6 +231,7 @@ export function ChannelDetail({
 	// Alerts : ONE query feeds the banner, the history section
 	// AND the heartbeat chart's reference dots.
 	const alerts = useQuery({
+		enabled: channel.isSuccess,
 		queryKey: ["live-channel-alerts", id],
 		queryFn: () =>
 			apiFetch<{ open: ChannelAlertEvent[]; history: ChannelAlertEvent[] }>(
@@ -193,12 +245,14 @@ export function ChannelDetail({
 	// one request to both consumers; a different key here would silently double
 	// the polling.
 	const schedules = useQuery({
+		enabled: channel.isSuccess,
 		queryKey: ["live-schedules", id],
 		refetchInterval: 15_000,
 		queryFn: () =>
 			apiFetch<LiveScheduleDto[]>(`/api/live-channels/${id}/schedules`),
 	});
 	const feeders = useQuery({
+		enabled: channel.isSuccess,
 		queryKey: ["feeder-sessions", id],
 		// Mirror FeederPanel's own condition: observers each keep their own
 		// timer and the UNION wins, so an unconditional interval here would
@@ -238,7 +292,10 @@ export function ChannelDetail({
 	 * refetch and during every 15s background poll. Monotonic is exactly what
 	 * a one-shot "have we heard anything yet" gate needs.
 	 */
-	if (channel.isLoading || !alerts.isFetched || !schedules.isFetched) {
+	if (
+		channel.isLoading ||
+		(channel.data && (!alerts.isFetched || !schedules.isFetched))
+	) {
 		return (
 			<div
 				role="status"
@@ -270,6 +327,27 @@ export function ChannelDetail({
 	}
 
 	const row = channel.data;
+	const imported = row.origin === "AISA_IMPORTED";
+	// Cached owner DTOs must not expose private payloads while a fresh session
+	// is unresolved or belongs to any other principal, including another ADMIN.
+	const sessionFreshForConsole =
+		(queryClient.getQueryState(["auth", "session"])?.dataUpdateCount ?? 0) >
+			initialSessionUpdateCount &&
+		technicalSession.status === "success" &&
+		technicalSession.fetchStatus === "idle" &&
+		!technicalSession.isRefetchError;
+	const showAisaFeature =
+		aisaRow &&
+		row.aisaFeatureAllowed === true &&
+		Boolean(aisaFeatureUserId) &&
+		sessionFreshForConsole &&
+		technicalSession.data?.mode === "users" &&
+		technicalSession.data.authenticated === true &&
+		technicalSession.data.role === "ADMIN" &&
+		technicalSession.data.isImpersonating === false &&
+		technicalSession.data.effectiveUserId === aisaFeatureUserId &&
+		technicalSession.data.actorUserId === aisaFeatureUserId;
+	const aisaOperatorAllowed = showAisaFeature;
 	const sessionAllowsTechnicalDetails =
 		technicalSession.status === "success" &&
 		technicalSession.fetchStatus === "idle" &&
@@ -279,15 +357,56 @@ export function ChannelDetail({
 			(technicalSession.data.mode === "users" &&
 				technicalSession.data.role === "ADMIN"));
 	const technicalDetailsAllowed =
-		row.technicalDetailsAllowed === true && sessionAllowsTechnicalDetails;
+		row.technicalDetailsAllowed === true &&
+		sessionAllowsTechnicalDetails &&
+		(!aisaRow || aisaOperatorAllowed);
 	//  PR2b: run-first, dual-written channel columns as fallback.
 	const run = row.currentRun ?? null;
-	const effectiveHeartbeat = run?.lastHeartbeat ?? row.lastHeartbeat;
-	const effectiveStreamKey = run?.streamKey ?? row.streamKey;
-	const effectiveEncoderIp = run?.encoderIp ?? row.encoderIp;
+	const selectedUnavailable = Boolean(
+		initialAisaRun && initialAisaRun.liveChannelId !== row.id,
+	);
+	const selection =
+		selectedAisaRun?.id === initialAisaRun?.id
+			? initialAisaRun
+			: selectedAisaRun;
+	const analysisRun = selectedUnavailable
+		? null
+		: selection?.id === run?.id
+			? run
+			: (selection ?? run);
+	const analysisSnapshot = aisaResultSchema.safeParse(
+		analysisRun?.aisaSnapshot,
+	);
+	const knownMomentCount =
+		analysisSnapshot.success &&
+		analysisSnapshot.data.analysisId === analysisRun?.aisaAnalysisId &&
+		analysisSnapshot.data.encodingId === analysisRun?.bitmovinEncodingId
+			? analysisSnapshot.data.keyMoments.length
+			: null;
+	const selectAisaRun = (selected: AisaRunSelection) => {
+		if (!showAisaFeature) return;
+		setSelectedAisaRun({
+			...(selected.id === initialAisaRun?.id ? initialAisaRun : {}),
+			...selected,
+			liveChannelId: row.id,
+		});
+		router.replace(
+			`/live/${row.id}?runId=${encodeURIComponent(selected.id)}#sec-analysis`,
+			{ scroll: false },
+		);
+	};
+	const monitoringAllowed =
+		!aisaRow || aisaOperatorAllowed || row.monitoringSafeForViewer === true;
+	const effectiveHeartbeat = monitoringAllowed
+		? (run?.lastHeartbeat ?? row.lastHeartbeat)
+		: null;
+	const effectiveStreamKey =
+		aisaRow && !aisaOperatorAllowed ? null : (run?.streamKey ?? row.streamKey);
+	const effectiveEncoderIp =
+		aisaRow && !aisaOperatorAllowed ? null : (run?.encoderIp ?? row.encoderIp);
 	const effectiveStepLog = run?.stepLog ?? row.stepLog;
 	const effectiveLiveToVod = normalizeLiveToVod(
-		run?.liveToVod ?? row.liveToVod,
+		aisaRow && !aisaOperatorAllowed ? null : (run?.liveToVod ?? row.liveToVod),
 	);
 	// The DISPLAY status derives from the run — IDLE for a never-run channel
 	// (the model's own word for it). Absence of a run row means "never ran"
@@ -300,20 +419,45 @@ export function ChannelDetail({
 		: row.status === "CREATED"
 			? deriveLiveChannelStatus(null)
 			: row.status;
-	const plan = liveChannelPlanSchema.safeParse(row.plan);
-	const entries = stepLogSchema.safeParse(effectiveStepLog);
+	const plan = liveChannelPlanSchema.safeParse(
+		aisaRow && !aisaOperatorAllowed ? null : row.plan,
+	);
+	const lifecycleActions =
+		!imported && (!aisaRow || showAisaFeature) ? (
+			<RoleAccess control="live.channel.lifecycle">
+				<ChannelLifecycleActions
+					channelId={id}
+					status={row.status}
+					hasEncoding={row.bitmovinEncodingId !== null}
+					plan={plan.success ? plan.data : undefined}
+					runId={run?.id}
+					generation={row.liveEffectFenceVersion}
+					cancelRequested={run?.cancelRequested}
+					managedAisa={aisaRow}
+				/>
+			</RoleAccess>
+		) : null;
+	const entries = stepLogSchema.safeParse(
+		aisaRow && !aisaOperatorAllowed ? [] : effectiveStepLog,
+	);
 	/**
 	 * Live playback is offered only while the channel RUNS: a stopped channel's
 	 * manifest still exists but nothing appends to it, so a player would stall
 	 * at the last segment and report an error that is not one.
 	 */
+	const linksUnavailable =
+		row.playbackLinksAvailability === "unavailable" ||
+		(aisaRow && !aisaOperatorAllowed);
+	const visiblePlaybackLinks = linksUnavailable
+		? []
+		: (row.playbackLinks ?? []);
 	const playable = playableLinks({
-		links: row.playbackLinks ?? [],
+		links: visiblePlaybackLinks,
 		status: row.status === "RUNNING" ? "RUNNING" : "",
 		live: true,
 	});
 	const playableKeys = new Set(playable.map((l) => l.key));
-	const mslEdgeUrlMissing = (row.playbackLinks ?? []).some(
+	const mslEdgeUrlMissing = visiblePlaybackLinks.some(
 		(l) => l.reason?.code === "MSL_EDGE_URL_NOT_CONFIGURED",
 	);
 	const stepEntries = entries.success ? entries.data : [];
@@ -353,9 +497,17 @@ export function ChannelDetail({
 				: 0)
 		: nowMs;
 	// Display evidence never falls through to another airing's channel mirror.
-	const displayPoll = run ? run.lastHeartbeat : row.lastHeartbeat;
+	const displayPoll = monitoringAllowed
+		? run
+			? run.lastHeartbeat
+			: row.lastHeartbeat
+		: null;
+	const heartbeatReception = monitoringAllowed
+		? row.heartbeatReception
+		: undefined;
+	const originObservation = monitoringAllowed ? run?.originObservation : null;
 	const displayTelemetry = selectLiveTelemetry({
-		reception: row.heartbeatReception,
+		reception: heartbeatReception,
 		runId: run?.id ?? null,
 		poll: displayPoll,
 		nowMs: anchoredNowMs,
@@ -367,13 +519,17 @@ export function ChannelDetail({
 		anchoredNowMs,
 	);
 	const displayIngestConnected = reportedOutput.input === "CONNECTED";
+	const displayedInputConnection =
+		aisaRow && reportedOutput.input === "UNKNOWN"
+			? null
+			: displayIngestConnected;
 	//  (owner): the RUNNING preview must not start before output is
 	// confirmed — judged WITH the origin observation, exactly as the delivery
 	// status panel judges "advancing".
 	const outputConfirmed =
 		deliveryDiagnosis(
 			displayTelemetry,
-			run?.originObservation ?? null,
+			originObservation ?? null,
 			anchoredNowMs,
 		).output === "advancing";
 	/**
@@ -438,18 +594,21 @@ export function ChannelDetail({
 		(r) => r.status === "FIRED" && r.outcome === "FAILED",
 	).length;
 	// A failed refetch retains cached rows, not a verified current count.
-	// Initial pending keeps the existing neutral zero (as distinct from error).
+	// AISA's pending read is unknown; ordinary Live keeps its existing lead.
 	// Retrying a first failure clears isError before data arrives; isFetched
 	// retains that failed attempt, so this is not a new initial loading state.
 	const feedersUnavailable =
-		feeders.isError || (feeders.data === undefined && feeders.isFetched);
+		feeders.isError ||
+		(feeders.data === undefined && (feeders.isFetched || aisaRow));
 	const runningFeeders: number | "unknown" = feedersUnavailable
 		? "unknown"
 		: (feeders.data?.items ?? []).filter((s) => isActiveFeederStatus(s.status))
 				.length;
 	/* Use query isError for summary freshness. TanStack retains successful data after a failed background refresh, so data presence cannot establish that an alert count or schedule list is current. Keep stale detail visible with an explicit refresh error rather than reporting an empty or healthy state. */
-	const alertsUnavailable = alerts.isError;
-	const schedulesUnavailable = schedules.isError;
+	const alertsUnavailable =
+		alerts.isError || (aisaRow && alerts.data === undefined);
+	const schedulesUnavailable =
+		schedules.isError || (aisaRow && schedules.data === undefined);
 	const openAlerts: number | "unknown" = alertsUnavailable
 		? "unknown"
 		: (alerts.data?.open.length ?? 0);
@@ -459,7 +618,7 @@ export function ChannelDetail({
 		status: displayStatus,
 		ingestConnected: displayIngestConnected,
 		hasEncoding: row.bitmovinEncodingId !== null,
-		playableCount: playable.length,
+		playableCount: linksUnavailable ? "unknown" : playable.length,
 		armedStartCount,
 		overdueArmedCount,
 		openAlerts,
@@ -482,6 +641,9 @@ export function ChannelDetail({
 	);
 	const hasFailedStep = stepEntries.some((entry) => entry.status === "FAILED");
 	const sectionOpen = (section: LiveSectionId) =>
+		(aisaRow && section === "sec-runs") ||
+		(section === "sec-analysis" &&
+			(selectedUnavailable || Boolean(selection) || analysisDeepLink)) ||
 		PHASE_DEFAULT_OPEN[phase].includes(section) ||
 		nextAction.section === section ||
 		(section === "sec-alerts" && criticalOpenAlert) ||
@@ -510,7 +672,23 @@ export function ChannelDetail({
 	];
 
 	/** The ingest coordinates themselves — framed twice, rendered once. */
-	const ingestBody = plan.success ? (
+	const ingestBody = aisaRow ? (
+		!imported &&
+		showAisaFeature &&
+		aisaOperatorAllowed &&
+		row.bitmovinAccountId &&
+		run?.aisaAnalysisId ? (
+			<AisaLiveIngest
+				accountId={row.bitmovinAccountId}
+				analysisId={run.aisaAnalysisId}
+				encodingId={run.bitmovinEncodingId ?? undefined}
+				running={run.status === "RUNNING"}
+				embedded
+			/>
+		) : (
+			<p className="text-sm text-zinc-500">{t("aisaLive.ingestWaiting")}</p>
+		)
+	) : plan.success ? (
 		<ul className="space-y-2">
 			{ingestCoordinates(plan.data, effectiveStreamKey, effectiveEncoderIp).map(
 				(coordinate, index) => {
@@ -571,12 +749,76 @@ export function ChannelDetail({
 	 * the last-broadcast lead needs a run to summarise.
 	 */
 	const omittedSections: LiveSectionId[] = [];
+	if (aisaRow) {
+		if (!showAisaFeature) omittedSections.push("sec-ingest", "sec-danger");
+		if (imported)
+			omittedSections.push("sec-actions", "sec-ingest", "sec-danger");
+		if (!aisaOperatorAllowed)
+			omittedSections.push(
+				"sec-ingest",
+				"sec-steps",
+				"sec-danger",
+				"sec-cue",
+				"sec-esam",
+				"sec-vmaf",
+				"sec-advanced",
+			);
+	}
 	if (!qcVmafEnabled) {
 		omittedSections.push("sec-vmaf");
 	}
 	if (!run) {
 		omittedSections.push("sec-last-run");
 	}
+	const playableCount = linksUnavailable ? "unknown" : playable.length;
+	const manifestCount = linksUnavailable
+		? "unknown"
+		: visiblePlaybackLinks.length;
+	const readOnlySections = new Set<LiveSectionId>([
+		"sec-alerts",
+		"sec-alert-rules",
+		"sec-slate",
+		"sec-insertion",
+		"sec-insertion-stop",
+		"sec-schedule",
+		"sec-cue",
+		"sec-esam",
+		"sec-feeders",
+		"sec-dvr",
+		"sec-dns",
+		"sec-live-to-vod",
+		"sec-vmaf",
+		"sec-runtime-cap",
+		"sec-advanced",
+	]);
+	const unsupportedOperation = (section: LiveSectionId) => {
+		switch (section) {
+			case "sec-dvr":
+				return "aisaLive.unavailableTimeshift" as const;
+			case "sec-cue":
+				return "aisaLive.unavailableCue" as const;
+			case "sec-esam":
+				return "aisaLive.unavailableEsam" as const;
+			case "sec-vmaf":
+				return "aisaLive.unavailableVmaf" as const;
+			case "sec-live-to-vod":
+				return "aisaLive.unavailableLiveToVod" as const;
+			case "sec-runtime-cap":
+				return "aisaLive.unavailableRuntimeCap" as const;
+			case "sec-advanced":
+				return "tenant.readOnly" as const;
+			default:
+				return undefined;
+		}
+	};
+	const sectionRestriction = (section: LiveSectionId): string | undefined => {
+		const reason = aisaRow ? unsupportedOperation(section) : undefined;
+		return (imported && readOnlySections.has(section)) ||
+			reason ||
+			(aisaRow && !showAisaFeature && readOnlySections.has(section))
+			? t(imported ? "tenant.readOnly" : (reason ?? "tenant.readOnly"))
+			: undefined;
+	};
 
 	/**
 	 * Every body section, keyed by id. The layers below RENDER FROM THE TABLE
@@ -601,10 +843,45 @@ export function ChannelDetail({
 		"sec-last-run": null,
 
 		// Operations
+		"sec-analysis": showAisaFeature ? (
+			<SectionCard
+				id="sec-analysis"
+				level={3}
+				title={t("aisaLive.keyMoments")}
+				defaultOpen={sectionOpen("sec-analysis")}
+				summary={
+					knownMomentCount === null
+						? t(run ? "aisaLive.pending" : "aisaLive.featureWaiting")
+						: t("aisaLive.momentsSummary", { count: knownMomentCount })
+				}
+			>
+				{selectedUnavailable ? (
+					<p role="alert" className="text-sm text-amber-400">
+						{t("aisaLive.selectedRunUnavailable")}
+					</p>
+				) : row.bitmovinAccountId &&
+					analysisRun?.aisaAnalysisId &&
+					analysisRun.bitmovinEncodingId ? (
+					<AisaChannelAnalysisPanel
+						accountId={row.bitmovinAccountId}
+						analysisId={analysisRun.aisaAnalysisId}
+						encodingId={analysisRun.bitmovinEncodingId}
+						status={analysisRun.aisaStatus ?? undefined}
+						initialSnapshot={analysisRun.aisaSnapshot}
+						embedded
+					/>
+				) : (
+					<p role="status" className="text-sm text-zinc-400">
+						{t(run ? "aisaLive.pending" : "aisaLive.featureWaiting")}
+					</p>
+				)}
+			</SectionCard>
+		) : null,
 		"sec-alerts": (
 			<SectionCard
 				key="sec-alerts"
 				id="sec-alerts"
+				restriction={sectionRestriction("sec-alerts")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-alerts"])}
 				defaultOpen={sectionOpen("sec-alerts")}
@@ -621,7 +898,7 @@ export function ChannelDetail({
 					channelId={id}
 					mode="open"
 					fetchError={
-						alerts.isError
+						alertsUnavailable
 							? localizedCustomerError(t, alerts.error, "common.requestFailed")
 							: null
 					}
@@ -638,11 +915,20 @@ export function ChannelDetail({
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-manifests"])}
 				defaultOpen={sectionOpen("sec-manifests")}
-				summary={t("status.summaryLinks", {
-					count: (row.playbackLinks ?? []).length,
-				})}
+				summary={
+					linksUnavailable
+						? t("status.summaryUnavailable")
+						: t("status.summaryLinks", {
+								count: visiblePlaybackLinks.length,
+							})
+				}
 				tone={playable.length > 0 ? "ok" : "neutral"}
 			>
+				{linksUnavailable ? (
+					<p role="status" className="text-sm text-zinc-400">
+						{t("aisaLive.manifestsUnavailable")}
+					</p>
+				) : null}
 				{/* A running channel is the only time its manifests exist; a
 				 * stopped one leaves them behind but nothing writes segments,
 				    so the player would stall at the last one. */}
@@ -691,7 +977,7 @@ export function ChannelDetail({
 					closeLabel={t("live.manifestUrlsDiscloseClose")}
 				>
 					<ManifestList
-						links={row.playbackLinks ?? []}
+						links={visiblePlaybackLinks}
 						playableKeys={playableKeys}
 					/>
 				</Disclosure>
@@ -702,6 +988,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-slate"
 				id="sec-slate"
+				restriction={sectionRestriction("sec-slate")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-slate"])}
 				help={sectionHelp("sec-slate")}
@@ -718,6 +1005,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-insertion-stop"
 				id="sec-insertion-stop"
+				restriction={sectionRestriction("sec-insertion-stop")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-insertion-stop"])}
 				help={sectionHelp("sec-insertion-stop")}
@@ -740,6 +1028,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-schedule"
 				id="sec-schedule"
+				restriction={sectionRestriction("sec-schedule")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-schedule"])}
 				help={sectionHelp("sec-schedule")}
@@ -775,6 +1064,7 @@ export function ChannelDetail({
 				}
 			>
 				<SchedulePanel
+					allowedActions={aisaRow ? ["STOP", "SLATE_IN"] : undefined}
 					channelId={id}
 					status={row.status}
 					bitmovinAccountId={row.bitmovinAccountId}
@@ -788,6 +1078,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-insertion"
 				id="sec-insertion"
+				restriction={sectionRestriction("sec-insertion")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-insertion"])}
 				help={sectionHelp("sec-insertion")}
@@ -831,6 +1122,7 @@ export function ChannelDetail({
 				<SectionCard
 					key="sec-cue"
 					id="sec-cue"
+					restriction={sectionRestriction("sec-cue")}
 					level={3}
 					title={t(LIVE_SECTION_TITLE_KEYS["sec-cue"])}
 					defaultOpen={sectionOpen("sec-cue")}
@@ -848,6 +1140,7 @@ export function ChannelDetail({
 				<SectionCard
 					key="sec-esam"
 					id="sec-esam"
+					restriction={sectionRestriction("sec-esam")}
 					level={3}
 					title={t(LIVE_SECTION_TITLE_KEYS["sec-esam"])}
 					defaultOpen={sectionOpen("sec-esam")}
@@ -881,6 +1174,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-feeders"
 				id="sec-feeders"
+				restriction={sectionRestriction("sec-feeders")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-feeders"])}
 				help={sectionHelp("sec-feeders")}
@@ -898,13 +1192,20 @@ export function ChannelDetail({
 							: "neutral"
 				}
 			>
-				{plan.success ? (
+				{plan.success || aisaRow ? (
 					<FeederPanel
+						readOnly={
+							imported || !plan.success || (aisaRow && !aisaOperatorAllowed)
+						}
 						channelId={id}
 						channelStatus={row.status}
-						plan={plan.data}
-						streamKey={effectiveStreamKey}
-						encoderIp={effectiveEncoderIp}
+						plan={plan.success ? plan.data : undefined}
+						streamKey={
+							aisaRow && !aisaOperatorAllowed ? null : effectiveStreamKey
+						}
+						encoderIp={
+							aisaRow && !aisaOperatorAllowed ? null : effectiveEncoderIp
+						}
 						ingestConnected={ingestKnown}
 						bitmovinAccountId={row.bitmovinAccountId}
 						bitmovinEncodingId={
@@ -927,6 +1228,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-dvr"
 				id="sec-dvr"
+				restriction={sectionRestriction("sec-dvr")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-dvr"])}
 				defaultOpen={sectionOpen("sec-dvr")}
@@ -949,6 +1251,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-dns"
 				id="sec-dns"
+				restriction={sectionRestriction("sec-dns")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-dns"])}
 				defaultOpen={sectionOpen("sec-dns")}
@@ -964,6 +1267,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-live-to-vod"
 				id="sec-live-to-vod"
+				restriction={sectionRestriction("sec-live-to-vod")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-live-to-vod"])}
 				help={sectionHelp("sec-live-to-vod")}
@@ -974,11 +1278,19 @@ export function ChannelDetail({
 					channelId={id}
 					status={row.status}
 					record={effectiveLiveToVod}
-					families={row.liveToVodFamilies ?? null}
+					families={
+						aisaRow && !aisaOperatorAllowed
+							? null
+							: (row.liveToVodFamilies ?? null)
+					}
 					technicalDetailsAllowed={technicalDetailsAllowed}
 					onStarted={() => channel.refetch()}
 				/>
-				<LiveArchivePanel key={run?.id ?? "no-run"} plan={row.plan} run={run} />
+				<LiveArchivePanel
+					key={run?.id ?? "no-run"}
+					plan={aisaRow && !aisaOperatorAllowed ? null : row.plan}
+					run={aisaRow && !aisaOperatorAllowed ? null : run}
+				/>
 			</SectionCard>
 		),
 		"sec-vmaf": (
@@ -986,6 +1298,7 @@ export function ChannelDetail({
 				<SectionCard
 					key="sec-vmaf"
 					id="sec-vmaf"
+					restriction={sectionRestriction("sec-vmaf")}
 					level={3}
 					title={t(LIVE_SECTION_TITLE_KEYS["sec-vmaf"])}
 					help={sectionHelp("sec-vmaf")}
@@ -1009,30 +1322,46 @@ export function ChannelDetail({
 				onOpenChange={setHeartbeatLogOpen}
 			>
 				{/* Push receipts first; separately retained Poll history / ADMIN export. */}
-				<HeartbeatLogPanel
-					key={id}
-					channelId={id}
-					currentRunId={run?.id ?? null}
-					currentRunStatus={run?.status}
-					currentRunActive={run?.status === "RUNNING"}
-					open={heartbeatLogOpen}
-				/>
+				{!aisaRow || aisaOperatorAllowed ? (
+					<HeartbeatLogPanel
+						key={id}
+						channelId={id}
+						currentRunId={run?.id ?? null}
+						currentRunStatus={run?.status}
+						currentRunActive={run?.status === "RUNNING"}
+						open={heartbeatLogOpen}
+					/>
+				) : (
+					<p className="mt-2 text-sm text-zinc-500">
+						{t("heartbeatLog.operatorOnly")}
+					</p>
+				)}
 			</SectionCard>
 		),
 		"sec-alert-rules": (
 			<SectionCard
 				key="sec-alert-rules"
 				id="sec-alert-rules"
+				restriction={sectionRestriction("sec-alert-rules")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-alert-rules"])}
 				defaultOpen={sectionOpen("sec-alert-rules")}
-				summary={t("status.summaryResolvedAlerts", {
-					count: (alerts.data?.history ?? []).length,
-				})}
+				summary={
+					alertsUnavailable
+						? t("status.summaryUnavailable")
+						: t("status.summaryResolvedAlerts", {
+								count: (alerts.data?.history ?? []).length,
+							})
+				}
 			>
 				<AlertPanel
 					channelId={id}
 					mode="manage"
+					fetchError={
+						alertsUnavailable
+							? localizedCustomerError(t, alerts.error, "common.requestFailed")
+							: null
+					}
 					open={alerts.data?.open ?? []}
 					history={alerts.data?.history ?? []}
 					onChanged={() => alerts.refetch()}
@@ -1054,6 +1383,8 @@ export function ChannelDetail({
 					channelId={id}
 					currentRunId={run?.id ?? null}
 					currentRunStatus={run?.status}
+					selectedAisaRunId={showAisaFeature ? analysisRun?.id : undefined}
+					onSelectAisaRun={showAisaFeature ? selectAisaRun : undefined}
 				/>
 			</SectionCard>
 		),
@@ -1114,6 +1445,7 @@ export function ChannelDetail({
 			<SectionCard
 				key="sec-runtime-cap"
 				id="sec-runtime-cap"
+				restriction={sectionRestriction("sec-runtime-cap")}
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-runtime-cap"])}
 				help={sectionHelp("sec-runtime-cap")}
@@ -1132,6 +1464,11 @@ export function ChannelDetail({
 					bitmovinAccountId={row.bitmovinAccountId}
 					onChannelChanged={() => channel.refetch()}
 				/>
+				{aisaRow ? (
+					<p className="text-xs text-zinc-400">
+						{t("aisaLive.unavailableAutoShutdown")}
+					</p>
+				) : null}
 				<AutoShutdownPanel channelId={id} runId={run?.id} status={row.status} />
 			</SectionCard>
 		),
@@ -1140,6 +1477,7 @@ export function ChannelDetail({
 				<SectionCard
 					key="sec-advanced"
 					id="sec-advanced"
+					restriction={sectionRestriction("sec-advanced")}
 					level={3}
 					title={t(LIVE_SECTION_TITLE_KEYS["sec-advanced"])}
 					defaultOpen={sectionOpen("sec-advanced")}
@@ -1148,7 +1486,7 @@ export function ChannelDetail({
 						{/* Save a reusable template; copy-and-edit is in the header. */}
 						<SaveAsTemplateButton
 							kind="LIVE_PLAN"
-							plan={row.plan}
+							plan={aisaRow && !aisaOperatorAllowed ? null : row.plan}
 							defaultName={row.name}
 						/>
 					</div>
@@ -1175,7 +1513,9 @@ export function ChannelDetail({
 		),
 	};
 
-	const bodyLayers = liveBodyLayers(phase, omittedSections);
+	const bodyLayers = liveBodyLayers(phase, omittedSections, {
+		keyMoments: showAisaFeature,
+	});
 
 	return (
 		<LiveAnnouncer>
@@ -1198,8 +1538,17 @@ export function ChannelDetail({
 				}}
 			/>
 			<section className="space-y-4">
+				<Link
+					href="/live"
+					className="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-emerald-400"
+				>
+					<span aria-hidden="true">←</span>
+					{t("live.title")}
+				</Link>
 				<header className="flex flex-wrap items-center gap-3">
-					<h1 className="font-semibold text-xl text-zinc-50">{row.name}</h1>
+					<h1 className="min-w-0 break-words font-semibold text-xl text-zinc-50">
+						{row.name}
+					</h1>
 					<LiveStatusBadge
 						status={displayStatus}
 						providerLifecycle={providerLifecycle}
@@ -1209,7 +1558,10 @@ export function ChannelDetail({
 							{plan.data.bitmovin.cloudRegion} · {plan.data.liveInput.kind}
 						</span>
 					) : null}
-					<DuplicateChannelButton channelId={id} />
+					{!imported && (!aisaRow || showAisaFeature) ? (
+						<DuplicateChannelButton channelId={id} />
+					) : null}
+					{showAisaFeature ? <Badge>{t("aisaLive.featureBadge")}</Badge> : null}
 					{/*
 					 * the lifecycle controls, MOVED here — not copied. They
 					 * used to share a button row with Duplicate and Delete inside the
@@ -1219,30 +1571,27 @@ export function ChannelDetail({
 					 * section on the page. Copy settings is a separate header action. `sec-actions`
 					 * keeps its id because core's `liveNextAction` points at it.
 					 */}
-					<section
-						id="sec-actions"
-						aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
-						// : the ONE jump target with no heading of its own, and
-						// the busiest — five of the twelve next-action codes point here.
-						// `focusLiveSection` falls back to the region itself, and that
-						// fallback is a silent no-op without this tabindex.
-						tabIndex={-1}
-						className="ml-auto scroll-mt-6 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
-					>
-						<RoleAccess control="live.channel.lifecycle">
-							<ChannelLifecycleActions
-								channelId={id}
-								status={row.status}
-								hasEncoding={row.bitmovinEncodingId !== null}
-								plan={plan.success ? plan.data : undefined}
-								runId={run?.id}
-								generation={row.liveEffectFenceVersion}
-								cancelRequested={run?.cancelRequested}
-							/>
-						</RoleAccess>
-					</section>
+					{!imported && (!aisaRow || showAisaFeature) ? (
+						<section
+							id="sec-actions"
+							aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
+							// : the ONE jump target with no heading of its own, and
+							// the busiest — five of the twelve next-action codes point here.
+							// `focusLiveSection` falls back to the region itself, and that
+							// fallback is a silent no-op without this tabindex.
+							tabIndex={-1}
+							className="ml-auto flex scroll-mt-6 flex-wrap items-center gap-2 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
+						>
+							{lifecycleActions}
+							{showAisaFeature ? (
+								<SectionHelp
+									title={t("live.actions")}
+									help={t("aisaLive.managedActionsHint")}
+								/>
+							) : null}
+						</section>
+					) : null}
 				</header>
-
 				{/* : WHERE in the encoder lifecycle the channel is. */}
 				<LifecycleStrip
 					// review-260 127-A12 (folded here): ONE status source — the
@@ -1250,7 +1599,7 @@ export function ChannelDetail({
 					// the derived word for never-ran, which the strip's stages
 					// spell CREATED.
 					status={displayStatus === "IDLE" ? "CREATED" : displayStatus}
-					ingestConnected={displayIngestConnected}
+					ingestConnected={displayedInputConnection}
 					hasEncoding={row.bitmovinEncodingId !== null}
 					hasError={Boolean(row.error)}
 					// : the provider's own view — amber while it cannot be
@@ -1268,12 +1617,20 @@ export function ChannelDetail({
 				{/*  layer 1: the one thing to do next. : taking
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
-				<NextActionPanel action={nextAction} onJump={jumpToLiveSection} />
+				<NextActionPanel
+					action={nextAction}
+					readOnly={imported}
+					inputUnconfirmed={
+						displayedInputConnection === null &&
+						nextAction.code === "CONNECT_INPUT"
+					}
+					onJump={jumpToLiveSection}
+				/>
 
 				{/* Layer 2: the monitoring line. */}
 				<StatusStrip
 					openAlerts={openAlerts}
-					playableCount={playable.length}
+					playableCount={playableCount}
 					feederCount={runningFeeders}
 					// : the next armed row, as a countdown, in the header —
 					// a healthy RUNNING channel's next action is ON_AIR, so nothing
@@ -1313,7 +1670,8 @@ export function ChannelDetail({
 				/>
 
 				{/* The contextual lead follows the phase: preparation and provisioning expose ingest coordinates and progress; StatusStrip leads while running; finished broadcasts lead with the last result. */}
-				{phase === "prepare" || phase === "starting" ? (
+				{(phase === "prepare" || phase === "starting") &&
+				!omittedSections.includes("sec-ingest") ? (
 					<div className="space-y-2" data-phase-lead={phase}>
 						{phase === "starting" ? (
 							<p className="text-xs text-zinc-400">
@@ -1348,19 +1706,34 @@ export function ChannelDetail({
 				{phase !== "prepare" ? (
 					<DeliveryStatusPanel
 						channelId={id}
-						run={run}
+						run={
+							run
+								? {
+										id: run.id,
+										providerStatus: run.providerStatus,
+										providerStatusObservedAt: run.providerStatusObservedAt,
+										providerUnknownSince: run.providerUnknownSince,
+										providerTerminalAt: run.providerTerminalAt,
+										originObservation: originObservation ?? null,
+									}
+								: null
+						}
 						mode={phase === "finished" ? "finished" : "live"}
 						phase={phase}
 						lastHeartbeat={displayPoll}
-						heartbeatReception={row.heartbeatReception}
+						warningEvidenceAvailable={
+							!aisaRow ||
+							(aisaOperatorAllowed && row.monitoringSafeForViewer !== true)
+						}
+						heartbeatReception={heartbeatReception}
 						openAlerts={
 							alerts.isPending || alerts.isError
 								? "unknown"
 								: (alerts.data?.open ?? [])
 						}
 						alertHistory={alerts.data?.history ?? []}
-						playableCount={playable.length}
-						manifestCount={(row.playbackLinks ?? []).length}
+						playableCount={playableCount}
+						manifestCount={manifestCount}
 						region={plan.success ? plan.data.bitmovin.cloudRegion : null}
 						encoderIp={effectiveEncoderIp}
 						channelStatus={row.status}

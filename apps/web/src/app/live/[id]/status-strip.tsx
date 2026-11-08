@@ -41,7 +41,7 @@ export function StatusStrip({
 	 * for a list it had never read.
 	 */
 	openAlerts: number | "unknown";
-	playableCount: number;
+	playableCount: number | "unknown";
 	/** Failed reads, including stale-data refetch failures, are not zero. */
 	feederCount: number | "unknown";
 	/**
@@ -202,8 +202,16 @@ export function StatusStrip({
 		{
 			key: "playable",
 			label: t("status.playable"),
-			value: String(playableCount),
-			tone: playableCount > 0 ? "ok" : "neutral",
+			value:
+				playableCount === "unknown"
+					? t("status.unknown")
+					: String(playableCount),
+			tone:
+				playableCount === "unknown"
+					? "warn"
+					: playableCount > 0
+						? "ok"
+						: "neutral",
 		},
 		{
 			key: "feeders",

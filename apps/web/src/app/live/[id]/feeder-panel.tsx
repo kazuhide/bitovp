@@ -107,10 +107,11 @@ export function FeederPanel({
 	bitmovinEncodingPending = false,
 	preselectedSource,
 	embeddedForm = false,
+	readOnly = false,
 }: {
 	channelId: string;
 	channelStatus: string;
-	plan: LiveChannelPlan;
+	plan?: LiveChannelPlan;
 	streamKey: string | null;
 	encoderIp: string | null;
 	/** : encoder-side ingest state, for the pushing-not-bound banner. */
@@ -133,18 +134,20 @@ export function FeederPanel({
 	preselectedSource?: FeederSource;
 	/** Show the shared form directly, without its channel-detail disclosure. */
 	embeddedForm?: boolean;
+	/** Keep session monitoring available when authoring coordinates are withheld. */
+	readOnly?: boolean;
 }) {
 	const { t } = useT();
 	const queryClient = useQueryClient();
 	const srtListenerPort =
-		plan.liveInput.kind === "SRT" && plan.liveInput.mode === "LISTENER"
+		plan?.liveInput.kind === "SRT" && plan.liveInput.mode === "LISTENER"
 			? plan.liveInput.port
 			: undefined;
 	// A redundant input's points carry their OWN application name and stream key
 	// : `rtmp://<ip>/live` + the channel key is the simple-RTMP
 	// convention and reaches nothing on an encoder listening at `liveA/primaryFeed`.
 	const redundant =
-		plan.liveInput.kind === "REDUNDANT_RTMP" ? plan.liveInput : undefined;
+		plan?.liveInput.kind === "REDUNDANT_RTMP" ? plan.liveInput : undefined;
 	const prefill = feederTargetFields({
 		encoderIp,
 		streamKey,
@@ -154,7 +157,8 @@ export function FeederPanel({
 	});
 
 	const [showForm, setShowForm] = useState(false);
-	const formOpen = embeddedForm || showForm;
+	const mayAuthor = !readOnly && plan !== undefined;
+	const formOpen = mayAuthor && (embeddedForm || showForm);
 	const [source, setSource] = useState<FeederSource>({
 		credentialId: "",
 		bucket: "",
@@ -286,7 +290,7 @@ export function FeederPanel({
 	// assigned-to-this-encoding LIST; the type filter keeps account-level
 	// RESERVED keys out of that arm entirely.
 	const staticPoints =
-		plan.liveInput.kind === "REDUNDANT_RTMP"
+		plan?.liveInput.kind === "REDUNDANT_RTMP"
 			? (plan.liveInput.staticIngestPoints ?? [])
 			: [];
 	const staticIngest = staticPoints.length > 0;
@@ -372,7 +376,7 @@ export function FeederPanel({
 
 	return (
 		<div className="mt-2 space-y-3">
-			{!embeddedForm ? (
+			{!embeddedForm && mayAuthor ? (
 				<div className="flex items-center justify-end gap-3">
 					{/* This toggle is the pattern the rest of the
 					 * page now copies (`Disclosure`), and it was the one missing the
@@ -729,7 +733,7 @@ export function FeederPanel({
 												<Button
 													variant="destructive"
 													size="sm"
-													disabled={stop.isPending}
+													disabled={!mayAuthor || stop.isPending}
 													onClick={() => setConfirmingStopId(session.id)}
 												>
 													{t("feeder.stop")}
@@ -756,11 +760,11 @@ export function FeederPanel({
 
 			<RoleAccess control="live.channel.feeder">
 				<StopFeederSessionDialog
-					open={confirmingStopId !== null}
+					open={mayAuthor && confirmingStopId !== null}
 					stopping={stop.isPending}
 					onCancel={() => setConfirmingStopId(null)}
 					onConfirm={() => {
-						if (confirmingStopId !== null) {
+						if (mayAuthor && confirmingStopId !== null) {
 							stop.mutate(confirmingStopId);
 						}
 					}}

@@ -1,6 +1,7 @@
 import {
 	createLivePresetSchema,
 	createPlanPresetSchema,
+	isAisaManagedLivePlan,
 	planHasErrors,
 	templateKindSchema,
 	validateLiveChannel,
@@ -8,6 +9,7 @@ import {
 } from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import {
 	jsonError,
@@ -38,9 +40,12 @@ export async function GET(req: Request) {
 	}
 	try {
 		const ctx = await getServerContext();
+		const filterAisa =
+			kind.data === "LIVE_PLAN" && !aisaLiveAccessAllowed(ctx.tenant);
 		const presets = await ctx.prisma.preset.findMany({
 			where: { kind: kind.data },
 			select: {
+				...(filterAisa ? { body: true } : {}),
 				id: true,
 				name: true,
 				description: true,
@@ -60,7 +65,12 @@ export async function GET(req: Request) {
 			},
 			orderBy: { createdAt: "desc" },
 		});
-		return NextResponse.json(presets);
+		return NextResponse.json(
+			presets
+				.filter((preset) => !filterAisa || !isAisaManagedLivePlan(preset.body))
+				.map(({ body: _body, ...summary }) => summary),
+			{ headers: { "Cache-Control": "private, no-store" } },
+		);
 	} catch (err) {
 		return routeError(err);
 	}
@@ -90,6 +100,11 @@ export async function POST(req: Request) {
 		}
 		try {
 			const ctx = await getServerContext();
+			if (
+				isAisaManagedLivePlan(parsedLive.data.plan) &&
+				!aisaLiveAccessAllowed(ctx.tenant)
+			)
+				return jsonError(404, "Not found");
 			const preset = await ctx.prisma.preset.create({
 				data: {
 					kind: "LIVE_PLAN",

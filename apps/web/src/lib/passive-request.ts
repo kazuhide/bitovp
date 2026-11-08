@@ -2,7 +2,7 @@ export const EXPECTED_ORGANIZATION_QUERY = "expectedOrganizationId";
 const UUID = "[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}";
 const ORGANIZATION_ID = new RegExp(`^${UUID}$`);
 const PASSIVE_PATH = new RegExp(
-	`^/api/(?:library/(?:(?:sources|media-versions|artifacts|image-assets)/${UUID}/media|artifacts/${UUID}/download)|vmaf-jobs/${UUID}/preview|encoding-jobs/${UUID}/qc-report)$`,
+	`^/api/(?:library/(?:(?:sources|media-versions|artifacts|image-assets)/${UUID}/media|artifacts/${UUID}/download)|vmaf-jobs/${UUID}/preview|encoding-jobs/${UUID}/qc-report|live/analyses/${UUID}/recording(?:/media)?)$`,
 );
 const LIBRARY_MEDIA_PATH = new RegExp(`^/api/library/sources/${UUID}/media$`);
 

@@ -138,6 +138,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
+			mutation: "encoding",
 			subject: "Registering insertable content",
 		});
 		if (!resolved.ok) {
@@ -192,6 +193,15 @@ export async function POST(req: Request, { params }: RouteParams) {
 			(preparation.action === "NORMALIZE" ||
 				preparation.action === "WAIT_FOR_INPUT")
 		) {
+			// Normalization jobs currently bind only a channel, so they cannot
+			// safely register into an AISA airing that may have been replaced.
+			if (resolved.aisaManaged) {
+				return jsonError(
+					409,
+					"Use an MPEG-TS clip compatible with the current live input",
+					customerErrorDetails("AISA_CONTENT_REQUIRES_COMPATIBLE_CLIP"),
+				);
+			}
 			const candidate = preflight.candidate ?? content.source;
 			// The worker must decrypt the credential to read and write the
 			// object; fail here rather than leave a row QUEUED forever behind a

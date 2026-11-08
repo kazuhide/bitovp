@@ -26,6 +26,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { resolveLiveEncoding } from "@/lib/server/live-channel-encoding";
+import { rejectImportedAisaMutation } from "@/lib/server/live-channel-mutation-guard";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -112,7 +113,12 @@ export async function POST(req: Request, { params }: RouteParams) {
 			const [replayChannel, replayRun] = await Promise.all([
 				ctx.prisma.liveChannel.findUnique({
 					where: { id },
-					select: { bitmovinAccountId: true, bitmovinEncodingId: true },
+					select: {
+						bitmovinAccountId: true,
+						bitmovinEncodingId: true,
+						origin: true,
+						plan: true,
+					},
 				}),
 				ctx.prisma.liveChannelRun.findFirst({
 					where: { liveChannelId: id },
@@ -134,6 +140,10 @@ export async function POST(req: Request, { params }: RouteParams) {
 					customerErrorDetails("CONTENT_REQUEST_CONFLICT"),
 				);
 			}
+			if (replayChannel) {
+				const refusal = rejectImportedAisaMutation(replayChannel);
+				if (refusal) return refusal;
+			}
 			if (existing.state === "ACKED") {
 				return NextResponse.json({
 					...(existing.providerResultId
@@ -150,6 +160,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
+			mutation: "encoding",
 			// review-228 I6: the #95 fix gated the SCHEDULED slate path on a
 			// proven-connected ingest; this manual path could still insert at
 			// Ingest waiting: a 200 response does not prove content rendered; the incident through

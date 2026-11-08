@@ -57,6 +57,22 @@ describe("passive request bindings", () => {
 		).toEqual({ kind: "invalid" });
 		expect(passiveRequestPath(path, "POST")).toBe(false);
 	});
+	it.each([
+		"",
+		"/media",
+	])("binds AISA recording%s reads to the document organization", (suffix) => {
+		const path = `/api/live/analyses/00000000-0000-4000-8000-000000000003/recording${suffix}`;
+		const value = bindPassiveRequestUrl(
+			`${path}?bitmovinAccountId=${ORG}&encodingId=${OTHER}`,
+			ORG,
+		);
+		expect(passiveRequestPath(path, "GET")).toBe(true);
+		expect(passiveRequestPath(path, "HEAD")).toBe(true);
+		expect(passiveRequestPath(`${path}/extra`, "GET")).toBe(false);
+		expect(
+			passiveOrganizationBinding(new URL(value, "http://localhost"), "GET"),
+		).toEqual({ kind: "bound", organizationId: ORG });
+	});
 	it("adds a non-secret organization assertion and retains exact object-key identity", () => {
 		const value = bindPassiveRequestUrl(URL_PATH, ORG);
 		expect(value).toBe(`${URL_PATH}&expectedOrganizationId=${ORG}`);

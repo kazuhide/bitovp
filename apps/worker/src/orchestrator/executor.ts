@@ -224,6 +224,9 @@ export async function executeStep(
 		case "CAPTURE_PER_TITLE_RESULTS":
 			return executeEncodingStep(op, ec);
 		case "CREATE_INPUT_HLS_LIVE":
+		case "CREATE_AISA_LIVE_ANALYSIS":
+		case "RESOLVE_AISA_LIVE_ENCODING":
+		case "START_AISA_LIVE_ANALYSIS":
 		case "START_LIVE_ENCODING":
 		case "AWAIT_LIVE_RUNNING":
 		case "ESAM_MEDIA_POINT":

@@ -41,6 +41,7 @@ function statusTone(
 export function HeartbeatPanel({
 	lastHeartbeat,
 	nowMs,
+	warningEvidenceAvailable = true,
 }: {
 	lastHeartbeat: unknown;
 	/**
@@ -51,6 +52,8 @@ export function HeartbeatPanel({
 	 * new mount site cannot fall back to `Date.now` by omission.
 	 */
 	nowMs: number;
+	/** Filtered public telemetry does not establish an empty event history. */
+	warningEvidenceAvailable?: boolean;
 }) {
 	const { t } = useT();
 	const view = parseHeartbeat(lastHeartbeat);
@@ -211,7 +214,9 @@ export function HeartbeatPanel({
 				<h4 className="font-medium text-xs text-zinc-300">
 					{t("heartbeat.events")}
 				</h4>
-				{view.events.length > 0 ? (
+				{!warningEvidenceAvailable ? (
+					<p className="mt-1 text-xs text-zinc-500">{t("status.unknown")}</p>
+				) : view.events.length > 0 ? (
 					<ul className="mt-1 space-y-1">
 						{view.events.map((event, index) => (
 							<li

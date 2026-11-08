@@ -181,6 +181,7 @@ export function SchedulePanel({
 	programStartAt,
 	programEndAt,
 	ingestConnected,
+	allowedActions,
 }: {
 	channelId: string;
 	status: LiveChannelStatus;
@@ -195,6 +196,8 @@ export function SchedulePanel({
 	 * discover it as a black stream at air time (the 2026-08-15 incident).
 	 */
 	ingestConnected?: boolean;
+	/** A managed integration may expose only a subset of normal scheduling. */
+	allowedActions?: readonly LiveScheduleActionKind[];
 }) {
 	const { t } = useT();
 	/**
@@ -219,7 +222,11 @@ export function SchedulePanel({
 	const contentId = useId();
 	const durationId = useId();
 
-	const [action, setAction] = useState<LiveScheduleActionKind>("START");
+	const availableActions: readonly LiveScheduleActionKind[] =
+		allowedActions ?? ["START", "STOP", "SLATE_IN"];
+	const [action, setAction] = useState<LiveScheduleActionKind>(
+		availableActions[0] ?? "START",
+	);
 	const [fireAt, setFireAt] = useState("");
 	// #160 PR2: intended air time — arms the not-RUNNING-by-deadline alert.
 	const [airAt, setAirAt] = useState("");
@@ -327,6 +334,7 @@ export function SchedulePanel({
 	});
 
 	const submitArm = () => {
+		if (!availableActions.includes(action)) return;
 		setIssues([]);
 		setLeadResolution(null);
 		const autoLeadActive = action === "START" && autoLead && airAt !== "";
@@ -410,6 +418,11 @@ export function SchedulePanel({
 
 	return (
 		<div className="mt-2 space-y-4">
+			{!availableActions.includes("START") ? (
+				<p className="text-xs text-zinc-400">
+					{t("aisaLive.scheduledStartUnavailable")}
+				</p>
+			) : null}
 			<p className="text-xs text-zinc-500">{t("schedule.explainer")}</p>
 
 			{/* : an armed slate cannot display without a CONNECTED
@@ -564,9 +577,11 @@ export function SchedulePanel({
 									}
 									className={SELECT_CLASS}
 								>
-									<option value="START">{actionLabel("START")}</option>
-									<option value="STOP">{actionLabel("STOP")}</option>
-									<option value="SLATE_IN">{actionLabel("SLATE_IN")}</option>
+									{availableActions.map((available) => (
+										<option key={available} value={available}>
+											{actionLabel(available)}
+										</option>
+									))}
 								</select>
 							</Field>
 							<Field label={t("schedule.fireAt")} htmlFor={fireAtId}>

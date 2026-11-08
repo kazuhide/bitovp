@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+	type AisaNeverStartedProof,
+	aisaCreateNotDispatched,
+	aisaLiveFinalization,
+	aisaLiveNeverStarted,
+	aisaStartNotDispatched,
 	classifyProviderLifecycle,
 	deriveFeederRtmpTarget,
 	deriveLiveToVodStatus,
@@ -7,6 +12,7 @@ import {
 	FEEDER_MAX_ACTIVE_SESSIONS,
 	type FeederJob,
 	feederOccupancyWhere,
+	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	isStaleGeneration,
 	joinManifestPath,
@@ -108,6 +114,11 @@ import {
 	transitionScheduleToStale,
 } from "../scheduler/schedule-outcome";
 import type { SlatePreparer } from "../slate/prepare";
+import {
+	type AisaLiveControl,
+	AisaLiveFinalizationPendingError,
+	AisaLiveIdentityError,
+} from "./aisa-live-ops";
 import { executeStep, type ResolvedCredential } from "./executor";
 import { liveFallbackAdmissionError } from "./live-fallback-admission";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
@@ -215,6 +226,7 @@ export type LiveChannelDeps = {
 		stamp?: CreateStamp;
 		monitoringSignal?: AbortSignal;
 		startControl?: StartRetryControl;
+		aisaLive?: AisaLiveControl;
 	}): SdkOps;
 	sleep(ms: number): Promise<void>;
 	pollIntervalMs: number;
@@ -870,12 +882,83 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		}
 		const account = await deps.revealBitmovinAccount(accountId);
 		monitoringSignal?.throwIfAborted();
+		let aisaLive: AisaLiveControl | undefined;
+		if (isAisaManagedLivePlan(row.plan)) {
+			const run = await deps.prisma.liveChannelRun.findFirst({
+				where: { liveChannelId: row.id },
+				orderBy: { seq: "desc" },
+			});
+			if (
+				!run?.aisaAnalysisId ||
+				run.bitmovinEncodingId !== row.bitmovinEncodingId
+			)
+				throw new ChannelStateError("AISA Live run binding is unavailable");
+			const analysisId = run.aisaAnalysisId;
+			aisaLive = {
+				runId: () => run.id,
+				analysisId: () => analysisId,
+				encodingId: () => run.bitmovinEncodingId ?? undefined,
+				sleep: deps.sleep,
+				onObservation: async ({ analysis, snapshot, finalization }) => {
+					if (
+						analysis.analysisId !== analysisId ||
+						analysis.encodingId !== run.bitmovinEncodingId
+					)
+						throw new AisaLiveIdentityError();
+					await deps.prisma.liveChannelRun.updateMany({
+						where: {
+							id: run.id,
+							liveChannelId: row.id,
+							aisaAnalysisId: analysisId,
+							bitmovinEncodingId: analysis.encodingId,
+						},
+						data: {
+							aisaStatus: analysis.status,
+							aisaObservedAt: new Date(deps.now()),
+							...(finalization
+								? { aisaFinalization: finalization as Prisma.InputJsonValue }
+								: {}),
+							...(snapshot
+								? { aisaSnapshot: snapshot as Prisma.InputJsonValue }
+								: {}),
+						},
+					});
+				},
+			};
+		}
 		return deps.makeSdk({
 			apiKey: account.apiKey,
 			tenantOrgId: account.tenantOrgId,
 			bitmovinAccountId: accountId,
 			...(monitoringSignal ? { monitoringSignal } : {}),
 			...(manifestStamp ? { stamp: manifestStamp } : {}),
+			...(aisaLive ? { aisaLive } : {}),
+			...(aisaLive
+				? {
+						startControl: {
+							check: async () => {
+								const [current, latest] = await Promise.all([
+									deps.prisma.liveChannel.findUnique({ where: { id: row.id } }),
+									deps.prisma.liveChannelRun.findFirst({
+										where: { liveChannelId: row.id },
+										orderBy: { seq: "desc" },
+									}),
+								]);
+								if (
+									!current ||
+									current.bitmovinEncodingId !== row.bitmovinEncodingId ||
+									current.liveEffectFenceVersion !==
+										row.liveEffectFenceVersion ||
+									latest?.id !== aisaLive.runId()
+								)
+									throw new ChannelStateError(
+										"AISA Live run ownership changed",
+									);
+							},
+							sleep: deps.sleep,
+						},
+					}
+				: {}),
 		});
 	}
 
@@ -911,7 +994,11 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		}
 		try {
 			for (const entry of stepLogSchema.parse(row.stepLog)) {
-				if (entry.kind === "CREATE_ENCODING" && entry.resourceId) {
+				if (
+					(entry.kind === "CREATE_ENCODING" ||
+						entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+					entry.resourceId
+				) {
 					ids.add(entry.resourceId);
 				}
 			}
@@ -1285,13 +1372,46 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				if (unconfirmed) {
 					console.error(`[live-channel] ${liveChannelId}: ${unconfirmed}`);
 				}
+				let aisaFailure = false;
+				if (isAisaManagedLivePlan(row.plan)) {
+					const run = await deps.prisma.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+					});
+					if (
+						!run?.aisaAnalysisId ||
+						!run.bitmovinEncodingId ||
+						run.bitmovinEncodingId !== row.bitmovinEncodingId
+					)
+						throw new AisaLiveIdentityError();
+					const providerStatus = terminalReadbacks.get(run.bitmovinEncodingId);
+					const finalization = aisaLiveFinalization({ ...run, providerStatus });
+					if (finalization === "PENDING" || finalization === "UNBOUND")
+						throw new AisaLiveFinalizationPendingError();
+					aisaFailure = finalization === "FAILED";
+					await deps.prisma.liveChannelRun.updateMany({
+						where: {
+							id: run.id,
+							bitmovinEncodingId: run.bitmovinEncodingId,
+							aisaAnalysisId: run.aisaAnalysisId,
+						},
+						data: {
+							providerStatus,
+							providerStatusObservedAt: new Date(deps.now()),
+							cancelRequested: false,
+						},
+					});
+				}
+				const settledStatus = aisaFailure && !unconfirmed ? "ERROR" : "STOPPED";
+				const settledError =
+					unconfirmed ?? (aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null);
 				await deps.prisma.liveChannel.update({
 					where: { id: liveChannelId },
-					data: { status: "STOPPED", error: unconfirmed },
+					data: { status: settledStatus, error: settledError },
 				});
 				await runs.mirror(liveChannelId, {
-					status: "STOPPED",
-					error: unconfirmed,
+					status: settledStatus,
+					error: settledError,
 				});
 				/**
 				 * what the SCHEDULED stop delivered.
@@ -1313,7 +1433,11 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						? "PROVIDER_TERMINAL"
 						: "PROVIDER_STATUS_UNKNOWN",
 				);
-				await emitChannel("CHANNEL_STOPPED", liveChannelId);
+				await emitChannel(
+					aisaFailure ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
+					liveChannelId,
+					aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : undefined,
+				);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : "stop failed";
 				// Once the provider call was attempted, a thrown response does not
@@ -4528,6 +4652,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			now: new Date(deps.now()),
 			expiresAt: new Date(Date.parse(deps.now()) + 20 * 60_000),
 			allowedChannelStatuses,
+			...(expectedAction === "STOP" ? { resumeAisaFinalization: true } : {}),
 			...(options.supersedeOpen ? { supersedeOpen: true } : {}),
 		});
 		if (begun.kind === "EXECUTE") {
@@ -4575,7 +4700,17 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				at: new Date(deps.now()),
 			});
 			if (resolved.kind === "RESOLVED") {
-				return { kind: "RETURN", result: effectResult(job, "STOPPED") };
+				const channel = await deps.prisma.liveChannel.findUnique({
+					where: { id: job.liveChannelId },
+					select: { status: true },
+				});
+				return {
+					kind: "RETURN",
+					result: effectResult(
+						job,
+						channel?.status === "ERROR" ? "ERROR" : "STOPPED",
+					),
+				};
 			}
 			throw new Error(`LIVE_STOP_RECONCILIATION_BLOCKED: ${resolved.reason}`);
 		}
@@ -4627,6 +4762,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			fence.claim,
 			`${reason}; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry`,
 		);
+		if (err instanceof AisaLiveFinalizationPendingError) throw err;
 		if (job.effect?.scheduleId) {
 			await recordScheduleOutcomeBestEffort(
 				deps.prisma,
@@ -4678,6 +4814,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// record; the extras that are run facts ride along, the rest (e.g.
 		// bitmovinAccountId) stay channel-only.
 		const runExtra: Record<string, unknown> = {};
+		const aisaCreate = entries.find(
+			(entry) => entry.kind === "CREATE_AISA_LIVE_ANALYSIS" && entry.resourceId,
+		);
+		if (aisaCreate?.resourceId) runExtra.aisaAnalysisId = aisaCreate.resourceId;
 		for (const key of [
 			"status",
 			"error",
@@ -4936,6 +5076,115 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				throw new ProvisionLeaseLostError(liveChannelId);
 			}
 		};
+		/** Terminal cancellation and removal of its durable wake flag are one fact. */
+		const commitAisaCancellation = async (
+			entries: StepLogEntry[],
+			runId: string,
+			outcome: {
+				status: "STOPPED" | "ERROR";
+				error: string | null;
+				encodingId?: string;
+			},
+			proof?: AisaNeverStartedProof,
+		) =>
+			withFenceWrite(async () => {
+				const token = heldAt;
+				if (!token) throw new ProvisionLeaseLostError(liveChannelId);
+				await deps.prisma.$transaction(async (tx) => {
+					await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+					const channel = await tx.liveChannel.findUnique({
+						where: { id: liveChannelId },
+					});
+					const run = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+					});
+					if (
+						!channel ||
+						channel.provisionClaimedAt?.getTime() !== token.getTime() ||
+						channel.liveEffectFenceVersion !== row.liveEffectFenceVersion ||
+						run?.id !== runId ||
+						!run.cancelRequested
+					)
+						throw new ProvisionLeaseLostError(liveChannelId);
+					const createdProof =
+						proof?.basis === "BOUND_CREATED_NOT_STARTED" ? proof : undefined;
+					const prospective = {
+						...run,
+						stepLog: entries,
+						...(proof ? { aisaFinalization: proof } : {}),
+						...(createdProof
+							? { providerStatus: "CREATED", aisaStatus: "CREATED" }
+							: {}),
+						...(outcome.encodingId
+							? { encoderStoppedConfirmedFor: outcome.encodingId }
+							: {}),
+					};
+					if (
+						proof
+							? !aisaLiveNeverStarted(prospective, {
+									...channel,
+									...(outcome.encodingId
+										? { encoderStoppedConfirmedFor: outcome.encodingId }
+										: {}),
+								})
+							: !["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run))
+					)
+						throw new AisaLiveFinalizationPendingError();
+					const channelWrite = await tx.liveChannel.updateMany({
+						where: {
+							id: liveChannelId,
+							provisionClaimedAt: token,
+							liveEffectFenceVersion: row.liveEffectFenceVersion,
+							bitmovinEncodingId: channel.bitmovinEncodingId,
+						},
+						data: {
+							status: outcome.status,
+							error: outcome.error,
+							stepLog: entries as unknown as Prisma.InputJsonValue,
+							provisionClaimedAt: null,
+							...(outcome.encodingId
+								? { encoderStoppedConfirmedFor: outcome.encodingId }
+								: {}),
+						},
+					});
+					if (channelWrite.count !== 1)
+						throw new ProvisionLeaseLostError(liveChannelId);
+					const runWrite = await tx.liveChannelRun.updateMany({
+						where: {
+							id: runId,
+							liveChannelId,
+							cancelRequested: true,
+							bitmovinEncodingId: run.bitmovinEncodingId,
+							aisaAnalysisId: run.aisaAnalysisId,
+						},
+						data: {
+							status: outcome.status,
+							error: outcome.error,
+							cancelRequested: false,
+							endedAt: run.endedAt ?? new Date(deps.now()),
+							stepLog: entries as unknown as Prisma.InputJsonValue,
+							...(proof
+								? { aisaFinalization: proof as Prisma.InputJsonValue }
+								: {}),
+							...(createdProof
+								? {
+										providerStatus: "CREATED",
+										providerStatusObservedAt: new Date(createdProof.observedAt),
+										aisaStatus: "CREATED",
+										aisaObservedAt: new Date(createdProof.observedAt),
+									}
+								: {}),
+							...(outcome.encodingId
+								? { encoderStoppedConfirmedFor: outcome.encodingId }
+								: {}),
+						},
+					});
+					if (runWrite.count !== 1)
+						throw new ProvisionLeaseLostError(liveChannelId);
+				});
+				fence.setHeld(null);
+			});
 		/**
 		 * Renew across a long SDK call . The poll seam renews
 		 * between polls; a create/start call that outlives the window had
@@ -4994,8 +5243,13 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			if (
 				!untouched.some(
 					(entry) =>
-						entry.kind === "CREATE_ENCODING" &&
-						(entry.startedAt || entry.resourceId),
+						(entry.kind === "CREATE_ENCODING" &&
+							(entry.startedAt || entry.resourceId)) ||
+						(entry.kind === "CREATE_AISA_LIVE_ANALYSIS" &&
+							(entry.resourceId ||
+								(entry.response &&
+									typeof entry.response === "object" &&
+									"aisaCreateDispatched" in entry.response))),
 				)
 			) {
 				const current = await deps.prisma.liveChannelRun.findFirst({
@@ -5013,10 +5267,38 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						feederSessionId: feeder.id,
 						action: "stop",
 					});
-				await persist(untouched, {
-					status: feeders.length ? "STOPPING" : "STOPPED",
-					error: null,
-				});
+				if (
+					!feeders.length &&
+					isAisaManagedLivePlan(row.plan) &&
+					!current.aisaAnalysisId &&
+					!current.bitmovinEncodingId &&
+					aisaCreateNotDispatched(untouched)
+				) {
+					try {
+						await commitAisaCancellation(
+							untouched,
+							current.id,
+							{ status: "STOPPED", error: null },
+							{
+								kind: "NEVER_STARTED",
+								basis: "CREATE_NOT_DISPATCHED",
+								runId: current.id,
+								observedAt: deps.now(),
+							},
+						);
+					} catch (error) {
+						if (error instanceof ProvisionLeaseLostError) throw error;
+						await persist(untouched, {
+							status: "STOPPING",
+							error: "Cancellation terminal commit is pending",
+						});
+						return "STOPPING";
+					}
+				} else
+					await persist(untouched, {
+						status: feeders.length ? "STOPPING" : "STOPPED",
+						error: null,
+					});
 				if (feeders.length) return "STOPPING";
 				await emitChannel("CHANNEL_STOPPED", liveChannelId);
 				return { status: "STOPPED", canceledRunId: pendingRun.id };
@@ -5056,6 +5338,86 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			resetOwner.accountId = accountId;
 			const account = await deps.revealBitmovinAccount(accountId);
 			sdk = deps.makeSdk({
+				...(isAisaManagedLivePlan(plan)
+					? {
+							aisaLive: {
+								runId: () => currentRunId,
+								analysisId: () =>
+									entries.find(
+										(entry) => entry.kind === "CREATE_AISA_LIVE_ANALYSIS",
+									)?.resourceId,
+								encodingId: () =>
+									entries.find(
+										(entry) => entry.kind === "RESOLVE_AISA_LIVE_ENCODING",
+									)?.resourceId,
+								creationMayExist: () =>
+									Boolean(
+										activeEntry?.response &&
+											typeof activeEntry.response === "object" &&
+											"aisaCreateDispatched" in activeEntry.response,
+									),
+								beforeCreate: async () => {
+									if (activeEntry?.kind !== "CREATE_AISA_LIVE_ANALYSIS")
+										throw new ProvisionLeaseLostError(liveChannelId);
+									activeEntry.response = { aisaCreateDispatched: true };
+									await persist(entries);
+								},
+								startMayExist: () =>
+									Boolean(
+										activeEntry?.response &&
+											typeof activeEntry.response === "object" &&
+											"aisaStartDispatched" in activeEntry.response,
+									),
+								beforeStart: async () => {
+									if (activeEntry?.kind !== "START_AISA_LIVE_ANALYSIS")
+										throw new ProvisionLeaseLostError(liveChannelId);
+									activeEntry.response = { aisaStartDispatched: true };
+									await persist(entries);
+								},
+								allowCreate: () => !cancelRecovery,
+								sleep: deps.sleep,
+								onObservation: async ({ analysis, snapshot, finalization }) => {
+									if (!(await renewLease()))
+										throw new ProvisionLeaseLostError(liveChannelId);
+									const current = await deps.prisma.liveChannelRun.findFirst({
+										where: { liveChannelId },
+										orderBy: { seq: "desc" },
+									});
+									if (current?.id !== currentRunId)
+										throw new ProvisionLeaseLostError(liveChannelId);
+									const expectedAnalysis = entries.find(
+										(entry) => entry.kind === "CREATE_AISA_LIVE_ANALYSIS",
+									)?.resourceId;
+									const expectedEncoding = entries.find(
+										(entry) => entry.kind === "RESOLVE_AISA_LIVE_ENCODING",
+									)?.resourceId;
+									if (
+										(expectedAnalysis &&
+											expectedAnalysis !== analysis.analysisId) ||
+										(expectedEncoding &&
+											expectedEncoding !== analysis.encodingId)
+									)
+										throw new AisaLiveIdentityError();
+									await deps.prisma.liveChannelRun.updateMany({
+										where: { id: currentRunId, liveChannelId },
+										data: {
+											aisaStatus: analysis.status,
+											aisaObservedAt: new Date(deps.now()),
+											...(finalization
+												? {
+														aisaFinalization:
+															finalization as Prisma.InputJsonValue,
+													}
+												: {}),
+											...(snapshot
+												? { aisaSnapshot: snapshot as Prisma.InputJsonValue }
+												: {}),
+										},
+									});
+								},
+							} satisfies AisaLiveControl,
+						}
+					: {}),
 				startControl: {
 					check: async (attempted) => {
 						if (activeLeaseTicker?.lost)
@@ -5065,7 +5427,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						const canceled = await shouldCancel();
 						if (activeLeaseTicker?.lost)
 							throw new ProvisionLeaseLostError(liveChannelId);
-						if (canceled)
+						if (canceled && !cancelRecovery)
 							throw new CancelRequested(stampStep ?? "start", !attempted);
 					},
 					sleep: deps.sleep,
@@ -5229,7 +5591,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		 * A first provision (no DONE CREATE_ENCODING) has nothing to ask about.
 		 */
 		const reviveEncodingId = entries.find(
-			(e) => e.kind === "CREATE_ENCODING" && e.status === "DONE",
+			(e) =>
+				(e.kind === "CREATE_ENCODING" ||
+					e.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+				e.status === "DONE",
 		)?.resourceId;
 		if (reviveEncodingId && !(await shouldCancel())) {
 			const reviveRun =
@@ -5407,8 +5772,55 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			try {
 				if (!(await shouldCancel()) || !(await renewLease()))
 					throw new ProvisionLeaseLostError(liveChannelId);
-				const encoding = entries.find((e) => e.kind === "CREATE_ENCODING");
-				if (encoding && !encoding.resourceId && encoding.startedAt) {
+				// Cleanup is admitted by the current cancellation and lease, while
+				// every CREATE remains forbidden. A normal START cancellation gate
+				// would otherwise reject the Analysis stop and its Encoder fallback.
+				cancelRecovery = true;
+				const encoding = entries.find(
+					(e) =>
+						e.kind === "CREATE_ENCODING" ||
+						e.kind === "RESOLVE_AISA_LIVE_ENCODING",
+				);
+				const aisaCreate = entries.find(
+					(e) => e.kind === "CREATE_AISA_LIVE_ANALYSIS",
+				);
+				if (
+					aisaCreate &&
+					!aisaCreate.resourceId &&
+					aisaCreate.response &&
+					typeof aisaCreate.response === "object" &&
+					"aisaCreateDispatched" in aisaCreate.response
+				) {
+					const previous = activeEntry;
+					activeEntry = aisaCreate;
+					cancelRecovery = true;
+					try {
+						const result = await executeStep(aisaCreate, ctx, {
+							wasRunning: true,
+						});
+						aisaCreate.resourceId = result.resourceId;
+						aisaCreate.status = "DONE";
+						if (result.resourceId) ids.set(aisaCreate.step, result.resourceId);
+						await persist(entries);
+					} finally {
+						activeEntry = previous;
+					}
+				}
+				if (aisaCreate?.resourceId && encoding && !encoding.resourceId) {
+					const analysis = await sdk.getAisaLiveAnalysis(aisaCreate.resourceId);
+					encoding.resourceId = analysis.encodingId;
+					encoding.status = "DONE";
+					ids.set(encoding.step, analysis.encodingId);
+					await persist(entries, {
+						bitmovinEncodingId: analysis.encodingId,
+						encoderStoppedConfirmedFor: null,
+					});
+				}
+				if (
+					encoding?.kind === "CREATE_ENCODING" &&
+					!encoding.resourceId &&
+					encoding.startedAt
+				) {
 					// A response-lost CREATE may exist remotely. Reconcile its stamp;
 					// allowCreate=false forbids accidentally creating during teardown.
 					stampStep = encoding.attempt
@@ -5484,18 +5896,58 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						channel.provisionClaimedAt?.getTime() === heldAt.getTime() &&
 						channel.liveEffectFenceVersion === row.liveEffectFenceVersion;
 				}
-				if (encodingId && !confirmed) {
+				let neverStartedProof: AisaNeverStartedProof | undefined;
+				if (
+					aisaCreate?.resourceId &&
+					encodingId &&
+					aisaStartNotDispatched(entries, aisaCreate.resourceId, encodingId)
+				) {
+					const analysis = await sdk.getAisaLiveAnalysis(aisaCreate.resourceId);
+					const task = await sdk.getEncodingStatus(encodingId);
+					if (
+						analysis.analysisId !== aisaCreate.resourceId ||
+						analysis.encodingId !== encodingId
+					)
+						throw new AisaLiveIdentityError();
+					if (analysis.status === "CREATED" && task.status === "CREATED")
+						neverStartedProof = {
+							kind: "NEVER_STARTED",
+							basis: "BOUND_CREATED_NOT_STARTED",
+							runId: currentRunId,
+							analysisId: analysis.analysisId,
+							encodingId,
+							analysisStatus: "CREATED",
+							encodingStatus: "CREATED",
+							observedAt: deps.now(),
+						};
+				}
+				const drainStartedAnalysis = Boolean(
+					aisaCreate?.resourceId && !neverStartedProof,
+				);
+				if (encodingId && drainStartedAnalysis) {
+					if (!(await renewLease()) || !(await shouldCancel()))
+						throw new ProvisionLeaseLostError(liveChannelId);
+					// Encoder terminal/stop confirmation proves nothing about AICA
+					// drain or its final result. Always cross the paired stop boundary.
+					await sdk.stopLiveEncoding(encodingId);
+				}
+				if (encodingId && (!confirmed || drainStartedAnalysis)) {
 					let task = await sdk.getEncodingStatus(encodingId);
 					const startAttempted = entries.some(
-						(e) => e.kind === "START_LIVE_ENCODING" && e.startedAt,
+						(e) =>
+							(e.kind === "START_LIVE_ENCODING" ||
+								e.kind === "START_AISA_LIVE_ANALYSIS") &&
+							e.startedAt,
 					);
 					if (
-						!(task.status === "CREATED" && !startAttempted) &&
-						!STOP_TERMINAL_STATUSES.includes(task.status)
+						!neverStartedProof &&
+						(drainStartedAnalysis ||
+							(!(task.status === "CREATED" && !startAttempted) &&
+								!STOP_TERMINAL_STATUSES.includes(task.status)))
 					) {
 						if (!(await renewLease()) || !(await shouldCancel()))
 							throw new ProvisionLeaseLostError(liveChannelId);
-						await sdk.stopLiveEncoding(encodingId);
+						if (!drainStartedAnalysis) await sdk.stopLiveEncoding(encodingId);
 						for (let attempt = 0; attempt < 6; attempt++) {
 							task = await sdk.getEncodingStatus(encodingId);
 							if (STOP_TERMINAL_STATUSES.includes(task.status)) break;
@@ -5523,13 +5975,44 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					throw new Error("Feeder termination is not yet confirmed");
 				if (!(await shouldCancel()))
 					throw new ProvisionLeaseLostError(liveChannelId);
-				await persist(entries, {
-					status: "STOPPED",
-					error: null,
-					...(encodingId ? { encoderStoppedConfirmedFor: encodingId } : {}),
-				});
-				await emitChannel("CHANNEL_STOPPED", liveChannelId);
-				return { status: "STOPPED", canceledRunId: currentRunId };
+				let aisaFailure = false;
+				if (aisaCreate?.resourceId && drainStartedAnalysis) {
+					const run = await deps.prisma.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+					});
+					if (run?.id !== currentRunId)
+						throw new ProvisionLeaseLostError(liveChannelId);
+					const proof = aisaLiveFinalization(run);
+					if (proof === "PENDING" || proof === "UNBOUND")
+						throw new AisaLiveFinalizationPendingError();
+					aisaFailure = proof === "FAILED";
+				}
+				if (isAisaManagedLivePlan(row.plan))
+					await commitAisaCancellation(
+						entries,
+						currentRunId,
+						{
+							status: aisaFailure ? "ERROR" : "STOPPED",
+							error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+							...(encodingId ? { encodingId } : {}),
+						},
+						neverStartedProof,
+					);
+				else
+					await persist(entries, {
+						status: aisaFailure ? "ERROR" : "STOPPED",
+						error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+						...(encodingId ? { encoderStoppedConfirmedFor: encodingId } : {}),
+					});
+				await emitChannel(
+					aisaFailure ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
+					liveChannelId,
+					aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : undefined,
+				);
+				return aisaFailure
+					? "ERROR"
+					: { status: "STOPPED", canceledRunId: currentRunId };
 			} catch (error) {
 				if (error instanceof ProvisionLeaseLostError) return "STOPPING";
 				await persist(entries, {
@@ -5602,7 +6085,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						}
 					}
 					// Preserve a late CREATE result before the ownership fence rejects persistence.
-					if (entry.kind === "CREATE_ENCODING" && result.resourceId)
+					if (
+						(entry.kind === "CREATE_ENCODING" ||
+							entry.kind === "CREATE_AISA_LIVE_ANALYSIS" ||
+							entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+						result.resourceId
+					)
 						entry.resourceId = result.resourceId;
 					if (ticker.lost) {
 						throw new ProvisionLeaseLostError(liveChannelId);
@@ -5635,7 +6123,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						ids.set(entry.step, result.resourceId);
 					}
 					const extra =
-						entry.kind === "CREATE_ENCODING" && result.resourceId
+						(entry.kind === "CREATE_ENCODING" ||
+							entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+						result.resourceId
 							? {
 									bitmovinEncodingId: result.resourceId,
 									// rev431: see the early persist above — same reason.
@@ -5767,7 +6257,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// last compiled op). Read back where to point the encoder and the
 		// submitted start request (C7 — Bitmovin purges after ~90 days).
 		try {
-			const encodingEntry = entries.find((e) => e.kind === "CREATE_ENCODING");
+			const encodingEntry = entries.find(
+				(e) =>
+					e.kind === "CREATE_ENCODING" ||
+					e.kind === "RESOLVE_AISA_LIVE_ENCODING",
+			);
 			const encodingId = encodingEntry?.resourceId;
 			if (!encodingId) {
 				throw new Error("Step log carries no CREATE_ENCODING resource id");
@@ -6122,7 +6616,20 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						where: { id: liveChannelId },
 						select: { status: true, error: true },
 					});
-					if (stopped?.status !== "STOPPED" || stopped.error !== null) {
+					const finalRun =
+						stopped?.status === "ERROR" &&
+						stopped.error === "AISA_LIVE_TERMINAL_FAILURE"
+							? await deps.prisma.liveChannelRun.findFirst({
+									where: { liveChannelId },
+									orderBy: { seq: "desc" },
+								})
+							: null;
+					const confirmedAisaFailure =
+						finalRun && aisaLiveFinalization(finalRun) === "FAILED";
+					if (
+						!confirmedAisaFailure &&
+						(stopped?.status !== "STOPPED" || stopped.error !== null)
+					) {
 						await markLiveEffectAmbiguous(
 							deps.prisma,
 							prepared.fence.claim,
@@ -6149,7 +6656,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						);
 						return effectResult(job, "EFFECT_AMBIGUOUS");
 					}
-					return effectResult(job, "STOPPED");
+					return effectResult(job, confirmedAisaFailure ? "ERROR" : "STOPPED");
 				} catch (err) {
 					return failLiveEffect(job, prepared.fence, err);
 				} finally {

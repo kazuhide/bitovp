@@ -12,6 +12,11 @@ import {
 	tsMuxingSchema,
 } from "../plan/schema";
 import {
+	aisaManagedLiveSettingSchema,
+	isAisaManagedLivePlan,
+	validateAisaManagedLivePlan,
+} from "./aisa";
+import {
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
 } from "./manifest-detail-schema";
@@ -521,26 +526,36 @@ export const liveAdInsertionSchema = z.strictObject({
  * Start-request options. manifestGenerator is NOT a plan field — the
  * compiler pins V2 (C3) exactly like VOD JIT starts.
  */
-export const liveStartSchema = z.strictObject({
-	/** App selector, not provider request JSON. Absent preserves legacy Custom. */
-	encodingOption: z.enum(["AUTO", "HD", "CUSTOM"]).optional(),
-	/** StartLiveEncodingRequest.streamKey: a-zA-Z, 3–20 characters. */
-	streamKey: z
-		.string()
-		.regex(/^[a-zA-Z]{3,20}$/, "Stream key is a-zA-Z, 3-20 characters"),
-	/** Only valid when no codec config sets encodingMode (SDK contract). */
-	liveEncodingMode: z
-		.enum(["STANDARD", "SINGLE_PASS", "TWO_PASS", "THREE_PASS"])
-		.optional(),
-	autoRestart: liveAutoRestartSchema.optional(),
-	autoShutdown: liveAutoShutdownSchema.optional(),
-	reupload: liveReuploadSchema.optional(),
-	/** All optional, no defaults ⇒ absent plans emit zero payload keys and
-	 * the live goldens stay byte-identical (P5 PR-3). */
-	esam: liveEsamSettingsSchema.optional(),
-	cacheControl: liveCacheControlSchema.optional(),
-	adInsertion: liveAdInsertionSchema.optional(),
-});
+export const liveStartSchema = z
+	.strictObject({
+		/** App selector, not provider request JSON. Absent preserves legacy Custom. */
+		encodingOption: z.enum(["AUTO", "HD", "CUSTOM"]).optional(),
+		/** StartLiveEncodingRequest.streamKey: a-zA-Z, 3–20 characters. */
+		streamKey: z.string(),
+		/** Only valid when no codec config sets encodingMode (SDK contract). */
+		liveEncodingMode: z
+			.enum(["STANDARD", "SINGLE_PASS", "TWO_PASS", "THREE_PASS"])
+			.optional(),
+		autoRestart: liveAutoRestartSchema.optional(),
+		autoShutdown: liveAutoShutdownSchema.optional(),
+		reupload: liveReuploadSchema.optional(),
+		/** All optional, no defaults ⇒ absent plans emit zero payload keys and
+		 * the live goldens stay byte-identical (P5 PR-3). */
+		esam: liveEsamSettingsSchema.optional(),
+		cacheControl: liveCacheControlSchema.optional(),
+		adInsertion: liveAdInsertionSchema.optional(),
+		aiSceneAnalysisLive: aisaManagedLiveSettingSchema.optional(),
+	})
+	.superRefine((start, ctx) => {
+		// Managed HLS has no RTMP key. Its input-aware validation happens on
+		// the containing plan; ordinary starts retain the existing key contract.
+		if (!start.aiSceneAnalysisLive && !/^[a-zA-Z]{3,20}$/.test(start.streamKey))
+			ctx.addIssue({
+				code: "custom",
+				path: ["streamKey"],
+				message: "Stream key is a-zA-Z, 3-20 characters",
+			});
+	});
 
 export const liveChannelPlanSchema = z
 	.strictObject({
@@ -576,7 +591,7 @@ export const liveChannelPlanSchema = z
 		}),
 		/** Exactly one live source; SRT redundancy lives inside it (backup). */
 		liveInput: liveInputSchema,
-		outputs: z.array(planOutputSchema).min(1),
+		outputs: z.array(planOutputSchema),
 		/**
 		 * Multi-output delivery for LIVE (the Akamai customer's MSL4 + Object
 		 * Storage simultaneous case, 2026-08-23): every live muxing/manifest
@@ -591,14 +606,14 @@ export const liveChannelPlanSchema = z
 			.array(z.strictObject({ outputKey: refKey }))
 			.min(1)
 			.optional(),
-		ingest: z.array(liveIngestSchema).min(1),
+		ingest: z.array(liveIngestSchema),
 		/**
 		 * Same rendition union as VOD. validateLiveChannel narrows it to the
 		 * live encoder's support matrix (H264/H265 + AAC/DD/DDPLUS, STANDARD
 		 * mode, no VOD-only stream attachments).
 		 */
-		renditions: z.array(renditionSchema).min(1),
-		muxings: z.array(liveMuxingSchema).min(1),
+		renditions: z.array(renditionSchema),
+		muxings: z.array(liveMuxingSchema),
 		/** Encrypted output destinations; content keys remain vault references. */
 		drm: z.array(planDrmSchema).optional(),
 		/** A channel without a manifest has no playback surface. */
@@ -607,8 +622,36 @@ export const liveChannelPlanSchema = z
 		adMarkers: liveAdMarkersSchema.optional(),
 		start: liveStartSchema,
 	})
+	.superRefine((plan, ctx) => {
+		if (isAisaManagedLivePlan(plan)) {
+			for (const issue of validateAisaManagedLivePlan(plan)) {
+				ctx.addIssue({
+					code: "custom",
+					message: issue.message,
+					path: issue.path.split("."),
+				});
+			}
+			return;
+		}
+		for (const field of [
+			"outputs",
+			"ingest",
+			"renditions",
+			"muxings",
+		] as const) {
+			if (plan[field].length === 0)
+				ctx.addIssue({
+					code: "too_small",
+					origin: "array",
+					minimum: 1,
+					inclusive: true,
+					path: [field],
+				});
+		}
+	})
 	.refine(
 		(plan) =>
+			isAisaManagedLivePlan(plan) ||
 			plan.liveManifests.length > 0 ||
 			plan.muxings.some(
 				(m) =>

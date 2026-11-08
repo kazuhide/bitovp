@@ -85,6 +85,57 @@ beforeEach(() => {
 });
 
 describe("GET …/runs/[runId]/health — the ledger #166 timeline", () => {
+	it.each([
+		"poll",
+		"push",
+		"missing",
+		"malformed",
+	])("uses observed managed HLS telemetry instead of assuming the preset topology: %s", async (source) => {
+		channelFindUnique.mockResolvedValue({
+			plan: {
+				start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				liveManifests: [],
+			},
+		});
+		heartbeatFindMany.mockResolvedValue(source === "poll" ? [hbRow(210)] : []);
+		if (source === "push" || source === "malformed") {
+			const sample = hbRow(210);
+			webhookEventFindMany.mockResolvedValue([
+				{
+					raw: {
+						eventType: "LIVE_ENCODING_HEARTBEAT",
+						webhookId: CHANNEL_ID,
+						encoding: { id: ENC_ID },
+						value: {
+							timestamp: iso(210),
+							...sample.raw,
+							...(source === "malformed"
+								? {
+										output: {
+											manifests: {
+												hls: [
+													{
+														manifestUpdates: [
+															{ manifestUpdateWallClockTime: "invalid" },
+														],
+													},
+												],
+											},
+										},
+									}
+								: {}),
+						},
+					},
+				},
+			]);
+		}
+		const response = await GET(new Request("http://test"), ctx());
+		expect(response.status).toBe(200);
+		expect((await response.json()).outputObservable).toBe(
+			source === "poll" || source === "push",
+		);
+	});
+
 	it("window and lifecycle events come from the step log and the run row", async () => {
 		const res = await GET(new Request("http://test"), ctx());
 		expect(res.status).toBe(200);

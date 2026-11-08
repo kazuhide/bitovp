@@ -215,6 +215,32 @@ export {
 	resolveIngress,
 } from "./ingress/resolver";
 export type {
+	AisaManagedCreateRequest,
+	AisaManagedLiveSetting,
+} from "./live/aisa";
+export {
+	aisaManagedLiveSettingSchema,
+	buildAisaManagedCreateRequest,
+	compileAisaManagedLiveChannel,
+	isAisaManagedLivePlan,
+	validateAisaManagedLivePlan,
+} from "./live/aisa";
+export {
+	type AisaFinalizationProof,
+	type AisaFinalizationRun,
+	type AisaNeverStartedProof,
+	aisaCreateNotDispatched,
+	aisaFinalizationProofSchema,
+	aisaLiveFinalization,
+	aisaLiveNeverStarted,
+	aisaNeverStartedProofSchema,
+	aisaStartNotDispatched,
+} from "./live/aisa-finalization";
+export {
+	type AisaLiveResultSnapshot,
+	aisaResultSchema,
+} from "./live/aisa-result";
+export type {
 	AlertEvaluation,
 	AlertMetric,
 	AlertRuleCreate,

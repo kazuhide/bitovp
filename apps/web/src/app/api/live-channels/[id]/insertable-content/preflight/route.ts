@@ -63,6 +63,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			channelId: id,
 			bitmovinAccountId,
 			requireRunning: true,
+			mutation: "encoding",
 			subject: "Slate compatibility checks",
 		});
 		if (!resolved.ok) {

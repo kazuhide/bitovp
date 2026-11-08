@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-08T15:13:56.849Z",
-		"sourceCommit": "16e5ee29dead6bd32cf2211110291338d4f2be26",
-		"sourceFingerprint": "c8d927f80ac58da11227b160c4635fee42534a87323899208dd03c73446ad1f8",
+		"generatedAt": "2026-11-08T15:36:25.616Z",
+		"sourceCommit": "3912f126f168e141ef2d61c199af3bd6b2f2c414",
+		"sourceFingerprint": "2c6a47d8db1b99fca27ccff274a4323d30e62d5e529c152652bcef55fc20877e",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
@@ -1502,6 +1502,10 @@
 					"line": 71
 				},
 				{
+					"file": "apps/web/src/lib/server/aisa-live-import.ts",
+					"line": 83
+				},
+				{
 					"file": "apps/worker/src/reset/provider.ts",
 					"line": 44
 				},
@@ -1604,6 +1608,10 @@
 			"family": "encodings",
 			"status": "source-confirmed",
 			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/aisa-live-import.ts",
+					"line": 84
+				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
 					"line": 569
@@ -2426,7 +2434,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/esam-media-point/route.ts",
-					"line": 85
+					"line": 86
 				}
 			]
 		},
@@ -2440,7 +2448,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 143
+					"line": 164
 				}
 			]
 		},
@@ -2482,7 +2490,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 136
+					"line": 157
 				}
 			]
 		},
@@ -2496,7 +2504,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/route.ts",
-					"line": 343
+					"line": 353
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -2518,7 +2526,7 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/schedules/route.ts",
-					"line": 348
+					"line": 367
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -2536,7 +2544,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/schedule/route.ts",
-					"line": 243
+					"line": 254
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -2554,7 +2562,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/schedule/[scheduledId]/route.ts",
-					"line": 66
+					"line": 67
 				}
 			]
 		},
@@ -2586,7 +2594,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/insertable-content/stop/route.ts",
-					"line": 60
+					"line": 61
 				}
 			]
 		},
@@ -11241,7 +11249,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 149
+					"line": 170
 				}
 			]
 		},
@@ -11255,7 +11263,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 154
+					"line": 175
 				}
 			]
 		},
@@ -11269,7 +11277,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 163
+					"line": 184
 				}
 			]
 		},
@@ -11283,7 +11291,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 158
+					"line": 179
 				}
 			]
 		},
@@ -11297,7 +11305,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 156
+					"line": 177
 				}
 			]
 		},

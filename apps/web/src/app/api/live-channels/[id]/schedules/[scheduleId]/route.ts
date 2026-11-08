@@ -1,7 +1,10 @@
+import { isAisaManagedLivePlan } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { customerErrorDetails } from "@/lib/customer-error";
+import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
+import { rejectImportedAisaMutation } from "@/lib/server/live-channel-mutation-guard";
 
 type RouteParams = { params: Promise<{ id: string; scheduleId: string }> };
 
@@ -19,6 +22,19 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
 	}
 	try {
 		const ctx = await getServerContext();
+		const channel = await ctx.prisma.liveChannel.findUnique({
+			where: { id },
+			select: { origin: true, plan: true },
+		});
+		if (!channel) return jsonError(404, "Not found");
+		if (
+			isAisaManagedLivePlan(channel.plan) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		) {
+			return jsonError(404, "Not found");
+		}
+		const refusal = rejectImportedAisaMutation(channel);
+		if (refusal) return refusal;
 		const { count } = await ctx.prisma.liveSchedule.updateMany({
 			where: { id: scheduleId, liveChannelId: id, status: "ARMED" },
 			data: { status: "CANCELED" },

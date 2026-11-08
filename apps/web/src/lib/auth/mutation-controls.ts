@@ -27,6 +27,38 @@ export type MutationControlContract = {
  * so deleting a gate or adding a new write call cannot leave this table green.
  */
 export const MUTATION_CONTROLS = {
+	"live.aisa.translate": {
+		minRole: "OPERATOR",
+		source: "app/live/aisa-channel-analysis.tsx",
+		bindings: 1,
+	},
+	"live.aisa.new": {
+		minRole: "OPERATOR",
+		source: "app/live/aisa-live-shared.tsx",
+		bindings: 1,
+		destinations: ["/live/new"],
+	},
+	"live.aisa.create": {
+		minRole: "OPERATOR",
+		source: "app/live/aisa-live-create.tsx",
+		bindings: 1,
+	},
+	"live.aisa.actions": {
+		minRole: "OPERATOR",
+		source: "app/live/aisa-live-actions.tsx",
+		bindings: 1,
+	},
+	"live.aisa.ingest": {
+		minRole: "OPERATOR",
+		source: "app/live/aisa-live-ingest.tsx",
+		bindings: 1,
+		reads: [
+			{
+				source: "app/live/aisa-live-ingest.tsx",
+				api: "/api/live/analyses/[analysisId]/ingest",
+			},
+		],
+	},
 	"dashboard.statistics-backfill": {
 		minRole: "OPERATOR",
 		source: "app/dashboard-backfill.tsx",
@@ -439,6 +471,18 @@ export const MUTATION_SOURCE_CENSUS = {
 		writeCalls: 2,
 		controls: ["library.edits.edit"],
 	},
+	"app/live/aisa-channel-analysis.tsx": {
+		writeCalls: 1,
+		controls: ["live.aisa.translate"],
+	},
+	"app/live/aisa-live-create.tsx": {
+		writeCalls: 1,
+		controls: ["live.aisa.create"],
+	},
+	"app/live/aisa-live-actions.tsx": {
+		writeCalls: 1,
+		controls: ["live.aisa.actions"],
+	},
 	"app/dashboard-backfill.tsx": {
 		writeCalls: 1,
 		controls: ["dashboard.statistics-backfill"],
@@ -793,6 +837,21 @@ export const MUTATION_WRITE_FAMILIES = {
 		{
 			write: "POST /api/library/media-tasks/x/retry",
 			controls: ["library.edits.edit"],
+		},
+	],
+	"app/live/aisa-channel-analysis.tsx": [
+		{
+			write: "POST /api/live/analyses/x/translations",
+			controls: ["live.aisa.translate"],
+		},
+	],
+	"app/live/aisa-live-create.tsx": [
+		{ write: "POST /api/live/analyses", controls: ["live.aisa.create"] },
+	],
+	"app/live/aisa-live-actions.tsx": [
+		{
+			write: "POST /api/live/analyses/x/actions",
+			controls: ["live.aisa.actions"],
 		},
 	],
 	"app/dashboard-backfill.tsx": [

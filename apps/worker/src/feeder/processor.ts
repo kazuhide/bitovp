@@ -11,6 +11,7 @@ import {
 	feederErrorEnglish,
 	feederJobSchema,
 	feederOccupancyWhere,
+	feederPlaybackModeSchema,
 	feederProcessMayBeAlive,
 	feederPublisherClaimHeld,
 	feederRtmpTargetSchema,
@@ -29,6 +30,7 @@ import {
 	type AppPrismaClient,
 	assertLiveEffectCurrent,
 	beginLiveEffect,
+	claimFeederSinglePassDispatch,
 	type LiveEffectClaimHandle,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,
@@ -58,6 +60,7 @@ import {
 	parseProbeJson,
 	probeArgs,
 	pushedMediaAttributes,
+	sourceDurationSec,
 	sourceMediaAttributes,
 	sourceVideoSpan,
 } from "./command";
@@ -1013,6 +1016,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			childReaped: boolean;
 			releaseClaim: boolean;
 			claimGeneration: number | null;
+			playbackReceipt?: Prisma.InputJsonValue;
 		},
 	): Promise<void> {
 		const at = new Date(deps.now());
@@ -1030,6 +1034,9 @@ export function createFeederProcessor(deps: FeederDeps) {
 			},
 			data: {
 				status,
+				...(evidence?.playbackReceipt
+					? { playbackReceipt: evidence.playbackReceipt }
+					: {}),
 				// The supervisor has already reaped its child by the time this
 				// runs, so the pid reference goes with the row's active life —
 				// and the host identity goes with the pid (they are one fact).
@@ -1123,6 +1130,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			where: {
 				id: feederSessionId,
 				status: "CREATED",
+				...(row.playbackMode === "ONCE" ? { playbackDispatchedAt: null } : {}),
 				ownerGeneration: row.ownerGeneration,
 			},
 			data: {
@@ -1877,114 +1885,192 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// so the target resolves first.
 				const { target, secrets } = await resolveTarget(row);
 				const reference = await loadIngestReference(row);
-				//  (PR-C): every pushed source is NORMALIZED first — one
-				// transcode into a CFR, pts-0, co-terminous loop that the encoder
-				// sees exactly as the VMAF side models it (`loopProfile`). The push
-				// itself then runs in copy mode against that loop. The normalizer is
-				// the transcode, so the reference targets are computed for it.
-				const normalise = reference
-					? normalisationTargets(reference.media, "transcode", target.protocol)
-					: undefined;
-				// The compatibility gate judges what the normalizer WILL push — the
-				// transcode's prediction pinned to the reference — before any
-				// transcoding is spent; an attribute the normalizer cannot pin (an
-				// unpinnable profile) is refused here exactly as before.
-				if (reference) {
-					const compatibility = compareSourceCompatibility(
-						reference.media,
-						pushedMediaAttributes(
-							sourceMediaAttributes(probe),
-							{ mode: "transcode", reasons: ["normalized loop"] },
-							target.protocol,
-							normalise,
-						),
-						"transcode",
-						normalise,
-					);
-					if (!compatibility.compatible) {
-						throw new Error(
-							feederError(
-								"sourceMismatch",
-								{ originKind: reference.originKind },
-								compatibility.differences,
+				// Repeating sources use the normalized, co-terminous loop modeled
+				// by VMAF. A single pass preserves the original full source instead.
+				const playbackMode = feederPlaybackModeSchema.parse(
+					row.playbackMode ?? "LOOP",
+				);
+				const {
+					pushProbe,
+					pushPath,
+					decision,
+					durationSec,
+					sourceFrames,
+					normalise,
+				} = await (async () => {
+					if (playbackMode === "ONCE") {
+						if (row.commitAt !== null && row.commitAt !== undefined) {
+							throw new Error(
+								"single-pass playback does not support staged switches",
+							);
+						}
+						const decision = decideCodecMode(probe, target.protocol);
+						if (decision.mode !== "copy") {
+							throw new Error(
+								"single-pass playback requires a copy-compatible H.264/AAC source; the full source is never loop-normalized",
+							);
+						}
+						const durationSec = sourceDurationSec(probe);
+						if (durationSec === undefined) {
+							throw new Error(
+								"single-pass playback requires a known source duration to qualify EOF",
+							);
+						}
+						const video = probe.streams?.find(
+							(stream) => stream.codec_type === "video",
+						);
+						if (!video || video.disposition?.attached_pic === 1) {
+							throw new Error(
+								"single-pass playback requires the first video stream to contain the source video",
+							);
+						}
+						const parsedFrames = Number(video.nb_frames);
+						const sourceFrames =
+							Number.isSafeInteger(parsedFrames) && parsedFrames > 0
+								? parsedFrames
+								: undefined;
+						if (reference) {
+							const compatibility = compareSourceCompatibility(
+								reference.media,
+								sourceMediaAttributes(probe),
+								"copy",
+							);
+							if (!compatibility.compatible) {
+								throw new Error(
+									feederError(
+										"sourceMismatch",
+										{ originKind: reference.originKind },
+										compatibility.differences,
+									),
+								);
+							}
+						}
+						return {
+							pushProbe: probe,
+							pushPath: fetched.path,
+							decision,
+							durationSec,
+							sourceFrames,
+							normalise: undefined,
+						};
+					}
+					const normalise = reference
+						? normalisationTargets(
+								reference.media,
+								"transcode",
+								target.protocol,
+							)
+						: undefined;
+					// The compatibility gate judges what the normalizer WILL push — the
+					// transcode's prediction pinned to the reference — before any
+					// transcoding is spent; an attribute the normalizer cannot pin (an
+					// unpinnable profile) is refused here exactly as before.
+					if (reference) {
+						const compatibility = compareSourceCompatibility(
+							reference.media,
+							pushedMediaAttributes(
+								sourceMediaAttributes(probe),
+								{ mode: "transcode", reasons: ["normalized loop"] },
+								target.protocol,
+								normalise,
 							),
+							"transcode",
+							normalise,
+						);
+						if (!compatibility.compatible) {
+							throw new Error(
+								feederError(
+									"sourceMismatch",
+									{ originKind: reference.originKind },
+									compatibility.differences,
+								),
+							);
+						}
+					}
+					const loopFps = normalise?.frameRate ?? DEFAULT_LOOP_FPS;
+					const span = sourceVideoSpan(probe);
+					const loopPath = normalizedSpoolPath(deps.spoolDir, feederSessionId);
+					// rev429 R1: the transcode can run for minutes on a long source;
+					// a STOP (or a lost lease) aborts it through the controller's
+					// signal instead of waiting for ffmpeg to finish, and the
+					// `throwIfStopped` below turns the aborted exit into a clean STOP.
+					const normalizeRun = await deps.runner.run(
+						deps.ffmpegPath,
+						buildNormalizeCommand({
+							sourcePath: fetched.path,
+							destPath: loopPath,
+							fps: loopFps,
+							protocol: target.protocol,
+							...(normalise ? { normalise } : {}),
+							videoStartSec: span.videoStartSec,
+							videoDurationSec: span.videoDurationSec,
+						}),
+						{ signal: controller.signal },
+					);
+					controller.throwIfStopped();
+					if (normalizeRun.code !== 0) {
+						throw new Error(
+							`normalizing the source loop failed (code ${normalizeRun.code}): ${normalizeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
 						);
 					}
-				}
-				const loopFps = normalise?.frameRate ?? DEFAULT_LOOP_FPS;
-				const span = sourceVideoSpan(probe);
-				const loopPath = normalizedSpoolPath(deps.spoolDir, feederSessionId);
-				// rev429 R1: the transcode can run for minutes on a long source;
-				// a STOP (or a lost lease) aborts it through the controller's
-				// signal instead of waiting for ffmpeg to finish, and the
-				// `throwIfStopped` below turns the aborted exit into a clean STOP.
-				const normalizeRun = await deps.runner.run(
-					deps.ffmpegPath,
-					buildNormalizeCommand({
-						sourcePath: fetched.path,
-						destPath: loopPath,
-						fps: loopFps,
-						protocol: target.protocol,
-						...(normalise ? { normalise } : {}),
-						videoStartSec: span.videoStartSec,
-						videoDurationSec: span.videoDurationSec,
-					}),
-					{ signal: controller.signal },
-				);
-				controller.throwIfStopped();
-				if (normalizeRun.code !== 0) {
-					throw new Error(
-						`normalizing the source loop failed (code ${normalizeRun.code}): ${normalizeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
+					const loopProbeRun = await deps.runner.run(
+						deps.ffprobePath,
+						probeArgs(loopPath),
 					);
-				}
-				const loopProbeRun = await deps.runner.run(
-					deps.ffprobePath,
-					probeArgs(loopPath),
-				);
-				if (loopProbeRun.code !== 0) {
-					throw new Error(
-						`ffprobe failed on the normalized loop (code ${loopProbeRun.code}): ${loopProbeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
+					if (loopProbeRun.code !== 0) {
+						throw new Error(
+							`ffprobe failed on the normalized loop (code ${loopProbeRun.code}): ${loopProbeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
+						);
+					}
+					const loopProbe = parseProbeJson(loopProbeRun.stdout);
+					const nowMs = Date.parse(deps.now());
+					const loopProfile = loopProfileFromProbe(
+						loopProbe,
+						loopFps,
+						fetched.sha256,
+						new Date(Number.isFinite(nowMs) ? nowMs : Date.now()).toISOString(),
+						normalise,
 					);
-				}
-				const loopProbe = parseProbeJson(loopProbeRun.stdout);
-				const nowMs = Date.parse(deps.now());
-				const loopProfile = loopProfileFromProbe(
-					loopProbe,
-					loopFps,
-					fetched.sha256,
-					new Date(Number.isFinite(nowMs) ? nowMs : Date.now()).toISOString(),
-					normalise,
-				);
-				// A takeover (#242) re-stages on another worker: the encoder is
-				// bound to the period the first owner pushed, so a loop that does
-				// not reproduce it is refused rather than pushed.
-				const priorProfile = loopProfileSchema.safeParse(row.loopProfile);
-				if (
-					priorProfile.success &&
-					(priorProfile.data.frames !== loopProfile.frames ||
-						priorProfile.data.fps !== loopProfile.fps)
-				) {
-					throw new Error(
-						`the normalized loop (${loopProfile.frames} frames at ${loopProfile.fps} fps) does not reproduce the profile this session already pushed (${priorProfile.data.frames} at ${priorProfile.data.fps})`,
-					);
-				}
-				await deps.prisma.feederSession.updateMany({
-					where: fence,
-					data: {
-						loopProfile: loopProfile as unknown as Prisma.InputJsonValue,
-					},
-				});
-				const decision = decideCodecMode(loopProbe, target.protocol);
-				if (decision.mode !== "copy") {
-					throw new Error(
-						`the normalized loop is not copy-compatible with the ${target.protocol} push: ${decision.reasons.join("; ")}`,
-					);
-				}
-				// What the encoder sees is the loop itself — recorded as the run's
-				// ingest reference from the loop's own probe.
-				const sourceAttributes = sourceMediaAttributes(loopProbe);
+					// A takeover (#242) re-stages on another worker: the encoder is
+					// bound to the period the first owner pushed, so a loop that does
+					// not reproduce it is refused rather than pushed.
+					const priorProfile = loopProfileSchema.safeParse(row.loopProfile);
+					if (
+						priorProfile.success &&
+						(priorProfile.data.frames !== loopProfile.frames ||
+							priorProfile.data.fps !== loopProfile.fps)
+					) {
+						throw new Error(
+							`the normalized loop (${loopProfile.frames} frames at ${loopProfile.fps} fps) does not reproduce the profile this session already pushed (${priorProfile.data.frames} at ${priorProfile.data.fps})`,
+						);
+					}
+					await deps.prisma.feederSession.updateMany({
+						where: fence,
+						data: {
+							loopProfile: loopProfile as unknown as Prisma.InputJsonValue,
+						},
+					});
+					const decision = decideCodecMode(loopProbe, target.protocol);
+					if (decision.mode !== "copy") {
+						throw new Error(
+							`the normalized loop is not copy-compatible with the ${target.protocol} push: ${decision.reasons.join("; ")}`,
+						);
+					}
+					// What the encoder sees is the loop itself — recorded as the run's
+					// ingest reference from the loop's own probe.
+					return {
+						pushProbe: loopProbe,
+						pushPath: loopPath,
+						decision,
+						durationSec: loopProfile.loopSeconds,
+						sourceFrames: undefined,
+						normalise,
+					};
+				})();
+				const sourceAttributes = sourceMediaAttributes(pushProbe);
 				const { argv, redactedArgv } = buildFeederCommand({
-					sourcePath: loopPath,
+					sourcePath: pushPath,
+					playbackMode,
 					decision,
 					target,
 				});
@@ -2118,7 +2204,9 @@ export function createFeederProcessor(deps: FeederDeps) {
 						...redactedArgv,
 					],
 					redactLine: buildLineRedactor(secrets),
-					sourceDurationSec: loopProfile.loopSeconds,
+					sourceDurationSec: durationSec,
+					playbackMode,
+					sourceFrames,
 					now: deps.now,
 					sleep: deps.sleep,
 					...(attemptEvidenceNotBefore
@@ -2130,6 +2218,23 @@ export function createFeederProcessor(deps: FeederDeps) {
 						// run-bound effect immediately before every initial spawn/respawn.
 						await assertPublisherEffectBoundary();
 						await crossSpawnBoundary(spawnOrdinal, "Feeder process spawn");
+					},
+					immediatelyBeforeProcessSpawn: async () => {
+						if (playbackMode !== "ONCE") return;
+						await assertProviderEffectBoundary("Single-pass process spawn");
+						await assertPublisherEffectBoundary();
+						const dispatched = await claimFeederSinglePassDispatch(
+							deps.prisma,
+							fence,
+							new Date(deps.now()),
+						);
+						// This marker is never cleared, including a lost acknowledgement.
+						// A crash after this CAS can abandon the pass, but cannot replay it.
+						if (!dispatched) {
+							throw new Error(
+								"single-pass dispatch refused: this source may already have been sent or its owner fence was lost",
+							);
+						}
 					},
 					onSpawnError: async (error) => {
 						if (!activeEffectClaim) return;
@@ -2551,7 +2656,19 @@ export function createFeederProcessor(deps: FeederDeps) {
 					row.liveChannelId,
 					result.outcome,
 					result.error,
-					terminalEvidence(),
+					{
+						...terminalEvidence(),
+						...(result.completion
+							? {
+									playbackReceipt: {
+										...result.completion,
+										sourceSha256: fetched.sha256,
+										sourceDurationSec: durationSec,
+										...(sourceFrames === undefined ? {} : { sourceFrames }),
+									} as Prisma.InputJsonValue,
+								}
+							: {}),
+					},
 				);
 				return result.outcome;
 			} finally {
@@ -2731,9 +2848,20 @@ export function createFeederProcessor(deps: FeederDeps) {
 			| "publisherClaimedAt"
 			| "publisherReleasedAt"
 			| "publisherGeneration"
+			| "playbackMode"
+			| "playbackDispatchedAt"
 		>,
 		now: Date,
 	): Promise<{ row: FeederSessionRow; generation: number } | null> {
+		if (row.playbackMode === "ONCE" && row.playbackDispatchedAt !== null) {
+			await refuseUnprovenPublisherTakeover(
+				row,
+				now,
+				"single-pass dispatch was already recorded; refusing to replay the source from its beginning",
+			);
+			await stop(row.id);
+			return null;
+		}
 		const from = row.ownerId ?? "an unnamed owner";
 		let note: string;
 		let proven = false;
@@ -2817,6 +2945,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// The exact token that was READ. A renewal by a live owner, or
 				// another worker's takeover, moves it and this matches nothing —
 				// #216's `reconcileAbandonedLeases` in one line.
+				...(row.playbackMode === "ONCE" ? { playbackDispatchedAt: null } : {}),
 				ownerId: row.ownerId,
 				ownerGeneration: row.ownerGeneration,
 				publisherGeneration: row.publisherGeneration,

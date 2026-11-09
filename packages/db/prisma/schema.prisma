@@ -1231,6 +1231,15 @@ model FeederSession {
   liveChannelRunId   String?         @db.Uuid
   liveChannelRun     LiveChannelRun? @relation(fields: [liveChannelRunId], references: [id], onDelete: Cascade)
   status             FeederStatus    @default(CREATED)
+  /// LOOP is the legacy default. ONCE never restarts from the beginning.
+  /// Values are constrained by FeederSession_playbackMode_check in SQL.
+  playbackMode       String          @default("LOOP")
+  /// Durable intent taken once, immediately before a single-pass spawn.
+  /// A takeover must not replay a session once this is present.
+  playbackDispatchedAt DateTime?
+  /// The worker's single-pass end evidence (exit, progress and source span).
+  /// A STOPPED status alone does not prove that the source reached EOF.
+  playbackReceipt    Json?
   /// Source MP4 storage coordinates; the credential is resolved from the
   /// vault at spawn only — never persisted here.
   sourceCredentialId String          @db.Uuid

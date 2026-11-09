@@ -272,6 +272,280 @@ function setup(overrides: Partial<SupervisorDeps> = {}) {
 	return { supervisor, spawned, sleeps, ...stored };
 }
 
+describe("createFeederSupervisor — single-pass", () => {
+	function finalProgress(proc: FakeProcess, seconds: string, frames = "300") {
+		proc.events.onStdoutLine(`frame=${frames}`);
+		proc.events.onStdoutLine(`out_time_us=${seconds}`);
+		proc.events.onStdoutLine("progress=end");
+	}
+
+	it("returns EOF evidence only after the final progress block and process exit", async () => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		proc.progress(500_000);
+		finalProgress(proc, "10000000");
+		proc.exit(0);
+		expect(await run).toEqual({
+			outcome: "STOPPED",
+			completion: {
+				reason: "EOF",
+				outTimeSec: 10,
+				progressEnd: true,
+				exitCode: 0,
+				observedAt: NOW,
+				frames: 300,
+			},
+		});
+		expect(s.spawned).toHaveLength(1);
+		expect(s.boundaries).toHaveLength(1);
+	});
+
+	it.each([
+		["missing end marker", "10000000", "300", false],
+		["short output", "9000000", "300", true],
+		["invalid output time", "N/A", "300", true],
+		["missing video frames", "10000000", "N/A", true],
+		["missing last video frame", "10000000", "299", true],
+		["extra video frames", "10000000", "301", true],
+	] as const)("rejects clean exit with %s", async (_name, seconds, frames, end) => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		if (end) finalProgress(proc, seconds, frames);
+		else proc.progress(Number(seconds));
+		proc.exit(0);
+		expect(await run).toMatchObject({
+			outcome: "ERROR",
+			error: expect.stringMatching(/single.pass.*EOF/i),
+		});
+		expect(s.spawned).toHaveLength(1);
+	});
+
+	it("does not reuse an earlier valid end block after a later invalid block", async () => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		finalProgress(proc, "10000000");
+		finalProgress(proc, "N/A");
+		proc.exit(0);
+		expect(await run).toMatchObject({ outcome: "ERROR" });
+	});
+
+	it.each([
+		undefined,
+		Number.NaN,
+		0,
+		-1,
+	])("does not claim EOF with unknown or invalid source duration %s", async (duration) => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceDurationSec: duration,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		finalProgress(proc, "10000000");
+		proc.exit(0);
+		expect(await run).toMatchObject({ outcome: "ERROR" });
+	});
+
+	it.each([
+		9_499_999, 10_500_001,
+	])("rejects duration outside the half-second packet tolerance: %s", async (outTimeUs) => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		finalProgress(proc, String(outTimeUs));
+		proc.exit(0);
+		expect(await run).toMatchObject({ outcome: "ERROR" });
+	});
+
+	it("does not count a duration overshoot at natural EOF as a second loop", async () => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		proc.progress(1_000_000);
+		proc.progress(10_100_000);
+		finalProgress(proc, "10100000");
+		proc.exit(0);
+		expect(await run).toMatchObject({
+			outcome: "STOPPED",
+			completion: { frames: 300 },
+		});
+		expect(s.boundaries).toHaveLength(1);
+	});
+
+	it("rejects a rewind even when the final progress matches the duration", async () => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		proc.progress(8_000_000);
+		proc.progress(1_000_000);
+		finalProgress(proc, "10000000");
+		proc.exit(0);
+		expect(await run).toMatchObject({ outcome: "ERROR" });
+	});
+
+	it("does not call a refused pre-spawn fence an ambiguous process spawn", async () => {
+		const onSpawnError = vi.fn(async () => {});
+		const s = setup({
+			playbackMode: "ONCE",
+			onSpawnError,
+			immediatelyBeforeProcessSpawn: async () => {
+				throw new Error("already dispatched");
+			},
+		});
+		await expect(s.supervisor.run()).rejects.toThrow("already dispatched");
+		expect(s.spawned).toHaveLength(0);
+		expect(onSpawnError).not.toHaveBeenCalled();
+	});
+
+	it("a bind deadline kills a single pass without replay or EOF success", async () => {
+		const s = setup({
+			playbackMode: "ONCE",
+			sourceFrames: 300,
+			bindTimeoutMs: 100,
+			bindProbeIntervalMs: 100,
+			mayKeepPushing: async () => ({
+				status: "UNKNOWN",
+				sampledAt: null,
+				probeStartedAt: null,
+			}),
+		});
+		const run = s.supervisor.run();
+		await tick();
+		expect(await s.sleeps.release()).toBe(100);
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		expect(proc.killed).toContain("SIGTERM");
+		finalProgress(proc, "10000000");
+		proc.exit(0);
+		expect(await run).toMatchObject({ outcome: "ERROR" });
+		expect(s.spawned).toHaveLength(1);
+	});
+
+	it("does not restart abnormal exits even when a restart budget is available", async () => {
+		const created = makeRunner();
+		const runner: ProcessRunner = {
+			...created.runner,
+			spawn(bin, argv, events) {
+				const proc = created.runner.spawn(bin, argv, events);
+				queueMicrotask(() => events.onExit(1, null));
+				return proc;
+			},
+		};
+		const s = setup({
+			runner,
+			playbackMode: "ONCE",
+			maxRestarts: 2,
+			sleep: async () => {},
+		});
+		expect(await s.supervisor.run()).toMatchObject({ outcome: "ERROR" });
+		expect(created.spawned).toHaveLength(1);
+	});
+
+	it("manual stop is terminal without claiming full EOF", async () => {
+		const s = setup({ playbackMode: "ONCE" });
+		const run = s.supervisor.run();
+		await tick();
+		s.supervisor.requestStop();
+		s.spawned[0]?.exit(null, "SIGTERM");
+		expect(await run).toEqual({ outcome: "STOPPED" });
+		expect(s.spawned).toHaveLength(1);
+	});
+
+	it("awaits the final dispatch fence after attempt persistence and before the process exists", async () => {
+		let release: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const hook = vi.fn(async () => {
+			await gate;
+		});
+		const s = setup({
+			playbackMode: "ONCE",
+			immediatelyBeforeProcessSpawn: hook,
+			maxRestarts: 0,
+		});
+		const run = s.supervisor.run();
+		await tick();
+		expect(s.attempts).toHaveLength(1);
+		expect(hook).toHaveBeenCalledWith(0);
+		expect(s.spawned).toHaveLength(0);
+		release();
+		await tick();
+		s.supervisor.requestStop();
+		s.spawned[0]?.exit(null, "SIGTERM");
+		await run;
+	});
+
+	it("does not spawn when a stop arrives during the final dispatch fence", async () => {
+		let release: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const s = setup({
+			playbackMode: "ONCE",
+			immediatelyBeforeProcessSpawn: async () => {
+				await gate;
+			},
+		});
+		const run = s.supervisor.run();
+		const outcome = run.then(
+			(value) => value,
+			(error: unknown) => error,
+		);
+		await tick();
+		s.supervisor.requestStop();
+		release();
+		await tick();
+		// Close a mistakenly created child before asserting so RED cannot hang.
+		s.spawned[0]?.exit(null, "SIGTERM");
+		const result = await outcome;
+		expect(s.spawned).toHaveLength(0);
+		expect(result).toBeInstanceOf(Error);
+	});
+});
+
 describe("createFeederSupervisor", () => {
 	it("runs the effect-boundary check immediately before the first spawn", async () => {
 		const beforeSpawn = vi.fn(async () => {

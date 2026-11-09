@@ -6,6 +6,7 @@ import {
 	feederJobId,
 	feederOccupancyWhere,
 	masterKeyFromEnv,
+	redactSecrets,
 } from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import type { Queue } from "bullmq";
@@ -61,6 +62,9 @@ const LIST_SELECT = {
 	liveChannelId: true,
 	status: true,
 	protocol: true,
+	playbackMode: true,
+	playbackDispatchedAt: true,
+	playbackReceipt: true,
 	sourceBucket: true,
 	sourceKey: true,
 	// The process ledger (audit 2026-08-29 CRITICAL-2): a terminal row that
@@ -161,6 +165,7 @@ export async function GET(req: Request) {
 				typeof item.error === "string" && isInternalFeederError(item.error);
 			return {
 				...item,
+				playbackReceipt: redactSecrets(item.playbackReceipt),
 				error: internalFailure ? null : item.error,
 				internalFailure,
 			};
@@ -407,6 +412,7 @@ export async function POST(req: Request) {
 						? { commitAt: now, commitRequestedAt: now }
 						: {}),
 					status: "CREATED",
+					playbackMode: data.playbackMode,
 					sourceCredentialId: data.source.credentialId,
 					sourceBucket: data.source.bucket,
 					sourceKey: data.source.key,

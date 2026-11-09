@@ -329,6 +329,9 @@ function setup(
 		sourceGeneration: null,
 		sourceSize: null,
 		sourceSha256: null,
+		playbackMode: "LOOP",
+		playbackDispatchedAt: null,
+		playbackReceipt: null,
 		protocol: "RTMP",
 		target: { url: "rtmp://203.0.113.7/live", streamKey: "sk-secret" },
 		pid: null,
@@ -429,6 +432,15 @@ function setup(
 		if (
 			"liveChannelRunId" in where &&
 			row.liveChannelRunId !== where.liveChannelRunId
+		) {
+			return false;
+		}
+		if ("playbackMode" in where && row.playbackMode !== where.playbackMode) {
+			return false;
+		}
+		if (
+			"playbackDispatchedAt" in where &&
+			!nullFilterOk(row.playbackDispatchedAt, where.playbackDispatchedAt)
 		) {
 			return false;
 		}
@@ -1117,6 +1129,7 @@ function setup(
 		liveSchedule,
 		effectClaims,
 		pushAttempts,
+		feederPushAttempt,
 	};
 }
 
@@ -5609,5 +5622,234 @@ describe("feeder processor — the publisher claim", () => {
 		expect(s.session.publisherGeneration).toBe(1);
 		expect(s.session.publisherReleasedAt).toBeNull();
 		expect(s.session.processGoneAt).toBeNull();
+	});
+});
+
+describe("single-pass feeder processor", () => {
+	it("uses all raw source streams without loop normalization, seals dispatch, and persists exact EOF evidence", async () => {
+		const source = structuredClone(PROBE_COPY);
+		const audio = source.streams[1];
+		if (!audio) throw new Error("Missing source audio fixture");
+		audio.duration = "30.050000";
+		source.format.duration = "30.050000";
+		const s = setup({
+			session: { playbackMode: "ONCE" },
+			probe: { code: 0, stdout: JSON.stringify(source), stderr: "" },
+		});
+		const run = s.processor.process(startJob);
+		await vi.waitFor(() => expect(s.spawned).toHaveLength(1));
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("Missing single-pass process");
+		expect(proc.argv[proc.argv.indexOf("-i") + 1]).toBe(
+			"/tmp/spool-test/src.mp4",
+		);
+		expect(proc.argv[proc.argv.indexOf("-stream_loop") + 1]).toBe("0");
+		expect(proc.argv).not.toContain("-ignore_editlist");
+		expect(s.session.playbackDispatchedAt).toBeInstanceOf(Date);
+		expect(normalizeArgvByLoop.size).toBe(0);
+		proc.events.onStdoutLine("frame=900");
+		proc.events.onStdoutLine("out_time_us=30050000");
+		proc.events.onStdoutLine("progress=end");
+		proc.exit(0);
+		await expect(run).resolves.toMatchObject({ status: "STOPPED" });
+		expect(s.spawned).toHaveLength(1);
+		expect(s.session.playbackReceipt).toMatchObject({
+			reason: "EOF",
+			sourceSha256: FETCHED_SHA256,
+			sourceDurationSec: 30.05,
+			outTimeSec: 30.05,
+			progressEnd: true,
+			exitCode: 0,
+			frames: 900,
+		});
+		expect(s.session.processGoneAt).toBeInstanceOf(Date);
+		expect(s.session.publisherReleasedAt).toBeInstanceOf(Date);
+		expect(s.session.pid).toBeNull();
+	});
+
+	it("refuses unsupported raw codecs instead of silently trimming a normalized source", async () => {
+		const source = structuredClone(PROBE_COPY);
+		const video = source.streams[0];
+		if (!video) throw new Error("Missing source video fixture");
+		video.codec_name = "hevc";
+		const s = setup({
+			session: { playbackMode: "ONCE" },
+			probe: { code: 0, stdout: JSON.stringify(source), stderr: "" },
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/single.pass.*copy.compatible/i,
+		);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeNull();
+	});
+
+	it("requires known source duration before spending the one dispatch", async () => {
+		const source = { streams: PROBE_COPY.streams };
+		const s = setup({
+			session: { playbackMode: "ONCE" },
+			probe: { code: 0, stdout: JSON.stringify(source), stderr: "" },
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(/duration/i);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeNull();
+	});
+
+	it("does not spawn when the durable single-pass dispatch CAS is refused", async () => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const update = s.feederSession.updateMany.getMockImplementation();
+		if (!update) throw new Error("Missing update fixture");
+		s.feederSession.updateMany.mockImplementation(async (arg) =>
+			arg.data.playbackDispatchedAt !== undefined ? { count: 0 } : update(arg),
+		);
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/single.pass.*dispatch/i,
+		);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.status).toBe("ERROR");
+	});
+
+	it("keeps an acknowledged-or-unknown dispatch marker and never republishes after a write error", async () => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const update = s.feederSession.updateMany.getMockImplementation();
+		if (!update) throw new Error("Missing update fixture");
+		s.feederSession.updateMany.mockImplementation(async (arg) => {
+			const result = await update(arg);
+			if (arg.data.playbackDispatchedAt !== undefined)
+				throw new Error("dispatch acknowledgement lost");
+			return result;
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/acknowledgement lost/,
+		);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeInstanceOf(Date);
+		await s.processor.process(startJob);
+		expect(s.spawned).toHaveLength(0);
+	});
+
+	it("does not resume a previously dispatched single pass after its process was proven gone", async () => {
+		const s = setup({
+			session: {
+				playbackMode: "ONCE",
+				playbackDispatchedAt: new Date(NOW),
+				status: "PUSHING",
+				ownerId: OWNER_A,
+				ownerGeneration: 1,
+				ownerLeaseAt: new Date(NOW),
+				startedAt: new Date(NOW),
+				pid: null,
+				processGoneAt: new Date(NOW),
+				publisherClaimedAt: new Date(NOW),
+				publisherReleasedAt: null,
+			},
+		});
+		const workerB = s.makeProcessor({
+			ownerId: OWNER_B,
+			now: () => new Date(Date.parse(NOW) + 600_000).toISOString(),
+		});
+		await expect(workerB.takeOverStale()).resolves.toEqual([]);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.status).toBe("ERROR");
+		expect(s.session.playbackDispatchedAt).toEqual(new Date(NOW));
+		expect(s.session.publisherReleasedAt).toBeInstanceOf(Date);
+	});
+
+	it("preserves an unproven publisher claim when only the single-pass dispatch marker survived", async () => {
+		const s = setup({
+			session: {
+				playbackMode: "ONCE",
+				playbackDispatchedAt: new Date(NOW),
+				status: "DOWNLOADING",
+				ownerId: OWNER_A,
+				ownerGeneration: 1,
+				ownerLeaseAt: new Date(NOW),
+				pid: null,
+				processGoneAt: null,
+				startedAt: null,
+				publisherClaimedAt: new Date(NOW),
+				publisherReleasedAt: null,
+			},
+		});
+		const workerB = s.makeProcessor({
+			ownerId: OWNER_B,
+			now: () => new Date(Date.parse(NOW) + 600_000).toISOString(),
+		});
+		await expect(workerB.takeOverStale()).resolves.toEqual([]);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.status).toBe("ERROR");
+		expect(s.session.playbackDispatchedAt).toEqual(new Date(NOW));
+		expect(s.session.processGoneAt).toBeNull();
+		expect(s.session.publisherReleasedAt).toBeNull();
+	});
+	it("does not spawn if a duplicate invocation observes a CREATED row with an existing dispatch marker", async () => {
+		const s = setup({
+			session: { playbackMode: "ONCE", playbackDispatchedAt: new Date(NOW) },
+		});
+		await s.processor.process(startJob);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toEqual(new Date(NOW));
+	});
+
+	it("cannot take over a stale snapshot after the old owner acquires its dispatch marker", async () => {
+		const s = setup({
+			session: {
+				playbackMode: "ONCE",
+				status: "DOWNLOADING",
+				pid: 4242,
+				ownerHost: HOST,
+				ownerId: OWNER_A,
+				ownerGeneration: 1,
+				ownerLeaseAt: new Date(NOW),
+				publisherClaimedAt: new Date(NOW),
+				publisherReleasedAt: null,
+			},
+		});
+		const workerB = s.makeProcessor({
+			ownerId: OWNER_B,
+			hostname: HOST,
+			now: () => new Date(Date.parse(NOW) + 600_000).toISOString(),
+			killPid: (pid, signal) => {
+				if (pid !== 4242) throw new Error("Unexpected reclaim pid");
+				if (signal === 0) {
+					// The old owner commits dispatch while takeover is awaiting the
+					// process probe; only the takeover CAS can observe this race.
+					s.session.playbackDispatchedAt = new Date(NOW);
+					const absent = new Error("gone") as Error & { code: string };
+					absent.code = "ESRCH";
+					throw absent;
+				}
+			},
+		});
+		await expect(workerB.takeOverStale()).resolves.toEqual([]);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.ownerGeneration).toBe(1);
+		expect(s.session.playbackDispatchedAt).toEqual(new Date(NOW));
+	});
+
+	it("manual stop never receives a natural EOF completion receipt", async () => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const run = s.processor.process(startJob);
+		await vi.waitFor(() => expect(s.spawned).toHaveLength(1));
+		await s.processor.process(stopJob);
+		s.spawned[0]?.exit(null, "SIGTERM");
+		await run;
+		expect(s.session.playbackReceipt).toBeNull();
+	});
+	it("rechecks the run after beginAttempt storage and refuses an intervening provider stop", async () => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const create = s.feederPushAttempt.create.getMockImplementation();
+		if (!create) throw new Error("Missing attempt fixture");
+		s.feederPushAttempt.create.mockImplementation(async (arg) => {
+			const result = await create(arg);
+			s.run.providerStatus = "STOPPING";
+			s.run.providerStatusObservedAt = new Date(NOW);
+			return result;
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/refused|STOPPING/,
+		);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeNull();
+		expect(s.session.status).toBe("ERROR");
 	});
 });

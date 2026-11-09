@@ -200,6 +200,8 @@ export type FeederTarget =
 export type BuildCommandInput = {
 	/** Local spool path of the downloaded source MP4. */
 	sourcePath: string;
+	/** Omission preserves the existing indefinitely repeating feeder. */
+	playbackMode?: "LOOP" | "ONCE";
 	decision: CodecDecision;
 	target: FeederTarget;
 	/**
@@ -333,6 +335,7 @@ function videoArgs(normalise: IngestNormalisation | undefined): string[] {
 
 export function buildFeederCommand(input: BuildCommandInput): BuiltCommand {
 	const { sourcePath, decision, target } = input;
+	const once = input.playbackMode === "ONCE";
 	// review-#239: normalisation is meaningless under `-c copy` — nothing is
 	// re-encoded, so the flags would be silently ignored and the argv would
 	// claim a guarantee the command cannot make.
@@ -341,7 +344,7 @@ export function buildFeederCommand(input: BuildCommandInput): BuiltCommand {
 	const head = [
 		"-hide_banner",
 		"-nostdin",
-		// -re (realtime pacing) and infinite -stream_loop must precede -i.
+		// Input pacing and loop count must precede -i.
 		"-re",
 		// : the normalized loop's AAC delay frame sits at a NEGATIVE
 		// pts under the mp4 edit list, and -stream_loop's per-play offset is
@@ -352,12 +355,15 @@ export function buildFeederCommand(input: BuildCommandInput): BuiltCommand {
 		// argument leans on the normalizer's `-tune zerolatency` (no B-frames,
 		// so the loop carries no VIDEO edit list); `normalize-ffmpeg.test.ts`
 		// pins the packet steps, so a return of B-frames would fail there.
-		"-ignore_editlist",
-		"1",
+		// A single pass uses the original MP4 timing, including its edit list.
+		...(once ? [] : ["-ignore_editlist", "1"]),
 		"-stream_loop",
-		"-1",
+		once ? "0" : "-1",
 		"-i",
 		sourcePath,
+		// Do not let cover art, subtitles or metadata choose the one-pass wire
+		// streams. No trim, shortest or loop-normalizer padding is applied.
+		...(once ? ["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn"] : []),
 	];
 	const codec =
 		decision.mode === "copy"

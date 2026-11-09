@@ -70,3 +70,73 @@ describe("feeder target schemas", () => {
 		).toThrow();
 	});
 });
+
+describe("feeder playback mode", () => {
+	const request = {
+		liveChannelId: uuid,
+		source: { credentialId: uuid, bucket: "media", key: "full-match.mp4" },
+		protocol: "RTMP",
+		target: { url: "rtmp://h/live", streamKey: "sk" },
+	};
+
+	it("keeps legacy requests in LOOP mode", () => {
+		expect(createFeederSessionSchema.parse(request).playbackMode).toBe("LOOP");
+	});
+
+	it.each(["LOOP", "ONCE"])("accepts an explicit %s mode", (playbackMode) => {
+		expect(
+			createFeederSessionSchema.parse({ ...request, playbackMode })
+				.playbackMode,
+		).toBe(playbackMode);
+	});
+
+	it("accepts single-pass SRT with the same source contract", () => {
+		expect(
+			createFeederSessionSchema.parse({
+				...request,
+				protocol: "SRT_CALLER",
+				target: { host: "h", port: 2088 },
+				playbackMode: "ONCE",
+			}).playbackMode,
+		).toBe("ONCE");
+	});
+
+	it.each([
+		null,
+		"once",
+		"REPEAT",
+		1,
+	])("rejects unknown mode %s", (playbackMode) => {
+		expect(
+			createFeederSessionSchema.safeParse({ ...request, playbackMode }).success,
+		).toBe(false);
+	});
+
+	it("refuses a staged switch for ONCE rather than replaying it on takeover", () => {
+		expect(
+			createFeederSessionSchema.safeParse({
+				...request,
+				playbackMode: "ONCE",
+				switchFromActive: true,
+			}).success,
+		).toBe(false);
+		expect(
+			createFeederSessionSchema.parse({
+				...request,
+				playbackMode: "ONCE",
+				switchFromActive: false,
+			}).playbackMode,
+		).toBe("ONCE");
+	});
+
+	it("does not accept client-written dispatch or EOF receipts", () => {
+		expect(
+			createFeederSessionSchema.safeParse({
+				...request,
+				playbackMode: "ONCE",
+				playbackDispatchedAt: "2026-11-09T00:00:00.000Z",
+				playbackReceipt: { completed: true },
+			}).success,
+		).toBe(false);
+	});
+});

@@ -60,7 +60,6 @@ import {
 	parseProbeJson,
 	probeArgs,
 	pushedMediaAttributes,
-	sourceDurationSec,
 	sourceMediaAttributes,
 	sourceVideoSpan,
 } from "./command";
@@ -432,6 +431,40 @@ function sealedIdentity(row: {
 			: {}),
 		size: Number(row.sourceSize),
 	};
+}
+
+/**
+ * ONCE maps v:0 and a:0 only and keeps MP4 edit lists enabled. ffprobe's
+ * selected-stream timing therefore describes that playback, relative to the
+ * input's container start. Container duration can include ignored tracks or
+ * subtitles and cannot qualify EOF. Missing timing is refused rather than
+ * inferred from a nominal frame rate or an unrelated stream.
+ */
+function selectedPlaybackDurationSec(probe: ProbeResult): number | undefined {
+	const seconds = (value: string | undefined): number | undefined => {
+		if (typeof value !== "string" || value.trim() === "") return undefined;
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : undefined;
+	};
+	const origin = seconds(probe.format?.start_time);
+	if (origin === undefined) return undefined;
+	const streams = probe.streams ?? [];
+	const selected = [
+		streams.find((stream) => stream.codec_type === "video"),
+		streams.find((stream) => stream.codec_type === "audio"),
+	];
+	let end = 0;
+	for (const stream of selected) {
+		if (!stream) continue;
+		const start = seconds(stream.start_time);
+		const duration = seconds(stream.duration);
+		if (start === undefined || duration === undefined || duration <= 0)
+			return undefined;
+		const streamEnd = start + duration - origin;
+		if (!Number.isFinite(streamEnd) || streamEnd <= 0) return undefined;
+		end = Math.max(end, streamEnd);
+	}
+	return end > 0 ? end : undefined;
 }
 
 /**
@@ -1910,18 +1943,18 @@ export function createFeederProcessor(deps: FeederDeps) {
 								"single-pass playback requires a copy-compatible H.264/AAC source; the full source is never loop-normalized",
 							);
 						}
-						const durationSec = sourceDurationSec(probe);
-						if (durationSec === undefined) {
-							throw new Error(
-								"single-pass playback requires a known source duration to qualify EOF",
-							);
-						}
 						const video = probe.streams?.find(
 							(stream) => stream.codec_type === "video",
 						);
 						if (!video || video.disposition?.attached_pic === 1) {
 							throw new Error(
 								"single-pass playback requires the first video stream to contain the source video",
+							);
+						}
+						const durationSec = selectedPlaybackDurationSec(probe);
+						if (durationSec === undefined) {
+							throw new Error(
+								"single-pass playback requires known selected-stream duration and start times to qualify EOF",
 							);
 						}
 						const parsedFrames = Number(video.nb_frames);
@@ -1932,7 +1965,11 @@ export function createFeederProcessor(deps: FeederDeps) {
 						if (reference) {
 							const compatibility = compareSourceCompatibility(
 								reference.media,
-								sourceMediaAttributes(probe),
+								pushedMediaAttributes(
+									sourceMediaAttributes(probe),
+									decision,
+									target.protocol,
+								),
 								"copy",
 							);
 							if (!compatibility.compatible) {

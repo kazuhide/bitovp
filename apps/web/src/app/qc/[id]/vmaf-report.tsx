@@ -26,6 +26,7 @@ import { FrameComparison } from "./frame-comparison";
 import { LadderScatter } from "./ladder-scatter";
 import { LivePanels, LiveQualityWarnings } from "./live-panels";
 import { PooledTable } from "./pooled-table";
+import { ReferencePreparationSummary } from "./reference-preparation-summary";
 import { VmafContextBanner } from "./vmaf-context-banner";
 
 /**
@@ -359,6 +360,7 @@ export function VmafReport({ id }: { id: string }) {
 			) : null}
 			{hasResults ? (
 				<>
+					<ReferencePreparationSummary results={job.results} />
 					{/* Above the numbers, deliberately: a correct score with no context is
 					    what turned a healthy pipeline into an hours-long investigation. */}
 					<VmafContextBanner

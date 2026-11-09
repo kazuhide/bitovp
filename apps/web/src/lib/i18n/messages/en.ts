@@ -2265,6 +2265,10 @@ export const en = {
 		language: "Language",
 	},
 	qc: {
+		referencePreparationSummary:
+			"Coded-raster comparison · display scaling ignored",
+		referencePreparationDescription:
+			"Manual choice for the results below: display scaling was ignored and coded pixels were preserved. This does not validate the displayed presentation.",
 		measureAdvanced: "Measurement options",
 		measureSource: "Measurement source",
 		measureSourceAuto: "Automatic (use the job settings)",

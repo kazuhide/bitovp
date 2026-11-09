@@ -198,6 +198,7 @@ const measureExistingSchema = z.object({
 	source: z.enum(["QC_MIRROR", "OUTPUT_MP4"]).optional(),
 	psnr: z.boolean().optional(),
 	measurementMethod: z.literal("FRAME_INDEX_BT709_10BIT").optional(),
+	referencePreparation: z.literal("LOSSLESS_DISPLAY_SCALE_REMUX").optional(),
 });
 
 export async function POST(req: Request) {
@@ -225,6 +226,17 @@ export async function POST(req: Request) {
 				"CAMBI is a detector, not a VMAF model; use kind BANDING for model-free measurement",
 			);
 		const execution = parsed.data.execution ?? { backend: "LOCAL" as const };
+		if (
+			parsed.data.referencePreparation &&
+			(parsed.data.execution?.backend !== "LOCAL" ||
+				parsed.data.execution.localMode !== "AUTO" ||
+				bandingOnly ||
+				parsed.data.measurementMethod !== undefined)
+		)
+			return jsonError(
+				400,
+				"Reference preparation requires explicit local AUTO VMAF without a frame-index measurement method",
+			);
 		if (banding && execution.backend === "CLOUD")
 			return jsonError(
 				400,
@@ -387,6 +399,9 @@ export async function POST(req: Request) {
 									: {}),
 								...(parsed.data.measurementMethod
 									? { measurementMethod: parsed.data.measurementMethod }
+									: {}),
+								...(parsed.data.referencePreparation
+									? { referencePreparation: parsed.data.referencePreparation }
 									: {}),
 								...(executionProfile ? { executionProfile } : {}),
 							} as Prisma.InputJsonValue,

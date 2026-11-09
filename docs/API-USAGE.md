@@ -606,6 +606,21 @@ No binary path or GPU index is accepted from these requests. Remeasure retains
 the requested local mode and selects a new backend snapshot for the new report.
 See [local GPU setup and limits](user-guide/GPU-QUALITY.md#choose-local-processing).
 
+Manual `POST /api/vmaf-jobs` additionally accepts
+`referencePreparation:"LOSSLESS_DISPLAY_SCALE_REMUX"` with explicit
+`execution:{"backend":"LOCAL","localMode":"AUTO"}`. It is unavailable for
+cloud, CPU, Banding-only, automatic QC, delivery gates, or `measurementMethod`.
+The worker requires an eligible native GPU and a supported display-scale-only
+source; it fails rather than falling back to CPU. Only a temporary reference is
+remuxed: coded pixels, packets and timing must be verified unchanged. Comparison
+uses the **coded raster**, with display scaling explicitly ignored; this does
+not validate the displayed presentation. Original storage objects stay unchanged.
+Valid per-result evidence appears as `results[].referencePreparation` in detail
+and `renditions[].referencePreparation` in JSON exports: source/prepared SHA-256,
+original fixed-point display matrix, geometry, stream identity, full packet/frame
+counts and hashes, and verified timing flags. Private paths are never returned;
+missing or invalid evidence is omitted. CSV columns remain unchanged.
+
 Create/re-run/watch
 validation: invalid400, unavailable503. `qc.measurementMethod:"FRAME_INDEX_BT709_10BIT"`:
 Cloud generation6. [Eligibility and cancellation](user-guide/QUALITY-AND-MONITORING.md#local-and-cloud-execution).

@@ -120,6 +120,34 @@ async function setup() {
 }
 
 describe("owned native local scoring", () => {
+	it("binds an explicitly prepared reference hash to the native receipt input", async () => {
+		const h = await setup();
+		const expectedReferenceSha256 = createHash("sha256")
+			.update("reference")
+			.digest("hex");
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			expectedReferenceSha256,
+		});
+		expect(result.execution.scoring.backend).toBe("vulkan");
+		expect(h.receipt.referenceSha256).toBe(expectedReferenceSha256);
+	});
+	it.each([
+		"0".repeat(64),
+		"A".repeat(64),
+		"",
+		"a".repeat(63),
+		"a".repeat(65),
+	])("rejects a mismatched or malformed prepared reference hash before native execution: %s", async (expectedReferenceSha256) => {
+		const h = await setup();
+		await expect(
+			runLocalVmafScore(h.deps, h.options, {
+				...h.context,
+				expectedReferenceSha256,
+			}),
+		).rejects.toThrow("NATIVE_REFERENCE_PREPARATION_SHA256_MISMATCH");
+		expect(h.run).not.toHaveBeenCalled();
+	});
 	it("keeps internal calibration bounded and verifies its frame count and pipeline depth", async () => {
 		const h = await setup();
 		Object.assign(h.receipt, {

@@ -1438,6 +1438,11 @@ export {
 	poolFrames,
 } from "./vmaf/pooled";
 export * from "./vmaf/profiles";
+export {
+	referencePreparationOf,
+	type VmafReferencePreparationEvidence,
+	vmafReferencePreparationEvidenceSchema,
+} from "./vmaf/reference-preparation";
 export * from "./vmaf/streamable-io";
 export type {
 	BandingTarget,

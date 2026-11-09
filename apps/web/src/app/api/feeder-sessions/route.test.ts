@@ -99,6 +99,9 @@ beforeEach(() => {
 		liveChannelId: data.liveChannelId,
 		status: data.status,
 		protocol: data.protocol,
+		playbackMode: data.playbackMode,
+		playbackDispatchedAt: null,
+		playbackReceipt: null,
 	}));
 });
 
@@ -107,6 +110,46 @@ afterEach(() => {
 });
 
 describe("POST /api/feeder-sessions", () => {
+	it("persists LOOP for an existing request which omits playbackMode", async () => {
+		const res = await POST(postRequest(rtmpBody));
+		expect(res.status).toBe(201);
+		expect(sessionCreate.mock.calls[0]?.[0]?.data.playbackMode).toBe("LOOP");
+		expect(await res.json()).toMatchObject({
+			playbackMode: "LOOP",
+			playbackDispatchedAt: null,
+			playbackReceipt: null,
+		});
+	});
+
+	it("persists a single-pass request without a dispatch or EOF claim from the client", async () => {
+		const res = await POST(postRequest({ ...rtmpBody, playbackMode: "ONCE" }));
+		expect(res.status).toBe(201);
+		const data = sessionCreate.mock.calls[0]?.[0]?.data;
+		expect(data.playbackMode).toBe("ONCE");
+		expect(data).not.toHaveProperty("playbackDispatchedAt");
+		expect(data).not.toHaveProperty("playbackReceipt");
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+		expect(await res.json()).toMatchObject({
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+			playbackReceipt: null,
+		});
+	});
+
+	it("rejects single-pass staged switching before admitting or enqueueing a session", async () => {
+		const res = await POST(
+			postRequest({
+				...rtmpBody,
+				playbackMode: "ONCE",
+				switchFromActive: true,
+			}),
+		);
+		expect(res.status).toBe(400);
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(sessionCount).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
 	it("rejects malformed bodies and mismatched protocol/target shapes", async () => {
 		expect((await POST(postRequest({}))).status).toBe(400);
 		expect(
@@ -549,6 +592,35 @@ describe("POST /api/feeder-sessions", () => {
 });
 
 describe("GET /api/feeder-sessions", () => {
+	it("keeps single-pass completion evidence readable and redacts secret-shaped receipt data", async () => {
+		sessionFindMany.mockResolvedValueOnce([
+			{
+				id: SESSION_ID,
+				status: "STOPPED",
+				playbackMode: "ONCE",
+				playbackDispatchedAt: new Date("2026-11-09T00:00:00.000Z"),
+				playbackReceipt: {
+					outcome: "EOF",
+					outTimeSec: 120,
+					streamKey: "must-stay-private",
+				},
+			},
+		]);
+		const res = await GET(new Request("http://test/api/feeder-sessions"));
+		const body = await res.json();
+		expect(body.items[0]).toMatchObject({
+			playbackMode: "ONCE",
+			playbackDispatchedAt: "2026-11-09T00:00:00.000Z",
+			playbackReceipt: { outcome: "EOF", outTimeSec: 120 },
+		});
+		expect(JSON.stringify(body)).not.toContain("must-stay-private");
+		expect(sessionFindMany.mock.calls[0]?.[0]?.select).toMatchObject({
+			playbackMode: true,
+			playbackDispatchedAt: true,
+			playbackReceipt: true,
+		});
+	});
+
 	it("returns a lean projection — never target/logTail/loopBoundaries", async () => {
 		sessionFindMany.mockResolvedValueOnce([
 			{

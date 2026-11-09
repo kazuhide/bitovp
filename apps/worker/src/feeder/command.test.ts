@@ -159,6 +159,41 @@ describe("probe helpers", () => {
 const copy: CodecDecision = { mode: "copy", reasons: ["fixture"] };
 
 describe("buildFeederCommand", () => {
+	it("ONCE reads the original edit list once and maps only the first video and audio", () => {
+		const { argv, redactedArgv } = buildFeederCommand({
+			sourcePath: "/spool/full-match.mp4",
+			playbackMode: "ONCE",
+			decision: copy,
+			target: {
+				protocol: "RTMP",
+				url: "rtmp://host/live",
+				streamKey: "private-key",
+			},
+		});
+		expect(argv.slice(0, argv.indexOf("-i") + 2)).toEqual([
+			"-hide_banner",
+			"-nostdin",
+			"-re",
+			"-stream_loop",
+			"0",
+			"-i",
+			"/spool/full-match.mp4",
+		]);
+		expect(argv).not.toContain("-ignore_editlist");
+		expect(argv.slice(argv.indexOf("-i") + 2, argv.indexOf("-c"))).toEqual([
+			"-map",
+			"0:v:0",
+			"-map",
+			"0:a:0?",
+			"-sn",
+			"-dn",
+		]);
+		for (const forbidden of ["-t", "-ss", "-shortest", "-vf", "-af"]) {
+			expect(argv).not.toContain(forbidden);
+		}
+		expect(redactedArgv.join(" ")).not.toContain("private-key");
+	});
+
 	it("RTMP copy: -re -stream_loop -1 before -i, flv mux, key joined onto the url", () => {
 		const { argv, redactedArgv } = buildFeederCommand({
 			sourcePath: "/spool/s.mp4",

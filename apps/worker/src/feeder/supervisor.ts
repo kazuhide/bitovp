@@ -121,8 +121,15 @@ export function createLoopTracker(
  * always been µs — the name is a historical bug); falls back to parsing
  * out_time=HH:MM:SS.micros. N/A values yield nothing.
  */
+export type FeederProgressBlock = {
+	status: string;
+	outTimeSec?: number;
+	frames?: number;
+};
+
 export function createProgressParser(
 	onOutTime: (outTimeSec: number) => void,
+	onBlock?: (progress: FeederProgressBlock) => void,
 ): (line: string) => void {
 	let block: Record<string, string> = {};
 	return (line: string) => {
@@ -137,6 +144,18 @@ export function createProgressParser(
 			return;
 		}
 		const sec = outTimeSecOf(block);
+		const rawFrames = block.frame;
+		const frames =
+			rawFrames !== undefined && /^\d+$/.test(rawFrames)
+				? Number(rawFrames)
+				: undefined;
+		onBlock?.({
+			status: value,
+			...(sec === undefined ? {} : { outTimeSec: sec }),
+			...(frames !== undefined && Number.isSafeInteger(frames)
+				? { frames }
+				: {}),
+		});
 		block = {};
 		if (sec !== undefined) {
 			onOutTime(sec);
@@ -147,8 +166,8 @@ export function createProgressParser(
 function outTimeSecOf(block: Record<string, string>): number | undefined {
 	for (const key of ["out_time_us", "out_time_ms"]) {
 		const raw = block[key];
-		if (raw !== undefined && raw !== "N/A") {
-			const us = Number.parseInt(raw, 10);
+		if (raw !== undefined && /^\d+$/.test(raw)) {
+			const us = Number(raw);
 			if (Number.isFinite(us) && us >= 0) {
 				return us / 1_000_000;
 			}
@@ -271,6 +290,10 @@ export type SupervisorDeps = {
 	/** Scrubs secret literals out of every captured line. */
 	redactLine(line: string): string;
 	sourceDurationSec: number | undefined;
+	/** ONCE never reopens a source after any process exit. Defaults to LOOP. */
+	playbackMode?: "LOOP" | "ONCE";
+	/** Exact selected-video frame count when the original MP4 reports it. */
+	sourceFrames?: number;
 	/**
 	 * Where this supervisor's loop numbering starts . Zero for a
 	 * fresh session; on a TAKEOVER it is one past the highest loop index the
@@ -288,6 +311,12 @@ export type SupervisorDeps = {
 	 * after its provider run or ownership generation changes.
 	 */
 	beforeSpawn?: (spawnOrdinal: number) => Promise<void>;
+	/**
+	 * Final durable single-pass dispatch fence, after attempt persistence and
+	 * immediately before the process syscall. No other await occurs between
+	 * this hook resolving and runner.spawn. A hook refusal is not a spawn.
+	 */
+	immediatelyBeforeProcessSpawn?: (spawnOrdinal: number) => Promise<void>;
 	/**
 	 * Called only after the process exists and the pid write returned. A false
 	 * result means the owner/session CAS lost and must not acknowledge an effect.
@@ -334,6 +363,15 @@ export type SupervisorDeps = {
 export type SupervisorResult = {
 	outcome: "STOPPED" | "ERROR";
 	error?: string;
+	/** Local source EOF proof, distinct from provider delivery/finalization. */
+	completion?: {
+		reason: "EOF";
+		outTimeSec: number;
+		progressEnd: true;
+		exitCode: 0;
+		observedAt: string;
+		frames?: number;
+	};
 };
 
 export type FeederSupervisor = {
@@ -465,6 +503,12 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 		process: FeederProcess;
 		exit: Promise<{ code: number | null; signal: string | null }>;
 		tracker: LoopTracker;
+		progress: {
+			last?: FeederProgressBlock;
+			previousTime?: number;
+			rewound: boolean;
+		};
+		bindStopped: boolean;
 	};
 
 	async function startOnce(attemptNo: number): Promise<ActiveAttempt> {
@@ -477,26 +521,43 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			startedAt,
 		});
 		const tracker = createLoopTracker(
-			deps.sourceDurationSec,
+			// At natural EOF the last packet can end slightly beyond duration.
+			// That is still pass 0, not evidence of another loop starting.
+			deps.playbackMode === "ONCE" ? undefined : deps.sourceDurationSec,
 			deps.now,
 			nextLoopBase,
 		);
-		const parseProgress = createProgressParser((outTimeSec) => {
-			const boundary = tracker.observe(outTimeSec);
-			if (boundary) {
-				capture(
-					`[feeder] loop boundary #${boundary.loopIndex} at stream ${boundary.streamTimeSec.toFixed(2)}s`,
-				);
-				// Sequential persists (single writer): boundary first, then tail.
-				void deps.store
-					.appendBoundary(boundary)
-					.then(() => flush(true))
-					.catch(() => {
-						// Persistence hiccups must not kill the push; the next
-						// boundary/flush retries with the full ring snapshot.
-					});
-			}
-		});
+		const progress: ActiveAttempt["progress"] = { rewound: false };
+		const parseProgress = createProgressParser(
+			(outTimeSec) => {
+				const boundary = tracker.observe(outTimeSec);
+				if (boundary) {
+					capture(
+						`[feeder] loop boundary #${boundary.loopIndex} at stream ${boundary.streamTimeSec.toFixed(2)}s`,
+					);
+					// Sequential persists (single writer): boundary first, then tail.
+					void deps.store
+						.appendBoundary(boundary)
+						.then(() => flush(true))
+						.catch(() => {
+							// Persistence hiccups must not kill the push; the next
+							// boundary/flush retries with the full ring snapshot.
+						});
+				}
+			},
+			(block) => {
+				progress.last = block;
+				if (block.outTimeSec !== undefined) {
+					if (
+						progress.previousTime !== undefined &&
+						block.outTimeSec < progress.previousTime - 0.25
+					) {
+						progress.rewound = true;
+					}
+					progress.previousTime = block.outTimeSec;
+				}
+			},
+		);
 
 		let settleExit: (result: {
 			code: number | null;
@@ -507,6 +568,10 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 				settleExit = resolve;
 			},
 		);
+		await deps.immediatelyBeforeProcessSpawn?.(attemptNo - 1);
+		if (deps.playbackMode === "ONCE" && stopRequested) {
+			throw new Error("Feeder stop requested before process spawn");
+		}
 		try {
 			current = deps.runner.spawn(deps.ffmpegPath, deps.argv, {
 				onStdoutLine: parseProgress,
@@ -620,6 +685,8 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			process,
 			exit,
 			tracker,
+			progress,
+			bindStopped: false,
 		};
 	}
 
@@ -732,11 +799,12 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			return;
 		}
 		bindKills += 1;
+		attempt.bindStopped = true;
 		if (bindKills >= cfg.maxBindKills) {
 			bindExhausted = true;
 		}
 		capture(
-			`[feeder] attempt ${attempt.id}: no accepted post-start CONNECTED evidence before the ${Math.round(cfg.bindTimeoutMs / 1000)}s deadline (last provider status ${lastStatus}) — stopping this process for a bounded retry (${bindKills}/${cfg.maxBindKills})`,
+			`[feeder] attempt ${attempt.id}: no accepted post-start CONNECTED evidence before the ${Math.round(cfg.bindTimeoutMs / 1000)}s deadline (last provider status ${lastStatus}) — stopping this process${deps.playbackMode === "ONCE" ? "; single-pass replay is forbidden" : ` for a bounded retry (${bindKills}/${cfg.maxBindKills})`}`,
 		);
 		// Evidence persistence already happened above. A diagnostic-tail write
 		// failure must never prevent the bounded safety action itself.
@@ -782,6 +850,51 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 				if (stopRequested) {
 					await flush(true);
 					return { outcome: "STOPPED" };
+				}
+				if (deps.playbackMode === "ONCE") {
+					const final = activeAttempt.progress.last;
+					const duration = deps.sourceDurationSec;
+					// FLV packet timestamps and AAC priming can differ from the MP4
+					// duration by a small fraction of a second. Exact selected-video
+					// frame equality, when known, separately protects the final frame.
+					const toleranceSec = 0.5;
+					const eof =
+						code === 0 &&
+						signal === null &&
+						!activeAttempt.bindStopped &&
+						!activeAttempt.progress.rewound &&
+						final?.status === "end" &&
+						typeof duration === "number" &&
+						Number.isFinite(duration) &&
+						duration > 0 &&
+						final.outTimeSec !== undefined &&
+						Number.isFinite(final.outTimeSec) &&
+						Math.abs(final.outTimeSec - duration) <= toleranceSec &&
+						(deps.sourceFrames === undefined ||
+							(Number.isSafeInteger(deps.sourceFrames) &&
+								deps.sourceFrames > 0 &&
+								final.frames === deps.sourceFrames));
+					if (!eof || final?.outTimeSec === undefined) {
+						const error = `single-pass EOF was not proven (exit ${code}, signal ${signal}, progress ${final?.status ?? "missing"}, out_time ${final?.outTimeSec ?? "missing"}, frames ${final?.frames ?? "missing"}, expected ${duration ?? "unknown"}s/${deps.sourceFrames ?? "unknown"} frames); replay is forbidden`;
+						capture(`[feeder] ${error}`);
+						await flush(true);
+						return { outcome: "ERROR", error };
+					}
+					capture(
+						`[feeder] single-pass EOF at ${final.outTimeSec}s; source will not be reopened`,
+					);
+					await flush(true);
+					return {
+						outcome: "STOPPED",
+						completion: {
+							reason: "EOF",
+							outTimeSec: final.outTimeSec,
+							progressEnd: true,
+							exitCode: 0,
+							observedAt: evidenceNow(),
+							...(final.frames === undefined ? {} : { frames: final.frames }),
+						},
+					};
 				}
 				if (bindExhausted) {
 					const error = `provider did not supply advancing CONNECTED evidence across two post-spawn polls for each of ${cfg.maxBindKills} bounded attempts; every process was stopped. Cause remains unresolved between source, ffmpeg/ingest path and provider — correlate FeederPushAttempt ${attemptIds.join(", ")} when comparing stream-copy and normalized-transcode runs`;

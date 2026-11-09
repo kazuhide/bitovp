@@ -492,6 +492,17 @@ curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/live-channels
 
 Stop also stops attached feeders. `DELETE /api/live-channels/<id>` removes a stopped channel.
 
+`POST /api/feeder-sessions` accepts optional `playbackMode: "LOOP" | "ONCE"`
+(omitted = `LOOP`). `ONCE` sends the complete copy-compatible H.264/AAC source
+once, preserves its audio tail and edit list, and never restarts after an exit,
+worker takeover, or an uncertain dispatch. It rejects `switchFromActive: true`.
+The normal feeder list/detail includes `playbackMode`, `playbackDispatchedAt`
+and `playbackReceipt`; a natural EOF receipt requires exit 0, final progress,
+source duration and the known video frame count. An operator stop has no EOF
+receipt. Feeder EOF does **not** stop the paid live channel: use the normal
+channel STOP action and verify provider finalization separately.
+See [single-pass contract and rollout](feeder-single-pass.md).
+
 The status body's `playbackLinks[]` carries one entry per manifest with `url`
 (or `null` plus a coded `reason`) and `via`. For an Akamai MSL output the URL
 is derived from the `AKAMAI_MSL` credential's optional `config.edgeBaseUrl`

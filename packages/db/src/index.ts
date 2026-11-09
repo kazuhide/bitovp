@@ -27,6 +27,8 @@ export type {
 } from "./credentials";
 export { createCredentialStore } from "./credentials";
 export { recordUnrestrictedEgress } from "./egress-audit";
+export type { FeederSinglePassDispatchFence } from "./feeder-single-pass";
+export { claimFeederSinglePassDispatch } from "./feeder-single-pass";
 export type {
 	AuthenticationToken,
 	IdentityPrismaClient,

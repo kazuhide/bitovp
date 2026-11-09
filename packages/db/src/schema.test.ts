@@ -44,6 +44,42 @@ describe("User session generation", () => {
 	});
 });
 
+describe("FeederSession single-pass persistence", () => {
+	it("retains LOOP by default and separates dispatch intent from EOF evidence", () => {
+		const body = block("model", "FeederSession");
+		expect(body).toMatch(/^\s{2}playbackMode\s+String\s+@default\("LOOP"\)$/m);
+		expect(body).toMatch(/^\s{2}playbackDispatchedAt\s+DateTime\?$/m);
+		expect(body).toMatch(/^\s{2}playbackReceipt\s+Json\?$/m);
+		const fields: Pick<
+			FeederSession,
+			"playbackMode" | "playbackDispatchedAt" | "playbackReceipt"
+		> = {
+			playbackMode: "LOOP",
+			playbackDispatchedAt: null,
+			playbackReceipt: null,
+		};
+		expect(fields.playbackDispatchedAt).toBeNull();
+		expect(fields.playbackReceipt).toBeNull();
+	});
+
+	it("upgrades old rows additively and constrains the persisted playback modes", () => {
+		const sql = readFileSync(
+			join(
+				__dirname,
+				"../prisma/migrations/20261109121500_feeder_single_pass/migration.sql",
+			),
+			"utf8",
+		);
+		expect(sql).toContain(
+			"ADD COLUMN \"playbackMode\" TEXT NOT NULL DEFAULT 'LOOP'",
+		);
+		expect(sql).toContain('ADD COLUMN "playbackDispatchedAt" TIMESTAMP(3)');
+		expect(sql).toContain('ADD COLUMN "playbackReceipt" JSONB');
+		expect(sql).toContain("CHECK (\"playbackMode\" IN ('LOOP', 'ONCE'))");
+		expect(sql).not.toMatch(/DROP\s+(TABLE|COLUMN)|DELETE\s+FROM/i);
+	});
+});
+
 describe("LiveChannelStatus enum", () => {
 	it("carries exactly the lifecycle states (RUNNING is steady, not terminal)", () => {
 		const body = block("enum", "LiveChannelStatus");

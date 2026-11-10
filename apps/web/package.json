@@ -1,6 +1,6 @@
 {
 	"name": "@bitovp/web",
-	"version": "1.2.2",
+	"version": "1.2.1",
 	"private": true,
 	"scripts": {
 		"auth:create-token": "tsx scripts/create-token.ts",

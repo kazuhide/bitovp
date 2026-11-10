@@ -1,8 +1,8 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-10T11:35:55.981Z",
-		"sourceCommit": "78ec37bbacda10d8a0b5a9524178731cd866a1bc",
+		"generatedAt": "2026-11-10T11:43:40.211Z",
+		"sourceCommit": "dec443c9341ac0e979a78bda2cd325326793abed",
 		"sourceFingerprint": "b9fa0e627eb21a4e606dc2457347be3d0053a381b57730b7d89fd0382cf96f1a",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",

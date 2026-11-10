@@ -1,3 +1,8 @@
+import {
+	type EncodingPlan,
+	encodingPlanSchema,
+	validatePlan,
+} from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
@@ -21,6 +26,62 @@ const ID = "00000000-0000-4000-8000-0000000000aa";
 const params = { params: Promise.resolve({ id: ID }) };
 const req = () => new Request("http://test", { method: "POST" });
 
+function nativeQcPlan(only = false): EncodingPlan {
+	return encodingPlanSchema.parse({
+		planVersion: 1,
+		name: "native HEVCv2 retained failed plan",
+		bitmovin: {},
+		generation: { timing: "JUST_IN_TIME" },
+		inputs: [{ key: "main", kind: "S3", credentialId: ID, bucket: "input" }],
+		outputs: [
+			{ key: "origin", kind: "S3", credentialId: ID, bucket: "output" },
+		],
+		ingest: [
+			{
+				key: "video",
+				inputKey: "main",
+				inputPath: "bbb.mov",
+				selectionMode: "VIDEO_RELATIVE",
+				position: 0,
+			},
+		],
+		renditions: [
+			{
+				key: "v1080",
+				codec: "H265",
+				ingestKey: "video",
+				width: 1920,
+				height: 1080,
+				bitrate: 2_000_000,
+				rate: 24,
+				mode: "STANDARD",
+			},
+		],
+		muxings: [
+			{
+				key: "video",
+				kind: "FMP4",
+				streamKey: "v1080",
+				segmentLength: 4,
+				destination: { outputKey: "origin", path: "video/1080/" },
+			},
+		],
+		internal: { hevcV2: { bcfVersion: "v2.325.0-461-g85df7fd6c6" } },
+		qc: { vmaf: false, banding: true, only },
+	});
+}
+
+const failedStart = [
+	{
+		step: "start",
+		kind: "START_ENCODING",
+		status: "FAILED",
+		payload: {},
+		refs: { encodingId: "encoding" },
+		error: "provider rejected start",
+	},
+];
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.stubEnv("MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
@@ -33,6 +94,72 @@ afterEach(() => {
 });
 
 describe("POST /api/encoding-jobs/[id]/retry", () => {
+	it.each([
+		"generated QC mirror",
+		"two delivery muxings",
+	])("refuses retained native HEVCv2 with %s before claiming or enqueueing", async (shape) => {
+		const plan = nativeQcPlan();
+		if (shape === "two delivery muxings") {
+			delete plan.qc;
+			const muxing = plan.muxings[0];
+			if (!muxing) throw new Error("Missing muxing fixture");
+			plan.muxings.push({ ...muxing, key: "second-delivery" });
+		}
+		findUnique.mockResolvedValueOnce({
+			id: ID,
+			status: "ERROR",
+			plan,
+			stepLog: failedStart,
+		});
+		const response = await POST(req(), params);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "PLAN_INTERNAL_HEVC_V2_MULTIPLE_MUXINGS" },
+			error: expect.stringContaining("SMART_PASS"),
+		});
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(update).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"native QC-only",
+		"ordinary HEVCv1",
+		"native legacy unrelated validation error",
+	])("preserves compiled retry semantics for %s", async (shape) => {
+		const plan = nativeQcPlan(shape !== "ordinary HEVCv1");
+		if (shape === "ordinary HEVCv1") delete plan.internal;
+		if (shape === "native legacy unrelated validation error") {
+			plan.ingest = [];
+			expect(validatePlan(plan).some((issue) => issue.level === "error")).toBe(
+				true,
+			);
+		}
+		findUnique.mockResolvedValueOnce({
+			id: ID,
+			status: "ERROR",
+			plan,
+			stepLog: failedStart,
+		});
+		const response = await POST(req(), params);
+		expect(response.status).toBe(200);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "QUEUED",
+					stepLog: [
+						expect.objectContaining({
+							step: "start",
+							status: "PENDING",
+							refs: { encodingId: "encoding" },
+						}),
+					],
+				}),
+			}),
+		);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
 	it("refuses irreversible remote STOP intent even if the job remains ERROR", async () => {
 		findUnique.mockResolvedValueOnce({
 			id: ID,

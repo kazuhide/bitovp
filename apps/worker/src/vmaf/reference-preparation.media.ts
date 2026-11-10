@@ -13,7 +13,7 @@ import { prepareDisplayScaleReference } from "./reference-preparation";
 const digest = (bytes: Buffer) =>
 	createHash("sha256").update(bytes).digest("hex");
 
-test("real fractional MOV display scale: complete H264 packets, B-frame timing and decoded rasters survive", async () => {
+async function verifyMediaReference(audioFirst: boolean) {
 	const directory = await mkdtemp(
 		join(tmpdir(), "bitovp-reference-preparation-media-"),
 	);
@@ -29,6 +29,20 @@ test("real fractional MOV display scale: complete H264 packets, B-frame timing a
 			"lavfi",
 			"-i",
 			"testsrc2=s=192x108:r=24",
+			...(audioFirst
+				? [
+						"-f",
+						"lavfi",
+						"-i",
+						"sine=frequency=440:sample_rate=48000:duration=0.5",
+						"-map",
+						"1:a:0",
+						"-map",
+						"0:v:0",
+						"-c:a",
+						"aac",
+					]
+				: []),
 			"-frames:v",
 			"12",
 			"-c:v",
@@ -45,7 +59,11 @@ test("real fractional MOV display scale: complete H264 packets, B-frame timing a
 		]);
 		assert.equal(generated.code, 0, generated.stderr);
 		const bytes = await readFile(originalPath);
-		const atom = bytes.indexOf(Buffer.from("tkhd")) - 4;
+		const firstHeader = bytes.indexOf(Buffer.from("tkhd"));
+		const atom =
+			(audioFirst
+				? bytes.indexOf(Buffer.from("tkhd"), firstHeader + 4)
+				: firstHeader) - 4;
 		assert.ok(atom >= 0);
 		assert.equal(bytes[atom + 8], 0, "fixture uses version-0 track header");
 		const values = [34475, 0, 0, 0, 34467, 0, 0, 0, 1073741824];
@@ -62,8 +80,12 @@ test("real fractional MOV display scale: complete H264 packets, B-frame timing a
 			originalPath,
 		]);
 		assert.equal(probe.code, 0, probe.stderr);
+		const originalVideo = JSON.parse(probe.stdout).streams.find(
+			(stream: { codec_type: string }) => stream.codec_type === "video",
+		);
+		assert.equal(originalVideo.index, audioFirst ? 1 : 0);
 		assert.equal(
-			presentationTransformReason(JSON.parse(probe.stdout).streams[0]),
+			presentationTransformReason(originalVideo),
 			"CUDA_DISPLAY_MATRIX_REQUIRES_CPU",
 		);
 		const result = await prepareDisplayScaleReference({
@@ -92,6 +114,7 @@ test("real fractional MOV display scale: complete H264 packets, B-frame timing a
 			presentationTransformReason(JSON.parse(result.probe).streams[0]),
 			undefined,
 		);
+		assert.equal(JSON.parse(result.probe).streams[0].index, 0);
 		assert.deepEqual((await readdir(directory)).sort(), [
 			"prepared.mov",
 			"source.mov",
@@ -140,10 +163,20 @@ test("real fractional MOV display scale: complete H264 packets, B-frame timing a
 				ffmpeg: (await runner.run("ffmpeg", ["-version"])).stdout.split(
 					"\n",
 				)[0],
+				ffprobe: (await runner.run("ffprobe", ["-version"])).stdout.split(
+					"\n",
+				)[0],
+				originalVideoIndex: originalVideo.index,
+				preparedVideoIndex: 0,
 				evidence: result.evidence,
 			}),
 		);
 	} finally {
 		await rm(directory, { recursive: true, force: true });
 	}
-});
+}
+
+test("real fractional MOV display scale: complete H264 packets, B-frame timing and decoded rasters survive", () =>
+	verifyMediaReference(false));
+test("real fractional MOV with audio first: video packets and frames survive stream renumbering one to zero", () =>
+	verifyMediaReference(true));

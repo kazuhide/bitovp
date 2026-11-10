@@ -11,13 +11,19 @@ const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const fail = (reason: string): never => {
 	throw new Error(`REFERENCE_PREPARATION_${reason}`);
 };
-type Video = Record<string, unknown>;
+type Video = Record<string, unknown> & { index: number };
 function videoOf(probe: string, prepared = false): Video {
 	if (Buffer.byteLength(probe) > 1024 * 1024) fail("PROBE_LIMIT");
 	const streams = JSON.parse(probe).streams;
 	if (!Array.isArray(streams)) return fail("VIDEO_STREAM");
 	const videos = streams.filter((stream) => stream?.codec_type === "video");
-	if (videos.length !== 1 || (prepared && streams.length !== 1))
+	if (
+		videos.length !== 1 ||
+		(prepared && streams.length !== 1) ||
+		typeof videos[0]?.index !== "number" ||
+		!Number.isSafeInteger(videos[0].index) ||
+		videos[0].index < 0
+	)
 		return fail("VIDEO_STREAM");
 	return videos[0];
 }
@@ -135,13 +141,13 @@ function identity(video: Video) {
 		identityFields.map((field) => [field, video[field] ?? null]),
 	);
 }
-function packets(text: string) {
+function packets(text: string, expectedIndex: number) {
 	const rows = JSON.parse(text).packets;
 	if (!Array.isArray(rows) || rows.length === 0 || rows.length > 500000)
 		return fail("PACKET_COVERAGE");
 	return rows.map((row, index) => {
 		if (
-			row.stream_index !== 0 ||
+			row.stream_index !== expectedIndex ||
 			![row.pts, row.dts, row.duration].every(Number.isSafeInteger) ||
 			row.duration <= 0 ||
 			!/^[1-9]\d*$/.test(row.size) ||
@@ -355,7 +361,7 @@ export async function prepareDisplayScaleReference(input: {
 		)
 			fail("PREPARED_IDENTITY");
 		const preparedBeforeProof = await hashNativeFile(preparedPath, signal);
-		const proof = async (path: string, label: string) => {
+		const proof = async (path: string, label: string, video: Video) => {
 			const packetFile = join(directory ?? "", `${label}.packets.json`),
 				frameFile = join(directory ?? "", `${label}.framehash`);
 			await run(
@@ -415,12 +421,12 @@ export async function prepareDisplayScaleReference(input: {
 				frameFile,
 			);
 			return {
-				packets: packets(await readFile(packetFile, "utf8")),
-				frames: frames(await readFile(frameFile, "utf8"), freshVideo),
+				packets: packets(await readFile(packetFile, "utf8"), video.index),
+				frames: frames(await readFile(frameFile, "utf8"), video),
 			};
 		};
-		const before = await proof(originalPath, "original"),
-			after = await proof(preparedPath, "prepared");
+		const before = await proof(originalPath, "original", freshVideo),
+			after = await proof(preparedPath, "prepared", preparedVideo);
 		const packetJson = JSON.stringify(before.packets),
 			frameJson = JSON.stringify(before.frames);
 		if (

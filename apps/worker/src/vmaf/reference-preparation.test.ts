@@ -138,6 +138,73 @@ it("accepts only completely verified coded-raster preservation", async () => {
 	expect(await readFile(input.originalPath, "utf8")).toBe("source");
 });
 
+it("verifies an audio-first source's video packets at index one against the remuxed video at zero", async () => {
+	const originalStreams = [
+		{ index: 0, codec_type: "audio" },
+		{ ...JSON.parse(sourceProbe()).streams[0], index: 1 },
+	];
+	const input = await setup((kind, source, text) => {
+		if (!source) return text;
+		if (kind === "probe") return JSON.stringify({ streams: originalStreams });
+		if (kind === "packets")
+			return text.replace('"stream_index":0', '"stream_index":1');
+		return text;
+	});
+	input.originalProbe = JSON.stringify({ streams: originalStreams });
+	const result = await prepareDisplayScaleReference(input);
+	expect(result.evidence).toMatchObject({
+		packetCount: 1,
+		frameCount: 1,
+		packetTimingVerified: true,
+		frameTimingVerified: true,
+	});
+	expect(JSON.parse(result.probe).streams[0].index).toBe(0);
+});
+
+it.each([
+	-1,
+	0.5,
+	Number.MAX_SAFE_INTEGER + 1,
+	"0",
+	undefined,
+])("rejects invalid selected video index %s", async (index) => {
+	const input = await setup();
+	await expect(
+		prepareDisplayScaleReference({
+			...input,
+			originalProbe: sourceProbe({ index }),
+		}),
+	).rejects.toThrow("REFERENCE_PREPARATION_VIDEO_STREAM");
+	await expect(readFile(input.preparedPath)).rejects.toThrow();
+});
+
+it.each([
+	true,
+	false,
+])("rejects packets belonging to another selected stream (source=%s)", async (isOriginal) => {
+	const input = await setup((kind, source, text) =>
+		kind === "packets" && source === isOriginal
+			? text.replace('"stream_index":0', '"stream_index":1')
+			: text,
+	);
+	await expect(prepareDisplayScaleReference(input)).rejects.toThrow(
+		"REFERENCE_PREPARATION_PACKET_TIMING",
+	);
+	await expect(readFile(input.preparedPath)).rejects.toThrow();
+});
+
+it("rejects an invalid freshly probed prepared-video index", async () => {
+	const input = await setup((kind, source, text) =>
+		kind === "probe" && !source
+			? text.replace('"index":0', '"index":-1')
+			: text,
+	);
+	await expect(prepareDisplayScaleReference(input)).rejects.toThrow(
+		"REFERENCE_PREPARATION_VIDEO_STREAM",
+	);
+	await expect(readFile(input.preparedPath)).rejects.toThrow();
+});
+
 it.each([
 	"packets",
 	"frames",

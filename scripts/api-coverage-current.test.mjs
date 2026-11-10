@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { enumerateOperations, collectEvidence } from "./api-coverage-current.mjs";
+import { enumerateOperations, collectEvidence, censusContent, censusDifferences, censusRunDifferences } from "./api-coverage-current.mjs";
 import { enumerateBodyParameters, createRequestFieldAudit } from "./api-coverage-fields.mjs";
 
 test("operation denominator preserves shared GET/DELETE paths and customData", () => {
@@ -235,4 +235,87 @@ test("field evidence comes only from direct SDK call body literals and construct
 test("unresolved SDK body declarations fail closed instead of silently shrinking the field inventory", () => {
 	const audit = createRequestFieldAudit({ root: "/fixture", sdkRoot: "/fixture/sdk", bodyOperations: [{ identity: "encoding/items/ItemsApi.d.ts#create", sdkMethod: "encoding.items.create", path: "/encoding/items", httpVerb: "POST", bodyParameterIndex: 0 }] });
 	assert.throws(() => audit.finish(), /Unresolved SDK body models/);
+});
+
+function censusFixture() {
+	return {
+		schemaVersion: 1,
+		provenance: { generatedAt: "2026-11-10T00:00:00.000Z", sourceCommit: "a".repeat(40), sourceFingerprint: "b".repeat(64), sdkVersion: "1.287.0", typescriptVersion: "5.9.3", sdkFingerprint: "c".repeat(64), method: "typescript-resolved-sdk-signatures-v1", scope: "encoding" },
+		summary: { totalOperations: 2, sourceConfirmed: 1, unconfirmed: 1, createTotal: 1, createSourceConfirmed: 1 },
+		families: [{ family: "items", total: 2, sourceConfirmed: 1, unconfirmed: 1 }],
+		endpoints: [
+			{ path: "/encoding/items", httpVerb: "POST", operation: "create", sdkMethod: "encoding.items.create", family: "items", status: "source-confirmed", evidence: [{ file: "apps/worker/src/a.ts", line: 10 }, { file: "apps/worker/src/a.ts", line: 30 }, { file: "apps/web/src/b.ts", line: 5 }] },
+			{ path: "/encoding/items/{id}", httpVerb: "GET", operation: "get", sdkMethod: "encoding.items.get", family: "items", status: "unconfirmed", evidence: [] },
+		],
+		requestFields: {
+			method: "typescript-sdk-body-properties-v1",
+			scope: "fixture",
+			summary: { bodyOperations: 1, expandedOperations: 1, unexpandedOperations: 0, totalFields: 2, sourceAssigned: 1, unconfirmed: 1 },
+			operations: [{
+				sdkMethod: "encoding.items.create", path: "/encoding/items", httpVerb: "POST", bodyParameterIndex: 0, bodyModel: "Item", expansion: "expanded",
+				fields: [
+					{ name: "name", type: "string | undefined", sdkEvidence: { file: "models/Item.d.ts", line: 4 }, status: "source-assigned", evidence: [{ file: "apps/worker/src/a.ts", line: 12, callLine: 10 }] },
+					{ name: "other", type: "string | undefined", sdkEvidence: { file: "models/Item.d.ts", line: 5 }, status: "unconfirmed", evidence: [] },
+				],
+			}],
+		},
+	};
+}
+
+test("unrelated source changes and shifted lines leave the census content unchanged", () => {
+	const saved = censusFixture();
+	const current = censusFixture();
+	Object.assign(current.provenance, { generatedAt: "2026-11-11T00:00:00.000Z", sourceCommit: "d".repeat(40), sourceFingerprint: "e".repeat(64), typescriptVersion: "5.9.4" });
+	for (const entry of current.endpoints[0].evidence) entry.line += 7;
+	Object.assign(current.requestFields.operations[0].fields[0].evidence[0], { line: 19, callLine: 17 });
+	assert.deepEqual(censusDifferences(saved, current), []);
+	// Only the exact check reports what a refresh at release preparation rewrites.
+	assert.deepEqual(censusRunDifferences(saved, current), [
+		`provenance: sourceFingerprint "${"b".repeat(64)}" -> "${"e".repeat(64)}"`,
+		'provenance: typescriptVersion "5.9.3" -> "5.9.4"',
+		"evidence line numbers or entry order differ",
+	]);
+	assert.deepEqual(censusRunDifferences(saved, censusFixture()), []);
+});
+
+test("each change to the SDK surface, reached operations, fields or evidence files is named", () => {
+	const create = "encoding.items.create (POST /encoding/items)";
+	for (const [change, expected] of [
+		[(c) => { c.provenance.sdkVersion = "1.288.0"; }, ['census: sdkVersion "1.287.0" -> "1.288.0"']],
+		[(c) => { c.provenance.sdkFingerprint = "f".repeat(64); }, [`census: sdkFingerprint "${"c".repeat(64)}" -> "${"f".repeat(64)}"`]],
+		[(c) => { c.endpoints[1].status = "source-confirmed"; c.endpoints[1].evidence.push({ file: "apps/web/src/new.ts", line: 3 }); }, [
+			'encoding.items.get (GET /encoding/items/{id}): status "unconfirmed" -> "source-confirmed"',
+			"encoding.items.get (GET /encoding/items/{id}): evidence +apps/web/src/new.ts",
+		]],
+		[(c) => { c.endpoints[0].evidence[2].file = "apps/web/src/moved.ts"; }, [`${create}: evidence -apps/web/src/b.ts +apps/web/src/moved.ts`]],
+		[(c) => { c.endpoints[0].evidence.pop(); c.endpoints[0].evidence.pop(); }, [`${create}: evidence -apps/web/src/b.ts -apps/worker/src/a.ts x2 +apps/worker/src/a.ts`]],
+		[(c) => { c.endpoints.pop(); }, ["encoding.items.get (GET /encoding/items/{id}): no longer produced by the source"]],
+		[(c) => { c.endpoints.push({ ...c.endpoints[1], sdkMethod: "encoding.items.list", path: "/encoding/items", operation: "list" }); }, ["encoding.items.list (GET /encoding/items): missing from the committed census"]],
+		[(c) => { c.summary.sourceConfirmed = 2; c.families[0].sourceConfirmed = 2; }, ["summary: sourceConfirmed 1 -> 2", "family items: sourceConfirmed 1 -> 2"]],
+		[(c) => { const field = c.requestFields.operations[0].fields[1]; field.status = "source-assigned"; field.evidence.push({ file: "apps/worker/src/a.ts", line: 13, callLine: 10 }); }, [
+			`${create} body field other: status "unconfirmed" -> "source-assigned"`,
+			`${create} body field other: evidence +apps/worker/src/a.ts`,
+		]],
+		[(c) => { c.requestFields.operations[0].fields[0].type = "number | undefined"; }, [`${create} body field name: type "string | undefined" -> "number | undefined"`]],
+		[(c) => { c.requestFields.operations[0].expansion = "unexpanded"; }, [`${create} body: expansion "expanded" -> "unexpanded"`]],
+		[(c) => { c.requestFields.summary.sourceAssigned = 2; }, ['request fields: summary {"bodyOperations":1,"expandedOperations":1,"unexpandedOperations":0,"totalFields":2,"sourceAssigned":1,"unconfirmed":1} -> {"bodyOperations":1,"expandedOperations":1,"unexpandedOperations":0,"totalFields":2,"sourceAssigned":2,"unconfirmed":1}']],
+	]) {
+		const current = censusFixture();
+		change(current);
+		assert.deepEqual(censusDifferences(censusFixture(), current), expected);
+	}
+});
+
+test("a census that cannot be compared entry by entry fails closed", () => {
+	const duplicate = censusFixture();
+	duplicate.endpoints.push({ ...duplicate.endpoints[0] });
+	assert.throws(() => censusContent(duplicate), /Ambiguous census entry: encoding\.items\.create/);
+	assert.throws(() => censusContent({ ...censusFixture(), extra: [] }), /Unknown census section: extra/);
+});
+
+test("the bundled census yields one comparable entry per operation, family and body field", () => {
+	const census = JSON.parse(readFileSync(new URL("../apps/web/src/data/api-coverage/current.json", import.meta.url), "utf8"));
+	const fields = census.requestFields.operations.reduce((total, operation) => total + operation.fields.length, 0);
+	assert.equal(censusContent(census).size, 3 + census.families.length + census.endpoints.length + census.requestFields.operations.length + fields);
+	assert.deepEqual(censusDifferences(census, census), []);
 });

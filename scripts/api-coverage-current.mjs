@@ -1,6 +1,12 @@
 /** Offline Encoding-operation census. Source evidence is not runtime/paid proof.
  * No SDK code is executed. Unresolved wrappers/dynamic dispatch remain unconfirmed.
- * node scripts/api-coverage-current.mjs --write | --check
+ * node scripts/api-coverage-current.mjs --write | --check | --check-exact
+ *
+ * --check compares what the census states: the SDK surface, which operations and
+ * body fields the source reaches, and from which files. Unrelated source changes
+ * and shifted line numbers do not make it stale. --check-exact also requires the
+ * recorded source fingerprint, compiler version and line numbers to match; release
+ * preparation refreshes them with --write.
  */
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -127,18 +133,95 @@ export function generateCensus() {
 	};
 }
 
+// These describe one generation run. The commit and time never take part in a check.
+const RUN_PROVENANCE = ["generatedAt", "sourceCommit", "sourceFingerprint", "typescriptVersion"];
+const SECTIONS = ["schemaVersion", "provenance", "summary", "families", "endpoints", "requestFields"];
+
+function evidenceFiles(evidence) {
+	const counts = new Map();
+	for (const { file } of evidence) counts.set(file, (counts.get(file) ?? 0) + 1);
+	return [...counts.keys()].sort().map((file) => (counts.get(file) > 1 ? `${file} x${counts.get(file)}` : file));
+}
+
+/** One entry per stated fact. Unknown sections and colliding entries fail closed. */
+export function censusContent(census) {
+	const unknown = Object.keys(census).filter((key) => !SECTIONS.includes(key));
+	if (unknown.length) throw new Error(`Unknown census section: ${unknown.join(", ")}`);
+	const entries = new Map();
+	const add = (key, value) => {
+		if (entries.has(key)) throw new Error(`Ambiguous census entry: ${key}`);
+		entries.set(key, value);
+	};
+	const provenance = Object.fromEntries(Object.entries(census.provenance).filter(([key]) => !RUN_PROVENANCE.includes(key)));
+	add("census", { schemaVersion: census.schemaVersion, ...provenance });
+	add("summary", census.summary);
+	for (const family of census.families) add(`family ${family.family}`, family);
+	for (const { evidence, ...endpoint } of census.endpoints) add(`${endpoint.sdkMethod} (${endpoint.httpVerb} ${endpoint.path})`, { ...endpoint, evidence: evidenceFiles(evidence) });
+	const { operations, ...fieldAudit } = census.requestFields;
+	add("request fields", fieldAudit);
+	for (const { fields, ...operation } of operations) {
+		const key = `${operation.sdkMethod} (${operation.httpVerb} ${operation.path}) body`;
+		add(key, operation);
+		for (const { evidence, ...field } of fields) add(`${key} field ${field.name}`, { ...field, evidence: evidenceFiles(evidence) });
+	}
+	return entries;
+}
+
+function describeChange(before, after) {
+	if (Array.isArray(before) && Array.isArray(after)) {
+		const removed = before.filter((item) => !after.includes(item)).map((item) => `-${item}`);
+		const added = after.filter((item) => !before.includes(item)).map((item) => `+${item}`);
+		if (removed.length || added.length) return [...removed, ...added].join(" ");
+	}
+	return `${JSON.stringify(before)} -> ${JSON.stringify(after)}`;
+}
+
+/** Readable differences between the committed census and the one the source produces. */
+export function censusDifferences(saved, current) {
+	const before = censusContent(saved);
+	const after = censusContent(current);
+	const lines = [];
+	for (const key of new Set([...before.keys(), ...after.keys()])) {
+		const a = before.get(key);
+		const b = after.get(key);
+		if (a === undefined) lines.push(`${key}: missing from the committed census`);
+		else if (b === undefined) lines.push(`${key}: no longer produced by the source`);
+		else for (const property of new Set([...Object.keys(a), ...Object.keys(b)])) {
+			if (JSON.stringify(a[property]) !== JSON.stringify(b[property])) lines.push(`${key}: ${property} ${describeChange(a[property], b[property])}`);
+		}
+	}
+	return lines;
+}
+
+/** Differences that only an exact refresh removes. Call after the content matches. */
+export function censusRunDifferences(saved, current) {
+	const lines = [];
+	for (const key of ["sourceFingerprint", "typescriptVersion"]) {
+		if (saved.provenance[key] !== current.provenance[key]) lines.push(`provenance: ${key} ${JSON.stringify(saved.provenance[key])} -> ${JSON.stringify(current.provenance[key])}`);
+	}
+	const body = ({ provenance: _provenance, ...rest }) => JSON.stringify(rest);
+	if (body(saved) !== body(current)) lines.push("evidence line numbers or entry order differ");
+	return lines;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const mode = process.argv[2];
-	if (!["--write", "--check"].includes(mode)) throw new Error("Usage: node scripts/api-coverage-current.mjs --write | --check");
+	if (!["--write", "--check", "--check-exact"].includes(mode)) throw new Error("Usage: node scripts/api-coverage-current.mjs --write | --check | --check-exact");
 	const file = join(root, "apps/web/src/data/api-coverage/current.json");
 	const current = generateCensus();
+	let differences = [];
 	if (mode === "--write") writeFileSync(file, `${JSON.stringify(current, null, "\t")}\n`);
 	else {
 		const saved = JSON.parse(readFileSync(file, "utf8"));
-		current.provenance.generatedAt = saved.provenance.generatedAt;
-		// Commit is provenance, fingerprint is content authority across commits.
-		current.provenance.sourceCommit = saved.provenance.sourceCommit;
-		if (JSON.stringify(current) !== JSON.stringify(saved)) throw new Error("API census is stale; regenerate after source freeze");
+		differences = censusDifferences(saved, current);
+		if (!differences.length && mode === "--check-exact") differences = censusRunDifferences(saved, current);
 	}
-	console.log(JSON.stringify({ mode, sdkVersion: current.provenance.sdkVersion, ...current.summary, sourceFingerprint: current.provenance.sourceFingerprint }));
+	if (differences.length) {
+		const shown = differences.slice(0, 40);
+		console.error(`API census is stale: ${differences.length} difference${differences.length === 1 ? "" : "s"} from the source.`);
+		for (const line of shown) console.error(`  ${line}`);
+		if (differences.length > shown.length) console.error(`  ... and ${differences.length - shown.length} more`);
+		console.error("Regenerate it with: node scripts/api-coverage-current.mjs --write");
+		process.exitCode = 1;
+	} else console.log(JSON.stringify({ mode, sdkVersion: current.provenance.sdkVersion, ...current.summary, sourceFingerprint: current.provenance.sourceFingerprint }));
 }

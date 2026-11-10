@@ -12,6 +12,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Clip settings diagnose configured services on open and expire stale results; creation and recovery show safe actionable errors.
 - Manual clip creation prevents duplicate submissions and ignores late responses after leaving the page or losing permission.
 - Encoding status probes keep failed, missing and unknown observations unverified instead of suggesting deletion.
+- Bound FFmpeg decoder and scaler thread pools so media preparation and multi-clip rendering remain within process limits.
 
 ### Changed
 

@@ -33,9 +33,11 @@ import {
 	type VmafCommandOptions,
 	type VmafExecution,
 	type VmafReferenceGeometry,
+	type VmafReferencePreparationEvidence,
 	vmafCloudProfileSchema,
 	vmafExecutionSchema,
 	vmafJobSchema,
+	vmafReferencePreparationEvidenceSchema,
 	vmafSourceFor,
 } from "@bitovp/core";
 import {
@@ -85,6 +87,7 @@ import {
 	type SelectLocalNative,
 } from "./local-selection";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
+import { prepareDisplayScaleReference } from "./reference-preparation";
 import {
 	defaultKeyLister,
 	type KeyLister,
@@ -900,6 +903,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		referenceProbe?: string,
 		selection?: LocalSelection,
 		banding?: BandingRun,
+		referencePreparation?: VmafReferencePreparationEvidence,
 	): Promise<void> {
 		const runner =
 			execution.backend === "LOCAL"
@@ -1148,6 +1152,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								? allocation?.nativeInflightFrames
 								: undefined,
 							referenceProbe,
+							...(referencePreparation
+								? {
+										expectedReferenceSha256:
+											referencePreparation.preparedSha256,
+									}
+								: {}),
 							distortedProbe: resourceProbe?.stdout,
 						},
 					);
@@ -1203,6 +1213,11 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						`libvmaf produced no frame scores for rendition ${target.renditionKey}`,
 					);
 				}
+				if (
+					referencePreparation &&
+					parsed.frames.length !== referencePreparation.frameCount
+				)
+					throw new Error("VMAF_REFERENCE_PREPARATION_FRAME_COUNT_MISMATCH");
 				const pooled = computePooled(parsed.frames);
 				// PSNR (when requested + actually present): pool the per-frame psnr_y
 				// into mean/min/max and attach it to the result's pooled block. Absent
@@ -1274,6 +1289,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						// sides' version identity (demanded at read) and digest.
 						provenance: {
 							reference: referenceProvenance,
+							...(referencePreparation ? { referencePreparation } : {}),
 							distorted: distortedProvenance,
 							...(providerResult !== undefined ? { providerResult } : {}),
 							...(localExecution ? { localExecution } : {}),
@@ -1587,6 +1603,21 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					: undefined;
 			if (measurementMethod && execution.backend !== "CLOUD")
 				throw new Error("Frame-index measurement requires cloud validation");
+			const referencePreparation = paramsAcc.referencePreparation;
+			if (
+				referencePreparation !== undefined &&
+				(referencePreparation !== "LOSSLESS_DISPLAY_SCALE_REMUX" ||
+					bandingOnly ||
+					measurementMethod !== undefined ||
+					gateCtx ||
+					!row.triggerKey?.startsWith(
+						labManualTriggerPrefix(row.encodingJobId ?? ""),
+					) ||
+					row.encodingJob.status !== "FINISHED" ||
+					execution.backend !== "LOCAL" ||
+					execution.localMode !== "AUTO")
+			)
+				throw new Error("VMAF_REFERENCE_PREPARATION_POLICY_INVALID");
 			const selection =
 				!bandingOnly &&
 				((execution.backend === "LOCAL" && execution.localMode !== undefined) ||
@@ -1605,6 +1636,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							},
 						)
 					: undefined;
+			if (referencePreparation && (!selection || selection.backend === "cpu"))
+				throw new Error("VMAF_REFERENCE_PREPARATION_GPU_REQUIRED");
 			// Effective settings belong to this run; shared resources stay shared.
 			const jobDeps: VmafProcessorDeps = selection
 				? {
@@ -1789,6 +1822,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const resourceSession = !isCloud
 				? deps.localResources?.begin(signal)
 				: undefined;
+			if (referencePreparation && !resourceSession?.exclusivePrepared)
+				throw new Error("VMAF_REFERENCE_PREPARATION_ADMISSION_REQUIRED");
 			await mkdir(jobDir, { recursive: true, mode: 0o700 });
 
 			// Reference download + probe, ONCE per unique source (every rendition
@@ -1802,6 +1837,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				resourceVideo?: ResourceVideo;
 				probe: string;
 				provenance: DownloadProvenance;
+				preparation?: VmafReferencePreparationEvidence;
 				credential: ResolvedCredential;
 			};
 			const refCache = new Map<string, Promise<Reference>>();
@@ -1845,10 +1881,43 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							`ffprobe failed on the reference source (code ${probe.code}): ${stderrTail(probe.stderr)}`,
 						);
 					}
-					const videoStream = JSON.parse(probe.stdout).streams?.find(
+					let selectedPath = referencePath;
+					let selectedProbe = probe.stdout;
+					let preparation: VmafReferencePreparationEvidence | undefined;
+					if (referencePreparation) {
+						if (!resourceSession?.exclusivePrepared)
+							throw new Error("VMAF_REFERENCE_PREPARATION_ADMISSION_REQUIRED");
+						const prepared = await resourceSession.exclusivePrepared(
+							`reference/${refIndex}`,
+							async (_scoped, leaseSignal, assertOwned) => {
+								await assertOwned();
+								const prepared = await prepareDisplayScaleReference({
+									runner,
+									ffmpegPath: deps.ffmpegPath,
+									ffprobePath: deps.ffprobePath,
+									originalPath: referencePath,
+									preparedPath: join(jobDir, `ref-${refIndex}-prepared.mov`),
+									originalProbe: probe.stdout,
+									originalSha256: referenceProvenance.sha256,
+									signal: leaseSignal,
+								});
+								const evidence = vmafReferencePreparationEvidenceSchema.parse(
+									prepared.evidence,
+								);
+								if (evidence.inputSha256 !== referenceProvenance.sha256)
+									throw new Error("VMAF_REFERENCE_PREPARATION_INPUT_MISMATCH");
+								await assertOwned();
+								return { ...prepared, evidence };
+							},
+						);
+						preparation = prepared.evidence;
+						selectedPath = prepared.path;
+						selectedProbe = prepared.probe;
+					}
+					const videoStream = JSON.parse(selectedProbe).streams?.find(
 						(stream: { codec_type?: string }) => stream.codec_type === "video",
 					);
-					const codedGeometry = geometryFromProbe(probe.stdout);
+					const codedGeometry = geometryFromProbe(selectedProbe);
 					const sar = measurementMethod
 						? sampleAspectRatioFromProbe(videoStream?.sample_aspect_ratio)
 						: undefined;
@@ -1878,13 +1947,14 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							: {}),
 					};
 					const entry = {
-						path: referencePath,
-						probe: probe.stdout,
+						path: selectedPath,
+						probe: selectedProbe,
 						geometry,
 						...(!isCloud && deps.localResources
-							? { resourceVideo: resourceVideoFromProbe(probe.stdout) }
+							? { resourceVideo: resourceVideoFromProbe(selectedProbe) }
 							: {}),
 						provenance: referenceProvenance,
+						...(preparation ? { preparation } : {}),
 						credential: src.credential,
 					};
 					// Persist the reference's geometry so the report can state the terms of
@@ -2252,6 +2322,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					: {}),
 			});
 
+			// Full reference proofs need exclusive CPU/RAM authority. Resolve their
+			// cache before any pool worker holds a lightweight preparation permit:
+			// nested acquisition would deadlock when that permit has capacity one.
+			if (referencePreparation) {
+				for (const item of work) {
+					if (!("reference" in item.target))
+						throw new Error("VMAF_REFERENCE_REQUIRED");
+					await referenceFor(item.target);
+				}
+			}
+
 			// Bounded pool: `concurrency` workers pull from a shared index. On the
 			// first error, stop pulling and let in-flight runs settle, then rethrow
 			// (partial results already persisted stay; markTerminal ERROR follows).
@@ -2309,6 +2390,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									reference.probe,
 									selection,
 									banding,
+									reference.preparation,
 								);
 							}
 							resultCount += 1;

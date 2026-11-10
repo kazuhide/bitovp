@@ -1,8 +1,51 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
+import { referencePreparationEvidence } from "@/test/vmaf-reference-preparation";
 import { vmafExportStream } from "./vmaf-export";
 
 describe("streamed VMAF export bytes", () => {
+	it("exports validated preparation proof without private paths or a request-only claim", async () => {
+		const text = await new Response(
+			vmafExportStream(
+				{
+					id: "prepared",
+					model: "vmaf_v1.0.16_3d0h",
+					params: { referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX" },
+					results: [
+						{
+							id: "valid",
+							renditionRef: {},
+							provenance: {
+								referencePreparation: referencePreparationEvidence,
+								path: "/private/original.mov",
+							},
+						},
+						{
+							id: "invalid",
+							renditionRef: {},
+							provenance: {
+								referencePreparation: {
+									...referencePreparationEvidence,
+									path: "/private/prepared.mov",
+								},
+							},
+						},
+						{ id: "missing", renditionRef: {} },
+					],
+				},
+				"json",
+				async () => null,
+				new AbortController().signal,
+			),
+		).text();
+		const data = JSON.parse(text);
+		expect(data.renditions[0].referencePreparation).toEqual(
+			referencePreparationEvidence,
+		);
+		expect(data.renditions[1]).not.toHaveProperty("referencePreparation");
+		expect(data.renditions[2]).not.toHaveProperty("referencePreparation");
+		expect(text).not.toMatch(/private|provenance|path/);
+	});
 	it("exports model-free CAMBI as a separate metric without a VMAF value", async () => {
 		const banding = [
 			{

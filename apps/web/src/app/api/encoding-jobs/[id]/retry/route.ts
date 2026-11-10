@@ -1,8 +1,14 @@
-import { masterKeyFromEnv, stepLogSchema } from "@bitovp/core";
+import {
+	encodingPlanSchema,
+	masterKeyFromEnv,
+	stepLogSchema,
+	validatePlan,
+} from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
+import { serverPlanValidationOptions } from "@/lib/server/plan-validation";
 import { getOrchestratorQueue } from "@/lib/server/queue";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -37,6 +43,23 @@ export async function POST(_req: Request, { params }: RouteParams) {
 				409,
 				"Remote STOP was requested; use re-run-as-new instead of reusing these resources",
 			);
+		}
+		// Retained steps resume unchanged. Reject the confirmed native SMART_PASS
+		// conflict, without revalidating unrelated historical configuration rules.
+		const plan = encodingPlanSchema.safeParse(row.plan);
+		if (plan.success && plan.data.internal?.hevcV2) {
+			const conflict = validatePlan(
+				plan.data,
+				serverPlanValidationOptions(),
+			).find(
+				(issue) => issue.code === "PLAN_INTERNAL_HEVC_V2_MULTIPLE_MUXINGS",
+			);
+			if (conflict)
+				return jsonError(
+					409,
+					`Create a corrected new job instead of repeating this saved SMART_PASS muxing conflict. ${conflict.message}`,
+					{ code: conflict.code },
+				);
 		}
 		const entries = stepLogSchema
 			.parse(row.stepLog)

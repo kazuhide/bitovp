@@ -22,6 +22,8 @@ export type NativeScoreContext = {
 	signal?: AbortSignal;
 	referenceProbe?: string;
 	distortedProbe?: string;
+	/** Binds an explicitly prepared reference's verified bytes to native scoring. */
+	expectedReferenceSha256?: string;
 	/** Internal scheduling controls; never alter a completed measurement's frame set. */
 	nativeInflightFrames?: 1 | 2 | 4;
 	/** Calibration-only prefix, written only to the caller's disposable directory. */
@@ -192,6 +194,12 @@ export async function runNativeVmafScore(
 		throw new Error("NATIVE_UNSUPPORTED_DISTORTED_ORIGINAL");
 	const model = await prepareNativeModel(options, signal);
 	const referenceSha256 = await hashNativeFile(options.referencePath, signal);
+	if (
+		context.expectedReferenceSha256 !== undefined &&
+		(!/^[a-f0-9]{64}$/.test(context.expectedReferenceSha256) ||
+			context.expectedReferenceSha256 !== referenceSha256)
+	)
+		throw new Error("NATIVE_REFERENCE_PREPARATION_SHA256_MISMATCH");
 	const distortedSha256 = await hashNativeFile(options.distortedPath, signal);
 	const version = await deps.runner.run(deps.nativePath, ["--version"], {
 		signal,

@@ -28,6 +28,9 @@ import {
 } from "./local-resources";
 import * as localScoring from "./local-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
+import * as referencePreparation from "./reference-preparation";
+import type { VmafResourceLeaseRequest } from "./resource-leases";
+import { createSharedVmafExecution } from "./shared-execution";
 
 /**
  * Processor units run WITHOUT ffmpeg (CI has none): an injected
@@ -4157,7 +4160,10 @@ it("keeps interleaved CPU and AUTO jobs isolated through selection, admission an
 	}
 });
 
-function autoNativeFailureHarness(admitGpu = true) {
+function autoNativeFailureHarness(
+	admitGpu = true,
+	overrides: { download?: VmafDownload; job?: Row } = {},
+) {
 	const chosen = {
 		backend: "cuda" as const,
 		device: 2,
@@ -4170,6 +4176,7 @@ function autoNativeFailureHarness(admitGpu = true) {
 	};
 	const localRunner: ProcessRunner = { spawn: vi.fn(), run: vi.fn() };
 	const t = setup({
+		download: overrides.download,
 		nativePath: "/native",
 		localRunner,
 		probeJson: RESOURCE_PROBE_JSON,
@@ -4199,6 +4206,7 @@ function autoNativeFailureHarness(admitGpu = true) {
 			model: "vmaf_v1.0.16_3d0h",
 			scoringVersion: VMAF_SCORING_VERSION,
 			params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+			...overrides.job,
 		},
 	});
 	const raw = vi.mocked(t.runner.run).getMockImplementation();
@@ -4754,4 +4762,423 @@ it("rejects a pinned native selection with an inconsistent CPU generation before
 	expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
 	expect(t.results).toHaveLength(1);
 	expect(t.runner.run).not.toHaveBeenCalled();
+});
+
+describe("explicit lossless reference preparation", () => {
+	const evidence = {
+		version: 1 as const,
+		method: "LOSSLESS_DISPLAY_SCALE_REMUX" as const,
+		comparisonSpace: "CODED_RASTER" as const,
+		inputSha256: "d".repeat(64),
+		preparedSha256: "e".repeat(64),
+		preparedBytes: 1024,
+		sourceDisplayMatrix: [34475, 0, 0, 0, 34467, 0, 0, 0, 1073741824] as [
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+		],
+		width: 1920,
+		height: 1080,
+		codec: "h264",
+		pixelFormat: "yuv420p",
+		timeBase: "1/2400",
+		packetCount: 5,
+		frameCount: 5,
+		packetSha256: "1".repeat(64),
+		frameSha256: "2".repeat(64),
+		streamIdentitySha256: "3".repeat(64),
+		packetTimingVerified: true as const,
+		frameTimingVerified: true as const,
+	};
+
+	function preparedHarness() {
+		return autoNativeFailureHarness(true, {
+			download: async (args) => ({
+				bucket: args.bucket,
+				key: args.key,
+				pinned: true,
+				sha256: evidence.inputSha256,
+				bytes: 1234,
+			}),
+			job: {
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}prepared`,
+				params: {
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+				},
+			},
+		});
+	}
+
+	function mockScore() {
+		return vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockImplementation(async (_deps, options) => ({
+				run: { code: 0, stderr: "" },
+				log: JSON.parse(vmafJson([95, 96, 94, 97, 93])),
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					attempts: 1,
+					scoring: {
+						backend: "cuda",
+						implementation: "bitovp-owned",
+						model: options.model,
+						modelSha256: "f".repeat(64),
+						features: ["a", "b", "c", "d", "e", "f", "g"],
+						bitDepth: 10,
+						distortedOriginal: { width: 1920, height: 1080, bitdepth: 8 },
+						officialRevision: NATIVE_OFFICIAL_REVISION,
+						sourceSha256: "a".repeat(64),
+						device: {
+							index: 2,
+							name: "Fixture GPU",
+							uuid: "GPU-fixture",
+							vendorId: 0x10de,
+							deviceId: 1,
+							integrated: false,
+						},
+						cpuParity: {
+							checked: true,
+							featureCount: 35,
+							scoreCount: 5,
+							maxFeatureError: 0,
+							maxScoreError: 0,
+						},
+					},
+				} satisfies LocalVmafExecution,
+			}));
+	}
+
+	function preparationResources() {
+		const requests: VmafResourceLeaseRequest[] = [];
+		const events: string[] = [];
+		const requested = resourceDeferred(),
+			grant = resourceDeferred();
+		const lease = new AbortController();
+		let cpuHeld = false;
+		let denied = false;
+		const readResources = () => ({
+			cpuCapacity: 8,
+			memoryLimitBytes: 8 * 1024 ** 3,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		});
+		const shared = createSharedVmafExecution({
+			hostKey: async () => "a".repeat(64),
+			readResources,
+			leases: {
+				async run(request, signal, work) {
+					requests.push(request);
+					if (request.deviceKey) {
+						events.push("gpu-request");
+						expect(cpuHeld).toBe(false);
+						return work({
+							signal,
+							assertOwned: async () => signal.throwIfAborted(),
+							fitsHeadroom: async () => true,
+						});
+					}
+					events.push("cpu-request");
+					requested.resolve();
+					await grant.promise;
+					if (denied) throw new Error("PREPARATION_ADMISSION_DENIED");
+					cpuHeld = true;
+					const runSignal = AbortSignal.any([signal, lease.signal]);
+					try {
+						return await work({
+							signal: runSignal,
+							assertOwned: async () => {
+								expect(cpuHeld).toBe(true);
+								runSignal.throwIfAborted();
+							},
+							fitsHeadroom: async () => true,
+						});
+					} finally {
+						cpuHeld = false;
+						events.push("cpu-release");
+					}
+				},
+			},
+		});
+		shared.registerDevice({
+			deviceKey: "e".repeat(64),
+			read: async () => ({
+				totalBytes: 8 * 1024 ** 3,
+				availableBytes: 8 * 1024 ** 3,
+			}),
+		});
+		const resources = createLocalVmafResources({
+			concurrency: 1,
+			readResources,
+			execute: (plan, signal, work) => shared.run(plan, signal, work),
+		});
+		return {
+			resources,
+			requests,
+			events,
+			requested,
+			grant,
+			lease,
+			get cpuHeld() {
+				return cpuHeld;
+			},
+			deny() {
+				denied = true;
+			},
+		};
+	}
+
+	it("admits the complete proof under a whole-host CPU lease before capacity-one GPU preparation", async () => {
+		const authority = preparationResources(),
+			proofEntered = resourceDeferred(),
+			finishProof = resourceDeferred();
+		const t = preparedHarness();
+		t.deps.localResources = authority.resources;
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => {
+				authority.events.push("proof");
+				proofEntered.resolve();
+				await finishProof.promise;
+				expect(authority.cpuHeld).toBe(true);
+				expect(args.signal?.aborted).toBe(false);
+				return {
+					path: args.preparedPath,
+					probe: RESOURCE_PROBE_JSON,
+					evidence: {
+						...evidence,
+						get inputSha256() {
+							expect(authority.cpuHeld).toBe(true);
+							return evidence.inputSha256;
+						},
+					},
+				};
+			});
+		const score = mockScore();
+		const running = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		const outcome = running.catch((error: unknown) => error);
+		try {
+			await vi.waitFor(() =>
+				expect(authority.events.length).toBeGreaterThan(0),
+			);
+			expect(authority.events).toEqual(["cpu-request"]);
+			expect(prepare).not.toHaveBeenCalled();
+			expect(score).not.toHaveBeenCalled();
+			expect(authority.requests[0]?.requested).toEqual({
+				cpuMilliCores: 8000,
+				hostBytes: 8 * 1024 ** 3,
+			});
+			authority.grant.resolve();
+			await proofEntered.promise;
+			expect(authority.cpuHeld).toBe(true);
+			expect(score).not.toHaveBeenCalled();
+			finishProof.resolve();
+			expect(await outcome).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(prepare).toHaveBeenCalledTimes(1);
+			expect(authority.events.slice(0, 4)).toEqual([
+				"cpu-request",
+				"proof",
+				"cpu-release",
+				"gpu-request",
+			]);
+			expect(score).toHaveBeenCalledTimes(2);
+		} finally {
+			authority.grant.resolve();
+			finishProof.resolve();
+			t.vmafJob.findUnique.mockResolvedValue(null);
+			await outcome;
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it.each([
+		"denied",
+		"lost",
+		"missing",
+	] as const)("does not score or publish when preparation authority is %s", async (failure) => {
+		const authority = preparationResources();
+		authority.grant.resolve();
+		if (failure === "denied") authority.deny();
+		const t = preparedHarness();
+		t.deps.localResources =
+			failure === "missing"
+				? {
+						begin(signal) {
+							return {
+								...authority.resources.begin(signal),
+								exclusivePrepared: undefined,
+							};
+						},
+					}
+				: authority.resources;
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => {
+				if (failure === "lost") {
+					expect(authority.cpuHeld).toBe(true);
+					authority.lease.abort(new Error("PREPARATION_LEASE_LOST"));
+					expect(args.signal?.aborted).toBe(true);
+				}
+				return {
+					path: args.preparedPath,
+					probe: RESOURCE_PROBE_JSON,
+					evidence,
+				};
+			});
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(/PREPARATION_(?:ADMISSION|LEASE)/);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.results).toHaveLength(0);
+			expect(score).not.toHaveBeenCalled();
+			if (failure !== "lost") expect(prepare).not.toHaveBeenCalled();
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("scores the prepared raster once per reference and persists its proof with each unchanged source identity", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: RESOURCE_PROBE_JSON,
+				evidence,
+			}));
+		const score = mockScore();
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(prepare).toHaveBeenCalledTimes(1);
+			const preparedPath = prepare.mock.calls[0]?.[0].preparedPath;
+			for (const call of score.mock.calls)
+				expect(call[1].referencePath).toBe(preparedPath);
+			for (const result of t.results)
+				expect(result.provenance).toMatchObject({
+					reference: {
+						bucket: "src-bucket",
+						key: "src/master.mkv",
+						sha256: evidence.inputSha256,
+					},
+					referencePreparation: evidence,
+					localExecution: { scoring: { backend: "cuda" } },
+				});
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("keeps the measurement failed when verified reference coverage does not match the scores", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: RESOURCE_PROBE_JSON,
+				evidence: { ...evidence, frameCount: 4 },
+			}));
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("VMAF_REFERENCE_PREPARATION_FRAME_COUNT_MISMATCH");
+			expect(t.job.status).toBe("ERROR");
+			expect(t.results).toHaveLength(0);
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("stops before scoring if reference preparation fails", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockRejectedValue(
+				new Error("REFERENCE_PREPARATION_CONTENT_OR_TIMING_MISMATCH"),
+			);
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("REFERENCE_PREPARATION_CONTENT_OR_TIMING_MISMATCH");
+			expect(t.results).toHaveLength(0);
+			expect(score).not.toHaveBeenCalled();
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+	it.each([
+		{
+			name: "unknown policy",
+			triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}test`,
+			policy: "IGNORE_ALL_TRANSFORMS",
+			localMode: "CPU",
+		},
+		{
+			name: "automatic QC",
+			triggerKey: `vod-auto:${ENCODING_JOB_ID}`,
+			policy: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "AUTO",
+		},
+		{
+			name: "explicit CPU mode",
+			triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}test`,
+			policy: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "CPU",
+		},
+	])("rejects $name before downloading media", async (item) => {
+		const t = setup({
+			job: {
+				triggerKey: item.triggerKey,
+				params: {
+					referencePreparation: item.policy,
+					execution: { backend: "LOCAL", localMode: item.localMode },
+				},
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("VMAF_REFERENCE_PREPARATION_POLICY_INVALID");
+		expect(t.job.status).toBe("ERROR");
+		expect(t.results).toHaveLength(0);
+		expect(t.downloaded).toHaveLength(0);
+	});
+
+	it("rejects AUTO selecting CPU rather than preparing an unrequested CPU comparison", async () => {
+		const t = setup({
+			job: {
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}test`,
+				params: {
+					referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+				},
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("VMAF_REFERENCE_PREPARATION_GPU_REQUIRED");
+		expect(t.job.status).toBe("ERROR");
+		expect(t.results).toHaveLength(0);
+		expect(t.downloaded).toHaveLength(0);
+	});
 });

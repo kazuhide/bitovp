@@ -10,6 +10,7 @@ import {
 	type VmafFrame,
 } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { referencePreparationEvidence } from "@/test/vmaf-reference-preparation";
 
 const findUnique = vi.fn();
 const resultFindFirst = vi.fn(async (args) => {
@@ -83,6 +84,52 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it.each([
+		{ evidence: referencePreparationEvidence, visible: true },
+		{ evidence: undefined, visible: false },
+		{
+			evidence: { ...referencePreparationEvidence, frameTimingVerified: false },
+			visible: false,
+		},
+		{
+			evidence: {
+				...referencePreparationEvidence,
+				preparedPath: "/private/prepared.mov",
+			},
+			visible: false,
+		},
+	])("exposes only valid reference preparation proof (visible=$visible)", async ({
+		evidence,
+		visible,
+	}) => {
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			params: { referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX" },
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "prepared-result",
+					renditionRef: {},
+					pooled: computePooled(frames([95])),
+					framesGzip: null,
+					provenance: {
+						referencePreparation: evidence,
+						reference: { path: "/private/original.mov" },
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		if (visible)
+			expect(body.results[0].referencePreparation).toEqual(
+				referencePreparationEvidence,
+			);
+		else expect(body.results[0]).not.toHaveProperty("referencePreparation");
+		expect(JSON.stringify(body)).not.toMatch(/private|preparedPath|provenance/);
+	});
 	it.each([
 		true,
 		false,

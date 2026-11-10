@@ -4,6 +4,14 @@ Notable changes are recorded here for people installing and using bitovp.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-11-10
+
+### Fixed
+
+- GPU VMAF can measure H.264 MOV references with a positive display-scale matrix using an explicit manual, verified lossless reference preparation. Every packet, timestamp and decoded frame must match; unsupported transforms still fail closed.
+- Reference preparation reserves shared CPU and memory before decoding, preserves its intent on retry, and records original/prepared identities and equivalence evidence in reports and JSON exports.
+- Native HEVCv2 plans detect SMART_PASS multi-muxing conflicts before encoding starts. GPU QC guidance describes the MP4-only workflow and reference preflight requirements.
+
 ## [1.2.0] - 2026-11-09
 
 ### Added

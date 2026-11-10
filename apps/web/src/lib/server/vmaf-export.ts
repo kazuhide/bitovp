@@ -1,5 +1,5 @@
 import "server-only";
-import { localVmafExecutionOf } from "@bitovp/core";
+import { localVmafExecutionOf, referencePreparationOf } from "@bitovp/core";
 import { type RenditionRef, renditionLabel } from "@/app/qc/vmaf-shared";
 import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
 import {
@@ -54,10 +54,12 @@ async function* fragments(
 		if (format === "json") {
 			const localExecution =
 				!bandingOnly && localVmafExecutionOf(result.provenance);
+			const referencePreparation =
+				!bandingOnly && referencePreparationOf(result.provenance);
 			const bandingExecution = banding && bandingExecutionOf(result.provenance);
 			const pooled = banding && bandingPooledOf(result.pooled);
 			const assessment = banding && bandingAssessmentOf(result.pooled);
-			yield `${index ? ",\n" : "\n"}${indent({ id: result.id, label, renditionRef: ref, ...(localExecution ? { localExecution } : {}), ...(bandingExecution ? { bandingExecution } : {}), ...(pooled ? { banding: pooled } : {}), ...(assessment ? { bandingAssessment: assessment } : {}) }, 4).slice(0, -6)},\n      "${bandingOnly ? "bandingFrames" : "frames"}": [`;
+			yield `${index ? ",\n" : "\n"}${indent({ id: result.id, label, renditionRef: ref, ...(localExecution ? { localExecution } : {}), ...(referencePreparation ? { referencePreparation } : {}), ...(bandingExecution ? { bandingExecution } : {}), ...(pooled ? { banding: pooled } : {}), ...(assessment ? { bandingAssessment: assessment } : {}) }, 4).slice(0, -6)},\n      "${bandingOnly ? "bandingFrames" : "frames"}": [`;
 		}
 		let first = true;
 		if (blob && !bandingOnly)

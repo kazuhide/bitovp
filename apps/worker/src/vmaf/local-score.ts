@@ -43,7 +43,8 @@ export async function runLocalVmafScore(
 	if (options.scoring) return runNativeVmafScore(deps, options, context);
 	if (
 		context.calibrationFrames !== undefined ||
-		context.nativeInflightFrames !== undefined
+		context.nativeInflightFrames !== undefined ||
+		context.expectedReferenceSha256 !== undefined
 	)
 		throw new Error("NATIVE_INTERNAL_CONTROLS_REQUIRE_NATIVE_SCORING");
 	const { signal } = context;

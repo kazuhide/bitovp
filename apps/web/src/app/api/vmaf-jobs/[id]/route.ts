@@ -1,5 +1,9 @@
 import type { PooledMetrics } from "@bitovp/core";
-import { localVmafExecutionOf, vmafExecutionSchema } from "@bitovp/core";
+import {
+	localVmafExecutionOf,
+	referencePreparationOf,
+	vmafExecutionSchema,
+} from "@bitovp/core";
 import { NextResponse } from "next/server";
 import type {
 	BandingResultDetail,
@@ -207,6 +211,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				...pooled
 			} = pooledRaw;
 			const localExecution = localVmafExecutionOf(r.provenance);
+			const referencePreparation = referencePreparationOf(r.provenance);
 			results.push({
 				id: r.id,
 				renditionRef: r.renditionRef as RenditionRef,
@@ -219,6 +224,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				frameCount: series.frameCount,
 				preview: previewDescriptor(id, job, r, requestOrganizationId(ctx)),
 				...(localExecution ? { localExecution } : {}),
+				...(referencePreparation ? { referencePreparation } : {}),
 				...(live ? { live } : {}),
 			});
 		}

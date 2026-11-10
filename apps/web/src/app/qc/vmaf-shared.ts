@@ -4,6 +4,7 @@ import type {
 	PooledMetrics,
 	VmafCloudProfile,
 	VmafExecution,
+	VmafReferencePreparationEvidence,
 } from "@bitovp/core";
 import type {
 	PublicBandingAssessment,
@@ -200,6 +201,8 @@ export type VmafResultDetail = BandingResultData & {
 	id: string;
 	/** Validated local decode/scoring implementation; absent on historical reports. */
 	localExecution?: LocalVmafExecution;
+	/** Validated manual display-scale preparation; comparison uses the coded raster. */
+	referencePreparation?: VmafReferencePreparationEvidence;
 	/** Version-pinned QC mirror; absent on older API payloads. */
 	preview?: MeasuredMediaPreview;
 	renditionRef: RenditionRef;

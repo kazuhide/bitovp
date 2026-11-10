@@ -2896,6 +2896,39 @@ export function validatePlan(
 		}
 	}
 
+	// Native HEVCv2 compiles to SMART_PASS. The provider refuses a video stream
+	// attached to multiple muxing resources, including the synthesized QC MP4.
+	// Storage mirrors are extra outputs on the same resource, not extra muxings.
+	if (
+		plan.internal?.hevcV2 &&
+		!issues.some(
+			(issue) =>
+				issue.code === "PLAN_INTERNAL_HEVC_V2_UNSUPPORTED" ||
+				issue.code === "PLAN_PER_TITLE_BITRATE",
+		)
+	) {
+		for (const [index, rendition] of plan.renditions.entries()) {
+			if (rendition.codec !== "H265") continue;
+			const deliveryCount = plan.qc?.only
+				? 0
+				: plan.muxings.filter((muxing) =>
+						muxingStreamKeys(muxing).includes(rendition.key),
+					).length;
+			const qcCount =
+				(plan.qc?.vmaf || plan.qc?.psnr || plan.qc?.banding) &&
+				renditionOutputBase(plan, rendition.key)
+					? 1
+					: 0;
+			if (deliveryCount + qcCount > 1)
+				issues.push({
+					code: "PLAN_INTERNAL_HEVC_V2_MULTIPLE_MUXINGS",
+					level: "error",
+					path: `renditions.${index}`,
+					message: `Native HEVCv2 SMART_PASS rendition "${rendition.key}" would feed ${deliveryCount + qcCount} muxings${qcCount ? " including a generated QC MP4" : ""}. SMART_PASS permits one muxing per video stream. Use qc.only:true with video-only renditions and no manifests/DRM, or disable automatic QC and keep one delivery muxing.`,
+				});
+		}
+	}
+
 	// QC-only encode (qc.only): the encode produces ONLY the per-video QC
 	// mirror MP4s — no delivery muxings, manifests, audio, thumbnails, sprites,
 	// DRM, or keyframes. Reject a plan that asks for those alongside qc.only

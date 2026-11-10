@@ -872,6 +872,71 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 	}
 
 	it.each([
+		{},
+		{ execution: { backend: "LOCAL" } },
+		{ execution: { backend: "LOCAL", localMode: "CPU" } },
+		{
+			execution: { backend: "CLOUD", profileId: "approved", budgetUsd: 10 },
+		},
+		{ execution: { backend: "LOCAL", localMode: "AUTO" }, kind: "BANDING" },
+		{
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			measurementMethod: "FRAME_INDEX_BT709_10BIT",
+		},
+	])("rejects reference preparation outside explicit local AUTO VMAF: %j", async (changes) => {
+		const response = await post({
+			encodingJobId: JOB,
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			...changes,
+		});
+		expect(response.status).toBe(400);
+		expect(jobFindUnique).not.toHaveBeenCalled();
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("persists manual display-scale preparation while preserving the encoding plan", async () => {
+		const before = JSON.stringify(qcPlan);
+		jobFindUnique.mockResolvedValueOnce({
+			id: JOB,
+			status: "FINISHED",
+			plan: qcPlan,
+		});
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "prepared-report" });
+		const response = await post({
+			encodingJobId: JOB,
+			model: "vmaf_v1.0.16_3d0h",
+			banding: true,
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data.params).toMatchObject({
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			banding: true,
+		});
+		expect(JSON.stringify(qcPlan)).toBe(before);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it("rejects unknown preparation methods before reading the encoding", async () => {
+		expect(
+			(
+				await post({
+					encodingJobId: JOB,
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					referencePreparation: "RESCALE",
+				})
+			).status,
+		).toBe(400);
+		expect(jobFindUnique).not.toHaveBeenCalled();
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
 		{ backend: "CLOUD", profileId: "approved" },
 		{ backend: "CLOUD", profileId: "approved", budgetUsd: 0 },
 		{ backend: "CLOUD", profileId: "approved", budgetUsd: -1 },
@@ -913,6 +978,9 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 			model: "vmaf_v1.0.16_3d0h",
 			params: { execution },
 		});
+		expect(vmafCreate.mock.calls[0]?.[0].data.params).not.toHaveProperty(
+			"referencePreparation",
+		);
 		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 

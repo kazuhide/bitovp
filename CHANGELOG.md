@@ -4,6 +4,20 @@ Notable changes are recorded here for people installing and using bitovp.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-11-10
+
+### Fixed
+
+- Clear HLS editing preparation accepts supported paired CUE-OUT/CUE-IN annotations while retaining segment, source identity and timing validation.
+- Clip settings diagnose configured services on open and expire stale results; creation and recovery show safe actionable errors.
+- Manual clip creation prevents duplicate submissions and ignores late responses after leaving the page or losing permission.
+- Encoding status probes keep failed, missing and unknown observations unverified instead of suggesting deletion.
+
+### Changed
+
+- Offline media CI now requires real HLS preparation, normalization, rendering and reference-preservation fixtures; preview and font checks are also required in CI.
+- Remove an unused legacy subtitle translation prompt and obsolete completed implementation plans; align editing and gateway guides with current behavior.
+
 ## [1.2.1] - 2026-11-10
 
 ### Fixed

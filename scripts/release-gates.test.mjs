@@ -113,7 +113,13 @@ test("fixed local gates include API freshness and the runner tests, never deploy
 		pkg.scripts["test:editing-preview"],
 		"node --test scripts/editing-preview.test.mjs scripts/editing-fonts.test.mjs",
 	);
-	assert.equal(COMMANDS.length, 7);
+	assert(
+		COMMANDS.some(
+			(c) =>
+				c.join(" ") === "node scripts/api-coverage-current.mjs --check-exact",
+		),
+	);
+	assert.equal(COMMANDS.length, 8);
 	assert(!JSON.stringify(COMMANDS).match(/docker|verify run|deploy|gh /));
 });
 test("exact committed clean standalone checkout only", () => {
@@ -198,7 +204,7 @@ test("output cannot be inside source and complete success remains local-only", (
 	);
 	const result = runGates(f, () => ({ status: 0, signal: null }));
 	assert.equal(result.state, "LOCAL_GATES_PASSED");
-	assert.equal(result.gates.length, 7);
+	assert.equal(result.gates.length, COMMANDS.length);
 	assert.equal(
 		JSON.parse(readFileSync(join(f.output, "result.json"))).sha,
 		f.sha,

@@ -4,6 +4,14 @@ Notable changes are recorded here for people installing and using bitovp.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-11-10
+
+### Fixed
+
+- Clear HLS media preparation accepts supported CUE-OUT/CUE-IN advertising metadata while preserving segment, timeline and source-identity validation.
+- Clip-editing settings run an authorized metadata diagnosis when opened, with fresh status and manual refresh.
+- Clip creation displays actionable messages for HLS preparation, unavailable local editing services and authentication failures.
+
 ## [1.2.1] - 2026-11-10
 
 ### Fixed

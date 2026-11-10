@@ -16,7 +16,7 @@ BitOVP workerが固定のローカルLLMへ非同期jobを送るための、Pyth
 すべてのAPIに、private tokenによるBearer認証が必要です。tokenは一つのpreview tenantへ固定します。任意のURL・model・runtime設定・schema・shell・toolを要求へ追加できません。CORSによるブラウザー直接接続も提供しません。
 
 - `GET /health`: Gatewayの版、登録stage、固定モデル、`quarantinedProfiles`、`acceptingJobs`を返します。隔離中や停止中は`status: "degraded"`、`acceptingJobs: false`。backend推論の動作確認は別です。
-- `GET /readiness/{profile}`: `amd`または`nvidia`だけを受け付ける認証付きの手動診断です。専用runtimeの`/api/version`と`/api/tags`へGETし、固定版とmodel digestを照合します。停止中・いずれかのprofileが隔離中ならruntimeへ接続しません。モデルの読込・推論・解放は行いません。
+- `GET /readiness/{profile}`: `amd`または`nvidia`だけを受け付ける認証付きのmetadata診断です。専用runtimeの`/api/version`と`/api/tags`へGETし、固定版・model digestとGPU能力を照合します。停止中・いずれかのprofileが隔離中ならruntimeへ接続しません。モデルの読込・推論・解放は行いません。
 - `POST /v1/semantic-jobs`: 初回202、同じ要求の再送200、同じkeyで異なるbodyは409。
 - `GET /v1/semantic-jobs/{id}`: 認証tenantに属するjobだけを返します。
 - `POST /v1/semantic-jobs/{id}/cancel`: `{}`を送り、取消を要求します。
@@ -26,15 +26,18 @@ readinessの成功HTTP応答は常に200で、次の固定キーだけを返し�
 ```text
 version: "bitovp-semantic-readiness-v2"
 profile: "amd" | "nvidia"
+organizationId: tokenに紐づくtenant UUID
 scope: "METADATA_ONLY"
 ready: codeが"READY"の場合だけtrue
 code: "READY" | "GATEWAY_STOPPING" | "RUNTIME_QUARANTINED"
       | "RUNTIME_UNAVAILABLE" | "RUNTIME_VERSION_MISMATCH" | "MODEL_MISMATCH"
+      | "GPU_UNVERIFIED"
+gpu: READYの場合だけ、新鮮なbitovp-runtime-gpu-capability-v1の能力情報
 ```
 
 `/health`の設定値と異なりruntimeの現在の登録情報を読みますが、GPUの空き・モデルの読込可否・推論結果の正しさまでは保証しません。各GETは既存の固定loopback接続・接続5秒/応答読取10秒・応答2MiB上限を使い、redirectやproxyを使いません。二つの読取を直列に行うため、clientはその合計時間も考慮します。raw error、接続先host、観測した未承認model名・digestは応答やログへ出しません。
 
-作成要求は次のキーだけを持ちます。
+既定の4stage registryへの作成要求は次のキーだけを持ちます。追加のCHOICE stageは後述の専用registryを明示した場合に限ります。
 
 ```text
 version: "bitovp-semantic-job-v1"
@@ -66,7 +69,7 @@ contextは8192、thinking=false、temperature=0、seed=41、jobの推論予算�
 
 現在の文脈付き翻訳は`LOCAL_CAPTION_JA_V2`を使い、旧v1のprompt・identity・証拠は履歴として保持します。字幕のcurrentなsource spanまたはanchorから、同じ素材・time mapのAISA場面、ショット、人物名を参照DATAへ選びます。任意の参照項目は全文のまま最大1400 UTF-8 bytes、本文・採用済み同文脈訳を含むDATA全体は4500 bytesまで。sourceや文脈・ASR policy・model/promptの変更は別cache keyです。同じ確認済みショット文脈の同じ台詞は採用済み表記を引き継ぎ、異なる場面や文脈不明のcueへtextだけで使い回しません。currentな手動訳は上書きしません。これは構造・出典・表記の一貫性の検証であり、訳の意味的正しさの保証ではありません。
 
-PLaMo 3 Translate用のpure PFML3 adapterは別identityの実験用準備です。このGatewayのjobやStory receiptがPLaMoへ切り替わることはなく、adapterだけではdownload・service・推論を有効にしません。利用条件、実weight SHA、変換/runtime、両GPUの実測は別途確認します。
+PLaMo 3 Translateは字幕専用の別identity・専用jobとして明示設定します。導入条件と実行経路は後述の「PLaMo 翻訳専用の導入境界」を参照してください。StoryのQwen identityは変更しません。
 
 従来の二段stageだけのregistryも読み込めます。現在の翻訳にはv2 stageの登録が必要です。翻訳stageを追加しても、Story identityは旧二段だけを同じ構造でhashし、翻訳identityを別に作るため、登録追加だけで既存Ledger cacheを失効させません。新ASR品質policyによって入力が変わる場合のcache分離は、これとは別です。
 
@@ -124,7 +127,7 @@ with inference_lease(folder.parent / "locks/inference.lock"):
 公開registryは、checkoutのcoreから推論なしで生成できます（出力先はrepository外へ指定します）。
 
 ```sh
-pnpm --filter @bitovp/worker exec tsx -e 'import {writeFileSync} from "node:fs"; import {localSemanticStageRegistry} from "@bitovp/core"; writeFileSync(process.argv[1],JSON.stringify(localSemanticStageRegistry(),null,2)+"\n")' /absolute/path/to/stages.json
+pnpm --filter @bitovp/worker exec tsx scripts/write-local-semantic-stages.ts /absolute/path/to/stages.json
 ```
 
 ### 検証済み編集候補から選ぶ CHOICE stage
@@ -186,7 +189,7 @@ loader の探索 directory とbinary/libraryの親directoryは、子directoryを
 
 共通 inference.lock 内で既設 Qwen が unloaded/専用 unit が inactive なことを確認してから起動します。最初の unit InvocationID/MainPID/startTicks を固定し、同じ起動identityの検証済み `/usr/bin/env` launcher から binary への移行だけを最大5秒待ちます。二度の観測の間にexecが完了した場合は、同じownerの期待binary/argvを再検証して期限内のloopに戻ります。不明な executable や argv を待機理由にしません。起動済み binary/profile と owned PID の GPU 割当を確認し、終了・取消・HTTP失敗のいずれも cgroup 空、捕捉済み旧 PID 終了を確認してから lock を解放し terminal 成功/取消にします。既にinactive/failed、MainPID0、元InvocationIDまたは解除済みの空ID、旧PID終了・cgroup空を証明できた場合はstopを呼びません。MainPID0でもforeign InvocationIDやactivating、未捕捉ownerを解放済みと扱わず、停止もせずcleanup:falseと永続global quarantineに進めます。捕捉済み startTicks を再観測で上書きせず、外部restartやPID再利用で起動identityが変わった場合も新プロセスをownedへ昇格させません。HTTP 接続の終了だけでは解放と扱いません。既存 Qwen 用 offline release CLI の証明を PLaMo job に流用することは拒否します。PLaMo の隔離解除を必要とする実運用は、専用 unit を対象にした独立監査済み operator 手順の追加が必要です。
 
-この追加は未配置環境でも fail closed となる adapter/protocol/recipe/fixture の実装です。ライセンス用途確認前の PLaMo 重み取得・実 service 配置・native 翻訳精度/速度の試験は行っていません。固定 [llama.cpp server source](https://github.com/ggml-org/llama.cpp/blob/10d4846a572aebf21c0482d140b00e74c0f1ad20/tools/server/README.md) の raw completion/stop/timing と CLI を基にしています。
+未配置環境では実行を拒否します。adapterやfixtureの検証は、実際の重みの配置、専用serviceの起動、翻訳精度・速度の検証とは区別します。固定 [llama.cpp server source](https://github.com/ggml-org/llama.cpp/blob/10d4846a572aebf21c0482d140b00e74c0f1ad20/tools/server/README.md) の raw completion/stop/timing と CLI を基にしています。
 
 ### 組織に束縛したclip受付
 

@@ -252,7 +252,7 @@ export function containerArguments(state, source) {
 		"/bin/sh",
 		resourceName(state.id),
 		"-c",
-		"pnpm test:editing-media >&2 && exec node /app/apps/worker/node_modules/tsx/dist/cli.mjs /app/apps/worker/src/testing/media-smoke.ts",
+		"sh scripts/editing-media.sh >&2 && exec node /app/apps/worker/node_modules/tsx/dist/cli.mjs /app/apps/worker/src/testing/media-smoke.ts",
 	];
 }
 

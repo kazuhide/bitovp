@@ -4,6 +4,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -209,16 +210,22 @@ test("the offline image runs every real editing and reference fixture", () => {
 	const { scripts } = JSON.parse(
 		readFileSync(join(root, "package.json"), "utf8"),
 	);
-	for (const fixture of [
-		"library-editing/hls-preparation.media.ts",
-		"library-editing/normalization.media.ts",
-		"library-editing/normalization-untagged-color.media.ts",
-		"library-editing/render.media.ts",
-		"library-editing/render-movie-clock.media.ts",
-		"vmaf/reference-preparation.media.ts",
-	])
-		assert(scripts["test:editing-media"].includes(`src/${fixture}`), fixture);
-	assert(scripts["test:editing-media"].includes("--test-concurrency=1"));
+	assert.equal(scripts["test:editing-media"], "sh scripts/editing-media.sh");
+	const script = readFileSync(
+		new URL("./editing-media.sh", import.meta.url),
+		"utf8",
+	);
+	const discovered = ["library-editing", "vmaf"].flatMap((folder) =>
+		readdirSync(join(root, "apps/worker/src", folder))
+			.filter((name) => name.endsWith(".media.ts"))
+			.map((name) => `src/${folder}/${name}`),
+	);
+	assert.deepEqual(
+		[...script.matchAll(/src\/[\w/-]+\.media\.ts/g)]
+			.map(([name]) => name)
+			.sort(),
+		discovered.sort(),
+	);
 	const args = containerArguments(
 		{ id: "a".repeat(32) },
 		"/private/source.mp4",
@@ -226,6 +233,7 @@ test("the offline image runs every real editing and reference fixture", () => {
 	assert(args.includes("BITOVP_HLS_NATIVE_OUT=/work/hls-gates"));
 	assert(args.includes("BITOVP_HLS_FFMPEG=/usr/local/bin/ffmpeg"));
 	assert(args.includes("BITOVP_HLS_FFPROBE=/usr/local/bin/ffprobe"));
+	assert(args.at(-1).startsWith("sh scripts/editing-media.sh >&2 && "));
 });
 
 for (const succeeds of [false, true])
@@ -234,7 +242,7 @@ for (const succeeds of [false, true])
 		try {
 			const marker = join(directory, "qc-ran");
 			writeFileSync(
-				join(directory, "pnpm"),
+				join(directory, "sh"),
 				`#!${process.execPath}\nprocess.exit(${succeeds ? 0 : 7});\n`,
 				{ mode: 0o700 },
 			);
@@ -254,6 +262,59 @@ for (const succeeds of [false, true])
 			if (succeeds) assert.equal(await run, "qc completed");
 			else await assert.rejects(run, /Media validation command failed/);
 			assert.equal(existsSync(marker), succeeds);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+for (const fails of [false, true])
+	test(`native fixtures use fresh processes and ${fails ? "stop at failure" : "all execute"}`, async () => {
+		const directory = mkdtempSync(join(tmpdir(), "native-media-loop-"));
+		try {
+			const bin = join(directory, "bin"),
+				scripts = join(directory, "scripts");
+			mkdirSync(bin);
+			mkdirSync(scripts);
+			mkdirSync(join(directory, "apps/worker"), { recursive: true });
+			const log = join(directory, "calls.jsonl"),
+				runner = join(scripts, "editing-media.sh");
+			writeFileSync(
+				runner,
+				readFileSync(new URL("./editing-media.sh", import.meta.url)),
+			);
+			writeFileSync(
+				join(bin, "node"),
+				`#!${process.execPath}
+const fs=require('node:fs'); const args=process.argv.slice(2);
+fs.appendFileSync(process.env.MEDIA_LOG,JSON.stringify({pid:process.pid,args,go:process.env.GOMAXPROCS})+'\\n');
+if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
+`,
+				{ mode: 0o700 },
+			);
+			const run = command("/bin/sh", [runner], {
+				cwd: tmpdir(),
+				env: {
+					PATH: `${bin}:/usr/bin:/bin`,
+					MEDIA_LOG: log,
+					FAIL_FIXTURE: fails ? "src/library-editing/render.media.ts" : "",
+				},
+			});
+			if (fails) await assert.rejects(run, /Media validation command failed/);
+			else await run;
+			const calls = readFileSync(log, "utf8")
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			assert.equal(calls.length, fails ? 4 : 6);
+			assert.equal(new Set(calls.map((call) => call.pid)).size, calls.length);
+			assert(
+				calls.every(
+					(call) =>
+						call.go === "2" &&
+						call.args.includes("--test") &&
+						call.args.includes("--experimental-test-isolation=none"),
+				),
+			);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

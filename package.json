@@ -20,7 +20,7 @@
 		"test:postgres-runner": "node --test scripts/postgres-integration.test.mjs",
 		"test:postgres": "node scripts/postgres-integration.mjs",
 		"test:media": "node scripts/media-smoke.mjs",
-		"test:editing-media": "pnpm --filter @bitovp/worker exec tsx --test src/library-editing/normalization.media.ts src/library-editing/normalization-untagged-color.media.ts src/library-editing/render-movie-clock.media.ts",
+		"test:editing-media": "pnpm --filter @bitovp/worker exec tsx --test --test-concurrency=1 src/library-editing/hls-preparation.media.ts src/library-editing/normalization.media.ts src/library-editing/normalization-untagged-color.media.ts src/library-editing/render.media.ts src/library-editing/render-movie-clock.media.ts src/vmaf/reference-preparation.media.ts",
 		"test:media-runner": "node --test scripts/media-smoke.test.mjs",
 		"release:gates": "node scripts/release-gates.mjs",
 		"typecheck": "turbo run typecheck",

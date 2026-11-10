@@ -204,6 +204,61 @@ test("media execution is offline, read-only and bounded without mounting the sou
 	);
 });
 
+test("the offline image runs every real editing and reference fixture", () => {
+	const root = join(import.meta.dirname, "..");
+	const { scripts } = JSON.parse(
+		readFileSync(join(root, "package.json"), "utf8"),
+	);
+	for (const fixture of [
+		"library-editing/hls-preparation.media.ts",
+		"library-editing/normalization.media.ts",
+		"library-editing/normalization-untagged-color.media.ts",
+		"library-editing/render.media.ts",
+		"library-editing/render-movie-clock.media.ts",
+		"vmaf/reference-preparation.media.ts",
+	])
+		assert(scripts["test:editing-media"].includes(`src/${fixture}`), fixture);
+	assert(scripts["test:editing-media"].includes("--test-concurrency=1"));
+	const args = containerArguments(
+		{ id: "a".repeat(32) },
+		"/private/source.mp4",
+	);
+	assert(args.includes("BITOVP_HLS_NATIVE_OUT=/work/hls-gates"));
+	assert(args.includes("BITOVP_HLS_FFMPEG=/usr/local/bin/ffmpeg"));
+	assert(args.includes("BITOVP_HLS_FFPROBE=/usr/local/bin/ffprobe"));
+});
+
+for (const succeeds of [false, true])
+	test(`an editing media gate ${succeeds ? "success permits" : "failure blocks"} the final QC summary`, async () => {
+		const directory = mkdtempSync(join(tmpdir(), "media-gate-order-"));
+		try {
+			const marker = join(directory, "qc-ran");
+			writeFileSync(
+				join(directory, "pnpm"),
+				`#!${process.execPath}\nprocess.exit(${succeeds ? 0 : 7});\n`,
+				{ mode: 0o700 },
+			);
+			writeFileSync(
+				join(directory, "node"),
+				`#!${process.execPath}\nrequire('node:fs').writeFileSync(process.env.QC_MARKER,'ran');process.stdout.write('qc completed');\n`,
+				{ mode: 0o700 },
+			);
+			const args = containerArguments(
+				{ id: "a".repeat(32) },
+				"/private/source.mp4",
+			);
+			const entrypoint = args.indexOf("--entrypoint");
+			const run = command(args[entrypoint + 1], args.slice(entrypoint + 3), {
+				env: { PATH: directory, QC_MARKER: marker },
+			});
+			if (succeeds) assert.equal(await run, "qc completed");
+			else await assert.rejects(run, /Media validation command failed/);
+			assert.equal(existsSync(marker), succeeds);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 test("media builds refresh the base image before offline execution", () => {
 	const source = readFileSync(
 		new URL("./media-smoke.mjs", import.meta.url),

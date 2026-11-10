@@ -1,14 +1,35 @@
 import { ApiError } from "@/lib/api";
 import type { Translator } from "@/lib/i18n/context";
 
+export function editingFailureCode(failure: unknown): string {
+	if (
+		failure instanceof ApiError &&
+		typeof failure.details === "object" &&
+		failure.details !== null &&
+		"code" in failure.details &&
+		typeof failure.details.code === "string"
+	)
+		return failure.details.code;
+	return typeof failure === "string"
+		? failure
+		: failure instanceof Error
+			? failure.message
+			: "";
+}
+
 export function editingErrorMessage(failure: unknown, t: Translator): string {
-	const code =
-		typeof failure === "string"
-			? failure
-			: failure instanceof Error
-				? failure.message
-				: "";
+	if (failure instanceof ApiError && failure.status === 401)
+		return t("editing.errors.signIn");
+	if (failure instanceof ApiError && failure.status === 403)
+		return t("editing.errors.permission");
+	const code = editingFailureCode(failure);
 	const keys = {
+		HLS_UNSUPPORTED: "editing.errors.hlsUnsupported",
+		HLS_LIMIT: "editing.errors.hlsLimit",
+		CLIP_EDITING_UNAVAILABLE: "editing.errors.clipUnavailable",
+		LOCAL_SEMANTIC_UNAVAILABLE: "editing.errors.clipUnavailable",
+		LOCAL_STORY_ENGINE_UNAVAILABLE: "editing.errors.clipUnavailable",
+		LOCAL_CAPTION_TRANSLATION_UNAVAILABLE: "editing.errors.clipUnavailable",
 		MEDIA_NOT_READY: "editing.errors.mediaNotReady",
 		MEDIA_VERSION_UNVERIFIED: "editing.errors.mediaUnverified",
 		SOURCE_UNVERIFIED: "editing.errors.mediaUnverified",

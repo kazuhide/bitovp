@@ -28,4 +28,50 @@ describe("editing error messages", () => {
 			ja.editing.failed,
 		);
 	});
+	it.each([
+		"CLIP_EDITING_UNAVAILABLE",
+		"LOCAL_STORY_ENGINE_UNAVAILABLE",
+		"LOCAL_SEMANTIC_UNAVAILABLE",
+	])("explains unavailable editing for %s", (code) => {
+		expect(editingErrorMessage(new ApiError(503, code), english)).toMatch(
+			/editing service.*unavailable/i,
+		);
+		expect(editingErrorMessage(new ApiError(503, code), japanese)).toMatch(
+			/編集サービス/,
+		);
+	});
+	it("explains unsupported HLS with a usable next step", () => {
+		expect(editingErrorMessage("HLS_UNSUPPORTED", english)).toMatch(/HLS.*MP4/);
+		expect(editingErrorMessage("HLS_UNSUPPORTED", japanese)).toMatch(
+			/HLS.*MP4/,
+		);
+	});
+	it("explains HLS preparation limits without exposing storage details", () => {
+		expect(editingErrorMessage("HLS_LIMIT", english)).toMatch(
+			/limits.*MP4.*shorter/,
+		);
+		expect(editingErrorMessage("HLS_LIMIT", japanese)).toMatch(
+			/上限.*MP4.*短い/,
+		);
+	});
+	it.each([
+		401, 403,
+	])("explains authentication/permission failure%s without raw text", (status) => {
+		const message = editingErrorMessage(
+			new ApiError(status, "private backend location"),
+			english,
+		);
+		expect(message).toMatch(status === 401 ? /sign in/i : /permission/i);
+		expect(message).not.toContain("private");
+	});
+	it("uses the safe machine-readable API code when the outer message is generic", () => {
+		expect(
+			editingErrorMessage(
+				new ApiError(422, "private storage response", {
+					code: "HLS_UNSUPPORTED",
+				}),
+				english,
+			),
+		).toMatch(/HLS.*MP4/);
+	});
 });

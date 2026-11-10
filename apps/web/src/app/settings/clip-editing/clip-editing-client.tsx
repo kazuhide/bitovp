@@ -1,36 +1,73 @@
 "use client";
 
-import type { LocalSemanticReadinessReport } from "@bitovp/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	LOCAL_SEMANTIC_HEARTBEAT_TTL_MS,
+	type LocalSemanticReadinessReport,
+} from "@bitovp/core";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
+import { useSession } from "@/lib/auth/use-session";
 import { useT } from "@/lib/i18n/context";
 
-const queryKey = ["clip-editing-diagnostics"] as const;
 export function ClipEditingClient() {
 	const { t, locale } = useT();
 	const canDiagnose = useMutationAccess("settings.clip-editing-diagnose");
-	const client = useQueryClient();
+	const session = useSession();
 	const query = useQuery({
-		queryKey,
-		queryFn: () =>
-			apiFetch<LocalSemanticReadinessReport>("/api/settings/clip-editing"),
+		queryKey: [
+			"clip-editing-diagnostics",
+			session.data?.organizationId,
+			session.data?.actorUserId,
+			session.data?.effectiveUserId,
+			canDiagnose,
+		],
+		enabled: session.status === "success" && session.data.authenticated,
+		queryFn: async ({ signal }) => {
+			const configuration = await apiFetch<LocalSemanticReadinessReport>(
+				"/api/settings/clip-editing",
+				{ signal },
+			);
+			signal.throwIfAborted();
+			if (!canDiagnose || configuration.configuration !== "CONFIGURED")
+				return configuration;
+			return apiFetch<LocalSemanticReadinessReport>(
+				"/api/settings/clip-editing",
+				{
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+					signal,
+				},
+			);
+		},
 		retry: false,
 		refetchOnWindowFocus: false,
-		staleTime: Infinity,
+		refetchOnMount: "always",
+		staleTime: LOCAL_SEMANTIC_HEARTBEAT_TTL_MS,
 	});
-	const diagnose = useMutation({
-		mutationFn: () =>
-			apiFetch<LocalSemanticReadinessReport>("/api/settings/clip-editing", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: "{}",
-			}),
-		onSuccess: (data) => client.setQueryData(queryKey, data),
-	});
-	const data = query.data;
+	const data = query.isFetching || query.isError ? undefined : query.data;
+	const checkedAt = data?.checkedAt;
+	const [expiredAt, setExpiredAt] = useState<string>();
+	useEffect(() => {
+		if (!checkedAt) return;
+		const remaining =
+			Date.parse(checkedAt) + LOCAL_SEMANTIC_HEARTBEAT_TTL_MS - Date.now();
+		if (!Number.isFinite(remaining)) return;
+		const timeout = setTimeout(
+			() => setExpiredAt(checkedAt),
+			Math.max(0, remaining),
+		);
+		return () => clearTimeout(timeout);
+	}, [checkedAt]);
+	const expired =
+		!!checkedAt &&
+		(expiredAt === checkedAt ||
+			!Number.isFinite(Date.parse(checkedAt)) ||
+			Date.now() - Date.parse(checkedAt) >= LOCAL_SEMANTIC_HEARTBEAT_TTL_MS);
 	const rows = data
 		? [
 				{
@@ -57,22 +94,26 @@ export function ClipEditingClient() {
 						variant="secondary"
 						size="sm"
 						disabled={
-							data?.configuration !== "CONFIGURED" || diagnose.isPending
+							query.isPending ||
+							query.isFetching ||
+							(!query.isError && data?.configuration !== "CONFIGURED")
 						}
-						onClick={() => diagnose.mutate()}
+						onClick={() => {
+							void query.refetch({ cancelRefetch: false });
+						}}
 					>
 						{t(
-							diagnose.isPending
+							query.isFetching
 								? "clipDiagnostics.checking"
 								: "clipDiagnostics.diagnose",
 						)}
 					</Button>
 				) : null}
 			</div>
-			{query.isPending ? (
+			{query.isPending || query.isFetching ? (
 				<p className="mt-6 text-sm text-zinc-500">{t("common.loading")}</p>
 			) : null}
-			{query.isError || diagnose.isError ? (
+			{query.isError ? (
 				<p role="alert" className="mt-4 text-sm text-amber-300">
 					{t("clipDiagnostics.failed")}
 				</p>
@@ -90,8 +131,13 @@ export function ClipEditingClient() {
 							>
 								<dt className="text-zinc-400">{t(row.label)}</dt>
 								<dd className="min-w-0 text-zinc-100">
-									{t(`clipDiagnostics.states.${row.code}`)}
+									{expired &&
+									row.label !== "clipDiagnostics.configuration" &&
+									row.code !== "NOT_CHECKED"
+										? t("clipDiagnostics.stale")
+										: t(`clipDiagnostics.states.${row.code}`)}
 									{row.label === "clipDiagnostics.worker" &&
+									!expired &&
 									data.worker.readyCount + data.worker.failedCount > 0 ? (
 										<p className="mt-1 text-xs text-zinc-500">
 											{t("clipDiagnostics.counts", {

@@ -42,6 +42,7 @@ export const en = {
 			"Checks configuration, service initialization, model identity and GPU capability. It does not load a model or run inference.",
 		counts: "Ready: {ready}; initialization failed: {failed}",
 		checkedAt: "Checked: {time}",
+		stale: "Diagnosis expired",
 		failed: "Could not complete the diagnosis. Try again.",
 		workerRecovery:
 			"Check the editing service log and deployment settings, then restart the service. Status expires after 45 seconds without a heartbeat.",
@@ -163,6 +164,15 @@ export const en = {
 		generatedPreviewStale:
 			"This generated preview belongs to an earlier edit. Save a confirmed revision and generate again to update it.",
 		errors: {
+			hlsUnsupported:
+				"This HLS format cannot be prepared for editing. Choose an MP4 output or another content item.",
+			hlsLimit:
+				"This HLS source exceeds the preparation limits. Choose an MP4 output or a shorter content item.",
+			clipUnavailable:
+				"The clip editing service is unavailable. Check its connection in Settings or contact the administrator.",
+			signIn: "Sign in again before retrying this operation.",
+			permission:
+				"You do not have permission for this operation. Contact the administrator.",
 			sourceChanged:
 				"The source changed. Prepare a new material version before continuing.",
 			sourceLarge:

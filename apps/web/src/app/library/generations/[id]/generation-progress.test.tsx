@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import { renderWithQuery } from "@/test/render";
 import { GenerationProgress } from "./generation-progress";
 
@@ -150,6 +151,52 @@ it("uses one fresh child request key across unknown retry responses", async () =
 	await waitFor(() =>
 		expect(mocks.push).toHaveBeenCalledWith(`/library/generations/${childId}`),
 	);
+});
+it.each([
+	[503, "CLIP_EDITING_UNAVAILABLE", /editing service.*unavailable/i],
+	[503, "LOCAL_STORY_ENGINE_UNAVAILABLE", /Automatic editing.*unavailable/i],
+	[401, "private session location", /sign in/i],
+	[403, "private permission detail", /permission/i],
+] as const)("shows a safe recovery explanation when retry returns %s %s", async (status, code, expected) => {
+	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) => {
+		if (init?.method === "POST") throw new ApiError(status, code);
+		return task("ERROR");
+	});
+	renderWithQuery(<GenerationProgress id={id} />);
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Retry as a new task" }),
+	);
+	expect(await screen.findByRole("alert")).toHaveTextContent(expected);
+	expect(screen.getByRole("alert")).not.toHaveTextContent("private");
+});
+
+it.each([
+	401, 403,
+])("explains %s when cancellation needs authentication or permission", async (status) => {
+	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) => {
+		if (init?.method === "POST")
+			throw new ApiError(status, "private cancellation detail");
+		return task();
+	});
+	renderWithQuery(<GenerationProgress id={id} />);
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Cancel generation" }),
+	);
+	expect(await screen.findByRole("alert")).toHaveTextContent(
+		status === 401 ? /sign in/i : /permission/i,
+	);
+	expect(screen.getByRole("alert")).not.toHaveTextContent("private");
+});
+
+it.each([
+	401, 403,
+])("explains %s when the progress data cannot be read", async (status) => {
+	mocks.api.mockRejectedValue(new ApiError(status, "private storage location"));
+	renderWithQuery(<GenerationProgress id={id} />);
+	expect(await screen.findByRole("alert")).toHaveTextContent(
+		status === 401 ? /sign in/i : /permission/i,
+	);
+	expect(screen.getByRole("alert")).not.toHaveTextContent("private");
 });
 it("allows viewers to read results while withholding cancel and retry", async () => {
 	mocks.permitted = false;

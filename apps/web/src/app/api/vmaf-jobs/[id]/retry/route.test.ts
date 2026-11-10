@@ -98,6 +98,83 @@ beforeEach(() => {
 	getJob.mockResolvedValue(null);
 });
 describe("local VMAF-only retry", () => {
+	it("preserves explicit reference preparation while regenerating proof and native selection", async () => {
+		findUnique.mockResolvedValue(
+			row({
+				triggerKey: `lab-manual:${JOB}:model:1`,
+				params: {
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					source: "QC_MIRROR",
+					referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+					localSelection: { backend: "cuda" },
+					localScoring: { backend: "cuda" },
+					referencePreparationEvidence: { frameCount: 1 },
+				},
+			}),
+		);
+		expect((await post()).status).toBe(201);
+		expect(create.mock.calls[0]?.[0].data.params).toEqual({
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			source: "QC_MIRROR",
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			retryOf: ID,
+		});
+	});
+	it.each([
+		{
+			referencePreparation: "UNKNOWN",
+			localMode: "AUTO",
+			kind: undefined,
+			automatic: false,
+			method: undefined,
+		},
+		{
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "CPU",
+			kind: undefined,
+			automatic: false,
+			method: undefined,
+		},
+		{
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "AUTO",
+			kind: "BANDING",
+			automatic: false,
+			method: undefined,
+		},
+		{
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "AUTO",
+			kind: undefined,
+			automatic: true,
+			method: undefined,
+		},
+		{
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "AUTO",
+			kind: undefined,
+			automatic: false,
+			method: "FRAME_INDEX_BT709_10BIT",
+		},
+	])("rejects unsupported reference preparation retry intent %# before claiming history", async (item) => {
+		findUnique.mockResolvedValue(
+			row({
+				triggerKey: item.automatic
+					? autoTriggerKey(JOB)
+					: `lab-manual:${JOB}:model:1`,
+				params: {
+					execution: { backend: "LOCAL", localMode: item.localMode },
+					referencePreparation: item.referencePreparation,
+					...(item.kind ? { kind: item.kind } : {}),
+					...(item.method ? { measurementMethod: item.method } : {}),
+				},
+			}),
+		);
+		expect((await post()).status).toBe(409);
+		expect(claim).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(add).not.toHaveBeenCalled();
+	});
 	it("retains the Banding discriminator and generation when retrying CAMBI evidence", async () => {
 		findUnique.mockResolvedValue(
 			row({

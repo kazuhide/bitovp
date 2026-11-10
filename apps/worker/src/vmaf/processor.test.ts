@@ -29,6 +29,8 @@ import {
 import * as localScoring from "./local-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 import * as referencePreparation from "./reference-preparation";
+import type { VmafResourceLeaseRequest } from "./resource-leases";
+import { createSharedVmafExecution } from "./shared-execution";
 
 /**
  * Processor units run WITHOUT ffmpeg (CI has none): an injected
@@ -4857,6 +4859,198 @@ describe("explicit lossless reference preparation", () => {
 				} satisfies LocalVmafExecution,
 			}));
 	}
+
+	function preparationResources() {
+		const requests: VmafResourceLeaseRequest[] = [];
+		const events: string[] = [];
+		const requested = resourceDeferred(),
+			grant = resourceDeferred();
+		const lease = new AbortController();
+		let cpuHeld = false;
+		let denied = false;
+		const readResources = () => ({
+			cpuCapacity: 8,
+			memoryLimitBytes: 8 * 1024 ** 3,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		});
+		const shared = createSharedVmafExecution({
+			hostKey: async () => "a".repeat(64),
+			readResources,
+			leases: {
+				async run(request, signal, work) {
+					requests.push(request);
+					if (request.deviceKey) {
+						events.push("gpu-request");
+						expect(cpuHeld).toBe(false);
+						return work({
+							signal,
+							assertOwned: async () => signal.throwIfAborted(),
+							fitsHeadroom: async () => true,
+						});
+					}
+					events.push("cpu-request");
+					requested.resolve();
+					await grant.promise;
+					if (denied) throw new Error("PREPARATION_ADMISSION_DENIED");
+					cpuHeld = true;
+					const runSignal = AbortSignal.any([signal, lease.signal]);
+					try {
+						return await work({
+							signal: runSignal,
+							assertOwned: async () => {
+								expect(cpuHeld).toBe(true);
+								runSignal.throwIfAborted();
+							},
+							fitsHeadroom: async () => true,
+						});
+					} finally {
+						cpuHeld = false;
+						events.push("cpu-release");
+					}
+				},
+			},
+		});
+		shared.registerDevice({
+			deviceKey: "e".repeat(64),
+			read: async () => ({
+				totalBytes: 8 * 1024 ** 3,
+				availableBytes: 8 * 1024 ** 3,
+			}),
+		});
+		const resources = createLocalVmafResources({
+			concurrency: 1,
+			readResources,
+			execute: (plan, signal, work) => shared.run(plan, signal, work),
+		});
+		return {
+			resources,
+			requests,
+			events,
+			requested,
+			grant,
+			lease,
+			get cpuHeld() {
+				return cpuHeld;
+			},
+			deny() {
+				denied = true;
+			},
+		};
+	}
+
+	it("admits the complete proof under a whole-host CPU lease before capacity-one GPU preparation", async () => {
+		const authority = preparationResources(),
+			proofEntered = resourceDeferred(),
+			finishProof = resourceDeferred();
+		const t = preparedHarness();
+		t.deps.localResources = authority.resources;
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => {
+				authority.events.push("proof");
+				proofEntered.resolve();
+				await finishProof.promise;
+				expect(authority.cpuHeld).toBe(true);
+				expect(args.signal?.aborted).toBe(false);
+				return {
+					path: args.preparedPath,
+					probe: RESOURCE_PROBE_JSON,
+					evidence: {
+						...evidence,
+						get inputSha256() {
+							expect(authority.cpuHeld).toBe(true);
+							return evidence.inputSha256;
+						},
+					},
+				};
+			});
+		const score = mockScore();
+		const running = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		const outcome = running.catch((error: unknown) => error);
+		try {
+			await vi.waitFor(() =>
+				expect(authority.events.length).toBeGreaterThan(0),
+			);
+			expect(authority.events).toEqual(["cpu-request"]);
+			expect(prepare).not.toHaveBeenCalled();
+			expect(score).not.toHaveBeenCalled();
+			expect(authority.requests[0]?.requested).toEqual({
+				cpuMilliCores: 8000,
+				hostBytes: 8 * 1024 ** 3,
+			});
+			authority.grant.resolve();
+			await proofEntered.promise;
+			expect(authority.cpuHeld).toBe(true);
+			expect(score).not.toHaveBeenCalled();
+			finishProof.resolve();
+			expect(await outcome).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(prepare).toHaveBeenCalledTimes(1);
+			expect(authority.events.slice(0, 4)).toEqual([
+				"cpu-request",
+				"proof",
+				"cpu-release",
+				"gpu-request",
+			]);
+			expect(score).toHaveBeenCalledTimes(2);
+		} finally {
+			authority.grant.resolve();
+			finishProof.resolve();
+			t.vmafJob.findUnique.mockResolvedValue(null);
+			await outcome;
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it.each([
+		"denied",
+		"lost",
+		"missing",
+	] as const)("does not score or publish when preparation authority is %s", async (failure) => {
+		const authority = preparationResources();
+		authority.grant.resolve();
+		if (failure === "denied") authority.deny();
+		const t = preparedHarness();
+		t.deps.localResources =
+			failure === "missing"
+				? {
+						begin(signal) {
+							return {
+								...authority.resources.begin(signal),
+								exclusivePrepared: undefined,
+							};
+						},
+					}
+				: authority.resources;
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => {
+				if (failure === "lost") {
+					expect(authority.cpuHeld).toBe(true);
+					authority.lease.abort(new Error("PREPARATION_LEASE_LOST"));
+					expect(args.signal?.aborted).toBe(true);
+				}
+				return {
+					path: args.preparedPath,
+					probe: RESOURCE_PROBE_JSON,
+					evidence,
+				};
+			});
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(/PREPARATION_(?:ADMISSION|LEASE)/);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.results).toHaveLength(0);
+			expect(score).not.toHaveBeenCalled();
+			if (failure !== "lost") expect(prepare).not.toHaveBeenCalled();
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
 
 	it("scores the prepared raster once per reference and persists its proof with each unchanged source identity", async () => {
 		const t = preparedHarness();

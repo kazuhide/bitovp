@@ -123,6 +123,106 @@ This verification adds CPU work. Benchmarking the qualified GPU extractor
 alone and measuring the current worker's end-to-end time answer different
 questions. Compare both before choosing a deployment setting.
 
+## Prepare a repeatable BBB codec comparison
+
+Inspect the source metadata and qualify the worker's native installation before
+submitting paid jobs. A GPU being present does not establish that the scorer,
+model, input format and numerical verification are supported. Keep each codec
+in a separate encoding job with a unique output prefix. A fixed comparison
+ladder can use these video targets at the source's unchanged frame rate:
+
+| Rendition | Dimensions | Target video bitrate |
+| --- | --- | ---: |
+| 1080p | 1920 × 1080 | 2,000,000 bps |
+| 720p | 1280 × 720 | 1,000,000 bps |
+| 540p | 960 × 540 | 600,000 bps |
+| 360p | 640 × 360 | 300,000 bps |
+
+Target bitrate and measured video bitrate are separate values; retain both when
+comparing results.
+
+### One muxing per native HEVCv2 stream
+
+The internal native HEVCv2 profile uses `SMART_PASS`. Each video stream can feed
+only **one muxing resource**. A delivery muxing plus the compiler-generated QC
+MP4 are two resources, even when both use MP4. Requesting VMAF, PSNR or Banding
+creates that QC mirror; disabling VMAF alone does not remove it when Banding is
+still enabled. Validation rejects this combination before job creation.
+
+For a quality-only comparison, use `qc.only:true`. Keep the four video renditions
+and their muxing destination entries, but remove audio renditions, manifests,
+DRM, thumbnails, sprites, keyframes and AI scene analysis. The destination
+entries tell the compiler where to write each QC MP4; their delivery muxings
+are not created. This produces one MP4 per video stream. The same quality-only
+recipe can be used for H.264, HEVCv1 and AV1. Extra storage destinations on a
+single muxing (`deliveryMirrors`) do not create additional muxing resources.
+
+The 2026-11-10 BBB test with the internal HEVCv2 BCF build
+`v2.325.0-461-g85df7fd6c6` and encoder `BETA` also encountered a provider error
+while creating a DASH fMP4 representation: HTTP 400, code 1001, `codecType` null.
+Treat DASH for that profile/build as an outstanding qualification gap and use
+the MP4-only comparison recipe. This observation is not a general DASH ban;
+requalify that packaging path separately when the provider implementation changes.
+Repeating an unchanged rejected plan does not resolve either constraint.
+
+### Separate Banding from a display-scaled reference comparison
+
+Some BBB MOV sources carry a nonidentity display-scale matrix despite a zero
+rotation angle. The native VMAF guard rejects that reference. Inspect the actual
+source; do not infer eligibility from the filename or `rotation:0` alone.
+
+For a source with this known display-scale metadata, start with automatic
+**Banding-only** QC so that the encode produces its QC MP4s without scheduling
+an already unsupported reference-based VMAF run:
+
+```json
+{
+  "qc": {
+    "vmaf": false,
+    "psnr": false,
+    "banding": true,
+    "only": true,
+    "execution": { "backend": "LOCAL", "localMode": "AUTO" }
+  }
+}
+```
+
+After the encoding is `FINISHED` and its automatic measurement has settled,
+submit a manual VMAF measurement through the application's normal API. For a
+supported H.264, 8-bit 4:2:0 SDR reference with positive axis-aligned display
+scaling, square pixels and no crop, rotation or reflection, the explicit request
+is:
+
+```http
+POST /api/vmaf-jobs
+Content-Type: application/json
+
+{
+  "encodingJobId": "<finished-encoding-job-id>",
+  "model": "vmaf_v1.0.16_3d0h",
+  "banding": false,
+  "source": "QC_MIRROR",
+  "execution": { "backend": "LOCAL", "localMode": "AUTO" },
+  "referencePreparation": "LOSSLESS_DISPLAY_SCALE_REMUX"
+}
+```
+
+Preparation stream-copies a temporary reference and verifies every encoded
+packet, decoded frame, codec setting and timestamp before scoring. It compares
+the **coded raster**, explicitly ignoring display scaling; it does not validate
+the displayed presentation. Unsupported transforms remain errors. This explicit
+preparation requires a qualified native GPU and fails instead of selecting CPU.
+The source object and completed encoding plan stay unchanged. The report and
+JSON export retain both file hashes, the original display matrix and complete
+equivalence evidence.
+
+Ordinary eligible references with no presentation transform can continue to use
+automatic VMAF and Banding together; they do not need this preparation option.
+Before accepting a comparison, check all four rungs per codec, complete expected
+frame coverage, the VMAF v1 model, actual `localExecution.scoring.backend` and
+`bandingExecution.backend`, and CPU verification. A queued job, selected AUTO
+mode or GPU utilization by itself does not establish a completed GPU result.
+
 ## Automatic local scheduling
 
 On Linux, a matching native scorer and supervisor enable automatic resource

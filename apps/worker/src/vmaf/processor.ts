@@ -1153,7 +1153,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								: undefined,
 							referenceProbe,
 							...(referencePreparation
-								? { expectedReferenceSha256: referencePreparation.preparedSha256 }
+								? {
+										expectedReferenceSha256:
+											referencePreparation.preparedSha256,
+									}
 								: {}),
 							distortedProbe: resourceProbe?.stdout,
 						},
@@ -1819,6 +1822,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const resourceSession = !isCloud
 				? deps.localResources?.begin(signal)
 				: undefined;
+			if (referencePreparation && !resourceSession?.exclusivePrepared)
+				throw new Error("VMAF_REFERENCE_PREPARATION_ADMISSION_REQUIRED");
 			await mkdir(jobDir, { recursive: true, mode: 0o700 });
 
 			// Reference download + probe, ONCE per unique source (every rendition
@@ -1880,21 +1885,32 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					let selectedProbe = probe.stdout;
 					let preparation: VmafReferencePreparationEvidence | undefined;
 					if (referencePreparation) {
-						const prepared = await prepareDisplayScaleReference({
-							runner,
-							ffmpegPath: deps.ffmpegPath,
-							ffprobePath: deps.ffprobePath,
-							originalPath: referencePath,
-							preparedPath: join(jobDir, `ref-${refIndex}-prepared.mov`),
-							originalProbe: probe.stdout,
-							originalSha256: referenceProvenance.sha256,
-							signal,
-						});
-						preparation = vmafReferencePreparationEvidenceSchema.parse(
-							prepared.evidence,
+						if (!resourceSession?.exclusivePrepared)
+							throw new Error("VMAF_REFERENCE_PREPARATION_ADMISSION_REQUIRED");
+						const prepared = await resourceSession.exclusivePrepared(
+							`reference/${refIndex}`,
+							async (_scoped, leaseSignal, assertOwned) => {
+								await assertOwned();
+								const prepared = await prepareDisplayScaleReference({
+									runner,
+									ffmpegPath: deps.ffmpegPath,
+									ffprobePath: deps.ffprobePath,
+									originalPath: referencePath,
+									preparedPath: join(jobDir, `ref-${refIndex}-prepared.mov`),
+									originalProbe: probe.stdout,
+									originalSha256: referenceProvenance.sha256,
+									signal: leaseSignal,
+								});
+								const evidence = vmafReferencePreparationEvidenceSchema.parse(
+									prepared.evidence,
+								);
+								if (evidence.inputSha256 !== referenceProvenance.sha256)
+									throw new Error("VMAF_REFERENCE_PREPARATION_INPUT_MISMATCH");
+								await assertOwned();
+								return { ...prepared, evidence };
+							},
 						);
-						if (preparation.inputSha256 !== referenceProvenance.sha256)
-							throw new Error("VMAF_REFERENCE_PREPARATION_INPUT_MISMATCH");
+						preparation = prepared.evidence;
 						selectedPath = prepared.path;
 						selectedProbe = prepared.probe;
 					}
@@ -2305,6 +2321,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						}
 					: {}),
 			});
+
+			// Full reference proofs need exclusive CPU/RAM authority. Resolve their
+			// cache before any pool worker holds a lightweight preparation permit:
+			// nested acquisition would deadlock when that permit has capacity one.
+			if (referencePreparation) {
+				for (const item of work) {
+					if (!("reference" in item.target))
+						throw new Error("VMAF_REFERENCE_REQUIRED");
+					await referenceFor(item.target);
+				}
+			}
 
 			// Bounded pool: `concurrency` workers pull from a shared index. On the
 			// first error, stop pulling and let in-flight runs settle, then rethrow

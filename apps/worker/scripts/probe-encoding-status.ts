@@ -7,9 +7,10 @@
  * an unanswered question, and the answer is one API call away.
  *
  * So before an operator deletes those rows, this turns "we cannot prove it
- * stopped" into a measurement: RUNNING/QUEUED means do NOT delete, a terminal
- * state or a 404 (Bitmovin purges after ~90 days) means the row is safe to
- * remove.
+ * stopped" into a measurement. Non-terminal states require keeping the row.
+ * Failed, missing or unrecognized observations remain unverified; a 404 does
+ * not prove the encoding is gone from another account. Even terminal states
+ * require checking local references before deletion.
  *
  * Reads through the product's own account store, so the plaintext API key is
  * never handled here. Touches no row and stops nothing — `stop-orphan-live.ts`
@@ -22,6 +23,7 @@ import { resolve } from "node:path";
 import { cipherFromEnv } from "@bitovp/core";
 import { createBitmovinAccountStore, createPrismaClient } from "@bitovp/db";
 import { createBitmovinSdkOps } from "../src/orchestrator/sdk-ops";
+import { encodingProbeSummary } from "./probe-encoding-summary";
 
 const envFile = resolve(import.meta.dirname, "../../../.env");
 if (existsSync(envFile)) {
@@ -60,9 +62,8 @@ try {
 		try {
 			state = String((await sdk.getEncodingStatus(id)).status);
 		} catch (err) {
-			// A purged or never-existent encoding answers 404. Reported as its
-			// own bucket rather than folded into "terminal": "gone" and
-			// "finished" are different facts even though both are safe.
+			// Preserve the lookup result, without treating absence in this
+			// account as proof that the resource is globally gone.
 			const message = err instanceof Error ? err.message : String(err);
 			state = /404|not found/i.test(message) ? "GONE (404)" : `PROBE FAILED`;
 			if (state === "PROBE FAILED") {
@@ -76,12 +77,7 @@ try {
 	for (const [state, n] of [...tally].sort()) {
 		console.log(`${String(n).padStart(4)}  ${state}`);
 	}
-	const live = [...tally].filter(([s]) => /RUNNING|QUEUED|STARTING/i.test(s));
-	console.log(
-		live.length > 0
-			? `\nSTOP FIRST: ${live.map(([s, n]) => `${n} ${s}`).join(", ")}`
-			: "\nNothing is live at Bitmovin — these rows are safe to delete.",
-	);
+	console.log(`\n${encodingProbeSummary(tally)}`);
 } finally {
 	await prisma.$disconnect();
 }

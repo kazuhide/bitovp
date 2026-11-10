@@ -43,6 +43,12 @@ worker saves the source identity, hash and timing information; wait for **Ready*
 before creating a landscape or portrait project. Keep generated output outside
 watch-folder inputs. FFmpeg and FFprobe must be available to the worker.
 
+Automatic preparation also accepts supported clear VOD HLS outputs. It selects
+the video and audio renditions, copies their segments into MP4, then applies the
+same editing-material checks below. Supported paired CUE-OUT/CUE-IN annotations
+do not alter the footage. Encrypted or live HLS and unsupported playlist features
+are refused; a `.m3u8` extension alone does not establish compatibility.
+
 Supported preparation inputs are MP4/MOV with H.264 or 8bit HEVC, BT.709 SDR,
 progressive constant 24/25/29.97/30fps, square pixels, no rotation and zero-based
 timestamps, with optional mono/stereo AAC at 44.1/48kHz. Fully tagged compatible

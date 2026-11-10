@@ -12,6 +12,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
+import { useT } from "@/lib/i18n/context";
+import {
+	editingErrorMessage,
+	editingFailureCode,
+} from "../../edits/editing-errors";
 import { AssociationReview } from "./association-review";
 import {
 	GenerationSettings,
@@ -77,6 +82,7 @@ function GenerationControlsView({
 	const c = useProductionCopy(),
 		id = useId(),
 		router = useRouter();
+	const { t } = useT();
 	const canMutate = useMutationAccess("library.edits.edit");
 	const [settings, setSettings] = useState<GenerationSettingsValue>(
 		initialSettings ?? {
@@ -249,9 +255,15 @@ function GenerationControlsView({
 			else if (request.current) request.current.uncertain = true;
 			if (isCurrent()) {
 				setError(
-					failure instanceof ApiError && failure.message.startsWith("STORY_")
-						? productionFailure(failure.message, c)
-						: c.error,
+					failure instanceof ApiError &&
+						failure.status !== 401 &&
+						failure.status !== 403
+						? productionFailure(
+								editingFailureCode(failure),
+								c,
+								editingErrorMessage(failure, t),
+							)
+						: editingErrorMessage(failure, t),
 				);
 				setUncertain(unknown);
 				keepReservation = renderMode === "DRAFT" && unknown;

@@ -136,3 +136,34 @@ it("uses a new key after a definitive validation failure", async () => {
 		JSON.parse(mocks.api.mock.calls[0]?.[1].body).requestKey,
 	);
 });
+
+it.each([
+	[
+		503,
+		"LOCAL_STORY_ENGINE_UNAVAILABLE",
+		/Automatic editing is temporarily unavailable/,
+	],
+	[503, "CLIP_EDITING_UNAVAILABLE", /editing service.*unavailable/i],
+	[422, "HLS_UNSUPPORTED", /HLS.*MP4/],
+	[401, "private auth text", /sign in/i],
+	[403, "private permission text", /permission/i],
+] as const)("shows a safe actionable creation failure%s %s", async (status, code, expected) => {
+	mocks.api.mockRejectedValue(new ApiError(status, code));
+	renderLocalized(form());
+	fireEvent.click(screen.getByRole("button", { name: "Association checked" }));
+	fireEvent.click(
+		screen.getByRole("button", { name: "Start configured generation" }),
+	);
+	const alert = await screen.findByRole("alert");
+	expect(alert).toHaveTextContent(expected);
+	expect(alert).not.toHaveTextContent("private");
+	if (status === 503) {
+		fireEvent.click(
+			screen.getByRole("button", { name: "Start configured generation" }),
+		);
+		await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(2));
+		expect(mocks.api.mock.calls[1]?.[1].body).toBe(
+			mocks.api.mock.calls[0]?.[1].body,
+		);
+	}
+});

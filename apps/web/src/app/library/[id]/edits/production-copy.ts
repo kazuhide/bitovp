@@ -639,6 +639,7 @@ export function productionPhase(phase: string, c: ProductionCopy): string {
 export function productionFailure(
 	code: string | null,
 	c: ProductionCopy,
+	fallback = c.error,
 ): string {
 	switch (code) {
 		case "LOCAL_SEMANTIC_UNAVAILABLE":
@@ -678,6 +679,6 @@ export function productionFailure(
 		case "NORMALIZATION_EVIDENCE_UNVERIFIED":
 			return c.preparedClockUnavailable;
 		default:
-			return c.error;
+			return fallback;
 	}
 }

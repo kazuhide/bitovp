@@ -805,7 +805,7 @@ export async function renderCompositionRecipe(input: {
 				...imageInputs,
 				...clipVideoInputs,
 				"-filter_complex_threads",
-				"2",
+				"1",
 				filterScriptOption,
 				graphPath,
 				"-map",

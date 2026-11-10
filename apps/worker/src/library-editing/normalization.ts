@@ -245,6 +245,8 @@ export function buildNormalizationRecipe(
 }
 
 const readInput = (path: string) => [
+	"-threads",
+	"2",
 	"-protocol_whitelist",
 	"file,pipe",
 	"-format_whitelist",
@@ -389,6 +391,8 @@ export async function normalizeEditingMedia(input: {
 					"-v",
 					"error",
 					"-nostdin",
+					"-filter_threads",
+					"2",
 					"-y",
 					"-noautorotate",
 					...readInput(input.sourcePath),

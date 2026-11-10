@@ -238,15 +238,21 @@ export function containerArguments(state, source) {
 		`${uid}:${gid}`,
 		"--env",
 		"TMPDIR=/work",
+		"--env",
+		"BITOVP_HLS_NATIVE_OUT=/work/hls-gates",
+		"--env",
+		"BITOVP_HLS_FFMPEG=/usr/local/bin/ffmpeg",
+		"--env",
+		"BITOVP_HLS_FFPROBE=/usr/local/bin/ffprobe",
 		"--tmpfs",
 		`/work:rw,size=256m,uid=${uid},gid=${gid},mode=700`,
 		"--mount",
 		`type=bind,source=${source},target=/input/source.mp4,readonly`,
 		"--entrypoint",
-		"node",
+		"/bin/sh",
 		resourceName(state.id),
-		"/app/apps/worker/node_modules/tsx/dist/cli.mjs",
-		"/app/apps/worker/src/testing/media-smoke.ts",
+		"-c",
+		"sh scripts/editing-media.sh >&2 && exec node /app/apps/worker/node_modules/tsx/dist/cli.mjs /app/apps/worker/src/testing/media-smoke.ts",
 	];
 }
 
@@ -477,10 +483,12 @@ export async function runFixture(
 		notify(`Worker image built: ${imageId}`);
 		state.containerRequested = true;
 		save();
-		notify("Media check: encoding, packaging, decoding and scoring offline");
+		notify(
+			"Media check: testing preparation/rendering, then packaging and scoring offline",
+		);
 		const summary = validateSummary(
 			await docker(containerArguments(state, asset), clean, execute, {
-				timeout: 180_000,
+				timeout: 420_000,
 				signal,
 			}),
 		);

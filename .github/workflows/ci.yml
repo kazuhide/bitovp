@@ -95,6 +95,7 @@ jobs:
         run: python3 -B -m unittest discover -s tools/clip-quality -p 'test_*.py' -v
       - run: pnpm test:api-coverage
       - run: pnpm test:release-gates
+      - run: pnpm test:editing-preview
       - run: pnpm --filter @bitovp/worker smoke
 
   tests:

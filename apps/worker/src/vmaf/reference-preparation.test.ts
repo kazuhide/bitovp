@@ -60,11 +60,13 @@ async function setup(
 	const originalPath = join(directory, "source.mov"),
 		preparedPath = join(directory, "prepared.mov");
 	await writeFile(originalPath, "source");
+	const commands: string[][] = [];
 	const runner: ProcessRunner = {
 		spawn() {
 			throw new Error("unexpected spawn");
 		},
 		async run(_bin, args) {
+			commands.push([...args]);
 			const source = args.includes(originalPath);
 			if (args.includes("copy") && !args.includes("framehash")) {
 				await writeFile(preparedPath, "prepared");
@@ -109,6 +111,7 @@ async function setup(
 		},
 	};
 	return {
+		commands,
 		runner,
 		ffmpegPath: "ffmpeg",
 		ffprobePath: "ffprobe",
@@ -136,6 +139,14 @@ it("accepts only completely verified coded-raster preservation", async () => {
 		frameTimingVerified: true,
 	});
 	expect(await readFile(input.originalPath, "utf8")).toBe("source");
+	for (const args of input.commands.filter((args) =>
+		args.includes("framehash"),
+	)) {
+		const beforeInput = args.slice(0, args.indexOf("-i"));
+		const encoder = args.slice(args.indexOf("-c:v") + 2);
+		expect(beforeInput[beforeInput.indexOf("-filter_threads") + 1]).toBe("1");
+		expect(encoder[encoder.indexOf("-threads") + 1]).toBe("1");
+	}
 });
 
 it("verifies an audio-first source's video packets at index one against the remuxed video at zero", async () => {

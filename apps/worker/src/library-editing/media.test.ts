@@ -258,6 +258,11 @@ describe("complete decoded media evidence", () => {
 			frameCount: frames,
 			durationUs: Math.ceil((frames * 1_000_000) / 30),
 		});
+		for (const [, args] of processRun.mock.calls) {
+			const input = args.indexOf("-i");
+			const decoder = args.slice(0, input);
+			expect(decoder[decoder.indexOf("-threads") + 1]).toBe("2");
+		}
 	});
 	it.each([
 		[180, 90],

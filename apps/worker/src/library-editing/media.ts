@@ -263,6 +263,8 @@ export function inspectEditingProbe(raw: unknown): EditingMediaFacts {
 }
 
 const readInput = (path: string) => [
+	"-threads",
+	"2",
 	"-protocol_whitelist",
 	"file,pipe",
 	"-format_whitelist",

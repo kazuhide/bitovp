@@ -55,7 +55,7 @@ postgres("tenant PostgreSQL reset", () => {
 		// `nullable` is a column of the reference that the fixture may clear.
 		const edges = await admin.$queryRaw<
 			{ child: string; parent: string; nullable: string | null }[]
-		>`SELECT child.relname AS child, parent.relname AS parent, (SELECT a.attname FROM unnest(c.conkey) AS k(attnum) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum WHERE NOT a.attnotnull AND a.attname <> 'organizationId' ORDER BY a.attname LIMIT 1) AS nullable FROM pg_constraint c JOIN pg_class child ON child.oid=c.conrelid JOIN pg_class parent ON parent.oid=c.confrelid WHERE c.contype='f' AND NOT c.condeferrable AND c.confdeltype IN ('a','r')`;
+		>`SELECT child.relname AS child, parent.relname AS parent, (SELECT a.attname FROM unnest(c.conkey) AS k(attnum) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum WHERE NOT a.attnotnull AND a.attname <> 'organizationId' ORDER BY a.attname LIMIT 1) AS nullable FROM pg_constraint c JOIN pg_class child ON child.oid=c.conrelid JOIN pg_class parent ON parent.oid=c.confrelid WHERE c.contype='f' AND NOT c.condeferrable AND c.confdeltype IN ('a','r') ORDER BY child.relname, parent.relname, c.conname`;
 		const pending = new Set(
 			tables
 				.map(({ table_name }) => table_name)

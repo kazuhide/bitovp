@@ -6,9 +6,13 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+
+- The API census check compares the SDK version, reached operations, body fields and evidence files on every change, and lists what differs. Unrelated source or dependency changes no longer require regenerating the bundled census; release gates still require an exact refresh of its source fingerprint and line numbers.
+
 ### Security
 
-- Updated fast-xml-parser to 5.12.0 for subtitle validation and the Azure and Google Cloud storage clients. Earlier versions could use excessive CPU time on XML with unterminated stop-node tags (GHSA-474x-hrwr-fgx4, low severity).
+- Updated fast-xml-parser to 5.12.0 for subtitle validation and the Azure and Google Cloud storage clients. Earlier versions could use excessive CPU time on XML with unterminated stop-node tags (GHSA-474x-hrwr-fgx4, low severity). bitovp does not enable stop nodes, so it was not affected.
 
 ## [1.2.2] - 2026-11-10
 

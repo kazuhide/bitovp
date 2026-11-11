@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { enumerateOperations, collectEvidence } from "./api-coverage-current.mjs";
+import { fileURLToPath } from "node:url";
+import { enumerateOperations, collectEvidence, censusContent, censusDifferences, censusRunDifferences, runCensus } from "./api-coverage-current.mjs";
 import { enumerateBodyParameters, createRequestFieldAudit } from "./api-coverage-fields.mjs";
 
 test("operation denominator preserves shared GET/DELETE paths and customData", () => {
@@ -235,4 +237,226 @@ test("field evidence comes only from direct SDK call body literals and construct
 test("unresolved SDK body declarations fail closed instead of silently shrinking the field inventory", () => {
 	const audit = createRequestFieldAudit({ root: "/fixture", sdkRoot: "/fixture/sdk", bodyOperations: [{ identity: "encoding/items/ItemsApi.d.ts#create", sdkMethod: "encoding.items.create", path: "/encoding/items", httpVerb: "POST", bodyParameterIndex: 0 }] });
 	assert.throws(() => audit.finish(), /Unresolved SDK body models/);
+});
+
+function censusFixture() {
+	return {
+		schemaVersion: 1,
+		provenance: { generatedAt: "2026-11-10T00:00:00.000Z", sourceCommit: "a".repeat(40), sourceFingerprint: "b".repeat(64), sdkVersion: "1.287.0", typescriptVersion: "5.9.3", sdkFingerprint: "c".repeat(64), method: "typescript-resolved-sdk-signatures-v1", scope: "encoding" },
+		summary: { totalOperations: 2, sourceConfirmed: 1, unconfirmed: 1, createTotal: 1, createSourceConfirmed: 1 },
+		families: [{ family: "items", total: 2, sourceConfirmed: 1, unconfirmed: 1 }],
+		endpoints: [
+			{ path: "/encoding/items", httpVerb: "POST", operation: "create", sdkMethod: "encoding.items.create", family: "items", status: "source-confirmed", evidence: [{ file: "apps/worker/src/a.ts", line: 10 }, { file: "apps/worker/src/a.ts", line: 30 }, { file: "apps/web/src/b.ts", line: 5 }] },
+			{ path: "/encoding/items/{id}", httpVerb: "GET", operation: "get", sdkMethod: "encoding.items.get", family: "items", status: "unconfirmed", evidence: [] },
+		],
+		requestFields: {
+			method: "typescript-sdk-body-properties-v1",
+			scope: "fixture",
+			summary: { bodyOperations: 1, expandedOperations: 1, unexpandedOperations: 0, totalFields: 2, sourceAssigned: 1, unconfirmed: 1 },
+			operations: [{
+				sdkMethod: "encoding.items.create", path: "/encoding/items", httpVerb: "POST", bodyParameterIndex: 0, bodyModel: "Item", expansion: "expanded",
+				fields: [
+					{ name: "name", type: "string | undefined", sdkEvidence: { file: "models/Item.d.ts", line: 4 }, status: "source-assigned", evidence: [{ file: "apps/worker/src/a.ts", line: 12, callLine: 10 }] },
+					{ name: "other", type: "string | undefined", sdkEvidence: { file: "models/Item.d.ts", line: 5 }, status: "unconfirmed", evidence: [] },
+				],
+			}],
+		},
+	};
+}
+
+test("unrelated source changes and shifted lines leave the census content unchanged", () => {
+	const saved = censusFixture();
+	const current = censusFixture();
+	Object.assign(current.provenance, { generatedAt: "2026-11-11T00:00:00.000Z", sourceCommit: "d".repeat(40), sourceFingerprint: "e".repeat(64), typescriptVersion: "5.9.4" });
+	for (const entry of current.endpoints[0].evidence) entry.line += 7;
+	Object.assign(current.requestFields.operations[0].fields[0].evidence[0], { line: 19, callLine: 17 });
+	assert.deepEqual(censusDifferences(saved, current), []);
+	// Only the exact check reports what a refresh at release preparation rewrites.
+	assert.deepEqual(censusRunDifferences(saved, current), [
+		`provenance: sourceFingerprint "${"b".repeat(64)}" -> "${"e".repeat(64)}"`,
+		'provenance: typescriptVersion "5.9.3" -> "5.9.4"',
+		"evidence line numbers or entry order differ",
+	]);
+	assert.deepEqual(censusRunDifferences(saved, censusFixture()), []);
+	// The time and commit of a run are never compared, not even exactly.
+	const rerun = censusFixture();
+	Object.assign(rerun.provenance, { generatedAt: "2026-11-12T00:00:00.000Z", sourceCommit: "f".repeat(40) });
+	assert.deepEqual(censusDifferences(saved, rerun), []);
+	assert.deepEqual(censusRunDifferences(saved, rerun), []);
+	// One shifted line anywhere is enough for the exact check, and only for it.
+	for (const shift of [(c) => { c.endpoints[0].evidence[0].line += 1; }, (c) => { c.requestFields.operations[0].fields[0].evidence[0].line += 1; }, (c) => { c.requestFields.operations[0].fields[0].evidence[0].callLine += 1; }, (c) => { c.endpoints[0].evidence.reverse(); }, (c) => { c.endpoints.reverse(); }]) {
+		const moved = censusFixture();
+		shift(moved);
+		assert.deepEqual(censusDifferences(saved, moved), []);
+		assert.deepEqual(censusRunDifferences(saved, moved), ["evidence line numbers or entry order differ"]);
+	}
+});
+
+test("each change to the SDK surface, reached operations, fields or evidence files is named", () => {
+	const create = "encoding.items.create (POST /encoding/items)";
+	for (const [change, expected] of [
+		[(c) => { c.provenance.sdkVersion = "1.288.0"; }, ['census: sdkVersion "1.287.0" -> "1.288.0"']],
+		[(c) => { c.provenance.sdkFingerprint = "f".repeat(64); }, [`census: sdkFingerprint "${"c".repeat(64)}" -> "${"f".repeat(64)}"`]],
+		[(c) => { c.endpoints[1].status = "source-confirmed"; c.endpoints[1].evidence.push({ file: "apps/web/src/new.ts", line: 3 }); }, [
+			'encoding.items.get (GET /encoding/items/{id}): status "unconfirmed" -> "source-confirmed"',
+			"encoding.items.get (GET /encoding/items/{id}): evidence +apps/web/src/new.ts",
+		]],
+		[(c) => { c.endpoints[0].evidence[2].file = "apps/web/src/moved.ts"; }, [`${create}: evidence -apps/web/src/b.ts +apps/web/src/moved.ts`]],
+		[(c) => { c.endpoints[0].evidence.pop(); c.endpoints[0].evidence.pop(); }, [`${create}: evidence -apps/web/src/b.ts -apps/worker/src/a.ts x2 +apps/worker/src/a.ts`]],
+		[(c) => { c.endpoints.pop(); }, ["encoding.items.get (GET /encoding/items/{id}): no longer produced by the source"]],
+		[(c) => { c.endpoints.push({ ...c.endpoints[1], sdkMethod: "encoding.items.list", path: "/encoding/items", operation: "list" }); }, ["encoding.items.list (GET /encoding/items): missing from the committed census"]],
+		[(c) => { c.summary.sourceConfirmed = 2; c.families[0].sourceConfirmed = 2; }, ["summary: sourceConfirmed 1 -> 2", "family items: sourceConfirmed 1 -> 2"]],
+		[(c) => { const field = c.requestFields.operations[0].fields[1]; field.status = "source-assigned"; field.evidence.push({ file: "apps/worker/src/a.ts", line: 13, callLine: 10 }); }, [
+			`${create} body field other: status "unconfirmed" -> "source-assigned"`,
+			`${create} body field other: evidence +apps/worker/src/a.ts`,
+		]],
+		[(c) => { c.requestFields.operations[0].fields[0].type = "number | undefined"; }, [`${create} body field name: type "string | undefined" -> "number | undefined"`]],
+		[(c) => { c.requestFields.operations[0].expansion = "unexpanded"; }, [`${create} body: expansion "expanded" -> "unexpanded"`]],
+		[(c) => { c.requestFields.summary.sourceAssigned = 2; }, ["request fields summary: sourceAssigned 1 -> 2"]],
+		[(c) => { c.requestFields.method = "typescript-sdk-body-properties-v2"; }, ['request fields: method "typescript-sdk-body-properties-v1" -> "typescript-sdk-body-properties-v2"']],
+		[(c) => { c.requestFields.operations[0].fields[0].sdkEvidence.line = 9; }, [`${create} body field name: sdkEvidence {"file":"models/Item.d.ts","line":4} -> {"file":"models/Item.d.ts","line":9}`]],
+		[(c) => { c.schemaVersion = 2; }, ["census: schemaVersion 1 -> 2"]],
+		[(c) => { c.provenance.method = "typescript-resolved-sdk-signatures-v2"; }, ['census: method "typescript-resolved-sdk-signatures-v1" -> "typescript-resolved-sdk-signatures-v2"']],
+		[(c) => { c.provenance.scope = "encoding and player"; }, ['census: scope "encoding" -> "encoding and player"']],
+		[(c) => { c.endpoints[1].family = "other"; }, ['encoding.items.get (GET /encoding/items/{id}): family "items" -> "other"']],
+		[(c) => { c.endpoints[1].operation = "read"; }, ['encoding.items.get (GET /encoding/items/{id}): operation "get" -> "read"']],
+		[(c) => { c.requestFields.operations[0].bodyModel = "ItemRequest"; }, [`${create} body: bodyModel "Item" -> "ItemRequest"`]],
+		[(c) => { c.requestFields.operations[0].bodyParameterIndex = 1; }, [`${create} body: bodyParameterIndex 0 -> 1`]],
+		[(c) => { c.requestFields.operations[0].reason = "union body"; }, [`${create} body: reason undefined -> "union body"`]],
+		// A property that only one side has is a difference in both directions.
+		[(c) => { c.endpoints[1].deprecated = true; }, ["encoding.items.get (GET /encoding/items/{id}): deprecated undefined -> true"]],
+		[(c) => { delete c.endpoints[1].family; }, ['encoding.items.get (GET /encoding/items/{id}): family "items" -> undefined']],
+	]) {
+		const current = censusFixture();
+		change(current);
+		assert.deepEqual(censusDifferences(censusFixture(), current), expected);
+	}
+});
+
+test("a census that cannot be compared entry by entry fails closed", () => {
+	const duplicate = censusFixture();
+	duplicate.endpoints.push({ ...duplicate.endpoints[0] });
+	assert.throws(() => censusContent(duplicate), /Ambiguous census entry: encoding\.items\.create/);
+	assert.throws(() => censusContent({ ...censusFixture(), extra: [] }), /Unknown census section: extra/);
+	// An evidence entry is only a position; any other attribute would escape the comparison.
+	for (const mark of [(c) => { c.endpoints[0].evidence[0].kind = "wrapper"; }, (c) => { c.requestFields.operations[0].fields[0].evidence[0].kind = "wrapper"; }]) {
+		const marked = censusFixture();
+		mark(marked);
+		assert.throws(() => censusContent(marked), /Unknown evidence attribute: kind/);
+		assert.throws(() => censusDifferences(censusFixture(), marked), /^Error: The generated census cannot be compared: Unknown evidence attribute: kind$/);
+		assert.throws(() => censusDifferences(marked, censusFixture()), /^Error: The committed census cannot be compared: Unknown evidence attribute: kind$/);
+	}
+});
+
+test("each mode reports and exits as the gate that calls it expects", () => {
+	const directory = mkdtempSync(join(tmpdir(), "api-census-modes-"));
+	const file = join(directory, "current.json");
+	const refresh = "Regenerate it with: node scripts/api-coverage-current.mjs --write";
+	const passed = (mode, fingerprint = "b".repeat(64)) => JSON.stringify({ mode, sdkVersion: "1.287.0", totalOperations: 2, sourceConfirmed: 1, unconfirmed: 1, createTotal: 1, createSourceConfirmed: 1, sourceFingerprint: fingerprint });
+	const usage = { status: 1, stdout: [], stderr: ["Usage: node scripts/api-coverage-current.mjs --write | --check | --check-exact"] };
+	try {
+		// An unknown mode is refused before anything is generated or written.
+		for (const mode of ["--check-exactly", "", undefined]) assert.deepEqual(runCensus(mode, file, () => assert.fail("generated a census")), usage);
+		// A missing or unreadable committed census fails with the way to create it.
+		for (const mode of ["--check", "--check-exact"]) {
+			const missing = runCensus(mode, file, censusFixture);
+			assert.equal(missing.status, 1);
+			assert.deepEqual(missing.stdout, []);
+			assert.match(missing.stderr[0], /^API census cannot be checked: ENOENT/);
+			assert.equal(missing.stderr[1], refresh);
+		}
+		assert.deepEqual(runCensus("--write", file, censusFixture), { status: 0, stdout: [passed("--write")], stderr: [] });
+		assert.equal(readFileSync(file, "utf8"), `${JSON.stringify(censusFixture(), null, "\t")}\n`);
+		for (const mode of ["--check", "--check-exact"]) assert.deepEqual(runCensus(mode, file, censusFixture), { status: 0, stdout: [passed(mode)], stderr: [] });
+		const written = readFileSync(file, "utf8");
+
+		// An unrelated change: the content check passes and says a refresh is owed; the exact check fails.
+		const shifted = () => {
+			const census = censusFixture();
+			census.provenance.sourceFingerprint = "e".repeat(64);
+			census.endpoints[0].evidence[0].line += 3;
+			return census;
+		};
+		assert.deepEqual(runCensus("--check", file, shifted), {
+			status: 0,
+			stdout: [passed("--check", "e".repeat(64)), "Note: the committed census records an older source fingerprint or line numbers. Release gates require an exact refresh."],
+			stderr: [],
+		});
+		assert.deepEqual(runCensus("--check-exact", file, shifted), {
+			status: 1,
+			stdout: [],
+			stderr: ["API census is stale: 2 differences from the source.", `  provenance: sourceFingerprint "${"b".repeat(64)}" -> "${"e".repeat(64)}"`, "  evidence line numbers or entry order differ", refresh],
+		});
+
+		// A content change fails both checks the same way and never prints the passing summary.
+		const reached = () => {
+			const census = shifted();
+			census.endpoints[1].status = "source-confirmed";
+			return census;
+		};
+		for (const mode of ["--check", "--check-exact"]) assert.deepEqual(runCensus(mode, file, reached), {
+			status: 1,
+			stdout: [],
+			stderr: ["API census is stale: 1 difference from the source.", '  encoding.items.get (GET /encoding/items/{id}): status "unconfirmed" -> "source-confirmed"', refresh],
+		});
+
+		// A list is cut after 40 lines and then says how many remain.
+		const added = (count) => () => {
+			const census = censusFixture();
+			for (let index = 0; index < count; index++) census.endpoints.push({ ...census.endpoints[1], sdkMethod: `encoding.items.extra${index}`, path: `/encoding/extra/${index}` });
+			return census;
+		};
+		for (const [count, remainder] of [[40, []], [41, ["  ... and 1 more"]], [45, ["  ... and 5 more"]]]) {
+			const long = runCensus("--check", file, added(count));
+			assert.equal(long.status, 1);
+			assert.deepEqual(long.stdout, []);
+			assert.equal(long.stderr[0], `API census is stale: ${count} differences from the source.`);
+			assert.equal(long.stderr[40], "  encoding.items.extra39 (GET /encoding/extra/39): missing from the committed census");
+			assert.deepEqual(long.stderr.slice(41), [...remainder, refresh]);
+		}
+		// No check ever rewrites the committed census.
+		assert.equal(readFileSync(file, "utf8"), written);
+
+		// A committed file that is not a census is reported, not thrown.
+		for (const [content, reason] of [["not json", /^API census cannot be checked: Unexpected token/], [JSON.stringify({ ...censusFixture(), notes: [] }), /^API census cannot be checked: The committed census cannot be compared: Unknown census section: notes$/], [JSON.stringify({ schemaVersion: 1 }), /^API census cannot be checked: The committed census cannot be compared: /]]) {
+			writeFileSync(file, content);
+			const broken = runCensus("--check", file, censusFixture);
+			assert.equal(broken.status, 1);
+			assert.deepEqual(broken.stdout, []);
+			assert.match(broken.stderr[0], reason);
+			assert.equal(broken.stderr[1], refresh);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("the command reports through its exit status, also when started through a symlink", () => {
+	const script = fileURLToPath(new URL("./api-coverage-current.mjs", import.meta.url));
+	const directory = mkdtempSync(join(tmpdir(), "api-census-entry-"));
+	try {
+		// A symlinked directory used to make the script exit 0 without running.
+		symlinkSync(dirname(script), join(directory, "linked"), "dir");
+		for (const path of [script, join(directory, "linked", "api-coverage-current.mjs")]) {
+			const result = spawnSync(process.execPath, [path, "--check-exactly"], { cwd: directory, encoding: "utf8", timeout: 30_000 });
+			assert.equal(result.status, 1);
+			assert.equal(result.stdout, "");
+			assert.equal(result.stderr, "Usage: node scripts/api-coverage-current.mjs --write | --check | --check-exact\n");
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("the bundled census yields one comparable entry per operation, family and body field", () => {
+	const census = JSON.parse(readFileSync(new URL("../apps/web/src/data/api-coverage/current.json", import.meta.url), "utf8"));
+	const fields = census.requestFields.operations.reduce((total, operation) => total + operation.fields.length, 0);
+	assert.equal(censusContent(census).size, 4 + census.families.length + census.endpoints.length + census.requestFields.operations.length + fields);
+	assert.deepEqual(censusDifferences(census, census), []);
+	// Every real row keeps its content when its lines move; only the exact check notices.
+	const shifted = structuredClone(census);
+	for (const row of shifted.endpoints) for (const entry of row.evidence) entry.line += 1;
+	for (const operation of shifted.requestFields.operations) for (const field of operation.fields) for (const entry of field.evidence) Object.assign(entry, { line: entry.line + 1, callLine: entry.callLine + 1 });
+	assert.deepEqual(censusDifferences(census, shifted), []);
+	assert.deepEqual(censusRunDifferences(census, shifted), ["evidence line numbers or entry order differ"]);
 });

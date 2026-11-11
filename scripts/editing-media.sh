@@ -14,7 +14,8 @@ for media_fixture in \
 do
   # The media runner matches this line with the totals the reporter prints, and
   # fails unless every fixture ran once and passed its required number of tests.
-  printf 'media fixture: %s\n' "$media_fixture"
+  # The leading newline starts the line even after output that did not end one.
+  printf '\nmedia fixture: %s\n' "$media_fixture"
   GOMAXPROCS=2 node --import ./node_modules/tsx/dist/esm/index.mjs \
     --test --experimental-test-isolation=none \
     --test-reporter=spec --test-reporter-destination=stdout \

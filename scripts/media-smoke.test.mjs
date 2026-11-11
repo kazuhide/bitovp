@@ -17,7 +17,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { failureLines } from "./gate-report.mjs";
+import { failureLines, GateFailure } from "./gate-report.mjs";
 import {
 	childEnvironment,
 	cleanupFixture,
@@ -44,6 +44,7 @@ const fixtureLog = (name, counts) =>
 			todo: 0,
 			topLevel: 0,
 			suites: 0,
+			emptyFiles: 0,
 			...counts,
 		},
 	)}\n`;
@@ -368,10 +369,14 @@ if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
 				},
 			});
 			if (fails) await assert.rejects(run, /Media validation command failed/);
+			// Every marker after the first follows an empty line: the script
+			// starts a new line before it, whatever the fixture printed last.
 			else
 				assert.deepEqual(
 					(await run).split("\n"),
-					Object.keys(FIXTURES).map((name) => `media fixture: ${name}`),
+					Object.keys(FIXTURES).flatMap((name, index) =>
+						index ? ["", `media fixture: ${name}`] : [`media fixture: ${name}`],
+					),
 				);
 			const calls = readFileSync(log, "utf8")
 				.trim()
@@ -398,7 +403,7 @@ if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
 test("the fixture reporter gives the media runner the test runner's own totals", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "media-reporter-test-"));
 	try {
-		const run = async (name, source) => {
+		const run = async (name, source, required = 3) => {
 			writeFileSync(join(directory, name), source);
 			const output = await command(
 				process.execPath,
@@ -413,7 +418,7 @@ test("the fixture reporter gives the media runner the test runner's own totals",
 				],
 				{ env: { PATH: process.env.PATH } },
 			);
-			const account = fixtureAccount({ [name]: 3 });
+			const account = fixtureAccount({ [name]: required });
 			account.accept(`media fixture: ${name}\n${output}\n`);
 			return account;
 		};
@@ -443,12 +448,82 @@ test("later", { todo: true }, () => {});
 				return true;
 			},
 		);
+		// The test runner counts a file that declares no test as one passed
+		// test. It must not satisfy a fixture that requires one test.
+		for (const [name, source] of [
+			["empty.media.mjs", "export {};\n"],
+			[
+				"unregistered.media.mjs",
+				`import test from "node:test";
+if (process.env.MEDIA_TOOL_THAT_IS_MISSING) test("needs the tool", () => {});
+`,
+			],
+		]) {
+			const empty = await run(name, source, 1);
+			assert.throws(
+				() => empty.finish(),
+				(error) => {
+					assert.deepEqual(error.details, [
+						`${name}: 1 of 1 tests passed, the file declares no test; 1 passed required`,
+					]);
+					return true;
+				},
+			);
+		}
+		// A test that ends the process reports nothing, so its fixture never
+		// finished, although the process exited with success.
+		const exits = await run(
+			"exits.media.mjs",
+			`import test from "node:test";
+test("first", () => { process.exit(0); });
+`,
+			1,
+		);
+		assert.throws(
+			() => exits.finish(),
+			(error) => {
+				assert.deepEqual(error.details, [
+					"exits.media.mjs: did not finish; 1 passed required",
+				]);
+				return true;
+			},
+		);
+		// Only a top-level test named as its own file is the runner's stand-in.
+		// A nested test with that name, or another name, is an ordinary test.
+		const named = await run(
+			"named.media.mjs",
+			`import test from "node:test";
+test("named.media.mjs", () => {});
+test("outer", async (t) => { await t.test(import.meta.filename, () => {}); });
+`,
+		);
+		assert.deepEqual(named.finish(), { files: 1, tests: 3 });
+		// A real top-level test with exactly that name cannot be told apart from
+		// the stand-in, so the gate fails closed on it.
+		const ambiguous = await run(
+			"ambiguous.media.mjs",
+			`import test from "node:test";
+test(import.meta.filename, () => {});
+`,
+			1,
+		);
+		assert.throws(
+			() => ambiguous.finish(),
+			(error) => {
+				assert.deepEqual(error.details, [
+					"ambiguous.media.mjs: 1 of 1 tests passed, the file declares no test; 1 passed required",
+				]);
+				return true;
+			},
+		);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
 
 test("every required fixture must run once and pass its required number of tests", () => {
+	// A lowered count would stop requiring a test that exists.
+	assert.deepEqual(Object.values(FIXTURES), [3, 8, 1, 5, 17, 2]);
 	const complete = fixtureAccount();
 	// Pipe chunks do not end at line boundaries.
 	for (const chunk of completeLog().match(/[\s\S]{1,37}/g))
@@ -464,6 +539,8 @@ test("every required fixture must run once and pass its required number of tests
 		passed: FIXTURES[first],
 	});
 	assert(completeLog().startsWith(firstLog));
+	const firstTotals = `${firstLog.trimEnd().split("\n").at(-1)}\n`;
+	assert(firstTotals.startsWith("media fixture totals: {"));
 	for (const [log, problem] of [
 		[
 			completeLog().replace(firstLog, ""),
@@ -492,7 +569,7 @@ test("every required fixture must run once and pass its required number of tests
 		],
 		[
 			completeLog({ [second]: { tests: "4" } }),
-			`${second}: did not finish; ${required} passed required`,
+			`${second}: reported unreadable totals; ${required} passed required`,
 		],
 		[
 			completeLog().replace(/media fixture totals: [^\n]+\n$/, ""),
@@ -501,6 +578,30 @@ test("every required fixture must run once and pass its required number of tests
 		[
 			completeLog() + fixtureLog("src/other.media.ts", { tests: 1, passed: 1 }),
 			"src/other.media.ts: not a required media fixture",
+		],
+		[
+			completeLog({ [second]: { emptyFiles: 1 } }),
+			`${second}: ${required} of ${required} tests passed, the file declares no test; ${required} passed required`,
+		],
+		[
+			completeLog({ [second]: { emptyFiles: undefined } }),
+			`${second}: reported unreadable totals; ${required} passed required`,
+		],
+		[
+			completeLog().replace(firstLog, `${firstLog}${firstTotals}`),
+			`${first}: ${FIXTURES[first]} of ${FIXTURES[first]} tests passed, totals reported 2 times; ${FIXTURES[first]} passed required`,
+		],
+		// Later totals never replace the first ones.
+		[
+			completeLog().replace(
+				firstLog,
+				`${fixtureLog(first, { tests: FIXTURES[first], passed: 0, failed: FIXTURES[first] })}${firstTotals}`,
+			),
+			`${first}: 0 of ${FIXTURES[first]} tests passed, ${FIXTURES[first]} failed, totals reported 2 times; ${FIXTURES[first]} passed required`,
+		],
+		[
+			`${firstTotals}${completeLog()}`,
+			"totals reported before a fixture was named: 1",
 		],
 	]) {
 		const account = fixtureAccount();
@@ -514,10 +615,40 @@ test("every required fixture must run once and pass its required number of tests
 			},
 		);
 	}
-	// Totals that precede every fixture belong to none of them.
-	const stray = fixtureAccount({});
-	stray.accept(fixtureLog("ignored", {}).split("\n").slice(1).join("\n"));
-	assert.deepEqual(stray.finish(), { files: 0, tests: 0 });
+	// The script starts each marker on a new line, so output that a fixture
+	// left without a line end cannot hide the next fixture's marker.
+	const unterminated = fixtureAccount();
+	unterminated.accept(
+		completeLog().replaceAll(
+			"\nmedia fixture: ",
+			"\nwritten at exit without a line end\nmedia fixture: ",
+		),
+	);
+	assert.equal(unterminated.finish().files, Object.keys(FIXTURES).length);
+	// The last line counts even when the container closed without ending it.
+	const open = fixtureAccount();
+	open.accept(completeLog().trimEnd());
+	assert.equal(open.finish().files, Object.keys(FIXTURES).length);
+	const started = fixtureAccount();
+	started.accept(`media fixture: ${first}`);
+	assert.equal(started.progress()[0], `${first}: did not finish`);
+	const hidden = fixtureAccount();
+	hidden.accept(
+		completeLog().replace(
+			`\nmedia fixture: ${second}`,
+			`\nwritten at exit without a line end media fixture: ${second}`,
+		),
+	);
+	assert.throws(
+		() => hidden.finish(),
+		(error) => {
+			assert.deepEqual(error.details, [
+				`${first}: ${FIXTURES[first]} of ${FIXTURES[first]} tests passed, totals reported 2 times; ${FIXTURES[first]} passed required`,
+				`${second}: ran 0 times, required once`,
+			]);
+			return true;
+		},
+	);
 });
 
 test("a failed media run reports which fixtures finished, stopped and never started", () => {
@@ -799,6 +930,281 @@ test("cleanup removes only labelled names and never prunes shared resources", as
 		assert(
 			!removals.find((args) => args.includes("image")).includes("--force"),
 		);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+const summaryText = JSON.stringify({
+	version: 1,
+	videoFrames: 240,
+	hlsSegments: 5,
+	dashSegments: 5,
+	decodedPresentations: 3,
+	vmafFrames: 240,
+	means: { self: 99, encoded: 90, degraded: 40 },
+});
+
+// A whole media run against fakes: the image builds, the container prints
+// `log` and returns `raw`, and cleanup finds resources labelled `owner(id)`.
+async function mediaRun({
+	log = completeLog(),
+	raw = summaryText,
+	failed = false,
+	verify = async (path) => path,
+	owner = (id) => id,
+} = {}) {
+	const directory = mkdtempSync(join(tmpdir(), "media-run-test-"));
+	const statePath = join(directory, "state.json");
+	const notes = [];
+	const removed = [];
+	const verified = [];
+	const execute = async (_binary, args, options = {}) => {
+		const docker = args.slice(2);
+		if (docker[0] === "build") return "";
+		if (docker.includes("{{.Id}}")) return `sha256:${"a".repeat(64)}`;
+		if (docker[0] === "run") {
+			options.diagnostics?.(log);
+			if (failed)
+				throw new GateFailure("Media validation command failed", {
+					diagnostics: log,
+				});
+			return raw;
+		}
+		if (docker.includes("{{json .Config.Labels}}"))
+			return JSON.stringify({
+				"io.bitovp.media-smoke": owner(
+					docker.at(-1).slice("bitovp-media-".length),
+				),
+			});
+		if (docker.includes("rm")) removed.push(docker[0]);
+		return "";
+	};
+	let lines;
+	try {
+		await runFixture(
+			{
+				source: join(directory, "source.mp4"),
+				statePath,
+				env: {},
+				notify: (note) => notes.push(note),
+				verify: async (path) => {
+					verified.push(path);
+					return verify(path, verified.length);
+				},
+			},
+			execute,
+		);
+	} catch (error) {
+		lines = failureLines(error);
+	} finally {
+		// A failed cleanup leaves its scratch directory behind.
+		if (existsSync(statePath))
+			rmSync(JSON.parse(readFileSync(statePath, "utf8")).directory, {
+				recursive: true,
+				force: true,
+			});
+		rmSync(directory, { recursive: true, force: true });
+	}
+	return { notes, removed, verified, lines };
+}
+
+test("a media run passes only with every fixture's totals, a valid summary, an unchanged source and a finished cleanup", async () => {
+	const names = Object.keys(FIXTURES);
+	const passed = await mediaRun();
+	assert.equal(passed.lines, undefined);
+	assert.deepEqual(passed.notes.slice(-4), [
+		`Media fixtures passed: ${names.length} files, ${Object.values(FIXTURES).reduce((sum, tests) => sum + tests, 0)} tests, 0 skipped`,
+		"Media passed: 240 video frames; HLS/DASH each 5 x 48 frames; 3 complete audio/video decodes; 240 VMAF frames per comparison",
+		"VMAF means: self=99.000, encoded=90.000, degraded=40.000",
+		"Media fixture: owned image, container and scratch files removed",
+	]);
+	assert.deepEqual(passed.removed, ["container", "image"]);
+	// The source is verified before the run and again after it.
+	assert.equal(passed.verified.length, 2);
+	assert.equal(passed.verified[0], passed.verified[1]);
+
+	const last = names.at(-1);
+	const required = FIXTURES[last];
+	const first = FIXTURES[names[0]];
+	for (const [change, expected] of [
+		[
+			{ log: completeLog({ [last]: { passed: required - 1, skipped: 1 } }) },
+			[
+				"Step: checking the media fixture totals",
+				"Reason: Media fixtures did not all run and pass",
+				`  - ${last}: ${required - 1} of ${required} tests passed, 1 skipped; ${required} passed required`,
+			],
+		],
+		[
+			{ raw: summaryText.replace('"videoFrames":240', '"videoFrames":239') },
+			[
+				"Step: checking the packaging and scoring summary",
+				"Reason: Incomplete media validation: videoFrames must be 240",
+			],
+		],
+		[
+			{
+				failed: true,
+				log: `${fixtureLog(names[0], { tests: first, passed: first })}media fixture: ${names[1]}\n::error::forged\n`,
+			},
+			[
+				"Step: running the media fixtures, then packaging and scoring offline",
+				"Reason: Media validation command failed",
+				`  - ${names[0]}: ${first} of ${first} tests passed`,
+				`  - ${names[1]}: did not finish`,
+				`  - not started: ${names.slice(2).join(", ")}`,
+				"Last 5 lines of the failed command:",
+			],
+		],
+		[
+			{
+				verify: async (path, call) => {
+					assert.equal(call, 1, "Source checksum mismatch");
+					return path;
+				},
+			},
+			[
+				"Step: verifying that the source is unchanged",
+				"Reason: Source checksum mismatch",
+			],
+		],
+		[
+			{ owner: () => "b".repeat(32) },
+			[
+				"Step: removing the owned image, container and scratch files",
+				"Reason: Media fixture ownership label does not match",
+			],
+		],
+		// A failed run whose cleanup fails too reports the run first.
+		[
+			{ failed: true, log: "", owner: () => "b".repeat(32) },
+			[
+				"Step: running the media fixtures, then packaging and scoring offline",
+				"Reason: Media validation command failed",
+				`  - not started: ${names.join(", ")}`,
+				"A later step also failed:",
+				"Step: removing the owned image, container and scratch files",
+				"Reason: Media fixture ownership label does not match",
+			],
+		],
+	]) {
+		const { lines } = await mediaRun(change);
+		assert.deepEqual(lines?.slice(0, expected.length), expected);
+	}
+});
+
+test("each total is required on its own, even when the totals disagree with each other", () => {
+	const [name] = Object.keys(FIXTURES);
+	const required = FIXTURES[name];
+	for (const change of [
+		{ tests: required + 1 },
+		{ passed: required - 1 },
+		{ failed: 1 },
+		{ cancelled: 1 },
+		{ skipped: 1 },
+		{ todo: 1 },
+	]) {
+		const account = fixtureAccount();
+		account.accept(completeLog({ [name]: change }));
+		assert.throws(
+			() => account.finish(),
+			/Media fixtures did not all run and pass/,
+			JSON.stringify(change),
+		);
+	}
+});
+
+test("a command stopped at its limit fails even when the child then exits 0, and a missing binary fails", {
+	timeout: 10_000,
+}, async () => {
+	await assert.rejects(
+		command(
+			process.execPath,
+			[
+				"-e",
+				"process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)",
+			],
+			{ env: {}, timeout: 500 },
+		),
+		(error) => {
+			assert.deepEqual(error.details, [
+				"The command was stopped at its 0.5 second limit",
+			]);
+			return true;
+		},
+	);
+	await assert.rejects(
+		command(join(tmpdir(), "bitovp-no-such-binary"), [], { env: {} }),
+		/Media validation command failed/,
+	);
+});
+
+test("a command keeps its child's output out of the runner's own streams", () => {
+	const result = spawnSync(
+		process.execPath,
+		[
+			"--input-type=module",
+			"-e",
+			`import { command } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "media-smoke.mjs")).href)};
+await command(process.execPath, ["-e", "console.log('::error::stdout');console.error('::error::stderr');process.exit(3)"], { env: {} }).catch(() => {});`,
+		],
+		{ env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000 },
+	);
+	assert.equal(result.status, 0);
+	assert.equal(result.stdout, "");
+	assert.equal(result.stderr, "");
+});
+
+test("a download is refused for a failure status with a body and for an archive over the size limit", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "media-download-limit-test-"));
+	const signal = new AbortController().signal;
+	const body = (chunk) =>
+		(async function* () {
+			yield chunk;
+		})();
+	try {
+		for (const [response, message] of [
+			[
+				{
+					ok: false,
+					status: 404,
+					headers: new Headers(),
+					body: body(new Uint8Array(4)),
+				},
+				"Official source download failed: HTTP 404",
+			],
+			[
+				{
+					ok: true,
+					status: 200,
+					headers: new Headers({ "content-length": String(91 * 1024 * 1024) }),
+					body: body(new Uint8Array(4)),
+				},
+				"Official source archive is too large",
+			],
+			[
+				{
+					ok: true,
+					status: 200,
+					headers: new Headers(),
+					// Only the length is read before the limit refuses the chunk.
+					body: body({ length: 91 * 1024 * 1024 }),
+				},
+				"Official source archive is too large",
+			],
+		])
+			await assert.rejects(
+				downloadArchive(
+					join(directory, `${randomUUID()}.zip`),
+					signal,
+					async () => response,
+				),
+				(error) => {
+					assert.deepEqual(failureLines(error), [`Reason: ${message}`]);
+					return true;
+				},
+			);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}

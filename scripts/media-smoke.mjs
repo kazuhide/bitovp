@@ -15,12 +15,15 @@ import {
 import { open } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { pathToFileURL } from "node:url";
 import {
+	asFailure,
+	atStep,
 	failureLines,
 	GateFailure,
 	inStep,
+	isEntryPoint,
 	outputTail,
+	withLaterFailure,
 } from "./gate-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -311,6 +314,9 @@ export function containerArguments(state, source) {
 }
 
 const COUNTS = ["tests", "passed", "failed", "cancelled", "skipped", "todo"];
+// What a fixture's reporter must print: the test runner's own counts, and how
+// many files declared no test (the runner counts such a file as a passed test).
+const TOTALS = [...COUNTS, "emptyFiles"];
 
 /**
  * Accounts for every media fixture from the container log: the shell loop
@@ -320,26 +326,39 @@ const COUNTS = ["tests", "passed", "failed", "cancelled", "skipped", "todo"];
 export function fixtureAccount(required = FIXTURES) {
 	const runs = [];
 	let pending = "";
+	let unowned = 0;
 	const read = (line) => {
 		const fixture = /^media fixture: (\S+)$/.exec(line);
-		if (fixture) runs.push({ name: fixture[1] });
+		if (fixture) runs.push({ name: fixture[1], reports: 0 });
 		const totals = /^media fixture totals: (\{.*\})$/.exec(line);
-		if (!totals || !runs.length) return;
+		if (!totals) return;
+		const run = runs.at(-1);
+		if (!run) {
+			unowned += 1;
+			return;
+		}
+		// One process reports once. The first totals stand; a second report
+		// fails the fixture instead of replacing them.
+		run.reports += 1;
+		if (run.reports > 1) return;
 		try {
 			const counts = JSON.parse(totals[1]);
-			if (COUNTS.every((key) => Number.isSafeInteger(counts?.[key])))
-				runs.at(-1).counts = counts;
+			if (TOTALS.every((key) => Number.isSafeInteger(counts?.[key])))
+				run.counts = counts;
 		} catch {}
 	};
 	const flush = () => {
 		read(pending.trimEnd());
 		pending = "";
 	};
-	const describe = ({ name, counts }) => {
-		if (!counts) return `${name}: did not finish`;
+	const describe = ({ name, counts, reports }) => {
+		if (!counts)
+			return `${name}: ${reports ? "reported unreadable totals" : "did not finish"}`;
 		const others = ["failed", "cancelled", "skipped", "todo"]
 			.filter((key) => counts[key] !== 0)
 			.map((key) => `, ${counts[key]} ${key}`);
+		if (counts.emptyFiles !== 0) others.push(", the file declares no test");
+		if (reports !== 1) others.push(`, totals reported ${reports} times`);
 		return `${name}: ${counts.passed} of ${counts.tests} tests passed${others.join("")}`;
 	};
 	return {
@@ -370,17 +389,20 @@ export function fixtureAccount(required = FIXTURES) {
 					problems.push(`${name}: ran ${matches.length} times, required once`);
 					continue;
 				}
-				const { counts } = matches[0];
+				const { counts, reports } = matches[0];
 				const complete =
+					reports === 1 &&
 					counts?.tests === tests &&
 					counts.passed === tests &&
-					COUNTS.slice(2).every((key) => counts[key] === 0);
+					TOTALS.slice(2).every((key) => counts[key] === 0);
 				if (!complete)
 					problems.push(`${describe(matches[0])}; ${tests} passed required`);
 			}
 			for (const { name } of runs)
 				if (!Object.hasOwn(required, name))
 					problems.push(`${name}: not a required media fixture`);
+			if (unowned)
+				problems.push(`totals reported before a fixture was named: ${unowned}`);
 			if (problems.length)
 				throw new GateFailure("Media fixtures did not all run and pass", {
 					details: problems,
@@ -546,6 +568,8 @@ export async function runFixture(
 		signal = new AbortController().signal,
 		env = process.env,
 		notify = console.log,
+		// Replaceable for tests; the official source cannot be reproduced there.
+		verify = verifySource,
 	} = {},
 	execute = command,
 ) {
@@ -579,6 +603,7 @@ export async function runFixture(
 	let saved = false;
 	// Names the part that failed in the final report.
 	let step = "creating private scratch files";
+	let failure;
 	try {
 		writeFileSync(stateFile, JSON.stringify(state), {
 			mode: 0o600,
@@ -592,7 +617,7 @@ export async function runFixture(
 		);
 		step = "verifying the official source";
 		notify("Media check: verifying the official source");
-		const asset = await verifySource(
+		const asset = await verify(
 			source ?? (await downloadSource(directory, signal)),
 		);
 		assert(!signal.aborted, "Media check cancelled");
@@ -653,7 +678,7 @@ export async function runFixture(
 		const summary = validateSummary(raw);
 		assert(!signal.aborted, "Media check cancelled");
 		step = "verifying that the source is unchanged";
-		await verifySource(asset);
+		await verify(asset);
 		notify(
 			`Media fixtures passed: ${fixtures.files} files, ${fixtures.tests} tests, 0 skipped`,
 		);
@@ -664,15 +689,20 @@ export async function runFixture(
 			`VMAF means: self=${summary.means.self.toFixed(3)}, encoded=${summary.means.encoded.toFixed(3)}, degraded=${summary.means.degraded.toFixed(3)}`,
 		);
 	} catch (error) {
-		if (error instanceof Error) error.step ??= step;
-		throw error;
-	} finally {
+		failure = atStep(asFailure(error), step);
+	}
+	// Cleanup runs on every path. When it fails too, the report keeps the first
+	// failure and adds the cleanup failure after it.
+	try {
 		await inStep("removing the owned image, container and scratch files", () =>
 			cleanupFixture(state, execute, env),
 		);
-		if (saved) rmSync(stateFile, { force: true });
-		notify("Media fixture: owned image, container and scratch files removed");
+	} catch (error) {
+		throw failure ? withLaterFailure(failure, error) : error;
 	}
+	if (saved) rmSync(stateFile, { force: true });
+	notify("Media fixture: owned image, container and scratch files removed");
+	if (failure) throw failure;
 }
 
 async function main(signal) {
@@ -708,11 +738,7 @@ async function main(signal) {
 		});
 }
 
-// The real path: a symlinked invocation must run, not exit 0 having done nothing.
-if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
-) {
+if (isEntryPoint(import.meta.url)) {
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {

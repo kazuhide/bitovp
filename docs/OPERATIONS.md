@@ -24,6 +24,21 @@ automatically and do not require those manual repairs.
 6. Check migration exit status, health, authentication, organization isolation,
    worker queues, and the image revision before accepting new work.
 
+Web startup resolves the native Prisma query engine from the deployed
+`packages/db/generated/client` directory before launching Next.js. Run the
+database client build for the deployment host; a missing engine stops startup.
+When packaging multiple platform engines, set `PRISMA_QUERY_ENGINE_LIBRARY` to
+the correct deployed library. Remove or update any older release-specific
+override when changing the release path. This uses Prisma 6's
+[documented engine override](https://docs.prisma.io/docs/orm/v6/reference/environment-variables-reference#prisma_query_engine_library).
+
+`/api/health` requires both SDK resolution and an actual identity database read.
+A database or native-engine failure returns HTTP 503 with
+`database: "unavailable"`; it does not return database connection details.
+Also verify that an unauthenticated request to `/library` redirects to `/login`
+and that an authenticated user can open the Library. A running Node process
+alone does not establish readiness.
+
 After the backup and drain steps, prepare the selected images with:
 
 ```bash

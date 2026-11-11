@@ -19,6 +19,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Web startup locates the packaged Prisma query engine after source relocation; deployment health checks perform an identity database read before reporting readiness.
 - Clear HLS editing preparation accepts supported paired CUE-OUT/CUE-IN annotations while retaining segment, source identity and timing validation.
 - Clip settings diagnose configured services on open and expire stale results; creation and recovery explain failures, including story plans that cannot fit the requested length.
 - Manual clip creation prevents duplicate submissions and ignores late responses after leaving the page or losing permission.

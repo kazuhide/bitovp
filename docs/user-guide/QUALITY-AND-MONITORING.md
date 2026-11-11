@@ -189,6 +189,8 @@ identical-video comparison and an intentionally degraded control check that the
 model responds to visible damage; their thresholds are test sanity checks,
 not quality targets for your content. No account or storage credentials are used.
 Only the check's own temporary files, image, and container are removed afterward.
+A failed check names the step that failed, lists each fixture's test totals,
+and prints the end of the failed command's output.
 
 To reuse an already extracted source without copying or changing it:
 

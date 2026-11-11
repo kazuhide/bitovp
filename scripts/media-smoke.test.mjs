@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -8,23 +9,50 @@ import {
 	readFileSync,
 	realpathSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
+import { failureLines } from "./gate-report.mjs";
 import {
 	childEnvironment,
 	cleanupFixture,
 	command,
 	containerArguments,
 	dockerConfiguration,
+	downloadArchive,
 	extractSource,
+	FIXTURES,
+	fixtureAccount,
 	runFixture,
 	validateSummary,
 	verifySource,
 } from "./media-smoke.mjs";
+
+const fixtureLog = (name, counts) =>
+	`media fixture: ${name}\n✔ a test (1ms)\nmedia fixture totals: ${JSON.stringify(
+		{
+			tests: 0,
+			passed: 0,
+			failed: 0,
+			cancelled: 0,
+			skipped: 0,
+			todo: 0,
+			topLevel: 0,
+			suites: 0,
+			...counts,
+		},
+	)}\n`;
+const completeLog = (change = {}) =>
+	Object.entries(FIXTURES)
+		.map(([name, tests]) =>
+			fixtureLog(name, { tests, passed: tests, ...change[name] }),
+		)
+		.join("");
 
 for (const signal of ["SIGINT", "SIGTERM"])
 	test(`a first ${signal} during ownership inspection allows every cleanup command to finish`, {
@@ -141,12 +169,17 @@ test("Docker Desktop plugin discovery does not import user registry configuratio
 	);
 });
 
-test("timeout and cancellation stop a real child without exposing its diagnostics", async () => {
-	for (const [options, message] of [
-		[() => ({ timeout: 30 }), "Media validation command failed"],
+test("timeout and cancellation stop a real child and keep its diagnostics out of the message", async () => {
+	for (const [options, message, details] of [
 		[
-			() => ({ timeout: 200, signal: AbortSignal.timeout(30) }),
+			() => ({ timeout: 300 }),
+			"Media validation command failed",
+			["The command was stopped at its 0.3 second limit"],
+		],
+		[
+			() => ({ timeout: 2_000, signal: AbortSignal.timeout(300) }),
 			"Media validation command cancelled",
+			[],
 		],
 	]) {
 		await assert.rejects(
@@ -154,13 +187,42 @@ test("timeout and cancellation stop a real child without exposing its diagnostic
 				process.execPath,
 				[
 					"-e",
-					"process.stderr.write('discard this diagnostic');setInterval(()=>{},1000)",
+					"process.stderr.write('kept for the failure report\\n');setInterval(()=>{},1000)",
 				],
 				{ env: {}, ...options() },
 			),
-			(error) => error.message === message,
+			(error) => {
+				assert.equal(error.message, message);
+				assert.deepEqual(error.details, details);
+				assert.equal(error.diagnostics, "kept for the failure report\n");
+				return true;
+			},
 		);
 	}
+});
+
+test("a failed command reports the end of its own diagnostics, not its result", async () => {
+	const seen = [];
+	await assert.rejects(
+		command(
+			process.execPath,
+			[
+				"-e",
+				"console.log('result text');console.error('::error::forged');console.error('real reason');process.exit(3)",
+			],
+			{ env: {}, diagnostics: (text) => seen.push(text) },
+		),
+		(error) => {
+			assert.deepEqual(failureLines(error), [
+				"Reason: Media validation command failed",
+				"Last 2 lines of the failed command:",
+				"  | ::error::forged",
+				"  | real reason",
+			]);
+			return true;
+		},
+	);
+	assert.equal(seen.join(""), "::error::forged\nreal reason\n");
 });
 
 test("only a local Docker socket and allowlisted child environment are accepted", () => {
@@ -230,6 +292,12 @@ test("the offline image runs every real editing and reference fixture", () => {
 		{ id: "a".repeat(32) },
 		"/private/source.mp4",
 	);
+	// The manifest requires the same fixtures, in the order the script runs them.
+	assert.deepEqual(
+		[...script.matchAll(/src\/[\w/-]+\.media\.ts/g)].map(([name]) => name),
+		Object.keys(FIXTURES),
+	);
+	assert(Object.values(FIXTURES).every((tests) => tests > 0));
 	assert(args.includes("BITOVP_HLS_NATIVE_OUT=/work/hls-gates"));
 	assert(args.includes("BITOVP_HLS_FFMPEG=/usr/local/bin/ffmpeg"));
 	assert(args.includes("BITOVP_HLS_FFPROBE=/usr/local/bin/ffprobe"));
@@ -300,7 +368,11 @@ if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
 				},
 			});
 			if (fails) await assert.rejects(run, /Media validation command failed/);
-			else await run;
+			else
+				assert.deepEqual(
+					(await run).split("\n"),
+					Object.keys(FIXTURES).map((name) => `media fixture: ${name}`),
+				);
 			const calls = readFileSync(log, "utf8")
 				.trim()
 				.split("\n")
@@ -312,13 +384,177 @@ if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
 					(call) =>
 						call.go === "2" &&
 						call.args.includes("--test") &&
-						call.args.includes("--experimental-test-isolation=none"),
+						call.args.includes("--experimental-test-isolation=none") &&
+						call.args.includes(
+							"--test-reporter=../../scripts/media-smoke-reporter.mjs",
+						),
 				),
 			);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
+
+test("the fixture reporter gives the media runner the test runner's own totals", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "media-reporter-test-"));
+	try {
+		const run = async (name, source) => {
+			writeFileSync(join(directory, name), source);
+			const output = await command(
+				process.execPath,
+				[
+					"--test",
+					"--experimental-test-isolation=none",
+					"--test-reporter=spec",
+					"--test-reporter-destination=stdout",
+					`--test-reporter=${pathToFileURL(join(import.meta.dirname, "media-smoke-reporter.mjs")).href}`,
+					"--test-reporter-destination=stdout",
+					join(directory, name),
+				],
+				{ env: { PATH: process.env.PATH } },
+			);
+			const account = fixtureAccount({ [name]: 3 });
+			account.accept(`media fixture: ${name}\n${output}\n`);
+			return account;
+		};
+		const passing = await run(
+			"passing.media.mjs",
+			`import test from "node:test";
+test("first", () => {});
+test("second", async (t) => { await t.test("inner", () => {}); });
+`,
+		);
+		assert.deepEqual(passing.finish(), { files: 1, tests: 3 });
+		const skipping = await run(
+			"skipping.media.mjs",
+			`import test from "node:test";
+test("first", () => {});
+test("second", async (t) => { await t.test("inner", () => {}); });
+test("unavailable", { skip: true }, () => {});
+test("later", { todo: true }, () => {});
+`,
+		);
+		assert.throws(
+			() => skipping.finish(),
+			(error) => {
+				assert.deepEqual(error.details, [
+					"skipping.media.mjs: 3 of 5 tests passed, 1 skipped, 1 todo; 3 passed required",
+				]);
+				return true;
+			},
+		);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("every required fixture must run once and pass its required number of tests", () => {
+	const complete = fixtureAccount();
+	// Pipe chunks do not end at line boundaries.
+	for (const chunk of completeLog().match(/[\s\S]{1,37}/g))
+		complete.accept(chunk);
+	assert.deepEqual(complete.finish(), {
+		files: Object.keys(FIXTURES).length,
+		tests: Object.values(FIXTURES).reduce((sum, tests) => sum + tests, 0),
+	});
+	const [first, second] = Object.keys(FIXTURES);
+	const required = FIXTURES[second];
+	const firstLog = fixtureLog(first, {
+		tests: FIXTURES[first],
+		passed: FIXTURES[first],
+	});
+	assert(completeLog().startsWith(firstLog));
+	for (const [log, problem] of [
+		[
+			completeLog().replace(firstLog, ""),
+			`${first}: ran 0 times, required once`,
+		],
+		[completeLog() + firstLog, `${first}: ran 2 times, required once`],
+		[
+			completeLog({ [second]: { tests: required - 1, passed: required - 1 } }),
+			`${second}: ${required - 1} of ${required - 1} tests passed; ${required} passed required`,
+		],
+		[
+			completeLog({ [second]: { passed: required - 1, skipped: 1 } }),
+			`${second}: ${required - 1} of ${required} tests passed, 1 skipped; ${required} passed required`,
+		],
+		[
+			completeLog({ [second]: { passed: required - 1, failed: 1 } }),
+			`${second}: ${required - 1} of ${required} tests passed, 1 failed; ${required} passed required`,
+		],
+		[
+			completeLog({ [second]: { cancelled: 1 } }),
+			`${second}: ${required} of ${required} tests passed, 1 cancelled; ${required} passed required`,
+		],
+		[
+			completeLog({ [second]: { tests: required + 1, todo: 1 } }),
+			`${second}: ${required} of ${required + 1} tests passed, 1 todo; ${required} passed required`,
+		],
+		[
+			completeLog({ [second]: { tests: "4" } }),
+			`${second}: did not finish; ${required} passed required`,
+		],
+		[
+			completeLog().replace(/media fixture totals: [^\n]+\n$/, ""),
+			`${Object.keys(FIXTURES).at(-1)}: did not finish; ${Object.values(FIXTURES).at(-1)} passed required`,
+		],
+		[
+			completeLog() + fixtureLog("src/other.media.ts", { tests: 1, passed: 1 }),
+			"src/other.media.ts: not a required media fixture",
+		],
+	]) {
+		const account = fixtureAccount();
+		account.accept(log);
+		assert.throws(
+			() => account.finish(),
+			(error) => {
+				assert.equal(error.message, "Media fixtures did not all run and pass");
+				assert.deepEqual(error.details, [problem]);
+				return true;
+			},
+		);
+	}
+	// Totals that precede every fixture belong to none of them.
+	const stray = fixtureAccount({});
+	stray.accept(fixtureLog("ignored", {}).split("\n").slice(1).join("\n"));
+	assert.deepEqual(stray.finish(), { files: 0, tests: 0 });
+});
+
+test("a failed media run reports which fixtures finished, stopped and never started", () => {
+	const names = Object.keys(FIXTURES);
+	const account = fixtureAccount();
+	account.accept(
+		`${fixtureLog(names[0], { tests: 1, passed: 1 })}${fixtureLog(names[1], { tests: 4, passed: 3, failed: 1 })}media fixture: ${names[2]}\n✖ stopped here`,
+	);
+	assert.deepEqual(account.progress(), [
+		`${names[0]}: 1 of 1 tests passed`,
+		`${names[1]}: 3 of 4 tests passed, 1 failed`,
+		`${names[2]}: did not finish`,
+		`not started: ${names.slice(3).join(", ")}`,
+	]);
+	assert.deepEqual(fixtureAccount().progress(), [
+		`not started: ${names.join(", ")}`,
+	]);
+});
+
+test("the runner started through a symlinked path still runs and reports its failure", () => {
+	const directory = mkdtempSync(join(tmpdir(), "media-symlink-test-"));
+	try {
+		symlinkSync(import.meta.dirname, join(directory, "linked"));
+		const result = spawnSync(
+			process.execPath,
+			[join(directory, "linked", "media-smoke.mjs"), "--unknown", "value"],
+			{ env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000 },
+		);
+		assert.equal(result.status, 1);
+		assert.deepEqual(result.stderr.trimEnd().split("\n"), [
+			"Offline media validation failed; source, media checks or owned cleanup did not complete.",
+			"Reason: Unknown or duplicate media option",
+		]);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
 
 test("media builds refresh the base image before offline execution", () => {
 	const source = readFileSync(
@@ -365,6 +601,68 @@ test("source failure removes private state without starting Docker or deleting t
 	}
 });
 
+test("a failed source download reports its kind without the underlying message", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "media-download-test-"));
+	const signal = new AbortController().signal;
+	try {
+		for (const [request, message, details] of [
+			[
+				async () => {
+					throw new TypeError("fetch failed", {
+						cause: Object.assign(new Error("connect to 203.0.113.7 refused"), {
+							code: "ECONNREFUSED",
+						}),
+					});
+				},
+				"Official source download failed",
+				["ECONNREFUSED"],
+			],
+			[
+				async () => {
+					throw new DOMException("timed out", "TimeoutError");
+				},
+				"Official source download failed",
+				["TimeoutError"],
+			],
+			[
+				async () => ({ ok: false, status: 503, headers: new Headers() }),
+				"Official source download failed: HTTP 503",
+				undefined,
+			],
+			[
+				async () => ({
+					ok: true,
+					status: 200,
+					headers: new Headers(),
+					body: (async function* () {
+						yield new Uint8Array(4);
+						throw new TypeError("terminated", {
+							cause: Object.assign(new Error("other side closed"), {
+								code: "UND_ERR_SOCKET",
+							}),
+						});
+					})(),
+				}),
+				"Official source download failed",
+				["UND_ERR_SOCKET"],
+			],
+		]) {
+			const archive = join(directory, `${randomUUID()}.zip`);
+			await assert.rejects(
+				downloadArchive(archive, signal, request),
+				(error) => {
+					assert.equal(error.message, message);
+					assert.deepEqual(error.details, details);
+					assert.equal(failureLines(error)[0], `Reason: ${message}`);
+					return true;
+				},
+			);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test("ZIP extraction targets only the pinned filename and rejects traversal", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "media-zip-test-"));
 	try {
@@ -404,8 +702,9 @@ test("only complete numeric summaries can reach the public log", () => {
 		means: { self: 99, encoded: 90, degraded: 40 },
 	};
 	assert.deepEqual(validateSummary(JSON.stringify(summary)), summary);
-	assert.throws(() =>
-		validateSummary(JSON.stringify({ ...summary, videoFrames: 239 })),
+	assert.throws(
+		() => validateSummary(JSON.stringify({ ...summary, videoFrames: 239 })),
+		/Incomplete media validation: videoFrames must be 240/,
 	);
 	assert.throws(() =>
 		validateSummary(JSON.stringify({ ...summary, raw: "private diagnostics" })),

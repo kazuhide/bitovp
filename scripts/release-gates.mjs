@@ -185,9 +185,10 @@ export function runGates(
 	return report;
 }
 
+// The real path: a symlinked invocation must run, not exit 0 having done nothing.
 if (
 	process.argv[1] &&
-	resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+	realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
 	if (process.argv.length === 2)
 		console.log(

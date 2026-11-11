@@ -9,8 +9,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
 	COMMANDS,
 	childEnvironment,
@@ -113,14 +114,41 @@ test("fixed local gates include API freshness and the runner tests, never deploy
 		pkg.scripts["test:editing-preview"],
 		"node --test scripts/editing-preview.test.mjs scripts/editing-fonts.test.mjs",
 	);
-	assert(
-		COMMANDS.some(
-			(c) =>
-				c.join(" ") === "node scripts/api-coverage-current.mjs --check-exact",
-		),
+	// Every gate needs the installed dependencies, and the exact census check
+	// runs in the tree that `pnpm test` has already checked.
+	const order = COMMANDS.map((c) => c.join(" "));
+	assert.equal(order[0], "pnpm install --frozen-lockfile");
+	assert.equal(
+		order[order.indexOf("pnpm test") + 1],
+		"node scripts/api-coverage-current.mjs --check-exact",
 	);
 	assert.equal(COMMANDS.length, 8);
 	assert(!JSON.stringify(COMMANDS).match(/docker|verify run|deploy|gh /));
+});
+test("the gate runner answers when it is started through a symlink", () => {
+	const script = fileURLToPath(new URL("./release-gates.mjs", import.meta.url));
+	const directory = mkdtempSync(join(tmpdir(), "release-gates-entry-"));
+	try {
+		// A symlinked directory used to make the script exit 0 without running.
+		symlinkSync(dirname(script), join(directory, "linked"), "dir");
+		for (const path of [script, join(directory, "linked/release-gates.mjs")]) {
+			const run = (...args) =>
+				spawnSync(process.execPath, [path, ...args], {
+					cwd: directory,
+					encoding: "utf8",
+					timeout: 30_000,
+				});
+			const idle = run();
+			assert.equal(idle.status, 0);
+			assert.match(idle.stdout, /^Preparation only\. /);
+			const refused = run("--run", "--unknown");
+			assert.equal(refused.status, 1);
+			assert.equal(refused.stdout, "");
+			assert.match(refused.stderr, /^RELEASE_GATES_REFUSED: /);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
 });
 test("exact committed clean standalone checkout only", () => {
 	const f = fixture();

@@ -117,6 +117,8 @@ function allowances(workspace, root) {
 /**
  * Why a package's plain test run hides a test: it skipped one that no other
  * job runs. Also counts the skipped tests, and those of them no job runs.
+ * Only the report of a run that passed can be checked: a file that failed to
+ * load is reported without its tests.
  */
 export function skipProblems(report, workspace, root = ROOT) {
 	const allowed = allowances(workspace, root);
@@ -127,12 +129,23 @@ export function skipProblems(report, workspace, root = ROOT) {
 			skipped: 0,
 			unexecuted: 0,
 		};
+	if (report?.success !== true)
+		return {
+			problems: [
+				"the test run failed; its report cannot show every skipped test",
+			],
+			skipped: 0,
+			unexecuted: 0,
+		};
 	const problems = [];
 	const seen = new Set();
 	let skipped = 0;
 	let unexecuted = 0;
 	for (const result of results) {
 		const file = resolve(String(result?.name));
+		// Each entry would otherwise get the file's whole allowance.
+		if (seen.has(file))
+			problems.push(`${relative(root, file)}: reported more than once`);
 		seen.add(file);
 		const unrun = (
 			Array.isArray(result?.assertionResults) ? result.assertionResults : []
@@ -167,6 +180,9 @@ export function skipProblems(report, workspace, root = ROOT) {
 }
 
 const TOTALS = "media fixture totals: ";
+// One command of the native media run. The three together stay below the CI
+// job's 20 minutes, so a command that hangs is reported with its step.
+const LIMIT = 300_000;
 
 /** Why the worker script tests did not all run and pass, from the reporter's totals. */
 export function scriptProblems(log, required = WORKER_SCRIPTS.tests) {
@@ -229,7 +245,7 @@ export async function runNativeMedia(
 						"--reporter=json",
 						`--outputFile=${output}`,
 					],
-					{ cwd: root, env: clean, signal, timeout: 600_000 },
+					{ cwd: root, env: clean, signal, timeout: LIMIT },
 				);
 			} catch (error) {
 				failure = asFailure(error);
@@ -274,7 +290,7 @@ export async function runNativeMedia(
 					cwd: resolve(root, WORKER_SCRIPTS.directory),
 					env: clean,
 					signal,
-					timeout: 900_000,
+					timeout: LIMIT,
 					diagnostics: (text) => {
 						log += text;
 					},

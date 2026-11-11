@@ -96,6 +96,9 @@ jobs:
       - run: pnpm test:api-coverage
       - run: pnpm test:release-gates
       - run: pnpm test:editing-preview
+      # Also here: this job always runs, and the suite checks that the jobs
+      # which run the gated tests are still in this file.
+      - run: pnpm test:gated-runner
       - run: pnpm --filter @bitovp/worker smoke
 
   tests:

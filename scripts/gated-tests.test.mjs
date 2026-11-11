@@ -284,6 +284,9 @@ test("the worker script tests must report their totals once, all passed", () => 
 		[totals({ emptyFiles: undefined }), ["emptyFiles: undefined, required 0"]],
 		// A line that only contains the marker later is not the reporter's.
 		[`note media fixture totals: {}\n${totals()}`, []],
+		[` ${totals()}`, ["totals reported 0 times, required once"]],
+		[totals({ skipped: "0" }), ['skipped: "0", required 0']],
+		[totals({ failed: false }), ["failed: false, required 0"]],
 	])
 		assert.deepEqual(scriptProblems(log), expected);
 });
@@ -302,6 +305,7 @@ async function nativeRun({
 		),
 	scripts = () => totals(),
 	env = {},
+	signal,
 } = {}) {
 	const calls = [];
 	const notes = [];
@@ -323,7 +327,7 @@ async function nativeRun({
 	let lines;
 	try {
 		await runNativeMedia(
-			{ root, env, notify: (note) => notes.push(note) },
+			{ root, env, signal, notify: (note) => notes.push(note) },
 			execute,
 		);
 	} catch (error) {
@@ -333,11 +337,14 @@ async function nativeRun({
 }
 
 test("a native media run passes only when every listed test ran and passed", async () => {
+	const controller = new AbortController();
 	const passed = await nativeRun({
+		signal: controller.signal,
 		env: {
 			PATH: "/tools/bin",
 			VMAF_MODEL_DIR: "/tools/model",
 			FFMPEG_PATH: "/tools/bin/ffmpeg",
+			FFPROBE_PATH: "/tools/bin/ffprobe",
 			GITHUB_TOKEN: "not for a child",
 		},
 	});
@@ -367,6 +374,21 @@ test("a native media run passes only when every listed test ran and passed", asy
 		/\/scripts\/media-smoke-reporter\.mjs$/,
 	);
 	assert.deepEqual(passed.calls[2].args.slice(5), WORKER_SCRIPTS.files);
+	// Vitest gets exactly the listed files and writes a JSON report of its own.
+	for (const [index, group] of NATIVE_MEDIA.entries()) {
+		assert.deepEqual(passed.calls[index].args.slice(5), [
+			...Object.keys(group.files),
+			"--maxWorkers=2",
+			"--reporter=json",
+			`--outputFile=${join(passed.scratch, `results-${index}.json`)}`,
+		]);
+		assert.equal(passed.calls[index].options.cwd, root);
+		assert.equal(passed.calls[index].options.timeout, 300_000);
+	}
+	assert.equal(passed.calls[2].options.timeout, 300_000);
+	// A cancelled run stops the command that is running.
+	for (const { options } of passed.calls)
+		assert.equal(options.signal, controller.signal);
 	assert.equal(passed.calls[2].options.cwd, resolve(root, "apps/worker"));
 	for (const { options } of passed.calls) {
 		assert.deepEqual(options.env, {
@@ -376,6 +398,7 @@ test("a native media run passes only when every listed test ran and passed", asy
 			NEXT_TELEMETRY_DISABLED: "1",
 			VMAF_MODEL_DIR: "/tools/model",
 			FFMPEG_PATH: "/tools/bin/ffmpeg",
+			FFPROBE_PATH: "/tools/bin/ffprobe",
 		});
 	}
 	// The reports are private scratch and do not outlive the run.
@@ -482,6 +505,27 @@ test("a native media run passes only when every listed test ran and passed", asy
 				"Reason: A step failed without an error",
 			],
 		],
+		[
+			{
+				vitest: (group) =>
+					reportOf([
+						...Object.entries(group.files).map(([file, tests]) =>
+							fileResult(
+								join(group.directory, file),
+								Array.from({ length: tests }, () => "passed"),
+							),
+						),
+						fileResult(join(group.directory, "src/other.test.ts"), ["passed"]),
+					]),
+			},
+			[
+				"Step: running @bitovp/core tests that need FFmpeg",
+				"Reason: Native media tests must all run and pass",
+				"  - tests discovered: 12, required 11",
+				"  - tests passed: 12, required 11",
+				"  - src/other.test.ts: not a required native media test file",
+			],
+		],
 	]) {
 		const { lines, scratch } = await nativeRun(change);
 		assert.deepEqual(lines?.slice(0, expected.length), expected);
@@ -531,6 +575,214 @@ test("a failed command is not excused by a complete report or by complete totals
 		);
 		assert.equal(calls.length, at);
 	}
+});
+
+test("a failed command with an incomplete report or totals names what is lacking and the end of its output", async () => {
+	const failing = (at) => {
+		let calls = 0;
+		return async (binary, args, options) => {
+			calls += 1;
+			if (binary === "pnpm") {
+				const group = NATIVE_MEDIA.find((group) => group.workspace === args[1]);
+				const files = Object.entries(group.files).map(
+					([file, tests], position) =>
+						fileResult(
+							join(group.directory, file),
+							Array.from({ length: tests }, (_, index) =>
+								calls === at && position === 0 && index === 0
+									? "failed"
+									: "passed",
+							),
+						),
+				);
+				const report = reportOf(files);
+				if (calls === at) {
+					// What Vitest 4 writes for a run with one failed test.
+					files[0].status = "failed";
+					report.success = false;
+					report.numFailedTestSuites = 1;
+				}
+				writeFileSync(
+					args.at(-1).slice("--outputFile=".length),
+					JSON.stringify(report),
+				);
+			} else
+				options.diagnostics(
+					calls === at ? totals({ failed: 1, passed: 42 }) : totals(),
+				);
+			if (calls === at)
+				throw new GateFailure("Media validation command failed", {
+					diagnostics: "the end of the command's output\n",
+				});
+			return "";
+		};
+	};
+	const lines = async (at) => {
+		try {
+			await runNativeMedia({ root, env: {}, notify: () => {} }, failing(at));
+		} catch (error) {
+			return failureLines(error);
+		}
+	};
+	const output = [
+		"Last 1 lines of the failed command:",
+		"  | the end of the command's output",
+	];
+	const [, worker] = NATIVE_MEDIA;
+	const file = Object.keys(worker.files)[0];
+	assert.deepEqual(await lines(2), [
+		"Step: running @bitovp/worker tests that need FFmpeg",
+		"Reason: Native media tests must all run and pass",
+		"  - Vitest reported a failed run",
+		"  - failed tests: 1, required 0",
+		"  - failed suites: 1, required 0",
+		"  - tests passed: 7, required 8",
+		`  - ${file}: 2 of 3 tests passed, 3 required; file status "failed"`,
+		`  - "failed": ${join(worker.directory, file)} > test 1`,
+		...output,
+	]);
+	assert.deepEqual(await lines(3), [
+		"Step: running the worker script tests",
+		"Reason: Worker script tests must all run and pass",
+		"  - passed: 42, required 43",
+		"  - failed: 1, required 0",
+		...output,
+	]);
+});
+
+test("the audit keeps each allowance to its own file and list, and treats what it does not know as not run", () => {
+	const workspace = "@bitovp/worker";
+	const audit = (change, edit = () => {}) => {
+		const report = plainRun(workspace, change);
+		edit(report);
+		return skipProblems(report, workspace, root);
+	};
+	const lists = [
+		[GROUPS, "the PostgreSQL integration job runs them"],
+		[NATIVE_MEDIA, "the native media job runs them"],
+		[UNEXECUTED, "listed as run by no job"],
+	].map(([groups, where]) => {
+		const group = groups.find((group) => group.workspace === workspace);
+		const [file, count] = Object.entries(group.files)[0];
+		return { file: join(group.directory, file), count, where };
+	});
+	for (const { file, count, where } of lists) {
+		// A listed file that left the run would keep its allowance for ever.
+		assert.deepEqual(
+			audit((files) =>
+				files.filter((entry) => entry.name !== resolve(root, file)),
+			).problems,
+			[`${file}: listed as skipped by this run but not part of it`],
+		);
+		// One skipped test more than its list allows.
+		assert.equal(
+			audit((files) =>
+				files.map((entry) =>
+					entry.name === resolve(root, file)
+						? fileResult(
+								file,
+								Array.from({ length: count + 1 }, () => "skipped"),
+							)
+						: entry,
+				),
+			).problems[0],
+			`${file}: ${count + 1} tests skipped, ${count} may be (${where})`,
+		);
+		// The allowance belongs to the path, not to the file name.
+		const namesake = join("apps/worker/src/zz", file.split("/").at(-1));
+		assert.equal(
+			audit((files) => [...files, fileResult(namesake, ["skipped"])])
+				.problems[0],
+			`${namesake}: 1 tests skipped, none may be`,
+		);
+	}
+	// A debt test that ran here is not counted as run by no job.
+	const debt = lists[2];
+	assert.deepEqual(
+		audit((files) =>
+			files.map((entry) =>
+				entry.name === resolve(root, debt.file)
+					? fileResult(
+							debt.file,
+							Array.from({ length: debt.count }, () => "passed"),
+						)
+					: entry,
+			),
+		),
+		{ problems: [], skipped: 67 - debt.count, unexecuted: 3 - debt.count },
+	);
+	// A failed test ran; the test command itself reports it.
+	assert.deepEqual(
+		audit((files) => [
+			...files,
+			fileResult("apps/worker/src/new.test.ts", ["failed", "passed"]),
+		]),
+		{ problems: [], skipped: 67, unexecuted: 3 },
+	);
+	// The report of a failed run is refused: it lacks the tests of a file that
+	// did not load.
+	for (const success of [false, undefined])
+		assert.deepEqual(
+			audit(undefined, (report) => {
+				report.success = success;
+			}),
+			{
+				problems: [
+					"the test run failed; its report cannot show every skipped test",
+				],
+				skipped: 0,
+				unexecuted: 0,
+			},
+		);
+	// A file reported twice would use its allowance twice.
+	assert.equal(
+		audit((files) => [
+			...files,
+			files.find((entry) => entry.name === resolve(root, debt.file)),
+		]).problems[0],
+		`${debt.file}: reported more than once`,
+	);
+	// A status this check does not know is not a test that ran.
+	assert.deepEqual(
+		audit((files) => [
+			...files,
+			fileResult("apps/worker/src/new.test.ts", ["disabled"]),
+		]).problems.slice(0, 2),
+		[
+			"apps/worker/src/new.test.ts: 1 tests skipped, none may be",
+			'"disabled": apps/worker/src/new.test.ts > test 1',
+		],
+	);
+	// At most 20 tests of a file are named.
+	assert.equal(
+		audit((files) => [
+			...files,
+			fileResult(
+				"apps/worker/src/new.test.ts",
+				Array.from({ length: 25 }, () => "skipped"),
+			),
+		]).problems.length,
+		21,
+	);
+	// Totals below the list, or no totals, disagree with it too.
+	assert.deepEqual(
+		audit(undefined, (report) => {
+			report.numPendingTests -= 2;
+		}).problems,
+		["the report counts 65 skipped tests but lists 67"],
+	);
+	assert.deepEqual(
+		audit(undefined, (report) => {
+			delete report.numPendingTests;
+		}).problems,
+		["the report counts undefined skipped tests but lists 67"],
+	);
+	assert.equal(
+		audit(undefined, (report) => {
+			delete report.numTodoTests;
+		}).problems[0],
+		"todo tests: undefined, required 0",
+	);
 });
 
 test("the command reports through its exit status", () => {
@@ -610,6 +862,14 @@ test("the command reports through its exit status", () => {
 				["--native-media", "extra"],
 				"Reason: Usage: gated-tests.mjs --native-media | --audit <workspace> <Vitest JSON report>",
 			],
+			[
+				["--audit", "@bitovp/core", join(directory, "clean.json"), "extra"],
+				"Reason: Usage: gated-tests.mjs --native-media | --audit <workspace> <Vitest JSON report>",
+			],
+			[
+				["--audit", "@bitovp/core!", join(directory, "clean.json")],
+				"Reason: A workspace name is required",
+			],
 		]) {
 			const result = run(...args);
 			assert.equal(result.status, 1);
@@ -638,11 +898,25 @@ test("CI audits every package's skipped tests and runs the native media tests wi
 	assert.match(
 		tests,
 		new RegExp(
-			`run: pnpm --filter @bitovp/\\$\\{\\{ matrix\\.package \\}\\} test --maxWorkers=2 --reporter=default --reporter=github-actions --reporter=json --outputFile\\.json=${report}\\n` +
+			`\\n {6}- run: pnpm --filter @bitovp/\\$\\{\\{ matrix\\.package \\}\\} test --maxWorkers=2 --reporter=default --reporter=github-actions --reporter=json --outputFile\\.json=${report}\\n` +
 				"      - name: Require every skipped test to run in another job\\n" +
-				`        run: pnpm test:skip-audit "@bitovp/\\$\\{\\{ matrix\\.package \\}\\}" ${report}\\n`,
+				`        run: pnpm test:skip-audit "@bitovp/\\$\\{\\{ matrix\\.package \\}\\}" ${report}\\n$`,
 		),
 	);
+	// Nothing may switch the job or a step off, or let a failure pass: the only
+	// condition is the one that prepares the web package.
+	assert.match(
+		ci,
+		/\non:\n {2}pull_request:\n {2}push:\n {4}branches: \[main\]\n/,
+	);
+	assert.doesNotMatch(tests, /continue-on-error|needs:|exclude:|include:/);
+	assert.deepEqual(tests.match(/^\s*(?:- )?if:.*$/gm), [
+		"        if: matrix.package == 'web'",
+	]);
+	// This suite also runs in a job that does not depend on the jobs it guards.
+	const quality = job("quality");
+	assert(quality.includes("\n      - run: pnpm test:gated-runner\n"));
+	assert.doesNotMatch(quality, /continue-on-error|^\s*(?:- )?(?:if|needs):/m);
 	const native = job("native-media");
 	const order = [
 		"run: pnpm install --frozen-lockfile",
@@ -661,7 +935,23 @@ test("CI audits every package's skipped tests and runs the native media tests wi
 		[...order].sort((a, b) => a - b),
 	);
 	// The job must not start on a condition that could skip it.
-	assert.doesNotMatch(native, /\n {4}if:|continue-on-error/);
+	assert.doesNotMatch(native, /continue-on-error|^\s*(?:- )?(?:if|needs):/m);
+	// Each command is a whole line: no `|| true`, no comment, nothing appended.
+	const commands = native.split("\n").map((line) => line.trim());
+	for (const line of [
+		"- run: pnpm install --frozen-lockfile",
+		"- run: pnpm test:gated-runner",
+		'sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"',
+		`printf '%s\\n' "$RUNNER_TEMP/native-media/bin" >> "$GITHUB_PATH"`,
+		`printf 'VMAF_MODEL_DIR=%s\\n' "$RUNNER_TEMP/native-media/model" >> "$GITHUB_ENV"`,
+		"run: pnpm test:native-media",
+	])
+		assert(commands.includes(line), line);
+	assert(
+		native.endsWith(
+			"      - name: Run every test that drives real FFmpeg\n        run: pnpm test:native-media\n",
+		),
+	);
 
 	const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 	assert.equal(

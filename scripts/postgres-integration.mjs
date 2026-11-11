@@ -50,6 +50,7 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
+			"src/lib/server/latest-runs.integration.test.ts": 2,
 			"src/lib/server/reset-live-probe.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
 			"src/lib/server/library-catalog.integration.test.ts": 17,
@@ -57,6 +58,7 @@ export const GROUPS = [
 			"src/lib/server/library-editing-presentation.integration.test.ts": 2,
 			"src/lib/server/library-media-tasks.integration.test.ts": 5,
 			"src/lib/server/library-media-tasks-generation.integration.test.ts": 2,
+			"src/lib/server/library-scene-search.integration.test.ts": 7,
 			"src/lib/server/job-evidence-retention.integration.test.ts": 7,
 			"src/lib/server/selected-reset-editing.integration.test.ts": 3,
 		},

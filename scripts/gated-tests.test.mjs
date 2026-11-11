@@ -111,7 +111,7 @@ test("every listed file exists once, and every FFmpeg or script test file is lis
 	// A changed count is a decision: it moves a test into or out of a job.
 	assert.equal(total(NATIVE_MEDIA), 19);
 	assert.equal(WORKER_SCRIPTS.tests, 43);
-	assert.equal(total(UNEXECUTED), 12);
+	assert.equal(total(UNEXECUTED), 3);
 });
 
 test("a plain run may skip the tests that another job runs or that are listed as run by no job", () => {
@@ -119,7 +119,7 @@ test("a plain run may skip the tests that another job runs or that are listed as
 		["@bitovp/core", 11, 0],
 		["@bitovp/db", 70, 0],
 		["@bitovp/worker", 67, 3],
-		["@bitovp/web", 81, 9],
+		["@bitovp/web", 81, 0],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],
@@ -810,13 +810,13 @@ test("the command reports through its exit status", () => {
 		);
 		const debt = run(
 			"--audit",
-			"@bitovp/web",
-			write("web.json", plainRun("@bitovp/web")),
+			"@bitovp/worker",
+			write("worker.json", plainRun("@bitovp/worker")),
 		);
 		assert.equal(debt.status, 0, debt.stderr);
 		assert.equal(
 			debt.stdout,
-			"@bitovp/web: 81 tests skipped by the plain run; 72 run in another job, 9 are listed as run by no job\n",
+			"@bitovp/worker: 67 tests skipped by the plain run; 64 run in another job, 3 are listed as run by no job\n",
 		);
 
 		const hiding = run(

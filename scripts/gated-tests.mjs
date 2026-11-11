@@ -82,14 +82,6 @@ export const UNEXECUTED = [
 			"src/tenant/redis.integration.test.ts": 1,
 		},
 	},
-	{
-		workspace: "@bitovp/web",
-		directory: "apps/web",
-		files: {
-			"src/lib/server/library-scene-search.integration.test.ts": 7,
-			"src/lib/server/latest-runs.test.ts": 2,
-		},
-	},
 ];
 
 const sum = (files) =>

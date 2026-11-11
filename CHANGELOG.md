@@ -4,6 +4,12 @@ Notable changes are recorded here for people installing and using bitovp.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Updated fast-xml-parser to 5.12.0 for subtitle validation and the Azure and Google Cloud storage clients. Earlier versions could use excessive CPU time on XML with unterminated stop-node tags (GHSA-474x-hrwr-fgx4, low severity).
+
 ## [1.2.2] - 2026-11-10
 
 ### Fixed

@@ -2240,10 +2240,11 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 				sources.push(source[1]);
 			} else if (instruction === "RUN") {
 				if (!line.startsWith("RUN --network=none ")) open.push(line);
-				// No other flag: a mount brings in the checkout, another image, a
-				// stage that is not followed here, or a cache that outlives the
-				// build, and none of them needs a network.
-				assert.match(line, /^RUN (?:--network=none )?[^-]/, line);
+				// No other flag, after any run of spaces and tabs: a mount brings
+				// in the checkout, another image, a stage that is not followed
+				// here, or a cache that outlives the build, and none of them needs
+				// a network.
+				assert.match(line, /^RUN (?:--network=none )?[^-\s]/, line);
 				// Meson builds nothing that it would have to download.
 				assert.equal(
 					line.split("meson setup ").length,
@@ -2368,6 +2369,43 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 		].sort(),
 	);
 
+	// The licence of each source that is compiled in goes out with the two
+	// programs. Meson is a tool of the build, and dlg is a part of FreeType's
+	// own build.
+	const licences = new Set();
+	for (const line of steps)
+		for (const [, name] of line.matchAll(
+			/ \/(?:opt\/ffbuild|out)\/share\/licenses\/([a-z0-9-]+)/g,
+		))
+			licences.add(name);
+	assert.deepEqual([...licences].sort(), [
+		"dav1d",
+		"ffmpeg",
+		"fontconfig",
+		"freetype",
+		"fribidi",
+		"harfbuzz",
+		"libass",
+		"libunibreak",
+		"libvmaf",
+		"libxml2",
+		"nv-codec-headers",
+		"openssl",
+		"srt",
+		"svt-av1",
+		"x264",
+		"zlib",
+	]);
+	// dav1d keeps its patent notice in a second file.
+	assert(
+		steps.some((line) =>
+			line.includes(
+				" -t /opt/ffbuild/share/licenses/dav1d COPYING doc/PATENTS",
+			),
+		),
+		"dav1d's patent notice",
+	);
+
 	// The image takes the two programs from that stage and from nowhere else,
 	// and still requires what bitovp needs of them.
 	const image = stages.at(-1);
@@ -2386,7 +2424,7 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 		assert(checks.includes(check), check);
 	// The checks are links of one chain, on the image's own files: nothing
 	// excuses a failure, and no mount puts other programs in their place.
-	assert.match(checks, /^RUN [^-]/, checks);
+	assert.match(checks, /^RUN [^-\s]/, checks);
 	assert.doesNotMatch(checks, /;|\|\||(?<!&)&(?!&)/, checks);
 	assert.doesNotMatch(
 		image.lines.join("\n"),
@@ -2656,6 +2694,12 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 				[{ models: list(["vmaf_v0.6.1.json?x"]) }, MODEL],
 				[{ models: list(["vmaf_v[0-1].json"]) }, MODEL],
 				[{ models: list(["vmaf v0.6.1.json"]) }, MODEL],
+				// Nor does it hold any other character than letters, digits
+				// and . _ -
+				...[..."%:@+~=,\\#&*"].map((character) => [
+					{ models: list([`vmaf_v0.6.1${character}json`]) },
+					MODEL,
+				]),
 				// A list without a model, or no list: nothing would be proven.
 				[{ models: "# model checksums\n" }, EMPTY],
 				[{ models: "" }, EMPTY],

@@ -74,7 +74,9 @@ To change a version:
 - Take a commit that is on the project's own branch. An archive URL also
   answers for a commit that exists only in a fork. For a GitHub repository,
   `gh api repos/<owner>/<repo>/compare/<commit>...<branch>` must report
-  `behind_by: 0`.
+  `behind_by: 0`. For x264,
+  `https://code.videolan.org/api/v4/projects/videolan%2Fx264/repository/commits/<commit>/refs?type=branch`
+  must list the branch.
 - For FFmpeg, set `FFMPEG_VER` to what `git describe --tags` prints for the
   commit, with the revision cut to ten characters, and `SOURCE_DATE_EPOCH` to
   the commit's date (`git show -s --format=%ct`). The build checks only that

@@ -17,8 +17,8 @@ import { latestRunsFor } from "./latest-runs";
  * So the property under test is a property of the SQL TEXT, and these
  * assertions read it. A double cannot prove what Postgres does with the
  * statement, which is why the last describe runs the real thing against a real
- * database (opt-in, like `reset-live-probe.test.ts`) and why the plan numbers
- * live in the helper's own docblock.
+ * database (opt-in through PROBE_DATABASE_URL) and why the plan numbers live
+ * in the helper's own docblock.
  */
 function fakePrisma(rows: unknown[] = []) {
 	// Variadic on purpose: with `vi.fn(async  => rows)` the inferred call
@@ -153,8 +153,8 @@ describe("latestRunsFor — the limit lives in the SQL", () => {
  * What no double can answer: does that statement really return one row per
  * channel, and is it really the NEWEST one?
  *
- * Opt-in, exactly like `reset-live-probe.test.ts`: the gate suite is offline by
- * rule, so this is skipped unless PROBE_DATABASE_URL names a probe database —
+ * Opt-in: the gate suite is offline by rule, so this is skipped unless
+ * PROBE_DATABASE_URL names a probe database —
  * and the name check is also the guard, because this block TRUNCATES the two
  * live tables and must not be able to reach the real one whatever the
  * environment says. TYPECHECK-COVERED ONLY in a normal `pnpm test` run: a green

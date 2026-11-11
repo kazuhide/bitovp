@@ -50,6 +50,7 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
+			"src/lib/server/reset-live-probe.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
 			"src/lib/server/library-catalog.integration.test.ts": 17,
 			"src/lib/server/library-editing.integration.test.ts": 27,

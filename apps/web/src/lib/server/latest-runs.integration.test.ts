@@ -133,6 +133,9 @@ describe.runIf(Boolean(adminUrl && runtimeUrl))(
 			const map = await latestRunsFor(prisma, [...ids, foreign.id]);
 			expect(map.has(foreign.id)).toBe(false);
 			expect(map.size).toBe(ids.length);
+			// Without an organization the statement returns nothing at all.
+			const none = await latestRunsFor(runtime, [...ids, foreign.id]);
+			expect(none.size).toBe(0);
 		});
 	},
 );

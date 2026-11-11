@@ -12,12 +12,16 @@ set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 target=${1:?usage: native-media-tools.sh <new directory>}
 
+# One line of the Dockerfile, holding only the characters that a build tag, a
+# version, a commit or a checksum uses.
 pin() {
 	value=$(sed -n "s/^ARG $1=\"\([^\"]*\)\"\$/\1/p" "$root/Dockerfile")
-	if [ -z "$value" ]; then
-		echo "The Dockerfile does not pin $1" >&2
-		exit 1
-	fi
+	case "$value" in
+		'' | *[!A-Za-z0-9._-]*)
+			echo "The Dockerfile does not pin $1 once as a plain value" >&2
+			exit 1
+			;;
+	esac
 	printf '%s' "$value"
 }
 
@@ -44,7 +48,8 @@ template=$(sed -n 's/.*FFMPEG_URL="\(https:[^"]*\)".*/\1/p' "$root/Dockerfile")
 url=$(printf '%s' "$template" |
 	sed "s|\${FFMPEG_BUILD}|$build|; s|\${FFMPEG_VER}|$version|; s|\${FF_ARCH}|$arch|")
 case "$url" in
-	*'$'* | '')
+	# Empty, a variable left unfilled, or more than one line.
+	'' | *[!A-Za-z0-9:/._-]*)
 		echo "The Dockerfile's FFmpeg asset URL could not be read" >&2
 		exit 1
 		;;
@@ -55,10 +60,23 @@ case "$url" in
 		;;
 esac
 
-mkdir "$target" "$target/bin" "$target/model"
+# A model name is a file in the model directory, never a path.
+grep -v '^#' "$root/docker/vmaf-models.sha256" | while read -r _ name; do
+	case "$name" in
+		'' | */* | .*)
+			echo "docker/vmaf-models.sha256 holds an unexpected model name" >&2
+			exit 1
+			;;
+	esac
+done
+
+# Refuses an existing directory before anything is written into it.
+mkdir "$target"
+mkdir "$target/bin" "$target/model"
 archive="$target/ffmpeg.tar.xz"
-curl -fsSL --retry 3 --max-time 600 "$url" -o "$archive"
-echo "$sha  $archive" | sha256sum -c - >/dev/null
+curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --max-time 600 \
+	"$url" -o "$archive"
+printf '%s  %s\n' "$sha" "$archive" | sha256sum -c - >/dev/null
 tar -xJf "$archive" -C "$target/bin" --strip-components=2 \
 	--wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
 rm -f "$archive"
@@ -72,7 +90,8 @@ grep -v '^#' "$root/docker/vmaf-models.sha256" | while read -r _ name; do
 		vmaf_v1.0.16_*) path="vmaf_v1.0.16/$name" ;;
 		*) path=$name ;;
 	esac
-	curl -fsSL --retry 3 --max-time 120 "$base/$path" -o "$target/model/$name"
+	curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --max-time 120 \
+		"$base/$path" -o "$target/model/$name"
 done
 (cd "$target/model" && sha256sum -c --strict "$root/docker/vmaf-models.sha256" >/dev/null)
 

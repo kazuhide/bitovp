@@ -290,7 +290,22 @@ describe("hierarchical flow fence", () => {
 		const production = [...files].filter(
 			(path) => isSource(path) && !isTest(path) && !fenced.has(path),
 		);
-		expect(production).toContain("packages/core/src/content-editing/index.ts");
+		// One file of each kind the scan has to reach: each workspace, scripts
+		// beside the sources, .tsx and .mjs, and a name that contains "test".
+		const reached = new Set(production);
+		expect(
+			[
+				"packages/core/src/content-editing/index.ts",
+				"packages/db/src/index.ts",
+				"packages/db/scripts/migrate.ts",
+				"packages/storage/src/index.ts",
+				"apps/worker/src/index.ts",
+				"apps/worker/scripts/vmaf-cloud-worker.mjs",
+				"apps/web/src/app/layout.tsx",
+				"apps/web/src/lib/server/latest-runs.ts",
+				"apps/site/src/main.tsx",
+			].filter((path) => !reached.has(path)),
+		).toEqual([]);
 		expect(
 			production.flatMap((path) => fencedImports(path)),
 			"Only fenced modules and tests may import the fence. See hierarchical-flow-fence.json.",
@@ -343,6 +358,10 @@ describe("hierarchical flow fence", () => {
 		expect(resolveSpecifier("apps/site/src/main.tsx", "@/app/layout")).toEqual([
 			"apps/web/src/app/layout.tsx",
 		]);
+		// A workspace file named by its path, past the package's `exports`.
+		expect(
+			resolveSpecifier("package.json", "@bitovp/core/src/index.ts"),
+		).toEqual(["packages/core/src/index.ts"]);
 	});
 
 	it("leaves the fenced tests out of the default runs and gives each a dedicated run", () => {

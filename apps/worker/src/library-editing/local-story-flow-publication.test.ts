@@ -19,7 +19,7 @@ import {
 	localStoryFlowSealedRecordEvidence,
 	type localStoryFlowSourceArchiveEvidence,
 	readLocalStoryFlowSealedRecord,
-} from "@bitovp/core/local-story-flow-server";
+} from "@bitovp/core/local-story-flow-hierarchy";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
 	LocalStoryFlowPublicationError,
@@ -42,8 +42,10 @@ const mocked = vi.hoisted(() => ({
 	route: vi.fn(),
 	root: vi.fn(),
 }));
-vi.mock("@bitovp/core/local-story-flow-server", async (original) => ({
-	...(await original<typeof import("@bitovp/core/local-story-flow-server")>()),
+vi.mock("@bitovp/core/local-story-flow-hierarchy", async (original) => ({
+	...(await original<
+		typeof import("@bitovp/core/local-story-flow-hierarchy")
+	>()),
 	localStoryFlowAcceptedContextNodePublication: mocked.node,
 	localStoryFlowSourceArchiveEvidence: mocked.archive,
 	localStoryFlowAcceptedContextPublication: mocked.context,

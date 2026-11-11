@@ -19,7 +19,8 @@
 				"../../apps/**/*.tsx",
 				"../../packages/**/*.ts",
 				"../../scripts/**",
-				"../../README.md"
+				"../../README.md",
+				"../../hierarchical-flow-fence.json"
 			]
 		},
 		"typecheck": {

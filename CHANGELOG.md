@@ -20,7 +20,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Fixed
 
 - Clear HLS editing preparation accepts supported paired CUE-OUT/CUE-IN annotations while retaining segment, source identity and timing validation.
-- Clip settings diagnose configured services on open and expire stale results; creation and recovery show safe actionable errors.
+- Clip settings diagnose configured services on open and expire stale results; creation and recovery explain failures, including story plans that cannot fit the requested length.
 - Manual clip creation prevents duplicate submissions and ignores late responses after leaving the page or losing permission.
 - Encoding status probes keep failed, missing and unknown observations unverified instead of suggesting deletion.
 - Bound FFmpeg decoder and scaler thread pools so media preparation and multi-clip rendering remain within process limits.
@@ -29,6 +29,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Offline media CI now requires real HLS preparation, normalization, rendering and reference-preservation fixtures; preview and font checks are also required in CI.
 - Remove an unused legacy subtitle translation prompt and obsolete completed implementation plans; align editing and gateway guides with current behavior.
+- Document the deployment setting for capability-checked, feasible Local LLM clip plans.
 
 ## [1.2.1] - 2026-11-10
 

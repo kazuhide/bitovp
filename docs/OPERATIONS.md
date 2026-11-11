@@ -168,6 +168,19 @@ Resource selection keeps the model, resolution and scored frames unchanged.
 `VMAF_SUBSAMPLE` remains a separate explicit quality tradeoff. Reports record the
 selected resources for each comparison in `params.localResources`.
 
+## Local clip planning
+
+For the feasible-plan workflow, set `BITOVP_LOCAL_STORY_CHOICE_ENABLED=1` in
+both Web and Worker deployment environments after the Gateway metadata probe
+verifies the five-stage `bitovp-semantic-stages-planning-v1` registry, including
+`LOCAL_STORY_CHOICE_V1`. Restart Web and Worker to load the setting. The Worker
+builds complete candidate edits that satisfy duration, source order and speech
+boundaries, and the Local LLM selects one of those edits. New draft requests and
+retries record this planner in their task parameters. A missing capability
+produces `LOCAL_STORY_ENGINE_UNAVAILABLE` before a new task is created.
+The [Gateway guide](../tools/local-semantic-gateway/README.md#検証済み編集候補から選ぶ-choice-stage)
+covers registry generation and capability checks.
+
 ## Cloud quality workers
 
 Configure profiles in `/settings/vmaf` only after preparing the provider's

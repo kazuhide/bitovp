@@ -442,3 +442,12 @@ test("an authored equality assertion prints its message, not the values it compa
 	assert(thrown.message.includes(password));
 	assert.deepEqual(failureLines(thrown), ["Reason: The gate wrote this"]);
 });
+
+test("a secret that repeats in a line is removed every time", () => {
+	assert.deepEqual(
+		publicLines(`SECRET-1234 SECRET-1234 SECRET-1234\n${url} then ${url}`, {
+			secrets: ["SECRET-1234", url, password],
+		}),
+		["[private] [private] [private]", "[private] then [private]"],
+	);
+});

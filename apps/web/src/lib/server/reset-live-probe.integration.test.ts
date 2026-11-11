@@ -52,37 +52,53 @@ postgres("tenant PostgreSQL reset", () => {
 		const tables = await admin.$queryRaw<
 			{ table_name: string }[]
 		>`SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'organizationId'`;
+		// `nullable` is a column of the reference that the fixture may clear.
 		const edges = await admin.$queryRaw<
-			{ child: string; parent: string }[]
-		>`SELECT child.relname AS child, parent.relname AS parent FROM pg_constraint c JOIN pg_class child ON child.oid=c.conrelid JOIN pg_class parent ON parent.oid=c.confrelid WHERE c.contype='f' AND NOT c.condeferrable AND c.confdeltype IN ('a','r')`;
+			{ child: string; parent: string; nullable: string | null }[]
+		>`SELECT child.relname AS child, parent.relname AS parent, (SELECT a.attname FROM unnest(c.conkey) AS k(attnum) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum WHERE NOT a.attnotnull AND a.attname <> 'organizationId' ORDER BY a.attname LIMIT 1) AS nullable FROM pg_constraint c JOIN pg_class child ON child.oid=c.conrelid JOIN pg_class parent ON parent.oid=c.confrelid WHERE c.contype='f' AND NOT c.condeferrable AND c.confdeltype IN ('a','r') ORDER BY child.relname, parent.relname, c.conname`;
 		const pending = new Set(
 			tables
 				.map(({ table_name }) => table_name)
 				.filter((table) => table !== "Membership"),
 		);
 		const ordered: string[] = [];
+		const cleared: { child: string; nullable: string }[] = [];
+		let restrictive = edges.filter((edge) => edge.child !== edge.parent);
 		while (pending.size) {
 			const next = [...pending].find(
 				(table) =>
-					!edges.some(
-						(edge) =>
-							edge.parent === table &&
-							edge.child !== table &&
-							pending.has(edge.child),
+					!restrictive.some(
+						(edge) => edge.parent === table && pending.has(edge.child),
 					),
 			);
-			if (!next)
+			if (next) {
+				ordered.push(next);
+				pending.delete(next);
+				continue;
+			}
+			// Tables that reference each other restrictively (a project and its
+			// current revision, a source and its render artifact) have no delete
+			// order until the fixture rows give up one nullable reference.
+			const release = restrictive.find(
+				(edge) =>
+					edge.nullable && pending.has(edge.child) && pending.has(edge.parent),
+			);
+			if (!release?.nullable)
 				throw new Error("Fixture cleanup has a restrictive foreign-key cycle");
-			ordered.push(next);
-			pending.delete(next);
+			cleared.push({ child: release.child, nullable: release.nullable });
+			restrictive = restrictive.filter((edge) => edge !== release);
 		}
+		const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`;
 		await admin.$transaction(async (tx) => {
 			await tx.$executeRawUnsafe("SET CONSTRAINTS ALL DEFERRED");
+			for (const { child, nullable } of cleared)
+				await tx.$executeRawUnsafe(
+					`UPDATE ${quoted(child)} SET ${quoted(nullable)} = NULL WHERE "organizationId" = ANY($1::uuid[])`,
+					organizationIds,
+				);
 			for (const table_name of ordered) {
 				await tx.$executeRawUnsafe(
-					'DELETE FROM "' +
-						table_name.replaceAll('"', '""') +
-						'" WHERE "organizationId" = ANY($1::uuid[])',
+					`DELETE FROM ${quoted(table_name)} WHERE "organizationId" = ANY($1::uuid[])`,
 					organizationIds,
 				);
 			}

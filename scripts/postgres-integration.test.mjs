@@ -120,13 +120,13 @@ test("accepts exactly the required files and all passed assertions", () => {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
 	// Editing adds DB/API/derivative/reset suites to the required census.
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 29);
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 32);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		195,
+		207,
 	);
 });
 

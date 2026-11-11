@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import {
 	type AppPrismaClient,
 	createPrismaClient,
@@ -12,9 +11,11 @@ import {
 	searchLibraryScenes,
 } from "./library-scene-search";
 
-// Opt in only with the private configuration of a disposable, restricted-role DB.
-const configFile = process.env.LIBRARY_SCENE_TEST_CONFIG;
-describe.runIf(Boolean(configFile))(
+// Runs with the PostgreSQL integration fixture: a disposable database, its
+// administrator and the restricted runtime role.
+const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
+const runtimeUrl = process.env.BITOVP_TENANT_TEST_APP_URL;
+describe.runIf(Boolean(adminUrl && runtimeUrl))(
 	"scene search PostgreSQL boundaries",
 	() => {
 		const orgA = randomUUID();
@@ -104,17 +105,17 @@ describe.runIf(Boolean(configFile))(
 		}
 
 		beforeAll(async () => {
-			const config = JSON.parse(readFileSync(configFile as string, "utf8"));
-			if (!/^bitovp_(mt|scene)_/.test(config.database)) {
+			const database = new URL(runtimeUrl as string).pathname.slice(1);
+			if (!/^bitovp_integration_[a-f0-9]{32}$/.test(database)) {
 				throw new Error("A disposable scene-test database is required");
 			}
-			admin = createPrismaClient(config.adminUrl);
-			runtime = createPrismaClient(config.runtimeUrl);
+			admin = createPrismaClient(adminUrl);
+			runtime = createPrismaClient(runtimeUrl);
 			const [role] = await runtime.$queryRaw<
 				{ database: string; rolsuper: boolean; rolbypassrls: boolean }[]
 			>`SELECT current_database() AS database, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`;
 			expect(role).toEqual({
-				database: config.database,
+				database,
 				rolsuper: false,
 				rolbypassrls: false,
 			});

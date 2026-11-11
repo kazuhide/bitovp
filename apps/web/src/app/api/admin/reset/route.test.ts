@@ -1079,7 +1079,7 @@ describe("GET /api/admin/reset (the preview)", () => {
 		// reset.ts:686 is the idiom users/[id] and setup were modelled on;
 		// its own isolation option was never pinned either. All three now
 		// have a from-mock discriminator; the two-connection race proof stays
-		// a PROBE_DATABASE_URL integration deferral.
+		// deferred to a PostgreSQL integration test.
 		await POST(postRequest({ confirm: "RESET" }));
 		expect(txOptions?.isolationLevel).toBe("Serializable");
 	});

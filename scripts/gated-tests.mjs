@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * A test that needs PostgreSQL, FFmpeg or Redis skips itself where that is
- * missing, and a run with skipped tests still passes. Two commands keep such a
- * test from never running:
+ * missing, and a run with skipped tests still passes. Three commands keep such
+ * a test from never running:
  *
  *   node scripts/gated-tests.mjs --native-media
  *     Runs the tests that drive real FFmpeg and requires each one to run and

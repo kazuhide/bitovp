@@ -14,13 +14,16 @@ import {
 } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 import {
+	asFailure,
+	atStep,
 	failureLines,
 	GateFailure,
 	inStep,
+	isEntryPoint,
 	outputTail,
+	withLaterFailure,
 } from "./gate-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -210,6 +213,8 @@ export function reportProblems(report, group, root) {
 			problems.push(
 				`${label}: ${JSON.stringify(report?.[key])}, required ${total}`,
 			);
+	if (!Array.isArray(report?.testResults))
+		problems.push("the report lists no test files");
 	const seen = new Set();
 	for (const result of Array.isArray(report?.testResults)
 		? report.testResults
@@ -260,12 +265,12 @@ export function reportProblems(report, group, root) {
 	return problems;
 }
 
-export function validateReport(report, group, root) {
+export function validateReport(report, group, root, diagnostics = "") {
 	const problems = reportProblems(report, group, root);
 	if (problems.length)
 		throw new GateFailure(
 			"PostgreSQL tests must have no failures, skips or unfinished cases",
-			{ details: problems },
+			{ details: problems, diagnostics },
 		);
 }
 
@@ -277,7 +282,7 @@ const terminate = (child) => {
 		child.kill("SIGTERM");
 	}
 };
-async function command(executable, args, options) {
+export async function command(executable, args, options) {
 	return new Promise((accept, reject) => {
 		const child = spawn(executable, args, {
 			cwd: options.cwd,
@@ -286,7 +291,6 @@ async function command(executable, args, options) {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let output = "";
-		const printed = outputTail(16 * 1024);
 		const errors = outputTail();
 		const decoder = new StringDecoder("utf8");
 		let expired = "";
@@ -309,9 +313,7 @@ async function command(executable, args, options) {
 		);
 		children.set(child, () => stop("was cancelled"));
 		child.stdout.on("data", (chunk) => {
-			const text = chunk.toString();
-			output += text;
-			printed.add(text);
+			output += chunk.toString();
 			if (output.length > 8_000_000) stop("exceeded its output limit");
 		});
 		// Raw child diagnostics can contain connection URLs. Never forward them
@@ -327,15 +329,17 @@ async function command(executable, args, options) {
 			clearTimeout(timer);
 			clearTimeout(killTimer);
 			children.delete(child);
-			if (code === 0 && !expired) accept(output.trim());
-			else
-				reject(
-					new GateFailure("PostgreSQL integration command failed", {
-						details: expired ? [`The command ${expired}`] : [],
-						diagnostics:
-							errors.text().trim() === "" ? printed.text() : errors.text(),
-					}),
-				);
+			if (code === 0 && !expired) return accept(output.trim());
+			// A command that wrote no diagnostics is explained by the end of its output.
+			const printed = outputTail(16 * 1024);
+			printed.add(output);
+			reject(
+				new GateFailure("PostgreSQL integration command failed", {
+					details: expired ? [`The command ${expired}`] : [],
+					diagnostics:
+						errors.text().trim() === "" ? printed.text() : errors.text(),
+				}),
+			);
 		});
 	});
 }
@@ -389,6 +393,7 @@ export async function runIntegrationTests(
 			step = `running ${group.workspace} PostgreSQL tests`;
 			const output = join(directory, `results-${index}.json`);
 			assert(!existsSync(output), "PostgreSQL report already exists");
+			// A rejection without an error is still a failure.
 			let failure;
 			try {
 				await execute(
@@ -407,7 +412,7 @@ export async function runIntegrationTests(
 					{ cwd: root, env: clean },
 				);
 			} catch (error) {
-				failure = error;
+				failure = asFailure(error);
 			}
 			// Vitest writes its report for a failed run too; it names what failed.
 			let report;
@@ -419,20 +424,20 @@ export async function runIntegrationTests(
 					new GateFailure("Vitest did not write a readable PostgreSQL report")
 				);
 			}
-			const problems = reportProblems(report, group, root);
-			if (problems.length)
-				throw new GateFailure(
-					"PostgreSQL tests must have no failures, skips or unfinished cases",
-					{ details: problems, diagnostics: failure?.diagnostics },
-				);
+			validateReport(
+				report,
+				group,
+				root,
+				failure instanceof GateFailure ? failure.diagnostics : "",
+			);
+			// A complete report does not excuse a command that failed.
 			if (failure) throw failure;
 			notify(
 				`${group.workspace}: ${Object.keys(group.files).length} PostgreSQL files, ${Object.values(group.files).reduce((sum, count) => sum + count, 0)} passed, 0 skipped`,
 			);
 		}
 	} catch (error) {
-		if (error instanceof Error) error.step ??= step;
-		throw error;
+		throw atStep(error, step);
 	}
 }
 
@@ -524,10 +529,16 @@ const inside = (root, path) => {
 // Fixture credentials: CI masks them in its log and failure reports redact them.
 const secrets = new Set();
 const mask = (env, values) => {
-	for (const value of new Set(values)) {
-		secrets.add(value);
-		if (env.GITHUB_ACTIONS === "true") console.log(`::add-mask::${value}`);
-	}
+	const fresh = [...new Set(values)];
+	for (const value of fresh) secrets.add(value);
+	// A line break inside a value would end the mask command early and let the
+	// rest of the value start a line of its own.
+	assert(
+		fresh.every((value) => !/[\u0000-\u001f\u007f-\u009f]/.test(value)),
+		"Fixture credentials must not contain control characters",
+	);
+	if (env.GITHUB_ACTIONS === "true")
+		for (const value of fresh) console.log(`::add-mask::${value}`);
 };
 
 /** The public explanation of a failed run. */
@@ -571,6 +582,7 @@ export async function runFixture(
 	let stateWritten = false;
 	// Names the part that failed in the final report.
 	let step = "creating private fixture files";
+	let failure;
 	writeFileSync(join(directory, ".owner"), id, { mode: 0o600, flag: "wx" });
 	try {
 		writeFileSync(stateFile, JSON.stringify(state), {
@@ -641,7 +653,7 @@ export async function runFixture(
 		}
 		if (!ready)
 			throw new GateFailure("PostgreSQL fixture did not become ready", {
-				diagnostics: refusal?.diagnostics,
+				diagnostics: refusal instanceof GateFailure ? refusal.diagnostics : "",
 			});
 		const adminUrl = `postgresql://bitovp_fixture_admin:${password}@${binding}/bitovp_integration_${id}?schema=public`;
 		mask(env, [adminUrl]);
@@ -691,15 +703,20 @@ export async function runFixture(
 			execute,
 		);
 	} catch (error) {
-		if (error instanceof Error) error.step ??= step;
-		throw error;
-	} finally {
+		failure = atStep(asFailure(error), step);
+	}
+	// Cleanup runs on every path. When it fails too, the report keeps the first
+	// failure and adds the cleanup failure after it.
+	try {
 		await inStep("removing the PostgreSQL fixture and private files", () =>
 			cleanupFixture(state, cleanupExecute, env),
 		);
-		if (stateWritten) rmSync(stateFile, { force: true });
-		notify("Dedicated PostgreSQL fixture and private files removed");
+	} catch (error) {
+		throw failure ? withLaterFailure(failure, error) : error;
 	}
+	if (stateWritten) rmSync(stateFile, { force: true });
+	notify("Dedicated PostgreSQL fixture and private files removed");
+	if (failure) throw failure;
 }
 
 async function main(signal) {
@@ -729,11 +746,7 @@ async function main(signal) {
 	}
 }
 
-// The real path: a symlinked invocation must run, not exit 0 having done nothing.
-if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
-) {
+if (isEntryPoint(import.meta.url)) {
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {

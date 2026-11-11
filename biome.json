@@ -45,6 +45,7 @@
 			"scripts/nonpaid-submit-proof*.mjs",
 			"scripts/database-restore-proof*.mjs",
 			"scripts/media-smoke*.mjs",
+			"scripts/gate-report*.mjs",
 			"scripts/editing-preview*.mjs",
 			"scripts/site-smoke.mjs",
 			"scripts/guide-smoke.mjs",

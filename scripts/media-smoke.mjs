@@ -14,7 +14,16 @@ import {
 } from "node:fs";
 import { open } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { StringDecoder } from "node:string_decoder";
+import {
+	asFailure,
+	atStep,
+	failureLines,
+	GateFailure,
+	isEntryPoint,
+	outputTail,
+	withLaterFailure,
+} from "./gate-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
@@ -24,6 +33,17 @@ const SOURCE_SHA =
 const SOURCE_URL =
 	"https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4.zip";
 const MAX_BYTES = 90 * 1024 * 1024;
+// Required tests per fixture, subtests included, in execution order. A fixture
+// that is missing, repeated, skipped in part or short of its count fails the
+// media check; a deliberate change to a fixture's tests updates its count here.
+export const FIXTURES = Object.freeze({
+	"src/library-editing/hls-preparation.media.ts": 3,
+	"src/library-editing/normalization.media.ts": 8,
+	"src/library-editing/normalization-untagged-color.media.ts": 1,
+	"src/library-editing/render.media.ts": 5,
+	"src/library-editing/render-movie-clock.media.ts": 17,
+	"src/vmaf/reference-preparation.media.ts": 2,
+});
 const resourceName = (id) => `bitovp-media-${id}`;
 const inside = (parent, path) => {
 	const child = relative(parent, path);
@@ -70,8 +90,10 @@ export async function command(binary, args, options = {}) {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let output = "";
+		const diagnostics = outputTail();
+		const decoder = new StringDecoder("utf8");
 		let bytes = 0;
-		let stopped = false;
+		let stopped = "";
 		let cancelled = false;
 		let killTimer;
 		const kill = (signal) => {
@@ -81,16 +103,20 @@ export async function command(binary, args, options = {}) {
 				child.kill(signal);
 			}
 		};
-		const stop = () => {
+		const stop = (reason) => {
 			if (stopped) return;
-			stopped = true;
+			stopped = reason;
 			kill("SIGTERM");
 			killTimer ??= setTimeout(() => kill("SIGKILL"), 5_000);
 		};
-		const timer = setTimeout(stop, options.timeout ?? 60_000);
+		const limit = options.timeout ?? 60_000;
+		const timer = setTimeout(
+			() => stop(`was stopped at its ${limit / 1000} second limit`),
+			limit,
+		);
 		const abort = () => {
 			cancelled = true;
-			stop();
+			stop("was cancelled");
 		};
 		options.signal?.addEventListener("abort", abort, { once: true });
 		for (const [stream, capture] of [
@@ -99,10 +125,15 @@ export async function command(binary, args, options = {}) {
 		])
 			stream.on("data", (chunk) => {
 				bytes += chunk.length;
-				if (bytes > 32 * 1024 * 1024) stop();
+				if (bytes > 32 * 1024 * 1024) stop("exceeded its output limit");
 				if (capture && options.capture !== false) {
 					output += chunk.toString();
-					if (output.length > 1024 * 1024) stop();
+					if (output.length > 1024 * 1024) stop("exceeded its result limit");
+				}
+				if (!capture) {
+					const text = decoder.write(chunk);
+					options.diagnostics?.(text);
+					diagnostics.add(text);
 				}
 			});
 		const finish = (code) => {
@@ -110,12 +141,18 @@ export async function command(binary, args, options = {}) {
 			clearTimeout(killTimer);
 			options.signal?.removeEventListener("abort", abort);
 			if (code === 0 && !stopped) accept(output.trim());
+			// The message stays fixed. The end of the child's diagnostics travels
+			// beside it and is printed only by the final failure report.
 			else
 				reject(
-					new Error(
+					new GateFailure(
 						cancelled
 							? "Media validation command cancelled"
 							: "Media validation command failed",
+						{
+							details: stopped && !cancelled ? [`The command ${stopped}`] : [],
+							diagnostics: diagnostics.text(),
+						},
 					),
 				);
 		};
@@ -185,28 +222,47 @@ export async function extractSource(
 	});
 }
 
+/** Fetches the official archive; `request` is replaceable for tests. */
+export async function downloadArchive(archive, signal, request = fetch) {
+	try {
+		const response = await request(SOURCE_URL, {
+			redirect: "error",
+			signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+		});
+		assert(
+			response.ok && response.body,
+			`Official source download failed: HTTP ${response.status}`,
+		);
+		assert(
+			Number(response.headers.get("content-length") ?? 0) <= MAX_BYTES,
+			"Official source archive is too large",
+		);
+		const file = await open(archive, "wx", 0o600);
+		let bytes = 0;
+		try {
+			for await (const chunk of response.body) {
+				bytes += chunk.length;
+				assert(bytes <= MAX_BYTES, "Official source archive is too large");
+				await file.write(chunk);
+			}
+		} finally {
+			await file.close();
+		}
+	} catch (error) {
+		if (error instanceof assert.AssertionError) throw error;
+		// A network or file failure states its kind in a code, not a fixed message.
+		const kind = [error?.cause?.code, error?.code, error?.name].find(
+			(value) => typeof value === "string" && value !== "",
+		);
+		throw new GateFailure("Official source download failed", {
+			details: [kind ?? "unknown failure"],
+		});
+	}
+}
+
 async function downloadSource(directory, signal) {
 	const archive = join(directory, "source.zip");
-	const response = await fetch(SOURCE_URL, {
-		redirect: "error",
-		signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
-	});
-	assert(response.ok && response.body, "Official source download failed");
-	assert(
-		Number(response.headers.get("content-length") ?? 0) <= MAX_BYTES,
-		"Official source archive is too large",
-	);
-	const file = await open(archive, "wx", 0o600);
-	let bytes = 0;
-	try {
-		for await (const chunk of response.body) {
-			bytes += chunk.length;
-			assert(bytes <= MAX_BYTES, "Official source archive is too large");
-			await file.write(chunk);
-		}
-	} finally {
-		await file.close();
-	}
+	await downloadArchive(archive, signal);
 	const source = join(directory, "source.mp4");
 	await extractSource(archive, source, command, process.env, signal);
 	return source;
@@ -256,6 +312,108 @@ export function containerArguments(state, source) {
 	];
 }
 
+const COUNTS = ["tests", "passed", "failed", "cancelled", "skipped", "todo"];
+// What a fixture's reporter must print: the test runner's own counts, and how
+// many files declared no test (the runner counts such a file as a passed test).
+const TOTALS = [...COUNTS, "emptyFiles"];
+
+/**
+ * Accounts for every media fixture from the container log: the shell loop
+ * names each fixture before it starts and the fixture's reporter prints the
+ * test runner's own totals when it ends.
+ */
+export function fixtureAccount(required = FIXTURES) {
+	const runs = [];
+	let pending = "";
+	let unowned = 0;
+	const read = (line) => {
+		const fixture = /^media fixture: (\S+)$/.exec(line);
+		if (fixture) runs.push({ name: fixture[1], reports: 0 });
+		const totals = /^media fixture totals: (\{.*\})$/.exec(line);
+		if (!totals) return;
+		const run = runs.at(-1);
+		if (!run) {
+			unowned += 1;
+			return;
+		}
+		// One process reports once. The first totals stand; a second report
+		// fails the fixture instead of replacing them.
+		run.reports += 1;
+		if (run.reports > 1) return;
+		try {
+			const counts = JSON.parse(totals[1]);
+			if (TOTALS.every((key) => Number.isSafeInteger(counts?.[key])))
+				run.counts = counts;
+		} catch {}
+	};
+	const flush = () => {
+		read(pending.trimEnd());
+		pending = "";
+	};
+	const describe = ({ name, counts, reports }) => {
+		if (!counts)
+			return `${name}: ${reports ? "reported unreadable totals" : "did not finish"}`;
+		const others = ["failed", "cancelled", "skipped", "todo"]
+			.filter((key) => counts[key] !== 0)
+			.map((key) => `, ${counts[key]} ${key}`);
+		if (counts.emptyFiles !== 0) others.push(", the file declares no test");
+		if (reports !== 1) others.push(`, totals reported ${reports} times`);
+		return `${name}: ${counts.passed} of ${counts.tests} tests passed${others.join("")}`;
+	};
+	return {
+		accept(text) {
+			const lines = (pending + text).split("\n");
+			pending = lines.pop();
+			for (const line of lines) read(line.trimEnd());
+		},
+		/** What ran before a failure, for the failure report. */
+		progress() {
+			flush();
+			const started = new Set(runs.map((run) => run.name));
+			const waiting = Object.keys(required).filter(
+				(name) => !started.has(name),
+			);
+			return [
+				...runs.map(describe),
+				...(waiting.length ? [`not started: ${waiting.join(", ")}`] : []),
+			];
+		},
+		/** Throws unless every required fixture ran once and passed all its tests. */
+		finish() {
+			flush();
+			const problems = [];
+			for (const [name, tests] of Object.entries(required)) {
+				const matches = runs.filter((run) => run.name === name);
+				if (matches.length !== 1) {
+					problems.push(`${name}: ran ${matches.length} times, required once`);
+					continue;
+				}
+				const { counts, reports } = matches[0];
+				const complete =
+					reports === 1 &&
+					counts?.tests === tests &&
+					counts.passed === tests &&
+					TOTALS.slice(2).every((key) => counts[key] === 0);
+				if (!complete)
+					problems.push(`${describe(matches[0])}; ${tests} passed required`);
+			}
+			for (const { name } of runs)
+				if (!Object.hasOwn(required, name))
+					problems.push(`${name}: not a required media fixture`);
+			if (unowned)
+				problems.push(`totals reported before a fixture was named: ${unowned}`);
+			if (problems.length)
+				throw new GateFailure("Media fixtures did not all run and pass", {
+					details: problems,
+				});
+			return {
+				files: runs.length,
+				tests: Object.values(required).reduce((sum, count) => sum + count, 0),
+			};
+		},
+	};
+}
+
 export function validateSummary(raw) {
 	assert(
 		typeof raw === "string" && raw.length <= 10_000,
@@ -273,6 +431,7 @@ export function validateSummary(raw) {
 			"vmafFrames",
 			"means",
 		].sort(),
+		"Unexpected media summary fields",
 	);
 	for (const [key, expected] of Object.entries({
 		version: 1,
@@ -282,12 +441,16 @@ export function validateSummary(raw) {
 		decodedPresentations: 3,
 		vmafFrames: 240,
 	}))
-		assert.equal(summary[key], expected, "Incomplete media validation");
-	assert.deepEqual(Object.keys(summary.means).sort(), [
-		"degraded",
-		"encoded",
-		"self",
-	]);
+		assert.equal(
+			summary[key],
+			expected,
+			`Incomplete media validation: ${key} must be ${expected}`,
+		);
+	assert.deepEqual(
+		Object.keys(summary.means).sort(),
+		["degraded", "encoded", "self"],
+		"Unexpected VMAF comparisons in the media summary",
+	);
 	assert(
 		Object.values(summary.means).every(
 			(value) =>
@@ -296,6 +459,7 @@ export function validateSummary(raw) {
 				value >= 0 &&
 				value <= 100,
 		),
+		"VMAF means must be numbers from 0 to 100",
 	);
 	return summary;
 }
@@ -403,6 +567,8 @@ export async function runFixture(
 		signal = new AbortController().signal,
 		env = process.env,
 		notify = console.log,
+		// Replaceable for tests; the official source cannot be reproduced there.
+		verify = verifySource,
 	} = {},
 	execute = command,
 ) {
@@ -434,6 +600,9 @@ export async function runFixture(
 	const save = () =>
 		writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 });
 	let saved = false;
+	// Names the part that failed in the final report.
+	let step = "creating private scratch files";
+	let failure;
 	try {
 		writeFileSync(stateFile, JSON.stringify(state), {
 			mode: 0o600,
@@ -445,13 +614,15 @@ export async function runFixture(
 			JSON.stringify(dockerConfiguration()),
 			{ mode: 0o600, flag: "wx" },
 		);
+		step = "verifying the official source";
 		notify("Media check: verifying the official source");
-		const asset = await verifySource(
+		const asset = await verify(
 			source ?? (await downloadSource(directory, signal)),
 		);
 		assert(!signal.aborted, "Media check cancelled");
 		state.imageRequested = true;
 		save();
+		step = "building the worker image";
 		notify("Media check: building the worker image");
 		await docker(
 			[
@@ -483,28 +654,57 @@ export async function runFixture(
 		notify(`Worker image built: ${imageId}`);
 		state.containerRequested = true;
 		save();
+		step = "running the media fixtures, then packaging and scoring offline";
 		notify(
 			"Media check: testing preparation/rendering, then packaging and scoring offline",
 		);
-		const summary = validateSummary(
-			await docker(containerArguments(state, asset), clean, execute, {
+		const account = fixtureAccount();
+		let raw;
+		try {
+			raw = await docker(containerArguments(state, asset), clean, execute, {
 				timeout: 420_000,
 				signal,
-			}),
-		);
+				diagnostics: account.accept,
+			});
+		} catch (error) {
+			if (error instanceof GateFailure)
+				error.details = [...error.details, ...account.progress()];
+			throw error;
+		}
+		step = "checking the media fixture totals";
+		const fixtures = account.finish();
+		step = "checking the packaging and scoring summary";
+		const summary = validateSummary(raw);
 		assert(!signal.aborted, "Media check cancelled");
-		await verifySource(asset);
+		step = "verifying that the source is unchanged";
+		await verify(asset);
+		notify(
+			`Media fixtures passed: ${fixtures.files} files, ${fixtures.tests} tests, 0 skipped`,
+		);
 		notify(
 			`Media passed: ${summary.videoFrames} video frames; HLS/DASH each ${summary.hlsSegments} x 48 frames; ${summary.decodedPresentations} complete audio/video decodes; ${summary.vmafFrames} VMAF frames per comparison`,
 		);
 		notify(
 			`VMAF means: self=${summary.means.self.toFixed(3)}, encoded=${summary.means.encoded.toFixed(3)}, degraded=${summary.means.degraded.toFixed(3)}`,
 		);
-	} finally {
-		await cleanupFixture(state, execute, env);
-		if (saved) rmSync(stateFile, { force: true });
-		notify("Media fixture: owned image, container and scratch files removed");
+	} catch (error) {
+		failure = atStep(asFailure(error), step);
 	}
+	// Cleanup runs on every path. When it fails too, the report keeps the first
+	// failure and adds the cleanup failure after it.
+	try {
+		await cleanupFixture(state, execute, env);
+	} catch (error) {
+		// A cleanup can reject with anything; the report still names its step.
+		const later = atStep(
+			asFailure(error),
+			"removing the owned image, container and scratch files",
+		);
+		throw failure ? withLaterFailure(failure, later) : later;
+	}
+	if (saved) rmSync(stateFile, { force: true });
+	notify("Media fixture: owned image, container and scratch files removed");
+	if (failure) throw failure;
 }
 
 async function main(signal) {
@@ -540,10 +740,7 @@ async function main(signal) {
 		});
 }
 
-if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+if (isEntryPoint(import.meta.url)) {
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {
@@ -551,10 +748,11 @@ if (
 			controller.abort();
 			process.exitCode = 1;
 		});
-	main(controller.signal).catch(() => {
+	main(controller.signal).catch((error) => {
 		console.error(
 			"Offline media validation failed; source, media checks or owned cleanup did not complete.",
 		);
+		for (const line of failureLines(error)) console.error(line);
 		process.exitCode = 1;
 	});
 }

@@ -8,14 +8,18 @@ import {
 	realpathSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { GateFailure } from "./gate-report.mjs";
 import {
 	childEnvironment,
 	cleanupFixture,
+	command,
+	failureReport,
 	GROUPS,
 	runFixture,
 	runIntegrationTests,
@@ -196,6 +200,154 @@ for (const [name, mutate] of [
 		assert.throws(() => validateReport(value, GROUPS[0], root));
 	});
 }
+
+test("a rejected report names each file, its counts and every test that did not pass", () => {
+	const group = GROUPS[0];
+	const files = Object.keys(group.files);
+	const value = report(group);
+	value.success = false;
+	value.numFailedTests = 1;
+	value.numPendingTests = 1;
+	value.numPassedTests -= 2;
+	value.testResults[1].status = "failed";
+	value.testResults[1].assertionResults[0] = {
+		status: "failed",
+		fullName: "tenant database > isolates organisations",
+		failureMessages: [
+			`AssertionError: expected ${urls.BITOVP_TENANT_TEST_APP_URL} to answer\n    at first.ts:1:1\n    at file:///repo/node_modules/vitest/runner.js:1:1\n    at new Promise (<anonymous>)\n${"    at deeper.ts:1:1\n".repeat(30)}`,
+		],
+	};
+	value.testResults[1].assertionResults[1] = {
+		status: "skipped",
+		fullName: "tenant database > needs a second role",
+		failureMessages: [],
+	};
+	value.testResults[2].status = "failed";
+	value.testResults[2].message = "Error: Cannot find module './missing'";
+	value.testResults[2].assertionResults = [];
+	value.testResults.pop();
+	let error;
+	assert.throws(
+		() => validateReport(value, group, root),
+		(thrown) => {
+			error = thrown;
+			return true;
+		},
+	);
+	const total = Object.values(group.files).reduce((a, b) => a + b, 0);
+	assert.deepEqual(
+		error.details.map((detail) => detail.split("\n")[0]),
+		[
+			"Vitest reported a failed run",
+			"failed tests: 1, required 0",
+			"skipped tests: 1, required 0",
+			`tests passed: ${total - 2}, required ${total}`,
+			`${files[1]}: ${group.files[files[1]] - 2} of ${group.files[files[1]]} tests passed, ${group.files[files[1]]} required; file status "failed"`,
+			'"failed": tenant database > isolates organisations',
+			'"skipped": tenant database > needs a second role',
+			`${files[2]}: 0 of 0 tests passed, ${group.files[files[2]]} required; file status "failed"`,
+			`${files[2]} did not load:`,
+			`${files.at(-1)}: not run`,
+		],
+	);
+	// A failure message keeps its first lines and loses its credentials.
+	const lines = failureReport(error);
+	assert.equal(
+		lines[0],
+		"Reason: PostgreSQL tests must have no failures, skips or unfinished cases",
+	);
+	assert(
+		lines.includes(
+			`    | AssertionError: expected postgresql://[private]@127.0.0.1:15432/${database}?schema=public to answer`,
+		),
+	);
+	assert(lines.includes("    | Error: Cannot find module './missing'"));
+	// Frames inside dependencies are dropped and the rest is kept short.
+	assert(lines.includes("    |     at first.ts:1:1"));
+	assert.equal(lines.filter((line) => line.includes("deeper.ts")).length, 6);
+	assert(!lines.some((line) => /node_modules|anonymous/.test(line)));
+	assert(!lines.join("\n").includes("random-app"));
+});
+
+for (const [name, wroteReport, failed, expected] of [
+	[
+		"a failed run that wrote its report is explained from the report",
+		true,
+		true,
+		[
+			"Step: running @bitovp/db PostgreSQL tests",
+			"Reason: PostgreSQL tests must have no failures, skips or unfinished cases",
+			"  - Vitest reported a failed run",
+			"  - failed tests: 1, required 0",
+			"  - tests passed: 69, required 70",
+			'  - src/runtime-role.integration.test.ts: 0 of 1 tests passed, 1 required; file status "failed"',
+			'  - "failed": runtime role > cannot create tables',
+			"    | Error: permission was granted",
+			"Last 1 lines of the failed command:",
+			`  | stderr mentioned postgresql://[private]@127.0.0.1:15432/${database}?schema=public`,
+		],
+	],
+	[
+		"a failed run without a report keeps its own explanation",
+		false,
+		true,
+		[
+			"Step: running @bitovp/db PostgreSQL tests",
+			"Reason: PostgreSQL integration command failed",
+			"Last 1 lines of the failed command:",
+			`  | stderr mentioned postgresql://[private]@127.0.0.1:15432/${database}?schema=public`,
+		],
+	],
+	[
+		"a successful run without a report is not accepted",
+		false,
+		false,
+		[
+			"Step: running @bitovp/db PostgreSQL tests",
+			"Reason: Vitest did not write a readable PostgreSQL report",
+		],
+	],
+])
+	test(name, async () => {
+		const directory = mkdtempSync(join(tmpdir(), "bitovp-pg-explained-"));
+		try {
+			await assert.rejects(
+				runIntegrationTests(
+					{ root, directory, env: urls, notify: () => {} },
+					async (_command, args) => {
+						if (wroteReport) {
+							const value = report(GROUPS[0]);
+							value.success = false;
+							value.numFailedTests = 1;
+							value.numPassedTests -= 1;
+							value.testResults[0].status = "failed";
+							value.testResults[0].assertionResults[0] = {
+								status: "failed",
+								fullName: "runtime role > cannot create tables",
+								failureMessages: ["Error: permission was granted"],
+							};
+							writeFileSync(
+								args
+									.find((arg) => arg.startsWith("--outputFile="))
+									.slice("--outputFile=".length),
+								JSON.stringify(value),
+							);
+						}
+						if (failed)
+							throw new GateFailure("PostgreSQL integration command failed", {
+								diagnostics: `stderr mentioned ${urls.BITOVP_TENANT_TEST_ADMIN_URL}\n`,
+							});
+					},
+				),
+				(error) => {
+					assert.deepEqual(failureReport(error), expected);
+					return true;
+				},
+			);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
 
 test("missing source files fail before launching Vitest", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "bitovp-pg-missing-"));
@@ -441,6 +593,16 @@ for (const cancellation of [false, true])
 					},
 					execute,
 				),
+				(error) => {
+					// A foreign message can hold a private URL, so only its kind is shown.
+					assert.deepEqual(failureReport(error), [
+						"Step: preparing the runtime database role",
+						cancellation
+							? "Reason: PostgreSQL integration was cancelled"
+							: "Reason: Error (message withheld)",
+					]);
+					return true;
+				},
 			);
 			const expectedImage = readFileSync(
 				join(root, "docker-compose.yml"),
@@ -534,6 +696,96 @@ test("CI cleanup command removes credential-bearing child temporary directories"
 	}
 });
 
+test("a failed run prints its step and redacted child output, never its credentials", () => {
+	const parent = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-pg-report-test-")),
+	);
+	try {
+		// The container cannot start, and the failing command leaks what a careless
+		// child could: the credential file, a URL and forged CI commands.
+		writeFileSync(
+			join(parent, "docker"),
+			`#!/usr/bin/env node
+const fs = require('node:fs');
+const a = process.argv.slice(4);
+if (a[0] === 'run') {
+	const credentials = fs.readFileSync(a[a.indexOf('--env-file') + 1], 'utf8');
+	const password = /POSTGRES_PASSWORD=(.+)/.exec(credentials)[1];
+	console.error('::error::forged annotation');
+	console.error(credentials);
+	console.error('psql: postgresql://bitovp_fixture_admin:' + password + '@127.0.0.1:15432/db refused');
+	console.error('\\u001b[31mno response\\u001b[0m ##[error]forged');
+	process.exit(125);
+}
+else if (a[0] === 'inspect') process.exit(1);
+else if (a[0] !== 'ps') process.exit(2);
+`,
+			{ mode: 0o700 },
+		);
+		const result = spawnSync(
+			process.execPath,
+			[join(root, "scripts/postgres-integration.mjs")],
+			{
+				env: {
+					...childEnvironment(process.env),
+					PATH: `${parent}:${process.env.PATH}`,
+					GITHUB_ACTIONS: "true",
+				},
+				encoding: "utf8",
+				timeout: 60_000,
+			},
+		);
+		assert.equal(result.status, 1);
+		const password = /^::add-mask::(.+)$/m.exec(result.stdout)?.[1];
+		assert.match(password, /^[A-Za-z0-9_-]{40,}$/);
+		assert(!result.stderr.includes(password));
+		const lines = result.stderr.trimEnd().split("\n");
+		assert.deepEqual(lines.slice(0, 4), [
+			"PostgreSQL integration failed; required tests or fixture cleanup did not complete.",
+			"Step: starting the PostgreSQL container",
+			"Reason: PostgreSQL integration command failed",
+			"Last 7 lines of the failed command:",
+		]);
+		assert.deepEqual(
+			lines.slice(4).map((line) => line.replace(/_[a-f0-9]{32}$/, "_ID")),
+			[
+				"  | ::error::forged annotation",
+				"  | POSTGRES_USER=bitovp_fixture_admin",
+				"  | POSTGRES_PASSWORD=[private]",
+				"  | POSTGRES_DB=bitovp_integration_ID",
+				"  | POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256",
+				"  | psql: postgresql://[private]@127.0.0.1:15432/db refused",
+				"  | no response ## [error]forged",
+			],
+		);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("the runner started through a symlinked path still runs and reports its failure", () => {
+	const directory = mkdtempSync(join(tmpdir(), "bitovp-pg-symlink-test-"));
+	try {
+		symlinkSync(join(root, "scripts"), join(directory, "linked"));
+		const result = spawnSync(
+			process.execPath,
+			[join(directory, "linked", "postgres-integration.mjs"), "--unknown"],
+			{
+				env: childEnvironment(process.env),
+				encoding: "utf8",
+				timeout: 10_000,
+			},
+		);
+		assert.equal(result.status, 1);
+		assert.deepEqual(result.stderr.trimEnd().split("\n"), [
+			"PostgreSQL integration failed; required tests or fixture cleanup did not complete.",
+			"Reason: Unknown PostgreSQL integration option",
+		]);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 for (const labels of [null, {}, { "io.bitovp.postgres-test": "another-owner" }])
 	test(`cleanup refuses missing or different ownership labels: ${JSON.stringify(labels)}`, async () => {
 		await assert.rejects(
@@ -544,3 +796,500 @@ for (const labels of [null, {}, { "io.bitovp.postgres-test": "another-owner" }])
 			/ownership/,
 		);
 	});
+
+test("a failed Vitest command is not accepted even when its report is complete and green", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "bitovp-pg-green-failure-"));
+	try {
+		await assert.rejects(
+			runIntegrationTests(
+				{ root, directory, env: urls, notify: () => {} },
+				async (_command, args) => {
+					writeFileSync(
+						args
+							.find((arg) => arg.startsWith("--outputFile="))
+							.slice("--outputFile=".length),
+						JSON.stringify(report(GROUPS[0])),
+					);
+					throw new GateFailure("PostgreSQL integration command failed", {
+						diagnostics: "Unhandled rejection after the last test\n",
+					});
+				},
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: running @bitovp/db PostgreSQL tests",
+					"Reason: PostgreSQL integration command failed",
+					"Last 1 lines of the failed command:",
+					"  | Unhandled rejection after the last test",
+				]);
+				return true;
+			},
+		);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+// A whole fixture run against fakes: the container starts and the runtime role
+// is prepared; `vitest` and `inspect` decide how the tests and the cleanup end.
+const runtimePassword = "runtime/pass+word@0123456789";
+const fakeFixture = ({
+	vitest,
+	inspect,
+	remove = () => "",
+	password = runtimePassword,
+}) => {
+	const seen = {};
+	return async (command, args) => {
+		if (command === "docker") {
+			const dockerArgs = args.slice(2);
+			if (dockerArgs[0] === "port") return "127.0.0.1:15432";
+			if (dockerArgs[0] === "inspect") return inspect(dockerArgs.at(-1));
+			if (dockerArgs[0] === "rm") return remove();
+			return "";
+		}
+		if (args.includes("db:runtime:prepare")) {
+			seen.adminUrl = /^DATABASE_URL=(.+)$/m.exec(
+				readFileSync(args[args.indexOf("--admin-env") + 1], "utf8"),
+			)[1];
+			const app = new URL(seen.adminUrl);
+			app.username = "bitovp_runtime";
+			app.password = password;
+			seen.appUrl = app.toString();
+			writeFileSync(
+				args[args.indexOf("--app-env") + 1],
+				`DATABASE_URL=${seen.appUrl}\n`,
+				{ mode: 0o600 },
+			);
+			return "";
+		}
+		if (args.includes("db:migrate:deploy")) return "";
+		return vitest(args, seen);
+	};
+};
+const ownLabel = (name) =>
+	JSON.stringify({
+		"io.bitovp.postgres-test": name.slice("bitovp-postgres-".length),
+	});
+
+test("the runtime role's URL and password are redacted from a failed test run", async () => {
+	const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-runtime-secret-"));
+	try {
+		await assert.rejects(
+			runFixture(
+				{
+					root,
+					statePath: join(parent, "fixture.json"),
+					notify: () => {},
+					env: { PATH: process.env.PATH },
+				},
+				fakeFixture({
+					inspect: ownLabel,
+					vitest: (_args, { adminUrl, appUrl }) => {
+						throw new GateFailure("PostgreSQL integration command failed", {
+							diagnostics: [
+								`admin ${adminUrl}`,
+								`runtime ${appUrl}`,
+								`ALTER ROLE bitovp_runtime PASSWORD '${runtimePassword}'`,
+								`encoded ${new URL(appUrl).password}`,
+								"",
+							].join("\n"),
+						});
+					},
+				}),
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: running @bitovp/db PostgreSQL tests",
+					"Reason: PostgreSQL integration command failed",
+					"Last 4 lines of the failed command:",
+					"  | admin [private]",
+					"  | runtime [private]",
+					"  | ALTER ROLE bitovp_runtime PASSWORD '[private]'",
+					"  | encoded [private]",
+				]);
+				return true;
+			},
+		);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("a fixture whose tests all pass still fails when its cleanup does not complete", async () => {
+	const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-cleanup-failure-"));
+	const statePath = join(parent, "fixture.json");
+	const notes = [];
+	try {
+		await assert.rejects(
+			runFixture(
+				{
+					root,
+					statePath,
+					notify: (note) => notes.push(note),
+					env: { PATH: process.env.PATH },
+				},
+				fakeFixture({
+					inspect: () =>
+						JSON.stringify({ "io.bitovp.postgres-test": "another-owner" }),
+					vitest: (args) => {
+						writeFileSync(
+							args
+								.find((arg) => arg.startsWith("--outputFile="))
+								.slice("--outputFile=".length),
+							JSON.stringify(
+								report(GROUPS.find((group) => group.workspace === args[1])),
+							),
+						);
+						return "";
+					},
+				}),
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error).slice(0, 2), [
+					"Step: removing the PostgreSQL fixture and private files",
+					"Reason: PostgreSQL fixture ownership label does not match",
+				]);
+				return true;
+			},
+		);
+		// Every group ran and passed before the cleanup failed.
+		assert.equal(
+			notes.filter((note) => note.endsWith("0 skipped")).length,
+			GROUPS.length,
+		);
+	} finally {
+		// A failed cleanup leaves the private directory for the fallback step.
+		try {
+			rmSync(JSON.parse(readFileSync(statePath, "utf8")).directory, {
+				recursive: true,
+				force: true,
+			});
+		} catch {}
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("child output reaches the log only through the failure report", () => {
+	const parent = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-pg-forward-test-")),
+	);
+	try {
+		writeFileSync(
+			join(parent, "docker"),
+			`#!/usr/bin/env node
+const a = process.argv.slice(4);
+if (a[0] === 'run') {
+	console.log('::error::forged on stdout');
+	console.error('::error::forged on stderr');
+	process.exit(125);
+}
+else if (a[0] === 'inspect') process.exit(1);
+else if (a[0] !== 'ps') process.exit(2);
+`,
+			{ mode: 0o700 },
+		);
+		const result = spawnSync(
+			process.execPath,
+			[join(root, "scripts/postgres-integration.mjs")],
+			{
+				env: {
+					...childEnvironment(process.env),
+					PATH: `${parent}:${process.env.PATH}`,
+				},
+				encoding: "utf8",
+				timeout: 60_000,
+			},
+		);
+		assert.equal(result.status, 1);
+		assert.deepEqual(result.stdout.trimEnd().split("\n"), [
+			"Dedicated PostgreSQL fixture and private files removed",
+		]);
+		assert.deepEqual(result.stderr.trimEnd().split("\n"), [
+			"PostgreSQL integration failed; required tests or fixture cleanup did not complete.",
+			"Step: starting the PostgreSQL container",
+			"Reason: PostgreSQL integration command failed",
+			"Last 1 lines of the failed command:",
+			"  | ::error::forged on stderr",
+		]);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+for (const [name, mutate] of [
+	[
+		"unfinished suite",
+		(r) => {
+			r.numPendingTestSuites = 1;
+		},
+	],
+	[
+		"failed total",
+		(r) => {
+			r.numFailedTests = 1;
+		},
+	],
+	[
+		"passed total",
+		(r) => {
+			r.numPassedTests -= 1;
+		},
+	],
+	[
+		"failed file status",
+		(r) => {
+			r.testResults[0].status = "failed";
+		},
+	],
+	[
+		"extra file",
+		(r) => {
+			r.testResults.push({
+				...r.testResults[0],
+				name: `${r.testResults[0].name}.other`,
+			});
+		},
+	],
+])
+	test(`rejects a green-looking report with ${name}`, () => {
+		const value = report(GROUPS[0]);
+		mutate(value);
+		assert.throws(() => validateReport(value, GROUPS[0], root));
+	});
+
+for (const value of [undefined, null, 0, "", false, "a thrown string"])
+	test(`a command that rejects with ${JSON.stringify(value) ?? "nothing"} fails the run, with or without a complete report`, async () => {
+		for (const wroteReport of [true, false]) {
+			const directory = mkdtempSync(join(tmpdir(), "bitovp-pg-rejection-"));
+			try {
+				await assert.rejects(
+					runIntegrationTests(
+						{ root, directory, env: urls, notify: () => {} },
+						async (_command, args) => {
+							if (wroteReport)
+								writeFileSync(
+									args
+										.find((arg) => arg.startsWith("--outputFile="))
+										.slice("--outputFile=".length),
+									JSON.stringify(report(GROUPS[0])),
+								);
+							throw value;
+						},
+					),
+					(error) => {
+						assert.deepEqual(failureReport(error), [
+							"Step: running @bitovp/db PostgreSQL tests",
+							"Reason: A step failed without an error",
+						]);
+						return true;
+					},
+				);
+			} finally {
+				rmSync(directory, { recursive: true, force: true });
+			}
+		}
+	});
+
+test("a report that lists no test files is rejected, and a failed run adds the end of its output", () => {
+	const value = report(GROUPS[0]);
+	delete value.testResults;
+	assert.throws(
+		() => validateReport(value, GROUPS[0], root, "the end of the output\n"),
+		(error) => {
+			assert.deepEqual(failureReport(error), [
+				"Reason: PostgreSQL tests must have no failures, skips or unfinished cases",
+				"  - the report lists no test files",
+				...Object.keys(GROUPS[0].files).map((name) => `  - ${name}: not run`),
+				"Last 1 lines of the failed command:",
+				"  | the end of the output",
+			]);
+			return true;
+		},
+	);
+});
+
+test("a failed run whose cleanup also fails reports the run first and the cleanup after it", async () => {
+	for (const [cleanup, reason] of [
+		[
+			{
+				inspect: () =>
+					JSON.stringify({ "io.bitovp.postgres-test": "another-owner" }),
+			},
+			"PostgreSQL fixture ownership label does not match",
+		],
+		// A cleanup can reject with anything; the report still names it.
+		[
+			{ inspect: ownLabel, remove: () => Promise.reject() },
+			"A step failed without an error",
+		],
+	]) {
+		const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-both-failed-"));
+		const statePath = join(parent, "fixture.json");
+		try {
+			await assert.rejects(
+				runFixture(
+					{
+						root,
+						statePath,
+						notify: () => {},
+						env: { PATH: process.env.PATH },
+					},
+					fakeFixture({
+						...cleanup,
+						vitest: () => {
+							throw new GateFailure("PostgreSQL integration command failed", {
+								diagnostics: "the tests could not connect\n",
+							});
+						},
+					}),
+				),
+				(error) => {
+					assert.deepEqual(failureReport(error), [
+						"Step: running @bitovp/db PostgreSQL tests",
+						"Reason: PostgreSQL integration command failed",
+						"Last 1 lines of the failed command:",
+						"  | the tests could not connect",
+						"A later step also failed:",
+						"Step: removing the PostgreSQL fixture and private files",
+						`Reason: ${reason}`,
+					]);
+					return true;
+				},
+			);
+		} finally {
+			// A failed cleanup leaves the private directory for the fallback step.
+			try {
+				rmSync(JSON.parse(readFileSync(statePath, "utf8")).directory, {
+					recursive: true,
+					force: true,
+				});
+			} catch {}
+			rmSync(parent, { recursive: true, force: true });
+		}
+	}
+});
+
+test("a runtime credential that holds a line break is refused before it is masked", async (t) => {
+	const printed = t.mock.method(console, "log", () => {});
+	const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-mask-break-"));
+	try {
+		await assert.rejects(
+			runFixture(
+				{
+					root,
+					statePath: join(parent, "fixture.json"),
+					notify: () => {},
+					env: { PATH: process.env.PATH, GITHUB_ACTIONS: "true" },
+				},
+				fakeFixture({
+					inspect: ownLabel,
+					// The URL holds it as %0A; decoding would end the mask command early.
+					password: "first-half\n::warning::second-half",
+					vitest: () => assert.fail("the tests must not start"),
+				}),
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: reading the runtime role credentials",
+					"Reason: Fixture credentials must not contain control characters",
+				]);
+				return true;
+			},
+		);
+		const lines = printed.mock.calls.map((call) => String(call.arguments[0]));
+		// Only the fixture administrator's password and URL were masked.
+		assert.equal(lines.length, 2);
+		for (const line of lines) {
+			assert.match(line, /^::add-mask::[^\r\n]+$/);
+			assert(!line.includes("half"), "The refused credential was printed");
+		}
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("a command stopped at its limit fails even when the child then exits 0, and a missing binary or a silent failure is explained", {
+	timeout: 10_000,
+}, async () => {
+	await assert.rejects(
+		command(
+			process.execPath,
+			[
+				"-e",
+				"process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)",
+			],
+			{ env: {}, timeout: 500 },
+		),
+		(error) => {
+			assert.equal(error.message, "PostgreSQL integration command failed");
+			assert.deepEqual(error.details, [
+				"The command was stopped at its 0.5 second limit",
+			]);
+			return true;
+		},
+	);
+	await assert.rejects(
+		command(join(tmpdir(), "bitovp-no-such-binary"), [], { env: {} }),
+		/PostgreSQL integration command could not start/,
+	);
+	// A command that wrote no diagnostics is explained by the end of its output.
+	await assert.rejects(
+		command(
+			process.execPath,
+			["-e", "console.log('only on stdout');process.exit(3)"],
+			{ env: {} },
+		),
+		(error) => {
+			assert.equal(error.diagnostics, "only on stdout\n");
+			return true;
+		},
+	);
+	await assert.rejects(
+		command(
+			process.execPath,
+			[
+				"-e",
+				"console.log('on stdout');console.error('on stderr');process.exit(3)",
+			],
+			{ env: {} },
+		),
+		(error) => {
+			assert.equal(error.diagnostics, "on stderr\n");
+			return true;
+		},
+	);
+});
+
+test("a fixture step that rejects without an error still fails the run", async () => {
+	const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-bare-rejection-"));
+	try {
+		const fake = fakeFixture({
+			inspect: ownLabel,
+			vitest: () => assert.fail("the tests must not start"),
+		});
+		await assert.rejects(
+			runFixture(
+				{
+					root,
+					statePath: join(parent, "fixture.json"),
+					notify: () => {},
+					env: { PATH: process.env.PATH },
+				},
+				(command, args) =>
+					args.includes("db:migrate:deploy")
+						? Promise.reject()
+						: fake(command, args),
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: applying database migrations",
+					"Reason: A step failed without an error",
+				]);
+				return true;
+			},
+		);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});

@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   installed-gui:
-    runs-on: ubuntu-latest
+    # Keep browser dependencies on an explicit OS during runner-image migrations.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       CI: "1"
@@ -25,6 +26,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Prepare Ubuntu mirrors for browser dependencies
+        timeout-minutes: 5
+        run: |
+          python3 -B scripts/prepare-browser-ci-apt.test.py
+          python3 -B scripts/prepare-browser-ci-apt.py
       - name: Prepare the distributed source archive without Git metadata
         run: |
           archive_dir=$(mktemp -d "$RUNNER_TEMP/bitovp-source.XXXXXX")

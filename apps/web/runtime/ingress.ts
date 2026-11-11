@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { validateIpCidrs } from "@bitovp/core";
 import { forwardHttpRequest } from "./http-forwarding";
 import { ingressHeaders } from "./ip-forwarding";
+import { prismaEngineEnvironment } from "./prisma-engine";
 
 const envFile = resolve(import.meta.dirname, "../../../.env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -40,7 +41,13 @@ const child = spawn(
 		"-H",
 		"127.0.0.1",
 	],
-	{ stdio: "inherit", env: process.env },
+	{
+		stdio: "inherit",
+		env: prismaEngineEnvironment(
+			resolve(import.meta.dirname, "../../../packages/db/generated/client"),
+			process.env,
+		),
+	},
 );
 
 const server = createServer((incoming, outgoing) => {

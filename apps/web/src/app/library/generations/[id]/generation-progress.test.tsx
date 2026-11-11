@@ -70,6 +70,10 @@ it.each([
 	["STORY_ENGINE_UNAVAILABLE", "Story selection is unavailable."],
 	["STORY_GRAPH_INVALID", "The story analysis could not be verified."],
 	["STORY_MODEL_CHANGED", "The story analysis model has changed."],
+	[
+		"LOCAL_STORY_NO_FITTING_PLAN",
+		"A connected edit could not fit the requested length.",
+	],
 ])("shows a safe explanation for %s without changing policy automatically", async (error, message) => {
 	mocks.api.mockResolvedValue({ ...task("ERROR"), renderMode: "DRAFT", error });
 	renderWithQuery(<GenerationProgress id={id} />);

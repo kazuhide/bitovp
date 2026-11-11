@@ -5,7 +5,6 @@ import {
 	type BoundLocalStoryFlowSealedRecord,
 	type BoundLocalStoryFlowSourceArchive,
 	LOCAL_STORY_FLOW_SEAL_POLICY,
-	type LocalStoryArtifactCacheRow,
 	type LocalStoryFlowRecordKey,
 	type LocalStoryFlowRecordKind,
 	type LocalStoryFlowSourceTuple,
@@ -15,7 +14,8 @@ import {
 	prepareLocalStoryFlowArchiveSource,
 	readLocalStoryFlowSealedRecord,
 	resolveLocalStoryFlowPolicyCatalogForTaskIdentity,
-} from "@bitovp/core/local-story-flow-server";
+} from "@bitovp/core/local-story-flow-hierarchy";
+import type { LocalStoryArtifactCacheRow } from "@bitovp/core/local-story-flow-server";
 import type { LibraryMediaTask } from "../generated/client";
 import type { AppTransactionClient } from "./client";
 import { resolveLibraryFlowSourceArchive } from "./library-flow-source-archive";

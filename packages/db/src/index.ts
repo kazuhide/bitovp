@@ -39,24 +39,8 @@ export {
 	touchApiTokenForAuthentication,
 } from "./identity-client";
 export { readIngressSnapshot, writeIngressSnapshot } from "./ingress-setting";
-export type {
-	BoundLocalStoryFlowReadSource,
-	LocalStoryFlowReadSnapshotReader,
-	LocalStoryFlowReadSourceEvidence,
-	LocalStoryFlowRuntimeReadSnapshot,
-	LocalStoryFlowWorkerSourceSnapshotReader,
-	OwnedLocalStoryFlowReadFence,
-} from "./library-flow-evidence-reader";
-export {
-	LOCAL_STORY_FLOW_DB_READ_POLICY,
-	LocalStoryFlowReadError,
-	localStoryFlowReadSourceEvidence,
-	localStoryFlowTaskLockKey,
-	validateLocalStoryFlowReadFence,
-	validateLocalStoryFlowSourceArchiveReadFence,
-	withLocalStoryFlowReadSnapshot,
-	withLocalStoryFlowWorkerSourceSnapshot,
-} from "./library-flow-evidence-reader";
+// The hierarchical flow evidence reader is fenced: its exports are in
+// ./library-flow (see hierarchical-flow-fence.json at the repository root).
 export type { CapturedOriginalInput } from "./library-input-capture";
 export {
 	listCapturedOriginalInputs,

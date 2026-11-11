@@ -12,7 +12,8 @@
 		"./testing": "./src/testing/index.ts",
 		"./local-semantic-diagnostic-probe": "./src/local-semantic-diagnostic-probe.ts",
 		"./local-caption-config": "./src/content-editing/local-caption-config-node.ts",
-		"./local-story-flow-server": "./src/local-story-flow-server.ts"
+		"./local-story-flow-server": "./src/local-story-flow-server.ts",
+		"./local-story-flow-hierarchy": "./src/local-story-flow-hierarchy.ts"
 	},
 	"scripts": {
 		"test": "vitest run",

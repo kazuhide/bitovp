@@ -3,11 +3,7 @@ import {
 	canonicalEditingJson,
 	editingAnalysisBindingSchema,
 	hashEditingEvidence as hash,
-	LOCAL_STORY_FLOW_CLOSURE_POLICY,
-	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_H1_POLICY,
-	LOCAL_STORY_FLOW_ROUTE_POLICY,
-	LOCAL_STORY_FLOW_SCOPE_POLICY,
 	localStoryFlowGenerationPolicyFingerprint,
 	localStoryStageRegistry,
 	mediaTaskCacheKey,
@@ -18,22 +14,28 @@ import {
 } from "@bitovp/core";
 import {
 	admitLocalStoryFlowArchiveTranscript,
-	createLocalStoryLegacyLedgerCacheRecipe,
-	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_FLOW_CLOSURE_POLICY,
+	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_NATIVE_PROMPT_POLICY,
-	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
+	LOCAL_STORY_FLOW_ROUTE_POLICY,
+	LOCAL_STORY_FLOW_SCOPE_POLICY,
 	type LocalStoryFlowRecordKind,
 	localStoryFlowArchiveLedgerRequests,
 	localStoryFlowArchiveLedgerStageRequest,
 	localStoryFlowArchivePreparationEvidence,
 	localStoryFlowArchiveTranscriptEvidence,
-	localStoryFlowIdentityForModelPin,
 	localStoryFlowRecordIdentity,
 	localStoryFlowSealedRecordEvidence,
 	localStoryFlowSourceArchiveEvidence,
+	prepareLocalStoryFlowArchiveSource,
+} from "@bitovp/core/local-story-flow-hierarchy";
+import {
+	createLocalStoryLegacyLedgerCacheRecipe,
+	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
+	localStoryFlowIdentityForModelPin,
 	localStoryIdentityForModelPin,
 	localStoryLegacyLedgerPrompt,
-	prepareLocalStoryFlowArchiveSource,
 } from "@bitovp/core/local-story-flow-server";
 import { describe, expect, it, type Mock, vi } from "vitest";
 import {

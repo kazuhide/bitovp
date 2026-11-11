@@ -42,40 +42,11 @@ export * from "./local-story-choice-readiness";
 export * from "./local-story-choice-stages";
 export * from "./local-story-coherence";
 export * from "./local-story-contracts";
-export * from "./local-story-flow-closure";
-export type {
-	BoundLocalStoryFlowContextNode,
-	LocalStoryFlowContextInput,
-	LocalStoryFlowContextIssue,
-	LocalStoryFlowContextLayout,
-	LocalStoryFlowContextNodeEvidence,
-	LocalStoryFlowContextPlan,
-	LocalStoryFlowContextPublicView,
-	LocalStoryFlowContextRelation,
-	LocalStoryFlowContextSourceBinding,
-	LocalStoryFlowEventRef,
-	LocalStoryFlowSummaryRef,
-	LocalStoryFlowWitnessEligibility,
-	LocalStoryFlowWitnessProof,
-	PreparedLocalStoryFlowContextSource,
-	SourceEvidence,
-} from "./local-story-flow-context";
-export {
-	buildLocalStoryFlowContextNode,
-	LOCAL_STORY_FLOW_CONTEXT_POLICY,
-	LocalStoryFlowContextError,
-	localStoryFlowContextInputForNode,
-	localStoryFlowContextNodeEvidence,
-	localStoryFlowContextSourceEvidence,
-	prepareLocalStoryFlowContextSource,
-	validateLocalStoryFlowContextNode,
-} from "./local-story-flow-context";
-export * from "./local-story-flow-context-tree";
+// The hierarchical flow modules (closure, context, context-tree, route, scope)
+// are fenced: see hierarchical-flow-fence.json at the repository root.
 export * from "./local-story-flow-contracts";
 export * from "./local-story-flow-manifest";
 export * from "./local-story-flow-readiness";
-export * from "./local-story-flow-route";
-export * from "./local-story-flow-scope";
 export {
 	localSemanticCombinedStageRegistry,
 	localStoryFlowIdentityForConfiguration,

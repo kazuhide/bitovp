@@ -4,7 +4,6 @@ import {
 	editingAnalysisBindingSchema,
 	hashEditingEvidence as hash,
 	type LocalStoryFlowTaskPolicyParts,
-	localStoryFlowContextSourceEvidence,
 	localStoryFlowTaskPolicyPartsSchema,
 	mediaTaskCacheKey,
 	mediaTaskEnvelopeSchema,
@@ -23,21 +22,18 @@ import {
 	type BoundLocalStoryFlowNativeRoot,
 	type BoundLocalStoryFlowSealedRecord,
 	type BoundLocalStoryFlowSourceArchive,
-	createLocalStoryLegacyTranscriptRecipe,
 	isLocalStoryFlowRuntimeFailureCode,
 	LOCAL_STORY_FLOW_RUNTIME_POLICY,
-	type LocalStoryArtifactCacheRow,
 	type LocalStoryFlowArchiveSourceSnapshots,
 	type LocalStoryFlowArtifactProposal,
 	type LocalStoryFlowRecordKey,
 	type LocalStoryFlowRecordRef,
 	LocalStoryFlowRuntimeHistoryError,
 	type LocalStoryFlowSourceTuple,
-	type LocalStoryLegacyArtifactRef,
-	type LocalStoryLegacyTranscriptPrepared,
 	localStoryFlowAcceptedContextNodePublication,
 	localStoryFlowAcceptedOriginEvidence,
 	localStoryFlowAcceptedRoutePublication,
+	localStoryFlowContextSourceEvidence,
 	localStoryFlowNativeExpectationEvidence,
 	localStoryFlowNativeRootEvidence,
 	localStoryFlowRecordIdentity,
@@ -53,8 +49,14 @@ import {
 	prepareLocalStoryFlowRuntimeIdentity,
 	readLocalStoryFlowRuntimeHistory,
 	readLocalStoryFlowSealedRecord,
-	readLocalStoryLegacyCacheRef,
 	requireLocalStoryFlowRuntimeNativeKey,
+} from "@bitovp/core/local-story-flow-hierarchy";
+import {
+	createLocalStoryLegacyTranscriptRecipe,
+	type LocalStoryArtifactCacheRow,
+	type LocalStoryLegacyArtifactRef,
+	type LocalStoryLegacyTranscriptPrepared,
+	readLocalStoryLegacyCacheRef,
 } from "@bitovp/core/local-story-flow-server";
 import {
 	type AppPrismaClient,
@@ -62,12 +64,14 @@ import {
 	type LibraryEvidenceReceipt,
 	type LibraryMediaTask,
 	LibraryMediaTaskEvidenceError,
-	localStoryFlowTaskLockKey,
-	type OwnedLocalStoryFlowReadFence,
 	tenantOrganizationId,
-	validateLocalStoryFlowSourceArchiveReadFence,
 	verifyLibraryMediaTaskEvidence,
 } from "@bitovp/db";
+import {
+	localStoryFlowTaskLockKey,
+	type OwnedLocalStoryFlowReadFence,
+	validateLocalStoryFlowSourceArchiveReadFence,
+} from "@bitovp/db/library-flow";
 import type { createLocalSemanticClient } from "./local-semantic-client";
 import {
 	localStoryFlowPreparedPublicationEvidence,
@@ -76,7 +80,7 @@ import {
 import type { VerifiedMediaTask } from "./media-task-execution";
 import { MediaOperationError } from "./process";
 
-export { LOCAL_STORY_FLOW_RUNTIME_POLICY } from "@bitovp/core/local-story-flow-server";
+export { LOCAL_STORY_FLOW_RUNTIME_POLICY } from "@bitovp/core/local-story-flow-hierarchy";
 
 const KIND = "LOCAL_FLOW_PLAN_V1" as const;
 const failureCodes = { has: isLocalStoryFlowRuntimeFailureCode };

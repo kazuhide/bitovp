@@ -3,7 +3,6 @@ import {
 	admitLocalStoryFlowArchiveTranscript,
 	type BoundLocalStoryFlowSourceArchive,
 	buildLocalStoryFlowSourceArchive,
-	type LocalStoryArtifactCacheRow,
 	type LocalStoryFlowLegacyRecordPair,
 	LocalStoryFlowSourceArchiveError,
 	localStoryFlowArchiveLedgerRequests,
@@ -11,7 +10,8 @@ import {
 	localStoryFlowArchivePreparationEvidence,
 	localStoryFlowArchiveTranscriptEvidence,
 	type PreparedLocalStoryFlowArchiveSource,
-} from "@bitovp/core/local-story-flow-server";
+} from "@bitovp/core/local-story-flow-hierarchy";
+import type { LocalStoryArtifactCacheRow } from "@bitovp/core/local-story-flow-server";
 
 export type LocalStoryFlowLegacySourceRequest = ReturnType<
 	typeof localStoryFlowArchivePreparationEvidence

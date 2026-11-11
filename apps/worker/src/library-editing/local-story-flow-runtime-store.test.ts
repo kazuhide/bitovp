@@ -1,23 +1,14 @@
 import { createHash } from "node:crypto";
 import {
 	buildLocalStoryChunks,
-	buildLocalStoryFlowContextNode,
-	buildLocalStoryFlowContextTree,
 	buildLocalStoryFlowLeafPages,
 	buildLocalStoryFlowManifest,
-	buildLocalStoryFlowRouteExpectation,
 	canonicalEditingJson,
 	cfrTimeMapSchema,
 	editingAnalysisBindingSchema,
 	hashEditingEvidence as hash,
-	LOCAL_STORY_FLOW_CLOSURE_POLICY,
-	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_H1_POLICY,
-	LOCAL_STORY_FLOW_ROUTE_POLICY,
-	LOCAL_STORY_FLOW_SCOPE_POLICY,
-	type LocalStoryFlowContextNodeEvidence,
 	type LocalStoryInput,
-	localStoryFlowContextSourceEvidence,
 	localStoryFlowGenerationPolicyFingerprint,
 	localStoryFlowStageRegistry,
 	localStoryStageRegistry,
@@ -32,14 +23,18 @@ import {
 	acceptLocalStoryFlowContextWork,
 	admitLocalStoryFlowArchiveTranscript,
 	admittedFlowNativeEvidence,
+	buildLocalStoryFlowContextNode,
+	buildLocalStoryFlowContextTree,
+	buildLocalStoryFlowRouteExpectation,
 	buildLocalStoryFlowSourceArchive,
 	contextNativeExpectation,
-	createLocalStoryLegacyLedgerCacheRecipe,
-	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_FLOW_CLOSURE_POLICY,
+	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_NATIVE_PROMPT_POLICY,
-	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
-	type LocalStoryArtifactCacheRow,
+	LOCAL_STORY_FLOW_ROUTE_POLICY,
+	LOCAL_STORY_FLOW_SCOPE_POLICY,
 	type LocalStoryFlowArchiveSourceSnapshots,
+	type LocalStoryFlowContextNodeEvidence,
 	type LocalStoryFlowRecordKey,
 	type LocalStoryFlowRecordRef,
 	type LocalStoryFlowSourceTuple,
@@ -48,8 +43,8 @@ import {
 	localStoryFlowArchiveLedgerStageRequest,
 	localStoryFlowArchivePreparationEvidence,
 	localStoryFlowArchiveTranscriptEvidence,
+	localStoryFlowContextSourceEvidence,
 	localStoryFlowContextWorkExpectation,
-	localStoryFlowIdentityForModelPin,
 	localStoryFlowNativeExpectationEvidence,
 	localStoryFlowNativeRequestIds,
 	localStoryFlowRecordIdentity,
@@ -57,23 +52,30 @@ import {
 	localStoryFlowRuntimeSignature,
 	localStoryFlowRuntimeStartRecord,
 	localStoryFlowSourceArchiveContext,
-	localStoryIdentityForModelPin,
-	localStoryLegacyLedgerPrompt,
 	nativeRequestForOrigin,
 	prepareLocalStoryFlowArchiveSource,
 	prepareLocalStoryFlowContextSourceFromPin,
 	prepareLocalStoryFlowContextWork,
 	prepareLocalStoryFlowRuntimeIdentity,
 	routeNativeExpectation,
+} from "@bitovp/core/local-story-flow-hierarchy";
+import {
+	createLocalStoryLegacyLedgerCacheRecipe,
+	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
+	type LocalStoryArtifactCacheRow,
+	localStoryFlowIdentityForModelPin,
+	localStoryIdentityForModelPin,
+	localStoryLegacyLedgerPrompt,
 } from "@bitovp/core/local-story-flow-server";
 import {
 	type AppPrismaClient,
 	type LibraryEvidenceReceipt,
 	type LibraryMediaTask,
 	LibraryMediaTaskEvidenceError,
-	localStoryFlowTaskLockKey,
 	TENANT_ORGANIZATION,
 } from "@bitovp/db";
+import { localStoryFlowTaskLockKey } from "@bitovp/db/library-flow";
 import { afterEach, expect, it, vi } from "vitest";
 import {
 	type LocalSemanticObservedResult,
@@ -93,6 +95,9 @@ const mocked = vi.hoisted(() => ({ verify: vi.fn(), sourceFence: vi.fn() }));
 vi.mock("@bitovp/db", async (original) => ({
 	...(await original<typeof import("@bitovp/db")>()),
 	verifyLibraryMediaTaskEvidence: mocked.verify,
+}));
+vi.mock("@bitovp/db/library-flow", async (original) => ({
+	...(await original<typeof import("@bitovp/db/library-flow")>()),
 	validateLocalStoryFlowSourceArchiveReadFence: mocked.sourceFence,
 }));
 const stores: Array<ReturnType<typeof createLocalStoryFlowRuntimeStore>> = [];

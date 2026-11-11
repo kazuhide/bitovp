@@ -50,12 +50,15 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
+			"src/lib/server/latest-runs.integration.test.ts": 3,
+			"src/lib/server/reset-live-probe.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
 			"src/lib/server/library-catalog.integration.test.ts": 17,
 			"src/lib/server/library-editing.integration.test.ts": 27,
 			"src/lib/server/library-editing-presentation.integration.test.ts": 2,
 			"src/lib/server/library-media-tasks.integration.test.ts": 5,
 			"src/lib/server/library-media-tasks-generation.integration.test.ts": 2,
+			"src/lib/server/library-scene-search.integration.test.ts": 7,
 			"src/lib/server/job-evidence-retention.integration.test.ts": 7,
 			"src/lib/server/selected-reset-editing.integration.test.ts": 3,
 		},
@@ -188,7 +191,7 @@ const excerpt = (text) =>
 		.join("\n");
 
 /** Why a Vitest report is not the complete, fully passed required run. */
-export function reportProblems(report, group, root) {
+export function reportProblems(report, group, root, kind = "PostgreSQL") {
 	const problems = [];
 	const total = Object.values(group.files).reduce(
 		(sum, count) => sum + count,
@@ -220,7 +223,7 @@ export function reportProblems(report, group, root) {
 		: []) {
 		const name = relative(resolve(root, group.directory), String(result?.name));
 		if (!Object.hasOwn(group.files, name)) {
-			problems.push(`${name}: not a required PostgreSQL test file`);
+			problems.push(`${name}: not a required ${kind} test file`);
 			continue;
 		}
 		if (seen.has(name)) {
@@ -274,6 +277,10 @@ export function validateReport(report, group, root, diagnostics = "") {
 }
 
 const children = new Map();
+/** Stops every command that is still running; for a signal handler. */
+export const stopCommands = () => {
+	for (const stop of children.values()) stop();
+};
 const terminate = (child) => {
 	try {
 		process.kill(-child.pid, "SIGTERM");
@@ -551,6 +558,9 @@ export async function runFixture(
 		env = process.env,
 		signal,
 		notify = console.log,
+		// What runs against the prepared database. Another gate passes its own
+		// tests here; it gets the fixture's private directory and both URLs.
+		run = runIntegrationTests,
 	} = {},
 	execute = command,
 ) {
@@ -688,7 +698,7 @@ export async function runFixture(
 		const appUrl = parseEnv(readFileSync(appFile, "utf8")).DATABASE_URL;
 		const appPassword = new URL(appUrl).password;
 		mask(env, [appUrl, appPassword, decodeURIComponent(appPassword)]);
-		await runIntegrationTests(
+		await run(
 			{
 				root,
 				directory,
@@ -753,7 +763,7 @@ if (isEntryPoint(import.meta.url)) {
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {
 			controller.abort();
-			for (const stop of children.values()) stop();
+			stopCommands();
 			process.exitCode = 1;
 		});
 	main(controller.signal).catch((error) => {

@@ -46,6 +46,7 @@
 			"scripts/database-restore-proof*.mjs",
 			"scripts/media-smoke*.mjs",
 			"scripts/gate-report*.mjs",
+			"scripts/gated-tests*.mjs",
 			"scripts/editing-preview*.mjs",
 			"scripts/site-smoke.mjs",
 			"scripts/guide-smoke.mjs",

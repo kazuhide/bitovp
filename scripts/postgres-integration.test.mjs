@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -14,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { GateFailure } from "./gate-report.mjs";
+import { atStep, GateFailure } from "./gate-report.mjs";
 import {
 	childEnvironment,
 	cleanupFixture,
@@ -966,6 +967,156 @@ test("a fixture whose tests all pass still fails when its cleanup does not compl
 				force: true,
 			});
 		} catch {}
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("another gate's tests run against the prepared database, and the fixture is removed after them", async () => {
+	const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-other-gate-"));
+	const notes = [];
+	const execute = fakeFixture({
+		inspect: ownLabel,
+		vitest: () => {
+			throw new Error("The PostgreSQL tests must not run here");
+		},
+	});
+	const fixture = (run) =>
+		runFixture(
+			{
+				root,
+				statePath: join(parent, "fixture.json"),
+				notify: (note) => notes.push(note),
+				env: { PATH: process.env.PATH, GITHUB_TOKEN: "not for a child" },
+				run,
+			},
+			execute,
+		);
+	try {
+		const seen = {};
+		await fixture(async (context, run) => {
+			seen.context = context;
+			seen.mode = statSync(context.directory).mode & 0o777;
+			// The same command runner, so a cancelled run stops here too.
+			seen.listed = await run("docker", ["--host", "x", "port"], {});
+			context.notify("the other gate's tests passed");
+		});
+		assert.deepEqual(Object.keys(seen.context).sort(), [
+			"directory",
+			"env",
+			"notify",
+			"root",
+		]);
+		assert.equal(seen.context.root, root);
+		assert.equal(seen.mode, 0o700);
+		assert.equal(seen.listed, "127.0.0.1:15432");
+		// The private child environment and both URLs; nothing else of the caller's.
+		const {
+			BITOVP_TENANT_TEST_ADMIN_URL: admin,
+			BITOVP_TENANT_TEST_APP_URL: app,
+			...child
+		} = seen.context.env;
+		const temporary = join(seen.context.directory, "tmp");
+		assert.deepEqual(child, {
+			PATH: process.env.PATH,
+			TMPDIR: temporary,
+			TMP: temporary,
+			TEMP: temporary,
+			CI: "1",
+			TURBO_TELEMETRY_DISABLED: "1",
+			NEXT_TELEMETRY_DISABLED: "1",
+		});
+		assert.match(
+			admin,
+			/^postgresql:\/\/bitovp_fixture_admin:[\w-]{43}@127\.0\.0\.1:15432\/bitovp_integration_[a-f0-9]{32}\?schema=public$/,
+		);
+		assert.equal(new URL(app).username, "bitovp_runtime");
+		// They are the URLs that the required tests would get.
+		assert.equal(
+			testEnvironment(seen.context.env).BITOVP_TENANT_TEST_APP_URL,
+			app,
+		);
+		assert.equal(existsSync(seen.context.directory), false);
+		assert.equal(existsSync(join(parent, "fixture.json")), false);
+		assert.deepEqual(notes, [
+			"Preparing dedicated PostgreSQL runtime role and migrations",
+			"the other gate's tests passed",
+			"Dedicated PostgreSQL fixture and private files removed",
+		]);
+
+		// Their failure keeps its own step and is reported after the cleanup.
+		let directory;
+		await assert.rejects(
+			fixture(async (context) => {
+				directory = context.directory;
+				throw atStep(
+					new GateFailure("Redis tests must all run and pass", {
+						diagnostics: `connect ${context.env.BITOVP_TENANT_TEST_ADMIN_URL}\n`,
+					}),
+					"running the queue tests that need Redis",
+				);
+			}),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: running the queue tests that need Redis",
+					"Reason: Redis tests must all run and pass",
+					"Last 1 lines of the failed command:",
+					"  | connect [private]",
+				]);
+				return true;
+			},
+		);
+		assert.equal(existsSync(directory), false);
+		assert.equal(
+			notes.at(-1),
+			"Dedicated PostgreSQL fixture and private files removed",
+		);
+		// Without a step of its own, the failure is the fixture's last step.
+		await assert.rejects(
+			fixture(async () => {
+				throw undefined;
+			}),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: reading the runtime role credentials",
+					"Reason: A step failed without an error",
+				]);
+				return true;
+			},
+		);
+		// A run cancelled during their step stops at the step's next command,
+		// and the fixture is removed all the same.
+		const controller = new AbortController();
+		const reached = [];
+		await assert.rejects(
+			runFixture(
+				{
+					root,
+					statePath: join(parent, "fixture.json"),
+					signal: controller.signal,
+					notify: (note) => notes.push(note),
+					env: { PATH: process.env.PATH },
+					run: async (context, run) => {
+						directory = context.directory;
+						controller.abort();
+						reached.push("before the command");
+						await run("docker", ["--host", "x", "port"], {});
+						reached.push("after the command");
+					},
+				},
+				execute,
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: reading the runtime role credentials",
+					"Reason: PostgreSQL integration was cancelled",
+				]);
+				return true;
+			},
+		);
+		assert.deepEqual(reached, ["before the command"]);
+		assert.equal(existsSync(directory), false);
+		assert.equal(existsSync(join(parent, "fixture.json")), false);
+	} finally {
 		rmSync(parent, { recursive: true, force: true });
 	}
 });

@@ -133,17 +133,26 @@ export function generateCensus() {
 	};
 }
 
-// These describe one generation run. The commit and time never take part in a check.
-const RUN_PROVENANCE = ["generatedAt", "sourceCommit", "sourceFingerprint", "typescriptVersion"];
+// The time and commit of a generation run never take part in a check.
+const NEVER_COMPARED = ["generatedAt", "sourceCommit"];
+// Unrelated source changes move these; only --check-exact requires them to match.
+const EXACT_ONLY = ["sourceFingerprint", "typescriptVersion"];
 const SECTIONS = ["schemaVersion", "provenance", "summary", "families", "endpoints", "requestFields"];
+// An evidence entry is a position. Any other attribute would be content and must be compared.
+const POSITION = ["file", "line", "callLine"];
+const REFRESH = "Regenerate it with: node scripts/api-coverage-current.mjs --write";
 
 function evidenceFiles(evidence) {
 	const counts = new Map();
-	for (const { file } of evidence) counts.set(file, (counts.get(file) ?? 0) + 1);
+	for (const entry of evidence) {
+		const unknown = Object.keys(entry).filter((key) => !POSITION.includes(key));
+		if (unknown.length) throw new Error(`Unknown evidence attribute: ${unknown.join(", ")}`);
+		counts.set(entry.file, (counts.get(entry.file) ?? 0) + 1);
+	}
 	return [...counts.keys()].sort().map((file) => (counts.get(file) > 1 ? `${file} x${counts.get(file)}` : file));
 }
 
-/** One entry per stated fact. Unknown sections and colliding entries fail closed. */
+/** One entry per stated fact. Unknown sections, unknown evidence attributes and colliding entries fail closed. */
 export function censusContent(census) {
 	const unknown = Object.keys(census).filter((key) => !SECTIONS.includes(key));
 	if (unknown.length) throw new Error(`Unknown census section: ${unknown.join(", ")}`);
@@ -152,13 +161,14 @@ export function censusContent(census) {
 		if (entries.has(key)) throw new Error(`Ambiguous census entry: ${key}`);
 		entries.set(key, value);
 	};
-	const provenance = Object.fromEntries(Object.entries(census.provenance).filter(([key]) => !RUN_PROVENANCE.includes(key)));
+	const provenance = Object.fromEntries(Object.entries(census.provenance).filter(([key]) => !NEVER_COMPARED.includes(key) && !EXACT_ONLY.includes(key)));
 	add("census", { schemaVersion: census.schemaVersion, ...provenance });
 	add("summary", census.summary);
 	for (const family of census.families) add(`family ${family.family}`, family);
 	for (const { evidence, ...endpoint } of census.endpoints) add(`${endpoint.sdkMethod} (${endpoint.httpVerb} ${endpoint.path})`, { ...endpoint, evidence: evidenceFiles(evidence) });
-	const { operations, ...fieldAudit } = census.requestFields;
+	const { operations, summary, ...fieldAudit } = census.requestFields;
 	add("request fields", fieldAudit);
+	add("request fields summary", summary);
 	for (const { fields, ...operation } of operations) {
 		const key = `${operation.sdkMethod} (${operation.httpVerb} ${operation.path}) body`;
 		add(key, operation);
@@ -176,10 +186,19 @@ function describeChange(before, after) {
 	return `${JSON.stringify(before)} -> ${JSON.stringify(after)}`;
 }
 
+// A census that cannot be read entry by entry is reported with the side it came from.
+function contentOf(census, side) {
+	try {
+		return censusContent(census);
+	} catch (error) {
+		throw new Error(`The ${side} census cannot be compared: ${error.message}`);
+	}
+}
+
 /** Readable differences between the committed census and the one the source produces. */
 export function censusDifferences(saved, current) {
-	const before = censusContent(saved);
-	const after = censusContent(current);
+	const before = contentOf(saved, "committed");
+	const after = contentOf(current, "generated");
 	const lines = [];
 	for (const key of new Set([...before.keys(), ...after.keys()])) {
 		const a = before.get(key);
@@ -196,7 +215,7 @@ export function censusDifferences(saved, current) {
 /** Differences that only an exact refresh removes. Call after the content matches. */
 export function censusRunDifferences(saved, current) {
 	const lines = [];
-	for (const key of ["sourceFingerprint", "typescriptVersion"]) {
+	for (const key of EXACT_ONLY) {
 		if (saved.provenance[key] !== current.provenance[key]) lines.push(`provenance: ${key} ${JSON.stringify(saved.provenance[key])} -> ${JSON.stringify(current.provenance[key])}`);
 	}
 	const body = ({ provenance: _provenance, ...rest }) => JSON.stringify(rest);
@@ -204,24 +223,39 @@ export function censusRunDifferences(saved, current) {
 	return lines;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-	const mode = process.argv[2];
-	if (!["--write", "--check", "--check-exact"].includes(mode)) throw new Error("Usage: node scripts/api-coverage-current.mjs --write | --check | --check-exact");
-	const file = join(root, "apps/web/src/data/api-coverage/current.json");
-	const current = generateCensus();
-	let differences = [];
-	if (mode === "--write") writeFileSync(file, `${JSON.stringify(current, null, "\t")}\n`);
-	else {
+/** Runs one mode against a census file and returns what to print and the exit status. */
+export function runCensus(mode, file, generate = generateCensus) {
+	// An unknown mode is refused before the census is generated.
+	if (!["--write", "--check", "--check-exact"].includes(mode)) return { status: 1, stdout: [], stderr: ["Usage: node scripts/api-coverage-current.mjs --write | --check | --check-exact"] };
+	const current = generate();
+	const passed = [JSON.stringify({ mode, sdkVersion: current.provenance.sdkVersion, ...current.summary, sourceFingerprint: current.provenance.sourceFingerprint })];
+	if (mode === "--write") {
+		writeFileSync(file, `${JSON.stringify(current, null, "\t")}\n`);
+		return { status: 0, stdout: passed, stderr: [] };
+	}
+	let differences;
+	try {
 		const saved = JSON.parse(readFileSync(file, "utf8"));
 		differences = censusDifferences(saved, current);
-		if (!differences.length && mode === "--check-exact") differences = censusRunDifferences(saved, current);
+		if (!differences.length) {
+			const run = censusRunDifferences(saved, current);
+			if (mode === "--check-exact") differences = run;
+			// The content is current; say when the release-only refresh is still owed.
+			else if (run.length) passed.push("Note: the committed census records an older source fingerprint or line numbers. Release gates require an exact refresh.");
+		}
+	} catch (error) {
+		return { status: 1, stdout: [], stderr: [`API census cannot be checked: ${error.message}`, REFRESH] };
 	}
-	if (differences.length) {
-		const shown = differences.slice(0, 40);
-		console.error(`API census is stale: ${differences.length} difference${differences.length === 1 ? "" : "s"} from the source.`);
-		for (const line of shown) console.error(`  ${line}`);
-		if (differences.length > shown.length) console.error(`  ... and ${differences.length - shown.length} more`);
-		console.error("Regenerate it with: node scripts/api-coverage-current.mjs --write");
-		process.exitCode = 1;
-	} else console.log(JSON.stringify({ mode, sdkVersion: current.provenance.sdkVersion, ...current.summary, sourceFingerprint: current.provenance.sourceFingerprint }));
+	if (!differences.length) return { status: 0, stdout: passed, stderr: [] };
+	const shown = differences.slice(0, 40).map((line) => `  ${line}`);
+	if (differences.length > shown.length) shown.push(`  ... and ${differences.length - shown.length} more`);
+	return { status: 1, stdout: [], stderr: [`API census is stale: ${differences.length} difference${differences.length === 1 ? "" : "s"} from the source.`, ...shown, REFRESH] };
+}
+
+// The real path: a symlinked invocation must run, not exit 0 having done nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	const result = runCensus(process.argv[2], join(root, "apps/web/src/data/api-coverage/current.json"));
+	for (const line of result.stdout) console.log(line);
+	for (const line of result.stderr) console.error(line);
+	process.exitCode = result.status;
 }

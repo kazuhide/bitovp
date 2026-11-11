@@ -77,6 +77,8 @@ docker compose up -d --no-build
 
 リビジョンを取得するコマンドは、Git で取得したソースと公式ソースアーカイブのどちらでも使えます。リビジョンの取得、設定確認、ビルド、マイグレーションのいずれかが失敗した場合は、原因を解消してから進めます。
 
+ビルドでは、Worker イメージ用の FFmpeg を、固定したソースからコンパイルします。この部分は 10 コアのコンピューターで約 3 分、4 コアのコンピューターで 8〜12 分かかりました。
+
 ```sh
 curl --connect-timeout 2 --max-time 5 -fsS \
   http://127.0.0.1:3100/api/health
@@ -1494,7 +1496,7 @@ INGRESS_QUICKTUNNEL_METRICS_URL=
 
 更新前には、現在のアプリ・イメージのバージョンと、実行中の外部リソースを記録します。新しい処理を受け付けないようにし、マイグレーションの注意事項を確認してから Web と Worker を同じバージョンへ更新します。停止やクリーンアップが未確認のリソースがある間は、必要な Worker と認証情報を失わないようにします。
 
-バックアップと処理の終了を確認してから、`docker compose pull postgres redis` で選択したデータサービスの固定イメージを取得し、`docker compose build --pull --no-cache migrate worker web` でアプリのベースと OS パッケージを更新します。イメージの取得だけでは、稼働中の PostgreSQL/Redis は切り替わりません。更新時の注意事項を確認し、ボリュームを保持したうえで保守時間中に再作成します。更新順序は[運用手順（英語）](../OPERATIONS.md#upgrades)を参照してください。
+バックアップと処理の終了を確認してから、`docker compose pull postgres redis` で選択したデータサービスの固定イメージを取得し、`docker compose build --pull --no-cache migrate worker web` でアプリのベースと OS パッケージを更新します。このビルドでは Worker イメージ用の FFmpeg をあらためてコンパイルするため、数分かかります。イメージの取得だけでは、稼働中の PostgreSQL/Redis は切り替わりません。更新時の注意事項を確認し、ボリュームを保持したうえで保守時間中に再作成します。更新順序は[運用手順（英語）](../OPERATIONS.md#upgrades)を参照してください。
 
 既存データベースの条件は[データベース更新手順（英語）](../DATABASE-UPGRADES.md)を参照してください。イメージを以前のバージョンへ戻しても、適用したデータベース変更を戻せるとは限りません。
 

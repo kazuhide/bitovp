@@ -77,6 +77,8 @@ docker compose up -d --no-build
 
 The revision command works in both Git checkouts and official source archives. If revision lookup, configuration validation, the build, or migration fails, fix the cause before continuing.
 
+The build compiles FFmpeg for the Worker image from pinned sources. This part took about 3 minutes on a 10-core machine and 8 to 12 minutes on a 4-core one.
+
 ```sh
 curl --connect-timeout 2 --max-time 5 -fsS \
   http://127.0.0.1:3100/api/health
@@ -1474,7 +1476,7 @@ Keep encrypted backups of the database, `.env`, and `.env.migrate` outside the r
 
 Before upgrading, record the current app and image versions and active external resources. Stop accepting new work, review migration notes, and update Web and Worker to the same version. While any resource still has unconfirmed shutdown or cleanup, retain the Worker and credentials it needs.
 
-After backups and draining work, run `docker compose pull postgres redis` to fetch the selected data-service pins and `docker compose build --pull --no-cache migrate worker web` to refresh the application base and OS packages. Pulling images does not replace running PostgreSQL/Redis services; recreate them during the maintenance window after checking their upgrade notes and preserving their volumes. See [Operations](../OPERATIONS.md#upgrades) for the upgrade sequence.
+After backups and draining work, run `docker compose pull postgres redis` to fetch the selected data-service pins and `docker compose build --pull --no-cache migrate worker web` to refresh the application base and OS packages. This build compiles the Worker image's FFmpeg again, which takes several minutes. Pulling images does not replace running PostgreSQL/Redis services; recreate them during the maintenance window after checking their upgrade notes and preserving their volumes. See [Operations](../OPERATIONS.md#upgrades) for the upgrade sequence.
 
 See the [database upgrade procedure](../DATABASE-UPGRADES.md) for requirements on existing databases. Reverting an image to an earlier version does not necessarily reverse database changes already applied.
 

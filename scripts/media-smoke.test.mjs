@@ -953,6 +953,7 @@ async function mediaRun({
 	failed = false,
 	verify = async (path) => path,
 	owner = (id) => id,
+	removal = () => {},
 } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "media-run-test-"));
 	const statePath = join(directory, "state.json");
@@ -977,7 +978,10 @@ async function mediaRun({
 					docker.at(-1).slice("bitovp-media-".length),
 				),
 			});
-		if (docker.includes("rm")) removed.push(docker[0]);
+		if (docker.includes("rm")) {
+			removed.push(docker[0]);
+			await removal();
+		}
 		return "";
 	};
 	let lines;
@@ -1086,6 +1090,25 @@ test("a media run passes only with every fixture's totals, a valid summary, an u
 				"A later step also failed:",
 				"Step: removing the owned image, container and scratch files",
 				"Reason: Media fixture ownership label does not match",
+			],
+		],
+		// A cleanup can reject with anything; the report still names it.
+		[
+			{ removal: () => Promise.reject() },
+			[
+				"Step: removing the owned image, container and scratch files",
+				"Reason: A step failed without an error",
+			],
+		],
+		[
+			{ failed: true, log: "", removal: () => Promise.reject() },
+			[
+				"Step: running the media fixtures, then packaging and scoring offline",
+				"Reason: Media validation command failed",
+				`  - not started: ${names.join(", ")}`,
+				"A later step also failed:",
+				"Step: removing the owned image, container and scratch files",
+				"Reason: A step failed without an error",
 			],
 		],
 	]) {

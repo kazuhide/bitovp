@@ -20,7 +20,6 @@ import {
 	atStep,
 	failureLines,
 	GateFailure,
-	inStep,
 	isEntryPoint,
 	outputTail,
 	withLaterFailure,
@@ -694,11 +693,14 @@ export async function runFixture(
 	// Cleanup runs on every path. When it fails too, the report keeps the first
 	// failure and adds the cleanup failure after it.
 	try {
-		await inStep("removing the owned image, container and scratch files", () =>
-			cleanupFixture(state, execute, env),
-		);
+		await cleanupFixture(state, execute, env);
 	} catch (error) {
-		throw failure ? withLaterFailure(failure, error) : error;
+		// A cleanup can reject with anything; the report still names its step.
+		const later = atStep(
+			asFailure(error),
+			"removing the owned image, container and scratch files",
+		);
+		throw failure ? withLaterFailure(failure, later) : later;
 	}
 	if (saved) rmSync(stateFile, { force: true });
 	notify("Media fixture: owned image, container and scratch files removed");

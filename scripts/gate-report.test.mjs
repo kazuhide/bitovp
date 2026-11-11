@@ -15,7 +15,6 @@ import {
 	atStep,
 	failureLines,
 	GateFailure,
-	inStep,
 	isEntryPoint,
 	outputTail,
 	publicLines,
@@ -73,6 +72,28 @@ test("a cut-off start of a known secret is removed too", () => {
 		[
 			"pw=SECRET-12 and [private]",
 			"https://registry.example/v2/ and [private]",
+		],
+	);
+});
+
+test("a known URL with another password still loses its credentials", () => {
+	// Its start matches the known URL up to the character that differs.
+	const other = (at) =>
+		url.replace(password, `${password.slice(0, at)}X${password.slice(at + 1)}`);
+	const rest = "127.0.0.1:15432/bitovp_integration_0123?schema=public";
+	assert.deepEqual(
+		publicLines(
+			[
+				`connect ${other(20)} refused`,
+				`connect ${other(1)} refused`,
+				`-   url: '${other(20)}'`,
+			].join("\n"),
+			{ secrets: [password, url] },
+		),
+		[
+			`connect postgresql://[private]@${rest} refused`,
+			`connect postgresql://[private]@${rest} refused`,
+			`-   url: 'postgresql://[private]@${rest}'`,
 		],
 	);
 });
@@ -290,14 +311,10 @@ test("a long list of details is bounded", () => {
 	assert.equal(lines.at(-1), "  - 340 more lines not shown");
 });
 
-test("a failure names the step that threw first, and a later cleanup failure follows it", async () => {
+test("a failure names the step that threw first, and a later cleanup failure follows it", () => {
 	const first = new GateFailure("Tests must pass", { details: ["a: not run"] });
-	await assert.rejects(
-		inStep("outer step", () =>
-			inStep("running tests", () => Promise.reject(first)),
-		),
-		(error) => error === first && error.step === "running tests",
-	);
+	assert.equal(atStep(atStep(first, "running tests"), "outer step"), first);
+	assert.equal(first.step, "running tests");
 	// A thrown value that is not an error becomes one that can be reported.
 	assert.equal(asFailure(first), first);
 	for (const value of [undefined, null, 0, "", false, "text"])
@@ -310,11 +327,7 @@ test("a failure names the step that threw first, and a later cleanup failure fol
 	assert.equal(atStep(frozen, "step"), frozen);
 	assert.equal(atStep("text", "step"), "text");
 	assert.equal(atStep(undefined, "step"), undefined);
-	await assert.rejects(
-		inStep("step", () => Promise.reject(frozen)),
-		(error) => error === frozen && error.step === undefined,
-	);
-	assert.equal(await inStep("step", () => "result"), "result");
+	assert.equal(frozen.step, undefined);
 
 	const later = atStep(
 		new GateFailure("Cleanup failed", { diagnostics: `rm ${url}\n` }),

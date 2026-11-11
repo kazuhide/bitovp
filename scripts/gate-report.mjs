@@ -42,15 +42,6 @@ export function atStep(error, step) {
 	return error;
 }
 
-/** Runs one part of a gate; a failure report names the part that threw. */
-export async function inStep(step, action) {
-	try {
-		return await action();
-	} catch (error) {
-		throw atStep(error, step);
-	}
-}
-
 /**
  * The error to report when a gate's work and its cleanup both failed: the
  * first failure, followed in the report by the cleanup failure.
@@ -146,12 +137,16 @@ export function publicLines(
 			// Invisible characters go first: removed later, they could have split
 			// a secret, or the marker below, until after it was looked for.
 			let clean = visible(line);
+			for (const secret of known) clean = clean.replaceAll(secret, "[private]");
+			// Credentials of any URL, up to the last "@" before its path. The
+			// pattern starts at a fixed text, so a long line costs linear time.
+			clean = clean.replace(/:\/\/[^\s/?#]*@/g, "://[private]@");
+			// Cut-off starts come last: found first, the start of a known URL
+			// would take "://" with it, and the rule above would then miss the
+			// rest of a password that differs from the known one.
 			for (const secret of known) clean = withoutSecret(clean, secret);
 			return (
 				clean
-					// Credentials of any URL, up to the last "@" before its path. The
-					// pattern starts at a fixed text, so a long line costs linear time.
-					.replace(/:\/\/[^\s/?#]*@/g, "://[private]@")
 					// The runner reads this marker anywhere in a line as a command.
 					.replaceAll("##[", "## [")
 					.trimEnd()

@@ -189,7 +189,7 @@ const excerpt = (text) =>
 		.join("\n");
 
 /** Why a Vitest report is not the complete, fully passed required run. */
-export function reportProblems(report, group, root) {
+export function reportProblems(report, group, root, kind = "PostgreSQL") {
 	const problems = [];
 	const total = Object.values(group.files).reduce(
 		(sum, count) => sum + count,
@@ -221,7 +221,7 @@ export function reportProblems(report, group, root) {
 		: []) {
 		const name = relative(resolve(root, group.directory), String(result?.name));
 		if (!Object.hasOwn(group.files, name)) {
-			problems.push(`${name}: not a required PostgreSQL test file`);
+			problems.push(`${name}: not a required ${kind} test file`);
 			continue;
 		}
 		if (seen.has(name)) {

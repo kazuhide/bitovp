@@ -14,6 +14,10 @@ import { latestRunsFor } from "./latest-runs";
  * Runs with the PostgreSQL integration fixture. Every row belongs to an
  * organization that this file creates and removes, and the statement is asked
  * for this file's channels only, so other tests may use the same tables.
+ *
+ * A broken statement shows in the first test: `LIMIT 5` gives seq [1, 1, 3],
+ * because the map keeps the last row it is handed per channel, and
+ * `ORDER BY r."seq" ASC` gives [1, 1, 1], the oldest airing of each channel.
  */
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
 const runtimeUrl = process.env.BITOVP_TENANT_TEST_APP_URL;

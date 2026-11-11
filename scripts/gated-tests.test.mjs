@@ -1276,10 +1276,10 @@ test("a Redis run names the part that did not run, and stops the servers it star
 // A program that takes redis-server's place: `FAKE_REDIS` chooses whether it
 // serves its port, stops at once, neither serves nor ends when asked, or stays
 // and starts another process that serves and holds its output open, as a
-// script does that starts the server without exec. Every start is listed in
-// `pids`, and none lasts longer than 90 seconds. A server answers INFO with
-// its process id, as Redis does, and leaves the file `asked` when it is asked
-// to end.
+// script does that starts the server without exec, or serves but only sends
+// a byte now and then. Every start is listed in `pids`, and none lasts longer
+// than 90 seconds. A server answers INFO with its process id, as Redis does,
+// and leaves the file `asked` when it is asked to end.
 const FAKE_REDIS = `#!${process.execPath}
 const { spawn } = require("node:child_process");
 const { appendFileSync, renameSync, writeFileSync } = require("node:fs");
@@ -1312,6 +1312,11 @@ else {
 		});
 		createServer((socket) => {
 			socket.on("error", () => {});
+			if (mode === "drips") {
+				const drip = setInterval(() => socket.write("-"), 200);
+				socket.on("close", () => clearInterval(drip));
+				return;
+			}
 			socket.on("data", (data) => {
 				if (String(data) !== "INFO server\\r\\n") return socket.end("-ERR unknown command\\r\\n");
 				const info = "# Server\\r\\nprocess_id:" + process.pid + "\\r\\n";
@@ -1431,7 +1436,7 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 		startRedis({ program, port, directory, env: env("stops"), wait: 30_000 }),
 		(error) => {
 			assert.deepEqual(failureLines(error), [
-				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
+				`Reason: The Redis server for 127.0.0.1:${port} did not answer`,
 				"Last 1 lines of the failed command:",
 				"  | Could not create server TCP listening socket: bind: Address already in use",
 			]);
@@ -1449,7 +1454,7 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 		}),
 		(error) => {
 			assert.deepEqual(failureLines(error), [
-				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
+				`Reason: The Redis server for 127.0.0.1:${port} did not answer`,
 			]);
 			return true;
 		},
@@ -1472,6 +1477,18 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 	for (let attempt = 0; alive(record().pid) && attempt < 100; attempt++)
 		await new Promise((accept) => setTimeout(accept, 50));
 	assert.equal(alive(record().pid), false);
+	// A server that keeps sending but never answers the question is given up
+	// when the wait is over.
+	await assert.rejects(
+		startRedis({ program, port, directory, env: env("drips"), wait: 1_500 }),
+		(error) => {
+			assert.deepEqual(failureLines(error), [
+				`Reason: The Redis server for 127.0.0.1:${port} did not answer`,
+			]);
+			return true;
+		},
+	);
+	assert.equal(alive(record().pid), false);
 	// A server that neither serves nor ends when asked is killed, and what it
 	// printed as an error is reported.
 	const begun = Date.now();
@@ -1479,7 +1496,7 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 		startRedis({ program, port, directory, env: env("deaf"), wait: 1_000 }),
 		(error) => {
 			assert.deepEqual(failureLines(error), [
-				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
+				`Reason: The Redis server for 127.0.0.1:${port} did not answer`,
 				"Last 1 lines of the failed command:",
 				"  | Error loading shared library libssl.so.3: No such file or directory",
 			]);
@@ -1759,6 +1776,12 @@ test("the installer takes only the pinned Redis image, into a new directory with
 		mkdtempSync(join(tmpdir(), "gated-redis-tools-")),
 	);
 	try {
+		// The installer refuses any other character in the path of its target.
+		assert.match(
+			parent,
+			/^[A-Za-z0-9/._-]+$/,
+			"this test needs a temporary directory with a plain path",
+		);
 		const tools = join(parent, "tools");
 		mkdirSync(tools);
 		writeFileSync(join(tools, "docker"), FAKE_DOCKER, { mode: 0o700 });

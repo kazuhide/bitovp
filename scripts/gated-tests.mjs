@@ -359,17 +359,19 @@ const accepts = (port) =>
 
 /**
  * The process id that the Redis server on a loopback port reports, or
- * undefined when nothing answers there as Redis does.
+ * undefined when nothing answers there as Redis does within a second.
  */
 const serverProcess = (port) =>
 	new Promise((accept) => {
 		const socket = connect({ host: "127.0.0.1", port });
 		let reply = "";
 		const answer = (id) => {
+			clearTimeout(timer);
 			socket.destroy();
 			accept(id);
 		};
-		socket.setTimeout(1_000, () => answer(undefined));
+		// For the whole exchange, whatever the other side sends meanwhile.
+		const timer = setTimeout(() => answer(undefined), 1_000);
 		socket.once("connect", () => socket.write("INFO server\r\n"));
 		socket.on("data", (chunk) => {
 			reply += chunk;
@@ -461,7 +463,7 @@ export async function startRedis({
 	await stop();
 	throw new GateFailure(
 		other === undefined
-			? `The Redis server for 127.0.0.1:${port} did not accept connections`
+			? `The Redis server for 127.0.0.1:${port} did not answer`
 			: `127.0.0.1:${port} is served by process ${other}, not by the server that this run started`,
 		{ diagnostics: log.text() },
 	);

@@ -159,6 +159,34 @@ jobs:
       - name: Run every test that drives real FFmpeg
         run: pnpm test:native-media
 
+  redis-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:gated-runner
+      - run: pnpm --filter @bitovp/db build
+      - name: Take the Redis server out of the image that production pins
+        run: |
+          sh scripts/redis-server-tools.sh "$RUNNER_TEMP/redis"
+          printf '%s\n' "$RUNNER_TEMP/redis/bin" >> "$GITHUB_PATH"
+      - name: Run every test that needs Redis
+        run: pnpm test:redis
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20

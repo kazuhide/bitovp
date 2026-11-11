@@ -1,24 +1,30 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	existsSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
-import { failureLines, GateFailure } from "./gate-report.mjs";
+import { atStep, failureLines, GateFailure } from "./gate-report.mjs";
 import {
 	auditSkips,
 	NATIVE_MEDIA,
+	REDIS,
 	runNativeMedia,
+	runRedis,
 	scriptProblems,
 	skipProblems,
-	UNEXECUTED,
+	startRedis,
 	WORKER_SCRIPTS,
 } from "./gated-tests.mjs";
 import { GROUPS } from "./postgres-integration.mjs";
@@ -66,7 +72,7 @@ const plainRun = (workspace, change = (files) => files) =>
 	reportOf(
 		change([
 			fileResult("src/always.test.ts", ["passed", "passed"]),
-			...[...GROUPS, ...NATIVE_MEDIA, ...UNEXECUTED]
+			...[...GROUPS, ...NATIVE_MEDIA, REDIS.queues]
 				.filter((group) => group.workspace === workspace)
 				.flatMap((group) =>
 					Object.entries(group.files).map(([file, tests]) =>
@@ -79,8 +85,13 @@ const plainRun = (workspace, change = (files) => files) =>
 		]),
 	);
 
-test("every listed file exists once, and every FFmpeg or script test file is listed", () => {
-	const listed = paths([...GROUPS, ...NATIVE_MEDIA, ...UNEXECUTED]);
+test("every listed file exists once, and every FFmpeg, Redis or script test file is listed", () => {
+	const listed = paths([
+		...GROUPS,
+		...NATIVE_MEDIA,
+		REDIS.queues,
+		REDIS.leases,
+	]);
 	assert.equal(new Set(listed).size, listed.length);
 	for (const file of [
 		...listed,
@@ -89,12 +100,15 @@ test("every listed file exists once, and every FFmpeg or script test file is lis
 		assert(existsSync(resolve(root, file)), `${file} is missing`);
 
 	const found = [];
+	const redis = [];
 	const visit = (directory) => {
 		for (const entry of readdirSync(directory, { withFileTypes: true })) {
 			const path = join(directory, entry.name);
 			if (entry.isDirectory()) visit(path);
 			else if (/[.-]ffmpeg\.test\.ts$/.test(entry.name))
 				found.push(relative(root, path));
+			else if (/(?:^|\.)redis\.integration(?:\.test)?\.ts$/.test(entry.name))
+				redis.push(relative(root, path));
 		}
 	};
 	for (const source of ["packages", "apps"])
@@ -102,6 +116,29 @@ test("every listed file exists once, and every FFmpeg or script test file is lis
 			if (existsSync(resolve(root, source, entry, "src")))
 				visit(resolve(root, source, entry, "src"));
 	assert.deepEqual(found.sort(), paths(NATIVE_MEDIA).sort());
+	assert.deepEqual(redis.sort(), paths([REDIS.queues, REDIS.leases]).sort());
+	// The lease tests have a configuration of their own, which names only them.
+	assert.match(
+		readFileSync(
+			resolve(root, REDIS.leases.directory, REDIS.leases.config),
+			"utf8",
+		),
+		/\tinclude: \["src\/vmaf\/resource-leases\.redis\.integration\.ts"\],\n/,
+	);
+	// Each queue test accepts one address; the run must start a server there.
+	const addresses = Object.keys(REDIS.queues.files).map((file) => {
+		const text = readFileSync(
+			resolve(root, REDIS.queues.directory, file),
+			"utf8",
+		);
+		const [, variable] = /process\.env\.([A-Z_]+_TEST_REDIS_URL)\b/.exec(text);
+		const [, port] = /"redis:\/\/127\.0\.0\.1:(\d+)"/.exec(text);
+		return [variable, Number(port)];
+	});
+	assert.deepEqual(
+		Object.fromEntries(addresses.sort(([, a], [, b]) => a - b)),
+		REDIS.servers,
+	);
 	assert.deepEqual(
 		readdirSync(resolve(root, WORKER_SCRIPTS.directory, "scripts"))
 			.filter((name) => name.endsWith(".test.mjs"))
@@ -111,20 +148,20 @@ test("every listed file exists once, and every FFmpeg or script test file is lis
 	// A changed count is a decision: it moves a test into or out of a job.
 	assert.equal(total(NATIVE_MEDIA), 19);
 	assert.equal(WORKER_SCRIPTS.tests, 43);
-	assert.equal(total(UNEXECUTED), 3);
+	assert.equal(total([REDIS.leases]), 29);
+	assert.equal(total([REDIS.queues]), 3);
 });
 
-test("a plain run may skip the tests that another job runs or that are listed as run by no job", () => {
-	for (const [workspace, skipped, unexecuted] of [
-		["@bitovp/core", 11, 0],
-		["@bitovp/db", 70, 0],
-		["@bitovp/worker", 67, 3],
-		["@bitovp/web", 81, 0],
+test("a plain run may skip the tests that another job runs", () => {
+	for (const [workspace, skipped] of [
+		["@bitovp/core", 11],
+		["@bitovp/db", 70],
+		["@bitovp/worker", 67],
+		["@bitovp/web", 81],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],
 			skipped,
-			unexecuted,
 		});
 	// A gated test that ran here after all is no problem.
 	const ran = plainRun("@bitovp/core", (files) =>
@@ -139,7 +176,6 @@ test("a plain run may skip the tests that another job runs or that are listed as
 	assert.deepEqual(skipProblems(ran, "@bitovp/core", root), {
 		problems: [],
 		skipped: 0,
-		unexecuted: 0,
 	});
 	assert.deepEqual(
 		skipProblems(
@@ -147,7 +183,7 @@ test("a plain run may skip the tests that another job runs or that are listed as
 			"@bitovp/storage",
 			root,
 		),
-		{ problems: [], skipped: 0, unexecuted: 0 },
+		{ problems: [], skipped: 0 },
 	);
 });
 
@@ -660,7 +696,7 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 	const lists = [
 		[GROUPS, "the PostgreSQL integration job runs them"],
 		[NATIVE_MEDIA, "the native media job runs them"],
-		[UNEXECUTED, "listed as run by no job"],
+		[[REDIS.queues], "the Redis integration job runs them"],
 	].map(([groups, where]) => {
 		const group = groups.find((group) => group.workspace === workspace);
 		const [file, count] = Object.entries(group.files)[0];
@@ -696,28 +732,20 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 			`${namesake}: 1 tests skipped, none may be`,
 		);
 	}
-	// A debt test that ran here is not counted as run by no job.
-	const debt = lists[2];
+	// A gated test that ran here after all is not counted as skipped.
+	const gated = lists[2];
 	assert.deepEqual(
 		audit((files) =>
 			files.map((entry) =>
-				entry.name === resolve(root, debt.file)
+				entry.name === resolve(root, gated.file)
 					? fileResult(
-							debt.file,
-							Array.from({ length: debt.count }, () => "passed"),
+							gated.file,
+							Array.from({ length: gated.count }, () => "passed"),
 						)
 					: entry,
 			),
 		),
-		{ problems: [], skipped: 67 - debt.count, unexecuted: 3 - debt.count },
-	);
-	// A failed test ran; the test command itself reports it.
-	assert.deepEqual(
-		audit((files) => [
-			...files,
-			fileResult("apps/worker/src/new.test.ts", ["failed", "passed"]),
-		]),
-		{ problems: [], skipped: 67, unexecuted: 3 },
+		{ problems: [], skipped: 67 - gated.count },
 	);
 	// The report of a failed run is refused: it lacks the tests of a file that
 	// did not load.
@@ -731,16 +759,15 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 					"the test run failed; its report cannot show every skipped test",
 				],
 				skipped: 0,
-				unexecuted: 0,
 			},
 		);
 	// A file reported twice would use its allowance twice.
 	assert.equal(
 		audit((files) => [
 			...files,
-			files.find((entry) => entry.name === resolve(root, debt.file)),
+			files.find((entry) => entry.name === resolve(root, gated.file)),
 		]).problems[0],
-		`${debt.file}: reported more than once`,
+		`${gated.file}: reported more than once`,
 	);
 	// A status this check does not know is not a test that ran.
 	assert.deepEqual(
@@ -785,6 +812,631 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 	);
 });
 
+const allPassed = (group) =>
+	reportOf(
+		Object.entries(group.files).map(([file, tests]) =>
+			fileResult(
+				join(group.directory, file),
+				Array.from({ length: tests }, () => "passed"),
+			),
+		),
+	);
+const ADMIN_URL =
+	"postgresql://bitovp_fixture_admin:admin-secret@127.0.0.1:54329/bitovp_integration_0123456789abcdef0123456789abcdef?schema=public";
+const APP_URL =
+	"postgresql://bitovp_app:app-secret@127.0.0.1:54329/bitovp_integration_0123456789abcdef0123456789abcdef?schema=public";
+
+// A stand-in for the commands, the PostgreSQL fixture and the servers of a
+// Redis run. `vitest` gives the report of a group; `during` looks at the
+// fixture's private directory while the queue tests run.
+async function redisRun({
+	version = async () =>
+		"Redis server v=8.10.3 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64 build=747a5ed3aa01506f",
+	vitest = allPassed,
+	during = () => {},
+	start,
+	fixture,
+	database = {
+		BITOVP_TENANT_TEST_ADMIN_URL: ADMIN_URL,
+		BITOVP_TENANT_TEST_APP_URL: APP_URL,
+	},
+	env = { PATH: "/tools/bin" },
+	signal,
+} = {}) {
+	const calls = [];
+	const notes = [];
+	const servers = [];
+	const scratch = {};
+	const execute = async (binary, args, options) => {
+		calls.push({ binary, args, options });
+		if (binary !== "pnpm") return version();
+		const output = args.at(-1).slice("--outputFile=".length);
+		const group = args.includes("--config") ? REDIS.leases : REDIS.queues;
+		scratch[group === REDIS.leases ? "leases" : "queues"] = dirname(output);
+		if (group === REDIS.queues) during(dirname(output), options);
+		const report = await vitest(group);
+		if (report !== undefined) writeFileSync(output, JSON.stringify(report));
+		return "";
+	};
+	// What the fixture gives its run step: a private directory, a private
+	// temporary directory in the child environment, and both database URLs.
+	const prepared = async ({ run, notify, root: checkout, env: given }) => {
+		const directory = mkdtempSync(join(tmpdir(), "gated-redis-fixture-"));
+		try {
+			await run(
+				{
+					root: checkout,
+					directory,
+					notify,
+					env: {
+						PATH: given.PATH,
+						TMPDIR: join(directory, "tmp"),
+						...database,
+					},
+				},
+				execute,
+			);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	};
+	const started = async (options) => {
+		const server = {
+			...options,
+			mode: statSync(options.directory).mode & 0o777,
+			stopped: false,
+		};
+		servers.push(server);
+		return {
+			stop: async () => {
+				server.stopped = true;
+			},
+		};
+	};
+	let lines;
+	try {
+		await runRedis(
+			{ root, env, signal, notify: (note) => notes.push(note) },
+			{ execute, fixture: fixture ?? prepared, start: start ?? started },
+		);
+	} catch (error) {
+		lines = failureLines(error);
+	}
+	return { calls, notes, servers, scratch, lines };
+}
+
+test("a Redis run passes only when every lease and queue test ran and passed", async () => {
+	const controller = new AbortController();
+	const seen = {};
+	const passed = await redisRun({
+		signal: controller.signal,
+		env: { PATH: "/tools/bin", GITHUB_TOKEN: "not for a child" },
+		during: (directory, options) => {
+			seen.directory = directory;
+			seen.database = readFileSync(options.env.TENANT_TEST_DB_FILE, "utf8");
+			seen.mode = statSync(options.env.TENANT_TEST_DB_FILE).mode & 0o777;
+		},
+	});
+	assert.equal(passed.lines, undefined);
+	assert.deepEqual(passed.notes, [
+		"Redis server 8.10.3",
+		"@bitovp/worker: 29 resource lease tests passed, 0 skipped",
+		"@bitovp/worker: 3 queue tests passed against Redis and PostgreSQL, 0 skipped",
+	]);
+	const child = {
+		PATH: "/tools/bin",
+		CI: "1",
+		TURBO_TELEMETRY_DISABLED: "1",
+		NEXT_TELEMETRY_DISABLED: "1",
+	};
+	assert.deepEqual(
+		passed.calls.map(({ binary, args }) => [binary, ...args.slice(0, -1)]),
+		[
+			["redis-server"],
+			[
+				"pnpm",
+				"--filter",
+				"@bitovp/worker",
+				"exec",
+				"vitest",
+				"run",
+				"--config",
+				"vitest.resource-leases.config.ts",
+				"--maxWorkers=2",
+				"--reporter=json",
+			],
+			[
+				"pnpm",
+				"--filter",
+				"@bitovp/worker",
+				"exec",
+				"vitest",
+				"run",
+				"src/handlers.redis.integration.test.ts",
+				"src/live-capacity.redis.integration.test.ts",
+				"src/tenant/redis.integration.test.ts",
+				"--maxWorkers=2",
+				"--reporter=json",
+			],
+		],
+	);
+	assert.deepEqual(passed.calls[0].args, ["--version"]);
+	assert.deepEqual(passed.calls[0].options, {
+		env: child,
+		signal: controller.signal,
+	});
+	assert.deepEqual(passed.calls[1].options, {
+		cwd: root,
+		env: child,
+		signal: controller.signal,
+		timeout: 300_000,
+	});
+	// The queue tests get the three addresses and the credentials file, and no
+	// database URL or token in their environment.
+	assert.deepEqual(passed.calls[2].options, {
+		cwd: root,
+		env: {
+			...child,
+			TMPDIR: join(seen.directory, "tmp"),
+			TENANT_TEST_DB_FILE: join(seen.directory, "tenant-redis.json"),
+			TENANT_TEST_REDIS_URL: "redis://127.0.0.1:16379",
+			VOD_REDELIVERY_TEST_REDIS_URL: "redis://127.0.0.1:16380",
+			LIVE_CAPACITY_TEST_REDIS_URL: "redis://127.0.0.1:16381",
+		},
+	});
+	assert.deepEqual(JSON.parse(seen.database), {
+		adminUrl: ADMIN_URL,
+		runtimeUrl: APP_URL,
+	});
+	assert.equal(seen.mode, 0o600);
+	// One private server per address, each stopped after the tests.
+	assert.deepEqual(
+		passed.servers.map(({ program, port, directory, env, mode, stopped }) => ({
+			program,
+			port,
+			directory,
+			env,
+			mode,
+			stopped,
+		})),
+		[16379, 16380, 16381].map((port) => ({
+			program: "redis-server",
+			port,
+			directory: join(seen.directory, `redis-${port}`),
+			env: { ...child, TMPDIR: join(seen.directory, "tmp") },
+			mode: 0o700,
+			stopped: true,
+		})),
+	);
+	assert.equal(existsSync(passed.scratch.leases), false);
+
+	// A program named for the lease tests is the one every part uses.
+	const named = await redisRun({
+		env: {
+			PATH: "/tools/bin",
+			VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER: "/redis/bin/redis-server",
+		},
+	});
+	assert.equal(named.lines, undefined);
+	assert.equal(named.calls[0].binary, "/redis/bin/redis-server");
+	assert.equal(
+		named.calls[1].options.env.VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER,
+		"/redis/bin/redis-server",
+	);
+	assert.deepEqual(
+		named.servers.map(({ program }) => program),
+		Array.from({ length: 3 }, () => "/redis/bin/redis-server"),
+	);
+});
+
+test("a Redis run names the part that did not run, and stops the servers it started", async () => {
+	// No program, or a program that is not Redis: nothing else starts.
+	const absent = await redisRun({
+		version: async () => {
+			throw new GateFailure("Media validation command failed", {
+				diagnostics: "sh: redis-server: not found\n",
+			});
+		},
+	});
+	assert.deepEqual(absent.lines, [
+		"Step: checking the Redis server program",
+		"Reason: redis-server could not be run; put it on PATH or name it in VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER",
+		"Last 1 lines of the failed command:",
+		"  | sh: redis-server: not found",
+	]);
+	assert.equal(absent.calls.length, 1);
+	for (const version of [
+		"Valkey server v=8.0.1 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64",
+		"note\nRedis server v=8.10.3 sha=00000000:1",
+		"Redis server v=8.10 sha=00000000:1",
+		"",
+	]) {
+		const other = await redisRun({ version: async () => version });
+		assert.deepEqual(other.lines, [
+			"Step: checking the Redis server program",
+			"Reason: redis-server did not report a Redis version",
+		]);
+		assert.deepEqual(other.notes, []);
+		assert.equal(other.calls.length, 1);
+	}
+
+	// A lease test that did not run: the queue part does not start.
+	const skippedLease = await redisRun({
+		vitest: (group) => {
+			const report = allPassed(group);
+			if (group !== REDIS.leases) return report;
+			report.testResults[0].assertionResults[3].status = "skipped";
+			report.numPassedTests -= 1;
+			report.numPendingTests += 1;
+			return report;
+		},
+	});
+	const lease = "src/vmaf/resource-leases.redis.integration.ts";
+	assert.deepEqual(skippedLease.lines, [
+		"Step: running the resource lease tests",
+		"Reason: Redis tests must all run and pass",
+		"  - skipped tests: 1, required 0",
+		"  - tests passed: 28, required 29",
+		`  - ${lease}: 28 of 29 tests passed, 29 required`,
+		`  - "skipped": apps/worker/${lease} > test 4`,
+	]);
+	assert.deepEqual(skippedLease.notes, ["Redis server 8.10.3"]);
+	assert.deepEqual(skippedLease.servers, []);
+	assert.equal(existsSync(skippedLease.scratch.leases), false);
+	// A file that the lease configuration gained is not a listed one.
+	const extra = await redisRun({
+		vitest: (group) =>
+			group === REDIS.leases
+				? reportOf([
+						...allPassed(group).testResults,
+						fileResult("apps/worker/src/vmaf/more.redis.integration.ts", [
+							"passed",
+						]),
+					])
+				: allPassed(group),
+	});
+	assert.deepEqual(extra.lines.slice(0, 5), [
+		"Step: running the resource lease tests",
+		"Reason: Redis tests must all run and pass",
+		"  - tests discovered: 30, required 29",
+		"  - tests passed: 30, required 29",
+		"  - src/vmaf/more.redis.integration.ts: not a required Redis test file",
+	]);
+
+	// A queue test that skipped itself, as each does without its variable.
+	const skippedQueue = await redisRun({
+		vitest: (group) => {
+			const report = allPassed(group);
+			if (group !== REDIS.queues) return report;
+			report.testResults[2].assertionResults[0].status = "skipped";
+			report.numPassedTests -= 1;
+			report.numPendingTests += 1;
+			return report;
+		},
+	});
+	assert.deepEqual(skippedQueue.lines, [
+		"Step: running the queue tests that need Redis",
+		"Reason: Redis tests must all run and pass",
+		"  - skipped tests: 1, required 0",
+		"  - tests passed: 2, required 3",
+		"  - src/tenant/redis.integration.test.ts: 0 of 1 tests passed, 1 required",
+		'  - "skipped": apps/worker/src/tenant/redis.integration.test.ts > test 1',
+	]);
+	assert.deepEqual(skippedQueue.notes, [
+		"Redis server 8.10.3",
+		"@bitovp/worker: 29 resource lease tests passed, 0 skipped",
+	]);
+	assert.deepEqual(
+		skippedQueue.servers.map(({ stopped }) => stopped),
+		[true, true, true],
+	);
+	// No report at all, with and without a failed command.
+	const silent = await redisRun({
+		vitest: (group) => (group === REDIS.queues ? undefined : allPassed(group)),
+	});
+	assert.deepEqual(silent.lines, [
+		"Step: running the queue tests that need Redis",
+		"Reason: Vitest did not write a readable report",
+	]);
+	assert.deepEqual(
+		silent.servers.map(({ stopped }) => stopped),
+		[true, true, true],
+	);
+	const failed = await redisRun({
+		vitest: (group) => {
+			if (group === REDIS.queues)
+				throw new GateFailure("PostgreSQL integration command failed", {
+					diagnostics: `connect ECONNREFUSED ${ADMIN_URL}\n`,
+				});
+			return allPassed(group);
+		},
+	});
+	assert.deepEqual(failed.lines.slice(0, 2), [
+		"Step: running the queue tests that need Redis",
+		"Reason: PostgreSQL integration command failed",
+	]);
+	assert.deepEqual(
+		failed.servers.map(({ stopped }) => stopped),
+		[true, true, true],
+	);
+
+	// A server that does not start: the ones before it are stopped, no test runs.
+	const taken = [];
+	const blocked = await redisRun({
+		start: async (options) => {
+			if (options.port === 16380)
+				throw new GateFailure(
+					"127.0.0.1:16380 already accepts connections; the Redis tests need that port for a server of their own",
+				);
+			const server = { port: options.port, stopped: false };
+			taken.push(server);
+			return {
+				stop: async () => {
+					server.stopped = true;
+				},
+			};
+		},
+	});
+	assert.deepEqual(blocked.lines, [
+		"Step: starting the Redis servers of the queue tests",
+		"Reason: 127.0.0.1:16380 already accepts connections; the Redis tests need that port for a server of their own",
+	]);
+	assert.deepEqual(taken, [{ port: 16379, stopped: true }]);
+	assert.equal(blocked.calls.length, 2);
+
+	// Database URLs that are not the fixture's own are refused before a
+	// credentials file or a server exists.
+	for (const [database, reason] of [
+		[{}, "Required PostgreSQL test URLs are missing"],
+		[
+			{
+				BITOVP_TENANT_TEST_ADMIN_URL: ADMIN_URL.replace("127.0.0.1", "db"),
+				BITOVP_TENANT_TEST_APP_URL: APP_URL.replace("127.0.0.1", "db"),
+			},
+			"Test database must use dedicated IPv4 loopback",
+		],
+		[
+			{
+				BITOVP_TENANT_TEST_ADMIN_URL: ADMIN_URL.replace(
+					/bitovp_integration_[a-f0-9]+/,
+					"bitovp",
+				),
+				BITOVP_TENANT_TEST_APP_URL: APP_URL.replace(
+					/bitovp_integration_[a-f0-9]+/,
+					"bitovp",
+				),
+			},
+			"A dedicated integration database is required",
+		],
+	]) {
+		const refused = await redisRun({ database });
+		assert.equal(
+			refused.lines[0],
+			"Step: running the queue tests in the PostgreSQL fixture",
+		);
+		assert.match(refused.lines[1], new RegExp(`^Reason: .*${reason}`));
+		assert.deepEqual(refused.servers, []);
+		assert.equal(refused.calls.length, 2);
+	}
+
+	// The fixture's own failure keeps the step it names.
+	const noDocker = await redisRun({
+		fixture: async () => {
+			throw atStep(
+				new GateFailure("PostgreSQL integration command could not start"),
+				"starting the PostgreSQL container",
+			);
+		},
+	});
+	assert.deepEqual(noDocker.lines, [
+		"Step: starting the PostgreSQL container",
+		"Reason: PostgreSQL integration command could not start",
+	]);
+	// A rejection without an error is still a failure with its step.
+	const bare = await redisRun({
+		fixture: async () => {
+			throw undefined;
+		},
+	});
+	assert.deepEqual(bare.lines, [
+		"Step: running the queue tests in the PostgreSQL fixture",
+		"Reason: A step failed without an error",
+	]);
+});
+
+// A program that takes redis-server's place: `FAKE_REDIS` chooses whether it
+// serves its port, stops at once, neither serves nor ends when asked, or
+// leaves a server behind and ends itself. Every start is listed in `pids`.
+const FAKE_REDIS = `#!${process.execPath}
+const { spawn } = require("node:child_process");
+const { appendFileSync, renameSync, writeFileSync } = require("node:fs");
+const { createServer } = require("node:net");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+const directory = args[args.indexOf("--dir") + 1];
+const mode = process.env.FAKE_REDIS;
+appendFileSync(join(directory, "pids"), process.pid + "\\n");
+if (mode === "forks") {
+	const server = spawn(process.execPath, [__filename, ...args], {
+		detached: true,
+		stdio: "ignore",
+		env: { ...process.env, FAKE_REDIS: "late" },
+	});
+	server.unref();
+	process.exit(0);
+}
+writeFileSync(join(directory, "started.tmp"), JSON.stringify({ args, pid: process.pid, env: Object.keys(process.env).sort() }));
+renameSync(join(directory, "started.tmp"), join(directory, "started.json"));
+if (mode === "stops") {
+	console.log("Could not create server TCP listening socket: bind: Address already in use");
+	process.exit(1);
+}
+const serve = () =>
+	createServer((socket) => socket.end()).listen(
+		Number(args[args.indexOf("--port") + 1]),
+		args[args.indexOf("--bind") + 1],
+	);
+if (mode === "deaf") {
+	process.on("SIGTERM", () => {});
+	setInterval(() => {}, 1_000);
+} else if (mode === "late") setTimeout(serve, 500);
+else serve();
+`;
+const freePort = () =>
+	new Promise((accept) => {
+		const server = createServer().listen(0, "127.0.0.1", () => {
+			const { port } = server.address();
+			server.close(() => accept(port));
+		});
+	});
+const reachable = (port) =>
+	new Promise((accept) => {
+		const socket = connect({ host: "127.0.0.1", port });
+		socket.once("connect", () => {
+			socket.destroy();
+			accept(true);
+		});
+		socket.once("error", () => accept(false));
+	});
+const alive = (pid) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+test("a Redis server of the run serves a port of its own until it is stopped", {
+	timeout: 60_000,
+}, async (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "gated-redis-server-"));
+	// Ends whatever a failed check left running, so that this file ends too.
+	t.after(() => {
+		const list = join(directory, "pids");
+		const pids = existsSync(list) ? readFileSync(list, "utf8").split("\n") : [];
+		for (const pid of pids.filter(Boolean))
+			try {
+				process.kill(Number(pid), "SIGKILL");
+			} catch {
+				// Ended already.
+			}
+		rmSync(directory, { recursive: true, force: true });
+	});
+	const program = join(directory, "redis-server");
+	writeFileSync(program, FAKE_REDIS);
+	chmodSync(program, 0o700);
+	const env = (mode) => ({ PATH: process.env.PATH, FAKE_REDIS: mode });
+	const record = () =>
+		JSON.parse(readFileSync(join(directory, "started.json"), "utf8"));
+	const port = await freePort();
+	const server = await startRedis({
+		program,
+		port,
+		directory,
+		env: env("serves"),
+	});
+	assert.equal(await reachable(port), true);
+	const started = record();
+	assert.deepEqual(started.args, [
+		"--port",
+		String(port),
+		"--bind",
+		"127.0.0.1",
+		"--save",
+		"",
+		"--appendonly",
+		"no",
+		"--dir",
+		directory,
+		"--loglevel",
+		"warning",
+	]);
+	// Only the environment it was given.
+	assert.deepEqual(
+		started.env.filter((key) => !key.startsWith("__")),
+		["FAKE_REDIS", "PATH"],
+	);
+	assert.equal(alive(started.pid), true);
+
+	// A port that something serves already is refused, and nothing is started.
+	rmSync(join(directory, "started.json"));
+	await assert.rejects(
+		startRedis({ program, port, directory, env: env("serves") }),
+		(error) => {
+			assert(error instanceof GateFailure);
+			assert.equal(
+				error.message,
+				`127.0.0.1:${port} already accepts connections; the Redis tests need that port for a server of their own`,
+			);
+			return true;
+		},
+	);
+	assert.equal(existsSync(join(directory, "started.json")), false);
+
+	// A server that ends when asked is not waited for any longer.
+	const asked = Date.now();
+	await server.stop();
+	assert(Date.now() - asked < 1_500, "the server was not asked to end");
+	assert.equal(await reachable(port), false);
+	assert.equal(alive(started.pid), false);
+	// Stopping twice is harmless.
+	await server.stop();
+
+	// A server that stops before it serves is reported with what it printed.
+	await assert.rejects(
+		startRedis({ program, port, directory, env: env("stops") }),
+		(error) => {
+			assert.deepEqual(failureLines(error), [
+				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
+				"Last 1 lines of the failed command:",
+				"  | Could not create server TCP listening socket: bind: Address already in use",
+			]);
+			return true;
+		},
+	);
+	// A program that does not exist.
+	await assert.rejects(
+		startRedis({
+			program: join(directory, "absent"),
+			port,
+			directory,
+			env: env("serves"),
+		}),
+		(error) => {
+			assert.deepEqual(failureLines(error), [
+				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
+			]);
+			return true;
+		},
+	);
+	// A program that ended is not waited for, although the server it left
+	// behind serves the port half a second later: the run could not stop it.
+	rmSync(join(directory, "started.json"));
+	await assert.rejects(
+		startRedis({ program, port, directory, env: env("forks"), wait: 5_000 }),
+		/did not accept connections/,
+	);
+	for (
+		let attempt = 0;
+		!existsSync(join(directory, "started.json")) && attempt < 100;
+		attempt++
+	)
+		await new Promise((accept) => setTimeout(accept, 50));
+	process.kill(record().pid, "SIGKILL");
+	rmSync(join(directory, "started.json"));
+	for (let attempt = 0; (await reachable(port)) && attempt < 100; attempt++)
+		await new Promise((accept) => setTimeout(accept, 50));
+	// A server that neither serves nor ends when asked is killed.
+	const begun = Date.now();
+	await assert.rejects(
+		startRedis({ program, port, directory, env: env("deaf"), wait: 300 }),
+		/did not accept connections/,
+	);
+	assert(Date.now() - begun >= 2_000, "the server was not given its 2 s");
+	assert.equal(alive(record().pid), false);
+});
+
 test("the command reports through its exit status", () => {
 	const directory = mkdtempSync(join(tmpdir(), "gated-tests-cli-"));
 	try {
@@ -806,17 +1458,17 @@ test("the command reports through its exit status", () => {
 		assert.equal(clean.status, 0, clean.stderr);
 		assert.equal(
 			clean.stdout,
-			"@bitovp/core: 11 tests skipped by the plain run; 11 run in another job, 0 are listed as run by no job\n",
+			"@bitovp/core: 11 tests skipped by the plain run; another job runs each of them\n",
 		);
-		const debt = run(
+		const worker = run(
 			"--audit",
 			"@bitovp/worker",
 			write("worker.json", plainRun("@bitovp/worker")),
 		);
-		assert.equal(debt.status, 0, debt.stderr);
+		assert.equal(worker.status, 0, worker.stderr);
 		assert.equal(
-			debt.stdout,
-			"@bitovp/worker: 67 tests skipped by the plain run; 64 run in another job, 3 are listed as run by no job\n",
+			worker.stdout,
+			"@bitovp/worker: 67 tests skipped by the plain run; another job runs each of them\n",
 		);
 
 		const hiding = run(
@@ -852,19 +1504,23 @@ test("the command reports through its exit status", () => {
 			],
 			[
 				[],
-				"Reason: Usage: gated-tests.mjs --native-media | --audit <workspace> <Vitest JSON report>",
+				"Reason: Usage: gated-tests.mjs --native-media | --redis | --audit <workspace> <Vitest JSON report>",
 			],
 			[
 				["--audit", "@bitovp/core"],
-				"Reason: Usage: gated-tests.mjs --native-media | --audit <workspace> <Vitest JSON report>",
+				"Reason: Usage: gated-tests.mjs --native-media | --redis | --audit <workspace> <Vitest JSON report>",
+			],
+			[
+				["--redis", "extra"],
+				"Reason: Usage: gated-tests.mjs --native-media | --redis | --audit <workspace> <Vitest JSON report>",
 			],
 			[
 				["--native-media", "extra"],
-				"Reason: Usage: gated-tests.mjs --native-media | --audit <workspace> <Vitest JSON report>",
+				"Reason: Usage: gated-tests.mjs --native-media | --redis | --audit <workspace> <Vitest JSON report>",
 			],
 			[
 				["--audit", "@bitovp/core", join(directory, "clean.json"), "extra"],
-				"Reason: Usage: gated-tests.mjs --native-media | --audit <workspace> <Vitest JSON report>",
+				"Reason: Usage: gated-tests.mjs --native-media | --redis | --audit <workspace> <Vitest JSON report>",
 			],
 			[
 				["--audit", "@bitovp/core!", join(directory, "clean.json")],
@@ -884,7 +1540,81 @@ test("the command reports through its exit status", () => {
 	}
 });
 
-test("CI audits every package's skipped tests and runs the native media tests with the image's tools", () => {
+test("the Redis command runs through to the fixture, and its report leaves out the fixture's credentials", () => {
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "gated-redis-cli-")));
+	const program = (name, body) =>
+		writeFileSync(join(parent, name), `#!/usr/bin/env node\n${body}`, {
+			mode: 0o700,
+		});
+	const run = (path) =>
+		spawnSync(process.execPath, [script, "--redis"], {
+			encoding: "utf8",
+			timeout: 60_000,
+			env: { PATH: path },
+		});
+	try {
+		// No program at all: the first step says so.
+		const absent = run(parent);
+		assert.equal(absent.status, 1);
+		assert.equal(absent.stdout, "");
+		assert.deepEqual(absent.stderr.trimEnd().split("\n"), [
+			"Gated tests failed; a required test did not run and pass.",
+			"Step: checking the Redis server program",
+			"Reason: redis-server could not be run; put it on PATH or name it in VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER",
+		]);
+
+		program(
+			"redis-server",
+			'console.log("Redis server v=8.10.3 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64 build=0");',
+		);
+		// Vitest for the lease tests, then the database preparation, which fails
+		// and prints the administrator URL it was given.
+		writeFileSync(
+			join(parent, "leases.json"),
+			JSON.stringify(allPassed(REDIS.leases)),
+		);
+		program(
+			"pnpm",
+			`const { copyFileSync, readFileSync } = require("node:fs");
+const a = process.argv.slice(2);
+const output = a.find((arg) => arg.startsWith("--outputFile="));
+if (output) copyFileSync(__dirname + "/leases.json", output.slice("--outputFile=".length));
+else if (a.includes("db:runtime:prepare")) {
+	const file = readFileSync(a[a.indexOf("--admin-env") + 1], "utf8");
+	console.error("cannot prepare a role at " + /^DATABASE_URL=(.+)$/m.exec(file)[1]);
+	process.exit(1);
+}
+`,
+		);
+		program(
+			"docker",
+			`const a = process.argv.slice(4);
+if (a[0] === "port") console.log("127.0.0.1:15432");
+else if (a[0] === "inspect")
+	console.log(JSON.stringify({ "io.bitovp.postgres-test": a.at(-1).slice("bitovp-postgres-".length) }));
+`,
+		);
+		const failed = run(`${parent}:${process.env.PATH}`);
+		assert.equal(failed.status, 1);
+		assert.deepEqual(failed.stdout.trimEnd().split("\n"), [
+			"Redis server 8.10.3",
+			"@bitovp/worker: 29 resource lease tests passed, 0 skipped",
+			"Preparing dedicated PostgreSQL runtime role and migrations",
+			"Dedicated PostgreSQL fixture and private files removed",
+		]);
+		assert.deepEqual(failed.stderr.trimEnd().split("\n"), [
+			"Gated tests failed; a required test did not run and pass.",
+			"Step: preparing the runtime database role",
+			"Reason: PostgreSQL integration command failed",
+			"Last 1 lines of the failed command:",
+			"  | cannot prepare a role at [private]",
+		]);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("CI audits every package's skipped tests and runs the native media and Redis tests with the pinned tools", () => {
 	const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 	const job = (name) => {
 		const start = ci.indexOf(`\n  ${name}:\n`);
@@ -917,46 +1647,63 @@ test("CI audits every package's skipped tests and runs the native media tests wi
 	const quality = job("quality");
 	assert(quality.includes("\n      - run: pnpm test:gated-runner\n"));
 	assert.doesNotMatch(quality, /continue-on-error|^\s*(?:- )?(?:if|needs):/m);
-	const native = job("native-media");
-	const order = [
-		"run: pnpm install --frozen-lockfile",
-		"run: pnpm test:gated-runner",
-		'sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"',
-		`printf '%s\\n' "$RUNNER_TEMP/native-media/bin" >> "$GITHUB_PATH"`,
-		`printf 'VMAF_MODEL_DIR=%s\\n' "$RUNNER_TEMP/native-media/model" >> "$GITHUB_ENV"`,
-		"run: pnpm test:native-media",
-	].map((text) => native.indexOf(text));
-	assert(
-		order.every((at) => at !== -1),
-		JSON.stringify(order),
+	// A job that installs pinned tools and then runs gated tests: its commands in
+	// this order, each a whole line, and the test command last.
+	const gatedJob = (name, lines, ending) => {
+		const text = job(name);
+		const order = lines.map((line) => text.indexOf(line));
+		assert(
+			order.every((at) => at !== -1),
+			`${name}: ${JSON.stringify(order)}`,
+		);
+		assert.deepEqual(
+			order,
+			[...order].sort((a, b) => a - b),
+		);
+		// The job must not start on a condition that could skip it.
+		assert.doesNotMatch(text, /continue-on-error|^\s*(?:- )?(?:if|needs):/m);
+		// No `|| true`, no comment, nothing appended.
+		const commands = text.split("\n").map((line) => line.trim());
+		for (const line of lines)
+			assert(
+				commands.includes(line) || commands.includes(`- ${line}`),
+				`${name}: ${line}`,
+			);
+		assert(text.endsWith(ending), name);
+	};
+	gatedJob(
+		"native-media",
+		[
+			"run: pnpm install --frozen-lockfile",
+			"run: pnpm test:gated-runner",
+			'sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"',
+			`printf '%s\\n' "$RUNNER_TEMP/native-media/bin" >> "$GITHUB_PATH"`,
+			`printf 'VMAF_MODEL_DIR=%s\\n' "$RUNNER_TEMP/native-media/model" >> "$GITHUB_ENV"`,
+			"run: pnpm test:native-media",
+		],
+		"      - name: Run every test that drives real FFmpeg\n        run: pnpm test:native-media\n",
 	);
-	assert.deepEqual(
-		order,
-		[...order].sort((a, b) => a - b),
-	);
-	// The job must not start on a condition that could skip it.
-	assert.doesNotMatch(native, /continue-on-error|^\s*(?:- )?(?:if|needs):/m);
-	// Each command is a whole line: no `|| true`, no comment, nothing appended.
-	const commands = native.split("\n").map((line) => line.trim());
-	for (const line of [
-		"- run: pnpm install --frozen-lockfile",
-		"- run: pnpm test:gated-runner",
-		'sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"',
-		`printf '%s\\n' "$RUNNER_TEMP/native-media/bin" >> "$GITHUB_PATH"`,
-		`printf 'VMAF_MODEL_DIR=%s\\n' "$RUNNER_TEMP/native-media/model" >> "$GITHUB_ENV"`,
-		"run: pnpm test:native-media",
-	])
-		assert(commands.includes(line), line);
-	assert(
-		native.endsWith(
-			"      - name: Run every test that drives real FFmpeg\n        run: pnpm test:native-media\n",
-		),
+	gatedJob(
+		"redis-integration",
+		[
+			"run: pnpm install --frozen-lockfile",
+			"run: pnpm test:gated-runner",
+			"run: pnpm --filter @bitovp/db build",
+			'sh scripts/redis-server-tools.sh "$RUNNER_TEMP/redis"',
+			`printf '%s\\n' "$RUNNER_TEMP/redis/bin" >> "$GITHUB_PATH"`,
+			"run: pnpm test:redis",
+		],
+		"      - name: Run every test that needs Redis\n        run: pnpm test:redis\n",
 	);
 
 	const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 	assert.equal(
 		pkg.scripts["test:native-media"],
 		"node scripts/gated-tests.mjs --native-media",
+	);
+	assert.equal(
+		pkg.scripts["test:redis"],
+		"node scripts/gated-tests.mjs --redis",
 	);
 	assert.equal(
 		pkg.scripts["test:skip-audit"],

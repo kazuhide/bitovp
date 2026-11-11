@@ -27,9 +27,10 @@ RUN python3 -m venv /opt/bitovp-caption-alignment \
 
 # FFmpeg and ffprobe, compiled from source. Every source is pinned by commit or
 # release and by SHA-256, and every compile step runs without network access.
-# Libraries that bitovp does not use are left out; FFmpeg's own codecs, formats
-# and filters are all kept. The commits and the build options follow the recipe
-# of github.com/BtbN/FFmpeg-Builds at c63bb308a1de.
+# Libraries that bitovp does not use are left out, and of the hardware families
+# only NVIDIA decoding and encoding are built; FFmpeg's built-in software codecs,
+# formats and filters are all kept. The commits and the build options follow the
+# recipe of github.com/BtbN/FFmpeg-Builds at c63bb308a1de.
 FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS ffmpeg-toolchain
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends autoconf automake cmake g++ gperf libtool make nasm ninja-build pkg-config python3 xxd \
@@ -152,7 +153,8 @@ RUN --network=none mkdir vmaf && tar xzf vmaf.tar.gz -C vmaf --strip-components=
 
 # H.264 and AV1 encoding, AV1 decoding.
 FROM ffmpeg-toolchain AS ffmpeg-codecs
-ADD --checksum=sha256:d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50 https://codeload.github.com/mirror/x264/tar.gz/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee x264.tar.gz
+# x264 comes from VideoLAN's own server; the project keeps no repository on GitHub.
+ADD --checksum=sha256:d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50 https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz x264.tar.gz
 RUN --network=none mkdir x264 && tar xzf x264.tar.gz -C x264 --strip-components=1 && cd x264 \
 	&& ./configure --prefix=/opt/ffbuild --disable-cli --enable-static --enable-pic --disable-lavf --disable-swscale \
 	&& make -j"$(nproc)" && make install \
@@ -176,7 +178,7 @@ RUN --network=none mkdir dav1d && tar xzf dav1d.tar.gz -C dav1d --strip-componen
 	&& meson setup build --wrap-mode=nodownload --prefix=/opt/ffbuild --libdir=lib --buildtype=release --default-library=static \
 		-Denable_tools=false -Denable_tests=false \
 	&& ninja -C build install \
-	&& install -D -m 0644 COPYING /opt/ffbuild/share/licenses/dav1d/COPYING
+	&& install -D -m 0644 -t /opt/ffbuild/share/licenses/dav1d COPYING doc/PATENTS
 
 FROM ffmpeg-toolchain AS ffmpeg-build
 COPY --from=ffmpeg-tls /opt/ffbuild/ /opt/ffbuild/
@@ -184,9 +186,14 @@ COPY --from=ffmpeg-text /opt/ffbuild/ /opt/ffbuild/
 COPY --from=ffmpeg-vmaf /opt/ffbuild/ /opt/ffbuild/
 COPY --from=ffmpeg-codecs /opt/ffbuild/ /opt/ffbuild/
 # Headers for NVIDIA decoding and encoding; the driver's libraries are loaded at run time.
+# The repository has no licence file: each header starts with its own notice.
 ADD --checksum=sha256:625ddd8f2a603699fdba101bebcde0e7a97bcc7b8a82ec7f45a7d06d61336597 https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/ced4f8eba3ba5dd431932cba17928f0dffdaeb2b nv-codec-headers.tar.gz
 RUN --network=none mkdir nv-codec-headers && tar xzf nv-codec-headers.tar.gz -C nv-codec-headers --strip-components=1 \
-	&& make -C nv-codec-headers PREFIX=/opt/ffbuild install
+	&& make -C nv-codec-headers PREFIX=/opt/ffbuild install \
+	&& mkdir -p /opt/ffbuild/share/licenses/nv-codec-headers \
+	&& cd nv-codec-headers/include/ffnvcodec \
+	&& awk 'FNR==1{print FILENAME ":"; p=1} p{print} /\*\//{p=0}' *.h > /opt/ffbuild/share/licenses/nv-codec-headers/NOTICE \
+	&& test "$(grep -c 'Permission is hereby granted' /opt/ffbuild/share/licenses/nv-codec-headers/NOTICE)" = "$(ls *.h | wc -l)"
 # FFMPEG_VER is what FFmpeg reports as its version: the release tag, the number of
 # commits after it, and the revision. Only what FFmpeg itself provides is built in,
 # plus the libraries above.
@@ -225,7 +232,8 @@ ADD --chmod=0644 --checksum=sha256:6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf19
 ADD --chmod=0644 --checksum=sha256:de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551 https://raw.githubusercontent.com/google/fonts/b979dba422e445492b0eb9951ac52ee0b4d648c3/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf /usr/local/share/fonts/bitovp/NotoEmoji-wght.ttf
 ADD --chmod=0644 --checksum=sha256:500bb1ccf43df7bbb522112f9133a52b16e1c35e809632f5d8609b179152de5b https://raw.githubusercontent.com/google/fonts/b979dba422e445492b0eb9951ac52ee0b4d648c3/ofl/notoemoji/OFL.txt /usr/local/share/licenses/noto-emoji/OFL.txt
 ENV EDITING_FONT_PATH=/usr/local/share/fonts/bitovp/NotoSansCJKjp-Regular.otf
-RUN chmod 0755 /usr/local/share/fonts /usr/local/share/fonts/bitovp
+# ADD gives its --chmod to the directories that it creates as well.
+RUN chmod 0755 /usr/local/share/fonts /usr/local/share/fonts/bitovp /usr/local/share/licenses /usr/local/share/licenses/noto-emoji
 
 COPY --from=ffmpeg /bin/ffmpeg /bin/ffprobe /usr/local/bin/
 COPY --from=ffmpeg /share/licenses/ /usr/local/share/licenses/

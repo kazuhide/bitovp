@@ -2126,22 +2126,52 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 	}
 });
 
-test("the worker image compiles FFmpeg from sources pinned by commit and checksum, without network access", () => {
+test("the worker image compiles FFmpeg from sources pinned by commit or release and by checksum, without network access", () => {
 	const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
+	// Docker's own frontend reads the file, and a backslash continues a line.
+	assert.match(
+		dockerfile,
+		/^# syntax=docker\/dockerfile:1(?:\.[0-9]+){0,2}(?:@sha256:[a-f0-9]{64})?\n/,
+	);
+	assert.doesNotMatch(dockerfile, /^#\s*escape\s*=/im);
+	const written = dockerfile.split("\n").filter((line) => !/^\s*#/.test(line));
+	// Docker also continues a line whose backslash is followed by spaces, does
+	// not continue one that ends with two backslashes, and reads a line that
+	// holds only a backslash as the start of the next instruction. None of
+	// these is written here, so the few rules below read the file as Docker
+	// does.
+	for (const line of written)
+		assert.doesNotMatch(line, /\\\s+$|\\\\$|^\s*\\$/, line);
 	// Each instruction on one line, without comments.
-	const instructions = dockerfile
-		.split("\n")
-		.filter((line) => !/^\s*#/.test(line))
+	const instructions = written
 		.join("\n")
 		.replace(/\s*\\\n\s*/g, " ")
 		.split("\n")
 		.filter(Boolean);
 	const stages = [];
 	for (const line of instructions) {
-		const from = /^FROM (\S+)(?: AS (\S+))?$/.exec(line);
-		if (from) stages.push({ base: from[1], name: from[2] ?? "", lines: [] });
-		else stages.at(-1).lines.push(line);
+		if (/^from\s/i.test(line)) {
+			// Docker reads FROM and AS in any letter case and lowers a stage's
+			// name. Here each stage is written in the one form.
+			const from =
+				/^FROM (?:--platform=(\S+) )?(\S+)(?: AS ([a-z0-9][a-z0-9._-]*))?$/.exec(
+					line,
+				);
+			assert(from, line);
+			stages.push({
+				platform: from[1],
+				base: from[2],
+				name: from[3] ?? "",
+				lines: [],
+			});
+		} else {
+			assert(stages.length > 0, line);
+			stages.at(-1).lines.push(line);
+		}
 	}
+	// Each name once: Docker takes the last stage of a name, without an error.
+	const names = stages.map((stage) => stage.name).filter(Boolean);
+	assert.deepEqual(names, [...new Set(names)]);
 	const named = new Map(stages.map((stage) => [stage.name, stage]));
 	// Every stage that the "ffmpeg" stage is made from.
 	const made = new Set();
@@ -2162,9 +2192,10 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 	const sources = [];
 	const open = [];
 	for (const name of made) {
-		const { base, lines } = named.get(name);
-		// It starts from another of these stages, from nothing, or from the
-		// Node image by its digest.
+		const { platform, base, lines } = named.get(name);
+		// It is built for the platform of the build, and starts from another
+		// of these stages, from nothing, or from the Node image by its digest.
+		assert.equal(platform, undefined, `${name}: --platform=${platform}`);
 		assert(
 			made.has(base) ||
 				base === "scratch" ||
@@ -2172,10 +2203,14 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 			`${name}: ${base}`,
 		);
 		const commits = new Map();
+		const downloaded = new Set();
 		for (const line of lines) {
 			const [instruction] = line.split(" ");
 			if (instruction === "ARG") {
-				const [, key, value] = /^ARG ([A-Z0-9_]+)="([^"]*)"$/.exec(line);
+				// A value of the file's own, in quotes.
+				const argument = /^ARG ([A-Z0-9_]+)="([^"]*)"$/.exec(line);
+				assert(argument, `${name}: ${line}`);
+				const [, key, value] = argument;
 				commits.set(key, value);
 				if (key.endsWith("_COMMIT")) assert.match(value, /^[a-f0-9]{40}$/, key);
 			} else if (instruction === "ADD") {
@@ -2187,6 +2222,7 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 				assert(added, line);
 				const url = added[1].replace(/\$\{([A-Z0-9_]+)\}/g, (_, key) => {
 					assert(commits.has(key), `${name}: ${key}`);
+					downloaded.add(key);
 					return commits.get(key);
 				});
 				const source =
@@ -2195,11 +2231,19 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 					) ??
 					/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/releases\/download\/[\w.-]+\/[\w.-]+\.tar\.gz$/.exec(
 						url,
+					) ??
+					// x264's project keeps no repository on GitHub.
+					/^https:\/\/(code\.videolan\.org\/videolan\/x264)\/-\/archive\/([a-f0-9]{40})\/x264-\2\.tar\.gz$/.exec(
+						url,
 					);
 				assert(source, url);
 				sources.push(source[1]);
 			} else if (instruction === "RUN") {
 				if (!line.startsWith("RUN --network=none ")) open.push(line);
+				// No other flag: a mount brings in the checkout, another image, a
+				// stage that is not followed here, or a cache that outlives the
+				// build, and none of them needs a network.
+				assert.match(line, /^RUN (?:--network=none )?[^-]/, line);
 				// Meson builds nothing that it would have to download.
 				assert.equal(
 					line.split("meson setup ").length,
@@ -2215,9 +2259,17 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 				assert(["ENV", "WORKDIR"].includes(instruction), line);
 			}
 		}
+		// A commit that the file names is the commit that is downloaded: the
+		// steps tell FFmpeg, libvmaf, SVT-AV1 and dav1d their revision from it.
+		for (const key of commits.keys())
+			if (key.endsWith("_COMMIT"))
+				assert(downloaded.has(key), `${name}: ${key} names no source`);
 	}
 	// What goes into the two programs, and the one build tool that Debian's
-	// packages do not provide.
+	// packages do not provide: repositories on GitHub, and x264 on VideoLAN's
+	// server. A name does not show that a commit is the project's own, because
+	// GitHub also serves a commit that only a fork holds. docs/OPERATIONS.md
+	// says how to check a new commit.
 	assert.deepEqual(sources.sort(), [
 		"AOMediaCodec/SVT-AV1",
 		"FFmpeg/FFmpeg",
@@ -2226,6 +2278,7 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 		"Haivision/srt",
 		"Netflix/vmaf",
 		"adah1972/libunibreak",
+		"code.videolan.org/videolan/x264",
 		"fontconfig/fontconfig",
 		"freetype/freetype",
 		"fribidi/fribidi",
@@ -2233,25 +2286,87 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 		"libass/libass",
 		"madler/zlib",
 		"mesonbuild/meson",
-		"mirror/x264",
 		"nyorain/dlg",
 		"openssl/openssl",
 		"videolan/dav1d",
 	]);
-	// Only the step that installs Debian's compiler and build tools has a network.
+	// Only the step that installs Debian's compiler and build tools has a
+	// network. It names packages, each with its version if that is pinned, and
+	// no option of apt-get.
 	assert.equal(open.length, 1, open.join("\n"));
 	assert.match(
 		open[0],
-		/^RUN apt-get update && apt-get install -y --no-install-recommends [a-z0-9+ .-]+ && rm -rf \/var\/lib\/apt\/lists\/\*$/,
+		/^RUN apt-get update && apt-get install -y --no-install-recommends (?:[a-z0-9][a-z0-9+.-]*(?:=[A-Za-z0-9.+~:-]+)? )+&& rm -rf \/var\/lib\/apt\/lists\/\*$/,
 	);
+	// Tools only: the headers of a development package would let a library of
+	// Debian's be compiled in.
+	assert.doesNotMatch(open[0], /-dev[ =]/, open[0]);
 
-	// FFmpeg reports the revision that is compiled.
+	// FFmpeg reports the revision that is compiled. Each is named once.
+	for (const key of ["FFMPEG_VER", "FFMPEG_COMMIT"])
+		assert.equal(dockerfile.split(`\nARG ${key}=`).length, 2, key);
 	const version = /^ARG FFMPEG_VER="(n[0-9.]+-[0-9]+-g([a-f0-9]{10}))"$/m.exec(
 		dockerfile,
 	);
 	const commit = /^ARG FFMPEG_COMMIT="([a-f0-9]{40})"$/m.exec(dockerfile);
 	assert(version && commit);
 	assert.equal(version[2], commit[1].slice(0, 10));
+	// An archive of a commit holds no history to read a version from. FFmpeg
+	// is told its version, which the installer prints, and libvmaf its
+	// revision, which bitovp records with every measurement.
+	const steps = [...made].flatMap((name) => named.get(name).lines);
+	for (const told of [
+		` && printf '%s\\n' "$FFMPEG_VER" > VERSION && ./configure `,
+		` && revision=$(printf '%.7s' "$LIBVMAF_COMMIT") && sed -i "s/@VCS_TAG@/$revision/" libvmaf/include/vcs_version.h.in && grep -q "\\"$revision\\"" libvmaf/include/vcs_version.h.in && `,
+	])
+		assert(
+			steps.some(
+				(line) => line.startsWith("RUN --network=none ") && line.includes(told),
+			),
+			told,
+		);
+
+	// What is built in besides FFmpeg's own parts: nothing that its configure
+	// finds among Debian's packages, nothing that may not be redistributed,
+	// and each library and NVIDIA interface that bitovp uses, whether or not a
+	// test of CI reaches it.
+	const configure = steps.find((line) =>
+		line.includes(" && ./configure --prefix=/opt/ffmpeg "),
+	);
+	assert(configure, "FFmpeg's configure step");
+	assert.deepEqual(
+		configure
+			.slice(configure.indexOf(" && ./configure "))
+			.match(/--(?:enable|disable)-[a-z0-9-]+/g)
+			.sort(),
+		[
+			"--disable-autodetect",
+			"--disable-debug",
+			"--disable-doc",
+			"--disable-ffplay",
+			"--enable-gpl",
+			"--enable-version3",
+			"--enable-zlib",
+			"--enable-iconv",
+			"--enable-openssl",
+			"--enable-libxml2",
+			"--enable-libfreetype",
+			"--enable-libharfbuzz",
+			"--enable-libfribidi",
+			"--enable-fontconfig",
+			"--enable-libass",
+			"--enable-libvmaf",
+			"--enable-libx264",
+			"--enable-libsvtav1",
+			"--enable-libdav1d",
+			"--enable-libsrt",
+			"--enable-ffnvcodec",
+			"--enable-cuda",
+			"--enable-cuvid",
+			"--enable-nvdec",
+			"--enable-nvenc",
+		].sort(),
+	);
 
 	// The image takes the two programs from that stage and from nowhere else,
 	// and still requires what bitovp needs of them.
@@ -2269,28 +2384,57 @@ test("the worker image compiles FFmpeg from sources pinned by commit and checksu
 		" && /usr/local/bin/ffmpeg -hide_banner -filters | grep -q ' libvmaf ' &&",
 	])
 		assert(checks.includes(check), check);
+	// The checks are links of one chain, on the image's own files: nothing
+	// excuses a failure, and no mount puts other programs in their place.
+	assert.match(checks, /^RUN [^-]/, checks);
+	assert.doesNotMatch(checks, /;|\|\||(?<!&)&(?!&)/, checks);
 	assert.doesNotMatch(
 		image.lines.join("\n"),
 		/FFMPEG|ffmpeg[^\n]*\.tar|releases\/download/,
+	);
+	// No other instruction of the image names the two programs: no second
+	// copy, package, download or mount. These four, in this order: the
+	// programs and the licences arrive, then the checks, then the proof.
+	assert.deepEqual(
+		image.lines.filter((line) => /ffmpeg|ffprobe/i.test(line)),
+		[
+			"COPY --from=ffmpeg /bin/ffmpeg /bin/ffprobe /usr/local/bin/",
+			"COPY --from=ffmpeg /share/licenses/ /usr/local/share/licenses/",
+			checks,
+			image.lines.find((line) =>
+				line.startsWith(
+					"RUN --mount=type=bind,source=docker/vmaf-build-proof.sh,target=/tmp/vmaf-build-proof.sh ",
+				),
+			),
+		],
 	);
 });
 
 // Stands in for Docker's build: records its arguments and, unless it is to
 // fail, writes the programs that the "ffmpeg" stage holds into the output
-// directory.
+// directory. It writes below the test's own directory `SANDBOX` only: a call
+// that names no output directory, or another one, must not reach the
+// system's /bin. Like every stand-in of this test it records the number of
+// its arguments too: a path with a space that fell apart would raise it.
 const FAKE_BUILD = `#!/bin/sh
-printf 'docker %s\\n' "$*" >> "$CALLS"
+printf 'docker[%s] %s\\n' "$#" "$*" >> "$CALLS"
 [ "$FAKE_DOCKER" = 0 ] || exit "$FAKE_DOCKER"
+dest=
 for argument in "$@"; do
 	case "$argument" in type=local,dest=*) dest=\${argument#type=local,dest=} ;; esac
 done
+case "$dest" in
+	"$SANDBOX"/*) ;;
+	*) echo "stand-in docker: no output directory of this test" >&2; exit 64 ;;
+esac
 mkdir -p "$dest/bin" "$dest/share/licenses/ffmpeg"
 for program in $FAKE_PROGRAMS; do
 	cat > "$dest/bin/$program" <<'PROGRAM'
 #!/bin/sh
-printf 'ffmpeg %s\\n' "$*" >> "$CALLS"
+name=\${0##*/}
+printf '%s[%s] %s\\n' "$name" "$#" "$*" >> "$CALLS"
 case "$*" in
-	*-version) printf 'ffmpeg version stand-in\\nbuilt with a compiler\\n' ;;
+	*-version) printf '%s version stand-in\\nbuilt with a compiler\\n' "$name" ;;
 	*) printf '%s\\n' "$FAKE_SCORE" >&2 ;;
 esac
 PROGRAM
@@ -2307,25 +2451,27 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 		assert.match(
 			parent,
 			/^[A-Za-z0-9/._-]+$/,
-			"this test needs a temporary directory with a plain path",
+			"this test needs a temporary directory whose path holds only letters, digits and / . _ -; set TMPDIR to one",
 		);
 		const tools = join(parent, "tools");
 		mkdirSync(tools);
 		writeFileSync(join(tools, "docker"), FAKE_BUILD, { mode: 0o700 });
+		// Answers the one question that the installer asks: the system's name.
 		writeFileSync(
 			join(tools, "uname"),
-			"#!/bin/sh\nprintf '%s\\n' \"$FAKE_UNAME\"\n",
+			'#!/bin/sh\n[ "$*" = -s ] || exit 64\nprintf \'%s\\n\' "$FAKE_UNAME"\n',
 			{ mode: 0o700 },
 		);
-		// The last argument is the file to write.
+		// The argument after -o is the file to write, below this test's
+		// directory only.
 		writeFileSync(
 			join(tools, "curl"),
-			'#!/bin/sh\nprintf \'curl %s\\n\' "$*" >> "$CALLS"\n[ "$FAKE_CURL" = 0 ] || exit "$FAKE_CURL"\nfor argument in "$@"; do file=$argument; done\necho model > "$file"\n',
+			'#!/bin/sh\nprintf \'curl[%s] %s\\n\' "$#" "$*" >> "$CALLS"\n[ "$FAKE_CURL" = 0 ] || exit "$FAKE_CURL"\nfile=\nwhile [ "$#" -gt 1 ]; do\n\t[ "$1" != -o ] || file=$2\n\tshift\ndone\ncase "$file" in\n\t"$SANDBOX"/*) echo model > "$file" ;;\n\t*) echo "stand-in curl: no file of this test" >&2; exit 64 ;;\nesac\n',
 			{ mode: 0o700 },
 		);
 		writeFileSync(
 			join(tools, "sha256sum"),
-			'#!/bin/sh\nprintf \'sha256sum %s in %s\\n\' "$*" "$(pwd)" >> "$CALLS"\nexit "$FAKE_SUM"\n',
+			'#!/bin/sh\nprintf \'sha256sum[%s] %s in %s\\n\' "$#" "$*" "$(pwd)" >> "$CALLS"\nexit "$FAKE_SUM"\n',
 			{ mode: 0o700 },
 		);
 		const reference = "c".repeat(40);
@@ -2340,12 +2486,17 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 			`# model checksums\n${names.map((name) => `${digest}  ${name}\n`).join("")}`;
 		const perfect = "[Parsed_libvmaf_0 @ 0x1] VMAF score: 100.000000";
 		let count = 0;
-		// One run of the installer, in a checkout of its own.
+		// One run of the installer, in a checkout of its own whose path holds a
+		// space: each path the installer builds from it must stay one word. The
+		// target is given by its whole path and the installer runs in an empty
+		// directory; with `at`, it runs in the directory of that name and is
+		// given the target's name alone.
 		const install = ({
 			shell,
 			file = pinned,
 			models = list(listed),
 			name = "media",
+			at,
 			before = () => {},
 			host = "Linux",
 			docker = 0,
@@ -2355,9 +2506,19 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 			score = perfect,
 		}) => {
 			count += 1;
-			const checkout = join(parent, `checkout-${count}`);
-			mkdirSync(join(checkout, "scripts"), { recursive: true });
-			mkdirSync(join(checkout, "docker"));
+			const run = join(parent, `run-${count}`);
+			const checkout = join(run, "check out");
+			const place = join(run, at ?? "place");
+			const elsewhere = join(run, "elsewhere");
+			const temporary = join(run, "tmp");
+			for (const directory of [
+				join(checkout, "scripts"),
+				join(checkout, "docker"),
+				place,
+				elsewhere,
+				temporary,
+			])
+				mkdirSync(directory, { recursive: true });
 			copyFileSync(
 				resolve(root, "scripts/native-media-tools.sh"),
 				join(checkout, "scripts/native-media-tools.sh"),
@@ -2367,19 +2528,24 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 				join(checkout, "docker/vmaf-build-proof.sh"),
 			);
 			writeFileSync(join(checkout, "Dockerfile"), file);
-			writeFileSync(join(checkout, "docker/vmaf-models.sha256"), models);
-			const calls = join(checkout, "calls");
+			// With `models: null` the checkout has no list of models.
+			if (models !== null)
+				writeFileSync(join(checkout, "docker/vmaf-models.sha256"), models);
+			const calls = join(run, "calls");
 			writeFileSync(calls, "");
-			const target = join(checkout, name);
+			const target = join(place, name);
 			before(target);
 			const result = spawnSync(
 				shell,
-				[join(checkout, "scripts/native-media-tools.sh"), target],
+				[join(checkout, "scripts/native-media-tools.sh"), at ? name : target],
 				{
+					cwd: at ? place : elsewhere,
 					encoding: "utf8",
 					env: {
 						PATH: `${tools}:/usr/bin:/bin`,
+						TMPDIR: temporary,
 						CALLS: calls,
+						SANDBOX: parent,
 						FAKE_UNAME: host,
 						FAKE_DOCKER: String(docker),
 						FAKE_PROGRAMS: programs,
@@ -2389,6 +2555,25 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 					},
 				},
 			);
+			// Whatever the run came to, it wrote into its target only: nothing
+			// into the checkout or the directory it ran in, and the proof's log
+			// is gone.
+			assert.deepEqual(readdirSync(checkout).sort(), [
+				"Dockerfile",
+				"docker",
+				"scripts",
+			]);
+			assert.deepEqual(
+				readdirSync(join(checkout, "docker")).sort(),
+				models === null
+					? ["vmaf-build-proof.sh"]
+					: ["vmaf-build-proof.sh", "vmaf-models.sha256"],
+			);
+			assert.deepEqual(readdirSync(join(checkout, "scripts")), [
+				"native-media-tools.sh",
+			]);
+			assert.deepEqual(readdirSync(elsewhere), []);
+			assert.deepEqual(readdirSync(temporary), []);
 			return {
 				status: result.status,
 				stdout: result.stdout,
@@ -2398,17 +2583,19 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 				calls: readFileSync(calls, "utf8").split("\n").filter(Boolean),
 			};
 		};
+		// Each call with the number of its arguments.
 		const BUILD = ({ checkout, target }) =>
-			`docker build --file ${checkout}/Dockerfile --target ffmpeg --output type=local,dest=${target} ${checkout}`;
+			`docker[8] build --file ${checkout}/Dockerfile --target ffmpeg --output type=local,dest=${target} ${checkout}`;
 		const FETCH = ({ target }, path, model) =>
-			`curl -fsSL --proto =https --proto-redir =https --retry 3 --max-time 120 https://raw.githubusercontent.com/Netflix/vmaf/${reference}/model/${path} -o ${target}/model/${model}`;
+			`curl[12] -fsSL --proto =https --proto-redir =https --retry 3 --max-time 120 https://raw.githubusercontent.com/Netflix/vmaf/${reference}/model/${path} -o ${target}/model/${model}`;
 		const SUM = ({ checkout, target }) =>
-			`sha256sum -c --strict ${checkout}/docker/vmaf-models.sha256 in ${target}/model`;
+			`sha256sum[3] -c --strict ${checkout}/docker/vmaf-models.sha256 in ${target}/model`;
 		const PIN =
 			"The Dockerfile does not pin VMAF_MODEL_REF once as a plain value\n";
 		const PATH =
 			"The directory's path may hold only letters, digits and / . _ -\n";
 		const MODEL = "docker/vmaf-models.sha256 holds an unexpected model name\n";
+		const EMPTY = "docker/vmaf-models.sha256 names no model\n";
 		// CI runs it with sh, which is dash there.
 		const shells = ["sh", "dash"].filter(
 			(shell) =>
@@ -2445,9 +2632,9 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 			assert.equal(done.calls.length, 7);
 			assert.match(
 				done.calls[5],
-				/^ffmpeg -hide_banner -nostdin .* -lavfi \[0:v\]\[1:v\]libvmaf=model=path=\S+\/media\/model\/vmaf_v1\.0\.16_3d0h\.json -f null -$/,
+				/^ffmpeg\[15\] -hide_banner -nostdin .* -lavfi \[0:v\]\[1:v\]libvmaf=model=path=\S+\/media\/model\/vmaf_v1\.0\.16_3d0h\.json -f null -$/,
 			);
-			assert.equal(done.calls[6], "ffmpeg -hide_banner -version");
+			assert.equal(done.calls[6], "ffmpeg[2] -hide_banner -version");
 			assert.deepEqual(readdirSync(done.target).sort(), [
 				"bin",
 				"model",
@@ -2461,11 +2648,28 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 				[{ file: `FROM scratch\nARG VMAF_MODEL_REF="main/../x"\n` }, PIN],
 				[{ file: `FROM scratch\nARG VMAF_MODEL_REF=${reference}\n` }, PIN],
 				[{ models: list(["../vmaf_v0.6.1.json"]) }, MODEL],
+				[{ models: list(["sub/vmaf_v0.6.1.json"]) }, MODEL],
 				[{ models: list([".hidden.json"]) }, MODEL],
 				[{ models: `${digest}\n` }, MODEL],
+				// A name becomes a part of a URL, where these characters mean
+				// something to curl or to the server.
+				[{ models: list(["vmaf_v0.6.1.json?x"]) }, MODEL],
+				[{ models: list(["vmaf_v[0-1].json"]) }, MODEL],
+				[{ models: list(["vmaf v0.6.1.json"]) }, MODEL],
+				// A list without a model, or no list: nothing would be proven.
+				[{ models: "# model checksums\n" }, EMPTY],
+				[{ models: "" }, EMPTY],
+				[
+					{ models: null },
+					/^grep: [^\n]*\/docker\/vmaf-models\.sha256: [^\n]*\ndocker\/vmaf-models\.sha256 names no model\n$/,
+				],
 				[{ name: "with space" }, PATH],
 				[{ name: "a,b=c" }, PATH],
+				[{ name: "a,b" }, PATH],
+				[{ name: "a=b" }, PATH],
 				[{ name: "$(id)" }, PATH],
+				// The whole path counts, also when only a name is given.
+				[{ at: "a,b=c" }, PATH],
 				[{ host: "Darwin" }, "The image's FFmpeg runs on Linux only\n"],
 				// The shell's own message, in one line: the script went no further.
 				[{ name: "absent/media" }, /^[^\n]*\bcd\b[^\n]*\n$/],
@@ -2477,6 +2681,9 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 				if (typeof stderr === "string") assert.equal(refused.stderr, stderr);
 				else assert.match(refused.stderr, stderr);
 				assert.deepEqual(refused.calls, []);
+				// And before a directory is made: the next run finds none in its way.
+				if (options.before) assert.deepEqual(readdirSync(refused.target), []);
+				else assert.equal(existsSync(refused.target), false);
 			}
 
 			// A build that fails, or that lacks a program, ends the installer
@@ -2485,6 +2692,8 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 			assert.equal(failed.status, 3);
 			assert.equal(failed.stdout, "");
 			assert.deepEqual(failed.calls, [BUILD(failed)]);
+			// It leaves no empty directory in the way of the next run.
+			assert.equal(existsSync(failed.target), false);
 			for (const [programs, missing] of [
 				["ffmpeg", "ffprobe"],
 				["ffprobe", "ffmpeg"],

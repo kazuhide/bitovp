@@ -9,7 +9,8 @@
 #   sh scripts/native-media-tools.sh <new directory>
 #
 # Leaves <directory>/bin/ffmpeg, <directory>/bin/ffprobe and <directory>/model.
-# Needs Docker with BuildKit.
+# Needs Docker with BuildKit, and glibc 2.36 or newer on the host: the programs
+# are linked in the image, which is Debian 12.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -45,10 +46,15 @@ if [ "$(uname -s)" != Linux ]; then
 	exit 1
 fi
 
-# A model name is a file in the model directory, never a path.
+# The list names a model, and a model name is a plain file name: it becomes a
+# file in the model directory and a part of a URL.
+if ! grep -q -v '^#' "$root/docker/vmaf-models.sha256"; then
+	echo "docker/vmaf-models.sha256 names no model" >&2
+	exit 1
+fi
 grep -v '^#' "$root/docker/vmaf-models.sha256" | while read -r _ name; do
 	case "$name" in
-		'' | */* | .*)
+		'' | .* | *[!A-Za-z0-9._-]*)
 			echo "docker/vmaf-models.sha256 holds an unexpected model name" >&2
 			exit 1
 			;;
@@ -58,8 +64,13 @@ done
 # Refuses an existing directory before anything is written into it.
 mkdir "$target"
 # The stage holds bin/ffmpeg, bin/ffprobe and the licences of what they contain.
+# A failed build leaves no empty directory in the way of the next run.
 docker build --file "$root/Dockerfile" --target ffmpeg \
-	--output "type=local,dest=$target" "$root"
+	--output "type=local,dest=$target" "$root" || {
+	status=$?
+	rmdir "$target" 2>/dev/null || :
+	exit "$status"
+}
 for program in ffmpeg ffprobe; do
 	if [ ! -x "$target/bin/$program" ]; then
 		echo "The Dockerfile's ffmpeg stage did not provide bin/$program" >&2

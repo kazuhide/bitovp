@@ -968,7 +968,7 @@ async function install(
 				"worker",
 				"web",
 			],
-			{ timeout: 1_200_000 },
+			{ timeout: 2_700_000 },
 		);
 		notify("Web and Worker Docker builds passed");
 	}

@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+
+- The worker image compiles FFmpeg 8.1.3 from source, at the same revision as before, instead of downloading a third-party build that its publisher removes after about two weeks. Every source is pinned by commit and SHA-256 and compiled without network access. Building the image takes longer: this part took about 3 minutes on a 10-core machine. On the files compared, VMAF and CAMBI values, decoded pictures, rendered captions and H.264, AV1 and AAC encodes are identical to the earlier build. FFmpeg no longer includes the external libraries that bitovp does not use: among them the x265, libvpx, libaom, libopus and LAME encoders, VAAPI, Vulkan, OpenCL and AMF support, the CUDA filters, and the ARIB caption, teletext, JPEG XL and SVG decoders. FFmpeg's own decoders, such as those for HEVC, VP9 and Opus, and NVIDIA decoding and encoding remain. The `FFMPEG_URL` and `FFMPEG_SHA256` build arguments are removed; `--build-context ffmpeg=<directory>` builds the image with another FFmpeg.
+
 ### Fixed
 
 - The worker image build fails when its FFmpeg cannot score with a bundled VMAF v1.0 model. The earlier build check passed although the scoring failed, because its 64×64 test pictures are too small for these models. The FFmpeg build that the image pins passes the corrected check.

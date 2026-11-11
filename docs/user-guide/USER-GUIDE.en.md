@@ -77,6 +77,8 @@ docker compose up -d --no-build
 
 The revision command works in both Git checkouts and official source archives. If revision lookup, configuration validation, the build, or migration fails, fix the cause before continuing.
 
+The build compiles FFmpeg for the Worker image from pinned sources. This part took about 3 minutes on a 10-core machine and takes longer with fewer cores.
+
 ```sh
 curl --connect-timeout 2 --max-time 5 -fsS \
   http://127.0.0.1:3100/api/health

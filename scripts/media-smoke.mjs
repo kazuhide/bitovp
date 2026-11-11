@@ -638,7 +638,7 @@ export async function runFixture(
 			],
 			clean,
 			execute,
-			{ cwd: ROOT, timeout: 900_000, capture: false, signal },
+			{ cwd: ROOT, timeout: 2_700_000, capture: false, signal },
 		);
 		assert(!signal.aborted, "Media check cancelled");
 		const imageId = await docker(

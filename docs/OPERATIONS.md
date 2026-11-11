@@ -50,11 +50,28 @@ Pulling images does not replace running data services. Recreate PostgreSQL/Redis
 during the maintenance window after checking their upgrade notes and preserving
 their volumes. Record the selected versions and image digests. The Node and data
 service pins must be updated for later security releases; `--no-cache` refreshes
-the available OS packages within the selected base.
+the available OS packages within the selected base. It also compiles the worker
+image's FFmpeg again, which takes several minutes.
 
 Never run web or worker with a PostgreSQL superuser or BYPASSRLS role. An image
 rollback may be incompatible with an already-applied migration. Preserve the
 new worker while it owns pending cleanup or cancellation work.
+
+### Worker FFmpeg
+
+The worker image compiles FFmpeg and ffprobe in the `ffmpeg-*` stages of
+`Dockerfile`. Each source is the archive of one commit or release, fixed by its
+SHA-256, and the compile steps run without network access. To change a version,
+change the commit and the checksum of its `ADD` line together; `FFMPEG_VER` must
+end with the first ten characters of `FFMPEG_COMMIT`. The image build fails
+unless the result has libvmaf and SRT and scores with a pinned VMAF model.
+
+To build the image with another FFmpeg, replace the `ffmpeg` stage with a
+directory that holds `bin/ffmpeg`, `bin/ffprobe` and `share/licenses/`:
+`docker build --build-context ffmpeg=<directory> --file Dockerfile .`, or
+`additional_contexts` in a Compose override. bitovp needs libvmaf, libx264,
+libdav1d, libass with Fontconfig, SRT with encryption, TLS for RTMPS and, for
+GPU decoding, NVDEC.
 
 ## Backup and rollback
 

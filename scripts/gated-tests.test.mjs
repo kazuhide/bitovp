@@ -157,7 +157,7 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/core", 11],
 		["@bitovp/db", 70],
 		["@bitovp/worker", 67],
-		["@bitovp/web", 81],
+		["@bitovp/web", 82],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],

@@ -90,7 +90,8 @@ export function childEnvironment(env) {
 	]) {
 		if (env[key]) clean[key] = env[key];
 	}
-	return { ...clean, CI: "1", TURBO_FORCE: "true" };
+	// Each package has its own worker pool; release checks share one host.
+	return { ...clean, CI: "1", TURBO_FORCE: "true", TURBO_CONCURRENCY: "1" };
 }
 const digest = (value) => {
 	const bytes = Buffer.from(value ?? "");

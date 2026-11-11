@@ -1,70 +1,87 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const { nativePrismaClient } = vi.hoisted(() => ({
+	nativePrismaClient: vi.fn(),
+}));
+vi.mock("../generated/client", () => ({
+	Prisma: { DbNull: {} },
+	PrismaClient: nativePrismaClient,
+}));
 
 describe("native statement timeout transactions", () => {
-	const events: string[] = [];
-	const calls: {
-		input: unknown;
-		options: unknown;
-		result: Promise<unknown>;
-	}[] = [];
-	let setupFailure = false;
-	function command(value: unknown, label: string) {
-		return {
-			[Symbol.toStringTag]: "PrismaPromise",
-			// biome-ignore lint/suspicious/noThenProperty: model native lazy PrismaPromise execution in batch transactions.
-			then(
-				resolve: (value: unknown) => unknown,
-				reject: (error: unknown) => unknown,
-			) {
-				events.push(label);
-				return (
-					setupFailure && label === "setup"
-						? Promise.reject(new Error("setup refused"))
-						: Promise.resolve(value)
-				).then(resolve, reject);
-			},
-		};
-	}
-	async function client() {
-		vi.resetModules();
-		vi.doMock("../generated/client", () => ({
-			Prisma: { DbNull: {} },
-			PrismaClient: class {
-				$queryRaw(strings: TemplateStringsArray, value: unknown) {
-					expect(strings.join("?")).toBe(
-						"SELECT set_config('statement_timeout', ?, true)",
-					);
-					expect(value).toMatch(/^(1|123|5000)ms$/);
-					return command([{ set_config: value }], "setup");
-				}
-				$transaction(input: unknown, options: unknown) {
-					const result = (async () => {
-						if (typeof input === "function") return input(this);
-						const results: unknown[] = [];
-						for (const item of input as unknown[]) results.push(await item);
-						return results;
-					})();
-					calls.push({ input, options, result });
-					return result;
-				}
-			},
-		}));
-		return (await import("./client")).createPrismaClient();
-	}
-	beforeEach(() => {
-		events.length = 0;
-		calls.length = 0;
-		setupFailure = false;
-		const shared = globalThis as unknown as { prismaModule?: unknown };
+	const shared = globalThis as unknown as { prismaModule?: unknown };
+	let previousModule: unknown;
+	let hadModule = false;
+	let createPrismaClient: typeof import("./client").createPrismaClient;
+
+	beforeAll(async () => {
+		hadModule = Object.hasOwn(shared, "prismaModule");
+		previousModule = shared.prismaModule;
 		shared.prismaModule = undefined;
+		// Cold module preparation belongs to setup, not transaction behavior timing.
+		({ createPrismaClient } = await import("./client"));
 	});
-	afterEach(() => {
+
+	afterAll(() => {
+		if (hadModule) shared.prismaModule = previousModule;
+		else delete shared.prismaModule;
+		nativePrismaClient.mockReset();
 		vi.doUnmock("../generated/client");
 		vi.resetModules();
 	});
 
+	function fixture() {
+		const events: string[] = [];
+		const calls: {
+			input: unknown;
+			options: unknown;
+			result: Promise<unknown>;
+		}[] = [];
+		const setup = { failure: false };
+		function command(value: unknown, label: string) {
+			return {
+				[Symbol.toStringTag]: "PrismaPromise",
+				// biome-ignore lint/suspicious/noThenProperty: model native lazy PrismaPromise execution in batch transactions.
+				then(
+					resolve: (value: unknown) => unknown,
+					reject: (error: unknown) => unknown,
+				) {
+					events.push(label);
+					return (
+						setup.failure && label === "setup"
+							? Promise.reject(new Error("setup refused"))
+							: Promise.resolve(value)
+					).then(resolve, reject);
+				},
+			};
+		}
+		const native = {
+			$queryRaw(strings: TemplateStringsArray, value: unknown) {
+				expect(strings.join("?")).toBe(
+					"SELECT set_config('statement_timeout', ?, true)",
+				);
+				expect(value).toMatch(/^(1|123|5000)ms$/);
+				return command([{ set_config: value }], "setup");
+			},
+			$transaction(input: unknown, options: unknown) {
+				const result = (async () => {
+					if (typeof input === "function") return input(this);
+					const results: unknown[] = [];
+					for (const item of input as unknown[]) results.push(await item);
+					return results;
+				})();
+				calls.push({ input, options, result });
+				return result;
+			},
+		};
+		nativePrismaClient.mockImplementationOnce(function (this: object) {
+			return native;
+		});
+		return { db: createPrismaClient(), events, calls, command, setup };
+	}
+
 	it("forwards the unchanged native input, options and promise when not opted in", async () => {
-		const db = await client();
+		const { db, command, calls, events } = fixture();
 		const input = [command("first", "first")] as never;
 		const options = { isolationLevel: "Serializable" } as const;
 		const result = db.$transaction(input, options);
@@ -81,7 +98,7 @@ describe("native statement timeout transactions", () => {
 	});
 
 	it("sets a callback timeout before work and forwards only native options", async () => {
-		const db = await client();
+		const { db, events, calls } = fixture();
 		await expect(
 			db.$transaction(
 				async () => {
@@ -105,7 +122,7 @@ describe("native statement timeout transactions", () => {
 	});
 
 	it("keeps native batch commands lazy, ordered and removes only the setup result", async () => {
-		const db = await client();
+		const { db, command, events, calls } = fixture();
 		const commands = [command({ first: true }, "first"), command(2, "second")];
 		expect(events).toEqual([]);
 		await expect(
@@ -132,7 +149,7 @@ describe("native statement timeout transactions", () => {
 		null,
 		"123",
 	])("rejects invalid timeout %s before starting native work", async (value) => {
-		const db = await client();
+		const { db, command, calls, events } = fixture();
 		await expect(
 			Promise.resolve().then(() =>
 				db.$transaction(async () => events.push("callback"), {
@@ -155,7 +172,7 @@ describe("native statement timeout transactions", () => {
 	it.each([
 		1, 5000,
 	])("accepts the inclusive statement timeout boundary %i", async (statementTimeoutMs) => {
-		const db = await client();
+		const { db, events } = fixture();
 		await expect(
 			db.$transaction(async () => 1, { statementTimeoutMs }),
 		).resolves.toBe(1);
@@ -163,7 +180,7 @@ describe("native statement timeout transactions", () => {
 	});
 
 	it("strips an explicitly undefined custom option without adding setup", async () => {
-		const db = await client();
+		const { db, calls, events } = fixture();
 		await db.$transaction(async () => 1, {
 			statementTimeoutMs: undefined,
 			timeout: 30000,
@@ -173,8 +190,8 @@ describe("native statement timeout transactions", () => {
 	});
 
 	it("does not run callback or batch commands after setup failure", async () => {
-		const db = await client();
-		setupFailure = true;
+		const { db, setup, command, events } = fixture();
+		setup.failure = true;
 		await expect(
 			db.$transaction(async () => events.push("callback"), {
 				statementTimeoutMs: 123,
@@ -186,5 +203,43 @@ describe("native statement timeout transactions", () => {
 			}),
 		).rejects.toThrow("setup refused");
 		expect(events).toEqual(["setup", "setup"]);
+	});
+
+	it("keeps delayed work from a previous client out of a new fixture", async () => {
+		const previous = fixture();
+		let resume: () => void = () => undefined;
+		const blocked = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		let markStarted: () => void = () => undefined;
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const previousWork = previous.db.$transaction(async () => {
+			markStarted();
+			await blocked;
+			return previous.db.$transaction([
+				previous.command("late", "previous"),
+			] as never);
+		});
+		try {
+			await started;
+			const current = fixture();
+			await expect(
+				current.db.$transaction([
+					current.command("current", "current"),
+				] as never),
+			).resolves.toEqual(["current"]);
+			expect(current.events).toEqual(["current"]);
+			expect(current.calls).toHaveLength(1);
+			resume();
+			await expect(previousWork).resolves.toEqual(["late"]);
+			expect(current.events).toEqual(["current"]);
+			expect(current.calls).toHaveLength(1);
+			expect(previous.events).toEqual(["previous"]);
+		} finally {
+			resume();
+			await previousWork;
+		}
 	});
 });

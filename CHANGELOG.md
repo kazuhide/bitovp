@@ -10,6 +10,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Local release checks run packages one at a time and isolate transaction-test setup and delayed fixture work, retaining all assertions and time limits.
 - Web startup locates the packaged Prisma query engine after source relocation; deployment health checks perform an identity database read before reporting readiness.
 - Clear HLS editing preparation accepts supported paired CUE-OUT/CUE-IN annotations while retaining segment, source identity and timing validation.
 - Clip settings diagnose configured services on open and expire stale results; creation and recovery explain failures, including story plans that cannot fit the requested length.

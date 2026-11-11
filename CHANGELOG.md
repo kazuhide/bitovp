@@ -6,18 +6,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
-### Changed
-
-- The web and worker processes no longer load the hierarchical story-flow modules that no feature uses yet. Their tests run in a dedicated CI job.
-- The API census check compares the SDK version, reached operations, body fields and evidence files on every change, and lists what differs. Unrelated source or dependency changes no longer require regenerating the bundled census; release gates still require an exact refresh of its source fingerprint and line numbers.
-- The offline media and PostgreSQL integration checks explain a failure: the step that failed, each PostgreSQL test that failed or was skipped or each media fixture's test totals, and the end of the failed command's output with credentials removed. The media check also requires every fixture to run once and pass its required number of tests, and no longer accepts a fixture file that declares no test.
-- CI runs 106 tests that no job ran before: 12 against PostgreSQL (tenant reset, scene search and the newest run of each live channel), 62 that drive real FFmpeg with the FFmpeg build and VMAF models that the worker image pins, and 32 against the Redis server of the image that `docker-compose.yml` pins (VMAF resource leases and BullMQ queues). Each package's test run now fails when it skips a test that no other job runs.
-
-### Security
-
-- Updated fast-xml-parser to 5.12.0 for subtitle validation and the Azure and Google Cloud storage clients. Earlier versions could use excessive CPU time on XML with unterminated stop-node tags (GHSA-474x-hrwr-fgx4, low severity). bitovp does not enable stop nodes, so it was not affected.
-
-## [1.2.2] - 2026-11-10
+## [1.2.2] - 2026-11-12
 
 ### Fixed
 
@@ -33,6 +22,15 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Offline media CI now requires real HLS preparation, normalization, rendering and reference-preservation fixtures; preview and font checks are also required in CI.
 - Remove an unused legacy subtitle translation prompt and obsolete completed implementation plans; align editing and gateway guides with current behavior.
 - Document the deployment setting for capability-checked, feasible Local LLM clip plans.
+- The web and worker processes no longer load the hierarchical story-flow modules that no feature uses yet. Their tests run in a dedicated CI job.
+- The API census check compares the SDK version, reached operations, body fields and evidence files on every change, and lists what differs. Unrelated source or dependency changes no longer require regenerating the bundled census; release gates still require an exact refresh of its source fingerprint and line numbers.
+- The offline media and PostgreSQL integration checks explain a failure: the step that failed, each PostgreSQL test that failed or was skipped or each media fixture's test totals, and the end of the failed command's output with credentials removed. The media check also requires every fixture to run once and pass its required number of tests, and no longer accepts a fixture file that declares no test.
+- CI runs 106 tests that no job ran before: 12 against PostgreSQL (tenant reset, scene search and the newest run of each live channel), 62 that drive real FFmpeg with the FFmpeg build and VMAF models that the worker image pins, and 32 against the Redis server of the image that `docker-compose.yml` pins (VMAF resource leases and BullMQ queues). Each package's test run now fails when it skips a test that no other job runs.
+- Browser qualification uses a pinned Ubuntu runner and a signed archive mirror fallback when the default Ubuntu mirror DNS lookups all fail. Playwright dependency installation and real browser tests remain required.
+
+### Security
+
+- Updated fast-xml-parser to 5.12.0 for subtitle validation and the Azure and Google Cloud storage clients. Earlier versions could use excessive CPU time on XML with unterminated stop-node tags (GHSA-474x-hrwr-fgx4, low severity). bitovp does not enable stop nodes, so it was not affected.
 
 ## [1.2.1] - 2026-11-10
 

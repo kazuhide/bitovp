@@ -24,6 +24,7 @@ import {
 	GROUPS,
 	runFixture,
 	runIntegrationTests,
+	stopCommands,
 	testEnvironment,
 	validateReport,
 } from "./postgres-integration.mjs";
@@ -1443,4 +1444,23 @@ test("a fixture step that rejects without an error still fails the run", async (
 	} finally {
 		rmSync(parent, { recursive: true, force: true });
 	}
+});
+
+test("stopCommands ends a command that is still running", {
+	timeout: 60_000,
+}, async () => {
+	// Left alone, the command ends by itself after 20 seconds and passes.
+	const running = command(
+		process.execPath,
+		["-e", "setTimeout(() => {}, 20_000)"],
+		{ env: {} },
+	);
+	stopCommands();
+	await assert.rejects(running, (error) => {
+		assert.deepEqual(failureReport(error), [
+			"Reason: PostgreSQL integration command failed",
+			"  - The command was cancelled",
+		]);
+		return true;
+	});
 });

@@ -192,8 +192,8 @@ export function skipProblems(report, workspace, root = ROOT) {
 }
 
 const TOTALS = "media fixture totals: ";
-// One command of a run. A run's commands together stay below its CI job's
-// limit, so a command that hangs is reported with its step.
+// The longest that one command of a run may take. It is below the limit of
+// the run's CI job, so a command that hangs is reported with its step.
 const LIMIT = 300_000;
 
 /** Why the worker script tests did not all run and pass, from the reporter's totals. */
@@ -358,9 +358,34 @@ const accepts = (port) =>
 	});
 
 /**
+ * The process id that the Redis server on a loopback port reports, or
+ * undefined when nothing answers there as Redis does.
+ */
+const serverProcess = (port) =>
+	new Promise((accept) => {
+		const socket = connect({ host: "127.0.0.1", port });
+		let reply = "";
+		const answer = (id) => {
+			socket.destroy();
+			accept(id);
+		};
+		socket.setTimeout(1_000, () => answer(undefined));
+		socket.once("connect", () => socket.write("INFO server\r\n"));
+		socket.on("data", (chunk) => {
+			reply += chunk;
+			const id = /^process_id:(\d+)\r\n/m.exec(reply)?.[1];
+			if (id || reply.length > 64 * 1024) answer(id && Number(id));
+		});
+		for (const event of ["error", "close"])
+			socket.once(event, () => answer(undefined));
+	});
+
+/**
  * Starts a Redis server of this run on a loopback port and waits until it
- * accepts connections. The queue tests name fixed ports, so a port that
- * something else serves already is refused: the tests would write there.
+ * answers there. The queue tests name fixed ports and write to whatever
+ * serves them, so the port must be free before, and the server that answers
+ * must be the process that was started, not one that the program started in
+ * its place or one that took the port in the meantime.
  */
 export async function startRedis({
 	program,
@@ -389,7 +414,9 @@ export async function startRedis({
 			"--loglevel",
 			"warning",
 		],
-		{ env, stdio: ["ignore", "pipe", "pipe"] },
+		// A process group of its own, so that the server is stopped together
+		// with anything that the program started beside it.
+		{ env, detached: true, stdio: ["ignore", "pipe", "pipe"] },
 	);
 	const log = outputTail(16 * 1024);
 	for (const stream of [child.stdout, child.stderr])
@@ -403,21 +430,39 @@ export async function startRedis({
 				accept();
 			});
 	});
+	const send = (name) => {
+		if (!running) return;
+		try {
+			process.kill(-child.pid, name);
+		} catch {
+			child.kill(name);
+		}
+	};
 	const stop = async () => {
-		child.kill("SIGTERM");
-		const timer = setTimeout(() => child.kill("SIGKILL"), 2_000);
+		send("SIGTERM");
+		const timer = setTimeout(() => send("SIGKILL"), 2_000);
 		await ended;
 		clearTimeout(timer);
 	};
-	// A program that ended is not waited for: whatever serves its port after
-	// that is not a server this run could stop.
-	for (const limit = Date.now() + wait; running && Date.now() < limit; ) {
-		if (await accepts(port)) return { stop };
-		await new Promise((accept) => setTimeout(accept, 50));
+	// A program that ended is not waited for, and neither is a port that
+	// another server took in the meantime.
+	let other;
+	for (
+		const limit = Date.now() + wait;
+		running && other === undefined && Date.now() < limit;
+	) {
+		const id = await serverProcess(port);
+		// A program that could not start has no process id either.
+		if (id !== undefined && id === child.pid) return { stop };
+		other = id;
+		if (other === undefined)
+			await new Promise((accept) => setTimeout(accept, 50));
 	}
 	await stop();
 	throw new GateFailure(
-		`The Redis server for 127.0.0.1:${port} did not accept connections`,
+		other === undefined
+			? `The Redis server for 127.0.0.1:${port} did not accept connections`
+			: `127.0.0.1:${port} is served by process ${other}, not by the server that this run started`,
 		{ diagnostics: log.text() },
 	);
 }
@@ -462,6 +507,7 @@ async function runQueues(
 			clean[variable] = `redis://127.0.0.1:${port}`;
 		}
 		step = "running the queue tests that need Redis";
+		// The fixture's runner stops a command at 180 seconds.
 		await runListed(
 			REDIS.queues,
 			"Redis",
@@ -497,6 +543,8 @@ export async function runRedis(
 		try {
 			version = await execute(program, ["--version"], { env: clean, signal });
 		} catch (error) {
+			// A cancelled run is not told to install the program.
+			if (signal?.aborted) throw error;
 			throw new GateFailure(
 				"redis-server could not be run; put it on PATH or name it in VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER",
 				{ diagnostics: error instanceof GateFailure ? error.diagnostics : "" },

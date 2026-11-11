@@ -12,14 +12,20 @@ set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 target=${1:?usage: redis-server-tools.sh <new directory>}
-# The path is written into the script that starts the server.
-target=$(cd "$(dirname "$target")" && pwd)/$(basename "$target")
-case "$target" in
-	*[!A-Za-z0-9/._-]*)
-		echo "The directory's path may hold only letters, digits and / . _ -" >&2
-		exit 1
-		;;
-esac
+# In a statement of its own, so that a parent directory that does not exist
+# stops the script.
+parent=$(cd "$(dirname "$target")" && pwd)
+target=$parent/$(basename "$target")
+# Paths are written into the script that starts the server.
+plain() {
+	case "$1" in
+		*[!A-Za-z0-9/._-]*) return 1 ;;
+	esac
+}
+if ! plain "$target"; then
+	echo "The directory's path may hold only letters, digits and / . _ -" >&2
+	exit 1
+fi
 
 # One image, by version and digest.
 image=$(sed -n 's/^ *image: \(redis:[^ ]*\)$/\1/p' "$root/docker-compose.yml")
@@ -44,15 +50,18 @@ fi
 mkdir "$target"
 mkdir "$target/bin" "$target/lib" "$target/libexec"
 container=$(docker create "$image")
-trap 'docker rm --force "$container" >/dev/null' EXIT
+# With the anonymous volume of the image's /data. A signal ends the script
+# through the same trap.
+trap 'docker rm --force --volumes "$container" >/dev/null' EXIT
+trap 'exit 1' HUP INT TERM
 docker cp --follow-link "$container:/usr/local/bin/redis-server" \
 	"$target/libexec/redis-server"
 docker cp "$container:/lib/." "$target/lib/"
 docker cp "$container:/usr/lib/." "$target/lib/"
 
-loader=$(ls "$target"/lib/ld-musl-*.so.1)
-if [ ! -f "$loader" ]; then
-	echo "The image holds no single musl loader" >&2
+loader=$(ls "$target"/lib/ld-musl-*.so.1 2>/dev/null || true)
+if [ ! -f "$loader" ] || ! plain "$loader"; then
+	echo "The image holds no single musl loader with a plain name" >&2
 	exit 1
 fi
 # exec keeps the process id, so a signal to the program reaches the server.

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
+	copyFileSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -860,7 +862,14 @@ async function redisRun({
 	};
 	// What the fixture gives its run step: a private directory, a private
 	// temporary directory in the child environment, and both database URLs.
-	const prepared = async ({ run, notify, root: checkout, env: given }) => {
+	const prepared = async ({
+		run,
+		notify,
+		root: checkout,
+		env: given,
+		signal: cancel,
+	}) => {
+		scratch.cancel = cancel;
 		const directory = mkdtempSync(join(tmpdir(), "gated-redis-fixture-"));
 		try {
 			await run(
@@ -910,7 +919,12 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 	const seen = {};
 	const passed = await redisRun({
 		signal: controller.signal,
-		env: { PATH: "/tools/bin", GITHUB_TOKEN: "not for a child" },
+		env: {
+			PATH: "/tools/bin",
+			GITHUB_TOKEN: "not for a child",
+			// The lease tests start a server of their own.
+			VMAF_RESOURCE_LEASE_TEST_REDIS_URL: "redis://127.0.0.1:16381",
+		},
 		during: (directory, options) => {
 			seen.directory = directory;
 			seen.database = readFileSync(options.env.TENANT_TEST_DB_FILE, "utf8");
@@ -989,6 +1003,8 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 		runtimeUrl: APP_URL,
 	});
 	assert.equal(seen.mode, 0o600);
+	// The fixture stops at its next command when the run is cancelled.
+	assert.equal(passed.scratch.cancel, controller.signal);
 	// One private server per address, each stopped after the tests.
 	assert.deepEqual(
 		passed.servers.map(({ program, port, directory, env, mode, stopped }) => ({
@@ -1045,6 +1061,19 @@ test("a Redis run names the part that did not run, and stops the servers it star
 		"  | sh: redis-server: not found",
 	]);
 	assert.equal(absent.calls.length, 1);
+	// A run that was cancelled during the check is reported as cancelled.
+	const controller = new AbortController();
+	controller.abort();
+	const cancelled = await redisRun({
+		signal: controller.signal,
+		version: async () => {
+			throw new GateFailure("Media validation command cancelled");
+		},
+	});
+	assert.deepEqual(cancelled.lines, [
+		"Step: checking the Redis server program",
+		"Reason: Media validation command cancelled",
+	]);
 	for (const version of [
 		"Valkey server v=8.0.1 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64",
 		"note\nRedis server v=8.10.3 sha=00000000:1",
@@ -1245,8 +1274,12 @@ test("a Redis run names the part that did not run, and stops the servers it star
 });
 
 // A program that takes redis-server's place: `FAKE_REDIS` chooses whether it
-// serves its port, stops at once, neither serves nor ends when asked, or
-// leaves a server behind and ends itself. Every start is listed in `pids`.
+// serves its port, stops at once, neither serves nor ends when asked, or stays
+// and starts another process that serves and holds its output open, as a
+// script does that starts the server without exec. Every start is listed in
+// `pids`, and none lasts longer than 90 seconds. A server answers INFO with
+// its process id, as Redis does, and leaves the file `asked` when it is asked
+// to end.
 const FAKE_REDIS = `#!${process.execPath}
 const { spawn } = require("node:child_process");
 const { appendFileSync, renameSync, writeFileSync } = require("node:fs");
@@ -1256,31 +1289,40 @@ const args = process.argv.slice(2);
 const directory = args[args.indexOf("--dir") + 1];
 const mode = process.env.FAKE_REDIS;
 appendFileSync(join(directory, "pids"), process.pid + "\\n");
-if (mode === "forks") {
-	const server = spawn(process.execPath, [__filename, ...args], {
-		detached: true,
-		stdio: "ignore",
-		env: { ...process.env, FAKE_REDIS: "late" },
+setTimeout(() => process.exit(0), 90_000);
+if (mode === "delegates")
+	spawn(process.execPath, [__filename, ...args], {
+		stdio: "inherit",
+		env: { ...process.env, FAKE_REDIS: "serves" },
 	});
-	server.unref();
-	process.exit(0);
+else {
+	writeFileSync(join(directory, "started.tmp"), JSON.stringify({ args, pid: process.pid, env: Object.keys(process.env).sort() }));
+	renameSync(join(directory, "started.tmp"), join(directory, "started.json"));
+	if (mode === "stops") {
+		console.log("Could not create server TCP listening socket: bind: Address already in use");
+		process.exit(1);
+	}
+	if (mode === "deaf") {
+		console.error("Error loading shared library libssl.so.3: No such file or directory");
+		process.on("SIGTERM", () => {});
+	} else {
+		process.on("SIGTERM", () => {
+			writeFileSync(join(directory, "asked"), "");
+			process.exit(0);
+		});
+		createServer((socket) => {
+			socket.on("error", () => {});
+			socket.on("data", (data) => {
+				if (String(data) !== "INFO server\\r\\n") return socket.end("-ERR unknown command\\r\\n");
+				const info = "# Server\\r\\nprocess_id:" + process.pid + "\\r\\n";
+				socket.end("$" + info.length + "\\r\\n" + info + "\\r\\n");
+			});
+		}).listen(
+			Number(args[args.indexOf("--port") + 1]),
+			args[args.indexOf("--bind") + 1],
+		);
+	}
 }
-writeFileSync(join(directory, "started.tmp"), JSON.stringify({ args, pid: process.pid, env: Object.keys(process.env).sort() }));
-renameSync(join(directory, "started.tmp"), join(directory, "started.json"));
-if (mode === "stops") {
-	console.log("Could not create server TCP listening socket: bind: Address already in use");
-	process.exit(1);
-}
-const serve = () =>
-	createServer((socket) => socket.end()).listen(
-		Number(args[args.indexOf("--port") + 1]),
-		args[args.indexOf("--bind") + 1],
-	);
-if (mode === "deaf") {
-	process.on("SIGTERM", () => {});
-	setInterval(() => {}, 1_000);
-} else if (mode === "late") setTimeout(serve, 500);
-else serve();
 `;
 const freePort = () =>
 	new Promise((accept) => {
@@ -1374,18 +1416,19 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 	);
 	assert.equal(existsSync(join(directory, "started.json")), false);
 
-	// A server that ends when asked is not waited for any longer.
-	const asked = Date.now();
+	// A server is asked to end before it is killed, and ends.
 	await server.stop();
-	assert(Date.now() - asked < 1_500, "the server was not asked to end");
+	assert.equal(existsSync(join(directory, "asked")), true);
 	assert.equal(await reachable(port), false);
 	assert.equal(alive(started.pid), false);
 	// Stopping twice is harmless.
 	await server.stop();
 
-	// A server that stops before it serves is reported with what it printed.
+	// A server that stops before it serves is not waited for, and is reported
+	// with what it printed.
+	const since = Date.now();
 	await assert.rejects(
-		startRedis({ program, port, directory, env: env("stops") }),
+		startRedis({ program, port, directory, env: env("stops"), wait: 30_000 }),
 		(error) => {
 			assert.deepEqual(failureLines(error), [
 				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
@@ -1395,6 +1438,7 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 			return true;
 		},
 	);
+	assert(Date.now() - since < 15_000, "a program that ended was waited for");
 	// A program that does not exist.
 	await assert.rejects(
 		startRedis({
@@ -1410,28 +1454,37 @@ test("a Redis server of the run serves a port of its own until it is stopped", {
 			return true;
 		},
 	);
-	// A program that ended is not waited for, although the server it left
-	// behind serves the port half a second later: the run could not stop it.
+	// A program that starts the server as another process is refused, and that
+	// server is stopped with it.
 	rmSync(join(directory, "started.json"));
 	await assert.rejects(
-		startRedis({ program, port, directory, env: env("forks"), wait: 5_000 }),
-		/did not accept connections/,
+		startRedis({ program, port, directory, env: env("delegates") }),
+		(error) => {
+			assert(error instanceof GateFailure);
+			assert.equal(
+				error.message,
+				`127.0.0.1:${port} is served by process ${record().pid}, not by the server that this run started`,
+			);
+			return true;
+		},
 	);
-	for (
-		let attempt = 0;
-		!existsSync(join(directory, "started.json")) && attempt < 100;
-		attempt++
-	)
+	assert.equal(await reachable(port), false);
+	for (let attempt = 0; alive(record().pid) && attempt < 100; attempt++)
 		await new Promise((accept) => setTimeout(accept, 50));
-	process.kill(record().pid, "SIGKILL");
-	rmSync(join(directory, "started.json"));
-	for (let attempt = 0; (await reachable(port)) && attempt < 100; attempt++)
-		await new Promise((accept) => setTimeout(accept, 50));
-	// A server that neither serves nor ends when asked is killed.
+	assert.equal(alive(record().pid), false);
+	// A server that neither serves nor ends when asked is killed, and what it
+	// printed as an error is reported.
 	const begun = Date.now();
 	await assert.rejects(
-		startRedis({ program, port, directory, env: env("deaf"), wait: 300 }),
-		/did not accept connections/,
+		startRedis({ program, port, directory, env: env("deaf"), wait: 1_000 }),
+		(error) => {
+			assert.deepEqual(failureLines(error), [
+				`Reason: The Redis server for 127.0.0.1:${port} did not accept connections`,
+				"Last 1 lines of the failed command:",
+				"  | Error loading shared library libssl.so.3: No such file or directory",
+			]);
+			return true;
+		},
 	);
 	assert(Date.now() - begun >= 2_000, "the server was not given its 2 s");
 	assert.equal(alive(record().pid), false);
@@ -1540,12 +1593,45 @@ test("the command reports through its exit status", () => {
 	}
 });
 
-test("the Redis command runs through to the fixture, and its report leaves out the fixture's credentials", () => {
-	const parent = realpathSync(mkdtempSync(join(tmpdir(), "gated-redis-cli-")));
+// Stand-ins on PATH for a run of the real command: a redis-server that reports
+// its version, Vitest for the lease tests, docker, and a database preparation
+// that does what `prepare` says.
+function standIns(parent, prepare) {
 	const program = (name, body) =>
 		writeFileSync(join(parent, name), `#!/usr/bin/env node\n${body}`, {
 			mode: 0o700,
 		});
+	program(
+		"redis-server",
+		'console.log("Redis server v=8.10.3 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64 build=0");',
+	);
+	writeFileSync(
+		join(parent, "leases.json"),
+		JSON.stringify(allPassed(REDIS.leases)),
+	);
+	program(
+		"pnpm",
+		`const { copyFileSync, readFileSync, renameSync, writeFileSync } = require("node:fs");
+const a = process.argv.slice(2);
+const output = a.find((arg) => arg.startsWith("--outputFile="));
+if (output) copyFileSync(__dirname + "/leases.json", output.slice("--outputFile=".length));
+else if (a.includes("db:runtime:prepare")) {
+${prepare}
+}
+`,
+	);
+	program(
+		"docker",
+		`const a = process.argv.slice(4);
+if (a[0] === "port") console.log("127.0.0.1:15432");
+else if (a[0] === "inspect")
+	console.log(JSON.stringify({ "io.bitovp.postgres-test": a.at(-1).slice("bitovp-postgres-".length) }));
+`,
+	);
+}
+
+test("the Redis command reaches the fixture, and a failure there is reported without the fixture's credentials", () => {
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "gated-redis-cli-")));
 	const run = (path) =>
 		spawnSync(process.execPath, [script, "--redis"], {
 			encoding: "utf8",
@@ -1563,36 +1649,13 @@ test("the Redis command runs through to the fixture, and its report leaves out t
 			"Reason: redis-server could not be run; put it on PATH or name it in VMAF_RESOURCE_LEASE_TEST_REDIS_SERVER",
 		]);
 
-		program(
-			"redis-server",
-			'console.log("Redis server v=8.10.3 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64 build=0");',
-		);
-		// Vitest for the lease tests, then the database preparation, which fails
-		// and prints the administrator URL it was given.
-		writeFileSync(
-			join(parent, "leases.json"),
-			JSON.stringify(allPassed(REDIS.leases)),
-		);
-		program(
-			"pnpm",
-			`const { copyFileSync, readFileSync } = require("node:fs");
-const a = process.argv.slice(2);
-const output = a.find((arg) => arg.startsWith("--outputFile="));
-if (output) copyFileSync(__dirname + "/leases.json", output.slice("--outputFile=".length));
-else if (a.includes("db:runtime:prepare")) {
-	const file = readFileSync(a[a.indexOf("--admin-env") + 1], "utf8");
+		// The database preparation fails and prints the administrator URL it
+		// was given.
+		standIns(
+			parent,
+			`	const file = readFileSync(a[a.indexOf("--admin-env") + 1], "utf8");
 	console.error("cannot prepare a role at " + /^DATABASE_URL=(.+)$/m.exec(file)[1]);
-	process.exit(1);
-}
-`,
-		);
-		program(
-			"docker",
-			`const a = process.argv.slice(4);
-if (a[0] === "port") console.log("127.0.0.1:15432");
-else if (a[0] === "inspect")
-	console.log(JSON.stringify({ "io.bitovp.postgres-test": a.at(-1).slice("bitovp-postgres-".length) }));
-`,
+	process.exit(1);`,
 		);
 		const failed = run(`${parent}:${process.env.PATH}`);
 		assert.equal(failed.status, 1);
@@ -1609,6 +1672,230 @@ else if (a[0] === "inspect")
 			"Last 1 lines of the failed command:",
 			"  | cannot prepare a role at [private]",
 		]);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("a signal stops the command that is running, and the fixture is removed all the same", {
+	timeout: 60_000,
+}, async (t) => {
+	const parent = realpathSync(
+		mkdtempSync(join(tmpdir(), "gated-redis-signal-")),
+	);
+	const pid = join(parent, "hanging.pid");
+	// The database preparation does not end by itself.
+	standIns(
+		parent,
+		`	writeFileSync(__dirname + "/hanging.tmp", String(process.pid));
+	renameSync(__dirname + "/hanging.tmp", __dirname + "/hanging.pid");
+	setTimeout(() => process.exit(0), 90_000);`,
+	);
+	const child = spawn(process.execPath, [script, "--redis"], {
+		env: { PATH: `${parent}:${process.env.PATH}` },
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	// Ends whatever a failed check left running, so that this file ends too.
+	t.after(() => {
+		child.kill("SIGKILL");
+		if (existsSync(pid))
+			try {
+				process.kill(Number(readFileSync(pid, "utf8")), "SIGKILL");
+			} catch {
+				// Ended already.
+			}
+		rmSync(parent, { recursive: true, force: true });
+	});
+	const printed = { stdout: "", stderr: "" };
+	for (const stream of ["stdout", "stderr"])
+		child[stream].on("data", (chunk) => {
+			printed[stream] += chunk;
+		});
+	let closed = false;
+	const ended = new Promise((accept) =>
+		child.once("close", (code, signal) => {
+			closed = true;
+			accept({ code, signal });
+		}),
+	);
+	while (!closed && !existsSync(pid))
+		await new Promise((accept) => setTimeout(accept, 50));
+	assert.equal(closed, false, printed.stderr);
+	const hanging = Number(readFileSync(pid, "utf8"));
+	child.kill("SIGTERM");
+	assert.deepEqual(await ended, { code: 1, signal: null });
+	assert.equal(alive(hanging), false);
+	assert.deepEqual(printed.stdout.trimEnd().split("\n"), [
+		"Redis server 8.10.3",
+		"@bitovp/worker: 29 resource lease tests passed, 0 skipped",
+		"Preparing dedicated PostgreSQL runtime role and migrations",
+		"Dedicated PostgreSQL fixture and private files removed",
+	]);
+	assert.deepEqual(printed.stderr.trimEnd().split("\n"), [
+		"Gated tests failed; a required test did not run and pass.",
+		"Step: preparing the runtime database role",
+		"Reason: PostgreSQL integration command failed",
+		"  - The command was cancelled",
+	]);
+});
+
+// Stand-ins for the installer's tools. docker lists its calls in the file
+// `CALLS`, and its copy of the image's /lib leaves a loader under each name in
+// `LOADERS`: a script that reports `REPORTED` as its version and how it was
+// called.
+const FAKE_DOCKER = `#!${process.execPath}
+const { appendFileSync, writeFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync(process.env.CALLS, args.join(" ") + "\\n");
+if (args[0] === "create") console.log("c0ffee");
+if (args[0] === "cp" && args.at(-2).endsWith(":/usr/local/bin/redis-server")) writeFileSync(args.at(-1), "");
+if (args[0] === "cp" && args.at(-2).endsWith(":/lib/."))
+	for (const name of JSON.parse(process.env.LOADERS))
+		writeFileSync(args.at(-1) + name, '#!/bin/sh\\necho "Redis server v=' + process.env.REPORTED + ' called with $*"\\n', { mode: 0o755 });
+`;
+
+test("the installer takes only the pinned Redis image, into a new directory with a plain path", () => {
+	const parent = realpathSync(
+		mkdtempSync(join(tmpdir(), "gated-redis-tools-")),
+	);
+	try {
+		const tools = join(parent, "tools");
+		mkdirSync(tools);
+		writeFileSync(join(tools, "docker"), FAKE_DOCKER, { mode: 0o700 });
+		writeFileSync(
+			join(tools, "uname"),
+			"#!/bin/sh\nprintf '%s\\n' \"$FAKE_UNAME\"\n",
+			{ mode: 0o700 },
+		);
+		const compose = readFileSync(resolve(root, "docker-compose.yml"), "utf8");
+		const [, image, version] =
+			/^ +image: (redis:([0-9.]+)-alpine@sha256:[a-f0-9]{64})$/m.exec(compose);
+		const pin = (value) =>
+			compose.replace(/^( +image: )redis:.*$/m, `$1${value}`);
+		const digest = "a".repeat(64);
+		let count = 0;
+		// One run of the installer, in a checkout of its own.
+		const install = ({
+			shell,
+			file = compose,
+			name = "redis",
+			before = () => {},
+			loaders = ["ld-musl-x86_64.so.1"],
+			reported = version,
+			host = "Linux",
+		}) => {
+			count += 1;
+			const checkout = join(parent, `checkout-${count}`);
+			mkdirSync(join(checkout, "scripts"), { recursive: true });
+			copyFileSync(
+				resolve(root, "scripts/redis-server-tools.sh"),
+				join(checkout, "scripts/redis-server-tools.sh"),
+			);
+			writeFileSync(join(checkout, "docker-compose.yml"), file);
+			const calls = join(checkout, "calls");
+			writeFileSync(calls, "");
+			const target = join(checkout, name);
+			before(target);
+			const result = spawnSync(
+				shell,
+				[join(checkout, "scripts/redis-server-tools.sh"), target],
+				{
+					encoding: "utf8",
+					env: {
+						PATH: `${tools}:/usr/bin:/bin`,
+						CALLS: calls,
+						LOADERS: JSON.stringify(loaders),
+						REPORTED: reported,
+						FAKE_UNAME: host,
+					},
+				},
+			);
+			return {
+				status: result.status,
+				stdout: result.stdout,
+				stderr: result.stderr,
+				target,
+				calls: readFileSync(calls, "utf8").split("\n").filter(Boolean),
+			};
+		};
+		const PIN =
+			"docker-compose.yml does not pin one Redis image by version and digest\n";
+		const PATH =
+			"The directory's path may hold only letters, digits and / . _ -\n";
+		const LOADER = "The image holds no single musl loader with a plain name\n";
+		// CI runs it with sh, which is dash there.
+		const shells = ["sh", "dash"].filter(
+			(shell) => spawnSync(shell, ["-c", ":"]).status === 0,
+		);
+		assert(shells.includes("sh"));
+		for (const shell of shells) {
+			const done = install({ shell });
+			assert.equal(done.status, 0, done.stderr);
+			const { target } = done;
+			// The program is started through the image's loader and libraries.
+			assert.equal(
+				done.stdout,
+				`Redis server v=${version} called with --library-path ${target}/lib ${target}/libexec/redis-server --version\n`,
+			);
+			assert.equal(
+				readFileSync(join(target, "bin/redis-server"), "utf8"),
+				`#!/bin/sh\nexec "${target}/lib/ld-musl-x86_64.so.1" --library-path "${target}/lib" "${target}/libexec/redis-server" "$@"\n`,
+			);
+			// The container is removed with its volume.
+			assert.deepEqual(done.calls, [
+				`create ${image}`,
+				`cp --follow-link c0ffee:/usr/local/bin/redis-server ${target}/libexec/redis-server`,
+				`cp c0ffee:/lib/. ${target}/lib/`,
+				`cp c0ffee:/usr/lib/. ${target}/lib/`,
+				"rm --force --volumes c0ffee",
+			]);
+
+			// Refused before Docker is asked for anything.
+			for (const [options, stderr] of [
+				[{ file: compose.replace(/^ +image: redis:.*\n/m, "") }, PIN],
+				[{ file: `${compose}\n    image: ${image}\n` }, PIN],
+				[{ file: pin(`redis:${version}-alpine`) }, PIN],
+				[{ file: pin(`redis:${version}@sha256:${digest}`) }, PIN],
+				[{ file: pin(`redis:latest-alpine@sha256:${digest}`) }, PIN],
+				[{ file: pin(`${image} # pinned`) }, PIN],
+				[{ file: pin(`"${image}"`) }, PIN],
+				[
+					{ file: pin(`ghcr.io/x/redis:${version}-alpine@sha256:${digest}`) },
+					PIN,
+				],
+				[{ name: "with space" }, PATH],
+				[{ name: "$(id)" }, PATH],
+				[{ host: "Darwin" }, "The image's redis-server runs on Linux only\n"],
+				// The shell's own message, in one line: the script went no further.
+				[{ name: "absent/redis" }, /^[^\n]*\bcd\b[^\n]*\n$/],
+				[{ before: (path) => mkdirSync(path) }, /^[^\n]*\bmkdir\b[^\n]*\n$/],
+			]) {
+				const refused = install({ shell, ...options });
+				assert.notEqual(refused.status, 0);
+				assert.equal(refused.stdout, "");
+				if (typeof stderr === "string") assert.equal(refused.stderr, stderr);
+				else assert.match(refused.stderr, stderr);
+				assert.deepEqual(refused.calls, []);
+			}
+
+			// Refused after the copy: no program is left to start, and the
+			// container is removed.
+			for (const [options, stderr] of [
+				[{ loaders: [] }, LOADER],
+				[{ loaders: ["ld-musl-x86_64.so.1", "ld-musl-aarch64.so.1"] }, LOADER],
+				[{ loaders: ["ld-musl-$(id).so.1"] }, LOADER],
+				[
+					{ reported: `${version}1` },
+					"The image's redis-server reports another version than its tag\n",
+				],
+			]) {
+				const refused = install({ shell, ...options });
+				assert.equal(refused.status, 1);
+				assert.equal(refused.stdout, "");
+				assert.equal(refused.stderr, stderr);
+				assert.equal(refused.calls.at(-1), "rm --force --volumes c0ffee");
+			}
+		}
 	} finally {
 		rmSync(parent, { recursive: true, force: true });
 	}

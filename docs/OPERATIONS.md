@@ -50,11 +50,60 @@ Pulling images does not replace running data services. Recreate PostgreSQL/Redis
 during the maintenance window after checking their upgrade notes and preserving
 their volumes. Record the selected versions and image digests. The Node and data
 service pins must be updated for later security releases; `--no-cache` refreshes
-the available OS packages within the selected base.
+the available OS packages within the selected base. It also compiles the worker
+image's FFmpeg again, which takes several minutes.
 
 Never run web or worker with a PostgreSQL superuser or BYPASSRLS role. An image
 rollback may be incompatible with an already-applied migration. Preserve the
 new worker while it owns pending cleanup or cancellation work.
+
+### Worker FFmpeg
+
+The worker image compiles FFmpeg and ffprobe in the `ffmpeg-*` stages of
+`Dockerfile`. Each source is the archive of one commit or release, fixed by its
+SHA-256, and the compile steps run without network access. Two inputs are not
+fixed in that way: Debian's compiler and build tools, which `apt-get` installs
+into the digest-pinned base image and parts of which are linked into the
+programs, and the Dockerfile frontend that line 1 names. The image build fails
+unless the result has libvmaf and SRT and scores with a pinned VMAF model.
+
+To change a version:
+
+- Change the commit and the SHA-256 of its `ADD` line together. For libvmaf,
+  SVT-AV1, dav1d and FFmpeg the commit is the `ARG` above that line.
+- Take a commit that is on the project's own branch. An archive URL also
+  answers for a commit that exists only in a fork. For a GitHub repository,
+  `gh api repos/<owner>/<repo>/compare/<commit>...<branch>` must report
+  `behind_by: 0`. For x264,
+  `https://code.videolan.org/api/v4/projects/videolan%2Fx264/repository/commits/<commit>/refs?type=branch`
+  must list the branch.
+- For FFmpeg, set `FFMPEG_VER` to what `git describe --tags` prints for the
+  commit, with the revision cut to ten characters, and `SOURCE_DATE_EPOCH` to
+  the commit's date (`git show -s --format=%ct`). The build checks only that
+  `FFMPEG_VER` ends with the revision.
+- With a new FreeType commit, take the dlg revision that it records for
+  `subprojects/dlg`. With a newer FFmpeg release, check which branch of the
+  NVIDIA headers that release needs.
+- Meson's version is written twice in its URL and once in the check below it.
+
+To build the image with another FFmpeg, replace the `ffmpeg` stage with a
+directory that holds `bin/ffmpeg`, `bin/ffprobe` and `share/licenses/`:
+`docker build --build-context ffmpeg=<directory> --file Dockerfile .`, or
+`additional_contexts` in a Compose override. The build does not verify a
+replaced FFmpeg. Check its SHA-256 yourself, keep the directory writable only
+by you, and do not name a remote image or URL as the context unless a digest
+fixes it. `share/licenses/` must hold the licences of what that FFmpeg
+contains. bitovp needs libvmaf, libx264, libdav1d, libass with Fontconfig, SRT
+with encryption, TLS for RTMPS, zlib for PNG image assets and, for GPU
+decoding, NVDEC.
+
+Building for another processor architecture, for example `--platform
+linux/amd64` on an Apple silicon Mac for a cloud quality worker, compiles
+FFmpeg under emulation. That took 12 to 17 minutes on a 10-core machine.
+
+FFmpeg in the image is under the GPL, version 3 or later, which sets
+conditions for giving the image to others, among them offering the source.
+`Dockerfile` names every source by commit or release.
 
 ## Backup and rollback
 

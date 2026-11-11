@@ -8,7 +8,7 @@
  *     Runs the tests that drive real FFmpeg and requires each one to run and
  *     pass. FFmpeg with libvmaf, libx264 and libsvtav1 must be on PATH and
  *     VMAF_MODEL_DIR must hold the models; scripts/native-media-tools.sh
- *     installs the builds that the worker image pins.
+ *     builds the worker image's FFmpeg and installs the models that it pins.
  *
  *   node scripts/gated-tests.mjs --redis
  *     Runs the tests that need a Redis server and requires each one to run and

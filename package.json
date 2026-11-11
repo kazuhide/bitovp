@@ -25,6 +25,7 @@
 		"test:media-runner": "node --test scripts/media-smoke.test.mjs scripts/gate-report.test.mjs",
 		"test:gated-runner": "node --test scripts/gated-tests.test.mjs",
 		"test:native-media": "node scripts/gated-tests.mjs --native-media",
+		"test:redis": "node scripts/gated-tests.mjs --redis",
 		"test:skip-audit": "node scripts/gated-tests.mjs --audit",
 		"release:gates": "node scripts/release-gates.mjs",
 		"typecheck": "turbo run typecheck",

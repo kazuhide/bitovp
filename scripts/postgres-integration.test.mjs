@@ -1260,3 +1260,36 @@ test("a command stopped at its limit fails even when the child then exits 0, and
 		},
 	);
 });
+
+test("a fixture step that rejects without an error still fails the run", async () => {
+	const parent = mkdtempSync(join(tmpdir(), "bitovp-pg-bare-rejection-"));
+	try {
+		const fake = fakeFixture({
+			inspect: ownLabel,
+			vitest: () => assert.fail("the tests must not start"),
+		});
+		await assert.rejects(
+			runFixture(
+				{
+					root,
+					statePath: join(parent, "fixture.json"),
+					notify: () => {},
+					env: { PATH: process.env.PATH },
+				},
+				(command, args) =>
+					args.includes("db:migrate:deploy")
+						? Promise.reject()
+						: fake(command, args),
+			),
+			(error) => {
+				assert.deepEqual(failureReport(error), [
+					"Step: applying database migrations",
+					"Reason: A step failed without an error",
+				]);
+				return true;
+			},
+		);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});

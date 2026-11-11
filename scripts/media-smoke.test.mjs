@@ -403,7 +403,7 @@ if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
 test("the fixture reporter gives the media runner the test runner's own totals", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "media-reporter-test-"));
 	try {
-		const run = async (name, source, required = 3) => {
+		const run = async (name, source, required = 3, relative = false) => {
 			writeFileSync(join(directory, name), source);
 			const output = await command(
 				process.execPath,
@@ -414,9 +414,12 @@ test("the fixture reporter gives the media runner the test runner's own totals",
 					"--test-reporter-destination=stdout",
 					`--test-reporter=${pathToFileURL(join(import.meta.dirname, "media-smoke-reporter.mjs")).href}`,
 					"--test-reporter-destination=stdout",
-					join(directory, name),
+					relative ? name : join(directory, name),
 				],
-				{ env: { PATH: process.env.PATH } },
+				{
+					cwd: relative ? directory : undefined,
+					env: { PATH: process.env.PATH },
+				},
 			);
 			const account = fixtureAccount({ [name]: required });
 			account.accept(`media fixture: ${name}\n${output}\n`);
@@ -450,8 +453,11 @@ test("later", { todo: true }, () => {});
 		);
 		// The test runner counts a file that declares no test as one passed
 		// test. It must not satisfy a fixture that requires one test.
-		for (const [name, source] of [
+		// The script gives each fixture by a path relative to its directory, and
+		// the runner names its stand-in by the path as it was given.
+		for (const [name, source, relative] of [
 			["empty.media.mjs", "export {};\n"],
+			["relative.media.mjs", "export {};\n", true],
 			[
 				"unregistered.media.mjs",
 				`import test from "node:test";
@@ -459,7 +465,7 @@ if (process.env.MEDIA_TOOL_THAT_IS_MISSING) test("needs the tool", () => {});
 `,
 			],
 		]) {
-			const empty = await run(name, source, 1);
+			const empty = await run(name, source, 1, relative);
 			assert.throws(
 				() => empty.finish(),
 				(error) => {
@@ -1090,6 +1096,14 @@ test("a media run passes only with every fixture's totals, a valid summary, an u
 				"A later step also failed:",
 				"Step: removing the owned image, container and scratch files",
 				"Reason: Media fixture ownership label does not match",
+			],
+		],
+		// A step that rejects without an error still fails the run.
+		[
+			{ verify: () => Promise.reject() },
+			[
+				"Step: verifying the official source",
+				"Reason: A step failed without an error",
 			],
 		],
 		// A cleanup can reject with anything; the report still names it.

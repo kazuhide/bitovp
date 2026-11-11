@@ -371,6 +371,16 @@ describe("hierarchical flow fence", () => {
 		}
 	});
 
+	// The dedicated runs count no skipped tests, so a fenced test that skipped
+	// itself would stop running without a failure anywhere.
+	it("lets no fenced test skip itself or others", () => {
+		const skipping = /\.(?:skip|skipIf|runIf|todo|only)\b/;
+		expect(skipping.test("it.skip(")).toBe(true);
+		expect(skipping.test("describe.runIf(ready)(")).toBe(true);
+		expect(skipping.test("context.skip()")).toBe(true);
+		expect(fence.tests.filter((path) => skipping.test(read(path)))).toEqual([]);
+	});
+
 	it("runs every dedicated configuration from the root script and the workflow", () => {
 		const { scripts }: { scripts: Record<string, string> } = JSON.parse(
 			read("package.json"),

@@ -1924,6 +1924,127 @@ test("the installer takes only the pinned Redis image, into a new directory with
 	}
 });
 
+test("the VMAF proof passes only when FFmpeg ends without an error and scores two identical pictures as 100", () => {
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "gated-vmaf-proof-")));
+	try {
+		const proof = resolve(root, "docker/vmaf-acceptance.sh");
+		const ffmpeg = join(parent, "ffmpeg");
+		// FFmpeg writes its log to the error output.
+		writeFileSync(
+			ffmpeg,
+			'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$CALLS"\nprintf \'%s\\n\' "$FAKE_OUTPUT" >&2\nexit "$FAKE_STATUS"\n',
+			{ mode: 0o700 },
+		);
+		const models = join(parent, "model");
+		const model = `${models}/vmaf_v1.0.16_3d0h.json`;
+		const calls = join(parent, "calls");
+		const temporary = join(parent, "tmp");
+		mkdirSync(temporary);
+		const prove = (shell, output, status, args = [ffmpeg, models]) => {
+			writeFileSync(calls, "");
+			const result = spawnSync(shell, [proof, ...args], {
+				encoding: "utf8",
+				env: {
+					PATH: "/usr/bin:/bin",
+					CALLS: calls,
+					FAKE_OUTPUT: output,
+					FAKE_STATUS: String(status),
+					TMPDIR: temporary,
+				},
+			});
+			// The log that the proof keeps while FFmpeg runs is removed again.
+			assert.deepEqual(readdirSync(temporary), []);
+			return {
+				status: result.status,
+				stdout: result.stdout,
+				stderr: result.stderr,
+				calls: readFileSync(calls, "utf8").split("\n").filter(Boolean),
+			};
+		};
+		const score = (value) => `[Parsed_libvmaf_0 @ 0x1] VMAF score: ${value}`;
+		const picture = "testsrc=size=256x144:rate=5:duration=0.4";
+		const FAILED = (status) =>
+			`FFmpeg ended with status ${status} while scoring with ${model}\n`;
+		const SCORE = `FFmpeg did not score two identical pictures as 100 with ${model}\n`;
+		// CI runs it with sh, which is dash there, and so does the image build.
+		const shells = ["sh", "dash"].filter(
+			(shell) => spawnSync(shell, ["-c", ":"]).status === 0,
+		);
+		assert(shells.includes("sh"));
+		for (const shell of shells) {
+			const passed = prove(shell, score("100.000000"), 0);
+			assert.deepEqual(passed, {
+				status: 0,
+				stdout: "",
+				stderr: "",
+				calls: [
+					`-hide_banner -nostdin -f lavfi -i ${picture} -f lavfi -i ${picture} -lavfi [0:v][1:v]libvmaf=model=path=${model} -f null -`,
+				],
+			});
+
+			// What the 64x64 pictures of the earlier check produced: libvmaf fails,
+			// FFmpeg fails, and the log still holds a score line.
+			const earlier = `libvmaf ERROR vmaf_predict_score_at_index(): no feature 'cambi_hrs_1080_cmxv_17_vlt_0.06' at index 0\n${score("0.000000")}\nConversion failed!`;
+			for (const [output, status, ending] of [
+				[earlier, 234, FAILED(234)],
+				// A score of 100 does not excuse an error.
+				[score("100.000000"), 1, FAILED(1)],
+				[score("0.000000"), 0, SCORE],
+				[score("99.999999"), 0, SCORE],
+				[score("100.0000001"), 0, SCORE],
+				[`${score("100.000000")} of 200`, 0, SCORE],
+				["frame=    2 fps=0.0", 0, SCORE],
+			]) {
+				const refused = prove(shell, output, status);
+				assert.equal(refused.status, 1, output);
+				assert.equal(refused.stdout, "");
+				// The end of FFmpeg's log, then what was wrong.
+				assert.equal(refused.stderr, `${output}\n${ending}`);
+				assert.equal(refused.calls.length, 1);
+			}
+
+			// Without both arguments FFmpeg is not started.
+			for (const args of [[], [ffmpeg]]) {
+				const refused = prove(shell, score("100.000000"), 0, args);
+				assert.notEqual(refused.status, 0);
+				assert.equal(refused.stdout, "");
+				assert.match(
+					refused.stderr,
+					/usage: vmaf-acceptance\.sh <ffmpeg> <model directory>\n$/,
+				);
+				assert.deepEqual(refused.calls, []);
+			}
+		}
+
+		// The image build and the installer both run this proof, and neither
+		// looks for the words of a score line by itself.
+		const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
+		assert(
+			dockerfile.includes(
+				"\nRUN --mount=type=bind,source=docker/vmaf-acceptance.sh,target=/tmp/vmaf-acceptance.sh \\\n",
+			),
+		);
+		assert(
+			dockerfile.includes(
+				'\n\t&& sh /tmp/vmaf-acceptance.sh ffmpeg "$VMAF_MODEL_DIR" \\\n',
+			),
+		);
+		const installer = readFileSync(
+			resolve(root, "scripts/native-media-tools.sh"),
+			"utf8",
+		);
+		assert(
+			installer.includes(
+				'\nsh "$root/docker/vmaf-acceptance.sh" "$target/bin/ffmpeg" "$target/model"\n',
+			),
+		);
+		for (const text of [dockerfile, installer])
+			assert.doesNotMatch(text, /VMAF score/);
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
 test("CI audits every package's skipped tests and runs the native media and Redis tests with the pinned tools", () => {
 	const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 	const job = (name) => {

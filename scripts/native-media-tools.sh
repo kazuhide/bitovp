@@ -95,12 +95,7 @@ grep -v '^#' "$root/docker/vmaf-models.sha256" | while read -r _ name; do
 done
 (cd "$target/model" && sha256sum -c --strict "$root/docker/vmaf-models.sha256" >/dev/null)
 
-# The same proof as the image build: this FFmpeg scores with a pinned model.
-"$target/bin/ffmpeg" -hide_banner -filters | grep -q ' libvmaf '
-"$target/bin/ffmpeg" -hide_banner \
-	-f lavfi -i testsrc=size=64x64:rate=5:duration=0.4 \
-	-f lavfi -i testsrc=size=64x64:rate=5:duration=0.4 \
-	-lavfi "[0:v][1:v]libvmaf=model=path=$target/model/vmaf_v1.0.16_3d0h.json" \
-	-f null - 2>&1 | grep -q 'VMAF score'
+# The image build's own proof: this FFmpeg scores with a pinned model.
+sh "$root/docker/vmaf-acceptance.sh" "$target/bin/ffmpeg" "$target/model"
 "$target/bin/ffmpeg" -hide_banner -version | sed -n 1p
 echo "VMAF models: $(ls "$target/model" | wc -l | tr -d ' ') files verified"

@@ -96,6 +96,6 @@ done
 (cd "$target/model" && sha256sum -c --strict "$root/docker/vmaf-models.sha256" >/dev/null)
 
 # The image build's own proof: this FFmpeg scores with a pinned model.
-sh "$root/docker/vmaf-acceptance.sh" "$target/bin/ffmpeg" "$target/model"
+sh "$root/docker/vmaf-build-proof.sh" "$target/bin/ffmpeg" "$target/model"
 "$target/bin/ffmpeg" -hide_banner -version | sed -n 1p
 echo "VMAF models: $(ls "$target/model" | wc -l | tr -d ' ') files verified"

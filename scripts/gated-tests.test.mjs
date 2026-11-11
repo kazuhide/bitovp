@@ -1925,28 +1925,34 @@ test("the installer takes only the pinned Redis image, into a new directory with
 });
 
 test("the VMAF proof passes only when FFmpeg ends without an error and scores two identical pictures as 100", () => {
-	const parent = realpathSync(mkdtempSync(join(tmpdir(), "gated-vmaf-proof-")));
+	// A space in the path: each path the proof uses must stay one word.
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "gated vmaf proof-")));
 	try {
-		const proof = resolve(root, "docker/vmaf-acceptance.sh");
+		const proof = resolve(root, "docker/vmaf-build-proof.sh");
 		const ffmpeg = join(parent, "ffmpeg");
-		// FFmpeg writes its log to the error output.
+		// FFmpeg writes its log to the error output. The stand-in records each
+		// argument on a line of its own, and the files that the temporary
+		// directory holds while it runs.
 		writeFileSync(
 			ffmpeg,
-			'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$CALLS"\nprintf \'%s\\n\' "$FAKE_OUTPUT" >&2\nexit "$FAKE_STATUS"\n',
+			'#!/bin/sh\nprintf \'%s\\n\' "$@" >> "$CALLS"\nls "$TMPDIR" >> "$KEPT"\nprintf \'%s\\n\' "$FAKE_OUTPUT" >&2\nexit "$FAKE_STATUS"\n',
 			{ mode: 0o700 },
 		);
 		const models = join(parent, "model");
 		const model = `${models}/vmaf_v1.0.16_3d0h.json`;
 		const calls = join(parent, "calls");
+		const kept = join(parent, "kept");
 		const temporary = join(parent, "tmp");
 		mkdirSync(temporary);
 		const prove = (shell, output, status, args = [ffmpeg, models]) => {
 			writeFileSync(calls, "");
+			writeFileSync(kept, "");
 			const result = spawnSync(shell, [proof, ...args], {
 				encoding: "utf8",
 				env: {
 					PATH: "/usr/bin:/bin",
 					CALLS: calls,
+					KEPT: kept,
 					FAKE_OUTPUT: output,
 					FAKE_STATUS: String(status),
 					TMPDIR: temporary,
@@ -1959,16 +1965,39 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 				stdout: result.stdout,
 				stderr: result.stderr,
 				calls: readFileSync(calls, "utf8").split("\n").filter(Boolean),
+				kept: readFileSync(kept, "utf8"),
 			};
 		};
 		const score = (value) => `[Parsed_libvmaf_0 @ 0x1] VMAF score: ${value}`;
-		const picture = "testsrc=size=256x144:rate=5:duration=0.4";
+		const picture = "testsrc=size=640x360:rate=5:duration=0.4";
 		const FAILED = (status) =>
 			`FFmpeg ended with status ${status} while scoring with ${model}\n`;
 		const SCORE = `FFmpeg did not score two identical pictures as 100 with ${model}\n`;
+		const ARGUMENTS = [
+			"-hide_banner",
+			"-nostdin",
+			"-f",
+			"lavfi",
+			"-i",
+			picture,
+			"-f",
+			"lavfi",
+			"-i",
+			picture,
+			"-lavfi",
+			`[0:v][1:v]libvmaf=model=path=${model}`,
+			"-f",
+			"null",
+			"-",
+		];
+		// While FFmpeg runs, the temporary directory holds the proof's log and
+		// nothing else, under a name of the run's own.
+		const LOG = /^vmaf-build-proof\.[A-Za-z0-9]{6}\n$/;
 		// CI runs it with sh, which is dash there, and so does the image build.
 		const shells = ["sh", "dash"].filter(
-			(shell) => spawnSync(shell, ["-c", ":"]).status === 0,
+			(shell) =>
+				spawnSync(shell, ["-c", ":"], { env: { PATH: "/usr/bin:/bin" } })
+					.status === 0,
 		);
 		assert(shells.includes("sh"));
 		for (const shell of shells) {
@@ -1977,10 +2006,10 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 				status: 0,
 				stdout: "",
 				stderr: "",
-				calls: [
-					`-hide_banner -nostdin -f lavfi -i ${picture} -f lavfi -i ${picture} -lavfi [0:v][1:v]libvmaf=model=path=${model} -f null -`,
-				],
+				calls: ARGUMENTS,
+				kept: passed.kept,
 			});
+			assert.match(passed.kept, LOG);
 
 			// What the 64x64 pictures of the earlier check produced: libvmaf fails,
 			// FFmpeg fails, and the log still holds a score line.
@@ -1994,25 +2023,58 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 				[score("100.0000001"), 0, SCORE],
 				[`${score("100.000000")} of 200`, 0, SCORE],
 				["frame=    2 fps=0.0", 0, SCORE],
+				// Only a VMAF score counts, in these very words.
+				["[Parsed_other_0 @ 0x1] score: 100.000000", 0, SCORE],
+				["[Parsed_libvmaf_0 @ 0x1] vmaf score: 100.000000", 0, SCORE],
 			]) {
 				const refused = prove(shell, output, status);
 				assert.equal(refused.status, 1, output);
 				assert.equal(refused.stdout, "");
-				// The end of FFmpeg's log, then what was wrong.
+				// FFmpeg's log, then what was wrong.
 				assert.equal(refused.stderr, `${output}\n${ending}`);
-				assert.equal(refused.calls.length, 1);
+				assert.deepEqual(refused.calls, ARGUMENTS);
+				assert.match(refused.kept, LOG);
 			}
 
+			// A long log is repeated whole: its first lines name the first error.
+			const long = Array.from(
+				{ length: 30 },
+				(_, index) => `line ${index + 1}`,
+			);
+			for (const [status, ending] of [
+				[1, FAILED(1)],
+				[0, SCORE],
+			]) {
+				const refused = prove(shell, long.join("\n"), status);
+				assert.equal(refused.status, 1);
+				assert.equal(refused.stdout, "");
+				assert.equal(refused.stderr, `${long.join("\n")}\n${ending}`);
+			}
+
+			// An FFmpeg that cannot be started is an FFmpeg that failed.
+			const absent = prove(shell, "", 0, [join(parent, "absent"), models]);
+			assert.equal(absent.status, 1);
+			assert.equal(absent.stdout, "");
+			// The shell's own line, then the proof's. The status is the shell's:
+			// 127 in dash, 1 in the bash 3.2 that macOS runs as sh.
+			assert.match(
+				absent.stderr,
+				/^[^\n]+\nFFmpeg ended with status (?:127|1) while scoring with [^\n]+\n$/,
+			);
+			assert(absent.stderr.endsWith(` while scoring with ${model}\n`));
+			assert.deepEqual(absent.calls, []);
+
 			// Without both arguments FFmpeg is not started.
-			for (const args of [[], [ffmpeg]]) {
+			for (const args of [[], [ffmpeg], ["", models], [ffmpeg, ""]]) {
 				const refused = prove(shell, score("100.000000"), 0, args);
 				assert.notEqual(refused.status, 0);
 				assert.equal(refused.stdout, "");
 				assert.match(
 					refused.stderr,
-					/usage: vmaf-acceptance\.sh <ffmpeg> <model directory>\n$/,
+					/usage: vmaf-build-proof\.sh <ffmpeg> <model directory>\n$/,
 				);
 				assert.deepEqual(refused.calls, []);
+				assert.equal(refused.kept, "");
 			}
 		}
 
@@ -2021,12 +2083,17 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 		const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
 		assert(
 			dockerfile.includes(
-				"\nRUN --mount=type=bind,source=docker/vmaf-acceptance.sh,target=/tmp/vmaf-acceptance.sh \\\n",
+				"\nRUN --mount=type=bind,source=docker/vmaf-build-proof.sh,target=/tmp/vmaf-build-proof.sh \\\n",
 			),
 		);
+		// The proof is one link of the chain that ends its RUN: after the
+		// checksums, and nothing after it excuses a failure.
 		assert(
 			dockerfile.includes(
-				'\n\t&& sh /tmp/vmaf-acceptance.sh ffmpeg "$VMAF_MODEL_DIR" \\\n',
+				'\n\t&& (cd "$VMAF_MODEL_DIR" && sha256sum -c --strict vmaf-models.sha256) \\\n' +
+					'\t&& sh /tmp/vmaf-build-proof.sh ffmpeg "$VMAF_MODEL_DIR" \\\n' +
+					"\t&& apt-get purge -y --auto-remove curl \\\n" +
+					"\t&& rm -rf /var/lib/apt/lists/*\n\n",
 			),
 		);
 		const installer = readFileSync(
@@ -2035,11 +2102,25 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 		);
 		assert(
 			installer.includes(
-				'\nsh "$root/docker/vmaf-acceptance.sh" "$target/bin/ffmpeg" "$target/model"\n',
+				'\nsh "$root/docker/vmaf-build-proof.sh" "$target/bin/ffmpeg" "$target/model"\n',
 			),
 		);
+		// The installer stops at the first command that fails: it says so once,
+		// before the proof, and does not end by itself before the proof.
+		const lines = installer.split("\n");
+		const at = lines.indexOf(
+			'sh "$root/docker/vmaf-build-proof.sh" "$target/bin/ffmpeg" "$target/model"',
+		);
+		assert.deepEqual(
+			lines.filter((line) => /^\s*set\b/.test(line)),
+			["set -eu"],
+		);
+		assert(lines.indexOf("set -eu") < at);
+		assert.doesNotMatch(lines.slice(0, at).join("\n"), /^exit\b/m);
+		// No command of either file looks for the words itself; a comment may
+		// hold them.
 		for (const text of [dockerfile, installer])
-			assert.doesNotMatch(text, /VMAF score/);
+			assert.doesNotMatch(text, /^(?!\s*#).*VMAF score/m);
 	} finally {
 		rmSync(parent, { recursive: true, force: true });
 	}

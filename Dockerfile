@@ -84,7 +84,7 @@ RUN apt-get update \
 ARG VMAF_MODEL_REF="3f9e02af258a5c0e30124fc585a3c3af90126dee"
 ENV VMAF_MODEL_DIR=/opt/vmaf/model
 COPY docker/vmaf-models.sha256 ${VMAF_MODEL_DIR}/vmaf-models.sha256
-RUN --mount=type=bind,source=docker/vmaf-acceptance.sh,target=/tmp/vmaf-acceptance.sh \
+RUN --mount=type=bind,source=docker/vmaf-build-proof.sh,target=/tmp/vmaf-build-proof.sh \
 	apt-get update \
 	&& apt-get install -y --no-install-recommends curl ca-certificates \
 	&& mkdir -p "$VMAF_MODEL_DIR" \
@@ -116,7 +116,7 @@ RUN --mount=type=bind,source=docker/vmaf-acceptance.sh,target=/tmp/vmaf-acceptan
 		curl -fSL "$base/vmaf_v1.0.16_hfr/$m.json" -o "$VMAF_MODEL_DIR/$m.json" ; \
 	done \
 	&& (cd "$VMAF_MODEL_DIR" && sha256sum -c --strict vmaf-models.sha256) \
-	&& sh /tmp/vmaf-acceptance.sh ffmpeg "$VMAF_MODEL_DIR" \
+	&& sh /tmp/vmaf-build-proof.sh ffmpeg "$VMAF_MODEL_DIR" \
 	&& apt-get purge -y --auto-remove curl \
 	&& rm -rf /var/lib/apt/lists/*
 

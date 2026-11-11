@@ -532,7 +532,7 @@ const ja: Record<keyof typeof en, string> = {
 	localStoryContextLimit:
 		"この素材を解析できる範囲を超えました。運用担当者に解析設定の確認を依頼してください。",
 	localStoryPlanUnavailable:
-		"希望尺に収まる構成を作れませんでした。尺や編集方針を変えて試してください。",
+		"希望の長さに収まる編集案を作れませんでした。長さや編集方針を変えて試してください。",
 	localStoryCoherence:
 		"選んだ場面のつながりを根拠付きで確認できませんでした。尺や場面の設定を変えて試してください。",
 	localStoryDurationLimited:
@@ -651,6 +651,7 @@ export function productionFailure(
 		case "LOCAL_STORY_CONTEXT_LIMIT":
 			return c.localStoryContextLimit;
 		case "LOCAL_STORY_PLAN_UNAVAILABLE":
+		case "LOCAL_STORY_NO_FITTING_PLAN":
 			return c.localStoryPlanUnavailable;
 		case "LOCAL_STORY_BLUEPRINT_COHERENCE_INVALID":
 		case "LOCAL_STORY_SELECTION_COHERENCE_INVALID":

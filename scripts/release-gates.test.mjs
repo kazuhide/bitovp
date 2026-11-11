@@ -246,7 +246,12 @@ test("child environment excludes application secrets and unsafe Node injection",
 		VERIFY_PASSWORD: "secret",
 		TURBO_FORCE: "false",
 	});
-	assert.deepEqual(env, { PATH: "/safe", CI: "1", TURBO_FORCE: "true" });
+	assert.deepEqual(env, {
+		PATH: "/safe",
+		CI: "1",
+		TURBO_FORCE: "true",
+		TURBO_CONCURRENCY: "1",
+	});
 });
 test("child environment preserves the existing HOME without Compose or cloud overrides", () => {
 	const env = childEnvironment({
@@ -264,7 +269,19 @@ test("child environment preserves the existing HOME without Compose or cloud ove
 		HOME: "/fixture-home",
 		CI: "1",
 		TURBO_FORCE: "true",
+		TURBO_CONCURRENCY: "1",
 	});
+});
+test("local release tasks have one package budget even when the caller requests more", () => {
+	for (const requested of [undefined, "10", "100%"]) {
+		const env = childEnvironment({
+			PATH: "/safe",
+			TURBO_CONCURRENCY: requested,
+		});
+		assert.equal(env.TURBO_CONCURRENCY, "1");
+		assert.equal(env.CI, "1");
+		assert.equal(env.TURBO_FORCE, "true");
+	}
 });
 test("nightly preflight initializes diagnostics before refusal and pins build revision", () => {
 	const source = readFileSync(

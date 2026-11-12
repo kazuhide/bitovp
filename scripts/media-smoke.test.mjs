@@ -30,6 +30,7 @@ import {
 	fixtureAccount,
 	runFixture,
 	validateSummary,
+	verifyFfmpeg,
 	verifySource,
 } from "./media-smoke.mjs";
 
@@ -829,17 +830,95 @@ test("ZIP extraction targets only the pinned filename and rejects traversal", as
 	}
 });
 
-test("only complete numeric summaries can reach the public log", () => {
+test("only complete summaries of numbers and of words in the shape of x264's capability names can reach the public log", () => {
 	const summary = {
-		version: 1,
+		version: 2,
 		videoFrames: 240,
 		hlsSegments: 5,
 		dashSegments: 5,
 		decodedPresentations: 3,
 		vmafFrames: 240,
 		means: { self: 99, encoded: 90, degraded: 40 },
+		x264Capabilities: "MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512",
 	};
 	assert.deepEqual(validateSummary(JSON.stringify(summary)), summary);
+	// The summary of the version before had no capabilities.
+	const { x264Capabilities: _, ...before } = summary;
+	assert.throws(
+		() => validateSummary(JSON.stringify({ ...before, version: 1 })),
+		/Unexpected media summary fields/,
+	);
+	assert.throws(
+		() => validateSummary(JSON.stringify({ ...summary, version: 1 })),
+		/Incomplete media validation: version must be 2/,
+	);
+	// What x264 prints on arm64, where it uses nothing of the processor, its
+	// longest name, and the most and the longest names that the rule takes.
+	for (const capabilities of [
+		"ARMv8 NEON",
+		"ARMv8 NEON DotProd I8MM SVE SVE2",
+		"none!",
+		"SSE4.2",
+		"UnalignedStack",
+		`${"A".repeat(14)}.1`,
+		Array.from({ length: 32 }, () => `${"A".repeat(14)}.1`).join(" "),
+	])
+		assert.equal(
+			validateSummary(
+				JSON.stringify({ ...summary, x264Capabilities: capabilities }),
+			).x264Capabilities,
+			capabilities,
+		);
+	// What does not have that shape: other characters, an address, a dotted
+	// name, a number, a word that is too long, too many words.
+	for (const capabilities of [
+		"",
+		" AVX2",
+		"AVX2 ",
+		"AVX2  AVX512",
+		"AVX2\nprivate diagnostics",
+		"AVX2, AVX512",
+		"/home/runner",
+		"none! AVX2",
+		"AVX2 none!",
+		"token=abc",
+		"10.1.0.4",
+		"192.168.100.200",
+		"example.internal",
+		"0123456789abcdef",
+		"1AVX",
+		"AVX.",
+		".AVX",
+		"SSE4.12",
+		"SSE4.x",
+		"SSE4.1.2",
+		"A".repeat(15),
+		`AVX2 ${"A".repeat(15)}`,
+		"SSE4 2",
+		`${"A".repeat(14)}1`,
+		Array.from({ length: 33 }, () => "AVX2").join(" "),
+		// Every other character of ASCII, between two names.
+		...Array.from({ length: 128 }, (_, code) => String.fromCharCode(code))
+			.filter((character) => !/[A-Za-z0-9. ]/.test(character))
+			.flatMap((character) => [
+				`AVX2${character}AVX512`,
+				// Where a name starts, in place of the dot and after it.
+				`${character}AVX2`,
+				`SSE4${character}2`,
+				`SSE4.${character}`,
+			]),
+		null,
+		7,
+		["AVX2"],
+	])
+		assert.throws(
+			() =>
+				validateSummary(
+					JSON.stringify({ ...summary, x264Capabilities: capabilities }),
+				),
+			/x264's processor capabilities must be a list of its capability names/,
+			JSON.stringify(capabilities),
+		);
 	assert.throws(
 		() => validateSummary(JSON.stringify({ ...summary, videoFrames: 239 })),
 		/Incomplete media validation: videoFrames must be 240/,
@@ -943,17 +1022,19 @@ test("cleanup removes only labelled names and never prunes shared resources", as
 });
 
 const summaryText = JSON.stringify({
-	version: 1,
+	version: 2,
 	videoFrames: 240,
 	hlsSegments: 5,
 	dashSegments: 5,
 	decodedPresentations: 3,
 	vmafFrames: 240,
 	means: { self: 99, encoded: 90, degraded: 40 },
+	x264Capabilities: "MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2",
 });
 
 // A whole media run against fakes: the image builds, the container prints
 // `log` and returns `raw`, and cleanup finds resources labelled `owner(id)`.
+// With `ffmpeg`, the run is given that directory of an FFmpeg already built.
 async function mediaRun({
 	log = completeLog(),
 	raw = summaryText,
@@ -961,15 +1042,23 @@ async function mediaRun({
 	verify = async (path) => path,
 	owner = (id) => id,
 	removal = () => {},
+	ffmpeg,
 } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "media-run-test-"));
 	const statePath = join(directory, "state.json");
 	const notes = [];
 	const removed = [];
 	const verified = [];
+	// Every command that the run starts, and the arguments of each image build.
+	let commands = 0;
+	const builds = [];
 	const execute = async (_binary, args, options = {}) => {
+		commands += 1;
 		const docker = args.slice(2);
-		if (docker[0] === "build") return "";
+		if (docker[0] === "build") {
+			builds.push(docker);
+			return "";
+		}
 		if (docker.includes("{{.Id}}")) return `sha256:${"a".repeat(64)}`;
 		if (docker[0] === "run") {
 			options.diagnostics?.(log);
@@ -996,6 +1085,7 @@ async function mediaRun({
 		await runFixture(
 			{
 				source: join(directory, "source.mp4"),
+				ffmpeg,
 				statePath,
 				env: {},
 				notify: (note) => notes.push(note),
@@ -1017,17 +1107,184 @@ async function mediaRun({
 			});
 		rmSync(directory, { recursive: true, force: true });
 	}
-	return { notes, removed, verified, lines };
+	return { notes, removed, verified, lines, builds, commands };
 }
+
+test("the image build takes an FFmpeg that is already built in place of the Dockerfile's stage, only from a directory outside the checkout that holds one", async () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "media-ffmpeg-test-")),
+	);
+	try {
+		// As scripts/native-media-tools.sh leaves it.
+		const holding = (name, programs = ["ffmpeg", "ffprobe"]) => {
+			const path = join(directory, name);
+			mkdirSync(join(path, "bin"), { recursive: true });
+			for (const program of programs)
+				writeFileSync(join(path, "bin", program), "", { mode: 0o755 });
+			return path;
+		};
+		const built = holding("native-media");
+		// The image build of a run, with the run's own identity left out.
+		const build = (run) =>
+			run.builds.map((args) =>
+				args.map((argument) => argument.replace(/[a-f0-9]{32}$/, "ID")),
+			);
+		const BUILD = (context) => [
+			"build",
+			"--pull",
+			...context,
+			"--label",
+			"io.bitovp.media-smoke=ID",
+			"--tag",
+			"bitovp-media-ID",
+			"--file",
+			"Dockerfile",
+			".",
+		];
+		const ANNOUNCED = "Media check: building the worker image";
+
+		// Without a directory the image compiles its own FFmpeg, as before.
+		const plain = await mediaRun();
+		assert.equal(plain.lines, undefined);
+		assert.deepEqual(build(plain), [BUILD([])]);
+		assert.equal(plain.notes[1], ANNOUNCED);
+
+		// With one, the build is given the directory under the name of the
+		// stage, and the rest of the run is the same.
+		const given = await mediaRun({ ffmpeg: built });
+		assert.equal(given.lines, undefined);
+		assert.deepEqual(build(given), [
+			BUILD(["--build-context", `ffmpeg=${built}`]),
+		]);
+		assert.equal(
+			given.notes[1],
+			`${ANNOUNCED} with the FFmpeg that is already built`,
+		);
+		assert.deepEqual(
+			given.notes.filter((_, index) => index !== 1),
+			plain.notes.filter((_, index) => index !== 1),
+		);
+		assert.deepEqual(given.removed, plain.removed);
+		assert.equal(given.commands, plain.commands);
+
+		// A link to the directory names the directory itself.
+		symlinkSync(built, join(directory, "linked"));
+		assert.equal(verifyFfmpeg(join(directory, "linked")), built);
+		const linked = await mediaRun({ ffmpeg: join(directory, "linked") });
+		assert.deepEqual(build(linked), [
+			BUILD(["--build-context", `ffmpeg=${built}`]),
+		]);
+
+		// Docker is given the path as one argument of its own: a dollar sign
+		// means nothing there.
+		assert.equal(
+			verifyFfmpeg(holding("with$dollar")),
+			join(directory, "with$dollar"),
+		);
+
+		const OUTSIDE = "FFmpeg directory must be a directory outside the checkout";
+		const program = (name) => `FFmpeg directory must hold the file bin/${name}`;
+		const other = holding("other", ["ffmpeg"]);
+		symlinkSync(join(built, "bin/ffprobe"), join(other, "bin/ffprobe"));
+		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
+		mkdirSync(join(directory, "empty"));
+		symlinkSync(import.meta.dirname, join(directory, "into"));
+		for (const [path, reason] of [
+			["native-media", "FFmpeg directory must be an absolute path"],
+			["", "FFmpeg directory must be an absolute path"],
+			[join(directory, "absent"), "FFmpeg directory does not exist"],
+			[join(built, "bin/ffmpeg"), OUTSIDE],
+			// The checkout, a directory in it, and a link outside the checkout
+			// that leads to one.
+			[join(import.meta.dirname, ".."), OUTSIDE],
+			[import.meta.dirname, OUTSIDE],
+			[join(directory, "into"), OUTSIDE],
+			// The rule of the source's path, for every path that Docker is
+			// given: no comma and no line break.
+			[holding("a,b"), "Unsupported FFmpeg directory path"],
+			[holding("a\nb"), "Unsupported FFmpeg directory path"],
+			[holding("a\rb"), "Unsupported FFmpeg directory path"],
+			[join(directory, "empty"), program("ffmpeg")],
+			[holding("one", ["ffmpeg"]), program("ffprobe")],
+			[holding("two", ["ffprobe"]), program("ffmpeg")],
+			// A program is a file of the directory: no link, no directory.
+			[other, program("ffprobe")],
+			[join(directory, "folder"), program("ffmpeg")],
+		]) {
+			assert.throws(() => verifyFfmpeg(path), { message: reason }, path);
+			// The run ends before it announces anything, looks at the source or
+			// starts a command. That it has made nothing by then is not seen
+			// from here: a run makes its directory in /tmp, where other
+			// processes make theirs.
+			const refused = await mediaRun({ ffmpeg: path });
+			assert.deepEqual(refused.lines, [`Reason: ${reason}`], path);
+			assert.deepEqual(
+				[refused.commands, refused.notes, refused.verified],
+				[0, [], []],
+			);
+		}
+
+		// The option of the command reaches the same check, once, and cleanup
+		// takes no directory.
+		for (const [args, reason] of [
+			[
+				["--ffmpeg", "native-media"],
+				"FFmpeg directory must be an absolute path",
+			],
+			[
+				["--ffmpeg", join(directory, "absent")],
+				"FFmpeg directory does not exist",
+			],
+			[["--ffmpeg", other], program("ffprobe")],
+			[["--ffmpeg"], "Unknown or duplicate media option"],
+			[
+				["--ffmpeg", built, "--ffmpeg", built],
+				"Unknown or duplicate media option",
+			],
+			// Cleanup names what it was given in error: the directory, whether
+			// or not a state file comes with it.
+			[
+				[
+					"--cleanup",
+					"--ffmpeg",
+					built,
+					"--state-file",
+					join(directory, "state.json"),
+				],
+				"Cleanup builds no image and takes no FFmpeg directory",
+			],
+			[
+				["--cleanup", "--ffmpeg", built],
+				"Cleanup builds no image and takes no FFmpeg directory",
+			],
+			[["--cleanup"], "Cleanup requires an external state file"],
+		]) {
+			const result = spawnSync(
+				process.execPath,
+				[join(import.meta.dirname, "media-smoke.mjs"), ...args],
+				{ env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000 },
+			);
+			assert.equal(result.status, 1, args.join(" "));
+			assert.equal(result.stdout, "");
+			assert.deepEqual(result.stderr.trimEnd().split("\n"), [
+				"Offline media validation failed; source, media checks or owned cleanup did not complete.",
+				`Reason: ${reason}`,
+			]);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
 
 test("a media run passes only with every fixture's totals, a valid summary, an unchanged source and a finished cleanup", async () => {
 	const names = Object.keys(FIXTURES);
 	const passed = await mediaRun();
 	assert.equal(passed.lines, undefined);
-	assert.deepEqual(passed.notes.slice(-4), [
+	assert.deepEqual(passed.notes.slice(-5), [
 		`Media fixtures passed: ${names.length} files, ${Object.values(FIXTURES).reduce((sum, tests) => sum + tests, 0)} tests, 0 skipped`,
 		"Media passed: 240 video frames; HLS/DASH each 5 x 48 frames; 3 complete audio/video decodes; 240 VMAF frames per comparison",
 		"VMAF means: self=99.000, encoded=90.000, degraded=40.000",
+		"x264 CPU capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2",
 		"Media fixture: owned image, container and scratch files removed",
 	]);
 	assert.deepEqual(passed.removed, ["container", "image"]);

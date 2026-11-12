@@ -198,6 +198,11 @@ To reuse an already extracted source without copying or changing it:
 pnpm test:media --source /absolute/path/to/BigBuckBunny_320x180.mp4
 ```
 
+To build the worker image for this check without compiling FFmpeg, add
+`--ffmpeg /absolute/path/to/directory`: a directory outside the repository that
+holds `bin/ffmpeg`, `bin/ffprobe` and `share/licenses/`, as
+`sh scripts/native-media-tools.sh <new directory>` leaves it on Linux.
+
 To reproduce, extract the MP4 from the [official Blender ZIP](https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4.zip)
 as `source.mp4` in a scratch directory, then run with the worker's FFmpeg:
 

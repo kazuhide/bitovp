@@ -181,6 +181,38 @@ export async function verifySource(path, maximum = MAX_BYTES) {
 	return canonical;
 }
 
+// A directory that holds an FFmpeg which is already built from the
+// Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The image
+// build takes it in place of the "ffmpeg" stage and compiles nothing. The
+// programs are not compared with the sources here. The installer that left
+// the directory ran the image's VMAF proof with them; of a build that it had
+// kept, it checked no more than that and the build's own list of checksums.
+// A directory in the checkout would also be a part of what the image is built
+// from.
+export function verifyFfmpeg(path) {
+	assert(
+		typeof path === "string" && isAbsolute(path),
+		"FFmpeg directory must be an absolute path",
+	);
+	assert(existsSync(path), "FFmpeg directory does not exist");
+	const canonical = realpathSync(path);
+	assert(
+		lstatSync(canonical).isDirectory() &&
+			!inside(realpathSync(ROOT), canonical),
+		"FFmpeg directory must be a directory outside the checkout",
+	);
+	// The rule of the source's path, for every path that Docker is given.
+	assert(!/[,\r\n]/.test(canonical), "Unsupported FFmpeg directory path");
+	for (const program of ["ffmpeg", "ffprobe"]) {
+		const file = join(canonical, "bin", program);
+		assert(
+			existsSync(file) && lstatSync(file).isFile(),
+			`FFmpeg directory must hold the file bin/${program}`,
+		);
+	}
+	return canonical;
+}
+
 // Read one known member into a fixed output path; never extract archive paths.
 const EXTRACT = `import os,pathlib,stat,sys,zipfile
 archive,output=sys.argv[1:]
@@ -415,6 +447,16 @@ export function fixtureAccount(required = FIXTURES) {
 	};
 }
 
+// The shape of x264's names for what it uses of the processor: a letter, then
+// letters and digits, 14 characters at most, and one digit after a dot where
+// the name has one ("SSE4.2"). A report is up to 32 of them, or "none!". An
+// address, a dotted name or a number does not have this shape; a single word
+// of letters and digits does.
+const X264_NAME = "[A-Za-z][A-Za-z0-9]{0,13}(?:\\.[0-9])?";
+const X264_NAMES = new RegExp(
+	`^(?:none!|${X264_NAME}(?: ${X264_NAME}){0,31})$`,
+);
+
 export function validateSummary(raw) {
 	assert(
 		typeof raw === "string" && raw.length <= 10_000,
@@ -431,11 +473,12 @@ export function validateSummary(raw) {
 			"decodedPresentations",
 			"vmafFrames",
 			"means",
+			"x264Capabilities",
 		].sort(),
 		"Unexpected media summary fields",
 	);
 	for (const [key, expected] of Object.entries({
-		version: 1,
+		version: 2,
 		videoFrames: 240,
 		hlsSegments: 5,
 		dashSegments: 5,
@@ -461,6 +504,15 @@ export function validateSummary(raw) {
 				value <= 100,
 		),
 		"VMAF means must be numbers from 0 to 100",
+	);
+	// The one text of the summary: x264's names for what it uses of the
+	// processor, or "none!". This rule bounds its shape. That the words are
+	// x264's is the check's part: it takes them from the one line of an
+	// encode's log that reports them.
+	assert(
+		typeof summary.x264Capabilities === "string" &&
+			X264_NAMES.test(summary.x264Capabilities),
+		"x264's processor capabilities must be a list of its capability names",
 	);
 	return summary;
 }
@@ -564,6 +616,7 @@ export async function cleanupFixture(
 export async function runFixture(
 	{
 		source,
+		ffmpeg,
 		statePath,
 		signal = new AbortController().signal,
 		env = process.env,
@@ -581,6 +634,8 @@ export async function runFixture(
 				!existsSync(statePath),
 			"State file must be new and outside the checkout",
 		);
+	// Before anything is created: a refused directory leaves nothing to remove.
+	const prebuilt = ffmpeg === undefined ? undefined : verifyFfmpeg(ffmpeg);
 	const directory = realpathSync(
 		mkdtempSync(join(realpathSync("/tmp"), "bitovp-media-")),
 	);
@@ -624,11 +679,18 @@ export async function runFixture(
 		state.imageRequested = true;
 		save();
 		step = "building the worker image";
-		notify("Media check: building the worker image");
+		notify(
+			prebuilt
+				? "Media check: building the worker image with the FFmpeg that is already built"
+				: "Media check: building the worker image",
+		);
 		await docker(
 			[
 				"build",
 				"--pull",
+				// The directory stands for the Dockerfile's "ffmpeg" stage, which
+				// is then not built, nor are the stages that only it needs.
+				...(prebuilt ? ["--build-context", `ffmpeg=${prebuilt}`] : []),
 				"--label",
 				`${LABEL}=${state.id}`,
 				"--tag",
@@ -688,6 +750,9 @@ export async function runFixture(
 		notify(
 			`VMAF means: self=${summary.means.self.toFixed(3)}, encoded=${summary.means.encoded.toFixed(3)}, degraded=${summary.means.degraded.toFixed(3)}`,
 		);
+		// The encoded and the degraded mean are of x264 encodes, which are not
+		// the same packets on every processor.
+		notify(`x264 CPU capabilities: ${summary.x264Capabilities}`);
 	} catch (error) {
 		failure = atStep(asFailure(error), step);
 	}
@@ -715,7 +780,7 @@ async function main(signal) {
 	const options = {};
 	for (let index = 0; index < args.length; index += 2) {
 		assert(
-			["--source", "--state-file"].includes(args[index]) &&
+			["--ffmpeg", "--source", "--state-file"].includes(args[index]) &&
 				args[index + 1] &&
 				!options[args[index]],
 			"Unknown or duplicate media option",
@@ -723,6 +788,10 @@ async function main(signal) {
 		options[args[index]] = args[index + 1];
 	}
 	if (cleanup) {
+		assert(
+			!options["--ffmpeg"],
+			"Cleanup builds no image and takes no FFmpeg directory",
+		);
 		const path = options["--state-file"];
 		assert(
 			path && !options["--source"] && isAbsolute(path) && !inside(ROOT, path),
@@ -736,6 +805,7 @@ async function main(signal) {
 	} else
 		await runFixture({
 			source: options["--source"],
+			ffmpeg: options["--ffmpeg"],
 			statePath: options["--state-file"],
 			signal,
 		});

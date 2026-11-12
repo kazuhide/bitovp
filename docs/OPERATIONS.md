@@ -67,6 +67,10 @@ into the digest-pinned base image and parts of which are linked into the
 programs, and the Dockerfile frontend that line 1 names. The image build fails
 unless the result has libvmaf and SRT and scores with a pinned VMAF model.
 
+[FFMPEG-BUILD.md](FFMPEG-BUILD.md) records this build: every source and
+command, what the logs of a build showed, the programs that came out, what was
+checked on them, what the build leaves out, and its known limits.
+
 To change a version:
 
 - Change the commit and the SHA-256 of its `ADD` line together. For libvmaf,
@@ -77,14 +81,20 @@ To change a version:
   `behind_by: 0`. For x264,
   `https://code.videolan.org/api/v4/projects/videolan%2Fx264/repository/commits/<commit>/refs?type=branch`
   must list the branch.
-- For FFmpeg, set `FFMPEG_VER` to what `git describe --tags` prints for the
-  commit, with the revision cut to ten characters, and `SOURCE_DATE_EPOCH` to
-  the commit's date (`git show -s --format=%ct`). The build checks only that
-  `FFMPEG_VER` ends with the revision.
+- For FFmpeg, set `FFMPEG_VER` to what
+  `git describe --tags --long --abbrev=10` prints for the commit, and
+  `SOURCE_DATE_EPOCH` to the commit's date (`git show -s --format=%ct`).
+  `--long` keeps the number of commits and the revision in the name of a
+  commit that is itself a tag. The build checks only that `FFMPEG_VER` ends
+  with the first ten characters of the revision.
 - With a new FreeType commit, take the dlg revision that it records for
   `subprojects/dlg`. With a newer FFmpeg release, check which branch of the
   NVIDIA headers that release needs.
 - Meson's version is written twice in its URL and once in the check below it.
+- Renew [FFMPEG-BUILD.md](FFMPEG-BUILD.md) as its section "Renewing this
+  record" says. A test fails until the record's stages, sources and commands
+  are those of `Dockerfile`; the logs, the checksums of the programs and the
+  measurements in it are renewed by hand.
 
 To build the image with another FFmpeg, replace the `ffmpeg` stage with a
 directory that holds `bin/ffmpeg`, `bin/ffprobe` and `share/licenses/`:
@@ -96,6 +106,70 @@ fixes it. `share/licenses/` must hold the licences of what that FFmpeg
 contains. bitovp needs libvmaf, libx264, libdav1d, libass with Fontconfig, SRT
 with encryption, TLS for RTMPS, zlib for PNG image assets and, for GPU
 decoding, NVDEC.
+
+CI keeps the build of the `ffmpeg` stage and reuses it.
+`scripts/native-media-tools.sh --cache <directory>` keeps the build, with the
+VMAF models, under a key made from `Dockerfile`, `docker/vmaf-models.sha256`,
+the script itself and the processor architecture, and GitHub's cache carries
+that directory from run to run under a key of the same three files. A run
+that finds a build under its key copies it instead of compiling. A run
+compiles when no build is kept for its key where it may read: after a change
+to one of the three files; on `main` after such a change is merged, because
+GitHub keeps what a pull request stores for that pull request alone; and when
+GitHub has removed the entry, which it does when no run has read it for 7 days
+and may do earlier when the repository's caches exceed their size limit. The
+three jobs do not wait for each other: those that start before a build is
+stored each compile, GitHub stores one build, and the others log
+`Failed to save: Unable to reserve cache` and pass all the same. A job that
+fails keeps nothing. The step's log says which of the two happened:
+`FFmpeg: built from the pinned sources` or `FFmpeg: reused the build kept
+under the key of these sources (<key>)`.
+
+Every run, whether it compiled or copied, checks that the model directory
+holds the models of `docker/vmaf-models.sha256`, with their SHA-256, and
+nothing else, proves that this FFmpeg scores with a pinned model, and prints
+the SHA-256 of `ffmpeg` and `ffprobe`. The two jobs that build the worker
+image give the same directory to the image build, so the image holds the
+programs that the run has just proven: the offline media job with
+`--build-context ffmpeg=<directory>`, the installed GUI job with
+`additional_contexts` in its Compose override.
+
+A kept build is taken only when it holds the files that the list kept with it
+names, with the SHA-256 recorded there, and nothing else. That check finds
+damage, not replacement: whoever can write the cache can store another build
+with a list of its own. Reuse is safe for two reasons. First, GitHub lets a
+run restore only an entry that its own branch or pull request stored, one
+that the default branch stored, or one that the base branch of its pull
+request stored. So what a pull request stores is read by that pull request
+alone, and an entry that `main` and the pull requests into `main` restore is
+written only by a run on `main`. Second, the three jobs that restore one hold
+a read-only token and no secret and publish nothing. A workflow that holds a
+secret, may write to the repository or publishes an image must not restore
+this cache. A kept build that fails the check stops the job and is not built
+again in its place. Then, and after any doubt about a run on `main`, delete
+every `ffmpeg-…` entry, so that the next runs compile:
+
+```bash
+gh cache list --key ffmpeg- --limit 100
+gh cache list --key ffmpeg- --limit 100 --json id --jq '.[].id' | xargs -n 1 gh cache delete
+```
+
+On your own machine, keep a `--cache` directory writable only by you.
+
+A run that copies a build does not show that the pinned sources can still be
+downloaded and compiled, and no run of these jobs shows that `Dockerfile`
+alone still builds the image that an installation gets: the two image jobs
+build it with the directory in place of the `ffmpeg` stage. The `FFmpeg from
+source` workflow shows both every week and on request, without the cache. Its
+job `ffmpeg-from-source` runs the script with no `--cache`: it downloads the
+sources and the models, compiles FFmpeg and runs the proof. Its job
+`image-from-source` builds the whole worker image from `Dockerfile` and
+validates the ten-second asset with it. A failure there blocks no pull
+request, so look at its runs: `gh run list --workflow ffmpeg-source-build.yml`.
+In a public repository GitHub turns a schedule off after 60 days without
+activity in the repository: `gh workflow enable ffmpeg-source-build.yml` turns
+it on again, and `gh workflow run ffmpeg-source-build.yml` starts a run at any
+time.
 
 Building for another processor architecture, for example `--platform
 linux/amd64` on an Apple silicon Mac for a cloud quality worker, compiles

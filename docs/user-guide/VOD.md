@@ -25,8 +25,8 @@ region. Review the selected account and any saved or copied region settings.
 8. **Review:** inspect the plan preview, warnings, generated resources, and paths,
    then start encoding.
 
-These steps package the job for streaming. To write finished files instead — MP4
-or similar files with the audio inside, and no manifests — choose **Export files**
+These steps package the job for streaming. To write finished files instead — MP4,
+MPEG-TS, or QuickTime files with the audio inside, and no manifests — choose **Export files**
 under "What to create" at the top of the page. That flow has five steps: Basics,
 Sources, Format, Destination, and Review. Files are written directly into the
 output folder and are named after the job until you type a name. Two files in one
@@ -94,7 +94,10 @@ remove them and pass validation.
 
 HLS/DASH manifests describe available renditions and their segments. Packaging
 defines how those streams are stored, for example MPEG-TS, fragmented MP4
-(fMP4), or progressive MP4.
+(fMP4), or progressive MP4. Progressive TS and MOV write one whole file for each
+rendition, with H.264 video and AAC audio inside; no manifest lists them and DRM
+is not offered. MOV has not been verified on a real encode, so check the first
+output.
 
 For HLS, decide whether video and audio share a container or use separate audio
 groups. A variant that already contains audio must not also reference an external

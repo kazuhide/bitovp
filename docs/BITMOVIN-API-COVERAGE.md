@@ -13,7 +13,7 @@ use the [glossary](user-guide/GLOSSARY.md) for encoding terms.
 
 | Workflow | Available features |
 |---|---|
-| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, manifests, encryption, and quality gates |
+| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, file export as MP4, Progressive TS, or Progressive MOV, manifests, encryption, and quality gates |
 | Live | RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; reusable channels and broadcast history; scheduling, slate insertion, advertising markers, heartbeat monitoring, storage mirrors, Live-to-VOD, and optional H.264/AAC MP4 archives |
 | Storage | AWS S3 and compatible providers, Google Cloud Storage, Azure, and other supported input/output credentials; encoding destinations can support more operations than the storage browser or output inspection |
 | Quality | Local or configured cloud quality measurement, comparisons, and quality gates; VMAF is calculated with FFmpeg/libvmaf, separately from the Bitmovin Encoding API |
@@ -51,6 +51,11 @@ not imply a control for every field.
 - Standard VOD and Live video renditions can set their HLS child-playlist
   filenames. Live accepts literal flat `.m3u8` names; VOD can expand `{group}`
   for variants per audio group. Per-Title keeps its derived filename options.
+- Progressive TS and Progressive MOV write one whole file for each video
+  rendition, with H.264 video and AAC audio in the same file. No HLS, DASH, or
+  Smooth manifest lists them, and DRM is not offered. Progressive MOV has not
+  been verified on a live encode, and Bitmovin publishes no sample request for
+  it; a plan that uses it carries the warning `PLAN_MUXING_UNMEASURED_KIND`.
 - Account-specific features, including HEVCv2, appear only where enabled for the
   selected account. A codec or setting declared by the provider's software
   development kit (SDK) is not proof that your account or encoder accepts it.

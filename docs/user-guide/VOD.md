@@ -30,7 +30,7 @@ MPEG-TS, or QuickTime files with the audio inside, and no manifests — choose *
 under "What to create" at the top of the page. That flow has five steps: Basics,
 Sources, Format, Destination, and Review. Files are written directly into the
 output folder and are named after the job until you type a name. Two files in one
-job cannot have the same name, and in the five steps they cannot have the same
+job cannot have the same name, and two made in the five steps cannot have the same
 height and codec with the same bitrate in kbps. A file already in the folder under
 the same name may be replaced. Public read access is not requested for the files
 unless you select it in Destination. **Show all settings** opens the eight steps

@@ -2889,7 +2889,7 @@ The scorer ends a refusal with status 1 and one line, which names no limit:
 The second line names Vulkan and comes from the CUDA backend as well: the two
 backends share the code that writes it.
 
-Since PR #NNN the worker names the limit when a run of the scorer ends with
+Since PR #119 the worker names the limit when a run of the scorer ends with
 one of these lines and the sizes are below a limit of
 `packages/core/src/vmaf/size-limits.ts`: the same sentences as for libvmaf, for
 4:2:0 pictures and the declared encode. Every other failure of the scorer keeps

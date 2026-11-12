@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { reconcileAutomaticAudioPackaging } from "./automatic-audio-packaging";
+import {
+	followRenamedAudioKeys,
+	reconcileAutomaticAudioPackaging,
+} from "./automatic-audio-packaging";
 import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
@@ -70,5 +73,76 @@ describe("automatic audio packaging across wizard steps", () => {
 		const state = initial();
 		state.audios = reconcileAutomaticAudioPackaging(state);
 		expect(JSON.stringify(buildPlan(state))).not.toContain("autoOwnContainer");
+	});
+});
+
+describe("audio keys carried by a video container", () => {
+	const low = { bitrate: 128000, rate: 48000 };
+	const high = { bitrate: 192000, rate: 48000 };
+	const carrying = (...keys: string[]): WizardState["videos"] => [
+		{
+			height: 360,
+			bitrate: 800000,
+			muxing: { kind: "TS", muxedAudioKeys: keys },
+			extraMuxings: [{ kind: "MP4", muxedAudioKeys: keys }],
+		},
+	];
+
+	it("follow a bitrate edit, so the track stays inside the container", () => {
+		const before = { videos: carrying("a128"), audios: [low] };
+		const after = { ...before, audios: [high] };
+		const state: WizardState = {
+			...DEFAULT_WIZARD_STATE,
+			...after,
+			videos: followRenamedAudioKeys(before, after),
+		};
+		state.audios = reconcileAutomaticAudioPackaging(state);
+		// Both containers of the rendition carry the track; none is made for it alone.
+		expect(
+			buildPlan(state).muxings.map((muxing) => [
+				muxing.kind,
+				muxing.streamKey,
+				"additionalStreamKeys" in muxing
+					? muxing.additionalStreamKeys
+					: undefined,
+			]),
+		).toEqual([
+			["TS", "v360", ["a192"]],
+			["MP4", "v360", ["a192"]],
+		]);
+	});
+
+	it("rename only the track that changed", () => {
+		const before = { videos: carrying("a128", "a192"), audios: [low, high] };
+		const after = {
+			...before,
+			audios: [low, { bitrate: 256000, rate: 48000 }],
+		};
+		expect(
+			followRenamedAudioKeys(before, after).map((video) => [
+				video.muxing?.muxedAudioKeys,
+				video.extraMuxings?.map((leg) => leg.muxedAudioKeys),
+			]),
+		).toEqual([[["a128", "a256"], [["a128", "a256"]]]]);
+	});
+
+	it.each([
+		[
+			"a typed key, which the edit does not change",
+			[{ ...low, extras: { key: "main" } }],
+			[{ ...high, extras: { key: "main" } }],
+		],
+		["a removed track", [low, high], [high]],
+		["an added track", [low], [low, high]],
+		// The same keys in another order: which track a key means has not changed.
+		["tracks that change places", [low, high], [high, low]],
+	] satisfies [
+		string,
+		WizardState["audios"],
+		WizardState["audios"],
+	][])("leave the containers as they are for %s", (_case, from, to) => {
+		const before = { videos: carrying("a128"), audios: from };
+		const after = { ...before, audios: to };
+		expect(followRenamedAudioKeys(before, after)).toBe(after.videos);
 	});
 });

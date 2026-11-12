@@ -13,6 +13,7 @@ import {
 	DEFAULT_WIZARD_STATE,
 	remapEncodingKeyRefs,
 	remapInputKeyRefs,
+	tryImportPresetIntoWizard,
 	type WizardH265Options,
 	type WizardKantar,
 	type WizardState,
@@ -1918,6 +1919,58 @@ describe("labels / infrastructure / start tweaks / preview placement (P5)", () =
 			credentialId: "00000000-0000-4000-8000-000000000002",
 			kind: "S3",
 			bucket: "out",
+	it("asks for no audio track of the source, which nothing encodes", () => {
+		const measuring: WizardState = {
+			...richState,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+		};
+		const streams = (state: WizardState) =>
+			encodingPlanSchema.parse(buildPlan(state)).ingest.map((item) => item.key);
+		expect(streams(richState)).toEqual(["video", "audio"]);
+		expect(streams(measuring)).toEqual(["video"]);
+		// A stream of the Sources step that wraps the track still needs it.
+		expect(
+			streams({
+				...measuring,
+				sources: {
+					...measuring.sources,
+					trimmingStreams: [
+						{ key: "cut", kind: "TIME_BASED", sourceKey: "audio", offset: 1 },
+					],
+				},
+			}),
+		).toEqual(["video", "audio"]);
+		// So the plan is one the form builds, and a copy of the job opens in the form.
+		expect(
+			tryImportPresetIntoWizard(buildPlan(measuring) as Record<string, unknown>)
+				.ok,
+		).toBe(true);
+	});
+
+	it("leaves the Kantar watermark out with the audio it would mark", () => {
+		const kantar: WizardKantar = {
+			credentialId: "00000000-0000-4000-8000-000000000003",
+			licenseId: 4711,
+			channelName: "Demo Channel",
+			contentReference: "clip-ep01",
+			serverUrl: "https://kantar.example.com/watermark",
+			reportPath: "reports/",
+		};
+		const marked: WizardState = { ...richState, kantar };
+		expect(buildPlan(marked).kantar?.reportDestination.path).toBe(
+			"output/vmaf-only-ui/reports/",
+		);
+		const measuring: WizardState = {
+			...marked,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+		};
+		const plan = encodingPlanSchema.parse(buildPlan(measuring));
+		expect("kantar" in plan).toBe(false);
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+	});
+
 			basePath: "output/infra-ops-ui/",
 			publicRead: true,
 			name: "S3 Output",

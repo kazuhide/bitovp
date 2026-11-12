@@ -1708,13 +1708,16 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		state.videos.some((v) => usesImplicit(v.extras, "video")) ||
 		wrappedSourceKeys.has("video");
 	const useAudioIngest =
-		state.audios.some((a) => usesImplicit(a.extras, "audio")) ||
+		(!qcOnly && state.audios.some((a) => usesImplicit(a.extras, "audio"))) ||
 		wrappedSourceKeys.has("audio");
 	// Separate A/V: the implicit audio may read a different input file than the
 	// video; absent audioInputFile = the same primary object.
 	const audioRef = ref(state.audioInputFile ?? primaryFile?.key ?? "");
 	const ingest: IngestInput[] = [
 		...(useVideoIngest && primaryFile
+	// A QC-only encode emits no audio rendition (below), so none reads the implicit
+	// audio track: left in, the plan would ask for a track of the source that nothing
+	// encodes, and would not load back into the form that built it.
 			? [
 					prune({
 						key: "video",
@@ -2866,8 +2869,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		// encoding). Emitted VERBATIM whenever the section is on: a half-filled
 		// form must reach the schema and fail loudly in the preview (the
 		// `infrastructure` precedent above) instead of being quietly pruned.
-		// Absent state ⇒ no key at all, so the goldens stay byte-identical.
-		...(state.kantar
+		// Absent state ⇒ no key at all, so the goldens stay byte-identical. A QC-only
+		// encode emits no audio rendition, and Kantar marks audio and nothing else:
+		// the block would be refused for the audio it lacks (PLAN_KANTAR_NEEDS_AUDIO),
+		// in words that ask for a track the form already has.
+		...(state.kantar && !qcOnly
 			? {
 					kantar: {
 						credentialId: state.kantar.credentialId,

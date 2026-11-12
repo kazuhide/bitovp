@@ -463,6 +463,10 @@ export async function executeMediaStep(
 				refId(op, ctx, "encodingId"),
 				{
 					streamId: refId(op, ctx, "streamId"),
+					// Present only on a PROGRESSIVE_WEBM muxing with audio muxed in.
+					// The QC mirror and a `WEBM` muxing marked progressive compile
+					// no such ref, so they stay the single-stream call they were.
+					additionalStreamIds: refIdList(op, ctx, "additionalStreamIds"),
 					filename: str(p.filename),
 					destination: destinationOf(op, ctx),
 					name: optStr(p.name),

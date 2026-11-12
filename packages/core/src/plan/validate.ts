@@ -80,6 +80,13 @@ const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
  *    title and shows no MOV request, and this app has not run one against the
  *    live API. The row repeats the TS one as the conservative guess, and
  *    `PLAN_MUXING_UNMEASURED_KIND` says so on every plan that uses it.
+ *  - PROGRESSIVE_WEBM repeats the WEBM row: the same container, written as one
+ *    file. The row is copied, not measured. The single-file WebM requests this
+ *    app already builds (the QC mirror of a VP9 rendition, a `WEBM` muxing
+ *    marked `progressive`) hold one stream each, and no live run of a file
+ *    holding video and Opus together is on record, so the same warning is
+ *    raised. Whether Bitmovin publishes a sample request for it was not looked
+ *    up, and nothing here claims either way.
  */
 export const MUXING_CODEC_MATRIX: Record<
 	PlanMuxing["kind"],
@@ -105,18 +112,39 @@ export const MUXING_CODEC_MATRIX: Record<
 	CHUNKED_TEXT: ["WEBVTT"],
 	PROGRESSIVE_TS: ["H264", "AAC"],
 	PROGRESSIVE_MOV: ["H264", "AAC"],
+	PROGRESSIVE_WEBM: ["VP9", "AV1", "OPUS"],
 };
 
 /**
- * Kinds backed by NEITHER a vendor sample to transcribe NOR a live run by this
- * app. Each one raises `PLAN_MUXING_UNMEASURED_KIND` — a warning, never a
- * block: the request shape is the SDK's own, so it may well be accepted, and an
- * error would forbid a plan on a guess (`PLAN_MUXING_CONDITIONAL_STREAM` and
+ * Kinds for which this app has no live run on record. Each one raises
+ * `PLAN_MUXING_UNMEASURED_KIND` — a warning, never a block: the request shape
+ * is the SDK's own, so it may well be accepted, and an error would forbid a
+ * plan on a guess (`PLAN_MUXING_CONDITIONAL_STREAM` and
  * `PLAN_PER_TITLE_MUXED_AUDIO` are the precedents for "unmeasured → say so").
+ *
+ * What else is known differs by kind, so the warning is worded per kind
+ * (`unmeasuredKindDetail`).
  */
 export const UNMEASURED_MUXING_KINDS: ReadonlySet<PlanMuxing["kind"]> = new Set(
-	["PROGRESSIVE_MOV"],
+	["PROGRESSIVE_MOV", "PROGRESSIVE_WEBM"],
 );
+
+/**
+ * What is and is not known about an unmeasured kind — the middle of its
+ * `PLAN_MUXING_UNMEASURED_KIND` message.
+ *
+ *  - PROGRESSIVE_MOV: no vendor sample to transcribe either (the matrix
+ *    comment above says where that was looked up).
+ *  - PROGRESSIVE_WEBM: that was not looked up, so it is not claimed. What is
+ *    known is that this app builds the same request elsewhere for a single
+ *    stream, and that this kind is the first to put audio beside the picture.
+ */
+function unmeasuredKindDetail(kind: PlanMuxing["kind"]): string {
+	if (kind === "PROGRESSIVE_WEBM") {
+		return "for which this app has no live encode on record: it builds the same request for one stream elsewhere (the QC mirror of a VP9 rendition, a WEBM muxing marked progressive), and a file that holds video and audio together is new with this kind";
+	}
+	return "which this app has not measured on a live encode and for which Bitmovin publishes no sample request";
+}
 
 /**
  * Plan-level (cross-field) validation per ARCHITECTURE §3 — runs after zod
@@ -1351,7 +1379,7 @@ export function validatePlan(
 			issues.push({
 				code: "PLAN_MUXING_UNMEASURED_KIND",
 				level: "warning",
-				message: `muxing "${muxing.key}" writes a ${muxing.kind} container, which this app has not measured on a live encode and for which Bitmovin publishes no sample request — the request is built from the SDK model alone, so check the first output before relying on it`,
+				message: `muxing "${muxing.key}" writes a ${muxing.kind} container, ${unmeasuredKindDetail(muxing.kind)} — the request is built from the SDK model alone, so check the first output before relying on it`,
 				path: `muxings[${index}].kind`,
 			});
 		}

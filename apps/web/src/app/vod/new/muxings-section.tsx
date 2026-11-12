@@ -53,9 +53,11 @@ const VIDEO_KINDS: WizardMuxingKind[] = [
 	"MP4",
 	"TS",
 	"WEBM",
-	// Whole-file containers: one .ts / .mov per rendition, never a manifest leg.
+	// Whole-file containers: one .ts / .mov / .webm per rendition, never a
+	// manifest leg.
 	"PROGRESSIVE_TS",
 	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WEBM",
 ];
 const AUDIO_KINDS: WizardMuxingKind[] = ["FMP4", "CMAF", "MP4", "TS"];
 const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
@@ -63,9 +65,10 @@ const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
 /**
  * The containers offered for a video rendition of this codec.
  *
- * CMAF keeps its H.264-only rule. The two whole-file kinds are read off
+ * CMAF keeps its H.264-only rule. The whole-file kinds are read off
  * `MUXING_CODEC_MATRIX` — the table the validator refuses mismatches with — so
- * the picker does not offer a pairing the preview is certain to reject. The
+ * the picker does not offer a pairing the preview is certain to reject: the
+ * `.ts` and `.mov` files on an H.264 row, the `.webm` file on VP9 and AV1. The
  * streaming kinds are deliberately NOT filtered through the matrix: that would
  * change what existing rows are offered, which is not this change's to decide.
  */
@@ -214,6 +217,20 @@ const PROGRESSIVE_MOV_FIELDS: OptionFieldSpec[] = [
 	},
 ];
 
+/**
+ * One whole `.webm` file. Not the "Single WebM file" switch of the `WEBM`
+ * container below: that one is a DASH leg holding one stream, and this is a
+ * file no manifest lists, with the audio in it.
+ */
+const PROGRESSIVE_WEBM_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "filename",
+		labelKey: "wizard.filename",
+		control: "text",
+		hintKey: "wizard.defaultOutputWebm",
+	},
+];
+
 const CHUNKED_TEXT_FIELDS: OptionFieldSpec[] = [
 	{
 		key: "segmentLength",
@@ -248,6 +265,8 @@ function fieldsFor(
 			return PROGRESSIVE_TS_FIELDS;
 		case "PROGRESSIVE_MOV":
 			return PROGRESSIVE_MOV_FIELDS;
+		case "PROGRESSIVE_WEBM":
+			return PROGRESSIVE_WEBM_FIELDS;
 		case "WEBM":
 			return [
 				{

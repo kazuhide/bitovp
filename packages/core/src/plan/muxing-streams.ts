@@ -56,11 +56,14 @@ export function isMuxedContainer(muxing: PlanMuxing): boolean {
  *
  * `MP4` and progressive `WEBM` are deliberately NOT here: both are files, and
  * both are also manifest legs (byte-range HLS, Smooth, DASH on-demand; DASH
- * progressive-WebM representations).
+ * progressive-WebM representations). `PROGRESSIVE_WEBM` IS here: it is the
+ * muxing kind, a file no manifest lists — not the `WEBM` muxing marked
+ * `progressive`, and not the DASH representation type of the same name.
  */
 export const FILE_ONLY_MUXING_KINDS = [
 	"PROGRESSIVE_TS",
 	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WEBM",
 ] as const satisfies readonly PlanMuxing["kind"][];
 
 export type FileOnlyMuxingKind = (typeof FILE_ONLY_MUXING_KINDS)[number];
@@ -94,6 +97,7 @@ const CARRIES_AUDIO: Record<PlanMuxing["kind"], boolean> = {
 	CHUNKED_TEXT: false,
 	PROGRESSIVE_TS: true,
 	PROGRESSIVE_MOV: true,
+	PROGRESSIVE_WEBM: true,
 };
 
 export function muxingKindCarriesAudio(kind: string): boolean {

@@ -67,8 +67,8 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 		 * reject valid plans. What breaks is mixing the segment container the
 		 * format does not use.
 		 *
-		 * The two whole-file kinds are on every list for the reason MP4 is: a
-		 * single `.ts`/`.mov` file is not something a live-ingest stream
+		 * The three whole-file kinds are on every list for the reason MP4 is: a
+		 * single `.ts`/`.mov`/`.webm` file is not something a live-ingest stream
 		 * delivers. Inferred, not measured — which is the strength this list
 		 * already reports at (a warning that says "unverified").
 		 */
@@ -79,6 +79,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"TEXT",
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WEBM",
 		],
 		/**
 		 * The manifest half of the same idea, and it was declared 3× and read
@@ -101,6 +102,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"TEXT",
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WEBM",
 		],
 		forbiddenManifests: ["DASH", "SMOOTH"],
 	},
@@ -114,6 +116,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"TEXT",
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WEBM",
 		],
 		forbiddenManifests: ["SMOOTH"],
 	},

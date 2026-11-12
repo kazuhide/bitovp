@@ -1038,11 +1038,18 @@ export type SdkOps = {
 	/**
 	 * Progressive (single-file) WebM — the VP9 QC mirror's container (ledger
 	 * #205). The provider refuses a VP9 progressive MP4 outright.
+	 *
+	 * Also the `PROGRESSIVE_WEBM` plan muxing, the one caller that passes
+	 * `additionalStreamIds` (Opus beside VP9 or AV1 in one `.webm`). That shape
+	 * is built from the SDK model alone, and this app has no live run of it on
+	 * record (the plan validator says so on every plan that uses it).
 	 */
 	createProgressiveWebmMuxing(
 		encodingId: string,
 		p: {
 			streamId: string;
+			/** Muxed-in streams — see createMp4Muxing. Absent = single stream. */
+			additionalStreamIds?: string[];
 			filename: string;
 			destination?: Destination;
 			name?: string;

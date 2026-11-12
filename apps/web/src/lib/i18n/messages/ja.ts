@@ -4893,6 +4893,7 @@ export const ja = {
 		defaultInitMp4: "既定 init.mp4",
 		defaultOutputMov: "既定 output.mov",
 		defaultOutputTs: "既定 output.ts",
+		defaultOutputWebm: "既定 output.webm",
 		encoderDefaultWhenEmpty:
 			"任意です。空欄の場合はエンコーダの既定値を使います。",
 		startOffsetS: "開始オフセット (秒)",

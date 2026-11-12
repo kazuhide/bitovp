@@ -74,12 +74,17 @@ export type PathPattern = {
 /**
  * Container families, distinguished because they are different artefacts.
  *
- * The two whole-file kinds keep the PLAN's spelling (`PROGRESSIVE_TS`, not
+ * The whole-file kinds keep the PLAN's spelling (`PROGRESSIVE_TS`, not
  * `TS_PROGRESSIVE`) on purpose. Several readers below ask "is this the leg the
  * manifest pinned" with `container.startsWith(kind)`, and a name beginning
  * with `TS` would answer yes for a file that is on no manifest at all. It is
  * also the provider's own `MuxingType`, which is what per-title delivery binds
  * a result muxing by.
+ *
+ * So `PROGRESSIVE_WEBM` and `WEBM_PROGRESSIVE` are two different things, one
+ * word apart: the first is the whole-file plan kind (video and audio in one
+ * `.webm`, on no manifest), the second a `WEBM` muxing marked `progressive`
+ * (one stream, a DASH leg). The provider calls both `PROGRESSIVE_WEBM`.
  */
 export type ContainerKind =
 	| "FMP4_SEGMENTED"
@@ -91,7 +96,8 @@ export type ContainerKind =
 	| "MP4_PROGRESSIVE"
 	| "MP4_FRAGMENTED"
 	| "PROGRESSIVE_TS"
-	| "PROGRESSIVE_MOV";
+	| "PROGRESSIVE_MOV"
+	| "PROGRESSIVE_WEBM";
 
 /** What one muxing must have written. */
 export type ExpectedMuxing = {
@@ -593,6 +599,7 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 				: "MP4_FRAGMENTED";
 		case "PROGRESSIVE_TS":
 		case "PROGRESSIVE_MOV":
+		case "PROGRESSIVE_WEBM":
 			return muxing.kind;
 		default: {
 			// The union is closed today; this makes a NEW muxing kind a compile error
@@ -850,7 +857,7 @@ export function compileExpectedArtefacts(
 			 * entry for one — so every "which legs does this manifest enumerate"
 			 * question below starts from this list, not from `muxings`. Without
 			 * it an unpinned manifest would expect one more variant than the
-			 * master carries, for a `.ts`/`.mov` nothing references.
+			 * master carries, for a `.ts`/`.mov`/`.webm` nothing references.
 			 */
 			const manifestLegs = muxings.filter(
 				(m) => !isFileOnlyMuxingKind(m.container),

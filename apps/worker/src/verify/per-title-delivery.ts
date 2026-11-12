@@ -100,9 +100,13 @@ function providerMuxingTypes(expected: ExpectedMuxing): string[] {
 		case "MP4_PROGRESSIVE":
 		case "MP4_FRAGMENTED":
 			return ["MP4"];
-		// The container name IS the provider's `MuxingType` for these two.
+		// The container name IS the provider's `MuxingType` for these three.
+		// (`PROGRESSIVE_WEBM` is also what `WEBM_PROGRESSIVE` above maps to: the
+		// provider has one type for both, so the filename and the output path
+		// are what tell the two apart, as they do for the two MP4 containers.)
 		case "PROGRESSIVE_TS":
 		case "PROGRESSIVE_MOV":
+		case "PROGRESSIVE_WEBM":
 			return [expected.container];
 	}
 }

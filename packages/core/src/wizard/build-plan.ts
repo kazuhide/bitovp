@@ -479,7 +479,9 @@ export type WizardMuxingKind =
 	/** One whole .ts file (never a manifest leg; audio muxed in). */
 	| "PROGRESSIVE_TS"
 	/** One whole .mov file (never a manifest leg; audio muxed in). */
-	| "PROGRESSIVE_MOV";
+	| "PROGRESSIVE_MOV"
+	/** One whole .webm file (never a manifest leg; audio muxed in). */
+	| "PROGRESSIVE_WEBM";
 
 /** Per-rendition muxing leg (Muxings step). Absent = P1 fMP4 defaults. */
 export type WizardMuxing = {
@@ -506,7 +508,7 @@ export type WizardMuxing = {
 	initSegmentName?: string;
 	initSegmentNameTemplate?: string;
 	framesPerCmafChunk?: number;
-	// MP4 (and the two whole-file kinds, which share `filename`)
+	// MP4 (and the three whole-file kinds, which share `filename`)
 	filename?: string;
 	fragmentDuration?: number;
 	manifestType?: "HLS_BYTE_RANGES" | "SMOOTH" | "DASH_ON_DEMAND";
@@ -2107,7 +2109,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		legacyFmp4: boolean,
 		/**
 		 * Audio renditions muxed INTO this container . Only the
-		 * kinds `muxingKindCarriesAudio` names accept them (TS, MP4 and the two
+		 * kinds `muxingKindCarriesAudio` names accept them (TS, MP4 and the three
 		 * whole-file kinds) — the plan schema carries the field on those only,
 		 * so passing it anywhere else could not compile even if this builder
 		 * tried. Empty is normalised to absent because the schema refuses an
@@ -2164,7 +2166,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				name,
 			});
 		}
-		if (kind === "PROGRESSIVE_TS" || kind === "PROGRESSIVE_MOV") {
+		if (
+			kind === "PROGRESSIVE_TS" ||
+			kind === "PROGRESSIVE_MOV" ||
+			kind === "PROGRESSIVE_WEBM"
+		) {
 			// One whole file. The destination is REQUIRED by the schema — these
 			// kinds have no DRM-owned output path — so it is written even when a
 			// DRM row names this muxing; the validator then refuses that row
@@ -2182,6 +2188,17 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					filename: m.filename || "output.ts",
 					segmentLength: m.segmentLength,
 					startOffset: m.startOffset,
+					destination: fileDestination,
+					name,
+				});
+			}
+			if (kind === "PROGRESSIVE_WEBM") {
+				return prune({
+					key: muxKey,
+					kind: "PROGRESSIVE_WEBM" as const,
+					streamKey: key,
+					additionalStreamKeys,
+					filename: m.filename || "output.webm",
 					destination: fileDestination,
 					name,
 				});

@@ -616,7 +616,9 @@ async function verifyMuxing(
 
 	// ---- the container family decides which files must be there ---------------
 	/**
-	 * The two whole-file kinds (one `.ts` / `.mov` per rendition, never a manifest leg).
+	 * The whole-file kinds (one `.ts` / `.mov` / `.webm` per rendition, never a
+	 * manifest leg). `PROGRESSIVE_WEBM` here is the plan kind of that name; a
+	 * `WEBM` muxing marked progressive is `WEBM_PROGRESSIVE`, the arm below.
 	 *
 	 * Matched EXACTLY against the destination pattern plus the filename, the way a
 	 * sprite is (`patternToRegExp`): that is the one key the plan claims. `endsWith`
@@ -627,7 +629,8 @@ async function verifyMuxing(
 	 */
 	const wholeFile =
 		muxing.container === "PROGRESSIVE_TS" ||
-		muxing.container === "PROGRESSIVE_MOV";
+		muxing.container === "PROGRESSIVE_MOV" ||
+		muxing.container === "PROGRESSIVE_WEBM";
 	const single =
 		wholeFile ||
 		muxing.container === "TEXT_SINGLE" ||

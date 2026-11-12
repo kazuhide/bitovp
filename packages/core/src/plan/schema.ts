@@ -1255,6 +1255,37 @@ export const progressiveMovMuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+/**
+ * One WebM `.webm` FILE per container: VP9 or AV1 video with Opus audio muxed
+ * in. Same shape and the same rules as `PROGRESSIVE_MOV` above.
+ *
+ * NOT `WEBM` with `progressive: true`, although both reach the provider as a
+ * ProgressiveWebmMuxing. That one holds a single stream and is a DASH leg (a
+ * progressive-WebM representation points at it); this one is a deliverable no
+ * manifest lists, and the only one of the two with `additionalStreamKeys`.
+ *
+ * What is known: the request shape, which is the SDK model's, and that this
+ * app already builds it for one stream (the `WEBM` case above, and the QC
+ * mirror of a VP9 rendition). What is not: no live encode of a progressive
+ * WebM is recorded here, and none that holds video and audio together has been
+ * sent — `PLAN_MUXING_UNMEASURED_KIND` says so on every plan that uses it.
+ *
+ * `manifestType` and `segmentLength`, the SDK model's two other fields
+ * (ProgressiveWebmMuxing.d.ts), are not carried: both concern the DASH
+ * on-demand use, and this kind is never a manifest leg. Neither is sent, so
+ * the provider's own defaults apply — as they do for the two single-stream
+ * requests named above.
+ */
+export const progressiveWebmMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_WEBM"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: outputFilenameSchema,
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
 export const planMuxingSchema = z.discriminatedUnion("kind", [
 	fmp4MuxingSchema,
 	cmafMuxingSchema,
@@ -1265,6 +1296,7 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 	webmMuxingSchema,
 	progressiveTsMuxingSchema,
 	progressiveMovMuxingSchema,
+	progressiveWebmMuxingSchema,
 ]);
 
 /**

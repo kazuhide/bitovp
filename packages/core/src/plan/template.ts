@@ -156,6 +156,7 @@ const MUXING_SECTION = {
 	WEBM: "webm",
 	PROGRESSIVE_TS: "progressiveTs",
 	PROGRESSIVE_MOV: "progressiveMov",
+	PROGRESSIVE_WEBM: "progressiveWebm",
 } as const satisfies Record<EncodingPlan["muxings"][number]["kind"], string>;
 
 type AnyRendition = EncodingPlan["renditions"][number];
@@ -1216,6 +1217,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			webm: Tree;
 			progressiveTs: Tree;
 			progressiveMov: Tree;
+			progressiveWebm: Tree;
 		}
 	>();
 	for (const muxing of plan.muxings) {
@@ -1232,6 +1234,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				webm: {},
 				progressiveTs: {},
 				progressiveMov: {},
+				progressiveWebm: {},
 			};
 			muxingsByEnc.set(ownerEnc, legs);
 		}
@@ -1245,6 +1248,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			webm,
 			progressiveTs,
 			progressiveMov,
+			progressiveWebm,
 		} = legs;
 		const shared = {
 			// EVERY stream the container packages . This emitted a
@@ -1410,6 +1414,12 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			};
 		} else if (muxing.kind === "PROGRESSIVE_MOV") {
 			progressiveMov[muxing.key] = {
+				properties: { filename: muxing.filename, ...shared },
+			};
+		} else if (muxing.kind === "PROGRESSIVE_WEBM") {
+			// The schema's `progressiveWebm` section. `manifestType` and
+			// `segmentLength` stay out: the plan kind does not carry them.
+			progressiveWebm[muxing.key] = {
 				properties: { filename: muxing.filename, ...shared },
 			};
 		} else {
@@ -2055,6 +2065,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					webm: {},
 					progressiveTs: {},
 					progressiveMov: {},
+					progressiveWebm: {},
 				};
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
 				const atmosEntries = dolbyAtmosByEnc.get(name) ?? {};
@@ -2149,6 +2160,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								: {}),
 							...(Object.keys(legs.progressiveMov).length > 0
 								? { progressiveMov: legs.progressiveMov }
+								: {}),
+							...(Object.keys(legs.progressiveWebm).length > 0
+								? { progressiveWebm: legs.progressiveWebm }
 								: {}),
 						},
 						start: {

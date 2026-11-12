@@ -123,8 +123,8 @@ export function createMediaOps(
 	 * `[new MuxingStream({ streamId })]` — a one-element array literal — for
 	 * every muxing kind, so a multiplexed container was unrepresentable no
 	 * matter what the plan compiled to. Used by the kinds whose schema can
-	 * carry extra streams (TS, MP4, and the whole-file progressive TS / MOV);
-	 * the other creators keep their single literal, because nothing can
+	 * carry extra streams (TS, MP4, and the whole-file progressive TS / MOV /
+	 * WebM); the other creators keep their single literal, because nothing can
 	 * currently hand them a second stream and a slot no input can reach is a
 	 * coverage claim that is not true.
 	 */
@@ -859,7 +859,7 @@ export function createMediaOps(
 								encodingId,
 								new ProgressiveWebmMuxing({
 									filename: p.filename,
-									streams: [new MuxingStream({ streamId: p.streamId })],
+									streams: muxingStreams(p),
 									outputs: outputs(p.destination),
 									name: p.name,
 								}),

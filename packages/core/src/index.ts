@@ -962,6 +962,7 @@ export {
 	planQcSchema,
 	progressiveMovMuxingSchema,
 	progressiveTsMuxingSchema,
+	progressiveWebmMuxingSchema,
 	renditionSchema,
 	secretEgressUrlSchema,
 	spriteSchema,

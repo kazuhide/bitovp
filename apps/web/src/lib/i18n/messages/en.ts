@@ -4955,6 +4955,7 @@ export const en = {
 		defaultInitMp4: "Default init.mp4",
 		defaultOutputMov: "Default output.mov",
 		defaultOutputTs: "Default output.ts",
+		defaultOutputWebm: "Default output.webm",
 		encoderDefaultWhenEmpty:
 			"Optional. Leave empty to use the encoder's default.",
 		startOffsetS: "Start offset (s)",

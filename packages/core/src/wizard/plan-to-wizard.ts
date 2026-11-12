@@ -534,7 +534,11 @@ function readMuxing(
 			muxing.dolbyVisionTrackSampleEntryName =
 				dolby as WizardMuxing["dolbyVisionTrackSampleEntryName"];
 		}
-	} else if (kind === "PROGRESSIVE_TS" || kind === "PROGRESSIVE_MOV") {
+	} else if (
+		kind === "PROGRESSIVE_TS" ||
+		kind === "PROGRESSIVE_MOV" ||
+		kind === "PROGRESSIVE_WEBM"
+	) {
 		// One whole file: the filename is carried verbatim, and so are the two
 		// PROGRESSIVE_TS numbers. They must NOT go through the segmented branch
 		// below — it drops `segmentLength: 6` as "the default", and this kind

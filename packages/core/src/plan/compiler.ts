@@ -497,6 +497,8 @@ const MUXING_LABEL = {
 	// No vendor sample names these two; the label follows the same grammar.
 	PROGRESSIVE_TS: "Progressive TS",
 	PROGRESSIVE_MOV: "Progressive MOV",
+	// The same grammar again; whether a vendor sample names it was not looked up.
+	PROGRESSIVE_WEBM: "Progressive WebM",
 } as const;
 
 /** Sample naming: "<Video|Audio> <FMP4|MP4|TS|WebM> Muxing <identity>". */
@@ -1877,6 +1879,20 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							filename: muxing.filename,
 							...destinationFields,
 							name: muxing.name ?? muxingName("PROGRESSIVE_MOV", primary),
+						},
+						refs: muxingRefs,
+					});
+				} else if (muxing.kind === "PROGRESSIVE_WEBM") {
+					// One whole .webm FILE. The op is the one a `WEBM` muxing marked
+					// `progressive` already compiles to; what differs is `muxingRefs`,
+					// which carries the muxed-in audio as `additionalStreamIds`.
+					ops.push({
+						step: `muxing:${muxing.key}`,
+						kind: "CREATE_MUXING_PROGRESSIVE_WEBM",
+						payload: {
+							filename: muxing.filename,
+							...destinationFields,
+							name: muxing.name ?? muxingName("PROGRESSIVE_WEBM", primary),
 						},
 						refs: muxingRefs,
 					});

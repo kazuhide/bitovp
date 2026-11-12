@@ -112,6 +112,23 @@ const file = (kind: FileKind, over: Muxing = {}): Muxing => ({
 	...over,
 });
 
+/** The same file holding the audio rendition alone. */
+const audioFile = (kind: FileKind, over: Muxing = {}): Muxing => {
+	const { additionalStreamKeys: _audio, ...alone } = file(kind);
+	return { ...alone, streamKey: "a", ...over };
+};
+
+/** The same two streams as a real, segmented HLS leg — what a file is not. */
+const tsLeg: Muxing = {
+	key: "file",
+	kind: "TS",
+	streamKey: "v",
+	additionalStreamKeys: ["a"],
+	segmentLength: 4,
+	segmentNaming: "seg_%number%.ts",
+	destination: { outputKey: "out", path: "files" },
+};
+
 const fmp4 = (key: string, streamKey: string, path: string): Muxing => ({
 	key,
 	kind: "FMP4",
@@ -375,13 +392,21 @@ describe("compile — one op per file, the audio as additional stream refs", () 
 describe("never a manifest leg", () => {
 	const without = planWith({ muxings: streaming, manifests });
 
-	for (const kind of FILE_ONLY_MUXING_KINDS) {
+	/**
+	 * Both shapes a file can take. The audio-only one walks the AUDIO leg
+	 * selections, which are separate code from the video ones.
+	 */
+	const shapes = FILE_ONLY_MUXING_KINDS.flatMap((kind) => [
+		{ kind, label: `${kind} holding video and audio`, muxing: file(kind) },
+		{ kind, label: `${kind} holding audio alone`, muxing: audioFile(kind) },
+	]);
+	for (const { kind, label, muxing } of shapes) {
 		const withFile = planWith({
-			muxings: [...streaming, file(kind)],
+			muxings: [...streaming, muxing],
 			manifests,
 		});
 
-		it(`${kind}: the compiled plan is the one it was, plus one op`, () => {
+		it(`${label}: the compiled plan is the one it was, plus one op`, () => {
 			const ops = compilePlan(withFile);
 			expect(ops.filter((o) => o.step === "muxing:file")).toHaveLength(1);
 			expect(ops.filter((o) => o.step !== "muxing:file")).toEqual(
@@ -389,8 +414,8 @@ describe("never a manifest leg", () => {
 			);
 		});
 
-		it(`${kind}: no manifest rail reads it as a leg`, () => {
-			// The file sits outside the manifests' directory and shares both
+		it(`${label}: no manifest rail reads it as a leg`, () => {
+			// The file sits outside the manifests' directory and shares its
 			// renditions with the streaming legs — the two things that make a
 			// REAL second leg trip a rail (see the counterfactual below).
 			expect(
@@ -400,13 +425,13 @@ describe("never a manifest leg", () => {
 			).toEqual(validatePlan(without));
 		});
 
-		it(`${kind}: the verifier expects the same manifests`, () => {
+		it(`${label}: the verifier expects the same manifests`, () => {
 			expect(compileExpectedArtefacts(withFile).manifests).toEqual(
 				compileExpectedArtefacts(without).manifests,
 			);
 		});
 
-		it(`${kind}: the template export gains the muxing and nothing else`, () => {
+		it(`${label}: the template export gains the muxing and nothing else`, () => {
 			const tree = parse(planToEncodingTemplateYaml(withFile));
 			const section =
 				kind === "PROGRESSIVE_TS" ? "progressiveTs" : "progressiveMov";
@@ -421,21 +446,7 @@ describe("never a manifest leg", () => {
 	it("the counterfactual — the same two streams as a segmented TS leg DO change the manifest", () => {
 		// Without this, every arm above would also pass on a compiler that
 		// ignored all extra muxings, file or not.
-		const asLeg = planWith({
-			muxings: [
-				...streaming,
-				{
-					key: "file",
-					kind: "TS",
-					streamKey: "v",
-					additionalStreamKeys: ["a"],
-					segmentLength: 4,
-					segmentNaming: "seg_%number%.ts",
-					destination: { outputKey: "out", path: "files" },
-				},
-			],
-			manifests,
-		});
+		const asLeg = planWith({ muxings: [...streaming, tsLeg], manifests });
 		const variants = (plan: ReturnType<typeof planWith>) =>
 			compilePlan(plan).filter((o) => o.kind === "CREATE_HLS_STREAM_INFO");
 		expect(variants(without)).toHaveLength(1);
@@ -473,6 +484,85 @@ describe("never a manifest leg", () => {
 				kind,
 			).toEqual(compilePlan(protectedLadder));
 		}
+	});
+
+	it("a file with audio beside a video-only ladder is not a half-muxed ladder", () => {
+		// An unpinned manifest reads every video muxing as a variant. Counted
+		// as one, the file would be "a variant that carries its audio" beside
+		// one that does not, with no audio entry for the latter to reference.
+		const codes = (muxing: Muxing) =>
+			validatePlan(
+				planWith({
+					muxings: [fmp4("vmux", "v", "x/video"), muxing],
+					manifests: manifests.slice(0, 1),
+				}),
+			).map((issue) => issue.code);
+		for (const kind of FILE_ONLY_MUXING_KINDS) {
+			expect(codes(file(kind)), kind).not.toContain(
+				"PLAN_HLS_PARTIAL_MUXED_LADDER",
+			);
+		}
+		// A segmented leg carrying the same audio IS that ladder.
+		expect(codes(tsLeg)).toContain("PLAN_HLS_PARTIAL_MUXED_LADDER");
+	});
+
+	it("a file with audio is not a self-contained variant of a per-audio-group manifest", () => {
+		const codes = (muxing: Muxing) =>
+			validatePlan(
+				planWith({
+					muxings: [...streaming, muxing],
+					manifests: [{ ...manifests[0], variantsPerAudioGroup: true }],
+				}),
+			).map((issue) => issue.code);
+		for (const kind of FILE_ONLY_MUXING_KINDS) {
+			expect(codes(file(kind)), kind).not.toContain(
+				"PLAN_HLS_MUXED_VARIANT_GROUPS",
+			);
+		}
+		expect(codes(tsLeg)).toContain("PLAN_HLS_MUXED_VARIANT_GROUPS");
+	});
+
+	it("an audio-only file is not the audio entry a silent variant could point at", () => {
+		// One audio media entry is what silences the half-muxed-ladder rail. A
+		// file counted as that entry would hide a variant with no sound.
+		const renditions = [
+			H264,
+			{ ...H264, key: "v2", height: 720, bitrate: 2000000 },
+			AAC,
+		];
+		const halfMuxed: Muxing[] = [
+			{
+				...tsLeg,
+				key: "carrying",
+				destination: { outputKey: "out", path: "x/v" },
+			},
+			{
+				key: "silent",
+				kind: "TS",
+				streamKey: "v2",
+				segmentLength: 4,
+				segmentNaming: "seg_%number%.ts",
+				destination: { outputKey: "out", path: "x/v2" },
+			},
+		];
+		const codes = (extra: Muxing[]) =>
+			validatePlan(
+				planWith({
+					renditions,
+					muxings: [...halfMuxed, ...extra],
+					manifests: manifests.slice(0, 1),
+				}),
+			).map((issue) => issue.code);
+		expect(codes([])).toContain("PLAN_HLS_PARTIAL_MUXED_LADDER");
+		for (const kind of FILE_ONLY_MUXING_KINDS) {
+			expect(codes([audioFile(kind)]), kind).toContain(
+				"PLAN_HLS_PARTIAL_MUXED_LADDER",
+			);
+		}
+		// A real standalone audio container is what does silence it.
+		expect(codes([fmp4("amux", "a", "x/audio")])).not.toContain(
+			"PLAN_HLS_PARTIAL_MUXED_LADDER",
+		);
 	});
 
 	it("a file is not something an HLS manifest can be made of", () => {
@@ -597,15 +687,7 @@ describe("validation rails", () => {
 			expect(issue?.message, kind).not.toContain("manifest references");
 		}
 		expect(
-			multiple({
-				key: "file",
-				kind: "TS",
-				streamKey: "v",
-				additionalStreamKeys: ["a", "a2"],
-				segmentLength: 4,
-				segmentNaming: "seg_%number%.ts",
-				destination: { outputKey: "out", path: "files" },
-			}),
+			multiple({ ...tsLeg, additionalStreamKeys: ["a", "a2"] }),
 		).toMatchObject({ level: "error" });
 	});
 });

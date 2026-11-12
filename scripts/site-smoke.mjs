@@ -403,7 +403,7 @@ async function runLocale(locale, copy) {
 		`PASS (${locale}): VOD form creates a browser-local job; detail survives reload.`,
 	);
 
-	// The file-export flow is the same wizard on five steps. The demo opens the flow
+	// The file-export flow is the same wizard on six steps. The demo opens the flow
 	// the URL names and, without one, the flow last chosen in this browser.
 	const stepCount = (expected) =>
 		page.waitForFunction(
@@ -415,7 +415,7 @@ async function runLocale(locale, copy) {
 	const chooseFlow = (flow) =>
 		page.locator(`a[href="#/demo/vod/new?flow=${flow}"]`).click();
 	await visit("/vod/new?flow=file");
-	await stepCount(5);
+	await stepCount(6);
 	await page.locator("#wz-name").fill(copy.vodName);
 	await step(/^3\. /);
 	assert.equal(await page.locator("#wz-file-0-kind").inputValue(), "MP4");
@@ -429,12 +429,17 @@ async function runLocale(locale, copy) {
 		await page.locator("#wz-file-0-name").inputValue(),
 		`${copy.vodName}.ts`,
 	);
+	// The fifth step is the wizard's Encoding step: AI Scene Analysis is there, and
+	// the Per-Title configuration, which acts on the ladder, is not.
+	await step(/^5\. /);
+	await page.locator("#wz-ai-enable").waitFor({ state: "attached" });
+	assert.equal(await page.locator("#wz-pt-h264-enable").count(), 0);
 	await chooseFlow("streaming");
 	await stepCount(8);
 	await chooseFlow("file");
-	await stepCount(5);
+	await stepCount(6);
 	await visit("/vod/new");
-	await stepCount(5);
+	await stepCount(6);
 	// Leave this browser on the flow the rest of the run was written for. Eight
 	// steps with no flow in the URL is the choice replacing the one remembered
 	// before it, and not the flow a first visit opens.
@@ -443,7 +448,7 @@ async function runLocale(locale, copy) {
 	await visit("/vod/new");
 	await stepCount(8);
 	console.log(
-		`PASS (${locale}): the file-export flow opens on five steps and the chosen flow is remembered.`,
+		`PASS (${locale}): the file-export flow opens on six steps and the chosen flow is remembered.`,
 	);
 
 	await visit("/live/new");

@@ -22,6 +22,7 @@ import {
 	FILE_OUTPUT_FIELD_HOME,
 	type FileOutputBlocker,
 	fileAudioCodecs,
+	fileJobWrites,
 	fileOutputBlockers,
 	isFileOutputState,
 	removeFile,
@@ -517,7 +518,26 @@ describe("what the simple view cannot show", () => {
 			},
 			["manifests"],
 		],
-		["an encoding option", { labels: ["team-a"] }, ["encoding"]],
+		[
+			"a Per-Title configuration",
+			{ startOptions: { perTitle: { h264: { minBitrate: 500_000 } } } },
+			["perTitle"],
+		],
+		[
+			"a quality gate that holds the manifests back",
+			{
+				qc: {
+					vmaf: true,
+					psnr: false,
+					model: "vmaf_v0.6.1",
+					gate: {
+						rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+						onFail: "BLOCK_MANIFESTS",
+					},
+				},
+			},
+			["qualityGate"],
+		],
 		[
 			"a thumbnail",
 			{
@@ -696,37 +716,6 @@ describe("every field of a step the simple view hides", () => {
 			},
 			"packaging",
 		],
-		labels: [{ labels: ["team-a"] }, "encoding"],
-		infrastructure: [
-			{
-				infrastructure: {
-					infrastructureId: "infrastructure",
-					cloudRegion: "AWS_EU_WEST_1",
-				},
-			},
-			"encoding",
-		],
-		prewarmedEncoderPoolIds: [
-			{ prewarmedEncoderPoolIds: ["pool"] },
-			"encoding",
-		],
-		startOptions: [
-			{ startOptions: { handleVariableInputFps: true } },
-			"encoding",
-		],
-		qc: [{ qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" } }, "encoding"],
-		kantar: [
-			{
-				kantar: {
-					credentialId,
-					channelName: "channel",
-					contentReference: "reference",
-					serverUrl: "https://kantar.example",
-					reportPath: "kantar",
-				},
-			},
-			"encoding",
-		],
 		manifests: [{ manifests: { hls: true, dash: false } }, "manifests"],
 		// Only while there is a manifest to generate.
 		timing: [
@@ -758,10 +747,6 @@ describe("every field of a step the simple view hides", () => {
 
 	it.each([
 		[
-			"a quality check with both measures unticked",
-			{ qc: { vmaf: false, psnr: false, model: "vmaf_v0.6.1" } },
-		],
-		[
 			"the options of a manifest that is switched off",
 			{
 				manifests: {
@@ -783,6 +768,318 @@ describe("every field of a step the simple view hides", () => {
 		expect(planOf(left)).toEqual(planOf(started));
 		expect(fileOutputBlockers(left)).toEqual([]);
 		expect(collapseToFileOutput(left)).toEqual(started);
+	});
+});
+
+describe("the Encoding step, which the simple view shows", () => {
+	const credentialId = "00000000-0000-4000-8000-000000000003";
+	// For each field the step edits, a job that uses it.
+	const inUse = {
+		labels: { labels: ["team-a"] },
+		infrastructure: {
+			infrastructure: {
+				infrastructureId: "infrastructure",
+				cloudRegion: "AWS_EU_WEST_1",
+			},
+			// The step sets this with it.
+			cloudRegion: "EXTERNAL",
+		},
+		prewarmedEncoderPoolIds: { prewarmedEncoderPoolIds: ["pool"] },
+		startOptions: {
+			startOptions: {
+				handleVariableInputFps: true,
+				aiSceneAnalysis: { filename: "analysis.json", path: "" },
+			},
+		},
+		qc: { qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" } },
+		kantar: {
+			kantar: {
+				credentialId,
+				licenseId: 1,
+				channelName: "channel",
+				contentReference: "reference",
+				serverUrl: "https://kantar.example",
+				reportPath: "kantar",
+			},
+		},
+	} satisfies Partial<Record<keyof WizardState, Partial<WizardState>>>;
+
+	it.each(
+		Object.entries(inUse),
+	)("%s in use is in the plan, does not hold the full view, and stays on the way back", (field, patch) => {
+		const used: WizardState = { ...started, ...patch };
+		expect(FILE_OUTPUT_FIELD_HOME[field as keyof WizardState]).toBe("shown");
+		expect(planOf(used)).not.toEqual(planOf(started));
+		expect(errorsOf(used)).toEqual([]);
+		expect(fileOutputBlockers(used)).toEqual([]);
+		expect(collapseToFileOutput(used)).toEqual(used);
+	});
+
+	it("keeps a quality check with both measures unticked: its own controls are there", () => {
+		const left: WizardState = {
+			...started,
+			qc: { vmaf: false, psnr: false, model: "vmaf_v0.6.1" },
+		};
+		expect(planOf(left)).toEqual(planOf(started));
+		expect(fileOutputBlockers(left)).toEqual([]);
+		expect(collapseToFileOutput(left).qc).toEqual(left.qc);
+	});
+});
+
+describe("the Per-Title configuration, which the simple view's Encoding step leaves out", () => {
+	const shown = { handleVariableInputFps: true };
+
+	it("holds the full view while it is set, beside the options the step shows", () => {
+		const set: WizardState = {
+			...started,
+			startOptions: { ...shown, perTitle: { h264: { minBitrate: 500_000 } } },
+		};
+		expect(planOf(set).perTitle).toEqual({
+			h264Configuration: { minBitrate: 500_000 },
+		});
+		expect(fileOutputBlockers(set)).toEqual(["perTitle"]);
+		expect(fileOutputBlockers({ ...set, startOptions: shown })).toEqual([]);
+	});
+
+	it("holds the full view for a codec switched on with every field left empty", () => {
+		// What ticking a codec's box makes. The plan carries the empty block.
+		const on: WizardState = {
+			...started,
+			startOptions: { perTitle: { h264: {} } },
+		};
+		expect(planOf(on).perTitle).toEqual({ h264Configuration: {} });
+		expect(fileOutputBlockers(on)).toEqual(["perTitle"]);
+	});
+
+	it("does not count a codec switched off again, and clears only that on the way back", () => {
+		// What unticking the box leaves.
+		const left: WizardState = {
+			...started,
+			startOptions: { ...shown, perTitle: { h264: undefined } },
+		};
+		expect(planOf(left)).toEqual(planOf({ ...started, startOptions: shown }));
+		expect(fileOutputBlockers(left)).toEqual([]);
+		expect(collapseToFileOutput(left).startOptions).toEqual(shown);
+	});
+
+	it("leaves the start options as the flow starts them when it was the only one", () => {
+		const left: WizardState = {
+			...started,
+			startOptions: { perTitle: { h264: undefined } },
+		};
+		expect(fileOutputBlockers(left)).toEqual([]);
+		expect("startOptions" in collapseToFileOutput(left)).toBe(false);
+		expect("startOptions" in FILE_OUTPUT_DEFAULT_STATE).toBe(false);
+	});
+
+	it("leaves start options alone that hold no Per-Title configuration", () => {
+		const options = { encodingMode: undefined };
+		const left: WizardState = { ...started, startOptions: options };
+		expect(collapseToFileOutput(left).startOptions).toBe(options);
+	});
+});
+
+describe("a quality gate, which in the simple view records its verdict and no more", () => {
+	const rules = [
+		{ metric: "VMAF_MEAN" as const, scope: "OVERALL" as const, gte: 80 },
+	];
+	const gated = (
+		onFail: "MARK_ONLY" | "BLOCK_MANIFESTS",
+		vmaf = true,
+	): WizardState => ({
+		...started,
+		qc: { vmaf, psnr: false, model: "vmaf_v0.6.1", gate: { rules, onFail } },
+	});
+
+	it("is shown there while it only marks the job", () => {
+		expect(planOf(gated("MARK_ONLY")).qc?.gate).toEqual({
+			rules,
+			onFail: "MARK_ONLY",
+		});
+		expect(errorsOf(gated("MARK_ONLY"))).toEqual([]);
+		expect(fileOutputBlockers(gated("MARK_ONLY"))).toEqual([]);
+		expect(collapseToFileOutput(gated("MARK_ONLY"))).toEqual(
+			gated("MARK_ONLY"),
+		);
+	});
+
+	it("holds the full view while it holds the manifests back", () => {
+		// Refused as the job stands: the remedy is a setting of the Manifests step.
+		expect(
+			errorsOf(gated("BLOCK_MANIFESTS")).map((issue) => issue.code),
+		).toEqual(["PLAN_QC_GATE_BLOCK_JIT"]);
+		expect(fileOutputBlockers(gated("BLOCK_MANIFESTS"))).toEqual([
+			"qualityGate",
+		]);
+		// Accepted with that setting, and still not something the simple view shows.
+		const after: WizardState = {
+			...gated("BLOCK_MANIFESTS"),
+			timing: "POST_ENCODING",
+		};
+		expect(errorsOf(after)).toEqual([]);
+		expect(fileOutputBlockers(after)).toEqual(["qualityGate"]);
+	});
+
+	it("goes back to marking on the way back, when no measure is ticked to act on it", () => {
+		const idle = gated("BLOCK_MANIFESTS", false);
+		expect(planOf(idle)).toEqual(planOf(started));
+		expect(fileOutputBlockers(idle)).toEqual([]);
+		const back = collapseToFileOutput(idle);
+		expect(back.qc).toEqual(gated("MARK_ONLY", false).qc);
+		// Ticking a measure in the simple view brings back a gate that can be met.
+		expect(errorsOf({ ...back, qc: gated("MARK_ONLY").qc })).toEqual([]);
+	});
+});
+
+describe("a job that only measures", () => {
+	const measuring: WizardState = {
+		...started,
+		qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1", only: true },
+	};
+
+	it("builds a plan of the video alone, with nothing left to carry", () => {
+		// The file carries the audio track, and the plan leaves that track out.
+		expect(filesOf(started)[0]?.streams).toEqual(["v1080", "a192"]);
+		expect(planOf(measuring).renditions.map((item) => item.key)).toEqual([
+			"v1080",
+		]);
+		expect(filesOf(measuring)[0]?.streams).toEqual(["v1080"]);
+		expect(errorsOf(measuring)).toEqual([]);
+		expect(fileOutputBlockers(measuring)).toEqual([]);
+	});
+
+	// "VMAF only" keeps what it holds back, and the simple view can untick it.
+	it.each([
+		["a manifest", { manifests: { hls: true, dash: false } }, "manifests"],
+		[
+			"a thumbnail",
+			{
+				thumbnails: [
+					{ key: "thumb", streamKey: "v1080", height: 320, positions: [10] },
+				],
+			},
+			"packaging",
+		],
+		["a subtitle", { subtitles: [{ source: "captions" }] }, "ladder"],
+	] satisfies [
+		string,
+		Partial<WizardState>,
+		FileOutputBlocker,
+	][])("%s it holds back still holds the full view", (_case, patch, step) => {
+		const held: WizardState = { ...measuring, ...patch };
+		// Not in the plan as it stands...
+		expect(JSON.stringify(buildPlan(held))).toBe(
+			JSON.stringify(buildPlan(measuring)),
+		);
+		// ...and in it the moment the option is unticked.
+		const unticked = { vmaf: true, psnr: false, model: "vmaf_v0.6.1" };
+		const lifted: WizardState = { ...held, qc: unticked };
+		expect(JSON.stringify(buildPlan(lifted))).not.toBe(
+			JSON.stringify(buildPlan({ ...measuring, qc: unticked })),
+		);
+		expect(fileOutputBlockers(held)).toEqual([step]);
+		expect(fileOutputBlockers(lifted)).toEqual([step]);
+	});
+});
+
+describe("what the Review step lists", () => {
+	const writes = (state: WizardState) =>
+		fileJobWrites(planOf(state), state.output.bucket).map(
+			(item) => `${item.kind} ${item.path}`,
+		);
+
+	it("lists each file by where it lands", () => {
+		const two = apply(started, addFile(started));
+		expect(writes(started)).toEqual(["file out/exports/clip.mp4"]);
+		expect(writes(two)).toEqual([
+			"file out/exports/clip.mp4",
+			"file out/exports/clip-540p.mp4",
+		]);
+	});
+
+	it("adds the result of AI Scene Analysis, in the folder or below it", () => {
+		const analysed = (path: string): WizardState => ({
+			...started,
+			startOptions: { aiSceneAnalysis: { filename: "analysis.json", path } },
+		});
+		expect(writes(analysed(""))).toEqual([
+			"file out/exports/clip.mp4",
+			"analysis out/exports/analysis.json",
+		]);
+		expect(writes(analysed("ai"))).toEqual([
+			"file out/exports/clip.mp4",
+			"analysis out/exports/ai/analysis.json",
+		]);
+	});
+
+	it("adds one folder for the copies a quality check measures, however many files", () => {
+		const two = apply(started, addFile(started));
+		const measured: WizardState = {
+			...two,
+			qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
+		};
+		expect(writes(measured)).toEqual([
+			"file out/exports/clip.mp4",
+			"file out/exports/clip-540p.mp4",
+			"qcMirror out/exports/qc/",
+		]);
+	});
+
+	it("lists no file for a job that only measures, and no analysis", () => {
+		const measuring: WizardState = {
+			...started,
+			startOptions: {
+				aiSceneAnalysis: { filename: "analysis.json", path: "" },
+			},
+			qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1", only: true },
+		};
+		expect(planOf(measuring).muxings).toHaveLength(1);
+		expect(writes(measuring)).toEqual(["qcMirror out/exports/qc/"]);
+	});
+
+	it("adds the folder of the Kantar report", () => {
+		const marked: WizardState = {
+			...started,
+			kantar: {
+				credentialId: "00000000-0000-4000-8000-000000000003",
+				licenseId: 1,
+				channelName: "channel",
+				contentReference: "reference",
+				serverUrl: "https://kantar.example",
+				reportPath: "kantar",
+			},
+		};
+		expect(writes(marked)).toEqual([
+			"file out/exports/clip.mp4",
+			"kantarReport out/exports/kantar/",
+		]);
+	});
+
+	it("names no bucket where the storage has none", () => {
+		const plan = planOf({
+			...started,
+			qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
+		});
+		expect(fileJobWrites(plan, "").map((item) => item.path)).toEqual([
+			"exports/clip.mp4",
+			"exports/qc/",
+		]);
+	});
+
+	it("gives every entry a key of its own", () => {
+		const two = apply(started, addFile(started));
+		const all = fileJobWrites(
+			planOf({
+				...two,
+				startOptions: {
+					aiSceneAnalysis: { filename: "analysis.json", path: "" },
+				},
+				qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
+			}),
+			"out",
+		);
+		expect(all).toHaveLength(4);
+		expect(new Set(all.map((item) => item.key)).size).toBe(4);
 	});
 });
 

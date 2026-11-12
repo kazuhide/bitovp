@@ -45,7 +45,9 @@ import {
 import {
 	collapseToFileOutput,
 	FILE_OUTPUT_DEFAULT_STATE,
+	type FileJobWrite,
 	type FileOutputBlocker,
+	fileJobWrites,
 	fileOutputBlockers,
 	renameFileJob,
 } from "./file-output";
@@ -92,6 +94,7 @@ import {
 	EncodingOptionsSection,
 	LadderSection,
 	ManifestSection,
+	measureOnlyLabel,
 } from "./wizard-sections";
 
 const STEPS: MessageKey[] = [
@@ -108,23 +111,33 @@ const ALL_STEPS = STEPS.map((label, step) => ({ step, label }));
 
 /**
  * The file-output flow's short view. Step numbers stay the full wizard's, so moving
- * between the two views never renumbers a draft: the four steps that describe a
- * streaming package are left out, and two are named for what they hold here.
+ * between the two views never renumbers a draft: the two steps that describe a
+ * streaming package are left out (Packaging, Manifests), two are named for what
+ * they hold here, and Encoding follows the destination as it does in the full view.
  */
 const FILE_STEPS: { step: number; label: MessageKey }[] = [
 	{ step: 0, label: "wizard.basics" },
 	{ step: 1, label: "wizard.sources" },
 	{ step: 2, label: "vodFlow.stepFormat" },
 	{ step: 3, label: "vodFlow.stepDestination" },
+	{ step: 5, label: "wizard.encoding" },
 	{ step: 7, label: "wizard.review" },
 ];
 const FILE_FORMAT_STEP = 2;
 
+/** What the Review step calls a write that is not one of the files. */
+const WRITE_LABEL: Record<Exclude<FileJobWrite["kind"], "file">, MessageKey> = {
+	analysis: "vodFlow.reviewAnalysis",
+	qcMirror: "vodFlow.reviewQcMirrors",
+	kantarReport: "vodFlow.reviewKantarReport",
+};
 const BLOCKER_STEP: Record<FileOutputBlocker, MessageKey> = {
 	basics: "wizard.basics",
 	ladder: "wizard.ladder",
 	packaging: "wizard.packaging",
-	encoding: "wizard.encoding",
+	// The simple view has the Encoding step too, so what it holds back is named.
+	perTitle: "vodFlow.blockerPerTitle",
+	qualityGate: "vodFlow.blockerQualityGate",
 	manifests: "wizard.manifests",
 };
 
@@ -1346,7 +1359,18 @@ export function VodWizard({
 					) : null}
 
 					{step === 2 && simple ? (
-						<FileOutputSection state={state} onPatch={patch} />
+						<>
+							{/* The files stay editable: their height, bitrate and codec
+							    are what gets measured. */}
+							{qcOnly ? (
+								<p className="rounded-md border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-amber-200/90 text-xs">
+									{t("vodFlow.measureOnlyFormatNote", {
+										option: t(measureOnlyLabel(state.qc, simple)),
+									})}
+								</p>
+							) : null}
+							<FileOutputSection state={state} onPatch={patch} />
+						</>
 					) : null}
 
 					{step === 2 && !simple ? (
@@ -1378,6 +1402,7 @@ export function VodWizard({
 							state={state}
 							onPatch={patch}
 							credentials={allCredentials}
+							fileView={simple}
 						/>
 					) : null}
 
@@ -1631,8 +1656,9 @@ export function VodWizard({
 							<p className="text-sm text-zinc-400">
 								{t("wizard.reviewThePlanOnTheRightThe")}
 							</p>
-							{/* Shown while these files are all the job writes. A hidden
-							    step in use can add outputs of its own (encrypted copies,
+							{/* Shown while this list is all the job writes: the files,
+							    and what the Encoding step adds to them. A hidden step in
+							    use can add outputs of its own (encrypted copies,
 							    thumbnails, an audio file), and the plan beside this step
 							    lists those. */}
 							{fileFlow && blockers.length === 0 && evaluation.ok ? (
@@ -1640,24 +1666,25 @@ export function VodWizard({
 									<h2 className="font-medium text-sm text-zinc-200">
 										{t("vodFlow.reviewFiles")}
 									</h2>
+									{evaluation.plan.qc?.only ? (
+										<p className="mt-1 text-amber-400 text-xs">
+											{t("vodFlow.reviewMeasureOnly", {
+												option: t(measureOnlyLabel(state.qc, simple)),
+											})}
+										</p>
+									) : null}
 									<ul className="mt-1 space-y-1 break-all font-mono text-xs text-zinc-300">
-										{evaluation.plan.muxings.flatMap((muxing) =>
-											"filename" in muxing &&
-											muxing.filename &&
-											muxing.destination
-												? [
-														<li key={muxing.key}>
-															{[
-																state.output.bucket,
-																// The path is a folder, with or without its slash.
-																muxing.destination.path.replace(/\/+$/, ""),
-																muxing.filename,
-															]
-																.filter(Boolean)
-																.join("/")}
-														</li>,
-													]
-												: [],
+										{fileJobWrites(evaluation.plan, state.output.bucket).map(
+											(item) => (
+												<li key={item.key}>
+													{item.path}
+													{item.kind === "file" ? null : (
+														<span className="ml-2 font-sans text-zinc-500">
+															{t(WRITE_LABEL[item.kind])}
+														</span>
+													)}
+												</li>
+											),
 										)}
 									</ul>
 								</div>

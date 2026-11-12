@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
 import { VOD_FLOW_COOKIE } from "@/lib/vod-flow";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
 import { renderWithQuery } from "@/test/render";
@@ -15,7 +16,7 @@ import { VodWizard } from "./wizard";
 /**
  * The file-output flow, mounted: the same wizard and the same state, opened on a
  * short view. What these check is the part no pure test can — that the view shows
- * five steps, that the full steps stay reachable without changing the job, and that
+ * six steps, that the full steps stay reachable without changing the job, and that
  * a setting the short view cannot show keeps the wizard in the full one.
  */
 
@@ -118,10 +119,24 @@ function steps() {
 		.map((button) => button.textContent);
 }
 
-async function restore(state: WizardState, step = 0) {
+/** `qcVmaf` is the deployment's switch for the quality check, off unless asked for. */
+async function restore(state: WizardState, step = 0, qcVmaf = false) {
 	writeWizardDraft(fileDraft, "vod", state, step);
-	renderWithQuery(<VodWizard flow="file" />);
+	renderWithQuery(
+		qcVmaf ? (
+			<FeatureFlagsProvider flags={{ qcVmaf }}>
+				<VodWizard flow="file" />
+			</FeatureFlagsProvider>
+		) : (
+			<VodWizard flow="file" />
+		),
+	);
 	await userEvent.click(await screen.findByRole("button", { name: "Restore" }));
+}
+
+/** The entry of the Review step's list that has this path, with what it is called. */
+function written(path: string) {
+	return screen.getByText(path).textContent;
 }
 
 function planJson(): string {
@@ -155,7 +170,13 @@ beforeEach(() => {
 				? [{ id: credentialId, label: "Storage", provider: "AWS_S3" }]
 				: url === "/api/bitmovin-accounts"
 					? [{ id: accountId, label: "Account" }]
-					: [],
+					: // The Encoding step lists two things a page at a time: the
+						// account's prewarmed pools, and the profiles a quality check
+						// can run on.
+						url.startsWith("/api/infrastructure/") ||
+							url === "/api/vmaf-compute-profiles"
+						? { items: [] }
+						: [],
 	);
 });
 
@@ -163,7 +184,14 @@ describe("VodWizard — the file-output flow", () => {
 	it.each([
 		[
 			"en",
-			["1. Basics", "2. Sources", "3. Format", "4. Destination", "5. Review"],
+			[
+				"1. Basics",
+				"2. Sources",
+				"3. Format",
+				"4. Destination",
+				"5. Encoding",
+				"6. Review",
+			],
 			"Export files",
 			"File 1",
 			"File name",
@@ -171,13 +199,20 @@ describe("VodWizard — the file-output flow", () => {
 		],
 		[
 			"ja",
-			["1. 基本", "2. ソース", "3. 出力形式", "4. 保存先", "5. 確認"],
+			[
+				"1. 基本",
+				"2. ソース",
+				"3. 出力形式",
+				"4. 保存先",
+				"5. エンコーディング",
+				"6. 確認",
+			],
 			"ファイルを書き出す",
 			"ファイル 1",
 			"ファイル名",
 			"すべてのファイルに音声を入れる",
 		],
-	] as const)("opens on five steps with one MP4 that carries the audio (%s)", async (locale, labels, current, file, fileName, audio) => {
+	] as const)("opens on six steps with one MP4 that carries the audio (%s)", async (locale, labels, current, file, fileName, audio) => {
 		renderWithQuery(<VodWizard flow="file" />, locale);
 		expect(steps()).toEqual(labels);
 		expect(screen.getByRole("link", { name: current })).toHaveAttribute(
@@ -280,7 +315,7 @@ describe("VodWizard — the file-output flow", () => {
 			screen.getByText(/\[PLAN_OUTPUT_FILE_COLLISION\]/),
 		).toHaveTextContent('"exports/clip.mp4"');
 
-		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(
 			screen.getByRole("button", { name: "Start encoding" }),
 		).toBeDisabled();
@@ -376,7 +411,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(
 			screen.getAllByText(/\[PLAN_DUPLICATE_KEY\]/).length,
 		).toBeGreaterThan(0);
-		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(
 			screen.getByRole("button", { name: "Start encoding" }),
 		).toBeDisabled();
@@ -393,8 +428,8 @@ describe("VodWizard — the file-output flow", () => {
 
 	it("starts a job that writes one file into the chosen folder, with no manifest", async () => {
 		await restore(ready);
-		expect(steps()).toHaveLength(5);
-		await userEvent.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(steps()).toHaveLength(6);
+		await userEvent.click(screen.getByRole("button", { name: "6. Review" }));
 		// The folder is used as given: no subfolder named after the job.
 		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
 
@@ -440,7 +475,7 @@ describe("VodWizard — the file-output flow", () => {
 		await user.type(folder, "deliveries/2026");
 		expect(folder).toHaveValue("deliveries/2026");
 
-		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(
 			screen.getByText("synthetic/deliveries/2026/clip.mp4"),
 		).toBeInTheDocument();
@@ -455,7 +490,7 @@ describe("VodWizard — the file-output flow", () => {
 		await user.clear(
 			screen.getByLabelText(/output folder/i, { selector: "input" }),
 		);
-		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(screen.getByText("synthetic/clip.mp4")).toBeInTheDocument();
 	});
 
@@ -468,7 +503,7 @@ describe("VodWizard — the file-output flow", () => {
 			screen.getByRole("button", { name: "Pick deliveries/2026" }),
 		);
 
-		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(
 			screen.getByText("picked/deliveries/2026/clip.mp4"),
 		).toBeInTheDocument();
@@ -493,7 +528,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.ts");
 		expect(container).not.toHaveAccessibleDescription();
 
-		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(screen.getByText("synthetic/exports/clip.ts")).toBeInTheDocument();
 		const start = screen.getByRole("button", { name: "Start encoding" });
 		await waitFor(() => expect(start).toBeEnabled());
@@ -575,7 +610,7 @@ describe("VodWizard — the file-output flow", () => {
 		await user.click(
 			screen.getByRole("button", { name: "Back to simple view" }),
 		);
-		expect(steps()).toHaveLength(5);
+		expect(steps()).toHaveLength(6);
 		expect(planJson()).toBe(before);
 	});
 
@@ -728,14 +763,14 @@ describe("VodWizard — the file-output flow", () => {
 		// any step that is: the format step stands in for it.
 		await user.click(screen.getByRole("button", { name: "5. Packaging" }));
 		await user.click(back);
-		expect(steps()).toHaveLength(5);
+		expect(steps()).toHaveLength(6);
 		current("3. Format");
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
 	});
 
 	it("opens a draft saved on a step the short view leaves out on the format step", async () => {
 		await restore(ready, 4);
-		expect(steps()).toHaveLength(5);
+		expect(steps()).toHaveLength(6);
 		current("3. Format");
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
 	});
@@ -892,7 +927,7 @@ describe("VodWizard — the file-output flow", () => {
 				output: { ...DEFAULT_WIZARD_STATE.output, ...ready.output },
 			}),
 		);
-		// The ladder and its manifest are in sight, not behind five steps.
+		// The ladder and its manifest are in sight, not behind six steps.
 		expect(steps()).toHaveLength(8);
 		current("1. Basics");
 		expect(screen.getByLabelText(/job name/i)).toHaveValue("ladder");
@@ -905,15 +940,298 @@ describe("VodWizard — the file-output flow", () => {
 		);
 	});
 
-	it("opens a plan this flow built, loaded from JSON, on its five steps again", async () => {
+	it("opens a plan this flow built, loaded from JSON, on its six steps again", async () => {
 		renderWithQuery(<VodWizard flow="file" />);
 		importJson(buildPlan(ready));
-		expect(steps()).toHaveLength(5);
+		expect(steps()).toHaveLength(6);
 		expect(screen.queryByRole("link", { name: "Export files" })).toBeNull();
 		await userEvent.click(screen.getByRole("button", { name: "3. Format" }));
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
-		await userEvent.click(screen.getByRole("button", { name: "5. Review" }));
+		await userEvent.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
+	});
+
+	it("sets AI Scene Analysis in the short view's own Encoding step, and lists its result with the file", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		current("5. Encoding");
+		await user.click(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		);
+		// The step is one of the short view's own: nothing is out of sight.
+		expect(steps()).toHaveLength(6);
+
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(written("synthetic/exports/clip.mp4")).toBe(
+			"synthetic/exports/clip.mp4",
+		);
+		expect(written("synthetic/exports/analysis.json")).toBe(
+			"synthetic/exports/analysis.jsonAI Scene Analysis result",
+		);
+
+		const start = screen.getByRole("button", { name: "Start encoding" });
+		await waitFor(() => expect(start).toBeEnabled());
+		await user.click(start);
+		await waitFor(() =>
+			expect(push).toHaveBeenCalledWith(`/vod/jobs/${jobId}`),
+		);
+		const post = apiFetch.mock.calls.find(
+			([, init]) => init?.method === "POST",
+		);
+		const { plan } = JSON.parse(post?.[1].body);
+		expect(plan.aiSceneAnalysis).toEqual({
+			assetDescription: {
+				filename: "analysis.json",
+				destination: expect.objectContaining({ path: "exports/" }),
+			},
+		});
+		expect(plan.muxings).toHaveLength(1);
+		expect(plan.manifests ?? []).toEqual([]);
+	});
+
+	it("keeps a draft that uses the Encoding step on the short view, on that step", async () => {
+		await restore(
+			{
+				...ready,
+				labels: ["team-a"],
+				startOptions: {
+					aiSceneAnalysis: { filename: "analysis.json", path: "ai" },
+				},
+			},
+			5,
+		);
+		expect(steps()).toHaveLength(6);
+		current("5. Encoding");
+		expect(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		).toBeChecked();
+		await userEvent.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(written("synthetic/exports/ai/analysis.json")).toBe(
+			"synthetic/exports/ai/analysis.jsonAI Scene Analysis result",
+		);
+	});
+
+	it("names the files where the full view names the ladder, for a mode set per file", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		const mode = () => screen.getByLabelText("Encoding mode");
+		const help = async () => {
+			await user.click(
+				screen.getByRole("button", {
+					name: "Encoding mode — more information",
+				}),
+			);
+			return screen.getByRole("note").textContent;
+		};
+		// An H.264 file takes its preset's mode, so the job has none of its own.
+		expect(mode()).toBeDisabled();
+		expect(within(mode()).getAllByRole("option")[0]).toHaveTextContent(
+			"Use each file's encoding mode / preset",
+		);
+		expect(await help()).toContain(
+			"Set the encoding mode or preset of each file in the Format step.",
+		);
+
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		current("6. Encoding");
+		expect(within(mode()).getAllByRole("option")[0]).toHaveTextContent(
+			"Use ladder encoding modes / presets",
+		);
+		expect(await help()).toContain("Set encoding modes or presets in step 3.");
+	});
+
+	it("leaves the Per-Title configuration to the full view, and stays there while a codec is switched on", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		expect(screen.queryByText("Per-Title configuration")).toBeNull();
+
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		expect(screen.getByText("Per-Title configuration")).toBeInTheDocument();
+		const codec = screen.getByRole("checkbox", {
+			name: /Enable h264 per-title/i,
+		});
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+		await user.click(codec);
+		expect(back).toBeDisabled();
+		expect(back).toHaveAccessibleDescription(
+			"Settings the simple view does not show are in use in: Encoding (Per-Title configuration).",
+		);
+
+		await user.click(codec);
+		expect(back).toBeEnabled();
+		await user.click(back);
+		expect(steps()).toHaveLength(6);
+		current("5. Encoding");
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).perTitle).toBeUndefined();
+	});
+
+	it("says in Format and in Review that a job which only measures writes none of its files", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 5, true);
+		await user.click(
+			screen.getByRole("checkbox", { name: "Run VMAF QC after encoding" }),
+		);
+		// The copy that is measured is written beside the file.
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(written("synthetic/exports/clip.mp4")).toBe(
+			"synthetic/exports/clip.mp4",
+		);
+		expect(written("synthetic/exports/qc/")).toBe(
+			"synthetic/exports/qc/Copies measured for quality (folder)",
+		);
+
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		// The option is named for the files: this view has no delivery outputs.
+		expect(
+			screen.queryByRole("checkbox", {
+				name: "VMAF only (skip delivery outputs)",
+			}),
+		).toBeNull();
+		// So is its help: what is written, and where, in the words of this view.
+		const help = screen.getByRole("button", {
+			name: "VMAF only (do not write the files) — more information",
+		});
+		expect(help).toHaveAccessibleDescription(
+			/^Writes only the copies that are measured: one MP4 per file, under qc\/ in the destination folder\./,
+		);
+		expect(help).not.toHaveAccessibleDescription(/manifest|ladder|rendition/i);
+		await user.click(
+			screen.getByRole("checkbox", {
+				name: "VMAF only (do not write the files)",
+			}),
+		);
+		const told =
+			"“VMAF only (do not write the files)” is on (Encoding → Quality control). This job writes only the copies it measures, under qc/ in the destination folder: the files below are not written, and audio is left out.";
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		expect(screen.getByText(told)).toBeInTheDocument();
+		// The files stay editable: what they set is what gets measured.
+		expect(screen.getByLabelText("Height (p)")).toBeEnabled();
+
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(screen.queryByText("synthetic/exports/clip.mp4")).toBeNull();
+		expect(written("synthetic/exports/qc/")).toBe(
+			"synthetic/exports/qc/Copies measured for quality (folder)",
+		);
+		expect(
+			screen.getByText(
+				"“VMAF only (do not write the files)” is on: this job measures the video of each file and does not write the files.",
+			),
+		).toBeInTheDocument();
+		// The file carries the audio track, and such a job has no audio to carry.
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		const plan = JSON.parse(planJson());
+		expect(
+			plan.renditions.map((rendition: { key: string }) => rendition.key),
+		).toEqual(["v1080"]);
+		expect(plan.muxings[0].additionalStreamKeys).toBeUndefined();
+		expect(screen.queryByText(/\[PLAN_UNRESOLVED_REF\]/)).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Start encoding" }),
+		).toBeEnabled();
+
+		// Unticked, the job writes its file again, audio and all.
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		await user.click(
+			screen.getByRole("checkbox", {
+				name: "VMAF only (do not write the files)",
+			}),
+		);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		expect(screen.queryByText(told)).toBeNull();
+		expect(JSON.parse(planJson()).muxings[0].additionalStreamKeys).toEqual([
+			"a192",
+		]);
+	});
+
+	it("offers a quality gate that records its verdict, and leaves holding the manifests back to the full view", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 5, true);
+		await user.click(
+			screen.getByRole("checkbox", { name: "Run VMAF QC after encoding" }),
+		);
+		await user.click(screen.getByRole("button", { name: "Add gate rule" }));
+		// A job of files has no manifest to hold back, so there is nothing to choose.
+		expect(screen.queryByText("On fail")).toBeNull();
+		const hint = () =>
+			screen.getByRole("button", { name: "QC gate — more information" });
+		expect(hint()).toHaveAccessibleDescription(
+			/does not stop the files from being written/,
+		);
+		expect(hint()).not.toHaveAccessibleDescription(/BLOCK_MANIFESTS|ladder/);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).qc.gate.onFail).toBe("MARK_ONLY");
+
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		expect(screen.getByText("On fail")).toBeInTheDocument();
+		expect(hint()).toHaveAccessibleDescription(
+			/BLOCK_MANIFESTS holds manifest generation/,
+		);
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+		expect(back).toBeEnabled();
+		await user.click(
+			screen.getByRole("radio", {
+				name: "Blocks manifest generation on fail",
+			}),
+		);
+		expect(back).toBeDisabled();
+		expect(back).toHaveAccessibleDescription(
+			"Settings the simple view does not show are in use in: Encoding (a QC gate that blocks manifest generation).",
+		);
+		await user.click(
+			screen.getByRole("radio", {
+				name: "Mark-only on fail (delivery proceeds)",
+			}),
+		);
+		expect(back).toBeEnabled();
+	});
+
+	it("stays in the full view while “VMAF only” holds back a manifest set there", async () => {
+		const user = userEvent.setup();
+		// The manifest is not in the plan while the option is on, and the short
+		// view's Encoding step could untick the option.
+		await restore(
+			{
+				...ready,
+				manifests: { hls: true, dash: false },
+				qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1", only: true },
+			},
+			5,
+			true,
+		);
+		expect(steps()).toHaveLength(8);
+		current("6. Encoding");
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).manifests ?? []).toEqual([]);
+		expect(
+			screen.getByRole("button", { name: "Back to simple view" }),
+		).toHaveAccessibleDescription(
+			"Settings the simple view does not show are in use in: Manifests.",
+		);
+	});
+
+	it("says in the short view where a file gets its audio, when Kantar has none to mark", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await user.click(
+			screen.getByRole("checkbox", { name: "Include audio in every file" }),
+		);
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		await user.click(
+			screen.getByRole("checkbox", {
+				name: "Enable Kantar audio watermarking",
+			}),
+		);
+		expect(
+			screen.getByText(
+				"The files have no audio track. Turn on “Include audio in every file” in the Format step, or the job will be rejected (Kantar watermarks audio).",
+			),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/add one on the Ladder step/)).toBeNull();
 	});
 
 	it("opens a draft that sets a hidden step in the full view, and says which step", async () => {

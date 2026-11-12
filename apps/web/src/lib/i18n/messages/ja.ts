@@ -740,6 +740,27 @@ export const ja = {
 		folderHelp:
 			"ファイルはこのフォルダの直下に書き出されます。ジョブ名のサブフォルダは作成しません。",
 		reviewFiles: "このジョブが書き出すファイル",
+		reviewAnalysis: "AI シーン解析の結果",
+		reviewQcMirrors: "品質測定用のコピー（フォルダ）",
+		reviewKantarReport: "Kantar のレポート（フォルダ）",
+		reviewMeasureOnly:
+			"「{option}」が有効なため、このジョブは各ファイルの映像を測定するだけで、ファイルは書き出しません。",
+		blockerPerTitle: "エンコーディング（Per-Title の設定）",
+		blockerQualityGate:
+			"エンコーディング（マニフェスト生成を保留する QC ゲート）",
+		qcGateHint:
+			"VMAF/PSNR 測定に対するしきい値ルールです。PER_RENDITION はすべてのファイルが個別に基準を満たす必要があり、OVERALL はファイル全体の平均で判定します。不合格はジョブに記録されるだけで、ファイルの書き出しは止まりません。",
+		encodingModeFromFiles: "各ファイルのモード・プリセットを使用",
+		encodingModeFromFilesHint:
+			"モードまたはプリセットは「出力形式」でファイルごとに設定します。重複を避けるため、ジョブ全体のモードは送信しません。",
+		kantarNeedsAudio:
+			"ファイルに音声が入っていません。「出力形式」で「すべてのファイルに音声を入れる」を有効にしてください。音声がないジョブは拒否されます（Kantar は音声にウォーターマークを入れます）。",
+		vmafOnly: "VMAF のみ（ファイルを書き出さない）",
+		qcOnly: "QC のみ（ファイルを書き出さない）",
+		measureOnlyHelp:
+			"測定に使うコピーだけを書き出します。コピーはファイルごとに 1 つの MP4 で、保存先の qc/ 以下に置かれます。「出力形式」で設定したファイルは書き出されず、音声も入りません。ファイルを残さずに品質を測定するための設定です。",
+		measureOnlyFormatNote:
+			"「{option}」が有効です（エンコーディング → 品質管理）。このジョブが書き出すのは測定用のコピーだけで、保存先の qc/ 以下に置かれます。下のファイルは書き出されず、音声も入りません。",
 	},
 	shell: {
 		skipToContent: "本文へ移動",

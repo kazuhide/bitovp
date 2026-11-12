@@ -767,6 +767,26 @@ export const en = {
 		folderHelp:
 			"Files are written directly into this folder. No subfolder is added for the job.",
 		reviewFiles: "Files this job writes",
+		reviewAnalysis: "AI Scene Analysis result",
+		reviewQcMirrors: "Copies measured for quality (folder)",
+		reviewKantarReport: "Kantar report (folder)",
+		reviewMeasureOnly:
+			"“{option}” is on: this job measures the video of each file and does not write the files.",
+		blockerPerTitle: "Encoding (Per-Title configuration)",
+		blockerQualityGate: "Encoding (a QC gate that blocks manifest generation)",
+		qcGateHint:
+			"Threshold rules over the VMAF/PSNR measurement. PER_RENDITION holds every file to the bar; OVERALL judges the mean over the files. A failed rule is recorded on the job and does not stop the files from being written.",
+		encodingModeFromFiles: "Use each file's encoding mode / preset",
+		encodingModeFromFilesHint:
+			"Set the encoding mode or preset of each file in the Format step. The job-level mode is omitted to avoid conflicting settings.",
+		kantarNeedsAudio:
+			"The files have no audio track. Turn on “Include audio in every file” in the Format step, or the job will be rejected (Kantar watermarks audio).",
+		vmafOnly: "VMAF only (do not write the files)",
+		qcOnly: "QC only (do not write the files)",
+		measureOnlyHelp:
+			"Writes only the copies that are measured: one MP4 per file, under qc/ in the destination folder. The files set in the Format step are not written, and audio is left out. Use it to measure quality without keeping the files.",
+		measureOnlyFormatNote:
+			"“{option}” is on (Encoding → Quality control). This job writes only the copies it measures, under qc/ in the destination folder: the files below are not written, and audio is left out.",
 	},
 	shell: {
 		skipToContent: "Skip to content",

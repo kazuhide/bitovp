@@ -19,6 +19,7 @@ import { InfoHint } from "@/components/ui/info-hint";
 import { Input, SelectNative } from "@/components/ui/input";
 import { NewCredentialLink } from "@/components/ui/new-credential-link";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
+import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import { AisaScheduleEditor } from "./aisa-schedule";
 import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
@@ -2225,7 +2226,29 @@ type EncodingOptionsSectionProps = ManifestSectionProps & {
 	 * wizard always passes the live list.
 	 */
 	credentials?: CredentialSummaryWire[];
+	/**
+	 * The file flow's simple view. It leaves out the two settings that act on
+	 * something the view does not have: the Per-Title configuration (a rendition
+	 * enters Per-Title in the Ladder step) and what a quality gate does when it
+	 * fails (the choice is whether to hold the manifests back). It names the files
+	 * and the Format step where the full wizard names the ladder and the delivery
+	 * outputs.
+	 */
+	fileView?: boolean;
 };
+
+/**
+ * The label of the option that makes a job measure and write none of its delivery.
+ * It is named for what is measured, and the file flow's simple view names the files
+ * where the full wizard names the delivery outputs.
+ */
+export function measureOnlyLabel(
+	qc: Pick<WizardQc, "banding"> | undefined,
+	fileView: boolean,
+): MessageKey {
+	if (qc?.banding) return fileView ? "vodFlow.qcOnly" : "banding.qcOnly";
+	return fileView ? "vodFlow.vmafOnly" : "wizard.vmafOnlySkipDeliveryOutputs";
+}
 
 /**
  * Encoding start options (StartEncodingRequest): encoding mode, Per-Title
@@ -2252,6 +2275,7 @@ export function EncodingOptionsSection({
 	state,
 	onPatch,
 	credentials = [],
+	fileView = false,
 }: EncodingOptionsSectionProps) {
 	const qcVmafEnabled = useQcVmafEnabled();
 	const { t } = useT();
@@ -2353,7 +2377,9 @@ export function EncodingOptionsSection({
 				htmlFor="wz-encmode"
 				help={t(
 					usesCodecMode
-						? "wizard.encodingModeFromLadderHint"
+						? fileView
+							? "vodFlow.encodingModeFromFilesHint"
+							: "wizard.encodingModeFromLadderHint"
 						: "wizard.startencodingrequestEncodingmodeEmptyApiDefa",
 				)}
 			>
@@ -2373,7 +2399,9 @@ export function EncodingOptionsSection({
 					<option value="">
 						{t(
 							usesCodecMode
-								? "wizard.encodingModeFromLadder"
+								? fileView
+									? "vodFlow.encodingModeFromFiles"
+									: "wizard.encodingModeFromLadder"
 								: "wizard.default",
 						)}
 					</option>
@@ -2513,27 +2541,29 @@ export function EncodingOptionsSection({
 					</Field>
 				</Collapsible>
 			</Collapsible>
-			<Collapsible
-				summary={t("wizard.perTitleConfiguration")}
-				help={t("wizard.startRequestPertitleBlocksPairThemWith")}
-			>
-				{(["h264", "h265", "vp9", "av1"] as const).map((codec) => (
-					<PerTitleCodecEditor
-						key={codec}
-						codec={codec}
-						hevcV2={
-							codec === "h265" &&
-							state.videos.some((video) => video.codec === "H265V2")
-						}
-						value={startOptions.perTitle?.[codec]}
-						onChange={(next) =>
-							patchStart({
-								perTitle: { ...startOptions.perTitle, [codec]: next },
-							})
-						}
-					/>
-				))}
-			</Collapsible>
+			{fileView ? null : (
+				<Collapsible
+					summary={t("wizard.perTitleConfiguration")}
+					help={t("wizard.startRequestPertitleBlocksPairThemWith")}
+				>
+					{(["h264", "h265", "vp9", "av1"] as const).map((codec) => (
+						<PerTitleCodecEditor
+							key={codec}
+							codec={codec}
+							hevcV2={
+								codec === "h265" &&
+								state.videos.some((video) => video.codec === "H265V2")
+							}
+							value={startOptions.perTitle?.[codec]}
+							onChange={(next) =>
+								patchStart({
+									perTitle: { ...startOptions.perTitle, [codec]: next },
+								})
+							}
+						/>
+					))}
+				</Collapsible>
+			)}
 			<Collapsible
 				summary={
 					t("wizardX.aiSceneAnalysis") +
@@ -2866,15 +2896,21 @@ export function EncodingOptionsSection({
 										checked={qc.only ?? false}
 										onChange={(e) => patchQc({ only: e.target.checked })}
 									/>
-									{t(
-										qc.banding
-											? "banding.qcOnly"
-											: "wizard.vmafOnlySkipDeliveryOutputs",
-									)}
+									{t(measureOnlyLabel(qc, fileView))}
 								</label>
 								<InfoHint
-									label={t("wizard.vmafOnlySkipDeliveryOutputsMoreInformation")}
-									text={t("wizard.producesOnlyThePerVideoQcMirror")}
+									label={
+										fileView
+											? t("uiX.moreInformationFor", {
+													label: t(measureOnlyLabel(qc, fileView)),
+												})
+											: t("wizard.vmafOnlySkipDeliveryOutputsMoreInformation")
+									}
+									text={t(
+										fileView
+											? "vodFlow.measureOnlyHelp"
+											: "wizard.producesOnlyThePerVideoQcMirror",
+									)}
 								/>
 							</div>
 							{/* QC gate editor : threshold rules that turn
@@ -2887,7 +2923,9 @@ export function EncodingOptionsSection({
 									</span>
 									<InfoHint
 										label={t("wizardX.qcGateHintMoreInformation")}
-										text={t("wizardX.qcGateHint")}
+										text={t(
+											fileView ? "vodFlow.qcGateHint" : "wizardX.qcGateHint",
+										)}
 									/>
 								</div>
 								{gateRules.map((rule, index) => (
@@ -3126,7 +3164,7 @@ export function EncodingOptionsSection({
 										{t("banding.gateHint")}
 									</p>
 								) : null}
-								{gateRules.length > 0 ? (
+								{gateRules.length > 0 && !fileView ? (
 									<div className="space-y-1">
 										<span className="text-xs text-zinc-400">
 											{t("wizardX.qcGateOnFail")}
@@ -3196,7 +3234,11 @@ export function EncodingOptionsSection({
 					<div className="space-y-3">
 						{state.audios.length === 0 ? (
 							<p className="text-amber-400 text-xs">
-								{t("wizard.thisPlanHasNoAudioRenditionAdd")}
+								{t(
+									fileView
+										? "vodFlow.kantarNeedsAudio"
+										: "wizard.thisPlanHasNoAudioRenditionAdd",
+								)}
 							</p>
 						) : null}
 						<Field

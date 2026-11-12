@@ -1,4 +1,9 @@
-import { MUXING_CODEC_MATRIX, UNMEASURED_MUXING_KINDS } from "@bitovp/core";
+import {
+	type EncodingPlan,
+	MUXING_CODEC_MATRIX,
+	storageSummaries,
+	UNMEASURED_MUXING_KINDS,
+} from "@bitovp/core";
 import { draftKeepsText } from "@/lib/wizard-draft";
 import {
 	audioKeys,
@@ -19,8 +24,8 @@ import {
  *
  * This is not a second model. The flow edits the `WizardState` the full wizard edits and
  * `buildPlan` reads. What lives here is the state the flow starts from, the edits its one
- * format screen makes, and the test for whether a state can be shown on that screen
- * without leaving a setting out of sight.
+ * format screen makes, the test for whether a state can be shown in the flow's short
+ * view without leaving a setting out of sight, and the list of what such a job writes.
  */
 
 export type FileContainer = {
@@ -457,14 +462,17 @@ export function editFileAudio(
 }
 
 /**
- * Where a setting lives that the simple view does not show. `basics` is a shown step
- * with one control held back; the rest are the steps the view leaves out.
+ * Where a setting lives that the simple view does not show, in wizard order.
+ * `basics` is a shown step with one control held back. `perTitle` and `qualityGate`
+ * are the two settings held back from the Encoding step, which is shown too
+ * (`HELD_BACK`). The rest are the steps the view leaves out.
  */
 export const FILE_OUTPUT_BLOCKERS = [
 	"basics",
 	"ladder",
 	"packaging",
-	"encoding",
+	"perTitle",
+	"qualityGate",
 	"manifests",
 ] as const;
 export type FileOutputBlocker = (typeof FILE_OUTPUT_BLOCKERS)[number];
@@ -500,12 +508,13 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	drm: "packaging",
 	thumbnails: "packaging",
 	sprites: "packaging",
-	labels: "encoding",
-	infrastructure: "encoding",
-	prewarmedEncoderPoolIds: "encoding",
-	startOptions: "encoding",
-	qc: "encoding",
-	kantar: "encoding",
+	labels: "shown",
+	infrastructure: "shown",
+	prewarmedEncoderPoolIds: "shown",
+	kantar: "shown",
+	// Shown but for one setting each, judged apart (`HELD_BACK`).
+	startOptions: "shown",
+	qc: "shown",
 	manifests: "manifests",
 	timing: "manifests",
 };
@@ -552,8 +561,8 @@ function planText(state: WizardState): string | undefined {
 /**
  * Of the fields a hidden step has set, the ones the job would be different without.
  * The full view's editors can leave a value behind that does nothing: the options of
- * a manifest that was switched off again, a quality check with both measures
- * unticked. That is not a setting in use, and it goes when the view is left
+ * a manifest that was switched off again, the bookkeeping of a filter that was
+ * removed. That is not a setting in use, and it goes when the view is left
  * (`collapseToFileOutput`).
  */
 function fieldsInUse(state: WizardState): (keyof WizardState)[] {
@@ -567,6 +576,84 @@ function fieldsInUse(state: WizardState): (keyof WizardState)[] {
 	const alone = set.filter((key) => planText(reset(state, [key])) !== plan);
 	// They matter together though none does alone: every one of them is named.
 	return alone.length > 0 ? alone : set;
+}
+
+/**
+ * The state as it is once "VMAF only" is unticked. That option holds back what the
+ * job would otherwise write (a manifest, a thumbnail, a subtitle) and keeps the
+ * setting, and the simple view's Encoding step can untick it. So a hidden setting it
+ * holds back is in use all the same: it is one click from the plan.
+ */
+function unsuspended(state: WizardState): WizardState {
+	return state.qc?.only ? { ...state, qc: without(state.qc, ["only"]) } : state;
+}
+
+type HeldBack = {
+	/** Switched on, whatever it then holds. */
+	set: (state: WizardState) => boolean;
+	/** The state without it. */
+	strip: (state: WizardState) => WizardState;
+};
+
+/**
+ * The two settings the simple view's Encoding step holds back. Each acts on
+ * something the view does not have, so there it would be a control with nothing to
+ * act on.
+ */
+const HELD_BACK: Record<"perTitle" | "qualityGate", HeldBack> = {
+	// The Per-Title configuration. A rendition enters Per-Title in the Ladder step.
+	// A codec switched on with every field left empty is a configuration too: the
+	// plan carries it, and it is switched off where it was switched on.
+	perTitle: {
+		set: (state) =>
+			Object.values(state.startOptions?.perTitle ?? {}).some(
+				(codec) => codec !== undefined,
+			),
+		strip: (state) => {
+			const options = state.startOptions;
+			if (!options || !("perTitle" in options)) return state;
+			const next: WizardState = {
+				...state,
+				startOptions: without(options, ["perTitle"]),
+			};
+			// Nothing else is set: the field is as the flow starts it.
+			if (isBlank(next.startOptions)) delete next.startOptions;
+			return next;
+		},
+	},
+	// A quality gate that holds the manifests back when it fails. Without a manifest
+	// to hold back it is refused unless a setting of the Manifests step says when
+	// they are generated, so here a gate records its verdict and no more.
+	qualityGate: {
+		set: (state) => state.qc?.gate?.onFail === "BLOCK_MANIFESTS",
+		strip: (state) => {
+			const gate = state.qc?.gate;
+			return state.qc && gate?.onFail === "BLOCK_MANIFESTS"
+				? {
+						...state,
+						qc: { ...state.qc, gate: { ...gate, onFail: "MARK_ONLY" } },
+					}
+				: state;
+		},
+	},
+};
+
+/** As `fieldsInUse`, for a setting held back: set, and the job differs without it. */
+function heldBackInUse(state: WizardState): (keyof typeof HELD_BACK)[] {
+	const plan = planText(state);
+	return (Object.keys(HELD_BACK) as (keyof typeof HELD_BACK)[]).filter(
+		(name) =>
+			HELD_BACK[name].set(state) &&
+			(plan === undefined || planText(HELD_BACK[name].strip(state)) !== plan),
+	);
+}
+
+/** The state with nothing left in a setting held back. */
+function stripHeldBack(state: WizardState): WizardState {
+	return Object.values(HELD_BACK).reduce(
+		(next, item) => item.strip(next),
+		state,
+	);
 }
 
 // Resource keys and the tokens that track them are bookkeeping of the full wizard's
@@ -636,10 +723,12 @@ function setsOnly(value: object | undefined, fields: readonly string[]) {
  */
 export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 	const found = new Set<FileOutputBlocker>();
-	for (const key of fieldsInUse(state)) {
+	const lifted = unsuspended(state);
+	for (const key of fieldsInUse(lifted)) {
 		const home = FILE_OUTPUT_FIELD_HOME[key];
 		if (home !== "shown") found.add(home);
 	}
+	for (const name of heldBackInUse(lifted)) found.add(name);
 	if (state.videos.length === 0 || state.audios.length > 1) found.add("ladder");
 	const audio = state.audios[0];
 	const audioKey = audio ? audioKeys(state.audios)[0] : undefined;
@@ -688,10 +777,11 @@ export function isFileOutputState(state: WizardState): boolean {
 /**
  * Return a state the full wizard edited to the form this flow's edits expect: the
  * editors' keys derived again, each file pointing at the audio track's current key,
- * and nothing left in a field the simple view does not show. Call it only on a state
- * `isFileOutputState` accepts. The files written do not change, because here every
- * file name and folder is explicit, and what is cleared from a hidden field was
- * doing nothing (`fieldsInUse`). A key a loaded plan chose stays (`chosenKey`), and
+ * and nothing left in a field or a setting the simple view does not show
+ * (`HIDDEN_FIELDS`, `HELD_BACK`). Call it only on a state `isFileOutputState`
+ * accepts. The files written do not change, because here every file name and folder
+ * is explicit, and what is cleared was doing nothing, with "VMAF only" ticked or not
+ * (`fieldsInUse`, `unsuspended`). A key a loaded plan chose stays (`chosenKey`), and
  * so does the number that kept a copy apart (`apart`).
  */
 export function collapseToFileOutput(state: WizardState): WizardState {
@@ -716,7 +806,7 @@ export function collapseToFileOutput(state: WizardState): WizardState {
 		};
 	});
 	return {
-		...reset(state, HIDDEN_FIELDS),
+		...stripHeldBack(reset(state, HIDDEN_FIELDS)),
 		audios,
 		videos: carrying(apart(videos, videoKeys(state.videos)), audios),
 	};
@@ -750,4 +840,78 @@ function apart(
 		taken.add(numbered);
 		return { ...video, extras: { ...video.extras, key: numbered } };
 	});
+}
+
+/** One thing the job leaves in storage. A `path` that ends in "/" is a folder. */
+export type FileJobWrite = {
+	kind: "file" | "analysis" | "qcMirror" | "kantarReport";
+	/** Apart from every other entry of the list, also when two paths are equal. */
+	key: string;
+	path: string;
+};
+
+/**
+ * What a file-output job writes, for the Review step: the files, unless the job only
+ * measures (`qc.only`), which writes none of them. After them, what the Encoding step
+ * adds: the result of AI Scene Analysis, the folder of the copies the quality check
+ * scores, and the folder of the Kantar report.
+ */
+export function fileJobWrites(
+	plan: EncodingPlan,
+	bucket: string,
+): FileJobWrite[] {
+	// A path is a folder, with or without its slash.
+	const at = (folder: string, name?: string) => {
+		const parts = [bucket, folder.replace(/\/+$/, "")].filter(Boolean);
+		return name === undefined
+			? `${parts.join("/")}/`
+			: [...parts, name].join("/");
+	};
+	const files = plan.qc?.only
+		? []
+		: plan.muxings.flatMap((muxing): FileJobWrite[] =>
+				"filename" in muxing && muxing.filename && muxing.destination
+					? [
+							{
+								kind: "file",
+								key: `file:${muxing.key}`,
+								path: at(muxing.destination.path, muxing.filename),
+							},
+						]
+					: [],
+			);
+	const analysis = plan.aiSceneAnalysis?.assetDescription;
+	const mirrors = new Set(
+		storageSummaries(plan).outputs.flatMap((output) =>
+			output.paths
+				.filter((item) => item.role === "qc")
+				.map((item) => item.path),
+		),
+	);
+	return [
+		...files,
+		...(analysis
+			? [
+					{
+						kind: "analysis" as const,
+						key: "analysis",
+						path: at(analysis.destination.path, analysis.filename),
+					},
+				]
+			: []),
+		...[...mirrors].map((path) => ({
+			kind: "qcMirror" as const,
+			key: `qcMirror:${path}`,
+			path: at(path),
+		})),
+		...(plan.kantar
+			? [
+					{
+						kind: "kantarReport" as const,
+						key: "kantarReport",
+						path: at(plan.kantar.reportDestination.path),
+					},
+				]
+			: []),
+	];
 }

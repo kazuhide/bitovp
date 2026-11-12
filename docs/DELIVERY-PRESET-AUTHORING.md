@@ -36,7 +36,7 @@ To require that a file carries its audio, constrain the streams of its muxing. A
 { "requirement": "Video and audio in one file", "path": "muxings.0.additionalStreamKeys", "expect": { "eq": ["aac"] } }
 ```
 
-Give the audio rendition a key that does not follow one of its settings. The form derives a key from the bitrate (`a320`) when the plan names none, so a row that names such a key reports a deviation as soon as the bitrate changes, even inside the range the spec allows.
+Give the audio rendition a key that does not follow one of its settings. A plan always names a key, and when it is loaded, the form keeps the key only if it differs from the one the form would derive from the bitrate (`a320` at 320 kbps). A key that equals the derived one is treated as derived: it changes with the bitrate, so a row that names it reports a deviation as soon as the bitrate changes, even inside the range the spec allows. Naming `a320` in the plan does not prevent this.
 
 A plan that writes the audio to a file of its own has no `additionalStreamKeys` on that muxing, and the unresolved path is reported as a deviation.
 

@@ -1016,11 +1016,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				};
 			}
 		}
-		// libvmaf does not score every picture size with a VMAF v1 model, and
-		// what it reports then is "Invalid argument" or a crash; a cloud run
-		// reports nothing of it. Say the limit before the run, and before a
-		// cloud resource exists for this pair. The GPU scorer is not libvmaf and
-		// holds its own limits: nothing of this applies to it.
+		// libvmaf does not score pictures that are too small for a VMAF v1
+		// model, and what FFmpeg reports then is "Invalid argument", no score at
+		// all, or a crash; a cloud run reports nothing of it. Say the limit
+		// before the run, and before a cloud resource exists for this pair. The
+		// GPU scorer is not libvmaf and holds its own limits: nothing of this
+		// applies to it.
 		const libvmafPictures =
 			execution.backend === "LOCAL" &&
 			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")

@@ -10,7 +10,8 @@
  *   does), each declared side must be from 144 to 7680, and CAMBI applies the
  *   216 to the declared size, unless that size exceeds the compared pictures
  *   on a side: then it takes the size of the pictures. FFmpeg ends with status
- *   234 and "Invalid argument".
+ *   234 and "Invalid argument", or, where libvmaf runs with worker threads and
+ *   the refusal is not that of the options' range, with status 0 and no score.
  * - SpEED takes the chroma planes, reduces them by the model's
  *   `speed_prescale` and then by 16, and needs 5 samples of the result in each
  *   direction. For smaller pictures libvmaf logs "SpEED: image too small" and
@@ -22,6 +23,12 @@
  * measurements. The numbers belong to that revision. `size-limits.ffmpeg.test.ts`
  * runs the image's FFmpeg at every edge and fails when a number no longer
  * holds.
+ *
+ * This file knows pictures that are too small, and nothing else that libvmaf
+ * refuses. CAMBI also refuses pictures whose width and height add up to more
+ * than 6092 (12092 where the encode has the pixels of 1920x1080 or more), and
+ * it can crash on pictures more than ten times as wide as high; "libvmaf and
+ * large or very wide pictures" in the same document holds both.
  */
 
 /** CAMBI: one side of the pictures, and of a declared encode, must reach this. */
@@ -105,8 +112,9 @@ const COMPARED = "The two pictures are compared at the size of the reference.";
 
 /**
  * Why libvmaf cannot score these pictures with this model: the limit and what
- * to do about it, or `undefined` when no known limit is in the way. A caller
- * asks before it starts FFmpeg and gives the answer as the measurement's error.
+ * to do about it, or `undefined` when no limit that this file knows is in the
+ * way. A caller asks before it starts FFmpeg and gives the answer as the
+ * measurement's error.
  */
 export function vmafSizeLimitMessage(
 	pictures: VmafComparedPictures,

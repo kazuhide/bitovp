@@ -2715,7 +2715,10 @@ with 8 and with 10 bits. Of the 199 runs with a v1.0.16 model, 109 ended with
 status 0, 16 with status 234 and 74 with status 139, each as the limits above
 and the three rules below say. The other 8 ran `vmaf_v0.6.1`: it scored 64x36
 and 32x18 in both methods and ended with a segmentation fault at 16x16 in both.
-That crash was not looked into.
+Test F of the next section found the edge: `vmaf_v0.6.1`, `vmaf_v0.6.1neg` and
+`vmaf_4k_v0.6.1` score pictures of 17x17, 400x17 and, the first of them, 17x400,
+1920x17 and 17x1080, and end with a segmentation fault at the same sizes with 16
+in place of 17. Why was not looked into.
 
 The three rules are for the size that the command of test B declares to CAMBI.
 `cambi.c` holds the first in the feature's options and the other two in its
@@ -2763,8 +2766,18 @@ log names each conversion. 78 runs ended with status 0 and 114 with status 139:
   formats ffprobe names `yuvj420p`, `yuvj422p` and `yuvj444p`.
 
 The first rule rests on the `scale` filter. In four runs of the graph without
-it, which the worker does not build, FFmpeg converted the reference to the
-encode's format although both formats were among the twelve.
+it, which the worker does not build, the outcome was that of the encode's layout
+although both formats were among the twelve.
+
+The statuses of this section are those of libvmaf without worker threads. The
+worker's command sets `n_threads` for a local run that has threads to give, and
+test G of 2026-11-12, 11 runs, ran the refusals with and without it. Where
+CAMBI's `init` refuses (pictures of 215x215, a declared encode of 215x215, and
+the window of the next section), FFmpeg with `n_threads=4` logs `problem
+getting pooled vmaf score`, writes no log file and ends with status 0; pictures
+of 215x215 did the same with `n_threads=1`. The refusal of a declared 143x400
+by the options keeps status 234, and SpEED's crash keeps status 139 and its
+message.
 
 What follows for bitovp:
 
@@ -2774,20 +2787,25 @@ What follows for bitovp:
   pictures end libvmaf with a segmentation fault. That describes the proof's own
   model, `vmaf_v1.0.16_3d0h`. The limits of the `5d0h` and `3d0h_2160` models
   are higher.
-- Since PR #117 the worker asks before a comparison whether libvmaf can score
-  it. A measurement that it cannot score ends with an error that names the limit
-  and what to do: use a model of the `vmaf_v0.6.1` family, or a larger
-  reference. `packages/core/src/vmaf/size-limits.ts` holds the limits of this
-  section for the eight models and for no other model. A VOD measurement asks
-  before FFmpeg starts and before a comparison goes to the cloud. It gives the
-  size of the reference, the chroma layout by the rules of test D, and in the
-  method of test B the size of the encode. A live measurement asks once, after
-  it has probed its source and before it captures anything. Where the layout is
-  not known, the check takes SpEED's limit for 4:4:4, the lowest, so that it
-  refuses nothing that libvmaf scores; when such a run then ends with SpEED's
-  message, the error names the limit instead of FFmpeg's status. The check
-  changes no command and no score. It does not apply to the GPU scorer, which is
-  not libvmaf.
+- Since PR #117 the worker asks before a comparison whether the pictures are
+  too small for the model. A measurement whose pictures are ends with an error
+  that names the limit and what to do: use a model of the `vmaf_v0.6.1` family,
+  or a larger reference. `packages/core/src/vmaf/size-limits.ts` holds the
+  limits of this section for the eight models and for no other model. A VOD
+  measurement asks before FFmpeg starts and before a comparison goes to the
+  cloud. It gives the size of the reference. In the method of test B it gives
+  4:2:0 and the size of the encode. In the method of test A it gives the
+  reference's chroma layout when the reference's pixel format is one of the
+  twelve, by the first rule of test D, and no layout otherwise. A live
+  measurement asks once, after it has probed its source and before it captures
+  anything, and gives no layout. Where the layout is not known, the check takes
+  SpEED's limit for 4:4:4, the lowest, so that it refuses nothing that libvmaf
+  scores. When a run of the worker's own FFmpeg then ends with SpEED's message,
+  the error names the limit instead of FFmpeg's status. A cloud comparison of
+  that kind still reports only that it did not finish: its failure does not
+  come back with FFmpeg's output. The check changes no command and no score. It
+  does not apply to the GPU scorer, which is not libvmaf. It knows the limits of
+  this section and not those of the next.
 - `packages/core/src/vmaf/size-limits.ffmpeg.test.ts` holds those numbers
   against these programs in the job `native-media`. It builds its commands with
   the worker's command builder and runs FFmpeg 177 times: every v1.0.16 model in
@@ -2799,6 +2817,105 @@ What follows for bitovp:
 - The copies of `cambi.c` and `speed.c` that were taken from the `master` branch
   of `Netflix/vmaf` on 2026-11-11 are byte for byte the pinned files. Both
   limits were therefore still in upstream's code on that day.
+
+### libvmaf and large or very wide pictures
+
+The review of PR #117 ran the size check against FFmpeg at sizes far from the
+edges above, and found two things that the check does not know. Tests E and F of
+2026-11-12 record them. They ran the programs, the models and the container of
+tests A to D, with 2 frames in a run.
+
+**CAMBI has an upper limit.** CAMBI works on a window of 65 samples and scales
+it in its `init` with the width plus the height: `((65 * (width + height)) /
+375) >> 4`, then made odd (`adjust_window_size` in `cambi.c`). A picture of
+3840x2160 keeps 65. `init` refuses the pictures when the square of the window
+reaches 4226 (`CAMBI_RECIPROCAL_LUT_SIZE` in `cambi.h`), which a window of 67
+does. libvmaf logs `cambi: window_size 67 too large for reciprocal LUT`, and
+FFmpeg ends with `problem during vmaf_read_pictures` and status 234. The eight
+`vmaf_v1.0.16_*` models set `cambi_high_res_speedup` to 1080. `init` then
+halves the window when the encode has the pixels of 1920x1080 or more, where the
+encode is the size that the command declares, or the pictures when it declares
+none. `init` computes one window for that size and one for the size of the
+source, which is the pictures because the worker's command declares no source,
+and takes the larger. A declared size does not exceed the pictures (see the
+rules above), so the pictures decide: their width and height may add up to 6092
+at most, and to 12092 when the window is halved.
+
+The 32 runs of test E at these edges agree. 21 used the method of test B with
+`vmaf_v1.0.16_3d0h` where the table names no model:
+
+| Pictures | Width plus height | Declared encode | Window halved | Status |
+|---|---|---|---|---|
+| 3840x2160 | 6000 | 1280x720 | no | 0 |
+| 3932x2160 | 6092 | 1280x720 | no | 0 |
+| 3933x2160 | 6093 | 1280x720 | no | 234 |
+| 4096x2160 | 6256 | 1280x720 | no | 234 |
+| 4096x2160 | 6256 | 1920x1079 | no | 234 |
+| 4096x2160 | 6256 | 1920x1080 | yes | 0 |
+| 4096x2160 | 6256 | 4096x2160 | yes | 0 |
+| 7680x4320 | 12000 | 1280x720 | no | 234 |
+| 7680x4320 | 12000 | 1920x1080 | yes | 0 |
+| 7772x4320 | 12092 | 1920x1080 | yes | 0 |
+| 7773x4320 | 12093 | 1920x1080 | yes | 234 |
+| 3932x2160, four other v1.0.16 models | 6092 | 1280x720 | no | 0 |
+| 3933x2160, the same four models | 6093 | 1280x720 | no | 234 |
+| 4096x2160, `vmaf_v0.6.1` and `vmaf_4k_v0.6.1` | 6256 | 1280x720 | no CAMBI | 0 |
+
+The other 11 runs compared pictures of the named size and declared nothing, as
+the method of test A does. 3840x2160, 4096x2160, 7680x4320 and 7772x4320 were
+scored, and 7773x4320 was refused. A picture with fewer pixels than 1920x1080
+meets the lower sum: 5876x216 and 216x5876 were scored, 5877x216 and 216x5877
+refused; 6000x345 has 2,070,000 pixels and was refused, and 6000x346 was scored.
+
+What this means for a measurement:
+
+- In the method of test A the pictures have the reference's size and the
+  command declares nothing. A reference with the pixels of 1920x1080 or more is
+  scored up to a sum of 12092, which 7680x4320 is below. A reference with fewer
+  pixels reaches the sum of 6093 only when it is more than 15 times as wide as
+  high, or as high as wide.
+- In the method of test B the pictures have the reference's display size and
+  the command declares the encode's size. A reference of 3840x2160 stays below
+  the limit with every encode. A reference of 4096x2160 or of 7680x4320 is
+  refused with every encode that has fewer pixels than 1920x1080.
+- The worker's check does not know this limit, and such a measurement fails as
+  it did before PR #117: FFmpeg ends with "Invalid argument", or with status 0
+  and no score where libvmaf runs with worker threads (test G). The models of
+  the `vmaf_v0.6.1` family have no CAMBI; two of them scored the refused case
+  of 4096x2160.
+
+**Very wide and short pictures crash now and then.** Tests E and F compared
+pictures of one size several times with `vmaf_v1.0.16_3d0h`, declaring nothing.
+Some runs ended with a segmentation fault (status 139) and no message of
+libvmaf, and the other runs of the same command gave a score:
+
+| Pictures | Runs | Segmentation faults |
+|---|---|---|
+| 5000x216 | 8 | 1 |
+| 3840x216 | 20 | 3 |
+| 2560x216 | 8 | 1 |
+| 3000x160, 2000x216, 3840x400, 216x5000 | 8 each | 0 |
+| 1920x216 | 20 | 0 |
+| 3840x2160 | 12 | 0 |
+
+The crash comes with CAMBI. `vmaf_v0.6.1` scored 3840x216 in 12 of 12 runs, and
+5000x216 in 4 of 4. With CAMBI added to it as a feature (`feature=name=cambi`)
+4 of 12 runs at 3840x216 ended with a segmentation fault; with SpEED's chroma
+feature added (`feature=name=speed_chroma`) all 12 gave a score.
+
+The review read the cause in `cambi.c`. CAMBI computes at five scales and halves
+the picture between them, rounding up: four times, and five when the window is
+halved. `calculate_c_values` takes half the window as a number of rows, and its
+last loop starts at the row `height - pad_size`. Where half the window exceeds
+the height of the smallest scale, that row is negative, and
+`calculate_c_values_row` reads its mask and writes its values before the start
+of both buffers. A picture of 2560x216 has a window of 31 and a smallest scale
+of 14 rows. By this arithmetic the zone begins at a width of 1871 for a height
+of 160, of 2554 for 216 and of 4400 for 400: at pictures more than ten times as
+wide as high. Every crash of the two tests lies in the zone and no run outside
+it crashed; 3000x160 lies in it and gave 8 scores. The worker's check does not
+know the zone: such a run fails with FFmpeg's status, and the same measurement
+may pass when it is started again.
 
 ### Other limits
 
@@ -3123,7 +3240,8 @@ What to measure again:
   in `packages/core/src/vmaf/size-limits.ffmpeg.test.ts`, which the job
   `native-media` runs: it fails when a limit has moved, and the numbers of
   `packages/core/src/vmaf/size-limits.ts` and of "libvmaf and small pictures"
-  are then taken again;
+  are then taken again. No test of the repository holds what tests E to G
+  measured ("libvmaf and large or very wide pictures");
 - the test of x264 with and without AVX-512, when x264 changes; "The VMAF means
   of the media job" names its commands. The names in `x264_cpu_names`
   (`common/cpu.c`) of the new revision are to be held against the rule for a
@@ -3139,7 +3257,7 @@ be repeated with this file and the repository, and the repository's test runs
 the edges of tests C and D. The comparison of "What was confirmed to be the
 same" and the check on a real GPU cannot: their sample files and scripts are
 kept with the research records, outside the repository, and so are the scripts
-and the result tables of tests C and D.
+and the result tables of tests C to G.
 
 ### History
 
@@ -3168,6 +3286,9 @@ and the result tables of tests C and D.
 | 2026-11-12 11:46 | | The results of small-picture test C were written |
 | 2026-11-12 12:14 | | The results of small-picture test D were written |
 | 2026-11-12 13:09 to 13:30 | `c6650ebc` | The first runs of PR #117, which names libvmaf's size limits in the worker's errors: the job `native-media` ran the test of the limits on x86-64 with the build that `main` had stored |
+| 2026-11-12 14:06 | | The results of test E, on CAMBI's upper limit and on very wide pictures, were written |
+| 2026-11-12 14:09 | | The results of test F, on the smallest pictures of the `vmaf_v0.6.1` models and on the feature that the crash on very wide pictures comes with, were written |
+| 2026-11-12 14:16 | | The results of test G, on CAMBI's refusals with libvmaf's worker threads, were written |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

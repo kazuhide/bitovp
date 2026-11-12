@@ -2634,13 +2634,16 @@ test("the FFmpeg build record holds the stages, the sources and the commands of 
 			proof.includes(line),
 			`${renew}: docker/vmaf-build-proof.sh does not hold this line: ${line}`,
 		);
-	// The script holds the lines together and in the record's order. Each line
-	// alone would also be found after the command was taken apart.
+	// The script holds the lines together and in the record's order, and they
+	// are the whole command: no line of the script continues into the first,
+	// and the last continues into none. Each line alone would also be found
+	// after the command was taken apart.
+	const at = proof.findIndex((_, index) =>
+		quote.every((line, offset) => proof[index + offset] === line),
+	);
 	assert(
-		proof.some((_, index) =>
-			quote.every((line, offset) => proof[index + offset] === line),
-		),
-		`${renew}: docker/vmaf-build-proof.sh does not hold the lines of the proof's command together and in the record's order`,
+		at !== -1 && !proof[at - 1]?.endsWith("\\") && !quote.at(-1).endsWith("\\"),
+		`${renew}: docker/vmaf-build-proof.sh does not hold the proof's command as the record shows it: whole, together and in the record's order`,
 	);
 
 	// A commit that the record names in full is one that the Dockerfile pins:

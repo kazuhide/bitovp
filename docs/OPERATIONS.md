@@ -67,6 +67,10 @@ into the digest-pinned base image and parts of which are linked into the
 programs, and the Dockerfile frontend that line 1 names. The image build fails
 unless the result has libvmaf and SRT and scores with a pinned VMAF model.
 
+[FFMPEG-BUILD.md](FFMPEG-BUILD.md) records this build: every source and
+command, what the logs of a build showed, the programs that came out, what was
+checked on them, what the build leaves out, and its known limits.
+
 To change a version:
 
 - Change the commit and the SHA-256 of its `ADD` line together. For libvmaf,
@@ -77,14 +81,20 @@ To change a version:
   `behind_by: 0`. For x264,
   `https://code.videolan.org/api/v4/projects/videolan%2Fx264/repository/commits/<commit>/refs?type=branch`
   must list the branch.
-- For FFmpeg, set `FFMPEG_VER` to what `git describe --tags` prints for the
-  commit, with the revision cut to ten characters, and `SOURCE_DATE_EPOCH` to
-  the commit's date (`git show -s --format=%ct`). The build checks only that
-  `FFMPEG_VER` ends with the revision.
+- For FFmpeg, set `FFMPEG_VER` to what
+  `git describe --tags --long --abbrev=10` prints for the commit, and
+  `SOURCE_DATE_EPOCH` to the commit's date (`git show -s --format=%ct`).
+  `--long` keeps the number of commits and the revision in the name of a
+  commit that is itself a tag. The build checks only that `FFMPEG_VER` ends
+  with the first ten characters of the revision.
 - With a new FreeType commit, take the dlg revision that it records for
   `subprojects/dlg`. With a newer FFmpeg release, check which branch of the
   NVIDIA headers that release needs.
 - Meson's version is written twice in its URL and once in the check below it.
+- Renew [FFMPEG-BUILD.md](FFMPEG-BUILD.md) as its section "Renewing this
+  record" says. A test fails until the record's stages, sources and commands
+  are those of `Dockerfile`; the logs, the checksums of the programs and the
+  measurements in it are renewed by hand.
 
 To build the image with another FFmpeg, replace the `ffmpeg` stage with a
 directory that holds `bin/ffmpeg`, `bin/ffprobe` and `share/licenses/`:

@@ -210,12 +210,13 @@ async function layouts(page,context,editor,report) {
    await page.evaluate(async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
    await beginTrim(page,editor,"audio","out",1,4000,4150);
    const line=await guide(editor,4000);await expect(line).toBeVisible();
-   const bounds=await line.boundingBox(),viewport=await editor.getByTestId("input-timeline-track").locator("..").boundingBox();assert.ok(bounds&&viewport);
-   assert.ok(bounds.x>=viewport.x-1&&bounds.x<=viewport.x+viewport.width+1,"Snap guide is outside the scrolled viewport at "+theme+"/"+width);
-   await editor.screenshot({path:resolve(report.output,theme+"-"+width+".png"),animations:"allow"});
+   const bounds=await line.boundingBox(),labelBounds=await line.locator("span").boundingBox(),viewport=await editor.getByTestId("input-timeline-track").locator("..").boundingBox();assert.ok(bounds&&labelBounds&&viewport);
    const layout=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,page:document.documentElement.scrollWidth}));
+   report.layouts.push({theme,width,...layout,guideMs:Number(await line.getAttribute("data-snap-ms")),guideBounds:bounds,labelBounds,viewportBounds:viewport});
+   assert.ok(bounds.x>=viewport.x-1&&bounds.x<=viewport.x+viewport.width+1,"Snap guide is outside the scrolled viewport at "+theme+"/"+width);
+   assert.ok(labelBounds.x>=viewport.x-1&&labelBounds.x+labelBounds.width<=viewport.x+viewport.width+1,"Snap label is clipped by the timeline viewport at "+theme+"/"+width);
+   await editor.screenshot({path:resolve(report.output,theme+"-"+width+".png"),animations:"allow"});
    assert.ok(layout.page<=layout.viewport+1,"Page overflows at "+theme+"/"+width);
-   report.layouts.push({theme,width,...layout,guideMs:Number(await line.getAttribute("data-snap-ms"))});
    await page.keyboard.press("Escape");await page.mouse.up();await guide(editor,null);
   }
  }

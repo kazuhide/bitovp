@@ -80,6 +80,10 @@ export function TimelineTracks({
 	});
 	const total = timelineDuration(gesture.shown),
 		canvas = scale.canvas(gesture.extentMs);
+	const labelBeforeGuide =
+		gesture.snapMs !== null &&
+		gesture.snapMs * scale.pixelsPerMs - scale.scrollLeft >
+			scale.viewportWidth / 2;
 	const partner = linked
 		? linkedPartner(gesture.shown, { track: selectedTrack, id: selectedId })
 		: null;
@@ -122,7 +126,7 @@ export function TimelineTracks({
 						<Magnet className="size-4" aria-hidden="true" />
 					</Button>
 					<label className="flex items-center gap-2">
-						{l.zoom}
+						<span className="hidden whitespace-nowrap sm:inline">{l.zoom}</span>
 						<select
 							aria-label={l.zoom}
 							value={scale.zoom}
@@ -258,7 +262,9 @@ export function TimelineTracks({
 								className="pointer-events-none absolute inset-y-0 z-30 border-emerald-300 border-l border-dashed"
 								style={{ left: gesture.snapMs * scale.pixelsPerMs }}
 							>
-								<span className="absolute top-0 left-1 whitespace-nowrap rounded border border-emerald-300 bg-zinc-950 px-1 text-emerald-200 text-[10px] tabular-nums">
+								<span
+									className={`absolute top-0 whitespace-nowrap rounded border border-emerald-300 bg-zinc-950 px-1 text-emerald-200 text-[10px] tabular-nums ${labelBeforeGuide ? "right-1" : "left-1"}`}
+								>
 									{formatTime(gesture.snapMs)}
 								</span>
 							</div>

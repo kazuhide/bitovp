@@ -28,6 +28,8 @@ export function useTimelineScale(viewport: RefObject<HTMLDivElement | null>) {
 	}, [viewport]);
 	return {
 		...scale,
+		viewportWidth,
+		scrollLeft,
 		factor: scale.pixelsPerMs / DEFAULT_PIXELS_PER_MS,
 		onScroll: () => setScrollLeft(viewport.current?.scrollLeft ?? 0),
 		setZoom(value: string) {

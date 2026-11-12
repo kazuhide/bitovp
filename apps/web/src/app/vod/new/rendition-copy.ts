@@ -426,9 +426,11 @@ export function addVodAudio(
 		rate: 48_000,
 		channelLayout: "CL_STEREO",
 	};
+	// The name a source's containers are waiting under is the source's, not the copy's.
+	const { carriedAs: _waiting, ...copy } = duplicate(source, "audio", context);
 	return {
 		videos: context.videos,
-		audios: [...context.audios, duplicate(source, "audio", context)],
+		audios: [...context.audios, copy],
 		drm: context.drm,
 	};
 }

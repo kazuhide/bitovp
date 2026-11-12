@@ -596,6 +596,12 @@ export type WizardAudioRendition = {
 	/** DOLBY_ATMOS loudness control. */
 	loudness?: WizardLoudnessControl;
 	extras?: WizardRenditionExtras;
+	/**
+	 * Editor-only, never in the plan: the key the video containers that carry this
+	 * track still name, while the key the track would have is one another row has
+	 * too. They are renamed once the key is this row's alone.
+	 */
+	carriedAs?: string;
 	muxing?: WizardMuxing;
 	/** Additional muxing legs from the same stream (see WizardVideoRendition). */
 	extraMuxings?: WizardMuxing[];

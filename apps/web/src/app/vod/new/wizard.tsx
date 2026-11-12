@@ -619,7 +619,7 @@ export function VodWizard({
 			) {
 				next.startOptions = { ...next.startOptions, encodingMode: undefined };
 			}
-			next.videos = followRenamedAudioKeys(prev, next);
+			Object.assign(next, followRenamedAudioKeys(prev, next));
 			next.audios = reconcileAutomaticAudioPackaging(next);
 			return next;
 		});

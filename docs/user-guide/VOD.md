@@ -31,10 +31,13 @@ under "What to create" at the top of the page. That flow has five steps: Basics,
 Sources, Format, Destination, and Review. Files are written directly into the
 output folder and are named after the job until you type a name. Two files in one
 job cannot have the same name, and a file already in the folder under the same
-name may be replaced. **Show all settings** opens the eight
+name may be replaced. Public read access is not requested for the files unless
+you select it in Destination. **Show all settings** opens the eight
 steps with what you entered, and **Back to simple view** returns while nothing
 outside the five steps is in use. The flow you choose is remembered in this
-browser, and Settings holds the same choice under "New VOD job flow".
+browser, and Settings holds the same choice under "New VOD job flow". Switching
+"What to create" opens a new form: what you entered is not carried over, and
+stays in the other flow's draft.
 
 Saved templates, samples, and imported plan JSON populate the same workflow.
 Importing or copying settings does not create a job. Settings that the form
@@ -95,8 +98,8 @@ remove them and pass validation.
 HLS/DASH manifests describe available renditions and their segments. Packaging
 defines how those streams are stored, for example MPEG-TS, fragmented MP4
 (fMP4), or progressive MP4. Progressive TS and MOV write one whole file for each
-rendition, with H.264 video and AAC audio inside; no manifest lists them and DRM
-is not offered. MOV has not been verified on a real encode, so check the first
+video rendition, with H.264 video and AAC audio inside; no manifest lists them and
+DRM is not offered. MOV has not been verified on a real encode, so check the first
 output.
 
 For HLS, decide whether video and audio share a container or use separate audio

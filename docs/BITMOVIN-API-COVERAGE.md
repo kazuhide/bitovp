@@ -56,6 +56,8 @@ not imply a control for every field.
   Smooth manifest lists them, and DRM is not offered. Progressive MOV has not
   been verified on a live encode, and Bitmovin publishes no sample request for
   it; a plan that uses it carries the warning `PLAN_MUXING_UNMEASURED_KIND`.
+  A playlist does not take its audio from such a file: an HLS manifest in a plan
+  whose only audio is inside one is refused with `PLAN_HLS_AUDIO_UNSELECTED`.
 - Account-specific features, including HEVCv2, appear only where enabled for the
   selected account. A codec or setting declared by the provider's software
   development kit (SDK) is not proof that your account or encoder accepts it.

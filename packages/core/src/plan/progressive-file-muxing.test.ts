@@ -547,6 +547,69 @@ describe("never a manifest leg", () => {
 		).toEqual([]);
 	});
 
+	it("says what to do about the cause: a container, a pin, or the one encoding a default manifest lists", () => {
+		const advice = (plan: ReturnType<typeof planWith>) =>
+			validatePlan(plan)
+				.filter((issue) => issue.code === "PLAN_HLS_AUDIO_UNSELECTED")
+				.map((issue) => issue.message.split("it would play silent. ")[1]);
+		const hls = manifests[0];
+		// The audio has its fMP4 container, and the manifest lists TS audio only:
+		// another container would change nothing.
+		expect(
+			advice(
+				planWith({
+					muxings: streaming,
+					manifests: [{ ...hls, audioMuxingKind: "TS" }],
+				}),
+			),
+		).toEqual([
+			"Its audioMuxingKind (TS) leaves out every container the audio has: pin the kind the audio is in, add an audio track in TS, or mux the audio into the variants",
+		]);
+		// The same pin where the audio has no container a playlist lists at all.
+		expect(
+			advice(
+				planWith({
+					muxings: [fmp4("vmux", "v", "x/video"), file("PROGRESSIVE_TS")],
+					manifests: [{ ...hls, audioMuxingKind: "TS" }],
+				}),
+			),
+		).toEqual([
+			"Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants",
+		]);
+		// A default manifest lists the encoding of the first rendition; the audio
+		// is in the other one, with a container of its own.
+		const split = encodingPlanSchema.parse({
+			...planWith({
+				muxings: streaming,
+				manifests: [{ ...hls, generationMode: "DEFAULT" }],
+			}),
+			encodings: [
+				{ key: "one", name: "one" },
+				{ key: "two", name: "two" },
+			],
+			renditions: [
+				{ ...H264, encodingKey: "one" },
+				{ ...AAC, encodingKey: "two" },
+			],
+		});
+		expect(advice(split)).toEqual([
+			"A default manifest is generated for one encoding, that of the plan's first rendition, and it has no audio rendition: put the audio in that encoding, or generate the manifest manually",
+		]);
+	});
+
+	it("says nothing about the audio of a manifest that lists no video", () => {
+		// With a pin no video muxing meets there is no variant to play silent.
+		for (const kind of FILE_ONLY_MUXING_KINDS) {
+			const codes = validatePlan(
+				planWith({
+					muxings: [fmp4("vmux", "v", "x/video"), file(kind)],
+					manifests: [{ ...manifests[0], videoMuxingKind: "TS" }],
+				}),
+			).map((issue) => issue.code);
+			expect(codes, kind).not.toContain("PLAN_HLS_AUDIO_UNSELECTED");
+		}
+	});
+
 	it("a file with audio is not a self-contained variant of a per-audio-group manifest", () => {
 		const codes = (muxing: Muxing) =>
 			validatePlan(

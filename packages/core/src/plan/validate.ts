@@ -2005,10 +2005,24 @@ export function validatePlan(
 				carrying.length === 0 &&
 				hlsAudioMediaCount === 0
 			) {
+				// What to do depends on why. A pin that leaves the audio out is
+				// not answered by another container, and a default manifest only
+				// ever lists one encoding.
+				const pinnedOut =
+					manifest.audioMuxingKind !== undefined &&
+					hlsLegs.some((m) => {
+						const primary = renditionByKey.get(m.streamKey);
+						return primary !== undefined && AUDIO_CODECS.has(primary.codec);
+					});
+				const advice = pinnedOut
+					? `Its audioMuxingKind (${manifest.audioMuxingKind}) leaves out every container the audio has: pin the kind the audio is in, add an audio track in ${manifest.audioMuxingKind}, or mux the audio into the variants`
+					: hlsRenditions.some((r) => AUDIO_CODECS.has(r.codec))
+						? "Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants"
+						: "A default manifest is generated for one encoding, that of the plan's first rendition, and it has no audio rendition: put the audio in that encoding, or generate the manifest manually";
 				issues.push({
 					code: "PLAN_HLS_AUDIO_UNSELECTED",
 					level: options.demoteFileOutputRails ? "warning" : "error",
-					message: `manifest "${manifest.key}" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants`,
+					message: `manifest "${manifest.key}" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. ${advice}`,
 					path: `manifests[${mIndex}]`,
 				});
 			}

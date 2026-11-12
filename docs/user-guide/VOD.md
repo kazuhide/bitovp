@@ -30,15 +30,15 @@ MPEG-TS, or QuickTime files with the audio inside, and no manifests — choose *
 under "What to create" at the top of the page. That flow has five steps: Basics,
 Sources, Format, Destination, and Review. Files are written directly into the
 output folder and are named after the job until you type a name. Two files in one
-job cannot have the same name, or the same height, bitrate, and codec, and a file
-already in the folder under the same name may be replaced. Public read access is
-not requested for the files unless you select it in Destination. **Show all
-settings** opens the eight steps with what you entered, and **Back to simple
-view** returns while nothing outside the five steps is in use. The flow you choose
-is remembered in this browser, and Settings holds the same choice under "New VOD
-job flow". Switching "What to create" opens a new form: what you entered is not
-carried over. It is saved as the other flow's draft, unless that form was still
-offering to restore an earlier draft.
+job cannot have the same name, and in the five steps they cannot have the same
+height and codec with the same bitrate in kbps. A file already in the folder under
+the same name may be replaced. Public read access is not requested for the files
+unless you select it in Destination. **Show all settings** opens the eight steps
+with what you entered, and **Back to simple view** returns while nothing outside
+the five steps is in use. The flow you choose is remembered in this browser, and
+Settings holds the same choice under "New VOD job flow". Switching "What to create"
+opens a new form: what you entered is not carried over. It is saved as the other
+flow's draft, unless that form was still offering to restore an earlier draft.
 
 Saved templates, samples, and imported plan JSON populate the same workflow.
 Importing or copying settings does not create a job. Settings that the form

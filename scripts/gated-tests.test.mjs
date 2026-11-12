@@ -159,8 +159,8 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/core", 11],
 		["@bitovp/db", 70],
 		["@bitovp/worker", 67],
-		// Nine VOD input preview cases now run in the PostgreSQL job.
-		["@bitovp/web", 91],
+		// Includes six favorite-registry and two still-image cases in the PostgreSQL job.
+		["@bitovp/web", 99],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],

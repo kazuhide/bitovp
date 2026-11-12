@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- A VMAF measurement with a VMAF v1.0 model on pictures that are too small for the model ends with an error that names the limit and what to do: use a model of the `vmaf_v0.6.1` family, or a larger reference. These models need 216 pixels in width or in height and, with 4:2:0 pictures, 160, 266 or 318 pixels in both, depending on the model; the frame-index method also needs an encode of 144 to 7680 pixels on each side. Before, such a measurement ended with FFmpeg's "Invalid argument" or with a crash, and a cloud measurement reported only that it did not finish. The size is checked before FFmpeg starts and before a cloud resource is created for the comparison. Measurements that worked before give the same scores.
 - The worker image build fails when its FFmpeg cannot score with a bundled VMAF v1.0 model. The earlier build check passed although the scoring failed, because its 64×64 test pictures are too small for these models. The FFmpeg build that the image pins passes the corrected check.
 - The Noto Emoji licence in the worker and web images can be read by the user that the containers run as. Its directory was created without search permission.
 - Local release checks run packages one at a time and isolate transaction-test setup and delayed fixture work, retaining all assertions and time limits.

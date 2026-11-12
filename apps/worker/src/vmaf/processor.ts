@@ -34,10 +34,13 @@ import {
 	type VmafExecution,
 	type VmafReferenceGeometry,
 	type VmafReferencePreparationEvidence,
+	vmafChromaLayout,
 	vmafCloudProfileSchema,
 	vmafExecutionSchema,
 	vmafJobSchema,
 	vmafReferencePreparationEvidenceSchema,
+	vmafSizeLimitFailureMessage,
+	vmafSizeLimitMessage,
 	vmafSourceFor,
 } from "@bitovp/core";
 import {
@@ -72,7 +75,11 @@ import {
 	localScoringGeneration,
 	ownedScoringSnapshot,
 } from "./execution-generation";
-import { type Geometry, geometryFromProbe } from "./geometry";
+import {
+	type Geometry,
+	geometryFromProbe,
+	pixelFormatFromProbe,
+} from "./geometry";
 import type { DecodePolicy } from "./hardware-decode";
 import type {
 	LocalVmafResourceSession,
@@ -1009,6 +1016,29 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				};
 			}
 		}
+		// libvmaf does not score every picture size with a VMAF v1 model, and
+		// what it reports then is "Invalid argument" or a crash; a cloud run
+		// reports nothing of it. Say the limit before the run, and before a
+		// cloud resource exists for this pair. The GPU scorer is not libvmaf and
+		// holds its own limits: nothing of this applies to it.
+		const libvmafPictures =
+			execution.backend === "LOCAL" &&
+			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
+				? undefined
+				: { model, width: geometry.width, height: geometry.height };
+		if (libvmafPictures) {
+			const sizeLimit = vmafSizeLimitMessage({
+				...libvmafPictures,
+				// The frame-index method converts both pictures to 10-bit 4:2:0 and
+				// declares the encode's size; the ordinary method compares in the
+				// reference's pixel format when libvmaf takes that format, because
+				// `scaleToReference` below always puts a scale filter on the encode.
+				...(measurementMethod
+					? { chroma: "4:2:0", declaredEncode: distortedOriginal }
+					: { chroma: vmafChromaLayout(pixelFormatFromProbe(referenceProbe)) }),
+			});
+			if (sizeLimit) throw new Error(sizeLimit);
+		}
 		const optionsFor = (
 			allocation?: LocalResourcePlan,
 		): VmafCommandOptions => ({
@@ -1201,6 +1231,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					if (isUnresolvableModel(run.stderr)) {
 						throw new Error(unresolvableModelMessage(model, modelPath));
 					}
+					// A size that the check before the run could not judge, because
+					// the chroma layout of the comparison was not known.
+					const sizeLimit =
+						libvmafPictures &&
+						vmafSizeLimitFailureMessage(run.stderr, libvmafPictures);
+					if (sizeLimit) throw new Error(sizeLimit);
 					throw new Error(
 						`libvmaf failed for rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,
 					);

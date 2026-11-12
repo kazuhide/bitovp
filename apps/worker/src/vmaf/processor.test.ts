@@ -5182,3 +5182,268 @@ describe("explicit lossless reference preparation", () => {
 		expect(t.downloaded).toHaveLength(0);
 	});
 });
+
+describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
+	const v1 = "vmaf_v1.0.16_3d0h";
+	const probeOf = (width: number, height: number, pixelFormat?: string) =>
+		JSON.stringify({
+			streams: [
+				{
+					codec_type: "video",
+					codec_name: "h264",
+					width,
+					height,
+					...(pixelFormat ? { pix_fmt: pixelFormat } : {}),
+					r_frame_rate: "25/1",
+					avg_frame_rate: "25/1",
+					sample_aspect_ratio: "1:1",
+					duration: "10",
+					nb_frames: "250",
+				},
+			],
+		});
+	const scoringRuns = (t: ReturnType<typeof setup>) =>
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-filter_complex"));
+
+	it("refuses a reference that is too small before FFmpeg scores, and says what to do", async () => {
+		const t = setup({
+			job: { model: v1 },
+			probeJson: probeOf(256, 144, "yuv420p"),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(String(t.job.error)).toContain("cannot score 4:2:0 pictures");
+		expect(scoringRuns(t)).toHaveLength(0);
+		expect(t.results).toHaveLength(0);
+	});
+
+	it.each([
+		// The same reference with a model that has no such limit.
+		["vmaf_v0.6.1", 256, 144, "yuv420p"],
+		// 4:4:4 chroma planes are as large as the pictures.
+		[v1, 256, 144, "yuv444p10le"],
+		// The smallest 4:2:0 pictures that the model scores.
+		[v1, 216, 160, "yuv420p"],
+		// A format that FFmpeg converts before libvmaf: the layout of the
+		// comparison is not known, so libvmaf decides.
+		[v1, 256, 144, "yuvj420p"],
+		[v1, 256, 144, undefined],
+	] as const)("scores %s at %ix%i (%s)", async (model, width, height, pixelFormat) => {
+		const t = setup({
+			job: { model },
+			probeJson: probeOf(width, height, pixelFormat),
+			resolveModelPath: (name) => `/opt/vmaf/model/${name}.json`,
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(scoringRuns(t)).toHaveLength(2);
+		// The check takes the reference's chroma layout as the comparison's.
+		// That holds while the encode's leg has a scale filter and the
+		// reference's has none: FFmpeg then lets that filter give the encode the
+		// reference's format.
+		for (const [, argv] of scoringRuns(t))
+			expect(argv[argv.indexOf("-filter_complex") + 1]).toMatch(
+				new RegExp(
+					`^\\[0:v\\][^;]*scale=${width}:${height}:flags=bicubic[^;]*\\[dist\\];\\[1:v\\](?![^;]*scale=)`,
+				),
+			);
+	});
+
+	it("names the limit when libvmaf meets it in a comparison whose chroma layout was not known", async () => {
+		const t = setup({ job: { model: v1 } });
+		const crash = (stderr: string) =>
+			vi
+				.mocked(t.runner.run)
+				.mockImplementation(async (_bin: string, argv: string[]) =>
+					argv.includes("-show_streams")
+						? { code: 0, stdout: probeOf(256, 144, "yuvj420p"), stderr: "" }
+						: { code: null, stdout: "", stderr },
+				);
+		// libvmaf's last words before its segmentation fault.
+		crash(
+			"[Parsed_libvmaf_4 @ 0x5581] libvmaf WARNING something\nlibvmaf ERROR SpEED: image too small, operating width or height is 0\n",
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score pictures of 256x144: libvmaf reports that they are too small for its SpEED feature. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(scoringRuns(t).length).toBeGreaterThan(0);
+	});
+
+	it("leaves every other crash of libvmaf as it reports it", async () => {
+		const t = setup({ job: { model: v1 } });
+		vi.mocked(t.runner.run).mockImplementation(
+			async (_bin: string, argv: string[]) =>
+				argv.includes("-show_streams")
+					? { code: 0, stdout: probeOf(256, 144, "yuvj420p"), stderr: "" }
+					: { code: null, stdout: "", stderr: "double free or corruption\n" },
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			/libvmaf failed for rendition v\d+ \(code null\): double free or corruption/,
+		);
+	});
+
+	it.each([
+		// Pictures that libvmaf would refuse: the GPU scorer is asked all the same.
+		[{ code: 0, stderr: "" }, undefined],
+		// Its own refusal stays its own: the sentence about libvmaf is not put
+		// in its place.
+		[
+			{
+				code: 1,
+				stderr: "SpEED: image too small, operating width or height is 0\n",
+			},
+			/^libvmaf failed for rendition v\d+ \(code 1\): SpEED: image too small, operating width or height is 0$/,
+		],
+	] as const)("does not hold the GPU scorer, which is not libvmaf, to libvmaf's limits (%o)", async (run, failure) => {
+		const localRunner: ProcessRunner = {
+			spawn: vi.fn(() => {
+				throw new Error("Unexpected spawn");
+			}),
+			run: vi.fn(),
+		};
+		const native = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockImplementation(async (_deps, options) => ({
+				run,
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					scoring: {
+						backend: "cpu",
+						implementation: "libvmaf",
+						model: options.model,
+					},
+					attempts: 1,
+				},
+				log: JSON.parse(vmafJson([95])),
+			}));
+		try {
+			const t = setup({
+				localResources: sharedTestResources(),
+				localRunner,
+				probeJson: probeOf(256, 144, "yuv420p"),
+				scoringBackend: "vulkan",
+				job: { model: v1, scoringVersion: VMAF_SCORING_VERSION },
+				resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+				resolveLocalResources: async () => ({
+					threads: 1,
+					concurrency: 2,
+					estimatedBytes: 1024,
+					exclusive: false,
+					manualFallback: false,
+					nativeDevice: 2,
+					nativeInflightFrames: 2,
+				}),
+			});
+			const raw = vi.mocked(t.runner.run).getMockImplementation();
+			if (!raw) throw new Error("Missing raw runner fixture");
+			vi.mocked(localRunner.run).mockImplementation(raw);
+			const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+			if (failure) await expect(processed).rejects.toThrow(failure);
+			else
+				expect(await processed).toMatchObject({
+					status: "FINISHED",
+					results: 2,
+				});
+			expect(native).toHaveBeenCalled();
+			for (const [, options] of native.mock.calls)
+				expect(options.scoring).toMatchObject({ backend: "vulkan" });
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it("refuses a too small reference of a cloud job before any pair reaches the cloud", async () => {
+		const cloudScore = vi.fn();
+		const t = setup({
+			cloudScore,
+			probeJson: probeOf(200, 200, "yuv420p"),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: {
+				model: v1,
+				params: {
+					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+				},
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			/cannot score 4:2:0 pictures of 200x200: it needs at least 160 pixels in width and in height, and at least 216 in one of the two\./,
+		);
+		expect(cloudScore).not.toHaveBeenCalled();
+		expect(t.job.status).toBe("ERROR");
+	});
+
+	it("refuses the encode whose size the frame-index method cannot declare, and sends the other pair to the cloud", async () => {
+		const plan = qcPlan();
+		delete plan.qc;
+		const cloudScore = vi.fn(async (request) => {
+			await writeFile(request.options.logPath, vmafJson([96, 97]));
+		});
+		const t = setup({
+			plan,
+			cloudScore,
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: {
+				model: v1,
+				scoringVersion: 6,
+				triggerKey: `lab-manual:${ENCODING_JOB_ID}:output`,
+				params: {
+					source: "OUTPUT_MP4",
+					measurementMethod: "FRAME_INDEX_BT709_10BIT",
+					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+				},
+			},
+		});
+		// The reference is 1080p; the encode of one rendition is below CAMBI's
+		// range, the other is in it.
+		vi.mocked(t.runner.run).mockImplementation(
+			async (_bin: string, argv: string[]) => {
+				if (!argv.includes("-show_streams"))
+					throw new Error("A cloud job runs no local FFmpeg");
+				const path = argv.at(-1) ?? "";
+				return {
+					code: 0,
+					stderr: "",
+					stdout: /\/ref-\d+\./.test(path)
+						? probeOf(1920, 1080, "yuv422p10le")
+						: path.includes("dist-v360-")
+							? probeOf(240, 134, "yuv420p")
+							: probeOf(960, 540, "yuv420p"),
+				};
+			},
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(cloudScore).toHaveBeenCalledTimes(1);
+		expect(cloudScore.mock.calls[0]?.[0]).toMatchObject({
+			targetKey: expect.stringMatching(/^v540\//),
+			options: {
+				measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				distortedOriginal: { width: 960, height: 540 },
+			},
+		});
+	});
+});

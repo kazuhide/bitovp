@@ -17,6 +17,52 @@ import {
 const SHA = "a".repeat(64);
 
 /**
+ * Starts a fixture as the very process the test kills. `--import tsx` loads
+ * TypeScript inside that process. tsx's own command line runs the script in a
+ * second process, which a SIGKILL sent to the first never reaches: the fixture
+ * would outlive the test, and the process that died would not be the one that
+ * had made the row durable.
+ */
+function spawnFixture(name: string, args: string[]) {
+	return spawn(
+		process.execPath,
+		[
+			"--import",
+			"tsx",
+			fileURLToPath(new URL(`./test-fixtures/${name}`, import.meta.url)),
+			...args,
+		],
+		{
+			// `tsx` resolves from the worker package wherever the suite is started.
+			cwd: fileURLToPath(new URL("../..", import.meta.url)),
+			stdio: ["ignore", "pipe", "pipe"],
+		},
+	);
+}
+
+/**
+ * Waits for the fixture's marker line and returns the process id on it: the
+ * process that made the state durable.
+ */
+async function durableProcessId(
+	child: ReturnType<typeof spawnFixture>,
+	marker: string,
+): Promise<number> {
+	let stderr = "";
+	child.stderr.on("data", (chunk) => {
+		stderr += String(chunk);
+	});
+	const line = new RegExp(`${marker} (\\d+)\\n`);
+	let stdout = "";
+	for await (const chunk of child.stdout) {
+		stdout += String(chunk);
+		const match = line.exec(stdout);
+		if (match) return Number(match[1]);
+	}
+	throw new Error(`The fixture ended before ${marker}: ${stderr}`);
+}
+
+/**
  * A real OS-process fault at the dangerous boundary: SUBMITTED is durable,
  * then the process dies before any response id is retained. Recovery starts in
  * a different process lifetime and is allowed to use only the durable key/SHA.
@@ -25,24 +71,13 @@ describe("EV-01 process-death recovery", () => {
 	it("SIGKILL after SUBMITTED is recovered by key+SHA, leased, and idempotently sealed", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "bitovp-intent-kill-"));
 		const ledgerPath = join(dir, "intent.json");
-		const tsxCli = fileURLToPath(
-			new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url),
-		);
-		const fixture = fileURLToPath(
-			new URL(
-				"./test-fixtures/resource-intent-submitted-child.ts",
-				import.meta.url,
-			),
-		);
-		const child = spawn(process.execPath, [tsxCli, fixture, ledgerPath], {
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		const child = spawnFixture("resource-intent-submitted-child.ts", [
+			ledgerPath,
+		]);
 		try {
-			let stdout = "";
-			for await (const chunk of child.stdout) {
-				stdout += String(chunk);
-				if (stdout.includes("SUBMITTED_DURABLE")) break;
-			}
+			expect(await durableProcessId(child, "SUBMITTED_DURABLE")).toBe(
+				child.pid,
+			);
 			const exited = once(child, "exit");
 			expect(child.kill("SIGKILL")).toBe(true);
 			const [code, signal] = (await exited) as [
@@ -176,24 +211,14 @@ describe("EV-01 process-death recovery", () => {
 	] as const)("SIGKILL after durable %s response-id capture + wrong adoption recovers and cleans the complete union", async (kind, createdId, wrongId, lateId) => {
 		const dir = await mkdtemp(join(tmpdir(), "bitovp-intent-mismatch-kill-"));
 		const ledgerPath = join(dir, "intent.json");
-		const tsxCli = fileURLToPath(
-			new URL("../../node_modules/tsx/dist/cli.mjs", import.meta.url),
-		);
-		const fixture = fileURLToPath(
-			new URL(
-				"./test-fixtures/resource-intent-mismatch-child.ts",
-				import.meta.url,
-			),
-		);
-		const child = spawn(process.execPath, [tsxCli, fixture, ledgerPath, kind], {
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		const child = spawnFixture("resource-intent-mismatch-child.ts", [
+			ledgerPath,
+			kind,
+		]);
 		try {
-			let stdout = "";
-			for await (const chunk of child.stdout) {
-				stdout += String(chunk);
-				if (stdout.includes("CAPTURE_AND_WRONG_ADOPTION_DURABLE")) break;
-			}
+			expect(
+				await durableProcessId(child, "CAPTURE_AND_WRONG_ADOPTION_DURABLE"),
+			).toBe(child.pid);
 			const exited = once(child, "exit");
 			expect(child.kill("SIGKILL")).toBe(true);
 			const [code, signal] = (await exited) as [

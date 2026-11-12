@@ -32,6 +32,7 @@ import {
 	drmEntriesFor,
 	orphanDrmEntries,
 } from "./drm-row-editor";
+import { fileContainer } from "./file-output";
 import {
 	Collapsible,
 	type OptionFieldSpec,
@@ -302,9 +303,10 @@ function MuxingEditor({
 	value: WizardMuxing | undefined;
 	derivedPath: string;
 	/**
-	 * What an emptied path field stores. Unset means the derived folder. "" is the
-	 * output folder itself, where the file-export flow writes: without it, a path
-	 * typed there and deleted again would move the file into a derived subfolder.
+	 * What an emptied path field stores for a leg that writes one whole file. Unset
+	 * means the derived folder. "" is the output folder itself, where the file-export
+	 * flow writes: without it, a path typed there and deleted again would move the
+	 * file into a derived subfolder. A segmented leg always gets the derived folder.
 	 */
 	emptyPath?: "";
 	/** Inline encryption for this output; absent = not DRM-capable (subtitles). */
@@ -320,6 +322,10 @@ function MuxingEditor({
 	const { t } = useT();
 	const muxing = value ?? {};
 	const kind = muxing.kind ?? defaultKind;
+	// The output folder itself is a place for one whole file. Segmented legs emptied
+	// to it would share the folder, and their segment names, with one another.
+	const emptied = (of: WizardMuxingKind) =>
+		fileContainer(of) ? emptyPath : undefined;
 	const drmEntries = drm?.entriesFor(muxingKey) ?? [];
 	const drmOwned = drmEntries.length > 0;
 	// Only the kinds whose schema has `additionalStreamKeys` can carry a second
@@ -365,12 +371,18 @@ function MuxingEditor({
 					<SelectNative
 						id={`${idBase}-kind`}
 						value={kind}
-						onChange={(e) =>
+						onChange={(e) => {
+							const next = e.target.value as WizardMuxingKind;
 							onChange({
 								...muxing,
-								kind: e.target.value as WizardMuxingKind,
-							})
-						}
+								kind: next,
+								// A file that sat in the output folder becomes segments in a
+								// folder of their own, as any other segmented leg has.
+								...(emptyPath === "" && muxing.path === ""
+									? { path: emptied(next) }
+									: {}),
+							});
+						}}
 					>
 						{kinds.map((k) => (
 							<option key={k} value={k}>
@@ -512,7 +524,7 @@ function MuxingEditor({
 						onChange={(e) =>
 							onChange({
 								...muxing,
-								path: e.target.value === "" ? emptyPath : e.target.value,
+								path: e.target.value === "" ? emptied(kind) : e.target.value,
 								autoPath: undefined,
 							})
 						}

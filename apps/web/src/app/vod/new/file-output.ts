@@ -1,8 +1,10 @@
 import { MUXING_CODEC_MATRIX, UNMEASURED_MUXING_KINDS } from "@bitovp/core";
+import { draftKeepsText } from "@/lib/wizard-draft";
 import {
 	audioKeys,
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
+	videoKeys,
 	type WizardAudioCodec,
 	type WizardAudioRendition,
 	type WizardMuxingKind,
@@ -130,18 +132,28 @@ function same(a: unknown, b: unknown): boolean {
 	return JSON.stringify(settled(a)) === JSON.stringify(settled(b));
 }
 
+/**
+ * Text a saved draft keeps. A draft drops text that reads as an address or a login,
+ * and a file name dropped that way comes back empty: a TS or MOV file would then be
+ * written under its container's own name, with nothing said. Both shapes are
+ * spelled with ":".
+ */
+function keptByDraft(text: string): string {
+	return draftKeepsText(text) ? text : text.replace(/:+/g, "-");
+}
+
 /** The part of a derived file name that comes from the job name. */
 export function fileStem(name: string): string {
-	return name.trim().replace(/[/\\?#]+/g, "-") || "output";
+	return keptByDraft(name.trim().replace(/[/\\?#]+/g, "-")) || "output";
 }
 
 /**
  * A name as the format screen takes it. `?` and `#` end the path in a URL, so a file
  * named with one cannot be fetched by its address, and a saved draft drops any text
- * that holds one: the name would come back empty. A folder in the name is left alone.
+ * that holds one (`keptByDraft`). A folder in the name is left alone.
  */
 export function typedFileName(name: string): string {
-	return name.replace(/[?#]+/g, "-");
+	return keptByDraft(name.replace(/[?#]+/g, "-"));
 }
 
 /**
@@ -204,6 +216,19 @@ export function sharedFileNames(
 			name !== undefined &&
 			names.some((other, at) => at !== index && other === name),
 	);
+}
+
+/**
+ * Files the plan cannot tell apart. Each file is a video stream of its own, and a
+ * stream is keyed by its height, its bitrate in kbps and its codec. Two files equal
+ * in all three get one key, and the plan is refused for it (`PLAN_DUPLICATE_KEY`) in
+ * words that name nothing this screen shows. This says which files to change.
+ */
+export function sameStreamFiles(
+	videos: readonly WizardVideoRendition[],
+): boolean[] {
+	const keys = videoKeys([...videos]);
+	return keys.map((key) => keys.indexOf(key) !== keys.lastIndexOf(key));
 }
 
 /** Files whose name is still the derived one, and so follows what it was derived from. */
@@ -506,7 +531,18 @@ function reset(
 
 function planText(state: WizardState): string | undefined {
 	try {
-		return JSON.stringify(buildPlan(state));
+		const plan = buildPlan(state);
+		// When the manifests are generated says nothing about one encoding that
+		// generates none. The full view sets it without being asked (a rendition
+		// entering Per-Title, a manifest's generation mode) and shows its control
+		// only while a manifest is on, so left alone it could not be taken back.
+		const timed =
+			(plan.manifests?.length ?? 0) > 0 || (plan.encodings?.length ?? 0) > 0;
+		return JSON.stringify(
+			timed
+				? plan
+				: { ...plan, generation: { ...plan.generation, timing: undefined } },
+		);
 	} catch {
 		// A ladder the plan cannot be built from; nothing to compare against.
 		return undefined;
@@ -536,21 +572,25 @@ function fieldsInUse(state: WizardState): (keyof WizardState)[] {
 // Resource keys and the tokens that track them are bookkeeping of the full wizard's
 // editors. They name nothing a file-output job writes, so they neither block the
 // simple view nor survive a return to it (`collapseToFileOutput`). A key somebody
-// typed is not bookkeeping: see `typedKey`.
+// chose is not bookkeeping: see `chosenKey`.
 const VIDEO_BOOKKEEPING = ["autoKey"];
 const MUXING_BOOKKEEPING = ["key", "autoPath"];
 const EXTRAS_BOOKKEEPING = ["key"];
 
-// Every key the editors write on their own: `v1080`, `video2`, `a192`, `a192_48000`,
-// and any of them numbered to stay apart (`v1080-2`).
-const EDITOR_KEY = /^(?:v|video|a)\d+(?:_\d+)?(?:-\d+)?$/;
+// Every shape the editors give a key on their own: what `videoKeys` and `audioKeys`
+// derive (`v1080`, `v1080_8000k`, `v1080_8000k_h265`, `video2`, `a192`,
+// `a192_48000`), and any of them numbered to stay apart (`v1080-2`). The ladder
+// writes such a key into every row as soon as one is added.
+const EDITOR_KEY =
+	/^(?:v\d+(?:_\d+k(?:_[a-z0-9]+)?)?|video\d+|a\d+(?:_\d+)?)(?:-\d+)?$/;
 
 /**
- * A key that reads as a name somebody chose. Returning to the simple view derives
- * keys again, which would replace it without a word, so it holds the full view.
+ * A key that reads as a name somebody chose, which only a loaded plan can bring: no
+ * step has a field for one. The simple view leaves it where it is, as the full view
+ * does. `own` is a key the editors are known to have written here.
  */
-function typedKey(key: string | undefined): boolean {
-	return key !== undefined && !EDITOR_KEY.test(key);
+function chosenKey(key: string | undefined, own?: string): key is string {
+	return key !== undefined && key !== own && !EDITOR_KEY.test(key);
 }
 
 const VIDEO_FIELDS = [
@@ -609,8 +649,7 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 		if (
 			!videoCodecs.includes(video.codec ?? "H264") ||
 			!setsOnly(video, VIDEO_FIELDS) ||
-			!setsOnly(video.extras, EXTRAS_FIELDS) ||
-			typedKey(video.extras?.key)
+			!setsOnly(video.extras, EXTRAS_FIELDS)
 		)
 			found.add("ladder");
 		const carried = (video.muxing?.muxedAudioKeys ?? []).filter(
@@ -621,8 +660,7 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 			video.muxing?.path !== "" ||
 			!setsOnly(video.muxing, FILE_MUXING_FIELDS) ||
 			!isBlank(video.extraMuxings) ||
-			carried.length !== (audio ? 1 : 0) ||
-			typedKey(video.muxing?.key)
+			carried.length !== (audio ? 1 : 0)
 		)
 			found.add("packaging");
 	}
@@ -630,8 +668,7 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 		if (
 			!audioCodecs.includes(audio.codec ?? "AAC") ||
 			!setsOnly(audio, AUDIO_FIELDS) ||
-			!setsOnly(audio.extras, EXTRAS_FIELDS) ||
-			typedKey(audio.extras?.key)
+			!setsOnly(audio.extras, EXTRAS_FIELDS)
 		)
 			found.add("ladder");
 		if (
@@ -649,25 +686,34 @@ export function isFileOutputState(state: WizardState): boolean {
 }
 
 /**
- * Return a state the full wizard edited to the form this flow's edits expect: keys
- * derived again, each file pointing at the audio track's current key, and nothing
- * left in a field the simple view does not show. Call it only on a state
+ * Return a state the full wizard edited to the form this flow's edits expect: the
+ * editors' keys derived again, each file pointing at the audio track's current key,
+ * and nothing left in a field the simple view does not show. Call it only on a state
  * `isFileOutputState` accepts. The files written do not change, because here every
  * file name and folder is explicit, and what is cleared from a hidden field was
- * doing nothing (`fieldsInUse`).
+ * doing nothing (`fieldsInUse`). A key a loaded plan chose stays (`chosenKey`).
  */
 export function collapseToFileOutput(state: WizardState): WizardState {
 	const unkeyed = <T extends { extras?: WizardRenditionExtras }>(
 		item: T,
+		own?: string,
 	): T => {
-		const extras = without(item.extras ?? {}, EXTRAS_BOOKKEEPING);
+		const extras = chosenKey(item.extras?.key, own)
+			? (item.extras ?? {})
+			: without(item.extras ?? {}, EXTRAS_BOOKKEEPING);
 		return defined({ ...item, extras: isBlank(extras) ? undefined : extras });
 	};
-	const audios = state.audios.map(unkeyed);
-	const videos = state.videos.map((video) => ({
-		...without(unkeyed(video), VIDEO_BOOKKEEPING),
-		muxing: without(video.muxing ?? {}, MUXING_BOOKKEEPING),
-	}));
+	const audios = state.audios.map((audio) => unkeyed(audio));
+	const videos = state.videos.map((video) => {
+		const muxing = without(video.muxing ?? {}, MUXING_BOOKKEEPING);
+		return {
+			...without(unkeyed(video, video.autoKey), VIDEO_BOOKKEEPING),
+			// A container keyed as its stream is, is the editors' doing as well.
+			muxing: chosenKey(video.muxing?.key, video.extras?.key)
+				? { ...muxing, key: video.muxing.key }
+				: muxing,
+		};
+	});
 	return {
 		...reset(state, HIDDEN_FIELDS),
 		audios,

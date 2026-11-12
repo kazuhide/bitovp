@@ -211,6 +211,24 @@ describe("VodWizard — the file-output flow", () => {
 		expect(screen.queryByRole("link", { name: "Export files" })).toBeNull();
 	});
 
+	it("opens a copied job on the eight steps, whichever flow it is asked for", () => {
+		// The page keeps the flow away from a copy; the wizard does not rely on it.
+		renderWithQuery(
+			<VodWizard
+				flow="file"
+				copiedJob={{
+					id: jobId,
+					plan: buildPlan(ready) as unknown as Record<string, unknown>,
+				}}
+			/>,
+		);
+		expect(steps()).toHaveLength(8);
+		expect(
+			screen.queryByRole("button", { name: "Back to simple view" }),
+		).toBeNull();
+		expect(screen.getByLabelText(/job name/i)).toHaveValue("clip");
+	});
+
 	it("remembers the flow that was chosen", async () => {
 		renderWithQuery(<VodWizard flow="file" />);
 		const link = screen.getByRole("link", { name: "Package for streaming" });
@@ -325,6 +343,52 @@ describe("VodWizard — the file-output flow", () => {
 		]);
 	});
 
+	it("says on both files when they are one video stream twice, and refuses the job", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await user.click(screen.getByRole("button", { name: "Add file" }));
+		const file = (n: number) =>
+			within(screen.getByRole("group", { name: `File ${n}` }));
+		const told = /Another file has the same height, bitrate and codec/;
+		expect(
+			file(1).getByLabelText("Bitrate (bps)"),
+		).not.toHaveAccessibleDescription();
+
+		// The first file once more, as QuickTime.
+		await user.selectOptions(
+			file(2).getByRole("combobox", { name: "Container" }),
+			"PROGRESSIVE_MOV",
+		);
+		// The values as a whole: what is under test is the two files being equal,
+		// not the keystrokes on the way there.
+		const set = (label: string, value: string) =>
+			fireEvent.change(file(2).getByLabelText(label), { target: { value } });
+		set("Height (p)", "1080");
+		set("Bitrate (bps)", "8000000");
+		expect(file(2).getByLabelText("File name")).toHaveValue("clip-1080p.mov");
+		for (const n of [1, 2])
+			expect(
+				file(n).getByLabelText("Bitrate (bps)"),
+			).toHaveAccessibleDescription(told);
+		expect(
+			screen.getAllByText(/\[PLAN_DUPLICATE_KEY\]/).length,
+		).toBeGreaterThan(0);
+		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(
+			screen.getByRole("button", { name: "Start encoding" }),
+		).toBeDisabled();
+
+		// One kilobit apart is two streams.
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		set("Bitrate (bps)", "7999000");
+		for (const n of [1, 2])
+			expect(
+				file(n).getByLabelText("Bitrate (bps)"),
+			).not.toHaveAccessibleDescription();
+		expect(screen.queryByText(/\[PLAN_DUPLICATE_KEY\]/)).toBeNull();
+	});
+
 	it("starts a job that writes one file into the chosen folder, with no manifest", async () => {
 		await restore(ready);
 		expect(steps()).toHaveLength(5);
@@ -357,14 +421,19 @@ describe("VodWizard — the file-output flow", () => {
 
 	it("writes into the folder typed in Destination, and adds none for the job", async () => {
 		const user = userEvent.setup();
-		await restore(ready);
+		// A folder that ends in the job's name: the streaming flow shows such a
+		// folder without it, because there the job's name is a folder of its own.
+		await restore({
+			...ready,
+			output: { ...ready.output, basePath: "exports/clip" },
+		});
 		await user.click(screen.getByRole("button", { name: "4. Destination" }));
 		await user.click(screen.getByRole("button", { name: "Enter manually" }));
 		const folder = screen.getByLabelText(/output folder/i, {
 			selector: "input",
 		});
-		// The folder as it is, not the streaming flow's folder-and-job-name split.
-		expect(folder).toHaveValue("exports");
+		// Here the field shows the folder as it is, the one the files go to.
+		expect(folder).toHaveValue("exports/clip");
 		await user.clear(folder);
 		await user.type(folder, "deliveries/2026");
 		expect(folder).toHaveValue("deliveries/2026");
@@ -498,6 +567,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(planJson()).toBe(before);
 		// Nothing a hidden step holds is in use, so the list is still the whole job.
 		await user.click(screen.getByRole("button", { name: "8. Review" }));
+		expect(screen.getByText("Files this job writes")).toBeInTheDocument();
 		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
 
 		await user.click(
@@ -521,6 +591,9 @@ describe("VodWizard — the file-output flow", () => {
 		expect(steps()).toHaveLength(8);
 		current("8. Review");
 		expect(screen.queryByText("Files this job writes")).toBeNull();
+		expect(
+			screen.queryByText("synthetic/exports/video/1080p/clip.mp4"),
+		).toBeNull();
 		await userEvent.click(screen.getByRole("button", { name: "Plan JSON" }));
 		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
 			"exports/video/1080p",
@@ -546,6 +619,33 @@ describe("VodWizard — the file-output flow", () => {
 		expect(back).toBeEnabled();
 		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
 		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe("exports/");
+	});
+
+	it("gives a file turned into segments in Packaging a folder of its own, however its path is emptied", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		await user.click(screen.getByRole("button", { name: "5. Packaging" }));
+		const kind = document.getElementById("wz-mx-v-0-kind") as HTMLSelectElement;
+		const path = () =>
+			document.getElementById("wz-mx-v-0-path") as HTMLInputElement;
+		expect(kind).toHaveValue("MP4");
+		// The output folder itself is a place for one whole file. Segments of two
+		// legs left there would share the folder, and their names.
+		await user.selectOptions(kind, "FMP4");
+		expect(path()).toHaveAccessibleDescription(
+			/empty = derived "video\/1080p"/,
+		);
+		await user.type(path(), "proxy");
+		await user.clear(path());
+		expect(path()).toHaveValue("");
+		expect(path()).toHaveAccessibleDescription(
+			/empty = derived "video\/1080p"/,
+		);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
+			"exports/video/1080p",
+		);
 	});
 
 	it("stays in the full view while a setting the short view cannot show is in use", async () => {
@@ -620,6 +720,46 @@ describe("VodWizard — the file-output flow", () => {
 		expect(
 			screen.getByRole("button", { name: "Back to simple view" }),
 		).toBeEnabled();
+	});
+
+	it("keeps the audio inside the file while its bitrate is typed through another track's", async () => {
+		const user = userEvent.setup();
+		const [track] = ready.audios as [WizardState["audios"][number]];
+		// A second track of 64 kbps in a container of its own, ahead of the one
+		// the file carries: 640000 typed into that one is 64000 on the way.
+		await restore({
+			...ready,
+			audios: [{ ...track, bitrate: 64_000, muxing: undefined }, track],
+		});
+		expect(steps()).toHaveLength(8);
+		await user.click(screen.getByRole("button", { name: "3. Ladder" }));
+		const bitrate = screen.getByRole("spinbutton", { name: "Audio 2 bitrate" });
+		await user.clear(bitrate);
+		await user.type(bitrate, "64000");
+		// For this keystroke the two tracks have one key, and the job says so.
+		expect(
+			screen.getAllByText(/\[PLAN_DUPLICATE_KEY\]/).length,
+		).toBeGreaterThan(0);
+		await user.type(bitrate, "0");
+		expect(bitrate).toHaveValue(640_000);
+		expect(screen.queryByText(/\[PLAN_DUPLICATE_KEY\]/)).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(
+			JSON.parse(planJson()).muxings.map(
+				(muxing: {
+					kind: string;
+					streamKey: string;
+					additionalStreamKeys?: string[];
+				}) => [
+					muxing.kind,
+					muxing.streamKey,
+					...(muxing.additionalStreamKeys ?? []),
+				],
+			),
+		).toEqual([
+			["MP4", "v1080", "a640"],
+			["FMP4", "a64"],
+		]);
 	});
 
 	it("opens a streaming plan loaded from JSON in the full view, with no switch to leave it by", async () => {

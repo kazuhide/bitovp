@@ -21,6 +21,7 @@ import {
 	fileAudioCodecs,
 	fileContainer,
 	removeFile,
+	sameStreamFiles,
 	setFileAudio,
 	sharedFileNames,
 	writtenFileName,
@@ -56,6 +57,7 @@ export function FileOutputSection({
 	const { videos } = state;
 	const audio = state.audios[0];
 	const sharedNames = sharedFileNames(videos);
+	const sameStreams = sameStreamFiles(videos);
 	const sources = renditionSourceOptions(state, t);
 	const visionMetadataKeys = (state.sources?.dolbyStreams ?? [])
 		.filter((stream) => stream.kind === "VISION_METADATA")
@@ -103,6 +105,7 @@ export function FileOutputSection({
 							index={index}
 							video={video}
 							sharedName={sharedNames[index] === true}
+							sameStream={sameStreams[index] === true}
 							removable={videos.length > 1}
 							sourceOptions={sources.video}
 							visionMetadataKeys={visionMetadataKeys}
@@ -298,6 +301,7 @@ function FileEditor({
 	index,
 	video,
 	sharedName,
+	sameStream,
 	removable,
 	sourceOptions,
 	visionMetadataKeys,
@@ -308,6 +312,8 @@ function FileEditor({
 	video: WizardVideoRendition;
 	/** Another file writes this name too, into the same folder. */
 	sharedName: boolean;
+	/** Another file has this height, bitrate and codec, and the plan needs them apart. */
+	sameStream: boolean;
 	removable: boolean;
 	sourceOptions: { value: string; label: string }[];
 	visionMetadataKeys: string[];
@@ -436,6 +442,7 @@ function FileEditor({
 				<Field
 					label={t("wizard.bitrateBps")}
 					htmlFor={`${id}-bitrate`}
+					error={sameStream ? t("vodFlow.sameSettings") : undefined}
 					hint={
 						video.bitrate === null && options?.crf === undefined
 							? t("vodFlow.bitrateOrCrf")

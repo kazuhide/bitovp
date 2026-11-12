@@ -26,10 +26,12 @@ import {
 	isFileOutputState,
 	removeFile,
 	renameFileJob,
+	sameStreamFiles,
 	setFileAudio,
 	sharedFileNames,
 } from "./file-output";
 import { tryImportPresetIntoWizard } from "./plan-to-wizard";
+import { addVodVideo } from "./rendition-copy";
 
 /** What the wizard's `patch` does with an edit: merge it, then reconcile the audio rows. */
 function apply(state: WizardState, patch: Partial<WizardState>): WizardState {
@@ -152,6 +154,31 @@ describe("file names", () => {
 		// "output.ts" in its place.
 		expect(restored.videos[0]?.muxing?.filename).toBe("sub/take-2-.ts");
 		localStorage.removeItem(key);
+	});
+
+	it("lose the other two shapes a draft would drop, and keep a colon it keeps", () => {
+		const typed = (name: string) =>
+			apply(started, editFile(started, 0, { filename: name }));
+		const key = draftKey(["org", "user"], "vod", "new:file");
+		for (const [name, taken] of [
+			["a://b.ts", "a-//b.ts"],
+			["clip:v2@1080.ts", "clip-v2@1080.ts"],
+			["cut 12:30.mp4", "cut 12:30.mp4"],
+		]) {
+			const state = typed(name as string);
+			expect(state.videos[0]?.muxing?.filename, name).toBe(taken);
+			writeWizardDraft(key, "vod", state, 2);
+			expect(
+				(readWizardDraft(key, "vod")?.value as Partial<WizardState>).videos?.[0]
+					?.muxing?.filename,
+				name,
+			).toBe(taken);
+			localStorage.removeItem(key);
+		}
+		// A job name that reads as a login gives a derived name a draft keeps too.
+		expect(defaultFileNames("user:pass@host", started.videos)).toEqual([
+			"user-pass@host.mp4",
+		]);
 	});
 
 	it("differ between files that share the folder", () => {
@@ -477,7 +504,19 @@ describe("the audio track", () => {
 describe("what the simple view cannot show", () => {
 	const cases: [string, Partial<WizardState>, string[]][] = [
 		["a manifest", { manifests: { hls: true, dash: false } }, ["manifests"]],
-		["post-encoding generation", { timing: "POST_ENCODING" }, ["manifests"]],
+		[
+			"post-encoding generation of a manifest",
+			{ manifests: { hls: true, dash: false }, timing: "POST_ENCODING" },
+			["manifests"],
+		],
+		[
+			"post-encoding generation for several encodings",
+			{
+				sources: { encodings: [{ key: "second", name: "Second encoding" }] },
+				timing: "POST_ENCODING",
+			},
+			["manifests"],
+		],
 		["an encoding option", { labels: ["team-a"] }, ["encoding"]],
 		[
 			"a thumbnail",
@@ -575,7 +614,6 @@ describe("what the simple view cannot show", () => {
 	});
 
 	// The two ways the audio can end up outside a file, each caught by its own guard.
-	const [file] = started.videos as [WizardState["videos"][number]];
 	const [track] = started.audios as [WizardState["audios"][number]];
 
 	it("audio written to a file of its own", () => {
@@ -605,35 +643,6 @@ describe("what the simple view cannot show", () => {
 			["v540"],
 		]);
 		expect(fileOutputBlockers(bare)).toEqual(["packaging"]);
-	});
-
-	it.each([
-		[
-			"a rendition",
-			{ videos: [{ ...file, extras: { key: "mezz" } }] },
-			["ladder"],
-		],
-		[
-			"a container",
-			{ videos: [{ ...file, muxing: { ...file.muxing, key: "mezz-file" } }] },
-			["packaging"],
-		],
-		[
-			"the audio track",
-			{
-				audios: [{ ...track, extras: { key: "main" } }],
-				videos: [
-					{ ...file, muxing: { ...file.muxing, muxedAudioKeys: ["main"] } },
-				],
-			},
-			["ladder"],
-		],
-	] satisfies [
-		string,
-		Partial<WizardState>,
-		FileOutputBlocker[],
-	][])("a key somebody typed for %s, which a return would replace", (_case, patch, steps) => {
-		expect(fileOutputBlockers({ ...started, ...patch })).toEqual(steps);
 	});
 });
 
@@ -719,7 +728,11 @@ describe("every field of a step the simple view hides", () => {
 			"encoding",
 		],
 		manifests: [{ manifests: { hls: true, dash: false } }, "manifests"],
-		timing: [{ timing: "POST_ENCODING" }, "manifests"],
+		// Only while there is a manifest to generate.
+		timing: [
+			{ manifests: { hls: true, dash: false }, timing: "POST_ENCODING" },
+			"manifests",
+		],
 	} satisfies Partial<
 		Record<keyof WizardState, [Partial<WizardState>, FileOutputBlocker]>
 	>;
@@ -770,6 +783,67 @@ describe("every field of a step the simple view hides", () => {
 		expect(planOf(left)).toEqual(planOf(started));
 		expect(fileOutputBlockers(left)).toEqual([]);
 		expect(collapseToFileOutput(left)).toEqual(started);
+	});
+});
+
+describe("when the manifests are generated, in a job that generates none", () => {
+	// The full view moves it without being asked (a rendition entering Per-Title, a
+	// manifest's generation mode) and shows its control only while a manifest is on.
+	const left: WizardState = { ...started, timing: "POST_ENCODING" };
+
+	it("is in the plan, and says nothing there", () => {
+		expect(planOf(left).generation.timing).toBe("POST_ENCODING");
+		expect(planOf(started).generation.timing).toBe("JUST_IN_TIME");
+		expect(planOf(left).manifests).toEqual([]);
+		expect({
+			...planOf(left),
+			generation: planOf(started).generation,
+		}).toEqual(planOf(started));
+	});
+
+	it("does not hold the full view, and is put back on the way back", () => {
+		expect(fileOutputBlockers(left)).toEqual([]);
+		expect(collapseToFileOutput(left)).toEqual(started);
+	});
+});
+
+describe("files the plan cannot tell apart", () => {
+	const second = (edit: Parameters<typeof editFile>[2]) => {
+		const two = apply(started, addFile(started));
+		return apply(two, editFile(two, 1, edit));
+	};
+	const duplicates = (state: WizardState) =>
+		validatePlan(planOf(state)).filter(
+			(issue) => issue.code === "PLAN_DUPLICATE_KEY",
+		).length;
+
+	it("are marked on both, where the plan is refused for a key it names twice", () => {
+		// The same video once as MP4 and once as QuickTime.
+		const same = second({
+			height: 1080,
+			bitrate: 8_000_000,
+			kind: "PROGRESSIVE_MOV",
+		});
+		expect(same.videos.map((video) => video.muxing?.filename)).toEqual([
+			"clip.mp4",
+			"clip-1080p.mov",
+		]);
+		expect(sameStreamFiles(same.videos)).toEqual([true, true]);
+		expect(duplicates(same)).toBeGreaterThan(0);
+	});
+
+	it.each([
+		["the height", { height: 720, bitrate: 8_000_000 }],
+		["the bitrate", { height: 1080, bitrate: 7_999_000 }],
+		["the codec", { height: 1080, bitrate: 8_000_000, codec: "H265" }],
+		["the source's own height", { height: null, bitrate: 8_000_000 }],
+	] satisfies [
+		string,
+		Parameters<typeof editFile>[2],
+	][])("are apart once %s differs", (_case, edit) => {
+		const apart = second(edit);
+		expect(sameStreamFiles(apart.videos)).toEqual([false, false]);
+		expect(duplicates(apart)).toBe(0);
 	});
 });
 
@@ -827,6 +901,81 @@ describe("returning from the full wizard", () => {
 
 	it("leaves a state this flow made untouched", () => {
 		expect(collapseToFileOutput(started)).toEqual(started);
+	});
+
+	it("is allowed after the ladder added a rendition beside two files of one height", () => {
+		// Files of one height are keyed by their bitrate as well, and the ladder
+		// writes its key into every row as soon as one is added.
+		const two = apply(started, addFile(started));
+		const twins = apply(two, editFile(two, 1, { height: 1080 }));
+		const added = apply(twins, addVodVideo(twins));
+		const removed = apply(added, { videos: added.videos.slice(0, 2) });
+		expect(removed.videos.map((video) => video.extras?.key)).toEqual([
+			"v1080_8000k",
+			"v1080_2000k",
+		]);
+		expect(planOf(removed)).toEqual(planOf(twins));
+		expect(fileOutputBlockers(removed)).toEqual([]);
+		expect(collapseToFileOutput(removed)).toEqual(twins);
+	});
+
+	it.each([
+		"v1080",
+		"v1080_8000k",
+		"v1080_8000k_h265",
+		"video2",
+		"v1080-2",
+		"v1080_8000k-3",
+	])("derives a key the editors wrote again, wherever it came from: %s", (key) => {
+		const [file] = started.videos as [WizardState["videos"][number]];
+		// No token says the ladder wrote it: a saved template keeps only the key.
+		const keyed: WizardState = {
+			...started,
+			videos: [{ ...file, extras: { key }, muxing: { ...file.muxing, key } }],
+		};
+		expect(fileOutputBlockers(keyed)).toEqual([]);
+		expect(collapseToFileOutput(keyed)).toEqual(started);
+	});
+
+	it("leaves a key a loaded plan chose where it is, and is not held by it", () => {
+		const [file] = started.videos as [WizardState["videos"][number]];
+		const [track] = started.audios as [WizardState["audios"][number]];
+		// No step has a field for a key, so there is nothing to send anyone to.
+		const chosen: WizardState = {
+			...started,
+			audios: [{ ...track, extras: { key: "aac" } }],
+			videos: [
+				{
+					...file,
+					extras: { key: "mezz" },
+					muxing: {
+						...file.muxing,
+						key: "mezz-file",
+						muxedAudioKeys: ["aac"],
+					},
+				},
+			],
+		};
+		expect(fileOutputBlockers(chosen)).toEqual([]);
+		expect(collapseToFileOutput(chosen)).toEqual(chosen);
+		expect(planOf(chosen).muxings.map((muxing) => muxing.key)).toEqual([
+			"mezz-file",
+		]);
+		expect(filesOf(chosen)[0]?.streams).toEqual(["mezz", "aac"]);
+
+		// The track's key is the one each file goes on naming after an edit here.
+		const louder = apply(chosen, editFileAudio(chosen, { bitrate: 320_000 }));
+		expect(filesOf(louder)[0]?.streams).toEqual(["mezz", "aac"]);
+		// A container keyed as its stream is was keyed by the editors, not chosen.
+		const [video] = chosen.videos as [WizardState["videos"][number]];
+		const followed: WizardState = {
+			...chosen,
+			videos: [{ ...video, muxing: { ...video.muxing, key: "mezz" } }],
+		};
+		expect(
+			collapseToFileOutput(followed).videos[0]?.muxing?.key,
+		).toBeUndefined();
+		expect(planOf(collapseToFileOutput(followed))).toEqual(planOf(followed));
 	});
 });
 

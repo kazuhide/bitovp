@@ -754,6 +754,8 @@ export const en = {
 		fileNameRequired: "Enter a file name.",
 		sameFileName:
 			"Another file has this name, and one would replace the other.",
+		sameSettings:
+			"Another file has the same height, bitrate and codec, and a job needs its files to differ in one of them. Change one on either file.",
 		sourceHeight: "Same as source",
 		bitrateOrCrf: "Enter a bitrate, or set CRF in the advanced options.",
 		videoSource: "Video source",

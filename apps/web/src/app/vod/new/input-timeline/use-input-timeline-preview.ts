@@ -39,6 +39,7 @@ export function useInputTimelinePreview({
 }) {
 	const references: VodInputTimelineSource[] = [];
 	for (const source of sources) {
+		if (source.purpose === "FILTER_IMAGE") continue;
 		const parsed = vodInputTimelineSourceSchema.safeParse({
 			key: source.key,
 			credentialId: source.credentialId,

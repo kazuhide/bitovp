@@ -10,7 +10,7 @@ import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import { apiFetch } from "@/lib/api";
-import { renderLocalized } from "@/test/render";
+import { renderLocalized, renderWithQuery } from "@/test/render";
 import type { WizardInputFile } from "../build-plan";
 import { VodInputTimelineEditor } from "./input-timeline-editor";
 import {
@@ -39,9 +39,11 @@ const sources: WizardInputFile[] = ["a", "b"].map((key) => ({
 function Harness({
 	disabled = false,
 	initial = timeline(),
+	withFavorites = false,
 }: {
 	disabled?: boolean;
 	initial?: VodInputTimelineDocument;
+	withFavorites?: boolean;
 }) {
 	const [document, setDocument] = useState<VodInputTimelineDocument>(initial);
 	return (
@@ -51,6 +53,7 @@ function Harness({
 				sources={sources}
 				onAddSource={() => {}}
 				disabled={disabled}
+				onUseFavorite={withFavorites ? () => {} : undefined}
 				onChange={(next: VodInputTimelineDocument) => {
 					changed(next);
 					setDocument(next);
@@ -62,7 +65,10 @@ function Harness({
 
 beforeEach(() => {
 	changed.mockReset();
-	vi.mocked(apiFetch).mockImplementation((_url, init) => {
+	vi.mocked(apiFetch).mockImplementation((url, init) => {
+		if (url === "/api/vod/input-favorites")
+			return Promise.resolve({ favorites: [] });
+		if (url === "/api/credentials") return Promise.resolve([]);
 		if (init?.method === "DELETE") return Promise.resolve(undefined);
 		const body = JSON.parse(String(init?.body));
 		return Promise.resolve({
@@ -104,6 +110,25 @@ beforeEach(() => {
 		height: 100,
 		toJSON: () => ({}),
 	});
+});
+
+it("does not undo the timeline from a storage dialog action", async () => {
+	renderWithQuery(<Harness withFavorites />);
+	const add = await screen.findByRole("button", {
+		name: "Add A.mp4 to sequence",
+	});
+	await waitFor(() => expect(add).toBeEnabled());
+	fireEvent.click(add);
+	const commits = changed.mock.calls.length;
+	const fixed = await screen.findByRole("button", { name: "Add fixed source" });
+	await waitFor(() => expect(fixed).toBeEnabled());
+	fireEvent.click(fixed);
+	const dialog = await screen.findByRole("dialog");
+	fireEvent.keyDown(within(dialog).getByRole("button", { name: "Close" }), {
+		key: "z",
+		ctrlKey: true,
+	});
+	expect(changed).toHaveBeenCalledTimes(commits);
 });
 afterEach(() => {
 	cleanup();

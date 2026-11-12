@@ -1,8 +1,9 @@
 "use client";
-import type {
-	VodInputTimelineSourceFacts,
-	VodInputTimelineTrack,
-	VodInputTimelineV2Document,
+import {
+	VodInputTimelineEditError,
+	type VodInputTimelineSourceFacts,
+	type VodInputTimelineTrack,
+	type VodInputTimelineV2Document,
 } from "@bitovp/core/vod-input-timeline";
 import {
 	type RefObject,
@@ -13,17 +14,30 @@ import {
 	useState,
 } from "react";
 import { availableSourceDuration } from "./source-availability";
-import { snapTimelineTime, timelineSnapCandidates } from "./timeline-snapping";
+import {
+	snapTimelineBody,
+	snapTimelineTime,
+	timelineSnapCandidates,
+} from "./timeline-snapping";
 import {
 	changeRange,
 	linkedPartner,
 	moveClip,
+	placeClip,
 	timelineDuration,
 	timelineItems,
 } from "./timeline-state";
 
 type Mode = "in" | "out" | "move";
 type Target = HTMLButtonElement | HTMLDivElement;
+export type TimelineGestureError = "invalidRange" | "gapTooLong" | "trackFull";
+function errorLabel(error: unknown): TimelineGestureError {
+	if (error instanceof VodInputTimelineEditError) {
+		if (error.code === "TIMELINE_GAP_TOO_LONG") return "gapTooLong";
+		if (error.code === "TIMELINE_LIMIT_EXCEEDED") return "trackFull";
+	}
+	return "invalidRange";
+}
 type Gesture = {
 	id: string;
 	track: VodInputTimelineTrack;
@@ -35,6 +49,8 @@ type Gesture = {
 	pixelsPerMs: number;
 	extentMs: number;
 	snapMs: number | null;
+	snapEdge: "in" | "out" | null;
+	dragged: boolean;
 	candidates: number[];
 	target: HTMLDivElement;
 	focusTarget: Target;
@@ -66,7 +82,7 @@ export function useTimelineGesture({
 	onChange: (next: VodInputTimelineV2Document) => void;
 	onSelect: (id: string, track: VodInputTimelineTrack) => void;
 	onSeek: (positionMs: number) => void;
-	onError: () => void;
+	onError: (reason?: TimelineGestureError) => void;
 }) {
 	const gesture = useRef<Gesture | null>(null);
 	const focusAfter = useRef<{
@@ -83,7 +99,7 @@ export function useTimelineGesture({
 	const modifierChanged = useRef<(altKey: boolean) => void>(() => {});
 	modifierChanged.current = (altKey) => {
 		const active = gesture.current;
-		if (active && active.mode !== "move")
+		if (active && (active.mode !== "move" || !active.linked))
 			move(active.pointer, active.clientX, altKey);
 	};
 	const finish = useCallback((commit: boolean) => {
@@ -140,8 +156,8 @@ export function useTimelineGesture({
 				finish(false);
 			} else if (
 				event.key === "Alt" &&
-				gesture.current?.mode !== "move" &&
-				gesture.current
+				gesture.current &&
+				(gesture.current.mode !== "move" || !gesture.current.linked)
 			) {
 				event.preventDefault();
 				modifierChanged.current(event.type === "keydown");
@@ -178,26 +194,37 @@ export function useTimelineGesture({
 		const amount = exact
 			? Math.round(delta)
 			: Math.round(Math.round(delta / tick) * tick);
-		const inMs =
-			mode === "in"
-				? Math.max(0, Math.min(clip.outMs - 1, clip.inMs + amount))
-				: clip.inMs;
 		const sourceDuration = availableSourceDuration(
 			source,
 			pair ? "both" : medium,
 			base.audioEnabled,
 		);
+		const inMs =
+			mode === "in"
+				? Math.max(
+						pair ? 0 : Math.max(0, clip.inMs - clip.startMs),
+						Math.min(clip.outMs - 1, clip.inMs + amount),
+					)
+				: clip.inMs;
 		const outMs =
 			mode === "out"
-				? Math.min(sourceDuration, Math.max(clip.inMs + 1, clip.outMs + amount))
+				? Math.min(
+						pair
+							? sourceDuration
+							: Math.min(
+									sourceDuration,
+									clip.inMs + base.durationMs - clip.startMs,
+								),
+						Math.max(clip.inMs + 1, clip.outMs + amount),
+					)
 				: clip.outMs;
 		try {
 			return changeRange(base, id, inMs, outMs, facts, {
 				track: medium,
 				linked: pair,
 			});
-		} catch {
-			onError();
+		} catch (error) {
+			onError(errorLabel(error));
 			return base;
 		}
 	}
@@ -210,26 +237,70 @@ export function useTimelineGesture({
 		const delta = Math.round((clientX - left - active.x) / active.pixelsPerMs);
 		active.clientX = clientX;
 		const previousSnap = active.snapMs;
+		const previousEdge = active.snapEdge;
 		active.snapMs = null;
+		active.snapEdge = null;
 		if (active.mode === "move") {
 			const items = timelineItems(active.base, active.track);
 			const item = items.find((entry) => entry.clip.id === active.id);
 			if (!item) return;
-			const center = item.startMs + item.durationMs / 2 + delta;
-			const others = items.filter((entry) => entry.clip.id !== active.id);
-			const index = others.findIndex(
-				(entry) => center < entry.startMs + entry.durationMs / 2,
-			);
+			if (!active.dragged && Math.abs(delta * active.pixelsPerMs) >= 4)
+				active.dragged = true;
 			try {
-				active.next = moveClip(
-					active.base,
-					active.id,
-					index < 0 ? others.length : index,
-					{ track: active.track, linked: active.linked },
-				);
-			} catch {
-				onError();
+				if (!active.dragged) {
+					active.next = active.base;
+				} else if (active.linked) {
+					const center = item.startMs + item.durationMs / 2 + delta;
+					const others = items.filter((entry) => entry.clip.id !== active.id);
+					const index = others.findIndex(
+						(entry) => center < entry.startMs + entry.durationMs / 2,
+					);
+					active.next = moveClip(
+						active.base,
+						active.id,
+						index < 0 ? others.length : index,
+						{ track: active.track, linked: true },
+					);
+				} else {
+					const rawStart = item.startMs + delta;
+					const snap =
+						snapping && !altKey
+							? snapTimelineBody(
+									rawStart,
+									item.durationMs,
+									active.base.durationMs,
+									active.candidates,
+									active.pixelsPerMs,
+									previousSnap !== null && previousEdge
+										? { timeMs: previousSnap, edge: previousEdge }
+										: null,
+								)
+							: null;
+					active.snapMs = snap?.timeMs ?? null;
+					active.snapEdge = snap?.edge ?? null;
+					const startMs = Math.max(
+						0,
+						Math.min(
+							active.base.durationMs - item.durationMs,
+							snap
+								? snap.timeMs - (snap.edge === "out" ? item.durationMs : 0)
+								: rawStart,
+						),
+					);
+					active.next =
+						startMs === item.startMs
+							? active.base
+							: placeClip(
+									active.base,
+									{ id: active.id, track: active.track },
+									startMs,
+								);
+				}
+			} catch (error) {
+				onError(errorLabel(error));
 				active.next = active.base;
+				active.snapMs = null;
+				active.snapEdge = null;
 			}
 		} else {
 			const clip = timelineItems(active.base, active.track).find(
@@ -327,6 +398,8 @@ export function useTimelineGesture({
 					pixelsPerMs,
 					extentMs: total,
 					snapMs: null,
+					snapEdge: null,
+					dragged: false,
 					candidates: timelineSnapCandidates(
 						document,
 						{ track: medium, id },
@@ -404,7 +477,11 @@ export function useTimelineGesture({
 			move(event.pointerId, event.clientX, event.altKey);
 			if (gesture.current !== active) return;
 			let seekTo: number | undefined;
-			if (active.mode === "move" && active.next === active.base) {
+			if (
+				active.mode === "move" &&
+				!active.dragged &&
+				active.next === active.base
+			) {
 				const item = timelineItems(active.base, active.track).find(
 					(item) => item.clip.id === active.id,
 				);

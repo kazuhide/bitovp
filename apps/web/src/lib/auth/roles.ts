@@ -269,6 +269,11 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "manual VOD input preparation and derived source previews",
 	},
 	{
+		prefix: "/api/vod/input-favorites",
+		minRole: "OPERATOR",
+		reason: "organization fixed input references for VOD editing",
+	},
+	{
 		prefix: "/api",
 		methods: ["GET", "HEAD"],
 		minRole: "VIEWER",

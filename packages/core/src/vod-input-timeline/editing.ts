@@ -88,6 +88,35 @@ function sourceRange(
 	if (outMs > getVodInputTimelineSourceDurationMs(source, track))
 		fail("SOURCE_TOO_SHORT");
 }
+export function positionVodInputTimelineClip(
+	input: VodInputTimelineDocument,
+	edit: { track: VodInputTimelineTrack; id: string; startMs: number },
+	nextId: VodInputTimelineNextId,
+): VodInputTimelineV2Document {
+	const document = normalizeVodInputTimelineDocument(input),
+		clip = selected(document, edit),
+		endMs = edit.startMs + clip.outMs - clip.inMs;
+	if (
+		!Number.isSafeInteger(edit.startMs) ||
+		edit.startMs < 0 ||
+		endMs > document.durationMs
+	)
+		fail("TIMELINE_RANGE_INVALID");
+	if (edit.startMs === clip.startMs) return finish(document);
+	const remaining = getVodInputTimelineTrack(document, edit.track).filter(
+		(item) => item.id !== clip.id,
+	);
+	return finish({
+		...document,
+		[trackKey(edit.track)]: overwriteClips(
+			remaining,
+			edit.startMs,
+			endMs,
+			{ ...clip, startMs: edit.startMs },
+			nextId,
+		),
+	});
+}
 export function overwriteVodInputTimelineTrack(
 	input: VodInputTimelineDocument,
 	edit: {

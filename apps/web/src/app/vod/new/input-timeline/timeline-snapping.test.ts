@@ -1,10 +1,48 @@
 import type { VodInputTimelineV2Document } from "@bitovp/core/vod-input-timeline";
 import { describe, expect, it } from "vitest";
-import { snapTimelineTime, timelineSnapCandidates } from "./timeline-snapping";
+import {
+	snapTimelineBody,
+	snapTimelineTime,
+	timelineSnapCandidates,
+} from "./timeline-snapping";
 
 const firstId = "10000000-0000-4000-8000-000000000001";
 const secondId = "10000000-0000-4000-8000-000000000002";
 const audioId = "10000000-0000-4000-8000-000000000003";
+
+describe("body snapping", () => {
+	it("keeps the previous edge through twelve pixels even when the other edge is closer", () => {
+		expect(
+			snapTimelineBody(1300, 2000, 10000, [1000, 3300], 0.04, {
+				edge: "in",
+				timeMs: 1000,
+			}),
+		).toEqual({ edge: "in", timeMs: 1000 });
+		expect(
+			snapTimelineBody(1301, 2000, 10000, [1000, 3300], 0.04, {
+				edge: "in",
+				timeMs: 1000,
+			}),
+		).toEqual({ edge: "out", timeMs: 3300 });
+	});
+	it("chooses the nearer edge and breaks ties toward the start", () => {
+		expect(
+			snapTimelineBody(1100, 2000, 10000, [1000, 3150], 0.04, null),
+		).toEqual({ edge: "out", timeMs: 3150 });
+		expect(
+			snapTimelineBody(1100, 2000, 10000, [1000, 3200], 0.04, null),
+		).toEqual({ edge: "in", timeMs: 1000 });
+	});
+	it("does not acquire unreachable endpoints or turn far-outside clamping into a snap", () => {
+		expect(snapTimelineBody(100, 2000, 10000, [1900], 0.04, null)).toBeNull();
+		expect(snapTimelineBody(7950, 2000, 10000, [8100], 0.04, null)).toBeNull();
+		expect(snapTimelineBody(-201, 2000, 10000, [0], 0.04, null)).toBeNull();
+		expect(snapTimelineBody(-200, 2000, 10000, [0], 0.04, null)).toEqual({
+			edge: "in",
+			timeMs: 0,
+		});
+	});
+});
 
 function document(): VodInputTimelineV2Document {
 	return {

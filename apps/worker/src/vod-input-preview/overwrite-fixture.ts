@@ -10,6 +10,7 @@ import {
 	readFile,
 	rm,
 	stat,
+	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +23,7 @@ import {
 import type { ObjectStorageBrowser } from "@bitovp/storage";
 import { runMediaProcess } from "../library-editing/process";
 import { probeVodInputSources, renderVodInputPreview } from "./media";
+import { runStillImageFixture } from "./still-image-fixture";
 
 const common = [
 	"-v",
@@ -398,6 +400,123 @@ export async function runIndependentOverwriteFixture() {
 		);
 		assert.equal((await metadata(window)).streams[0].width, 480);
 		assert.equal((await metadata(window)).streams[0].height, 360);
+		// The screenshot's independent A1 move exposes 11.658s before the next clip.
+		const screenshot = document(
+			Array.from({ length: 7 }, (_, index) =>
+				clip("a", index * 4000, 0, index === 6 ? 2000 : 4000),
+			),
+			[
+				clip("e", 0, 0, 7689),
+				clip("e", 11_347, 11_347, 18_000),
+				clip("c", 26_000, 0, 4000),
+				clip("c", 30_000, 0, 4000),
+			],
+			34_000,
+		);
+		const shifted = structuredClone(screenshot);
+		if (shifted.audioClips[1]) shifted.audioClips[1].startMs = 7689;
+		const original = await render("before-audio-move", screenshot),
+			moved = await render("interior-11658", shifted);
+		const encodedVideo = async (path: string) => {
+			const target = join(directory, `${randomUUID()}.h264`);
+			await runMediaProcess(
+				"ffmpeg",
+				[
+					...common,
+					"-i",
+					path,
+					"-map",
+					"0:v:0",
+					"-an",
+					"-c:v",
+					"copy",
+					"-f",
+					"h264",
+					target,
+				],
+				{ signal },
+			);
+			return digest(await readFile(target));
+		};
+		const untouchedVideo = await encodedVideo(original);
+		assert.equal(
+			await encodedVideo(moved),
+			untouchedVideo,
+			"moving A1 leaves the entire encoded V1 byte-identical",
+		);
+		for (const [second, expectedHz] of [
+			[13.8, 770],
+			[14.8, 0],
+			[25.6, 0],
+			[26.3, 990],
+		] as const) {
+			const measured = await sample(moved, second);
+			if (second < 26)
+				assert.ok(
+					[...measured.rgb].some((channel) => channel > 100),
+					"V1 stays visible across the A1 gap",
+				);
+			else assert.ok([...measured.rgb].every((channel) => channel < 10));
+			if (expectedHz) assert.ok(Math.abs(measured.hz - expectedHz) < 30);
+			else
+				assert.ok(
+					measured.rms < 2,
+					"the exposed 11.658s A1 interval is silent",
+				);
+		}
+		const maxGapDocument = document(
+			[clip("a", 0, 0, 1000), clip("b", 21_000, 0, 1000)],
+			[clip("c", 0, 0, 1000), clip("c", 21_000, 0, 1000)],
+			22_000,
+		);
+		const maxGap = await render("interior-20000", maxGapDocument);
+		for (const second of [1.3, 10.5, 20.6]) {
+			const measured = await sample(maxGap, second);
+			assert.ok([...measured.rgb].every((channel) => channel < 10));
+			assert.ok(measured.rms < 2, "the 20s interior gap is black and silent");
+		}
+		const afterGap = await sample(maxGap, 21.3);
+		assert.ok(afterGap.rgb[2] !== undefined && afterGap.rgb[2] > 100);
+		assert.ok(Math.abs(afterGap.hz - 990) < 30, "both tracks resume after 20s");
+		const slicedGap = await render(
+			"interior-gap-window",
+			maxGapDocument,
+			2000,
+			15_000,
+		);
+		const sliceSample = await sample(slicedGap, 12);
+		assert.ok([...sliceSample.rgb].every((channel) => channel < 10));
+		assert.ok(
+			sliceSample.rms < 2,
+			"a window wholly inside an interior gap retains full-program eligibility",
+		);
+		const evidenceDirectory = process.env.BITOVP_VOD_INPUT_MEDIA_EVIDENCE_DIR;
+		if (evidenceDirectory) {
+			await mkdir(evidenceDirectory, { recursive: true });
+			for (const [name, path] of [
+				["interior-11658", moved],
+				["interior-20000", maxGap],
+				["interior-gap-window", slicedGap],
+			] as const)
+				await copyFile(path, join(evidenceDirectory, `${name}.mp4`));
+			await writeFile(
+				join(evidenceDirectory, "interior-gaps.json"),
+				JSON.stringify(
+					{
+						untouchedVideoSha256: untouchedVideo,
+						document: shifted,
+						metadata: await Promise.all(
+							[moved, maxGap, slicedGap].map(metadata),
+						),
+					},
+					null,
+					2,
+				),
+			);
+		}
+		console.log(
+			`interior gaps: 11.658s A1 gap, 20s black/silent gap, 15s cropped window; unchanged V1 sha256=${untouchedVideo}`,
+		);
 		const noAudio = await render("empty-audio", document(base.videoClips, []));
 		assert.equal(
 			(await metadata(noAudio)).streams.filter(
@@ -450,6 +569,7 @@ export async function runIndependentOverwriteFixture() {
 		await assert.rejects(render("forged-long-source", edited, 0, 18000, "e"), {
 			code: "SOURCE_PREVIEW_INVALID",
 		});
+		await runStillImageFixture(signal);
 		console.log(
 			`independent A/V media: unchanged V1 sha256=${baseVideo}; unchanged A1 sha256=${baseAudio}; WAV/MP3, gaps, source window and cleanup passed`,
 		);

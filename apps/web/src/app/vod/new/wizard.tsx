@@ -11,6 +11,7 @@ import {
 	type VodInputTimelineSourceFacts,
 	validateVodInputTimeline,
 } from "@bitovp/core/vod-input-timeline";
+import { applyVodInputFavorite } from "@bitovp/core/wizard";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -43,6 +44,7 @@ import {
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
 import { VodInputTimelineEditor } from "./input-timeline/input-timeline-editor";
+import { importPreparedImageFile } from "./input-timeline/prepared-image-placement";
 import { MuxingsSection } from "./muxings-section";
 import { PlaceholderRefsList } from "./placeholder-refs-list";
 import {
@@ -1296,6 +1298,39 @@ export function VodWizard({
 										onChange={(document) => patch({ inputTimeline: document })}
 										sources={state.inputFiles}
 										onAddSource={() => setPicker({ timelineAdd: true })}
+										onUseFavorite={(favorite) => {
+											const imported = applyVodInputFavorite(
+												state,
+												favorite,
+												() => crypto.randomUUID().replaceAll("-", ""),
+											);
+											setState(imported.state);
+										}}
+										canUseLogo={
+											state.videos.length > 0 &&
+											state.inputFiles.some(
+												(file) => file.path && file.purpose !== "FILTER_IMAGE",
+											)
+										}
+										canUseMedia={
+											state.inputFiles.filter(
+												(file) => file.path && file.purpose !== "FILTER_IMAGE",
+											).length < 16
+										}
+										imageOutput={{
+											credentialId: state.output.credentialId,
+											bucket: state.output.bucket,
+											prefix: state.output.basePath,
+										}}
+										imageCredentials={allCredentials}
+										onImportPreparedSource={(file) =>
+											patch({
+												inputFiles: importPreparedImageFile(
+													state.inputFiles,
+													file,
+												),
+											})
+										}
 										onReadinessChange={onTimelineReadiness}
 									/>
 									<details className="rounded-md border border-zinc-800 p-3">

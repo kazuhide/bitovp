@@ -32,8 +32,17 @@ const holder = vi.hoisted(() => ({
 	context: null as unknown as ServerContext,
 }));
 const queue = vi.hoisted(() => ({ add: vi.fn() }));
+const imageStorage = vi.hoisted(() => ({
+	headObject: vi.fn(),
+	getObject: vi.fn(),
+	putObject: vi.fn(),
+	dispose: vi.fn(),
+}));
 vi.mock("./context", () => ({ getServerContext: async () => holder.context }));
 vi.mock("./queue", () => ({ getVodInputPreviewQueue: () => queue }));
+vi.mock("./storage", () => ({
+	browserForCredentialId: async () => imageStorage,
+}));
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
 const appUrl = process.env.BITOVP_TENANT_TEST_APP_URL;
@@ -89,6 +98,9 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		});
 		beforeEach(() => {
 			queue.add.mockReset().mockResolvedValue(undefined);
+			imageStorage.headObject
+				.mockReset()
+				.mockResolvedValue({ size: 1024, etag: '"image-v1"' });
 			use();
 		});
 		afterAll(async () => {
@@ -569,6 +581,110 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(
 				JSON.stringify(await getVodInputPreviewTask(failed.id)),
 			).not.toContain("private redis");
+		});
+		it("persists a server-sealed image task through the new SQL kind check without changing canonical intent", async () => {
+			const f = await fixture(),
+				output = await fixture();
+			const source = f.request.sources[0];
+			if (!source) throw new Error("Image source fixture missing");
+			const request = {
+				kind: "IMAGE_PREPARE",
+				source: { ...source, objectKey: "title.png" },
+				durationMs: 5000,
+				output: {
+					credentialId: output.credential.id,
+					bucket: "output",
+					prefix: "titles/",
+				},
+			};
+			const before = Date.now(),
+				created = await createVodInputPreviewTask(request);
+			const stored = await a.vodInputPreviewTask.findUniqueOrThrow({
+				where: { id: created.id },
+			});
+			const parsed = vodInputPreviewRequestSchema.parse(stored.request);
+			expect(parsed).toEqual({
+				...request,
+				sourceIdentity: { size: 1024, etag: '"image-v1"' },
+			});
+			expect(stored.kind).toBe("IMAGE_PREPARE");
+			expect(stored.requestHash).toBe(hash(parsed));
+			expect(stored.expiresAt.getTime()).toBeGreaterThanOrEqual(
+				before + 24 * 3600_000,
+			);
+			await expect(
+				a.vodInputPreviewTask.update({
+					where: { id: created.id },
+					data: { requestHash: "b".repeat(64) },
+				}),
+			).rejects.toThrow("VOD input preview intent is immutable");
+			expect(await getVodInputPreviewTask(created.id)).toMatchObject({
+				kind: "IMAGE_PREPARE",
+				status: "PENDING",
+			});
+			expect((await cancelVodInputPreviewTask(created.id)).status).toBe(
+				"CANCELED",
+			);
+		});
+		it("rejects foreign image credentials and revokes image access when either actual credential is deleted", async () => {
+			const f = await fixture(),
+				output = await fixture(),
+				foreign = await fixture(b);
+			const source = f.request.sources[0];
+			if (!source) throw new Error("Image source fixture missing");
+			const request = {
+				kind: "IMAGE_PREPARE",
+				source: { ...source, objectKey: "title.jpg" },
+				durationMs: 5000,
+				output: {
+					credentialId: output.credential.id,
+					bucket: "output",
+					prefix: "titles/",
+				},
+			};
+			await expect(
+				createVodInputPreviewTask({
+					...request,
+					source: { ...request.source, credentialId: foreign.credential.id },
+				}),
+			).rejects.toMatchObject({ code: "SOURCE_CREDENTIAL_NOT_FOUND" });
+			await expect(
+				createVodInputPreviewTask({
+					...request,
+					output: { ...request.output, credentialId: foreign.credential.id },
+				}),
+			).rejects.toMatchObject({ code: "SOURCE_CREDENTIAL_NOT_FOUND" });
+			const created = await createVodInputPreviewTask(request);
+			use(b, otherOrg);
+			await expect(getVodInputPreviewTask(created.id)).rejects.toMatchObject({
+				code: "PREVIEW_NOT_FOUND",
+			});
+			await expect(cancelVodInputPreviewTask(created.id)).rejects.toMatchObject(
+				{ code: "PREVIEW_NOT_FOUND" },
+			);
+			use();
+			await a.credential.delete({ where: { id: output.credential.id } });
+			await expect(getVodInputPreviewTask(created.id)).rejects.toMatchObject({
+				code: "SOURCE_CREDENTIAL_NOT_FOUND",
+			});
+			await expect(cancelVodInputPreviewTask(created.id)).rejects.toMatchObject(
+				{ code: "SOURCE_CREDENTIAL_NOT_FOUND" },
+			);
+			const replacementOutput = await fixture(),
+				second = await createVodInputPreviewTask({
+					...request,
+					output: {
+						...request.output,
+						credentialId: replacementOutput.credential.id,
+					},
+				});
+			await a.credential.delete({ where: { id: f.credential.id } });
+			await expect(getVodInputPreviewTask(second.id)).rejects.toMatchObject({
+				code: "SOURCE_CREDENTIAL_NOT_FOUND",
+			});
+			await expect(cancelVodInputPreviewTask(second.id)).rejects.toMatchObject({
+				code: "SOURCE_CREDENTIAL_NOT_FOUND",
+			});
 		});
 	},
 );

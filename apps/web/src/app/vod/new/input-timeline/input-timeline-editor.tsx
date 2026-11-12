@@ -1,9 +1,16 @@
 "use client";
 
+import type { VodInputFavoriteWire } from "@bitovp/core/vod-input-timeline";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ClipInspector } from "./clip-inspector";
 import { EditorToolbar } from "./editor-toolbar";
+import { ImagePlacementDialog } from "./image-placement-dialog";
 import { taskErrorText } from "./labels";
+import {
+	buildPreparedImagePlacement,
+	preparedImageFile,
+} from "./prepared-image-placement";
 import { PreviewMonitor } from "./preview-monitor";
 import { availableSourceDuration } from "./source-availability";
 import { SourceBin } from "./source-bin";
@@ -20,6 +27,10 @@ export type {
 export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 	const { sources, onAddSource, disabled = false } = props;
 	const w = useInputTimelineWorkbench(props);
+	const [image, setImage] = useState<{
+		favorite: VodInputFavoriteWire;
+		documentKey: string;
+	} | null>(null);
 	const document = w.document;
 	const selectedFact = w.state.facts.find(
 		(source) => source.key === w.selected?.sourceKey,
@@ -42,6 +53,18 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 					onAddSource={onAddSource}
 					onAdd={w.add}
 					onSelect={w.selectSource}
+					onUseFavorite={props.onUseFavorite}
+					canUseLogo={props.canUseLogo}
+					canUseMedia={props.canUseMedia}
+					onPrepareImage={
+						props.onImportPreparedSource
+							? (favorite) =>
+									setImage({
+										favorite,
+										documentKey: JSON.stringify(w.document),
+									})
+							: undefined
+					}
 				/>
 				<div className="min-w-0">
 					<PreviewMonitor
@@ -145,6 +168,36 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 				<p role="status" className="text-xs text-zinc-400">
 					{w.l.preparing}
 				</p>
+			)}
+			{image && props.onImportPreparedSource && (
+				<ImagePlacementDialog
+					favorite={image.favorite}
+					initialOutput={props.imageOutput}
+					credentials={props.imageCredentials ?? []}
+					positionMs={w.editor.positionMs}
+					durationMs={w.document.durationMs}
+					disabled={disabled || w.dragging}
+					onClose={() => setImage(null)}
+					onPlace={(prepared, placement, kind) => {
+						if (JSON.stringify(w.document) !== image.documentKey || disabled)
+							throw new Error("IMAGE_EDIT_CHANGED");
+						const file = preparedImageFile(
+							sources,
+							prepared,
+							kind,
+							image.favorite.label,
+						);
+						const next = buildPreparedImagePlacement(
+							w.document,
+							prepared,
+							placement,
+							w.state.facts,
+							() => crypto.randomUUID(),
+						);
+						props.onImportPreparedSource?.(file);
+						if (!w.commitPrepared(next)) throw new Error("IMAGE_EDIT_CHANGED");
+					}}
+				/>
 			)}
 			{w.error && (
 				<div

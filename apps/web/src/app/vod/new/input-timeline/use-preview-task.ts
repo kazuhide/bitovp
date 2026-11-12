@@ -1,7 +1,7 @@
 "use client";
 
 import {
-	type VodInputPreviewRequest,
+	type VodInputPreviewSubmission,
 	type VodInputPreviewTask,
 	vodInputPreviewTaskSchema,
 } from "@bitovp/core/vod-input-timeline";
@@ -33,7 +33,7 @@ function delay(ms: number, signal: AbortSignal) {
 	});
 }
 
-function readTask(value: unknown, request: VodInputPreviewRequest) {
+function readTask(value: unknown, request: VodInputPreviewSubmission) {
 	const task = vodInputPreviewTaskSchema.safeParse(
 		(value as { task?: unknown } | null)?.task,
 	);
@@ -44,7 +44,9 @@ function readTask(value: unknown, request: VodInputPreviewRequest) {
 		task.data.status === "SUCCEEDED" &&
 		!(request.kind === "PROBE"
 			? task.data.result?.sources
-			: task.data.result?.preview)
+			: request.kind === "IMAGE_PREPARE"
+				? task.data.result?.prepared
+				: task.data.result?.preview)
 	)
 		throw new Error("invalidResponse");
 	const preview = task.data.result?.preview;
@@ -55,12 +57,21 @@ function readTask(value: unknown, request: VodInputPreviewRequest) {
 			preview.durationMs !== request.range.durationMs)
 	)
 		throw new Error("invalidResponse");
+	if (task.data.status === "SUCCEEDED" && request.kind === "IMAGE_PREPARE") {
+		const prepared = task.data.result?.prepared;
+		if (
+			prepared?.requestedDurationMs !== request.durationMs ||
+			prepared.source.credentialId !== request.output.credentialId ||
+			prepared.source.bucket !== request.output.bucket
+		)
+			throw new Error("invalidResponse");
+	}
 	return task.data;
 }
 
 /** Only a task belonging to this exact request generation may become current. */
 export function usePreviewTask(
-	request: VodInputPreviewRequest | null,
+	request: VodInputPreviewSubmission | null,
 	{ debounceMs = 350, pollMs = 1000 } = {},
 ) {
 	const requestKey = request ? JSON.stringify(request) : null;
@@ -78,7 +89,7 @@ export function usePreviewTask(
 	useEffect(() => {
 		if (!executionKey) return;
 		const [, body] = JSON.parse(executionKey) as [number, string];
-		const current = JSON.parse(body) as VodInputPreviewRequest;
+		const current = JSON.parse(body) as VodInputPreviewSubmission;
 		const controller = new AbortController();
 		let active = true;
 		let task: VodInputPreviewTask | null = null;

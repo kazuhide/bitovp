@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { finish } from "./edit-support";
 import {
 	getVodInputTimelineLinkedPartner,
 	locateVodInputTimelineTime,
@@ -7,6 +8,7 @@ import {
 	overwriteVodInputTimelineTrack,
 	resolveVodInputTimeline,
 	type VodInputTimelineSourceFacts,
+	validateVodInputPreview,
 	validateVodInputTimeline,
 	vodInputTimelineDocumentSchema,
 	vodInputTimelineSourceFactsSchema,
@@ -119,9 +121,9 @@ it.each([
 	"leading",
 	"internal",
 	"trailing",
-] as const)("accepts exactly ten seconds of %s padding but rejects one millisecond more", (position) => {
-	function fixture(gap: number) {
-		const videoClips =
+] as const)("enforces per-sequence native padding limits for %s gaps", (position) => {
+	function fixture(gap: number, track: "video" | "audio") {
+		const clips =
 			position === "leading"
 				? [clip(2, "a", gap, 0, 1000)]
 				: position === "trailing"
@@ -130,20 +132,45 @@ it.each([
 		return {
 			schemaVersion: 2 as const,
 			id: id(1),
-			audioEnabled: false,
+			audioEnabled: track === "audio",
 			durationMs: gap + (position === "internal" ? 2000 : 1000),
-			videoClips,
-			audioClips: [],
+			videoClips: track === "video" ? clips : [],
+			audioClips: track === "audio" ? clips : [],
 		};
 	}
-	expect(validateVodInputTimeline(fixture(10_000), facts)).toEqual([]);
-	expect(validateVodInputTimeline(fixture(10_001), facts)).toContainEqual(
-		expect.objectContaining({
-			code: "TIMELINE_GAP_TOO_LONG",
-			track: "video",
-			durationMs: 10_001,
-		}),
-	);
+	const limit = position === "internal" ? 20_000 : 10_000;
+	for (const track of ["video", "audio"] as const) {
+		for (const gap of position === "internal"
+			? [10_000, 10_001, 11_658, 20_000]
+			: [10_000]) {
+			const document = fixture(gap, track);
+			expect(validateVodInputTimeline(document, facts)).toEqual([]);
+			expect(finish(document)).toBe(document);
+			if (position === "internal")
+				expect(
+					validateVodInputPreview(
+						{
+							kind: "PREVIEW",
+							probeId: id(90),
+							document,
+							range: { startMs: 1000, durationMs: gap },
+						},
+						facts,
+					),
+				).toEqual([]);
+		}
+		const invalid = fixture(limit + 1, track);
+		expect(validateVodInputTimeline(invalid, facts)).toContainEqual(
+			expect.objectContaining({
+				code: "TIMELINE_GAP_TOO_LONG",
+				track,
+				durationMs: limit + 1,
+			}),
+		);
+		expect(() => finish(invalid)).toThrowError(
+			expect.objectContaining({ code: "TIMELINE_GAP_TOO_LONG" }),
+		);
+	}
 });
 
 it("does not impose native gap padding on a wholly empty track, and distinguishes source audition from a video-output project", () => {
@@ -170,6 +197,16 @@ it("does not impose native gap padding on a wholly empty track, and distinguishe
 	};
 	expect(validateVodInputTimeline(videoOnly, facts)).toEqual([]);
 	expect(resolveVodInputTimeline(videoOnly).hasAudio).toBe(false);
+	const disabledAudio = {
+		...videoOnly,
+		audioEnabled: false,
+		durationMs: 40_000,
+		videoClips: [clip(2, "a", 0, 0, 20_000), clip(3, "b", 20_000, 0, 20_000)],
+		audioClips: [clip(4, "a", 0, 0, 1000), clip(5, "sound", 30_000, 0, 1000)],
+	};
+	expect(validateVodInputTimeline(disabledAudio, facts)).toEqual([]);
+	expect(finish(disabledAudio)).toBe(disabledAudio);
+	expect(resolveVodInputTimeline(disabledAudio).audioSegments).toEqual([]);
 });
 
 it("uses per-stream duration to reject audio beyond its real end and rejects metadata with no real media", () => {

@@ -2,8 +2,10 @@ import { z } from "zod";
 
 export const MAX_VOD_TIMELINE_SOURCES = 16;
 export const MAX_VOD_TIMELINE_CLIPS = 64;
-/** Provider PaddingSequence is limited to 10 seconds per gap. */
+/** Each native PaddingSequence is limited to 10 seconds. */
 export const MAX_VOD_TIMELINE_GAP_MS = 10_000;
+/** An interior gap can use the preceding after-pad and following before-pad. */
+export const MAX_VOD_TIMELINE_INTERIOR_GAP_MS = MAX_VOD_TIMELINE_GAP_MS * 2;
 export const MAX_VOD_TIMELINE_DURATION_MS = 24 * 60 * 60 * 1000;
 export const MAX_VOD_INPUT_PREVIEW_DURATION_MS = 180_000;
 export const DEFAULT_VOD_INPUT_PREVIEW_DURATION_MS = 30_000;
@@ -217,22 +219,98 @@ export const vodInputPreviewRangeSchema = z.strictObject({
 		.positive()
 		.max(MAX_VOD_INPUT_PREVIEW_DURATION_MS),
 });
-export const vodInputPreviewRequestSchema = z.discriminatedUnion("kind", [
-	z.strictObject({ kind: z.literal("PROBE"), sources: sourcesSchema }),
-	z.strictObject({
-		kind: z.literal("PREVIEW"),
-		probeId: z.uuid(),
-		document: vodInputTimelineDocumentSchema.refine(
-			(doc) =>
-				doc.schemaVersion === 1
-					? doc.clips.length > 0
-					: doc.videoClips.length > 0 ||
-						(doc.audioEnabled && doc.audioClips.length > 0),
-			"Add a clip",
+const probeRequestSchema = z.strictObject({
+	kind: z.literal("PROBE"),
+	sources: sourcesSchema,
+});
+const previewRequestSchema = z.strictObject({
+	kind: z.literal("PREVIEW"),
+	probeId: z.uuid(),
+	document: vodInputTimelineDocumentSchema.refine(
+		(doc) =>
+			doc.schemaVersion === 1
+				? doc.clips.length > 0
+				: doc.videoClips.length > 0 ||
+					(doc.audioEnabled && doc.audioClips.length > 0),
+		"Add a clip",
+	),
+	range: vodInputPreviewRangeSchema,
+	sourcePreviewKey: key.optional(),
+});
+export const MAX_VOD_INPUT_IMAGE_BYTES = 32 * 1024 ** 2;
+export const MAX_VOD_INPUT_IMAGE_PIXELS = 4096 * 2160;
+export const VOD_INPUT_IMAGE_OUTPUT_PROVIDERS = [
+	"AWS_S3",
+	"AKAMAI_OBJECT_STORAGE",
+	"OCI_OBJECT_STORAGE",
+	"GENERIC_S3",
+	"GCS_HMAC",
+] as const;
+const hasImagePathControl = (value: string, includeSpace = false) =>
+	[...value].some((character) => {
+		const code = character.charCodeAt(0);
+		return code < (includeSpace ? 33 : 32) || code === 127;
+	});
+export const vodInputImagePrepareInputSchema = z.strictObject({
+	kind: z.literal("IMAGE_PREPARE"),
+	source: vodInputTimelineSourceSchema,
+	durationMs: z.number().int().min(1000).max(60_000),
+	output: z.strictObject({
+		credentialId: z.uuid(),
+		bucket: vodInputTimelineSourceSchema.shape.bucket.refine(
+			(value) => !/[\\/?#]/.test(value) && !hasImagePathControl(value, true),
+			"Choose an output bucket",
 		),
-		range: vodInputPreviewRangeSchema,
-		sourcePreviewKey: key.optional(),
+		prefix: z
+			.string()
+			.max(512)
+			.refine(
+				(value) =>
+					new TextEncoder().encode(value).length <= 768 &&
+					!/[\\?#]/.test(value) &&
+					!hasImagePathControl(value) &&
+					!value.includes("://") &&
+					!value.split("/").some((part) => part === "." || part === ".."),
+				"Choose an output folder",
+			),
 	}),
+});
+export type VodInputImagePrepareInput = z.infer<
+	typeof vodInputImagePrepareInputSchema
+>;
+export const vodInputImagePrepareRequestSchema =
+	vodInputImagePrepareInputSchema.extend({
+		sourceIdentity: vodInputTimelineSourceFactsSchema.shape.identity
+			.refine(
+				(identity) => identity.size <= MAX_VOD_INPUT_IMAGE_BYTES,
+				"Image exceeds 32 MiB",
+			)
+			.refine(
+				(identity) =>
+					Boolean(
+						identity.etag?.trim() ||
+							(identity.versionId?.trim() && identity.versionId !== "null") ||
+							identity.generation?.trim(),
+					),
+				"Seal the current source version",
+			),
+	});
+export type VodInputImagePrepareRequest = z.infer<
+	typeof vodInputImagePrepareRequestSchema
+>;
+/** Public image submissions are sealed with server-observed identity before hashing. */
+export const vodInputPreviewSubmissionSchema = z.discriminatedUnion("kind", [
+	probeRequestSchema,
+	previewRequestSchema,
+	vodInputImagePrepareInputSchema,
+]);
+export type VodInputPreviewSubmission = z.infer<
+	typeof vodInputPreviewSubmissionSchema
+>;
+export const vodInputPreviewRequestSchema = z.discriminatedUnion("kind", [
+	probeRequestSchema,
+	previewRequestSchema,
+	vodInputImagePrepareRequestSchema,
 ]);
 export type VodInputPreviewRequest = z.infer<
 	typeof vodInputPreviewRequestSchema
@@ -242,6 +320,22 @@ export const vodInputPreviewResultSchema = z.strictObject({
 		.array(vodInputTimelineSourceFactsSchema)
 		.min(1)
 		.max(MAX_VOD_TIMELINE_SOURCES)
+		.optional(),
+	prepared: z
+		.strictObject({
+			source: vodInputTimelineSourceSchema,
+			facts: vodInputTimelineSourceFactsSchema,
+			requestedDurationMs: z.number().int().min(1000).max(60_000),
+			sha256: z.string().regex(/^[a-f0-9]{64}$/),
+		})
+		.refine(
+			(value) =>
+				value.source.key === value.facts.key &&
+				value.facts.video !== null &&
+				value.facts.audio !== null &&
+				value.facts.durationMs >= value.requestedDurationMs,
+			"A prepared image needs matching video/audio source evidence",
+		)
 		.optional(),
 	preview: z
 		.strictObject({
@@ -259,7 +353,7 @@ export const vodInputPreviewResultSchema = z.strictObject({
 export type VodInputPreviewResult = z.infer<typeof vodInputPreviewResultSchema>;
 export const vodInputPreviewTaskSchema = z.strictObject({
 	id: z.uuid(),
-	kind: z.enum(["PROBE", "PREVIEW"]),
+	kind: z.enum(["PROBE", "PREVIEW", "IMAGE_PREPARE"]),
 	status: z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED"]),
 	stage: z.string().min(1).max(64),
 	requestHash: z.string().regex(/^[a-f0-9]{64}$/),

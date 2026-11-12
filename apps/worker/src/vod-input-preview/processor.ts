@@ -3,6 +3,8 @@ import { mkdir, rm } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { vodInputPreviewJobSchema } from "@bitovp/core";
 import {
+	MAX_VOD_INPUT_IMAGE_PIXELS,
+	VOD_INPUT_IMAGE_OUTPUT_PROVIDERS,
 	vodInputPreviewRequestSchema,
 	vodInputPreviewResultSchema,
 } from "@bitovp/core/vod-input-timeline";
@@ -10,6 +12,7 @@ import { type AppPrismaClient, DB_NULL, type Prisma } from "@bitovp/db";
 import { MediaOperationError } from "../library-editing/process";
 import { probeVodInputSources, renderVodInputPreview } from "./media";
 import type { VodInputBrowserFactory } from "./range-bridge";
+import { prepareVodInputImage } from "./still-image";
 
 export const VOD_INPUT_PREVIEW_LEASE_MS = 30_000;
 export const VOD_INPUT_PREVIEW_TASK_TIMEOUT_MS = 180_000;
@@ -51,7 +54,7 @@ const errorMessages: Record<string, string> = {
 	SOURCE_VIDEO_MISSING: "A video clip has no usable video stream.",
 	TIMELINE_VIDEO_MISSING: "Choose a video source before creating video output.",
 	TIMELINE_GAP_TOO_LONG:
-		"A blank interval exceeds the 10-second input-stream padding limit.",
+		"Keep leading/trailing gaps within 10 seconds and gaps between clips within 20 seconds.",
 	SOURCE_PREVIEW_INVALID: "Recreate the source preview before trying again.",
 	SOURCE_RANGE_INVALID:
 		"A clip or preview range is outside the measured source duration.",
@@ -63,6 +66,17 @@ const errorMessages: Record<string, string> = {
 	TIMED_OUT:
 		"The CPU preview exceeded its time limit. Use a shorter preview range.",
 	TASK_EXPIRED: "The preview expired. Create a new preview.",
+	IMAGE_UNSUPPORTED:
+		"Use a single PNG or JPEG image within the image size limits.",
+	IMAGE_OUTPUT_UNSUPPORTED:
+		"Choose an output storage location that supports image preparation.",
+	IMAGE_OUTPUT_WRITE_FAILED:
+		"The prepared image could not be saved to the selected storage.",
+	IMAGE_OUTPUT_UNVERIFIED:
+		"The saved image could not be verified. Prepare it again.",
+	IMAGE_OUTPUT_INVALID:
+		"The prepared image has an invalid format or duration. Prepare it again.",
+	IMAGE_PREPARE_FAILED: "The image could not be prepared.",
 };
 
 /** Durable intent and artifact adoption share the same expiring owner fence. */
@@ -77,6 +91,7 @@ export function createVodInputPreviewProcessor(deps: {
 	reserve?: Reservation;
 	probe?: typeof probeVodInputSources;
 	render?: typeof renderVodInputPreview;
+	prepareImage?: typeof prepareVodInputImage;
 	heartbeatMs?: number;
 }) {
 	const now = deps.now ?? (() => new Date());
@@ -183,7 +198,38 @@ export function createVodInputPreviewProcessor(deps: {
 				ffprobePath: deps.ffprobePath,
 				signal,
 			};
-			if (request.kind === "PROBE") {
+			if (request.kind === "IMAGE_PREPARE") {
+				const outputCredential = await deps.prisma.credential.findUnique({
+					where: { id: request.output.credentialId },
+					select: { provider: true },
+				});
+				if (!outputCredential)
+					throw new MediaOperationError("CREDENTIAL_UNAVAILABLE");
+				if (
+					!(VOD_INPUT_IMAGE_OUTPUT_PROVIDERS as readonly string[]).includes(
+						outputCredential.provider,
+					)
+				)
+					throw new MediaOperationError("IMAGE_OUTPUT_UNSUPPORTED");
+				await mkdir(directory, { recursive: true, mode: 0o700 });
+				await renew("IMAGE_PREPARING");
+				const prepared = await reserve(
+					MAX_VOD_INPUT_IMAGE_PIXELS,
+					signal,
+					(permitSignal) =>
+						(deps.prepareImage ?? prepareVodInputImage)({
+							...media,
+							signal: permitSignal,
+							request,
+							organizationId: row.organizationId,
+							taskId,
+							attemptId: token,
+							directory,
+						}),
+				);
+				sources = [request.source, prepared.source];
+				result = { prepared };
+			} else if (request.kind === "PROBE") {
 				sources = request.sources;
 				await renew("PROBING");
 				result = {
@@ -305,7 +351,9 @@ export function createVodInputPreviewProcessor(deps: {
 							? "RESOURCE_UNAVAILABLE"
 							: error instanceof MediaOperationError
 								? error.code
-								: "PREVIEW_FAILED";
+								: row.kind === "IMAGE_PREPARE"
+									? "IMAGE_PREPARE_FAILED"
+									: "PREVIEW_FAILED";
 			if (
 				latest?.leaseToken === token &&
 				latest.leaseUntil &&
@@ -336,7 +384,8 @@ export function createVodInputPreviewProcessor(deps: {
 			clearInterval(heartbeat);
 			controller.abort();
 			await renewing;
-			if (!adopted) await rm(directory, { recursive: true, force: true });
+			if (!adopted || row.kind === "IMAGE_PREPARE")
+				await rm(directory, { recursive: true, force: true });
 		}
 	};
 }

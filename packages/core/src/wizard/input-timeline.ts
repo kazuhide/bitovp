@@ -3,6 +3,7 @@ import {
 	vodInputTimelineDocumentSchema,
 } from "../vod-input-timeline/contracts";
 import {
+	isVodInputTimelineGapSupported,
 	normalizeVodInputTimelineDocument,
 	resolveVodInputTimeline,
 } from "../vod-input-timeline/model";
@@ -73,7 +74,7 @@ export function applyVodInputTimeline(state: WizardState): WizardState {
 			segments.some(
 				(segment) =>
 					segment.kind === "gap" &&
-					segment.durationMs > MAX_VOD_TIMELINE_GAP_MS,
+					!isVodInputTimelineGapSupported(segment, document.durationMs),
 			)
 		)
 			throw new WizardInputTimelineError("TIMELINE_GAP_TOO_LONG");
@@ -101,13 +102,29 @@ export function applyVodInputTimeline(state: WizardState): WizardState {
 			key: `${prefix}${media}_sequence`,
 			sources: real.map((clip, index) => {
 				const previous = real[index - 1];
-				const before =
+				const gapBefore =
 					clip.startMs -
 					(previous ? previous.startMs + previous.durationMs : 0);
-				const after =
-					index === real.length - 1
-						? document.durationMs - clip.startMs - clip.durationMs
-						: 0;
+				const next = real[index + 1];
+				const before = previous
+					? Math.min(gapBefore, MAX_VOD_TIMELINE_GAP_MS)
+					: gapBefore;
+				const after = next
+					? Math.max(
+							0,
+							next.startMs -
+								clip.startMs -
+								clip.durationMs -
+								MAX_VOD_TIMELINE_GAP_MS,
+						)
+					: document.durationMs - clip.startMs - clip.durationMs;
+				if (
+					before < 0 ||
+					after < 0 ||
+					before > MAX_VOD_TIMELINE_GAP_MS ||
+					after > MAX_VOD_TIMELINE_GAP_MS
+				)
+					throw new WizardInputTimelineError("TIMELINE_GAP_TOO_LONG");
 				return {
 					sourceKey: `${prefix}${media}_clip_${index}`,
 					position: index,

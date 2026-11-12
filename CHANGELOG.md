@@ -8,12 +8,14 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- Boundary snapping for independent VOD video/audio trim edges and ruler positioning, with a visible time guide, zoom-aware tolerance, an on/off control and temporary Alt/Option bypass.
-- Manual VOD input timeline editing for linked or independent video/audio: browse storage files, trim, split, reorder and concatenate clips with a stable time scale, seek, zoom and undo/redo. Append to a selected track or replace a selected interval while preserving the opposite track and program duration; audio-only WAV/MP3 sources are supported. Edited-track gaps use black video or silence, with a ten-second limit per gap. Input editing preserves the normal VOD output settings, including HLS/DASH and progressive files. CPU-only FFmpeg previews use version-pinned range reads and do not require a GPU or Local LLM or start a cloud encoding job.
+- Reusable organization-scoped VOD sources, with video/audio references and PNG/JPEG images retained across new edits. Images can be applied as output logos or prepared on CPU as 1–60-second V1 clips, appended with silence or used to replace video while retaining the existing audio. Prepared clips are saved to the selected storage for previews and final encoding.
+- Boundary snapping for independent VOD video/audio clip movement, trim edges and ruler positioning, with a visible time guide, zoom-aware tolerance, an on/off control and temporary Alt/Option bypass.
+- Manual VOD input timeline editing for linked or independent video/audio: browse storage files, trim, split, reorder and concatenate clips with a stable time scale, seek, zoom and undo/redo. Append to a selected track or replace a selected interval while preserving the opposite track and program duration; audio-only WAV/MP3 sources are supported. Edited-track gaps use black video or silence, with up to twenty seconds between clips and ten seconds at either end. Input editing preserves the normal VOD output settings, including HLS/DASH and progressive files. CPU-only FFmpeg previews use version-pinned range reads and do not require a GPU or Local LLM or start a cloud encoding job.
 - Progressive single-file TS output alongside MP4, independently of HLS/DASH. Existing segmented TS output remains available.
 
 ### Fixed
 
+- Independent VOD clips can be dragged into empty timeline space without changing their source range or duration. Trim handles can be grabbed on hover and explain source limits; canceled or returned drags do not accidentally seek.
 - The worker image build fails when its FFmpeg cannot score with a bundled VMAF v1.0 model. The earlier build check passed although the scoring failed, because its 64×64 test pictures are too small for these models. The FFmpeg build that the image pins passes the corrected check.
 - The Noto Emoji licence in the worker and web images can be read by the user that the containers run as. Its directory was created without search permission.
 - Local release checks run packages one at a time and isolate transaction-test setup and delayed fixture work, retaining all assertions and time limits.

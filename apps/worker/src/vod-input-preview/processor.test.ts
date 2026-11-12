@@ -23,6 +23,16 @@ const facts = {
 	audio: null,
 	identity: { size: 100, etag: '"original"' },
 };
+const imageIntent = (): Extract<
+	VodInputPreviewRequest,
+	{ kind: "IMAGE_PREPARE" }
+> => ({
+	kind: "IMAGE_PREPARE",
+	source: { ...source, objectKey: "cover.png" },
+	durationMs: 1000,
+	output: { credentialId: probeId, bucket: "output", prefix: "staging" },
+	sourceIdentity: { size: 100, etag: '"image"' },
+});
 let directory: string;
 beforeEach(async () => {
 	directory = await mkdtemp(join(tmpdir(), "bitovp-vod-processor-"));
@@ -114,7 +124,13 @@ function setup() {
 				return { count };
 			}),
 		},
-		credential: { count: vi.fn(async () => 1) },
+		credential: {
+			count: vi.fn(
+				async (input: { where: { id: { in: string[] } } }) =>
+					input.where.id.in.length,
+			),
+			findUnique: vi.fn(async () => ({ provider: "AWS_S3" })),
+		},
 	};
 	const probe = vi.fn(async () => [facts]);
 	const render = vi.fn(async (input) => {
@@ -129,6 +145,31 @@ function setup() {
 		};
 	});
 	const browserFor = vi.fn();
+	const prepareImage = vi.fn(async (input) => {
+		await writeFile(join(input.directory, "prepared.mp4"), "prepared");
+		return {
+			source: {
+				...source,
+				credentialId: input.request.output.credentialId,
+				bucket: input.request.output.bucket,
+				key: "img_task",
+				objectKey: "owned/prepared.mp4",
+			},
+			facts: {
+				...facts,
+				key: "img_task",
+				video: { ...facts.video, durationMs: 1000 },
+				audio: {
+					streamIndex: 1,
+					sampleRate: 48000,
+					channels: 2,
+					durationMs: 1000,
+				},
+			},
+			requestedDurationMs: 1000,
+			sha256: "b".repeat(64),
+		};
+	});
 	return {
 		task,
 		rows,
@@ -136,18 +177,88 @@ function setup() {
 		probe,
 		render,
 		browserFor,
+		prepareImage,
 		process: createVodInputPreviewProcessor({
 			prisma: prisma as unknown as AppPrismaClient,
 			browserFor,
 			workDir: directory,
 			probe,
 			render,
+			prepareImage,
 			heartbeatMs: 10,
 		}),
 	};
 }
 
 describe("durable CPU input preview ownership", () => {
+	it("adopts image preparation as a persistent storage reference and cleans local intermediates", async () => {
+		const f = setup();
+		Object.assign(f.task, row(imageIntent()));
+		expect(await f.process({ taskId: id })).toEqual({ status: "SUCCEEDED" });
+		expect(f.prepareImage).toHaveBeenCalledOnce();
+		expect(f.probe).not.toHaveBeenCalled();
+		expect(f.render).not.toHaveBeenCalled();
+		expect(f.prisma.credential.count).toHaveBeenCalledWith({
+			where: { id: { in: [source.credentialId, probeId] } },
+		});
+		expect(f.task.result).toMatchObject({
+			prepared: { source: { objectKey: "owned/prepared.mp4" } },
+		});
+		expect(f.task.artifactPath).toBeNull();
+		const attemptDirectory = f.prepareImage.mock.calls[0]?.[0].directory;
+		expect(attemptDirectory).toBeTruthy();
+		await expect(readdir(attemptDirectory)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+	it.each([
+		"provider",
+		"revoked",
+		"cancel",
+		"lease",
+	] as const)("does not adopt an image when %s admission is lost", async (mode) => {
+		const f = setup();
+		Object.assign(f.task, row(imageIntent()));
+		if (mode === "provider") {
+			f.prisma.credential.findUnique.mockResolvedValue({
+				provider: "GCS_SERVICE_ACCOUNT",
+			});
+		} else if (mode === "lease") {
+			const update =
+				f.prisma.vodInputPreviewTask.updateMany.getMockImplementation();
+			if (!update) throw new Error("Missing database fixture");
+			f.prisma.vodInputPreviewTask.updateMany.mockImplementation(
+				async (args) =>
+					args.data.status === "SUCCEEDED" ? { count: 0 } : update(args),
+			);
+		} else {
+			const prepare = f.prepareImage.getMockImplementation();
+			if (!prepare) throw new Error("Missing image fixture");
+			f.prepareImage.mockImplementation(async (input) => {
+				const result = await prepare(input);
+				if (mode === "revoked") f.prisma.credential.count.mockResolvedValue(0);
+				else Object.assign(f.task, { cancelRequestedAt: new Date() });
+				return result;
+			});
+		}
+		expect(await f.process({ taskId: id })).toEqual({
+			status:
+				mode === "cancel"
+					? "CANCELED"
+					: mode === "lease"
+						? "LEASE_LOST"
+						: "FAILED",
+		});
+		expect(f.task.result).toBeNull();
+		expect(f.task.artifactPath).toBeNull();
+		if (mode === "provider") expect(f.prepareImage).not.toHaveBeenCalled();
+		else {
+			const attemptDirectory = f.prepareImage.mock.calls[0]?.[0].directory;
+			await expect(readdir(attemptDirectory)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+		}
+	});
 	it("retains the canonical legacy intent hash even when stored JSON keys are reordered", async () => {
 		const f = setup();
 		const request: VodInputPreviewRequest = {

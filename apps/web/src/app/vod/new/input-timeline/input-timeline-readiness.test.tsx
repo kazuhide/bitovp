@@ -30,7 +30,7 @@ const sources: WizardInputFile[] = ["a", "b"].map((key) => ({
 	bucket: "sources",
 	path: `${key}.mp4`,
 }));
-function Harness() {
+function Harness({ inputs = sources }: { inputs?: WizardInputFile[] }) {
 	const [document, setDocument] = useState<VodInputTimelineDocument>(
 		timeline(),
 	);
@@ -39,12 +39,61 @@ function Harness() {
 			<VodInputTimelineEditor
 				document={document}
 				onChange={setDocument}
-				sources={sources}
+				sources={inputs}
 				onAddSource={() => {}}
 			/>
 		</DocumentOrganizationContext.Provider>
 	);
 }
+
+it("keeps output-logo images out of media preparation and timeline readiness", async () => {
+	vi.mocked(apiFetch).mockImplementation((_url, init) => {
+		if (init?.method === "DELETE") return Promise.resolve(undefined);
+		const request = JSON.parse(String(init?.body));
+		return Promise.resolve({
+			task:
+				request.kind === "PROBE"
+					? previewTask({ kind: "PROBE", result: { sources: facts } })
+					: previewTask({
+							result: {
+								preview: {
+									...request.range,
+									size: 1024,
+									sha256: "b".repeat(64),
+								},
+							},
+						}),
+		});
+	});
+	renderLocalized(
+		<Harness
+			inputs={[
+				...sources,
+				{
+					key: "logo",
+					inputKey: "a",
+					kind: "S3",
+					credentialId,
+					bucket: "sources",
+					path: "logo.png",
+					purpose: "FILTER_IMAGE",
+				},
+			]}
+		/>,
+	);
+	await screen.findByText("Preview ready");
+	const probes = vi
+		.mocked(apiFetch)
+		.mock.calls.filter(([, init]) =>
+			String(init?.body).includes('"kind":"PROBE"'),
+		)
+		.map(([, init]) => JSON.parse(String(init?.body)));
+	expect(probes).toHaveLength(1);
+	expect(
+		probes[0].sources.map((source: { key: string }) => source.key),
+	).toEqual(["a", "b"]);
+	expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
 
 it("blocks sequence preview for a missing audio track until audio is explicitly disabled", async () => {
 	vi.mocked(apiFetch).mockImplementation((_url, init) => {

@@ -34,7 +34,7 @@ v1は累積時刻でstartMsへ変換し、音声無効時も潜在的なaudioCli
 
 素材試聴要求だけは`PREVIEW.sourcePreviewKey`を任意指定する。このフィールドはwireの`range`より後へ追加し、未指定の旧要求のJSON・hashを変えない。共通builderは素材の主尺・測定済みV/A尺の最大値を試聴全体尺とし、各トラックはその実尺まで配置する。validatorは、参照素材、全体尺、有効音声、トラック数、配置とin/outが未編集1素材の自然な構成へ完全一致することを確認する。UUIDは構造検証を保ちつつ値を固定しない。
 
-この厳密な素材試聴だけは、映像が先に終わる場合などの10秒超の黒／無音を許可する。編集済み要求、他素材への差し替え、偽の尺・開始位置では試聴の例外を使えない。通常プログラムと最終nativeグラフには10秒上限を保ち、資格情報・版・組織・時間・CPU・容量の制限は素材試聴にも適用する。DBのtask kindは既存の`PREVIEW`を使い、schema migrationは追加しない。
+この厳密な素材試聴だけは、映像が先に終わる場合などの長い黒／無音を許可する。編集済み要求、他素材への差し替え、偽の尺・開始位置では試聴の例外を使えない。通常プログラムと最終nativeグラフには先頭・末尾10秒、中間20秒の上限を保ち、資格情報・版・組織・時間・CPU・容量の制限は素材試聴にも適用する。素材試聴のtask kindは既存の`PREVIEW`を使う。後から追加した画像準備は別の`IMAGE_PREPARE`として扱う。
 
 ## 操作とUI
 
@@ -66,7 +66,7 @@ flowchart LR
 
 CPU FFmpegは映像・音声の区間を別々に生成・連結し、最後にmuxする。音声の差し替えで映像のエンコード境界を増やさず、映像の差し替えで元音声を再分割しない。AACは最後に一度だけエンコードする。素材単体の試聴はプロジェクトをspreadせず新しい単体用文書を作り、音声専用素材には中立な黒背景を付ける。
 
-最終出力は既存のVIDEO_RELATIVE/AUDIO_RELATIVE→TimeBasedTrimming→Concatenationへ別々に変換する。隙間は既存のpaddingBefore/paddingAfterを秒で指定する。公式SDKのPaddingSequence上限に合わせ、実素材を持つ各トラックの空白は1区間10秒以内に制限し、それを超える状態はプレビュー／生成の前に明示する。空のconcatは作らない。音声が空なら音声出力を作らず、映像出力があるのに実映像がない場合はプロバイダー呼び出し前に拒否する。
+最終出力は既存のVIDEO_RELATIVE/AUDIO_RELATIVE→TimeBasedTrimming→Concatenationへ別々に変換する。隙間は既存のpaddingBefore/paddingAfterを秒で指定する。公式SDKのPaddingSequenceは1個10秒以内とし、先頭・末尾は10秒、中間は前後へ分配して20秒以内に制限する。それを超える状態はプレビュー／生成の前に明示する。[分配の設計](vod-input-timeline-positioning-design.md)。空のconcatは作らない。音声が空なら音声出力を作らず、映像出力があるのに実映像がない場合はプロバイダー呼び出し前に拒否する。
 
 版付きRange、資格情報失効、組織分離、read-onlyなWeb側volume、lease・キャンセル・期限・バイト上限・CPU制御は維持する。
 

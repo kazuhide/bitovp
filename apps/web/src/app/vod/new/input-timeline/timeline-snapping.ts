@@ -82,3 +82,45 @@ export function snapTimelineTime(
 		? nearest
 		: null;
 }
+
+export type TimelineBodySnap = { edge: "in" | "out"; timeMs: number };
+
+export function snapTimelineBody(
+	startMs: number,
+	durationMs: number,
+	programDurationMs: number,
+	candidates: readonly number[],
+	pixelsPerMs: number,
+	previous: TimelineBodySnap | null,
+): TimelineBodySnap | null {
+	const choices = (["in", "out"] as const).map((edge) => {
+		const offset = edge === "in" ? 0 : durationMs;
+		const valid = candidates.filter(
+			(time) =>
+				time >= offset && time <= programDurationMs - durationMs + offset,
+		);
+		return { edge, position: startMs + offset, valid };
+	});
+	if (previous) {
+		const anchor = choices.find((choice) => choice.edge === previous.edge);
+		if (
+			anchor &&
+			snapTimelineTime(
+				anchor.position,
+				anchor.valid,
+				pixelsPerMs,
+				previous.timeMs,
+			) === previous.timeMs
+		)
+			return previous;
+	}
+	let nearest: (TimelineBodySnap & { distance: number }) | null = null;
+	for (const choice of choices) {
+		const timeMs = snapTimelineTime(choice.position, choice.valid, pixelsPerMs);
+		if (timeMs === null) continue;
+		const distance = Math.abs(timeMs - choice.position);
+		if (!nearest || distance < nearest.distance)
+			nearest = { edge: choice.edge, timeMs, distance };
+	}
+	return nearest && { edge: nearest.edge, timeMs: nearest.timeMs };
+}

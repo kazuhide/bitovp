@@ -2,14 +2,18 @@
 
 import {
 	MAX_VOD_TIMELINE_SOURCES,
+	type VodInputFavoriteWire,
 	type VodInputTimelineSourceFacts,
 } from "@bitovp/core/vod-input-timeline";
-import { FileAudio2, FileVideo2, Plus } from "lucide-react";
+import { FileAudio2, FileVideo2, Plus, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { baseName } from "@/lib/format";
 import type { WizardInputFile } from "../build-plan";
+import { FavoriteBin } from "./favorite-bin";
+import { useFavoriteLabels } from "./favorite-labels";
 import { useTimelineLabels } from "./labels";
 import { formatTime } from "./timeline-state";
+import { useInputFavorites } from "./use-input-favorites";
 
 export function SourceBin({
 	sources,
@@ -20,6 +24,10 @@ export function SourceBin({
 	onSelect,
 	onAdd,
 	onAddSource,
+	onUseFavorite,
+	canUseLogo = false,
+	canUseMedia = true,
+	onPrepareImage,
 }: {
 	sources: WizardInputFile[];
 	facts: VodInputTimelineSourceFacts[];
@@ -29,8 +37,17 @@ export function SourceBin({
 	onSelect: (key: string) => void;
 	onAdd: (source: VodInputTimelineSourceFacts) => void;
 	onAddSource: () => void;
+	onUseFavorite?: (favorite: VodInputFavoriteWire) => void;
+	canUseLogo?: boolean;
+	canUseMedia?: boolean;
+	onPrepareImage?: (favorite: VodInputFavoriteWire) => void;
 }) {
 	const l = useTimelineLabels();
+	const f = useFavoriteLabels(),
+		favorites = useInputFavorites(!!onUseFavorite);
+	const mediaSources = sources.filter(
+		(source) => source.purpose !== "FILTER_IMAGE",
+	);
 	return (
 		<section aria-label={l.sources} className="min-w-0 space-y-2">
 			<div className="flex items-center justify-between gap-2">
@@ -38,7 +55,11 @@ export function SourceBin({
 				<Button
 					size="sm"
 					variant="ghost"
-					disabled={disabled || sources.length >= MAX_VOD_TIMELINE_SOURCES}
+					disabled={
+						disabled ||
+						mediaSources.filter((source) => source.path).length >=
+							MAX_VOD_TIMELINE_SOURCES
+					}
 					onClick={onAddSource}
 				>
 					<Plus aria-hidden className="h-3.5 w-3.5" />
@@ -46,11 +67,11 @@ export function SourceBin({
 				</Button>
 			</div>
 			<ul className="max-h-64 space-y-1 overflow-y-auto lg:max-h-80">
-				{sources
+				{mediaSources
 					.filter((source) => source.path)
 					.map((source) => {
 						const fact = facts.find((item) => item.key === source.key);
-						const name = baseName(source.path);
+						const name = source.displayName || baseName(source.path);
 						const Icon = fact?.video === null ? FileAudio2 : FileVideo2;
 						return (
 							<li
@@ -82,6 +103,43 @@ export function SourceBin({
 										</span>
 									</span>
 								</button>
+								{onUseFavorite && (
+									<Button
+										size="icon"
+										variant="ghost"
+										aria-label={
+											favorites.has({
+												credentialId: source.credentialId,
+												bucket: source.bucket,
+												objectKey: source.path,
+											})
+												? f.pinned(name)
+												: f.pin(name)
+										}
+										disabled={
+											disabled ||
+											!fact ||
+											!favorites.ready ||
+											favorites.busy ||
+											favorites.has({
+												credentialId: source.credentialId,
+												bucket: source.bucket,
+												objectKey: source.path,
+											})
+										}
+										onClick={() =>
+											void favorites.add({
+												credentialId: source.credentialId,
+												bucket: source.bucket,
+												objectKey: source.path,
+												label: name.slice(0, 120),
+												kind: fact?.video ? "VIDEO" : "AUDIO",
+											})
+										}
+									>
+										<Star aria-hidden className="h-3.5 w-3.5" />
+									</Button>
+								)}
 								<Button
 									size="icon"
 									variant="ghost"
@@ -96,8 +154,18 @@ export function SourceBin({
 						);
 					})}
 			</ul>
-			{!sources.some((source) => source.path) && (
+			{!mediaSources.some((source) => source.path) && (
 				<p className="text-xs text-zinc-400">{l.empty}</p>
+			)}
+			{onUseFavorite && (
+				<FavoriteBin
+					model={favorites}
+					disabled={disabled}
+					onUse={onUseFavorite}
+					canUseLogo={canUseLogo}
+					canUseMedia={canUseMedia}
+					onPrepareImage={onPrepareImage}
+				/>
 			)}
 		</section>
 	);

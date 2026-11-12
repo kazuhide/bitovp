@@ -1,4 +1,5 @@
 import { liveChannelPlanSchema } from "@bitovp/core";
+import { applyVodInputFavorite } from "@bitovp/core/wizard";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
 	buildLiveChannelPlan,
@@ -27,6 +28,77 @@ import {
 } from "./wizard-draft";
 
 beforeEach(() => localStorage.clear());
+
+it("restores a fixed output logo with its image-only source and rendition attachments", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	base.inputFiles[0] = {
+		key: "main",
+		inputKey: "main",
+		kind: "S3",
+		credentialId: "44444444-4444-4444-8444-444444444444",
+		bucket: "media",
+		path: "main.mp4",
+	};
+	let id = 0;
+	const original = applyVodInputFavorite(
+		base,
+		{
+			id: "55555555-5555-4555-8555-555555555555",
+			credentialId: base.inputFiles[0].credentialId,
+			bucket: "media",
+			objectKey: "images/logo.png",
+			label: "Logo",
+			kind: "IMAGE",
+			availability: "AVAILABLE",
+			inputKind: "S3",
+		},
+		() => `key${++id}`,
+	).state;
+	writeWizardDraft("logo", "vod", original, 1);
+	const saved = readWizardDraft("logo", "vod");
+	if (!saved) throw new Error("Logo draft was not saved");
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, saved.value, "vod");
+	expect(restored.inputFiles).toEqual(original.inputFiles);
+	expect(restored.filters).toEqual(original.filters);
+	expect(restored.videos.map((video) => video.extras?.filters)).toEqual(
+		original.videos.map((video) => video.extras?.filters),
+	);
+	expect(buildPlan(restored).filters).toEqual(buildPlan(original).filters);
+	expect(
+		buildPlan(restored).renditions.map((rendition) => rendition.filters),
+	).toEqual(
+		buildPlan(original).renditions.map((rendition) => rendition.filters),
+	);
+});
+
+it("does not persist image URLs, unknown filter JSON or dangling logo attachments", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const value = projectWizardDraft("vod", {
+		...state,
+		inputFiles: [{ ...state.inputFiles[0], purpose: "SECRET_UNKNOWN" }],
+		filters: [
+			{
+				key: "unsafe",
+				kind: "WATERMARK",
+				inputKey: "main",
+				imagePath: "https://host/image.png?token=SECRET_URL",
+			},
+			{ key: "text", kind: "TEXT", text: "SECRET_OPTIONS", x: "0", y: "0" },
+		],
+		videos: state.videos.map((video) => ({
+			...video,
+			extras: {
+				filters: [{ filterKey: "unsafe", position: 0 }],
+				jsonOptions: "SECRET_JSON",
+			},
+		})),
+	});
+	expect(JSON.stringify(value)).not.toMatch(/SECRET|token=|https:\/\//);
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
+	expect(
+		restored.videos.flatMap((video) => video.extras?.filters ?? []),
+	).toEqual([]);
+});
 
 it("keeps a sparse legacy VOD draft on its implicit STABLE version", () => {
 	expect(

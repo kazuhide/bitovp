@@ -7,6 +7,7 @@ import {
 	moveVodInputTimelineClip,
 	normalizeVodInputTimelineDocument,
 	overwriteVodInputTimelineTrack,
+	positionVodInputTimelineClip,
 	splitVodInputTimelineAt,
 	trimVodInputTimelineClip,
 	type VodInputTimelineDocument,
@@ -110,6 +111,17 @@ export function moveClip(
 			toIndex,
 			linked: options.linked ?? true,
 		},
+		newId,
+	);
+}
+export function placeClip(
+	document: VodInputTimelineV2Document,
+	selection: TimelineSelection,
+	startMs: number,
+) {
+	return positionVodInputTimelineClip(
+		document,
+		{ ...selection, startMs },
 		newId,
 	);
 }

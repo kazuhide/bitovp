@@ -14,6 +14,7 @@ export function TimelineClip({
 	index,
 	name,
 	pixelsPerMs,
+	durationMs,
 	selected,
 	fact,
 	disabled,
@@ -30,6 +31,7 @@ export function TimelineClip({
 	index: number;
 	name: string;
 	pixelsPerMs: number;
+	durationMs: number;
 	selected: boolean;
 	fact: VodInputTimelineSourceFacts | undefined;
 	disabled: boolean;
@@ -45,6 +47,15 @@ export function TimelineClip({
 		isAudio = track === "audio",
 		clipLabel = isAudio ? l.audioClip : l.clip;
 	const moveHandlers = handlers(clip.id, "move", track);
+	const sourceDuration = fact
+		? availableSourceDuration(fact, linked ? "both" : track, audioEnabled)
+		: clip.outMs;
+	const minimumIn = linked ? 0 : Math.max(0, clip.inMs - clip.startMs);
+	const maximumOut = linked
+		? sourceDuration
+		: Math.min(sourceDuration, clip.inMs + durationMs - clip.startMs);
+	const width = (clip.outMs - clip.inMs) * pixelsPerMs;
+	const trimDisabled = disabled || !fact?.[track];
 	const tone = isAudio
 		? selected
 			? "border-sky-400 bg-sky-950 text-sky-100"
@@ -54,10 +65,10 @@ export function TimelineClip({
 			: "border-zinc-600 bg-zinc-800 text-zinc-200";
 	return (
 		<div
-			className={`absolute top-0 min-w-0 py-1 ${isAudio ? "h-10" : "h-16"}`}
+			className={`group absolute top-0 min-w-0 py-1 ${isAudio ? "h-10" : "h-16"}`}
 			style={{
 				left: clip.startMs * pixelsPerMs,
-				width: (clip.outMs - clip.inMs) * pixelsPerMs,
+				width,
 			}}
 		>
 			<button
@@ -66,6 +77,7 @@ export function TimelineClip({
 				data-clip-track={track}
 				aria-label={`${clipLabel} ${index + 1}, ${name}`}
 				aria-pressed={selected}
+				title={linked ? l.dragReorder : l.dragMove}
 				aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Delete Backspace"
 				className={`h-full w-full touch-none cursor-grab overflow-hidden border px-3 text-left text-xs active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-emerald-300 ${tone} ${muted ? "opacity-60" : ""}`}
 				{...moveHandlers}
@@ -102,34 +114,44 @@ export function TimelineClip({
 					{formatTime(clip.inMs)} – {formatTime(clip.outMs)}
 				</span>
 			</button>
-			{selected &&
-				(["in", "out"] as const).map((edge) => (
-					<div
-						key={edge}
-						role="slider"
-						tabIndex={0}
-						aria-orientation="horizontal"
-						aria-label={`${edge === "in" ? l.trimStart : l.trimEnd}, ${name}, ${clipLabel.toLowerCase()} ${index + 1}`}
-						aria-valuemin={edge === "in" ? 0 : clip.inMs + 1}
-						aria-valuemax={
-							edge === "in"
-								? clip.outMs - 1
-								: fact
-									? availableSourceDuration(
-											fact,
-											linked ? "both" : track,
-											audioEnabled,
-										)
-									: clip.outMs
-						}
-						aria-valuenow={edge === "in" ? clip.inMs : clip.outMs}
-						aria-valuetext={formatTime(edge === "in" ? clip.inMs : clip.outMs)}
-						aria-disabled={disabled || !fact?.[track]}
-						aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
-						className={`absolute top-1 z-10 w-3 touch-none cursor-ew-resize rounded-sm border focus-visible:outline-2 focus-visible:outline-emerald-100 ${isAudio ? "h-8 border-sky-300 bg-sky-600/80" : "h-14 border-emerald-300 bg-emerald-600/80"} ${edge === "in" ? "left-0" : "right-0"}`}
-						{...handlers(clip.id, edge, track)}
-					/>
-				))}
+			{(selected || width >= 32) &&
+				(["in", "out"] as const).map((edge) => {
+					const atLimit =
+						edge === "in" ? clip.inMs === minimumIn : clip.outMs === maximumOut;
+					const hint =
+						edge === "in"
+							? clip.inMs === 0
+								? l.sourceStart
+								: atLimit
+									? l.sequenceStart
+									: l.trimStart
+							: clip.outMs === sourceDuration
+								? l.sourceEnd
+								: atLimit
+									? l.sequenceEnd
+									: l.trimEnd;
+					return (
+						<div
+							key={edge}
+							role="slider"
+							tabIndex={selected && !trimDisabled ? 0 : -1}
+							aria-hidden={!selected}
+							title={hint}
+							aria-orientation="horizontal"
+							aria-label={`${edge === "in" ? l.trimStart : l.trimEnd}, ${name}, ${clipLabel.toLowerCase()} ${index + 1}`}
+							aria-valuemin={edge === "in" ? minimumIn : clip.inMs + 1}
+							aria-valuemax={edge === "in" ? clip.outMs - 1 : maximumOut}
+							aria-valuenow={edge === "in" ? clip.inMs : clip.outMs}
+							aria-valuetext={formatTime(
+								edge === "in" ? clip.inMs : clip.outMs,
+							)}
+							aria-disabled={trimDisabled}
+							aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
+							className={`absolute top-1 z-10 w-3 touch-none rounded-sm border focus-visible:outline-2 focus-visible:outline-emerald-100 ${isAudio ? "h-8 border-sky-300 bg-sky-600/80" : "h-14 border-emerald-300 bg-emerald-600/80"} ${edge === "in" ? "left-0" : "right-0"} ${atLimit ? (edge === "in" ? "cursor-e-resize" : "cursor-w-resize") : "cursor-ew-resize"} ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"} ${trimDisabled ? "pointer-events-none" : ""}`}
+							{...handlers(clip.id, edge, track)}
+						/>
+					);
+				})}
 		</div>
 	);
 }

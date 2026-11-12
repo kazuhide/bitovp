@@ -19,7 +19,10 @@ import {
 	timelineDuration,
 	timelineItems,
 } from "./timeline-state";
-import { useTimelineGesture } from "./use-timeline-gesture";
+import {
+	type TimelineGestureError,
+	useTimelineGesture,
+} from "./use-timeline-gesture";
 import { useTimelineScale } from "./use-timeline-scale";
 
 export function TimelineTracks({
@@ -52,7 +55,7 @@ export function TimelineTracks({
 	onSeek: (position: number) => void;
 	onChange: (next: VodInputTimelineV2Document) => void;
 	onDelete: (id: string, track: VodInputTimelineTrack) => void;
-	onError: () => void;
+	onError: (reason?: TimelineGestureError) => void;
 	onDragging: (active: boolean) => void;
 }) {
 	const document = useMemo(
@@ -225,6 +228,7 @@ export function TimelineTracks({
 											index={index}
 											name={names[clip.sourceKey] ?? clip.sourceKey}
 											pixelsPerMs={scale.pixelsPerMs}
+											durationMs={total}
 											selected={
 												selectedId === clip.id &&
 												(selectedTrack === medium || partner?.id === clip.id)
@@ -234,7 +238,13 @@ export function TimelineTracks({
 											)}
 											disabled={disabled}
 											muted={medium === "audio" && !document.audioEnabled}
-											linked={linked && partner?.id === clip.id}
+											linked={
+												linked &&
+												!!linkedPartner(gesture.shown, {
+													track: medium,
+													id: clip.id,
+												})
+											}
 											audioEnabled={document.audioEnabled}
 											handlers={gesture.handlers}
 											onSelect={onSelect}

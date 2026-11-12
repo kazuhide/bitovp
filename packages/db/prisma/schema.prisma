@@ -1597,7 +1597,8 @@ enum StorageInspectionStatus {
   ERROR
 }
 
-/// CPU-only, short-lived input inspection/preview intent, independent of Library editing.
+/// CPU-only input inspection/preview/image preparation intent, independent of Library editing.
+/// IMAGE_PREPARE publishes an input object; task expiry does not delete that remote object.
 model VodInputPreviewTask {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)

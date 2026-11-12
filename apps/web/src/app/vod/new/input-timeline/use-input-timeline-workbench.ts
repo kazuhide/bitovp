@@ -69,7 +69,10 @@ export function useInputTimelineWorkbench({
 		disabled,
 	});
 	const names = Object.fromEntries(
-		sources.map((source) => [source.key, baseName(source.path) || source.key]),
+		sources.map((source) => [
+			source.key,
+			source.displayName || baseName(source.path) || source.key,
+		]),
 	);
 	const items = timelineItems(document, editor.selectedTrack);
 	const selectedIndex = items.findIndex(
@@ -330,7 +333,9 @@ export function useInputTimelineWorkbench({
 		},
 		setMode,
 		onPlayback: mode === "source" ? setSourcePosition : editor.seek,
-		invalid: () => setLocalError("invalidRange"),
+		invalid: (
+			reason: "invalidRange" | "gapTooLong" | "trackFull" = "invalidRange",
+		) => setLocalError(reason),
 		mediaError: () => setLocalError("failed"),
 		changeRange: (inMs: number, outMs: number) =>
 			selected &&
@@ -374,6 +379,18 @@ export function useInputTimelineWorkbench({
 		toggleAudio: (audioEnabled: boolean) =>
 			apply(() => ({ ...document, audioEnabled })),
 		commit: (next: VodInputTimelineV2Document) => apply(() => next),
+		commitPrepared(next: {
+			document: VodInputTimelineV2Document;
+			id: string;
+			startMs: number;
+		}) {
+			if (!apply(() => next.document)) return false;
+			editor.select({ track: "video", id: next.id });
+			editor.seek(next.startMs, next.document.durationMs);
+			setSequenceAnchor(next.startMs);
+			setMode("sequence");
+			return true;
+		},
 		retry() {
 			setLocalError(null);
 			state.probe.retry();
@@ -385,6 +402,7 @@ export function useInputTimelineWorkbench({
 				!["range", "checkbox", "button"].includes(target.type);
 			if (
 				event.defaultPrevented ||
+				(target instanceof HTMLElement && target.closest('[role="dialog"]')) ||
 				textInput ||
 				target instanceof HTMLTextAreaElement ||
 				(target instanceof HTMLElement && target.isContentEditable)

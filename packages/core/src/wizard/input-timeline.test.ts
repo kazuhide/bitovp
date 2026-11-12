@@ -4,6 +4,7 @@ import { validatePlan } from "../plan/validate";
 import {
 	normalizeVodInputTimelineDocument,
 	overwriteVodInputTimelineTrack,
+	positionVodInputTimelineClip,
 } from "../vod-input-timeline";
 import {
 	buildPlan,
@@ -151,7 +152,7 @@ describe("VOD manual input graph", () => {
 			validatePlan(plan).filter((issue) => issue.level === "error"),
 		).toEqual([]);
 	});
-	it("uses native black/silence padding up to exactly ten seconds and rejects a longer active gap", () => {
+	it("splits interior black/silence gaps into bounded native pads and retains ten-second edge limits", () => {
 		const base = normalizeVodInputTimelineDocument({
 			...sequence,
 			clips: [
@@ -178,6 +179,188 @@ describe("VOD manual input graph", () => {
 				inputTimeline: { ...allowed, durationMs: 11_001 },
 			}),
 		).toThrowError(expect.objectContaining({ code: "TIMELINE_GAP_TOO_LONG" }));
+		for (const edge of [10_000, 10_001]) {
+			const leading = {
+				...base,
+				durationMs: edge + 1000,
+				videoClips: base.videoClips.map((clip) => ({ ...clip, startMs: edge })),
+			};
+			if (edge === 10_000)
+				expect(() =>
+					buildPlan({ ...state, inputTimeline: leading }),
+				).not.toThrow();
+			else
+				expect(() =>
+					buildPlan({ ...state, inputTimeline: leading }),
+				).toThrowError(
+					expect.objectContaining({ code: "TIMELINE_GAP_TOO_LONG" }),
+				);
+		}
+		const gapped = (gap: number) => {
+			const clips = sequence.clips.map((clip, index) => ({
+				...clip,
+				startMs: 10_000 + index * (1000 + gap),
+				outMs: clip.inMs + 1000,
+			}));
+			return {
+				...base,
+				audioEnabled: true,
+				durationMs: 23_000 + gap * 2,
+				videoClips: clips,
+				audioClips: clips,
+			};
+		};
+		for (const gap of [1000, 10_000, 10_001, 11_658, 20_000]) {
+			const document = gapped(gap),
+				snapshot = structuredClone(document),
+				native = encodingPlanSchema.parse(
+					buildPlan({ ...state, inputTimeline: document }),
+				);
+			expect(
+				validatePlan(native).filter((issue) => issue.level === "error"),
+			).toEqual([]);
+			expect(document).toEqual(snapshot);
+			expect(native.concatenationStreams).toHaveLength(2);
+			const trims = new Map(
+				native.trimmingStreams?.map((trim) => [trim.key, trim]),
+			);
+			expect(
+				native.trimmingStreams?.map((trim) =>
+					trim.kind === "TIME_BASED" ? [trim.offset, trim.duration] : null,
+				),
+			).toEqual([
+				[1.2, 1],
+				[0.3, 1],
+				[0, 1],
+				[1.2, 1],
+				[0.3, 1],
+				[0, 1],
+			]);
+			for (const concat of native.concatenationStreams ?? []) {
+				const interiorBefore = Math.min(gap, 10_000) / 1000,
+					interiorAfter = gap > 10_000 ? (gap - 10_000) / 1000 : undefined;
+				expect(
+					concat.sources.map((part) => [
+						part.paddingBefore?.duration,
+						part.paddingAfter?.duration,
+					]),
+				).toEqual([
+					[10, interiorAfter],
+					[interiorBefore, interiorAfter],
+					[interiorBefore, 10],
+				]);
+				for (const part of JSON.parse(JSON.stringify(concat)).sources)
+					for (const pad of [part.paddingBefore, part.paddingAfter])
+						if (pad) {
+							expect(pad.unit).toBe("SECONDS");
+							expect(pad.duration).toBeGreaterThan(0);
+							expect(pad.duration).toBeLessThanOrEqual(10);
+						}
+				const seconds = concat.sources.reduce((total, part) => {
+					const trim = trims.get(part.sourceKey);
+					if (trim?.kind !== "TIME_BASED") throw new Error("Missing trim");
+					return (
+						total +
+						(trim.duration ?? 0) +
+						(part.paddingBefore?.duration ?? 0) +
+						(part.paddingAfter?.duration ?? 0)
+					);
+				}, 0);
+				expect(seconds).toBeCloseTo(document.durationMs / 1000, 9);
+				if (gap <= 10_000) {
+					const media = concat.key.endsWith("v_sequence") ? "v" : "a";
+					expect(concat.sources).toEqual(
+						sequence.clips.map((_, index) => ({
+							sourceKey: `vt_${id.replaceAll("-", "")}_${media}_clip_${index}`,
+							position: index,
+							isMain: index === 0,
+							aspectMode: "PAD",
+							paddingBefore: {
+								duration: index === 0 ? 10 : gap / 1000,
+								unit: "SECONDS",
+							},
+							...(index === 2
+								? { paddingAfter: { duration: 10, unit: "SECONDS" } }
+								: {}),
+						})),
+					);
+				}
+			}
+		}
+		expect(() =>
+			buildPlan({ ...state, inputTimeline: gapped(20_001) }),
+		).toThrowError(expect.objectContaining({ code: "TIMELINE_GAP_TOO_LONG" }));
+	});
+	it("compiles the screenshot's A1 move with an 11.658-second gap without changing V1 or source clocks", () => {
+		const placed = (
+			n: number,
+			sourceKey: string,
+			startMs: number,
+			inMs: number,
+			outMs: number,
+		) => ({
+			id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+			sourceKey,
+			startMs,
+			inMs,
+			outMs,
+		});
+		const document = {
+			schemaVersion: 2 as const,
+			id,
+			audioEnabled: true,
+			durationMs: 34_000,
+			videoClips: [
+				placed(2, "a", 0, 0, 7689),
+				placed(3, "b", 11_347, 0, 8000),
+				placed(4, "a", 19_347, 11_347, 18_000),
+			],
+			audioClips: [
+				placed(2, "a", 0, 0, 7689),
+				placed(5, "a", 11_347, 11_347, 18_000),
+				placed(6, "b", 26_000, 0, 8000),
+			],
+		};
+		const moved = positionVodInputTimelineClip(
+			document,
+			{
+				track: "audio",
+				id: document.audioClips[1]?.id ?? "",
+				startMs: 7689,
+			},
+			() => {
+				throw new Error("The empty interval must not split another clip");
+			},
+		);
+		const before = encodingPlanSchema.parse(
+				buildPlan({ ...state, inputTimeline: document }),
+			),
+			after = encodingPlanSchema.parse(
+				buildPlan({ ...state, inputTimeline: moved }),
+			);
+		expect(after.trimmingStreams).toEqual(before.trimmingStreams);
+		expect(after.ingest).toEqual(before.ingest);
+		expect(
+			after.concatenationStreams?.find((item) =>
+				item.key.endsWith("v_sequence"),
+			),
+		).toEqual(
+			before.concatenationStreams?.find((item) =>
+				item.key.endsWith("v_sequence"),
+			),
+		);
+		expect(
+			after.concatenationStreams
+				?.find((item) => item.key.endsWith("a_sequence"))
+				?.sources.map((part) => [part.paddingBefore, part.paddingAfter]),
+		).toEqual([
+			[undefined, undefined],
+			[undefined, { duration: 1.658, unit: "SECONDS" }],
+			[{ duration: 10, unit: "SECONDS" }, undefined],
+		]);
+		expect(
+			validatePlan(after).filter((issue) => issue.level === "error"),
+		).toEqual([]);
 	});
 	it("omits empty audio instead of emitting an empty concat or dangling muxed audio", () => {
 		const base = normalizeVodInputTimelineDocument(sequence);

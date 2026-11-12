@@ -95,6 +95,10 @@ export type WizardInputFile = {
 	region?: string;
 	/** Bitmovin Input resource name (on the deduped input). */
 	name?: string;
+	/** An output-filter image is not an audio/video timeline source. */
+	purpose?: "FILTER_IMAGE";
+	/** Optional bin/timeline label; never a provider input resource name. */
+	displayName?: string;
 };
 
 /** Extra ingest track beyond the implicit video/audio pair. */

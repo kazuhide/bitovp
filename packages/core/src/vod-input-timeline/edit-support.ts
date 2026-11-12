@@ -1,14 +1,16 @@
 import {
 	MAX_VOD_TIMELINE_CLIPS,
 	MAX_VOD_TIMELINE_DURATION_MS,
-	MAX_VOD_TIMELINE_GAP_MS,
 	MAX_VOD_TIMELINE_SOURCES,
 	type VodInputTimelinePlacedClip,
 	type VodInputTimelineTrack,
 	type VodInputTimelineV2Document,
 	vodInputTimelineV2DocumentSchema,
 } from "./contracts";
-import { resolveVodInputTimeline } from "./model";
+import {
+	isVodInputTimelineGapSupported,
+	resolveVodInputTimeline,
+} from "./model";
 
 export type VodInputTimelineEditErrorCode =
 	| "CLIP_NOT_FOUND"
@@ -74,7 +76,7 @@ export function finish(
 			segments.some(
 				(segment) =>
 					segment.kind === "gap" &&
-					segment.durationMs > MAX_VOD_TIMELINE_GAP_MS,
+					!isVodInputTimelineGapSupported(segment, document.durationMs),
 			)
 		)
 			fail("TIMELINE_GAP_TOO_LONG");

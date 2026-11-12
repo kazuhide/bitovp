@@ -1,5 +1,6 @@
 import {
 	MAX_VOD_TIMELINE_GAP_MS,
+	MAX_VOD_TIMELINE_INTERIOR_GAP_MS,
 	type VodInputTimelineDocument,
 	type VodInputTimelinePlacedClip,
 	type VodInputTimelineSourceFacts,
@@ -112,6 +113,20 @@ export type VodInputTimelineSegment =
 			durationMs: number;
 	  }
 	| { kind: "gap"; startMs: number; durationMs: number };
+
+/** Classify against the full program, never a cropped preview window. */
+export function isVodInputTimelineGapSupported(
+	gap: Extract<VodInputTimelineSegment, { kind: "gap" }>,
+	programDurationMs: number,
+): boolean {
+	const interior =
+		gap.startMs > 0 && gap.startMs + gap.durationMs < programDurationMs;
+	return (
+		gap.durationMs <=
+		(interior ? MAX_VOD_TIMELINE_INTERIOR_GAP_MS : MAX_VOD_TIMELINE_GAP_MS)
+	);
+}
+
 export type ResolvedVodInputTimeline = {
 	startMs: number;
 	durationMs: number;
@@ -270,7 +285,7 @@ export function validateVodInputTimeline(
 			for (const segment of segments(clips, 0, document.durationMs)) {
 				if (
 					segment.kind === "gap" &&
-					segment.durationMs > MAX_VOD_TIMELINE_GAP_MS
+					!isVodInputTimelineGapSupported(segment, document.durationMs)
 				)
 					issues.push({
 						code: "TIMELINE_GAP_TOO_LONG",

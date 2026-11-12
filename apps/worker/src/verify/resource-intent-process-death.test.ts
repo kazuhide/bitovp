@@ -57,7 +57,8 @@ async function temporaryDirectory(prefix: string): Promise<string> {
 
 /**
  * Waits for the fixture's marker line and returns the process id on it: the
- * process that made the state durable.
+ * process that made the state durable. A process of that id which is not the
+ * one started here is ended first.
  */
 async function durableProcessId(
 	child: ReturnType<typeof spawnFixture>,
@@ -80,7 +81,8 @@ async function durableProcessId(
 			try {
 				process.kill(pid, "SIGKILL");
 			} catch {
-				// It has ended already.
+				// It has ended already, or it is no process that this test may
+				// end.
 			}
 		}
 		return pid;

@@ -8,6 +8,7 @@ import {
 	FEEDER_SUPPORTED_PROVIDERS,
 	SLATE_SUPPORTED_PROVIDERS,
 } from "@bitovp/core";
+import { VOD_INPUT_IMAGE_OUTPUT_PROVIDERS } from "@bitovp/core/vod-input-timeline";
 import { describe, expect, it } from "vitest";
 import { BROWSABLE_STORAGE_PROVIDERS } from "@/app/vod/new/stream-model";
 
@@ -55,6 +56,7 @@ const SANCTIONED: Record<string, readonly string[]> = {
 	BROWSABLE_STORAGE_PROVIDERS,
 	FEEDER_SUPPORTED_PROVIDERS,
 	SLATE_SUPPORTED_PROVIDERS,
+	VOD_INPUT_IMAGE_OUTPUT_PROVIDERS,
 	// launch-dialog narrows BROWSABLE_STORAGE_PROVIDERS by the template's own
 	// input kind before passing it; the narrowing can only remove.
 	pickerProviders: BROWSABLE_STORAGE_PROVIDERS,

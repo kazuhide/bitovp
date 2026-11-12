@@ -147,18 +147,22 @@ const OUT_CRED = "00000000-0000-4000-8000-000000000002";
 
 /**
  * H.264 1080p high-bitrate mezzanine: one progressive MP4, High profile,
- * 50 Mbps video + 320k AAC, faststart for storage-side probing. The classic
- * "house mezzanine" shape file-delivery shops standardize on.
+ * 50 Mbps video + 320k AAC in the same file. The classic "house mezzanine"
+ * shape file-delivery shops standardize on.
+ *
+ * Until a muxing could carry more than one stream, this spec delivered the
+ * video and the audio as two MP4 files, which nobody receiving a mezzanine
+ * wants. `additionalStreamKeys` closed that; the spec says so in a constraint
+ * row, so a plan that splits them again deviates.
  */
 const MEZZ_H264: DeliverySpec = {
 	id: "mezz-h264-1080p-50m",
 	name: "Mezzanine — H.264 1080p 50 Mbps MP4",
 	category: "MEZZANINE",
-	// : this sentence renders verbatim on the customer presets page,
-	// so it says what the spec delivers and not where the limit is recorded
-	// (the combined-AV MP4 gap stays ledgered under #82; see line 83 above).
+	// This sentence renders verbatim on the customer presets page, so it says
+	// what the spec delivers and nothing about how the plan expresses it.
 	description:
-		"Progressive MP4 mezzanine: H.264 High profile 1080p at 50 Mbps plus a 320 kbps AAC audio master, delivered as separate progressive files (one stream per MP4). Export and adapt to your platform's delivery spec.",
+		"Progressive MP4 mezzanine: H.264 High profile 1080p at 50 Mbps with 320 kbps AAC audio in the same file. Export and adapt to your platform's delivery spec.",
 	plan: encodingPlanSchema.parse({
 		planVersion: 1,
 		name: "mezz-h264-1080p-50m",
@@ -216,17 +220,11 @@ const MEZZ_H264: DeliverySpec = {
 		],
 		muxings: [
 			{
-				key: "mezzV",
+				key: "mezz",
 				kind: "MP4",
 				streamKey: "v1080",
-				filename: "mezzanine-1080p-video.mp4",
-				destination: { outputKey: "origin", path: "./delivery/h264-1080" },
-			},
-			{
-				key: "mezzA",
-				kind: "MP4",
-				streamKey: "a320",
-				filename: "mezzanine-1080p-audio.mp4",
+				additionalStreamKeys: ["a320"],
+				filename: "mezzanine-1080p.mp4",
 				destination: { outputKey: "origin", path: "./delivery/h264-1080" },
 			},
 		],
@@ -274,14 +272,14 @@ const MEZZ_H264: DeliverySpec = {
 			// fields" but the row asserts only kind === MP4 — the v1 grammar
 			// cannot express "field is absent" ,
 			// so the sentence now claims exactly what the row checks.
-			requirement: "MP4 container video file",
+			requirement: "MP4 container",
 			path: "muxings.0.kind",
 			expect: { eq: "MP4" },
 		},
 		{
-			requirement: "MP4 container audio file",
-			path: "muxings.1.kind",
-			expect: { eq: "MP4" },
+			requirement: "Video and audio in one file",
+			path: "muxings.0.additionalStreamKeys",
+			expect: { eq: ["a320"] },
 		},
 	],
 	suggestedGate: {
@@ -291,15 +289,15 @@ const MEZZ_H264: DeliverySpec = {
 };
 
 /**
- * H.265 UHD mezzanine: Main10 2160p high-bitrate progressive MP4 — the
- * archive/interchange shape for UHD masters.
+ * H.265 UHD mezzanine: Main10 2160p high-bitrate progressive MP4 with its
+ * audio in the same file — the archive/interchange shape for UHD masters.
  */
 const MEZZ_H265: DeliverySpec = {
 	id: "mezz-h265-2160p",
 	name: "Mezzanine — H.265 UHD Main10 MP4",
 	category: "MEZZANINE",
 	description:
-		"Progressive MP4 UHD mezzanine: H.265 Main10 2160p at 80 Mbps with 320 kbps AAC. Main10 keeps 10-bit sources 10-bit end to end.",
+		"Progressive MP4 UHD mezzanine: H.265 Main10 2160p at 80 Mbps with 320 kbps AAC audio in the same file. Main10 keeps 10-bit sources 10-bit end to end.",
 	plan: encodingPlanSchema.parse({
 		planVersion: 1,
 		name: "mezz-h265-2160p",
@@ -362,17 +360,11 @@ const MEZZ_H265: DeliverySpec = {
 		],
 		muxings: [
 			{
-				key: "mezzV",
+				key: "mezz",
 				kind: "MP4",
 				streamKey: "v2160",
-				filename: "mezzanine-2160p-video.mp4",
-				destination: { outputKey: "origin", path: "./delivery/h265-2160" },
-			},
-			{
-				key: "mezzA",
-				kind: "MP4",
-				streamKey: "a320",
-				filename: "mezzanine-2160p-audio.mp4",
+				additionalStreamKeys: ["a320"],
+				filename: "mezzanine-2160p.mp4",
 				destination: { outputKey: "origin", path: "./delivery/h265-2160" },
 			},
 		],
@@ -414,9 +406,14 @@ const MEZZ_H265: DeliverySpec = {
 			expect: { eq: 48_000 },
 		},
 		{
-			requirement: "MP4 container video file",
+			requirement: "MP4 container",
 			path: "muxings.0.kind",
 			expect: { eq: "MP4" },
+		},
+		{
+			requirement: "Video and audio in one file",
+			path: "muxings.0.additionalStreamKeys",
+			expect: { eq: ["a320"] },
 		},
 	],
 	suggestedGate: {

@@ -30,6 +30,14 @@ How to encode a platform delivery spec as a `.bitovp-preset.json` file. We ship 
 
 One operator per row: `eq` (deep-equal), `oneOf`, or a numeric window via `gte`/`lte` (use both for a range). Paths are dot-joined with numeric array indices (`renditions.0.codec`). **An unresolved path is a deviation, never a pass** — a spec whose field the plan dropped must say so. No cross-field expressions in v1.
 
+To require that a file carries its audio, constrain the streams of its muxing. A muxing names its first stream in `streamKey` and the others in `additionalStreamKeys`, so the shipped mezzanine specs use:
+
+```json
+{ "requirement": "Video and audio in one file", "path": "muxings.0.additionalStreamKeys", "expect": { "eq": ["a320"] } }
+```
+
+A plan that writes the audio to a file of its own has no `additionalStreamKeys` on that muxing, and the unresolved path is reported as a deviation.
+
 Conformance checks plan INTENT, not output bytes — pairing with the verify engine's artefact checks is future work; a ✔ is not a measurement.
 
 ## Verification checklist for a new spec

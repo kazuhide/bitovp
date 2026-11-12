@@ -446,6 +446,16 @@ export function fixtureAccount(required = FIXTURES) {
 	};
 }
 
+// The shape of x264's names for what it uses of the processor: a letter, then
+// letters and digits, 14 characters at most, and one digit after a dot where
+// the name has one ("SSE4.2"). A report is up to 32 of them, or "none!". An
+// address, a dotted name or a number does not have this shape; a single word
+// of letters and digits does.
+const X264_NAME = "[A-Za-z][A-Za-z0-9]{0,13}(?:\\.[0-9])?";
+const X264_NAMES = new RegExp(
+	`^(?:none!|${X264_NAME}(?: ${X264_NAME}){0,31})$`,
+);
+
 export function validateSummary(raw) {
 	assert(
 		typeof raw === "string" && raw.length <= 10_000,
@@ -462,11 +472,12 @@ export function validateSummary(raw) {
 			"decodedPresentations",
 			"vmafFrames",
 			"means",
+			"x264Capabilities",
 		].sort(),
 		"Unexpected media summary fields",
 	);
 	for (const [key, expected] of Object.entries({
-		version: 1,
+		version: 2,
 		videoFrames: 240,
 		hlsSegments: 5,
 		dashSegments: 5,
@@ -492,6 +503,15 @@ export function validateSummary(raw) {
 				value <= 100,
 		),
 		"VMAF means must be numbers from 0 to 100",
+	);
+	// The one text of the summary: x264's names for what it uses of the
+	// processor, or "none!". This rule bounds its shape. That the words are
+	// x264's is the check's part: it takes them from the one line of an
+	// encode's log that reports them.
+	assert(
+		typeof summary.x264Capabilities === "string" &&
+			X264_NAMES.test(summary.x264Capabilities),
+		"x264's processor capabilities must be a list of its capability names",
 	);
 	return summary;
 }
@@ -729,6 +749,9 @@ export async function runFixture(
 		notify(
 			`VMAF means: self=${summary.means.self.toFixed(3)}, encoded=${summary.means.encoded.toFixed(3)}, degraded=${summary.means.degraded.toFixed(3)}`,
 		);
+		// The encoded and the degraded mean are of x264 encodes, which are not
+		// the same packets on every processor.
+		notify(`x264 CPU capabilities: ${summary.x264Capabilities}`);
 	} catch (error) {
 		failure = atStep(asFailure(error), step);
 	}

@@ -39,6 +39,10 @@ PR #112 left it.
   `42e5d926` on `main` and for the first two commits of PR #114, which added
   this record (`3b5edb98` and `a403ff35`), and the logs of the two jobs of the
   first run of the workflow "FFmpeg from source".
+- **The logs of PR #116** are the logs of the job `media-smoke` for its first
+  commit (`c1812e8d`), on 2026-11-12: the run of the pull request and six runs
+  that were started on its branch one after the other. PR #116 made the media
+  check print what x264 reports that it uses of the processor.
 - **The research records** are the measurements, reviews and notes made for
   PR #109. **The design note** is the note written for that PR.
 - **The measurement records** of the check on a real GPU, of the small-picture
@@ -2270,13 +2274,16 @@ next section). The time limits of the three jobs are 30, 40 and 50 minutes.
 
 ### The VMAF means of the media job
 
-The media check (`pnpm test:media`, which the job `media-smoke` runs) ends with
-the means of three comparisons: the reference with itself, an x264 encode of it,
-and a strongly degraded x264 encode. It requires that the first is at least 90,
-that the second is not above the first, and that the third is more than 5 below
-the second; it requires no exact value. On an arm64 host it printed a third set
-(see the end of this section). In the CI jobs that this record read, all on
-GitHub's x86-64 runners, it printed one of two sets:
+The media check (`pnpm test:media`, which the job `media-smoke` runs) prints,
+when it has passed, the means of three comparisons: the reference with itself,
+an x264 encode of it, and a strongly degraded x264 encode. It requires that the
+first is at least 90, that the second is not above the first, and that the third
+is more than 5 below the second; it requires no exact value. Since PR #116 it
+prints one more line after the means, `x264 CPU capabilities:`, with what x264
+reported that it uses of the processor in the two encodes. On an arm64 host the
+check printed a third set of means (see the end of this section). In the CI jobs
+that this record read, all on GitHub's x86-64 runners, it printed one of two
+sets:
 
 | Set | self | encoded | degraded |
 |---|---|---|---|
@@ -2295,7 +2302,9 @@ with means that are kept, up to the runs of `a403ff35`, are of 13 jobs. They
 name one runner image (`ubuntu-26.04` version `20261101.186.1`) and one version
 of the runner software (2.338.2); 8 of them hold set A and 5 set B. The set
 therefore follows neither the commit, nor the build, nor the runner's software,
-and jobs that get the programs in the same way print both.
+and jobs that get the programs in the same way print both. The seven jobs of
+PR #116 that are listed below show it once more: one commit, one kept build, one
+runner image and one version of the runner software, and both sets.
 
 What is left is the runner's processor, and a test shows that the processor is
 enough to give both sets. x264 chooses its functions by the vector extensions
@@ -2312,8 +2321,8 @@ The test ran on 2026-11-12 from 07:27 to 07:36 UTC on the host of the GPU check
 used the `linux/amd64` `ffmpeg` of that check (SHA-256 `61720e87…`, the bytes
 that CI's native builds give), the source file of the media check
 (`BigBuckBunny_320x180.mp4`; `scripts/media-smoke.mjs` holds its SHA-256,
-`f78f3960…`, and the address of the archive that it comes in), and the check's
-own commands:
+`f78f3960…`, and the address of the archive that it comes in), and the commands
+that the check then had, with the two differences that are named after them:
 
 ```sh
 ffmpeg -v error -nostdin -y -ss 30 -threads 1 -i source.mp4 -t 10 -map 0:v:0 -an \
@@ -2330,10 +2339,12 @@ ffmpeg -v info -nostdin -y -threads 1 -i reference.mkv -an \
 The three comparisons are the commands that `buildVmafCommand` of `@bitovp/core`
 gives for the options in `runMediaCheck` of
 `apps/worker/src/testing/media-smoke.ts`, with the model `vmaf_v0.6.1`; a mean
-is `pooled_metrics.vmaf.mean` of libvmaf's JSON log. Two things differ from the
-check. The test ran the two x264 encodes with `-v info` instead of `-v error`,
-so that the log holds x264's line `using cpu capabilities`, and it put
-`-v error -nostdin -y` in front of the comparisons. A variant adds
+is `pooled_metrics.vmaf.mean` of libvmaf's JSON log. Two things differed from
+the check as it then was. The test ran the two x264 encodes with `-v info`
+instead of `-v error`, so that the log holds x264's line
+`using cpu capabilities`, and it put `-v error -nostdin -y` in front of the
+comparisons. Since PR #116 the check itself runs the two encodes with
+`-v info -nostats` and reads that line. A variant adds
 `-x264-params <parameter>` before the name of the output of the two x264
 encodes, or `-cpuflags <flags>` right after `-y` in every command. The MD5 of
 the packets is what `ffmpeg -i <file> -map 0:v:0 -c copy -f md5 -` prints, and
@@ -2342,7 +2353,7 @@ the MD5 of the reference's frames is what the same command prints without
 
 | Variant | x264 reports AVX-512 | Encoded packets | Degraded packets | self | encoded | degraded |
 |---|---|---|---|---|---|---|
-| as the check runs it | yes | `425ede39…` | `06ce7606…` | 98.282420 | 93.142497 | 5.088417 |
+| without a variant option | yes | `425ede39…` | `06ce7606…` | 98.282420 | 93.142497 | 5.088417 |
 | `-x264-params asm=AVX2` | no | `04a059c4…` | `1ab5e6e7…` | 98.282420 | 93.115978 | 5.527475 |
 | `-x264-params asm=AVX512` | yes | `425ede39…` | `06ce7606…` | 98.282420 | 93.142497 | 5.088417 |
 | `-x264-params cpu-independent=1` | yes | `1f0da230…` | `3a05699c…` | 98.282420 | 93.122542 | 4.929811 |
@@ -2369,12 +2380,37 @@ the MD5 of the reference's frames is what the same command prints without
   the same nine variants on the same host. Every checksum and every mean is the
   same as with this build.
 
+Since PR #116 the logs hold x264's report, and they show the same. The first
+commit of that pull request, `c1812e8d`, ran seven times on GitHub's x86-64
+runners on 2026-11-12 from 11:42 to 12:23 UTC: once for the pull request, and
+six times on its branch, started by hand: the first while the run of the pull
+request was going, each later one after the one before had ended. All seven
+name the runner image `ubuntu-26.04` version `20261101.186.1` and the runner
+software 2.338.2, and all seven reused the build that `main` had stored.
+
+| Run | Azure region | x264 reports AVX-512 | self | encoded | degraded |
+|---|---|---|---|---|---|
+| 43211484048, of the pull request | westus | no | 98.282 | 93.116 | 5.527 |
+| 43211521248 | westcentralus | no | 98.282 | 93.116 | 5.527 |
+| 43212507080 | eastus2 | yes | 98.282 | 93.142 | 5.088 |
+| 43213387904 | westus2 | yes | 98.282 | 93.142 | 5.088 |
+| 43214383595 | westus3 | no | 98.282 | 93.116 | 5.527 |
+| 43215396495 | eastus | no | 98.282 | 93.116 | 5.527 |
+| 43216434317 | westus2 | no | 98.282 | 93.116 | 5.527 |
+
+After `x264 CPU capabilities:` the line holds
+`MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512` in the two runs that
+printed set A, and the same without `AVX512` in the five that printed set B.
+These are the two reports of the test's first two variants, with the means of
+those variants. One region, westus2, gave a runner of each kind.
+
 What follows, and what does not:
 
 - The media check passes on both kinds of runner, those where x264 uses AVX-512
   and those where it does not, because both sets meet its three requirements. A
   mean of an x264 encode in a CI log can be compared only with a run in which
-  x264 used the same extensions.
+  x264 used the same extensions. Since PR #116 the line `x264 CPU capabilities:`
+  of a run names them.
 - The difference is in the encode, not in the measurement: on one machine, with
   one libvmaf, the two encodes give the two sets of the runners, at the three
   decimals that CI prints.
@@ -2387,19 +2423,27 @@ What follows, and what does not:
   2026 had printed the same: `docs/user-guide/QUALITY-AND-MONITORING.md` gives
   it for a local run, in a line written when the pin was
   `n8.1.3-18-g46d899d7a0`, and the research records hold it for a run of
-  2026-10-24 on an arm64 host, whose log names no build. The test of the nine
+  2026-10-24 on an arm64 host, whose log names no build. With the check of
+  PR #116 the same Mac printed the same means on 2026-11-12, and
+  `ARMv8 NEON DotProd I8MM` as x264's report. The test of the nine
   variants was not made on arm64. x264 has versions of the tree's functions for
   arm64 too (`common/aarch64/mc-c.c`), so other packets are to be expected, but
   the packets of the arm64 runs were not compared with those of x86-64, and
   whether anything else differs there is not known.
-- Not established: which processor each runner had. No log names it: that the
-  runners of set A have AVX-512 and those of set B do not is inferred from the
-  test. No run was made on a processor without AVX-512; the test took AVX-512
-  from x264 by an option. Whether `cpu-independent=1` gives the same packets on
-  both kinds was not tried, nor was a processor without AVX2, nor a second arm64
-  processor, so there may be more sets than these three. The test shows that the
-  tree is where the encodes differ, not which of its functions. It did not vary
-  what libvmaf uses of the processor.
+- For the seven runs of PR #116 the logs show which kind of runner printed which
+  set: x264 reported AVX-512 in the runs of set A and did not in those of set B.
+  For the jobs before it no log names what x264 used, and that their sets
+  follow the same rule stays inferred from the test. No log names the processor
+  itself: the line holds what x264 uses of it.
+- Not established: the packets of a processor without AVX-512. The test took
+  AVX-512 from x264 by an option; the five runs of set B are on runners where
+  x264 reported no AVX-512, and they print the means of that variant at CI's
+  three decimals, but CI prints no checksum of the packets. Whether
+  `cpu-independent=1` gives the same packets on both kinds was not tried, nor
+  was a processor without AVX2, nor a second arm64 processor, so there may be
+  more sets than these three. The test shows that the tree is where the encodes
+  differ, not which of its functions. It did not vary what libvmaf uses of the
+  processor.
 
 ### Comparison with the earlier build
 
@@ -2697,9 +2741,10 @@ What follows for bitovp:
   third set of means on an arm64 host; its packets were not compared. A
   processor without AVX2 and a second arm64 processor were not tried, so there
   may be more. A VMAF score of an x264 encode can be compared only between
-  processors on which x264 uses the same extensions. The earlier prebuilt build
-  behaves in the same way on x86-64. "The VMAF means of the media job" records
-  the test.
+  processors on which x264 uses the same extensions; the media check prints them
+  after its means, in the line `x264 CPU capabilities:`. The earlier prebuilt
+  build behaves in the same way on x86-64. "The VMAF means of the media job"
+  records the test.
 - The limits of the GPU check are listed under "Verification record", and what
   the build no longer contains under "Differences from the earlier prebuilt
   build".
@@ -2972,7 +3017,12 @@ What to measure again:
 - the two small-picture tests, when libvmaf or the models change; the appendix
   holds their scripts;
 - the test of x264 with and without AVX-512, when x264 changes; "The VMAF means
-  of the media job" names its commands;
+  of the media job" names its commands. The names in `x264_cpu_names`
+  (`common/cpu.c`) of the new revision are to be held against the rule for a
+  name in the media check, `X264_NAME` in
+  `apps/worker/src/testing/media-smoke.ts` and in `scripts/media-smoke.mjs`: the
+  check fails on a report with a name that the rule does not take, or with
+  more than 32 names;
 - the upstream commits after each new pin, as in "Upstream fixes after the
   pinned revisions".
 
@@ -3003,6 +3053,8 @@ and scripts are kept with the research records, outside the repository.
 | 2026-11-12 07:54 to 08:17 | `3b5edb98` | The runs of the first commit of PR #114, which added this record; its three jobs that need FFmpeg restored the entry of `main` |
 | 2026-11-12 08:34 to 08:48 | `a403ff35` | The runs of the second commit of PR #114; the same entry of `main`, and the other set of VMAF means |
 | 2026-11-12 08:54 to 08:57 | `a403ff35` | The media check on an arm64 host, with the worker image built from `Dockerfile` |
+| 2026-11-12 11:37 to 11:39 | | The media check with the change of PR #116 on the same arm64 host, from the tree that was committed as `c1812e8d` at 11:41: the same means, and x264's report |
+| 2026-11-12 11:42 to 12:23 | `c1812e8d` | Seven runs of the job `media-smoke` for the first commit of PR #116, whose check prints what x264 reports that it uses of the processor: two with AVX-512 and set A, five without and set B |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

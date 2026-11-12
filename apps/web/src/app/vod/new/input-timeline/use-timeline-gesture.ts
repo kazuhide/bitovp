@@ -35,6 +35,7 @@ export function useTimelineGesture({
 	facts,
 	disabled,
 	track,
+	pixelsPerMs,
 	onChange,
 	onSelect,
 	onError,
@@ -43,6 +44,7 @@ export function useTimelineGesture({
 	facts: VodInputTimelineSourceFacts[];
 	disabled: boolean;
 	track: RefObject<HTMLDivElement | null>;
+	pixelsPerMs: number;
 	onChange: (next: VodInputTimelineDocument) => void;
 	onSelect: (id: string) => void;
 	onError: () => void;
@@ -123,7 +125,9 @@ export function useTimelineGesture({
 		const active = gesture.current;
 		if (!active || pointer !== active.pointer) return;
 		if (disabled || document !== active.base) return finish(false);
-		const delta = Math.round((clientX - active.x) / active.pixelsPerMs);
+		const left = track.current?.getBoundingClientRect().left;
+		if (left === undefined) return;
+		const delta = Math.round((clientX - left - active.x) / active.pixelsPerMs);
 		if (active.mode === "move") {
 			const items = timelineItems(active.base);
 			const item = items.find((entry) => entry.clip.id === active.id);
@@ -151,9 +155,9 @@ export function useTimelineGesture({
 					!facts.some((item) => item.key === clip?.sourceKey)
 				)
 					return;
-				const width = track.current?.getBoundingClientRect().width ?? 0;
+				const bounds = track.current?.getBoundingClientRect();
 				const total = timelineDuration(document);
-				if (!width || !total) return;
+				if (!bounds || !pixelsPerMs || !total) return;
 				event.preventDefault();
 				event.currentTarget.focus();
 				onSelect(id);
@@ -162,8 +166,8 @@ export function useTimelineGesture({
 					id,
 					mode,
 					pointer: event.pointerId,
-					x: event.clientX,
-					pixelsPerMs: width / total,
+					x: event.clientX - bounds.left,
+					pixelsPerMs,
 					target: event.currentTarget,
 					base: document,
 					next: document,

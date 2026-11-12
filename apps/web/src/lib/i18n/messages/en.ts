@@ -32,7 +32,6 @@ export const en = {
 		edit: "Edit on timeline",
 		ordinary: "Use ordinary inputs",
 		title: "Input sequence",
-		fileOutput: "File output",
 		sourceSettings: "Source settings",
 		invalid: "Add valid clips to the input timeline.",
 		notReady:

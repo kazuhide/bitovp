@@ -8,7 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- Manual VOD input timeline editing for linked video/audio: browse storage files, trim, split, reorder and concatenate clips with seek, zoom and undo/redo. CPU-only FFmpeg previews use version-pinned range reads and do not require a GPU or Local LLM or start a cloud encoding job.
+- Manual VOD input timeline editing for linked video/audio: browse storage files, trim, split, reorder and concatenate clips with a stable time scale, seek, zoom and undo/redo. Input editing preserves the normal VOD output settings, including HLS/DASH and progressive files. CPU-only FFmpeg previews use version-pinned range reads and do not require a GPU or Local LLM or start a cloud encoding job.
 - Progressive single-file TS output alongside MP4, independently of HLS/DASH. Existing segmented TS output remains available.
 
 ### Fixed

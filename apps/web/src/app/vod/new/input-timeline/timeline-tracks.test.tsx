@@ -1,0 +1,272 @@
+import type { VodInputTimelineDocument } from "@bitovp/core/vod-input-timeline";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { renderLocalized } from "@/test/render";
+import { clipA, facts, splitId, timeline } from "./test-fixtures";
+import { changeRange, moveClip, splitAt } from "./timeline-state";
+import { TimelineTracks } from "./timeline-tracks";
+
+let viewportWidth = 800;
+const observers = new Set<ResizeObserverCallback>();
+const changed = vi.fn();
+const sought = vi.fn();
+
+function widthOf(element: HTMLElement | null): number {
+	if (!element) throw new Error("Timeline geometry element is missing");
+	const width = element.style.width;
+	if (width.endsWith("px")) return Number.parseFloat(width);
+	if (width.endsWith("%"))
+		return (Number.parseFloat(width) / 100) * widthOf(element.parentElement);
+	return viewportWidth;
+}
+
+function clipWidth(name: string) {
+	return widthOf(screen.getByRole("button", { name }).parentElement);
+}
+
+function viewportOf() {
+	const viewport = screen.getByTestId("input-timeline-track").parentElement;
+	if (!viewport) throw new Error("Timeline viewport is missing");
+	return viewport;
+}
+
+function tracks(document: VodInputTimelineDocument) {
+	return (
+		<TimelineTracks
+			document={document}
+			facts={facts.map((source) => ({
+				...source,
+				video: { ...source.video, frameRate: { num: 30, den: 1 } },
+			}))}
+			names={{ a: "A.mp4", b: "B.mp4" }}
+			selectedId={clipA}
+			positionMs={0}
+			disabled={false}
+			onSelect={() => {}}
+			onSeek={sought}
+			onChange={changed}
+			onDelete={() => {}}
+			onError={() => {}}
+			onDragging={() => {}}
+		/>
+	);
+}
+
+beforeEach(() => {
+	viewportWidth = 800;
+	changed.mockReset();
+	sought.mockReset();
+	observers.clear();
+	vi.stubGlobal(
+		"ResizeObserver",
+		class {
+			constructor(callback: ResizeObserverCallback) {
+				observers.add(callback);
+			}
+			observe() {}
+			disconnect() {}
+		},
+	);
+	vi.stubGlobal(
+		"PointerEvent",
+		class extends MouseEvent {
+			pointerId: number;
+			constructor(type: string, init: PointerEventInit = {}) {
+				super(type, init);
+				this.pointerId = init.pointerId ?? 1;
+			}
+		},
+	);
+	vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+		function (this: HTMLElement) {
+			return widthOf(this);
+		},
+	);
+	vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+		function (this: HTMLElement) {
+			const width = widthOf(this);
+			const canvas = this.closest('[data-testid="input-timeline-track"]');
+			const left = -(canvas?.parentElement?.scrollLeft ?? 0);
+			return {
+				x: left,
+				y: 0,
+				left,
+				right: left + width,
+				top: 0,
+				bottom: 100,
+				width,
+				height: 100,
+				toJSON: () => ({}),
+			};
+		},
+	);
+	HTMLElement.prototype.setPointerCapture = vi.fn();
+	HTMLElement.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
+	HTMLElement.prototype.releasePointerCapture = vi.fn();
+});
+
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
+});
+
+it("uses a fixed scale with an empty tail and keeps untrimmed clips steady through edits and history", () => {
+	const original = timeline();
+	const view = renderLocalized(tracks(original));
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(400);
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(600);
+	expect(widthOf(screen.getByTestId("input-timeline-track"))).toBeCloseTo(1120);
+
+	const trimmed = changeRange(original, clipA, 12_000, 20_000, facts);
+	view.rerender(tracks(trimmed));
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(320);
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(600);
+
+	const split = splitAt(trimmed, 4000, splitId);
+	view.rerender(tracks(split));
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(160);
+	expect(clipWidth("Clip 2, A.mp4")).toBeCloseTo(160);
+	expect(clipWidth("Clip 3, B.mp4")).toBeCloseTo(600);
+	view.rerender(tracks(moveClip(split, splitId, 2)));
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(600);
+	view.rerender(tracks(original));
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(400);
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(600);
+});
+
+it("extends the scroll canvas for appended or lengthened clips without changing the time scale", () => {
+	const original = timeline();
+	const view = renderLocalized(tracks(original));
+	view.rerender(
+		tracks({
+			...original,
+			clips: [
+				...original.clips,
+				{ id: splitId, sourceKey: "a", inMs: 0, outMs: 60_000 },
+			],
+		}),
+	);
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(400);
+	expect(clipWidth("Clip 3, A.mp4")).toBeCloseTo(2400);
+	expect(widthOf(screen.getByTestId("input-timeline-track"))).toBeCloseTo(3520);
+	view.rerender(tracks(changeRange(original, clipA, 10_000, 40_000, facts)));
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(1200);
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(600);
+	expect(widthOf(screen.getByTestId("input-timeline-track"))).toBeCloseTo(1920);
+});
+
+it("makes Fit an explicit snapshot while manual zoom remains fixed after trimming", () => {
+	const original = timeline();
+	const view = renderLocalized(tracks(original));
+	fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(400);
+	view.rerender(tracks(changeRange(original, clipA, 12_000, 20_000, facts)));
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(400);
+	fireEvent.change(screen.getByRole("combobox", { name: "Timeline zoom" }), {
+		target: { value: "4" },
+	});
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(2400);
+	view.rerender(tracks(original));
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(2400);
+});
+
+it("fits a short sequence together with its empty tail into the viewport", () => {
+	const original = timeline();
+	renderLocalized(
+		tracks({
+			...original,
+			clips: [{ id: clipA, sourceKey: "a", inMs: 0, outMs: 9000 }],
+		}),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+	expect(widthOf(screen.getByTestId("input-timeline-track"))).toBeCloseTo(800);
+});
+
+it("keeps the scale through an empty start, restored content and narrow viewport changes", () => {
+	const original = timeline();
+	const view = renderLocalized(tracks({ ...original, clips: [] }));
+	expect(widthOf(screen.getByTestId("input-timeline-track"))).toBe(800);
+	view.rerender(tracks(original));
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(400);
+	act(() => {
+		viewportWidth = 200;
+		for (const callback of observers) callback([], {} as ResizeObserver);
+	});
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(400);
+	expect(widthOf(screen.getByTestId("input-timeline-track"))).toBeCloseTo(1120);
+});
+
+it("bounds ruler labels for a 24 hour sequence at maximum zoom and when scrolled", () => {
+	const original = timeline();
+	renderLocalized(
+		tracks({
+			...original,
+			clips: [{ id: clipA, sourceKey: "a", inMs: 0, outMs: 86_400_000 }],
+		}),
+	);
+	fireEvent.change(screen.getByRole("combobox", { name: "Timeline zoom" }), {
+		target: { value: "8" },
+	});
+	const ruler = screen.getByRole("slider", { name: "Time ruler" });
+	expect(ruler.querySelectorAll("span").length).toBeLessThan(20);
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(27_648_000);
+	const viewport = viewportOf();
+	fireEvent.scroll(viewport, { target: { scrollLeft: 27_647_200 } });
+	expect(ruler.querySelectorAll("span").length).toBeGreaterThan(0);
+	expect(ruler.querySelectorAll("span").length).toBeLessThan(20);
+	expect(ruler.textContent).toContain("1440:");
+});
+
+it("seeks on a horizontally scrolled ruler, clamps the empty tail and retains keyboard seeking", () => {
+	renderLocalized(tracks(timeline()));
+	const ruler = screen.getByRole("slider", { name: "Time ruler" });
+	const viewport = viewportOf();
+	fireEvent.scroll(viewport, { target: { scrollLeft: 400 } });
+	fireEvent.click(ruler, { clientX: 200, detail: 1 });
+	expect(sought).toHaveBeenLastCalledWith(15_000);
+	fireEvent.click(ruler, { clientX: 700, detail: 1 });
+	expect(sought).toHaveBeenLastCalledWith(24_999);
+	fireEvent.keyDown(ruler, { key: "End" });
+	expect(sought).toHaveBeenLastCalledWith(24_999);
+	fireEvent.keyDown(ruler, { key: "ArrowRight" });
+	expect(sought).toHaveBeenLastCalledWith(1000);
+});
+
+it("trims by the fixed scale while scrolling and changing the preview canvas", () => {
+	renderLocalized(tracks(timeline()));
+	const viewport = viewportOf();
+	const handle = screen.getByRole("slider", {
+		name: "Trim end, A.mp4, clip 1",
+	});
+	fireEvent.scroll(viewport, { target: { scrollLeft: 300 } });
+	fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100 });
+	fireEvent.pointerMove(handle, { pointerId: 1, clientX: 180 });
+	expect(clipWidth("Clip 1, A.mp4")).toBeCloseTo(480);
+	expect(clipWidth("Clip 2, B.mp4")).toBeCloseTo(600);
+	fireEvent.scroll(viewport, { target: { scrollLeft: 340 } });
+	fireEvent.pointerMove(handle, { pointerId: 1, clientX: 180 });
+	expect(handle).toHaveAttribute("aria-valuenow", "23000");
+	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 180 });
+	expect(changed).toHaveBeenCalledTimes(1);
+	expect(changed.mock.lastCall?.[0].clips[0].outMs).toBe(23_000);
+	expect(viewport.scrollLeft).toBe(340);
+});
+
+it("exposes named editing controls without an operation-help disclosure", () => {
+	renderLocalized(tracks(timeline()));
+	const region = screen.getByRole("region", { name: "Input timeline tracks" });
+	expect(
+		within(region).queryByText("Timeline controls"),
+	).not.toBeInTheDocument();
+	expect(region.querySelector("details")).toBeNull();
+	expect(
+		screen.getByRole("slider", { name: "Trim start, A.mp4, clip 1" }),
+	).not.toHaveAttribute("aria-describedby");
+});

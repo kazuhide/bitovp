@@ -122,8 +122,8 @@ describe("catalogue parity", () => {
 		// Runtime measurement includes the manual VOD input timeline copy.
 		pinWithDriftAid(long.length, 1591, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes the manual VOD input timeline labels.
-		pinWithDriftAid(short.size, 3160, "short");
+		// Runtime measurement after removing the timeline-only file-output label.
+		pinWithDriftAid(short.size, 3159, "short");
 	});
 
 	/**

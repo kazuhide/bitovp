@@ -10,11 +10,10 @@ export function TimelineClip({
 	clip,
 	index,
 	name,
-	durationMs,
+	pixelsPerMs,
 	selected,
 	fact,
 	disabled,
-	helpId,
 	handlers,
 	consumeClick,
 	onSeek,
@@ -24,11 +23,10 @@ export function TimelineClip({
 	clip: VodInputTimelineClip;
 	index: number;
 	name: string;
-	durationMs: number;
+	pixelsPerMs: number;
 	selected: boolean;
 	fact: VodInputTimelineSourceFacts | undefined;
 	disabled: boolean;
-	helpId: string;
 	handlers: ReturnType<typeof useTimelineGesture>["handlers"];
 	consumeClick: ReturnType<typeof useTimelineGesture>["consumeClick"];
 	onSeek: (localMs: number) => void;
@@ -40,14 +38,15 @@ export function TimelineClip({
 	return (
 		<div
 			className="relative h-16 min-w-0 shrink-0 py-1"
-			style={{ width: `${((clip.outMs - clip.inMs) / durationMs) * 100}%` }}
+			style={{ width: (clip.outMs - clip.inMs) * pixelsPerMs }}
 		>
 			<button
 				type="button"
 				data-clip-id={clip.id}
 				aria-label={`${l.clip} ${index + 1}, ${name}`}
 				aria-pressed={selected}
-				className={`h-full w-full touch-none overflow-hidden border px-3 text-left text-xs focus-visible:outline-2 focus-visible:outline-emerald-300 ${selected ? "border-emerald-400 bg-emerald-950 text-emerald-100" : "border-zinc-600 bg-zinc-800 text-zinc-200"}`}
+				aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Delete Backspace"
+				className={`h-full w-full touch-none cursor-grab overflow-hidden border px-3 text-left text-xs active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-emerald-300 ${selected ? "border-emerald-400 bg-emerald-950 text-emerald-100" : "border-zinc-600 bg-zinc-800 text-zinc-200"}`}
 				{...moveHandlers}
 				onKeyDown={(event) => {
 					if (event.key === "Delete" || event.key === "Backspace") {
@@ -96,7 +95,7 @@ export function TimelineClip({
 						aria-valuenow={edge === "in" ? clip.inMs : clip.outMs}
 						aria-valuetext={formatTime(edge === "in" ? clip.inMs : clip.outMs)}
 						aria-disabled={disabled || !fact}
-						aria-describedby={helpId}
+						aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
 						className={`absolute top-1 z-10 h-14 w-3 touch-none cursor-ew-resize rounded-sm border border-emerald-300 bg-emerald-600/80 focus-visible:outline-2 focus-visible:outline-emerald-100 ${edge === "in" ? "left-0" : "right-0"}`}
 						{...handlers(clip.id, edge)}
 					/>

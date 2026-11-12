@@ -5,7 +5,11 @@ import {
 	DEFAULT_LIVE_WIZARD_STATE,
 } from "@/app/live/new/build-live-plan";
 import { LiveWizard } from "@/app/live/new/live-wizard";
-import { buildPlan, DEFAULT_WIZARD_STATE } from "@/app/vod/new/build-plan";
+import {
+	buildPlan,
+	DEFAULT_WIZARD_STATE,
+	type WizardState,
+} from "@/app/vod/new/build-plan";
 import { VodWizard } from "@/app/vod/new/wizard";
 import { renderWithQuery } from "@/test/render";
 import {
@@ -174,6 +178,69 @@ it("resumes a timeline draft saved at Review through fresh source preparation", 
 			),
 		).toBe(true),
 	);
+});
+
+it.each([
+	"FMP4",
+	"MP4",
+	"PROGRESSIVE_TS",
+] as const)("keeps selected %s output settings when timeline editing is enabled and disabled", async (kind) => {
+	const key = draftKey(["org", "user"], "vod", "new");
+	const audio = vod.audios[0];
+	if (!audio) throw new Error("Expected the selected audio rendition");
+	const selected: WizardState = {
+		...vod,
+		videos: [
+			{
+				height: 720,
+				bitrate: 2_000_000,
+				muxing:
+					kind === "FMP4"
+						? { kind, segmentLength: 4, segmentNaming: "custom_%number%.m4s" }
+						: { kind, filename: "custom-master", muxedAudioKeys: ["a128"] },
+				extraMuxings: [{ kind: "MP4", filename: "second-master.mp4" }],
+			},
+		],
+		audios: [
+			{
+				...audio,
+				bitrate: 128_000,
+				muxing: { ownContainer: kind === "FMP4" },
+			},
+		],
+		manifests: { hls: kind === "FMP4", dash: kind === "FMP4" },
+	};
+	writeWizardDraft(key, "vod", selected, 1);
+	const saved = readWizardDraft(key, "vod")?.value;
+	if (!saved) throw new Error("Expected the selected output draft");
+	const packaging = {
+		videos: saved.videos,
+		audios: saved.audios,
+		manifests: saved.manifests,
+	};
+	renderWithQuery(<VodWizard />);
+	fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	fireEvent.click(screen.getByRole("button", { name: "Edit on timeline" }));
+	await waitFor(() => {
+		const draft = readWizardDraft(key, "vod")?.value;
+		expect(draft?.inputTimeline).toBeDefined();
+		expect({
+			videos: draft?.videos,
+			audios: draft?.audios,
+			manifests: draft?.manifests,
+		}).toEqual(packaging);
+	});
+	expect(screen.queryByRole("combobox", { name: "File output" })).toBeNull();
+	fireEvent.click(screen.getByRole("button", { name: "Use ordinary inputs" }));
+	await waitFor(() => {
+		const draft = readWizardDraft(key, "vod")?.value;
+		expect(draft?.inputTimeline).toBeUndefined();
+		expect({
+			videos: draft?.videos,
+			audios: draft?.audios,
+			manifests: draft?.manifests,
+		}).toEqual(packaging);
+	});
 });
 
 it("preserves source hydration and manual edits, and refuses an edit draft from a different CAS version", async () => {

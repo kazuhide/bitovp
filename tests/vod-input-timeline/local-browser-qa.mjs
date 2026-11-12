@@ -77,6 +77,44 @@ async function buildSequence(page, editor) {
 	await expect(editor.getByRole("button", { name: /^クリップ \d, / })).toHaveCount(3);
 }
 
+async function stableTimelineScale(editor, report) {
+	const first = editor.getByRole("button", { name: "クリップ 1, a.mp4", exact: true });
+	const second = editor.getByRole("button", { name: "クリップ 2, b.mp4", exact: true });
+	const geometry = async () => {
+		const a = await first.boundingBox(), b = await second.boundingBox();
+		assert.ok(a && b);
+		return { firstWidth: a.width, secondWidth: b.width, secondOffset: b.x - a.x };
+	};
+	await first.click();
+	const before = await geometry();
+	assert.ok(Math.abs(before.firstWidth - 120) < 1, "Default timeline must use a stable 40 pixels/second scale");
+	assert.equal(await editor.getByText("タイムラインの操作", { exact: true }).count(), 0);
+	const trim = async (end) => {
+		const input = editor.getByRole("spinbutton", { name: "終了（秒）" });
+		await input.fill(String(end));
+		await input.press("Tab");
+	};
+	await trim(4);
+	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(80, 0);
+	const afterTrim = await geometry();
+	assert.ok(Math.abs(afterTrim.secondWidth - before.secondWidth) < 1, "Trimming must not rescale another clip");
+	assert.ok(Math.abs(before.secondOffset - afterTrim.secondOffset - 40) < 1, "One second of trim must visibly remove one second at the existing scale");
+	await editor.getByRole("button", { name: "元に戻す", exact: true }).click();
+	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(before.firstWidth, 0);
+	await editor.getByRole("button", { name: "全体", exact: true }).click();
+	const fitted = await geometry();
+	await trim(4);
+	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(fitted.firstWidth * 2 / 3, 0);
+	const afterFitTrim = await geometry();
+	assert.ok(Math.abs(afterFitTrim.secondWidth - fitted.secondWidth) < 1, "Explicit Fit must also keep its scale while trimming");
+	await editor.getByRole("button", { name: "元に戻す", exact: true }).click();
+	await editor.getByRole("combobox", { name: "タイムラインのズーム" }).selectOption("1");
+	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(before.firstWidth, 0);
+	await editor.getByRole("button", { name: "クリップ 3, a.mp4", exact: true }).click();
+	await mediaReady(editor, 9);
+	report.timelineScale = { before, afterTrim, fitted, afterFitTrim };
+}
+
 async function editingInteractions(page, editor) {
 	const position = editor.getByRole("slider", { name: content.position, exact: true });
 	const bounds = await position.boundingBox();
@@ -251,9 +289,12 @@ export async function runBrowserQa(options) {
 		await page.goto("/vod/new");
 		await page.getByRole("navigation", { name: "ウィザードのステップ" }).getByRole("button", { name: /^2\./ }).click();
 		await page.getByRole("button", { name: "タイムラインで編集", exact: true }).click();
+		assert.equal(await page.getByText("ファイル出力", { exact: true }).count(), 0, "Input editing must not introduce a packaging selector");
 		const editor = page.getByRole("region", { name: content.editor, exact: true });
 		console.log("QA: selecting real S3 sources and building A/B/A");
 		await buildSequence(page, editor);
+		console.log("QA: checking stable default scale and explicit Fit while trimming");
+		await stableTimelineScale(editor, report);
 		console.log("QA: exercising edit, history, pointer and keyboard controls");
 		await editingInteractions(page, editor);
 		console.log("QA: verifying actual MP4 playback and active seeks");

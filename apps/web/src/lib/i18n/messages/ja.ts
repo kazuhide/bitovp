@@ -10,7 +10,6 @@ export const ja = {
 		edit: "タイムラインで編集",
 		ordinary: "通常の入力に戻す",
 		title: "入力シーケンス",
-		fileOutput: "ファイル出力",
 		sourceSettings: "素材の設定",
 		invalid: "タイムラインに有効なクリップを追加してください。",
 		notReady:

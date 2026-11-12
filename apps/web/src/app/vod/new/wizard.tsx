@@ -43,7 +43,6 @@ import {
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
 import { VodInputTimelineEditor } from "./input-timeline/input-timeline-editor";
-import { vodInputTimelineFileOutput } from "./input-timeline-output";
 import { MuxingsSection } from "./muxings-section";
 import { PlaceholderRefsList } from "./placeholder-refs-list";
 import {
@@ -1276,7 +1275,6 @@ export function VodWizard({
 															audioEnabled: state.audios.length > 0,
 															clips: [],
 														},
-														...vodInputTimelineFileOutput(state, "MP4"),
 													},
 										)
 									}
@@ -1290,36 +1288,6 @@ export function VodWizard({
 							</div>
 							{state.inputTimeline ? (
 								<>
-									<div className="flex items-center gap-3">
-										<label
-											htmlFor="vod-timeline-file-output"
-											className="text-sm text-zinc-300"
-										>
-											{t("vodTimeline.fileOutput")}
-										</label>
-										<SelectNative
-											id="vod-timeline-file-output"
-											className="w-auto"
-											value={
-												state.videos[0]?.muxing?.kind === "PROGRESSIVE_TS"
-													? "PROGRESSIVE_TS"
-													: "MP4"
-											}
-											onChange={(event) =>
-												patch(
-													vodInputTimelineFileOutput(
-														state,
-														event.target.value === "PROGRESSIVE_TS"
-															? "PROGRESSIVE_TS"
-															: "MP4",
-													),
-												)
-											}
-										>
-											<option value="MP4">MP4</option>
-											<option value="PROGRESSIVE_TS">TS</option>
-										</SelectNative>
-									</div>
 									<VodInputTimelineEditor
 										document={state.inputTimeline}
 										onChange={(document) => patch({ inputTimeline: document })}

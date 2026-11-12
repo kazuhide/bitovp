@@ -109,8 +109,9 @@ GitHub keeps what a pull request stores for that pull request alone; and when
 GitHub has removed the entry, which it does when no run has read it for 7 days
 and may do earlier when the repository's caches exceed their size limit. The
 three jobs do not wait for each other: those that start before a build is
-stored each compile, GitHub stores one build, and the others log a warning. A
-job that fails keeps nothing. The step's log says which of the two happened:
+stored each compile, GitHub stores one build, and the others log
+`Failed to save: Unable to reserve cache` and pass all the same. A job that
+fails keeps nothing. The step's log says which of the two happened:
 `FFmpeg: built from the pinned sources` or `FFmpeg: reused the build kept
 under the key of these sources (<key>)`.
 
@@ -126,14 +127,17 @@ programs that the run has just proven: the offline media job with
 A kept build is taken only when it holds the files that the list kept with it
 names, with the SHA-256 recorded there, and nothing else. That check finds
 damage, not replacement: whoever can write the cache can store another build
-with a list of its own. Reuse is safe because GitHub lets only a run on
-`main` write an entry that `main` and other pull requests restore, and
-because the three jobs that restore one hold a read-only token and no secret
-and publish nothing. A workflow that holds a secret, may write to the
-repository or publishes an image must not restore this cache. A kept build
-that fails the check stops the job and is not built again in its place. Then,
-and after any doubt about a run on `main`, delete every `ffmpeg-…` entry, so
-that the next runs compile:
+with a list of its own. Reuse is safe for two reasons. First, GitHub lets a
+run restore only an entry that its own branch or pull request stored, one
+that the default branch stored, or one that the base branch of its pull
+request stored. So what a pull request stores is read by that pull request
+alone, and an entry that `main` and the pull requests into `main` restore is
+written only by a run on `main`. Second, the three jobs that restore one hold
+a read-only token and no secret and publish nothing. A workflow that holds a
+secret, may write to the repository or publishes an image must not restore
+this cache. A kept build that fails the check stops the job and is not built
+again in its place. Then, and after any doubt about a run on `main`, delete
+every `ffmpeg-…` entry, so that the next runs compile:
 
 ```bash
 gh cache list --key ffmpeg- --limit 100

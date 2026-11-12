@@ -4123,6 +4123,15 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	};
 	// The conditions that a job or its steps start on.
 	const conditions = (text) => text.match(/^\s*(?:- )?if:.*$/gm) ?? [];
+	// What none of the four workflows may hold. A secret: one that an
+	// expression names with a dot or in brackets, all of them given to a
+	// function, or all of them handed to a workflow that a job calls. A
+	// token of another service. An event that runs with more than a pull
+	// request has. A command that publishes: the list is of the ones that a
+	// workflow here could plausibly gain, and is no proof that nothing is
+	// published.
+	const FORBIDDEN =
+		/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
 	for (const [name, [job, steps]] of Object.entries(jobs)) {
 		const text = workflow(name);
 		const holder = jobOf(text, job);
@@ -4161,13 +4170,14 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		])
 			assert.equal(text.split(part).length - 1, times, `${name}: ${part}`);
 		// A kept build is checked against its own list, which finds damage
-		// and not replacement. What makes it safe to take one is that only a
-		// run on the main branch writes a build which that branch or another
-		// pull request restores, and that a job which restores one holds
-		// nothing a wrong build could reach. So the workflow states its
-		// permissions once, for all its jobs, and they only read; it names no
-		// secret, asks for no token of another service, and starts on no
-		// event that runs with more; and the job's checkout leaves no
+		// and not replacement. What makes it safe to take one is that a build
+		// which the main branch and the pull requests into it restore is
+		// written only by a run on the main branch, and that a job which
+		// restores one holds nothing a wrong build could reach. So the
+		// workflow states its permissions once, for all its jobs, and they
+		// only read; it names no secret, asks for no token of another
+		// service, starts on no event that runs with more, and has none of
+		// the commands above that publish; and the job's checkout leaves no
 		// credentials behind for the steps that run the build.
 		assert.deepEqual(
 			text.match(/^.*permissions:.*$/gm),
@@ -4175,11 +4185,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			name,
 		);
 		assert(text.includes("\npermissions:\n  contents: read\n\n"), name);
-		assert.doesNotMatch(
-			text,
-			/secrets\.|id-token|pull_request_target|workflow_run|issue_comment/,
-			name,
-		);
+		assert.doesNotMatch(text, FORBIDDEN, name);
 		assert.equal(holder.split("actions/checkout@").length - 1, 1, name);
 		assert(holder.includes(`\n    steps:\n${CHECKOUT}`), name);
 	}
@@ -4247,10 +4253,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		"        if: always()",
 	]);
 	assert.deepEqual(weekly.match(/^.*permissions:.*$/gm), ["permissions:"]);
-	assert.doesNotMatch(
-		weekly,
-		/secrets\.|id-token|pull_request_target|workflow_run|issue_comment/,
-	);
+	assert.doesNotMatch(weekly, FORBIDDEN);
 	// No other workflow runs the installer or keeps a cache.
 	const others = readdirSync(directory)
 		.filter(

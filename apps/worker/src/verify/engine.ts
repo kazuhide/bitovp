@@ -618,12 +618,12 @@ async function verifyMuxing(
 	/**
 	 * The two whole-file kinds (one `.ts` / `.mov` per rendition, never a manifest leg).
 	 *
-	 * Matched on the BASENAME, which is exactly what the plan claims: the schema refuses
-	 * a filename with a directory in it. `endsWith` (the MP4 arm) would take
-	 * `seg_0.ts` for a file named `0.ts` — and a segmented TS leg of the same rendition
-	 * writes into the same directory by default — while the WebM arm's exact
-	 * `prefix + name` would miss every destination that carries a placeholder, whose
-	 * `prefix` stops at the first token.
+	 * Matched EXACTLY against the destination pattern plus the filename, the way a
+	 * sprite is (`patternToRegExp`): that is the one key the plan claims. `endsWith`
+	 * (the MP4 arm) would take `seg_movie.ts`, or a same-named file one directory
+	 * down, for a file named `movie.ts` — and probe a different object as though it
+	 * were the deliverable. The WebM arm's literal `prefix + name` would miss every
+	 * destination that carries a placeholder, whose `prefix` stops at the first token.
 	 */
 	const wholeFile =
 		muxing.container === "PROGRESSIVE_TS" ||
@@ -641,7 +641,9 @@ async function verifyMuxing(
 					muxing.container === "WEBM_PROGRESSIVE"
 						? dirs.some((dir) => k === `${dir.prefix}${name}`)
 						: wholeFile
-							? k.split("/").pop() === name
+							? dirs.some((dir) =>
+									patternToRegExp(`${dir.pattern}${name}`).test(k),
+								)
 							: k.endsWith(name),
 				)
 			: undefined;

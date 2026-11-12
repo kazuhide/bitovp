@@ -2079,6 +2079,31 @@ describe("whole-file progressive TS and MOV delivery", () => {
 		expect(verdictOf(report, "rendition:v360:height")).toBeUndefined();
 	});
 
+	it("a same-named file one directory down is not the file either", async () => {
+		// The listing is by prefix, so it returns everything beneath the
+		// destination. Only the key the plan names is the deliverable.
+		const { artefacts, world } = fileWorld("PROGRESSIVE_TS", [
+			"out/files/previous/movie.ts",
+		]);
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:file:file")).toBe("FAIL");
+		expect(verdictOf(report, "rendition:v360:height")).toBeUndefined();
+	});
+
+	it("picks the planned key when a stray namesake sits beside it", async () => {
+		const { artefacts, world } = fileWorld("PROGRESSIVE_TS", [
+			"out/files/previous/movie.ts",
+			"out/files/movie.ts",
+		]);
+		// Only the stray is empty: probing or sizing it would fail the run.
+		world.sizes = { "out/files/previous/movie.ts": 0 };
+		world.probes["out/files/previous/movie.ts"] = {};
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(failedIds(report)).toEqual([]);
+		expect(verdictOf(report, "muxing:file:file-bytes")).toBe("PASS");
+		expect(verdictOf(report, "rendition:v360:codec")).toBe("PASS");
+	});
+
 	it("finds the file under a destination that carries a placeholder", async () => {
 		// `dir.prefix` stops at the first token, so the progressive WebM arm's
 		// exact `prefix + name` would report this file absent.

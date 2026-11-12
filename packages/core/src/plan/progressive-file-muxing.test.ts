@@ -565,6 +565,30 @@ describe("never a manifest leg", () => {
 		);
 	});
 
+	it("a file is not a DASH video representation — the manifest is refused, not emptied", () => {
+		// DASH selects its legs from a closed list, so the file was never going
+		// to be listed. What this pins is the other half: a manifest left with
+		// audio only is refused in words rather than published without a picture.
+		for (const kind of FILE_ONLY_MUXING_KINDS) {
+			const plan = planWith({
+				muxings: [file(kind), fmp4("amux", "a", "x/audio")],
+				manifests: manifests.slice(1),
+			});
+			expect(
+				validatePlan(plan).find(
+					(issue) => issue.code === "PLAN_DASH_VIDEO_UNSELECTED",
+				),
+				kind,
+			).toMatchObject({ level: "error", path: "manifests[0]" });
+			expect(
+				compilePlan(plan)
+					.filter((o) => o.kind.startsWith("CREATE_DASH_REPRESENTATION"))
+					.map((o) => o.step),
+				kind,
+			).toEqual(["manifest:dash:rep:amux"]);
+		}
+	});
+
 	it("a file is not something an HLS manifest can be made of", () => {
 		// The wizard's default leaves HLS on; choosing a file kind for the only
 		// video container must be refused in words, not compiled into a master

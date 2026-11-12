@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { type ExecutorContext, executeStep } from "./executor";
 import { fakeSdk } from "./fake-sdk";
 import type { SdkOps } from "./sdk-ops";
+import { createStampingFetch } from "./stamping-fetch";
 
 /**
  * The executor arms for the two whole-file muxings.
@@ -165,6 +166,35 @@ describe("CREATE_MUXING_PROGRESSIVE_MOV", () => {
 		});
 		expect(sdk.createMp4Muxing).not.toHaveBeenCalled();
 		expect(sdk.createProgressiveTsMuxing).not.toHaveBeenCalled();
+	});
+});
+
+describe("the create stamp reaches both file endpoints", () => {
+	// The stamp is what lets a retried create ADOPT the muxing a lost response
+	// already made, instead of writing the file twice. It is applied by a path
+	// rule, not per kind, so nothing in this change adds it — this arm is the
+	// evidence that the rule does cover the two new paths.
+	it.each([
+		["progressive-ts", { filename: "video.ts", segmentLength: 4 }],
+		["progressive-mov", { filename: "video.mov" }],
+	] as const)("stamps POST …/muxings/%s with the job and step", async (segment, body) => {
+		const inner = vi.fn(
+			async (_url: string, _init?: unknown) =>
+				new Response("{}", { status: 200 }),
+		);
+		const stampingFetch = createStampingFetch(inner, {
+			jobId: "job-1",
+			currentStep: () => "muxing:file",
+		});
+		await stampingFetch(
+			`https://api.bitmovin.com/v1/encoding/encodings/enc-1/muxings/${segment}`,
+			{ method: "POST", body: JSON.stringify(body) },
+		);
+		const sent = inner.mock.calls[0]?.[1] as { body: string };
+		expect(JSON.parse(sent.body)).toEqual({
+			...body,
+			customData: { bitovp: { job: "job-1", step: "muxing:file" } },
+		});
 	});
 });
 

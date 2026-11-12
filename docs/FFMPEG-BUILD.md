@@ -2825,21 +2825,23 @@ edges above, and found two things that the check does not know. Tests E and F of
 2026-11-12 record them. They ran the programs, the models and the container of
 tests A to D, with 2 frames in a run.
 
-**CAMBI has an upper limit.** CAMBI works on a window of 65 samples and scales
-it in its `init` with the width plus the height: `((65 * (width + height)) /
-375) >> 4`, then made odd (`adjust_window_size` in `cambi.c`). A picture of
-3840x2160 keeps 65. `init` refuses the pictures when the square of the window
+**CAMBI has an upper limit.** CAMBI works on a window of 65 samples, and its
+`init` scales the window with the width plus the height (`adjust_window_size`
+in `cambi.c`) in three steps. The first is `((65 * (width + height)) / 375) >>
+4`, which gives 65 again at the 6000 of 3840x2160. The second halves the
+result, rounding up, where the high-resolution speed-up applies. The third makes
+the result odd. `init` refuses the pictures when the square of the window
 reaches 4226 (`CAMBI_RECIPROCAL_LUT_SIZE` in `cambi.h`), which a window of 67
 does. libvmaf logs `cambi: window_size 67 too large for reciprocal LUT`, and
 FFmpeg ends with `problem during vmaf_read_pictures` and status 234. The eight
-`vmaf_v1.0.16_*` models set `cambi_high_res_speedup` to 1080. `init` then
-halves the window when the encode has the pixels of 1920x1080 or more, where the
-encode is the size that the command declares, or the pictures when it declares
-none. `init` computes one window for that size and one for the size of the
-source, which is the pictures because the worker's command declares no source,
-and takes the larger. A declared size does not exceed the pictures (see the
-rules above), so the pictures decide: their width and height may add up to 6092
-at most, and to 12092 when the window is halved.
+`vmaf_v1.0.16_*` models set `cambi_high_res_speedup` to 1080: the speed-up
+applies when the encode has the pixels of 1920x1080 or more, where the encode
+is the size that the command declares, or the pictures when it declares none.
+`init` computes one window for that size and one for the size of the source,
+which is the pictures because the worker's command declares no source, and
+takes the larger. A declared size does not exceed the pictures (see the rules
+above), so the pictures decide: their width and height may add up to 6092 at
+most, and to 12092 when the window is halved.
 
 The 32 runs of test E at these edges agree. 21 used the method of test B with
 `vmaf_v1.0.16_3d0h` where the table names no model:
@@ -2913,9 +2915,12 @@ of both buffers. A picture of 2560x216 has a window of 31 and a smallest scale
 of 14 rows. By this arithmetic the zone begins at a width of 1871 for a height
 of 160, of 2554 for 216 and of 4400 for 400: at pictures more than ten times as
 wide as high. Every crash of the two tests lies in the zone and no run outside
-it crashed; 3000x160 lies in it and gave 8 scores. The worker's check does not
-know the zone: such a run fails with FFmpeg's status, and the same measurement
-may pass when it is started again.
+it crashed; 3000x160 lies in it and gave 8 scores here, and crashed in 2 of 6
+runs of the review. CAMBI computes at the size of the encode
+(`preprocess_and_extract_cambi`), so where a command declares the encode's
+size, that size decides and not the pictures'; this was read and not run. The
+worker's check does not know the zone: such a run fails with FFmpeg's status,
+and the same measurement may pass when it is started again.
 
 ### Other limits
 

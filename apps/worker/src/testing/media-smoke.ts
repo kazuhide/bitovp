@@ -17,18 +17,67 @@ import {
 
 type Execute = (binary: string, args: string[]) => Promise<string>;
 const exec = promisify(execFile);
+const launch = (binary: string, args: string[]) =>
+	exec(binary, args, {
+		encoding: "utf8",
+		timeout: 60_000,
+		killSignal: "SIGKILL",
+		maxBuffer: 4 * 1024 * 1024,
+		env: { PATH: "/usr/local/bin:/usr/bin:/bin", TMPDIR: "/work/tmp" },
+	});
 const execute: Execute = async (binary, args) =>
-	(
-		await exec(binary, args, {
-			encoding: "utf8",
-			timeout: 60_000,
-			killSignal: "SIGKILL",
-			maxBuffer: 4 * 1024 * 1024,
-			env: { PATH: "/usr/local/bin:/usr/bin:/bin", TMPDIR: "/work/tmp" },
-		})
-	).stdout;
+	(await launch(binary, args)).stdout;
 const ffmpeg = (args: string[], run = execute) =>
 	run("/usr/local/bin/ffmpeg", ["-v", "error", "-nostdin", "-y", ...args]);
+
+/**
+ * What x264 reports that it uses of the processor, from the log of one encode
+ * at FFmpeg's level "info":
+ *
+ *   [libx264 @ 0x…] using cpu capabilities: MMX2 SSE2Fast … AVX2 AVX512
+ *
+ * x264 has its own versions of some functions for these extensions, and it
+ * does not write the same packets with all of them, so the means of the two
+ * x264 encodes below are not the same on every processor. "The VMAF means of
+ * the media job" in docs/FFMPEG-BUILD.md has the measurements.
+ */
+export function x264Capabilities(log: string) {
+	const reports = [
+		...log.matchAll(/^\[libx264 @ [^\]\n]*\] using cpu capabilities: (.*)$/gm),
+	];
+	assert.equal(
+		reports.length,
+		1,
+		"An x264 encode must report the processor capabilities that it uses once",
+	);
+	const capabilities = reports[0]?.[1] ?? "";
+	// x264's own names, or "none!" where it uses none. The media runner holds
+	// the same rule for what it prints.
+	assert(
+		/^(?:none!|[A-Za-z0-9.]{1,16}(?: [A-Za-z0-9.]{1,16}){0,31})$/.test(
+			capabilities,
+		),
+		"Unexpected x264 processor capabilities",
+	);
+	return capabilities;
+}
+
+/**
+ * Runs one x264 encode and returns the processor capabilities that x264
+ * reported for it. The level "info" puts x264's report in the log and changes
+ * no byte of the output; `-nostats` leaves the progress lines out.
+ */
+async function encodeWithX264(args: string[]) {
+	const { stderr } = await launch("/usr/local/bin/ffmpeg", [
+		"-v",
+		"info",
+		"-nostats",
+		"-nostdin",
+		"-y",
+		...args,
+	]);
+	return x264Capabilities(stderr);
+}
 const object = (value: unknown): Record<string, unknown> => {
 	assert(value !== null && typeof value === "object" && !Array.isArray(value));
 	return value as Record<string, unknown>;
@@ -300,7 +349,7 @@ export async function runMediaCheck() {
 		"1",
 		"reference.mkv",
 	]);
-	await ffmpeg([
+	const encodedWith = await encodeWithX264([
 		...input,
 		"-map",
 		"0:v:0",
@@ -336,7 +385,7 @@ export async function runMediaCheck() {
 		"+faststart",
 		"bbb-10s.mp4",
 	]);
-	await ffmpeg([
+	const degradedWith = await encodeWithX264([
 		"-threads",
 		"1",
 		"-i",
@@ -352,6 +401,11 @@ export async function runMediaCheck() {
 		"45",
 		"degraded.mp4",
 	]);
+	assert.equal(
+		degradedWith,
+		encodedWith,
+		"Both x264 encodes must use the same processor capabilities",
+	);
 	await ffmpeg([
 		"-i",
 		"bbb-10s.mp4",
@@ -478,13 +532,14 @@ export async function runMediaCheck() {
 	validateBandingMeasurement(banding);
 	await assert.rejects(readFile(bandingLog), { code: "ENOENT" });
 	return {
-		version: 1,
+		version: 2,
 		videoFrames: 240,
 		hlsSegments: 5,
 		dashSegments: 5,
 		decodedPresentations: 3,
 		vmafFrames: 240,
 		means,
+		x264Capabilities: encodedWith,
 	};
 }
 

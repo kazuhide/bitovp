@@ -7,6 +7,7 @@ import {
 	validateBandingMeasurement,
 	validateVideoSegments,
 	validateVmafReports,
+	x264Capabilities,
 } from "./media-smoke";
 
 const frames = (count = 48, start = 0) =>
@@ -206,6 +207,62 @@ describe("offline media validation", () => {
 				report(40),
 			),
 		).toThrow();
+	});
+
+	it("reads the processor capabilities that x264 reports, once, from an encode's log", () => {
+		// The lines of an encode at FFmpeg's level "info", around x264's report.
+		const log = (...reports: string[]) =>
+			[
+				"Stream mapping:",
+				"  Stream #0:0 -> #0:0 (h264 (native) -> h264 (libx264))",
+				"[libx264 @ 0x580814cad8c0] using SAR=1/1",
+				...reports,
+				"[libx264 @ 0x580814cad8c0] profile High, level 1.2, 4:2:0, 8-bit",
+				"Output #0, mp4, to 'bbb-10s.mp4':",
+				"",
+			].join("\n");
+		const report = (capabilities: string) =>
+			`[libx264 @ 0x580814cad8c0] using cpu capabilities: ${capabilities}`;
+		for (const capabilities of [
+			"MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512",
+			"MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2",
+			"ARMv8 NEON",
+			"none!",
+		])
+			expect(x264Capabilities(log(report(capabilities)))).toBe(capabilities);
+		// Line ends of another platform do not become a part of the names.
+		expect(
+			x264Capabilities(log(report("ARMv8 NEON")).replaceAll("\n", "\r\n")),
+		).toBe("ARMv8 NEON");
+
+		// At the level "error" the log holds no report, and two encodes are two
+		// reports.
+		expect(() => x264Capabilities(log())).toThrow(/once/);
+		expect(() => x264Capabilities("")).toThrow(/once/);
+		expect(() =>
+			x264Capabilities(log(report("AVX2"), report("AVX2 AVX512"))),
+		).toThrow(/once/);
+		// Only x264's own line counts, from its start.
+		for (const line of [
+			"[libx265 @ 0x580814cad8c0] using cpu capabilities: AVX2",
+			"x [libx264 @ 0x580814cad8c0] using cpu capabilities: AVX2",
+			"[libx264 @ 0x580814cad8c0] using CPU capabilities: AVX2",
+		])
+			expect(() => x264Capabilities(log(line))).toThrow(/once/);
+		// What is no list of x264's names does not leave the container.
+		for (const capabilities of [
+			"",
+			"AVX2  AVX512",
+			"AVX2 ",
+			"AVX2, AVX512",
+			"/home/runner/work",
+			"none! AVX2",
+			"A".repeat(17),
+			Array.from({ length: 33 }, () => "AVX2").join(" "),
+		])
+			expect(() => x264Capabilities(log(report(capabilities)))).toThrow(
+				/Unexpected x264 processor capabilities/,
+			);
 	});
 
 	it("uses an absolute presentation path so DASH resolves local fragments once", async () => {

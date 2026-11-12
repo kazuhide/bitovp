@@ -462,11 +462,12 @@ export function validateSummary(raw) {
 			"decodedPresentations",
 			"vmafFrames",
 			"means",
+			"x264Capabilities",
 		].sort(),
 		"Unexpected media summary fields",
 	);
 	for (const [key, expected] of Object.entries({
-		version: 1,
+		version: 2,
 		videoFrames: 240,
 		hlsSegments: 5,
 		dashSegments: 5,
@@ -492,6 +493,15 @@ export function validateSummary(raw) {
 				value <= 100,
 		),
 		"VMAF means must be numbers from 0 to 100",
+	);
+	// The one text of the summary: x264's own names for what it uses of the
+	// processor, or "none!". Nothing else of a log can come through it.
+	assert(
+		typeof summary.x264Capabilities === "string" &&
+			/^(?:none!|[A-Za-z0-9.]{1,16}(?: [A-Za-z0-9.]{1,16}){0,31})$/.test(
+				summary.x264Capabilities,
+			),
+		"x264's processor capabilities must be a list of its capability names",
 	);
 	return summary;
 }
@@ -729,6 +739,9 @@ export async function runFixture(
 		notify(
 			`VMAF means: self=${summary.means.self.toFixed(3)}, encoded=${summary.means.encoded.toFixed(3)}, degraded=${summary.means.degraded.toFixed(3)}`,
 		);
+		// The encoded and the degraded mean are of x264 encodes, which are not
+		// the same packets on every processor.
+		notify(`x264 CPU capabilities: ${summary.x264Capabilities}`);
 	} catch (error) {
 		failure = atStep(asFailure(error), step);
 	}

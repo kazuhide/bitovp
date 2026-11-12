@@ -40,8 +40,9 @@ PR #112 left it.
 - **The measurement records** of the check on a real GPU, of the small-picture
   tests and of the test of x264 with and without AVX-512 are result tables, logs
   and the scripts that made them. **The table of means** lists what the job
-  `media-smoke` printed in its 38 runs that passed from 2026-11-11 05:08 to
-  2026-11-12 06:01 UTC, read from the logs of those jobs.
+  `media-smoke` printed in the 38 jobs that passed from 2026-11-11 05:08 to
+  2026-11-12 06:01 UTC (36 workflow runs, two of them with a second attempt),
+  read from the logs of those jobs.
 
 The logs, the lists, the records and the note are kept outside the repository.
 The CI log and the arm64 log report the same size for `Dockerfile`, 24.18 kB
@@ -253,7 +254,7 @@ build") run in every image build as before. Both scripts refuse a directory that
 is not an absolute path to a directory outside the checkout with `bin/ffmpeg`
 and `bin/ffprobe` in it.
 
-### The runs of PR #112
+### The runs of PR #112 and the first runs on `main`
 
 The three workflows ran twice for commit `4ae4c43b` on 2026-11-12, the last
 commit of PR #112. It changed the script and so had a new key. The first attempt
@@ -283,8 +284,8 @@ the first had stored one.
   `ffmpeg`. The section "The VMAF means of the media job" explains the two
   sets.
 
-Three earlier commits of PR #112 had run on the same day with the script as it
-was then. The times are those of `native-media`, `media-smoke` and
+Three of the four earlier commits of PR #112 had run on the same day with the
+script as it was then. The times are those of `native-media`, `media-smoke` and
 `installed-gui`, in this order:
 
 | Commit | Compiled | Reused |
@@ -294,16 +295,27 @@ was then. The times are those of `native-media`, `media-smoke` and
 | `be4d3ddb` | not at all: it changed none of the three files | 2 min 24 s, 5 min 29 s and 7 min 8 s, in its first attempt |
 
 At `47025a92` the job `media-smoke` ended first, and its archive had 41,988,639
-bytes.
+bytes. The jobs of `be4d3ddb` reused that build: their logs show its key,
+`46c02b06…`, and an archive of that size.
 
 PR #112 was merged on 2026-11-12 at 07:32 UTC. The three jobs of the merge
 commit `42e5d926` on `main` found no build, because what a pull request stores
 is read by that pull request alone. Each compiled once more and printed the same
 two SHA-256: `native-media` in 12 min 32 s (job 131040319726), `media-smoke` in
 18 min 11 s (job 131040320129) and `installed-gui` in 16 min 52 s (job
-131040319216). `native-media` ended first, and GitHub stored its cache directory
-for `main` as an archive of 41,988,616 bytes. The runs of `main` and of the pull
-requests that start from it read that entry.
+131040319216). `media-smoke` printed set B of the VMAF means. `native-media`
+ended first, and GitHub stored its cache directory for `main` as an archive of
+41,988,616 bytes. Later runs on `main` and pull requests into `main` can restore
+that entry (see `OPERATIONS.md`).
+
+The pull request that added this record restored it. For its commit `3b5edb98`
+the three jobs took the entry of `main` and reused the build: `native-media` in
+2 min 16 s, `media-smoke` in 6 min 24 s and `installed-gui` in 7 min 39 s.
+`media-smoke` printed set B again.
+
+The four archives that GitHub stored for these runs, three for the pull request
+and one for `main`, hold the same programs and have four sizes, from 41,988,572
+to 41,988,693 bytes. Why the sizes differ was not looked into.
 
 ### When a job still compiles, and the weekly build
 
@@ -333,12 +345,12 @@ cache, every Sunday at 19:17 UTC and on request:
 this record rests on (see "Renewing this record").
 
 The workflow ran for the first time on 2026-11-12 at 07:32 UTC, started by hand
-for `42e5d926` (run 43176043401). `ffmpeg-from-source` (job 131040424225)
-compiled the stages in 9 min 4 s and printed the same two SHA-256 as every other
-compile. `image-from-source` (job 131040424501) took 18 min 27 s: it built the
-whole image from `Dockerfile` alone in 16 min 41 s, passed the 6 test files with
-36 tests, and printed set B of the VMAF means (see "The VMAF means of the media
-job").
+for `42e5d926` (run 43176043401). `ffmpeg-from-source` (job 131040424225) took 9
+min 4 s; it compiled the stages and printed the same two SHA-256 as every other
+compile by the script. `image-from-source` (job 131040424501) took 18 min 27 s:
+it built the whole image from `Dockerfile` alone in 16 min 41 s, passed the 6
+test files with 36 tests, and printed set B of the VMAF means (see "The VMAF
+means of the media job").
 
 ## Sources
 
@@ -1784,11 +1796,13 @@ stages, each on its own GitHub-hosted x86-64 runner: `native-media` (job
 under emulation therefore gave the same bytes, and what was measured with the
 emulated programs holds for the programs that CI compiles.
 
-Every later compile in CI printed the same two values: six more jobs of PR #112
-(for the commits `47025a92` and `4ae4c43b`), the three jobs of the merge commit
-`42e5d926` on `main`, and the first run of the weekly job `ffmpeg-from-source`.
-That makes thirteen compiles on GitHub-hosted runners, with the runner images
-`ubuntu-26.04` and `ubuntu-24.04`.
+Every later run of the script that compiled printed the same two values: six
+more jobs of PR #112 (for the commits `47025a92` and `4ae4c43b`), the three jobs
+of the merge commit `42e5d926` on `main`, and the first run of the weekly job
+`ffmpeg-from-source`. That makes thirteen compiles by the script on
+GitHub-hosted runners, with the runner images `ubuntu-26.04` and `ubuntu-24.04`.
+The weekly job `image-from-source` compiles the stages inside its image build
+and does not print the values.
 
 BuildKit reports the size of what it copies out. For the output of the CI log it
 reports 99.89 MB (CI #70), and for the arm64 output 82.24 MB (arm64 #68). The
@@ -2138,11 +2152,11 @@ libvmaf. The design note and the reviews record more that is the same:
 - Both builds have the eleven `*_nvdec` hwaccels, the ten `*_cuvid` decoders,
   the three `*_nvenc` encoders and the device type `cuda`.
 - CI on x86-64: the job `media-smoke` printed the same VMAF means with the
-  earlier build and with this build. It prints one of two sets, by the runner's
-  processor (see "The VMAF means of the media job"), and each set was printed
-  with both builds: 98.282, 93.142 and 5.088 for `cbe95324` (earlier build) and
-  for `87e70e9b` (this build), and 98.282, 93.116 and 5.527 for `61c086e9`
-  (earlier build) and for `22498424` (this build).
+  earlier build and with this build. It has printed one of two sets, which the
+  section "The VMAF means of the media job" traces to the runner's processor,
+  and each set was printed with both builds: 98.282, 93.142 and 5.088 for
+  `cbe95324` (earlier build) and for `87e70e9b` (this build), and 98.282, 93.116
+  and 5.527 for `61c086e9` (earlier build) and for `22498424` (this build).
 
 The section "Verification record" holds the later comparison on a real GPU.
 
@@ -2242,37 +2256,51 @@ Until PR #112 they compiled the same stages in every run. The research records
 hold their results for the last commit of PR #109: `media-smoke` ran 6 test
 files with 36 tests, and printed the VMAF means 98.282, 93.142 and 5.088;
 `installed-gui` passed 10 browser tests. All 15 required checks passed for that
-commit. The section "How CI obtains this build" holds the same results for the
+commit. The section "How CI obtains this build" holds the same totals for the
 runs of PR #112, in which the image builds took the programs from the directory
-that the script left. The time limits of the three jobs are 30, 40 and 50
-minutes.
+that the script left; the VMAF means of those runs are of both sets (see the
+next section). The time limits of the three jobs are 30, 40 and 50 minutes.
 
 ### The VMAF means of the media job
 
-The job `media-smoke` ends with the means of three comparisons: the reference
-with itself, an x264 encode of it, and a strongly degraded x264 encode. It
-requires their order, not their values. What it prints is one of two sets:
+The media check (`pnpm test:media`, which the job `media-smoke` runs) ends with
+the means of three comparisons: the reference with itself, an x264 encode of it,
+and a strongly degraded x264 encode. It requires that the first is at least 90,
+that the second is not above the first, and that the third is more than 5 below
+the second; it requires no exact value. So far it has printed one of two sets:
 
 | Set | self | encoded | degraded |
 |---|---|---|---|
 | A | 98.282 | 93.142 | 5.088 |
 | B | 98.282 | 93.116 | 5.527 |
 
-Of the 38 `media-smoke` jobs in the table of means, 25 printed set A and 13 set
-B. Each set was printed with the earlier prebuilt build and with this build, and
-in eight of the nine Azure regions that the logs name both sets were printed.
-For the last commit of PR #112 the job that compiled printed set B, and the job
-that reused the same bytes printed set A. The set therefore follows neither the
-commit, nor the build, nor the way by which a job gets the programs.
+Of the 38 `media-smoke` jobs in the table of means (see "Where the facts come
+from"), 25 printed set A and 13 set B. Each set was printed with the earlier
+prebuilt build and with this build, and in eight of the nine Azure regions that
+the logs name both sets were printed. Jobs that compiled printed both sets: A
+for `334b4e0f` and `47025a92`, B for `4ae4c43b` and for the merge commit on
+`main`. Jobs that reused a build printed both as well: A in the second attempt
+of `4ae4c43b`, with the bytes that had printed B in the first, and B for
+`3b5edb98`, with the build that `main` had stored. The set therefore follows
+neither the commit nor the build, and jobs that get the programs in the same way
+print both.
 
-It follows the processor. x264 chooses its functions by the vector extensions
-that the processor has, and the function that propagates the costs of its
-macroblock tree exists in one version for AVX2 and in another for AVX-512
-(`mbtree_propagate_cost` in `common/x86/mc-c.c` of the pinned revision). A test
-of 2026-11-12, 07:27 to 07:36 UTC, shows what follows from that. It ran on the
-host of the GPU check, whose processor has AVX-512, with the natively built
-`ffmpeg` of this record (SHA-256 `61720e87…`), with the source file of the
-media check (SHA-256 `f78f3960…`), and with the check's own commands:
+What is left is the runner's processor, and a test shows that the processor is
+enough to give both sets. x264 chooses its functions by the vector extensions
+that the processor has. `common/x86/mc-c.c` of the pinned revision gives four
+functions of the macroblock tree one version for AVX2 and another for AVX-512,
+among them `mbtree_propagate_cost`, which propagates the tree's costs. The two
+versions of that function do not compute in the same way: in
+`common/x86/mc-a2.asm` the AVX2 version multiplies by an approximation of the
+reciprocal that it refines once (`rcpps`), and the AVX-512 version divides
+(`vdivps`).
+
+The test ran on 2026-11-12 from 07:27 to 07:36 UTC on the host of the GPU check
+(see "Check on a real NVIDIA GPU, 2026-11-12"), whose processor has AVX-512. It
+used the `linux/amd64` `ffmpeg` of that check (SHA-256 `61720e87…`, the bytes
+that CI's native builds give), the source file of the media check
+(`BigBuckBunny_320x180.mp4`; `scripts/media-smoke.mjs` holds its address and its
+SHA-256, `f78f3960…`), and the check's own commands:
 
 ```sh
 ffmpeg -v error -nostdin -y -ss 30 -threads 1 -i source.mp4 -t 10 -map 0:v:0 -an \
@@ -2286,13 +2314,18 @@ ffmpeg -v info -nostdin -y -threads 1 -i reference.mkv -an \
   -c:v libx264 -threads 1 -crf 45 degraded.mp4
 ```
 
-The three comparisons are the commands that `buildVmafCommand` of
-`@bitovp/core` gives for the check's options, with the model `vmaf_v0.6.1`. The
-check runs the two x264 encodes with `-v error`; the test ran them with
-`-v info`, so that the log holds x264's line `using cpu capabilities`. A variant
-adds `-x264-params <parameter>` to the two x264 encodes, or `-cpuflags <flags>`
-to every command. The MD5 of the packets is what
-`ffmpeg -i <file> -map 0:v:0 -c copy -f md5 -` prints.
+The three comparisons are the commands that `buildVmafCommand` of `@bitovp/core`
+gives for the options in `runMediaCheck` of
+`apps/worker/src/testing/media-smoke.ts`, with the model `vmaf_v0.6.1`; a mean
+is `pooled_metrics.vmaf.mean` of libvmaf's JSON log. Two things differ from the
+check. The test ran the two x264 encodes with `-v info` instead of `-v error`,
+so that the log holds x264's line `using cpu capabilities`, and it put
+`-v error -nostdin -y` in front of the comparisons. A variant adds
+`-x264-params <parameter>` before the name of the output of the two x264
+encodes, or `-cpuflags <flags>` right after `-y` in every command. The MD5 of
+the packets is what `ffmpeg -i <file> -map 0:v:0 -c copy -f md5 -` prints, and
+the MD5 of the reference's frames is what the same command prints without
+`-c copy`; these two ran without `-cpuflags`.
 
 | Variant | x264 reports AVX-512 | Encoded packets | Degraded packets | self | encoded | degraded |
 |---|---|---|---|---|---|---|
@@ -2306,33 +2339,44 @@ to every command. The MD5 of the packets is what
 | `-x264-params asm=AVX2:mbtree=0` | no | `ff683251…` | `ca235bba…` | 98.282420 | 92.213768 | 4.679245 |
 | `-x264-params cpu-independent=1:mbtree=0` | yes | `46e982cb…` | `37d46bc1…` | 98.282420 | 92.265062 | 4.574816 |
 
-- The first two rows are the sets A and B, to the last digit that CI prints.
-  One machine gives both, and the only difference is whether x264 uses AVX-512.
+- The first two rows are the sets A and B, to the last digit that CI prints. One
+  machine gives both, and the only difference is whether x264 uses AVX-512.
 - With the macroblock tree off, x264 writes the same packets with AVX-512 and
-  without it. The tree is where the two differ.
+  without it. The tree is where the two encodes differ.
 - `-cpuflags` takes AVX-512 from FFmpeg's own code and changes nothing, neither
   the packets nor the means.
 - The frames of the reference have one MD5 in all nine variants, `c84fff17…`,
   and the mean of the self-comparison is the same in all of them.
 - `cpu-independent=1` is x264's option for results that do not depend on the
-  processor. It gives a third pair of encodes. It changes the packets with the
-  tree off as well, so it changes more than the tree.
+  processor. It gives a third pair of encodes, and it changes the packets with
+  the tree off as well: besides taking the C versions of two tree functions
+  (`common/mc.c`), it leaves out two functions of the intra search
+  (`encoder/encoder.c`).
 - The earlier prebuilt build (SHA-256 of its `ffmpeg` `55e97eb5…`) was run in
   the same nine variants on the same host. Every checksum and every mean is the
   same as with this build.
 
 What follows, and what does not:
 
-- The media check passes on both kinds of runner, because it requires the order
-  of the means. A mean of an x264 encode in a CI log can be compared only with
-  a run on a processor of the same kind.
+- The media check passes on both kinds of runner, those where x264 uses AVX-512
+  and those where it does not, because both sets meet its three requirements. A
+  mean of an x264 encode in a CI log can be compared only with a run in which
+  x264 used the same extensions.
 - The difference is in the encode, not in the measurement: on one machine, with
-  one libvmaf, the two encodes give the two sets of the runners.
+  one libvmaf, the two encodes give the two sets of the runners, at the three
+  decimals that CI prints.
 - This is a property of x264 and not of this build. It was there with the
   earlier prebuilt build.
-- Not established: which processor each runner had. No log names it, so that
-  the runners of set B have no AVX-512 follows from the test and not from a
-  log. The test did not vary what libvmaf uses of the processor.
+- Not established: which processor each runner had. No log names it: that the
+  runners of set A have AVX-512 and those of set B do not is inferred from the
+  test. No run was made on a processor without AVX-512; the test took AVX-512
+  from x264 by an option. Whether `cpu-independent=1` gives the same packets on
+  both kinds was not tried, nor was a processor without AVX2. arm64 was not
+  tried with this build; a record of October 2026 holds a third set for the
+  check on arm64 (98.282, 93.123 and 4.778), printed with the FFmpeg build that
+  the image had then. So there may be more than two sets. The test shows that
+  the tree is where the encodes differ, not which of its functions. It did not
+  vary what libvmaf uses of the processor.
 
 ### Comparison with the earlier build
 
@@ -2598,8 +2642,8 @@ What follows for bitovp:
   does not ask. The push is encrypted, but the server is not authenticated. The
   earlier build behaved in the same way. The security review found that
   verification works when it is requested: with `-tls_verify 1` FFmpeg finds the
-  trust store of the image in `/etc/ssl/certs`. Adding that option to the
-  feeder was considered on 2026-11-12 and not done.
+  trust store of the image in `/etc/ssl/certs`. The feeder does not pass that
+  option; passing it would be a change to the feeder, not to this build.
 - Outside the image, the programs need a host with glibc 2.36 or newer (see
   "Result").
 - Two inputs are not pinned: Debian's compiler and build tools, and the
@@ -2624,19 +2668,20 @@ What follows for bitovp:
   only, with one exception: the two x264 encodes of the media check were later
   made with both builds on the host of the GPU check, and gave the same packets
   (see "The VMAF means of the media job").
-- x264 does not write the same packets on every x86-64 processor. Its
-  macroblock tree gives other results with AVX-512 than without, so one command
-  on one input gives one of two encodes, and a VMAF score of an x264 encode can
-  be compared only between processors of the same kind. The earlier prebuilt
-  build behaves in the same way. "The VMAF means of the media job" records the
-  test.
+- x264 does not write the same packets on every x86-64 processor. Its macroblock
+  tree gives other results with AVX-512 than without: one command on one input
+  gave two different encodes on one host. Processors without AVX2, and arm64,
+  were not tried with this build, so there may be more than two. A VMAF score of
+  an x264 encode can be compared only between processors on which x264 uses the
+  same extensions. The earlier prebuilt build behaves in the same way. "The VMAF
+  means of the media job" records the test.
 - The limits of the GPU check are listed under "Verification record", and what
   the build no longer contains under "Differences from the earlier prebuilt
   build".
 
 ## Upstream fixes after the pinned revisions
 
-This section is the state of 2026-11-11, with two additions of 2026-11-12 that
+This section is the state of 2026-11-11, with three additions of 2026-11-12 that
 are marked. It is not kept current: nothing in the repository watches the
 upstream projects. For a source on GitHub,
 `gh api repos/<owner>/<repo>/compare/<pin>...<branch>` lists what the project
@@ -2665,17 +2710,18 @@ long as the condition does.
   `ass_process_chunk`.
 - zlib: `2fd31f0074` (2026-11-03), an out-of-bounds write after
   `inflateReset()`. The review: not reached. It happens only through
-  `inflateGetDictionary()`, which FFmpeg does not call. The check of this record
-  found no call in the other sources of the build either.
+  `inflateGetDictionary()`, which FFmpeg does not call. A check of 2026-11-12
+  for this record found no call in the other sources of the build either.
 - SRT: `5c8f6464c5` (2026-11-10), key-stream reuse between the two directions of
   one connection. The review: not reached in practice. The feeder sends one way
   only; the fix also needs a new peer.
 - FreeType: `3e8df65e4e` ("FT_Vector_NormLen: Fix issues", the commit right
-  after the pin), `f1f3f7d722` and `6065d6a40e`. They need a hostile font. The
-  worker gives the caption filter a font directory of its own and caption files
-  that it writes itself. A font can also reach FreeType from inside a caption
-  file or from a container's attachments, so the answer holds only as long as
-  no caption file comes from outside.
+  after the pin), `f1f3f7d722` and `6065d6a40e`. The review: they need a hostile
+  font, and the fonts are the product's own. The worker gives the caption filter
+  a font directory of its own and caption files that it writes itself. A font
+  can also reach FreeType from inside a caption file or from a container's
+  attachments, so the answer holds only as long as no caption file comes from
+  outside.
 - HarfBuzz: several font-parsing fixes (kerx, VARC/COLR) among 252 commits. As
   for FreeType.
 - Fontconfig: `02d4b15daa`, cache validation. The caches are the image's own.
@@ -2688,8 +2734,9 @@ long as the condition does.
 - FFmpeg: one commit on `release/8.1` after the pin, `f1acb0a266` (2026-11-10,
   "avcodec/4xm: fix unaligned access"); on 2026-11-12 it was still the only
   one. The review answers that it is not reached and gives no reason. This
-  record does not repeat the answer: the build contains the decoder `4xm`, and
-  whether an input can reach it was not examined.
+  record does not repeat the answer: the build contains the decoder `4xm`
+  (`fourxm` in configure's summary), and whether an input can reach it was not
+  examined.
 
 The review's list names no fix for the other eight sources: Meson, libxml2, dlg,
 FriBidi, libvmaf, x264, SVT-AV1 and the NVIDIA headers.
@@ -2792,19 +2839,37 @@ until the record follows a change:
 - no `dockerfile` block shows a line that `Dockerfile` does not hold, and every
   block of this file is a `dockerfile`, `text`, `sh` or `bash` block;
 - every line after the eight stages that names `ffmpeg` is shown, so that a
-  check which the image gains or loses is seen;
-- the command of the proof under "Checks in the build" is, line for line, in
-  `docker/vmaf-build-proof.sh`;
+  check of `ffmpeg` which the image gains or loses is seen;
+- the command of the proof under "Checks in the build" stands in
+  `docker/vmaf-build-proof.sh`, line for line and in one piece;
 - a commit that this file names in full is one that `Dockerfile` pins;
 - the models' revision and a row for each of the fourteen models are present.
 
+The test finds the tables by the shape of their rows and the proof by its first
+word, anywhere in this file. A row of three or more cells counts as a row of the
+table of stages when its first cell is a lowercase name in backticks and its
+second is such a name or the words "the base image". A row of two cells counts
+as a row of the table of archives when its second is an `https://` address in
+backticks. A row of four cells counts as a row of the first table of sources
+when its second begins with "commit" or "release" and its third is a SHA-256 in
+backticks. Any 40 hexadecimal digits count as a commit that is named in full,
+also in the excerpt of a log. Exactly one `sh` block may begin with the word
+`"$ffmpeg"`: the command of the proof. The stages after the eight repeat two of
+their lines, the first line of an `apt-get` step and the line that removes the
+package lists; shown in a `dockerfile` block a second time, either one fails the
+test as a line out of order. And the test holds three numbers: 8 stages, 18
+sources and 14 models. When one of them changes, the test fails at that number
+also when the record has followed, and the number is then changed in the test.
+
 A test that passes does not mean that the record is renewed. The test does not
 compare the digest of the base image or the Debian packages, which change
-without a change to what is compiled. It does not read the sentences: a version
-in the third table of sources, a commit that is named by its first digits, or a
-number that was taken from a log can be out of date while the test passes. And
-it cannot tell whether the excerpts of the logs belong to a build of the new
-`Dockerfile`. The rest of this section is for that.
+without a change to what is compiled. It does not see a check in the last stage
+that does not name `ffmpeg`, such as one of `ffprobe` or of the models. It does
+not read the sentences: a version in the third table of sources, a commit that
+is named by its first digits, or a number that was taken from a log can be out
+of date while the test passes. And it cannot tell whether the excerpts of the
+logs belong to a build of the new `Dockerfile`. The rest of this section is for
+that.
 
 The record rests on two build logs, on the capability lists and on the
 measurements.
@@ -2822,9 +2887,8 @@ for a branch:
 gh workflow run ffmpeg-source-build.yml --ref <branch>
 ```
 
-`gh run list --workflow ffmpeg-source-build.yml --limit 1` then prints the
-number of that run. These commands list the jobs of a run and save the log of
-one job:
+`gh run list --workflow ffmpeg-source-build.yml --limit 1` then prints that run
+with its id. These commands list the jobs of a run and save the log of one job:
 
 ```sh
 gh api 'repos/<owner>/<repo>/actions/runs/<run id>/jobs?filter=all&per_page=100' \
@@ -2881,6 +2945,11 @@ What to measure again:
 - the upstream commits after each new pin, as in "Upstream fixes after the
   pinned revisions".
 
+The capability lists, the small-picture tests and the test of x264 can be
+repeated with this file and the repository. The comparison of "What was
+confirmed to be the same" and the check on a real GPU cannot: their sample files
+and scripts are kept with the research records, outside the repository.
+
 ### History
 
 | Date (UTC) | Commit | What happened |
@@ -2895,11 +2964,12 @@ What to measure again:
 | 2026-11-12 01:02 to 01:06 | | The check on a real NVIDIA GPU |
 | 2026-11-12 02:29 to 02:57 | `334b4e0f` | The first runs of PR #112: three native builds with the SHA-256 of the emulated build, then three runs that reused one of them |
 | 2026-11-12 04:21 to 05:23 | `47025a92` | Runs of the second commit of PR #112: three native builds, then three runs that reused one of them |
-| 2026-11-12 06:01 to 06:08 | `be4d3ddb` | Runs of the third commit of PR #112, which reused the build of the second in their first attempt |
+| 2026-11-12 06:01 to 06:23 | `be4d3ddb` | Runs of the third commit of PR #112; its three jobs that need FFmpeg reused the build of the second in their first attempt, from 06:01 to 06:08 |
 | 2026-11-12 06:53 to 07:22 | `4ae4c43b` | The runs of PR #112 that "How CI obtains this build" records |
 | 2026-11-12 07:27 to 07:36 | | The test of x264 with and without AVX-512 on the host of the GPU check |
 | 2026-11-12 07:32 | `42e5d926` | PR #112 merged: CI reuses a kept build of the same sources, and a weekly workflow compiles the sources and builds the whole image; this record describes `Dockerfile` at this commit |
 | 2026-11-12 07:32 to 07:51 | `42e5d926` | The first runs on `main` after PR #112: three native builds, of which `native-media` stored its build for `main`; and the first run of the workflow "FFmpeg from source" |
+| 2026-11-12 07:54 to 08:17 | `3b5edb98` | The runs of the pull request that added this record; its three jobs that need FFmpeg restored the entry of `main` |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed
@@ -3142,6 +3212,9 @@ docker run --rm --network none \
   node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c \
   sh /scripts/matrix-a.sh /ff/bin/ffmpeg /models /out
 ```
+
+The directory of the models holds the fourteen model files and nothing else:
+`matrix-a.sh` takes every file there as a model.
 
 Each script prints one line for every case: the model, the sizes, FFmpeg's
 status, the number of frames that were scored, the mean, and the first lines of

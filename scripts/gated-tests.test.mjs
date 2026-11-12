@@ -2606,8 +2606,8 @@ test("the FFmpeg build record holds the stages, the sources and the commands of 
 		);
 
 	// What the stages after these do with the programs: every line there that
-	// names ffmpeg is shown, so a check that is added to the image or taken
-	// from it is seen.
+	// names ffmpeg is shown, so a check of ffmpeg that is added to the image or
+	// taken from it is seen. A line that does not name ffmpeg is not compared.
 	for (const line of lines.slice(after))
 		assert(
 			/^\s*#/.test(line) ||
@@ -2628,11 +2628,20 @@ test("the FFmpeg build record holds the stages, the sources and the commands of 
 			kind === "sh" && head?.startsWith('"$ffmpeg" '),
 	);
 	assert.equal(quoted.length, 1, `${renew}: the command of the proof`);
-	for (const line of quoted[0].lines)
+	const [{ lines: quote }] = quoted;
+	for (const line of quote)
 		assert(
 			proof.includes(line),
 			`${renew}: docker/vmaf-build-proof.sh does not hold this line: ${line}`,
 		);
+	// The script holds the lines together and in the record's order. Each line
+	// alone would also be found after the command was taken apart.
+	assert(
+		proof.some((_, index) =>
+			quote.every((line, offset) => proof[index + offset] === line),
+		),
+		`${renew}: docker/vmaf-build-proof.sh does not hold the lines of the proof's command together and in the record's order`,
+	);
 
 	// A commit that the record names in full is one that the Dockerfile pins:
 	// the pin of before does not stay behind in a sentence. The record names

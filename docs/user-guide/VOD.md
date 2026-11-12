@@ -27,15 +27,18 @@ region. Review the selected account and any saved or copied region settings.
 
 These steps package the job for streaming. To write finished files instead — MP4,
 MPEG-TS, or QuickTime files with the audio inside, and no manifests — choose **Export files**
-under "What to create" at the top of the page. That flow has five steps: Basics,
-Sources, Format, Destination, and Review. Files are written directly into the
-output folder and are named after the job until you type a name. Two files in one
-job cannot have the same name, and two made in the five steps cannot have the same
+under "What to create" at the top of the page. That flow has six steps: Basics,
+Sources, Format, Destination, Encoding, and Review. Files are written directly into
+the output folder and are named after the job until you type a name. Two files in one
+job cannot have the same name, and two made in the six steps cannot have the same
 height and codec with the same bitrate in kbps. A file already in the folder under
 the same name may be replaced. Public read access is not requested for the files
-unless you select it in Destination. **Show all settings** opens the eight steps
-with what you entered, and **Back to simple view** returns while nothing outside
-the five steps is in use. The flow you choose is remembered in this browser, and
+unless you select it in Destination. Encoding is the step the eight steps have,
+with AI Scene Analysis, quality control, and Kantar audio watermarking, and without
+the Per-Title configuration and the choice of what a QC gate does when it fails.
+Review lists what those settings write with the files. **Show all settings** opens
+the eight steps with what you entered, and **Back to simple view** returns while
+nothing outside the six steps is in use. The flow you choose is remembered in this browser, and
 Settings holds the same choice under "New VOD job flow". Switching "What to create"
 opens a new form: what you entered is not carried over. It is saved as the other
 flow's draft, unless that form was still offering to restore an earlier draft.

@@ -2353,7 +2353,7 @@ the MD5 of the reference's frames is what the same command prints without
 
 | Variant | x264 reports AVX-512 | Encoded packets | Degraded packets | self | encoded | degraded |
 |---|---|---|---|---|---|---|
-| as the check runs it | yes | `425ede39…` | `06ce7606…` | 98.282420 | 93.142497 | 5.088417 |
+| without a variant option | yes | `425ede39…` | `06ce7606…` | 98.282420 | 93.142497 | 5.088417 |
 | `-x264-params asm=AVX2` | no | `04a059c4…` | `1ab5e6e7…` | 98.282420 | 93.115978 | 5.527475 |
 | `-x264-params asm=AVX512` | yes | `425ede39…` | `06ce7606…` | 98.282420 | 93.142497 | 5.088417 |
 | `-x264-params cpu-independent=1` | yes | `1f0da230…` | `3a05699c…` | 98.282420 | 93.122542 | 4.929811 |
@@ -2383,9 +2383,10 @@ the MD5 of the reference's frames is what the same command prints without
 Since PR #116 the logs hold x264's report, and they show the same. The first
 commit of that pull request, `c1812e8d`, ran seven times on GitHub's x86-64
 runners on 2026-11-12 from 11:42 to 12:23 UTC: once for the pull request, and
-six times on its branch, each started by hand after the one before had ended.
-All seven name the runner image `ubuntu-26.04` version `20261101.186.1` and the
-runner software 2.338.2, and all seven reused the build that `main` had stored.
+six times on its branch, started by hand: the first while the run of the pull
+request was going, each later one after the one before had ended. All seven
+name the runner image `ubuntu-26.04` version `20261101.186.1` and the runner
+software 2.338.2, and all seven reused the build that `main` had stored.
 
 | Run | Azure region | x264 reports AVX-512 | self | encoded | degraded |
 |---|---|---|---|---|---|
@@ -2431,12 +2432,13 @@ What follows, and what does not:
   whether anything else differs there is not known.
 - For the seven runs of PR #116 the logs show which kind of runner printed which
   set: x264 reported AVX-512 in the runs of set A and did not in those of set B.
-  For the 38 jobs before it no log names what x264 used, and that their sets
-  follow the same rule stays inferred from the test.
+  For the jobs before it no log names what x264 used, and that their sets
+  follow the same rule stays inferred from the test. No log names the processor
+  itself: the line holds what x264 uses of it.
 - Not established: the packets of a processor without AVX-512. The test took
   AVX-512 from x264 by an option; the five runs of set B are on runners where
-  x264 reported none, and they print the means of that variant at CI's three
-  decimals, but CI prints no checksum of the packets. Whether
+  x264 reported no AVX-512, and they print the means of that variant at CI's
+  three decimals, but CI prints no checksum of the packets. Whether
   `cpu-independent=1` gives the same packets on both kinds was not tried, nor
   was a processor without AVX2, nor a second arm64 processor, so there may be
   more sets than these three. The test shows that the tree is where the encodes
@@ -3019,7 +3021,8 @@ What to measure again:
   (`common/cpu.c`) of the new revision are to be held against the rule for a
   name in the media check, `X264_NAME` in
   `apps/worker/src/testing/media-smoke.ts` and in `scripts/media-smoke.mjs`: the
-  check fails on a report with a name that the rule does not take;
+  check fails on a report with a name that the rule does not take, or with
+  more than 32 names;
 - the upstream commits after each new pin, as in "Upstream fixes after the
   pinned revisions".
 
@@ -3050,7 +3053,7 @@ and scripts are kept with the research records, outside the repository.
 | 2026-11-12 07:54 to 08:17 | `3b5edb98` | The runs of the first commit of PR #114, which added this record; its three jobs that need FFmpeg restored the entry of `main` |
 | 2026-11-12 08:34 to 08:48 | `a403ff35` | The runs of the second commit of PR #114; the same entry of `main`, and the other set of VMAF means |
 | 2026-11-12 08:54 to 08:57 | `a403ff35` | The media check on an arm64 host, with the worker image built from `Dockerfile` |
-| 2026-11-12 11:37 to 11:39 | `c1812e8d` | The media check of PR #116 on the same arm64 host: the same means, and x264's report |
+| 2026-11-12 11:37 to 11:39 | | The media check with the change of PR #116 on the same arm64 host, from the tree that was committed as `c1812e8d` at 11:41: the same means, and x264's report |
 | 2026-11-12 11:42 to 12:23 | `c1812e8d` | Seven runs of the job `media-smoke` for the first commit of PR #116, whose check prints what x264 reports that it uses of the processor: two with AVX-512 and set A, five without and set B |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory

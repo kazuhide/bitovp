@@ -236,6 +236,18 @@ export type PlanValidationOptions = {
 	 */
 	demoteUnmuxedAudio?: boolean;
 	/**
+	 * Demote `PLAN_OUTPUT_FILE_COLLISION` and `PLAN_HLS_AUDIO_UNSELECTED` to
+	 * warnings — RE-RUN ONLY.
+	 *
+	 * Both arrived with the whole-file muxings, and both refuse a plan that was
+	 * accepted before. The principle is the one `demoteUnmuxedAudio` states: a
+	 * rail added later must not make a FINISHED job un-re-runnable, because
+	 * there is no in-app way to edit a persisted plan. A re-run reproduces what
+	 * the job already wrote; the warning still says what is wrong with it.
+	 * Fresh submissions, the watch-folder sweep included, leave this off.
+	 */
+	demoteFileOutputRails?: boolean;
+	/**
 	 * VMAF model names the SCORING worker can actually load — the built-ins it
 	 * always has, plus whatever `VMAF_MODEL_DIR` holds. Omitted ⇒ the check is
 	 * skipped (an unknown capability must not manufacture a refusal).
@@ -328,7 +340,12 @@ export function validatePlan(
 	checkUniqueKeys(plan.keyframes, "keyframes", issues);
 	checkUniqueKeys(plan.manifests, "manifests", issues);
 	issues.push(...validateManifestDetails(plan));
-	issues.push(...outputFileCollisions(plan));
+	issues.push(
+		...outputFileCollisions(
+			plan,
+			options.demoteFileOutputRails ? "warning" : "error",
+		),
+	);
 
 	const inputKeys = new Set(plan.inputs.map((i) => i.key));
 	const outputKeys = new Set(plan.outputs.map((o) => o.key));
@@ -1975,6 +1992,23 @@ export function validatePlan(
 					code: "PLAN_HLS_PARTIAL_MUXED_LADDER",
 					level: "error",
 					message: `manifest "${manifest.key}" mixes variants that carry their own audio with ones that do not (e.g. "${stranded?.key}"), and no audio media entry exists for the latter to reference — those renditions would play silent`,
+					path: `manifests[${mIndex}]`,
+				});
+			}
+			// The HLS side of PLAN_DASH_AUDIO_UNSELECTED. A whole-file muxing can
+			// carry a track without being a leg of any playlist: the track counts
+			// as packaged, so nothing above speaks, while every variant names an
+			// audio group that no media entry creates.
+			if (
+				plan.renditions.some((r) => AUDIO_CODECS.has(r.codec)) &&
+				selectedVideo.length > 0 &&
+				carrying.length === 0 &&
+				hlsAudioMediaCount === 0
+			) {
+				issues.push({
+					code: "PLAN_HLS_AUDIO_UNSELECTED",
+					level: options.demoteFileOutputRails ? "warning" : "error",
+					message: `manifest "${manifest.key}" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants`,
 					path: `manifests[${mIndex}]`,
 				});
 			}

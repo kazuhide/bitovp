@@ -506,6 +506,47 @@ describe("never a manifest leg", () => {
 		expect(codes(tsLeg)).toContain("PLAN_HLS_PARTIAL_MUXED_LADDER");
 	});
 
+	it("a playlist is not given its audio by a file: a ladder whose only audio is inside one is refused", () => {
+		// The track is packaged, so PLAN_UNMUXED_RENDITION is silent, and the file
+		// is no variant, so the half-muxed rail is silent too. What is left is a
+		// playlist whose every variant names an audio group nothing creates.
+		const ladder = (muxings: Muxing[]) =>
+			planWith({ muxings, manifests: manifests.slice(0, 1) });
+		const unselected = (plan: ReturnType<typeof planWith>, options = {}) =>
+			validatePlan(plan, options).filter(
+				(issue) => issue.code === "PLAN_HLS_AUDIO_UNSELECTED",
+			);
+		for (const kind of FILE_ONLY_MUXING_KINDS) {
+			const silent = ladder([fmp4("vmux", "v", "x/video"), file(kind)]);
+			expect(unselected(silent), kind).toEqual([
+				{
+					code: "PLAN_HLS_AUDIO_UNSELECTED",
+					level: "error",
+					message:
+						'manifest "hls" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants',
+					path: "manifests[0]",
+				},
+			]);
+			expect(
+				compilePlan(silent).filter((o) => o.kind === "CREATE_HLS_AUDIO_MEDIA"),
+				kind,
+			).toEqual([]);
+			// A job that already ran this way can be run again; it is told why.
+			expect(
+				unselected(silent, { demoteFileOutputRails: true }).map(
+					(issue) => issue.level,
+				),
+				kind,
+			).toEqual(["warning"]);
+			// The same file beside a ladder that has its audio is no concern.
+			expect(unselected(ladder([...streaming, file(kind)])), kind).toEqual([]);
+		}
+		// Variants that carry the audio themselves need no audio entry.
+		expect(
+			unselected(ladder([{ ...tsLeg, key: "vmux", streamKey: "v" }])),
+		).toEqual([]);
+	});
+
 	it("a file with audio is not a self-contained variant of a per-audio-group manifest", () => {
 		const codes = (muxing: Muxing) =>
 			validatePlan(

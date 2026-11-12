@@ -155,20 +155,81 @@ describe("two outputs written to one file", () => {
 		expect(second?.message).toContain('muxing "a" and muxing "b"');
 	});
 
+	it("reads a folder with and without its closing slash as one folder", () => {
+		expect(
+			outputFileCollisions(
+				plan([
+					mp4("full", "v1080", "exports", "clip.mp4"),
+					mp4("proxy", "v540", "exports/", "clip.mp4"),
+				]),
+			).map((issue) => [issue.path, issue.level]),
+		).toEqual([["muxings[1].filename", "error"]]);
+	});
+
 	it.each([
-		["exports", "exports/"],
 		["./exports", "exports"],
 		["exports//", "/exports"],
 		["exports/tmp/..", "exports"],
-	])("reads %j and %j as one folder", (one, other) => {
+	])("warns, and does not refuse, when %j and %j may be one folder", (one, other) => {
+		// Whether the storage normalises a path is not measured: if it does, these
+		// are one file; if it does not, they are two and the plan works as written.
+		const source = plan([
+			mp4("full", "v1080", one, "clip.mp4"),
+			mp4("proxy", "v540", other, "clip.mp4"),
+		]);
+		expect(outputFileCollisions(source)).toEqual([
+			{
+				code: "PLAN_OUTPUT_FILE_COLLISION",
+				level: "warning",
+				path: "muxings[1].filename",
+				message:
+					'muxing "proxy" writes "exports/clip.mp4", the file that muxing "full" writes, if the storage reads the two spellings of that path as one — one would then replace the other. Spell the path one way, or give each file its own name or folder.',
+			},
+		]);
 		expect(
-			collisions(
-				plan([
-					mp4("full", "v1080", one, "clip.mp4"),
-					mp4("proxy", "v540", other, "clip.mp4"),
-				]),
+			validatePlan(source).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+	});
+
+	it("is certain as soon as one earlier output spells the path the same way", () => {
+		const levels = outputFileCollisions(
+			plan(
+				[
+					mp4("a", "v1080", "./exports", "clip.mp4"),
+					mp4("b", "v540", "exports", "clip.mp4"),
+					mp4("c", "v360", "exports", "clip.mp4"),
+				],
+				{
+					renditions: [1080, 540, 360].map((height) => ({
+						key: `v${height}`,
+						ingestKey: "video",
+						codec: "H264",
+						height,
+						bitrate: height * 4000,
+					})),
+				},
 			),
-		).toEqual(["muxings[1].filename"]);
+		).map((issue) => [issue.path, issue.level]);
+		expect(levels).toEqual([
+			["muxings[1].filename", "warning"],
+			["muxings[2].filename", "error"],
+		]);
+	});
+
+	it("is a warning on a re-run, which reproduces what the job already wrote", () => {
+		const source = plan([
+			mp4("full", "v1080", "exports/", "clip.mp4"),
+			mp4("proxy", "v540", "exports/", "clip.mp4"),
+		]);
+		expect(
+			outputFileCollisions(source, "warning").map((issue) => issue.level),
+		).toEqual(["warning"]);
+		const rerun = validatePlan(source, { demoteFileOutputRails: true }).filter(
+			(issue) => issue.code === "PLAN_OUTPUT_FILE_COLLISION",
+		);
+		expect(rerun.map((issue) => issue.level)).toEqual(["warning"]);
+		// The message is the certain one: only the level is lowered.
+		expect(rerun[0]?.message).toContain("one would replace the other");
 	});
 
 	it("follows the bytes: an output listed under a second key is the same bucket", () => {
@@ -248,6 +309,41 @@ describe("two outputs written to one file", () => {
 					drm("d3", "proxy", "drm/c"),
 				],
 			}),
+		).toEqual([]);
+	});
+
+	it("counts one muxing that writes the same file from two of its outputs", () => {
+		const drm = (key: string, path: string) => ({
+			key,
+			kind: "FAIRPLAY" as const,
+			muxingKey: "full",
+			credentialId: OTHER,
+			iv: "0".repeat(32),
+			uri: "skd://key",
+			destination: { outputKey: "origin", path },
+		});
+		const clear = plan([mp4("full", "v1080", "exports", "clip.mp4")]);
+		// Its own copy and its encrypted copy, under the one name the muxing has.
+		expect(
+			outputFileCollisions({ ...clear, drm: [drm("d1", "exports/")] }),
+		).toEqual([
+			{
+				code: "PLAN_OUTPUT_FILE_COLLISION",
+				level: "error",
+				path: "muxings[0].filename",
+				message:
+					'muxing "full" writes "exports/clip.mp4" from two of its outputs — one would replace the other. Give each file its own name or folder.',
+			},
+		]);
+		// Two encrypted copies into one folder.
+		const encrypted = plan([
+			{ key: "full", kind: "MP4", streamKey: "v1080", filename: "clip.mp4" },
+		]);
+		expect(
+			collisions({ ...encrypted, drm: [drm("d1", "drm"), drm("d2", "drm")] }),
+		).toEqual(["muxings[0].filename"]);
+		expect(
+			collisions({ ...clear, drm: [drm("d1", "exports/encrypted")] }),
 		).toEqual([]);
 	});
 

@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { availableSourceDuration } from "./source-availability";
+import { snapTimelineTime, timelineSnapCandidates } from "./timeline-snapping";
 import {
 	changeRange,
 	linkedPartner,
@@ -30,8 +31,11 @@ type Gesture = {
 	linked: boolean;
 	pointer: number;
 	x: number;
+	clientX: number;
 	pixelsPerMs: number;
 	extentMs: number;
+	snapMs: number | null;
+	candidates: number[];
 	target: HTMLDivElement;
 	focusTarget: Target;
 	base: VodInputTimelineV2Document;
@@ -44,6 +48,8 @@ export function useTimelineGesture({
 	track,
 	pixelsPerMs,
 	linked = true,
+	snapping = true,
+	positionMs = 0,
 	onChange,
 	onSelect,
 	onSeek,
@@ -55,6 +61,8 @@ export function useTimelineGesture({
 	track: RefObject<HTMLDivElement | null>;
 	pixelsPerMs: number;
 	linked?: boolean;
+	snapping?: boolean;
+	positionMs?: number;
 	onChange: (next: VodInputTimelineV2Document) => void;
 	onSelect: (id: string, track: VodInputTimelineTrack) => void;
 	onSeek: (positionMs: number) => void;
@@ -68,9 +76,16 @@ export function useTimelineGesture({
 	} | null>(null);
 	const latest = useRef({ document, disabled, onChange });
 	latest.current = { document, disabled, onChange };
-	const [shown, setShown] = useState<Pick<Gesture, "next" | "extentMs"> | null>(
-		null,
-	);
+	const [shown, setShown] = useState<Pick<
+		Gesture,
+		"next" | "extentMs" | "snapMs"
+	> | null>(null);
+	const modifierChanged = useRef<(altKey: boolean) => void>(() => {});
+	modifierChanged.current = (altKey) => {
+		const active = gesture.current;
+		if (active && active.mode !== "move")
+			move(active.pointer, active.clientX, altKey);
+	};
 	const finish = useCallback((commit: boolean) => {
 		const active = gesture.current;
 		if (!active) return;
@@ -116,14 +131,27 @@ export function useTimelineGesture({
 	}, [shown, document, disabled]);
 	useEffect(() => {
 		function handleEscape(event: KeyboardEvent) {
-			if (event.key === "Escape" && gesture.current) {
+			if (
+				event.key === "Escape" &&
+				event.type === "keydown" &&
+				gesture.current
+			) {
 				event.preventDefault();
 				finish(false);
+			} else if (
+				event.key === "Alt" &&
+				gesture.current?.mode !== "move" &&
+				gesture.current
+			) {
+				event.preventDefault();
+				modifierChanged.current(event.type === "keydown");
 			}
 		}
 		window.addEventListener("keydown", handleEscape);
+		window.addEventListener("keyup", handleEscape);
 		return () => {
 			window.removeEventListener("keydown", handleEscape);
+			window.removeEventListener("keyup", handleEscape);
 			const active = gesture.current;
 			gesture.current = null;
 			focusAfter.current = null;
@@ -138,6 +166,7 @@ export function useTimelineGesture({
 		pair: boolean,
 		mode: "in" | "out",
 		delta: number,
+		exact = false,
 	) {
 		const clip = timelineItems(base, medium).find(
 			(item) => item.clip.id === id,
@@ -146,7 +175,9 @@ export function useTimelineGesture({
 		if (!clip || !source) return base;
 		const rate = medium === "video" ? source.video?.frameRate : null;
 		const tick = rate ? (1000 * rate.den) / rate.num : 1;
-		const amount = Math.round(Math.round(delta / tick) * tick);
+		const amount = exact
+			? Math.round(delta)
+			: Math.round(Math.round(delta / tick) * tick);
 		const inMs =
 			mode === "in"
 				? Math.max(0, Math.min(clip.outMs - 1, clip.inMs + amount))
@@ -170,13 +201,16 @@ export function useTimelineGesture({
 			return base;
 		}
 	}
-	function move(pointer: number, clientX: number) {
+	function move(pointer: number, clientX: number, altKey = false) {
 		const active = gesture.current;
 		if (!active || pointer !== active.pointer) return;
 		if (disabled || document !== active.base) return finish(false);
 		const left = track.current?.getBoundingClientRect().left;
 		if (left === undefined) return;
 		const delta = Math.round((clientX - left - active.x) / active.pixelsPerMs);
+		active.clientX = clientX;
+		const previousSnap = active.snapMs;
+		active.snapMs = null;
 		if (active.mode === "move") {
 			const items = timelineItems(active.base, active.track);
 			const item = items.find((entry) => entry.clip.id === active.id);
@@ -197,17 +231,65 @@ export function useTimelineGesture({
 				onError();
 				active.next = active.base;
 			}
-		} else
+		} else {
+			const clip = timelineItems(active.base, active.track).find(
+				(item) => item.clip.id === active.id,
+			)?.clip;
+			const source = facts.find((item) => item.key === clip?.sourceKey);
+			let snappedDelta = delta;
+			if (!active.linked && snapping && !altKey && clip && source) {
+				const end = clip.startMs + clip.outMs - clip.inMs;
+				const edge = active.mode === "in" ? clip.startMs : end;
+				const min =
+					active.mode === "in"
+						? Math.max(0, clip.startMs - clip.inMs)
+						: clip.startMs + 1;
+				const max =
+					active.mode === "in"
+						? end - 1
+						: Math.min(
+								active.base.durationMs,
+								clip.startMs +
+									availableSourceDuration(
+										source,
+										active.track,
+										active.base.audioEnabled,
+									) -
+									clip.inMs,
+							);
+				active.snapMs = snapTimelineTime(
+					edge + delta,
+					active.candidates.filter((time) => time >= min && time <= max),
+					active.pixelsPerMs,
+					previousSnap,
+				);
+				if (active.snapMs !== null) snappedDelta = active.snapMs - edge;
+			}
 			active.next = trim(
 				active.base,
 				active.id,
 				active.track,
 				active.linked,
 				active.mode,
-				delta,
+				snappedDelta,
+				active.snapMs !== null,
 			);
+			const edited = timelineItems(active.next, active.track).find(
+				(item) => item.clip.id === active.id,
+			)?.clip;
+			const actualEdge =
+				edited &&
+				(active.mode === "in"
+					? edited.startMs
+					: edited.startMs + edited.outMs - edited.inMs);
+			if (actualEdge !== active.snapMs) active.snapMs = null;
+		}
 		active.extentMs = Math.max(active.extentMs, timelineDuration(active.next));
-		setShown({ next: active.next, extentMs: active.extentMs });
+		setShown({
+			next: active.next,
+			extentMs: active.extentMs,
+			snapMs: active.snapMs,
+		});
 	}
 	function handlers(
 		id: string,
@@ -241,14 +323,21 @@ export function useTimelineGesture({
 					linked: linked && !!linkedPartner(document, { track: medium, id }),
 					pointer: event.pointerId,
 					x: event.clientX - bounds.left,
+					clientX: event.clientX,
 					pixelsPerMs,
 					extentMs: total,
+					snapMs: null,
+					candidates: timelineSnapCandidates(
+						document,
+						{ track: medium, id },
+						positionMs,
+					),
 					target: captureTarget,
 					focusTarget: event.currentTarget,
 					base: document,
 					next: document,
 				};
-				setShown({ next: document, extentMs: total });
+				setShown({ next: document, extentMs: total, snapMs: null });
 			},
 			onKeyDown(event: React.KeyboardEvent<Target>) {
 				if (
@@ -307,12 +396,12 @@ export function useTimelineGesture({
 	}
 	const pointerHandlers = {
 		onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
-			move(event.pointerId, event.clientX);
+			move(event.pointerId, event.clientX, event.altKey);
 		},
 		onPointerUp(event: React.PointerEvent<HTMLDivElement>) {
 			const active = gesture.current;
 			if (!active || active.pointer !== event.pointerId) return;
-			move(event.pointerId, event.clientX);
+			move(event.pointerId, event.clientX, event.altKey);
 			if (gesture.current !== active) return;
 			let seekTo: number | undefined;
 			if (active.mode === "move" && active.next === active.base) {
@@ -349,6 +438,7 @@ export function useTimelineGesture({
 		shown: shown?.next ?? document,
 		extentMs: shown?.extentMs ?? timelineDuration(document),
 		dragging: shown !== null,
+		snapMs: shown?.snapMs ?? null,
 		handlers,
 		pointerHandlers,
 	};

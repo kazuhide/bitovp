@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Boundary snapping for independent VOD video/audio trim edges and ruler positioning, with a visible time guide, zoom-aware tolerance, an on/off control and temporary Alt/Option bypass.
 - Manual VOD input timeline editing for linked or independent video/audio: browse storage files, trim, split, reorder and concatenate clips with a stable time scale, seek, zoom and undo/redo. Append to a selected track or replace a selected interval while preserving the opposite track and program duration; audio-only WAV/MP3 sources are supported. Edited-track gaps use black video or silence, with a ten-second limit per gap. Input editing preserves the normal VOD output settings, including HLS/DASH and progressive files. CPU-only FFmpeg previews use version-pinned range reads and do not require a GPU or Local LLM or start a cloud encoding job.
 - Progressive single-file TS output alongside MP4, independently of HLS/DASH. Existing segmented TS output remains available.
 

@@ -5,11 +5,13 @@ import type {
 	VodInputTimelineTrack,
 	VodInputTimelineV2Document,
 } from "@bitovp/core/vod-input-timeline";
-import { useEffect, useMemo, useRef } from "react";
+import { Magnet } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTimelineLabels } from "./labels";
 import { TimelineClip } from "./timeline-clip";
 import { TimelineRuler } from "./timeline-ruler";
+import { snapTimelineTime, timelineSnapCandidates } from "./timeline-snapping";
 import {
 	formatTime,
 	linkedPartner,
@@ -61,6 +63,7 @@ export function TimelineTracks({
 		track = useRef<HTMLDivElement>(null),
 		viewport = useRef<HTMLDivElement>(null);
 	const scale = useTimelineScale(viewport);
+	const [snapping, setSnapping] = useState(true);
 	const gesture = useTimelineGesture({
 		document,
 		facts,
@@ -68,6 +71,8 @@ export function TimelineTracks({
 		track,
 		pixelsPerMs: scale.pixelsPerMs,
 		linked,
+		snapping,
+		positionMs,
 		onChange,
 		onSelect,
 		onSeek,
@@ -104,6 +109,18 @@ export function TimelineTracks({
 					{formatTime(positionMs)} / {formatTime(total)}
 				</span>
 				<div className="flex items-center gap-2">
+					<Button
+						type="button"
+						size="sm"
+						variant={snapping ? "secondary" : "ghost"}
+						aria-label={l.snap}
+						aria-pressed={snapping}
+						title={l.snapHint}
+						disabled={gesture.dragging}
+						onClick={() => setSnapping((value) => !value)}
+					>
+						<Magnet className="size-4" aria-hidden="true" />
+					</Button>
 					<label className="flex items-center gap-2">
 						{l.zoom}
 						<select
@@ -136,6 +153,11 @@ export function TimelineTracks({
 					</Button>
 				</div>
 			</div>
+			<span role="status" className="sr-only">
+				{gesture.snapMs !== null
+					? `${l.snapped}: ${formatTime(gesture.snapMs)}`
+					: ""}
+			</span>
 			<div className="flex min-w-0 gap-2">
 				<div className="w-12 shrink-0 pt-7 text-xs text-zinc-400">
 					{(["video", "audio"] as const).map((medium) => (
@@ -170,6 +192,18 @@ export function TimelineTracks({
 							pixelsPerMs={scale.pixelsPerMs}
 							ticks={canvas.ticks}
 							disabled={!total || gesture.dragging}
+							snap={
+								snapping
+									? (position) =>
+											snapTimelineTime(
+												position,
+												timelineSnapCandidates(document).filter(
+													(time) => time < total,
+												),
+												scale.pixelsPerMs,
+											)
+									: undefined
+							}
 							onSeek={onSeek}
 						/>
 						{(["video", "audio"] as const).map((medium) => (
@@ -215,6 +249,19 @@ export function TimelineTracks({
 									left: Math.min(positionMs, total - 1) * scale.pixelsPerMs,
 								}}
 							/>
+						)}
+						{gesture.snapMs !== null && (
+							<div
+								data-testid="input-timeline-snap-guide"
+								data-snap-ms={gesture.snapMs}
+								aria-hidden="true"
+								className="pointer-events-none absolute inset-y-0 z-30 border-emerald-300 border-l border-dashed"
+								style={{ left: gesture.snapMs * scale.pixelsPerMs }}
+							>
+								<span className="absolute top-0 left-1 whitespace-nowrap rounded border border-emerald-300 bg-zinc-950 px-1 text-emerald-200 text-[10px] tabular-nums">
+									{formatTime(gesture.snapMs)}
+								</span>
+							</div>
 						)}
 					</div>
 				</div>

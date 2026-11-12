@@ -7,6 +7,7 @@ export function TimelineRuler({
 	pixelsPerMs,
 	ticks,
 	disabled,
+	snap,
 	onSeek,
 }: {
 	durationMs: number;
@@ -14,12 +15,15 @@ export function TimelineRuler({
 	pixelsPerMs: number;
 	ticks: number[];
 	disabled: boolean;
+	snap?: (positionMs: number) => number | null;
 	onSeek: (positionMs: number) => void;
 }) {
 	const l = useTimelineLabels();
 	const maximum = Math.max(0, durationMs - 1);
-	function seek(value: number) {
-		if (!disabled) onSeek(Math.max(0, Math.min(maximum, Math.round(value))));
+	function seek(value: number, allowSnap = false) {
+		const position = Math.max(0, Math.min(maximum, Math.round(value)));
+		if (!disabled)
+			onSeek(allowSnap ? (snap?.(position) ?? position) : position);
 	}
 	return (
 		<div
@@ -39,6 +43,7 @@ export function TimelineRuler({
 				seek(
 					(event.clientX - event.currentTarget.getBoundingClientRect().left) /
 						pixelsPerMs,
+					!event.altKey,
 				);
 			}}
 			onKeyDown={(event) => {

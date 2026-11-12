@@ -43,6 +43,10 @@ PR #112 left it.
   commit (`c1812e8d`), on 2026-11-12: the run of the pull request and six runs
   that were started on its branch one after the other. PR #116 made the media
   check print what x264 reports that it uses of the processor.
+- **The log of PR #117** is the log of the job `native-media` for its commit
+  `c6650ebc`, on 2026-11-12. PR #117 made the worker name libvmaf's size limits
+  in the error of a measurement, and added the test of those limits to that
+  job.
 - **The research records** are the measurements, reviews and notes made for
   PR #109. **The design note** is the note written for that PR.
 - **The measurement records** of the check on a real GPU, of the small-picture
@@ -2233,7 +2237,9 @@ the job compiled:
 | `pnpm test:native-media`, worker scripts | 43 tests in 3 files passed, 0 skipped |
 
 The first step ran 19 tests in the CI log. With the tests that PR #112 added
-and the test of this record it runs 23. These tests of
+and the test of this record it runs 23. The group of `@bitovp/core` has 17 tests
+since PR #117: the six that it added hold libvmaf's size limits against these
+programs (see "libvmaf and small pictures"). These tests of
 `scripts/gated-tests.test.mjs` guard this build without compiling anything:
 
 - "the worker image compiles FFmpeg from sources pinned by commit or release and
@@ -2578,10 +2584,13 @@ the same.
 
 The bundled libvmaf (commit `f712fa7564fe49b12991d83920b83573af2ae063`) does not
 score every picture size with the eight `vmaf_v1.0.16_*` models. Two tests of
-2026-11-11 record what happens. They ran the `linux/arm64` programs of this
+2026-11-11, A and B, record what happens, and two of 2026-11-12, C and D,
+measured where the limits lie. All four ran the `linux/arm64` programs of this
 build in a container of the base image, without network access, with the
-fourteen models that the image bundles. The appendix holds the two scripts and
-the command that started them.
+fourteen models that the image bundles. The appendix holds the scripts of tests
+A and B and the command that started them. Since PR #117 the worker knows these
+limits and names them in the error of a measurement; "What follows for bitovp"
+at the end of this section says how.
 
 Test A gives both pictures the same size. Each run compares 10 frames of
 `testsrc2` in 8-bit 4:2:0 with the same frames after `gblur=sigma=1.5`. Every
@@ -2649,6 +2658,24 @@ the `3d0h_2160` models 0.5; the `3d0h` and `1d5h_2160` models do not set it. The
 width and the height of a 4:2:0 picture must therefore be at least 160, 266 or
 318 px. Every run of test A agrees with these limits.
 
+The other chroma layouts follow from the same arithmetic. A side of the chroma
+planes, times `speed_prescale` and rounded to a whole number, must be 80 or
+more, so the smallest side is 80, 133 or 159 samples. libvmaf gives the chroma
+planes of a 4:2:0 picture its width and its height, each shifted right by one
+bit, and those of a 4:2:2 picture its shifted width and its whole height
+(`libvmaf/src/picture.c`). An odd width or height therefore has the chroma
+planes of the even one below it. The last three columns give the smallest
+picture that SpEED takes:
+
+| `speed_prescale` | Models | Smallest chroma side | 4:2:0 | 4:2:2 | 4:4:4 |
+|---|---|---|---|---|---|
+| 1.0 | `3d0h`, `hfr_3d0h`, `1d5h_2160`, `hfr_1d5h_2160` | 80 | 160x160 | 160x80 | 80x80 |
+| 0.6 | `5d0h`, `hfr_5d0h` | 133 | 266x266 | 266x133 | 133x133 |
+| 0.5 | `3d0h_2160`, `hfr_3d0h_2160` | 159 | 318x318 | 318x159 | 159x159 |
+
+CAMBI's 216 holds in every layout: a picture that one of these models scores
+also has a width or a height of 216 or more.
+
 Test B follows the product's own method with a v1.0.16 model. Both pictures are
 scaled to one canvas in 10 bits, and the size of the encoded picture goes to
 CAMBI as `cambi.enc_width` and `cambi.enc_height`. Of its 43 runs of 5 frames
@@ -2682,6 +2709,63 @@ A. At 192x108 the options refuse the encoded size.
 | 256x144 | 139 | 139 | 139 | 139 |
 | 192x108 | 234 | 234 | 234 | 234 |
 
+Test C measured the edges of the limits: 207 runs of 5 frames each, 71 in the
+method of test B and 136 in that of test A, the latter in 4:2:0, 4:2:2 and 4:4:4
+with 8 and with 10 bits. Of the 199 runs with a v1.0.16 model, 109 ended with
+status 0, 16 with status 234 and 74 with status 139, each as the limits above
+and the three rules below say. The other 8 ran `vmaf_v0.6.1`: it scored 64x36
+and 32x18 in both methods and ended with a segmentation fault at 16x16 in both.
+That crash was not looked into.
+
+The three rules are for the size that the command of test B declares to CAMBI.
+`cambi.c` holds the first in the feature's options and the other two in its
+`init`:
+
+- A declared width or height below 144 or above 7680 is refused when the filter
+  is set up, with `problem during vmaf_use_features_from_model`. 143x400,
+  400x143, 7681x4320 and 7680x7681 are refused; 144x400, 400x144 and 7680x4320
+  are scored.
+- A declared size that exceeds the pictures in width or in height counts as the
+  size of the pictures. On a canvas of 1920x1080 a declared 2000x1200 is scored.
+  On a canvas of 200x200 a declared 1920x1080 is refused, as pictures of 200x200
+  are.
+- Otherwise the 216 is asked of the declared size. 144x144, 215x215 and 144x215
+  are refused with the first pictures, with `problem during vmaf_read_pictures`;
+  216x144 and 144x216 are scored.
+
+In the 136 runs in the method of test A, `testsrc2` drew the pictures in the
+format of the comparison. It draws an odd width or height one pixel smaller
+where that format halves the chroma, so the runs at such sizes compared pictures
+of the even size below the named one. Such a picture has the same chroma planes
+in libvmaf, and 214 is below 216 as 215 is, so those runs ended as the named
+size does. The test of the repository that is named below draws in `yuv444p`
+and converts, and its pictures have the named size.
+
+Test D measured in which pixel format the method of test A compares, because
+the format decides the chroma layout. The method of test B converts both
+pictures to `yuv420p10le`. In the method of test A the worker's command scales
+the encode to the reference's size with a `scale` filter, also when the two
+sizes are equal, and puts no such filter on the reference. FFmpeg's libvmaf
+filter takes twelve formats: `yuv420p`, `yuv422p` and `yuv444p`, each with 8,
+10, 12 and 16 bits (`libavfilter/vf_libvmaf.c`). The 192 runs of test D used
+the worker's graph with `vmaf_v1.0.16_3d0h`. The reference was a file in one of
+28 pixel formats, 11 of the twelve and 17 others, and the encode a file in
+`yuv420p`, `yuv420p10le` or `yuv444p`. Two sizes tell the layouts apart: the
+model scores 216x100 in 4:2:2 and in 4:4:4, and 150x216 in 4:4:4 only. FFmpeg's
+log names each conversion. 78 runs ended with status 0 and 114 with status 139:
+
+- A reference in one of the twelve formats was never converted. The `scale`
+  filter gave the encode the reference's format, and the status was that of the
+  reference's layout (84 runs).
+- A reference in another format was converted to the encode's format, and the
+  status was that of the encode's layout (108 runs). The same held in 16 runs
+  with full-range references from x264 and from FFmpeg's MJPEG encoder, whose
+  formats ffprobe names `yuvj420p`, `yuvj422p` and `yuvj444p`.
+
+The first rule rests on the `scale` filter. In four runs of the graph without
+it, which the worker does not build, FFmpeg converted the reference to the
+encode's format although both formats were among the twelve.
+
 What follows for bitovp:
 
 - The proof of the image build uses 640x360, which all fourteen models score in
@@ -2690,8 +2774,28 @@ What follows for bitovp:
   pictures end libvmaf with a segmentation fault. That describes the proof's own
   model, `vmaf_v1.0.16_3d0h`. The limits of the `5d0h` and `3d0h_2160` models
   are higher.
-- The research records list a size guard in the product's VMAF path as a
-  follow-up that is not part of the pull requests.
+- Since PR #117 the worker asks before a comparison whether libvmaf can score
+  it. A measurement that it cannot score ends with an error that names the limit
+  and what to do: use a model of the `vmaf_v0.6.1` family, or a larger
+  reference. `packages/core/src/vmaf/size-limits.ts` holds the limits of this
+  section for the eight models and for no other model. A VOD measurement asks
+  before FFmpeg starts and before a comparison goes to the cloud. It gives the
+  size of the reference, the chroma layout by the rules of test D, and in the
+  method of test B the size of the encode. A live measurement asks once, after
+  it has probed its source and before it captures anything. Where the layout is
+  not known, the check takes SpEED's limit for 4:4:4, the lowest, so that it
+  refuses nothing that libvmaf scores; when such a run then ends with SpEED's
+  message, the error names the limit instead of FFmpeg's status. The check
+  changes no command and no score. It does not apply to the GPU scorer, which is
+  not libvmaf.
+- `packages/core/src/vmaf/size-limits.ffmpeg.test.ts` holds those numbers
+  against these programs in the job `native-media`. It builds its commands with
+  the worker's command builder and runs FFmpeg 177 times: every v1.0.16 model in
+  the three layouts at SpEED's edge and one pixel below it, the twelve pixel
+  formats, CAMBI's 216, references and encodes in different formats, the
+  declared sizes of test C, and three models of the `vmaf_v0.6.1` family at
+  sizes that the v1.0.16 models refuse. It fails when a number no longer holds,
+  and when the image holds another set of v1.0.16 models than the eight.
 - The copies of `cambi.c` and `speed.c` that were taken from the `master` branch
   of `Netflix/vmaf` on 2026-11-11 are byte for byte the pinned files. Both
   limits were therefore still in upstream's code on that day.
@@ -3014,8 +3118,12 @@ What to measure again:
 - the outputs of the new programs against those of the build before, as in "What
   was confirmed to be the same";
 - the check on a real NVIDIA GPU, when FFmpeg or the NVIDIA headers change;
-- the two small-picture tests, when libvmaf or the models change; the appendix
-  holds their scripts;
+- the small-picture tests, when libvmaf or the models change. The appendix
+  holds the scripts of tests A and B. The edges that tests C and D measured are
+  in `packages/core/src/vmaf/size-limits.ffmpeg.test.ts`, which the job
+  `native-media` runs: it fails when a limit has moved, and the numbers of
+  `packages/core/src/vmaf/size-limits.ts` and of "libvmaf and small pictures"
+  are then taken again;
 - the test of x264 with and without AVX-512, when x264 changes; "The VMAF means
   of the media job" names its commands. The names in `x264_cpu_names`
   (`common/cpu.c`) of the new revision are to be held against the rule for a
@@ -3026,10 +3134,12 @@ What to measure again:
 - the upstream commits after each new pin, as in "Upstream fixes after the
   pinned revisions".
 
-The capability lists, the small-picture tests and the test of x264 can be
-repeated with this file and the repository. The comparison of "What was
-confirmed to be the same" and the check on a real GPU cannot: their sample files
-and scripts are kept with the research records, outside the repository.
+The capability lists, the small-picture tests A and B and the test of x264 can
+be repeated with this file and the repository, and the repository's test runs
+the edges of tests C and D. The comparison of "What was confirmed to be the
+same" and the check on a real GPU cannot: their sample files and scripts are
+kept with the research records, outside the repository, and so are the scripts
+and the result tables of tests C and D.
 
 ### History
 
@@ -3055,6 +3165,9 @@ and scripts are kept with the research records, outside the repository.
 | 2026-11-12 08:54 to 08:57 | `a403ff35` | The media check on an arm64 host, with the worker image built from `Dockerfile` |
 | 2026-11-12 11:37 to 11:39 | | The media check with the change of PR #116 on the same arm64 host, from the tree that was committed as `c1812e8d` at 11:41: the same means, and x264's report |
 | 2026-11-12 11:42 to 12:23 | `c1812e8d` | Seven runs of the job `media-smoke` for the first commit of PR #116, whose check prints what x264 reports that it uses of the processor: two with AVX-512 and set A, five without and set B |
+| 2026-11-12 11:46 | | The results of small-picture test C were written |
+| 2026-11-12 12:14 | | The results of small-picture test D were written |
+| 2026-11-12 13:09 to 13:30 | `c6650ebc` | The first runs of PR #117, which names libvmaf's size limits in the worker's errors: the job `native-media` ran the test of the limits on x86-64 with the build that `main` had stored |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

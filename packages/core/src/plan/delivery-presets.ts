@@ -211,7 +211,10 @@ const MEZZ_H264: DeliverySpec = {
 				profile: "HIGH",
 			},
 			{
-				key: "a320",
+				// Not named after the bitrate: the spec allows a higher one, and
+				// the row below names this key. A key the form derives from the
+				// bitrate would change with it and read as a deviation.
+				key: "aac",
 				ingestKey: "audio",
 				codec: "AAC",
 				bitrate: 320_000,
@@ -223,7 +226,7 @@ const MEZZ_H264: DeliverySpec = {
 				key: "mezz",
 				kind: "MP4",
 				streamKey: "v1080",
-				additionalStreamKeys: ["a320"],
+				additionalStreamKeys: ["aac"],
 				filename: "mezzanine-1080p.mp4",
 				destination: { outputKey: "origin", path: "./delivery/h264-1080" },
 			},
@@ -279,7 +282,7 @@ const MEZZ_H264: DeliverySpec = {
 		{
 			requirement: "Video and audio in one file",
 			path: "muxings.0.additionalStreamKeys",
-			expect: { eq: ["a320"] },
+			expect: { eq: ["aac"] },
 		},
 	],
 	suggestedGate: {
@@ -351,7 +354,10 @@ const MEZZ_H265: DeliverySpec = {
 				pixelFormat: "YUV420P10LE",
 			},
 			{
-				key: "a320",
+				// Not named after the bitrate: the spec allows a higher one, and
+				// the row below names this key. A key the form derives from the
+				// bitrate would change with it and read as a deviation.
+				key: "aac",
 				ingestKey: "audio",
 				codec: "AAC",
 				bitrate: 320_000,
@@ -363,7 +369,7 @@ const MEZZ_H265: DeliverySpec = {
 				key: "mezz",
 				kind: "MP4",
 				streamKey: "v2160",
-				additionalStreamKeys: ["a320"],
+				additionalStreamKeys: ["aac"],
 				filename: "mezzanine-2160p.mp4",
 				destination: { outputKey: "origin", path: "./delivery/h265-2160" },
 			},
@@ -413,7 +419,7 @@ const MEZZ_H265: DeliverySpec = {
 		{
 			requirement: "Video and audio in one file",
 			path: "muxings.0.additionalStreamKeys",
-			expect: { eq: ["a320"] },
+			expect: { eq: ["aac"] },
 		},
 	],
 	suggestedGate: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { buildPlan } from "../wizard/build-plan";
 import { tryImportPresetIntoWizard } from "../wizard/plan-to-wizard";
 import { compilePlan } from "./compiler";
 import {
@@ -69,7 +70,7 @@ describe("shipped delivery specs", () => {
 		expect(files).toHaveLength(1);
 		expect(files[0]?.refs).toMatchObject({
 			streamId: `stream:${spec.plan.renditions[0]?.key}`,
-			additionalStreamIds: ["stream:a320"],
+			additionalStreamIds: ["stream:aac"],
 		});
 		// No manifests on a file-delivery plan — nothing to start beyond
 		// the encoding itself.
@@ -105,7 +106,7 @@ describe("shipped delivery specs", () => {
 				{
 					...videoOnly,
 					key: "audio",
-					streamKey: "a320",
+					streamKey: "aac",
 					filename: "audio.mp4",
 				},
 			],
@@ -114,6 +115,22 @@ describe("shipped delivery specs", () => {
 		expect(checkDeliverySpec(split, spec).map((d) => d.requirement)).toEqual([
 			"Video and audio in one file",
 		]);
+	});
+
+	it.each(
+		DELIVERY_SPECS.map((spec) => [spec.id, spec] as const),
+	)("%s still conforms after the audio bitrate is raised in the form", (_id, spec) => {
+		// The form derives an audio key from the bitrate unless the plan names one.
+		// A row that names a derived key would call a louder track a deviation.
+		const mapping = tryImportPresetIntoWizard(structuredClone(spec.plan));
+		if (!mapping.ok) throw new Error(mapping.reasonKey);
+		const [audio] = mapping.state.audios;
+		if (!audio) throw new Error("expected an audio track");
+		const louder = buildPlan({
+			...mapping.state,
+			audios: [{ ...audio, bitrate: 384_000 }],
+		});
+		expect(checkDeliverySpec(louder, spec)).toEqual([]);
 	});
 
 	it("suggested gates are schema-valid and advisory-shaped", () => {

@@ -33,8 +33,10 @@ One operator per row: `eq` (deep-equal), `oneOf`, or a numeric window via `gte`/
 To require that a file carries its audio, constrain the streams of its muxing. A muxing names its first stream in `streamKey` and the others in `additionalStreamKeys`, so the shipped mezzanine specs use:
 
 ```json
-{ "requirement": "Video and audio in one file", "path": "muxings.0.additionalStreamKeys", "expect": { "eq": ["a320"] } }
+{ "requirement": "Video and audio in one file", "path": "muxings.0.additionalStreamKeys", "expect": { "eq": ["aac"] } }
 ```
+
+Give the audio rendition a key that does not follow one of its settings. The form derives a key from the bitrate (`a320`) when the plan names none, so a row that names such a key reports a deviation as soon as the bitrate changes, even inside the range the spec allows.
 
 A plan that writes the audio to a file of its own has no `additionalStreamKeys` on that muxing, and the unresolved path is reported as a deviation.
 

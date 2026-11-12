@@ -701,7 +701,7 @@ export const ja = {
 	},
 	vodFlow: {
 		label: "作成するもの",
-		streaming: "配信用にパッケージ",
+		streaming: "配信用にパッケージする",
 		file: "ファイルを書き出す",
 		streamingHint:
 			"プレイヤーで再生するための、ラダーと HLS / DASH マニフェストを作成します。",
@@ -5383,6 +5383,8 @@ export const ja = {
 			"1 回のエンコードで、全レンディションとマニフェストを複数のストレージへ配信します。各ミラーにも同じパス・同じ ACL で書き込みます。",
 		derivedPathHint:
 			"ベース出力パスからの相対パス:空欄 = 自動で決まるパス「{path}」。per-title の出力には {uuidToken}/{bitrateToken} のプレースホルダーが必要です。",
+		destinationBasePathHint:
+			"ベース出力パスからの相対パス:空欄 = ベース出力パスの直下(サブフォルダなし)。",
 		enableCodecPerTitle: "{codec} の per-title 設定を有効にする",
 		encryptionDrmCount: "暗号化 / DRM({count})",
 		extraContainerOf: "{key} の追加コンテナ",

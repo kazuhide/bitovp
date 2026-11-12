@@ -233,34 +233,64 @@ export function FileOutputSection({
 								/>
 							</Field>
 						</div>
-						{sources.audio.length > 1 ? (
-							<Field
-								label={t("vodFlow.audioSource")}
-								htmlFor="wz-file-audio-source"
-							>
-								<SelectNative
-									id="wz-file-audio-source"
-									value={audio.extras?.source ?? ""}
-									onChange={(event) =>
-										onPatch(
-											editFileAudio(state, { source: event.target.value }),
-										)
-									}
-								>
-									{sources.audio.map((option) => (
-										<option key={option.value} value={option.value}>
-											{option.label}
-										</option>
-									))}
-								</SelectNative>
-							</Field>
-						) : null}
+						<SourceSelect
+							id="wz-file-audio-source"
+							label={t("vodFlow.audioSource")}
+							value={audio.extras?.source ?? ""}
+							options={sources.audio}
+							onChange={(source) => onPatch(editFileAudio(state, { source }))}
+						/>
 					</div>
 				) : (
 					<p className="mt-2 text-xs text-zinc-500">{t("vodFlow.noAudio")}</p>
 				)}
 			</section>
 		</div>
+	);
+}
+
+/**
+ * Which stream a file or the audio track reads. With one input there is nothing to
+ * choose and the field is left out — unless the stream chosen earlier is gone from
+ * the sources: then the plan cannot be built, and this is where it is put right.
+ */
+function SourceSelect({
+	id,
+	label,
+	value,
+	options,
+	onChange,
+}: {
+	id: string;
+	label: string;
+	/** A stream key; "" is the input's own track. */
+	value: string;
+	options: { value: string; label: string }[];
+	onChange: (source: string) => void;
+}) {
+	const { t } = useT();
+	const missing =
+		value !== "" && !options.some((option) => option.value === value);
+	if (options.length <= 1 && !missing) return null;
+	return (
+		<Field label={label} htmlFor={id}>
+			<SelectNative
+				id={id}
+				value={value}
+				onChange={(event) => onChange(event.target.value)}
+			>
+				{missing ? (
+					<option value={value}>
+						{value} {t("wizardX.missingParen")}
+					</option>
+				) : null}
+				{options.map((option) => (
+					<option key={option.value} value={option.value}>
+						{option.label}
+					</option>
+				))}
+			</SelectNative>
+		</Field>
 	);
 }
 
@@ -420,21 +450,13 @@ function FileEditor({
 					/>
 				</Field>
 			</div>
-			{sourceOptions.length > 1 ? (
-				<Field label={t("vodFlow.videoSource")} htmlFor={`${id}-source`}>
-					<SelectNative
-						id={`${id}-source`}
-						value={video.extras?.source ?? ""}
-						onChange={(event) => onEdit({ source: event.target.value })}
-					>
-						{sourceOptions.map((option) => (
-							<option key={option.value} value={option.value}>
-								{option.label}
-							</option>
-						))}
-					</SelectNative>
-				</Field>
-			) : null}
+			<SourceSelect
+				id={`${id}-source`}
+				label={t("vodFlow.videoSource")}
+				value={video.extras?.source ?? ""}
+				options={sourceOptions}
+				onChange={(source) => onEdit({ source })}
+			/>
 			{codec === "H265" ? (
 				<H265AdvancedEditor
 					idBase={`${id}-h265`}

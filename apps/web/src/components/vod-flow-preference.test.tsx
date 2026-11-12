@@ -35,7 +35,7 @@ describe("VodFlowPreference — the default flow, from Settings", () => {
 		renderLocalized(<VodFlowPreference />, "ja");
 		expect(
 			screen.getAllByRole("option").map((option) => option.textContent),
-		).toEqual(["配信用にパッケージ", "ファイルを書き出す"]);
+		).toEqual(["配信用にパッケージする", "ファイルを書き出す"]);
 	});
 
 	it("remembers a change for the whole site, for two years", async () => {

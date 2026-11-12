@@ -1614,6 +1614,7 @@ export function VodWizard({
 							<MuxingsSection
 								state={state}
 								credentials={allCredentials}
+								flatFiles={fileFlow}
 								onPatch={patch}
 							/>
 							<ThumbnailsSection state={state} onPatch={patch} />
@@ -1630,7 +1631,11 @@ export function VodWizard({
 							<p className="text-sm text-zinc-400">
 								{t("wizard.reviewThePlanOnTheRightThe")}
 							</p>
-							{fileFlow && evaluation.ok ? (
+							{/* Shown while these files are all the job writes. A hidden
+							    step in use can add outputs of its own (encrypted copies,
+							    thumbnails, an audio file), and the plan beside this step
+							    lists those. */}
+							{fileFlow && blockers.length === 0 && evaluation.ok ? (
 								<div>
 									<h2 className="font-medium text-sm text-zinc-200">
 										{t("vodFlow.reviewFiles")}
@@ -1644,7 +1649,9 @@ export function VodWizard({
 														<li key={muxing.key}>
 															{[
 																state.output.bucket,
-																`${muxing.destination.path}${muxing.filename}`,
+																// The path is a folder, with or without its slash.
+																muxing.destination.path.replace(/\/+$/, ""),
+																muxing.filename,
 															]
 																.filter(Boolean)
 																.join("/")}

@@ -1,5 +1,14 @@
-import { encodingPlanSchema, validatePlan } from "@bitovp/core";
+import {
+	encodingPlanSchema,
+	INTERNAL_HEVC_V2_BCF_VERSION,
+	validatePlan,
+} from "@bitovp/core";
 import { describe, expect, it } from "vitest";
+import {
+	draftKey,
+	readWizardDraft,
+	writeWizardDraft,
+} from "@/lib/wizard-draft";
 import { reconcileAutomaticAudioPackaging } from "./automatic-audio-packaging";
 import { buildPlan, type WizardState } from "./build-plan";
 import {
@@ -10,6 +19,8 @@ import {
 	editFileAudio,
 	FILE_CONTAINERS,
 	FILE_OUTPUT_DEFAULT_STATE,
+	FILE_OUTPUT_FIELD_HOME,
+	type FileOutputBlocker,
 	fileAudioCodecs,
 	fileOutputBlockers,
 	isFileOutputState,
@@ -18,6 +29,7 @@ import {
 	setFileAudio,
 	sharedFileNames,
 } from "./file-output";
+import { tryImportPresetIntoWizard } from "./plan-to-wizard";
 
 /** What the wizard's `patch` does with an edit: merge it, then reconcile the audio rows. */
 function apply(state: WizardState, patch: Partial<WizardState>): WizardState {
@@ -81,9 +93,15 @@ describe("the state the file-output flow starts from", () => {
 
 	it("keeps the folder private", () => {
 		expect(FILE_OUTPUT_DEFAULT_STATE.output.publicRead).toBe(false);
-		expect(planOf(started).muxings[0]?.destination?.acl).not.toBe(
-			"PUBLIC_READ",
-		);
+		// No access is asked for at all. Ticking the box in Destination is what asks.
+		expect(planOf(started).muxings[0]?.destination).toEqual({
+			outputKey: "origin",
+			path: "exports/",
+		});
+		expect(
+			planOf({ ...started, output: { ...started.output, publicRead: true } })
+				.muxings[0]?.destination?.acl,
+		).toBe("PUBLIC_READ");
 	});
 
 	it("is already what the wizard's audio reconciliation settles on", () => {
@@ -116,6 +134,24 @@ describe("file names", () => {
 			"a-b-c-d.mp4",
 		]);
 		expect(defaultFileNames("", started.videos)).toEqual(["output.mp4"]);
+	});
+
+	it("come back from a saved draft as they were typed, ? and # taken out on the way in", () => {
+		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
+		const typed = apply(ts, editFile(ts, 0, { filename: "sub/take#2?.ts" }));
+		// A folder in the name is the user's to give; the two characters are not kept.
+		expect(typed.videos[0]?.muxing?.filename).toBe("sub/take-2-.ts");
+
+		const key = draftKey(["org", "user"], "vod", "new:file");
+		writeWizardDraft(key, "vod", typed, 2);
+		const restored = {
+			...FILE_OUTPUT_DEFAULT_STATE,
+			...(readWizardDraft(key, "vod")?.value as Partial<WizardState>),
+		};
+		// Without that, the draft would drop the name and the plan would write
+		// "output.ts" in its place.
+		expect(restored.videos[0]?.muxing?.filename).toBe("sub/take-2-.ts");
+		localStorage.removeItem(key);
 	});
 
 	it("differ between files that share the folder", () => {
@@ -290,10 +326,21 @@ describe("a name two files were given", () => {
 		expect(sharedFileNames(two.videos)).toEqual([false, false]);
 		expect(collides(two)).toBe(false);
 
-		// The folder is one, however the name spells its way there.
-		const same = renamed(["clip.mp4", "./clip.mp4"]);
+		const same = renamed(["clip.mp4", "clip.mp4"]);
 		expect(sharedFileNames(same.videos)).toEqual([true, true]);
 		expect(collides(same)).toBe(true);
+	});
+
+	it("is not read into another spelling of the name, which the plan warns about", () => {
+		// One file only if the storage reads both spellings as one path.
+		const spelled = renamed(["clip.mp4", "./clip.mp4"]);
+		expect(sharedFileNames(spelled.videos)).toEqual([false, false]);
+		expect(collides(spelled)).toBe(false);
+		expect(
+			validatePlan(planOf(spelled))
+				.filter((issue) => issue.code === "PLAN_OUTPUT_FILE_COLLISION")
+				.map((issue) => issue.level),
+		).toEqual(["warning"]);
 	});
 
 	it("is marked on the files that share it, not on the rest", () => {
@@ -361,6 +408,20 @@ describe("files", () => {
 		const one = apply(two, removeFile(two, 0));
 		expect(filesOf(one).map((item) => item.filename)).toEqual(["clip.mp4"]);
 		expect(one.videos[0]?.height).toBe(540);
+	});
+
+	it("keeps a typed name on the file it was typed for when another is removed", () => {
+		const two = apply(started, addFile(started));
+		const names = (state: WizardState) =>
+			state.videos.map((video) => video.muxing?.filename);
+
+		const second = apply(two, editFile(two, 1, { filename: "proxy.mp4" }));
+		expect(names(apply(second, removeFile(second, 0)))).toEqual(["proxy.mp4"]);
+
+		const first = apply(two, editFile(two, 0, { filename: "master.mp4" }));
+		expect(names(apply(first, removeFile(first, 1)))).toEqual(["master.mp4"]);
+		// The file that is left followed the job name, and is now the first file.
+		expect(names(apply(first, removeFile(first, 0)))).toEqual(["clip.mp4"]);
 	});
 
 	it("refuses to remove the last file", () => {
@@ -512,6 +573,204 @@ describe("what the simple view cannot show", () => {
 		});
 		expect(isFileOutputState(emptied)).toBe(true);
 	});
+
+	// The two ways the audio can end up outside a file, each caught by its own guard.
+	const [file] = started.videos as [WizardState["videos"][number]];
+	const [track] = started.audios as [WizardState["audios"][number]];
+
+	it("audio written to a file of its own", () => {
+		const apart: WizardState = {
+			...started,
+			audios: [{ ...track, muxing: { ownContainer: true } }],
+		};
+		expect(planOf(apart).muxings.map((muxing) => muxing.streamKey)).toEqual([
+			"v1080",
+			"a192",
+		]);
+		expect(fileOutputBlockers(apart)).toEqual(["packaging"]);
+	});
+
+	it("a file that does not carry the audio track", () => {
+		const two = apply(started, addFile(started));
+		const bare: WizardState = {
+			...two,
+			videos: two.videos.map((video, index) =>
+				index === 1
+					? { ...video, muxing: { ...video.muxing, muxedAudioKeys: [] } }
+					: video,
+			),
+		};
+		expect(filesOf(bare).map((item) => item.streams)).toEqual([
+			["v1080", "a192"],
+			["v540"],
+		]);
+		expect(fileOutputBlockers(bare)).toEqual(["packaging"]);
+	});
+
+	it.each([
+		[
+			"a rendition",
+			{ videos: [{ ...file, extras: { key: "mezz" } }] },
+			["ladder"],
+		],
+		[
+			"a container",
+			{ videos: [{ ...file, muxing: { ...file.muxing, key: "mezz-file" } }] },
+			["packaging"],
+		],
+		[
+			"the audio track",
+			{
+				audios: [{ ...track, extras: { key: "main" } }],
+				videos: [
+					{ ...file, muxing: { ...file.muxing, muxedAudioKeys: ["main"] } },
+				],
+			},
+			["ladder"],
+		],
+	] satisfies [
+		string,
+		Partial<WizardState>,
+		FileOutputBlocker[],
+	][])("a key somebody typed for %s, which a return would replace", (_case, patch, steps) => {
+		expect(fileOutputBlockers({ ...started, ...patch })).toEqual(steps);
+	});
+});
+
+describe("every field of a step the simple view hides", () => {
+	const credentialId = "00000000-0000-4000-8000-000000000003";
+	// For each field, a job that uses it and the step that edits it.
+	const inUse = {
+		internal: [
+			{ internal: { hevcV2: { bcfVersion: INTERNAL_HEVC_V2_BCF_VERSION } } },
+			"basics",
+		],
+		audioGuard: [{ audioGuard: true }, "ladder"],
+		subtitles: [{ subtitles: [{ source: "captions" }] }, "ladder"],
+		filters: [{ filters: [{ key: "deinterlace" }] }, "ladder"],
+		// Bookkeeping of the filter editor: it means something only beside a filter.
+		manualFilterKeys: [
+			{ filters: [{ key: "deinterlace" }], manualFilterKeys: ["deinterlace"] },
+			"ladder",
+		],
+		drm: [
+			{
+				drm: [
+					{
+						kind: "CENC",
+						muxingKey: "v1080",
+						credentialId,
+						kid: "0".repeat(32),
+					},
+				],
+			},
+			"packaging",
+		],
+		thumbnails: [
+			{
+				thumbnails: [
+					{ key: "thumb", streamKey: "v1080", height: 320, positions: [10] },
+				],
+			},
+			"packaging",
+		],
+		sprites: [
+			{
+				sprites: [
+					{
+						key: "sprite",
+						streamKey: "v1080",
+						distance: 10,
+						filename: "sprite.jpg",
+					},
+				],
+			},
+			"packaging",
+		],
+		labels: [{ labels: ["team-a"] }, "encoding"],
+		infrastructure: [
+			{
+				infrastructure: {
+					infrastructureId: "infrastructure",
+					cloudRegion: "AWS_EU_WEST_1",
+				},
+			},
+			"encoding",
+		],
+		prewarmedEncoderPoolIds: [
+			{ prewarmedEncoderPoolIds: ["pool"] },
+			"encoding",
+		],
+		startOptions: [
+			{ startOptions: { handleVariableInputFps: true } },
+			"encoding",
+		],
+		qc: [{ qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" } }, "encoding"],
+		kantar: [
+			{
+				kantar: {
+					credentialId,
+					channelName: "channel",
+					contentReference: "reference",
+					serverUrl: "https://kantar.example",
+					reportPath: "kantar",
+				},
+			},
+			"encoding",
+		],
+		manifests: [{ manifests: { hls: true, dash: false } }, "manifests"],
+		timing: [{ timing: "POST_ENCODING" }, "manifests"],
+	} satisfies Partial<
+		Record<keyof WizardState, [Partial<WizardState>, FileOutputBlocker]>
+	>;
+
+	it("has a case here, so a field added to the state cannot go unnoticed", () => {
+		expect(Object.keys(inUse).sort()).toEqual(
+			Object.entries(FILE_OUTPUT_FIELD_HOME)
+				.filter(([, home]) => home !== "shown")
+				.map(([field]) => field)
+				.sort(),
+		);
+	});
+
+	it.each(
+		Object.entries(inUse),
+	)("%s in use holds the full view, and names its step", (field, [
+		patch,
+		step,
+	]) => {
+		expect(FILE_OUTPUT_FIELD_HOME[field as keyof WizardState]).toBe(step);
+		expect(fileOutputBlockers({ ...started, ...patch })).toEqual([step]);
+	});
+
+	it.each([
+		[
+			"a quality check with both measures unticked",
+			{ qc: { vmaf: false, psnr: false, model: "vmaf_v0.6.1" } },
+		],
+		[
+			"the options of a manifest that is switched off",
+			{
+				manifests: {
+					hls: false,
+					dash: false,
+					hlsOptions: { audioGroupId: "audio" },
+				},
+			},
+		],
+		[
+			"filter bookkeeping with no filter",
+			{ manualFilterKeys: ["deinterlace"] },
+		],
+	] satisfies [
+		string,
+		Partial<WizardState>,
+	][])("does not count %s, and clears it on the way back", (_case, patch) => {
+		const left: WizardState = { ...started, ...patch };
+		expect(planOf(left)).toEqual(planOf(started));
+		expect(fileOutputBlockers(left)).toEqual([]);
+		expect(collapseToFileOutput(left)).toEqual(started);
+	});
 });
 
 describe("returning from the full wizard", () => {
@@ -568,5 +827,68 @@ describe("returning from the full wizard", () => {
 
 	it("leaves a state this flow made untouched", () => {
 		expect(collapseToFileOutput(started)).toEqual(started);
+	});
+});
+
+describe("a plan this flow built, loaded again", () => {
+	// Ids that do not read as a sample's placeholders, which a load would clear.
+	const accountId = "33333333-3333-4333-8333-333333333333";
+	const credentialId = "44444444-4444-4444-8444-444444444444";
+	const loaded = (state: WizardState) => {
+		const built: WizardState = {
+			...state,
+			accountId,
+			inputFiles: state.inputFiles.map((input) => ({ ...input, credentialId })),
+			output: { ...state.output, credentialId },
+		};
+		const mapping = tryImportPresetIntoWizard(
+			JSON.parse(JSON.stringify(planOf(built))),
+		);
+		if (!mapping.ok) throw new Error(mapping.reasonKey);
+		return { built, state: mapping.state };
+	};
+	const two = apply(started, addFile(started));
+
+	it.each([
+		["one MP4", started],
+		["two files", two],
+		[
+			"an MPEG-TS file",
+			apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" })),
+		],
+		["no audio", apply(started, setFileAudio(started, false))],
+	])("%s opens in the simple view, with its folder as the destination", (_case, job) => {
+		const { built, state } = loaded(job);
+		expect(state.output.basePath).toBe("exports/");
+		expect(fileOutputBlockers(state)).toEqual([]);
+		expect(planOf(collapseToFileOutput(state))).toEqual(planOf(built));
+	});
+
+	it("moves with the destination, as a job made here does", () => {
+		const { state } = loaded(two);
+		const moved = collapseToFileOutput({
+			...state,
+			output: { ...state.output, basePath: "archive" },
+		});
+		expect(filesOf(moved).map((item) => item.path)).toEqual([
+			"archive/",
+			"archive/",
+		]);
+	});
+
+	it("keeps whole paths when its files do not share one folder", () => {
+		const [first, second] = two.videos as WizardState["videos"];
+		const { state } = loaded({
+			...two,
+			videos: [
+				first,
+				{ ...second, muxing: { ...second?.muxing, path: "proxy" } },
+			] as WizardState["videos"],
+		});
+		expect(state.output.basePath).toBe("");
+		expect(state.videos.map((video) => video.muxing?.path)).toEqual([
+			"exports/",
+			"exports/proxy",
+		]);
 	});
 });

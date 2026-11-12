@@ -287,6 +287,7 @@ function MuxingEditor({
 	defaultKind,
 	value,
 	derivedPath,
+	emptyPath,
 	drm,
 	audio,
 	audioChoices,
@@ -300,6 +301,12 @@ function MuxingEditor({
 	defaultKind: WizardMuxingKind;
 	value: WizardMuxing | undefined;
 	derivedPath: string;
+	/**
+	 * What an emptied path field stores. Unset means the derived folder. "" is the
+	 * output folder itself, where the file-export flow writes: without it, a path
+	 * typed there and deleted again would move the file into a derived subfolder.
+	 */
+	emptyPath?: "";
 	/** Inline encryption for this output; absent = not DRM-capable (subtitles). */
 	drm?: DrmApi;
 	/** Audio rows offer the placement choice; video and subtitle rows do not. */
@@ -487,21 +494,25 @@ function MuxingEditor({
 					hint={
 						drmOwned
 							? t("wizard.anEncryptionRowTargetsThisOutputIts")
-							: t("wizardX.derivedPathHint", {
-									path: derivedPath,
-									uuidToken: "{uuid}",
-									bitrateToken: "{bitrate}",
-								})
+							: // The field is empty for both an unset path and "", and they
+								// are different folders. The hint says which this one is.
+								muxing.path === ""
+								? t("wizardX.destinationBasePathHint")
+								: t("wizardX.derivedPathHint", {
+										path: derivedPath,
+										uuidToken: "{uuid}",
+										bitrateToken: "{bitrate}",
+									})
 					}
 				>
 					<Input
 						id={`${idBase}-path`}
-						placeholder={derivedPath}
+						placeholder={muxing.path === "" ? undefined : derivedPath}
 						value={muxing.path ?? ""}
 						onChange={(e) =>
 							onChange({
 								...muxing,
-								path: e.target.value === "" ? undefined : e.target.value,
+								path: e.target.value === "" ? emptyPath : e.target.value,
 								autoPath: undefined,
 							})
 						}
@@ -573,6 +584,7 @@ function RenditionMuxings({
 	muxingKey,
 	kinds,
 	derivedPath,
+	emptyPath,
 	drm,
 	audio,
 	audioChoices,
@@ -586,6 +598,8 @@ function RenditionMuxings({
 	muxingKey: string;
 	kinds: WizardMuxingKind[];
 	derivedPath: string;
+	/** Forwarded to every leg — see MuxingEditor. */
+	emptyPath?: "";
 	drm: DrmApi;
 	/** Audio rendition rows — see MuxingEditor's `audio`. */
 	audio?: boolean;
@@ -624,6 +638,7 @@ function RenditionMuxings({
 				defaultKind={kinds[0] ?? "FMP4"}
 				value={muxing}
 				derivedPath={derivedPath}
+				emptyPath={emptyPath}
 				drm={drm}
 				audio={audio}
 				audioChoices={audioChoices}
@@ -646,6 +661,7 @@ function RenditionMuxings({
 						defaultKind="TS"
 						value={leg}
 						derivedPath={derivedPath}
+						emptyPath={emptyPath}
 						drm={drm}
 						audio={audio}
 						audioChoices={audioChoices}
@@ -680,12 +696,18 @@ function RenditionMuxings({
 type MuxingsSectionProps = {
 	state: WizardState;
 	credentials: CredentialSummaryWire[];
+	/**
+	 * The job writes its files into the output folder itself (the file-export flow):
+	 * an emptied path of a video output means that folder, not a derived subfolder.
+	 */
+	flatFiles?: boolean;
 	onPatch: (partial: Partial<WizardState>) => void;
 };
 
 export function MuxingsSection({
 	state,
 	credentials,
+	flatFiles,
 	onPatch,
 }: MuxingsSectionProps) {
 	const { t } = useT();
@@ -772,6 +794,7 @@ export function MuxingsSection({
 						muxingKey={key}
 						kinds={videoKindsFor(video.codec)}
 						derivedPath={videoMuxingRelPath(video, key)}
+						emptyPath={flatFiles ? "" : undefined}
 						drm={drm}
 						audioChoices={audioChoices}
 						muxing={video.muxing}

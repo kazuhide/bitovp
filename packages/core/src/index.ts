@@ -790,7 +790,7 @@ export {
 	isFileOnlyMuxingKind,
 	muxingKindCarriesAudio,
 } from "./plan/muxing-streams";
-export { outputFilePath, outputStorageKeys } from "./plan/output-files";
+export { outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
 export {

@@ -1,10 +1,14 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VOD_FLOW_COOKIE } from "@/lib/vod-flow";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
 import { renderWithQuery } from "@/test/render";
-import type { WizardState } from "./build-plan";
+import {
+	buildPlan,
+	DEFAULT_WIZARD_STATE,
+	type WizardState,
+} from "./build-plan";
 import { FILE_OUTPUT_DEFAULT_STATE, renameFileJob } from "./file-output";
 import { VodWizard } from "./wizard";
 
@@ -25,6 +29,37 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push, replace: vi.fn() }),
+}));
+// The picker is its own component with its own tests. Here it stands for one
+// choice: a folder below the bucket the job already writes to.
+vi.mock("@/components/storage-picker", () => ({
+	StoragePicker: ({
+		open,
+		initialCredentialId,
+		onSelect,
+	}: {
+		open: boolean;
+		initialCredentialId?: string;
+		onSelect: (selection: {
+			credentialId: string;
+			bucket: string;
+			path: string;
+		}) => void;
+	}) =>
+		open ? (
+			<button
+				type="button"
+				onClick={() =>
+					onSelect({
+						credentialId: initialCredentialId ?? "",
+						bucket: "picked",
+						path: "deliveries/2026",
+					})
+				}
+			>
+				Pick deliveries/2026
+			</button>
+		) : null,
 }));
 vi.mock("@/lib/auth/use-session", () => ({
 	useSession: () => ({
@@ -91,6 +126,21 @@ async function restore(state: WizardState, step = 0) {
 
 function planJson(): string {
 	return screen.getByTestId("plan-json").textContent ?? "";
+}
+
+function importJson(raw: unknown) {
+	fireEvent.click(screen.getByRole("button", { name: /Import plan JSON/ }));
+	fireEvent.change(screen.getByRole("textbox", { name: /Import plan JSON/ }), {
+		target: { value: JSON.stringify(raw) },
+	});
+	fireEvent.click(screen.getByRole("button", { name: /Validate.*load/i }));
+}
+
+function current(step: string) {
+	return expect(screen.getByRole("button", { name: step })).toHaveAttribute(
+		"aria-current",
+		"step",
+	);
 }
 
 beforeEach(() => {
@@ -218,6 +268,63 @@ describe("VodWizard — the file-output flow", () => {
 		).toBeDisabled();
 	});
 
+	it("writes a file at the source's own height and with no audio track, and takes a file away again", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		expect(screen.queryByRole("button", { name: /Remove file/ })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Add file" }));
+		const second = () => within(screen.getByRole("group", { name: "File 2" }));
+		// No height is the source's own, and the name counts the file instead.
+		await user.clear(second().getByLabelText("Height (p)"));
+		expect(second().getByLabelText("Height (p)")).toHaveValue(null);
+		expect(second().getByLabelText("File name")).toHaveValue("clip-2.mp4");
+		await user.click(
+			screen.getByRole("checkbox", { name: "Include audio in every file" }),
+		);
+		expect(
+			screen.getByText("The files are written without an audio track."),
+		).toBeInTheDocument();
+
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		const files = () =>
+			JSON.parse(planJson()) as {
+				renditions: { codec: string; height?: number | null }[];
+				muxings: { filename: string; additionalStreamKeys?: string[] }[];
+			};
+		expect(
+			files().renditions.map((rendition) => [
+				rendition.codec,
+				rendition.height ?? "source",
+			]),
+		).toEqual([
+			["H264", 1080],
+			["H264", "source"],
+		]);
+		expect(
+			files().muxings.map((muxing) => [
+				muxing.filename,
+				muxing.additionalStreamKeys ?? [],
+			]),
+		).toEqual([
+			["clip.mp4", []],
+			["clip-2.mp4", []],
+		]);
+
+		// The file that stays is the first one now, and is named as the first one is.
+		await user.click(screen.getByRole("button", { name: "Remove file 1" }));
+		expect(screen.queryByRole("group", { name: "File 2" })).toBeNull();
+		expect(screen.queryByRole("button", { name: /Remove file/ })).toBeNull();
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
+		expect(screen.getByLabelText("Height (p)")).toHaveValue(null);
+		expect(
+			files().renditions.map((rendition) => rendition.height ?? "source"),
+		).toEqual(["source"]);
+		expect(files().muxings.map((muxing) => muxing.filename)).toEqual([
+			"clip.mp4",
+		]);
+	});
+
 	it("starts a job that writes one file into the chosen folder, with no manifest", async () => {
 		await restore(ready);
 		expect(steps()).toHaveLength(5);
@@ -246,6 +353,58 @@ describe("VodWizard — the file-output flow", () => {
 			}),
 		]);
 		expect(localStorage.getItem(fileDraft)).toBeNull();
+	});
+
+	it("writes into the folder typed in Destination, and adds none for the job", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "4. Destination" }));
+		await user.click(screen.getByRole("button", { name: "Enter manually" }));
+		const folder = screen.getByLabelText(/output folder/i, {
+			selector: "input",
+		});
+		// The folder as it is, not the streaming flow's folder-and-job-name split.
+		expect(folder).toHaveValue("exports");
+		await user.clear(folder);
+		await user.type(folder, "deliveries/2026");
+		expect(folder).toHaveValue("deliveries/2026");
+
+		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(
+			screen.getByText("synthetic/deliveries/2026/clip.mp4"),
+		).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
+			"deliveries/2026/",
+		);
+
+		// No folder at all is the top of the bucket.
+		await user.click(screen.getByRole("button", { name: "4. Destination" }));
+		await user.click(screen.getByRole("button", { name: "Enter manually" }));
+		await user.clear(
+			screen.getByLabelText(/output folder/i, { selector: "input" }),
+		);
+		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(screen.getByText("synthetic/clip.mp4")).toBeInTheDocument();
+	});
+
+	it("writes into the folder picked from storage, and adds none for the job", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "4. Destination" }));
+		await user.click(screen.getByRole("button", { name: "Change" }));
+		await user.click(
+			screen.getByRole("button", { name: "Pick deliveries/2026" }),
+		);
+
+		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(
+			screen.getByText("picked/deliveries/2026/clip.mp4"),
+		).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		const plan = JSON.parse(planJson());
+		expect(plan.outputs[0].bucket).toBe("picked");
+		expect(plan.muxings[0].destination.path).toBe("deliveries/2026/");
 	});
 
 	it("writes an MPEG-TS file when that container is chosen, named after the job", async () => {
@@ -337,12 +496,56 @@ describe("VodWizard — the file-output flow", () => {
 		await user.click(screen.getByRole("button", { name: "Show all settings" }));
 		expect(steps()).toHaveLength(8);
 		expect(planJson()).toBe(before);
+		// Nothing a hidden step holds is in use, so the list is still the whole job.
+		await user.click(screen.getByRole("button", { name: "8. Review" }));
+		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
 
 		await user.click(
 			screen.getByRole("button", { name: "Back to simple view" }),
 		);
 		expect(steps()).toHaveLength(5);
 		expect(planJson()).toBe(before);
+	});
+
+	it("leaves the list of files out once a hidden step adds to what the job writes", async () => {
+		const [file] = ready.videos as [WizardState["videos"][number]];
+		// A folder per file is the packaging step's. The list would be one output
+		// of several, and the plan beside the step names them all.
+		await restore(
+			{
+				...ready,
+				videos: [{ ...file, muxing: { ...file.muxing, path: "video/1080p" } }],
+			},
+			7,
+		);
+		expect(steps()).toHaveLength(8);
+		current("8. Review");
+		expect(screen.queryByText("Files this job writes")).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
+			"exports/video/1080p",
+		);
+	});
+
+	it("returns a file to the output folder when a path typed in Packaging is deleted again", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		await user.click(screen.getByRole("button", { name: "5. Packaging" }));
+		const path = screen.getByLabelText("Destination path");
+		// Empty here is the folder itself, not the folder the ladder would derive.
+		expect(path).toHaveAccessibleDescription(
+			"Relative to the base output path — empty = that path itself, with no subfolder.",
+		);
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+
+		await user.type(path, "proxy");
+		expect(back).toBeDisabled();
+		expect(path).toHaveAccessibleDescription(/empty = derived "video\/1080p"/);
+		await user.clear(path);
+		expect(back).toBeEnabled();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe("exports/");
 	});
 
 	it("stays in the full view while a setting the short view cannot show is in use", async () => {
@@ -362,12 +565,44 @@ describe("VodWizard — the file-output flow", () => {
 
 		await user.click(guard);
 		expect(back).toBeEnabled();
+		// Packaging is not a step of the short view, and has another number than
+		// any step that is: the format step stands in for it.
+		await user.click(screen.getByRole("button", { name: "5. Packaging" }));
 		await user.click(back);
-		// The ladder is not a step of the short view; the format step stands in for it.
-		expect(screen.getByRole("button", { name: "3. Format" })).toHaveAttribute(
-			"aria-current",
-			"step",
-		);
+		expect(steps()).toHaveLength(5);
+		current("3. Format");
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
+	});
+
+	it("opens a draft saved on a step the short view leaves out on the format step", async () => {
+		await restore(ready, 4);
+		expect(steps()).toHaveLength(5);
+		current("3. Format");
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
+	});
+
+	it("shows the stream a file reads when it is gone from the sources, so it can be replaced", async () => {
+		const user = userEvent.setup();
+		const [file] = ready.videos as [WizardState["videos"][number]];
+		await restore({
+			...ready,
+			videos: [{ ...file, extras: { source: "removed-track" } }],
+		});
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		// With one input there is nothing to choose, and the field is left out —
+		// which would leave this reference with nowhere to be changed.
+		const source = screen.getByRole("combobox", { name: "Video source" });
+		expect(source).toHaveValue("removed-track");
+		expect(
+			within(source)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["removed-track (missing)", "Input video track (implicit)"]);
+		expect(screen.getByText(/\[PLAN_UNRESOLVED_REF\]/)).toBeInTheDocument();
+
+		await user.selectOptions(source, "Input video track (implicit)");
+		expect(screen.queryByText(/\[PLAN_UNRESOLVED_REF\]/)).toBeNull();
+		expect(screen.queryByRole("combobox", { name: "Video source" })).toBeNull();
 	});
 
 	it("keeps the audio inside the file when the ladder step changes its bitrate", async () => {
@@ -385,6 +620,42 @@ describe("VodWizard — the file-output flow", () => {
 		expect(
 			screen.getByRole("button", { name: "Back to simple view" }),
 		).toBeEnabled();
+	});
+
+	it("opens a streaming plan loaded from JSON in the full view, with no switch to leave it by", async () => {
+		renderWithQuery(<VodWizard flow="file" />);
+		expect(screen.getByRole("link", { name: "Export files" })).toBeVisible();
+		importJson(
+			buildPlan({
+				...DEFAULT_WIZARD_STATE,
+				name: "ladder",
+				accountId,
+				inputFiles: ready.inputFiles,
+				output: { ...DEFAULT_WIZARD_STATE.output, ...ready.output },
+			}),
+		);
+		// The ladder and its manifest are in sight, not behind five steps.
+		expect(steps()).toHaveLength(8);
+		current("1. Basics");
+		expect(screen.getByLabelText(/job name/i)).toHaveValue("ladder");
+		// Following a link would drop the loaded plan.
+		expect(screen.queryByRole("link", { name: "Export files" })).toBeNull();
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+		expect(back).toBeDisabled();
+		expect(back).toHaveAccessibleDescription(
+			"Settings the simple view does not show are in use in: Packaging and Manifests.",
+		);
+	});
+
+	it("opens a plan this flow built, loaded from JSON, on its five steps again", async () => {
+		renderWithQuery(<VodWizard flow="file" />);
+		importJson(buildPlan(ready));
+		expect(steps()).toHaveLength(5);
+		expect(screen.queryByRole("link", { name: "Export files" })).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "3. Format" }));
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.mp4");
+		await userEvent.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
 	});
 
 	it("opens a draft that sets a hidden step in the full view, and says which step", async () => {

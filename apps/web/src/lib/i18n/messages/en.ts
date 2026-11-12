@@ -5442,6 +5442,8 @@ export const en = {
 			"Every rendition and manifest is ALSO written to each mirror, at the same paths and ACL — one encode, several storages.",
 		derivedPathHint:
 			'Relative to the base output path — empty = derived "{path}". Per-title outputs need {uuidToken}/{bitrateToken} placeholders.',
+		destinationBasePathHint:
+			"Relative to the base output path — empty = that path itself, with no subfolder.",
 		enableCodecPerTitle: "Enable {codec} per-title configuration",
 		encryptionDrmCount: "Encryption / DRM ({count})",
 		extraContainerOf: "extra container of {key}",

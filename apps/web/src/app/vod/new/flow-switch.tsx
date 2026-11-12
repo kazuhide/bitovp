@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useId } from "react";
 import { useT } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import { VOD_FLOWS, type VodFlow, vodFlowHref } from "@/lib/vod-flow";
@@ -14,12 +15,16 @@ import { persistVodFlow } from "@/lib/vod-flow-preference";
  */
 export function VodFlowSwitch({ flow }: { flow: VodFlow }) {
 	const { t } = useT();
+	const label = useId();
 	return (
 		<nav
-			aria-label={t("vodFlow.label")}
+			// Named by the text on screen, so it is read once and not twice.
+			aria-labelledby={label}
 			className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2"
 		>
-			<span className="text-xs text-zinc-400">{t("vodFlow.label")}</span>
+			<span id={label} className="text-xs text-zinc-400">
+				{t("vodFlow.label")}
+			</span>
 			<div className="inline-flex gap-0.5 rounded-md border border-zinc-700 p-0.5">
 				{VOD_FLOWS.map((candidate) => (
 					<Link

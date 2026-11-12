@@ -1,10 +1,7 @@
-import {
-	MUXING_CODEC_MATRIX,
-	outputFilePath,
-	UNMEASURED_MUXING_KINDS,
-} from "@bitovp/core";
+import { MUXING_CODEC_MATRIX, UNMEASURED_MUXING_KINDS } from "@bitovp/core";
 import {
 	audioKeys,
+	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	type WizardAudioCodec,
 	type WizardAudioRendition,
@@ -139,6 +136,15 @@ export function fileStem(name: string): string {
 }
 
 /**
+ * A name as the format screen takes it. `?` and `#` end the path in a URL, so a file
+ * named with one cannot be fetched by its address, and a saved draft drops any text
+ * that holds one: the name would come back empty. A folder in the name is left alone.
+ */
+export function typedFileName(name: string): string {
+	return name.replace(/[?#]+/g, "-");
+}
+
+/**
  * The name each file gets while nobody has typed one: the job name for the first file,
  * the job name and the height for the rest. All files share one folder, so the names
  * have to differ.
@@ -180,6 +186,10 @@ export function writtenFileName(video: WizardVideoRendition): string {
  * so two files with one name are one file, and the plan is refused for it
  * (`PLAN_OUTPUT_FILE_COLLISION`). This says which names to change, and can say so
  * before the rest of the form is complete enough to validate.
+ *
+ * Only names that are the same as typed. Two spellings of one path ("clip.mp4" and
+ * "./clip.mp4") are one file only if the storage reads them as one, which the plan's
+ * validation reports as a warning and not as a refusal.
  */
 export function sharedFileNames(
 	videos: readonly WizardVideoRendition[],
@@ -187,9 +197,7 @@ export function sharedFileNames(
 	const names = videos.map((video) => {
 		const name = writtenFileName(video);
 		// A placeholder gets its value at the provider, so nothing is known here.
-		return name === "" || /[%{}]/.test(name)
-			? undefined
-			: outputFilePath("", name);
+		return name === "" || /[%{}]/.test(name) ? undefined : name;
 	});
 	return names.map(
 		(name, index) =>
@@ -308,7 +316,7 @@ export function editFile(
 	const container = fileContainer(kind) ?? previous;
 	let name = current.muxing?.filename ?? "";
 	if (filename !== undefined) {
-		name = filename;
+		name = typedFileName(filename);
 		derived[index] = false;
 	} else if (
 		container &&
@@ -441,7 +449,10 @@ export type FileOutputBlocker = (typeof FILE_OUTPUT_BLOCKERS)[number];
  * hides. A field added to `WizardState` fails typechecking here until it is placed,
  * which is the point: an unplaced field would be a setting the view could hide.
  */
-const FIELD_HOME: Record<keyof WizardState, "shown" | FileOutputBlocker> = {
+export const FILE_OUTPUT_FIELD_HOME: Record<
+	keyof WizardState,
+	"shown" | FileOutputBlocker
+> = {
 	name: "shown",
 	accountId: "shown",
 	cloudRegion: "shown",
@@ -474,12 +485,73 @@ const FIELD_HOME: Record<keyof WizardState, "shown" | FileOutputBlocker> = {
 	timing: "manifests",
 };
 
+const HIDDEN_FIELDS = (
+	Object.keys(FILE_OUTPUT_FIELD_HOME) as (keyof WizardState)[]
+).filter((key) => FILE_OUTPUT_FIELD_HOME[key] !== "shown");
+
+/** The state with the named fields as the flow starts them. */
+function reset(
+	state: WizardState,
+	keys: readonly (keyof WizardState)[],
+): WizardState {
+	const next = { ...state };
+	const put = <K extends keyof WizardState>(key: K) => {
+		if (key in FILE_OUTPUT_DEFAULT_STATE)
+			next[key] = FILE_OUTPUT_DEFAULT_STATE[key];
+		else delete next[key];
+	};
+	for (const key of keys) put(key);
+	return next;
+}
+
+function planText(state: WizardState): string | undefined {
+	try {
+		return JSON.stringify(buildPlan(state));
+	} catch {
+		// A ladder the plan cannot be built from; nothing to compare against.
+		return undefined;
+	}
+}
+
+/**
+ * Of the fields a hidden step has set, the ones the job would be different without.
+ * The full view's editors can leave a value behind that does nothing: the options of
+ * a manifest that was switched off again, a quality check with both measures
+ * unticked. That is not a setting in use, and it goes when the view is left
+ * (`collapseToFileOutput`).
+ */
+function fieldsInUse(state: WizardState): (keyof WizardState)[] {
+	const set = HIDDEN_FIELDS.filter(
+		(key) => !same(state[key], FILE_OUTPUT_DEFAULT_STATE[key]),
+	);
+	if (set.length === 0) return [];
+	const plan = planText(state);
+	if (plan === undefined) return set;
+	if (planText(reset(state, set)) === plan) return [];
+	const alone = set.filter((key) => planText(reset(state, [key])) !== plan);
+	// They matter together though none does alone: every one of them is named.
+	return alone.length > 0 ? alone : set;
+}
+
 // Resource keys and the tokens that track them are bookkeeping of the full wizard's
 // editors. They name nothing a file-output job writes, so they neither block the
-// simple view nor survive a return to it (`collapseToFileOutput`).
+// simple view nor survive a return to it (`collapseToFileOutput`). A key somebody
+// typed is not bookkeeping: see `typedKey`.
 const VIDEO_BOOKKEEPING = ["autoKey"];
 const MUXING_BOOKKEEPING = ["key", "autoPath"];
 const EXTRAS_BOOKKEEPING = ["key"];
+
+// Every key the editors write on their own: `v1080`, `video2`, `a192`, `a192_48000`,
+// and any of them numbered to stay apart (`v1080-2`).
+const EDITOR_KEY = /^(?:v|video|a)\d+(?:_\d+)?(?:-\d+)?$/;
+
+/**
+ * A key that reads as a name somebody chose. Returning to the simple view derives
+ * keys again, which would replace it without a word, so it holds the full view.
+ */
+function typedKey(key: string | undefined): boolean {
+	return key !== undefined && !EDITOR_KEY.test(key);
+}
 
 const VIDEO_FIELDS = [
 	"height",
@@ -524,10 +596,9 @@ function setsOnly(value: object | undefined, fields: readonly string[]) {
  */
 export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 	const found = new Set<FileOutputBlocker>();
-	for (const key of Object.keys(state) as (keyof WizardState)[]) {
-		const home = FIELD_HOME[key];
-		if (home !== "shown" && !same(state[key], FILE_OUTPUT_DEFAULT_STATE[key]))
-			found.add(home);
+	for (const key of fieldsInUse(state)) {
+		const home = FILE_OUTPUT_FIELD_HOME[key];
+		if (home !== "shown") found.add(home);
 	}
 	if (state.videos.length === 0 || state.audios.length > 1) found.add("ladder");
 	const audio = state.audios[0];
@@ -538,7 +609,8 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 		if (
 			!videoCodecs.includes(video.codec ?? "H264") ||
 			!setsOnly(video, VIDEO_FIELDS) ||
-			!setsOnly(video.extras, EXTRAS_FIELDS)
+			!setsOnly(video.extras, EXTRAS_FIELDS) ||
+			typedKey(video.extras?.key)
 		)
 			found.add("ladder");
 		const carried = (video.muxing?.muxedAudioKeys ?? []).filter(
@@ -549,7 +621,8 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 			video.muxing?.path !== "" ||
 			!setsOnly(video.muxing, FILE_MUXING_FIELDS) ||
 			!isBlank(video.extraMuxings) ||
-			carried.length !== (audio ? 1 : 0)
+			carried.length !== (audio ? 1 : 0) ||
+			typedKey(video.muxing?.key)
 		)
 			found.add("packaging");
 	}
@@ -557,7 +630,8 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 		if (
 			!audioCodecs.includes(audio.codec ?? "AAC") ||
 			!setsOnly(audio, AUDIO_FIELDS) ||
-			!setsOnly(audio.extras, EXTRAS_FIELDS)
+			!setsOnly(audio.extras, EXTRAS_FIELDS) ||
+			typedKey(audio.extras?.key)
 		)
 			found.add("ladder");
 		if (
@@ -576,9 +650,11 @@ export function isFileOutputState(state: WizardState): boolean {
 
 /**
  * Return a state the full wizard edited to the form this flow's edits expect: keys
- * derived again, each file pointing at the audio track's current key. Call it only on
- * a state `isFileOutputState` accepts. The files written do not change, because here
- * every file name and folder is explicit.
+ * derived again, each file pointing at the audio track's current key, and nothing
+ * left in a field the simple view does not show. Call it only on a state
+ * `isFileOutputState` accepts. The files written do not change, because here every
+ * file name and folder is explicit, and what is cleared from a hidden field was
+ * doing nothing (`fieldsInUse`).
  */
 export function collapseToFileOutput(state: WizardState): WizardState {
 	const unkeyed = <T extends { extras?: WizardRenditionExtras }>(
@@ -592,5 +668,9 @@ export function collapseToFileOutput(state: WizardState): WizardState {
 		...without(unkeyed(video), VIDEO_BOOKKEEPING),
 		muxing: without(video.muxing ?? {}, MUXING_BOOKKEEPING),
 	}));
-	return { ...state, audios, videos: carrying(videos, audios) };
+	return {
+		...reset(state, HIDDEN_FIELDS),
+		audios,
+		videos: carrying(videos, audios),
+	};
 }

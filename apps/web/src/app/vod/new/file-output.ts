@@ -463,9 +463,9 @@ export function editFileAudio(
 
 /**
  * Where a setting lives that the simple view does not show, in wizard order.
- * `basics` is a shown step with one control held back. `perTitle` and `qualityGate`
- * are the two settings held back from the Encoding step, which is shown too
- * (`HELD_BACK`). The rest are the steps the view leaves out.
+ * `basics` is a shown step with one control held back. `perTitle`, `qualityGate`
+ * and `gateTargets` are the three settings held back from the Encoding step, which
+ * is shown too (`HELD_BACK`). The rest are the steps the view leaves out.
  */
 export const FILE_OUTPUT_BLOCKERS = [
 	"basics",
@@ -473,6 +473,7 @@ export const FILE_OUTPUT_BLOCKERS = [
 	"packaging",
 	"perTitle",
 	"qualityGate",
+	"gateTargets",
 	"manifests",
 ] as const;
 export type FileOutputBlocker = (typeof FILE_OUTPUT_BLOCKERS)[number];
@@ -512,7 +513,7 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	infrastructure: "shown",
 	prewarmedEncoderPoolIds: "shown",
 	kantar: "shown",
-	// Shown but for one setting each, judged apart (`HELD_BACK`).
+	// Shown but for the settings judged apart (`HELD_BACK`).
 	startOptions: "shown",
 	qc: "shown",
 	manifests: "manifests",
@@ -588,6 +589,7 @@ function unsuspended(state: WizardState): WizardState {
 	return state.qc?.only ? { ...state, qc: without(state.qc, ["only"]) } : state;
 }
 
+type HeldBackName = "perTitle" | "qualityGate" | "gateTargets";
 type HeldBack = {
 	/** Switched on, whatever it then holds. */
 	set: (state: WizardState) => boolean;
@@ -596,11 +598,11 @@ type HeldBack = {
 };
 
 /**
- * The two settings the simple view's Encoding step holds back. Each acts on
+ * The three settings the simple view's Encoding step holds back. Each acts on
  * something the view does not have, so there it would be a control with nothing to
  * act on.
  */
-const HELD_BACK: Record<"perTitle" | "qualityGate", HeldBack> = {
+const HELD_BACK: Record<HeldBackName, HeldBack> = {
 	// The Per-Title configuration. A rendition enters Per-Title in the Ladder step.
 	// A codec switched on with every field left empty is a configuration too: the
 	// plan carries it, and it is switched off where it was switched on.
@@ -636,12 +638,39 @@ const HELD_BACK: Record<"perTitle" | "qualityGate", HeldBack> = {
 				: state;
 		},
 	},
+	// The renditions a rule of the gate is for. A rule names them by key, and this
+	// view has no keys: it derives the key of a file from its height, bitrate and
+	// codec, on every edit and on the way back from the full view. A rule that
+	// named one would come to name a key no file has, and the job would be refused
+	// for a name this view never shows. So here a rule is for every file.
+	gateTargets: {
+		set: (state) =>
+			(state.qc?.gate?.rules ?? []).some(
+				(rule) => (rule.renditions ?? []).length > 0,
+			),
+		strip: (state) => {
+			const gate = state.qc?.gate;
+			return state.qc &&
+				gate?.rules.some((rule) => rule.renditions !== undefined)
+				? {
+						...state,
+						qc: {
+							...state.qc,
+							gate: {
+								...gate,
+								rules: gate.rules.map((rule) => without(rule, ["renditions"])),
+							},
+						},
+					}
+				: state;
+		},
+	},
 };
 
 /** As `fieldsInUse`, for a setting held back: set, and the job differs without it. */
-function heldBackInUse(state: WizardState): (keyof typeof HELD_BACK)[] {
+function heldBackInUse(state: WizardState): HeldBackName[] {
 	const plan = planText(state);
-	return (Object.keys(HELD_BACK) as (keyof typeof HELD_BACK)[]).filter(
+	return (Object.keys(HELD_BACK) as HeldBackName[]).filter(
 		(name) =>
 			HELD_BACK[name].set(state) &&
 			(plan === undefined || planText(HELD_BACK[name].strip(state)) !== plan),

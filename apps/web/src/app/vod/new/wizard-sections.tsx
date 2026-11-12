@@ -2227,12 +2227,12 @@ type EncodingOptionsSectionProps = ManifestSectionProps & {
 	 */
 	credentials?: CredentialSummaryWire[];
 	/**
-	 * The file flow's simple view. It leaves out the two settings that act on
+	 * The file flow's simple view. It leaves out the three settings that act on
 	 * something the view does not have: the Per-Title configuration (a rendition
-	 * enters Per-Title in the Ladder step) and what a quality gate does when it
-	 * fails (the choice is whether to hold the manifests back). It names the files
-	 * and the Format step where the full wizard names the ladder and the delivery
-	 * outputs.
+	 * enters Per-Title in the Ladder step), what a quality gate does when it fails
+	 * (the choice is whether to hold the manifests back) and the renditions a rule
+	 * of the gate is for (it names them by key). It names the files and the Format
+	 * step where the full wizard names the ladder and the delivery outputs.
 	 */
 	fileView?: boolean;
 };
@@ -2806,7 +2806,11 @@ export function EncodingOptionsSection({
 						</label>
 						<InfoHint
 							label={t("wizard.runVmafQcAfterEncodingMoreInformation")}
-							text={t("wizard.addsAProgressiveMp4QcMirrorPer")}
+							text={t(
+								fileView
+									? "vodFlow.qcHelp"
+									: "wizard.addsAProgressiveMp4QcMirrorPer",
+							)}
 						/>
 					</div>
 					<div className="mt-2 space-y-1">
@@ -3075,66 +3079,70 @@ export function EncodingOptionsSection({
 												{t("wizard.remove")}
 											</Button>
 										</div>
-										<div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-											<span>{t("wizardX.qcGateTargets")}</span>
-											{/* review-204 N1: keys a ladder edit ORPHANED render as
+										{/* The simple view has no keys to name a file by, so there a
+										    rule is for every file. */}
+										{fileView ? null : (
+											<div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+												<span>{t("wizardX.qcGateTargets")}</span>
+												{/* review-204 N1: keys a ladder edit ORPHANED render as
 											    checked boxes too — invisible-and-unclearable was the
 											    only GUI recovery being rule deletion. The C29 rail
 											    still blocks the plan; this gives the untick. */}
-											{(rule.renditions ?? [])
-												.filter((key) => !gateVideoKeys.includes(key))
-												.map((orphan) => (
-													<label
-														key={orphan}
-														className="flex items-center gap-1 text-amber-400 text-xs"
-													>
-														<input
-															type="checkbox"
-															className="h-3 w-3 accent-amber-500"
-															checked
-															onChange={() => {
-																const next = (rule.renditions ?? []).filter(
-																	(k) => k !== orphan,
-																);
-																patchGateRule(index, {
-																	renditions:
-																		next.length > 0 ? next : undefined,
-																});
-															}}
-														/>
-														{orphan}
-													</label>
-												))}
-											{gateVideoKeys.map((key) => {
-												const selected =
-													rule.renditions?.includes(key) ?? false;
-												return (
-													<label
-														key={key}
-														className="flex items-center gap-1 text-xs text-zinc-300"
-													>
-														<input
-															type="checkbox"
-															className="h-3 w-3 accent-emerald-600"
-															checked={selected}
-															onChange={(e) => {
-																const current = rule.renditions ?? [];
-																const next = e.target.checked
-																	? [...current, key]
-																	: current.filter((k) => k !== key);
-																// Empty selection = rule.renditions ABSENT
-																// (= every measured-expected rendition).
-																patchGateRule(index, {
-																	renditions:
-																		next.length > 0 ? next : undefined,
-																});
-															}}
-														/>
-														{key}
-													</label>
-												);
-											})}
-										</div>
+												{(rule.renditions ?? [])
+													.filter((key) => !gateVideoKeys.includes(key))
+													.map((orphan) => (
+														<label
+															key={orphan}
+															className="flex items-center gap-1 text-amber-400 text-xs"
+														>
+															<input
+																type="checkbox"
+																className="h-3 w-3 accent-amber-500"
+																checked
+																onChange={() => {
+																	const next = (rule.renditions ?? []).filter(
+																		(k) => k !== orphan,
+																	);
+																	patchGateRule(index, {
+																		renditions:
+																			next.length > 0 ? next : undefined,
+																	});
+																}}
+															/>
+															{orphan}
+														</label>
+													))}
+												{gateVideoKeys.map((key) => {
+													const selected =
+														rule.renditions?.includes(key) ?? false;
+													return (
+														<label
+															key={key}
+															className="flex items-center gap-1 text-xs text-zinc-300"
+														>
+															<input
+																type="checkbox"
+																className="h-3 w-3 accent-emerald-600"
+																checked={selected}
+																onChange={(e) => {
+																	const current = rule.renditions ?? [];
+																	const next = e.target.checked
+																		? [...current, key]
+																		: current.filter((k) => k !== key);
+																	// Empty selection = rule.renditions ABSENT
+																	// (= every measured-expected rendition).
+																	patchGateRule(index, {
+																		renditions:
+																			next.length > 0 ? next : undefined,
+																	});
+																}}
+															/>
+															{key}
+														</label>
+													);
+												})}
+											</div>
+										)}
 									</div>
 								))}
 								<Button

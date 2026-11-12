@@ -774,6 +774,7 @@ export const en = {
 			"“{option}” is on: this job measures the video of each file and does not write the files.",
 		blockerPerTitle: "Encoding (Per-Title configuration)",
 		blockerQualityGate: "Encoding (a QC gate that blocks manifest generation)",
+		blockerGateTargets: "Encoding (a QC gate rule for selected renditions)",
 		qcGateHint:
 			"Threshold rules over the VMAF/PSNR measurement. PER_RENDITION holds every file to the bar; OVERALL judges the mean over the files. A failed rule is recorded on the job and does not stop the files from being written.",
 		encodingModeFromFiles: "Use each file's encoding mode / preset",
@@ -781,6 +782,8 @@ export const en = {
 			"Set the encoding mode or preset of each file in the Format step. The job-level mode is omitted to avoid conflicting settings.",
 		kantarNeedsAudio:
 			"The files have no audio track. Turn on “Include audio in every file” in the Format step, or the job will be rejected (Kantar watermarks audio).",
+		qcHelp:
+			"Adds a copy of each file's video to measure (MP4, under qc/ in the destination folder). After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
 		vmafOnly: "VMAF only (do not write the files)",
 		qcOnly: "QC only (do not write the files)",
 		measureOnlyHelp:

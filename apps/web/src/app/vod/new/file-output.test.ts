@@ -539,6 +539,28 @@ describe("what the simple view cannot show", () => {
 			["qualityGate"],
 		],
 		[
+			"a gate rule for one of the files",
+			{
+				qc: {
+					vmaf: true,
+					psnr: false,
+					model: "vmaf_v0.6.1",
+					gate: {
+						rules: [
+							{
+								metric: "VMAF_MEAN",
+								scope: "PER_RENDITION",
+								gte: 80,
+								renditions: ["v1080"],
+							},
+						],
+						onFail: "MARK_ONLY",
+					},
+				},
+			},
+			["gateTargets"],
+		],
+		[
 			"a thumbnail",
 			{
 				thumbnails: [
@@ -928,6 +950,110 @@ describe("a quality gate, which in the simple view records its verdict and no mo
 		expect(back.qc).toEqual(gated("MARK_ONLY", false).qc);
 		// Ticking a measure in the simple view brings back a gate that can be met.
 		expect(errorsOf({ ...back, qc: gated("MARK_ONLY").qc })).toEqual([]);
+	});
+});
+
+describe("the renditions a gate rule is for, which the simple view leaves to the full view", () => {
+	const rule = {
+		metric: "VMAF_MEAN" as const,
+		scope: "PER_RENDITION" as const,
+		gte: 80,
+	};
+	const aimed = (
+		state: WizardState,
+		renditions: string[],
+		vmaf = true,
+		onFail: "MARK_ONLY" | "BLOCK_MANIFESTS" = "MARK_ONLY",
+	): WizardState => ({
+		...state,
+		qc: {
+			vmaf,
+			psnr: false,
+			model: "vmaf_v0.6.1",
+			gate: { rules: [{ ...rule, renditions }], onFail },
+		},
+	});
+
+	it("holds the full view while a rule names a file by its key", () => {
+		const one = aimed(started, ["v1080"]);
+		expect(planOf(one).qc?.gate?.rules[0]?.renditions).toEqual(["v1080"]);
+		expect(errorsOf(one)).toEqual([]);
+		expect(fileOutputBlockers(one)).toEqual(["gateTargets"]);
+	});
+
+	// The way back derives the editors' keys again. A rule taken along would name
+	// a key no file has, and a job the full view accepted would be refused.
+	it("holds it for a key the ladder editor wrote, which the way back would derive again", () => {
+		const fixed: WizardState = aimed(
+			{
+				...started,
+				videos: started.videos.map((video) => ({
+					...video,
+					extras: { ...video.extras, key: "v1080_8000k" },
+				})),
+			},
+			["v1080_8000k"],
+		);
+		expect(errorsOf(fixed)).toEqual([]);
+		expect(fileOutputBlockers(fixed)).toEqual(["gateTargets"]);
+		// What pressing the button would do, were it enabled.
+		expect(planOf(collapseToFileOutput(fixed)).renditions[0]?.key).toBe(
+			"v1080",
+		);
+	});
+
+	// Two files of one height are told apart by bitrate, so adding the second
+	// renames the first: no rule made in the simple view may depend on a key.
+	it("leaves a rule made in the simple view standing when a file's key moves", () => {
+		const open: WizardState = {
+			...started,
+			qc: {
+				vmaf: true,
+				psnr: false,
+				model: "vmaf_v0.6.1",
+				gate: { rules: [rule], onFail: "MARK_ONLY" },
+			},
+		};
+		const two = apply(open, addFile(open));
+		const same = apply(two, editFile(two, 1, { height: 1080 }));
+		expect(
+			planOf(same)
+				.renditions.filter((item) => item.key.startsWith("v"))
+				.map((item) => item.key),
+		).toEqual(["v1080_8000k", "v1080_2000k"]);
+		expect(errorsOf(same)).toEqual([]);
+		expect(fileOutputBlockers(same)).toEqual([]);
+		expect(collapseToFileOutput(same)).toEqual(same);
+	});
+
+	it("is for every file again on the way back, when no measure is ticked to act on it", () => {
+		const idle = aimed(started, ["v1080"], false);
+		expect(planOf(idle)).toEqual(planOf(started));
+		expect(fileOutputBlockers(idle)).toEqual([]);
+		const back = collapseToFileOutput(idle);
+		expect(back.qc?.gate).toEqual({ rules: [rule], onFail: "MARK_ONLY" });
+		// Ticking a measure in the simple view brings back a rule that can be met.
+		const measured: WizardState = {
+			...back,
+			qc: { ...back.qc, vmaf: true } as WizardState["qc"],
+		};
+		expect(errorsOf(measured)).toEqual([]);
+		expect(planOf(measured).qc?.gate?.rules).toEqual([rule]);
+	});
+
+	it("is cleared together with a gate that holds the manifests back", () => {
+		const both = aimed(started, ["v1080"], false, "BLOCK_MANIFESTS");
+		expect(fileOutputBlockers(both)).toEqual([]);
+		expect(collapseToFileOutput(both).qc?.gate).toEqual({
+			rules: [rule],
+			onFail: "MARK_ONLY",
+		});
+	});
+
+	it("is named beside such a gate when both are in use", () => {
+		expect(
+			fileOutputBlockers(aimed(started, ["v1080"], true, "BLOCK_MANIFESTS")),
+		).toEqual(["qualityGate", "gateTargets"]);
 	});
 });
 

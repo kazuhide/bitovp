@@ -1075,6 +1075,14 @@ describe("VodWizard — the file-output flow", () => {
 		await user.click(
 			screen.getByRole("checkbox", { name: "Run VMAF QC after encoding" }),
 		);
+		// The help of the option says what it adds, in the words of this view.
+		const adds = screen.getByRole("button", {
+			name: "Run VMAF QC after encoding — more information",
+		});
+		expect(adds).toHaveAccessibleDescription(
+			/^Adds a copy of each file's video to measure \(MP4, under qc\/ in the destination folder\)\./,
+		);
+		expect(adds).not.toHaveAccessibleDescription(/rendition|WebM/);
 		// The copy that is measured is written beside the file.
 		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(written("synthetic/exports/clip.mp4")).toBe(
@@ -1187,6 +1195,68 @@ describe("VodWizard — the file-output flow", () => {
 			}),
 		);
 		expect(back).toBeEnabled();
+	});
+
+	it("makes a gate rule for every file, and leaves choosing among them to the full view, where a file has a key", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 5, true);
+		await user.click(
+			screen.getByRole("checkbox", { name: "Run VMAF QC after encoding" }),
+		);
+		await user.click(screen.getByRole("button", { name: "Add gate rule" }));
+		// A file's key follows its height and bitrate here, so no rule names one.
+		expect(screen.queryByText(/Target renditions/)).toBeNull();
+		expect(screen.queryByRole("checkbox", { name: "v1080" })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).qc.gate.rules).toEqual([
+			{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 },
+		]);
+
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		expect(
+			screen.getByText("Target renditions (none selected = all)"),
+		).toBeInTheDocument();
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+		expect(back).toBeEnabled();
+		await user.click(screen.getByRole("checkbox", { name: "v1080" }));
+		expect(JSON.parse(planJson()).qc.gate.rules[0].renditions).toEqual([
+			"v1080",
+		]);
+		expect(back).toBeDisabled();
+		expect(back).toHaveAccessibleDescription(
+			"Settings the simple view does not show are in use in: Encoding (a QC gate rule for selected renditions).",
+		);
+		await user.click(screen.getByRole("checkbox", { name: "v1080" }));
+		expect(back).toBeEnabled();
+	});
+
+	it("opens a draft whose gate rule names a file in the full view, on the Encoding step", async () => {
+		await restore(
+			{
+				...ready,
+				qc: {
+					vmaf: true,
+					psnr: false,
+					model: "vmaf_v0.6.1",
+					gate: {
+						rules: [
+							{
+								metric: "VMAF_MEAN",
+								scope: "PER_RENDITION",
+								gte: 80,
+								renditions: ["v1080"],
+							},
+						],
+						onFail: "MARK_ONLY",
+					},
+				},
+			},
+			5,
+			true,
+		);
+		expect(steps()).toHaveLength(8);
+		current("6. Encoding");
+		expect(screen.getByRole("checkbox", { name: "v1080" })).toBeChecked();
 	});
 
 	it("stays in the full view while “VMAF only” holds back a manifest set there", async () => {

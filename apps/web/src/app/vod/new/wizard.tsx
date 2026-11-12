@@ -138,6 +138,7 @@ const BLOCKER_STEP: Record<FileOutputBlocker, MessageKey> = {
 	// The simple view has the Encoding step too, so what it holds back is named.
 	perTitle: "vodFlow.blockerPerTitle",
 	qualityGate: "vodFlow.blockerQualityGate",
+	gateTargets: "vodFlow.blockerGateTargets",
 	manifests: "wizard.manifests",
 };
 

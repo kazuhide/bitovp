@@ -748,6 +748,8 @@ export const ja = {
 		blockerPerTitle: "エンコーディング（Per-Title の設定）",
 		blockerQualityGate:
 			"エンコーディング（マニフェスト生成を保留する QC ゲート）",
+		blockerGateTargets:
+			"エンコーディング（対象レンディションを選んだ QC ゲートのルール）",
 		qcGateHint:
 			"VMAF/PSNR 測定に対するしきい値ルールです。PER_RENDITION はすべてのファイルが個別に基準を満たす必要があり、OVERALL はファイル全体の平均で判定します。不合格はジョブに記録されるだけで、ファイルの書き出しは止まりません。",
 		encodingModeFromFiles: "各ファイルのモード・プリセットを使用",
@@ -755,6 +757,8 @@ export const ja = {
 			"モードまたはプリセットは「出力形式」でファイルごとに設定します。重複を避けるため、ジョブ全体のモードは送信しません。",
 		kantarNeedsAudio:
 			"ファイルに音声が入っていません。「出力形式」で「すべてのファイルに音声を入れる」を有効にしてください。音声がないジョブは拒否されます（Kantar は音声にウォーターマークを入れます）。",
+		qcHelp:
+			"ファイルごとに、その映像を測定するためのコピー（MP4）を保存先の qc/ 以下に作成します。エンコードが FINISHED になった後、libvmaf で元映像と自動的に比較します。レポートは VMAF ラボ (/qc) に表示されます。",
 		vmafOnly: "VMAF のみ（ファイルを書き出さない）",
 		qcOnly: "QC のみ（ファイルを書き出さない）",
 		measureOnlyHelp:

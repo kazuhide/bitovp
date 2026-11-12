@@ -2053,7 +2053,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	 * videoA←audioA, videoB←audioB, videoC←audioA, videoD←nothing. The owner
 	 * rejected it on exactly that case.
 	 */
-	const audioKeySet = new Set(aKeys);
+	// A QC-only encode emits no audio rendition (below), so no container has one
+	// to carry: a key left on a video leg would name a stream the plan lacks.
+	const audioKeySet = new Set(qcOnly ? [] : aKeys);
 	/**
 	 * What this leg will ACTUALLY carry — the same two conditions `muxingFor`
 	 * applies when it writes `additionalStreamKeys`.

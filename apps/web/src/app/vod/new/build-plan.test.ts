@@ -1848,6 +1848,42 @@ describe("buildPlan qc.only (VMAF-only encode)", () => {
 		expect(muxingKinds).toHaveLength(2);
 	});
 
+	it("drops the audio a video container carries, with the audio renditions", () => {
+		// A TS container that holds the audio track. The track's key on it would
+		// name a rendition this plan leaves out.
+		const carrying: WizardState = {
+			...richState,
+			videos: richState.videos.map((video) => ({
+				...video,
+				muxing: { kind: "TS", muxedAudioKeys: ["a64"] },
+			})),
+			audios: richState.audios.map((audio) => ({
+				...audio,
+				muxing: { kind: "TS", ownContainer: false },
+			})),
+		};
+		const carried = (state: WizardState) =>
+			encodingPlanSchema
+				.parse(buildPlan(state))
+				.muxings.map((muxing) =>
+					"additionalStreamKeys" in muxing
+						? (muxing.additionalStreamKeys ?? [])
+						: [],
+				);
+		expect(carried(carrying)).toEqual([["a64"], ["a64"]]);
+
+		const measuring: WizardState = {
+			...carrying,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+		};
+		expect(carried(measuring)).toEqual([[], []]);
+		expect(
+			validatePlan(encodingPlanSchema.parse(buildPlan(measuring))).filter(
+				(issue) => issue.level === "error",
+			),
+		).toEqual([]);
+	});
+
 	it("does NOT clear delivery outputs when only is off (qc still emits mirrors)", () => {
 		const plan = buildPlan({
 			...richState,

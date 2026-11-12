@@ -364,6 +364,7 @@ export function useInputTimelineWorkbench({
 			);
 			if (
 				next &&
+				point?.clip.id === editor.selectedId &&
 				timelineItems(next, editor.selectedTrack).some(
 					(item) => item.clip.id === id,
 				)

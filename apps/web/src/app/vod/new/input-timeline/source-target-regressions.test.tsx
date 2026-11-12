@@ -367,6 +367,22 @@ it("honors an explicit unlink even when the operated keyboard target has an exac
 	expect(lastEdit().videoClips[0]?.id).toBe(clipB);
 	expect(lastEdit().audioClips).toEqual(original.audioClips);
 });
+
+it("keeps the reordered clip focused so keyboard Undo works without another click", async () => {
+	const original = mixed();
+	renderLocalized(<Harness initial={original} />);
+	await ready();
+	const canvas = screen.getByTestId("input-timeline-track");
+	const button = screen.getByRole("button", { name: "Clip 1, A.mp4" });
+	fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: 100 });
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 200 });
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 200 });
+	expect(lastEdit().videoClips[0]?.id).toBe(clipB);
+	expect(button).toHaveFocus();
+	fireEvent.keyDown(button, { key: "z", ctrlKey: true });
+	expect(lastEdit().videoClips).toEqual(original.videoClips);
+	expect(lastEdit().audioClips).toEqual(original.audioClips);
+});
 it("permits a WAV quick-add to available A1 when V1 has 64 clips", async () => {
 	sourceFacts = [
 		fact("a", 64000, 64000, 64000),

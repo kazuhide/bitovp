@@ -8,6 +8,7 @@ import {
 	type RefObject,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useRef,
 	useState,
 } from "react";
@@ -31,7 +32,8 @@ type Gesture = {
 	x: number;
 	pixelsPerMs: number;
 	extentMs: number;
-	target: Target;
+	target: HTMLDivElement;
+	focusTarget: Target;
 	base: VodInputTimelineV2Document;
 	next: VodInputTimelineV2Document;
 };
@@ -44,6 +46,7 @@ export function useTimelineGesture({
 	linked = true,
 	onChange,
 	onSelect,
+	onSeek,
 	onError,
 }: {
 	document: VodInputTimelineV2Document;
@@ -54,10 +57,15 @@ export function useTimelineGesture({
 	linked?: boolean;
 	onChange: (next: VodInputTimelineV2Document) => void;
 	onSelect: (id: string, track: VodInputTimelineTrack) => void;
+	onSeek: (positionMs: number) => void;
 	onError: () => void;
 }) {
 	const gesture = useRef<Gesture | null>(null);
-	const suppressClick = useRef<string | null>(null);
+	const focusAfter = useRef<{
+		target: Target;
+		base: VodInputTimelineV2Document;
+		next: VodInputTimelineV2Document;
+	} | null>(null);
 	const latest = useRef({ document, disabled, onChange });
 	latest.current = { document, disabled, onChange };
 	const [shown, setShown] = useState<Pick<Gesture, "next" | "extentMs"> | null>(
@@ -66,10 +74,15 @@ export function useTimelineGesture({
 	const finish = useCallback((commit: boolean) => {
 		const active = gesture.current;
 		if (!active) return;
+		const focus = active.focusTarget;
+		focusAfter.current =
+			!latest.current.disabled &&
+			latest.current.document === active.base &&
+			focus.isConnected
+				? { target: focus, base: active.base, next: active.next }
+				: null;
 		gesture.current = null;
 		setShown(null);
-		if (active.mode === "move" && active.next !== active.base)
-			suppressClick.current = `${active.track}:${active.id}`;
 		if (active.target.hasPointerCapture?.(active.pointer))
 			active.target.releasePointerCapture(active.pointer);
 		if (
@@ -84,6 +97,23 @@ export function useTimelineGesture({
 		if (disabled || (gesture.current && document !== gesture.current.base))
 			finish(false);
 	}, [document, disabled, finish]);
+	useLayoutEffect(() => {
+		if (shown !== null) return;
+		const request = focusAfter.current;
+		focusAfter.current = null;
+		if (
+			!request ||
+			disabled ||
+			!request.target.isConnected ||
+			(document !== request.base && document !== request.next)
+		)
+			return;
+		if (
+			request.target.ownerDocument.activeElement ===
+			request.target.ownerDocument.body
+		)
+			request.target.focus({ preventScroll: true });
+	}, [shown, document, disabled]);
 	useEffect(() => {
 		function handleEscape(event: KeyboardEvent) {
 			if (event.key === "Escape" && gesture.current) {
@@ -95,9 +125,10 @@ export function useTimelineGesture({
 		return () => {
 			window.removeEventListener("keydown", handleEscape);
 			const active = gesture.current;
+			gesture.current = null;
+			focusAfter.current = null;
 			if (active?.target.hasPointerCapture?.(active.pointer))
 				active.target.releasePointerCapture(active.pointer);
-			gesture.current = null;
 		};
 	}, [finish]);
 	function trim(
@@ -194,13 +225,15 @@ export function useTimelineGesture({
 					!facts.some((item) => item.key === clip?.sourceKey && item[medium])
 				)
 					return;
-				const bounds = track.current?.getBoundingClientRect(),
+				const captureTarget = track.current;
+				const bounds = captureTarget?.getBoundingClientRect(),
 					total = timelineDuration(document);
-				if (!bounds || !pixelsPerMs || !total) return;
+				if (!captureTarget || !bounds || !pixelsPerMs || !total) return;
+				focusAfter.current = null;
 				event.preventDefault();
 				event.currentTarget.focus();
 				onSelect(id, medium);
-				event.currentTarget.setPointerCapture(event.pointerId);
+				captureTarget.setPointerCapture(event.pointerId);
 				gesture.current = {
 					id,
 					track: medium,
@@ -210,27 +243,12 @@ export function useTimelineGesture({
 					x: event.clientX - bounds.left,
 					pixelsPerMs,
 					extentMs: total,
-					target: event.currentTarget,
+					target: captureTarget,
+					focusTarget: event.currentTarget,
 					base: document,
 					next: document,
 				};
-				suppressClick.current = null;
 				setShown({ next: document, extentMs: total });
-			},
-			onPointerMove(event: React.PointerEvent<Target>) {
-				move(event.pointerId, event.clientX);
-			},
-			onPointerUp(event: React.PointerEvent<Target>) {
-				if (gesture.current?.pointer === event.pointerId) {
-					move(event.pointerId, event.clientX);
-					finish(true);
-				}
-			},
-			onPointerCancel(event: React.PointerEvent<Target>) {
-				if (gesture.current?.pointer === event.pointerId) finish(false);
-			},
-			onLostPointerCapture(event: React.PointerEvent<Target>) {
-				if (gesture.current?.pointer === event.pointerId) finish(false);
 			},
 			onKeyDown(event: React.KeyboardEvent<Target>) {
 				if (
@@ -287,15 +305,51 @@ export function useTimelineGesture({
 			},
 		};
 	}
+	const pointerHandlers = {
+		onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+			move(event.pointerId, event.clientX);
+		},
+		onPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+			const active = gesture.current;
+			if (!active || active.pointer !== event.pointerId) return;
+			move(event.pointerId, event.clientX);
+			if (gesture.current !== active) return;
+			let seekTo: number | undefined;
+			if (active.mode === "move" && active.next === active.base) {
+				const item = timelineItems(active.base, active.track).find(
+					(item) => item.clip.id === active.id,
+				);
+				if (item)
+					seekTo = Math.max(
+						item.startMs,
+						Math.min(
+							item.startMs + item.durationMs - 1,
+							Math.round(
+								(event.clientX - active.target.getBoundingClientRect().left) /
+									active.pixelsPerMs,
+							),
+						),
+					);
+			}
+			finish(true);
+			if (seekTo !== undefined) onSeek(seekTo);
+		},
+		onPointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+			if (gesture.current?.pointer === event.pointerId) finish(false);
+		},
+		onLostPointerCapture(event: React.PointerEvent<HTMLDivElement>) {
+			if (
+				gesture.current?.pointer === event.pointerId &&
+				event.target === gesture.current.target
+			)
+				finish(false);
+		},
+	};
 	return {
 		shown: shown?.next ?? document,
 		extentMs: shown?.extentMs ?? timelineDuration(document),
 		dragging: shown !== null,
 		handlers,
-		consumeClick(id: string, medium: VodInputTimelineTrack = "video") {
-			const suppressed = suppressClick.current === `${medium}:${id}`;
-			suppressClick.current = null;
-			return suppressed;
-		},
+		pointerHandlers,
 	};
 }

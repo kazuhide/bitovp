@@ -52,7 +52,7 @@ function nativeScrollCanvas() {
 	return { canvas, viewport };
 }
 
-function tracks(document: VodInputTimelineDocument) {
+function tracks(document: VodInputTimelineDocument, disabled = false) {
 	return (
 		<TimelineTracks
 			document={document}
@@ -65,7 +65,7 @@ function tracks(document: VodInputTimelineDocument) {
 			names={{ a: "A.mp4", b: "B.mp4" }}
 			selectedId={clipA}
 			positionMs={0}
-			disabled={false}
+			disabled={disabled}
 			onSelect={() => {}}
 			onSeek={sought}
 			onChange={changed}
@@ -133,6 +133,178 @@ afterEach(() => {
 	cleanup();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
+});
+
+function pointerCaptures() {
+	const owners = new Map<number, HTMLElement>();
+	vi.mocked(HTMLElement.prototype.setPointerCapture).mockImplementation(
+		function (this: HTMLElement, pointerId: number) {
+			owners.set(pointerId, this);
+		},
+	);
+	vi.mocked(HTMLElement.prototype.hasPointerCapture).mockImplementation(
+		function (this: HTMLElement, pointerId: number) {
+			return owners.get(pointerId) === this;
+		},
+	);
+	vi.mocked(HTMLElement.prototype.releasePointerCapture).mockImplementation(
+		function (this: HTMLElement, pointerId: number) {
+			if (owners.get(pointerId) === this) owners.delete(pointerId);
+		},
+	);
+	return owners;
+}
+
+it.each([
+	{ name: "forward", clip: "Clip 1, A.mp4", from: 100, to: 700 },
+	{ name: "backward", clip: "Clip 2, B.mp4", from: 700, to: 100 },
+])("keeps $name reorder capture on the stable canvas while clip nodes move", ({
+	clip,
+	from,
+	to,
+}) => {
+	const owners = pointerCaptures();
+	renderLocalized(tracks(timeline()));
+	const canvas = screen.getByTestId("input-timeline-track");
+	const button = screen.getByRole("button", { name: clip });
+	fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: from });
+	expect(owners.get(1)).toBe(canvas);
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: to });
+	expect(screen.getByRole("button", { name: "Clip 1, B.mp4" })).toBeVisible();
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: to });
+	expect(changed).toHaveBeenCalledTimes(1);
+	expect(changed.mock.lastCall?.[0].videoClips[0].sourceKey).toBe("b");
+	expect(changed.mock.lastCall?.[0].audioClips[0].sourceKey).toBe("b");
+	expect(button).toHaveFocus();
+	expect(owners.size).toBe(0);
+});
+
+it("restores clip focus when committing the reorder clears focus after pointer-up", () => {
+	pointerCaptures();
+	renderLocalized(tracks(timeline()));
+	const canvas = screen.getByTestId("input-timeline-track");
+	const button = screen.getByRole("button", { name: "Clip 1, A.mp4" });
+	fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: 100 });
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 700 });
+	button.focus();
+	expect(button).toHaveFocus();
+	changed.mockImplementationOnce(() => button.blur());
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 700 });
+	expect(changed).toHaveBeenCalledTimes(1);
+	expect(button).toHaveFocus();
+});
+
+it("seeks once for a captured pointer tap and keeps keyboard clip activation", () => {
+	pointerCaptures();
+	renderLocalized(tracks(timeline()));
+	const canvas = screen.getByTestId("input-timeline-track");
+	const button = screen.getByRole("button", { name: "Clip 1, A.mp4" });
+	fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: 200 });
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 200 });
+	fireEvent.click(canvas, { detail: 1, clientX: 200 });
+	expect(sought).toHaveBeenCalledExactlyOnceWith(5000);
+	expect(changed).not.toHaveBeenCalled();
+	fireEvent.click(button, { detail: 0 });
+	expect(sought).toHaveBeenLastCalledWith(0);
+	expect(sought).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+	"pointercancel",
+	"lostpointercapture",
+	"Escape",
+])("cancels stable capture for %s and never commits on later pointer-up", (reason) => {
+	const owners = pointerCaptures();
+	renderLocalized(tracks(timeline()));
+	const canvas = screen.getByTestId("input-timeline-track");
+	fireEvent.pointerDown(screen.getByRole("button", { name: "Clip 1, A.mp4" }), {
+		pointerId: 1,
+		button: 0,
+		clientX: 100,
+	});
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 700 });
+	expect(screen.getByRole("button", { name: "Clip 1, B.mp4" })).toBeVisible();
+	if (reason === "Escape") fireEvent.keyDown(canvas, { key: "Escape" });
+	else if (reason === "pointercancel")
+		fireEvent.pointerCancel(canvas, { pointerId: 1 });
+	else fireEvent.lostPointerCapture(canvas, { pointerId: 1 });
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 700 });
+	expect(screen.getByRole("button", { name: "Clip 1, A.mp4" })).toBeVisible();
+	expect(changed).not.toHaveBeenCalled();
+	expect(sought).not.toHaveBeenCalled();
+	expect(owners.size).toBe(0);
+});
+
+it("does not treat a child's capture-loss event as losing the canvas's owned capture", () => {
+	const owners = pointerCaptures();
+	renderLocalized(tracks(timeline()));
+	const canvas = screen.getByTestId("input-timeline-track");
+	const button = screen.getByRole("button", { name: "Clip 1, A.mp4" });
+	fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: 100 });
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 700 });
+	fireEvent.lostPointerCapture(button, { pointerId: 1 });
+	expect(owners.get(1)).toBe(canvas);
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 700 });
+	expect(changed).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+	"disabled",
+	"document",
+	"unmount",
+])("releases stable capture on %s and discards its staged edit", (reason) => {
+	const owners = pointerCaptures();
+	const original = timeline();
+	const view = renderLocalized(tracks(original));
+	const canvas = screen.getByTestId("input-timeline-track");
+	fireEvent.pointerDown(screen.getByRole("button", { name: "Clip 1, A.mp4" }), {
+		pointerId: 1,
+		button: 0,
+		clientX: 100,
+	});
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 700 });
+	expect(screen.getByRole("button", { name: "Clip 1, B.mp4" })).toBeVisible();
+	if (reason === "disabled") view.rerender(tracks(original, true));
+	else if (reason === "document")
+		view.rerender(tracks({ ...original, audioEnabled: false }));
+	else view.unmount();
+	fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 700 });
+	expect(changed).not.toHaveBeenCalled();
+	expect(owners.size).toBe(0);
+});
+
+it("does not steal focus from another control when a captured drag is canceled", () => {
+	pointerCaptures();
+	renderLocalized(
+		<>
+			{tracks(timeline())}
+			<button type="button">Other control</button>
+		</>,
+	);
+	const canvas = screen.getByTestId("input-timeline-track");
+	fireEvent.pointerDown(screen.getByRole("button", { name: "Clip 1, A.mp4" }), {
+		pointerId: 1,
+		button: 0,
+		clientX: 100,
+	});
+	fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 700 });
+	const other = screen.getByRole("button", { name: "Other control" });
+	other.focus();
+	fireEvent.pointerCancel(canvas, { pointerId: 1 });
+	expect(other).toHaveFocus();
+	expect(changed).not.toHaveBeenCalled();
+});
+
+it("keeps pointer click seeking available when edits are disabled", () => {
+	const owners = pointerCaptures();
+	renderLocalized(tracks(timeline(), true));
+	const button = screen.getByRole("button", { name: "Clip 1, A.mp4" });
+	fireEvent.pointerDown(button, { pointerId: 1, button: 0, clientX: 200 });
+	fireEvent.pointerUp(button, { pointerId: 1, clientX: 200 });
+	fireEvent.click(button, { detail: 1, clientX: 200 });
+	expect(sought).toHaveBeenCalledTimes(1);
+	expect(changed).not.toHaveBeenCalled();
+	expect(owners.size).toBe(0);
 });
 
 it("uses a fixed scale with an empty tail and keeps untrimmed clips steady through edits and history", () => {

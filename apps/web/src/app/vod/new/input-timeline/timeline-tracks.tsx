@@ -70,6 +70,7 @@ export function TimelineTracks({
 		linked,
 		onChange,
 		onSelect,
+		onSeek,
 		onError,
 	});
 	const total = timelineDuration(gesture.shown),
@@ -161,6 +162,7 @@ export function TimelineTracks({
 						data-testid="input-timeline-track"
 						className="relative"
 						style={{ width: canvas.widthPx }}
+						{...gesture.pointerHandlers}
 					>
 						<TimelineRuler
 							durationMs={total}
@@ -197,7 +199,6 @@ export function TimelineTracks({
 											linked={linked && partner?.id === clip.id}
 											audioEnabled={document.audioEnabled}
 											handlers={gesture.handlers}
-											consumeClick={gesture.consumeClick}
 											onSelect={onSelect}
 											onSeek={(local) => onSeek(startMs + local)}
 											onDelete={onDelete}

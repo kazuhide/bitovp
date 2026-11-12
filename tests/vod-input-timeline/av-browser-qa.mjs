@@ -71,7 +71,10 @@ async function nativeTargetLinking(page,editor,report,projectId,original) {
  const pointer=structuredClone(latestProject(report,projectId));
  assert.deepEqual(pointer.videoClips,pointer.audioClips.slice(0,2),"Pointer edit used a stale unpaired selection to unlink an exact target pair");
  assert.deepEqual(pointer.audioClips.at(-1),before.audioClips.at(-1),"Pointer reorder changed the unpaired WAV tail");
- await editor.getByRole("button",{name:"元に戻す",exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>document.activeElement?.getAttribute("data-clip-id"))).toBe(before.videoClips[0].id);
+ const pointerFocus=await page.evaluate(()=>({tag:document.activeElement?.tagName,clipId:document.activeElement?.getAttribute("data-clip-id"),track:document.activeElement?.getAttribute("data-clip-track")}));
+ await expect(editor.getByRole("button",{name:"元に戻す",exact:true})).toBeEnabled();
+ await page.keyboard.press(process.platform==="darwin"?"Meta+z":"Control+z");
  await expect.poll(()=>latestProject(report,projectId)?.videoClips[0]?.sourceKey).toBe(before.videoClips[0].sourceKey);
  await mediaReady(editor,before.durationMs/1000);
  assert.deepEqual(latestProject(report,projectId),before,"Undo did not restore the paired program before the focused-keyboard check");
@@ -82,7 +85,7 @@ async function nativeTargetLinking(page,editor,report,projectId,original) {
  const keyboard=structuredClone(latestProject(report,projectId));
  assert.deepEqual(keyboard.videoClips,keyboard.audioClips.slice(0,2),"Keyboard edit used the previous unpaired selection instead of the focused exact pair");
  assert.deepEqual(keyboard.audioClips.at(-1),before.audioClips.at(-1));
- report.nativeTargetLinking={before,pointer,keyboard,draggedPixels:deltaPx};
+ report.nativeTargetLinking={before,pointer,pointerFocus,keyboard,draggedPixels:deltaPx,pointerUndo:"keyboard-without-refocus"};
  for(let undo=0;undo<3;undo++)await editor.getByRole("button",{name:"元に戻す",exact:true}).click();
  await expect(editor.getByRole("button",{name:/^クリップ \d, /})).toHaveCount(1);
  await expect(editor.getByRole("button",{name:/^音声クリップ \d, /})).toHaveCount(1);

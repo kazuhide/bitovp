@@ -15,10 +15,12 @@ import type { WizardInputFile } from "../build-plan";
 import { VodInputTimelineEditor } from "./input-timeline-editor";
 import {
 	clipA,
+	clipB,
 	credentialId,
 	facts,
 	organizationId,
 	previewTask,
+	splitId,
 	taskId,
 	timeline,
 } from "./test-fixtures";
@@ -34,10 +36,14 @@ const sources: WizardInputFile[] = ["a", "b"].map((key) => ({
 	path: `${key.toUpperCase()}.mp4`,
 }));
 
-function Harness({ disabled = false }: { disabled?: boolean }) {
-	const [document, setDocument] = useState<VodInputTimelineDocument>(
-		timeline(),
-	);
+function Harness({
+	disabled = false,
+	initial = timeline(),
+}: {
+	disabled?: boolean;
+	initial?: VodInputTimelineDocument;
+}) {
+	const [document, setDocument] = useState<VodInputTimelineDocument>(initial);
 	return (
 		<DocumentOrganizationContext.Provider value={organizationId}>
 			<VodInputTimelineEditor
@@ -170,6 +176,44 @@ it("previews a pointer trim locally, commits once and cancels Escape without cha
 	fireEvent.keyDown(handle, { key: "Escape" });
 	fireEvent.pointerUp(handle, { pointerId: 2, clientX: 220 });
 	expect(changed).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the explicit third selection after splitting another clip at the playhead and undoing", async () => {
+	const initial = {
+		...timeline(),
+		clips: [
+			{ id: clipA, sourceKey: "a", inMs: 2000, outMs: 5000 },
+			{ id: clipB, sourceKey: "b", inMs: 1000, outMs: 4000 },
+			{ id: splitId, sourceKey: "a", inMs: 4000, outMs: 7000 },
+		],
+	};
+	renderLocalized(<Harness initial={initial} />);
+	await waitFor(() =>
+		expect(
+			screen.getByRole("button", { name: "Add A.mp4 to sequence" }),
+		).toBeEnabled(),
+	);
+	const third = screen.getByRole("button", { name: "Clip 3, A.mp4" });
+	fireEvent.click(third);
+	fireEvent.change(screen.getByRole("slider", { name: "Sequence position" }), {
+		target: { value: "1000" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Split at playhead" }));
+	fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+	expect(third).toHaveAttribute("aria-pressed", "true");
+	const earlier = screen.getByRole("button", { name: "Move earlier" });
+	expect(earlier).toBeEnabled();
+	fireEvent.click(earlier);
+	expect(
+		changed.mock.lastCall?.[0].videoClips.map(
+			(clip: { sourceKey: string }) => clip.sourceKey,
+		),
+	).toEqual(["a", "a", "b"]);
+	expect(
+		changed.mock.lastCall?.[0].audioClips.map(
+			(clip: { sourceKey: string }) => clip.sourceKey,
+		),
+	).toEqual(["a", "a", "b"]);
 });
 
 it("keeps unknown source facts unknown and exposes a recovery action", async () => {

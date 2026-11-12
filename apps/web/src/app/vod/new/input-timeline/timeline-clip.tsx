@@ -21,7 +21,6 @@ export function TimelineClip({
 	linked,
 	audioEnabled,
 	handlers,
-	consumeClick,
 	onSeek,
 	onSelect,
 	onDelete,
@@ -38,7 +37,6 @@ export function TimelineClip({
 	linked: boolean;
 	audioEnabled: boolean;
 	handlers: ReturnType<typeof useTimelineGesture>["handlers"];
-	consumeClick: ReturnType<typeof useTimelineGesture>["consumeClick"];
 	onSeek: (localMs: number) => void;
 	onSelect: (id: string, track: VodInputTimelineTrack) => void;
 	onDelete: (id: string, track: VodInputTimelineTrack) => void;
@@ -78,7 +76,8 @@ export function TimelineClip({
 					} else moveHandlers.onKeyDown(event);
 				}}
 				onClick={(event) => {
-					if (consumeClick(clip.id, track)) return;
+					// Captured pointer taps seek from the canvas; native keyboard clicks still activate this clip.
+					if (event.detail !== 0 && !disabled) return;
 					onSelect(clip.id, track);
 					const bounds = event.currentTarget.getBoundingClientRect();
 					const fraction =

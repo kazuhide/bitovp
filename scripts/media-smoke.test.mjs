@@ -829,17 +829,95 @@ test("ZIP extraction targets only the pinned filename and rejects traversal", as
 	}
 });
 
-test("only complete numeric summaries can reach the public log", () => {
+test("only complete summaries of numbers and of words in the shape of x264's capability names can reach the public log", () => {
 	const summary = {
-		version: 1,
+		version: 2,
 		videoFrames: 240,
 		hlsSegments: 5,
 		dashSegments: 5,
 		decodedPresentations: 3,
 		vmafFrames: 240,
 		means: { self: 99, encoded: 90, degraded: 40 },
+		x264Capabilities: "MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512",
 	};
 	assert.deepEqual(validateSummary(JSON.stringify(summary)), summary);
+	// The summary of the version before had no capabilities.
+	const { x264Capabilities: _, ...before } = summary;
+	assert.throws(
+		() => validateSummary(JSON.stringify({ ...before, version: 1 })),
+		/Unexpected media summary fields/,
+	);
+	assert.throws(
+		() => validateSummary(JSON.stringify({ ...summary, version: 1 })),
+		/Incomplete media validation: version must be 2/,
+	);
+	// What x264 prints on arm64, where it uses nothing of the processor, its
+	// longest name, and the most and the longest names that the rule takes.
+	for (const capabilities of [
+		"ARMv8 NEON",
+		"ARMv8 NEON DotProd I8MM SVE SVE2",
+		"none!",
+		"SSE4.2",
+		"UnalignedStack",
+		`${"A".repeat(14)}.1`,
+		Array.from({ length: 32 }, () => `${"A".repeat(14)}.1`).join(" "),
+	])
+		assert.equal(
+			validateSummary(
+				JSON.stringify({ ...summary, x264Capabilities: capabilities }),
+			).x264Capabilities,
+			capabilities,
+		);
+	// What does not have that shape: other characters, an address, a dotted
+	// name, a number, a word that is too long, too many words.
+	for (const capabilities of [
+		"",
+		" AVX2",
+		"AVX2 ",
+		"AVX2  AVX512",
+		"AVX2\nprivate diagnostics",
+		"AVX2, AVX512",
+		"/home/runner",
+		"none! AVX2",
+		"AVX2 none!",
+		"token=abc",
+		"10.1.0.4",
+		"192.168.100.200",
+		"example.internal",
+		"0123456789abcdef",
+		"1AVX",
+		"AVX.",
+		".AVX",
+		"SSE4.12",
+		"SSE4.x",
+		"SSE4.1.2",
+		"A".repeat(15),
+		`AVX2 ${"A".repeat(15)}`,
+		"SSE4 2",
+		`${"A".repeat(14)}1`,
+		Array.from({ length: 33 }, () => "AVX2").join(" "),
+		// Every other character of ASCII, between two names.
+		...Array.from({ length: 128 }, (_, code) => String.fromCharCode(code))
+			.filter((character) => !/[A-Za-z0-9. ]/.test(character))
+			.flatMap((character) => [
+				`AVX2${character}AVX512`,
+				// Where a name starts, in place of the dot and after it.
+				`${character}AVX2`,
+				`SSE4${character}2`,
+				`SSE4.${character}`,
+			]),
+		null,
+		7,
+		["AVX2"],
+	])
+		assert.throws(
+			() =>
+				validateSummary(
+					JSON.stringify({ ...summary, x264Capabilities: capabilities }),
+				),
+			/x264's processor capabilities must be a list of its capability names/,
+			JSON.stringify(capabilities),
+		);
 	assert.throws(
 		() => validateSummary(JSON.stringify({ ...summary, videoFrames: 239 })),
 		/Incomplete media validation: videoFrames must be 240/,
@@ -943,13 +1021,14 @@ test("cleanup removes only labelled names and never prunes shared resources", as
 });
 
 const summaryText = JSON.stringify({
-	version: 1,
+	version: 2,
 	videoFrames: 240,
 	hlsSegments: 5,
 	dashSegments: 5,
 	decodedPresentations: 3,
 	vmafFrames: 240,
 	means: { self: 99, encoded: 90, degraded: 40 },
+	x264Capabilities: "MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2",
 });
 
 // A whole media run against fakes: the image builds, the container prints
@@ -1200,10 +1279,11 @@ test("a media run passes only with every fixture's totals, a valid summary, an u
 	const names = Object.keys(FIXTURES);
 	const passed = await mediaRun();
 	assert.equal(passed.lines, undefined);
-	assert.deepEqual(passed.notes.slice(-4), [
+	assert.deepEqual(passed.notes.slice(-5), [
 		`Media fixtures passed: ${names.length} files, ${Object.values(FIXTURES).reduce((sum, tests) => sum + tests, 0)} tests, 0 skipped`,
 		"Media passed: 240 video frames; HLS/DASH each 5 x 48 frames; 3 complete audio/video decodes; 240 VMAF frames per comparison",
 		"VMAF means: self=99.000, encoded=90.000, degraded=40.000",
+		"x264 CPU capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2",
 		"Media fixture: owned image, container and scratch files removed",
 	]);
 	assert.deepEqual(passed.removed, ["container", "image"]);

@@ -25,6 +25,17 @@ region. Review the selected account and any saved or copied region settings.
 8. **Review:** inspect the plan preview, warnings, generated resources, and paths,
    then start encoding.
 
+These steps package the job for streaming. To write finished files instead — MP4
+or similar files with the audio inside, and no manifests — choose **Export files**
+under "What to create" at the top of the page. That flow has five steps: Basics,
+Sources, Format, Destination, and Review. Files are written directly into the
+output folder and are named after the job until you type a name. Two files in one
+job cannot have the same name, and a file already in the folder under the same
+name may be replaced. **Show all settings** opens the eight
+steps with what you entered, and **Back to simple view** returns while nothing
+outside the five steps is in use. The flow you choose is remembered in this
+browser, and Settings holds the same choice under "New VOD job flow".
+
 Saved templates, samples, and imported plan JSON populate the same workflow.
 Importing or copying settings does not create a job. Settings that the form
 cannot represent remain available through the JSON editor instead of being

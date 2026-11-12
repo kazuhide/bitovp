@@ -256,7 +256,13 @@ describe("SettingsAreas — category panels", () => {
 			}
 		}
 		const preferences = screen.getByRole("region", { name: "自分の表示設定" });
-		expect(within(preferences).getAllByRole("combobox")).toHaveLength(2);
+		// Language, appearance, and the flow a new VOD job opens in.
+		expect(within(preferences).getAllByRole("combobox")).toHaveLength(3);
+		expect(
+			within(preferences).getByRole("combobox", {
+				name: "新規 VOD の作成フロー",
+			}),
+		).toHaveValue("streaming");
 		expect(screen.getAllByRole("heading", { level: 2 })[0]).toHaveTextContent(
 			"自分の表示設定",
 		);

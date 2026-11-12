@@ -726,6 +726,43 @@ export const en = {
 		system: "Follow system",
 		hint: "Saved in this browser.",
 	},
+	vodFlow: {
+		label: "What to create",
+		streaming: "Package for streaming",
+		file: "Export files",
+		streamingHint:
+			"A rendition ladder with HLS or DASH manifests, for playback in a player.",
+		fileHint:
+			"MP4 or similar files with the audio inside, for editing or hand-off. No manifests.",
+		preferenceLabel: "New VOD job flow",
+		preferenceHint:
+			"The flow a new VOD job opens in. Saved in this browser; switching on the New VOD job page changes it too.",
+		stepFormat: "Format",
+		stepDestination: "Destination",
+		showAll: "Show all settings",
+		backToSimple: "Back to simple view",
+		simpleBlocked:
+			"Settings the simple view does not show are in use in: {steps}.",
+		files: "Output files",
+		addFile: "Add file",
+		fileN: "File {n}",
+		removeFileN: "Remove file {n}",
+		container: "Container",
+		fileName: "File name",
+		fileNameRequired: "Enter a file name.",
+		sameFileName:
+			"Another file has this name, and one would replace the other.",
+		sourceHeight: "Same as source",
+		bitrateOrCrf: "Enter a bitrate, or set CRF in the advanced options.",
+		videoSource: "Video source",
+		audio: "Audio",
+		includeAudio: "Include audio in every file",
+		noAudio: "The files are written without an audio track.",
+		audioSource: "Audio source",
+		folderHelp:
+			"Files are written directly into this folder. No subfolder is added for the job.",
+		reviewFiles: "Files this job writes",
+	},
 	shell: {
 		skipToContent: "Skip to content",
 	},

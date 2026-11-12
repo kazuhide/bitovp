@@ -228,7 +228,7 @@ Shared-password authentication does not provide separate roles for individual us
 
 ### Language, theme, and field help
 
-Choose the display language and theme in "Settings". Display preferences are stored in your browser. Open the help button beside a field to read about its meaning, units, and conditions of use. Some advanced fields show API parameter names so that you can match them to the Bitmovin API.
+Choose the display language and theme in "Settings". The same place sets what a new VOD job opens for (Chapter 4). Display preferences are stored in your browser. Open the help button beside a field to read about its meaning, units, and conditions of use. Some advanced fields show API parameter names so that you can match them to the Bitmovin API.
 
 "Additional API settings" groups less common controls by rate control, frame structure/parallelism, prediction/analysis and colour/pixels. Search by API parameter name to find a field. H.264 includes deblocking, B-frame strategy, partitions and CEA-608/708 caption passthrough. H.265 adds motion/transform search, quantization, grain/noise controls, lookahead and parallelism. VP9 includes client buffers (milliseconds), row multithreading, frame parallelism, tiles and quality controls. These are tuning controls: changing them can affect encode time, quality and decoder compatibility. Leave them unset unless needed.
 
@@ -274,6 +274,23 @@ VOD converts stored video or audio into files for delivery. One encoding operati
 ![Sample VOD configuration screen](../../apps/site/public/screenshots/en/vod-settings.png)
 
 Figure 4-1. VOD ladder and detailed codec settings in the demo. The screen uses sample settings; it does not show execution results or measured values.
+
+### Streaming packages and file export
+
+At the top of the new-job screen, "What to create" selects what the job is for. The choice is stored in your browser and applies the next time you create a job. You can also change it under "New VOD job flow" in "Settings".
+
+| Purpose | What it creates | Steps |
+|---|---|---|
+| Package for streaming | A rendition ladder with HLS and DASH manifests, for playback in a player | The 8 steps in the table above |
+| Export files | MP4 or similar files with the audio inside, for editing or hand-off. No manifests are created | 5 steps: Basics, Sources, Format, Destination, and Review |
+
+"Export files" starts with one MP4 that holds H.264 1080p video at 8 Mbps and AAC audio at 192 kbps. In "Format", set the container, file name, codec, height, and bitrate of each file. Leave the height blank to keep the source height. Use "Add file" when you also need files at other resolutions. The audio settings apply to every file.
+
+A file name follows the job name until you type one. Files are written directly into the folder chosen in "Destination"; no subfolder is added for the job. Two files in one job cannot have the same name: the "File name" fields report it, and the job cannot start until the names differ. A file that already exists in the folder under the same name may be replaced. Check the paths listed in "Review" before you start.
+
+To use DRM, subtitles, filters, Per-Title, quality measurement, or similar settings, select "Show all settings" to switch to the 8-step screen. What you have entered is kept. "Back to simple view" is available while no setting outside the 5-step screen is in use; otherwise the screen names the steps that hold such settings.
+
+Jobs started from a preset, a saved template, or a copied job open the 8-step screen with the loaded settings. Drafts are stored separately for each purpose.
 
 ### Basic settings and input files
 

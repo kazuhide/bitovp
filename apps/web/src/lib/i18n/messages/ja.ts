@@ -699,6 +699,43 @@ export const ja = {
 		system: "システムに合わせる",
 		hint: "このブラウザに保存されます。",
 	},
+	vodFlow: {
+		label: "作成するもの",
+		streaming: "配信用にパッケージ",
+		file: "ファイルを書き出す",
+		streamingHint:
+			"プレイヤーで再生するための、ラダーと HLS / DASH マニフェストを作成します。",
+		fileHint:
+			"編集や納品に使う、音声入りの MP4 などのファイルを書き出します。マニフェストは作成しません。",
+		preferenceLabel: "新規 VOD の作成フロー",
+		preferenceHint:
+			"VOD ジョブの作成画面を開いたときのフローです。このブラウザに保存され、作成画面で切り替えたときにも変わります。",
+		stepFormat: "出力形式",
+		stepDestination: "保存先",
+		showAll: "すべての設定を表示",
+		backToSimple: "シンプル表示に戻す",
+		simpleBlocked: "シンプル表示にない設定が使われています：{steps}",
+		files: "出力ファイル",
+		addFile: "ファイルを追加",
+		fileN: "ファイル {n}",
+		removeFileN: "ファイル {n} を削除",
+		container: "コンテナ",
+		fileName: "ファイル名",
+		fileNameRequired: "ファイル名を入力してください。",
+		sameFileName:
+			"同じ名前のファイルがほかにあり、一方がもう一方を上書きします。",
+		sourceHeight: "ソースと同じ",
+		bitrateOrCrf:
+			"ビットレートを入力するか、詳細設定で CRF を指定してください。",
+		videoSource: "映像ソース",
+		audio: "音声",
+		includeAudio: "すべてのファイルに音声を入れる",
+		noAudio: "音声トラックなしで書き出します。",
+		audioSource: "音声ソース",
+		folderHelp:
+			"ファイルはこのフォルダの直下に書き出されます。ジョブ名のサブフォルダは作成しません。",
+		reviewFiles: "このジョブが書き出すファイル",
+	},
 	shell: {
 		skipToContent: "本文へ移動",
 	},

@@ -403,6 +403,41 @@ async function runLocale(locale, copy) {
 		`PASS (${locale}): VOD form creates a browser-local job; detail survives reload.`,
 	);
 
+	// The file-export flow is the same wizard on five steps. The demo opens the flow
+	// the URL names and, without one, the flow last chosen in this browser.
+	const stepCount = (expected) =>
+		page.waitForFunction(
+			([label, count]) =>
+				document.querySelectorAll(`nav[aria-label="${label}"] button`)
+					.length === count,
+			[copy.wizardSteps, expected],
+		);
+	const chooseFlow = (flow) =>
+		page.locator(`a[href="#/demo/vod/new?flow=${flow}"]`).click();
+	await visit("/vod/new?flow=file");
+	await stepCount(5);
+	await page.locator("#wz-name").fill(copy.vodName);
+	await step(/^3\. /);
+	assert.equal(await page.locator("#wz-file-0-kind").inputValue(), "MP4");
+	assert.equal(
+		await page.locator("#wz-file-0-name").inputValue(),
+		`${copy.vodName}.mp4`,
+	);
+	await chooseFlow("streaming");
+	await stepCount(8);
+	await visit("/vod/new");
+	await stepCount(8);
+	await chooseFlow("file");
+	await stepCount(5);
+	await visit("/vod/new");
+	await stepCount(5);
+	// Leave this browser on the flow the rest of the run was written for.
+	await chooseFlow("streaming");
+	await stepCount(8);
+	console.log(
+		`PASS (${locale}): the file-export flow opens on five steps and the chosen flow is remembered.`,
+	);
+
 	await visit("/live/new");
 	await page.locator("#lw-name").fill(copy.liveName);
 	await page.locator("#lw-account").selectOption(accountId);

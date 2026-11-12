@@ -78,9 +78,9 @@ import {
 	LoudnessEditor,
 	manifestPlacement,
 	RenditionPlacement,
-	type SourceOption,
 	Vp9AdvancedEditor,
 } from "./rendition-editors";
+import { renditionSourceOptions } from "./rendition-sources";
 import {
 	flattenStreams,
 	inputFileOptions,
@@ -219,47 +219,11 @@ export function LadderSection({
 	// guidance (HLS audio-group fields, declared DASH adaptation sets with
 	// per-manifest context and cross-manifest type-conflict warnings).
 
-	// Reference streams by a human-readable label (type · input file / object),
-	// not the hidden internal key. The select still stores the key — only the
-	// visible text changes, so the emitted plan is unaffected. WEBVTT streams
-	// are subtitle-only, so they stay out of the video/audio source lists.
 	const allStreams = flattenStreams(sources);
-	// Trimming/concatenation intermediate streams aren't in flattenStreams (they
-	// reference other input streams, not input files) — surface them as selectable
-	// sources so a rendition can read a trim/concat result by key.
-	const trimConcatSources: SourceOption[] = [
-		// `trim`, not `t` — the callback parameter used to be `t`, which shadowed the
-		// translator inside this block.
-		...(sources.trimmingStreams ?? []).map((trim) => ({
-			value: trim.key,
-			label: t("wizardX.trimSourceKey", {
-				source: trim.sourceKey,
-				key: trim.key,
-			}),
-		})),
-		...(sources.concatenationStreams ?? []).map((c) => ({
-			value: c.key,
-			label: t("wizardX.concatenationKey", { key: c.key }),
-		})),
-	];
-	const namedSources: SourceOption[] = [
-		...allStreams
-			.filter((s) => s.type !== "WEBVTT")
-			.map((s) => ({ value: s.key, label: streamReferenceLabel(state, s) })),
-		...trimConcatSources,
-	];
-	const videoSources: SourceOption[] = [
-		{ value: "", label: t("wizard.inputVideoTrackImplicit") },
-		...namedSources,
-	];
-	const audioSources: SourceOption[] = [
-		...(sources.audioMixStreams ?? []).map((s) => ({
-			value: s.key,
-			label: `${t("audioMix.title")} · ${s.key}`,
-		})),
-		{ value: "", label: t("wizard.inputAudioTrackImplicit") },
-		...namedSources,
-	];
+	const { video: videoSources, audio: audioSources } = renditionSourceOptions(
+		state,
+		t,
+	);
 
 	const patchVideos = (
 		next: WizardVideoRendition[],

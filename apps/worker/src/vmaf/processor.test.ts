@@ -5295,19 +5295,26 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 		);
 	});
 
-	it.each([
-		// Pictures that libvmaf would refuse: the GPU scorer is asked all the same.
-		[{ code: 0, stderr: "" }, undefined],
-		// Its own refusal stays its own: the sentence about libvmaf is not put
-		// in its place.
-		[
-			{
-				code: 1,
-				stderr: "SpEED: image too small, operating width or height is 0\n",
-			},
-			/^libvmaf failed for rendition v\d+ \(code 1\): SpEED: image too small, operating width or height is 0$/,
-		],
-	] as const)("does not hold the GPU scorer, which is not libvmaf, to libvmaf's limits (%o)", async (run, failure) => {
+	it.each(
+		(["cuda", "vulkan"] as const).flatMap(
+			(backend) =>
+				[
+					// Pictures that libvmaf would refuse: the GPU scorer is asked all the same.
+					[backend, { code: 0, stderr: "" }, undefined],
+					// Its own refusal stays its own: the sentence about libvmaf is not put
+					// in its place.
+					[
+						backend,
+						{
+							code: 1,
+							stderr:
+								"SpEED: image too small, operating width or height is 0\n",
+						},
+						/^libvmaf failed for rendition v\d+ \(code 1\): SpEED: image too small, operating width or height is 0$/,
+					],
+				] as const,
+		),
+	)("does not hold the %s scorer, which is not libvmaf, to libvmaf's limits (%o)", async (backend, run, failure) => {
 		const localRunner: ProcessRunner = {
 			spawn: vi.fn(() => {
 				throw new Error("Unexpected spawn");
@@ -5339,7 +5346,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				localResources: sharedTestResources(),
 				localRunner,
 				probeJson: probeOf(256, 144, "yuv420p"),
-				scoringBackend: "vulkan",
+				scoringBackend: backend,
 				job: { model: v1, scoringVersion: VMAF_SCORING_VERSION },
 				resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
 				resolveLocalResources: async () => ({
@@ -5364,7 +5371,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				});
 			expect(native).toHaveBeenCalled();
 			for (const [, options] of native.mock.calls)
-				expect(options.scoring).toMatchObject({ backend: "vulkan" });
+				expect(options.scoring).toMatchObject({ backend });
 		} finally {
 			native.mockRestore();
 		}
@@ -5445,5 +5452,119 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				distortedOriginal: { width: 960, height: 540 },
 			},
 		});
+	});
+
+	/** Answers each ffprobe call by the file it names: the reference or an encode. */
+	const probeByFile = (
+		t: ReturnType<typeof setup>,
+		reference: string,
+		encode: string,
+	) => {
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing runner fixture");
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) =>
+			argv.includes("-show_streams")
+				? {
+						code: 0,
+						stderr: "",
+						stdout: /\/ref-\d+\./.test(argv.at(-1) ?? "") ? reference : encode,
+					}
+				: raw(bin, argv, options),
+		);
+	};
+	const cloudJob = {
+		execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+	};
+
+	it("holds a frame-index comparison to the 4:2:0 that the method converts to, whatever the reference's own layout", async () => {
+		const plan = qcPlan();
+		delete plan.qc;
+		const cloudScore = vi.fn();
+		const t = setup({
+			plan,
+			cloudScore,
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: {
+				model: v1,
+				scoringVersion: 6,
+				triggerKey: `lab-manual:${ENCODING_JOB_ID}:output`,
+				params: {
+					source: "OUTPUT_MP4",
+					measurementMethod: "FRAME_INDEX_BT709_10BIT",
+					...cloudJob,
+				},
+			},
+		});
+		// The ordinary method scores a 4:4:4 reference of 256x144. Its declared
+		// encode passes CAMBI's rules too, so the pictures decide.
+		probeByFile(t, probeOf(256, 144, "yuv444p"), probeOf(256, 144, "yuv444p"));
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two.`,
+		);
+		expect(cloudScore).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		// 256x144 is too small in 4:2:0 and enough in 4:4:4.
+		["yuv420p", "yuv444p", false],
+		["yuv444p", "yuv420p", true],
+	] as const)("takes the layout of a %s reference and not that of its %s encode, when it has probed both", async (reference, encode, scores) => {
+		// A job with local resources probes each encode before it scores.
+		const t = setup({
+			job: { model: v1 },
+			localResources: sharedTestResources(),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(t, probeOf(256, 144, reference), probeOf(640, 360, encode));
+		const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		if (scores) {
+			expect(await processed).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(scoringRuns(t)).toHaveLength(2);
+		} else {
+			await expect(processed).rejects.toThrow(
+				"cannot score 4:2:0 pictures of 256x144",
+			);
+			expect(scoringRuns(t)).toHaveLength(0);
+		}
+	});
+
+	it("scores encodes below CAMBI's range with the ordinary method, which declares no encode", async () => {
+		const plan = qcPlan();
+		const [first, second] = plan.renditions as { height: number }[];
+		if (!first || !second) throw new Error("Missing renditions");
+		first.height = 108;
+		second.height = 120;
+		const t = setup({
+			plan,
+			job: { model: v1 },
+			localResources: sharedTestResources(),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(
+			t,
+			probeOf(1920, 1080, "yuv420p"),
+			probeOf(192, 108, "yuv420p"),
+		);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(scoringRuns(t)).toHaveLength(2);
+	});
+
+	it("holds a cloud job to libvmaf's limits on a worker whose own scorer is the GPU's", async () => {
+		const cloudScore = vi.fn();
+		const t = setup({
+			cloudScore,
+			scoringBackend: "vulkan",
+			probeJson: probeOf(200, 200, "yuv420p"),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: { model: v1, params: cloudJob },
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("cannot score 4:2:0 pictures of 200x200");
+		expect(cloudScore).not.toHaveBeenCalled();
 	});
 });

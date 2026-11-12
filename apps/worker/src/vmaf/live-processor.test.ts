@@ -2174,6 +2174,19 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 		expect(t.results).toHaveLength(0);
 	});
 
+	// A source whose sides differ, so that the size that the check is given
+	// cannot be the wrong way round.
+	it("names the width and the height of the source in that order", async () => {
+		const t = withV1([200, 120]);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score pictures of 200x120: it needs chroma planes of at least 80 samples in width and in height, and at least 216 pixels in width or in height.`,
+		);
+		expect(t.browser.listObjects).not.toHaveBeenCalled();
+		expect(scoringRuns(t)).toHaveLength(0);
+	});
+
 	it("scores the same source with a model that has no such limit", async () => {
 		const t = setup({ sourceSize: [200, 200] });
 		await t.processor.process({ vmafJobId: VMAF_JOB_ID });

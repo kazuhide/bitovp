@@ -180,6 +180,38 @@ export async function verifySource(path, maximum = MAX_BYTES) {
 	return canonical;
 }
 
+// A directory that holds an FFmpeg which is already built from the
+// Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The image
+// build takes it in place of the "ffmpeg" stage and compiles nothing. The
+// programs are not compared with the sources here. The installer that left
+// the directory ran the image's VMAF proof with them; of a build that it had
+// kept, it checked no more than that and the build's own list of checksums.
+// A directory in the checkout would also be a part of what the image is built
+// from.
+export function verifyFfmpeg(path) {
+	assert(
+		typeof path === "string" && isAbsolute(path),
+		"FFmpeg directory must be an absolute path",
+	);
+	assert(existsSync(path), "FFmpeg directory does not exist");
+	const canonical = realpathSync(path);
+	assert(
+		lstatSync(canonical).isDirectory() &&
+			!inside(realpathSync(ROOT), canonical),
+		"FFmpeg directory must be a directory outside the checkout",
+	);
+	// The rule of the source's path, for every path that Docker is given.
+	assert(!/[,\r\n]/.test(canonical), "Unsupported FFmpeg directory path");
+	for (const program of ["ffmpeg", "ffprobe"]) {
+		const file = join(canonical, "bin", program);
+		assert(
+			existsSync(file) && lstatSync(file).isFile(),
+			`FFmpeg directory must hold the file bin/${program}`,
+		);
+	}
+	return canonical;
+}
+
 // Read one known member into a fixed output path; never extract archive paths.
 const EXTRACT = `import os,pathlib,stat,sys,zipfile
 archive,output=sys.argv[1:]
@@ -563,6 +595,7 @@ export async function cleanupFixture(
 export async function runFixture(
 	{
 		source,
+		ffmpeg,
 		statePath,
 		signal = new AbortController().signal,
 		env = process.env,
@@ -580,6 +613,8 @@ export async function runFixture(
 				!existsSync(statePath),
 			"State file must be new and outside the checkout",
 		);
+	// Before anything is created: a refused directory leaves nothing to remove.
+	const prebuilt = ffmpeg === undefined ? undefined : verifyFfmpeg(ffmpeg);
 	const directory = realpathSync(
 		mkdtempSync(join(realpathSync("/tmp"), "bitovp-media-")),
 	);
@@ -623,11 +658,18 @@ export async function runFixture(
 		state.imageRequested = true;
 		save();
 		step = "building the worker image";
-		notify("Media check: building the worker image");
+		notify(
+			prebuilt
+				? "Media check: building the worker image with the FFmpeg that is already built"
+				: "Media check: building the worker image",
+		);
 		await docker(
 			[
 				"build",
 				"--pull",
+				// The directory stands for the Dockerfile's "ffmpeg" stage, which
+				// is then not built, nor are the stages that only it needs.
+				...(prebuilt ? ["--build-context", `ffmpeg=${prebuilt}`] : []),
 				"--label",
 				`${LABEL}=${state.id}`,
 				"--tag",
@@ -714,7 +756,7 @@ async function main(signal) {
 	const options = {};
 	for (let index = 0; index < args.length; index += 2) {
 		assert(
-			["--source", "--state-file"].includes(args[index]) &&
+			["--ffmpeg", "--source", "--state-file"].includes(args[index]) &&
 				args[index + 1] &&
 				!options[args[index]],
 			"Unknown or duplicate media option",
@@ -722,6 +764,10 @@ async function main(signal) {
 		options[args[index]] = args[index + 1];
 	}
 	if (cleanup) {
+		assert(
+			!options["--ffmpeg"],
+			"Cleanup builds no image and takes no FFmpeg directory",
+		);
 		const path = options["--state-file"];
 		assert(
 			path && !options["--source"] && isAbsolute(path) && !inside(ROOT, path),
@@ -735,6 +781,7 @@ async function main(signal) {
 	} else
 		await runFixture({
 			source: options["--source"],
+			ffmpeg: options["--ffmpeg"],
 			statePath: options["--state-file"],
 			signal,
 		});

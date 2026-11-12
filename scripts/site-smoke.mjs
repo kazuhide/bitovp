@@ -423,6 +423,12 @@ async function runLocale(locale, copy) {
 		await page.locator("#wz-file-0-name").inputValue(),
 		`${copy.vodName}.mp4`,
 	);
+	// A name that follows the job takes the extension of the container chosen.
+	await page.locator("#wz-file-0-kind").selectOption("PROGRESSIVE_TS");
+	assert.equal(
+		await page.locator("#wz-file-0-name").inputValue(),
+		`${copy.vodName}.ts`,
+	);
 	await chooseFlow("streaming");
 	await stepCount(8);
 	await visit("/vod/new");

@@ -248,6 +248,76 @@ describe("VodWizard — the file-output flow", () => {
 		expect(localStorage.getItem(fileDraft)).toBeNull();
 	});
 
+	it("writes an MPEG-TS file when that container is chosen, named after the job", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		const container = screen.getByRole("combobox", { name: "Container" });
+		expect(
+			within(container)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["MP4 (.mp4)", "MPEG-TS (.ts)", "QuickTime (.mov)"]);
+
+		await user.selectOptions(container, "MPEG-TS (.ts)");
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.ts");
+		expect(container).not.toHaveAccessibleDescription();
+
+		await user.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(screen.getByText("synthetic/exports/clip.ts")).toBeInTheDocument();
+		const start = screen.getByRole("button", { name: "Start encoding" });
+		await waitFor(() => expect(start).toBeEnabled());
+		await user.click(start);
+		await waitFor(() =>
+			expect(push).toHaveBeenCalledWith(`/vod/jobs/${jobId}`),
+		);
+		const post = apiFetch.mock.calls.find(
+			([, init]) => init?.method === "POST",
+		);
+		const { plan } = JSON.parse(post?.[1].body);
+		expect(plan.manifests ?? []).toEqual([]);
+		expect(plan.muxings).toEqual([
+			expect.objectContaining({
+				kind: "PROGRESSIVE_TS",
+				filename: "clip.ts",
+				streamKey: "v1080",
+				additionalStreamKeys: ["a192"],
+				destination: expect.objectContaining({ path: "exports/" }),
+			}),
+		]);
+	});
+
+	it("says that QuickTime is not verified yet, and which container cannot hold the audio codec", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		const container = screen.getByRole("combobox", { name: "Container" });
+		const audioCodec = within(
+			screen.getByRole("region", { name: "Audio" }),
+		).getByRole("combobox", { name: "Codec" });
+
+		await user.selectOptions(audioCodec, "AC3");
+		expect(audioCodec).not.toHaveAccessibleDescription();
+		await user.selectOptions(container, "QuickTime (.mov)");
+		expect(container).toHaveAccessibleDescription(
+			"Not yet verified on a real encode. Check the first file this job writes.",
+		);
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.mov");
+		// The codec that was chosen stays on show; only what fits is offered beside it.
+		expect(audioCodec).toHaveValue("AC3");
+		expect(audioCodec).toHaveAccessibleDescription(
+			"QuickTime (.mov) cannot hold this codec.",
+		);
+		expect(
+			within(audioCodec)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["AAC", "AC3"]);
+
+		await user.selectOptions(audioCodec, "AAC");
+		expect(audioCodec).not.toHaveAccessibleDescription();
+	});
+
 	it("keeps its draft apart from the streaming flow's", async () => {
 		writeWizardDraft(fileDraft, "vod", ready, 0);
 		renderWithQuery(<VodWizard flow="streaming" />);

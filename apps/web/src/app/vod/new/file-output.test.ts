@@ -8,7 +8,9 @@ import {
 	defaultFileNames,
 	editFile,
 	editFileAudio,
+	FILE_CONTAINERS,
 	FILE_OUTPUT_DEFAULT_STATE,
+	fileAudioCodecs,
 	fileOutputBlockers,
 	isFileOutputState,
 	removeFile,
@@ -130,6 +132,147 @@ describe("file names", () => {
 	});
 });
 
+describe("the containers the flow offers", () => {
+	const inContainer = (kind: string) =>
+		apply(started, editFile(started, 0, { kind: kind as never }));
+	const issuesOf = (state: WizardState) =>
+		validatePlan(planOf(state)).map((issue) => issue.code);
+
+	it("are MP4, MPEG-TS and QuickTime, each with the codecs it can hold", () => {
+		expect(
+			FILE_CONTAINERS.map(({ kind, extension, video, audio }) => ({
+				kind,
+				extension,
+				video,
+				audio,
+			})),
+		).toEqual([
+			{
+				kind: "MP4",
+				extension: "mp4",
+				video: ["H264", "H265"],
+				audio: ["AAC", "AC3", "EAC3"],
+			},
+			{
+				kind: "PROGRESSIVE_TS",
+				extension: "ts",
+				video: ["H264"],
+				audio: ["AAC"],
+			},
+			{
+				kind: "PROGRESSIVE_MOV",
+				extension: "mov",
+				video: ["H264"],
+				audio: ["AAC"],
+			},
+		]);
+	});
+
+	it.each(
+		FILE_CONTAINERS.flatMap((container) =>
+			container.video.flatMap((video) =>
+				container.audio.map((audio) => [container.kind, video, audio] as const),
+			),
+		),
+	)("%s with %s and %s passes the plan's validation", (kind, video, audio) => {
+		const file = apply(started, editFile(started, 0, { kind, codec: video }));
+		const state = apply(file, editFileAudio(file, { codec: audio }));
+		expect(filesOf(state)).toEqual([
+			expect.objectContaining({ kind, streams: ["v1080", "a192"] }),
+		]);
+		expect(errorsOf(state)).toEqual([]);
+	});
+
+	it("say which one no encode has written yet, as the plan's warning does", () => {
+		expect(
+			FILE_CONTAINERS.map((container) => [
+				container.kind,
+				container.unmeasured,
+				issuesOf(inContainer(container.kind)).includes(
+					"PLAN_MUXING_UNMEASURED_KIND",
+				),
+			]),
+		).toEqual([
+			["MP4", false, false],
+			["PROGRESSIVE_TS", false, false],
+			["PROGRESSIVE_MOV", true, true],
+		]);
+	});
+
+	it("name the file the plan writes when the name is left empty, or none", () => {
+		for (const container of FILE_CONTAINERS) {
+			const file = inContainer(container.kind);
+			const unnamed = apply(file, editFile(file, 0, { filename: "" }));
+			const built = encodingPlanSchema.safeParse(buildPlan(unnamed));
+			expect([container.kind, built.success]).toEqual([
+				container.kind,
+				container.fallbackName !== undefined,
+			]);
+			if (built.success)
+				expect(filesOf(unnamed)[0]?.filename).toBe(container.fallbackName);
+		}
+	});
+});
+
+describe("changing a file's container", () => {
+	it("changes the extension of a name that follows the job, which goes on following", () => {
+		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
+		expect(filesOf(ts)).toEqual([
+			{
+				kind: "PROGRESSIVE_TS",
+				filename: "clip.ts",
+				path: "exports/",
+				streams: ["v1080", "a192"],
+			},
+		]);
+		expect(errorsOf(ts)).toEqual([]);
+		expect(isFileOutputState(ts)).toBe(true);
+
+		const renamed = apply(ts, renameFileJob(ts, "trailer"));
+		expect(renamed.videos[0]?.muxing?.filename).toBe("trailer.ts");
+	});
+
+	it("keeps the stem of a typed name, and a name without the extension as it is", () => {
+		const named = (filename: string) => {
+			const typed = apply(started, editFile(started, 0, { filename }));
+			return apply(typed, editFile(typed, 0, { kind: "PROGRESSIVE_MOV" }))
+				.videos[0]?.muxing?.filename;
+		};
+		expect(named("final.MP4")).toBe("final.mov");
+		expect(named("final")).toBe("final");
+	});
+
+	it("moves to a codec the new container can hold", () => {
+		const hevc = apply(started, editFile(started, 0, { codec: "H265" }));
+		const ts = apply(hevc, editFile(hevc, 0, { kind: "PROGRESSIVE_TS" }));
+		expect(ts.videos[0]?.codec).toBe("H264");
+		expect(errorsOf(ts)).toEqual([]);
+	});
+
+	it("leaves the audio codec to its own field, which offers what every file can hold", () => {
+		const ac3 = apply(started, editFileAudio(started, { codec: "AC3" }));
+		const ts = apply(ac3, editFile(ac3, 0, { kind: "PROGRESSIVE_TS" }));
+		expect(ts.audios[0]?.codec).toBe("AC3");
+		expect(fileAudioCodecs(ts.videos)).toEqual(["AAC"]);
+		expect(errorsOf(ts).map((issue) => issue.code)).toEqual([
+			"PLAN_MUXING_CODEC_MISMATCH",
+		]);
+
+		const aac = apply(ts, editFileAudio(ts, { codec: "AAC" }));
+		expect(errorsOf(aac)).toEqual([]);
+	});
+
+	it("is kept by the next file that is added", () => {
+		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
+		const two = apply(ts, addFile(ts));
+		expect(filesOf(two).map((file) => [file.kind, file.filename])).toEqual([
+			["PROGRESSIVE_TS", "clip.ts"],
+			["PROGRESSIVE_TS", "clip-540p.ts"],
+		]);
+		expect(errorsOf(two)).toEqual([]);
+	});
+});
+
 describe("a name two files were given", () => {
 	const two = apply(started, addFile(started));
 	const collides = (state: WizardState) =>
@@ -171,6 +314,23 @@ describe("a name two files were given", () => {
 
 	it("is not read into two fields left empty, which are missing rather than shared", () => {
 		expect(sharedFileNames(renamed(["", ""]).videos)).toEqual([false, false]);
+	});
+
+	it("is read into two empty fields of a container that names its own file", () => {
+		const ts = two.videos.reduce(
+			(state, _video, index) =>
+				apply(
+					state,
+					editFile(state, index, { kind: "PROGRESSIVE_TS", filename: "" }),
+				),
+			two,
+		);
+		expect(filesOf(ts).map((file) => file.filename)).toEqual([
+			"output.ts",
+			"output.ts",
+		]);
+		expect(sharedFileNames(ts.videos)).toEqual([true, true]);
+		expect(collides(ts)).toBe(true);
 	});
 });
 
@@ -320,6 +480,22 @@ describe("what the simple view cannot show", () => {
 		[
 			"a segmented container",
 			{ videos: [{ height: 1080, bitrate: 8_000_000 }] },
+			["packaging"],
+		],
+		[
+			"a timestamp offset in an MPEG-TS file",
+			{
+				videos: [
+					{
+						...started.videos[0],
+						muxing: {
+							...started.videos[0]?.muxing,
+							kind: "PROGRESSIVE_TS",
+							startOffset: 10,
+						},
+					} as never,
+				],
+			},
 			["packaging"],
 		],
 	];

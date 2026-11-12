@@ -720,6 +720,8 @@ export const ja = {
 		fileN: "ファイル {n}",
 		removeFileN: "ファイル {n} を削除",
 		container: "コンテナ",
+		unmeasuredContainer:
+			"実際のエンコードでは未確認です。最初に書き出されたファイルを確認してください。",
 		fileName: "ファイル名",
 		fileNameRequired: "ファイル名を入力してください。",
 		sameFileName:
@@ -730,6 +732,7 @@ export const ja = {
 		videoSource: "映像ソース",
 		audio: "音声",
 		includeAudio: "すべてのファイルに音声を入れる",
+		audioCodecNotHeld: "{containers} にはこのコーデックを入れられません。",
 		noAudio: "音声トラックなしで書き出します。",
 		audioSource: "音声ソース",
 		folderHelp:

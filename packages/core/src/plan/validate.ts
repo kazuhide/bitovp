@@ -113,9 +113,9 @@ export const MUXING_CODEC_MATRIX: Record<
  * error would forbid a plan on a guess (`PLAN_MUXING_CONDITIONAL_STREAM` and
  * `PLAN_PER_TITLE_MUXED_AUDIO` are the precedents for "unmeasured → say so").
  */
-const UNMEASURED_MUXING_KINDS: ReadonlySet<PlanMuxing["kind"]> = new Set([
-	"PROGRESSIVE_MOV",
-]);
+export const UNMEASURED_MUXING_KINDS: ReadonlySet<PlanMuxing["kind"]> = new Set(
+	["PROGRESSIVE_MOV"],
+);
 
 /**
  * Plan-level (cross-field) validation per ARCHITECTURE §3 — runs after zod

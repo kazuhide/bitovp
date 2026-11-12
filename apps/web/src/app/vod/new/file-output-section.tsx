@@ -23,6 +23,7 @@ import {
 	removeFile,
 	setFileAudio,
 	sharedFileNames,
+	writtenFileName,
 } from "./file-output";
 import { H264AdvancedEditor, H265AdvancedEditor } from "./rendition-editors";
 import { renditionSourceOptions } from "./rendition-sources";
@@ -51,7 +52,7 @@ export function FileOutputSection({
 	state: WizardState;
 	onPatch: (partial: Partial<WizardState>) => void;
 }) {
-	const { t } = useT();
+	const { t, locale } = useT();
 	const { videos } = state;
 	const audio = state.audios[0];
 	const sharedNames = sharedFileNames(videos);
@@ -61,8 +62,18 @@ export function FileOutputSection({
 		.map((stream) => stream.key);
 	const audioCodec = audio?.codec ?? "AAC";
 	// The current value stays selectable even when a container cannot hold it, so
-	// the select shows what the plan says and validation explains the conflict.
+	// the select shows what the plan says, and the field names the containers.
 	const audioCodecs = [...new Set([...fileAudioCodecs(videos), audioCodec])];
+	const cannotHoldAudio = [
+		...new Set(
+			videos.flatMap((video) => {
+				const container = fileContainer(video.muxing?.kind);
+				return container && !container.audio.includes(audioCodec)
+					? [container.label]
+					: [];
+			}),
+		),
+	];
 	const layouts =
 		audioCodec === "DOLBY_ATMOS" ? [] : AUDIO_CHANNEL_LAYOUTS[audioCodec];
 
@@ -127,7 +138,19 @@ export function FileOutputSection({
 				{audio ? (
 					<div className="mt-3 space-y-3 rounded-md border border-zinc-800 p-3">
 						<div className="grid grid-cols-2 gap-2">
-							<Field label={t("wizard.codec")} htmlFor="wz-file-audio-codec">
+							<Field
+								label={t("wizard.codec")}
+								htmlFor="wz-file-audio-codec"
+								error={
+									cannotHoldAudio.length > 0
+										? t("vodFlow.audioCodecNotHeld", {
+												containers: new Intl.ListFormat(locale, {
+													type: "conjunction",
+												}).format(cannotHoldAudio),
+											})
+										: undefined
+								}
+							>
 								<SelectNative
 									id="wz-file-audio-codec"
 									value={audioCodec}
@@ -274,7 +297,13 @@ function FileEditor({
 				{t("vodFlow.fileN", { n })}
 			</legend>
 			<div className="flex flex-wrap items-start gap-2">
-				<Field label={t("vodFlow.container")} htmlFor={`${id}-kind`}>
+				<Field
+					label={t("vodFlow.container")}
+					htmlFor={`${id}-kind`}
+					hint={
+						container?.unmeasured ? t("vodFlow.unmeasuredContainer") : undefined
+					}
+				>
 					<SelectNative
 						id={`${id}-kind`}
 						className="w-44"
@@ -295,18 +324,21 @@ function FileEditor({
 						label={t("vodFlow.fileName")}
 						htmlFor={`${id}-name`}
 						error={
-							// The plan has no default name to fall back on.
-							video.muxing?.filename
-								? sharedName
+							// Only some containers have a name of their own to fall back on.
+							writtenFileName(video) === ""
+								? t("vodFlow.fileNameRequired")
+								: sharedName
 									? t("vodFlow.sameFileName")
 									: undefined
-								: t("vodFlow.fileNameRequired")
 						}
 					>
 						<Input
 							id={`${id}-name`}
 							value={video.muxing?.filename ?? ""}
-							placeholder={`output.${container?.extension ?? "mp4"}`}
+							placeholder={
+								container?.fallbackName ??
+								`output.${container?.extension ?? "mp4"}`
+							}
 							onChange={(event) => onEdit({ filename: event.target.value })}
 						/>
 					</Field>

@@ -748,6 +748,8 @@ export const en = {
 		fileN: "File {n}",
 		removeFileN: "Remove file {n}",
 		container: "Container",
+		unmeasuredContainer:
+			"Not yet verified on a real encode. Check the first file this job writes.",
 		fileName: "File name",
 		fileNameRequired: "Enter a file name.",
 		sameFileName:
@@ -757,6 +759,7 @@ export const en = {
 		videoSource: "Video source",
 		audio: "Audio",
 		includeAudio: "Include audio in every file",
+		audioCodecNotHeld: "{containers} cannot hold this codec.",
 		noAudio: "The files are written without an audio track.",
 		audioSource: "Audio source",
 		folderHelp:

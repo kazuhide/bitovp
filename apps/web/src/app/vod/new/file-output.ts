@@ -1,4 +1,8 @@
-import { outputFilePath } from "@bitovp/core";
+import {
+	MUXING_CODEC_MATRIX,
+	outputFilePath,
+	UNMEASURED_MUXING_KINDS,
+} from "@bitovp/core";
 import {
 	audioKeys,
 	DEFAULT_WIZARD_STATE,
@@ -27,17 +31,40 @@ export type FileContainer = {
 	extension: string;
 	video: readonly WizardVideoCodec[];
 	audio: readonly WizardAudioCodec[];
+	/** The name the plan writes when none is given. Without one, a name is required. */
+	fallbackName?: string;
+	/** No live encode of this app has written one yet; the plan carries a warning. */
+	unmeasured: boolean;
 };
+
+// What the format screen can configure. A container holds the ones the plan's
+// validation accepts for it, read from the table that validation uses.
+const VIDEO_CODECS: readonly WizardVideoCodec[] = ["H264", "H265"];
+const AUDIO_CODECS: readonly WizardAudioCodec[] = ["AAC", "AC3", "EAC3"];
+
+function container(
+	kind: "MP4" | "PROGRESSIVE_TS" | "PROGRESSIVE_MOV",
+	label: string,
+	extension: string,
+	fallbackName?: string,
+): FileContainer {
+	const holds: readonly string[] = MUXING_CODEC_MATRIX[kind];
+	return defined({
+		kind,
+		label,
+		extension,
+		video: VIDEO_CODECS.filter((codec) => holds.includes(codec)),
+		audio: AUDIO_CODECS.filter((codec) => holds.includes(codec)),
+		fallbackName,
+		unmeasured: UNMEASURED_MUXING_KINDS.has(kind),
+	});
+}
 
 /** Containers the flow offers, with the codecs its screen can configure for each. */
 export const FILE_CONTAINERS: readonly FileContainer[] = [
-	{
-		kind: "MP4",
-		label: "MP4 (.mp4)",
-		extension: "mp4",
-		video: ["H264", "H265"],
-		audio: ["AAC", "AC3", "EAC3"],
-	},
+	container("MP4", "MP4 (.mp4)", "mp4"),
+	container("PROGRESSIVE_TS", "MPEG-TS (.ts)", "ts", "output.ts"),
+	container("PROGRESSIVE_MOV", "QuickTime (.mov)", "mov", "output.mov"),
 ];
 
 export function fileContainer(
@@ -137,6 +164,18 @@ export function defaultFileNames(
 }
 
 /**
+ * The name a file is written under: the one given, or the container's own when it
+ * has one. Empty means the plan has no name for the file and is refused.
+ */
+export function writtenFileName(video: WizardVideoRendition): string {
+	return (
+		video.muxing?.filename ||
+		fileContainer(video.muxing?.kind)?.fallbackName ||
+		""
+	);
+}
+
+/**
  * Files that write the name another file writes. Every file goes to the one folder,
  * so two files with one name are one file, and the plan is refused for it
  * (`PLAN_OUTPUT_FILE_COLLISION`). This says which names to change, and can say so
@@ -146,7 +185,7 @@ export function sharedFileNames(
 	videos: readonly WizardVideoRendition[],
 ): boolean[] {
 	const names = videos.map((video) => {
-		const name = video.muxing?.filename ?? "";
+		const name = writtenFileName(video);
 		// A placeholder gets its value at the provider, so nothing is known here.
 		return name === "" || /[%{}]/.test(name)
 			? undefined

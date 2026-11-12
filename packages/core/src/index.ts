@@ -1022,6 +1022,7 @@ export type {
 export {
 	MUXING_CODEC_MATRIX,
 	planHasErrors,
+	UNMEASURED_MUXING_KINDS,
 	validatePlan,
 } from "./plan/validate";
 export type {

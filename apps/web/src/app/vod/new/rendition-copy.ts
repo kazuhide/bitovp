@@ -175,7 +175,7 @@ function prepareLadder(
 	);
 	const audioLegs = wizardAudioLegs(state);
 	// The names video containers carry audio by. A row that waits for its key is
-	// in there under the name it had (`carriedAs`), which no row's key is.
+	// in there under the name it had (`carriedAs`), not under its key.
 	const carriedNames = new Set(
 		state.videos.flatMap((video) =>
 			[video.muxing, ...(video.extraMuxings ?? [])].flatMap((leg) =>

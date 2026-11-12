@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {assertFavoriteCopyPreserved,assertNoImageProbes,favoriteFixtures,favoriteRequestAllowed,runFavoritesBrowserQa} from "./favorites-browser-qa.mjs";
+import {assertFavoriteCopyPreserved,assertNoImageProbes,favoriteFixtures,favoriteRequestAllowed,favoriteSyntheticRead,runFavoritesBrowserQa} from "./favorites-browser-qa.mjs";
 const origin="http://127.0.0.1:3192",id="20000000-0000-4000-8000-000000000001";
 const body=f=>Object.fromEntries(["credentialId","bucket","kind","label","objectKey"].map(k=>[k,f[k]]));
 test("favorites QA permits only its three exact references and IDs returned to this run",async()=>{
@@ -9,7 +9,7 @@ test("favorites QA permits only its three exact references and IDs returned to t
   assert.equal(favoriteRequestAllowed(origin+"/api/vod/input-favorites","POST",{...body(favoriteFixtures[0]),...patch}),false);
  assert.equal(favoriteRequestAllowed(origin+"/api/vod/input-favorites/"+id,"DELETE",null,new Set([id])),true);
  assert.equal(favoriteRequestAllowed(origin+"/api/vod/input-favorites/"+id,"DELETE",null,new Set()),false);
- for(const path of ["/api/vod/jobs","/api/settings","/api/credentials","/api/live-channels"])
+ for(const path of ["/api/vod/jobs","/api/encoding-jobs","/api/presets","/api/settings","/api/credentials","/api/bitmovin-accounts","/api/live-channels"])
   assert.equal(favoriteRequestAllowed(origin+path,"POST",{}),false);
  assert.equal(favoriteRequestAllowed("https://bitovp.stream/api/vod/input-favorites","POST",body(favoriteFixtures[0])),false);
  assert.equal(favoriteRequestAllowed(origin+"/api/vod/input-favorites?orgId=other","POST",body(favoriteFixtures[0])),false);
@@ -17,6 +17,12 @@ test("favorites QA permits only its three exact references and IDs returned to t
  assert.equal(favoriteRequestAllowed(origin+"/api/vod/input-favorites/"+id+"?all=true","DELETE",null,new Set([id])),false);
  assert.equal(favoriteRequestAllowed(origin+"/api/vod/input-previews","POST",{kind:"PROBE"}),true);
  await assert.rejects(runFavoritesBrowserQa({baseURL:"https://bitovp.stream",output:"unused"}));
+});
+test("parent eligibility uses only an explicit exact loopback account GET fixture with no keys",()=>{
+ const accounts=favoriteSyntheticRead(origin+"/api/bitmovin-accounts","GET");assert.equal(accounts.length,1);assert.deepEqual(Object.keys(accounts[0]).sort(),["id","internalHevcV2","label"]);
+ for(const method of ["POST","PATCH","DELETE"])assert.equal(favoriteSyntheticRead(origin+"/api/bitmovin-accounts",method),null);
+ for(const url of ["https://bitovp.stream/api/bitmovin-accounts",origin+"/api/bitmovin-accounts?org=other",origin+"/api/bitmovin-accounts#other","http://user@127.0.0.1:3192/api/bitmovin-accounts",origin+"/api/encoding-jobs",origin+"/api/presets"])assert.equal(favoriteSyntheticRead(url,"GET"),null);
+ accounts[0].label="changed";assert.notEqual(favoriteSyntheticRead(origin+"/api/bitmovin-accounts","GET")[0].label,"changed");
 });
 test("image exclusion assertion detects PNG and FILTER_IMAGE contamination",()=>{
  assert.doesNotThrow(()=>assertNoImageProbes([{kind:"PROBE",sources:[{objectKey:favoriteFixtures[0].objectKey}]}]));

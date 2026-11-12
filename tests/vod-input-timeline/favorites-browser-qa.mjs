@@ -8,12 +8,18 @@ import {chromium,expect} from "@playwright/test";
 import {parseOptions,requestAllowed} from "./local-browser-qa.mjs";
 
 const origin="http://127.0.0.1:3192",favoritePath="/api/vod/input-favorites";
-const credentialId="928d0a9c-3217-4d54-ad2f-8eaa946274c8",bucket="bitovp-editing-preview",prefix="fixtures/vod-favorites/v1/";
+const credentialId="928d0a9c-3217-4d54-ad2f-8eaa946274c8",bucket="bitovp-editing-preview",prefix="fixtures/vod-favorites-merge/v1/";
+const syntheticAccount={id:"30000000-0000-4000-8000-000000000001",label:"Favorites QA synthetic account (never submitted)",internalHevcV2:false};
 const draftKey='bitovp.wizard-draft:["00000000-0000-4000-8000-000000000001","main:none","vod","new"]';
+// Read-only fixture: exercise the real parent Start gate without storing API keys
+// or an account, and without ever submitting an encoding or preset write.
+export function favoriteSyntheticRead(url,method){
+ const u=new URL(url);return u.origin===origin&&!u.username&&!u.password&&!u.hash&&!u.search&&method==="GET"&&u.pathname==="/api/bitmovin-accounts"?[{...syntheticAccount}]:null;
+}
 export const favoriteFixtures=[
- {filename:"qa-video.mp4",label:"qa-video.mp4",kind:"VIDEO"},
- {filename:"qa-audio.wav",label:"qa-audio.wav",kind:"AUDIO"},
- {filename:"qa-logo.png",label:"QA固定素材 ロゴ",kind:"IMAGE"},
+ {filename:"merge-qa-video.mp4",label:"merge-qa-video.mp4",kind:"VIDEO"},
+ {filename:"merge-qa-audio.wav",label:"merge-qa-audio.wav",kind:"AUDIO"},
+ {filename:"merge-qa-logo.png",label:"Merge QA固定素材 ロゴ",kind:"IMAGE"},
 ].map(f=>({...f,credentialId,bucket,objectKey:prefix+f.filename}));
 export function favoriteRequestAllowed(url,method,body=null,ownedIds=new Set()) {
  const u=new URL(url);if(u.origin!==origin||u.username||u.password||u.hash)return false;
@@ -29,7 +35,7 @@ export function favoriteRequestAllowed(url,method,body=null,ownedIds=new Set()) 
 }
 export function assertNoImageProbes(requests){
  for(const r of requests.filter(v=>v.kind==="PROBE"))for(const source of r.sources){
-  assert.notEqual(source.objectKey,prefix+"qa-logo.png","Output logo entered AV PROBE");
+  assert.notEqual(source.objectKey,prefix+"merge-qa-logo.png","Output logo entered AV PROBE");
   assert.notEqual(source.purpose,"FILTER_IMAGE","FILTER_IMAGE entered AV PROBE");
  }
 }
@@ -60,7 +66,7 @@ async function ready(page,duration=8){
 async function pickOwned(page,filename){
  const picker=page.getByRole("dialog").filter({has:page.locator("#picker-credential")});await expect(picker).toBeVisible();
  await picker.locator("#picker-credential").selectOption({label:"VOD timeline local S3 (synthetic only)"});await picker.locator("#picker-bucket").selectOption(bucket);
- for(const folder of ["fixtures/","vod-favorites/","v1/"])await picker.getByRole("button",{name:folder,exact:true}).click();
+ for(const folder of ["fixtures/","vod-favorites-merge/","v1/"])await picker.getByRole("button",{name:folder,exact:true}).click();
  await picker.getByRole("row").filter({has:page.getByText(filename,{exact:true})}).getByRole("button",{name:"入力に使う",exact:true}).click();await expect(picker).toBeHidden();
 }
 async function addInput(page,f){
@@ -138,15 +144,44 @@ async function inspectLogo(page,{output}={}){
  if(output&&logo){const summary=page.locator("summary").filter({hasText:/^フィルター設定/});if(await summary.count())await summary.click();await page.screenshot({path:resolve(output,"output-logo-filter.png"),fullPage:true});}
  await step(page,2);await expect(editorOf(page)).toBeVisible();await ready(page);return logo;
 }
+async function inspectParentEligibility(page,report,phase,output){
+ const probesBefore=report.requests.filter(r=>r.kind==="PROBE").length;await step(page,8);
+ const start=page.getByRole("button",{name:"エンコーディングを開始",exact:true});await expect(start).toBeEnabled();
+ await page.getByRole("textbox",{name:"プリセット名",exact:true}).fill("favorites-readiness-qa");
+ await expect(page.getByRole("button",{name:"プリセットとして保存",exact:true})).toBeEnabled();
+ assert.equal(report.requests.filter(r=>r.kind==="PROBE").length,probesBefore,"Review eligibility was repaired by an unexpected probe");
+ report.parentReadiness??={};report.parentReadiness[phase]={startEnabled:true,savePresetEnabled:true,probes:probesBefore,providerSubmitted:false};
+ await page.screenshot({path:resolve(output,"parent-readiness-"+phase+".png"),fullPage:true});
+ // Do not click either write action. The provider-write request guard stays closed.
+}
+async function configureParentEligibility(page,report,output){
+ await step(page,1);await page.locator("#wz-name").fill("Fixed source readiness QA");await page.locator("#wz-account").selectOption(syntheticAccount.id);
+ await step(page,4);await page.locator("#wz-out-cred").selectOption(credentialId);
+ const picker=page.getByRole("dialog").filter({has:page.locator("#picker-credential")});await expect(picker).toBeVisible();
+ await picker.locator("#picker-bucket").selectOption(bucket);
+ for(const folder of ["fixtures/","vod-favorites-merge/","v1/"])await picker.getByRole("button",{name:folder,exact:true}).click();
+ await picker.getByRole("button",{name:/^現在のプレフィックスを(?:出力先にする|使う)$/}).click();await expect(picker).toBeHidden();
+ await step(page,2);await ready(page);await inspectParentEligibility(page,report,"before-logo",output);
+ await step(page,2);await ready(page);
+}
 async function applyLogo(page,report){
- const before=await ownDraft(page);await editorOf(page).getByRole("button",{name:useName(fixture("IMAGE")),exact:true}).click();
+ const before=await ownDraft(page),editorHandle=await editorOf(page).elementHandle(),previewHandle=await editorOf(page).getByLabel("入力タイムラインのプレビュー",{exact:true}).elementHandle(),requestCount=mediaRequests(report).length;
+ await editorOf(page).getByRole("button",{name:useName(fixture("IMAGE")),exact:true}).click();
  await expect(editorOf(page).getByRole("status").filter({hasText:"入力プレビューには表示されません"})).toBeVisible();
  await expect.poll(async()=>!!(await ownDraft(page))?.inputFiles?.some(f=>f.path===fixture("IMAGE").objectKey&&f.purpose==="FILTER_IMAGE")).toBe(true);
- const after=await ownDraft(page);assert.deepEqual(after.inputTimeline,before.inputTimeline,"Logo action changed timeline clips");assertNoImageProbes(report.requests);return after;
+ const after=await ownDraft(page);assert.deepEqual(after.inputTimeline,before.inputTimeline,"Logo action changed timeline clips");assertNoImageProbes(report.requests);
+ assert.ok(await editorOf(page).evaluate((el,previous)=>el===previous,editorHandle),"Logo action remounted the editor");
+ assert.ok(await editorOf(page).getByLabel("入力タイムラインのプレビュー",{exact:true}).evaluate((el,previous)=>el===previous,previewHandle),"Logo action remounted the preview");
+ assert.equal(mediaRequests(report).length,requestCount,"Applying output-only logo triggered AV preparation");
+ report.logoApplication={editorRetained:true,previewRetained:true,mediaRequestsUnchanged:true};return after;
 }
 async function logoAndRemoval(page,report,output){
  console.log("Favorites QA: output logo copy, reload exclusion and removal invariance");
- await applyLogo(page,report);const initialLogo=await inspectLogo(page),beforeReload=await ownDraft(page);const probesBefore=report.requests.filter(v=>v.kind==="PROBE").length;
+ await configureParentEligibility(page,report,output);await applyLogo(page,report);
+ // Checking output filters first would remount the editor and hide the parent's
+ // stale signature bug. Go straight to Review and inspect the actual Start gate.
+ await inspectParentEligibility(page,report,"after-logo",output);await step(page,2);await ready(page);
+ const initialLogo=await inspectLogo(page),beforeReload=await ownDraft(page);const probesBefore=report.requests.filter(v=>v.kind==="PROBE").length;
  await restore(page);assert.ok(report.requests.filter(v=>v.kind==="PROBE").length>probesBefore,"Applied-logo draft did not re-PROBE media");assertNoImageProbes(report.requests);
  const logo=await inspectLogo(page),afterReload=await ownDraft(page);
  assert.deepEqual(afterReload.inputFiles,beforeReload.inputFiles,"Draft restore changed FILTER_IMAGE input reference or purpose");
@@ -174,6 +209,7 @@ export async function runFavoritesBrowserQa(options){
   const r=route.request(),url=new URL(r.url()),body=r.method()==="POST"?JSON.parse(r.postData()??"null"):null;
   if(!favoriteRequestAllowed(r.url(),r.method(),body,ownedIds)){report.blocked.push({method:r.method(),path:url.pathname});return route.abort();}
   if(r.method()==="POST"){report.requests.push(body);report.requestTimes.push({at:Date.now(),path:url.pathname,kind:body?.kind});}
+  const syntheticRead=favoriteSyntheticRead(r.url(),r.method());if(syntheticRead){report.injectedResponses.push({path:url.pathname,status:200,mode:"synthetic-account-read-only-no-key",at:Date.now()});return route.fulfill({status:200,contentType:"application/json",headers:{"cache-control":"private, no-store"},body:JSON.stringify(syntheticRead)});}
   if(r.method()==="GET"&&url.pathname===favoritePath&&fault.mode==="invalid-list"){report.injectedResponses.push({path:favoritePath,status:200,mode:"invalid-schema",at:Date.now()});return route.fulfill({status:200,contentType:"application/json",headers:{"cache-control":"private, no-store"},body:JSON.stringify({favorites:"intentional QA malformed response"})});}
   return route.continue();
  });

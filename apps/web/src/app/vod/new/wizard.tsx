@@ -8,6 +8,7 @@ import {
 	INTERNAL_HEVC_V2_BCF_VERSION,
 } from "@bitovp/core";
 import {
+	MAX_VOD_TIMELINE_SOURCES,
 	type VodInputTimelineSourceFacts,
 	validateVodInputTimeline,
 } from "@bitovp/core/vod-input-timeline";
@@ -135,13 +136,15 @@ export function VodWizard({
 	const [step, setStep] = useState(0);
 	const [state, setState] = useState<WizardState>(DEFAULT_WIZARD_STATE);
 	const timelineSourcesSignature = JSON.stringify(
-		state.inputFiles.map(({ key, credentialId, bucket, path, kind }) => ({
-			key,
-			credentialId,
-			bucket,
-			path,
-			kind,
-		})),
+		state.inputFiles
+			.filter((file) => file.purpose !== "FILTER_IMAGE")
+			.map(({ key, credentialId, bucket, path, kind }) => ({
+				key,
+				credentialId,
+				bucket,
+				path,
+				kind,
+			})),
 	);
 	const [timelineReadiness, setTimelineReadiness] = useState<{
 		ready: boolean;
@@ -1315,7 +1318,7 @@ export function VodWizard({
 										canUseMedia={
 											state.inputFiles.filter(
 												(file) => file.path && file.purpose !== "FILTER_IMAGE",
-											).length < 16
+											).length < MAX_VOD_TIMELINE_SOURCES
 										}
 										imageOutput={{
 											credentialId: state.output.credentialId,
@@ -1820,6 +1823,12 @@ export function VodWizard({
 								)
 							)
 								return prev;
+							if (
+								prev.inputFiles.filter(
+									(file) => file.path && file.purpose !== "FILTER_IMAGE",
+								).length >= MAX_VOD_TIMELINE_SOURCES
+							)
+								return prev;
 							const empty = prev.inputFiles.findIndex(
 								(file) => !file.path && !file.credentialId,
 							);
@@ -1846,7 +1855,7 @@ export function VodWizard({
 									key: emptyFile.key,
 									inputKey: shared?.inputKey ?? emptyFile.inputKey,
 								};
-							else if (files.length < 16) files.push(file);
+							else files.push(file);
 							return { ...prev, inputFiles: files };
 						});
 					} else if (picker !== null) {

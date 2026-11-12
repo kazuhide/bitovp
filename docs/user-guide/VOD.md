@@ -36,8 +36,12 @@ the same name may be replaced. Public read access is not requested for the files
 unless you select it in Destination. Encoding is the step the eight steps have,
 with AI Scene Analysis, quality control, and Kantar audio watermarking. It leaves
 three settings to the eight steps: the Per-Title configuration, what a QC gate does
-when it fails, and the renditions a gate rule is for. A gate set here records its
-result, and each of its rules is for every file. Review lists what those settings
+when it fails, and the renditions a gate rule is for. A gate set here holds nothing
+back: a failed rule is recorded on the job and sends the "QC gate failed"
+notification, and each rule is for every file. The AI Scene Analysis result, the
+copies measured for quality, and the Kantar report start in a folder named after the
+job inside the output folder; the copies are named after the video settings and not
+after the job, so keep a folder for each job. Review lists what those settings
 write with the files. **Show all settings** opens the eight steps with what you
 entered, and **Back to simple view** returns while nothing outside the six steps is
 in use. The flow you choose is remembered in this browser, and

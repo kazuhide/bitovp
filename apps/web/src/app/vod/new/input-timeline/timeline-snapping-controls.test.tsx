@@ -296,3 +296,18 @@ it("snaps ruler clicks but preserves Alt, keyboard and slider precision", () => 
 	fireEvent.keyDown(handle("audio"), { key: "ArrowLeft" });
 	expect(changed.mock.lastCall?.[0].audioClips[0].outMs).toBe(7999);
 });
+
+it("measures ruler snap distance from the pointer before clamping the empty tail", () => {
+	const document = documentFor("audio");
+	document.videoClips = document.videoClips.map((clip, index) =>
+		index === 0
+			? { ...clip, outMs: 7900 }
+			: { ...clip, startMs: 7900, outMs: 100 },
+	);
+	renderLocalized(editor("audio", document));
+	fireEvent.click(screen.getByRole("slider", { name: "Time ruler" }), {
+		clientX: 400,
+		detail: 1,
+	});
+	expect(sought).toHaveBeenLastCalledWith(7999);
+});

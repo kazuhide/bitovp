@@ -21,9 +21,9 @@ export function TimelineRuler({
 	const l = useTimelineLabels();
 	const maximum = Math.max(0, durationMs - 1);
 	function seek(value: number, allowSnap = false) {
-		const position = Math.max(0, Math.min(maximum, Math.round(value)));
-		if (!disabled)
-			onSeek(allowSnap ? (snap?.(position) ?? position) : position);
+		const raw = Math.round(value);
+		const position = allowSnap ? (snap?.(raw) ?? raw) : raw;
+		if (!disabled) onSeek(Math.max(0, Math.min(maximum, position)));
 	}
 	return (
 		<div

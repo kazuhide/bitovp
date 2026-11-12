@@ -158,6 +158,14 @@ async function reverseAndPrecise(page,editor,report,id) {
   report.cases.push({kind:"video-"+edge,before,after:await releaseAndCheck(page,editor,report,id,before,{track:"video",id:clip.id,edge,expectedMs:5000})});
   await undo(editor,report,id,before);
  }
+ await undo(editor,report,id,base);
+ console.log("Snap QA: tail-space clicks use raw distance before clamping");
+ await select(page,editor,"video",2);await splitAt(editor,7900,["Alt"]);
+ await waitProject(report,id,next=>next?.videoClips.length===3&&next.videoClips[2].startMs===7900);
+ const tailPosition=editor.getByRole("slider",{name:labels.position,exact:true});
+ await editor.getByRole("slider",{name:"時間目盛り",exact:true}).click({position:{x:10000*.04,y:14}});
+ await expect(tailPosition).toHaveValue("7999");
+ report.rulerTail={durationMs:8000,cutMs:7900,rawMs:10000,actualMs:Number(await tailPosition.inputValue())};
  await undo(editor,report,id,base);await select(page,editor,"audio");
  const end=handle(editor,"audio","out");await end.press("ArrowLeft");
  const keyboard=await waitProject(report,id,next=>next?.audioClips[0]?.outMs===7999);
@@ -214,14 +222,17 @@ async function layouts(page,context,editor,report) {
 }
 export async function runSnappingBrowserQa(options) {
  assert.equal(options.baseURL,origin);await mkdir(options.output,{recursive:true});
- const report={baseURL:origin,output:options.output,startedAt:new Date().toISOString(),status:"RUNNING",blocked:[],httpErrors:[],consoleErrors:[],requests:[],cases:[],layouts:[]};
+ const report={baseURL:origin,output:options.output,startedAt:new Date().toISOString(),status:"RUNNING",blocked:[],httpErrors:[],consoleErrors:[],requests:[],requestTimes:[],cases:[],layouts:[]};
  const browser=await chromium.launch({headless:true});
  const context=await browser.newContext({baseURL:origin,viewport:{width:1440,height:1000},locale:"ja-JP",serviceWorkers:"block"});
  await context.addCookies([{name:"ovp-locale",value:"ja",url:origin}]);
  await context.route("**/*",async route=>{
   const request=route.request();
   if(!requestAllowed(request.url(),request.method(),origin)){report.blocked.push({method:request.method(),path:new URL(request.url()).pathname});return route.abort();}
-  if(request.method()==="POST")report.requests.push(JSON.parse(request.postData()??"null"));
+  if(request.method()==="POST"){
+   const body=JSON.parse(request.postData()??"null");report.requests.push(body);
+   report.requestTimes.push({at:Date.now(),kind:body?.kind});
+  }
   return route.continue();
  });
  const page=await context.newPage();
@@ -240,7 +251,15 @@ export async function runSnappingBrowserQa(options) {
   await addSource(page,editor,"b.mp4");await addSource(page,editor,"c.wav","v2");await mediaReady(editor);
   await select(page,editor,"video");await splitAt(editor,4000);
   await waitProject(report,id,next=>next?.videoClips.length===2&&next.audioClips.length===1);
-  await snapTrims(page,editor,report,id);await reverseAndPrecise(page,editor,report,id);
+  await snapTrims(page,editor,report,id);
+  // PROBE and PREVIEW share 30 POSTs/60s (the real route's fixed-window limit).
+  // The first group uses 20; let that window expire before the next group.
+  report.pacing={limit:30,windowMs:60000,quietMs:60200,postsBefore:report.requests.length,startedAt:Date.now()};
+  console.log("Snap QA: respecting 30 POSTs/60s; quiet window after "+report.requests.length+" POSTs");
+  await page.waitForTimeout(30100);await page.waitForTimeout(30100);
+  report.pacing.finishedAt=Date.now();
+  assert.equal(report.requests.length,report.pacing.postsBefore,"Unexpected POST during the quiet window");
+  await reverseAndPrecise(page,editor,report,id);
   await layouts(page,context,editor,report);
   await writeFile(resolve(options.output,"accessibility.yaml"),await editor.ariaSnapshot());
   assert.equal(report.blocked.length,0,"Forbidden request attempted");assert.equal(report.httpErrors.length,0,"HTTP error");assert.equal(report.consoleErrors.length,0,"Browser console error");

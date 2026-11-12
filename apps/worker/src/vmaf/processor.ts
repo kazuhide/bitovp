@@ -36,6 +36,7 @@ import {
 	type VmafReferencePreparationEvidence,
 	vmafChromaLayout,
 	vmafCloudProfileSchema,
+	vmafConvertedChromaLayout,
 	vmafExecutionSchema,
 	vmafJobSchema,
 	vmafReferencePreparationEvidenceSchema,
@@ -1020,23 +1021,50 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		// model, and what FFmpeg reports then is "Invalid argument", no score at
 		// all, or a crash; a cloud run reports nothing of it. Say the limit
 		// before the run, and before a cloud resource exists for this pair. The
-		// GPU scorer is not libvmaf and holds its own limits: nothing of this
-		// applies to it.
+		// GPU scorer is not libvmaf: it is asked all the same, and where it
+		// refuses, `runNativeVmafScore` names the limit.
 		const libvmafPictures =
 			execution.backend === "LOCAL" &&
 			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
 				? undefined
 				: { model, width: geometry.width, height: geometry.height };
 		if (libvmafPictures) {
+			// The ordinary method compares in the reference's pixel format when
+			// libvmaf takes that format, because `scaleToReference` below always
+			// puts a scale filter on the encode. FFmpeg converts a reference in
+			// any other format, a full-range one for example, to the format that
+			// this filter gives the encode, so the encode decides the layout then.
+			// Its probe is worth a run only for pictures that some layout
+			// refuses, and 4:2:0 has the highest limits.
+			const ordinaryLayout = async () => {
+				const referenceFormat = pixelFormatFromProbe(referenceProbe);
+				const layout = vmafChromaLayout(referenceFormat);
+				if (
+					layout ||
+					referenceFormat === undefined ||
+					!vmafSizeLimitMessage({ ...libvmafPictures, chroma: "4:2:0" })
+				)
+					return layout;
+				const probe =
+					resourceProbe ??
+					(await runner.run(
+						deps.ffprobePath,
+						["-v", "error", "-show_streams", "-of", "json", distortedPath],
+						{ signal },
+					));
+				// Without the encode's format the layout stays unknown, and
+				// libvmaf decides.
+				return probe.code === 0
+					? vmafConvertedChromaLayout(pixelFormatFromProbe(probe.stdout))
+					: undefined;
+			};
 			const sizeLimit = vmafSizeLimitMessage({
 				...libvmafPictures,
 				// The frame-index method converts both pictures to 10-bit 4:2:0 and
-				// declares the encode's size; the ordinary method compares in the
-				// reference's pixel format when libvmaf takes that format, because
-				// `scaleToReference` below always puts a scale filter on the encode.
+				// declares the encode's size.
 				...(measurementMethod
 					? { chroma: "4:2:0", declaredEncode: distortedOriginal }
-					: { chroma: vmafChromaLayout(pixelFormatFromProbe(referenceProbe)) }),
+					: { chroma: await ordinaryLayout() }),
 			});
 			if (sizeLimit) throw new Error(sizeLimit);
 		}

@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+	VMAF_NATIVE_SIZE_REFUSALS,
 	VMAF_SPEED_CHROMA_PRESCALE,
 	type VmafChromaLayout,
 	vmafChromaLayout,
+	vmafConvertedChromaLayout,
+	vmafNativeSizeLimitFailureMessage,
 	vmafSizeLimitFailureMessage,
 	vmafSizeLimitMessage,
 } from "./size-limits";
@@ -47,6 +51,37 @@ describe("libvmaf's picture size limits for the VMAF v1 models", () => {
 			420,
 		])
 			expect(vmafChromaLayout(other), String(other)).toBeUndefined();
+	});
+
+	it("knows the layout that an encode gives a reference which FFmpeg converts: the encode's own, also for a full-range encode", () => {
+		for (const [sampling, layout] of [
+			["420", "4:2:0"],
+			["422", "4:2:2"],
+			["444", "4:4:4"],
+		] as const) {
+			for (const depth of ["", "10le", "12le", "16le"])
+				expect(vmafConvertedChromaLayout(`yuv${sampling}p${depth}`)).toBe(
+					layout,
+				);
+			expect(vmafConvertedChromaLayout(`yuvj${sampling}p`)).toBe(layout);
+		}
+		// Encodes of which the conversion is not known.
+		for (const other of [
+			"nv12",
+			"p010le",
+			"gbrp",
+			"gray",
+			"yuv440p",
+			"yuvj440p",
+			"yuvj411p",
+			"yuvj420p10le",
+			"yuva420p",
+			"yuv420p10be",
+			"",
+			undefined,
+			420,
+		])
+			expect(vmafConvertedChromaLayout(other), String(other)).toBeUndefined();
 	});
 
 	it("has limits for the eight bundled VMAF v1 models and leaves every other model to libvmaf", () => {
@@ -328,5 +363,123 @@ describe("libvmaf's picture size limits for the VMAF v1 models", () => {
 				vmafSizeLimitFailureMessage(stderr, pictures),
 				stderr,
 			).toBeUndefined();
+	});
+
+	it("names the limit after a run in which the GPU scorer refused the pictures or the encode, and nothing else", () => {
+		const model = "vmaf_v1.0.16_3d0h";
+		const advice =
+			"Use a model of the vmaf_v0.6.1 family, which scores smaller pictures";
+		// Each line as a run on an NVIDIA GPU printed it, with the sizes of that run.
+		for (const [stderr, width, height, encode, sentence] of [
+			[
+				"bitovp-vmaf: input is too small or too large for official SpEED chroma blocks\n",
+				256,
+				144,
+				{ width: 256, height: 144 },
+				`cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two. The two pictures are compared at the size of the reference. ${advice}, or a larger reference.`,
+			],
+			[
+				"bitovp-vmaf: override official extractor cambi failed (libvmaf -22)\n",
+				640,
+				360,
+				{ width: 240, height: 134 },
+				`cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. ${advice}.`,
+			],
+			[
+				"bitovp-vmaf: invalid Vulkan CAMBI encoding geometry\n",
+				640,
+				360,
+				{ width: 200, height: 200 },
+				`cannot score an encode of 200x200: it needs an encode of at least 216 pixels in width or in height. ${advice}.`,
+			],
+		] as const)
+			expect(
+				vmafNativeSizeLimitFailureMessage(stderr, {
+					model,
+					width,
+					height,
+					declaredEncode: encode,
+				}),
+			).toBe(`VMAF model "${model}" ${sentence}`);
+
+		// The scorer compares in 4:2:0 whatever the reference is: 216x160 is the
+		// smallest that it scores, where libvmaf scores 4:4:4 pictures of 216x80.
+		const edge = (width: number, height: number) =>
+			vmafNativeSizeLimitFailureMessage(
+				"bitovp-vmaf: input is too small or too large for official SpEED chroma blocks\n",
+				{ model, width, height, declaredEncode: { width, height } },
+			);
+		expect(edge(216, 158)).toContain("cannot score 4:2:0 pictures of 216x158");
+		expect(edge(216, 160)).toBeUndefined();
+
+		const small = {
+			model,
+			width: 256,
+			height: 144,
+			declaredEncode: { width: 256, height: 144 },
+		};
+		for (const refusal of VMAF_NATIVE_SIZE_REFUSALS) {
+			expect(
+				vmafNativeSizeLimitFailureMessage(`bitovp-vmaf: ${refusal}\n`, small),
+				refusal,
+			).toContain("cannot score 4:2:0 pictures of 256x144");
+			// The same words for sizes that no limit of this file refuses, and for a
+			// model whose limits it does not know: the scorer's words stay.
+			expect(
+				vmafNativeSizeLimitFailureMessage(`bitovp-vmaf: ${refusal}\n`, {
+					model,
+					width: 1920,
+					height: 1080,
+					declaredEncode: { width: 1280, height: 720 },
+				}),
+				refusal,
+			).toBeUndefined();
+			expect(
+				vmafNativeSizeLimitFailureMessage(`bitovp-vmaf: ${refusal}\n`, {
+					...small,
+					model: "vmaf_v0.6.1",
+				}),
+				refusal,
+			).toBeUndefined();
+		}
+		// Every other failure on pictures that are too small.
+		for (const stderr of [
+			"",
+			"bitovp-vmaf: CUDA error: out of memory\n",
+			// libvmaf's other errors at the same call.
+			"bitovp-vmaf: override official extractor cambi failed (libvmaf -12)\n",
+			"bitovp-vmaf: load official model vmaf_v1.0.16_3d0h failed (libvmaf -22)\n",
+			// libvmaf's own words: the scorer does not print them.
+			"libvmaf ERROR SpEED: image too small, operating width or height is 0\n",
+			"too small",
+		])
+			expect(
+				vmafNativeSizeLimitFailureMessage(stderr, small),
+				stderr,
+			).toBeUndefined();
+	});
+
+	it("takes for a refusal of the GPU scorer only words that its source holds", () => {
+		const source = [
+			"model_oracle.cpp",
+			"vulkan/cambi_parameters.hpp",
+			"vulkan/speed_parameters.hpp",
+		]
+			.map((file) =>
+				readFileSync(
+					new URL(`../../../../native/vmaf-gpu/src/${file}`, import.meta.url),
+					"utf8",
+				),
+			)
+			.join("\n");
+		// The scorer puts this one together: what it asked of libvmaf, then
+		// libvmaf's error number. -22 is the one for an option out of its range.
+		const composed = "override official extractor cambi failed (libvmaf -22)";
+		expect(VMAF_NATIVE_SIZE_REFUSALS).toContain(composed);
+		expect(source).toContain('"override official extractor " + extractor');
+		expect(source).toContain('operation + " failed (libvmaf " +');
+		for (const refusal of VMAF_NATIVE_SIZE_REFUSALS)
+			if (refusal !== composed)
+				expect(source, refusal).toContain(`"${refusal}"`);
 	});
 });

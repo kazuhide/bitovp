@@ -293,6 +293,56 @@ describe("owned native local scoring", () => {
 		).rejects.toThrow(/NATIVE_UNSUPPORTED/);
 		expect(h.run).not.toHaveBeenCalled();
 	});
+	it("names the limit where the scorer refuses an encode that is too small for the model, and keeps the scorer's words for every other failure", async () => {
+		const h = await setup();
+		const failsWith = (stderr: string) =>
+			h.run.mockImplementation(async (_binary, args) =>
+				args[0] === "--version"
+					? {
+							code: 0,
+							stdout: `bitovp-vmaf 0.1 owned CUDA/Vulkan; official=${NATIVE_OFFICIAL_REVISION}; source=${source}\n`,
+							stderr: "",
+						}
+					: { code: 1, stdout: "", stderr },
+			);
+		// A 240x134 encode of the 640x360 reference, and what a run on an NVIDIA
+		// GPU printed for it.
+		const options = {
+			...h.options,
+			distortedOriginal: { width: 240, height: 134, bitdepth: 8 },
+		};
+		const context = {
+			...h.context,
+			distortedProbe: probe({ width: 240, height: 134 }),
+		};
+		const refusal =
+			"bitovp-vmaf: override official extractor cambi failed (libvmaf -22)\n";
+		failsWith(refusal);
+		await expect(
+			runLocalVmafScore(h.deps, options, context),
+		).rejects.toMatchObject({
+			message:
+				'VMAF model "vmaf_v1.0.16_3d0h" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.',
+		});
+		// The same words for sizes that no known limit refuses.
+		await expect(
+			runLocalVmafScore(h.deps, h.options, h.context),
+		).rejects.toMatchObject({
+			message: `NATIVE_SCORING_FAILED (1): ${refusal}`,
+		});
+		// Other words for the encode that is too small.
+		failsWith("bitovp-vmaf: CUDA error: out of memory\n");
+		await expect(
+			runLocalVmafScore(h.deps, options, context),
+		).rejects.toMatchObject({
+			message:
+				"NATIVE_SCORING_FAILED (1): bitovp-vmaf: CUDA error: out of memory\n",
+		});
+		// A failed run starts no CPU scoring in its place.
+		expect(h.run.mock.calls.map(([binary]) => binary)).toEqual(
+			Array.from({ length: 6 }, () => "bitovp-vmaf"),
+		);
+	});
 	it("fails a corrupt receipt without starting a CPU fallback", async () => {
 		const h = await setup();
 		h.receipt.cpuParity.checked = false;

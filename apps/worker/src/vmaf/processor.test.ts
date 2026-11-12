@@ -5231,9 +5231,11 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 		[v1, 256, 144, "yuv444p10le"],
 		// The smallest 4:2:0 pictures that the model scores.
 		[v1, 216, 160, "yuv420p"],
-		// A format that FFmpeg converts before libvmaf: the layout of the
-		// comparison is not known, so libvmaf decides.
-		[v1, 256, 144, "yuvj420p"],
+		// A reference that FFmpeg converts before libvmaf, to a format that
+		// follows from an encode of which it is not known: the layout of the
+		// comparison is not known, so libvmaf decides. Every file has this
+		// format here.
+		[v1, 256, 144, "nv12"],
 		[v1, 256, 144, undefined],
 	] as const)("scores %s at %ix%i (%s)", async (model, width, height, pixelFormat) => {
 		const t = setup({
@@ -5264,7 +5266,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				.mocked(t.runner.run)
 				.mockImplementation(async (_bin: string, argv: string[]) =>
 					argv.includes("-show_streams")
-						? { code: 0, stdout: probeOf(256, 144, "yuvj420p"), stderr: "" }
+						? { code: 0, stdout: probeOf(256, 144, "nv12"), stderr: "" }
 						: { code: null, stdout: "", stderr },
 				);
 		// libvmaf's last words before its segmentation fault.
@@ -5285,7 +5287,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 		vi.mocked(t.runner.run).mockImplementation(
 			async (_bin: string, argv: string[]) =>
 				argv.includes("-show_streams")
-					? { code: 0, stdout: probeOf(256, 144, "yuvj420p"), stderr: "" }
+					? { code: 0, stdout: probeOf(256, 144, "nv12"), stderr: "" }
 					: { code: null, stdout: "", stderr: "double free or corruption\n" },
 		);
 		await expect(
@@ -5528,6 +5530,97 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			);
 			expect(scoringRuns(t)).toHaveLength(0);
 		}
+	});
+
+	/** The ffprobe runs that named an encode, by the file that each read. */
+	const encodeProbes = (t: ReturnType<typeof setup>) =>
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(
+				([, argv]) =>
+					argv.includes("-show_streams") &&
+					!/\/ref-\d+\./.test(argv.at(-1) ?? ""),
+			);
+
+	it.each([
+		// 256x144 is too small in 4:2:0 and enough in 4:4:4. FFmpeg converts
+		// each of these references to the format that the encode's scale filter
+		// writes.
+		["yuvj420p", "yuv420p", true],
+		["yuvj444p", "yuvj420p", true],
+		["nv12", "yuv420p10le", true],
+		["yuvj420p", "yuv444p", false],
+		["gbrp", "yuvj444p", false],
+		// An encode of which the conversion is not known: libvmaf decides.
+		["yuvj420p", "nv12", false],
+		["yuvj420p", undefined, false],
+	] as const)("takes the layout of the encode for a %s reference, which libvmaf does not take as it is (encode %s)", async (reference, encode, refused) => {
+		const cloudScore = vi.fn(async (request) => {
+			await writeFile(request.options.logPath, vmafJson([96, 97]));
+		});
+		const t = setup({
+			cloudScore,
+			job: { model: v1, params: cloudJob },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(t, probeOf(256, 144, reference), probeOf(256, 144, encode));
+		const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		if (refused) {
+			await expect(processed).rejects.toThrow(
+				`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two.`,
+			);
+			// Before any pair reaches the cloud.
+			expect(cloudScore).not.toHaveBeenCalled();
+			expect(t.job.status).toBe("ERROR");
+		} else {
+			expect(await processed).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(cloudScore).toHaveBeenCalledTimes(2);
+		}
+		expect(encodeProbes(t).length).toBeGreaterThan(0);
+	});
+
+	it("leaves the layout unknown when the encode cannot be probed, and libvmaf decides", async () => {
+		const t = setup({
+			job: { model: v1 },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing runner fixture");
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) =>
+			argv.includes("-show_streams")
+				? /\/ref-\d+\./.test(argv.at(-1) ?? "")
+					? { code: 0, stderr: "", stdout: probeOf(256, 144, "yuvj420p") }
+					: { code: 1, stderr: "Invalid data found", stdout: "" }
+				: raw(bin, argv, options),
+		);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(encodeProbes(t)).toHaveLength(2);
+		expect(scoringRuns(t)).toHaveLength(2);
+	});
+
+	it.each([
+		// The reference's layout is known.
+		[256, 144, "yuv444p"],
+		// No layout refuses pictures of this size.
+		[640, 360, "yuvj420p"],
+		// The reference's format is not known, so nothing says that FFmpeg converts it.
+		[256, 144, undefined],
+	] as const)("does not probe the encode for a %ix%i reference in %s", async (width, height, reference) => {
+		const t = setup({
+			job: { model: v1 },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(
+			t,
+			probeOf(width, height, reference),
+			probeOf(256, 144, "yuv420p"),
+		);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(encodeProbes(t)).toHaveLength(0);
 	});
 
 	it("scores encodes below CAMBI's range with the ordinary method, which declares no encode", async () => {

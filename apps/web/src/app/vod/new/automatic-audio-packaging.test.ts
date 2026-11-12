@@ -4,6 +4,7 @@ import {
 	reconcileAutomaticAudioPackaging,
 } from "./automatic-audio-packaging";
 import {
+	audioKeys,
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
@@ -124,6 +125,38 @@ describe("audio keys carried by a video container", () => {
 				video.extraMuxings?.map((leg) => leg.muxedAudioKeys),
 			]),
 		).toEqual([[["a128", "a256"], [["a128", "a256"]]]]);
+	});
+
+	it("keep the track a container carries while another bitrate is typed through its value", () => {
+		// 640 kbps typed into the second row is "64000" for one keystroke: for that
+		// moment both rows derive one key, and it names neither of them.
+		const small = { bitrate: 64000, rate: 48000 };
+		const typed = [6400, 64000, 640000].map((bitrate) => ({
+			bitrate,
+			rate: 48000,
+		}));
+		let state = { videos: carrying("a64"), audios: [small, high] };
+		for (const second of typed) {
+			const next = { ...state, audios: [small, second] };
+			state = { ...next, videos: followRenamedAudioKeys(state, next) };
+		}
+		expect(audioKeys(state.audios)).toEqual(["a64", "a640"]);
+		expect(
+			state.videos.map((video) => [
+				video.muxing?.muxedAudioKeys,
+				video.extraMuxings?.map((leg) => leg.muxedAudioKeys),
+			]),
+		).toEqual([[["a64"], [["a64"]]]]);
+	});
+
+	it("leave a key two rows share where it is, whichever row is edited", () => {
+		const twin = { bitrate: 128000, rate: 48000 };
+		const before = {
+			videos: carrying("a128_48000"),
+			audios: [low, twin],
+		};
+		const after = { ...before, audios: [low, high] };
+		expect(followRenamedAudioKeys(before, after)).toBe(after.videos);
 	});
 
 	it.each([

@@ -7,7 +7,10 @@ import { audioKeys, type WizardMuxing, type WizardState } from "./build-plan";
  * the track dropped out of the file and came back as a container of its own.
  *
  * Only a rename is followed — the same row, its old key gone from the list. A reorder
- * or a removal changes which track a key means, and is left alone.
+ * or a removal changes which track a key means, and is left alone. So is a key two
+ * rows share, before or after the edit: it does not say which row a container meant.
+ * Two bitrates pass through such a key while one is being typed (64 kbps on the way
+ * to 640), and following it would hand the container the other row's track.
  */
 export function followRenamedAudioKeys(
 	previous: Pick<WizardState, "audios">,
@@ -18,11 +21,20 @@ export function followRenamedAudioKeys(
 		previous.audios.length !== next.audios.length
 	)
 		return next.videos;
+	const before = audioKeys(previous.audios);
 	const after = audioKeys(next.audios);
+	const one = (keys: readonly string[], key: string) =>
+		keys.indexOf(key) === keys.lastIndexOf(key);
 	const renamed = new Map<string, string>();
-	for (const [index, key] of audioKeys(previous.audios).entries()) {
+	for (const [index, key] of before.entries()) {
 		const to = after[index];
-		if (to !== undefined && to !== key && !after.includes(key))
+		if (
+			to !== undefined &&
+			to !== key &&
+			!after.includes(key) &&
+			one(before, key) &&
+			one(after, to)
+		)
 			renamed.set(key, to);
 	}
 	if (renamed.size === 0) return next.videos;

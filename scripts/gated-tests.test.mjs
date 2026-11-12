@@ -2780,6 +2780,15 @@ const withMediaInstaller = (check) => {
 			`#!/bin/sh\nfor last in "$@"; do :; done\n[ -z "$FAKE_MADE" ] || [ "$last" != "$FAKE_MADE" ] || ${system("mkdir")} -p "$last"\nexec ${system("mkdir")} "$@"\n`,
 			{ mode: 0o700 },
 		);
+		// The system's cp. With FAKE_SIGNAL it sends that signal to the shell
+		// that started it, once it has copied into the directory that a build
+		// is kept in under another name: the signal reaches the installer
+		// while it keeps its build, however long the copy takes.
+		writeFileSync(
+			join(tools, "cp"),
+			`#!/bin/sh\n${system("cp")} "$@" || exit\nfor last in "$@"; do :; done\ncase "$FAKE_SIGNAL:$last" in\n\t?*:*/partial.*/) kill -s "$FAKE_SIGNAL" "$PPID" ;;\nesac\n`,
+			{ mode: 0o700 },
+		);
 		const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 		const installer = readFileSync(
 			resolve(root, "scripts/native-media-tools.sh"),
@@ -2811,7 +2820,9 @@ const withMediaInstaller = (check) => {
 		// the build cannot be moved to its key (`move`), or another run gives
 		// the key the build `rival` first, or makes the directory `made` at the
 		// moment this run does; or sha256sum gives `answer` for the key of the
-		// build, and nothing where that is "none".
+		// build, and nothing where that is "none"; or the signal `signal`
+		// reaches the installer while it keeps its build. With `style`, the
+		// environment tells ls to quote names in that way.
 		const install = ({
 			shell,
 			file = pinned,
@@ -2836,6 +2847,8 @@ const withMediaInstaller = (check) => {
 			rival = "",
 			made = "",
 			answer = "",
+			signal = "",
+			style = "",
 			score = perfect,
 		}) => {
 			count += 1;
@@ -2896,7 +2909,9 @@ const withMediaInstaller = (check) => {
 						FAKE_RIVAL: rival,
 						FAKE_MADE: made,
 						FAKE_KEY: answer,
+						FAKE_SIGNAL: signal,
 						FAKE_SCORE: score,
+						...(style ? { QUOTING_STYLE: style } : {}),
 					},
 				},
 			);
@@ -3053,6 +3068,11 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 					`\necho "VMAF models: $(printf '%s\\n' "$models" | wc -l | tr -d ' ') files verified"\n`,
 				),
 			);
+			// The installer lists no directory with ls: GNU's ls quotes names
+			// as QUOTING_STYLE in the environment tells it to, and a quoted
+			// name is not the name that is expected. Outside its comments the
+			// installer does not hold the word.
+			assert.doesNotMatch(installer.replace(/^\s*#.*$/gm, ""), /\bls\b/);
 			for (const shell of shells) {
 				const done = install({ shell });
 				assert.equal(done.status, 0, done.stderr);
@@ -3095,6 +3115,15 @@ test("the installer builds the Dockerfile's own FFmpeg stage into a new director
 				]);
 				// Without a cache directory nothing is kept beside the target.
 				assert.deepEqual(readdirSync(join(done.target, "..")), ["media"]);
+				// With that variable in the environment the run ends as it does
+				// without it. Only a system whose ls is GNU's shows a difference.
+				for (const style of ["c", "shell-always"]) {
+					const quoted = install({ shell, style });
+					assert.equal(quoted.status, 0, quoted.stderr);
+					assert.equal(quoted.stdout, done.stdout);
+					assert.equal(quoted.stderr, "");
+					assert.equal(quoted.calls.length, 8);
+				}
 				// And a stage that holds more than the programs and the licences
 				// is taken as it is.
 				const wide = install({ shell, top: "lib" });
@@ -3412,6 +3441,22 @@ test("the installer keeps a build that passed the proof under a key of what it i
 				assert.equal(restored.stdout, reused.stdout);
 				assert.deepEqual(tree(restored.target), tree(built.target));
 
+				// What the environment tells ls about quoting names changes
+				// neither a run that keeps its build nor a run that finds it.
+				// Only a system whose ls is GNU's shows a difference.
+				for (const style of ["c", "shell-always"]) {
+					const styled = join(parent, `styled-${shell}-${style}`);
+					const kept = install({ shell, cache: styled, style });
+					assert.equal(kept.status, 0, kept.stderr);
+					assert.equal(kept.stdout, built.stdout);
+					assert.equal(kept.stderr, "");
+					assert.deepEqual(readdirSync(styled), [key]);
+					const found = install({ shell, cache: styled, style });
+					assert.equal(found.status, 0, found.stderr);
+					assert.equal(found.stdout, reused.stdout);
+					assert.equal(found.stderr, "");
+				}
+
 				// A kept build that is not whole is neither used nor built in
 				// its place: the installer names it, says what is wrong with it
 				// and ends before Docker is asked for anything and before the
@@ -3718,10 +3763,15 @@ test("the installer keeps a build that passed the proof under a key of what it i
 				// A build is kept whole or not at all. Where its list cannot be
 				// written, where find or sort fails while it is written, so that
 				// the list names other files than the build holds, and where the
-				// build cannot be given its key, the run fails and says why. It
-				// leaves nothing in the cache directory: no build under the key
-				// that every later run would stop at, and no directory under
-				// another name. The next run builds, and keeps its build.
+				// build cannot be given its key, the run fails and says why.
+				// Where a signal reaches the installer once the build is copied
+				// into the cache directory, the run ends with the status 1,
+				// says nothing and starts nothing more. The signal is sent to
+				// the shell alone: dash would end at once and leave the copy.
+				// Each of these runs leaves nothing in the cache directory: no
+				// build under the key that every later run would stop at, and
+				// no directory under another name. The next run builds, and
+				// keeps its build.
 				const NOT_WHOLE = (at) =>
 					`The build is not kept: its copy in ${at} is not whole: ${FILES}\n`;
 				for (const [options, status, stderr, calls] of [
@@ -3735,6 +3785,12 @@ test("the installer keeps a build that passed the proof under a key of what it i
 							`The build could not be kept in ${join(at, key)}: mv: stand-in failure\n`,
 						10,
 					],
+					...["HUP", "INT", "TERM"].map((signal) => [
+						{ signal },
+						1,
+						() => "",
+						8,
+					]),
 				]) {
 					failures += 1;
 					const none = join(parent, `none-${shell}-${failures}`);
@@ -3815,19 +3871,22 @@ test("the installer keeps a build that passed the proof under a key of what it i
 				assert.equal(paired.calls.length, 12);
 				assert.deepEqual(readdirSync(twin), [key]);
 
-				// A cache directory that cannot take a build is refused before
-				// the build and not after it: a file in its place, also one
-				// that may be written and started, or a link to nothing; a
-				// directory that cannot be written or searched; and a missing
-				// one whose parent cannot be written. Nothing is made there.
-				// The one who may write everywhere is refused only the first
-				// three.
+				// A run looks for its build in the cache directory. What cannot
+				// be searched is refused before anything is summed: a file in
+				// its place, also one that may be written and started, a link
+				// to nothing, and a directory that cannot be searched. A run
+				// that finds no build under its key has one to keep, and a
+				// place that cannot take it is refused once the key is known,
+				// before the build and not after it: a directory that cannot
+				// be written, and a missing one whose parent cannot be
+				// written. Nothing is made there. The one who may write
+				// everywhere is refused only the first three.
 				const places = join(parent, `places-${shell}`);
 				mkdirSync(places);
 				const UNFIT = (path) =>
-					`The cache directory is not a directory that can be written and searched: ${path}\n`;
+					`The cache directory is not a directory that can be searched: ${path}\n`;
 				const all = process.getuid?.() === 0;
-				for (const [name, prepare, stderr] of [
+				for (const [name, prepare, stderr, keyed] of [
 					["file", (path) => writeFileSync(path, ""), UNFIT],
 					[
 						"program",
@@ -3838,13 +3897,20 @@ test("the installer keeps a build that passed the proof under a key of what it i
 					...(all
 						? []
 						: [
-								["read", (path) => mkdirSync(path, { mode: 0o500 }), UNFIT],
 								["closed", (path) => mkdirSync(path, { mode: 0o600 }), UNFIT],
+								[
+									"read",
+									(path) => mkdirSync(path, { mode: 0o500 }),
+									(path) =>
+										`The cache directory cannot be written, and it holds no build under the key of these sources: ${path}\n`,
+									true,
+								],
 								[
 									"fixed/kept",
 									(path) => mkdirSync(dirname(path), { mode: 0o500 }),
 									(path) =>
 										`The cache directory cannot be made: ${dirname(path)} cannot be written\n`,
+									true,
 								],
 							]),
 				]) {
@@ -3854,7 +3920,11 @@ test("the installer keeps a build that passed the proof under a key of what it i
 					assert.equal(refused.status, 1, name);
 					assert.equal(refused.stdout, "");
 					assert.equal(refused.stderr, stderr(path));
-					assert.deepEqual(refused.calls, []);
+					assert.deepEqual(
+						refused.calls,
+						keyed ? [INPUTS(refused), KEY(refused)] : [],
+						name,
+					);
 					assert.equal(existsSync(refused.target), false);
 				}
 				assert.deepEqual(
@@ -3872,6 +3942,32 @@ test("the installer keeps a build that passed the proof under a key of what it i
 						chmodSync(join(places, name), 0o700);
 						assert.deepEqual(readdirSync(join(places, name)), []);
 					}
+
+				// A run that finds its build writes nothing into the cache
+				// directory, so that one which cannot be written serves it: the
+				// build is reused as from any other, and the directory holds
+				// what it held.
+				if (!all) {
+					const fixed = copy(() => {});
+					const before = tree(fixed);
+					const modes = [fixed, join(fixed, key)].map((path) => [
+						path,
+						statSync(path).mode & 0o7777,
+					]);
+					for (const [path] of modes) chmodSync(path, 0o500);
+					try {
+						const served = install({ shell, cache: fixed });
+						assert.equal(served.status, 0, served.stderr);
+						assert.equal(served.stdout, reused.stdout);
+						assert.equal(served.stderr, "");
+						assert.equal(served.calls.length, 7);
+						assert.deepEqual(tree(served.target), tree(built.target));
+					} finally {
+						// So that the test's own directory can be removed.
+						for (const [path, mode] of modes) chmodSync(path, mode);
+					}
+					assert.deepEqual(tree(fixed), before);
+				}
 
 				// Refused before anything is summed, built or kept.
 				const unused = join(parent, `unused-${shell}`);

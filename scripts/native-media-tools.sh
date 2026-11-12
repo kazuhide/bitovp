@@ -61,17 +61,14 @@ if [ -n "$cache" ]; then
 			exit 1
 			;;
 	esac
-	# A build is kept only after it is made and proven. A place that cannot
-	# take it is refused here, before the build and not after it. Nothing is
-	# made here: a run that is refused writes nothing.
+	# A run looks for a build in the cache directory: what stands at its path
+	# is a directory that can be searched. Whether it can take a build is asked
+	# below, of a run that has one to keep.
 	if [ -e "$cache" ] || [ -L "$cache" ]; then
-		if [ ! -d "$cache" ] || [ ! -w "$cache" ] || [ ! -x "$cache" ]; then
-			echo "The cache directory is not a directory that can be written and searched: $cache" >&2
+		if [ ! -d "$cache" ] || [ ! -x "$cache" ]; then
+			echo "The cache directory is not a directory that can be searched: $cache" >&2
 			exit 1
 		fi
-	elif [ ! -w "$parent" ]; then
-		echo "The cache directory cannot be made: $parent cannot be written" >&2
-		exit 1
 	fi
 fi
 
@@ -120,6 +117,13 @@ files() {
 	(cd "$1" && find . ! -type d ! -path ./SHA256SUMS | sed 's|^\./||' | LC_ALL=C sort)
 }
 
+# The names in the directory $1, hidden ones too, each on a line and in one
+# order. Not from ls: GNU's ls quotes the names as QUOTING_STYLE in the
+# environment tells it to. -prune keeps find from what is below a name.
+names() {
+	(cd "$1" && find . ! -name . -prune | sed 's|^\./||' | LC_ALL=C sort)
+}
+
 # Ends the script unless the directory $1 holds a whole build as it is kept:
 # the list and the three directories, and no other name beside them; below
 # them only plain files, and directories that hold something; each file that
@@ -129,8 +133,10 @@ files() {
 # list names, so that sha256sum reads plain files of the build and nothing
 # else: a list that names "-" would make it read its input.
 whole() {
-	if [ "$(ls -A "$1" | LC_ALL=C sort)" != "$(printf 'SHA256SUMS\nbin\nmodel\nshare')" ] ||
-		[ ! -f "$1/SHA256SUMS" ] || [ ! -d "$1/bin" ] || [ ! -d "$1/model" ] || [ ! -d "$1/share" ]; then
+	# The four are looked at before the names are listed: what stands under a
+	# key may be a file or a link to nothing, which holds no names to list.
+	if [ ! -f "$1/SHA256SUMS" ] || [ ! -d "$1/bin" ] || [ ! -d "$1/model" ] || [ ! -d "$1/share" ] ||
+		[ "$(names "$1")" != "$(printf 'SHA256SUMS\nbin\nmodel\nshare')" ]; then
 		echo "$2: it does not hold SHA256SUMS, bin, model and share alone" >&2
 		exit 1
 	fi
@@ -185,6 +191,19 @@ if [ -n "$cache" ]; then
 	if [ -e "$entry" ] || [ -L "$entry" ]; then
 		whole "$entry" "The FFmpeg build kept in $entry is damaged"
 		kept=$entry
+	# Nothing stands under the key: this run has a build to keep, and keeps it
+	# only after it is made and proven. A place that cannot take it is refused
+	# here, before the build and not after it. Nothing is made here: a run
+	# that is refused writes nothing. A run that found its build is not asked,
+	# because it writes nothing into the cache directory.
+	elif [ -d "$cache" ]; then
+		if [ ! -w "$cache" ]; then
+			echo "The cache directory cannot be written, and it holds no build under the key of these sources: $cache" >&2
+			exit 1
+		fi
+	elif [ ! -w "$(dirname "$cache")" ]; then
+		echo "The cache directory cannot be made: $(dirname "$cache") cannot be written" >&2
+		exit 1
 	fi
 fi
 
@@ -226,7 +245,7 @@ fi
 # sha256sum passes over a file that the list does not name. The directory
 # holds the models of the list and nothing else, so that the number printed
 # below is of models that were verified.
-if [ "$(ls -A "$target/model" | LC_ALL=C sort)" != "$models" ]; then
+if [ "$(names "$target/model")" != "$models" ]; then
 	echo "$target/model does not hold the models that docker/vmaf-models.sha256 names and nothing else" >&2
 	exit 1
 fi
@@ -242,7 +261,7 @@ partial=
 if [ -n "$entry" ] && [ -z "$kept" ]; then
 	# A run that finds the build copies bin, model and share and nothing else.
 	# A build that holds more is not kept: both ways leave the same directory.
-	if [ "$(ls -A "$target" | LC_ALL=C sort)" != "$(printf 'bin\nmodel\nshare')" ]; then
+	if [ "$(names "$target")" != "$(printf 'bin\nmodel\nshare')" ]; then
 		echo "The build cannot be kept: it does not hold bin, model and share alone, and a run that reuses a build gets these three" >&2
 		exit 1
 	fi
@@ -254,9 +273,12 @@ if [ -n "$entry" ] && [ -z "$kept" ]; then
 	fi
 	# Two runs may both find that the directory is missing.
 	mkdir -p "$cache"
-	# Whatever ends the script from here on takes the directory of the other
-	# name with it.
+	# A failure from here on takes the directory of the other name with it, and
+	# so does one of these three signals: without the second line, a shell
+	# that a signal ends does not do what the first line asks for. A kill that
+	# cannot be caught can leave the directory, and no run takes it for a build.
 	trap '[ -z "$partial" ] || rm -rf "$partial"' EXIT
+	trap 'exit 1' HUP INT TERM
 	partial=$(mktemp -d "$cache/partial.XXXXXX")
 	cp -R -p "$target/bin" "$target/share" "$target/model" "$partial/"
 	(cd "$partial" && files . | xargs sha256sum >SHA256SUMS)

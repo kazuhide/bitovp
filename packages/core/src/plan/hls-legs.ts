@@ -1,3 +1,5 @@
+import { isFileOnlyMuxingKind } from "./muxing-streams";
+
 /**
  * Which muxing legs an HLS manifest lists, and the playlist version those legs
  * imply — the two rules spelled ONCE, for the same reason `dash-legs.ts`
@@ -29,6 +31,11 @@ export function hlsLegSelected(
 	legKind: string,
 	pin: HlsLegKind | undefined,
 ): boolean {
+	// A whole-file kind is no leg at all, pinned or not: an unpinned manifest
+	// would otherwise list a `.mov` beside the ladder it sits next to.
+	if (isFileOnlyMuxingKind(legKind)) {
+		return false;
+	}
 	return legKind !== "CMAF" && (pin === undefined || legKind === pin);
 }
 

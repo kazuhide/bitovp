@@ -423,6 +423,41 @@ export async function executeMediaStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_MUXING_PROGRESSIVE_TS": {
+			const resourceId = await ctx.sdk.createProgressiveTsMuxing(
+				refId(op, ctx, "encodingId"),
+				{
+					streamId: refId(op, ctx, "streamId"),
+					// Same contract as the MP4 arm: absent on a single-stream file,
+					// and a ref naming an uncreated step throws before the API call.
+					additionalStreamIds: refIdList(op, ctx, "additionalStreamIds"),
+					filename: str(p.filename),
+					// `optNum`, never `num(…, default)`: an unset value must stay
+					// unset so the encoder decides — this app has no measured
+					// default to put in its place.
+					segmentLength: optNum(p.segmentLength),
+					startOffset: optNum(p.startOffset),
+					destination: destinationOf(op, ctx),
+					name: optStr(p.name),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
+		case "CREATE_MUXING_PROGRESSIVE_MOV": {
+			const resourceId = await ctx.sdk.createProgressiveMovMuxing(
+				refId(op, ctx, "encodingId"),
+				{
+					streamId: refId(op, ctx, "streamId"),
+					additionalStreamIds: refIdList(op, ctx, "additionalStreamIds"),
+					filename: str(p.filename),
+					destination: destinationOf(op, ctx),
+					name: optStr(p.name),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
 		case "CREATE_MUXING_PROGRESSIVE_WEBM": {
 			const resourceId = await ctx.sdk.createProgressiveWebmMuxing(
 				refId(op, ctx, "encodingId"),

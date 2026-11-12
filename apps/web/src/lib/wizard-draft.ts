@@ -133,7 +133,7 @@ const codec = fields(
 );
 const muxing = fields(
 	"acl kind key name path autoPath segmentNaming segmentNamingTemplate initSegmentName initSegmentNameTemplate filename manifestType dolbyVisionTrackSampleEntryName",
-	"segmentLength framesPerCmafChunk fragmentDuration",
+	"segmentLength framesPerCmafChunk fragmentDuration startOffset",
 	"ownContainer autoOwnContainer progressive",
 	{ muxedAudioKeys: strings },
 );

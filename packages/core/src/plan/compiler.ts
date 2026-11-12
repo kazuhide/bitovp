@@ -15,7 +15,11 @@ import {
 } from "./hls-media-defaults";
 import { applyManifestDetails } from "./manifest-detail-compiler";
 import { filterParameters } from "./media-filters";
-import { hasMuxedInAudio, muxingStreamKeys } from "./muxing-streams";
+import {
+	hasMuxedInAudio,
+	isFileOnlyMuxingKind,
+	muxingStreamKeys,
+} from "./muxing-streams";
 import {
 	isPerTitleRendition,
 	PER_TITLE_CAPTURE_STEP,
@@ -120,6 +124,8 @@ export type OperationKind =
 	| "CREATE_MUXING_TEXT"
 	| "CREATE_MUXING_TS"
 	| "CREATE_MUXING_WEBM"
+	| "CREATE_MUXING_PROGRESSIVE_TS"
+	| "CREATE_MUXING_PROGRESSIVE_MOV"
 	| "CREATE_DRM_CENC"
 	| "CREATE_DRM_FAIRPLAY"
 	| "CREATE_DRM_SPEKE"
@@ -472,6 +478,9 @@ const MUXING_LABEL = {
 	MP4: "MP4",
 	TS: "TS",
 	WEBM: "WebM",
+	// No vendor sample names these two; the label follows the same grammar.
+	PROGRESSIVE_TS: "Progressive TS",
+	PROGRESSIVE_MOV: "Progressive MOV",
 } as const;
 
 /** Sample naming: "<Video|Audio> <FMP4|MP4|TS|WebM> Muxing <identity>". */
@@ -1824,6 +1833,37 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						},
 						refs: muxingRefs,
 					});
+				} else if (muxing.kind === "PROGRESSIVE_TS") {
+					// One whole .ts FILE. The two optional fields are sent only
+					// when the plan states them — an absent one leaves the
+					// encoder's own default in force rather than one invented here.
+					ops.push({
+						step: `muxing:${muxing.key}`,
+						kind: "CREATE_MUXING_PROGRESSIVE_TS",
+						payload: {
+							filename: muxing.filename,
+							...(muxing.segmentLength !== undefined
+								? { segmentLength: muxing.segmentLength }
+								: {}),
+							...(muxing.startOffset !== undefined
+								? { startOffset: muxing.startOffset }
+								: {}),
+							...destinationFields,
+							name: muxing.name ?? muxingName("PROGRESSIVE_TS", primary),
+						},
+						refs: muxingRefs,
+					});
+				} else if (muxing.kind === "PROGRESSIVE_MOV") {
+					ops.push({
+						step: `muxing:${muxing.key}`,
+						kind: "CREATE_MUXING_PROGRESSIVE_MOV",
+						payload: {
+							filename: muxing.filename,
+							...destinationFields,
+							name: muxing.name ?? muxingName("PROGRESSIVE_MOV", primary),
+						},
+						refs: muxingRefs,
+					});
 				} else {
 					unreachable(muxing);
 				}
@@ -2390,6 +2430,10 @@ function compileHlsManifest(
 			!rendition ||
 			muxing.kind === "CHUNKED_TEXT" ||
 			muxing.kind === "TEXT" ||
+			// A whole-file deliverable is not a variant. The video branch below
+			// lists EVERY kind when the manifest pins none, so without this a
+			// `.ts`/`.mov` file beside a ladder would become a stream-info entry.
+			isFileOnlyMuxingKind(muxing.kind) ||
 			isPerTitle(rendition)
 		) {
 			continue;

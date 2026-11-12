@@ -1,3 +1,4 @@
+import { muxingKindCarriesAudio } from "@bitovp/core";
 import { audioKeys, type WizardMuxing, type WizardState } from "./build-plan";
 
 /**
@@ -61,7 +62,9 @@ export function reconcileAutomaticAudioPackaging(
 			state.videos.every((video) =>
 				[video.muxing, ...(video.extraMuxings ?? [])].every(
 					(leg) =>
-						(leg?.kind === "TS" || leg?.kind === "MP4") &&
+						// Absent kind = the fMP4 default, which carries nothing.
+						leg?.kind !== undefined &&
+						muxingKindCarriesAudio(leg.kind) &&
 						leg.muxedAudioKeys?.includes(key),
 				),
 			);

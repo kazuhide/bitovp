@@ -4633,6 +4633,7 @@ export const ja = {
 		muxedAudio: "同梱する音声",
 		muxedAudioHint:
 			"映像と同じセグメントに含める音声です。音声を含むバリアントには EXT-X-MEDIA グループは不要です。音声を含まないバリアントは、独立した音声コンテナを参照します。",
+		muxedAudioFileHint: "映像と一緒にこのファイルへ書き込む音声です。",
 		ownContainer: "独立コンテナ",
 		ownContainerLabel: "この音声用に作る",
 		ownContainerOnHint:
@@ -4836,6 +4837,13 @@ export const ja = {
 		defaultEnWebvttSegNumberVtt: "既定 en_webvtt_seg_%number%.vtt",
 		defaultInitHdr: "既定 init.hdr",
 		defaultInitMp4: "既定 init.mp4",
+		defaultOutputMov: "既定 output.mov",
+		defaultOutputTs: "既定 output.ts",
+		encoderDefaultWhenEmpty:
+			"任意です。空欄の場合はエンコーダーの既定値を使います。",
+		startOffsetS: "開始オフセット (秒)",
+		startOffsetHint:
+			"MPEG-TS のタイムスタンプを、指定した秒数(整数)だけずらします。空欄の場合はエンコーダーの既定値を使います。",
 		defaultSegNumberChk: "既定 seg_%number%.chk",
 		defaultSegNumberTs: "既定 seg_%number%.ts",
 		addDeliveryMirror: "配信先を追加",
@@ -5316,6 +5324,7 @@ export const ja = {
 			"このプランにはウィザードで保持できない設定があります。元のJSONを保持しています。「JSONを編集」から変更してください。",
 		importEditJson: "JSONを編集",
 		muxedAudioCarrying: "このセグメントに {key} の音声を含めます。",
+		muxedAudioCarryingFile: "このファイルに {key} の音声を含めます。",
 		qcDisabledCarriedBlock:
 			"このプランは QC/VMAF の設定を含んでいますが、この環境では QC/VMAF がオフのため開始できません。設定を削除して続けるか、設定画面で QC/VMAF を有効にしてください。",
 		qcDisabledRemoveBlock: "QC 設定を削除",

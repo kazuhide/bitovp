@@ -527,6 +527,23 @@ function readMuxing(
 			muxing.dolbyVisionTrackSampleEntryName =
 				dolby as WizardMuxing["dolbyVisionTrackSampleEntryName"];
 		}
+	} else if (kind === "PROGRESSIVE_TS" || kind === "PROGRESSIVE_MOV") {
+		// One whole file: the filename is carried verbatim, and so are the two
+		// PROGRESSIVE_TS numbers. They must NOT go through the segmented branch
+		// below — it drops `segmentLength: 6` as "the default", and this kind
+		// has no default here (absent means the encoder's own choice), so an
+		// explicit 6 would come back as absent and change the request.
+		muxing.filename = asString(mux.filename) ?? "";
+		if (kind === "PROGRESSIVE_TS") {
+			const segmentLength = asNumber(mux.segmentLength);
+			if (segmentLength !== undefined) {
+				muxing.segmentLength = segmentLength;
+			}
+			const startOffset = asNumber(mux.startOffset);
+			if (startOffset !== undefined) {
+				muxing.startOffset = startOffset;
+			}
+		}
 	} else if (kind === "WEBM" && mux.progressive === true) {
 		muxing.progressive = true;
 		muxing.filename = asString(mux.filename) ?? "output.webm";

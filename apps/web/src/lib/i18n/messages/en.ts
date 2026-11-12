@@ -4696,6 +4696,8 @@ export const en = {
 		muxedAudio: "Muxed-in audio",
 		muxedAudioHint:
 			"Audio tracks that travel INSIDE these segments. Each variant that carries its own audio needs no EXT-X-MEDIA group; the ones that carry none point at a standalone audio container instead.",
+		muxedAudioFileHint:
+			"The audio track written into this file together with the video.",
 		ownContainer: "Standalone container",
 		ownContainerLabel: "Build one for this track",
 		ownContainerOnHint:
@@ -4899,6 +4901,13 @@ export const en = {
 		defaultEnWebvttSegNumberVtt: "Default en_webvtt_seg_%number%.vtt",
 		defaultInitHdr: "Default init.hdr",
 		defaultInitMp4: "Default init.mp4",
+		defaultOutputMov: "Default output.mov",
+		defaultOutputTs: "Default output.ts",
+		encoderDefaultWhenEmpty:
+			"Optional. Leave empty to use the encoder's default.",
+		startOffsetS: "Start offset (s)",
+		startOffsetHint:
+			"Offsets the MPEG-TS timestamps by this many whole seconds. Leave empty to use the encoder's default.",
 		defaultSegNumberChk: "Default seg_%number%.chk",
 		defaultSegNumberTs: "Default seg_%number%.ts",
 		addDeliveryMirror: "Add delivery mirror",
@@ -5373,6 +5382,7 @@ export const en = {
 			"The wizard cannot preserve every setting in this plan. The original JSON remains active; use Edit JSON to change it.",
 		importEditJson: "Edit JSON",
 		muxedAudioCarrying: "Carrying {key} inside these segments.",
+		muxedAudioCarryingFile: "Carrying {key} inside this file.",
 		qcDisabledCarriedBlock:
 			"This plan carries a QC/VMAF block, but QC/VMAF is turned off for this deployment — starting it will be refused. Remove the block to continue, or enable QC/VMAF in Settings.",
 		qcDisabledRemoveBlock: "Remove the QC block",

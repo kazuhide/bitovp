@@ -15,6 +15,7 @@ import type {
 	DashDetailedOptions,
 	HlsDetailedOptions,
 } from "../plan/manifest-options";
+import { muxingKindCarriesAudio } from "../plan/muxing-streams";
 import type { QcGate } from "../plan/qc-gate";
 import {
 	type AV1_DYNAMIC_RANGE_FORMATS,
@@ -474,7 +475,11 @@ export type WizardMuxingKind =
 	| "TS"
 	| "WEBM"
 	| "CHUNKED_TEXT"
-	| "TEXT";
+	| "TEXT"
+	/** One whole .ts file (never a manifest leg; audio muxed in). */
+	| "PROGRESSIVE_TS"
+	/** One whole .mov file (never a manifest leg; audio muxed in). */
+	| "PROGRESSIVE_MOV";
 
 /** Per-rendition muxing leg (Muxings step). Absent = P1 fMP4 defaults. */
 export type WizardMuxing = {
@@ -501,11 +506,13 @@ export type WizardMuxing = {
 	initSegmentName?: string;
 	initSegmentNameTemplate?: string;
 	framesPerCmafChunk?: number;
-	// MP4
+	// MP4 (and the two whole-file kinds, which share `filename`)
 	filename?: string;
 	fragmentDuration?: number;
 	manifestType?: "HLS_BYTE_RANGES" | "SMOOTH" | "DASH_ON_DEMAND";
 	dolbyVisionTrackSampleEntryName?: "DVHE" | "DVH1";
+	/** PROGRESSIVE_TS only: MPEG-TS timestamp offset in whole seconds. */
+	startOffset?: number;
 	/**
 	 * VIDEO CONTAINERS — the audio renditions that ride INSIDE this one.
 	 *
@@ -1129,13 +1136,16 @@ function isQcOnly(state: Pick<WizardState, "qc">): boolean {
 	);
 }
 
-/** Audio keys a video container leg carries  — TS/MP4 only. */
+/**
+ * Audio keys a video container leg carries — only for the kinds whose
+ * container can hold a second stream (`muxingKindCarriesAudio`, the one
+ * definition the packaging form and its reconciler read too).
+ */
 function carriedAudioKeysOf(
 	leg: WizardMuxing,
 	audioKeySet: ReadonlySet<string>,
 ): string[] {
-	const legKind = leg.kind ?? "FMP4";
-	if (legKind !== "TS" && legKind !== "MP4") {
+	if (!muxingKindCarriesAudio(leg.kind ?? "FMP4")) {
 		return [];
 	}
 	return (leg.muxedAudioKeys ?? []).filter((key) => audioKeySet.has(key));
@@ -2077,8 +2087,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		muxing: WizardMuxing | undefined,
 		legacyFmp4: boolean,
 		/**
-		 * Audio renditions muxed INTO this container . Only TS and
-		 * MP4 accept them — the plan schema carries the field on those two only,
+		 * Audio renditions muxed INTO this container . Only the
+		 * kinds `muxingKindCarriesAudio` names accept them (TS, MP4 and the two
+		 * whole-file kinds) — the plan schema carries the field on those only,
 		 * so passing it anywhere else could not compile even if this builder
 		 * tried. Empty is normalised to absent because the schema refuses an
 		 * empty list: there is no half-muxed container.
@@ -2131,6 +2142,39 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				segmentNaming: str(m.segmentNaming),
 				segmentNamingTemplate: str(m.segmentNamingTemplate),
 				destination: dest,
+				name,
+			});
+		}
+		if (kind === "PROGRESSIVE_TS" || kind === "PROGRESSIVE_MOV") {
+			// One whole file. The destination is REQUIRED by the schema — these
+			// kinds have no DRM-owned output path — so it is written even when a
+			// DRM row names this muxing; the validator then refuses that row
+			// (PLAN_DRM_MUXING_MISMATCH) instead of the plan failing to parse on
+			// a missing destination, which would say nothing about the cause.
+			const fileDestination =
+				dest ?? destination(`${base}${derived}`, m.acl);
+			const additionalStreamKeys =
+				muxedIn && muxedIn.length > 0 ? [...muxedIn] : undefined;
+			if (kind === "PROGRESSIVE_TS") {
+				return prune({
+					key: muxKey,
+					kind: "PROGRESSIVE_TS" as const,
+					streamKey: key,
+					additionalStreamKeys,
+					filename: m.filename || "output.ts",
+					segmentLength: m.segmentLength,
+					startOffset: m.startOffset,
+					destination: fileDestination,
+					name,
+				});
+			}
+			return prune({
+				key: muxKey,
+				kind: "PROGRESSIVE_MOV" as const,
+				streamKey: key,
+				additionalStreamKeys,
+				filename: m.filename || "output.mov",
+				destination: fileDestination,
 				name,
 			});
 		}

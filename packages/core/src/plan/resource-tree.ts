@@ -112,6 +112,8 @@ const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	CREATE_MUXING_CMAF: "muxings",
 	CREATE_MUXING_MP4: "muxings",
 	CREATE_MUXING_PROGRESSIVE_WEBM: "muxings",
+	CREATE_MUXING_PROGRESSIVE_TS: "muxings",
+	CREATE_MUXING_PROGRESSIVE_MOV: "muxings",
 	CREATE_MUXING_TS: "muxings",
 	CREATE_MUXING_WEBM: "muxings",
 	CREATE_MUXING_CHUNKED_TEXT: "muxings",

@@ -784,6 +784,12 @@ export {
 export * from "./plan/manifest-options";
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
+export type { FileOnlyMuxingKind } from "./plan/muxing-streams";
+export {
+	FILE_ONLY_MUXING_KINDS,
+	isFileOnlyMuxingKind,
+	muxingKindCarriesAudio,
+} from "./plan/muxing-streams";
 export { outputFilePath, outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
@@ -916,6 +922,7 @@ export type {
 	H265V2QualityControls,
 	PaddingSequence,
 	PlanInput,
+	PlanMuxing,
 	PlanOutput,
 	PlanQc,
 	PlanRendition,
@@ -952,6 +959,8 @@ export {
 	planMuxingSchema,
 	planOutputSchema,
 	planQcSchema,
+	progressiveMovMuxingSchema,
+	progressiveTsMuxingSchema,
 	renditionSchema,
 	secretEgressUrlSchema,
 	spriteSchema,
@@ -1010,7 +1019,11 @@ export type {
 	PlanIssueLevel,
 	PlanValidationOptions,
 } from "./plan/validate";
-export { planHasErrors, validatePlan } from "./plan/validate";
+export {
+	MUXING_CODEC_MATRIX,
+	planHasErrors,
+	validatePlan,
+} from "./plan/validate";
 export type {
 	InstantiateWatchPlanInput,
 	InstantiateWatchPlanResult,

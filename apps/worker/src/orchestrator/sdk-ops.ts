@@ -999,6 +999,43 @@ export type SdkOps = {
 		},
 	): Promise<string>;
 	/**
+	 * Progressive MOV — one whole `.mov` file. Built from the SDK model alone:
+	 * Bitmovin publishes no sample request for this muxing and this app has not
+	 * run one live (the plan validator says so on every plan that uses it).
+	 */
+	createProgressiveMovMuxing(
+		encodingId: string,
+		p: {
+			streamId: string;
+			/** Muxed-in streams — see createMp4Muxing. Absent = single stream. */
+			additionalStreamIds?: string[];
+			filename: string;
+			destination?: Destination;
+			name?: string;
+		},
+	): Promise<string>;
+	/**
+	 * Progressive TS — one whole `.ts` file, as opposed to `createTsMuxing`'s
+	 * HLS segments. Audio rides inside via `additionalStreamIds`, which is the
+	 * shape of Bitmovin's own sample (one H.264 and one AAC stream handed to a
+	 * single ProgressiveTsMuxing).
+	 */
+	createProgressiveTsMuxing(
+		encodingId: string,
+		p: {
+			streamId: string;
+			/** Muxed-in streams — see createMp4Muxing. Absent = single stream. */
+			additionalStreamIds?: string[];
+			filename: string;
+			/** Absent = the encoder's own choice; this app sends no default. */
+			segmentLength?: number;
+			/** MPEG-TS timestamp offset in whole seconds; absent = encoder default. */
+			startOffset?: number;
+			destination?: Destination;
+			name?: string;
+		},
+	): Promise<string>;
+	/**
 	 * Progressive (single-file) WebM — the VP9 QC mirror's container (ledger
 	 * #205). The provider refuses a VP9 progressive MP4 outright.
 	 */

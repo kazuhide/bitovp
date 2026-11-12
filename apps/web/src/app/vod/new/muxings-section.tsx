@@ -1,6 +1,11 @@
 "use client";
 
-import type { CredentialSummaryWire } from "@bitovp/core";
+import {
+	type CredentialSummaryWire,
+	isFileOnlyMuxingKind,
+	MUXING_CODEC_MATRIX,
+	muxingKindCarriesAudio,
+} from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
@@ -17,6 +22,7 @@ import {
 	type WizardMuxing,
 	type WizardMuxingKind,
 	type WizardState,
+	type WizardVideoCodec,
 } from "./build-plan";
 import { CMAF_CHUNK_FIELDS } from "./cmaf-fields";
 import {
@@ -40,9 +46,42 @@ import {
  * they protect, so they live right under that output.
  */
 
-const VIDEO_KINDS: WizardMuxingKind[] = ["FMP4", "CMAF", "MP4", "TS", "WEBM"];
+const VIDEO_KINDS: WizardMuxingKind[] = [
+	"FMP4",
+	"CMAF",
+	"MP4",
+	"TS",
+	"WEBM",
+	// Whole-file containers: one .ts / .mov per rendition, never a manifest leg.
+	"PROGRESSIVE_TS",
+	"PROGRESSIVE_MOV",
+];
 const AUDIO_KINDS: WizardMuxingKind[] = ["FMP4", "CMAF", "MP4", "TS"];
 const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
+
+/**
+ * The containers offered for a video rendition of this codec.
+ *
+ * CMAF keeps its H.264-only rule. The two whole-file kinds are read off
+ * `MUXING_CODEC_MATRIX` — the table the validator refuses mismatches with — so
+ * the picker does not offer a pairing the preview is certain to reject. The
+ * streaming kinds are deliberately NOT filtered through the matrix: that would
+ * change what existing rows are offered, which is not this change's to decide.
+ */
+function videoKindsFor(
+	codec: WizardVideoCodec | undefined,
+): WizardMuxingKind[] {
+	// The plan spells both HEVC encoders "H265".
+	const planCodec =
+		codec === undefined ? "H264" : codec === "H265V2" ? "H265" : codec;
+	return VIDEO_KINDS.filter((kind) =>
+		kind === "CMAF"
+			? planCodec === "H264"
+			: isFileOnlyMuxingKind(kind)
+				? MUXING_CODEC_MATRIX[kind].includes(planCodec)
+				: true,
+	);
+}
 
 const FMP4_FIELDS: OptionFieldSpec[] = [
 	{
@@ -139,6 +178,41 @@ const WEBM_FIELDS: OptionFieldSpec[] = [
 	},
 ];
 
+/**
+ * One whole `.ts` file. Neither number has a default in this app — an empty
+ * field leaves the choice to the encoder, and the hints say exactly that
+ * rather than name a value nobody here has measured.
+ */
+const PROGRESSIVE_TS_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "filename",
+		labelKey: "wizard.filename",
+		control: "text",
+		hintKey: "wizard.defaultOutputTs",
+	},
+	{
+		key: "segmentLength",
+		labelKey: "wizard.segmentLengthS",
+		control: "num",
+		hintKey: "wizard.encoderDefaultWhenEmpty",
+	},
+	{
+		key: "startOffset",
+		labelKey: "wizard.startOffsetS",
+		control: "num",
+		hintKey: "wizard.startOffsetHint",
+	},
+];
+
+const PROGRESSIVE_MOV_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "filename",
+		labelKey: "wizard.filename",
+		control: "text",
+		hintKey: "wizard.defaultOutputMov",
+	},
+];
+
 const CHUNKED_TEXT_FIELDS: OptionFieldSpec[] = [
 	{
 		key: "segmentLength",
@@ -169,6 +243,10 @@ function fieldsFor(
 			return MP4_FIELDS;
 		case "TS":
 			return TS_FIELDS;
+		case "PROGRESSIVE_TS":
+			return PROGRESSIVE_TS_FIELDS;
+		case "PROGRESSIVE_MOV":
+			return PROGRESSIVE_MOV_FIELDS;
 		case "WEBM":
 			return [
 				{
@@ -237,9 +315,14 @@ function MuxingEditor({
 	const kind = muxing.kind ?? defaultKind;
 	const drmEntries = drm?.entriesFor(muxingKey) ?? [];
 	const drmOwned = drmEntries.length > 0;
-	// Only TS and MP4 can carry a second stream — `additionalStreamKeys` lives
-	// on those two schemas.
-	const kindCanMux = kind === "TS" || kind === "MP4";
+	// Only the kinds whose schema has `additionalStreamKeys` can carry a second
+	// stream — one predicate, shared with `buildPlan` and the audio reconciler,
+	// so the picker cannot offer a relation the builder would drop.
+	const kindCanMux = muxingKindCarriesAudio(kind);
+	// A whole-file container is never a manifest leg and has no DRM route: the
+	// validator refuses an encryption row on it, so the form does not offer one.
+	const fileOnly = isFileOnlyMuxingKind(kind);
+	const drmOffered = kind !== "CMAF" && !fileOnly;
 	/**
 	 * The selection, resolved against the renditions that CURRENTLY exist.
 	 *
@@ -311,9 +394,20 @@ function MuxingEditor({
 						label={t("wizard.muxedAudio")}
 						htmlFor={`${idBase}-muxaudio`}
 						hint={
+							// The streaming copy talks about segments and EXT-X-MEDIA
+							// groups; neither exists for a file nothing references.
 							selectedAudio
-								? t("wizardX.muxedAudioCarrying", { key: selectedAudio })
-								: t("wizard.muxedAudioHint")
+								? t(
+										fileOnly
+											? "wizardX.muxedAudioCarryingFile"
+											: "wizardX.muxedAudioCarrying",
+										{ key: selectedAudio },
+									)
+								: t(
+										fileOnly
+											? "wizard.muxedAudioFileHint"
+											: "wizard.muxedAudioHint",
+									)
 						}
 					>
 						<SelectNative
@@ -414,7 +508,10 @@ function MuxingEditor({
 					/>
 				</Field>
 			)}
-			{drm && !muxedIn && (kind !== "CMAF" || drmEntries.length > 0) ? (
+			{/* Existing rows stay reachable on a kind that offers none, so a row
+			    left behind by a kind change can be removed instead of failing the
+			    preview with nothing on screen to act on. */}
+			{drm && !muxedIn && (drmOffered || drmEntries.length > 0) ? (
 				<Collapsible
 					summary={t("wizardX.encryptionDrmCount", {
 						count: drmEntries.length,
@@ -431,7 +528,7 @@ function MuxingEditor({
 							onRemove={() => drm.remove(index)}
 						/>
 					))}
-					{kind !== "CMAF" ? (
+					{drmOffered ? (
 						<div className="flex gap-1">
 							<Button
 								variant="secondary"
@@ -673,11 +770,7 @@ export function MuxingsSection({
 						idBase={`wz-mx-v-${index}`}
 						label={`video · ${video.codec ?? "H264"}`}
 						muxingKey={key}
-						kinds={
-							video.codec === undefined || video.codec === "H264"
-								? VIDEO_KINDS
-								: VIDEO_KINDS.filter((kind) => kind !== "CMAF")
-						}
+						kinds={videoKindsFor(video.codec)}
 						derivedPath={videoMuxingRelPath(video, key)}
 						drm={drm}
 						audioChoices={audioChoices}

@@ -615,7 +615,21 @@ async function verifyMuxing(
 	}
 
 	// ---- the container family decides which files must be there ---------------
+	/**
+	 * The two whole-file kinds (one `.ts` / `.mov` per rendition, never a manifest leg).
+	 *
+	 * Matched on the BASENAME, which is exactly what the plan claims: the schema refuses
+	 * a filename with a directory in it. `endsWith` (the MP4 arm) would take
+	 * `seg_0.ts` for a file named `0.ts` — and a segmented TS leg of the same rendition
+	 * writes into the same directory by default — while the WebM arm's exact
+	 * `prefix + name` would miss every destination that carries a placeholder, whose
+	 * `prefix` stops at the first token.
+	 */
+	const wholeFile =
+		muxing.container === "PROGRESSIVE_TS" ||
+		muxing.container === "PROGRESSIVE_MOV";
 	const single =
+		wholeFile ||
 		muxing.container === "TEXT_SINGLE" ||
 		muxing.container === "WEBM_PROGRESSIVE" ||
 		muxing.container === "MP4_PROGRESSIVE" ||
@@ -626,7 +640,9 @@ async function verifyMuxing(
 			? keys.find((k) =>
 					muxing.container === "WEBM_PROGRESSIVE"
 						? dirs.some((dir) => k === `${dir.prefix}${name}`)
-						: k.endsWith(name),
+						: wholeFile
+							? k.split("/").pop() === name
+							: k.endsWith(name),
 				)
 			: undefined;
 		if (
@@ -653,6 +669,25 @@ async function verifyMuxing(
 					"muxing",
 					object.size > 0,
 					"Progressive WebM file must contain bytes",
+				);
+		}
+		if (wholeFile) {
+			// Same reason as the WebM arm: a zero-byte object is an origin write
+			// failure, and without this it surfaces only as an ffprobe complaint
+			// that reads like a corrupt encode.
+			const object = listedKeys.find((entry) => entry.key === hit);
+			if (object?.size === undefined)
+				report.skip(
+					`${id}:file-bytes`,
+					"muxing",
+					`Object size unavailable for the ${muxing.container} file`,
+				);
+			else
+				report.assert(
+					`${id}:file-bytes`,
+					"muxing",
+					object.size > 0,
+					`${muxing.container} file must contain bytes`,
 				);
 		}
 		if (muxing.container === "TEXT_SINGLE") {
@@ -693,7 +728,8 @@ async function verifyMuxing(
 			}
 			return;
 		}
-		// A progressive WebM or MP4 is self-contained: one key, no init to prepend.
+		// A progressive WebM, MP4, TS or MOV is self-contained: one key, no init to
+		// prepend.
 		await verifyMediaProperties(
 			report,
 			deps,

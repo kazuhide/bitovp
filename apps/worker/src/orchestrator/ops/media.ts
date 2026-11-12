@@ -44,6 +44,8 @@ import {
 	PaddingDurationUnit,
 	PaddingSequence,
 	PictureFieldParity,
+	ProgressiveMovMuxing,
+	ProgressiveTsMuxing,
 	ProgressiveWebmMuxing,
 	Sprite,
 	SpriteCreationMode,
@@ -99,6 +101,8 @@ export function createMediaOps(
 	| "createCmafMuxing"
 	| "createFmp4Muxing"
 	| "createMp4Muxing"
+	| "createProgressiveMovMuxing"
+	| "createProgressiveTsMuxing"
 	| "createProgressiveWebmMuxing"
 	| "createTsMuxing"
 	| "createWebmMuxing"
@@ -118,10 +122,11 @@ export function createMediaOps(
 	 * `Muxing.streams` is a `MuxingStream[]` and always was; this layer wrote
 	 * `[new MuxingStream({ streamId })]` — a one-element array literal — for
 	 * every muxing kind, so a multiplexed container was unrepresentable no
-	 * matter what the plan compiled to. Used by the two kinds whose schema can
-	 * carry extra streams (TS, MP4); the other three creators keep their single
-	 * literal, because nothing can currently hand them a second stream and a
-	 * slot no input can reach is a coverage claim that is not true.
+	 * matter what the plan compiled to. Used by the kinds whose schema can
+	 * carry extra streams (TS, MP4, and the whole-file progressive TS / MOV);
+	 * the other creators keep their single literal, because nothing can
+	 * currently hand them a second stream and a slot no input can reach is a
+	 * coverage claim that is not true.
 	 */
 	const muxingStreams = (p: {
 		streamId: string;
@@ -733,6 +738,89 @@ export function createMediaOps(
 												),
 											})
 										: undefined,
+									streams: muxingStreams(p),
+									outputs: outputs(p.destination),
+									name: p.name,
+								}),
+							),
+						(r) => ({ id: r.id }),
+					).then(id),
+			}),
+
+		createProgressiveMovMuxing: (encodingId, p) =>
+			adoptOrCreateStamped({
+				label: "progressive mov muxing",
+				stamp: options.stamp,
+				lookup: (expect) =>
+					findStampedResource({
+						label: "progressive mov muxing",
+						expect,
+						list: (q) => muxings().progressiveMov.list(encodingId, q),
+						customData: (rid) =>
+							muxings().progressiveMov.customdata.get(encodingId, rid),
+					}),
+				auditAdopt: stampAuditAdopt(
+					`/encoding/encodings/${encodingId}/muxings/progressive-mov`,
+				),
+				create: () =>
+					audited(
+						"POST",
+						`/encoding/encodings/${encodingId}/muxings/progressive-mov`,
+						{
+							name: p.name,
+							filename: p.filename,
+							outputPath: p.destination?.outputPath,
+						},
+						() =>
+							muxings().progressiveMov.create(
+								encodingId,
+								new ProgressiveMovMuxing({
+									filename: p.filename,
+									streams: muxingStreams(p),
+									outputs: outputs(p.destination),
+									name: p.name,
+								}),
+							),
+						(r) => ({ id: r.id }),
+					).then(id),
+			}),
+
+		createProgressiveTsMuxing: (encodingId, p) =>
+			adoptOrCreateStamped({
+				label: "progressive ts muxing",
+				stamp: options.stamp,
+				lookup: (expect) =>
+					findStampedResource({
+						label: "progressive ts muxing",
+						expect,
+						list: (q) => muxings().progressiveTs.list(encodingId, q),
+						customData: (rid) =>
+							muxings().progressiveTs.customdata.get(encodingId, rid),
+					}),
+				auditAdopt: stampAuditAdopt(
+					`/encoding/encodings/${encodingId}/muxings/progressive-ts`,
+				),
+				create: () =>
+					audited(
+						"POST",
+						`/encoding/encodings/${encodingId}/muxings/progressive-ts`,
+						{
+							name: p.name,
+							filename: p.filename,
+							segmentLength: p.segmentLength,
+							startOffset: p.startOffset,
+							outputPath: p.destination?.outputPath,
+						},
+						() =>
+							muxings().progressiveTs.create(
+								encodingId,
+								new ProgressiveTsMuxing({
+									filename: p.filename,
+									// Both optional and sent only when the plan set them:
+									// undefined is dropped by the SDK's serialiser, so an
+									// unset field leaves the choice to the encoder.
+									segmentLength: p.segmentLength,
+									startOffset: p.startOffset,
 									streams: muxingStreams(p),
 									outputs: outputs(p.destination),
 									name: p.name,

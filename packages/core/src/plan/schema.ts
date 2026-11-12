@@ -1116,16 +1116,23 @@ export const mp4MuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+/**
+ * A single output file's name: no directories and no URL suffix. The folder is
+ * `destination.path`, so a "/" here would write somewhere the destination does
+ * not say.
+ */
+const outputFilenameSchema = z
+	.string()
+	.min(1)
+	.max(255)
+	.regex(/^[^/\\?#]+$/, "Use a filename without directories or URL suffixes")
+	.refine((n) => n !== "." && n !== "..", "Use a file name");
+
 export const textMuxingSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("TEXT"),
 	streamKey: refKey,
-	filename: z
-		.string()
-		.min(1)
-		.max(255)
-		.regex(/^[^/\\?#]+$/, "Use a filename without directories or URL suffixes")
-		.refine((n) => n !== "." && n !== "..", "Use a file name"),
+	filename: outputFilenameSchema,
 	destination: destinationSchema,
 	name: z.string().optional(),
 });
@@ -1188,6 +1195,62 @@ export const webmMuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+/**
+ * One whole MPEG-TS FILE per container — not the HLS segments `TS` writes.
+ *
+ * A file deliverable (mezzanine, editing, hand-off), so audio rides INSIDE it
+ * through `additionalStreamKeys`. That is how Bitmovin's guide "Creating
+ * Progressive MOV, MP4 and TS Outputs" builds it: its sample hands one H.264
+ * video stream and one AAC audio stream to a single ProgressiveTsMuxing.
+ *
+ * `destination` is REQUIRED, unlike `TS`/`MP4`: those may omit it because a
+ * DRM resource can own the encrypted output, and this app builds no DRM path
+ * for a progressive file. No manifest references this kind either — every
+ * leg selector reads a closed list of kinds, and this one is in none of them.
+ *
+ * `segmentLength` and `startOffset` are the SDK model's two optional fields
+ * (ProgressiveTsMuxing.d.ts). Neither has a default here: an absent field is
+ * not sent, so the encoder's own default applies rather than one we invented.
+ */
+export const progressiveTsMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_TS"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: outputFilenameSchema,
+	/**
+	 * "Length of the segments in seconds" — the SDK's whole description. What
+	 * it changes inside a single file has not been measured by this app.
+	 */
+	segmentLength: z.number().positive().optional(),
+	/**
+	 * Offset of the MPEG-TS timestamps in seconds. The SDK's example: an offset
+	 * of 10 makes the first packet start at PTS 900,000 (90 kHz timescale).
+	 *
+	 * An INTEGER: the SDK types it `number`, but Bitmovin's published
+	 * encoding-template schema (`bitmovin-encoding-template.schema.json`)
+	 * types this field `integer`, and the template export is validated
+	 * against that schema.
+	 */
+	startOffset: z.number().int().min(0).optional(),
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
+/**
+ * One QuickTime `.mov` FILE per container. Same shape and the same rules as
+ * `PROGRESSIVE_TS` above; the SDK model carries a filename and nothing else.
+ */
+export const progressiveMovMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_MOV"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: outputFilenameSchema,
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
 export const planMuxingSchema = z.discriminatedUnion("kind", [
 	fmp4MuxingSchema,
 	cmafMuxingSchema,
@@ -1196,6 +1259,8 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 	textMuxingSchema,
 	tsMuxingSchema,
 	webmMuxingSchema,
+	progressiveTsMuxingSchema,
+	progressiveMovMuxingSchema,
 ]);
 
 /**

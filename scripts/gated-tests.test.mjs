@@ -2456,6 +2456,229 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 	);
 });
 
+// docs/FFMPEG-BUILD.md records the build of the worker image's FFmpeg: every
+// source with its checksum and every command, beside what the logs of a build
+// showed. Nothing else would notice when the Dockerfile moves on without it,
+// so the record's copy of the build is compared with the Dockerfile: the
+// stages with their parents, the sources in their order, the commands in
+// their order, what the last stage does with the programs, and the proof. The
+// base image and Debian's packages are not compared: they change without a
+// change to what is compiled, and the record names the day of its logs. What
+// the record says in its own words about a build's log is not compared
+// either.
+test("the FFmpeg build record holds the stages, the sources and the commands of the Dockerfile's FFmpeg build in their order, and no other", () => {
+	const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
+	const record = readFileSync(resolve(root, "docs/FFMPEG-BUILD.md"), "utf8");
+	const renew =
+		'Renew docs/FFMPEG-BUILD.md as its section "Renewing this record" says';
+	// The record writes a tab as two spaces.
+	const plain = (line) => line.replaceAll("\t", "  ");
+
+	// The record's blocks, each with the word that follows its opening fence.
+	// A block of another kind than these four would be read by no check below.
+	const blocks = [];
+	let block;
+	for (const line of record.split("\n")) {
+		if (!line.startsWith("```")) block?.lines.push(line);
+		else if (block) block = undefined;
+		else {
+			block = { kind: line.slice(3), lines: [] };
+			blocks.push(block);
+		}
+	}
+	assert.equal(block, undefined, "a fence of the record is left open");
+	for (const { kind, lines } of blocks)
+		assert(
+			["dockerfile", "text", "sh", "bash"].includes(kind),
+			`${renew}: a block is fenced as "${kind}": ${lines[0]}`,
+		);
+	const shown = blocks
+		.filter(({ kind }) => kind === "dockerfile")
+		.flatMap(({ lines }) => lines);
+
+	// The stages that the "ffmpeg" stage is made from stand together, from the
+	// toolchain to the stage itself.
+	const lines = dockerfile.split("\n");
+	const first = lines.findIndex((line) =>
+		/^FROM \S+ AS ffmpeg-toolchain$/.test(line),
+	);
+	const last = lines.indexOf("FROM scratch AS ffmpeg");
+	assert(first !== -1 && last > first, "the FFmpeg stages of the Dockerfile");
+	const after = lines.findIndex(
+		(line, index) => index > last && line.startsWith("FROM "),
+	);
+	assert(after !== -1, "the stage after the FFmpeg stages");
+	const stages = [];
+	const sources = [];
+	const commands = [];
+	const values = new Map();
+	for (const line of lines.slice(first, after)) {
+		if (line === "" || /^\s*#/.test(line)) continue;
+		const stage = /^FROM (\S+) AS ([a-z0-9-]+)$/.exec(line);
+		const added = /^ADD --checksum=sha256:([a-f0-9]{64}) (\S+) \S+$/.exec(line);
+		if (stage) stages.push([stage[2], stage[1]]);
+		else if (added)
+			sources.push([
+				added[2].replace(/\$\{([A-Z0-9_]+)\}/g, (_, key) => {
+					assert(values.has(key), key);
+					return values.get(key);
+				}),
+				added[1],
+			]);
+		else {
+			const argument = /^ARG ([A-Z0-9_]+)="([^"]*)"$/.exec(line);
+			if (argument) values.set(argument[1], argument[2]);
+			commands.push(plain(line));
+		}
+	}
+	// The loops below compare something: 8 stages, 18 sources, and more lines
+	// than a file that names only them would have.
+	assert.equal(stages.length, 8);
+	assert.equal(sources.length, 18);
+	assert(commands.length > 100, `${commands.length} lines`);
+
+	// The table of stages: a row for each stage and for no other, in the
+	// Dockerfile's order, with the stage that it starts from. Only the first
+	// stage starts from an image.
+	const names = new Set(stages.map(([name]) => name));
+	assert.deepEqual(
+		[
+			...record.matchAll(
+				/^\| `([a-z0-9-]+)` \| (?:`([a-z0-9-]+)`|(the base image)) \| .+ \|$/gm,
+			),
+		].map(([, name, parent, image]) => [name, parent ?? image]),
+		stages.map(([name, parent]) => [
+			name,
+			names.has(parent) || parent === "scratch" ? parent : "the base image",
+		]),
+		`${renew}: its table of stages`,
+	);
+
+	// The tables of sources: the archives in the Dockerfile's order and no
+	// other row; beside each source of that table, in the same order, the
+	// commit or release that its archive's address names, and the archive's
+	// SHA-256.
+	const archives = [
+		...record.matchAll(/^\| ([^|`]+) \| `(https:\/\/[^`]+)` \|$/gm),
+	].map(([, name, url]) => [name, url]);
+	assert.deepEqual(
+		archives.map(([, url]) => url),
+		sources.map(([url]) => url),
+		`${renew}: its table of archives`,
+	);
+	const pins = [
+		...record.matchAll(
+			/^\| ([^|`]+) \| (?:commit|release) `([^`]+)` \| `([a-f0-9]{64})` \| [^|]+ \|$/gm,
+		),
+	].map(([, name, pin, sum]) => [name, pin, sum]);
+	assert.deepEqual(
+		pins.map(([name, , sum]) => [name, sum]),
+		archives.map(([name], index) => [name, sources[index][1]]),
+		`${renew}: its table of commits and SHA-256`,
+	);
+	for (const [index, [name, pin]] of pins.entries())
+		assert(
+			sources[index][0].includes(pin),
+			`${renew}: the archive of ${name} is not of ${pin}`,
+		);
+
+	// The commands: every line of the stages that is no comment, no FROM and no
+	// ADD stands in a dockerfile block, and the record shows these lines in the
+	// Dockerfile's order, each as often as the Dockerfile has it. A line that
+	// moved, or one of several equal lines that went, is seen.
+	const command = new Set(commands);
+	const copied = shown.filter((line) => command.has(line));
+	const differs = commands.findIndex((line, index) => line !== copied[index]);
+	assert(
+		differs === -1 && copied.length === commands.length,
+		`${renew}: its dockerfile blocks do not show the lines of the FFmpeg stages in the Dockerfile's order: ` +
+			`line ${differs === -1 ? commands.length + 1 : differs + 1} of them is "${commands[differs] ?? "nothing"}" ` +
+			`in the Dockerfile and "${copied[differs === -1 ? commands.length : differs] ?? "nothing"}" in the record`,
+	);
+
+	// The record shows no line as the Dockerfile's that the Dockerfile has not:
+	// a command that was changed or taken out does not stay behind.
+	const written = new Set(lines.map(plain));
+	for (const line of shown)
+		assert(
+			written.has(line),
+			`${renew}: it shows a line that the Dockerfile does not hold: ${line}`,
+		);
+
+	// What the stages after these do with the programs: every line there that
+	// names ffmpeg is shown, so a check of ffmpeg that is added to the image or
+	// taken from it is seen. A line that does not name ffmpeg is not compared.
+	for (const line of lines.slice(after))
+		assert(
+			/^\s*#/.test(line) ||
+				!line.includes("ffmpeg") ||
+				shown.includes(plain(line)),
+			`${renew}: it does not show this line of the image's last stage: ${line}`,
+		);
+
+	// The command of the proof, which the record quotes once.
+	const proof = readFileSync(
+		resolve(root, "docker/vmaf-build-proof.sh"),
+		"utf8",
+	)
+		.split("\n")
+		.map(plain);
+	const quoted = blocks.filter(
+		({ kind, lines: [head] }) =>
+			kind === "sh" && head?.startsWith('"$ffmpeg" '),
+	);
+	assert.equal(quoted.length, 1, `${renew}: the command of the proof`);
+	const [{ lines: quote }] = quoted;
+	for (const line of quote)
+		assert(
+			proof.includes(line),
+			`${renew}: docker/vmaf-build-proof.sh does not hold this line: ${line}`,
+		);
+	// The script holds the lines together and in the record's order, and they
+	// are the whole command: no line of the script continues into the first,
+	// and the last continues into none. Each line alone would also be found
+	// after the command was taken apart.
+	const at = proof.findIndex((_, index) =>
+		quote.every((line, offset) => proof[index + offset] === line),
+	);
+	assert(
+		at !== -1 && !proof[at - 1]?.endsWith("\\") && !quote.at(-1).endsWith("\\"),
+		`${renew}: docker/vmaf-build-proof.sh does not hold the proof's command as the record shows it: whole, together and in the record's order`,
+	);
+
+	// A commit that the record names in full is one that the Dockerfile pins:
+	// the pin of before does not stay behind in a sentence. The record names
+	// every other commit by its first digits.
+	for (const [commit] of record.matchAll(
+		/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/g,
+	))
+		assert(
+			dockerfile.includes(commit),
+			`${renew}: it names a commit that the Dockerfile does not pin: ${commit}`,
+		);
+
+	// The models that the image pins, and the revision that they come from.
+	const reference = /^ARG VMAF_MODEL_REF="([a-f0-9]{40})"$/m.exec(dockerfile);
+	assert(reference, "VMAF_MODEL_REF");
+	assert(
+		record.includes(`\`${reference[1]}\``),
+		`${renew}: it does not name the models' revision ${reference[1]}`,
+	);
+	const models = readFileSync(
+		resolve(root, "docker/vmaf-models.sha256"),
+		"utf8",
+	)
+		.split("\n")
+		.filter((line) => line !== "" && !line.startsWith("#"))
+		.map((line) => line.split(/\s+/)[1].replace(/\.json$/, ""));
+	assert.equal(models.length, 14);
+	for (const model of models)
+		assert(
+			record.includes(`\n| \`${model}\` | `),
+			`${renew}: it has no row for the model ${model}`,
+		);
+});
+
 // Stands in for Docker's build: records its arguments and, unless it is to
 // fail, writes the programs that the "ffmpeg" stage holds, and a licence,
 // into the output directory; with FAKE_EXTRA, another file of that name

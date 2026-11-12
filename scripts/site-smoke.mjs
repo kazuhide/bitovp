@@ -431,14 +431,16 @@ async function runLocale(locale, copy) {
 	);
 	await chooseFlow("streaming");
 	await stepCount(8);
-	await visit("/vod/new");
-	await stepCount(8);
 	await chooseFlow("file");
 	await stepCount(5);
 	await visit("/vod/new");
 	await stepCount(5);
-	// Leave this browser on the flow the rest of the run was written for.
+	// Leave this browser on the flow the rest of the run was written for. Eight
+	// steps with no flow in the URL is the choice replacing the one remembered
+	// before it, and not the flow a first visit opens.
 	await chooseFlow("streaming");
+	await stepCount(8);
+	await visit("/vod/new");
 	await stepCount(8);
 	console.log(
 		`PASS (${locale}): the file-export flow opens on five steps and the chosen flow is remembered.`,

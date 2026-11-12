@@ -135,7 +135,9 @@ describe("CREATE_MUXING_PROGRESSIVE_TS", () => {
 				},
 				ctx(sdk, withoutAudio),
 			),
-		).rejects.toThrow();
+		).rejects.toThrow(
+			'step "muxing:file" needs ref "additionalStreamIds" but it has not resolved yet',
+		);
 		expect(sdk.createProgressiveTsMuxing).not.toHaveBeenCalled();
 	});
 });

@@ -2142,3 +2142,82 @@ it("preserves a distinct execution lease signal through the Live row-liveness wr
 	expect(t.results).toHaveLength(0);
 	expect(resources.begin(new AbortController().signal).report().queued).toBe(0);
 });
+
+describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
+	const v1 = "vmaf_v1.0.16_3d0h";
+	const withV1 = (sourceSize: [number, number]) =>
+		setup({
+			sourceSize,
+			job: { model: v1 },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+	const scoringRuns = (t: ReturnType<typeof setup>) =>
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(
+				([, argv]) =>
+					argv.includes("-filter_complex") &&
+					argv.join(" ").includes("libvmaf"),
+			);
+
+	it("refuses a source that is too small in every chroma layout before it captures anything", async () => {
+		const t = withV1([200, 200]);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score pictures of 200x200: it needs chroma planes of at least 80 samples in width and in height, and at least 216 pixels in width or in height. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(String(t.job.error)).toContain("cannot score pictures of 200x200");
+		expect(t.browser.listObjects).not.toHaveBeenCalled();
+		expect(scoringRuns(t)).toHaveLength(0);
+		expect(t.results).toHaveLength(0);
+	});
+
+	// A source whose sides differ, so that the size that the check is given
+	// cannot be the wrong way round.
+	it("names the width and the height of the source in that order", async () => {
+		const t = withV1([200, 120]);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score pictures of 200x120: it needs chroma planes of at least 80 samples in width and in height, and at least 216 pixels in width or in height.`,
+		);
+		expect(t.browser.listObjects).not.toHaveBeenCalled();
+		expect(scoringRuns(t)).toHaveLength(0);
+	});
+
+	it("scores the same source with a model that has no such limit", async () => {
+		const t = setup({ sourceSize: [200, 200] });
+		await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		expect(t.job.status).toBe("FINISHED");
+		expect(scoringRuns(t).length).toBeGreaterThan(0);
+	});
+
+	it("starts libvmaf for a source that only some chroma layouts can score, and names the limit when libvmaf meets it", async () => {
+		// 256x144 is enough with 4:4:4 chroma and too small with 4:2:0. The
+		// aligned reference's layout is not known before the run.
+		const t = withV1([256, 144]);
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing runner fixture");
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) =>
+			argv.includes("-filter_complex") && argv.join(" ").includes("libvmaf")
+				? {
+						code: null,
+						stdout: "",
+						stderr:
+							"libvmaf ERROR SpEED: image too small, operating width or height is 0\n",
+					}
+				: raw(bin, argv, options),
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow();
+		expect(t.job.status).toBe("ERROR");
+		expect(String(t.job.error)).toContain(
+			`VMAF model "${v1}" cannot score pictures of 256x144: libvmaf reports that they are too small for its SpEED feature. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+		);
+		expect(String(t.job.error)).not.toContain("libvmaf failed");
+		expect(scoringRuns(t).length).toBeGreaterThan(0);
+	});
+});

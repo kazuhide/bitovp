@@ -27,6 +27,8 @@ import {
 	timelineFromProfile,
 	type VmafCommandOptions,
 	vmafJobSchema,
+	vmafSizeLimitFailureMessage,
+	vmafSizeLimitMessage,
 	vmafSourceFor,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
@@ -1203,6 +1205,12 @@ function createLiveVmafProcessorRun(
 						if (isUnresolvableModel(run.stderr)) {
 							throw new Error(unresolvableModelMessage(args.model, modelPath));
 						}
+						const sizeLimit = vmafSizeLimitFailureMessage(run.stderr, {
+							model: args.model,
+							width: args.referenceGeometry.width,
+							height: args.referenceGeometry.height,
+						});
+						if (sizeLimit) throw new Error(sizeLimit);
 						throw new Error(
 							`libvmaf failed for live rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,
 						);
@@ -1681,6 +1689,17 @@ function createLiveVmafProcessorRun(
 					// The geometry every rendition's distorted clip is scaled to — probed
 					// once, here, for the same reason the stats below are extracted once.
 					const referenceGeometry = await probeSourceGeometry(referencePath);
+					// libvmaf does not score every picture size with a VMAF v1 model
+					// (see the VOD runner). Every rendition is compared at this size, so
+					// say the limit before any capture. The aligned reference is a new
+					// encode whose chroma layout is not known here: this refuses what no
+					// layout can score, and a failed run names the rest.
+					const sizeLimit = vmafSizeLimitMessage({
+						model: row.model,
+						width: referenceGeometry.width,
+						height: referenceGeometry.height,
+					});
+					if (sizeLimit) throw new Error(sizeLimit);
 					// : the reference is the feeder's OWN push. `-stream_loop …
 					// -c copy` repeats the container with whatever transition the
 					// container's timestamps produce (measured: 300.7 frames per loop for

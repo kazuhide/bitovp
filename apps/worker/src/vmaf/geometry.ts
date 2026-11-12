@@ -25,6 +25,7 @@ type ProbeJson = {
 		height?: number;
 		r_frame_rate?: string;
 		avg_frame_rate?: string;
+		pix_fmt?: unknown;
 	}[];
 };
 
@@ -70,4 +71,22 @@ export function geometryFromProbe(stdout: string): Geometry {
 		height: video.height,
 		...(fps !== undefined ? { fps } : {}),
 	};
+}
+
+/**
+ * First video stream's pixel format from ffprobe JSON, by ffprobe's name for
+ * it; `undefined` when the output names none.
+ */
+export function pixelFormatFromProbe(
+	stdout: string | undefined,
+): string | undefined {
+	if (stdout === undefined) return undefined;
+	try {
+		const video = ((JSON.parse(stdout) as ProbeJson).streams ?? []).find(
+			(s) => s.codec_type === "video",
+		);
+		return typeof video?.pix_fmt === "string" ? video.pix_fmt : undefined;
+	} catch {
+		return undefined;
+	}
 }

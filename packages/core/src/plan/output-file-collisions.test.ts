@@ -152,7 +152,9 @@ describe("two outputs written to one file", () => {
 		);
 		expect(first?.path).toBe("muxings[1].filename");
 		expect(second?.path).toBe("muxings[2].filename");
-		expect(second?.message).toContain('muxing "a" and muxing "b"');
+		expect(second?.message).toContain(
+			'the file that muxing "a" and muxing "b" write — one would replace the other',
+		);
 	});
 
 	it("reads a folder with and without its closing slash as one folder", () => {
@@ -170,6 +172,9 @@ describe("two outputs written to one file", () => {
 		["./exports", "exports"],
 		["exports//", "/exports"],
 		["exports/tmp/..", "exports"],
+		// One closing slash closes the folder. A second is part of the spelling.
+		["exports//", "exports"],
+		["exports//", "exports/"],
 	])("warns, and does not refuse, when %j and %j may be one folder", (one, other) => {
 		// Whether the storage normalises a path is not measured: if it does, these
 		// are one file; if it does not, they are two and the plan works as written.
@@ -191,8 +196,22 @@ describe("two outputs written to one file", () => {
 		).toEqual([]);
 	});
 
+	it("does not read a path that is only a slash as the empty path", () => {
+		// The schema keeps neither out, and a leading slash is a matter of spelling.
+		const root = (one: string, other: string) =>
+			outputFileCollisions(
+				plan([
+					mp4("full", "v1080", one, "clip.mp4"),
+					mp4("proxy", "v540", other, "clip.mp4"),
+				]),
+			).map((issue) => issue.level);
+		expect(root("/", "")).toEqual(["warning"]);
+		expect(root("/", "/")).toEqual(["error"]);
+		expect(root("", "")).toEqual(["error"]);
+	});
+
 	it("is certain as soon as one earlier output spells the path the same way", () => {
-		const levels = outputFileCollisions(
+		const issues = outputFileCollisions(
 			plan(
 				[
 					mp4("a", "v1080", "./exports", "clip.mp4"),
@@ -209,11 +228,77 @@ describe("two outputs written to one file", () => {
 					})),
 				},
 			),
-		).map((issue) => [issue.path, issue.level]);
-		expect(levels).toEqual([
+		);
+		expect(issues.map((issue) => [issue.path, issue.level])).toEqual([
 			["muxings[1].filename", "warning"],
 			["muxings[2].filename", "error"],
 		]);
+		// It names the output it is certain of, and not the one it is unsure of.
+		expect(issues[1]?.message).toBe(
+			'muxing "c" writes "exports/clip.mp4", the file that muxing "b" writes — one would replace the other. Give each file its own name or folder.',
+		);
+	});
+
+	describe("a muxing that reaches the file under two spellings", () => {
+		const cenc = (key: string, muxingKey: string, path: string) => ({
+			key,
+			kind: "FAIRPLAY" as const,
+			muxingKey,
+			credentialId: OTHER,
+			iv: "0".repeat(32),
+			uri: "skd://key",
+			destination: { outputKey: "origin", path },
+		});
+		// Its own copy spelled one way, its encrypted copy the other.
+		const twoWays = mp4("full", "v1080", "./exports", "clip.mp4");
+		const plain = mp4("proxy", "v540", "exports", "clip.mp4");
+		const drm = [cenc("d1", "full", "exports")];
+		const levels = (muxings: Muxing[]) =>
+			outputFileCollisions({ ...plan(muxings), drm }).map((issue) => [
+				issue.path,
+				issue.level,
+			]);
+
+		it("is compared under both, so the order of the muxings does not decide", () => {
+			// Only its first spelling was kept, and a muxing listed after it that
+			// spelled the path as its second was let through with a warning.
+			expect(levels([twoWays, plain])).toEqual([
+				["muxings[0].filename", "warning"],
+				["muxings[1].filename", "error"],
+			]);
+			expect(levels([plain, twoWays])).toEqual([
+				["muxings[1].filename", "error"],
+			]);
+		});
+
+		it("says which of the two the other muxing certainly replaces", () => {
+			expect(
+				outputFileCollisions({ ...plan([plain, twoWays]), drm })[0]?.message,
+			).toBe(
+				'muxing "full" writes "exports/clip.mp4", the file that muxing "proxy" writes — one would replace the other. Give each file its own name or folder.',
+			);
+		});
+
+		it("is certain of its own third output when that spells the path as the second did", () => {
+			const alone = plan([twoWays]);
+			expect(
+				outputFileCollisions({ ...alone, drm }).map((issue) => issue.level),
+			).toEqual(["warning"]);
+			expect(
+				outputFileCollisions({
+					...alone,
+					drm: [...drm, cenc("d2", "full", "exports")],
+				}),
+			).toEqual([
+				{
+					code: "PLAN_OUTPUT_FILE_COLLISION",
+					level: "error",
+					path: "muxings[0].filename",
+					message:
+						'muxing "full" writes "exports/clip.mp4" from two of its outputs — one would replace the other. Give each file its own name or folder.',
+				},
+			]);
+		});
 	});
 
 	it("is a warning on a re-run, which reproduces what the job already wrote", () => {

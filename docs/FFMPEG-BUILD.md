@@ -2290,12 +2290,12 @@ the logs name both sets were printed. Jobs that compiled printed both sets: A
 for `334b4e0f` and `47025a92`, B for `4ae4c43b` and for the merge commit on
 `main`. Jobs that reused a build printed both as well: A in the second attempt
 of `4ae4c43b`, with the bytes that had printed B in the first; and with the one
-build that `main` had stored, B for `3b5edb98` and A for `a403ff35`. The 14 logs
-with means that are kept name one runner image (`ubuntu-26.04` version
-`20261101.186.1`) and one version of the runner software (2.338.2); 9 of them
-hold set A and 5 set B. The set therefore follows neither the commit, nor the
-build, nor the runner's software, and jobs that get the programs in the same way
-print both.
+build that `main` had stored, B for `3b5edb98` and A for `a403ff35`. The logs
+with means that are kept, up to the runs of `a403ff35`, are of 13 jobs. They
+name one runner image (`ubuntu-26.04` version `20261101.186.1`) and one version
+of the runner software (2.338.2); 8 of them hold set A and 5 set B. The set
+therefore follows neither the commit, nor the build, nor the runner's software,
+and jobs that get the programs in the same way print both.
 
 What is left is the runner's processor, and a test shows that the processor is
 enough to give both sets. x264 chooses its functions by the vector extensions
@@ -2380,14 +2380,18 @@ What follows, and what does not:
   decimals that CI prints.
 - This is a property of x264 and not of this build. It was there with the
   earlier prebuilt build.
-- An arm64 host gives a third set, 98.282, 93.123 and 4.778. This build printed
-  it on 2026-11-12 on an Apple silicon Mac, in Docker Desktop, with the worker
-  image built from `Dockerfile` for `linux/arm64`. Prebuilt builds that
-  `Dockerfile` pinned in October 2026 had printed the same:
-  `docs/user-guide/QUALITY-AND-MONITORING.md` gives it for a local run, and the
-  research records hold it for a run of 2026-10-24 on an arm64 host. The test of
-  the nine variants was not made on arm64, so where its encodes part from those
-  of x86-64 is not known.
+- The arm64 host that was tried gave a third set, 98.282, 93.123 and 4.778. This
+  build printed it on 2026-11-12 on an Apple silicon Mac, in Docker Desktop,
+  with the worker image built from `Dockerfile` for the platform of the host's
+  Docker, `linux/arm64`. A prebuilt build that `Dockerfile` pinned in October
+  2026 had printed the same: `docs/user-guide/QUALITY-AND-MONITORING.md` gives
+  it for a local run, in a line written when the pin was
+  `n8.1.3-18-g46d899d7a0`, and the research records hold it for a run of
+  2026-10-24 on an arm64 host, whose log names no build. The test of the nine
+  variants was not made on arm64. x264 has versions of the tree's functions for
+  arm64 too (`common/aarch64/mc-c.c`), so other packets are to be expected, but
+  the packets of the arm64 runs were not compared with those of x86-64, and
+  whether anything else differs there is not known.
 - Not established: which processor each runner had. No log names it: that the
   runners of set A have AVX-512 and those of set B do not is inferred from the
   test. No run was made on a processor without AVX-512; the test took AVX-512
@@ -2690,11 +2694,12 @@ What follows for bitovp:
 - x264 does not write the same packets on every processor. On x86-64 its
   macroblock tree gives other results with AVX-512 than without: one command on
   one input gave two different encodes on one host. The media check prints a
-  third set of means on an arm64 host. A processor without AVX2 and a second
-  arm64 processor were not tried, so there may be more. A VMAF score of an x264
-  encode can be compared only between processors on which x264 uses the same
-  extensions. The earlier prebuilt build behaves in the same way on x86-64. "The
-  VMAF means of the media job" records the test.
+  third set of means on an arm64 host; its packets were not compared. A
+  processor without AVX2 and a second arm64 processor were not tried, so there
+  may be more. A VMAF score of an x264 encode can be compared only between
+  processors on which x264 uses the same extensions. The earlier prebuilt build
+  behaves in the same way on x86-64. "The VMAF means of the media job" records
+  the test.
 - The limits of the GPU check are listed under "Verification record", and what
   the build no longer contains under "Differences from the earlier prebuilt
   build".
@@ -2877,13 +2882,15 @@ is the word "commit" or "release" with one value in backticks, and its third is
 a SHA-256 in backticks; a row of that table that gains a word in its second cell
 is no longer found. A run of exactly 40 lowercase hexadecimal digits counts as a
 commit that is named in full, also in the excerpt of a log. Exactly one `sh`
-block may begin with the word `"$ffmpeg"`: the command of the proof. The stages
-after the eight repeat two of their lines, the first line of an `apt-get` step
-and the line that removes the package lists; shown in a `dockerfile` block a
-second time, either one fails the test as a line out of order. And the test
-holds three numbers: 8 stages, 18 sources and 14 models. When one of them
-changes, the test fails at that number also when the record has followed, and
-the number is then changed in the test.
+block may begin with the word `"$ffmpeg"`: the command of the proof. The test
+takes the command as whole when the line in front of it in the script does not
+end with a backslash and its own last line does not. The stages after the eight
+repeat two of their lines, the first line of an `apt-get` step and the line that
+removes the package lists; shown in a `dockerfile` block a second time, either
+one fails the test as a line out of order. And the test holds three numbers: 8
+stages, 18 sources and 14 models. When one of them changes, the test fails at
+that number also when the record has followed, and the number is then changed in
+the test.
 
 A test that passes does not mean that the record is renewed. The test does not
 compare the digest of the base image or the Debian packages, which change

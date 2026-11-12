@@ -313,12 +313,50 @@ export const FILE_OUTPUT_DEFAULT_STATE: WizardState = {
 	manifests: { hls: false, dash: false },
 };
 
-/** Rename the job; file names that were derived from the old name follow. */
+/**
+ * The folder, relative to the destination folder, for what a job writes besides its
+ * files: the AI Scene Analysis result, the copies the quality check measures and the
+ * Kantar report. The files go straight into the destination folder, which other
+ * jobs write to as well, and none of the three is named after the job: the result
+ * is `analysis.json` unless renamed, and a copy is named by the key of its file's
+ * video stream (`v1080.mp4`). Left in the destination folder, the next job would
+ * replace them, and a job could be scored on a copy another job wrote.
+ */
+export function fileJobFolder(name: string): string {
+	return `${fileStem(name)}/`;
+}
+
+/**
+ * Rename the job. What was derived from the old name follows: the file names, and
+ * the folder of what the job writes besides them (`fileJobFolder`) wherever that
+ * folder is still the derived one.
+ */
 export function renameFileJob(
 	state: WizardState,
 	name: string,
-): Pick<WizardState, "name" | "videos"> {
-	return { name, videos: named(name, state.videos, derivedNames(state)) };
+): Pick<WizardState, "name" | "videos"> &
+	Partial<Pick<WizardState, "startOptions" | "qc" | "kantar">> {
+	const from = fileJobFolder(state.name);
+	const to = fileJobFolder(name);
+	const analysis = state.startOptions?.aiSceneAnalysis;
+	return {
+		name,
+		videos: named(name, state.videos, derivedNames(state)),
+		...(analysis?.path === from
+			? {
+					startOptions: {
+						...state.startOptions,
+						aiSceneAnalysis: { ...analysis, path: to },
+					},
+				}
+			: {}),
+		...(state.qc?.mirrorPath === from
+			? { qc: { ...state.qc, mirrorPath: to } }
+			: {}),
+		...(state.kantar?.reportPath === from
+			? { kantar: { ...state.kantar, reportPath: to } }
+			: {}),
+	};
 }
 
 export type FileEdit = Partial<
@@ -463,12 +501,14 @@ export function editFileAudio(
 
 /**
  * Where a setting lives that the simple view does not show, in wizard order.
- * `basics` is a shown step with one control held back. `perTitle`, `qualityGate`
- * and `gateTargets` are the three settings held back from the Encoding step, which
- * is shown too (`HELD_BACK`). The rest are the steps the view leaves out.
+ * `basics` is a shown step with one control held back. `encodings` is the one
+ * setting held back from the Sources step, and `perTitle`, `qualityGate` and
+ * `gateTargets` are the three held back from the Encoding step; both steps are
+ * shown too (`HELD_BACK`). The rest are the steps the view leaves out.
  */
 export const FILE_OUTPUT_BLOCKERS = [
 	"basics",
+	"encodings",
 	"ladder",
 	"packaging",
 	"perTitle",
@@ -493,6 +533,7 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	encoderVersion: "shown",
 	inputFiles: "shown",
 	audioInputFile: "shown",
+	// Shown but for the setting judged apart (`HELD_BACK`).
 	sources: "shown",
 	output: "shown",
 	additionalOutputs: "shown",
@@ -573,23 +614,43 @@ function fieldsInUse(state: WizardState): (keyof WizardState)[] {
 	if (set.length === 0) return [];
 	const plan = planText(state);
 	if (plan === undefined) return set;
-	if (planText(reset(state, set)) === plan) return [];
-	const alone = set.filter((key) => planText(reset(state, [key])) !== plan);
+	const waiting = set.filter((key) => IN_USE_WHEN_SET.includes(key));
+	if (planText(reset(state, set)) === plan) return waiting;
+	const alone = set.filter(
+		(key) => waiting.includes(key) || planText(reset(state, [key])) !== plan,
+	);
 	// They matter together though none does alone: every one of them is named.
 	return alone.length > 0 ? alone : set;
 }
 
 /**
- * The state as it is once "VMAF only" is unticked. That option holds back what the
- * job would otherwise write (a manifest, a thumbnail, a subtitle) and keeps the
- * setting, and the simple view's Encoding step can untick it. So a hidden setting it
- * holds back is in use all the same: it is one click from the plan.
+ * The state one click of the simple view's Encoding step away, which is what a
+ * hidden setting is judged in: a setting that click brings into the plan is in use
+ * all the same.
+ *
+ * "VMAF only" is unticked. That option holds back what the job would otherwise write
+ * (a manifest, a thumbnail, a subtitle) and keeps the setting. And a quality gate
+ * that waits for a measurement has one: the gate is kept while nothing is measured,
+ * and with it the two things about it this view does not show (`HELD_BACK`), which
+ * would otherwise be dropped on the way back without being named.
  */
 function unsuspended(state: WizardState): WizardState {
-	return state.qc?.only ? { ...state, qc: without(state.qc, ["only"]) } : state;
+	let qc = state.qc;
+	if (!qc) return state;
+	if (qc.only) qc = without(qc, ["only"]);
+	if (qc.gate && !(qc.vmaf || qc.psnr || qc.banding))
+		qc = { ...qc, vmaf: true };
+	return qc === state.qc ? state : { ...state, qc };
 }
 
-type HeldBackName = "perTitle" | "qualityGate" | "gateTargets";
+/**
+ * Hidden fields that are in use whenever they are set, though the plan may not show
+ * it yet. The audio guard is a condition on the audio streams: with no audio in the
+ * files it is in no plan, and the Format step puts audio in with one click.
+ */
+const IN_USE_WHEN_SET: readonly (keyof WizardState)[] = ["audioGuard"];
+
+type HeldBackName = "encodings" | "perTitle" | "qualityGate" | "gateTargets";
 type HeldBack = {
 	/** Switched on, whatever it then holds. */
 	set: (state: WizardState) => boolean;
@@ -598,11 +659,28 @@ type HeldBack = {
 };
 
 /**
- * The three settings the simple view's Encoding step holds back. Each acts on
- * something the view does not have, so there it would be a control with nothing to
- * act on.
+ * The settings held back from a step the simple view shows: one of the Sources step
+ * and three of the Encoding step. Each acts on something the view does not have, so
+ * there it would be a control with nothing to act on.
  */
 const HELD_BACK: Record<HeldBackName, HeldBack> = {
+	// The encodings a job is split into. A stream is put on one of them in the Ladder
+	// step, and with more than one the manifests have to be generated after encoding,
+	// which the Manifests step sets. A row added here would be refused for both, in
+	// words that name two steps this view leaves out.
+	encodings: {
+		set: (state) => (state.sources?.encodings ?? []).length > 0,
+		strip: (state) => {
+			const sources = state.sources;
+			if (!sources || !("encodings" in sources)) return state;
+			const next: WizardState = {
+				...state,
+				sources: without(sources, ["encodings", "implicitEncodingKeys"]),
+			};
+			if (isBlank(next.sources)) delete next.sources;
+			return next;
+		},
+	},
 	// The Per-Title configuration. A rendition enters Per-Title in the Ladder step.
 	// A codec switched on with every field left empty is a configuration too: the
 	// plan carries it, and it is switched off where it was switched on.
@@ -625,7 +703,8 @@ const HELD_BACK: Record<HeldBackName, HeldBack> = {
 	},
 	// A quality gate that holds the manifests back when it fails. Without a manifest
 	// to hold back it is refused unless a setting of the Manifests step says when
-	// they are generated, so here a gate records its verdict and no more.
+	// they are generated. So here a failed gate marks the job (and is notified as
+	// any failed gate is), and holds nothing back.
 	qualityGate: {
 		set: (state) => state.qc?.gate?.onFail === "BLOCK_MANIFESTS",
 		strip: (state) => {
@@ -809,9 +888,11 @@ export function isFileOutputState(state: WizardState): boolean {
  * and nothing left in a field or a setting the simple view does not show
  * (`HIDDEN_FIELDS`, `HELD_BACK`). Call it only on a state `isFileOutputState`
  * accepts. The files written do not change, because here every file name and folder
- * is explicit, and what is cleared was doing nothing, with "VMAF only" ticked or not
- * (`fieldsInUse`, `unsuspended`). A key a loaded plan chose stays (`chosenKey`), and
- * so does the number that kept a copy apart (`apart`).
+ * is explicit, and what is cleared was doing nothing, one click of the Encoding step
+ * later or not (`fieldsInUse`, `unsuspended`). A copy the quality check measures is
+ * named by its stream's key, so it can be renamed where a key is derived again. A
+ * key a loaded plan chose stays (`chosenKey`), and so does the number that kept a
+ * copy apart (`apart`).
  */
 export function collapseToFileOutput(state: WizardState): WizardState {
 	const unkeyed = <T extends { extras?: WizardRenditionExtras }>(
@@ -880,18 +961,31 @@ export type FileJobWrite = {
 };
 
 /**
- * What a file-output job writes, for the Review step: the files, unless the job only
- * measures (`qc.only`), which writes none of them. After them, what the Encoding step
- * adds: the result of AI Scene Analysis, the folder of the copies the quality check
- * scores, and the folder of the Kantar report.
+ * What a file-output job writes to its destination, for the Review step: the files,
+ * unless the job only measures (`qc.only`), which writes none of them. After them,
+ * what the Encoding step adds: the result of AI Scene Analysis, the folder of the
+ * copies the quality check scores, and the folder of the Kantar report.
+ *
+ * A path starts with the bucket or container of the output it is written to, where
+ * that kind of storage has one, and reads the same however its folder was typed
+ * ("exports", "exports/", "/exports/").
  */
-export function fileJobWrites(
-	plan: EncodingPlan,
-	bucket: string,
-): FileJobWrite[] {
+export function fileJobWrites(plan: EncodingPlan): FileJobWrite[] {
+	const root = (outputKey: string) => {
+		const output = plan.outputs.find((item) => item.key === outputKey);
+		if (!output) return "";
+		if ("bucket" in output) return output.bucket;
+		return "container" in output ? output.container : "";
+	};
 	// A path is a folder, with or without its slash.
-	const at = (folder: string, name?: string) => {
-		const parts = [bucket, folder.replace(/\/+$/, "")].filter(Boolean);
+	const at = (
+		destination: { outputKey: string; path: string },
+		name?: string,
+	) => {
+		const parts = [
+			root(destination.outputKey),
+			...destination.path.split("/"),
+		].filter(Boolean);
 		return name === undefined
 			? `${parts.join("/")}/`
 			: [...parts, name].join("/");
@@ -904,7 +998,7 @@ export function fileJobWrites(
 							{
 								kind: "file",
 								key: `file:${muxing.key}`,
-								path: at(muxing.destination.path, muxing.filename),
+								path: at(muxing.destination, muxing.filename),
 							},
 						]
 					: [],
@@ -914,7 +1008,7 @@ export function fileJobWrites(
 		storageSummaries(plan).outputs.flatMap((output) =>
 			output.paths
 				.filter((item) => item.role === "qc")
-				.map((item) => item.path),
+				.map((item) => at({ outputKey: output.key, path: item.path })),
 		),
 	);
 	return [
@@ -924,21 +1018,21 @@ export function fileJobWrites(
 					{
 						kind: "analysis" as const,
 						key: "analysis",
-						path: at(analysis.destination.path, analysis.filename),
+						path: at(analysis.destination, analysis.filename),
 					},
 				]
 			: []),
 		...[...mirrors].map((path) => ({
 			kind: "qcMirror" as const,
 			key: `qcMirror:${path}`,
-			path: at(path),
+			path,
 		})),
 		...(plan.kantar
 			? [
 					{
 						kind: "kantarReport" as const,
 						key: "kantarReport",
-						path: at(plan.kantar.reportDestination.path),
+						path: at(plan.kantar.reportDestination),
 					},
 				]
 			: []),

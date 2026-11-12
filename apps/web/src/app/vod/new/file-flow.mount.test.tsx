@@ -143,6 +143,17 @@ function planJson(): string {
 	return screen.getByTestId("plan-json").textContent ?? "";
 }
 
+/** What a field's help says: opened, read, and closed again. */
+async function helpOf(label: string) {
+	const button = screen.getByRole("button", {
+		name: `${label} — more information`,
+	});
+	await userEvent.click(button);
+	const text = screen.getByRole("note").textContent;
+	await userEvent.click(button);
+	return text;
+}
+
 function importJson(raw: unknown) {
 	fireEvent.click(screen.getByRole("button", { name: /Import plan JSON/ }));
 	fireEvent.change(screen.getByRole("textbox", { name: /Import plan JSON/ }), {
@@ -604,7 +615,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(planJson()).toBe(before);
 		// Nothing a hidden step holds is in use, so the list is still the whole job.
 		await user.click(screen.getByRole("button", { name: "8. Review" }));
-		expect(screen.getByText("Files this job writes")).toBeInTheDocument();
+		expect(screen.getByText("What this job writes")).toBeInTheDocument();
 		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
 
 		await user.click(
@@ -627,7 +638,7 @@ describe("VodWizard — the file-output flow", () => {
 		);
 		expect(steps()).toHaveLength(8);
 		current("8. Review");
-		expect(screen.queryByText("Files this job writes")).toBeNull();
+		expect(screen.queryByText("What this job writes")).toBeNull();
 		expect(
 			screen.queryByText("synthetic/exports/video/1080p/clip.mp4"),
 		).toBeNull();
@@ -962,12 +973,19 @@ describe("VodWizard — the file-output flow", () => {
 		// The step is one of the short view's own: nothing is out of sight.
 		expect(steps()).toHaveLength(6);
 
+		// The file goes straight into the folder, which other jobs write to as well.
+		// The result is not named after the job, so it starts in a folder that is.
+		expect(screen.getByLabelText("Destination path")).toHaveValue("clip/");
+		expect(await helpOf("Destination path")).toBe(
+			"Relative to the destination folder",
+		);
+
 		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(written("synthetic/exports/clip.mp4")).toBe(
 			"synthetic/exports/clip.mp4",
 		);
-		expect(written("synthetic/exports/analysis.json")).toBe(
-			"synthetic/exports/analysis.jsonAI Scene Analysis result",
+		expect(written("synthetic/exports/clip/analysis.json")).toBe(
+			"synthetic/exports/clip/analysis.jsonAI Scene Analysis result",
 		);
 
 		const start = screen.getByRole("button", { name: "Start encoding" });
@@ -983,11 +1001,174 @@ describe("VodWizard — the file-output flow", () => {
 		expect(plan.aiSceneAnalysis).toEqual({
 			assetDescription: {
 				filename: "analysis.json",
-				destination: expect.objectContaining({ path: "exports/" }),
+				destination: expect.objectContaining({ path: "exports/clip/" }),
 			},
 		});
 		expect(plan.muxings).toHaveLength(1);
 		expect(plan.manifests ?? []).toEqual([]);
+	});
+
+	it("starts what the job writes besides its files in a folder named after the job", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 5, true);
+		await user.click(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		);
+		await user.click(
+			screen.getByRole("checkbox", { name: "Run VMAF QC after encoding" }),
+		);
+		await user.click(
+			screen.getByRole("checkbox", {
+				name: "Enable Kantar audio watermarking",
+			}),
+		);
+		expect(screen.getByLabelText("Destination path")).toHaveValue("clip/");
+		expect(screen.getByLabelText("Folder for the measured copies")).toHaveValue(
+			"clip/",
+		);
+		expect(screen.getByLabelText("Report path")).toHaveValue("clip/");
+		expect(await helpOf("Report path")).toBe(
+			"Relative to the destination folder — where Kantar's processing report is written",
+		);
+		// The full view of this flow starts them there too: the files are in the
+		// shared folder in either view.
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		await user.click(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		);
+		await user.click(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		);
+		expect(screen.getByLabelText("Destination path")).toHaveValue("clip/");
+	});
+
+	it("moves that folder with the job's name, until another is typed for it", async () => {
+		const user = userEvent.setup();
+		await restore(
+			{
+				...ready,
+				startOptions: {
+					aiSceneAnalysis: { filename: "analysis.json", path: "clip/" },
+				},
+				qc: {
+					vmaf: true,
+					psnr: false,
+					model: "vmaf_v0.6.1",
+					mirrorPath: "clip/",
+				},
+				kantar: {
+					credentialId,
+					licenseId: 1,
+					channelName: "channel",
+					contentReference: "reference",
+					serverUrl: "https://kantar.example",
+					// Put somewhere else than the job's folder.
+					reportPath: "reports/",
+				},
+			},
+			0,
+			true,
+		);
+		fireEvent.change(screen.getByLabelText("Job name"), {
+			target: { value: "trailer" },
+		});
+		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
+		expect(screen.getByLabelText("Destination path")).toHaveValue("trailer/");
+		expect(screen.getByLabelText("Folder for the measured copies")).toHaveValue(
+			"trailer/",
+		);
+		expect(screen.getByLabelText("Report path")).toHaveValue("reports/");
+		// A draft keeps no address, so the one the job needs is typed again.
+		fireEvent.change(screen.getByLabelText("Server URL"), {
+			target: { value: "https://kantar.example" },
+		});
+
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(written("synthetic/exports/trailer.mp4")).toBe(
+			"synthetic/exports/trailer.mp4",
+		);
+		expect(written("synthetic/exports/trailer/analysis.json")).toBe(
+			"synthetic/exports/trailer/analysis.jsonAI Scene Analysis result",
+		);
+		expect(written("synthetic/exports/trailer/qc/")).toBe(
+			"synthetic/exports/trailer/qc/Copies measured for quality (folder)",
+		);
+		expect(written("synthetic/exports/reports/")).toBe(
+			"synthetic/exports/reports/Kantar report (folder)",
+		);
+	});
+
+	it("puts the measured copies beside the files when their folder is left empty", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 5, true);
+		await user.click(
+			screen.getByRole("checkbox", { name: "Run VMAF QC after encoding" }),
+		);
+		// One field says it: every file is in the one folder, so there is no
+		// "beside each rendition" to choose apart from it.
+		expect(
+			screen.queryByRole("checkbox", {
+				name: "Write the measured copies to one folder",
+			}),
+		).toBeNull();
+		fireEvent.change(screen.getByLabelText("Folder for the measured copies"), {
+			target: { value: "" },
+		});
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect("mirrorPath" in JSON.parse(planJson()).qc).toBe(false);
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(written("synthetic/exports/qc/")).toBe(
+			"synthetic/exports/qc/Copies measured for quality (folder)",
+		);
+	});
+
+	it("says in Review that the other destinations get the files and the copies, and not the result or the report", async () => {
+		const mirrored: WizardState = {
+			...ready,
+			additionalOutputs: [
+				{ credentialId, kind: "S3", bucket: "second", name: "Second" },
+			],
+		};
+		await restore(mirrored, 5, true);
+		const also =
+			"The files and the measured copies are also written to the additional destinations (1).";
+		const only =
+			"The AI Scene Analysis result and the Kantar report are written to this destination only.";
+		await userEvent.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(screen.getByText(also)).toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "5. Encoding" }));
+		await userEvent.click(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		);
+		await userEvent.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(screen.getByText(`${also} ${only}`)).toBeInTheDocument();
+	});
+
+	it("says nothing about other destinations in a job that has one", async () => {
+		await restore(ready, 5);
+		expect(
+			screen.queryByText(/are also written to the additional destinations/),
+		).toBeNull();
+	});
+
+	it("leaves the encodings a job is split into to the full view, and stays there while one is set", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 1);
+		current("2. Sources");
+		// The other parts of the step are here.
+		expect(screen.getByText(/^Keyframes/)).toBeInTheDocument();
+		expect(screen.queryByText(/^Multi-encoding partition/)).toBeNull();
+
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		await user.click(screen.getByText(/^Multi-encoding partition/));
+		await user.click(screen.getByRole("button", { name: "Add encoding" }));
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+		expect(back).toBeDisabled();
+		expect(back).toHaveAccessibleDescription(
+			"Settings the simple view does not show are in use in: Sources (multi-encoding partition).",
+		);
+		await user.click(screen.getByRole("button", { name: "Remove encoding 1" }));
+		expect(back).toBeEnabled();
 	});
 
 	it("keeps a draft that uses the Encoding step on the short view, on that step", async () => {
@@ -1080,16 +1261,22 @@ describe("VodWizard — the file-output flow", () => {
 			name: "Run VMAF QC after encoding — more information",
 		});
 		expect(adds).toHaveAccessibleDescription(
-			/^Adds a copy of each file's video to measure \(MP4, under qc\/ in the destination folder\)\./,
+			/^Adds a copy of each file's video to measure \(MP4, or WebM for a VP9 file\), written to qc\/ in the folder for the measured copies\./,
 		);
-		expect(adds).not.toHaveAccessibleDescription(/rendition|WebM/);
-		// The copy that is measured is written beside the file.
+		expect(adds).not.toHaveAccessibleDescription(/rendition/);
+		// The folder is the job's own: a copy is not named after the job.
+		expect(screen.getByLabelText("Folder for the measured copies")).toHaveValue(
+			"clip/",
+		);
+		expect(await helpOf("Folder for the measured copies")).toMatch(
+			/^Relative to the destination folder\. The copies are written to qc\/ inside it; empty puts qc\/ straight into the destination folder\./,
+		);
 		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(written("synthetic/exports/clip.mp4")).toBe(
 			"synthetic/exports/clip.mp4",
 		);
-		expect(written("synthetic/exports/qc/")).toBe(
-			"synthetic/exports/qc/Copies measured for quality (folder)",
+		expect(written("synthetic/exports/clip/qc/")).toBe(
+			"synthetic/exports/clip/qc/Copies measured for quality (folder)",
 		);
 
 		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
@@ -1104,7 +1291,7 @@ describe("VodWizard — the file-output flow", () => {
 			name: "VMAF only (do not write the files) — more information",
 		});
 		expect(help).toHaveAccessibleDescription(
-			/^Writes only the copies that are measured: one MP4 per file, under qc\/ in the destination folder\./,
+			/^Writes only the copies that are measured: one per file \(MP4, or WebM for a VP9 file\), in qc\/ in the folder for the measured copies\./,
 		);
 		expect(help).not.toHaveAccessibleDescription(/manifest|ladder|rendition/i);
 		await user.click(
@@ -1113,7 +1300,7 @@ describe("VodWizard — the file-output flow", () => {
 			}),
 		);
 		const told =
-			"“VMAF only (do not write the files)” is on (Encoding → Quality control). This job writes only the copies it measures, under qc/ in the destination folder: the files below are not written, and audio is left out.";
+			"“VMAF only (do not write the files)” is on (Encoding → Quality control). This job writes only the copies it measures, which the Review step lists: the files below are not written, and audio is left out.";
 		await user.click(screen.getByRole("button", { name: "3. Format" }));
 		expect(screen.getByText(told)).toBeInTheDocument();
 		// The files stay editable: what they set is what gets measured.
@@ -1121,8 +1308,8 @@ describe("VodWizard — the file-output flow", () => {
 
 		await user.click(screen.getByRole("button", { name: "6. Review" }));
 		expect(screen.queryByText("synthetic/exports/clip.mp4")).toBeNull();
-		expect(written("synthetic/exports/qc/")).toBe(
-			"synthetic/exports/qc/Copies measured for quality (folder)",
+		expect(written("synthetic/exports/clip/qc/")).toBe(
+			"synthetic/exports/clip/qc/Copies measured for quality (folder)",
 		);
 		expect(
 			screen.getByText(

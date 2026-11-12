@@ -22,6 +22,7 @@ import {
 	FILE_OUTPUT_FIELD_HOME,
 	type FileOutputBlocker,
 	fileAudioCodecs,
+	fileJobFolder,
 	fileJobWrites,
 	fileOutputBlockers,
 	isFileOutputState,
@@ -511,12 +512,17 @@ describe("what the simple view cannot show", () => {
 			["manifests"],
 		],
 		[
+			"an encoding the job is split into, which the Sources step adds",
+			{ sources: { encodings: [{ key: "second", name: "Second encoding" }] } },
+			["encodings"],
+		],
+		[
 			"post-encoding generation for several encodings",
 			{
 				sources: { encodings: [{ key: "second", name: "Second encoding" }] },
 				timing: "POST_ENCODING",
 			},
-			["manifests"],
+			["encodings", "manifests"],
 		],
 		[
 			"a Per-Title configuration",
@@ -643,6 +649,20 @@ describe("what the simple view cannot show", () => {
 	];
 	it.each(cases)("%s", (_name, patch, steps) => {
 		expect(fileOutputBlockers(apply(started, patch))).toEqual(steps);
+	});
+
+	it("the audio guard while no file has audio, which the Format step adds in one click", () => {
+		const silent = apply(started, setFileAudio(started, false));
+		const guarded: WizardState = { ...silent, audioGuard: true };
+		// In no plan as the job stands...
+		expect(planOf(guarded)).toEqual(planOf(silent));
+		expect(fileOutputBlockers(guarded)).toEqual(["ladder"]);
+		// ...and on the audio stream as soon as there is one.
+		const audible = apply(guarded, setFileAudio(guarded, true));
+		expect(planOf(audible)).not.toEqual(
+			planOf({ ...audible, audioGuard: false }),
+		);
+		expect(fileOutputBlockers(audible)).toEqual(["ladder"]);
 	});
 
 	it("does not count a collection someone emptied again", () => {
@@ -901,7 +921,7 @@ describe("the Per-Title configuration, which the simple view's Encoding step lea
 	});
 });
 
-describe("a quality gate, which in the simple view records its verdict and no more", () => {
+describe("a quality gate, which in the simple view marks the job and holds nothing back", () => {
 	const rules = [
 		{ metric: "VMAF_MEAN" as const, scope: "OVERALL" as const, gte: 80 },
 	];
@@ -942,14 +962,20 @@ describe("a quality gate, which in the simple view records its verdict and no mo
 		expect(fileOutputBlockers(after)).toEqual(["qualityGate"]);
 	});
 
-	it("goes back to marking on the way back, when no measure is ticked to act on it", () => {
+	// The simple view keeps a gate while nothing is measured, and ticks a measure in
+	// one click. A gate that would then hold the manifests back is not dropped to
+	// marking on the way back without a word: it is named, as it is when measured.
+	it("holds the full view with no measure ticked too, a measure being one click away", () => {
 		const idle = gated("BLOCK_MANIFESTS", false);
 		expect(planOf(idle)).toEqual(planOf(started));
+		expect(fileOutputBlockers(idle)).toEqual(["qualityGate"]);
+	});
+
+	it("is shown there with no measure ticked while it only marks the job", () => {
+		const idle = gated("MARK_ONLY", false);
+		expect(planOf(idle)).toEqual(planOf(started));
 		expect(fileOutputBlockers(idle)).toEqual([]);
-		const back = collapseToFileOutput(idle);
-		expect(back.qc).toEqual(gated("MARK_ONLY", false).qc);
-		// Ticking a measure in the simple view brings back a gate that can be met.
-		expect(errorsOf({ ...back, qc: gated("MARK_ONLY").qc })).toEqual([]);
+		expect(collapseToFileOutput(idle)).toEqual(idle);
 	});
 });
 
@@ -1026,33 +1052,18 @@ describe("the renditions a gate rule is for, which the simple view leaves to the
 		expect(collapseToFileOutput(same)).toEqual(same);
 	});
 
-	it("is for every file again on the way back, when no measure is ticked to act on it", () => {
+	it("holds the full view with no measure ticked too, a measure being one click away", () => {
 		const idle = aimed(started, ["v1080"], false);
 		expect(planOf(idle)).toEqual(planOf(started));
-		expect(fileOutputBlockers(idle)).toEqual([]);
-		const back = collapseToFileOutput(idle);
-		expect(back.qc?.gate).toEqual({ rules: [rule], onFail: "MARK_ONLY" });
-		// Ticking a measure in the simple view brings back a rule that can be met.
-		const measured: WizardState = {
-			...back,
-			qc: { ...back.qc, vmaf: true } as WizardState["qc"],
-		};
-		expect(errorsOf(measured)).toEqual([]);
-		expect(planOf(measured).qc?.gate?.rules).toEqual([rule]);
+		expect(fileOutputBlockers(idle)).toEqual(["gateTargets"]);
 	});
 
-	it("is cleared together with a gate that holds the manifests back", () => {
-		const both = aimed(started, ["v1080"], false, "BLOCK_MANIFESTS");
-		expect(fileOutputBlockers(both)).toEqual([]);
-		expect(collapseToFileOutput(both).qc?.gate).toEqual({
-			rules: [rule],
-			onFail: "MARK_ONLY",
-		});
-	});
-
-	it("is named beside such a gate when both are in use", () => {
+	it.each([
+		true,
+		false,
+	])("is named beside a gate that holds the manifests back (a measure ticked: %s)", (vmaf) => {
 		expect(
-			fileOutputBlockers(aimed(started, ["v1080"], true, "BLOCK_MANIFESTS")),
+			fileOutputBlockers(aimed(started, ["v1080"], vmaf, "BLOCK_MANIFESTS")),
 		).toEqual(["qualityGate", "gateTargets"]);
 	});
 });
@@ -1110,9 +1121,7 @@ describe("a job that only measures", () => {
 
 describe("what the Review step lists", () => {
 	const writes = (state: WizardState) =>
-		fileJobWrites(planOf(state), state.output.bucket).map(
-			(item) => `${item.kind} ${item.path}`,
-		);
+		fileJobWrites(planOf(state)).map((item) => `${item.kind} ${item.path}`);
 
 	it("lists each file by where it lands", () => {
 		const two = apply(started, addFile(started));
@@ -1181,14 +1190,69 @@ describe("what the Review step lists", () => {
 		]);
 	});
 
-	it("names no bucket where the storage has none", () => {
-		const plan = planOf({
+	// The form keeps the bucket it had when the storage is changed to a kind that
+	// has none, so the name is read from the plan, where it is gone.
+	it.each([
+		"SFTP",
+		"AKAMAI_NETSTORAGE",
+	] as const)("names no bucket for %s, which has none", (kind) => {
+		const measured: WizardState = {
 			...started,
+			output: { ...started.output, kind },
 			qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
-		});
-		expect(fileJobWrites(plan, "").map((item) => item.path)).toEqual([
-			"exports/clip.mp4",
-			"exports/qc/",
+		};
+		expect(measured.output.bucket).toBe("out");
+		expect(writes(measured)).toEqual([
+			"file exports/clip.mp4",
+			"qcMirror exports/qc/",
+		]);
+	});
+
+	it("starts with the container of an Azure output", () => {
+		expect(
+			writes({ ...started, output: { ...started.output, kind: "AZURE" } }),
+		).toEqual(["file out/exports/clip.mp4"]);
+	});
+
+	it.each([
+		["exports", "out/exports/"],
+		["exports/", "out/exports/"],
+		["/exports/", "out/exports/"],
+		["", "out/"],
+		["/", "out/"],
+	])("reads the same however the folder %j was typed", (basePath, folder) => {
+		expect(
+			writes({
+				...started,
+				output: { ...started.output, basePath },
+				startOptions: {
+					aiSceneAnalysis: { filename: "analysis.json", path: "" },
+				},
+				qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
+			}),
+		).toEqual([
+			`file ${folder}clip.mp4`,
+			`analysis ${folder}analysis.json`,
+			`qcMirror ${folder}qc/`,
+		]);
+	});
+
+	it("puts the copies where the quality check is told to", () => {
+		const two = apply(started, addFile(started));
+		expect(
+			writes({
+				...two,
+				qc: {
+					vmaf: true,
+					psnr: false,
+					model: "vmaf_v0.6.1",
+					mirrorPath: "clip/",
+				},
+			}),
+		).toEqual([
+			"file out/exports/clip.mp4",
+			"file out/exports/clip-540p.mp4",
+			"qcMirror out/exports/clip/qc/",
 		]);
 	});
 
@@ -1202,10 +1266,95 @@ describe("what the Review step lists", () => {
 				},
 				qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
 			}),
-			"out",
 		);
 		expect(all).toHaveLength(4);
 		expect(new Set(all.map((item) => item.key)).size).toBe(4);
+	});
+});
+
+describe("the folder of what a job writes besides its files", () => {
+	const kantar = {
+		credentialId: "00000000-0000-4000-8000-000000000003",
+		licenseId: 1,
+		channelName: "channel",
+		contentReference: "reference",
+		serverUrl: "https://kantar.example",
+	};
+	// As the Encoding step leaves them when each is switched on in this flow.
+	const full: WizardState = {
+		...started,
+		startOptions: {
+			aiSceneAnalysis: {
+				filename: "analysis.json",
+				path: fileJobFolder(started.name),
+			},
+		},
+		qc: {
+			vmaf: true,
+			psnr: false,
+			model: "vmaf_v0.6.1",
+			mirrorPath: fileJobFolder(started.name),
+		},
+		kantar: { ...kantar, reportPath: fileJobFolder(started.name) },
+	};
+	const besides = (state: WizardState) =>
+		fileJobWrites(planOf(state))
+			.filter((item) => item.kind !== "file")
+			.map((item) => item.path);
+
+	it("is named after the job, as the files are", () => {
+		expect(fileJobFolder("clip")).toBe("clip/");
+		expect(fileJobFolder(" a/b?c ")).toBe("a-b-c/");
+		expect(fileJobFolder("")).toBe("output/");
+	});
+
+	it("keeps two jobs that write to one folder apart", () => {
+		expect(errorsOf(full)).toEqual([]);
+		expect(besides(full)).toEqual([
+			"out/exports/clip/analysis.json",
+			"out/exports/clip/qc/",
+			"out/exports/clip/",
+		]);
+		const other = apply(full, renameFileJob(full, "trailer"));
+		expect(besides(other)).toEqual([
+			"out/exports/trailer/analysis.json",
+			"out/exports/trailer/qc/",
+			"out/exports/trailer/",
+		]);
+		// The files are where they were: straight in the folder.
+		expect(fileJobWrites(planOf(other))[0]?.path).toBe(
+			"out/exports/trailer.mp4",
+		);
+	});
+
+	it("stays where it was put once somebody chose another", () => {
+		const moved: WizardState = {
+			...full,
+			startOptions: {
+				aiSceneAnalysis: { filename: "analysis.json", path: "ai/" },
+			},
+			qc: { ...full.qc, mirrorPath: "" } as WizardState["qc"],
+			kantar: { ...kantar, reportPath: "reports/" },
+		};
+		const renamed = apply(moved, renameFileJob(moved, "trailer"));
+		expect(renamed.startOptions).toEqual(moved.startOptions);
+		expect(renamed.qc).toEqual(moved.qc);
+		expect(renamed.kantar).toEqual(moved.kantar);
+		expect(besides(renamed)).toEqual([
+			"out/exports/ai/analysis.json",
+			"out/exports/qc/",
+			"out/exports/reports/",
+		]);
+	});
+
+	it("is not invented by a rename for a job that has none of the three", () => {
+		const renamed = renameFileJob(started, "trailer");
+		expect(Object.keys(renamed).sort()).toEqual(["name", "videos"]);
+	});
+
+	it("is a setting the simple view shows, there and back", () => {
+		expect(fileOutputBlockers(full)).toEqual([]);
+		expect(collapseToFileOutput(full)).toEqual(full);
 	});
 });
 

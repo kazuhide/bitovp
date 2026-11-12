@@ -47,6 +47,7 @@ import {
 	FILE_OUTPUT_DEFAULT_STATE,
 	type FileJobWrite,
 	type FileOutputBlocker,
+	fileJobFolder,
 	fileJobWrites,
 	fileOutputBlockers,
 	renameFileJob,
@@ -133,9 +134,11 @@ const WRITE_LABEL: Record<Exclude<FileJobWrite["kind"], "file">, MessageKey> = {
 };
 const BLOCKER_STEP: Record<FileOutputBlocker, MessageKey> = {
 	basics: "wizard.basics",
+	// The simple view has the Sources step too, so what it holds back is named.
+	encodings: "vodFlow.blockerEncodings",
 	ladder: "wizard.ladder",
 	packaging: "wizard.packaging",
-	// The simple view has the Encoding step too, so what it holds back is named.
+	// As is what it holds back from the Encoding step.
 	perTitle: "vodFlow.blockerPerTitle",
 	qualityGate: "vodFlow.blockerQualityGate",
 	gateTargets: "vodFlow.blockerGateTargets",
@@ -1355,7 +1358,7 @@ export function VodWizard({
 								onPatch={patch}
 								onBrowse={(index) => setPicker({ file: index })}
 							/>
-							<SourcesSection state={state} onPatch={patch} />
+							<SourcesSection state={state} onPatch={patch} fileView={simple} />
 						</>
 					) : null}
 
@@ -1404,6 +1407,7 @@ export function VodWizard({
 							onPatch={patch}
 							credentials={allCredentials}
 							fileView={simple}
+							jobFolder={fileFlow ? fileJobFolder(state.name) : undefined}
 						/>
 					) : null}
 
@@ -1665,7 +1669,7 @@ export function VodWizard({
 							{fileFlow && blockers.length === 0 && evaluation.ok ? (
 								<div>
 									<h2 className="font-medium text-sm text-zinc-200">
-										{t("vodFlow.reviewFiles")}
+										{t("vodFlow.reviewWrites")}
 									</h2>
 									{evaluation.plan.qc?.only ? (
 										<p className="mt-1 text-amber-400 text-xs">
@@ -1675,19 +1679,30 @@ export function VodWizard({
 										</p>
 									) : null}
 									<ul className="mt-1 space-y-1 break-all font-mono text-xs text-zinc-300">
-										{fileJobWrites(evaluation.plan, state.output.bucket).map(
-											(item) => (
-												<li key={item.key}>
-													{item.path}
-													{item.kind === "file" ? null : (
-														<span className="ml-2 font-sans text-zinc-500">
-															{t(WRITE_LABEL[item.kind])}
-														</span>
-													)}
-												</li>
-											),
-										)}
+										{fileJobWrites(evaluation.plan).map((item) => (
+											<li key={item.key}>
+												{item.path}
+												{item.kind === "file" ? null : (
+													<span className="ml-2 font-sans text-zinc-500">
+														{t(WRITE_LABEL[item.kind])}
+													</span>
+												)}
+											</li>
+										))}
 									</ul>
+									{/* The list is the first destination. The others get what
+									    the encoder writes as a muxing, which the result of AI
+									    Scene Analysis and the Kantar report are not. */}
+									{(evaluation.plan.deliveryMirrors ?? []).length > 0 ? (
+										<p className="mt-1 text-xs text-zinc-500">
+											{t("vodFlow.reviewAlsoMirrored", {
+												count: (evaluation.plan.deliveryMirrors ?? []).length,
+											})}
+											{evaluation.plan.aiSceneAnalysis || evaluation.plan.kantar
+												? ` ${t("vodFlow.reviewNotMirrored")}`
+												: ""}
+										</p>
+									) : null}
 								</div>
 							) : null}
 							{!state.accountId ? (

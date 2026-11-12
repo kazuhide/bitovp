@@ -2235,6 +2235,14 @@ type EncodingOptionsSectionProps = ManifestSectionProps & {
 	 * step where the full wizard names the ladder and the delivery outputs.
 	 */
 	fileView?: boolean;
+	/**
+	 * The file flow, in either of its views: the folder, relative to the base output
+	 * path, that a job keeps what it writes besides its files in (`fileJobFolder`).
+	 * AI Scene Analysis, the quality check and Kantar start there when they are
+	 * switched on, because a file job writes its files straight into a folder other
+	 * jobs use. Unset in the delivery flow, whose base output path is the job's own.
+	 */
+	jobFolder?: string;
 };
 
 /**
@@ -2276,6 +2284,7 @@ export function EncodingOptionsSection({
 	onPatch,
 	credentials = [],
 	fileView = false,
+	jobFolder,
 }: EncodingOptionsSectionProps) {
 	const qcVmafEnabled = useQcVmafEnabled();
 	const { t } = useT();
@@ -2323,6 +2332,11 @@ export function EncodingOptionsSection({
 	const qcOnly = Boolean(qcOn && qc.only);
 	const patchQc = (partial: Partial<WizardQc>) =>
 		onPatch({ qc: { ...qc, ...partial } });
+	// Switching the first measure on is switching the quality check on.
+	const qcFolderSeed: Partial<WizardQc> =
+		jobFolder !== undefined && !qcOn && qc.mirrorPath === undefined
+			? { mirrorPath: jobFolder }
+			: {};
 	// QC gate editor . Zero rules = no gate key at all — the
 	// wizard never emits an empty gate the schema would reject (rules min 1).
 	const gateRules = qc.gate?.rules ?? [];
@@ -2572,7 +2586,10 @@ export function EncodingOptionsSection({
 			>
 				{qcOnly ? (
 					<p className="text-amber-400 text-xs">
-						{t("wizard.aisaDisabledQcOnly")}
+						{t("wizard.skippedWhileMeasureOnly", {
+							option: t(measureOnlyLabel(qc, fileView)),
+							feature: t("wizardX.aiSceneAnalysis"),
+						})}
 					</p>
 				) : null}
 				<fieldset disabled={qcOnly} className="space-y-3">
@@ -2588,7 +2605,7 @@ export function EncodingOptionsSection({
 							onChange={(e) =>
 								patchStart({
 									aiSceneAnalysis: e.target.checked
-										? { filename: "analysis.json", path: "" }
+										? { filename: "analysis.json", path: jobFolder ?? "" }
 										: undefined,
 								})
 							}
@@ -2616,7 +2633,11 @@ export function EncodingOptionsSection({
 								<Field
 									label={t("wizard.destinationPath")}
 									htmlFor="wz-ai-path"
-									help={t("wizard.relativeToTheBaseOutputPath")}
+									help={t(
+										fileView
+											? "vodFlow.relativeToDestination"
+											: "wizard.relativeToTheBaseOutputPath",
+									)}
 								>
 									<Input
 										id="wz-ai-path"
@@ -2797,6 +2818,7 @@ export function EncodingOptionsSection({
 														backend: "LOCAL",
 														localMode: "CPU",
 													},
+													...qcFolderSeed,
 												}
 											: { vmaf: false, psnr: false },
 									)
@@ -2829,6 +2851,7 @@ export function EncodingOptionsSection({
 										...(e.target.checked && !qc.execution
 											? { execution: { backend: "LOCAL", localMode: "CPU" } }
 											: {}),
+										...(e.target.checked ? qcFolderSeed : {}),
 									})
 								}
 							/>
@@ -2917,6 +2940,100 @@ export function EncodingOptionsSection({
 									)}
 								/>
 							</div>
+							{/* Where the measured copies go. A copy is named by its rendition
+							    key and nothing else, so jobs whose renditions share an output
+							    folder need a folder each. In the file view every file is
+							    written to the one folder, so "beside the rendition" and "" are
+							    one place and the field alone says it. */}
+							{fileView ? (
+								<Field
+									label={t("wizard.qcMirrorFolder")}
+									htmlFor="wz-qc-mirror-path"
+									help={t("vodFlow.qcMirrorFolderHelp")}
+								>
+									<Input
+										id="wz-qc-mirror-path"
+										value={qc.mirrorPath ?? ""}
+										onChange={(e) =>
+											patchQc({
+												mirrorPath:
+													e.target.value === "" ? undefined : e.target.value,
+											})
+										}
+									/>
+								</Field>
+							) : (
+								<>
+									<div className="flex items-center gap-1">
+										<label
+											htmlFor="wz-qc-mirror-own"
+											className="flex items-center gap-2 text-xs text-zinc-300"
+										>
+											<input
+												id="wz-qc-mirror-own"
+												type="checkbox"
+												className="h-3.5 w-3.5 accent-emerald-600"
+												checked={qc.mirrorPath !== undefined}
+												onChange={(e) =>
+													patchQc({
+														mirrorPath: e.target.checked ? "" : undefined,
+													})
+												}
+											/>
+											{t("wizard.qcMirrorOwnFolder")}
+										</label>
+										<InfoHint
+											label={t("uiX.moreInformationFor", {
+												label: t("wizard.qcMirrorOwnFolder"),
+											})}
+											text={t("wizard.qcMirrorOwnFolderHelp")}
+										/>
+									</div>
+									{qc.mirrorPath !== undefined ? (
+										<Field
+											label={t("wizard.qcMirrorFolder")}
+											htmlFor="wz-qc-mirror-path"
+											help={t("wizard.qcMirrorFolderHelp")}
+										>
+											<Input
+												id="wz-qc-mirror-path"
+												value={qc.mirrorPath}
+												onChange={(e) =>
+													patchQc({ mirrorPath: e.target.value })
+												}
+											/>
+										</Field>
+									) : null}
+								</>
+							)}
+							{/* No step sets this: it comes with a loaded plan, and it changes
+							    how the job is scored. Shown so that it is not in the plan
+							    unseen, with the one edit there is, which is taking it out. */}
+							{qc.measurementMethod !== undefined ? (
+								<Field
+									label={t("qc.measureMethod")}
+									htmlFor="wz-qc-method"
+									help={t("wizard.qcMeasurementMethodHelp")}
+								>
+									<SelectNative
+										id="wz-qc-method"
+										value={qc.measurementMethod}
+										onChange={(e) =>
+											patchQc({
+												measurementMethod:
+													e.target.value === ""
+														? undefined
+														: qc.measurementMethod,
+											})
+										}
+									>
+										<option value="">{t("qc.measureMethodDefault")}</option>
+										<option value="FRAME_INDEX_BT709_10BIT">
+											{t("qc.measureMethodFrameIndex")}
+										</option>
+									</SelectNative>
+								</Field>
+							) : null}
 							{/* QC gate editor : threshold rules that turn
 							    the measurement into enforcement. Zero rules = no gate key;
 							    the schema shape is carried VERBATIM into plan.qc.gate. */}
@@ -3169,7 +3286,9 @@ export function EncodingOptionsSection({
 								</Button>
 								{gateRules.some((rule) => rule.metric === "CAMBI_MAX") ? (
 									<p className="text-xs text-zinc-500">
-										{t("banding.gateHint")}
+										{t(
+											fileView ? "vodFlow.bandingGateHint" : "banding.gateHint",
+										)}
 									</p>
 								) : null}
 								{gateRules.length > 0 && !fileView ? (
@@ -3209,165 +3328,193 @@ export function EncodingOptionsSection({
 			<Collapsible
 				summary={
 					t("wizardX.kantarAudioWatermarking") +
-					(kantar ? t("wizardX.onSuffix") : "")
+					(kantar && !qcOnly ? t("wizardX.onSuffix") : "")
 				}
-				help={t("ui.embedsAnInaudibleKantarWatermarkInThe")}
+				help={t(
+					fileView
+						? "vodFlow.kantarHelp"
+						: "ui.embedsAnInaudibleKantarWatermarkInThe",
+				)}
 			>
-				<label
-					htmlFor="wz-kantar-enable"
-					className="flex items-center gap-2 text-xs text-zinc-300"
-				>
-					<input
-						id="wz-kantar-enable"
-						type="checkbox"
-						className="h-3.5 w-3.5 accent-emerald-600"
-						checked={kantar !== undefined}
-						onChange={(e) =>
-							onPatch({
-								kantar: e.target.checked
-									? {
-											credentialId: "",
-											channelName: "",
-											contentReference: "",
-											serverUrl: "",
-											reportPath: "",
-										}
-									: undefined,
-							})
-						}
-					/>
-					{t("wizard.enableKantarAudioWatermarking")}
-				</label>
-				{kantar ? (
-					<div className="space-y-3">
-						{state.audios.length === 0 ? (
-							<p className="text-amber-400 text-xs">
-								{t(
-									fileView
-										? "vodFlow.kantarNeedsAudio"
-										: "wizard.thisPlanHasNoAudioRenditionAdd",
-								)}
-							</p>
-						) : null}
-						<Field
-							label={t("wizard.kantarCredential")}
-							htmlFor="wz-kantar-cred"
-							help={t("wizard.vaultCredentialTheServiceLoginPasswordNever")}
-						>
-							<SelectNative
-								id="wz-kantar-cred"
-								value={kantar.credentialId}
-								onChange={(e) => patchKantar({ credentialId: e.target.value })}
-							>
-								<option value="">{t("wizard.selectCredential")}</option>
-								{kantarCredentials.map((credential) => (
-									<option key={credential.id} value={credential.id}>
-										{credential.label}
-									</option>
-								))}
-							</SelectNative>
-							<NewCredentialLink />
-						</Field>
-						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-							<Field
-								label={t("wizard.licenseId")}
-								htmlFor="wz-kantar-license"
-								help={t("wizard.kantarLicenseIdInteger")}
-							>
-								<Input
-									id="wz-kantar-license"
-									type="number"
-									min={1}
-									placeholder="4711"
-									value={kantar.licenseId ?? ""}
-									onChange={(e) =>
-										// Blank stays blank (undefined) so the preview says
-										// "expected number" rather than the form inventing a 0.
-										patchKantar({
-											licenseId:
-												e.target.value === ""
-													? undefined
-													: Number(e.target.value),
-										})
-									}
-								/>
-							</Field>
-							<Field
-								label={t("wizard.channelName")}
-								htmlFor="wz-kantar-channel"
-								help={t("wizard.kantarChannelThisContentIsReportedUnder")}
-							>
-								<Input
-									id="wz-kantar-channel"
-									placeholder={t("wizard.demoChannelJp")}
-									value={kantar.channelName}
-									onChange={(e) => patchKantar({ channelName: e.target.value })}
-								/>
-							</Field>
-							<Field
-								label={t("wizard.contentReference")}
-								htmlFor="wz-kantar-content-ref"
-								help={t("wizard.yourIdentifierForThisAssetInKantar")}
-							>
-								<Input
-									id="wz-kantar-content-ref"
-									placeholder="bbb-2026-08-06-ep01"
-									value={kantar.contentReference}
-									onChange={(e) =>
-										patchKantar({ contentReference: e.target.value })
-									}
-								/>
-							</Field>
-							<Field
-								label={t("wizard.serverUrl")}
-								htmlFor="wz-kantar-server-url"
-								help={t("wizard.kantarWatermarkingServiceEndpoint")}
-							>
-								<Input
-									id="wz-kantar-server-url"
-									placeholder="https://kantar.example.com/watermark"
-									value={kantar.serverUrl}
-									onChange={(e) => patchKantar({ serverUrl: e.target.value })}
-								/>
-							</Field>
-						</div>
-						<Field
-							label={t("wizard.reportPath")}
-							htmlFor="wz-kantar-report-path"
-							help={t("wizard.relativeToTheBaseOutputPathWhere")}
-						>
-							<Input
-								id="wz-kantar-report-path"
-								placeholder={t("wizard.reports")}
-								value={kantar.reportPath}
-								onChange={(e) => patchKantar({ reportPath: e.target.value })}
-							/>
-						</Field>
-						<div className="flex items-center gap-1">
-							<label
-								htmlFor="wz-kantar-report-private"
-								className="flex items-center gap-2 text-xs text-zinc-300"
-							>
-								<input
-									id="wz-kantar-report-private"
-									type="checkbox"
-									className="h-3.5 w-3.5 accent-emerald-600"
-									checked={kantar.reportPrivate ?? false}
-									onChange={(e) =>
-										patchKantar({
-											reportPrivate: e.target.checked ? true : undefined,
-										})
-									}
-								/>
-								{t("wizard.writeTheReportPrivatelyAclPrivate")}
-							</label>
-							<InfoHint
-								label={t("wizard.writeTheReportPrivatelyAclPrivateMore")}
-								text={t("wizard.theProcessingReportIsOperationalDataSo")}
-							/>
-						</div>
-					</div>
+				{/* A job that only measures encodes no audio, and Kantar marks audio
+				    and nothing else: the block stays here and out of the plan. */}
+				{qcOnly ? (
+					<p className="text-amber-400 text-xs">
+						{t("wizard.skippedWhileMeasureOnly", {
+							option: t(measureOnlyLabel(qc, fileView)),
+							feature: t("wizardX.kantarAudioWatermarking"),
+						})}
+					</p>
 				) : null}
+				<fieldset disabled={qcOnly} className="space-y-3">
+					<label
+						htmlFor="wz-kantar-enable"
+						className="flex items-center gap-2 text-xs text-zinc-300"
+					>
+						<input
+							id="wz-kantar-enable"
+							type="checkbox"
+							className="h-3.5 w-3.5 accent-emerald-600"
+							checked={kantar !== undefined}
+							onChange={(e) =>
+								onPatch({
+									kantar: e.target.checked
+										? {
+												credentialId: "",
+												channelName: "",
+												contentReference: "",
+												serverUrl: "",
+												reportPath: jobFolder ?? "",
+											}
+										: undefined,
+								})
+							}
+						/>
+						{t("wizard.enableKantarAudioWatermarking")}
+					</label>
+					{kantar ? (
+						<div className="space-y-3">
+							{!qcOnly && state.audios.length === 0 ? (
+								<p className="text-amber-400 text-xs">
+									{t(
+										fileView
+											? "vodFlow.kantarNeedsAudio"
+											: "wizard.thisPlanHasNoAudioRenditionAdd",
+									)}
+								</p>
+							) : null}
+							<Field
+								label={t("wizard.kantarCredential")}
+								htmlFor="wz-kantar-cred"
+								help={t("wizard.vaultCredentialTheServiceLoginPasswordNever")}
+							>
+								<SelectNative
+									id="wz-kantar-cred"
+									value={kantar.credentialId}
+									onChange={(e) =>
+										patchKantar({ credentialId: e.target.value })
+									}
+								>
+									<option value="">{t("wizard.selectCredential")}</option>
+									{kantarCredentials.map((credential) => (
+										<option key={credential.id} value={credential.id}>
+											{credential.label}
+										</option>
+									))}
+								</SelectNative>
+								<NewCredentialLink />
+							</Field>
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+								<Field
+									label={t("wizard.licenseId")}
+									htmlFor="wz-kantar-license"
+									help={t("wizard.kantarLicenseIdInteger")}
+								>
+									<Input
+										id="wz-kantar-license"
+										type="number"
+										min={1}
+										placeholder="4711"
+										value={kantar.licenseId ?? ""}
+										onChange={(e) =>
+											// Blank stays blank (undefined) so the preview says
+											// "expected number" rather than the form inventing a 0.
+											patchKantar({
+												licenseId:
+													e.target.value === ""
+														? undefined
+														: Number(e.target.value),
+											})
+										}
+									/>
+								</Field>
+								<Field
+									label={t("wizard.channelName")}
+									htmlFor="wz-kantar-channel"
+									help={t("wizard.kantarChannelThisContentIsReportedUnder")}
+								>
+									<Input
+										id="wz-kantar-channel"
+										placeholder={t("wizard.demoChannelJp")}
+										value={kantar.channelName}
+										onChange={(e) =>
+											patchKantar({ channelName: e.target.value })
+										}
+									/>
+								</Field>
+								<Field
+									label={t("wizard.contentReference")}
+									htmlFor="wz-kantar-content-ref"
+									help={t("wizard.yourIdentifierForThisAssetInKantar")}
+								>
+									<Input
+										id="wz-kantar-content-ref"
+										placeholder="bbb-2026-08-06-ep01"
+										value={kantar.contentReference}
+										onChange={(e) =>
+											patchKantar({ contentReference: e.target.value })
+										}
+									/>
+								</Field>
+								<Field
+									label={t("wizard.serverUrl")}
+									htmlFor="wz-kantar-server-url"
+									help={t("wizard.kantarWatermarkingServiceEndpoint")}
+								>
+									<Input
+										id="wz-kantar-server-url"
+										placeholder="https://kantar.example.com/watermark"
+										value={kantar.serverUrl}
+										onChange={(e) => patchKantar({ serverUrl: e.target.value })}
+									/>
+								</Field>
+							</div>
+							<Field
+								label={t("wizard.reportPath")}
+								htmlFor="wz-kantar-report-path"
+								help={t(
+									fileView
+										? "vodFlow.kantarReportPathHelp"
+										: "wizard.relativeToTheBaseOutputPathWhere",
+								)}
+							>
+								<Input
+									id="wz-kantar-report-path"
+									placeholder={t("wizard.reports")}
+									value={kantar.reportPath}
+									onChange={(e) => patchKantar({ reportPath: e.target.value })}
+								/>
+							</Field>
+							<div className="flex items-center gap-1">
+								<label
+									htmlFor="wz-kantar-report-private"
+									className="flex items-center gap-2 text-xs text-zinc-300"
+								>
+									<input
+										id="wz-kantar-report-private"
+										type="checkbox"
+										className="h-3.5 w-3.5 accent-emerald-600"
+										checked={kantar.reportPrivate ?? false}
+										onChange={(e) =>
+											patchKantar({
+												reportPrivate: e.target.checked ? true : undefined,
+											})
+										}
+									/>
+									{t("wizard.writeTheReportPrivatelyAclPrivate")}
+								</label>
+								<InfoHint
+									label={t("wizard.writeTheReportPrivatelyAclPrivateMore")}
+									text={t(
+										fileView
+											? "vodFlow.kantarReportPrivateHelp"
+											: "wizard.theProcessingReportIsOperationalDataSo",
+									)}
+								/>
+							</div>
+						</div>
+					) : null}
+				</fieldset>
 			</Collapsible>
 		</div>
 	);

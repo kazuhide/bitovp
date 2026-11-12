@@ -766,30 +766,46 @@ export const en = {
 		audioSource: "Audio source",
 		folderHelp:
 			"Files are written directly into this folder. No subfolder is added for the job.",
-		reviewFiles: "Files this job writes",
+		reviewWrites: "What this job writes",
+		reviewAlsoMirrored:
+			"The files and the measured copies are also written to the additional destinations ({count}).",
+		reviewNotMirrored:
+			"The AI Scene Analysis result and the Kantar report are written to this destination only.",
 		reviewAnalysis: "AI Scene Analysis result",
 		reviewQcMirrors: "Copies measured for quality (folder)",
 		reviewKantarReport: "Kantar report (folder)",
 		reviewMeasureOnly:
 			"“{option}” is on: this job measures the video of each file and does not write the files.",
+		blockerEncodings: "Sources (multi-encoding partition)",
 		blockerPerTitle: "Encoding (Per-Title configuration)",
 		blockerQualityGate: "Encoding (a QC gate that blocks manifest generation)",
 		blockerGateTargets: "Encoding (a QC gate rule for selected renditions)",
 		qcGateHint:
-			"Threshold rules over the VMAF/PSNR measurement. PER_RENDITION holds every file to the bar; OVERALL judges the mean over the files. A failed rule is recorded on the job and does not stop the files from being written.",
+			"Threshold rules over what is measured (VMAF, PSNR, banding). PER_RENDITION holds every file to the bar; OVERALL judges the mean over the files. A failed rule is recorded on the job and sends the “QC gate failed” notification; it does not stop the files from being written.",
+		bandingGateHint:
+			"A CAMBI limit is an upper bound every file is held to. Start with a warning and review examples under your viewing conditions; 5 is a suggested starting point, not a universal visibility threshold.",
+		qcMirrorFolderHelp:
+			"Relative to the destination folder. The copies are written to qc/ inside it; empty puts qc/ straight into the destination folder. A copy is named after its file's video settings (v1080.mp4, for example) and not after the job, so jobs that write to one destination folder should each keep a folder of their own.",
+		relativeToDestination: "Relative to the destination folder",
+		kantarHelp:
+			"Embeds an inaudible Kantar watermark in the audio of the files. A job whose files have no audio has nothing to mark and is rejected. One configuration applies to the whole job. The Kantar service login and password are vault-only (managed in Settings → Credentials under “Kantar audio watermarking”) — the plan carries the credential reference, never the login itself.",
+		kantarReportPathHelp:
+			"Relative to the destination folder — where Kantar's processing report is written",
+		kantarReportPrivateHelp:
+			"The processing report is operational data, so it is normally written PRIVATE even when the files are public. Unchecked, the report is public or private as the files are.",
 		encodingModeFromFiles: "Use each file's encoding mode / preset",
 		encodingModeFromFilesHint:
 			"Set the encoding mode or preset of each file in the Format step. The job-level mode is omitted to avoid conflicting settings.",
 		kantarNeedsAudio:
 			"The files have no audio track. Turn on “Include audio in every file” in the Format step, or the job will be rejected (Kantar watermarks audio).",
 		qcHelp:
-			"Adds a copy of each file's video to measure (MP4, under qc/ in the destination folder). After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
+			"Adds a copy of each file's video to measure (MP4, or WebM for a VP9 file), written to qc/ in the folder for the measured copies. After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
 		vmafOnly: "VMAF only (do not write the files)",
 		qcOnly: "QC only (do not write the files)",
 		measureOnlyHelp:
-			"Writes only the copies that are measured: one MP4 per file, under qc/ in the destination folder. The files set in the Format step are not written, and audio is left out. Use it to measure quality without keeping the files.",
+			"Writes only the copies that are measured: one per file (MP4, or WebM for a VP9 file), in qc/ in the folder for the measured copies. The files set in the Format step are not written, and audio is left out. Use it to measure quality without keeping the files.",
 		measureOnlyFormatNote:
-			"“{option}” is on (Encoding → Quality control). This job writes only the copies it measures, under qc/ in the destination folder: the files below are not written, and audio is left out.",
+			"“{option}” is on (Encoding → Quality control). This job writes only the copies it measures, which the Review step lists: the files below are not written, and audio is left out.",
 	},
 	shell: {
 		skipToContent: "Skip to content",
@@ -4706,8 +4722,16 @@ export const en = {
 			"Could not load credentials. Retry to select your storage credentials.",
 		accountsLoadFailed:
 			"Could not load Bitmovin accounts. Retry to select an account.",
-		aisaDisabledQcOnly:
-			"VMAF-only encoding skips AI Scene Analysis. Turn off VMAF-only to use these saved settings.",
+		skippedWhileMeasureOnly:
+			"“{option}” is on, so {feature} is skipped. Turn that option off to use the settings saved here.",
+		qcMirrorOwnFolder: "Write the measured copies to one folder",
+		qcMirrorOwnFolderHelp:
+			"Unchecked, each copy is written beside its rendition, in qc/ under that rendition's output folder. Checked, every copy goes to qc/ under the folder named below. A copy is named by its rendition key and nothing else, so jobs whose renditions share an output folder should each name a folder of their own: otherwise a later job replaces the copies an earlier job is measured on.",
+		qcMirrorFolder: "Folder for the measured copies",
+		qcMirrorFolderHelp:
+			"Relative to the base output path. The copies are written to qc/ inside it; empty is the base output path itself.",
+		qcMeasurementMethodHelp:
+			"Set by the plan that was loaded; the wizard cannot choose it. Frame-index comparison requires cloud execution, and its scores are compared apart from the standard method's. Choosing Standard removes it.",
 		previewPlacementNeedsJit:
 			"Preview placement requires Just in time. Change the timing or reset Start placement to VOD (default).",
 		encodingModeFromLadder: "Use ladder encoding modes / presets",

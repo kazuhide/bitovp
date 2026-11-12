@@ -102,8 +102,10 @@ export function childEnvironment(env) {
 // A directory that holds an FFmpeg which is already built from the
 // Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The Worker
 // image's build takes it in place of the "ffmpeg" stage and compiles nothing.
-// The programs are not compared with the sources here: what made the directory
-// proved them. A directory in the checkout would also be a part of what the
+// The programs are not compared with the sources here. The installer that
+// left the directory ran the image's VMAF proof with them; of a build that it
+// had kept, it checked no more than that and the build's own list of
+// checksums. A directory in the checkout would also be a part of what the
 // image is built from.
 export function verifyFfmpeg(path) {
 	assert(
@@ -117,6 +119,9 @@ export function verifyFfmpeg(path) {
 			!inside(realpathSync(ROOT), canonical),
 		"FFmpeg directory must be a directory outside the checkout",
 	);
+	// Compose reads a dollar sign in the override as the start of a variable:
+	// the image's build would get another directory than the one checked here.
+	assert(!/[$\r\n]/.test(canonical), "Unsupported FFmpeg directory path");
 	for (const program of ["ffmpeg", "ffprobe"]) {
 		const file = join(canonical, "bin", program);
 		assert(
@@ -130,9 +135,10 @@ export function verifyFfmpeg(path) {
 export function composeOverride({ id, directory, imageId = id, ffmpeg }) {
 	assert(/^[a-f0-9]{32}$/.test(id), "Invalid smoke test identity");
 	assert(/^[a-f0-9]{32}$/.test(imageId), "Invalid smoke image identity");
-	// Compose would look for any other path in the checkout.
+	// Compose would look for any other path in the checkout, and would read a
+	// dollar sign in it as the start of a variable.
 	assert(
-		ffmpeg === undefined || isAbsolute(ffmpeg),
+		ffmpeg === undefined || (isAbsolute(ffmpeg) && !/[$\r\n]/.test(ffmpeg)),
 		"Invalid FFmpeg directory",
 	);
 	const env = (file) =>

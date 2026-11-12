@@ -1,8 +1,11 @@
 name: FFmpeg from source
 
-# The jobs that need the worker image's FFmpeg reuse an earlier build of the
-# same sources, so they no longer prove that the pinned sources still download
-# and compile. This workflow proves it every week, with no build to reuse.
+# The jobs that need the worker image's FFmpeg reuse a build that was kept for
+# the same sources, and build the image with that build in the place of the
+# Dockerfile's "ffmpeg" stage. They no longer show that the pinned sources
+# still download and compile, nor that the Dockerfile alone still builds the
+# whole image, as it does for whoever installs bitovp. This workflow shows
+# both every week, with no build to reuse.
 on:
   schedule:
     - cron: "17 19 * * 0"
@@ -25,3 +28,28 @@ jobs:
           persist-credentials: false
       - name: Build the worker image's FFmpeg from its pinned sources and prove it with the pinned VMAF models
         run: sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"
+
+  image-from-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - name: Build the whole worker image from the Dockerfile alone and validate the ten-second asset with it
+        run: pnpm test:media --state-file "$RUNNER_TEMP/bitovp-media-state.json"
+      - name: Remove only this job's owned media resources
+        if: always()
+        run: node scripts/media-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-media-state.json"

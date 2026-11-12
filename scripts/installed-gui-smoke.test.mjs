@@ -214,12 +214,23 @@ test("only the builds of the Worker's Dockerfile take a directory of built FFmpe
 			`\n        ffmpeg: ${JSON.stringify(odd)}\n`,
 		),
 	);
-	// Compose would look for any other path in the checkout.
-	for (const relative of ["native-media", "./native-media", ""])
+	// Compose would look for any other path in the checkout, and would put
+	// the value of a variable where a dollar sign starts one: the build would
+	// get another directory than the one that was checked.
+	for (const unsafe of [
+		"native-media",
+		"./native-media",
+		"",
+		"/private/with$dollar",
+		"/private/native-media$",
+		"/private/a\nb",
+		"/private/a\rb",
+	])
 		assert.throws(
 			() =>
-				composeOverride({ id, directory: "/private/smoke", ffmpeg: relative }),
+				composeOverride({ id, directory: "/private/smoke", ffmpeg: unsafe }),
 			{ message: "Invalid FFmpeg directory" },
+			JSON.stringify(unsafe),
 		);
 	// Both installations of a run are given the directory that was checked.
 	const source = readFileSync(
@@ -244,17 +255,22 @@ test("a directory of built FFmpeg is taken only whole and from outside the check
 		};
 		const built = holding("native-media");
 		assert.equal(verifyFfmpeg(built), built);
-		// A link to the directory names the directory itself.
+		// A link to the directory names the directory itself, which is what
+		// Compose is given: the link's own name does not count.
 		symlinkSync(built, join(directory, "linked"));
 		assert.equal(verifyFfmpeg(join(directory, "linked")), built);
+		symlinkSync(built, join(directory, "linked$dollar"));
+		assert.equal(verifyFfmpeg(join(directory, "linked$dollar")), built);
 
 		const ABSOLUTE = "FFmpeg directory must be an absolute path";
 		const OUTSIDE = "FFmpeg directory must be a directory outside the checkout";
+		const UNSUPPORTED = "Unsupported FFmpeg directory path";
 		const program = (name) => `FFmpeg directory must hold the file bin/${name}`;
 		const other = holding("other", ["ffmpeg"]);
 		symlinkSync(join(built, "bin/ffprobe"), join(other, "bin/ffprobe"));
 		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
 		mkdirSync(join(directory, "empty"));
+		symlinkSync(holding("with$dollar"), join(directory, "plain"));
 		const refused = [
 			["native-media", ABSOLUTE],
 			["", ABSOLUTE],
@@ -263,6 +279,13 @@ test("a directory of built FFmpeg is taken only whole and from outside the check
 			// The checkout, and a directory in it.
 			[root, OUTSIDE],
 			[import.meta.dirname, OUTSIDE],
+			// Compose would read the dollar sign as the start of a variable,
+			// also where a link with a plain name leads to the directory. A
+			// line break has no place in a path that is written into a file.
+			[join(directory, "with$dollar"), UNSUPPORTED],
+			[join(directory, "plain"), UNSUPPORTED],
+			[holding("a\nb"), UNSUPPORTED],
+			[holding("a\rb"), UNSUPPORTED],
 			[join(directory, "empty"), program("ffmpeg")],
 			[holding("one", ["ffmpeg"]), program("ffprobe")],
 			[holding("two", ["ffprobe"]), program("ffmpeg")],

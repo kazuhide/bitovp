@@ -183,9 +183,11 @@ export async function verifySource(path, maximum = MAX_BYTES) {
 // A directory that holds an FFmpeg which is already built from the
 // Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The image
 // build takes it in place of the "ffmpeg" stage and compiles nothing. The
-// programs are not compared with the sources here: what made the directory
-// proved them. A directory in the checkout would also be a part of what the
-// image is built from.
+// programs are not compared with the sources here. The installer that left
+// the directory ran the image's VMAF proof with them; of a build that it had
+// kept, it checked no more than that and the build's own list of checksums.
+// A directory in the checkout would also be a part of what the image is built
+// from.
 export function verifyFfmpeg(path) {
 	assert(
 		typeof path === "string" && isAbsolute(path),
@@ -762,13 +764,13 @@ async function main(signal) {
 		options[args[index]] = args[index + 1];
 	}
 	if (cleanup) {
+		assert(
+			!options["--ffmpeg"],
+			"Cleanup builds no image and takes no FFmpeg directory",
+		);
 		const path = options["--state-file"];
 		assert(
-			path &&
-				!options["--source"] &&
-				!options["--ffmpeg"] &&
-				isAbsolute(path) &&
-				!inside(ROOT, path),
+			path && !options["--source"] && isAbsolute(path) && !inside(ROOT, path),
 			"Cleanup requires an external state file",
 		);
 		if (!existsSync(path)) return;

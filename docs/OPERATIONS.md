@@ -97,25 +97,65 @@ contains. bitovp needs libvmaf, libx264, libdav1d, libass with Fontconfig, SRT
 with encryption, TLS for RTMPS, zlib for PNG image assets and, for GPU
 decoding, NVDEC.
 
-CI compiles FFmpeg only when what it is made from changes.
-`scripts/native-media-tools.sh --cache <directory>` keeps the build of the
-`ffmpeg` stage, with the VMAF models, under a key made from `Dockerfile`,
-`docker/vmaf-models.sha256`, the script itself and the processor
-architecture. GitHub's cache carries that directory from run to run under a
-key of the same three files. A run that finds its key copies the kept build
-instead of compiling, after it has checked every file against the SHA-256
-recorded when the build was kept. A kept build that fails this check stops the
-job and is not built again in its place: delete the `ffmpeg-…` entry from the
-repository's Actions caches to compile once more. Every run, whether it
-compiled or copied, verifies the models against `docker/vmaf-models.sha256`,
-proves that this FFmpeg scores with a pinned model, and prints the SHA-256 of
-`ffmpeg` and `ffprobe`. The two jobs that build the worker image give the same
-directory to the image build, so the image holds the programs that the run has
-just proven: the offline media job with `--build-context ffmpeg=<directory>`,
-the installed GUI job with `additional_contexts` in its Compose override. A
-run that copies a build no longer shows that the pinned sources can still be
-downloaded and compiled. The `FFmpeg from source` workflow shows that every
-week and on request, without the cache.
+CI keeps the build of the `ffmpeg` stage and reuses it.
+`scripts/native-media-tools.sh --cache <directory>` keeps the build, with the
+VMAF models, under a key made from `Dockerfile`, `docker/vmaf-models.sha256`,
+the script itself and the processor architecture, and GitHub's cache carries
+that directory from run to run under a key of the same three files. A run
+that finds a build under its key copies it instead of compiling. A run
+compiles when no build is kept for its key where it may read: after a change
+to one of the three files; on `main` after such a change is merged, because
+GitHub keeps what a pull request stores for that pull request alone; and when
+GitHub has removed the entry, which it does when no run has read it for 7 days
+and may do earlier when the repository's caches exceed their size limit. The
+three jobs do not wait for each other: those that start before a build is
+stored each compile, GitHub stores one build, and the others log a warning. A
+job that fails keeps nothing. The step's log says which of the two happened:
+`FFmpeg: built from the pinned sources` or `FFmpeg: reused the build kept
+under the key of these sources (<key>)`.
+
+Every run, whether it compiled or copied, checks that the model directory
+holds the models of `docker/vmaf-models.sha256`, with their SHA-256, and
+nothing else, proves that this FFmpeg scores with a pinned model, and prints
+the SHA-256 of `ffmpeg` and `ffprobe`. The two jobs that build the worker
+image give the same directory to the image build, so the image holds the
+programs that the run has just proven: the offline media job with
+`--build-context ffmpeg=<directory>`, the installed GUI job with
+`additional_contexts` in its Compose override.
+
+A kept build is taken only when it holds the files that the list kept with it
+names, with the SHA-256 recorded there, and nothing else. That check finds
+damage, not replacement: whoever can write the cache can store another build
+with a list of its own. Reuse is safe because GitHub lets only a run on
+`main` write an entry that `main` and other pull requests restore, and
+because the three jobs that restore one hold a read-only token and no secret
+and publish nothing. A workflow that holds a secret, may write to the
+repository or publishes an image must not restore this cache. A kept build
+that fails the check stops the job and is not built again in its place. Then,
+and after any doubt about a run on `main`, delete every `ffmpeg-…` entry, so
+that the next runs compile:
+
+```bash
+gh cache list --key ffmpeg- --limit 100
+gh cache list --key ffmpeg- --limit 100 --json id --jq '.[].id' | xargs -n 1 gh cache delete
+```
+
+On your own machine, keep a `--cache` directory writable only by you.
+
+A run that copies a build does not show that the pinned sources can still be
+downloaded and compiled, and no run of these jobs shows that `Dockerfile`
+alone still builds the image that an installation gets: the two image jobs
+build it with the directory in place of the `ffmpeg` stage. The `FFmpeg from
+source` workflow shows both every week and on request, without the cache. Its
+job `ffmpeg-from-source` runs the script with no `--cache`: it downloads the
+sources and the models, compiles FFmpeg and runs the proof. Its job
+`image-from-source` builds the whole worker image from `Dockerfile` and
+validates the ten-second asset with it. A failure there blocks no pull
+request, so look at its runs: `gh run list --workflow ffmpeg-source-build.yml`.
+In a public repository GitHub turns a schedule off after 60 days without
+activity in the repository: `gh workflow enable ffmpeg-source-build.yml` turns
+it on again, and `gh workflow run ffmpeg-source-build.yml` starts a run at any
+time.
 
 Building for another processor architecture, for example `--platform
 linux/amd64` on an Apple silicon Mac for a cloud quality worker, compiles

@@ -1095,6 +1095,13 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 			BUILD(["--build-context", `ffmpeg=${built}`]),
 		]);
 
+		// Docker is given the path as one argument of its own: a dollar sign
+		// means nothing there.
+		assert.equal(
+			verifyFfmpeg(holding("with$dollar")),
+			join(directory, "with$dollar"),
+		);
+
 		const OUTSIDE = "FFmpeg directory must be a directory outside the checkout";
 		const program = (name) => `FFmpeg directory must hold the file bin/${name}`;
 		const other = holding("other", ["ffmpeg"]);
@@ -1144,6 +1151,8 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 				["--ffmpeg", built, "--ffmpeg", built],
 				"Unknown or duplicate media option",
 			],
+			// Cleanup names what it was given in error: the directory, whether
+			// or not a state file comes with it.
 			[
 				[
 					"--cleanup",
@@ -1152,8 +1161,13 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 					"--state-file",
 					join(directory, "state.json"),
 				],
-				"Cleanup requires an external state file",
+				"Cleanup builds no image and takes no FFmpeg directory",
 			],
+			[
+				["--cleanup", "--ffmpeg", built],
+				"Cleanup builds no image and takes no FFmpeg directory",
+			],
+			[["--cleanup"], "Cleanup requires an external state file"],
 		]) {
 			const result = spawnSync(
 				process.execPath,

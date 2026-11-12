@@ -66,7 +66,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/ffmpeg-build
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'docker/vmaf-models.sha256', 'scripts/native-media-tools.sh') }}
-      - name: Build the worker image's FFmpeg and install the VMAF models that it pins
+      - name: Get the worker image's FFmpeg and the VMAF models that it pins
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
         run: sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"
       - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"

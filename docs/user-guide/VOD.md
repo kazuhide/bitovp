@@ -34,11 +34,13 @@ job cannot have the same name, and two made in the six steps cannot have the sam
 height and codec with the same bitrate in kbps. A file already in the folder under
 the same name may be replaced. Public read access is not requested for the files
 unless you select it in Destination. Encoding is the step the eight steps have,
-with AI Scene Analysis, quality control, and Kantar audio watermarking, and without
-the Per-Title configuration and the choice of what a QC gate does when it fails.
-Review lists what those settings write with the files. **Show all settings** opens
-the eight steps with what you entered, and **Back to simple view** returns while
-nothing outside the six steps is in use. The flow you choose is remembered in this browser, and
+with AI Scene Analysis, quality control, and Kantar audio watermarking. It leaves
+three settings to the eight steps: the Per-Title configuration, what a QC gate does
+when it fails, and the renditions a gate rule is for. A gate set here records its
+result, and each of its rules is for every file. Review lists what those settings
+write with the files. **Show all settings** opens the eight steps with what you
+entered, and **Back to simple view** returns while nothing outside the six steps is
+in use. The flow you choose is remembered in this browser, and
 Settings holds the same choice under "New VOD job flow". Switching "What to create"
 opens a new form: what you entered is not carried over. It is saved as the other
 flow's draft, unless that form was still offering to restore an earlier draft.

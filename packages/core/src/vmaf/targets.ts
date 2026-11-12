@@ -169,6 +169,23 @@ export function enumerateQcTargets(plan: EncodingPlan): QcTarget[] {
 	return enumerateExistingQcMirrorTargets(plan);
 }
 
+/**
+ * The video renditions a VMAF or PSNR pass writes a mirror for and cannot score:
+ * the stream the rendition reads is not a source file as it stands (a trimmed or
+ * concatenated stream, a Dolby Vision input), so there is nothing to compare the
+ * mirror with. `enumerateQcTargets` leaves these out without a word, and a gate
+ * rule that expects one fails for the measurement it never gets
+ * (`gateExpectedRenditionKeys`). The plan's validation says so before the encode.
+ */
+export function enumerateQcMirrorsWithoutReference(
+	plan: EncodingPlan,
+): QcMirrorOutput[] {
+	if (!(plan.qc?.vmaf || plan.qc?.psnr)) return [];
+	return enumerateQcMirrors(plan).filter(
+		({ rendition }) => !resolveReference(plan, rendition),
+	);
+}
+
 /** A manual comparison can reuse a mirror produced for any original QC metric.
  * Reference resolution stays mandatory; no automatic metric is enabled here. */
 export function enumerateExistingQcMirrorTargets(

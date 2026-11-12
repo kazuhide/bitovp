@@ -1480,6 +1480,7 @@ export {
 	enumerateExistingMp4Targets,
 	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
+	enumerateQcMirrorsWithoutReference,
 	enumerateQcTargets,
 	gateExpectedRenditionKeys,
 	sameQcTargetPopulation,

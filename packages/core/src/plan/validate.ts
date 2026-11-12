@@ -2,6 +2,7 @@ import { vmafSourceFor } from "../vmaf/streamable-io";
 import {
 	enumerateBandingQcTargets,
 	enumerateFrameIndexQcTargets,
+	enumerateQcMirrorsWithoutReference,
 	enumerateQcTargets,
 } from "../vmaf/targets";
 import { checkAkamaiMslConstraints } from "./akamai-msl-constraint";
@@ -3045,6 +3046,31 @@ export function validatePlan(
 				path,
 			});
 		}
+	}
+
+	// VMAF and PSNR compare an encode with the file it was encoded from. A rendition
+	// that reads a stream derived from the source (a trimmed part, a concatenation,
+	// a Dolby Vision input) has no such file, so it gets a mirror and no score. A
+	// warning, as the encode itself is what was asked for: what is lost is the
+	// measurement, and a gate rule that covers the rendition fails for the lack of
+	// it, which the rule can avoid by naming the renditions it is for.
+	for (const { rendition } of enumerateQcMirrorsWithoutReference(plan)) {
+		const gated = (plan.qc?.gate?.rules ?? []).some(
+			(rule) =>
+				rule.metric !== "CAMBI_MAX" &&
+				(rule.renditions === undefined ||
+					rule.renditions.includes(rendition.key)),
+		);
+		issues.push({
+			code: "PLAN_QC_NO_REFERENCE",
+			level: "warning",
+			path: `renditions[${plan.renditions.indexOf(rendition)}].ingestKey`,
+			message: `quality control compares an encode with the source file it reads, and video rendition "${rendition.key}" reads "${rendition.ingestKey}", which is a stream derived from a source and not a source file: VMAF and PSNR will not be measured for it${
+				gated
+					? ", and the QC gate rule that covers it will fail for the missing score — name the renditions that rule is for, or leave this rendition out of the measurement"
+					: ""
+			}`,
+		});
 	}
 
 	// Native HEVCv2 compiles to SMART_PASS. The provider refuses a video stream

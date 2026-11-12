@@ -829,7 +829,7 @@ test("ZIP extraction targets only the pinned filename and rejects traversal", as
 	}
 });
 
-test("only complete summaries of numbers and of x264's capability names can reach the public log", () => {
+test("only complete summaries of numbers and of words in the shape of x264's capability names can reach the public log", () => {
 	const summary = {
 		version: 2,
 		videoFrames: 240,
@@ -851,29 +851,53 @@ test("only complete summaries of numbers and of x264's capability names can reac
 		() => validateSummary(JSON.stringify({ ...summary, version: 1 })),
 		/Incomplete media validation: version must be 2/,
 	);
-	// What x264 prints on arm64, and where it uses nothing of the processor.
-	for (const capabilities of ["ARMv8 NEON", "none!", "SSE4.2"])
+	// What x264 prints on arm64, where it uses nothing of the processor, its
+	// longest name, and the most and the longest names that the rule takes.
+	for (const capabilities of [
+		"ARMv8 NEON",
+		"ARMv8 NEON DotProd I8MM SVE SVE2",
+		"none!",
+		"SSE4.2",
+		"UnalignedStack",
+		`${"A".repeat(14)}.1`,
+		Array.from({ length: 32 }, () => `${"A".repeat(14)}.1`).join(" "),
+	])
 		assert.equal(
 			validateSummary(
 				JSON.stringify({ ...summary, x264Capabilities: capabilities }),
 			).x264Capabilities,
 			capabilities,
 		);
-	// Anything else that a log could hold in that place.
+	// What does not have that shape: other characters, an address, a dotted
+	// name, a number, a word that is too long, too many words.
 	for (const capabilities of [
 		"",
 		" AVX2",
 		"AVX2 ",
 		"AVX2  AVX512",
 		"AVX2\nprivate diagnostics",
-		"AVX2\tAVX512",
 		"AVX2, AVX512",
-		"/home/runner/work",
+		"/home/runner",
 		"none! AVX2",
 		"AVX2 none!",
 		"token=abc",
-		"A".repeat(17),
+		"10.1.0.4",
+		"192.168.100.200",
+		"example.internal",
+		"0123456789abcdef",
+		"1AVX",
+		"AVX.",
+		".AVX",
+		"SSE4.12",
+		"SSE4.x",
+		"SSE4.1.2",
+		"A".repeat(15),
+		`AVX2 ${"A".repeat(15)}`,
 		Array.from({ length: 33 }, () => "AVX2").join(" "),
+		// Every other character of ASCII, between two names.
+		...Array.from({ length: 128 }, (_, code) => String.fromCharCode(code))
+			.filter((character) => !/[A-Za-z0-9. ]/.test(character))
+			.map((character) => `AVX2${character}AVX512`),
 		null,
 		7,
 		["AVX2"],

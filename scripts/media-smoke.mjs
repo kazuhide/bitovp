@@ -446,6 +446,16 @@ export function fixtureAccount(required = FIXTURES) {
 	};
 }
 
+// The shape of x264's names for what it uses of the processor: a letter, then
+// letters and digits, 14 characters at most, and one digit after a dot where
+// the name has one ("SSE4.2"). A report is up to 32 of them, or "none!". An
+// address, a dotted name or a number does not have this shape; a single word
+// of letters and digits does.
+const X264_NAME = "[A-Za-z][A-Za-z0-9]{0,13}(?:\\.[0-9])?";
+const X264_NAMES = new RegExp(
+	`^(?:none!|${X264_NAME}(?: ${X264_NAME}){0,31})$`,
+);
+
 export function validateSummary(raw) {
 	assert(
 		typeof raw === "string" && raw.length <= 10_000,
@@ -494,13 +504,13 @@ export function validateSummary(raw) {
 		),
 		"VMAF means must be numbers from 0 to 100",
 	);
-	// The one text of the summary: x264's own names for what it uses of the
-	// processor, or "none!". Nothing else of a log can come through it.
+	// The one text of the summary: x264's names for what it uses of the
+	// processor, or "none!". This rule bounds its shape. That the words are
+	// x264's is the check's part: it takes them from the one line of an
+	// encode's log that reports them.
 	assert(
 		typeof summary.x264Capabilities === "string" &&
-			/^(?:none!|[A-Za-z0-9.]{1,16}(?: [A-Za-z0-9.]{1,16}){0,31})$/.test(
-				summary.x264Capabilities,
-			),
+			X264_NAMES.test(summary.x264Capabilities),
 		"x264's processor capabilities must be a list of its capability names",
 	);
 	return summary;

@@ -16,8 +16,12 @@ import {
 } from "../vmaf/banding-score";
 
 type Execute = (binary: string, args: string[]) => Promise<string>;
+type Launch = (
+	binary: string,
+	args: string[],
+) => Promise<{ stdout: string; stderr: string }>;
 const exec = promisify(execFile);
-const launch = (binary: string, args: string[]) =>
+const launch: Launch = (binary, args) =>
 	exec(binary, args, {
 		encoding: "utf8",
 		timeout: 60_000,
@@ -29,6 +33,15 @@ const execute: Execute = async (binary, args) =>
 	(await launch(binary, args)).stdout;
 const ffmpeg = (args: string[], run = execute) =>
 	run("/usr/local/bin/ffmpeg", ["-v", "error", "-nostdin", "-y", ...args]);
+
+// The shape of x264's names for what it uses of the processor: a letter, then
+// letters and digits, 14 characters at most, and one digit after a dot where
+// the name has one ("SSE4.2"). A report is up to 32 of them, or "none!". The
+// media runner holds the same rule for what it prints.
+const X264_NAME = "[A-Za-z][A-Za-z0-9]{0,13}(?:\\.[0-9])?";
+const X264_NAMES = new RegExp(
+	`^(?:none!|${X264_NAME}(?: ${X264_NAME}){0,31})$`,
+);
 
 /**
  * What x264 reports that it uses of the processor, from the log of one encode
@@ -51,12 +64,8 @@ export function x264Capabilities(log: string) {
 		"An x264 encode must report the processor capabilities that it uses once",
 	);
 	const capabilities = reports[0]?.[1] ?? "";
-	// x264's own names, or "none!" where it uses none. The media runner holds
-	// the same rule for what it prints.
 	assert(
-		/^(?:none!|[A-Za-z0-9.]{1,16}(?: [A-Za-z0-9.]{1,16}){0,31})$/.test(
-			capabilities,
-		),
+		X264_NAMES.test(capabilities),
 		"Unexpected x264 processor capabilities",
 	);
 	return capabilities;
@@ -67,8 +76,8 @@ export function x264Capabilities(log: string) {
  * reported for it. The level "info" puts x264's report in the log and changes
  * no byte of the output; `-nostats` leaves the progress lines out.
  */
-async function encodeWithX264(args: string[]) {
-	const { stderr } = await launch("/usr/local/bin/ffmpeg", [
+export async function encodeWithX264(args: string[], run = launch) {
+	const { stderr } = await run("/usr/local/bin/ffmpeg", [
 		"-v",
 		"info",
 		"-nostats",

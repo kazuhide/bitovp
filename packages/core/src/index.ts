@@ -1457,6 +1457,14 @@ export {
 	type VmafReferencePreparationEvidence,
 	vmafReferencePreparationEvidenceSchema,
 } from "./vmaf/reference-preparation";
+export {
+	VMAF_SPEED_CHROMA_PRESCALE,
+	type VmafChromaLayout,
+	type VmafComparedPictures,
+	vmafChromaLayout,
+	vmafSizeLimitFailureMessage,
+	vmafSizeLimitMessage,
+} from "./vmaf/size-limits";
 export * from "./vmaf/streamable-io";
 export type {
 	BandingTarget,

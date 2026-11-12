@@ -369,6 +369,22 @@ export function qcOutputPath(dir: string): string {
 }
 
 /**
+ * The folder a rendition's QC mirror is written to: the `qc/` child of the folder
+ * the plan names for its mirrors (`qc.mirrorPath`), else of the rendition's own
+ * output folder (`base`, from `renditionOutputBase`).
+ *
+ * One definition for the three that have to agree: the compiler, which writes the
+ * mirror; the VMAF target enumeration, which fetches it; and the detail view, which
+ * says where it is.
+ */
+export function qcMirrorDirectory(
+	plan: EncodingPlan,
+	base: { path: string },
+): string {
+	return qcOutputPath(plan.qc?.mirrorPath ?? base.path);
+}
+
+/**
  * The QC mirror's name (filename + container) lives in the leaf `./qc-mirror`
  * so per-title attribution can bind a RESULT muxing back to its template
  * without importing this module. The compiler imports `./per-title-results`,
@@ -2021,7 +2037,8 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 
 			// QC mirror (plan.qc.vmaf OR plan.qc.psnr): one progressive single-
 			// file MP4 per VIDEO rendition, written to a `qc/` child of that
-			// rendition's output dir, NOT referenced by any manifest. These
+			// rendition's output dir (or of `qc.mirrorPath`, when the plan names one
+			// — `qcMirrorDirectory`), NOT referenced by any manifest. These
 			// plaintext files exist solely for the VMAF/PSNR runner (worker, PR3)
 			// to download and score against the source — Bitmovin has no VMAF API,
 			// and PSNR rides the same libvmaf pass so it needs the distorted file
@@ -2055,7 +2072,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 								: "CREATE_MUXING_MP4",
 						payload: {
 							filename: qcMirrorFilename(rendition.key, rendition.codec),
-							outputPath: qcOutputPath(base.path),
+							outputPath: qcMirrorDirectory(plan, base),
 							...(base.acl ? { acl: base.acl } : {}),
 							name: `QC VMAF Mirror ${streamName(rendition)}`,
 						},

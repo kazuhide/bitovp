@@ -1778,6 +1778,17 @@ export const planQcSchema = z.strictObject({
 	 */
 	only: z.boolean().optional(),
 	/**
+	 * The folder the QC mirrors are written to, in place of each rendition's own
+	 * output folder: they go to its `qc/` child, on the output the rendition
+	 * writes to. A mirror is named by its rendition key and nothing else, so two
+	 * jobs whose renditions share an output folder write one path, and the later
+	 * encode replaces the copy the earlier job is measured on. A job that puts its
+	 * files straight into a folder other jobs use names a folder of its own here.
+	 * Absent ⇒ beside each rendition's output, as every plan without the field
+	 * compiles (`qcMirrorDirectory`).
+	 */
+	mirrorPath: z.string().optional(),
+	/**
 	 * QC gate : threshold rules that turn the measurement into
 	 * enforcement (C29 rails in validate.ts; verdict in qc-gate.ts). Absent
 	 * ⇒ no compiler output changes and the 73 goldens stay byte-identical.

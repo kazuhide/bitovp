@@ -337,7 +337,7 @@ const vod = fields(
 		),
 		delivery: group(fields("specId onDeviation")),
 		qc: group(
-			fields("model", "", "vmaf psnr only", {
+			fields("model mirrorPath", "", "vmaf psnr only", {
 				execution: group(fields("backend profileId localMode", "budgetUsd")),
 				gate: group(
 					fields("onFail", "", "", {

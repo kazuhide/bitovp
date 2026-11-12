@@ -689,6 +689,7 @@ export { CODEC_ENUM_VALUES, CODEC_OPTIONS } from "./plan/codec-enums";
 export type { CompiledOperation, OperationKind } from "./plan/compiler";
 export {
 	compilePlan,
+	qcMirrorDirectory,
 	qcOutputPath,
 	relativeSegmentPath,
 } from "./plan/compiler";

@@ -1172,11 +1172,16 @@ function readAiScene(
  * prune so a qc plan round-trips byte-for-byte. `only` (QC-only encode)
  * defaults to false — symmetric with buildPlan, which emits it only when set.
  */
-function readQc(raw: Record<string, unknown>): WizardQc | undefined {
+function readQc(
+	raw: Record<string, unknown>,
+	base: string,
+): WizardQc | undefined {
 	const qc = isRecord(raw.qc) ? raw.qc : undefined;
 	if (!qc) {
 		return undefined;
 	}
+	// Stored RELATIVE to the base output path, as the Kantar report path is.
+	const mirrorPath = asString(qc.mirrorPath);
 	// Gate : parsed through its OWN schema, not hand-read —
 	// the editor round-trips the exact shape, and a malformed gate on a
 	// hand-edited plan reads as absent here while the plan-level validator
@@ -1195,6 +1200,13 @@ function readQc(raw: Record<string, unknown>): WizardQc | undefined {
 		...(execution.success ? { execution: execution.data } : {}),
 		...(qc.measurementMethod === "FRAME_INDEX_BT709_10BIT"
 			? { measurementMethod: qc.measurementMethod }
+			: {}),
+		...(mirrorPath !== undefined
+			? {
+					mirrorPath: mirrorPath.startsWith(base)
+						? mirrorPath.slice(base.length)
+						: mirrorPath,
+				}
 			: {}),
 	};
 }
@@ -2057,7 +2069,7 @@ export function planToWizardState(
 
 	// Read before the literal: `hlsDefaultVersion` needs it (a QC-only plan
 	// emits no standalone audio containers, so they cannot imply a version).
-	const qcState = readQc(raw);
+	const qcState = readQc(raw, base);
 	const state: WizardState = {
 		...DEFAULT_WIZARD_STATE,
 		name: asString(raw.name) ?? "",

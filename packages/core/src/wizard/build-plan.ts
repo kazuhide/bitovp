@@ -885,6 +885,14 @@ export type WizardQc = {
 	 */
 	only?: boolean;
 	/**
+	 * Folder the measured copies go to, RELATIVE to the base output path (the AISA
+	 * precedent); they are written to its `qc/` child (`planQcSchema.mirrorPath`).
+	 * Absent = beside each rendition's own output. A job that writes its files
+	 * straight into a folder other jobs use sets one, so that its copies are not the
+	 * ones another job writes.
+	 */
+	mirrorPath?: string;
+	/**
 	 * QC gate : carried VERBATIM as the plan's `qc.gate` —
 	 * the editor produces exactly the schema shape, so the wizard state does
 	 * not re-model it. Only meaningful while vmaf/psnr is on: buildPlan
@@ -1707,6 +1715,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const useVideoIngest =
 		state.videos.some((v) => usesImplicit(v.extras, "video")) ||
 		wrappedSourceKeys.has("video");
+	// A QC-only encode emits no audio rendition (below), so none reads the implicit
+	// audio track: left in, the plan would ask for a track of the source that nothing
+	// encodes, and would not load back into the form that built it.
 	const useAudioIngest =
 		(!qcOnly && state.audios.some((a) => usesImplicit(a.extras, "audio"))) ||
 		wrappedSourceKeys.has("audio");
@@ -1715,9 +1726,6 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const audioRef = ref(state.audioInputFile ?? primaryFile?.key ?? "");
 	const ingest: IngestInput[] = [
 		...(useVideoIngest && primaryFile
-	// A QC-only encode emits no audio rendition (below), so none reads the implicit
-	// audio track: left in, the plan would ask for a track of the source that nothing
-	// encodes, and would not load back into the form that built it.
 			? [
 					prune({
 						key: "video",
@@ -2856,6 +2864,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 						// QC-only: emit `only: true` (and the spreads above cleared
 						// manifests/thumbnails/sprites/drm/keyframes). Absent otherwise.
 						only: qcOnly ? true : undefined,
+						// "" is the base output path itself, so only absence is left out.
+						mirrorPath:
+							state.qc.mirrorPath === undefined
+								? undefined
+								: `${base}${state.qc.mirrorPath}`,
 						// QC gate : VERBATIM — the editor produces the
 						// schema shape and the preview's validator rails a bad one
 						// loudly (the infrastructure precedent); pruning would swallow

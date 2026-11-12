@@ -1,6 +1,6 @@
 import {
+	qcMirrorDirectory,
 	qcMirrorFilename,
-	qcOutputPath,
 	renditionOutputBase,
 } from "../plan/compiler";
 import type { EncodingPlan, PlanRendition } from "../plan/schema";
@@ -15,7 +15,7 @@ import type { EncodingPlan, PlanRendition } from "../plan/schema";
  * This MUST stay in lockstep with the compiler's qc-mirror emission
  * (plan/compiler.ts §4 "QC mirror"): same video-codec gate, same base
  * resolution (prefer a muxing's own destination, else the encrypting DRM's
- * output), same `qcOutputPath` + `<key>.mp4` filename. Living next to the
+ * output), same `qcMirrorDirectory` + `<key>.mp4` filename. Living next to the
  * compiler in core (not the worker) keeps the two from drifting — a
  * compiler change to the mirror path breaks this module's golden test, not
  * a silent runtime mismatch where the runner downloads a 404.
@@ -112,7 +112,7 @@ export function enumerateQcMirrors(plan: EncodingPlan): QcMirrorOutput[] {
 		mirrors.push({
 			rendition,
 			destination,
-			path: `${qcOutputPath(destination.path)}${qcMirrorFilename(rendition.key, rendition.codec)}`,
+			path: `${qcMirrorDirectory(plan, destination)}${qcMirrorFilename(rendition.key, rendition.codec)}`,
 		});
 	}
 	return mirrors;

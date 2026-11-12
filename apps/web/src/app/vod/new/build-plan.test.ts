@@ -1745,6 +1745,40 @@ describe("buildPlan qc (VMAF quality control)", () => {
 		expect(qcMirrorSteps(onPlan)).toEqual(["qc-muxing:v360", "qc-muxing:v540"]);
 		expect(qcMirrorSteps(offPlan)).toEqual([]);
 	});
+
+	it("writes the measured copies to the folder named for them, under the output path", () => {
+		const measured: WizardState = {
+			...baseState,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false },
+		};
+		const mirrors = (state: WizardState) =>
+			compilePlan(encodingPlanSchema.parse(buildPlan(state)))
+				.filter((op) => op.step.startsWith("qc-muxing:"))
+				.map((op) => `${op.payload.outputPath}${op.payload.filename}`);
+		// Unset: beside the rendition, as before the setting existed.
+		expect("mirrorPath" in (buildPlan(measured).qc ?? {})).toBe(false);
+		expect(mirrors(measured)).toEqual([
+			"output/qc-test/video/360p/qc/v360.mp4",
+		]);
+		const named: WizardState = {
+			...measured,
+			qc: { ...measured.qc, mirrorPath: "checks/" } as WizardState["qc"],
+		};
+		expect(buildPlan(named).qc?.mirrorPath).toBe("output/qc-test/checks/");
+		expect(mirrors(named)).toEqual(["output/qc-test/checks/qc/v360.mp4"]);
+		// "" is the output path itself, which is not the same as unset.
+		expect(
+			mirrors({
+				...measured,
+				qc: { ...measured.qc, mirrorPath: "" } as WizardState["qc"],
+			}),
+		).toEqual(["output/qc-test/qc/v360.mp4"]);
+		// And the plan loads back into the form with the folder as it was typed.
+		const loaded = tryImportPresetIntoWizard(
+			buildPlan(named) as Record<string, unknown>,
+		);
+		expect(loaded.ok && loaded.state.qc?.mirrorPath).toBe("checks/");
+	});
 });
 
 describe("buildPlan qc.only (VMAF-only encode)", () => {
@@ -1885,40 +1919,6 @@ describe("buildPlan qc.only (VMAF-only encode)", () => {
 		).toEqual([]);
 	});
 
-	it("does NOT clear delivery outputs when only is off (qc still emits mirrors)", () => {
-		const plan = buildPlan({
-			...richState,
-			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: false },
-		});
-		// only:false ⇒ a normal qc plan: manifests + thumbnails survive.
-		expect(plan.manifests).not.toEqual([]);
-		expect("thumbnails" in plan).toBe(true);
-		expect(plan.qc).toEqual({ vmaf: true });
-	});
-});
-
-describe("labels / infrastructure / start tweaks / preview placement (P5)", () => {
-	const baseState: WizardState = {
-		name: "infra-ops-ui",
-		accountId: "",
-		cloudRegion: "AWS_AP_NORTHEAST_1",
-		encoderVersion: "STABLE",
-		inputFiles: [
-			{
-				key: "main",
-				inputKey: "main",
-				kind: "S3",
-				credentialId: "00000000-0000-4000-8000-000000000001",
-				bucket: "in",
-				path: "src.mkv",
-				name: "S3 Input",
-			},
-		],
-		additionalOutputs: [],
-		output: {
-			credentialId: "00000000-0000-4000-8000-000000000002",
-			kind: "S3",
-			bucket: "out",
 	it("asks for no audio track of the source, which nothing encodes", () => {
 		const measuring: WizardState = {
 			...richState,
@@ -1971,6 +1971,40 @@ describe("labels / infrastructure / start tweaks / preview placement (P5)", () =
 		).toEqual([]);
 	});
 
+	it("does NOT clear delivery outputs when only is off (qc still emits mirrors)", () => {
+		const plan = buildPlan({
+			...richState,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: false },
+		});
+		// only:false ⇒ a normal qc plan: manifests + thumbnails survive.
+		expect(plan.manifests).not.toEqual([]);
+		expect("thumbnails" in plan).toBe(true);
+		expect(plan.qc).toEqual({ vmaf: true });
+	});
+});
+
+describe("labels / infrastructure / start tweaks / preview placement (P5)", () => {
+	const baseState: WizardState = {
+		name: "infra-ops-ui",
+		accountId: "",
+		cloudRegion: "AWS_AP_NORTHEAST_1",
+		encoderVersion: "STABLE",
+		inputFiles: [
+			{
+				key: "main",
+				inputKey: "main",
+				kind: "S3",
+				credentialId: "00000000-0000-4000-8000-000000000001",
+				bucket: "in",
+				path: "src.mkv",
+				name: "S3 Input",
+			},
+		],
+		additionalOutputs: [],
+		output: {
+			credentialId: "00000000-0000-4000-8000-000000000002",
+			kind: "S3",
+			bucket: "out",
 			basePath: "output/infra-ops-ui/",
 			publicRead: true,
 			name: "S3 Output",

@@ -97,7 +97,9 @@ function requireCurrentProbeGeometry(probe: TaskRow) {
 		probe.kind !== "PROBE" ||
 		probe.status !== "SUCCEEDED" ||
 		!facts?.length ||
-		facts.some((source) => !source.video.displayAspectRatio)
+		facts.some(
+			(source) => source.video !== null && !source.video.displayAspectRatio,
+		)
 	) {
 		throw new VodInputPreviewError(409, "SOURCE_PROBE_NOT_READY");
 	}

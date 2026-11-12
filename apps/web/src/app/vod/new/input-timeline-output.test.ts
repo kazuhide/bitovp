@@ -1,4 +1,5 @@
 import { encodingPlanSchema, validatePlan } from "@bitovp/core";
+import { normalizeVodInputTimelineDocument } from "@bitovp/core/vod-input-timeline";
 import { expect, it } from "vitest";
 import { buildPlan, DEFAULT_WIZARD_STATE } from "./build-plan";
 
@@ -57,6 +58,34 @@ it("retains HLS and DASH outputs while compiling the edited A/B/A input graph", 
 	}
 	expect(plan.renditions.map((rendition) => rendition.ingestKey)).toEqual(
 		plan.concatenationStreams?.map((concat) => concat.key),
+	);
+	expect(validatePlan(plan).filter((issue) => issue.level === "error")).toEqual(
+		[],
+	);
+});
+
+it("keeps HLS and DASH valid after the entire independent audio track is removed", () => {
+	const initial = withTimeline(fixture());
+	initial.manifests = { hls: true, dash: true };
+	const plan = encodingPlanSchema.parse(
+		buildPlan({
+			...initial,
+			inputTimeline: {
+				...normalizeVodInputTimelineDocument(initial.inputTimeline),
+				audioClips: [],
+			},
+		}),
+	);
+	expect(plan.manifests.map((manifest) => manifest.kind)).toEqual([
+		"HLS",
+		"DASH",
+	]);
+	expect(plan.concatenationStreams).toHaveLength(1);
+	expect(plan.renditions.every((rendition) => rendition.codec === "H264")).toBe(
+		true,
+	);
+	expect(plan.muxings.map((muxing) => muxing.streamKey)).toEqual(
+		plan.renditions.map((rendition) => rendition.key),
 	);
 	expect(validatePlan(plan).filter((issue) => issue.level === "error")).toEqual(
 		[],

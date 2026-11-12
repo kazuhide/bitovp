@@ -158,8 +158,9 @@ export function VodWizard({
 		state.inputTimeline &&
 			(!timelineReadiness.ready ||
 				timelineReadiness.sourceSignature !== timelineSourcesSignature ||
-				validateVodInputTimeline(state.inputTimeline, timelineReadiness.facts)
-					.length > 0),
+				validateVodInputTimeline(state.inputTimeline, timelineReadiness.facts, {
+					requireVideo: true,
+				}).length > 0),
 	);
 	const draftBase = useRef(DEFAULT_WIZARD_STATE);
 	const [appliedDraftContext, setAppliedDraftContext] = useState<string | null>(
@@ -1270,10 +1271,12 @@ export function VodWizard({
 												? { inputTimeline: undefined }
 												: {
 														inputTimeline: {
-															schemaVersion: 1,
+															schemaVersion: 2,
 															id: crypto.randomUUID(),
 															audioEnabled: state.audios.length > 0,
-															clips: [],
+															durationMs: 0,
+															videoClips: [],
+															audioClips: [],
 														},
 													},
 										)

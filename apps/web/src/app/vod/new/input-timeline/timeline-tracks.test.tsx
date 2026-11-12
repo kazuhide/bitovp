@@ -58,7 +58,9 @@ function tracks(document: VodInputTimelineDocument) {
 			document={document}
 			facts={facts.map((source) => ({
 				...source,
-				video: { ...source.video, frameRate: { num: 30, den: 1 } },
+				video: source.video
+					? { ...source.video, frameRate: { num: 30, den: 1 } }
+					: null,
 			}))}
 			names={{ a: "A.mp4", b: "B.mp4" }}
 			selectedId={clipA}
@@ -271,7 +273,7 @@ it("trims by the fixed scale while scrolling and changing the preview canvas", (
 	expect(handle).toHaveAttribute("aria-valuenow", "23000");
 	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 180 });
 	expect(changed).toHaveBeenCalledTimes(1);
-	expect(changed.mock.lastCall?.[0].clips[0].outMs).toBe(23_000);
+	expect(changed.mock.lastCall?.[0].videoClips[0].outMs).toBe(23_000);
 	expect(viewport.scrollLeft).toBe(340);
 });
 
@@ -297,7 +299,7 @@ it("does not count native scroll clamping as more pointer motion when trimming t
 	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 256 });
 	expect(changed).toHaveBeenCalledTimes(1);
 	const committed = changed.mock.lastCall?.[0];
-	expect(committed.clips[0].outMs).toBe(7600);
+	expect(committed.videoClips[0].outMs).toBe(7600);
 	view.rerender(tracks(committed));
 	expect(widthOf(canvas)).toBe(before - 64);
 	expect(viewport.scrollLeft).toBe(before - 64 - viewportWidth);
@@ -329,7 +331,7 @@ it("holds the grown scroll extent when a trim grows, scrolls and reverses before
 	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 256 });
 	expect(changed).toHaveBeenCalledTimes(1);
 	const committed = changed.mock.lastCall?.[0];
-	expect(committed.clips[0].outMs).toBe(6600);
+	expect(committed.videoClips[0].outMs).toBe(6600);
 	expect(reverseWidth).toBe(peakWidth);
 	view.rerender(tracks(committed));
 	expect(widthOf(canvas)).toBe(1536);

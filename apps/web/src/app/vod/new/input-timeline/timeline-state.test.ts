@@ -5,6 +5,7 @@ import {
 	changeRange,
 	createHistory,
 	moveClip,
+	normalizeTimeline,
 	splitAt,
 	timelineAt,
 	timelineDuration,
@@ -32,12 +33,12 @@ describe("input timeline editing", () => {
 		expect(() => changeRange(doc, clipA, 0, 60_001, facts)).toThrow();
 		expect(doc.clips[0]).toMatchObject({ inMs: 10_000, outMs: 20_000 });
 		const split = splitAt(doc, 4_000, splitId);
-		expect(split.clips.map(({ inMs, outMs }) => [inMs, outMs])).toEqual([
+		expect(split.videoClips.map(({ inMs, outMs }) => [inMs, outMs])).toEqual([
 			[10_000, 14_000],
 			[14_000, 20_000],
 			[0, 15_000],
 		]);
-		expect(splitAt(doc, 10_000, splitId)).toBe(doc);
+		expect(splitAt(doc, 10_000, splitId)).toEqual(normalizeTimeline(doc));
 	});
 
 	it("bounds undo history, restores ordered ranges and drops redo after a new edit", () => {
@@ -48,9 +49,9 @@ describe("input timeline editing", () => {
 			document: moved,
 		});
 		history = timelineHistory(history, { type: "undo" });
-		expect(history.present).toEqual(doc);
+		expect(history.present).toEqual(normalizeTimeline(doc));
 		history = timelineHistory(history, { type: "redo" });
-		expect(history.present.clips[0]?.id).toBe(clipB);
+		expect(history.present.videoClips[0]?.id).toBe(clipB);
 		history = timelineHistory(history, { type: "undo" });
 		history = timelineHistory(history, {
 			type: "commit",

@@ -148,6 +148,128 @@ function setup() {
 }
 
 describe("durable CPU input preview ownership", () => {
+	it("retains the canonical legacy intent hash even when stored JSON keys are reordered", async () => {
+		const f = setup();
+		const request: VodInputPreviewRequest = {
+			kind: "PREVIEW",
+			probeId,
+			document: {
+				schemaVersion: 1,
+				id: randomUUID(),
+				audioEnabled: false,
+				clips: [{ id: randomUUID(), sourceKey: "a", inMs: 0, outMs: 1000 }],
+			},
+			range: { startMs: 0, durationMs: 1000 },
+		};
+		Object.assign(f.task, row(request));
+		const originalHash = f.task.requestHash;
+		function reorder(value: unknown): unknown {
+			if (Array.isArray(value)) return value.map(reorder);
+			if (!value || typeof value !== "object") return value;
+			return Object.fromEntries(
+				Object.entries(value)
+					.reverse()
+					.map(([key, item]) => [key, reorder(item)]),
+			);
+		}
+		f.task.request = reorder(request) as typeof f.task.request;
+		expect(JSON.stringify(f.task.request)).not.toBe(JSON.stringify(request));
+		const probe = row({ kind: "PROBE", sources: [source] }, probeId);
+		Object.assign(probe, { status: "SUCCEEDED", result: { sources: [facts] } });
+		f.rows.set(probeId, probe);
+		await f.process({ taskId: id });
+		expect(f.task.status).toBe("SUCCEEDED");
+		expect(f.task.requestHash).toBe(originalHash);
+		expect(f.render.mock.calls[0]?.[0].request.document.schemaVersion).toBe(1);
+	});
+	it("reserves the audio-only preview without reading nullable video dimensions", async () => {
+		const f = setup();
+		const request: VodInputPreviewRequest = {
+			kind: "PREVIEW",
+			probeId,
+			document: {
+				schemaVersion: 2,
+				id: randomUUID(),
+				audioEnabled: true,
+				durationMs: 1000,
+				videoClips: [],
+				audioClips: [
+					{
+						id: randomUUID(),
+						sourceKey: "a",
+						startMs: 0,
+						inMs: 0,
+						outMs: 1000,
+					},
+				],
+			},
+			range: { startMs: 0, durationMs: 1000 },
+		};
+		Object.assign(f.task, row(request));
+		const probe = row({ kind: "PROBE", sources: [source] }, probeId);
+		Object.assign(probe, {
+			status: "SUCCEEDED",
+			result: {
+				sources: [
+					{
+						...facts,
+						video: null,
+						audio: { streamIndex: 0, sampleRate: 48000, channels: 2 },
+					},
+				],
+			},
+		});
+		f.rows.set(probeId, probe);
+		const reserved: number[] = [];
+		const handler = createVodInputPreviewProcessor({
+			prisma: f.prisma as unknown as AppPrismaClient,
+			browserFor: f.browserFor,
+			workDir: directory,
+			render: f.render,
+			reserve: async (pixels, signal, work) => {
+				reserved.push(pixels);
+				return work(signal);
+			},
+		});
+		await handler({ taskId: id });
+		expect(f.task.status).toBe("SUCCEEDED");
+		expect(reserved).toEqual([0]);
+		expect(f.render).toHaveBeenCalledOnce();
+	});
+	it("rejects valid-shape v2 timeline tampering before rendering", async () => {
+		const f = setup();
+		const request: VodInputPreviewRequest = {
+			kind: "PREVIEW",
+			probeId,
+			document: {
+				schemaVersion: 2,
+				id: randomUUID(),
+				audioEnabled: false,
+				durationMs: 1000,
+				videoClips: [
+					{
+						id: randomUUID(),
+						sourceKey: "a",
+						startMs: 0,
+						inMs: 0,
+						outMs: 1000,
+					},
+				],
+				audioClips: [],
+			},
+			range: { startMs: 0, durationMs: 1000 },
+		};
+		Object.assign(f.task, row(request));
+		if (request.document.schemaVersion !== 2) throw new Error("Expected v2");
+		f.task.request = {
+			...request,
+			document: { ...request.document, durationMs: 2000 },
+		};
+		await f.process({ taskId: id });
+		expect(f.task.status).toBe("FAILED");
+		expect(f.task.error).toMatchObject({ code: "INVALID_INTENT" });
+		expect(f.render).not.toHaveBeenCalled();
+	});
 	it("probes once, persists narrow facts, and dedupes redelivery without GPU/LLM configuration", async () => {
 		const f = setup();
 		await f.process({ taskId: id });

@@ -36,7 +36,7 @@ export const en = {
 		invalid: "Add valid clips to the input timeline.",
 		notReady:
 			"Input media is being prepared. Open Inputs to resolve unavailable sources.",
-		help: "Trim, split and arrange linked video/audio before encoding. Preview runs on the CPU and does not create an encoding job.",
+		help: "Edit video and audio together or independently, and replace selected intervals with another source. Preview runs on the CPU and does not create an encoding job.",
 		graphUnsupported:
 			"Timeline editing is available for a single encoding. Keep advanced multi-encoding plans in the source editor.",
 	},

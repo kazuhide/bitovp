@@ -48,6 +48,10 @@ const errorMessages: Record<string, string> = {
 	SOURCE_READ_TIMED_OUT: "The source storage did not respond in time.",
 	SOURCE_AUDIO_MISSING:
 		"Every clip needs an audio stream when sequence audio is enabled.",
+	SOURCE_VIDEO_MISSING: "A video clip has no usable video stream.",
+	TIMELINE_VIDEO_MISSING: "Choose a video source before creating video output.",
+	TIMELINE_GAP_TOO_LONG:
+		"A blank interval exceeds the 10-second input-stream padding limit.",
 	SOURCE_RANGE_INVALID:
 		"A clip or preview range is outside the measured source duration.",
 	PROBE_UNAVAILABLE:
@@ -221,7 +225,10 @@ export function createVodInputPreviewProcessor(deps: {
 				await mkdir(directory, { recursive: true, mode: 0o700 });
 				await renew("RENDERING");
 				const pixels = Math.max(
-					...facts.map((facts) => facts.video.width * facts.video.height),
+					0,
+					...facts.map((facts) =>
+						facts.video ? facts.video.width * facts.video.height : 0,
+					),
 				);
 				const rendered = await reserve(pixels, signal, (permitSignal) =>
 					(deps.render ?? renderVodInputPreview)({

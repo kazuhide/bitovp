@@ -1,7 +1,7 @@
 "use client";
 
 import type {
-	VodInputTimelineClip,
+	VodInputTimelinePlacedClip,
 	VodInputTimelineSourceFacts,
 } from "@bitovp/core/vod-input-timeline";
 import { useId, useState } from "react";
@@ -18,7 +18,7 @@ export function ClipInspector({
 	onChange,
 	onError,
 }: {
-	clip: VodInputTimelineClip;
+	clip: VodInputTimelinePlacedClip;
 	source: VodInputTimelineSourceFacts | undefined;
 	name: string;
 	disabled: boolean;

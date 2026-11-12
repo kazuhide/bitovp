@@ -64,7 +64,7 @@ describe("VOD input timeline model", () => {
 			durationMs: 3000,
 		});
 		expect(
-			sliced.clips.map(({ sourceKey, inMs, outMs }) => ({
+			sliced.videoClips.map(({ sourceKey, inMs, outMs }) => ({
 				sourceKey,
 				inMs,
 				outMs,
@@ -75,6 +75,7 @@ describe("VOD input timeline model", () => {
 			{ sourceKey: "a", inMs: 0, outMs: 500 },
 		]);
 		expect(getVodInputTimelineDurationMs(sliced)).toBe(3000);
+		expect(sliced.audioClips).toEqual(sliced.videoClips);
 		expect(document.clips[0]?.inMs).toBe(1000);
 	});
 	it("rejects missing, out-of-bounds and silent sources when linked audio is enabled", () => {

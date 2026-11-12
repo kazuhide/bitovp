@@ -35,7 +35,9 @@ const sources: WizardInputFile[] = ["a", "b"].map((key) => ({
 }));
 
 function Harness({ disabled = false }: { disabled?: boolean }) {
-	const [document, setDocument] = useState(timeline());
+	const [document, setDocument] = useState<VodInputTimelineDocument>(
+		timeline(),
+	);
 	return (
 		<DocumentOrganizationContext.Provider value={organizationId}>
 			<VodInputTimelineEditor
@@ -111,28 +113,28 @@ it("edits A/B/A with keyboard alternatives and restores ranges and order with un
 	await waitFor(() => expect(add).toBeEnabled());
 	fireEvent.click(add);
 	expect(
-		changed.mock.lastCall?.[0].clips.map(
+		changed.mock.lastCall?.[0].videoClips.map(
 			(clip: { sourceKey: string }) => clip.sourceKey,
 		),
 	).toEqual(["a", "b", "a"]);
 	fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-	expect(changed.mock.lastCall?.[0].clips).toHaveLength(2);
+	expect(changed.mock.lastCall?.[0].videoClips).toHaveLength(2);
 	const start = screen.getByRole("spinbutton", { name: "In (seconds)" });
 	fireEvent.change(start, { target: { value: "12" } });
 	fireEvent.blur(start);
-	expect(changed.mock.lastCall?.[0].clips[0]).toMatchObject({
+	expect(changed.mock.lastCall?.[0].videoClips[0]).toMatchObject({
 		id: clipA,
 		inMs: 12_000,
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Move later" }));
-	expect(changed.mock.lastCall?.[0].clips[1].id).toBe(clipA);
+	expect(changed.mock.lastCall?.[0].videoClips[1].id).toBe(clipA);
 	fireEvent.click(screen.getByRole("button", { name: "Undo" }));
 	fireEvent.change(screen.getByRole("slider", { name: "Sequence position" }), {
 		target: { value: "4000" },
 	});
 	fireEvent.click(screen.getByRole("button", { name: "Split at playhead" }));
 	expect(
-		changed.mock.lastCall?.[0].clips
+		changed.mock.lastCall?.[0].videoClips
 			.slice(0, 2)
 			.map((clip: { inMs: number; outMs: number }) => [clip.inMs, clip.outMs]),
 	).toEqual([
@@ -162,7 +164,7 @@ it("previews a pointer trim locally, commits once and cancels Escape without cha
 	expect(changed).not.toHaveBeenCalled();
 	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 180 });
 	expect(changed).toHaveBeenCalledTimes(1);
-	expect(changed.mock.lastCall?.[0].clips[0].inMs).toBeGreaterThan(10_000);
+	expect(changed.mock.lastCall?.[0].videoClips[0].inMs).toBeGreaterThan(10_000);
 	fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 180 });
 	fireEvent.pointerMove(handle, { pointerId: 2, clientX: 220 });
 	fireEvent.keyDown(handle, { key: "Escape" });
@@ -202,7 +204,7 @@ it("deletes by keyboard and restores focus to the next clip", async () => {
 	renderLocalized(<Harness />);
 	const clip = screen.getByRole("button", { name: "Clip 1, A.mp4" });
 	fireEvent.keyDown(clip, { key: "Delete" });
-	expect(changed.mock.lastCall?.[0].clips).toHaveLength(1);
+	expect(changed.mock.lastCall?.[0].videoClips).toHaveLength(1);
 	expect(screen.getByRole("button", { name: "Clip 1, B.mp4" })).toHaveFocus();
 	fireEvent.keyDown(screen.getByRole("button", { name: "Clip 1, B.mp4" }), {
 		key: "Delete",
@@ -230,7 +232,8 @@ it("requests actual source preview windows without editing the sequence", async 
 			expect.objectContaining({
 				kind: "PREVIEW",
 				document: expect.objectContaining({
-					clips: [
+					schemaVersion: 2,
+					videoClips: [
 						expect.objectContaining({ sourceKey: "a", inMs: 0, outMs: 60_000 }),
 					],
 				}),

@@ -121,14 +121,14 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	// The VOD input-preview suite adds eight native DB assertions to this census.
+	// VOD preview persistence includes independent v2 tracks and legacy requests.
 	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 33);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		216,
+		217,
 	);
 });
 

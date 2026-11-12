@@ -1,3 +1,4 @@
+import { Link2, Unlink2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTimelineLabels } from "./labels";
 
@@ -10,6 +11,9 @@ export function EditorToolbar({
 	canMoveLater,
 	canDelete,
 	audioEnabled,
+	linked,
+	linkAvailable,
+	targetLabel,
 	onUndo,
 	onRedo,
 	onSplit,
@@ -17,6 +21,7 @@ export function EditorToolbar({
 	onLater,
 	onDelete,
 	onAudio,
+	onLinked,
 }: {
 	disabled: boolean;
 	canUndo: boolean;
@@ -26,6 +31,9 @@ export function EditorToolbar({
 	canMoveLater: boolean;
 	canDelete: boolean;
 	audioEnabled: boolean;
+	linked: boolean;
+	linkAvailable: boolean;
+	targetLabel: string;
 	onUndo: () => void;
 	onRedo: () => void;
 	onSplit: () => void;
@@ -33,10 +41,31 @@ export function EditorToolbar({
 	onLater: () => void;
 	onDelete: () => void;
 	onAudio: (enabled: boolean) => void;
+	onLinked: (linked: boolean) => void;
 }) {
 	const l = useTimelineLabels();
 	return (
 		<div className="flex flex-wrap items-center gap-1 border-zinc-800 border-t pt-3">
+			<output
+				aria-label={l.editTarget}
+				className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+			>
+				{targetLabel}
+			</output>
+			<Button
+				size="sm"
+				variant="ghost"
+				aria-label={linked ? l.unlink : l.link}
+				aria-pressed={linked}
+				disabled={disabled || !linkAvailable}
+				onClick={() => onLinked(!linked)}
+			>
+				{linked ? (
+					<Link2 aria-hidden className="h-4 w-4" />
+				) : (
+					<Unlink2 aria-hidden className="h-4 w-4" />
+				)}
+			</Button>
 			<Button
 				size="sm"
 				variant="ghost"

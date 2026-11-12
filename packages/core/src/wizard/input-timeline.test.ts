@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { encodingPlanSchema } from "../plan/schema";
 import { validatePlan } from "../plan/validate";
 import {
+	normalizeVodInputTimelineDocument,
+	overwriteVodInputTimelineTrack,
+} from "../vod-input-timeline";
+import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
@@ -78,6 +82,127 @@ const sequence = {
 };
 
 describe("VOD manual input graph", () => {
+	it.each([
+		"audio",
+		"video",
+	] as const)("lowers only the overwritten %s track into three parts", (track) => {
+		const document = normalizeVodInputTimelineDocument({
+			...sequence,
+			clips: [
+				{
+					id: "00000000-0000-4000-8000-000000000002",
+					sourceKey: "a",
+					inMs: 0,
+					outMs: 10_000,
+				},
+			],
+		});
+		const facts = ["a", "b"].map((key) => ({
+			key,
+			durationMs: 20_000,
+			video: { streamIndex: 0, width: 1920, height: 1080 },
+			audio: { streamIndex: 1, sampleRate: 48000, channels: 2 },
+			identity: { size: 100, etag: '"fixed"' },
+		}));
+		const edited = overwriteVodInputTimelineTrack(
+			document,
+			{
+				track,
+				atMs: 2000,
+				sourceKey: "b",
+				inMs: 1000,
+				outMs: 4000,
+				id: "00000000-0000-4000-8000-000000000020",
+				splitId: "00000000-0000-4000-8000-000000000021",
+			},
+			facts,
+		);
+		const plan = encodingPlanSchema.parse(
+			buildPlan({ ...state, inputTimeline: edited }),
+		);
+		const changed = plan.concatenationStreams?.find((item) =>
+			item.key.endsWith(track === "video" ? "v_sequence" : "a_sequence"),
+		);
+		const other = plan.concatenationStreams?.find((item) => item !== changed);
+		expect(changed?.sources).toHaveLength(3);
+		expect(other?.sources).toHaveLength(1);
+		expect(
+			plan.trimmingStreams
+				?.filter((item) => item.kind === "TIME_BASED")
+				.map((item) =>
+					item.kind === "TIME_BASED" ? [item.offset, item.duration] : null,
+				),
+		).toEqual(
+			track === "video"
+				? [
+						[0, 2],
+						[1, 3],
+						[5, 5],
+						[0, 10],
+					]
+				: [
+						[0, 10],
+						[0, 2],
+						[1, 3],
+						[5, 5],
+					],
+		);
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+	});
+	it("uses native black/silence padding up to exactly ten seconds and rejects a longer active gap", () => {
+		const base = normalizeVodInputTimelineDocument({
+			...sequence,
+			clips: [
+				{
+					id: "00000000-0000-4000-8000-000000000002",
+					sourceKey: "a",
+					inMs: 0,
+					outMs: 1000,
+				},
+			],
+			audioEnabled: false,
+		});
+		const allowed = { ...base, durationMs: 11_000 };
+		const plan = encodingPlanSchema.parse(
+			buildPlan({ ...state, inputTimeline: allowed }),
+		);
+		expect(plan.concatenationStreams?.[0]?.sources[0]?.paddingAfter).toEqual({
+			duration: 10,
+			unit: "SECONDS",
+		});
+		expect(() =>
+			buildPlan({
+				...state,
+				inputTimeline: { ...allowed, durationMs: 11_001 },
+			}),
+		).toThrowError(expect.objectContaining({ code: "TIMELINE_GAP_TOO_LONG" }));
+	});
+	it("omits empty audio instead of emitting an empty concat or dangling muxed audio", () => {
+		const base = normalizeVodInputTimelineDocument(sequence);
+		const plan = encodingPlanSchema.parse(
+			buildPlan({ ...state, inputTimeline: { ...base, audioClips: [] } }),
+		);
+		expect(plan.concatenationStreams).toHaveLength(1);
+		expect(plan.renditions).toHaveLength(1);
+		expect(plan.renditions.every((item) => item.codec === "H264")).toBe(true);
+		expect(plan.muxings[0]?.kind).toBe("MP4");
+		expect(
+			plan.muxings.every(
+				(item) => item.kind !== "MP4" || !item.additionalStreamKeys?.length,
+			),
+		).toBe(true);
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+	});
+	it("refuses a video-output program with no real video before native resources are created", () => {
+		const base = normalizeVodInputTimelineDocument(sequence);
+		expect(() =>
+			buildPlan({ ...state, inputTimeline: { ...base, videoClips: [] } }),
+		).toThrowError(expect.objectContaining({ code: "TIMELINE_VIDEO_MISSING" }));
+	});
 	it("lowers A/B/A to identical video/audio ranges and explicit concat order", () => {
 		const input = { ...state, inputTimeline: sequence };
 		const snapshot = structuredClone(input);

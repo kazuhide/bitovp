@@ -12,6 +12,15 @@ import {
 } from "@bitovp/storage";
 import { runMediaProcess } from "../library-editing/process";
 import { probeVodInputSources, renderVodInputPreview } from "./media";
+import { runIndependentOverwriteFixture } from "./overwrite-fixture";
+
+test(
+	"real CPU FFmpeg preserves the untouched channel in V1/A1 overwrite, WAV/MP3 and gaps",
+	{
+		timeout: 90_000,
+	},
+	runIndependentOverwriteFixture,
+);
 
 test("real CPU FFmpeg previews A latter → B first → A first over pinned sparse Range reads", {
 	timeout: 60_000,

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const MAX_VOD_TIMELINE_SOURCES = 16;
 export const MAX_VOD_TIMELINE_CLIPS = 64;
+/** Provider PaddingSequence is limited to 10 seconds per gap. */
+export const MAX_VOD_TIMELINE_GAP_MS = 10_000;
 export const MAX_VOD_TIMELINE_DURATION_MS = 24 * 60 * 60 * 1000;
 export const MAX_VOD_INPUT_PREVIEW_DURATION_MS = 180_000;
 export const DEFAULT_VOD_INPUT_PREVIEW_DURATION_MS = 30_000;
@@ -21,7 +23,8 @@ export const vodInputTimelineClipSchema = z
 	})
 	.refine((clip) => clip.outMs > clip.inMs, "Clip out must follow in");
 
-export const vodInputTimelineDocumentSchema = z
+// Keep the v1 wire shape and key order unchanged: queued tasks hash parsed JSON.
+export const vodInputTimelineV1DocumentSchema = z
 	.strictObject({
 		schemaVersion: z.literal(1),
 		id: z.uuid(),
@@ -48,6 +51,90 @@ export const vodInputTimelineDocumentSchema = z
 		}
 	});
 export type VodInputTimelineClip = z.infer<typeof vodInputTimelineClipSchema>;
+export type VodInputTimelineV1Document = z.infer<
+	typeof vodInputTimelineV1DocumentSchema
+>;
+
+export const vodInputTimelinePlacedClipSchema = z
+	.strictObject({
+		id: z.uuid(),
+		sourceKey: key,
+		startMs: timeMs,
+		inMs: timeMs,
+		outMs: timeMs,
+	})
+	.refine((clip) => clip.outMs > clip.inMs, "Clip out must follow in");
+export type VodInputTimelinePlacedClip = z.infer<
+	typeof vodInputTimelinePlacedClipSchema
+>;
+export type VodInputTimelineTrack = "video" | "audio";
+
+export const vodInputTimelineV2DocumentSchema = z
+	.strictObject({
+		schemaVersion: z.literal(2),
+		id: z.uuid(),
+		audioEnabled: z.boolean(),
+		durationMs: timeMs,
+		videoClips: z
+			.array(vodInputTimelinePlacedClipSchema)
+			.max(MAX_VOD_TIMELINE_CLIPS),
+		audioClips: z
+			.array(vodInputTimelinePlacedClipSchema)
+			.max(MAX_VOD_TIMELINE_CLIPS),
+	})
+	.superRefine((document, ctx) => {
+		if (
+			new Set(
+				[...document.videoClips, ...document.audioClips].map(
+					(clip) => clip.sourceKey,
+				),
+			).size > MAX_VOD_TIMELINE_SOURCES
+		) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["videoClips"],
+				message: "Sequence references more than sixteen sources",
+			});
+		}
+		for (const track of ["videoClips", "audioClips"] as const) {
+			let endMs = 0;
+			const ids = new Set<string>();
+			for (const [index, clip] of document[track].entries()) {
+				if (ids.has(clip.id)) {
+					ctx.addIssue({
+						code: "custom",
+						path: [track, index, "id"],
+						message: "Clip IDs must be unique within a track",
+					});
+				}
+				ids.add(clip.id);
+				if (clip.startMs < endMs) {
+					ctx.addIssue({
+						code: "custom",
+						path: [track, index, "startMs"],
+						message: "Track clips must be sorted without overlap",
+					});
+				}
+				endMs = clip.startMs + clip.outMs - clip.inMs;
+				if (endMs > document.durationMs) {
+					ctx.addIssue({
+						code: "custom",
+						path: [track, index],
+						message: "Clip exceeds program duration",
+					});
+				}
+			}
+		}
+	});
+export type VodInputTimelineV2Document = z.infer<
+	typeof vodInputTimelineV2DocumentSchema
+>;
+
+/** Lossless wire union. Normalize explicitly only AFTER request-hash checks. */
+export const vodInputTimelineDocumentSchema = z.discriminatedUnion(
+	"schemaVersion",
+	[vodInputTimelineV1DocumentSchema, vodInputTimelineV2DocumentSchema],
+);
 export type VodInputTimelineDocument = z.infer<
 	typeof vodInputTimelineDocumentSchema
 >;
@@ -66,40 +153,49 @@ export type VodInputTimelineSource = z.infer<
 	typeof vodInputTimelineSourceSchema
 >;
 
-export const vodInputTimelineSourceFactsSchema = z.strictObject({
-	key,
-	durationMs: timeMs.positive(),
-	video: z.strictObject({
-		streamIndex: z.number().int().min(0).max(1024),
-		width: z.number().int().positive().max(32768),
-		height: z.number().int().positive().max(32768),
-		displayAspectRatio: z
+export const vodInputTimelineSourceFactsSchema = z
+	.strictObject({
+		key,
+		durationMs: timeMs.positive(),
+		video: z
 			.strictObject({
-				num: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-				den: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+				streamIndex: z.number().int().min(0).max(1024),
+				width: z.number().int().positive().max(32768),
+				height: z.number().int().positive().max(32768),
+				displayAspectRatio: z
+					.strictObject({
+						num: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+						den: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+					})
+					.optional(),
+				frameRate: z
+					.strictObject({
+						num: z.number().int().positive().max(1_000_000),
+						den: z.number().int().positive().max(1_000_000),
+					})
+					.optional(),
+				durationMs: timeMs.positive().optional(),
 			})
-			.optional(),
-		frameRate: z
+			.nullable(),
+		audio: z
 			.strictObject({
-				num: z.number().int().positive().max(1_000_000),
-				den: z.number().int().positive().max(1_000_000),
+				streamIndex: z.number().int().min(0).max(1024),
+				sampleRate: z.number().int().positive().max(384_000),
+				channels: z.number().int().positive().max(64),
+				durationMs: timeMs.positive().optional(),
 			})
-			.optional(),
-	}),
-	audio: z
-		.strictObject({
-			streamIndex: z.number().int().min(0).max(1024),
-			sampleRate: z.number().int().positive().max(384_000),
-			channels: z.number().int().positive().max(64),
-		})
-		.nullable(),
-	identity: z.strictObject({
-		size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-		etag: z.string().min(1).max(1024).optional(),
-		versionId: z.string().min(1).max(1024).optional(),
-		generation: z.string().min(1).max(1024).optional(),
-	}),
-});
+			.nullable(),
+		identity: z.strictObject({
+			size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+			etag: z.string().min(1).max(1024).optional(),
+			versionId: z.string().min(1).max(1024).optional(),
+			generation: z.string().min(1).max(1024).optional(),
+		}),
+	})
+	.refine(
+		(source) => source.video !== null || source.audio !== null,
+		"A source must contain video or audio",
+	);
 export type VodInputTimelineSourceFacts = z.infer<
 	typeof vodInputTimelineSourceFactsSchema
 >;
@@ -127,7 +223,11 @@ export const vodInputPreviewRequestSchema = z.discriminatedUnion("kind", [
 		kind: z.literal("PREVIEW"),
 		probeId: z.uuid(),
 		document: vodInputTimelineDocumentSchema.refine(
-			(doc) => doc.clips.length > 0,
+			(doc) =>
+				doc.schemaVersion === 1
+					? doc.clips.length > 0
+					: doc.videoClips.length > 0 ||
+						(doc.audioEnabled && doc.audioClips.length > 0),
 			"Add a clip",
 		),
 		range: vodInputPreviewRangeSchema,

@@ -33,6 +33,7 @@ describe("CPU input timeline metadata admission", () => {
 				height: 1080,
 				displayAspectRatio: { num: 16, den: 9 },
 				frameRate: { num: 30000, den: 1001 },
+				durationMs: 8125,
 			},
 			audio: { streamIndex: 3, sampleRate: 48000, channels: 2 },
 			identity,
@@ -46,13 +47,74 @@ describe("CPU input timeline metadata admission", () => {
 			{ duration: "Infinity" },
 			{ width: 32768 },
 			{ width: -1 },
-			{ disposition: { attached_pic: 1 } },
 		]) {
 			const invalid = probe();
 			const first = invalid.streams[0];
 			if (!first) throw new Error("Missing test video");
 			Object.assign(first, patch);
 			expect(() => inspectVodInputProbe("source", invalid, identity)).toThrow();
+		}
+	});
+	it("admits audio-only metadata and ignores album art as a video track", () => {
+		for (const albumArt of [false, true]) {
+			const sound = {
+				streams: [
+					...(albumArt
+						? [
+								{
+									index: 0,
+									codec_type: "video",
+									width: 600,
+									height: 600,
+									disposition: { attached_pic: 1 },
+								},
+							]
+						: []),
+					{
+						index: 1,
+						codec_type: "audio",
+						duration: "8.25",
+						sample_rate: "48000",
+						channels: 2,
+					},
+				],
+				format: { duration: "8.3", format_name: albumArt ? "mp3" : "wav" },
+			};
+			expect(inspectVodInputProbe("sound", sound, identity)).toEqual({
+				key: "sound",
+				durationMs: 8250,
+				video: null,
+				audio: {
+					streamIndex: 1,
+					sampleRate: 48000,
+					channels: 2,
+					durationMs: 8250,
+				},
+				identity,
+			});
+		}
+	});
+	it("refuses streamless, artwork-only and encrypted audio sources", () => {
+		for (const streams of [
+			[],
+			[{ codec_type: "video", disposition: { attached_pic: 1 } }],
+			[
+				{
+					index: 0,
+					codec_type: "audio",
+					sample_rate: "48000",
+					channels: 2,
+					codec_tag_string: "enca",
+				},
+			],
+		]) {
+			expect(() =>
+				inspectVodInputProbe(
+					"sound",
+					{ streams, format: { duration: "8" } },
+					identity,
+				),
+			).toThrow(expect.objectContaining({ code: "SOURCE_UNSUPPORTED" }));
 		}
 	});
 	it("fits the main source aspect into an even bounded preview canvas", () => {
@@ -72,7 +134,7 @@ describe("CPU input timeline metadata admission", () => {
 	it("only permits bridge HTTP and bounded supported container parsing", () => {
 		const args = vodInputPreviewReadArgs("http://127.0.0.1:1234/token/0");
 		expect(args).toContain("http,tcp");
-		expect(args).toContain("mov,matroska,webm,mpegts");
+		expect(args).toContain("mov,matroska,webm,mpegts,wav,mp3");
 		expect(() =>
 			vodInputPreviewReadArgs("https://customer/source.mp4"),
 		).toThrow();
@@ -86,6 +148,7 @@ describe("CPU input timeline metadata admission", () => {
 			sample_aspect_ratio: "16:15",
 		});
 		const anamorphic = inspectVodInputProbe("source", sample, identity);
+		if (!anamorphic.video) throw new Error("Expected actual video");
 		expect(anamorphic.video.displayAspectRatio).toEqual({ num: 4, den: 3 });
 		expect(
 			vodInputPreviewCanvas(720, 576, anamorphic.video.displayAspectRatio),
@@ -94,6 +157,7 @@ describe("CPU input timeline metadata admission", () => {
 			side_data_list: [{ side_data_type: "Display Matrix", rotation: 90 }],
 		});
 		const rotated = inspectVodInputProbe("source", sample, identity);
+		if (!rotated.video) throw new Error("Expected actual video");
 		expect(rotated.video.displayAspectRatio).toEqual({ num: 3, den: 4 });
 		expect(
 			vodInputPreviewCanvas(720, 576, rotated.video.displayAspectRatio),
@@ -131,6 +195,7 @@ describe("CPU input timeline metadata admission", () => {
 	});
 	it("requires a fresh probe before replaying legacy facts with no display geometry", async () => {
 		const measured = inspectVodInputProbe("source", probe(), identity);
+		if (!measured.video) throw new Error("Expected actual video");
 		delete measured.video.displayAspectRatio;
 		const browserFor = vi.fn();
 		await expect(

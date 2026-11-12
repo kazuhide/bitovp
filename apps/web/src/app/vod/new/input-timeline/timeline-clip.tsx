@@ -1,6 +1,7 @@
 import type {
-	VodInputTimelineClip,
+	VodInputTimelinePlacedClip,
 	VodInputTimelineSourceFacts,
+	VodInputTimelineTrack,
 } from "@bitovp/core/vod-input-timeline";
 import { useTimelineLabels } from "./labels";
 import { formatTime } from "./timeline-state";
@@ -8,55 +9,72 @@ import type { useTimelineGesture } from "./use-timeline-gesture";
 
 export function TimelineClip({
 	clip,
+	track,
 	index,
 	name,
 	pixelsPerMs,
 	selected,
 	fact,
 	disabled,
+	muted,
 	handlers,
 	consumeClick,
 	onSeek,
 	onSelect,
 	onDelete,
 }: {
-	clip: VodInputTimelineClip;
+	clip: VodInputTimelinePlacedClip;
+	track: VodInputTimelineTrack;
 	index: number;
 	name: string;
 	pixelsPerMs: number;
 	selected: boolean;
 	fact: VodInputTimelineSourceFacts | undefined;
 	disabled: boolean;
+	muted?: boolean;
 	handlers: ReturnType<typeof useTimelineGesture>["handlers"];
 	consumeClick: ReturnType<typeof useTimelineGesture>["consumeClick"];
 	onSeek: (localMs: number) => void;
-	onSelect: (id: string) => void;
-	onDelete: (id: string) => void;
+	onSelect: (id: string, track: VodInputTimelineTrack) => void;
+	onDelete: (id: string, track: VodInputTimelineTrack) => void;
 }) {
-	const l = useTimelineLabels();
-	const moveHandlers = handlers(clip.id, "move");
+	const l = useTimelineLabels(),
+		isAudio = track === "audio",
+		clipLabel = isAudio ? l.audioClip : l.clip;
+	const moveHandlers = handlers(clip.id, "move", track);
+	const tone = isAudio
+		? selected
+			? "border-sky-400 bg-sky-950 text-sky-100"
+			: "border-sky-800 bg-sky-950/60 text-sky-200"
+		: selected
+			? "border-emerald-400 bg-emerald-950 text-emerald-100"
+			: "border-zinc-600 bg-zinc-800 text-zinc-200";
 	return (
 		<div
-			className="relative h-16 min-w-0 shrink-0 py-1"
-			style={{ width: (clip.outMs - clip.inMs) * pixelsPerMs }}
+			className={`absolute top-0 min-w-0 py-1 ${isAudio ? "h-10" : "h-16"}`}
+			style={{
+				left: clip.startMs * pixelsPerMs,
+				width: (clip.outMs - clip.inMs) * pixelsPerMs,
+			}}
 		>
 			<button
 				type="button"
 				data-clip-id={clip.id}
-				aria-label={`${l.clip} ${index + 1}, ${name}`}
+				data-clip-track={track}
+				aria-label={`${clipLabel} ${index + 1}, ${name}`}
 				aria-pressed={selected}
 				aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Delete Backspace"
-				className={`h-full w-full touch-none cursor-grab overflow-hidden border px-3 text-left text-xs active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-emerald-300 ${selected ? "border-emerald-400 bg-emerald-950 text-emerald-100" : "border-zinc-600 bg-zinc-800 text-zinc-200"}`}
+				className={`h-full w-full touch-none cursor-grab overflow-hidden border px-3 text-left text-xs active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-emerald-300 ${tone} ${muted ? "opacity-60" : ""}`}
 				{...moveHandlers}
 				onKeyDown={(event) => {
 					if (event.key === "Delete" || event.key === "Backspace") {
 						event.preventDefault();
-						if (!disabled) onDelete(clip.id);
+						if (!disabled) onDelete(clip.id, track);
 					} else moveHandlers.onKeyDown(event);
 				}}
 				onClick={(event) => {
-					if (consumeClick(clip.id)) return;
-					onSelect(clip.id);
+					if (consumeClick(clip.id, track)) return;
+					onSelect(clip.id, track);
 					const bounds = event.currentTarget.getBoundingClientRect();
 					const fraction =
 						event.detail === 0
@@ -87,17 +105,19 @@ export function TimelineClip({
 						role="slider"
 						tabIndex={0}
 						aria-orientation="horizontal"
-						aria-label={`${edge === "in" ? l.trimStart : l.trimEnd}, ${name}, ${l.clip.toLowerCase()} ${index + 1}`}
+						aria-label={`${edge === "in" ? l.trimStart : l.trimEnd}, ${name}, ${clipLabel.toLowerCase()} ${index + 1}`}
 						aria-valuemin={edge === "in" ? 0 : clip.inMs + 1}
 						aria-valuemax={
-							edge === "in" ? clip.outMs - 1 : (fact?.durationMs ?? clip.outMs)
+							edge === "in"
+								? clip.outMs - 1
+								: (fact?.[track]?.durationMs ?? fact?.durationMs ?? clip.outMs)
 						}
 						aria-valuenow={edge === "in" ? clip.inMs : clip.outMs}
 						aria-valuetext={formatTime(edge === "in" ? clip.inMs : clip.outMs)}
-						aria-disabled={disabled || !fact}
+						aria-disabled={disabled || !fact?.[track]}
 						aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
-						className={`absolute top-1 z-10 h-14 w-3 touch-none cursor-ew-resize rounded-sm border border-emerald-300 bg-emerald-600/80 focus-visible:outline-2 focus-visible:outline-emerald-100 ${edge === "in" ? "left-0" : "right-0"}`}
-						{...handlers(clip.id, edge)}
+						className={`absolute top-1 z-10 w-3 touch-none cursor-ew-resize rounded-sm border focus-visible:outline-2 focus-visible:outline-emerald-100 ${isAudio ? "h-8 border-sky-300 bg-sky-600/80" : "h-14 border-emerald-300 bg-emerald-600/80"} ${edge === "in" ? "left-0" : "right-0"}`}
+						{...handlers(clip.id, edge, track)}
 					/>
 				))}
 		</div>

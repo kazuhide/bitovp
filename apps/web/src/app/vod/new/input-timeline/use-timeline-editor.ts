@@ -1,20 +1,31 @@
 "use client";
-
-import type { VodInputTimelineDocument } from "@bitovp/core/vod-input-timeline";
+import type {
+	VodInputTimelineDocument,
+	VodInputTimelineV2Document,
+} from "@bitovp/core/vod-input-timeline";
 import { useEffect, useRef, useState } from "react";
 import {
 	createHistory,
+	type TimelineSelection,
 	timelineDuration,
 	timelineHistory,
+	timelineItems,
 } from "./timeline-state";
 
 export function useTimelineEditor(
-	document: VodInputTimelineDocument,
+	document: VodInputTimelineV2Document,
 	onChange: (next: VodInputTimelineDocument) => void,
 	disabled: boolean,
 ) {
 	const [history, setHistory] = useState(() => createHistory(document));
-	const [selectedId, setSelectedId] = useState(document.clips[0]?.id ?? "");
+	const [selection, select] = useState<TimelineSelection>(() => ({
+		track: document.videoClips.length
+			? "video"
+			: document.audioClips.length
+				? "audio"
+				: "video",
+		id: document.videoClips[0]?.id ?? document.audioClips[0]?.id ?? "",
+	}));
 	const [positionMs, setPositionMs] = useState(0);
 	const accepted = useRef(JSON.stringify(document));
 	const serialized = JSON.stringify(document);
@@ -25,12 +36,16 @@ export function useTimelineEditor(
 		}
 	}, [serialized]);
 	useEffect(() => {
-		if (!document.clips.some((clip) => clip.id === selectedId))
-			setSelectedId(document.clips[0]?.id ?? "");
+		const items = timelineItems(document, selection.track);
+		if (
+			!items.some((item) => item.clip.id === selection.id) &&
+			selection.id !== ""
+		)
+			select({ track: selection.track, id: items[0]?.clip.id ?? "" });
 		setPositionMs((position) =>
 			Math.min(position, Math.max(0, timelineDuration(document) - 1)),
 		);
-	}, [document, selectedId]);
+	}, [document, selection]);
 	function publish(next: ReturnType<typeof createHistory>) {
 		if (disabled || next === history) return;
 		accepted.current = JSON.stringify(next.present);
@@ -38,8 +53,10 @@ export function useTimelineEditor(
 		onChange(next.present);
 	}
 	return {
-		selectedId,
-		setSelectedId,
+		selection,
+		select,
+		selectedId: selection.id,
+		selectedTrack: selection.track,
 		positionMs,
 		seek(position: number, duration = timelineDuration(document)) {
 			if (Number.isFinite(position))

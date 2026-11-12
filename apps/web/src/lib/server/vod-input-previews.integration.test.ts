@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { cipherFromEnv } from "@bitovp/core";
 import {
 	type VodInputPreviewRequest,
+	vodInputPreviewRequestSchema,
 	vodInputPreviewResultSchema,
 } from "@bitovp/core/vod-input-timeline";
 import {
@@ -192,6 +193,87 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			});
 		}
 
+		it("persists independent v2 audio replacement with canonical hash through JSONB and tenant guards", async () => {
+			const base = await fixture();
+			const baseSource = base.request.sources[0];
+			if (!baseSource) throw new Error("Expected a registered source fixture");
+			const request = {
+				kind: "PROBE" as const,
+				sources: [
+					...base.request.sources,
+					{ ...baseSource, key: "voice", objectKey: "voice.wav" },
+				],
+			};
+			const result = vodInputPreviewResultSchema.parse(base.probe.result);
+			const first = result.sources?.[0];
+			if (!first) throw new Error("Expected a video probe fixture");
+			const voice = {
+				key: "voice",
+				durationMs: 5000,
+				video: null,
+				audio: { streamIndex: 0, sampleRate: 48000, channels: 2 },
+				identity: { size: 4096, etag: '"voice-v1"' },
+			};
+			const probe = await a.vodInputPreviewTask.create({
+				data: {
+					kind: "PROBE",
+					status: "SUCCEEDED",
+					stage: "READY",
+					requestHash: hash(request),
+					request,
+					result: { sources: [{ ...first, audio: null }, voice] },
+					finishedAt: new Date(),
+					expiresAt: base.probe.expiresAt,
+				},
+			});
+			const input = {
+				kind: "PREVIEW",
+				probeId: probe.id,
+				document: {
+					schemaVersion: 2,
+					id: randomUUID(),
+					durationMs: 5000,
+					audioEnabled: true,
+					videoClips: [
+						{
+							id: randomUUID(),
+							sourceKey: "source",
+							startMs: 0,
+							inMs: 0,
+							outMs: 5000,
+						},
+					],
+					audioClips: [
+						{
+							id: randomUUID(),
+							sourceKey: "voice",
+							startMs: 0,
+							inMs: 0,
+							outMs: 5000,
+						},
+					],
+				},
+				range: { startMs: 0, durationMs: 1000 },
+			};
+			const created = await createVodInputPreviewTask(input);
+			const stored = await a.vodInputPreviewTask.findUniqueOrThrow({
+				where: { id: created.id },
+			});
+			const parsed = vodInputPreviewRequestSchema.parse(stored.request);
+			expect(parsed).toEqual(input);
+			expect(hash(parsed)).toBe(stored.requestHash);
+			expect(queue.add).toHaveBeenCalledTimes(1);
+			use(b, otherOrg);
+			await expect(getVodInputPreviewTask(created.id)).rejects.toMatchObject({
+				code: "PREVIEW_NOT_FOUND",
+			});
+			use();
+			await a.credential.delete({ where: { id: base.credential.id } });
+			await expect(getVodInputPreviewTask(created.id)).rejects.toMatchObject({
+				code: "SOURCE_CREDENTIAL_NOT_FOUND",
+			});
+		});
+
 		it("enforces forced RLS for lists, IDs, raw reads and writes under a restricted runtime role", async () => {
 			const own = await fixture(),
 				foreign = await fixture(b);
@@ -337,14 +419,17 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				where: { id: f.probe.id },
 				data: {
 					result: {
-						sources: (result.sources ?? []).map(({ video, ...source }) => ({
-							...source,
-							video: {
-								streamIndex: video.streamIndex,
-								width: video.width,
-								height: video.height,
-							},
-						})),
+						sources: (result.sources ?? []).map(({ video, ...source }) => {
+							if (!video) throw new Error("Expected a video geometry fixture");
+							return {
+								...source,
+								video: {
+									streamIndex: video.streamIndex,
+									width: video.width,
+									height: video.height,
+								},
+							};
+						}),
 					},
 				},
 			});

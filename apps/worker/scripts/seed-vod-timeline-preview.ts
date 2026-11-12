@@ -49,6 +49,35 @@ async function main() {
 			)
 				throw error;
 		}
+		const upload = async (
+			path: string,
+			key: string,
+			contentType: string,
+			fixture: string,
+		) => {
+			const bytes = await readFile(path);
+			const sha256 = createHash("sha256").update(bytes).digest("hex");
+			try {
+				const head = await client.send(
+					new HeadObjectCommand({ Bucket: env.bucket, Key: key }),
+				);
+				if (head.Metadata?.sha256 !== sha256)
+					throw new Error("PREVIEW_FIXTURE_WAS_CHANGED");
+				return;
+			} catch (error) {
+				if (!["NotFound", "NoSuchKey"].includes((error as Error).name))
+					throw error;
+			}
+			await client.send(
+				new PutObjectCommand({
+					Bucket: env.bucket,
+					Key: key,
+					Body: bytes,
+					ContentType: contentType,
+					Metadata: { sha256, "preview-fixture": fixture },
+				}),
+			);
+		};
 		for (const [name, video, frequency] of [
 			[
 				"a",
@@ -95,32 +124,45 @@ async function main() {
 				],
 				{ timeoutMs: 30_000 },
 			);
-			const bytes = await readFile(path);
-			const sha256 = createHash("sha256").update(bytes).digest("hex");
 			const key = `fixtures/vod-timeline/v1/${name}.mp4`;
-			let exists = false;
-			try {
-				const head = await client.send(
-					new HeadObjectCommand({ Bucket: env.bucket, Key: key }),
-				);
-				if (head.Metadata?.sha256 !== sha256)
-					throw new Error("PREVIEW_FIXTURE_WAS_CHANGED");
-				exists = true;
-			} catch (error) {
-				if (!["NotFound", "NoSuchKey"].includes((error as Error).name))
-					throw error;
-			}
-			if (!exists)
-				await client.send(
-					new PutObjectCommand({
-						Bucket: env.bucket,
-						Key: key,
-						Body: bytes,
-						ContentType: "video/mp4",
-						Metadata: { sha256, "preview-fixture": "vod-timeline-v1" },
-					}),
-				);
+			await upload(path, key, "video/mp4", "vod-timeline-v1");
 		}
+		// New audio-only fixture is additive; v1 A/B generation bytes stay unchanged.
+		const audioPath = join(directory, "c.wav");
+		await runMediaProcess(
+			process.env.FFMPEG_PATH ?? "ffmpeg",
+			[
+				"-v",
+				"error",
+				"-nostdin",
+				"-cpucount",
+				"1",
+				"-filter_threads",
+				"1",
+				"-f",
+				"lavfi",
+				"-i",
+				"sine=frequency=660:sample_rate=48000:duration=8",
+				"-map_metadata",
+				"-1",
+				"-c:a",
+				"pcm_s16le",
+				"-ar",
+				"48000",
+				"-ac",
+				"2",
+				"-threads",
+				"1",
+				audioPath,
+			],
+			{ timeoutMs: 30_000 },
+		);
+		await upload(
+			audioPath,
+			"fixtures/vod-timeline/v2/c.wav",
+			"audio/wav",
+			"vod-timeline-v2",
+		);
 		const prisma = createTenantPrismaClient(runtime, DEFAULT_ORGANIZATION_ID);
 		const label = "VOD timeline local S3 (synthetic only)";
 		const existing = await prisma.credential.findFirst({ where: { label } });
@@ -148,6 +190,7 @@ async function main() {
 				objects: [
 					"fixtures/vod-timeline/v1/a.mp4",
 					"fixtures/vod-timeline/v1/b.mp4",
+					"fixtures/vod-timeline/v2/c.wav",
 				],
 			}),
 		);

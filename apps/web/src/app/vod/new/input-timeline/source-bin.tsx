@@ -4,7 +4,7 @@ import {
 	MAX_VOD_TIMELINE_SOURCES,
 	type VodInputTimelineSourceFacts,
 } from "@bitovp/core/vod-input-timeline";
-import { FileVideo2, Plus } from "lucide-react";
+import { FileAudio2, FileVideo2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { baseName } from "@/lib/format";
 import type { WizardInputFile } from "../build-plan";
@@ -51,6 +51,7 @@ export function SourceBin({
 					.map((source) => {
 						const fact = facts.find((item) => item.key === source.key);
 						const name = baseName(source.path);
+						const Icon = fact?.video === null ? FileAudio2 : FileVideo2;
 						return (
 							<li
 								key={source.key}
@@ -63,7 +64,7 @@ export function SourceBin({
 									onClick={() => onSelect(source.key)}
 									className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-2 text-left text-xs hover:bg-zinc-900 focus-visible:outline-2 focus-visible:outline-emerald-400"
 								>
-									<FileVideo2
+									<Icon
 										aria-hidden
 										className="h-7 w-7 shrink-0 text-zinc-500"
 									/>
@@ -76,7 +77,7 @@ export function SourceBin({
 										</span>
 										<span className="block truncate text-zinc-400">
 											{fact
-												? `${formatTime(fact.durationMs)} · ${fact.video.width}×${fact.video.height}`
+												? `${formatTime(fact.durationMs)} · ${fact.video ? `${fact.video.width}×${fact.video.height}` : l.audio}`
 												: l.unknown}
 										</span>
 									</span>
@@ -85,7 +86,7 @@ export function SourceBin({
 									size="icon"
 									variant="ghost"
 									aria-label={l.addNamed.replace("{name}", name)}
-									title={l.add}
+									title={l.appendWhole}
 									disabled={disabled || !fact || full}
 									onClick={() => fact && onAdd(fact)}
 								>

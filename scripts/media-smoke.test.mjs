@@ -530,7 +530,7 @@ test(import.meta.filename, () => {});
 
 test("every required fixture must run once and pass its required number of tests", () => {
 	// A lowered count would stop requiring a test that exists.
-	assert.deepEqual(Object.values(FIXTURES), [3, 8, 1, 5, 17, 2, 1]);
+	assert.deepEqual(Object.values(FIXTURES), [3, 8, 1, 5, 17, 2, 2]);
 	const complete = fixtureAccount();
 	// Pipe chunks do not end at line boundaries.
 	for (const chunk of completeLog().match(/[\s\S]{1,37}/g))

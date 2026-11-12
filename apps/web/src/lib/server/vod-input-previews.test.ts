@@ -134,6 +134,90 @@ describe("manual VOD preview service", () => {
 		).rejects.toMatchObject({ code: "SOURCE_RANGE_INVALID" });
 		expect(add).not.toHaveBeenCalled();
 	});
+	it("accepts independent audio over a silent video without requiring video geometry on the audio file", async () => {
+		const voiceId = "00000000-0000-4000-8000-000000000003";
+		const request = {
+			kind: "PREVIEW",
+			probeId: id,
+			document: {
+				schemaVersion: 2,
+				id,
+				audioEnabled: true,
+				durationMs: 5000,
+				videoClips: [{ id, sourceKey: "a", startMs: 0, inMs: 0, outMs: 5000 }],
+				audioClips: [
+					{ id: voiceId, sourceKey: "voice", startMs: 0, inMs: 0, outMs: 5000 },
+				],
+			},
+			range: { startMs: 0, durationMs: 5000 },
+		};
+		const probe = {
+			...row,
+			request: {
+				...probeRequest,
+				sources: [
+					...probeRequest.sources,
+					{
+						key: "voice",
+						credentialId: id,
+						bucket: "input",
+						objectKey: "voice.wav",
+					},
+				],
+			},
+			result: {
+				sources: [
+					...facts,
+					{
+						key: "voice",
+						durationMs: 5000,
+						video: null,
+						audio: { streamIndex: 0, sampleRate: 48000, channels: 2 },
+						identity: { size: 100, etag: '"voice"' },
+					},
+				],
+			},
+		};
+		db.vodInputPreviewTask.findUnique.mockResolvedValue(probe);
+		const task = await createVodInputPreviewTask(request);
+		expect(task).toMatchObject({ kind: "PREVIEW", status: "PENDING" });
+		expect(
+			db.vodInputPreviewTask.create.mock.calls[0]?.[0].data.request,
+		).toEqual(request);
+		expect(add).toHaveBeenCalledTimes(1);
+	});
+	it("allows an audio-only source audition with a neutral video canvas", async () => {
+		const probe = {
+			...row,
+			result: {
+				sources: [
+					{
+						key: "a",
+						durationMs: 5000,
+						video: null,
+						audio: { streamIndex: 0, sampleRate: 48000, channels: 2 },
+						identity: { size: 100, etag: '"voice"' },
+					},
+				],
+			},
+		};
+		db.vodInputPreviewTask.findUnique.mockResolvedValue(probe);
+		const task = await createVodInputPreviewTask({
+			kind: "PREVIEW",
+			probeId: id,
+			document: {
+				schemaVersion: 2,
+				id,
+				audioEnabled: true,
+				durationMs: 5000,
+				videoClips: [],
+				audioClips: [{ id, sourceKey: "a", startMs: 0, inMs: 0, outMs: 5000 }],
+			},
+			range: { startMs: 0, durationMs: 1000 },
+		});
+		expect(task.kind).toBe("PREVIEW");
+		expect(add).toHaveBeenCalledTimes(1);
+	});
 	it("does not expose a derived task once its source credential is deleted", async () => {
 		db.vodInputPreviewTask.findUnique.mockResolvedValue(row);
 		credentials.get.mockResolvedValue(null);

@@ -1,26 +1,36 @@
 "use client";
-
 import type {
 	VodInputTimelineDocument,
 	VodInputTimelineSourceFacts,
+	VodInputTimelineTrack,
+	VodInputTimelineV2Document,
 } from "@bitovp/core/vod-input-timeline";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useTimelineLabels } from "./labels";
 import { TimelineClip } from "./timeline-clip";
 import { TimelineRuler } from "./timeline-ruler";
-import { formatTime, timelineDuration, timelineItems } from "./timeline-state";
+import {
+	formatTime,
+	linkedPartner,
+	normalizeTimeline,
+	timelineDuration,
+	timelineItems,
+} from "./timeline-state";
 import { useTimelineGesture } from "./use-timeline-gesture";
 import { useTimelineScale } from "./use-timeline-scale";
 
 export function TimelineTracks({
-	document,
+	document: wireDocument,
 	facts,
 	names,
 	selectedId,
+	selectedTrack = "video",
+	linked = true,
 	positionMs,
 	disabled,
 	onSelect,
+	onSelectTrack,
 	onSeek,
 	onChange,
 	onDelete,
@@ -31,18 +41,25 @@ export function TimelineTracks({
 	facts: VodInputTimelineSourceFacts[];
 	names: Record<string, string>;
 	selectedId: string;
+	selectedTrack?: VodInputTimelineTrack;
+	linked?: boolean;
 	positionMs: number;
 	disabled: boolean;
-	onSelect: (id: string) => void;
+	onSelect: (id: string, track: VodInputTimelineTrack) => void;
+	onSelectTrack?: (track: VodInputTimelineTrack) => void;
 	onSeek: (position: number) => void;
-	onChange: (next: VodInputTimelineDocument) => void;
-	onDelete: (id: string) => void;
+	onChange: (next: VodInputTimelineV2Document) => void;
+	onDelete: (id: string, track: VodInputTimelineTrack) => void;
 	onError: () => void;
 	onDragging: (active: boolean) => void;
 }) {
-	const l = useTimelineLabels();
-	const track = useRef<HTMLDivElement>(null);
-	const viewport = useRef<HTMLDivElement>(null);
+	const document = useMemo(
+		() => normalizeTimeline(wireDocument),
+		[wireDocument],
+	);
+	const l = useTimelineLabels(),
+		track = useRef<HTMLDivElement>(null),
+		viewport = useRef<HTMLDivElement>(null);
 	const scale = useTimelineScale(viewport);
 	const gesture = useTimelineGesture({
 		document,
@@ -50,13 +67,16 @@ export function TimelineTracks({
 		disabled,
 		track,
 		pixelsPerMs: scale.pixelsPerMs,
+		linked,
 		onChange,
 		onSelect,
 		onError,
 	});
-	const total = timelineDuration(gesture.shown);
-	const items = timelineItems(gesture.shown);
-	const canvas = scale.canvas(gesture.extentMs);
+	const total = timelineDuration(gesture.shown),
+		canvas = scale.canvas(gesture.extentMs);
+	const partner = linked
+		? linkedPartner(gesture.shown, { track: selectedTrack, id: selectedId })
+		: null;
 	const followed = useRef({ positionMs, pixelsPerMs: scale.pixelsPerMs });
 	useEffect(() => onDragging(gesture.dragging), [gesture.dragging, onDragging]);
 	useEffect(() => {
@@ -117,8 +137,19 @@ export function TimelineTracks({
 			</div>
 			<div className="flex min-w-0 gap-2">
 				<div className="w-12 shrink-0 pt-7 text-xs text-zinc-400">
-					<div className="flex h-16 items-center">V1</div>
-					<div className="flex h-10 items-center">A1</div>
+					{(["video", "audio"] as const).map((medium) => (
+						<button
+							type="button"
+							key={medium}
+							aria-label={medium === "video" ? l.selectVideo : l.selectAudio}
+							aria-pressed={selectedTrack === medium}
+							disabled={disabled || gesture.dragging}
+							onClick={() => onSelectTrack?.(medium)}
+							className={`block w-full rounded text-left font-medium focus-visible:outline-2 focus-visible:outline-emerald-300 ${medium === "video" ? "h-16" : "h-10"} ${selectedTrack === medium ? "text-zinc-100" : "text-zinc-500"}`}
+						>
+							{medium === "video" ? "V1" : "A1"}
+						</button>
+					))}
 				</div>
 				<div
 					ref={viewport}
@@ -139,47 +170,40 @@ export function TimelineTracks({
 							disabled={!total || gesture.dragging}
 							onSeek={onSeek}
 						/>
-						<div className="flex h-16">
-							{items.map(({ clip, startMs }, index) => (
-								<TimelineClip
-									key={clip.id}
-									clip={clip}
-									index={index}
-									name={names[clip.sourceKey] ?? clip.sourceKey}
-									pixelsPerMs={scale.pixelsPerMs}
-									selected={selectedId === clip.id}
-									fact={facts.find((source) => source.key === clip.sourceKey)}
-									disabled={disabled}
-									handlers={gesture.handlers}
-									consumeClick={gesture.consumeClick}
-									onSelect={onSelect}
-									onSeek={(local) => onSeek(startMs + local)}
-									onDelete={onDelete}
-								/>
-							))}
-						</div>
-						<fieldset
-							className="flex h-10 min-w-0 border-zinc-800 border-t p-0"
-							aria-label={l.linked}
-						>
-							{items.map(({ clip }) => (
-								<button
-									key={clip.id}
-									type="button"
-									onClick={() => onSelect(clip.id)}
-									aria-label={`${l.audio}, ${names[clip.sourceKey] ?? clip.sourceKey}`}
-									aria-pressed={selectedId === clip.id}
-									className={`my-1 min-w-0 shrink-0 truncate border px-3 text-left text-[10px] ${document.audioEnabled ? "border-sky-800 bg-sky-950 text-sky-200" : "border-zinc-800 bg-zinc-900 text-zinc-500"}`}
-									style={{
-										width: (clip.outMs - clip.inMs) * scale.pixelsPerMs,
-									}}
-								>
-									{document.audioEnabled
-										? (names[clip.sourceKey] ?? clip.sourceKey)
-										: l.noAudio}
-								</button>
-							))}
-						</fieldset>
+						{(["video", "audio"] as const).map((medium) => (
+							<fieldset
+								key={medium}
+								aria-label={medium === "video" ? l.videoTrack : l.audioTrack}
+								className={`relative m-0 min-w-0 border-0 border-zinc-800 p-0 ${medium === "video" ? "h-16" : "h-10 border-t"}`}
+							>
+								{timelineItems(gesture.shown, medium).map(
+									({ clip, startMs }, index) => (
+										<TimelineClip
+											key={clip.id}
+											clip={clip}
+											track={medium}
+											index={index}
+											name={names[clip.sourceKey] ?? clip.sourceKey}
+											pixelsPerMs={scale.pixelsPerMs}
+											selected={
+												selectedId === clip.id &&
+												(selectedTrack === medium || partner?.id === clip.id)
+											}
+											fact={facts.find(
+												(source) => source.key === clip.sourceKey,
+											)}
+											disabled={disabled}
+											muted={medium === "audio" && !document.audioEnabled}
+											handlers={gesture.handlers}
+											consumeClick={gesture.consumeClick}
+											onSelect={onSelect}
+											onSeek={(local) => onSeek(startMs + local)}
+											onDelete={onDelete}
+										/>
+									),
+								)}
+							</fieldset>
+						))}
 						{!!total && (
 							<div
 								aria-hidden="true"

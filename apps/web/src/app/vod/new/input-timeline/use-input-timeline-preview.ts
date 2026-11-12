@@ -7,10 +7,16 @@ import {
 	type VodInputTimelineDocument,
 	type VodInputTimelineSource,
 	type VodInputTimelineSourceFacts,
+	type VodInputTimelineV2Document,
 	vodInputTimelineSourceSchema,
 } from "@bitovp/core/vod-input-timeline";
+import { useMemo } from "react";
 import type { WizardInputFile } from "../build-plan";
-import { timelineDuration, timelineProblem } from "./timeline-state";
+import {
+	normalizeTimeline,
+	timelineDuration,
+	timelineProblem,
+} from "./timeline-state";
 import { usePreviewTask } from "./use-preview-task";
 
 const noFacts: VodInputTimelineSourceFacts[] = [];
@@ -61,18 +67,32 @@ export function useInputTimelinePreview({
 	const source = sourceKey
 		? facts.find((item) => item.key === sourceKey)
 		: null;
-	const previewDocument: VodInputTimelineDocument | null = sourceKey
-		? source
-			? {
-					...document,
-					audioEnabled: source.audio !== null,
-					clips: [
-						{ id: document.id, sourceKey, inMs: 0, outMs: source.durationMs },
-					],
-				}
-			: null
+	const sourceDocument = useMemo<VodInputTimelineV2Document | null>(() => {
+		if (!source) return null;
+		const id = crypto.randomUUID();
+		const clip = {
+			id: crypto.randomUUID(),
+			sourceKey: source.key,
+			startMs: 0,
+			inMs: 0,
+		};
+		return {
+			schemaVersion: 2,
+			id,
+			audioEnabled: source.audio !== null,
+			durationMs: source.durationMs,
+			videoClips: source.video
+				? [{ ...clip, outMs: source.video.durationMs ?? source.durationMs }]
+				: [],
+			audioClips: source.audio
+				? [{ ...clip, outMs: source.audio.durationMs ?? source.durationMs }]
+				: [],
+		};
+	}, [source]);
+	const previewDocument = sourceKey
+		? sourceDocument
 		: !problem
-			? document
+			? normalizeTimeline(document)
 			: null;
 	const durationMs = previewDocument ? timelineDuration(previewDocument) : 0;
 	const fullAllowed =

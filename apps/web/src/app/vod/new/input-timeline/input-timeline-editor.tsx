@@ -7,6 +7,7 @@ import { EditorToolbar } from "./editor-toolbar";
 import { taskErrorText } from "./labels";
 import { PreviewMonitor } from "./preview-monitor";
 import { SourceBin } from "./source-bin";
+import { SourceInsertionControls } from "./source-insertion-controls";
 import { TimelineTracks } from "./timeline-tracks";
 import type { VodInputTimelineEditorProps } from "./types";
 import { useInputTimelineWorkbench } from "./use-input-timeline-workbench";
@@ -17,8 +18,9 @@ export type {
 } from "./types";
 
 export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
-	const { document, sources, onAddSource, disabled = false } = props;
+	const { sources, onAddSource, disabled = false } = props;
 	const w = useInputTimelineWorkbench(props);
+	const document = w.document;
 	return (
 		<section
 			ref={w.container}
@@ -33,31 +35,54 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 					facts={w.state.facts}
 					selectedKey={w.mode === "source" ? w.sourceKey : null}
 					disabled={disabled || w.dragging}
-					full={document.clips.length >= MAX_VOD_TIMELINE_CLIPS}
+					full={
+						Math.max(document.videoClips.length, document.audioClips.length) >=
+						MAX_VOD_TIMELINE_CLIPS
+					}
 					onAddSource={onAddSource}
 					onAdd={w.add}
 					onSelect={w.selectSource}
 				/>
-				<PreviewMonitor
-					task={w.state.preview.ready ?? w.state.preview.previous}
-					stale={w.state.preview.stale}
-					pending={w.state.probe.pending || w.state.preview.pending}
-					mode={w.mode}
-					positionMs={
-						w.mode === "source" ? w.sourcePosition : w.editor.positionMs
-					}
-					durationMs={w.previewDurationMs}
-					whole={w.whole}
-					fullAllowed={w.state.fullAllowed}
-					onWhole={w.setWhole}
-					onMode={w.setMode}
-					onPosition={w.onPlayback}
-					onSeek={w.sourceSeek}
-					onError={w.mediaError}
-				/>
+				<div className="min-w-0">
+					<PreviewMonitor
+						task={w.state.preview.ready ?? w.state.preview.previous}
+						stale={w.state.preview.stale}
+						pending={w.state.probe.pending || w.state.preview.pending}
+						mode={w.mode}
+						positionMs={
+							w.mode === "source" ? w.sourcePosition : w.editor.positionMs
+						}
+						durationMs={w.previewDurationMs}
+						whole={w.whole}
+						fullAllowed={w.state.fullAllowed}
+						onWhole={w.setWhole}
+						onMode={w.setMode}
+						onPosition={w.onPlayback}
+						onSeek={w.sourceSeek}
+						onError={w.mediaError}
+					/>
+					{w.mode === "source" && w.selectedSource && (
+						<SourceInsertionControls
+							key={w.selectedSource.key}
+							source={w.selectedSource}
+							range={w.insertion.range}
+							targetLabel={w.targetLabel}
+							selected={w.selected}
+							appendPositionMs={w.insertion.appendPositionMs}
+							canAppend={w.insertion.canAppend}
+							canReplace={w.insertion.canReplace}
+							error={w.insertion.replaceError ?? w.insertion.appendError}
+							disabled={disabled || w.dragging}
+							onRange={w.insertion.setRange}
+							onAppend={() => w.insertion.append()}
+							onReplace={w.insertion.replace}
+							onInvalid={w.invalid}
+						/>
+					)}
+				</div>
 				{w.selected ? (
 					<ClipInspector
-						key={`${w.selected.id}:${w.selected.inMs}:${w.selected.outMs}`}
+						key={`${w.editor.selectedTrack}:${w.selected.id}:${w.selected.inMs}:${w.selected.outMs}`}
 						clip={w.selected}
 						source={w.state.facts.find(
 							(source) => source.key === w.selected?.sourceKey,
@@ -76,12 +101,14 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 				canUndo={w.editor.canUndo}
 				canRedo={w.editor.canRedo}
 				canSplit={w.canSplit}
-				canMoveEarlier={w.selectedIndex > 0}
-				canMoveLater={
-					w.selectedIndex >= 0 && w.selectedIndex < document.clips.length - 1
-				}
+				canMoveEarlier={w.canMoveEarlier}
+				canMoveLater={w.canMoveLater}
 				canDelete={!!w.selected}
 				audioEnabled={document.audioEnabled}
+				linked={w.linked}
+				linkAvailable={w.linkAvailable}
+				targetLabel={w.targetLabel}
+				onLinked={w.setLinked}
 				onUndo={w.editor.undo}
 				onRedo={w.editor.redo}
 				onSplit={w.split}
@@ -95,9 +122,12 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 				facts={w.state.facts}
 				names={w.names}
 				selectedId={w.editor.selectedId}
+				selectedTrack={w.editor.selectedTrack}
+				linked={w.linked}
 				positionMs={w.editor.positionMs}
 				disabled={disabled}
 				onSelect={w.selectClip}
+				onSelectTrack={w.selectTrack}
 				onSeek={w.seek}
 				onChange={w.commit}
 				onDelete={w.remove}

@@ -1,7 +1,7 @@
 import type {
 	VodInputPreviewTask,
-	VodInputTimelineDocument,
 	VodInputTimelineSourceFacts,
+	VodInputTimelineV1Document,
 } from "@bitovp/core/vod-input-timeline";
 
 export const sequenceId = "10000000-0000-4000-8000-000000000001";
@@ -28,7 +28,7 @@ const sourceFact = (key: string): VodInputTimelineSourceFacts => ({
 export const facts: [VodInputTimelineSourceFacts, VodInputTimelineSourceFacts] =
 	[sourceFact("a"), sourceFact("b")];
 
-export function timeline(): VodInputTimelineDocument {
+export function timeline(): VodInputTimelineV1Document {
 	return {
 		schemaVersion: 1,
 		id: sequenceId,

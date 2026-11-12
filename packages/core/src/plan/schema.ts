@@ -656,6 +656,9 @@ const codecEncodingModeSchema = z.enum([
 	"SMART_PASS",
 ]);
 
+/** The name an H.264 codec configuration gets when the plan gives none. */
+export const H264_DEFAULT_CONFIG_NAME = "Sample video codec configuration";
+
 export const h264RenditionSchema = z.strictObject({
 	...h264DetailControlsSchema.shape,
 	...renditionBase,
@@ -663,7 +666,7 @@ export const h264RenditionSchema = z.strictObject({
 	codec: z.literal("H264"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	/** Codec-config display name (sample default kept for golden fidelity). */
-	name: z.string().default("Sample video codec configuration"),
+	name: z.string().default(H264_DEFAULT_CONFIG_NAME),
 	/** Explicit output width; omitted legacy plans still inherit input aspect. */
 	width: z.number().int().positive().optional(),
 	crf: z.number().min(0).max(51).optional(),

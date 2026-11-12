@@ -6,6 +6,7 @@ import {
 	DEFAULT_VMAF_MODEL,
 	type EncodingPlan,
 	encodingPlanSchema,
+	H264_DEFAULT_CONFIG_NAME,
 } from "../plan/schema";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import {
@@ -293,7 +294,13 @@ function readExtras(
 		extras.source = ingestKey;
 	}
 	const name = asString(r.name);
-	if (name !== undefined) {
+	// A parsed plan always names an H.264 configuration: the schema supplies the
+	// name when the plan has none. Read back, that default would look like a name
+	// somebody gave, and the plan is the same without it.
+	if (
+		name !== undefined &&
+		!(r.codec === "H264" && name === H264_DEFAULT_CONFIG_NAME)
+	) {
 		extras.name = name;
 	}
 	const mode = asString(r.mode);
@@ -1633,8 +1640,9 @@ function readBasePath(
 		(dest) => asString(dest.acl) === "PUBLIC_READ",
 	);
 	// Every manifest writes to the base path verbatim (buildPlan), so any
-	// manifest destination IS the base. Manifest-less plans aren't in the
-	// form-mappable set; "" lets the round-trip gate reject them.
+	// manifest destination IS the base. A plan without manifests names none:
+	// "" keeps every destination a whole path, which always rebuilds. The
+	// caller may know better (`sharedOutputFolder`).
 	const firstManifestDest = isRecord(manifests[0]?.destination)
 		? manifests[0].destination
 		: undefined;
@@ -1748,7 +1756,32 @@ function collectInputFiles(
  * Best-effort inverse of buildPlan. ALWAYS returns a state; correctness is
  * the round-trip gate's job (tryImportPresetIntoWizard), not this function's.
  */
-export function planToWizardState(raw: Record<string, unknown>): WizardState {
+/**
+ * The folder a plan without manifests writes all its files into, when there is one:
+ * every muxing destination is the same path, and it is a folder (ends in "/"). This
+ * is the shape the file-export flow builds. Undefined for any other plan.
+ */
+function sharedOutputFolder(plan: Record<string, unknown>): string | undefined {
+	if (asArray(plan.manifests).length > 0) return undefined;
+	const paths = new Set(
+		asArray(plan.muxings)
+			.filter(isRecord)
+			.flatMap((muxing) =>
+				isRecord(muxing.destination) ? [asString(muxing.destination.path)] : [],
+			),
+	);
+	const [folder] = [...paths];
+	return paths.size === 1 && folder?.endsWith("/") ? folder : undefined;
+}
+
+/**
+ * `basePath` replaces the base folder the plan's manifests would give. Pass it only
+ * with a check that the state still rebuilds the plan (`tryImportPresetIntoWizard`).
+ */
+export function planToWizardState(
+	raw: Record<string, unknown>,
+	basePath?: string,
+): WizardState {
 	const bitmovin = isRecord(raw.bitmovin) ? raw.bitmovin : {};
 	const inputs = asArray(raw.inputs).filter(isRecord);
 	const outputs = asArray(raw.outputs).filter(isRecord);
@@ -1819,7 +1852,9 @@ export function planToWizardState(raw: Record<string, unknown>): WizardState {
 			? audioFileKey
 			: undefined;
 
-	const { base, publicRead } = readBasePath(manifests, muxings);
+	const read = readBasePath(manifests, muxings);
+	const base = basePath ?? read.base;
+	const { publicRead } = read;
 
 	const outputKind = outputKindOf(asString(origin.kind));
 
@@ -2476,14 +2511,31 @@ export function tryImportPresetIntoWizard(
 	// keeps them from being submitted until the user replaces them in the path
 	// inputs. (C4 {uuid}/{bitrate}/{height} are run-time placeholders, kept.)
 	// Use normalized enum names in the form as well as in the rebuilt plan.
-	const state = planToWizardState(parsed.data);
-	let rebuilt: unknown;
-	try {
-		rebuilt = encodingPlanSchema.parse(buildPlan(state));
-	} catch {
+	const attempt = (basePath?: string) => {
+		const state = planToWizardState(parsed.data, basePath);
+		try {
+			return plansDeepEqual(
+				encodingPlanSchema.parse(buildPlan(state)),
+				parsed.data,
+			)
+				? state
+				: ("differs" as const);
+		} catch {
+			return "unbuildable" as const;
+		}
+	};
+	// A plan without manifests does not say which folder is its output folder: every
+	// destination is a whole path. When all its files go to one folder, that folder
+	// reads back as the output folder, so the form shows where the files go and a
+	// change made there moves them. It is kept only if the plan still rebuilds
+	// exactly; otherwise the paths stay whole, as they always did.
+	const folder = sharedOutputFolder(parsed.data);
+	const flat = folder === undefined ? undefined : attempt(folder);
+	const state = typeof flat === "object" ? flat : attempt();
+	if (state === "unbuildable") {
 		return { ok: false, reasonKey: "wizardX.reasonCannotBeRebuilt" };
 	}
-	if (!plansDeepEqual(rebuilt, parsed.data)) {
+	if (state === "differs") {
 		return {
 			ok: false,
 			reasonKey: "wizardX.reasonUsesUnrepresentedOptions",

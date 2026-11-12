@@ -691,7 +691,8 @@ export function isFileOutputState(state: WizardState): boolean {
  * and nothing left in a field the simple view does not show. Call it only on a state
  * `isFileOutputState` accepts. The files written do not change, because here every
  * file name and folder is explicit, and what is cleared from a hidden field was
- * doing nothing (`fieldsInUse`). A key a loaded plan chose stays (`chosenKey`).
+ * doing nothing (`fieldsInUse`). A key a loaded plan chose stays (`chosenKey`), and
+ * so does the number that kept a copy apart (`apart`).
  */
 export function collapseToFileOutput(state: WizardState): WizardState {
 	const unkeyed = <T extends { extras?: WizardRenditionExtras }>(
@@ -717,6 +718,36 @@ export function collapseToFileOutput(state: WizardState): WizardState {
 	return {
 		...reset(state, HIDDEN_FIELDS),
 		audios,
-		videos: carrying(videos, audios),
+		videos: carrying(apart(videos, videoKeys(state.videos)), audios),
 	};
+}
+
+/**
+ * The ladder copies a row and numbers the copy's key (`v1080`, `v1080-2`): two files
+ * with one height, bitrate and codec, which the plan holds as two streams. Derived
+ * again, both would get one key, and a job the full view accepts would be refused
+ * here. So a row that had a key of its own (`before`) and would now share one keeps a
+ * number: its own key if that is numbered, which no row derives, and the shared key
+ * numbered otherwise. Rows that already had one key between them are left to be
+ * refused, as they were.
+ */
+function apart(
+	videos: WizardVideoRendition[],
+	before: readonly string[],
+): WizardVideoRendition[] {
+	const keys = videoKeys(videos);
+	const taken = new Set(keys);
+	const met = new Set<string>();
+	return videos.map((video, index) => {
+		const key = keys[index] ?? "";
+		const own = before[index] ?? "";
+		const first = !met.has(key);
+		met.add(key);
+		if (first || before.indexOf(own) !== before.lastIndexOf(own)) return video;
+		let numbered = own;
+		for (let n = 2; !/-\d+$/.test(numbered) || taken.has(numbered); n++)
+			numbered = `${key}-${n}`;
+		taken.add(numbered);
+		return { ...video, extras: { ...video.extras, key: numbered } };
+	});
 }

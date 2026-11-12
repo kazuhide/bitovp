@@ -832,6 +832,16 @@ describe("files the plan cannot tell apart", () => {
 		expect(duplicates(same)).toBeGreaterThan(0);
 	});
 
+	it("are told apart by the bitrate in kbps, not by the number typed", () => {
+		// 8,000,400 rounds to the 8000 kbps the first file has. 8,000,500 does not.
+		const near = second({ height: 1080, bitrate: 8_000_400 });
+		expect(sameStreamFiles(near.videos)).toEqual([true, true]);
+		expect(duplicates(near)).toBeGreaterThan(0);
+		const apart = second({ height: 1080, bitrate: 8_000_500 });
+		expect(sameStreamFiles(apart.videos)).toEqual([false, false]);
+		expect(duplicates(apart)).toBe(0);
+	});
+
 	it.each([
 		["the height", { height: 720, bitrate: 8_000_000 }],
 		["the bitrate", { height: 1080, bitrate: 7_999_000 }],
@@ -917,6 +927,141 @@ describe("returning from the full wizard", () => {
 		expect(planOf(removed)).toEqual(planOf(twins));
 		expect(fileOutputBlockers(removed)).toEqual([]);
 		expect(collapseToFileOutput(removed)).toEqual(twins);
+	});
+
+	describe("with a copy the ladder made of a file", () => {
+		type Video = WizardState["videos"][number];
+		const placed = (state: WizardState, edit: Partial<Video> = {}) => {
+			const [first, second] = state.videos as [Video, Video];
+			// What Packaging stores when the copy's path is deleted and its file named.
+			const muxing = {
+				...second.muxing,
+				path: "",
+				autoPath: undefined,
+				filename: "clip-b.mp4",
+			};
+			return apply(state, { videos: [first, { ...second, ...edit, muxing }] });
+		};
+		const places = (state: WizardState) =>
+			filesOf(state).map(({ streams: _streams, ...file }) => file);
+		// "Add video" on a row copies it and numbers the copy's key.
+		const copied = placed(apply(started, addVodVideo(started, 0)));
+
+		it("is a job the full view accepts, with the two keys numbered apart", () => {
+			expect(copied.videos.map((video) => video.extras?.key)).toEqual([
+				"v1080",
+				"v1080-2",
+			]);
+			expect(errorsOf(copied)).toEqual([]);
+			expect(fileOutputBlockers(copied)).toEqual([]);
+		});
+
+		it("keeps the copy's number, so the job is the same one in the simple view", () => {
+			const collapsed = collapseToFileOutput(copied);
+			expect(collapsed.videos.map((video) => video.extras?.key)).toEqual([
+				undefined,
+				"v1080-2",
+			]);
+			expect(collapsed.videos.map((video) => video.muxing?.key)).toEqual([
+				undefined,
+				undefined,
+			]);
+			expect(planOf(collapsed)).toEqual(planOf(copied));
+			expect(errorsOf(collapsed)).toEqual([]);
+			expect(sameStreamFiles(collapsed.videos)).toEqual([false, false]);
+			expect(fileOutputBlockers(collapsed)).toEqual([]);
+			expect(collapseToFileOutput(collapsed)).toEqual(collapsed);
+		});
+
+		it("numbers a file whose own key another file could derive", () => {
+			// Keys written while the bitrates differed, which then became equal.
+			const two = apply(started, addFile(started));
+			const twins = apply(two, editFile(two, 1, { height: 1080 }));
+			const added = apply(twins, addVodVideo(twins));
+			const keyed = apply(added, { videos: added.videos.slice(0, 2) });
+			const [first, second] = keyed.videos as [Video, Video];
+			const equal = apply(keyed, {
+				videos: [first, { ...second, bitrate: 8_000_000 }],
+			});
+			expect(equal.videos.map((video) => video.extras?.key)).toEqual([
+				"v1080_8000k",
+				"v1080_2000k",
+			]);
+			expect(errorsOf(equal)).toEqual([]);
+			expect(fileOutputBlockers(equal)).toEqual([]);
+
+			const collapsed = collapseToFileOutput(equal);
+			// `v1080_2000k` is what a third file of 2 Mbps would derive.
+			expect(collapsed.videos.map((video) => video.extras?.key)).toEqual([
+				undefined,
+				"v1080_8000k_h264-2",
+			]);
+			expect(places(collapsed)).toEqual(places(equal));
+			expect(filesOf(collapsed).map((file) => file.streams[0])).toEqual([
+				"v1080",
+				"v1080_8000k_h264-2",
+			]);
+			expect(errorsOf(collapsed)).toEqual([]);
+			expect(collapseToFileOutput(collapsed)).toEqual(collapsed);
+		});
+
+		it("takes a number no other file has", () => {
+			const added = apply(copied, addVodVideo(copied, 0));
+			const three = added.videos as [Video, Video, Video];
+			// The third file's own key is the one the second is given before it.
+			const taken = apply(added, {
+				videos: [
+					three[0],
+					{ ...three[1], extras: { key: "v1080_4000k" } },
+					{
+						...three[2],
+						extras: { key: "v1080_8000k_h264-2" },
+						muxing: {
+							...three[2].muxing,
+							key: undefined,
+							path: "",
+							autoPath: undefined,
+							filename: "clip-c.mp4",
+						},
+					},
+				],
+			});
+			expect(errorsOf(taken)).toEqual([]);
+			const collapsed = collapseToFileOutput(taken);
+			expect(collapsed.videos.map((video) => video.extras?.key)).toEqual([
+				undefined,
+				"v1080_8000k_h264-2",
+				"v1080_8000k_h264-3",
+			]);
+			expect(errorsOf(collapsed)).toEqual([]);
+			expect(places(collapsed)).toEqual(places(taken));
+		});
+
+		it("leaves files that had one key between them to be refused, as they were", () => {
+			const [first, second] = copied.videos as [Video, Video];
+			const twice = apply(copied, {
+				videos: [first, { ...second, extras: { key: "v1080" } }],
+			});
+			const refused = (state: WizardState) =>
+				validatePlan(planOf(state)).some(
+					(issue) => issue.code === "PLAN_DUPLICATE_KEY",
+				);
+			expect(refused(twice)).toBe(true);
+			const collapsed = collapseToFileOutput(twice);
+			expect(collapsed.videos.map((video) => video.extras?.key)).toEqual([
+				undefined,
+				undefined,
+			]);
+			expect(refused(collapsed)).toBe(true);
+			expect(sameStreamFiles(collapsed.videos)).toEqual([true, true]);
+
+			// Two files made equal in the simple view are not parted by a visit either.
+			const two = apply(started, addFile(started));
+			const same = apply(two, editFile(two, 1, { height: 1080 }));
+			const equal = apply(same, editFile(same, 1, { bitrate: 8_000_000 }));
+			expect(sameStreamFiles(equal.videos)).toEqual([true, true]);
+			expect(collapseToFileOutput(equal)).toEqual(equal);
+		});
 	});
 
 	it.each([

@@ -350,7 +350,8 @@ describe("VodWizard — the file-output flow", () => {
 		await user.click(screen.getByRole("button", { name: "Add file" }));
 		const file = (n: number) =>
 			within(screen.getByRole("group", { name: `File ${n}` }));
-		const told = /Another file has the same height, bitrate and codec/;
+		const told =
+			/Another file has the same height and codec, and the same bitrate once both are rounded to kbps/;
 		expect(
 			file(1).getByLabelText("Bitrate (bps)"),
 		).not.toHaveAccessibleDescription();
@@ -365,7 +366,8 @@ describe("VodWizard — the file-output flow", () => {
 		const set = (label: string, value: string) =>
 			fireEvent.change(file(2).getByLabelText(label), { target: { value } });
 		set("Height (p)", "1080");
-		set("Bitrate (bps)", "8000000");
+		// Under a kilobit from the first file's 8,000,000: the same bitrate in kbps.
+		set("Bitrate (bps)", "8000400");
 		expect(file(2).getByLabelText("File name")).toHaveValue("clip-1080p.mov");
 		for (const n of [1, 2])
 			expect(
@@ -621,7 +623,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe("exports/");
 	});
 
-	it("gives a file turned into segments in Packaging a folder of its own, however its path is emptied", async () => {
+	it("gives a file turned into segments in Packaging a folder of its own, however its path is emptied, and takes it back as a whole file", async () => {
 		const user = userEvent.setup();
 		await restore(ready);
 		await user.click(screen.getByRole("button", { name: "Show all settings" }));
@@ -629,6 +631,7 @@ describe("VodWizard — the file-output flow", () => {
 		const kind = document.getElementById("wz-mx-v-0-kind") as HTMLSelectElement;
 		const path = () =>
 			document.getElementById("wz-mx-v-0-path") as HTMLInputElement;
+		const back = screen.getByRole("button", { name: "Back to simple view" });
 		expect(kind).toHaveValue("MP4");
 		// The output folder itself is a place for one whole file. Segments of two
 		// legs left there would share the folder, and their names.
@@ -641,6 +644,62 @@ describe("VodWizard — the file-output flow", () => {
 		expect(path()).toHaveValue("");
 		expect(path()).toHaveAccessibleDescription(
 			/empty = derived "video\/1080p"/,
+		);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
+			"exports/video/1080p",
+		);
+		expect(back).toBeDisabled();
+
+		// One whole file again, it is back where it was, and the simple view has it.
+		await user.selectOptions(
+			document.getElementById("wz-mx-v-0-kind") as HTMLSelectElement,
+			"MP4",
+		);
+		expect(path()).toHaveValue("");
+		expect(path()).toHaveAccessibleDescription(
+			"Relative to the base output path — empty = that path itself, with no subfolder.",
+		);
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe("exports/");
+		expect(back).toBeEnabled();
+	});
+
+	it("leaves a path typed in Packaging where it is when the container changes", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		await user.click(screen.getByRole("button", { name: "5. Packaging" }));
+		const kind = () =>
+			document.getElementById("wz-mx-v-0-kind") as HTMLSelectElement;
+		const path = () =>
+			document.getElementById("wz-mx-v-0-path") as HTMLInputElement;
+		await user.type(path(), "proxy");
+		await user.selectOptions(kind(), "FMP4");
+		expect(path()).toHaveValue("proxy");
+		await user.selectOptions(kind(), "MP4");
+		expect(path()).toHaveValue("proxy");
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
+			"exports/proxy",
+		);
+	});
+
+	it("leaves a whole file in the folder derived for it when it becomes another kind of whole file", async () => {
+		const user = userEvent.setup();
+		const [file] = ready.videos as [WizardState["videos"][number]];
+		// A file with no path of its own, as a loaded plan can leave it.
+		await restore(
+			{
+				...ready,
+				videos: [{ ...file, muxing: { ...file.muxing, path: undefined } }],
+			},
+			4,
+		);
+		expect(steps()).toHaveLength(8);
+		current("5. Packaging");
+		await user.selectOptions(
+			document.getElementById("wz-mx-v-0-kind") as HTMLSelectElement,
+			"PROGRESSIVE_MOV",
 		);
 		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
 		expect(JSON.parse(planJson()).muxings[0].destination.path).toBe(
@@ -743,6 +802,65 @@ describe("VodWizard — the file-output flow", () => {
 		await user.type(bitrate, "0");
 		expect(bitrate).toHaveValue(640_000);
 		expect(screen.queryByText(/\[PLAN_DUPLICATE_KEY\]/)).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(
+			JSON.parse(planJson()).muxings.map(
+				(muxing: {
+					kind: string;
+					streamKey: string;
+					additionalStreamKeys?: string[];
+				}) => [
+					muxing.kind,
+					muxing.streamKey,
+					...(muxing.additionalStreamKeys ?? []),
+				],
+			),
+		).toEqual([
+			["MP4", "v1080", "a640"],
+			["FMP4", "a64"],
+		]);
+	});
+
+	it("shows in Packaging the track a file carries while two tracks have one key, and keeps a track picked then", async () => {
+		const user = userEvent.setup();
+		const [track] = ready.audios as [WizardState["audios"][number]];
+		// The second track is switched off as a container of its own by hand, so
+		// what the step says of it does not change with what carries it.
+		await restore({
+			...ready,
+			audios: [
+				{ ...track, bitrate: 64_000, muxing: undefined },
+				{ ...track, muxing: { ownContainer: false } },
+			],
+		});
+		await user.click(screen.getByRole("button", { name: "3. Ladder" }));
+		const bitrate = () =>
+			screen.getByRole("spinbutton", { name: "Audio 2 bitrate" });
+		await user.clear(bitrate());
+		await user.type(bitrate(), "64000");
+		await user.click(screen.getByRole("button", { name: "5. Packaging" }));
+		const carried = () =>
+			document.getElementById("wz-mx-v-0-muxaudio") as HTMLSelectElement;
+		// The file is offered its track under the name it carries it by — the key
+		// of the keystroke before, 6400 — not the key the two tracks have between
+		// them, which would show it as carrying nothing.
+		expect(carried()).toHaveValue("a6");
+		expect([...carried().options].map((option) => option.value)).toEqual([
+			"",
+			"a64",
+			"a6",
+		]);
+		expect(
+			document.getElementById("wz-mx-a-1-own"),
+		).toHaveAccessibleDescription(
+			"No container of its own — this track ships only inside the video containers that carry it.",
+		);
+		await user.selectOptions(carried(), "");
+		await user.selectOptions(carried(), "a6");
+
+		await user.click(screen.getByRole("button", { name: "3. Ladder" }));
+		await user.type(bitrate(), "0");
+		expect(bitrate()).toHaveValue(640_000);
 		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
 		expect(
 			JSON.parse(planJson()).muxings.map(

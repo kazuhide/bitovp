@@ -349,6 +349,48 @@ describe("audio keys carried by a video container", () => {
 			).toEqual(["a64", "a128", undefined]);
 		});
 
+		it("a row added then is not given a name that a row's files wait under", () => {
+			// 640 on the way to 6400 is the key `a1`, which is also what the first
+			// blank row added to a ladder is given.
+			const start: Rows = {
+				videos: ["a32", "a6"].map((key, index) => ({
+					height: index === 0 ? 1080 : 720,
+					bitrate: 8_000_000,
+					muxing: {
+						kind: "MP4" as const,
+						filename: `${key}.mp4`,
+						muxedAudioKeys: [key],
+					},
+				})),
+				audios: [
+					{ bitrate: 32000, rate: 48000 },
+					{ bitrate: 6400, rate: 48000 },
+				],
+			};
+			const held = type(start, 0, "6400");
+			expect(waiting(held)).toEqual(["a1", "a6"]);
+			const added = addVodAudio({
+				...DEFAULT_WIZARD_STATE,
+				...held,
+			} as WizardState);
+			expect(added.audios.map((audio) => audio.extras?.key)).toEqual([
+				"a6_48000",
+				"a6_48000",
+				"a2",
+			]);
+			const grown = { ...held, ...added };
+			const three: Rows = { ...grown, ...followRenamedAudioKeys(held, grown) };
+			// With the second row gone the first has its key to itself, and its
+			// file goes on carrying it: not the row that was added.
+			const fewer = {
+				...three,
+				audios: three.audios.filter((_audio, index) => index !== 1),
+			};
+			const left: Rows = { ...fewer, ...followRenamedAudioKeys(three, fewer) };
+			expect(waiting(left)).toEqual([undefined, undefined]);
+			expect(carried(left)[0]).toEqual([["a6_48000"], undefined]);
+		});
+
 		it("stays as it is in a saved draft", () => {
 			const key = draftKey(["org", "user"], "vod", "new");
 			writeWizardDraft(
@@ -436,10 +478,15 @@ describe("audio keys carried by a video container", () => {
 	it("keep every file with the row it carried, through any run of edits", () => {
 		// What a file carries is checked against the row it started with, each
 		// time no two rows have one key. Values are few, so rows often meet.
+		// mulberry32. A multiplier of that size on a plain number passes 2^53 and
+		// loses the low bits, which is where a small modulus looks.
 		let seed = 20261112;
 		const pick = <T>(from: readonly T[]): T => {
-			seed = (seed * 1103515245 + 12345) % 2147483648;
-			return from[seed % from.length] as T;
+			seed = (seed + 0x6d2b79f5) | 0;
+			let mixed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+			mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+			const unit = ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+			return from[Math.floor(unit * from.length)] as T;
 		};
 		const bitrates = [6400, 32000, 64000, 128000, 320000, 640000];
 		const rates = [44100, 48000];
@@ -501,6 +548,6 @@ describe("audio keys carried by a video container", () => {
 			}
 		}
 		// The run is about rows that meet: it has to have seen many.
-		expect(met).toBeGreaterThan(200);
+		expect(met).toBeGreaterThan(400);
 	});
 });

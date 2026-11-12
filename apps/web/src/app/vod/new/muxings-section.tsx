@@ -377,8 +377,12 @@ function MuxingEditor({
 								...muxing,
 								kind: next,
 								// A file that sat in the output folder becomes segments in a
-								// folder of their own, as any other segmented leg has.
-								...(emptyPath === "" && muxing.path === ""
+								// folder of their own, as any other segmented leg has, and
+								// goes back there when it becomes one whole file again. A
+								// path that was typed stays.
+								...(emptyPath === "" &&
+								(muxing.path === "" ||
+									(muxing.path === undefined && !fileContainer(kind)))
 									? { path: emptied(next) }
 									: {}),
 							});
@@ -769,9 +773,19 @@ export function MuxingsSection({
 	 * Both are derived from the SAME state the builder reads, so the picker
 	 * cannot offer a key the plan will not have and the standalone toggle
 	 * cannot claim a track is covered when it is not.
+	 *
+	 * One exception to "a key the plan has": while a track's key is another
+	 * row's too, its containers go on naming it as they did (`carriedAs`), and
+	 * that name is what is offered. The shared key showed every such file as
+	 * carrying nothing, and a track picked then was stored under a key that no
+	 * later edit could tell apart.
 	 */
+	const carriedNames = state.audios.map(
+		(audio, index) =>
+			audio.carriedAs ?? aKeys[index] ?? `a${Math.round(audio.bitrate / 1000)}`,
+	);
 	const audioChoices = state.audios.map((audio, index) => ({
-		key: aKeys[index] ?? `a${Math.round(audio.bitrate / 1000)}`,
+		key: carriedNames[index] ?? "",
 		label: `${audio.codec ?? "AAC"} ${Math.round(audio.bitrate / 1000)}k`,
 	}));
 	const carriedAudioKeys = new Set(
@@ -847,7 +861,9 @@ export function MuxingsSection({
 						derivedPath={audioMuxingRelPath(audio, key)}
 						drm={drm}
 						audio
-						carriedBySomething={carriedAudioKeys.has(key)}
+						carriedBySomething={carriedAudioKeys.has(
+							carriedNames[index] ?? key,
+						)}
 						muxing={audio.muxing}
 						extraMuxings={audio.extraMuxings}
 						onChange={(next) => {

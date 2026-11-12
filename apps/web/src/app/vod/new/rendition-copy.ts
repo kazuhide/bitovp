@@ -149,6 +149,8 @@ function prepareLadder(
 	const reserved = new Set([
 		...vKeys,
 		...aKeys,
+		// A name the containers of a row still use while it waits for its key.
+		...state.audios.flatMap((audio) => audio.carriedAs ?? []),
 		...subtitleKeys(state.subtitles ?? []),
 		...state.inputFiles.flatMap((file) => [file.key, file.inputKey]),
 		"origin",
